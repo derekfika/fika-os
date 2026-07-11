@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:fika:schema:draft:fika-customer:1",
+  "title": "FikaCustomer v1 (Draft)",
+  "description": "Draft customer/contact snapshot embedded in a booking. Stable customer master identity is optional until matching and ownership rules are agreed.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "contactName",
+    "email",
+    "phone",
+    "organisationName"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "1.0.0-draft.1"
+    },
+    "customerId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "description": "Optional stable customer-master ID. Omit when no verified customer identity exists."
+    },
+    "contactName": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 240
+    },
+    "email": {
+      "type": "string",
+      "format": "email",
+      "maxLength": 320
+    },
+    "phone": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 80
+    },
+    "organisationName": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 240
+    },
+    "metadata": {
+      "type": "object",
+      "description": "Optional customer-system metadata. Provider-specific values belong here and must not contain secrets.",
+      "additionalProperties": true
+    }
+  }
+}

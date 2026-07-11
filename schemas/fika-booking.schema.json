@@ -1,0 +1,467 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:fika:schema:draft:fika-booking:1",
+  "title": "FikaBooking v1 (Draft)",
+  "description": "Draft canonical hospitality booking record. This schema is not adopted. Dashboard workflow state is deliberately excluded from authoritative commercial status.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "bookingId",
+    "version",
+    "status",
+    "siteId",
+    "source",
+    "customer",
+    "service",
+    "items",
+    "pricingSnapshot",
+    "dietaryRequirements",
+    "acknowledgements",
+    "validation",
+    "createdAt",
+    "updatedAt",
+    "createdBy",
+    "updatedBy"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "1.0.0-draft.1"
+    },
+    "bookingId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "description": "Stable canonical booking identifier."
+    },
+    "version": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Persisted record version used for optimistic concurrency."
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "draft",
+        "submitted",
+        "acknowledged",
+        "quoted",
+        "confirmed",
+        "cancelled",
+        "declined",
+        "completed"
+      ],
+      "description": "Authoritative commercial booking status. Dashboard workflow statuses do not belong here."
+    },
+    "siteId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "siteDisplayNameSnapshot": {
+      "type": "string",
+      "maxLength": 240,
+      "description": "Optional submission-time label. The stable site relationship is siteId."
+    },
+    "commercialReference": {
+      "type": "string",
+      "maxLength": 240,
+      "description": "Booking-specific invoice, purchase-order, cost-centre or internal reference."
+    },
+    "source": {
+      "$ref": "#/$defs/source"
+    },
+    "customer": {
+      "$ref": "urn:fika:schema:draft:fika-customer:1"
+    },
+    "service": {
+      "$ref": "#/$defs/service"
+    },
+    "items": {
+      "type": "array",
+      "items": {
+        "$ref": "urn:fika:schema:draft:fika-booking-item:1"
+      },
+      "description": "Frozen submission/version snapshot. Empty only where the selected service type explicitly permits a bespoke enquiry without resolved items."
+    },
+    "pricingSnapshot": {
+      "$ref": "#/$defs/pricingSnapshot"
+    },
+    "dietaryRequirements": {
+      "$ref": "#/$defs/dietaryRequirements"
+    },
+    "acknowledgements": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/acknowledgement"
+      },
+      "description": "Accepted policies with version and time. Legacy records must not fabricate acceptance; missing evidence is represented by an empty array and validation issues."
+    },
+    "specialInstructions": {
+      "type": "string",
+      "maxLength": 4000
+    },
+    "validation": {
+      "$ref": "#/$defs/validation"
+    },
+    "createdAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "updatedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "createdBy": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 240,
+      "description": "Stable actor or system reference, not a display name alone."
+    },
+    "updatedBy": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 240,
+      "description": "Stable actor or system reference, not a display name alone."
+    },
+    "metadata": {
+      "type": "object",
+      "description": "Optional non-provider-specific canonical metadata. Provider details belong under source.integrationMetadata.",
+      "additionalProperties": true
+    }
+  },
+  "$defs": {
+    "sourceReference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "value"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": [
+            "submission_id",
+            "idempotency_key",
+            "email_message_id",
+            "email_thread_id",
+            "attachment_hash",
+            "external_record_id",
+            "other"
+          ]
+        },
+        "value": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1000
+        }
+      }
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["channel", "sourceSystem", "receivedAt", "references"],
+      "properties": {
+        "channel": {
+          "type": "string",
+          "enum": [
+            "direct_booking_platform",
+            "legacy_email_form",
+            "manual",
+            "import",
+            "api",
+            "other"
+          ]
+        },
+        "sourceSystem": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 240
+        },
+        "receivedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "submissionId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 240
+        },
+        "idempotencyKey": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500
+        },
+        "references": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/sourceReference" },
+          "uniqueItems": true
+        },
+        "integrationMetadata": {
+          "type": "object",
+          "description": "Provider-specific metadata is permitted only here. Do not store credentials or secrets.",
+          "additionalProperties": true
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": { "channel": { "const": "direct_booking_platform" } },
+            "required": ["channel"]
+          },
+          "then": {
+            "anyOf": [
+              { "required": ["submissionId"] },
+              { "required": ["idempotencyKey"] }
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": { "channel": { "const": "legacy_email_form" } },
+            "required": ["channel"]
+          },
+          "then": {
+            "properties": {
+              "references": { "minItems": 1 }
+            }
+          }
+        }
+      ]
+    },
+    "service": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "serviceDate",
+        "startTime",
+        "timeZone",
+        "guestCount",
+        "serviceType",
+        "location"
+      ],
+      "properties": {
+        "serviceDate": {
+          "type": "string",
+          "format": "date"
+        },
+        "startTime": {
+          "type": "string",
+          "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9](:[0-5][0-9])?$"
+        },
+        "endTime": {
+          "type": "string",
+          "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9](:[0-5][0-9])?$"
+        },
+        "timeZone": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100,
+          "description": "IANA time-zone name."
+        },
+        "guestCount": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "serviceType": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "location": {
+          "$ref": "urn:fika:schema:draft:fika-service-location:1"
+        },
+        "onsiteContact": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "name": { "type": "string", "minLength": 1, "maxLength": 240 },
+            "phone": { "type": "string", "minLength": 1, "maxLength": 80 }
+          }
+        }
+      }
+    },
+    "taxLine": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "taxLineId",
+        "label",
+        "rateBasisPoints",
+        "taxableAmountMinor",
+        "taxAmountMinor"
+      ],
+      "properties": {
+        "taxLineId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "label": { "type": "string", "minLength": 1, "maxLength": 240 },
+        "rateBasisPoints": { "type": "integer", "minimum": 0, "maximum": 10000 },
+        "taxableAmountMinor": { "type": "integer", "minimum": 0 },
+        "taxAmountMinor": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "pricingSnapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "currency",
+        "catalogueVersion",
+        "pricingPolicyVersion",
+        "itemSubtotalMinor",
+        "charges",
+        "chargeTotalMinor",
+        "netTotalMinor",
+        "taxLines",
+        "taxTotalMinor",
+        "grossTotalMinor",
+        "calculatedAt",
+        "calculatedBy"
+      ],
+      "properties": {
+        "currency": {
+          "type": "string",
+          "pattern": "^[A-Z]{3}$"
+        },
+        "catalogueVersion": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "pricingPolicyVersion": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "itemSubtotalMinor": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "charges": {
+          "type": "array",
+          "items": { "$ref": "urn:fika:schema:draft:fika-charge:1" }
+        },
+        "chargeTotalMinor": {
+          "type": "integer",
+          "description": "Signed sum of all charge amountMinor values."
+        },
+        "netTotalMinor": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Item subtotal plus booking-level charges, before tax."
+        },
+        "taxLines": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/taxLine" }
+        },
+        "taxTotalMinor": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "grossTotalMinor": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Net total plus tax total."
+        },
+        "calculatedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "calculatedBy": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 240
+        }
+      }
+    },
+    "dietaryRequirements": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "declared",
+        "vegetarianCount",
+        "veganCount",
+        "glutenFreeCount",
+        "coeliacCount",
+        "dairyFreeCount",
+        "halalCount",
+        "otherCount"
+      ],
+      "properties": {
+        "declared": { "type": "boolean" },
+        "vegetarianCount": { "type": "integer", "minimum": 0 },
+        "veganCount": { "type": "integer", "minimum": 0 },
+        "glutenFreeCount": { "type": "integer", "minimum": 0 },
+        "coeliacCount": { "type": "integer", "minimum": 0 },
+        "dairyFreeCount": { "type": "integer", "minimum": 0 },
+        "halalCount": { "type": "integer", "minimum": 0 },
+        "otherCount": { "type": "integer", "minimum": 0 },
+        "allergyDetails": { "type": "string", "maxLength": 4000 },
+        "freeText": { "type": "string", "maxLength": 4000 }
+      }
+    },
+    "acknowledgement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "acknowledgementId",
+        "type",
+        "policyVersion",
+        "acceptedAt",
+        "acceptedBy"
+      ],
+      "properties": {
+        "acknowledgementId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "type": {
+          "type": "string",
+          "enum": [
+            "quote_subject_to_confirmation",
+            "notice_policy",
+            "dietary_responsibility",
+            "severe_allergy",
+            "other"
+          ]
+        },
+        "policyVersion": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "acceptedAt": { "type": "string", "format": "date-time" },
+        "acceptedBy": { "type": "string", "minLength": 1, "maxLength": 240 },
+        "wordingSnapshot": { "type": "string", "maxLength": 4000 }
+      }
+    },
+    "validationIssue": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "severity", "message"],
+      "properties": {
+        "code": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "severity": { "type": "string", "enum": ["info", "warning", "error"] },
+        "message": { "type": "string", "minLength": 1, "maxLength": 1000 },
+        "fieldPath": { "type": "string", "maxLength": 500 }
+      }
+    },
+    "validation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "issues", "validatedAt", "validatedBy"],
+      "properties": {
+        "status": { "type": "string", "enum": ["valid", "needs_review", "invalid"] },
+        "issues": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/validationIssue" }
+        },
+        "validatedAt": { "type": "string", "format": "date-time" },
+        "validatedBy": { "type": "string", "minLength": 1, "maxLength": 240 }
+      }
+    },
+    "mutationConcurrency": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["expectedVersion", "updatedAt", "updatedBy"],
+      "properties": {
+        "expectedVersion": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Version the caller expects before mutation. It belongs to the mutation command and must not be persisted in the booking record."
+        },
+        "updatedAt": { "type": "string", "format": "date-time" },
+        "updatedBy": { "type": "string", "minLength": 1, "maxLength": 240 }
+      }
+    }
+  }
+}

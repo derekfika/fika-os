@@ -1,0 +1,94 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:fika:schema:draft:fika-charge:1",
+  "title": "FikaCharge v1 (Draft)",
+  "description": "Draft immutable pricing charge snapshot. Money is stored as integer minor units in the stated ISO 4217 currency.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "chargeId",
+    "type",
+    "label",
+    "currency",
+    "amountMinor",
+    "taxTreatment"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "1.0.0-draft.1"
+    },
+    "chargeId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "description": "Stable identifier for this charge within the booking price snapshot."
+    },
+    "type": {
+      "type": "string",
+      "enum": [
+        "management_fee",
+        "delivery",
+        "labour",
+        "equipment",
+        "service_charge",
+        "discount",
+        "other"
+      ]
+    },
+    "code": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "description": "Optional site or policy code. It must not be used instead of the canonical charge type."
+    },
+    "label": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 240
+    },
+    "currency": {
+      "type": "string",
+      "pattern": "^[A-Z]{3}$",
+      "description": "ISO 4217 currency code."
+    },
+    "amountMinor": {
+      "type": "integer",
+      "description": "Signed amount in currency minor units. Discounts are zero or negative; other charge types are zero or positive."
+    },
+    "taxTreatment": {
+      "type": "string",
+      "enum": ["taxable", "non_taxable", "tax_inclusive", "unknown"]
+    },
+    "taxRateBasisPoints": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 10000,
+      "description": "Tax rate in basis points when known; 2000 means 20%."
+    },
+    "calculationPolicyVersion": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "metadata": {
+      "type": "object",
+      "description": "Optional non-canonical calculation or integration metadata. Do not place secrets here.",
+      "additionalProperties": true
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": { "type": { "const": "discount" } },
+        "required": ["type"]
+      },
+      "then": {
+        "properties": { "amountMinor": { "maximum": 0 } }
+      },
+      "else": {
+        "properties": { "amountMinor": { "minimum": 0 } }
+      }
+    }
+  ]
+}

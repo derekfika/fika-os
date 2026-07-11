@@ -1,0 +1,151 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:fika:schema:draft:fika-booking-item:1",
+  "title": "FikaBookingItem v1 (Draft)",
+  "description": "Draft immutable line-item snapshot captured when a booking is submitted or versioned.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "bookingItemId",
+    "categoryLabel",
+    "itemName",
+    "quantity",
+    "priceSnapshot"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "1.0.0-draft.1"
+    },
+    "bookingItemId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "description": "Stable ID for this line within the booking."
+    },
+    "catalogueItemId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "description": "Stable catalogue item ID when resolved. Legacy unmapped lines may omit it."
+    },
+    "catalogueVersion": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "categoryId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "categoryLabel": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 240
+    },
+    "itemName": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 500
+    },
+    "descriptionSnapshot": {
+      "type": "string",
+      "maxLength": 4000
+    },
+    "servingInfoSnapshot": {
+      "type": "string",
+      "maxLength": 1000
+    },
+    "quantity": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "serviceTime": {
+      "type": "string",
+      "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9](:[0-5][0-9])?$",
+      "description": "Local service time in ISO 8601-compatible HH:MM or HH:MM:SS form; the booking service.timeZone supplies the zone."
+    },
+    "choices": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["choiceId", "label", "values"],
+        "properties": {
+          "choiceId": { "type": "string", "minLength": 1, "maxLength": 128 },
+          "label": { "type": "string", "minLength": 1, "maxLength": 240 },
+          "values": {
+            "type": "array",
+            "items": { "type": "string", "minLength": 1, "maxLength": 500 },
+            "uniqueItems": true
+          }
+        }
+      }
+    },
+    "comments": {
+      "type": "string",
+      "maxLength": 2000
+    },
+    "minimumQuantitySnapshot": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "minimumGuestsSnapshot": {
+      "type": ["integer", "null"],
+      "minimum": 0
+    },
+    "noticeRequiredDaysSnapshot": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "validation": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "minimumQuantityMet": { "type": "boolean" },
+        "minimumGuestsMet": { "type": "boolean" },
+        "noticeMet": { "type": "boolean" }
+      }
+    },
+    "priceSnapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "currency",
+        "priceType",
+        "unitPriceMinor",
+        "lineTotalMinor"
+      ],
+      "properties": {
+        "currency": {
+          "type": "string",
+          "pattern": "^[A-Z]{3}$"
+        },
+        "priceType": {
+          "type": "string",
+          "enum": ["per_item", "per_person", "per_package", "fixed", "other"]
+        },
+        "unitPriceMinor": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "lineTotalMinor": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Frozen line total in minor units before booking-level charges and tax."
+        },
+        "calculationPolicyVersion": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        }
+      }
+    },
+    "metadata": {
+      "type": "object",
+      "description": "Optional source/integration metadata for this line. Do not place secrets here.",
+      "additionalProperties": true
+    }
+  }
+}

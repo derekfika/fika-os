@@ -1,0 +1,196 @@
+{
+  "schemaVersion": "1.0.0-draft.1",
+  "bookingId": "booking_example_mnk_001",
+  "version": 1,
+  "status": "submitted",
+  "siteId": "site_example_mnk",
+  "siteDisplayNameSnapshot": "Example MNK Hospitality Site",
+  "commercialReference": "EXAMPLE-PO-001",
+  "source": {
+    "channel": "direct_booking_platform",
+    "sourceSystem": "booking-platform:mnk-example",
+    "receivedAt": "2026-07-11T09:30:00Z",
+    "submissionId": "submission_example_mnk_001",
+    "idempotencyKey": "idempotency_example_mnk_001",
+    "references": [
+      {
+        "type": "submission_id",
+        "value": "submission_example_mnk_001"
+      }
+    ]
+  },
+  "customer": {
+    "schemaVersion": "1.0.0-draft.1",
+    "customerId": "customer_example_001",
+    "contactName": "Example Customer",
+    "email": "customer@example.invalid",
+    "phone": "+44 0000 000001",
+    "organisationName": "Example Organisation"
+  },
+  "service": {
+    "serviceDate": "2026-08-18",
+    "startTime": "09:00",
+    "endTime": "10:30",
+    "timeZone": "Europe/London",
+    "guestCount": 10,
+    "serviceType": "meeting_hospitality",
+    "location": {
+      "schemaVersion": "1.0.0-draft.1",
+      "serviceLocationId": "location_example_mnk_room_01",
+      "type": "onsite",
+      "displayLabel": "Example Building, Floor 2, Meeting Room A",
+      "siteId": "site_example_mnk",
+      "building": "Example Building",
+      "floor": "2",
+      "roomOrArea": "Meeting Room A"
+    },
+    "onsiteContact": {
+      "name": "Example Onsite Contact",
+      "phone": "+44 0000 000002"
+    }
+  },
+  "items": [
+    {
+      "schemaVersion": "1.0.0-draft.1",
+      "bookingItemId": "booking_item_example_mnk_001",
+      "catalogueItemId": "catalogue_item_example_coffee",
+      "catalogueVersion": "mnk-example-menu-2026-01",
+      "categoryId": "drinks",
+      "categoryLabel": "Drinks",
+      "itemName": "Example Filter Coffee",
+      "descriptionSnapshot": "Example coffee service.",
+      "servingInfoSnapshot": "Per person",
+      "quantity": 10,
+      "serviceTime": "09:00",
+      "choices": [],
+      "comments": "",
+      "minimumQuantitySnapshot": 1,
+      "minimumGuestsSnapshot": null,
+      "noticeRequiredDaysSnapshot": 3,
+      "validation": {
+        "minimumQuantityMet": true,
+        "minimumGuestsMet": true,
+        "noticeMet": true
+      },
+      "priceSnapshot": {
+        "currency": "GBP",
+        "priceType": "per_person",
+        "unitPriceMinor": 350,
+        "lineTotalMinor": 3500,
+        "calculationPolicyVersion": "pricing-example-v1"
+      }
+    },
+    {
+      "schemaVersion": "1.0.0-draft.1",
+      "bookingItemId": "booking_item_example_mnk_002",
+      "catalogueItemId": "catalogue_item_example_pastries",
+      "catalogueVersion": "mnk-example-menu-2026-01",
+      "categoryId": "breakfast",
+      "categoryLabel": "Breakfast",
+      "itemName": "Example Pastry Box",
+      "descriptionSnapshot": "Example pastry selection.",
+      "servingInfoSnapshot": "One box",
+      "quantity": 1,
+      "serviceTime": "09:00",
+      "choices": [],
+      "comments": "",
+      "minimumQuantitySnapshot": 1,
+      "minimumGuestsSnapshot": null,
+      "noticeRequiredDaysSnapshot": 3,
+      "validation": {
+        "minimumQuantityMet": true,
+        "minimumGuestsMet": true,
+        "noticeMet": true
+      },
+      "priceSnapshot": {
+        "currency": "GBP",
+        "priceType": "per_item",
+        "unitPriceMinor": 3600,
+        "lineTotalMinor": 3600,
+        "calculationPolicyVersion": "pricing-example-v1"
+      }
+    }
+  ],
+  "pricingSnapshot": {
+    "currency": "GBP",
+    "catalogueVersion": "mnk-example-menu-2026-01",
+    "pricingPolicyVersion": "mnk-example-pricing-v1",
+    "itemSubtotalMinor": 7100,
+    "charges": [
+      {
+        "schemaVersion": "1.0.0-draft.1",
+        "chargeId": "charge_example_mnk_delivery_001",
+        "type": "delivery",
+        "code": "example_delivery",
+        "label": "Example delivery charge",
+        "currency": "GBP",
+        "amountMinor": 1000,
+        "taxTreatment": "taxable",
+        "taxRateBasisPoints": 2000,
+        "calculationPolicyVersion": "mnk-example-pricing-v1"
+      }
+    ],
+    "chargeTotalMinor": 1000,
+    "netTotalMinor": 8100,
+    "taxLines": [
+      {
+        "taxLineId": "tax_example_mnk_vat_001",
+        "label": "VAT",
+        "rateBasisPoints": 2000,
+        "taxableAmountMinor": 8100,
+        "taxAmountMinor": 1620
+      }
+    ],
+    "taxTotalMinor": 1620,
+    "grossTotalMinor": 9720,
+    "calculatedAt": "2026-07-11T09:30:00Z",
+    "calculatedBy": "actor:booking-platform:mnk-example"
+  },
+  "dietaryRequirements": {
+    "declared": true,
+    "vegetarianCount": 2,
+    "veganCount": 1,
+    "glutenFreeCount": 0,
+    "coeliacCount": 0,
+    "dairyFreeCount": 1,
+    "halalCount": 0,
+    "otherCount": 0,
+    "allergyDetails": "Synthetic fixture: no real allergy information.",
+    "freeText": "Synthetic fixture only."
+  },
+  "acknowledgements": [
+    {
+      "acknowledgementId": "ack_example_mnk_quote_001",
+      "type": "quote_subject_to_confirmation",
+      "policyVersion": "example-policy-v1",
+      "acceptedAt": "2026-07-11T09:29:30Z",
+      "acceptedBy": "customer:customer_example_001",
+      "wordingSnapshot": "Example wording: this request remains subject to confirmation."
+    },
+    {
+      "acknowledgementId": "ack_example_mnk_notice_001",
+      "type": "notice_policy",
+      "policyVersion": "example-policy-v1",
+      "acceptedAt": "2026-07-11T09:29:31Z",
+      "acceptedBy": "customer:customer_example_001"
+    },
+    {
+      "acknowledgementId": "ack_example_mnk_dietary_001",
+      "type": "dietary_responsibility",
+      "policyVersion": "example-policy-v1",
+      "acceptedAt": "2026-07-11T09:29:32Z",
+      "acceptedBy": "customer:customer_example_001"
+    }
+  ],
+  "specialInstructions": "Synthetic fixture: example setup instructions.",
+  "validation": {
+    "status": "valid",
+    "issues": [],
+    "validatedAt": "2026-07-11T09:30:00Z",
+    "validatedBy": "actor:booking-platform:mnk-example"
+  },
+  "createdAt": "2026-07-11T09:30:00Z",
+  "updatedAt": "2026-07-11T09:30:00Z",
+  "createdBy": "actor:booking-platform:mnk-example",
+  "updatedBy": "actor:booking-platform:mnk-example"
+}

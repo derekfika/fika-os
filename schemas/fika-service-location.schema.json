@@ -1,0 +1,79 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:fika:schema:draft:fika-service-location:1",
+  "title": "FikaServiceLocation v1 (Draft)",
+  "description": "Draft structured location for hospitality service while retaining an operational display label.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "type",
+    "displayLabel"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "1.0.0-draft.1"
+    },
+    "serviceLocationId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "description": "Optional stable location ID. Omit until the location has been resolved against an authoritative location record."
+    },
+    "type": {
+      "type": "string",
+      "enum": ["onsite", "delivery", "collection", "external", "unknown"]
+    },
+    "displayLabel": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 500
+    },
+    "siteId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "building": {
+      "type": "string",
+      "maxLength": 240
+    },
+    "floor": {
+      "type": "string",
+      "maxLength": 120
+    },
+    "roomOrArea": {
+      "type": "string",
+      "maxLength": 240
+    },
+    "deliveryPoint": {
+      "type": "string",
+      "maxLength": 500
+    },
+    "address": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "line1": { "type": "string", "maxLength": 240 },
+        "line2": { "type": "string", "maxLength": 240 },
+        "city": { "type": "string", "maxLength": 160 },
+        "region": { "type": "string", "maxLength": 160 },
+        "postalCode": { "type": "string", "maxLength": 40 },
+        "countryCode": {
+          "type": "string",
+          "pattern": "^[A-Z]{2}$",
+          "description": "ISO 3166-1 alpha-2 country code."
+        }
+      }
+    },
+    "instructions": {
+      "type": "string",
+      "maxLength": 2000
+    },
+    "metadata": {
+      "type": "object",
+      "description": "Optional integration/location-provider metadata. Do not place secrets here.",
+      "additionalProperties": true
+    }
+  }
+}
