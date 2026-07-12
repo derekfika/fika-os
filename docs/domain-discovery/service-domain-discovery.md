@@ -1,5 +1,7 @@
 # Service Domain Discovery
 
+> **Classification: Supporting discovery evidence.** Canonical Service Arrangement, Recurring Schedule and Service Occurrence meaning now comes from approved decisions and the [Platform Domain Map](../platform-domain-map.md).
+
 ## Status and purpose
 
 This is read-only business/domain discovery. It proposes vocabulary and boundaries for workshop review; it does not adopt names, policies, schemas or implementation.

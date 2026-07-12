@@ -1,5 +1,7 @@
 # Provisional Service Type Catalogue
 
+> **Classification: Historical discovery evidence.** Candidate terminology is retained for context. Approved Service Arrangement, Recurring Schedule and Service Occurrence decisions now govern current language; see the [Platform Domain Map](../platform-domain-map.md).
+
 ## Purpose
 
 This catalogue distinguishes classification, reusable blueprint, configured service, schedule and dated demand. It is not an adopted taxonomy or schema.

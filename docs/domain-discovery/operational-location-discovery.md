@@ -1,5 +1,7 @@
 # Operational Location Domain Discovery
 
+> **Classification: Supporting discovery evidence.** Canonical Operational Location meaning now comes from approved decisions and the [Platform Domain Map](../platform-domain-map.md). Retain this document for evidence, alternatives and historical reasoning.
+
 ## Status and evidence boundary
 
 This is read-only domain discovery based on confirmed business context, the FIKA architecture repository, repository/folder structure, project documentation, and local configuration patterns. It does not define or adopt a schema, migrate configuration, select a provider, or assert production lifecycle where evidence is incomplete.

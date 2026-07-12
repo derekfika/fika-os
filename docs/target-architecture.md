@@ -1,5 +1,7 @@
 # Target Architecture
 
+> **Classification: Supporting provisional architecture.** Stage 6 has not started. This technology-neutral direction must be reconciled with accepted BDRs and adopted schemas before it becomes implementation authority.
+
 ## Purpose and status
 
 This document defines a technology-neutral architectural direction. It does not select a database, hosting model, runtime, deployment platform, or provider. Existing applications can migrate gradually through adapters and repository interfaces.

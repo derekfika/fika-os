@@ -1,5 +1,7 @@
 # FikaBooking v1 Domain Model
 
+> **Classification: Supporting pre-decision draft.** The seven business blockers described here were subsequently resolved in the 54 canonical decisions. This draft has not yet been revised or adopted; Stage 5 must reconcile it with accepted BDRs.
+
 ## Status
 
 **Draft for review — not adopted.**
@@ -269,7 +271,9 @@ The following existing concepts need further ownership decisions before they ent
 
 These values may map to source metadata, integration metadata, workflow state, separate canonical objects, audit events or projections. No final placement is asserted.
 
-## Unresolved Questions
+## Historical unresolved questions — now decided
+
+The following questions were open when this draft was written. Their answers now exist in the canonical decision register and must be applied during Stage 5 revision.
 
 1. What is the permitted commercial status-transition graph, and which workflow owns each transition?
 2. Do dashboard edits create a new authoritative booking version or an operational overlay?

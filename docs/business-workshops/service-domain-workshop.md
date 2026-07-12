@@ -1,5 +1,7 @@
 # FIKA Service Domain Workshop
 
+> **Classification: Historical discovery evidence.** This workshop fed the completed business-discovery process. Open rows are not a current backlog and are superseded where the canonical decision register differs.
+
 ## Purpose
 
 This workshop decides the meaning and boundary of a FIKA Service. It is pre-filled only with confirmed evidence and explicit proposals. It does not create a schema or adopt policy.

@@ -1,5 +1,7 @@
 # Future Platform Domains
 
+> **Classification: Supporting future-domain evidence.** This is not a commitment, roadmap or adopted domain catalogue. Approved decisions and BDRs take precedence where discovery has since resolved a candidate.
+
 ## Purpose
 
 This document records business domains that may eventually become first-class FIKA Platform capabilities. It is an architectural horizon: it is not a roadmap, backlog, commitment, delivery sequence, or assertion that an application exists.
@@ -12,7 +14,7 @@ Entries should influence boundaries, identifiers, configuration, permissions, au
 
 - **Classification:** Future domain; not a committed implementation
 - **Purpose:** TODO
-- **Business Owner:** TODO
+- **Business Owner:** Events Lead, with Site Manager approval where appropriate
 - **Problem being solved:** TODO
 - **Candidate schemas:** TODO; names are provisional until discovery
 - **Candidate workflows:** TODO
@@ -26,10 +28,10 @@ Entries should influence boundaries, identifiers, configuration, permissions, au
 - **Purpose:** Provide a shared company-wide event model and internal operational source of truth while supporting distinct public/client experiences.
 - **Business Owner:** TODO
 - **Problem being solved:** Events originate from The Line, FIKA sites, FIKA Events and Pop-ups, external venues, and email, phone, or manual entry. Separate channels must not create separate operational truths.
-- **Candidate schemas:** `FikaEvent`, event source/reference, venue/location, participant/contact, schedule, event status, event workflow state. All remain TODO pending discovery.
+- **Candidate schemas:** `FikaEvent`, event source/reference, Operational Location, Client/Client Contact, schedule, event status and workflow state. Names remain provisional until Stage 5.
 - **Candidate workflows:** capture/normalise event; deduplicate; amend/cancel; assign ownership; operational review; publish/project to authorised experiences; reporting.
 - **Dependencies:** site/configuration, customer/contact, permissions, notifications, Calendar adapter, audit, document/media references.
-- **Current maturity:** Planned capability; no repository or adopted schema found.
+- **Current maturity:** Event definition, Service/Booking boundary and approval direction are canonical; no repository or adopted schema exists.
 - **Notes:** The internal Events Dashboard is the intended source of truth. The Line and FIKA Events and Pop-ups remain separate experiences feeding it. Do not assume a hospitality booking is an event or that statuses are identical.
 
 ## Media Management
@@ -59,13 +61,13 @@ Entries should influence boundaries, identifiers, configuration, permissions, au
 ## Mobilisation
 
 - **Classification:** Future domain; not a committed implementation
-- **Purpose:** Coordinate the controlled setup or transition of new sites, clients, services, and operational capabilities.
-- **Business Owner:** TODO
-- **Problem being solved:** The platform aims to make each new location easier to establish, but current site variants contain duplicated configuration and no audited mobilisation workflow.
+- **Purpose:** Coordinate the controlled setup or transition of Operational Locations, Clients, Service Arrangements and Operational Capabilities.
+- **Business Owner:** Senior Management collectively, with a nominated coordinator for each mobilisation
+- **Problem being solved:** Each mobilisation needs a consistent journey, accountable coordination, domain readiness and explicit mandatory, capability-conditional and Client/Operational Location-specific work.
 - **Candidate schemas:** mobilisation, workstream, milestone, dependency, readiness check, decision, issue/risk, handover. TODO.
 - **Candidate workflows:** initiate; define scope; assign owners; configure; validate readiness; migrate; train/handover; launch; close/review.
-- **Dependencies:** Sites/Configuration, Workforce, Equipment, Media/Brand, Till abstraction, permissions, documents and audit.
-- **Current maturity:** Architectural concept; current operational process not inventoried.
+- **Dependencies:** Operational Location, Configuration, Workforce, Equipment, Media/Brand, Operational Capabilities, permissions, documents and audit.
+- **Current maturity:** Business journey, stewardship, readiness and task-classification decisions are canonical; schema and implementation remain future work.
 - **Notes:** Do not confuse application provisioning with the wider business mobilisation lifecycle.
 
 ## Workforce Planning

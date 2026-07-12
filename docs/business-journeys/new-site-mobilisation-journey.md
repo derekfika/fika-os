@@ -1,5 +1,7 @@
 # New-Site Mobilisation Journey
 
+> **Classification: Supporting journey evidence.** The MNK-derived journey remains valuable evidence. Approved Mobilisation decisions govern canonical ownership, readiness and task classification where this document still shows TODOs.
+
 ## Purpose and evidence
 
 This is a concise senior-management view of the established MNK mobilisation process. It preserves the workbook's operational thinking without redesigning it. The workbook records responsibility mainly as FIKA, MNK or both; it does not establish permanent individual role ownership.

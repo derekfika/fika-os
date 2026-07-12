@@ -1,5 +1,7 @@
 # Candidate Location Type Catalogue
 
+> **Classification: Historical discovery evidence.** Candidate types and open questions are retained for context. Approved Operational Location type decisions supersede conflicting proposals.
+
 ## Purpose
 
 This catalogue asks whether locations should be classified and what useful defaults each classification might provide. Types do not create identity and do not automatically grant capabilities, permissions or provider relationships.

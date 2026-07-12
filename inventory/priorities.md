@@ -1,5 +1,7 @@
 # Stage 1 Priorities
 
+> **Classification: Historical planning evidence.** These priorities reflect the original Stage 1 evidence base. The canonical [nine-stage roadmap](../roadmap.md) now places Business Decision Records next.
+
 ## Method
 
 Priorities are evidence-based recommendations, not commitments. Numeric scoring has not been used because user counts, business criticality, measured performance, ownership, and effort remain unconfirmed for many applications. Priority bands reflect confirmed architectural leverage, dependency order, duplication, and operational risk from the Stage 1 audits.

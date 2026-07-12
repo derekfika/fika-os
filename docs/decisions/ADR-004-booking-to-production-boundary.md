@@ -1,5 +1,7 @@
 # ADR-004: Booking-to-Production Boundary
 
+> **Classification: Supporting accepted architectural direction.** The previously unresolved Booking and Production rules are now canonical decisions. Reconcile this ADR with their BDRs before schema or implementation work.
+
 - Status: Accepted architectural direction; production-order schemas and implementation remain future work
 - Date: 2026-07-11
 
@@ -44,7 +46,9 @@ The production transformation must retain the source booking ID and version. It 
 - CPU Sheets may continue to support operational views without becoming authoritative records.
 - A canonical booking change does not silently overwrite production work; an explicit production amendment or disposition policy is required.
 
-## Unresolved decisions
+## Historical unresolved decisions — now decided
+
+The canonical decision register now contains these business answers. They remain listed here to preserve the ADR's original context until it is reconciled with accepted BDRs.
 
 - TODO: Confirm which commercial booking statuses create, hold, update, cancel, or complete production work.
 - TODO: Define required-ready, dispatch, arrival, handover, and service-time semantics and ownership.

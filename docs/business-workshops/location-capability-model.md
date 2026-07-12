@@ -1,5 +1,7 @@
 # Candidate Location Capability Model
 
+> **Classification: Historical discovery evidence.** Candidate capabilities and open questions are retained for context. Approved Operational Capability decisions govern current meaning and ownership.
+
 ## Purpose
 
 Capabilities describe what a location is enabled to do. They are independent from canonical identity and should not be inferred solely from location type, application folders or provider mappings.

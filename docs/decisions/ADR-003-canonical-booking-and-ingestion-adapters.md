@@ -1,5 +1,7 @@
 # ADR-003: Canonical Booking and Ingestion Adapters
 
+> **Classification: Supporting proposed ADR.** Business discovery is now complete, but this ADR remains unadopted and must be reconciled with accepted BDRs and Stage 5 schemas.
+
 ## Status
 
 Proposed — draft for review, not adopted.

@@ -1,5 +1,7 @@
 # FIKA Location Domain Workshop v3
 
+> **Classification: Historical discovery evidence.** This workshop explains the evidence behind Operational Location decisions. Its provisional name, TODOs and open statuses are superseded by canonical decisions.
+
 ## Status and purpose
 
 This workshop separates three decisions that must not be collapsed:

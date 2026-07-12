@@ -1,4 +1,6 @@
-# Stage 1 — Platform Foundations
+# Historical Plan — Stage 1 Platform Foundations
+
+> **Classification: Historical.** This document preserves the original platform-foundations delivery plan and prompt sequence. Its stage numbering is superseded by the canonical [nine-stage roadmap](roadmap.md) and [Stage 1 — Vision](docs/stages/stage-1-vision.md). The completion evidence remains in [Stage 1 Review](docs/stage-1-review.md).
 
 ## Purpose
 

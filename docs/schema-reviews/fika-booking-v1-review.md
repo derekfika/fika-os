@@ -1,5 +1,7 @@
 # FikaBooking v1 Formal Architecture and Domain Review
 
+> **Classification: Supporting historical review.** Its blocking decisions have now been answered in the canonical decision register. The recommendations remain evidence, but no schema revision or adoption is implied.
+
 ## Review status
 
 - **Schema reviewed:** `FikaBooking` `1.0.0-draft.1` and its draft item, customer, service-location and charge value objects
@@ -149,7 +151,9 @@ Yes. Direct and Angel Court email-derived bookings can share the same aggregate.
 | Personal-data retention | No retention/redaction policy in schema | Customer, contact, dietary and legacy evidence | Define policy and constrain metadata; do not embed raw sources | Data/business owner: TODO | Open | Blocks adoption; only blocks revision if fields change |
 | Storage | Not selected | Storage independence principle and target architecture | Retain repository abstraction; defer implementation choice | Architecture owner: TODO | Deferred deliberately | None |
 
-## Minimum Decisions Required Before Schema Revision
+## Historical minimum decisions — now resolved
+
+These decisions blocked revision when the review was written. They are now canonical and must be traced through BDRs before the schema is revised.
 
 Only the following decisions materially determine the next schema shape:
 

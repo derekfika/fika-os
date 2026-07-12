@@ -1,0 +1,108 @@
+# Documentation Governance
+
+## Purpose
+
+This document defines how knowledge is organised, trusted and changed in the FIKA OS specification repository. It prevents supporting evidence, historical plans, draft schemas and application behaviour from silently redefining approved business meaning.
+
+## Authority order
+
+When two documents differ, use the highest applicable source in this order:
+
+1. **Approved canonical decisions** in the FIKA Business Knowledge Workbook
+2. **Business Decision Records (BDRs)** that preserve and explain those decisions
+3. **Canonical domain definitions and business journeys**
+4. **Adopted canonical schemas**
+5. **Approved platform architecture**
+6. **Application specifications**
+7. **Supporting evidence**, including inventories, audits, discoveries and workshops
+8. **Historical or superseded material**
+
+Downstream documents must reference upstream authority and must not silently redefine it. Where an approved decision changes, create or supersede the relevant BDR before changing schemas, architecture or implementation.
+
+The current canonical decision authority is the [FIKA Business Knowledge Workbook](https://docs.google.com/spreadsheets/d/195jMni3vG5fX5hfAUFARc-vC2ifO8AI8r0r4xQUeoxk/edit). Stage 4 will create durable repository BDRs from its 54 canonical decisions.
+
+## Document classifications
+
+- **Canonical:** authoritative at its stated layer and status.
+- **Supporting evidence:** retained facts, examples, audits or analysis that inform authority but cannot override it.
+- **Historical:** records past work, reasoning or plans; useful for context but not current direction.
+- **Superseded:** replaced by a named authoritative source.
+- **Duplicate:** repeats another document without adding evidence; consolidate and retain only a pointer if history is useful.
+- **Needs consolidation:** contains useful knowledge mixed with stale or repeated definitions and must be reconciled before being treated as current.
+
+Draft, proposed and planned documents are never adopted authority merely because they exist in a canonical directory.
+
+## Repository classification register
+
+| Document or group | Classification | Authoritative purpose |
+|---|---|---|
+| `AGENTS.md` | Canonical | Repository working and safety instructions |
+| `README.md` | Canonical | Primary navigation and current status |
+| `roadmap.md` | Canonical | Nine-stage knowledge-to-delivery lifecycle and delivery themes |
+| `docs/historical/legacy-19-stage-roadmap.md` | Historical | Complete former implementation roadmap retained as planning evidence |
+| `stage1.md` | Historical | Original platform-foundations delivery plan; superseded for stage numbering |
+| `docs/stages/*.md` | Canonical | Purpose, gates and status for the nine canonical stages |
+| `docs/scope.md` | Canonical | Platform scope and exclusions |
+| `docs/platform-principles.md` | Canonical | Enduring platform principles |
+| `docs/platform-domain-map.md` | Canonical | Highest-level business-domain relationships and terminology |
+| `docs/current-system-map.md` | Canonical current-state record | Evidence-backed classification of current systems, projections and adapters |
+| `docs/target-architecture.md` | Supporting, provisional | Technology-neutral architecture input for Stage 6; not implementation authority |
+| `docs/future-platform-domains.md` | Supporting | Long-term domain candidates, not commitments |
+| `docs/stage-1-review.md` | Historical | Closure record for the original platform-foundations work |
+| `docs/documentation-governance.md` | Canonical | Authority order and document classification |
+| `docs/platform-methodology/business-discovery-process.md` | Canonical method | Governed discovery-to-delivery workflow |
+| `docs/business-decisions/README.md` | Canonical index | BDR governance and future record index |
+| `docs/business-decisions/000-template.md` | Canonical template | Required BDR structure |
+| `docs/domain-discovery/*.md` | Supporting evidence | Domain hypotheses, evidence and questions that preceded canonical decisions |
+| `docs/business-workshops/*.md` | Historical discovery evidence | Workshop questions and candidate models; superseded by approved decisions where different |
+| `docs/business-journeys/new-site-mobilisation-journey.md` | Supporting evidence | Evidence-backed mobilisation journey pending BDR consolidation |
+| `docs/domain-models/fika-booking-v1.md` | Supporting draft | Unadopted booking domain-model evidence for Stage 5 |
+| `docs/schema-reviews/fika-booking-v1-review.md` | Supporting review | Formal review of an unadopted schema draft |
+| `docs/decisions/ADR-003-canonical-booking-and-ingestion-adapters.md` | Supporting proposed ADR | Proposed technical/architectural direction; subject to BDR and schema reconciliation |
+| `docs/decisions/ADR-004-booking-to-production-boundary.md` | Supporting accepted ADR | Architectural boundary evidence; business wording must align with BDRs |
+| `docs/decisions/README.md` | Canonical ADR index | Architectural Decision Record guidance, distinct from BDRs |
+| `docs/fika-core/*.md` | Supporting specification | Preliminary Stage 6 conceptual service, repository and workflow boundaries |
+| `docs/engineering/*.md` | Canonical engineering standards | Delivery, testing, review and AI-working standards |
+| `inventory/applications.md` | Supporting evidence | Application inventory |
+| `inventory/data-sources.md` | Supporting evidence | Data-source inventory |
+| `inventory/integrations.md` | Supporting evidence | Integration inventory |
+| `inventory/shared-functions.md` | Supporting evidence | Shared-function and duplication inventory |
+| `inventory/performance-issues.md` | Supporting evidence | Performance-risk inventory |
+| `inventory/priorities.md` | Historical planning evidence | Stage 1 prioritisation before completed business discovery |
+| `inventory/reports/*.md` | Supporting evidence | Read-only repository-family and business-domain audits |
+| `schemas/README.md` | Canonical entry point | Status and navigation for future adopted schemas |
+| `fixtures/README.md` | Canonical entry point | Rules for future non-production fixtures |
+| `config-examples/README.md` | Canonical entry point | Rules for future safe configuration examples |
+
+## Status banners
+
+Supporting, historical and superseded documents should state their classification near the top and link to the higher authority that governs conflicts. A banner must not erase evidence or imply that the evidence was wrong; it clarifies its present role.
+
+## Terminology
+
+Use these terms consistently in current canonical documents:
+
+- Operational Location (OPLOC)
+- Client and Client Contact
+- Operational Capability
+- Service Arrangement, Recurring Schedule and Service Occurrence
+- Booking, Event and Production Order
+- Role, Responsibility, Assignment and Approval Authority
+- View, Contribute, Manage, Approve, Publish and Administer
+
+Historical source wording such as “site”, “venue” or generic “location” may remain when quoting or explaining evidence. Current prose must use the canonical term unless it deliberately means a different concept.
+
+## Change rules
+
+1. Identify the upstream authority before editing downstream material.
+2. Preserve approved wording in BDRs; add explanation around it without paraphrasing the decision itself.
+3. Link instead of copying long definitions.
+4. Mark supersession explicitly and retain useful rationale and evidence.
+5. Run link, terminology, status and contradiction checks before completion.
+6. Never treat code, a provider object or spreadsheet layout as automatic business authority.
+
+## See also
+
+- [Business-discovery process](platform-methodology/business-discovery-process.md)
+- [Canonical stages](stages/stage-1-vision.md)
+- [Business Decision Records](business-decisions/README.md)

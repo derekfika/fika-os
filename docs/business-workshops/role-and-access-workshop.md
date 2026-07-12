@@ -1,5 +1,7 @@
 # Role and Access Business Workshop
 
+> **Classification: Historical discovery evidence.** This workshop is retained as role/access evidence. Approved Role, Responsibility, Assignment, Approval Authority and action-vocabulary decisions govern current meaning.
+
 ## Purpose
 
 This workshop confirms business responsibilities, homepage needs, site/project scope and approval authority before any technical access design. It uses plain-English access language and does not grant access.

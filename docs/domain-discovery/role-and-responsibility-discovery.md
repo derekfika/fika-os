@@ -1,5 +1,7 @@
 # Role and Responsibility Discovery
 
+> **Classification: Supporting discovery evidence.** Canonical Role, Responsibility, Assignment, Approval Authority and action vocabulary now comes from approved decisions. Retain this document for examples and evidence.
+
 ## Status and evidence boundary
 
 This is business discovery, not a permissions model or implementation. It uses confirmed context, architecture documents, the Business Discovery workshop, and the MNK mobilisation workbook. Workbook task ownership is historical process evidence and must not be treated automatically as a current job description, permanent authority or future access grant.

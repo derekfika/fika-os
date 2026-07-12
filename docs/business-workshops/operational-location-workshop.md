@@ -1,5 +1,7 @@
 # Operational Location Business Workshop
 
+> **Classification: Historical discovery evidence.** This completed workshop is retained for evidence and context. Its open questions and candidate wording are superseded by the 54 canonical decisions and the [Platform Domain Map](../platform-domain-map.md).
+
 ## Purpose
 
 Use this workshop to decide the business meaning and name of the future operational-location domain before schema design. Pre-filled evidence is limited to confirmed context and local repository evidence. Blank final answers are intentional.

@@ -1,19 +1,47 @@
-# FIKA Platform Specifications
+# FIKA OS Specifications
 
-This repository is the architectural source of truth for the core FIKA operational platform. It begins with Stage 1 platform foundations and will hold scope, inventories, system maps, decisions, schemas, fixtures, and safe configuration examples as the roadmap progresses.
+This repository is the governed business, domain, schema and architecture specification for FIKA OS. It preserves why the platform exists, what FIKA's business concepts mean and how later delivery must implement that knowledge.
 
-## Start Here
+## Current stage
 
-- Read `AGENTS.md` before making changes.
-- Read `roadmap.md` for the platform direction.
-- Read `stage1.md` for the current foundation work.
-- Use `docs/` for scope, architecture, system maps, and decisions.
-- Use `inventory/` for evidence-based records of applications, data sources, integrations, shared functions, performance issues, and priorities.
+- **Stage 3 — Business Discovery:** Complete
+- **Canonical decisions:** 54
+- **Discovery:** 100%
+- **Remaining questions:** 0
+- **Needs Review:** 0
+- **Next active stage:** [Stage 4 — Business Decision Records](docs/stages/stage-4-business-decision-records.md)
+
+The approved decisions currently live in the [FIKA Business Knowledge Workbook](https://docs.google.com/spreadsheets/d/195jMni3vG5fX5hfAUFARc-vC2ifO8AI8r0r4xQUeoxk/edit). Stage 4 will create durable repository records without changing Derek's approved wording.
+
+## Start here
+
+1. Read the repository instructions in [`AGENTS.md`](AGENTS.md).
+2. Read [documentation governance](docs/documentation-governance.md) to understand authority and document status.
+3. Review the [nine-stage roadmap](roadmap.md) and [stage files](docs/stages/stage-1-vision.md).
+4. Use the [platform principles](docs/platform-principles.md) and [domain map](docs/platform-domain-map.md) for enduring context.
+5. Use [domain discovery](docs/domain-discovery/) and [business journeys](docs/business-journeys/) as supporting evidence.
+6. Use [Business Decision Records](docs/business-decisions/README.md) once Stage 4 records are generated.
+7. Use [`schemas/`](schemas/README.md) only for explicitly adopted Stage 5 contracts; existing booking material remains draft evidence.
+
+## Repository navigation
+
+| Area | Purpose | Authority |
+|---|---|---|
+| [`docs/stages/`](docs/stages/stage-1-vision.md) | Canonical staged lifecycle | Canonical process and status |
+| [Business Knowledge Workbook](https://docs.google.com/spreadsheets/d/195jMni3vG5fX5hfAUFARc-vC2ifO8AI8r0r4xQUeoxk/edit) | Approved decision register | Highest current business authority |
+| [`docs/business-decisions/`](docs/business-decisions/README.md) | Durable business decisions | Stage 4 records; future accepted authority |
+| [`docs/domain-discovery/`](docs/domain-discovery/) | Discovery hypotheses and evidence | Supporting evidence |
+| [`docs/business-workshops/`](docs/business-workshops/) | Completed workshop material | Historical discovery evidence |
+| [`docs/business-journeys/`](docs/business-journeys/) | Evidence-backed journeys | Supporting or canonical as stated |
+| [`schemas/`](schemas/README.md) | Canonical domain contracts | Draft or adopted as each schema states |
+| [`docs/decisions/`](docs/decisions/README.md) | Architectural Decision Records | Architecture authority only |
+| [`inventory/`](inventory/applications.md) | Application, data and integration evidence | Supporting evidence |
+| [`docs/engineering/`](docs/engineering/repository-standards.md) | Engineering standards | Canonical delivery guidance |
+
+## Governing rule
+
+Code, schemas, architecture and application specifications must follow approved business knowledge. They must not infer business meaning from current screens, spreadsheet columns, provider models or historical terminology.
 
 ## Safety
 
-Do not store credentials, tokens, passwords, private certificates, service-account keys, or other production secrets here. Do not invent production facts; use explicit TODO markers until facts are confirmed.
-
-## Current Status
-
-The Stage 1 structure exists. Operational inventories and the current-state map require factual discovery and confirmation before they can be completed.
+Do not store credentials, tokens, passwords, private certificates, service-account keys or sensitive production data here. Do not invent production facts. Use `TODO` where evidence remains genuinely incomplete.

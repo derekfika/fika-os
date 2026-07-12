@@ -2,9 +2,9 @@
 
 ## Status and authority
 
-This is the highest-level conceptual map of the FIKA Platform. It explains how business meaning, Core capabilities, applications, adapters and providers relate. It does not adopt schemas, choose technology, authorise implementation, or settle business decisions still marked TODO.
+This is the highest-level conceptual map of FIKA OS. It explains how business meaning, Core capabilities, applications, adapters and providers relate. The 54 approved decisions in the FIKA Business Knowledge Workbook govern business meaning; this map summarises their relationships without replacing their exact wording.
 
-Where evidence is incomplete, relationships are labelled provisional. Detailed domain documents and ADRs remain authoritative for their narrower decisions.
+This document does not adopt schemas, choose technology or authorise implementation. See [documentation governance](documentation-governance.md) for the authority order.
 
 ## 1. Platform Overview
 
@@ -45,7 +45,7 @@ Providers supply optional capabilities such as communications, calendars, files,
 ```text
 FIKA organisation context
   -> Client relationship
-  -> Operational location
+  -> Operational Location
   -> Service or recurring service arrangement
   -> Booking or demand
   -> Production work
@@ -57,21 +57,21 @@ Supporting and adjacent capabilities:
   Documents, Audit, Media, Equipment, Events, Workforce and Mobilisation
 ```
 
-The vertical sequence is a navigation model, not a claim that every operation uses every layer. Client-to-location cardinality, the Service boundary and the threshold for event venues/pop-ups remain TODO. Booking-to-Production and future Production-to-Logistics are confirmed architectural directions.
+The vertical sequence is a navigation model, not a claim that every operation uses every layer. Client, Operational Location, Service Arrangement, Booking, Event and Production boundaries are governed by approved decisions. Logistics remains a later discovery and delivery domain.
 
 ```mermaid
 flowchart TB
   ORG["Organisation context"]
   CLIENT["Client"]
-  LOC["Operational Location\nworking name"]
-  SERVICE["Service / Recurring Service"]
+  LOC["Operational Location\nOPLOC"]
+  SERVICE["Service Arrangement"]
   BOOKING["Booking"]
   PROD["Production"]
   LOG["Logistics\nplanned"]
   REPORT["Reporting"]
 
-  ORG -. "context; ownership model TODO" .-> CLIENT
-  CLIENT -. "relationship/cardinality TODO" .-> LOC
+  ORG -. "organisation context" .-> CLIENT
+  CLIENT -. "commercial relationship; effective over time" .-> LOC
   LOC --> SERVICE
   SERVICE --> BOOKING
   BOOKING --> PROD
@@ -132,35 +132,46 @@ Dashed arrows denote supporting, consumer or provisional relationships rather th
 
 ### Client
 
-- **Purpose:** Represent the commercial or organisational party for whom FIKA provides services.
+- **Purpose:** Represent an external organisation with which FIKA has a commercial or operational relationship.
 - **Business question answered:** For whom is FIKA operating or delivering this service?
-- **Owns:** Future client identity, lifecycle and relationships; precise boundary TODO.
-- **Does not own:** Operational-location identity, brand assets, individual customer/contact snapshots, provider accounts or bookings.
+- **Owns:** Stable business identity, commercial relationship and shared business information independently of any individual Operational Location.
+- **Does not own:** Operational Location identity, brand assets, individual people, provider accounts or bookings. People are represented separately as Client Contacts.
 - **Depends on:** Organisation context, Permissions and Configuration.
 - **Consumers:** Operational Location, Service, Booking, Events, Reporting and Brand relationships.
-- **Current maturity:** Clearly required boundary; no focused discovery or schema.
-- **Examples:** Current application names imply client relationships, but a confirmed client register/cardinality is missing.
+- **Current maturity:** Business definition and relationship direction approved; BDR and schema work remain.
+- **Examples:** One Client may relate to multiple Operational Locations. An Operational Location may exist without an external Client but must have an accountable internal owner.
 
 ### Operational Location
 
-- **Purpose:** Represent the stable context in which FIKA plans, delivers, manages or reports operational services, independent of building ownership or provider integrations.
+- **Purpose:** Represent a site, venue or recurring operating context that FIKA works with over time under one durable identity.
 - **Business question answered:** Where or under which durable operating context does FIKA operate?
-- **Owns:** Candidate provider-neutral identity, approved aliases, lifecycle and capability relationships.
-- **Does not own:** Client, brand, building/address, room/delivery point, recurring schedule, app settings or provider IDs.
-- **Depends on:** Client relationship (cardinality TODO), Organisation context, Configuration and Permissions.
+- **Owns:** Stable identity, approved name, historical aliases, lifecycle and durable relationships to other business objects.
+- **Does not own:** Provider integrations, application configuration, branding, physical-address master data, menus, pricing, equipment inventory, staffing, Calendars, Bookings, Events, Services or other domain records.
+- **Depends on:** Organisation context, optional Client relationships, Configuration and Permissions.
 - **Consumers:** Service, Booking, Production, Logistics, Events, Workforce, Equipment, Mobilisation and Reporting.
-- **Current maturity:** Discovery completed; `FikaOperationalLocation` is the recommended working name; workshop required before modelling.
+- **Current maturity:** Canonical name, definition, ownership boundary, lifecycle, Client relationship, building/address cardinality and type policy are approved; BDR and schema work remain.
 - **Examples:** Angel Court, MNK, The Line, Munich RE and Wise; CFC is confirmed Development. CPU-only labels require verification.
+
+### Operational Capability
+
+- **Purpose:** Represent a reusable business function that an Operational Location may enable independently of its identity or primary type.
+- **Business question answered:** What is this Operational Location able to support?
+- **Owns:** The approved capability catalogue, dependency/exclusion policy, enablement and effective-dated overrides.
+- **Does not own:** Domain meaning, domain records, user permissions or the internal operation of the enabled domain.
+- **Depends on:** Operational Location, Configuration, accountable business ownership and relevant domain prerequisites.
+- **Consumers:** Mobilisation, application composition, Configuration, Permissions and Reporting.
+- **Current maturity:** Definition, catalogue ownership, optionality, dependency and override principles are approved; detailed catalogue and schema work remain.
+- **Examples:** Hospitality, Events, Coffee, Production, Logistics, Reporting, Feedback and Training.
 
 ### Service
 
-- **Purpose:** Represent what FIKA agrees or plans to provide in an operational context, including recurring arrangements.
+- **Purpose:** Represent a durable offering or arrangement describing what FIKA provides, distinct from its dated operation.
 - **Business question answered:** What service is provided, on what pattern and under which operational expectations?
-- **Owns:** Candidate service type, cadence/validity, expected attendance, service windows and operational requirements; final boundary TODO.
-- **Does not own:** Location identity, individual booking, production conversion, event lifecycle or provider integration.
+- **Owns:** Service Arrangement identity, purpose, commercial/operating model and its effective-dated Recurring Schedules.
+- **Does not own:** Operational Location identity, individual Booking, production conversion, Event lifecycle or provider integration.
 - **Depends on:** Operational Location, Client where applicable, Configuration, Permissions and Validation.
 - **Consumers:** Booking, Production planning, Logistics, Workforce and Reporting.
-- **Current maturity:** Emerging from operational-location discovery; focused workshop/domain discovery missing.
+- **Current maturity:** Service Arrangement, Recurring Schedule, Service Occurrence and Booking boundaries are approved; BDR and schema work remain.
 - **Examples:** Wise's confirmed weekly breakfast and lunch arrangements, each serving approximately 450–500 people.
 
 ### Booking
@@ -171,7 +182,7 @@ Dashed arrows denote supporting, consumer or provisional relationships rather th
 - **Does not own:** Dashboard workflow, quote/Calendar sync, CPU preparation, production quantities, logistics or raw legacy evidence.
 - **Depends on:** Service/Operational Location context, Client/Customer concepts, Configuration, Permissions, Validation, Audit and relevant commercial policy.
 - **Consumers:** Hospitality applications, Quote/Documents, Production, Notifications, Calendar adapter, Logistics downstream and Reporting.
-- **Current maturity:** Most mature domain; draft model/schemas/fixtures and formal review exist. Seven decisions block revision; not adopted.
+- **Current maturity:** Seven blocking business decisions are approved. The existing model, schemas and fixtures remain draft and require Stage 5 revision before adoption.
 - **Examples:** Direct MNK and Angel Court booking flows; Angel Court email-derived booking through a provenance-preserving adapter.
 
 ### Production
@@ -182,7 +193,7 @@ Dashed arrows denote supporting, consumer or provisional relationships rather th
 - **Does not own:** Booking commercial status/pricing, Calendar/provider state, dashboard UI or logistics execution.
 - **Depends on:** Booking or other approved demand source, Operational Location, Configuration, Equipment where relevant, Permissions, Validation and Audit.
 - **Consumers:** CPU operational views, Logistics, Notifications and Reporting.
-- **Current maturity:** Boundary confirmed by ADR-004 and CPU audit; domain model/schema not drafted.
+- **Current maturity:** Booking-to-Production boundary, eligibility, timing, units/yields, amendments/cancellations and multi-facility routing are approved. Domain model/schema not drafted.
 - **Examples:** Future production order derived from an eligible booking ID/version; current CPU Orders is an operational projection only.
 
 ### Logistics
@@ -198,14 +209,14 @@ Dashed arrows denote supporting, consumer or provisional relationships rather th
 
 ### Events
 
-- **Purpose:** Own the future company-wide event record shared by distinct enquiry and public channels.
+- **Purpose:** Own bespoke offerings planned specifically for a customer or occasion and shared by distinct enquiry and public channels.
 - **Business question answered:** What event is being considered or delivered, where, when, for whom, and through which lifecycle?
 - **Owns:** Future event identity, source, lifecycle, schedule, venue relationship, ownership and event requirements.
 - **Does not own:** Public-channel presentation, operational-location identity, equipment inventory, workforce records, logistics execution or Calendar provider state.
 - **Depends on:** Client, venue/Operational Location references, Brand, Configuration, Permissions, Media, Equipment, Workforce, Documents, Notifications and Audit as confirmed by future discovery.
 - **Consumers:** Internal Events Dashboard, The Line experience, FIKA Events and Pop-ups, operations, Logistics and Reporting.
-- **Current maturity:** Planned priority; no repository or adopted schema. Domain/channel discovery remains required.
-- **Examples:** The Line, FIKA sites, FIKA Events and Pop-ups, external venues and email/phone/manual events feeding one internal source of truth.
+- **Current maturity:** Event qualification and approval ownership are approved; lifecycle statuses and publication details must be carried into BDR/schema work without being invented.
+- **Examples:** The Line, FIKA Operational Locations, FIKA Events and Pop-ups, external venues and email/phone/manual Events feeding one internal source of truth.
 
 ### Equipment
 
@@ -231,14 +242,14 @@ Dashed arrows denote supporting, consumer or provisional relationships rather th
 
 ### Mobilisation
 
-- **Purpose:** Coordinate establishment or transition of sites, clients, services and capabilities.
+- **Purpose:** Coordinate establishment or transition of Operational Locations, Clients, Service Arrangements and Operational Capabilities.
 - **Business question answered:** What must be ready, by whom and by when before an operation can launch or transition?
 - **Owns:** Future mobilisation plan, workstreams, milestones, dependencies, risks, readiness and handover.
 - **Does not own:** Location, workforce, equipment, brand or application records it coordinates.
 - **Depends on:** Operational Location, Client, Brand, Configuration, Workforce, Equipment, Media, Permissions, Documents and Audit.
-- **Consumers:** Operations, site provisioning, Reporting and domain owners.
-- **Current maturity:** Architectural concept; current business process not inventoried.
-- **Examples:** Planned operational location progressing toward opening; no current workflow asserted.
+- **Consumers:** Operations, Operational Location provisioning, Reporting and domain owners.
+- **Current maturity:** Canonical phases use the evidenced MNK baseline; ownership, readiness and mandatory/capability/client-specific task classes are approved.
+- **Examples:** A mobilisation with a nominated coordinator, domain-owned readiness evidence and Senior Management stewardship.
 
 ### Workforce
 
@@ -253,14 +264,14 @@ Dashed arrows denote supporting, consumer or provisional relationships rather th
 
 ### Waste
 
-- **Purpose:** TODO: determine whether waste tracking is a first-class domain, reporting measure or operational workflow.
-- **Business question answered:** What waste is generated, measured, attributed and acted upon? Business confirmation required.
-- **Owns:** Nothing confirmed.
-- **Does not own:** No boundary can be approved yet.
-- **Depends on:** Potentially Operational Location, Service, Production, Events and Reporting; unconfirmed.
-- **Consumers:** Potential operations and reporting consumers; unconfirmed.
-- **Current maturity:** Missing domain evidence; requested as a capability during location discovery only.
-- **Examples:** None confirmed in the inspected architecture/inventory.
+- **Purpose:** Measure and manage food and operational waste as a sustainability, commercial and continuous-improvement concern.
+- **Business question answered:** What waste occurred, in what quantity, for what reason and with what outcome?
+- **Owns:** Waste events, quantities, reasons, Operational Location attribution and outcomes.
+- **Does not own:** Source Service, Production, Event or financial records.
+- **Depends on:** Operational Location, relevant operating domains, Reporting and Permissions.
+- **Consumers:** Operations, individual Operational Locations and central Reporting.
+- **Current maturity:** Confirmed first-class business domain owned by Operations; BDR and schema work remain.
+- **Examples:** Location-recorded waste feeding trend, cost and environmental-improvement reporting.
 
 ### Reporting
 
@@ -281,18 +292,18 @@ Dashed arrows denote supporting, consumer or provisional relationships rather th
 - **Does not own:** Business rules, operational-location identity, media content lifecycle or application layout.
 - **Depends on:** Media, Configuration, Permissions and brand governance.
 - **Consumers:** Applications, Documents, Notifications, Events and client/public experiences.
-- **Current maturity:** FIKA Core conceptual model completed; brand inventory/owners/tokens remain TODO.
+- **Current maturity:** Default FIKA branding, approved client/co-brand/white-label variation and Marketing/Brand approval are confirmed; detailed inventory/tokens remain later work.
 - **Examples:** FIKA brand, client brands, future Events branding and site overrides.
 
 ### Configuration
 
-- **Purpose:** Resolve governed variation across global, brand, site/location, application and user scopes while separating secrets.
+- **Purpose:** Resolve governed variation across organisation, Client, Brand, Operational Capability, Operational Location, application and user scopes while separating secrets.
 - **Business question answered:** Which approved policy and settings apply to this action/context?
 - **Owns:** Configuration records, scope, versions, inheritance and publication lifecycle.
 - **Does not own:** Business records, secrets, brand assets, permissions or provider identity.
 - **Depends on:** Ownership/governance, Permissions, Audit and referenced domain records.
 - **Consumers:** All services, workflows, adapters and applications.
-- **Current maturity:** FIKA Core conceptual model completed; key catalogue, owners and inheritance decisions missing.
+- **Current maturity:** Scope ownership, layered inheritance, effective-dated overrides and exception ownership are approved; key catalogue remains later work.
 - **Examples:** Capability enablement and references to menus, calendars, folders, pricing policy or brand context—not their private values here.
 
 ### Permissions
@@ -303,8 +314,8 @@ Dashed arrows denote supporting, consumer or provisional relationships rather th
 - **Does not own:** Authentication credentials, user profile, domain records or UI visibility.
 - **Depends on:** User/actor identity, Organisation, domain scope, Configuration and Audit.
 - **Consumers:** Every authoritative query, command, administrative action and sensitive projection.
-- **Current maturity:** Conceptual model completed; real roles, policy owner and privacy rules missing.
-- **Examples:** Site-scoped booking operator, production operator, client user and system actor—all provisional roles.
+- **Current maturity:** Role, Responsibility, Assignment, Approval Authority, scope, action vocabulary, least privilege and emergency access are approved; implementation policy remains later work.
+- **Examples:** Operational Location-scoped Booking operator, Production operator, Client user and system actor.
 
 ### Notifications
 
@@ -376,20 +387,20 @@ The normal hospitality-derived lifecycle currently provides the strongest eviden
 ```text
 Organisation context
   -> Client relationship
-  -> Operational location
-  -> Service arrangement
+  -> Operational Location
+  -> Service Arrangement
   -> Canonical booking
   -> Canonical production order (future)
   -> Logistics job (future)
   -> Reporting projections and insight
 ```
 
-Client/location/service relationships remain provisional until workshops. Booking authority and the Booking-to-Production separation are confirmed.
+Client, Operational Location and Service Arrangement relationships are approved business decisions. Booking authority and the Booking-to-Production separation are also confirmed.
 
 ```mermaid
 flowchart LR
-  CLIENT["Client"] -. "relationship TODO" .-> LOC["Operational Location"]
-  LOC --> SERVICE["Service"]
+  CLIENT["Client"] -. "commercial relationship; effective over time" .-> LOC["Operational Location"]
+  LOC --> SERVICE["Service Arrangement"]
   SERVICE --> BOOKING["Booking"]
   BOOKING --> PRODUCTION["Production"]
   PRODUCTION -. "planned" .-> LOGISTICS["Logistics"]
@@ -426,31 +437,15 @@ Participation rules:
 
 | Area | Current maturity | Confirmed evidence | Next gate |
 |---|---|---|---|
-| Discovery foundation | Completed for Stage 1 | Scope, inventories, current map and priority audits exist | Maintain as new domains are inspected |
-| Engineering standards | Completed first Stage 2 deliverable | Coding, repository, branching, testing, review, AI playbook, prompts and Definition of Done | Apply incrementally to active repositories |
-| Platform principles | Established | Stable principles cover authority, migration, storage independence, security, UX and growth | Review only when long-term direction changes |
-| FIKA Core specification | First conceptual draft complete | Overview plus service/repository/workflow and cross-cutting models | Confirm owners and first Core slice |
-| Booking domain | Advanced draft, not adopted | Domain model, schemas/fixtures, ADR-003, formal review and downstream CPU test | Decision workshop for seven revision blockers |
-| Operational Location domain | Discovery complete; name provisional | Workspace audit, boundary recommendation and pre-filled workshop | Complete workshop before any model/schema |
-| Client domain | Boundary recognised only | Separated from location/brand in architecture | Focused Client workshop/discovery |
-| Service domain | Emerging | Wise recurring breakfast/lunch evidence and booking service intent | Define service/recurring-arrangement boundary |
-| Production domain | Boundary confirmed | ADR-004 and CPU audit | Production-order business workshop/domain model |
-| Logistics domain | Planned | Target flow and CPU delivery concern | Discovery of current manual workflow/ownership |
-| Events domain | Planned priority | Channels and intended internal source of truth confirmed | Events business/domain discovery workshop |
-| Equipment domain | Future concept | Future-domain/Core boundary only | Inventory current equipment/fault/allocation process |
-| Media domain | Future concept | Brand/assets/evidence clues and Core boundary | Media ownership/rights/retention discovery |
-| Mobilisation domain | Future concept | Site provisioning/growth need | Inventory current mobilisation process |
-| Workforce domain | Provisionally in scope | Existing application and provider workflow evidence | Focused audit, privacy and authority decisions |
-| Waste domain | Missing evidence | Requested as candidate capability only | Decide whether a domain exists and identify owner/problem |
-| Reporting domain | Fragmented implementations | Feedback and client-specific reporting inventories | Metric ownership/lineage and executive-reporting discovery |
-| Configuration | Conceptual model complete; current state fragmented | Repeated site/app configuration and FIKA Core model | Key catalogue, ownership and inheritance workshop |
-| Permissions | Conceptual model only | Roles/scopes principles specified | Actor/role/privacy workshop |
-| Notifications | Conceptual model plus existing email effects | Generation/delivery boundary specified | Recipient/preference/escalation decisions |
-| Validation | Conceptual model plus Booking evidence | Five validation layers specified | Shared issue vocabulary/override policy |
-| Audit | Conceptual requirement only | ADRs/Core require attributable history | Audit/privacy/retention workshop and model |
-| Implementation | Not started as FIKA Core | Existing applications remain current implementations | No Core implementation until contracts/owners approved |
-| Adapters | Current and transitional | Inbox/form, Calendar-led CPU, document and provider mappings inventoried | Define parity/reconciliation/retirement criteria |
-| Applications | Inventoried; mixed lifecycle | Hospitality families, CPU, reporting and workforce catalogued | Add repository standards and confirm owners/lifecycle |
+| Vision | Complete | Scope and principles established | Maintain as enduring authority |
+| Domain discovery | Complete | Maps, audits, workshops and journeys retained | Use as BDR evidence |
+| Business discovery | Complete | 54 canonical decisions; 100%; no review items | Generate and review BDRs |
+| Business Decision Records | Active | Template and governance prepared | Create 54 exact, traceable records |
+| Schema design | Planned | Existing booking draft/review evidence only | Reconcile with accepted BDRs |
+| Platform architecture | Planned | Target/FIKA Core conceptual drafts exist | Review after BDRs and schemas |
+| Implementation | Planned | Existing applications remain current implementations | No new platform build without upstream gates |
+| Validation and rollout | Planned | Engineering standards exist | Apply to authorised increments |
+| Continuous discovery | Planned ongoing | Proven workbook method documented | Activate when new evidence arises |
 
 ## 7. Future Platform Vision
 
@@ -467,47 +462,25 @@ The long-term platform is a set of stable business domains exposed through share
 
 Canonical business meaning must remain even as technology, applications, suppliers and organisational scale change.
 
-## Missing domain work
+## Later domain work
 
-The map contains every domain/capability currently evidenced or explicitly identified in the architecture. The following lack sufficient discovery to be treated as mature domains:
+Business discovery is complete for the initial 54-decision scope. The following areas still require later domain-specific evidence or policy before schemas or implementation:
 
-- Organisation/identity boundary;
-- Client;
-- Service and recurring service arrangements;
+- Organisation and user identity;
 - Logistics;
-- Events;
 - Equipment;
 - Media;
-- Mobilisation;
-- Workforce authority/privacy;
-- Waste;
-- Reporting/metric governance;
-- Documents, Audit and user/actor identity as adopted contracts.
+- Workforce authority and privacy;
+- Reporting and metric governance;
+- Documents and Audit as adopted contracts.
 
 No additional business domains are asserted.
 
-## Recommended Stage 3 workshop
+## Next governed work
 
-Run the **Operational Location decision workshop first**, because its outcome constrains `FikaSite`/location naming, Client relationships, Service arrangements, Configuration scopes, Events venue references, Production routing and the initial schema catalogue.
+Stage 4 must convert the 54 workbook decisions into BDRs before schemas or architecture are revised. Existing discovery material remains evidence; it must not be treated as an open-question backlog.
 
-Immediately follow it with a combined **Client and Service boundary workshop** using Wise, Angel Court/MNK, The Line and one CPU-only location label as contrasting cases. Do not create schemas until those workshops settle identity, cardinality and ownership.
-
-The existing `FikaBooking` decision workshop remains the first schema-revision workshop and can proceed in parallel where its seven blockers do not depend on final location naming.
-
-## Recommended roadmap adjustments after Stage 2
-
-Recommendations only; the roadmap is not changed by this document.
-
-1. Insert explicit domain-discovery/decision workshops before Stage 3 schema drafting.
-2. Replace the assumption that `FikaSite` is automatically the first location schema with the workshop outcome; retain `FikaOperationalLocation` as the working candidate.
-3. Add Client and Service/Recurring Service ahead of, or alongside, location and booking configuration schemas.
-4. Split Stage 3 into candidate, draft, reviewed and adopted schema states with explicit adoption gates.
-5. Add Production immediately after Booking decisions because downstream evidence is already strong.
-6. Keep Events discovery before `FikaEvent` schema and before Events implementation.
-7. Add audit, permission, configuration and personal-data policy decisions as prerequisites for adopted schemas, not later implementation details.
-8. Add adapter parity/reconciliation/retirement standards before consolidation work.
-9. Keep storage/provider decisions after domain and repository requirements.
-10. Add a Waste discovery gate rather than assuming it is a platform domain.
+After BDR acceptance, Stage 5 should prioritise the domain contracts needed to support the Booking-to-Production flow while respecting Operational Location, Client, Service Arrangement, Configuration and permission decisions.
 
 ## 8. Architectural North Star
 

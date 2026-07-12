@@ -1,5 +1,7 @@
 # Stage 1 Review
 
+> **Classification: Historical completion record.** This review closed the original platform-foundations work. Statements about then-unresolved business discovery are retained as historical context and are superseded by the completed [Stage 3 Business Discovery](stages/stage-3-business-discovery.md) and its 54 canonical decisions.
+
 ## Review status
 
 Stage 1 has established a credible architectural foundation and is ready to close as a discovery/documentation stage, subject to recording the remaining unknowns as Stage 2 inputs rather than treating them as resolved facts.
