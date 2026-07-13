@@ -37,7 +37,7 @@ FIKA can understand not only what was decided, but why it was decided and what f
 
 ## Current status
 
-**Active — next stage.** The directory, governance and template are prepared; the 54 records have not yet been generated.
+**Active — human review.** All 54 BDRs have been generated and mechanically validated. One BDR is Accepted and 53 remain Draft pending human review of their explanatory sections.
 
 ## Dependencies on earlier stages
 
@@ -61,4 +61,3 @@ Stage 5 derives schemas from BDRs. Stage 6 uses BDRs to explain architecture bou
 - [Business Decision Records](../business-decisions/README.md)
 - [BDR template](../business-decisions/000-template.md)
 - [Business-discovery methodology](../platform-methodology/business-discovery-process.md)
-

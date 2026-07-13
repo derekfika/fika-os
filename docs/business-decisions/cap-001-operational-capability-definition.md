@@ -1,0 +1,66 @@
+# CAP-001: Operational Capability Definition
+
+- **Decision ID:** CAP-001
+- **Workbook Decision ID:** DEC-CAP-001
+- **Status:** Draft
+- **Date:** 2026-07-12T08:54:24.133Z
+- **Decision owner:** Derek / Domain owners
+- **Related domains:** Operational Capability, Mobilisation
+
+## Context
+
+Business discovery asked: **What qualifies as an operational capability, and who owns its approved catalogue?**
+
+Before approval, the recorded evidence stated: “The candidate catalogue mixes business capabilities and presentation choices; ownership is unconfirmed.” The question was recorded as a foundation decision with low repository confidence before approval.
+
+## Decision
+
+An operational capability is a reusable business function that an Operational Location may enable to support how FIKA operates, independent of its identity or type. Capabilities determine what a location is able to do, such as Hospitality, Events, Coffee, Production, Logistics, Reporting, Feedback or Training, without defining how those domains operate internally. The approved capability catalogue should be owned centrally by the Platform and Operations teams to ensure consistency across FIKA, with new capabilities added only where there is a defined business purpose, accountable owner and operational lifecycle. Individual Operational Locations may enable or disable approved capabilities but must not create their own.
+
+## Business rationale
+
+FIKA needed one authoritative answer to the ambiguity recorded in [docs/business-workshops/location-capability-model.md](../business-workshops/location-capability-model.md), specifically the section `Core decisions`. Without a canonical decision, later documents or applications could interpret this subject differently.
+
+The approved decision establishes a shared business rule. The alternative—leaving the matter implicit or allowing each implementation to decide independently—was rejected because it would recreate competing business meaning. Historical and supporting material remains evidence, but it cannot override this decision.
+
+## Positive consequences
+
+- FIKA now has a stable, human-approved rule for this aspect of Operational Capability.
+- It directly enabled [CAP-002](cap-002-capability-optionality-dependencies.md), [CAP-003](cap-003-capability-overrides.md), [MOB-004](mob-004-mobilisation-task-classification.md), [CAP-004](cap-004-capability-domain-permission-boundary.md) to be decided on a stable basis.
+- Stage 5 schemas and Stage 6 architecture can trace their treatment of this subject to one canonical source.
+- Application and provider behaviour cannot silently redefine the decision.
+
+## Trade-offs
+
+- The decision constrains local interpretation where consistency is required.
+- Any future change must preserve history and use a superseding or amended BDR rather than silently editing downstream documents.
+- The decision deliberately leaves technology, storage and API design to later stages.
+
+## Implementation implications
+
+Capability catalogues and configuration must preserve approved optionality, dependencies, ownership and boundaries without granting permissions or redefining domain meaning.
+
+This BDR does not select a database, API, provider, application design or deployment approach.
+
+## Related decisions
+
+- **Directly informs:** [CAP-002 — Capability Optionality and Dependencies](cap-002-capability-optionality-dependencies.md)
+- **Directly informs:** [CAP-003 — Capability Overrides](cap-003-capability-overrides.md)
+- **Directly informs:** [MOB-004 — Mobilisation Task Classification](mob-004-mobilisation-task-classification.md)
+- **Directly informs:** [CAP-004 — Capability, Domain and Permission Boundary](cap-004-capability-domain-permission-boundary.md)
+
+## Evidence
+
+- [FIKA Business Knowledge Workbook](https://docs.google.com/spreadsheets/d/195jMni3vG5fX5hfAUFARc-vC2ifO8AI8r0r4xQUeoxk/edit) — **Canonical**; DEC-CAP-001, sourced from `Questions!2`.
+- [docs/business-workshops/location-capability-model.md](../business-workshops/location-capability-model.md) — **Historical**; `Core decisions`.
+- [Platform principles](../platform-principles.md) — **Canonical**; business meaning, authority, configuration and gradual-migration principles.
+- [Business-discovery process](../platform-methodology/business-discovery-process.md) — **Canonical methodology**; approval, exact wording, dependency and history rules.
+
+## Supersedes / Superseded by
+
+- **Supersedes:** None
+- **Superseded by:** None
+
+## Future considerations
+
+There are no open discovery questions for this decision. During BDR review, evidence and explanatory text should be checked without altering the Decision section. Later schema, architecture and implementation work must resolve technical detail while preserving this approved business meaning.

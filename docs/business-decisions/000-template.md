@@ -1,6 +1,6 @@
-# BDR-0000: Decision title
+# DECISION-ID: Decision title
 
-- **Decision ID:** TODO
+- **Decision ID:** TODO — use the existing domain decision ID; do not create a second sequence
 - **Workbook Decision ID:** TODO
 - **Question ID:** TODO
 - **Status:** Draft
@@ -16,17 +16,21 @@ TODO: Summarise the evidence-backed business context without inventing policy.
 
 TODO: Copy the approved answer exactly from the canonical decision register.
 
-## Rationale
+## Business rationale
 
 TODO: Explain why the decision was made using evidence and related decisions.
 
-## Consequences
+## Positive consequences
 
 TODO: Record business consequences, including what becomes possible or constrained.
 
 ## Trade-offs
 
 TODO: Record known trade-offs. Do not invent missing concerns.
+
+## Implementation implications
+
+TODO: Identify downstream schema, architecture, workflow or application implications without specifying implementation prematurely.
 
 ## Related decisions
 
@@ -41,11 +45,7 @@ TODO: Record known trade-offs. Do not invent missing concerns.
 - **Supersedes:** None / TODO
 - **Superseded by:** None / TODO
 
-## Implementation implications
+## Future considerations
 
-TODO: Identify downstream schema, architecture, workflow or application implications without specifying implementation prematurely.
-
-## Open follow-ups
-
-- TODO: Include only follow-up work that does not reopen the approved decision.
-
+- No open discovery questions.
+- TODO: Include only later implementation or continuous-discovery considerations that do not reopen the approved decision.
