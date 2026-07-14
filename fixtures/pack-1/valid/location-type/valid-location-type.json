@@ -1,0 +1,25 @@
+{
+  "schemaVersion": "1.0.0-draft.1",
+  "locationTypeId": "location-type-site",
+  "version": 1,
+  "name": "Site",
+  "definition": "An Operational Location where FIKA maintains an ongoing operational presence.",
+  "catalogueState": "active",
+  "changeHistory": [
+    {
+      "changeId": "location-type-change-example-001",
+      "changeType": "add",
+      "newName": "Site",
+      "effectiveAt": "2026-07-13T09:20:00Z",
+      "approval": {
+        "schemaVersion": "1.0.0-draft.1",
+        "approvalId": "approval-example-003",
+        "approvedAt": "2026-07-13T09:19:00Z",
+        "authorityRole": "Senior operational approver",
+        "reason": "Approved example catalogue entry."
+      }
+    }
+  ],
+  "createdAt": "2026-07-13T09:20:00Z",
+  "updatedAt": "2026-07-13T09:20:00Z"
+}

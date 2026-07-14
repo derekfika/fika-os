@@ -1,0 +1,13 @@
+{
+  "schemaVersion": "1.0.0-draft.1",
+  "operationalLocationId": "operational-location-invalid-001",
+  "version": 1,
+  "approvedName": "Invalid Operational Location",
+  "accountableInternalOwnerReference": "internal-owner-assignment-invalid-001",
+  "lifecycleState": "active",
+  "aliases": [],
+  "lifecycleHistory": [],
+  "locationTypeHistory": [],
+  "createdAt": "2026-07-13T09:25:00Z",
+  "updatedAt": "2026-07-13T09:25:00Z"
+}

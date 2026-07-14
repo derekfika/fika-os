@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:fika:schema:draft:client-contact-operational-location-assignment:1",
+  "title": "Client Contact Operational Location Assignment v1 (Draft)",
+  "description": "Draft effective-dated assignment allowing an independent Client Contact to fulfil a stated responsibility across an Operational Location.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "assignmentId", "clientContactId", "operationalLocationId", "responsibility", "effectiveFrom", "sourceReference"],
+  "properties": {
+    "schemaVersion": { "const": "1.0.0-draft.1" },
+    "assignmentId": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "clientContactId": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "operationalLocationId": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "responsibility": { "type": "string", "minLength": 1, "maxLength": 500, "description": "Operational, commercial or administrative responsibility stated without assuming a closed catalogue." },
+    "effectiveFrom": { "type": "string", "format": "date-time" },
+    "effectiveTo": { "type": "string", "format": "date-time" },
+    "sourceReference": { "type": "string", "minLength": 1, "maxLength": 500 }
+  }
+}

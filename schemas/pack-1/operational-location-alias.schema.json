@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:fika:schema:draft:operational-location-alias:1",
+  "title": "Operational Location Alias v1 (Draft)",
+  "description": "Draft historical alias for an Operational Location. The current approved name remains on the Operational Location record.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "aliasId", "name", "recordedAt"],
+  "properties": {
+    "schemaVersion": { "const": "1.0.0-draft.1" },
+    "aliasId": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "name": { "type": "string", "minLength": 1, "maxLength": 240, "description": "Historical or alternative name associated with the same Operational Location identity." },
+    "recordedAt": { "type": "string", "format": "date-time" },
+    "effectiveFrom": { "type": "string", "format": "date-time" },
+    "effectiveTo": { "type": "string", "format": "date-time" },
+    "reason": { "type": "string", "minLength": 1, "maxLength": 2000 },
+    "sourceReference": { "type": "string", "minLength": 1, "maxLength": 500 }
+  }
+}

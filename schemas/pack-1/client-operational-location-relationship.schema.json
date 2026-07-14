@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:fika:schema:draft:client-operational-location-relationship:1",
+  "title": "Client and Operational Location Relationship v1 (Draft)",
+  "description": "Draft historically traceable relationship between an independent Client and Operational Location. It does not create a broader relationship domain.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "relationshipId", "clientId", "operationalLocationId", "relationshipKind", "role", "effectiveFrom", "sourceReference"],
+  "properties": {
+    "schemaVersion": { "const": "1.0.0-draft.1" },
+    "relationshipId": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "clientId": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "operationalLocationId": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "relationshipKind": {
+      "type": "string",
+      "enum": ["primary_commercial_client", "stakeholder_organisation"],
+      "description": "Separates the primary commercial Client relationship from other stakeholder-organisation involvement without creating a broader Operational Relationship domain."
+    },
+    "role": { "type": "string", "minLength": 1, "maxLength": 240, "description": "Business role of this Client in relation to the Operational Location. No Pack 1 role catalogue is assumed." },
+    "effectiveFrom": { "type": "string", "format": "date-time" },
+    "effectiveTo": { "type": "string", "format": "date-time" },
+    "sourceReference": { "type": "string", "minLength": 1, "maxLength": 500, "description": "Stable provenance reference without provider payload or secrets." }
+  }
+}

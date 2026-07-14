@@ -2,16 +2,14 @@
 
 - **Decision ID:** LOC-005
 - **Workbook Decision ID:** DEC-LOC-005
-- **Status:** Draft
+- **Status:** Accepted
 - **Date:** 2026-07-12T09:22:16.752Z
 - **Decision owner:** Derek / Commercial
 - **Related domains:** Operational Location, Client
 
 ## Context
 
-Business discovery asked: **Can one client relate to several locations, and one location to several clients over time?**
-
-Before approval, the recorded evidence stated: “Both relationship cardinalities remain unconfirmed.” The question was recorded as a refinement decision with medium repository confidence before approval.
+FIKA needs to distinguish the place where it operates from the organisations and people it works with. Client, Client Contact and OPLOC identities can each persist while their relationships change.
 
 ## Decision
 
@@ -19,28 +17,35 @@ A Client may relate to multiple Operational Locations, and those relationships m
 
 ## Business rationale
 
-FIKA needed one authoritative answer to the ambiguity recorded in [docs/business-workshops/location-domain-workshop-v3.md](../business-workshops/location-domain-workshop-v3.md), specifically the section `Decision 1: Canonical Location`. Without a canonical decision, later documents or applications could interpret this subject differently.
+A Client is an organisation and a Client Contact is an individual associated with that organisation. An OPLOC answers where FIKA operates; Client concepts answer who FIKA works with.
 
-The approved decision establishes a shared business rule. The alternative—leaving the matter implicit or allowing each implementation to decide independently—was rejected because it would recreate competing business meaning. Historical and supporting material remains evidence, but it cannot override this decision.
+One Client may relate to many OPLOCs, and one OPLOC may involve multiple Client organisations and Client Contacts. A Client change therefore does not create a new OPLOC, and historical relationships must remain traceable.
 
 ## Positive consequences
 
-- FIKA now has a stable, human-approved rule for this aspect of Operational Location.
-- It provides stable business meaning for later BDR, schema and architecture work.
-- Stage 5 schemas and Stage 6 architecture can trace their treatment of this subject to one canonical source.
-- Application and provider behaviour cannot silently redefine the decision.
+- Client and OPLOC identities remain independent and reusable.
+
+- Changes in contracting, occupying or stakeholder organisations do not fragment location history.
+
+- FIKA can trace which organisations and contacts were involved at different times.
+
+- The model can support several Client layers around one OPLOC without treating them as the place itself.
 
 ## Trade-offs
 
-- The decision constrains local interpretation where consistency is required.
-- Any future change must preserve history and use a superseding or amended BDR rather than silently editing downstream documents.
-- The decision deliberately leaves technology, storage and API design to later stages.
+- The relationship between a Client and an OPLOC needs its own dates, role and provenance rather than being reduced to one current Client field.
+
+- Contact responsibility and communication practices cannot safely be inferred from Client identity alone.
+
+- A richer relationship concept may be required, but it is not yet approved as a canonical Pack 1 object.
 
 ## Implementation implications
 
-Domain models, schemas, architecture and applications must reference the Operational Location identity, lifecycle and relationship rules established here rather than creating competing place identities.
+- Future schemas must keep Client, Client Contact and OPLOC as separate identities connected through historically traceable relationships.
 
-This BDR does not select a database, API, provider, application design or deployment approach.
+- OPLOC creation and maintenance must not duplicate Client or Client Contact master data.
+
+- Operational Relationship (OPREL) is recorded only as a high-priority discovery candidate. It must not enter Pack 1 schemas without a future approved BDR.
 
 ## Related decisions
 
@@ -61,4 +66,6 @@ This BDR does not select a database, API, provider, application design or deploy
 
 ## Future considerations
 
-There are no open discovery questions for this decision. During BDR review, evidence and explanatory text should be checked without altering the Decision section. Later schema, architecture and implementation work must resolve technical detail while preserving this approved business meaning.
+- Future discovery should test OPREL as a possible description of how FIKA works with a Client organisation and its Client Contacts in a particular operational context.
+
+- Candidate OPREL concerns include communication method, meeting cadence, responsibilities, reporting expectations, escalation routes, approvals, relationship ownership and active dates. These are provisional and non-canonical.

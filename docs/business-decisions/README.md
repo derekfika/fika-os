@@ -8,7 +8,20 @@ BDRs are distinct from Architectural Decision Records in [`docs/decisions`](../d
 
 ## Current status
 
-Stage 4 is active. All **54 canonical decisions** have generated BDRs: **1 Accepted** and **53 Draft**. The canonical decisions are accepted; each explanatory BDR remains Draft until human repository review.
+Stage 4 is active. All **54 canonical decisions** have generated BDRs: **10 Accepted** and **44 Draft**. Pack 1 is accepted and Frozen for current downstream use; the remaining explanatory BDRs stay Draft until human repository review.
+
+## Pack 1 freeze
+
+Pack 1 comprises CLIENT-001, LOC-001 through LOC-006, and TYPE-001 through TYPE-003. It is **Frozen** for current downstream use.
+
+Frozen means:
+
+- these accepted BDRs are the current canonical business authority;
+- they are stable enough for downstream schema dependency;
+- they are not immutable forever;
+- any future change must follow the governed amendment or superseding-BDR process.
+
+Freezing the pack does not rewrite or extend its accepted business meaning.
 
 ## Authority and source
 
@@ -44,7 +57,7 @@ The [FIKA Business Knowledge Workbook](https://docs.google.com/spreadsheets/d/19
 
 Use [`000-template.md`](000-template.md) for future records. The filename is retained as a template marker only; it is not a BDR identifier.
 
-## Draft BDR index
+## BDR index
 
 ### Booking
 
@@ -91,15 +104,15 @@ Use [`000-template.md`](000-template.md) for future records. The filename is ret
 
 ### Operational Location
 
-- [LOC-001 — Operational Location Definition](loc-001-operational-location.md) — Draft
-- [LOC-002 — Operational Location Name](loc-002-operational-location-name.md) — Draft
-- [LOC-003 — Operational Location Ownership Boundary](loc-003-operational-location-boundary.md) — Draft
-- [LOC-004 — Operational Location Lifecycle](loc-004-operational-location-lifecycle.md) — Draft
-- [LOC-005 — Client and Operational Location Relationships](loc-005-client-operational-location-relationships.md) — Draft
-- [LOC-006 — Operational Location Building and Address Boundary](loc-006-single-building-address.md) — Draft
-- [TYPE-001 — Location Type Requirement and Ownership](type-001-location-type-requirement.md) — Draft
-- [TYPE-002 — Primary Location Type](type-002-primary-location-type.md) — Draft
-- [TYPE-003 — Location Type History](type-003-location-type-history.md) — Draft
+- [LOC-001 — Operational Location Definition](loc-001-operational-location.md) — Accepted
+- [LOC-002 — Operational Location Name](loc-002-operational-location-name.md) — Accepted
+- [LOC-003 — Operational Location Ownership Boundary](loc-003-operational-location-boundary.md) — Accepted
+- [LOC-004 — Operational Location Lifecycle](loc-004-operational-location-lifecycle.md) — Accepted
+- [LOC-005 — Client and Operational Location Relationships](loc-005-client-operational-location-relationships.md) — Accepted
+- [LOC-006 — Operational Location Building and Address Boundary](loc-006-single-building-address.md) — Accepted
+- [TYPE-001 — Location Type Requirement and Ownership](type-001-location-type-requirement.md) — Accepted
+- [TYPE-002 — Primary Location Type](type-002-primary-location-type.md) — Accepted
+- [TYPE-003 — Location Type History](type-003-location-type-history.md) — Accepted
 
 ### Production
 

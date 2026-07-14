@@ -1,0 +1,9 @@
+{
+  "schemaVersion": "1.0.0-draft.1",
+  "relationshipId": "invalid-client-location-001",
+  "clientId": "client-example-001",
+  "operationalLocationId": "operational-location-example-001",
+  "relationshipKind": "primary_commercial_client",
+  "role": "Primary commercial Client",
+  "effectiveFrom": "2026-07-13T09:35:00Z"
+}

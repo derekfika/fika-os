@@ -1,0 +1,9 @@
+{
+  "schemaVersion": "1.0.0-draft.1",
+  "assignmentId": "client-contact-assignment-example-001",
+  "clientContactId": "client-contact-example-001",
+  "operationalLocationId": "operational-location-example-001",
+  "responsibility": "Operational contact for the example location.",
+  "effectiveFrom": "2026-07-13T09:40:00Z",
+  "sourceReference": "example-contact-record-001"
+}

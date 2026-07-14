@@ -1,0 +1,9 @@
+{
+  "schemaVersion": "1.0.0-draft.1",
+  "approvalId": "approval-example-001",
+  "approvedAt": "2026-07-13T10:00:00Z",
+  "authorityRole": "Senior operational approver",
+  "actorReference": "actor-example-001",
+  "reason": "Approved example change for non-production schema validation.",
+  "sourceReference": "example-review-record-001"
+}

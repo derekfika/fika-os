@@ -37,7 +37,9 @@ FIKA can understand not only what was decided, but why it was decided and what f
 
 ## Current status
 
-**Active — human review.** All 54 BDRs have been generated and mechanically validated. One BDR is Accepted and 53 remain Draft pending human review of their explanatory sections.
+**Active — human review.** All 54 BDRs have been generated and mechanically validated. Ten BDRs are Accepted and 44 remain Draft pending human review of their explanatory sections.
+
+Pack 1—CLIENT-001, LOC-001 through LOC-006, and TYPE-001 through TYPE-003—is **Frozen** for current downstream use. Frozen means the pack is the current canonical business authority and is stable enough for downstream schema dependency. It is not immutable forever: future change must use a governed amendment or superseding BDR. The freeze does not rewrite accepted business meaning.
 
 ## Dependencies on earlier stages
 

@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:fika:schema:draft:client-contact:1",
+  "title": "Client Contact v1 (Draft)",
+  "description": "Draft identity for an individual person associated with a Client. Communication methods and personal-data retention are intentionally deferred.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "clientContactId", "clientId", "version", "displayName", "createdAt", "updatedAt"],
+  "properties": {
+    "schemaVersion": { "const": "1.0.0-draft.1" },
+    "clientContactId": { "type": "string", "minLength": 1, "maxLength": 128, "description": "Stable identifier for the individual Client Contact." },
+    "clientId": { "type": "string", "minLength": 1, "maxLength": 128, "description": "Stable reference to the Client organisation with which this person is associated." },
+    "version": { "type": "integer", "minimum": 1 },
+    "displayName": { "type": "string", "minLength": 1, "maxLength": 240, "description": "Human-readable name for the Client Contact." },
+    "createdAt": { "type": "string", "format": "date-time" },
+    "updatedAt": { "type": "string", "format": "date-time" }
+  }
+}

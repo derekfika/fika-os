@@ -1,0 +1,25 @@
+{
+  "schemaVersion": "1.0.0-draft.1",
+  "locationTypeId": "location-type-venue",
+  "version": 1,
+  "name": "Venue",
+  "definition": "An Operational Location where FIKA delivers occasional or recurring work without maintaining an ongoing operational presence.",
+  "catalogueState": "active",
+  "changeHistory": [
+    {
+      "changeId": "location-type-change-example-venue-001",
+      "changeType": "add",
+      "newName": "Venue",
+      "effectiveAt": "2026-07-13T09:21:00Z",
+      "approval": {
+        "schemaVersion": "1.0.0-draft.1",
+        "approvalId": "approval-example-venue-001",
+        "approvedAt": "2026-07-13T09:20:00Z",
+        "authorityRole": "Senior operational approver",
+        "reason": "Approved example catalogue entry."
+      }
+    }
+  ],
+  "createdAt": "2026-07-13T09:21:00Z",
+  "updatedAt": "2026-07-13T09:21:00Z"
+}

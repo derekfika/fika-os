@@ -2,16 +2,14 @@
 
 - **Decision ID:** LOC-003
 - **Workbook Decision ID:** DEC-LOC-003
-- **Status:** Draft
+- **Status:** Accepted
 - **Date:** 2026-07-12T08:31:57.824Z
 - **Decision owner:** Derek / Operations / Domain owners
 - **Related domains:** Operational Location
 
 ## Context
 
-Business discovery asked: **Which durable facts belong to canonical location, and which explicitly do not?**
-
-Before approval, the recorded evidence stated: “Identity, name, aliases and lifecycle are proposed; client, brand, address and providers are separate.” The question was recorded as a refinement decision with medium repository confidence before approval.
+An OPLOC must anchor activity associated with a place without becoming a container that owns every detailed record connected to it. Clear ownership boundaries prevent the location record from absorbing specialist business meaning.
 
 ## Decision
 
@@ -19,28 +17,35 @@ A canonical Operational Location owns only the durable facts that define the lon
 
 ## Business rationale
 
-FIKA needed one authoritative answer to the ambiguity recorded in [docs/business-workshops/location-domain-workshop-v3.md](../business-workshops/location-domain-workshop-v3.md), specifically the section `Candidate responsibility boundary`. Without a canonical decision, later documents or applications could interpret this subject differently.
+The OPLOC directly represents only the durable facts that identify the operating context: stable identity, approved name, historical aliases, lifecycle and durable links to other business concepts.
 
-The approved decision establishes a shared business rule. The alternative—leaving the matter implicit or allowing each implementation to decide independently—was rejected because it would recreate competing business meaning. Historical and supporting material remains evidence, but it cannot override this decision.
+Client organisations and contacts, provider integrations, application configuration, branding, address master data, menus and pricing, equipment, staffing, calendars, Bookings, Events, Services, commercial agreements and Operational Capabilities each require their own domain ownership. Those domains relate their records to the OPLOC.
 
 ## Positive consequences
 
-- FIKA now has a stable, human-approved rule for this aspect of Operational Location.
-- It provides stable business meaning for later BDR, schema and architecture work.
-- Stage 5 schemas and Stage 6 architecture can trace their treatment of this subject to one canonical source.
-- Application and provider behaviour cannot silently redefine the decision.
+- The OPLOC remains stable and understandable as specialist domains evolve.
+
+- Each domain can govern its own records without duplicating or embedding them inside the OPLOC.
+
+- Relationships to Clients, Services, capabilities and other concepts can change without recreating the location.
+
+- Teams can find the durable operational anchor while following links to the authoritative detail.
 
 ## Trade-offs
 
-- The decision constrains local interpretation where consistency is required.
-- Any future change must preserve history and use a superseding or amended BDR rather than silently editing downstream documents.
-- The decision deliberately leaves technology, storage and API design to later stages.
+- Consumers may need to combine the OPLOC with records from several related domains.
+
+- Domain ownership and relationship boundaries must be explicit to avoid duplicated facts.
+
+- Not every useful location-related fact belongs directly on the OPLOC, even when displaying it alongside the location is convenient.
 
 ## Implementation implications
 
-Domain models, schemas, architecture and applications must reference the Operational Location identity, lifecycle and relationship rules established here rather than creating competing place identities.
+- Future OPLOC schemas should contain only durable identity and lifecycle facts plus stable references needed to relate specialist records.
 
-This BDR does not select a database, API, provider, application design or deployment approach.
+- Detailed provider, configuration, brand, address, menu, pricing, equipment, workforce, calendar, Booking, Event, Service, commercial and capability data must remain owned by their respective domains.
+
+- Applications may assemble a location view from related domains but must not treat that projection as OPLOC ownership.
 
 ## Related decisions
 
@@ -60,4 +65,6 @@ This BDR does not select a database, API, provider, application design or deploy
 
 ## Future considerations
 
-There are no open discovery questions for this decision. During BDR review, evidence and explanatory text should be checked without altering the Decision section. Later schema, architecture and implementation work must resolve technical detail while preserving this approved business meaning.
+- Stage 5 should test every proposed OPLOC field against the ownership boundary before including it.
+
+- Future BDRs must establish ownership for Commercial Agreements and other candidate domains before their detailed records become canonical.

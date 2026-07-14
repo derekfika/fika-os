@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:fika:schema:draft:change-approval:1",
+  "title": "Change Approval v1 (Draft)",
+  "description": "Draft Pack 1 value object recording role-based approval for a governed change. It is not a universal audit-event model and is not adopted.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "approvalId", "approvedAt", "authorityRole", "reason"],
+  "properties": {
+    "schemaVersion": { "const": "1.0.0-draft.1" },
+    "approvalId": { "type": "string", "minLength": 1, "maxLength": 128, "description": "Stable identifier for this approval record." },
+    "approvedAt": { "type": "string", "format": "date-time", "description": "ISO 8601 date and time at which approval was given." },
+    "authorityRole": { "type": "string", "minLength": 1, "maxLength": 240, "description": "Role or organisational authority under which approval was given; never a hardcoded list of named people." },
+    "actorReference": { "type": "string", "minLength": 1, "maxLength": 240, "description": "Optional stable reference to the assigned actor who exercised the role. Display names do not belong here." },
+    "reason": { "type": "string", "minLength": 1, "maxLength": 2000, "description": "Business reason recorded for the governed change." },
+    "sourceReference": { "type": "string", "minLength": 1, "maxLength": 500, "description": "Optional stable provenance reference. Provider payloads and secrets are excluded." }
+  }
+}

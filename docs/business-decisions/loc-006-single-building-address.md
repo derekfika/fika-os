@@ -2,16 +2,14 @@
 
 - **Decision ID:** LOC-006
 - **Workbook Decision ID:** DEC-LOC-006
-- **Status:** Draft
+- **Status:** Accepted
 - **Date:** 2026-07-12T08:32:47.310Z
 - **Decision owner:** Derek / Operations
 - **Related domains:** Operational Location
 
 ## Context
 
-Business discovery asked: **Can one location relate to multiple buildings or addresses over time?**
-
-Before approval, the recorded evidence stated: “Building and address are separated; cardinality is unconfirmed.” The question was recorded as a refinement decision with low repository confidence before approval.
+Postal addresses and building boundaries do not always match the way FIKA operates. The OPLOC boundary must reflect whether FIKA manages operating environments together or independently.
 
 ## Decision
 
@@ -19,28 +17,37 @@ A canonical Operational Location represents a single physical operating location
 
 ## Business rationale
 
-FIKA needed one authoritative answer to the ambiguity recorded in [docs/business-workshops/location-domain-workshop-v3.md](../business-workshops/location-domain-workshop-v3.md), specifically the section `Decision 1: Canonical Location`. Without a canonical decision, later documents or applications could interpret this subject differently.
+The operational test is: would FIKA manage, staff, equip, deliver to, order for, mobilise or account for the operating environments independently? If yes, they should normally be separate OPLOCs.
 
-The approved decision establishes a shared business rule. The alternative—leaving the matter implicit or allowing each implementation to decide independently—was rejected because it would recreate competing business meaning. Historical and supporting material remains evidence, but it cannot override this decision.
+Different buildings that require separate staffing, equipment, deliveries or supplier ordering are separate OPLOCs. Several floors or service points may remain one OPLOC when they form one managed operating environment.
+
+Commercial relationships may connect locations; operational management determines whether they are separate OPLOCs.
 
 ## Positive consequences
 
-- FIKA now has a stable, human-approved rule for this aspect of Operational Location.
-- It provides stable business meaning for later BDR, schema and architecture work.
-- Stage 5 schemas and Stage 6 architecture can trace their treatment of this subject to one canonical source.
-- Application and provider behaviour cannot silently redefine the decision.
+- OPLOC boundaries reflect real operational responsibility rather than relying only on postal addresses.
+
+- Staffing, equipment, deliveries, supplier ordering, mobilisation and reporting can follow independently managed environments.
+
+- One Client can connect several OPLOCs without collapsing their operational identities.
+
+- Future commercial records can span multiple OPLOCs while each location retains its own history.
 
 ## Trade-offs
 
-- The decision constrains local interpretation where consistency is required.
-- Any future change must preserve history and use a superseding or amended BDR rather than silently editing downstream documents.
-- The decision deliberately leaves technology, storage and API design to later stages.
+- Judgement is required where a building contains several service points or operating environments.
+
+- A single address may contain more than one OPLOC, while several floors may form one OPLOC.
+
+- Commercial scope alone cannot decide whether operational environments are one location.
 
 ## Implementation implications
 
-Domain models, schemas, architecture and applications must reference the Operational Location identity, lifecycle and relationship rules established here rather than creating competing place identities.
+- OPLOC creation and boundary-review workflows must apply the operational-management test and retain the evidence used.
 
-This BDR does not select a database, API, provider, application design or deployment approach.
+- Commercial Agreement (COMAG) is a high-priority discovery candidate that may cover one or more OPLOCs and may eventually own commercial scope, billing rules, contract dates, renewals, commercial reporting, profitability, SLAs and related terms. It must not enter Pack 1 schemas without an approved BDR.
+
+- OPLOC Group remains parked because no current FIKA requirement justifies a non-commercial grouping object.
 
 ## Related decisions
 
@@ -60,4 +67,8 @@ This BDR does not select a database, API, provider, application design or deploy
 
 ## Future considerations
 
-There are no open discovery questions for this decision. During BDR review, evidence and explanatory text should be checked without altering the Decision section. Later schema, architecture and implementation work must resolve technical detail while preserving this approved business meaning.
+- Future COMAG discovery should determine whether it provides the commercial anchor for multiple OPLOCs without owning their operational identities.
+
+- OPLOC Group should be reconsidered only if a real non-commercial grouping requirement emerges that Client or COMAG cannot satisfy.
+
+- Stage 5 should avoid reducing the OPLOC boundary to one-address or one-building validation.

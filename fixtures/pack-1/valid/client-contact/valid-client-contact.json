@@ -1,0 +1,9 @@
+{
+  "schemaVersion": "1.0.0-draft.1",
+  "clientContactId": "client-contact-example-001",
+  "clientId": "client-example-001",
+  "version": 1,
+  "displayName": "Example Contact",
+  "createdAt": "2026-07-13T09:05:00Z",
+  "updatedAt": "2026-07-13T09:05:00Z"
+}

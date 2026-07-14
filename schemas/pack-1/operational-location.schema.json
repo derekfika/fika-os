@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:fika:schema:draft:operational-location:1",
+  "title": "Operational Location v1 (Draft)",
+  "description": "Draft durable Operational Location identity. It owns only approved name, aliases, lifecycle, stable identity and primary Location Type history; specialist domain data remains separate.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "operationalLocationId",
+    "version",
+    "approvedName",
+    "accountableInternalOwnerReference",
+    "lifecycleState",
+    "aliases",
+    "lifecycleHistory",
+    "currentLocationTypeAssignment",
+    "locationTypeHistory",
+    "createdAt",
+    "updatedAt"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "1.0.0-draft.1" },
+    "operationalLocationId": { "type": "string", "minLength": 1, "maxLength": 128, "description": "Stable identity retained through rename, Type change, decommissioning, reactivation and merge." },
+    "version": { "type": "integer", "minimum": 1 },
+    "approvedName": { "type": "string", "minLength": 1, "maxLength": 240 },
+    "accountableInternalOwnerReference": { "type": "string", "minLength": 1, "maxLength": 240, "description": "Stable reference to the accountable internal role assignment. It must not be a hardcoded named-person governance rule." },
+    "lifecycleState": { "type": "string", "enum": ["active", "decommissioned", "merged"], "description": "Minimal current lifecycle state compiled from accepted Pack 1 behaviour; broader lifecycle catalogues remain unresolved." },
+    "mergedIntoOperationalLocationId": { "type": "string", "minLength": 1, "maxLength": 128, "description": "Permanent reference to the surviving Operational Location when this record is merged." },
+    "aliases": {
+      "type": "array",
+      "items": { "$ref": "urn:fika:schema:draft:operational-location-alias:1" },
+      "description": "Historical or alternative names retained without replacing the current approved name."
+    },
+    "lifecycleHistory": {
+      "type": "array",
+      "items": { "$ref": "urn:fika:schema:draft:operational-location-lifecycle-transition:1" },
+      "description": "Preserved, senior-management-approved lifecycle transitions."
+    },
+    "currentLocationTypeAssignment": { "$ref": "urn:fika:schema:draft:location-type-assignment:1" },
+    "locationTypeHistory": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "urn:fika:schema:draft:location-type-assignment:1" },
+      "description": "All effective-dated primary Location Type assignments, including the current open assignment."
+    },
+    "createdAt": { "type": "string", "format": "date-time" },
+    "updatedAt": { "type": "string", "format": "date-time" }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "lifecycleState": { "const": "merged" } }, "required": ["lifecycleState"] },
+      "then": { "required": ["mergedIntoOperationalLocationId"] },
+      "else": { "not": { "required": ["mergedIntoOperationalLocationId"] } }
+    }
+  ]
+}

@@ -2,16 +2,14 @@
 
 - **Decision ID:** TYPE-003
 - **Workbook Decision ID:** DEC-TYPE-003
-- **Status:** Draft
+- **Status:** Accepted
 - **Date:** 2026-07-12T08:54:24.133Z
 - **Decision owner:** Derek / Operations
 - **Related domains:** Operational Location
 
 ## Context
 
-Business discovery asked: **May location type change over time, and what history must be retained?**
-
-Before approval, the recorded evidence stated: “Planned sites and pop-ups may change lifecycle or operating model.” The question was recorded as a refinement decision with low repository confidence before approval.
+An OPLOC's fundamental operating model may change while its durable identity remains the same. Type history is therefore required to explain how the location was classified at different times.
 
 ## Decision
 
@@ -19,28 +17,35 @@ A Location Type may change over the lifetime of an Operational Location where it
 
 ## Business rationale
 
-FIKA needed one authoritative answer to the ambiguity recorded in [docs/business-workshops/location-type-catalogue.md](../business-workshops/location-type-catalogue.md), specifically the section `Type model questions`. Without a canonical decision, later documents or applications could interpret this subject differently.
+The current Type may be easy to access, but prior assignments must remain saved with what changed, when, who authorised it and why. Type changes should be rare because they represent a fundamental operating-model change.
 
-The approved decision establishes a shared business rule. The alternative—leaving the matter implicit or allowing each implementation to decide independently—was rejected because it would recreate competing business meaning. Historical and supporting material remains evidence, but it cannot override this decision.
+OPCAP assignments may change more frequently. Lifecycle, Type, OPCAP and relationship history are distinct histories and must not overwrite one another.
 
 ## Positive consequences
 
-- FIKA now has a stable, human-approved rule for this aspect of Operational Location.
-- It provides stable business meaning for later BDR, schema and architecture work.
-- Stage 5 schemas and Stage 6 architecture can trace their treatment of this subject to one canonical source.
-- Application and provider behaviour cannot silently redefine the decision.
+- Historical reporting can use the Type that applied at the relevant time.
+
+- FIKA can explain and audit rare operating-model changes.
+
+- Venue-to-Site transitions preserve the same OPLOC identity.
+
+- Capability changes can be traced without falsely implying a Type change.
 
 ## Trade-offs
 
-- The decision constrains local interpretation where consistency is required.
-- Any future change must preserve history and use a superseding or amended BDR rather than silently editing downstream documents.
-- The decision deliberately leaves technology, storage and API design to later stages.
+- History grows over time and cannot be discarded merely for convenience.
+
+- Users and reports must distinguish the current Type from prior assignments.
+
+- Type and OPCAP changes require separate histories and approval evidence.
 
 ## Implementation implications
 
-Domain models, schemas, architecture and applications must reference the Operational Location identity, lifecycle and relationship rules established here rather than creating competing place identities.
+- Type assignments must retain effective dates, authorisation and reason instead of overwriting the previous Type.
 
-This BDR does not select a database, API, provider, application design or deployment approach.
+- Every OPCAP addition, removal or material configuration change should eventually have its own history, separate from Type and lifecycle history.
+
+- Example: in July 2027, Wise changed from Venue to Site because FIKA established an ongoing operational presence. Coffee Bar was added as an OPCAP as part of that change. Adding Coffee Bar did not itself change the Type; explicit approval of the changed operating model did.
 
 ## Related decisions
 
@@ -61,4 +66,8 @@ This BDR does not select a database, API, provider, application design or deploy
 
 ## Future considerations
 
-There are no open discovery questions for this decision. During BDR review, evidence and explanatory text should be checked without altering the Decision section. Later schema, architecture and implementation work must resolve technical detail while preserving this approved business meaning.
+- Stage 5 should define current-Type access and immutable historical assignments without prematurely selecting storage.
+
+- Future governance must define approval evidence for Type and material OPCAP changes.
+
+- History may be optimised or archived later only if genuinely necessary and without losing business traceability.

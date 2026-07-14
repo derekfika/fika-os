@@ -1,0 +1,15 @@
+{
+  "schemaVersion": "1.0.0-draft.1",
+  "transitionId": "transition-example-001",
+  "fromState": "decommissioned",
+  "toState": "active",
+  "effectiveAt": "2026-07-13T09:15:00Z",
+  "approval": {
+    "schemaVersion": "1.0.0-draft.1",
+    "approvalId": "approval-example-002",
+    "approvedAt": "2026-07-13T09:14:00Z",
+    "authorityRole": "Senior management approver",
+    "reason": "Reactivated the same Operational Location identity.",
+    "sourceReference": "example-lifecycle-review-001"
+  }
+}

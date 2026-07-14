@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:fika:schema:draft:location-type-assignment:1",
+  "title": "Location Type Assignment v1 (Draft)",
+  "description": "Draft effective-dated assignment of one primary Location Type to an Operational Location. Previous assignments are retained rather than overwritten.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "assignmentId", "operationalLocationId", "locationTypeId", "effectiveFrom", "approval"],
+  "properties": {
+    "schemaVersion": { "const": "1.0.0-draft.1" },
+    "assignmentId": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "operationalLocationId": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "locationTypeId": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "previousLocationTypeId": { "type": "string", "minLength": 1, "maxLength": 128, "description": "Prior Type when this record represents a change. Initial assignments omit it." },
+    "effectiveFrom": { "type": "string", "format": "date-time" },
+    "effectiveTo": { "type": "string", "format": "date-time", "description": "Absent only for the current assignment." },
+    "approval": { "$ref": "urn:fika:schema:draft:change-approval:1" }
+  }
+}

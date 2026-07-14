@@ -1,0 +1,10 @@
+{
+  "schemaVersion": "1.0.0-draft.1",
+  "aliasId": "alias-example-001",
+  "name": "Example Former Location Name",
+  "recordedAt": "2026-07-13T09:10:00Z",
+  "effectiveFrom": "2025-01-01T00:00:00Z",
+  "effectiveTo": "2026-07-13T09:10:00Z",
+  "reason": "Approved name changed while the Operational Location identity remained the same.",
+  "sourceReference": "example-name-review-001"
+}

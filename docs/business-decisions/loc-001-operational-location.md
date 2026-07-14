@@ -2,16 +2,16 @@
 
 - **Decision ID:** LOC-001
 - **Workbook Decision ID:** DEC-LOC-001
-- **Status:** Draft
+- **Status:** Accepted
 - **Date:** 2026-07-12T07:40:53.482Z
 - **Decision owner:** Derek / Operations
 - **Related domains:** Operational Location, Configuration, Service, Brand, Production
 
 ## Context
 
-Business discovery asked: **What does the canonical operational-location object represent in plain business language?**
+FIKA needs one durable way to identify every distinct place or operating context where it delivers work. The approved term is Operational Location, abbreviated OPLOC.
 
-Before approval, the recorded evidence stated: “Evidence supports a durable place or operating context recognised by FIKA.” The question was recorded as a foundation decision with medium repository confidence before approval.
+An OPLOC may exist for one day or for many years. Expected duration does not determine whether the operating context qualifies. Although FIKA overwhelmingly operates through repeat business, a one-off engagement may later become recurring, so returning to the same place must reuse the same OPLOC rather than create a new identity.
 
 ## Decision
 
@@ -19,28 +19,35 @@ An Operational Location is a site, venue or recurring operating context that FIK
 
 ## Business rationale
 
-FIKA needed one authoritative answer to the ambiguity recorded in [docs/business-workshops/location-domain-workshop-v3.md](../business-workshops/location-domain-workshop-v3.md), specifically the section `Decision 1: Canonical Location`. Without a canonical decision, later documents or applications could interpret this subject differently.
+The OPLOC is the durable operational identity. It keeps FIKA's knowledge of where work is delivered connected even when the activity, capabilities, Client relationships, Services, classification or expected duration changes.
 
-The approved decision establishes a shared business rule. The alternative—leaving the matter implicit or allowing each implementation to decide independently—was rejected because it would recreate competing business meaning. Historical and supporting material remains evidence, but it cannot override this decision.
+Reusing the same identity when FIKA returns protects continuity across operational history. Without it, repeat activity could be fragmented across records and teams could lose knowledge already gained about the operating environment.
 
 ## Positive consequences
 
-- FIKA now has a stable, human-approved rule for this aspect of Operational Location.
-- It directly enabled [LOC-002](loc-002-operational-location-name.md), [LOC-003](loc-003-operational-location-boundary.md), [LOC-004](loc-004-operational-location-lifecycle.md), [TYPE-001](type-001-location-type-requirement.md), [LOC-006](loc-006-single-building-address.md), [CFG-003](cfg-003-configuration-variation-approval.md), [LOC-005](loc-005-client-operational-location-relationships.md), [SVC-004](svc-004-service-arrangement-scope.md), [BRAND-001](brand-001-brand-overrides.md), [TYPE-002](type-002-primary-location-type.md), [TYPE-003](type-003-location-type-history.md), [PROD-005](prod-005-multi-facility-production-routing.md) to be decided on a stable basis.
-- Stage 5 schemas and Stage 6 architecture can trace their treatment of this subject to one canonical source.
-- Application and provider behaviour cannot silently redefine the decision.
+- One stable OPLOC can connect operational knowledge across short-term and long-term work.
+
+- FIKA can recognise repeat business and reuse knowledge instead of treating a returning location as entirely new.
+
+- Changes to Clients, Services, capabilities or classification do not break the location's history.
+
+- Operational reporting can follow the same place over time without relying on its current name or operating model.
 
 ## Trade-offs
 
-- The decision constrains local interpretation where consistency is required.
-- Any future change must preserve history and use a superseding or amended BDR rather than silently editing downstream documents.
-- The decision deliberately leaves technology, storage and API design to later stages.
+- Teams must check for an existing OPLOC before creating a new one.
+
+- A short engagement still requires a durable identity even when no future work is expected.
+
+- Information that changes belongs in dated relationships or specialist domains rather than being overwritten on the OPLOC.
 
 ## Implementation implications
 
-Domain models, schemas, architecture and applications must reference the Operational Location identity, lifecycle and relationship rules established here rather than creating competing place identities.
+- Future domain models must give each OPLOC a stable identity that survives renames, reopening and changes in activity, Client relationships, capabilities, Services and classification.
 
-This BDR does not select a database, API, provider, application design or deployment approach.
+- Workflows that create or mobilise an OPLOC must support duplicate checking and reuse of an existing OPLOC when FIKA returns.
+
+- Historical operational knowledge must remain connected to the OPLOC while detailed records remain owned by their appropriate domains.
 
 ## Related decisions
 
@@ -57,6 +64,21 @@ This BDR does not select a database, API, provider, application design or deploy
 - **Directly informs:** [TYPE-003 — Location Type History](type-003-location-type-history.md)
 - **Directly informs:** [PROD-005 — Multi-Facility Production Routing](prod-005-multi-facility-production-routing.md)
 
+Source traceability links retained for reversible Markdown reconstruction:
+
+- [LOC-002](loc-002-operational-location-name.md)
+- [LOC-003](loc-003-operational-location-boundary.md)
+- [LOC-004](loc-004-operational-location-lifecycle.md)
+- [TYPE-001](type-001-location-type-requirement.md)
+- [LOC-006](loc-006-single-building-address.md)
+- [CFG-003](cfg-003-configuration-variation-approval.md)
+- [LOC-005](loc-005-client-operational-location-relationships.md)
+- [SVC-004](svc-004-service-arrangement-scope.md)
+- [BRAND-001](brand-001-brand-overrides.md)
+- [TYPE-002](type-002-primary-location-type.md)
+- [TYPE-003](type-003-location-type-history.md)
+- [PROD-005](prod-005-multi-facility-production-routing.md)
+
 ## Evidence
 
 - [FIKA Business Knowledge Workbook](https://docs.google.com/spreadsheets/d/195jMni3vG5fX5hfAUFARc-vC2ifO8AI8r0r4xQUeoxk/edit) — **Canonical**; DEC-LOC-001, sourced from `Questions!3`.
@@ -71,4 +93,8 @@ This BDR does not select a database, API, provider, application design or deploy
 
 ## Future considerations
 
-There are no open discovery questions for this decision. During BDR review, evidence and explanatory text should be checked without altering the Decision section. Later schema, architecture and implementation work must resolve technical detail while preserving this approved business meaning.
+- Stage 5 may define the minimum durable attributes and history required for an OPLOC without assuming that expected duration determines identity.
+
+- Duplicate-detection and return-to-location workflows will need governed rules informed by real operational evidence.
+
+- Future discovery should clarify how one-off operating contexts are found and reused when they later become recurring.

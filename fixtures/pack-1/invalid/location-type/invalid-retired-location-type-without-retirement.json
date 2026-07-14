@@ -1,0 +1,25 @@
+{
+  "schemaVersion": "1.0.0-draft.1",
+  "locationTypeId": "location-type-invalid-retired",
+  "version": 2,
+  "name": "Invalid Retired Type",
+  "definition": "Invalid because no governed retirement appears in history.",
+  "catalogueState": "retired",
+  "changeHistory": [
+    {
+      "changeId": "invalid-change-001",
+      "changeType": "add",
+      "newName": "Invalid Retired Type",
+      "effectiveAt": "2026-07-13T09:20:00Z",
+      "approval": {
+        "schemaVersion": "1.0.0-draft.1",
+        "approvalId": "invalid-approval-001",
+        "approvedAt": "2026-07-13T09:19:00Z",
+        "authorityRole": "Senior operational approver",
+        "reason": "Addition only; retirement evidence is missing."
+      }
+    }
+  ],
+  "createdAt": "2026-07-13T09:20:00Z",
+  "updatedAt": "2026-07-13T09:20:00Z"
+}

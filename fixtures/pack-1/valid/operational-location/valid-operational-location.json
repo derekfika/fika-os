@@ -1,0 +1,42 @@
+{
+  "schemaVersion": "1.0.0-draft.1",
+  "operationalLocationId": "operational-location-example-001",
+  "version": 1,
+  "approvedName": "Example Operational Location",
+  "accountableInternalOwnerReference": "internal-owner-assignment-example-001",
+  "lifecycleState": "active",
+  "aliases": [],
+  "lifecycleHistory": [],
+  "currentLocationTypeAssignment": {
+    "schemaVersion": "1.0.0-draft.1",
+    "assignmentId": "location-type-assignment-example-001",
+    "operationalLocationId": "operational-location-example-001",
+    "locationTypeId": "location-type-site",
+    "effectiveFrom": "2026-07-13T09:30:00Z",
+    "approval": {
+      "schemaVersion": "1.0.0-draft.1",
+      "approvalId": "approval-example-004",
+      "approvedAt": "2026-07-13T09:29:00Z",
+      "authorityRole": "Senior operational approver",
+      "reason": "Approved the initial primary Location Type."
+    }
+  },
+  "locationTypeHistory": [
+    {
+      "schemaVersion": "1.0.0-draft.1",
+      "assignmentId": "location-type-assignment-example-001",
+      "operationalLocationId": "operational-location-example-001",
+      "locationTypeId": "location-type-site",
+      "effectiveFrom": "2026-07-13T09:30:00Z",
+      "approval": {
+        "schemaVersion": "1.0.0-draft.1",
+        "approvalId": "approval-example-004",
+        "approvedAt": "2026-07-13T09:29:00Z",
+        "authorityRole": "Senior operational approver",
+        "reason": "Approved the initial primary Location Type."
+      }
+    }
+  ],
+  "createdAt": "2026-07-13T09:25:00Z",
+  "updatedAt": "2026-07-13T09:30:00Z"
+}

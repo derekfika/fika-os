@@ -2,16 +2,14 @@
 
 - **Decision ID:** LOC-002
 - **Workbook Decision ID:** DEC-LOC-002
-- **Status:** Draft
+- **Status:** Accepted
 - **Date:** 2026-07-12T08:31:57.824Z
 - **Decision owner:** Derek
 - **Related domains:** Operational Location
 
 ## Context
 
-Business discovery asked: **What is the final business name for the canonical location concept?**
-
-Before approval, the recorded evidence stated: “Site, Location, Venue and Operational Location have different strengths.” The question was recorded as a refinement decision with high repository confidence before approval.
+FIKA has used words such as site, venue and location in different operational contexts. A single umbrella term is required so that those narrower labels do not create competing identities for the same business concept.
 
 ## Decision
 
@@ -19,28 +17,33 @@ Operational Location (OPLOC)
 
 ## Business rationale
 
-FIKA needed one authoritative answer to the ambiguity recorded in [docs/business-workshops/location-domain-workshop-v3.md](../business-workshops/location-domain-workshop-v3.md), specifically the section `Decision 1: Canonical Location`. Without a canonical decision, later documents or applications could interpret this subject differently.
+Site is too narrow because it implies an ongoing operating presence. Venue describes only one operating model, and Location alone is too generic to distinguish the business concept from an address or other place reference.
 
-The approved decision establishes a shared business rule. The alternative—leaving the matter implicit or allowing each implementation to decide independently—was rejected because it would recreate competing business meaning. Historical and supporting material remains evidence, but it cannot override this decision.
+Operational Location accurately describes the durable identity of the place or operating context where FIKA works. OPLOC is the approved internal abbreviation.
 
 ## Positive consequences
 
-- FIKA now has a stable, human-approved rule for this aspect of Operational Location.
-- It provides stable business meaning for later BDR, schema and architecture work.
-- Stage 5 schemas and Stage 6 architecture can trace their treatment of this subject to one canonical source.
-- Application and provider behaviour cannot silently redefine the decision.
+- Teams have one precise umbrella term for every durable operating context.
+
+- Site and Venue can remain meaningful Location Types without competing with the canonical identity.
+
+- Internal documents and cross-application data can use OPLOC consistently.
+
+- User-facing applications may use friendlier labels where appropriate without changing the underlying business meaning.
 
 ## Trade-offs
 
-- The decision constrains local interpretation where consistency is required.
-- Any future change must preserve history and use a superseding or amended BDR rather than silently editing downstream documents.
-- The decision deliberately leaves technology, storage and API design to later stages.
+- FIKA must deliberately replace ambiguous uses of Location where the canonical concept is intended.
+
+- User-facing labels may differ from canonical terminology, so documentation and mappings must keep the relationship clear.
+
+- The Site and Venue catalogue still requires its own Type decisions and is not defined by this naming decision.
 
 ## Implementation implications
 
-Domain models, schemas, architecture and applications must reference the Operational Location identity, lifecycle and relationship rules established here rather than creating competing place identities.
+- Domain documentation and internal contracts should use Operational Location or OPLOC for the canonical concept.
 
-This BDR does not select a database, API, provider, application design or deployment approach.
+- Applications may present context-appropriate labels, but they must map back to the same OPLOC identity and must not redefine Site or Venue as separate umbrella concepts.
 
 ## Related decisions
 
@@ -60,4 +63,6 @@ This BDR does not select a database, API, provider, application design or deploy
 
 ## Future considerations
 
-There are no open discovery questions for this decision. During BDR review, evidence and explanatory text should be checked without altering the Decision section. Later schema, architecture and implementation work must resolve technical detail while preserving this approved business meaning.
+- Future Type BDRs govern the definitions and lifecycle of Site and Venue.
+
+- Terminology guidance may be needed for public-facing labels, translations and training while preserving Operational Location as the canonical business term.

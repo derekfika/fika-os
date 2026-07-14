@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:fika:schema:draft:operational-location-lifecycle-transition:1",
+  "title": "Operational Location Lifecycle Transition v1 (Draft)",
+  "description": "Draft preserved lifecycle transition for an Operational Location. The deliberately narrow lifecycle values compile only accepted Pack 1 behaviour.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "transitionId", "toState", "effectiveAt", "approval"],
+  "properties": {
+    "schemaVersion": { "const": "1.0.0-draft.1" },
+    "transitionId": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "fromState": { "$ref": "#/$defs/lifecycleState" },
+    "toState": { "$ref": "#/$defs/lifecycleState" },
+    "effectiveAt": { "type": "string", "format": "date-time" },
+    "approval": { "$ref": "urn:fika:schema:draft:change-approval:1" }
+  },
+  "$defs": {
+    "lifecycleState": { "type": "string", "enum": ["active", "decommissioned", "merged"] }
+  }
+}

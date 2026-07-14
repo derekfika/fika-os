@@ -1,0 +1,58 @@
+{
+  "schemaVersion": "1.0.0-draft.1",
+  "operationalLocationId": "operational-location-invalid-self",
+  "version": 2,
+  "approvedName": "Invalid Self-Merged Location",
+  "accountableInternalOwnerReference": "internal-owner-assignment-invalid-self",
+  "lifecycleState": "merged",
+  "mergedIntoOperationalLocationId": "operational-location-invalid-self",
+  "aliases": [],
+  "lifecycleHistory": [
+    {
+      "schemaVersion": "1.0.0-draft.1",
+      "transitionId": "invalid-transition-self",
+      "fromState": "active",
+      "toState": "merged",
+      "effectiveAt": "2026-07-13T10:00:00Z",
+      "approval": {
+        "schemaVersion": "1.0.0-draft.1",
+        "approvalId": "invalid-approval-self",
+        "approvedAt": "2026-07-13T09:59:00Z",
+        "authorityRole": "Senior management approver",
+        "reason": "Invalid because an Operational Location cannot survive itself."
+      }
+    }
+  ],
+  "currentLocationTypeAssignment": {
+    "schemaVersion": "1.0.0-draft.1",
+    "assignmentId": "assignment-invalid-self",
+    "operationalLocationId": "operational-location-invalid-self",
+    "locationTypeId": "location-type-site",
+    "effectiveFrom": "2026-07-13T09:30:00Z",
+    "approval": {
+      "schemaVersion": "1.0.0-draft.1",
+      "approvalId": "approval-invalid-type-self",
+      "approvedAt": "2026-07-13T09:29:00Z",
+      "authorityRole": "Senior operational approver",
+      "reason": "Example Type assignment."
+    }
+  },
+  "locationTypeHistory": [
+    {
+      "schemaVersion": "1.0.0-draft.1",
+      "assignmentId": "assignment-invalid-self",
+      "operationalLocationId": "operational-location-invalid-self",
+      "locationTypeId": "location-type-site",
+      "effectiveFrom": "2026-07-13T09:30:00Z",
+      "approval": {
+        "schemaVersion": "1.0.0-draft.1",
+        "approvalId": "approval-invalid-type-self",
+        "approvedAt": "2026-07-13T09:29:00Z",
+        "authorityRole": "Senior operational approver",
+        "reason": "Example Type assignment."
+      }
+    }
+  ],
+  "createdAt": "2026-07-13T09:25:00Z",
+  "updatedAt": "2026-07-13T10:00:00Z"
+}

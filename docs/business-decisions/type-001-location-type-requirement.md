@@ -2,51 +2,72 @@
 
 - **Decision ID:** TYPE-001
 - **Workbook Decision ID:** DEC-TYPE-001
-- **Status:** Draft
+- **Status:** Accepted
 - **Date:** 2026-07-12T08:31:57.824Z
 - **Decision owner:** Derek / Operations
 - **Related domains:** Operational Location
 
 ## Context
 
-Business discovery asked: **Must every location have a type, and who owns the type catalogue?**
+Every OPLOC requires a Location Type so its fundamental operating model is explicit and consistently understood.
 
-Before approval, the recorded evidence stated: “Type may provide defaults, but mandatory use and ownership are open.” The question was recorded as a refinement decision with low repository confidence before approval.
+The former Decision established temporary personal ownership while discovery continued. This governed amendment replaces that temporary rule with durable, role-based Operations ownership while preserving the previous wording and approval history.
 
 ## Decision
 
-Yes. I'll own it for now.
+Every Operational Location must have a Location Type. The Location Type catalogue is owned by the Operations function. Operations Managers and above may administer the catalogue, while material additions, renames and retirements require senior operational approval. Authority is role-based rather than assigned to named individuals. Catalogue administration does not grant authority to redefine canonical business language, and changes with schema, reporting or migration impact require platform-governance assessment.
+
+## Decision history
+
+- **Previous approved Decision:** Yes. I'll own it for now.
+- **Previous Decision date:** 2026-07-12
+- **Amended Decision approved:** 2026-07-13
+- **Amendment reason:** Replaced temporary personal ownership with mandatory Location Type use and durable role-based governance while preserving the previous decision history.
 
 ## Business rationale
 
-FIKA needed one authoritative answer to the ambiguity recorded in [docs/business-workshops/location-type-catalogue.md](../business-workshops/location-type-catalogue.md), specifically the section `Type model questions`. Without a canonical decision, later documents or applications could interpret this subject differently.
+Location Type affects how FIKA describes an OPLOC's fundamental operating model. Its catalogue therefore requires stable organisational ownership and controlled change rather than authority assigned permanently to named individuals.
 
-The approved decision establishes a shared business rule. The alternative—leaving the matter implicit or allowing each implementation to decide independently—was rejected because it would recreate competing business meaning. Historical and supporting material remains evidence, but it cannot override this decision.
+Operations Managers and above may administer the catalogue within approved rules. Material additions, renames and retirements require senior operational approval, while changes with schema, reporting or migration impact also require platform-governance assessment.
 
 ## Positive consequences
 
-- FIKA now has a stable, human-approved rule for this aspect of Operational Location.
-- It directly enabled [TYPE-002](type-002-primary-location-type.md), [TYPE-003](type-003-location-type-history.md) to be decided on a stable basis.
-- Stage 5 schemas and Stage 6 architecture can trace their treatment of this subject to one canonical source.
-- Application and provider behaviour cannot silently redefine the decision.
+- Every OPLOC has an accountable Location Type.
+
+- Catalogue administration continues when individual role holders change.
+
+- Material catalogue changes receive appropriate operational approval.
+
+- Business-language authority remains separate from day-to-day catalogue administration.
+
+- Cross-domain, reporting and migration impacts are assessed before disruptive changes are applied.
 
 ## Trade-offs
 
-- The decision constrains local interpretation where consistency is required.
-- Any future change must preserve history and use a superseding or amended BDR rather than silently editing downstream documents.
-- The decision deliberately leaves technology, storage and API design to later stages.
+- Catalogue changes may require both operational approval and platform-governance assessment.
+
+- Role-based authority requires clear assignments and audit history.
+
+- Operational administration cannot be used as a shortcut to redefine canonical language.
 
 ## Implementation implications
 
-Domain models, schemas, architecture and applications must reference the Operational Location identity, lifecycle and relationship rules established here rather than creating competing place identities.
+- Future workflows must use organisational roles and approval authority rather than fixed lists of named individuals.
 
-This BDR does not select a database, API, provider, application design or deployment approach.
+- Location Type administration must distinguish routine catalogue maintenance from material additions, renames and retirements.
+
+- Any later schema, reporting or migration work must trace its Location Type governance to this amended Decision.
 
 ## Related decisions
 
 - **Depends on:** [LOC-001 — Operational Location Definition](loc-001-operational-location.md)
 - **Directly informs:** [TYPE-002 — Primary Location Type](type-002-primary-location-type.md)
 - **Directly informs:** [TYPE-003 — Location Type History](type-003-location-type-history.md)
+
+Source traceability links retained for reversible Markdown reconstruction:
+
+- [TYPE-002](type-002-primary-location-type.md)
+- [TYPE-003](type-003-location-type-history.md)
 
 ## Evidence
 
@@ -57,9 +78,13 @@ This BDR does not select a database, API, provider, application design or deploy
 
 ## Supersedes / Superseded by
 
-- **Supersedes:** None
+- **Supersedes:** Previous TYPE-001 Decision approved 2026-07-12 — Yes. I'll own it for now.
 - **Superseded by:** None
 
 ## Future considerations
 
-There are no open discovery questions for this decision. During BDR review, evidence and explanatory text should be checked without altering the Decision section. Later schema, architecture and implementation work must resolve technical detail while preserving this approved business meaning.
+- Stage 5 may express the mandatory Location Type relationship and catalogue governance only after authorised repository write-back and BDR acceptance.
+
+- Future governance may refine assignment, delegation and audit requirements without reverting to named-person authority.
+
+- No schema is authorised by this amendment task.

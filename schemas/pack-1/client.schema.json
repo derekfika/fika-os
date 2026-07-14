@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:fika:schema:draft:client:1",
+  "title": "FikaClient v1 (Draft)",
+  "description": "Draft stable identity for an external organisation with which FIKA has a commercial or operational relationship. Client Contacts and Operational Locations remain separate records.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "clientId", "version", "approvedName", "createdAt", "updatedAt"],
+  "properties": {
+    "schemaVersion": { "const": "1.0.0-draft.1" },
+    "clientId": { "type": "string", "minLength": 1, "maxLength": 128, "description": "Stable Client identifier independent of any Operational Location." },
+    "version": { "type": "integer", "minimum": 1, "description": "Version of this Draft Client record." },
+    "approvedName": { "type": "string", "minLength": 1, "maxLength": 240, "description": "Current approved name used to identify the external organisation." },
+    "createdAt": { "type": "string", "format": "date-time" },
+    "updatedAt": { "type": "string", "format": "date-time" }
+  }
+}

@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:fika:schema:draft:location-type:1",
+  "title": "Location Type v1 (Draft)",
+  "description": "Draft governed catalogue entry describing an Operational Location's fundamental operating model. Catalogue records are used instead of a schema enum so governed catalogue change does not redefine Operational Location identity.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "locationTypeId", "version", "name", "definition", "catalogueState", "changeHistory", "createdAt", "updatedAt"],
+  "properties": {
+    "schemaVersion": { "const": "1.0.0-draft.1" },
+    "locationTypeId": { "type": "string", "minLength": 1, "maxLength": 128, "description": "Stable Location Type catalogue identifier." },
+    "version": { "type": "integer", "minimum": 1 },
+    "name": { "type": "string", "minLength": 1, "maxLength": 120, "description": "Current approved catalogue name. Site and Venue are the currently confirmed entries." },
+    "definition": { "type": "string", "minLength": 1, "maxLength": 2000, "description": "Approved description of the fundamental operating model." },
+    "catalogueState": { "type": "string", "enum": ["active", "retired"], "description": "Minimal catalogue state required to preserve retirement without deleting the entry." },
+    "changeHistory": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/catalogueChange" },
+      "description": "Governed material additions, renames and retirements in effective order. Routine administration that does not change business meaning is not represented here."
+    },
+    "createdAt": { "type": "string", "format": "date-time" },
+    "updatedAt": { "type": "string", "format": "date-time" }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "catalogueState": { "const": "retired" } }, "required": ["catalogueState"] },
+      "then": { "properties": { "changeHistory": { "contains": { "type": "object", "properties": { "changeType": { "const": "retire" } }, "required": ["changeType"] } } } }
+    }
+  ],
+  "$defs": {
+    "catalogueChange": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["changeId", "changeType", "effectiveAt", "newName", "approval"],
+      "properties": {
+        "changeId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "changeType": { "type": "string", "enum": ["add", "rename", "retire"] },
+        "previousName": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "newName": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "effectiveAt": { "type": "string", "format": "date-time" },
+        "approval": { "$ref": "urn:fika:schema:draft:change-approval:1" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "changeType": { "const": "rename" } }, "required": ["changeType"] },
+          "then": { "required": ["previousName"] }
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "schemaVersion": "1.0.0-draft.1",
+  "clientId": "client-invalid-001",
+  "version": 1,
+  "approvedName": "Invalid Embedded Contact Client",
+  "contacts": [
+    { "name": "Must remain a separate Client Contact record" }
+  ],
+  "createdAt": "2026-07-13T09:00:00Z",
+  "updatedAt": "2026-07-13T09:00:00Z"
+}
