@@ -1,0 +1,1823 @@
+﻿diff --git "a/schemas\\pack-4\\booking-amendment-action.schema.json" "b/schemas\\pack-4\\booking-amendment-action.schema.json"
+new file mode 100644
+index 0000000..5bc96c0
+--- /dev/null
++++ "b/schemas\\pack-4\\booking-amendment-action.schema.json"
+@@ -0,0 +1,82 @@
++{
++  "$schema": "https://json-schema.org/draft/2020-12/schema",
++  "$id": "https://fika-os.local/schemas/pack-4/booking-amendment-action.schema.json",
++  "title": "Booking Amendment Cancellation or Decline Action",
++  "description": "Draft business contract for audited amendment, cancellation and decline actions from BOOK-006.",
++  "type": "object",
++  "additionalProperties": false,
++  "required": [
++    "schemaVersion",
++    "id",
++    "sourceDecisionIds",
++    "bookingId",
++    "actionType",
++    "reason",
++    "auditHistoryPreserved",
++    "createdAt",
++    "updatedAt"
++  ],
++  "properties": {
++    "schemaVersion": {
++      "type": "string",
++      "const": "pack-4-draft"
++    },
++    "id": {
++      "type": "string",
++      "minLength": 1
++    },
++    "sourceDecisionIds": {
++      "type": "array",
++      "items": {
++        "type": "string"
++      },
++      "minItems": 1
++    },
++    "createdAt": {
++      "type": "string"
++    },
++    "updatedAt": {
++      "type": "string"
++    },
++    "notes": {
++      "type": "string"
++    },
++    "bookingId": {
++      "type": "string",
++      "minLength": 1
++    },
++    "actionType": {
++      "type": "string",
++      "enum": [
++        "amend",
++        "cancel",
++        "decline"
++      ]
++    },
++    "reason": {
++      "type": "string",
++      "minLength": 1
++    },
++    "responsibleBusinessOwner": {
++      "type": "string"
++    },
++    "approvalReference": {
++      "type": "string"
++    },
++    "previousVersion": {
++      "type": "integer",
++      "minimum": 1
++    },
++    "newVersion": {
++      "type": "integer",
++      "minimum": 1
++    },
++    "auditHistoryPreserved": {
++      "type": "boolean",
++      "const": true
++    },
++    "effectiveAt": {
++      "type": "string"
++    }
++  }
++}
+diff --git "a/schemas\\pack-4\\booking-dietary-allergen-requirement.schema.json" "b/schemas\\pack-4\\booking-dietary-allergen-requirement.schema.json"
+new file mode 100644
+index 0000000..7a649b2
+--- /dev/null
++++ "b/schemas\\pack-4\\booking-dietary-allergen-requirement.schema.json"
+@@ -0,0 +1,102 @@
++{
++  "$schema": "https://json-schema.org/draft/2020-12/schema",
++  "$id": "https://fika-os.local/schemas/pack-4/booking-dietary-allergen-requirement.schema.json",
++  "title": "Booking Dietary and Allergen Requirement",
++  "description": "Draft business contract for allergy, dietary, labelling, menu and allergen-matrix obligations from BOOK-003.",
++  "type": "object",
++  "additionalProperties": false,
++  "required": [
++    "schemaVersion",
++    "id",
++    "sourceDecisionIds",
++    "requirementType",
++    "description",
++    "customerDisclosure",
++    "createdAt",
++    "updatedAt"
++  ],
++  "properties": {
++    "schemaVersion": {
++      "type": "string",
++      "const": "pack-4-draft"
++    },
++    "id": {
++      "type": "string",
++      "minLength": 1
++    },
++    "sourceDecisionIds": {
++      "type": "array",
++      "items": {
++        "type": "string"
++      },
++      "minItems": 1
++    },
++    "createdAt": {
++      "type": "string"
++    },
++    "updatedAt": {
++      "type": "string"
++    },
++    "notes": {
++      "type": "string"
++    },
++    "requirementType": {
++      "type": "string",
++      "enum": [
++        "allergy",
++        "dietary",
++        "allergen_matrix",
++        "labelling",
++        "menu_disclosure",
++        "other"
++      ]
++    },
++    "description": {
++      "type": "string",
++      "minLength": 1
++    },
++    "appliesTo": {
++      "type": "object",
++      "additionalProperties": false,
++      "required": [],
++      "properties": {
++        "bookingItemIds": {
++          "type": "array",
++          "items": {
++            "type": "string"
++          }
++        },
++        "personLabel": {
++          "type": "string"
++        },
++        "groupLabel": {
++          "type": "string"
++        }
++      }
++    },
++    "customerDisclosure": {
++      "type": "object",
++      "additionalProperties": false,
++      "required": [
++        "required"
++      ],
++      "properties": {
++        "required": {
++          "type": "boolean"
++        },
++        "method": {
++          "type": "string",
++          "enum": [
++            "label",
++            "menu",
++            "allergen_matrix_printout",
++            "other"
++          ]
++        },
++        "evidenceReference": {
++          "type": "string"
++        }
++      }
++    }
++  }
++}
+diff --git "a/schemas\\pack-4\\booking-item-quantity.schema.json" "b/schemas\\pack-4\\booking-item-quantity.schema.json"
+new file mode 100644
+index 0000000..73941a8
+--- /dev/null
++++ "b/schemas\\pack-4\\booking-item-quantity.schema.json"
+@@ -0,0 +1,123 @@
++{
++  "$schema": "https://json-schema.org/draft/2020-12/schema",
++  "$id": "https://fika-os.local/schemas/pack-4/booking-item-quantity.schema.json",
++  "title": "Booking Item Quantity and Unit",
++  "description": "Draft business contract preserving what the customer ordered and what Production must prepare from BOOK-002.",
++  "type": "object",
++  "additionalProperties": false,
++  "required": [
++    "schemaVersion",
++    "id",
++    "sourceDecisionIds",
++    "bookingItemId",
++    "ordered",
++    "createdAt",
++    "updatedAt"
++  ],
++  "properties": {
++    "schemaVersion": {
++      "type": "string",
++      "const": "pack-4-draft"
++    },
++    "id": {
++      "type": "string",
++      "minLength": 1
++    },
++    "sourceDecisionIds": {
++      "type": "array",
++      "items": {
++        "type": "string"
++      },
++      "minItems": 1
++    },
++    "createdAt": {
++      "type": "string"
++    },
++    "updatedAt": {
++      "type": "string"
++    },
++    "notes": {
++      "type": "string"
++    },
++    "bookingItemId": {
++      "type": "string",
++      "minLength": 1
++    },
++    "ordered": {
++      "type": "object",
++      "additionalProperties": false,
++      "required": [
++        "quantity",
++        "unitLabel"
++      ],
++      "properties": {
++        "quantity": {
++          "type": "number",
++          "exclusiveMinimum": 0
++        },
++        "unitLabel": {
++          "type": "string",
++          "minLength": 1
++        },
++        "unitCode": {
++          "type": "string"
++        },
++        "catalogueReference": {
++          "type": "string"
++        }
++      }
++    },
++    "productionConversion": {
++      "type": "object",
++      "additionalProperties": false,
++      "required": [
++        "conversionType",
++        "factor"
++      ],
++      "properties": {
++        "conversionType": {
++          "type": "string",
++          "enum": [
++            "serves_per_unit",
++            "pieces_per_person",
++            "other"
++          ]
++        },
++        "factor": {
++          "type": "number",
++          "exclusiveMinimum": 0
++        },
++        "outputUnitLabel": {
++          "type": "string"
++        },
++        "sourceReference": {
++          "type": "string"
++        }
++      }
++    },
++    "productionQuantity": {
++      "type": "object",
++      "additionalProperties": false,
++      "required": [
++        "quantity",
++        "unitLabel"
++      ],
++      "properties": {
++        "quantity": {
++          "type": "number",
++          "exclusiveMinimum": 0
++        },
++        "unitLabel": {
++          "type": "string",
++          "minLength": 1
++        },
++        "unitCode": {
++          "type": "string"
++        },
++        "catalogueReference": {
++          "type": "string"
++        }
++      }
++    }
++  }
++}
+diff --git "a/schemas\\pack-4\\booking-price-snapshot.schema.json" "b/schemas\\pack-4\\booking-price-snapshot.schema.json"
+new file mode 100644
+index 0000000..a8a2f59
+--- /dev/null
++++ "b/schemas\\pack-4\\booking-price-snapshot.schema.json"
+@@ -0,0 +1,137 @@
++{
++  "$schema": "https://json-schema.org/draft/2020-12/schema",
++  "$id": "https://fika-os.local/schemas/pack-4/booking-price-snapshot.schema.json",
++  "title": "Booking Price Snapshot",
++  "description": "Draft business contract for immutable accepted price snapshots and amendment versions from BOOK-004.",
++  "type": "object",
++  "additionalProperties": false,
++  "required": [
++    "schemaVersion",
++    "id",
++    "sourceDecisionIds",
++    "bookingId",
++    "snapshotVersion",
++    "snapshotStatus",
++    "immutableAfterAcceptance",
++    "subtotalExVat",
++    "createdAt",
++    "updatedAt"
++  ],
++  "properties": {
++    "schemaVersion": {
++      "type": "string",
++      "const": "pack-4-draft"
++    },
++    "id": {
++      "type": "string",
++      "minLength": 1
++    },
++    "sourceDecisionIds": {
++      "type": "array",
++      "items": {
++        "type": "string"
++      },
++      "minItems": 1
++    },
++    "createdAt": {
++      "type": "string"
++    },
++    "updatedAt": {
++      "type": "string"
++    },
++    "notes": {
++      "type": "string"
++    },
++    "bookingId": {
++      "type": "string",
++      "minLength": 1
++    },
++    "snapshotVersion": {
++      "type": "integer",
++      "minimum": 1
++    },
++    "snapshotStatus": {
++      "type": "string",
++      "enum": [
++        "submitted",
++        "accepted",
++        "superseded_by_amendment"
++      ]
++    },
++    "immutableAfterAcceptance": {
++      "type": "boolean",
++      "const": true
++    },
++    "supersedesSnapshotId": {
++      "type": "string"
++    },
++    "subtotalExVat": {
++      "type": "object",
++      "additionalProperties": false,
++      "required": [
++        "amountMinor",
++        "currency"
++      ],
++      "properties": {
++        "amountMinor": {
++          "type": "integer"
++        },
++        "currency": {
++          "type": "string",
++          "minLength": 3
++        }
++      }
++    },
++    "chargesTotal": {
++      "type": "object",
++      "additionalProperties": false,
++      "required": [
++        "amountMinor",
++        "currency"
++      ],
++      "properties": {
++        "amountMinor": {
++          "type": "integer"
++        },
++        "currency": {
++          "type": "string",
++          "minLength": 3
++        }
++      }
++    },
++    "vatTotal": {
++      "type": "object",
++      "additionalProperties": false,
++      "required": [
++        "amountMinor",
++        "currency"
++      ],
++      "properties": {
++        "amountMinor": {
++          "type": "integer"
++        },
++        "currency": {
++          "type": "string",
++          "minLength": 3
++        }
++      }
++    },
++    "totalIncVat": {
++      "type": "object",
++      "additionalProperties": false,
++      "required": [
++        "amountMinor",
++        "currency"
++      ],
++      "properties": {
++        "amountMinor": {
++          "type": "integer"
++        },
++        "currency": {
++          "type": "string",
++          "minLength": 3
++        }
++      }
++    }
++  }
++}
+diff --git "a/schemas\\pack-4\\booking-service-time.schema.json" "b/schemas\\pack-4\\booking-service-time.schema.json"
+new file mode 100644
+index 0000000..866a326
+--- /dev/null
++++ "b/schemas\\pack-4\\booking-service-time.schema.json"
+@@ -0,0 +1,58 @@
++{
++  "$schema": "https://json-schema.org/draft/2020-12/schema",
++  "$id": "https://fika-os.local/schemas/pack-4/booking-service-time.schema.json",
++  "title": "Booking Service Time",
++  "description": "Draft business contract for mandatory booking service start time from BOOK-001.",
++  "type": "object",
++  "additionalProperties": false,
++  "required": [
++    "schemaVersion",
++    "id",
++    "sourceDecisionIds",
++    "serviceStartAt",
++    "createdAt",
++    "updatedAt"
++  ],
++  "properties": {
++    "schemaVersion": {
++      "type": "string",
++      "const": "pack-4-draft"
++    },
++    "id": {
++      "type": "string",
++      "minLength": 1
++    },
++    "sourceDecisionIds": {
++      "type": "array",
++      "items": {
++        "type": "string"
++      },
++      "minItems": 1
++    },
++    "createdAt": {
++      "type": "string"
++    },
++    "updatedAt": {
++      "type": "string"
++    },
++    "notes": {
++      "type": "string"
++    },
++    "serviceStartAt": {
++      "type": "string",
++      "description": "Mandatory service time: start time of the booking."
++    },
++    "preferredArrivalAt": {
++      "type": "string"
++    },
++    "preferredEndAt": {
++      "type": "string"
++    },
++    "preferredCollectionAt": {
++      "type": "string"
++    },
++    "timezone": {
++      "type": "string"
++    }
++  }
++}
+diff --git "a/schemas\\pack-4\\booking-source-reference.schema.json" "b/schemas\\pack-4\\booking-source-reference.schema.json"
+new file mode 100644
+index 0000000..8f764bd
+--- /dev/null
++++ "b/schemas\\pack-4\\booking-source-reference.schema.json"
+@@ -0,0 +1,92 @@
++{
++  "$schema": "https://json-schema.org/draft/2020-12/schema",
++  "$id": "https://fika-os.local/schemas/pack-4/booking-source-reference.schema.json",
++  "title": "Booking Source Reference",
++  "description": "Draft business contract for channel-neutral source metadata and stable source references from BOOK-007.",
++  "type": "object",
++  "additionalProperties": false,
++  "required": [
++    "schemaVersion",
++    "id",
++    "sourceDecisionIds",
++    "bookingId",
++    "sourceChannel",
++    "stableSourceReference",
++    "parserDetailStoredOutsideBooking",
++    "createdAt",
++    "updatedAt"
++  ],
++  "properties": {
++    "schemaVersion": {
++      "type": "string",
++      "const": "pack-4-draft"
++    },
++    "id": {
++      "type": "string",
++      "minLength": 1
++    },
++    "sourceDecisionIds": {
++      "type": "array",
++      "items": {
++        "type": "string"
++      },
++      "minItems": 1
++    },
++    "createdAt": {
++      "type": "string"
++    },
++    "updatedAt": {
++      "type": "string"
++    },
++    "notes": {
++      "type": "string"
++    },
++    "bookingId": {
++      "type": "string",
++      "minLength": 1
++    },
++    "sourceChannel": {
++      "type": "string",
++      "enum": [
++        "direct_platform",
++        "email",
++        "manual",
++        "legacy",
++        "other"
++      ]
++    },
++    "stableSourceReference": {
++      "type": "string",
++      "minLength": 1
++    },
++    "submittedAt": {
++      "type": "string"
++    },
++    "sourceMetadata": {
++      "type": "object",
++      "additionalProperties": false,
++      "required": [],
++      "properties": {
++        "originSystemLabel": {
++          "type": "string"
++        },
++        "submissionId": {
++          "type": "string"
++        },
++        "idempotencyKey": {
++          "type": "string"
++        },
++        "messageId": {
++          "type": "string"
++        },
++        "legacyReference": {
++          "type": "string"
++        }
++      }
++    },
++    "parserDetailStoredOutsideBooking": {
++      "type": "boolean",
++      "const": true
++    }
++  }
++}
+diff --git "a/schemas\\pack-4\\booking-vat-total.schema.json" "b/schemas\\pack-4\\booking-vat-total.schema.json"
+new file mode 100644
+index 0000000..360d485
+--- /dev/null
++++ "b/schemas\\pack-4\\booking-vat-total.schema.json"
+@@ -0,0 +1,127 @@
++{
++  "$schema": "https://json-schema.org/draft/2020-12/schema",
++  "$id": "https://fika-os.local/schemas/pack-4/booking-vat-total.schema.json",
++  "title": "Booking VAT Rounding and Totals",
++  "description": "Draft business contract for ex-VAT pricing, end-of-quote VAT calculation and round-up preference from BOOK-005.",
++  "type": "object",
++  "additionalProperties": false,
++  "required": [
++    "schemaVersion",
++    "id",
++    "sourceDecisionIds",
++    "pricingBasis",
++    "vatCalculationPoint",
++    "roundingPreference",
++    "subtotalExVat",
++    "vatAmount",
++    "totalIncVat",
++    "createdAt",
++    "updatedAt"
++  ],
++  "properties": {
++    "schemaVersion": {
++      "type": "string",
++      "const": "pack-4-draft"
++    },
++    "id": {
++      "type": "string",
++      "minLength": 1
++    },
++    "sourceDecisionIds": {
++      "type": "array",
++      "items": {
++        "type": "string"
++      },
++      "minItems": 1
++    },
++    "createdAt": {
++      "type": "string"
++    },
++    "updatedAt": {
++      "type": "string"
++    },
++    "notes": {
++      "type": "string"
++    },
++    "pricingBasis": {
++      "type": "string",
++      "const": "ex_vat"
++    },
++    "vatCalculationPoint": {
++      "type": "string",
++      "const": "quote_total"
++    },
++    "roundingPreference": {
++      "type": "string",
++      "const": "round_up"
++    },
++    "subtotalExVat": {
++      "type": "object",
++      "additionalProperties": false,
++      "required": [
++        "amountMinor",
++        "currency"
++      ],
++      "properties": {
++        "amountMinor": {
++          "type": "integer"
++        },
++        "currency": {
++          "type": "string",
++          "minLength": 3
++        }
++      }
++    },
++    "vatAmount": {
++      "type": "object",
++      "additionalProperties": false,
++      "required": [
++        "amountMinor",
++        "currency"
++      ],
++      "properties": {
++        "amountMinor": {
++          "type": "integer"
++        },
++        "currency": {
++          "type": "string",
++          "minLength": 3
++        }
++      }
++    },
++    "totalIncVat": {
++      "type": "object",
++      "additionalProperties": false,
++      "required": [
++        "amountMinor",
++        "currency"
++      ],
++      "properties": {
++        "amountMinor": {
++          "type": "integer"
++        },
++        "currency": {
++          "type": "string",
++          "minLength": 3
++        }
++      }
++    },
++    "roundingAdjustment": {
++      "type": "object",
++      "additionalProperties": false,
++      "required": [
++        "amountMinor",
++        "currency"
++      ],
++      "properties": {
++        "amountMinor": {
++          "type": "integer"
++        },
++        "currency": {
++          "type": "string",
++          "minLength": 3
++        }
++      }
++    }
++  }
++}
+diff --git "a/schemas\\pack-4\\schema-index.md" "b/schemas\\pack-4\\schema-index.md"
+new file mode 100644
+index 0000000..9337362
+--- /dev/null
++++ "b/schemas\\pack-4\\schema-index.md"
+@@ -0,0 +1,9 @@
++# Pack 4 Schema Index
++
++- [booking-amendment-action.schema.json](booking-amendment-action.schema.json)
++- [booking-dietary-allergen-requirement.schema.json](booking-dietary-allergen-requirement.schema.json)
++- [booking-item-quantity.schema.json](booking-item-quantity.schema.json)
++- [booking-price-snapshot.schema.json](booking-price-snapshot.schema.json)
++- [booking-service-time.schema.json](booking-service-time.schema.json)
++- [booking-source-reference.schema.json](booking-source-reference.schema.json)
++- [booking-vat-total.schema.json](booking-vat-total.schema.json)
+diff --git "a/schemas\\pack-4\\validate-fixtures.js" "b/schemas\\pack-4\\validate-fixtures.js"
+new file mode 100644
+index 0000000..88ee843
+--- /dev/null
++++ "b/schemas\\pack-4\\validate-fixtures.js"
+@@ -0,0 +1,3 @@
++﻿const fs=require('fs'); const path=require('path');
++function check(s,o,p='') { let e=[]; if(s.type==='object'){ if(o===null||Array.isArray(o)||typeof o!=='object') return [`${p||'/'}: expected object`]; for(const r of (s.required||[])) if(!(r in o)) e.push(`${p}/${r}: required property missing`); if(s.additionalProperties===false) for(const k of Object.keys(o)) if(!s.properties||!(k in s.properties)) e.push(`${p}/${k}: additional property not allowed`); for(const [k,v] of Object.entries(o)) if(s.properties&&s.properties[k]) e=e.concat(check(s.properties[k],v,`${p}/${k}`)); } else if(s.type==='array'){ if(!Array.isArray(o)) e.push(`${p}: expected array`); else { if(s.minItems&&o.length<s.minItems) e.push(`${p}: too few items`); o.forEach((x,i)=>{ if(s.items) e=e.concat(check(s.items,x,`${p}/${i}`)); }); } } else if(s.type==='string'){ if(typeof o!=='string') e.push(`${p}: expected string`); if(s.const!==undefined&&o!==s.const) e.push(`${p}: expected const ${s.const}`); if(s.enum&&!s.enum.includes(o)) e.push(`${p}: not in enum`); if(s.minLength&&o.length<s.minLength) e.push(`${p}: too short`); } else if(s.type==='integer'){ if(!Number.isInteger(o)) e.push(`${p}: expected integer`); if(s.minimum!==undefined&&o<s.minimum) e.push(`${p}: below minimum`); } else if(s.type==='number'){ if(typeof o!=='number') e.push(`${p}: expected number`); if(s.exclusiveMinimum!==undefined&&!(o>s.exclusiveMinimum)) e.push(`${p}: not above exclusive minimum`); } else if(s.type==='boolean'){ if(typeof o!=='boolean') e.push(`${p}: expected boolean`); if(s.const!==undefined&&o!==s.const) e.push(`${p}: expected const ${s.const}`); } return e; }
++const base=path.resolve(__dirname); let results=[], failures=0; for(const sf of fs.readdirSync(base).filter(f=>f.endsWith('.schema.json')).sort()){ const s=JSON.parse(fs.readFileSync(path.join(base,sf),'utf8')); const stem=sf.replace('.schema.json',''); for(const [kind,expected] of [['valid','pass'],['invalid','fail']]){ const fp=path.join(base,'fixtures',kind,`${kind}-${stem}.json`); const o=JSON.parse(fs.readFileSync(fp,'utf8')); const errors=check(s,o); const actual=errors.length?'fail':'pass'; const passed=actual===expected; if(!passed) failures++; results.push({schema:sf,fixture:path.basename(fp),expected,actual,passed,errors}); }} console.log(JSON.stringify({validator:'local structural subset validator',failures,results},null,2)); process.exit(failures?1:0);
+diff --git "a/schemas\\pack-4\\fixtures\\invalid\\invalid-booking-amendment-action.json" "b/schemas\\pack-4\\fixtures\\invalid\\invalid-booking-amendment-action.json"
+new file mode 100644
+index 0000000..293bffc
+--- /dev/null
++++ "b/schemas\\pack-4\\fixtures\\invalid\\invalid-booking-amendment-action.json"
+@@ -0,0 +1,15 @@
++{
++  "schemaVersion": "pack-4-draft",
++  "id": "baa-001",
++  "sourceDecisionIds": [
++    "BOOK-006"
++  ],
++  "bookingId": "booking-001",
++  "actionType": "cancel",
++  "reason": "Customer request cannot proceed",
++  "auditHistoryPreserved": false,
++  "previousVersion": 1,
++  "newVersion": 2,
++  "createdAt": "2026-07-14T19:00:00Z",
++  "updatedAt": "2026-07-14T19:00:00Z"
++}
+diff --git "a/schemas\\pack-4\\fixtures\\invalid\\invalid-booking-dietary-allergen-requirement.json" "b/schemas\\pack-4\\fixtures\\invalid\\invalid-booking-dietary-allergen-requirement.json"
+new file mode 100644
+index 0000000..9ca8b2e
+--- /dev/null
++++ "b/schemas\\pack-4\\fixtures\\invalid\\invalid-booking-dietary-allergen-requirement.json"
+@@ -0,0 +1,21 @@
++{
++  "schemaVersion": "pack-4-draft",
++  "id": "bdar-001",
++  "sourceDecisionIds": [
++    "BOOK-003"
++  ],
++  "requirementType": "allergy",
++  "description": "Declared allergy requiring customer-facing disclosure",
++  "appliesTo": {
++    "bookingItemIds": [
++      "item-001"
++    ],
++    "personLabel": "Guest 1"
++  },
++  "customerDisclosure": {
++    "required": true,
++    "unexpected": "bad"
++  },
++  "createdAt": "2026-07-14T19:00:00Z",
++  "updatedAt": "2026-07-14T19:00:00Z"
++}
+diff --git "a/schemas\\pack-4\\fixtures\\invalid\\invalid-booking-item-quantity.json" "b/schemas\\pack-4\\fixtures\\invalid\\invalid-booking-item-quantity.json"
+new file mode 100644
+index 0000000..207fb3c
+--- /dev/null
++++ "b/schemas\\pack-4\\fixtures\\invalid\\invalid-booking-item-quantity.json"
+@@ -0,0 +1,27 @@
++{
++  "schemaVersion": "pack-4-draft",
++  "id": "biq-001",
++  "sourceDecisionIds": [
++    "BOOK-002"
++  ],
++  "bookingItemId": "item-001",
++  "ordered": {
++    "quantity": 10,
++    "unitLabel": "people"
++  },
++  "productionConversion": {
++    "conversionType": "pieces_per_person",
++    "factor": 2,
++    "outputUnitLabel": "pieces",
++    "sourceReference": "approved-hospitality-brochure-or-production-process"
++  },
++  "productionQuantity": {
++    "quantity": 20,
++    "unitLabel": "pieces"
++  },
++  "createdAt": "2026-07-14T19:00:00Z",
++  "updatedAt": "2026-07-14T19:00:00Z",
++  "providerPayload": {
++    "not": "canonical"
++  }
++}
+diff --git "a/schemas\\pack-4\\fixtures\\invalid\\invalid-booking-price-snapshot.json" "b/schemas\\pack-4\\fixtures\\invalid\\invalid-booking-price-snapshot.json"
+new file mode 100644
+index 0000000..b429814
+--- /dev/null
++++ "b/schemas\\pack-4\\fixtures\\invalid\\invalid-booking-price-snapshot.json"
+@@ -0,0 +1,25 @@
++{
++  "schemaVersion": "pack-4-draft",
++  "id": "bps-001",
++  "sourceDecisionIds": [
++    "BOOK-004"
++  ],
++  "bookingId": "booking-001",
++  "snapshotVersion": 1,
++  "snapshotStatus": "accepted",
++  "immutableAfterAcceptance": false,
++  "subtotalExVat": {
++    "amountMinor": 10000,
++    "currency": "GBP"
++  },
++  "vatTotal": {
++    "amountMinor": 2000,
++    "currency": "GBP"
++  },
++  "totalIncVat": {
++    "amountMinor": 12000,
++    "currency": "GBP"
++  },
++  "createdAt": "2026-07-14T19:00:00Z",
++  "updatedAt": "2026-07-14T19:00:00Z"
++}
+diff --git "a/schemas\\pack-4\\fixtures\\invalid\\invalid-booking-service-time.json" "b/schemas\\pack-4\\fixtures\\invalid\\invalid-booking-service-time.json"
+new file mode 100644
+index 0000000..0910e76
+--- /dev/null
++++ "b/schemas\\pack-4\\fixtures\\invalid\\invalid-booking-service-time.json"
+@@ -0,0 +1,10 @@
++{
++  "schemaVersion": "pack-4-draft",
++  "id": "bst-001",
++  "sourceDecisionIds": [
++    "BOOK-001"
++  ],
++  "timezone": "Europe/London",
++  "createdAt": "2026-07-14T19:00:00Z",
++  "updatedAt": "2026-07-14T19:00:00Z"
++}
+diff --git "a/schemas\\pack-4\\fixtures\\invalid\\invalid-booking-source-reference.json" "b/schemas\\pack-4\\fixtures\\invalid\\invalid-booking-source-reference.json"
+new file mode 100644
+index 0000000..fd25904
+--- /dev/null
++++ "b/schemas\\pack-4\\fixtures\\invalid\\invalid-booking-source-reference.json"
+@@ -0,0 +1,16 @@
++{
++  "schemaVersion": "pack-4-draft",
++  "id": "bsr-001",
++  "sourceDecisionIds": [
++    "BOOK-007"
++  ],
++  "bookingId": "booking-001",
++  "sourceChannel": "email",
++  "stableSourceReference": "gmail-message-id-placeholder",
++  "parserDetailStoredOutsideBooking": false,
++  "sourceMetadata": {
++    "messageId": "gmail-message-id-placeholder"
++  },
++  "createdAt": "2026-07-14T19:00:00Z",
++  "updatedAt": "2026-07-14T19:00:00Z"
++}
+diff --git "a/schemas\\pack-4\\fixtures\\invalid\\invalid-booking-vat-total.json" "b/schemas\\pack-4\\fixtures\\invalid\\invalid-booking-vat-total.json"
+new file mode 100644
+index 0000000..28c207d
+--- /dev/null
++++ "b/schemas\\pack-4\\fixtures\\invalid\\invalid-booking-vat-total.json"
+@@ -0,0 +1,24 @@
++{
++  "schemaVersion": "pack-4-draft",
++  "id": "bvt-001",
++  "sourceDecisionIds": [
++    "BOOK-005"
++  ],
++  "pricingBasis": "inc_vat",
++  "vatCalculationPoint": "quote_total",
++  "roundingPreference": "round_up",
++  "subtotalExVat": {
++    "amountMinor": 10000,
++    "currency": "GBP"
++  },
++  "vatAmount": {
++    "amountMinor": 2000,
++    "currency": "GBP"
++  },
++  "totalIncVat": {
++    "amountMinor": 12000,
++    "currency": "GBP"
++  },
++  "createdAt": "2026-07-14T19:00:00Z",
++  "updatedAt": "2026-07-14T19:00:00Z"
++}
+diff --git "a/schemas\\pack-4\\fixtures\\valid\\valid-booking-amendment-action.json" "b/schemas\\pack-4\\fixtures\\valid\\valid-booking-amendment-action.json"
+new file mode 100644
+index 0000000..9d2feb8
+--- /dev/null
++++ "b/schemas\\pack-4\\fixtures\\valid\\valid-booking-amendment-action.json"
+@@ -0,0 +1,15 @@
++{
++  "schemaVersion": "pack-4-draft",
++  "id": "baa-001",
++  "sourceDecisionIds": [
++    "BOOK-006"
++  ],
++  "bookingId": "booking-001",
++  "actionType": "cancel",
++  "reason": "Customer request cannot proceed",
++  "auditHistoryPreserved": true,
++  "previousVersion": 1,
++  "newVersion": 2,
++  "createdAt": "2026-07-14T19:00:00Z",
++  "updatedAt": "2026-07-14T19:00:00Z"
++}
+diff --git "a/schemas\\pack-4\\fixtures\\valid\\valid-booking-dietary-allergen-requirement.json" "b/schemas\\pack-4\\fixtures\\valid\\valid-booking-dietary-allergen-requirement.json"
+new file mode 100644
+index 0000000..d4b9aae
+--- /dev/null
++++ "b/schemas\\pack-4\\fixtures\\valid\\valid-booking-dietary-allergen-requirement.json"
+@@ -0,0 +1,22 @@
++{
++  "schemaVersion": "pack-4-draft",
++  "id": "bdar-001",
++  "sourceDecisionIds": [
++    "BOOK-003"
++  ],
++  "requirementType": "allergy",
++  "description": "Declared allergy requiring customer-facing disclosure",
++  "appliesTo": {
++    "bookingItemIds": [
++      "item-001"
++    ],
++    "personLabel": "Guest 1"
++  },
++  "customerDisclosure": {
++    "required": true,
++    "method": "menu",
++    "evidenceReference": "menu-or-label-reference"
++  },
++  "createdAt": "2026-07-14T19:00:00Z",
++  "updatedAt": "2026-07-14T19:00:00Z"
++}
+diff --git "a/schemas\\pack-4\\fixtures\\valid\\valid-booking-item-quantity.json" "b/schemas\\pack-4\\fixtures\\valid\\valid-booking-item-quantity.json"
+new file mode 100644
+index 0000000..f5c25aa
+--- /dev/null
++++ "b/schemas\\pack-4\\fixtures\\valid\\valid-booking-item-quantity.json"
+@@ -0,0 +1,24 @@
++{
++  "schemaVersion": "pack-4-draft",
++  "id": "biq-001",
++  "sourceDecisionIds": [
++    "BOOK-002"
++  ],
++  "bookingItemId": "item-001",
++  "ordered": {
++    "quantity": 10,
++    "unitLabel": "people"
++  },
++  "productionConversion": {
++    "conversionType": "pieces_per_person",
++    "factor": 2,
++    "outputUnitLabel": "pieces",
++    "sourceReference": "approved-hospitality-brochure-or-production-process"
++  },
++  "productionQuantity": {
++    "quantity": 20,
++    "unitLabel": "pieces"
++  },
++  "createdAt": "2026-07-14T19:00:00Z",
++  "updatedAt": "2026-07-14T19:00:00Z"
++}
+diff --git "a/schemas\\pack-4\\fixtures\\valid\\valid-booking-price-snapshot.json" "b/schemas\\pack-4\\fixtures\\valid\\valid-booking-price-snapshot.json"
+new file mode 100644
+index 0000000..89446ed
+--- /dev/null
++++ "b/schemas\\pack-4\\fixtures\\valid\\valid-booking-price-snapshot.json"
+@@ -0,0 +1,25 @@
++{
++  "schemaVersion": "pack-4-draft",
++  "id": "bps-001",
++  "sourceDecisionIds": [
++    "BOOK-004"
++  ],
++  "bookingId": "booking-001",
++  "snapshotVersion": 1,
++  "snapshotStatus": "accepted",
++  "immutableAfterAcceptance": true,
++  "subtotalExVat": {
++    "amountMinor": 10000,
++    "currency": "GBP"
++  },
++  "vatTotal": {
++    "amountMinor": 2000,
++    "currency": "GBP"
++  },
++  "totalIncVat": {
++    "amountMinor": 12000,
++    "currency": "GBP"
++  },
++  "createdAt": "2026-07-14T19:00:00Z",
++  "updatedAt": "2026-07-14T19:00:00Z"
++}
+diff --git "a/schemas\\pack-4\\fixtures\\valid\\valid-booking-service-time.json" "b/schemas\\pack-4\\fixtures\\valid\\valid-booking-service-time.json"
+new file mode 100644
+index 0000000..3858d89
+--- /dev/null
++++ "b/schemas\\pack-4\\fixtures\\valid\\valid-booking-service-time.json"
+@@ -0,0 +1,11 @@
++{
++  "schemaVersion": "pack-4-draft",
++  "id": "bst-001",
++  "sourceDecisionIds": [
++    "BOOK-001"
++  ],
++  "serviceStartAt": "2026-08-01T09:00:00Z",
++  "timezone": "Europe/London",
++  "createdAt": "2026-07-14T19:00:00Z",
++  "updatedAt": "2026-07-14T19:00:00Z"
++}
+diff --git "a/schemas\\pack-4\\fixtures\\valid\\valid-booking-source-reference.json" "b/schemas\\pack-4\\fixtures\\valid\\valid-booking-source-reference.json"
+new file mode 100644
+index 0000000..67ac265
+--- /dev/null
++++ "b/schemas\\pack-4\\fixtures\\valid\\valid-booking-source-reference.json"
+@@ -0,0 +1,16 @@
++{
++  "schemaVersion": "pack-4-draft",
++  "id": "bsr-001",
++  "sourceDecisionIds": [
++    "BOOK-007"
++  ],
++  "bookingId": "booking-001",
++  "sourceChannel": "email",
++  "stableSourceReference": "gmail-message-id-placeholder",
++  "parserDetailStoredOutsideBooking": true,
++  "sourceMetadata": {
++    "messageId": "gmail-message-id-placeholder"
++  },
++  "createdAt": "2026-07-14T19:00:00Z",
++  "updatedAt": "2026-07-14T19:00:00Z"
++}
+diff --git "a/schemas\\pack-4\\fixtures\\valid\\valid-booking-vat-total.json" "b/schemas\\pack-4\\fixtures\\valid\\valid-booking-vat-total.json"
+new file mode 100644
+index 0000000..a7a0abe
+--- /dev/null
++++ "b/schemas\\pack-4\\fixtures\\valid\\valid-booking-vat-total.json"
+@@ -0,0 +1,24 @@
++{
++  "schemaVersion": "pack-4-draft",
++  "id": "bvt-001",
++  "sourceDecisionIds": [
++    "BOOK-005"
++  ],
++  "pricingBasis": "ex_vat",
++  "vatCalculationPoint": "quote_total",
++  "roundingPreference": "round_up",
++  "subtotalExVat": {
++    "amountMinor": 10000,
++    "currency": "GBP"
++  },
++  "vatAmount": {
++    "amountMinor": 2000,
++    "currency": "GBP"
++  },
++  "totalIncVat": {
++    "amountMinor": 12000,
++    "currency": "GBP"
++  },
++  "createdAt": "2026-07-14T19:00:00Z",
++  "updatedAt": "2026-07-14T19:00:00Z"
++}
+diff --git "a/docs\\schema-reviews\\pack-4-bdr-to-schema-traceability.md" "b/docs\\schema-reviews\\pack-4-bdr-to-schema-traceability.md"
+new file mode 100644
+index 0000000..c58eb6d
+--- /dev/null
++++ "b/docs\\schema-reviews\\pack-4-bdr-to-schema-traceability.md"
+@@ -0,0 +1,57 @@
++# Pack 4 BDR-to-Schema Traceability
++
++## BOOK-001 ? Booking Service Time
++
++- Repository source: `docs\business-decisions\book-001-booking-service-time.md`
++- Exported Markdown: `book-001-booking-service-time.md`
++- Schema(s): `booking-service-time.schema.json`
++- Decision text preserved exactly: Yes
++- Source status metadata: Draft
++
++## BOOK-002 ? Booking Item Quantities and Units
++
++- Repository source: `docs\business-decisions\book-002-booking-item-quantity-units.md`
++- Exported Markdown: `book-002-booking-item-quantity-units.md`
++- Schema(s): `booking-item-quantity.schema.json`
++- Decision text preserved exactly: Yes
++- Source status metadata: Draft
++
++## BOOK-003 ? Dietary and Allergen Requirements
++
++- Repository source: `docs\business-decisions\book-003-dietary-allergen-references.md`
++- Exported Markdown: `book-003-dietary-allergen-references.md`
++- Schema(s): `booking-dietary-allergen-requirement.schema.json`
++- Decision text preserved exactly: Yes
++- Source status metadata: Draft
++
++## BOOK-004 ? Immutable Pricing and Amendments
++
++- Repository source: `docs\business-decisions\book-004-immutable-pricing-amendments.md`
++- Exported Markdown: `book-004-immutable-pricing-amendments.md`
++- Schema(s): `booking-price-snapshot.schema.json`
++- Decision text preserved exactly: Yes
++- Source status metadata: Draft
++
++## BOOK-005 ? VAT, Rounding and Totals
++
++- Repository source: `docs\business-decisions\book-005-vat-rounding-totals.md`
++- Exported Markdown: `book-005-vat-rounding-totals.md`
++- Schema(s): `booking-vat-total.schema.json`
++- Decision text preserved exactly: Yes
++- Source status metadata: Draft
++
++## BOOK-006 ? Booking Amendments, Cancellations and Declines
++
++- Repository source: `docs\business-decisions\book-006-booking-amendment-cancellation-decline.md`
++- Exported Markdown: `book-006-booking-amendment-cancellation-decline.md`
++- Schema(s): `booking-amendment-action.schema.json`
++- Decision text preserved exactly: Yes
++- Source status metadata: Draft
++
++## BOOK-007 ? Booking Source References
++
++- Repository source: `docs\business-decisions\book-007-booking-source-references.md`
++- Exported Markdown: `book-007-booking-source-references.md`
++- Schema(s): `booking-source-reference.schema.json`
++- Decision text preserved exactly: Yes
++- Source status metadata: Draft
+diff --git "a/docs\\schema-reviews\\pack-4-final-pack-readiness-report.md" "b/docs\\schema-reviews\\pack-4-final-pack-readiness-report.md"
+new file mode 100644
+index 0000000..b6588ab
+--- /dev/null
++++ "b/docs\\schema-reviews\\pack-4-final-pack-readiness-report.md"
+@@ -0,0 +1,24 @@
++# Final Pack Readiness Report
++
++- Pack name: Pack 4
++- Business domain: Booking
++- Working source: local repository `C:\FIKA\fika-platform-specs`
++- BDRs processed: 7
++- Schemas generated: 7
++- Valid fixture results: 7 passed
++- Invalid fixture results: 7 failed as expected
++- Schema validation failures: 0
++- Markdown export errors: 0
++- Markdown export warnings: 7
++- Repository files modified: No
++- Commit, push or deployment: No
++
++## Findings
++
++- INFORMATIONAL: The local repository BDRs contain `Status: Draft`; this was preserved rather than rewritten.
++- WARNING: Deferred business decisions remain for catalogue granularity, approval thresholds and exact VAT rounding mechanics.
++- INFORMATIONAL: Validation used the local structural subset validator included in the Pack 4 canonical folder.
++
++## Readiness conclusion
++
++Pack 4 autonomous processing is complete and ready for human review.
+diff --git "a/docs\\schema-reviews\\pack-4-governed-export-validation-report.md" "b/docs\\schema-reviews\\pack-4-governed-export-validation-report.md"
+new file mode 100644
+index 0000000..ccb16a2
+--- /dev/null
++++ "b/docs\\schema-reviews\\pack-4-governed-export-validation-report.md"
+@@ -0,0 +1,17 @@
++# Pack 4 Governed Export Validation Report
++
++- BDRs processed: 7
++- Decision sections detected: 7
++- Markdown files exported: 7
++- Errors: 0
++- Warnings: 7
++
++## Warnings
++
++- WARNING: BOOK-001 source metadata status is `Draft`; current run instruction treats the target Pack as processable under Stage 5.
++- WARNING: BOOK-002 source metadata status is `Draft`; current run instruction treats the target Pack as processable under Stage 5.
++- WARNING: BOOK-003 source metadata status is `Draft`; current run instruction treats the target Pack as processable under Stage 5.
++- WARNING: BOOK-004 source metadata status is `Draft`; current run instruction treats the target Pack as processable under Stage 5.
++- WARNING: BOOK-005 source metadata status is `Draft`; current run instruction treats the target Pack as processable under Stage 5.
++- WARNING: BOOK-006 source metadata status is `Draft`; current run instruction treats the target Pack as processable under Stage 5.
++- WARNING: BOOK-007 source metadata status is `Draft`; current run instruction treats the target Pack as processable under Stage 5.
+diff --git "a/docs\\schema-reviews\\pack-4-schema-design-report.md" "b/docs\\schema-reviews\\pack-4-schema-design-report.md"
+new file mode 100644
+index 0000000..77a2106
+--- /dev/null
++++ "b/docs\\schema-reviews\\pack-4-schema-design-report.md"
+@@ -0,0 +1,38 @@
++# Pack 4 Schema Design Report
++
++Pack 4 generates seven draft Booking-domain business schemas from the local repository BDRs BOOK-001 through BOOK-007.
++
++These schemas are draft business contracts only. They are not database tables, APIs, UI models, provider payloads or adopted production schemas.
++
++## Schemas generated
++
++- `booking-amendment-action.schema.json`
++- `booking-dietary-allergen-requirement.schema.json`
++- `booking-item-quantity.schema.json`
++- `booking-price-snapshot.schema.json`
++- `booking-service-time.schema.json`
++- `booking-source-reference.schema.json`
++- `booking-vat-total.schema.json`
++
++## Design boundaries
++
++- BOOK-001 requires `serviceStartAt`; other service-adjacent times remain optional.
++- BOOK-002 separates ordered quantity/unit from production conversion and production quantity.
++- BOOK-003 models customer-facing disclosure obligations without inventing a definitive allergen catalogue.
++- BOOK-004 models immutable accepted price snapshots and amendment versions.
++- BOOK-005 models ex-VAT pricing, quote-total VAT calculation and round-up preference.
++- BOOK-006 models audited amendment, cancellation and decline actions without inventing approval thresholds.
++- BOOK-007 models channel-neutral source references and keeps parser detail outside Booking.
++
++## Deferred business decisions
++
++- Definitive supported unit catalogue and conversion-rule catalogue.
++- Exact allergen/dietary allocation granularity for person, group and item references.
++- Higher-risk booking-change thresholds and approval rules.
++- Exact VAT rounding algorithm beyond the approved preference to round up.
++
++## Validation
++
++- Valid fixtures passed: 7
++- Invalid fixtures failed as expected: 7
++- Failures: 0
+diff --git "a/docs\\schema-reviews\\pack-4-schema-validation-report.json" "b/docs\\schema-reviews\\pack-4-schema-validation-report.json"
+new file mode 100644
+index 0000000..df336a0
+--- /dev/null
++++ "b/docs\\schema-reviews\\pack-4-schema-validation-report.json"
+@@ -0,0 +1,132 @@
++{
++  "validator": "local structural subset validator",
++  "failures": 0,
++  "results": [
++    {
++      "schema": "booking-amendment-action.schema.json",
++      "fixture": "valid-booking-amendment-action.json",
++      "expected": "pass",
++      "actual": "pass",
++      "passed": true,
++      "errors": []
++    },
++    {
++      "schema": "booking-amendment-action.schema.json",
++      "fixture": "invalid-booking-amendment-action.json",
++      "expected": "fail",
++      "actual": "fail",
++      "passed": true,
++      "errors": [
++        "/auditHistoryPreserved: expected const true"
++      ]
++    },
++    {
++      "schema": "booking-dietary-allergen-requirement.schema.json",
++      "fixture": "valid-booking-dietary-allergen-requirement.json",
++      "expected": "pass",
++      "actual": "pass",
++      "passed": true,
++      "errors": []
++    },
++    {
++      "schema": "booking-dietary-allergen-requirement.schema.json",
++      "fixture": "invalid-booking-dietary-allergen-requirement.json",
++      "expected": "fail",
++      "actual": "fail",
++      "passed": true,
++      "errors": [
++        "/customerDisclosure/unexpected: additional property not allowed"
++      ]
++    },
++    {
++      "schema": "booking-item-quantity.schema.json",
++      "fixture": "valid-booking-item-quantity.json",
++      "expected": "pass",
++      "actual": "pass",
++      "passed": true,
++      "errors": []
++    },
++    {
++      "schema": "booking-item-quantity.schema.json",
++      "fixture": "invalid-booking-item-quantity.json",
++      "expected": "fail",
++      "actual": "fail",
++      "passed": true,
++      "errors": [
++        "/providerPayload: additional property not allowed"
++      ]
++    },
++    {
++      "schema": "booking-price-snapshot.schema.json",
++      "fixture": "valid-booking-price-snapshot.json",
++      "expected": "pass",
++      "actual": "pass",
++      "passed": true,
++      "errors": []
++    },
++    {
++      "schema": "booking-price-snapshot.schema.json",
++      "fixture": "invalid-booking-price-snapshot.json",
++      "expected": "fail",
++      "actual": "fail",
++      "passed": true,
++      "errors": [
++        "/immutableAfterAcceptance: expected const true"
++      ]
++    },
++    {
++      "schema": "booking-service-time.schema.json",
++      "fixture": "valid-booking-service-time.json",
++      "expected": "pass",
++      "actual": "pass",
++      "passed": true,
++      "errors": []
++    },
++    {
++      "schema": "booking-service-time.schema.json",
++      "fixture": "invalid-booking-service-time.json",
++      "expected": "fail",
++      "actual": "fail",
++      "passed": true,
++      "errors": [
++        "/serviceStartAt: required property missing"
++      ]
++    },
++    {
++      "schema": "booking-source-reference.schema.json",
++      "fixture": "valid-booking-source-reference.json",
++      "expected": "pass",
++      "actual": "pass",
++      "passed": true,
++      "errors": []
++    },
++    {
++      "schema": "booking-source-reference.schema.json",
++      "fixture": "invalid-booking-source-reference.json",
++      "expected": "fail",
++      "actual": "fail",
++      "passed": true,
++      "errors": [
++        "/parserDetailStoredOutsideBooking: expected const true"
++      ]
++    },
++    {
++      "schema": "booking-vat-total.schema.json",
++      "fixture": "valid-booking-vat-total.json",
++      "expected": "pass",
++      "actual": "pass",
++      "passed": true,
++      "errors": []
++    },
++    {
++      "schema": "booking-vat-total.schema.json",
++      "fixture": "invalid-booking-vat-total.json",
++      "expected": "fail",
++      "actual": "fail",
++      "passed": true,
++      "errors": [
++        "/pricingBasis: expected const ex_vat"
++      ]
++    }
++  ]
++}
+diff --git "a/docs\\packs\\pack-4\\Archive-Certificate.md" "b/docs\\packs\\pack-4\\Archive-Certificate.md"
+new file mode 100644
+index 0000000..1da2462
+--- /dev/null
++++ "b/docs\\packs\\pack-4\\Archive-Certificate.md"
+@@ -0,0 +1,65 @@
++# Archive Certificate
++
++## Pack Number
++
++Pack 4
++
++## Processing Date
++
++2026-07-14
++
++## Processing Standard Version
++
++Stage 5 Autonomous Pack Processor v2.0 using frozen Stage 4 workflow v2.0
++
++## Number of BDRs
++
++7
++
++## Number of Schemas
++
++7
++
++## Validation Summary
++
++- Governed Markdown: complete
++- Schemas: generated
++- Fixtures: generated
++- Traceability: complete
++- Manifest: present
++- Reflection: present
++- Archive Certificate: present
++- Markdown export errors: 0
++- Schema validation failures: 0
++- Valid fixtures: 7 passed
++- Invalid fixtures: 7 failed as expected
++
++## Outstanding Warnings
++
++- Local repository BDR status metadata remains Draft and was preserved.
++- Deferred business-detail questions are documented in the schema design report.
++
++## Outstanding Errors
++
++None.
++
++## Evidence Gaps
++
++- No separate Pack 4 GDR/GRR was present in the scoped local repository sources.
++- Full external JSON Schema Draft 2020-12 validation tooling was not used; local structural validation evidence is included.
++
++## Reflection Included
++
++Yes.
++
++## Manifest Included
++
++Yes.
++
++## Repository Integration Status
++
++Pending. Repository integration is a separate workflow and was not performed.
++
++## READY FOR HUMAN REVIEW
++
++Yes.
+diff --git "a/docs\\packs\\pack-4\\Manifest.md" "b/docs\\packs\\pack-4\\Manifest.md"
+new file mode 100644
+index 0000000..c5d9fa4
+--- /dev/null
++++ "b/docs\\packs\\pack-4\\Manifest.md"
+@@ -0,0 +1,27 @@
++# Pack 4 Manifest
++
++## Source
++
++Local repository: `C:\FIKA\fika-platform-specs`
++
++## Business Decision Records
++
++- `docs\business-decisions\book-001-booking-service-time.md`
++- `docs\business-decisions\book-002-booking-item-quantity-units.md`
++- `docs\business-decisions\book-003-dietary-allergen-references.md`
++- `docs\business-decisions\book-004-immutable-pricing-amendments.md`
++- `docs\business-decisions\book-005-vat-rounding-totals.md`
++- `docs\business-decisions\book-006-booking-amendment-cancellation-decline.md`
++- `docs\business-decisions\book-007-booking-source-references.md`
++
++## Generated Artefacts
++
++- Governed Markdown: 7 files
++- Schemas: 7 files
++- Valid fixtures: 7 files
++- Invalid fixtures: 7 files
++- Reports: 5 files plus local validation script
++
++## Status
++
++AUTONOMOUS PROCESSING COMPLETE ? READY FOR HUMAN REVIEW
+diff --git "a/docs\\packs\\pack-4\\README.md" "b/docs\\packs\\pack-4\\README.md"
+new file mode 100644
+index 0000000..f01acc5
+--- /dev/null
++++ "b/docs\\packs\\pack-4\\README.md"
+@@ -0,0 +1,28 @@
++# Pack 4 ? Booking Domain
++
++## Purpose
++
++This folder is the canonical autonomous Pack 4 output generated from the local repository under the Stage 5 Autonomous Pack Processor v2.0 instruction.
++
++## Contents
++
++- Pack number: Pack 4
++- Business domain: Booking
++- BDR count: 7
++- Schema count: 7
++- Fixture count: 14
++
++## Validation Summary
++
++- Markdown export errors: 0
++- Schema validation failures: 0
++- Valid fixtures: 7 passed
++- Invalid fixtures: 7 failed as expected
++
++## Current Status
++
++AUTONOMOUS PROCESSING COMPLETE
++
++READY FOR HUMAN REVIEW
++
++Repository integration remains pending and is a separate workflow.
+diff --git "a/docs\\packs\\pack-4\\Reflection.md" "b/docs\\packs\\pack-4\\Reflection.md"
+new file mode 100644
+index 0000000..d3eea73
+--- /dev/null
++++ "b/docs\\packs\\pack-4\\Reflection.md"
+@@ -0,0 +1,58 @@
++# Pack
++
++Pack 4 ? Booking Domain
++
++# Date
++
++2026-07-14
++
++# Domain(s)
++
++Booking, Production, Commercial, Finance, Food Safety and source-reference provenance.
++
++# What this Pack clarified
++
++Pack 4 resolves the key FikaBooking revision blockers represented by BOOK-001 through BOOK-007: mandatory service start time, booking-item quantity/unit semantics, allergy and allergen disclosure, immutable accepted price snapshots, VAT and rounding direction, audited amendments/cancellations/declines, and channel-neutral source references.
++
++# Major business decisions
++
++Seven repository BDRs were processed. Their Decision sections were preserved exactly.
++
++# Cross-document observations
++
++The pack reinforces that Booking owns commercial and service intent while Production, parser detail, provider state and operational projections remain separate.
++
++# Concepts intentionally deferred
++
++Definitive unit catalogues, conversion-rule catalogues, exact allergen allocation granularity, high-risk amendment thresholds and precise VAT rounding mechanics beyond the approved preference remain deferred.
++
++# Schema observations
++
++Seven draft business schemas were generated. They are candidate contracts only and should not be treated as adopted schemas.
++
++# Workflow observations
++
++None recorded. The active workflow is frozen.
++
++# Risks avoided
++
++The pack avoids inventing business catalogues, approval thresholds, provider payloads, implementation models or parser-specific canonical fields.
++
++# Evidence produced
++
++- Number of BDRs: 7
++- Number of Schemas: 7
++- Number of Fixtures: 14
++- Validation summary: 0 validation failures; 7 valid fixtures passed; 7 invalid fixtures failed as expected.
++
++# Lessons learned
++
++The Booking domain can progress substantially from the approved BDRs, but adoption still needs explicit treatment of catalogues, thresholds and arithmetic rules that the BDRs intentionally leave to later governed work.
++
++# Future domain candidates
++
++Production conversion catalogues, allergen disclosure catalogues, amendment approval policy and source-channel adapter metadata.
++
++# Recommendations for the next Pack
++
++Continue generating schemas only from approved business meaning and keep unresolved catalogues out of canonical contracts until business authority approves them.
+diff --git "a/docs\\packs\\pack-4\\repository-integration-manifest.md" "b/docs\\packs\\pack-4\\repository-integration-manifest.md"
+new file mode 100644
+index 0000000..ccf9345
+--- /dev/null
++++ "b/docs\\packs\\pack-4\\repository-integration-manifest.md"
+@@ -0,0 +1,107 @@
++# Repository Integration Manifest — Pack 4
++
++## Source Canonical Pack
++
++`C:\FIKA\.codex-staging\pack-4-repo-authoritative\Pack 4 Canonical`
++
++## Target Repository
++
++`C:\FIKA\fika-platform-specs`
++
++## Pack
++
++- Pack number: Pack 4
++- Business domain: Booking
++- Repository integration status: Pending human review
++
++## Pre-existing Repository Changes Observed
++
++The repository already contained uncommitted Stage 4 Pack 3 integration changes before Pack 4 integration began. These changes were preserved and not cleaned, staged, committed or pushed.
++
++## File Placement
++
++- Existing Booking BDRs: `docs/business-decisions/`
++- Pack schemas and fixtures: `schemas/pack-4/`
++- Pack traceability, validation and design reports: `docs/schema-reviews/`
++- Pack archive metadata and integration audit artefacts: `docs/packs/pack-4/`
++
++## BDR Files Reused
++
++The Pack 4 Markdown BDR exports matched the existing repository BDR files exactly, so the following files were not rewritten:
++
++- `docs/business-decisions/book-001-booking-service-time.md`
++- `docs/business-decisions/book-002-booking-item-quantity-units.md`
++- `docs/business-decisions/book-003-dietary-allergen-references.md`
++- `docs/business-decisions/book-004-immutable-pricing-amendments.md`
++- `docs/business-decisions/book-005-vat-rounding-totals.md`
++- `docs/business-decisions/book-006-booking-amendment-cancellation-decline.md`
++- `docs/business-decisions/book-007-booking-source-references.md`
++
++## Schemas Added
++
++- `schemas/pack-4/booking-amendment-action.schema.json`
++- `schemas/pack-4/booking-dietary-allergen-requirement.schema.json`
++- `schemas/pack-4/booking-item-quantity.schema.json`
++- `schemas/pack-4/booking-price-snapshot.schema.json`
++- `schemas/pack-4/booking-service-time.schema.json`
++- `schemas/pack-4/booking-source-reference.schema.json`
++- `schemas/pack-4/booking-vat-total.schema.json`
++- `schemas/pack-4/schema-index.md`
++- `schemas/pack-4/validate-fixtures.js`
++
++## Fixtures Added
++
++- 7 valid fixtures in `schemas/pack-4/fixtures/valid/`
++- 7 invalid fixtures in `schemas/pack-4/fixtures/invalid/`
++
++## Reports and Archive Artefacts Added
++
++- `docs/schema-reviews/pack-4-bdr-to-schema-traceability.md`
++- `docs/schema-reviews/pack-4-final-pack-readiness-report.md`
++- `docs/schema-reviews/pack-4-governed-export-validation-report.md`
++- `docs/schema-reviews/pack-4-schema-design-report.md`
++- `docs/schema-reviews/pack-4-schema-validation-report.json`
++- `docs/packs/pack-4/README.md`
++- `docs/packs/pack-4/Manifest.md`
++- `docs/packs/pack-4/Reflection.md`
++- `docs/packs/pack-4/Archive-Certificate.md`
++- `docs/packs/pack-4/repository-integration-unified.diff`
++
++## Path Adjustments
++
++- The Pack 4 validation script was placed at `schemas/pack-4/validate-fixtures.js` with a minimal repository-path adjustment so it validates the repository fixture layout.
++
++## Cross-Pack or Index References Changed
++
++- `docs/packs/README.md` was created as the repository pack register.
++- `docs/stages/stage-4-business-decision-records.md` was updated to reflect Stage 4 completion status and uncommitted Pack 3/4 repository integration state.
++
++## Skipped Files
++
++None from the promoted Pack 4 artefacts.
++
++## Validation Results
++
++- Pack 4 schemas parsed as JSON: passed.
++- Pack 4 schema-index references: passed.
++- Pack 4 fixture validation failures: 0.
++- Pack 4 valid fixtures passed: 7.
++- Pack 4 invalid fixtures failed as expected: 7.
++- Relative Markdown links across pack/stage documentation: 0 missing.
++- Repository commit performed: No.
++- Repository push performed: No.
++- Deployment performed: No.
++
++## Warnings
++
++- Pack 4 source BDR metadata still says `Status: Draft`; this was preserved and not rewritten.
++- Full external JSON Schema Draft 2020-12 validation was not performed; local structural validation evidence is included.
++- Pack 3 and Pack 4 integration changes remain uncommitted pending human acceptance.
++
++## Commit Status
++
++Not committed. Commit authorisation was not provided.
++
++## Proposed Commit Message
++
++`docs(schema): complete Stage 4 pack integrations`
+diff --git "a/docs\\packs\\pack-4\\repository-integration-validation-report.md" "b/docs\\packs\\pack-4\\repository-integration-validation-report.md"
+new file mode 100644
+index 0000000..ef5a759
+--- /dev/null
++++ "b/docs\\packs\\pack-4\\repository-integration-validation-report.md"
+@@ -0,0 +1,58 @@
++# Repository Integration Validation Report — Pack 4
++
++## Status
++
++Integration validation passed with informational warnings only.
++
++## Source and Target
++
++- Source Canonical Pack: `C:\FIKA\.codex-staging\pack-4-repo-authoritative\Pack 4 Canonical`
++- Target repository: `C:\FIKA\fika-platform-specs`
++
++## Content Preservation
++
++- Pack 4 BDR Markdown exports matched existing repository BDR files exactly.
++- No Pack 4 BDR Decision text was changed.
++- Canon, previous packs and previous schemas were not modified.
++
++## Schema Validation
++
++- Schema files added: 7
++- Schema JSON parse errors: 0
++- Missing schema-index references: 0
++- Pack 4 fixture validation failures: 0
++
++## Fixture Validation Evidence
++
++From `schemas/pack-4/validate-fixtures.js`:
++
++- Valid fixtures passed: 7
++- Invalid fixtures failed as expected: 7
++- Total fixture results: 14
++
++## Markdown and Link Validation
++
++- Relative Markdown links checked across pack and stage documentation.
++- Missing relative links: 0
++
++## Repository Safety
++
++- Pre-existing repository changes before Pack 4 integration: uncommitted Pack 3 integration changes.
++- Pre-existing changes preserved: Yes.
++- Git commit performed: No.
++- Git push performed: No.
++- Deployment performed: No.
++
++## Warnings
++
++- Pack 4 source BDR metadata still says `Status: Draft`; this was preserved and not rewritten.
++- Full external JSON Schema Draft 2020-12 validation was not performed.
++- Pack 3 and Pack 4 repository integrations remain uncommitted pending human acceptance.
++
++## Errors
++
++None.
++
++## Conclusion
++
++Pack 4 repository integration is complete and ready for human review.

@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fika-os.local/schemas/pack-4/booking-service-time.schema.json",
+  "title": "Booking Service Time",
+  "description": "Draft business contract for mandatory booking service start time from BOOK-001.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "id",
+    "sourceDecisionIds",
+    "serviceStartAt",
+    "createdAt",
+    "updatedAt"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "type": "string",
+      "const": "pack-4-draft"
+    },
+    "id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "sourceDecisionIds": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1
+    },
+    "createdAt": {
+      "type": "string"
+    },
+    "updatedAt": {
+      "type": "string"
+    },
+    "notes": {
+      "type": "string"
+    },
+    "serviceStartAt": {
+      "type": "string",
+      "description": "Mandatory service time: start time of the booking."
+    },
+    "preferredArrivalAt": {
+      "type": "string"
+    },
+    "preferredEndAt": {
+      "type": "string"
+    },
+    "preferredCollectionAt": {
+      "type": "string"
+    },
+    "timezone": {
+      "type": "string"
+    }
+  }
+}

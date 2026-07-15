@@ -38,7 +38,7 @@ Stage 9 Continuous Discovery  Planned ongoing governance
 
 - Later stages consume earlier authority; they do not silently redefine it.
 - A BDR must exist before a schema implements a business decision.
-- A schema must be adopted before it becomes an implementation contract.
+- A schema Pack must complete Stage 5, be integrated and be committed before it becomes an implementation dependency.
 - Architecture must trace to BDRs and schemas.
 - Implementation requires reviewed architecture and explicit scope.
 - Rollout requires validation, operational readiness and authority.

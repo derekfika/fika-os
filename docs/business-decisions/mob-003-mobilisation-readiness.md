@@ -62,3 +62,13 @@ This BDR does not select a database, API, provider, application design or deploy
 ## Future considerations
 
 There are no open discovery questions for this decision. During BDR review, evidence and explanatory text should be checked without altering the Decision section. Later schema, architecture and implementation work must resolve technical detail while preserving this approved business meaning.
+
+## Stage 5 governed clarification
+
+Approved by Derek on 2026-07-15 for Pack 7 processing. The original Decision above and the BDR's Draft metadata remain unchanged.
+
+- Mobilisation is not necessarily Client-contractual.
+- Client, contract and commercial-agreement references are optional and apply only where relevant.
+- Internal Mobilisations, capability launches, remobilisations and material operating-model changes may have no Client basis.
+- Readiness assessment authority follows explicit role assignments and AUTHMOD authority grants rather than management-group membership.
+- No separate Client Mobilisation concept is introduced.

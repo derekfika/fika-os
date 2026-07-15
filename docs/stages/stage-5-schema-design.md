@@ -28,7 +28,7 @@ Applications and workflows can exchange consistent business records whose identi
 - Domain-model guidance
 - Valid and invalid fixtures
 - Validation evidence
-- Schema review and adoption record
+- Schema completion and repository-integration record
 
 ## Exit criteria
 
@@ -36,7 +36,7 @@ Applications and workflows can exchange consistent business records whose identi
 - Required and optional fields are explicit.
 - Fixtures validate and contain no sensitive production data.
 - Ownership and source of truth are stated.
-- Adoption is explicitly approved; drafts are never presented as adopted.
+- The Pack completes validation and deterministic repository integration; incomplete drafts are never presented as completed.
 
 ## Current status
 
@@ -62,4 +62,3 @@ Stages 6–8 use adopted schemas as stable contracts for architecture, implement
 - [Schemas directory](../../schemas/README.md)
 - [FikaBooking draft domain model](../domain-models/fika-booking-v1.md)
 - [FikaBooking formal review](../schema-reviews/fika-booking-v1-review.md)
-

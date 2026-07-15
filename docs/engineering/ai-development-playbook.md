@@ -4,7 +4,7 @@
 
 ChatGPT and Codex are complementary collaborators in FIKA Platform development. They support reasoning and execution; neither supplies missing business facts or independent authority to change production systems.
 
-Human owners approve business meaning, risk, permissions, production actions, schema adoption, and releases.
+Human owners approve business meaning, risk, permissions, production actions and releases. Schema Packs complete and integrate autonomously once no Human Decision Gate remains.
 
 ## Responsibilities
 

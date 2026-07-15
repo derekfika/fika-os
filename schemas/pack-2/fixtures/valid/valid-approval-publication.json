@@ -1,0 +1,50 @@
+{
+  "schemaVersion": "pack-2-draft-1",
+  "controlId": "approvalpub:capability-catalogue",
+  "subject": {
+    "subjectType": "operational_capability_catalogue",
+    "subjectId": "catalogue:operational-capabilities"
+  },
+  "approvalAction": {
+    "authorityGrantId": "grant:approve-capability-catalogue",
+    "actorId": "person:derek",
+    "occurredAt": "2026-07-14T10:00:00Z",
+    "reason": "Fixture approval"
+  },
+  "publicationAction": {
+    "authorityGrantId": "grant:publish-capability-catalogue",
+    "actorId": "person:derek",
+    "occurredAt": "2026-07-14T11:00:00Z",
+    "audienceScope": {
+      "scopeType": "organisation",
+      "scopeId": "org:fika",
+      "scopeLabel": "FIKA"
+    },
+    "reason": "Fixture publication"
+  },
+  "sameActorPermitted": true,
+  "status": "published",
+  "provenance": {
+    "sourceBdrIds": [
+      "ROLE-003",
+      "ROLE-005"
+    ],
+    "sourceSnapshot": "02 Pack 2-20260714T164540Z-1-001.zip",
+    "authorityRank": "Approved GRR"
+  },
+  "audit": {
+    "version": 1,
+    "createdAt": "2026-07-14T12:00:00Z",
+    "createdBy": "role:platform-governance",
+    "updatedAt": "2026-07-14T12:00:00Z",
+    "updatedBy": "role:platform-governance",
+    "events": [
+      {
+        "eventType": "drafted",
+        "occurredAt": "2026-07-14T12:00:00Z",
+        "actorId": "role:platform-governance",
+        "reason": "Pack 2 schema draft fixture"
+      }
+    ]
+  }
+}

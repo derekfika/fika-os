@@ -1,0 +1,28 @@
+{
+  "schemaVersion": "1.0.0-draft.1",
+  "eventId": "event:fictional-unapproved-reception",
+  "operationalLocationId": "oploc:fictional-riverside-house",
+  "purpose": "Fictional bespoke reception",
+  "eventContact": {
+    "eventContactId": "event-contact:fictional-unapproved-reception",
+    "personId": "person:fictional-morgan-reception",
+    "responsibility": "event_communications"
+  },
+  "qualificationBasis": {
+    "bespoke": true,
+    "partOfRecurringServiceSchedule": false,
+    "occasionDescription": "One-off reception"
+  },
+  "provenance": {
+    "sourceBdrIds": ["EVT-001", "EVT-002"],
+    "sourceSnapshot": "local-repository-2026-07-14"
+  },
+  "audit": {
+    "version": 1,
+    "createdAt": "2026-07-14T20:15:00Z",
+    "createdByAssignmentId": "assignment:fictional-site-coordinator",
+    "updatedAt": "2026-07-14T20:15:00Z",
+    "updatedByAssignmentId": "assignment:fictional-site-coordinator",
+    "events": []
+  }
+}

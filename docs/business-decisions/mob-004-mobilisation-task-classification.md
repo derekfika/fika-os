@@ -62,3 +62,11 @@ This BDR does not select a database, API, provider, application design or deploy
 ## Future considerations
 
 There are no open discovery questions for this decision. During BDR review, evidence and explanatory text should be checked without altering the Decision section. Later schema, architecture and implementation work must resolve technical detail while preserving this approved business meaning.
+
+## Stage 5 governed clarification
+
+Approved by Derek on 2026-07-15 for Pack 7 processing. The original Decision above and the BDR's Draft metadata remain unchanged.
+
+- Capability launches and material operating-model changes may legitimately create a Mobilisation without a Client-contractual basis.
+- Routine operational changes do not create new Mobilisation records unless approved business policy classifies the change as material enough for Mobilisation governance.
+- The exact material-remobilisation threshold remains deferred.

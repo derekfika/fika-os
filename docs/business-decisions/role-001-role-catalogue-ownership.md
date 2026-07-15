@@ -1,4 +1,4 @@
-# ROLE-001: Role Catalogue Ownership
+# ROLE-001 — Role Catalogue Ownership
 
 - **Decision ID:** ROLE-001
 - **Workbook Decision ID:** DEC-ROLE-001
@@ -15,7 +15,7 @@ Before approval, the recorded evidence stated: “Jobs, roles, responsibilities,
 
 ## Decision
 
-Derek
+Operations Leadership owns the organisation-wide business Role Catalogue and is accountable for ensuring that organisational roles remain coherent, purposeful and aligned with FIKA’s operating model. Each business domain owns the responsibilities and domain-specific authority requirements associated with its work. AUTHMOD owns the governed authority model, including the controlled permission-action vocabulary, scopes, separation-of-duties rules and delegation constraints used to grant authority to organisational roles. Authority is granted to roles, not inferred from job titles, individuals, applications or technical access. Platform Governance maintains the technical representation, validates cross-domain consistency and implements approved changes, but does not create business roles or grant business authority unless separately authorised through AUTHMOD. All catalogue and authority-model changes must identify their accountable owner, approver, effective date, reason and audit history.
 
 ## Business rationale
 
@@ -25,16 +25,21 @@ The approved decision establishes a shared business rule. The alternative—leav
 
 ## Positive consequences
 
-- FIKA now has a stable, human-approved rule for this aspect of Roles and Permissions.
-- It directly enabled [ROLE-002](role-002-roles-responsibilities-assignments.md), [EVT-002](evt-002-event-governance.md), [ROLE-003](role-003-permission-actions.md) to be decided on a stable basis.
-- Stage 5 schemas and Stage 6 architecture can trace their treatment of this subject to one canonical source.
-- Application and provider behaviour cannot silently redefine the decision.
+FIKA now has a stable, human-approved rule for this aspect of Roles and Permissions.
+
+It directly enabled [ROLE-002](role-002-roles-responsibilities-assignments.md), [EVT-002](evt-002-event-governance.md), [ROLE-003](role-003-permission-actions.md) to be decided on a stable basis.
+
+Stage 5 schemas and Stage 6 architecture can trace their treatment of this subject to one canonical source.
+
+Application and provider behaviour cannot silently redefine the decision.
 
 ## Trade-offs
 
-- The decision constrains local interpretation where consistency is required.
-- Any future change must preserve history and use a superseding or amended BDR rather than silently editing downstream documents.
-- The decision deliberately leaves technology, storage and API design to later stages.
+The decision constrains local interpretation where consistency is required.
+
+Any future change must preserve history and use a superseding or amended BDR rather than silently editing downstream documents.
+
+The decision deliberately leaves technology, storage and API design to later stages.
 
 ## Implementation implications
 
@@ -63,3 +68,7 @@ This BDR does not select a database, API, provider, application design or deploy
 ## Future considerations
 
 There are no open discovery questions for this decision. During BDR review, evidence and explanatory text should be checked without altering the Decision section. Later schema, architecture and implementation work must resolve technical detail while preserving this approved business meaning.
+
+## Revision 2 governance note
+
+This Revision 2 candidate applies the approved Governed Refactoring Register amendment. Ownership, authority and technical administration remain separate; AUTHMOD governs approved authority; Platform Governance implements approved controls and assesses impact without becoming business authority.

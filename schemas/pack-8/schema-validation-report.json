@@ -1,0 +1,79 @@
+{
+  "validator": "local deterministic validator for the Draft 2020-12 keywords used by this pack",
+  "schemaSyntaxValid": true,
+  "failures": 0,
+  "results": [
+    {
+      "schema": "brand-assurance-record.schema.json",
+      "fixture": "valid-brand-assurance-record.json",
+      "expected": "pass",
+      "actual": "pass",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "schema": "brand-assurance-record.schema.json",
+      "fixture": "invalid-brand-assurance-record.json",
+      "expected": "fail",
+      "actual": "fail",
+      "passed": true,
+      "errors": [
+        "$.verifiedItems: contains too few items"
+      ]
+    },
+    {
+      "schema": "brand-variation.schema.json",
+      "fixture": "valid-brand-variation.json",
+      "expected": "pass",
+      "actual": "pass",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "schema": "brand-variation.schema.json",
+      "fixture": "invalid-brand-variation.json",
+      "expected": "fail",
+      "actual": "fail",
+      "passed": true,
+      "errors": [
+        "$.brandAssuranceRecordIds: contains too few items"
+      ]
+    },
+    {
+      "schema": "waste-disposition.schema.json",
+      "fixture": "valid-waste-disposition.json",
+      "expected": "pass",
+      "actual": "pass",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "schema": "waste-disposition.schema.json",
+      "fixture": "invalid-waste-disposition.json",
+      "expected": "fail",
+      "actual": "fail",
+      "passed": true,
+      "errors": [
+        "$.immediateOperationalOutcome: required property missing"
+      ]
+    },
+    {
+      "schema": "waste-event.schema.json",
+      "fixture": "valid-waste-event.json",
+      "expected": "pass",
+      "actual": "pass",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "schema": "waste-event.schema.json",
+      "fixture": "invalid-waste-event.json",
+      "expected": "fail",
+      "actual": "fail",
+      "passed": true,
+      "errors": [
+        "$.quantity.measurementUnitReference: required property missing"
+      ]
+    }
+  ]
+}

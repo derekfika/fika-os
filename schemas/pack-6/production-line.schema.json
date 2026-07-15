@@ -1,0 +1,109 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:fika:schema:draft:production-line:1",
+  "title": "Production Line v1 (Draft)",
+  "description": "Draft Production-domain line preserving source Booking Item traceability while owning preparation quantity, unit and applied production rules.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "productionLineId",
+    "productionOrderId",
+    "ownership",
+    "sourceBookingItemIds",
+    "orderedSnapshot",
+    "productionQuantity",
+    "provenance",
+    "audit"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "1.0.0-draft.1" },
+    "productionLineId": { "$ref": "#/$defs/stableId" },
+    "productionOrderId": { "$ref": "#/$defs/stableId" },
+    "ownership": {
+      "$ref": "#/$defs/ownership",
+      "description": "Role-based ownership for this Production Line, which may differ from its Production Order ownership."
+    },
+    "sourceBookingItemIds": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/stableId" }
+    },
+    "orderedSnapshot": { "$ref": "#/$defs/quantity" },
+    "productionQuantity": { "$ref": "#/$defs/quantity" },
+    "productionRuleSnapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "preparationUnitReference": { "$ref": "#/$defs/stableId" },
+        "yieldRuleReferences": { "type": "array", "uniqueItems": true, "items": { "$ref": "#/$defs/stableId" } },
+        "recipeConversionReferences": { "type": "array", "uniqueItems": true, "items": { "$ref": "#/$defs/stableId" } },
+        "batchCalculationReference": { "$ref": "#/$defs/stableId" },
+        "aggregationRuleReferences": { "type": "array", "uniqueItems": true, "items": { "$ref": "#/$defs/stableId" } }
+      }
+    },
+    "aggregationGroupReference": { "$ref": "#/$defs/stableId" },
+    "provenance": { "$ref": "#/$defs/provenance" },
+    "audit": { "$ref": "#/$defs/audit" }
+  },
+  "$defs": {
+    "stableId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[A-Za-z][A-Za-z0-9_.:-]*$" },
+    "isoDateTime": { "type": "string", "format": "date-time" },
+    "ownership": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["organisationalRoleId"],
+      "properties": {
+        "organisationalRoleId": { "$ref": "#/$defs/stableId" },
+        "roleAssignmentId": { "$ref": "#/$defs/stableId" },
+        "operationalContextReference": { "$ref": "#/$defs/stableId" }
+      }
+    },
+    "quantity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["quantity", "unitLabel"],
+      "properties": {
+        "quantity": { "type": "number", "exclusiveMinimum": 0 },
+        "unitLabel": { "type": "string", "minLength": 1 },
+        "unitReference": { "$ref": "#/$defs/stableId" }
+      }
+    },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sourceBdrIds", "sourceSnapshot"],
+      "properties": {
+        "sourceBdrIds": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "type": "string", "pattern": "^(PROD|BOOK)-\\d{3}$" } },
+        "sourceSnapshot": { "type": "string", "minLength": 1 }
+      }
+    },
+    "auditEvent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["eventType", "occurredAt", "actorAssignmentId"],
+      "properties": {
+        "eventType": { "type": "string", "minLength": 1 },
+        "occurredAt": { "$ref": "#/$defs/isoDateTime" },
+        "actorAssignmentId": { "$ref": "#/$defs/stableId" },
+        "reason": { "type": "string" }
+      }
+    },
+    "audit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "createdAt", "createdByAssignmentId", "updatedAt", "updatedByAssignmentId", "events"],
+      "properties": {
+        "version": { "type": "integer", "minimum": 1 },
+        "createdAt": { "$ref": "#/$defs/isoDateTime" },
+        "createdByAssignmentId": { "$ref": "#/$defs/stableId" },
+        "updatedAt": { "$ref": "#/$defs/isoDateTime" },
+        "updatedByAssignmentId": { "$ref": "#/$defs/stableId" },
+        "events": { "type": "array", "items": { "$ref": "#/$defs/auditEvent" } }
+      }
+    }
+  },
+  "x-fika-source-bdrs": ["PROD-003", "BOOK-002"],
+  "x-fika-status": "Draft review candidate; not approved or adopted"
+}

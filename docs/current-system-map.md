@@ -63,7 +63,7 @@ The direct platform path is authoritative. The legacy path should normalise into
 | CFC | Development; built but not operationally deployed | Uses the shared direct booking-object flow |
 | Demo | Sales/tender demonstration | Demonstrates the direct booking-object flow; must not define production business rules |
 
-The platform recalculates and validates requests server-side, creates booking IDs, writes operational line-item/request views, and sends notifications. Menu/brochure catalogues and platform settings are current inputs. The authoritative physical repository, mutation/version delivery, and final schema adoption remain TODO.
+The platform recalculates and validates requests server-side, creates booking IDs, writes operational line-item/request views, and sends notifications. Menu/brochure catalogues and platform settings are current inputs. The authoritative physical repository and mutation/version delivery remain TODO; the applicable Stage 5 schema Packs are completed and integrated locally, ready for commit.
 
 ## Legacy inbox adapters
 

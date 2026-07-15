@@ -1,0 +1,33 @@
+{
+  "schemaVersion": "1.0.0-draft.1",
+  "readinessAssessmentId": "readiness-assessment:fictional-riverside-opening",
+  "mobilisationId": "mobilisation:fictional-riverside-opening",
+  "targetDate": "2026-09-01",
+  "domainReadiness": [
+    {
+      "domainReference": "domain:fictional-operations",
+      "confirmedByAssignmentId": "assignment:fictional-operations-owner",
+      "ready": true,
+      "evidenceReferences": ["readiness-evidence:fictional-operations-check"]
+    }
+  ],
+  "assessedBy": {
+    "roleAssignmentId": "assignment:fictional-mobilisation-approver",
+    "authorityGrantId": "authority-grant:fictional-readiness-approval"
+  },
+  "internalReadinessConfirmed": true,
+  "significantRisks": [],
+  "assessedAt": "2026-08-28T15:00:00+01:00",
+  "provenance": {
+    "sourceBdrIds": ["MOB-002", "MOB-003", "ROLE-002"],
+    "sourceSnapshot": "local-repository-2026-07-15"
+  },
+  "audit": {
+    "version": 1,
+    "createdAt": "2026-08-28T15:00:00+01:00",
+    "createdByAssignmentId": "assignment:fictional-mobilisation-coordinator",
+    "updatedAt": "2026-08-28T15:00:00+01:00",
+    "updatedByAssignmentId": "assignment:fictional-mobilisation-coordinator",
+    "events": []
+  }
+}

@@ -1,0 +1,55 @@
+{
+  "schemaVersion": "1.0.0-draft.1",
+  "eventId": "event:fictional-client-celebration",
+  "operationalLocationId": "oploc:fictional-central-house",
+  "purpose": "Fictional client anniversary celebration",
+  "eventContact": {
+    "eventContactId": "event-contact:fictional-client-celebration",
+    "personId": "person:fictional-avery-north",
+    "responsibility": "event_communications"
+  },
+  "clientId": "client:fictional-north-star",
+  "qualificationBasis": {
+    "bespoke": true,
+    "partOfRecurringServiceSchedule": false,
+    "occasionDescription": "Fictional client anniversary"
+  },
+  "serviceIds": [
+    "service:fictional-catering",
+    "service:fictional-coffee"
+  ],
+  "serviceArrangementIds": [
+    "service-arrangement:fictional-central-house-catering"
+  ],
+  "approval": {
+    "approvingPersonId": "person:fictional-riley-events",
+    "approvingAuthority": {
+      "authorityType": "organisational_role",
+      "authorityReference": "role:events-lead"
+    },
+    "decision": "approved",
+    "decidedAt": "2026-07-14T20:00:00Z"
+  },
+  "provenance": {
+    "sourceBdrIds": [
+      "EVT-001",
+      "EVT-002",
+      "SVC-008"
+    ],
+    "sourceSnapshot": "local-repository-2026-07-14"
+  },
+  "audit": {
+    "version": 1,
+    "createdAt": "2026-07-14T19:45:00Z",
+    "createdByAssignmentId": "assignment:fictional-events-coordinator",
+    "updatedAt": "2026-07-14T20:00:00Z",
+    "updatedByAssignmentId": "assignment:fictional-events-lead",
+    "events": [
+      {
+        "eventType": "approved",
+        "occurredAt": "2026-07-14T20:00:00Z",
+        "actorAssignmentId": "assignment:fictional-events-lead"
+      }
+    ]
+  }
+}

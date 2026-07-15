@@ -1,0 +1,10 @@
+{
+  "schemaVersion": "pack-4-draft",
+  "id": "bst-001",
+  "sourceDecisionIds": [
+    "BOOK-001"
+  ],
+  "timezone": "Europe/London",
+  "createdAt": "2026-07-14T19:00:00Z",
+  "updatedAt": "2026-07-14T19:00:00Z"
+}

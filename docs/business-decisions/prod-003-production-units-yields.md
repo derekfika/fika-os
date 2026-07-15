@@ -62,3 +62,11 @@ This BDR does not select a database, API, provider, application design or deploy
 ## Future considerations
 
 There are no open discovery questions for this decision. During BDR review, evidence and explanatory text should be checked without altering the Decision section. Later schema, architecture and implementation work must resolve technical detail while preserving this approved business meaning.
+
+## Stage 5 governed clarification
+
+Approved by Derek on 2026-07-15 for Pack 6 processing. The original Decision above and the BDR's Draft metadata remain unchanged.
+
+- Production Line ownership is assigned through organisational roles under the Authority Model.
+- Ownership may differ between Production Lines within one Production Order where the operational context requires it.
+- Ownership is not fixed to a department.

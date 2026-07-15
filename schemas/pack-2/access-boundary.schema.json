@@ -1,0 +1,304 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fika.invalid/schemas/pack-2/access-boundary.schema.json",
+  "title": "Access Boundary",
+  "description": "Least-privilege information-access boundary for a governed business purpose and scope. Draft business schema derived from approved Pack 2 BDR/GRR authority; not an implementation model.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "accessBoundaryId",
+    "informationCategory",
+    "permittedAction",
+    "scope",
+    "detailLevel",
+    "status",
+    "effectivePeriod",
+    "provenance",
+    "audit"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "type": "string",
+      "const": "pack-2-draft-1"
+    },
+    "accessBoundaryId": {
+      "$ref": "#/$defs/stableId"
+    },
+    "informationCategory": {
+      "type": "string",
+      "enum": [
+        "workforce",
+        "commercial",
+        "financial",
+        "client",
+        "operational",
+        "allergen",
+        "food_safety",
+        "safeguarding",
+        "audit",
+        "safety",
+        "other"
+      ]
+    },
+    "permittedAction": {
+      "$ref": "#/$defs/permissionAction"
+    },
+    "scope": {
+      "$ref": "#/$defs/scope"
+    },
+    "detailLevel": {
+      "type": "string",
+      "enum": [
+        "full_detail",
+        "restricted_fields",
+        "summary",
+        "aggregated_output"
+      ]
+    },
+    "businessPurpose": {
+      "type": "string"
+    },
+    "domainOwnerId": {
+      "$ref": "#/$defs/stableId"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "active",
+        "scheduled",
+        "expired",
+        "revoked"
+      ]
+    },
+    "effectivePeriod": {
+      "$ref": "#/$defs/effectivePeriod"
+    },
+    "provenance": {
+      "$ref": "#/$defs/provenance"
+    },
+    "audit": {
+      "$ref": "#/$defs/audit"
+    }
+  },
+  "$defs": {
+    "stableId": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[A-Za-z][A-Za-z0-9_.:-]*$"
+    },
+    "isoDateTime": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "lifecycleStatus": {
+      "type": "string",
+      "enum": [
+        "draft",
+        "active",
+        "inactive",
+        "retired",
+        "expired",
+        "revoked",
+        "superseded"
+      ]
+    },
+    "permissionAction": {
+      "type": "string",
+      "enum": [
+        "View",
+        "Contribute",
+        "Manage",
+        "Approve",
+        "Publish",
+        "Administer"
+      ]
+    },
+    "scopeType": {
+      "type": "string",
+      "enum": [
+        "organisation",
+        "domain",
+        "client",
+        "brand",
+        "operational_capability",
+        "operational_location",
+        "service",
+        "service_arrangement",
+        "event",
+        "mobilisation",
+        "application",
+        "user",
+        "project",
+        "other"
+      ]
+    },
+    "scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "scopeType",
+        "scopeId"
+      ],
+      "properties": {
+        "scopeType": {
+          "$ref": "#/$defs/scopeType"
+        },
+        "scopeId": {
+          "$ref": "#/$defs/stableId"
+        },
+        "scopeLabel": {
+          "type": "string"
+        },
+        "parentScopeId": {
+          "$ref": "#/$defs/stableId"
+        }
+      }
+    },
+    "effectivePeriod": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "startAt"
+      ],
+      "properties": {
+        "startAt": {
+          "$ref": "#/$defs/isoDateTime"
+        },
+        "endAt": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        },
+        "reason": {
+          "type": "string"
+        }
+      }
+    },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sourceBdrIds",
+        "sourceSnapshot",
+        "authorityRank"
+      ],
+      "properties": {
+        "sourceBdrIds": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Z]+-\\d{3}$"
+          }
+        },
+        "sourceSnapshot": {
+          "type": "string"
+        },
+        "authorityRank": {
+          "type": "string",
+          "enum": [
+            "Approved Canon",
+            "Approved Pack 2 BDR Decision",
+            "Approved GRR",
+            "Supporting review artefact"
+          ]
+        },
+        "notes": {
+          "type": "string"
+        }
+      }
+    },
+    "auditEvent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "eventType",
+        "occurredAt",
+        "actorId"
+      ],
+      "properties": {
+        "eventType": {
+          "type": "string"
+        },
+        "occurredAt": {
+          "$ref": "#/$defs/isoDateTime"
+        },
+        "actorId": {
+          "$ref": "#/$defs/stableId"
+        },
+        "reason": {
+          "type": "string"
+        }
+      }
+    },
+    "audit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "version",
+        "createdAt",
+        "createdBy",
+        "updatedAt",
+        "updatedBy",
+        "events"
+      ],
+      "properties": {
+        "version": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "createdAt": {
+          "$ref": "#/$defs/isoDateTime"
+        },
+        "createdBy": {
+          "$ref": "#/$defs/stableId"
+        },
+        "updatedAt": {
+          "$ref": "#/$defs/isoDateTime"
+        },
+        "updatedBy": {
+          "$ref": "#/$defs/stableId"
+        },
+        "events": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/auditEvent"
+          }
+        }
+      }
+    },
+    "approval": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "approvedBy",
+        "approvedAt",
+        "authorityGrantId",
+        "reason"
+      ],
+      "properties": {
+        "approvedBy": {
+          "$ref": "#/$defs/stableId"
+        },
+        "approvedAt": {
+          "$ref": "#/$defs/isoDateTime"
+        },
+        "authorityGrantId": {
+          "$ref": "#/$defs/stableId"
+        },
+        "reason": {
+          "type": "string"
+        }
+      }
+    }
+  },
+  "x-fika-source-bdrs": [
+    "ROLE-006",
+    "ROLE-003",
+    "ROLE-004"
+  ],
+  "x-fika-status": "Draft for review; not adopted"
+}

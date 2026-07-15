@@ -1,0 +1,106 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:fika:schema:draft:brand-variation:1",
+  "title": "Brand Variation v1 (Draft)",
+  "description": "Draft record of a deliberate, documented and approved variation from approved FIKA branding for one governed business scope.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "brandVariationId", "scope", "basis", "variation", "documentationReference", "brandAssuranceRecordIds", "authorisation", "effectivePeriod", "provenance", "audit"],
+  "properties": {
+    "schemaVersion": { "const": "1.0.0-draft.1" },
+    "brandVariationId": { "$ref": "#/$defs/stableId" },
+    "scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["scopeType", "scopeReference"],
+      "properties": {
+        "scopeType": { "type": "string", "enum": ["client", "operational_location", "service"] },
+        "scopeReference": { "$ref": "#/$defs/stableId" }
+      }
+    },
+    "basis": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["basisType", "basisReference"],
+      "properties": {
+        "basisType": { "type": "string", "enum": ["client_agreement", "co_branding_arrangement", "white_labelled_service"] },
+        "basisReference": { "$ref": "#/$defs/stableId" }
+      }
+    },
+    "variation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["description", "elements"],
+      "properties": {
+        "description": { "type": "string", "minLength": 1 },
+        "elements": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "type": "string", "enum": ["logo", "colour", "imagery", "messaging"] }
+        }
+      }
+    },
+    "documentationReference": { "$ref": "#/$defs/stableId" },
+    "brandAssuranceRecordIds": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "$ref": "#/$defs/stableId" } },
+    "authorisation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["marketingApprovalReference", "brandApprovalReference"],
+      "properties": {
+        "marketingApprovalReference": { "$ref": "#/$defs/stableId" },
+        "brandApprovalReference": { "$ref": "#/$defs/stableId" }
+      }
+    },
+    "effectivePeriod": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["effectiveFrom"],
+      "properties": {
+        "effectiveFrom": { "type": "string", "format": "date" },
+        "effectiveTo": { "type": "string", "format": "date" }
+      }
+    },
+    "provenance": { "$ref": "#/$defs/provenance" },
+    "audit": { "$ref": "#/$defs/audit" }
+  },
+  "$defs": {
+    "stableId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[A-Za-z][A-Za-z0-9_.:-]*$" },
+    "isoDateTime": { "type": "string", "format": "date-time" },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sourceBdrIds", "sourceSnapshot"],
+      "properties": {
+        "sourceBdrIds": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "type": "string", "pattern": "^(BRAND|CFG|LOC|SVC|ROLE)-\\d{3}$" } },
+        "sourceSnapshot": { "type": "string", "minLength": 1 }
+      }
+    },
+    "auditEvent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["eventType", "occurredAt", "actorAssignmentId"],
+      "properties": {
+        "eventType": { "type": "string", "minLength": 1 },
+        "occurredAt": { "$ref": "#/$defs/isoDateTime" },
+        "actorAssignmentId": { "$ref": "#/$defs/stableId" },
+        "reason": { "type": "string" }
+      }
+    },
+    "audit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "createdAt", "createdByAssignmentId", "updatedAt", "updatedByAssignmentId", "events"],
+      "properties": {
+        "version": { "type": "integer", "minimum": 1 },
+        "createdAt": { "$ref": "#/$defs/isoDateTime" },
+        "createdByAssignmentId": { "$ref": "#/$defs/stableId" },
+        "updatedAt": { "$ref": "#/$defs/isoDateTime" },
+        "updatedByAssignmentId": { "$ref": "#/$defs/stableId" },
+        "events": { "type": "array", "items": { "$ref": "#/$defs/auditEvent" } }
+      }
+    }
+  },
+  "x-fika-source-bdrs": ["BRAND-001", "CFG-001", "CFG-002", "LOC-001", "ROLE-002"],
+  "x-fika-status": "Draft review candidate; not approved or adopted"
+}

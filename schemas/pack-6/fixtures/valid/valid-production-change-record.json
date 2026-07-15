@@ -1,0 +1,32 @@
+{
+  "schemaVersion": "1.0.0-draft.1",
+  "productionChangeId": "production-change:fictional-1001-v4",
+  "productionOrderId": "production-order:fictional-1001",
+  "sourceBooking": {
+    "bookingId": "booking:fictional-1001",
+    "bookingVersion": 4
+  },
+  "changeType": "amendment",
+  "reason": "Fictional final attendance increased",
+  "originalRequestSnapshotReference": "booking-snapshot:fictional-1001-v3",
+  "changedRequestSnapshotReference": "booking-snapshot:fictional-1001-v4",
+  "approvedBy": {
+    "personId": "person:fictional-production-approver",
+    "authorityReference": "authority-grant:fictional-production-change"
+  },
+  "occurredAt": "2026-08-11T10:00:00+01:00",
+  "productionHadCommenced": false,
+  "handlingMode": "automatic_update",
+  "provenance": {
+    "sourceBdrIds": ["PROD-001", "PROD-004", "BOOK-006"],
+    "sourceSnapshot": "local-repository-2026-07-15"
+  },
+  "audit": {
+    "version": 1,
+    "createdAt": "2026-08-11T10:00:00+01:00",
+    "createdByAssignmentId": "assignment:fictional-production-controller",
+    "updatedAt": "2026-08-11T10:00:00+01:00",
+    "updatedByAssignmentId": "assignment:fictional-production-controller",
+    "events": []
+  }
+}

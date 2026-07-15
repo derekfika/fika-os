@@ -26,7 +26,7 @@ The approved decision establishes a shared business rule. The alternative—leav
 ## Positive consequences
 
 - FIKA now has a stable, human-approved rule for this aspect of Events.
-- It directly enabled [EVT-002](evt-002-event-governance.md), [SVC-008](svc-008-service-event-boundary.md) to be decided on a stable basis.
+- It directly enabled [EVT-002](evt-002-event-governance.md), [SVC-008](svc-008-service-and-event-boundary.md) to be decided on a stable basis.
 - Stage 5 schemas and Stage 6 architecture can trace their treatment of this subject to one canonical source.
 - Application and provider behaviour cannot silently redefine the decision.
 
@@ -45,7 +45,7 @@ This BDR does not select a database, API, provider, application design or deploy
 ## Related decisions
 
 - **Directly informs:** [EVT-002 — Event Governance](evt-002-event-governance.md)
-- **Directly informs:** [SVC-008 — Service and Event Boundary](svc-008-service-event-boundary.md)
+- **Directly informs:** [SVC-008 — Service and Event Boundary](svc-008-service-and-event-boundary.md)
 
 ## Evidence
 
@@ -62,3 +62,13 @@ This BDR does not select a database, API, provider, application design or deploy
 ## Future considerations
 
 There are no open discovery questions for this decision. During BDR review, evidence and explanatory text should be checked without altering the Decision section. Later schema, architecture and implementation work must resolve technical detail while preserving this approved business meaning.
+
+## Stage 5 governed clarification
+
+Approved by Derek on 2026-07-15 for Pack 5 processing. The original Decision above and the BDR's Draft metadata remain unchanged.
+
+- Replace the term "Customer" with "Event Contact" in the Pack 5 schema and explanatory terminology.
+- Every Event has one Event Contact: the identifiable person responsible for Event communications, including confirmations, updates and operational correspondence.
+- An Event may optionally reference an existing Client where applicable.
+- Client represents an organisation with an approved Operational Relationship (OPREL) with FIKA.
+- An Event does not require a Client relationship; examples include internal meetings, Bloom Academy sessions, Coffee Clubs and staff activities.

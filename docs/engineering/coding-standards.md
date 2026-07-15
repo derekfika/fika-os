@@ -34,7 +34,7 @@ Project-specific rules may strengthen these standards in the nearest `AGENTS.md`
 
 - Use strict type checking for new TypeScript projects unless an ADR documents a temporary exception.
 - Do not use `any` to bypass uncertainty. Use `unknown`, validate, then narrow.
-- Generate or derive types from adopted canonical schemas where practical; prevent parallel handwritten contracts from drifting.
+- Generate or derive types from completed, committed canonical schemas where practical; prevent parallel handwritten contracts from drifting.
 - Distinguish identifiers, money, timestamps, statuses, commands, results, and provider metadata through clear types.
 - Use discriminated unions for meaningful variants and exhaustive handling for closed status sets.
 - Keep optional fields genuinely optional. Do not use optionality as a substitute for unresolved modelling.

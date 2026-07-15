@@ -1,0 +1,128 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:fika:schema:draft:mobilisation:1",
+  "title": "Mobilisation v1 (Draft)",
+  "description": "Draft Mobilisation-domain record for one governed programme that establishes, materially changes or re-establishes an approved operating scope.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "mobilisationId",
+    "purpose",
+    "programmeType",
+    "scope",
+    "governanceEntryReference",
+    "stewardship",
+    "effectivePeriod",
+    "phasePlanId",
+    "taskIds",
+    "readinessAssessmentId",
+    "provenance",
+    "audit"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "1.0.0-draft.1" },
+    "mobilisationId": { "$ref": "#/$defs/stableId" },
+    "purpose": { "type": "string", "minLength": 1 },
+    "programmeType": { "type": "string", "enum": ["establishment", "material_change", "re_establishment"] },
+    "scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["scopeType", "scopeReference"],
+      "properties": {
+        "scopeType": { "type": "string", "enum": ["operational_location", "service_arrangement", "operational_capability", "other_approved_scope"] },
+        "scopeReference": { "$ref": "#/$defs/stableId" },
+        "operationalLocationId": { "$ref": "#/$defs/stableId" }
+      }
+    },
+    "governanceEntryReference": { "$ref": "#/$defs/stableId", "description": "Reference to the approved decision or policy classifying this work as requiring Mobilisation governance." },
+    "clientId": { "$ref": "#/$defs/stableId" },
+    "contractReference": { "$ref": "#/$defs/stableId" },
+    "commercialAgreementReference": { "$ref": "#/$defs/stableId" },
+    "goLiveTarget": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["targetDate", "authorityReference"],
+      "properties": {
+        "targetDate": { "type": "string", "format": "date" },
+        "authorityReference": { "$ref": "#/$defs/stableId" },
+        "basisReference": { "$ref": "#/$defs/stableId" }
+      }
+    },
+    "stewardship": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["accountableOrganisationalRoleId", "coordinatorAssignmentId", "authorityGrantIds", "delegationIds"],
+      "properties": {
+        "accountableOrganisationalRoleId": { "$ref": "#/$defs/stableId" },
+        "accountableRoleAssignmentId": { "$ref": "#/$defs/stableId" },
+        "coordinatorAssignmentId": { "$ref": "#/$defs/stableId" },
+        "authorityGrantIds": { "type": "array", "uniqueItems": true, "items": { "$ref": "#/$defs/stableId" } },
+        "delegationIds": { "type": "array", "uniqueItems": true, "items": { "$ref": "#/$defs/stableId" } }
+      }
+    },
+    "effectivePeriod": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["effectiveFrom"],
+      "properties": {
+        "effectiveFrom": { "type": "string", "format": "date" },
+        "effectiveTo": { "type": "string", "format": "date" }
+      }
+    },
+    "phasePlanId": { "$ref": "#/$defs/stableId" },
+    "taskIds": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "$ref": "#/$defs/stableId" } },
+    "readinessAssessmentId": { "$ref": "#/$defs/stableId" },
+    "outcome": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["summary", "recordedAt", "recordedByAssignmentId"],
+      "properties": {
+        "summary": { "type": "string", "minLength": 1 },
+        "recordedAt": { "$ref": "#/$defs/isoDateTime" },
+        "recordedByAssignmentId": { "$ref": "#/$defs/stableId" }
+      }
+    },
+    "provenance": { "$ref": "#/$defs/provenance" },
+    "audit": { "$ref": "#/$defs/audit" }
+  },
+  "$defs": {
+    "stableId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[A-Za-z][A-Za-z0-9_.:-]*$" },
+    "isoDateTime": { "type": "string", "format": "date-time" },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sourceBdrIds", "sourceSnapshot"],
+      "properties": {
+        "sourceBdrIds": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "type": "string", "pattern": "^(MOB|LOC|ROLE|CAP|SVC)-\\d{3}$" } },
+        "sourceSnapshot": { "type": "string", "minLength": 1 }
+      }
+    },
+    "auditEvent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["eventType", "occurredAt", "actorAssignmentId"],
+      "properties": {
+        "eventType": { "type": "string", "minLength": 1 },
+        "occurredAt": { "$ref": "#/$defs/isoDateTime" },
+        "actorAssignmentId": { "$ref": "#/$defs/stableId" },
+        "reason": { "type": "string" }
+      }
+    },
+    "audit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "createdAt", "createdByAssignmentId", "updatedAt", "updatedByAssignmentId", "events"],
+      "properties": {
+        "version": { "type": "integer", "minimum": 1 },
+        "createdAt": { "$ref": "#/$defs/isoDateTime" },
+        "createdByAssignmentId": { "$ref": "#/$defs/stableId" },
+        "updatedAt": { "$ref": "#/$defs/isoDateTime" },
+        "updatedByAssignmentId": { "$ref": "#/$defs/stableId" },
+        "events": { "type": "array", "items": { "$ref": "#/$defs/auditEvent" } }
+      }
+    }
+  },
+  "x-fika-source-bdrs": ["MOB-001", "MOB-002", "MOB-003", "MOB-004", "LOC-001", "ROLE-002", "CAP-001", "SVC-004"],
+  "x-fika-status": "Draft review candidate; not approved or adopted"
+}

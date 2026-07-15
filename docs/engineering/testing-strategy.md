@@ -27,7 +27,7 @@ Use for pure validation, pricing, status transitions, mapping, identifiers, time
 - Test required/optional fields, enums, formats, money units, timestamps, stable IDs and additional-property policy.
 - Test backward/forward compatibility according to the contract's adoption policy.
 - Test adapters against the canonical output contract without making legacy layouts canonical.
-- A draft schema is not adopted merely because it validates.
+- Schema validation alone does not complete a Pack; traceability, fixtures, reports and repository integration must also succeed.
 
 ### Integration tests
 

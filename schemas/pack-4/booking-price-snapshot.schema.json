@@ -1,0 +1,137 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fika-os.local/schemas/pack-4/booking-price-snapshot.schema.json",
+  "title": "Booking Price Snapshot",
+  "description": "Draft business contract for immutable accepted price snapshots and amendment versions from BOOK-004.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "id",
+    "sourceDecisionIds",
+    "bookingId",
+    "snapshotVersion",
+    "snapshotStatus",
+    "immutableAfterAcceptance",
+    "subtotalExVat",
+    "createdAt",
+    "updatedAt"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "type": "string",
+      "const": "pack-4-draft"
+    },
+    "id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "sourceDecisionIds": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1
+    },
+    "createdAt": {
+      "type": "string"
+    },
+    "updatedAt": {
+      "type": "string"
+    },
+    "notes": {
+      "type": "string"
+    },
+    "bookingId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "snapshotVersion": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "snapshotStatus": {
+      "type": "string",
+      "enum": [
+        "submitted",
+        "accepted",
+        "superseded_by_amendment"
+      ]
+    },
+    "immutableAfterAcceptance": {
+      "type": "boolean",
+      "const": true
+    },
+    "supersedesSnapshotId": {
+      "type": "string"
+    },
+    "subtotalExVat": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "amountMinor",
+        "currency"
+      ],
+      "properties": {
+        "amountMinor": {
+          "type": "integer"
+        },
+        "currency": {
+          "type": "string",
+          "minLength": 3
+        }
+      }
+    },
+    "chargesTotal": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "amountMinor",
+        "currency"
+      ],
+      "properties": {
+        "amountMinor": {
+          "type": "integer"
+        },
+        "currency": {
+          "type": "string",
+          "minLength": 3
+        }
+      }
+    },
+    "vatTotal": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "amountMinor",
+        "currency"
+      ],
+      "properties": {
+        "amountMinor": {
+          "type": "integer"
+        },
+        "currency": {
+          "type": "string",
+          "minLength": 3
+        }
+      }
+    },
+    "totalIncVat": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "amountMinor",
+        "currency"
+      ],
+      "properties": {
+        "amountMinor": {
+          "type": "integer"
+        },
+        "currency": {
+          "type": "string",
+          "minLength": 3
+        }
+      }
+    }
+  }
+}

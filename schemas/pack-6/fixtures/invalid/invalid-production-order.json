@@ -1,0 +1,36 @@
+{
+  "schemaVersion": "1.0.0-draft.1",
+  "productionOrderId": "production-order:fictional-ineligible",
+  "sourceBooking": {
+    "bookingId": "booking:fictional-ineligible",
+    "bookingVersion": 1
+  },
+  "ownership": {
+    "organisationalRoleId": "role:fictional-production-owner"
+  },
+  "eligibility": {
+    "bookingApprovalReference": "booking-approval:fictional-pending",
+    "operationalFulfilmentRequired": false
+  },
+  "lifecycleStatus": "requested",
+  "customerCommitment": {
+    "serviceAt": "2026-08-12T12:30:00+01:00"
+  },
+  "productionLineIds": ["production-line:fictional-ineligible-1"],
+  "routingAllocationIds": ["routing-allocation:fictional-ineligible-1"],
+  "productionTiming": {
+    "requiredReadyAt": "2026-08-12T10:45:00+01:00"
+  },
+  "provenance": {
+    "sourceBdrIds": ["PROD-001"],
+    "sourceSnapshot": "local-repository-2026-07-15"
+  },
+  "audit": {
+    "version": 1,
+    "createdAt": "2026-07-15T07:30:00Z",
+    "createdByAssignmentId": "assignment:fictional-production-planner",
+    "updatedAt": "2026-07-15T07:30:00Z",
+    "updatedByAssignmentId": "assignment:fictional-production-planner",
+    "events": []
+  }
+}

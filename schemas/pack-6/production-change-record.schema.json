@@ -1,0 +1,123 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:fika:schema:draft:production-change-record:1",
+  "title": "Production Change Record v1 (Draft)",
+  "description": "Draft immutable audit record for a Booking amendment or cancellation affecting an existing Production Order.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "productionChangeId",
+    "productionOrderId",
+    "sourceBooking",
+    "changeType",
+    "reason",
+    "originalRequestSnapshotReference",
+    "changedRequestSnapshotReference",
+    "approvedBy",
+    "occurredAt",
+    "productionHadCommenced",
+    "handlingMode",
+    "provenance",
+    "audit"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "1.0.0-draft.1" },
+    "productionChangeId": { "$ref": "#/$defs/stableId" },
+    "productionOrderId": { "$ref": "#/$defs/stableId" },
+    "sourceBooking": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["bookingId", "bookingVersion"],
+      "properties": {
+        "bookingId": { "$ref": "#/$defs/stableId" },
+        "bookingVersion": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "changeType": { "type": "string", "enum": ["amendment", "cancellation"] },
+    "reason": { "type": "string", "minLength": 1 },
+    "originalRequestSnapshotReference": { "$ref": "#/$defs/stableId" },
+    "changedRequestSnapshotReference": { "$ref": "#/$defs/stableId" },
+    "approvedBy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["personId", "authorityReference"],
+      "properties": {
+        "personId": { "$ref": "#/$defs/stableId" },
+        "authorityReference": { "$ref": "#/$defs/stableId" }
+      }
+    },
+    "occurredAt": { "$ref": "#/$defs/isoDateTime" },
+    "productionHadCommenced": { "type": "boolean" },
+    "handlingMode": { "type": "string", "enum": ["automatic_update", "automatic_cancellation", "human_review"] },
+    "operationalNotificationReferences": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "$ref": "#/$defs/stableId" } },
+    "humanReviewOutcome": { "type": "string", "minLength": 1 },
+    "provenance": { "$ref": "#/$defs/provenance" },
+    "audit": { "$ref": "#/$defs/audit" }
+  },
+  "oneOf": [
+    {
+      "type": "object",
+      "properties": {
+        "changeType": { "const": "amendment" },
+        "productionHadCommenced": { "const": false },
+        "handlingMode": { "const": "automatic_update" }
+      }
+    },
+    {
+      "type": "object",
+      "properties": {
+        "changeType": { "const": "cancellation" },
+        "productionHadCommenced": { "const": false },
+        "handlingMode": { "const": "automatic_cancellation" }
+      }
+    },
+    {
+      "type": "object",
+      "required": ["operationalNotificationReferences"],
+      "properties": {
+        "productionHadCommenced": { "const": true },
+        "handlingMode": { "const": "human_review" }
+      }
+    }
+  ],
+  "$defs": {
+    "stableId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[A-Za-z][A-Za-z0-9_.:-]*$" },
+    "isoDateTime": { "type": "string", "format": "date-time" },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sourceBdrIds", "sourceSnapshot"],
+      "properties": {
+        "sourceBdrIds": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "type": "string", "pattern": "^(PROD|BOOK)-\\d{3}$" } },
+        "sourceSnapshot": { "type": "string", "minLength": 1 }
+      }
+    },
+    "auditEvent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["eventType", "occurredAt", "actorAssignmentId"],
+      "properties": {
+        "eventType": { "type": "string", "minLength": 1 },
+        "occurredAt": { "$ref": "#/$defs/isoDateTime" },
+        "actorAssignmentId": { "$ref": "#/$defs/stableId" },
+        "reason": { "type": "string" }
+      }
+    },
+    "audit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "createdAt", "createdByAssignmentId", "updatedAt", "updatedByAssignmentId", "events"],
+      "properties": {
+        "version": { "type": "integer", "minimum": 1 },
+        "createdAt": { "$ref": "#/$defs/isoDateTime" },
+        "createdByAssignmentId": { "$ref": "#/$defs/stableId" },
+        "updatedAt": { "$ref": "#/$defs/isoDateTime" },
+        "updatedByAssignmentId": { "$ref": "#/$defs/stableId" },
+        "events": { "type": "array", "items": { "$ref": "#/$defs/auditEvent" } }
+      }
+    }
+  },
+  "x-fika-source-bdrs": ["PROD-001", "PROD-004", "BOOK-004", "BOOK-006"],
+  "x-fika-status": "Draft review candidate; not approved or adopted"
+}

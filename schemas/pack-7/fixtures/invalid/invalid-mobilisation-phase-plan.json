@@ -1,0 +1,26 @@
+{
+  "schemaVersion": "1.0.0-draft.1",
+  "mobilisationPhasePlanId": "mobilisation-phase-plan:fictional-missing-optionality",
+  "mobilisationId": "mobilisation:fictional-riverside-opening",
+  "workshopBaselineReference": "workshop-baseline:fictional-mobilisation-v1",
+  "phases": [
+    {
+      "phaseInstanceId": "phase-instance:fictional-alignment",
+      "phaseReference": "workshop-phase:fictional-alignment",
+      "sequence": 1,
+      "dependencyPhaseInstanceIds": []
+    }
+  ],
+  "provenance": {
+    "sourceBdrIds": ["MOB-001"],
+    "sourceSnapshot": "local-repository-2026-07-15"
+  },
+  "audit": {
+    "version": 1,
+    "createdAt": "2026-07-15T08:16:00Z",
+    "createdByAssignmentId": "assignment:fictional-mobilisation-coordinator",
+    "updatedAt": "2026-07-15T08:16:00Z",
+    "updatedByAssignmentId": "assignment:fictional-mobilisation-coordinator",
+    "events": []
+  }
+}

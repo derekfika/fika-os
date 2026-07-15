@@ -1,0 +1,79 @@
+{
+  "validator": "local deterministic validator for the Draft 2020-12 keywords used by this pack",
+  "schemaSyntaxValid": true,
+  "failures": 0,
+  "results": [
+    {
+      "schema": "mobilisation-phase-plan.schema.json",
+      "fixture": "valid-mobilisation-phase-plan.json",
+      "expected": "pass",
+      "actual": "pass",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "schema": "mobilisation-phase-plan.schema.json",
+      "fixture": "invalid-mobilisation-phase-plan.json",
+      "expected": "fail",
+      "actual": "fail",
+      "passed": true,
+      "errors": [
+        "$.phases[0].optionalWork: required property missing"
+      ]
+    },
+    {
+      "schema": "mobilisation-readiness-assessment.schema.json",
+      "fixture": "valid-mobilisation-readiness-assessment.json",
+      "expected": "pass",
+      "actual": "pass",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "schema": "mobilisation-readiness-assessment.schema.json",
+      "fixture": "invalid-mobilisation-readiness-assessment.json",
+      "expected": "fail",
+      "actual": "fail",
+      "passed": true,
+      "errors": [
+        "$.domainReadiness[0].evidenceReferences: contains too few items"
+      ]
+    },
+    {
+      "schema": "mobilisation-task.schema.json",
+      "fixture": "valid-mobilisation-task.json",
+      "expected": "pass",
+      "actual": "pass",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "schema": "mobilisation-task.schema.json",
+      "fixture": "invalid-mobilisation-task.json",
+      "expected": "fail",
+      "actual": "fail",
+      "passed": true,
+      "errors": [
+        "$: does not satisfy oneOf"
+      ]
+    },
+    {
+      "schema": "mobilisation.schema.json",
+      "fixture": "valid-mobilisation.json",
+      "expected": "pass",
+      "actual": "pass",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "schema": "mobilisation.schema.json",
+      "fixture": "invalid-mobilisation.json",
+      "expected": "fail",
+      "actual": "fail",
+      "passed": true,
+      "errors": [
+        "$.stewardship.accountableOrganisationalRoleId: required property missing"
+      ]
+    }
+  ]
+}

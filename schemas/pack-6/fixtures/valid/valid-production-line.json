@@ -1,0 +1,41 @@
+{
+  "schemaVersion": "1.0.0-draft.1",
+  "productionLineId": "production-line:fictional-1001-1",
+  "productionOrderId": "production-order:fictional-1001",
+  "ownership": {
+    "organisationalRoleId": "role:fictional-cold-kitchen-owner",
+    "roleAssignmentId": "assignment:fictional-cold-kitchen-lead",
+    "operationalContextReference": "oploc:fictional-central-kitchen"
+  },
+  "sourceBookingItemIds": ["booking-item:fictional-1001-sandwiches"],
+  "orderedSnapshot": {
+    "quantity": 10,
+    "unitLabel": "people",
+    "unitReference": "unit:people"
+  },
+  "productionQuantity": {
+    "quantity": 20,
+    "unitLabel": "pieces",
+    "unitReference": "unit:pieces"
+  },
+  "productionRuleSnapshot": {
+    "preparationUnitReference": "unit:pieces",
+    "yieldRuleReferences": ["yield-rule:fictional-two-pieces-per-person"],
+    "recipeConversionReferences": ["recipe-conversion:fictional-sandwich-selection"],
+    "batchCalculationReference": "batch-calculation:fictional-1001-1",
+    "aggregationRuleReferences": ["aggregation-rule:fictional-sandwich-type"]
+  },
+  "aggregationGroupReference": "aggregation-group:fictional-sandwiches",
+  "provenance": {
+    "sourceBdrIds": ["PROD-003", "BOOK-002"],
+    "sourceSnapshot": "local-repository-2026-07-15"
+  },
+  "audit": {
+    "version": 1,
+    "createdAt": "2026-07-15T07:31:00Z",
+    "createdByAssignmentId": "assignment:fictional-production-planner",
+    "updatedAt": "2026-07-15T07:31:00Z",
+    "updatedByAssignmentId": "assignment:fictional-production-planner",
+    "events": []
+  }
+}

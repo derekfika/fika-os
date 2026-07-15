@@ -62,3 +62,13 @@ This BDR does not select a database, API, provider, application design or deploy
 ## Future considerations
 
 There are no open discovery questions for this decision. During BDR review, evidence and explanatory text should be checked without altering the Decision section. Later schema, architecture and implementation work must resolve technical detail while preserving this approved business meaning.
+
+## Stage 5 governed clarification
+
+Approved by Derek on 2026-07-15 for Pack 6 processing. The original Decision above and the BDR's Draft metadata remain unchanged.
+
+- Production is location-independent and may occur at any Operational Location capable of fulfilling the required work.
+- Central and on-site Production are not separate canonical business concepts.
+- Every Production Order records a mandatory Required Ready Time.
+- Production Start Time is optional.
+- Additional Production timing milestones remain deferred.

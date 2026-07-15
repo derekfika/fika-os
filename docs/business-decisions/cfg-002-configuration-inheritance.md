@@ -1,4 +1,4 @@
-# CFG-002: Configuration Inheritance
+# CFG-002 — Configuration Inheritance
 
 - **Decision ID:** CFG-002
 - **Workbook Decision ID:** DEC-CFG-002
@@ -15,7 +15,7 @@ Before approval, the recorded evidence stated: “Multiple scopes are proposed; 
 
 ## Decision
 
-Use explicit layered inheritance with validated, dated overrides; exact precedence requires approval.
+Configuration values inherit only through explicitly governed scope relationships. A value defined at a more specific applicable scope overrides an inherited value from a broader scope, while an absent value continues to inherit the nearest valid effective value. No universal precedence order is assumed between unrelated scopes: where two applicable scopes could conflict, the owning domain must define and govern the permitted relationship and precedence rule before use. Every override must be authorised through AUTHMOD, effective-dated, validated for its scope and dependencies, and preserved with its reason, approver and audit history. Expired or withdrawn overrides reveal the next valid inherited value rather than copying or rewriting it. User- or application-level configuration must not override protected business rules unless that authority is explicitly granted.
 
 ## Business rationale
 
@@ -25,16 +25,21 @@ The approved decision establishes a shared business rule. The alternative—leav
 
 ## Positive consequences
 
-- FIKA now has a stable, human-approved rule for this aspect of Configuration.
-- It provides stable business meaning for later BDR, schema and architecture work.
-- Stage 5 schemas and Stage 6 architecture can trace their treatment of this subject to one canonical source.
-- Application and provider behaviour cannot silently redefine the decision.
+FIKA now has a stable, human-approved rule for this aspect of Configuration.
+
+It provides stable business meaning for later BDR, schema and architecture work.
+
+Stage 5 schemas and Stage 6 architecture can trace their treatment of this subject to one canonical source.
+
+Application and provider behaviour cannot silently redefine the decision.
 
 ## Trade-offs
 
-- The decision constrains local interpretation where consistency is required.
-- Any future change must preserve history and use a superseding or amended BDR rather than silently editing downstream documents.
-- The decision deliberately leaves technology, storage and API design to later stages.
+The decision constrains local interpretation where consistency is required.
+
+Any future change must preserve history and use a superseding or amended BDR rather than silently editing downstream documents.
+
+The decision deliberately leaves technology, storage and API design to later stages.
 
 ## Implementation implications
 
@@ -61,3 +66,7 @@ This BDR does not select a database, API, provider, application design or deploy
 ## Future considerations
 
 There are no open discovery questions for this decision. During BDR review, evidence and explanatory text should be checked without altering the Decision section. Later schema, architecture and implementation work must resolve technical detail while preserving this approved business meaning.
+
+## Revision 2 governance note
+
+This Revision 2 candidate applies the approved Governed Refactoring Register amendment. Ownership, authority and technical administration remain separate; AUTHMOD governs approved authority; Platform Governance implements approved controls and assesses impact without becoming business authority.

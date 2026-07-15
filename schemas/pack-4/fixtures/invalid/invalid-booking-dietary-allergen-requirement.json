@@ -1,0 +1,21 @@
+{
+  "schemaVersion": "pack-4-draft",
+  "id": "bdar-001",
+  "sourceDecisionIds": [
+    "BOOK-003"
+  ],
+  "requirementType": "allergy",
+  "description": "Declared allergy requiring customer-facing disclosure",
+  "appliesTo": {
+    "bookingItemIds": [
+      "item-001"
+    ],
+    "personLabel": "Guest 1"
+  },
+  "customerDisclosure": {
+    "required": true,
+    "unexpected": "bad"
+  },
+  "createdAt": "2026-07-14T19:00:00Z",
+  "updatedAt": "2026-07-14T19:00:00Z"
+}

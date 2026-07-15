@@ -2,30 +2,30 @@
 
 ## Purpose
 
-This roadmap divides Stage 5 into dependency-ordered review packs. It is a governance and sequencing plan, not a schema definition, implementation roadmap or adoption record.
+This roadmap divides Stage 5 into dependency-ordered schema Packs. It is a governance and sequencing plan, not a schema definition, implementation roadmap or completion record.
 
-All packs follow the [Schema Generation and Approval Process](platform-methodology/schema-generation-and-approval-process.md). A pack may be planned from Draft BDRs, but generation and adoption must satisfy the BDR entry gates stated in that process.
+All Packs follow the [Schema Generation and Completion Process](platform-methodology/schema-generation-and-approval-process.md). Missing business meaning returns to a Human Decision Gate; deterministic completion continues through repository integration.
 
 ## Status vocabulary
 
-- **Approval status:** Not submitted, Under Review, Approved or Adopted.
+- **Repository status:** Not started, Staged, Integrated or Committed.
 - **Completion status:** Planned, In progress, Complete or Blocked.
 
-“Complete” means the pack's Stage 5 deliverables are complete; “Adopted” requires a separate explicit adoption record.
+“Complete” means the Pack's Stage 5 deliverables are complete and integrated. `READY FOR COMMIT` means Git commit is the sole remaining manual engineering action.
 
 ## Pack summary
 
-| Pack | Scope | Depends on | Review owner | Approval status | Completion status |
+| Pack | Scope | Depends on | Business authority | Repository status | Completion status |
 |---|---|---|---|---|---|
-| 1 | Shared primitives; Client; Client Contact; Operational Location; Alias; Ownership; Type | Accepted CLIENT, LOC and TYPE BDRs | Derek / Commercial and Derek / Operations; schema reviewer TODO | Not submitted | Blocked — relevant BDRs remain Draft |
-| 2 | Capabilities; Configuration; Roles; Responsibilities; Assignments; Permissions | Pack 1; accepted CAP, CFG and ROLE BDRs | Relevant BDR decision owners; schema reviewer TODO | Not submitted | Blocked — Pack 1 and BDR review |
-| 3 | Service; Recurring Schedule; Service Arrangement; Service Occurrence | Packs 1–2; accepted SVC BDRs | Derek / Operations and relevant Service owners; schema reviewer TODO | Not submitted | Blocked — dependencies and BDR review |
-| 4 | Booking | Packs 1–3; accepted BOOK BDRs | Derek / Hospitality and relevant Booking owners; schema reviewer TODO | Not submitted | Blocked — dependencies and BDR review |
-| 5 | Events | Packs 1–3; accepted EVT BDRs | Derek / Events owner; schema reviewer TODO | Not submitted | Blocked — dependencies and BDR review |
-| 6 | Production | Packs 1–4; accepted PROD BDRs | Derek / Production / Hospitality; schema reviewer TODO | Not submitted | Blocked — dependencies and BDR review |
-| 7 | Mobilisation | Packs 1–3 where referenced; accepted MOB BDRs | Derek / Mobilisation owner; schema reviewer TODO | Not submitted | Blocked — dependencies and BDR review |
-| 8 | Brand; Waste | Pack 1; Pack 2 configuration where referenced; accepted BRAND and WASTE BDRs | Derek / Brand owner and Derek / Operations; schema reviewer TODO | Not submitted | Blocked — dependencies and BDR review |
-| 9 | Provider mappings | Adopted canonical schemas from applicable packs | Provider/integration owners TODO | Not submitted | Blocked — canonical schema adoption |
+| 1 | Shared primitives; Client; Client Contact; Operational Location; Alias; Ownership; Type | Governed CLIENT, LOC and TYPE BDRs | Relevant Client and Operations business owners | Integrated | Complete; ready for commit |
+| 2 | Capabilities; Configuration; Roles; Responsibilities; Assignments; Permissions | Pack 1; governed CAP, CFG and ROLE BDRs | Relevant BDR business owners | Integrated | Complete; ready for commit |
+| 3 | Service; Recurring Schedule; Service Arrangement; Service Occurrence | Packs 1–2; governed SVC BDRs | Operations and relevant Service owners | Integrated | Complete; ready for commit |
+| 4 | Booking | Packs 1–3; governed BOOK BDRs | Hospitality and relevant Booking owners | Integrated | Complete; ready for commit |
+| 5 | Events | Packs 1–3; governed EVT BDRs | Events business owner | Integrated | Complete; ready for commit |
+| 6 | Production | Packs 1–4; governed PROD BDRs | Production and Hospitality business owners | Integrated | Complete; ready for commit |
+| 7 | Mobilisation | Packs 1–3 where referenced; governed MOB BDRs | Mobilisation business owner | Integrated | Complete; ready for commit |
+| 8 | Brand; Waste | Pack 1; Pack 2 configuration where referenced; governed BRAND and WASTE BDRs | Brand and Operations business owners | Integrated | Complete; ready for commit |
+| 9 | Provider mappings | Completed and integrated canonical schemas from applicable Packs | Relevant domain owner plus provider/integration owner | Not started | Blocked only by first provider selection and accountable owner |
 
 ## Pack 1 — Foundational identity and location
 
@@ -45,16 +45,16 @@ Establish the shared primitives and stable organisational/place identities that 
 - Explicit identity, ownership, relationship, cardinality, lifecycle and effective-history rules.
 - Valid and invalid fictional fixtures.
 - Validation evidence and completed review checklists.
-- Approval and adoption records when the relevant gates are passed.
+- Completion and repository-integration records.
 
-### Review owner
+### Business authority
 
-Derek / Commercial for Client meaning and Derek / Operations for Operational Location meaning. **TODO:** name the standing schema reviewer/adoption authority.
+Relevant Client, Commercial and Operations business owners.
 
 ### Status
 
-- **Approval status:** Not submitted
-- **Completion status:** Blocked pending acceptance of the relevant Draft BDRs
+- **Repository status:** Integrated
+- **Completion status:** Complete; ready for commit
 
 ## Pack 2 — Capability, configuration and authority
 
@@ -71,16 +71,16 @@ Express Operational Capability, configuration, Roles, Responsibilities, Assignme
 
 - Schemas and guidance for each named concept and their explicit relationships.
 - Inheritance, effective-history and scope representation where required by BDRs.
-- Valid/invalid fixtures, validation evidence and review/adoption records.
+- Valid/invalid fixtures, validation evidence and completion records.
 
-### Review owner
+### Business authority
 
-Relevant BDR decision owners. **TODO:** confirm a single coordinating review owner and adoption authority.
+Relevant Capability, Configuration, Role and Permission business owners.
 
 ### Status
 
-- **Approval status:** Not submitted
-- **Completion status:** Blocked by Pack 1 and BDR review
+- **Repository status:** Integrated
+- **Completion status:** Complete; ready for commit
 
 ## Pack 3 — Service
 
@@ -98,16 +98,16 @@ Define Service, Service Arrangement, Recurring Schedule and Service Occurrence a
 
 - Schemas and domain guidance for the four named concepts.
 - Explicit scope, ownership, lifecycle, effective-dated schedule and occurrence relationships.
-- Valid/invalid fixtures, validation evidence and review/adoption records.
+- Valid/invalid fixtures, validation evidence and completion records.
 
-### Review owner
+### Business authority
 
-Derek / Operations and the relevant Service decision owners. **TODO:** confirm the coordinating owner.
+Operations and the relevant Service business owners.
 
 ### Status
 
-- **Approval status:** Not submitted
-- **Completion status:** Blocked by Packs 1–2 and BDR review
+- **Repository status:** Integrated
+- **Completion status:** Complete; ready for commit
 
 ## Pack 4 — Booking
 
@@ -125,16 +125,16 @@ Reconcile the existing draft booking evidence with accepted Booking and upstream
 
 - Booking and booking-item schema set and domain guidance.
 - Amendment, cancellation, price-snapshot, source-reference, quantity/unit, dietary/allergen, VAT and totals representation supported by BDRs.
-- Valid/invalid fixtures, validation evidence, compatibility assessment and review/adoption records.
+- Valid/invalid fixtures, validation evidence, compatibility assessment and completion records.
 
-### Review owner
+### Business authority
 
-Derek / Hospitality and relevant Booking decision owners. **TODO:** confirm the coordinating schema reviewer.
+Hospitality and the relevant Booking business owners.
 
 ### Status
 
-- **Approval status:** Not submitted
-- **Completion status:** Blocked by Packs 1–3 and BDR review
+- **Repository status:** Integrated
+- **Completion status:** Complete; ready for commit
 
 ## Pack 5 — Events
 
@@ -151,16 +151,16 @@ Define the Event domain boundary and governance while preserving its distinction
 
 - Event schema and domain guidance.
 - Explicit qualification, ownership and relationships to upstream concepts.
-- Valid/invalid fixtures, validation evidence and review/adoption records.
+- Valid/invalid fixtures, validation evidence and completion records.
 
-### Review owner
+### Business authority
 
-Derek / Events owner. **TODO:** confirm named business and schema reviewers.
+The Events business owner.
 
 ### Status
 
-- **Approval status:** Not submitted
-- **Completion status:** Blocked by dependencies and BDR review
+- **Repository status:** Integrated
+- **Completion status:** Complete; ready for commit
 
 ## Pack 6 — Production
 
@@ -177,16 +177,16 @@ Define production intent and lines separately from the commercial Booking while 
 
 - Production Order and production-line schema set and domain guidance.
 - Explicit eligibility, linkage, timing, units, yields, aggregation, amendments, cancellations and routing.
-- Valid/invalid fixtures, validation evidence and review/adoption records.
+- Valid/invalid fixtures, validation evidence and completion records.
 
-### Review owner
+### Business authority
 
-Derek / Production / Hospitality and relevant Production decision owners. **TODO:** confirm the coordinating schema reviewer.
+Production, Hospitality and relevant Production business owners.
 
 ### Status
 
-- **Approval status:** Not submitted
-- **Completion status:** Blocked by Packs 1–4 and BDR review
+- **Repository status:** Integrated
+- **Completion status:** Complete; ready for commit
 
 ## Pack 7 — Mobilisation
 
@@ -203,16 +203,16 @@ Express the governed mobilisation journey, ownership, readiness and task classif
 
 - Mobilisation, phase/readiness and task-related schemas or value objects justified by BDRs.
 - Explicit optionality, ownership, dependencies and history.
-- Valid/invalid fixtures, validation evidence and review/adoption records.
+- Valid/invalid fixtures, validation evidence and completion records.
 
-### Review owner
+### Business authority
 
-Derek / Mobilisation owner. **TODO:** confirm the coordinating schema reviewer.
+The Mobilisation business owner.
 
 ### Status
 
-- **Approval status:** Not submitted
-- **Completion status:** Blocked by dependencies and BDR review
+- **Repository status:** Integrated
+- **Completion status:** Complete; ready for commit
 
 ## Pack 8 — Brand and Waste
 
@@ -231,49 +231,48 @@ Define Brand variation/override meaning and the separate Waste domain without im
 - Separate Brand and Waste schema/domain guidance.
 - Brand approval and override relationships supported by BDRs.
 - Waste event, quantity, reason, location and outcome concepts supported by BDRs; unresolved measurement detail must return to business governance.
-- Valid/invalid fixtures, validation evidence and separate review/adoption records.
+- Valid/invalid fixtures, validation evidence and separate completion records.
 
-### Review owner
+### Business authority
 
-Derek / Brand owner for Brand; Derek / Operations for Waste. **TODO:** confirm schema reviewers.
+The Brand business owner for Brand and Operations business owner for Waste.
 
 ### Status
 
-- **Approval status:** Not submitted
-- **Completion status:** Blocked by dependencies and BDR review
+- **Repository status:** Integrated
+- **Completion status:** Complete; ready for commit
 
 ## Pack 9 — Provider mappings
 
 ### Purpose
 
-Map external and legacy source models into adopted canonical schemas without allowing providers to define FIKA business meaning.
+Map external and legacy source models into completed, integrated canonical schemas without allowing providers to define FIKA business meaning.
 
 ### Dependencies
 
-- Adopted canonical schemas from the relevant Packs 1–8.
+- Completed and integrated canonical schemas from the relevant Packs 1–8.
 - [Provider Mapping Principles](platform-methodology/provider-mapping-principles.md).
 - Confirmed provider contracts and named mapping owners.
 
 ### Expected deliverables
 
-- Versioned mapping specifications for Square, BrightHR, Google Workspace, Goodtill, legacy systems, email ingestion and future providers only where an adopted schema and evidenced need exist.
+- Versioned mapping specifications for Square, BrightHR, Google Workspace, Goodtill, legacy systems, email ingestion and future providers only where a completed, integrated schema and evidenced need exist.
 - Fictional inbound/outbound mapping fixtures, provenance rules and validation evidence.
 - Documented loss, ambiguity, rejection and version-change behaviour.
 
-### Review owner
+### Business authority
 
 Relevant domain owner plus provider/integration owner. **TODO:** name owners per mapping.
 
 ### Status
 
-- **Approval status:** Not submitted
-- **Completion status:** Blocked pending canonical schema adoption
+- **Repository status:** Not started
+- **Completion status:** Blocked only by first provider selection and accountable owner
 
 ## Roadmap governance
 
-- Update pack status only through an explicit review, approval or adoption action.
+- Update Pack status through deterministic completion and repository integration.
 - Do not mark a pack Complete merely because draft files exist.
 - A pack may be split if review scope becomes too broad, but dependencies and traceability must be retained.
 - Cross-pack discoveries that change business meaning return to the BDR process.
-- Provider mapping cannot be used to accelerate or redefine a canonical pack.
-
+- Provider mapping cannot be used to accelerate or redefine a canonical Pack.

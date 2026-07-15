@@ -15,13 +15,15 @@ Before approval, the recorded evidence stated: “The candidate catalogue mixes 
 
 ## Decision
 
-An operational capability is a reusable business function that an Operational Location may enable to support how FIKA operates, independent of its identity or type. Capabilities determine what a location is able to do, such as Hospitality, Events, Coffee, Production, Logistics, Reporting, Feedback or Training, without defining how those domains operate internally. The approved capability catalogue should be owned centrally by the Platform and Operations teams to ensure consistency across FIKA, with new capabilities added only where there is a defined business purpose, accountable owner and operational lifecycle. Individual Operational Locations may enable or disable approved capabilities but must not create their own.
+An Operational Capability is a governed, reusable business ability that may be enabled within an applicable Operational Location, Service Arrangement or other approved operating scope to support how FIKA delivers work. It describes what the business is able to do and must not define a business domain, organisational role, application, provider, location identity, presentation choice or implementation method. Each Operational Capability belongs to the business domain that owns its meaning, rules and lifecycle. Operations Leadership owns the organisation-wide Operational Capability Catalogue and is accountable for its coherence across FIKA, while the relevant domain owner defines and maintains each capability’s business meaning, eligibility, dependencies and lifecycle requirements. Catalogue additions, material changes, renames, mergers and retirements require explicit approval through AUTHMOD, effective dating, impact assessment and complete audit history. Platform Governance maintains the technical representation and assesses cross-domain, reporting, migration and implementation impact, but does not create or own business capabilities. Operational Locations and other authorised scopes may enable or disable approved capabilities only where permitted by governed configuration and dependency rules; they must not create local capability definitions or alter canonical meaning.
 
 ## Business rationale
 
 FIKA needed one authoritative answer to the ambiguity recorded in [docs/business-workshops/location-capability-model.md](../business-workshops/location-capability-model.md), specifically the section `Core decisions`. Without a canonical decision, later documents or applications could interpret this subject differently.
 
 The approved decision establishes a shared business rule. The alternative—leaving the matter implicit or allowing each implementation to decide independently—was rejected because it would recreate competing business meaning. Historical and supporting material remains evidence, but it cannot override this decision.
+
+The catalogue has business meaning and therefore requires accountable Operations and domain ownership. Platform Governance may implement the catalogue and assess cohesion, but it does not acquire authority to define capabilities merely by administering the platform. This follows the [FIKA OS Authority Model](../fika-os-canon/04-authority-model.md).
 
 ## Positive consequences
 
@@ -30,17 +32,23 @@ The approved decision establishes a shared business rule. The alternative—leav
 - Stage 5 schemas and Stage 6 architecture can trace their treatment of this subject to one canonical source.
 - Application and provider behaviour cannot silently redefine the decision.
 
+- Ownership, authority and technical administration are now explicitly separated and traceable.
+
 ## Trade-offs
 
 - The decision constrains local interpretation where consistency is required.
 - Any future change must preserve history and use a superseding or amended BDR rather than silently editing downstream documents.
 - The decision deliberately leaves technology, storage and API design to later stages.
 
+- Role-based approval, audit history and time limits add governance effort but prevent technical or temporary access from becoming permanent business authority.
+
 ## Implementation implications
 
 Capability catalogues and configuration must preserve approved optionality, dependencies, ownership and boundaries without granting permissions or redefining domain meaning.
 
 This BDR does not select a database, API, provider, application design or deployment approach.
+
+Capability specifications must identify the accountable business owner, the role authorised to approve catalogue changes and the technical administrator separately. Material additions, renames or retirements must be auditable and assessed by Platform Governance for cross-domain, reporting and migration impact.
 
 ## Related decisions
 
@@ -56,6 +64,8 @@ This BDR does not select a database, API, provider, application design or deploy
 - [Platform principles](../platform-principles.md) — **Canonical**; business meaning, authority, configuration and gradual-migration principles.
 - [Business-discovery process](../platform-methodology/business-discovery-process.md) — **Canonical methodology**; approval, exact wording, dependency and history rules.
 
+- [FIKA OS Authority Model](../fika-os-canon/04-authority-model.md) — **Canonical governance**; role-based authority, ownership, administration, delegation and platform-governance boundaries.
+
 ## Supersedes / Superseded by
 
 - **Supersedes:** None
@@ -63,4 +73,8 @@ This BDR does not select a database, API, provider, application design or deploy
 
 ## Future considerations
 
-There are no open discovery questions for this decision. During BDR review, evidence and explanatory text should be checked without altering the Decision section. Later schema, architecture and implementation work must resolve technical detail while preserving this approved business meaning.
+Future work must confirm the role-based approval boundary for catalogue changes and the evidence required for each capability lifecycle transition.
+
+## Revision 2 governance note
+
+This Revision 2 candidate applies the approved Governed Refactoring Register amendment. Ownership, authority and technical administration remain separate; AUTHMOD governs approved authority; Platform Governance implements approved controls and assesses impact without becoming business authority.

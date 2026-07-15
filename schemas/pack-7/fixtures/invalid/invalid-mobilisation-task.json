@@ -1,0 +1,22 @@
+{
+  "schemaVersion": "1.0.0-draft.1",
+  "mobilisationTaskId": "mobilisation-task:fictional-unlinked-capability",
+  "mobilisationId": "mobilisation:fictional-riverside-opening",
+  "title": "Fictional capability task without enablement",
+  "classification": "capability_conditional",
+  "owningRoleId": "role:fictional-coffee-mobilisation-owner",
+  "sourceRequirement": {},
+  "dependencyTaskIds": [],
+  "provenance": {
+    "sourceBdrIds": ["MOB-004", "CAP-001"],
+    "sourceSnapshot": "local-repository-2026-07-15"
+  },
+  "audit": {
+    "version": 1,
+    "createdAt": "2026-07-15T08:17:00Z",
+    "createdByAssignmentId": "assignment:fictional-mobilisation-coordinator",
+    "updatedAt": "2026-07-15T08:17:00Z",
+    "updatedByAssignmentId": "assignment:fictional-mobilisation-coordinator",
+    "events": []
+  }
+}

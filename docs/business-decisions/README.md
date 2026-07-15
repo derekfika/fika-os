@@ -8,7 +8,7 @@ BDRs are distinct from Architectural Decision Records in [`docs/decisions`](../d
 
 ## Current status
 
-Stage 4 is active. All **54 canonical decisions** have generated BDRs: **10 Accepted** and **44 Draft**. Pack 1 is accepted and Frozen for current downstream use; the remaining explanatory BDRs stay Draft until human repository review.
+Stage 4 is complete. All **54 canonical decisions** have generated BDRs: **20 Accepted** and **34 Draft**. Pack 1 is accepted and Frozen for current downstream use; Pack 3 Service BDRs are Accepted; remaining BDR metadata stays Draft unless changed through governed authority.
 
 ## Pack 1 freeze
 
@@ -134,16 +134,16 @@ Use [`000-template.md`](000-template.md) for future records. The filename is ret
 
 ### Service
 
-- [SVC-001 — Service Definition](svc-001-service-definition.md) — Draft
-- [SVC-002 — Service Terminology](svc-002-service-terminology.md) — Draft
-- [SVC-003 — Production and Training Domain Boundary](svc-003-production-training-domain-boundary.md) — Draft
-- [SVC-004 — Service Arrangement Scope](svc-004-service-arrangement-scope.md) — Draft
-- [SVC-005 — Recurring Schedule Governance](svc-005-recurring-schedule-governance.md) — Draft
-- [SVC-006 — Service Occurrence and Booking Boundary](svc-006-service-occurrence-booking-boundary.md) — Draft
-- [SVC-007 — Wise Service Arrangements](svc-007-wise-service-arrangements.md) — Draft
-- [SVC-008 — Service and Event Boundary](svc-008-service-event-boundary.md) — Draft
-- [SVC-009 — Coffee Cart Model](svc-009-coffee-cart-model.md) — Draft
-- [SVC-010 — Service Commercial Ownership](svc-010-service-commercial-ownership.md) — Draft
+- [SVC-001 — Service Definition](svc-001-service-definition.md) — Accepted
+- [SVC-002 — Service Terminology](svc-002-service-terminology.md) — Accepted
+- [SVC-003 — Production and Training Domain Boundary](svc-003-production-and-training-domain-boundary.md) — Accepted
+- [SVC-004 — Service Arrangement Scope](svc-004-service-arrangement-scope.md) — Accepted
+- [SVC-005 — Recurring Schedule Governance](svc-005-recurring-schedule-governance.md) — Accepted
+- [SVC-006 — Scheduled Work and Booking Boundary](svc-006-scheduled-work-and-booking-boundary.md) — Accepted
+- [SVC-007 — Wise Service Arrangements](svc-007-wise-service-arrangements.md) — Accepted
+- [SVC-008 — Service and Event Boundary](svc-008-service-and-event-boundary.md) — Accepted
+- [SVC-009 — Coffee Cart Model](svc-009-coffee-cart-model.md) — Accepted
+- [SVC-010 — Service Commercial Ownership](svc-010-service-commercial-ownership.md) — Accepted
 
 ### Waste
 

@@ -1,0 +1,24 @@
+{
+  "schemaVersion": "pack-4-draft",
+  "id": "bvt-001",
+  "sourceDecisionIds": [
+    "BOOK-005"
+  ],
+  "pricingBasis": "inc_vat",
+  "vatCalculationPoint": "quote_total",
+  "roundingPreference": "round_up",
+  "subtotalExVat": {
+    "amountMinor": 10000,
+    "currency": "GBP"
+  },
+  "vatAmount": {
+    "amountMinor": 2000,
+    "currency": "GBP"
+  },
+  "totalIncVat": {
+    "amountMinor": 12000,
+    "currency": "GBP"
+  },
+  "createdAt": "2026-07-14T19:00:00Z",
+  "updatedAt": "2026-07-14T19:00:00Z"
+}

@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:fika:schema:draft:waste-disposition:1",
+  "title": "Waste Disposition v1 (Draft)",
+  "description": "Draft record of the immediate operational outcome of one Waste Event.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "wasteDispositionId", "wasteEventId", "immediateOperationalOutcome", "recordedAt", "recordedByAssignmentId", "provenance", "audit"],
+  "properties": {
+    "schemaVersion": { "const": "1.0.0-draft.1" },
+    "wasteDispositionId": { "$ref": "#/$defs/stableId" },
+    "wasteEventId": { "$ref": "#/$defs/stableId" },
+    "immediateOperationalOutcome": { "type": "string", "minLength": 1 },
+    "recordedAt": { "$ref": "#/$defs/isoDateTime" },
+    "recordedByAssignmentId": { "$ref": "#/$defs/stableId" },
+    "notes": { "type": "string" },
+    "provenance": { "$ref": "#/$defs/provenance" },
+    "audit": { "$ref": "#/$defs/audit" }
+  },
+  "$defs": {
+    "stableId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[A-Za-z][A-Za-z0-9_.:-]*$" },
+    "isoDateTime": { "type": "string", "format": "date-time" },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sourceBdrIds", "sourceSnapshot"],
+      "properties": {
+        "sourceBdrIds": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "type": "string", "pattern": "^(WASTE|ROLE)-\\d{3}$" } },
+        "sourceSnapshot": { "type": "string", "minLength": 1 }
+      }
+    },
+    "auditEvent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["eventType", "occurredAt", "actorAssignmentId"],
+      "properties": {
+        "eventType": { "type": "string", "minLength": 1 },
+        "occurredAt": { "$ref": "#/$defs/isoDateTime" },
+        "actorAssignmentId": { "$ref": "#/$defs/stableId" },
+        "reason": { "type": "string" }
+      }
+    },
+    "audit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "createdAt", "createdByAssignmentId", "updatedAt", "updatedByAssignmentId", "events"],
+      "properties": {
+        "version": { "type": "integer", "minimum": 1 },
+        "createdAt": { "$ref": "#/$defs/isoDateTime" },
+        "createdByAssignmentId": { "$ref": "#/$defs/stableId" },
+        "updatedAt": { "$ref": "#/$defs/isoDateTime" },
+        "updatedByAssignmentId": { "$ref": "#/$defs/stableId" },
+        "events": { "type": "array", "items": { "$ref": "#/$defs/auditEvent" } }
+      }
+    }
+  },
+  "x-fika-source-bdrs": ["WASTE-001", "ROLE-002"],
+  "x-fika-status": "Draft review candidate; not approved or adopted"
+}

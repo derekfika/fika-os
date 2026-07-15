@@ -1,0 +1,52 @@
+{
+  "schemaVersion": "pack-2-draft-1",
+  "catalogueId": "catalogue:operational-capabilities",
+  "catalogueOwnerRoleId": "role:operations-leadership",
+  "capabilities": [
+    {
+      "capabilityId": "cap:hospitality",
+      "capabilityName": "Hospitality",
+      "owningDomainId": "domain:hospitality",
+      "businessPurpose": "Support hospitality work where enabled.",
+      "eligibilitySummary": "Subject to approved dependencies and configuration.",
+      "dependencyRuleIds": [
+        "caprule:hospitality-booking-process"
+      ],
+      "lifecycleStatus": "active",
+      "effectivePeriod": {
+        "startAt": "2026-07-14T00:00:00Z",
+        "endAt": null,
+        "reason": "Draft fixture effective period"
+      }
+    }
+  ],
+  "lifecycleStatus": "active",
+  "effectivePeriod": {
+    "startAt": "2026-07-14T00:00:00Z",
+    "endAt": null,
+    "reason": "Draft fixture effective period"
+  },
+  "provenance": {
+    "sourceBdrIds": [
+      "CAP-001",
+      "CAP-004"
+    ],
+    "sourceSnapshot": "02 Pack 2-20260714T164540Z-1-001.zip",
+    "authorityRank": "Approved GRR"
+  },
+  "audit": {
+    "version": 1,
+    "createdAt": "2026-07-14T12:00:00Z",
+    "createdBy": "role:platform-governance",
+    "updatedAt": "2026-07-14T12:00:00Z",
+    "updatedBy": "role:platform-governance",
+    "events": [
+      {
+        "eventType": "drafted",
+        "occurredAt": "2026-07-14T12:00:00Z",
+        "actorId": "role:platform-governance",
+        "reason": "Pack 2 schema draft fixture"
+      }
+    ]
+  }
+}

@@ -1,0 +1,25 @@
+{
+  "schemaVersion": "1.0.0-draft.1",
+  "mobilisationTaskId": "mobilisation-task:fictional-coffee-capability",
+  "mobilisationId": "mobilisation:fictional-riverside-opening",
+  "title": "Fictional Coffee capability mobilisation work",
+  "classification": "capability_conditional",
+  "owningRoleId": "role:fictional-coffee-mobilisation-owner",
+  "assignedToAssignmentId": "assignment:fictional-coffee-specialist",
+  "sourceRequirement": {
+    "capabilityEnablementReference": "capability-enablement:fictional-riverside-coffee"
+  },
+  "dependencyTaskIds": [],
+  "provenance": {
+    "sourceBdrIds": ["MOB-004", "CAP-001", "ROLE-002"],
+    "sourceSnapshot": "local-repository-2026-07-15"
+  },
+  "audit": {
+    "version": 1,
+    "createdAt": "2026-07-15T08:17:00Z",
+    "createdByAssignmentId": "assignment:fictional-mobilisation-coordinator",
+    "updatedAt": "2026-07-15T08:17:00Z",
+    "updatedByAssignmentId": "assignment:fictional-mobilisation-coordinator",
+    "events": []
+  }
+}

@@ -11,7 +11,7 @@ FIKA has a coherent platform design in which applications consume stable busines
 ## Inputs
 
 - Approved BDRs
-- Adopted canonical schemas
+- Completed and committed canonical schemas
 - Platform principles and domain map
 - Current-system evidence and migration constraints
 
@@ -63,4 +63,3 @@ Stages 7 and 8 use the architecture to constrain implementation, testing, rollou
 - [FIKA Core overview](../fika-core/overview.md)
 - [Platform domain map](../platform-domain-map.md)
 - [Architecture review checklist](../engineering/architecture-review-checklist.md)
-

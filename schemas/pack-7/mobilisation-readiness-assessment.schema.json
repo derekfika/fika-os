@@ -1,0 +1,96 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:fika:schema:draft:mobilisation-readiness-assessment:1",
+  "title": "Mobilisation Readiness Assessment v1 (Draft)",
+  "description": "Draft readiness assessment for a governed Mobilisation target, without assuming a Client-contractual basis.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "readinessAssessmentId", "mobilisationId", "domainReadiness", "assessedBy", "internalReadinessConfirmed", "significantRisks", "assessedAt", "provenance", "audit"],
+  "properties": {
+    "schemaVersion": { "const": "1.0.0-draft.1" },
+    "readinessAssessmentId": { "$ref": "#/$defs/stableId" },
+    "mobilisationId": { "$ref": "#/$defs/stableId" },
+    "targetDate": { "type": "string", "format": "date" },
+    "domainReadiness": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["domainReference", "confirmedByAssignmentId", "ready", "evidenceReferences"],
+        "properties": {
+          "domainReference": { "$ref": "#/$defs/stableId" },
+          "confirmedByAssignmentId": { "$ref": "#/$defs/stableId" },
+          "ready": { "type": "boolean" },
+          "evidenceReferences": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "$ref": "#/$defs/stableId" } }
+        }
+      }
+    },
+    "assessedBy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["roleAssignmentId", "authorityGrantId"],
+      "properties": {
+        "roleAssignmentId": { "$ref": "#/$defs/stableId" },
+        "authorityGrantId": { "$ref": "#/$defs/stableId" }
+      }
+    },
+    "internalReadinessConfirmed": { "type": "boolean" },
+    "significantRisks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["riskReference", "escalationReference", "mitigationReference"],
+        "properties": {
+          "riskReference": { "$ref": "#/$defs/stableId" },
+          "escalationReference": { "$ref": "#/$defs/stableId" },
+          "mitigationReference": { "$ref": "#/$defs/stableId" }
+        }
+      }
+    },
+    "clientApprovedDelayReference": { "$ref": "#/$defs/stableId" },
+    "assessedAt": { "$ref": "#/$defs/isoDateTime" },
+    "provenance": { "$ref": "#/$defs/provenance" },
+    "audit": { "$ref": "#/$defs/audit" }
+  },
+  "$defs": {
+    "stableId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[A-Za-z][A-Za-z0-9_.:-]*$" },
+    "isoDateTime": { "type": "string", "format": "date-time" },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sourceBdrIds", "sourceSnapshot"],
+      "properties": {
+        "sourceBdrIds": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "type": "string", "pattern": "^(MOB|ROLE)-\\d{3}$" } },
+        "sourceSnapshot": { "type": "string", "minLength": 1 }
+      }
+    },
+    "auditEvent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["eventType", "occurredAt", "actorAssignmentId"],
+      "properties": {
+        "eventType": { "type": "string", "minLength": 1 },
+        "occurredAt": { "$ref": "#/$defs/isoDateTime" },
+        "actorAssignmentId": { "$ref": "#/$defs/stableId" },
+        "reason": { "type": "string" }
+      }
+    },
+    "audit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "createdAt", "createdByAssignmentId", "updatedAt", "updatedByAssignmentId", "events"],
+      "properties": {
+        "version": { "type": "integer", "minimum": 1 },
+        "createdAt": { "$ref": "#/$defs/isoDateTime" },
+        "createdByAssignmentId": { "$ref": "#/$defs/stableId" },
+        "updatedAt": { "$ref": "#/$defs/isoDateTime" },
+        "updatedByAssignmentId": { "$ref": "#/$defs/stableId" },
+        "events": { "type": "array", "items": { "$ref": "#/$defs/auditEvent" } }
+      }
+    }
+  },
+  "x-fika-source-bdrs": ["MOB-002", "MOB-003", "ROLE-002"],
+  "x-fika-status": "Draft review candidate; not approved or adopted"
+}

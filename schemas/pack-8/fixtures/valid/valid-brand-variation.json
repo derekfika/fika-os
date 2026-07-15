@@ -1,0 +1,26 @@
+{
+  "schemaVersion": "1.0.0-draft.1",
+  "brandVariationId": "brand-variation.demo-001",
+  "scope": { "scopeType": "operational_location", "scopeReference": "oploc.demo-001" },
+  "basis": { "basisType": "co_branding_arrangement", "basisReference": "agreement.demo-001" },
+  "variation": {
+    "description": "Fictional co-branded presentation variation for schema validation.",
+    "elements": ["logo", "colour"]
+  },
+  "documentationReference": "brand-document.demo-001",
+  "brandAssuranceRecordIds": ["brand-assurance-record.demo-001"],
+  "authorisation": {
+    "marketingApprovalReference": "approval.demo-marketing-001",
+    "brandApprovalReference": "approval.demo-brand-001"
+  },
+  "effectivePeriod": { "effectiveFrom": "2026-08-01" },
+  "provenance": { "sourceBdrIds": ["BRAND-001", "CFG-001"], "sourceSnapshot": "Pack 8 fictional validation snapshot" },
+  "audit": {
+    "version": 1,
+    "createdAt": "2026-07-15T10:00:00Z",
+    "createdByAssignmentId": "assignment.demo-brand-author",
+    "updatedAt": "2026-07-15T10:00:00Z",
+    "updatedByAssignmentId": "assignment.demo-brand-author",
+    "events": []
+  }
+}

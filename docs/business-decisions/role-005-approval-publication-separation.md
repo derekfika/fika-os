@@ -15,13 +15,15 @@ Before approval, the recorded evidence stated: “Approval responsibilities are 
 
 ## Decision
 
-Contributors create and amend business content within their responsibilities. Managers coordinate operational delivery, assign work and ensure tasks are completed but do not necessarily provide formal approval. Approvers accept business responsibility for significant decisions within their domain, such as commercial, financial, food safety or operational changes. Publishers make approved information or services operationally active or visible to the intended audience and may be the same person as the Approver where appropriate. Approval and publication remain separate business actions even when performed by the same individual. Authority should be delegated to the appropriate domain owner wherever possible, with Senior Management approving only decisions that carry significant strategic, financial or organisational impact.
+Contribute, Manage, Approve and Publish are separate AUTHMOD actions and no action includes another implicitly. Contribute permits authorised creation or amendment of business records. Manage permits authorised coordination, assignment and routine operational control. Approve records formal acceptance of a governed business decision, exception, change or output by a role holding explicit approval authority for the applicable domain and scope. Publish makes approved information, configuration, Service or other governed output visible, available or operationally active for an authorised audience and scope. Publication must not occur without the required approval, but approval does not itself publish. The same assigned person may perform more than one action only where AUTHMOD explicitly grants each action and the owning domain permits that combination under its separation-of-duties rules. High-risk or material decisions may require different approver and publisher assignments or multiple approvals. Every approval and publication must record the action, subject, scope, actor, authority source, decision or outcome, effective time and audit history. Delegation must be scoped, auditable and time-limited and never transfers ownership. Platform Governance implements and validates the workflow controls but does not supply business approval or publication authority unless separately granted through AUTHMOD.
 
 ## Business rationale
 
 FIKA needed one authoritative answer to the ambiguity recorded in [docs/domain-discovery/role-and-responsibility-discovery.md](../domain-discovery/role-and-responsibility-discovery.md), specifically the section `G. Access principles`. Without a canonical decision, later documents or applications could interpret this subject differently.
 
 The approved decision establishes a shared business rule. The alternative—leaving the matter implicit or allowing each implementation to decide independently—was rejected because it would recreate competing business meaning. Historical and supporting material remains evidence, but it cannot override this decision.
+
+Approval authority belongs to an accountable business role or function; publication is a separate action that activates approved content. The [FIKA OS Authority Model](../fika-os-canon/04-authority-model.md) keeps both distinct from technical administration. Platform Governance implements controls but does not decide business approval.
 
 ## Positive consequences
 
@@ -30,17 +32,23 @@ The approved decision establishes a shared business rule. The alternative—leav
 - Stage 5 schemas and Stage 6 architecture can trace their treatment of this subject to one canonical source.
 - Application and provider behaviour cannot silently redefine the decision.
 
+- Ownership, authority and technical administration are now explicitly separated and traceable.
+
 ## Trade-offs
 
 - The decision constrains local interpretation where consistency is required.
 - Any future change must preserve history and use a superseding or amended BDR rather than silently editing downstream documents.
 - The decision deliberately leaves technology, storage and API design to later stages.
 
+- Role-based approval, audit history and time limits add governance effort but prevent technical or temporary access from becoming permanent business authority.
+
 ## Implementation implications
 
 Permission and assignment design must preserve the approved vocabulary, scopes, separation of duties, least-privilege boundaries and audit expectations.
 
 This BDR does not select a database, API, provider, application design or deployment approach.
+
+Workflow and permission specifications must record contribution, management, approval and publication as distinct actions even where one authorised assignee performs more than one. Temporary delegation must have a mandatory end date, be fully auditable and never transfer ownership.
 
 ## Related decisions
 
@@ -54,6 +62,8 @@ This BDR does not select a database, API, provider, application design or deploy
 - [Platform principles](../platform-principles.md) — **Canonical**; business meaning, authority, configuration and gradual-migration principles.
 - [Business-discovery process](../platform-methodology/business-discovery-process.md) — **Canonical methodology**; approval, exact wording, dependency and history rules.
 
+- [FIKA OS Authority Model](../fika-os-canon/04-authority-model.md) — **Canonical governance**; role-based authority, ownership, administration, delegation and platform-governance boundaries.
+
 ## Supersedes / Superseded by
 
 - **Supersedes:** None
@@ -61,4 +71,8 @@ This BDR does not select a database, API, provider, application design or deploy
 
 ## Future considerations
 
-There are no open discovery questions for this decision. During BDR review, evidence and explanatory text should be checked without altering the Decision section. Later schema, architecture and implementation work must resolve technical detail while preserving this approved business meaning.
+Future work must define which accountable roles may approve and publish within each domain and when separation of duties is mandatory.
+
+## Revision 2 governance note
+
+This Revision 2 candidate applies the approved Governed Refactoring Register amendment. Ownership, authority and technical administration remain separate; AUTHMOD governs approved authority; Platform Governance implements approved controls and assesses impact without becoming business authority.

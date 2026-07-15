@@ -61,3 +61,14 @@ This BDR does not select a database, API, provider, application design or deploy
 ## Future considerations
 
 There are no open discovery questions for this decision. During BDR review, evidence and explanatory text should be checked without altering the Decision section. Later schema, architecture and implementation work must resolve technical detail while preserving this approved business meaning.
+
+## Stage 5 governed clarification
+
+Approved by Derek on 2026-07-15 for Pack 8 processing. The original Decision above and the BDR's Draft metadata remain unchanged.
+
+- Waste quantity comprises a positive numeric quantity and a measurement unit referenced from the Operations-owned Measurement Catalogue.
+- Measurement Catalogue values remain deferred and are not hardcoded in the Waste domain.
+- Waste Disposition records the immediate operational outcome of a Waste Event.
+- Improvement Action records any later business change arising from analysis of a Waste Event.
+- Waste Disposition and Improvement Action remain separate business concepts.
+- The detailed Improvement Action domain remains deferred and is not introduced into this Pack.

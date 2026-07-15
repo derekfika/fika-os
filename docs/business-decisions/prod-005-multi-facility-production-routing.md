@@ -62,3 +62,12 @@ This BDR does not select a database, API, provider, application design or deploy
 ## Future considerations
 
 There are no open discovery questions for this decision. During BDR review, evidence and explanatory text should be checked without altering the Decision section. Later schema, architecture and implementation work must resolve technical detail while preserving this approved business meaning.
+
+## Stage 5 governed clarification
+
+Approved by Derek on 2026-07-15 for Pack 6 processing. The original Decision above and the BDR's Draft metadata remain unchanged.
+
+- No separate Production Facility canonical concept is introduced.
+- A production facility is an Operational Location with Production capability enabled.
+- Operational Location determines where Production occurs.
+- Production remains location-independent and does not distinguish central from on-site Production as separate business concepts.

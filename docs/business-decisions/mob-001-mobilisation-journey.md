@@ -63,3 +63,13 @@ This BDR does not select a database, API, provider, application design or deploy
 ## Future considerations
 
 There are no open discovery questions for this decision. During BDR review, evidence and explanatory text should be checked without altering the Decision section. Later schema, architecture and implementation work must resolve technical detail while preserving this approved business meaning.
+
+## Stage 5 governed clarification
+
+Approved by Derek on 2026-07-15 for Pack 7 processing. The original Decision above and the BDR's Draft metadata remain unchanged.
+
+- A Mobilisation is one governed programme that establishes, materially changes or re-establishes an Operational Location, Service Arrangement, Operational Capability or other approved operating scope.
+- One Operational Location may have multiple Mobilisation records over time.
+- Each Mobilisation preserves its own purpose, scope, ownership, phase plan, readiness evidence, effective period, outcome and audit history.
+- A later Mobilisation does not overwrite or replace earlier Mobilisation history.
+- MNK-derived phase names remain workshop evidence and are not promoted into Canon.

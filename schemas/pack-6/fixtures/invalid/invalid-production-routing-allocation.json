@@ -1,0 +1,24 @@
+{
+  "schemaVersion": "1.0.0-draft.1",
+  "routingAllocationId": "routing-allocation:fictional-no-facility",
+  "productionOrderId": "production-order:fictional-1001",
+  "productionLineIds": ["production-line:fictional-1001-1"],
+  "productionCapabilityEnablementReference": "capability-enablement:fictional-unknown-location-production",
+  "routingBasis": {
+    "routingRuleReferences": ["routing-rule:fictional-central-production"],
+    "capacityAssessmentReference": "capacity-assessment:fictional-central-2026-08-12",
+    "deliveryRequirementReference": "delivery-requirement:fictional-1001"
+  },
+  "provenance": {
+    "sourceBdrIds": ["PROD-005"],
+    "sourceSnapshot": "local-repository-2026-07-15"
+  },
+  "audit": {
+    "version": 1,
+    "createdAt": "2026-07-15T07:32:00Z",
+    "createdByAssignmentId": "assignment:fictional-production-router",
+    "updatedAt": "2026-07-15T07:32:00Z",
+    "updatedByAssignmentId": "assignment:fictional-production-router",
+    "events": []
+  }
+}

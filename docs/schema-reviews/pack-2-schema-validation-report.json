@@ -1,0 +1,210 @@
+{
+  "validator": "local structural JSON Schema subset validator for Pack 2 fixtures",
+  "failures": 0,
+  "results": [
+    {
+      "schema": "access-boundary.schema.json",
+      "fixture": "valid-access-boundary.json",
+      "expected": "pass",
+      "actual": "pass",
+      "errors": []
+    },
+    {
+      "schema": "access-boundary.schema.json",
+      "fixture": "invalid-access-boundary.json",
+      "expected": "fail",
+      "actual": "fail",
+      "errors": [
+        "/schemaVersion: required property missing",
+        "/unexpectedImplementationField: additional property not allowed"
+      ]
+    },
+    {
+      "schema": "approval-publication.schema.json",
+      "fixture": "valid-approval-publication.json",
+      "expected": "pass",
+      "actual": "pass",
+      "errors": []
+    },
+    {
+      "schema": "approval-publication.schema.json",
+      "fixture": "invalid-approval-publication.json",
+      "expected": "fail",
+      "actual": "fail",
+      "errors": [
+        "/schemaVersion: required property missing",
+        "/unexpectedImplementationField: additional property not allowed"
+      ]
+    },
+    {
+      "schema": "assignment.schema.json",
+      "fixture": "valid-assignment.json",
+      "expected": "pass",
+      "actual": "pass",
+      "errors": []
+    },
+    {
+      "schema": "assignment.schema.json",
+      "fixture": "invalid-assignment.json",
+      "expected": "fail",
+      "actual": "fail",
+      "errors": [
+        "/schemaVersion: required property missing",
+        "/unexpectedImplementationField: additional property not allowed"
+      ]
+    },
+    {
+      "schema": "authority-grant.schema.json",
+      "fixture": "valid-authority-grant.json",
+      "expected": "pass",
+      "actual": "pass",
+      "errors": []
+    },
+    {
+      "schema": "authority-grant.schema.json",
+      "fixture": "invalid-authority-grant.json",
+      "expected": "fail",
+      "actual": "fail",
+      "errors": [
+        "/schemaVersion: required property missing",
+        "/unexpectedImplementationField: additional property not allowed"
+      ]
+    },
+    {
+      "schema": "capability-dependency-rule.schema.json",
+      "fixture": "valid-capability-dependency-rule.json",
+      "expected": "pass",
+      "actual": "pass",
+      "errors": []
+    },
+    {
+      "schema": "capability-dependency-rule.schema.json",
+      "fixture": "invalid-capability-dependency-rule.json",
+      "expected": "fail",
+      "actual": "fail",
+      "errors": [
+        "/schemaVersion: required property missing",
+        "/unexpectedImplementationField: additional property not allowed"
+      ]
+    },
+    {
+      "schema": "capability-enablement.schema.json",
+      "fixture": "valid-capability-enablement.json",
+      "expected": "pass",
+      "actual": "pass",
+      "errors": []
+    },
+    {
+      "schema": "capability-enablement.schema.json",
+      "fixture": "invalid-capability-enablement.json",
+      "expected": "fail",
+      "actual": "fail",
+      "errors": [
+        "/schemaVersion: required property missing",
+        "/unexpectedImplementationField: additional property not allowed"
+      ]
+    },
+    {
+      "schema": "capability-override.schema.json",
+      "fixture": "valid-capability-override.json",
+      "expected": "pass",
+      "actual": "pass",
+      "errors": []
+    },
+    {
+      "schema": "capability-override.schema.json",
+      "fixture": "invalid-capability-override.json",
+      "expected": "fail",
+      "actual": "fail",
+      "errors": [
+        "/schemaVersion: required property missing",
+        "/unexpectedImplementationField: additional property not allowed"
+      ]
+    },
+    {
+      "schema": "emergency-access.schema.json",
+      "fixture": "valid-emergency-access.json",
+      "expected": "pass",
+      "actual": "pass",
+      "errors": []
+    },
+    {
+      "schema": "emergency-access.schema.json",
+      "fixture": "invalid-emergency-access.json",
+      "expected": "fail",
+      "actual": "fail",
+      "errors": [
+        "/schemaVersion: required property missing",
+        "/unexpectedImplementationField: additional property not allowed"
+      ]
+    },
+    {
+      "schema": "operational-capability-catalogue.schema.json",
+      "fixture": "valid-operational-capability-catalogue.json",
+      "expected": "pass",
+      "actual": "pass",
+      "errors": []
+    },
+    {
+      "schema": "operational-capability-catalogue.schema.json",
+      "fixture": "invalid-operational-capability-catalogue.json",
+      "expected": "fail",
+      "actual": "fail",
+      "errors": [
+        "/schemaVersion: required property missing",
+        "/unexpectedImplementationField: additional property not allowed"
+      ]
+    },
+    {
+      "schema": "organisational-role.schema.json",
+      "fixture": "valid-organisational-role.json",
+      "expected": "pass",
+      "actual": "pass",
+      "errors": []
+    },
+    {
+      "schema": "organisational-role.schema.json",
+      "fixture": "invalid-organisational-role.json",
+      "expected": "fail",
+      "actual": "fail",
+      "errors": [
+        "/schemaVersion: required property missing",
+        "/unexpectedImplementationField: additional property not allowed"
+      ]
+    },
+    {
+      "schema": "permission-action-vocabulary.schema.json",
+      "fixture": "valid-permission-action-vocabulary.json",
+      "expected": "pass",
+      "actual": "pass",
+      "errors": []
+    },
+    {
+      "schema": "permission-action-vocabulary.schema.json",
+      "fixture": "invalid-permission-action-vocabulary.json",
+      "expected": "fail",
+      "actual": "fail",
+      "errors": [
+        "/schemaVersion: required property missing",
+        "/unexpectedImplementationField: additional property not allowed"
+      ]
+    },
+    {
+      "schema": "responsibility.schema.json",
+      "fixture": "valid-responsibility.json",
+      "expected": "pass",
+      "actual": "pass",
+      "errors": []
+    },
+    {
+      "schema": "responsibility.schema.json",
+      "fixture": "invalid-responsibility.json",
+      "expected": "fail",
+      "actual": "fail",
+      "errors": [
+        "/schemaVersion: required property missing",
+        "/unexpectedImplementationField: additional property not allowed"
+      ]
+    }
+  ]
+}

@@ -15,13 +15,15 @@ Before approval, the recorded evidence stated: “Ownership is fragmented and ov
 
 ## Decision
 
-Configuration ownership is determined by business scope. The Platform Owner governs organisation-wide configuration and the configuration model itself. Client, Brand, Capability, Operational Location and Application owners govern configuration within their respective business areas. Site Managers may approve and manage configuration affecting their own Operational Location, while centrally operated functions such as CPU remain under their designated domain owner. Ownership may be delegated through FIKA OS role assignments without changing the canonical governance model.
+Configuration ownership is assigned by business scope to accountable organisational roles. Organisation-wide configuration and the configuration model are owned by the accountable organisation-wide configuration role. Client, Brand, Operational Capability, Operational Location, Application and other domain-scoped configuration are owned by accountable roles for those business scopes. Approval authority is granted separately through AUTHMOD and may be narrower than ownership. Authorised operational roles may administer or apply approved configuration without acquiring ownership or authority to redefine business meaning. Temporary delegation must have a defined scope, fixed end date and complete audit history, and never transfers ownership. Platform Governance assesses cohesion and downstream impact but does not replace business ownership or approval authority.
 
 ## Business rationale
 
 FIKA needed one authoritative answer to the ambiguity recorded in [docs/business-workshops/location-domain-workshop-v3.md](../business-workshops/location-domain-workshop-v3.md), specifically the section `Configuration Inheritance`. Without a canonical decision, later documents or applications could interpret this subject differently.
 
 The approved decision establishes a shared business rule. The alternative—leaving the matter implicit or allowing each implementation to decide independently—was rejected because it would recreate competing business meaning. Historical and supporting material remains evidence, but it cannot override this decision.
+
+Business ownership determines configuration meaning and scope; approval authority belongs to accountable organisational roles or functions under the [FIKA OS Authority Model](../fika-os-canon/04-authority-model.md). Operational administration applies approved configuration without acquiring authority to redefine the business concept. Platform Governance assesses cohesion and downstream impact but does not define business authority.
 
 ## Positive consequences
 
@@ -30,17 +32,23 @@ The approved decision establishes a shared business rule. The alternative—leav
 - Stage 5 schemas and Stage 6 architecture can trace their treatment of this subject to one canonical source.
 - Application and provider behaviour cannot silently redefine the decision.
 
+- Ownership, authority and technical administration are now explicitly separated and traceable.
+
 ## Trade-offs
 
 - The decision constrains local interpretation where consistency is required.
 - Any future change must preserve history and use a superseding or amended BDR rather than silently editing downstream documents.
 - The decision deliberately leaves technology, storage and API design to later stages.
 
+- Role-based approval, audit history and time limits add governance effort but prevent technical or temporary access from becoming permanent business authority.
+
 ## Implementation implications
 
 Configuration specifications must preserve the ownership, scope, inheritance, effective-date and approval rules established here without embedding provider or application assumptions.
 
 This BDR does not select a database, API, provider, application design or deployment approach.
+
+Configuration specifications must distinguish business ownership, approval authority and technical administration. Any delegation must be temporary, have a mandatory end date, remain fully auditable and never transfer ownership. Platform Governance implements approved authority and assesses cross-domain, reporting and migration impact.
 
 ## Related decisions
 
@@ -57,6 +65,8 @@ This BDR does not select a database, API, provider, application design or deploy
 - [Platform principles](../platform-principles.md) — **Canonical**; business meaning, authority, configuration and gradual-migration principles.
 - [Business-discovery process](../platform-methodology/business-discovery-process.md) — **Canonical methodology**; approval, exact wording, dependency and history rules.
 
+- [FIKA OS Authority Model](../fika-os-canon/04-authority-model.md) — **Canonical governance**; role-based authority, ownership, administration, delegation and platform-governance boundaries.
+
 ## Supersedes / Superseded by
 
 - **Supersedes:** None
@@ -64,4 +74,8 @@ This BDR does not select a database, API, provider, application design or deploy
 
 ## Future considerations
 
-There are no open discovery questions for this decision. During BDR review, evidence and explanatory text should be checked without altering the Decision section. Later schema, architecture and implementation work must resolve technical detail while preserving this approved business meaning.
+Future work must identify accountable organisational roles for each scope and the audit evidence for effective-dated changes without replacing the approved ownership model.
+
+## Revision 2 governance note
+
+This Revision 2 candidate applies the approved Governed Refactoring Register amendment. Ownership, authority and technical administration remain separate; AUTHMOD governs approved authority; Platform Governance implements approved controls and assesses impact without becoming business authority.

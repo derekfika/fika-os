@@ -1,0 +1,84 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:fika:schema:draft:production-routing-allocation:1",
+  "title": "Production Routing Allocation v1 (Draft)",
+  "description": "Draft Production-owned allocation of production lines to a production facility using routing rules, capacity and delivery requirements.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "routingAllocationId",
+    "productionOrderId",
+    "productionLineIds",
+    "operationalLocationId",
+    "productionCapabilityEnablementReference",
+    "routingBasis",
+    "provenance",
+    "audit"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "1.0.0-draft.1" },
+    "routingAllocationId": { "$ref": "#/$defs/stableId" },
+    "productionOrderId": { "$ref": "#/$defs/stableId" },
+    "productionLineIds": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "$ref": "#/$defs/stableId" } },
+    "operationalLocationId": {
+      "$ref": "#/$defs/stableId",
+      "description": "Operational Location at which the allocated Production work occurs."
+    },
+    "productionCapabilityEnablementReference": {
+      "$ref": "#/$defs/stableId",
+      "description": "Evidence that Production capability is enabled for the Operational Location."
+    },
+    "routingBasis": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["routingRuleReferences", "capacityAssessmentReference", "deliveryRequirementReference"],
+      "properties": {
+        "routingRuleReferences": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "$ref": "#/$defs/stableId" } },
+        "capacityAssessmentReference": { "$ref": "#/$defs/stableId" },
+        "deliveryRequirementReference": { "$ref": "#/$defs/stableId" }
+      }
+    },
+    "provenance": { "$ref": "#/$defs/provenance" },
+    "audit": { "$ref": "#/$defs/audit" }
+  },
+  "$defs": {
+    "stableId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[A-Za-z][A-Za-z0-9_.:-]*$" },
+    "isoDateTime": { "type": "string", "format": "date-time" },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sourceBdrIds", "sourceSnapshot"],
+      "properties": {
+        "sourceBdrIds": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "type": "string", "pattern": "^(PROD|LOC|CAP)-\\d{3}$" } },
+        "sourceSnapshot": { "type": "string", "minLength": 1 }
+      }
+    },
+    "auditEvent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["eventType", "occurredAt", "actorAssignmentId"],
+      "properties": {
+        "eventType": { "type": "string", "minLength": 1 },
+        "occurredAt": { "$ref": "#/$defs/isoDateTime" },
+        "actorAssignmentId": { "$ref": "#/$defs/stableId" },
+        "reason": { "type": "string" }
+      }
+    },
+    "audit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "createdAt", "createdByAssignmentId", "updatedAt", "updatedByAssignmentId", "events"],
+      "properties": {
+        "version": { "type": "integer", "minimum": 1 },
+        "createdAt": { "$ref": "#/$defs/isoDateTime" },
+        "createdByAssignmentId": { "$ref": "#/$defs/stableId" },
+        "updatedAt": { "$ref": "#/$defs/isoDateTime" },
+        "updatedByAssignmentId": { "$ref": "#/$defs/stableId" },
+        "events": { "type": "array", "items": { "$ref": "#/$defs/auditEvent" } }
+      }
+    }
+  },
+  "x-fika-source-bdrs": ["PROD-005", "LOC-001", "CAP-001"],
+  "x-fika-status": "Draft review candidate; not approved or adopted"
+}

@@ -1,10 +1,10 @@
-# Schema Generation and Approval Process
+# Schema Generation and Completion Process
 
 ## Purpose
 
-This document is the canonical methodology for Stage 5 of FIKA OS. It governs how approved business meaning is translated into versioned canonical schemas, reviewed, approved and adopted without allowing schemas, applications or providers to invent FIKA business meaning.
+This document is the canonical methodology for Stage 5 of FIKA OS. It governs how approved business meaning is translated into versioned canonical schemas, validated, completed and integrated without allowing schemas, applications or providers to invent FIKA business meaning.
 
-This process does not adopt a schema merely because a file exists. Draft schema material remains supporting evidence until it completes every applicable gate below.
+File creation alone is not completion. A schema Pack becomes the current repository baseline only after traceability, fixtures, validation, autonomous completion and deterministic repository integration succeed.
 
 ## Core principles
 
@@ -23,12 +23,12 @@ This process does not adopt a schema merely because a file exists. Draft schema 
 
 The authority order in [Documentation Governance](../documentation-governance.md) applies. A schema may enter drafting only when:
 
-1. its business boundary is supported by accepted BDRs;
+1. its business boundary is supported by governed BDR authority;
 2. prerequisite BDRs and schema-pack dependencies are identified;
 3. unresolved questions that would change required structure, ownership or cardinality are resolved by the relevant business owner; and
-4. a review owner is named.
+4. its validation and repository-integration targets are identified.
 
-Draft BDRs may be used to plan a pack, but not to justify adoption. If schema work exposes missing business meaning, return the issue to the governed business-decision process rather than resolving it in the schema.
+If schema work exposes missing business meaning, return the issue to the governed business-decision process rather than resolving it in the schema. No separate Schema Adoption Authority or additional review/adoption gate applies.
 
 ## End-to-end workflow
 
@@ -37,11 +37,11 @@ flowchart TD
     B["Accepted Business Decision Records"] --> D["Schema Draft"]
     D --> E["Examples"]
     E --> V["Validation"]
-    V --> H["Human Review"]
-    H --> P["Approved"]
-    P --> A["Adopted"]
-    A --> I["Implementation"]
-    H -->|"Business meaning missing"| B
+    V --> C["Autonomous Completion"]
+    C --> R["Repository Integration"]
+    R --> G["Ready for Commit"]
+    G --> I["Later Architecture and Implementation"]
+    C -->|"Business meaning missing"| B
     V -->|"Validation fails"| D
 ```
 
@@ -49,8 +49,8 @@ flowchart TD
 
 - **Purpose:** establish the authoritative business meaning the schema must express.
 - **Entry criteria:** the decision is canonical and its BDR exists.
-- **Exit criteria:** the relevant BDRs are Accepted, dependencies are known and no blocking contradiction remains.
-- **Deliverables:** BDR references, dependency list and identified business/review owners.
+- **Exit criteria:** the relevant business Decisions and BDRs are governed, dependencies are known and no blocking contradiction remains.
+- **Deliverables:** BDR references, dependency list and identified business owners.
 
 ### 2. Schema Draft
 
@@ -73,73 +73,52 @@ flowchart TD
 - **Exit criteria:** schema syntax, references, valid fixtures, invalid fixtures, naming and traceability checks pass; any exceptions are documented.
 - **Deliverables:** reproducible validation evidence and exception record.
 
-### 5. Human Review
+### 5. Autonomous Completion
 
-- **Purpose:** confirm that the draft expresses the intended business meaning and boundaries.
-- **Entry criteria:** validation passes and the review pack identifies changes and unresolved matters.
-- **Exit criteria:** the business owner confirms meaning; affected domain owners confirm boundaries; technical reviewers confirm consistency and storage independence; blocking comments are resolved.
-- **Deliverables:** completed [schema review checklist](schema-review-checklist.md), review comments and review outcome.
+- **Purpose:** complete every deterministic Pack artefact and surface only genuine Human Decision Gates.
+- **Entry criteria:** validation passes and all affected artefacts are available.
+- **Exit criteria:** schemas, fixtures, traceability, reports, reflection, manifest and archive evidence are consistent; no unresolved Human Decision Gate remains.
+- **Deliverables:** completed Pack and reproducible completion evidence.
 
-### 6. Approved
+### 6. Repository Integration
 
-- **Purpose:** record that the proposed contract is acceptable for adoption planning.
-- **Entry criteria:** human review is complete and no blocking decision remains.
-- **Exit criteria:** an accountable approver records the approved version, date and scope; migration and compatibility impacts are understood.
-- **Deliverables:** approval record, final candidate and adoption prerequisites.
+- **Purpose:** make the completed Pack the local repository baseline.
+- **Entry criteria:** autonomous completion succeeds and no Human Decision Gate remains.
+- **Exit criteria:** governed Markdown, schemas, fixtures, reports, Pack archive and indexes are repository-visible and revalidated.
+- **Deliverables:** repository integration manifest, validation report and updated indexes.
 
-Approval does not yet make the schema an implementation contract.
+### 7. Ready for Commit
 
-### 7. Adopted
+- **Purpose:** identify a completed and integrated repository baseline awaiting the sole manual engineering action.
+- **Entry criteria:** repository integration and revalidation pass.
+- **Exit criteria:** Git commit occurs through the separate engineering action.
+- **Deliverables:** completed local diff and readiness report.
 
-- **Purpose:** establish a specific schema version as a canonical contract.
-- **Entry criteria:** approval exists; catalogue, version, fixtures, validation and transition consequences are complete.
-- **Exit criteria:** adoption is explicitly recorded, documentation identifies the adopted version, and downstream consumers can reference it unambiguously.
-- **Deliverables:** adopted schema, catalogue entry, adoption record, fixtures, validation evidence and migration guidance where applicable.
+### 8. Later Architecture and Implementation
 
-### 8. Implementation
-
-- **Purpose:** implement applications, repositories, adapters and workflows against the adopted contract.
-- **Entry criteria:** the schema is Adopted and the applicable Stage 6 architecture has been reviewed.
+- **Purpose:** implement applications, repositories, adapters and workflows against the committed canonical baseline.
+- **Entry criteria:** the Pack is committed and the applicable Stage 6 architecture has been completed.
 - **Exit criteria:** implementation and rollout satisfy Stages 7 and 8.
 - **Deliverables:** implementation, tests, operational documentation and release evidence. These are outside Stage 5.
 
-## Review workflow
+## Completion workflow
 
-1. Prepare a review bundle containing the draft, traceability, examples, validation result and change summary.
-2. Complete the schema review checklist before requesting human review.
-3. Review business meaning and ownership before technical representation.
-4. Review dependent and consuming domains for boundary or cardinality changes.
-5. Record each comment as blocking, non-blocking or future consideration.
-6. Route missing business policy back to a BDR workflow; do not resolve it in schema prose.
-7. Revalidate after every structural change.
-8. Retain the review outcome with the schema version.
-
-## Approval workflow
-
-- The relevant business decision owner approves fidelity to business meaning.
-- A designated schema approver confirms cross-domain consistency, traceability and validation evidence. **TODO:** name the standing FIKA OS schema approver or approval group.
-- Approval must identify the exact candidate version and date.
-- Conditional approval must list conditions and cannot advance to Adopted until they are resolved.
-- Silence, file creation, merge or implementation use does not constitute approval.
-
-## Adoption workflow
-
-1. Confirm the approved candidate is unchanged since review.
-2. Confirm every required property traces to accepted BDRs.
-3. Confirm validation is reproducible and fixtures contain no production or sensitive personal data.
-4. Confirm compatibility, migration and deprecation effects are documented.
-5. Record the adopting authority, date, exact version and effective scope.
-6. Update the schema catalogue and pack roadmap.
-7. Notify downstream architecture and application owners that an adopted contract is available.
+1. Assemble the schema, traceability, examples, validation result and change summary.
+2. Confirm business meaning and ownership before technical representation.
+3. Check dependent and consuming domains for boundary or cardinality conflicts.
+4. Route missing business policy to a Human Decision Gate; do not resolve it in schema prose.
+5. Complete all unaffected deterministic work before pausing.
+6. Revalidate after every structural change.
+7. Integrate the completed Pack and update repository indexes mechanically.
+8. Revalidate the integrated repository and report `READY FOR COMMIT`.
 
 ## Schema lifecycle
 
 | Status | Meaning | Permitted use |
 |---|---|---|
-| Draft | Work in progress derived from accepted BDRs; not reviewed as a complete contract. | Exploration and review preparation only |
-| Under Review | A fixed draft is undergoing business, domain and technical review. | Review and validation only |
-| Approved | Review is complete and the exact version is approved for adoption preparation. | Adoption planning; not yet an implementation contract |
-| Adopted | Explicitly established as a canonical contract for its stated scope and version. | Architecture and implementation contract |
+| Draft | Work in progress derived from governed BDR authority. | Autonomous Pack processing and validation |
+| Completed | All deterministic Pack artefacts and validation are complete with no Human Decision Gate. | Repository integration |
+| Integrated | The completed Pack is repository-visible and revalidated. | Ready for commit |
 | Deprecated | Still supported for a stated transition period but not for new use. | Existing consumers during governed migration |
 | Superseded | Replaced by a named later version or schema and no longer current authority. | Historical traceability only, except documented legacy support |
 
@@ -151,9 +130,9 @@ Status changes must be explicit, dated and attributable. History must not be rew
 - A version identifies a fixed contract; published versions are not silently edited.
 - Corrections that change validation or meaning require a new version.
 - A breaking change is any change that can invalidate previously valid canonical records, make previously invalid records valid in a meaning-changing way, change ownership or cardinality, remove or rename a property, narrow allowed values, or alter a relationship's meaning.
-- Breaking changes require impact assessment, new examples, full review, explicit approval, migration guidance and a deprecation or supersession plan.
-- Non-breaking additions still require BDR traceability, review and a new recorded version.
-- **TODO:** approve the repository-wide version-numbering convention before the first adoption.
+- Breaking changes require impact assessment, new examples, any required Business Decision, full validation, migration guidance and a deprecation or supersession plan.
+- Non-breaking additions still require BDR traceability, validation and a new recorded version.
+- **TODO:** confirm the repository-wide version-numbering convention before the first implementation dependency.
 
 ## Traceability
 
@@ -167,7 +146,7 @@ Every schema must have an accompanying traceability record containing:
 - valid and invalid examples;
 - validation fixtures and validation evidence;
 - provider mappings where applicable;
-- review, approval and adoption records;
+- completion and repository-integration records;
 - deprecation or supersession links where applicable.
 
 A provider field, spreadsheet column or application property is evidence for a mapping or compatibility concern, not sufficient authority for a canonical property.
@@ -178,7 +157,7 @@ Providers and legacy systems connect through mappings and adapters. Canonical sc
 
 ## Validation requirements
 
-Before approval, each schema must have:
+Before repository integration, each schema must have:
 
 - a syntactically valid, resolvable definition;
 - documented required and optional properties;
@@ -188,7 +167,7 @@ Before approval, each schema must have:
 - checks for duplicate meaning and provider leakage;
 - checks that examples contain no secrets, sensitive production data or private customer data;
 - reproducible validation results;
-- completed traceability and review checklists.
+- completed traceability and deterministic completion checks.
 
 Validation proves conformance to the proposed contract. It does not approve the underlying business policy.
 
@@ -200,7 +179,7 @@ Stage 5 artefacts should use the existing governed areas:
 docs/
   business-decisions/       authoritative business meaning
   domain-models/            explanatory domain-model guidance
-  schema-reviews/           review and adoption evidence
+  schema-reviews/           completion and validation evidence
   platform-methodology/     Stage 5 governance
 schemas/                    versioned canonical schema definitions and catalogue
 fixtures/                   non-production valid and invalid examples
@@ -210,18 +189,18 @@ Provider mappings should be stored separately from canonical schemas. **TODO:** 
 
 ## Business ownership
 
-Business owners approve meaning; schema reviewers confirm faithful representation; technical reviewers confirm consistency and validation; adoption authority makes the contract canonical. None of these roles may use schema design to bypass a missing business decision.
+Business owners retain authority over business meaning. Autonomous schema processing confirms faithful representation, consistency and validation. Repository integration is deterministic and does not create a separate business or adoption authority. Schema design must never bypass a missing business decision.
 
-Where a pack spans domains, every affected business owner must review the boundary relevant to their domain. **TODO:** confirm the standing adoption authority and any delegated approval thresholds.
+Where a Pack exposes unresolved cross-domain meaning, it pauses at one batched Human Decision Gate. Otherwise processing continues through repository integration without an additional review gate.
 
 ## Current stage
 
-Stage 5 governance is being established. No schema is adopted by this document. Existing `FikaBooking` schemas, fixtures and review material remain draft supporting evidence. The 54 BDRs are currently Draft pending human review, so schema pack generation remains gated until the relevant BDRs are Accepted.
+Packs 1 through 8 have completed the established Stage 5 workflow and are integrated locally. Existing standalone `FikaBooking` material remains supporting draft evidence unless incorporated through a governed Pack. Pack 9 remains gated only by the business decision selecting the first provider mapping and its accountable owner.
 
 ## Recommended working practices
 
 - Work one dependency-ordered schema pack at a time.
-- Freeze a review candidate while comments are gathered.
+- Preserve a fixed candidate while validation or a Human Decision Gate is pending.
 - Keep canonical schemas, provider mappings and projections separate.
 - Prefer small, reviewable schema versions over broad speculative models.
 - Use examples early to expose ambiguity.
@@ -237,4 +216,3 @@ Stage 5 governance is being established. No schema is adopted by this document. 
 - [Schema Pack Roadmap](../schema-pack-roadmap.md)
 - [Stage 5 — Schema Design](../stages/stage-5-schema-design.md)
 - [Documentation Governance](../documentation-governance.md)
-

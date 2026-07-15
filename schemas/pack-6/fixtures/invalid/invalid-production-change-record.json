@@ -1,0 +1,32 @@
+{
+  "schemaVersion": "1.0.0-draft.1",
+  "productionChangeId": "production-change:fictional-started-auto",
+  "productionOrderId": "production-order:fictional-1001",
+  "sourceBooking": {
+    "bookingId": "booking:fictional-1001",
+    "bookingVersion": 5
+  },
+  "changeType": "cancellation",
+  "reason": "Fictional cancellation after preparation began",
+  "originalRequestSnapshotReference": "booking-snapshot:fictional-1001-v4",
+  "changedRequestSnapshotReference": "booking-snapshot:fictional-1001-v5",
+  "approvedBy": {
+    "personId": "person:fictional-production-approver",
+    "authorityReference": "authority-grant:fictional-production-change"
+  },
+  "occurredAt": "2026-08-12T09:30:00+01:00",
+  "productionHadCommenced": true,
+  "handlingMode": "automatic_cancellation",
+  "provenance": {
+    "sourceBdrIds": ["PROD-001", "PROD-004", "BOOK-006"],
+    "sourceSnapshot": "local-repository-2026-07-15"
+  },
+  "audit": {
+    "version": 1,
+    "createdAt": "2026-08-12T09:30:00+01:00",
+    "createdByAssignmentId": "assignment:fictional-production-controller",
+    "updatedAt": "2026-08-12T09:30:00+01:00",
+    "updatedByAssignmentId": "assignment:fictional-production-controller",
+    "events": []
+  }
+}

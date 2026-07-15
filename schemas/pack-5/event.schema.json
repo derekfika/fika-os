@@ -1,0 +1,263 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:fika:schema:draft:event:1",
+  "title": "Event v1 (Draft)",
+  "description": "Draft business contract for an Event: a bespoke activity delivered at an Operational Location with one mandatory Event Contact. It is not a recurring Service schedule, Service Arrangement or Hospitality Booking.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "eventId",
+    "operationalLocationId",
+    "purpose",
+    "eventContact",
+    "qualificationBasis",
+    "approval",
+    "provenance",
+    "audit"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "1.0.0-draft.1"
+    },
+    "eventId": {
+      "$ref": "#/$defs/stableId",
+      "description": "Stable identity owned by the Event domain."
+    },
+    "operationalLocationId": {
+      "$ref": "#/$defs/stableId",
+      "description": "Stable reference to the Operational Location at which the Event is delivered."
+    },
+    "purpose": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The Event-specific purpose owned by the Event domain."
+    },
+    "eventContact": {
+      "$ref": "#/$defs/eventContact"
+    },
+    "clientId": {
+      "$ref": "#/$defs/stableId",
+      "description": "Optional reference to an existing Client where an approved Operational Relationship with FIKA applies."
+    },
+    "qualificationBasis": {
+      "$ref": "#/$defs/qualificationBasis"
+    },
+    "serviceIds": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/stableId"
+      },
+      "description": "Optional references to reusable Services used, referenced or purchased by the Event."
+    },
+    "serviceArrangementIds": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/stableId"
+      },
+      "description": "Optional references to Operational Location-specific Service Arrangements supporting the Event."
+    },
+    "approval": {
+      "$ref": "#/$defs/approval"
+    },
+    "provenance": {
+      "$ref": "#/$defs/provenance"
+    },
+    "audit": {
+      "$ref": "#/$defs/audit"
+    }
+  },
+  "$defs": {
+    "stableId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z][A-Za-z0-9_.:-]*$"
+    },
+    "isoDateTime": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "eventContact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "eventContactId",
+        "personId",
+        "responsibility"
+      ],
+      "properties": {
+        "eventContactId": {
+          "$ref": "#/$defs/stableId",
+          "description": "Stable identity for this Event Contact relationship."
+        },
+        "personId": {
+          "$ref": "#/$defs/stableId",
+          "description": "Stable reference to the identifiable person responsible for Event communications."
+        },
+        "responsibility": {
+          "const": "event_communications",
+          "description": "Responsibility for confirmations, updates and operational correspondence."
+        }
+      }
+    },
+    "qualificationBasis": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "bespoke",
+        "partOfRecurringServiceSchedule"
+      ],
+      "properties": {
+        "bespoke": {
+          "const": true
+        },
+        "partOfRecurringServiceSchedule": {
+          "const": false
+        },
+        "occasionDescription": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "approval": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "approvingPersonId",
+        "approvingAuthority",
+        "decision",
+        "decidedAt"
+      ],
+      "properties": {
+        "approvingPersonId": {
+          "$ref": "#/$defs/stableId"
+        },
+        "approvingAuthority": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "authorityType",
+            "authorityReference"
+          ],
+          "properties": {
+            "authorityType": {
+              "type": "string",
+              "enum": [
+                "organisational_role",
+                "delegated_authority"
+              ]
+            },
+            "authorityReference": {
+              "$ref": "#/$defs/stableId"
+            }
+          }
+        },
+        "decision": {
+          "type": "string",
+          "minLength": 1
+        },
+        "decidedAt": {
+          "$ref": "#/$defs/isoDateTime"
+        },
+        "conditions": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Approval conditions where applicable."
+        }
+      }
+    },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sourceBdrIds",
+        "sourceSnapshot"
+      ],
+      "properties": {
+        "sourceBdrIds": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^(EVT|SVC)-\\d{3}$"
+          }
+        },
+        "sourceSnapshot": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "auditEvent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "eventType",
+        "occurredAt",
+        "actorAssignmentId"
+      ],
+      "properties": {
+        "eventType": {
+          "type": "string",
+          "minLength": 1
+        },
+        "occurredAt": {
+          "$ref": "#/$defs/isoDateTime"
+        },
+        "actorAssignmentId": {
+          "$ref": "#/$defs/stableId"
+        },
+        "reason": {
+          "type": "string"
+        }
+      }
+    },
+    "audit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "version",
+        "createdAt",
+        "createdByAssignmentId",
+        "updatedAt",
+        "updatedByAssignmentId",
+        "events"
+      ],
+      "properties": {
+        "version": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "createdAt": {
+          "$ref": "#/$defs/isoDateTime"
+        },
+        "createdByAssignmentId": {
+          "$ref": "#/$defs/stableId"
+        },
+        "updatedAt": {
+          "$ref": "#/$defs/isoDateTime"
+        },
+        "updatedByAssignmentId": {
+          "$ref": "#/$defs/stableId"
+        },
+        "events": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/auditEvent"
+          }
+        }
+      }
+    }
+  },
+  "x-fika-source-bdrs": [
+    "EVT-001",
+    "EVT-002",
+    "SVC-008"
+  ],
+  "x-fika-status": "Draft review candidate; not approved or adopted"
+}

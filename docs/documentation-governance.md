@@ -11,7 +11,7 @@ When two documents differ, use the highest applicable source in this order:
 1. **Approved canonical decisions** in the FIKA Business Knowledge Workbook
 2. **Business Decision Records (BDRs)** that preserve and explain those decisions
 3. **Canonical domain definitions and business journeys**
-4. **Adopted canonical schemas**
+4. **Completed and integrated canonical schemas**
 5. **Approved platform architecture**
 6. **Application specifications**
 7. **Supporting evidence**, including inventories, audits, discoveries and workshops
@@ -56,8 +56,8 @@ Draft, proposed and planned documents are never adopted authority merely because
 | `docs/domain-discovery/*.md` | Supporting evidence | Domain hypotheses, evidence and questions that preceded canonical decisions |
 | `docs/business-workshops/*.md` | Historical discovery evidence | Workshop questions and candidate models; superseded by approved decisions where different |
 | `docs/business-journeys/new-site-mobilisation-journey.md` | Supporting evidence | Evidence-backed mobilisation journey pending BDR consolidation |
-| `docs/domain-models/fika-booking-v1.md` | Supporting draft | Unadopted booking domain-model evidence for Stage 5 |
-| `docs/schema-reviews/fika-booking-v1-review.md` | Supporting review | Formal review of an unadopted schema draft |
+| `docs/domain-models/fika-booking-v1.md` | Supporting draft | Pre-Pack booking domain-model evidence for Stage 5 |
+| `docs/schema-reviews/fika-booking-v1-review.md` | Supporting review | Formal review of the earlier supporting schema draft |
 | `docs/decisions/ADR-003-canonical-booking-and-ingestion-adapters.md` | Supporting proposed ADR | Proposed technical/architectural direction; subject to BDR and schema reconciliation |
 | `docs/decisions/ADR-004-booking-to-production-boundary.md` | Supporting accepted ADR | Architectural boundary evidence; business wording must align with BDRs |
 | `docs/decisions/README.md` | Canonical ADR index | Architectural Decision Record guidance, distinct from BDRs |

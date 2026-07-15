@@ -1,0 +1,41 @@
+{
+  "schemaVersion": "1.0.0-draft.1",
+  "eventId": "event:fictional-summer-reception",
+  "operationalLocationId": "oploc:fictional-riverside-house",
+  "purpose": "Fictional summer reception",
+  "eventContact": {
+    "eventContactId": "event-contact:fictional-summer-reception",
+    "personId": "person:fictional-jordan-river",
+    "responsibility": "event_communications"
+  },
+  "qualificationBasis": {
+    "bespoke": true,
+    "partOfRecurringServiceSchedule": false,
+    "occasionDescription": "A one-off fictional summer reception"
+  },
+  "approval": {
+    "approvingPersonId": "person:fictional-casey-site",
+    "approvingAuthority": {
+      "authorityType": "delegated_authority",
+      "authorityReference": "delegation:fictional-site-event-approval"
+    },
+    "decision": "approved with conditions",
+    "decidedAt": "2026-07-14T20:30:00Z",
+    "conditions": "Fictional condition: delivery plan confirmed before the Event."
+  },
+  "provenance": {
+    "sourceBdrIds": [
+      "EVT-001",
+      "EVT-002"
+    ],
+    "sourceSnapshot": "local-repository-2026-07-14"
+  },
+  "audit": {
+    "version": 1,
+    "createdAt": "2026-07-14T20:15:00Z",
+    "createdByAssignmentId": "assignment:fictional-site-coordinator",
+    "updatedAt": "2026-07-14T20:30:00Z",
+    "updatedByAssignmentId": "assignment:fictional-site-manager",
+    "events": []
+  }
+}
