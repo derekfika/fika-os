@@ -11,7 +11,7 @@
 
 Business discovery asked: **Which service date/time fields and vocabulary are required in the next FikaBooking revision?**
 
-Before approval, the recorded evidence stated: “Timing semantics are a genuine blocker to revision.” The question was recorded as a refinement decision with low repository confidence before approval.
+FIKA delivers many different types of hospitality, including meeting room catering, coffee services, events, breakfasts, lunches and hospitality requests. During discovery it became clear that not every booking naturally contains the same timeline. Some bookings require preparation, delivery, setup and collection, while others simply require a service to begin at a specific time. Before this decision there was no agreed definition of which booking time was fundamental and which were optional, creating ambiguity for future booking schemas and operational workflows.
 
 ## Decision
 
