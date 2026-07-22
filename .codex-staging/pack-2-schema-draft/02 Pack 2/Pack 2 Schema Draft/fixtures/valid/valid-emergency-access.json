@@ -1,0 +1,50 @@
+{
+  "schemaVersion": "pack-2-draft-1",
+  "emergencyAccessId": "emergency:example-001",
+  "requesterId": "person:example",
+  "authoriserId": "person:derek",
+  "reason": "Urgent operational continuity fixture.",
+  "scope": {
+    "scopeType": "organisation",
+    "scopeId": "org:fika",
+    "scopeLabel": "FIKA"
+  },
+  "status": "reviewed",
+  "effectivePeriod": {
+    "startAt": "2026-07-14T00:00:00Z",
+    "endAt": "2026-07-14T13:00:00Z",
+    "reason": "Draft fixture effective period"
+  },
+  "accessedActions": [
+    "View",
+    "Administer"
+  ],
+  "review": {
+    "reviewedBy": "person:derek",
+    "reviewedAt": "2026-07-14T14:00:00Z",
+    "outcome": "Fixture reviewed; no permanent permission change."
+  },
+  "provenance": {
+    "sourceBdrIds": [
+      "ROLE-007",
+      "ROLE-006"
+    ],
+    "sourceSnapshot": "02 Pack 2-20260714T164540Z-1-001.zip",
+    "authorityRank": "Approved GRR"
+  },
+  "audit": {
+    "version": 1,
+    "createdAt": "2026-07-14T12:00:00Z",
+    "createdBy": "role:platform-governance",
+    "updatedAt": "2026-07-14T12:00:00Z",
+    "updatedBy": "role:platform-governance",
+    "events": [
+      {
+        "eventType": "drafted",
+        "occurredAt": "2026-07-14T12:00:00Z",
+        "actorId": "role:platform-governance",
+        "reason": "Pack 2 schema draft fixture"
+      }
+    ]
+  }
+}

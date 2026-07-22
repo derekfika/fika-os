@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <base target="_top">
+  <?!= include_("Styles"); ?>
+  <? const faviconUrl = getConfiguredValue_("FAVICON_URL", ""); ?>
+  <? if (faviconUrl) { ?>
+  <link rel="icon" href="<?!= faviconUrl; ?>">
+  <? } ?>
+  <style>
+  <? const titleFontUrl = getConfiguredValue_("FONT_TITLE_URL", ""); ?>
+  <? const bodyFontUrl = getConfiguredValue_("FONT_BODY_URL", ""); ?>
+  <? const titleFontFamily = getConfiguredValue_("FONT_TITLE_FAMILY", CONFIG.FONT_TITLE_FAMILY); ?>
+  <? const bodyFontFamily = getConfiguredValue_("FONT_BODY_FAMILY", CONFIG.FONT_BODY_FAMILY); ?>
+
+  <? if (titleFontUrl) { ?>
+    @font-face {
+      font-family: '<?!= titleFontFamily ?>';
+      src: url('<?!= titleFontUrl ?>');
+    }
+  <? } ?>
+
+  <? if (bodyFontUrl) { ?>
+    @font-face {
+      font-family: '<?!= bodyFontFamily ?>';
+      src: url('<?!= bodyFontUrl ?>');
+    }
+  <? } ?>
+
+  :root {
+    --bg: <?!= getConfiguredValue_("COLOUR_BACKGROUND", CONFIG.COLOUR_BACKGROUND) ?>;
+    --bg-elevated: <?!= getConfiguredValue_("COLOUR_SURFACE", CONFIG.COLOUR_SURFACE) ?>;
+    --bg-card: <?!= getConfiguredValue_("COLOUR_SURFACE_ALT", CONFIG.COLOUR_SURFACE_ALT) ?>;
+    --text: <?!= getConfiguredValue_("COLOUR_TEXT", CONFIG.COLOUR_TEXT) ?>;
+    --text-muted: <?!= getConfiguredValue_("COLOUR_TEXT_MUTED", CONFIG.COLOUR_TEXT_MUTED) ?>;
+    --border: <?!= getConfiguredValue_("COLOUR_BORDER", CONFIG.COLOUR_BORDER) ?>;
+    --primary: <?!= getConfiguredValue_("COLOUR_PRIMARY", CONFIG.COLOUR_PRIMARY) ?>;
+    --success: <?!= getConfiguredValue_("COLOUR_SUCCESS", CONFIG.COLOUR_SUCCESS) ?>;
+    --warning: <?!= getConfiguredValue_("COLOUR_WARNING", CONFIG.COLOUR_WARNING) ?>;
+    --error: <?!= getConfiguredValue_("COLOUR_DANGER", CONFIG.COLOUR_DANGER) ?>;
+    --info: <?!= getConfiguredValue_("COLOUR_INFO", CONFIG.COLOUR_INFO) ?>;
+    --font-title: '<?!= titleFontFamily ?>', serif;
+    --font-body: '<?!= bodyFontFamily ?>', Arial, sans-serif;
+  }
+</style>
+
+  </style>
+  <?!= include_("Icons"); ?>
+</head>
+
+<body>
+  <div class="app">
+    <header class="topbar">
+
+      <div class="logo-wrap">
+        <img class="fika-logo" src="<?!= getConfiguredValue_('FIKA_LOGO_URL', CONFIG.FIKA_LOGO_URL); ?>" alt="FIKA" />
+      </div>
+
+      <div class="header-title">
+        <h1>
+          <?!= getConfiguredValue_("APP_NAME", CONFIG.APP_NAME); ?>
+        </h1>
+      </div>
+      <div class="header-actions">
+        <button class="button secondary" onclick="openDeliveryReportModal()">Delivery PDF</button>
+        <button class="button" onclick="openScanModal()">Scan Inbox</button>
+        <button class="button" onclick="loadBookings()">Refresh</button>
+        <button class="icon-btn header-settings-btn" title="Settings" aria-label="Settings"
+          onclick="openSettingsModal()">
+          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none"
+            stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+            class="lucide lucide-settings">
+            <path
+              d="M9.671 4.136a2.34 2.34 0 0 1 4.659 0 2.34 2.34 0 0 0 3.319 1.915 2.34 2.34 0 0 1 2.33 4.033 2.34 2.34 0 0 0 0 3.831 2.34 2.34 0 0 1-2.33 4.033 2.34 2.34 0 0 0-3.319 1.915 2.34 2.34 0 0 1-4.659 0 2.34 2.34 0 0 0-3.32-1.915 2.34 2.34 0 0 1-2.33-4.033 2.34 2.34 0 0 0 0-3.831A2.34 2.34 0 0 1 6.35 6.051a2.34 2.34 0 0 0 3.319-1.915" />
+            <circle cx="12" cy="12" r="3" />
+          </svg>
+        </button>
+      </div>
+
+    </header>
+    <section class="stats" id="stats"></section>
+    <section class="feedback-insights" id="feedbackInsights" aria-live="polite">
+      <div class="feedback-insights-heading">
+        <div>
+          <span class="eyebrow">Client feedback</span>
+          <h2>Hospitality pulse</h2>
+        </div>
+        <span class="muted" id="feedbackInsightsStatus">Loading feedback…</span>
+      </div>
+      <div class="feedback-metrics" id="feedbackMetrics"></div>
+      <div class="feedback-items" id="feedbackItems"></div>
+    </section>
+
+    <section class="controls">
+      <input id="searchInput" placeholder="Search company, host, floor, status..." oninput="renderBookings()">
+
+      <div class="status-filters">
+        <label><input type="checkbox" value="NEW" checked onchange="renderBookings()"> New</label>
+        <label><input type="checkbox" value="NEEDS_REVIEW" checked onchange="renderBookings()"> Needs Review</label>
+        <label><input type="checkbox" value="READY" checked onchange="renderBookings()"> Ready</label>
+        <label><input type="checkbox" value="QUOTE_GENERATED" checked onchange="renderBookings()"> Quote</label>
+        <label><input type="checkbox" value="CPU_CREATED" checked onchange="renderBookings()"> Calendar</label>
+        <label><input type="checkbox" value="CONFIRMED" checked onchange="renderBookings()"> Confirmed</label>
+        <label><input type="checkbox" value="CANCELLED" onchange="renderBookings()"> Cancelled</label>
+        <label><input type="checkbox" value="ERROR" onchange="renderBookings()"> Error</label>
+        <label><input type="checkbox" value="ARCHIVED" onchange="renderBookings()"> Archived</label>
+      </div>
+    </section>
+
+    <div id="calendarControls" class="calendar-controls">
+      <button class="button" onclick="changeCalendarWeek(-1)">&larr; Previous Week</button>
+      <button class="button" onclick="goToCurrentWeek()">This Week</button>
+      <button class="button" onclick="changeCalendarWeek(1)">Next Week &rarr;</button>
+      <div id="calendarWeekLabel" class="calendar-week-label"></div>
+    </div>
+
+    <section id="calendarView" class="calendar-view"></section>
+
+    <main id="tableView" class="table-wrap">
+      <table class="bookings-table">
+
+        <colgroup>
+          <col style="width: 90px">
+          <col style="width: 70px">
+          <col style="width: 170px">
+          <col style="width: 50px">
+          <col style="width: 90px">
+          <col style="width: 80px">
+          <col style="width: 80px">
+          <col style="width: 110px">
+          <col>
+          <col style="width: 280px">
+        </colgroup>
+
+        <thead>
+          <tr>
+            <th onclick="setSort('date')">Date</th>
+            <th onclick="setSort('time')">Time</th>
+            <th onclick="setSort('company')">Company</th>
+            <th onclick="setSort('pax')">Pax</th>
+            <th onclick="setSort('service')">Service</th>
+            <th onclick="setSort('floor')">Floor</th>
+            <th onclick="setSort('total')">Total</th>
+            <th onclick="setSort('status')">Status</th>
+            <th>Missing</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+
+        <tbody id="bookingRows">
+          <tr>
+            <td colspan="10" class="loading">
+              Loading bookings...
+            </td>
+          </tr>
+        </tbody>
+
+      </table>
+    </main>
+
+    <div id="toast" class="toast hidden"></div>
+
+    <div id="deliveryReportModal" class="modal hidden">
+      <div class="modal-card">
+        <h2>Delivery PDF</h2>
+        <p class="muted">Generate a printable delivery report for active hospitality bookings in a date range.</p>
+        <div class="edit-grid">
+          <label class="field">
+            <span>Start date</span>
+            <input id="deliveryReportStart" type="date">
+          </label>
+          <label class="field">
+            <span>End date</span>
+            <input id="deliveryReportEnd" type="date">
+          </label>
+        </div>
+        <div id="deliveryReportStatus" class="settings-status muted"></div>
+        <div class="modal-actions">
+          <button class="button secondary" onclick="closeDeliveryReportModal()" type="button">Cancel</button>
+          <button id="deliveryReportGenerateBtn" class="button" onclick="generateDeliveryReport()" type="button">Generate PDF</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="cancelModal" class="modal hidden">
+      <div class="modal-card">
+        <h2>Cancel Booking?</h2>
+
+        <p class="muted">
+          Choose what should happen when this booking is cancelled.
+        </p>
+
+        <label class="modal-check">
+          <input id="cancel-send-email" type="checkbox">
+          <span>Send cancellation email to client</span>
+        </label>
+
+        <label class="modal-check">
+          <input id="cancel-remove-calendar" type="checkbox" checked>
+          <span>Remove from CPU calendar</span>
+        </label>
+
+        <div class="modal-actions">
+          <button class="button secondary" onclick="closeCancelDialog()">Back</button>
+          <button class="button danger" onclick="continueCancelDialog()">Continue</button>
+        </div>
+      </div>
+    </div>
+    <div id="settingsModal" class="modal hidden">
+      <div class="modal-card settings-modal-card">
+        <div class="settings-modal-header">
+          <div>
+            <h2>Settings</h2>
+            <p class="muted">Update the dashboard configuration stored in the Settings sheet.</p>
+          </div>
+          <button class="icon-btn" title="Close settings" onclick="closeSettingsModal()">&times;</button>
+        </div>
+
+        <div id="settingsStatus" class="settings-status muted">Loading settings...</div>
+
+        <div class="settings-layout">
+          <nav id="settingsTabs" class="settings-tabs"></nav>
+          <form id="settingsForm" class="settings-form" onsubmit="event.preventDefault(); saveSettings();"></form>
+        </div>
+
+        <div class="modal-actions">
+          <button class="button secondary" onclick="resetCurrentSettingsTab()" type="button">Reset Tab</button>
+          <button class="button secondary" onclick="closeSettingsModal()" type="button">Close</button>
+          <button id="settingsSaveBtn" class="button" onclick="saveSettings()" type="button" disabled>Save
+            Settings</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="adminPinModal" class="modal hidden">
+      <div class="modal-card">
+        <h2>Admin Access</h2>
+        <p class="muted">Enter the admin PIN to unlock protected settings.</p>
+
+        <label class="field full">
+          <span>Admin PIN</span>
+          <input id="adminPinInput" type="password" autocomplete="off">
+        </label>
+
+        <div id="adminPinStatus" class="settings-status muted hidden"></div>
+
+        <div class="modal-actions">
+          <button class="button secondary" onclick="closeAdminPinModal()" type="button">Cancel</button>
+          <button class="button" onclick="submitAdminPin()" type="button">Unlock</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="scanModal" class="modal hidden">
+      <div class="modal-card scan-modal-card">
+        <h2>Scan Inbox</h2>
+
+        <p id="scan-summary" class="muted">Preparing scan...</p>
+
+        <div class="scan-stats">
+          <div><strong id="scan-found">0 </strong><span>Found</span></div>
+          <div><strong id="scan-logged">0 </strong><span>Logged</span></div>
+          <div><strong id="scan-skipped">0 </strong><span>Skipped</span></div>
+          <div><strong id="scan-archived">0 </strong><span>Archived</span></div>
+          <div><strong id="scan-errors">0 </strong><span>Errors</span></div>
+        </div>
+
+        <div id="scan-ticker" class="scan-ticker">Checking settings...</div>
+
+        <div class="modal-actions">
+          <button id="scan-close-btn" class="button secondary" onclick="closeScanModal()">Close</button>
+          <button id="scan-start-btn" class="button" onclick="startInboxScan()" disabled>Start Scan</button>
+        </div>
+      </div>
+    </div>
+    <script>
+      window.DASHBOARD_SETTINGS_SCHEMA = <?!= JSON.stringify(getSettingSchema_()); ?>;
+    </script>
+    <?!= include_("Script"); ?>
+
+</body>
+
+</html>

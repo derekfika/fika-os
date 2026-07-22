@@ -1,0 +1,132 @@
+{
+  "validator": "local structural subset validator",
+  "failures": 0,
+  "results": [
+    {
+      "schema": "booking-amendment-action.schema.json",
+      "fixture": "valid-booking-amendment-action.json",
+      "expected": "pass",
+      "actual": "pass",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "schema": "booking-amendment-action.schema.json",
+      "fixture": "invalid-booking-amendment-action.json",
+      "expected": "fail",
+      "actual": "fail",
+      "passed": true,
+      "errors": [
+        "/auditHistoryPreserved: expected const true"
+      ]
+    },
+    {
+      "schema": "booking-dietary-allergen-requirement.schema.json",
+      "fixture": "valid-booking-dietary-allergen-requirement.json",
+      "expected": "pass",
+      "actual": "pass",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "schema": "booking-dietary-allergen-requirement.schema.json",
+      "fixture": "invalid-booking-dietary-allergen-requirement.json",
+      "expected": "fail",
+      "actual": "fail",
+      "passed": true,
+      "errors": [
+        "/customerDisclosure/unexpected: additional property not allowed"
+      ]
+    },
+    {
+      "schema": "booking-item-quantity.schema.json",
+      "fixture": "valid-booking-item-quantity.json",
+      "expected": "pass",
+      "actual": "pass",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "schema": "booking-item-quantity.schema.json",
+      "fixture": "invalid-booking-item-quantity.json",
+      "expected": "fail",
+      "actual": "fail",
+      "passed": true,
+      "errors": [
+        "/providerPayload: additional property not allowed"
+      ]
+    },
+    {
+      "schema": "booking-price-snapshot.schema.json",
+      "fixture": "valid-booking-price-snapshot.json",
+      "expected": "pass",
+      "actual": "pass",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "schema": "booking-price-snapshot.schema.json",
+      "fixture": "invalid-booking-price-snapshot.json",
+      "expected": "fail",
+      "actual": "fail",
+      "passed": true,
+      "errors": [
+        "/immutableAfterAcceptance: expected const true"
+      ]
+    },
+    {
+      "schema": "booking-service-time.schema.json",
+      "fixture": "valid-booking-service-time.json",
+      "expected": "pass",
+      "actual": "pass",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "schema": "booking-service-time.schema.json",
+      "fixture": "invalid-booking-service-time.json",
+      "expected": "fail",
+      "actual": "fail",
+      "passed": true,
+      "errors": [
+        "/serviceStartAt: required property missing"
+      ]
+    },
+    {
+      "schema": "booking-source-reference.schema.json",
+      "fixture": "valid-booking-source-reference.json",
+      "expected": "pass",
+      "actual": "pass",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "schema": "booking-source-reference.schema.json",
+      "fixture": "invalid-booking-source-reference.json",
+      "expected": "fail",
+      "actual": "fail",
+      "passed": true,
+      "errors": [
+        "/parserDetailStoredOutsideBooking: expected const true"
+      ]
+    },
+    {
+      "schema": "booking-vat-total.schema.json",
+      "fixture": "valid-booking-vat-total.json",
+      "expected": "pass",
+      "actual": "pass",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "schema": "booking-vat-total.schema.json",
+      "fixture": "invalid-booking-vat-total.json",
+      "expected": "fail",
+      "actual": "fail",
+      "passed": true,
+      "errors": [
+        "/pricingBasis: expected const ex_vat"
+      ]
+    }
+  ]
+}

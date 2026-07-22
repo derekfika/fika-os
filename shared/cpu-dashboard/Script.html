@@ -1,0 +1,1905 @@
+<script>
+  const CLIENT_BUILD = "2026.06.21.9";
+  const PREP_CHEF_KEY = "cpu-dashboard-last-prep-chef";
+  const PREFS_KEY = "cpu-dashboard-preferences-v1";
+  const state = {
+    weekStart: startOfWeek(new Date()),
+    orders: [],
+    deliveries: [],
+    sites: [],
+    productCategories: [],
+    activeSites: new Set(),
+    activePeriods: new Set(["BREAKFAST", "LUNCH", "EVENING"]),
+    selectedProductCategories: new Set(),
+    dayFocus: "",
+    updatedOnly: false,
+    showUpdatedFlags: false,
+    hideCompleted: false,
+    kitchenMode: false,
+    autoRefreshTimer: null,
+    preferencesRestored: false,
+    editingOrderId: "",
+    prepCameraStream: null,
+    scanJobId: "",
+    scanRunning: false,
+    view: "calendar",
+    loading: false
+  };
+
+  document.addEventListener("DOMContentLoaded", function() {
+    restorePreferences_();
+    applyTabletDefaults_();
+    bindKeyboardShortcuts_();
+    bindDropdownDismiss_();
+    renderLoadingSkeleton_();
+    loadDashboard();
+  });
+
+  function loadDashboard() {
+    setBusyState_(true);
+    updatePeriodHeading();
+    const request = weekRequest();
+    if (window.google && google.script && google.script.run) {
+      runWithUiTimeout_("Loading cached orders", 60000, function(onSuccess, onFailure) {
+        google.script.run
+          .withSuccessHandler(onSuccess)
+          .withFailureHandler(onFailure)
+          .getCpuDashboardData(request);
+      });
+    } else {
+      window.setTimeout(function() { applyDashboardData(demoDashboardData()); }, 180);
+    }
+  }
+
+  function applyDashboardData(data) {
+    setBusyState_(false);
+    state.loading = false;
+    setWeekLoading_(false);
+    const previousSiteIds = new Set(state.sites.map(function(site) { return site.id; }));
+    state.orders = ((data && data.orders) || []).map(normaliseOrder);
+    state.deliveries = (data && data.deliveries) || [];
+    state.sites = mergeSites((data && data.sites) || [], deriveSites(state.orders));
+    state.productCategories = (data && data.productCategories) || [];
+    state.showUpdatedFlags = Boolean(data && data.uiSettings && data.uiSettings.showUpdatedFlags);
+    applyOwnerSiteMappings_();
+    syncActiveSites(previousSiteIds);
+    document.querySelector("h1").textContent = (data && data.appName) || "CPU Production";
+    const diagnostics = data && data.diagnostics;
+    const serverBuild = data && data.build;
+    const deploymentNotice = document.getElementById("deploymentNotice");
+    if (serverBuild !== CLIENT_BUILD) {
+      deploymentNotice.textContent = "Deployment mismatch: this page is using client build " + CLIENT_BUILD +
+        " but server build " + (serverBuild || "is missing") +
+        ". Create a new Apps Script deployment version and open its /exec URL.";
+      deploymentNotice.classList.remove("hidden");
+    } else {
+      deploymentNotice.classList.add("hidden");
+    }
+    document.getElementById("syncStatus").textContent = data && data.configured === false
+      ? "Preview mode · add calendar IDs in settings"
+      : diagnostics
+        ? diagnostics.ordersLoaded + " orders loaded · " + diagnostics.sheetRows + " sheet rows" +
+          (diagnostics.cacheHit ? " · cached" : "") + " · build " + serverBuild
+        : "Updated " + formatTime((data && data.generatedAt) || new Date().toISOString());
+    renderSiteFilters();
+    renderPeriodFilters();
+    renderProductFilter();
+    document.getElementById("dayFocus").value = state.dayFocus;
+    document.getElementById("updatedOnlyToggle").checked = state.updatedOnly;
+    document.getElementById("hideCompletedToggle").checked = state.hideCompleted;
+    document.body.classList.toggle("kitchen-mode", state.kitchenMode);
+    document.getElementById("kitchenModeButton").textContent =
+      state.kitchenMode ? "Exit kitchen mode" : "Kitchen mode";
+    if (state.kitchenMode && !state.autoRefreshTimer) {
+      state.autoRefreshTimer = window.setInterval(function() {
+        if (!state.scanRunning && !state.loading) reloadSheet();
+      }, 120000);
+    }
+    renderAll();
+    setView(state.view);
+    if (diagnostics && diagnostics.sheetRows > 0 && diagnostics.ordersLoaded === 0) {
+      showToast("The orders sheet has rows, but none could be read. Check the deployed project.");
+    }
+  }
+
+  function renderAll() {
+    document.body.classList.toggle("day-focused", state.dayFocus !== "");
+    const orders = filteredOrders();
+    const progressOrders = filteredOrders({ includeCompleted: true });
+    renderStats(orders);
+    renderCalendar(orders);
+    renderRunSheet(orders);
+    renderProduction(orders);
+    renderDeliveries();
+    renderDietary(orders);
+    renderAttention(orders);
+    renderLoadNotice(orders);
+    renderPrepProgress(progressOrders);
+  }
+
+  function renderLoadNotice(visibleOrders) {
+    let notice = document.getElementById("loadNotice");
+    if (!notice) {
+      notice = document.createElement("div");
+      notice.id = "loadNotice";
+      notice.className = "load-notice hidden";
+      document.querySelector(".content-layout").insertAdjacentElement("beforebegin", notice);
+    }
+    if (!visibleOrders.length && state.orders.length) {
+      const first = state.orders.map(function(order) { return order.eventDate; }).filter(Boolean).sort()[0];
+      const last = state.orders.map(function(order) { return order.eventDate; }).filter(Boolean).sort().slice(-1)[0];
+      notice.textContent = state.orders.length + " orders loaded, but none match this week and the active filters. Cached dates: " +
+        formatShortIsoDate(first) + " – " + formatShortIsoDate(last) + ".";
+      notice.classList.remove("hidden");
+    } else {
+      notice.classList.add("hidden");
+    }
+  }
+
+  function filteredOrders(options) {
+    options = options || {};
+    const query = document.getElementById("searchInput").value.trim().toLowerCase();
+    const start = dateKey(state.weekStart);
+    const end = dateKey(addDays(state.weekStart, 5));
+    return state.orders.filter(function(order) {
+      const haystack = [
+        order.clientCompany, order.serviceType, order.location, order.floor,
+        order.notes, order.dietary, (order.items || []).map(function(item) { return item.name; }).join(" ")
+      ].join(" ").toLowerCase();
+      const matchesProduct = !state.selectedProductCategories.size ||
+        Array.from(state.selectedProductCategories).some(function(categoryId) {
+          return getCategoryQuantity(order, categoryId) > 0;
+        });
+      return order.eventDate >= start &&
+        order.eventDate < end &&
+        (state.dayFocus === "" || order.eventDate === dateKey(addDays(state.weekStart, Number(state.dayFocus)))) &&
+        state.activeSites.has(order.siteId) &&
+        state.activePeriods.has(order.period) &&
+        (!state.updatedOnly || isRecentlyChanged(order)) &&
+        (options.includeCompleted || !state.hideCompleted || !order.prepped) &&
+        matchesProduct &&
+        (!query || haystack.indexOf(query) !== -1);
+    }).sort(orderSort);
+  }
+
+  function renderStats(orders) {
+    const nextWeekStart = addDays(state.weekStart, 7);
+    const nextWeekEnd = addDays(state.weekStart, 12);
+    const nextOrders = state.orders.filter(function(order) {
+      return order.eventDate >= dateKey(nextWeekStart) &&
+        order.eventDate < dateKey(nextWeekEnd) &&
+        state.activeSites.has(order.siteId);
+    });
+    const stats = [
+      { label: "Bookings this week", value: orders.length, detail: orders.filter(function(o) { return o.prepped; }).length + " prepped · " + orders.filter(isRecentlyChanged).length + " updated", colour: "#4f34c7" },
+      { label: "Total pax", value: sum(orders, "pax"), detail: average(orders, "pax") + " average per booking", colour: "#ef6c35" },
+      { label: "Busiest day", value: busiestDay(orders).label, detail: busiestDay(orders).detail, colour: "#13866e" },
+      { label: "Next week bookings", value: nextOrders.length, detail: sum(nextOrders, "pax") + " pax forecast", colour: "#3376b8" },
+      { label: "Needs attention", value: orders.filter(hasWarnings).length, detail: "missing or unreadable details", colour: "#c04444" }
+    ];
+    document.getElementById("stats").innerHTML = stats.map(function(stat) {
+      return '<article class="stat-card" style="--accent:' + stat.colour + '">' +
+        '<span class="stat-label">' + escapeHtml(stat.label) + '</span>' +
+        '<strong class="stat-value">' + escapeHtml(String(stat.value)) + '</strong>' +
+        '<span class="stat-delta">' + escapeHtml(stat.detail) + '</span></article>';
+    }).join("");
+  }
+
+  function renderPrepProgress(orders) {
+    const total = orders.length;
+    const done = orders.filter(function(order) { return order.prepped; }).length;
+    const percent = total ? Math.round(done / total * 100) : 0;
+    document.getElementById("prepProgress").innerHTML =
+      '<div><span><strong>' + done + ' of ' + total + '</strong> bookings prepped</span><b>' +
+      percent + '%</b></div><div class="prep-progress-track"><i style="width:' + percent + '%"></i></div>';
+  }
+
+  function renderSiteFilters() {
+    const start = dateKey(state.weekStart);
+    const end = dateKey(addDays(state.weekStart, 5));
+    const weekSiteIds = new Set(state.orders.filter(function(order) {
+      return order.eventDate >= start && order.eventDate < end;
+    }).map(function(order) { return order.siteId; }));
+    const visibleSites = state.sites.filter(function(site) {
+      return weekSiteIds.has(site.id);
+    });
+    document.getElementById("siteFilters").innerHTML = visibleSites.map(function(site) {
+      const active = state.activeSites.has(site.id);
+      return '<label class="site-chip ' + (active ? "" : "off") + '" style="--site:' + escapeHtml(site.colour) + '">' +
+        '<input type="checkbox" ' + (active ? "checked" : "") + ' onchange="toggleSite(\'' + escapeJs(site.id) + '\')">' +
+        '<span class="site-dot"></span><span>' + escapeHtml(site.code || site.name) + '</span></label>';
+    }).join("");
+  }
+
+  function renderPeriodFilters() {
+    const periods = [
+      { id: "BREAKFAST", label: "Breakfast", icon: "AM", colour: "#D9941A" },
+      { id: "LUNCH", label: "Lunch", icon: "12", colour: "#4F34C7" },
+      { id: "EVENING", label: "Evening", icon: "PM", colour: "#C0447A" }
+    ];
+    document.getElementById("periodFilters").innerHTML = periods.map(function(period) {
+      const active = state.activePeriods.has(period.id);
+      const count = state.orders.filter(function(order) {
+        return order.period === period.id &&
+          state.activeSites.has(order.siteId) &&
+          order.eventDate >= dateKey(state.weekStart) &&
+          order.eventDate < dateKey(addDays(state.weekStart, 5));
+      }).length;
+      return '<label class="site-chip ' + (active ? "" : "off") + '" style="--site:' + period.colour + '">' +
+        '<input type="checkbox" ' + (active ? "checked" : "") + ' onchange="togglePeriod(\'' + period.id + '\')">' +
+        '<span class="period-icon">' + period.icon + '</span><span>' + period.label + ' (' + count + ')</span></label>';
+    }).join("");
+  }
+
+  function renderProductFilter() {
+    const menu = document.getElementById("productFilterMenu");
+    const summary = document.getElementById("productFilterSummary");
+    if (!menu || !summary) return;
+    const categories = {};
+    const start = dateKey(state.weekStart);
+    const end = dateKey(addDays(state.weekStart, 5));
+    state.orders.filter(function(order) {
+      return order.eventDate >= start &&
+        order.eventDate < end &&
+        state.activeSites.has(order.siteId) &&
+        state.activePeriods.has(order.period);
+    }).forEach(function(order) {
+      const seenCategories = {};
+      (order.items || []).forEach(function(item) {
+        const name = cleanProductDisplayName(item.name);
+        if (!name) return;
+        const category = categoriseCpuProduct(name);
+        if (!categories[category.id]) {
+          categories[category.id] = {
+            id: category.id,
+            name: category.name,
+            order: category.order,
+            bookings: 0,
+            quantity: 0
+          };
+        }
+        if (!seenCategories[category.id]) categories[category.id].bookings += 1;
+        seenCategories[category.id] = true;
+        categories[category.id].quantity += Number(item.quantity || 0);
+      });
+    });
+    state.selectedProductCategories.forEach(function(id) {
+      if (!categories[id]) state.selectedProductCategories.delete(id);
+    });
+    const values = Object.keys(categories).map(function(id) { return categories[id]; })
+      .sort(function(a, b) { return a.order - b.order || a.name.localeCompare(b.name); });
+    menu.innerHTML = '<div class="product-filter-actions">' +
+      '<button type="button" onclick="setAllProducts(false)">Deselect all</button>' +
+      '<button type="button" onclick="setAllProducts(true)">Select all</button>' +
+      '</div>' +
+      '<div class="product-filter-group">' + values.map(function(category) {
+        const checked = state.selectedProductCategories.has(category.id);
+        return '<label class="product-check"><input type="checkbox" value="' +
+          escapeHtml(category.id) + '"' + (checked ? " checked" : "") +
+          ' onchange="toggleProductCategory(\'' + escapeJs(category.id) + '\')">' +
+          '<span><b>' + escapeHtml(category.name) + '</b><small>' +
+          category.bookings + ' bookings · ' + category.quantity + ' total</small></span></label>';
+      }).join("") + '</div>';
+    summary.textContent = state.selectedProductCategories.size
+      ? state.selectedProductCategories.size + " categor" +
+        (state.selectedProductCategories.size === 1 ? "y" : "ies") + " selected"
+      : "All products";
+  }
+
+  function toggleProductCategory(value) {
+    if (state.selectedProductCategories.has(value)) state.selectedProductCategories.delete(value);
+    else state.selectedProductCategories.add(value);
+    renderProductFilter();
+    renderAll();
+    savePreferences_();
+  }
+
+  function setAllProducts(selected) {
+    const inputs = document.querySelectorAll("#productFilterMenu input[type=checkbox]");
+    state.selectedProductCategories.clear();
+    if (selected) {
+      inputs.forEach(function(input) { state.selectedProductCategories.add(input.value); });
+    }
+    renderProductFilter();
+    renderAll();
+    savePreferences_();
+  }
+
+  function setDayFocus(value) {
+    state.dayFocus = value;
+    renderAll();
+    savePreferences_();
+  }
+
+  function setUpdatedOnly(value) {
+    state.updatedOnly = Boolean(value);
+    renderAll();
+    savePreferences_();
+  }
+
+  function setHideCompleted(value) {
+    state.hideCompleted = Boolean(value);
+    renderAll();
+    savePreferences_();
+  }
+
+  function toggleSite(siteId) {
+    if (state.activeSites.has(siteId)) state.activeSites.delete(siteId);
+    else state.activeSites.add(siteId);
+    renderSiteFilters();
+    renderPeriodFilters();
+    renderProductFilter();
+    renderAll();
+    savePreferences_();
+  }
+
+  function setAllSites(selected) {
+    state.activeSites.clear();
+    if (selected) {
+      state.sites.forEach(function(site) { state.activeSites.add(site.id); });
+    }
+    renderSiteFilters();
+    renderPeriodFilters();
+    renderProductFilter();
+    renderAll();
+    savePreferences_();
+  }
+
+  function togglePeriod(period) {
+    if (state.activePeriods.has(period)) state.activePeriods.delete(period);
+    else state.activePeriods.add(period);
+    renderPeriodFilters();
+    renderProductFilter();
+    renderAll();
+    savePreferences_();
+  }
+
+  function setAllPeriods(selected) {
+    state.activePeriods = selected
+      ? new Set(["BREAKFAST", "LUNCH", "EVENING"])
+      : new Set();
+    renderPeriodFilters();
+    renderProductFilter();
+    renderAll();
+    savePreferences_();
+  }
+
+  function renderCalendar(orders) {
+    const today = dateKey(new Date());
+    let html = "";
+    const dayIndexes = state.dayFocus === "" ? [0,1,2,3,4] : [Number(state.dayFocus)];
+    dayIndexes.forEach(function(dayIndex) {
+      const date = addDays(state.weekStart, dayIndex);
+      const key = dateKey(date);
+      const dayOrders = orders.filter(function(order) { return order.eventDate === key; });
+      const dayDeliveries = filteredDeliveries_().filter(function(delivery) { return delivery.eventDate === key; });
+      html += '<section class="day-column ' + (key === today ? "today" : "") + '">' +
+        '<header class="day-header"><div class="day-name">' + formatDay(date) + '</div>' +
+        '<div class="day-number">' + date.getDate() + '</div>' +
+        '<div class="day-summary">' + dayOrders.length + ' orders · ' + sum(dayOrders, "pax") + ' pax</div>' +
+        (dayDeliveries.length ? '<div class="delivery-day-flag">🚚 ' + dayDeliveries.length +
+          ' delivery scheduled <span class="delivery-driver-dots">' +
+          unique(dayDeliveries.map(function(delivery) {
+            return '<i style="--driver:' + escapeHtml(delivery.driverColour || "#8B8496") +
+              '" title="' + escapeHtml(delivery.driverName || "Unassigned") + '"></i>';
+          })).join("") + '</span></div>' : '') +
+        '</header>' +
+        '<div class="day-orders">' + (dayOrders.length ? dayOrders.map(orderCard).join("") : '<div class="empty-state">No orders</div>') + '</div></section>';
+    });
+    const board = document.getElementById("calendarView");
+    board.style.gridTemplateColumns = state.dayFocus === "" ? "repeat(5, minmax(180px, 1fr))" : "minmax(0, 1fr)";
+    board.innerHTML = html;
+  }
+
+  function orderCard(order) {
+    const selectedProductLine = selectedProductSummary(order);
+    return '<article class="order-card ' + (order.prepped ? "prepped " : "") + (isUrgent(order) ? "urgent" : "") + '" style="--site:' + escapeHtml(order.siteColour) + '" onclick="openOrderDrawer(\'' + escapeJs(order.id) + '\')">' +
+      '<div class="order-card-top"><span class="order-site">' + escapeHtml(order.siteCode) + ' / ' +
+      escapeHtml(order.siteName) + '</span>' +
+      (order.prepped ? '<span class="done-badge">' + escapeHtml(prepDoneLabel_(order, true)) + '</span>' :
+        (showUpdatedFlag_(order) ? '<span class="updated-badge" title="' + escapeHtml((order.changes || []).join(" / ")) + '">Updated</span>' : "")) +
+      (order.prepPhotoUrl ? '<span class="photo-badge" title="Prep photo attached">📷</span>' : '') +
+      (order.allergenPhotoUrl ? '<span class="photo-badge" title="Allergen sheet photo attached">🧾</span>' : '') +
+      '</div><div class="order-time">' + escapeHtml(order.deliveryTime || formatTime(order.startAt)) +
+      (hasWarnings(order) ? '<span class="warning-dot" title="Needs attention"></span>' : "") + '</div>' +
+      '<div class="order-company">' + escapeHtml(order.clientCompany) + '</div>' +
+      '<div class="order-meta"><span>' + escapeHtml(order.location || order.siteName) + '</span><strong>' + Number(order.pax || 0) + ' pax</strong></div>' +
+      '<div class="muted" style="margin-top:6px;font-size:11px">' + escapeHtml(order.serviceType) + '</div>' +
+      selectedProductLine + '<button class="quick-prep" type="button" onclick="event.stopPropagation();quickTogglePrepped(\'' +
+      escapeJs(order.id) + '\')">' + (order.prepped ? "Undo prep" : "Mark prepped") + '</button></article>';
+  }
+
+  function renderRunSheet(orders) {
+    let html = "";
+    for (let i = 0; i < 5; i++) {
+      const date = addDays(state.weekStart, i);
+      const dayOrders = orders.filter(function(order) { return order.eventDate === dateKey(date); });
+      if (!dayOrders.length) continue;
+      html += '<section class="run-day"><header class="run-day-title"><strong>' + formatLongDate(date) + '</strong><span>' + dayOrders.length + ' orders · ' + sum(dayOrders, "pax") + ' pax</span></header>';
+      html += dayOrders.map(function(order) {
+        const selectedQuantity = getSelectedProductQuantity(order);
+        return '<div class="run-row ' + (order.prepped ? "prepped" : "") + '" onclick="openOrderDrawer(\'' + escapeJs(order.id) + '\')">' +
+          '<strong>' + escapeHtml(order.deliveryTime || formatTime(order.startAt)) + '</strong>' +
+          '<span class="site-tag" style="--site:' + escapeHtml(order.siteColour) + '">' + escapeHtml(order.siteCode) + '</span>' +
+          '<span><strong>' + escapeHtml(order.clientCompany) + '</strong><br><span class="muted">' + escapeHtml(order.serviceType) + '</span></span>' +
+          '<span class="pax-pill">' + (state.selectedProductCategories.size ? selectedQuantity + ' × selected' : Number(order.pax || 0) + ' pax') + '</span>' +
+          '<span class="muted">' + escapeHtml([order.location, order.floor].filter(Boolean).join(" · ")) + '</span>' +
+          '<span>' + (order.prepped ? '<span class="done-badge">' + escapeHtml(prepDoneLabel_(order, false)) + '</span>' :
+            (showUpdatedFlag_(order) ? '<span class="updated-badge">Updated</span>' : (hasWarnings(order) ? "●" : "›"))) + '</span></div>';
+      }).join("") + '</section>';
+    }
+    document.getElementById("listView").innerHTML = html || '<div class="empty-state">No bookings match these filters.</div>';
+  }
+
+  function renderProduction(orders) {
+    return renderChefProduction_(orders);
+  }
+
+  function renderChefProduction_(orders) {
+    const categories = {};
+    orders.forEach(function(order) {
+      (order.items || []).forEach(function(item) {
+        const category = categoriseCpuProduct(item.name);
+        const productKey = normaliseProductName(item.name) || String(item.name || "Unlabelled item");
+        if (!categories[category.id]) {
+          categories[category.id] = { name: category.name, order: Number(category.order) || 100, items: {} };
+        }
+        if (!categories[category.id].items[productKey]) {
+          categories[category.id].items[productKey] = {
+            name: cleanProductDisplayName(item.name) || "Unlabelled item",
+            quantity: 0,
+            sites: {},
+            bookings: []
+          };
+        }
+        const product = categories[category.id].items[productKey];
+        const quantity = Number(item.quantity || 0);
+        product.quantity += quantity;
+        if (!product.sites[order.siteCode]) {
+          product.sites[order.siteCode] = { quantity: 0, colour: order.siteColour };
+        }
+        product.sites[order.siteCode].quantity += quantity;
+        product.bookings.push({
+          id: order.id,
+          client: order.clientCompany,
+          siteCode: order.siteCode,
+          siteColour: order.siteColour,
+          time: order.deliveryTime || formatTime(order.startAt),
+          quantity: quantity,
+          prepped: order.prepped === true,
+          preppedBy: order.preppedBy || ""
+        });
+      });
+    });
+
+    const categoryList = Object.keys(categories).map(function(key) { return categories[key]; })
+      .sort(function(a, b) { return a.order - b.order || a.name.localeCompare(b.name); });
+    const lineCount = categoryList.reduce(function(total, category) {
+      return total + Object.keys(category.items).length;
+    }, 0);
+    const totalQuantity = categoryList.reduce(function(total, category) {
+      return total + Object.keys(category.items).reduce(function(sum, key) {
+        return sum + category.items[key].quantity;
+      }, 0);
+    }, 0);
+
+    if (!lineCount) {
+      document.getElementById("productionView").innerHTML =
+        '<div class="empty-state">Menu lines will appear here once booking attachments have been read.</div>';
+      return;
+    }
+
+    document.getElementById("productionView").innerHTML =
+      '<div class="production-heading"><div><p class="eyebrow">Chef production board</p><h3>Consolidated prep</h3></div>' +
+      '<div class="production-summary"><strong>' + totalQuantity + '</strong><span>portions</span><strong>' +
+      orders.length + '</strong><span>bookings</span></div></div>' +
+      categoryList.map(function(category) {
+        const items = Object.keys(category.items).map(function(key) { return category.items[key]; })
+          .sort(function(a, b) { return b.quantity - a.quantity || a.name.localeCompare(b.name); });
+        const categoryTotal = items.reduce(function(total, item) { return total + item.quantity; }, 0);
+        return '<section class="production-category"><header><div><p class="eyebrow">Product category</p><h3>' +
+          escapeHtml(category.name) + '</h3></div><span>' + categoryTotal + ' portions / ' +
+          items.length + ' lines</span></header><div class="production-grid">' +
+          items.map(function(item) {
+            const sites = Object.keys(item.sites).sort().map(function(siteCode) {
+              const site = item.sites[siteCode];
+              return '<span class="production-site-chip" style="--site:' + escapeHtml(site.colour) +
+                '"><i></i><b>' + escapeHtml(siteCode) + '</b> ' + site.quantity + '</span>';
+            }).join("");
+            const bookings = item.bookings.sort(function(a, b) {
+              return String(a.time).localeCompare(String(b.time));
+            }).map(function(booking) {
+              return '<div class="production-booking ' + (booking.prepped ? "prepped" : "") + '" onclick="openOrderDrawer(\'' +
+                escapeJs(booking.id) + '\')"><span>' + escapeHtml(booking.time) +
+                '</span><i style="--site:' + escapeHtml(booking.siteColour) + '"></i><b>' +
+                escapeHtml(booking.siteCode) + '</b><span>' + escapeHtml(booking.client) +
+                (booking.prepped && booking.preppedBy ? '<small>' + escapeHtml("Prepped by " + booking.preppedBy) + '</small>' : '') +
+                '</span><strong>' + booking.quantity + '×</strong><button type="button" onclick="event.stopPropagation();quickTogglePrepped(\'' +
+                escapeJs(booking.id) + '\')">' + (booking.prepped ? "Undo" : "Prep") + '</button></div>';
+            }).join("");
+            return '<article class="production-card"><div class="production-card-head"><div><h3>' +
+              escapeHtml(item.name) + '</h3><span>' + item.bookings.length +
+              ' bookings</span></div><strong class="production-qty">' + item.quantity +
+              '</strong></div><div class="production-sites">' + sites +
+              '</div><div class="production-bookings">' + bookings + '</div></article>';
+          }).join("") + '</div></section>';
+      }).join("");
+  }
+
+  function renderProductionLegacy_(orders) {
+    const aggregated = {};
+    orders.forEach(function(order) {
+      (order.items || []).forEach(function(item) {
+        const key = String(item.name || "Unlabelled item").trim().toLowerCase();
+        if (!aggregated[key]) aggregated[key] = { name: item.name || "Unlabelled item", quantity: 0, sites: {}, orders: 0 };
+        aggregated[key].quantity += Number(item.quantity || 0);
+        aggregated[key].sites[order.siteCode] = (aggregated[key].sites[order.siteCode] || 0) + Number(item.quantity || 0);
+        aggregated[key].orders += 1;
+      });
+    });
+    const items = Object.keys(aggregated).map(function(key) { return aggregated[key]; })
+      .sort(function(a, b) { return b.quantity - a.quantity || a.name.localeCompare(b.name); });
+    const html = '<div class="production-heading"><div><p class="eyebrow">Consolidated prep</p><h3>All menu items</h3></div><span class="muted">' + items.length + ' production lines</span></div>' +
+      '<div class="production-grid">' + items.map(function(item) {
+        const siteText = Object.keys(item.sites).map(function(site) { return site + " " + item.sites[site]; }).join(" · ");
+        return '<article class="production-card"><strong class="production-qty">' + item.quantity + '</strong><h3>' + escapeHtml(item.name) + '</h3>' +
+          '<div class="production-sites">' + escapeHtml(siteText) + ' · ' + item.orders + ' orders</div></article>';
+      }).join("") + '</div>';
+    document.getElementById("productionView").innerHTML = items.length ? html : '<div class="empty-state">Menu lines will appear here once booking attachments have been read.</div>';
+  }
+
+  function renderAttention(orders) {
+    const attention = orders.filter(hasWarnings);
+    document.getElementById("attentionCount").textContent = attention.length;
+    document.getElementById("attentionList").innerHTML = attention.length ? attention.map(function(order) {
+      return '<article class="attention-item" onclick="openOrderDrawer(\'' + escapeJs(order.id) + '\')">' +
+        '<div class="attention-title"><span>' + escapeHtml(order.clientCompany) + '</span><span style="color:' + escapeHtml(order.siteColour) + '">' + escapeHtml(order.siteCode) + '</span></div>' +
+        '<p class="attention-copy">' + escapeHtml((order.warnings || []).join(" · ")) + '</p></article>';
+    }).join("") : '<div class="empty-state">Everything is production-ready.</div>';
+  }
+
+  function filteredDeliveries_() {
+    const start = dateKey(state.weekStart);
+    const end = dateKey(addDays(state.weekStart, 5));
+    return (state.deliveries || []).filter(function(delivery) {
+      return delivery.eventDate >= start &&
+        delivery.eventDate < end &&
+        (state.dayFocus === "" || delivery.eventDate === dateKey(addDays(state.weekStart, Number(state.dayFocus)))) &&
+        (!delivery.siteId || state.activeSites.has(delivery.siteId));
+    }).sort(function(a, b) { return String(a.startAt).localeCompare(String(b.startAt)); });
+  }
+
+  function renderDeliveries() {
+    const deliveries = filteredDeliveries_();
+    const byDate = {};
+    deliveries.forEach(function(delivery) {
+      if (!byDate[delivery.eventDate]) byDate[delivery.eventDate] = [];
+      byDate[delivery.eventDate].push(delivery);
+    });
+    const html = '<div class="production-heading"><div><p class="eyebrow">Logistics</p><h3>Scheduled deliveries</h3></div>' +
+      '<span class="muted">' + deliveries.length + ' this week</span></div>' +
+      Object.keys(byDate).sort().map(function(date) {
+        const dayDeliveries = byDate[date];
+        return '<section class="delivery-day"><header><div><strong>' +
+          escapeHtml(formatFullDate(date)) + '</strong><span>' + dayDeliveries.length +
+          (dayDeliveries.length === 1 ? ' delivery' : ' deliveries') +
+          '</span></div></header>' + dayDeliveries.map(function(delivery) {
+            return '<a class="delivery-row" style="--site:' + escapeHtml(delivery.siteColour || "#4f34c7") +
+              ';--driver:' + escapeHtml(delivery.driverColour || "#8B8496") +
+              '" href="' + escapeHtml(delivery.eventUrl || "#") + '" target="_blank"><span class="delivery-date">' +
+              escapeHtml(formatShortIsoDate(delivery.eventDate)) + '</span><span class="delivery-time">' +
+              escapeHtml(formatTime(delivery.startAt)) + '</span><span class="site-tag">' +
+              escapeHtml(delivery.siteCode || "DEL") + '</span><span class="driver-badge"><i></i>' +
+              escapeHtml(delivery.driverName || "Unassigned") + '</span><span><strong>' +
+              escapeHtml(delivery.summary) + '</strong><small>' +
+              escapeHtml([delivery.location, delivery.description].filter(Boolean).join(" · ")) +
+              '</small></span><span>Open calendar ↗</span></a>';
+          }).join("") + '</section>';
+      }).join("");
+    document.getElementById("deliveryView").innerHTML = deliveries.length
+      ? html
+      : '<div class="empty-state">No scheduled deliveries match this week and the active site filters.</div>';
+  }
+
+  function renderDietary(orders) {
+    const groups = {};
+    orders.filter(function(order) { return String(order.dietary || "").trim(); }).forEach(function(order) {
+      const key = order.siteCode || "Unassigned";
+      if (!groups[key]) groups[key] = { colour: order.siteColour, name: order.siteName, orders: [] };
+      groups[key].orders.push(order);
+    });
+    const keys = Object.keys(groups).sort();
+    document.getElementById("dietaryView").innerHTML = keys.length
+      ? '<div class="production-heading"><div><p class="eyebrow">Allergen control</p><h3>Dietary production summary</h3></div></div>' +
+        keys.map(function(key) {
+          const group = groups[key];
+          return '<section class="dietary-site"><header style="--site:' + escapeHtml(group.colour) +
+            '"><span class="site-tag">' + escapeHtml(key) + '</span><h3>' + escapeHtml(group.name) +
+            '</h3></header>' + group.orders.map(function(order) {
+              return '<button type="button" class="dietary-row" onclick="openOrderDrawer(\'' +
+                escapeJs(order.id) + '\')"><span>' + escapeHtml(order.deliveryTime || formatTime(order.startAt)) +
+                '</span><strong>' + escapeHtml(order.clientCompany) + '</strong><span>' +
+                escapeHtml((order.items || []).map(function(i) { return i.quantity + "× " + i.name; }).join(" · ")) +
+                '</span><b>' + escapeHtml(order.dietary) + '</b></button>';
+            }).join("") + '</section>';
+        }).join("")
+      : '<div class="empty-state">No dietary requirements match the active filters.</div>';
+  }
+
+  function openOrderDrawer(id) {
+    const order = state.orders.find(function(item) { return item.id === id; });
+    if (!order) return;
+    const items = (order.items || []).map(function(item) {
+      return '<tr><td>' + Number(item.quantity || 0) + '×</td><td><strong>' + escapeHtml(item.name) + '</strong>' +
+        (item.notes ? '<br><span class="muted">' + escapeHtml(item.notes) + '</span>' : "") + '</td></tr>';
+    }).join("");
+    const warnings = (order.warnings || []).map(function(warning) { return '<div class="warning-card">' + escapeHtml(warning) + '</div>'; }).join("");
+    document.getElementById("drawerContent").innerHTML =
+      '<button class="drawer-close" type="button" onclick="closeOrderDrawer()">×</button>' +
+      '<div class="drawer-site" style="--site:' + escapeHtml(order.siteColour) + '"><span class="site-dot"></span>' + escapeHtml(order.siteName) + '</div>' +
+      '<div class="drawer-title">' + escapeHtml(order.clientCompany) + '</div>' +
+      '<div class="drawer-subtitle">' + escapeHtml(formatFullDate(order.eventDate)) + ' · ' + escapeHtml(order.serviceType) + '</div>' +
+      '<div class="detail-strip">' +
+        detailBox("Delivery", order.deliveryTime || formatTime(order.startAt)) +
+        detailBox("Service", order.serviceTime || "Not set") +
+        detailBox("Pax", Number(order.pax || 0)) +
+        detailBox("Location", order.location || order.siteName) +
+        detailBox("Floor / room", order.floor || "—") +
+        detailBox("Host", order.hostName || "—") +
+      '</div>' +
+      (warnings ? '<section class="drawer-section"><h3>Needs attention</h3>' + warnings + '</section>' : "") +
+      '<section class="drawer-section"><h3>Order</h3>' + (items ? '<table class="menu-table">' + items + '</table>' : '<div class="empty-state">No menu lines were found.</div>') + '</section>' +
+      (order.dietary ? '<section class="drawer-section"><h3>Dietary & allergens</h3><div class="note-card">' + escapeHtml(order.dietary) + '</div></section>' : "") +
+      (order.notes ? '<section class="drawer-section"><h3>Chef notes</h3><div class="note-card">' + escapeHtml(order.notes) + '</div></section>' : "") +
+      '<section class="drawer-section"><h3>Source documents</h3><div class="attachment-links">' +
+        attachmentLink(order.quoteUrl, "Open quote") + attachmentLink(order.bookingFormUrl, "Open booking form") +
+      '</div></section>';
+    document.getElementById("drawerBackdrop").classList.remove("hidden");
+    document.getElementById("orderDrawer").classList.add("open");
+    document.getElementById("orderDrawer").setAttribute("aria-hidden", "false");
+  }
+
+  function closeOrderDrawer() {
+    document.getElementById("drawerBackdrop").classList.add("hidden");
+    document.getElementById("orderDrawer").classList.remove("open");
+    document.getElementById("orderDrawer").setAttribute("aria-hidden", "true");
+  }
+
+  // Bottom-page editor. This later declaration intentionally replaces the
+  // original drawer opener while preserving existing calendar click handlers.
+  function openOrderDrawer(id) {
+    openOrderEditor(id);
+  }
+
+  function openOrderEditor(id) {
+    const order = state.orders.find(function(item) { return item.id === id; });
+    if (!order) return;
+    state.editingOrderId = id;
+    const warnings = (order.warnings || []).map(function(warning) {
+      return '<div class="warning-card">' + escapeHtml(warning) + '</div>';
+    }).join("");
+    const changes = state.showUpdatedFlags && isRecentlyChanged(order)
+      ? (order.changes || []).map(function(change) {
+          return '<div class="change-card">' + escapeHtml(change) + '</div>';
+        }).join("")
+      : "";
+    const lines = (order.items || []).map(editorLineItem).join("");
+    const editor = document.getElementById("orderEditor");
+
+    document.getElementById("editorContent").innerHTML =
+      '<header class="editor-header">' +
+        '<div><div class="editor-site-banner" style="--site:' + escapeHtml(order.siteColour) + '">' +
+          escapeHtml(order.siteCode) + ' · ' + escapeHtml(order.siteName) + '</div>' +
+          '<h2 class="editor-title">' + escapeHtml(order.clientCompany) + '</h2>' +
+          '<div class="editor-subtitle">' + escapeHtml(order.serviceType) +
+          (order.eventOwnerEmail ? ' · Event owner: ' + escapeHtml(order.eventOwnerEmail) : '') + '</div></div>' +
+        '<div class="editor-actions">' +
+          (order.quoteUrl ? '<a class="button secondary" href="' + escapeHtml(order.quoteUrl) + '" target="_blank">Open quote ↗</a>' : '') +
+          (order.quoteUrl ? '<button id="reparseQuoteButton" class="button secondary" type="button" onclick="reparseOrderQuote()">Re-read quote</button>' : '') +
+          (order.eventUrl ? '<a class="button secondary" href="' + escapeHtml(order.eventUrl) + '" target="_blank">Open calendar ↗</a>' : '') +
+          '<button class="button secondary" type="button" onclick="closeOrderEditor()">Close</button>' +
+          '<button id="saveOrderButton" class="button" type="button" onclick="saveOrderEditor()">Save changes</button>' +
+        '</div></header>' +
+      (warnings ? '<section class="editor-section"><h3>Needs attention</h3>' + warnings + '</section>' : '') +
+      (changes ? '<section class="editor-section"><h3>Updated booking</h3><p class="muted">Changed during the latest calendar refresh.</p>' + changes + '</section>' : '') +
+      '<div class="editor-grid">' +
+        editorField("Location", "editLocation", order.location || order.siteName, "text") +
+        editorField("Floor / room", "editFloor", order.floor, "text") +
+        editorField("Date", "editDate", order.eventDate, "date") +
+        editorField("Delivery time", "editDeliveryTime", order.deliveryTime || formatTime(order.startAt), "time") +
+        editorField("Service time", "editServiceTime", order.serviceTime, "time") +
+        editorField("Pax", "editPax", Number(order.pax || 0), "number") +
+        editorTextarea("Dietary & allergens", "editDietary", order.dietary, "wide") +
+        editorTextarea("Chef notes", "editNotes", order.notes, "wide") +
+      '</div>' +
+      '<section class="prep-panel"><label class="prep-toggle"><input id="editPrepped" type="checkbox" ' +
+        (order.prepped ? "checked" : "") +
+        '><span class="prep-toggle-box">✓</span><span><strong>Prepped / done</strong><small>' +
+        escapeHtml(prepStatusText_(order)) + '</small></span></label>' +
+        '<label class="editor-field prep-chef-field"><span>Chef name</span><input id="editPreppedBy" type="text" value="' +
+        escapeHtml(order.preppedBy || getLastPrepChef_()) +
+        '" placeholder="e.g. Francesco" autocomplete="name"></label>' +
+        '<div class="prep-photo-panel">' +
+          '<div class="prep-photo-row"><strong>Prep proof</strong><div class="prep-photo-actions">' +
+            '<label class="button secondary prep-file-button">Upload prep photo<input type="file" accept="image/*" capture="environment" multiple onchange="handleOrderPhotoFiles(this.files, \'prep\'); this.value = \'\';"></label>' +
+          '</div><div id="prepPhotoStatus" class="prep-photo-status">' + escapeHtml(prepPhotoStatusText_(order)) + '</div>' +
+          photoLinksHtml_(order.prepPhotos, order.prepPhotoUrl, "prep photo") + '</div>' +
+          '<div class="prep-photo-row"><strong>Allergen sheet</strong><div class="prep-photo-actions">' +
+            '<label class="button secondary prep-file-button">Upload allergen photo<input type="file" accept="image/*" capture="environment" multiple onchange="handleOrderPhotoFiles(this.files, \'allergen\'); this.value = \'\';"></label>' +
+          '</div><div id="allergenPhotoStatus" class="prep-photo-status">' + escapeHtml(allergenPhotoStatusText_(order)) + '</div>' +
+          photoLinksHtml_(order.allergenPhotos, order.allergenPhotoUrl, "allergen photo") + '</div>' +
+          '<canvas id="prepPhotoCanvas" class="hidden"></canvas>' +
+        '</div></section>' +
+      '<section class="editor-section"><div class="editor-section-heading"><div><p class="eyebrow">Production detail</p><h3>Line items</h3></div>' +
+        '<button class="button secondary" type="button" onclick="addEditorLine()">Add line</button></div>' +
+        '<div id="lineItemsEditor" class="line-items-editor">' +
+          (lines || editorLineItem({ quantity: 0, name: "", notes: "" })) +
+        '</div></section>';
+
+    editor.classList.remove("hidden");
+    window.setTimeout(function() {
+      editor.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 20);
+  }
+
+  function closeOrderEditor() {
+    stopPrepCamera();
+    state.editingOrderId = "";
+    document.getElementById("orderEditor").classList.add("hidden");
+  }
+
+  function editorField(label, id, value, type) {
+    return '<label class="editor-field"><span>' + escapeHtml(label) + '</span>' +
+      '<input id="' + id + '" type="' + type + '" value="' +
+      escapeHtml(value == null ? "" : value) + '"></label>';
+  }
+
+  function editorTextarea(label, id, value, extraClass) {
+    return '<label class="editor-field ' + (extraClass || "") + '"><span>' +
+      escapeHtml(label) + '</span><textarea id="' + id + '">' +
+      escapeHtml(value || "") + '</textarea></label>';
+  }
+
+  function editorLineItem(item) {
+    return '<div class="line-item-edit">' +
+      '<input class="line-qty" type="number" min="0" step="1" value="' +
+      escapeHtml(Number(item.quantity || 0)) + '" aria-label="Quantity">' +
+      '<input class="line-name" type="text" value="' + escapeHtml(item.name || "") +
+      '" placeholder="Item name" aria-label="Item name">' +
+      '<input class="line-notes" type="text" value="' + escapeHtml(item.notes || "") +
+      '" placeholder="Notes or dietary split" aria-label="Line notes">' +
+      '<button class="remove-line" type="button" onclick="removeEditorLine(this)" aria-label="Remove line">×</button></div>';
+  }
+
+  function addEditorLine() {
+    document.getElementById("lineItemsEditor").insertAdjacentHTML(
+      "beforeend",
+      editorLineItem({ quantity: 0, name: "", notes: "" })
+    );
+  }
+
+  function removeEditorLine(button) {
+    const rows = document.querySelectorAll("#lineItemsEditor .line-item-edit");
+    if (rows.length === 1) {
+      rows[0].querySelector(".line-qty").value = 0;
+      rows[0].querySelector(".line-name").value = "";
+      rows[0].querySelector(".line-notes").value = "";
+      return;
+    }
+    button.closest(".line-item-edit").remove();
+  }
+
+  function startPrepCamera() {
+    if (!state.editingOrderId) return;
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      showToast("Camera is not available in this browser");
+      return;
+    }
+    const preview = document.getElementById("prepCameraPreview");
+    const status = document.getElementById("prepPhotoStatus");
+    const startButton = document.getElementById("startPrepCameraButton");
+    startButton.disabled = true;
+    status.textContent = "Requesting camera access…";
+    navigator.mediaDevices.getUserMedia({
+      audio: false,
+      video: {
+        facingMode: { ideal: "environment" },
+        width: { ideal: 1280 },
+        height: { ideal: 720 }
+      }
+    }).then(function(stream) {
+      stopPrepCamera();
+      state.prepCameraStream = stream;
+      preview.srcObject = stream;
+      preview.classList.remove("hidden");
+      document.getElementById("capturePrepPhotoButton").classList.remove("hidden");
+      document.getElementById("stopPrepCameraButton").classList.remove("hidden");
+      startButton.classList.add("hidden");
+      startButton.disabled = false;
+      status.textContent = "Camera ready. Frame the finished order, then capture and save.";
+    }).catch(function(error) {
+      startButton.disabled = false;
+      status.textContent = "Camera permission was not granted.";
+      showToast((error && error.message) || "Camera could not be opened");
+    });
+  }
+
+  function stopPrepCamera() {
+    if (state.prepCameraStream) {
+      state.prepCameraStream.getTracks().forEach(function(track) { track.stop(); });
+      state.prepCameraStream = null;
+    }
+    const preview = document.getElementById("prepCameraPreview");
+    if (preview) {
+      preview.srcObject = null;
+      preview.classList.add("hidden");
+    }
+    const startButton = document.getElementById("startPrepCameraButton");
+    const captureButton = document.getElementById("capturePrepPhotoButton");
+    const stopButton = document.getElementById("stopPrepCameraButton");
+    if (startButton) startButton.classList.remove("hidden");
+    if (captureButton) captureButton.classList.add("hidden");
+    if (stopButton) stopButton.classList.add("hidden");
+  }
+
+  function capturePrepPhoto() {
+    if (!state.editingOrderId) return;
+    const preview = document.getElementById("prepCameraPreview");
+    const canvas = document.getElementById("prepPhotoCanvas");
+    const status = document.getElementById("prepPhotoStatus");
+    const button = document.getElementById("capturePrepPhotoButton");
+    if (!preview || !preview.videoWidth) {
+      showToast("Camera preview is not ready yet");
+      return;
+    }
+    const maxWidth = 1280;
+    const scale = Math.min(1, maxWidth / preview.videoWidth);
+    canvas.width = Math.round(preview.videoWidth * scale);
+    canvas.height = Math.round(preview.videoHeight * scale);
+    canvas.getContext("2d").drawImage(preview, 0, 0, canvas.width, canvas.height);
+    const dataUrl = canvas.toDataURL("image/jpeg", 0.78);
+    uploadPrepPhotoDataUrl_(dataUrl, button, status, true);
+  }
+
+  function handlePrepPhotoFile(file) {
+    handleOrderPhotoFile(file, "prep");
+  }
+
+  function handleOrderPhotoFiles(fileList, photoType) {
+    const files = Array.from(fileList || []);
+    if (!files.length) return;
+    uploadOrderPhotoQueue_(files, photoType === "allergen" ? "allergen" : "prep", 0);
+  }
+
+  function uploadOrderPhotoQueue_(files, photoType, index) {
+    if (index >= files.length) {
+      showToast(files.length + (files.length === 1 ? " photo uploaded" : " photos uploaded"));
+      return;
+    }
+    handleOrderPhotoFile(files[index], photoType, function() {
+      uploadOrderPhotoQueue_(files, photoType, index + 1);
+    }, index + 1, files.length);
+  }
+
+  function handleOrderPhotoFile(file, photoType, callback, index, total) {
+    if (!state.editingOrderId || !file) return;
+    photoType = photoType === "allergen" ? "allergen" : "prep";
+    const status = document.getElementById(photoType === "allergen" ? "allergenPhotoStatus" : "prepPhotoStatus");
+    if (!/^image\//i.test(file.type || "")) {
+      showToast("Please choose a photo");
+      return;
+    }
+    status.textContent = "Preparing " + (total ? index + " of " + total : "proof photo") + "…";
+    const reader = new FileReader();
+    reader.onload = function(event) {
+      resizePrepPhotoDataUrl_(event.target.result, function(dataUrl) {
+        uploadOrderPhotoDataUrl_(dataUrl, null, status, false, photoType, callback, index, total);
+      });
+    };
+    reader.onerror = function() {
+      status.textContent = "Photo could not be read.";
+      showToast("Photo could not be read");
+    };
+    reader.readAsDataURL(file);
+  }
+
+  function resizePrepPhotoDataUrl_(sourceDataUrl, callback) {
+    const image = new Image();
+    image.onload = function() {
+      const canvas = document.getElementById("prepPhotoCanvas") || document.createElement("canvas");
+      const maxWidth = 1280;
+      const scale = Math.min(1, maxWidth / image.width);
+      canvas.width = Math.round(image.width * scale);
+      canvas.height = Math.round(image.height * scale);
+      canvas.getContext("2d").drawImage(image, 0, 0, canvas.width, canvas.height);
+      callback(canvas.toDataURL("image/jpeg", 0.78));
+    };
+    image.onerror = function() {
+      showToast("Photo could not be prepared");
+    };
+    image.src = sourceDataUrl;
+  }
+
+  function uploadPrepPhotoDataUrl_(dataUrl, button, status, stopCameraAfterUpload) {
+    uploadOrderPhotoDataUrl_(dataUrl, button, status, stopCameraAfterUpload, "prep");
+  }
+
+  function uploadOrderPhotoDataUrl_(dataUrl, button, status, stopCameraAfterUpload, photoType, callback, index, total) {
+    photoType = photoType === "allergen" ? "allergen" : "prep";
+    const chefName = document.getElementById("editPreppedBy").value.trim();
+    if (photoType === "prep") {
+      if (chefName) setLastPrepChef_(chefName);
+      document.getElementById("editPrepped").checked = true;
+    }
+    if (button) {
+      button.disabled = true;
+      button.textContent = "Saving…";
+    }
+    status.textContent = "Uploading " + (total ? index + " of " + total : "proof photo") + "…";
+
+    if (!(window.google && google.script && google.script.run)) {
+      applyPrepPhotoResult_(state.editingOrderId, {
+        photoType: photoType,
+        prepped: photoType === "prep",
+        preppedBy: chefName,
+        prepPhotoUrl: photoType === "prep" ? "#" : "",
+        prepPhotoAt: photoType === "prep" ? new Date().toISOString() : "",
+        allergenPhotoUrl: photoType === "allergen" ? "#" : "",
+        allergenPhotoAt: photoType === "allergen" ? new Date().toISOString() : ""
+      });
+      if (button) {
+        button.disabled = false;
+        button.textContent = "Capture & save";
+      }
+      if (stopCameraAfterUpload) stopPrepCamera();
+      showToast("Preview prep photo saved");
+      if (callback) callback();
+      return;
+    }
+
+    google.script.run
+      .withSuccessHandler(function(result) {
+        if (button) {
+          button.disabled = false;
+          button.textContent = "Capture & save";
+        }
+        if (stopCameraAfterUpload) stopPrepCamera();
+        applyPrepPhotoResult_(state.editingOrderId, result);
+        if (!callback) showToast(photoType === "allergen" ? "Allergen photo saved" : "Prep photo saved");
+        if (callback) callback();
+      })
+      .withFailureHandler(function(error) {
+        if (button) {
+          button.disabled = false;
+          button.textContent = "Capture & save";
+        }
+        status.textContent = "Photo upload failed.";
+        handleFailure(error);
+      })
+      [photoType === "allergen" ? "saveCpuAllergenPhoto" : "saveCpuPrepPhoto"](state.editingOrderId, dataUrl, chefName);
+  }
+
+  function applyPrepPhotoResult_(id, result) {
+    const order = state.orders.find(function(item) { return item.id === id; });
+    if (!order) return;
+    if (result.photoType === "allergen") {
+      order.allergenPhotoFileId = result.allergenPhotoFileId || order.allergenPhotoFileId || "";
+      order.allergenPhotoUrl = result.allergenPhotoUrl || order.allergenPhotoUrl || "";
+      order.allergenPhotoAt = result.allergenPhotoAt || new Date().toISOString();
+      order.allergenPhotos = Array.isArray(result.allergenPhotos) ? result.allergenPhotos : order.allergenPhotos || [];
+    } else {
+      order.prepped = true;
+      order.preppedBy = result.preppedBy || order.preppedBy || "";
+      order.prepPhotoFileId = result.prepPhotoFileId || order.prepPhotoFileId || "";
+      order.prepPhotoUrl = result.prepPhotoUrl || order.prepPhotoUrl || "";
+      order.prepPhotoAt = result.prepPhotoAt || new Date().toISOString();
+      order.prepPhotos = Array.isArray(result.prepPhotos) ? result.prepPhotos : order.prepPhotos || [];
+    }
+    renderAll();
+    openOrderEditor(id);
+  }
+
+  function saveOrderEditor() {
+    if (!state.editingOrderId) return;
+    const button = document.getElementById("saveOrderButton");
+    const patch = {
+      location: document.getElementById("editLocation").value.trim(),
+      floor: document.getElementById("editFloor").value.trim(),
+      eventDate: document.getElementById("editDate").value,
+      deliveryTime: document.getElementById("editDeliveryTime").value,
+      serviceTime: document.getElementById("editServiceTime").value,
+      pax: Number(document.getElementById("editPax").value) || 0,
+      dietary: document.getElementById("editDietary").value.trim(),
+      notes: document.getElementById("editNotes").value.trim(),
+      prepped: document.getElementById("editPrepped").checked,
+      preppedBy: document.getElementById("editPreppedBy").value.trim(),
+      items: Array.from(document.querySelectorAll("#lineItemsEditor .line-item-edit"))
+        .map(function(row) {
+          return {
+            quantity: Number(row.querySelector(".line-qty").value) || 0,
+            name: row.querySelector(".line-name").value.trim(),
+            notes: row.querySelector(".line-notes").value.trim()
+          };
+        })
+        .filter(function(item) { return item.name; })
+    };
+    if (!patch.prepped) patch.preppedBy = "";
+    if (patch.prepped && patch.preppedBy) setLastPrepChef_(patch.preppedBy);
+
+    if (!(window.google && google.script && google.script.run)) {
+      applyLocalOrderPatch_(state.editingOrderId, patch);
+      showToast("Preview changes saved");
+      return;
+    }
+
+    button.disabled = true;
+    button.textContent = "Saving…";
+    google.script.run
+      .withSuccessHandler(function() {
+        button.disabled = false;
+        button.textContent = "Save changes";
+        applyLocalOrderPatch_(state.editingOrderId, patch);
+        showToast("Order updated");
+      })
+      .withFailureHandler(function(error) {
+        button.disabled = false;
+        button.textContent = "Save changes";
+        handleFailure(error);
+      })
+      .saveCpuOrder(state.editingOrderId, patch);
+  }
+
+  function reparseOrderQuote() {
+    if (!state.editingOrderId || !(window.google && google.script && google.script.run)) return;
+    const orderId = state.editingOrderId;
+    const button = document.getElementById("reparseQuoteButton");
+    button.disabled = true;
+    button.textContent = "Reading…";
+    google.script.run
+      .withSuccessHandler(function(result) {
+        button.disabled = false;
+        button.textContent = "Re-read quote";
+        const order = state.orders.find(function(item) { return item.id === orderId; });
+        if (order) {
+          order.items = result.parsedItems || [];
+          order.dietary = result.dietary || "";
+          order.notes = result.notes || "";
+          order.pax = Number(result.pax) || order.pax || 0;
+          order.location = result.location || order.location || "";
+          order.floor = result.floor || order.floor || "";
+          order.deliveryTime = result.deliveryTime || order.deliveryTime || "";
+          order.serviceTime = result.serviceTime || order.serviceTime || "";
+          order.warnings = result.warnings || [];
+          order.status = result.status || (order.warnings.length ? "NEEDS_ATTENTION" : "READY");
+          renderAll();
+          openOrderEditor(orderId);
+        }
+        showToast((result.items || 0) + " line items read from quote");
+        reloadSheet(orderId);
+      })
+      .withFailureHandler(function(error) {
+        button.disabled = false;
+        button.textContent = "Re-read quote";
+        handleFailure(error);
+      })
+      .reparseCpuOrderQuote(state.editingOrderId);
+  }
+
+  function applyLocalOrderPatch_(id, patch) {
+    const order = state.orders.find(function(item) { return item.id === id; });
+    if (!order) return;
+    Object.assign(order, patch);
+    order.period = classifyPeriod(order);
+    renderAll();
+    openOrderEditor(id);
+  }
+
+  function quickTogglePrepped(id) {
+    const order = state.orders.find(function(item) { return item.id === id; });
+    if (!order) return;
+    const next = !order.prepped;
+    const previousPreppedBy = order.preppedBy || "";
+    let preppedBy = next ? String(order.preppedBy || getLastPrepChef_() || "").trim() : "";
+    if (next && !preppedBy) {
+      preppedBy = window.prompt("Who prepped this order?", "") || "";
+      preppedBy = preppedBy.trim();
+    }
+    if (next && preppedBy) setLastPrepChef_(preppedBy);
+    order.prepped = next;
+    order.preppedBy = preppedBy;
+    renderAll();
+    if (!(window.google && google.script && google.script.run)) {
+      showToast(next ? "Marked prepped" : "Prep status cleared");
+      return;
+    }
+    google.script.run
+      .withSuccessHandler(function() {
+        showToast(next ? "Marked prepped" : "Prep status cleared");
+      })
+      .withFailureHandler(function(error) {
+        order.prepped = !next;
+        order.preppedBy = previousPreppedBy;
+        renderAll();
+        handleFailure(error);
+      })
+      .saveCpuOrder(id, { prepped: next, preppedBy: preppedBy });
+  }
+
+  function setView(view) {
+    state.view = view;
+    updateBodyViewClass_();
+    ["calendar", "list", "production", "delivery", "dietary"].forEach(function(name) {
+      document.getElementById(name + "View").classList.toggle("hidden", name !== view);
+      document.getElementById(name + "ViewButton").classList.toggle("active", name === view);
+    });
+    savePreferences_();
+  }
+
+  function updateBodyViewClass_() {
+    ["calendar", "list", "production", "delivery", "dietary"].forEach(function(name) {
+      document.body.classList.toggle("view-" + name, state.view === name);
+    });
+  }
+
+  function toggleKitchenMode() {
+    state.kitchenMode = !state.kitchenMode;
+    document.body.classList.toggle("kitchen-mode", state.kitchenMode);
+    document.getElementById("kitchenModeButton").textContent =
+      state.kitchenMode ? "Exit kitchen mode" : "Kitchen mode";
+    if (state.kitchenMode) {
+      setView("production");
+      if (document.documentElement.requestFullscreen) {
+        document.documentElement.requestFullscreen().catch(function() {});
+      }
+      if (!state.autoRefreshTimer) {
+        state.autoRefreshTimer = window.setInterval(function() {
+          if (!state.scanRunning && !state.loading) reloadSheet();
+        }, 120000);
+      }
+    } else if (state.autoRefreshTimer) {
+      window.clearInterval(state.autoRefreshTimer);
+      state.autoRefreshTimer = null;
+      if (document.fullscreenElement && document.exitFullscreen) document.exitFullscreen().catch(function() {});
+    }
+    savePreferences_();
+  }
+
+  function changeWeek(delta) {
+    if (state.loading) return;
+    state.loading = true;
+    state.weekStart = addDays(state.weekStart, delta * 7);
+    updatePeriodHeading();
+    setWeekLoading_(true);
+    loadDashboard();
+  }
+
+  function goToToday() {
+    if (state.loading) return;
+    state.loading = true;
+    state.weekStart = startOfWeek(new Date());
+    if (isTabletPrepView_()) state.dayFocus = tabletDefaultDayFocus_();
+    updatePeriodHeading();
+    setWeekLoading_(true);
+    loadDashboard();
+  }
+
+  function refreshFromCalendar() {
+    if (state.loading) return;
+    if (!(window.google && google.script && google.script.run)) {
+      showToast("Preview refreshed");
+      return;
+    }
+    state.loading = true;
+    const button = document.getElementById("refreshButton");
+    button.disabled = true;
+    button.textContent = "Scanning…";
+    const scanTimer = window.setTimeout(function() {
+      if (!state.loading) return;
+      state.loading = false;
+      button.disabled = false;
+      button.textContent = "Scan calendars";
+      showToast("The calendar scan is still running on Google. You can continue using the cached sheet.");
+      reloadSheet();
+    }, 45000);
+    google.script.run
+      .withSuccessHandler(function(result) {
+        window.clearTimeout(scanTimer);
+        state.loading = false;
+        button.disabled = false;
+        button.textContent = "Scan calendars";
+        applyDashboardData(result.data);
+        showToast(result.scan.orders + " orders refreshed");
+      })
+      .withFailureHandler(function(error) {
+        window.clearTimeout(scanTimer);
+        state.loading = false;
+        button.disabled = false;
+        button.textContent = "Scan calendars";
+        handleFailure(error);
+      })
+      .refreshCpuDashboard({
+        start: dateKey(state.weekStart),
+        end: dateKey(addDays(state.weekStart, 14))
+      });
+  }
+
+  // Chunked modal scanner. This later declaration replaces the original
+  // single-call scanner above.
+  function refreshFromCalendar() {
+    if (state.scanRunning) return;
+    if (!(window.google && google.script && google.script.run)) {
+      showToast("Calendar scanning is unavailable in preview mode");
+      return;
+    }
+    openScanModal();
+    resetScanModal_();
+    state.scanRunning = true;
+    const button = document.getElementById("refreshButton");
+    button.disabled = true;
+    button.textContent = "Scanning…";
+    google.script.run
+      .withSuccessHandler(function(job) {
+        state.scanJobId = job.id;
+        updateScanModal_(job);
+        window.setTimeout(processNextScanChunk_, 150);
+      })
+      .withFailureHandler(finishScanWithError_)
+      .startCpuCalendarScanJob({
+        start: dateKey(state.weekStart),
+        end: dateKey(addDays(state.weekStart, 14))
+      });
+  }
+
+  function processNextScanChunk_() {
+    if (!state.scanRunning || !state.scanJobId) return;
+    google.script.run
+      .withSuccessHandler(function(job) {
+        updateScanModal_(job);
+        if (job.status === "RUNNING") {
+          window.setTimeout(processNextScanChunk_, 180);
+        } else {
+          finishScanJob_(job);
+        }
+      })
+      .withFailureHandler(finishScanWithError_)
+      .processCpuCalendarScanChunk(state.scanJobId);
+  }
+
+  function openScanModal() {
+    document.getElementById("scanModal").classList.remove("hidden");
+  }
+
+  function closeScanModal() {
+    if (state.scanRunning) {
+      showToast("Cancel or wait for the scan to finish before closing.");
+      return;
+    }
+    document.getElementById("scanModal").classList.add("hidden");
+  }
+
+  function resetScanModal_() {
+    ["scanFound", "scanLogged", "scanSkipped", "scanAttention", "scanErrors"]
+      .forEach(function(id) { document.getElementById(id).textContent = "0"; });
+    document.getElementById("scanSummary").textContent = "Starting calendar scan…";
+    document.getElementById("scanCurrent").textContent = "Preparing date range…";
+    document.getElementById("scanProgressBar").style.width = "6%";
+    document.getElementById("scanErrorList").classList.add("hidden");
+    document.getElementById("scanErrorList").innerHTML = "";
+    document.getElementById("scanCancelButton").classList.remove("hidden");
+    document.getElementById("scanCancelButton").disabled = false;
+    document.getElementById("scanDoneButton").classList.add("hidden");
+    document.getElementById("scanModalClose").disabled = true;
+  }
+
+  function updateScanModal_(job) {
+    const counters = job.counters || {};
+    document.getElementById("scanFound").textContent = counters.found || 0;
+    document.getElementById("scanLogged").textContent = counters.logged || 0;
+    document.getElementById("scanSkipped").textContent =
+      (counters.skipped || 0) + (counters.unchanged || 0);
+    document.getElementById("scanAttention").textContent = counters.attention || 0;
+    document.getElementById("scanErrors").textContent = counters.errors || 0;
+    document.getElementById("scanCurrent").textContent = job.current || "Scanning…";
+    document.getElementById("scanSummary").textContent =
+      job.status === "RUNNING"
+        ? job.deepMode
+          ? "Deep scan active. Every booking quote is being reopened and reparsed."
+          : "Fast scan active. Unchanged bookings are skipped without reopening their quotes."
+        : job.status === "COMPLETE" ? "Scan complete." : "Scan stopped.";
+    const progress = job.status === "COMPLETE"
+      ? 100
+      : Math.min(92, 8 + Math.round((counters.found || 0) * 1.8));
+    document.getElementById("scanProgressBar").style.width = progress + "%";
+    if ((job.errors || []).length) {
+      const list = document.getElementById("scanErrorList");
+      list.innerHTML = job.errors.map(function(error) {
+        return '<div>' + escapeHtml(error) + '</div>';
+      }).join("");
+      list.classList.remove("hidden");
+    }
+  }
+
+  function finishScanJob_(job) {
+    setBusyState_(false);
+    state.scanRunning = false;
+    state.scanJobId = "";
+    const button = document.getElementById("refreshButton");
+    button.disabled = false;
+    button.textContent = "Scan calendars";
+    document.getElementById("scanCancelButton").classList.add("hidden");
+    document.getElementById("scanDoneButton").classList.remove("hidden");
+    document.getElementById("scanModalClose").disabled = false;
+    if (job.status === "COMPLETE") {
+      document.getElementById("scanProgressBar").style.width = "100%";
+      reloadSheet();
+    }
+  }
+
+  function finishScanWithError_(error) {
+    setBusyState_(false);
+    state.scanRunning = false;
+    state.scanJobId = "";
+    const button = document.getElementById("refreshButton");
+    button.disabled = false;
+    button.textContent = "Scan calendars";
+    document.getElementById("scanSummary").textContent = "The scan stopped unexpectedly.";
+    document.getElementById("scanCurrent").textContent =
+      (error && error.message) || "Unknown scan error";
+    document.getElementById("scanCancelButton").classList.add("hidden");
+    document.getElementById("scanDoneButton").classList.remove("hidden");
+    document.getElementById("scanModalClose").disabled = false;
+  }
+
+  function cancelCalendarScan() {
+    if (!state.scanRunning || !state.scanJobId) {
+      closeScanModal();
+      return;
+    }
+    document.getElementById("scanCancelButton").disabled = true;
+    google.script.run
+      .withSuccessHandler(function(job) {
+        updateScanModal_(job);
+        finishScanJob_(job);
+      })
+      .withFailureHandler(finishScanWithError_)
+      .cancelCpuCalendarScanJob(state.scanJobId);
+  }
+
+  function finishScanModal() {
+    closeScanModal();
+  }
+
+  function reloadSheet(reopenOrderId) {
+    setBusyState_(true);
+    const button = document.getElementById("reloadButton");
+    button.disabled = true;
+    button.textContent = "Loading…";
+    if (!(window.google && google.script && google.script.run)) {
+      button.disabled = false;
+      button.textContent = "Reload sheet";
+      setBusyState_(false);
+      loadDashboard();
+      return;
+    }
+    let finished = false;
+    let timedOut = false;
+    document.getElementById("syncStatus").textContent = "Loading cached orders…";
+    const timer = window.setTimeout(function() {
+      if (finished) return;
+      timedOut = true;
+      button.disabled = false;
+      button.textContent = "Reload sheet";
+      document.getElementById("syncStatus").textContent = "Still loading cached orders…";
+      showToast("Sheet loading is taking longer than usual, but it is still running.");
+    }, 60000);
+    google.script.run
+      .withSuccessHandler(function(data) {
+        if (finished) return;
+        finished = true;
+        window.clearTimeout(timer);
+        button.disabled = false;
+        button.textContent = "Reload sheet";
+        setBusyState_(false);
+        applyDashboardData(data);
+        if (reopenOrderId && state.orders.some(function(order) { return order.id === reopenOrderId; })) {
+          openOrderEditor(reopenOrderId);
+        }
+        if (timedOut) showToast("Cached orders finished loading.");
+      })
+      .withFailureHandler(function(error) {
+        if (finished) return;
+        finished = true;
+        window.clearTimeout(timer);
+        button.disabled = false;
+        button.textContent = "Reload sheet";
+        setBusyState_(false);
+        handleFailure(error);
+      })
+      .getCpuDashboardData(weekRequest());
+  }
+
+  function runWithUiTimeout_(label, milliseconds, starter) {
+    let finished = false;
+    const timer = window.setTimeout(function() {
+      if (finished) return;
+      finished = true;
+      setBusyState_(false);
+      state.loading = false;
+      setWeekLoading_(false);
+      document.getElementById("syncStatus").textContent = label + " timed out";
+      showToast(label + " timed out. The server deployment may be stale.");
+    }, milliseconds);
+    starter(function(value) {
+      if (finished) return;
+      finished = true;
+      window.clearTimeout(timer);
+      setBusyState_(false);
+      state.loading = false;
+      setWeekLoading_(false);
+      applyDashboardData(value);
+    }, function(error) {
+      if (finished) return;
+      finished = true;
+      window.clearTimeout(timer);
+      setBusyState_(false);
+      state.loading = false;
+      setWeekLoading_(false);
+      handleFailure(error);
+    });
+  }
+
+  function updatePeriodHeading() {
+    const end = addDays(state.weekStart, 4);
+    document.getElementById("periodTitle").textContent = isCurrentWeek(state.weekStart) ? "This week" : formatLongDate(state.weekStart);
+    document.getElementById("periodSubtitle").textContent = formatRange(state.weekStart, end);
+  }
+
+  function weekRequest() {
+    return { start: dateKey(addDays(state.weekStart, -14)), end: dateKey(addDays(state.weekStart, 21)) };
+  }
+
+  function savePreferences_() {
+    try {
+      localStorage.setItem(PREFS_KEY, JSON.stringify({
+        activeSites: Array.from(state.activeSites),
+        activePeriods: Array.from(state.activePeriods),
+        selectedProductCategories: Array.from(state.selectedProductCategories),
+        dayFocus: state.dayFocus,
+        updatedOnly: state.updatedOnly,
+        hideCompleted: state.hideCompleted,
+        kitchenMode: state.kitchenMode,
+        view: state.view
+      }));
+    } catch (ignore) {}
+  }
+
+  function restorePreferences_() {
+    try {
+      const raw = localStorage.getItem(PREFS_KEY);
+      const saved = JSON.parse(raw || "{}");
+      state.preferencesRestored = Boolean(raw);
+      if (Array.isArray(saved.activeSites)) state.activeSites = new Set(saved.activeSites);
+      if (Array.isArray(saved.activePeriods)) state.activePeriods = new Set(saved.activePeriods);
+      if (Array.isArray(saved.selectedProductCategories)) {
+        state.selectedProductCategories = new Set(saved.selectedProductCategories);
+      }
+      state.dayFocus = saved.dayFocus == null ? "" : String(saved.dayFocus);
+      state.updatedOnly = saved.updatedOnly === true;
+      state.hideCompleted = saved.hideCompleted === true;
+      state.kitchenMode = saved.kitchenMode === true;
+      state.view = saved.view || "calendar";
+    } catch (ignore) {}
+  }
+
+  function applyTabletDefaults_() {
+    if (!isTabletPrepView_() || state.preferencesRestored || state.dayFocus !== "") return;
+    state.dayFocus = tabletDefaultDayFocus_();
+  }
+
+  function isTabletPrepView_() {
+    try {
+      return window.matchMedia &&
+        window.matchMedia("(min-width: 761px) and (max-width: 1368px) and (pointer: coarse)").matches;
+    } catch (ignore) {
+      return false;
+    }
+  }
+
+  function tabletDefaultDayFocus_() {
+    if (!isCurrentWeek(state.weekStart)) return "0";
+    const day = (new Date().getDay() + 6) % 7;
+    return String(Math.min(Math.max(day, 0), 4));
+  }
+
+  function bindKeyboardShortcuts_() {
+    document.addEventListener("keydown", function(event) {
+      const target = event.target;
+      if (target && /input|textarea|select/i.test(target.tagName)) return;
+      if (event.key === "/") {
+        event.preventDefault();
+        document.getElementById("searchInput").focus();
+      } else if (event.key.toLowerCase() === "p") {
+        setView("production");
+      } else if (event.key === "ArrowLeft") {
+        changeWeek(-1);
+      } else if (event.key === "ArrowRight") {
+        changeWeek(1);
+      } else if (/^[1-5]$/.test(event.key)) {
+        state.dayFocus = String(Number(event.key) - 1);
+        document.getElementById("dayFocus").value = state.dayFocus;
+        renderAll();
+        savePreferences_();
+      }
+    });
+  }
+
+  function bindDropdownDismiss_() {
+    document.addEventListener("click", function(event) {
+      document.querySelectorAll("details[open]").forEach(function(details) {
+        if (!details.contains(event.target)) details.removeAttribute("open");
+      });
+    });
+    document.addEventListener("keydown", function(event) {
+      if (event.key !== "Escape") return;
+      document.querySelectorAll("details[open]").forEach(function(details) {
+        details.removeAttribute("open");
+      });
+    });
+  }
+
+  function renderLoadingSkeleton_() {
+    document.getElementById("stats").innerHTML = new Array(5).fill(
+      '<article class="stat-card skeleton"><span></span><strong></strong><i></i></article>'
+    ).join("");
+    document.getElementById("calendarView").innerHTML =
+      '<div class="loading-board">' + new Array(5).fill('<div class="skeleton-column"><i></i><b></b><b></b></div>').join("") + '</div>';
+  }
+
+  function hasWarnings(order) { return (order.warnings || []).length > 0 || order.status === "NEEDS_ATTENTION"; }
+  function sum(items, field) { return items.reduce(function(total, item) { return total + Number(item[field] || 0); }, 0); }
+  function average(items, field) { return items.length ? Math.round(sum(items, field) / items.length) : 0; }
+  function unique(items) { return Array.from(new Set(items)); }
+  function orderSort(a, b) { return (a.startAt || "").localeCompare(b.startAt || "") || String(a.clientCompany).localeCompare(String(b.clientCompany)); }
+  function startOfWeek(date) { const copy = new Date(date); const day = (copy.getDay() + 6) % 7; copy.setHours(0,0,0,0); copy.setDate(copy.getDate() - day); return copy; }
+  function addDays(date, days) { const copy = new Date(date); copy.setDate(copy.getDate() + days); return copy; }
+  function dateKey(value) { const date = value instanceof Date ? value : new Date(value); return date.getFullYear() + "-" + pad(date.getMonth() + 1) + "-" + pad(date.getDate()); }
+  function pad(value) { return String(value).padStart(2, "0"); }
+  function formatDay(date) { return new Intl.DateTimeFormat("en-GB", { weekday: "short" }).format(date); }
+  function formatLongDate(date) { return new Intl.DateTimeFormat("en-GB", { weekday: "long", day: "numeric", month: "short" }).format(date); }
+  function formatFullDate(value) { return new Intl.DateTimeFormat("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric" }).format(new Date(value + "T12:00:00")); }
+  function formatTime(value) { return value ? new Intl.DateTimeFormat("en-GB", { hour: "2-digit", minute: "2-digit" }).format(new Date(value)) : "—"; }
+  function formatRange(start, end) { return new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "long" }).format(start) + " – " + new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "long", year: "numeric" }).format(end); }
+  function formatShortIsoDate(value) { return value ? new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", year: "numeric" }).format(new Date(value + "T12:00:00")) : "unknown"; }
+  function isCurrentWeek(date) { return dateKey(startOfWeek(new Date())) === dateKey(date); }
+  function busiestDay(orders) {
+    const byDay = {};
+    orders.forEach(function(order) {
+      if (!byDay[order.eventDate]) byDay[order.eventDate] = { bookings: 0, pax: 0 };
+      byDay[order.eventDate].bookings += 1;
+      byDay[order.eventDate].pax += Number(order.pax || 0);
+    });
+    const keys = Object.keys(byDay).sort(function(a, b) {
+      return byDay[b].bookings - byDay[a].bookings ||
+        byDay[b].pax - byDay[a].pax ||
+        a.localeCompare(b);
+    });
+    return keys.length
+      ? {
+          label: new Intl.DateTimeFormat("en-GB", { weekday: "short" }).format(new Date(keys[0] + "T12:00:00")),
+          detail: byDay[keys[0]].bookings + (byDay[keys[0]].bookings === 1 ? " booking scheduled" : " bookings scheduled")
+        }
+      : { label: "—", detail: "No bookings scheduled" };
+  }
+  function detailBox(label, value) { return '<div class="detail-box"><span class="detail-label">' + escapeHtml(label) + '</span><span class="detail-value">' + escapeHtml(String(value)) + '</span></div>'; }
+  function attachmentLink(url, label) { return url ? '<a class="attachment-link" href="' + escapeHtml(url) + '" target="_blank">' + escapeHtml(label) + ' ↗</a>' : '<span class="attachment-link muted">' + escapeHtml(label) + ' unavailable</span>'; }
+  function escapeHtml(value) { return String(value == null ? "" : value).replace(/[&<>"']/g, function(char) { return ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;" })[char]; }); }
+  function escapeJs(value) { return String(value).replace(/\\/g, "\\\\").replace(/'/g, "\\'"); }
+  function deriveSites(orders) {
+    const seen = {};
+    return orders.filter(function(order) { if (seen[order.siteId]) return false; seen[order.siteId] = true; return true; })
+      .map(function(order) { return { id: order.siteId, name: order.siteName, code: order.siteCode, colour: order.siteColour }; });
+  }
+  function mergeSites(configured, discovered) {
+    const byId = {};
+    (configured || []).concat(discovered || []).forEach(function(site, index) {
+      const id = String(site.id || site.code || site.name || ("site-" + index));
+      if (!byId[id]) {
+        byId[id] = {
+          id: id,
+          name: site.name || site.code || id,
+          code: site.code || initials(site.name || id),
+          colour: site.colour || site.color || siteColour(index),
+          emails: Array.isArray(site.emails) ? site.emails : []
+        };
+      }
+    });
+    return Object.keys(byId).map(function(id) { return byId[id]; });
+  }
+  function applyOwnerSiteMappings_() {
+    const byEmail = {};
+    state.sites.forEach(function(site) {
+      if (String(site.id || "").indexOf("@") !== -1) {
+        byEmail[String(site.id).toLowerCase()] = site;
+      }
+      (site.emails || []).forEach(function(email) {
+        byEmail[String(email).toLowerCase()] = site;
+      });
+    });
+    state.orders.forEach(function(order) {
+      const site = byEmail[String(order.eventOwnerEmail || "").toLowerCase()];
+      if (!site) return;
+      order.siteId = site.id;
+      order.siteName = site.name;
+      order.siteCode = site.code;
+      order.siteColour = site.colour;
+    });
+  }
+  function syncActiveSites(previousSiteIds) {
+    const valid = new Set(state.sites.map(function(site) { return site.id; }));
+    const next = new Set();
+    state.activeSites.forEach(function(id) { if (valid.has(id)) next.add(id); });
+    if (state.preferencesRestored && previousSiteIds.size === 0) {
+      state.activeSites = next;
+      return;
+    }
+    state.sites.forEach(function(site) {
+      if (!state.activeSites.size || !previousSiteIds.has(site.id)) next.add(site.id);
+    });
+    state.activeSites = next;
+  }
+  function normaliseOrder(order) {
+    const copy = Object.assign({}, order);
+    copy.siteId = String(copy.siteId || copy.siteCode || copy.siteName || "unassigned");
+    copy.siteName = copy.siteName || copy.siteCode || "Unassigned site";
+    copy.siteCode = copy.siteCode || initials(copy.siteName);
+    copy.siteColour = copy.siteColour || siteColour(Math.abs(hashText(copy.siteId)) % 6);
+    copy.eventDate = normaliseDateKey(copy.eventDate || copy.startAt);
+    copy.period = classifyPeriod(copy);
+    copy.items = Array.isArray(copy.items) ? copy.items : [];
+    copy.warnings = Array.isArray(copy.warnings) ? copy.warnings : [];
+    copy.changes = Array.isArray(copy.changes) ? copy.changes : [];
+    copy.prepped = copy.prepped === true || String(copy.prepped).toLowerCase() === "true";
+    copy.preppedBy = String(copy.preppedBy || "").trim();
+    copy.prepPhotoFileId = String(copy.prepPhotoFileId || "").trim();
+    copy.prepPhotoUrl = String(copy.prepPhotoUrl || "").trim();
+    copy.prepPhotoAt = String(copy.prepPhotoAt || "").trim();
+    copy.allergenPhotoFileId = String(copy.allergenPhotoFileId || "").trim();
+    copy.allergenPhotoUrl = String(copy.allergenPhotoUrl || "").trim();
+    copy.allergenPhotoAt = String(copy.allergenPhotoAt || "").trim();
+    copy.prepPhotos = normalisePhotoList_(copy.prepPhotos, copy.prepPhotoUrl, copy.prepPhotoAt, "Prep proof");
+    copy.allergenPhotos = normalisePhotoList_(copy.allergenPhotos, copy.allergenPhotoUrl, copy.allergenPhotoAt, "Allergen sheet");
+    return copy;
+  }
+  function isRecentlyChanged(order) {
+    if (!(order.changes || []).length || !order.changedAt) return false;
+    const changedAt = new Date(order.changedAt).getTime();
+    return !isNaN(changedAt) && Date.now() - changedAt < 7 * 24 * 60 * 60 * 1000;
+  }
+  function showUpdatedFlag_(order) {
+    return state.showUpdatedFlags && isRecentlyChanged(order);
+  }
+  function prepDoneLabel_(order, short) {
+    if (!order || !order.prepped) return "";
+    return order.preppedBy
+      ? (short ? "By " + order.preppedBy : "Prepped by " + order.preppedBy)
+      : (short ? "Prepped" : "Done");
+  }
+  function prepStatusText_(order) {
+    if (order && order.prepped && order.preppedBy) return "Prepped by " + order.preppedBy + ".";
+    if (order && order.prepped) return "Marked prepped. Add the chef name here.";
+    return "Marks this booking purple across the CPU dashboard.";
+  }
+  function prepPhotoStatusText_(order) {
+    const count = order && order.prepPhotos ? order.prepPhotos.length : 0;
+    if (count) {
+      return count + (count === 1 ? " prep proof photo attached." : " prep proof photos attached.");
+    }
+    return "No prep photo attached yet.";
+  }
+  function allergenPhotoStatusText_(order) {
+    const count = order && order.allergenPhotos ? order.allergenPhotos.length : 0;
+    if (count) {
+      return count + (count === 1 ? " allergen sheet photo attached." : " allergen sheet photos attached.");
+    }
+    return "No allergen sheet photo attached yet.";
+  }
+  function normalisePhotoList_(photos, fallbackUrl, fallbackAt, label) {
+    const list = Array.isArray(photos) ? photos.slice() : [];
+    if (!list.length && fallbackUrl) {
+      list.push({ url: fallbackUrl, uploadedAt: fallbackAt || "", label: label });
+    }
+    return list.filter(function(photo) { return photo && photo.url; });
+  }
+  function photoLinksHtml_(photos, fallbackUrl, label) {
+    const list = normalisePhotoList_(photos, fallbackUrl, "", label);
+    if (!list.length) return "";
+    return '<div class="photo-link-list">' + list.map(function(photo, index) {
+      return '<a href="' + escapeHtml(photo.url) + '" target="_blank">' +
+        escapeHtml((photo.label || label) + " " + (index + 1)) + ' ↗</a>';
+    }).join("") + '</div>';
+  }
+  function getLastPrepChef_() {
+    try { return localStorage.getItem(PREP_CHEF_KEY) || ""; } catch (ignore) { return ""; }
+  }
+  function setLastPrepChef_(name) {
+    try { localStorage.setItem(PREP_CHEF_KEY, String(name || "").trim()); } catch (ignore) {}
+  }
+  function isUrgent(order) {
+    if (order.prepped || !order.eventDate) return false;
+    const time = String(order.deliveryTime || "").match(/^(\d{1,2}):(\d{2})/);
+    if (!time) return false;
+    const due = new Date(order.eventDate + "T" + pad(time[1]) + ":" + time[2] + ":00").getTime();
+    const minutes = (due - Date.now()) / 60000;
+    return minutes >= 0 && minutes <= 90;
+  }
+  function normaliseProductName(value) {
+    return cleanProductDisplayName(value)
+      .toLowerCase()
+      .replace(/\([^)]*\)/g, " ")
+      .replace(/[^a-z0-9]+/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+  function categoriseCpuProduct(value) {
+    const text = cleanProductDisplayName(value).toLowerCase();
+    const categories = (state.productCategories || []).slice()
+      .sort(function(a, b) { return Number(a.order || 0) - Number(b.order || 0); });
+    let fallback = { id: "other", name: "Other Food & Drink", order: 100 };
+    for (let i = 0; i < categories.length; i++) {
+      const category = categories[i];
+      if (category.id === "other" || !(category.keywords || []).length) {
+        fallback = category;
+        continue;
+      }
+      const matched = category.keywords.some(function(keyword) {
+        return text.indexOf(String(keyword || "").toLowerCase()) !== -1;
+      });
+      if (matched) return category;
+    }
+    return fallback;
+  }
+  function cleanProductDisplayName(value) {
+    return String(value || "")
+      .replace(/^\s*\d{1,2}(?::|\.)\d{2}\s*(?:am|pm)?\s*[-–—]\s*\d{1,2}(?::|\.)\d{2}\s*(?:am|pm)?\s*[-–—:]\s*/i, "")
+      .replace(/^\s*(?:delivery|service)?\s*\d{1,2}(?::|\.)\d{2}\s*(?:am|pm)?\s*[-–—:]\s*/i, "")
+      .replace(/^\s*\d+\s*[x×]\s*/i, "")
+      .replace(/^\s*\d{1,2}\s*(?:am|pm)\s*[-–—:]\s*/i, "")
+      .replace(/^\s*[•·\-–—]+\s*/, "")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+  function getProductQuantity(order, productKey) {
+    return (order.items || []).reduce(function(total, item) {
+      return total + (normaliseProductName(item.name) === productKey ? Number(item.quantity || 0) : 0);
+    }, 0);
+  }
+  function getCategoryQuantity(order, categoryId) {
+    return (order.items || []).reduce(function(total, item) {
+      return total + (
+        categoriseCpuProduct(item.name).id === categoryId
+          ? Number(item.quantity || 0)
+          : 0
+      );
+    }, 0);
+  }
+  function getSelectedProductQuantity(order) {
+    return Array.from(state.selectedProductCategories).reduce(function(total, categoryId) {
+      return total + getCategoryQuantity(order, categoryId);
+    }, 0);
+  }
+  function selectedProductSummary(order) {
+    if (!state.selectedProductCategories.size) return "";
+    const matches = (order.items || []).filter(function(line) {
+      return state.selectedProductCategories.has(categoriseCpuProduct(line.name).id);
+    });
+    return matches.map(function(item) {
+      return '<div class="product-quantity"><span>' +
+        escapeHtml(cleanProductDisplayName(item.name)) + '</span><strong>' +
+        Number(item.quantity || 0) + '×</strong></div>';
+    }).join("");
+  }
+  function normaliseDateKey(value) {
+    if (typeof value === "number") {
+      return dateKey(new Date(Date.UTC(1899, 11, 30) + value * 86400000));
+    }
+    const text = String(value || "");
+    const iso = text.match(/^(\d{4}-\d{2}-\d{2})/);
+    if (iso) return iso[1];
+    const date = new Date(value);
+    return isNaN(date.getTime()) ? "" : dateKey(date);
+  }
+  function classifyPeriod(order) {
+    const text = [
+      order.serviceType, order.clientCompany, order.notes,
+      (order.items || []).map(function(item) { return item.name; }).join(" ")
+    ].join(" ").toLowerCase();
+    if (/(breakfast|morning|pastr|croissant|brunch)/.test(text)) return "BREAKFAST";
+    if (/(evening|dinner|canap|drinks|reception|bbq|bowl food|event)/.test(text)) return "EVENING";
+    if (/(lunch|sandwi|salad|jacket potato|working lunch)/.test(text)) return "LUNCH";
+    const time = String(order.deliveryTime || "").match(/^(\d{1,2})/);
+    const hour = time ? Number(time[1]) : new Date(order.startAt || 0).getHours();
+    if (hour && hour < 10) return "BREAKFAST";
+    if (hour >= 16) return "EVENING";
+    return "LUNCH";
+  }
+  function initials(value) { return String(value || "").split(/\s+/).filter(Boolean).map(function(part) { return part[0]; }).join("").slice(0, 4).toUpperCase() || "SITE"; }
+  function siteColour(index) { return ["#4F34C7", "#EF6C35", "#168C72", "#C0447A", "#3376B8", "#8C6A2D"][index % 6]; }
+  function hashText(value) { return String(value || "").split("").reduce(function(hash, char) { return ((hash << 5) - hash) + char.charCodeAt(0); }, 0); }
+  function handleFailure(error) { showToast((error && error.message) || "Something went wrong"); document.getElementById("syncStatus").textContent = "Refresh failed"; }
+  function showToast(message) { const toast = document.getElementById("toast"); toast.textContent = message; toast.classList.remove("hidden"); window.setTimeout(function() { toast.classList.add("hidden"); }, 3200); }
+  function setBusyState_(busy) {
+    document.documentElement.classList.toggle("is-busy", Boolean(busy));
+    document.body.classList.toggle("is-busy", Boolean(busy));
+    if (!busy) {
+      document.documentElement.style.cursor = "default";
+      document.body.style.cursor = "default";
+    }
+  }
+  function setWeekLoading_(loading) {
+    const panel = document.querySelector(".primary-panel");
+    if (panel) {
+      panel.classList.toggle("week-loading", Boolean(loading));
+      let overlay = panel.querySelector(".week-loading-overlay");
+      if (loading && !overlay) {
+        overlay = document.createElement("div");
+        overlay.className = "week-loading-overlay";
+        overlay.innerHTML = '<span class="week-spinner"></span><strong>Loading week…</strong>';
+        panel.appendChild(overlay);
+      } else if (!loading && overlay) {
+        overlay.remove();
+      }
+    }
+    document.querySelectorAll(".week-button").forEach(function(button) {
+      button.disabled = Boolean(loading);
+    });
+  }
+
+  function demoDashboardData() {
+    const sites = [
+      { id: "oac", name: "One Angel Court", code: "OAC", colour: "#4F34C7" },
+      { id: "lp", name: "London Place", code: "LP", colour: "#EF6C35" },
+      { id: "wh", name: "West House", code: "WH", colour: "#168C72" },
+      { id: "pms", name: "Paternoster Square", code: "PMS", colour: "#C0447A" }
+    ];
+    const names = ["Apex Partners", "Northstar Capital", "Lumen Workshop", "Bracken & Co", "Eider Consulting", "Atlas Ventures", "Morrow Legal", "Cedar Studio", "Fenchurch Group", "Harbour Finance"];
+    const services = ["Breakfast", "Working lunch", "Canapés", "Board lunch", "Afternoon tea"];
+    const menu = [
+      ["Smoked salmon bagel", "Seasonal fruit pot", "Mini pastries"],
+      ["Roast chicken ciabatta", "Heritage tomato salad", "Chocolate brownie"],
+      ["Wild mushroom tartlet", "Beef croquette", "Lemon posset"],
+      ["Seared salmon", "New potatoes", "Tenderstem broccoli"],
+      ["Scones with clotted cream", "Finger sandwiches", "Mini lemon tart"]
+    ];
+    const orders = [];
+    for (let i = 0; i < 18; i++) {
+      const date = addDays(state.weekStart, i % 6);
+      const site = sites[i % sites.length];
+      const serviceIndex = i % services.length;
+      const pax = 8 + ((i * 11) % 64);
+      orders.push({
+        id: "demo-" + i, siteId: site.id, siteName: site.name, siteCode: site.code, siteColour: site.colour,
+        eventDate: dateKey(date), startAt: new Date(date.getFullYear(), date.getMonth(), date.getDate(), 8 + (i % 8), (i % 2) * 30).toISOString(),
+        deliveryTime: pad(8 + (i % 8)) + ":" + ((i % 2) ? "30" : "00"), serviceTime: pad(9 + (i % 8)) + ":00",
+        clientCompany: names[i % names.length], serviceType: services[serviceIndex], pax: pax,
+        location: site.name, floor: (2 + (i % 12)) + "F", hostName: ["Sam", "Alex", "Taylor", "Jordan"][i % 4],
+        notes: i % 4 === 0 ? "Set on the north credenza. Collect serviceware after 14:30." : "",
+        dietary: i % 5 === 0 ? "2 vegan · 1 gluten-free · severe nut allergy" : "",
+        items: menu[serviceIndex].map(function(name, itemIndex) { return { name: name, quantity: Math.ceil(pax / (itemIndex === 0 ? 1 : 2)), notes: itemIndex === 0 && i % 5 === 0 ? "Hold 2 vegan portions" : "" }; }),
+        quoteUrl: "#", bookingFormUrl: "#",
+        warnings: i === 3 ? ["Original booking form missing"] : i === 11 ? ["Pax could not be read", "Check dietary notes"] : [],
+        status: i === 3 || i === 11 ? "NEEDS_ATTENTION" : "READY"
+      });
+    }
+    for (let j = 0; j < 8; j++) {
+      const futureDate = addDays(state.weekStart, 7 + (j % 5));
+      const futureSite = sites[j % sites.length];
+      orders.push({
+        id: "next-" + j, siteId: futureSite.id, siteName: futureSite.name, siteCode: futureSite.code, siteColour: futureSite.colour,
+        eventDate: dateKey(futureDate), startAt: new Date(futureDate.getFullYear(), futureDate.getMonth(), futureDate.getDate(), 11, 0).toISOString(),
+        deliveryTime: "11:00", clientCompany: names[(j + 3) % names.length], serviceType: services[j % services.length],
+        pax: 12 + j * 5, items: [], warnings: [], status: "READY"
+      });
+    }
+    return { appName: "CPU Production", generatedAt: new Date().toISOString(), sites: sites, orders: orders, configured: false };
+  }
+</script>

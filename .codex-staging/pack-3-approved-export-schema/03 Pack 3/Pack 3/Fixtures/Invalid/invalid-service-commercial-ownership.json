@@ -1,0 +1,43 @@
+{
+  "commercialOwnershipId": "comm:wise-breakfast",
+  "subjectType": "service_arrangement",
+  "subjectId": "arr:wise-monday-breakfast",
+  "accountableRoleId": "role:commercial-owner",
+  "delegatedRoleIds": [
+    "role:specialist-operator"
+  ],
+  "commercialFrameworkSummary": "Menus, packages, pricing principles and effective-date governance.",
+  "approval": {
+    "approvedBy": "role:authorised-approver",
+    "approvedAt": "2026-07-14T17:30:00Z",
+    "authorityGrantId": "grant:approve-pack-3-fixture",
+    "reason": "Draft fixture approval"
+  },
+  "effectivePeriod": {
+    "startAt": "2026-07-14T00:00:00Z",
+    "endAt": null,
+    "reason": "Draft fixture"
+  },
+  "provenance": {
+    "sourceBdrIds": [
+      "SVC-010"
+    ],
+    "sourceSnapshot": "03 Pack 3-20260714T172736Z-1-001.zip",
+    "authorityRank": "Approved Governed Decision Register"
+  },
+  "audit": {
+    "version": 1,
+    "createdAt": "2026-07-14T17:30:00Z",
+    "createdBy": "role:platform-governance",
+    "updatedAt": "2026-07-14T17:30:00Z",
+    "updatedBy": "role:platform-governance",
+    "events": [
+      {
+        "eventType": "drafted",
+        "occurredAt": "2026-07-14T17:30:00Z",
+        "actorId": "role:platform-governance"
+      }
+    ]
+  },
+  "providerPayload": "not allowed in canonical schema"
+}

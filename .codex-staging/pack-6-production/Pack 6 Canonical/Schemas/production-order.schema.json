@@ -1,0 +1,147 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:fika:schema:draft:production-order:1",
+  "title": "Production Order v1 (Draft)",
+  "description": "Draft Production-domain record derived from an eligible Booking version. It owns production intent and control without owning commercial Booking status or price.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "productionOrderId",
+    "sourceBooking",
+    "ownership",
+    "eligibility",
+    "lifecycleStatus",
+    "customerCommitment",
+    "productionLineIds",
+    "routingAllocationIds",
+    "productionTiming",
+    "provenance",
+    "audit"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "1.0.0-draft.1" },
+    "productionOrderId": { "$ref": "#/$defs/stableId" },
+    "sourceBooking": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["bookingId", "bookingVersion"],
+      "properties": {
+        "bookingId": { "$ref": "#/$defs/stableId" },
+        "bookingVersion": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "ownership": {
+      "$ref": "#/$defs/ownership",
+      "description": "Role-based ownership for this Production Order; no fixed department is implied."
+    },
+    "eligibility": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["bookingApprovalReference", "operationalFulfilmentRequired"],
+      "properties": {
+        "bookingApprovalReference": { "$ref": "#/$defs/stableId" },
+        "operationalFulfilmentRequired": { "const": true },
+        "prerequisites": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["description", "satisfied"],
+            "properties": {
+              "description": { "type": "string", "minLength": 1 },
+              "satisfied": { "type": "boolean" }
+            }
+          }
+        }
+      }
+    },
+    "lifecycleStatus": {
+      "type": "string",
+      "enum": ["requested", "planned", "in_production", "completed"]
+    },
+    "customerCommitment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["serviceAt"],
+      "properties": {
+        "serviceAt": { "$ref": "#/$defs/isoDateTime" },
+        "expectedDeliveryAt": { "$ref": "#/$defs/isoDateTime" }
+      },
+      "description": "Projection of the Booking-owned customer-facing service commitment."
+    },
+    "productionLineIds": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/stableId" }
+    },
+    "routingAllocationIds": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/stableId" }
+    },
+    "productionTiming": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["requiredReadyAt"],
+      "properties": {
+        "requiredReadyAt": { "$ref": "#/$defs/isoDateTime" },
+        "productionStartAt": { "$ref": "#/$defs/isoDateTime" }
+      },
+      "description": "Production-owned timing. Required Ready Time is mandatory; Production Start Time is optional."
+    },
+    "provenance": { "$ref": "#/$defs/provenance" },
+    "audit": { "$ref": "#/$defs/audit" }
+  },
+  "$defs": {
+    "stableId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[A-Za-z][A-Za-z0-9_.:-]*$" },
+    "isoDateTime": { "type": "string", "format": "date-time" },
+    "ownership": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["organisationalRoleId"],
+      "properties": {
+        "organisationalRoleId": { "$ref": "#/$defs/stableId" },
+        "roleAssignmentId": { "$ref": "#/$defs/stableId" },
+        "operationalContextReference": { "$ref": "#/$defs/stableId" }
+      }
+    },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sourceBdrIds", "sourceSnapshot"],
+      "properties": {
+        "sourceBdrIds": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "type": "string", "pattern": "^(PROD|BOOK|SVC)-\\d{3}$" } },
+        "sourceSnapshot": { "type": "string", "minLength": 1 }
+      }
+    },
+    "auditEvent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["eventType", "occurredAt", "actorAssignmentId"],
+      "properties": {
+        "eventType": { "type": "string", "minLength": 1 },
+        "occurredAt": { "$ref": "#/$defs/isoDateTime" },
+        "actorAssignmentId": { "$ref": "#/$defs/stableId" },
+        "reason": { "type": "string" }
+      }
+    },
+    "audit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "createdAt", "createdByAssignmentId", "updatedAt", "updatedByAssignmentId", "events"],
+      "properties": {
+        "version": { "type": "integer", "minimum": 1 },
+        "createdAt": { "$ref": "#/$defs/isoDateTime" },
+        "createdByAssignmentId": { "$ref": "#/$defs/stableId" },
+        "updatedAt": { "$ref": "#/$defs/isoDateTime" },
+        "updatedByAssignmentId": { "$ref": "#/$defs/stableId" },
+        "events": { "type": "array", "items": { "$ref": "#/$defs/auditEvent" } }
+      }
+    }
+  },
+  "x-fika-source-bdrs": ["PROD-001", "PROD-002", "PROD-004", "PROD-005", "BOOK-006"],
+  "x-fika-status": "Draft review candidate; not approved or adopted"
+}

@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <?!= include_("Styles"); ?>
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <div class="brand">
+        <div class="brand-mark"><?!= fikaLogoSvg ?></div>
+      </div>
+      <div class="topbar-title">
+        <p class="eyebrow">Hospitality operations</p>
+        <h1><?= appName ?></h1>
+      </div>
+      <div class="topbar-build">
+        <span id="syncStatus" class="sync-status">Loading schedule…</span>
+      </div>
+    </header>
+
+    <main>
+      <div id="deploymentNotice" class="deployment-notice hidden"></div>
+      <section class="hero-row">
+        <div>
+          <p class="eyebrow">Production horizon</p>
+          <h2 id="periodTitle">This week</h2>
+          <p id="periodSubtitle" class="muted"></p>
+        </div>
+        <div class="week-nav">
+          <button id="reloadButton" class="button secondary" type="button" onclick="reloadSheet()">Reload sheet</button>
+          <button id="refreshButton" class="button" type="button" onclick="refreshFromCalendar()">Scan calendars</button>
+          <button id="kitchenModeButton" class="button secondary" type="button" onclick="toggleKitchenMode()">Kitchen mode</button>
+          <button class="icon-button week-button" type="button" aria-label="Previous week" onclick="changeWeek(-1)">←</button>
+          <button class="button secondary" type="button" onclick="goToToday()">Today</button>
+          <button class="icon-button week-button" type="button" aria-label="Next week" onclick="changeWeek(1)">→</button>
+          <button class="button secondary print-button" type="button" onclick="window.print()">Print</button>
+        </div>
+      </section>
+
+      <section id="stats" class="stats-grid" aria-label="Weekly summary"></section>
+      <section id="prepProgress" class="prep-progress"></section>
+
+      <section class="toolbar">
+        <button class="kitchen-exit button" type="button" onclick="toggleKitchenMode()">Exit kitchen mode</button>
+        <div class="filter-groups">
+          <div>
+            <div class="filter-heading">
+              <p class="toolbar-label">Sites</p>
+              <button class="filter-action" type="button" onclick="setAllSites(false)">Deselect all</button>
+              <button class="filter-action" type="button" onclick="setAllSites(true)">Select all</button>
+            </div>
+            <div id="siteFilters" class="site-filters"></div>
+          </div>
+          <div>
+            <div class="filter-heading">
+              <p class="toolbar-label">Service</p>
+              <button class="filter-action" type="button" onclick="setAllPeriods(false)">Deselect all</button>
+              <button class="filter-action" type="button" onclick="setAllPeriods(true)">Select all</button>
+            </div>
+            <div id="periodFilters" class="site-filters"></div>
+          </div>
+        </div>
+        <div class="toolbar-group">
+          <label class="compact-select"><span>Day</span><select id="dayFocus" onchange="setDayFocus(this.value)">
+            <option value="">Whole week</option><option value="0">Monday</option><option value="1">Tuesday</option>
+            <option value="2">Wednesday</option><option value="3">Thursday</option><option value="4">Friday</option>
+          </select></label>
+          <label class="toggle-chip"><input id="updatedOnlyToggle" type="checkbox" onchange="setUpdatedOnly(this.checked)"><span>Updated only</span></label>
+          <label class="toggle-chip"><input id="hideCompletedToggle" type="checkbox" onchange="setHideCompleted(this.checked)"><span>Hide completed</span></label>
+          <div class="product-filter">
+            <span>Product</span>
+            <details id="productFilter">
+              <summary id="productFilterSummary">All products</summary>
+              <div id="productFilterMenu" class="product-filter-menu"></div>
+            </details>
+          </div>
+          <label class="search-field">
+            <span aria-hidden="true">⌕</span>
+            <input id="searchInput" type="search" placeholder="Search company, menu or floor" oninput="renderAll()">
+          </label>
+          <div class="view-switch" role="group" aria-label="View">
+            <button id="calendarViewButton" class="active" type="button" onclick="setView('calendar')">Calendar</button>
+            <button id="listViewButton" type="button" onclick="setView('list')">Run sheet</button>
+            <button id="productionViewButton" type="button" onclick="setView('production')">Production</button>
+            <button id="deliveryViewButton" type="button" onclick="setView('delivery')">Deliveries</button>
+            <button id="dietaryViewButton" type="button" onclick="setView('dietary')">Dietary</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="content-layout">
+        <div class="primary-panel">
+          <div id="calendarView" class="calendar-board"></div>
+          <div id="listView" class="run-sheet hidden"></div>
+          <div id="productionView" class="production-view hidden"></div>
+          <div id="deliveryView" class="delivery-view hidden"></div>
+          <div id="dietaryView" class="dietary-view hidden"></div>
+        </div>
+        <aside class="attention-panel">
+          <div class="panel-heading">
+            <div>
+              <p class="eyebrow">Prep control</p>
+              <h3>Needs attention</h3>
+            </div>
+            <span id="attentionCount" class="count-badge">0</span>
+          </div>
+          <div id="attentionList"></div>
+        </aside>
+      </section>
+      <section id="orderEditor" class="order-editor hidden">
+        <div id="editorContent"></div>
+      </section>
+    </main>
+  </div>
+  <div id="toast" class="toast hidden"></div>
+  <div id="scanModal" class="modal hidden">
+    <div class="modal-card scan-modal-card">
+      <div class="scan-modal-header">
+        <div>
+          <p class="eyebrow">Calendar import</p>
+          <h2>Scan bookings</h2>
+        </div>
+        <button id="scanModalClose" class="icon-button secondary-icon" type="button" onclick="closeScanModal()">×</button>
+      </div>
+      <p id="scanSummary" class="muted">Preparing scan…</p>
+      <div class="scan-progress-track"><div id="scanProgressBar" class="scan-progress-bar"></div></div>
+      <div class="scan-stats">
+        <div><strong id="scanFound">0</strong><span>Found</span></div>
+        <div><strong id="scanLogged">0</strong><span>Logged</span></div>
+        <div><strong id="scanSkipped">0</strong><span>Unchanged / skipped</span></div>
+        <div><strong id="scanAttention">0</strong><span>Attention</span></div>
+        <div><strong id="scanErrors">0</strong><span>Errors</span></div>
+      </div>
+      <div id="scanCurrent" class="scan-current">Waiting to start…</div>
+      <div id="scanErrorList" class="scan-error-list hidden"></div>
+      <div class="modal-actions">
+        <button id="scanCancelButton" class="button secondary" type="button" onclick="cancelCalendarScan()">Cancel</button>
+        <button id="scanDoneButton" class="button hidden" type="button" onclick="finishScanModal()">Done</button>
+      </div>
+    </div>
+  </div>
+
+  <?!= include_("Script"); ?>
+</body>
+</html>

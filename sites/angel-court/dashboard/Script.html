@@ -1,0 +1,1795 @@
+<script>
+  let BOOKINGS = [];
+  let BUSY_BOOKING_ID = "";
+  let SORT_KEY = "date";
+  let SORT_DIR = "asc";
+  let OPEN_BOOKING_ID = "";
+  let CURRENT_VIEW = "table";
+  let HIGHLIGHT_BOOKING_ID = "";
+  let CALENDAR_WEEK_START = getMonday_(new Date());
+
+  let CANCEL_BOOKING_ID = null;
+  let REGENERATE_BOOKING_ID = null;
+  let SCAN_STATE = null;
+  let TOAST_TIMER = null;
+  let SETTINGS_STATE = null;
+  let ACTIVE_SETTINGS_TAB = "";
+  let ADMIN_UNLOCKED = false;
+  let PENDING_ADMIN_TAB = "";
+
+  let scanTotals = {
+    logged: 0,
+    skipped: 0,
+    errors: 0,
+    archived: 0
+  };
+
+  console.log("SCRIPT LOADED VERSION BETA TEST v0.9.2");
+
+  document.addEventListener("DOMContentLoaded", () => {
+    loadBookings();
+    loadFeedbackMetrics();
+  });
+
+  function toggleTheme() {
+    document.body.classList.toggle("theme-dark");
+  }
+
+  function openSettingsModal() {
+    const modal = document.getElementById("settingsModal");
+    if (!modal) return;
+
+    modal.classList.remove("hidden");
+    setSettingsStatus_("Loading settings...");
+    setSettingsSaving_(true, "Loading...");
+
+    google.script.run
+      .withSuccessHandler(res => {
+        SETTINGS_STATE = normaliseSettingsResponse_(res);
+        ACTIVE_SETTINGS_TAB =
+          ACTIVE_SETTINGS_TAB ||
+          (SETTINGS_STATE.schema[0] && SETTINGS_STATE.schema[0].id) ||
+          "";
+
+        renderSettingsModal_();
+        setSettingsSaving_(false);
+        setSettingsStatus_("Settings loaded.");
+      })
+      .withFailureHandler(err => {
+        SETTINGS_STATE = normaliseSettingsResponse_({ ok: false });
+        ACTIVE_SETTINGS_TAB =
+          ACTIVE_SETTINGS_TAB ||
+          (SETTINGS_STATE.schema[0] && SETTINGS_STATE.schema[0].id) ||
+          "";
+
+        renderSettingsModal_();
+        setSettingsSaving_(false);
+        setSettingsStatus_("Settings failed to load: " + (err.message || err), true);
+      })
+      .getDashboardSettings();
+  }
+
+  function normaliseSettingsResponse_(res) {
+    const state = res || {};
+    const fallbackSchema = Array.isArray(window.DASHBOARD_SETTINGS_SCHEMA)
+      ? window.DASHBOARD_SETTINGS_SCHEMA
+      : [];
+
+    const schema =
+      Array.isArray(state.schema) && state.schema.length
+        ? state.schema
+        : Array.isArray(state.sections) && state.sections.length
+          ? state.sections
+          : fallbackSchema;
+
+    console.log("Settings response debug", {
+      hasStateSchema: Array.isArray(state.schema),
+      stateSchemaLength: Array.isArray(state.schema) ? state.schema.length : null,
+      hasStateSections: Array.isArray(state.sections),
+      stateSectionsLength: Array.isArray(state.sections) ? state.sections.length : null,
+      fallbackSchemaLength: fallbackSchema.length,
+      finalSchemaLength: schema.length
+    });
+
+    return {
+      ok: state.ok !== false,
+      schema,
+      values: {
+        ...buildSettingsFallbackValues_(schema),
+        ...(state.values || {})
+      },
+      validation: state.validation || { ok: true, errors: [], errorsByKey: {} },
+      about: state.about || {},
+      raw: state
+    };
+  }
+
+  function buildSettingsFallbackValues_(schema) {
+    return (schema || []).reduce((values, section) => {
+      (section.fields || []).forEach(field => {
+        values[field.key] = normaliseClientSettingValue_(field.fallback, field);
+      });
+      return values;
+    }, {});
+  }
+
+  function closeSettingsModal() {
+    const modal = document.getElementById("settingsModal");
+    if (modal) modal.classList.add("hidden");
+  }
+
+  function renderSettingsModal_() {
+    if (!SETTINGS_STATE) return;
+
+    const tabsEl = document.getElementById("settingsTabs");
+    const formEl = document.getElementById("settingsForm");
+    if (!tabsEl || !formEl) return;
+
+    if (!Array.isArray(SETTINGS_STATE.schema) || SETTINGS_STATE.schema.length === 0) {
+      console.log(
+        "Admin debug",
+        SETTINGS_STATE.schema.map(s => ({
+          id: s.id,
+          title: s.title,
+          access: s.access,
+          locked: s.access === "admin" && !ADMIN_UNLOCKED
+        }))
+      ); tabsEl.innerHTML = "";
+      formEl.innerHTML = `
+        <div class="loading">
+          Settings schema did not load. Try refreshing the web app after pushing the latest script.
+        </div>
+      `;
+      setSettingsStatus_("Settings schema did not load from Apps Script.", true);
+      return;
+    }
+
+    tabsEl.innerHTML = SETTINGS_STATE.schema.map(section => {
+      const locked =
+        section.access === "admin" &&
+        !ADMIN_UNLOCKED;
+
+      return `
+    <button
+      class="settings-tab
+             ${section.id === ACTIVE_SETTINGS_TAB ? "active" : ""}
+             ${sectionHasSettingsErrors_(section) ? "has-error" : ""}
+             ${locked ? "locked" : ""}"
+      type="button"
+      onclick="selectSettingsTab('${section.id}')">
+      ${locked ? "🔒 " : ""}
+      ${escapeHtml(section.title)}
+    </button>
+  `;
+    }).join("");
+
+    const section =
+      SETTINGS_STATE.schema.find(item => item.id === ACTIVE_SETTINGS_TAB) ||
+      SETTINGS_STATE.schema[0];
+
+    if (!section) {
+      formEl.innerHTML = `<div class="loading">No settings have been configured.</div>`;
+      return;
+    }
+
+    formEl.innerHTML = `
+      <h3>${escapeHtml(section.title)}</h3>
+      <div class="settings-fields">
+        ${section.fields.map(field => renderSettingsField_(field)).join("")}
+      </div>
+    `;
+  }
+
+  function openAdminPinModal() {
+    const modal = document.getElementById("adminPinModal");
+    const input = document.getElementById("adminPinInput");
+    const status = document.getElementById("adminPinStatus");
+    console.log("Admin modal found?", !!modal);
+
+    if (!modal) return;
+
+    if (status) {
+      status.textContent = "";
+      status.classList.add("hidden");
+      status.classList.remove("settings-error");
+    }
+
+    if (input) input.value = "";
+
+    modal.classList.remove("hidden");
+
+    setTimeout(() => {
+      if (input) input.focus();
+    }, 50);
+  }
+
+  function closeAdminPinModal() {
+    const modal = document.getElementById("adminPinModal");
+    if (modal) modal.classList.add("hidden");
+
+    PENDING_ADMIN_TAB = "";
+  }
+
+  function submitAdminPin() {
+    const input = document.getElementById("adminPinInput");
+    const status = document.getElementById("adminPinStatus");
+    const pin = input ? input.value : "";
+
+    if (!pin) {
+      if (status) {
+        status.textContent = "Enter the admin PIN.";
+        status.classList.remove("hidden");
+        status.classList.add("settings-error");
+      }
+      return;
+    }
+
+    if (status) {
+      status.textContent = "Checking PIN...";
+      status.classList.remove("hidden");
+      status.classList.remove("settings-error");
+    }
+
+    google.script.run
+      .withSuccessHandler(res => {
+        if (res && res.ok) {
+          ADMIN_UNLOCKED = true;
+
+          const targetTab = PENDING_ADMIN_TAB;
+          PENDING_ADMIN_TAB = "";
+
+          closeAdminPinModal();
+
+          if (targetTab) {
+            updateSettingsStateFromForm_();
+            ACTIVE_SETTINGS_TAB = targetTab;
+          }
+
+          renderSettingsModal_();
+          setSettingsStatus_("Admin settings unlocked for this session.");
+          showToast("Admin unlocked.", "success");
+          return;
+        }
+
+        if (status) {
+          status.textContent = "Incorrect PIN.";
+          status.classList.remove("hidden");
+          status.classList.add("settings-error");
+        }
+      })
+      .withFailureHandler(err => {
+        if (status) {
+          status.textContent = "PIN check failed: " + (err.message || err);
+          status.classList.remove("hidden");
+          status.classList.add("settings-error");
+        }
+      })
+      .verifyAdminPin(pin);
+  }
+
+  function renderSettingsField_(field) {
+    const values = (SETTINGS_STATE && SETTINGS_STATE.values) || {};
+    const validation = (SETTINGS_STATE && SETTINGS_STATE.validation) || {};
+    const errorsByKey = validation.errorsByKey || {};
+    const errors = errorsByKey[field.key] || [];
+    const rawValue = values[field.key] ?? "";
+    const value = Array.isArray(rawValue) ? rawValue.join(", ") : rawValue;
+    const readonly = field.readonly ? "readonly" : "";
+    const disabledClass = field.readonly ? " readonly" : "";
+    const errorClass = errors.length ? " settings-field-error" : "";
+    const noteHtml = field.notes ? `<small class="settings-help">${escapeHtml(field.notes)}</small>` : "";
+    const errorHtml = errors.length ? `<small class="settings-error-text">${escapeHtml(errors.join(" "))}</small>` : "";
+
+    if (field.type === "textarea") {
+      return `
+        <label class="field settings-field${disabledClass}${errorClass}">
+          <span>${escapeHtml(field.label)}</span>
+          <textarea data-setting-key="${escapeHtml(field.key)}" ${readonly}>${escapeHtml(value)}</textarea>
+          ${noteHtml}
+          ${errorHtml}
+        </label>
+      `;
+    }
+
+    return `
+      <label class="field settings-field${disabledClass}${errorClass}">
+        <span>${escapeHtml(field.label)}</span>
+        <input
+          data-setting-key="${escapeHtml(field.key)}"
+          type="${escapeHtml(field.type || "text")}"
+          value="${escapeHtml(value)}"
+          ${readonly}>
+        ${noteHtml}
+        ${errorHtml}
+      </label>
+    `;
+  }
+
+  function sectionHasSettingsErrors_(section) {
+    const validation = (SETTINGS_STATE && SETTINGS_STATE.validation) || {};
+    const errorsByKey = validation.errorsByKey || {};
+    return section.fields.some(field => errorsByKey[field.key] && errorsByKey[field.key].length);
+  }
+
+  function selectSettingsTab(tabId) {
+    const section = SETTINGS_STATE.schema.find(item => item.id === tabId);
+
+    if (section && section.access === "admin" && !ADMIN_UNLOCKED) {
+      PENDING_ADMIN_TAB = tabId;
+      openAdminPinModal();
+      return;
+    }
+
+    updateSettingsStateFromForm_();
+    ACTIVE_SETTINGS_TAB = tabId;
+    renderSettingsModal_();
+  }
+  function resetCurrentSettingsTab() {
+    if (!SETTINGS_STATE) return;
+
+    const section =
+      SETTINGS_STATE.schema.find(item => item.id === ACTIVE_SETTINGS_TAB) ||
+      SETTINGS_STATE.schema[0];
+
+    if (!section) return;
+
+    SETTINGS_STATE.values = SETTINGS_STATE.values || {};
+    SETTINGS_STATE.validation = { ok: true, errors: [], errorsByKey: {} };
+
+    section.fields.forEach(field => {
+      if (field.readonly) return;
+      SETTINGS_STATE.values[field.key] = normaliseClientSettingValue_(field.fallback, field);
+    });
+
+    renderSettingsModal_();
+    setSettingsStatus_(`${section.title} reset to defaults. Save settings to apply.`);
+  }
+
+  function updateSettingsStateFromForm_() {
+    if (!SETTINGS_STATE) return;
+    SETTINGS_STATE.values = SETTINGS_STATE.values || {};
+    SETTINGS_STATE.validation = { ok: true, errors: [], errorsByKey: {} };
+
+    document
+      .querySelectorAll("[data-setting-key]")
+      .forEach(el => {
+        if (el.hasAttribute("readonly")) return;
+        SETTINGS_STATE.values[el.dataset.settingKey] = el.value;
+      });
+  }
+
+  function collectSettingsValues_() {
+    updateSettingsStateFromForm_();
+
+    const values = {};
+    const editableKeys = new Set();
+
+    ((SETTINGS_STATE && SETTINGS_STATE.schema) || []).forEach(section => {
+      section.fields.forEach(field => {
+        if (!field.readonly) editableKeys.add(field.key);
+      });
+    });
+
+    editableKeys.forEach(key => {
+      values[key] = SETTINGS_STATE.values[key] ?? "";
+    });
+
+    return values;
+  }
+
+  function normaliseClientSettingValue_(value, field) {
+    if (field.type === "textarea") {
+      if (Array.isArray(value)) return value.join(", ");
+      return String(value || "")
+        .split(/\r?\n|,/)
+        .map(item => item.trim())
+        .filter(Boolean)
+        .join(", ");
+    }
+
+    return value ?? "";
+  }
+
+  function saveSettings() {
+    if (!SETTINGS_STATE) return;
+
+    const validation = validateSettingsState_();
+    if (!validation.ok) {
+      SETTINGS_STATE.validation = validation;
+      renderSettingsModal_();
+      setSettingsStatus_("Settings were not saved. Please fix the highlighted fields.", true);
+      showToast("Settings need attention.", "error");
+      return;
+    }
+
+    setSettingsSaving_(true);
+    setSettingsStatus_("Saving settings...");
+
+    google.script.run
+      .withSuccessHandler(res => {
+        SETTINGS_STATE = normaliseSettingsResponse_(res || SETTINGS_STATE);
+        renderSettingsModal_();
+        setSettingsSaving_(false);
+        setSettingsStatus_("Settings saved. Refresh the page to see title, logo, font, or colour changes.");
+        showToast("Settings saved.", "success");
+      })
+      .withFailureHandler(err => {
+        setSettingsSaving_(false);
+        setSettingsStatus_(err.message || String(err), true);
+        showToast("Settings failed: " + (err.message || err), "error");
+      })
+      .saveDashboardSettings(collectSettingsValues_());
+  }
+
+  function validateSettingsState_() {
+    const values = collectSettingsValues_();
+    const errors = [];
+    const errorsByKey = {};
+
+    function addError(field, message) {
+      errors.push(`${field.label}: ${message}`);
+      if (!errorsByKey[field.key]) errorsByKey[field.key] = [];
+      errorsByKey[field.key].push(message);
+    }
+
+    ((SETTINGS_STATE && SETTINGS_STATE.schema) || []).forEach(section => {
+      section.fields.forEach(field => {
+        if (field.readonly) return;
+
+        const value = values[field.key];
+        const text = String(value === null || value === undefined ? "" : value).trim();
+
+        if (field.required && !text) {
+          addError(field, "required.");
+          return;
+        }
+
+        if (!text) return;
+
+        if (field.type === "email" && !isValidSettingsEmail_(text)) {
+          addError(field, "enter a valid email address.");
+        }
+
+        if (field.type === "url" && !/^https?:\/\/\S+$/i.test(text)) {
+          addError(field, "enter a valid URL starting with http:// or https://.");
+        }
+
+        if (field.type === "color" && !/^#[0-9a-fA-F]{6}$/.test(text)) {
+          addError(field, "use a hex colour like #F8F6F2.");
+        }
+
+        if (field.type === "number") {
+          const n = Number(text);
+
+          if (isNaN(n)) {
+            addError(field, "enter a number.");
+          } else if (field.min !== undefined && n < field.min) {
+            addError(field, `must be at least ${field.min}.`);
+          }
+        }
+
+        if (field.type === "date" && !/^\d{4}-\d{2}-\d{2}$/.test(text)) {
+          addError(field, "use YYYY-MM-DD.");
+        }
+
+        if (field.type === "textarea" && field.key === "CALENDAR_ATTENDEES") {
+          text
+            .split(/\r?\n|,/)
+            .map(item => item.trim())
+            .filter(Boolean)
+            .forEach(email => {
+              if (!isValidSettingsEmail_(email)) {
+                addError(field, `${email} is not a valid email address.`);
+              }
+            });
+        }
+      });
+    });
+
+    return {
+      ok: errors.length === 0,
+      errors,
+      errorsByKey
+    };
+  }
+
+  function isValidSettingsEmail_(value) {
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value || "").trim());
+  }
+
+  function setSettingsSaving_(saving, label) {
+    const button = document.getElementById("settingsSaveBtn");
+    if (button) {
+      button.disabled = saving;
+      button.textContent = saving ? (label || "Saving...") : "Save Settings";
+    }
+  }
+
+  function setSettingsStatus_(message, isError = false) {
+    const el = document.getElementById("settingsStatus");
+    if (!el) return;
+
+    el.textContent = message;
+    el.classList.toggle("settings-error", isError);
+  }
+
+  function loadBookings(showLoading = true) {
+    if (showLoading) showToast("Refreshing bookings...", "loading", true);
+
+    google.script.run
+      .withSuccessHandler(data => {
+        BOOKINGS = data || [];
+        renderStats();
+        renderCalendar();
+        renderBookings();
+        if (showLoading) showToast("Bookings refreshed.", "success");
+      })
+      .withFailureHandler(err => {
+        showToast("Refresh failed: " + (err.message || err), "error");
+      })
+      .getDashboardBookings();
+  }
+
+  function loadFeedbackMetrics() {
+    const status = document.getElementById("feedbackInsightsStatus");
+    google.script.run
+      .withSuccessHandler(renderFeedbackMetrics)
+      .withFailureHandler(err => {
+        if (status) status.textContent = "Feedback unavailable";
+        console.warn("Feedback metrics failed:", err);
+      })
+      .getHospitalityFeedbackMetrics();
+  }
+
+  function renderFeedbackMetrics(data) {
+    const metrics = document.getElementById("feedbackMetrics");
+    const items = document.getElementById("feedbackItems");
+    const status = document.getElementById("feedbackInsightsStatus");
+    if (!metrics || !items || !status) return;
+
+    if (!data || !data.available) {
+      status.textContent = "Portal not set up yet";
+      metrics.innerHTML = "";
+      items.innerHTML = "";
+      return;
+    }
+
+    status.textContent = `${data.completed || 0} responses from ${data.sent || 0} requests`;
+    metrics.innerHTML = `
+      <div class="feedback-metric"><strong>${data.averageOverall ?? "—"}</strong><span>Average rating / 5</span></div>
+      <div class="feedback-metric"><strong>${data.responseRate || 0}%</strong><span>Response rate</span></div>
+      <div class="feedback-metric"><strong>${data.nps ?? "—"}</strong><span>Net promoter score</span></div>
+      <div class="feedback-metric ${data.lowRatings ? "needs-attention" : ""}"><strong>${data.lowRatings || 0}</strong><span>Low ratings</span></div>
+    `;
+
+    const itemRows = Array.isArray(data.items) ? data.items : [];
+    items.innerHTML = itemRows.length
+      ? `<div class="feedback-items-title">Menu item intelligence</div>
+         <div class="feedback-item-list">${itemRows.map(item => `
+           <div class="feedback-item-row">
+             <span>${escapeHtml(item.itemName)}</span>
+             <span class="feedback-item-score">${item.average} ★ <small>${item.responses} response${item.responses === 1 ? "" : "s"}</small></span>
+           </div>`).join("")}</div>`
+      : `<span class="muted">Item-level ratings will appear here after the first responses.</span>`;
+  }
+
+  function showToast(message, type = "success", persist = false) {
+    const el = document.getElementById("toast");
+    if (!el) {
+      console.log("Toast:", message);
+      return;
+    }
+
+    if (TOAST_TIMER) {
+      clearTimeout(TOAST_TIMER);
+      TOAST_TIMER = null;
+    }
+
+    el.className = `toast ${type}`;
+    el.textContent = message;
+    el.classList.remove("hidden");
+
+    if (!persist) {
+      TOAST_TIMER = setTimeout(() => {
+        el.classList.add("hidden");
+      }, 3500);
+    }
+  }
+
+  function hideToast() {
+    const el = document.getElementById("toast");
+    if (!el) return;
+
+    if (TOAST_TIMER) {
+      clearTimeout(TOAST_TIMER);
+      TOAST_TIMER = null;
+    }
+
+    el.classList.add("hidden");
+  }
+
+  function setBusy(bookingId) {
+    BUSY_BOOKING_ID = bookingId;
+    renderBookings();
+  }
+
+  function clearBusy() {
+    BUSY_BOOKING_ID = "";
+    renderBookings();
+  }
+
+  function actionSpinner(bookingId) {
+    if (BUSY_BOOKING_ID !== bookingId) return "";
+    return `<span class="action-spinner"></span>`;
+  }
+
+  function renderStats() {
+    const counts = {
+      READY: 0,
+      NEEDS_REVIEW: 0,
+      CONFIRMED: 0,
+      CANCELLED: 0,
+      ARCHIVED: 0
+    };
+
+    BOOKINGS.forEach(row => {
+      const status = row.Status || "NEEDS_REVIEW";
+      if (counts[status] !== undefined) counts[status]++;
+    });
+
+    document.getElementById("stats").innerHTML = `
+      <div class="stat-card">
+        <strong>${BOOKINGS.length}</strong>
+        <span>Total</span>
+      </div>
+      <div class="stat-card status-ready">
+        <strong>${counts.READY}</strong>
+        <span>Ready</span>
+      </div>
+      <div class="stat-card status-review">
+        <strong>${counts.NEEDS_REVIEW}</strong>
+        <span>Needs Review</span>
+      </div>
+      <div class="stat-card status-confirmed">
+        <strong>${counts.CONFIRMED}</strong>
+        <span>Confirmed</span>
+      </div>
+      <div class="stat-card status-cancelled">
+        <strong>${counts.CANCELLED}</strong>
+        <span>Cancelled</span>
+      </div>
+      <div class="stat-card status-archived">
+        <strong>${counts.ARCHIVED}</strong>
+        <span>Archived</span>
+      </div>
+    `;
+  }
+
+  function getSortValue(b, key) {
+    switch (key) {
+      case "date": return getDisplayDate(b) || "";
+      case "time": return getDisplayTime(b) || "";
+      case "company": return String(b.ClientCompany || "").toLowerCase();
+      case "pax": return Number(b.Pax || 0);
+      case "service": return String(b.ServiceType || "").toLowerCase();
+      case "floor": return String(b.Floor || "").toLowerCase();
+      case "total": return Number(b.TotalPrice || 0);
+      case "status": return String(b.Status || "").toLowerCase();
+      default: return "";
+    }
+  }
+
+  function setSort(key) {
+    if (SORT_KEY === key) {
+      SORT_DIR = SORT_DIR === "asc" ? "desc" : "asc";
+    } else {
+      SORT_KEY = key;
+      SORT_DIR = "asc";
+    }
+
+    renderBookings();
+  }
+
+  function getVisibleBookings_() {
+    const searchEl = document.getElementById("searchInput");
+    const search = searchEl ? searchEl.value.toLowerCase() : "";
+
+    const selectedStatuses = Array.from(
+      document.querySelectorAll(".status-filters input:checked")
+    ).map(cb => cb.value);
+
+    return filterBookings_(BOOKINGS, selectedStatuses, search);
+  }
+
+  function filterBookings_(bookings, selectedStatuses, search) {
+    let rows = (bookings || []).slice();
+    const needle = String(search || "").toLowerCase();
+
+    if (selectedStatuses.length) {
+      rows = rows.filter(b => selectedStatuses.includes(b.Status));
+    }
+
+    if (needle) {
+      rows = rows.filter(b => {
+        const text = [
+          b.ClientCompany,
+          b.HostName,
+          b.HostEmail,
+          b.ServiceType,
+          b.Location,
+          b.Floor,
+          b.Status
+        ].join(" ").toLowerCase();
+
+        return text.includes(needle);
+      });
+    }
+
+    return rows;
+  }
+
+  function renderBookings() {
+    let rows = getVisibleBookings_();
+
+    rows.sort((a, b) => {
+      const aa = getSortValue(a, SORT_KEY);
+      const bb = getSortValue(b, SORT_KEY);
+
+      if (aa < bb) return SORT_DIR === "asc" ? -1 : 1;
+      if (aa > bb) return SORT_DIR === "asc" ? 1 : -1;
+      return 0;
+    });
+
+    const html = rows.map(b => `
+      <tr data-booking-id="${b.BookingID}"
+          class="status-${b.Status} ${HIGHLIGHT_BOOKING_ID === b.BookingID ? "row-highlight" : ""}"
+          ondblclick="toggleDetail('${b.BookingID}')">
+        <td>${escapeHtml(formatDate(getDisplayDate(b)))}</td>
+        <td>${escapeHtml(getDisplayTime(b) || "-")}</td>
+        <td>
+          <strong>${escapeHtml(b.ClientCompany || "-")}</strong>
+          <div class="muted">${escapeHtml(b.HostEmail || "")}</div>
+        </td>
+        <td>${escapeHtml(b.Pax || "-")}</td>
+        <td>${escapeHtml(b.ServiceType || "-")}</td>
+        <td>${escapeHtml(b.Floor || "-")}</td>
+        <td>&pound;${Number(b.TotalPrice || 0).toFixed(2)}</td>
+        <td><span class="badge status-${escapeHtml(b.Status)}">${escapeHtml(b.Status)}</span></td>
+        <td class="missing">${escapeHtml((b.ValidationErrorsParsed || []).join(", "))}</td>
+        <td>${renderActionButtons(b)}</td>
+      </tr>
+
+      ${OPEN_BOOKING_ID === b.BookingID ? `
+        <tr id="detail-${b.BookingID}" class="detail-row">
+          <td colspan="10">
+            ${renderDetailPanel(b)}
+          </td>
+        </tr>
+      ` : ""}
+    `).join("");
+
+    document.getElementById("bookingRows").innerHTML =
+      html || `<tr><td colspan="10" class="loading">No bookings found.</td></tr>`;
+  }
+
+  function renderActionButtons(b) {
+    const parsed = b.ParsedBooking || {};
+
+    const hasQuote =
+      !!b.QuoteURL ||
+      !!parsed.quoteUrl;
+
+    const quoteStale =
+      parsed.quoteStale === true ||
+      parsed.quoteStale === "TRUE";
+
+    const canGenerateQuote =
+      !hasQuote || quoteStale;
+
+    const hasCalendar =
+      !!b.CalendarEventId ||
+      !!parsed.calendarEventId;
+    const calendarStale =
+      parsed.calendarStale === true ||
+      parsed.calendarStale === "TRUE";
+    const canCreateCalendar =
+      !hasCalendar || calendarStale;
+
+    const isArchived = b.Status === "ARCHIVED";
+    const isConfirmed = b.Status === "CONFIRMED";
+
+    if (isArchived) {
+      return `
+        <div class="action-cluster archived-actions">
+          <button class="icon-btn"
+            title="Open Quote"
+            ${hasQuote ? "" : "disabled"}
+            onclick="event.stopPropagation(); openQuote('${b.BookingID}')">
+            ${ICONS.open || "Open"}
+          </button>
+
+          <button class="icon-btn"
+            title="Print Quote"
+            ${hasQuote ? "" : "disabled"}
+            onclick="event.stopPropagation(); printQuote('${b.BookingID}')">
+            ${ICONS.print || "Print"}
+          </button>
+
+          <span class="archived-pill">Archived</span>
+          ${actionSpinner(b.BookingID)}
+        </div>
+      `;
+    }
+
+    return `
+      <div class="action-cluster">
+        ${actionSpinner(b.BookingID)}
+        <button class="icon-btn" title="Edit" onclick="event.stopPropagation(); toggleDetail('${b.BookingID}')">
+          ${ICONS.edit || "Edit"}
+        </button>
+
+        <button
+          class="icon-btn ${quoteStale ? "warning" : ""}"
+          title="${quoteStale ? "Regenerate outdated quote" : hasQuote ? "Quote already generated" : "Generate quote"}"
+          ${canGenerateQuote ? "" : "disabled"}
+          onclick="event.stopPropagation(); handleQuoteClick('${b.BookingID}')">
+          ${ICONS.quote || "Quote"}
+        </button>
+
+        <button class="icon-btn" title="Open Quote" ${hasQuote ? "" : "disabled"} onclick="event.stopPropagation(); openQuote('${b.BookingID}')">
+          ${ICONS.open || "Open"}
+        </button>
+
+        <button class="icon-btn" title="Print Quote" ${hasQuote ? "" : "disabled"} onclick="event.stopPropagation(); printQuote('${b.BookingID}')">
+          ${ICONS.print || "Print"}
+        </button>
+
+        <button
+          class="icon-btn ${calendarStale ? "warning" : ""}"
+          title="${calendarStale ? "Recreate stale calendar event" : hasCalendar ? "Calendar event already created" : "Create Calendar Event"}"
+          ${canCreateCalendar ? "" : "disabled"}
+          onclick="event.stopPropagation(); createCalendar('${b.BookingID}')">
+          ${ICONS.calendar || "Calendar"}
+        </button>
+
+        <button
+          class="icon-btn"
+          title="${isConfirmed ? "Booking already confirmed" : "Confirm Booking"}"
+          ${isConfirmed ? "disabled" : ""}
+          onclick="event.stopPropagation(); confirmBooking('${b.BookingID}')">
+          ${ICONS.confirm || "Confirm"}
+        </button>
+
+        <button class="icon-btn danger" title="Cancel Booking" onclick="event.stopPropagation(); openCancelDialog('${b.BookingID}')">
+          ${ICONS.cancel || "Cancel"}
+        </button>
+
+      </div>
+    `;
+  }
+
+  function toggleDetail(bookingId) {
+    if (OPEN_BOOKING_ID === bookingId) {
+      OPEN_BOOKING_ID = "";
+      renderBookings();
+      return;
+    }
+
+    OPEN_BOOKING_ID = bookingId;
+    renderBookings();
+  }
+
+  function renderDetailPanel(row) {
+    const b = row.ParsedBooking || {};
+    const items = b.items || row.ItemsParsed || [];
+
+    return `
+      <div class="inline-detail">
+        <div class="detail-header">
+          <h3>${escapeHtml(b.clientCompany || "")}</h3>
+
+          <div style="display:flex; gap:8px;">
+            <button class="button" onclick="saveDetail('${row.BookingID}')">Save</button>
+            <button class="button" onclick="toggleDetail('${row.BookingID}')">Close</button>
+          </div>
+        </div>
+
+        <div class="edit-grid">
+          ${editField("clientCompany", "Company", b.clientCompany)}
+          ${editField("hostName", "Host name", b.hostName)}
+          ${editField("hostEmail", "Host email", b.hostEmail)}
+          ${editField("pax", "Pax", b.pax)}
+          ${editField("eventDate", "Event date", b.eventDate, "date")}
+          ${editField("serviceTimes", "Service time", (b.serviceTimes || []).join(" / "))}
+          ${editField("serviceType", "Service type", b.serviceType)}
+          ${editField("location", "Room / area", getEditRoomValue_(b))}
+          ${editField("floor", "Floor", b.floor)}
+        </div>
+
+        <label class="field full">
+          <span>Dietary / allergen info</span>
+          <textarea id="edit-notes">${escapeHtml(b.notes || "")}</textarea>
+        </label>
+
+        <h3 style="margin-top:20px;">Line items</h3>
+
+        <div class="items">
+          ${items.map((item, i) => `
+            <div class="item">
+              <div class="edit-grid">
+                ${editItemField(i, "time", "Time", item.time)}
+                ${editItemField(i, "section", "Section", item.section)}
+                ${editItemField(i, "name", "Item", item.name)}
+                ${editItemField(i, "qty", "Qty", item.qty)}
+              </div>
+
+              <label class="field full">
+                <span>Detail</span>
+                <textarea data-item="${i}" data-key="detail">${escapeHtml(item.detail || "")}</textarea>
+              </label>
+
+              <label class="field full">
+                <span>Info</span>
+                <textarea data-item="${i}" data-key="info">${escapeHtml(item.info || "")}</textarea>
+              </label>
+
+              <label class="field full">
+                <span>Comment</span>
+                <textarea data-item="${i}" data-key="comment">${escapeHtml(item.comment || "")}</textarea>
+              </label>
+            </div>
+          `).join("")}
+        </div>
+      </div>
+    `;
+  }
+
+  function getEditRoomValue_(booking) {
+    const clientEvent = booking.clientBooking && booking.clientBooking.event
+      ? booking.clientBooking.event
+      : {};
+
+    return (
+      booking.room ||
+      booking.roomOrArea ||
+      booking.deliveryPoint ||
+      clientEvent.roomOrArea ||
+      clientEvent.deliveryPoint ||
+      booking.location ||
+      ""
+    );
+  }
+
+  function editField(key, label, value, type = "text") {
+    const missing = value === "" || value === null || value === undefined;
+
+    return `
+      <label class="field ${missing ? "field-missing" : ""}">
+        <span>${label}</span>
+        <input id="edit-${key}" type="${type}" value="${escapeHtml(value || "")}">
+      </label>
+    `;
+  }
+
+  function editItemField(index, key, label, value) {
+    return `
+      <label class="field">
+        <span>${label}</span>
+        <input data-item="${index}" data-key="${key}" value="${escapeHtml(value || "")}">
+      </label>
+    `;
+  }
+
+  function saveDetail(bookingId) {
+    const row = BOOKINGS.find(x => x.BookingID === bookingId);
+    if (!row) return;
+
+    const itemPatch = Array.from(document.querySelectorAll("[data-item]"))
+      .reduce((acc, el) => {
+        const i = Number(el.dataset.item);
+        const key = el.dataset.key;
+
+        if (!acc[i]) acc[i] = {};
+        acc[i][key] = el.value;
+
+        return acc;
+      }, []);
+
+    const existingItems =
+      (row.ParsedBooking && row.ParsedBooking.items && row.ParsedBooking.items.length)
+        ? row.ParsedBooking.items
+        : (row.ItemsParsed || []);
+
+    const serviceTimesText = document.getElementById("edit-serviceTimes").value.trim();
+    const serviceTimes = serviceTimesText
+      ? serviceTimesText.split("/").map(s => s.trim()).filter(Boolean)
+      : [];
+
+    const mainStartTime = serviceTimes[0] || "";
+
+    const mergedItems = existingItems.map((item, i) => {
+      const patch = itemPatch[i] || {};
+      let time = (patch.time !== undefined ? patch.time.trim() : (item.time || ""));
+      if (!time) time = mainStartTime;
+
+      return {
+        ...item,
+        ...patch,
+        time: normaliseTime_(time)
+      };
+    });
+
+    const mergedServiceTimes = Array.from(new Set(
+      serviceTimes
+        .concat(mergedItems.map(item => item.time))
+        .map(t => normaliseTime_(t))
+        .filter(Boolean)
+    ));
+
+    const roomValue = document.getElementById("edit-location").value.trim();
+
+    const patch = {
+      clientCompany: document.getElementById("edit-clientCompany").value.trim(),
+      hostName: document.getElementById("edit-hostName").value.trim(),
+      hostEmail: document.getElementById("edit-hostEmail").value.trim(),
+      pax: document.getElementById("edit-pax").value.trim(),
+      eventDate: document.getElementById("edit-eventDate").value.trim(),
+      serviceTimes: mergedServiceTimes,
+      serviceType: document.getElementById("edit-serviceType").value.trim(),
+      location: roomValue,
+      room: roomValue,
+      roomOrArea: roomValue,
+      floor: document.getElementById("edit-floor").value.trim(),
+      notes: document.getElementById("edit-notes") ? document.getElementById("edit-notes").value.trim() : "",
+      items: mergedItems
+    };
+
+    setBusy(bookingId);
+    showToast("Saving booking...", "loading", true);
+
+    google.script.run
+      .withSuccessHandler(res => {
+        clearBusy();
+        if (res && res.quoteRegenerated) {
+          showToast("Booking saved and quote regenerated.", "success");
+        } else if (res && res.quoteRegenerationError) {
+          showToast("Booking saved. Quote refresh failed: " + res.quoteRegenerationError, "error");
+        } else {
+          showToast("Booking saved.", "success");
+        }
+        OPEN_BOOKING_ID = "";
+        loadBookings(false);
+      })
+      .withFailureHandler(err => {
+        clearBusy();
+        showToast("Save failed: " + (err.message || err), "error");
+      })
+      .updateBookingFromDashboard(row.RowNumber, patch, row.BookingID);
+  }
+
+  function handleQuoteClick(bookingId) {
+    const row = BOOKINGS.find(x => x.BookingID === bookingId);
+    if (!row) return;
+
+    const parsed = row.ParsedBooking || {};
+    const hasQuote = !!row.QuoteURL || !!parsed.quoteUrl;
+    const quoteStale = parsed.quoteStale === true || parsed.quoteStale === "TRUE";
+
+    if (hasQuote && quoteStale) {
+      openRegenerateQuoteModal(bookingId);
+      return;
+    }
+
+    generateQuote(bookingId);
+  }
+
+  function openRegenerateQuoteModal(bookingId) {
+    REGENERATE_BOOKING_ID = bookingId;
+
+    const modal = document.getElementById("regenerateQuoteModal");
+
+    if (!modal) {
+      const ok = confirm("This booking has changed since the quote was generated. Regenerate the quote now?");
+      if (ok) confirmRegenerateQuote();
+      return;
+    }
+
+    modal.classList.remove("hidden");
+  }
+
+  function closeRegenerateQuoteModal() {
+    REGENERATE_BOOKING_ID = null;
+
+    const modal = document.getElementById("regenerateQuoteModal");
+    if (modal) modal.classList.add("hidden");
+  }
+
+  function confirmRegenerateQuote() {
+    if (!REGENERATE_BOOKING_ID) return;
+
+    const bookingId = REGENERATE_BOOKING_ID;
+    closeRegenerateQuoteModal();
+    executeGenerateQuote_(bookingId);
+  }
+
+  function generateQuote(bookingId) {
+    const row = BOOKINGS.find(x => x.BookingID === bookingId);
+    if (!row) return;
+
+    const parsed = row.ParsedBooking || {};
+    const hasQuote = !!row.QuoteURL || !!parsed.quoteUrl;
+
+    if (hasQuote) {
+      openRegenerateQuoteModal(bookingId);
+      return;
+    }
+
+    executeGenerateQuote_(bookingId);
+  }
+
+  function executeGenerateQuote_(bookingId) {
+    const row = BOOKINGS.find(x => x.BookingID === bookingId);
+    if (!row) return;
+
+    setBusy(bookingId);
+    showToast("Generating quote...", "loading", true);
+
+    google.script.run
+      .withSuccessHandler(res => {
+        clearBusy();
+        showToast("Quote generated.", "success");
+        loadBookings(false);
+
+        if (res && res.quoteUrl) {
+          window.open(res.quoteUrl, "_blank");
+        }
+      })
+      .withFailureHandler(err => {
+        clearBusy();
+        showToast("Quote failed: " + (err.message || err), "error");
+      })
+      .generateQuoteForRow(row.RowNumber);
+  }
+
+  function openQuote(bookingId) {
+    const row = BOOKINGS.find(x => x.BookingID === bookingId);
+    if (!row) return;
+
+    const url =
+      row.QuoteURL ||
+      (row.ParsedBooking && row.ParsedBooking.quoteUrl);
+
+    if (!url) {
+      showToast("No quote URL found.", "error");
+      return;
+    }
+
+    window.open(url, "_blank");
+  }
+
+  function printQuote(bookingId) {
+    const row = BOOKINGS.find(x => x.BookingID === bookingId);
+    if (!row) return;
+
+    setBusy(bookingId);
+    showToast("Sending quote to printer...", "loading", true);
+
+    google.script.run
+      .withSuccessHandler(() => {
+        clearBusy();
+        showToast("Quote sent to printer.", "success");
+        loadBookings(false);
+      })
+      .withFailureHandler(err => {
+        clearBusy();
+        showToast("Print failed: " + (err.message || err), "error");
+      })
+      .printQuoteForRow(row.RowNumber);
+  }
+
+  function createCalendar(bookingId) {
+    const row = BOOKINGS.find(x => x.BookingID === bookingId);
+    if (!row) return;
+
+    setBusy(bookingId);
+    showToast("Creating calendar event...", "loading", true);
+
+    google.script.run
+      .withSuccessHandler(() => {
+        clearBusy();
+        showToast("Calendar event created.", "success");
+        loadBookings(false);
+      })
+      .withFailureHandler(err => {
+        clearBusy();
+        showToast("Calendar failed: " + (err.message || err), "error");
+      })
+      .createCalendarEventForRow(row.RowNumber);
+  }
+
+  function confirmBooking(bookingId) {
+    const row = BOOKINGS.find(x => x.BookingID === bookingId);
+    if (!row) return;
+
+    setBusy(bookingId);
+    showToast("Sending confirmation email...", "loading", true);
+
+    google.script.run
+      .withSuccessHandler(res => {
+        clearBusy();
+        showToast(`Booking confirmed. Email sent to ${res.sentTo}.`, "success");
+        loadBookings(false);
+      })
+      .withFailureHandler(err => {
+        clearBusy();
+        showToast("Confirmation failed: " + (err.message || err), "error");
+      })
+      .confirmBookingForRow(row.RowNumber);
+  }
+
+  function openCancelDialog(bookingId) {
+    CANCEL_BOOKING_ID = bookingId;
+
+    const modal = document.getElementById("cancelModal");
+    if (!modal) return;
+
+    document.getElementById("cancel-send-email").checked = false;
+    document.getElementById("cancel-remove-calendar").checked = true;
+
+    modal.classList.remove("hidden");
+  }
+
+  function closeCancelDialog() {
+    CANCEL_BOOKING_ID = null;
+    document.getElementById("cancelModal").classList.add("hidden");
+  }
+
+  function continueCancelDialog() {
+    const sendEmail = document.getElementById("cancel-send-email").checked;
+    const removeCalendar = document.getElementById("cancel-remove-calendar").checked;
+
+    const summary = [
+      "You are about to cancel this booking.",
+      "",
+      `Send cancellation email: ${sendEmail ? "YES" : "NO"}`,
+      `Remove from calendar: ${removeCalendar ? "YES" : "NO"}`,
+      "",
+      "This cannot be undone."
+    ].join("\n");
+
+    const ok = confirm(summary);
+    if (!ok) return;
+
+    confirmCancelBooking({ sendEmail, removeCalendar });
+  }
+
+  function confirmCancelBooking(options) {
+    const row = BOOKINGS.find(x => x.BookingID === CANCEL_BOOKING_ID);
+    if (!row) return;
+
+    const bookingId = row.BookingID;
+
+    closeCancelDialog();
+
+    setBusy(bookingId);
+    showToast("Cancelling booking...", "loading", true);
+
+    google.script.run
+      .withSuccessHandler(() => {
+        clearBusy();
+        showToast("Booking cancelled.", "success");
+        loadBookings(false);
+      })
+      .withFailureHandler(err => {
+        clearBusy();
+        showToast("Cancel failed: " + (err.message || err), "error");
+      })
+      .cancelBookingForRow(row.RowNumber, options);
+  }
+
+  function scanInbox() {
+    showToast("Scanning inbox...", "loading", true);
+
+    google.script.run
+      .withSuccessHandler(res => {
+        showToast(
+          `Scan complete. Logged ${res.logged}, skipped ${res.skipped}, errors ${res.errors}.`,
+          "success"
+        );
+        loadBookings(false);
+      })
+      .withFailureHandler(err => {
+        showToast("Scan failed: " + (err.message || err), "error");
+      })
+      .scanInboxForDashboardBookings();
+  }
+
+  function openScanModal() {
+    const modal = document.getElementById("scanModal");
+    modal.classList.remove("hidden");
+
+    resetScanStats();
+
+    document.getElementById("scan-start-btn").disabled = true;
+    document.getElementById("scan-close-btn").disabled = false;
+    document.getElementById("scan-summary").textContent = "Preparing scan...";
+    document.getElementById("scan-ticker").textContent = "Checking inbox settings...";
+
+    google.script.run
+      .withSuccessHandler(res => {
+        SCAN_STATE = res;
+
+        document.getElementById("scan-found").textContent = res.totalFound || 0;
+        document.getElementById("scan-archived").textContent = "0 ";
+        document.getElementById("scan-summary").textContent =
+          `Scan from: ${formatScanDateTime_(res.scanFromLabel)}. ${res.totalFound} thread(s) found.`;
+        document.getElementById("scan-ticker").textContent = "Ready to scan.";
+        document.getElementById("scan-start-btn").disabled = false;
+      })
+      .withFailureHandler(err => {
+        document.getElementById("scan-ticker").textContent =
+          "Scan setup failed: " + (err.message || err);
+      })
+      .prepareInboxScan();
+  }
+
+  function closeScanModal() {
+    document.getElementById("scanModal").classList.add("hidden");
+  }
+
+  function resetScanStats() {
+    ["found", "logged", "skipped", "errors"].forEach(k => {
+      const el = document.getElementById(`scan-${k}`);
+      if (el) el.textContent = "0";
+    });
+  }
+
+  function startInboxScan() {
+    document.getElementById("scan-start-btn").disabled = true;
+    document.getElementById("scan-close-btn").disabled = true;
+    document.getElementById("scan-ticker").textContent = "Scanning...";
+    scanTotals = {
+      logged: 0,
+      skipped: 0,
+      errors: 0,
+      archived: 0
+    };
+
+    processScanChunk(0, {
+      logged: 0,
+      skipped: 0,
+      errors: 0
+    });
+  }
+
+  function processScanChunk(offset, totals) {
+    google.script.run
+      .withSuccessHandler(res => {
+        totals.logged += res.logged || 0;
+        totals.skipped += res.skipped || 0;
+        totals.errors += res.errors || 0;
+
+        scanTotals.logged += Number(res.logged || 0);
+        scanTotals.skipped += Number(res.skipped || 0);
+        scanTotals.errors += Number(res.errors || 0);
+        scanTotals.archived += Number(res.archived || 0);
+
+        document.getElementById("scan-logged").textContent = scanTotals.logged + " ";
+        document.getElementById("scan-skipped").textContent = scanTotals.skipped + " ";
+        document.getElementById("scan-errors").textContent = scanTotals.errors + " ";
+        document.getElementById("scan-archived").textContent = scanTotals.archived + " ";
+
+        document.getElementById("scan-logged").textContent = totals.logged;
+        document.getElementById("scan-skipped").textContent = totals.skipped;
+        document.getElementById("scan-errors").textContent = totals.errors;
+        if (res.archived !== undefined) {
+          document.getElementById("scan-archived").textContent = String(res.archived) + " ";
+        }
+        scanTotals.archived += Number(res.archived || 0);
+        document.getElementById("scan-archived").textContent = scanTotals.archived + " ";
+        document.getElementById("scan-ticker").textContent =
+          `Processed ${res.nextOffset} of ${SCAN_STATE.totalFound} thread(s)...`;
+
+        if (res.done) {
+          document.getElementById("scan-ticker").textContent = "Scan complete.";
+          document.getElementById("scan-close-btn").disabled = false;
+          showToast("Inbox scan complete.", "success");
+          loadBookings(false);
+          return;
+        }
+
+        processScanChunk(res.nextOffset, totals);
+      })
+      .withFailureHandler(err => {
+        document.getElementById("scan-ticker").textContent =
+          "Scan failed: " + (err.message || err);
+
+        document.getElementById("scan-close-btn").disabled = false;
+        showToast("Scan failed: " + (err.message || err), "error");
+      })
+      .scanInboxChunk(offset, 5);
+  }
+
+  function setStatus(bookingId, status) {
+    const row = BOOKINGS.find(x => x.BookingID === bookingId);
+    if (!row) return;
+
+    google.script.run
+      .withSuccessHandler(() => {
+        loadBookings(false);
+      })
+      .withFailureHandler(err => {
+        showToast("Status update failed: " + (err.message || err), "error");
+      })
+      .setBookingStatus(row.RowNumber, status);
+  }
+
+  function setView(view) {
+    CURRENT_VIEW = view;
+
+    document.getElementById("tableView").classList.toggle("hidden", view !== "table");
+
+    renderCalendar();
+    renderBookings();
+  }
+
+
+  function renderCalendar() {
+    const el = document.getElementById("calendarView");
+    if (!el) return;
+
+    const weekDays = getWorkingWeekDays_(CALENDAR_WEEK_START);
+    const bookings = BOOKINGS.filter(b => b.Status !== "CANCELLED");
+
+    document.getElementById("calendarWeekLabel").textContent =
+      `Week commencing ${formatDateForCalendarLabel_(weekDays[0])}`;
+
+    const grouped = {};
+    weekDays.forEach(day => {
+      grouped[toIsoDate_(day)] = [];
+    });
+
+    bookings.forEach(b => {
+      const iso = getDisplayDate(b);
+      if (!iso || !grouped[iso]) return;
+
+      grouped[iso].push(b);
+    });
+
+    Object.keys(grouped).forEach(iso => {
+      grouped[iso].sort((a, b) => {
+        const aa = getCalendarSortTime_(a);
+        const bb = getCalendarSortTime_(b);
+
+        if (aa < bb) return -1;
+        if (aa > bb) return 1;
+
+        return String(a.ClientCompany || "").localeCompare(
+          String(b.ClientCompany || "")
+        );
+      });
+    });
+
+    el.innerHTML = weekDays.map(day => {
+      const iso = toIsoDate_(day);
+      const bookingsForDay = grouped[iso] || [];
+      const isToday = toIsoDate_(day) === toIsoDate_(new Date());
+
+      return `
+        <div class="calendar-day ${isToday ? 'today' : ''}">
+          <div class="calendar-day-title">
+            <div>${day.toLocaleDateString("en-GB", { weekday: "long" })}</div>
+            <div class="calendar-date">${day.toLocaleDateString("en-GB", { day: "2-digit", month: "short" })}</div>
+          </div>
+
+          ${bookingsForDay.length
+          ? bookingsForDay.map(b => renderCalendarCard_(b)).join("")
+          : `<div class="muted">No bookings</div>`
+        }
+        </div>
+      `;
+    }).join("");
+  }
+
+  function renderCalendarCard_(b) {
+    return `
+      <div class="calendar-card status-${b.Status}" onclick="jumpToBooking('${b.BookingID}')">
+        <div class="calendar-time">${escapeHtml(getDisplayTime(b) || "-")}</div>
+        <strong>${escapeHtml(b.ClientCompany || "-")}</strong>
+        <div class="calendar-meta">
+          ${escapeHtml(b.ServiceType || "")} &middot; ${escapeHtml(b.Pax || "")} pax
+        </div>
+        <div class="calendar-meta">${escapeHtml(b.Floor || "")}</div>
+      </div>
+    `;
+  }
+
+  function jumpToBooking(bookingId) {
+    CURRENT_VIEW = "table";
+    HIGHLIGHT_BOOKING_ID = bookingId;
+
+    setView("table");
+
+    setTimeout(() => {
+      const row = document.querySelector(`[data-booking-id="${bookingId}"]`);
+      if (row) {
+        row.scrollIntoView({ behavior: "smooth", block: "center" });
+      }
+
+      OPEN_BOOKING_ID = bookingId;
+      renderBookings();
+
+      setTimeout(() => {
+        HIGHLIGHT_BOOKING_ID = "";
+        renderBookings();
+      }, 2500);
+    }, 100);
+  }
+
+  function changeCalendarWeek(direction) {
+    CALENDAR_WEEK_START.setDate(CALENDAR_WEEK_START.getDate() + direction * 7);
+    renderCalendar();
+  }
+
+  function goToCurrentWeek() {
+    CALENDAR_WEEK_START = getMonday_(new Date());
+    renderCalendar();
+  }
+
+  function getMonday_(date) {
+    const d = new Date(date);
+    d.setHours(0, 0, 0, 0);
+
+    const day = d.getDay();
+    const diff = day === 0 ? -6 : 1 - day;
+
+    d.setDate(d.getDate() + diff);
+    return d;
+  }
+
+  function getWorkingWeekDays_(monday) {
+    return [0, 1, 2, 3, 4].map(offset => {
+      const d = new Date(monday);
+      d.setDate(d.getDate() + offset);
+      return d;
+    });
+  }
+
+  function toIsoDate_(date) {
+    const y = date.getFullYear();
+    const m = String(date.getMonth() + 1).padStart(2, "0");
+    const d = String(date.getDate()).padStart(2, "0");
+    return `${y}-${m}-${d}`;
+  }
+
+  function formatDateForCalendarLabel_(date) {
+    return date.toLocaleDateString("en-GB", {
+      day: "2-digit",
+      month: "long",
+      year: "numeric"
+    });
+  }
+
+  function getDisplayDate(b) {
+    return (b.ParsedBooking && b.ParsedBooking.eventDate) || b.EventDate || "";
+  }
+
+  function getDisplayTime(b) {
+    const parsed =
+      (b.ParsedBooking && b.ParsedBooking.serviceTimes) ||
+      b.ServiceTimesParsed ||
+      [];
+
+    return parsed.length ? parsed.join(" / ") : "";
+  }
+
+  function getCalendarSortTime_(booking) {
+    const displayTime = getDisplayTime(booking);
+
+    const firstTime = String(displayTime || "")
+      .split("/")
+      .map(t => t.trim())
+      .filter(Boolean)[0] || "";
+
+    const match = firstTime.match(/^(\d{1,2}):(\d{2})/);
+    if (!match) return "99:99";
+
+    return `${match[1].padStart(2, "0")}:${match[2]}`;
+  }
+
+  function formatDate(value) {
+    if (!value) return "-";
+
+    if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+      const [y, m, d] = value.split("-");
+      return `${d}/${m}/${y}`;
+    }
+
+    const d = new Date(value);
+    if (isNaN(d.getTime())) return value;
+
+    return d.toLocaleDateString("en-GB");
+  }
+
+  /**
+   * Normalises a time string to ISO HH:mm format.
+   * Handles formats like "9", "9:00", "9am", "2pm", "14.30"
+   */
+  function normaliseTime_(timeStr) {
+    if (!timeStr) return "";
+
+    let clean = String(timeStr).toLowerCase().replace(/[^0-9ap:.]/g, "");
+    if (!clean) return "";
+
+    let hours = 0;
+    let minutes = 0;
+
+    const isPm = clean.includes("pm");
+    const isAm = clean.includes("am");
+    clean = clean.replace(/[apm]/g, "");
+
+    const parts = clean.split(/[:.]/);
+    if (parts.length >= 2) {
+      hours = parseInt(parts[0], 10);
+      minutes = parseInt(parts[1], 10);
+    } else if (parts.length === 1 && parts[0]) {
+      if (parts[0].length <= 2) {
+        hours = parseInt(parts[0], 10);
+      } else {
+        hours = parseInt(parts[0].substring(0, parts[0].length - 2), 10);
+        minutes = parseInt(parts[0].slice(-2), 10);
+      }
+    }
+
+    if (isPm && hours < 12) hours += 12;
+    if (isAm && hours === 12) hours = 0;
+
+    if (isNaN(hours) || hours < 0 || hours > 23) hours = 0;
+    if (isNaN(minutes) || minutes < 0 || minutes > 59) minutes = 0;
+
+    return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
+  }
+
+  function escapeHtml(value) {
+    return String(value ?? "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#039;");
+  }
+
+  function runDashboardClientTests() {
+    const fixture = [
+      { BookingID: "A", Status: "READY", ClientCompany: "Acme", HostName: "Alex", HostEmail: "alex@example.com", ServiceType: "Breakfast", Location: "OAC", Floor: "7" },
+      { BookingID: "B", Status: "CONFIRMED", ClientCompany: "Beta", HostName: "Bea", HostEmail: "bea@example.com", ServiceType: "Lunch", Location: "OAC", Floor: "8" },
+      { BookingID: "C", Status: "ARCHIVED", ClientCompany: "Gamma", HostName: "Gus", HostEmail: "gus@example.com", ServiceType: "Drinks", Location: "OAC", Floor: "9" }
+    ];
+
+    const tests = [
+      {
+        name: "status filter",
+        ok: filterBookings_(fixture, ["READY"], "").map(item => item.BookingID).join(",") === "A"
+      },
+      {
+        name: "search filter",
+        ok: filterBookings_(fixture, [], "bea@example.com").map(item => item.BookingID).join(",") === "B"
+      },
+      {
+        name: "combined filters",
+        ok: filterBookings_(fixture, ["CONFIRMED", "READY"], "breakfast").map(item => item.BookingID).join(",") === "A"
+      },
+      {
+        name: "empty filters return all",
+        ok: filterBookings_(fixture, [], "").length === 3
+      }
+    ];
+
+    return {
+      ok: tests.every(test => test.ok),
+      tests
+    };
+  }
+
+  function formatScanDateTime_(value) {
+    if (!value) return "recent inbox";
+
+    const date = new Date(value);
+    if (isNaN(date.getTime())) return String(value);
+
+    return date.toLocaleString("en-GB", {
+      day: "2-digit",
+      month: "short",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit"
+    });
+  }
+
+  function openDeliveryReportModal() {
+    const modal = document.getElementById("deliveryReportModal");
+    if (!modal) return;
+
+    const days = getWorkingWeekDays_(CALENDAR_WEEK_START || getMonday_(new Date()));
+    const start = document.getElementById("deliveryReportStart");
+    const end = document.getElementById("deliveryReportEnd");
+    const status = document.getElementById("deliveryReportStatus");
+
+    if (start && !start.value) start.value = toIsoDate_(days[0]);
+    if (end && !end.value) end.value = toIsoDate_(days[days.length - 1]);
+    if (status) status.textContent = "";
+
+    modal.classList.remove("hidden");
+  }
+
+  function closeDeliveryReportModal() {
+    const modal = document.getElementById("deliveryReportModal");
+    if (modal) modal.classList.add("hidden");
+  }
+
+  function generateDeliveryReport() {
+    const start = document.getElementById("deliveryReportStart");
+    const end = document.getElementById("deliveryReportEnd");
+    const status = document.getElementById("deliveryReportStatus");
+    const button = document.getElementById("deliveryReportGenerateBtn");
+
+    const startDate = start ? start.value : "";
+    const endDate = end ? end.value : "";
+    if (!startDate || !endDate) {
+      if (status) status.textContent = "Choose a start and end date.";
+      return;
+    }
+
+    if (button) {
+      button.disabled = true;
+      button.textContent = "Generating...";
+    }
+    if (status) status.textContent = "Generating delivery PDF...";
+    showToast("Generating delivery PDF...", "loading", true);
+
+    google.script.run
+      .withSuccessHandler(res => {
+        if (button) {
+          button.disabled = false;
+          button.textContent = "Generate PDF";
+        }
+        if (res && res.url) {
+          if (status) status.textContent = `Created ${res.fileName || "delivery report"} with ${res.count || 0} bookings.`;
+          showToast(`Delivery PDF ready. ${res.count || 0} bookings included.`, "success");
+          window.open(res.url, "_blank");
+        } else {
+          if (status) status.textContent = "Delivery report did not return a PDF URL.";
+          showToast("Delivery report did not return a PDF URL.", "error");
+        }
+      })
+      .withFailureHandler(err => {
+        if (button) {
+          button.disabled = false;
+          button.textContent = "Generate PDF";
+        }
+        const message = err && err.message ? err.message : err;
+        if (status) status.textContent = "Delivery PDF failed: " + message;
+        showToast("Delivery PDF failed: " + message, "error");
+      })
+      .generateHospitalityDeliveryPdf(startDate, endDate);
+  }
+
+  window.setView = setView;
+  window.openSettingsModal = openSettingsModal;
+  window.closeSettingsModal = closeSettingsModal;
+  window.selectSettingsTab = selectSettingsTab;
+  window.resetCurrentSettingsTab = resetCurrentSettingsTab;
+  window.saveSettings = saveSettings;
+  window.openScanModal = openScanModal;
+  window.loadBookings = loadBookings;
+  window.renderBookings = renderBookings;
+  window.toggleTheme = toggleTheme;
+  window.changeCalendarWeek = changeCalendarWeek;
+  window.goToCurrentWeek = goToCurrentWeek;
+  window.runDashboardClientTests = runDashboardClientTests;
+  window.closeAdminPinModal = closeAdminPinModal;
+  window.submitAdminPin = submitAdminPin;
+  window.openDeliveryReportModal = openDeliveryReportModal;
+  window.closeDeliveryReportModal = closeDeliveryReportModal;
+  window.generateDeliveryReport = generateDeliveryReport;
+</script>

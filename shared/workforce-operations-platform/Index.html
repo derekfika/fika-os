@@ -1,0 +1,504 @@
+<!doctype html>
+<html>
+  <head>
+    <base target="_top">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <?!= include("Styles"); ?>
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar">
+        <div class="brand">
+          <div class="brand-mark" aria-label="FIKA">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1726 740" role="img" aria-label="Fika logo"><path fill="currentColor" fill-rule="evenodd" d="M429 0L0 0L0 729L132 729L133 428L395 428L395 296L132 295L132 133L429 132ZM492 194L492 729L624 729L624 194ZM492 0L492 132L624 132L624 0ZM687 0L687 729L820 729L937 573L1054 729L1221 729L1020 462L1221 194L1055 194L820 507L819 0ZM1259 266L1241 286L1222 312L1213 327L1197 361L1187 392L1181 422L1179 441L1179 483L1183 514L1189 539L1203 577L1216 602L1231 625L1247 645L1273 671L1308 697L1346 717L1380 729L1419 737L1441 739L1469 739L1489 737L1518 731L1539 724L1559 715L1584 700L1599 688L1601 692L1603 729L1725 729L1725 194L1603 194L1601 232L1599 236L1587 226L1563 211L1544 202L1518 193L1496 188L1470 185L1440 185L1412 188L1373 197L1346 207L1325 217L1293 237ZM1450 317L1473 318L1500 324L1525 335L1547 350L1568 371L1585 397L1594 419L1600 449L1600 475L1593 508L1581 534L1567 554L1547 574L1530 586L1515 594L1489 603L1458 607L1432 605L1406 598L1383 587L1362 572L1345 555L1329 532L1317 504L1311 473L1312 442L1317 420L1329 392L1345 369L1368 347L1396 330L1422 321Z"/></svg>
+          </div>
+          <div>
+            <p class="eyebrow">FIKA</p>
+            <h1>Rota Assistant</h1>
+          </div>
+        </div>
+        <nav>
+          <a class="active" href="#overview">Assistant</a>
+          <button class="nav-admin-button" id="toggleAdminBtn" type="button">Admin</button>
+        </nav>
+        <div class="sidebar-version">
+          <span>Build</span>
+          <strong id="appVersion">Loading…</strong>
+        </div>
+      </aside>
+
+      <main>
+        <section class="assistant-topbar cockpit-hero" id="overview">
+          <div>
+            <p class="eyebrow">Rota Assistant</p>
+            <h2>Weekly rota exceptions and cover planning</h2>
+            <div class="cockpit-controls">
+              <label>Site <select id="cockpitSiteSelect"></select></label>
+              <label>Week <input id="cockpitWeekStartInput" type="date"></label>
+              <div class="week-nav" aria-label="Week navigation">
+                <button class="week-nav-btn" id="prevWeekBtn" type="button" title="Previous week">←</button>
+                <button class="week-nav-today" id="thisWeekBtn" type="button">This week</button>
+                <button class="week-nav-btn" id="nextWeekBtn" type="button" title="Next week">→</button>
+                <button class="week-nav-btn wide" id="weekAfterBtn" type="button" title="Week after next">+2</button>
+              </div>
+              <button id="loadCockpitBtn" type="button">Refresh week</button>
+              <button class="secondary" id="toggleFullRotaBtn" type="button">Show full rota</button>
+            </div>
+          </div>
+          <div class="hero-card">
+            <span class="pulse"></span>
+            <p>System status</p>
+            <strong id="systemStatus">Loading…</strong>
+          </div>
+        </section>
+
+        <section class="cockpit-kpis" id="cockpitTotals">
+          <article><span>Scheduled</span><strong id="cockpitScheduled">—</strong></article>
+          <article><span>Absences</span><strong id="cockpitAbsences">—</strong></article>
+          <article><span>Suggested</span><strong id="cockpitSuggested">—</strong></article>
+          <article><span>Uncovered</span><strong id="cockpitUncovered">—</strong></article>
+        </section>
+
+        <section class="assistant-section">
+          <div class="assistant-heading">
+            <div>
+              <p class="eyebrow">Needs action</p>
+              <h3>What needs fixing this week?</h3>
+            </div>
+            <div class="assistant-actions">
+              <button id="rebuildCurrentSnapshotBtn" class="secondary mini" type="button">Rebuild snapshot</button>
+            </div>
+          </div>
+        </section>
+
+        <section class="assistant-section relief-rota-panel" id="reliefRotaPanel">
+          <div class="assistant-heading">
+            <div>
+              <p class="eyebrow">Relief rota</p>
+              <h3>Who's covering who this week?</h3>
+              <p class="muted-text">A quick weekly view of accepted cover and generated draft relief assignments.</p>
+            </div>
+            <div class="assistant-actions">
+              <button id="loadReliefRotaWindowBtn" class="secondary mini" type="button">Refresh relief rota</button>
+              <button id="downloadAssistantPdfBtn" class="mini" type="button">Generate PDF</button>
+            </div>
+          </div>
+          <div class="relief-rota-window" id="reliefRotaWindow">
+            <div class="empty-state">Choose a site/week above, then refresh the relief rota.</div>
+          </div>
+        </section>
+
+        <section class="cockpit-board" id="cockpitBoard">
+          <div class="empty-state">Choose a site and week to load the rota assistant.</div>
+        </section>
+
+        <section class="grid metrics admin-section hidden">
+          <article class="metric-card">
+            <span>Staff</span>
+            <strong id="staffCount">—</strong>
+            <small>BrightHR directory</small>
+          </article>
+          <article class="metric-card">
+            <span>Absences</span>
+            <strong id="absenceCount">—</strong>
+            <small>Holiday, sickness, leave</small>
+          </article>
+          <article class="metric-card">
+            <span>Sites</span>
+            <strong id="siteCount">—</strong>
+            <small>Operational locations</small>
+          </article>
+          <article class="metric-card">
+            <span>Open cover</span>
+            <strong id="coverCount">—</strong>
+            <small>Relief + agency queue</small>
+          </article>
+          <article class="metric-card">
+            <span>Gaps</span>
+            <strong id="gapCount">—</strong>
+            <small>Next 28 days</small>
+          </article>
+        </section>
+
+        <section class="panel admin-section hidden" id="brighthr">
+          <div class="panel-heading">
+            <div>
+              <p class="eyebrow">BrightHR sync</p>
+              <h3>Connect the HR source of truth.</h3>
+            </div>
+            <span class="status-pill" id="brightHrStatus">Checking…</span>
+          </div>
+
+          <div class="action-row">
+            <button id="syncEverythingBtn">Sync workforce data</button>
+            <button id="testBrightHrConnectionBtn" class="secondary" type="button">Test BrightHR connection</button>
+            <button id="testEmployeeEndpointBtn" class="secondary" type="button">Test employee endpoint</button>
+            <button id="testAbsenceEndpointBtn" class="secondary" type="button">Test absence endpoint</button>
+            <button id="discoverAbsenceEndpointBtn" class="secondary" type="button">Discover absence endpoint</button>
+            <button id="rebuildAllSnapshotsBtn" class="secondary" type="button">Build 3 month snapshots</button>
+            <button id="showDiagnosticsBtn" class="secondary" type="button">Show performance diagnostics</button>
+          </div>
+
+          <div class="endpoint-card">
+            <span>Configured absence endpoint</span>
+            <strong id="absenceEndpointStatus">Not configured</strong>
+            <pre id="brightHrDebugPreview"></pre>
+          </div>
+
+          <div class="snapshot-admin-card" id="snapshotAdminCard">
+            <div class="snapshot-admin-heading">
+              <div>
+                <p class="eyebrow">Snapshot builder</p>
+                <h4>3 month cache coverage</h4>
+              </div>
+              <button id="refreshSnapshotStatusBtn" class="secondary mini" type="button">Refresh status</button>
+            </div>
+            <div class="snapshot-status-grid">
+              <div><span>Built</span><strong id="snapshotBuiltCount">-</strong></div>
+              <div><span>Missing</span><strong id="snapshotMissingCount">-</strong></div>
+              <div><span>Stale</span><strong id="snapshotStaleCount">-</strong></div>
+              <div><span>Available until</span><strong id="snapshotAvailableUntil">-</strong></div>
+            </div>
+            <div class="snapshot-progress">
+              <span id="snapshotProgressBar"></span>
+            </div>
+            <p class="muted-text" id="snapshotBuildMessage">Snapshot status not loaded yet.</p>
+            <div class="snapshot-coverage-grid" id="snapshotCoverageGrid"></div>
+          </div>
+
+          <div class="checklist">
+            <div class="check-item" id="checkSpreadsheet">Spreadsheet configured</div>
+            <div class="check-item" id="checkCredentials">BrightHR credentials stored</div>
+            <div class="check-item" id="checkToken">Access token ready</div>
+            <div class="check-item muted" id="checkAbsenceEndpoint">Absence endpoint configured</div>
+            <div class="check-item muted" id="checkLegacyRota">Legacy rota configured</div>
+            <div class="check-item muted" id="checkReliefRota">Relief rota configured</div>
+          </div>
+        </section>
+
+        <section class="two-col admin-section hidden">
+          <article class="panel" id="rota">
+            <div class="panel-heading">
+              <div>
+                <p class="eyebrow">Rota builder</p>
+                <h3>Weekly planner</h3>
+                <p class="muted-text">Choose a site and week to generate the rota board.</p>
+              </div>
+            </div>
+            <div class="control-row">
+              <label>Site <select id="siteSelect"></select></label>
+              <label>Week <input id="weekStartInput" type="date"></label>
+              <button id="loadRotaBtn">Load rota</button>
+            </div>
+            <div class="rota-board" id="rotaBoard">
+              <div class="empty-state">Choose a site and load a week</div>
+            </div>
+          </article>
+
+          <article class="panel" id="relief">
+            <div class="panel-heading">
+              <div>
+                <p class="eyebrow">Relief planning</p>
+                <h3>Coverage suggestions</h3>
+                <p class="muted-text">
+                  Generate internal cover suggestions before escalating to agency.
+                </p>
+              </div>
+              <div class="action-row compact-actions">
+                <button id="generateReliefBtn">Suggest relief</button>
+                <button id="generateReliefRotaBtn" class="secondary">Download week PDF</button>
+              </div>
+            </div>
+            <div class="relief-list" id="reliefList">
+              <div class="empty-state">No suggestions yet</div>
+            </div>
+          </article>
+        </section>
+
+        <section class="panel admin-section hidden" id="gaps">
+          <div class="panel-heading">
+            <div>
+              <p class="eyebrow">Gap detection</p>
+              <h3>Find cover risks before Gill has to chase them.</h3>
+              <p class="muted-text">
+                Compares standard rota templates against BrightHR absences and rota exceptions.
+              </p>
+            </div>
+            <button id="detectGapsBtn">Detect gaps</button>
+          </div>
+          <div class="gap-list" id="gapList">
+            <div class="empty-state">No gaps loaded yet</div>
+          </div>
+        </section>
+
+        <section class="panel admin-only admin-section hidden" id="legacy">
+          <div class="panel-heading">
+            <div>
+              <p class="eyebrow">Legacy rota import</p>
+              <h3>Bring the old weekly workbook into the new structure.</h3>
+              <p class="muted-text">
+                Upload/convert the old Excel rota to Google Sheets, run
+                <code>setLegacyRotaSpreadsheetId(...)</code> once, then preview and import here.
+                The new importer stores recurring patterns as templates and dated changes as exceptions.
+                By default it only imports rota data from 29 June 2026 onwards.
+              </p>
+            </div>
+          </div>
+          <div class="action-row">
+            <button id="previewLegacyBtn" class="secondary">Preview legacy import</button>
+            <button id="importLegacyBtn">Import future rota</button>
+            <button id="clearLegacyNoiseBtn" class="danger">Clear noisy old import</button>
+          </div>
+          <div class="empty-state" id="legacyImportSummary">No legacy import preview yet</div>
+        </section>
+
+        <section class="panel admin-only admin-section hidden" id="relief-import">
+          <div class="panel-heading">
+            <div>
+              <p class="eyebrow">Relief rota import</p>
+              <h3>Bring relief availability into the cover engine.</h3>
+              <p class="muted-text">
+                Import the converted relief rota so suggestions prioritise the actual relief plan.
+                Only the 2026 tab from 29 June onwards is imported.
+              </p>
+            </div>
+          </div>
+          <div class="action-row">
+            <button id="previewReliefImportBtn" class="secondary">Preview relief import</button>
+            <button id="importReliefBtn">Import relief rota</button>
+          </div>
+          <div class="empty-state" id="reliefImportSummary">No relief import preview yet</div>
+        </section>
+
+        <section class="panel admin-section hidden" id="agency">
+          <div class="panel-heading">
+            <div>
+              <p class="eyebrow">Agency control</p>
+              <h3>Escalate only when internal cover cannot solve it.</h3>
+            </div>
+          </div>
+          <div class="timeline">
+            <div><strong>1</strong><span>Detect gap</span></div>
+            <div><strong>2</strong><span>Try relief</span></div>
+            <div><strong>3</strong><span>Request agency</span></div>
+            <div><strong>4</strong><span>Track cost</span></div>
+          </div>
+        </section>
+
+        <section class="panel admin-section hidden" id="settings">
+          <div class="panel-heading">
+            <div>
+              <p class="eyebrow">Settings library</p>
+              <h3>The control room for managers, agencies, roles and emails.</h3>
+            </div>
+            <button id="openSettingsBtn" type="button">Open settings</button>
+          </div>
+          <div class="settings-grid">
+            <div><strong id="managerCount">—</strong><span>Managers</span></div>
+            <div><strong id="agencyContactCount">—</strong><span>Agency contacts</span></div>
+            <div><strong id="templateCount">—</strong><span>Rota templates</span></div>
+            <div><strong id="exceptionCount">—</strong><span>Rota exceptions</span></div>
+          </div>
+          <p class="muted-text settings-summary-copy">
+            Contact directories, relief team membership, standard rota rows and agency contacts are managed in the settings modal.
+          </p>
+          <div class="settings-forms">
+            <div class="mini-form wide-form settings-tab-panel" id="reliefSettings">
+              <div class="form-title-row">
+                <h4>Relief team selector</h4>
+                <span class="soft-pill" id="reliefTeamCount">0 relief team</span>
+              </div>
+              <p class="muted-text form-copy">
+                Mark the people Gill should see first when assigning cover. Everyone else stays hidden unless she deliberately enables all employees.
+              </p>
+              <select id="reliefStaffSelect"></select>
+              <div class="action-row compact-actions">
+                <button id="addReliefBtn" type="button">Add to relief team</button>
+                <button id="removeReliefBtn" class="secondary" type="button">Remove from relief team</button>
+              </div>
+              <div class="relief-chip-list" id="reliefTeamList">
+                <div class="empty-state compact">No relief team loaded yet</div>
+              </div>
+              <div class="settings-table-wrap" id="reliefDirectoryTable"></div>
+            </div>
+            <form id="rotaTemplateForm" class="mini-form wide-form settings-tab-panel hidden" data-panel-id="rotaSettings">
+              <div class="form-title-row">
+                <h4>Add/update standard rota row</h4>
+                <button id="dedupeTemplatesBtn" class="secondary mini" type="button">Clean duplicate rota rows</button>
+              </div>
+              <div class="settings-filter-row">
+                <label>View site rota <select id="standardRotaSiteFilter"></select></label>
+              </div>
+              <div class="settings-table-wrap" id="standardRotaTable"></div>
+              <select name="siteId" id="templateSiteSelect"></select>
+              <select name="weekday">
+                <option value="">Weekday</option>
+                <option>Monday</option>
+                <option>Tuesday</option>
+                <option>Wednesday</option>
+                <option>Thursday</option>
+                <option>Friday</option>
+                <option>Saturday</option>
+                <option>Sunday</option>
+              </select>
+              <input name="role" placeholder="Role e.g. KP, Barista, Chef">
+              <input name="employeeName" placeholder="Employee name">
+              <select name="standardStatus">
+                <option value="IN">Standard status: IN</option>
+                <option value="OFF">Standard status: OFF</option>
+              </select>
+              <input name="notes" placeholder="Notes">
+              <button type="submit">Save standard rota row</button>
+            </form>
+            <form id="managerForm" class="mini-form settings-tab-panel hidden" data-panel-id="managerSettings">
+              <h4>Add/update manager</h4>
+              <input name="managerName" placeholder="Manager name">
+              <input name="email" placeholder="Email">
+              <input name="phone" placeholder="Phone">
+              <input name="primarySiteId" placeholder="Primary site ID">
+              <button type="submit">Save manager</button>
+              <div class="settings-table-wrap" id="managerDirectoryTable"></div>
+            </form>
+            <form id="agencyForm" class="mini-form settings-tab-panel hidden" data-panel-id="agencySettings">
+              <h4>Add/update agency contact</h4>
+              <input name="agencyName" placeholder="Agency name e.g. Berkeley Scott">
+              <input name="contactName" placeholder="Contact name">
+              <input name="email" placeholder="Email">
+              <input name="phone" placeholder="Phone">
+              <input name="rolesSupplied" placeholder="Roles supplied">
+              <input name="defaultRate" placeholder="Default rate">
+              <button type="submit">Save agency</button>
+              <div class="settings-table-wrap" id="agencyDirectoryTable"></div>
+            </form>
+            <div class="mini-form wide-form settings-tab-panel hidden" id="personRotaSettings" data-panel-id="personRotaSettings">
+              <div class="form-title-row">
+                <h4>Person standard rota</h4>
+                <span class="soft-pill">Per-person weekly pattern</span>
+              </div>
+              <p class="muted-text form-copy">
+                Use this for people whose normal week moves between sites. Site rota says what the site needs; person rota says where that person normally belongs.
+              </p>
+              <div class="settings-table-wrap" id="personStandardRotaSettingsTable"></div>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <div class="modal-backdrop hidden" id="settingsModal">
+      <div class="modal-card settings-modal-card">
+        <button class="modal-close secondary mini" id="closeSettingsModal" type="button">Close</button>
+        <p class="eyebrow">Settings</p>
+        <h3>Workforce control room</h3>
+        <p class="muted-text">Manage site contacts, relief team contacts, standard rota rows and Berkeley Scott agency details.</p>
+        <div class="settings-modal-tabs">
+          <button class="settings-tab active" type="button" data-settings-tab="reliefSettings">Relief team</button>
+          <button class="settings-tab" type="button" data-settings-tab="rotaSettings">Standard rota</button>
+          <button class="settings-tab" type="button" data-settings-tab="personRotaSettings">Person rota</button>
+          <button class="settings-tab" type="button" data-settings-tab="managerSettings">Managers</button>
+          <button class="settings-tab" type="button" data-settings-tab="agencySettings">Agency</button>
+        </div>
+        <div id="settingsModalBody"></div>
+      </div>
+    </div>
+
+    <div class="modal-backdrop hidden" id="gapModal">
+      <div class="modal-card">
+        <button class="modal-close secondary mini" id="closeGapModal" type="button">Close</button>
+        <p class="eyebrow">Gap action</p>
+        <h3 id="gapModalTitle">Manage gap</h3>
+        <p class="muted-text" id="gapModalSummary"></p>
+        <form id="gapActionForm" class="mini-form">
+          <input type="hidden" name="gapId">
+          <input type="hidden" name="action">
+          <label class="cover-only">Cover person
+            <select name="coverName" id="coverPersonSelect"></select>
+          </label>
+          <label class="cover-only toggle-row">
+            <input type="checkbox" name="enableAllEmployees" id="enableAllEmployeesCover">
+            <span>Enable all employees to cover</span>
+          </label>
+          <label class="cover-only">Cover type
+            <select name="coverType">
+              <option value="Relief">Relief</option>
+              <option value="Support">Support</option>
+              <option value="Self cover">Self cover</option>
+            </select>
+          </label>
+          <label class="agency-only">Agency
+            <select name="agencyId" id="agencySelect"></select>
+          </label>
+          <label>Notes
+            <input name="notes" placeholder="Anything Gill should know">
+          </label>
+          <button type="submit" id="gapActionSubmit">Save action</button>
+        </form>
+      </div>
+    </div>
+
+    <div class="modal-backdrop hidden" id="personRotaModal">
+      <div class="modal-card person-rota-card">
+        <button class="modal-close secondary mini" id="closePersonRotaModal" type="button">Close</button>
+        <p class="eyebrow">Employee rota profile</p>
+        <h3 id="personRotaTitle">Employee</h3>
+        <p class="muted-text" id="personRotaSummary"></p>
+        <div class="person-profile-grid" id="personRotaProfile"></div>
+        <div class="person-rota-actions">
+          <button id="markPersonSickBtn" type="button">Mark sick for selected day</button>
+          <button class="secondary" id="editPersonStandardRotaBtn" type="button">Edit standard rota</button>
+        </div>
+        <form id="personStandardRotaForm" class="mini-form wide-form person-standard-form">
+          <div class="form-title-row">
+            <h4>Edit this person's normal rota</h4>
+            <span class="soft-pill">Replaces the selected weekday</span>
+          </div>
+          <select name="dayOfWeek" required>
+            <option value="">Weekday</option>
+            <option>Monday</option>
+            <option>Tuesday</option>
+            <option>Wednesday</option>
+            <option>Thursday</option>
+            <option>Friday</option>
+            <option>Saturday</option>
+            <option>Sunday</option>
+          </select>
+          <input name="site" placeholder="Site ID or site name" required>
+          <input name="role" placeholder="Role" required>
+          <input name="startTime" placeholder="Start e.g. 07:30">
+          <input name="endTime" placeholder="End e.g. 15:30">
+          <input name="notes" placeholder="Notes">
+          <label class="toggle-row">
+            <input type="checkbox" name="active" checked>
+            <span>Active row</span>
+          </label>
+          <button type="submit">Save weekday pattern</button>
+        </form>
+        <div class="settings-table-wrap" id="personStandardRotaTable"></div>
+      </div>
+    </div>
+
+    <div class="loading-overlay hidden" id="loadingOverlay">
+      <div class="loading-card">
+        <span class="loader"></span>
+        <strong id="loadingTitle">Working…</strong>
+        <p id="loadingDetail">Please keep this tab open.</p>
+      </div>
+    </div>
+
+    <div class="modal-backdrop hidden" id="syncProgressModal">
+      <div class="modal-card sync-progress-card">
+        <p class="eyebrow">Live sync</p>
+        <h3>Syncing workforce data</h3>
+        <p class="muted-text" id="syncProgressSummary">Preparing sync…</p>
+        <div class="sync-progress-bar"><span id="syncProgressBar"></span></div>
+        <div class="sync-step-list" id="syncStepList"></div>
+        <div class="action-row compact-actions">
+          <button class="secondary" id="closeSyncProgressBtn" type="button">Close</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="toast" id="toast"></div>
+    <?!= include("Script"); ?>
+  </body>
+</html>

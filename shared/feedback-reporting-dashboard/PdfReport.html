@@ -1,0 +1,68 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    body { margin:0; padding:34px; color:#241F33; font-family:Arial,Helvetica,sans-serif; }
+    header { padding:26px; color:#fff; background:#4F34C7; }
+    h1 { margin:0; font-size:34px; }
+    .meta { margin-top:8px; color:rgba(255,255,255,.78); }
+    .grid { display:grid; grid-template-columns:repeat(4,1fr); gap:10px; margin:22px 0; }
+    .card { padding:14px; border:1px solid #d9d4f4; border-radius:8px; }
+    .card span { color:#6F67A8; font-size:10px; font-weight:bold; text-transform:uppercase; }
+    .card strong { display:block; margin-top:8px; color:#4F34C7; font-size:28px; }
+    h2 { margin:24px 0 10px; color:#4F34C7; }
+    table { width:100%; border-collapse:collapse; font-size:12px; }
+    th,td { padding:8px; border-bottom:1px solid #e7e2fb; text-align:left; vertical-align:top; }
+    th { color:#4F34C7; background:#f4f3ff; }
+    .bar { height:9px; border-radius:999px; background:#4DF7C2; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>FIKA Hospitality Feedback Report</h1>
+    <div class="meta">
+      <?= report.filters.startDate ?> to <?= report.filters.endDate ?> · Generated <?= report.generatedAt ?>
+    </div>
+  </header>
+  <section class="grid">
+    <div class="card"><span>Completed</span><strong><?= report.summary.completed ?></strong></div>
+    <div class="card"><span>Average overall</span><strong><?= report.summary.averageOverall || "-" ?></strong></div>
+    <div class="card"><span>NPS</span><strong><?= report.summary.nps === "" ? "-" : report.summary.nps ?></strong></div>
+    <div class="card"><span>Follow-ups</span><strong><?= report.summary.followUps ?></strong></div>
+  </section>
+  <h2>Site Comparison</h2>
+  <table>
+    <thead><tr><th>Site</th><th>Responses</th><th>Average</th><th>Follow-ups</th></tr></thead>
+    <tbody>
+      <? Object.keys(report.summary.bySite || {}).sort().forEach(function(siteName) { var site = report.summary.bySite[siteName]; ?>
+        <tr><td><?= siteName ?></td><td><?= site.total ?></td><td><?= site.average ?></td><td><?= site.followUps ?></td></tr>
+      <? }); ?>
+    </tbody>
+  </table>
+  <h2>Rating Split</h2>
+  <table>
+    <thead><tr><th>Rating</th><th>Count</th><th></th></tr></thead>
+    <tbody>
+      <? ["5","4","3","2","1"].forEach(function(rating) { var value = report.summary.byRating[rating] || 0; ?>
+        <tr><td><?= rating ?> stars</td><td><?= value ?></td><td><div class="bar" style="width:<?= Math.max(2, value / Math.max(1, report.summary.completed) * 100) ?>%"></div></td></tr>
+      <? }); ?>
+    </tbody>
+  </table>
+  <h2>Recent Completed Feedback</h2>
+  <table>
+    <thead><tr><th>Site</th><th>Booking</th><th>Date</th><th>Overall</th><th>Comment</th></tr></thead>
+    <tbody>
+      <? report.rows.forEach(function(row) { ?>
+        <tr>
+          <td><?= row.siteName ?></td>
+          <td><?= row.bookingReference ?></td>
+          <td><?= row.submittedDate ?></td>
+          <td><?= row.overallSatisfaction ?>/5</td>
+          <td><?= row.whatWentWell || row.improvements || row.additionalComments || "" ?></td>
+        </tr>
+      <? }); ?>
+    </tbody>
+  </table>
+</body>
+</html>

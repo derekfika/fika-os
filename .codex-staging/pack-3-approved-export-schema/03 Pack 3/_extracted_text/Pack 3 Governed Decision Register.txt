@@ -1,0 +1,231 @@
+PACK 3 GOVERNED DECISION REGISTER
+SVC-001 — Service Definition
+Review status: Approved
+Decision outcome: No Decision amendment proposed
+Canonical Decision: A durable definition of what FIKA provides, distinct from a dated occurrence and capability.
+Explanatory refinements:
+- Clarify that a Service is a durable operational offering, not merely something FIKA could provide.
+- Distinguish Service from Operational Capability: an OPCAP states what an OPLOC does; a Service states what FIKA provides through that operational ability.
+- Distinguish Service from a dated delivery or occurrence: the Service persists while individual bookings or occurrences happen at specific times.
+- Add grounded examples such as Sandwich Lunch and Coffee Service without creating a closed catalogue.
+- Avoid introducing Product or OPEXP into canonical wording until governed decisions exist for those concepts.
+Discovery / follow-up:
+- Later Pack 3 BDRs should test the boundary between Service, Product and OPEXP.
+Ready for export: Yes
+---
+SVC-002 — Service Terminology
+Review status: Approved
+Decision outcome: Decision amendment proposed
+Current Decision:
+Use Service for the durable offering or arrangement and Service Occurrence for a scheduled, repeatable operation. A Hospitality Booking is a one-off request fulfilled through an existing Service Occurrence. Family, template and schedule terminology still requires confirmation.
+Proposed canonical Decision:
+Use Service for the durable offering. Use Service Arrangement for the governed way that a Service is provided within a defined scope. Use Recurring Schedule for a repeating pattern of planned delivery. A Hospitality Booking is an independent request for hospitality work and does not require a Service Occurrence. Other recurring operational requests may use the same scheduling and fulfilment workflow without being classified as Hospitality Bookings. Family and template terminology still requires confirmation.
+Reason for amendment:
+- The current wording incorrectly treats Service and Service Arrangement as interchangeable.
+- Service Occurrence is removed from the Pack 3 vocabulary because it does not represent a distinct business concept used by FIKA.
+- Repeatability belongs to the Recurring Schedule.
+- Hospitality Bookings remain independent requests rather than occurrences of another scheduled service.
+- Similar recurring operational work, such as Angel Court milk deliveries, may use the same scheduling and fulfilment workflow without being reclassified as Hospitality Bookings.
+Explanatory refinements:
+- Add grounded examples showing Service → Service Arrangement → Recurring Schedule where relevant.
+- Use Angel Court recurring milk deliveries to demonstrate that recurring operational requests can share a workflow with Hospitality Bookings while remaining a separate business classification.
+- Remove Service Occurrence from explanatory text, implementation implications and downstream Pack 3 decisions.
+- Keep family and template terminology unresolved until separately confirmed.
+Discovery / follow-up:
+- Confirm the final meaning of Service Family and Service Template in later Pack 3 BDRs.
+- Later Pack 3 BDRs must define the shared scheduled-work workflow without reintroducing Service Occurrence.
+Ready for export: Yes
+---
+SVC-003 — Production and Training Domain Boundary
+Review status: Approved
+Decision outcome: Decision amendment proposed
+Current Decision:
+Internal Production and Training should be modelled as their own business domains rather than as Services. They support the delivery of Services but have their own workflows, ownership, records and lifecycles. A Service Arrangement may depend on Production or Training activities, but those activities remain operational capabilities that can evolve independently without changing the definition of a Service. Future internal capabilities should follow the same principle, becoming first-class domains only where they have a defined business purpose, owner and operational lifecycle.
+Proposed canonical Decision:
+Internal Production and Training are modelled as their own business domains rather than as Services. They support the delivery of Services but have their own workflows, ownership, records and lifecycles. A Service Arrangement may depend on Production or Training capabilities, while those capabilities remain owned by their respective domains and may evolve independently without changing the definition of a Service. Future internal business areas should become first-class domains only where they have a defined business purpose, owner, records, workflows and operational lifecycle.
+Reason for amendment:
+- The current wording alternates between domain and capability as though they are interchangeable.
+- Production and Training are domains; the operational abilities they provide are capabilities owned by those domains.
+- The final sentence should describe the threshold for recognising a new domain rather than suggesting that every internal capability may become one.
+Explanatory refinements:
+- Remove Service Occurrence from the implementation implications.
+- Clarify that a Service Arrangement may depend on Production or Training without owning their records or workflows.
+- Preserve the separate ownership and lifecycle of each domain.
+- Use examples carefully: food production may fulfil a sandwich-lunch arrangement, while Training may prepare Legends to deliver a coffee service.
+Discovery / follow-up:
+- Production and Training require later domain discovery and are not defined in detail by this BDR.
+- Food Production, CPU and Food Safety remain excluded discovery concepts until separately governed.
+Ready for export: Yes
+---
+SVC-004 — Service Arrangement Scope
+Review status: Approved
+Decision outcome: Decision amendment proposed
+Current Decision:
+A Service Arrangement belongs to a single Operational Location and represents one defined recurring service delivered there. It must not span multiple Operational Locations, clients or service locations. Where the same type of service is provided at multiple locations, each location has its own Service Arrangement with its own operational history, configuration and lifecycle. Shared standards, menus or operating models may be reused across Service Arrangements, but each arrangement remains operationally distinct.
+Proposed canonical Decision:
+A Service Arrangement belongs to one Operational Location and defines how one Service is provided within that operational scope. It must not span multiple Operational Locations. Where the same Service is provided at multiple locations, each location has its own Service Arrangement with its own operational history, configuration and lifecycle. A Service Arrangement may have no recurring schedule, one recurring schedule or multiple recurring schedules, and may support independent bookings or other operational requests. Client and commercial relationships are referenced separately and do not define the Service Arrangement boundary. Shared standards, menus, templates or operating models may be reused across Service Arrangements, but each arrangement remains operationally distinct.
+Reason for amendment:
+- A Service Arrangement is not necessarily recurring; repeatability belongs to Recurring Schedule.
+- The OPLOC is the stable operational boundary.
+- Client and commercial relationships should not be embedded into the Service Arrangement boundary.
+- “Service location” is undefined and should not become a second location concept beside OPLOC.
+- The model must support both recurring work, such as Angel Court milk deliveries, and independent Hospitality Bookings using the same arrangement.
+Explanatory refinements:
+- Remove Service Occurrence from implementation implications.
+- Explain that one Service Arrangement may support recurring schedules, independent bookings and similar operational requests.
+- Add an example showing the same Service implemented as separate arrangements at different OPLOCs.
+- Preserve separate history, configuration and lifecycle for each OPLOC-specific arrangement.
+Discovery / follow-up:
+- Later BDRs must define whether a Service Arrangement may have multiple Recurring Schedules and how each schedule is identified.
+- Client and commercial-agreement scope remains governed outside this BDR.
+Ready for export: Yes
+---
+SVC-005 — Recurring Schedule Governance
+Review status: Approved
+Decision outcome: Decision amendment proposed
+Current Decision:
+Recurring schedules should define the normal pattern of operation using effective dates that preserve historical and future changes without overwriting previous records. Individual occurrences should inherit the recurring schedule by default but may be amended or cancelled as approved exceptions without changing the underlying pattern. All exceptions must record their reason, approval and effective period, allowing the business to distinguish between the planned schedule and what actually occurred while maintaining a complete audit history.
+Proposed canonical Decision:
+Recurring Schedules define repeating patterns of planned delivery for a Service Arrangement. They use effective dates so historical and future changes are preserved without overwriting previous records. A Recurring Schedule may have governed exceptions for specific dates or periods, including amendments, pauses or cancellations, without changing the underlying repeating pattern. Every exception must record its reason, approval, effective scope and audit history. FIKA OS must preserve the distinction between the normal planned schedule, approved exceptions and the operational work generated or completed from that schedule.
+Reason for amendment:
+- Service Occurrence has been removed from the Pack 3 vocabulary.
+- The recurring pattern belongs to the Recurring Schedule, while specific operational work is generated or managed through the shared work workflow.
+- Exceptions apply to specific dates or periods without silently rewriting the underlying schedule.
+- The model must preserve both planned and actual operational history.
+Explanatory refinements:
+- Remove all references to Service Occurrence from the context, consequences, implementation implications and related-decision wording.
+- Use Angel Court milk delivery as a grounded example: every Monday morning, with a specific Monday paused, amended or cancelled as an exception.
+- Clarify that one Service Arrangement may support multiple independently identified Recurring Schedules.
+- Explain that effective-dated schedule changes create new governed versions rather than overwriting history.
+Discovery / follow-up:
+- The shared operational-work concept and record name must be confirmed without reintroducing Service Occurrence.
+- Later schema work must define schedule identifiers, recurrence patterns, exceptions, effective dating and links to generated work records.
+Ready for export: Yes
+---
+r Pack 3 BDRs must define the shared scheduled-work workflow without reintroducing Service Occurrence.
+Ready for export: Yes
+---
+SVC-006 — Service Occurrence and Booking Boundary
+Review status: Approved
+Decision outcome: Supersede and retitle BDR
+Current Decision:
+A dated Service Occurrence represents a scheduled instance of a recurring Service Arrangement and may exist without any Bookings. It defines that the service is available to operate at a particular time and place. A Booking is only required when a customer requests, reserves or purchases something from that Service Occurrence or from a bespoke Event. For example, the Munich Re Coffee Bar operates through recurring Service Occurrences without requiring Bookings, whereas a sandwich lunch for fifteen people on the seventh floor of Angel Court creates a Booking against an existing Service. A Booking therefore records customer demand, while a Service Occurrence records operational availability.
+Proposed replacement title:
+SVC-006 — Scheduled Work and Booking Boundary
+Proposed canonical Decision:
+A Hospitality Booking is an independent request for hospitality work against an available Service Arrangement. It does not depend on, attach to or create a Service Occurrence. Recurring Schedules define repeating planned work, while Hospitality Bookings and similar operational requests provide separate demand inputs into a shared fulfilment workflow. The shared workflow must preserve each input's business classification, source, requested date and time, quantities, destination, status and audit history. Routine operating availability, such as Munich RE coffee-bar opening hours, remains configuration or scheduling information and is not itself a Booking or work record.
+Reason for replacement:
+- Service Occurrence has been removed from the Pack 3 vocabulary.
+- Coffee-bar opening hours describe operational availability; they do not create a daily business record merely because a date passes.
+- Hospitality Bookings are independent requests and should not be attached to a recurring coffee-bar or lunch schedule.
+- Recurring work such as Angel Court milk delivery and one-off Hospitality Bookings may enter the same fulfilment workflow while retaining different classifications.
+- The BDR still needs to govern the boundary between scheduled work and booking demand, so it should be retitled rather than deleted.
+Explanatory refinements:
+- Replace the Munich RE example with a clear distinction between operating hours and generated operational work.
+- Use Angel Court milk delivery as the recurring-work example.
+- Use a one-off Angel Court sandwich request as the Hospitality Booking example.
+- Remove every reference to Service Occurrence from context, consequences, implementation implications, related decisions and filename.
+- Preserve Event as the established FIKA business concept; do not use it as technical messaging terminology.
+Discovery / follow-up:
+- Confirm the canonical name of the shared fulfilment record or work concept in later discovery; do not assume Work Item is adopted yet.
+- Confirm whether other request types beyond Hospitality Booking and Recurring Schedule may use the same fulfilment workflow.
+Ready for export: Yes
+---
+SVC-007 — Wise Service Arrangements
+Review status: Approved
+Decision outcome: Decision amendment proposed
+Current Decision:
+Yes. Wise Monday Breakfast and Friday Lunch are two separate Service Arrangements because they are two distinct recurring services with different purposes, menus, operating patterns and production requirements. They therefore each own their own recurring schedule and generate their own dated Service Occurrences. A change to the recurring day, time or schedule of either service does not create a new Service Arrangement where the underlying service remains the same. Instead, the existing arrangement receives a new effective-dated schedule while preserving historical schedules for audit and reporting. A new Service Arrangement is only created when the underlying service itself changes materially.
+Proposed canonical Decision:
+Wise Monday Breakfast and Friday Lunch are separate Service Arrangements because they provide distinct Services at the same Operational Location, with different purposes, menus, operating patterns and production requirements. Each Service Arrangement owns its own operational history, configuration and one or more Recurring Schedules. Changing the day, time or recurrence pattern does not create a new Service Arrangement where the underlying Service and operational scope remain the same. Instead, the existing arrangement receives a new effective-dated schedule while preserving previous schedules for audit and reporting. A new Service Arrangement is created only when the underlying Service or its OPLOC-specific operational scope changes materially.
+Reason for amendment:
+- Service Occurrence has been removed from the Pack 3 vocabulary.
+- Monday Breakfast and Friday Lunch are distinct because of their underlying Service and operational scope, not merely because they recur on different days.
+- A Service Arrangement may own one or more Recurring Schedules.
+- Schedule changes should preserve the arrangement identity where the Service and operational scope remain stable.
+Explanatory refinements:
+- Remove every reference to Service Occurrence from the document.
+- Clarify that both arrangements belong to the same OPLOC but represent different Services.
+- Explain that changing Monday to Tuesday, or changing the service time, creates an effective-dated schedule change rather than a new arrangement.
+- Explain that a material change to the underlying Service or OPLOC-specific scope may require a new Service Arrangement.
+Discovery / follow-up:
+- Later schema work must define how material arrangement changes are distinguished from effective-dated configuration and schedule changes.
+Ready for export: Yes
+---
+SVC-008 — Service and Event Boundary
+Review status: Approved
+Decision outcome: Decision amendment proposed
+Current Decision:
+A Service defines the reusable offering. An Event is the bespoke customer- or occasion-specific activity and owns its planning and approval. An Event may reference a Service without becoming a recurring Service Occurrence.
+Proposed canonical Decision:
+A Service defines a durable reusable offering. An Event is a distinct customer-, client- or occasion-specific activity that owns its own purpose, planning, approval, delivery and lifecycle. An Event may use, reference or purchase one or more existing Services or Service Arrangements without becoming a Service Arrangement, Recurring Schedule or Hospitality Booking. The Event domain owns the Event record and lifecycle; the Service domain continues to own the reusable Service definitions and OPLOC-specific Service Arrangements that support it.
+Reason for amendment:
+- Service Occurrence has been removed from the Pack 3 vocabulary.
+- The boundary should be based on ownership and lifecycle, not recurrence alone.
+- An Event may consume several Services while remaining one governed Event.
+- A Service or Service Arrangement does not become an Event merely because it supports a bespoke activity.
+- Hospitality Booking remains a separate request type and should not be used as a synonym for Event.
+Explanatory refinements:
+- Preserve Event as the established FIKA business concept and domain language.
+- Add a grounded example: a bespoke client celebration may use catering, coffee and staffing Services while the Event owns its overall brief, approvals, timing and delivery plan.
+- Remove Service Occurrence from the Decision and implementation implications.
+- Clarify that references between Event and Service records do not transfer ownership of either record.
+- Replace the generic named owner “Derek / Events / Commercial” with role-based business ownership governed through AUTHMOD where the BDR format allows.
+Discovery / follow-up:
+- EVT-001 remains authoritative for deciding what qualifies as an Event.
+- Later Event-domain discovery must define Event relationships to Hospitality Bookings, OPEXP and operational work without collapsing those concepts together.
+Ready for export: Yes
+--
+SVC-009 — Coffee Cart Model
+Review status: Approved
+Decision outcome: Decision amendment proposed
+Current Decision:
+The Coffee Cart should be modelled as an Equipment asset that can be allocated to one or more Service Arrangements. The service offered by the Coffee Cart is a reusable Service template, while availability is determined by the allocation of the physical asset, staff and schedule rather than by the Service definition itself.
+Proposed canonical Decision:
+The Coffee Cart is an Equipment asset. Coffee-cart provision is a reusable Service. An OPLOC-specific implementation of that Service is governed through a Service Arrangement, while an Event may reference the Service and request allocation of the Coffee Cart without becoming a Service Arrangement. Availability is determined by the governed allocation of the physical asset, authorised staff, time and location rather than by the Service definition itself. The same Coffee Cart may support different Service Arrangements or Events over time but must not have conflicting allocations.
+Reason for amendment:
+- Service Template remains unresolved and should not be adopted through this BDR.
+- The physical Coffee Cart and the reusable coffee-cart Service are separate governed concepts.
+- OPLOC-specific delivery belongs to a Service Arrangement.
+- Event-specific use remains owned by the Event while referencing the Service and asset allocation.
+- Availability is constrained by asset, staff, time and location, not by whether the Service exists.
+- The model must prevent conflicting allocations of the same physical asset.
+Explanatory refinements:
+- Remove Service Occurrence from the implementation implications.
+- Distinguish Equipment ownership and lifecycle from Service ownership and lifecycle.
+- Add one OPLOC example and one Event example.
+- Clarify that allocation does not transfer ownership of the Equipment asset.
+- Replace named Decision ownership with role-based business ownership governed through AUTHMOD where the BDR format allows.
+Discovery / follow-up:
+- Equipment-domain discovery must define asset identity, status, maintenance, availability and allocation history.
+- Later architecture must determine how asset, staff and schedule conflicts are validated across Service Arrangements and Events.
+- Service Template terminology remains unresolved and must not appear in the adopted Decision.
+Ready for export: Yes
+---
+-
+SVC-010 — Service Commercial Ownership
+Review status: Approved
+Decision outcome: Decision amendment proposed
+Current Decision:
+Sam the culinary director at top level, delegated to Brian, the project chef.
+Proposed canonical Decision:
+Commercial ownership of each Service and Service Arrangement is assigned to an authorised business role through AUTHMOD rather than to a named individual. The accountable senior role owns the commercial framework, including approved menus, packages, pricing principles and effective-date governance. Defined responsibilities may be delegated to authorised operational or specialist roles within a governed scope and for a recorded period, without transferring ultimate ownership. Every commercial change must identify its owner, approver, effective date, scope, reason and audit history. Different Service domains may assign different accountable and delegated roles while following the same governance model.
+Reason for amendment:
+- The current Decision names Sam and Brian directly, making business authority dependent on current postholders.
+- The BDR must govern roles and authority, not individuals.
+- Ownership and delegated responsibility must remain distinct.
+- Delegation must be scoped, recorded and auditable and must not transfer ultimate ownership.
+- Menus, packages, pricing and effective dates may have different operational contributors but require one accountable commercial authority for the governed scope.
+Explanatory refinements:
+- Replace named Decision ownership with role-based business ownership governed through AUTHMOD.
+- Use the current Culinary Director and Project Chef arrangement only as an explanatory example, not as canonical identity.
+- Clarify that the accountable senior role may delegate defined responsibilities while retaining ownership.
+- Require effective dating, approval, version history and auditability for commercial changes.
+- Remove Service Occurrence from implementation implications.
+- Distinguish Service-level commercial standards from OPLOC-specific Service Arrangement configuration.
+Discovery / follow-up:
+- Confirm the canonical role or authority domain that owns the commercial framework for food Services; do not assume one role owns every Service domain.
+- Confirm which changes require central approval and which may be delegated locally through AUTHMOD.
+- Later schema work must distinguish accountable owner, delegated contributor, approver and effective-dated commercial configuration.
+Ready for export: Yes
+---

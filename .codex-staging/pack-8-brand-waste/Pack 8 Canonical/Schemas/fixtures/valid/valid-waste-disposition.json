@@ -1,0 +1,17 @@
+{
+  "schemaVersion": "1.0.0-draft.1",
+  "wasteDispositionId": "waste-disposition.demo-001",
+  "wasteEventId": "waste-event.demo-001",
+  "immediateOperationalOutcome": "Fictional immediate handling outcome used only for schema validation.",
+  "recordedAt": "2026-07-15T09:32:00Z",
+  "recordedByAssignmentId": "assignment.demo-location-recorder",
+  "provenance": { "sourceBdrIds": ["WASTE-001", "ROLE-002"], "sourceSnapshot": "Pack 8 fictional validation snapshot" },
+  "audit": {
+    "version": 1,
+    "createdAt": "2026-07-15T09:35:00Z",
+    "createdByAssignmentId": "assignment.demo-location-recorder",
+    "updatedAt": "2026-07-15T09:35:00Z",
+    "updatedByAssignmentId": "assignment.demo-location-recorder",
+    "events": []
+  }
+}

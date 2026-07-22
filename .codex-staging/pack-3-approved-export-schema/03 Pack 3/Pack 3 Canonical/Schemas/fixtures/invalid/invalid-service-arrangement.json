@@ -1,0 +1,36 @@
+{
+  "serviceArrangementId": "arr:wise-monday-breakfast",
+  "serviceId": "svc:breakfast",
+  "operationalLocationId": "oploc:wise",
+  "clientRelationshipReferenceIds": [
+    "clientrel:wise"
+  ],
+  "commercialOwnershipId": "comm:wise-breakfast",
+  "recurringScheduleIds": [
+    "schedule:wise-monday-breakfast"
+  ],
+  "lifecycleStatus": "active",
+  "provenance": {
+    "sourceBdrIds": [
+      "SVC-004",
+      "SVC-007"
+    ],
+    "sourceSnapshot": "03 Pack 3-20260714T172736Z-1-001.zip",
+    "authorityRank": "Approved Governed Decision Register"
+  },
+  "audit": {
+    "version": 1,
+    "createdAt": "2026-07-14T17:30:00Z",
+    "createdBy": "role:platform-governance",
+    "updatedAt": "2026-07-14T17:30:00Z",
+    "updatedBy": "role:platform-governance",
+    "events": [
+      {
+        "eventType": "drafted",
+        "occurredAt": "2026-07-14T17:30:00Z",
+        "actorId": "role:platform-governance"
+      }
+    ]
+  },
+  "providerPayload": "not allowed in canonical schema"
+}

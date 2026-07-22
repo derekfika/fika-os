@@ -1,0 +1,23 @@
+{
+  "schemaVersion": "pack-4-draft",
+  "id": "bar-001",
+  "sourceDecisionIds": [
+    "BOOK-003"
+  ],
+  "requirementType": "allergy",
+  "description": "Declared nut allergy",
+  "severity": "declared_allergy",
+  "appliesTo": {
+    "bookingItemIds": [
+      "item-001"
+    ],
+    "personLabel": "Guest 1"
+  },
+  "customerDisclosure": {
+    "required": true,
+    "method": "menu",
+    "evidenceReference": "TODO-menu-or-label-reference"
+  },
+  "createdAt": "2026-07-14T18:45:00Z",
+  "updatedAt": "2026-07-14T18:45:00Z"
+}

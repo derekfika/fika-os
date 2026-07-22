@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <base target="_top">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#00538A">
+  <?!= include_("Styles"); ?>
+</head>
+<body>
+  <aside class="sidebar">
+    <div class="brand">
+      <span class="brand-mark">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 560 120" role="img" aria-label="Munich Re logo">
+          <g fill="#ffffff">
+            <path d="M28 18h70l28 42-28 42H28L0 60 28 18Zm8 12L16 60l20 30h56l20-30-20-30H36Z"/>
+            <path d="M21 48h86v8H21zM21 64h86v8H21z"/>
+            <text x="155" y="78" font-family="Arial, Helvetica, sans-serif" font-size="58" font-weight="700" letter-spacing="-2">Munich Re</text>
+          </g>
+        </svg>
+      </span>
+      <span>Hot drink reporting</span>
+    </div>
+  </aside>
+
+  <main>
+    <div id="activity-bar" class="activity-bar" hidden><span></span></div>
+    <section id="dashboard-view" class="view">
+      <header class="page-header hero-header">
+        <div>
+          <p><span class="status-dot"></span>Live reporting</p>
+          <h1>Hot drink usage</h1>
+          <span class="page-subtitle">Live service data, archive-backed reporting and client-ready monthly exports.</span>
+        </div>
+        <div class="header-actions">
+          <button id="export-pdf" class="primary-action" type="button"><span class="button-icon">PDF</span>Export report</button>
+          <button id="export-csv" type="button"><span class="button-icon">CSV</span>Export data</button>
+        </div>
+      </header>
+
+      <!-- Changed: sticky report control bar with advanced filters tucked away -->
+      <form id="dashboard-filters" class="filters">
+        <label>Preset<select name="preset">
+          <option value="today">Today</option>
+          <option value="yesterday">Yesterday</option>
+          <option value="thisWeek">This week</option>
+          <option value="lastWeek">Last week</option>
+          <option value="thisMonth">This month</option>
+          <option value="lastMonth">Last month</option>
+          <option value="custom">Custom range</option>
+          <option value="tueThu">Tuesday-Thursday only</option>
+          <option value="monThu">Monday-Thursday only</option>
+          <option value="excludeFridays">Exclude Fridays</option>
+        </select></label>
+        <label>Start<input name="startDate" type="date"></label>
+        <label>End<input name="endDate" type="date"></label>
+        <label>Floor<select name="floor"></select></label>
+        <button type="submit">Run report</button>
+        <details class="advanced-filters">
+          <summary>Advanced filters</summary>
+          <div>
+            <label>Drink<select name="drink"></select></label>
+            <label class="check"><input name="excludeBankHolidays" type="checkbox" checked> Exclude bank holidays</label>
+            <label class="check"><input name="excludeClosedPeriods" type="checkbox" checked> Exclude closed periods/days</label>
+          </div>
+        </details>
+      </form>
+
+      <div id="report-progress" class="report-progress" hidden>
+        <div class="report-progress-copy">
+          <span id="report-progress-label">Preparing report</span>
+          <strong id="report-progress-percent">0%</strong>
+        </div>
+        <div class="report-progress-track"><i id="report-progress-fill"></i></div>
+        <small id="report-progress-detail">Starting report run...</small>
+      </div>
+
+      <div id="report-context" class="report-context"></div>
+      <!-- Changed: deterministic insight layer before detailed charts -->
+      <section class="takeaways-panel">
+        <div class="panel-heading">
+          <div>
+            <span>Key takeaways</span>
+            <h2>What changed in this report</h2>
+          </div>
+        </div>
+        <div id="key-takeaways" class="takeaway-list"></div>
+      </section>
+      <div id="report-summary" class="summary-grid"></div>
+
+      <section class="dashboard-grid">
+        <article class="panel wide">
+          <div class="panel-heading">
+            <div><span>Daily movement</span><h2>Trend over time</h2></div>
+          </div>
+          <div id="trend" class="trend"></div>
+        </article>
+        <article class="panel">
+          <div class="panel-heading">
+            <div><span>Product split</span><h2>Drink mix</h2></div>
+          </div>
+          <div id="drink-mix" class="list-chart"></div>
+        </article>
+        <article class="panel">
+          <div class="panel-heading">
+            <div><span>Location split</span><h2>Floor comparison</h2></div>
+          </div>
+          <div id="floor-comparison" class="list-chart"></div>
+        </article>
+        <article class="panel wide">
+          <div class="panel-heading">
+            <div>
+              <span>Service pattern</span>
+              <h2>Hourly heatmap</h2>
+            </div>
+            <div class="panel-tools">
+              <label class="mini-select">View<select id="heatmap-mode">
+                <option value="total">Total drinks</option>
+                <option value="topDrink">Top drink type</option>
+              </select></label>
+              <div class="heat-legend"><i></i><span>Low</span><strong>High</strong></div>
+            </div>
+          </div>
+          <div id="heatmap" class="heatmap"></div>
+        </article>
+        <article class="panel wide">
+          <div class="panel-heading">
+            <div>
+              <span>Hourly detail</span>
+              <h2>Drinks by hour and type</h2>
+            </div>
+            <div class="segmented" role="group" aria-label="Hourly drink type view">
+              <button class="active" data-hourly-view="chart" type="button">Graph</button>
+              <button data-hourly-view="table" type="button">Table</button>
+            </div>
+          </div>
+          <div id="hourly-drinks" class="hourly-drinks"></div>
+        </article>
+      </section>
+    </section>
+
+  </main>
+
+  <div id="toast" class="toast" hidden></div>
+  <script>
+    window.APP_CONFIG = <?!= initialConfig ?>;
+  </script>
+  <?!= include_("JavaScript"); ?>
+</body>
+</html>

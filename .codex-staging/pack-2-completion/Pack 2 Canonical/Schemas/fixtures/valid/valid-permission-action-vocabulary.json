@@ -1,0 +1,85 @@
+{
+  "schemaVersion": "pack-2-draft-1",
+  "vocabularyId": "vocab:authmod-actions",
+  "owner": {
+    "authorityModelOwnerId": "role:authmod-owner"
+  },
+  "actions": [
+    {
+      "action": "View",
+      "meaning": "Read information within an authorised scope.",
+      "doesNotConfer": [
+        "Contribute",
+        "Manage",
+        "Approve",
+        "Publish",
+        "Administer"
+      ]
+    },
+    {
+      "action": "Contribute",
+      "meaning": "Create or amend records within authorised scope.",
+      "doesNotConfer": [
+        "Approve",
+        "Publish",
+        "Administer"
+      ]
+    },
+    {
+      "action": "Manage",
+      "meaning": "Coordinate operational control within a governed scope.",
+      "doesNotConfer": [
+        "Approve",
+        "Publish"
+      ]
+    },
+    {
+      "action": "Approve",
+      "meaning": "Formally accept a governed business action or change.",
+      "doesNotConfer": [
+        "Publish",
+        "Administer"
+      ]
+    },
+    {
+      "action": "Publish",
+      "meaning": "Make approved information available to an authorised audience.",
+      "doesNotConfer": [
+        "Approve",
+        "Administer"
+      ]
+    },
+    {
+      "action": "Administer",
+      "meaning": "Perform technical or configuration administration.",
+      "doesNotConfer": [
+        "ownership",
+        "commercial authority",
+        "operational authority"
+      ]
+    }
+  ],
+  "provenance": {
+    "sourceBdrIds": [
+      "ROLE-001",
+      "ROLE-003"
+    ],
+    "sourceSnapshot": "02 Pack 2-20260714T164540Z-1-001.zip",
+    "authorityRank": "Approved GRR"
+  },
+  "audit": {
+    "version": 1,
+    "createdAt": "2026-07-14T12:00:00Z",
+    "createdBy": "role:platform-governance",
+    "updatedAt": "2026-07-14T12:00:00Z",
+    "updatedBy": "role:platform-governance",
+    "events": [
+      {
+        "eventType": "drafted",
+        "occurredAt": "2026-07-14T12:00:00Z",
+        "actorId": "role:platform-governance",
+        "reason": "Pack 2 schema draft fixture"
+      }
+    ]
+  }
+}

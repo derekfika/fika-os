@@ -1,0 +1,340 @@
+<script>
+(() => {
+  const config = window.APP_CONFIG || {};
+  const state = {
+    floor: config.defaultFloor,
+    counts: null,
+    queue: [],
+    syncing: false,
+    lastTap: null,
+    pendingFloor: null
+  };
+  const queueKey = "munichHotDrinkTapQueue";
+  const syncIntervalMs = 60000;
+  const maxBatchSize = 80;
+  const colors = ["#6f4b33", "#b8794a", "#c88d5c", "#8d6a4c", "#167a62", "#8f3d2f", "#d39a22", "#4F34C7"];
+  const drinkMeta = {
+    "Coffee": { code: "CO", accent: "#6f4b33", tone: "#f5ebe2" },
+    "Cappuccino": { code: "CP", accent: "#b8794a", tone: "#f8eee5" },
+    "Latte": { code: "LA", accent: "#c88d5c", tone: "#fbf0e6" },
+    "Flat White": { code: "FW", accent: "#8d6a4c", tone: "#f3ece4" },
+    "Tea": { code: "TE", accent: "#167a62", tone: "#e8f4ef" },
+    "Hot Chocolate": { code: "HC", accent: "#8f3d2f", tone: "#fae9e6" },
+    "Chai": { code: "CH", accent: "#d39a22", tone: "#fff4d9" },
+    "Drink Special": { code: "DS", accent: "#4F34C7", tone: "#eeeafd" }
+  };
+  const $ = selector => document.querySelector(selector);
+
+  function init() {
+    state.queue = loadQueue();
+    renderSelectors();
+    bindEvents();
+    refreshCounts();
+    updateQueueStatus();
+    setInterval(syncQueue, syncIntervalMs);
+    window.addEventListener("online", syncQueue);
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "hidden") syncQueue();
+    });
+  }
+
+  function renderSelectors() {
+    $("#floor-selector").innerHTML = (config.floors || []).map(floor =>
+      `<button class="floor-button ${floor === state.floor ? "active" : ""}" data-floor="${escapeHtml(floor)}" type="button">
+        <span>${escapeHtml(floor)}</span>
+        <strong data-floor-count="${escapeHtml(floor)}">0</strong>
+      </button>`
+    ).join("");
+    $("#drink-buttons").innerHTML = (config.drinks || []).map((drink, index) => {
+      const meta = drinkMeta[drink] || { code: initials(drink), accent: colors[index % colors.length], tone: "#f3f0ea" };
+      return `
+      <button class="drink-button" data-drink="${escapeHtml(drink)}" style="--drink:${meta.accent}; --drink-soft:${meta.tone}" type="button">
+        <span class="drink-count" data-drink-count="${escapeHtml(drink)}">0</span>
+        <span class="drink-art" aria-hidden="true">
+          <span class="drink-orbit"></span>
+          <span class="drink-icon">${escapeHtml(meta.code)}</span>
+        </span>
+        <span class="drink-copy">
+          <span class="drink-label">${escapeHtml(drink)}</span>
+          <span class="drink-subtitle">Tap to add</span>
+        </span>
+      </button>
+    `;
+    }).join("");
+    updateDrinkTileCounts();
+  }
+
+  function bindEvents() {
+    document.addEventListener("click", event => {
+      const floorButton = event.target.closest("[data-floor]");
+      if (floorButton) return requestFloorChange(floorButton.dataset.floor);
+      const drinkButton = event.target.closest("[data-drink]");
+      if (drinkButton) return tapDrink(drinkButton.dataset.drink, drinkButton);
+    });
+    $("#undo-button").addEventListener("click", undoLast);
+    $("#retry-button").addEventListener("click", syncQueue);
+    $("#cancel-floor-change").addEventListener("click", closeFloorModal);
+    $("#confirm-floor-change").addEventListener("click", confirmFloorChange);
+    $("#floor-modal").addEventListener("click", event => {
+      if (event.target.id === "floor-modal") closeFloorModal();
+    });
+  }
+
+  function requestFloorChange(floor) {
+    if (!floor || floor === state.floor) return;
+    state.pendingFloor = floor;
+    $("#floor-modal-current").textContent = state.floor || "Not set";
+    $("#floor-modal-target").textContent = floor;
+    $("#floor-modal").hidden = false;
+  }
+
+  function confirmFloorChange() {
+    if (!state.pendingFloor) return closeFloorModal();
+    setFloor(state.pendingFloor);
+    closeFloorModal();
+  }
+
+  function closeFloorModal() {
+    state.pendingFloor = null;
+    $("#floor-modal").hidden = true;
+  }
+
+  function setFloor(floor) {
+    state.floor = floor;
+    document.querySelectorAll(".floor-button").forEach(button => button.classList.toggle("active", button.dataset.floor === floor));
+    renderBreakdown();
+    updateDrinkTileCounts();
+    toast(`Floor set to ${floor}`);
+  }
+
+  function tapDrink(drink, button) {
+    const payload = {
+      floor: state.floor,
+      drink,
+      device: deviceName(),
+      clientTapId: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      tappedAt: new Date().toISOString()
+    };
+    state.lastTap = payload;
+    state.queue.push(payload);
+    saveQueue();
+    applyOptimisticCount(drink, 1);
+    flashButton(button);
+    burstPlusOne(button);
+    updateQueueStatus();
+    $("#error-panel").hidden = true;
+    if (state.queue.length >= maxBatchSize) syncQueue();
+  }
+
+  function undoLast() {
+    if (state.queue.length) {
+      const removed = state.queue.pop();
+      saveQueue();
+      if (removed && removed.drink) applyOptimisticCount(removed.drink, -1);
+      state.lastTap = state.queue[state.queue.length - 1] || null;
+      updateQueueStatus();
+      toast("Last unsynced tap removed");
+      return;
+    }
+
+    setStatus("Undoing synced tap...");
+    google.script.run
+      .withSuccessHandler(result => {
+        if (result && result.counts) setCounts(applyQueueCounts(result.counts));
+        toast(result && result.ok ? "Last tap undone" : (result.message || "Nothing to undo"));
+        updateQueueStatus();
+      })
+      .withFailureHandler(error => showError(error.message || String(error)))
+      .undoLastTap({ floor: state.floor, device: deviceName() });
+  }
+
+  function syncQueue() {
+    if (state.syncing || !state.queue.length || !navigator.onLine) {
+      updateQueueStatus();
+      return;
+    }
+    const batch = state.queue.slice(0, maxBatchSize);
+    state.syncing = true;
+    $("#sync-status").classList.remove("sync-synced", "sync-offline", "sync-error");
+    $("#sync-status").classList.add("sync-saving");
+    setStatus(`Syncing ${batch.length}...`);
+    google.script.run
+      .withSuccessHandler(result => {
+        state.queue.splice(0, batch.length);
+        saveQueue();
+        state.syncing = false;
+        if (result && result.counts) setCounts(applyQueueCounts(result.counts));
+        $("#error-panel").hidden = true;
+        updateQueueStatus();
+        if (state.queue.length) setTimeout(syncQueue, 400);
+      })
+      .withFailureHandler(error => {
+        state.syncing = false;
+        showError(error.message || String(error));
+        setTimeout(syncQueue, 10000);
+      })
+      .recordDrinkTapBatch(batch);
+  }
+
+  function refreshCounts() {
+    google.script.run
+      .withSuccessHandler(counts => {
+        setCounts(applyQueueCounts(counts));
+        updateQueueStatus();
+      })
+      .withFailureHandler(error => showError(error.message || String(error)))
+      .getTodayCounts();
+  }
+
+  function setCounts(counts) {
+    state.counts = counts;
+    $("#today-total").textContent = counts.total || 0;
+    renderBreakdown();
+    updateFloorCounts();
+    updateDrinkTileCounts();
+  }
+
+  function renderBreakdown() {
+    const counts = state.counts || { byDrink: {}, byFloorDrink: {} };
+    const floorCounts = (counts.byFloorDrink && counts.byFloorDrink[state.floor]) || counts.byDrink || {};
+    $("#drink-counts").innerHTML = Object.keys(floorCounts || {}).map((drink, index) => `
+      <div class="count-tile" style="--count:${(drinkMeta[drink] && drinkMeta[drink].accent) || colors[index % colors.length]}">
+        <span>${escapeHtml(drink)}</span>
+        <strong>${floorCounts[drink] || 0}</strong>
+      </div>
+    `).join("");
+  }
+
+  function applyOptimisticCount(drink, delta) {
+    const counts = state.counts || { total: 0, byDrink: {}, byFloor: {}, byFloorDrink: {} };
+    counts.byDrink = counts.byDrink || {};
+    counts.byFloor = counts.byFloor || {};
+    counts.byFloorDrink = counts.byFloorDrink || {};
+    counts.byFloorDrink[state.floor] = counts.byFloorDrink[state.floor] || {};
+    counts.total = Math.max(0, (counts.total || 0) + delta);
+    counts.byDrink[drink] = Math.max(0, (counts.byDrink[drink] || 0) + delta);
+    counts.byFloor[state.floor] = Math.max(0, (counts.byFloor[state.floor] || 0) + delta);
+    counts.byFloorDrink[state.floor][drink] = Math.max(0, (counts.byFloorDrink[state.floor][drink] || 0) + delta);
+    setCounts(counts);
+  }
+
+  function showError(message) {
+    $("#error-message").textContent = message;
+    $("#error-panel").hidden = false;
+    updateQueueStatus("Sync paused");
+  }
+
+  function flashButton(button) {
+    if (!button) return;
+    button.animate([{ transform: "scale(1)" }, { transform: "scale(.97)" }, { transform: "scale(1)" }], { duration: 180 });
+  }
+
+  function burstPlusOne(button) {
+    if (!button) return;
+    const burst = document.createElement("span");
+    burst.className = "tap-burst";
+    burst.textContent = "+1";
+    button.appendChild(burst);
+    burst.addEventListener("animationend", () => burst.remove(), { once: true });
+  }
+
+  function setStatus(text) {
+    $("#sync-status").textContent = text;
+  }
+
+  function updateQueueStatus(prefix) {
+    const queued = state.queue.length;
+    const status = $("#sync-status");
+    status.classList.remove("sync-synced", "sync-saving", "sync-offline", "sync-error");
+    if (prefix) {
+      status.classList.add("sync-error");
+      return setStatus(`${prefix} - ${queued} queued`);
+    }
+    if (!navigator.onLine) {
+      status.classList.add("sync-offline");
+      return setStatus(`${queued} queued - offline`);
+    }
+    if (state.syncing) {
+      status.classList.add("sync-saving");
+      return;
+    }
+    status.classList.add(queued ? "sync-saving" : "sync-synced");
+    setStatus(queued ? `${queued} queued - autosync` : "Synced");
+  }
+
+  function loadQueue() {
+    try {
+      const parsed = JSON.parse(localStorage.getItem(queueKey) || "[]");
+      return Array.isArray(parsed) ? parsed : [];
+    } catch (error) {
+      return [];
+    }
+  }
+
+  function saveQueue() {
+    localStorage.setItem(queueKey, JSON.stringify(state.queue));
+  }
+
+  function applyQueueCounts(counts) {
+    const output = JSON.parse(JSON.stringify(counts || { total: 0, byDrink: {}, byFloor: {}, byFloorDrink: {} }));
+    output.byDrink = output.byDrink || {};
+    output.byFloor = output.byFloor || {};
+    output.byFloorDrink = output.byFloorDrink || {};
+    const today = output.date || config.serverDate || todayKey();
+    state.queue.forEach(tap => {
+      if (!String(tap.tappedAt || "").startsWith(today)) return;
+      output.total = (output.total || 0) + 1;
+      output.byDrink[tap.drink] = (output.byDrink[tap.drink] || 0) + 1;
+      output.byFloor[tap.floor] = (output.byFloor[tap.floor] || 0) + 1;
+      output.byFloorDrink[tap.floor] = output.byFloorDrink[tap.floor] || {};
+      output.byFloorDrink[tap.floor][tap.drink] = (output.byFloorDrink[tap.floor][tap.drink] || 0) + 1;
+    });
+    return output;
+  }
+
+  function updateFloorCounts() {
+    const byFloor = (state.counts && state.counts.byFloor) || {};
+    document.querySelectorAll("[data-floor-count]").forEach(item => {
+      item.textContent = byFloor[item.dataset.floorCount] || 0;
+    });
+  }
+
+  function updateDrinkTileCounts() {
+    const byFloorDrink = (state.counts && state.counts.byFloorDrink && state.counts.byFloorDrink[state.floor]) || {};
+    const byDrink = (state.counts && state.counts.byDrink) || {};
+    document.querySelectorAll("[data-drink-count]").forEach(item => {
+      const drink = item.dataset.drinkCount;
+      item.textContent = Object.prototype.hasOwnProperty.call(byFloorDrink, drink) ? byFloorDrink[drink] : (byDrink[drink] || 0);
+    });
+  }
+
+  function toast(text) {
+    const toastEl = $("#toast");
+    toastEl.textContent = text;
+    toastEl.hidden = false;
+    clearTimeout(toastEl.timer);
+    toastEl.timer = setTimeout(() => { toastEl.hidden = true; }, 2600);
+  }
+
+  function deviceName() {
+    return `${navigator.platform || "Device"} ${navigator.userAgent.match(/(Android|iPad|iPhone|Windows|Macintosh)/)?.[0] || ""}`.trim();
+  }
+
+  function todayKey() {
+    const today = new Date();
+    const month = String(today.getMonth() + 1).padStart(2, "0");
+    const day = String(today.getDate()).padStart(2, "0");
+    return `${today.getFullYear()}-${month}-${day}`;
+  }
+
+  function initials(value) {
+    return String(value).split(/\s+/).map(part => part[0]).join("").slice(0, 2).toUpperCase();
+  }
+
+  function escapeHtml(value) {
+    return String(value == null ? "" : value).replace(/[&<>"']/g, char => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;" }[char]));
+  }
+
+  document.addEventListener("DOMContentLoaded", init);
+})();
+</script>

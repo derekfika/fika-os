@@ -1,0 +1,124 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fika-os.local/schemas/pack-4/booking-item-quantity.schema.json",
+  "title": "Booking Item Quantity and Production Conversion",
+  "description": "Draft business schema preserving ordered quantity/unit and optional approved production conversion from BOOK-002.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "id",
+    "sourceDecisionIds",
+    "bookingItemId",
+    "ordered",
+    "createdAt",
+    "updatedAt"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "type": "string",
+      "const": "pack-4-draft"
+    },
+    "id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "sourceDecisionIds": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1
+    },
+    "createdAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "updatedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "notes": {
+      "type": "string"
+    },
+    "bookingItemId": {
+      "type": "string"
+    },
+    "ordered": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "quantity",
+        "unitLabel"
+      ],
+      "properties": {
+        "quantity": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "unitLabel": {
+          "type": "string",
+          "minLength": 1
+        },
+        "unitCode": {
+          "type": "string"
+        },
+        "catalogueReference": {
+          "type": "string"
+        }
+      }
+    },
+    "productionConversion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "conversionType",
+        "factor"
+      ],
+      "properties": {
+        "conversionType": {
+          "type": "string",
+          "enum": [
+            "serves_per_unit",
+            "pieces_per_person",
+            "other"
+          ]
+        },
+        "factor": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "outputUnitLabel": {
+          "type": "string"
+        },
+        "sourceReference": {
+          "type": "string"
+        }
+      }
+    },
+    "productionQuantity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "quantity",
+        "unitLabel"
+      ],
+      "properties": {
+        "quantity": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "unitLabel": {
+          "type": "string",
+          "minLength": 1
+        },
+        "unitCode": {
+          "type": "string"
+        },
+        "catalogueReference": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}

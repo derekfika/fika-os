@@ -1,0 +1,931 @@
+<script>
+  (() => {
+    const config = window.PLATFORM_CONFIG;
+    const STORAGE_KEY = "angel-court-booking-" + config.site.siteId;
+    const CONTACT_PROFILE_KEY = "angel-court-booking-contact-profile";
+    const CONTACT_FIELDS = ["client.name", "client.email", "client.phone", "client.companyName"];
+    const DEFAULT_EVENT_TYPES = [
+      { id: "breakfast", label: "Breakfast", categories: ["Breakfast"], noticeType: "standard" },
+      { id: "lunch", label: "Lunch", categories: ["Lunch", "Lunch Add-ons", "Add-ons"], noticeType: "standard" },
+      { id: "meeting_hospitality", label: "Meeting hospitality", categories: ["Breakfast", "Lunch", "Lunch Add-ons", "Drinks & Packages"], noticeType: "standard" },
+      { id: "event_catering", label: "Event catering", categories: ["Events Catering", "Add-ons", "White Wine", "Red Wine", "Rose Wine", "Sparkling Wine", "Drinks & Packages"], noticeType: "large" },
+      { id: "drinks_reception", label: "Drinks reception", categories: ["White Wine", "Red Wine", "Rose Wine", "Sparkling Wine", "Drinks & Packages", "Add-ons"], noticeType: "large" },
+      { id: "bbq", label: "BBQ / large event", categories: ["Summer BBQ Catering", "White Wine", "Red Wine", "Rose Wine", "Sparkling Wine", "Drinks & Packages"], noticeType: "large" },
+      { id: "bespoke", label: "Bespoke enquiry", categories: [], noticeType: "large", allowsEmptyOrder: true }
+    ];
+    let saveIndicatorTimer = null;
+    let hasRenderedOnce = false;
+    const state = {
+      step: 0,
+      eventType: "",
+      fields: {},
+      items: {},
+      activeCategory: "",
+      submitted: false
+    };
+
+    const $ = (selector, root = document) => root.querySelector(selector);
+    const $$ = (selector, root = document) => Array.from(root.querySelectorAll(selector));
+    const money = new Intl.NumberFormat(config.site.locale || "en-GB", { style: "currency", currency: config.site.currency });
+
+    function init() {
+      applyBranding();
+      restore();
+      loadSavedContactProfile(false);
+      renderEventTypes();
+      bindFields();
+      setMinimumDate();
+      renderMenu();
+      render();
+      requestAnimationFrame(() => document.body.classList.add("page-ready"));
+      bindRippleEffects();
+      window.addEventListener("beforeunload", () => persist(false));
+    }
+
+    function applyBranding() {
+      document.documentElement.style.setProperty("--accent", config.site.branding.accent);
+      document.documentElement.style.setProperty("--ink", config.site.branding.ink);
+      document.documentElement.style.setProperty("--paper", config.site.branding.paper);
+      document.title = config.site.clientFacingName;
+      configureLogo("site-logo", "site-logo-svg", "site-logo-fallback", config.site.branding.siteLogoSvg, config.site.branding.siteLogoUrl, config.site.branding.siteLogoAlt, config.site.branding.siteFallbackText);
+      $("#hero-eyebrow").textContent = config.site.branding.eyebrow;
+      $("#hero-title").innerHTML = escapeHtml(config.site.branding.heroTitle).replace(",", ",<br>");
+      $("#hero-body").textContent = config.site.branding.heroBody;
+      $("#vat-note").textContent = config.site.copy.vatNote;
+    }
+
+    function configureLogo(imageId, svgId, fallbackId, svgMarkup, url, alt, fallbackText) {
+      const image = document.getElementById(imageId);
+      const svg = document.getElementById(svgId);
+      const fallback = document.getElementById(fallbackId);
+      fallback.textContent = fallbackText || alt || "";
+      image.hidden = true;
+      svg.hidden = true;
+      fallback.hidden = false;
+      const cleanSvg = normaliseInlineSvg(svgMarkup);
+      const logoUrl = normaliseLogoUrl(url);
+
+      if (logoUrl) {
+        image.alt = alt || fallbackText || "";
+        image.onload = () => {
+          image.hidden = false;
+          svg.hidden = true;
+          fallback.hidden = true;
+        };
+        image.onerror = () => {
+          image.hidden = true;
+          if (cleanSvg) {
+            svg.innerHTML = cleanSvg;
+            svg.setAttribute("role", "img");
+            svg.setAttribute("aria-label", alt || fallbackText || "Logo");
+            svg.hidden = false;
+            fallback.hidden = true;
+          } else {
+            fallback.hidden = false;
+          }
+        };
+        image.src = logoUrl;
+        return;
+      }
+
+      if (cleanSvg) {
+        svg.innerHTML = cleanSvg;
+        svg.setAttribute("role", "img");
+        svg.setAttribute("aria-label", alt || fallbackText || "Logo");
+        svg.hidden = false;
+        image.hidden = true;
+        fallback.hidden = true;
+        return;
+      }
+      svg.innerHTML = "";
+    }
+
+    function normaliseLogoUrl(url) {
+      const value = String(url || "").trim();
+      if (!value) return "";
+      if (/^https?:\/\//i.test(value) || /^data:image\//i.test(value)) return value;
+      if (/^www\./i.test(value)) return "https://" + value;
+      return value;
+    }
+
+    function normaliseInlineSvg(markup) {
+      const value = String(markup || "")
+        .trim()
+        .replace(/^<\?xml[^>]*>\s*/i, "")
+        .replace(/^<!--[\s\S]*?-->\s*/i, "")
+        .trim();
+      if (!value || !/^<svg[\s>]/i.test(value) || !/<\/svg>$/i.test(value)) return "";
+      if (/<script|on\w+\s*=|javascript:/i.test(value)) return "";
+      return value;
+    }
+
+    function renderEventTypes() {
+      const types = eventTypes();
+      const grid = $("#event-type-grid");
+      if (!types.length) {
+        grid.innerHTML = '<p class="guidance warning">Occasion options could not be loaded. Please refresh the page.</p>';
+        return;
+      }
+      grid.innerHTML = types.map(type => {
+        const selectedClass = state.eventType === type.id ? " selected" : "";
+        const notice = type.noticeType === "large"
+          ? config.site.rules.largeEventNoticeWorkingDays + " working days' notice"
+          : config.site.rules.standardNoticeHours + " hours' notice";
+        return '<button type="button" class="occasion-card' + selectedClass + '" data-event-type="' + escapeHtml(type.id) + '">' +
+          '<strong>' + escapeHtml(type.label) + '</strong>' +
+          '<span>' + escapeHtml(notice) + '</span>' +
+          '</button>';
+      }).join("");
+    }
+
+    function eventTypes() {
+      return Array.isArray(config.eventTypes) && config.eventTypes.length
+        ? config.eventTypes
+        : DEFAULT_EVENT_TYPES;
+    }
+
+    function bindFields() {
+      document.addEventListener("click", event => {
+        const typeButton = event.target.closest("[data-event-type]");
+        if (typeButton) {
+          state.eventType = typeButton.dataset.eventType;
+          state.activeCategory = "";
+          renderEventTypes();
+          renderMenu();
+          render();
+        }
+        const qtyButton = event.target.closest("[data-qty-action]");
+        if (qtyButton) changeQuantity(qtyButton.dataset.itemId, qtyButton.dataset.qtyAction === "up" ? 1 : -1);
+        const suggestionButton = event.target.closest("[data-use-suggestion]");
+        if (suggestionButton) applySuggestedQuantity(suggestionButton.dataset.useSuggestion);
+        const newBookingButton = event.target.closest('[data-action="new-booking"]');
+        if (newBookingButton) {
+          event.preventDefault();
+          resetBooking();
+        }
+        const resetButton = event.target.closest('[data-action="reset"]');
+        if (resetButton) {
+          event.preventDefault();
+          openResetModal();
+        }
+      });
+
+      document.addEventListener("input", event => {
+        if (event.target.matches("[name]")) {
+          state.fields[event.target.name] = fieldValue(event.target);
+          event.target.closest(".field")?.classList.remove("invalid");
+          persist(true);
+          if (CONTACT_FIELDS.includes(event.target.name)) saveContactProfileIfEnabled();
+          if (event.target.name === "event.guestCount") renderMenu();
+          renderSummary();
+          renderDateGuidance();
+        }
+        if (event.target.matches("[data-item-quantity]")) setQuantity(event.target.dataset.itemQuantity, event.target.value, true);
+        if (event.target.matches("[data-item-choice], [data-item-comment], [data-item-time]")) updateItemDetail(event.target);
+        if (event.target.id === "menu-search") renderMenuList();
+      });
+
+      document.addEventListener("change", function(event) {
+        if (event.target.matches("[data-item-quantity]")) finishQuantityEdit(event.target.dataset.itemQuantity);
+      });
+
+      $("#back-button").addEventListener("click", () => goTo(Math.max(0, state.step - 1)));
+      $("#next-button").addEventListener("click", next);
+      $$("[data-step-jump]").forEach(button => button.addEventListener("click", () => {
+        const target = Number(button.dataset.stepJump);
+        if (target <= state.step || target <= highestCompletedStep()) goTo(target);
+      }));
+      $("#reset-modal-cancel").addEventListener("click", closeResetModal);
+      $("#reset-modal-close").addEventListener("click", closeResetModal);
+      $("#reset-modal-confirm").addEventListener("click", () => {
+        closeResetModal();
+        resetBooking();
+      });
+      $("#reset-modal").addEventListener("click", event => {
+        if (event.target.id === "reset-modal") closeResetModal();
+      });
+      document.addEventListener("keydown", event => {
+        if (event.key === "Escape" && !$("#reset-modal").hidden) closeResetModal();
+      });
+      $("#remember-contact").addEventListener("change", () => {
+        saveContactProfileIfEnabled();
+        $("#forget-contact").hidden = !$("#remember-contact").checked;
+      });
+      $("#forget-contact").addEventListener("click", forgetContactProfile);
+    }
+
+    function render(shouldScroll) {
+      $$(".form-step").forEach(section => section.classList.toggle("active", Number(section.dataset.step) === state.step));
+      $$(".step").forEach((button, index) => {
+        button.classList.toggle("active", index === state.step);
+        button.classList.toggle("complete", index < state.step);
+        button.setAttribute("aria-current", index === state.step ? "step" : "false");
+      });
+      $("#back-button").style.visibility = state.step === 0 ? "hidden" : "visible";
+      $("#next-button").textContent = state.step === 5 ? "Send booking request" : "Continue";
+      $("#notice-guidance").innerHTML = noticeText();
+      renderDateGuidance();
+      renderSummary();
+      if (state.step === 5) renderReview();
+      persist(false);
+      if (hasRenderedOnce && shouldScroll) {
+        window.scrollTo({ top: document.querySelector(".app-shell").offsetTop - 18, behavior: "smooth" });
+      }
+      hasRenderedOnce = true;
+    }
+
+    function next() {
+      clearMessage();
+      const errors = validateStep(state.step);
+      if (errors.length) return showMessage(errors);
+      if (state.step < 5) return goTo(state.step + 1);
+      submit();
+    }
+
+    function goTo(step) {
+      state.step = step;
+      render(true);
+    }
+
+    function validateStep(step) {
+      const errors = [];
+      if (step === 0 && !state.eventType) errors.push("Choose the type of booking.");
+      if (step === 1) {
+        requireField("client.name", "Add your name.", errors);
+        const email = value("client.email");
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) errors.push("Add a valid work email.");
+        requireField("client.phone", "Add a contact number.", errors);
+        requireField("client.companyName", "Add your company name.", errors);
+      }
+      if (step === 2) {
+        requireField("event.eventDate", "Choose an event date.", errors);
+        requireField("event.startTime", "Choose a start or service time.", errors);
+        if (eventType().id === "bespoke") requireField("event.endTime", "Choose an end time for bespoke events.", errors);
+        if (Number(value("event.guestCount")) < 1) errors.push("Add the number of guests.");
+        if (!value("event.floorLevel") && !value("event.roomOrArea") && !value("event.deliveryPoint")) errors.push("Add a floor, room or delivery point.");
+        if (value("event.eventDate") && new Date(value("event.eventDate") + "T23:59:59") < new Date()) errors.push("The event date cannot be in the past.");
+        if (value("event.endTime") && value("event.endTime") <= value("event.startTime")) errors.push("The end time must be after the start time.");
+      }
+      if (step === 3 && !eventType().allowsEmptyOrder) {
+        const selected = selectedItems();
+        if (!selected.length) errors.push("Choose at least one menu item.");
+        selected.forEach(line => {
+          const item = menuItem(line.itemId);
+          if (line.quantity < item.minimumQuantity) errors.push(item.name + " requires at least " + item.minimumQuantity + ".");
+          if (item.minimumGuests && Number(value("event.guestCount")) < item.minimumGuests) errors.push(item.name + " requires at least " + item.minimumGuests + " guests.");
+          item.choices.forEach(group => {
+            if (group.required && !hasChoiceValue(line.choices[group.id])) errors.push("Choose an option for " + item.name + ".");
+          });
+        });
+      }
+      if (step === 4) {
+        const dietaryTotal = ["vegetarian", "vegan", "glutenFree", "coeliac", "dairyFree", "halal", "otherCount"]
+          .reduce((sum, key) => sum + Number(value("dietaries." + key) || 0), 0);
+        if (dietaryTotal > Number(value("event.guestCount"))) errors.push("Dietary counts exceed the total guest count. Please check them.");
+        if (value("dietaries.allergyDetails") && !value("dietaries.severeAllergyAcknowledged")) errors.push("Acknowledge the severe allergy notice.");
+      }
+      if (step === 5) {
+        ["quoteSubjectToConfirmation", "noticePolicyAccepted", "dietaryResponsibilityAccepted"].forEach(key => {
+          if (!value("acknowledgements." + key)) errors.push("Accept all three booking acknowledgements.");
+        });
+      }
+      return [...new Set(errors)];
+    }
+
+    function renderMenu() {
+      const type = eventType();
+      const categories = type ? type.categories : [];
+      if (!state.activeCategory || !categories.includes(state.activeCategory)) state.activeCategory = categories[0] || "";
+      $("#menu-categories").innerHTML = categories.map(category => {
+        const activeClass = category === state.activeCategory ? " active" : "";
+        return '<button type="button" class="category-tab' + activeClass + '" data-category="' + escapeHtml(category) + '">' +
+          escapeHtml(category) +
+          '</button>';
+      }).join("");
+      $$("[data-category]").forEach(button => button.addEventListener("click", () => {
+        state.activeCategory = button.dataset.category;
+        renderMenu();
+      }));
+      renderMenuList();
+    }
+
+    function renderMenuList() {
+      const search = ($("#menu-search")?.value || "").trim().toLowerCase();
+      const items = config.menu.filter(item => {
+        const inCategory = !state.activeCategory || item.category === state.activeCategory;
+        const matches = !search || (item.name + " " + item.description + " " + item.servingInfo).toLowerCase().includes(search);
+        return inCategory && matches;
+      });
+      $("#menu-list").innerHTML = items.length ? items.map(renderMenuCard).join("") : '<p class="guidance">No menu items match this search.</p>';
+      $$(".menu-card", $("#menu-list")).forEach((card, index) => {
+        card.style.animationDelay = Math.min(index * 42, 250) + "ms";
+      });
+      hydrateItemInputs();
+    }
+
+    function renderMenuCard(item) {
+      const line = ensureLine(item.id);
+      const selected = line.quantity > 0;
+      const suggestion = suggestedQuantity(item);
+      const description = item.description ? '<p>' + escapeHtml(item.description) + '</p>' : "";
+      const notice = item.noticeRequiredDays ? " - " + item.noticeRequiredDays + " days' notice" : "";
+      const suggestionHtml = suggestion
+        ? '<div class="suggestion-pill">' +
+          '<span><strong>Suggested: ' + suggestion.quantity + " " + escapeHtml(suggestion.unit) + '</strong><small>Feeds approx. ' + suggestion.feeds + ' guests</small></span>' +
+          '<button class="use-suggestion-button" type="button" data-use-suggestion="' + escapeHtml(item.id) + '">Use suggestion</button>' +
+          '</div>'
+        : "";
+      const lineTotal = selected
+        ? line.quantity + " x " + money.format(item.unitPrice) + " = " + money.format(line.quantity * item.unitPrice)
+        : "Not selected";
+      return '<article class="menu-card' + (selected ? " selected" : "") + '" data-menu-card="' + escapeHtml(item.id) + '">' +
+        '<div>' +
+        '<h3>' + escapeHtml(item.name) + '</h3>' +
+        description +
+        '<p>' + escapeHtml(item.servingInfo) + escapeHtml(notice) + '</p>' +
+        '<p class="menu-price">' + money.format(item.unitPrice) + ' unit price</p>' +
+        suggestionHtml +
+        '</div>' +
+        '<div class="quantity-control" aria-label="' + escapeHtml(item.name) + ' quantity">' +
+        '<button type="button" data-qty-action="down" data-item-id="' + escapeHtml(item.id) + '" aria-label="Reduce quantity">-</button>' +
+        '<input type="number" min="0" step="1" value="' + line.quantity + '" data-item-quantity="' + escapeHtml(item.id) + '" aria-label="Quantity">' +
+        '<button type="button" data-qty-action="up" data-item-id="' + escapeHtml(item.id) + '" aria-label="Increase quantity">+</button>' +
+        '</div>' +
+        '<div class="line-total">' + escapeHtml(lineTotal) + '</div>' +
+        (selected ? renderItemOptions(item, line) : "") +
+        '</article>';
+    }
+
+    function renderItemOptions(item, line) {
+      const choices = item.choices.map(group => {
+        if (isMultiChoice(group)) {
+          const selectedValues = Array.isArray(line.choices[group.id]) ? line.choices[group.id] : [];
+          const options = group.options.map(option => {
+            const checked = selectedValues.includes(option) ? " checked" : "";
+            return '<label class="choice-check">' +
+              '<input type="checkbox" data-item-choice="' + escapeHtml(item.id) + '" data-choice-id="' + escapeHtml(group.id) + '" data-choice-value="' + escapeHtml(option) + '"' + checked + '>' +
+              '<span class="choice-dot" aria-hidden="true"></span>' +
+              '<span>' + escapeHtml(option) + '</span>' +
+              '</label>';
+          }).join("");
+          return '<fieldset class="field choice-field">' +
+            '<legend>' + escapeHtml(group.label) + (group.required ? " *" : "") + '</legend>' +
+            '<div class="choice-checks">' + options + '</div>' +
+            '</fieldset>';
+        }
+        const options = group.options.map(option => {
+          return '<option value="' + escapeHtml(option) + '"' + (line.choices[group.id] === option ? " selected" : "") + '>' + escapeHtml(option) + '</option>';
+        }).join("");
+        return '<label class="field">' +
+          '<span>' + escapeHtml(group.label) + (group.required ? " *" : "") + '</span>' +
+          '<select data-item-choice="' + escapeHtml(item.id) + '" data-choice-id="' + escapeHtml(group.id) + '">' +
+          '<option value="">Choose...</option>' +
+          options +
+          '</select>' +
+          '</label>';
+      }).join("");
+      return '<div class="item-options">' +
+        choices +
+        '<label class="field">' +
+        '<span>Service time</span>' +
+        '<input type="time" data-item-time="' + escapeHtml(item.id) + '" value="' + escapeHtml(line.timeRequired || value("event.startTime") || "") + '">' +
+        '</label>' +
+        '<label class="field' + (item.choices.length ? " full" : "") + '">' +
+        '<span>Comments</span>' +
+        '<input data-item-comment="' + escapeHtml(item.id) + '" value="' + escapeHtml(line.comments || "") + '" placeholder="Optional notes">' +
+        '</label>' +
+        '</div>';
+    }
+
+    function changeQuantity(id, delta) {
+      const item = menuItem(id);
+      const line = ensureLine(id);
+      const wasSelected = line.quantity > 0;
+      const next = Math.max(0, line.quantity + delta);
+      line.quantity = next > 0 && line.quantity === 0 ? Math.max(next, item.minimumQuantity || 1) : next;
+      updateAfterItemChange(id, wasSelected !== (line.quantity > 0));
+    }
+
+    function setQuantity(id, raw, deferRedraw) {
+      const line = ensureLine(id);
+      const wasSelected = line.quantity > 0;
+      line.quantity = Math.max(0, Math.floor(Number(raw || 0)));
+      updateAfterItemChange(id, deferRedraw ? false : wasSelected !== (line.quantity > 0));
+    }
+
+    function finishQuantityEdit(id) {
+      const line = ensureLine(id);
+      const current = $$(".menu-card", $("#menu-list")).find(function(card) {
+        return card.dataset.menuCard === id;
+      });
+      const hasOptions = current && current.querySelector(".item-options");
+      const shouldHaveOptions = line.quantity > 0;
+
+      if (Boolean(hasOptions) !== shouldHaveOptions) {
+        updateMenuCard(id);
+      }
+    }
+
+    function updateItemDetail(input) {
+      const id = input.dataset.itemChoice || input.dataset.itemComment || input.dataset.itemTime;
+      const line = ensureLine(id);
+      if (input.dataset.itemChoice) {
+        if (input.type === "checkbox" && input.dataset.choiceValue) {
+          const current = Array.isArray(line.choices[input.dataset.choiceId]) ? line.choices[input.dataset.choiceId].slice() : [];
+          const next = input.checked
+            ? Array.from(new Set(current.concat(input.dataset.choiceValue)))
+            : current.filter(value => value !== input.dataset.choiceValue);
+          line.choices[input.dataset.choiceId] = next;
+        } else {
+          line.choices[input.dataset.choiceId] = input.value;
+        }
+      }
+      if (input.dataset.itemComment) line.comments = input.value;
+      if (input.dataset.itemTime) line.timeRequired = input.value;
+      persist(true);
+      renderSummary();
+    }
+
+    function updateMenuCard(id) {
+      const item = menuItem(id);
+      const current = $$(".menu-card", $("#menu-list")).find(card => card.dataset.menuCard === id);
+      if (!item || !current) return;
+
+      const active = document.activeElement;
+      const restoreQuantityFocus = active?.dataset?.itemQuantity === id;
+      const template = document.createElement("template");
+      template.innerHTML = renderMenuCard(item).trim();
+      const next = template.content.firstElementChild;
+      next.style.animationDelay = "0ms";
+      current.replaceWith(next);
+
+      if (restoreQuantityFocus) {
+        const input = next.querySelector("[data-item-quantity]");
+        input?.focus({ preventScroll: true });
+      }
+    }
+
+    function updateMenuCardQuantity(id) {
+      const item = menuItem(id);
+      const line = ensureLine(id);
+      const current = $$(".menu-card", $("#menu-list")).find(card => card.dataset.menuCard === id);
+      if (!item || !current) return false;
+      const input = current.querySelector("[data-item-quantity]");
+      const total = current.querySelector(".line-total");
+      if (input && document.activeElement !== input) input.value = line.quantity;
+      if (total) {
+        total.textContent = line.quantity > 0
+          ? line.quantity + " x " + money.format(item.unitPrice) + " = " + money.format(line.quantity * item.unitPrice)
+          : "Not selected";
+      }
+      return true;
+    }
+
+    function updateAfterItemChange(id, redrawCard) {
+      if (redrawCard || !updateMenuCardQuantity(id)) updateMenuCard(id);
+      renderSummary();
+      persist(true);
+    }
+
+    function renderSummary() {
+      const type = eventType();
+      const guests = Number(value("event.guestCount") || 0);
+      const eventDate = formatDisplayDate(value("event.eventDate"));
+      const serviceTime = value("event.startTime");
+
+      $("#summary-meta").innerHTML = !state.eventType
+        ? '<div class="summary-empty"><strong>Start building your booking</strong><span>Choose an occasion to begin.</span></div>'
+        : '<div class="summary-booking-meta">' +
+          '<strong>' + escapeHtml(type.label || "Hospitality booking") + '</strong>' +
+          '<span>' + (guests ? guests + " guests" : "Add guest count for serving suggestions.") + '</span>' +
+          (eventDate ? '<span>' + escapeHtml(eventDate) + '</span>' : "") +
+          (serviceTime ? '<span>' + escapeHtml(serviceTime) + ' service</span>' : "") +
+          '</div>';
+
+      const lines = selectedItems();
+      $("#summary-items").innerHTML = lines.length ? lines.map(line => {
+        const item = menuItem(line.itemId);
+        return '<div class="summary-item"><div><strong>' + line.quantity + ' x ' + escapeHtml(item.name || "Menu item") + '</strong><small>' + money.format(line.quantity * item.unitPrice) + '</small></div></div>';
+      }).join("") : '<div class="summary-empty summary-empty-menu"><strong>No menu items yet.</strong><span>Choose from the menu to build your request.</span></div>';
+
+      const totalElement = $("#summary-total");
+      const nextTotal = money.format(total());
+      if (totalElement.textContent !== nextTotal) {
+        totalElement.textContent = nextTotal;
+        totalElement.classList.remove("total-updated");
+        void totalElement.offsetWidth;
+        totalElement.classList.add("total-updated");
+        setTimeout(() => totalElement.classList.remove("total-updated"), 260);
+      }
+    }
+
+    function renderDateGuidance() {
+      const box = $("#date-guidance");
+      const dateValue = value("event.eventDate");
+      if (!dateValue) return box.innerHTML = "";
+      const eventDate = new Date(dateValue + "T" + (value("event.startTime") || "00:00") + ":00");
+      const hours = (eventDate - new Date()) / 3600000;
+      const workingDays = workingDaysUntil(eventDate);
+      const warnings = [];
+      if (hours < config.site.rules.standardNoticeHours) warnings.push("This request is inside the standard " + config.site.rules.standardNoticeHours + "-hour notice window.");
+      if (eventType()?.noticeType === "large" && workingDays < config.site.rules.largeEventNoticeWorkingDays) warnings.push("Large events normally need " + config.site.rules.largeEventNoticeWorkingDays + " working days' notice.");
+      if (workingDays < config.site.rules.dietaryNoticeWorkingDays) warnings.push("Dietary requirements are inside the " + config.site.rules.dietaryNoticeWorkingDays + "-working-day deadline.");
+      box.classList.toggle("warning", warnings.length > 0);
+      box.innerHTML = warnings.join("<br>");
+    }
+
+    function renderReview() {
+      const lines = selectedItems();
+      const menuRows = lines.length
+        ? lines.map(line => {
+          const item = menuItem(line.itemId);
+          return reviewRow(line.quantity + " x " + item.name, money.format(line.quantity * item.unitPrice));
+        }).join("")
+        : reviewRow("Bespoke enquiry", "Menu to be discussed");
+      $("#review-content").innerHTML =
+        '<div class="review-block"><h3>Contact</h3>' +
+        reviewRow("Name", value("client.name")) +
+        reviewRow("Email", value("client.email")) +
+        reviewRow("Phone", value("client.phone")) +
+        reviewRow("Company", value("client.companyName")) +
+        (value("client.invoiceReference") ? reviewRow("Invoice reference", value("client.invoiceReference")) : "") +
+        '</div>' +
+        '<div class="review-block"><h3>Event</h3>' +
+        reviewRow("Occasion", eventType()?.label || "") +
+        reviewRow("Date", value("event.eventDate")) +
+        reviewRow("Time", [value("event.startTime"), value("event.endTime")].filter(Boolean).join("-")) +
+        reviewRow("Guests", value("event.guestCount")) +
+        reviewRow("Location", [value("event.floorLevel"), value("event.roomOrArea"), value("event.deliveryPoint")].filter(Boolean).join(" - ")) +
+        '</div>' +
+        '<div class="review-block"><h3>Menu</h3>' +
+        menuRows +
+        reviewRow("Estimated total", money.format(total())) +
+        '<p class="fine-print" style="color:var(--muted)">' + escapeHtml(config.site.copy.vatNote) + '</p>' +
+        '</div>';
+    }
+
+    function submit() {
+      const button = $("#next-button");
+      button.disabled = true;
+      button.textContent = "Sending...";
+      const payload = buildPayload();
+      if (window.google?.script?.run) {
+        google.script.run
+          .withSuccessHandler(handleSubmission)
+          .withFailureHandler(error => submissionFailed(error?.message || String(error)))
+          .submitBookingRequest(payload);
+      } else {
+        setTimeout(() => handleSubmission({ ok: true, bookingId: "AC-PREVIEW-" + Date.now().toString().slice(-6) }), 500);
+      }
+    }
+
+    function handleSubmission(result) {
+      if (!result?.ok) return submissionFailed((result?.errors || ["The request could not be submitted."]).join(" "));
+      state.submitted = true;
+      $$(".form-step").forEach(section => section.classList.remove("active"));
+      $(".form-actions").hidden = true;
+      $(".stepper").hidden = true;
+      $("#confirmation").hidden = false;
+      $("#confirmation-reference").textContent = result.bookingId;
+      try {
+        localStorage.removeItem(STORAGE_KEY);
+      } catch (_) { }
+      window.scrollTo({ top: document.querySelector(".app-shell").offsetTop - 18, behavior: "smooth" });
+    }
+
+    function submissionFailed(message) {
+      $("#next-button").disabled = false;
+      $("#next-button").textContent = "Send booking request";
+      showMessage([message]);
+    }
+
+    function buildPayload() {
+      return {
+        client: objectFromPrefix("client."),
+        event: objectFromPrefix("event."),
+        order: {
+          eventType: state.eventType,
+          items: selectedItems().map(line => ({
+            itemId: line.itemId,
+            quantity: line.quantity,
+            choices: Object.entries(line.choices).map(([id, value]) => ({ id, value: Array.isArray(value) ? value.slice() : value })),
+            comments: line.comments || "",
+            timeRequired: line.timeRequired || value("event.startTime") || ""
+          }))
+        },
+        dietaries: objectFromPrefix("dietaries."),
+        acknowledgements: objectFromPrefix("acknowledgements."),
+        specialInstructions: value("specialInstructions")
+      };
+    }
+
+    function objectFromPrefix(prefix) {
+      return Object.keys(state.fields).filter(key => key.startsWith(prefix)).reduce((out, key) => {
+        out[key.slice(prefix.length)] = state.fields[key];
+        return out;
+      }, {});
+    }
+
+    function restore() {
+      try {
+        const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || "null");
+        if (!saved) return;
+        state.step = Math.max(0, Math.min(5, Number(saved.step) || 0));
+        state.eventType = typeof saved.eventType === "string" ? saved.eventType : "";
+        state.fields = saved.fields && typeof saved.fields === "object" ? saved.fields : {};
+        state.items = saved.items && typeof saved.items === "object" ? saved.items : {};
+        state.activeCategory = typeof saved.activeCategory === "string" ? saved.activeCategory : "";
+        state.submitted = false;
+      } catch (_) { }
+    }
+
+    function hydrateItemInputs() {
+      $$("[data-item-quantity]").forEach(input => input.value = ensureLine(input.dataset.itemQuantity).quantity);
+    }
+
+    function persist(showIndicator) {
+      if (state.submitted) return;
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify({ step: state.step, eventType: state.eventType, fields: state.fields, items: state.items, activeCategory: state.activeCategory }));
+        if (showIndicator) renderSaveIndicator();
+      } catch (_) { }
+    }
+
+    function resetBooking() {
+      try {
+        localStorage.removeItem(STORAGE_KEY);
+      } catch (_) { }
+
+      state.step = 0;
+      state.eventType = "";
+      state.fields = {};
+      state.items = {};
+      state.activeCategory = "";
+      state.submitted = false;
+
+      $$("[name]").forEach(input => {
+        if (input.type === "checkbox" || input.type === "radio") {
+          input.checked = input.defaultChecked;
+        } else {
+          input.value = input.defaultValue;
+        }
+        input.closest(".field")?.classList.remove("invalid");
+        state.fields[input.name] = fieldValue(input);
+      });
+      loadSavedContactProfile(true);
+
+      const menuSearch = $("#menu-search");
+      if (menuSearch) menuSearch.value = "";
+
+      clearMessage();
+      $("#confirmation").hidden = true;
+      $("#confirmation-reference").textContent = "";
+      $(".form-actions").hidden = false;
+      $(".stepper").hidden = false;
+      $("#next-button").disabled = false;
+
+      renderEventTypes();
+      bindSavedFields();
+      renderMenu();
+      render(false);
+
+      const firstChoice = $("[data-event-type]");
+      if (firstChoice) firstChoice.focus({ preventScroll: true });
+    }
+
+    function openResetModal() {
+      const modal = $("#reset-modal");
+      modal.hidden = false;
+      document.body.classList.add("modal-open");
+      requestAnimationFrame(() => modal.classList.add("visible"));
+      $("#reset-modal-cancel").focus();
+    }
+
+    function closeResetModal() {
+      const modal = $("#reset-modal");
+      modal.classList.remove("visible");
+      document.body.classList.remove("modal-open");
+      setTimeout(() => {
+        modal.hidden = true;
+        $('[data-action="reset"]')?.focus();
+      }, 180);
+    }
+
+    function bindSavedFields() {
+      $$("[name]").forEach(input => {
+        if (Object.prototype.hasOwnProperty.call(state.fields, input.name)) setFieldValue(input, state.fields[input.name]);
+        else state.fields[input.name] = fieldValue(input);
+      });
+    }
+
+    function setMinimumDate() {
+      const dateInput = $('[name="event.eventDate"]');
+      const today = new Date();
+      dateInput.min = [today.getFullYear(), String(today.getMonth() + 1).padStart(2, "0"), String(today.getDate()).padStart(2, "0")].join("-");
+      bindSavedFields();
+    }
+
+    function fieldValue(input) {
+      return input.type === "checkbox" ? input.checked : input.value;
+    }
+
+    function setFieldValue(input, saved) {
+      if (input.type === "checkbox") input.checked = Boolean(saved);
+      else input.value = saved;
+    }
+
+    function requireField(name, message, errors) {
+      if (!value(name)) {
+        errors.push(message);
+        $('[name="' + name + '"]')?.closest(".field")?.classList.add("invalid");
+      }
+    }
+
+    function value(name) {
+      return state.fields[name] ?? "";
+    }
+
+    function eventType() {
+      return eventTypes().find(type => type.id === state.eventType) || {
+        id: "",
+        label: "",
+        categories: [],
+        noticeType: "standard",
+        allowsEmptyOrder: false
+      };
+    }
+
+    function menuItem(id) {
+      return config.menu.find(item => item.id === id);
+    }
+
+    function ensureLine(id) {
+      if (!state.items[id]) state.items[id] = { itemId: id, quantity: 0, choices: {}, comments: "", timeRequired: "" };
+      return state.items[id];
+    }
+
+    function isMultiChoice(group) {
+      return ["multi", "checkbox", "checkboxes"].includes(String(group.type || "").toLowerCase());
+    }
+
+    function hasChoiceValue(choice) {
+      return Array.isArray(choice) ? choice.length > 0 : !!choice;
+    }
+
+    function selectedItems() {
+      return Object.values(state.items).filter(line => line.quantity > 0 && menuItem(line.itemId));
+    }
+
+    function total() {
+      return selectedItems().reduce((sum, line) => sum + menuItem(line.itemId).unitPrice * line.quantity, 0);
+    }
+
+    function noticeText() {
+      if (!state.eventType) return "";
+      return eventType().noticeType === "large"
+        ? "Large events normally require " + config.site.rules.largeEventNoticeWorkingDays + " working days' notice. We'll still capture your request if the date is closer."
+        : "Standard hospitality normally requires at least " + config.site.rules.standardNoticeHours + " hours' notice.";
+    }
+
+    function workingDaysUntil(end) {
+      const cursor = new Date();
+      cursor.setHours(0, 0, 0, 0);
+      const target = new Date(end);
+      target.setHours(0, 0, 0, 0);
+      let days = 0;
+      while (cursor < target) {
+        cursor.setDate(cursor.getDate() + 1);
+        if (cursor.getDay() !== 0 && cursor.getDay() !== 6) days++;
+      }
+      return days;
+    }
+
+    function highestCompletedStep() {
+      let completed = 0;
+      for (let i = 0; i < 5; i++) {
+        if (validateStep(i).length) break;
+        completed = i + 1;
+      }
+      return completed;
+    }
+
+    function reviewRow(label, content) {
+      return '<div class="review-row"><span>' + escapeHtml(label) + '</span><strong>' + escapeHtml(content || "-") + '</strong></div>';
+    }
+
+    function showMessage(errors) {
+      $("#messages").innerHTML = '<div class="message">' + errors.map(escapeHtml).join("<br>") + '</div>';
+      $("#messages").scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+
+    function clearMessage() {
+      $("#messages").innerHTML = "";
+    }
+
+    function formatDisplayDate(dateString) {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(String(dateString || ""))) return "";
+      const parts = dateString.split("-").map(Number);
+      const date = new Date(parts[0], parts[1] - 1, parts[2]);
+      if (isNaN(date.getTime())) return "";
+      return date.toLocaleDateString(config.site.locale || "en-GB", {
+        weekday: "short",
+        day: "numeric",
+        month: "short"
+      });
+    }
+
+    function suggestedQuantity(item) {
+      const guests = Number(value("event.guestCount") || 0);
+      const serves = Number(item && item.serves || 0);
+      if (!guests || !serves || item.suggestionType !== "ceil_by_guests") return null;
+      const quantity = Math.max(
+        Number(item.minimumQuantity || 1),
+        Math.ceil(guests / serves)
+      );
+      return {
+        quantity: quantity,
+        feeds: quantity * serves,
+        unit: item.suggestionUnit || "units"
+      };
+    }
+
+    function applySuggestedQuantity(itemId) {
+      const item = menuItem(itemId);
+      const suggestion = suggestedQuantity(item);
+      if (!suggestion) return;
+      const line = ensureLine(itemId);
+      const wasSelected = line.quantity > 0;
+      line.quantity = suggestion.quantity;
+      updateAfterItemChange(itemId, wasSelected !== (line.quantity > 0));
+    }
+
+    function loadSavedContactProfile(includeEmptyFields) {
+      try {
+        const profile = JSON.parse(localStorage.getItem(CONTACT_PROFILE_KEY) || "null");
+        if (!profile) return;
+        CONTACT_FIELDS.forEach(field => {
+          const draftHasValue = Object.prototype.hasOwnProperty.call(state.fields, field);
+          if ((!draftHasValue || includeEmptyFields) && profile[field]) {
+            state.fields[field] = profile[field];
+          }
+        });
+        $("#remember-contact").checked = true;
+        $("#forget-contact").hidden = false;
+      } catch (_) { }
+    }
+
+    function saveContactProfileIfEnabled() {
+      const checkbox = $("#remember-contact");
+      if (!checkbox || !checkbox.checked) return;
+      const profile = {};
+      CONTACT_FIELDS.forEach(field => {
+        profile[field] = value(field);
+      });
+      try {
+        localStorage.setItem(CONTACT_PROFILE_KEY, JSON.stringify(profile));
+      } catch (_) { }
+    }
+
+    function forgetContactProfile() {
+      try {
+        localStorage.removeItem(CONTACT_PROFILE_KEY);
+      } catch (_) { }
+      $("#remember-contact").checked = false;
+      $("#forget-contact").hidden = true;
+    }
+
+    function renderSaveIndicator() {
+      const status = $("#save-status-text");
+      if (!status) return;
+      status.textContent = "Progress saved";
+      status.classList.add("visible");
+      clearTimeout(saveIndicatorTimer);
+      saveIndicatorTimer = setTimeout(() => {
+        status.classList.remove("visible");
+      }, 1600);
+    }
+
+    function bindRippleEffects() {
+      document.addEventListener("pointerdown", event => {
+        const button = event.target.closest(".primary-button, .occasion-card, .category-tab");
+        if (!button) return;
+        const rect = button.getBoundingClientRect();
+        const size = Math.max(rect.width, rect.height);
+        const ripple = document.createElement("span");
+        ripple.className = "click-ripple";
+        ripple.style.width = size + "px";
+        ripple.style.height = size + "px";
+        ripple.style.left = event.clientX - rect.left - size / 2 + "px";
+        ripple.style.top = event.clientY - rect.top - size / 2 + "px";
+        button.appendChild(ripple);
+        ripple.addEventListener("animationend", () => ripple.remove());
+      });
+    }
+
+    function escapeHtml(value) {
+      return String(value ?? "").replace(/[&<>"']/g, char => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;" }[char]));
+    }
+
+    document.addEventListener("DOMContentLoaded", init);
+  })();
+</script>

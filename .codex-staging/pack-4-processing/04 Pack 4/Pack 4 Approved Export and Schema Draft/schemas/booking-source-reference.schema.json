@@ -1,0 +1,90 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fika-os.local/schemas/pack-4/booking-source-reference.schema.json",
+  "title": "Booking Source Reference",
+  "description": "Draft business schema for channel-neutral booking source metadata and stable source references from BOOK-007.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "id",
+    "sourceDecisionIds",
+    "bookingId",
+    "sourceChannel",
+    "stableSourceReference",
+    "parserDetailStoredOutsideBooking",
+    "createdAt",
+    "updatedAt"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "type": "string",
+      "const": "pack-4-draft"
+    },
+    "id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "sourceDecisionIds": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1
+    },
+    "createdAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "updatedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "notes": {
+      "type": "string"
+    },
+    "bookingId": {
+      "type": "string"
+    },
+    "sourceChannel": {
+      "type": "string",
+      "enum": [
+        "direct_platform",
+        "email",
+        "manual",
+        "legacy",
+        "other"
+      ]
+    },
+    "stableSourceReference": {
+      "type": "string",
+      "minLength": 1
+    },
+    "submittedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "sourceMetadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "originSystemLabel": {
+          "type": "string"
+        },
+        "submissionId": {
+          "type": "string"
+        },
+        "messageId": {
+          "type": "string"
+        },
+        "legacyReference": {
+          "type": "string"
+        }
+      }
+    },
+    "parserDetailStoredOutsideBooking": {
+      "type": "boolean",
+      "const": true
+    }
+  }
+}

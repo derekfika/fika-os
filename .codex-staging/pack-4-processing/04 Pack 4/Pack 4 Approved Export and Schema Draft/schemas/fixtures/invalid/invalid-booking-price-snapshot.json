@@ -1,0 +1,25 @@
+{
+  "schemaVersion": "pack-4-draft",
+  "id": "bps-001",
+  "sourceDecisionIds": [
+    "BOOK-004"
+  ],
+  "bookingId": "booking-001",
+  "snapshotVersion": 1,
+  "snapshotStatus": "accepted",
+  "immutableAfterAcceptance": false,
+  "bookingTotalExVat": {
+    "amount": 10000,
+    "currency": "GBP"
+  },
+  "vatTotal": {
+    "amount": 2000,
+    "currency": "GBP"
+  },
+  "bookingTotalIncVat": {
+    "amount": 12000,
+    "currency": "GBP"
+  },
+  "createdAt": "2026-07-14T18:45:00Z",
+  "updatedAt": "2026-07-14T18:45:00Z"
+}

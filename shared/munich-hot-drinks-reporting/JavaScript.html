@@ -1,0 +1,503 @@
+<script>
+(() => {
+  const config = window.APP_CONFIG || {};
+  const $ = selector => document.querySelector(selector);
+  const state = {
+    lastReport: null,
+    heatmapMode: "total",
+    hourlyView: "chart",
+    progressTimer: null,
+    progressStartedAt: 0
+  };
+  const drinkColors = ["#00538A", "#0b70a8", "#167a62", "#ff8000", "#4F34C7", "#8f3d2f", "#d39a22", "#647280"];
+  const reportingWeekdays = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"];
+
+  function init() {
+    renderFilterOptions();
+    bindEvents();
+    runReport();
+  }
+
+  function renderFilterOptions() {
+    $('[name="floor"]').innerHTML = [`<option>Combined</option>`].concat((config.floors || []).map(floor => `<option>${escapeHtml(floor)}</option>`)).join("");
+    $('[name="drink"]').innerHTML = [`<option>All</option>`].concat((config.drinks || []).map(drink => `<option>${escapeHtml(drink)}</option>`)).join("");
+    const today = config.serverDate || new Date().toISOString().slice(0, 10);
+    $('[name="startDate"]').value = today;
+    $('[name="endDate"]').value = today;
+  }
+
+  function bindEvents() {
+    $("#dashboard-filters").addEventListener("submit", event => {
+      event.preventDefault();
+      runReport();
+    });
+    bindClick("#export-csv", exportCsv);
+    bindClick("#export-pdf", exportPdf);
+    const heatmapMode = $("#heatmap-mode");
+    if (heatmapMode) {
+      heatmapMode.addEventListener("change", event => {
+        state.heatmapMode = event.target.value;
+        if (state.lastReport) renderHeatmapFromReport(state.lastReport);
+      });
+    }
+    document.querySelectorAll("[data-hourly-view]").forEach(button => {
+      button.addEventListener("click", () => {
+        state.hourlyView = button.dataset.hourlyView;
+        document.querySelectorAll("[data-hourly-view]").forEach(item => item.classList.toggle("active", item === button));
+        if (state.lastReport) renderHourlyDrinks(state.lastReport.summary || {});
+      });
+    });
+  }
+
+  function bindClick(selector, handler) {
+    const element = $(selector);
+    if (element) element.addEventListener("click", handler);
+  }
+
+  function runReport() {
+    startAction($("#dashboard-filters button[type='submit']"), "Running...");
+    showReportLoading();
+    startReportProgress();
+    google.script.run
+      .withSuccessHandler(result => {
+        completeReportProgress("Report ready");
+        finishAction($("#dashboard-filters button[type='submit']"), "Run report");
+        renderReport(result);
+        toast("Report updated");
+      })
+      .withFailureHandler(error => {
+        failReportProgress(error.message || String(error));
+        finishAction($("#dashboard-filters button[type='submit']"), "Run report");
+        toast(error.message || String(error), "error");
+      })
+      .getDashboardReport(readFilters());
+  }
+
+  function renderReport(result) {
+    state.lastReport = result;
+    const summary = result.summary || {};
+    renderReportContext(result.filters || readFilters(), summary);
+    renderTakeaways(summary);
+    const topDrink = topEntry(summary.byDrink || {});
+    $("#report-summary").innerHTML = [
+      metric("Total drinks", summary.total || 0, "selected range", "volume", "cup"),
+      metric("Average per day", summary.averagePerDay || 0, "per active day", "daily", "avg"),
+      metric("Peak hour", summary.peakHour || "-", "busiest hour", "peak", "peak", "heatmap"),
+      metric("Most popular drink", topDrink.key || "-", topDrink.value ? `${percent(topDrink.value, summary.total)}% of all drinks` : "no drink activity", "drink", "mix", "drink"),
+      metric("Busiest day", shortDate(summary.busiestDay) || "-", "highest volume day", "day", "day"),
+      metric("Tue-Thu average", summary.tuesdayThursdayDailyAverage || 0, "midweek benchmark", "midweek", "avg"),
+      metric("Mon-Thu average", summary.mondayThursdayDailyAverage || 0, "core week benchmark", "week", "avg"),
+      metric("Active days", Object.keys(summary.byDate || {}).length, "days with activity", "calendar", "calendar")
+    ].join("");
+    animateMetricNumbers();
+    bindMetricActions();
+    renderHeatmapFromReport(result);
+    renderHourlyDrinks(summary);
+    renderTrend(summary.trend || []);
+    renderListChart("#drink-mix", summary.byDrink || {}, summary.drinkMix || {});
+    renderListChart("#floor-comparison", summary.byFloor || {});
+  }
+
+  function renderHeatmapFromReport(result) {
+    const summary = result.summary || {};
+    renderHeatmap(summary.heatmap || {}, summary.heatmapDrinkTop || {}, result.filters || readFilters(), summary);
+  }
+
+  function renderHeatmap(heatmap, heatmapDrinkTop, filters, summary) {
+    filters = filters || {};
+    summary = summary || {};
+    const bucketConfig = config.timeBuckets || [];
+    const buckets = bucketConfig.map(bucket => bucket.label);
+    const days = reportingWeekdays.filter(day => heatmap[day]);
+    const values = Object.values(heatmap).flatMap(row => Object.values(row || {}));
+    const max = Math.max(1, ...values);
+    const total = values.reduce((sum, value) => sum + Number(value || 0), 0);
+    if (!days.length || !total) {
+      $("#heatmap").innerHTML = timeEmptyState(summary, "heatmap activity");
+      return;
+    }
+    $("#heatmap").innerHTML = `<div class="heatmap-grid" style="--cols:${buckets.length}">
+      <div class="heat-head">Day</div>${bucketConfig.map(bucket => `<div class="heat-head${bucket.closed && filters.excludeClosedPeriods ? " is-closed" : ""}">${escapeHtml(bucket.label)}</div>`).join("")}
+      ${days.map(day => `<div class="heat-day">${escapeHtml(day)}</div>${bucketConfig.map(bucket => {
+        const value = heatmap[day][bucket.label] || 0;
+        const intensity = Math.max(.05, value / max);
+        const closed = bucket.closed && filters.excludeClosedPeriods;
+        const topDrink = ((heatmapDrinkTop[day] || {})[bucket.label]) || {};
+        const drinkLabel = topDrink.drink ? `${topDrink.drink} (${topDrink.count})` : "";
+        const display = state.heatmapMode === "topDrink" && drinkLabel ? drinkLabel : (value || "");
+        const title = closed ? `${day} ${bucket.label}: closed period` : `${day} ${bucket.label}: ${value} total${drinkLabel ? `, top drink ${drinkLabel}` : ""}`;
+        return `<div class="heat-cell${closed ? " is-closed" : ""}${!value && !closed ? " is-zero" : ""}${state.heatmapMode === "topDrink" ? " heat-cell-drink" : ""}" data-tooltip="${escapeAttr(title)}" style="--heat:${intensity}"><span>${closed ? "Closed" : escapeHtml(display)}</span></div>`;
+      }).join("")}`).join("")}
+    </div>`;
+  }
+
+  function renderHourlyDrinks(summaryOrRows) {
+    const summary = Array.isArray(summaryOrRows) ? {} : (summaryOrRows || {});
+    const items = Array.isArray(summaryOrRows) ? summaryOrRows : (summary.hourlyDrinkMix || []);
+    const total = items.reduce((sum, row) => sum + Number(row.total || 0), 0);
+    if (!items.length || !total) {
+      $("#hourly-drinks").innerHTML = timeEmptyState(summary, "hourly drink type data");
+      return;
+    }
+    $("#hourly-drinks").innerHTML = state.hourlyView === "table" ? renderHourlyTable(items) : renderHourlyChart(items);
+  }
+
+  function timeEmptyState(summary, label) {
+    const excluded = Number((summary || {}).excludedClosedPeriodRows || 0);
+    if (excluded) {
+      return `<div class="empty-state">${excluded} matching drink${excluded === 1 ? "" : "s"} fall inside excluded closed periods.<br>Open Advanced filters and include closed periods to show this ${escapeHtml(label)}.</div>`;
+    }
+    return `<div class="empty-state">No ${escapeHtml(label)} in this range</div>`;
+  }
+
+  function renderHourlyChart(rows) {
+    const max = Math.max(1, ...rows.map(row => Number(row.total || 0)));
+    const drinks = config.drinks || [];
+    return `<div class="hourly-legend">${drinks.map((drink, index) => `<span><i style="background:${drinkColor(index)}"></i>${escapeHtml(drink)}</span>`).join("")}</div>
+      <div class="hourly-chart">${rows.map(row => {
+        const segments = drinks.map((drink, index) => {
+          const value = Number((row.drinks || {})[drink] || 0);
+          if (!value) return "";
+          const width = Math.max(3, value / Math.max(1, row.total) * 100);
+          return `<i title="${escapeAttr(`${row.bucket} ${drink}: ${value}`)}" style="width:${width}%; background:${drinkColor(index)}"></i>`;
+        }).join("");
+        return `<div class="hourly-row">
+          <span>${escapeHtml(row.bucket)}</span>
+          <div class="hourly-stack" style="--height:${Math.max(10, Number(row.total || 0) / max * 100)}%">${segments}</div>
+          <strong>${row.total || 0}</strong>
+        </div>`;
+      }).join("")}</div>`;
+  }
+
+  function renderHourlyTable(rows) {
+    const drinks = config.drinks || [];
+    return `<div class="hourly-table-wrap"><table class="hourly-table">
+      <thead><tr><th>Hour</th><th>Total</th>${drinks.map(drink => `<th>${escapeHtml(drink)}</th>`).join("")}</tr></thead>
+      <tbody>${rows.map(row => `<tr>
+        <th>${escapeHtml(row.bucket)}</th>
+        <td>${row.total || 0}</td>
+        ${drinks.map(drink => `<td>${(row.drinks || {})[drink] || 0}</td>`).join("")}
+      </tr>`).join("")}</tbody>
+    </table></div>`;
+  }
+
+  function renderTrend(trend) {
+    const max = Math.max(1, ...trend.map(item => item.total));
+    const total = trend.reduce((sum, item) => sum + Number(item.total || 0), 0);
+    $("#trend").innerHTML = trend.length && total ? trend.map(item =>
+      `<div class="bar" title="${escapeHtml(item.date)}: ${item.total}" style="height:${Math.max(5, item.total / max * 100)}%"><span>${item.total}</span><small>${escapeHtml(shortDate(item.date))}</small></div>`
+    ).join("") : emptyState("No drinks were recorded for this period.", "Try widening the date range or changing the floor/drink filters.");
+  }
+
+  function renderListChart(selector, values, percentages) {
+    const max = Math.max(1, ...Object.values(values));
+    const keys = Object.keys(values).filter(key => Number(values[key] || 0) > 0);
+    $(selector).innerHTML = keys.length ? keys.map(key => {
+      const value = values[key] || 0;
+      const suffix = percentages && percentages[key] != null ? ` (${percentages[key]}%)` : "";
+      return `<div class="list-row">
+        <span>${escapeHtml(key)}</span>
+        <strong>${value}${suffix}</strong>
+        <i style="width:${Math.max(2, value / max * 100)}%"></i>
+      </div>`;
+    }).join("") : emptyState("No matching data yet.", "Adjust the report filters to see this breakdown.");
+  }
+
+  function exportCsv() {
+    const button = $("#export-csv");
+    startAction(button, "Exporting...");
+    google.script.run
+      .withSuccessHandler(result => {
+        finishAction(button, "Export CSV");
+        const blob = new Blob([result.csv], { type: "text/csv" });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = result.filename;
+        link.click();
+        URL.revokeObjectURL(url);
+        toast("CSV exported");
+      })
+      .withFailureHandler(error => {
+        finishAction(button, "Export CSV");
+        toast(error.message || String(error), "error");
+      })
+      .exportFilteredCsv(readFilters());
+  }
+
+  function exportPdf() {
+    const button = $("#export-pdf");
+    startAction(button, "Building PDF...");
+    google.script.run
+      .withSuccessHandler(result => {
+        finishAction(button, "Export PDF report");
+        const bytes = atob(result.base64);
+        const numbers = new Array(bytes.length);
+        for (let i = 0; i < bytes.length; i += 1) numbers[i] = bytes.charCodeAt(i);
+        const blob = new Blob([new Uint8Array(numbers)], { type: "application/pdf" });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = result.filename;
+        link.click();
+        URL.revokeObjectURL(url);
+        toast("PDF report exported");
+      })
+      .withFailureHandler(error => {
+        finishAction(button, "Export PDF report");
+        toast(error.message || String(error), "error");
+      })
+      .exportPdfReport(readFilters());
+  }
+
+  function readFilters() {
+    const form = $("#dashboard-filters");
+    return {
+      preset: form.preset.value,
+      startDate: form.startDate.value,
+      endDate: form.endDate.value,
+      floor: form.floor.value,
+      drink: form.drink.value,
+      excludeBankHolidays: form.excludeBankHolidays.checked,
+      excludeClosedPeriods: form.excludeClosedPeriods.checked
+    };
+  }
+
+  function metric(label, value, helper, tone, icon, action) {
+    const numeric = typeof value === "number" && isFinite(value);
+    return `<button class="metric metric-${escapeHtml(tone || "default")}" type="button" ${action ? `data-metric-action="${escapeAttr(action)}"` : ""}>
+      <i aria-hidden="true">${metricIcon(icon)}</i>
+      <span>${escapeHtml(label)}</span>
+      <strong ${numeric ? `data-count="${value}"` : ""}>${escapeHtml(value)}</strong>
+      <small>${escapeHtml(helper || "")}</small>
+    </button>`;
+  }
+
+  function renderReportContext(filters, summary) {
+    const floor = filters.floor || "Combined";
+    const drink = filters.drink || "All";
+    const activeDays = Object.keys((summary && summary.byDate) || {}).length;
+    $("#report-context").textContent = `Showing ${floor} / ${drink === "All" ? "All drinks" : drink} - ${formatDate(filters.startDate)} -> ${formatDate(filters.endDate)} - Bank holidays ${filters.excludeBankHolidays ? "excluded" : "included"} - Closed periods ${filters.excludeClosedPeriods ? "excluded" : "included"} - ${activeDays} active day${activeDays === 1 ? "" : "s"}`;
+  }
+
+  function renderTakeaways(summary) {
+    const total = Number(summary.total || 0);
+    const insights = [];
+    const topDrink = topEntry(summary.byDrink || {});
+    const topFloor = topEntry(summary.byFloor || {});
+    if (total && topDrink.key) insights.push(`${topDrink.key} accounted for ${percent(topDrink.value, total)}% of all drinks in this period.`);
+    if (summary.peakHour) insights.push(`Peak demand was around ${summary.peakHour}.`);
+    if (total && topFloor.key) insights.push(`${topFloor.key} served ${percent(topFloor.value, total)}% of recorded drinks.`);
+    const weekday = summary.averageByWeekday || {};
+    const tueThuAvg = averageValues([weekday.Tuesday, weekday.Wednesday, weekday.Thursday]);
+    if (weekday.Friday && tueThuAvg) {
+      const change = Math.round((1 - (weekday.Friday / tueThuAvg)) * 100);
+      if (change > 0) insights.push(`Friday volume was ${change}% lower than the Tuesday-Thursday average.`);
+      if (change < 0) insights.push(`Friday volume was ${Math.abs(change)}% higher than the Tuesday-Thursday average.`);
+    }
+    $("#key-takeaways").innerHTML = insights.length
+      ? insights.slice(0, 4).map((text, index) => `<div class="takeaway"><i>${index + 1}</i><span>${escapeHtml(text)}</span></div>`).join("")
+      : emptyState("Not enough data in this range to generate meaningful insights yet.", "Try widening the date range or changing filters.");
+  }
+
+  function bindMetricActions() {
+    document.querySelectorAll("[data-metric-action]").forEach(button => {
+      button.addEventListener("click", () => {
+        const action = button.dataset.metricAction;
+        if (action === "heatmap") scrollToPanel("#heatmap", "Peak hour highlighted in the hourly heatmap");
+        if (action === "drink") scrollToPanel("#drink-mix", "Most popular drink shown in the drink mix");
+      });
+    });
+  }
+
+  function scrollToPanel(selector, message) {
+    const target = $(selector);
+    if (!target) return;
+    target.closest(".panel")?.classList.add("spotlight");
+    target.scrollIntoView({ behavior: "smooth", block: "center" });
+    setTimeout(() => target.closest(".panel")?.classList.remove("spotlight"), 1200);
+    toast(message);
+  }
+
+  function animateMetricNumbers() {
+    document.querySelectorAll("[data-count]").forEach(node => {
+      const target = Number(node.dataset.count || 0);
+      const start = performance.now();
+      const duration = 520;
+      const decimals = Number.isInteger(target) ? 0 : 1;
+      const tick = now => {
+        const progress = Math.min(1, (now - start) / duration);
+        const eased = 1 - Math.pow(1 - progress, 3);
+        node.textContent = (target * eased).toFixed(decimals).replace(/\.0$/, "");
+        if (progress < 1) requestAnimationFrame(tick);
+      };
+      requestAnimationFrame(tick);
+    });
+  }
+
+  function formatDate(value) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(String(value || ""))) return value || "";
+    const parts = value.split("-");
+    return `${parts[2]}/${parts[1]}/${parts[0]}`;
+  }
+
+  function shortDate(value) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(String(value || ""))) return value || "";
+    const parts = value.split("-");
+    return `${parts[2]}/${parts[1]}`;
+  }
+
+  function startAction(button, label) {
+    if (button) {
+      button.disabled = true;
+      button.dataset.originalHtml = button.dataset.originalHtml || button.innerHTML;
+      button.innerHTML = `<span class="button-spinner"></span>${escapeHtml(label)}`;
+      button.classList.add("is-busy");
+    }
+    setActivity(true);
+  }
+
+  function finishAction(button, fallbackText) {
+    if (button) {
+      button.disabled = false;
+      button.innerHTML = button.dataset.originalHtml || escapeHtml(fallbackText);
+      delete button.dataset.originalHtml;
+      button.classList.remove("is-busy");
+    }
+    setActivity(false);
+  }
+
+  function setActivity(active) {
+    const bar = $("#activity-bar");
+    if (!bar) return;
+    bar.hidden = !active;
+  }
+
+  function showReportLoading() {
+    $("#report-context").textContent = "Refreshing report...";
+    $("#key-takeaways").innerHTML = Array.from({ length: 3 }, () => `<div class="takeaway skeleton-line"><i></i><span></span></div>`).join("");
+    $("#report-summary").innerHTML = Array.from({ length: 8 }, () => `<div class="metric skeleton-card"><span></span><strong></strong></div>`).join("");
+    $("#heatmap").innerHTML = `<div class="panel-loading"><span class="spinner"></span>Loading heatmap...</div>`;
+    $("#trend").innerHTML = `<div class="panel-loading"><span class="spinner"></span>Loading trend...</div>`;
+    $("#hourly-drinks").innerHTML = `<div class="panel-loading"><span class="spinner"></span>Loading hourly drink types...</div>`;
+    $("#drink-mix").innerHTML = `<div class="panel-loading"><span class="spinner"></span>Loading drink mix...</div>`;
+    $("#floor-comparison").innerHTML = `<div class="panel-loading"><span class="spinner"></span>Loading floors...</div>`;
+  }
+
+  function startReportProgress() {
+    clearReportProgressTimer();
+    state.progressStartedAt = Date.now();
+    updateReportProgress(5, "Starting report", "Checking filters and preparing the reporting request...");
+    const stages = [
+      { at: 600, value: 16, label: "Reading live sheet rows", detail: "Checking any current drink-log entries for the selected range..." },
+      { at: 1800, value: 34, label: "Reading archive JSONs", detail: "Loading only the archive files needed for this date range..." },
+      { at: 4200, value: 54, label: "Filtering service days", detail: "Removing weekends, bank holidays, closed days and excluded drinks..." },
+      { at: 7600, value: 70, label: "Building summaries", detail: "Calculating drink mix, floor split, trends and averages..." },
+      { at: 11200, value: 82, label: "Preparing charts", detail: "Creating heatmap and hourly drink type datasets..." },
+      { at: 15800, value: 90, label: "Nearly there", detail: "Waiting for Apps Script to return the finished report..." }
+    ];
+    stages.forEach(stage => {
+      window.setTimeout(() => {
+        if (!state.progressStartedAt) return;
+        updateReportProgress(stage.value, stage.label, stage.detail);
+      }, stage.at);
+    });
+    state.progressTimer = window.setInterval(() => {
+      if (!state.progressStartedAt) return;
+      const elapsed = Date.now() - state.progressStartedAt;
+      const softProgress = Math.min(94, 90 + Math.floor(Math.max(0, elapsed - 15800) / 3000));
+      const current = Number($("#report-progress-fill").dataset.progress || 0);
+      if (softProgress > current) {
+        updateReportProgress(softProgress, "Still working", "Large archive ranges can take a moment. The report is still running...");
+      }
+    }, 3000);
+  }
+
+  function completeReportProgress(message) {
+    updateReportProgress(100, message || "Report ready", "Charts and summary updated.");
+    clearReportProgressTimer();
+    window.setTimeout(() => {
+      const panel = $("#report-progress");
+      if (panel && !state.progressStartedAt) panel.hidden = true;
+    }, 900);
+  }
+
+  function failReportProgress(message) {
+    updateReportProgress(100, "Report failed", message || "Something went wrong while running the report.");
+    clearReportProgressTimer();
+  }
+
+  function updateReportProgress(value, label, detail) {
+    const panel = $("#report-progress");
+    if (!panel) return;
+    const percent = Math.max(0, Math.min(100, Math.round(value)));
+    panel.hidden = false;
+    $("#report-progress-label").textContent = label;
+    $("#report-progress-percent").textContent = percent + "%";
+    $("#report-progress-detail").textContent = detail;
+    const fill = $("#report-progress-fill");
+    fill.style.setProperty("--progress", percent + "%");
+    fill.dataset.progress = String(percent);
+  }
+
+  function clearReportProgressTimer() {
+    if (state.progressTimer) {
+      window.clearInterval(state.progressTimer);
+      state.progressTimer = null;
+    }
+    state.progressStartedAt = 0;
+  }
+
+  function toast(text, tone) {
+    const toastEl = $("#toast");
+    toastEl.textContent = text;
+    toastEl.classList.toggle("toast-error", tone === "error");
+    toastEl.hidden = false;
+    clearTimeout(toastEl.timer);
+    toastEl.timer = setTimeout(() => { toastEl.hidden = true; }, tone === "error" ? 5200 : 2600);
+  }
+
+  function escapeHtml(value) {
+    return String(value == null ? "" : value).replace(/[&<>"']/g, char => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;" }[char]));
+  }
+
+  function escapeAttr(value) {
+    return escapeHtml(value).replace(/"/g, "&quot;");
+  }
+
+  function drinkColor(index) {
+    return drinkColors[index % drinkColors.length];
+  }
+
+  function topEntry(map) {
+    return Object.keys(map || {}).reduce((best, key) => Number(map[key] || 0) > best.value ? { key, value: Number(map[key] || 0) } : best, { key: "", value: 0 });
+  }
+
+  function percent(value, total) {
+    return total ? Math.round(Number(value || 0) / Number(total || 1) * 100) : 0;
+  }
+
+  function averageValues(values) {
+    const clean = values.map(Number).filter(value => value > 0);
+    return clean.length ? clean.reduce((sum, value) => sum + value, 0) / clean.length : 0;
+  }
+
+  function emptyState(title, detail) {
+    return `<div class="empty-state"><i aria-hidden="true">-</i><strong>${escapeHtml(title)}</strong><span>${escapeHtml(detail || "")}</span></div>`;
+  }
+
+  function metricIcon(type) {
+    const icons = {
+      cup: "T",
+      avg: "A",
+      peak: "P",
+      mix: "M",
+      day: "D",
+      calendar: "C"
+    };
+    return icons[type] || ".";
+  }
+
+  document.addEventListener("DOMContentLoaded", init);
+})();
+</script>

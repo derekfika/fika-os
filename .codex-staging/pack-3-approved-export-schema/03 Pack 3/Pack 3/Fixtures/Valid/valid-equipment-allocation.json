@@ -1,0 +1,40 @@
+{
+  "schemaVersion": "pack-3-draft-1",
+  "allocationId": "alloc:coffee-cart-event",
+  "equipmentAssetId": "equip:coffee-cart-001",
+  "allocationTargetType": "event",
+  "allocationTargetId": "event:client-celebration",
+  "staffRequirementSummary": "Authorised staff required.",
+  "effectivePeriod": {
+    "startAt": "2026-07-14T00:00:00Z",
+    "endAt": "2026-07-20T16:00:00Z",
+    "reason": "Draft fixture"
+  },
+  "locationScope": {
+    "scopeType": "event",
+    "scopeId": "event:client-celebration",
+    "scopeLabel": "Client celebration"
+  },
+  "conflictCheckStatus": "clear",
+  "provenance": {
+    "sourceBdrIds": [
+      "SVC-009"
+    ],
+    "sourceSnapshot": "03 Pack 3-20260714T172736Z-1-001.zip",
+    "authorityRank": "Approved Governed Decision Register"
+  },
+  "audit": {
+    "version": 1,
+    "createdAt": "2026-07-14T17:30:00Z",
+    "createdBy": "role:platform-governance",
+    "updatedAt": "2026-07-14T17:30:00Z",
+    "updatedBy": "role:platform-governance",
+    "events": [
+      {
+        "eventType": "drafted",
+        "occurredAt": "2026-07-14T17:30:00Z",
+        "actorId": "role:platform-governance"
+      }
+    ]
+  }
+}

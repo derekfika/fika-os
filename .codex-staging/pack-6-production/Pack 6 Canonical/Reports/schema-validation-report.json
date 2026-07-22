@@ -1,0 +1,79 @@
+{
+  "validator": "local deterministic validator for the Draft 2020-12 keywords used by this pack",
+  "schemaSyntaxValid": true,
+  "failures": 0,
+  "results": [
+    {
+      "schema": "production-change-record.schema.json",
+      "fixture": "valid-production-change-record.json",
+      "expected": "pass",
+      "actual": "pass",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "schema": "production-change-record.schema.json",
+      "fixture": "invalid-production-change-record.json",
+      "expected": "fail",
+      "actual": "fail",
+      "passed": true,
+      "errors": [
+        "$: does not satisfy oneOf"
+      ]
+    },
+    {
+      "schema": "production-line.schema.json",
+      "fixture": "valid-production-line.json",
+      "expected": "pass",
+      "actual": "pass",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "schema": "production-line.schema.json",
+      "fixture": "invalid-production-line.json",
+      "expected": "fail",
+      "actual": "fail",
+      "passed": true,
+      "errors": [
+        "$.productionQuantity: required property missing"
+      ]
+    },
+    {
+      "schema": "production-order.schema.json",
+      "fixture": "valid-production-order.json",
+      "expected": "pass",
+      "actual": "pass",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "schema": "production-order.schema.json",
+      "fixture": "invalid-production-order.json",
+      "expected": "fail",
+      "actual": "fail",
+      "passed": true,
+      "errors": [
+        "$.eligibility.operationalFulfilmentRequired: must equal True"
+      ]
+    },
+    {
+      "schema": "production-routing-allocation.schema.json",
+      "fixture": "valid-production-routing-allocation.json",
+      "expected": "pass",
+      "actual": "pass",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "schema": "production-routing-allocation.schema.json",
+      "fixture": "invalid-production-routing-allocation.json",
+      "expected": "fail",
+      "actual": "fail",
+      "passed": true,
+      "errors": [
+        "$.operationalLocationId: required property missing"
+      ]
+    }
+  ]
+}

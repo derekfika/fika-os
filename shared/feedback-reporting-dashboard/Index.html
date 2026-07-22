@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <base target="_top">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#4F34C7">
+  <?!= include_("Styles"); ?>
+</head>
+<body>
+  <aside class="sidebar">
+    <div class="brand">
+      <strong>Fika</strong>
+      <span>Feedback reporting</span>
+    </div>
+    <nav>
+      <a href="#summary">Summary</a>
+      <a href="#sites">Sites</a>
+      <a href="#comments">Comments</a>
+    </nav>
+  </aside>
+
+  <main>
+    <div id="activity-bar" class="activity-bar" hidden><span></span></div>
+    <header class="page-header">
+      <div>
+        <p><span class="status-dot"></span>FIKA hospitality feedback</p>
+        <h1>FIKA feedback reporting</h1>
+        <span>Track satisfaction, NPS, follow-ups and comments across every booking platform.</span>
+      </div>
+      <div class="header-actions">
+        <button id="export-pdf" class="primary-action" type="button">Export PDF</button>
+        <button id="export-csv" type="button">Export CSV</button>
+      </div>
+    </header>
+
+    <form id="filters" class="filters">
+      <label>Preset<select name="preset">
+        <option value="thisMonth">This month</option>
+        <option value="last30">Last 30 days</option>
+        <option value="last7">Last 7 days</option>
+        <option value="lastMonth">Last month</option>
+        <option value="today">Today</option>
+        <option value="custom">Custom range</option>
+      </select></label>
+      <label>Start<input name="startDate" type="date"></label>
+      <label>End<input name="endDate" type="date"></label>
+      <label>Site<select name="siteId"></select></label>
+      <label>Rating<select name="rating">
+        <option value="all">All ratings</option>
+        <option value="5">5 stars</option>
+        <option value="4">4 stars</option>
+        <option value="3">3 stars</option>
+        <option value="2">2 stars</option>
+        <option value="1">1 star</option>
+      </select></label>
+      <label>Status<select name="status">
+        <option value="all">All requests</option>
+        <option value="completed">Completed</option>
+        <option value="requested">Awaiting feedback</option>
+        <option value="followUp">Needs follow-up</option>
+      </select></label>
+      <button type="submit">Run report</button>
+    </form>
+
+    <div id="health" class="health"></div>
+    <section id="summary" class="summary-grid"></section>
+
+    <section class="grid">
+      <article class="panel wide">
+        <div class="panel-heading"><div><span>Trend</span><h2>Responses over time</h2></div></div>
+        <div id="trend" class="trend"></div>
+      </article>
+      <article class="panel">
+        <div class="panel-heading"><div><span>Rating split</span><h2>Overall satisfaction</h2></div></div>
+        <div id="rating-chart" class="list-chart"></div>
+      </article>
+      <article id="sites" class="panel">
+        <div class="panel-heading"><div><span>Sites</span><h2>Site comparison</h2></div></div>
+        <div id="site-chart" class="list-chart"></div>
+      </article>
+      <article class="panel wide">
+        <div class="panel-heading"><div><span>Quality scores</span><h2>Service dimensions</h2></div></div>
+        <div id="dimension-chart" class="dimension-grid"></div>
+      </article>
+      <article id="comments" class="panel wide">
+        <div class="panel-heading"><div><span>Voice of client</span><h2>Recent comments</h2></div></div>
+        <div id="comment-list" class="comment-list"></div>
+      </article>
+    </section>
+  </main>
+
+  <div id="toast" class="toast" hidden></div>
+  <script>window.APP_CONFIG = <?!= initialConfig ?>;</script>
+  <?!= include_("JavaScript"); ?>
+</body>
+</html>

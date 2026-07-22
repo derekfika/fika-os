@@ -1,0 +1,11 @@
+# ignore docs/dev files
+README.md
+CHANGELOG.md
+.gitignore
+*.bat
+*.zip
+
+# keep Apps Script files
+!appsscript.json
+!*.js
+!*.html

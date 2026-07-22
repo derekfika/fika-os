@@ -1,0 +1,16 @@
+{
+  "schemaVersion": "1.0.0-draft.1",
+  "wasteDispositionId": "waste-disposition.demo-invalid",
+  "wasteEventId": "waste-event.demo-invalid",
+  "recordedAt": "2026-07-15T09:32:00Z",
+  "recordedByAssignmentId": "assignment.demo-location-recorder",
+  "provenance": { "sourceBdrIds": ["WASTE-001"], "sourceSnapshot": "Pack 8 fictional invalid snapshot" },
+  "audit": {
+    "version": 1,
+    "createdAt": "2026-07-15T09:35:00Z",
+    "createdByAssignmentId": "assignment.demo-location-recorder",
+    "updatedAt": "2026-07-15T09:35:00Z",
+    "updatedByAssignmentId": "assignment.demo-location-recorder",
+    "events": []
+  }
+}

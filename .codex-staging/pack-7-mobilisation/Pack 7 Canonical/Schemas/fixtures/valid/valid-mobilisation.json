@@ -1,0 +1,41 @@
+{
+  "schemaVersion": "1.0.0-draft.1",
+  "mobilisationId": "mobilisation:fictional-riverside-opening",
+  "purpose": "Establish fictional Coffee capability at an existing Operational Location",
+  "programmeType": "material_change",
+  "scope": {
+    "scopeType": "operational_capability",
+    "scopeReference": "capability-enablement:fictional-riverside-coffee",
+    "operationalLocationId": "oploc:fictional-riverside-house"
+  },
+  "governanceEntryReference": "materiality-decision:fictional-riverside-coffee-launch",
+  "goLiveTarget": {
+    "targetDate": "2026-09-01",
+    "authorityReference": "authority-grant:fictional-internal-go-live"
+  },
+  "stewardship": {
+    "accountableOrganisationalRoleId": "role:fictional-mobilisation-accountable",
+    "accountableRoleAssignmentId": "assignment:fictional-mobilisation-accountable",
+    "coordinatorAssignmentId": "assignment:fictional-mobilisation-coordinator",
+    "authorityGrantIds": ["authority-grant:fictional-mobilisation-approval"],
+    "delegationIds": []
+  },
+  "effectivePeriod": {
+    "effectiveFrom": "2026-07-15"
+  },
+  "phasePlanId": "mobilisation-phase-plan:fictional-riverside-opening",
+  "taskIds": ["mobilisation-task:fictional-coffee-capability"],
+  "readinessAssessmentId": "readiness-assessment:fictional-riverside-opening",
+  "provenance": {
+    "sourceBdrIds": ["MOB-001", "MOB-002", "MOB-003", "LOC-001", "ROLE-002"],
+    "sourceSnapshot": "local-repository-2026-07-15"
+  },
+  "audit": {
+    "version": 1,
+    "createdAt": "2026-07-15T08:15:00Z",
+    "createdByAssignmentId": "assignment:fictional-mobilisation-coordinator",
+    "updatedAt": "2026-07-15T08:15:00Z",
+    "updatedByAssignmentId": "assignment:fictional-mobilisation-coordinator",
+    "events": []
+  }
+}

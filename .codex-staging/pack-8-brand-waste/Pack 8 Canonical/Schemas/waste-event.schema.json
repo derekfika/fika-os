@@ -1,0 +1,70 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:fika:schema:draft:waste-event:1",
+  "title": "Waste Event v1 (Draft)",
+  "description": "Draft record of food or operational waste attributed to one Operational Location.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "wasteEventId", "wasteCategory", "operationalLocationId", "occurredAt", "quantity", "reason", "wasteDispositionId", "recordedByAssignmentId", "provenance", "audit"],
+  "properties": {
+    "schemaVersion": { "const": "1.0.0-draft.1" },
+    "wasteEventId": { "$ref": "#/$defs/stableId" },
+    "wasteCategory": { "type": "string", "enum": ["food", "operational"] },
+    "operationalLocationId": { "$ref": "#/$defs/stableId" },
+    "occurredAt": { "$ref": "#/$defs/isoDateTime" },
+    "quantity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["amount", "measurementUnitReference"],
+      "properties": {
+        "amount": { "type": "number", "exclusiveMinimum": 0 },
+        "measurementUnitReference": { "$ref": "#/$defs/stableId", "description": "Reference to an Operations-owned Measurement Catalogue entry." }
+      }
+    },
+    "reason": { "type": "string", "minLength": 1 },
+    "wasteDispositionId": { "$ref": "#/$defs/stableId" },
+    "recordedByAssignmentId": { "$ref": "#/$defs/stableId" },
+    "notes": { "type": "string" },
+    "provenance": { "$ref": "#/$defs/provenance" },
+    "audit": { "$ref": "#/$defs/audit" }
+  },
+  "$defs": {
+    "stableId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[A-Za-z][A-Za-z0-9_.:-]*$" },
+    "isoDateTime": { "type": "string", "format": "date-time" },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sourceBdrIds", "sourceSnapshot"],
+      "properties": {
+        "sourceBdrIds": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "type": "string", "pattern": "^(WASTE|LOC|ROLE)-\\d{3}$" } },
+        "sourceSnapshot": { "type": "string", "minLength": 1 }
+      }
+    },
+    "auditEvent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["eventType", "occurredAt", "actorAssignmentId"],
+      "properties": {
+        "eventType": { "type": "string", "minLength": 1 },
+        "occurredAt": { "$ref": "#/$defs/isoDateTime" },
+        "actorAssignmentId": { "$ref": "#/$defs/stableId" },
+        "reason": { "type": "string" }
+      }
+    },
+    "audit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "createdAt", "createdByAssignmentId", "updatedAt", "updatedByAssignmentId", "events"],
+      "properties": {
+        "version": { "type": "integer", "minimum": 1 },
+        "createdAt": { "$ref": "#/$defs/isoDateTime" },
+        "createdByAssignmentId": { "$ref": "#/$defs/stableId" },
+        "updatedAt": { "$ref": "#/$defs/isoDateTime" },
+        "updatedByAssignmentId": { "$ref": "#/$defs/stableId" },
+        "events": { "type": "array", "items": { "$ref": "#/$defs/auditEvent" } }
+      }
+    }
+  },
+  "x-fika-source-bdrs": ["WASTE-001", "LOC-001", "ROLE-002"],
+  "x-fika-status": "Draft review candidate; not approved or adopted"
+}

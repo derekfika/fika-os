@@ -1,0 +1,46 @@
+{
+  "schemaVersion": "1.0.0-draft.1",
+  "productionOrderId": "production-order:fictional-1001",
+  "sourceBooking": {
+    "bookingId": "booking:fictional-1001",
+    "bookingVersion": 3
+  },
+  "ownership": {
+    "organisationalRoleId": "role:fictional-production-owner",
+    "roleAssignmentId": "assignment:fictional-production-planner",
+    "operationalContextReference": "oploc:fictional-central-kitchen"
+  },
+  "eligibility": {
+    "bookingApprovalReference": "booking-approval:fictional-1001-v3",
+    "operationalFulfilmentRequired": true,
+    "prerequisites": [
+      {
+        "description": "Fictional final numbers confirmed",
+        "satisfied": true
+      }
+    ]
+  },
+  "lifecycleStatus": "planned",
+  "customerCommitment": {
+    "serviceAt": "2026-08-12T12:30:00+01:00",
+    "expectedDeliveryAt": "2026-08-12T12:00:00+01:00"
+  },
+  "productionLineIds": ["production-line:fictional-1001-1"],
+  "routingAllocationIds": ["routing-allocation:fictional-1001-1"],
+  "productionTiming": {
+    "requiredReadyAt": "2026-08-12T10:45:00+01:00",
+    "productionStartAt": "2026-08-12T08:00:00+01:00"
+  },
+  "provenance": {
+    "sourceBdrIds": ["PROD-001", "PROD-002", "PROD-005", "BOOK-006"],
+    "sourceSnapshot": "local-repository-2026-07-15"
+  },
+  "audit": {
+    "version": 1,
+    "createdAt": "2026-07-15T07:30:00Z",
+    "createdByAssignmentId": "assignment:fictional-production-planner",
+    "updatedAt": "2026-07-15T07:30:00Z",
+    "updatedByAssignmentId": "assignment:fictional-production-planner",
+    "events": []
+  }
+}

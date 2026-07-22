@@ -1,0 +1,20 @@
+{
+  "schemaVersion": "1.0.0-draft.1",
+  "wasteEventId": "waste-event.demo-001",
+  "wasteCategory": "food",
+  "operationalLocationId": "oploc.demo-001",
+  "occurredAt": "2026-07-15T09:30:00Z",
+  "quantity": { "amount": 1.5, "measurementUnitReference": "measurement-unit.demo-001" },
+  "reason": "Fictional reason used only to test the structural candidate.",
+  "wasteDispositionId": "waste-disposition.demo-001",
+  "recordedByAssignmentId": "assignment.demo-location-recorder",
+  "provenance": { "sourceBdrIds": ["WASTE-001", "LOC-001"], "sourceSnapshot": "Pack 8 fictional validation snapshot" },
+  "audit": {
+    "version": 1,
+    "createdAt": "2026-07-15T09:35:00Z",
+    "createdByAssignmentId": "assignment.demo-location-recorder",
+    "updatedAt": "2026-07-15T09:35:00Z",
+    "updatedByAssignmentId": "assignment.demo-location-recorder",
+    "events": []
+  }
+}

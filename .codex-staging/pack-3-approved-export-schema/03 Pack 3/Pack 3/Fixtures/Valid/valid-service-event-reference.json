@@ -1,0 +1,33 @@
+{
+  "schemaVersion": "pack-3-draft-1",
+  "referenceId": "svcevt:celebration-catering",
+  "eventId": "event:client-celebration",
+  "serviceIds": [
+    "svc:sandwich-lunch"
+  ],
+  "serviceArrangementIds": [
+    "arr:angel-court-lunch"
+  ],
+  "relationshipType": "uses",
+  "provenance": {
+    "sourceBdrIds": [
+      "SVC-008"
+    ],
+    "sourceSnapshot": "03 Pack 3-20260714T172736Z-1-001.zip",
+    "authorityRank": "Approved Governed Decision Register"
+  },
+  "audit": {
+    "version": 1,
+    "createdAt": "2026-07-14T17:30:00Z",
+    "createdBy": "role:platform-governance",
+    "updatedAt": "2026-07-14T17:30:00Z",
+    "updatedBy": "role:platform-governance",
+    "events": [
+      {
+        "eventType": "drafted",
+        "occurredAt": "2026-07-14T17:30:00Z",
+        "actorId": "role:platform-governance"
+      }
+    ]
+  }
+}

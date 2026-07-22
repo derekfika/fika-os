@@ -1,0 +1,496 @@
+PACK 2 GOVERNED REFACTORING REGISTER
+Purpose
+This register records only the Pack 2 amendments required to align previously reviewed decisions with later approved Canon. It does not reopen Pack 2 business discovery. Existing repository files remain unchanged until a separate repository write-back is explicitly authorised.
+Refactoring authority
+- Pack 3 Governed Decision Register
+- FIKA OS Authority Model (AUTHMOD)
+- Review Doctrine v2
+CFG-001 — Configuration Ownership
+Review status: Approved
+Refactoring outcome: Canonical Decision amendment required
+Change type: Governance and authority boundary
+Current Decision:
+Configuration ownership is determined by business scope. The Platform Owner governs organisation-wide configuration and the configuration model itself. Client, Brand, Capability, Operational Location and Application owners govern configuration within their respective business areas. Site Managers may approve and manage configuration affecting their own Operational Location, while centrally operated functions such as CPU remain under their designated domain owner. Ownership may be delegated through FIKA OS role assignments without changing the canonical governance model.
+Proposed canonical Decision:
+Configuration ownership is assigned by business scope to accountable organisational roles. Organisation-wide configuration and the configuration model are owned by the accountable organisation-wide configuration role. Client, Brand, Operational Capability, Operational Location, Application and other domain-scoped configuration are owned by accountable roles for those business scopes. Approval authority is granted separately through AUTHMOD and may be narrower than ownership. Authorised operational roles may administer or apply approved configuration without acquiring ownership or authority to redefine business meaning. Temporary delegation must have a defined scope, fixed end date and complete audit history, and never transfers ownership. Platform Governance assesses cohesion and downstream impact but does not replace business ownership or approval authority.
+Reason for amendment:
+- The current Decision combines ownership, approval authority and operational administration.
+- “Platform Owner” risks implying that technical platform responsibility owns organisation-wide business configuration.
+- Site Managers may hold OPLOC-scoped authority, but that authority must come from AUTHMOD rather than from the job title alone.
+- Delegation cannot be open-ended and must not transfer canonical ownership.
+- Platform Governance supports cohesion and impact assessment without becoming the business authority for every configuration scope.
+Required explanatory refinements:
+- Preserve the distinction Ownership ≠ Authority ≠ Technical Administration.
+- Use Operational Capability rather than the shortened Capability where the canonical concept is intended.
+- Replace named or assumed job-title authority with accountable organisational roles and AUTHMOD grants.
+- Keep CPU as an example only; CPU and its detailed ownership remain subject to separate domain discovery.
+- Preserve effective dating, audit history and downstream-impact assessment.
+Source authority:
+- AUTHMOD: role-based authority, domain-specific privilege branches and temporary delegation with a fixed end date.
+- Pack 3 SVC-010: commercial ownership belongs to accountable roles; delegated responsibilities do not transfer ultimate ownership.
+- Pack 3 domain/capability refinements: domains own business meaning and records; capabilities are operational abilities owned within domains.
+Repository impact:
+- Replace the canonical Decision in CFG-001.
+- Align rationale, consequences and implementation implications with the amended Decision.
+- Review downstream wording in CAP-003, CFG-002, CFG-003, SVC-010 and BRAND-001 for dependency consistency.
+- Preserve the staged-file gate; repository write-back remains unauthorised.
+Ready for Codex staging: Yes
+---
+CFG-002 — Configuration Inheritance
+Review status: Approved
+Refactoring outcome: Canonical Decision amendment required
+Change type: Inheritance, precedence and effective dating
+Current Decision:
+Use explicit layered inheritance with validated, dated overrides; exact precedence requires approval.
+Proposed canonical Decision:
+Configuration values inherit only through explicitly governed scope relationships. A value defined at a more specific applicable scope overrides an inherited value from a broader scope, while an absent value continues to inherit the nearest valid effective value. No universal precedence order is assumed between unrelated scopes: where two applicable scopes could conflict, the owning domain must define and govern the permitted relationship and precedence rule before use. Every override must be authorised through AUTHMOD, effective-dated, validated for its scope and dependencies, and preserved with its reason, approver and audit history. Expired or withdrawn overrides reveal the next valid inherited value rather than copying or rewriting it. User- or application-level configuration must not override protected business rules unless that authority is explicitly granted.
+Reason for amendment:
+- The current Decision acknowledges inheritance but leaves the core precedence rule unresolved.
+- A single fixed sequence across organisation, client, brand, Operational Capability, OPLOC, application and user scopes would incorrectly treat all scopes as one hierarchy.
+- More-specific applicable values should override broader inherited values only where an explicit governed relationship exists.
+- Missing values should inherit the nearest valid effective value rather than create duplicates or implicit defaults.
+- Overrides require separate authority through AUTHMOD and must not transfer ownership.
+- Effective dating must preserve both historical meaning and future planned changes.
+Required explanatory refinements:
+- Replace claims that there are no open questions with the now-governed inheritance rule and the requirement for domain-specific conflict policies where scopes overlap.
+- Distinguish an absent value, an explicit null or disabled value, and an expired or withdrawn override.
+- Explain that removing an override reveals the next applicable inherited value.
+- Preserve effective dates, validation, reason, approval and audit history for every override.
+- State that provider or application behaviour cannot invent additional precedence rules.
+Source authority:
+- CFG-001: ownership is assigned by business scope; authority and administration remain separate.
+- AUTHMOD: approval authority is role-based, scoped, auditable and separately delegated.
+- Pack 3 governance: business domains own meaning and rules; applications do not redefine them.
+Repository impact:
+- Replace the canonical Decision in CFG-002.
+- Align rationale, consequences, implementation implications and future considerations with the approved rule.
+- Review CFG-003 and any downstream configuration schemas for override, null, expiry and conflict semantics.
+- Preserve the staged-file gate; repository write-back remains unauthorised.
+Ready for Codex staging: Yes
+---
+CFG-003 — Configuration Variation and Approval
+Review status: Approved
+Refactoring outcome: Canonical Decision amendment required
+Change type: Variation ownership, approval authority and override governance
+Current Decision:
+Booking rules, routing, recipients, calendars, menus and pricing may vary where required to meet the operational or commercial needs of a client, Operational Location or Service, but each variation must have a clearly defined business owner. Operational changes such as routing, recipients and calendars should be approved by the relevant Site Manager or Operations. Commercial changes such as menus and pricing should be approved by the appropriate commercial or culinary owner. Platform-wide defaults should remain the standard, with exceptions recorded, justified and approved rather than becoming independent local configurations.
+Proposed canonical Decision:
+Configuration may vary only within explicitly governed business scopes and subject to protected rules defined by the owning domain. Each variation remains owned by the accountable role for the affected business scope, while approval authority is granted separately through AUTHMOD and must be appropriate to the variation’s subject, scope and impact. Job titles or broad labels such as operational or commercial do not confer authority by themselves. An authorised variation is an effective-dated override of an inherited or default value, not an independent local configuration. Every variation must record the value it overrides, its scope, reason, owner, approving authority, effective period, validation outcome and complete audit history. Temporary delegated authority must have a fixed end date and never transfers ownership. Platform Governance assesses cross-domain, reporting, migration and technical impact but does not approve the business exception unless separately authorised through AUTHMOD.
+Reason for amendment:
+- The current Decision assigns approval through job titles and broad functions rather than explicit AUTHMOD authority.
+- Ownership of the affected business meaning must remain separate from authority to approve a particular variation.
+- Variations must follow the governed inheritance model established by CFG-002 rather than becoming standalone local configurations.
+- “Platform-wide defaults” is too narrow because valid inherited values may originate from several governed business scopes.
+- Operational and commercial are useful classifications but are not sufficient authority rules.
+- Platform Governance may assess impact without automatically owning or approving the underlying business exception.
+Required explanatory refinements:
+- Preserve Ownership ≠ Authority ≠ Technical Administration.
+- Describe each variation as a governed, effective-dated override linked to the value it supersedes.
+- Require explicit scope, reason, owner, approver, effective period, validation result and audit history.
+- Replace assumed Site Manager, Operations, commercial or culinary approval with role-based AUTHMOD grants.
+- Explain that expired or withdrawn variations reveal the next applicable inherited value under CFG-002.
+- Distinguish business approval from technical implementation and cross-domain impact assessment.
+- Remove any implication that an application or provider may create its own exception rules.
+Source authority:
+- CFG-001: configuration ownership is assigned by business scope; approval authority and administration remain separate.
+- CFG-002: overrides operate only through governed inheritance relationships and effective dating.
+- AUTHMOD: authority is role-based, scoped, auditable and may be temporarily delegated only with a fixed end date.
+- Pack 3 SVC-010: accountable ownership remains with authorised business roles while delegated responsibilities do not transfer ownership.
+Repository impact:
+- Replace the canonical Decision in CFG-003.
+- Align rationale, consequences, implementation implications and future considerations with CFG-001, CFG-002 and AUTHMOD.
+- Review downstream Booking, Service, Operational Location, Brand and commercial configuration wording for assumed job-title authority.
+- Preserve the staged-file gate; repository write-back remains unauthorised.
+Ready for Codex staging: Yes
+---
+ROLE-001 — Role Catalogue Ownership
+Review status: Approved
+Refactoring outcome: Canonical Decision replacement required
+Change type: Role-catalogue ownership and Authority Model boundary
+Current Decision:
+Derek
+Proposed canonical Decision:
+Operations Leadership owns the organisation-wide business Role Catalogue and is accountable for ensuring that organisational roles remain coherent, purposeful and aligned with FIKA’s operating model. Each business domain owns the responsibilities and domain-specific authority requirements associated with its work. AUTHMOD owns the governed authority model, including the controlled permission-action vocabulary, scopes, separation-of-duties rules and delegation constraints used to grant authority to organisational roles. Authority is granted to roles, not inferred from job titles, individuals, applications or technical access. Platform Governance maintains the technical representation, validates cross-domain consistency and implements approved changes, but does not create business roles or grant business authority unless separately authorised through AUTHMOD. All catalogue and authority-model changes must identify their accountable owner, approver, effective date, reason and audit history.
+Reason for amendment:
+- The current Decision names one individual and therefore cannot survive organisational change.
+- Ownership of the business Role Catalogue must be separated from ownership of domain responsibilities and from authority grants.
+- Operations Leadership is accountable for organisation-wide role coherence, while each domain remains authoritative for the work and responsibilities it owns.
+- AUTHMOD governs the permission-action vocabulary, scopes, separation of duties and delegation rules; applications and providers do not define authority.
+- Technical maintenance of role records does not confer business ownership or approval authority.
+Required explanatory refinements:
+- Replace every use of Derek as canonical owner with the accountable Operations Leadership role.
+- Preserve the distinction between organisational role, job title, responsibility, assignment and authority.
+- Explain that domain owners define required responsibilities and authority needs, while AUTHMOD governs how authority is granted.
+- Require role-catalogue and permission-vocabulary changes to be effective-dated, approved and auditable.
+- State that temporary delegation must have a fixed end date and never changes role ownership or the canonical catalogue.
+- Clarify that Platform Governance implements and validates approved changes but does not independently create roles or authority.
+Source authority:
+- AUTHMOD: authority belongs to organisational roles through governed, domain-specific privilege branches; temporary delegation is scoped, auditable and time-limited.
+- Review Doctrine v2: Ownership ≠ Authority ≠ Technical Administration.
+- Pack 3 governance: named individuals must not be embedded as enduring canonical owners.
+Repository impact:
+- Replace the canonical Decision in ROLE-001.
+- Align rationale, consequences, implementation implications and future considerations with Operations Leadership and AUTHMOD ownership boundaries.
+- Review ROLE-002, ROLE-003, EVT-002 and downstream role or permission schemas for dependency consistency.
+- Preserve the staged-file gate; repository write-back remains unauthorised.
+Ready for Codex staging: Yes
+---
+ROLE-002 — Roles, Responsibilities, Assignments and Authority
+Review status: Approved
+Refactoring outcome: Canonical Decision amendment required
+Change type: Role, assignment and authority separation
+Current Decision:
+Keep job title, role, responsibility, assignment scope and approval authority distinct.
+Proposed canonical Decision:
+Job title, organisational role, responsibility, assignment and authority are separate governed concepts. A job title describes a person’s employment position and does not by itself grant authority. An organisational role defines a durable business purpose and set of responsibilities. A responsibility states work or accountability owned by a role or business domain. An assignment links a named person to a role, responsibility or governed scope for an effective period and does not transfer ownership. Authority is granted separately through AUTHMOD as explicit, scoped permission to perform defined actions. Assignments and authority grants must be effective-dated, auditable and revocable. Temporary delegation must have a fixed end date and never changes the underlying role, responsibility or business ownership. Applications and technical access enforce approved assignments and authority but do not create them.
+Reason for amendment:
+- The current Decision correctly separates the concepts but does not define their relationships.
+- Job titles must not imply authority or permission automatically.
+- Organisational roles and responsibilities remain durable even when the assigned person changes.
+- A named person exercises a role or responsibility through an effective-dated assignment.
+- Authority is a separate AUTHMOD grant and may be narrower than the assigned role or responsibility.
+- Temporary delegation and technical access must not transfer ownership or permanently change the Role Catalogue.
+Required explanatory refinements:
+- Define each concept in plain business language and preserve the distinctions throughout the document.
+- Replace language suggesting that authority belongs to an accountable function with the clearer rule that AUTHMOD grants authority to organisational roles and assigned people exercise it within scope.
+- Require assignments and authority grants to have effective dates, status, scope, source, approver and audit history.
+- Explain that assignment expiry removes the person’s assignment without deleting the underlying role or responsibility.
+- Explain that authority may be revoked independently of an assignment where required.
+- Preserve separation of duties and least-privilege principles.
+- Clarify that Platform Governance implements approved records and controls but does not define business roles, responsibilities or authority.
+Source authority:
+- ROLE-001: Operations Leadership owns the organisation-wide Role Catalogue; domains own their responsibilities; AUTHMOD governs authority.
+- AUTHMOD: authority is explicit, role-based, scoped, auditable and separately delegated.
+- Review Doctrine v2: Ownership ≠ Authority ≠ Technical Administration.
+Repository impact:
+- Replace the canonical Decision in ROLE-002.
+- Align rationale, consequences, implementation implications and future considerations with ROLE-001 and AUTHMOD.
+- Review ROLE-003 through ROLE-007 and mobilisation dependencies for any implication that job titles or assignments automatically grant authority.
+- Preserve the staged-file gate; repository write-back remains unauthorised.
+Ready for Codex staging: Yes
+---
+ROLE-003 — Permission Action Vocabulary
+Review status: Approved
+Refactoring outcome: Canonical Decision amendment required
+Change type: Controlled action vocabulary and authority semantics
+Current Decision:
+FIKA OS should use a consistent set of business actions across every domain: View, Contribute, Manage, Approve, Publish and Administer. View allows read-only access to relevant information. Contribute allows users to create or edit records they own or are responsible for. Manage allows operational control, assignment and routine decision-making within a domain. Approve grants formal authority to accept significant business actions, exceptions or changes. Publish makes approved information visible or operationally active to the wider business or customers. Administer governs platform configuration, roles and permissions but does not automatically grant operational or commercial authority. Each action should be granted according to business responsibility rather than job title, with least-privilege access as the default.
+Proposed canonical Decision:
+AUTHMOD uses the controlled business-action vocabulary View, Contribute, Manage, Approve, Publish and Administer. View permits access to information within an authorised scope without changing it. Contribute permits creation or amendment of records within an authorised scope but does not confer approval, publication or administrative authority. Manage permits governed operational control, coordination and assignment within a defined domain and scope, but does not by itself permit approval or publication. Approve permits formal acceptance of a governed business action, exception or change where the role has explicit approval authority. Publish permits approved information or configuration to become visible, available or operationally active within its authorised audience and scope. Administer permits technical or configuration administration but does not confer ownership, operational, commercial, approval or publication authority. Every grant must combine an action with an explicit business scope, organisational role, effective period and audit history. Actions are granted through AUTHMOD according to business responsibility, separation of duties and least privilege; job titles, assignments, application access and technical privileges do not grant them implicitly.
+Reason for amendment:
+- The current Decision establishes the correct six actions but gives Manage, Approve and Administer meanings that could be interpreted too broadly.
+- An action must never stand alone; every grant requires an authorised role, business scope and effective period.
+- Contribute must not imply approval or publication merely because a person owns or edits a record.
+- Manage supports operational control but must not silently include Approve or Publish.
+- Administer describes technical or configuration administration and must remain separate from business ownership and authority.
+- The controlled vocabulary is governed through AUTHMOD rather than independently by applications or providers.
+Required explanatory refinements:
+- Preserve the six controlled actions exactly: View, Contribute, Manage, Approve, Publish and Administer.
+- Explain that actions are composable grants rather than a simple hierarchy in which each action automatically includes every earlier action.
+- Require every permission grant to identify action, domain or business scope, organisational role, effective period, source, approver and audit history.
+- Preserve separation between Contribute, Approve and Publish.
+- Clarify that Manage does not automatically permit approval, publication or administration.
+- Clarify that Administer never implies operational, commercial or ownership authority.
+- State that temporary delegation must have a fixed end date and remains subject to least privilege and separation of duties.
+- Remove any implication that job title, assignment or technical access grants an action automatically.
+Source authority:
+- ROLE-001: AUTHMOD owns the controlled permission-action vocabulary and authority rules.
+- ROLE-002: authority is separate from job title, responsibility and assignment and is granted explicitly through AUTHMOD.
+- Review Doctrine v2: Ownership ≠ Authority ≠ Technical Administration.
+Repository impact:
+- Replace the canonical Decision in ROLE-003.
+- Align rationale, consequences, implementation implications and future considerations with ROLE-001, ROLE-002 and AUTHMOD.
+- Review ROLE-005 through ROLE-007 and downstream permission schemas for action inclusion, scope, approval and publication semantics.
+- Preserve the staged-file gate; repository write-back remains unauthorised.
+Ready for Codex staging: Yes
+---
+ROLE-004 — Assignment Scopes
+Review status: Approved
+Refactoring outcome: Canonical Decision amendment required
+Change type: Assignment scope, duration and authority boundary
+Current Decision:
+Assignments may exist at multiple business scopes depending on the responsibility being performed. Company-wide assignments apply across FIKA, such as platform administration, Coffee, Marketing or Culinary leadership. Client-scoped assignments apply to a specific client relationship. Location-scoped assignments apply to the day-to-day operation of an Operational Location. Project-scoped assignments apply to defined activities such as mobilisations, implementations or major events. Temporary assignments allow responsibilities to be delegated for a fixed period, such as annual leave, sickness cover, secondments or relief support. All assignments should be time-bound where appropriate and granted according to business responsibility rather than organisational hierarchy or job title.
+Proposed canonical Decision:
+An assignment links a named person to an organisational role, responsibility or governed business scope for an effective period. Assignments may apply organisation-wide or to one or more explicitly identified domains, clients, Operational Locations, Services, Service Arrangements, Events, mobilisations or other governed scopes. A person may hold multiple concurrent assignments where their scopes and responsibilities are compatible. An assignment does not by itself grant authority: any permitted actions must be granted separately through AUTHMOD for the applicable role, scope and effective period. Every assignment must record its assignee, assigned role or responsibility, scope, source, status, start date, approver and audit history. Temporary, cover and delegated assignments must also have a mandatory fixed end date; other assignments remain subject to effective dating, review and revocation. Expiry or revocation ends the person’s assignment without deleting the underlying role, responsibility or business ownership. Technical access must follow the approved assignment and authority grant and must not extend either.
+Reason for amendment:
+- The current Decision identifies useful scope examples but does not fully define an assignment as a governed relationship.
+- Company-wide, client, OPLOC, project and temporary are not mutually exclusive assignment types; scope and duration are separate dimensions.
+- Assignment must remain separate from AUTHMOD authority and technical access.
+- Named people may hold multiple compatible assignments across different governed scopes.
+- “Time-bound where appropriate” is too weak for temporary delegation, which requires a mandatory fixed end date.
+- Expiry or revocation must remove the assignment without changing the durable role, responsibility or business ownership.
+Required explanatory refinements:
+- Describe assignment scope and assignment duration as separate governed properties.
+- Use Operational Location rather than the generic shortened location where the canonical concept is intended.
+- Treat project, mobilisation and Event scopes as governed references rather than interchangeable concepts.
+- Require assignee, role or responsibility, scope, source, status, start date, approver and audit history for every assignment.
+- Require a fixed end date for temporary, cover and delegated assignments.
+- Explain that assignments may overlap only where compatible with least privilege and separation of duties.
+- Clarify that authority grants may be narrower than the assignment and may be revoked independently.
+- State that applications and providers enforce approved scope and duration but cannot widen them.
+Source authority:
+- ROLE-002: assignment is separate from role, responsibility and authority and links a named person to governed work for an effective period.
+- ROLE-003: permission actions require explicit role, scope and effective-period grants through AUTHMOD.
+- AUTHMOD: authority is role-based, scoped, auditable, revocable and separately delegated.
+Repository impact:
+- Replace the canonical Decision in ROLE-004.
+- Align rationale, consequences, implementation implications and future considerations with ROLE-002, ROLE-003 and AUTHMOD.
+- Review ROLE-005 through ROLE-007, mobilisation decisions and assignment schemas for scope, duration and authority consistency.
+- Preserve the staged-file gate; repository write-back remains unauthorised.
+Ready for Codex staging: Yes
+---
+ROLE-005 — Approval and Publication Separation
+Review status: Approved
+Refactoring outcome: Canonical Decision amendment required
+Change type: Separation of duties, approval and publication authority
+Current Decision:
+Contributors create and amend business content within their responsibilities. Managers coordinate operational delivery, assign work and ensure tasks are completed but do not necessarily provide formal approval. Approvers accept business responsibility for significant decisions within their domain, such as commercial, financial, food safety or operational changes. Publishers make approved information or services operationally active or visible to the intended audience and may be the same person as the Approver where appropriate. Approval and publication remain separate business actions even when performed by the same individual. Authority should be delegated to the appropriate domain owner wherever possible, with Senior Management approving only decisions that carry significant strategic, financial or organisational impact.
+Proposed canonical Decision:
+Contribute, Manage, Approve and Publish are separate AUTHMOD actions and no action includes another implicitly. Contribute permits authorised creation or amendment of business records. Manage permits authorised coordination, assignment and routine operational control. Approve records formal acceptance of a governed business decision, exception, change or output by a role holding explicit approval authority for the applicable domain and scope. Publish makes approved information, configuration, Service or other governed output visible, available or operationally active for an authorised audience and scope. Publication must not occur without the required approval, but approval does not itself publish. The same assigned person may perform more than one action only where AUTHMOD explicitly grants each action and the owning domain permits that combination under its separation-of-duties rules. High-risk or material decisions may require different approver and publisher assignments or multiple approvals. Every approval and publication must record the action, subject, scope, actor, authority source, decision or outcome, effective time and audit history. Delegation must be scoped, auditable and time-limited and never transfers ownership. Platform Governance implements and validates the workflow controls but does not supply business approval or publication authority unless separately granted through AUTHMOD.
+Reason for amendment:
+- The current Decision preserves action separation but allows the same individual to approve and publish without requiring an explicit domain rule or AUTHMOD grant for both actions.
+- “Appropriate domain owner” confuses business ownership with authority to approve a particular action.
+- “Senior Management” is a broad organisational label and must not confer authority automatically.
+- Approval is a governed recorded decision; publication is a later activation or visibility action and must remain independently auditable.
+- Separation of duties should be risk-based and governed by the owning domain rather than assumed universally or ignored.
+- Platform Governance may enforce workflow gates without becoming the business approver or publisher.
+Required explanatory refinements:
+- Align all action definitions with ROLE-003 and preserve that actions are composable rather than hierarchical.
+- Replace domain-owner or Senior-Management authority assumptions with explicit AUTHMOD grants.
+- Explain when one person may hold both Approve and Publish and when separation is mandatory.
+- Require publication to reference the approval or approvals on which it depends.
+- Record rejected, withdrawn, superseded and revoked approvals without deleting history.
+- Require fixed end dates for temporary delegated approval or publication authority.
+- Preserve Ownership ≠ Authority ≠ Technical Administration.
+Source authority:
+- ROLE-002: role, assignment and authority are separate governed concepts.
+- ROLE-003: Approve and Publish are distinct controlled actions granted explicitly through AUTHMOD.
+- ROLE-004: assignments and authority grants are independently scoped, effective-dated and revocable.
+- AUTHMOD: authority is role-based, scoped, auditable and subject to separation of duties and least privilege.
+Repository impact:
+- Replace the canonical Decision in ROLE-005.
+- Align rationale, consequences, implementation implications and future considerations with ROLE-002 through ROLE-004 and AUTHMOD.
+- Review approval and publication workflows across Configuration, Service, Event, Mobilisation, commercial, food-safety and other domains for assumed job-title or ownership authority.
+- Preserve the staged-file gate; repository write-back remains unauthorised.
+Ready for Codex staging: Yes
+---
+ROLE-006 — Access Boundaries
+Review status: Approved
+Refactoring outcome: Canonical Decision amendment required
+Change type: Information access, sensitivity and privileged-access boundary
+Current Decision:
+Access to information within FIKA OS must follow the principle of least privilege and be granted according to business responsibility rather than job title. Site Managers may access workforce, client, operational, allergen, safety and audit information relating only to their own Operational Location. Domain Owners may access equivalent information across all Operational Locations within the domains they own, such as Coffee, Culinary, Events or Hospitality, without automatically gaining access to unrelated domains. Commercial, financial and workforce information must be restricted to authorised business owners. A limited number of Platform Administrators may hold full-system access for platform administration, support and recovery purposes, with all privileged access subject to comprehensive audit logging and periodic review.
+Proposed canonical Decision:
+Access to information is granted through AUTHMOD according to explicit business purpose, controlled action, governed scope, information sensitivity and effective period, with least privilege as the default. Job title, assignment, ownership, application access or technical administration does not confer information access automatically. Each business domain owns the classification and permitted uses of its records, including whether a role may access full detail, restricted fields, summaries or aggregated outputs. Access may be scoped to identified domains, clients, Operational Locations, Services, Service Arrangements, Events or other governed business boundaries and must not extend to unrelated scopes. Workforce, commercial, financial, client, allergen, food-safety, safeguarding and audit information must receive controls appropriate to its sensitivity and lawful business use. Privileged technical access must be separately authorised, limited to the minimum purpose and duration required, and must not confer business ownership, operational authority or unrestricted routine visibility. Every access grant, change, use of privileged access, review, expiry and revocation must be auditable. Temporary or exceptional access must have a fixed end date; emergency access is additionally governed by ROLE-007. Platform Governance implements and monitors approved controls but does not define business access entitlement unless separately authorised through AUTHMOD.
+Reason for amendment:
+- The current Decision assigns access through job titles such as Site Manager and broad labels such as Domain Owner rather than explicit AUTHMOD grants.
+- Ownership of a domain or record does not automatically mean unrestricted access to every field or record within it.
+- Access boundaries must account for sensitivity, business purpose and the distinction between detailed, restricted, summary and aggregate information.
+- Platform administration must not imply routine full-system business visibility.
+- Technical privileged access requires stricter purpose, duration, logging and review controls.
+- Access must remain distinct from ownership, approval authority and technical administration.
+Required explanatory refinements:
+- Replace assumed job-title access with explicit role, action, scope, purpose and effective-period grants through AUTHMOD.
+- Distinguish record ownership from entitlement to view or manage sensitive information.
+- Require each domain to classify information and define permitted detail, restricted-field, summary and aggregate access.
+- Preserve Operational Location and other governed scope boundaries without assuming every assigned manager receives every category of information.
+- State that privileged technical access is exceptional, purpose-limited and not equivalent to business authority or routine access.
+- Require periodic access review, revocation and complete audit history.
+- Require fixed end dates for temporary and exceptional access and defer emergency-access controls to ROLE-007.
+Source authority:
+- ROLE-002: assignments and authority are separate governed concepts.
+- ROLE-003: View, Manage and Administer are distinct controlled actions and do not include one another implicitly.
+- ROLE-004: assignments and authority grants are explicitly scoped, effective-dated and revocable.
+- AUTHMOD: authority is role-based, scoped, auditable and governed by least privilege and separation of duties.
+- Review Doctrine v2: Ownership ≠ Authority ≠ Technical Administration.
+Repository impact:
+- Replace the canonical Decision in ROLE-006.
+- Align rationale, consequences, implementation implications and future considerations with ROLE-002 through ROLE-004 and AUTHMOD.
+- Review ROLE-007 and downstream identity, permission, audit, workforce, client, commercial, allergen and safety schemas for sensitivity, summary/detail and privileged-access semantics.
+- Preserve the staged-file gate; repository write-back remains unauthorised.
+Ready for Codex staging: Yes
+---
+ROLE-007 — Emergency Access
+Review status: Approved
+Refactoring outcome: Canonical Decision amendment required
+Change type: Emergency authority, break-glass access and post-use governance
+Current Decision:
+FIKA OS must support emergency access for exceptional operational, security or business continuity situations where normal permissions would prevent an urgent response. Emergency access should be granted only to authorised Platform Administrators or designated senior personnel, require a documented reason, and be limited to the minimum scope and duration necessary. Every emergency access session must generate a complete audit record showing who requested access, who authorised it, what information or actions were accessed, when access occurred and when it was revoked. Emergency access must never become a substitute for normal role assignments or permission management and should be reviewed after each use to identify whether permanent permission changes or process improvements are required.
+Proposed canonical Decision:
+Emergency access is a separately governed, temporary AUTHMOD authority grant used only where an immediate operational, security, safety or business-continuity need cannot be resolved through normal assignments and permission processes. It must not be inferred from job title, seniority, platform administration or existing technical access. Every emergency-access grant must identify the emergency, requester, authorised recipient, approving authority, controlled actions, governed scope, purpose, start time and mandatory fixed end time, and must be limited to the minimum access necessary. Where prior approval is genuinely impossible, a predefined break-glass rule may permit immediate activation only for specifically authorised roles, with automatic notification and mandatory retrospective approval and review. All activation, access, actions, data viewed or changed, approvals, notifications, expiry and revocation must be preserved in a tamper-evident audit history. Emergency access must expire automatically, may be revoked earlier, never transfers ownership and must not create permanent authority or routine access. Each use requires prompt independent review to confirm necessity, assess impact, identify misuse or control failure, and determine whether normal roles, permissions or processes require a separately governed change. Platform Governance implements and monitors the mechanism but does not grant emergency business authority unless explicitly authorised through AUTHMOD.
+Reason for amendment:
+- The current Decision assumes Platform Administrators or senior personnel may receive emergency access by status rather than explicit AUTHMOD authority.
+- Emergency access is an exceptional authority grant, not merely a temporary assignment or technical-access mode.
+- A genuine break-glass path is needed for circumstances where prior approval is impossible, but it must be predefined and immediately reviewable.
+- Minimum scope must include both information access and permitted actions.
+- Emergency access must expire automatically and must never become a route to permanent or routine access.
+- Post-use review should be independent and mandatory, not optional.
+Required explanatory refinements:
+- Replace assumed Platform Administrator or senior-person authority with explicit emergency-access roles and grants under AUTHMOD.
+- Distinguish ordinary temporary access, privileged technical access and emergency break-glass authority.
+- Require requester, recipient, reason, emergency classification, approver, actions, scope, start time and mandatory end time.
+- Define the narrow circumstances in which retrospective approval is permitted and require automatic notification on activation.
+- Require tamper-evident recording of activation, information accessed, actions performed, changes made, expiry and revocation.
+- Require automatic expiry and allow immediate revocation.
+- Require prompt independent post-use review, including whether a normal governed change is needed.
+- Preserve Ownership ≠ Authority ≠ Technical Administration.
+Source authority:
+- ROLE-002: assignment and authority are separate governed concepts.
+- ROLE-003: controlled actions are explicit, scoped and independently granted.
+- ROLE-004: temporary grants require a fixed end date and audit history.
+- ROLE-006: privileged technical access is exceptional, purpose-limited and not equivalent to routine business access.
+- AUTHMOD: authority is role-based, scoped, auditable, revocable and subject to least privilege and separation of duties.
+Repository impact:
+- Replace the canonical Decision in ROLE-007.
+- Align rationale, consequences, implementation implications and future considerations with ROLE-002 through ROLE-006 and AUTHMOD.
+- Review identity, access-control, security, audit and incident-management specifications for break-glass activation, retrospective approval, automatic expiry and post-use review.
+- Preserve the staged-file gate; repository write-back remains unauthorised.
+Ready for Codex staging: Yes
+--
+CAP-001 — Operational Capability Definition
+Review status: Approved
+Refactoring outcome: Canonical Decision amendment required
+Change type: Capability definition, catalogue ownership and domain boundary
+Current Decision:
+An operational capability is a reusable business function that an Operational Location may enable to support how FIKA operates, independent of its identity or type. Capabilities determine what a location is able to do, such as Hospitality, Events, Coffee, Production, Logistics, Reporting, Feedback or Training, without defining how those domains operate internally. The approved capability catalogue should be owned centrally by the Platform and Operations teams to ensure consistency across FIKA, with new capabilities added only where there is a defined business purpose, accountable owner and operational lifecycle. Individual Operational Locations may enable or disable approved capabilities but must not create their own.
+Proposed canonical Decision:
+An Operational Capability is a governed, reusable business ability that may be enabled within an applicable Operational Location, Service Arrangement or other approved operating scope to support how FIKA delivers work. It describes what the business is able to do and must not define a business domain, organisational role, application, provider, location identity, presentation choice or implementation method. Each Operational Capability belongs to the business domain that owns its meaning, rules and lifecycle. Operations Leadership owns the organisation-wide Operational Capability Catalogue and is accountable for its coherence across FIKA, while the relevant domain owner defines and maintains each capability’s business meaning, eligibility, dependencies and lifecycle requirements. Catalogue additions, material changes, renames, mergers and retirements require explicit approval through AUTHMOD, effective dating, impact assessment and complete audit history. Platform Governance maintains the technical representation and assesses cross-domain, reporting, migration and implementation impact, but does not create or own business capabilities. Operational Locations and other authorised scopes may enable or disable approved capabilities only where permitted by governed configuration and dependency rules; they must not create local capability definitions or alter canonical meaning.
+Reason for amendment:
+- The current Decision correctly treats capability as reusable and separate from Operational Location identity, but does not fully separate capability, domain, catalogue ownership and technical administration.
+- “Platform and Operations teams” combines business ownership with technical implementation and does not identify a durable accountable role.
+- Examples such as Coffee, Hospitality and Events can be interpreted as domains rather than reusable abilities and should not define the concept.
+- The capability catalogue requires organisation-wide coherence, while each capability’s business meaning and lifecycle remain owned by the relevant domain.
+- Enabling a capability within an Operational Location is configuration and does not create local ownership or a new capability definition.
+- Catalogue lifecycle changes require explicit authority, effective dating, impact assessment and preserved history.
+Required explanatory refinements:
+- Use Operational Capability consistently as the canonical term.
+- Define a capability as a reusable business ability and explicitly distinguish it from domains, roles, applications, providers, location identity and presentation choices.
+- Replace joint “Platform and Operations” ownership with Operations Leadership ownership of the organisation-wide catalogue, domain ownership of capability meaning and Platform Governance technical administration.
+- Treat examples as illustrative only and do not imply that every business domain is itself an Operational Capability.
+- Require each capability to identify its owning domain, business purpose, eligibility, dependencies, lifecycle status and effective period.
+- Explain that Operational Locations and other scopes enable approved capabilities through governed configuration and cannot invent local definitions.
+- Require additions, material changes, renames, mergers and retirements to be authorised, effective-dated, impact-assessed and auditable.
+- Preserve Ownership ≠ Authority ≠ Technical Administration.
+Source authority:
+- Pack 3 domain and capability refinements: business domains own meaning and records; Operational Capabilities are reusable operational abilities owned within domains.
+- CFG-001: ownership, approval authority and technical administration are separate.
+- CFG-002 and CFG-003: enabling or varying an approved capability operates through governed inheritance and effective-dated configuration.
+- AUTHMOD: catalogue and lifecycle approvals are role-based, scoped and auditable.
+- Review Doctrine v2: Ownership ≠ Authority ≠ Technical Administration.
+Repository impact:
+- Replace the canonical Decision in CAP-001.
+- Align rationale, consequences, implementation implications and future considerations with the approved domain, catalogue-ownership and Platform Governance boundaries.
+- Review CAP-002 through CAP-004, mobilisation decisions and capability/configuration schemas for domain-versus-capability meaning, lifecycle and enablement consistency.
+- Preserve the staged-file gate; repository write-back remains unauthorised.
+Ready for Codex staging: Yes
+----
+CAP-002 — Capability Optionality and Dependencies
+Review status: Approved
+Refactoring outcome: Canonical Decision amendment required
+Change type: Optionality, dependency governance and valid operating-model boundaries
+Current Decision:
+Operational Capabilities are optional and may be combined flexibly so that any Operational Location can support the services requested by the client or required by FIKA. Some capabilities have dependencies that must be satisfied to preserve a complete and workable operational flow. For example, an on-site Hospitality capability may require an approved brochure, booking process, operational dashboard and appropriate ownership before it can be enabled. Capabilities may also be enabled without related capabilities where the workflow remains valid, such as Production without Logistics where delivery is not required. Every Operational Location must have a named accountable owner, even where no external Client exists, and recurring locations should normally support reporting. Dependencies and exclusions should therefore prevent broken workflows without unnecessarily restricting valid operating models.
+Proposed canonical Decision:
+Operational Capabilities are optional unless an approved business rule makes a capability mandatory for a defined operating scope. Capabilities may be combined only where the resulting operating model is valid under the owning domains’ governed dependency, exclusion, eligibility and lifecycle rules. Each dependency rule must identify the capability or governed condition on which enablement depends, whether the rule is mandatory, conditional or advisory, the applicable scope, effective period, owning domain, approving authority and audit history. Exclusion rules must identify combinations that are prohibited or require an approved exception. A capability may operate without another capability where no governed dependency applies and the complete business workflow remains valid. Capability enablement must not be inferred from client request, location type, application availability or technical configuration alone. Every enabled capability must have an accountable business owner for its operating scope, while approval authority and technical administration remain separate under AUTHMOD. Platform Governance validates and enforces approved dependency rules and assesses cross-domain impact but does not invent business dependencies or exceptions. Operational Locations and other authorised scopes may select only valid combinations from the approved catalogue and must not bypass mandatory rules or create local dependency semantics.
+Reason for amendment:
+- The current Decision correctly preserves flexibility but mixes optionality, workflow examples, ownership and reporting expectations in one rule.
+- “Optional” must not prevent a governed business rule from making a capability mandatory for a defined scope.
+- Dependencies and exclusions require explicit ownership, authority, effective dating and audit history rather than illustrative examples alone.
+- Client request or technical availability must not activate a capability without governed eligibility and dependency validation.
+- A capability may stand alone only where no approved dependency applies and the end-to-end business workflow remains valid.
+- Reporting expectations and Operational Location ownership are related governance requirements but should not redefine capability dependency semantics.
+Required explanatory refinements:
+- Distinguish optional capability selection from mandatory rules that apply within a defined scope.
+- Define dependency, exclusion, eligibility and advisory rules separately.
+- Require every rule to record subject capability, related capability or condition, rule type, scope, owner, approver, effective period and audit history.
+- Explain that disabled, unavailable and ineligible are distinct states.
+- Require exceptions to mandatory dependencies or exclusions to be separately authorised, effective-dated and auditable.
+- Remove examples that could imply Hospitality, Production or Logistics are universally classified as capabilities before their owning domains confirm the catalogue.
+- Preserve Ownership ≠ Authority ≠ Technical Administration.
+Source authority:
+- CAP-001: Operational Capabilities are governed reusable abilities owned within business domains and enabled through approved configuration.
+- CFG-002 and CFG-003: enablement and exceptions operate through governed inheritance, effective dating and authorised variation.
+- AUTHMOD: approval and exception authority is role-based, scoped and auditable.
+- Pack 3 governance: domains own business meaning and rules; Platform Governance implements and assesses impact without becoming business authority.
+Repository impact:
+- Replace the canonical Decision in CAP-002.
+- Align rationale, consequences, implementation implications and future considerations with CAP-001, CFG-002, CFG-003 and AUTHMOD.
+- Review CAP-003, CAP-004, mobilisation decisions and capability/configuration schemas for dependency, exclusion, eligibility, exception and lifecycle semantics.
+- Preserve the staged-file gate; repository write-back remains unauthorised.
+Ready for Codex staging: Yes
+--
+CAP-003 — Capability Overrides
+Review status: Approved
+Refactoring outcome: Canonical Decision amendment required
+Change type: Capability override governance, authority and inheritance consistency
+Current Decision:
+Capability defaults should be defined centrally but may be overridden at company, client or Operational Location scope where required. Site Managers have authority to approve and manage overrides affecting activities within their own Operational Location, while centrally operated functions such as CPU remain under their relevant domain owner. Overrides must follow the ownership of the affected business area, be explicitly recorded and take effect from a defined date. Previous values must never be destroyed or overwritten, ensuring the platform can reconstruct which configuration applied at any point in time.
+Proposed canonical Decision:
+An Operational Capability override is an explicitly authorised, effective-dated configuration variation that changes an inherited capability value or enablement rule for a governed business scope without changing the canonical capability definition. Overrides may be created only where CAP-001, CAP-002, CFG-002 and CFG-003 permit variation for the affected capability, scope and dependency rules. No fixed universal precedence is assumed between company, client, Operational Location, Service Arrangement or other scopes; the applicable inheritance relationship and precedence must already be governed before an override can take effect. The business domain that owns the affected capability retains ownership of its meaning and protected rules, while approval authority is granted separately through AUTHMOD for the subject, scope and impact of the override. Job title, local responsibility, technical access or platform administration does not confer override authority automatically. Every override must record the inherited value or rule it changes, resulting value or state, business reason, scope, owner, approving authority, dependency and eligibility validation, start date, mandatory end date where temporary, status and complete audit history. Expired, withdrawn or revoked overrides must reveal the next valid inherited value rather than copying, deleting or rewriting history. An override must not bypass mandatory dependencies, exclusions, protected business rules or lifecycle restrictions unless a separately authorised exception explicitly permits it. Platform Governance implements validation and impact controls and preserves historical reconstruction but does not define or approve the business exception unless separately authorised through AUTHMOD.
+Reason for amendment:
+- The current Decision assumes company, client and Operational Location form a universal precedence hierarchy, contrary to CFG-002.
+- Site Manager authority is inferred from job title rather than an explicit AUTHMOD grant.
+- Ownership of capability meaning, authority to approve an override and technical administration are not sufficiently separated.
+- A capability override must alter an inherited value or enablement state, not create a local capability definition.
+- Overrides must be validated against dependency, exclusion, eligibility and lifecycle rules established under CAP-002.
+- Historical reconstruction requires expiry and withdrawal to reveal the next valid inherited value without destructive rewriting.
+Required explanatory refinements:
+- Describe capability overrides as governed CFG-003 variations operating within CFG-002 inheritance relationships.
+- Remove any universal company → client → Operational Location precedence assumption.
+- Replace job-title and broad domain-owner authority with explicit AUTHMOD grants.
+- Require each override to identify the inherited value or rule, resulting value or state, reason, scope, owner, approver, effective period, validation outcome, status and audit history.
+- Require a fixed end date for temporary overrides and temporary delegated authority.
+- Explain that expiry, withdrawal or revocation reveals the next valid inherited value.
+- State that overrides cannot create local capability definitions or bypass protected dependency and lifecycle rules without a separately authorised exception.
+- Preserve Ownership ≠ Authority ≠ Technical Administration.
+Source authority:
+- CAP-001: capability meaning and lifecycle belong to the owning business domain; authorised scopes enable approved capabilities through governed configuration.
+- CAP-002: dependency, exclusion, eligibility and lifecycle rules govern valid capability combinations and exceptions.
+- CFG-002: inheritance operates only through explicitly governed relationships, with no universal precedence between unrelated scopes.
+- CFG-003: variations are authorised, effective-dated overrides rather than independent local configurations.
+- AUTHMOD: approval authority is role-based, scoped, auditable and separately delegated.
+Repository impact:
+- Replace the canonical Decision in CAP-003.
+- Align rationale, consequences, implementation implications and future considerations with CAP-001, CAP-002, CFG-002, CFG-003 and AUTHMOD.
+- Review CAP-004 and downstream capability, configuration and mobilisation schemas for override, inheritance, dependency, expiry and exception consistency.
+- Preserve the staged-file gate; repository write-back remains unauthorised.
+Ready for Codex staging: Yes
+---
+-
+CAP-004 — Capability, Domain and Permission Boundary
+Review status: Proposed — awaiting Derek approval
+Refactoring outcome: Canonical Decision amendment required
+Change type: Domain meaning, capability enablement and permission-authority boundary
+Current Decision:
+Operational Capabilities enable business experiences by making functions available to an Operational Location, but they do not define business meaning, own business records or grant user permissions. Business meaning remains the responsibility of the relevant business domains, while access is governed independently through the platform's roles, assignments and permission model. Enabling a capability determines what the platform can provide for an Operational Location, not who may use it or how the underlying business concepts are defined.
+Proposed canonical Decision:
+An Operational Capability makes an approved business ability available within a governed operating scope, but does not define business meaning, own canonical business records, assign organisational responsibility or grant authority or information access. The business domain that owns the capability retains ownership of its concepts, records, rules, classifications and lifecycle. Capability enablement records only that the approved ability is available for the applicable Operational Location, Service Arrangement or other governed scope, subject to CAP-001 through CAP-003 and approved configuration. Authority to View, Contribute, Manage, Approve, Publish or Administer is granted separately through AUTHMOD to organisational roles for explicit business scopes and effective periods; capability availability, assignment, application access or technical administration must not create or widen those grants. A person may therefore be authorised within a domain where a capability is unavailable, or a capability may be enabled where no person currently holds a particular action, without either condition changing the other. Applications and providers consume approved domain meaning, capability state and AUTHMOD grants and must not redefine, merge or infer them. Platform Governance maintains the technical relationships, validates cross-domain consistency and audits capability-state changes, but does not acquire business ownership or permission authority through implementation.
+Reason for amendment:
+- The current Decision establishes the correct high-level boundary but does not define the independence of domain meaning, capability state, assignment, authority and technical access strongly enough.
+- “Enable business experiences” may be interpreted as granting use or access rather than making an approved ability available within a governed scope.
+- Capability enablement must not own or duplicate canonical domain records or business rules.
+- AUTHMOD actions and information access must remain separately granted even when the related capability is enabled.
+- Applications and providers must consume these governed concepts without inferring permissions from capability state.
+- Platform Governance may implement and validate the relationships without becoming the business owner or authority source.
+Required explanatory refinements:
+- Preserve the distinction Domain Meaning ≠ Capability Availability ≠ Assignment ≠ Authority ≠ Technical Administration.
+- State that capability enablement is governed configuration and does not define who may use the capability.
+- State that AUTHMOD grants remain explicit, scoped, effective-dated, auditable and independent of capability state.
+- Explain that an enabled capability may exist without a current user grant and that a user grant may exist while a capability is unavailable, subject to the owning domain’s rules.
+- Prohibit applications and providers from inferring authority, access or ownership from capability enablement.
+- Ensure capability specifications reference canonical domain records rather than embedding or duplicating their meaning.
+- Require capability-state changes to be authorised, effective-dated, dependency-validated and auditable.
+- Preserve Ownership ≠ Authority ≠ Technical Administration.
+Source authority:
+- CAP-001: Operational Capabilities are governed reusable abilities owned within business domains.
+- CAP-002 and CAP-003: availability and overrides are governed through eligibility, dependency, inheritance and authorised configuration rules.
+- ROLE-002 through ROLE-006: assignment, authority, controlled actions and information access are distinct governed concepts.
+- AUTHMOD: authority is role-based, action-specific, scoped, effective-dated and auditable.
+- Pack 3 governance: domains own business meaning and records; applications and providers consume rather than redefine them.
+Repository impact:
+- Replace the canonical Decision in CAP-004.
+- Align rationale, consequences, implementation implications and future considerations with CAP-001 through CAP-003, ROLE-002 through ROLE-006 and AUTHMOD.
+- Review capability, domain, permission, identity and application schemas for any inferred authority or duplicated business meaning.
+- Preserve the staged-file gate; repository write-back remains unauthorised.
+Ready for Codex staging: No — awaiting Derek approval
+---

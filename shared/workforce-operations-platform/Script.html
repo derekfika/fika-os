@@ -1,0 +1,2632 @@
+<script>
+  const state = {
+    loading: false,
+    settings: {},
+    settingsLoaded: false,
+    gapsLoaded: false,
+    cockpitLoaded: false,
+    adminVisible: false,
+    currentSiteId: "",
+    currentWeekStart: "",
+    selectedDay: "",
+    selectedIssueId: "",
+    loadedWeeksBySite: {},
+    snapshotsByKey: {},
+    detailFilter: "all",
+    openDrawer: null,
+    showFullRota: false,
+    currentCockpit: null,
+    cockpitRefreshTimer: null,
+    selectedPerson: null,
+    gapsById: {}
+  };
+
+  document.addEventListener("DOMContentLoaded", () => {
+    mountSettingsModal();
+    bindActions();
+    bindNavigation();
+    loadDashboard();
+  });
+
+  function bindNavigation() {
+    document.querySelectorAll(".sidebar nav a[href^='#']").forEach(link => {
+      link.addEventListener("click", event => {
+        event.preventDefault();
+        const target = document.querySelector(link.getAttribute("href"));
+        if (!target) return;
+        document.querySelectorAll(".sidebar nav a").forEach(item => {
+          item.classList.toggle("active", item === link);
+        });
+        if (link.getAttribute("href") === "#gaps" && !state.gapsLoaded) loadCoverageGaps();
+        if (link.getAttribute("href") === "#settings" && !state.settingsLoaded) loadSettingsLibrary();
+        target.scrollIntoView({ behavior: "smooth", block: "start" });
+        history.replaceState(null, "", link.getAttribute("href"));
+      });
+    });
+  }
+
+  function toggleAdmin() {
+    state.adminVisible = !state.adminVisible;
+    document.querySelectorAll(".admin-section").forEach(section => {
+      section.classList.toggle("hidden", !state.adminVisible);
+    });
+    const button = document.getElementById("toggleAdminBtn");
+    if (button) {
+      button.classList.toggle("active", state.adminVisible);
+      button.textContent = state.adminVisible ? "Hide admin" : "Admin";
+    }
+    if (state.adminVisible && !state.settingsLoaded) loadSettingsLibrary();
+    if (state.adminVisible) loadSnapshotBuildStatus();
+    showToast(state.adminVisible ? "Admin tools shown." : "Admin tools hidden.");
+  }
+
+  function bindActions() {
+    onClick("syncEverythingBtn", () => {
+      runLiveWorkforceSync();
+    });
+    onClick("testBrightHrConnectionBtn", () => {
+      runAction("Testing BrightHR connection...", "testBrightHrConnectionFromUi");
+    });
+    onClick("testEmployeeEndpointBtn", () => {
+      runAction("Testing BrightHR employee endpoint...", "testBrightHrEmployeeEndpointFromUi");
+    });
+    onClick("testAbsenceEndpointBtn", () => {
+      runAction("Testing BrightHR absence endpoint…", "testBrightHrAbsenceEndpointFromUi");
+    });
+    onClick("discoverAbsenceEndpointBtn", () => {
+      runAction("Discovering BrightHR absence endpoint…", "discoverBrightHrAbsenceEndpointFromUi");
+    });
+    onClick("rebuildAllSnapshotsBtn", () => {
+      startMonthSnapshotBuilder();
+    });
+    onClick("refreshSnapshotStatusBtn", loadSnapshotBuildStatus);
+    onClick("showDiagnosticsBtn", showPerformanceDiagnostics);
+    onClick("loadCockpitBtn", () => {
+      loadRotaCockpit();
+    });
+    onClick("prevWeekBtn", () => shiftCockpitWeek(-7));
+    onClick("thisWeekBtn", () => setCockpitWeek(getMondayForDate(new Date())));
+    onClick("nextWeekBtn", () => shiftCockpitWeek(7));
+    onClick("weekAfterBtn", () => shiftCockpitWeek(14));
+    onClick("toggleFullRotaBtn", toggleFullRota);
+    onClick("toggleAdminBtn", toggleAdmin);
+    onClick("loadReliefRotaWindowBtn", () => loadReliefRotaWindow());
+    onClick("downloadAssistantPdfBtn", generateSelectedWeekReliefRotaPdf);
+    onClick("rebuildCurrentSnapshotBtn", rebuildCurrentSnapshot);
+    onClick("previewLegacyBtn", () => {
+      runLegacyPreview();
+    });
+    onClick("previewReliefImportBtn", () => {
+      runReliefPreview();
+    });
+    onClick("importReliefBtn", () => {
+      runAction("Importing relief rota…", "importReliefRotaFromUi");
+    });
+    onClick("importLegacyBtn", () => {
+      runAction("Importing legacy rota…", "importLegacyRotaFromUi");
+    });
+    onClick("clearLegacyNoiseBtn", () => {
+      runAction("Clearing noisy legacy rows…", "clearLegacyRotaShiftNoiseFromUi");
+    });
+    onClick("detectGapsBtn", () => {
+      runAction("Detecting staffing gaps…", "detectCoverageGapsFromUi");
+    });
+    onClick("loadRotaBtn", () => {
+      loadRotaBoard();
+    });
+    onClick("generateReliefBtn", () => {
+      runAction("Generating relief suggestions…", "generateReliefSuggestionsFromUi");
+    });
+    onClick("generateReliefRotaBtn", () => {
+      generateSelectedWeekReliefRotaPdf();
+    });
+    onClick("openSettingsBtn", openSettingsModal);
+    onClick("closeSettingsModal", closeSettingsModal);
+    onSubmit("managerForm", event => {
+      event.preventDefault();
+      saveManagerFromForm();
+    });
+    onSubmit("agencyForm", event => {
+      event.preventDefault();
+      saveAgencyFromForm();
+    });
+    onSubmit("rotaTemplateForm", event => {
+      event.preventDefault();
+      saveRotaTemplateFromForm();
+    });
+    onClick("dedupeTemplatesBtn", () => {
+      runAction("Cleaning duplicate rota rows…", "dedupeRotaTemplatesFromUi");
+    });
+    onClick("addReliefBtn", () => {
+      updateReliefTeamSelection(true);
+    });
+    onClick("removeReliefBtn", () => {
+      updateReliefTeamSelection(false);
+    });
+    onClick("enableAllEmployeesCover", () => {
+      refreshCoverPersonSelect();
+    });
+    const rotaFilter = document.getElementById("standardRotaSiteFilter");
+    if (rotaFilter) rotaFilter.addEventListener("change", renderStandardRotaTable);
+    onSubmit("gapActionForm", event => {
+      event.preventDefault();
+      submitGapActionForm();
+    });
+    onClick("closeGapModal", closeGapModal);
+    onClick("closePersonRotaModal", closePersonRotaModal);
+    onClick("markPersonSickBtn", markSelectedPersonSick);
+    onClick("editPersonStandardRotaBtn", showSelectedPersonStandardRotaEditor);
+    onSubmit("personStandardRotaForm", event => {
+      event.preventDefault();
+      savePersonStandardRotaFromModal();
+    });
+    onClick("closeSyncProgressBtn", closeSyncProgressModal);
+  }
+
+  function onClick(id, handler) {
+    const element = document.getElementById(id);
+    if (element) element.addEventListener("click", handler);
+  }
+
+  function onSubmit(id, handler) {
+    const element = document.getElementById(id);
+    if (element) element.addEventListener("submit", handler);
+  }
+
+  function loadDashboard() {
+    if (!state.gapsLoaded) setPanelLoading("gapList", "Coverage gaps load when you open Coverage.");
+    setPanelLoading("reliefList", "Relief suggestions load from each gap.");
+    google.script.run
+      .withSuccessHandler(data => {
+        if (!data) {
+          data = emptyDashboardData();
+          showToast("Dashboard returned no data. Checking server connection...");
+          checkDashboardPing();
+        } else if (data.ok === false && data.error) {
+          showToast(data.error);
+        }
+        renderDashboard(data);
+        if (!state.cockpitLoaded) loadRotaCockpit();
+      })
+      .withFailureHandler(error => {
+        showToast(error.message || "Could not load workforce dashboard.");
+      })
+      .getWorkforceDashboardSummaryFromUi();
+  }
+
+  function checkDashboardPing() {
+    google.script.run
+      .withSuccessHandler(result => {
+        if (result && result.ok) {
+          showToast("Server is responding, but dashboard data is empty. Run getWorkforceDashboardData in Apps Script to see the backend error.");
+        } else {
+          showToast("Server ping returned no data. Push and update the deployment again.");
+        }
+      })
+      .withFailureHandler(error => {
+        showToast(error.message || "Server ping failed. Check deployment permissions.");
+      })
+      .getWorkforceDashboardPing();
+  }
+
+  function runAction(loadingMessage, functionName) {
+    showLoading(loadingMessage, "Please keep this tab open while the app updates.");
+    const runner = google.script.run
+      .withSuccessHandler(result => {
+        result = result || {};
+        hideLoading();
+        showToast(result.message || `Done. ${result.synced || 0} record(s) updated.`);
+        refreshAfterAction(functionName);
+      })
+      .withFailureHandler(error => {
+        hideLoading();
+        showToast(error.message || "Action failed.");
+      });
+
+    const actions = {
+      setupWorkforceFromUi: () => runner.setupWorkforceFromUi(),
+      syncBrightHrEmployeesFromUi: () => runner.syncBrightHrEmployeesFromUi(),
+      syncBrightHrAbsencesFromUi: () => runner.syncBrightHrAbsencesFromUi(),
+      syncWorkforceFromUi: () => runner.syncWorkforceFromUi(),
+      testBrightHrConnectionFromUi: () => runner.testBrightHrConnectionFromUi(),
+      testBrightHrEmployeeEndpointFromUi: () => runner.testBrightHrEmployeeEndpointFromUi(),
+      testBrightHrAbsenceEndpointFromUi: () => runner.testBrightHrAbsenceEndpointFromUi(),
+      discoverBrightHrAbsenceEndpointFromUi: () => runner.discoverBrightHrAbsenceEndpointFromUi(),
+      rebuildAllRotaSnapshotsFromUi: () => runner.rebuildAllRotaSnapshotsFromUi(),
+      buildNextMonthRotaSnapshotsFromUi: () => runner.buildNextMonthRotaSnapshotsFromUi(),
+      importLegacyRotaFromUi: () => runner.importLegacyRotaFromUi(),
+      importReliefRotaFromUi: () => runner.importReliefRotaFromUi(),
+      clearLegacyRotaShiftNoiseFromUi: () => runner.clearLegacyRotaShiftNoiseFromUi(),
+      detectCoverageGapsFromUi: () => runner.detectCoverageGapsFromUi(),
+      generateReliefSuggestionsFromUi: () => runner.generateReliefSuggestionsFromUi(),
+      generateReliefRotaAssignmentsFromUi: () => runner.generateReliefRotaAssignmentsFromUi(),
+      dedupeRotaTemplatesFromUi: () => runner.dedupeRotaTemplatesFromUi()
+    };
+    if (!actions[functionName]) {
+      hideLoading();
+      showToast("That action is not wired yet: " + functionName);
+      return;
+    }
+    actions[functionName]();
+  }
+
+  function runLiveWorkforceSync() {
+    const progress = {
+      employeeSynced: 0,
+      absenceSynced: 0,
+      employeesQueried: 0,
+      totalEmployees: 0,
+      batches: 0,
+      warnings: []
+    };
+    openSyncProgressModal();
+    updateSyncProgress(progress, "Syncing employees…", 8);
+    google.script.run
+      .withSuccessHandler(result => {
+        result = result || {};
+        progress.employeeSynced = Number(result.synced || 0);
+        addSyncStep("Employees", `${progress.employeeSynced} employee(s) updated.`, "done");
+        runAbsenceSyncBatch(progress);
+      })
+      .withFailureHandler(error => {
+        progress.warnings.push(error.message || "Employee sync failed.");
+        addSyncStep("Employees", error.message || "Employee sync failed.", "warn");
+        updateSyncProgress(progress, "Employee sync failed.", 100);
+      })
+      .syncBrightHrEmployeesFromUi();
+  }
+
+  function runAbsenceSyncBatch(progress) {
+    progress.batches += 1;
+    updateSyncProgress(progress, `Syncing absence batch ${progress.batches}…`, getSyncPercent(progress));
+    google.script.run
+      .withSuccessHandler(result => {
+        result = result || {};
+        progress.absenceSynced += Number(result.synced || 0);
+        progress.employeesQueried += Number(result.employeesQueried || 0);
+        progress.totalEmployees = Number(result.totalEmployees || progress.totalEmployees || 0);
+        if (result.warning) progress.warnings.push(result.warning);
+        addSyncStep(
+          `Absence batch ${progress.batches}`,
+          `${result.employeesQueried || 0} employee(s) checked, ${result.synced || 0} absence row(s) updated.`,
+          result.rateLimited ? "warn" : "done"
+        );
+        if (result.rateLimited) {
+          updateSyncProgress(progress, "BrightHR rate limit reached. Wait a minute, then sync again to continue.", getSyncPercent(progress));
+          showToast("BrightHR rate limit reached. Sync can continue from this point later.");
+          loadDashboard();
+          if (state.cockpitLoaded) loadRotaCockpit();
+          return;
+        }
+        if (result.hasMore) {
+          window.setTimeout(() => runAbsenceSyncBatch(progress), 700);
+          return;
+        }
+        updateSyncProgress(progress, "Workforce sync complete.", 100);
+        addSyncStep("Complete", `${progress.absenceSynced} absence row(s) updated in total.`, "done");
+        showToast("Workforce sync complete.");
+        loadDashboard();
+        if (state.cockpitLoaded) loadRotaCockpit();
+      })
+      .withFailureHandler(error => {
+        progress.warnings.push(error.message || "Absence sync failed.");
+        addSyncStep(`Absence batch ${progress.batches}`, error.message || "Absence sync failed.", "warn");
+        updateSyncProgress(progress, "Absence sync stopped. See warning below.", getSyncPercent(progress));
+        loadDashboard();
+      })
+      .syncBrightHrAbsencesBatchFromUi(25);
+  }
+
+  function openSyncProgressModal() {
+    const modal = document.getElementById("syncProgressModal");
+    const list = document.getElementById("syncStepList");
+    if (list) list.innerHTML = "";
+    if (modal) modal.classList.remove("hidden");
+  }
+
+  function closeSyncProgressModal() {
+    const modal = document.getElementById("syncProgressModal");
+    if (modal) modal.classList.add("hidden");
+  }
+
+  function updateSyncProgress(progress, message, percent) {
+    text("syncProgressSummary", [
+      message,
+      progress.totalEmployees ? `${progress.employeesQueried}/${progress.totalEmployees} employees checked for absences.` : "",
+      progress.warnings.length ? progress.warnings[progress.warnings.length - 1] : ""
+    ].filter(Boolean).join(" "));
+    const bar = document.getElementById("syncProgressBar");
+    if (bar) bar.style.width = `${Math.max(4, Math.min(Number(percent || 0), 100))}%`;
+  }
+
+  function addSyncStep(title, body, status) {
+    const list = document.getElementById("syncStepList");
+    if (!list) return;
+    const item = document.createElement("div");
+    item.className = `sync-step ${status || "pending"}`;
+    item.innerHTML = `<strong>${escapeHtml(title)}</strong><span>${escapeHtml(body)}</span>`;
+    list.appendChild(item);
+  }
+
+  function getSyncPercent(progress) {
+    if (!progress.totalEmployees) return 20;
+    return 20 + Math.min(75, Math.round((progress.employeesQueried / progress.totalEmployees) * 75));
+  }
+
+  function refreshAfterAction(functionName) {
+    if (functionName === "detectCoverageGapsFromUi") {
+      state.gapsLoaded = false;
+      loadDashboard();
+      loadCoverageGaps();
+      return;
+    }
+    if (functionName === "generateReliefSuggestionsFromUi") {
+      loadDashboard();
+      if (state.gapsLoaded) loadCoverageGaps();
+      return;
+    }
+    if (functionName === "dedupeRotaTemplatesFromUi" || functionName === "importReliefRotaFromUi") {
+      state.settingsLoaded = false;
+      loadDashboard();
+      loadSettingsLibrary();
+      return;
+    }
+    if (functionName === "syncWorkforceFromUi" || functionName === "testBrightHrAbsenceEndpointFromUi" || functionName === "discoverBrightHrAbsenceEndpointFromUi") {
+      loadDashboard();
+      if (state.cockpitLoaded) loadRotaCockpit();
+      return;
+    }
+    loadDashboard();
+  }
+
+  function mountSettingsModal() {
+    const forms = document.querySelector("#settings .settings-forms");
+    const body = document.getElementById("settingsModalBody");
+    if (forms && body && forms.parentElement !== body) body.appendChild(forms);
+    document.querySelectorAll("[data-settings-tab]").forEach(tab => {
+      tab.addEventListener("click", () => activateSettingsTab(tab.dataset.settingsTab));
+    });
+    activateSettingsTab("reliefSettings");
+  }
+
+  function openSettingsModal() {
+    const modal = document.getElementById("settingsModal");
+    if (modal) modal.classList.remove("hidden");
+    if (!state.settingsLoaded) loadSettingsLibrary();
+  }
+
+  function closeSettingsModal() {
+    const modal = document.getElementById("settingsModal");
+    if (modal) modal.classList.add("hidden");
+  }
+
+  function activateSettingsTab(tabId) {
+    document.querySelectorAll("[data-settings-tab]").forEach(tab => {
+      tab.classList.toggle("active", tab.dataset.settingsTab === tabId);
+    });
+    document.querySelectorAll(".settings-tab-panel").forEach(panel => {
+      const panelId = panel.dataset.panelId || panel.id;
+      panel.classList.toggle("hidden", panelId !== tabId);
+    });
+  }
+
+  function loadRotaBoard() {
+    const siteId = document.getElementById("siteSelect").value;
+    const weekStart = document.getElementById("weekStartInput").value;
+    if (!siteId) {
+      showToast("Choose a site first.");
+      return;
+    }
+    if (siteId === "__all_sites") {
+      showToast("Building the next 3 months for all sites. This may take a while.");
+      runAction("Building 3 months of rota snapshots…", "buildNextMonthRotaSnapshotsFromUi");
+      return;
+    }
+    showLoading("Loading rota board…", "Building the weekly rota view.");
+    google.script.run
+      .withSuccessHandler(board => {
+        board = board || { days: [], siteName: "", weekStart: "", totalRows: 0, totalGaps: 0 };
+        renderRotaBoard(board);
+        hideLoading();
+      })
+      .withFailureHandler(error => {
+        hideLoading();
+        showToast(error.message || "Could not load rota board.");
+      })
+      .getRotaBoardFromUi(siteId, weekStart);
+  }
+
+  function loadRotaCockpit() {
+    const siteSelect = document.getElementById("cockpitSiteSelect");
+    const weekInput = document.getElementById("cockpitWeekStartInput");
+    const siteId = siteSelect ? siteSelect.value : "";
+    const weekStart = weekInput ? weekInput.value : "";
+    if (!siteId) {
+      setCockpitLoading("Choose a site to load the rota assistant.");
+      return;
+    }
+    if (siteId === "__all_sites") {
+      loadAllSitesCockpitDayByDay(weekStart);
+      loadReliefRotaWindow({ quiet: true });
+      return;
+    }
+    state.currentSiteId = siteId;
+    state.currentWeekStart = weekStart;
+    const cacheKey = getSnapshotCacheKey_(siteId, weekStart);
+    const cachedBoard = state.snapshotsByKey[cacheKey];
+    if (cachedBoard) {
+      state.currentCockpit = state.snapshotsByKey[cacheKey];
+      renderRotaCockpit(cachedBoard);
+    }
+    if (!cachedBoard) setCockpitLoading("Loading selected site/week…");
+    google.script.run
+      .withSuccessHandler(board => {
+        board = board || { ok: false, days: [], totals: {} };
+        if (board.ok === false && board.error) showToast(board.error);
+        state.cockpitLoaded = true;
+        state.currentCockpit = board;
+        state.loadedWeeksBySite[siteId + "|" + weekStart] = board;
+        state.snapshotsByKey[cacheKey] = board;
+        renderRotaCockpit(board);
+        loadReliefRotaWindow({ quiet: true });
+      })
+      .withFailureHandler(error => {
+        showToast(error.message || "Could not load rota assistant.");
+        setCockpitLoading("Could not load this rota week.");
+      })
+      .getRotaAssistantWeekFromUi(siteId, weekStart);
+  }
+
+  function loadAllSitesCockpitDayByDay(weekStart) {
+    const board = createAllSitesLoadingBoard_(weekStart);
+    state.currentSiteId = "__all_sites";
+    state.currentWeekStart = weekStart;
+    state.currentCockpit = board;
+    state.cockpitLoaded = true;
+    renderRotaCockpit(board);
+    loadReliefRotaWindow({ quiet: true });
+    board.days.forEach(day => {
+      google.script.run
+        .withSuccessHandler(result => {
+          result = result || {};
+          const nextBoard = state.currentCockpit || board;
+          const index = (nextBoard.days || []).findIndex(candidate => candidate.date === day.date);
+          if (index !== -1 && result.day) {
+            result.day.loading = false;
+            nextBoard.days[index] = result.day;
+            nextBoard.diagnostics = Object.assign({}, nextBoard.diagnostics || {}, result.diagnostics || {});
+            recomputeCockpitBoard(nextBoard);
+            state.snapshotsByKey[getSnapshotCacheKey_("__all_sites", weekStart)] = nextBoard;
+            renderRotaCockpit(nextBoard);
+          }
+        })
+        .withFailureHandler(error => {
+          showToast(error.message || "Could not load one all-sites day.");
+        })
+        .getAllSitesRotaAssistantDayFromUi(weekStart, day.date);
+    });
+  }
+
+  function createAllSitesLoadingBoard_(weekStart) {
+    const monday = weekStart ? new Date(weekStart + "T00:00:00") : getMondayForDate(new Date());
+    const days = Array.from({ length: 5 }).map((_, index) => {
+      const date = new Date(monday.getTime());
+      date.setDate(monday.getDate() + index);
+      return {
+        date: formatDateInput(date),
+        weekday: date.toLocaleDateString("en-GB", { weekday: "long" }),
+        status: "loading",
+        summary: {
+          scheduledCount: 0,
+          absenceCount: 0,
+          issueCount: 0,
+          uncoveredCount: 0,
+          suggestionCount: 0
+        },
+        issues: [],
+        fullRota: [],
+        siteSummaries: [],
+        loading: true
+      };
+    });
+    return {
+      ok: true,
+      allSites: true,
+      siteId: "__all_sites",
+      siteName: "All sites",
+      weekStart: formatDateInput(monday),
+      weekEnd: days[days.length - 1].date,
+      generatedAt: new Date().toISOString(),
+      totals: getEmptyClientCockpitTotals_(),
+      days: days,
+      diagnostics: {
+        source: "all_sites_day_by_day",
+        loading: true
+      }
+    };
+  }
+
+  function getEmptyClientCockpitTotals_() {
+    return {
+      scheduled: 0,
+      absences: 0,
+      uncoveredGaps: 0,
+      coverSuggested: 0,
+      issueCount: 0
+    };
+  }
+
+  function generateSelectedWeekReliefRotaPdf() {
+    const weekInput = document.getElementById("cockpitWeekStartInput");
+    const weekStart = weekInput ? weekInput.value : "";
+    if (!weekStart) {
+      showToast("Choose a week first.");
+      return;
+    }
+    const button = document.getElementById("downloadAssistantPdfBtn") || document.getElementById("generateReliefRotaBtn");
+    if (button) {
+      button.disabled = true;
+      button.dataset.defaultText = button.dataset.defaultText || button.textContent;
+      button.textContent = "Building PDF...";
+    }
+    showToast("Generating relief rota PDF for the selected week...");
+    google.script.run
+      .withSuccessHandler(result => {
+        if (button) {
+          button.disabled = false;
+          button.textContent = button.dataset.defaultText || "Download week PDF";
+        }
+        if (!result || result.ok === false) {
+          showToast((result && result.error) || "Could not generate relief rota PDF.");
+          return;
+        }
+        downloadBase64File_(result.base64, result.mimeType || "application/pdf", result.filename || "relief-rota.pdf");
+        showToast(result.message || "Relief rota PDF downloaded.");
+        loadReliefRotaWindow({ quiet: true });
+        queueQuietCockpitRefresh();
+      })
+      .withFailureHandler(error => {
+        if (button) {
+          button.disabled = false;
+          button.textContent = button.dataset.defaultText || "Download week PDF";
+        }
+        showToast(error.message || "Could not generate relief rota PDF.");
+      })
+      .generateReliefRotaPdfForSelectedWeekFromUi("__all_sites", weekStart);
+  }
+
+  function downloadBase64File_(base64, mimeType, filename) {
+    if (!base64) {
+      showToast("The PDF was empty.");
+      return;
+    }
+    const binary = window.atob(base64);
+    const bytes = new Uint8Array(binary.length);
+    for (let index = 0; index < binary.length; index += 1) {
+      bytes[index] = binary.charCodeAt(index);
+    }
+    const blob = new Blob([bytes], { type: mimeType || "application/octet-stream" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = filename || "download.pdf";
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
+  function loadReliefRotaWindow(options) {
+    options = options || {};
+    const siteSelect = document.getElementById("cockpitSiteSelect");
+    const weekInput = document.getElementById("cockpitWeekStartInput");
+    const siteId = state.currentSiteId || (siteSelect ? siteSelect.value : "");
+    const weekStart = state.currentWeekStart || (weekInput ? weekInput.value : "");
+    const root = document.getElementById("reliefRotaWindow");
+    if (!root) return;
+    if (!siteId || !weekStart) {
+      root.innerHTML = '<div class="empty-state">Choose a site and week above to load the relief rota.</div>';
+      return;
+    }
+    const button = document.getElementById("loadReliefRotaWindowBtn");
+    if (!options.quiet) {
+      root.innerHTML = `
+        <div class="skeleton-card">
+          <span class="loader small"></span>
+          <div>
+            <strong>Loading relief rota...</strong>
+            <p class="quiet">Checking accepted cover and draft relief assignments for this week.</p>
+          </div>
+        </div>
+      `;
+    }
+    setButtonLoading_(button, true, "Refreshing...");
+    google.script.run
+      .withSuccessHandler(result => {
+        setButtonLoading_(button, false);
+        if (!result || result.ok === false) {
+          root.innerHTML = `<div class="empty-state">${escapeHtml((result && result.error) || "Could not load relief rota.")}</div>`;
+          return;
+        }
+        renderReliefRotaWindow(result);
+      })
+      .withFailureHandler(error => {
+        setButtonLoading_(button, false);
+        root.innerHTML = `<div class="empty-state">${escapeHtml(error.message || "Could not load relief rota.")}</div>`;
+      })
+      .getReliefRotaWindowFromUi(siteId, weekStart);
+  }
+
+  function renderReliefRotaWindow(data) {
+    const root = document.getElementById("reliefRotaWindow");
+    if (!root) return;
+    const days = data.days || [];
+    const people = data.people || [];
+    const totals = data.totals || {};
+    if (!people.length) {
+      root.innerHTML = `
+        <div class="relief-rota-empty">
+          <div>
+            <strong>No relief cover recorded for this week yet.</strong>
+            <p class="muted-text">Approve cover from the issue cards or generate the PDF to create draft assignments.</p>
+          </div>
+          <span>${escapeHtml(data.siteName || "")} · WC ${escapeHtml(data.weekStart || "")}</span>
+        </div>
+      `;
+      return;
+    }
+    root.innerHTML = `
+      <div class="relief-rota-summary">
+        <div>
+          <span>Week</span>
+          <strong>${escapeHtml(data.siteName || "Relief rota")} · WC ${escapeHtml(data.weekStart || "")}</strong>
+        </div>
+        <div><span>People</span><strong>${escapeHtml(totals.people || 0)}</strong></div>
+        <div><span>Assignments</span><strong>${escapeHtml(totals.assignments || 0)}</strong></div>
+        <div><span>Accepted</span><strong>${escapeHtml(totals.accepted || 0)}</strong></div>
+        <div><span>Draft</span><strong>${escapeHtml(totals.draft || 0)}</strong></div>
+      </div>
+      <div class="relief-rota-calendar" style="--relief-days:${Math.max(1, days.length)}">
+        <div class="relief-rota-corner">Relief team</div>
+        ${days.map(day => `
+          <div class="relief-rota-day-head">
+            <strong>${escapeHtml(day.weekday || "")}</strong>
+            <span>${escapeHtml(formatDayMonth_(day.date))}</span>
+          </div>
+        `).join("")}
+        ${people.map(person => renderReliefRotaPersonRow_(person, days)).join("")}
+      </div>
+    `;
+  }
+
+  function renderReliefRotaPersonRow_(person, days) {
+    return `
+      <div class="relief-rota-person">
+        <strong>${escapeHtml(person.employeeName || "Unassigned relief")}</strong>
+        <span>${escapeHtml(person.assignmentCount || 0)} assignment${Number(person.assignmentCount || 0) === 1 ? "" : "s"}</span>
+        ${person.email ? `<small>${escapeHtml(person.email)}</small>` : ""}
+      </div>
+      ${days.map(day => {
+        const assignments = (person.assignmentsByDate && person.assignmentsByDate[day.date]) || [];
+        return `
+          <div class="relief-rota-cell ${assignments.length ? "has-cover" : ""}">
+            ${assignments.length ? assignments.map(renderReliefRotaAssignment_).join("") : '<span class="relief-rota-off">-</span>'}
+          </div>
+        `;
+      }).join("")}
+    `;
+  }
+
+  function renderReliefRotaAssignment_(assignment) {
+    const status = String(assignment.status || "Draft").toLowerCase().replace(/[^a-z0-9]+/g, "-");
+    return `
+      <article class="relief-rota-assignment status-${escapeHtml(status)}">
+        <div>
+          <strong>${escapeHtml(assignment.siteName || assignment.siteId || "Site")}</strong>
+          <span>${escapeHtml(assignment.role || "Cover")}</span>
+        </div>
+        <small>Covering ${escapeHtml(assignment.coveredEmployeeName || "rota gap")}</small>
+        ${assignment.reason ? `<small class="relief-reason">${escapeHtml(assignment.reason)}</small>` : ""}
+        <em>${escapeHtml(assignment.status || "Draft")}</em>
+      </article>
+    `;
+  }
+
+  function formatDayMonth_(dateText) {
+    if (!dateText) return "";
+    const date = new Date(dateText + "T00:00:00");
+    if (isNaN(date.getTime())) return dateText;
+    return date.toLocaleDateString("en-GB", { day: "2-digit", month: "short" });
+  }
+
+  function setButtonLoading_(button, isLoading, label) {
+    if (!button) return;
+    if (!button.dataset.defaultText) button.dataset.defaultText = button.textContent;
+    button.disabled = Boolean(isLoading);
+    button.textContent = isLoading ? (label || "Working...") : button.dataset.defaultText;
+  }
+
+  function shiftCockpitWeek(days) {
+    const input = document.getElementById("cockpitWeekStartInput");
+    if (!input) return;
+    const base = input.value ? new Date(input.value + "T00:00:00") : getMondayForDate(new Date());
+    base.setDate(base.getDate() + Number(days || 0));
+    setCockpitWeek(getMondayForDate(base));
+  }
+
+  function setCockpitWeek(date) {
+    const input = document.getElementById("cockpitWeekStartInput");
+    if (!input || !date) return;
+    input.value = formatDateInput(date);
+    loadRotaCockpit();
+  }
+
+  function getMondayForDate(date) {
+    const copy = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+    const day = copy.getDay();
+    const diff = day === 0 ? -6 : 1 - day;
+    copy.setDate(copy.getDate() + diff);
+    return copy;
+  }
+
+  function formatDateInput(date) {
+    return [
+      date.getFullYear(),
+      String(date.getMonth() + 1).padStart(2, "0"),
+      String(date.getDate()).padStart(2, "0")
+    ].join("-");
+  }
+
+  function formatDisplayDate(value) {
+    if (!value) return "";
+    const date = new Date(String(value) + "T00:00:00");
+    if (Number.isNaN(date.getTime())) return String(value);
+    return date.toLocaleDateString("en-GB", {
+      day: "numeric",
+      month: "short",
+      year: "numeric"
+    });
+  }
+
+  function formatDisplayDateTime_(value) {
+    if (!value) return "";
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return String(value);
+    return date.toLocaleString("en-GB", {
+      day: "numeric",
+      month: "short",
+      hour: "2-digit",
+      minute: "2-digit"
+    });
+  }
+
+  function getSnapshotCacheKey_(siteId, weekStart) {
+    return [siteId || "", weekStart || ""].join("|");
+  }
+
+  function rebuildCurrentSnapshot() {
+    const siteSelect = document.getElementById("cockpitSiteSelect");
+    const weekInput = document.getElementById("cockpitWeekStartInput");
+    const siteId = siteSelect ? siteSelect.value : "";
+    const weekStart = weekInput ? weekInput.value : "";
+    if (!siteId) {
+      showToast("Choose a site first.");
+      return;
+    }
+    const button = document.getElementById("rebuildCurrentSnapshotBtn");
+    if (button) {
+      button.disabled = true;
+      button.dataset.defaultText = button.dataset.defaultText || button.textContent;
+      button.textContent = "Rebuilding...";
+    }
+    setCockpitLoading("Rebuilding this week's snapshot…");
+    google.script.run
+      .withSuccessHandler(board => {
+        if (button) {
+          button.disabled = false;
+          button.textContent = button.dataset.defaultText || "Rebuild snapshot";
+        }
+        if (!board || board.ok === false) {
+          showToast((board && board.error) || "Could not rebuild this snapshot.");
+          return;
+        }
+        const key = getSnapshotCacheKey_(siteId, weekStart);
+        state.snapshotsByKey[key] = board;
+        state.currentCockpit = board;
+        renderRotaCockpit(board);
+        showToast("Snapshot rebuilt for this week.");
+      })
+      .withFailureHandler(error => {
+        if (button) {
+          button.disabled = false;
+          button.textContent = button.dataset.defaultText || "Rebuild snapshot";
+        }
+        showToast(error.message || "Could not rebuild this snapshot.");
+      })
+      .buildAndSaveRotaWeekSnapshotFromUi(siteId, weekStart);
+  }
+
+  function showPerformanceDiagnostics() {
+    const diagnostics = (state.currentCockpit && state.currentCockpit.diagnostics) || null;
+    if (!diagnostics) {
+      showToast("Load a week first, then diagnostics will appear.");
+      return;
+    }
+    const preview = [
+      `Source: ${diagnostics.source || "unknown"}`,
+      `Backend: ${diagnostics.totalBackendMs || 0}ms`,
+      `Load: ${diagnostics.snapshotLoadMs || 0}ms`,
+      `Build: ${diagnostics.snapshotBuildMs || 0}ms`,
+      `Payload: ${diagnostics.payloadKb || 0}KB`,
+      `Days: ${diagnostics.dayCount || 0}`,
+      `Issues: ${diagnostics.issueCount || 0}`,
+      `Scheduled: ${diagnostics.scheduledCount || 0}`,
+      `Generated: ${diagnostics.generatedAt || "unknown"}`
+    ].join("\n");
+    const output = document.getElementById("brightHrDebugPreview");
+    if (output) output.textContent = preview;
+    showToast("Performance diagnostics shown in Admin.");
+  }
+
+  function startMonthSnapshotBuilder() {
+    const button = document.getElementById("rebuildAllSnapshotsBtn");
+    if (button) {
+      button.disabled = true;
+      button.dataset.defaultText = button.dataset.defaultText || button.textContent;
+      button.textContent = "Starting...";
+    }
+    text("snapshotBuildMessage", "Starting 3 month snapshot builder...");
+    google.script.run
+      .withSuccessHandler(result => {
+        if (button) {
+          button.disabled = false;
+          button.textContent = button.dataset.defaultText || "Build 3 month snapshots";
+        }
+        showToast((result && result.message) || "Snapshot builder started.");
+        renderSnapshotBuildStatus(result || {});
+        window.setTimeout(loadSnapshotBuildStatus, 2000);
+      })
+      .withFailureHandler(error => {
+        if (button) {
+          button.disabled = false;
+          button.textContent = button.dataset.defaultText || "Build 3 month snapshots";
+        }
+        showToast(error.message || "Could not start snapshot builder.");
+      })
+      .buildNextMonthRotaSnapshotsFromUi();
+  }
+
+  function loadSnapshotBuildStatus() {
+    setSnapshotStatusLoading("Checking snapshot coverage in the background...");
+    google.script.run
+      .withSuccessHandler(result => {
+        renderSnapshotBuildStatus(result || {});
+      })
+      .withFailureHandler(error => {
+        setSnapshotStatusLoading("", false);
+        text("snapshotBuildMessage", error.message || "Could not load snapshot status.");
+      })
+      .getRotaSnapshotBuildStatusFromUi();
+  }
+
+  function setSnapshotStatusLoading(message, isLoading) {
+    const card = document.getElementById("snapshotAdminCard");
+    const loading = isLoading !== false;
+    if (card) card.classList.toggle("is-loading", loading);
+    if (message) text("snapshotBuildMessage", message);
+    const root = document.getElementById("snapshotCoverageGrid");
+    if (root && loading && !root.querySelector(".snapshot-coverage-table")) {
+      root.innerHTML = `
+        <div class="snapshot-loading-grid">
+          ${Array.from({ length: 18 }).map(() => '<span></span>').join("")}
+        </div>
+      `;
+    }
+  }
+
+  function renderSnapshotBuildStatus(status) {
+    setSnapshotStatusLoading("", false);
+    const total = Number(status.total || 0);
+    const built = Number(status.built || 0);
+    const missing = Number(status.missing || 0);
+    const stale = Number(status.stale || 0);
+    text("snapshotBuiltCount", built);
+    text("snapshotMissingCount", missing);
+    text("snapshotStaleCount", stale);
+    text("snapshotAvailableUntil", status.availableUntil ? formatDisplayDate(status.availableUntil) : "Not ready");
+    const bar = document.getElementById("snapshotProgressBar");
+    if (bar) {
+      const percent = total ? Math.round((built / total) * 100) : 0;
+      bar.style.width = Math.max(2, percent) + "%";
+    }
+    const message = [
+      status.message || "Snapshot status loaded.",
+      total ? `${built}/${total} fresh snapshot(s).` : "",
+      status.queueRemaining ? `${status.queueRemaining} queued.` : "",
+      status.processed ? `${status.processed} processed in current job.` : ""
+    ].filter(Boolean).join(" ");
+    text("snapshotBuildMessage", message);
+    renderSnapshotCoverageGrid(status);
+    window.clearTimeout(renderSnapshotBuildStatus.timer);
+    if (status.running || Number(status.queueRemaining || 0) > 0) {
+      renderSnapshotBuildStatus.timer = window.setTimeout(loadSnapshotBuildStatus, 15000);
+    }
+  }
+
+  function renderSnapshotCoverageGrid(status) {
+    const root = document.getElementById("snapshotCoverageGrid");
+    if (!root) return;
+    const sites = status.sites || [];
+    const weeks = status.weeks || [];
+    const rows = status.rows || [];
+    if (!sites.length || !weeks.length) {
+      root.innerHTML = '<div class="empty-state compact">No snapshot coverage data yet.</div>';
+      return;
+    }
+    const byKey = {};
+    rows.forEach(row => {
+      byKey[[row.siteId, row.weekStart].join("|")] = row;
+    });
+    root.innerHTML = `
+      <div class="snapshot-coverage-table" style="--snapshot-week-count:${weeks.length}">
+        <div class="snapshot-cell snapshot-head">Site</div>
+        ${weeks.map(week => `<div class="snapshot-cell snapshot-head">${escapeHtml(formatShortWeek_(week))}</div>`).join("")}
+        ${sites.map(site => `
+          <div class="snapshot-cell snapshot-site">${escapeHtml(site.siteName || site.siteId)}</div>
+          ${weeks.map(week => {
+            const row = byKey[[site.siteId, week].join("|")] || {};
+            return `
+              <div class="snapshot-cell snapshot-state ${escapeHtml(row.status || "missing")}" title="${escapeHtml(row.generatedAt || "No snapshot")}">
+                <strong>${escapeHtml(row.status || "missing")}</strong>
+                <span>${Number(row.issueCount || 0)} issues</span>
+              </div>
+            `;
+          }).join("")}
+        `).join("")}
+      </div>
+    `;
+  }
+
+  function formatShortWeek_(weekStart) {
+    const date = new Date(String(weekStart || "") + "T00:00:00");
+    if (Number.isNaN(date.getTime())) return weekStart || "";
+    return date.toLocaleDateString("en-GB", { day: "numeric", month: "short" });
+  }
+
+  function previewBulkApproveSafeSuggestions(button) {
+    const siteId = state.currentSiteId || (document.getElementById("cockpitSiteSelect") || {}).value || "";
+    const weekStart = state.currentWeekStart || (document.getElementById("cockpitWeekStartInput") || {}).value || "";
+    if (!siteId) {
+      showToast("Choose a site first.");
+      return;
+    }
+    if (button) {
+      button.disabled = true;
+      button.dataset.defaultText = button.dataset.defaultText || button.textContent;
+      button.textContent = "Checking...";
+    }
+    google.script.run
+      .withSuccessHandler(result => {
+        if (button) {
+          button.disabled = false;
+          button.textContent = button.dataset.defaultText || "Approve safe suggestions";
+        }
+        result = result || {};
+        if (!result.count) {
+          showToast(result.message || "No safe suggestions to approve.");
+          return;
+        }
+        const names = (result.candidates || [])
+          .slice(0, 6)
+          .map(item => `${item.weekday}: ${item.coverEmployeeName} for ${item.missingEmployeeName || item.role}`)
+          .join("\n");
+        const ok = window.confirm(`${result.message}\n\n${names}${result.count > 6 ? "\n…" : ""}`);
+        if (!ok) return;
+        applyBulkApproveSafeSuggestions(button);
+      })
+      .withFailureHandler(error => {
+        if (button) {
+          button.disabled = false;
+          button.textContent = button.dataset.defaultText || "Approve safe suggestions";
+        }
+        showToast(error.message || "Could not preview safe suggestions.");
+      })
+      .approveHighConfidenceSuggestionsForWeekFromUi(siteId, weekStart, true);
+  }
+
+  function applyBulkApproveSafeSuggestions(button) {
+    const siteId = state.currentSiteId || (document.getElementById("cockpitSiteSelect") || {}).value || "";
+    const weekStart = state.currentWeekStart || (document.getElementById("cockpitWeekStartInput") || {}).value || "";
+    if (button) {
+      button.disabled = true;
+      button.textContent = "Approving...";
+    }
+    google.script.run
+      .withSuccessHandler(result => {
+        if (button) {
+          button.disabled = false;
+          button.textContent = button.dataset.defaultText || "Approve safe suggestions";
+        }
+        showToast((result && result.message) || "Safe suggestions approved.");
+        queueQuietCockpitRefresh();
+      })
+      .withFailureHandler(error => {
+        if (button) {
+          button.disabled = false;
+          button.textContent = button.dataset.defaultText || "Approve safe suggestions";
+        }
+        showToast(error.message || "Could not approve safe suggestions.");
+      })
+      .approveHighConfidenceSuggestionsForWeekFromUi(siteId, weekStart, false);
+  }
+
+  function loadCoverageGaps() {
+    setPanelLoading("gapList", "Loading current coverage gaps…");
+    google.script.run
+      .withSuccessHandler(summary => {
+        state.gapsLoaded = true;
+        renderGaps(summary || { gaps: [] });
+      })
+      .withFailureHandler(error => {
+        showToast(error.message || "Could not load coverage gaps.");
+        renderGaps({ gaps: [] });
+      })
+      .getCoverageGapsFromUi(60);
+  }
+
+  function loadSettingsLibrary() {
+    setSettingsLoading("Loading settings library…");
+    google.script.run
+      .withSuccessHandler(result => {
+        result = result || {};
+        if (result.ok === false && result.error) showToast(result.error);
+        renderOptions(result.options || {});
+        renderSettingsSelectors(result.settings || {});
+        state.settingsLoaded = true;
+      })
+      .withFailureHandler(error => {
+        showToast(error.message || "Could not load settings.");
+        state.settingsLoaded = false;
+      })
+      .getSettingsLibraryFromUi();
+  }
+
+  function runLegacyPreview() {
+    showToast("Previewing legacy rota import…");
+    setBusy(true);
+    google.script.run
+      .withSuccessHandler(result => {
+        result = result || {};
+        const summary = document.getElementById("legacyImportSummary");
+        summary.innerHTML = `
+          <div>
+            <strong>${result.rawShiftsFound || 0}</strong> raw shifts compressed into
+            <strong>${result.templatesFound || 0}</strong> templates and
+            <strong>${result.exceptionsFound || 0}</strong> exceptions, with
+            <strong>${result.agencyRequestsFound || 0}</strong> agency rows and 
+            <strong>${result.sitesFound || 0}</strong> sites found in
+            <strong>${result.sampledSheets || 0}</strong> sampled sheet(s).
+            Estimated rows saved: <strong>${result.estimatedRowsSaved || 0}</strong>.
+          </div>
+        `;
+        showToast("Legacy preview ready.");
+        setBusy(false);
+      })
+      .withFailureHandler(error => {
+        showToast(error.message || "Legacy preview failed.");
+        setBusy(false);
+      })
+      .previewLegacyRotaImportFromUi();
+  }
+
+  function runReliefPreview() {
+    showToast("Previewing relief rota import…");
+    setBusy(true);
+    google.script.run
+      .withSuccessHandler(result => {
+        result = result || {};
+        const summary = document.getElementById("reliefImportSummary");
+        summary.innerHTML = `
+          <div>
+            <strong>${result.availabilityRowsFound || 0}</strong> relief availability rows and
+            <strong>${result.sitesFound || 0}</strong> sites found from
+            <strong>${escapeHtml(result.sourceSpreadsheetName || "relief rota")}</strong>.
+          </div>
+        `;
+        showToast("Relief preview ready.");
+        setBusy(false);
+      })
+      .withFailureHandler(error => {
+        showToast(error.message || "Relief preview failed.");
+        setBusy(false);
+      })
+      .previewReliefRotaImportFromUi();
+  }
+
+  function renderDashboard(data) {
+    data = data || emptyDashboardData();
+    const summary = data.summary || {};
+    const brightHr = data.brightHr || {};
+    const spreadsheet = data.spreadsheet || {};
+    const legacyRota = data.legacyRota || {};
+    const reliefRota = data.reliefRota || {};
+    const hasCredentials = brightHr.hasClientId && brightHr.hasClientSecret;
+    const ready = spreadsheet.configured && hasCredentials;
+    const coverCount = Number(summary.reliefSuggestionCount || 0) +
+      Number(summary.reliefAssignmentCount || 0) +
+      Number(summary.agencyRequestCount || 0);
+
+    text("appVersion", data.appVersion || "local");
+    text("systemStatus", ready ? "Ready to run" : "Setup needed");
+    text("staffCount", summary.staffCount || 0);
+    text("absenceCount", summary.absenceCount || 0);
+    text("siteCount", summary.siteCount || 0);
+    text("coverCount", coverCount);
+    text("gapCount", summary.coverageGapCount || 0);
+    text("managerCount", summary.managerCount || 0);
+    text("agencyContactCount", summary.agencyContactCount || 0);
+    text("templateCount", summary.rotaTemplateCount || 0);
+    text("exceptionCount", summary.rotaExceptionCount || 0);
+
+    const status = document.getElementById("brightHrStatus");
+    status.textContent = hasCredentials ? "BrightHR connected" : "Credentials needed";
+    status.classList.toggle("warn", !hasCredentials);
+    text("absenceEndpointStatus", brightHr.hasAbsencesPath
+      ? `${brightHr.absencesMethod || "post"} ${brightHr.absencesPath || ""}`
+      : "Not configured");
+
+    setCheck("checkSpreadsheet", spreadsheet.configured);
+    setCheck("checkCredentials", hasCredentials);
+    setCheck("checkToken", brightHr.hasCachedAccessToken);
+    setCheck("checkAbsenceEndpoint", brightHr.hasAbsencesPath);
+    setCheck("checkLegacyRota", legacyRota.configured);
+    setCheck("checkReliefRota", reliefRota.configured);
+    renderOptions(data.options || {});
+    if (data.settings) renderSettingsSelectors(data.settings);
+    if (data.gaps) {
+      state.gapsLoaded = true;
+      renderGaps(data.gaps);
+    }
+    if (data.relief) renderRelief(data.relief);
+  }
+
+  function emptyDashboardData() {
+    return {
+      ok: false,
+      appName: "FIKA Workforce Operations",
+      appVersion: "local",
+      brightHr: {},
+      legacyRota: {},
+      reliefRota: {},
+      spreadsheet: {},
+      summary: {},
+      gaps: { gaps: [] },
+      relief: { suggestions: [] },
+      options: { sites: [], defaultWeekStart: "" },
+      settings: {}
+    };
+  }
+
+  function saveManagerFromForm() {
+    const form = document.getElementById("managerForm");
+    const data = Object.fromEntries(new FormData(form).entries());
+    if (!data.managerName || !data.email) {
+      showToast("Manager name and email are required.");
+      return;
+    }
+    setFormSubmitting_(form, true, "Saving...");
+    google.script.run
+      .withSuccessHandler(result => {
+        showToast(result.message || "Manager saved.");
+        form.reset();
+        state.settingsLoaded = false;
+        loadSettingsLibrary();
+        setFormSubmitting_(form, false);
+      })
+      .withFailureHandler(error => {
+        showToast(error.message || "Manager save failed.");
+        setFormSubmitting_(form, false);
+      })
+      .saveWorkforceManagerFromUi(data);
+  }
+
+  function saveAgencyFromForm() {
+    const form = document.getElementById("agencyForm");
+    const data = Object.fromEntries(new FormData(form).entries());
+    if (!data.agencyName || !data.email) {
+      showToast("Agency name and email are required.");
+      return;
+    }
+    setFormSubmitting_(form, true, "Saving...");
+    google.script.run
+      .withSuccessHandler(result => {
+        showToast(result.message || "Agency contact saved.");
+        form.reset();
+        state.settingsLoaded = false;
+        loadSettingsLibrary();
+        setFormSubmitting_(form, false);
+      })
+      .withFailureHandler(error => {
+        showToast(error.message || "Agency save failed.");
+        setFormSubmitting_(form, false);
+      })
+      .saveWorkforceAgencyContactFromUi(data);
+  }
+
+  function saveRotaTemplateFromForm() {
+    const form = document.getElementById("rotaTemplateForm");
+    const data = Object.fromEntries(new FormData(form).entries());
+    if (!data.siteId || !data.weekday || !data.role) {
+      showToast("Site, weekday and role are required.");
+      return;
+    }
+    setFormSubmitting_(form, true, "Saving...");
+    google.script.run
+      .withSuccessHandler(result => {
+        showToast(result.message || "Standard rota row saved.");
+        form.reset();
+        state.settingsLoaded = false;
+        loadSettingsLibrary();
+        setFormSubmitting_(form, false);
+      })
+      .withFailureHandler(error => {
+        showToast(error.message || "Could not save standard rota row.");
+        setFormSubmitting_(form, false);
+      })
+      .saveRotaTemplateFromUi(data);
+  }
+
+  function renderOptions(options) {
+    const siteSelect = document.getElementById("siteSelect");
+    const sites = options.sites || [];
+    if (siteSelect) fillSiteSelect_(siteSelect, sites);
+    const cockpitSiteSelect = document.getElementById("cockpitSiteSelect");
+    if (cockpitSiteSelect) fillSiteSelect_(cockpitSiteSelect, sites);
+    const weekInput = document.getElementById("weekStartInput");
+    if (weekInput && !weekInput.value && options.defaultWeekStart) weekInput.value = options.defaultWeekStart;
+    const cockpitWeekInput = document.getElementById("cockpitWeekStartInput");
+    if (cockpitWeekInput && !cockpitWeekInput.value && options.defaultWeekStart) cockpitWeekInput.value = options.defaultWeekStart;
+  }
+
+  function fillSiteSelect_(select, sites) {
+    const current = select.value;
+    const allSitesOption = select.id === "cockpitSiteSelect"
+      ? ['<option value="__all_sites">All sites</option>']
+      : [];
+    select.innerHTML = ['<option value="">Choose site…</option>']
+      .concat(allSitesOption)
+      .concat((sites || []).map(site => `<option value="${escapeHtml(site.siteId)}">${escapeHtml(site.siteName)}</option>`))
+      .join("");
+    if (current) select.value = current;
+    if (!select.value && select.id === "cockpitSiteSelect") select.value = "__all_sites";
+    if (!select.value && sites[0]) select.value = sites[0].siteId;
+  }
+
+  function renderSettingsSelectors(settings) {
+    state.settings = settings || {};
+    const sites = (settings && settings.sites) || [];
+    const staff = ((settings && settings.staff) || []).slice().sort((a, b) => String(a.name || "").localeCompare(String(b.name || "")));
+    const agencies = ((settings && settings.agencyContacts) || []).filter(item => String(item.Active).toUpperCase() !== "FALSE");
+    const reliefStaff = staff.filter(person => person.reliefTeam);
+
+    fillSelect("templateSiteSelect", sites.map(site => ({
+      value: site["Site ID"],
+      label: site["Site Name"] || site["Site ID"]
+    })), "Choose site");
+    fillSelect("standardRotaSiteFilter", sites.map(site => ({
+      value: site["Site ID"],
+      label: site["Site Name"] || site["Site ID"]
+    })), "Choose site");
+
+    fillSelect("reliefStaffSelect", staff.map(person => ({
+      value: person.employeeId || person.name,
+      label: person.name + (person.role ? " · " + person.role : "") + (person.reliefTeam ? " · Relief" : "")
+    })), "Choose staff member");
+
+    fillSelect("agencySelect", agencies.map(agency => ({
+      value: agency["Agency ID"],
+      label: agency["Agency Name"] + (agency["Contact Name"] ? " · " + agency["Contact Name"] : "")
+    })), "Choose agency");
+
+    text("reliefTeamCount", reliefStaff.length + " relief team");
+    renderReliefTeamList(reliefStaff);
+    renderSettingsTables();
+    refreshCoverPersonSelect();
+  }
+
+  function renderSettingsTables() {
+    renderReliefDirectoryTable();
+    renderStandardRotaTable();
+    renderPersonStandardRotaSettingsTable();
+    renderManagerDirectoryTable();
+    renderAgencyDirectoryTable();
+  }
+
+  function renderReliefDirectoryTable() {
+    const staff = ((state.settings && state.settings.staff) || [])
+      .filter(person => person.reliefTeam)
+      .sort((a, b) => String(a.name || "").localeCompare(String(b.name || "")));
+    renderTable("reliefDirectoryTable", ["Name", "Email", "Role"], staff.map(person => ({
+      Name: person.name || "",
+      Email: person.email || "",
+      Role: person.role || ""
+    })), "No relief contacts selected yet.");
+  }
+
+  function renderStandardRotaTable() {
+    const select = document.getElementById("standardRotaSiteFilter");
+    const sites = (state.settings && state.settings.sites) || [];
+    const templates = ((state.settings && state.settings.rotaTemplates) || [])
+      .filter(row => String(row.Active).toUpperCase() !== "FALSE");
+    if (select && !select.value && sites[0]) select.value = sites[0]["Site ID"];
+    const siteId = select ? select.value : "";
+    const root = document.getElementById("standardRotaTable");
+    if (!root) return;
+    const rows = templates.filter(row => !siteId || String(row["Site ID"] || "") === String(siteId));
+    if (!rows.length) {
+      root.innerHTML = '<div class="empty-state compact">No standard rota rows for this site yet.</div>';
+      return;
+    }
+    const days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+    root.innerHTML = `
+      <div class="standard-rota-calendar">
+        ${days.map(day => {
+          const dayRows = rows
+            .filter(row => String(row.Weekday || "") === day)
+            .sort((a, b) => String(a.Role || "").localeCompare(String(b.Role || "")) ||
+              String(a["Employee Name"] || "").localeCompare(String(b["Employee Name"] || "")));
+          return `
+            <section class="standard-rota-day">
+              <h5>${escapeHtml(day)}<span>${dayRows.length} row${dayRows.length === 1 ? "" : "s"}</span></h5>
+              ${dayRows.length ? dayRows.map(row => `
+                <button class="standard-rota-shift" type="button" data-edit-template="${escapeHtml(row["Template ID"] || "")}">
+                  <strong>${escapeHtml(row.Role || "Role")}</strong>
+                  <span>${escapeHtml(row["Employee Name"] || "Unassigned")}</span>
+                  <em>${escapeHtml(row["Standard Status"] || "IN")}</em>
+                </button>
+              `).join("") : '<p class="quiet">No standard cover</p>'}
+            </section>
+          `;
+        }).join("")}
+      </div>
+    `;
+    root.querySelectorAll("[data-edit-template]").forEach(button => {
+      button.addEventListener("click", () => fillRotaTemplateForm(button.dataset.editTemplate));
+    });
+  }
+
+  function renderManagerDirectoryTable() {
+    const managers = ((state.settings && state.settings.managers) || [])
+      .filter(row => String(row.Active).toUpperCase() !== "FALSE")
+      .sort((a, b) => String(a["Manager Name"] || "").localeCompare(String(b["Manager Name"] || "")));
+    renderTable("managerDirectoryTable", ["Manager", "Email", "Phone", "Primary Site", "Alerts"], managers.map(row => ({
+      Manager: row["Manager Name"] || "",
+      Email: row.Email || "",
+      Phone: row.Phone || "",
+      "Primary Site": row["Primary Site ID"] || "",
+      Alerts: truthyLabel_(row["Receives Gap Alerts"])
+    })), "No managers saved yet.");
+  }
+
+  function renderPersonStandardRotaSettingsTable() {
+    const rows = ((state.settings && state.settings.personStandardRota) || [])
+      .filter(row => String(row.Active).toUpperCase() !== "FALSE")
+      .sort((a, b) => String(a["Employee Name"] || "").localeCompare(String(b["Employee Name"] || "")) ||
+        weekdayOrder_(a["Day of Week"]) - weekdayOrder_(b["Day of Week"]));
+    renderTable("personStandardRotaSettingsTable", ["Employee", "Day", "Site", "Role", "Start", "End", "Active"], rows.map(row => ({
+      Employee: row["Employee Name"] || "",
+      Day: row["Day of Week"] || "",
+      Site: row.Site || "",
+      Role: row.Role || "",
+      Start: row["Start Time"] || "",
+      End: row["End Time"] || "",
+      Active: truthyLabel_(row.Active)
+    })), "No person-specific rota rows yet.");
+  }
+
+  function renderAgencyDirectoryTable() {
+    const agencies = ((state.settings && state.settings.agencyContacts) || [])
+      .filter(row => String(row.Active).toUpperCase() !== "FALSE")
+      .sort((a, b) => String(a["Agency Name"] || "").localeCompare(String(b["Agency Name"] || "")));
+    renderTable("agencyDirectoryTable", ["Agency", "Contact", "Email", "Phone", "Roles", "Rate"], agencies.map(row => ({
+      Agency: row["Agency Name"] || "",
+      Contact: row["Contact Name"] || "",
+      Email: row.Email || "",
+      Phone: row.Phone || "",
+      Roles: row["Roles Supplied"] || "",
+      Rate: row["Default Rate"] || ""
+    })), "No agency contacts saved yet.");
+  }
+
+  function renderTable(id, headers, rows, emptyMessage) {
+    const root = document.getElementById(id);
+    if (!root) return;
+    if (!rows.length) {
+      root.innerHTML = `<div class="empty-state compact">${escapeHtml(emptyMessage || "No data yet.")}</div>`;
+      return;
+    }
+    root.innerHTML = `
+      <table class="settings-data-table">
+        <thead><tr>${headers.map(header => `<th>${escapeHtml(header)}</th>`).join("")}</tr></thead>
+        <tbody>
+          ${rows.map(row => `<tr>${headers.map(header => `<td>${header === "Action" ? (row[header] || "") : escapeHtml(row[header] || "")}</td>`).join("")}</tr>`).join("")}
+        </tbody>
+      </table>
+    `;
+  }
+
+  function fillRotaTemplateForm(templateId) {
+    const row = ((state.settings && state.settings.rotaTemplates) || [])
+      .find(item => String(item["Template ID"] || "") === String(templateId));
+    const form = document.getElementById("rotaTemplateForm");
+    if (!row || !form) return;
+    form.elements.siteId.value = row["Site ID"] || "";
+    form.elements.weekday.value = row.Weekday || "";
+    form.elements.role.value = row.Role || "";
+    form.elements.employeeName.value = row["Employee Name"] || "";
+    form.elements.standardStatus.value = row["Standard Status"] || "IN";
+    form.elements.notes.value = row.Observations || "";
+    showToast("Standard rota row loaded for editing.");
+  }
+
+  function weekdayOrder_(weekday) {
+    return ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+      .indexOf(String(weekday || ""));
+  }
+
+  function truthyLabel_(value) {
+    return value === true || String(value).toUpperCase() === "TRUE" || String(value).toUpperCase() === "YES" ? "Yes" : "No";
+  }
+
+  function refreshCoverPersonSelect() {
+    const staff = ((state.settings && state.settings.staff) || []).slice().sort((a, b) => {
+      if (a.reliefTeam !== b.reliefTeam) return a.reliefTeam ? -1 : 1;
+      return String(a.name || "").localeCompare(String(b.name || ""));
+    });
+    const enableAll = document.getElementById("enableAllEmployeesCover");
+    const showAll = Boolean(enableAll && enableAll.checked);
+    const people = showAll ? staff : staff.filter(person => person.reliefTeam);
+    fillSelect("coverPersonSelect", people.map(person => ({
+      value: person.name,
+      label: person.name + (person.role ? " · " + person.role : "") + (person.reliefTeam ? " · Relief" : "")
+    })), showAll ? "Choose cover person" : "Choose relief team member");
+  }
+
+  function renderReliefTeamList(reliefStaff) {
+    const list = document.getElementById("reliefTeamList");
+    if (!list) return;
+    if (!reliefStaff.length) {
+      list.innerHTML = '<div class="empty-state compact">No relief team selected yet</div>';
+      return;
+    }
+    list.innerHTML = reliefStaff.map(person => `
+      <button class="relief-chip" type="button" data-employee-id="${escapeHtml(person.employeeId || "")}" data-employee-name="${escapeHtml(person.name || "")}">
+        <strong>${escapeHtml(person.name || "")}</strong>
+        <span>${escapeHtml([person.role || "Relief", person.email || ""].filter(Boolean).join(" · "))}</span>
+      </button>
+    `).join("");
+    list.querySelectorAll(".relief-chip").forEach(button => {
+      button.addEventListener("click", () => {
+        const select = document.getElementById("reliefStaffSelect");
+        if (select) select.value = button.dataset.employeeId || button.dataset.employeeName || "";
+      });
+    });
+  }
+
+  function updateReliefTeamSelection(isReliefTeam) {
+    const select = document.getElementById("reliefStaffSelect");
+    if (!select || !select.value) {
+      showToast("Choose a staff member first.");
+      return;
+    }
+    const staff = ((state.settings && state.settings.staff) || []);
+    const person = staff.find(item => String(item.employeeId || item.name) === String(select.value));
+    if (!person) {
+      showToast("Could not find that staff member.");
+      return;
+    }
+    person.reliefTeam = Boolean(isReliefTeam);
+    renderSettingsSelectors(state.settings);
+    showToast(isReliefTeam ? "Adding to relief team in the background..." : "Removing from relief team in the background...");
+    google.script.run
+      .withSuccessHandler(result => {
+        showToast((result && result.message) || "Relief team updated.");
+      })
+      .withFailureHandler(error => {
+        person.reliefTeam = !Boolean(isReliefTeam);
+        renderSettingsSelectors(state.settings);
+        showToast(error.message || "Could not update relief team.");
+      })
+      .setReliefTeamMemberFromUi(person.employeeId || "", person.name || "", isReliefTeam);
+  }
+
+  function fillSelect(id, options, placeholder) {
+    const select = document.getElementById(id);
+    if (!select) return;
+    const current = select.value;
+    select.innerHTML = [`<option value="">${escapeHtml(placeholder || "Choose")}</option>`]
+      .concat((options || []).map(option => `<option value="${escapeHtml(option.value || "")}">${escapeHtml(option.label || option.value || "")}</option>`))
+      .join("");
+    if (current) select.value = current;
+  }
+
+  function setCockpitLoading(message) {
+    const board = document.getElementById("cockpitBoard");
+    if (!board) return;
+    board.innerHTML = `
+      <div class="skeleton-card">
+        <span class="loader small"></span>
+        <div>
+          <strong>${escapeHtml(message || "Loading rota assistant…")}</strong>
+          <p class="quiet">Only the selected site and week are being loaded.</p>
+        </div>
+      </div>
+    `;
+  }
+
+  function renderRotaCockpit(board) {
+    const root = document.getElementById("cockpitBoard");
+    if (!root) return;
+    board = board || { days: [], totals: {} };
+    const totals = board.totals || {};
+    const scheduledTotal = totals.scheduled != null
+      ? Number(totals.scheduled || 0)
+      : (board.days || []).reduce((sum, day) => sum + Number((day.summary && day.summary.scheduledCount) || ((day.fullRota || []).length) || 0), 0);
+    const absenceTotal = Number(totals.absences != null ? totals.absences : (totals.absenceCount || 0));
+    const suggestedTotal = Number(totals.coverSuggested != null ? totals.coverSuggested : (totals.suggestionCount || totals.suggestions || 0));
+    const uncoveredTotal = Number(totals.uncoveredGaps != null ? totals.uncoveredGaps : (totals.uncoveredGapCount || totals.uncovered || 0));
+    text("cockpitScheduled", scheduledTotal);
+    text("cockpitAbsences", absenceTotal);
+    text("cockpitSuggested", suggestedTotal);
+    text("cockpitUncovered", uncoveredTotal);
+    if (!board.days || !board.days.length) {
+      root.innerHTML = `
+        <div class="empty-state">
+          <div>
+            <strong>No snapshot exists yet.</strong>
+            <p class="quiet">Build this week now to create the first rota snapshot.</p>
+            <button class="secondary mini" type="button" data-rebuild-current="true">Build this week now</button>
+          </div>
+        </div>
+      `;
+      const rebuild = root.querySelector("[data-rebuild-current]");
+      if (rebuild) rebuild.addEventListener("click", rebuildCurrentSnapshot);
+      return;
+    }
+    const selectedDate = getSelectedDayForBoard_(board);
+    state.selectedDay = selectedDate;
+    const selectedDay = (board.days || []).find(day => String(day.date || "") === String(selectedDate)) || board.days[0];
+    const diagnostics = board.diagnostics || {};
+    root.innerHTML = `
+      <div class="cockpit-week-title">
+        <div>
+          <p class="eyebrow">${escapeHtml(board.siteName || board.siteId || "Site")}</p>
+          <h3>Week commencing ${escapeHtml(formatDisplayDate(board.weekStart || ""))}</h3>
+        </div>
+        <span>${uncoveredTotal} uncovered · ${suggestedTotal} suggested · ${escapeHtml(diagnostics.source || "snapshot")}</span>
+      </div>
+      <div class="cockpit-days">
+        ${board.days.map(day => renderCockpitDayCard(day, selectedDate)).join("")}
+      </div>
+      ${renderSelectedDayDetail(selectedDay, board)}
+    `;
+    root.querySelectorAll("[data-select-day]").forEach(button => {
+      button.addEventListener("click", () => {
+        state.selectedDay = button.dataset.selectDay || "";
+        renderRotaCockpit(board);
+      });
+    });
+    root.querySelectorAll("[data-detail-filter]").forEach(button => {
+      button.addEventListener("click", () => {
+        state.detailFilter = button.dataset.detailFilter || "all";
+        renderRotaCockpit(board);
+      });
+    });
+    root.querySelectorAll("[data-rebuild-current]").forEach(button => {
+      button.addEventListener("click", rebuildCurrentSnapshot);
+    });
+    root.querySelectorAll("[data-bulk-approve]").forEach(button => {
+      button.addEventListener("click", () => previewBulkApproveSafeSuggestions(button));
+    });
+    root.querySelectorAll("[data-cockpit-action]").forEach(button => {
+      button.addEventListener("click", () => handleCockpitGapAction(button));
+    });
+    root.querySelectorAll("[data-person-profile]").forEach(button => {
+      button.addEventListener("click", () => openPersonRotaProfile(button.dataset.personProfile, button.dataset.personDate || ""));
+    });
+  }
+
+  function renderCockpitDayCard(day, selectedDate) {
+    const scheduled = day.fullRota || day.scheduled || [];
+    const issues = day.issues || [];
+    const openIssues = issues.filter(issue => !/resolved|snoozed|ignored|agency_requested/i.test(String(issue.status || "")));
+    const summary = day.summary || {};
+    const selected = String(day.date || "") === String(selectedDate || "");
+    return `
+      <button class="cockpit-day day-card status-${escapeHtml(day.status || "closed")} ${selected ? "selected" : ""}" type="button" data-select-day="${escapeHtml(day.date || "")}">
+        <header>
+          <div>
+            <strong>${escapeHtml(day.weekday || "")}</strong>
+            <span>${escapeHtml(formatDisplayDate(day.date || ""))}</span>
+          </div>
+          <em>${formatCockpitStatus(day.status)}</em>
+        </header>
+        <div class="day-card-counts">
+          <span>${Number(summary.scheduledCount || scheduled.length || 0)} scheduled</span>
+          <span>${Number(summary.absenceCount || 0)} absent</span>
+          <span>${Number(summary.uncoveredCount || 0)} gaps</span>
+          <span>${Number(summary.suggestionCount || 0)} suggested</span>
+        </div>
+        ${openIssues.length ? `<strong class="day-action-count">${openIssues.length} to check</strong>` : '<strong class="day-action-count good">No issues</strong>'}
+      </button>
+    `;
+  }
+
+  function renderSelectedDayDetail(day, board) {
+    if (!day) return "";
+    if (day.loading) {
+      return `
+        <section class="selected-day-panel status-loading">
+          <div class="skeleton-card">
+            <span class="loader small"></span>
+            <div>
+              <strong>Loading ${escapeHtml(day.weekday || "day")}...</strong>
+              <p class="quiet">All sites are being loaded one day at a time in the background.</p>
+            </div>
+          </div>
+        </section>
+      `;
+    }
+    const scheduled = day.fullRota || day.scheduled || [];
+    const absences = getDayAbsenceIssues_(day);
+    const issues = getFilteredDayIssues_(day);
+    const fullRotaOpen = state.showFullRota;
+    return `
+      <section class="selected-day-panel status-${escapeHtml(day.status || "closed")}">
+        <div class="selected-day-header">
+          <div>
+            <p class="eyebrow">Selected day</p>
+            <h3>${escapeHtml(day.weekday || "")} · ${escapeHtml(formatDisplayDate(day.date || ""))}</h3>
+          </div>
+          <div class="quick-filter-row">
+            <button class="secondary mini" type="button" data-bulk-approve="true">Approve safe suggestions</button>
+            ${renderDetailFilterButton_("all", "All")}
+            ${renderDetailFilterButton_("needs_action", "Needs action")}
+            ${renderDetailFilterButton_("gaps", "Gaps only")}
+            ${renderDetailFilterButton_("absences", "Absences")}
+            ${renderDetailFilterButton_("agency", "Agency needed")}
+            ${renderDetailFilterButton_("resolved", "Resolved")}
+          </div>
+        </div>
+        ${renderSnapshotHealth_(board)}
+        ${!issues.length && !absences.length ? renderFullyCoveredState_(day, board) : ""}
+        ${renderAllSitesSelectedDaySummary_(day)}
+        <div class="selected-day-grid ${fullRotaOpen ? "" : "issues-only"}">
+          ${fullRotaOpen ? `
+            <article class="day-detail-card">
+              <div class="detail-card-heading">
+                <h4>Scheduled</h4>
+                <span>${scheduled.length}</span>
+              </div>
+              <div class="cockpit-staff-list">
+                ${scheduled.length ? scheduled.map(person => renderCockpitPerson(person, day.date)).join("") : '<p class="quiet">No rota for this day.</p>'}
+              </div>
+            </article>
+          ` : ""}
+          <article class="day-detail-card">
+            <div class="detail-card-heading">
+              <h4>Absences</h4>
+              <span>${absences.length}</span>
+            </div>
+            <div class="cockpit-gap-list">
+              ${absences.length ? absences.map(issue => renderCockpitIssue(issue, day.date)).join("") : '<p class="quiet">No absences affecting this rota.</p>'}
+            </div>
+          </article>
+          <article class="day-detail-card issues-card">
+            <div class="detail-card-heading">
+              <h4>Issues & cover</h4>
+              <span>${issues.length}</span>
+            </div>
+            <div class="cockpit-gap-list">
+              ${issues.length ? issues.map(issue => renderCockpitIssue(issue, day.date)).join("") : '<p class="quiet">Nothing needs action for this filter.</p>'}
+            </div>
+          </article>
+        </div>
+        ${fullRotaOpen ? "" : '<p class="quiet selected-day-note">Scheduled rota is hidden by default so this view stays focused on what needs fixing. Use Show full rota if you need it.</p>'}
+      </section>
+    `;
+  }
+
+  function getSelectedDayForBoard_(board) {
+    const days = board.days || [];
+    if (!days.length) return "";
+    const selected = state.selectedDay
+      ? days.find(day => String(day.date || "") === String(state.selectedDay))
+      : null;
+    const loadedDays = days.filter(day => !day.loading);
+    if (selected && !selected.loading) {
+      return state.selectedDay;
+    }
+    const searchDays = loadedDays.length ? loadedDays : days;
+    const uncovered = searchDays.find(day => Number((day.summary || {}).uncoveredCount || 0) > 0);
+    if (uncovered) return uncovered.date;
+    const suggested = searchDays.find(day => Number((day.summary || {}).suggestionCount || 0) > 0);
+    if (suggested) return suggested.date;
+    const today = formatDateInput(new Date());
+    const todayInWeek = searchDays.find(day => String(day.date || "") === today);
+    return (todayInWeek || searchDays[0] || days[0]).date;
+  }
+
+  function getDayAbsenceIssues_(day) {
+    return (day.issues || []).filter(issue =>
+      String(issue.issueType || issue.type || "").toLowerCase() === "absence"
+    );
+  }
+
+  function getFilteredDayIssues_(day) {
+    const filter = state.detailFilter || "all";
+    const issues = (day.issues || []).filter(issue =>
+      String(issue.issueType || issue.type || "").toLowerCase() !== "absence"
+    );
+    if (filter === "all") return issues.filter(issue => !isIssueResolved_(issue));
+    if (filter === "needs_action") return issues.filter(issue => !isIssueResolved_(issue));
+    if (filter === "gaps") return issues.filter(issue => issue.gapId || issue.issueType === "gap" || issue.type === "uncovered");
+    if (filter === "absences") return getDayAbsenceIssues_(day);
+    if (filter === "agency") return issues.filter(issue => !issue.bestSuggestion || /agency/i.test(String(issue.status || "")));
+    if (filter === "resolved") return (day.issues || []).filter(isIssueResolved_);
+    return issues;
+  }
+
+  function isIssueResolved_(issue) {
+    return /resolved|snoozed|ignored|agency_requested/i.test(String(issue.status || ""));
+  }
+
+  function renderDetailFilterButton_(filter, label) {
+    return `<button class="secondary mini ${state.detailFilter === filter ? "active" : ""}" type="button" data-detail-filter="${escapeHtml(filter)}">${escapeHtml(label)}</button>`;
+  }
+
+  function renderSnapshotHealth_(board) {
+    const diagnostics = board.diagnostics || {};
+    const generatedAt = board.generatedAt || diagnostics.generatedAt || "";
+    const stale = board.snapshotStale || diagnostics.stale;
+    const missing = Number(diagnostics.missingSnapshotCount || 0);
+    const staleCount = Number(diagnostics.staleSnapshotCount || 0);
+    return `
+      <div class="snapshot-health ${stale ? "stale" : ""}">
+        <span>${missing ? missing + " missing snapshot(s)" : stale ? "Snapshot needs refresh" : "Snapshot ready"}</span>
+        <strong>${escapeHtml(diagnostics.source || "snapshot")}</strong>
+        ${staleCount ? `<strong>${staleCount} stale</strong>` : ""}
+        <em>${generatedAt ? "Refreshed " + escapeHtml(formatDisplayDateTime_(generatedAt)) : "No refresh time"}</em>
+      </div>
+    `;
+  }
+
+  function renderFullyCoveredState_(day, board) {
+    const scheduled = Number((day.summary || {}).scheduledCount || (day.fullRota || []).length || 0);
+    const absences = Number((day.summary || {}).absenceCount || 0);
+    return `
+      <div class="fully-covered-state">
+        <strong>Fully covered for this day.</strong>
+        <span>${scheduled} scheduled · ${absences} absences · last refreshed ${escapeHtml(formatDisplayDateTime_(board.generatedAt || ""))}</span>
+        <div class="cockpit-gap-actions">
+          <button class="secondary mini" type="button" data-detail-filter="all">Show day detail</button>
+          <button class="secondary mini" type="button" data-rebuild-current="true">Rebuild snapshot</button>
+        </div>
+      </div>
+    `;
+  }
+
+  function renderAllSitesSelectedDaySummary_(day) {
+    const sites = (day && day.siteSummaries) || [];
+    if (!sites.length) return "";
+    return `
+      <div class="all-sites-summary-strip">
+        ${sites.map(site => {
+          const summary = site.summary || {};
+          return `
+            <button class="site-summary-chip status-${escapeHtml(site.status || "covered")}" type="button">
+              <strong>${escapeHtml(site.siteName || site.siteId || "Site")}</strong>
+              <span>${Number(summary.scheduledCount || 0)} scheduled · ${Number(summary.issueCount || 0)} issues</span>
+            </button>
+          `;
+        }).join("")}
+      </div>
+    `;
+  }
+
+  function renderCockpitDaySummary(summary, fallbackScheduledCount) {
+    const safe = summary && typeof summary === "object" ? summary : {};
+    const scheduledCount = Number(safe.scheduledCount || fallbackScheduledCount || 0);
+    const absenceCount = Number(safe.absenceCount || 0);
+    const uncoveredCount = Number(safe.uncoveredCount || 0);
+    const suggestionCount = Number(safe.suggestionCount || 0);
+    const conflictCount = Number(safe.conflictCount || 0);
+    const issueCount = Number(safe.issueCount || 0);
+    if (!scheduledCount) {
+      return '<div class="cockpit-day-summary"><span class="summary-chip muted">No rota</span></div>';
+    }
+    if (!issueCount) {
+      return `
+        <div class="cockpit-day-summary">
+          <span class="summary-chip good">${scheduledCount} scheduled</span>
+          <span class="summary-chip good">Fully covered</span>
+        </div>
+      `;
+    }
+    return `
+      <div class="cockpit-day-summary">
+        <span class="summary-chip">${scheduledCount} scheduled</span>
+        ${absenceCount ? `<span class="summary-chip amber">${absenceCount} absence${absenceCount === 1 ? "" : "s"}</span>` : ""}
+        ${uncoveredCount ? `<span class="summary-chip red">${uncoveredCount} gap${uncoveredCount === 1 ? "" : "s"}</span>` : ""}
+        ${suggestionCount ? `<span class="summary-chip amber">${suggestionCount} suggestion${suggestionCount === 1 ? "" : "s"}</span>` : ""}
+        ${conflictCount ? `<span class="summary-chip muted">${conflictCount} conflict${conflictCount === 1 ? "" : "s"}</span>` : ""}
+      </div>
+    `;
+  }
+
+  function renderCockpitIssue(issue, date) {
+    if (issue.gapId || issue.type === "cover_suggested" || issue.type === "uncovered") return renderCockpitGap(issue, date);
+    const employeeId = issue.employeeId || "";
+    return `
+      <div class="cockpit-gap issue-${escapeHtml(issue.type || "issue")}">
+        <button class="issue-person-link" type="button" data-person-profile="${escapeHtml(employeeId)}" data-person-date="${escapeHtml(date || "")}">
+          <strong>${escapeHtml(issue.employeeName || issue.missingEmployeeName || "Person")}</strong>
+          <span>${escapeHtml([issue.siteName || "", issue.role || "Role", issue.type || "Issue"].filter(Boolean).join(" · "))}</span>
+        </button>
+        <div class="best-suggestion ${issue.status === "resolved" ? "" : "empty"}">
+          <b>${escapeHtml(issue.reason || issue.absenceType || "Needs attention")}</b>
+          ${issue.coverName ? `<span>Covered by ${escapeHtml(issue.coverName)}</span>` : ""}
+        </div>
+        <div class="cockpit-gap-actions">
+          <button class="mini primary-mini" data-person-profile="${escapeHtml(employeeId)}" data-person-date="${escapeHtml(date || "")}">Edit rota</button>
+        </div>
+      </div>
+    `;
+  }
+
+  function renderCockpitPerson(person, date) {
+    return `
+      <button class="cockpit-person person-${escapeHtml(person.status || "scheduled")}" type="button" data-person-profile="${escapeHtml(person.employeeId || "")}" data-person-date="${escapeHtml(date || "")}">
+        <b>${escapeHtml(person.role || "Role")}</b>
+        <span>${escapeHtml(person.employeeName || "Unassigned")}</span>
+        ${person.siteName ? `<small>${escapeHtml(person.siteName)}</small>` : ""}
+        ${person.startTime || person.endTime ? `<small>${escapeHtml([person.startTime, person.endTime].filter(Boolean).join("–"))}</small>` : ""}
+        ${person.source ? `<small class="source-badge">${escapeHtml(formatSourceBadge_(person.source))}</small>` : ""}
+        ${person.absenceType ? `<small>${escapeHtml(person.absenceType)}</small>` : ""}
+        ${person.coverName ? `<small>Covered by ${escapeHtml(person.coverName)}</small>` : ""}
+      </button>
+    `;
+  }
+
+  function renderCockpitGap(gap, date) {
+    const suggestion = gap.bestSuggestion || null;
+    const matchBullets = suggestion && suggestion.matchBullets ? suggestion.matchBullets : [];
+    return `
+      <div class="cockpit-gap" data-gap-id="${escapeHtml(gap.gapId || "")}">
+        <button class="issue-person-link" type="button" data-person-profile="${escapeHtml(gap.employeeId || "")}" data-person-date="${escapeHtml(date || "")}">
+          <strong>${escapeHtml(gap.role || "Role gap")}</strong>
+          <span>${escapeHtml([gap.siteName || "", gap.missingEmployeeName || "Missing person", gap.absenceType || "Gap"].filter(Boolean).join(" · "))}</span>
+        </button>
+        ${suggestion ? `
+          <div class="best-suggestion">
+            <b>${escapeHtml(suggestion.employeeName || "")}</b>
+            <span>${escapeHtml(suggestion.reason || "")}</span>
+            ${matchBullets.length ? `<div class="match-bullets">${matchBullets.slice(0, 3).map(bullet => `<small>✓ ${escapeHtml(bullet)}</small>`).join("")}</div>` : ""}
+            <em>${escapeHtml(suggestion.confidence || "")} · ${escapeHtml(suggestion.score || "")}</em>
+          </div>
+        ` : '<div class="best-suggestion empty">No cover suggestion yet</div>'}
+        <div class="cockpit-gap-actions">
+          ${suggestion ? `<button class="mini primary-mini" data-cockpit-action="approve" data-gap-id="${escapeHtml(gap.gapId || "")}">Approve ${escapeHtml(firstName_(suggestion.employeeName))}</button>` : `<button class="mini primary-mini" data-cockpit-action="agency" data-gap-id="${escapeHtml(gap.gapId || "")}">Agency</button>`}
+          <button class="secondary mini" data-cockpit-action="choose" data-gap-id="${escapeHtml(gap.gapId || "")}">Change</button>
+          ${suggestion ? `<button class="secondary mini" data-cockpit-action="agency" data-gap-id="${escapeHtml(gap.gapId || "")}">Agency</button>` : ""}
+          <button class="secondary mini" data-cockpit-action="resolved" data-gap-id="${escapeHtml(gap.gapId || "")}">Resolve</button>
+          <button class="secondary mini" data-cockpit-action="ignore" data-gap-id="${escapeHtml(gap.gapId || "")}">Ignore</button>
+          <button class="secondary mini" data-person-profile="${escapeHtml(gap.employeeId || "")}" data-person-date="${escapeHtml(date || "")}">Edit rota</button>
+        </div>
+      </div>
+    `;
+  }
+
+  function applyCockpitGapUpdate(gapId, action, result) {
+    const board = state.currentCockpit;
+    if (!board || !gapId) return false;
+    let changed = false;
+    (board.days || []).forEach(day => {
+      let approvedCoverName = "";
+      (day.issues || []).forEach(issue => {
+        if (String(issue.gapId || issue.issueId || "") !== String(gapId)) return;
+        changed = true;
+        if (action === "approve") {
+          const suggestion = issue.bestSuggestion || {};
+          approvedCoverName = suggestion.employeeName || (result && result.coverName) || "";
+          issue.status = "resolved";
+          issue.type = "resolved";
+          issue.coverName = approvedCoverName || "Approved cover";
+          issue.primaryAction = "Cover approved";
+        } else if (action === "agency") {
+          issue.status = "agency_requested";
+          issue.type = "resolved";
+          issue.primaryAction = "Agency requested";
+        } else if (action === "resolved") {
+          issue.status = "resolved";
+          issue.type = "resolved";
+          issue.primaryAction = "Resolved";
+        } else if (action === "ignore") {
+          issue.status = "ignored";
+          issue.type = "resolved";
+          issue.primaryAction = "Ignored";
+        }
+      });
+      if (action === "approve" && approvedCoverName) {
+        removeAssignedReliefFromDaySuggestions_(day, approvedCoverName, gapId);
+      }
+      (day.fullRota || []).forEach(person => {
+        const personName = normaliseClientText_(person.employeeName);
+        const matchingIssue = (day.issues || []).find(issue =>
+          String(issue.gapId || issue.issueId || "") === String(gapId) &&
+          normaliseClientText_(issue.employeeName || issue.missingEmployeeName) === personName
+        );
+        if (matchingIssue && action === "approve") {
+          person.status = "covered";
+          person.coverName = matchingIssue.coverName || "";
+          person.coverType = "Relief";
+        }
+      });
+    });
+    if (!changed) return false;
+    recomputeCockpitBoard(board);
+    renderRotaCockpit(board);
+    return true;
+  }
+
+  function removeAssignedReliefFromDaySuggestions_(day, coverName, approvedGapId) {
+    const assigned = normaliseClientText_(coverName);
+    if (!assigned) return;
+    (day.issues || []).forEach(issue => {
+      const issueId = String(issue.gapId || issue.issueId || "");
+      if (issueId === String(approvedGapId || "")) return;
+      const suggestion = issue.bestSuggestion || null;
+      if (!suggestion || normaliseClientText_(suggestion.employeeName) !== assigned) return;
+      issue.bestSuggestion = null;
+      issue.type = "uncovered";
+      issue.primaryAction = "Choose cover";
+      issue.reason = [issue.reason || issue.gapReason || "", coverName + " is already assigned to another role today."]
+        .filter(Boolean)
+        .join(" ");
+    });
+  }
+
+  function recomputeCockpitBoard(board) {
+    const totals = {
+      scheduled: 0,
+      absences: 0,
+      uncovered: 0,
+      uncoveredGaps: 0,
+      suggestions: 0,
+      coverSuggested: 0,
+      conflicts: 0,
+      unresolvedActions: 0,
+      resolved: 0
+    };
+    (board.days || []).forEach(day => {
+      if (day.loading) return;
+      const fullRota = day.fullRota || day.scheduled || [];
+      const issues = day.issues || [];
+      const openIssues = issues.filter(issue => !/resolved|snoozed|ignored|agency_requested/i.test(String(issue.status || "")));
+      const openGaps = openIssues.filter(issue => issue.gapId || issue.type === "uncovered" || issue.type === "cover_suggested");
+      day.summary = {
+        scheduledCount: fullRota.length,
+        absenceCount: issues.filter(issue => String(issue.type || "") === "absence").length,
+        issueCount: openIssues.length,
+        uncoveredCount: openGaps.filter(issue => !issue.bestSuggestion).length,
+        suggestionCount: openGaps.filter(issue => issue.bestSuggestion).length,
+        conflictCount: openIssues.filter(issue => String(issue.type || "") === "conflict").length,
+        resolvedCount: issues.length - openIssues.length
+      };
+      day.status = !fullRota.length ? "closed"
+        : day.summary.uncoveredCount ? "uncovered"
+        : day.summary.suggestionCount || day.summary.conflictCount ? "cover_suggested"
+        : "covered";
+      totals.scheduled += fullRota.length;
+      totals.absences += day.absences ? day.absences.length : day.summary.absenceCount;
+      totals.uncoveredGaps += day.summary.uncoveredCount;
+      totals.uncovered += day.summary.uncoveredCount;
+      totals.coverSuggested += day.summary.suggestionCount;
+      totals.suggestions += day.summary.suggestionCount;
+      totals.conflicts += day.summary.conflictCount;
+      totals.resolved += day.summary.resolvedCount;
+      totals.unresolvedActions += Math.max(0, day.summary.issueCount - day.summary.uncoveredCount - day.summary.suggestionCount - day.summary.conflictCount);
+    });
+    board.totals = totals;
+  }
+
+  function normaliseClientText_(value) {
+    return String(value || "").trim().toLowerCase();
+  }
+
+  function queueQuietCockpitRefresh() {
+    window.clearTimeout(state.cockpitRefreshTimer);
+    state.cockpitRefreshTimer = window.setTimeout(() => {
+      refreshRotaCockpitQuietly();
+    }, 1800);
+  }
+
+  function refreshRotaCockpitQuietly() {
+    const siteSelect = document.getElementById("cockpitSiteSelect");
+    const weekInput = document.getElementById("cockpitWeekStartInput");
+    const siteId = siteSelect ? siteSelect.value : "";
+    const weekStart = weekInput ? weekInput.value : "";
+    if (!siteId) return;
+    if (siteId === "__all_sites") {
+      loadAllSitesCockpitDayByDay(weekStart);
+      return;
+    }
+    const scrollY = window.scrollY;
+    google.script.run
+      .withSuccessHandler(board => {
+        if (!board || board.ok === false) return;
+        state.currentCockpit = board;
+        state.snapshotsByKey[getSnapshotCacheKey_(siteId, weekStart)] = board;
+        renderRotaCockpit(board);
+        window.scrollTo(0, scrollY);
+      })
+      .withFailureHandler(error => {
+        showToast(error.message || "Cockpit saved, but quiet refresh failed.");
+      })
+      .getRotaAssistantWeekFromUi(siteId, weekStart);
+  }
+
+  function formatCockpitStatus(status) {
+    const map = {
+      covered: "Covered",
+      cover_suggested: "Cover suggested",
+      uncovered: "Uncovered",
+      closed: "Closed",
+      loading: "Loading"
+    };
+    return map[status] || "Open";
+  }
+
+  function toggleFullRota() {
+    state.showFullRota = !state.showFullRota;
+    text("toggleFullRotaBtn", state.showFullRota ? "Hide full rota" : "Show full rota");
+    if (state.currentCockpit) renderRotaCockpit(state.currentCockpit);
+  }
+
+  function openPersonRotaProfile(employeeId, dateText) {
+    if (!employeeId) {
+      showToast("This rota row does not have an employee ID yet.");
+      return;
+    }
+    const modal = document.getElementById("personRotaModal");
+    if (modal) modal.classList.remove("hidden");
+    state.openDrawer = "personRota";
+    state.selectedDay = dateText || getCockpitSelectedDate_();
+    state.selectedPerson = { employeeId: employeeId, date: dateText || getCockpitSelectedDate_() };
+    text("personRotaTitle", "Loading employee…");
+    text("personRotaSummary", "Pulling their standard rota and profile.");
+    const profileRoot = document.getElementById("personRotaProfile");
+    const rotaRoot = document.getElementById("personStandardRotaTable");
+    if (profileRoot) profileRoot.innerHTML = '<div class="skeleton-card"><span class="loader small"></span><strong>Loading profile…</strong></div>';
+    if (rotaRoot) rotaRoot.innerHTML = "";
+    google.script.run
+      .withSuccessHandler(result => {
+        renderPersonRotaProfile(result || {});
+      })
+      .withFailureHandler(error => {
+        showToast(error.message || "Could not load employee profile.");
+        text("personRotaTitle", "Could not load employee");
+      })
+      .getPersonRotaProfileFromUi(employeeId);
+  }
+
+  function renderPersonRotaProfile(profile) {
+    const person = profile.person || {};
+    const rows = profile.standardRota || [];
+    state.selectedPerson = Object.assign({}, state.selectedPerson || {}, {
+      employeeId: profile.employeeId || person.employeeId || "",
+      employeeName: person.name || "",
+      standardRota: rows
+    });
+    text("personRotaTitle", person.name || "Employee");
+    text("personRotaSummary", [person.role, person.primarySite, person.email].filter(Boolean).join(" · "));
+    const profileRoot = document.getElementById("personRotaProfile");
+    if (profileRoot) {
+      profileRoot.innerHTML = `
+        <div><span>Role</span><strong>${escapeHtml(person.role || "—")}</strong></div>
+        <div><span>Primary site</span><strong>${escapeHtml(person.primarySite || "—")}</strong></div>
+        <div><span>Email</span><strong>${escapeHtml(person.email || "—")}</strong></div>
+      `;
+    }
+    renderTable("personStandardRotaTable", ["Day", "Site", "Role", "Start", "End", "Active"], rows.map(row => ({
+      Day: row["Day of Week"] || "",
+      Site: row.Site || "",
+      Role: row.Role || "",
+      Start: row["Start Time"] || "",
+      End: row["End Time"] || "",
+      Active: truthyLabel_(row.Active)
+    })), "No person-specific standard rota rows yet.");
+    prefillPersonStandardRotaForm(rows);
+  }
+
+  function prefillPersonStandardRotaForm(rows) {
+    const form = document.getElementById("personStandardRotaForm");
+    if (!form) return;
+    const date = (state.selectedPerson && state.selectedPerson.date) || "";
+    const weekday = date ? new Date(date + "T00:00:00").toLocaleDateString("en-GB", { weekday: "long" }) : "";
+    const row = (rows || []).find(item => String(item["Day of Week"] || "") === weekday) || (rows || [])[0] || {};
+    form.elements.dayOfWeek.value = row["Day of Week"] || weekday || "";
+    form.elements.site.value = row.Site || "";
+    form.elements.role.value = row.Role || "";
+    form.elements.startTime.value = row["Start Time"] || "";
+    form.elements.endTime.value = row["End Time"] || "";
+    form.elements.notes.value = row.Notes || "";
+    form.elements.active.checked = row.Active === true || String(row.Active || "TRUE").toUpperCase() !== "FALSE";
+  }
+
+  function closePersonRotaModal() {
+    const modal = document.getElementById("personRotaModal");
+    if (modal) modal.classList.add("hidden");
+    state.openDrawer = null;
+  }
+
+  function markSelectedPersonSick() {
+    const selected = state.selectedPerson || {};
+    if (!selected.employeeId) {
+      showToast("Choose an employee first.");
+      return;
+    }
+    const date = selected.date || getCockpitSelectedDate_();
+    text("personRotaSummary", "Marking sick and rebuilding suggestions…");
+    google.script.run
+      .withSuccessHandler(result => {
+        showToast((result && result.message) || "Employee marked sick.");
+        closePersonRotaModal();
+        rebuildCurrentSnapshot();
+      })
+      .withFailureHandler(error => {
+        showToast(error.message || "Could not mark employee sick.");
+      })
+      .markEmployeeSickFromUi(selected.employeeId, date, "Marked sick from rota cockpit");
+  }
+
+  function showSelectedPersonStandardRotaEditor() {
+    const form = document.getElementById("personStandardRotaForm");
+    if (form) {
+      form.scrollIntoView({ behavior: "smooth", block: "center" });
+      const first = form.querySelector("select, input");
+      if (first) first.focus();
+    }
+  }
+
+  function savePersonStandardRotaFromModal() {
+    const selected = state.selectedPerson || {};
+    const form = document.getElementById("personStandardRotaForm");
+    if (!selected.employeeId || !form) {
+      showToast("Choose an employee first.");
+      return;
+    }
+    const dayOfWeek = form.elements.dayOfWeek.value;
+    const rows = (selected.standardRota || []).filter(row => String(row["Day of Week"] || "") !== String(dayOfWeek || ""));
+    rows.push({
+      "Employee ID": selected.employeeId,
+      "Employee Name": selected.employeeName || "",
+      "Day of Week": dayOfWeek,
+      "Site": form.elements.site.value,
+      "Role": form.elements.role.value,
+      "Start Time": form.elements.startTime.value,
+      "End Time": form.elements.endTime.value,
+      "Effective From": "",
+      "Effective To": "",
+      "Active": form.elements.active.checked,
+      "Notes": form.elements.notes.value
+    });
+    const submit = form.querySelector("button[type='submit']");
+    if (submit) {
+      submit.disabled = true;
+      submit.textContent = "Saving...";
+    }
+    google.script.run
+      .withSuccessHandler(result => {
+        if (submit) {
+          submit.disabled = false;
+          submit.textContent = "Save weekday pattern";
+        }
+        showToast((result && result.message) || "Person standard rota saved.");
+        state.settingsLoaded = false;
+        openPersonRotaProfile(selected.employeeId, selected.date || "");
+        if (state.cockpitLoaded) rebuildCurrentSnapshot();
+      })
+      .withFailureHandler(error => {
+        if (submit) {
+          submit.disabled = false;
+          submit.textContent = "Save weekday pattern";
+        }
+        showToast(error.message || "Could not save person standard rota.");
+      })
+      .savePersonStandardRotaFromUi(selected.employeeId, rows);
+  }
+
+  function getCockpitSelectedDate_() {
+    const input = document.getElementById("cockpitWeekStartInput");
+    return input ? input.value : "";
+  }
+
+  function handleCockpitGapAction(button) {
+    const action = button.dataset.cockpitAction;
+    const gapId = button.dataset.gapId;
+    if (!gapId) return;
+    state.selectedIssueId = gapId;
+    if (action === "choose") {
+      openCoverPickerForCockpitGap(gapId);
+      return;
+    }
+    const optimisticChanged = applyCockpitGapUpdate(gapId, action, {});
+    if (optimisticChanged) showToast("Updating in the background...");
+    button.disabled = true;
+    const originalText = button.textContent;
+    button.textContent = "Saving...";
+    const runner = google.script.run
+      .withSuccessHandler(result => {
+        showToast((result && result.message) || "Gap updated.");
+        if (!optimisticChanged) applyCockpitGapUpdate(gapId, action, result || {});
+        queueQuietCockpitRefresh();
+        loadReliefRotaWindow({ quiet: true });
+      })
+      .withFailureHandler(error => {
+        button.disabled = false;
+        button.textContent = originalText;
+        showToast(error.message || "Could not update gap.");
+        refreshRotaCockpitQuietly();
+      });
+    if (action === "approve") runner.approveBestCoverFromUi(gapId);
+    if (action === "agency") runner.requestAgencyForIssueFromUi(gapId);
+    if (action === "resolved") runner.markIssueResolvedFromUi(gapId);
+    if (action === "ignore") runner.ignoreIssueFromUi(gapId);
+    if (action === "snooze") runner.snoozeIssueFromUi(gapId);
+  }
+
+  function openCoverPickerForCockpitGap(gapId) {
+    if (state.settingsLoaded) {
+      openGapModal(gapId, "cover");
+      return;
+    }
+    showToast("Loading staff picker…");
+    google.script.run
+      .withSuccessHandler(result => {
+        result = result || {};
+        renderOptions(result.options || {});
+        renderSettingsSelectors(result.settings || {});
+        state.settingsLoaded = true;
+        openGapModal(gapId, "cover");
+      })
+      .withFailureHandler(error => {
+        showToast(error.message || "Could not load staff picker.");
+      })
+      .getSettingsLibraryFromUi();
+  }
+
+  function renderRotaBoard(board) {
+    const root = document.getElementById("rotaBoard");
+    board = board || { days: [] };
+    if (!board.days || !board.days.length) {
+      root.innerHTML = '<div class="empty-state">No rota templates found for this site</div>';
+      return;
+    }
+    root.innerHTML = `
+      <div class="rota-summary">
+        <strong>${escapeHtml(board.siteName)}</strong>
+        <span>${escapeHtml(board.weekStart)} · ${board.totalRows || 0} rota rows · ${board.totalGaps || 0} gaps</span>
+      </div>
+      <div class="rota-days">
+        ${board.days.map(day => `
+          <section class="rota-day ${day.gapCount ? "has-gap" : ""}">
+            <h4>${escapeHtml(day.weekday)}<span>${escapeHtml(day.date)}</span></h4>
+            ${(day.rows || []).length ? day.rows.map(row => `
+              <div class="rota-row ${row.hasGap ? "gap" : ""} ${row.coverName ? "covered" : ""}">
+                <div>
+                  <b>${escapeHtml(row.role || "Role")}</b>
+                  <span>${escapeHtml(row.employeeName || "Unassigned")}</span>
+                  ${row.coverName ? `<small>Covered by ${escapeHtml(row.coverName)} · ${escapeHtml(row.coverType || "Cover")}</small>` : ""}
+                </div>
+                <em>${escapeHtml(row.status || "—")}</em>
+              </div>
+            `).join("") : '<p class="quiet">No planned rota</p>'}
+          </section>
+        `).join("")}
+      </div>
+    `;
+  }
+
+  function renderGaps(gapSummary) {
+    const list = document.getElementById("gapList");
+    if (!list) return;
+    const gaps = gapSummary.gaps || [];
+    state.gapsById = {};
+    gaps.forEach(gap => {
+      if (gap["Gap ID"]) state.gapsById[gap["Gap ID"]] = gap;
+    });
+    if (!gaps.length) {
+      list.innerHTML = '<div class="empty-state">No open gaps found</div>';
+      return;
+    }
+    list.innerHTML = gaps.map(gap => `
+      <article class="gap-card priority-${gap.Priority || 3}">
+        <div>
+          <strong>${escapeHtml(gap["Site Name"] || "")}</strong>
+          <span>${escapeHtml(gap.FriendlyDate || gap.Date || "")} · ${escapeHtml(gap.Weekday || "")}</span>
+        </div>
+        <div>
+          <b>${escapeHtml(gap.Role || "Role")}</b>
+          <span>${escapeHtml(gap["Employee Name"] || "")}</span>
+        </div>
+        <em>${escapeHtml(gap["Gap Type"] || "Gap")}</em>
+        <div class="gap-actions">
+          <button class="secondary mini" data-gap-action="suggestions" data-gap-id="${escapeHtml(gap["Gap ID"] || "")}">Suggestions</button>
+          <button class="secondary mini" data-gap-action="cover" data-gap-id="${escapeHtml(gap["Gap ID"] || "")}">Assign cover</button>
+          <button class="secondary mini" data-gap-action="agency" data-gap-id="${escapeHtml(gap["Gap ID"] || "")}">Request agency</button>
+          <button class="secondary mini" data-gap-action="resolved" data-gap-id="${escapeHtml(gap["Gap ID"] || "")}">Resolved</button>
+        </div>
+        <div class="gap-suggestions hidden" id="suggestions-${escapeHtml(gap["Gap ID"] || "")}"></div>
+      </article>
+    `).join("");
+    list.querySelectorAll("[data-gap-action]").forEach(button => {
+      button.addEventListener("click", () => {
+        if (button.dataset.gapAction === "suggestions") {
+          loadReliefSuggestionsForGap(button.dataset.gapId);
+        } else if (button.dataset.gapAction === "resolved") {
+          markGap(button.dataset.gapId, "resolved");
+        } else {
+          openGapModal(button.dataset.gapId, button.dataset.gapAction);
+        }
+      });
+    });
+  }
+
+  function loadReliefSuggestionsForGap(gapId) {
+    if (!gapId) return;
+    const root = document.getElementById(`suggestions-${gapId}`);
+    if (!root) return;
+    root.classList.remove("hidden");
+    root.innerHTML = '<div class="mini-loading"><span class="loader small"></span><strong>Finding relief suggestions…</strong></div>';
+    google.script.run
+      .withSuccessHandler(result => {
+        const suggestions = (result && result.suggestions) || [];
+        if (!suggestions.length) {
+          root.innerHTML = '<div class="empty-state compact">No suggestions found for this gap yet.</div>';
+          return;
+        }
+        root.innerHTML = suggestions.map(item => `
+          <button class="suggestion-row" type="button" data-cover-name="${escapeHtml(item["Suggested Employee Name"] || "")}">
+            <strong>${escapeHtml(item["Suggested Employee Name"] || "")}</strong>
+            <span>${escapeHtml(item.Reason || "")}</span>
+            <em>Score ${escapeHtml(item.Score || "")}</em>
+          </button>
+        `).join("");
+        root.querySelectorAll("[data-cover-name]").forEach(button => {
+          button.addEventListener("click", () => {
+            openGapModal(gapId, "cover");
+            const coverSelect = document.getElementById("coverPersonSelect");
+            if (coverSelect) coverSelect.value = button.dataset.coverName || "";
+          });
+        });
+      })
+      .withFailureHandler(error => {
+        root.innerHTML = `<div class="empty-state compact">${escapeHtml(error.message || "Could not load suggestions.")}</div>`;
+      })
+      .getReliefSuggestionsForGapFromUi(gapId, 8);
+  }
+
+  function openGapModal(gapId, action) {
+    const modal = document.getElementById("gapModal");
+    const form = document.getElementById("gapActionForm");
+    const gap = state.gapsById[gapId] || {};
+    if (!modal || !form) return;
+    form.reset();
+    form.elements.gapId.value = gapId;
+    form.elements.action.value = action;
+    const enableAll = document.getElementById("enableAllEmployeesCover");
+    if (enableAll) enableAll.checked = false;
+    refreshCoverPersonSelect();
+    text("gapModalTitle", action === "agency" ? "Request agency cover" : "Assign internal cover");
+    text("gapModalSummary", [
+      gap["Site Name"],
+      gap.FriendlyDate || gap.Date,
+      gap.Role,
+      gap["Employee Name"] ? "for " + gap["Employee Name"] : ""
+    ].filter(Boolean).join(" · "));
+    document.querySelectorAll(".cover-only").forEach(el => el.classList.toggle("hidden", action !== "cover"));
+    document.querySelectorAll(".agency-only").forEach(el => el.classList.toggle("hidden", action !== "agency"));
+    text("gapActionSubmit", action === "agency" ? "Create agency request" : "Assign cover");
+    modal.classList.remove("hidden");
+  }
+
+  function closeGapModal() {
+    const modal = document.getElementById("gapModal");
+    if (modal) modal.classList.add("hidden");
+  }
+
+  function submitGapActionForm() {
+    const form = document.getElementById("gapActionForm");
+    const data = Object.fromEntries(new FormData(form).entries());
+    if (!data.gapId) return;
+    if (data.action === "cover" && !data.coverName) {
+      showToast(data.enableAllEmployees ? "Choose who is covering." : "Choose a relief team member, or tick Enable all employees to cover.");
+      return;
+    }
+    if (data.action === "agency" && !data.agencyId) {
+      showToast("Choose an agency.");
+      return;
+    }
+    closeGapModal();
+    applyCoverageGapLocalUpdate(data.gapId, data.action);
+    if (state.cockpitLoaded) {
+      applyCockpitGapUpdate(data.gapId, data.action === "cover" ? "approve" : "agency", {
+        coverName: data.coverName || ""
+      });
+    }
+    showToast("Saving gap action in the background...");
+    const runner = google.script.run
+      .withSuccessHandler(result => {
+        showToast((result && result.message) || "Gap action saved.");
+        if (state.cockpitLoaded) queueQuietCockpitRefresh();
+      })
+      .withFailureHandler(error => {
+        showToast(error.message || "Could not save gap action.");
+        loadCoverageGaps();
+        if (state.cockpitLoaded) refreshRotaCockpitQuietly();
+      });
+    if (data.action === "cover") {
+      runner.assignCoverForGapFromUi(data.gapId, data);
+    } else {
+      runner.requestAgencyForGapFromUi(data.gapId, data.agencyId, data);
+    }
+  }
+
+  function markGap(gapId, action) {
+    if (!gapId) return;
+    applyCoverageGapLocalUpdate(gapId, action);
+    showToast("Updating gap in the background...");
+    google.script.run
+      .withSuccessHandler(result => {
+        showToast((result && result.message) || "Gap updated.");
+      })
+      .withFailureHandler(error => {
+        showToast(error.message || "Could not update gap.");
+        loadCoverageGaps();
+      })
+      .markCoverageGapFromUi(gapId, action, {});
+  }
+
+  function applyCoverageGapLocalUpdate(gapId, action) {
+    if (!gapId) return;
+    delete state.gapsById[gapId];
+    const button = document.querySelector(`[data-gap-id="${cssEscape_(gapId)}"]`);
+    const card = button ? button.closest(".gap-card") : null;
+    if (!card) return;
+    card.style.opacity = "0.45";
+    card.style.transform = "scale(.985)";
+    card.setAttribute("aria-busy", "true");
+    window.setTimeout(() => {
+      card.remove();
+      const list = document.getElementById("gapList");
+      if (list && !list.querySelector(".gap-card")) {
+        list.innerHTML = '<div class="empty-state">No open gaps found</div>';
+      }
+    }, 180);
+  }
+
+  function renderRelief(reliefSummary) {
+    const list = document.getElementById("reliefList");
+    if (!list) return;
+    const suggestions = reliefSummary.suggestions || [];
+    if (!suggestions.length) {
+      list.innerHTML = '<div class="empty-state">No suggestions yet</div>';
+      return;
+    }
+    list.innerHTML = suggestions.map(item => `
+      <article class="relief-card">
+        <strong>${escapeHtml(item["Suggested Employee Name"] || "")}</strong>
+        <span>${escapeHtml(item.Date || "")} · ${escapeHtml(item.Role || "")}</span>
+        <small>${escapeHtml(item.Reason || "")}</small>
+        <em>Score ${escapeHtml(item.Score || "")}</em>
+      </article>
+    `).join("");
+  }
+
+  function setCheck(id, ok) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.classList.toggle("muted", !ok);
+  }
+
+  function text(id, value) {
+    const el = document.getElementById(id);
+    if (el) el.textContent = value;
+  }
+
+  function setBusy(isBusy) {
+    state.loading = isBusy;
+    document.querySelectorAll("button").forEach(button => {
+      button.disabled = isBusy;
+    });
+  }
+
+  function setFormSubmitting_(form, isSubmitting, label) {
+    if (!form) return;
+    const button = form.querySelector("button[type='submit']");
+    if (!button) return;
+    if (!button.dataset.defaultText) button.dataset.defaultText = button.textContent;
+    button.disabled = Boolean(isSubmitting);
+    button.textContent = isSubmitting ? (label || "Saving...") : button.dataset.defaultText;
+  }
+
+  function setPanelLoading(id, message) {
+    const root = document.getElementById(id);
+    if (!root) return;
+    root.innerHTML = `
+      <div class="skeleton-card">
+        <span class="loader small"></span>
+        <div>
+          <strong>${escapeHtml(message || "Loading…")}</strong>
+          <p class="quiet">This section is loaded separately so the app opens faster.</p>
+        </div>
+      </div>
+    `;
+  }
+
+  function setSettingsLoading(message) {
+    ["reliefDirectoryTable", "standardRotaTable", "personStandardRotaSettingsTable", "managerDirectoryTable", "agencyDirectoryTable"].forEach(id => {
+      setPanelLoading(id, message || "Loading settings…");
+    });
+  }
+
+  function showLoading(title, detail) {
+    setBusy(true);
+    text("loadingTitle", title || "Working…");
+    text("loadingDetail", detail || "Please keep this tab open.");
+    const overlay = document.getElementById("loadingOverlay");
+    if (overlay) overlay.classList.remove("hidden");
+  }
+
+  function hideLoading() {
+    const overlay = document.getElementById("loadingOverlay");
+    if (overlay) overlay.classList.add("hidden");
+    setBusy(false);
+  }
+
+  function showToast(message) {
+    const toast = document.getElementById("toast");
+    if (!toast) return;
+    toast.textContent = message;
+    toast.classList.add("show");
+    window.clearTimeout(showToast.timer);
+    showToast.timer = window.setTimeout(() => toast.classList.remove("show"), 4200);
+  }
+
+  function escapeHtml(value) {
+    return String(value ?? "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#039;");
+  }
+
+  function firstName_(name) {
+    return String(name || "").trim().split(/\s+/)[0] || "cover";
+  }
+
+  function formatSourceBadge_(source) {
+    const text = String(source || "").replace(/_/g, " ").toLowerCase();
+    if (text.indexOf("person") !== -1) return "person standard";
+    if (text.indexOf("actual") !== -1) return "actual rota";
+    if (text.indexOf("manual") !== -1) return "manual";
+    return "site standard";
+  }
+
+  function cssEscape_(value) {
+    if (window.CSS && typeof window.CSS.escape === "function") return window.CSS.escape(String(value || ""));
+    return String(value || "").replace(/["\\]/g, "\\$&");
+  }
+</script>

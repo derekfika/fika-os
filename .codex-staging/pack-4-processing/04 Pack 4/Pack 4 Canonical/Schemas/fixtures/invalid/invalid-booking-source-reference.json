@@ -1,0 +1,16 @@
+{
+  "schemaVersion": "pack-4-draft",
+  "id": "bsr-001",
+  "sourceDecisionIds": [
+    "BOOK-007"
+  ],
+  "bookingId": "booking-001",
+  "sourceChannel": "email",
+  "stableSourceReference": "gmail-message-id-placeholder",
+  "parserDetailStoredOutsideBooking": false,
+  "sourceMetadata": {
+    "messageId": "gmail-message-id-placeholder"
+  },
+  "createdAt": "2026-07-14T18:45:00Z",
+  "updatedAt": "2026-07-14T18:45:00Z"
+}

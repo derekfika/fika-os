@@ -1,0 +1,648 @@
+diff --git "a/C:\\FIKA\\fika-platform-specs\\docs\\business-decisions\\cap-001-operational-capability-definition.md" "b/C:\\FIKA\\.codex-staging\\pack-2\\cap-001-operational-capability-definition.md"
+index 704cab8b..88b501d7 100644
+--- "a/C:\\FIKA\\fika-platform-specs\\docs\\business-decisions\\cap-001-operational-capability-definition.md"
++++ "b/C:\\FIKA\\.codex-staging\\pack-2\\cap-001-operational-capability-definition.md"
+@@ -23,6 +23,8 @@ FIKA needed one authoritative answer to the ambiguity recorded in [docs/business
+ 
+ The approved decision establishes a shared business rule. The alternative—leaving the matter implicit or allowing each implementation to decide independently—was rejected because it would recreate competing business meaning. Historical and supporting material remains evidence, but it cannot override this decision.
+ 
++The catalogue has business meaning and therefore requires accountable Operations and domain ownership. Platform Governance may implement the catalogue and assess cohesion, but it does not acquire authority to define capabilities merely by administering the platform. This follows the [FIKA OS Authority Model](../fika-os-canon/04-authority-model.md).
++
+ ## Positive consequences
+ 
+ - FIKA now has a stable, human-approved rule for this aspect of Operational Capability.
+@@ -30,18 +32,24 @@ The approved decision establishes a shared business rule. The alternative—leav
+ - Stage 5 schemas and Stage 6 architecture can trace their treatment of this subject to one canonical source.
+ - Application and provider behaviour cannot silently redefine the decision.
+ 
++- Ownership, authority and technical administration are now explicitly separated and traceable.
++
+ ## Trade-offs
+ 
+ - The decision constrains local interpretation where consistency is required.
+ - Any future change must preserve history and use a superseding or amended BDR rather than silently editing downstream documents.
+ - The decision deliberately leaves technology, storage and API design to later stages.
+ 
++- Role-based approval, audit history and time limits add governance effort but prevent technical or temporary access from becoming permanent business authority.
++
+ ## Implementation implications
+ 
+ Capability catalogues and configuration must preserve approved optionality, dependencies, ownership and boundaries without granting permissions or redefining domain meaning.
+ 
+ This BDR does not select a database, API, provider, application design or deployment approach.
+ 
++Capability specifications must identify the accountable business owner, the role authorised to approve catalogue changes and the technical administrator separately. Material additions, renames or retirements must be auditable and assessed by Platform Governance for cross-domain, reporting and migration impact.
++
+ ## Related decisions
+ 
+ - **Directly informs:** [CAP-002 — Capability Optionality and Dependencies](cap-002-capability-optionality-dependencies.md)
+@@ -56,6 +64,8 @@ This BDR does not select a database, API, provider, application design or deploy
+ - [Platform principles](../platform-principles.md) — **Canonical**; business meaning, authority, configuration and gradual-migration principles.
+ - [Business-discovery process](../platform-methodology/business-discovery-process.md) — **Canonical methodology**; approval, exact wording, dependency and history rules.
+ 
++- [FIKA OS Authority Model](../fika-os-canon/04-authority-model.md) — **Canonical governance**; role-based authority, ownership, administration, delegation and platform-governance boundaries.
++
+ ## Supersedes / Superseded by
+ 
+ - **Supersedes:** None
+@@ -63,4 +73,4 @@ This BDR does not select a database, API, provider, application design or deploy
+ 
+ ## Future considerations
+ 
+-There are no open discovery questions for this decision. During BDR review, evidence and explanatory text should be checked without altering the Decision section. Later schema, architecture and implementation work must resolve technical detail while preserving this approved business meaning.
++Future work must confirm the role-based approval boundary for catalogue changes and the evidence required for each capability lifecycle transition.
+
+diff --git "a/C:\\FIKA\\fika-platform-specs\\docs\\business-decisions\\cap-002-capability-optionality-dependencies.md" "b/C:\\FIKA\\.codex-staging\\pack-2\\cap-002-capability-optionality-dependencies.md"
+index 5c92674f..176c72ed 100644
+--- "a/C:\\FIKA\\fika-platform-specs\\docs\\business-decisions\\cap-002-capability-optionality-dependencies.md"
++++ "b/C:\\FIKA\\.codex-staging\\pack-2\\cap-002-capability-optionality-dependencies.md"
+@@ -23,6 +23,8 @@ FIKA needed one authoritative answer to the ambiguity recorded in [docs/business
+ 
+ The approved decision establishes a shared business rule. The alternative—leaving the matter implicit or allowing each implementation to decide independently—was rejected because it would recreate competing business meaning. Historical and supporting material remains evidence, but it cannot override this decision.
+ 
++Capability owners define valid dependency and exclusion rules as business rules. Platform Governance implements and validates those approved rules but does not invent them. Approval authority follows accountable roles or functions under the [FIKA OS Authority Model](../fika-os-canon/04-authority-model.md).
++
+ ## Positive consequences
+ 
+ - FIKA now has a stable, human-approved rule for this aspect of Operational Capability.
+@@ -30,18 +32,24 @@ The approved decision establishes a shared business rule. The alternative—leav
+ - Stage 5 schemas and Stage 6 architecture can trace their treatment of this subject to one canonical source.
+ - Application and provider behaviour cannot silently redefine the decision.
+ 
++- Ownership, authority and technical administration are now explicitly separated and traceable.
++
+ ## Trade-offs
+ 
+ - The decision constrains local interpretation where consistency is required.
+ - Any future change must preserve history and use a superseding or amended BDR rather than silently editing downstream documents.
+ - The decision deliberately leaves technology, storage and API design to later stages.
+ 
++- Role-based approval, audit history and time limits add governance effort but prevent technical or temporary access from becoming permanent business authority.
++
+ ## Implementation implications
+ 
+ Capability catalogues and configuration must preserve approved optionality, dependencies, ownership and boundaries without granting permissions or redefining domain meaning.
+ 
+ This BDR does not select a database, API, provider, application design or deployment approach.
+ 
++Capability specifications must preserve approved optionality, dependencies and exclusions as versioned, auditable rules. Business ownership, approval authority and technical enforcement must remain distinct, and administrators must not redefine domain meaning through configuration.
++
+ ## Related decisions
+ 
+ - **Depends on:** [CAP-001 — Operational Capability Definition](cap-001-operational-capability-definition.md)
+@@ -53,6 +61,8 @@ This BDR does not select a database, API, provider, application design or deploy
+ - [Platform principles](../platform-principles.md) — **Canonical**; business meaning, authority, configuration and gradual-migration principles.
+ - [Business-discovery process](../platform-methodology/business-discovery-process.md) — **Canonical methodology**; approval, exact wording, dependency and history rules.
+ 
++- [FIKA OS Authority Model](../fika-os-canon/04-authority-model.md) — **Canonical governance**; role-based authority, ownership, administration, delegation and platform-governance boundaries.
++
+ ## Supersedes / Superseded by
+ 
+ - **Supersedes:** None
+@@ -60,4 +70,4 @@ This BDR does not select a database, API, provider, application design or deploy
+ 
+ ## Future considerations
+ 
+-There are no open discovery questions for this decision. During BDR review, evidence and explanatory text should be checked without altering the Decision section. Later schema, architecture and implementation work must resolve technical detail while preserving this approved business meaning.
++Future work must confirm the catalogue of dependencies and exclusions and the role authorised to approve material changes to it.
+
+diff --git "a/C:\\FIKA\\fika-platform-specs\\docs\\business-decisions\\cap-003-capability-overrides.md" "b/C:\\FIKA\\.codex-staging\\pack-2\\cap-003-capability-overrides.md"
+index 5f365edb..c4da51fe 100644
+--- "a/C:\\FIKA\\fika-platform-specs\\docs\\business-decisions\\cap-003-capability-overrides.md"
++++ "b/C:\\FIKA\\.codex-staging\\pack-2\\cap-003-capability-overrides.md"
+@@ -23,6 +23,8 @@ FIKA needed one authoritative answer to the ambiguity recorded in [docs/business
+ 
+ The approved decision establishes a shared business rule. The alternative—leaving the matter implicit or allowing each implementation to decide independently—was rejected because it would recreate competing business meaning. Historical and supporting material remains evidence, but it cannot override this decision.
+ 
++Override ownership remains with the affected business area; role-based authority determines who may approve an override. Platform Governance implements the mechanism and assesses wider impact but does not define the exception. This follows the [FIKA OS Authority Model](../fika-os-canon/04-authority-model.md).
++
+ ## Positive consequences
+ 
+ - FIKA now has a stable, human-approved rule for this aspect of Operational Capability.
+@@ -30,18 +32,24 @@ The approved decision establishes a shared business rule. The alternative—leav
+ - Stage 5 schemas and Stage 6 architecture can trace their treatment of this subject to one canonical source.
+ - Application and provider behaviour cannot silently redefine the decision.
+ 
++- Ownership, authority and technical administration are now explicitly separated and traceable.
++
+ ## Trade-offs
+ 
+ - The decision constrains local interpretation where consistency is required.
+ - Any future change must preserve history and use a superseding or amended BDR rather than silently editing downstream documents.
+ - The decision deliberately leaves technology, storage and API design to later stages.
+ 
++- Role-based approval, audit history and time limits add governance effort but prevent technical or temporary access from becoming permanent business authority.
++
+ ## Implementation implications
+ 
+ Capability catalogues and configuration must preserve approved optionality, dependencies, ownership and boundaries without granting permissions or redefining domain meaning.
+ 
+ This BDR does not select a database, API, provider, application design or deployment approach.
+ 
++Capability override specifications must record business ownership, approving authority, scope, justification and effective dates separately from technical administration. Overrides must be fully auditable. Any temporary delegation must have a mandatory end date and must not transfer ownership.
++
+ ## Related decisions
+ 
+ - **Depends on:** [CAP-001 — Operational Capability Definition](cap-001-operational-capability-definition.md)
+@@ -54,6 +62,8 @@ This BDR does not select a database, API, provider, application design or deploy
+ - [Platform principles](../platform-principles.md) — **Canonical**; business meaning, authority, configuration and gradual-migration principles.
+ - [Business-discovery process](../platform-methodology/business-discovery-process.md) — **Canonical methodology**; approval, exact wording, dependency and history rules.
+ 
++- [FIKA OS Authority Model](../fika-os-canon/04-authority-model.md) — **Canonical governance**; role-based authority, ownership, administration, delegation and platform-governance boundaries.
++
+ ## Supersedes / Superseded by
+ 
+ - **Supersedes:** None
+@@ -61,4 +71,4 @@ This BDR does not select a database, API, provider, application design or deploy
+ 
+ ## Future considerations
+ 
+-There are no open discovery questions for this decision. During BDR review, evidence and explanatory text should be checked without altering the Decision section. Later schema, architecture and implementation work must resolve technical detail while preserving this approved business meaning.
++Future work must define the evidence, review and retirement rules for overrides without changing the approved scope hierarchy.
+
+diff --git "a/C:\\FIKA\\fika-platform-specs\\docs\\business-decisions\\cap-004-capability-domain-permission-boundary.md" "b/C:\\FIKA\\.codex-staging\\pack-2\\cap-004-capability-domain-permission-boundary.md"
+index e1195126..7b5d5021 100644
+--- "a/C:\\FIKA\\fika-platform-specs\\docs\\business-decisions\\cap-004-capability-domain-permission-boundary.md"
++++ "b/C:\\FIKA\\.codex-staging\\pack-2\\cap-004-capability-domain-permission-boundary.md"
+@@ -23,6 +23,8 @@ FIKA needed one authoritative answer to the ambiguity recorded in [docs/business
+ 
+ The approved decision establishes a shared business rule. The alternative—leaving the matter implicit or allowing each implementation to decide independently—was rejected because it would recreate competing business meaning. Historical and supporting material remains evidence, but it cannot override this decision.
+ 
++This boundary separates business ownership from technical enablement: domain owners define meaning, accountable roles hold authority and Platform Governance implements approved controls. The [FIKA OS Authority Model](../fika-os-canon/04-authority-model.md) prevents capability administration from becoming business or access authority.
++
+ ## Positive consequences
+ 
+ - FIKA now has a stable, human-approved rule for this aspect of Operational Capability.
+@@ -30,18 +32,24 @@ The approved decision establishes a shared business rule. The alternative—leav
+ - Stage 5 schemas and Stage 6 architecture can trace their treatment of this subject to one canonical source.
+ - Application and provider behaviour cannot silently redefine the decision.
+ 
++- Ownership, authority and technical administration are now explicitly separated and traceable.
++
+ ## Trade-offs
+ 
+ - The decision constrains local interpretation where consistency is required.
+ - Any future change must preserve history and use a superseding or amended BDR rather than silently editing downstream documents.
+ - The decision deliberately leaves technology, storage and API design to later stages.
+ 
++- Role-based approval, audit history and time limits add governance effort but prevent technical or temporary access from becoming permanent business authority.
++
+ ## Implementation implications
+ 
+ Capability catalogues and configuration must preserve approved optionality, dependencies, ownership and boundaries without granting permissions or redefining domain meaning.
+ 
+ This BDR does not select a database, API, provider, application design or deployment approach.
+ 
++Capability specifications must not embed domain ownership, canonical records or permission grants. Technical enablement must consume approved domain meaning and role-based authority, and all capability-state changes must be auditable.
++
+ ## Related decisions
+ 
+ - **Depends on:** [CAP-001 — Operational Capability Definition](cap-001-operational-capability-definition.md)
+@@ -53,6 +61,8 @@ This BDR does not select a database, API, provider, application design or deploy
+ - [Platform principles](../platform-principles.md) — **Canonical**; business meaning, authority, configuration and gradual-migration principles.
+ - [Business-discovery process](../platform-methodology/business-discovery-process.md) — **Canonical methodology**; approval, exact wording, dependency and history rules.
+ 
++- [FIKA OS Authority Model](../fika-os-canon/04-authority-model.md) — **Canonical governance**; role-based authority, ownership, administration, delegation and platform-governance boundaries.
++
+ ## Supersedes / Superseded by
+ 
+ - **Supersedes:** None
+@@ -60,4 +70,4 @@ This BDR does not select a database, API, provider, application design or deploy
+ 
+ ## Future considerations
+ 
+-There are no open discovery questions for this decision. During BDR review, evidence and explanatory text should be checked without altering the Decision section. Later schema, architecture and implementation work must resolve technical detail while preserving this approved business meaning.
++Future work may refine technical enforcement, but must preserve the boundary among domain meaning, capability enablement and permission authority.
+
+diff --git "a/C:\\FIKA\\fika-platform-specs\\docs\\business-decisions\\cfg-001-configuration-ownership.md" "b/C:\\FIKA\\.codex-staging\\pack-2\\cfg-001-configuration-ownership.md"
+index fdcd6f88..b8582e0b 100644
+--- "a/C:\\FIKA\\fika-platform-specs\\docs\\business-decisions\\cfg-001-configuration-ownership.md"
++++ "b/C:\\FIKA\\.codex-staging\\pack-2\\cfg-001-configuration-ownership.md"
+@@ -23,6 +23,8 @@ FIKA needed one authoritative answer to the ambiguity recorded in [docs/business
+ 
+ The approved decision establishes a shared business rule. The alternative—leaving the matter implicit or allowing each implementation to decide independently—was rejected because it would recreate competing business meaning. Historical and supporting material remains evidence, but it cannot override this decision.
+ 
++Business ownership determines configuration meaning and scope; approval authority belongs to accountable organisational roles or functions under the [FIKA OS Authority Model](../fika-os-canon/04-authority-model.md). Operational administration applies approved configuration without acquiring authority to redefine the business concept. Platform Governance assesses cohesion and downstream impact but does not define business authority.
++
+ ## Positive consequences
+ 
+ - FIKA now has a stable, human-approved rule for this aspect of Configuration.
+@@ -30,18 +32,24 @@ The approved decision establishes a shared business rule. The alternative—leav
+ - Stage 5 schemas and Stage 6 architecture can trace their treatment of this subject to one canonical source.
+ - Application and provider behaviour cannot silently redefine the decision.
+ 
++- Ownership, authority and technical administration are now explicitly separated and traceable.
++
+ ## Trade-offs
+ 
+ - The decision constrains local interpretation where consistency is required.
+ - Any future change must preserve history and use a superseding or amended BDR rather than silently editing downstream documents.
+ - The decision deliberately leaves technology, storage and API design to later stages.
+ 
++- Role-based approval, audit history and time limits add governance effort but prevent technical or temporary access from becoming permanent business authority.
++
+ ## Implementation implications
+ 
+ Configuration specifications must preserve the ownership, scope, inheritance, effective-date and approval rules established here without embedding provider or application assumptions.
+ 
+ This BDR does not select a database, API, provider, application design or deployment approach.
+ 
++Configuration specifications must distinguish business ownership, approval authority and technical administration. Any delegation must be temporary, have a mandatory end date, remain fully auditable and never transfer ownership. Platform Governance implements approved authority and assesses cross-domain, reporting and migration impact.
++
+ ## Related decisions
+ 
+ - **Directly informs:** [CAP-003 — Capability Overrides](cap-003-capability-overrides.md)
+@@ -57,6 +65,8 @@ This BDR does not select a database, API, provider, application design or deploy
+ - [Platform principles](../platform-principles.md) — **Canonical**; business meaning, authority, configuration and gradual-migration principles.
+ - [Business-discovery process](../platform-methodology/business-discovery-process.md) — **Canonical methodology**; approval, exact wording, dependency and history rules.
+ 
++- [FIKA OS Authority Model](../fika-os-canon/04-authority-model.md) — **Canonical governance**; role-based authority, ownership, administration, delegation and platform-governance boundaries.
++
+ ## Supersedes / Superseded by
+ 
+ - **Supersedes:** None
+@@ -64,4 +74,4 @@ This BDR does not select a database, API, provider, application design or deploy
+ 
+ ## Future considerations
+ 
+-There are no open discovery questions for this decision. During BDR review, evidence and explanatory text should be checked without altering the Decision section. Later schema, architecture and implementation work must resolve technical detail while preserving this approved business meaning.
++Future work must identify accountable organisational roles for each scope and the audit evidence for effective-dated changes without replacing the approved ownership model.
+
+diff --git "a/C:\\FIKA\\fika-platform-specs\\docs\\business-decisions\\cfg-003-configuration-variation-approval.md" "b/C:\\FIKA\\.codex-staging\\pack-2\\cfg-003-configuration-variation-approval.md"
+index a552274e..5eb8c5cf 100644
+--- "a/C:\\FIKA\\fika-platform-specs\\docs\\business-decisions\\cfg-003-configuration-variation-approval.md"
++++ "b/C:\\FIKA\\.codex-staging\\pack-2\\cfg-003-configuration-variation-approval.md"
+@@ -23,6 +23,8 @@ FIKA needed one authoritative answer to the ambiguity recorded in [docs/business
+ 
+ The approved decision establishes a shared business rule. The alternative—leaving the matter implicit or allowing each implementation to decide independently—was rejected because it would recreate competing business meaning. Historical and supporting material remains evidence, but it cannot override this decision.
+ 
++The owner of the affected business area remains accountable for a variation, while approval authority follows the relevant accountable role or function under the [FIKA OS Authority Model](../fika-os-canon/04-authority-model.md). Platform Governance assesses wider schema, reporting, migration or cross-domain impact; it does not decide the business exception.
++
+ ## Positive consequences
+ 
+ - FIKA now has a stable, human-approved rule for this aspect of Configuration.
+@@ -30,18 +32,24 @@ The approved decision establishes a shared business rule. The alternative—leav
+ - Stage 5 schemas and Stage 6 architecture can trace their treatment of this subject to one canonical source.
+ - Application and provider behaviour cannot silently redefine the decision.
+ 
++- Ownership, authority and technical administration are now explicitly separated and traceable.
++
+ ## Trade-offs
+ 
+ - The decision constrains local interpretation where consistency is required.
+ - Any future change must preserve history and use a superseding or amended BDR rather than silently editing downstream documents.
+ - The decision deliberately leaves technology, storage and API design to later stages.
+ 
++- Role-based approval, audit history and time limits add governance effort but prevent technical or temporary access from becoming permanent business authority.
++
+ ## Implementation implications
+ 
+ Configuration specifications must preserve the ownership, scope, inheritance, effective-date and approval rules established here without embedding provider or application assumptions.
+ 
+ This BDR does not select a database, API, provider, application design or deployment approach.
+ 
++Configuration specifications must distinguish the business owner, approving authority, effective period and technical administrator for every exception. Changes must be versioned or effective-dated where applicable and fully auditable. Temporary delegated authority must have a mandatory end date and must not transfer ownership.
++
+ ## Related decisions
+ 
+ - **Depends on:** [CFG-001 — Configuration Ownership](cfg-001-configuration-ownership.md)
+@@ -55,6 +63,8 @@ This BDR does not select a database, API, provider, application design or deploy
+ - [Platform principles](../platform-principles.md) — **Canonical**; business meaning, authority, configuration and gradual-migration principles.
+ - [Business-discovery process](../platform-methodology/business-discovery-process.md) — **Canonical methodology**; approval, exact wording, dependency and history rules.
+ 
++- [FIKA OS Authority Model](../fika-os-canon/04-authority-model.md) — **Canonical governance**; role-based authority, ownership, administration, delegation and platform-governance boundaries.
++
+ ## Supersedes / Superseded by
+ 
+ - **Supersedes:** None
+@@ -62,4 +72,4 @@ This BDR does not select a database, API, provider, application design or deploy
+ 
+ ## Future considerations
+ 
+-There are no open discovery questions for this decision. During BDR review, evidence and explanatory text should be checked without altering the Decision section. Later schema, architecture and implementation work must resolve technical detail while preserving this approved business meaning.
++Future work must define the evidence and review cadence for exceptions without changing which business role owns or approves each variation.
+
+diff --git "a/C:\\FIKA\\fika-platform-specs\\docs\\business-decisions\\role-002-roles-responsibilities-assignments.md" "b/C:\\FIKA\\.codex-staging\\pack-2\\role-002-roles-responsibilities-assignments.md"
+index e2692ed8..01f7de7c 100644
+--- "a/C:\\FIKA\\fika-platform-specs\\docs\\business-decisions\\role-002-roles-responsibilities-assignments.md"
++++ "b/C:\\FIKA\\.codex-staging\\pack-2\\role-002-roles-responsibilities-assignments.md"
+@@ -23,6 +23,8 @@ FIKA needed one authoritative answer to the ambiguity recorded in [docs/domain-d
+ 
+ The approved decision establishes a shared business rule. The alternative—leaving the matter implicit or allowing each implementation to decide independently—was rejected because it would recreate competing business meaning. Historical and supporting material remains evidence, but it cannot override this decision.
+ 
++The [FIKA OS Authority Model](../fika-os-canon/04-authority-model.md) makes the separation operational: authority belongs to an accountable role or function, while a named person receives a time-bound assignment to exercise it. Business ownership remains distinct from both the assignment and the technical mechanism that enforces it.
++
+ ## Positive consequences
+ 
+ - FIKA now has a stable, human-approved rule for this aspect of Roles and Permissions.
+@@ -30,18 +32,24 @@ The approved decision establishes a shared business rule. The alternative—leav
+ - Stage 5 schemas and Stage 6 architecture can trace their treatment of this subject to one canonical source.
+ - Application and provider behaviour cannot silently redefine the decision.
+ 
++- Ownership, authority and technical administration are now explicitly separated and traceable.
++
+ ## Trade-offs
+ 
+ - The decision constrains local interpretation where consistency is required.
+ - Any future change must preserve history and use a superseding or amended BDR rather than silently editing downstream documents.
+ - The decision deliberately leaves technology, storage and API design to later stages.
+ 
++- Role-based approval, audit history and time limits add governance effort but prevent technical or temporary access from becoming permanent business authority.
++
+ ## Implementation implications
+ 
+ Permission and assignment design must preserve the approved vocabulary, scopes, separation of duties, least-privilege boundaries and audit expectations.
+ 
+ This BDR does not select a database, API, provider, application design or deployment approach.
+ 
++Permission and assignment specifications must preserve the approved distinctions. Temporary delegation must have a mandatory end date, be fully auditable and never transfer ownership. Platform Governance implements approved assignments and controls but does not define business authority.
++
+ ## Related decisions
+ 
+ - **Depends on:** [ROLE-001 — Role Catalogue Ownership](role-001-role-catalogue-ownership.md)
+@@ -60,6 +68,8 @@ This BDR does not select a database, API, provider, application design or deploy
+ - [Platform principles](../platform-principles.md) — **Canonical**; business meaning, authority, configuration and gradual-migration principles.
+ - [Business-discovery process](../platform-methodology/business-discovery-process.md) — **Canonical methodology**; approval, exact wording, dependency and history rules.
+ 
++- [FIKA OS Authority Model](../fika-os-canon/04-authority-model.md) — **Canonical governance**; role-based authority, ownership, administration, delegation and platform-governance boundaries.
++
+ ## Supersedes / Superseded by
+ 
+ - **Supersedes:** None
+@@ -67,4 +77,4 @@ This BDR does not select a database, API, provider, application design or deploy
+ 
+ ## Future considerations
+ 
+-There are no open discovery questions for this decision. During BDR review, evidence and explanatory text should be checked without altering the Decision section. Later schema, architecture and implementation work must resolve technical detail while preserving this approved business meaning.
++Future work must define the approved role catalogue and assignment evidence without collapsing jobs, roles, responsibilities, scopes or authority into one record.
+
+diff --git "a/C:\\FIKA\\fika-platform-specs\\docs\\business-decisions\\role-003-permission-actions.md" "b/C:\\FIKA\\.codex-staging\\pack-2\\role-003-permission-actions.md"
+index c34655c9..03c4633c 100644
+--- "a/C:\\FIKA\\fika-platform-specs\\docs\\business-decisions\\role-003-permission-actions.md"
++++ "b/C:\\FIKA\\.codex-staging\\pack-2\\role-003-permission-actions.md"
+@@ -23,6 +23,8 @@ FIKA needed one authoritative answer to the ambiguity recorded in [docs/domain-d
+ 
+ The approved decision establishes a shared business rule. The alternative—leaving the matter implicit or allowing each implementation to decide independently—was rejected because it would recreate competing business meaning. Historical and supporting material remains evidence, but it cannot override this decision.
+ 
++An action describes what may be done; it does not establish who owns a business concept or holds authority to approve it. The [FIKA OS Authority Model](../fika-os-canon/04-authority-model.md) supplies authority through accountable roles or functions and time-bound assignments. Platform Governance enforces the vocabulary without redefining business authority.
++
+ ## Positive consequences
+ 
+ - FIKA now has a stable, human-approved rule for this aspect of Roles and Permissions.
+@@ -30,18 +32,24 @@ The approved decision establishes a shared business rule. The alternative—leav
+ - Stage 5 schemas and Stage 6 architecture can trace their treatment of this subject to one canonical source.
+ - Application and provider behaviour cannot silently redefine the decision.
+ 
++- Ownership, authority and technical administration are now explicitly separated and traceable.
++
+ ## Trade-offs
+ 
+ - The decision constrains local interpretation where consistency is required.
+ - Any future change must preserve history and use a superseding or amended BDR rather than silently editing downstream documents.
+ - The decision deliberately leaves technology, storage and API design to later stages.
+ 
++- Role-based approval, audit history and time limits add governance effort but prevent technical or temporary access from becoming permanent business authority.
++
+ ## Implementation implications
+ 
+ Permission and assignment design must preserve the approved vocabulary, scopes, separation of duties, least-privilege boundaries and audit expectations.
+ 
+ This BDR does not select a database, API, provider, application design or deployment approach.
+ 
++Permission specifications must combine the approved action vocabulary with a defined scope and authorised role assignment. Grants, changes and uses of elevated actions must be auditable; administration does not imply operational, commercial or publication authority.
++
+ ## Related decisions
+ 
+ - **Depends on:** [ROLE-001 — Role Catalogue Ownership](role-001-role-catalogue-ownership.md)
+@@ -57,6 +65,8 @@ This BDR does not select a database, API, provider, application design or deploy
+ - [Platform principles](../platform-principles.md) — **Canonical**; business meaning, authority, configuration and gradual-migration principles.
+ - [Business-discovery process](../platform-methodology/business-discovery-process.md) — **Canonical methodology**; approval, exact wording, dependency and history rules.
+ 
++- [FIKA OS Authority Model](../fika-os-canon/04-authority-model.md) — **Canonical governance**; role-based authority, ownership, administration, delegation and platform-governance boundaries.
++
+ ## Supersedes / Superseded by
+ 
+ - **Supersedes:** None
+@@ -64,4 +74,4 @@ This BDR does not select a database, API, provider, application design or deploy
+ 
+ ## Future considerations
+ 
+-There are no open discovery questions for this decision. During BDR review, evidence and explanatory text should be checked without altering the Decision section. Later schema, architecture and implementation work must resolve technical detail while preserving this approved business meaning.
++Future work must define domain-specific permission mappings and review rules without adding new canonical actions silently.
+
+diff --git "a/C:\\FIKA\\fika-platform-specs\\docs\\business-decisions\\role-004-assignment-scopes.md" "b/C:\\FIKA\\.codex-staging\\pack-2\\role-004-assignment-scopes.md"
+index 8ed64eab..6604ea78 100644
+--- "a/C:\\FIKA\\fika-platform-specs\\docs\\business-decisions\\role-004-assignment-scopes.md"
++++ "b/C:\\FIKA\\.codex-staging\\pack-2\\role-004-assignment-scopes.md"
+@@ -23,6 +23,8 @@ FIKA needed one authoritative answer to the ambiguity recorded in [docs/domain-d
+ 
+ The approved decision establishes a shared business rule. The alternative—leaving the matter implicit or allowing each implementation to decide independently—was rejected because it would recreate competing business meaning. Historical and supporting material remains evidence, but it cannot override this decision.
+ 
++Assignments let named people exercise authority that remains owned by an accountable organisational role or function under the [FIKA OS Authority Model](../fika-os-canon/04-authority-model.md). Scope and duration limit that exercise; neither assignment nor technical access transfers business ownership.
++
+ ## Positive consequences
+ 
+ - FIKA now has a stable, human-approved rule for this aspect of Roles and Permissions.
+@@ -30,18 +32,24 @@ The approved decision establishes a shared business rule. The alternative—leav
+ - Stage 5 schemas and Stage 6 architecture can trace their treatment of this subject to one canonical source.
+ - Application and provider behaviour cannot silently redefine the decision.
+ 
++- Ownership, authority and technical administration are now explicitly separated and traceable.
++
+ ## Trade-offs
+ 
+ - The decision constrains local interpretation where consistency is required.
+ - Any future change must preserve history and use a superseding or amended BDR rather than silently editing downstream documents.
+ - The decision deliberately leaves technology, storage and API design to later stages.
+ 
++- Role-based approval, audit history and time limits add governance effort but prevent technical or temporary access from becoming permanent business authority.
++
+ ## Implementation implications
+ 
+ Permission and assignment design must preserve the approved vocabulary, scopes, separation of duties, least-privilege boundaries and audit expectations.
+ 
+ This BDR does not select a database, API, provider, application design or deployment approach.
+ 
++Assignment specifications must record the authorised role, assignee, scope, start date, mandatory end date for temporary delegation, approval evidence and revocation history. Every delegation must be fully auditable and must never transfer ownership. Platform Governance implements these controls but does not define the authority assigned.
++
+ ## Related decisions
+ 
+ - **Depends on:** [ROLE-002 — Roles, Responsibilities, Assignments and Authority](role-002-roles-responsibilities-assignments.md)
+@@ -53,6 +61,8 @@ This BDR does not select a database, API, provider, application design or deploy
+ - [Platform principles](../platform-principles.md) — **Canonical**; business meaning, authority, configuration and gradual-migration principles.
+ - [Business-discovery process](../platform-methodology/business-discovery-process.md) — **Canonical methodology**; approval, exact wording, dependency and history rules.
+ 
++- [FIKA OS Authority Model](../fika-os-canon/04-authority-model.md) — **Canonical governance**; role-based authority, ownership, administration, delegation and platform-governance boundaries.
++
+ ## Supersedes / Superseded by
+ 
+ - **Supersedes:** None
+@@ -60,4 +70,4 @@ This BDR does not select a database, API, provider, application design or deploy
+ 
+ ## Future considerations
+ 
+-There are no open discovery questions for this decision. During BDR review, evidence and explanatory text should be checked without altering the Decision section. Later schema, architecture and implementation work must resolve technical detail while preserving this approved business meaning.
++Future work must confirm approval and review rules for each assignment scope without replacing role-based authority with named-person rules.
+
+diff --git "a/C:\\FIKA\\fika-platform-specs\\docs\\business-decisions\\role-005-approval-publication-separation.md" "b/C:\\FIKA\\.codex-staging\\pack-2\\role-005-approval-publication-separation.md"
+index f65b9282..e5b121f8 100644
+--- "a/C:\\FIKA\\fika-platform-specs\\docs\\business-decisions\\role-005-approval-publication-separation.md"
++++ "b/C:\\FIKA\\.codex-staging\\pack-2\\role-005-approval-publication-separation.md"
+@@ -23,6 +23,8 @@ FIKA needed one authoritative answer to the ambiguity recorded in [docs/domain-d
+ 
+ The approved decision establishes a shared business rule. The alternative—leaving the matter implicit or allowing each implementation to decide independently—was rejected because it would recreate competing business meaning. Historical and supporting material remains evidence, but it cannot override this decision.
+ 
++Approval authority belongs to an accountable business role or function; publication is a separate action that activates approved content. The [FIKA OS Authority Model](../fika-os-canon/04-authority-model.md) keeps both distinct from technical administration. Platform Governance implements controls but does not decide business approval.
++
+ ## Positive consequences
+ 
+ - FIKA now has a stable, human-approved rule for this aspect of Roles and Permissions.
+@@ -30,18 +32,24 @@ The approved decision establishes a shared business rule. The alternative—leav
+ - Stage 5 schemas and Stage 6 architecture can trace their treatment of this subject to one canonical source.
+ - Application and provider behaviour cannot silently redefine the decision.
+ 
++- Ownership, authority and technical administration are now explicitly separated and traceable.
++
+ ## Trade-offs
+ 
+ - The decision constrains local interpretation where consistency is required.
+ - Any future change must preserve history and use a superseding or amended BDR rather than silently editing downstream documents.
+ - The decision deliberately leaves technology, storage and API design to later stages.
+ 
++- Role-based approval, audit history and time limits add governance effort but prevent technical or temporary access from becoming permanent business authority.
++
+ ## Implementation implications
+ 
+ Permission and assignment design must preserve the approved vocabulary, scopes, separation of duties, least-privilege boundaries and audit expectations.
+ 
+ This BDR does not select a database, API, provider, application design or deployment approach.
+ 
++Workflow and permission specifications must record contribution, management, approval and publication as distinct actions even where one authorised assignee performs more than one. Temporary delegation must have a mandatory end date, be fully auditable and never transfer ownership.
++
+ ## Related decisions
+ 
+ - **Depends on:** [ROLE-002 — Roles, Responsibilities, Assignments and Authority](role-002-roles-responsibilities-assignments.md)
+@@ -54,6 +62,8 @@ This BDR does not select a database, API, provider, application design or deploy
+ - [Platform principles](../platform-principles.md) — **Canonical**; business meaning, authority, configuration and gradual-migration principles.
+ - [Business-discovery process](../platform-methodology/business-discovery-process.md) — **Canonical methodology**; approval, exact wording, dependency and history rules.
+ 
++- [FIKA OS Authority Model](../fika-os-canon/04-authority-model.md) — **Canonical governance**; role-based authority, ownership, administration, delegation and platform-governance boundaries.
++
+ ## Supersedes / Superseded by
+ 
+ - **Supersedes:** None
+@@ -61,4 +71,4 @@ This BDR does not select a database, API, provider, application design or deploy
+ 
+ ## Future considerations
+ 
+-There are no open discovery questions for this decision. During BDR review, evidence and explanatory text should be checked without altering the Decision section. Later schema, architecture and implementation work must resolve technical detail while preserving this approved business meaning.
++Future work must define which accountable roles may approve and publish within each domain and when separation of duties is mandatory.
+
+diff --git "a/C:\\FIKA\\fika-platform-specs\\docs\\business-decisions\\role-006-access-boundaries.md" "b/C:\\FIKA\\.codex-staging\\pack-2\\role-006-access-boundaries.md"
+index f0c958d3..e60a6473 100644
+--- "a/C:\\FIKA\\fika-platform-specs\\docs\\business-decisions\\role-006-access-boundaries.md"
++++ "b/C:\\FIKA\\.codex-staging\\pack-2\\role-006-access-boundaries.md"
+@@ -23,6 +23,8 @@ FIKA needed one authoritative answer to the ambiguity recorded in [docs/domain-d
+ 
+ The approved decision establishes a shared business rule. The alternative—leaving the matter implicit or allowing each implementation to decide independently—was rejected because it would recreate competing business meaning. Historical and supporting material remains evidence, but it cannot override this decision.
+ 
++Access is a technical expression of approved business responsibility, not evidence of ownership or approval authority. The [FIKA OS Authority Model](../fika-os-canon/04-authority-model.md) requires authority to remain role-based and assignments scoped and time-bound. Platform Governance administers and audits access without defining business authority.
++
+ ## Positive consequences
+ 
+ - FIKA now has a stable, human-approved rule for this aspect of Roles and Permissions.
+@@ -30,18 +32,24 @@ The approved decision establishes a shared business rule. The alternative—leav
+ - Stage 5 schemas and Stage 6 architecture can trace their treatment of this subject to one canonical source.
+ - Application and provider behaviour cannot silently redefine the decision.
+ 
++- Ownership, authority and technical administration are now explicitly separated and traceable.
++
+ ## Trade-offs
+ 
+ - The decision constrains local interpretation where consistency is required.
+ - Any future change must preserve history and use a superseding or amended BDR rather than silently editing downstream documents.
+ - The decision deliberately leaves technology, storage and API design to later stages.
+ 
++- Role-based approval, audit history and time limits add governance effort but prevent technical or temporary access from becoming permanent business authority.
++
+ ## Implementation implications
+ 
+ Permission and assignment design must preserve the approved vocabulary, scopes, separation of duties, least-privilege boundaries and audit expectations.
+ 
+ This BDR does not select a database, API, provider, application design or deployment approach.
+ 
++Permission specifications must distinguish business ownership, approval authority and technical access. Grants, changes, privileged use, reviews and revocations must be fully auditable. Temporary access must have a mandatory end date and must not transfer ownership.
++
+ ## Related decisions
+ 
+ - **Depends on:** [ROLE-002 — Roles, Responsibilities, Assignments and Authority](role-002-roles-responsibilities-assignments.md)
+@@ -54,6 +62,8 @@ This BDR does not select a database, API, provider, application design or deploy
+ - [Platform principles](../platform-principles.md) — **Canonical**; business meaning, authority, configuration and gradual-migration principles.
+ - [Business-discovery process](../platform-methodology/business-discovery-process.md) — **Canonical methodology**; approval, exact wording, dependency and history rules.
+ 
++- [FIKA OS Authority Model](../fika-os-canon/04-authority-model.md) — **Canonical governance**; role-based authority, ownership, administration, delegation and platform-governance boundaries.
++
+ ## Supersedes / Superseded by
+ 
+ - **Supersedes:** None
+@@ -61,4 +71,4 @@ This BDR does not select a database, API, provider, application design or deploy
+ 
+ ## Future considerations
+ 
+-There are no open discovery questions for this decision. During BDR review, evidence and explanatory text should be checked without altering the Decision section. Later schema, architecture and implementation work must resolve technical detail while preserving this approved business meaning.
++Future work must define role-based access-review frequency, retention of audit evidence and the precise boundary of privileged platform administration.
+
+diff --git "a/C:\\FIKA\\fika-platform-specs\\docs\\business-decisions\\role-007-emergency-access.md" "b/C:\\FIKA\\.codex-staging\\pack-2\\role-007-emergency-access.md"
+index db610a40..82ed2bb9 100644
+--- "a/C:\\FIKA\\fika-platform-specs\\docs\\business-decisions\\role-007-emergency-access.md"
++++ "b/C:\\FIKA\\.codex-staging\\pack-2\\role-007-emergency-access.md"
+@@ -23,6 +23,8 @@ FIKA needed one authoritative answer to the ambiguity recorded in [docs/domain-d
+ 
+ The approved decision establishes a shared business rule. The alternative—leaving the matter implicit or allowing each implementation to decide independently—was rejected because it would recreate competing business meaning. Historical and supporting material remains evidence, but it cannot override this decision.
+ 
++Emergency access is a temporary assignment of exceptional technical authority; it does not transfer ownership or redefine normal approval rights. The [FIKA OS Authority Model](../fika-os-canon/04-authority-model.md) requires an accountable role, explicit authorisation, bounded scope and complete auditability. Platform Governance implements and reviews the mechanism but does not create business authority.
++
+ ## Positive consequences
+ 
+ - FIKA now has a stable, human-approved rule for this aspect of Roles and Permissions.
+@@ -30,18 +32,24 @@ The approved decision establishes a shared business rule. The alternative—leav
+ - Stage 5 schemas and Stage 6 architecture can trace their treatment of this subject to one canonical source.
+ - Application and provider behaviour cannot silently redefine the decision.
+ 
++- Ownership, authority and technical administration are now explicitly separated and traceable.
++
+ ## Trade-offs
+ 
+ - The decision constrains local interpretation where consistency is required.
+ - Any future change must preserve history and use a superseding or amended BDR rather than silently editing downstream documents.
+ - The decision deliberately leaves technology, storage and API design to later stages.
+ 
++- Role-based approval, audit history and time limits add governance effort but prevent technical or temporary access from becoming permanent business authority.
++
+ ## Implementation implications
+ 
+ Permission and assignment design must preserve the approved vocabulary, scopes, separation of duties, least-privilege boundaries and audit expectations.
+ 
+ This BDR does not select a database, API, provider, application design or deployment approach.
+ 
++Emergency-access specifications must require an authorised role, reason, approving authority, minimum scope, start time, mandatory end time, revocation and complete activity history. Delegation must be fully auditable and must never transfer ownership.
++
+ ## Related decisions
+ 
+ - **Depends on:** [ROLE-002 — Roles, Responsibilities, Assignments and Authority](role-002-roles-responsibilities-assignments.md)
+@@ -54,6 +62,8 @@ This BDR does not select a database, API, provider, application design or deploy
+ - [Platform principles](../platform-principles.md) — **Canonical**; business meaning, authority, configuration and gradual-migration principles.
+ - [Business-discovery process](../platform-methodology/business-discovery-process.md) — **Canonical methodology**; approval, exact wording, dependency and history rules.
+ 
++- [FIKA OS Authority Model](../fika-os-canon/04-authority-model.md) — **Canonical governance**; role-based authority, ownership, administration, delegation and platform-governance boundaries.
++
+ ## Supersedes / Superseded by
+ 
+ - **Supersedes:** None
+@@ -61,4 +71,4 @@ This BDR does not select a database, API, provider, application design or deploy
+ 
+ ## Future considerations
+ 
+-There are no open discovery questions for this decision. During BDR review, evidence and explanatory text should be checked without altering the Decision section. Later schema, architecture and implementation work must resolve technical detail while preserving this approved business meaning.
++Future work must confirm the role-based emergency authorisers, maximum durations, review timescales and retained audit evidence.
+

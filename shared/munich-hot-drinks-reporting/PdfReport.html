@@ -1,0 +1,679 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    @page { size: A4 landscape; margin: 8mm; }
+    :root {
+      --munich: #00538A;
+      --munich-dark: #003a61;
+      --munich-soft: #eaf4fa;
+      --ink: #05090B;
+      --muted: #667481;
+      --line: #d9e4eb;
+      --paper: #edf4f8;
+      --orange: #ff8000;
+      --green: #167a62;
+      --purple: #4F34C7;
+      --coffee: #8d6a4c;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      color: var(--ink);
+      font-family: Arial, Helvetica, sans-serif;
+      background: var(--paper);
+      font-size: 10.5px;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+    .cover, .page {
+      position: relative;
+      min-height: 183mm;
+      overflow: hidden;
+      border: 1px solid #d7e5ed;
+      background: #fff;
+    }
+    .cover {
+      padding: 14mm;
+      color: #fff;
+      background:
+        radial-gradient(circle at 83% 15%, rgba(255,255,255,.22), transparent 24%),
+        radial-gradient(circle at 18% 92%, rgba(255,128,0,.17), transparent 23%),
+        linear-gradient(135deg, #003a61 0%, #00538A 58%, #0b70a8 100%);
+    }
+    .cover:before {
+      content: "";
+      position: absolute;
+      inset: 0 auto 0 0;
+      width: 13mm;
+      background: linear-gradient(180deg, #fff, rgba(255,255,255,.7));
+      opacity: .18;
+    }
+    .cover:after {
+      content: "";
+      position: absolute;
+      right: -23mm;
+      bottom: -40mm;
+      width: 118mm;
+      height: 118mm;
+      border: 16mm solid rgba(255,255,255,.13);
+      border-radius: 50%;
+    }
+    .cover-logos, .cover-title, .cover-grid { position: relative; z-index: 1; }
+    .cover-logos {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 14mm;
+    }
+    .logo-card {
+      background: rgba(255,255,255,.96);
+      border: 1px solid rgba(255,255,255,.7);
+      border-radius: 3mm;
+      padding: 4mm 5mm;
+    }
+    .munich-logo svg { width: 54mm; height: auto; }
+    .partner-logos {
+      display: flex;
+      align-items: center;
+      gap: 5mm;
+    }
+    .fika-logo svg { width: 24mm; height: auto; }
+    .bloom-logo svg { width: 21mm; height: auto; }
+    .just-eat-logo svg { width: 27mm; height: auto; }
+    .cover-title {
+      margin: 20mm 0 10mm 9mm;
+      max-width: 122mm;
+    }
+    .strapline {
+      display: inline-block;
+      padding: 2mm 3mm;
+      border: 1px solid rgba(255,255,255,.26);
+      border-radius: 99mm;
+      background: rgba(255,255,255,.13);
+      font-size: 8.5px;
+      font-weight: 700;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+    }
+    h1 {
+      margin: 6mm 0 4mm;
+      font-size: 43px;
+      line-height: .98;
+      letter-spacing: -.5px;
+    }
+    .period {
+      color: rgba(255,255,255,.88);
+      font-size: 18px;
+      font-weight: 700;
+    }
+    .capture {
+      margin-top: 7mm;
+      padding-left: 4mm;
+      border-left: 4px solid var(--orange);
+      color: rgba(255,255,255,.88);
+      font-size: 12px;
+      font-weight: 700;
+    }
+    .cover-grid {
+      position: absolute;
+      right: 14mm;
+      bottom: 13mm;
+      width: 106mm;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 3mm;
+    }
+    .meta-card {
+      min-height: 24mm;
+      padding: 4mm;
+      border-radius: 3mm;
+      background: #fff;
+      color: var(--ink);
+      border: 1px solid var(--line);
+      border-left: 4px solid var(--munich);
+    }
+    .meta-card.wide { grid-column: 1 / -1; border-left-color: var(--orange); }
+    .meta-card span, .kpi span, .note span, .section-kicker {
+      display: block;
+      color: var(--muted);
+      font-size: 7.6px;
+      font-weight: 700;
+      letter-spacing: .7px;
+      text-transform: uppercase;
+    }
+    .meta-card strong {
+      display: block;
+      margin-top: 1.5mm;
+      color: var(--ink);
+      font-size: 12px;
+      line-height: 1.25;
+    }
+    .page {
+      page-break-before: always;
+      padding: 8mm 9mm 10mm;
+      background:
+        linear-gradient(90deg, rgba(0,83,138,.055) 0 13mm, transparent 13mm),
+        linear-gradient(180deg, #ffffff 0%, #f7fbfd 100%);
+    }
+    .page-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 3.5mm;
+      padding: 3.4mm 4.2mm;
+      border-radius: 3mm;
+      color: #fff;
+      background:
+        radial-gradient(circle at 94% 0%, rgba(255,128,0,.24), transparent 25%),
+        linear-gradient(120deg, var(--munich-dark), var(--munich) 72%, #0b70a8);
+    }
+    .page-header h2 {
+      margin: 1mm 0 0;
+      font-size: 19px;
+      line-height: 1;
+    }
+    .page-header span {
+      display: block;
+      margin-top: 1mm;
+      color: rgba(255,255,255,.78);
+      font-weight: 700;
+    }
+    .small-munich {
+      background: #fff;
+      border-radius: 2mm;
+      padding: 2mm 3mm;
+    }
+    .small-munich svg { width: 27mm; height: auto; }
+    .footer {
+      position: absolute;
+      left: 9mm;
+      right: 9mm;
+      bottom: 3.2mm;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      color: #7b8994;
+      font-size: 7.4px;
+      font-weight: 700;
+      border-top: 1px solid #dfeaf1;
+      padding-top: 2mm;
+    }
+    .kpi-grid {
+      display: grid;
+      grid-template-columns: repeat(8, 1fr);
+      gap: 1.4mm;
+      margin-bottom: 2.3mm;
+    }
+    .kpi {
+      min-height: 17mm;
+      padding: 2.1mm;
+      border: 1px solid var(--line);
+      border-radius: 2.2mm;
+      background:
+        radial-gradient(circle at 90% 12%, rgba(0,83,138,.1), transparent 28%),
+        linear-gradient(180deg, #fff, #f8fbfd);
+      border-left: 4px solid var(--munich);
+    }
+    .kpi.orange { border-left-color: var(--orange); }
+    .kpi.green { border-left-color: var(--green); }
+    .kpi.purple { border-left-color: var(--purple); }
+    .kpi strong {
+      display: block;
+      margin-top: .8mm;
+      color: var(--munich);
+      font-size: 13px;
+      line-height: 1;
+      font-weight: 800;
+    }
+    .kpi small {
+      display: block;
+      margin-top: .8mm;
+      color: var(--muted);
+      font-size: 6px;
+      font-weight: 700;
+      line-height: 1.15;
+    }
+    .insight {
+      display: grid;
+      grid-template-columns: 9mm 1fr;
+      gap: 3mm;
+      align-items: center;
+      margin-bottom: 2.4mm;
+      padding: 2.4mm;
+      border-radius: 3mm;
+      background: linear-gradient(135deg, #eaf4fa, #fff);
+      border: 1px solid #cfe3ed;
+    }
+    .insight-mark {
+      width: 9mm;
+      height: 9mm;
+      display: grid;
+      place-items: center;
+      border-radius: 50%;
+      background: var(--munich);
+      color: #fff;
+      font-size: 14px;
+      font-weight: 800;
+    }
+    .insight p {
+      margin: 0;
+      color: #234254;
+      font-size: 9.4px;
+      line-height: 1.25;
+      font-weight: 700;
+    }
+    .content-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 2.2mm;
+    }
+    .panel {
+      min-height: 31mm;
+      padding: 2.5mm;
+      border: 1px solid var(--line);
+      border-radius: 3mm;
+      background: linear-gradient(180deg, #ffffff, #f8fbfd);
+    }
+    .panel.wide { grid-column: 1 / -1; }
+    .panel h3 {
+      margin: 0 0 1.8mm;
+      color: var(--munich-dark);
+      font-size: 12px;
+    }
+    .row {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 2mm;
+      align-items: center;
+      margin-bottom: 1.15mm;
+      font-weight: 700;
+    }
+    .row strong { color: var(--munich); }
+    .track {
+      grid-column: 1 / -1;
+      height: 1.8mm;
+      overflow: hidden;
+      border-radius: 99mm;
+      background: var(--munich-soft);
+    }
+    .fill {
+      height: 100%;
+      border-radius: inherit;
+      background: linear-gradient(90deg, var(--munich), #52a4cd);
+    }
+    .row:nth-of-type(2n) .fill { background: linear-gradient(90deg, var(--coffee), var(--orange)); }
+    .trend {
+      height: 36mm;
+      display: flex;
+      align-items: end;
+      gap: 2mm;
+      border-bottom: 1px solid var(--line);
+      padding: 6mm 1mm 6mm;
+    }
+    .bar {
+      position: relative;
+      flex: 1;
+      min-width: 3mm;
+      border-radius: 1.6mm 1.6mm 0 0;
+      background: linear-gradient(180deg, #0b70a8, var(--munich));
+    }
+    .bar span {
+      position: absolute;
+      top: -5mm;
+      left: 50%;
+      transform: translateX(-50%);
+      font-size: 7px;
+      font-weight: 700;
+    }
+    .bar small {
+      position: absolute;
+      bottom: -5.7mm;
+      left: 50%;
+      transform: translateX(-50%);
+      color: var(--muted);
+      font-size: 6.2px;
+      white-space: nowrap;
+      font-weight: 700;
+    }
+    .empty-state {
+      min-height: 90mm;
+      display: grid;
+      place-items: center;
+      padding: 10mm;
+      border: 1px dashed #bfd6e3;
+      border-radius: 4mm;
+      background: #f8fbfd;
+      color: var(--muted);
+      text-align: center;
+      font-size: 14px;
+      font-weight: 700;
+      line-height: 1.4;
+    }
+    .hourly-bars {
+      display: grid;
+      gap: 1.8mm;
+      margin-bottom: 3mm;
+    }
+    .hourly-bar-row {
+      display: grid;
+      grid-template-columns: 23mm 1fr 11mm;
+      gap: 2mm;
+      align-items: center;
+      font-weight: 700;
+    }
+    .hourly-bar-row > span { color: var(--munich-dark); }
+    .hourly-bar-row > strong { color: var(--munich); text-align: right; }
+    .stack {
+      height: 4.1mm;
+      display: flex;
+      overflow: hidden;
+      border: 1px solid #c9dfe9;
+      border-radius: 99mm;
+      background: #dcebf3;
+    }
+    .stack i {
+      display: block;
+      min-width: 1.2mm;
+      height: 100%;
+    }
+    .legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 1.5mm 4mm;
+      margin-bottom: 3mm;
+      color: var(--muted);
+      font-size: 8px;
+      font-weight: 700;
+    }
+    .legend span {
+      display: inline-flex;
+      align-items: center;
+      gap: 1.5mm;
+    }
+    .legend i {
+      display: inline-block;
+      width: 2.6mm;
+      height: 2.6mm;
+      border-radius: 50%;
+    }
+    table {
+      width: 100%;
+      border-collapse: separate;
+      border-spacing: .65mm;
+      font-size: 7px;
+    }
+    th, td {
+      border: 0;
+      border-radius: 1.4mm;
+      padding: 1.35mm;
+      text-align: center;
+    }
+    th {
+      color: var(--munich-dark);
+      background: var(--munich-soft);
+      font-weight: 800;
+    }
+    td {
+      background: #fff;
+      border: 1px solid #e3edf3;
+      font-weight: 700;
+    }
+    td.total {
+      color: var(--munich);
+      background: #eaf4fa;
+      font-weight: 800;
+    }
+    .heat-table {
+      border-spacing: .8mm;
+      font-size: 7.3px;
+    }
+    .heat {
+      color: #03283d;
+      font-weight: 800;
+      background:
+        linear-gradient(135deg, rgba(255,255,255,.45), rgba(255,255,255,0)),
+        rgba(0,83,138,var(--heat));
+    }
+    .heat.zero {
+      color: #8a98a3;
+      background: #f3f7fa;
+    }
+    .heat.closed {
+      color: #7b8994;
+      background: repeating-linear-gradient(135deg, #eef4f7 0 2mm, #e0ebf1 2mm 4mm);
+      font-size: 6.8px;
+      text-transform: uppercase;
+    }
+    .heat-legend {
+      display: flex;
+      justify-content: flex-end;
+      align-items: center;
+      gap: 2mm;
+      margin: -1.4mm 0 1.5mm;
+      color: var(--muted);
+      font-size: 8px;
+      font-weight: 700;
+    }
+    .heat-legend i {
+      width: 32mm;
+      height: 3mm;
+      border-radius: 99mm;
+      background: linear-gradient(90deg, rgba(0,83,138,.08), rgba(0,83,138,.75), var(--orange));
+    }
+    .notes {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 2mm;
+      margin-top: 2.6mm;
+    }
+    .note {
+      padding: 2.2mm;
+      border: 1px solid var(--line);
+      border-left: 4px solid var(--munich);
+      border-radius: 2.6mm;
+      background: #f8fbfd;
+    }
+    .note strong {
+      display: block;
+      margin-top: 1mm;
+      color: var(--munich);
+      font-size: 9.5px;
+    }
+    .appendix-note {
+      margin-top: 3mm;
+      padding: 3mm;
+      border-radius: 3mm;
+      background: #fff7ed;
+      border: 1px solid #ffd2a3;
+      color: #70470f;
+      font-size: 8.8px;
+      font-weight: 700;
+      line-height: 1.45;
+    }
+  </style>
+</head>
+<body>
+  <!-- Changed: client-ready PDF cover page -->
+  <section class="cover">
+    <div class="cover-logos">
+      <div class="logo-card munich-logo"><?!= report.logos.munichRe ?></div>
+      <div class="logo-card partner-logos">
+        <span class="fika-logo"><?!= report.logos.fika ?></span>
+        <span class="bloom-logo"><?!= report.logos.bloom ?></span>
+        <span class="just-eat-logo"><?!= report.logos.justEat ?></span>
+      </div>
+    </div>
+    <div class="cover-title">
+      <div class="strapline"><?= report.strapline ?></div>
+      <h1><?= report.title ?></h1>
+      <div class="period"><?= report.period ?></div>
+      <div class="capture"><?= report.captureStatement ?></div>
+    </div>
+    <div class="cover-grid">
+      <div class="meta-card"><span>Prepared</span><strong><?= report.generatedAt ?></strong></div>
+      <div class="meta-card"><span>Scope</span><strong><?= report.filters.floor ?> / <?= report.filters.drink ?></strong></div>
+      <div class="meta-card wide"><span>Data handling</span><strong>Bank holidays <?= report.filters.bankHolidays ?> - Closed periods <?= report.filters.closedPeriods ?></strong></div>
+    </div>
+  </section>
+
+  <!-- Changed: executive summary and automated insight -->
+  <section class="page">
+    <header class="page-header">
+      <div>
+        <span class="section-kicker">Executive summary</span>
+        <h2>Key performance view</h2>
+        <span><?= report.period ?></span>
+      </div>
+      <div class="small-munich"><?!= report.logos.munichRe ?></div>
+    </header>
+    <? if (!report.hasData) { ?>
+      <div class="empty-state">No hot drink activity matched the selected filters.<br>Report scope and data handling settings are shown on the cover page.</div>
+    <? } else { ?>
+      <div class="kpi-grid">
+        <? for (var i = 0; i < report.kpis.length; i++) { var kpi = report.kpis[i]; ?>
+          <div class="kpi <?= kpi.tone ?>"><span><?= kpi.label ?></span><strong><?= kpi.value ?></strong><small><?= kpi.helper ?></small></div>
+        <? } ?>
+      </div>
+      <div class="insight">
+        <div class="insight-mark">i</div>
+        <p><?= report.insightText ?></p>
+      </div>
+      <div class="content-grid">
+        <article class="panel">
+          <h3>Drink mix</h3>
+          <? for (var d = 0; d < report.drinkRows.length; d++) { var drink = report.drinkRows[d]; ?>
+            <div class="row">
+              <span><?= drink.label ?></span><strong><?= drink.value ?> - <?= drink.percent ?>%</strong>
+              <div class="track"><div class="fill" style="width:<?= drink.width ?>%"></div></div>
+            </div>
+          <? } ?>
+        </article>
+        <article class="panel">
+          <h3>Floor comparison</h3>
+          <? for (var f = 0; f < report.floorRows.length; f++) { var floor = report.floorRows[f]; ?>
+            <div class="row">
+              <span><?= floor.label ?></span><strong><?= floor.value ?> - <?= floor.percent ?>%</strong>
+              <div class="track"><div class="fill" style="width:<?= floor.width ?>%"></div></div>
+            </div>
+          <? } ?>
+        </article>
+        <article class="panel">
+          <h3>Weekday profile</h3>
+          <? for (var w = 0; w < report.weekdayRows.length; w++) { var weekday = report.weekdayRows[w]; ?>
+            <div class="row">
+              <span><?= weekday.label ?></span><strong><?= weekday.value ?></strong>
+              <div class="track"><div class="fill" style="width:<?= weekday.width ?>%"></div></div>
+            </div>
+          <? } ?>
+        </article>
+      </div>
+    <? } ?>
+    <div class="footer"><span><?= report.title ?> - <?= report.period ?></span><span><?= report.generatedLabel ?></span></div>
+  </section>
+
+  <!-- Changed: visual hourly patterns -->
+  <section class="page">
+    <header class="page-header">
+      <div>
+        <span class="section-kicker">Hourly patterns</span>
+        <h2>Volume and product mix</h2>
+        <span>Hourly number of drinks sold, split by product type</span>
+      </div>
+      <div class="small-munich"><?!= report.logos.munichRe ?></div>
+    </header>
+    <article class="panel wide">
+      <h3>Hourly drink type mix</h3>
+      <? if (!report.hasData) { ?>
+        <div class="empty-state">No hourly drink type data matched the selected filters.</div>
+      <? } else { ?>
+        <div class="legend">
+          <? for (var drinkIndex = 0; drinkIndex < report.drinks.length; drinkIndex++) { ?>
+            <span><i style="background:<?= report.drinkColors[drinkIndex % report.drinkColors.length] ?>"></i><?= report.drinks[drinkIndex] ?></span>
+          <? } ?>
+        </div>
+        <div class="hourly-bars">
+          <? for (var hourIndex = 0; hourIndex < report.hourlyDrinkRows.length; hourIndex++) { var hour = report.hourlyDrinkRows[hourIndex]; ?>
+            <div class="hourly-bar-row">
+              <span><?= hour.bucket ?></span>
+              <div class="stack">
+                <? for (var segmentIndex = 0; segmentIndex < hour.segments.length; segmentIndex++) { var segment = hour.segments[segmentIndex]; ?>
+                  <? if (segment.value) { ?><i style="width:<?= segment.width ?>%; background:<?= segment.color ?>"></i><? } ?>
+                <? } ?>
+              </div>
+              <strong><?= hour.total ?></strong>
+            </div>
+          <? } ?>
+        </div>
+      <? } ?>
+    </article>
+    <? if (report.hasData) { ?>
+      <table>
+        <thead>
+          <tr>
+            <th>Hour</th><th>Total</th>
+            <? for (var headerDrink = 0; headerDrink < report.drinks.length; headerDrink++) { ?><th><?= report.drinks[headerDrink] ?></th><? } ?>
+          </tr>
+        </thead>
+        <tbody>
+          <? for (var tableHourIndex = 0; tableHourIndex < report.hourlyDrinkRows.length; tableHourIndex++) { var tableHour = report.hourlyDrinkRows[tableHourIndex]; ?>
+            <tr>
+              <th><?= tableHour.bucket ?></th><td class="total"><?= tableHour.total ?></td>
+              <? for (var tableSegmentIndex = 0; tableSegmentIndex < tableHour.segments.length; tableSegmentIndex++) { ?><td><?= tableHour.segments[tableSegmentIndex].value ?></td><? } ?>
+            </tr>
+          <? } ?>
+        </tbody>
+      </table>
+    <? } ?>
+    <div class="footer"><span><?= report.title ?> - Hourly patterns</span><span><?= report.generatedLabel ?></span></div>
+  </section>
+
+  <!-- Changed: polished heatmap and appendix notes -->
+  <section class="page">
+    <header class="page-header">
+      <div>
+        <span class="section-kicker">Demand heatmap</span>
+        <h2>Service demand by weekday</h2>
+        <span>Counts by configured service time bucket</span>
+      </div>
+      <div class="small-munich"><?!= report.logos.munichRe ?></div>
+    </header>
+    <? if (!report.hasData) { ?>
+      <div class="empty-state">No heatmap activity matched the selected filters.</div>
+    <? } else { ?>
+      <div class="heat-legend"><span>Low</span><i></i><strong>High</strong></div>
+      <table class="heat-table">
+        <thead>
+          <tr>
+            <th>Day</th>
+            <? for (var b = 0; b < report.heatmapBuckets.length; b++) { ?><th><?= report.heatmapBuckets[b] ?></th><? } ?>
+          </tr>
+        </thead>
+        <tbody>
+          <? for (var dayIndex = 0; dayIndex < report.heatmapDays.length; dayIndex++) { var day = report.heatmapDays[dayIndex]; ?>
+            <tr>
+              <th><?= day ?></th>
+              <? for (var bucketIndex = 0; bucketIndex < report.heatmapBuckets.length; bucketIndex++) {
+                var bucket = report.heatmapBuckets[bucketIndex];
+                var value = report.heatmap[day][bucket] || 0;
+                var closed = report.heatmapBucketMeta[bucketIndex] && report.heatmapBucketMeta[bucketIndex].closed && report.filters.closedPeriods === "Excluded";
+              ?>
+                <td class="heat <?= closed ? 'closed' : (value ? '' : 'zero') ?>" style="--heat:<?= heatOpacity_(value, report.heatmapMax) ?>"><?= closed ? 'Closed' : value ?></td>
+              <? } ?>
+            </tr>
+          <? } ?>
+        </tbody>
+      </table>
+    <? } ?>
+    <div class="notes">
+      <div class="note"><span>Active days</span><strong><?= report.activeDays ?></strong></div>
+      <div class="note"><span>Quietest hour</span><strong><?= report.quietestHour ?></strong></div>
+      <div class="note"><span>Floor filter</span><strong><?= report.filters.floor ?></strong></div>
+      <div class="note"><span>Drink filter</span><strong><?= report.filters.drink ?></strong></div>
+    </div>
+    <div class="appendix-note">Data is captured from live barista tally submissions. Reports may exclude configured bank holidays and closed service periods depending on the selected filters. This export reflects the dashboard filters selected at the time the PDF was generated.</div>
+    <div class="footer"><span><?= report.title ?> - Data appendix</span><span><?= report.generatedLabel ?></span></div>
+  </section>
+</body>
+</html>

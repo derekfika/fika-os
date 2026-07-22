@@ -1,0 +1,15 @@
+**/node_modules/**
+**/.npm-cache/**
+**/.git/**
+**/.vscode/**
+
+preview-server.js
+
+package.json
+package-lock.json
+local-tests.js 
+
+*.log
+
+.clasp.json
+.gitignore

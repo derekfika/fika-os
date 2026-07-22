@@ -1,0 +1,57 @@
+CFG-003 — Configuration Variation and Approval
+Decision ID: CFG-003
+Workbook Decision ID: DEC-CFG-003
+Current Status: Draft
+Date: 2026-07-12T08:33:47.768Z
+Decision Owner: Derek / Domain owners
+Related Domains: Configuration, Operational Location, Service
+Repository File: docs/business-decisions/cfg-003-configuration-variation-approval.md
+Schema Pack: Pack 2
+Review Status: Approved for Export
+The Decision section is canonical and locked. Do not edit it.
+Context
+Business discovery asked: **Which booking rules, routing, recipients, calendars, menus and pricing may vary, and who approves exceptions?**
+Before approval, the recorded evidence stated: “Each area has an open ownership or override question.” The question was recorded as a refinement decision with low repository confidence before approval.
+Decision — Canonical and Locked
+The Decision section is canonical and locked. Do not edit it.
+Booking rules, routing, recipients, calendars, menus and pricing may vary where required to meet the operational or commercial needs of a client, Operational Location or Service, but each variation must have a clearly defined business owner. Operational changes such as routing, recipients and calendars should be approved by the relevant Site Manager or Operations. Commercial changes such as menus and pricing should be approved by the appropriate commercial or culinary owner. Platform-wide defaults should remain the standard, with exceptions recorded, justified and approved rather than becoming independent local configurations.
+Business rationale
+FIKA needed one authoritative answer to the ambiguity recorded in [docs/business-workshops/location-domain-workshop-v3.md](../business-workshops/location-domain-workshop-v3.md), specifically the section `Configuration Inheritance`. Without a canonical decision, later documents or applications could interpret this subject differently.
+The approved decision establishes a shared business rule. The alternative—leaving the matter implicit or allowing each implementation to decide independently—was rejected because it would recreate competing business meaning. Historical and supporting material remains evidence, but it cannot override this decision.
+The owner of the affected business area remains accountable for a variation, while approval authority follows the relevant accountable role or function under the FIKA OS Authority Model. Platform Governance assesses wider schema, reporting, migration or cross-domain impact; it does not decide the business exception.
+Positive consequences
+FIKA now has a stable, human-approved rule for this aspect of Configuration.
+It provides stable business meaning for later BDR, schema and architecture work.
+Stage 5 schemas and Stage 6 architecture can trace their treatment of this subject to one canonical source.
+Application and provider behaviour cannot silently redefine the decision.
+Ownership, authority and technical administration are now explicitly separated and traceable.
+Trade-offs
+The decision constrains local interpretation where consistency is required.
+Any future change must preserve history and use a superseding or amended BDR rather than silently editing downstream documents.
+The decision deliberately leaves technology, storage and API design to later stages.
+Role-based approval, audit history and time limits add governance effort but prevent technical or temporary access from becoming permanent business authority.
+Implementation implications
+Configuration specifications must preserve the ownership, scope, inheritance, effective-date and approval rules established here without embedding provider or application assumptions.
+This BDR does not select a database, API, provider, application design or deployment approach.
+Configuration specifications must distinguish the business owner, approving authority, effective period and technical administrator for every exception. Changes must be versioned or effective-dated where applicable and fully auditable. Temporary delegated authority must have a mandatory end date and must not transfer ownership.
+Related decisions
+**Depends on:** [CFG-001 — Configuration Ownership](cfg-001-configuration-ownership.md)
+**Depends on:** [LOC-001 — Operational Location Definition](loc-001-operational-location.md)
+**Depends on:** [SVC-001 — Service Definition](svc-001-service-definition.md)
+Evidence
+[FIKA Business Knowledge Workbook](https://docs.google.com/spreadsheets/d/195jMni3vG5fX5hfAUFARc-vC2ifO8AI8r0r4xQUeoxk/edit) — **Canonical**; DEC-CFG-003, sourced from `Questions!26`.
+[docs/business-workshops/location-domain-workshop-v3.md](../business-workshops/location-domain-workshop-v3.md) — **Historical**; `Configuration Inheritance`.
+[Platform principles](../platform-principles.md) — **Canonical**; business meaning, authority, configuration and gradual-migration principles.
+[FIKA OS Authority Model](../fika-os-canon/04-authority-model.md) — **Canonical governance**; role-based authority, ownership, administration, delegation and platform-governance boundaries.
+[Business-discovery process](../platform-methodology/business-discovery-process.md) — **Canonical methodology**; approval, exact wording, dependency and history rules.
+Supersedes / Superseded by
+**Supersedes:** None
+**Superseded by:** None
+Future considerations
+Future work must define the evidence and review cadence for exceptions without changing which business role owns or approves each variation.
+Review Notes
+Questions for Derek:
+Business corrections required:
+Reviewer comments: Review Doctrine v2 applied; Decision unchanged character-for-character.
+Final approval: Approved for staged Markdown export only; repository write-back is not authorised.
+Approval date: 2026-07-14

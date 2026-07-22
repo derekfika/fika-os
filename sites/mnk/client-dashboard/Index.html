@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <base target="_top">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <?!= include_("Styles"); ?>
+</head>
+<body>
+  <div id="pinGate" class="gate" role="dialog" aria-modal="true" aria-labelledby="pinTitle">
+    <form id="pinForm" class="pin-card">
+      <span class="eyebrow">FIKA AT MNK</span>
+      <h1 id="pinTitle">Welcome, Felipe</h1>
+      <p>Enter your PIN to view the MNK hospitality dashboard.</p>
+      <label for="pinInput">Access PIN</label>
+      <input id="pinInput" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="4" autocomplete="current-password" required autofocus>
+      <button id="pinButton" type="submit">Open dashboard</button>
+      <p id="pinError" class="pin-error" role="alert" hidden></p>
+    </form>
+  </div>
+  <main class="shell">
+    <header class="hero">
+      <div class="hero-copy"><div class="brand-lockup"><span class="brand-mark">M</span><span class="eyebrow">FIKA AT MNK</span></div><h1>My hospitality</h1><p id="welcome">Your bookings, all in one place.</p></div>
+      <a id="bookButton" class="book" hidden>Book hospitality</a>
+    </header>
+    <section id="loading" class="state" hidden>Loading your bookings…</section>
+    <section id="error" class="state error" hidden></section>
+    <div id="portal" hidden>
+      <section class="stats" aria-label="This week">
+        <article><span id="bookingsStatLabel">Bookings · selected week</span><strong id="weekBookings">0</strong></article>
+        <article><span id="paxStatLabel">Pax · selected week</span><strong id="weekPax">0</strong></article>
+        <article><span id="drinksStatLabel">Coffee / tea · selected week</span><strong id="weekDrinks">0</strong></article>
+        <article><span id="foodStatLabel">Food · selected week</span><strong id="weekFood">0</strong></article>
+      </section>
+      <section class="panel calendar-panel">
+        <div class="panel-head"><div><span class="eyebrow">WEEKLY VIEW</span><h2 id="calendarTitle">Calendar</h2></div><div class="calendar-nav"><button type="button" id="previousWeek" aria-label="Previous week">←</button><button type="button" id="thisWeek">This week</button><button type="button" id="nextWeek" aria-label="Next week">→</button></div></div>
+        <div id="calendar" class="calendar"></div>
+      </section>
+      <section class="panel">
+        <div class="panel-head"><div><span class="eyebrow">COMING UP</span><h2>Upcoming bookings</h2></div></div>
+        <div id="upcoming" class="booking-list"></div>
+      </section>
+      <section class="panel">
+        <div class="panel-head"><div><span class="eyebrow">HISTORY</span><h2>Previous bookings</h2></div><input id="search" type="search" placeholder="Search history" aria-label="Search booking history"></div>
+        <div id="history" class="booking-list"></div>
+      </section>
+      <footer>Need help? <a id="supportLink">Contact the Fika at MNK team</a>.</footer>
+    </div>
+  </main>
+  <?!= include_("Script"); ?>
+</body>
+</html>

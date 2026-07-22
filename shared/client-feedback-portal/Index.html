@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <base target="_top">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#3d21bf">
+  <?!= include_("Styles"); ?>
+</head>
+<body>
+  <header class="site-header">
+    <div class="brand">
+      <span class="logo-slot"><img id="fika-logo" hidden><strong id="fika-fallback">Fika</strong></span>
+      <span class="brand-partner">×</span>
+      <span class="logo-slot"><img id="site-logo" hidden><strong id="site-fallback">Hospitality</strong></span>
+    </div>
+    <span class="header-label">Hospitality feedback</span>
+  </header>
+
+  <main>
+    <section class="hero">
+      <p class="eyebrow">Your experience</p>
+      <h1>How did we do?</h1>
+      <p>Your feedback helps us make every booking better. This should take less than a minute.</p>
+    </section>
+
+    <section class="portal-shell">
+      <div id="loading-state" class="state-card">Loading your booking…</div>
+      <div id="invalid-state" class="state-card" hidden>
+        <h2>This feedback link is unavailable.</h2>
+        <p>It may be incomplete or no longer valid. Please contact the hospitality team if you need help.</p>
+      </div>
+      <div id="completed-state" class="state-card" hidden>
+        <div class="success-icon">✓</div>
+        <h2>Thank you.</h2>
+        <p>Your feedback has already been received.</p>
+      </div>
+
+      <form id="feedback-form" hidden>
+        <section class="booking-card">
+          <div>
+            <p class="eyebrow">Your booking</p>
+            <h2 id="booking-event-type">Hospitality booking</h2>
+          </div>
+          <dl>
+            <div><dt>Reference</dt><dd id="booking-reference"></dd></div>
+            <div><dt>Event date</dt><dd id="booking-date"></dd></div>
+          </dl>
+          <div id="booking-items" class="booking-items"></div>
+        </section>
+
+        <section class="feedback-card">
+          <p class="eyebrow">Overall experience</p>
+          <div id="overall-questions"></div>
+          <fieldset class="nps-field">
+            <legend>How likely are you to recommend FIKA hospitality?</legend>
+            <div id="nps-scale" class="nps-scale"></div>
+            <div class="nps-labels"><span>Not likely</span><span>Very likely</span></div>
+          </fieldset>
+        </section>
+
+        <section class="feedback-card">
+          <p class="eyebrow">Menu feedback</p>
+          <h2>What stood out?</h2>
+          <div id="item-ratings" class="item-ratings"></div>
+        </section>
+
+        <section class="feedback-card">
+          <p class="eyebrow">A little more detail</p>
+          <label>What did we do well?<textarea name="whatWentWell" rows="3"></textarea></label>
+          <label>How could we improve?<textarea name="improvements" rows="3"></textarea></label>
+          <label>Any additional comments?<textarea name="additionalComments" rows="3"></textarea></label>
+        </section>
+
+        <section id="recovery-card" class="feedback-card recovery-card" hidden>
+          <h2>We’re sorry your experience did not meet expectations.</h2>
+          <p>Would you like a member of our team to contact you?</p>
+          <div class="contact-choice">
+            <label><input type="radio" name="contactRequested" value="yes"> Yes</label>
+            <label><input type="radio" name="contactRequested" value="no"> No</label>
+          </div>
+          <label id="contact-details-field" hidden>Preferred contact details
+            <input name="preferredContactDetails" placeholder="Phone number or email">
+          </label>
+        </section>
+
+        <div id="form-errors" class="form-errors" aria-live="polite"></div>
+        <button id="submit-feedback" class="primary-button" type="submit">Send feedback</button>
+      </form>
+
+      <div id="success-state" class="state-card" hidden>
+        <div class="success-icon">✓</div>
+        <h2>Thank you for your feedback.</h2>
+        <p>It has been shared with the <span id="success-site-name">hospitality</span> team.</p>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    window.FEEDBACK_TOKEN = <?!= feedbackToken ?>;
+    window.FEEDBACK_CONFIG = <?!= publicConfig ?>;
+  </script>
+  <?!= include_("Script"); ?>
+</body>
+</html>

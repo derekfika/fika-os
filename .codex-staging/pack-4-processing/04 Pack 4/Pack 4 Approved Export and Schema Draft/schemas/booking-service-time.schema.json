@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fika-os.local/schemas/pack-4/booking-service-time.schema.json",
+  "title": "Booking Service Time",
+  "description": "Draft business schema for mandatory booking service start time and optional preferred supporting times from BOOK-001.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "id",
+    "sourceDecisionIds",
+    "serviceStartAt",
+    "createdAt",
+    "updatedAt"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "type": "string",
+      "const": "pack-4-draft"
+    },
+    "id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "sourceDecisionIds": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1
+    },
+    "createdAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "updatedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "notes": {
+      "type": "string"
+    },
+    "serviceStartAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "preferredArrivalAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "preferredCollectionAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "preferredEndAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "timezone": {
+      "type": "string"
+    }
+  }
+}

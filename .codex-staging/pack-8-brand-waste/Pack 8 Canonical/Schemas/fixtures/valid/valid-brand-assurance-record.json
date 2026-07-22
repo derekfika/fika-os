@@ -1,0 +1,19 @@
+{
+  "schemaVersion": "1.0.0-draft.1",
+  "brandAssuranceRecordId": "brand-assurance-record.demo-001",
+  "brandVariationId": "brand-variation.demo-001",
+  "brandStandardReference": "brand-standard.demo-fika-001",
+  "verifiedItems": ["Fictional accessibility review", "Fictional usability review"],
+  "evidenceReferences": ["brand-evidence.demo-001"],
+  "reviewedAt": "2026-07-15T09:45:00Z",
+  "reviewedByAssignmentId": "assignment.demo-brand-reviewer",
+  "provenance": { "sourceBdrIds": ["BRAND-001", "ROLE-002"], "sourceSnapshot": "Pack 8 fictional validation snapshot" },
+  "audit": {
+    "version": 1,
+    "createdAt": "2026-07-15T09:45:00Z",
+    "createdByAssignmentId": "assignment.demo-brand-reviewer",
+    "updatedAt": "2026-07-15T09:45:00Z",
+    "updatedByAssignmentId": "assignment.demo-brand-reviewer",
+    "events": []
+  }
+}

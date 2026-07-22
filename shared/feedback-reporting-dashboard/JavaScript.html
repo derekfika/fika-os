@@ -1,0 +1,232 @@
+<script>
+(() => {
+  const config = window.APP_CONFIG || {};
+  const $ = selector => document.querySelector(selector);
+  const state = { lastReport: null };
+
+  function init() {
+    renderSiteOptions();
+    setDefaultDates();
+    bindEvents();
+    runReport();
+  }
+
+  function renderSiteOptions() {
+    const sites = config.sites || [];
+    $('[name="siteId"]').innerHTML = sites.map(site =>
+      `<option value="${escapeAttr(site.siteId)}">${escapeHtml(site.siteName)}${site.siteId !== "all" && !site.configured ? " (not linked)" : ""}</option>`
+    ).join("");
+  }
+
+  function setDefaultDates() {
+    const today = config.serverDate || new Date().toISOString().slice(0, 10);
+    const date = new Date(today + "T00:00:00");
+    $('[name="startDate"]').value = new Date(date.getFullYear(), date.getMonth(), 1).toISOString().slice(0, 10);
+    $('[name="endDate"]').value = today;
+  }
+
+  function bindEvents() {
+    $("#filters").addEventListener("submit", event => {
+      event.preventDefault();
+      runReport();
+    });
+    $("#export-csv").addEventListener("click", exportCsv);
+    $("#export-pdf").addEventListener("click", exportPdf);
+  }
+
+  function runReport() {
+    setBusy(true);
+    google.script.run
+      .withSuccessHandler(result => {
+        setBusy(false);
+        state.lastReport = result;
+        renderReport(result);
+        toast("Feedback report updated");
+      })
+      .withFailureHandler(error => {
+        setBusy(false);
+        toast(error.message || String(error), "error");
+      })
+      .getFeedbackReport(readFilters());
+  }
+
+  function renderReport(report) {
+    const summary = report.summary || {};
+    renderHealth(report.health || []);
+    $("#summary").innerHTML = [
+      metric("Completed feedback", summary.completed || 0, `${summary.completionRate || 0}% completion rate`),
+      metric("Average overall", summary.averageOverall || "-", "out of 5"),
+      metric("NPS", summary.nps === "" ? "-" : summary.nps, "promoters less detractors"),
+      metric("Needs follow-up", summary.followUps || 0, "low rating contact requests"),
+      metric("Food quality", summary.averageFood || "-", "average score"),
+      metric("Presentation", summary.averagePresentation || "-", "average score"),
+      metric("Delivery timing", summary.averageDelivery || "-", "average score"),
+      metric("Ease of booking", summary.averageEase || "-", "average score")
+    ].join("");
+    renderTrend(summary.trend || []);
+    renderRatingChart(summary.byRating || {});
+    renderSiteChart(summary.bySite || {});
+    renderDimensions(summary);
+    renderComments(summary.recentComments || []);
+  }
+
+  function renderHealth(items) {
+    const unlinked = items.filter(item => !item.ok);
+    $("#health").innerHTML = unlinked.length
+      ? unlinked.map(item => `<span class="health-warning">${escapeHtml(item.siteName)}: ${escapeHtml(item.message || "not configured")}</span>`).join("")
+      : `<span>All configured feedback sources are reachable.</span>`;
+  }
+
+  function renderTrend(rows) {
+    const max = Math.max(1, ...rows.map(row => Number(row.total || 0)));
+    $("#trend").innerHTML = rows.length
+      ? rows.map(row => `<div class="bar" style="height:${Math.max(8, row.total / max * 100)}%"><span>${row.total}</span><small>${shortDate(row.date)}</small></div>`).join("")
+      : empty("No completed feedback in this range.");
+  }
+
+  function renderRatingChart(byRating) {
+    const ordered = ["5", "4", "3", "2", "1"];
+    const max = Math.max(1, ...ordered.map(key => Number(byRating[key] || 0)));
+    $("#rating-chart").innerHTML = ordered.map(key => {
+      const value = Number(byRating[key] || 0);
+      return listRow(`${key} stars`, value, value / max * 100);
+    }).join("");
+  }
+
+  function renderSiteChart(bySite) {
+    const rows = Object.keys(bySite).sort().map(siteName => {
+      const item = bySite[siteName];
+      return { label: siteName, value: item.total, helper: `${item.average}/5 avg · ${item.followUps} follow-up` };
+    });
+    const max = Math.max(1, ...rows.map(row => row.value));
+    $("#site-chart").innerHTML = rows.length
+      ? rows.map(row => listRow(row.label, row.value, row.value / max * 100, row.helper)).join("")
+      : empty("No site feedback yet.");
+  }
+
+  function renderDimensions(summary) {
+    const dimensions = [
+      ["Food quality", summary.averageFood],
+      ["Presentation", summary.averagePresentation],
+      ["Delivery timing", summary.averageDelivery],
+      ["Ease of booking", summary.averageEase]
+    ];
+    $("#dimension-chart").innerHTML = dimensions.map(([label, value]) => `
+      <div class="dimension">
+        <strong>${escapeHtml(value || "-")}</strong>
+        <span>${escapeHtml(label)}</span>
+        <i style="width:${Math.max(3, Number(value || 0) / 5 * 100)}%"></i>
+      </div>
+    `).join("");
+  }
+
+  function renderComments(rows) {
+    $("#comment-list").innerHTML = rows.length ? rows.map(row => `
+      <article class="comment">
+        <header><strong>${escapeHtml(row.siteName)} · ${escapeHtml(row.bookingReference)}</strong><span>${escapeHtml(row.overallSatisfaction)}/5 · ${escapeHtml(shortDate(row.submittedDate))}</span></header>
+        ${row.whatWentWell ? `<p><b>Went well:</b> ${escapeHtml(row.whatWentWell)}</p>` : ""}
+        ${row.improvements ? `<p><b>Improve:</b> ${escapeHtml(row.improvements)}</p>` : ""}
+        ${row.additionalComments ? `<p>${escapeHtml(row.additionalComments)}</p>` : ""}
+      </article>
+    `).join("") : empty("No comments in this range.");
+  }
+
+  function exportCsv() {
+    setBusy(true);
+    google.script.run
+      .withSuccessHandler(result => {
+        setBusy(false);
+        downloadText(result.filename, result.csv, "text/csv");
+      })
+      .withFailureHandler(error => {
+        setBusy(false);
+        toast(error.message || String(error), "error");
+      })
+      .exportFeedbackCsv(readFilters());
+  }
+
+  function exportPdf() {
+    setBusy(true);
+    google.script.run
+      .withSuccessHandler(result => {
+        setBusy(false);
+        const bytes = atob(result.base64);
+        const values = new Array(bytes.length);
+        for (let i = 0; i < bytes.length; i++) values[i] = bytes.charCodeAt(i);
+        downloadBlob(result.filename, new Blob([new Uint8Array(values)], { type: "application/pdf" }));
+      })
+      .withFailureHandler(error => {
+        setBusy(false);
+        toast(error.message || String(error), "error");
+      })
+      .exportFeedbackPdf(readFilters());
+  }
+
+  function readFilters() {
+    const form = $("#filters");
+    return {
+      preset: form.preset.value,
+      startDate: form.startDate.value,
+      endDate: form.endDate.value,
+      siteId: form.siteId.value,
+      rating: form.rating.value,
+      status: form.status.value
+    };
+  }
+
+  function metric(label, value, helper) {
+    return `<div class="metric"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong><small>${escapeHtml(helper)}</small></div>`;
+  }
+
+  function listRow(label, value, width, helper) {
+    return `<div class="list-row"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong><i style="width:${Math.max(2, width)}%"></i>${helper ? `<small>${escapeHtml(helper)}</small>` : ""}</div>`;
+  }
+
+  function empty(text) {
+    return `<div class="empty-state">${escapeHtml(text)}</div>`;
+  }
+
+  function setBusy(active) {
+    $("#activity-bar").hidden = !active;
+    document.querySelectorAll("button").forEach(button => button.disabled = active);
+  }
+
+  function toast(text, tone) {
+    const el = $("#toast");
+    el.textContent = text;
+    el.classList.toggle("toast-error", tone === "error");
+    el.hidden = false;
+    clearTimeout(el.timer);
+    el.timer = setTimeout(() => { el.hidden = true; }, tone === "error" ? 5200 : 2600);
+  }
+
+  function downloadText(filename, text, type) {
+    downloadBlob(filename, new Blob([text], { type }));
+  }
+
+  function downloadBlob(filename, blob) {
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = filename;
+    link.click();
+    URL.revokeObjectURL(url);
+  }
+
+  function shortDate(value) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(String(value || ""))) return value || "";
+    const parts = value.split("-");
+    return `${parts[2]}/${parts[1]}`;
+  }
+
+  function escapeHtml(value) {
+    return String(value == null ? "" : value).replace(/[&<>"']/g, char => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;" }[char]));
+  }
+
+  function escapeAttr(value) {
+    return escapeHtml(value).replace(/"/g, "&quot;");
+  }
+
+  document.addEventListener("DOMContentLoaded", init);
+})();
+</script>

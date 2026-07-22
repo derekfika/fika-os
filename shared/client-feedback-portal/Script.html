@@ -1,0 +1,191 @@
+<script>
+(() => {
+  const token = window.FEEDBACK_TOKEN || "";
+  const config = window.FEEDBACK_CONFIG || {};
+  const $ = selector => document.querySelector(selector);
+  const questions = [
+    ["overallSatisfaction", "How satisfied were you overall?"],
+    ["foodQuality", "How would you rate the quality of the food and drinks?"],
+    ["presentation", "How would you rate the presentation?"],
+    ["deliveryTiming", "How would you rate delivery and timing?"],
+    ["easeOfBooking", "How easy was the booking process?"]
+  ];
+  let booking = null;
+
+  function init() {
+    applyBranding();
+    renderQuestions();
+    renderNps();
+    bindEvents();
+    if (!token) return showState("invalid");
+    google.script.run
+      .withSuccessHandler(loadBooking)
+      .withFailureHandler(() => showState("invalid"))
+      .getFeedbackPageData(token);
+  }
+
+  function applyBranding() {
+    const branding = config.branding || {};
+    document.documentElement.style.setProperty("--accent", branding.accent || "#3d21bf");
+    document.documentElement.style.setProperty("--ink", branding.ink || "#221874");
+    document.documentElement.style.setProperty("--paper", branding.paper || "#f4f4f2");
+    configureLogo("fika-logo", "fika-fallback", branding.fikaLogoUrl, branding.fikaFallbackText);
+    configureLogo("site-logo", "site-fallback", branding.siteLogoUrl, branding.siteFallbackText);
+    $("#success-site-name").textContent = config.siteName || "hospitality";
+  }
+
+  function configureLogo(imageId, fallbackId, url, fallbackText) {
+    const image = $("#" + imageId);
+    const fallback = $("#" + fallbackId);
+    fallback.textContent = fallbackText || "";
+    if (!url) return;
+    image.onload = () => { image.hidden = false; fallback.hidden = true; };
+    image.onerror = () => { image.hidden = true; fallback.hidden = false; };
+    image.src = url;
+  }
+
+  function loadBooking(result) {
+    if (!result || !result.ok || result.state === "invalid") return showState("invalid");
+    if (result.state === "completed") return showState("completed");
+    booking = result.booking;
+    $("#booking-reference").textContent = booking.bookingReference || "—";
+    $("#booking-event-type").textContent = booking.eventType || "Hospitality booking";
+    $("#booking-date").textContent = formatDate(booking.eventDate);
+    $("#booking-items").innerHTML = (booking.items || []).map(item =>
+      `<span class="booking-item">${item.quantity} × ${escapeHtml(item.itemName)}</span>`
+    ).join("");
+    renderItemRatings();
+    showState("form");
+  }
+
+  function renderQuestions() {
+    $("#overall-questions").innerHTML = questions.map(question => `
+      <div class="rating-question">
+        <div><strong>${question[1]}</strong><small>Required</small></div>
+        ${starInput(question[0])}
+      </div>
+    `).join("");
+  }
+
+  function starInput(name, itemId) {
+    const group = itemId ? `${name}_${itemId}` : name;
+    return `<div class="stars" aria-label="Rating out of five">
+      ${[5,4,3,2,1].map(value => `
+        <input id="${group}_${value}" type="radio" name="${group}" value="${value}">
+        <label for="${group}_${value}" title="${value} out of 5">★</label>
+      `).join("")}
+    </div>`;
+  }
+
+  function renderNps() {
+    $("#nps-scale").innerHTML = Array.from({length:11}, (_, value) =>
+      `<label><input type="radio" name="nps" value="${value}">${value}</label>`
+    ).join("");
+  }
+
+  function renderItemRatings() {
+    $("#item-ratings").innerHTML = (booking.items || []).map(item => `
+      <article class="item-rating" data-item-id="${escapeHtml(item.itemId)}">
+        <div><h3>${escapeHtml(item.itemName)}</h3><small>Ordered quantity: ${item.quantity}</small></div>
+        ${starInput("itemRating", item.itemId)}
+        <textarea data-item-comment="${escapeHtml(item.itemId)}" rows="2" placeholder="Optional comments"></textarea>
+      </article>
+    `).join("");
+  }
+
+  function bindEvents() {
+    $("#feedback-form").addEventListener("submit", submit);
+    document.addEventListener("change", event => {
+      if (event.target.name === "overallSatisfaction") {
+        const recovered = Number(event.target.value) > 2;
+        $("#recovery-card").hidden = recovered;
+        if (recovered) {
+          document.querySelectorAll('[name="contactRequested"]').forEach(input => {
+            input.checked = false;
+          });
+          $("#contact-details-field").hidden = true;
+          $('[name="preferredContactDetails"]').value = "";
+        }
+      }
+      if (event.target.name === "contactRequested") {
+        $("#contact-details-field").hidden = event.target.value !== "yes";
+      }
+    });
+  }
+
+  function submit(event) {
+    event.preventDefault();
+    const payload = {
+      overallSatisfaction: selected("overallSatisfaction"),
+      foodQuality: selected("foodQuality"),
+      presentation: selected("presentation"),
+      deliveryTiming: selected("deliveryTiming"),
+      easeOfBooking: selected("easeOfBooking"),
+      nps: selected("nps"),
+      itemRatings: (booking.items || []).map(item => ({
+        itemId: item.itemId,
+        rating: selected(`itemRating_${item.itemId}`),
+        comments: $(`[data-item-comment="${cssEscape(item.itemId)}"]`).value
+      })),
+      whatWentWell: $('[name="whatWentWell"]').value,
+      improvements: $('[name="improvements"]').value,
+      additionalComments: $('[name="additionalComments"]').value,
+      contactRequested: selected("contactRequested") === "yes",
+      preferredContactDetails: $('[name="preferredContactDetails"]').value
+    };
+    const button = $("#submit-feedback");
+    button.disabled = true;
+    button.textContent = "Sending…";
+    $("#form-errors").textContent = "";
+    google.script.run
+      .withSuccessHandler(result => {
+        if (!result || !result.ok) {
+          button.disabled = false;
+          button.textContent = "Send feedback";
+          $("#form-errors").textContent = (result && result.errors || ["Feedback could not be submitted."]).join(" ");
+          return;
+        }
+        showState("success");
+      })
+      .withFailureHandler(error => {
+        button.disabled = false;
+        button.textContent = "Send feedback";
+        $("#form-errors").textContent = error.message || String(error);
+      })
+      .submitFeedback(token, payload);
+  }
+
+  function selected(name) {
+    const input = document.querySelector(`input[name="${name}"]:checked`);
+    return input ? input.value : "";
+  }
+
+  function showState(state) {
+    $("#loading-state").hidden = true;
+    $("#invalid-state").hidden = state !== "invalid";
+    $("#completed-state").hidden = state !== "completed";
+    $("#feedback-form").hidden = state !== "form";
+    $("#success-state").hidden = state !== "success";
+  }
+
+  function formatDate(value) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(String(value || ""))) return value || "—";
+    const parts = value.split("-").map(Number);
+    return new Date(parts[0], parts[1]-1, parts[2]).toLocaleDateString("en-GB", {
+      weekday:"long", day:"numeric", month:"long", year:"numeric"
+    });
+  }
+
+  function cssEscape(value) {
+    return String(value).replace(/(["\\])/g, "\\$1");
+  }
+
+  function escapeHtml(value) {
+    return String(value || "").replace(/[&<>"']/g, char =>
+      ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[char])
+    );
+  }
+
+  document.addEventListener("DOMContentLoaded", init);
+})();
+</script>

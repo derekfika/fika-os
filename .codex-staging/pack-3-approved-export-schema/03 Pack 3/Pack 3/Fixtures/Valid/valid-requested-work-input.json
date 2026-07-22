@@ -1,0 +1,33 @@
+{
+  "schemaVersion": "pack-3-draft-1",
+  "requestedWorkInputId": "req:hospitality-001",
+  "classification": "hospitality_booking",
+  "sourceType": "hospitality_booking",
+  "serviceArrangementId": "arr:angel-court-lunch",
+  "serviceId": "svc:sandwich-lunch",
+  "requestedDateTime": "2026-07-20T12:00:00Z",
+  "destination": "Example destination",
+  "quantitiesSummary": "15 people",
+  "status": "requested",
+  "provenance": {
+    "sourceBdrIds": [
+      "SVC-006"
+    ],
+    "sourceSnapshot": "03 Pack 3-20260714T172736Z-1-001.zip",
+    "authorityRank": "Approved Governed Decision Register"
+  },
+  "audit": {
+    "version": 1,
+    "createdAt": "2026-07-14T17:30:00Z",
+    "createdBy": "role:platform-governance",
+    "updatedAt": "2026-07-14T17:30:00Z",
+    "updatedBy": "role:platform-governance",
+    "events": [
+      {
+        "eventType": "drafted",
+        "occurredAt": "2026-07-14T17:30:00Z",
+        "actorId": "role:platform-governance"
+      }
+    ]
+  }
+}

@@ -1,0 +1,25 @@
+{
+  "schemaVersion": "1.0.0-draft.1",
+  "productionLineId": "production-line:fictional-missing-quantity",
+  "productionOrderId": "production-order:fictional-1001",
+  "ownership": {
+    "organisationalRoleId": "role:fictional-cold-kitchen-owner"
+  },
+  "sourceBookingItemIds": ["booking-item:fictional-1001-sandwiches"],
+  "orderedSnapshot": {
+    "quantity": 10,
+    "unitLabel": "people"
+  },
+  "provenance": {
+    "sourceBdrIds": ["PROD-003", "BOOK-002"],
+    "sourceSnapshot": "local-repository-2026-07-15"
+  },
+  "audit": {
+    "version": 1,
+    "createdAt": "2026-07-15T07:31:00Z",
+    "createdByAssignmentId": "assignment:fictional-production-planner",
+    "updatedAt": "2026-07-15T07:31:00Z",
+    "updatedByAssignmentId": "assignment:fictional-production-planner",
+    "events": []
+  }
+}

@@ -1,0 +1,32 @@
+{
+  "schemaVersion": "1.0.0-draft.1",
+  "eventId": "event:fictional-unqualified-activity",
+  "operationalLocationId": "oploc:fictional-riverside-house",
+  "purpose": "Fictional activity without an Event Contact",
+  "qualificationBasis": {
+    "bespoke": true,
+    "partOfRecurringServiceSchedule": false,
+    "occasionDescription": "Fictional staff activity"
+  },
+  "approval": {
+    "approvingPersonId": "person:fictional-riley-events",
+    "approvingAuthority": {
+      "authorityType": "organisational_role",
+      "authorityReference": "role:events-lead"
+    },
+    "decision": "approved",
+    "decidedAt": "2026-07-14T20:00:00Z"
+  },
+  "provenance": {
+    "sourceBdrIds": ["EVT-001"],
+    "sourceSnapshot": "local-repository-2026-07-14"
+  },
+  "audit": {
+    "version": 1,
+    "createdAt": "2026-07-14T19:45:00Z",
+    "createdByAssignmentId": "assignment:fictional-events-coordinator",
+    "updatedAt": "2026-07-14T20:00:00Z",
+    "updatedByAssignmentId": "assignment:fictional-events-lead",
+    "events": []
+  }
+}

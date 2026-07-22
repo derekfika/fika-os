@@ -1,0 +1,15 @@
+{
+  "schemaVersion": "pack-4-draft",
+  "id": "baa-001",
+  "sourceDecisionIds": [
+    "BOOK-006"
+  ],
+  "bookingId": "booking-001",
+  "actionType": "cancel",
+  "reason": "Customer cancelled request",
+  "auditHistoryPreserved": false,
+  "previousVersion": 1,
+  "newVersion": 2,
+  "createdAt": "2026-07-14T18:45:00Z",
+  "updatedAt": "2026-07-14T18:45:00Z"
+}

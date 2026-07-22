@@ -1,0 +1,67 @@
+{
+  "overrideId": "capoverride:hospitality-example-temporary",
+  "capabilityId": "cap:hospitality",
+  "scope": {
+    "scopeType": "operational_location",
+    "scopeId": "oploc:example",
+    "scopeLabel": "Example Operational Location"
+  },
+  "inheritedValueReference": {
+    "sourceScope": {
+      "scopeType": "domain",
+      "scopeId": "domain:hospitality",
+      "scopeLabel": "Hospitality"
+    },
+    "valueKey": "enablement.default",
+    "displayValue": "disabled"
+  },
+  "resultingValue": {
+    "valueKey": "enablement.default",
+    "displayValue": "enabled for fixture scope",
+    "valueState": "enabled"
+  },
+  "businessReason": "Fixture override for governed enablement.",
+  "ownerRoleId": "role:hospitality-owner",
+  "approval": {
+    "approvedBy": "person:derek",
+    "approvedAt": "2026-07-14T10:00:00Z",
+    "authorityGrantId": "grant:approve-pack-2",
+    "reason": "Approved Pack 2 schema fixture"
+  },
+  "dependencyValidation": {
+    "validatedAt": "2026-07-14T12:00:00Z",
+    "valid": true,
+    "notes": "No protected dependency bypassed."
+  },
+  "status": "active",
+  "effectivePeriod": {
+    "startAt": "2026-07-14T00:00:00Z",
+    "endAt": "2026-12-31T23:59:59Z",
+    "reason": "Draft fixture effective period"
+  },
+  "provenance": {
+    "sourceBdrIds": [
+      "CAP-003",
+      "CFG-002",
+      "CFG-003"
+    ],
+    "sourceSnapshot": "02 Pack 2-20260714T164540Z-1-001.zip",
+    "authorityRank": "Approved GRR"
+  },
+  "audit": {
+    "version": 1,
+    "createdAt": "2026-07-14T12:00:00Z",
+    "createdBy": "role:platform-governance",
+    "updatedAt": "2026-07-14T12:00:00Z",
+    "updatedBy": "role:platform-governance",
+    "events": [
+      {
+        "eventType": "drafted",
+        "occurredAt": "2026-07-14T12:00:00Z",
+        "actorId": "role:platform-governance",
+        "reason": "Pack 2 schema draft fixture"
+      }
+    ]
+  },
+  "unexpectedImplementationField": "must fail because additionalProperties is false"
+}

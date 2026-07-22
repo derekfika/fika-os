@@ -1,0 +1,101 @@
+# Governed Markdown Export Validation Report
+
+- Pack: Pack 3
+- BDRs reviewed: 10
+- Approved amendments/replacements applied: 9
+- Revised Markdown files: 10
+- Retitled BDRs: SVC-006: SVC-006 — Scheduled Work and Booking Boundary
+- Errors: 0
+- Warnings: 85
+
+## Errors
+
+- None
+
+## Warnings
+
+- WARNING: svc-001-service-definition.md: linked document outside ZIP or not supplied: ../domain-discovery/service-domain-discovery.md
+- WARNING: svc-001-service-definition.md: linked document outside ZIP or not supplied: cfg-003-configuration-variation-approval.md
+- WARNING: svc-001-service-definition.md: linked document outside ZIP or not supplied: svc-002-service-terminology.md
+- WARNING: svc-001-service-definition.md: linked document outside ZIP or not supplied: svc-004-service-arrangement-scope.md
+- WARNING: svc-001-service-definition.md: linked document outside ZIP or not supplied: svc-005-recurring-schedule-governance.md
+- WARNING: svc-001-service-definition.md: linked document outside ZIP or not supplied: svc-008-service-event-boundary.md
+- WARNING: svc-001-service-definition.md: linked document outside ZIP or not supplied: svc-010-service-commercial-ownership.md
+- WARNING: svc-001-service-definition.md: linked document outside ZIP or not supplied: svc-003-production-training-domain-boundary.md
+- WARNING: svc-001-service-definition.md: linked document outside ZIP or not supplied: svc-009-coffee-cart-model.md
+- WARNING: svc-001-service-definition.md: linked document outside ZIP or not supplied: cfg-003-configuration-variation-approval.md
+- WARNING: svc-001-service-definition.md: linked document outside ZIP or not supplied: svc-002-service-terminology.md
+- WARNING: svc-001-service-definition.md: linked document outside ZIP or not supplied: svc-004-service-arrangement-scope.md
+- WARNING: svc-001-service-definition.md: linked document outside ZIP or not supplied: svc-005-recurring-schedule-governance.md
+- WARNING: svc-001-service-definition.md: linked document outside ZIP or not supplied: svc-008-service-event-boundary.md
+- WARNING: svc-001-service-definition.md: linked document outside ZIP or not supplied: svc-010-service-commercial-ownership.md
+- WARNING: svc-001-service-definition.md: linked document outside ZIP or not supplied: svc-003-production-training-domain-boundary.md
+- WARNING: svc-001-service-definition.md: linked document outside ZIP or not supplied: svc-009-coffee-cart-model.md
+- WARNING: svc-001-service-definition.md: linked document outside ZIP or not supplied: ../domain-discovery/service-domain-discovery.md
+- WARNING: svc-001-service-definition.md: linked document outside ZIP or not supplied: ../platform-principles.md
+- WARNING: svc-001-service-definition.md: linked document outside ZIP or not supplied: ../platform-methodology/business-discovery-process.md
+- WARNING: svc-002-service-terminology.md: linked document outside ZIP or not supplied: ../domain-discovery/service-domain-discovery.md
+- WARNING: svc-002-service-terminology.md: linked document outside ZIP or not supplied: svc-005-recurring-schedule-governance.md
+- WARNING: svc-002-service-terminology.md: linked document outside ZIP or not supplied: svc-006-scheduled-work-and-booking-boundary.md
+- WARNING: svc-002-service-terminology.md: linked document outside ZIP or not supplied: svc-007-wise-service-arrangements.md
+- WARNING: svc-002-service-terminology.md: linked document outside ZIP or not supplied: svc-009-coffee-cart-model.md
+- WARNING: svc-002-service-terminology.md: linked document outside ZIP or not supplied: svc-001-service-definition.md
+- WARNING: svc-002-service-terminology.md: linked document outside ZIP or not supplied: svc-005-recurring-schedule-governance.md
+- WARNING: svc-002-service-terminology.md: linked document outside ZIP or not supplied: svc-006-scheduled-work-and-booking-boundary.md
+- WARNING: svc-002-service-terminology.md: linked document outside ZIP or not supplied: svc-007-wise-service-arrangements.md
+- WARNING: svc-002-service-terminology.md: linked document outside ZIP or not supplied: svc-009-coffee-cart-model.md
+- WARNING: svc-002-service-terminology.md: linked document outside ZIP or not supplied: ../domain-discovery/service-domain-discovery.md
+- WARNING: svc-002-service-terminology.md: linked document outside ZIP or not supplied: ../platform-principles.md
+- WARNING: svc-002-service-terminology.md: linked document outside ZIP or not supplied: ../platform-methodology/business-discovery-process.md
+- WARNING: svc-003-production-and-training-domain-boundary.md: linked document outside ZIP or not supplied: ../domain-discovery/service-domain-discovery.md
+- WARNING: svc-003-production-and-training-domain-boundary.md: linked document outside ZIP or not supplied: svc-001-service-definition.md
+- WARNING: svc-003-production-and-training-domain-boundary.md: linked document outside ZIP or not supplied: ../domain-discovery/service-domain-discovery.md
+- WARNING: svc-003-production-and-training-domain-boundary.md: linked document outside ZIP or not supplied: ../platform-principles.md
+- WARNING: svc-003-production-and-training-domain-boundary.md: linked document outside ZIP or not supplied: ../platform-methodology/business-discovery-process.md
+- WARNING: svc-004-service-arrangement-scope.md: linked document outside ZIP or not supplied: ../domain-discovery/service-domain-discovery.md
+- WARNING: svc-004-service-arrangement-scope.md: linked document outside ZIP or not supplied: client-001-client-definition.md
+- WARNING: svc-004-service-arrangement-scope.md: linked document outside ZIP or not supplied: loc-001-operational-location.md
+- WARNING: svc-004-service-arrangement-scope.md: linked document outside ZIP or not supplied: svc-001-service-definition.md
+- WARNING: svc-004-service-arrangement-scope.md: linked document outside ZIP or not supplied: ../domain-discovery/service-domain-discovery.md
+- WARNING: svc-004-service-arrangement-scope.md: linked document outside ZIP or not supplied: ../platform-principles.md
+- WARNING: svc-004-service-arrangement-scope.md: linked document outside ZIP or not supplied: ../platform-methodology/business-discovery-process.md
+- WARNING: svc-005-recurring-schedule-governance.md: linked document outside ZIP or not supplied: ../domain-discovery/service-domain-discovery.md
+- WARNING: svc-005-recurring-schedule-governance.md: linked document outside ZIP or not supplied: svc-006-scheduled-work-and-booking-boundary.md
+- WARNING: svc-005-recurring-schedule-governance.md: linked document outside ZIP or not supplied: svc-007-wise-service-arrangements.md
+- WARNING: svc-005-recurring-schedule-governance.md: linked document outside ZIP or not supplied: svc-001-service-definition.md
+- WARNING: svc-005-recurring-schedule-governance.md: linked document outside ZIP or not supplied: svc-002-service-terminology.md
+- WARNING: svc-005-recurring-schedule-governance.md: linked document outside ZIP or not supplied: svc-006-scheduled-work-and-booking-boundary.md
+- WARNING: svc-005-recurring-schedule-governance.md: linked document outside ZIP or not supplied: svc-007-wise-service-arrangements.md
+- WARNING: svc-005-recurring-schedule-governance.md: linked document outside ZIP or not supplied: ../domain-discovery/service-domain-discovery.md
+- WARNING: svc-005-recurring-schedule-governance.md: linked document outside ZIP or not supplied: ../platform-principles.md
+- WARNING: svc-005-recurring-schedule-governance.md: linked document outside ZIP or not supplied: ../platform-methodology/business-discovery-process.md
+- WARNING: svc-006-scheduled-work-and-booking-boundary.md: linked document outside ZIP or not supplied: ../domain-discovery/service-domain-discovery.md
+- WARNING: svc-006-scheduled-work-and-booking-boundary.md: linked document outside ZIP or not supplied: svc-002-service-terminology.md
+- WARNING: svc-006-scheduled-work-and-booking-boundary.md: linked document outside ZIP or not supplied: svc-005-recurring-schedule-governance.md
+- WARNING: svc-006-scheduled-work-and-booking-boundary.md: linked document outside ZIP or not supplied: ../domain-discovery/service-domain-discovery.md
+- WARNING: svc-006-scheduled-work-and-booking-boundary.md: linked document outside ZIP or not supplied: ../platform-principles.md
+- WARNING: svc-006-scheduled-work-and-booking-boundary.md: linked document outside ZIP or not supplied: ../platform-methodology/business-discovery-process.md
+- WARNING: svc-007-wise-service-arrangements.md: linked document outside ZIP or not supplied: ../domain-discovery/service-domain-discovery.md
+- WARNING: svc-007-wise-service-arrangements.md: linked document outside ZIP or not supplied: svc-002-service-terminology.md
+- WARNING: svc-007-wise-service-arrangements.md: linked document outside ZIP or not supplied: svc-005-recurring-schedule-governance.md
+- WARNING: svc-007-wise-service-arrangements.md: linked document outside ZIP or not supplied: ../domain-discovery/service-domain-discovery.md
+- WARNING: svc-007-wise-service-arrangements.md: linked document outside ZIP or not supplied: ../platform-principles.md
+- WARNING: svc-007-wise-service-arrangements.md: linked document outside ZIP or not supplied: ../platform-methodology/business-discovery-process.md
+- WARNING: svc-008-service-and-event-boundary.md: linked document outside ZIP or not supplied: ../domain-discovery/service-domain-discovery.md
+- WARNING: svc-008-service-and-event-boundary.md: linked document outside ZIP or not supplied: svc-001-service-definition.md
+- WARNING: svc-008-service-and-event-boundary.md: linked document outside ZIP or not supplied: evt-001-event-qualification.md
+- WARNING: svc-008-service-and-event-boundary.md: linked document outside ZIP or not supplied: ../domain-discovery/service-domain-discovery.md
+- WARNING: svc-008-service-and-event-boundary.md: linked document outside ZIP or not supplied: ../platform-principles.md
+- WARNING: svc-008-service-and-event-boundary.md: linked document outside ZIP or not supplied: ../platform-methodology/business-discovery-process.md
+- WARNING: svc-009-coffee-cart-model.md: linked document outside ZIP or not supplied: ../domain-discovery/service-domain-discovery.md
+- WARNING: svc-009-coffee-cart-model.md: linked document outside ZIP or not supplied: svc-001-service-definition.md
+- WARNING: svc-009-coffee-cart-model.md: linked document outside ZIP or not supplied: svc-002-service-terminology.md
+- WARNING: svc-009-coffee-cart-model.md: linked document outside ZIP or not supplied: ../domain-discovery/service-domain-discovery.md
+- WARNING: svc-009-coffee-cart-model.md: linked document outside ZIP or not supplied: ../platform-principles.md
+- WARNING: svc-009-coffee-cart-model.md: linked document outside ZIP or not supplied: ../platform-methodology/business-discovery-process.md
+- WARNING: svc-010-service-commercial-ownership.md: linked document outside ZIP or not supplied: ../domain-discovery/service-domain-discovery.md
+- WARNING: svc-010-service-commercial-ownership.md: linked document outside ZIP or not supplied: svc-001-service-definition.md
+- WARNING: svc-010-service-commercial-ownership.md: linked document outside ZIP or not supplied: cfg-001-configuration-ownership.md
+- WARNING: svc-010-service-commercial-ownership.md: linked document outside ZIP or not supplied: ../domain-discovery/service-domain-discovery.md
+- WARNING: svc-010-service-commercial-ownership.md: linked document outside ZIP or not supplied: ../platform-principles.md
+- WARNING: svc-010-service-commercial-ownership.md: linked document outside ZIP or not supplied: ../platform-methodology/business-discovery-process.md

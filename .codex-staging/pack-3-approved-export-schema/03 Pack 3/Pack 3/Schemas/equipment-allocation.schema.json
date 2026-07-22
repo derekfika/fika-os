@@ -1,0 +1,248 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fika.invalid/schemas/pack-3/equipment-allocation.schema.json",
+  "title": "Equipment Allocation",
+  "description": "Allocation of an Equipment asset to a Service Arrangement or Event for a time and location. Draft business schema derived from approved Pack 3 BDR authority; not an implementation model.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "allocationId",
+    "equipmentAssetId",
+    "allocationTargetType",
+    "allocationTargetId",
+    "effectivePeriod",
+    "locationScope",
+    "provenance",
+    "audit"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "type": "string",
+      "const": "pack-3-draft-1"
+    },
+    "allocationId": {
+      "$ref": "#/$defs/stableId"
+    },
+    "equipmentAssetId": {
+      "$ref": "#/$defs/stableId"
+    },
+    "allocationTargetType": {
+      "type": "string",
+      "enum": [
+        "service_arrangement",
+        "event"
+      ]
+    },
+    "allocationTargetId": {
+      "$ref": "#/$defs/stableId"
+    },
+    "staffRequirementSummary": {
+      "type": "string"
+    },
+    "effectivePeriod": {
+      "$ref": "#/$defs/effectivePeriod"
+    },
+    "locationScope": {
+      "$ref": "#/$defs/scope"
+    },
+    "conflictCheckStatus": {
+      "type": "string",
+      "enum": [
+        "not_checked",
+        "clear",
+        "conflict_detected"
+      ]
+    },
+    "provenance": {
+      "$ref": "#/$defs/provenance"
+    },
+    "audit": {
+      "$ref": "#/$defs/audit"
+    }
+  },
+  "$defs": {
+    "stableId": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[A-Za-z][A-Za-z0-9_.:-]*$"
+    },
+    "isoDateTime": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "scopeType": {
+      "type": "string",
+      "enum": [
+        "organisation",
+        "domain",
+        "operational_location",
+        "service",
+        "service_arrangement",
+        "event",
+        "equipment_asset",
+        "client",
+        "other"
+      ]
+    },
+    "scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "scopeType",
+        "scopeId"
+      ],
+      "properties": {
+        "scopeType": {
+          "$ref": "#/$defs/scopeType"
+        },
+        "scopeId": {
+          "$ref": "#/$defs/stableId"
+        },
+        "scopeLabel": {
+          "type": "string"
+        }
+      }
+    },
+    "effectivePeriod": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "startAt"
+      ],
+      "properties": {
+        "startAt": {
+          "$ref": "#/$defs/isoDateTime"
+        },
+        "endAt": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        },
+        "reason": {
+          "type": "string"
+        }
+      }
+    },
+    "approval": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "approvedBy",
+        "approvedAt",
+        "authorityGrantId",
+        "reason"
+      ],
+      "properties": {
+        "approvedBy": {
+          "$ref": "#/$defs/stableId"
+        },
+        "approvedAt": {
+          "$ref": "#/$defs/isoDateTime"
+        },
+        "authorityGrantId": {
+          "$ref": "#/$defs/stableId"
+        },
+        "reason": {
+          "type": "string"
+        }
+      }
+    },
+    "auditEvent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "eventType",
+        "occurredAt",
+        "actorId"
+      ],
+      "properties": {
+        "eventType": {
+          "type": "string"
+        },
+        "occurredAt": {
+          "$ref": "#/$defs/isoDateTime"
+        },
+        "actorId": {
+          "$ref": "#/$defs/stableId"
+        },
+        "reason": {
+          "type": "string"
+        }
+      }
+    },
+    "audit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "version",
+        "createdAt",
+        "createdBy",
+        "updatedAt",
+        "updatedBy",
+        "events"
+      ],
+      "properties": {
+        "version": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "createdAt": {
+          "$ref": "#/$defs/isoDateTime"
+        },
+        "createdBy": {
+          "$ref": "#/$defs/stableId"
+        },
+        "updatedAt": {
+          "$ref": "#/$defs/isoDateTime"
+        },
+        "updatedBy": {
+          "$ref": "#/$defs/stableId"
+        },
+        "events": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/auditEvent"
+          }
+        }
+      }
+    },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sourceBdrIds",
+        "sourceSnapshot",
+        "authorityRank"
+      ],
+      "properties": {
+        "sourceBdrIds": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "pattern": "^SVC-\\d{3}$"
+          }
+        },
+        "sourceSnapshot": {
+          "type": "string"
+        },
+        "authorityRank": {
+          "type": "string",
+          "enum": [
+            "Approved Canon",
+            "Approved Governed Decision Register",
+            "Approved canonical Decision",
+            "Review Doctrine and Authority Model"
+          ]
+        }
+      }
+    }
+  },
+  "x-fika-source-bdrs": [
+    "SVC-009"
+  ],
+  "x-fika-status": "Draft for human review; not adopted"
+}

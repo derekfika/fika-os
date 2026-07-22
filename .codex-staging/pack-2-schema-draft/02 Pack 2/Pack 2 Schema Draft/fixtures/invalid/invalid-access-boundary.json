@@ -1,0 +1,44 @@
+{
+  "accessBoundaryId": "access:oploc-workforce-summary",
+  "informationCategory": "workforce",
+  "permittedAction": "View",
+  "scope": {
+    "scopeType": "operational_location",
+    "scopeId": "oploc:example",
+    "scopeLabel": "Example Operational Location"
+  },
+  "detailLevel": "summary",
+  "businessPurpose": "Operational management within assigned scope.",
+  "domainOwnerId": "domain:operations",
+  "status": "active",
+  "effectivePeriod": {
+    "startAt": "2026-07-14T00:00:00Z",
+    "endAt": null,
+    "reason": "Draft fixture effective period"
+  },
+  "provenance": {
+    "sourceBdrIds": [
+      "ROLE-006",
+      "ROLE-003",
+      "ROLE-004"
+    ],
+    "sourceSnapshot": "02 Pack 2-20260714T164540Z-1-001.zip",
+    "authorityRank": "Approved GRR"
+  },
+  "audit": {
+    "version": 1,
+    "createdAt": "2026-07-14T12:00:00Z",
+    "createdBy": "role:platform-governance",
+    "updatedAt": "2026-07-14T12:00:00Z",
+    "updatedBy": "role:platform-governance",
+    "events": [
+      {
+        "eventType": "drafted",
+        "occurredAt": "2026-07-14T12:00:00Z",
+        "actorId": "role:platform-governance",
+        "reason": "Pack 2 schema draft fixture"
+      }
+    ]
+  },
+  "unexpectedImplementationField": "must fail because additionalProperties is false"
+}

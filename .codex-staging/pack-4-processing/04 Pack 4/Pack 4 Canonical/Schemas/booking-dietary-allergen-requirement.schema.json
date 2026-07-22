@@ -1,0 +1,112 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fika-os.local/schemas/pack-4/booking-dietary-allergen-requirement.schema.json",
+  "title": "Booking Dietary and Allergen Requirement",
+  "description": "Draft business schema for capturing dietary/allergen requirements and customer-facing communication evidence from BOOK-003.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "id",
+    "sourceDecisionIds",
+    "requirementType",
+    "description",
+    "customerDisclosure",
+    "createdAt",
+    "updatedAt"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "type": "string",
+      "const": "pack-4-draft"
+    },
+    "id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "sourceDecisionIds": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1
+    },
+    "createdAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "updatedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "notes": {
+      "type": "string"
+    },
+    "requirementType": {
+      "type": "string",
+      "enum": [
+        "allergy",
+        "dietary",
+        "allergen_matrix",
+        "labelling",
+        "menu_disclosure",
+        "other"
+      ]
+    },
+    "description": {
+      "type": "string",
+      "minLength": 1
+    },
+    "severity": {
+      "type": "string",
+      "enum": [
+        "declared_allergy",
+        "dietary_preference",
+        "information_only",
+        "unknown"
+      ]
+    },
+    "appliesTo": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "bookingItemIds": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "personLabel": {
+          "type": "string"
+        },
+        "groupLabel": {
+          "type": "string"
+        }
+      }
+    },
+    "customerDisclosure": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "required"
+      ],
+      "properties": {
+        "required": {
+          "type": "boolean"
+        },
+        "method": {
+          "type": "string",
+          "enum": [
+            "label",
+            "menu",
+            "allergen_matrix_printout",
+            "other"
+          ]
+        },
+        "evidenceReference": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}

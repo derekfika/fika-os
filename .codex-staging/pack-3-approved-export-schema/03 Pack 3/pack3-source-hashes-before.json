@@ -1,0 +1,198 @@
+﻿[
+    {
+        "Path":  "C:\\FIKA\\.codex-staging\\pack-3-approved-export-schema\\03 Pack 3\\Pack 3 Canonical\\Archive-Certificate.md",
+        "Hash":  "CFD8DE2BCA19F4568BAF9646334BC134AF0451472356B1BA798981CFA7CF2275"
+    },
+    {
+        "Path":  "C:\\FIKA\\.codex-staging\\pack-3-approved-export-schema\\03 Pack 3\\Pack 3 Canonical\\Manifest.md",
+        "Hash":  "0487499538F6F899930A22CDC0635C8F2CD5DE290E67CAD1AD666B9068D61446"
+    },
+    {
+        "Path":  "C:\\FIKA\\.codex-staging\\pack-3-approved-export-schema\\03 Pack 3\\Pack 3 Canonical\\README.md",
+        "Hash":  "BF3D6B687B606EB3D6C18174F02771861C862FAF8368EC28BB1A70AD3821F84B"
+    },
+    {
+        "Path":  "C:\\FIKA\\.codex-staging\\pack-3-approved-export-schema\\03 Pack 3\\Pack 3 Canonical\\Reflection.md",
+        "Hash":  "5B2CB77ABFAD26312DFA317802E235CE0FAC5F7C72EDF8DB92156FF923AC9755"
+    },
+    {
+        "Path":  "C:\\FIKA\\.codex-staging\\pack-3-approved-export-schema\\03 Pack 3\\Pack 3 Canonical\\Markdown\\governed-export-unified.diff",
+        "Hash":  "05BBE6B717B8C2B3B42349E873D1F324513D61AC4509DCD1396FD1BE2D42DBD2"
+    },
+    {
+        "Path":  "C:\\FIKA\\.codex-staging\\pack-3-approved-export-schema\\03 Pack 3\\Pack 3 Canonical\\Markdown\\governed-export-validation-report.md",
+        "Hash":  "B801D1700EC6861C599A26EFD51740C1B1C3F3008DC7A3ABA19007DAC0D50F73"
+    },
+    {
+        "Path":  "C:\\FIKA\\.codex-staging\\pack-3-approved-export-schema\\03 Pack 3\\Pack 3 Canonical\\Markdown\\svc-001-service-definition.md",
+        "Hash":  "B744772E3CD1A4022F99A479949440EFE26EE74ED0F4CAF32A813418E89FD542"
+    },
+    {
+        "Path":  "C:\\FIKA\\.codex-staging\\pack-3-approved-export-schema\\03 Pack 3\\Pack 3 Canonical\\Markdown\\svc-002-service-terminology.md",
+        "Hash":  "45D117C85A3F80675CD46F52CB22B78D55E83C5D1D9D95DE6761EB38197452DD"
+    },
+    {
+        "Path":  "C:\\FIKA\\.codex-staging\\pack-3-approved-export-schema\\03 Pack 3\\Pack 3 Canonical\\Markdown\\svc-003-production-and-training-domain-boundary.md",
+        "Hash":  "4ACC3878E37A563359C419B61E62ABA8813624D16B5EFB780F78712F27B4FB70"
+    },
+    {
+        "Path":  "C:\\FIKA\\.codex-staging\\pack-3-approved-export-schema\\03 Pack 3\\Pack 3 Canonical\\Markdown\\svc-004-service-arrangement-scope.md",
+        "Hash":  "DF1A126428C62C01DD04815012FEA6B88A168F96DB6499B268370918D92094DE"
+    },
+    {
+        "Path":  "C:\\FIKA\\.codex-staging\\pack-3-approved-export-schema\\03 Pack 3\\Pack 3 Canonical\\Markdown\\svc-005-recurring-schedule-governance.md",
+        "Hash":  "28461E6377877AC1A43F10AB7B8FB1FDF31AC7C4CE2370E8F5DE3F9F92B79E61"
+    },
+    {
+        "Path":  "C:\\FIKA\\.codex-staging\\pack-3-approved-export-schema\\03 Pack 3\\Pack 3 Canonical\\Markdown\\svc-006-scheduled-work-and-booking-boundary.md",
+        "Hash":  "3732E157CABE35C8F4B11A643515924F772F53835B5278EFA3A879FFF23DD367"
+    },
+    {
+        "Path":  "C:\\FIKA\\.codex-staging\\pack-3-approved-export-schema\\03 Pack 3\\Pack 3 Canonical\\Markdown\\svc-007-wise-service-arrangements.md",
+        "Hash":  "CE2019386DA21D9847DEBAAFD047601A4119586DBE7818C6209E02BDD38ACABB"
+    },
+    {
+        "Path":  "C:\\FIKA\\.codex-staging\\pack-3-approved-export-schema\\03 Pack 3\\Pack 3 Canonical\\Markdown\\svc-008-service-and-event-boundary.md",
+        "Hash":  "617D6E92D9CBE03C7CBF9F6A754839890150AB2F85211AD8DEDC2DAB5CCAEFA4"
+    },
+    {
+        "Path":  "C:\\FIKA\\.codex-staging\\pack-3-approved-export-schema\\03 Pack 3\\Pack 3 Canonical\\Markdown\\svc-009-coffee-cart-model.md",
+        "Hash":  "F84057E9EEC7A78E3B3F878C9BC9662159C3F8CA4E2F10D01FF22CD725536B54"
+    },
+    {
+        "Path":  "C:\\FIKA\\.codex-staging\\pack-3-approved-export-schema\\03 Pack 3\\Pack 3 Canonical\\Markdown\\svc-010-service-commercial-ownership.md",
+        "Hash":  "499C235559CB6B23EE347143C343B0CB4FCB31273D6ECF9BCE9A070FCAC2FDC6"
+    },
+    {
+        "Path":  "C:\\FIKA\\.codex-staging\\pack-3-approved-export-schema\\03 Pack 3\\Pack 3 Canonical\\Reports\\bdr-to-schema-traceability.md",
+        "Hash":  "1F78111510B16BC1F0A4C1449C69BB4EC55DC74D586B5CB6B3699D2032129D1E"
+    },
+    {
+        "Path":  "C:\\FIKA\\.codex-staging\\pack-3-approved-export-schema\\03 Pack 3\\Pack 3 Canonical\\Reports\\cross-pack-dependency-warnings.md",
+        "Hash":  "8CF95E09DB245ADA5EBAE1F6F31D6B22F58C664CB3350F95DC4E454527212B86"
+    },
+    {
+        "Path":  "C:\\FIKA\\.codex-staging\\pack-3-approved-export-schema\\03 Pack 3\\Pack 3 Canonical\\Reports\\final-pack-readiness-report.md",
+        "Hash":  "79C2E6C273A67CF8E547D2112D36084F291CB8CFC19D0EA446D03CC0E94A3724"
+    },
+    {
+        "Path":  "C:\\FIKA\\.codex-staging\\pack-3-approved-export-schema\\03 Pack 3\\Pack 3 Canonical\\Reports\\schema-design-report.md",
+        "Hash":  "9D21AD92DC5C8FA9089304BC709E54622F0959E892309176CE50D3A272CDA5E7"
+    },
+    {
+        "Path":  "C:\\FIKA\\.codex-staging\\pack-3-approved-export-schema\\03 Pack 3\\Pack 3 Canonical\\Reports\\schema-validation-report.json",
+        "Hash":  "440CB2B47ABF5EA16790CF3881342A3D6D1D447FDBA7355067273ECF919D461F"
+    },
+    {
+        "Path":  "C:\\FIKA\\.codex-staging\\pack-3-approved-export-schema\\03 Pack 3\\Pack 3 Canonical\\Schemas\\equipment-allocation.schema.json",
+        "Hash":  "EE29F2C4817136D955F339508DE3412131D3E154BB76C04115CA83CFE427C53E"
+    },
+    {
+        "Path":  "C:\\FIKA\\.codex-staging\\pack-3-approved-export-schema\\03 Pack 3\\Pack 3 Canonical\\Schemas\\recurring-schedule-exception.schema.json",
+        "Hash":  "599428ED72673127493BC7D9AF3AFB7FA0997D0E929FC871996B36FF10BE185B"
+    },
+    {
+        "Path":  "C:\\FIKA\\.codex-staging\\pack-3-approved-export-schema\\03 Pack 3\\Pack 3 Canonical\\Schemas\\recurring-schedule.schema.json",
+        "Hash":  "1FA2BF95BA1A3BF9C3ABCD55EC92EC2B1F54AB0BE79B0F23FA797BAB8E1B9C69"
+    },
+    {
+        "Path":  "C:\\FIKA\\.codex-staging\\pack-3-approved-export-schema\\03 Pack 3\\Pack 3 Canonical\\Schemas\\requested-work-input.schema.json",
+        "Hash":  "889DDB4190E13D748FD619A1DF31E6DB53096ECB7D2FB8F9D1547A2201EBD8A2"
+    },
+    {
+        "Path":  "C:\\FIKA\\.codex-staging\\pack-3-approved-export-schema\\03 Pack 3\\Pack 3 Canonical\\Schemas\\schema-index.md",
+        "Hash":  "7935972DE2BBC279EA75F588D89B5B447790CD7AE736CC82C4F0018F4ED5E88C"
+    },
+    {
+        "Path":  "C:\\FIKA\\.codex-staging\\pack-3-approved-export-schema\\03 Pack 3\\Pack 3 Canonical\\Schemas\\service-arrangement.schema.json",
+        "Hash":  "44A31E9794ADBB6A0A7D26236FEF1702BFA095E5F74C09DB3E4756346B29856C"
+    },
+    {
+        "Path":  "C:\\FIKA\\.codex-staging\\pack-3-approved-export-schema\\03 Pack 3\\Pack 3 Canonical\\Schemas\\service-commercial-ownership.schema.json",
+        "Hash":  "8D3D198DE74C0F425DF0A0B1C1988ADF379CACD923049F5EBDE45FB0EFFF61AD"
+    },
+    {
+        "Path":  "C:\\FIKA\\.codex-staging\\pack-3-approved-export-schema\\03 Pack 3\\Pack 3 Canonical\\Schemas\\service-domain-dependency.schema.json",
+        "Hash":  "45A9EB107C79CE07CD07BA641580F9B9B3F51C69F3A9AC2AE30E76138F1F0233"
+    },
+    {
+        "Path":  "C:\\FIKA\\.codex-staging\\pack-3-approved-export-schema\\03 Pack 3\\Pack 3 Canonical\\Schemas\\service-event-reference.schema.json",
+        "Hash":  "94D46FEB2BCBCC997AE343835BCFC756A2504656A03825AD92947FA5DB17FE32"
+    },
+    {
+        "Path":  "C:\\FIKA\\.codex-staging\\pack-3-approved-export-schema\\03 Pack 3\\Pack 3 Canonical\\Schemas\\service.schema.json",
+        "Hash":  "414BD2EE0B10D3C3A24B4442D739CD94B5FF1B96DFD022ECDFDA0BE76C5D77CA"
+    },
+    {
+        "Path":  "C:\\FIKA\\.codex-staging\\pack-3-approved-export-schema\\03 Pack 3\\Pack 3 Canonical\\Schemas\\fixtures\\invalid\\invalid-equipment-allocation.json",
+        "Hash":  "F155963BA960BF335A58DCA029C21BF496AF200C29D1D38FDA86DDC2D9BF4C3F"
+    },
+    {
+        "Path":  "C:\\FIKA\\.codex-staging\\pack-3-approved-export-schema\\03 Pack 3\\Pack 3 Canonical\\Schemas\\fixtures\\invalid\\invalid-recurring-schedule-exception.json",
+        "Hash":  "DCFB6E6B3E44F7D5133745349AE1DDDE317A9409BD84D022036FA91B3209002F"
+    },
+    {
+        "Path":  "C:\\FIKA\\.codex-staging\\pack-3-approved-export-schema\\03 Pack 3\\Pack 3 Canonical\\Schemas\\fixtures\\invalid\\invalid-recurring-schedule.json",
+        "Hash":  "1B7FFC4A1FEF15AD776AD03DC6EFA3E2A9ADCEEDADA2461CCEB03278945D748C"
+    },
+    {
+        "Path":  "C:\\FIKA\\.codex-staging\\pack-3-approved-export-schema\\03 Pack 3\\Pack 3 Canonical\\Schemas\\fixtures\\invalid\\invalid-requested-work-input.json",
+        "Hash":  "DF225AC9B137A6D293167F4FD6F6DC77F3FB1C04CFF28D377D086DC491D0BE0C"
+    },
+    {
+        "Path":  "C:\\FIKA\\.codex-staging\\pack-3-approved-export-schema\\03 Pack 3\\Pack 3 Canonical\\Schemas\\fixtures\\invalid\\invalid-service-arrangement.json",
+        "Hash":  "2005FD4F75BDD2C8C99A96AD02317A4A57211258AA99CD7509E83791E8C2C5ED"
+    },
+    {
+        "Path":  "C:\\FIKA\\.codex-staging\\pack-3-approved-export-schema\\03 Pack 3\\Pack 3 Canonical\\Schemas\\fixtures\\invalid\\invalid-service-commercial-ownership.json",
+        "Hash":  "B5C20991EA5FC14496A9BE34ABA6491484197EB3E599D092D7911E7E22240927"
+    },
+    {
+        "Path":  "C:\\FIKA\\.codex-staging\\pack-3-approved-export-schema\\03 Pack 3\\Pack 3 Canonical\\Schemas\\fixtures\\invalid\\invalid-service-domain-dependency.json",
+        "Hash":  "D7E07228FB23762F2DC2CF803558E01F5637E332C0A561273E8C85AAC212E9D6"
+    },
+    {
+        "Path":  "C:\\FIKA\\.codex-staging\\pack-3-approved-export-schema\\03 Pack 3\\Pack 3 Canonical\\Schemas\\fixtures\\invalid\\invalid-service-event-reference.json",
+        "Hash":  "C25899BD4BFB2C73444C3EE84E738D9B38747E2FD5DD3CBD19B5B1967D82E24E"
+    },
+    {
+        "Path":  "C:\\FIKA\\.codex-staging\\pack-3-approved-export-schema\\03 Pack 3\\Pack 3 Canonical\\Schemas\\fixtures\\invalid\\invalid-service.json",
+        "Hash":  "004066DECBCBBF13D6C2087D5326FDE4822864AEB379DCBB4201991242784308"
+    },
+    {
+        "Path":  "C:\\FIKA\\.codex-staging\\pack-3-approved-export-schema\\03 Pack 3\\Pack 3 Canonical\\Schemas\\fixtures\\valid\\valid-equipment-allocation.json",
+        "Hash":  "F4F8429977952D01EF8AB510508BF30F7A69C9B96F771CB86F89FBAD9158151F"
+    },
+    {
+        "Path":  "C:\\FIKA\\.codex-staging\\pack-3-approved-export-schema\\03 Pack 3\\Pack 3 Canonical\\Schemas\\fixtures\\valid\\valid-recurring-schedule-exception.json",
+        "Hash":  "C51C865BCD38204DDE6491DF2073F55C5FDFDE03AF690FBF60DC2B5606558A8E"
+    },
+    {
+        "Path":  "C:\\FIKA\\.codex-staging\\pack-3-approved-export-schema\\03 Pack 3\\Pack 3 Canonical\\Schemas\\fixtures\\valid\\valid-recurring-schedule.json",
+        "Hash":  "7EC07C78E18C22224946DD28350F3CB9923F5F56BFBB60D1D32919EF80DB4B1B"
+    },
+    {
+        "Path":  "C:\\FIKA\\.codex-staging\\pack-3-approved-export-schema\\03 Pack 3\\Pack 3 Canonical\\Schemas\\fixtures\\valid\\valid-requested-work-input.json",
+        "Hash":  "448CA5C055B7F015160822768B6608C14E94292DFFE5749408E2BCD878D63D96"
+    },
+    {
+        "Path":  "C:\\FIKA\\.codex-staging\\pack-3-approved-export-schema\\03 Pack 3\\Pack 3 Canonical\\Schemas\\fixtures\\valid\\valid-service-arrangement.json",
+        "Hash":  "A161E6E82A6062492872A0E01C34AF8E17E2A42E0C3A783A23183661121831A6"
+    },
+    {
+        "Path":  "C:\\FIKA\\.codex-staging\\pack-3-approved-export-schema\\03 Pack 3\\Pack 3 Canonical\\Schemas\\fixtures\\valid\\valid-service-commercial-ownership.json",
+        "Hash":  "4E504A2390A8A9A42541794934B32B50C8621EC28637CB515FD895C8C2ED86F5"
+    },
+    {
+        "Path":  "C:\\FIKA\\.codex-staging\\pack-3-approved-export-schema\\03 Pack 3\\Pack 3 Canonical\\Schemas\\fixtures\\valid\\valid-service-domain-dependency.json",
+        "Hash":  "CF56DBF59BAF6B7FD3FC70D8929B367F4E7270C1AF271B8E148CC10DEFB8FADB"
+    },
+    {
+        "Path":  "C:\\FIKA\\.codex-staging\\pack-3-approved-export-schema\\03 Pack 3\\Pack 3 Canonical\\Schemas\\fixtures\\valid\\valid-service-event-reference.json",
+        "Hash":  "3E3A1D55FE66DEB2873F45F2F77D40E05D8BF46722E4F214433D2A3854C56161"
+    },
+    {
+        "Path":  "C:\\FIKA\\.codex-staging\\pack-3-approved-export-schema\\03 Pack 3\\Pack 3 Canonical\\Schemas\\fixtures\\valid\\valid-service.json",
+        "Hash":  "C81284547B6AC27101B4331646423FB3FA13C9C6C02A458C003435604C2E9AAB"
+    }
+]

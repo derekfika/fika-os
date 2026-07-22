@@ -1,0 +1,34 @@
+{
+  "schemaVersion": "1.0.0-draft.1",
+  "mobilisationPhasePlanId": "mobilisation-phase-plan:fictional-riverside-opening",
+  "mobilisationId": "mobilisation:fictional-riverside-opening",
+  "workshopBaselineReference": "workshop-baseline:fictional-mobilisation-v1",
+  "phases": [
+    {
+      "phaseInstanceId": "phase-instance:fictional-alignment",
+      "phaseReference": "workshop-phase:fictional-alignment",
+      "sequence": 1,
+      "optionalWork": false,
+      "dependencyPhaseInstanceIds": []
+    },
+    {
+      "phaseInstanceId": "phase-instance:fictional-specialist-setup",
+      "phaseReference": "workshop-phase:fictional-specialist-setup",
+      "sequence": 2,
+      "optionalWork": true,
+      "dependencyPhaseInstanceIds": ["phase-instance:fictional-alignment"]
+    }
+  ],
+  "provenance": {
+    "sourceBdrIds": ["MOB-001"],
+    "sourceSnapshot": "local-repository-2026-07-15"
+  },
+  "audit": {
+    "version": 1,
+    "createdAt": "2026-07-15T08:16:00Z",
+    "createdByAssignmentId": "assignment:fictional-mobilisation-coordinator",
+    "updatedAt": "2026-07-15T08:16:00Z",
+    "updatedByAssignmentId": "assignment:fictional-mobilisation-coordinator",
+    "events": []
+  }
+}

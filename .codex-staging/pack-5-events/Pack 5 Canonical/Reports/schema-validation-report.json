@@ -1,0 +1,64 @@
+{
+  "validator": "local deterministic validator for the Draft 2020-12 keywords used by this pack",
+  "schemaSyntaxValid": true,
+  "failures": 0,
+  "results": [
+    {
+      "schema": "event.schema.json",
+      "fixture": "valid-event-contact-event.json",
+      "expected": "pass",
+      "actual": "pass",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "schema": "event.schema.json",
+      "fixture": "valid-occasion-event.json",
+      "expected": "pass",
+      "actual": "pass",
+      "passed": true,
+      "errors": []
+    },
+    {
+      "schema": "event.schema.json",
+      "fixture": "invalid-incomplete-approval.json",
+      "expected": "fail",
+      "actual": "fail",
+      "passed": true,
+      "errors": [
+        "$.approval.approvingAuthority: required property missing"
+      ]
+    },
+    {
+      "schema": "event.schema.json",
+      "fixture": "invalid-missing-approval.json",
+      "expected": "fail",
+      "actual": "fail",
+      "passed": true,
+      "errors": [
+        "$.approval: required property missing"
+      ]
+    },
+    {
+      "schema": "event.schema.json",
+      "fixture": "invalid-missing-event-contact.json",
+      "expected": "fail",
+      "actual": "fail",
+      "passed": true,
+      "errors": [
+        "$.eventContact: required property missing"
+      ]
+    },
+    {
+      "schema": "event.schema.json",
+      "fixture": "invalid-recurring-activity.json",
+      "expected": "fail",
+      "actual": "fail",
+      "passed": true,
+      "errors": [
+        "$.qualificationBasis.bespoke: must equal True",
+        "$.qualificationBasis.partOfRecurringServiceSchedule: must equal False"
+      ]
+    }
+  ]
+}

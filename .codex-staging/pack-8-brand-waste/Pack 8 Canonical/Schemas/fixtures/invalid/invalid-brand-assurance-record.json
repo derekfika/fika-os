@@ -1,0 +1,18 @@
+{
+  "schemaVersion": "1.0.0-draft.1",
+  "brandAssuranceRecordId": "brand-assurance-record.demo-invalid",
+  "brandVariationId": "brand-variation.demo-invalid",
+  "brandStandardReference": "brand-standard.demo-fika-001",
+  "verifiedItems": [],
+  "reviewedAt": "2026-07-15T09:45:00Z",
+  "reviewedByAssignmentId": "assignment.demo-brand-reviewer",
+  "provenance": { "sourceBdrIds": ["BRAND-001"], "sourceSnapshot": "Pack 8 fictional invalid snapshot" },
+  "audit": {
+    "version": 1,
+    "createdAt": "2026-07-15T09:45:00Z",
+    "createdByAssignmentId": "assignment.demo-brand-reviewer",
+    "updatedAt": "2026-07-15T09:45:00Z",
+    "updatedByAssignmentId": "assignment.demo-brand-reviewer",
+    "events": []
+  }
+}

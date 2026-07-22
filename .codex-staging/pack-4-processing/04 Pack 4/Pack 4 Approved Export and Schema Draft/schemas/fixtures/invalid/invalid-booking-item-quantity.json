@@ -1,0 +1,27 @@
+{
+  "schemaVersion": "pack-4-draft",
+  "id": "biq-001",
+  "sourceDecisionIds": [
+    "BOOK-002"
+  ],
+  "bookingItemId": "item-001",
+  "ordered": {
+    "quantity": 10,
+    "unitLabel": "people"
+  },
+  "productionConversion": {
+    "conversionType": "pieces_per_person",
+    "factor": 2,
+    "outputUnitLabel": "pieces",
+    "sourceReference": "TODO-approved-brochure-or-production-process"
+  },
+  "productionQuantity": {
+    "quantity": 20,
+    "unitLabel": "pieces"
+  },
+  "createdAt": "2026-07-14T18:45:00Z",
+  "updatedAt": "2026-07-14T18:45:00Z",
+  "providerPayload": {
+    "x": 1
+  }
+}

@@ -1,0 +1,34 @@
+{
+  "schemaVersion": "1.0.0-draft.1",
+  "mobilisationId": "mobilisation:fictional-missing-accountability",
+  "purpose": "Re-establish a fictional operating scope",
+  "programmeType": "re_establishment",
+  "scope": {
+    "scopeType": "operational_location",
+    "scopeReference": "oploc:fictional-riverside-house"
+  },
+  "governanceEntryReference": "materiality-decision:fictional-remobilisation",
+  "stewardship": {
+    "coordinatorAssignmentId": "assignment:fictional-mobilisation-coordinator",
+    "authorityGrantIds": [],
+    "delegationIds": []
+  },
+  "effectivePeriod": {
+    "effectiveFrom": "2026-07-15"
+  },
+  "phasePlanId": "mobilisation-phase-plan:fictional-riverside-opening",
+  "taskIds": ["mobilisation-task:fictional-coffee-capability"],
+  "readinessAssessmentId": "readiness-assessment:fictional-riverside-opening",
+  "provenance": {
+    "sourceBdrIds": ["MOB-001", "MOB-002", "MOB-003"],
+    "sourceSnapshot": "local-repository-2026-07-15"
+  },
+  "audit": {
+    "version": 1,
+    "createdAt": "2026-07-15T08:15:00Z",
+    "createdByAssignmentId": "assignment:fictional-mobilisation-coordinator",
+    "updatedAt": "2026-07-15T08:15:00Z",
+    "updatedByAssignmentId": "assignment:fictional-mobilisation-coordinator",
+    "events": []
+  }
+}

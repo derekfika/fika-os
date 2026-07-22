@@ -1,0 +1,221 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <base target="_top">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#176f8e">
+  <title>Fika at MNK Hospitality</title>
+  <?!= include_("Styles"); ?>
+</head>
+<body>
+  <header class="site-header">
+    <a class="brand" href="#" aria-label="Fika at MNK Hospitality home">
+      <span class="logo-slot logo-slot-site">
+        <span id="site-logo-svg" class="brand-logo-svg site-brand-logo-svg" hidden></span>
+        <img id="site-logo" class="brand-logo site-brand-logo" hidden>
+        <span id="site-logo-fallback" class="brand-place">Fika</span>
+      </span>
+      <span class="brand-partner">by</span>
+      <span class="logo-slot logo-slot-fika">
+        <span id="fika-logo-svg" class="brand-logo-svg" hidden></span>
+        <img id="fika-logo" class="brand-logo" hidden>
+        <span id="fika-logo-fallback" class="brand-mark">mnk</span>
+      </span>
+    </a>
+    <button class="link-button reset-icon-button" type="button" data-action="reset" aria-label="Start again">
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M21 12a9 9 0 1 1-2.64-6.36"></path>
+        <path d="M21 3v6h-6"></path>
+      </svg>
+    </button>
+  </header>
+
+  <main>
+    <section class="hero">
+      <div class="hero-content">
+        <p class="eyebrow" id="hero-eyebrow">Hospitality brochure 2026</p>
+        <h1 id="hero-title">A fresh force for good.</h1>
+        <p class="hero-copy" id="hero-body">Plan Fika at MNK hospitality across breakfast, lunch, afternoon food, canapes and events in one clear request.</p>
+      </div>
+      <div class="hero-guide" aria-label="Booking overview">
+        <span>Choose</span>
+        <i aria-hidden="true"></i>
+        <span>Plan</span>
+        <i aria-hidden="true"></i>
+        <span>Submit</span>
+      </div>
+    </section>
+
+    <div class="app-shell">
+      <nav class="stepper" aria-label="Booking progress">
+        <button class="step active" data-step-jump="0"><span>01</span> Occasion</button>
+        <button class="step" data-step-jump="1"><span>02</span> Contact</button>
+        <button class="step" data-step-jump="2"><span>03</span> Event</button>
+        <button class="step" data-step-jump="3"><span>04</span> Menu</button>
+        <button class="step" data-step-jump="4"><span>05</span> Dietaries</button>
+        <button class="step" data-step-jump="5"><span>06</span> Review</button>
+      </nav>
+
+      <section class="form-panel">
+        <div id="messages" aria-live="polite"></div>
+
+        <section class="form-step active" data-step="0">
+          <div class="section-heading">
+            <p class="eyebrow">Your occasion</p>
+            <h2>What are we arranging?</h2>
+            <p>We will tailor the menu and notice guidance around your selection.</p>
+          </div>
+          <div id="event-type-grid" class="choice-grid"></div>
+          <div id="notice-guidance" class="guidance"></div>
+        </section>
+
+        <section class="form-step" data-step="1">
+          <div class="section-heading">
+            <p class="eyebrow">Contact details</p>
+            <h2>Who should we speak to?</h2>
+          </div>
+          <div class="field-grid">
+            <label class="field"><span>Name *</span><input name="client.name" autocomplete="name" required></label>
+            <label class="field"><span>Work email *</span><input name="client.email" type="email" autocomplete="email" required></label>
+            <label class="field"><span>Contact number *</span><input name="client.phone" type="tel" autocomplete="tel" required></label>
+            <label class="field"><span>Company name *</span><input name="client.companyName" autocomplete="organization" required></label>
+            <label class="field full"><span>Invoice / purchase order reference <small>(optional)</small></span><input name="client.invoiceReference" placeholder="e.g. PO number, cost centre or internal reference"></label>
+          </div>
+          <div class="remember-contact-row">
+            <label>
+              <input id="remember-contact" type="checkbox">
+              <span><strong>Remember my contact details on this browser</strong><small>Saved only in this browser.</small></span>
+            </label>
+            <button id="forget-contact" class="forget-contact-button" type="button" hidden>Forget saved details</button>
+          </div>
+        </section>
+
+        <section class="form-step" data-step="2">
+          <div class="section-heading">
+            <p class="eyebrow">Event details</p>
+            <h2>When and where?</h2>
+          </div>
+          <div class="field-grid">
+            <label class="field"><span>Event date *</span><input name="event.eventDate" type="date" required></label>
+            <label class="field"><span>Number of guests *</span><input name="event.guestCount" type="number" min="1" step="1" required></label>
+            <label class="field"><span>Start / service time *</span><input name="event.startTime" type="time" required></label>
+            <label class="field"><span>End time</span><input name="event.endTime" type="time"></label>
+            <label class="field"><span>Floor level</span><input name="event.floorLevel" placeholder="e.g. 7"></label>
+            <label class="field"><span>Room or area</span><input name="event.roomOrArea" placeholder="e.g. Boardroom"></label>
+            <label class="field full"><span>Delivery point, if different</span><input name="event.deliveryPoint"></label>
+            <label class="field"><span>Onsite contact name</span><input name="event.onsiteContactName"></label>
+            <label class="field"><span>Onsite contact phone</span><input name="event.onsiteContactPhone" type="tel"></label>
+          </div>
+          <div id="date-guidance" class="guidance"></div>
+        </section>
+
+        <section class="form-step menu-step" data-step="3">
+          <div class="section-heading menu-heading">
+            <div>
+              <p class="eyebrow">Build your menu</p>
+              <h2>Choose what feels right.</h2>
+            </div>
+            <label class="search-box"><span>Search menu</span><input id="menu-search" type="search" placeholder="Try fruit, sushi or canapes"></label>
+          </div>
+          <div id="menu-categories" class="category-tabs"></div>
+          <div id="menu-list" class="menu-list"></div>
+        </section>
+
+        <section class="form-step" data-step="4">
+          <div class="section-heading">
+            <p class="eyebrow">Dietaries & allergens</p>
+            <h2>Help us look after everyone.</h2>
+            <p>Tell us what you know now. The team will confirm final requirements with you.</p>
+          </div>
+          <label class="switch-row">
+            <input name="dietaries.hasDietaries" type="checkbox">
+            <span>There are dietary requirements for this booking</span>
+          </label>
+          <div class="dietary-grid">
+            <label class="field"><span>Vegetarian</span><input name="dietaries.vegetarian" type="number" min="0" value="0"></label>
+            <label class="field"><span>Vegan</span><input name="dietaries.vegan" type="number" min="0" value="0"></label>
+            <label class="field"><span>Gluten-free</span><input name="dietaries.glutenFree" type="number" min="0" value="0"></label>
+            <label class="field"><span>Coeliac</span><input name="dietaries.coeliac" type="number" min="0" value="0"></label>
+            <label class="field"><span>Dairy-free</span><input name="dietaries.dairyFree" type="number" min="0" value="0"></label>
+            <label class="field"><span>Halal</span><input name="dietaries.halal" type="number" min="0" value="0"></label>
+            <label class="field"><span>Other dietary guests</span><input name="dietaries.otherCount" type="number" min="0" value="0"></label>
+          </div>
+          <label class="field full"><span>Allergy details</span><textarea name="dietaries.allergyDetails" rows="3" placeholder="Include the guest, allergen and severity where known"></textarea></label>
+          <label class="check-row warning-check">
+            <input name="dietaries.severeAllergyAcknowledged" type="checkbox">
+            <span>I understand FIKA must be told about severe allergies and cross-contamination risks.</span>
+          </label>
+          <label class="field full"><span>Dietary notes</span><textarea name="dietaries.freeText" rows="3"></textarea></label>
+        </section>
+
+        <section class="form-step" data-step="5">
+          <div class="section-heading">
+            <p class="eyebrow">Review</p>
+            <h2>One last look.</h2>
+          </div>
+          <div id="review-content"></div>
+          <label class="field full"><span>Special instructions</span><textarea name="specialInstructions" rows="3" placeholder="Access, setup, presentation or anything else the team should know"></textarea></label>
+          <div class="acknowledgements">
+            <label class="check-row"><input name="acknowledgements.quoteSubjectToConfirmation" type="checkbox"><span>I understand this is a booking request and is subject to confirmation.</span></label>
+            <label class="check-row"><input name="acknowledgements.noticePolicyAccepted" type="checkbox"><span>I understand the notice and cancellation policies.</span></label>
+            <label class="check-row"><input name="acknowledgements.dietaryResponsibilityAccepted" type="checkbox"><span>I have provided all known dietary and allergen requirements.</span></label>
+          </div>
+        </section>
+
+        <section class="confirmation" id="confirmation" hidden>
+          <p class="eyebrow">Request received</p>
+          <h2>Thank you. We will take it from here.</h2>
+          <p>Your reference is <strong id="confirmation-reference"></strong>.</p>
+          <p>The hospitality team will review availability, labour, equipment and VAT before confirming your booking.</p>
+          <button class="primary-button" type="button" data-action="new-booking">Make another booking</button>
+        </section>
+
+        <footer class="form-actions">
+          <button id="back-button" class="secondary-button" type="button">Back</button>
+          <button id="next-button" class="primary-button" type="button">Continue</button>
+        </footer>
+      </section>
+
+      <aside class="summary-panel">
+        <div class="summary-heading">
+          <p class="eyebrow">Your request</p>
+          <div class="save-status" aria-live="polite">
+            <span class="summary-live-dot" title="Saved automatically"></span>
+            <span id="save-status-text"></span>
+          </div>
+        </div>
+        <div class="summary-meta" id="summary-meta">No occasion selected yet.</div>
+        <div id="summary-items" class="summary-items"></div>
+        <div class="summary-total">
+          <span>Estimated total</span>
+          <strong id="summary-total">£0.00</strong>
+        </div>
+        <p class="fine-print" id="vat-note">Estimated total, subject to final confirmation, VAT, labour and equipment hire where applicable.</p>
+      </aside>
+    </div>
+  </main>
+
+  <div id="reset-modal" class="modal-backdrop" hidden>
+    <section class="reset-modal" role="dialog" aria-modal="true" aria-labelledby="reset-modal-title" aria-describedby="reset-modal-copy">
+      <button id="reset-modal-close" class="modal-close" type="button" aria-label="Close">&times;</button>
+      <div class="modal-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24">
+          <path d="M21 12a9 9 0 1 1-2.64-6.36"></path>
+          <path d="M21 3v6h-6"></path>
+        </svg>
+      </div>
+      <p class="eyebrow">Start again</p>
+      <h2 id="reset-modal-title">Clear this booking?</h2>
+      <p id="reset-modal-copy">This will clear the current booking request from this browser. Saved contact details are kept unless you choose to forget them.</p>
+      <div class="modal-actions">
+        <button id="reset-modal-cancel" class="secondary-button" type="button">Keep booking</button>
+        <button id="reset-modal-confirm" class="danger-button" type="button">Clear and start again</button>
+      </div>
+    </section>
+  </div>
+
+  <script>window.PLATFORM_CONFIG = <?!= platformConfig ?>;</script>
+  <?!= include_("Script"); ?>
+</body>
+</html>
