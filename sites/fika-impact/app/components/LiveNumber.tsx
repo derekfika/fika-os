@@ -1,7 +1,5 @@
 "use client";
 
-import { AnimatePresence, motion } from "framer-motion";
-
 type LiveNumberProps = {
   value: string;
   unit?: string;
@@ -12,18 +10,7 @@ type LiveNumberProps = {
 export function LiveNumber({ value, unit, className = "", label }: LiveNumberProps) {
   return (
     <span className={`live-number ${className}`} aria-label={`${label}: ${value}${unit ? ` ${unit}` : ""}`}>
-      <AnimatePresence mode="wait" initial={false}>
-        <motion.span
-          key={value}
-          className="live-number__value"
-          initial={{ opacity: 0, y: "0.18em" }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: "-0.08em" }}
-          transition={{ duration: 0.34, ease: [0.22, 1, 0.36, 1] }}
-        >
-          {value}
-        </motion.span>
-      </AnimatePresence>
+      <span className="live-number__value">{value}</span>
       {unit && <span className="live-number__unit">{unit}</span>}
     </span>
   );

@@ -10,7 +10,7 @@ import { ImpactMethodView, ImpactTodayView, LivePulseView, LiveServiceView, Tang
 import { PresentationFrame } from "./PresentationFrame";
 
 const VIEW_DURATIONS = [12_000, 14_000, 12_000, 14_000, 12_000] as const;
-const VIEW_TONES = ["warm", "warm", "warm", "purple", "ink"] as const;
+const VIEW_TONES = ["purple", "ink", "ink", "purple", "ink"] as const;
 
 type Simulation = {
   totals: ImpactTotals;
@@ -65,7 +65,7 @@ export function ImpactPresentation({ simulation, monthTotals }: { simulation: Si
     <ImpactTodayView key="today" totals={simulation.totals} />,
     <ImpactMethodView key="method" />,
     <TangibleImpactView key="tangible" totals={simulation.totals} monthTotals={monthTotals} />,
-    <LivePulseView key="pulse" events={simulation.events} monthTotals={monthTotals} />,
+    <LivePulseView key="pulse" events={simulation.events} totals={simulation.totals} />,
   ];
 
   return (
