@@ -1,166 +1,162 @@
 # Target Architecture
 
-> **Classification: Supporting provisional architecture.** Stage 6 is active. This technology-neutral direction must be reconciled with the governed Stage 5 Packs 1–8 before it becomes implementation authority.
+## Status and authority
 
-## Purpose and status
+This is the initial accepted Stage 6 target boundary, governed by [ADR-001](decisions/ADR-001-stage-6-platform-boundaries.md). It is technology-neutral and does not decide deployment topology, storage, hosting, provider or programming language.
 
-This document defines a technology-neutral architectural direction. It does not select a database, hosting model, runtime, deployment platform, or provider. Existing applications can migrate gradually through adapters and repository interfaces.
+Business meaning remains authoritative in the Business Decision Records and completed Packs. This document explains how future software must respect that meaning.
 
-## Architectural layers
+## Architecture at a glance
 
 ```mermaid
-flowchart TB
-  OS["FIKA OS\nExperiences and operational surfaces"]
-  DOM["Domain Modules\nBooking, Hospitality, Production, Events, Logistics, Workforce and Reporting"]
-  CORE["FIKA Core\nSchemas, workflows, configuration, validation, permissions, notifications and brand"]
-  REPO["Repository Interfaces\nAuthoritative records, projections, files, audit and configuration"]
-  INFRA["Storage and External Integrations\nImplementation choices behind adapters"]
-
-  OS --> DOM --> CORE --> REPO --> INFRA
+flowchart TD
+    A["Applications and operational experiences"] --> O["Application orchestration"]
+    O --> D["Logical domain services"]
+    D --> C["Narrow FIKA Core contracts"]
+    D --> R["Repository and projection ports"]
+    O --> P["Provider ports"]
+    R --> I["Storage adapters"]
+    P --> X["External provider adapters"]
+    O --> L["Legacy adapters"]
+    L --> D
 ```
 
-**FIKA OS** is the coherent collection of public, client-facing, administrative, and internal operational experiences. It does not require one user interface or one deployment.
+These are responsibility boundaries, not separate servers.
 
-**Domain Modules** own business meaning and domain-specific workflows. A module may serve several experiences while remaining separate from other domains.
+## Applications and operational experiences
 
-**FIKA Core** supplies shared, versioned capabilities whose business meaning is common across the platform.
+Applications present business capabilities to Legends, clients or other authorised actors. They may coordinate use cases through orchestration, read governed projections and provide early validation feedback. They do not own canonical business meaning and must not reconstruct it from screen state, spreadsheets, messages or provider payloads.
 
-**Repository Interfaces** express how domain records, projections, configuration, files, and audit history are accessed without exposing storage layout to the domain.
+Public experiences and internal operations remain separate experiences even where they use the same domain services. A public booking experience does not inherit internal dashboard authority. An internal dashboard does not become the commercial source of truth merely because it can amend a projection.
 
-**Storage and External Integrations** are replaceable implementation choices connected through adapters. Storage selection remains a later decision based on evidence.
+## Application orchestration
 
-## FIKA OS experiences
+Orchestration coordinates work that crosses domain boundaries. It supplies actor and authority context, invokes domain commands, carries idempotency and correlation references, and coordinates projections, notifications and providers after authoritative changes.
 
-Public experiences and internal operations remain separate presentation and permission boundaries. Hospitality booking channels, The Line, FIKA Events and Pop-ups, internal dashboards, and future operational surfaces may use different journeys and brands while relying on shared domain contracts.
+Orchestration owns sequencing, not domain invariants. It cannot infer authority, bypass a domain service or edit canonical records directly.
 
-Experiences must not create competing sources of truth. They submit commands, read authorised views, and display workflow state through domain contracts.
+## Logical domain services
 
-## Domain modules
+The initial governed boundaries are:
 
-Initially evidenced or planned modules include:
+- Client;
+- Operational Location;
+- Authority and Assignment;
+- Operational Capability;
+- Configuration;
+- Service;
+- Booking;
+- Event;
+- Production;
+- Mobilisation;
+- Brand;
+- Waste.
 
-- Hospitality Booking and customer/service intent;
-- Hospitality Operations and dashboard workflow;
-- Production and CPU preparation;
-- Events as a company-wide internal event model with separate source channels;
-- Logistics downstream of operational demand;
-- Workforce Operations, provisionally in scope pending manual review;
-- Reporting and client-specific operational reporting;
-- document, media, equipment and mobilisation capabilities where future business evidence justifies first-class domains.
+Each owns its canonical records, invariants, lifecycle decisions and business language. Equipment has partial governed evidence but not yet a complete service boundary. Media, Workforce, Logistics, Reporting, Documents and Notifications remain candidate or future domains pending business authority.
 
-Module boundaries must follow business ownership and lifecycle, not current folders or Sheet layouts.
+Logical services do not imply microservices. Several may share one deployment while preserving their contracts and ownership.
 
-## FIKA Core
+## Narrow FIKA Core
 
-### Canonical schemas
+FIKA Core standardises domain-neutral contracts that genuinely recur across governed domains:
 
-Canonical schemas define stable IDs, versions, timestamps, ownership, required/optional fields, validation, and source-of-truth. They are independent of interfaces, sites, storage layouts, and external providers.
+- identifier and reference conventions;
+- schema and record version conventions;
+- effective-time, provenance and audit conventions;
+- actor, assignment and authority-context references;
+- correlation, causation, idempotency and concurrency context;
+- validation-issue and operation-result shapes;
+- domain-event envelope conventions;
+- repository, projection and provider-port conventions.
 
-The Stage 5 baseline contains governed contracts across foundational identity and Operational Location, authority and capability, Service, Booking, Event, Production, Mobilisation, Brand Variation and Waste. The earlier standalone `FikaBooking` material remains supporting draft evidence rather than the only platform contract. Logistics, workforce, reporting and other unresolved concepts still require their applicable governed discovery before schema or implementation work.
+Core does not own domain schemas, records, business rules, workflows, permissions, configuration values, brand meaning, notifications, providers, dashboards or miscellaneous shared utilities.
 
-### Shared workflows
+## Repository and projection ports
 
-Shared workflows coordinate business actions such as booking submission, server-authoritative pricing, acknowledgement, quote/document generation, Calendar projection, notifications, booking-to-production transformation, amendment/cancellation handling, and audit logging.
+A domain repository is a logical contract for loading and durably changing one domain's aggregate. It hides the persistence implementation and returns domain records rather than provider or storage shapes.
 
-They must be idempotent where repeated delivery is possible, version-aware, observable, explicit about partial failure, and safe to migrate gradually.
+A projection port publishes or retrieves a rebuildable consumer view. Projections may optimise dashboards, calendars, documents, operational Sheets and reporting. They must be labelled as projections and must not become the sole record of authoritative business state or audit history.
 
-### Shared configuration
+Repository interfaces do not imply one database per domain or any particular storage technology.
 
-Shared configuration represents sites, branding, enabled capabilities, catalogue references, workflow policies, provider connections, permissions, and operational rules. Safe/public configuration must remain separate from private configuration and secrets.
+## Adapters and providers
 
-Configuration changes require ownership, validation, versioning, auditability, and controlled rollout. Configuration should express genuine variation without hiding different business behaviour.
+Adapters translate at system boundaries:
 
-### Brand system
+- storage adapters implement repository ports;
+- provider adapters implement capabilities such as message, calendar or document delivery;
+- ingestion adapters normalise legacy inputs while preserving provenance;
+- projection adapters update operational views;
+- legacy adapters allow controlled coexistence with current systems.
 
-The brand system supplies reusable identity, content patterns, presentation tokens, and accessibility expectations while allowing confirmed public/client distinctions. Brand configuration must not contain domain rules or private integration data.
+Providers never define canonical concepts. Provider IDs and payloads remain integration metadata unless a governed domain explicitly requires a stable source reference.
 
-### Validation
+## Canonical records, operational execution and read models
 
-Validation occurs at trust boundaries and within authoritative workflows. Client validation improves experience; server/domain validation remains authoritative. Validation errors should identify actionable corrections without exposing sensitive implementation detail.
+| Classification | Meaning |
+|---|---|
+| Canonical authority | Accepted owner of a governed business record and history. |
+| Operational system of execution | Performs day-to-day work using canonical records or governed projections. |
+| Read projection | Rebuildable view optimised for a consumer; no independent business authority. |
+| Provider | External capability behind an adapter. |
+| Legacy transition partner | Current system participating temporarily in a controlled migration. |
+| Planned retirement candidate | System that may be retired only after evidence, reconciliation and acceptance. |
 
-### Notifications
+Unknown current classifications remain TODO. Production use alone does not establish canonical authority.
 
-Notifications are effects of domain workflows, not the source of workflow state. Templates, recipients, channel policy, retry behaviour, delivery evidence, and failure escalation require explicit ownership. Repeated processing must not send unintended duplicates.
-
-### Permissions
-
-Permissions express roles and allowed actions across domains, sites, clients, and experiences. They follow least privilege and must be enforced at authoritative boundaries, not only hidden in interfaces. Important actions require attributable audit records.
-
-## Repository abstraction
-
-Each canonical aggregate should define a repository interface around domain needs, such as retrieving a stable ID/version, creating with idempotency, conditionally updating with an expected version, querying authorised views, and recording domain/audit events.
-
-Separate repository interfaces may serve:
-
-- canonical domain records;
-- operational projections and read models;
-- configuration;
-- files and generated artefacts;
-- integration checkpoints/idempotency;
-- immutable audit history.
-
-The interface contract must not expose physical row numbers, folder layouts, provider object IDs, or query syntax as domain semantics. Implementations may initially use current stores if they satisfy correctness, security, recovery, and performance requirements.
-
-## Adapters
-
-Adapters translate between domain contracts and external or legacy representations. Examples include public-channel submissions, legacy email/forms, Calendar events, file/document formats, notifications, workforce providers, till providers, and reporting projections.
-
-An adapter owns provider-specific references, parsing, retries, rate/permission failures, and mapping diagnostics. It must not silently invent missing business facts. Unresolved input should be rejected or routed to an explicit review workflow.
-
-## Legacy support and migration
-
-Legacy inbox, spreadsheet, quote/form, Calendar-led CPU, and current projection workflows remain supported while replacement paths are introduced. Migration follows these steps:
-
-1. define and validate the target contract;
-2. adapt existing inputs into that contract;
-3. run old and new projections in parallel where risk warrants;
-4. compare results and expose discrepancies;
-5. move authority only with rollback and recovery plans;
-6. retire legacy paths only after usage and retention decisions are confirmed.
-
-No future site should recreate a booking-form spreadsheet by default. A specific operational requirement and documented decision would be required.
-
-## Target booking-to-operations flow
+## Confirmed cross-domain flow
 
 ```mermaid
 flowchart LR
-  CHANNELS["Booking channels"] --> INGEST["Validated ingestion adapters"]
-  INGEST --> BOOKING["Canonical FikaBooking repository"]
-  BOOKING --> HOSP["Hospitality workflow and projections"]
-  BOOKING --> TRANSFORM["Versioned booking-to-production workflow"]
-  TRANSFORM --> PROD["Canonical FikaProductionOrder repository"]
-  PROD --> CPU["CPU operational views"]
-  PROD --> LOG["Future Logistics workflow"]
-  BOOKING --> AUDIT["Audit and integration history"]
-  PROD --> AUDIT
+    B["Booking: commercial and service intent"] -->|"eligible committed Booking version"| O["Orchestration"]
+    O --> P["Production: fulfilment work"]
+    B --> BP["Booking projections"]
+    P --> PP["Production projections"]
+    O --> N["Notification intent or provider port"]
+    B -. "audit and provenance" .-> A["Governed audit context"]
+    P -. "audit and provenance" .-> A
 ```
 
-Calendar, Sheets, files, and dashboards may remain useful projections or integrations. They no longer define booking or production identity and status.
+Booking and Production remain separate authorities. Production determines fulfilment eligibility and owns preparation, routing and production lifecycle. Logistics remains a planned downstream capability and is not defined by this flow.
 
-## Target Events direction
+## Enforcement
 
-Separate experiences for The Line, FIKA sites, FIKA Events and Pop-ups, external venues, and manual channels should normalise into the governed Event contract. The internal Events Dashboard should become the company-wide operational source of truth for events. Stage 6 must now define workflow, permissions, repositories, projections and adapters without changing the Event business meaning.
+- Schemas enforce structure at trust boundaries.
+- Domain services enforce business invariants and lifecycle.
+- AUTHMOD evaluation enforces explicit scoped actions.
+- Orchestration enforces cross-domain sequencing.
+- Adapters enforce provider and transport constraints.
+- Repositories enforce persistence concurrency and uniqueness required by their contract.
 
-## Quality attributes
+User-interface validation improves usability but is not authoritative enforcement.
 
-The architecture should support:
+## Events, notifications and audit
 
-- clear ownership and traceability;
-- optimistic concurrency and duplicate-safe mutations;
-- measurable performance and capacity decisions;
-- recovery from partial processing;
-- least-privilege access and secret isolation;
-- versioned, compatible contracts;
-- accessible, dependable user experiences;
-- gradual, reversible migration.
+Domain events describe accepted business facts after durable domain change. Consumers must be idempotent where they cause effects. Notifications are generated from governed business facts but delivered through channel adapters. Audit must preserve actor, authority context where applicable, change, time, reason, provenance and correlation needed for reconstruction.
+
+Exact event, consistency, retry, retention and notification policies require the follow-up ADRs registered by ADR-001.
+
+## Legacy support and gradual migration
+
+Current applications may continue while boundaries are introduced. Each coexistence path must name:
+
+- the authoritative record;
+- synchronisation direction;
+- conflict and failure handling;
+- reconciliation evidence;
+- rollback approach;
+- accountable acceptance and exit condition.
+
+No legacy path is retired by this architecture document.
 
 ## Decisions deliberately deferred
 
-- database or storage technology;
-- runtime, hosting, messaging, or deployment platform;
-- physical repository implementation;
-- future schema Pack scope and versioning conventions;
-- production authentication and permission model;
-- Events and Logistics architecture and implementation design;
-- production workflow orchestration and any business policy not already settled by Pack 6;
-- migration cutover dates and legacy retirement.
+- deployment topology and service distribution;
+- storage and hosting;
+- event-envelope and delivery guarantees;
+- cross-domain transaction and consistency policy;
+- authentication implementation;
+- projection freshness and rebuild targets;
+- provider selection;
+- final boundaries for candidate domains;
+- legacy retirement timing.

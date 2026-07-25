@@ -1,94 +1,49 @@
-# FIKA Core Brand System
+# Brand Boundary and Presentation System
 
-## Purpose
+## Status
 
-The Brand System provides consistent, governed identity across FIKA OS experiences while allowing approved client brands, white-label arrangements, sites and future Events experiences to remain distinct.
+Stage 6 supporting specification governed by BRAND-001, Pack 8 Human Decision Resolution and [ADR-001](../decisions/ADR-001-stage-6-platform-boundaries.md). Brand business meaning belongs to the Brand domain, not FIKA Core.
 
-Branding is presentation/configuration. It must not redefine domain rules, permissions, recipients, statuses or sources of truth.
+## Governed Brand records
 
-## Brand hierarchy
+Evidence establishes:
 
-1. **FIKA brand:** the primary organisational identity and default design language.
-2. **Experience/domain brand:** an approved expression for a capability such as future Events.
-3. **Client brand:** an approved client identity or co-brand relationship.
-4. **Site override:** a narrowly scoped variation for a site where explicitly allowed.
-5. **Application context:** selects approved brand/version and presentation mode; it does not invent brand values.
+- approved FIKA branding is the default;
+- a deliberate Brand Variation may support an agreed client, co-brand or white-labelled context;
+- every governed variation includes at least one Brand Assurance Record;
+- Marketing and Brand approval identifies authorisation;
+- assurance records what was checked against the applicable Brand Standard;
+- accessibility, usability, quality and consistency must not be compromised.
 
-Precedence and allowed overrides are defined by each brand key. White-labelling must be an explicit brand relationship, not arbitrary removal of FIKA identity.
+The Brand domain owns Brand Variation and Brand Assurance Record. The complete Brand Standard catalogue, lifecycle and ownership details are not yet fully governed.
 
-## Brand definition
+## Configuration relationship
 
-A versioned conceptual brand definition may include:
+Configuration may select an authorised, effective Brand Variation for a governed scope. Configuration does not create the variation, redefine the Brand Standard or grant approval authority. “Site override” is expressed as an Operational Location-scoped configuration only where the relationship is governed.
 
-- stable brand ID, name and status;
-- relationship to parent/co-brand/white-label context;
-- logo asset roles and usage rules;
-- colour palette and semantic colour tokens;
-- typography families, roles and fallback policy;
-- spacing, shape, elevation and motion principles;
-- imagery/art-direction guidance;
-- tone of voice and content guidance;
-- accessibility constraints;
-- approved Media asset references;
-- allowed site/application overrides;
-- effective dates, owner and approval evidence.
+## Presentation concerns
 
-It should reference assets rather than embed implementation-specific paths.
+Applications may render logos, colour palettes, typography, imagery and messaging from an approved brand view or asset reference. Rendering components are reusable presentation assets, not canonical Brand records.
 
-## Logos
+## Media and asset relationship
 
-Define roles such as primary, compact, mark, inverse and co-branded lockup. Each role may have approved variations/renditions, minimum size, clear space, background and accessibility guidance. Applications request a role; they do not select arbitrary files.
+Media storage, transformation and delivery are separate concerns. A Brand record may reference approved assets without owning their binary storage. Future Media capability must not redefine Brand approval or assurance.
 
-## Colour palettes
+## Events
 
-Separate foundational colours from semantic roles such as text, surface, action, success, warning, error and focus. Contrast requirements apply to every effective override. Site/client variations should map semantic roles rather than duplicate application styles.
+An Event may use an authorised Brand Variation or presentation configuration. This does not move Event ownership into Brand or create a new Event-brand business concept without a BDR.
 
-## Typography
+## White-labelling
 
-Define semantic text roles, hierarchy, weights, scale, line spacing and approved fallbacks. Typography choices must remain readable, responsive and available under the approved asset/licence policy.
+White-labelling is an approved Brand Variation, not an application fork. It must remain deliberate, documented, assured and authorised under the governed business scope.
 
-## Assets
+## FIKA Core role
 
-Brand records reference approved Media assets with version, purpose, rights and visibility. Asset replacement creates a governed version/relationship; it does not silently mutate historical generated documents where reproducibility matters.
-
-## White-labelling and client brands
-
-Each relationship must define:
-
-- FIKA visibility and co-branding rules;
-- which tokens/assets/content may be overridden;
-- approval owner and effective period;
-- accessibility and legal constraints;
-- fallback when a client asset is missing/invalid;
-- which generated documents/notifications use which brand.
-
-Client branding must not cause a separate operational truth or fork shared workflows.
-
-## Site overrides
-
-Site overrides are permitted only for keys explicitly marked site-overridable. They require a reason, owner, validation and version. A site should normally select a brand and supply limited approved variations rather than copy the complete brand definition.
-
-## Future Events branding
-
-The internal Events capability and separate public experiences may use distinct brand presentations while sharing a canonical internal event model. Event brand architecture, co-branding and venue/client overrides require discovery. Presentation must not split event identity or lifecycle.
-
-## Future Media Portal integration
-
-A future Media Portal may supply approved asset discovery, rights, rendition and usage information through Media Service. Brand Service remains the authority for which asset role/version is valid in a context; Media Service owns asset metadata/content lifecycle.
-
-## Governance and validation
-
-- Brand owner approves definition and usage policy.
-- Brand Service resolves effective versions and overrides.
-- Media Service validates asset availability/rights/visibility.
-- Validation checks completeness, token types, references, contrast and allowed overrides.
-- Configuration selects brand context without exposing private configuration.
-- Document and Notification Services record the brand version used for reproducibility.
+Core may standardise stable references and configuration-resolution contracts used to retrieve an authorised brand view. Core does not own brand assets, standards, variations, approval or rendering rules.
 
 ## Open questions
 
-- TODO: Confirm brand owners and approval process.
-- TODO: Define initial FIKA tokens, logo roles, typography and accessibility target.
-- TODO: Inventory approved client brands and white-label agreements.
-- TODO: Define Events brand hierarchy and Media Portal ownership.
-- TODO: Define asset licensing, retention and historical-rendering policy.
+- Canonical Brand Standard record and lifecycle.
+- Ownership and effective dating of reusable asset collections.
+- Required assurance checks and evidence retention.
+- Resolution when multiple applicable brand scopes conflict.

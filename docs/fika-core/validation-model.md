@@ -1,80 +1,44 @@
-# FIKA Core Validation Model
+# Validation Boundary
 
-## Purpose
+## Status
 
-Validation prevents structurally invalid, unauthorised, inconsistent or operationally unsafe work from entering authoritative workflows. Validation is layered because no single schema or interface can decide every concern.
+Stage 6 supporting specification governed by [ADR-001](../decisions/ADR-001-stage-6-platform-boundaries.md). FIKA Core may standardise validation-result structure; it does not own domain rules.
 
-Client-side feedback may improve experience but never replaces authoritative validation.
+## Structural validation
 
-## Schema validation
+Canonical schemas define record shape, required fields, formats and closed-property boundaries. Structural validation runs at every trust boundary. A structurally valid record may still be invalid under business, authority or workflow rules.
 
-- **Question:** Is the data structurally compatible with the declared contract version?
-- **Owns:** Types, required/optional fields, formats, enums, ranges and closed/open object policy.
-- **Runs:** At every external/adapter boundary and before persistence/publication.
-- **Does not decide:** Business eligibility, permissions, current state or external existence.
-- **Evidence:** Schema version, validator version and structured issues.
+## Domain validation
 
-## Business validation
+The owning domain service enforces meaning, invariants, lifecycle transitions, effective dates, relationships and approved policy. Domain rules are not duplicated in applications, adapters or Core.
 
-- **Question:** Is the proposed business state meaningful under approved domain policy?
-- **Owns:** Pricing invariants, catalogue choices, notice/minimum rules, status eligibility, quantity/unit rules and domain-specific constraints.
-- **Runs:** Inside the owning domain service using an explicit policy/configuration version.
-- **Does not decide:** Actor permission or provider availability.
-- **Evidence:** Rule codes, severity, field/item references and policy version.
+## Authority validation
 
-## Workflow validation
+AUTHMOD independently evaluates controlled action, organisational role, assignment, scope, effective period, access boundary, delegation and separation of duties. Ownership, capability state and technical access do not substitute for an authority grant.
 
-- **Question:** May this action occur now against this record/version and process state?
-- **Owns:** Preconditions, transition graph, idempotency, expected version, duplicate effects, amendment/cancellation cutoffs and dependency readiness.
-- **Runs:** Before authoritative mutation and before irreversible effects.
-- **Does not decide:** General role policy or structural shape alone.
-- **Evidence:** Workflow/action code, source/current versions and actionable outcome.
+## Orchestration validation
 
-## Permission validation
+Orchestration verifies cross-domain preconditions, source versions, idempotency, sequencing and compensation policy. It must call the owning domain for any domain decision.
 
-- **Question:** May this actor perform this action on this scoped resource?
-- **Owns:** Role/grant/scope/condition evaluation and explicit denial.
-- **Runs:** At authoritative query, command, configuration and administrative boundaries.
-- **Does not decide:** Whether the resulting business state is valid.
-- **Evidence:** Safe decision reason and policy version; sensitive policy details remain protected.
+## Repository validation
 
-## External integration validation
+Repositories enforce durable uniqueness, expected version and other persistence constraints required by the domain contract. A persistence error must not be presented as a successful domain change.
 
-- **Question:** Can external input/output be trusted and mapped, and is the dependency able to accept the request?
-- **Owns:** Source authentication where applicable, provider format/reference mapping, capability/limit checks, response validation and retry classification.
-- **Runs:** In adapters before canonical ingestion and after external responses.
-- **Does not decide:** Missing business facts by assumption.
-- **Evidence:** Adapter/version, stable source reference, mapping diagnostics and dependency outcome.
+## Adapter validation
 
-## Validation result model
+Adapters validate transport, provider and legacy-input constraints and translate failures. They preserve source references and reject or quarantine inputs that cannot safely normalise. They do not repair ambiguous business meaning by guessing.
 
-A shared conceptual result should contain:
+## Application validation
 
-- status: valid, needs review or invalid;
-- stable issue code;
-- severity: information, warning or error;
-- safe human-readable message;
-- domain field or stable item/reference where relevant;
-- validation layer and rule/policy version;
-- validation time and actor/system reference;
-- whether retry, correction, override or manual review is permitted.
+Applications provide timely feedback and accessibility but are not the authoritative enforcement boundary. Every command is revalidated after crossing the application boundary.
 
-Messages are presentation-ready summaries, not the sole machine contract. Stable codes drive automation. Validation results must not expose secrets or unnecessary personal data.
+## Common result
 
-## Submission and revalidation
-
-Preserve the validation result that applied when an authoritative version was created. Later policy changes may produce a separate revalidation/review result; they must not rewrite historical evidence or silently invalidate an accepted record.
-
-Overrides require explicit permission, reason, actor, scope and audit. Some errors should never be overridable; policy owner TODO.
-
-## Legacy input
-
-Legacy adapters may emit `needs review`, unresolved mappings and missing acknowledgement evidence. They must not invent acceptance, catalogue identity, price, dietary allocation or customer facts. Original evidence and parser diagnostics remain outside the canonical aggregate under retention policy.
+A domain-neutral validation issue may carry a stable code, category, affected path or subject, safe message, severity and correlation reference. Exact shape and error-disclosure policy require a later contract decision.
 
 ## Open questions
 
-- TODO: Approve the initial validation-code catalogue and severity semantics.
-- TODO: Define overrideable versus non-overrideable rules and approvers.
-- TODO: Define submission validation versus later review/revalidation storage.
-- TODO: Confirm validation retention, redaction and reporting policy.
-- TODO: Define cross-service validation ordering and performance targets.
+- Common error taxonomy and localisation.
+- Warning versus blocking policy by domain.
+- Quarantine and correction workflow for ambiguous legacy input.
+- Safe disclosure rules for sensitive validation failures.

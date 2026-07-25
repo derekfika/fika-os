@@ -1,133 +1,68 @@
-# FIKA Core Permissions Model
+# Authority and Permission Enforcement Model
 
-## Purpose
+## Status
 
-The permissions model defines conceptually who may perform which action on which resource and scope. It does not define authentication, identity-provider configuration, user-interface visibility or implementation.
+Stage 6 supporting specification governed by ROLE-001–007, CAP-004 and [ADR-001](../decisions/ADR-001-stage-6-platform-boundaries.md). It defines conceptual enforcement boundaries, not authentication or access-control technology.
 
-Permissions are enforced at authoritative service/workflow boundaries. Hiding a control is not authorisation.
+## Governing distinctions
 
-## Core concepts
+- Business ownership identifies the accountable role for meaning or work.
+- Responsibility describes work or accountability associated with a role or domain.
+- Assignment links a named person to a role, responsibility or scope for an effective period.
+- Authority is an explicit AUTHMOD grant to an organisational role for an action, scope and effective period.
+- Permission action is one of the controlled actions View, Contribute, Manage, Approve, Publish and Administer.
+- Capability enablement says a business ability is available; it grants no authority.
+- Technical administration implements controls; it grants no business ownership or authority.
 
-- **Actor:** a stable person or system identity making a request.
-- **Role:** a named collection of responsibilities, not a job title alone.
-- **Permission:** an allowed action on a resource type.
-- **Scope:** where the permission applies: global, domain, client, site, application, record or owned assignment.
-- **Condition:** additional rule such as record status, assignment, time, sensitivity or approval requirement.
-- **Grant:** assignment of a role/permission to an actor or group within scope.
-- **Restriction:** explicit denial or limitation that takes precedence according to policy.
-- **Decision:** allow or deny with a safe reason and policy version.
+No item above may be inferred from another.
 
-## Candidate conceptual roles
+## AUTHMOD evaluation
 
-Roles are provisional and may be combined or specialised after user/owner discovery.
+An authoritative action check considers at least:
 
-### Platform Administrator
+- authenticated actor reference;
+- effective assignment to the applicable organisational role where required;
+- explicit authority grant;
+- controlled action;
+- governed business scope;
+- effective period and status;
+- access boundary, information sensitivity and least privilege;
+- separation-of-duties or approval/publication constraints;
+- applicable delegation or emergency-access evidence.
 
-Manages approved platform-level configuration, role assignments and operational administration. Does not automatically receive unrestricted access to sensitive business records.
+Applications may hide unavailable actions, but the domain-service boundary must enforce the decision. Repository access alone cannot authorise a business action.
 
-### Domain Administrator
+## Approval and publication
 
-Administers one domain's policies/configuration and operational access. Scope may be Hospitality, Events, Production, Logistics, Media, Equipment or Workforce.
+Contribute, Manage, Approve and Publish are separate actions. Approval does not publish, and publication requires the necessary approval. The same person may perform multiple actions only where each is explicitly granted and the owning domain permits it.
 
-### Site Administrator
+## Delegation
 
-Manages authorised site configuration, memberships and operations within one or more sites. Cannot change global policy or other sites.
+Delegation is scoped, auditable, revocable and time-limited. Temporary delegation has a mandatory end date and never transfers ownership or changes the underlying organisational role.
 
-### Booking Operator
+## Emergency access
 
-Reviews bookings and may submit permitted governed amendments/status actions. Cannot bypass commercial policy, concurrency or audit.
+Emergency access is a separate temporary grant for an immediate qualifying need. It is minimum-scope, fixed-duration, fully audited and independently reviewed. Technical seniority or administrator access does not create it.
 
-### Commercial Approver
+## Authentication boundary
 
-Approves quotes, pricing exceptions, discounts or commercial transitions within defined limits. Exact authority TODO.
+Authentication establishes who or what is acting. AUTHMOD establishes what that actor may do in a business scope. The mapping from provider identity to Person, Assignment and authority context requires a follow-up ADR.
 
-### Production Operator
+## System actors
 
-Views and progresses production work, records preparation notes/evidence and raises exceptions. Cannot directly change the authoritative booking.
+Automated processes require explicit identity, purpose, scope and authority appropriate to their actions. They do not inherit the authority of a developer, administrator or initiating application.
 
-### Event Operator
+## No invented role catalogue
 
-Creates, qualifies and manages events within assigned scope. Detailed transitions require Events discovery.
+This specification intentionally defines no candidate Platform Administrator, Site Administrator, operator or viewer roles. Operations Leadership owns the organisation-wide Role Catalogue; domains own responsibilities and authority requirements. Architecture must consume that catalogue rather than invent it.
 
-### Logistics Operator
+## Audit
 
-Plans or progresses authorised logistics work. Detailed role split requires Logistics discovery.
-
-### Equipment Operator
-
-Manages equipment availability, allocations, faults and returns within scope.
-
-### Media Contributor
-
-Submits/indexes assets and metadata but cannot necessarily approve or publish them.
-
-### Media Approver
-
-Approves visibility, rights and publication of media within assigned brand/domain scope.
-
-### Reporting Viewer
-
-Reads authorised operational or executive reporting without mutation rights or unrestricted source-record access.
-
-### Client User
-
-Accesses explicitly shared client-facing records/actions within a client/site scope. Never receives implicit access to internal operational data.
-
-### Auditor
-
-Reads authorised immutable history and configuration/permission changes. Does not mutate business records.
-
-### System Actor
-
-Performs a narrowly defined automated workflow or integration action. Uses least privilege and a stable attributable identity.
-
-## Permission decisions
-
-A decision evaluates:
-
-```text
-actor + action + resource + scope + current context + policy version
-```
-
-The result is allow or deny. “Unknown” should fail closed for authoritative/sensitive actions. Denial messages are actionable without revealing protected policy or record existence.
-
-## Separation of duties
-
-High-risk actions may require different roles or explicit approval, including:
-
-- granting platform/domain administration;
-- publishing global configuration/brand/permission changes;
-- approving exceptional pricing or refunds;
-- accessing/exporting sensitive personal data;
-- deleting/redacting records under retention policy;
-- overriding validation;
-- executing irreversible migration or release actions.
-
-Exact approval thresholds and dual-control rules are TODO.
-
-## Site, client and domain isolation
-
-- Access is scoped explicitly; membership in one site/client does not imply another.
-- Cross-site company roles require deliberate grants.
-- Public/client users receive minimum records/fields/actions required for their experience.
-- Domain permissions do not automatically cross into Workforce, Media, Equipment or reporting.
-- Operational projections enforce the same underlying scope as authoritative records.
-
-## Privacy and audit
-
-Permission evaluation should consider data sensitivity and purpose, not role name alone. Access to personal contact, dietary/allergy, workforce, evidence and audit information requires minimisation and retention policy.
-
-Important allows/denials, role changes, overrides and administrative actions are auditable using safe metadata. Audit visibility is itself permission-controlled.
-
-## Relationship to user preferences and authentication
-
-Authentication establishes actor identity; it does not decide authority. User preferences affect presentation/notifications only and cannot grant permission. External provider permissions are adapter configuration and do not replace Core authorisation.
+Grant, change, evaluation where required, privileged use, expiry and revocation must be reconstructable. Domain audit records should reference the actor and effective authority context without copying the whole authority model into each aggregate.
 
 ## Open questions
 
-- TODO: Confirm actor/user ownership and lifecycle.
-- TODO: Map real business roles, sites, clients and domain responsibilities.
-- TODO: Approve permission/action vocabulary and scope hierarchy.
-- TODO: Define separation-of-duty, approval and emergency-access rules.
-- TODO: Define personal-data classification, retention and audit-access policy.
-- TODO: Define system-actor creation, rotation, review and deactivation governance.
+- Authentication identity mapping.
+- Service-to-service and delegated system authority.
+- Decision-cache validity and revocation propagation.
+- Domain information classifications and restricted-field projections.

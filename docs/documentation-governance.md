@@ -46,7 +46,7 @@ Draft, proposed and planned documents are never adopted authority merely because
 | `docs/platform-principles.md` | Canonical | Enduring platform principles |
 | `docs/platform-domain-map.md` | Canonical | Highest-level business-domain relationships and terminology |
 | `docs/current-system-map.md` | Canonical current-state record | Evidence-backed classification of current systems, projections and adapters |
-| `docs/target-architecture.md` | Supporting, provisional | Technology-neutral architecture input for Stage 6; not implementation authority |
+| `docs/target-architecture.md` | Accepted architecture | Initial technology-neutral Stage 6 boundary governed by ADR-001; not implementation or deployment authority |
 | `docs/future-platform-domains.md` | Supporting | Long-term domain candidates, not commitments |
 | `docs/stage-1-review.md` | Historical | Closure record for the original platform-foundations work |
 | `docs/documentation-governance.md` | Canonical | Authority order and document classification |
@@ -60,8 +60,9 @@ Draft, proposed and planned documents are never adopted authority merely because
 | `docs/schema-reviews/fika-booking-v1-review.md` | Supporting review | Formal review of the earlier supporting schema draft |
 | `docs/decisions/ADR-003-canonical-booking-and-ingestion-adapters.md` | Supporting proposed ADR | Proposed technical/architectural direction; subject to BDR and schema reconciliation |
 | `docs/decisions/ADR-004-booking-to-production-boundary.md` | Supporting accepted ADR | Architectural boundary evidence; business wording must align with BDRs |
+| `docs/decisions/ADR-001-stage-6-platform-boundaries.md` | Accepted ADR | Initial Stage 6 responsibility model constrained by Packs 1–8 and approved business authority |
 | `docs/decisions/README.md` | Canonical ADR index | Architectural Decision Record guidance, distinct from BDRs |
-| `docs/fika-core/*.md` | Supporting specification | Preliminary Stage 6 conceptual service, repository and workflow boundaries |
+| `docs/fika-core/*.md` | Supporting Stage 6 specification | Catalogues constrained by ADR-001; do not independently create business authority |
 | `docs/engineering/*.md` | Canonical engineering standards | Delivery, testing, review and AI-working standards |
 | `inventory/applications.md` | Supporting evidence | Application inventory |
 | `inventory/data-sources.md` | Supporting evidence | Data-source inventory |

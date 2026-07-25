@@ -194,7 +194,7 @@ Dashed arrows denote supporting, consumer or provisional relationships rather th
 - **Depends on:** Booking or other approved demand source, Operational Location, Configuration, Equipment where relevant, Permissions, Validation and Audit.
 - **Consumers:** CPU operational views, Logistics, Notifications and Reporting.
 - **Current maturity:** Booking-to-Production boundary and Pack 6 Production contracts are complete and integrated; workflow architecture remains Stage 6 work.
-- **Examples:** Future production order derived from an eligible booking ID/version; current CPU Orders is an operational projection only.
+- **Examples:** A governed Production Order derived from an eligible Booking version; current CPU Orders is an operational projection only.
 
 ### Logistics
 
@@ -442,7 +442,7 @@ Participation rules:
 | Business discovery | Complete | 54 canonical decisions; 100%; no review items | Continue through governed increments |
 | Business Decision Records | Complete | 54 exact Decision sections preserved in repository BDRs | Add or amend only through BDR governance |
 | Schema design | Complete for Packs 1–8 | 51 integrated schemas and 104 fixtures freshly validated | Extend through future governed Packs |
-| Platform architecture | Active | Target/FIKA Core conceptual drafts plus completed Stage 5 baseline | Reconcile boundaries and create required ADRs |
+| Platform architecture | Active | Initial target boundary and narrow FIKA Core accepted through ADR-001 | Complete follow-up ADRs before implementation |
 | Implementation | Planned | Existing applications remain current implementations | No new platform build without upstream gates |
 | Validation and rollout | Planned | Engineering standards exist | Apply to authorised increments |
 | Continuous discovery | Planned ongoing | Proven workbook method documented | Activate when new evidence arises |
@@ -478,7 +478,7 @@ No additional business domains are asserted.
 
 ## Next governed work
 
-Stage 6 must reconcile the preliminary architecture and FIKA Core catalogues with the completed Packs 1–8. It must define service, repository, projection and adapter boundaries without selecting storage prematurely or rewriting business meaning. Any missing business policy returns to the BDR process.
+Stage 6 has reconciled the initial architecture and FIKA Core catalogues with completed Packs 1–8 through ADR-001. The next work is to define the event, consistency, projection, identity-enforcement and legacy-coexistence contracts registered there. Missing business policy returns to the BDR process.
 
 ## 8. Architectural North Star
 

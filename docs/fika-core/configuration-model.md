@@ -1,113 +1,55 @@
-# FIKA Core Configuration Model
+# Configuration Boundary
+
+## Status
+
+Stage 6 supporting specification governed by CFG-001–003, CAP-003 and [ADR-001](../decisions/ADR-001-stage-6-platform-boundaries.md). Configuration is a governed domain responsibility, not content owned by FIKA Core.
 
 ## Purpose
 
-Configuration expresses approved variation without copying applications or hiding different business behaviour. It is versioned, owned, validated, auditable and resolved independently from physical storage.
+Configuration expresses an authorised variation in how an approved business capability or application behaves within an explicit scope. It must not redefine canonical meaning, create authority or bypass protected rules.
 
-Configuration is not a substitute for canonical records, workflow state, secrets management or unresolved policy.
+## Governed scopes
 
-## Configuration scopes
+Evidence confirms organisation-wide, Client, Brand, Operational Capability, Operational Location, Application and other domain-scoped configuration may exist. A scope is used only where its owning domain has defined the relationship.
 
-### Global
+No universal precedence sequence is assumed. In particular, “Global → Brand → Site → Application → User” is not a canonical inheritance chain.
 
-- **Purpose:** Platform-wide defaults, supported capabilities, common policy references and shared vocabulary.
-- **Owner:** Platform architecture/governance owner: TODO.
-- **Examples:** default locale/time conventions, supported feature keys, common validation-policy references.
-- **Must not contain:** site/client-specific behaviour, secrets or mutable business records.
+## Ownership, authority and administration
 
-### Brand
+- An accountable organisational role owns configuration for its business scope.
+- Approval authority is granted separately through AUTHMOD.
+- An authorised role may administer approved configuration without acquiring ownership.
+- Platform Governance implements representation and assesses cross-domain impact; it does not become business authority.
+- Temporary delegation has an explicit scope, fixed end date and audit history and never transfers ownership.
 
-- **Purpose:** Identity and presentation defaults for FIKA or an approved client/experience brand.
-- **Owner:** Brand/business owner: TODO.
-- **Examples:** brand version/reference, tokens, typography, asset roles and white-label policy.
-- **Must not contain:** booking rules, recipients, permissions or private provider values.
+## Inheritance and variation
 
-### Site
+- Values inherit only through explicitly governed scope relationships.
+- A more specific applicable value overrides a broader applicable value only where that relationship and precedence are governed.
+- An absent value inherits the nearest valid effective value.
+- A variation records inherited value, resulting value, scope, reason, owner, approval, effective period, validation and audit.
+- Expiry reveals the next valid inherited value; it does not copy or rewrite history.
+- User or application settings cannot override protected business rules without explicit authority.
 
-- **Purpose:** Approved variation for a stable FIKA/client site.
-- **Owner:** Site operational owner with platform governance: TODO.
-- **Examples:** enabled capabilities, catalogue/policy references, location defaults, operational labels and brand selection.
-- **Must not contain:** copied application code, user-specific preferences or ungoverned external identifiers as domain identity.
+## Capability relationship
 
-### Application
+Capability enablement and configuration are separate. Enablement states whether an approved ability is available in a scope. Configuration controls authorised values within that ability. Neither creates permission, assignment or business meaning.
 
-- **Purpose:** Behaviour and presentation settings for one application capability/deployment context.
-- **Owner:** Application/service owner: TODO.
-- **Examples:** enabled modules, supported views, non-sensitive integration feature settings and projection policy.
-- **Must not contain:** canonical business records, hardcoded site rules disguised as flags or secrets.
+## Secrets
 
-### User
+Secrets and credentials are operational security material. They do not participate in business configuration inheritance and never enter canonical records. Their implementation and custody remain undecided.
 
-- **Purpose:** Individual preferences that do not change shared business truth or permissions.
-- **Owner:** User within organisational policy.
-- **Examples:** display preferences, saved filters, accessibility preferences and notification preferences.
-- **Must not contain:** role grants, authoritative status, shared workflow rules or credentials.
+## Application preferences
 
-### Secrets
+A personal or application preference is configuration only if the owning business scope permits it. Presentation preferences must not be promoted into canonical business meaning.
 
-- **Purpose:** Sensitive credentials and private connection material required by authorised adapters.
-- **Owner:** Security/operational owner: TODO.
-- **Boundary:** Secrets are referenced by opaque configuration keys and resolved only within authorised execution. Values are never returned as normal configuration, committed, logged, copied into domain records or exposed to clients.
+## Enforcement
 
-## Ownership and inheritance
-
-Recommended effective-value order:
-
-```text
-Global defaults
-  -> Brand defaults where presentation applies
-  -> Site overrides
-  -> Application overrides
-  -> User preferences where explicitly permitted
-```
-
-Inheritance applies only to keys whose definition permits that scope. A user preference cannot override a business rule, permission or site authority. Brand and site precedence must be declared per key when both apply.
-
-Every configuration key should define:
-
-- stable key and description;
-- data type and validation;
-- allowed scopes;
-- default and whether absence is valid;
-- owner and approver;
-- safe/private/secret classification;
-- inheritance and override rule;
-- compatibility/version policy;
-- effective and retirement dates where needed;
-- affected services/applications;
-- audit and rollout requirements.
-
-## Change lifecycle
-
-1. propose change with reason and scope;
-2. validate structure, references, permissions and compatibility;
-3. review by owner/approver;
-4. publish a version with effective timing;
-5. resolve deterministically and expose safe diagnostics;
-6. monitor affected workflows;
-7. roll back or supersede, never silently rewrite history;
-8. retire after consumers and retention are confirmed.
-
-## Safe failure
-
-- Missing required configuration blocks the affected action with an actionable error.
-- Invalid overrides do not silently fall back when that could change business behaviour.
-- The effective configuration version is recorded with important workflow results.
-- Stale configuration changes use expected-version conflict handling.
-- Applications may cache configuration only with version/invalidation semantics.
-
-## Boundaries
-
-- Catalogue content may have its own domain/repository; configuration references it.
-- Permissions are evaluated by Permission Service; configuration supplies policy inputs only.
-- Brand Service resolves brand; configuration selects context/overrides.
-- Integration adapters own provider mapping; configuration supplies validated references.
-- Operational projections may display effective configuration but are not its authority.
+The Configuration domain resolves effective values and validates governed relationships. AUTHMOD evaluates authority. Consuming domains enforce protected business rules. Adapters prevent secrets and provider details from leaking into canonical values.
 
 ## Open questions
 
-- TODO: Confirm configuration owners and approval forum.
-- TODO: Define the initial key catalogue and scope matrix.
-- TODO: Decide safe/private classification policy and secret-reference governance.
-- TODO: Define effective-date, environment/context and emergency-change rules.
-- TODO: Define compatibility, cache and rollback expectations.
+- Which scopes and precedence rules apply to each configuration family.
+- Configuration publication and rollback policy.
+- Review cadence and materiality thresholds.
+- Secret-management implementation.

@@ -1,125 +1,74 @@
-# FIKA Core Repository Catalogue
+# Repository and Port Catalogue
 
-## Purpose and rules
+## Status
 
-Repositories are conceptual interfaces between domain services and persistence. They describe required responsibilities, consistency and query boundaries without selecting storage, runtime, protocol or provider.
+Stage 6 supporting catalogue governed by [ADR-001](../decisions/ADR-001-stage-6-platform-boundaries.md). It defines logical responsibilities only and selects no storage technology.
 
-Repository interfaces should:
+## Repository rules
 
-- use domain identities and versions rather than rows, paths or provider IDs;
-- support optimistic concurrency and idempotent creation where relevant;
-- distinguish canonical records, projections, configuration, files, checkpoints and audit history;
-- enforce authorised access through service/workflow boundaries;
-- state not-found, conflict and partial-failure outcomes;
-- support migration/reconciliation without changing domain meaning;
-- avoid business policy beyond persistence invariants.
+- A canonical aggregate has one logical repository contract owned with its domain.
+- Contracts use canonical identifiers and records, not tables, files, provider payloads or UI rows.
+- Domain services are the write boundary; applications do not write repositories directly.
+- Repositories preserve concurrency, versioning, history and uniqueness required by the governed domain.
+- Cross-domain joins belong in orchestration or projections, not hidden inside a domain repository.
+- A repository interface does not imply a separate database or deployment.
 
-## BookingRepository
+## Governed domain repositories
 
-- **Responsibility:** Persist and retrieve canonical booking aggregates and immutable historical versions.
-- **Required capabilities:** Create idempotently; get current/specific version; conditionally update by expected version; query authorised booking references; preserve source-reference uniqueness; expose history linkage.
-- **Does not own:** Status-transition policy, pricing, dashboard projections or raw legacy sources.
+| Repository boundary | Canonical responsibility | Must not expose |
+|---|---|---|
+| ClientRepository | Client, Contact and governed relationship records | Operational Location internals or Booking data |
+| OperationalLocationRepository | OPLOC identity, aliases, lifecycle and Location Type history | address/provider/application models |
+| AuthorityRepository | Roles, responsibilities, assignments, grants, access boundaries and emergency access | authentication-provider objects or inferred authority |
+| CapabilityRepository | Catalogue, dependency, enablement and override records | domain rules disguised as capability data |
+| ConfigurationRepository | Effective-dated configuration and authorised variations | secrets or universal precedence assumptions |
+| ServiceRepository | Services, Arrangements, Recurring Schedules and exceptions | Booking, Event or Production aggregates |
+| BookingRepository | Booking aggregate and governed version/amendment history | parser internals, dashboard state or Production state |
+| EventRepository | Event and auditable approval record | Calendar/provider event as authority |
+| ProductionRepository | Orders, Lines, routing and change history | customer-facing Booking state |
+| MobilisationRepository | Mobilisation programme, plan, tasks and readiness | routine operational task lists without mobilisation governance |
+| BrandRepository | Brand Variations and Brand Assurance Records | media binaries or rendering implementation |
+| WasteRepository | Waste Events and Dispositions | Improvement Actions or report projections |
 
-## SiteRepository
+The names are architectural labels, not prescribed code names.
 
-- **Responsibility:** Persist stable site records, lifecycle and authorised site relationships.
-- **Required capabilities:** Get/list sites by stable identity and authorised scope; conditionally update; resolve aliases without making them identity.
-- **Does not own:** Effective configuration resolution, brand inheritance or provider configuration.
+## Projection ports
 
-## EventRepository
+Projection ports accept committed domain facts or retrieve rebuildable views for an identified consumer. Each projection specification must state:
 
-- **Responsibility:** Persist future canonical event aggregates and versions.
-- **Required capabilities:** Idempotent creation from channels; versioned mutation; retrieve pipeline/query views; preserve source references and lifecycle history linkage.
-- **Does not own:** Public experience state, Calendar projections, equipment allocations or logistics jobs.
+- source canonical records and versions;
+- consumer and purpose;
+- refresh or lag expectation;
+- rebuild and reconciliation method;
+- sensitive-field restrictions;
+- whether any user-entered operational state is separately authoritative.
 
-## ProductionRepository
+Dashboard, reporting, Calendar, document and Sheet views are projection candidates. A projection is never the only durable audit history.
 
-- **Responsibility:** Persist future production orders/lines and their source booking/event version links.
-- **Required capabilities:** Idempotent creation; versioned amendments; status/progress mutation; query production plans; retain cancellation/amendment disposition.
-- **Does not own:** Booking pricing/status, CPU UI filters or raw parser data.
+## Provider ports
 
-## EquipmentRepository
+Provider ports express the capability required by orchestration or a domain without importing provider concepts. Candidate port categories include notification delivery, document rendering, file storage, calendar delivery and external workforce access. Their existence does not establish a new business domain.
 
-- **Responsibility:** Persist equipment identity, type, condition, allocation and maintenance state.
-- **Required capabilities:** Retrieve availability; reserve/release with conflict protection; record movements/faults/maintenance; query by site/status.
-- **Does not own:** Commercial equipment charges or logistics routing.
+Provider adapters own translation, authentication to the provider, retries required by the provider contract and provider identifiers. They do not decide business eligibility or approval.
 
-## MediaRepository
+## Legacy adapter ports
 
-- **Responsibility:** Persist media metadata, versions/renditions, ownership, rights, visibility and usage references.
-- **Required capabilities:** Register metadata; version/update; search authorised metadata; link usage; apply lifecycle/retention state.
-- **Does not own:** Binary implementation, brand policy or operational evidence decisions.
+Legacy ingestion and coexistence ports preserve stable source references, normalise input and expose reconciliation evidence. They must identify the authoritative direction and must not allow circular write-back to create competing truth.
 
-## ConfigurationRepository
+Examples supported by current evidence include Angel Court email ingestion and Calendar-led CPU ingestion. Their continued use is transitional unless later evidence establishes a different classification.
 
-- **Responsibility:** Persist versioned configuration values by scope with ownership, validity and audit linkage.
-- **Required capabilities:** Get scope/version; publish conditional change; list overrides; retrieve effective-input set; retain history.
-- **Does not own:** Inheritance policy, secret values, business records or permission decisions.
+## Integration checkpoint records
 
-## BrandRepository
+An integration checkpoint may record delivery attempts, idempotency, provider references and reconciliation status. It is integration/audit metadata, not a domain aggregate. Its exact common contract requires a follow-up ADR.
 
-- **Responsibility:** Persist versioned brand definitions, token sets, asset references and approved override relationships.
-- **Required capabilities:** Retrieve brand/version; publish conditional update; list hierarchy/overrides; retain prior versions.
-- **Does not own:** Media content storage, application layout or business configuration.
+## Candidate repositories
 
-## DocumentRepository
-
-- **Responsibility:** Persist document metadata, source-record/version relationships, generation state, artefact references and supersession history.
-- **Required capabilities:** Idempotent generation record; get version/status; record success/failure; supersede/archive; list authorised documents.
-- **Does not own:** Domain pricing, template business policy or physical file implementation.
-
-## QuoteRepository
-
-- **Responsibility:** Persist future quote aggregates, versions, status and source relationships.
-- **Required capabilities:** Create/version conditionally; retrieve current/history; query by source/customer/status; link document versions.
-- **Does not own:** Booking state, generated artefact content or delivery attempts.
-
-## UserRepository
-
-- **Responsibility:** Persist stable platform actor profiles, active state and organisational memberships.
-- **Required capabilities:** Resolve stable actor/external reference; retrieve authorised profile; update conditionally; list memberships.
-- **Does not own:** Credentials, authentication sessions, employee master data or permission policy.
-
-## PermissionRepository
-
-- **Responsibility:** Persist conceptual roles, grants, restrictions, scope assignments and policy versions.
-- **Required capabilities:** Retrieve effective policy inputs; assign/revoke conditionally; list role definitions and scoped assignments; retain change history.
-- **Does not own:** Authorisation evaluation, user identity or UI visibility.
-
-## NotificationRepository
-
-- **Responsibility:** Persist notification intents, deduplication keys, channel requests, attempts, outcomes and suppression/preference decisions.
-- **Required capabilities:** Create idempotently; claim/record attempt; schedule/retry/cancel; query status; retain delivery evidence under policy.
-- **Does not own:** Source domain state, recipient identity or channel transport.
-
-## AuditRepository
-
-- **Responsibility:** Append and retrieve immutable, attributable audit events under access and retention rules.
-- **Required capabilities:** Append once; query by record/version/actor/action/time; verify integrity/completeness; apply approved redaction treatment without rewriting business history improperly.
-- **Does not own:** Current state, debug logs or raw sensitive payloads.
-
-## ProjectionRepository
-
-- **Responsibility:** Maintain rebuildable operational/read projections linked to canonical record IDs and versions.
-- **Required capabilities:** Upsert idempotently from source version; query view; record projection checkpoint/error; rebuild/reconcile; identify staleness.
-- **Does not own:** Canonical business identity/status or direct authoritative mutation.
-
-## IntegrationCheckpointRepository
-
-- **Responsibility:** Persist adapter source references, idempotency/checkpoints, attempts, mapping diagnostics and reconciliation state.
-- **Required capabilities:** Claim source idempotently; record attempt/outcome; resume/retry; query unresolved inputs; link canonical output.
-- **Does not own:** Canonical domain facts or raw content beyond approved evidence references.
-
-## Repository relationships
-
-Services use canonical repositories to change domain state. Workflows request projections, documents, notifications and integrations after authoritative success. Audit and checkpoint records preserve traceability without being embedded into aggregates.
-
-No application should bypass an authoritative service to mutate a canonical repository. Read models may be accessed through authorised query services where direct domain mutation is impossible.
+Equipment, Media, Workforce, Logistics, Reporting, Document, Notification and Quote repositories are not adopted by this catalogue. They require a governed domain boundary or a proven port responsibility first.
 
 ## Open questions
 
-- TODO: Decide aggregate history and audit-history relationship.
-- TODO: Define cross-repository transaction, outbox/effect and compensation expectations conceptually.
-- TODO: Confirm query/read-model ownership and acceptable consistency.
-- TODO: Define retention, deletion, redaction, backup, restoration and reconciliation requirements per repository.
-- TODO: Confirm repository contract versioning and migration compatibility rules.
+- Standard optimistic-concurrency contract across repositories.
+- Cross-domain consistency and compensation policy.
+- Event outbox or equivalent durability requirement.
+- Projection rebuild and retention targets.
+- Whether shared audit conventions require one logical AuditRepository.

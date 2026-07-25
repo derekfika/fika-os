@@ -21,6 +21,7 @@ The repository contains all 54 durable Business Decision Records and the integra
 5. Use [domain discovery](docs/domain-discovery/) and [business journeys](docs/business-journeys/) as supporting evidence.
 6. Use [Business Decision Records](docs/business-decisions/README.md) for canonical business meaning.
 7. Use the integrated [`schemas/`](schemas/README.md) baseline as an input to Stage 6; existing pre-Pack booking material remains supporting draft evidence.
+8. Use the [accepted target architecture](docs/target-architecture.md) and [ADR-001](docs/decisions/ADR-001-stage-6-platform-boundaries.md) for the initial Stage 6 responsibility boundaries.
 
 ## Repository navigation
 

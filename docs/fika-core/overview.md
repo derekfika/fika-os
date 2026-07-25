@@ -2,140 +2,103 @@
 
 ## Status
 
-First conceptual draft. This specification is not an implementation, deployment plan, adopted schema catalogue, or authority to refactor existing applications.
+Stage 6 supporting specification constrained by [ADR-001](../decisions/ADR-001-stage-6-platform-boundaries.md). Where an older FIKA Core catalogue conflicts with ADR-001 or governed business meaning, ADR-001 and the governing BDR take precedence.
 
 ## Purpose
 
-FIKA Core is the shared conceptual platform beneath future FIKA applications. It defines common business contracts, service responsibilities, workflow boundaries, configuration, validation, permissions, notifications, branding, and repository interfaces so applications do not recreate the same meaning independently.
+FIKA Core is the smallest stable set of domain-neutral contracts needed for FIKA OS components to work together without sharing storage models, provider payloads or application assumptions.
 
-FIKA Core exists to make each new site, client experience, operational surface, and business capability easier to establish without multiplying code, configuration, manual reconciliation, or competing sources of truth.
+It is a contract layer, not a business super-domain and not a general shared-code folder.
 
-## Position in the target architecture
+## Position
 
 ```text
-FIKA OS experiences
-  -> Domain modules
-  -> FIKA Core
-  -> Repository interfaces
-  -> Storage and external integrations
+Applications
+    ↓
+Application orchestration
+    ↓
+Logical domain services
+    ↓
+FIKA Core contracts
+    ↓
+Repository, projection and provider ports
+    ↓
+Adapters and implementations
 ```
 
-FIKA Core serves public, client-facing, administrative, and internal operational experiences without requiring them to share one interface, brand, release, or deployment.
+Logical dependency does not dictate deployment topology.
 
 ## Core responsibilities
 
-FIKA Core should provide:
+Core may standardise:
 
-- canonical, versioned domain contracts;
-- shared business-service boundaries;
-- reusable workflow definitions;
-- repository interfaces expressed in domain terms;
-- configuration ownership, inheritance and validation;
-- permission decisions at authoritative boundaries;
-- common validation and result semantics;
-- notification intent separated from channel delivery;
-- brand identity and override rules;
-- identity, idempotency, concurrency and audit expectations;
-- adapter contracts for external systems, projections and legacy inputs;
-- migration and compatibility guidance.
+- identifier and cross-record reference conventions;
+- schema-version and record-version conventions;
+- effective-time, provenance and audit conventions;
+- actor, assignment and authority-context references;
+- correlation, causation, idempotency and concurrency context;
+- common validation-issue and operation-result shapes;
+- a domain-event envelope;
+- repository, projection and provider-port conventions.
 
-## What FIKA Core is not
+Core supplies no domain decision merely because multiple domains use the same structural convention.
 
-FIKA Core is not:
+## Explicit exclusions
 
-- one application, user interface or deployment;
-- a physical database or file layout;
-- a replacement for domain ownership;
-- a container for every shared-looking helper;
-- an operational dashboard or reporting view;
-- a provider-specific integration library;
-- a place for site-specific rules that are not genuinely shared;
-- permission to consolidate working systems prematurely;
-- an owner of raw legacy documents, parser layouts or UI state.
+Core does not own:
 
-## Conceptual boundaries
+- Client, Operational Location, Authority, Capability, Configuration, Service, Booking, Event, Production, Mobilisation, Brand or Waste records;
+- domain invariants, lifecycle values or approval policy;
+- roles, assignments, authority grants or access entitlement;
+- configuration values or inheritance decisions;
+- end-to-end workflows;
+- notification recipient policy;
+- brand standards or variations;
+- documents, quotes, calendars or provider records;
+- applications, dashboards or read projections;
+- provider SDKs and storage implementations;
+- utilities that lack stable domain-neutral meaning.
 
-### Domain services
+## Admission test
 
-Services own business capabilities and invariants. They coordinate repositories, validation, permissions and effects through stable conceptual operations. A service must have one clear business responsibility and an identified owner before implementation.
+A concern belongs in FIKA Core only when every answer is yes:
 
-### Repositories
+1. Is it required by more than one governed domain?
+2. Is its meaning independent of any one domain, application, provider and storage choice?
+3. Would separate definitions create a real interoperability or governance risk?
+4. Can it be specified without importing domain policy?
+5. Is its meaning stable enough to version as a platform contract?
 
-Repositories provide domain-oriented access to canonical records, configuration, files, audit history and projections. They conceal physical storage and provider details. A repository does not decide business policy.
+If not, it remains in the owning domain, orchestration layer, port or adapter.
 
-### Workflows
+## Relationship to domain services
 
-Workflows coordinate a business outcome across services and effects. They define inputs, outputs, ownership, idempotency, versioning, partial failure and recovery. A workflow does not make projections authoritative.
+Domain services consume Core contracts but own their own commands, queries, records, invariants and events. Core never calls a domain service to make a business decision and never becomes the shared owner of an aggregate.
 
-### Adapters
+## Relationship to AUTHMOD
 
-Adapters translate external, legacy or provider-specific representations into or out of Core contracts. They own mapping, provider references, retries and diagnostics, but do not invent missing business facts.
+Core may carry a standard authority context and request an AUTHMOD evaluation through a port. AUTHMOD owns the governed action vocabulary and grant semantics. Core does not infer permission from assignment, ownership, capability state, application access or technical administration.
 
-### Applications and projections
+## Relationship to repositories and adapters
 
-Applications request Core capabilities and render authorised views. Dashboard, Calendar, document and reporting representations are projections unless a specific domain decision establishes otherwise.
-
-## Design principles
-
-1. Business meaning is independent of storage, interface and provider.
-2. Every canonical record and configuration value has explicit ownership.
-3. Public/client experiences remain distinct from internal operations while sharing authoritative facts.
-4. Commands are duplicate-safe and version-aware where effects or concurrent mutations are possible.
-5. Human judgement remains explicit when policy is unresolved.
-6. Configuration represents genuine variation; different business behaviour remains visible.
-7. Migration is gradual, measurable, reversible and supported by adapters.
-8. Security, privacy, accessibility, audit and recovery are design responsibilities.
-9. Performance change follows measurement.
-10. Core grows only when repeated business meaning and ownership are proven.
-
-## Initial domain relationship
-
-Hospitality evidence establishes this direction:
-
-```text
-Booking channel
-  -> Booking Service
-  -> authoritative FikaBooking
-  -> Hospitality operational projections
-  -> Production Creation workflow
-  -> governed Production Order
-  -> future Logistics workflows
-```
-
-Calendar-led CPU discovery, inbox/form parsing and current Sheets remain transitional adapters or projections. They do not define future Core identity or status.
-
-Stage 5 now provides governed Event and Production contracts alongside the other Packs 1–8 domains. Stage 6 must reconcile these conceptual Core boundaries with that baseline before selecting an implementation shape.
-
-## Core growth test
-
-A capability should enter FIKA Core only when:
-
-- at least one confirmed domain needs it and reuse is credible;
-- its business meaning and owner are clear;
-- its boundary can be stated without current storage or provider terminology;
-- inputs, outputs, permissions, failure and audit expectations are understood;
-- variation can be represented without hiding incompatible rules;
-- adoption can proceed without breaking current operations;
-- tests and compatibility expectations can protect consumers.
-
-If these conditions are absent, keep the capability in its domain or adapter until evidence improves.
+Core defines common port behaviour only where it is truly cross-domain. Domain repository contracts remain named and owned by their domains. Implementations and providers remain behind adapters.
 
 ## Specification map
 
-- `service-catalog.md`: candidate business and platform services.
-- `repository-catalog.md`: conceptual persistence/access boundaries.
-- `workflow-catalog.md`: cross-service business workflows.
-- `configuration-model.md`: configuration scopes, ownership and inheritance.
-- `notification-model.md`: notification intent and delivery separation.
-- `validation-model.md`: validation layers and result semantics.
-- `brand-system.md`: identity, assets and override hierarchy.
-- `permissions-model.md`: conceptual actors, roles, scopes and decisions.
+- [Service catalogue](service-catalog.md): governed logical domain-service boundaries.
+- [Repository catalogue](repository-catalog.md): domain repository, projection and adapter-port responsibilities.
+- [Workflow catalogue](workflow-catalog.md): domain command versus cross-domain orchestration boundaries.
+- [Configuration model](configuration-model.md): configuration ownership and resolution boundary.
+- [Notification model](notification-model.md): notification intent versus delivery.
+- [Validation model](validation-model.md): structural, business, authority, workflow and provider validation.
+- [Brand system](brand-system.md): governed Brand boundary and rendering concerns.
+- [Permissions model](permissions-model.md): AUTHMOD enforcement boundary.
 
 ## Open questions
 
-- TODO: Confirm service and domain owners.
-- TODO: Decide the first adopted Core contracts and compatibility policy.
-- TODO: Confirm identity, user and organisation boundaries.
-- TODO: Define audit, privacy, retention, recovery and operational service expectations.
-- TODO: Confirm the configuration decision forum and override governance.
-- TODO: Define when a capability graduates from domain-specific to Core.
+- Exact event-envelope and consistency contracts.
+- Exact common concurrency and idempotency contracts.
+- Authentication-to-actor mapping.
+- Whether a common audit store is needed or only common audit conventions.
+
+These require the follow-up ADRs registered in ADR-001.

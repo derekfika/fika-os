@@ -6,7 +6,7 @@ This map describes only relationships confirmed by the Stage 1 inventories and h
 
 ## Classification
 
-- **Canonical record:** the authoritative representation of a business concept. The Hospitality Booking Platform is confirmed as the authority for hospitality bookings; the draft `FikaBooking` schema is not yet adopted.
+- **Canonical record:** the authoritative representation of a business concept. The Hospitality Booking Platform is confirmed as the authority for hospitality bookings. Pack 4 provides the governed Booking contract evidence; the earlier standalone `FikaBooking` aggregate remains a supporting draft requiring later reconciliation.
 - **Operational projection:** a derived representation used to operate, report, cache, or audit work. It can be rebuilt or reconciled from its authority and must not silently become a competing truth.
 - **Legacy adapter:** a transitional component that reconstructs or normalises business facts from an older channel or layout.
 
@@ -15,6 +15,28 @@ This map describes only relationships confirmed by the Stage 1 inventories and h
 The current workspace contains site-specific Hospitality Booking Platforms and Hospitality Dashboards, shared hospitality utilities, the CPU Production Dashboard, workforce and client-specific reporting tools, and planned capabilities without repositories. Hospitality variants share substantial code but remain separate current implementations.
 
 MNK is the preferred direct-booking baseline. Angel Court supports direct booking and retains a legacy inbox adapter. CFC is built but not live. Demo supports sales and tender demonstrations. The Line has a hospitality dashboard but is not the standard booking baseline.
+
+## Stage 6 current-system classification
+
+The classifications below describe evidenced responsibility, not implementation quality or retirement approval.
+
+| Current system or family | Confirmed classification | Canonical authority assessment | Transition status |
+|---|---|---|---|
+| Hospitality Booking Platforms | Canonical authority for hospitality Booking; operational system of execution | Confirmed for the Booking object; durable physical repository and version-delivery mechanism remain TODO | Site variants coexist; MNK is the preferred direct baseline |
+| Hospitality Dashboards | Operational system of execution; read/operational projection | Not authoritative for commercial Booking status | Continue while object consumption and projection write boundaries are introduced |
+| Angel Court inbox scanner | Legacy transition partner and ingestion adapter | Gmail message is provenance, not the Booking authority | Retained fallback; normalise into the Booking contract |
+| CPU Production Dashboard | Operational system of execution; legacy transition partner; operational projection | Current canonical Production repository is TODO; Pack 6 defines the governed target record | Calendar-led ingestion continues until a governed Booking-to-Production path is reconciled |
+| Google Sheets | Mixed configuration, operational projection, audit/log and reporting roles | Must be classified per Sheet; no blanket canonical authority | Retain where needed and prevent layout from defining domain contracts |
+| Google Calendar | Provider, operational projection and CPU transition envelope | Not the Booking authority; not established as Production authority | Retain adapter path until replacement is verified |
+| Gmail | Provider and legacy source channel | Stable message reference preserves provenance only | Retain authorised adapter use where required |
+| Google Drive and generated documents | Provider and document projection store | Quotes, PDFs and files do not replace canonical Booking or Production records | Retain behind document/file adapters |
+| Munich RE hot-drinks tools | Client-specific operational reporting | No canonical domain ownership established | Live; retirement not assessed |
+| BrightHR workflow | Provider integration; operational system classification TODO | Workforce authority and synchronisation behaviour require manual review | No retirement assessment |
+| Square, SumUp and Goodtill work | Provider boundary and planned migration tooling | Canonical till/business ownership TODO | Capability planned; implementation evidence incomplete |
+| Events Dashboard | Planned operational system and projection | Governed Event record owns meaning; the dashboard's confirmed company-wide operational source-of-truth role is not yet implemented | Not yet implemented |
+| Logistics Dashboard | Planned operational system and projection | No canonical Logistics contract or current application exists | Not yet implemented |
+
+No current system is a planned retirement candidate solely because a target boundary now exists. Retirement requires the evidence and acceptance described by ADR-001.
 
 ```mermaid
 flowchart LR
@@ -52,7 +74,7 @@ flowchart LR
   CPU --> CPUS
 ```
 
-The direct platform path is authoritative. The legacy path should normalise into the same booking contract. The current CPU path remains Calendar-led and does not yet consume draft `FikaBooking` v1 directly.
+The direct platform path is authoritative. The legacy path should normalise into the same Booking domain contract. The current CPU path remains Calendar-led and does not yet consume a canonical Booking-to-Production handoff directly.
 
 ## Hospitality Booking Platforms
 
@@ -124,7 +146,7 @@ No direct Gmail ingestion or external order API was found in the CPU project.
 
 The Events Dashboard is a planned internal company-wide source of truth for events from The Line, FIKA sites, FIKA Events and Pop-ups, external venues, and email-, phone-, or manually-created events. FIKA Events and Pop-ups and The Line will remain separate public/client-facing experiences feeding that shared internal capability.
 
-No repository, adopted event schema, storage, deployment, or confirmed integration implementation was found. These are planned capabilities, not current-system applications.
+No Events Dashboard repository, storage, deployment, or confirmed integration implementation was found. Pack 5 now provides the governed Event contract evidence, but the dashboard and its projections remain planned capabilities rather than current-system applications.
 
 ```mermaid
 flowchart LR

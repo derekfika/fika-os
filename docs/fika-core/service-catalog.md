@@ -1,156 +1,131 @@
-# FIKA Core Service Catalogue
+# Logical Domain Service Catalogue
 
-## Status and conventions
+## Status and use
 
-These are candidate conceptual services, not deployed components or generated APIs. Candidate operations describe future business capabilities only; they do not prescribe endpoints, protocols, signatures or process boundaries. Several services may initially coexist within one application, provided their ownership and contracts remain separate.
+This is a Stage 6 logical catalogue governed by [ADR-001](../decisions/ADR-001-stage-6-platform-boundaries.md). “Service” here means a software responsibility boundary. It must not be confused with the canonical business concept **Service** governed by SVC-001.
 
-## Booking Service
+The catalogue defines no deployment topology and no API. Illustrative commands and queries are responsibility tests, not implementation specifications.
 
-- **Purpose:** Own authoritative hospitality booking commercial and service intent.
-- **Responsibilities:** Create, retrieve and govern booking versions; apply status rules; coordinate server-authoritative validation/pricing; preserve source provenance; enforce idempotency/concurrency; initiate downstream effects.
-- **Owns:** `FikaBooking` lifecycle and booking-specific invariants.
-- **Does not own:** Dashboard workflow state, quote documents, Calendar sync, CPU preparation, production quantities, logistics or raw legacy sources.
-- **Candidate operations:** submit booking; amend booking; acknowledge; confirm; decline; cancel; retrieve current/version history; evaluate transition.
-- **Dependencies:** Site, Configuration, Validation, Permission, Quote/Pricing policy, Notification, Audit and repositories.
+## Governed services
 
-## Site Service
+### Client Service
 
-- **Purpose:** Provide authoritative site identity and site-level operational context.
-- **Responsibilities:** Resolve stable sites; expose approved capabilities, locations and configuration references; manage site lifecycle subject to ownership.
-- **Owns:** Future `FikaSite` identity and site relationships.
-- **Does not own:** Brand definitions, application configuration, users, bookings or physical storage identifiers as domain meaning.
-- **Candidate operations:** create/update site; resolve site; list authorised sites; resolve service location; evaluate enabled capability.
-- **Dependencies:** Configuration, Brand, Permission and SiteRepository.
+- Purpose: protect the stable identity of an external organisation, its Contacts and governed OPLOC relationships.
+- Owns: Client, Client Contact and relationship history.
+- Does not own: Operational Location identity, Booking, access policy or commercial workflow not governed by Pack 1.
+- Depends on: Operational Location references and authority context.
+- Evidence: CLIENT-001, LOC-005–006 and Pack 1 schemas.
+- Candidate interactions: establish a Client; record a Contact; start/end a relationship; resolve current relationships.
 
-## Event Service
+### Operational Location Service
 
-- **Purpose:** Own the company-wide Event record shared by distinct source channels.
-- **Responsibilities:** Capture/normalise events; govern lifecycle, venue, schedule, ownership and source; coordinate event amendments and downstream requirements.
-- **Owns:** The governed Event aggregate and event-specific invariants.
-- **Does not own:** Public-channel presentation, hospitality booking semantics, labour/equipment inventory, logistics execution or Calendar provider state.
-- **Candidate operations:** create event draft; qualify; amend; cancel; assign owner; add requirements; retrieve pipeline/view.
-- **Dependencies:** Site, User, Permission, Configuration, Equipment, Media, Quote, Document, Notification and EventRepository.
+- Purpose: protect the durable identity and history of one Operational Location.
+- Owns: approved name, aliases, lifecycle, Location Type catalogue assignments and governed transitions.
+- Does not own: address master data, brand, equipment, staffing, applications, Services, Bookings or Events.
+- Depends on: authority context; references Client relationships without owning them.
+- Evidence: LOC-001–006, TYPE-001–003 and Pack 1 schemas.
+- Candidate interactions: establish, rename, classify, transition and resolve history.
 
-## Production Service
+### Authority and Assignment Service
 
-- **Purpose:** Own production work derived from eligible commercial/service demand.
-- **Responsibilities:** Create and version production orders/lines; apply production conversion rules; manage production status, notes, allocation and amendment/cancellation disposition.
-- **Owns:** The governed Production Order and Production Line concepts and production workflow state.
-- **Does not own:** Commercial booking status/pricing, raw Calendar/parser metadata, dashboard UI state or logistics execution.
-- **Candidate operations:** create from booking; revise from booking version; cancel/dispose; assign production facility; mark production milestones; retrieve production plan.
-- **Dependencies:** Booking, Site, Configuration, Validation, Permission, Notification, Audit and ProductionRepository.
+- Purpose: evaluate and preserve organisational roles, responsibilities, assignments and scoped AUTHMOD grants.
+- Owns: the governed records defined by ROLE-001–007 and Pack 2.
+- Does not own: authentication provider identity, domain records, capability enablement or business ownership held by another domain.
+- Depends on: governed scope references.
+- Evidence: ROLE-001–007 and Pack 2 schemas.
+- Candidate interactions: assign/revoke, grant/revoke, evaluate action, record approval/publication, govern emergency access.
 
-## Equipment Service
+### Operational Capability Service
 
-- **Purpose:** Govern physical equipment requirements, availability, allocation, condition and lifecycle.
-- **Responsibilities:** Maintain equipment identity/types; record requirements; reserve/allocate; record faults, maintenance, movements and returns.
-- **Owns:** Future equipment records, allocations and condition state.
-- **Does not own:** Commercial equipment charges, event/booking status, logistics routing or supplier finance.
-- **Candidate operations:** register equipment; request/reserve/allocate; report fault; update condition; release/return; list availability.
-- **Dependencies:** Site, Event, Production, Logistics boundary, Permission, Notification and EquipmentRepository.
+- Purpose: maintain the organisation-wide catalogue and effective availability of reusable business abilities.
+- Owns: catalogue entries, dependency rules, enablement and capability overrides.
+- Does not own: the meaning and lifecycle rules supplied by the owning domain, roles, authority grants or application features.
+- Depends on: owning domains, Configuration and AUTHMOD.
+- Evidence: CAP-001–004 and Pack 2 schemas.
+- Candidate interactions: register approved capability, validate combination, enable/disable and resolve effective state.
 
-## Media Service
+### Configuration Service
 
-- **Purpose:** Govern reusable media assets, renditions, rights, ownership and usage.
-- **Responsibilities:** Register/index media; validate metadata; manage approval, visibility, renditions, references and retention classification.
-- **Owns:** Future media asset records and usage relationships.
-- **Does not own:** Brand policy, document content, operational evidence policy, or external file storage implementation.
-- **Candidate operations:** register/index asset; approve; publish/unpublish; create rendition request; link usage; archive.
-- **Dependencies:** Brand, Permission, Validation, Audit and MediaRepository.
+- Purpose: resolve effective governed configuration through explicitly approved scope relationships.
+- Owns: configuration records and their effective-dated inheritance/variation history.
+- Does not own: business meaning, secrets, permission grants or a universal scope-precedence rule.
+- Depends on: owning domain, AUTHMOD and applicable capability rules.
+- Evidence: CFG-001–003 and Pack 2.
+- Candidate interactions: define, authorise variation, expire and explain resolution.
 
-## Configuration Service
+### Service Domain Service
 
-- **Purpose:** Resolve authoritative, validated configuration across defined scopes.
-- **Responsibilities:** Read effective configuration; validate changes; apply inheritance/overrides; separate safe/private values; version and audit changes.
-- **Owns:** Configuration records, scope and resolution policy.
-- **Does not own:** Secrets themselves, business records, brand assets or permission decisions.
-- **Candidate operations:** get effective configuration; propose/validate/publish change; compare versions; list scope overrides; retire value.
-- **Dependencies:** Site, Application identity, User context, Permission, Audit and ConfigurationRepository.
+- Purpose: govern durable Services and the way each is delivered at an Operational Location.
+- Owns: Service, Service Arrangement, Recurring Schedule, schedule exceptions and Service commercial-ownership records.
+- Does not own: Booking, Event, Production, Training or a provider schedule.
+- Depends on: Operational Location, Capability and AUTHMOD; may reference Event.
+- Evidence: SVC-001–010 and Pack 3 schemas.
+- Candidate interactions: define Service, establish Arrangement, revise schedule and record exception.
 
-## Brand Service
+### Booking Service
 
-- **Purpose:** Resolve coherent brand identity for an experience and context.
-- **Responsibilities:** Manage brand definitions, tokens, typography, logos, approved assets, client/white-label relationships and governed overrides.
-- **Owns:** Brand identity and inheritance policy.
-- **Does not own:** Media binary storage, application layout, business rules, recipients, permissions or site operational configuration.
-- **Candidate operations:** resolve effective brand; validate brand configuration; list approved assets; publish brand version; evaluate override.
-- **Dependencies:** Media, Configuration, Site, Permission and BrandRepository.
+- Purpose: govern commercial and service intent from request through approved changes and closure.
+- Owns: Booking aggregate, items, customer/service details, source references, pricing snapshots and amendment/cancellation/decline history.
+- Does not own: dashboard workflow, parser internals, provider payloads or Production state.
+- Depends on: Service/Arrangement where applicable, OPLOC and party references, AUTHMOD.
+- Evidence: BOOK-001–007, ADR-003, Pack 4 and earlier draft Booking review.
+- Candidate interactions: submit, acknowledge, quote/confirm where governed, amend, cancel, decline and retrieve version history.
+- Unresolved: the earlier aggregate schema requires later reconciliation with the Pack 4 component schemas; no schema change is made here.
 
-## Document Service
+### Event Service
 
-- **Purpose:** Govern document generation requests, artefact identity, templates, versions and retention references.
-- **Responsibilities:** Create reproducible document artefacts from approved snapshots; track version/status; prevent duplicates; expose authorised references.
-- **Owns:** Document records and generation lifecycle.
-- **Does not own:** Booking/event pricing policy, file storage implementation, notification delivery or Calendar projection.
-- **Candidate operations:** request generation; regenerate new version; retrieve metadata; supersede; archive; verify artefact.
-- **Dependencies:** Brand, Media, Configuration, Permission, Validation and DocumentRepository.
+- Purpose: govern bespoke Event identity, qualification, planning references and approval record.
+- Owns: Event purpose, Event Contact, optional Client reference, qualification and approval evidence.
+- Does not own: recurring Service work, Hospitality Booking, publication policy or Calendar/provider records.
+- Depends on: OPLOC, Service, optional Client and AUTHMOD.
+- Evidence: EVT-001–002, Pack 5 resolution and Event schema.
+- Candidate interactions: propose, qualify, approve, amend and retrieve.
+- Unresolved: lifecycle states and publication policy.
 
-## Quote Service
+### Production Service
 
-- **Purpose:** Own commercial quote intent, lifecycle and relationship to a source booking/event version.
-- **Responsibilities:** Create/version quotes; apply approved pricing inputs; track commercial status; request document generation; preserve source traceability.
-- **Owns:** Future quote aggregate and quote-specific lifecycle.
-- **Does not own:** Booking aggregate, generated file storage, delivery of notifications or dashboard print state.
-- **Candidate operations:** create quote; revise; issue; accept/decline/expire; retrieve; request document.
-- **Dependencies:** Booking/Event, Validation, Permission, Document, Notification, Audit and QuoteRepository.
+- Purpose: govern operational fulfilment work derived from eligible Booking demand.
+- Owns: Production Orders, Lines, routing allocations, preparation quantities/rules and Production change history.
+- Does not own: customer-facing Booking state, a separate Production Facility concept or Logistics state.
+- Depends on: attributable Booking version, OPLOC, Production capability and AUTHMOD.
+- Evidence: PROD-001–005, Pack 6 resolution, Pack 6 schemas and ADR-004.
+- Candidate interactions: create from eligible Booking, plan, start, complete, route and handle change.
 
-## Calendar Service
+### Mobilisation Service
 
-- **Purpose:** Project approved domain schedules to external calendar representations and reconcile them.
-- **Responsibilities:** Build calendar intent; create/update/remove projections; prevent duplicates; retain provider references; report sync state and conflicts.
-- **Owns:** Calendar projection/synchronisation records.
-- **Does not own:** Booking/event/production status, canonical service timing or provider-specific details outside its adapter.
-- **Candidate operations:** synchronise schedule; refresh; remove projection; reconcile; retrieve sync status.
-- **Dependencies:** Booking, Event, Production, Permission, Configuration, Audit and Calendar projection repository/adapter.
+- Purpose: govern a distinct programme that establishes, materially changes or re-establishes an approved operating scope.
+- Owns: Mobilisation, accountable role, scope, plan, tasks, readiness assessment, effective period, outcome and history.
+- Does not own: routine operational change, a mandatory Client contract or MNK phase names as Canon.
+- Depends on: governed scope, AUTHMOD, Capabilities and optional Client/OPLOC references.
+- Evidence: MOB-001–004, Pack 7 resolution and schemas.
+- Candidate interactions: start, plan, assign task, assess readiness and close.
+- Unresolved: material-remobilisation threshold.
 
-## Notification Service
+### Brand Service
 
-- **Purpose:** Turn authorised domain notification intent into governed delivery requests and outcomes.
-- **Responsibilities:** Apply notification policy; render channel-neutral content; deduplicate; schedule; route; track delivery attempts and preferences.
-- **Owns:** Notification intents and delivery lifecycle records.
-- **Does not own:** Source domain state, recipient master identity, channel provider implementation or business decisions that trigger intent.
-- **Candidate operations:** create intent; preview; dispatch; retry; cancel; retrieve status; record preference/suppression result.
-- **Dependencies:** User/Contact, Brand, Configuration, Permission, Document, Validation, Audit and NotificationRepository/adapters.
+- Purpose: govern Brand Variations and verification against applicable Brand Standards.
+- Owns: Brand Variation and Brand Assurance Record.
+- Does not own: Marketing approval authority, media storage, UI rendering or a complete Brand Standard model not yet governed.
+- Depends on: AUTHMOD, Configuration and governed scope references.
+- Evidence: BRAND-001, Pack 8 resolution and schemas.
+- Candidate interactions: propose variation, record assurance and resolve effective variation.
 
-## User Service
+### Waste Service
 
-- **Purpose:** Represent platform actors and their stable organisational context.
-- **Responsibilities:** Resolve actor identity, profile/reference, active state and memberships needed by other services.
-- **Owns:** Future platform user/actor record, subject to privacy decisions.
-- **Does not own:** Authentication mechanism, permission policy, workforce employment record or contact/customer aggregate.
-- **Candidate operations:** resolve user; list memberships; update profile; activate/deactivate; link external identity reference.
-- **Dependencies:** Permission, Configuration, Audit and UserRepository.
+- Purpose: govern Waste Events, measurements, reasons and immediate operational outcomes.
+- Owns: Waste Event and Waste Disposition.
+- Does not own: Improvement Action or reporting authority.
+- Depends on: OPLOC, Assignment and Measurement Catalogue reference.
+- Evidence: WASTE-001, Pack 8 resolution and schemas.
+- Candidate interactions: record event, record disposition, retrieve and aggregate.
+- Unresolved: Measurement Catalogue values and detailed Improvement Action domain.
 
-## Permission Service
+## Candidate boundaries not yet adopted
 
-- **Purpose:** Decide whether an actor may perform an action on a scoped resource.
-- **Responsibilities:** Evaluate roles, grants, scopes, conditions and explicit restrictions; return explainable decisions; support audit.
-- **Owns:** Permission policy and assignments, not authentication credentials.
-- **Does not own:** User profile, domain records, UI visibility as enforcement, or provider access configuration.
-- **Candidate operations:** authorise action; explain decision; list effective permissions; assign/revoke role; validate policy.
-- **Dependencies:** User, Site, Configuration, Audit and PermissionRepository.
+Equipment has partial governed evidence through SVC-009 and Equipment Allocation, but its full records, lifecycle and ownership are not yet governed. Media, Workforce, Logistics, Reporting, Documents, Notifications and Training remain candidates or future domains. Quote and Calendar currently describe workflows or provider interactions, not proven domain-service ownership.
 
-## Validation Service
+No implementation may present these candidates as adopted Canon without the required business decision.
 
-- **Purpose:** Provide consistent structural and shared validation orchestration while preserving domain ownership of business rules.
-- **Responsibilities:** Run schema, business, workflow, permission and external-input validation; produce structured issues; identify rule/policy versions.
-- **Owns:** Validation result conventions and shared validation registry/process.
-- **Does not own:** Domain policy decisions, source records, UI-only validation or integration retries.
-- **Candidate operations:** validate command/record; validate transition; revalidate against policy; explain issue; retrieve rule version.
-- **Dependencies:** Schemas, domain services, Configuration and Permission.
+## Cross-domain rule
 
-## Audit Service
-
-- **Purpose:** Preserve attributable, immutable evidence of important domain, configuration, permission and integration actions.
-- **Responsibilities:** Record events/attempts; link actor, record/version, action and outcome; support authorised investigation and retention policy.
-- **Owns:** Audit event records and integrity expectations.
-- **Does not own:** Current domain state, raw sensitive payloads, operational logs or reporting definitions.
-- **Candidate operations:** append audit event; retrieve authorised history; verify chain/completeness; apply approved retention/redaction treatment.
-- **Dependencies:** User, Permission, Configuration and AuditRepository.
-
-## Candidate-service decisions
-
-- TODO: Confirm service owners and whether Quote/Document, User/Permission, or Validation/Audit remain separate conceptual services.
-- TODO: Complete Equipment, Media and Logistics domain discovery before adopting their operations; reconcile Event and Production operations with Packs 5 and 6.
-- TODO: Define compatibility and deprecation rules for service contracts.
-- TODO: Confirm which services belong in initial Core and which remain domain-local.
+One logical domain service may reference another domain's stable identity or consume an attributable version/snapshot. It must not edit the other domain's record, duplicate its lifecycle or infer its authority.
