@@ -9,6 +9,8 @@
 
 ## Context
 
+Business discovery asked: **What stable business concept should FikaClient represent, and what identity facts does it own?**
+
 FIKA's long-term success depends on building and maintaining trusted relationships with external organisations and the people who represent them. These relationships help FIKA win tenders, retain contracts and respond to operational requests with as little friction as possible. During business discovery, the term "Client" was being used inconsistently to describe external organisations, individual contacts, Operational Locations and commercial relationships. In practice, a single Operational Location may involve several client layers. For example, CBRE may be the contracting organisation, Munich Re the occupier, and each organisation may have multiple individual contacts with different operational responsibilities. Without a canonical definition, different applications could model these concepts differently, leading to inconsistent relationships, duplicated data and loss of operational continuity. This decision establishes Client as a stable business concept before downstream domains are modelled.
 
 ## Decision
@@ -60,3 +62,9 @@ This BDR does not select a database, API, provider, application design or deploy
 ## Future considerations
 
 There are no open discovery questions for this decision. During BDR review, evidence and explanatory text should be checked without altering the Decision section. Later schema, architecture and implementation work must resolve technical detail while preserving this approved business meaning.
+
+## Repository History
+
+//Context
+Before approval, the recorded evidence stated: “Client is discovered above Operational Location; detailed discovery is missing.” The question was recorded as a foundation decision with low repository confidence before approval.
+
