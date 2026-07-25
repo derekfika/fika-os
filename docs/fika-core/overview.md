@@ -98,13 +98,13 @@ Booking channel
   -> authoritative FikaBooking
   -> Hospitality operational projections
   -> Production Creation workflow
-  -> future FikaProductionOrder
+  -> governed Production Order
   -> future Logistics workflows
 ```
 
 Calendar-led CPU discovery, inbox/form parsing and current Sheets remain transitional adapters or projections. They do not define future Core identity or status.
 
-Events is the intended first flagship domain using these standards. Separate event channels should feed a shared internal event model, but its contracts remain subject to domain discovery.
+Stage 5 now provides governed Event and Production contracts alongside the other Packs 1–8 domains. Stage 6 must reconcile these conceptual Core boundaries with that baseline before selecting an implementation shape.
 
 ## Core growth test
 

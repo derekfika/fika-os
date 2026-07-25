@@ -40,7 +40,11 @@ Applications and workflows can exchange consistent business records whose identi
 
 ## Current status
 
-**Planned.** Existing `FikaBooking` material remains draft evidence and must be reconciled with the 54 BDRs before revision or adoption.
+**Complete — closed on 2026-07-25.** Packs 1–8 contain 51 integrated schemas, 53 valid fixtures, 51 invalid fixtures, traceability and reproducible validation. Fresh Draft 2020-12, reference, fixture, BDR and link validation passed at closure.
+
+The earlier standalone `FikaBooking` material remains supporting draft evidence; the governed Pack 4 Booking contracts are the Stage 5 baseline. Draft BDR metadata may remain where supporting explanation has not been fully accepted, but exact approved Decision sections remain authoritative.
+
+See the [Stage 5 closure record](stage-5-closure-2026-07-25.md).
 
 ## Dependencies on earlier stages
 

@@ -138,7 +138,7 @@ Dashed arrows denote supporting, consumer or provisional relationships rather th
 - **Does not own:** Operational Location identity, brand assets, individual people, provider accounts or bookings. People are represented separately as Client Contacts.
 - **Depends on:** Organisation context, Permissions and Configuration.
 - **Consumers:** Operational Location, Service, Booking, Events, Reporting and Brand relationships.
-- **Current maturity:** Business definition and relationship direction approved; BDR and schema work remain.
+- **Current maturity:** Business definition, BDR and Pack 1 schema contracts complete; Stage 6 architecture is active.
 - **Examples:** One Client may relate to multiple Operational Locations. An Operational Location may exist without an external Client but must have an accountable internal owner.
 
 ### Operational Location
@@ -149,7 +149,7 @@ Dashed arrows denote supporting, consumer or provisional relationships rather th
 - **Does not own:** Provider integrations, application configuration, branding, physical-address master data, menus, pricing, equipment inventory, staffing, Calendars, Bookings, Events, Services or other domain records.
 - **Depends on:** Organisation context, optional Client relationships, Configuration and Permissions.
 - **Consumers:** Service, Booking, Production, Logistics, Events, Workforce, Equipment, Mobilisation and Reporting.
-- **Current maturity:** Canonical name, definition, ownership boundary, lifecycle, Client relationship, building/address cardinality and type policy are approved; BDR and schema work remain.
+- **Current maturity:** Canonical meaning, BDRs and Pack 1 schema contracts complete; Stage 6 architecture is active.
 - **Examples:** Angel Court, MNK, The Line, Munich RE and Wise; CFC is confirmed Development. CPU-only labels require verification.
 
 ### Operational Capability
@@ -160,7 +160,7 @@ Dashed arrows denote supporting, consumer or provisional relationships rather th
 - **Does not own:** Domain meaning, domain records, user permissions or the internal operation of the enabled domain.
 - **Depends on:** Operational Location, Configuration, accountable business ownership and relevant domain prerequisites.
 - **Consumers:** Mobilisation, application composition, Configuration, Permissions and Reporting.
-- **Current maturity:** Definition, catalogue ownership, optionality, dependency and override principles are approved; detailed catalogue and schema work remain.
+- **Current maturity:** Definition, governance and Pack 2 schema contracts complete; detailed catalogue values remain governed future work.
 - **Examples:** Hospitality, Events, Coffee, Production, Logistics, Reporting, Feedback and Training.
 
 ### Service
@@ -171,7 +171,7 @@ Dashed arrows denote supporting, consumer or provisional relationships rather th
 - **Does not own:** Operational Location identity, individual Booking, production conversion, Event lifecycle or provider integration.
 - **Depends on:** Operational Location, Client where applicable, Configuration, Permissions and Validation.
 - **Consumers:** Booking, Production planning, Logistics, Workforce and Reporting.
-- **Current maturity:** Service Arrangement, Recurring Schedule, Service Occurrence and Booking boundaries are approved; BDR and schema work remain.
+- **Current maturity:** Service BDRs and Pack 3 schema contracts complete; Stage 6 architecture is active.
 - **Examples:** Wise's confirmed weekly breakfast and lunch arrangements, each serving approximately 450–500 people.
 
 ### Booking
@@ -182,18 +182,18 @@ Dashed arrows denote supporting, consumer or provisional relationships rather th
 - **Does not own:** Dashboard workflow, quote/Calendar sync, CPU preparation, production quantities, logistics or raw legacy evidence.
 - **Depends on:** Service/Operational Location context, Client/Customer concepts, Configuration, Permissions, Validation, Audit and relevant commercial policy.
 - **Consumers:** Hospitality applications, Quote/Documents, Production, Notifications, Calendar adapter, Logistics downstream and Reporting.
-- **Current maturity:** Seven blocking business decisions are approved. The existing model, schemas and fixtures remain draft and require Stage 5 revision before adoption.
+- **Current maturity:** Seven Booking BDRs and the Pack 4 schema contracts are complete and integrated. The earlier standalone `FikaBooking` model remains supporting draft evidence.
 - **Examples:** Direct MNK and Angel Court booking flows; Angel Court email-derived booking through a provenance-preserving adapter.
 
 ### Production
 
 - **Purpose:** Own work required to prepare or produce from eligible demand.
 - **Business question answered:** What must be produced, where, when, in what production quantities/units and with which instructions?
-- **Owns:** Future production order/lines, production status, conversion/yield snapshot, facility/routing, prep state and amendment/cancellation disposition.
+- **Owns:** Production Order and Production Line meaning, production status, conversion/yield snapshot, routing, preparation state and amendment/cancellation disposition.
 - **Does not own:** Booking commercial status/pricing, Calendar/provider state, dashboard UI or logistics execution.
 - **Depends on:** Booking or other approved demand source, Operational Location, Configuration, Equipment where relevant, Permissions, Validation and Audit.
 - **Consumers:** CPU operational views, Logistics, Notifications and Reporting.
-- **Current maturity:** Booking-to-Production boundary, eligibility, timing, units/yields, amendments/cancellations and multi-facility routing are approved. Domain model/schema not drafted.
+- **Current maturity:** Booking-to-Production boundary and Pack 6 Production contracts are complete and integrated; workflow architecture remains Stage 6 work.
 - **Examples:** Future production order derived from an eligible booking ID/version; current CPU Orders is an operational projection only.
 
 ### Logistics
@@ -211,11 +211,11 @@ Dashed arrows denote supporting, consumer or provisional relationships rather th
 
 - **Purpose:** Own bespoke offerings planned specifically for a customer or occasion and shared by distinct enquiry and public channels.
 - **Business question answered:** What event is being considered or delivered, where, when, for whom, and through which lifecycle?
-- **Owns:** Future event identity, source, lifecycle, schedule, venue relationship, ownership and event requirements.
+- **Owns:** Event identity, source, approved governance and Event-specific intent; lifecycle detail remains deferred where the governed baseline does not define it.
 - **Does not own:** Public-channel presentation, operational-location identity, equipment inventory, workforce records, logistics execution or Calendar provider state.
-- **Depends on:** Client, venue/Operational Location references, Brand, Configuration, Permissions, Media, Equipment, Workforce, Documents, Notifications and Audit as confirmed by future discovery.
+- **Depends on:** Operational Location and governed authority references; other cross-domain dependencies require Stage 6 confirmation rather than inference.
 - **Consumers:** Internal Events Dashboard, The Line experience, FIKA Events and Pop-ups, operations, Logistics and Reporting.
-- **Current maturity:** Event qualification and approval ownership are approved; lifecycle statuses and publication details must be carried into BDR/schema work without being invented.
+- **Current maturity:** Event qualification, Event Contact, optional Client relationship, approval evidence and the Pack 5 Event contract are complete; lifecycle and publication policy remain deferred.
 - **Examples:** The Line, FIKA Operational Locations, FIKA Events and Pop-ups, external venues and email/phone/manual Events feeding one internal source of truth.
 
 ### Equipment
@@ -244,12 +244,12 @@ Dashed arrows denote supporting, consumer or provisional relationships rather th
 
 - **Purpose:** Coordinate establishment or transition of Operational Locations, Clients, Service Arrangements and Operational Capabilities.
 - **Business question answered:** What must be ready, by whom and by when before an operation can launch or transition?
-- **Owns:** Future mobilisation plan, workstreams, milestones, dependencies, risks, readiness and handover.
+- **Owns:** A governed Mobilisation programme, scope, role-based accountability, phase plan, tasks, readiness evidence, effective period, outcome and history.
 - **Does not own:** Location, workforce, equipment, brand or application records it coordinates.
 - **Depends on:** Operational Location, Client, Brand, Configuration, Workforce, Equipment, Media, Permissions, Documents and Audit.
 - **Consumers:** Operations, Operational Location provisioning, Reporting and domain owners.
-- **Current maturity:** Canonical phases use the evidenced MNK baseline; ownership, readiness and mandatory/capability/client-specific task classes are approved.
-- **Examples:** A mobilisation with a nominated coordinator, domain-owned readiness evidence and Senior Management stewardship.
+- **Current maturity:** Pack 7 Mobilisation contracts are complete. MNK-derived phase names remain workshop evidence and are not Canon; the material-remobilisation threshold remains deferred.
+- **Examples:** A Mobilisation with one accountable organisational role, a coordinator assignment and domain-owned readiness evidence.
 
 ### Workforce
 
@@ -270,7 +270,7 @@ Dashed arrows denote supporting, consumer or provisional relationships rather th
 - **Does not own:** Source Service, Production, Event or financial records.
 - **Depends on:** Operational Location, relevant operating domains, Reporting and Permissions.
 - **Consumers:** Operations, individual Operational Locations and central Reporting.
-- **Current maturity:** Confirmed first-class business domain owned by Operations; BDR and schema work remain.
+- **Current maturity:** Waste BDR and Pack 8 Waste Event and Waste Disposition contracts complete; Measurement Catalogue values and Improvement Action detail remain deferred.
 - **Examples:** Location-recorded waste feeding trend, cost and environmental-improvement reporting.
 
 ### Reporting
@@ -439,10 +439,10 @@ Participation rules:
 |---|---|---|---|
 | Vision | Complete | Scope and principles established | Maintain as enduring authority |
 | Domain discovery | Complete | Maps, audits, workshops and journeys retained | Use as BDR evidence |
-| Business discovery | Complete | 54 canonical decisions; 100%; no review items | Generate and review BDRs |
-| Business Decision Records | Active | Template and governance prepared | Create 54 exact, traceable records |
-| Schema design | Planned | Existing booking draft/review evidence only | Reconcile with accepted BDRs |
-| Platform architecture | Planned | Target/FIKA Core conceptual drafts exist | Review after BDRs and schemas |
+| Business discovery | Complete | 54 canonical decisions; 100%; no review items | Continue through governed increments |
+| Business Decision Records | Complete | 54 exact Decision sections preserved in repository BDRs | Add or amend only through BDR governance |
+| Schema design | Complete for Packs 1–8 | 51 integrated schemas and 104 fixtures freshly validated | Extend through future governed Packs |
+| Platform architecture | Active | Target/FIKA Core conceptual drafts plus completed Stage 5 baseline | Reconcile boundaries and create required ADRs |
 | Implementation | Planned | Existing applications remain current implementations | No new platform build without upstream gates |
 | Validation and rollout | Planned | Engineering standards exist | Apply to authorised increments |
 | Continuous discovery | Planned ongoing | Proven workbook method documented | Activate when new evidence arises |
@@ -458,7 +458,7 @@ The long-term platform is a set of stable business domains exposed through share
 - New operational locations and capabilities are enabled primarily through governed configuration and relationships rather than copied applications.
 - Legacy channels can continue through adapters until canonical paths are proven and recoverable.
 - Reporting grows from traceable sources without becoming a competing operational truth.
-- Events can become the first flagship domain built to these standards after discovery.
+- Applications can adopt governed domains incrementally while stable legacy workflows continue through explicit adapters.
 
 Canonical business meaning must remain even as technology, applications, suppliers and organisational scale change.
 
@@ -478,9 +478,7 @@ No additional business domains are asserted.
 
 ## Next governed work
 
-Stage 4 must convert the 54 workbook decisions into BDRs before schemas or architecture are revised. Existing discovery material remains evidence; it must not be treated as an open-question backlog.
-
-After BDR acceptance, Stage 5 should prioritise the domain contracts needed to support the Booking-to-Production flow while respecting Operational Location, Client, Service Arrangement, Configuration and permission decisions.
+Stage 6 must reconcile the preliminary architecture and FIKA Core catalogues with the completed Packs 1–8. It must define service, repository, projection and adapter boundaries without selecting storage prematurely or rewriting business meaning. Any missing business policy returns to the BDR process.
 
 ## 8. Architectural North Star
 

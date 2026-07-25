@@ -108,7 +108,7 @@ This dictionary records the canonical vocabulary and controlled candidate terms 
 - [TYPE-002 — Primary Location Type](../business-decisions/type-002-primary-location-type.md)
 - [CAP-001 — Operational Capability Definition](../business-decisions/cap-001-operational-capability-definition.md)
 - [SVC-004 — Service Arrangement Scope](../business-decisions/svc-004-service-arrangement-scope.md)
-- [SVC-006 — Service Occurrence and Booking Boundary](../business-decisions/svc-006-service-occurrence-booking-boundary.md)
+- [SVC-006 — Scheduled Work and Booking Boundary](../business-decisions/svc-006-scheduled-work-and-booking-boundary.md)
 
 ## Related Canon
 
@@ -116,4 +116,3 @@ This dictionary records the canonical vocabulary and controlled candidate terms 
 - [Naming Conventions](03-naming-conventions.md)
 - [Authority Model](04-authority-model.md)
 - [Discovery Register](05-discovery-register.md)
-

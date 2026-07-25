@@ -1,6 +1,6 @@
 # Target Architecture
 
-> **Classification: Supporting provisional architecture.** Stage 6 has not started. This technology-neutral direction must be reconciled with accepted BDRs and adopted schemas before it becomes implementation authority.
+> **Classification: Supporting provisional architecture.** Stage 6 is active. This technology-neutral direction must be reconciled with the governed Stage 5 Packs 1–8 before it becomes implementation authority.
 
 ## Purpose and status
 
@@ -56,7 +56,7 @@ Module boundaries must follow business ownership and lifecycle, not current fold
 
 Canonical schemas define stable IDs, versions, timestamps, ownership, required/optional fields, validation, and source-of-truth. They are independent of interfaces, sites, storage layouts, and external providers.
 
-`FikaBooking` is the first draft domain contract. Future candidates include `FikaSite`, `FikaAppConfig`, `FikaCustomer`, `FikaEvent`, `FikaProductionOrder`, `FikaProductionLine`, and logistics/workforce/reporting concepts after discovery. Drafts are not adopted contracts until reviewed and decided.
+The Stage 5 baseline contains governed contracts across foundational identity and Operational Location, authority and capability, Service, Booking, Event, Production, Mobilisation, Brand Variation and Waste. The earlier standalone `FikaBooking` material remains supporting draft evidence rather than the only platform contract. Logistics, workforce, reporting and other unresolved concepts still require their applicable governed discovery before schema or implementation work.
 
 ### Shared workflows
 
@@ -139,7 +139,7 @@ Calendar, Sheets, files, and dashboards may remain useful projections or integra
 
 ## Target Events direction
 
-Separate experiences for The Line, FIKA sites, FIKA Events and Pop-ups, external venues, and manual channels should normalise into a shared event contract. The internal Events Dashboard should become the company-wide operational source of truth for events. Schema, workflow, permissions, storage, and delivery choices remain future decisions.
+Separate experiences for The Line, FIKA sites, FIKA Events and Pop-ups, external venues, and manual channels should normalise into the governed Event contract. The internal Events Dashboard should become the company-wide operational source of truth for events. Stage 6 must now define workflow, permissions, repositories, projections and adapters without changing the Event business meaning.
 
 ## Quality attributes
 
@@ -159,8 +159,8 @@ The architecture should support:
 - database or storage technology;
 - runtime, hosting, messaging, or deployment platform;
 - physical repository implementation;
-- final schema catalogue and adoption sequence;
+- future schema Pack scope and versioning conventions;
 - production authentication and permission model;
-- Events and Logistics implementation design;
-- production-order status, timing, unit, yield, amendment, and dietary allocation rules;
+- Events and Logistics architecture and implementation design;
+- production workflow orchestration and any business policy not already settled by Pack 6;
 - migration cutover dates and legacy retirement.

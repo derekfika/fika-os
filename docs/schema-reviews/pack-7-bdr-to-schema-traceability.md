@@ -14,7 +14,7 @@
 | coordinator assignment | MOB-002; ROLE-002 | Required day-to-day coordinator assignment. |
 | effective period and outcome | Stage 5 governed clarification | Preserves each Mobilisation's timing, outcome and history independently. |
 
-## Phase Plan
+## Phase Plan (`mobilisation-phase-plan.schema.json`)
 
 | Schema element | Authority | Treatment |
 |---|---|---|
@@ -23,7 +23,7 @@
 | explicit optionality | MOB-001 | Every phase entry states whether its work is optional. |
 | dependencies | MOB-001 supporting evidence | Explicit references without hardcoding the MNK sequence. |
 
-## Task
+## Task (`mobilisation-task.schema.json`)
 
 | Schema element | Authority | Treatment |
 |---|---|---|
@@ -32,7 +32,7 @@
 | capability enablement reference | MOB-004; CAP-001 | Required for capability-generated tasks. |
 | requirement reference | MOB-004 | Prevents specific work from entering the canonical task catalogue silently. |
 
-## Readiness Assessment
+## Readiness Assessment (`mobilisation-readiness-assessment.schema.json`)
 
 | Schema element | Authority | Treatment |
 |---|---|---|

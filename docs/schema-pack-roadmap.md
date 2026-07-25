@@ -11,20 +11,20 @@ All Packs follow the [Schema Generation and Completion Process](platform-methodo
 - **Repository status:** Not started, Staged, Integrated or Committed.
 - **Completion status:** Planned, In progress, Complete or Blocked.
 
-“Complete” means the Pack's Stage 5 deliverables are complete and integrated. `READY FOR COMMIT` means Git commit is the sole remaining manual engineering action.
+“Complete” means the Pack's Stage 5 deliverables are complete and integrated. `Committed` means that completed baseline is present in repository history.
 
 ## Pack summary
 
 | Pack | Scope | Depends on | Business authority | Repository status | Completion status |
 |---|---|---|---|---|---|
-| 1 | Shared primitives; Client; Client Contact; Operational Location; Alias; Ownership; Type | Governed CLIENT, LOC and TYPE BDRs | Relevant Client and Operations business owners | Integrated | Complete; ready for commit |
-| 2 | Capabilities; Configuration; Roles; Responsibilities; Assignments; Permissions | Pack 1; governed CAP, CFG and ROLE BDRs | Relevant BDR business owners | Integrated | Complete; ready for commit |
-| 3 | Service; Recurring Schedule; Service Arrangement; Service Occurrence | Packs 1–2; governed SVC BDRs | Operations and relevant Service owners | Integrated | Complete; ready for commit |
-| 4 | Booking | Packs 1–3; governed BOOK BDRs | Hospitality and relevant Booking owners | Integrated | Complete; ready for commit |
-| 5 | Events | Packs 1–3; governed EVT BDRs | Events business owner | Integrated | Complete; ready for commit |
-| 6 | Production | Packs 1–4; governed PROD BDRs | Production and Hospitality business owners | Integrated | Complete; ready for commit |
-| 7 | Mobilisation | Packs 1–3 where referenced; governed MOB BDRs | Mobilisation business owner | Integrated | Complete; ready for commit |
-| 8 | Brand; Waste | Pack 1; Pack 2 configuration where referenced; governed BRAND and WASTE BDRs | Brand and Operations business owners | Integrated | Complete; ready for commit |
+| 1 | Shared primitives; Client; Client Contact; Operational Location; Alias; Ownership; Type | Governed CLIENT, LOC and TYPE BDRs | Relevant Client and Operations business owners | Committed | Complete |
+| 2 | Capabilities; Configuration; Roles; Responsibilities; Assignments; Permissions | Pack 1; governed CAP, CFG and ROLE BDRs | Relevant BDR business owners | Committed | Complete |
+| 3 | Service; Recurring Schedule; Service Arrangement; Service Occurrence | Packs 1–2; governed SVC BDRs | Operations and relevant Service owners | Committed | Complete |
+| 4 | Booking | Packs 1–3; governed BOOK BDRs | Hospitality and relevant Booking owners | Committed | Complete |
+| 5 | Events | Packs 1–3; governed EVT BDRs | Events business owner | Committed | Complete |
+| 6 | Production | Packs 1–4; governed PROD BDRs | Production and Hospitality business owners | Committed | Complete |
+| 7 | Mobilisation | Packs 1–3 where referenced; governed MOB BDRs | Mobilisation business owner | Committed | Complete |
+| 8 | Brand; Waste | Pack 1; Pack 2 configuration where referenced; governed BRAND and WASTE BDRs | Brand and Operations business owners | Committed | Complete |
 | 9 | Provider mappings | Completed and integrated canonical schemas from applicable Packs | Relevant domain owner plus provider/integration owner | Not started | Blocked only by first provider selection and accountable owner |
 
 ## Pack 1 — Foundational identity and location
@@ -53,8 +53,8 @@ Relevant Client, Commercial and Operations business owners.
 
 ### Status
 
-- **Repository status:** Integrated
-- **Completion status:** Complete; ready for commit
+- **Repository status:** Committed
+- **Completion status:** Complete
 
 ## Pack 2 — Capability, configuration and authority
 
@@ -79,8 +79,8 @@ Relevant Capability, Configuration, Role and Permission business owners.
 
 ### Status
 
-- **Repository status:** Integrated
-- **Completion status:** Complete; ready for commit
+- **Repository status:** Committed
+- **Completion status:** Complete
 
 ## Pack 3 — Service
 
@@ -106,8 +106,8 @@ Operations and the relevant Service business owners.
 
 ### Status
 
-- **Repository status:** Integrated
-- **Completion status:** Complete; ready for commit
+- **Repository status:** Committed
+- **Completion status:** Complete
 
 ## Pack 4 — Booking
 
@@ -133,8 +133,8 @@ Hospitality and the relevant Booking business owners.
 
 ### Status
 
-- **Repository status:** Integrated
-- **Completion status:** Complete; ready for commit
+- **Repository status:** Committed
+- **Completion status:** Complete
 
 ## Pack 5 — Events
 
@@ -159,8 +159,8 @@ The Events business owner.
 
 ### Status
 
-- **Repository status:** Integrated
-- **Completion status:** Complete; ready for commit
+- **Repository status:** Committed
+- **Completion status:** Complete
 
 ## Pack 6 — Production
 
@@ -185,8 +185,8 @@ Production, Hospitality and relevant Production business owners.
 
 ### Status
 
-- **Repository status:** Integrated
-- **Completion status:** Complete; ready for commit
+- **Repository status:** Committed
+- **Completion status:** Complete
 
 ## Pack 7 — Mobilisation
 
@@ -211,8 +211,8 @@ The Mobilisation business owner.
 
 ### Status
 
-- **Repository status:** Integrated
-- **Completion status:** Complete; ready for commit
+- **Repository status:** Committed
+- **Completion status:** Complete
 
 ## Pack 8 — Brand and Waste
 
@@ -239,8 +239,8 @@ The Brand business owner for Brand and Operations business owner for Waste.
 
 ### Status
 
-- **Repository status:** Integrated
-- **Completion status:** Complete; ready for commit
+- **Repository status:** Committed
+- **Completion status:** Complete
 
 ## Pack 9 — Provider mappings
 

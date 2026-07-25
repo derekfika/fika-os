@@ -12,7 +12,7 @@ Canonical schemas are a Stage 5 deliverable. They implement accepted Business De
 - [Pack 6](pack-6/README.md) contains Production Order, Production Line, routing and change-record Draft schemas.
 - [Pack 7](pack-7/README.md) contains Mobilisation, phase-plan, task and readiness-assessment Draft schemas.
 - [Pack 8](pack-8/README.md) contains separate Brand Variation, Brand Assurance Record, Waste Event and Waste Disposition Draft schemas.
-- Packs 1 through 8 have completed the established Stage 5 autonomous workflow and are integrated locally, ready for commit.
+- Packs 1 through 8 form the completed, integrated and committed Stage 5 baseline. Fresh repository-wide validation passed on 2026-07-25.
 - Lifecycle labels inside older schema files remain historical candidate metadata and do not create an additional review or adoption gate.
 - Existing pre-Pack `FikaBooking` schemas and fixtures remain supporting draft evidence, not completed canonical contracts.
 - Canonical use requires traceable BDR authority, validation and repository integration under the established Stage 5 workflow.

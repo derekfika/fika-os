@@ -4,14 +4,13 @@ This repository is the governed business, domain, schema and architecture specif
 
 ## Current stage
 
-- **Stage 3 — Business Discovery:** Complete
+- **Stages 1–5:** Complete
 - **Canonical decisions:** 54
-- **Discovery:** 100%
-- **Remaining questions:** 0
-- **Needs Review:** 0
-- **Next active stage:** [Stage 4 — Business Decision Records](docs/stages/stage-4-business-decision-records.md)
+- **Stage 5 baseline:** Packs 1–8, 51 schemas, 53 valid fixtures and 51 invalid fixtures
+- **Fresh baseline validation:** Passed on 2026-07-25
+- **Active stage:** [Stage 6 — Platform Architecture](docs/stages/stage-6-platform-architecture.md)
 
-The approved decisions currently live in the [FIKA Business Knowledge Workbook](https://docs.google.com/spreadsheets/d/195jMni3vG5fX5hfAUFARc-vC2ifO8AI8r0r4xQUeoxk/edit). Stage 4 will create durable repository records without changing Derek's approved wording.
+The repository contains all 54 durable Business Decision Records and the integrated Stage 5 schema baseline. A BDR may retain `Draft` metadata while its supporting explanation awaits review; its exact approved `Decision` section remains authoritative and is not superseded by that metadata.
 
 ## Start here
 
@@ -20,8 +19,8 @@ The approved decisions currently live in the [FIKA Business Knowledge Workbook](
 3. Review the [nine-stage roadmap](roadmap.md) and [stage files](docs/stages/stage-1-vision.md).
 4. Use the [platform principles](docs/platform-principles.md) and [domain map](docs/platform-domain-map.md) for enduring context.
 5. Use [domain discovery](docs/domain-discovery/) and [business journeys](docs/business-journeys/) as supporting evidence.
-6. Use [Business Decision Records](docs/business-decisions/README.md) once Stage 4 records are generated.
-7. Use [`schemas/`](schemas/README.md) only for explicitly adopted Stage 5 contracts; existing booking material remains draft evidence.
+6. Use [Business Decision Records](docs/business-decisions/README.md) for canonical business meaning.
+7. Use the integrated [`schemas/`](schemas/README.md) baseline as an input to Stage 6; existing pre-Pack booking material remains supporting draft evidence.
 
 ## Repository navigation
 

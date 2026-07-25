@@ -25,7 +25,7 @@
 | production quantity | BOOK-002; PROD-003 | Production-owned preparation quantity and unit. |
 | rule snapshot references | PROD-003 | References preparation unit, yield, conversion, recipe, batch and aggregation rules without inventing catalogues. |
 
-## Routing Allocation
+## Routing Allocation (`production-routing-allocation.schema.json`)
 
 | Schema element | Authority | Treatment |
 |---|---|---|

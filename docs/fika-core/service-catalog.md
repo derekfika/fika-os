@@ -24,9 +24,9 @@ These are candidate conceptual services, not deployed components or generated AP
 
 ## Event Service
 
-- **Purpose:** Own the future company-wide event record shared by distinct source channels.
+- **Purpose:** Own the company-wide Event record shared by distinct source channels.
 - **Responsibilities:** Capture/normalise events; govern lifecycle, venue, schedule, ownership and source; coordinate event amendments and downstream requirements.
-- **Owns:** Future `FikaEvent` aggregate and event-specific invariants.
+- **Owns:** The governed Event aggregate and event-specific invariants.
 - **Does not own:** Public-channel presentation, hospitality booking semantics, labour/equipment inventory, logistics execution or Calendar provider state.
 - **Candidate operations:** create event draft; qualify; amend; cancel; assign owner; add requirements; retrieve pipeline/view.
 - **Dependencies:** Site, User, Permission, Configuration, Equipment, Media, Quote, Document, Notification and EventRepository.
@@ -35,7 +35,7 @@ These are candidate conceptual services, not deployed components or generated AP
 
 - **Purpose:** Own production work derived from eligible commercial/service demand.
 - **Responsibilities:** Create and version production orders/lines; apply production conversion rules; manage production status, notes, allocation and amendment/cancellation disposition.
-- **Owns:** Future `FikaProductionOrder`, `FikaProductionLine` and production workflow state.
+- **Owns:** The governed Production Order and Production Line concepts and production workflow state.
 - **Does not own:** Commercial booking status/pricing, raw Calendar/parser metadata, dashboard UI state or logistics execution.
 - **Candidate operations:** create from booking; revise from booking version; cancel/dispose; assign production facility; mark production milestones; retrieve production plan.
 - **Dependencies:** Booking, Site, Configuration, Validation, Permission, Notification, Audit and ProductionRepository.
@@ -151,6 +151,6 @@ These are candidate conceptual services, not deployed components or generated AP
 ## Candidate-service decisions
 
 - TODO: Confirm service owners and whether Quote/Document, User/Permission, or Validation/Audit remain separate conceptual services.
-- TODO: Complete Event, Production, Equipment, Media and Logistics domain discovery before adopting their operations.
+- TODO: Complete Equipment, Media and Logistics domain discovery before adopting their operations; reconcile Event and Production operations with Packs 5 and 6.
 - TODO: Define compatibility and deprecation rules for service contracts.
 - TODO: Confirm which services belong in initial Core and which remain domain-local.

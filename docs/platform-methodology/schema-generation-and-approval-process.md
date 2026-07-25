@@ -193,9 +193,9 @@ Business owners retain authority over business meaning. Autonomous schema proces
 
 Where a Pack exposes unresolved cross-domain meaning, it pauses at one batched Human Decision Gate. Otherwise processing continues through repository integration without an additional review gate.
 
-## Current stage
+## Current baseline
 
-Packs 1 through 8 have completed the established Stage 5 workflow and are integrated locally. Existing standalone `FikaBooking` material remains supporting draft evidence unless incorporated through a governed Pack. Pack 9 remains gated only by the business decision selecting the first provider mapping and its accountable owner.
+Stage 5 closed on 2026-07-25 with Packs 1 through 8 completed, integrated, committed and freshly validated. Existing standalone `FikaBooking` material remains supporting draft evidence unless incorporated through a governed Pack. Future BDR and schema Packs may extend the baseline incrementally through this process. Pack 9 remains gated by the business decision selecting the first provider mapping and its accountable owner.
 
 ## Recommended working practices
 

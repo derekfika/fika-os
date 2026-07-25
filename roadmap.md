@@ -14,9 +14,9 @@ FIKA OS allows FIKA to grow without proportional increases in manual work, dupli
 Stage 1 Vision                 Complete
 Stage 2 Domain Discovery      Complete
 Stage 3 Business Discovery    Complete — 54 canonical decisions, 100%
-Stage 4 Business Decisions    Active
-Stage 5 Schema Design         Planned
-Stage 6 Platform Architecture Planned
+Stage 4 Business Decisions    Complete
+Stage 5 Schema Design         Complete — Packs 1–8, freshly validated
+Stage 6 Platform Architecture Active
 Stage 7 Implementation        Planned
 Stage 8 Validation/Rollout    Planned
 Stage 9 Continuous Discovery  Planned ongoing governance
@@ -38,7 +38,7 @@ Stage 9 Continuous Discovery  Planned ongoing governance
 
 - Later stages consume earlier authority; they do not silently redefine it.
 - A BDR must exist before a schema implements a business decision.
-- A schema Pack must complete Stage 5, be integrated and be committed before it becomes an implementation dependency.
+- A schema Pack must complete Stage 5, be integrated and be committed before it becomes an architecture or implementation dependency.
 - Architecture must trace to BDRs and schemas.
 - Implementation requires reviewed architecture and explicit scope.
 - Rollout requires validation, operational readiness and authority.

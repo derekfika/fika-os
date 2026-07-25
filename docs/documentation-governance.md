@@ -19,7 +19,7 @@ When two documents differ, use the highest applicable source in this order:
 
 Downstream documents must reference upstream authority and must not silently redefine it. Where an approved decision changes, create or supersede the relevant BDR before changing schemas, architecture or implementation.
 
-The current canonical decision authority is the [FIKA Business Knowledge Workbook](https://docs.google.com/spreadsheets/d/195jMni3vG5fX5hfAUFARc-vC2ifO8AI8r0r4xQUeoxk/edit). Stage 4 will create durable repository BDRs from its 54 canonical decisions.
+The [FIKA Business Knowledge Workbook](https://docs.google.com/spreadsheets/d/195jMni3vG5fX5hfAUFARc-vC2ifO8AI8r0r4xQUeoxk/edit) is the approved source register. Stage 4 preserved all 54 canonical decisions as durable repository BDRs; their exact Decision sections govern downstream repository work.
 
 ## Document classifications
 

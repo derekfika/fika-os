@@ -63,7 +63,7 @@ The direct platform path is authoritative. The legacy path should normalise into
 | CFC | Development; built but not operationally deployed | Uses the shared direct booking-object flow |
 | Demo | Sales/tender demonstration | Demonstrates the direct booking-object flow; must not define production business rules |
 
-The platform recalculates and validates requests server-side, creates booking IDs, writes operational line-item/request views, and sends notifications. Menu/brochure catalogues and platform settings are current inputs. The authoritative physical repository and mutation/version delivery remain TODO; the applicable Stage 5 schema Packs are completed and integrated locally, ready for commit.
+The platform recalculates and validates requests server-side, creates booking IDs, writes operational line-item/request views, and sends notifications. Menu/brochure catalogues and platform settings are current inputs. The authoritative physical repository and mutation/version delivery remain TODO; the applicable Stage 5 schema Packs are part of the completed and committed baseline.
 
 ## Legacy inbox adapters
 
@@ -101,7 +101,7 @@ flowchart TB
 
 The CPU scanner reads configured Calendars, prefers a recognised booking JSON attachment, and falls back to quote, booking-form, title, description, location, and owner mappings. It stores a lossy order projection and aggregates production quantities by normalised item display name and site.
 
-CPU statuses (`READY`, `NEEDS_ATTENTION`, `CANCELLED`), preparation state, chef attribution, warnings, detected changes, and photographs are operational/production state. A future `FikaProductionOrder` will represent production work; it does not yet exist as a canonical schema or repository.
+CPU statuses (`READY`, `NEEDS_ATTENTION`, `CANCELLED`), preparation state, chef attribution, warnings, detected changes, and photographs are operational/production state. Pack 6 now defines the governed Production Order and Production Line contracts; an authoritative production repository and workflow remain Stage 6 and later delivery work.
 
 ## Existing integrations
 
@@ -148,7 +148,7 @@ Logistics is a planned company-wide capability downstream of hospitality/CPU wor
 | Menu/catalogue at submission | Site booking-platform catalogue/configuration; governance TODO | Frozen item snapshots in bookings; brochures as documented provenance |
 | Dashboard workflow | Dashboard operational projection, pending formal ownership | Booking commercial status must remain separate |
 | CPU production work | No canonical production-order repository yet | CPU Orders Sheet is the current operational projection |
-| Events | Planned Events Dashboard authority | Current event records/channels require future inventory and schema decisions |
+| Events | Governed Event record; planned internal Events Dashboard authority | Pack 5 defines the Event contract; channel inventory, architecture, workflows and projections remain Stage 6 work |
 | Configuration | Mixed current source files, Settings Sheets and properties | Target central ownership remains future work |
 
 ## Transitional adapters and operational projections

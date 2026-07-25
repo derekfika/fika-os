@@ -20,7 +20,7 @@
 |---|---|---|
 | Client | CLIENT-001 | Client stable organisational identity |
 | Client Contact | CLIENT-001 | Individual identity separate from Client |
-| Client/OPLOC Relationship | CLIENT-001, LOC-005 | Independent, historically traceable relationship |
+| Client/OPLOC Relationship (`client-operational-location-relationship.schema.json`) | CLIENT-001, LOC-005 | Independent, historically traceable relationship |
 | Client Contact OPLOC Assignment | CLIENT-001, LOC-005 | Contact responsibility across OPLOCs |
 | Operational Location | LOC-001–LOC-004, LOC-006, TYPE-001–TYPE-003 | Durable OPLOC identity and owned current/history facts |
 | Operational Location Alias | LOC-002, LOC-003 | Historical aliases without changing identity |
