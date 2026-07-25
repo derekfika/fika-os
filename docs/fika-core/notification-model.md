@@ -2,7 +2,7 @@
 
 ## Status
 
-Stage 6 supporting specification governed by [ADR-001](../decisions/ADR-001-stage-6-platform-boundaries.md). Notifications are not yet an adopted business domain.
+Stage 6 supporting specification governed by [ADR-001](../decisions/ADR-001-stage-6-platform-boundaries.md) and [ADR-005](../decisions/ADR-005-domain-event-and-integration-contract.md). Notifications are not yet an adopted business domain.
 
 ## Generation and delivery
 
@@ -11,6 +11,8 @@ Notification generation decides that a governed business fact requires communica
 Notification delivery transports an approved intent through a channel. It belongs behind a provider port and adapter.
 
 These responsibilities must remain separate. A mail, chat, mobile or dashboard provider must not decide business eligibility or authority.
+
+A domain or integration event records a completed fact; it is not itself a notification. Event delivery to a technical consumer does not mean a Legend or external recipient was notified, and notification-delivery success does not change the underlying business outcome.
 
 ## Notification intent
 

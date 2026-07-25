@@ -48,6 +48,8 @@ FIKA has a coherent platform design in which applications consume stable busines
 
 The first bounded architecture reconciliation is complete and accepted through ADR-001. Stage 6 remains active; no implementation is authorised by that completion.
 
+The second bounded task, the technology-neutral domain-event and integration contract, is complete and accepted through ADR-005.
+
 ## Entry brief
 
 The completed Stage 5 baseline includes governed contracts for foundational Client and Operational Location concepts, authority and capability, Service, Booking, Event, Production, Mobilisation, Brand Variation and Waste. Stage 6 consumes those contracts and does not casually rewrite their business meaning.
@@ -67,12 +69,25 @@ Completed on 2026-07-25:
 
 No storage, provider, deployment topology or production implementation was selected.
 
+## Second bounded deliverable
+
+Completed on 2026-07-25:
+
+- accepted [ADR-005](../decisions/ADR-005-domain-event-and-integration-contract.md);
+- distinguished domain events, integration events, commands, queries, notifications, provider webhooks, audit entries and Event-domain records;
+- established a logical event envelope, ownership and compatibility rules;
+- established duplicate-safe delivery, ordering limitations, correlation, causation, retry, quarantine and replay principles;
+- protected provider, legacy, security, privacy, audit and observability boundaries; and
+- remained neutral on messaging infrastructure, serialization, storage, event sourcing and deployment topology.
+
+No event catalogue, business trigger, Stage 5 schema or implementation was created.
+
 ## Next bounded work
 
-ADR-001 registers the required follow-up decisions. Before implementation, Stage 6 should address:
+ADR-001 registers the required follow-up decisions. ADR-005 has completed item 1 below. The next bounded task is **ADR-006: Repository and Consistency Contract**.
 
-1. domain-event and integration guarantees;
-2. repository and cross-domain consistency;
+1. domain-event and integration guarantees — complete through ADR-005;
+2. repository and cross-domain consistency — next through ADR-006;
 3. projection and dashboard boundaries;
 4. identity-to-AUTHMOD enforcement;
 5. Booking-to-Production orchestration; and
@@ -100,6 +115,7 @@ Stages 7 and 8 use the architecture to constrain implementation, testing, rollou
 
 - [Target architecture](../target-architecture.md).
 - [ADR-001 — Stage 6 Platform Boundaries](../decisions/ADR-001-stage-6-platform-boundaries.md).
+- [ADR-005 — Domain Event and Integration Contract](../decisions/ADR-005-domain-event-and-integration-contract.md).
 - [FIKA Core overview](../fika-core/overview.md).
 - [Platform domain map](../platform-domain-map.md).
 - [Architecture review checklist](../engineering/architecture-review-checklist.md).

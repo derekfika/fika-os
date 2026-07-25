@@ -53,7 +53,7 @@ flowchart LR
     HD["Hospitality Dashboards"]
     HDS["Hospitality Dashboard Sheets"]
     QUOTE["Quote and PDF generation"]
-    CAL["Calendar events"]
+    CAL["Calendar provider records"]
     CPU["CPU Production Dashboard"]
     CPUS["CPU Orders and Deliveries Sheets"]
   end
@@ -95,7 +95,7 @@ These adapters reconstruct fields from message and workbook layout. They are not
 
 ## Hospitality Dashboards
 
-Dashboards review bookings, generate quotes/documents, create Calendar events, send confirmations/cancellations, archive files, and maintain operational workflow fields. Their Sheets contain booking projections, quote and Calendar references, statuses, audit information, and variant-specific fields.
+Dashboards review bookings, generate quotes/documents, create Calendar provider records, send confirmations/cancellations, archive files, and maintain operational workflow fields. Their Sheets contain booking projections, quote and Calendar references, statuses, audit information, and variant-specific fields.
 
 The dashboards should consume booking objects rather than reconstruct bookings wherever possible. Dashboard workflow status is not authoritative commercial booking status. MNK recharge logic and The Line revision behaviour are confirmed variant-specific concerns pending separate domain decisions.
 
@@ -105,7 +105,7 @@ The dashboards should consume booking objects rather than reconstruct bookings w
 flowchart TB
   BOOKING["Canonical booking intent"] --> DASH["Hospitality Dashboard workflow"]
   DASH --> QUOTE["Quote document and PDF"]
-  DASH --> EVENT["Calendar event"]
+  DASH --> EVENT["Calendar provider record"]
   DASH --> EMAIL["Confirmation or cancellation email"]
   QUOTE --> DRIVE["Drive files and folders"]
   EVENT --> DRIVE
@@ -131,7 +131,7 @@ CPU statuses (`READY`, `NEEDS_ATTENTION`, `CANCELLED`), preparation state, chef 
 |---|---|---|
 | Gmail | Legacy booking intake and workflow email in Hospitality Dashboards; booking-platform notifications | Legacy adapter and external communication |
 | Google Drive | Source/quote/PDF/JSON storage, attachment reading, Office conversion, archives, CPU evidence | External integration and file store |
-| Google Calendar | Hospitality event creation and CPU discovery/delivery events | Operational integration and transitional adapter envelope |
+| Google Calendar | Hospitality Calendar-record creation and CPU discovery/delivery records | Operational integration and transitional adapter envelope; not an ADR-005 event contract |
 | Google Sheets | Configuration, projections, logs, reporting and workflow state | Mixed; role must be explicit per Sheet |
 | Google Docs/Slides | Quote/document generation and CPU attachment parsing | Document integration/legacy adapter |
 | BrightHR | Workforce Operations Platform data workflow | External integration; detailed authority/sync behaviour requires manual review |
@@ -159,7 +159,7 @@ flowchart LR
 
 ## Planned Logistics capability
 
-Logistics is a planned company-wide capability downstream of hospitality/CPU workflows. No local Logistics Dashboard repository or adopted logistics schema was found. Current CPU delivery Calendar events and the CPU Deliveries Sheet are evidence of an operational delivery concern, but not evidence of the target Logistics design.
+Logistics is a planned company-wide capability downstream of hospitality/CPU workflows. No local Logistics Dashboard repository or adopted logistics schema was found. Current CPU delivery Calendar records and the CPU Deliveries Sheet are evidence of an operational delivery concern, but not evidence of the target Logistics design.
 
 ## Sources of truth summary
 
@@ -177,7 +177,7 @@ Logistics is a planned company-wide capability downstream of hospitality/CPU wor
 
 Transitional adapters currently include Gmail/form parsers, The Line revision parsing, dashboard booking-object projection adapters, CPU Calendar discovery, CPU quote/form parsing, and Office document conversion. They should be retained until canonical replacements are verified and recoverable.
 
-Operational projections include booking-platform line-item/request logs, Hospitality Dashboard Sheets, Calendar events, quotes/PDFs, CPU Orders, CPU Deliveries, scan logs, and reporting views. Each projection requires an explicit authority, refresh direction, reconciliation rule, and retention policy during future implementation work.
+Operational projections include booking-platform line-item/request logs, Hospitality Dashboard Sheets, Calendar provider records, quotes/PDFs, CPU Orders, CPU Deliveries, scan logs, and reporting views. Each projection requires an explicit authority, refresh direction, reconciliation rule, and retention policy during future implementation work.
 
 ## Remaining current-state questions
 

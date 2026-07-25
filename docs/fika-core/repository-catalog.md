@@ -59,7 +59,7 @@ Examples supported by current evidence include Angel Court email ingestion and C
 
 ## Integration checkpoint records
 
-An integration checkpoint may record delivery attempts, idempotency, provider references and reconciliation status. It is integration/audit metadata, not a domain aggregate. Its exact common contract requires a follow-up ADR.
+An integration checkpoint may record delivery attempts, consumer deduplication, provider references, quarantine/replay context and reconciliation status. It is integration processing metadata, not a domain aggregate or the ADR-005 event envelope. Its persistence and consistency contract belongs to ADR-006.
 
 ## Candidate repositories
 
@@ -69,6 +69,6 @@ Equipment, Media, Workforce, Logistics, Reporting, Document, Notification and Qu
 
 - Standard optimistic-concurrency contract across repositories.
 - Cross-domain consistency and compensation policy.
-- Event outbox or equivalent durability requirement.
+- Durable record/publication coordination without mandating an outbox or equivalent implementation.
 - Projection rebuild and retention targets.
 - Whether shared audit conventions require one logical AuditRepository.

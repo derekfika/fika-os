@@ -28,6 +28,10 @@ Repositories enforce durable uniqueness, expected version and other persistence 
 
 Adapters validate transport, provider and legacy-input constraints and translate failures. They preserve source references and reject or quarantine inputs that cannot safely normalise. They do not repair ambiguous business meaning by guessing.
 
+## Event-contract validation
+
+Producers validate the ADR-005 envelope and event-type contract before publication. Consumers reject unsupported envelope or event-contract versions visibly, tolerate compatible optional additions, deduplicate stable event identities and still revalidate every resulting command at the receiving domain. Structural event validity never proves authority or business eligibility.
+
 ## Application validation
 
 Applications provide timely feedback and accessibility but are not the authoritative enforcement boundary. Every command is revalidated after crossing the application boundary.

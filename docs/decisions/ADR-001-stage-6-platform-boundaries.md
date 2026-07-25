@@ -129,7 +129,7 @@ Adapters translate between a port and storage, a provider, a legacy input or a l
 - Audit records who or what acted, under which assignment or authority where applicable, what changed, when, why and the source/correlation context required for reconstruction.
 - Audit evidence is not a substitute for a canonical record, and logs are not a substitute for governed audit history.
 
-The exact event envelope, ordering, consistency and retention contracts are deferred to follow-up ADRs.
+The event envelope, taxonomy, delivery assumptions, idempotency, ordering and replay boundaries are now governed by [ADR-005](ADR-005-domain-event-and-integration-contract.md). Repository/publication consistency and retention policy remain deferred.
 
 ### Enforcement boundaries
 
@@ -231,7 +231,7 @@ Future implementations must make it possible to trace a business change across a
 
 ## Unresolved questions
 
-- Exact domain-event envelope, delivery, ordering and retention guarantees.
+- Repository/publication consistency, physical delivery implementation and domain-specific retention policy after ADR-005.
 - Transaction and consistency policy across domain boundaries.
 - Standard repository concurrency contract beyond requirements already governed by individual domains.
 - Authentication identity mapping into Person, Assignment and AUTHMOD references.
@@ -256,15 +256,15 @@ Architecture must not resolve the following:
 
 ## Required follow-up ADR register
 
-| Candidate ADR | Scope | Trigger |
-|---|---|---|
-| ADR-005 Domain event and integration contract | Envelope, idempotency, ordering, delivery and replay | Before implementing cross-domain event delivery |
-| ADR-006 Repository and consistency contract | Aggregate persistence, concurrency, transactions and failure semantics | Before selecting or building repository implementations |
-| ADR-007 Projection and dashboard boundary | Projection ownership, rebuild, freshness and write-back prohibition | Before replacing or materially changing operational dashboards |
-| ADR-008 Identity and AUTHMOD enforcement boundary | Authentication mapping, actor context and enforcement responsibilities | Before platform identity implementation |
-| ADR-009 Booking-to-Production orchestration | Trigger, Booking-version contract, retries, compensation and reconciliation | Before implementing canonical Production creation |
-| ADR-010 Legacy coexistence and retirement | Classification evidence, cutover, reconciliation, rollback and acceptance | Before retiring any current operational path |
-| ADR-011 Notification generation and delivery | Domain intent, recipient policy, delivery adapters and audit | Before a shared notification capability is implemented |
+| ADR | Scope | Trigger | Status |
+|---|---|---|---|
+| [ADR-005 Domain event and integration contract](ADR-005-domain-event-and-integration-contract.md) | Envelope, idempotency, ordering, delivery and replay | Before implementing cross-domain event delivery | Accepted 2026-07-25 |
+| ADR-006 Repository and consistency contract | Aggregate persistence, concurrency, transactions and failure semantics | Before selecting or building repository implementations | Next bounded task |
+| ADR-007 Projection and dashboard boundary | Projection ownership, rebuild, freshness and write-back prohibition | Before replacing or materially changing operational dashboards | Planned |
+| ADR-008 Identity and AUTHMOD enforcement boundary | Authentication mapping, actor context and enforcement responsibilities | Before platform identity implementation | Planned |
+| ADR-009 Booking-to-Production orchestration | Trigger, Booking-version contract, retries, compensation and reconciliation | Before implementing canonical Production creation | Planned |
+| ADR-010 Legacy coexistence and retirement | Classification evidence, cutover, reconciliation, rollback and acceptance | Before retiring any current operational path | Planned |
+| ADR-011 Notification generation and delivery | Domain intent, recipient policy, delivery adapters and audit | Before a shared notification capability is implemented | Planned |
 
 The numbers are reserved as a planning register only. Each ADR requires its own evidence and review.
 

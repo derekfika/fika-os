@@ -18,7 +18,7 @@ Business domains describe what FIKA operates: clients, operational locations, se
 
 ### Core Platform
 
-FIKA Core supplies shared conceptual services and cross-cutting capabilities: repositories, workflows, configuration, brand, permissions, validation, notifications, documents and audit. Core implements or coordinates domain contracts without merging all domains into one model.
+FIKA Core standardises only narrow domain-neutral contracts such as identifier/reference conventions, version and effective-time conventions, the ADR-005 event envelope, validation-result shapes, and repository/projection/provider-port conventions. Configuration, Brand, AUTHMOD, Notifications, Documents and Audit retain their own governed or candidate ownership; Core does not absorb their business meaning.
 
 ### Applications
 
@@ -80,7 +80,7 @@ flowchart TB
   PROD -.-> REPORT
   LOG -.-> REPORT
 
-  subgraph CROSS["Cross-cutting FIKA Core capabilities"]
+  subgraph CROSS["Supporting and cross-domain concerns"]
     BRAND["Brand"]
     CONFIG["Configuration"]
     PERM["Permissions"]
@@ -217,6 +217,7 @@ Dashed arrows denote supporting, consumer or provisional relationships rather th
 - **Consumers:** Internal Events Dashboard, The Line experience, FIKA Events and Pop-ups, operations, Logistics and Reporting.
 - **Current maturity:** Event qualification, Event Contact, optional Client relationship, approval evidence and the Pack 5 Event contract are complete; lifecycle and publication policy remain deferred.
 - **Examples:** The Line, FIKA Operational Locations, FIKA Events and Pop-ups, external venues and email/phone/manual Events feeding one internal source of truth.
+- **Terminology boundary:** Capitalised **Event** is this business-domain record. An ADR-005 domain event is an immutable architectural statement that a completed fact occurred; it does not create or rename the Event business concept.
 
 ### Equipment
 
@@ -478,7 +479,7 @@ No additional business domains are asserted.
 
 ## Next governed work
 
-Stage 6 has reconciled the initial architecture and FIKA Core catalogues with completed Packs 1–8 through ADR-001. The next work is to define the event, consistency, projection, identity-enforcement and legacy-coexistence contracts registered there. Missing business policy returns to the BDR process.
+Stage 6 has reconciled the initial architecture and FIKA Core catalogues through ADR-001 and established the domain-event and integration contract through ADR-005. The next bounded work is ADR-006 for repository and consistency boundaries, followed by the remaining projection, identity-enforcement and legacy-coexistence decisions. Missing business policy returns to the BDR process.
 
 ## 8. Architectural North Star
 

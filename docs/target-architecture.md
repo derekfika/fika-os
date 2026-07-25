@@ -132,9 +132,9 @@ User-interface validation improves usability but is not authoritative enforcemen
 
 ## Events, notifications and audit
 
-Domain events describe accepted business facts after durable domain change. Consumers must be idempotent where they cause effects. Notifications are generated from governed business facts but delivered through channel adapters. Audit must preserve actor, authority context where applicable, change, time, reason, provenance and correlation needed for reconstruction.
+Domain events describe accepted business facts after durable domain change. Integration events are deliberately stable, minimised publications of those facts across boundaries. Commands request actions and may be refused; notifications communicate consequences; provider webhooks remain untrusted observations behind adapters. Capitalised **Event** remains the governed Event-domain business concept.
 
-Exact event, consistency, retry, retention and notification policies require the follow-up ADRs registered by ADR-001.
+[ADR-005](decisions/ADR-005-domain-event-and-integration-contract.md) governs the logical envelope, versioning, duplicate-safe delivery, ordering limitations, correlation, replay and provider boundaries. Repository/publication consistency, retention and notification policy require later decisions registered by ADR-001.
 
 ## Legacy support and gradual migration
 
@@ -153,7 +153,7 @@ No legacy path is retired by this architecture document.
 
 - deployment topology and service distribution;
 - storage and hosting;
-- event-envelope and delivery guarantees;
+- repository/publication consistency and physical delivery implementation;
 - cross-domain transaction and consistency policy;
 - authentication implementation;
 - projection freshness and rebuild targets;

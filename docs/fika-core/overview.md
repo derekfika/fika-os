@@ -2,7 +2,7 @@
 
 ## Status
 
-Stage 6 supporting specification constrained by [ADR-001](../decisions/ADR-001-stage-6-platform-boundaries.md). Where an older FIKA Core catalogue conflicts with ADR-001 or governed business meaning, ADR-001 and the governing BDR take precedence.
+Stage 6 supporting specification constrained by [ADR-001](../decisions/ADR-001-stage-6-platform-boundaries.md) and [ADR-005](../decisions/ADR-005-domain-event-and-integration-contract.md). Where an older FIKA Core catalogue conflicts with an accepted ADR or governed business meaning, the accepted ADR and governing BDR take precedence.
 
 ## Purpose
 
@@ -38,7 +38,7 @@ Core may standardise:
 - actor, assignment and authority-context references;
 - correlation, causation, idempotency and concurrency context;
 - common validation-issue and operation-result shapes;
-- a domain-event envelope;
+- the ADR-005 domain-event envelope and compatibility conventions;
 - repository, projection and provider-port conventions.
 
 Core supplies no domain decision merely because multiple domains use the same structural convention.
@@ -96,7 +96,7 @@ Core defines common port behaviour only where it is truly cross-domain. Domain r
 
 ## Open questions
 
-- Exact event-envelope and consistency contracts.
+- Repository/publication consistency and physical delivery contracts.
 - Exact common concurrency and idempotency contracts.
 - Authentication-to-actor mapping.
 - Whether a common audit store is needed or only common audit conventions.
