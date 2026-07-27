@@ -2,7 +2,7 @@
 
 ## Status and authority
 
-This accepted Stage 6 target boundary is governed by [ADR-001](decisions/ADR-001-stage-6-platform-boundaries.md) and [ADR-005](decisions/ADR-005-domain-event-and-integration-contract.md) through [ADR-009](decisions/ADR-009-booking-to-production-orchestration.md). It is technology-neutral and does not decide deployment topology, storage, hosting, provider or programming language.
+This accepted Stage 6 target boundary is governed by [ADR-001](decisions/ADR-001-stage-6-platform-boundaries.md) and [ADR-005](decisions/ADR-005-domain-event-and-integration-contract.md) through [ADR-010](decisions/ADR-010-legacy-coexistence-and-retirement.md). It is technology-neutral and does not decide deployment topology, storage, hosting, provider or programming language.
 
 Business meaning remains authoritative in the Business Decision Records and completed Packs. This document explains how future software must respect that meaning.
 
@@ -153,7 +153,7 @@ Current applications may continue while boundaries are introduced. Each coexiste
 - rollback approach;
 - accountable acceptance and exit condition.
 
-No legacy path is retired by this architecture document.
+No legacy path is retired by this architecture document. [ADR-010](decisions/ADR-010-legacy-coexistence-and-retirement.md) governs bounded coexistence, readiness, cutover, fallback and retirement: each migration unit declares one canonical-write direction, and cutover does not automatically prove retirement eligibility.
 
 ## Decisions deliberately deferred
 

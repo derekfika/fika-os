@@ -10,7 +10,7 @@ This repository is the governed business, domain, schema and architecture specif
 - **Fresh baseline validation:** Passed on 2026-07-25
 - **Active stage:** [Stage 6 — Platform Architecture](docs/stages/stage-6-platform-architecture.md)
 
-The repository contains all 54 durable Business Decision Records and the integrated Stage 5 schema baseline. Stage 6 has accepted its platform-boundary, domain-event, repository-consistency, projection/dashboard, identity/AUTHMOD and Booking-to-Production orchestration contracts through ADR-001 and ADR-005–009. A BDR may retain `Draft` metadata while its supporting explanation awaits review; its exact approved `Decision` section remains authoritative and is not superseded by that metadata.
+The repository contains all 54 durable Business Decision Records and the integrated Stage 5 schema baseline. Stage 6 has accepted its platform-boundary, domain-event, repository-consistency, projection/dashboard, identity/AUTHMOD, Booking-to-Production orchestration and legacy-coexistence contracts through ADR-001 and ADR-005–010. A BDR may retain `Draft` metadata while its supporting explanation awaits review; its exact approved `Decision` section remains authoritative and is not superseded by that metadata.
 
 ## Start here
 
@@ -24,6 +24,7 @@ The repository contains all 54 durable Business Decision Records and the integra
 8. Use the [accepted target architecture](docs/target-architecture.md) and [ADR-001](docs/decisions/ADR-001-stage-6-platform-boundaries.md) for the initial Stage 6 responsibility boundaries.
 9. Use [ADR-005](docs/decisions/ADR-005-domain-event-and-integration-contract.md) for the domain-event and cross-boundary integration contract.
 10. Use [ADR-009](docs/decisions/ADR-009-booking-to-production-orchestration.md) for the Booking-to-Production orchestration contract.
+11. Use [ADR-010](docs/decisions/ADR-010-legacy-coexistence-and-retirement.md) for legacy coexistence, readiness, cutover, fallback and retirement boundaries.
 
 ## Repository navigation
 

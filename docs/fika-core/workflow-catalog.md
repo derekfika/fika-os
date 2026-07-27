@@ -2,7 +2,7 @@
 
 ## Status
 
-Stage 6 supporting catalogue governed by [ADR-001](../decisions/ADR-001-stage-6-platform-boundaries.md), [ADR-005](../decisions/ADR-005-domain-event-and-integration-contract.md), [ADR-006](../decisions/ADR-006-repository-and-consistency-contract.md), [ADR-007](../decisions/ADR-007-projection-and-dashboard-boundary.md), [ADR-008](../decisions/ADR-008-identity-and-authmod-enforcement-boundary.md) and [ADR-009](../decisions/ADR-009-booking-to-production-orchestration.md). It distinguishes a domain command from a completed domain fact and from cross-domain orchestration. It specifies no workflow engine.
+Stage 6 supporting catalogue governed by [ADR-001](../decisions/ADR-001-stage-6-platform-boundaries.md) and [ADR-005](../decisions/ADR-005-domain-event-and-integration-contract.md) through [ADR-010](../decisions/ADR-010-legacy-coexistence-and-retirement.md). It distinguishes a domain command from a completed domain fact and from cross-domain orchestration. It specifies no workflow engine or migration platform.
 
 ## Boundary rule
 
@@ -39,6 +39,14 @@ ADR-008 governs trusted actor context. Orchestration preserves initiating, execu
 - Required controls: idempotency, source-version traceability, independent authority checks, durable progress, explicit partial outcomes and reconciliation under ADR-009.
 - Amendment and cancellation: Booking records the governed commercial action; Production independently applies the permitted operational consequence according to whether work has started.
 - Deferred business policy: the exact Booking status trigger, hold prerequisites, multi-order all-or-nothing expectations, post-start disposition and notification policy return to the BDR process.
+
+## Legacy coexistence, cutover and retirement
+
+- Owner: application/platform orchestration coordinates the transition; participating domains retain canonical ownership.
+- Input: a bounded migration unit with declared authority direction, identities, dependencies, evidence requirements and fallback constraints.
+- Result: scoped shadow/comparison evidence, governed cutover outcome, controlled coexistence, or separately approved retirement/decommissioning evidence.
+- Controls: one canonical writer per fact/scope/period, provenance, duplicate-effect prevention, divergence visibility, authorised reconciliation and attributable checkpoints.
+- Exclusions: migration tooling, cutover schedule, universal thresholds, retention policy and business acceptance ownership where not governed.
 
 ## Event approval
 

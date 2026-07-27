@@ -36,7 +36,7 @@ The classifications below describe evidenced responsibility, not implementation 
 | Events Dashboard | Planned company-wide operational system and projection | Governed Event record owns canonical meaning; the dashboard is the intended shared operational access point, not a separate authority | Not yet implemented |
 | Logistics Dashboard | Planned operational system and projection | No canonical Logistics contract or current application exists | Not yet implemented |
 
-No current system is a planned retirement candidate solely because a target boundary now exists. Retirement requires the evidence and acceptance described by ADR-001.
+No current system is a planned retirement candidate solely because a target boundary now exists. [ADR-010](decisions/ADR-010-legacy-coexistence-and-retirement.md) requires a bounded migration unit, explicit authority direction, scoped equivalence/readiness evidence and separate governed retirement approval.
 
 Current application sharing, active-user attribution, administrative PINs, provider groups and allowlists are implementation or legacy access controls. Under [ADR-008](decisions/ADR-008-identity-and-authmod-enforcement-boundary.md), they do not establish canonical Person, Worker, actor, Assignment or AUTHMOD authority. Exact deployment audiences and migration classifications remain TODO where not confirmed.
 
@@ -177,7 +177,7 @@ Logistics is a planned company-wide capability downstream of hospitality/CPU wor
 
 ## Transitional adapters and operational projections
 
-Transitional adapters currently include Gmail/form parsers, The Line revision parsing, dashboard booking-object projection adapters, CPU Calendar discovery, CPU quote/form parsing, and Office document conversion. They should be retained until canonical replacements are verified and recoverable.
+Transitional adapters currently include Gmail/form parsers, The Line revision parsing, dashboard booking-object projection adapters, CPU Calendar discovery, CPU quote/form parsing, and Office document conversion. They remain operational until a bounded replacement is verified, accepted and deliberately adopted under ADR-010; coexistence must declare one canonical-write direction and prevent duplicate effects.
 
 Operational projections include booking-platform line-item/request logs, Hospitality Dashboard Sheets, Calendar provider records, quotes/PDFs, CPU Orders, CPU Deliveries, scan logs, and reporting views. Each projection requires a logical owner, declared sources, access purpose, freshness/completeness characteristics, reconciliation rule and retention policy during future implementation work. Projection ownership does not transfer canonical authority.
 
