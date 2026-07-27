@@ -1,0 +1,1 @@
+import type {MetadataRoute} from "next";export default function manifest():MetadataRoute.Manifest{return{name:"FIKA OS Events",short_name:"FIKA Events",description:"Operational Event planning and readiness",start_url:"/",display:"standalone",background_color:"#f7f3eb",theme_color:"#4f34c7",icons:[]}}

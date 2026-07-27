@@ -1,0 +1,1 @@
+import {NextResponse} from "next/server";export function errorResponse(error:unknown){const e=error as {message?:string;status?:number;code?:string};return NextResponse.json({error:{code:e.code||"INVALID_REQUEST",message:e.message||"Request failed"}},{status:e.status|| (e.code==="VERSION_CONFLICT"?409:400)})}

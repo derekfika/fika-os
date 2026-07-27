@@ -1,0 +1,3 @@
+import type {NextRequest} from "next/server";
+export type Actor={id:string;name:string;development:boolean};
+export function requireActor(req:NextRequest,environment=process.env.NODE_ENV):Actor{const id=req.headers.get("x-fika-user-id");const name=req.headers.get("x-fika-user-name");if(id)return{id,name:name||"FIKA user",development:false};if(environment!=="production"){const devId=process.env.EVENTS_DEV_USER_ID||"person:synthetic-event-coordinator";return{id:devId,name:process.env.EVENTS_DEV_USER_NAME||"Event Coordinator (Development)",development:true}}throw Object.assign(new Error("Authentication required"),{status:401})}
