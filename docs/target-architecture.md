@@ -2,7 +2,7 @@
 
 ## Status and authority
 
-This accepted Stage 6 target boundary is governed by [ADR-001](decisions/ADR-001-stage-6-platform-boundaries.md) and [ADR-005](decisions/ADR-005-domain-event-and-integration-contract.md) through [ADR-010](decisions/ADR-010-legacy-coexistence-and-retirement.md). It is technology-neutral and does not decide deployment topology, storage, hosting, provider or programming language.
+This accepted Stage 6 target boundary is governed by [ADR-001](decisions/ADR-001-stage-6-platform-boundaries.md) and [ADR-005](decisions/ADR-005-domain-event-and-integration-contract.md) through [ADR-011](decisions/ADR-011-notification-generation-and-delivery.md). It is technology-neutral and does not decide deployment topology, storage, hosting, provider or programming language.
 
 Business meaning remains authoritative in the Business Decision Records and completed Packs. This document explains how future software must respect that meaning.
 
@@ -140,7 +140,7 @@ Authentication establishes an accepted principal, governed account mapping resol
 
 Domain events describe accepted business facts after durable domain change. Integration events are deliberately stable, minimised publications of those facts across boundaries. Commands request actions and may be refused; notifications communicate consequences; provider webhooks remain untrusted observations behind adapters. Capitalised **Event** remains the governed Event-domain business concept.
 
-[ADR-005](decisions/ADR-005-domain-event-and-integration-contract.md) governs the logical envelope, versioning, duplicate-safe delivery, ordering limitations, correlation, replay and provider boundaries. [ADR-006](decisions/ADR-006-repository-and-consistency-contract.md) governs the relationship between durable canonical change and recoverable publication, including explicit publication uncertainty. Retention and notification policy require later decisions registered by ADR-001.
+[ADR-005](decisions/ADR-005-domain-event-and-integration-contract.md) governs the logical envelope, versioning, duplicate-safe delivery, ordering limitations, correlation, replay and provider boundaries. [ADR-006](decisions/ADR-006-repository-and-consistency-contract.md) governs the relationship between durable canonical change and recoverable publication, including explicit publication uncertainty. [ADR-011](decisions/ADR-011-notification-generation-and-delivery.md) governs notification intent, recipient/content resolution, delivery attempts, provider observations, acknowledgement and reconciliation; use-case-specific recipient, consent, timing, escalation and retention policy remains governed business work.
 
 ## Legacy support and gradual migration
 

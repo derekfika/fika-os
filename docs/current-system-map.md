@@ -131,7 +131,7 @@ CPU statuses (`READY`, `NEEDS_ATTENTION`, `CANCELLED`), preparation state, chef 
 
 | Integration | Confirmed current role | Classification |
 |---|---|---|
-| Gmail | Legacy booking intake and workflow email in Hospitality Dashboards; booking-platform notifications | Legacy adapter and external communication |
+| Gmail | Legacy booking intake and workflow email in Hospitality Dashboards; booking-platform notifications | Legacy adapter and external communication; provider acceptance/history does not prove delivery or canonical business outcome under ADR-011 |
 | Google Drive | Source/quote/PDF/JSON storage, attachment reading, Office conversion, archives, CPU evidence | External integration and file store |
 | Google Calendar | Hospitality Calendar-record creation and CPU discovery/delivery records | Operational integration and transitional adapter envelope; not an ADR-005 event contract |
 | Google Sheets | Configuration, projections, logs, reporting and workflow state | Mixed; role must be explicit per Sheet |

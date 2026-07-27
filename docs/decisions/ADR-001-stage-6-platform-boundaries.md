@@ -263,7 +263,7 @@ Architecture must not resolve the following:
 | [ADR-008 Identity and AUTHMOD enforcement boundary](ADR-008-identity-and-authmod-enforcement-boundary.md) | Authentication mapping, actor context and enforcement responsibilities | Before platform identity implementation | Accepted 2026-07-27 |
 | ADR-009 Booking-to-Production orchestration | Trigger, Booking-version contract, retries, compensation and reconciliation | Before implementing canonical Production creation | Accepted 2026-07-27 |
 | ADR-010 Legacy coexistence and retirement | Classification evidence, cutover, reconciliation, rollback and acceptance | Before retiring any current operational path | Accepted 2026-07-27 |
-| ADR-011 Notification generation and delivery | Domain intent, recipient policy, delivery adapters and audit | Before a shared notification capability is implemented | Next bounded task |
+| ADR-011 Notification generation and delivery | Domain intent, recipient policy, delivery adapters and audit | Before a shared notification capability is implemented | Accepted 2026-07-27 |
 
 The numbers are reserved as a planning register only. Each ADR requires its own evidence and review.
 

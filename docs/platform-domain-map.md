@@ -479,7 +479,7 @@ No additional business domains are asserted.
 
 ## Next governed work
 
-Stage 6 has reconciled the initial architecture and FIKA Core catalogues through ADR-001, established domain-event and integration rules through ADR-005, repository and consistency rules through ADR-006, projection/dashboard boundaries through ADR-007, identity-to-AUTHMOD enforcement through ADR-008, Booking-to-Production orchestration through ADR-009, and legacy coexistence/retirement through ADR-010. The next bounded work is ADR-011 for notification generation and delivery. Missing business policy returns to the BDR process.
+Stage 6 has reconciled the initial architecture and FIKA Core catalogues through ADR-001, established domain-event and integration rules through ADR-005, repository and consistency rules through ADR-006, projection/dashboard boundaries through ADR-007, identity-to-AUTHMOD enforcement through ADR-008, Booking-to-Production orchestration through ADR-009, legacy coexistence/retirement through ADR-010, and notification generation/delivery through ADR-011. No later ADR is registered. Stage 6 remains active until its next governed action is determined; missing business policy returns to the BDR process.
 
 ## 8. Architectural North Star
 

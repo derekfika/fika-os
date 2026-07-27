@@ -2,7 +2,7 @@
 
 ## Status and use
 
-This is a Stage 6 logical catalogue governed by [ADR-001](../decisions/ADR-001-stage-6-platform-boundaries.md) and its accepted follow-up decisions through [ADR-010](../decisions/ADR-010-legacy-coexistence-and-retirement.md). “Service” here means a software responsibility boundary. It must not be confused with the canonical business concept **Service** governed by SVC-001.
+This is a Stage 6 logical catalogue governed by [ADR-001](../decisions/ADR-001-stage-6-platform-boundaries.md) and its accepted follow-up decisions through [ADR-011](../decisions/ADR-011-notification-generation-and-delivery.md). “Service” here means a software responsibility boundary. It must not be confused with the canonical business concept **Service** governed by SVC-001.
 
 The catalogue defines no deployment topology and no API. Illustrative commands and queries are responsibility tests, not implementation specifications.
 

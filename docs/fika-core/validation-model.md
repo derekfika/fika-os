@@ -2,7 +2,7 @@
 
 ## Status
 
-Stage 6 supporting specification governed by [ADR-001](../decisions/ADR-001-stage-6-platform-boundaries.md) and [ADR-006](../decisions/ADR-006-repository-and-consistency-contract.md) through [ADR-010](../decisions/ADR-010-legacy-coexistence-and-retirement.md). FIKA Core may standardise validation-result structure; it does not own domain rules.
+Stage 6 supporting specification governed by [ADR-001](../decisions/ADR-001-stage-6-platform-boundaries.md) and [ADR-006](../decisions/ADR-006-repository-and-consistency-contract.md) through [ADR-011](../decisions/ADR-011-notification-generation-and-delivery.md). FIKA Core may standardise validation-result structure; it does not own domain rules.
 
 ## Projection validation
 

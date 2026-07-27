@@ -60,6 +60,8 @@ The sixth bounded task, the technology-neutral Booking-to-Production orchestrati
 
 The seventh bounded task, the technology-neutral legacy coexistence and retirement contract, is complete and accepted through ADR-010.
 
+The eighth bounded task, the technology-neutral notification generation and delivery contract, is complete and accepted through ADR-011.
+
 ## Entry brief
 
 The completed Stage 5 baseline includes governed contracts for foundational Client and Operational Location concepts, authority and capability, Service, Booking, Event, Production, Mobilisation, Brand Variation and Waste. Stage 6 consumes those contracts and does not casually rewrite their business meaning.
@@ -152,9 +154,21 @@ Completed on 2026-07-27:
 
 No cutover date, migration wave, provider mapping, live-system change, Logistics design, Stage 5 schema or implementation was created.
 
+## Eighth bounded deliverable
+
+Completed on 2026-07-27:
+
+- accepted [ADR-011](../decisions/ADR-011-notification-generation-and-delivery.md);
+- separated source facts, notification intent, rendering, dispatch, attempts, provider observations and human acknowledgement;
+- established governed purpose, recipient, content, privacy, authority, duplicate-safety and reconciliation boundaries;
+- applied the contract to Hospitality and Booking-to-Production communications while preserving stable legacy workflows; and
+- remained neutral on recipients, channels, providers, timing, escalation, consent policy and implementation technology.
+
+No notification was sent or scheduled, and no template, provider configuration, live workflow, Logistics design, Stage 5 schema or implementation was created.
+
 ## Next bounded work
 
-ADR-001 registers the required follow-up decisions. ADR-005 through ADR-010 have completed items 1–6 below. The next bounded task is **ADR-011: Notification Generation and Delivery**.
+ADR-001 registers the required follow-up decisions. ADR-005 through ADR-011 have completed all currently registered items below. Stage 6 remains active; no later ADR is registered, and further bounded work requires a governed register update.
 
 1. domain-event and integration guarantees — complete through ADR-005;
 2. repository and cross-domain consistency — complete through ADR-006;
@@ -162,7 +176,7 @@ ADR-001 registers the required follow-up decisions. ADR-005 through ADR-010 have
 4. identity-to-AUTHMOD enforcement — complete through ADR-008;
 5. Booking-to-Production orchestration — complete through ADR-009; and
 6. legacy coexistence, cutover and retirement — complete through ADR-010; and
-7. notification generation and delivery — next through ADR-011.
+7. notification generation and delivery — complete through ADR-011.
 
 Notification detail should be decided only when a shared capability is authorised. Business-policy gaps identified during this work return to discovery or a BDR.
 
@@ -192,6 +206,7 @@ Stages 7 and 8 use the architecture to constrain implementation, testing, rollou
 - [ADR-008 — Identity and AUTHMOD Enforcement Boundary](../decisions/ADR-008-identity-and-authmod-enforcement-boundary.md).
 - [ADR-009 — Booking-to-Production Orchestration](../decisions/ADR-009-booking-to-production-orchestration.md).
 - [ADR-010 — Legacy Coexistence and Retirement](../decisions/ADR-010-legacy-coexistence-and-retirement.md).
+- [ADR-011 — Notification Generation and Delivery](../decisions/ADR-011-notification-generation-and-delivery.md).
 - [FIKA Core overview](../fika-core/overview.md).
 - [Platform domain map](../platform-domain-map.md).
 - [Architecture review checklist](../engineering/architecture-review-checklist.md).

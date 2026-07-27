@@ -2,11 +2,11 @@
 
 ## Status
 
-Stage 6 supporting specification governed by [ADR-001](../decisions/ADR-001-stage-6-platform-boundaries.md) and [ADR-005](../decisions/ADR-005-domain-event-and-integration-contract.md). Notifications are not yet an adopted business domain.
+Stage 6 supporting specification governed by [ADR-001](../decisions/ADR-001-stage-6-platform-boundaries.md), [ADR-005](../decisions/ADR-005-domain-event-and-integration-contract.md) and [ADR-011](../decisions/ADR-011-notification-generation-and-delivery.md). Notifications remain a logical shared capability rather than an adopted business domain; use-case policy remains with its governed owner.
 
 ## Generation and delivery
 
-Notification generation decides that a governed business fact requires communication, who should receive it, its business purpose and any timing or escalation policy. That decision belongs to the applicable domain or an approved orchestration policy.
+Notification generation evaluates whether a governed business fact or authorised request creates notification intent under an explicit purpose and policy. Recipient, content, timing, acknowledgement and escalation rules belong to their declared business or governance owners; architecture does not infer them from current messages.
 
 Notification delivery transports an approved intent through a channel. It belongs behind a provider port and adapter.
 
@@ -25,6 +25,8 @@ A future cross-domain intent contract may include:
 - correlation and idempotency references;
 - required audit outcome.
 
+Occurrence identity, recipient identity, destination, rendered-message identity, attempt identity and provider message identity remain distinct. Repeated triggers resolve to one logical occurrence, while attempts remain individually attributable.
+
 This list is architectural guidance, not an adopted schema.
 
 ## Channels
@@ -33,17 +35,20 @@ Email and dashboard delivery are evidenced current needs. Mobile and team-messag
 
 ## Failure and audit
 
-Delivery attempts must distinguish accepted, delivered where knowable, retriable failure and permanent failure. Retry must be idempotent. Provider logs support operations but do not replace domain audit or approval evidence.
+Delivery attempts distinguish prepared, dispatch requested, provider accepted, delivery observed, failed, delayed, uncertain, partial, suppressed and expired outcomes. Retry is occurrence-aware and idempotent; unknown outcomes are reconciled before unsafe resend. Provider delivery does not prove human receipt or acknowledgement. Provider logs support operations but do not replace domain audit or approval evidence.
 
 ## Explicit exclusions
 
 - Provider-specific fields in canonical domain records.
 - Recipient or escalation policy invented by architecture.
 - Treating a Calendar entry, email or dashboard alert as the authoritative business record.
+- Treating provider acceptance as delivery or acknowledgement.
+- Letting replay or projection rebuild resend external messages by default.
+- Treating a reply or action link as a domain mutation without an authorised command.
 
 ## Open questions
 
-- Which domain owns each notification policy.
-- Recipient resolution and sensitive-data rules.
-- Retry, escalation, retention and delivery-evidence requirements.
-- Whether Notification later becomes a governed domain or remains orchestration/provider capability.
+- Which owner governs each notification class, recipient rule and content definition.
+- Trigger, purpose, consent/lawful basis and sensitive-data rules.
+- Channel, fallback, timing, acknowledgement and escalation policy.
+- Retry, retention, deletion, tracking and delivery-evidence requirements.

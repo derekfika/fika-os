@@ -2,7 +2,7 @@
 
 ## Status
 
-Stage 6 supporting catalogue governed by [ADR-001](../decisions/ADR-001-stage-6-platform-boundaries.md) and [ADR-005](../decisions/ADR-005-domain-event-and-integration-contract.md) through [ADR-010](../decisions/ADR-010-legacy-coexistence-and-retirement.md). It distinguishes a domain command from a completed domain fact and from cross-domain orchestration. It specifies no workflow engine or migration platform.
+Stage 6 supporting catalogue governed by [ADR-001](../decisions/ADR-001-stage-6-platform-boundaries.md) and [ADR-005](../decisions/ADR-005-domain-event-and-integration-contract.md) through [ADR-011](../decisions/ADR-011-notification-generation-and-delivery.md). It distinguishes a domain command from a completed domain fact and from cross-domain orchestration. It specifies no workflow engine, migration platform or notification provider.
 
 ## Boundary rule
 
@@ -47,6 +47,14 @@ ADR-008 governs trusted actor context. Orchestration preserves initiating, execu
 - Result: scoped shadow/comparison evidence, governed cutover outcome, controlled coexistence, or separately approved retirement/decommissioning evidence.
 - Controls: one canonical writer per fact/scope/period, provenance, duplicate-effect prevention, divergence visibility, authorised reconciliation and attributable checkpoints.
 - Exclusions: migration tooling, cutover schedule, universal thresholds, retention policy and business acceptance ownership where not governed.
+
+## Notification generation and delivery
+
+- Owner: the source domain owns the fact; declared policy owners govern purpose/recipient/content; the notification boundary owns accepted intent, preparation, attempts and reconciliation.
+- Input: attributable source fact or authorised request plus current policy, actor, recipient and disclosure context.
+- Result: ineligible/suppressed/review outcome or one stable notification occurrence with per-recipient attempts and qualified provider observations.
+- Controls: occurrence and attempt idempotency, command-time authority, minimisation, safe rendering, explicit partiality and replay without external effects by default.
+- Exclusions: recipients, channels, consent basis, wording, delivery targets, retry schedule, escalation, acknowledgement consequence and retention where not governed.
 
 ## Event approval
 
