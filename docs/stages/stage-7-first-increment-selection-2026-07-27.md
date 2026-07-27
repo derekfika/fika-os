@@ -254,3 +254,7 @@ This review does not create a charter, activate Stage 7 or Stage 8, select techn
 The repository contains multiple credible but materially different first increments. It does not contain authority to prioritise one, complete its accountability set or accept its operational risk. The correct governed result is **No Selection**.
 
 **Stage 7 remains Planned. Stage 8 remains Planned. Application implementation has not started.**
+
+## Subsequent governed resolution
+
+Later on 2026-07-27, Derek explicitly selected **Shadow CPU Production intake and reconciliation** and supplied product, Production and delegated operational-acceptance authority. The [Increment 1 charter](stage-7-increment-1-shadow-cpu-production-charter.md) records the prospective decision and activation assessment. This note does not rewrite the No Selection outcome or evidence available when this review was completed.

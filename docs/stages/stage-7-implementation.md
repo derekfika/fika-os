@@ -40,7 +40,7 @@ FIKA receives usable platform capabilities that preserve canonical business mean
 
 ## Current status
 
-**Planned.** The [first-increment selection review](stage-7-first-increment-selection-2026-07-27.md) recorded **No Selection** because the repository cannot choose the current business priority or supply the missing accountable acceptance and support roles. Existing production applications continue operating and are not authorised for change by this stage document.
+**Active — Increment 1 selected and chartered; implementation not yet started.** Derek subsequently selected Shadow CPU Production intake and reconciliation and supplied the accountable product, Production and delegated CPU-acceptance model required by the prior [selection review](stage-7-first-increment-selection-2026-07-27.md). The [activation record](stage-7-increment-1-activation-2026-07-27.md) and [Increment 1 charter](stage-7-increment-1-shadow-cpu-production-charter.md) activate Stage 7 only for that bounded read-only shadow outcome. Existing production applications continue operating and are not authorised for change.
 
 ## Dependencies on earlier stages
 
