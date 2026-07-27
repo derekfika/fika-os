@@ -35,7 +35,7 @@ The smallest safe migration unit is:
 
 > one currently configured CPU Calendar intake scope, mapped to one producing CPU represented by one governed Operational Location, observed over one bounded snapshot/replay window and compared with the corresponding CPU Orders operational projection.
 
-The later [before-first-code review](stage-7-increment-1-before-first-code-review-2026-07-27.md) confirms FIKA Xchange as the producing CPU/Operational Location and `cpux@fikacatering.com` as the current intake reference. The stable canonical `operationalLocationId` remains unresolved and blocks first code. The replay duration is one Monday-to-Friday week; exact safe dates remain a later fixture-extraction decision.
+The amended [before-first-code review](stage-7-increment-1-before-first-code-review-2026-07-27.md) confirms FIKA Xchange as the host Site Operational Location, CPUX as a separate Production-capable Operational Location hosted within it, and `cpux@fikacatering.com` as CPUX's configured Calendar intake reference rather than its identity. Two proposed OPLOC IDs await approval, and the adopted model cannot express the host relationship. The replay duration is one Monday-to-Friday week; exact safe dates remain a later fixture-extraction decision.
 
 The first scope includes only source observations attributable to that one configured intake and producing CPU. It excludes other CPUs even if the current dashboard scans them in the same application.
 
@@ -43,10 +43,11 @@ The first scope includes only source observations attributable to that one confi
 
 | Concept | Increment interpretation |
 |---|---|
-| Producing CPU | FIKA Xchange; its stable canonical `operationalLocationId` remains the pre-code gate. |
+| Host Site | FIKA Xchange Operational Location. |
+| Producing CPU | CPUX, represented as a separate Production-capable Operational Location. |
 | Requesting Operational Location | The location requesting or originating the hospitality demand, if defensibly evidenced; it is not the producing CPU by default. |
-| Service/destination location | The location, floor, room or delivery context where service is expected; it is not a producing facility or requesting location by implication. |
-| Discovery source | The current `cpux@fikacatering.com` Calendar intake and its later authorised snapshot references. The address is evidence, not access authority or canonical Production identity. |
+| Service/destination location | One of potentially multiple destination Operational Locations served by CPUX; floor, room or delivery detail does not become an OPLOC by implication. |
+| Discovery source | The current `cpux@fikacatering.com` Calendar intake and its later authorised snapshot references. The address is configuration evidence, not CPUX identity or access authority. |
 | Current dashboard scope | The CPU Dashboard's broader configured scan estate; only the selected intake subset enters Increment 1. |
 | Shadow Production Order scope | Non-canonical comparison representation derived from one observed source occurrence and qualified mappings. |
 | Review population | Derek only during isolated Stage 7 development and testing. |
@@ -363,13 +364,15 @@ Technical logs/metrics, provider observations, reconciliation evidence, governed
 
 | ID | Description | Source/evidence and need | Accountable decision role | Required by | Status | Blocks activation/code/real source/completion/Stage 8 | Resolution evidence |
 |---|---|---|---|---|---|---|---|
-| INC1-PR-001 | Exact configured Calendar intake and producing CPU/OPLOC | FIKA Xchange and `cpux@fikacatering.com` are confirmed; canonical OPLOC ID is missing | Derek / OPLOC governance | First code | **Blocked only on stable ID** | No / Yes / Yes / Yes / Yes | Approved canonical ID with legacy-alias reconciliation |
+| INC1-PR-001 | Host Site, producing CPUX and Calendar intake semantics | FIKA Xchange hosts the separate Production-capable CPUX OPLOC; `cpux@fikacatering.com` is CPUX's configured intake reference | Derek | First code | Satisfied as business meaning | No / No / No / No / No | Current explicit modelling decision |
 | INC1-PR-002 | Sam and delegated Head Chef durable identity/Assignment/delegation | Production review begins in Stage 8 | Sam / AUTHMOD administrator | Stage 8 | Deferred | No / No / No / No / Yes | Actor, Assignment, delegation scope and effective period |
 | INC1-PR-003 | Technical delivery owner | Derek owns Increment 1 technical delivery | Derek | First code | Satisfied | No / No / No / No / No | Current explicit decision |
 | INC1-PR-004 | Implementation repository and owner | Existing FIKA OS outer repository; `tools/cpu-shadow-reconciliation` | Derek | First code | Satisfied as decision; path not created | No / No / No / No / No | Before-code review and clean-worktree preparation |
 | INC1-PR-005 | Schema versioning/compatibility convention | Repository convention adopted without schema change | Schema/platform governance | First code | Satisfied | No / No / No / No / No | `docs/engineering/schema-versioning-and-compatibility.md` |
 | INC1-PR-006 | Pack 6 field applicability | Charter and before-code review classify fields and preserve gaps | Derek | First code | Satisfied for first seam | No / No / No / Yes / Yes | Reviewed compatibility matrix without schema change |
 | INC1-PR-007 | Legacy-source access | Calendar, Drive and Sheets contain protected operational evidence | Sam and information-security/access authority | Real-source integration | Open | No / No / Yes / Yes / Yes | Least-privilege grants and access test for selected scope |
+| INC1-PR-019 | Stable identities for host and producer | Repository requires stable IDs but does not mandate one lexical convention | Derek / OPLOC governance | First code | **Blocked** | No / Yes / Yes / Yes / Yes | Explicit approval or replacement of `oploc:fika-xchange` and `oploc:cpux` |
+| INC1-PR-020 | Governed OPLOC hosting relationship | Adopted OPLOC schema has no host relationship and Capability Enablement scope hierarchy cannot substitute for it | OPLOC/schema governance | First code | **Blocked** | No / Yes / Yes / Yes / Yes | Approved schema revision or separate governed relationship contract |
 | INC1-PR-008 | Safe test data | First task uses synthetic fixtures only | Derek | First code | Satisfied by policy; fixtures created later | No / No / Yes for sanitised/live / Yes / Yes | Snapshot sanitisation contract and fixture tests |
 | INC1-PR-009 | Snapshot/replay approach | Must avoid live writes and nondeterministic evidence | Technical owner | First code | Open | No / Yes / Yes / Yes / Yes | Design proving bounded read-only capture, identity and repeatability |
 | INC1-PR-010 | Sensitive-data minimisation and retention | Purpose known; retention duration is not governed | Sam and information-security/privacy authority | Real-source integration | Open | No / No / Yes / Yes / Yes | Field inventory, minimisation, access and approved ephemeral/retention rule |
@@ -417,11 +420,11 @@ Another CPU, Calendar, source class, write path, canonical repository, notificat
 
 **Stage 7 is Active — Increment 1 selected and chartered; implementation not yet started.**
 
-The charter has a bounded migration unit, Derek-only Stage 7 review, explicit read-only direction and meaningful reconciliation outcome. The later before-code review resolved technical ownership, repository strategy, versioning and minimum local technology. FIKA Xchange's stable canonical Operational Location ID remains the sole first-code blocker; real-source access remains a later integration gate.
+The charter has a bounded migration unit, Derek-only Stage 7 review, explicit read-only direction and meaningful reconciliation outcome. The amended before-code review resolved technical ownership, repository strategy, versioning, minimum local technology and the distinct meanings of FIKA Xchange, CPUX and the Calendar intake. Approval of two proposed IDs and governed representation of the OPLOC host relationship remain the first-code blockers; real-source access remains a later integration gate.
 
 ## Next bounded task
 
-Supply and approve the stable canonical `operationalLocationId` for FIKA Xchange and confirm that `FIKAX` and `fikax@fikacatering.com` remain legacy aliases/references. Then rerun only the final identity gate and issue the exact first-code task. Stop before implementation until that gate passes.
+Approve or replace `oploc:fika-xchange` and `oploc:cpux`, then govern how **FIKA Xchange hosts CPUX** is represented without inventing fields. Rerun only the final identity/model gate and issue the exact first-code task. Stop before implementation until both gates pass.
 
 ## Evidence
 

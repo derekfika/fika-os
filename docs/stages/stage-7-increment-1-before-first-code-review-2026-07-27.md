@@ -12,11 +12,11 @@
 
 ## Executive decision
 
-Every deterministic pre-code decision has been completed except one: FIKA Xchange has no governed stable canonical `operationalLocationId` in the repository. Derek has selected FIKA Xchange as the producing CPU/Operational Location, and current CPU configuration proves the legacy name, code and source-directory alias. Those application values cannot be promoted into a canonical identifier because repository instructions forbid inventing site IDs and current discovery explicitly treats the directory entry as candidate evidence.
+The review recorded at commit `52defea` preceded the authoritative identity correction in this addendum. FIKA Xchange is the host Site Operational Location. CPUX is a separate Production-capable Operational Location hosted within FIKA Xchange, and CPUX—not FIKA Xchange—is the pilot producing Operational Location. `cpux@fikacatering.com` is CPUX's configured Calendar intake reference; it is neither an Operational Location identity nor access authority. CPUX may produce for multiple destination Operational Locations.
 
-The gate will become ready when Derek or the authorised Operational Location governance route supplies the stable identifier for the existing FIKA Xchange record and confirms that `FIKAX` and `fikax@fikacatering.com` are legacy aliases/references rather than the canonical ID.
+Two canonical Operational Location identities are therefore required for the governed model: one for FIKA Xchange and one for CPUX. The repository mandates stable IDs but does not mandate one lexical format. Existing examples use both `operational-location-*` and `oploc:*`; the Pack 6 routing fixture establishes `oploc:<stable-kebab-key>` as a schema-compliant convention across the relevant contracts. This review proposes `oploc:fika-xchange` and `oploc:cpux`, subject to Derek's explicit approval. `FIKAX` remains a legacy alias for FIKA Xchange, while CPUX remains the current operational shorthand/name and must not become the ID by implication.
 
-No other unresolved item blocks the offline first task.
+The adopted Operational Location schema cannot express one Operational Location being hosted within another. Capability Enablement can represent Production capability at CPUX scope, and Production Routing Allocation can identify CPUX as the producing Operational Location, but neither contract represents the FIKA Xchange-to-CPUX host relationship. First code remains blocked pending approval of both proposed IDs and a governed decision on whether the host relationship belongs in the Operational Location aggregate or a separate relationship contract.
 
 ## Governed baseline
 
@@ -81,14 +81,17 @@ Before any later legacy preservation or refactor, create a separate clean branch
 
 | Identity/evidence | Confirmed meaning | Authority |
 |---|---|---|
-| `FIKA Xchange` | Derek-selected producing CPU/Operational Location for Increment 1 | Current explicit business decision |
-| `FIKAX` | Current CPU directory short code; BDR example also calls FIKAX a Site | Legacy/application and explanatory evidence |
-| `fikax@fikacatering.com` | Current CPU site-directory key associated with FIKA Xchange | Legacy configuration reference; not a user identity or canonical OPLOC ID |
-| `cpux@fikacatering.com` | Default configured CPU Hospitality Calendar intake | Current configuration evidence; not access authority or producing-location identity |
+| `FIKA Xchange` | Host Site Operational Location | Current explicit business decision |
+| `CPUX` | Separate Production-capable pilot producing Operational Location hosted within FIKA Xchange | Current explicit business decision |
+| `FIKAX` | Legacy alias for FIKA Xchange | Current explicit business decision; not a canonical ID |
+| `fikax@fikacatering.com` | Current source-directory reference associated with FIKA Xchange | Legacy configuration reference; not an OPLOC identity |
+| `cpux@fikacatering.com` | CPUX's configured Calendar intake reference | Current explicit business decision; not an OPLOC identity or access authority |
 | South Quay / 2 Harbour Exchange / CPU X | No verified equivalence found in reviewed governed/current evidence | Must not be used as aliases automatically |
-| canonical `operationalLocationId` | Required stable ID for the pilot | Missing; sole first-code blocker |
+| `oploc:fika-xchange` | Proposed immutable canonical ID for FIKA Xchange | Schema-compliant convention; awaiting Derek approval |
+| `oploc:cpux` | Proposed immutable canonical ID for CPUX | Schema-compliant convention; awaiting Derek approval |
+| Host relationship | FIKA Xchange hosts CPUX | Confirmed meaning; not representable by the adopted OPLOC schema |
 
-Producing CPU, requesting Operational Location, destination and Calendar intake remain separate. The first snapshot must carry the canonical producing ID once approved and may retain `FIKAX`/`fikax@…` only as qualified legacy references.
+Host Site, producing CPUX, requesting Operational Location, destination and Calendar intake remain separate. Increment 1 may represent the two locations only in isolated test configuration or fixtures. It must not promote names, aliases or email addresses into IDs, alter live reference data, create OPLOC administration or connect to Google Calendar.
 
 No live Calendar was accessed. Knowledge of the Calendar address grants no access.
 
@@ -192,7 +195,7 @@ Pack 6 remains unchanged and is part of the adopted Stage 5 baseline. The first 
 | production quantity/unit | Required | Unresolved conversion/yield | Mapping blocked; never copy ordered quantity |
 | Production rule references | Optional | No governed references in source | Omit and report |
 | aggregation reference | Optional | Keyword/name grouping is unsafe | Omit |
-| routing allocation | Required by Production Order | Producing FIKA Xchange selected; routing/capability evidence incomplete | Excluded from first task |
+| routing allocation | Required by Production Order | CPUX is the producing OPLOC and may serve multiple destination OPLOCs; adopted routing can identify CPUX, while destination evidence remains distinct | Excluded from first task |
 | amendment/cancellation record | Separate required fields when used | Disappearance/update evidence incomplete | Preserve uncertainty only |
 | dietary/allergen allocation | Not represented by these two schemas | Flattened current evidence is insufficient | Exclude content; record presence category synthetically |
 
@@ -303,9 +306,12 @@ Invalid configuration/input fails closed. Records are quarantined without partia
 | History preservation | Resolved | Separate histories; legacy stays in place; clean future worktree |
 | Tracked-secret active risk | Resolved | No literal tracked secret established; values never printed |
 | Ignore protection | Sufficient for first task | Existing rules cover task artefacts; backup gaps are separate metadata work |
-| FIKA Xchange business scope | Resolved | Derek decision |
-| FIKA Xchange stable canonical ID | **Blocking** | Must be approved; aliases cannot substitute |
-| Calendar intake relationship | Resolved for offline design | `cpux@fikacatering.com` default config; no access granted |
+| Host and producing-location meaning | Resolved | FIKA Xchange hosts separate producing OPLOC CPUX |
+| Two stable canonical OPLOC IDs | **Blocking** | `oploc:fika-xchange` and `oploc:cpux` proposed; Derek approval required |
+| OPLOC host relationship | **Blocking** | Adopted OPLOC schema has no host/parent relationship; do not invent one |
+| Production capability | Resolved for isolated design | Existing capability catalogue and enablement contracts can represent capability at CPUX scope |
+| Destination scope | Resolved for isolated design | CPUX may produce for multiple destination OPLOCs |
+| Calendar intake relationship | Resolved for offline design | `cpux@fikacatering.com` is CPUX's configured intake reference, not identity or access authority; no access granted |
 | Isolated system | Resolved | Local Derek-only offline CLI |
 | Snapshot/sanitisation contract | Resolved | Versioned JSON; synthetic first |
 | Replay duration | Resolved | Monday–Friday week; dates deferred |
@@ -336,9 +342,9 @@ Do not combine these into an “initial commit.”
 
 ## Exact first-code task status
 
-No first-code instruction is issued because the canonical FIKA Xchange `operationalLocationId` is unresolved. All other boundaries are sufficiently exact.
+No first-code instruction is issued because two proposed canonical OPLOC IDs await approval and the adopted model cannot represent the confirmed FIKA Xchange-to-CPUX host relationship without a governed change. All other boundaries are sufficiently exact.
 
-Once that identifier is supplied, the first code task is limited to loading and validating `fika.cpu-intake-snapshot` v1.0.0 synthetic JSON, preserving provenance, emitting a non-canonical source-observation/evidence result, and proving deterministic replay with tests. The fully executable instruction must be generated only after the gate changes to Ready.
+Once those gates are resolved, the first code task is limited to loading and validating `fika.cpu-intake-snapshot` v1.0.0 synthetic JSON, preserving provenance, emitting a non-canonical source-observation/evidence result, and proving deterministic replay with tests. It must use isolated test configuration or fixtures only; it must not create OPLOC administration, alter live reference data or connect to Google Calendar.
 
 ## Protected scope
 
@@ -348,9 +354,10 @@ This review changed no BDR Decision, adopted schema, fixture, inventory evidence
 
 **NOT READY FOR FIRST CODE.**
 
-Smallest required decision/evidence:
+Smallest required decisions:
 
-> Supply and approve the stable canonical `operationalLocationId` for the existing Operational Location named **FIKA Xchange**, and confirm that `FIKAX` and `fikax@fikacatering.com` remain legacy aliases/references rather than that canonical ID.
+1. Derek approves or replaces the proposed immutable IDs `oploc:fika-xchange` and `oploc:cpux`.
+2. Operational Location/schema governance decides whether the confirmed relationship **FIKA Xchange hosts CPUX** is represented within the Operational Location aggregate or by a separate governed relationship contract.
 
 ## References
 
