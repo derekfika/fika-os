@@ -42,7 +42,7 @@ FIKA receives usable platform capabilities that preserve canonical business mean
 
 **Active — Increment 1 selected and chartered; implementation not yet started.** Derek subsequently selected Shadow CPU Production intake and reconciliation and supplied the accountable product, Production and delegated CPU-acceptance model required by the prior [selection review](stage-7-first-increment-selection-2026-07-27.md). The [activation record](stage-7-increment-1-activation-2026-07-27.md) and [Increment 1 charter](stage-7-increment-1-shadow-cpu-production-charter.md) activate Stage 7 only for that bounded read-only shadow outcome. Existing production applications continue operating and are not authorised for change.
 
-The amended [before-first-code review](stage-7-increment-1-before-first-code-review-2026-07-27.md) returned **NOT READY FOR FIRST CODE**. FIKA Xchange is the host Site Operational Location and CPUX is the separate pilot producing Operational Location. Two proposed stable IDs await explicit approval, and the adopted model cannot yet express the confirmed host relationship without a governed change. No implementation may begin until both gates are resolved.
+The amended [before-first-code review](stage-7-increment-1-before-first-code-review-2026-07-27.md) returned **READY FOR FIRST CODE**. FIKA Xchange (`oploc:fika-xchange`) is the host Site Operational Location and CPUX (`oploc:cpux`) is the separate pilot producing Operational Location. Hosting belongs to a future separate governed Operational Location Relationship contract; a versioned non-canonical test assertion is permitted only for the isolated offline first seam. Implementation is authorised only for the single bounded task stated in that review.
 
 ## Dependencies on earlier stages
 

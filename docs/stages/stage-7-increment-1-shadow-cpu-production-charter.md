@@ -35,7 +35,7 @@ The smallest safe migration unit is:
 
 > one currently configured CPU Calendar intake scope, mapped to one producing CPU represented by one governed Operational Location, observed over one bounded snapshot/replay window and compared with the corresponding CPU Orders operational projection.
 
-The amended [before-first-code review](stage-7-increment-1-before-first-code-review-2026-07-27.md) confirms FIKA Xchange as the host Site Operational Location, CPUX as a separate Production-capable Operational Location hosted within it, and `cpux@fikacatering.com` as CPUX's configured Calendar intake reference rather than its identity. Two proposed OPLOC IDs await approval, and the adopted model cannot express the host relationship. The replay duration is one Monday-to-Friday week; exact safe dates remain a later fixture-extraction decision.
+The amended [before-first-code review](stage-7-increment-1-before-first-code-review-2026-07-27.md) confirms FIKA Xchange as the host Site Operational Location (`oploc:fika-xchange`), CPUX as the separate Production-capable producing Operational Location (`oploc:cpux`), and `cpux@fikacatering.com` as CPUX's configured Calendar intake reference rather than its identity. Hosting belongs to a future separate governed Operational Location Relationship contract. Its adoption is not required for the first offline source-observation seam; an explicitly versioned non-canonical test assertion preserves the approved context meanwhile. The replay duration is one Monday-to-Friday week; exact safe dates remain a later fixture-extraction decision.
 
 The first scope includes only source observations attributable to that one configured intake and producing CPU. It excludes other CPUs even if the current dashboard scans them in the same application.
 
@@ -43,8 +43,8 @@ The first scope includes only source observations attributable to that one confi
 
 | Concept | Increment interpretation |
 |---|---|
-| Host Site | FIKA Xchange Operational Location. |
-| Producing CPU | CPUX, represented as a separate Production-capable Operational Location. |
+| Host Site | FIKA Xchange Operational Location, canonical ID `oploc:fika-xchange`. |
+| Producing CPU | CPUX, separate Production-capable Operational Location, canonical ID `oploc:cpux`. |
 | Requesting Operational Location | The location requesting or originating the hospitality demand, if defensibly evidenced; it is not the producing CPU by default. |
 | Service/destination location | One of potentially multiple destination Operational Locations served by CPUX; floor, room or delivery detail does not become an OPLOC by implication. |
 | Discovery source | The current `cpux@fikacatering.com` Calendar intake and its later authorised snapshot references. The address is configuration evidence, not CPUX identity or access authority. |
@@ -371,10 +371,10 @@ Technical logs/metrics, provider observations, reconciliation evidence, governed
 | INC1-PR-005 | Schema versioning/compatibility convention | Repository convention adopted without schema change | Schema/platform governance | First code | Satisfied | No / No / No / No / No | `docs/engineering/schema-versioning-and-compatibility.md` |
 | INC1-PR-006 | Pack 6 field applicability | Charter and before-code review classify fields and preserve gaps | Derek | First code | Satisfied for first seam | No / No / No / Yes / Yes | Reviewed compatibility matrix without schema change |
 | INC1-PR-007 | Legacy-source access | Calendar, Drive and Sheets contain protected operational evidence | Sam and information-security/access authority | Real-source integration | Open | No / No / Yes / Yes / Yes | Least-privilege grants and access test for selected scope |
-| INC1-PR-019 | Stable identities for host and producer | Repository requires stable IDs but does not mandate one lexical convention | Derek / OPLOC governance | First code | **Blocked** | No / Yes / Yes / Yes / Yes | Explicit approval or replacement of `oploc:fika-xchange` and `oploc:cpux` |
-| INC1-PR-020 | Governed OPLOC hosting relationship | Adopted OPLOC schema has no host relationship and Capability Enablement scope hierarchy cannot substitute for it | OPLOC/schema governance | First code | **Blocked** | No / Yes / Yes / Yes / Yes | Approved schema revision or separate governed relationship contract |
+| INC1-PR-019 | Stable identities for host and producer | Repository requires stable IDs but does not mandate one lexical convention | Derek / OPLOC governance | First code | Satisfied | No / No / No / No / No | Approved `oploc:fika-xchange` and `oploc:cpux` |
+| INC1-PR-020 | Governed OPLOC hosting relationship | Host relationship must remain outside the OPLOC aggregate | Derek / OPLOC/schema governance | Canonical persistence or operational use | Deferred, non-blocking for offline first seam | No / No / Yes / Yes / Yes | Separate governed Operational Location Relationship contract; versioned non-canonical test assertion meanwhile |
 | INC1-PR-008 | Safe test data | First task uses synthetic fixtures only | Derek | First code | Satisfied by policy; fixtures created later | No / No / Yes for sanitised/live / Yes / Yes | Snapshot sanitisation contract and fixture tests |
-| INC1-PR-009 | Snapshot/replay approach | Must avoid live writes and nondeterministic evidence | Technical owner | First code | Open | No / Yes / Yes / Yes / Yes | Design proving bounded read-only capture, identity and repeatability |
+| INC1-PR-009 | Snapshot/replay approach | Must avoid live writes and nondeterministic evidence | Technical owner | First code | Satisfied for first task | No / No / No / Yes / Yes | Versioned synthetic snapshot, fail-closed validation and deterministic replay task |
 | INC1-PR-010 | Sensitive-data minimisation and retention | Purpose known; retention duration is not governed | Sam and information-security/privacy authority | Real-source integration | Open | No / No / Yes / Yes / Yes | Field inventory, minimisation, access and approved ephemeral/retention rule |
 | INC1-PR-011 | AUTHMOD design | Derek-only offline boundary now; scoped Production access later | Derek; Sam/AUTHMOD in Stage 8 | First code locally / Stage 8 operationally | Satisfied for local simulation | No / No / Yes / Yes / Yes | Fail-closed local controls; later grant matrix |
 | INC1-PR-012 | Bounded technology decisions | Node/JavaScript, npm, `node:test`, Ajv, filesystem and CLI selected | Derek | First code | Satisfied | No / No / No / No / No | Before-code technology table |
@@ -420,11 +420,11 @@ Another CPU, Calendar, source class, write path, canonical repository, notificat
 
 **Stage 7 is Active — Increment 1 selected and chartered; implementation not yet started.**
 
-The charter has a bounded migration unit, Derek-only Stage 7 review, explicit read-only direction and meaningful reconciliation outcome. The amended before-code review resolved technical ownership, repository strategy, versioning, minimum local technology and the distinct meanings of FIKA Xchange, CPUX and the Calendar intake. Approval of two proposed IDs and governed representation of the OPLOC host relationship remain the first-code blockers; real-source access remains a later integration gate.
+The charter has a bounded migration unit, Derek-only Stage 7 review, explicit read-only direction and meaningful reconciliation outcome. The amended before-code review resolved technical ownership, repository strategy, versioning, minimum local technology, both immutable OPLOC IDs and the separate Operational Location Relationship boundary. The relationship contract is deferred without blocking the offline source-observation seam; real-source access remains a later integration gate.
 
 ## Next bounded task
 
-Approve or replace `oploc:fika-xchange` and `oploc:cpux`, then govern how **FIKA Xchange hosts CPUX** is represented without inventing fields. Rerun only the final identity/model gate and issue the exact first-code task. Stop before implementation until both gates pass.
+Complete the single bounded first-code task issued by the amended before-first-code review. Do not expand into canonical relationship persistence, Pack 6 transformation, live-source access or operational writes.
 
 ## Evidence
 
