@@ -9,8 +9,8 @@ An ADR must implement approved BDRs and adopted schemas. It must not invent or s
 ## Current records
 
 - [ADR-001 — Stage 6 Platform Boundaries](ADR-001-stage-6-platform-boundaries.md) — accepted initial Stage 6 responsibility model for domains, narrow FIKA Core, orchestration, repositories, projections and adapters.
-- [ADR-003 — Canonical Booking and Ingestion Adapters](ADR-003-canonical-booking-and-ingestion-adapters.md) — proposed draft requiring reconciliation with completed BDRs and schema work.
-- [ADR-004 — Booking-to-Production Boundary](ADR-004-booking-to-production-boundary.md) — accepted architectural direction requiring reconciliation with completed BDRs before implementation.
+- [ADR-003 — Canonical Booking and Ingestion Adapters](ADR-003-canonical-booking-and-ingestion-adapters.md) — superseded, never-adopted pre-Pack proposal retained as historical rationale; later governed Booking contracts and ADR-006/007/009/010 control implementation.
+- [ADR-004 — Booking-to-Production Boundary](ADR-004-booking-to-production-boundary.md) — accepted supporting direction retained for history and reconciled by ADR-009, which controls the current orchestration contract.
 - [ADR-005 — Domain Event and Integration Contract](ADR-005-domain-event-and-integration-contract.md) — accepted technology-neutral contract for completed facts, integration events, delivery, idempotency, ordering and replay.
 - [ADR-006 — Repository and Consistency Contract](ADR-006-repository-and-consistency-contract.md) — accepted technology-neutral contract for domain-owned repositories, canonical persistence, concurrency, cross-domain consistency, partial failure and recovery.
 - [ADR-007 — Projection and Dashboard Boundary](ADR-007-projection-and-dashboard-boundary.md) — accepted technology-neutral contract for projection ownership, freshness, rebuilding, reporting and authorised dashboard interaction.

@@ -48,6 +48,7 @@ Draft, proposed and planned documents are never adopted authority merely because
 | `docs/current-system-map.md` | Canonical current-state record | Evidence-backed classification of current systems, projections and adapters |
 | `docs/target-architecture.md` | Accepted architecture | Technology-neutral Stage 6 boundary governed by accepted ADRs; not implementation or deployment authority |
 | `docs/future-platform-domains.md` | Supporting | Long-term domain candidates, not commitments |
+| `docs/Firebase Hosting and Cost Strategy.md` | Supporting option and cost analysis | Time-bound Firebase pricing and suitability evidence; not hosting, identity, database or deployment authority |
 | `docs/stage-1-review.md` | Historical | Closure record for the original platform-foundations work |
 | `docs/documentation-governance.md` | Canonical | Authority order and document classification |
 | `docs/platform-methodology/business-discovery-process.md` | Canonical method | Governed discovery-to-delivery workflow |
@@ -58,8 +59,8 @@ Draft, proposed and planned documents are never adopted authority merely because
 | `docs/business-journeys/new-site-mobilisation-journey.md` | Supporting evidence | Evidence-backed mobilisation journey pending BDR consolidation |
 | `docs/domain-models/fika-booking-v1.md` | Supporting draft | Pre-Pack booking domain-model evidence for Stage 5 |
 | `docs/schema-reviews/fika-booking-v1-review.md` | Supporting review | Formal review of the earlier supporting schema draft |
-| `docs/decisions/ADR-003-canonical-booking-and-ingestion-adapters.md` | Supporting proposed ADR | Proposed technical/architectural direction; subject to BDR and schema reconciliation |
-| `docs/decisions/ADR-004-booking-to-production-boundary.md` | Supporting accepted ADR | Architectural boundary evidence; business wording must align with BDRs |
+| `docs/decisions/ADR-003-canonical-booking-and-ingestion-adapters.md` | Superseded ADR | Historical pre-Pack proposal superseded by governed Booking decisions, Pack 4 and ADR-006/007/009/010 |
+| `docs/decisions/ADR-004-booking-to-production-boundary.md` | Supporting accepted ADR | Historical boundary evidence reconciled by ADR-009; later governed contracts control conflicts |
 | `docs/decisions/ADR-001-stage-6-platform-boundaries.md` | Accepted ADR | Initial Stage 6 responsibility model constrained by Packs 1–8 and approved business authority |
 | `docs/decisions/ADR-005-domain-event-and-integration-contract.md` | Accepted ADR | Technology-neutral contract for domain facts, integration events, delivery, idempotency, ordering and replay |
 | `docs/decisions/ADR-006-repository-and-consistency-contract.md` | Accepted ADR | Technology-neutral contract for repository ownership, canonical persistence, concurrency, cross-domain consistency and recovery |

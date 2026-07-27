@@ -1,5 +1,7 @@
 # Pack 5 — Events Domain
 
+> **Current status:** Completed, integrated, committed and adopted as part of the Stage 5 Packs 1–8 baseline. Review-candidate wording below records the Pack's earlier processing stage.
+
 ## Purpose
 
 This is the fixed Stage 5 review candidate for the Events domain. It translates the current local repository authority into a technology-neutral draft schema without adopting it or changing repository files.

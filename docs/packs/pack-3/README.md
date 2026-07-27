@@ -1,5 +1,7 @@
 # Pack 3 — Service Domain
 
+> **Current status:** Completed, integrated, committed and adopted as part of the Stage 5 Packs 1–8 baseline. Archive/readiness wording below records the Pack's earlier processing stage.
+
 ## Purpose
 
 This folder is the canonical promoted structure for Pack 3. It contains the governed Markdown, schemas, fixtures, reports, manifest, reflection, and archive certificate for the completed Service Domain pack.

@@ -102,4 +102,4 @@ Core defines common port behaviour only where it is truly cross-domain. Domain r
 - Person, Worker, actor and account ownership/lifecycle policy.
 - Whether a common audit store is needed or only common audit conventions.
 
-These require the follow-up ADRs registered in ADR-001.
+These are business-governance or implementation prerequisites where relevant. The ADR-001 follow-up register is complete; no later ADR is currently registered.

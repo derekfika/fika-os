@@ -1,8 +1,10 @@
 # Pack 1 Draft Schemas
 
+> **Current authority:** These component schemas are part of the completed, integrated and adopted Stage 5 Packs 1–8 baseline. The title and original Draft wording below preserve their pre-adoption review history and do not create a new adoption gate.
+
 ## Status
 
-**Draft — not adopted.** These schemas compile the Accepted and Frozen Pack 1 Business Decision Records (BDRs) for governed review. Frozen business authority remains unchanged; schema validation does not constitute adoption.
+**Historical processing status:** Draft — not adopted at the time this Pack was prepared. The schemas were subsequently validated, integrated and adopted through the Stage 5 closure on 2026-07-25. Frozen business authority remains unchanged.
 
 ## Scope
 
@@ -60,4 +62,3 @@ The local validation environment requires the `jsonschema` package. The command 
 - Confirm whether the Client/OPLOC relationship classifications are the intended minimum.
 - Confirm personal-data fields, ownership and retention before extending Client Contact.
 - Confirm catalogue-change history requirements beyond additions, renames and retirement.
-

@@ -1,5 +1,7 @@
 # Pack 7 — Mobilisation Domain
 
+> **Current status:** Completed, integrated, committed and adopted as part of the Stage 5 Packs 1–8 baseline. Historical Draft wording below records the Pack's earlier processing stage.
+
 ## Purpose
 
 This is the completed Stage 5 Canonical Pack for the Mobilisation domain. It translates the governed local repository authority into technology-neutral Draft schemas without adopting them.

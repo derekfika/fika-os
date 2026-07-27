@@ -421,7 +421,7 @@ The following do not block this architectural contract but cannot be invented by
 
 | Decision | Dependency created by ADR-005 |
 |---|---|
-| ADR-006 Repository and Consistency Contract | Define durable record/publication boundary, concurrency, atomicity limits, uncertain outcomes and reconciliation responsibilities. This is the next bounded task. |
+| ADR-006 Repository and Consistency Contract | Defined durable record/publication boundary, concurrency, atomicity limits, uncertain outcomes and reconciliation responsibilities; subsequently accepted. |
 | ADR-007 Projection and Dashboard Boundary | Apply replay-source, freshness, rebuild, sensitive-field and stale-event rules to projections. |
 | ADR-008 Identity and AUTHMOD Enforcement Boundary | Define authentication-to-actor mapping and safe authority-context propagation. |
 | ADR-009 Booking-to-Production Orchestration | Define the specific Booking fact, Production command, idempotency, failure, compensation and reconciliation workflow. |

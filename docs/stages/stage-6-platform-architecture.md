@@ -44,9 +44,9 @@ FIKA has a coherent platform design in which applications consume stable busines
 
 ## Current status
 
-**Active from 2026-07-25.** Stage 6 consumes the governed and freshly validated Stage 5 Packs 1–8.
+**Complete — closed 2026-07-27.** Stage 6 consumed the governed and freshly validated Stage 5 Packs 1–8. See the [Stage 6 closure and implementation-readiness review](stage-6-closure-2026-07-27.md).
 
-The first bounded architecture reconciliation is complete and accepted through ADR-001. Stage 6 remains active; no implementation is authorised by that completion.
+The first bounded architecture reconciliation is complete and accepted through ADR-001. Stage 6 closure does not itself authorise implementation.
 
 The second bounded task, the technology-neutral domain-event and integration contract, is complete and accepted through ADR-005.
 
@@ -166,19 +166,19 @@ Completed on 2026-07-27:
 
 No notification was sent or scheduled, and no template, provider configuration, live workflow, Logistics design, Stage 5 schema or implementation was created.
 
-## Next bounded work
+## Completed bounded work
 
-ADR-001 registers the required follow-up decisions. ADR-005 through ADR-011 have completed all currently registered items below. Stage 6 remains active; no later ADR is registered, and further bounded work requires a governed register update.
+ADR-001 registered the required follow-up decisions. ADR-005 through ADR-011 completed all registered items. No later ADR is registered.
 
 1. domain-event and integration guarantees — complete through ADR-005;
 2. repository and cross-domain consistency — complete through ADR-006;
 3. projection and dashboard boundaries — complete through ADR-007;
 4. identity-to-AUTHMOD enforcement — complete through ADR-008;
-5. Booking-to-Production orchestration — complete through ADR-009; and
+5. Booking-to-Production orchestration — complete through ADR-009;
 6. legacy coexistence, cutover and retirement — complete through ADR-010; and
 7. notification generation and delivery — complete through ADR-011.
 
-Notification detail should be decided only when a shared capability is authorised. Business-policy gaps identified during this work return to discovery or a BDR.
+Use-case notification policy should be decided only when its governed capability is authorised. Business-policy gaps identified during this work return to discovery or a BDR. Governance must select the first bounded Stage 7 implementation increment before implementation begins.
 
 ## Dependencies on earlier stages
 

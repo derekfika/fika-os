@@ -1,5 +1,7 @@
 # Pack 2 — Capability, Configuration and Authority
 
+> **Current status:** Completed, integrated, committed and adopted as part of the Stage 5 Packs 1–8 baseline. The processing-state wording below is retained as historical evidence.
+
 ## Purpose
 
 Pack 2 expresses Operational Capability, configuration, organisational Roles, Responsibilities, Assignments, AUTHMOD authority and Permissions without merging their business meanings.

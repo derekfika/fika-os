@@ -1,13 +1,15 @@
 # Firebase Hosting and Cost Strategy
 
+> **Classification: Supporting option and cost analysis; not an accepted technology selection.** This appendix preserves research conducted on 16 July 2026. Stage 6 deliberately selected no hosting platform, identity provider, database, storage model or deployment topology. Any future use of Firebase requires a separate governed technology-selection and implementation decision.
+
 ## Executive Appendix A
 
 **Pricing reviewed:** 16 July 2026  
 **Audience:** CEO, Operations Director, Finance, Marketing and Senior Management
 
-This appendix explains why Firebase has been selected as the hosting platform for FIKA OS and what that choice is expected to cost at FIKA's current scale.
+This appendix explains why Firebase was evaluated as a possible hosting platform for FIKA OS and what that option could cost at FIKA's assumed scale.
 
-The selection is practical rather than permanent. FIKA's business knowledge remains FIKA's own, independent of any technology supplier. Firebase provides a low-overhead way to host and operate the platform now, while FIKA retains the ability to review that choice if its needs materially change.
+No selection is authorised by this document. FIKA's business knowledge remains FIKA's own, independent of any technology supplier. The analysis indicates that Firebase could provide a comparatively low-overhead option if later governance selects it after requirements and alternatives are assessed.
 
 ## 1. Why Firebase?
 
@@ -19,7 +21,7 @@ Firebase Hosting provides managed web hosting, secure connections and automatic 
 
 ### Managed authentication
 
-Firebase Authentication provides the service used to identify and sign in authorised Legends. It handles the underlying sign-in service and established identity standards, reducing the need for FIKA to build and maintain its own identity system. FIKA remains responsible for deciding who should have access and what each role is allowed to do. [Firebase Authentication provides managed sign-in services and supports common identity providers.](https://firebase.google.com/docs/auth)
+Firebase Authentication could provide a managed service for identifying and signing in authorised Legends. It handles the underlying sign-in service and established identity standards, potentially reducing the need for FIKA to build and maintain its own identity system. FIKA would remain responsible for deciding who should have access and what each role is allowed to do. [Firebase Authentication provides managed sign-in services and supports common identity providers.](https://firebase.google.com/docs/auth)
 
 ### Managed database
 
@@ -37,7 +39,7 @@ Google maintains the underlying hosting and data infrastructure. This removes ro
 
 ### The business benefit
 
-Firebase allows FIKA to focus its time and money on improving how Legends work rather than maintaining servers. It supports the FIKA OS principles of Positivity, Wellbeing and Cohesion by reducing avoidable technical administration, supporting dependable shared tools and keeping the operational burden proportionate to the size of the platform.
+If selected later, Firebase could allow FIKA to focus more time on improving how Legends work rather than maintaining servers. That potential aligns with Positivity, Wellbeing and Cohesion, but this option analysis does not establish that Firebase is the only or preferred way to achieve those outcomes.
 
 ## 2. Expected FIKA Usage
 
@@ -78,13 +80,13 @@ Spark is the no-cost plan. It requires no payment details and includes free allo
 
 Spark has an important operational limitation: when a paid service reaches its no-cost allowance, that service can be stopped until the allowance resets or the project is moved to Blaze. Spark also does not provide access to every paid capability. Cloud Storage for Firebase now requires Blaze, even though some storage usage may still be free once Blaze is enabled. [Firebase explains the Spark limits and the risk of service shut-off after an allowance is exceeded](https://firebase.google.com/docs/projects/billing/firebase-pricing-plans), and [its current Storage policy requires the Blaze plan](https://firebase.google.com/docs/storage/faqs-storage-changes-announced-sept-2024).
 
-Spark is therefore useful for controlled non-production work, but it is not the recommended long-term plan for the live FIKA OS platform.
+Spark could be useful for controlled non-production evaluation, but this document does not authorise its use or determine the long-term production plan.
 
 ### Blaze Plan
 
 Blaze is the pay-as-you-go plan. It has no fixed Firebase subscription fee. It retains Firebase's relevant no-cost allowances and charges only for eligible usage above them. It also enables managed backups, Cloud Storage and other services that may be required for a dependable production platform. [Firebase's official plan comparison confirms that Blaze retains no-cost quotas and charges for additional usage.](https://firebase.google.com/docs/projects/billing/firebase-pricing-plans)
 
-Blaze is the recommended production plan because it provides continuity if usage exceeds a free allowance. Moving to Blaze does not itself create a large bill; cost depends on actual usage. It does, however, require active budget and usage governance.
+If Firebase were selected, Blaze would be the stronger production-plan candidate because it provides continuity if usage exceeds a free allowance. This is a conditional cost-analysis conclusion, not production-plan authority. Cost would depend on actual usage and would require active budget and usage governance.
 
 ### Expected monthly position
 
@@ -164,10 +166,10 @@ FIKA OS is intentionally designed as a lightweight internal operational platform
 
 With approximately 100 Legends, around 50 daily active users, business-hours usage, small datasets and no consumer-scale media or artificial-intelligence workload, Firebase usage should be comparatively light.
 
-The Blaze pay-as-you-go plan is the recommended production choice. It retains relevant free allowances, removes the risk of a service stopping when a free limit is reached and provides access to managed backups and file storage. Spark remains useful for controlled early work where those production capabilities are not required.
+Within the Firebase option, the Blaze pay-as-you-go plan appears more suitable for production evaluation than Spark because it retains relevant free allowances, reduces free-limit interruption risk and provides access to managed backups and file storage. No Firebase plan is selected or authorised here.
 
 Based on the current assumptions, normal Firebase infrastructure costs are expected to be approximately **US$0–5 per month**, with a prudent planning allowance of **US$10–25 per month**. This should remain comfortably within FIKA's financial capability, provided usage is governed and monitored.
 
 The objective is not simply to minimise the bill. It is to build a platform whose operational value significantly exceeds its hosting cost: less repeated administration, clearer shared information, more dependable operations and more time for Legends to focus on brilliant work.
 
-Exact costs will depend on future usage, data location, retention and service choices. The estimate should therefore be reviewed against actual billing data after launch and whenever the usage profile materially changes.
+Exact costs would depend on future usage, data location, retention and service choices. If Firebase is later selected, the estimate should be refreshed before approval and reviewed against actual billing data after launch.

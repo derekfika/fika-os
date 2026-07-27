@@ -8,7 +8,8 @@ This repository is the governed business, domain, schema and architecture specif
 - **Canonical decisions:** 54
 - **Stage 5 baseline:** Packs 1–8, 51 schemas, 53 valid fixtures and 51 invalid fixtures
 - **Fresh baseline validation:** Passed on 2026-07-25
-- **Active stage:** [Stage 6 — Platform Architecture](docs/stages/stage-6-platform-architecture.md)
+- **Stage 6:** Complete — closed 2026-07-27 ([closure review](docs/stages/stage-6-closure-2026-07-27.md))
+- **Stage 7:** Planned — awaiting governed selection of the first bounded implementation increment
 
 The repository contains all 54 durable Business Decision Records and the integrated Stage 5 schema baseline. Stage 6 has accepted its platform-boundary, domain-event, repository-consistency, projection/dashboard, identity/AUTHMOD, Booking-to-Production orchestration, legacy-coexistence and notification contracts through ADR-001 and ADR-005–011. A BDR may retain `Draft` metadata while its supporting explanation awaits review; its exact approved `Decision` section remains authoritative and is not superseded by that metadata.
 
@@ -20,7 +21,7 @@ The repository contains all 54 durable Business Decision Records and the integra
 4. Use the [platform principles](docs/platform-principles.md) and [domain map](docs/platform-domain-map.md) for enduring context.
 5. Use [domain discovery](docs/domain-discovery/) and [business journeys](docs/business-journeys/) as supporting evidence.
 6. Use [Business Decision Records](docs/business-decisions/README.md) for canonical business meaning.
-7. Use the integrated [`schemas/`](schemas/README.md) baseline as an input to Stage 6; existing pre-Pack booking material remains supporting draft evidence.
+7. Use the integrated [`schemas/`](schemas/README.md) baseline and accepted Stage 6 architecture as inputs to future governed implementation; existing pre-Pack booking material remains supporting draft evidence.
 8. Use the [accepted target architecture](docs/target-architecture.md) and [ADR-001](docs/decisions/ADR-001-stage-6-platform-boundaries.md) for the initial Stage 6 responsibility boundaries.
 9. Use [ADR-005](docs/decisions/ADR-005-domain-event-and-integration-contract.md) for the domain-event and cross-boundary integration contract.
 10. Use [ADR-009](docs/decisions/ADR-009-booking-to-production-orchestration.md) for the Booking-to-Production orchestration contract.

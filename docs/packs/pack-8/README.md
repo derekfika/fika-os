@@ -1,5 +1,7 @@
 # Pack 8 — Brand and Waste
 
+> **Current status:** Completed, integrated, committed and adopted as part of the Stage 5 Packs 1–8 baseline. “Draft” and “ready for commit” wording below records the Pack's earlier processing stage.
+
 ## Purpose
 
 This Stage 5 Pack contains two separate domain candidates: governed Brand variations and Waste events. Sharing a Pack does not merge their ownership, identity or lifecycle.

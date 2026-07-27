@@ -172,7 +172,7 @@ Logistics is a planned company-wide capability downstream of hospitality/CPU wor
 | Menu/catalogue at submission | Site booking-platform catalogue/configuration; governance TODO | Frozen item snapshots in bookings; brochures as documented provenance |
 | Dashboard workflow | Dashboard operational projection, pending formal ownership | Booking commercial status must remain separate |
 | CPU production work | No canonical production-order repository yet | CPU Orders Sheet is the current operational projection |
-| Events | Governed Event record; planned internal Events Dashboard authority | Pack 5 defines the Event contract; channel inventory, architecture, workflows and projections remain Stage 6 work |
+| Events | Governed Event record; planned internal Events Dashboard authority | Pack 5 defines the Event contract; use-case channel, workflow, projection and implementation decisions remain later governed work |
 | Configuration | Mixed current source files, Settings Sheets and properties | Target central ownership remains future work |
 
 ## Transitional adapters and operational projections

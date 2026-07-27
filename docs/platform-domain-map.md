@@ -138,7 +138,7 @@ Dashed arrows denote supporting, consumer or provisional relationships rather th
 - **Does not own:** Operational Location identity, brand assets, individual people, provider accounts or bookings. People are represented separately as Client Contacts.
 - **Depends on:** Organisation context, Permissions and Configuration.
 - **Consumers:** Operational Location, Service, Booking, Events, Reporting and Brand relationships.
-- **Current maturity:** Business definition, BDR and Pack 1 schema contracts complete; Stage 6 architecture is active.
+- **Current maturity:** Business definition, BDR and Pack 1 schema contracts complete; Stage 6 architecture is complete.
 - **Examples:** One Client may relate to multiple Operational Locations. An Operational Location may exist without an external Client but must have an accountable internal owner.
 
 ### Operational Location
@@ -149,7 +149,7 @@ Dashed arrows denote supporting, consumer or provisional relationships rather th
 - **Does not own:** Provider integrations, application configuration, branding, physical-address master data, menus, pricing, equipment inventory, staffing, Calendars, Bookings, Events, Services or other domain records.
 - **Depends on:** Organisation context, optional Client relationships, Configuration and Permissions.
 - **Consumers:** Service, Booking, Production, Logistics, Events, Workforce, Equipment, Mobilisation and Reporting.
-- **Current maturity:** Canonical meaning, BDRs and Pack 1 schema contracts complete; Stage 6 architecture is active.
+- **Current maturity:** Canonical meaning, BDRs and Pack 1 schema contracts complete; Stage 6 architecture is complete.
 - **Examples:** Angel Court, MNK, The Line, Munich RE and Wise; CFC is confirmed Development. CPU-only labels require verification.
 
 ### Operational Capability
@@ -171,7 +171,7 @@ Dashed arrows denote supporting, consumer or provisional relationships rather th
 - **Does not own:** Operational Location identity, individual Booking, production conversion, Event lifecycle or provider integration.
 - **Depends on:** Operational Location, Client where applicable, Configuration, Permissions and Validation.
 - **Consumers:** Booking, Production planning, Logistics, Workforce and Reporting.
-- **Current maturity:** Service BDRs and Pack 3 schema contracts complete; Stage 6 architecture is active.
+- **Current maturity:** Service BDRs, Pack 3 schema contracts and Stage 6 architecture are complete.
 - **Examples:** Wise's confirmed weekly breakfast and lunch arrangements, each serving approximately 450–500 people.
 
 ### Booking
@@ -193,7 +193,7 @@ Dashed arrows denote supporting, consumer or provisional relationships rather th
 - **Does not own:** Booking commercial status/pricing, Calendar/provider state, dashboard UI or logistics execution.
 - **Depends on:** Booking or other approved demand source, Operational Location, Configuration, Equipment where relevant, Permissions, Validation and Audit.
 - **Consumers:** CPU operational views, Logistics, Notifications and Reporting.
-- **Current maturity:** Booking-to-Production boundary and Pack 6 Production contracts are complete and integrated; workflow architecture remains Stage 6 work.
+- **Current maturity:** Booking-to-Production and Production architecture is governed by ADR-009; Pack 6 Production contracts are complete and integrated. Use-case policy and implementation remain later work.
 - **Examples:** A governed Production Order derived from an eligible Booking version; current CPU Orders is an operational projection only.
 
 ### Logistics
@@ -289,11 +289,11 @@ Dashed arrows denote supporting, consumer or provisional relationships rather th
 
 - **Purpose:** Govern coherent FIKA/client/experience identity and approved overrides.
 - **Business question answered:** Which identity, assets and presentation rules apply in this context?
-- **Owns:** Brand definitions, tokens, asset roles, typography, co-brand/white-label rules and override policy.
+- **Owns:** Governed Brand Variation identity, approved scope/conditions and Brand Assurance evidence established by Pack 8.
 - **Does not own:** Business rules, operational-location identity, media content lifecycle or application layout.
 - **Depends on:** Media, Configuration, Permissions and brand governance.
 - **Consumers:** Applications, Documents, Notifications, Events and client/public experiences.
-- **Current maturity:** Default FIKA branding, approved client/co-brand/white-label variation and Marketing/Brand approval are confirmed; detailed inventory/tokens remain later work.
+- **Current maturity:** Brand Variation and Brand Assurance are governed through Pack 8. Complete Brand Standard, token, typography, asset-role and override ownership remains candidate future work.
 - **Examples:** FIKA brand, client brands, future Events branding and site overrides.
 
 ### Configuration
@@ -322,11 +322,11 @@ Dashed arrows denote supporting, consumer or provisional relationships rather th
 
 - **Purpose:** Generate governed notification intent and track delivery separately from domain state.
 - **Business question answered:** Who needs to know or act, through which permitted channel, and what happened to delivery?
-- **Owns:** Notification intent, policy application, deduplication and delivery lifecycle records.
+- **Owns:** As a logical capability under ADR-011, accepted notification intent, occurrence identity, preparation, attempts and reconciliation. Use-case policy ownership must be declared separately.
 - **Does not own:** Source booking/event/production state, recipient identity or provider transport.
 - **Depends on:** Source domain intent, User/Contact, Brand, Configuration, Permissions, Documents, Validation and Audit.
 - **Consumers:** External/client and internal operational experiences.
-- **Current maturity:** FIKA Core conceptual model completed; recipients, preferences, escalation and retention missing.
+- **Current maturity:** Technology-neutral capability boundary accepted through ADR-011; Notifications is not an adopted business-owning domain. Recipients, purpose/consent, preferences, escalation and retention remain governed use-case questions.
 - **Examples:** Email and dashboard notifications; future mobile and collaboration-channel delivery.
 
 ### Validation
@@ -344,22 +344,22 @@ Dashed arrows denote supporting, consumer or provisional relationships rather th
 
 - **Purpose:** Govern reproducible document-generation requests, artefact identity, versions and source relationships.
 - **Business question answered:** Which document version represents which approved source record/version?
-- **Owns:** Document metadata and generation lifecycle.
+- **Owns:** TODO if Documents becomes a governed domain. Current architecture defines document generation and provider handling as logical capabilities linked to authoritative source records.
 - **Does not own:** Booking/event pricing policy, physical storage implementation, brand definitions or notification delivery.
 - **Depends on:** Source domain, Brand, Media, Configuration, Permissions, Validation and Audit.
 - **Consumers:** Booking, Quote, Events, Notifications and applications.
-- **Current maturity:** Existing quote/PDF generation in applications; Core conceptual service/repository only.
+- **Current maturity:** Candidate domain/logical capability with existing quote/PDF evidence; no adopted Documents ownership or complete domain contract.
 - **Examples:** Hospitality quote documents and PDFs as separate downstream artefacts.
 
 ### Audit
 
 - **Purpose:** Preserve attributable, immutable evidence of important domain, configuration, permission and integration actions.
 - **Business question answered:** Who or what did what, to which record/version, when, and with what outcome?
-- **Owns:** Audit-event identity, integrity, linkage and retention treatment.
+- **Owns:** TODO if Audit becomes a governed domain. Current architecture establishes shared audit conventions while each owning domain retains its authoritative history.
 - **Does not own:** Current domain state, raw sensitive payloads, debug logs or reporting definitions.
 - **Depends on:** Actor identity, Permissions, Configuration and retention/security policy.
 - **Consumers:** Domain owners, operations, security, support and authorised reporting.
-- **Current maturity:** Conceptual Core service/repository; formal audit model and policy missing.
+- **Current maturity:** Cross-cutting architectural responsibility, not an adopted Audit domain or Core-owned repository. Formal ownership, model and retention policy remain unresolved.
 - **Examples:** Booking amendment/cancellation evidence, configuration publication and integration attempt outcomes.
 
 ## 4. Dependency Rules
@@ -443,7 +443,7 @@ Participation rules:
 | Business discovery | Complete | 54 canonical decisions; 100%; no review items | Continue through governed increments |
 | Business Decision Records | Complete | 54 exact Decision sections preserved in repository BDRs | Add or amend only through BDR governance |
 | Schema design | Complete for Packs 1–8 | 51 integrated schemas and 104 fixtures freshly validated | Extend through future governed Packs |
-| Platform architecture | Active | Initial target boundary and narrow FIKA Core accepted through ADR-001 | Complete follow-up ADRs before implementation |
+| Platform architecture | Complete | ADR-001 and ADR-005–011 accepted; Stage 6 closure review passed | Select a bounded Stage 7 increment through governance |
 | Implementation | Planned | Existing applications remain current implementations | No new platform build without upstream gates |
 | Validation and rollout | Planned | Engineering standards exist | Apply to authorised increments |
 | Continuous discovery | Planned ongoing | Proven workbook method documented | Activate when new evidence arises |
@@ -479,7 +479,7 @@ No additional business domains are asserted.
 
 ## Next governed work
 
-Stage 6 has reconciled the initial architecture and FIKA Core catalogues through ADR-001, established domain-event and integration rules through ADR-005, repository and consistency rules through ADR-006, projection/dashboard boundaries through ADR-007, identity-to-AUTHMOD enforcement through ADR-008, Booking-to-Production orchestration through ADR-009, legacy coexistence/retirement through ADR-010, and notification generation/delivery through ADR-011. No later ADR is registered. Stage 6 remains active until its next governed action is determined; missing business policy returns to the BDR process.
+Stage 6 closed on 2026-07-27 after reconciling the target architecture and FIKA Core catalogues through ADR-001 and ADR-005–011. No later ADR is registered. Governance must select the first bounded Stage 7 implementation increment; missing business policy returns to the BDR process.
 
 ## 8. Architectural North Star
 

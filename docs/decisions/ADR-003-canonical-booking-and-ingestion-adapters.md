@@ -1,10 +1,10 @@
 # ADR-003: Canonical Booking and Ingestion Adapters
 
-> **Classification: Supporting proposed ADR.** Business discovery is now complete, but this ADR remains unadopted and must be reconciled with accepted BDRs and Stage 5 schemas.
+> **Classification: Superseded historical ADR.** This pre-Pack proposal was never accepted. Its useful direction is now governed by Booking BDRs, the integrated Pack 4 component schemas and [ADR-006](ADR-006-repository-and-consistency-contract.md), [ADR-007](ADR-007-projection-and-dashboard-boundary.md), [ADR-009](ADR-009-booking-to-production-orchestration.md) and [ADR-010](ADR-010-legacy-coexistence-and-retirement.md). The earlier standalone `FikaBooking` aggregate remains supporting draft evidence and is not adopted Canon.
 
 ## Status
 
-Proposed — draft for review, not adopted.
+Superseded — never adopted; retained for historical rationale.
 
 ## Context
 

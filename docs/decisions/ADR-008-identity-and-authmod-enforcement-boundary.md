@@ -30,7 +30,7 @@ Internal staff sign-in is the first case study. It tests the boundary but does n
 | [ADR-001](ADR-001-stage-6-platform-boundaries.md), [ADR-005](ADR-005-domain-event-and-integration-contract.md), [ADR-006](ADR-006-repository-and-consistency-contract.md) and [ADR-007](ADR-007-projection-and-dashboard-boundary.md) | Domain enforcement, trusted actor references, current revalidation, failure safety and projection-access separation are already architectural requirements. | Accepted architecture |
 | [Platform principles](../platform-principles.md) | Security, least privilege, replaceable providers, explicit source-of-truth and gradual migration are required. | Canonical principles |
 | [Current-system map](../current-system-map.md) and [Hospitality dashboard audit](../../inventory/reports/hospitality-dashboard-family.md) | Current deployment audience is unconfirmed; active-user attribution and a settings PIN are implementation evidence, not an authority model. | Canonical current-state and supporting evidence |
-| [Stage 5 closure](../stages/stage-5-closure-2026-07-25.md) and [Stage 6 record](../stages/stage-6-platform-architecture.md) | Packs 1–8 are protected and ADR-008 is the registered next bounded decision. | Canonical stage records |
+| [Stage 5 closure](../stages/stage-5-closure-2026-07-25.md) and [Stage 6 record](../stages/stage-6-platform-architecture.md) | Packs 1–8 were protected and ADR-008 was the registered bounded decision at decision time. | Canonical stage records |
 
 ## Decision
 

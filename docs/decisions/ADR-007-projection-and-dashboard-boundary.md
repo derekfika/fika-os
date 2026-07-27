@@ -30,7 +30,7 @@ The Hospitality dashboard is the first case study because it displays Booking-de
 | [Pack 2 traceability](../schema-reviews/pack-2-bdr-to-schema-traceability.md), [Pack 4 traceability](../schema-reviews/pack-4-bdr-to-schema-traceability.md) and [Pack 6 traceability](../schema-reviews/pack-6-bdr-to-schema-traceability.md) | Stable identity, scope, source references, versions, audit and cross-domain references support traceable projections without transferring ownership. | Integrated schema evidence |
 | [Current-system map](../current-system-map.md) | Hospitality and CPU dashboards, Sheets, Calendar and documents are systems of execution, projections, providers or adapters; classifications are mixed but not canonical by default. | Canonical current-state evidence |
 | [Hospitality dashboard audit](../../inventory/reports/hospitality-dashboard-family.md), [booking-platform audit](../../inventory/reports/hospitality-booking-platform-family.md) and [CPU audit](../../inventory/reports/cpu-production-dashboard.md) | Current dashboard rows combine Booking data, workflow fields, quote/Calendar references and parser state; CPU rows are lossy projections with distinct Production/workflow concerns. | Supporting operational evidence |
-| [Stage 5 closure](../stages/stage-5-closure-2026-07-25.md) and [Stage 6 record](../stages/stage-6-platform-architecture.md) | Packs 1–8 are protected; ADR-007 is the registered next bounded architecture task. | Canonical stage records |
+| [Stage 5 closure](../stages/stage-5-closure-2026-07-25.md) and [Stage 6 record](../stages/stage-6-platform-architecture.md) | Packs 1–8 were protected and ADR-007 was the registered bounded architecture task at decision time. | Canonical stage records |
 
 ## Decision
 

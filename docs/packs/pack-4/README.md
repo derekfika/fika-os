@@ -1,5 +1,7 @@
 # Pack 4 ? Booking Domain
 
+> **Current status:** Completed, integrated, committed and adopted as part of the Stage 5 Packs 1–8 baseline. Pack 4 contains seven Booking component schemas, not one complete canonical Booking aggregate schema. Processing-state wording below is historical evidence.
+
 ## Purpose
 
 This folder is the canonical autonomous Pack 4 output generated from the local repository under the Stage 5 Autonomous Pack Processor v2.0 instruction.

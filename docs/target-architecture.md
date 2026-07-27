@@ -27,7 +27,7 @@ These are responsibility boundaries, not separate servers.
 
 Applications present business capabilities to Legends, clients or other authorised actors. They may coordinate use cases through orchestration, read governed projections and provide early validation feedback. They do not own canonical business meaning and must not reconstruct it from screen state, spreadsheets, messages or provider payloads.
 
-Public experiences and internal operations remain separate experiences even where they use the same domain services. A public booking experience does not inherit internal dashboard authority. An internal dashboard does not become the commercial source of truth merely because it can amend a projection.
+Public experiences and internal operations remain separate experiences even where they use the same domain services. A public booking experience does not inherit internal dashboard authority. An internal dashboard does not become the commercial source of truth: it may initiate an authorised command, the owning domain accepts or rejects the change, and projection builders later update or reconcile the view. The dashboard never directly rewrites canonical or projection state.
 
 ## Application orchestration
 
