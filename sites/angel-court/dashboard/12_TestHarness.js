@@ -155,6 +155,51 @@ function testParserEdgeCases_() {
   assertDashboardEqual_(parseHospitalityDate_(""),             "",           "parseHospitalityDate_: empty should return empty.");
   assertDashboardEqual_(parseHospitalityDate_(null),           "",           "parseHospitalityDate_: null should return empty.");
 
+  // Email subject consistency and stale-form recovery
+  const bookingSubject = "Lunch | 05.08.26 | 8ppl | lunch for 11:30am | Arrow Global Meeting";
+  assertDashboardEqual_(extractDateFromText_(bookingSubject), "2026-08-05", "Subject date extraction failed.");
+  assertDashboardEqual_(extractPaxFromText_(bookingSubject), 8, "Subject pax extraction failed.");
+
+  const staleFormBooking = makeDashboardTestBooking_();
+  staleFormBooking.eventDate = "2026-07-21";
+  staleFormBooking.pax = 10;
+  staleFormBooking.serviceTimes = ["11:30"];
+
+  applyEmailSubjectConsistencyChecks_(
+    staleFormBooking,
+    bookingSubject,
+    new Date(2026, 6, 27)
+  );
+
+  assertDashboardEqual_(staleFormBooking.eventDate, "2026-08-05", "Future subject date should replace a past workbook date.");
+  assertDashboardEqual_(staleFormBooking.sourceConsistency.eventDateAutoCorrected, true, "Stale workbook date should be marked as auto-corrected.");
+  assertDashboardEqual_(staleFormBooking.sourceConsistencyIssues.length, 1, "Only the pax mismatch should remain after date recovery.");
+  assertDashboardTest_(hasUnreviewedSourceConsistencyIssues_(staleFormBooking), "Pax mismatch should require review.");
+  assertDashboardEqual_(validateBooking_(staleFormBooking).status, CONFIG.STATUS.NEEDS_REVIEW, "Recovered booking with a pax mismatch should need review.");
+
+  staleFormBooking.sourceConsistencyReviewed = true;
+  assertDashboardEqual_(validateBooking_(staleFormBooking).status, CONFIG.STATUS.READY, "A manually reviewed source mismatch should no longer block readiness.");
+
+  const currentFormBooking = makeDashboardTestBooking_();
+  currentFormBooking.eventDate = "2026-08-04";
+  applyEmailSubjectConsistencyChecks_(
+    currentFormBooking,
+    "Lunch | 05.08.26 | 12ppl | 08:30",
+    new Date(2026, 6, 27)
+  );
+  assertDashboardEqual_(currentFormBooking.eventDate, "2026-08-04", "A non-past workbook date should not be silently replaced.");
+  assertDashboardTest_(currentFormBooking.sourceConsistencyIssues.length > 0, "A non-stale date conflict should require review.");
+
+  const futureWorkbookBooking = makeDashboardTestBooking_();
+  futureWorkbookBooking.eventDate = "2026-08-05";
+  applyEmailSubjectConsistencyChecks_(
+    futureWorkbookBooking,
+    "Lunch | 21.07.26 | 12ppl | 08:30",
+    new Date(2026, 6, 27)
+  );
+  assertDashboardEqual_(futureWorkbookBooking.eventDate, "2026-08-05", "The future workbook date should remain canonical when the subject date is past.");
+  assertDashboardEqual_(futureWorkbookBooking.sourceConsistencyIssues.length, 0, "A past-versus-future date conflict should auto-resolve to the future date.");
+
   // ── normaliseBookingTimes_ forward-fill ──────────────────────────────────
   const testBooking = {
     serviceTimes: ["08:30"],

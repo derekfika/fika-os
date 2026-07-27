@@ -15,6 +15,9 @@ function createEmptyBooking_() {
 
     sourceEmailFrom: "",
     sourceEmailSubject: "",
+    sourceConsistency: {},
+    sourceConsistencyIssues: [],
+    sourceConsistencyReviewed: false,
 
     clientCompany: "",
     hostName: "",
@@ -68,7 +71,9 @@ function createEmptyBooking_() {
 
 function validateBooking_(booking) {
 
-  const errors = [];
+  const errors = hasUnreviewedSourceConsistencyIssues_(booking)
+    ? booking.sourceConsistencyIssues.slice()
+    : [];
   const currentStatus = booking.status;
 
   if (!booking.clientCompany)

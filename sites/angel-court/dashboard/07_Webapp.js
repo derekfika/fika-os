@@ -96,6 +96,7 @@ function updateBookingFromDashboard(rowNumber, patch, expectedBookingId) {
     oldServiceTimes !== newServiceTimes;
 
   booking.manuallyEdited = true;
+  booking.sourceConsistencyReviewed = true;
   booking.lastEditedBy = Session.getActiveUser().getEmail();
   booking.lastEditedAt = new Date();
   booking.updatedAt = new Date();

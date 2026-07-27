@@ -346,6 +346,93 @@ function extractTimeFromSheetName_(name) {
   return extractTimeFromText_(name);
 }
 
+function extractDateFromText_(text) {
+  if (!text) return "";
+  const match = String(text).match(
+    /\b(\d{1,2}(?:st|nd|rd|th)?\s+[a-z]+\s+\d{2,4}|\d{1,2}[.\/-]\d{1,2}[.\/-]\d{2,4})\b/i
+  );
+  return match ? parseHospitalityDate_(match[1]) : "";
+}
+
+function extractPaxFromText_(text) {
+  if (!text) return null;
+  const match = String(text).match(/\b(\d+)\s*(?:ppl|people|persons?|pax)\b/i);
+  return match ? Number(match[1]) : null;
+}
+
+function applyEmailSubjectConsistencyChecks_(booking, subject, now) {
+  const subjectText = String(subject || "").trim();
+  const subjectDate = extractDateFromText_(subjectText);
+  const subjectPax = extractPaxFromText_(subjectText);
+  const subjectTime = extractTimeFromText_(subjectText);
+  const workbookDate = String(booking.eventDate || "").trim();
+  const workbookPax = Number(booking.pax || 0) || null;
+  const workbookTimes = (booking.serviceTimes || []).map(parseHospitalityTime_).filter(Boolean);
+  const issues = [];
+  const currentDate = now instanceof Date ? now : new Date();
+  const todayIso = formatIsoDate_(currentDate);
+  const workbookIsPast = Boolean(workbookDate && workbookDate < todayIso);
+  const workbookIsFuture = Boolean(workbookDate && workbookDate > todayIso);
+  const subjectIsPast = Boolean(subjectDate && subjectDate < todayIso);
+  const subjectIsFuture = Boolean(subjectDate && subjectDate > todayIso);
+  const useFutureSubjectDate = Boolean(
+    workbookIsPast && subjectIsFuture
+  );
+  const keepFutureWorkbookDate = Boolean(subjectIsPast && workbookIsFuture);
+
+  if (useFutureSubjectDate) {
+    booking.eventDate = subjectDate;
+  } else if (
+    !keepFutureWorkbookDate &&
+    subjectDate &&
+    workbookDate &&
+    subjectDate !== workbookDate
+  ) {
+    issues.push(
+      "Email subject date " + formatConsistencyDate_(subjectDate) +
+      " conflicts with workbook date " + formatConsistencyDate_(workbookDate)
+    );
+  }
+  if (subjectPax && workbookPax && subjectPax !== workbookPax) {
+    issues.push("Email subject pax " + subjectPax + " conflicts with workbook pax " + workbookPax);
+  }
+  if (subjectTime && workbookTimes.length && workbookTimes.indexOf(subjectTime) === -1) {
+    issues.push(
+      "Email subject time " + subjectTime + " conflicts with workbook time " + workbookTimes.join(" / ")
+    );
+  }
+
+  booking.sourceConsistency = {
+    subject: subjectText,
+    subjectEventDate: subjectDate,
+    subjectPax: subjectPax || "",
+    subjectTime: subjectTime,
+    workbookEventDate: workbookDate,
+    workbookPax: workbookPax || "",
+    workbookTimes: workbookTimes,
+    canonicalEventDate: booking.eventDate || "",
+    eventDateAutoCorrected: useFutureSubjectDate,
+    eventDateAutoResolved: useFutureSubjectDate || keepFutureWorkbookDate
+  };
+  booking.sourceConsistencyIssues = issues;
+  if (booking.sourceConsistencyReviewed !== true) booking.sourceConsistencyReviewed = false;
+  return booking;
+}
+
+function hasUnreviewedSourceConsistencyIssues_(booking) {
+  return Boolean(
+    booking &&
+    booking.sourceConsistencyReviewed !== true &&
+    Array.isArray(booking.sourceConsistencyIssues) &&
+    booking.sourceConsistencyIssues.length
+  );
+}
+
+function formatConsistencyDate_(isoDate) {
+  const match = String(isoDate || "").match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  return match ? match[3] + "/" + match[2] + "/" + match[1] : String(isoDate || "");
+}
+
 
 // ---------------------------------------------------------------------------
 // BOOKING TIME NORMALISATION  (called after parse, before validate)
@@ -439,6 +526,7 @@ function buildBookingFromMessageId(messageId) {
     if (!booking.hostName) booking.hostName = extractEmailName_(msg.getFrom());
 
     booking = normaliseBookingTimes_(booking);
+    booking = applyEmailSubjectConsistencyChecks_(booking, msg.getSubject());
     booking = validateBooking_(booking);
 
     return booking;

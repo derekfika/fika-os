@@ -146,6 +146,7 @@ function applyProcessedLabel_(thread) {
 
 function shouldArchiveBooking_(booking) {
   if (!booking.eventDate) return false;
+  if (hasUnreviewedSourceConsistencyIssues_(booking)) return false;
 
   const archiveAfterDays = getConfiguredNumber_("ARCHIVE_AFTER_DAYS", 0);
 
@@ -273,6 +274,7 @@ function buildBookingFromMessageIdAndAttachment_(messageId, attachmentName) {
     }
 
     booking = normaliseBookingTimes_(booking);
+    booking = applyEmailSubjectConsistencyChecks_(booking, msg.getSubject());
     booking = validateBooking_(booking);
 
     return booking;
@@ -416,6 +418,7 @@ function archiveOldBookings_() {
 
   const today = new Date();
   today.setHours(0, 0, 0, 0);
+  const todayIso = formatIsoDate_(today);
 
   const lastRow = sh.getLastRow();
   if (lastRow < 2) return;
@@ -427,9 +430,35 @@ function archiveOldBookings_() {
     .getValues();
 
   values.forEach((row, i) => {
-    const booking = safeJsonParse_(row[0], null);
+    let booking = safeJsonParse_(row[0], null);
 
     if (!booking) return;
+
+    const hasConsistencySnapshot = booking.sourceConsistency &&
+      Object.keys(booking.sourceConsistency).length > 0;
+
+    if (!hasConsistencySnapshot && booking.sourceEmailSubject) {
+      booking = applyEmailSubjectConsistencyChecks_(
+        booking,
+        booking.sourceEmailSubject,
+        today
+      );
+
+      if (
+        booking.status === CONFIG.STATUS.ARCHIVED &&
+        booking.sourceConsistency.eventDateAutoCorrected === true &&
+        booking.eventDate >= todayIso
+      ) {
+        booking.status = CONFIG.STATUS.NEW;
+        booking = validateBooking_(booking);
+        booking.updatedAt = new Date();
+        writeBookingObjectToExistingRow_(i + 2, booking);
+        return;
+      }
+
+      booking.updatedAt = new Date();
+      writeBookingObjectToExistingRow_(i + 2, booking);
+    }
 
     if (
       booking.status === CONFIG.STATUS.ARCHIVED ||
@@ -437,6 +466,8 @@ function archiveOldBookings_() {
     ) {
       return;
     }
+
+    if (hasUnreviewedSourceConsistencyIssues_(booking)) return;
 
     if (
       isBookingOlderThanArchiveThreshold_(
@@ -464,16 +495,18 @@ function archiveOldDashboardBookings() {
 
   const lastRow = sh.getLastRow();
   if (lastRow < 2) {
-    return { checked: 0, archived: 0 };
+    return { checked: 0, archived: 0, flaggedForReview: 0 };
   }
 
   const archiveAfterDays = getConfiguredNumber_("ARCHIVE_AFTER_DAYS", 0);
 
   const today = new Date();
   today.setHours(0, 0, 0, 0);
+  const todayIso = formatIsoDate_(today);
 
   let checked = 0;
   let archived = 0;
+  let flaggedForReview = 0;
 
   const values = sh
     .getRange(2, parsedJsonCol, lastRow - 1, 1)
@@ -481,11 +514,38 @@ function archiveOldDashboardBookings() {
 
   values.forEach((row, index) => {
     const rowNumber = index + 2;
-    const booking = safeJsonParse_(row[0], null);
+    let booking = safeJsonParse_(row[0], null);
 
     if (!booking) return;
 
     checked++;
+
+    const hasConsistencySnapshot = booking.sourceConsistency &&
+      Object.keys(booking.sourceConsistency).length > 0;
+
+    if (!hasConsistencySnapshot && booking.sourceEmailSubject) {
+      booking = applyEmailSubjectConsistencyChecks_(
+        booking,
+        booking.sourceEmailSubject,
+        today
+      );
+
+      if (
+        booking.status === CONFIG.STATUS.ARCHIVED &&
+        booking.sourceConsistency.eventDateAutoCorrected === true &&
+        booking.eventDate >= todayIso
+      ) {
+        booking.status = CONFIG.STATUS.NEW;
+        booking = validateBooking_(booking);
+        booking.updatedAt = new Date();
+        writeBookingObjectToExistingRow_(rowNumber, booking);
+        flaggedForReview++;
+        return;
+      }
+
+      booking.updatedAt = new Date();
+      writeBookingObjectToExistingRow_(rowNumber, booking);
+    }
 
     if (
       booking.status === CONFIG.STATUS.ARCHIVED ||
@@ -495,6 +555,7 @@ function archiveOldDashboardBookings() {
     }
 
     if (!booking.eventDate) return;
+    if (hasUnreviewedSourceConsistencyIssues_(booking)) return;
 
     if (
       isBookingOlderThanArchiveThreshold_(
@@ -511,5 +572,5 @@ function archiveOldDashboardBookings() {
     }
   });
 
-  return { checked, archived };
+  return { checked, archived, flaggedForReview };
 }
