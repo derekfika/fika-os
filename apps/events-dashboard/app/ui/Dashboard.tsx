@@ -1,4 +1,5 @@
 "use client";
+import Image from "next/image";
 import { useEffect, useMemo, useState } from "react";
 import {
   CalendarDays,
@@ -8,6 +9,7 @@ import {
   ChefHat,
   CheckSquare,
   AlertTriangle,
+  SlidersHorizontal,
 } from "lucide-react";
 import type { EventRecord, Staffing, Production, EventTask } from "@/lib/types";
 import { PUBLIC_CONFIG as C } from "@/lib/config";
@@ -90,6 +92,9 @@ export default function Dashboard() {
     () =>
       records
         .filter((r) =>
+          (!filters.lifecycleStatus && r.lifecycleStatus === "Cancelled"
+            ? false
+            : true) &&
           Object.entries(filters).every(([k, v]) => {
             if (!v) return true;
             if (k === "from") return r.eventDate >= v;
@@ -160,9 +165,16 @@ export default function Dashboard() {
     <>
       <header className="top">
         <div className="brand">
-          FIKA<span>OS</span>
+          <Image
+            src="/fika-logo-white.png"
+            alt="FIKA"
+            width={116}
+            height={50}
+            priority
+          />
+          <span>OS</span>
         </div>
-        <div>
+        <div className="app-title">
           <small>Company-wide operations</small>
           <h1>Events</h1>
         </div>
@@ -322,9 +334,23 @@ function Filters({
   values: Record<string, string>;
   set: (x: Record<string, string>) => void;
 }) {
+  const [open, setOpen] = useState(true);
   const f = (k: string, v: string) => set({ ...values, [k]: v });
   return (
-    <section className="filters">
+    <section className="filter-panel">
+      <button
+        className="filter-toggle"
+        onClick={() => setOpen(!open)}
+        aria-expanded={open}
+        aria-controls="event-filters"
+      >
+        <SlidersHorizontal /> Filters
+        <span>{Object.values(values).filter(Boolean).length || "All Events"}</span>
+      </button>
+      <div
+        id="event-filters"
+        className={`filters ${open ? "filters--open" : ""}`}
+      >
       <Field
         label="From"
         type="date"
@@ -386,12 +412,17 @@ function Filters({
           { id: "tasks", name: "Task issues" },
         ]}
       />
+      </div>
     </section>
   );
 }
 function EventCard({ r, open }: { r: RecordView; open: () => void }) {
+  const cancelled = r.lifecycleStatus === "Cancelled";
   return (
-    <button className="event" onClick={open}>
+    <button
+      className={`event ${cancelled ? "event--cancelled" : ""}`}
+      onClick={open}
+    >
       <div>
         <b className="pill">{r.recordType}</b>
         <h3>{r.eventName || "Untitled Event"}</h3>
@@ -407,11 +438,11 @@ function EventCard({ r, open }: { r: RecordView; open: () => void }) {
       <Cell l="Site" v={name(C.sites, r.siteId)} />
       <Cell l="OPLOC" v={name(C.oplocs, r.responsibleOplocId)} />
       <Cell l="Owner" v={name(C.people, r.accountableOwnerId)} />
-      <Cell l="Lifecycle" v={r.lifecycleStatus} />
+      <div><small>Lifecycle</small><StatusBadge status={r.lifecycleStatus} /></div>
       <Cell
         l="Readiness"
-        v={`${r.readiness.percentage}%`}
-        warn={!r.readiness.complete}
+        v={cancelled ? "Archived" : `${r.readiness.percentage}%`}
+        warn={!cancelled && !r.readiness.complete}
       />
       <Cell
         l="Attention"
@@ -433,6 +464,13 @@ const Cell = ({ l, v, warn }: { l: string; v: string; warn?: boolean }) => (
     <small>{l}</small>
     <strong className={warn ? "warn" : ""}>{v}</strong>
   </div>
+);
+const StatusBadge = ({ status }: { status: string }) => (
+  <strong
+    className={`status status--${status.toLowerCase().replaceAll(" ", "-")}`}
+  >
+    {status}
+  </strong>
 );
 function Overview({
   e,

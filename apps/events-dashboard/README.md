@@ -24,6 +24,12 @@ Open `http://localhost:3000`.
 - `npm run db:migrate` — repeatable SQLite setup.
 - `npm run db:seed` — verifies synthetic configuration without fabricating Events.
 
+## Brand and interface foundation
+
+The dashboard uses the approved FIKA logo, Vim display type and Gilroy interface type from the authoritative local brand assets. Reusable semantic tokens live in `app/styles/fika-tokens.css`; application styling consumes them from `app/globals.css`.
+
+See [FIKA OS brand foundation](docs/brand-foundation.md) for source assets, usage rules, accessibility decisions and the remaining compact-icon question.
+
 ## Product workflow
 
 Users can view and filter the operational schedule, create an incomplete Draft, reopen and edit it, add staffing and production requirements, assign tasks, inspect transparent readiness, progress through guarded lifecycle transitions and cancel without deleting history.
