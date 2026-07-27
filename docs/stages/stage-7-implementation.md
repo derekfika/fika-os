@@ -44,6 +44,10 @@ FIKA receives usable platform capabilities that preserve canonical business mean
 
 The amended [before-first-code review](stage-7-increment-1-before-first-code-review-2026-07-27.md) returned **READY FOR FIRST CODE**. FIKA Xchange (`oploc:fika-xchange`) is the host Site Operational Location and CPUX (`oploc:cpux`) is the separate pilot producing Operational Location. Hosting belongs to a future separate governed Operational Location Relationship contract; a versioned non-canonical test assertion is permitted only for the isolated offline first seam. Implementation is authorised only for the single bounded task stated in that review.
 
+Implementation commit `f18574c003c228a5d8d804e7467b79d94103bd8d` completed the first build, but the independent [technical completion review](stage-7-increment-1-technical-completion-review-2026-07-27.md) returned **NOT TECHNICALLY COMPLETE — OFFLINE SEAM**. The package satisfies its core business/evidence boundary and deterministic replay requirements, but a junction can redirect output beyond the declared directory and malformed JSON does not produce quarantine evidence. A package-only corrective task is required before technical completion; no live-source or Stage 8 work is authorised.
+
+The review also records the corrected target architecture: upstream FIKA OS dashboards will originate governed Production JSON for CPU Dashboard ingestion, while Calendar remains a legacy compatibility and shadow-observation source during transition. The current `fika.cpu-intake-snapshot` contract is transitional and non-canonical; governance of the dashboard-to-CPU contract and source-neutral comparison boundary must precede any Calendar-provider extraction task.
+
 ## Dependencies on earlier stages
 
 - Stages 1–6
