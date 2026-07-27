@@ -62,6 +62,7 @@ Draft, proposed and planned documents are never adopted authority merely because
 | `docs/decisions/ADR-004-booking-to-production-boundary.md` | Supporting accepted ADR | Architectural boundary evidence; business wording must align with BDRs |
 | `docs/decisions/ADR-001-stage-6-platform-boundaries.md` | Accepted ADR | Initial Stage 6 responsibility model constrained by Packs 1–8 and approved business authority |
 | `docs/decisions/ADR-005-domain-event-and-integration-contract.md` | Accepted ADR | Technology-neutral contract for domain facts, integration events, delivery, idempotency, ordering and replay |
+| `docs/decisions/ADR-006-repository-and-consistency-contract.md` | Accepted ADR | Technology-neutral contract for repository ownership, canonical persistence, concurrency, cross-domain consistency and recovery |
 | `docs/decisions/README.md` | Canonical ADR index | Architectural Decision Record guidance, distinct from BDRs |
 | `docs/fika-core/*.md` | Supporting Stage 6 specification | Catalogues constrained by ADR-001, ADR-005 and later accepted ADRs; do not independently create business authority |
 | `docs/engineering/*.md` | Canonical engineering standards | Delivery, testing, review and AI-working standards |

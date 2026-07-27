@@ -2,14 +2,15 @@
 
 ## Status
 
-Stage 6 supporting catalogue governed by [ADR-001](../decisions/ADR-001-stage-6-platform-boundaries.md). It defines logical responsibilities only and selects no storage technology.
+Stage 6 supporting catalogue governed by [ADR-001](../decisions/ADR-001-stage-6-platform-boundaries.md) and [ADR-006](../decisions/ADR-006-repository-and-consistency-contract.md). It defines logical responsibilities only and selects no storage technology.
 
 ## Repository rules
 
-- A canonical aggregate has one logical repository contract owned with its domain.
+- Repository contracts are owned by the domain responsible for the canonical records and invariants they protect.
+- Boundaries follow governed consistency scopes, not a repository-per-schema or universal repository-per-domain rule.
 - Contracts use canonical identifiers and records, not tables, files, provider payloads or UI rows.
 - Domain services are the write boundary; applications do not write repositories directly.
-- Repositories preserve concurrency, versioning, history and uniqueness required by the governed domain.
+- Repositories preserve comparison, history, provenance and uniqueness required by the governed domain; optimistic concurrency is the default expectation where concurrent change is possible.
 - Cross-domain joins belong in orchestration or projections, not hidden inside a domain repository.
 - A repository interface does not imply a separate database or deployment.
 
@@ -30,7 +31,7 @@ Stage 6 supporting catalogue governed by [ADR-001](../decisions/ADR-001-stage-6-
 | BrandRepository | Brand Variations and Brand Assurance Records | media binaries or rendering implementation |
 | WasteRepository | Waste Events and Dispositions | Improvement Actions or report projections |
 
-The names are architectural labels, not prescribed code names.
+The names are evidence-supported ownership-family labels, not prescribed code names, aggregate boundaries or a repository-per-schema catalogue. A domain may use more than one repository, and one repository may coordinate related records, only where governed invariants justify that consistency scope.
 
 ## Projection ports
 
@@ -59,7 +60,11 @@ Examples supported by current evidence include Angel Court email ingestion and C
 
 ## Integration checkpoint records
 
-An integration checkpoint may record delivery attempts, consumer deduplication, provider references, quarantine/replay context and reconciliation status. It is integration processing metadata, not a domain aggregate or the ADR-005 event envelope. Its persistence and consistency contract belongs to ADR-006.
+An integration checkpoint may record delivery attempts, consumer deduplication, provider references, quarantine/replay context and reconciliation status. It is integration processing metadata, not a domain aggregate or the ADR-005 event envelope. ADR-006 governs its separation from canonical state and its recovery purpose without selecting storage.
+
+## Workflow-state repositories
+
+Application orchestration may persist process step, correlation, retry, waiting, intervention, compensation and reconciliation state plus references to participating canonical records. This state does not transfer ownership and cannot be used to mutate another domain's repository directly.
 
 ## Candidate repositories
 
@@ -67,8 +72,7 @@ Equipment, Media, Workforce, Logistics, Reporting, Document, Notification and Qu
 
 ## Open questions
 
-- Standard optimistic-concurrency contract across repositories.
-- Cross-domain consistency and compensation policy.
-- Durable record/publication coordination without mandating an outbox or equivalent implementation.
+- Domain-specific merge, precedence and compensation policy where business authority is unresolved.
+- Physical durable record/publication coordination technique.
 - Projection rebuild and retention targets.
 - Whether shared audit conventions require one logical AuditRepository.

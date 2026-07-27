@@ -50,6 +50,8 @@ The first bounded architecture reconciliation is complete and accepted through A
 
 The second bounded task, the technology-neutral domain-event and integration contract, is complete and accepted through ADR-005.
 
+The third bounded task, the technology-neutral repository and consistency contract, is complete and accepted through ADR-006.
+
 ## Entry brief
 
 The completed Stage 5 baseline includes governed contracts for foundational Client and Operational Location concepts, authority and capability, Service, Booking, Event, Production, Mobilisation, Brand Variation and Waste. Stage 6 consumes those contracts and does not casually rewrite their business meaning.
@@ -82,13 +84,25 @@ Completed on 2026-07-25:
 
 No event catalogue, business trigger, Stage 5 schema or implementation was created.
 
+## Third bounded deliverable
+
+Completed on 2026-07-27:
+
+- accepted [ADR-006](../decisions/ADR-006-repository-and-consistency-contract.md);
+- established domain-owned repository, write-model, domain-query, projection, provider, legacy and workflow-state boundaries;
+- established invariant-led consistency scopes, optimistic concurrency expectations and explicit conflict outcomes;
+- established idempotent command, partial-failure, reconciliation and recoverable event-publication rules; and
+- remained neutral on storage, transaction, messaging, framework, hosting and deployment choices.
+
+No aggregate catalogue, physical persistence design, Stage 5 schema or implementation was created.
+
 ## Next bounded work
 
-ADR-001 registers the required follow-up decisions. ADR-005 has completed item 1 below. The next bounded task is **ADR-006: Repository and Consistency Contract**.
+ADR-001 registers the required follow-up decisions. ADR-005 and ADR-006 have completed items 1 and 2 below. The next bounded task is **ADR-007: Projection and Dashboard Boundary**, using the Hospitality dashboard as the first case study.
 
 1. domain-event and integration guarantees — complete through ADR-005;
-2. repository and cross-domain consistency — next through ADR-006;
-3. projection and dashboard boundaries;
+2. repository and cross-domain consistency — complete through ADR-006;
+3. projection and dashboard boundaries — next through ADR-007;
 4. identity-to-AUTHMOD enforcement;
 5. Booking-to-Production orchestration; and
 6. legacy coexistence, cutover and retirement.
@@ -116,6 +130,7 @@ Stages 7 and 8 use the architecture to constrain implementation, testing, rollou
 - [Target architecture](../target-architecture.md).
 - [ADR-001 — Stage 6 Platform Boundaries](../decisions/ADR-001-stage-6-platform-boundaries.md).
 - [ADR-005 — Domain Event and Integration Contract](../decisions/ADR-005-domain-event-and-integration-contract.md).
+- [ADR-006 — Repository and Consistency Contract](../decisions/ADR-006-repository-and-consistency-contract.md).
 - [FIKA Core overview](../fika-core/overview.md).
 - [Platform domain map](../platform-domain-map.md).
 - [Architecture review checklist](../engineering/architecture-review-checklist.md).

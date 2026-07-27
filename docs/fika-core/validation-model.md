@@ -2,7 +2,7 @@
 
 ## Status
 
-Stage 6 supporting specification governed by [ADR-001](../decisions/ADR-001-stage-6-platform-boundaries.md). FIKA Core may standardise validation-result structure; it does not own domain rules.
+Stage 6 supporting specification governed by [ADR-001](../decisions/ADR-001-stage-6-platform-boundaries.md) and [ADR-006](../decisions/ADR-006-repository-and-consistency-contract.md). FIKA Core may standardise validation-result structure; it does not own domain rules.
 
 ## Structural validation
 
@@ -22,7 +22,7 @@ Orchestration verifies cross-domain preconditions, source versions, idempotency,
 
 ## Repository validation
 
-Repositories enforce durable uniqueness, expected version and other persistence constraints required by the domain contract. A persistence error must not be presented as a successful domain change.
+Repositories enforce durable uniqueness, the applicable comparison token and other persistence constraints required by the domain contract. A stale conflict requires current-state revalidation; a failed or uncertain persistence outcome must not be presented as a successful domain change.
 
 ## Adapter validation
 

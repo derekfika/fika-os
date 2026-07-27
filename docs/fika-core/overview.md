@@ -2,7 +2,7 @@
 
 ## Status
 
-Stage 6 supporting specification constrained by [ADR-001](../decisions/ADR-001-stage-6-platform-boundaries.md) and [ADR-005](../decisions/ADR-005-domain-event-and-integration-contract.md). Where an older FIKA Core catalogue conflicts with an accepted ADR or governed business meaning, the accepted ADR and governing BDR take precedence.
+Stage 6 supporting specification constrained by [ADR-001](../decisions/ADR-001-stage-6-platform-boundaries.md), [ADR-005](../decisions/ADR-005-domain-event-and-integration-contract.md) and [ADR-006](../decisions/ADR-006-repository-and-consistency-contract.md). Where an older FIKA Core catalogue conflicts with an accepted ADR or governed business meaning, the accepted ADR and governing BDR take precedence.
 
 ## Purpose
 
@@ -39,7 +39,7 @@ Core may standardise:
 - correlation, causation, idempotency and concurrency context;
 - common validation-issue and operation-result shapes;
 - the ADR-005 domain-event envelope and compatibility conventions;
-- repository, projection and provider-port conventions.
+- repository, comparison, operation-outcome, projection and provider-port conventions governed by ADR-006.
 
 Core supplies no domain decision merely because multiple domains use the same structural convention.
 
@@ -81,7 +81,7 @@ Core may carry a standard authority context and request an AUTHMOD evaluation th
 
 ## Relationship to repositories and adapters
 
-Core defines common port behaviour only where it is truly cross-domain. Domain repository contracts remain named and owned by their domains. Implementations and providers remain behind adapters.
+Core defines common port behaviour only where it is truly cross-domain. Domain repository contracts remain named and owned by their domains. Consistency scopes follow governed invariants rather than schemas, and implementations and providers remain behind adapters.
 
 ## Specification map
 
@@ -96,8 +96,8 @@ Core defines common port behaviour only where it is truly cross-domain. Domain r
 
 ## Open questions
 
-- Repository/publication consistency and physical delivery contracts.
-- Exact common concurrency and idempotency contracts.
+- Physical delivery implementation and domain-specific retention policy.
+- Domain-specific merge, compensation and conflict policies where business authority is unresolved.
 - Authentication-to-actor mapping.
 - Whether a common audit store is needed or only common audit conventions.
 

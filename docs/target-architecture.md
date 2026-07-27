@@ -2,7 +2,7 @@
 
 ## Status and authority
 
-This is the initial accepted Stage 6 target boundary, governed by [ADR-001](decisions/ADR-001-stage-6-platform-boundaries.md). It is technology-neutral and does not decide deployment topology, storage, hosting, provider or programming language.
+This accepted Stage 6 target boundary is governed by [ADR-001](decisions/ADR-001-stage-6-platform-boundaries.md), [ADR-005](decisions/ADR-005-domain-event-and-integration-contract.md) and [ADR-006](decisions/ADR-006-repository-and-consistency-contract.md). It is technology-neutral and does not decide deployment topology, storage, hosting, provider or programming language.
 
 Business meaning remains authoritative in the Business Decision Records and completed Packs. This document explains how future software must respect that meaning.
 
@@ -73,11 +73,13 @@ Core does not own domain schemas, records, business rules, workflows, permission
 
 ## Repository and projection ports
 
-A domain repository is a logical contract for loading and durably changing one domain's aggregate. It hides the persistence implementation and returns domain records rather than provider or storage shapes.
+A domain repository is a logical contract owned by the domain responsible for the canonical records and invariants it protects. Its consistency scope follows governed invariants rather than a schema, storage structure or universal repository-per-domain rule. It hides persistence and returns canonical concepts rather than provider or storage shapes.
+
+Domain services remain the command boundary. Other domains and applications use authorised commands or domain queries rather than directly mutating a repository. Workflow repositories may retain orchestration progress and canonical references without acquiring ownership of participating records.
 
 A projection port publishes or retrieves a rebuildable consumer view. Projections may optimise dashboards, calendars, documents, operational Sheets and reporting. They must be labelled as projections and must not become the sole record of authoritative business state or audit history.
 
-Repository interfaces do not imply one database per domain or any particular storage technology.
+Repository interfaces do not imply one database per domain, one repository per schema, separate deployment or any particular storage technology. Cross-domain workflows coordinate independently accepted changes, expose partial completion and do not assume a distributed transaction.
 
 ## Adapters and providers
 
@@ -134,7 +136,7 @@ User-interface validation improves usability but is not authoritative enforcemen
 
 Domain events describe accepted business facts after durable domain change. Integration events are deliberately stable, minimised publications of those facts across boundaries. Commands request actions and may be refused; notifications communicate consequences; provider webhooks remain untrusted observations behind adapters. Capitalised **Event** remains the governed Event-domain business concept.
 
-[ADR-005](decisions/ADR-005-domain-event-and-integration-contract.md) governs the logical envelope, versioning, duplicate-safe delivery, ordering limitations, correlation, replay and provider boundaries. Repository/publication consistency, retention and notification policy require later decisions registered by ADR-001.
+[ADR-005](decisions/ADR-005-domain-event-and-integration-contract.md) governs the logical envelope, versioning, duplicate-safe delivery, ordering limitations, correlation, replay and provider boundaries. [ADR-006](decisions/ADR-006-repository-and-consistency-contract.md) governs the relationship between durable canonical change and recoverable publication, including explicit publication uncertainty. Retention and notification policy require later decisions registered by ADR-001.
 
 ## Legacy support and gradual migration
 
@@ -153,8 +155,8 @@ No legacy path is retired by this architecture document.
 
 - deployment topology and service distribution;
 - storage and hosting;
-- repository/publication consistency and physical delivery implementation;
-- cross-domain transaction and consistency policy;
+- physical repository/publication coordination and delivery implementation;
+- domain-specific merge, compensation and conflict policy not yet supported by BDRs;
 - authentication implementation;
 - projection freshness and rebuild targets;
 - provider selection;

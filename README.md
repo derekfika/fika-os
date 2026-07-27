@@ -10,7 +10,7 @@ This repository is the governed business, domain, schema and architecture specif
 - **Fresh baseline validation:** Passed on 2026-07-25
 - **Active stage:** [Stage 6 — Platform Architecture](docs/stages/stage-6-platform-architecture.md)
 
-The repository contains all 54 durable Business Decision Records and the integrated Stage 5 schema baseline. A BDR may retain `Draft` metadata while its supporting explanation awaits review; its exact approved `Decision` section remains authoritative and is not superseded by that metadata.
+The repository contains all 54 durable Business Decision Records and the integrated Stage 5 schema baseline. Stage 6 has accepted its platform-boundary, domain-event and repository-consistency contracts through ADR-001, ADR-005 and ADR-006. A BDR may retain `Draft` metadata while its supporting explanation awaits review; its exact approved `Decision` section remains authoritative and is not superseded by that metadata.
 
 ## Start here
 

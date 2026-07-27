@@ -129,7 +129,7 @@ Adapters translate between a port and storage, a provider, a legacy input or a l
 - Audit records who or what acted, under which assignment or authority where applicable, what changed, when, why and the source/correlation context required for reconstruction.
 - Audit evidence is not a substitute for a canonical record, and logs are not a substitute for governed audit history.
 
-The event envelope, taxonomy, delivery assumptions, idempotency, ordering and replay boundaries are now governed by [ADR-005](ADR-005-domain-event-and-integration-contract.md). Repository/publication consistency and retention policy remain deferred.
+The event envelope, taxonomy, delivery assumptions, idempotency, ordering and replay boundaries are governed by [ADR-005](ADR-005-domain-event-and-integration-contract.md). Repository ownership, canonical persistence, concurrency, cross-domain consistency, partial failure and publication recovery are governed by [ADR-006](ADR-006-repository-and-consistency-contract.md). Retention policy remains deferred.
 
 ### Enforcement boundaries
 
@@ -231,9 +231,8 @@ Future implementations must make it possible to trace a business change across a
 
 ## Unresolved questions
 
-- Repository/publication consistency, physical delivery implementation and domain-specific retention policy after ADR-005.
-- Transaction and consistency policy across domain boundaries.
-- Standard repository concurrency contract beyond requirements already governed by individual domains.
+- Physical delivery implementation and domain-specific retention policy after ADR-005 and ADR-006.
+- Domain-specific merge, compensation and conflict policies where business authority is not yet governed.
 - Authentication identity mapping into Person, Assignment and AUTHMOD references.
 - Projection ownership, refresh objectives and reconciliation for each application.
 - Complete domain boundaries for Equipment, Media, Workforce, Logistics, Reporting, Documents and Notifications.
@@ -259,8 +258,8 @@ Architecture must not resolve the following:
 | ADR | Scope | Trigger | Status |
 |---|---|---|---|
 | [ADR-005 Domain event and integration contract](ADR-005-domain-event-and-integration-contract.md) | Envelope, idempotency, ordering, delivery and replay | Before implementing cross-domain event delivery | Accepted 2026-07-25 |
-| ADR-006 Repository and consistency contract | Aggregate persistence, concurrency, transactions and failure semantics | Before selecting or building repository implementations | Next bounded task |
-| ADR-007 Projection and dashboard boundary | Projection ownership, rebuild, freshness and write-back prohibition | Before replacing or materially changing operational dashboards | Planned |
+| [ADR-006 Repository and consistency contract](ADR-006-repository-and-consistency-contract.md) | Aggregate persistence, concurrency, transactions and failure semantics | Before selecting or building repository implementations | Accepted 2026-07-27 |
+| ADR-007 Projection and dashboard boundary | Projection ownership, rebuild, freshness and write-back prohibition; Hospitality dashboard is the first case study | Before replacing or materially changing operational dashboards | Next bounded task |
 | ADR-008 Identity and AUTHMOD enforcement boundary | Authentication mapping, actor context and enforcement responsibilities | Before platform identity implementation | Planned |
 | ADR-009 Booking-to-Production orchestration | Trigger, Booking-version contract, retries, compensation and reconciliation | Before implementing canonical Production creation | Planned |
 | ADR-010 Legacy coexistence and retirement | Classification evidence, cutover, reconciliation, rollback and acceptance | Before retiring any current operational path | Planned |
