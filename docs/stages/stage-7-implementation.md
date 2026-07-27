@@ -40,7 +40,7 @@ FIKA receives usable platform capabilities that preserve canonical business mean
 
 ## Current status
 
-**Planned.** Existing production applications continue operating and are not authorised for change by this stage document.
+**Planned.** The [first-increment selection review](stage-7-first-increment-selection-2026-07-27.md) recorded **No Selection** because the repository cannot choose the current business priority or supply the missing accountable acceptance and support roles. Existing production applications continue operating and are not authorised for change by this stage document.
 
 ## Dependencies on earlier stages
 
@@ -63,4 +63,3 @@ Stage 8 validates and rolls out completed increments. Stage 9 uses operational e
 - [Definition of Done](../engineering/definition-of-done.md)
 - [Testing strategy](../engineering/testing-strategy.md)
 - [AI development playbook](../engineering/ai-development-playbook.md)
-
