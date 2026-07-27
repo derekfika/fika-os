@@ -2,7 +2,7 @@
 
 ## Status
 
-Stage 6 supporting catalogue governed by [ADR-001](../decisions/ADR-001-stage-6-platform-boundaries.md), [ADR-005](../decisions/ADR-005-domain-event-and-integration-contract.md), [ADR-006](../decisions/ADR-006-repository-and-consistency-contract.md) and [ADR-007](../decisions/ADR-007-projection-and-dashboard-boundary.md). It distinguishes a domain command from a completed domain fact and from cross-domain orchestration. It specifies no workflow engine.
+Stage 6 supporting catalogue governed by [ADR-001](../decisions/ADR-001-stage-6-platform-boundaries.md), [ADR-005](../decisions/ADR-005-domain-event-and-integration-contract.md), [ADR-006](../decisions/ADR-006-repository-and-consistency-contract.md), [ADR-007](../decisions/ADR-007-projection-and-dashboard-boundary.md) and [ADR-008](../decisions/ADR-008-identity-and-authmod-enforcement-boundary.md). It distinguishes a domain command from a completed domain fact and from cross-domain orchestration. It specifies no workflow engine.
 
 ## Boundary rule
 
@@ -13,6 +13,8 @@ ADR-005 governs how completed facts are published. Orchestration consumes an int
 ADR-006 governs persisted workflow state, partial completion, stale conflicts, command idempotency and reconciliation. A cross-domain workflow does not imply one distributed transaction, and compensation is an authorised business action rather than a technical rollback.
 
 ADR-007 governs workflow projections and dashboard visibility. Projected progress does not overwrite participating-domain state, and a dashboard action must cross an authorised command boundary that revalidates current canonical state.
+
+ADR-008 governs trusted actor context. Orchestration preserves initiating, executing and represented actors, revalidates authority at each protected domain/provider step, and never lets a service identity impersonate a human for convenience.
 
 ## Booking submission
 

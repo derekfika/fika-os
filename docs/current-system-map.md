@@ -38,6 +38,8 @@ The classifications below describe evidenced responsibility, not implementation 
 
 No current system is a planned retirement candidate solely because a target boundary now exists. Retirement requires the evidence and acceptance described by ADR-001.
 
+Current application sharing, active-user attribution, administrative PINs, provider groups and allowlists are implementation or legacy access controls. Under [ADR-008](decisions/ADR-008-identity-and-authmod-enforcement-boundary.md), they do not establish canonical Person, Worker, actor, Assignment or AUTHMOD authority. Exact deployment audiences and migration classifications remain TODO where not confirmed.
+
 ```mermaid
 flowchart LR
   subgraph Channels["Booking channels"]

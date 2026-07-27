@@ -2,7 +2,7 @@
 
 ## Status
 
-Stage 6 supporting specification constrained by [ADR-001](../decisions/ADR-001-stage-6-platform-boundaries.md), [ADR-005](../decisions/ADR-005-domain-event-and-integration-contract.md), [ADR-006](../decisions/ADR-006-repository-and-consistency-contract.md) and [ADR-007](../decisions/ADR-007-projection-and-dashboard-boundary.md). Where an older FIKA Core catalogue conflicts with an accepted ADR or governed business meaning, the accepted ADR and governing BDR take precedence.
+Stage 6 supporting specification constrained by [ADR-001](../decisions/ADR-001-stage-6-platform-boundaries.md), [ADR-005](../decisions/ADR-005-domain-event-and-integration-contract.md), [ADR-006](../decisions/ADR-006-repository-and-consistency-contract.md), [ADR-007](../decisions/ADR-007-projection-and-dashboard-boundary.md) and [ADR-008](../decisions/ADR-008-identity-and-authmod-enforcement-boundary.md). Where an older FIKA Core catalogue conflicts with an accepted ADR or governed business meaning, the accepted ADR and governing BDR take precedence.
 
 ## Purpose
 
@@ -35,7 +35,7 @@ Core may standardise:
 - identifier and cross-record reference conventions;
 - schema-version and record-version conventions;
 - effective-time, provenance and audit conventions;
-- actor, assignment and authority-context references;
+- trusted actor, Assignment and Authority Grant references governed by ADR-008;
 - correlation, causation, idempotency and concurrency context;
 - common validation-issue and operation-result shapes;
 - the ADR-005 domain-event envelope and compatibility conventions;
@@ -78,7 +78,7 @@ Domain services consume Core contracts but own their own commands, queries, reco
 
 ## Relationship to AUTHMOD
 
-Core may carry a standard authority context and request an AUTHMOD evaluation through a port. AUTHMOD owns the governed action vocabulary and grant semantics. Core does not infer permission from assignment, ownership, capability state, application access or technical administration.
+Core may carry a minimal integrity-protected actor context and request an AUTHMOD evaluation through a port. AUTHMOD owns the governed action vocabulary and grant semantics. Core does not infer authority from authentication, account mapping, Assignment, ownership, capability state, Configuration, application access or technical administration.
 
 ## Relationship to repositories and adapters
 
@@ -99,7 +99,7 @@ Core defines common port behaviour only where it is truly cross-domain. Domain r
 
 - Physical delivery implementation and domain-specific retention policy.
 - Domain-specific merge, compensation and conflict policies where business authority is unresolved.
-- Authentication-to-actor mapping.
+- Person, Worker, actor and account ownership/lifecycle policy.
 - Whether a common audit store is needed or only common audit conventions.
 
 These require the follow-up ADRs registered in ADR-001.

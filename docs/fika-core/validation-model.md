@@ -2,7 +2,7 @@
 
 ## Status
 
-Stage 6 supporting specification governed by [ADR-001](../decisions/ADR-001-stage-6-platform-boundaries.md), [ADR-006](../decisions/ADR-006-repository-and-consistency-contract.md) and [ADR-007](../decisions/ADR-007-projection-and-dashboard-boundary.md). FIKA Core may standardise validation-result structure; it does not own domain rules.
+Stage 6 supporting specification governed by [ADR-001](../decisions/ADR-001-stage-6-platform-boundaries.md), [ADR-006](../decisions/ADR-006-repository-and-consistency-contract.md), [ADR-007](../decisions/ADR-007-projection-and-dashboard-boundary.md) and [ADR-008](../decisions/ADR-008-identity-and-authmod-enforcement-boundary.md). FIKA Core may standardise validation-result structure; it does not own domain rules.
 
 ## Projection validation
 
@@ -18,7 +18,7 @@ The owning domain service enforces meaning, invariants, lifecycle transitions, e
 
 ## Authority validation
 
-AUTHMOD independently evaluates controlled action, organisational role, assignment, scope, effective period, access boundary, delegation and separation of duties. Ownership, capability state and technical access do not substitute for an authority grant.
+AUTHMOD independently evaluates a recognised actor, controlled action, organisational role, Assignment, Authority Grant, scope, effective period, access boundary, delegation and separation of duties. Authentication, account mapping, ownership, capability state, Configuration, provider claims and technical access do not substitute for an Authority Grant. Missing or unavailable required authority fails safely.
 
 ## Orchestration validation
 

@@ -2,7 +2,7 @@
 
 ## Status and authority
 
-This accepted Stage 6 target boundary is governed by [ADR-001](decisions/ADR-001-stage-6-platform-boundaries.md), [ADR-005](decisions/ADR-005-domain-event-and-integration-contract.md), [ADR-006](decisions/ADR-006-repository-and-consistency-contract.md) and [ADR-007](decisions/ADR-007-projection-and-dashboard-boundary.md). It is technology-neutral and does not decide deployment topology, storage, hosting, provider or programming language.
+This accepted Stage 6 target boundary is governed by [ADR-001](decisions/ADR-001-stage-6-platform-boundaries.md), [ADR-005](decisions/ADR-005-domain-event-and-integration-contract.md), [ADR-006](decisions/ADR-006-repository-and-consistency-contract.md), [ADR-007](decisions/ADR-007-projection-and-dashboard-boundary.md) and [ADR-008](decisions/ADR-008-identity-and-authmod-enforcement-boundary.md). It is technology-neutral and does not decide deployment topology, storage, hosting, provider or programming language.
 
 Business meaning remains authoritative in the Business Decision Records and completed Packs. This document explains how future software must respect that meaning.
 
@@ -134,6 +134,8 @@ Booking and Production remain separate authorities. Production determines fulfil
 
 User-interface validation improves usability but is not authoritative enforcement.
 
+Authentication establishes an accepted principal, governed account mapping resolves a FIKA actor, and AUTHMOD evaluates explicit scoped authority. The owning domain still validates capability, Configuration, current state and invariants. A valid session, application access, job title, Assignment or provider group does not grant authority, and every protected action is enforced beyond the client interface under [ADR-008](decisions/ADR-008-identity-and-authmod-enforcement-boundary.md).
+
 ## Events, notifications and audit
 
 Domain events describe accepted business facts after durable domain change. Integration events are deliberately stable, minimised publications of those facts across boundaries. Commands request actions and may be refused; notifications communicate consequences; provider webhooks remain untrusted observations behind adapters. Capitalised **Event** remains the governed Event-domain business concept.
@@ -159,7 +161,7 @@ No legacy path is retired by this architecture document.
 - storage and hosting;
 - physical repository/publication coordination and delivery implementation;
 - domain-specific merge, compensation and conflict policy not yet supported by BDRs;
-- authentication implementation;
+- identity-provider, authentication and account-lifecycle implementation;
 - numerical projection freshness targets and domain-specific reporting/restatement policy;
 - provider selection;
 - final boundaries for candidate domains;

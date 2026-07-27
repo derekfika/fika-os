@@ -312,7 +312,7 @@ Dashed arrows denote supporting, consumer or provisional relationships rather th
 - **Purpose:** Decide whether an actor may perform an action on a resource within scope.
 - **Business question answered:** May this actor do this here and now?
 - **Owns:** Conceptual permission policy, roles/grants/restrictions/scopes and decision semantics.
-- **Does not own:** Authentication credentials, user profile, domain records or UI visibility.
+- **Does not own:** Authentication credentials, provider principals, Person/Worker/account lifecycle, domain records, Capability, Configuration or UI visibility.
 - **Depends on:** User/actor identity, Organisation, domain scope, Configuration and Audit.
 - **Consumers:** Every authoritative query, command, administrative action and sensitive projection.
 - **Current maturity:** Role, Responsibility, Assignment, Approval Authority, scope, action vocabulary, least privilege and emergency access are approved; implementation policy remains later work.
@@ -479,7 +479,7 @@ No additional business domains are asserted.
 
 ## Next governed work
 
-Stage 6 has reconciled the initial architecture and FIKA Core catalogues through ADR-001, established domain-event and integration rules through ADR-005, repository and consistency rules through ADR-006, and projection/dashboard boundaries through ADR-007. The next bounded work is ADR-008 for identity-to-AUTHMOD enforcement, followed by Booking-to-Production orchestration and legacy coexistence. Missing business policy returns to the BDR process.
+Stage 6 has reconciled the initial architecture and FIKA Core catalogues through ADR-001, established domain-event and integration rules through ADR-005, repository and consistency rules through ADR-006, projection/dashboard boundaries through ADR-007, and identity-to-AUTHMOD enforcement through ADR-008. The next bounded work is ADR-009 for Booking-to-Production orchestration, followed by legacy coexistence. Missing business policy returns to the BDR process.
 
 ## 8. Architectural North Star
 

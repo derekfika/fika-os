@@ -2,7 +2,7 @@
 
 ## Status
 
-Stage 6 supporting specification governed by ROLE-001–007, CAP-004 and [ADR-001](../decisions/ADR-001-stage-6-platform-boundaries.md). It defines conceptual enforcement boundaries, not authentication or access-control technology.
+Stage 6 supporting specification governed by ROLE-001–007, CAP-004, [ADR-001](../decisions/ADR-001-stage-6-platform-boundaries.md) and [ADR-008](../decisions/ADR-008-identity-and-authmod-enforcement-boundary.md). It defines conceptual enforcement boundaries, not authentication or access-control technology.
 
 ## Governing distinctions
 
@@ -18,7 +18,7 @@ No item above may be inferred from another.
 
 ## AUTHMOD evaluation
 
-An authoritative action check considers at least:
+After accepted authentication evidence maps a principal to a recognised FIKA actor, an authoritative action check considers at least:
 
 - authenticated actor reference;
 - effective assignment to the applicable organisational role where required;
@@ -30,7 +30,7 @@ An authoritative action check considers at least:
 - separation-of-duties or approval/publication constraints;
 - applicable delegation or emergency-access evidence.
 
-Applications may hide unavailable actions, but the domain-service boundary must enforce the decision. Repository access alone cannot authorise a business action.
+Applications may hide unavailable actions, but every protected command, authoritative query, projection/export read and administrative operation enforces at its authoritative boundary. Repository access, provider sharing and client-side checks cannot authorise a business action.
 
 ## Approval and publication
 
@@ -46,11 +46,13 @@ Emergency access is a separate temporary grant for an immediate qualifying need.
 
 ## Authentication boundary
 
-Authentication establishes who or what is acting. AUTHMOD establishes what that actor may do in a business scope. The mapping from provider identity to Person, Assignment and authority context requires a follow-up ADR.
+Authentication establishes an accepted principal under stated conditions. A governed account mapping resolves a stable FIKA actor; AUTHMOD then establishes what that actor may attempt in a business scope. Authentication success, email, provider group, account mapping, session validity and Assignment do not independently grant authority.
+
+Person, Worker, actor and account lifecycle ownership remains a business-policy question. ADR-008 adopts no identity-provider mapping, automatic linking or workforce lifecycle rule.
 
 ## System actors
 
-Automated processes require explicit identity, purpose, scope and authority appropriate to their actions. They do not inherit the authority of a developer, administrator or initiating application.
+Automated processes require explicit actor identity, purpose, scope and authority appropriate to their actions. A human-initiated background task preserves both initiating and executing actors; the service does not impersonate the human or inherit developer/application authority.
 
 ## No invented role catalogue
 
@@ -62,7 +64,8 @@ Grant, change, evaluation where required, privileged use, expiry and revocation 
 
 ## Open questions
 
-- Authentication identity mapping.
-- Service-to-service and delegated system authority.
-- Decision-cache validity and revocation propagation.
+- Person, Worker, actor and account ownership and lifecycle.
+- Approved provider/account linking, recovery and migration rules.
+- Domain-specific delegation, support impersonation and service-actor authority.
+- Numerical decision-cache validity and revocation-propagation objectives.
 - Domain information classifications and restricted-field projections.

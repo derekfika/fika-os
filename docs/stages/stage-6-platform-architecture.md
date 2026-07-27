@@ -54,6 +54,8 @@ The third bounded task, the technology-neutral repository and consistency contra
 
 The fourth bounded task, the technology-neutral projection and dashboard boundary, is complete and accepted through ADR-007.
 
+The fifth bounded task, the provider-neutral identity and AUTHMOD enforcement boundary, is complete and accepted through ADR-008.
+
 ## Entry brief
 
 The completed Stage 5 baseline includes governed contracts for foundational Client and Operational Location concepts, authority and capability, Service, Booking, Event, Production, Mobilisation, Brand Variation and Waste. Stage 6 consumes those contracts and does not casually rewrite their business meaning.
@@ -110,15 +112,27 @@ Completed on 2026-07-27:
 
 No dashboard implementation, physical read model, numerical service level, Stage 5 schema or ADR-009 workflow was created.
 
+## Fifth bounded deliverable
+
+Completed on 2026-07-27:
+
+- accepted [ADR-008](../decisions/ADR-008-identity-and-authmod-enforcement-boundary.md);
+- separated Person, Worker, actor, principal, account, credential, session, Assignment and Authority Grant concepts;
+- established provider-neutral authentication-evidence acceptance and governed principal-to-actor mapping;
+- established AUTHMOD ownership, trusted actor context, authoritative enforcement, revocation and fail-safe dependency rules; and
+- applied the contract to internal staff sign-in without selecting a provider or inventing workforce/account policy.
+
+No identity schema, provider mapping, login product, session target, Stage 5 schema or implementation was created.
+
 ## Next bounded work
 
-ADR-001 registers the required follow-up decisions. ADR-005, ADR-006 and ADR-007 have completed items 1–3 below. The next bounded task is **ADR-008: Identity and AUTHMOD Enforcement Boundary**.
+ADR-001 registers the required follow-up decisions. ADR-005 through ADR-008 have completed items 1–4 below. The next bounded task is **ADR-009: Booking-to-Production Orchestration**.
 
 1. domain-event and integration guarantees — complete through ADR-005;
 2. repository and cross-domain consistency — complete through ADR-006;
 3. projection and dashboard boundaries — complete through ADR-007;
-4. identity-to-AUTHMOD enforcement — next through ADR-008;
-5. Booking-to-Production orchestration; and
+4. identity-to-AUTHMOD enforcement — complete through ADR-008;
+5. Booking-to-Production orchestration — next through ADR-009; and
 6. legacy coexistence, cutover and retirement.
 
 Notification detail should be decided only when a shared capability is authorised. Business-policy gaps identified during this work return to discovery or a BDR.
@@ -146,6 +160,7 @@ Stages 7 and 8 use the architecture to constrain implementation, testing, rollou
 - [ADR-005 — Domain Event and Integration Contract](../decisions/ADR-005-domain-event-and-integration-contract.md).
 - [ADR-006 — Repository and Consistency Contract](../decisions/ADR-006-repository-and-consistency-contract.md).
 - [ADR-007 — Projection and Dashboard Boundary](../decisions/ADR-007-projection-and-dashboard-boundary.md).
+- [ADR-008 — Identity and AUTHMOD Enforcement Boundary](../decisions/ADR-008-identity-and-authmod-enforcement-boundary.md).
 - [FIKA Core overview](../fika-core/overview.md).
 - [Platform domain map](../platform-domain-map.md).
 - [Architecture review checklist](../engineering/architecture-review-checklist.md).

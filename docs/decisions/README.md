@@ -14,8 +14,9 @@ An ADR must implement approved BDRs and adopted schemas. It must not invent or s
 - [ADR-005 — Domain Event and Integration Contract](ADR-005-domain-event-and-integration-contract.md) — accepted technology-neutral contract for completed facts, integration events, delivery, idempotency, ordering and replay.
 - [ADR-006 — Repository and Consistency Contract](ADR-006-repository-and-consistency-contract.md) — accepted technology-neutral contract for domain-owned repositories, canonical persistence, concurrency, cross-domain consistency, partial failure and recovery.
 - [ADR-007 — Projection and Dashboard Boundary](ADR-007-projection-and-dashboard-boundary.md) — accepted technology-neutral contract for projection ownership, freshness, rebuilding, reporting and authorised dashboard interaction.
+- [ADR-008 — Identity and AUTHMOD Enforcement Boundary](ADR-008-identity-and-authmod-enforcement-boundary.md) — accepted provider-neutral contract for authentication evidence, actor mapping, AUTHMOD evaluation and authoritative enforcement.
 
-ADR-001 contains the controlled register of required follow-up ADRs. ADR-005, ADR-006 and ADR-007 are complete; reserved numbers without a record remain planning references rather than accepted decisions.
+ADR-001 contains the controlled register of required follow-up ADRs. ADR-005 through ADR-008 are complete; reserved numbers without a record remain planning references rather than accepted decisions.
 
 ## Status convention
 
