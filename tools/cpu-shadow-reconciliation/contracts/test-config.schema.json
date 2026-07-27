@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:fika:integration:test-config:cpu-shadow-reconciliation:1",
+  "title": "CPU Shadow Reconciliation Test Configuration",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["configName", "configVersion", "classification", "canonicalPersistencePermitted", "hostOperationalLocationId", "producingOperationalLocationId", "intakeReference", "hostingAssertion", "mapping", "governance"],
+  "properties": {
+    "configName": { "const": "fika.cpu-shadow-reconciliation.test-config" },
+    "configVersion": { "const": "1.0.0" },
+    "classification": { "const": "synthetic-test-only-non-canonical" },
+    "canonicalPersistencePermitted": { "const": false },
+    "hostOperationalLocationId": { "const": "oploc:fika-xchange" },
+    "producingOperationalLocationId": { "const": "oploc:cpux" },
+    "intakeReference": { "const": "cpux@fikacatering.com" },
+    "hostingAssertion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["direction", "hostOperationalLocationId", "hostedOperationalLocationId", "status", "canonicalRelationship"],
+      "properties": {
+        "direction": { "const": "host-to-hosted" },
+        "hostOperationalLocationId": { "const": "oploc:fika-xchange" },
+        "hostedOperationalLocationId": { "const": "oploc:cpux" },
+        "status": { "const": "test-assertion-pending-governed-contract" },
+        "canonicalRelationship": { "const": false }
+      }
+    },
+    "mapping": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mappingId", "mappingVersion"],
+      "properties": {
+        "mappingId": { "const": "fika.cpu-shadow-observation-mapping" },
+        "mappingVersion": { "const": "1.0.0" }
+      }
+    },
+    "governance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["specificationCommit", "productionOrderSchemaId", "productionOrderSchemaVersion", "productionLineSchemaId", "productionLineSchemaVersion"],
+      "properties": {
+        "specificationCommit": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+        "productionOrderSchemaId": { "const": "urn:fika:schema:draft:production-order:1" },
+        "productionOrderSchemaVersion": { "const": "1.0.0-draft.1" },
+        "productionLineSchemaId": { "const": "urn:fika:schema:draft:production-line:1" },
+        "productionLineSchemaVersion": { "const": "1.0.0-draft.1" }
+      }
+    }
+  }
+}

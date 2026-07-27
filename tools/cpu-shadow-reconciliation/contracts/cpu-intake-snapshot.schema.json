@@ -1,0 +1,158 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:fika:integration:cpu-intake-snapshot:1.0.0",
+  "title": "fika.cpu-intake-snapshot 1.0.0",
+  "description": "Strict synthetic source-observation snapshot contract. It is not a canonical Booking or Production schema.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contract", "snapshotId", "createdAt", "classification", "source", "scope", "sanitisation", "provenance", "integrity", "omissions", "observations"],
+  "properties": {
+    "contract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "version"],
+      "properties": {
+        "name": { "const": "fika.cpu-intake-snapshot" },
+        "version": { "const": "1.0.0" }
+      }
+    },
+    "snapshotId": { "$ref": "#/$defs/stableId" },
+    "createdAt": { "$ref": "#/$defs/dateTime" },
+    "classification": { "const": "synthetic" },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sourceType", "intakeReference"],
+      "properties": {
+        "sourceType": { "const": "calendar-intake-synthetic-snapshot" },
+        "intakeReference": { "const": "cpux@fikacatering.com" }
+      }
+    },
+    "scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["producingOperationalLocationId", "windowStart", "windowEnd", "timezone", "asOf"],
+      "properties": {
+        "producingOperationalLocationId": { "const": "oploc:cpux" },
+        "windowStart": { "$ref": "#/$defs/dateTime" },
+        "windowEnd": { "$ref": "#/$defs/dateTime" },
+        "timezone": { "const": "Europe/London" },
+        "asOf": { "$ref": "#/$defs/dateTime" }
+      }
+    },
+    "sanitisation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["method", "version", "excludedCategories"],
+      "properties": {
+        "method": { "const": "fully-synthetic" },
+        "version": { "const": "1.0.0" },
+        "excludedCategories": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "enum": ["real-contacts", "attendees", "commercial-details", "dietary-text", "employee-data", "attachment-content", "access-links", "credentials"] }
+        }
+      }
+    },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["generator", "generatedAt", "sourceReference", "method"],
+      "properties": {
+        "generator": { "const": "fika-cpu-shadow-synthetic-fixture" },
+        "generatedAt": { "$ref": "#/$defs/dateTime" },
+        "sourceReference": { "type": "string", "minLength": 1 },
+        "method": { "const": "synthetic-authoring" }
+      }
+    },
+    "integrity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["algorithm", "observationsSha256"],
+      "properties": {
+        "algorithm": { "const": "sha256-canonical-json" },
+        "observationsSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+      }
+    },
+    "omissions": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
+    "observations": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/observation" } }
+  },
+  "$defs": {
+    "stableId": { "type": "string", "pattern": "^[A-Za-z][A-Za-z0-9_.:-]{0,127}$" },
+    "dateTime": { "type": "string", "format": "date-time" },
+    "stringList": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
+    "observation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["observationId", "sourceRecord", "observedAt", "serviceTime", "stateEvidence", "extracted", "warnings", "uncertainties", "exclusions"],
+      "properties": {
+        "observationId": { "$ref": "#/$defs/stableId" },
+        "sourceRecord": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["sourceRecordId", "recordType"],
+          "properties": {
+            "sourceRecordId": { "$ref": "#/$defs/stableId" },
+            "recordType": { "const": "synthetic-calendar-event" },
+            "recurrenceId": { "$ref": "#/$defs/stableId" },
+            "providerUpdatedAt": { "$ref": "#/$defs/dateTime" }
+          }
+        },
+        "observedAt": { "$ref": "#/$defs/dateTime" },
+        "serviceTime": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["startAt", "timezone"],
+          "properties": {
+            "startAt": { "$ref": "#/$defs/dateTime" },
+            "endAt": { "$ref": "#/$defs/dateTime" },
+            "timezone": { "const": "Europe/London" },
+            "semanticLabel": { "enum": ["service-time", "delivery-time", "ambiguous"] }
+          }
+        },
+        "stateEvidence": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["observedState", "cancellationEvidence"],
+          "properties": {
+            "observedState": { "enum": ["observed", "cancelled", "unknown"] },
+            "cancellationEvidence": { "enum": ["explicit", "disappearance-only", "none"] }
+          }
+        },
+        "extracted": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["serviceLabel", "items", "dietaryInformationPresence"],
+          "properties": {
+            "serviceLabel": { "type": ["string", "null"] },
+            "items": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["sourceLineReference", "description", "orderedQuantity"],
+                "properties": {
+                  "sourceLineReference": { "type": ["string", "null"] },
+                  "description": { "type": "string", "minLength": 1 },
+                  "orderedQuantity": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["value", "unit"],
+                    "properties": {
+                      "value": { "type": ["number", "null"], "minimum": 0 },
+                      "unit": { "type": ["string", "null"] }
+                    }
+                  }
+                }
+              }
+            },
+            "dietaryInformationPresence": { "enum": ["none", "present-withheld", "unknown"] }
+          }
+        },
+        "warnings": { "$ref": "#/$defs/stringList" },
+        "uncertainties": { "$ref": "#/$defs/stringList" },
+        "exclusions": { "$ref": "#/$defs/stringList" }
+      }
+    }
+  }
+}

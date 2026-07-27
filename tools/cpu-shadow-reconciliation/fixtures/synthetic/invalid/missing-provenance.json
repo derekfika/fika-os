@@ -1,0 +1,12 @@
+{
+  "contract": { "name": "fika.cpu-intake-snapshot", "version": "1.0.0" },
+  "snapshotId": "snapshot:invalid-missing-provenance",
+  "createdAt": "2026-07-21T18:00:00+01:00",
+  "classification": "synthetic",
+  "source": { "sourceType": "calendar-intake-synthetic-snapshot", "intakeReference": "cpux@fikacatering.com" },
+  "scope": { "producingOperationalLocationId": "oploc:cpux", "windowStart": "2026-07-20T00:00:00+01:00", "windowEnd": "2026-07-21T00:00:00+01:00", "timezone": "Europe/London", "asOf": "2026-07-21T00:00:00+01:00" },
+  "sanitisation": { "method": "fully-synthetic", "version": "1.0.0", "excludedCategories": [] },
+  "integrity": { "algorithm": "sha256-canonical-json", "observationsSha256": "0000000000000000000000000000000000000000000000000000000000000000" },
+  "omissions": [],
+  "observations": []
+}

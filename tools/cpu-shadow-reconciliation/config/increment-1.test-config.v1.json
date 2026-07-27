@@ -1,0 +1,27 @@
+{
+  "configName": "fika.cpu-shadow-reconciliation.test-config",
+  "configVersion": "1.0.0",
+  "classification": "synthetic-test-only-non-canonical",
+  "canonicalPersistencePermitted": false,
+  "hostOperationalLocationId": "oploc:fika-xchange",
+  "producingOperationalLocationId": "oploc:cpux",
+  "intakeReference": "cpux@fikacatering.com",
+  "hostingAssertion": {
+    "direction": "host-to-hosted",
+    "hostOperationalLocationId": "oploc:fika-xchange",
+    "hostedOperationalLocationId": "oploc:cpux",
+    "status": "test-assertion-pending-governed-contract",
+    "canonicalRelationship": false
+  },
+  "mapping": {
+    "mappingId": "fika.cpu-shadow-observation-mapping",
+    "mappingVersion": "1.0.0"
+  },
+  "governance": {
+    "specificationCommit": "252b5ed8931cfd925f93987a14f0db967b055567",
+    "productionOrderSchemaId": "urn:fika:schema:draft:production-order:1",
+    "productionOrderSchemaVersion": "1.0.0-draft.1",
+    "productionLineSchemaId": "urn:fika:schema:draft:production-line:1",
+    "productionLineSchemaVersion": "1.0.0-draft.1"
+  }
+}

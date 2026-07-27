@@ -1,0 +1,16 @@
+{
+  "contract": { "name": "fika.cpu-intake-snapshot", "version": "1.0.0" },
+  "snapshotId": "snapshot:duplicate-source-record",
+  "createdAt": "2026-07-21T18:00:00+01:00",
+  "classification": "synthetic",
+  "source": { "sourceType": "calendar-intake-synthetic-snapshot", "intakeReference": "cpux@fikacatering.com" },
+  "scope": { "producingOperationalLocationId": "oploc:cpux", "windowStart": "2026-07-20T00:00:00+01:00", "windowEnd": "2026-07-21T00:00:00+01:00", "timezone": "Europe/London", "asOf": "2026-07-21T00:00:00+01:00" },
+  "sanitisation": { "method": "fully-synthetic", "version": "1.0.0", "excludedCategories": ["real-contacts"] },
+  "provenance": { "generator": "fika-cpu-shadow-synthetic-fixture", "generatedAt": "2026-07-21T18:00:00+01:00", "sourceReference": "fixture:duplicate", "method": "synthetic-authoring" },
+  "integrity": { "algorithm": "sha256-canonical-json", "observationsSha256": "7a2157a1444afebd3d2d25d9a81fb11f2f997b826d91cc52cd87fe89e5b76984" },
+  "omissions": [],
+  "observations": [
+    { "observationId": "observation:duplicate-a", "sourceRecord": { "sourceRecordId": "source-record:duplicate", "recordType": "synthetic-calendar-event" }, "observedAt": "2026-07-20T18:00:00+01:00", "serviceTime": { "startAt": "2026-07-20T12:00:00+01:00", "timezone": "Europe/London", "semanticLabel": "service-time" }, "stateEvidence": { "observedState": "observed", "cancellationEvidence": "none" }, "extracted": { "serviceLabel": "Synthetic duplicate A", "items": [], "dietaryInformationPresence": "none" }, "warnings": [], "uncertainties": [], "exclusions": [] },
+    { "observationId": "observation:duplicate-b", "sourceRecord": { "sourceRecordId": "source-record:duplicate", "recordType": "synthetic-calendar-event" }, "observedAt": "2026-07-20T18:01:00+01:00", "serviceTime": { "startAt": "2026-07-20T12:00:00+01:00", "timezone": "Europe/London", "semanticLabel": "service-time" }, "stateEvidence": { "observedState": "observed", "cancellationEvidence": "none" }, "extracted": { "serviceLabel": "Synthetic duplicate B", "items": [], "dietaryInformationPresence": "none" }, "warnings": [], "uncertainties": ["duplicate-source-record-suspected"], "exclusions": [] }
+  ]
+}

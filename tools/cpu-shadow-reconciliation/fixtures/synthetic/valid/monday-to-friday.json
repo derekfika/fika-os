@@ -1,0 +1,74 @@
+{
+  "contract": { "name": "fika.cpu-intake-snapshot", "version": "1.0.0" },
+  "snapshotId": "snapshot:synthetic-week-2026-07-20",
+  "createdAt": "2026-07-24T18:00:00+01:00",
+  "classification": "synthetic",
+  "source": { "sourceType": "calendar-intake-synthetic-snapshot", "intakeReference": "cpux@fikacatering.com" },
+  "scope": {
+    "producingOperationalLocationId": "oploc:cpux",
+    "windowStart": "2026-07-20T00:00:00+01:00",
+    "windowEnd": "2026-07-25T00:00:00+01:00",
+    "timezone": "Europe/London",
+    "asOf": "2026-07-25T00:00:00+01:00"
+  },
+  "sanitisation": {
+    "method": "fully-synthetic",
+    "version": "1.0.0",
+    "excludedCategories": ["access-links", "attachment-content", "attendees", "commercial-details", "credentials", "dietary-text", "employee-data", "real-contacts"]
+  },
+  "provenance": {
+    "generator": "fika-cpu-shadow-synthetic-fixture",
+    "generatedAt": "2026-07-24T18:00:00+01:00",
+    "sourceReference": "fixture:monday-to-friday",
+    "method": "synthetic-authoring"
+  },
+  "integrity": { "algorithm": "sha256-canonical-json", "observationsSha256": "37e7df00ab370db6f476181bd9182431e9580d8d5ef65745037f5589d9026427" },
+  "omissions": ["canonical-booking", "customer-data", "production-routing", "required-ready-time"],
+  "observations": [
+    {
+      "observationId": "observation:monday",
+      "sourceRecord": { "sourceRecordId": "source-record:monday", "recordType": "synthetic-calendar-event", "recurrenceId": "recurrence:weekday-lunch", "providerUpdatedAt": "2026-07-19T12:00:00+01:00" },
+      "observedAt": "2026-07-24T17:50:00+01:00",
+      "serviceTime": { "startAt": "2026-07-20T12:00:00+01:00", "endAt": "2026-07-20T13:00:00+01:00", "timezone": "Europe/London", "semanticLabel": "service-time" },
+      "stateEvidence": { "observedState": "observed", "cancellationEvidence": "none" },
+      "extracted": { "serviceLabel": "Synthetic Monday Lunch", "items": [{ "sourceLineReference": "line:monday-1", "description": "Synthetic lunch item", "orderedQuantity": { "value": 12, "unit": "portions" } }], "dietaryInformationPresence": "none" },
+      "warnings": [], "uncertainties": ["required-ready-time-unavailable"], "exclusions": ["production-quantity-not-derived"]
+    },
+    {
+      "observationId": "observation:tuesday",
+      "sourceRecord": { "sourceRecordId": "source-record:tuesday", "recordType": "synthetic-calendar-event", "recurrenceId": "recurrence:weekday-lunch", "providerUpdatedAt": "2026-07-20T12:00:00+01:00" },
+      "observedAt": "2026-07-24T17:51:00+01:00",
+      "serviceTime": { "startAt": "2026-07-21T12:00:00+01:00", "endAt": "2026-07-21T13:00:00+01:00", "timezone": "Europe/London", "semanticLabel": "delivery-time" },
+      "stateEvidence": { "observedState": "observed", "cancellationEvidence": "none" },
+      "extracted": { "serviceLabel": "Synthetic Tuesday Lunch", "items": [{ "sourceLineReference": "line:tuesday-1", "description": "Synthetic lunch item", "orderedQuantity": { "value": 18, "unit": "portions" } }], "dietaryInformationPresence": "present-withheld" },
+      "warnings": ["dietary-detail-intentionally-withheld"], "uncertainties": ["service-versus-delivery-semantics"], "exclusions": ["dietary-allergen-allocation"]
+    },
+    {
+      "observationId": "observation:wednesday",
+      "sourceRecord": { "sourceRecordId": "source-record:wednesday", "recordType": "synthetic-calendar-event", "recurrenceId": "recurrence:weekday-lunch", "providerUpdatedAt": "2026-07-22T08:00:00+01:00" },
+      "observedAt": "2026-07-24T17:52:00+01:00",
+      "serviceTime": { "startAt": "2026-07-22T12:00:00+01:00", "timezone": "Europe/London", "semanticLabel": "ambiguous" },
+      "stateEvidence": { "observedState": "cancelled", "cancellationEvidence": "explicit" },
+      "extracted": { "serviceLabel": "Synthetic Wednesday Lunch", "items": [], "dietaryInformationPresence": "unknown" },
+      "warnings": ["explicit-cancellation-observed"], "uncertainties": ["production-commencement-unknown"], "exclusions": ["cancellation-action-not-derived"]
+    },
+    {
+      "observationId": "observation:thursday",
+      "sourceRecord": { "sourceRecordId": "source-record:thursday", "recordType": "synthetic-calendar-event", "providerUpdatedAt": "2026-07-23T09:00:00+01:00" },
+      "observedAt": "2026-07-24T17:53:00+01:00",
+      "serviceTime": { "startAt": "2026-07-23T12:00:00+01:00", "timezone": "Europe/London", "semanticLabel": "service-time" },
+      "stateEvidence": { "observedState": "observed", "cancellationEvidence": "none" },
+      "extracted": { "serviceLabel": "Synthetic Thursday Lunch", "items": [{ "sourceLineReference": null, "description": "Synthetic unreferenced item", "orderedQuantity": { "value": 10, "unit": null } }], "dietaryInformationPresence": "unknown" },
+      "warnings": ["ordered-unit-missing"], "uncertainties": ["stable-source-line-identity-missing"], "exclusions": ["no-unit-default-applied"]
+    },
+    {
+      "observationId": "observation:friday",
+      "sourceRecord": { "sourceRecordId": "source-record:friday", "recordType": "synthetic-calendar-event", "providerUpdatedAt": "2026-07-24T09:00:00+01:00" },
+      "observedAt": "2026-07-24T17:54:00+01:00",
+      "serviceTime": { "startAt": "2026-07-24T12:00:00+01:00", "endAt": "2026-07-24T13:00:00+01:00", "timezone": "Europe/London", "semanticLabel": "service-time" },
+      "stateEvidence": { "observedState": "unknown", "cancellationEvidence": "disappearance-only" },
+      "extracted": { "serviceLabel": null, "items": [{ "sourceLineReference": "line:friday-1", "description": "Synthetic partial item", "orderedQuantity": { "value": null, "unit": null } }], "dietaryInformationPresence": "unknown" },
+      "warnings": ["partial-observation"], "uncertainties": ["disappearance-is-not-confirmed-cancellation"], "exclusions": ["commercial-status-not-derived"]
+    }
+  ]
+}

@@ -1,0 +1,20 @@
+{
+  "name": "@fika/cpu-shadow-reconciliation",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Offline, non-canonical CPU intake snapshot validation and reconciliation evidence.",
+  "engines": {
+    "node": ">=24 <25",
+    "npm": ">=11 <12"
+  },
+  "scripts": {
+    "test": "node --test",
+    "validate": "node src/cli.js validate",
+    "reconcile": "node src/cli.js reconcile"
+  },
+  "dependencies": {
+    "ajv": "8.17.1",
+    "ajv-formats": "3.0.1"
+  }
+}
