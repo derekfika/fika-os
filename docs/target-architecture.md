@@ -2,7 +2,7 @@
 
 ## Status and authority
 
-This accepted Stage 6 target boundary is governed by [ADR-001](decisions/ADR-001-stage-6-platform-boundaries.md), [ADR-005](decisions/ADR-005-domain-event-and-integration-contract.md) and [ADR-006](decisions/ADR-006-repository-and-consistency-contract.md). It is technology-neutral and does not decide deployment topology, storage, hosting, provider or programming language.
+This accepted Stage 6 target boundary is governed by [ADR-001](decisions/ADR-001-stage-6-platform-boundaries.md), [ADR-005](decisions/ADR-005-domain-event-and-integration-contract.md), [ADR-006](decisions/ADR-006-repository-and-consistency-contract.md) and [ADR-007](decisions/ADR-007-projection-and-dashboard-boundary.md). It is technology-neutral and does not decide deployment topology, storage, hosting, provider or programming language.
 
 Business meaning remains authoritative in the Business Decision Records and completed Packs. This document explains how future software must respect that meaning.
 
@@ -77,7 +77,9 @@ A domain repository is a logical contract owned by the domain responsible for th
 
 Domain services remain the command boundary. Other domains and applications use authorised commands or domain queries rather than directly mutating a repository. Workflow repositories may retain orchestration progress and canonical references without acquiring ownership of participating records.
 
-A projection port publishes or retrieves a rebuildable consumer view. Projections may optimise dashboards, calendars, documents, operational Sheets and reporting. They must be labelled as projections and must not become the sole record of authoritative business state or audit history.
+A projection port publishes or retrieves a derived consumer view with explicit ownership, source linkage, freshness, completeness and recovery responsibility. Projections may optimise dashboards, calendars, documents, operational Sheets and reporting. They remain non-authoritative, may lag, and must not become the sole record of business state or audit history.
+
+Dashboards normally read projections and use an authoritative domain query where a decision materially requires current owned state. Every dashboard action invokes an authorised application or domain command and is revalidated; it never mutates a repository or projection store directly.
 
 Repository interfaces do not imply one database per domain, one repository per schema, separate deployment or any particular storage technology. Cross-domain workflows coordinate independently accepted changes, expose partial completion and do not assume a distributed transaction.
 
@@ -158,7 +160,7 @@ No legacy path is retired by this architecture document.
 - physical repository/publication coordination and delivery implementation;
 - domain-specific merge, compensation and conflict policy not yet supported by BDRs;
 - authentication implementation;
-- projection freshness and rebuild targets;
+- numerical projection freshness targets and domain-specific reporting/restatement policy;
 - provider selection;
 - final boundaries for candidate domains;
 - legacy retirement timing.

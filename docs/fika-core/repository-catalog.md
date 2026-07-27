@@ -2,7 +2,7 @@
 
 ## Status
 
-Stage 6 supporting catalogue governed by [ADR-001](../decisions/ADR-001-stage-6-platform-boundaries.md) and [ADR-006](../decisions/ADR-006-repository-and-consistency-contract.md). It defines logical responsibilities only and selects no storage technology.
+Stage 6 supporting catalogue governed by [ADR-001](../decisions/ADR-001-stage-6-platform-boundaries.md), [ADR-006](../decisions/ADR-006-repository-and-consistency-contract.md) and [ADR-007](../decisions/ADR-007-projection-and-dashboard-boundary.md). It defines logical responsibilities only and selects no storage technology.
 
 ## Repository rules
 
@@ -43,8 +43,13 @@ Projection ports accept committed domain facts or retrieve rebuildable views for
 - rebuild and reconciliation method;
 - sensitive-field restrictions;
 - whether any user-entered operational state is separately authoritative.
+- logical owner, source identities and access purpose;
+- source-specific freshness, completeness and checkpoint meaning;
+- failure, rejected-input and rebuild status.
 
 Dashboard, reporting, Calendar, document and Sheet views are projection candidates. A projection is never the only durable audit history.
+
+Projection builders process validated, authorised facts or queries under duplicate-safe, order-aware rules. A checkpoint records technical progress only. Dashboards normally read projections and send actions through authorised command boundaries; they do not update a projection as a substitute for changing canonical state.
 
 ## Provider ports
 
@@ -74,5 +79,6 @@ Equipment, Media, Workforce, Logistics, Reporting, Document, Notification and Qu
 
 - Domain-specific merge, precedence and compensation policy where business authority is unresolved.
 - Physical durable record/publication coordination technique.
-- Projection rebuild and retention targets.
+- Numerical projection freshness and retention targets by use case.
+- Reporting-definition and historical-restatement policy by dataset.
 - Whether shared audit conventions require one logical AuditRepository.

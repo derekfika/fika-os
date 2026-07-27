@@ -48,7 +48,7 @@ This document defines the platform boundary. It does not confirm that a particul
 
 ## Events Platform Boundary
 
-The Events Dashboard is the internal, company-wide source of truth for events. It receives or records events from:
+The Events Dashboard is the intended internal, company-wide operational source through which authoritative Event records are accessed and managed. The governed Event domain owns canonical Event meaning and records; the dashboard does not become a separate authority. It receives or records events from:
 
 - The Line
 - FIKA sites

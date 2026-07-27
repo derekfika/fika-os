@@ -2,7 +2,7 @@
 
 ## Status
 
-Stage 6 supporting catalogue governed by [ADR-001](../decisions/ADR-001-stage-6-platform-boundaries.md), [ADR-005](../decisions/ADR-005-domain-event-and-integration-contract.md) and [ADR-006](../decisions/ADR-006-repository-and-consistency-contract.md). It distinguishes a domain command from a completed domain fact and from cross-domain orchestration. It specifies no workflow engine.
+Stage 6 supporting catalogue governed by [ADR-001](../decisions/ADR-001-stage-6-platform-boundaries.md), [ADR-005](../decisions/ADR-005-domain-event-and-integration-contract.md), [ADR-006](../decisions/ADR-006-repository-and-consistency-contract.md) and [ADR-007](../decisions/ADR-007-projection-and-dashboard-boundary.md). It distinguishes a domain command from a completed domain fact and from cross-domain orchestration. It specifies no workflow engine.
 
 ## Boundary rule
 
@@ -11,6 +11,8 @@ A domain command changes one domain under that domain's rules. Orchestration coo
 ADR-005 governs how completed facts are published. Orchestration consumes an integration event and issues a new command for an intended downstream action; it never publishes the desired outcome as if that action had already succeeded.
 
 ADR-006 governs persisted workflow state, partial completion, stale conflicts, command idempotency and reconciliation. A cross-domain workflow does not imply one distributed transaction, and compensation is an authorised business action rather than a technical rollback.
+
+ADR-007 governs workflow projections and dashboard visibility. Projected progress does not overwrite participating-domain state, and a dashboard action must cross an authorised command boundary that revalidates current canonical state.
 
 ## Booking submission
 

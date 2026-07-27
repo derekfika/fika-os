@@ -13,8 +13,9 @@ An ADR must implement approved BDRs and adopted schemas. It must not invent or s
 - [ADR-004 — Booking-to-Production Boundary](ADR-004-booking-to-production-boundary.md) — accepted architectural direction requiring reconciliation with completed BDRs before implementation.
 - [ADR-005 — Domain Event and Integration Contract](ADR-005-domain-event-and-integration-contract.md) — accepted technology-neutral contract for completed facts, integration events, delivery, idempotency, ordering and replay.
 - [ADR-006 — Repository and Consistency Contract](ADR-006-repository-and-consistency-contract.md) — accepted technology-neutral contract for domain-owned repositories, canonical persistence, concurrency, cross-domain consistency, partial failure and recovery.
+- [ADR-007 — Projection and Dashboard Boundary](ADR-007-projection-and-dashboard-boundary.md) — accepted technology-neutral contract for projection ownership, freshness, rebuilding, reporting and authorised dashboard interaction.
 
-ADR-001 contains the controlled register of required follow-up ADRs. ADR-005 and ADR-006 are complete; reserved numbers without a record remain planning references rather than accepted decisions.
+ADR-001 contains the controlled register of required follow-up ADRs. ADR-005, ADR-006 and ADR-007 are complete; reserved numbers without a record remain planning references rather than accepted decisions.
 
 ## Status convention
 

@@ -259,8 +259,8 @@ Architecture must not resolve the following:
 |---|---|---|---|
 | [ADR-005 Domain event and integration contract](ADR-005-domain-event-and-integration-contract.md) | Envelope, idempotency, ordering, delivery and replay | Before implementing cross-domain event delivery | Accepted 2026-07-25 |
 | [ADR-006 Repository and consistency contract](ADR-006-repository-and-consistency-contract.md) | Aggregate persistence, concurrency, transactions and failure semantics | Before selecting or building repository implementations | Accepted 2026-07-27 |
-| ADR-007 Projection and dashboard boundary | Projection ownership, rebuild, freshness and write-back prohibition; Hospitality dashboard is the first case study | Before replacing or materially changing operational dashboards | Next bounded task |
-| ADR-008 Identity and AUTHMOD enforcement boundary | Authentication mapping, actor context and enforcement responsibilities | Before platform identity implementation | Planned |
+| [ADR-007 Projection and dashboard boundary](ADR-007-projection-and-dashboard-boundary.md) | Projection ownership, rebuild, freshness and write-back prohibition; Hospitality dashboard is the first case study | Before replacing or materially changing operational dashboards | Accepted 2026-07-27 |
+| ADR-008 Identity and AUTHMOD enforcement boundary | Authentication mapping, actor context and enforcement responsibilities | Before platform identity implementation | Next bounded task |
 | ADR-009 Booking-to-Production orchestration | Trigger, Booking-version contract, retries, compensation and reconciliation | Before implementing canonical Production creation | Planned |
 | ADR-010 Legacy coexistence and retirement | Classification evidence, cutover, reconciliation, rollback and acceptance | Before retiring any current operational path | Planned |
 | ADR-011 Notification generation and delivery | Domain intent, recipient policy, delivery adapters and audit | Before a shared notification capability is implemented | Planned |

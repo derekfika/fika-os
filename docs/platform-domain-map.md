@@ -479,7 +479,7 @@ No additional business domains are asserted.
 
 ## Next governed work
 
-Stage 6 has reconciled the initial architecture and FIKA Core catalogues through ADR-001, established the domain-event and integration contract through ADR-005, and established repository and consistency boundaries through ADR-006. The next bounded work is ADR-007 for projections and dashboards, using the Hospitality dashboard as its first case study, followed by identity-enforcement and legacy-coexistence decisions. Missing business policy returns to the BDR process.
+Stage 6 has reconciled the initial architecture and FIKA Core catalogues through ADR-001, established domain-event and integration rules through ADR-005, repository and consistency rules through ADR-006, and projection/dashboard boundaries through ADR-007. The next bounded work is ADR-008 for identity-to-AUTHMOD enforcement, followed by Booking-to-Production orchestration and legacy coexistence. Missing business policy returns to the BDR process.
 
 ## 8. Architectural North Star
 

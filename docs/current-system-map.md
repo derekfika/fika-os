@@ -33,7 +33,7 @@ The classifications below describe evidenced responsibility, not implementation 
 | Munich RE hot-drinks tools | Client-specific operational reporting | No canonical domain ownership established | Live; retirement not assessed |
 | BrightHR workflow | Provider integration; operational system classification TODO | Workforce authority and synchronisation behaviour require manual review | No retirement assessment |
 | Square, SumUp and Goodtill work | Provider boundary and planned migration tooling | Canonical till/business ownership TODO | Capability planned; implementation evidence incomplete |
-| Events Dashboard | Planned operational system and projection | Governed Event record owns meaning; the dashboard's confirmed company-wide operational source-of-truth role is not yet implemented | Not yet implemented |
+| Events Dashboard | Planned company-wide operational system and projection | Governed Event record owns canonical meaning; the dashboard is the intended shared operational access point, not a separate authority | Not yet implemented |
 | Logistics Dashboard | Planned operational system and projection | No canonical Logistics contract or current application exists | Not yet implemented |
 
 No current system is a planned retirement candidate solely because a target boundary now exists. Retirement requires the evidence and acceptance described by ADR-001.
@@ -97,7 +97,7 @@ These adapters reconstruct fields from message and workbook layout. They are not
 
 Dashboards review bookings, generate quotes/documents, create Calendar provider records, send confirmations/cancellations, archive files, and maintain operational workflow fields. Their Sheets contain booking projections, quote and Calendar references, statuses, audit information, and variant-specific fields.
 
-The dashboards should consume booking objects rather than reconstruct bookings wherever possible. Dashboard workflow status is not authoritative commercial booking status. MNK recharge logic and The Line revision behaviour are confirmed variant-specific concerns pending separate domain decisions.
+The dashboards should consume booking objects rather than reconstruct bookings wherever possible. Under [ADR-007](decisions/ADR-007-projection-and-dashboard-boundary.md), dashboard workflow status is not authoritative commercial Booking status, projected state is advisory at command time, and actions must cross an authorised command boundary. MNK recharge logic and The Line revision behaviour are confirmed variant-specific concerns pending separate domain decisions.
 
 ## Quote generation, Drive, Calendar and Sheets
 
@@ -144,7 +144,7 @@ No direct Gmail ingestion or external order API was found in the CPU project.
 
 ## Planned Events capability
 
-The Events Dashboard is a planned internal company-wide source of truth for events from The Line, FIKA sites, FIKA Events and Pop-ups, external venues, and email-, phone-, or manually-created events. FIKA Events and Pop-ups and The Line will remain separate public/client-facing experiences feeding that shared internal capability.
+The Events Dashboard is the planned internal company-wide operational access point for authoritative Event records originating from The Line, FIKA Operational Locations, FIKA Events and Pop-ups, external venues, and email-, phone-, or manually-created Events. The governed Event domain remains canonical. FIKA Events and Pop-ups and The Line will remain separate public/client-facing experiences feeding that shared internal capability.
 
 No Events Dashboard repository, storage, deployment, or confirmed integration implementation was found. Pack 5 now provides the governed Event contract evidence, but the dashboard and its projections remain planned capabilities rather than current-system applications.
 
@@ -177,7 +177,7 @@ Logistics is a planned company-wide capability downstream of hospitality/CPU wor
 
 Transitional adapters currently include Gmail/form parsers, The Line revision parsing, dashboard booking-object projection adapters, CPU Calendar discovery, CPU quote/form parsing, and Office document conversion. They should be retained until canonical replacements are verified and recoverable.
 
-Operational projections include booking-platform line-item/request logs, Hospitality Dashboard Sheets, Calendar provider records, quotes/PDFs, CPU Orders, CPU Deliveries, scan logs, and reporting views. Each projection requires an explicit authority, refresh direction, reconciliation rule, and retention policy during future implementation work.
+Operational projections include booking-platform line-item/request logs, Hospitality Dashboard Sheets, Calendar provider records, quotes/PDFs, CPU Orders, CPU Deliveries, scan logs, and reporting views. Each projection requires a logical owner, declared sources, access purpose, freshness/completeness characteristics, reconciliation rule and retention policy during future implementation work. Projection ownership does not transfer canonical authority.
 
 ## Remaining current-state questions
 

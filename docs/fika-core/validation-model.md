@@ -2,7 +2,11 @@
 
 ## Status
 
-Stage 6 supporting specification governed by [ADR-001](../decisions/ADR-001-stage-6-platform-boundaries.md) and [ADR-006](../decisions/ADR-006-repository-and-consistency-contract.md). FIKA Core may standardise validation-result structure; it does not own domain rules.
+Stage 6 supporting specification governed by [ADR-001](../decisions/ADR-001-stage-6-platform-boundaries.md), [ADR-006](../decisions/ADR-006-repository-and-consistency-contract.md) and [ADR-007](../decisions/ADR-007-projection-and-dashboard-boundary.md). FIKA Core may standardise validation-result structure; it does not own domain rules.
+
+## Projection validation
+
+Projection builders validate input identity, origin, contract version and access before updating derived state. They handle duplicates safely, reject or quarantine incompatible input, compare attributable source versions rather than arrival order alone, and expose gaps, stale sources, partiality and rebuild state. Projection validity does not prove canonical correctness or command eligibility.
 
 ## Structural validation
 

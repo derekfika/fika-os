@@ -46,7 +46,7 @@ Draft, proposed and planned documents are never adopted authority merely because
 | `docs/platform-principles.md` | Canonical | Enduring platform principles |
 | `docs/platform-domain-map.md` | Canonical | Highest-level business-domain relationships and terminology |
 | `docs/current-system-map.md` | Canonical current-state record | Evidence-backed classification of current systems, projections and adapters |
-| `docs/target-architecture.md` | Accepted architecture | Initial technology-neutral Stage 6 boundary governed by ADR-001; not implementation or deployment authority |
+| `docs/target-architecture.md` | Accepted architecture | Technology-neutral Stage 6 boundary governed by accepted ADRs; not implementation or deployment authority |
 | `docs/future-platform-domains.md` | Supporting | Long-term domain candidates, not commitments |
 | `docs/stage-1-review.md` | Historical | Closure record for the original platform-foundations work |
 | `docs/documentation-governance.md` | Canonical | Authority order and document classification |
@@ -63,6 +63,7 @@ Draft, proposed and planned documents are never adopted authority merely because
 | `docs/decisions/ADR-001-stage-6-platform-boundaries.md` | Accepted ADR | Initial Stage 6 responsibility model constrained by Packs 1–8 and approved business authority |
 | `docs/decisions/ADR-005-domain-event-and-integration-contract.md` | Accepted ADR | Technology-neutral contract for domain facts, integration events, delivery, idempotency, ordering and replay |
 | `docs/decisions/ADR-006-repository-and-consistency-contract.md` | Accepted ADR | Technology-neutral contract for repository ownership, canonical persistence, concurrency, cross-domain consistency and recovery |
+| `docs/decisions/ADR-007-projection-and-dashboard-boundary.md` | Accepted ADR | Technology-neutral contract for projection ownership, freshness, rebuilding, reporting and dashboard boundaries |
 | `docs/decisions/README.md` | Canonical ADR index | Architectural Decision Record guidance, distinct from BDRs |
 | `docs/fika-core/*.md` | Supporting Stage 6 specification | Catalogues constrained by ADR-001, ADR-005 and later accepted ADRs; do not independently create business authority |
 | `docs/engineering/*.md` | Canonical engineering standards | Delivery, testing, review and AI-working standards |

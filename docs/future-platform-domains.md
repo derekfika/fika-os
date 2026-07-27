@@ -32,7 +32,7 @@ Entries should influence boundaries, identifiers, configuration, permissions, au
 - **Candidate workflows:** capture/normalise event; deduplicate; amend/cancel; assign ownership; operational review; publish/project to authorised experiences; reporting.
 - **Dependencies:** site/configuration, customer/contact, permissions, notifications, Calendar adapter, audit, document/media references.
 - **Current maturity:** Event definition, Service/Booking boundary and approval direction are canonical; no repository or adopted schema exists.
-- **Notes:** The internal Events Dashboard is the intended source of truth. The Line and FIKA Events and Pop-ups remain separate experiences feeding it. Do not assume a hospitality booking is an event or that statuses are identical.
+- **Notes:** The internal Events Dashboard is the intended company-wide operational view of authoritative Event records; the governed Event domain remains the canonical owner. The Line and FIKA Events and Pop-ups remain separate experiences feeding it. Do not assume a hospitality booking is an Event or that statuses are identical.
 
 ## Media Management
 
