@@ -48,6 +48,8 @@ Implementation commit `f18574c003c228a5d8d804e7467b79d94103bd8d` completed the f
 
 The review also records the corrected target architecture: upstream FIKA OS dashboards will originate governed Production JSON for CPU Dashboard ingestion, while Calendar remains a legacy compatibility and shadow-observation source during transition. The current `fika.cpu-intake-snapshot` contract is transitional and non-canonical; governance of the dashboard-to-CPU contract and source-neutral comparison boundary must precede any Calendar-provider extraction task.
 
+The subsequent [dashboard-to-CPU contract boundary review](stage-7-dashboard-to-cpu-contract-boundary-review-2026-07-27.md) returned **DASHBOARD-TO-CPU CONTRACT BOUNDARY READY**. Dashboard-originated JSON is an idempotent Booking-to-Production Command, not a dashboard-created canonical Production Order. Production owns transformation and canonical identity; the CPU Dashboard consumes a Production-owned ingestion projection; Calendar remains a transitional observation source. This governance verdict does not change the offline seam's blocking technical defects or authorise implementation/live integration.
+
 ## Dependencies on earlier stages
 
 - Stages 1–6
