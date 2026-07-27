@@ -2,7 +2,7 @@
 
 ## Status and authority
 
-This accepted Stage 6 target boundary is governed by [ADR-001](decisions/ADR-001-stage-6-platform-boundaries.md), [ADR-005](decisions/ADR-005-domain-event-and-integration-contract.md), [ADR-006](decisions/ADR-006-repository-and-consistency-contract.md), [ADR-007](decisions/ADR-007-projection-and-dashboard-boundary.md) and [ADR-008](decisions/ADR-008-identity-and-authmod-enforcement-boundary.md). It is technology-neutral and does not decide deployment topology, storage, hosting, provider or programming language.
+This accepted Stage 6 target boundary is governed by [ADR-001](decisions/ADR-001-stage-6-platform-boundaries.md) and [ADR-005](decisions/ADR-005-domain-event-and-integration-contract.md) through [ADR-009](decisions/ADR-009-booking-to-production-orchestration.md). It is technology-neutral and does not decide deployment topology, storage, hosting, provider or programming language.
 
 Business meaning remains authoritative in the Business Decision Records and completed Packs. This document explains how future software must respect that meaning.
 

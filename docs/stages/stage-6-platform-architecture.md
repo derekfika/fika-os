@@ -56,6 +56,8 @@ The fourth bounded task, the technology-neutral projection and dashboard boundar
 
 The fifth bounded task, the provider-neutral identity and AUTHMOD enforcement boundary, is complete and accepted through ADR-008.
 
+The sixth bounded task, the technology-neutral Booking-to-Production orchestration contract, is complete and accepted through ADR-009.
+
 ## Entry brief
 
 The completed Stage 5 baseline includes governed contracts for foundational Client and Operational Location concepts, authority and capability, Service, Booking, Event, Production, Mobilisation, Brand Variation and Waste. Stage 6 consumes those contracts and does not casually rewrite their business meaning.
@@ -124,16 +126,28 @@ Completed on 2026-07-27:
 
 No identity schema, provider mapping, login product, session target, Stage 5 schema or implementation was created.
 
+## Sixth bounded deliverable
+
+Completed on 2026-07-27:
+
+- accepted [ADR-009](../decisions/ADR-009-booking-to-production-orchestration.md);
+- established Production-owned eligibility evaluation from attributable Booking versions;
+- established zero-, one- or many-order outcomes, duplicate-safe creation, partial-outcome recovery and reconciliation;
+- preserved Booking and Production ownership across amendments, cancellations and post-start operational review; and
+- remained neutral on workflow engines, messaging, storage, timing targets and provider technology.
+
+No Logistics design, business-policy threshold, Stage 5 schema or implementation was created.
+
 ## Next bounded work
 
-ADR-001 registers the required follow-up decisions. ADR-005 through ADR-008 have completed items 1–4 below. The next bounded task is **ADR-009: Booking-to-Production Orchestration**.
+ADR-001 registers the required follow-up decisions. ADR-005 through ADR-009 have completed items 1–5 below. The next bounded task is **ADR-010: Legacy Coexistence and Retirement**.
 
 1. domain-event and integration guarantees — complete through ADR-005;
 2. repository and cross-domain consistency — complete through ADR-006;
 3. projection and dashboard boundaries — complete through ADR-007;
 4. identity-to-AUTHMOD enforcement — complete through ADR-008;
-5. Booking-to-Production orchestration — next through ADR-009; and
-6. legacy coexistence, cutover and retirement.
+5. Booking-to-Production orchestration — complete through ADR-009; and
+6. legacy coexistence, cutover and retirement — next through ADR-010.
 
 Notification detail should be decided only when a shared capability is authorised. Business-policy gaps identified during this work return to discovery or a BDR.
 

@@ -76,7 +76,7 @@ flowchart LR
   CPU --> CPUS
 ```
 
-The direct platform path is authoritative. The legacy path should normalise into the same Booking domain contract. The current CPU path remains Calendar-led and does not yet consume a canonical Booking-to-Production handoff directly.
+The direct platform path is authoritative. The legacy path should normalise into the same Booking domain contract. The current CPU path remains Calendar-led and does not yet consume the canonical Booking-to-Production handoff governed by [ADR-009](decisions/ADR-009-booking-to-production-orchestration.md).
 
 ## Hospitality Booking Platforms
 

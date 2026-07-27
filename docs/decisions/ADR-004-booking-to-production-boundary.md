@@ -1,8 +1,8 @@
 # ADR-004: Booking-to-Production Boundary
 
-> **Classification: Supporting accepted architectural direction.** The previously unresolved Booking and Production rules are now canonical decisions. Reconcile this ADR with their BDRs before schema or implementation work.
+> **Classification: Supporting accepted architectural direction, reconciled by [ADR-009](ADR-009-booking-to-production-orchestration.md).** This record preserves the earlier boundary decision and historical context. ADR-009 governs the current orchestration contract where this record is incomplete.
 
-- Status: Accepted architectural direction; production-order schemas and implementation remain future work
+- Status: Accepted supporting direction; reconciled by ADR-009 on 2026-07-27
 - Date: 2026-07-11
 
 ## Context
@@ -46,17 +46,21 @@ The production transformation must retain the source booking ID and version. It 
 - CPU Sheets may continue to support operational views without becoming authoritative records.
 - A canonical booking change does not silently overwrite production work; an explicit production amendment or disposition policy is required.
 
-## Historical unresolved decisions — now decided
+## Historical questions and current disposition
 
-The canonical decision register now contains these business answers. They remain listed here to preserve the ADR's original context until it is reconciled with accepted BDRs.
+These questions are retained to preserve the ADR's original context. Canonical BDRs and ADR-009 now govern their disposition.
 
-- TODO: Confirm which commercial booking statuses create, hold, update, cancel, or complete production work.
-- TODO: Define required-ready, dispatch, arrival, handover, and service-time semantics and ownership.
-- TODO: Confirm whether one booking can create multiple production orders or use multiple producing facilities.
-- TODO: Define production units, yields, conversion rules, and their configuration ownership.
-- TODO: Define dietary/allergen allocation from booking requirements to production lines.
-- TODO: Define late amendment, cancellation, already-prepared, and correction workflows.
-- TODO: Define the canonical production-order repository and delivery mechanism; storage is not decided by this ADR.
+- **Partly resolved:** PROD-001 defines Production eligibility, but the exact Booking-status trigger and hold prerequisites remain business-policy questions.
+- **Resolved at the current governed minimum:** BOOK-001 and PROD-002 separate customer-facing service time from mandatory Production Required Ready Time; additional milestones remain deferred.
+- **Resolved:** PROD-005 permits one Booking to create one or more Production Orders and makes Production responsible for routing to capable Operational Locations.
+- **Resolved:** BOOK-002 and PROD-003 separate ordered quantities from Production-owned conversion, yield, aggregation and preparation quantities.
+- **Partly resolved:** BOOK-003 requires dietary and allergen requirements to flow into fulfilment, while the exact allocation rule remains a business-policy question.
+- **Resolved at the architectural boundary:** BOOK-006, PROD-004 and ADR-009 preserve amendment and cancellation history and require human review after Production has started; detailed disposition policy remains deferred.
+- **Resolved architecturally:** ADR-006 defines the logical canonical repository boundary and ADR-009 defines the delivery and recovery contract without selecting storage or transport.
+
+## Reconciliation with ADR-009
+
+ADR-009 preserves this record's core separation while replacing its incomplete transformation wording with an explicit cross-domain orchestration contract. Booking remains authoritative for commercial and service intent. Production independently evaluates eligibility and owns zero, one or several Production Orders. Orchestration coordinates attributable versions, outcomes, retries and reconciliation without owning either domain's facts. Calendar-led ingestion and CPU Sheets remain legacy observations or operational projections during controlled coexistence.
 
 ## Evidence
 

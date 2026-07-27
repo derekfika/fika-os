@@ -261,8 +261,8 @@ Architecture must not resolve the following:
 | [ADR-006 Repository and consistency contract](ADR-006-repository-and-consistency-contract.md) | Aggregate persistence, concurrency, transactions and failure semantics | Before selecting or building repository implementations | Accepted 2026-07-27 |
 | [ADR-007 Projection and dashboard boundary](ADR-007-projection-and-dashboard-boundary.md) | Projection ownership, rebuild, freshness and write-back prohibition; Hospitality dashboard is the first case study | Before replacing or materially changing operational dashboards | Accepted 2026-07-27 |
 | [ADR-008 Identity and AUTHMOD enforcement boundary](ADR-008-identity-and-authmod-enforcement-boundary.md) | Authentication mapping, actor context and enforcement responsibilities | Before platform identity implementation | Accepted 2026-07-27 |
-| ADR-009 Booking-to-Production orchestration | Trigger, Booking-version contract, retries, compensation and reconciliation | Before implementing canonical Production creation | Next bounded task |
-| ADR-010 Legacy coexistence and retirement | Classification evidence, cutover, reconciliation, rollback and acceptance | Before retiring any current operational path | Planned |
+| ADR-009 Booking-to-Production orchestration | Trigger, Booking-version contract, retries, compensation and reconciliation | Before implementing canonical Production creation | Accepted 2026-07-27 |
+| ADR-010 Legacy coexistence and retirement | Classification evidence, cutover, reconciliation, rollback and acceptance | Before retiring any current operational path | Next bounded task |
 | ADR-011 Notification generation and delivery | Domain intent, recipient policy, delivery adapters and audit | Before a shared notification capability is implemented | Planned |
 
 The numbers are reserved as a planning register only. Each ADR requires its own evidence and review.

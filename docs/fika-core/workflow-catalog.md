@@ -2,7 +2,7 @@
 
 ## Status
 
-Stage 6 supporting catalogue governed by [ADR-001](../decisions/ADR-001-stage-6-platform-boundaries.md), [ADR-005](../decisions/ADR-005-domain-event-and-integration-contract.md), [ADR-006](../decisions/ADR-006-repository-and-consistency-contract.md), [ADR-007](../decisions/ADR-007-projection-and-dashboard-boundary.md) and [ADR-008](../decisions/ADR-008-identity-and-authmod-enforcement-boundary.md). It distinguishes a domain command from a completed domain fact and from cross-domain orchestration. It specifies no workflow engine.
+Stage 6 supporting catalogue governed by [ADR-001](../decisions/ADR-001-stage-6-platform-boundaries.md), [ADR-005](../decisions/ADR-005-domain-event-and-integration-contract.md), [ADR-006](../decisions/ADR-006-repository-and-consistency-contract.md), [ADR-007](../decisions/ADR-007-projection-and-dashboard-boundary.md), [ADR-008](../decisions/ADR-008-identity-and-authmod-enforcement-boundary.md) and [ADR-009](../decisions/ADR-009-booking-to-production-orchestration.md). It distinguishes a domain command from a completed domain fact and from cross-domain orchestration. It specifies no workflow engine.
 
 ## Boundary rule
 
@@ -36,8 +36,9 @@ ADR-008 governs trusted actor context. Orchestration preserves initiating, execu
 - Source authority: attributable Booking version.
 - Eligibility owner: Production under PROD-001 and Pack 6 resolution.
 - Result: zero, one or more Production Orders with Production-owned lifecycle and routing.
-- Required controls: idempotency, source-version traceability, independent authority checks and reconciliation.
-- Deferred: exact trigger, delivery guarantee, retry/compensation and timing objectives; these belong in ADR-009.
+- Required controls: idempotency, source-version traceability, independent authority checks, durable progress, explicit partial outcomes and reconciliation under ADR-009.
+- Amendment and cancellation: Booking records the governed commercial action; Production independently applies the permitted operational consequence according to whether work has started.
+- Deferred business policy: the exact Booking status trigger, hold prerequisites, multi-order all-or-nothing expectations, post-start disposition and notification policy return to the BDR process.
 
 ## Event approval
 

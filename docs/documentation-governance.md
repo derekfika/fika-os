@@ -65,6 +65,7 @@ Draft, proposed and planned documents are never adopted authority merely because
 | `docs/decisions/ADR-006-repository-and-consistency-contract.md` | Accepted ADR | Technology-neutral contract for repository ownership, canonical persistence, concurrency, cross-domain consistency and recovery |
 | `docs/decisions/ADR-007-projection-and-dashboard-boundary.md` | Accepted ADR | Technology-neutral contract for projection ownership, freshness, rebuilding, reporting and dashboard boundaries |
 | `docs/decisions/ADR-008-identity-and-authmod-enforcement-boundary.md` | Accepted ADR | Provider-neutral contract for authentication evidence, actor mapping, AUTHMOD evaluation and authoritative enforcement |
+| `docs/decisions/ADR-009-booking-to-production-orchestration.md` | Accepted ADR | Technology-neutral contract for Booking-to-Production eligibility, lifecycle coordination, recovery and reconciliation |
 | `docs/decisions/README.md` | Canonical ADR index | Architectural Decision Record guidance, distinct from BDRs |
 | `docs/fika-core/*.md` | Supporting Stage 6 specification | Catalogues constrained by ADR-001, ADR-005 and later accepted ADRs; do not independently create business authority |
 | `docs/engineering/*.md` | Canonical engineering standards | Delivery, testing, review and AI-working standards |

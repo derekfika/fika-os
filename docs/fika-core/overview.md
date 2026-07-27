@@ -2,7 +2,7 @@
 
 ## Status
 
-Stage 6 supporting specification constrained by [ADR-001](../decisions/ADR-001-stage-6-platform-boundaries.md), [ADR-005](../decisions/ADR-005-domain-event-and-integration-contract.md), [ADR-006](../decisions/ADR-006-repository-and-consistency-contract.md), [ADR-007](../decisions/ADR-007-projection-and-dashboard-boundary.md) and [ADR-008](../decisions/ADR-008-identity-and-authmod-enforcement-boundary.md). Where an older FIKA Core catalogue conflicts with an accepted ADR or governed business meaning, the accepted ADR and governing BDR take precedence.
+Stage 6 supporting specification constrained by [ADR-001](../decisions/ADR-001-stage-6-platform-boundaries.md) and [ADR-005](../decisions/ADR-005-domain-event-and-integration-contract.md) through [ADR-009](../decisions/ADR-009-booking-to-production-orchestration.md). Where an older FIKA Core catalogue conflicts with an accepted ADR or governed business meaning, the accepted ADR and governing BDR take precedence.
 
 ## Purpose
 
