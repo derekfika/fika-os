@@ -17,7 +17,7 @@ Stage 3 Business Discovery    Complete — 54 canonical decisions, 100%
 Stage 4 Business Decisions    Complete
 Stage 5 Schema Design         Complete — Packs 1–8, freshly validated
 Stage 6 Platform Architecture Complete — closed 2026-07-27
-Stage 7 Implementation        Active — Increment 1 chartered; implementation not started
+Stage 7 Implementation        Active — Increment 1 chartered; first code blocked by pilot identity
 Stage 8 Validation/Rollout    Planned
 Stage 9 Continuous Discovery  Planned ongoing governance
 ```

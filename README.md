@@ -9,7 +9,7 @@ This repository is the governed business, domain, schema and architecture specif
 - **Stage 5 baseline:** Packs 1–8, 51 schemas, 53 valid fixtures and 51 invalid fixtures
 - **Fresh baseline validation:** Passed on 2026-07-25
 - **Stage 6:** Complete — closed 2026-07-27 ([closure review](docs/stages/stage-6-closure-2026-07-27.md))
-- **Stage 7:** Active — [Increment 1](docs/stages/stage-7-increment-1-shadow-cpu-production-charter.md) is chartered for Shadow CPU Production intake and reconciliation; implementation has not started
+- **Stage 7:** Active — [Increment 1](docs/stages/stage-7-increment-1-shadow-cpu-production-charter.md) is chartered; the [pre-code review](docs/stages/stage-7-increment-1-before-first-code-review-2026-07-27.md) is blocked only by FIKA Xchange's missing canonical Operational Location ID
 
 The repository contains all 54 durable Business Decision Records and the integrated Stage 5 schema baseline. Stage 6 has accepted its platform-boundary, domain-event, repository-consistency, projection/dashboard, identity/AUTHMOD, Booking-to-Production orchestration, legacy-coexistence and notification contracts through ADR-001 and ADR-005–011. A BDR may retain `Draft` metadata while its supporting explanation awaits review; its exact approved `Decision` section remains authoritative and is not superseded by that metadata.
 

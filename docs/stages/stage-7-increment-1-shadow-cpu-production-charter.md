@@ -35,7 +35,7 @@ The smallest safe migration unit is:
 
 > one currently configured CPU Calendar intake scope, mapped to one producing CPU represented by one governed Operational Location, observed over one bounded snapshot/replay window and compared with the corresponding CPU Orders operational projection.
 
-The exact Calendar configuration reference, producing CPU/Operational Location, snapshot window and delegated Head Chef are not present in the specification repository. They must be verified and recorded before the first implementation commit. The verification must select an existing configured intake; it must not add a Calendar, location, feed or user.
+The later [before-first-code review](stage-7-increment-1-before-first-code-review-2026-07-27.md) confirms FIKA Xchange as the producing CPU/Operational Location and `cpux@fikacatering.com` as the current intake reference. The stable canonical `operationalLocationId` remains unresolved and blocks first code. The replay duration is one Monday-to-Friday week; exact safe dates remain a later fixture-extraction decision.
 
 The first scope includes only source observations attributable to that one configured intake and producing CPU. It excludes other CPUs even if the current dashboard scans them in the same application.
 
@@ -43,14 +43,14 @@ The first scope includes only source observations attributable to that one confi
 
 | Concept | Increment interpretation |
 |---|---|
-| Producing CPU | The one selected Operational Location where the observed Production work is performed; exact identity is a pre-code gate. |
+| Producing CPU | FIKA Xchange; its stable canonical `operationalLocationId` remains the pre-code gate. |
 | Requesting Operational Location | The location requesting or originating the hospitality demand, if defensibly evidenced; it is not the producing CPU by default. |
 | Service/destination location | The location, floor, room or delivery context where service is expected; it is not a producing facility or requesting location by implication. |
-| Discovery source | One currently configured Calendar intake and its authorised attachment references. Calendar is evidence, not canonical Production identity. |
+| Discovery source | The current `cpux@fikacatering.com` Calendar intake and its later authorised snapshot references. The address is evidence, not access authority or canonical Production identity. |
 | Current dashboard scope | The CPU Dashboard's broader configured scan estate; only the selected intake subset enters Increment 1. |
 | Shadow Production Order scope | Non-canonical comparison representation derived from one observed source occurrence and qualified mappings. |
-| Review population | Derek, Sam and the Head Chef delegated for the selected CPU only. |
-| Acceptance authority | Derek for product; Sam for Production, with bounded CPU review/acceptance delegable to the selected Head Chef. |
+| Review population | Derek only during isolated Stage 7 development and testing. |
+| Acceptance authority | Derek for Stage 7 product and technical evidence; Sam and delegated Head Chef Production acceptance begins in Stage 8. |
 
 The scope definition is invalid if one configured Calendar intake cannot be isolated without adding sources or exposing another CPU's data. In that event, return to this charter before code.
 
@@ -58,11 +58,9 @@ The scope definition is invalid if one configured Calendar intake cannot be isol
 
 ### Immediate users and reviewers
 
-- Derek, accountable FIKA OS product owner and initial technical-support owner for Increment 1;
-- Sam, accountable Production business and operational owner across the CPU estate; and
-- the Head Chef explicitly delegated by Sam for the selected CPU scope.
+- Derek, accountable FIKA OS product owner, technical owner and initial technical-support owner for Increment 1.
 
-No wider CPU team, Hospitality team, Client, customer, external user or unselected CPU is an Increment 1 user.
+Sam and any delegated Head Chef retain later Production authority but do not join the Stage 7 build or isolated test process. No wider CPU team, Hospitality team, Client, customer, external user or unselected CPU is an Increment 1 user.
 
 ### Observable outcome
 
@@ -128,19 +126,19 @@ It does not prove that a live order or Booking is correct, Production is ready, 
 | Product accountability | Derek | Does not override Production safety or Canon | Explicitly supplied |
 | Stage 7 charter acceptance — product | Derek | Joint with Production perspective | Explicitly supplied |
 | Production business and operational accountability | Sam | Retained across the CPU estate; does not extend to Booking, Hospitality, Logistics, technology or platform ownership | Explicitly supplied |
-| Stage 7 charter acceptance — Production | Sam | Joint with product perspective | Explicitly supplied |
-| CPU-specific operational review | Head Chef delegated by Sam | One selected CPU and effective delegation period only | Role model supplied; identity pending |
-| CPU-specific shadow-evidence acceptance | Head Chef delegated by Sam | Does not accept architecture, security, cross-CPU policy, Stage 8 entry or release; Sam retains accountability | Role model supplied; identity pending |
+| Stage 7 isolated product/technical review | Derek | Derek-only; does not constitute Production acceptance | Explicitly supplied later |
+| Stage 8 Production validation | Sam | Retains estate-wide accountability | Explicitly supplied later |
+| Stage 8 CPU-specific operational acceptance | Head Chef delegated by Sam | One selected CPU and effective delegation period only; Sam retains accountability | Deferred to Stage 8 |
 | Initial technical support | Derek | Increment 1 only; not permanent platform support, repository ownership or release authority | Explicitly supplied |
-| Technical delivery ownership | TODO | Required before code; not inferred from Derek's support role | Unresolved |
+| Technical delivery ownership | Derek | Increment 1 only; does not confer permanent platform/infrastructure ownership | Explicitly supplied later |
 | Information-security/access approval | TODO authorised role | Required before real-source integration | Unresolved |
-| Implementation repository ownership | TODO | Required before code | Unresolved |
-| Code-review authority | TODO | Required before code/merge | Unresolved |
-| Stage 7 completion acceptance | Derek and Sam; delegated CPU evidence contributes | Technical completion authority also required | Product/Production supplied; technical role unresolved |
+| Implementation repository ownership | FIKA OS repository; Derek accountable for Increment 1 | Package path is `tools/cpu-shadow-reconciliation` | Resolved by before-code review |
+| Code-review authority | Derek | Derek-only Stage 7 | Explicitly supplied later |
+| Stage 7 completion acceptance | Derek | Product and technical evidence only | Explicitly supplied later |
 | Stage 8 entry authority | TODO governed authority, with Derek/Sam acceptance evidence | Delegated Head Chef cannot grant it | Unresolved; later gate |
 | Production release authority | TODO governed authority | Not granted by this charter | Unresolved; rollout gate |
 
-Sam's surname, formal job title, employment identity and reporting line are not recorded. No Head Chef is named. Durable Actor, Assignment, Authority Grant, delegation scope and effective-period references must be resolved before protected implementation/review activity. Temporary delegation requires a fixed end date and never transfers Sam's accountability.
+Sam's surname, formal job title, employment identity and reporting line are not recorded. No Head Chef is named. Their durable Assignment, delegation and access references are Stage 8 prerequisites, not Stage 7 build gates. Temporary delegation requires a fixed end date and never transfers Sam's accountability.
 
 ## Domain and authority boundary
 
@@ -321,9 +319,8 @@ An uncertain failure is reconciled before a rerun result is trusted. No global t
 
 Protected actions are: source read, shadow compare, discrepancy review, accept/reject shadow evidence, export and administration. Authentication evidence, Actor mapping, Assignment, Authority Grant, scope and domain acceptance remain distinct under ADR-008.
 
-- Derek receives only the grants needed for product review and initial support.
-- Sam receives Production review/acceptance access appropriate to accountability.
-- A delegated Head Chef receives only CPU-specific review/acceptance access for the selected CPU and effective period.
+- Derek alone operates and reviews the isolated local Stage 7 system under explicit Increment 1 product, technical and initial-support authority.
+- Sam and a delegated Head Chef receive no Stage 7 system access; their Production review/acceptance access is designed and granted only for Stage 8.
 - Cross-CPU access is denied by default.
 - Source access does not imply permission to disclose or export shadow results.
 - Contact, commercial, dietary/allergen, employee, raw-source and attachment data are minimised to necessary comparison evidence.
@@ -357,32 +354,31 @@ Technical logs/metrics, provider observations, reconciliation evidence, governed
 | Acceptance | Evidence | Authority | Does not mean |
 |---|---|---|---|
 | Product acceptance | Outcome is usable, bounded, attributable and meets charter | Derek | Production correctness or release authority |
-| CPU-scope operational review | Dimensional discrepancies and source context are understandable for selected CPU | Delegated Head Chef, if appointed | Cross-CPU policy or Sam's accountability transfers |
-| CPU-scope shadow-evidence acceptance | Comparison is useful and honest for its scope/time | Delegated Head Chef under Sam, or Sam directly | Live order acceptance, readiness, cutover or Stage 8 |
-| Production acceptance | Increment respects Production meaning and safety | Sam | Booking, Logistics, technology or platform ownership |
-| Technical completion | Tests, security, recovery, documentation and repository controls pass | TODO technical authority | Business acceptance or rollout |
-| Stage 7 completion | Product, Production and technical evidence all pass | Derek and Sam plus TODO technical authority | Stage 8 entry or production release automatically |
+| Stage 7 product acceptance | Outcome and evidence conform to the charter | Derek | Production acceptance or rollout |
+| Stage 7 technical completion | Tests, security, recovery, documentation and repository controls pass | Derek | Production acceptance or rollout |
+| Stage 8 CPU-scope operational review | Discrepancies and source context are understandable for selected CPU | Delegated Head Chef, if appointed | Cross-CPU policy or transfer of Sam's accountability |
+| Stage 8 Production acceptance | Increment respects Production meaning and safety in operational validation | Sam, with delegated scoped evidence | Booking, Logistics, technology or platform ownership |
 
 ## Prerequisite register
 
 | ID | Description | Source/evidence and need | Accountable decision role | Required by | Status | Blocks activation/code/real source/completion/Stage 8 | Resolution evidence |
 |---|---|---|---|---|---|---|---|
-| INC1-PR-001 | Exact configured Calendar intake and producing CPU/OPLOC | Inventory proves multiple configured Calendars but names no safe pilot | Sam with Derek product agreement | First code | Open | No / Yes / Yes / Yes / Yes | Recorded existing configuration reference, governed OPLOC and one-CPU scope |
-| INC1-PR-002 | Sam and delegated Head Chef durable identity/Assignment/delegation | Supplied authority lacks durable IDs; scoped review must be attributable | Sam / AUTHMOD administrator | Protected review; design before code | Open | No / Yes for access design / Yes / Yes / Yes | Actor, role Assignment, delegation scope and effective period |
-| INC1-PR-003 | Technical delivery owner | Support is not delivery ownership | Derek/product governance | First code | Open | No / Yes / Yes / Yes / Yes | Explicit role assignment |
-| INC1-PR-004 | Implementation repository and owner | No production repository selected; repository standards require ownership | Technical governance | First code | Open | No / Yes / Yes / Yes / Yes | Repository decision and code owner; no repository creation in this task |
-| INC1-PR-005 | Schema versioning/compatibility convention | Pack 6 is adopted but cross-boundary convention is unresolved | Schema/platform governance | First code | Open | No / Yes / Yes / Yes / Yes | Governed convention covering referenced Pack 6 version and mapping compatibility |
-| INC1-PR-006 | Pack 6 field applicability | This charter classifies fields; implementation mapping must preserve gaps | Derek and Sam, technical review | First code | Satisfied for charter; mapping spec pending | No / Yes for mapping spec / Yes / Yes / Yes | Reviewed field-level mapping specification without schema change |
+| INC1-PR-001 | Exact configured Calendar intake and producing CPU/OPLOC | FIKA Xchange and `cpux@fikacatering.com` are confirmed; canonical OPLOC ID is missing | Derek / OPLOC governance | First code | **Blocked only on stable ID** | No / Yes / Yes / Yes / Yes | Approved canonical ID with legacy-alias reconciliation |
+| INC1-PR-002 | Sam and delegated Head Chef durable identity/Assignment/delegation | Production review begins in Stage 8 | Sam / AUTHMOD administrator | Stage 8 | Deferred | No / No / No / No / Yes | Actor, Assignment, delegation scope and effective period |
+| INC1-PR-003 | Technical delivery owner | Derek owns Increment 1 technical delivery | Derek | First code | Satisfied | No / No / No / No / No | Current explicit decision |
+| INC1-PR-004 | Implementation repository and owner | Existing FIKA OS outer repository; `tools/cpu-shadow-reconciliation` | Derek | First code | Satisfied as decision; path not created | No / No / No / No / No | Before-code review and clean-worktree preparation |
+| INC1-PR-005 | Schema versioning/compatibility convention | Repository convention adopted without schema change | Schema/platform governance | First code | Satisfied | No / No / No / No / No | `docs/engineering/schema-versioning-and-compatibility.md` |
+| INC1-PR-006 | Pack 6 field applicability | Charter and before-code review classify fields and preserve gaps | Derek | First code | Satisfied for first seam | No / No / No / Yes / Yes | Reviewed compatibility matrix without schema change |
 | INC1-PR-007 | Legacy-source access | Calendar, Drive and Sheets contain protected operational evidence | Sam and information-security/access authority | Real-source integration | Open | No / No / Yes / Yes / Yes | Least-privilege grants and access test for selected scope |
-| INC1-PR-008 | Safe test data | Production/private data cannot be fixtures | Derek, Sam and security authority | First integration test | Open | No / No if fictional fixtures first / Yes / Yes / Yes | Approved fictional/sanitised fixture set and handling record |
+| INC1-PR-008 | Safe test data | First task uses synthetic fixtures only | Derek | First code | Satisfied by policy; fixtures created later | No / No / Yes for sanitised/live / Yes / Yes | Snapshot sanitisation contract and fixture tests |
 | INC1-PR-009 | Snapshot/replay approach | Must avoid live writes and nondeterministic evidence | Technical owner | First code | Open | No / Yes / Yes / Yes / Yes | Design proving bounded read-only capture, identity and repeatability |
 | INC1-PR-010 | Sensitive-data minimisation and retention | Purpose known; retention duration is not governed | Sam and information-security/privacy authority | Real-source integration | Open | No / No / Yes / Yes / Yes | Field inventory, minimisation, access and approved ephemeral/retention rule |
-| INC1-PR-011 | AUTHMOD design | CPU-scoped read/review/export must not leak cross-scope data | Sam, AUTHMOD and security authority | First protected integration | Open | No / Yes for design / Yes / Yes / Yes | Action/scope/grant matrix and denial tests |
-| INC1-PR-012 | Bounded technology decisions | Runtime, storage, identity, observability and environment are open | Technical owner/governance | First code where choice shapes work | Open | No / Yes / Yes / Yes / Yes | Evidence-backed decision record(s), limited to Increment 1 |
-| INC1-PR-013 | Reconciliation fixtures | Dimensional outcomes and uncertainty need repeatable cases | Technical owner with Sam review | First code/tests | Open | No / Yes / Yes / Yes / Yes | Valid cases for matches, gaps, duplicates, stale, cancellation, ambiguity and partial failure |
-| INC1-PR-014 | Acceptance evidence | No numeric equivalence threshold is authorised | Derek and Sam | Stage 7 completion | Open | No / No / No / Yes / Yes | Product, Production and delegated CPU review records against charter dimensions |
+| INC1-PR-011 | AUTHMOD design | Derek-only offline boundary now; scoped Production access later | Derek; Sam/AUTHMOD in Stage 8 | First code locally / Stage 8 operationally | Satisfied for local simulation | No / No / Yes / Yes / Yes | Fail-closed local controls; later grant matrix |
+| INC1-PR-012 | Bounded technology decisions | Node/JavaScript, npm, `node:test`, Ajv, filesystem and CLI selected | Derek | First code | Satisfied | No / No / No / No / No | Before-code technology table |
+| INC1-PR-013 | Reconciliation fixtures | Synthetic cases specified; implementation creates them | Derek | First code/tests | Ready for implementation after ID gate | No / Yes only because task not started / No / Yes / Yes | Tests for gaps, duplicates, stale, cancellation, ambiguity and partial failure |
+| INC1-PR-014 | Acceptance evidence | Derek accepts Stage 7 product/technical evidence; Production acceptance is Stage 8 | Derek | Stage 7 completion | Open, correctly timed | No / No / No / Yes / Yes | Derek review against charter; no numeric threshold |
 | INC1-PR-015 | Support and incident route | Derek is initial support only; escalation/recovery route missing | Derek and Sam | Real-source integration | Open | No / No / Yes / Yes / Yes | Runbook, contacts by role, escalation and stop criteria |
-| INC1-PR-016 | Stage 7 technical completion authority | Code-review and technical acceptance not assigned | Technical governance | Stage 7 completion | Open | No / Yes for code review / Yes / Yes / Yes | Named organisational role and review evidence |
+| INC1-PR-016 | Stage 7 technical completion authority | Derek is accountable technical owner/reviewer | Derek | Stage 7 completion | Satisfied as authority | No / No / No / No / No | Explicit decision and later review evidence |
 | INC1-PR-017 | Stage 8 entry authority | Later rollout/validation authority not granted | Governance | Stage 8 entry | Open | No / No / No / No / Yes | Explicit Stage 8 entry decision after Stage 7 evidence |
 | INC1-PR-018 | Production release authority | No production release is in Increment 1 | Governance/operations | Production rollout | Open | No / No / No / No / No; blocks rollout | Separate future release authority |
 
@@ -390,7 +386,7 @@ All activation blockers are satisfied by the supplied selection, product/Product
 
 ## Technology and repository non-decisions
 
-No runtime, framework, language, storage, database, hosting, identity provider, secret store, observability product, CI system, deployment topology or provider is selected. No implementation repository exists or is created. The future repository decision must identify accountable ownership, access, branch/review controls, validation commands, configuration/secrets boundary and dependency policy before code.
+The before-first-code review selects only Node.js/JavaScript, npm, package-local `node:test`, Ajv, filesystem evidence storage and a CLI at `tools/cpu-shadow-reconciliation`. The outer FIKA OS repository owns the future package. Hosting, database, production identity, secrets/observability products, CI, deployment topology and providers remain unselected. No implementation path is created by this governance task.
 
 ## Stage 7 Definition of Done
 
@@ -421,20 +417,11 @@ Another CPU, Calendar, source class, write path, canonical repository, notificat
 
 **Stage 7 is Active — Increment 1 selected and chartered; implementation not yet started.**
 
-The charter has a bounded configuration-level migration unit, authorised reviewers, explicit read-only direction and meaningful reconciliation outcome. Remaining CPU identity, technical ownership, repository, versioning, technology and access decisions are correctly timed before code or real-source integration rather than treated as activation blockers.
+The charter has a bounded migration unit, Derek-only Stage 7 review, explicit read-only direction and meaningful reconciliation outcome. The later before-code review resolved technical ownership, repository strategy, versioning and minimum local technology. FIKA Xchange's stable canonical Operational Location ID remains the sole first-code blocker; real-source access remains a later integration gate.
 
 ## Next bounded task
 
-Resolve the complete **before-first-implementation-commit prerequisite bundle** without writing code:
-
-1. verify one existing configured Calendar intake and its producing CPU/Operational Location;
-2. record Sam's and the delegated Head Chef's durable scoped Assignment/delegation references;
-3. appoint the technical delivery and code-review roles;
-4. select the implementation repository and owner;
-5. govern the schema-versioning/compatibility convention needed by Pack 6; and
-6. make only the bounded technology decisions necessary to author the mapping, snapshot/replay and test plan.
-
-Stop again before implementation.
+Supply and approve the stable canonical `operationalLocationId` for FIKA Xchange and confirm that `FIKAX` and `fikax@fikacatering.com` remain legacy aliases/references. Then rerun only the final identity gate and issue the exact first-code task. Stop before implementation until that gate passes.
 
 ## Evidence
 

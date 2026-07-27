@@ -64,3 +64,7 @@ Before the first implementation commit, resolve the bounded prerequisite bundle 
 - [Prior selection review](stage-7-first-increment-selection-2026-07-27.md)
 - [Stage 7](stage-7-implementation.md)
 - [Stage 6 closure](stage-6-closure-2026-07-27.md)
+
+## Subsequent Stage 7 authority refinement
+
+Derek later established that the isolated Stage 7 build, testing and review are Derek-only; Derek is also the accountable Increment 1 technical owner. Sam retains Production accountability, but Sam and any delegated Head Chef begin operational validation and Production acceptance in Stage 8 rather than Stage 7. The [before-first-code review](stage-7-increment-1-before-first-code-review-2026-07-27.md) governs that later timing and resolves the repository, versioning and minimum local-technology decisions. This refinement does not alter the original activation decision.
