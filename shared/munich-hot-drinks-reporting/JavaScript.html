@@ -5,9 +5,13 @@
   const state = {
     lastReport: null,
     heatmapMode: "total",
+    heatmapGranularity: "hourly",
     hourlyView: "chart",
     progressTimer: null,
-    progressStartedAt: 0
+    progressTimeouts: [],
+    progressRunId: 0,
+    progressStartedAt: 0,
+    pinToken: ""
   };
   const drinkColors = ["#00538A", "#0b70a8", "#167a62", "#ff8000", "#4F34C7", "#8f3d2f", "#d39a22", "#647280"];
   const reportingWeekdays = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"];
@@ -15,7 +19,7 @@
   function init() {
     renderFilterOptions();
     bindEvents();
-    runReport();
+    initAccessGate();
   }
 
   function renderFilterOptions() {
@@ -33,6 +37,15 @@
     });
     bindClick("#export-csv", exportCsv);
     bindClick("#export-pdf", exportPdf);
+    const pinForm = $("#pin-form");
+    if (pinForm) pinForm.addEventListener("submit", submitPin);
+    const heatmapGranularity = $("#heatmap-granularity");
+    if (heatmapGranularity) {
+      heatmapGranularity.addEventListener("change", event => {
+        state.heatmapGranularity = event.target.value;
+        if (state.lastReport) renderHeatmapFromReport(state.lastReport);
+      });
+    }
     const heatmapMode = $("#heatmap-mode");
     if (heatmapMode) {
       heatmapMode.addEventListener("change", event => {
@@ -55,6 +68,10 @@
   }
 
   function runReport() {
+    if (!state.pinToken) {
+      showPinModal();
+      return;
+    }
     startAction($("#dashboard-filters button[type='submit']"), "Running...");
     showReportLoading();
     startReportProgress();
@@ -66,8 +83,9 @@
         toast("Report updated");
       })
       .withFailureHandler(error => {
-        failReportProgress(error.message || String(error));
         finishAction($("#dashboard-filters button[type='submit']"), "Run report");
+        if (handleAccessError(error)) return;
+        failReportProgress(error.message || String(error));
         toast(error.message || String(error), "error");
       })
       .getDashboardReport(readFilters());
@@ -100,35 +118,86 @@
 
   function renderHeatmapFromReport(result) {
     const summary = result.summary || {};
-    renderHeatmap(summary.heatmap || {}, summary.heatmapDrinkTop || {}, result.filters || readFilters(), summary);
-  }
-
-  function renderHeatmap(heatmap, heatmapDrinkTop, filters, summary) {
-    filters = filters || {};
-    summary = summary || {};
-    const bucketConfig = config.timeBuckets || [];
-    const buckets = bucketConfig.map(bucket => bucket.label);
-    const days = reportingWeekdays.filter(day => heatmap[day]);
-    const values = Object.values(heatmap).flatMap(row => Object.values(row || {}));
-    const max = Math.max(1, ...values);
-    const total = values.reduce((sum, value) => sum + Number(value || 0), 0);
-    if (!days.length || !total) {
-      $("#heatmap").innerHTML = timeEmptyState(summary, "heatmap activity");
+    syncHeatmapControls(summary);
+    if (state.heatmapGranularity === "quarter") {
+      renderQuarterHourHeatmap(summary, result.filters || readFilters());
       return;
     }
-    $("#heatmap").innerHTML = `<div class="heatmap-grid" style="--cols:${buckets.length}">
-      <div class="heat-head">Day</div>${bucketConfig.map(bucket => `<div class="heat-head${bucket.closed && filters.excludeClosedPeriods ? " is-closed" : ""}">${escapeHtml(bucket.label)}</div>`).join("")}
-      ${days.map(day => `<div class="heat-day">${escapeHtml(day)}</div>${bucketConfig.map(bucket => {
-        const value = heatmap[day][bucket.label] || 0;
-        const intensity = Math.max(.05, value / max);
+    renderHeatmap(summary.heatmap || {}, summary.heatmapDrinkTop || {}, result.filters || readFilters(), summary, config.timeBuckets || []);
+  }
+
+  function renderQuarterHourHeatmap(summary, filters) {
+    const buckets = (summary.quarterHourBuckets || {}).hours || [];
+    renderHeatmap(summary.quarterHourHeatmap || {}, summary.quarterHourDrinkTop || {}, filters, summary, buckets, "15-minute heatmap activity", (summary.quarterHourBuckets || {}).intervals || [], "15 min");
+  }
+
+  function syncHeatmapControls(summary) {
+    const granularity = $("#heatmap-granularity");
+    if (granularity) granularity.value = state.heatmapGranularity;
+  }
+
+  function renderHeatmap(heatmap, heatmapDrinkTop, filters, summary, bucketConfig, emptyLabel, rowOrder, rowHeaderLabel) {
+    filters = filters || {};
+    summary = summary || {};
+    bucketConfig = bucketConfig || [];
+    const buckets = bucketConfig.map(bucket => bucket.label);
+    const rows = (rowOrder && rowOrder.length ? rowOrder : reportingWeekdays).filter(row => heatmap[row]);
+    const activeDays = Object.keys(summary.byDate || {}).length;
+    const activeDatesByWeekday = summary.activeDatesByWeekday || {};
+    const valueForCell = rowLabel => bucketLabel => {
+      const value = Number((heatmap[rowLabel] || {})[bucketLabel] || 0);
+      if (state.heatmapMode !== "average") return value;
+      const divisor = rowHeaderLabel === "15 min" ? activeDays : Number(activeDatesByWeekday[rowLabel] || 0);
+      return divisor ? roundDisplay(value / divisor) : 0;
+    };
+    const displayValues = rows.flatMap(row => buckets.map(bucket => valueForCell(row)(bucket)));
+    const rawValues = Object.values(heatmap).flatMap(row => Object.values(row || {}));
+    const max = Math.max(1, ...displayValues);
+    const total = rawValues.reduce((sum, value) => sum + Number(value || 0), 0);
+    if (!rows.length || !total) {
+      $("#heatmap").innerHTML = timeEmptyState(summary, emptyLabel || "heatmap activity");
+      return;
+    }
+    const compactClass = buckets.length <= 4 ? " heatmap-grid-compact" : "";
+    $("#heatmap").innerHTML = `<div class="heatmap-grid${compactClass}" style="--cols:${buckets.length}">
+      <div class="heat-head">${escapeHtml(rowHeaderLabel || "Day")}</div>${bucketConfig.map(bucket => `<div class="heat-head${bucket.closed && filters.excludeClosedPeriods ? " is-closed" : ""}">${escapeHtml(bucket.label)}</div>`).join("")}
+      ${rows.map(rowLabel => `<div class="heat-day">${escapeHtml(rowLabel)}</div>${bucketConfig.map(bucket => {
+        const rawValue = Number((heatmap[rowLabel] || {})[bucket.label] || 0);
+        const value = valueForCell(rowLabel)(bucket.label);
+        const intensity = heatIntensity(value, max);
         const closed = bucket.closed && filters.excludeClosedPeriods;
-        const topDrink = ((heatmapDrinkTop[day] || {})[bucket.label]) || {};
+        const topDrink = ((heatmapDrinkTop[rowLabel] || {})[bucket.label]) || {};
         const drinkLabel = topDrink.drink ? `${topDrink.drink} (${topDrink.count})` : "";
+        const averageSuffix = state.heatmapMode === "average" ? " average" : " total";
         const display = state.heatmapMode === "topDrink" && drinkLabel ? drinkLabel : (value || "");
-        const title = closed ? `${day} ${bucket.label}: closed period` : `${day} ${bucket.label}: ${value} total${drinkLabel ? `, top drink ${drinkLabel}` : ""}`;
-        return `<div class="heat-cell${closed ? " is-closed" : ""}${!value && !closed ? " is-zero" : ""}${state.heatmapMode === "topDrink" ? " heat-cell-drink" : ""}" data-tooltip="${escapeAttr(title)}" style="--heat:${intensity}"><span>${closed ? "Closed" : escapeHtml(display)}</span></div>`;
+        const title = closed ? `${rowLabel} ${bucket.label}: closed period` : `${rowLabel} ${bucket.label}: ${value}${averageSuffix}${rawValue !== value ? `, ${rawValue} total` : ""}${drinkLabel ? `, top drink ${drinkLabel}` : ""}`;
+        return `<div class="heat-cell${closed ? " is-closed" : ""}${!rawValue && !closed ? " is-zero" : ""}${state.heatmapMode === "topDrink" ? " heat-cell-drink" : ""}" data-tooltip="${escapeAttr(title)}" style="--heat:${intensity}; --heat-color:${heatColor(intensity)}"><span>${closed ? "Closed" : escapeHtml(display)}</span></div>`;
       }).join("")}`).join("")}
     </div>`;
+  }
+
+  function heatIntensity(value, max) {
+    const number = Number(value || 0);
+    if (!number) return 0;
+    return Math.max(.08, Math.min(1, number / Math.max(1, max)));
+  }
+
+  function roundDisplay(value) {
+    return Math.round(Number(value || 0) * 10) / 10;
+  }
+
+  function heatColor(intensity) {
+    const stops = [
+      { at: 0, color: [232, 242, 247] },
+      { at: .55, color: [0, 83, 138] },
+      { at: 1, color: [255, 128, 0] }
+    ];
+    const value = Math.max(0, Math.min(1, Number(intensity || 0)));
+    const start = value <= stops[1].at ? stops[0] : stops[1];
+    const end = value <= stops[1].at ? stops[1] : stops[2];
+    const progress = (value - start.at) / Math.max(.001, end.at - start.at);
+    const channel = index => Math.round(start.color[index] + (end.color[index] - start.color[index]) * progress);
+    return `rgb(${channel(0)}, ${channel(1)}, ${channel(2)})`;
   }
 
   function renderHourlyDrinks(summaryOrRows) {
@@ -204,6 +273,10 @@
   }
 
   function exportCsv() {
+    if (!state.pinToken) {
+      showPinModal();
+      return;
+    }
     const button = $("#export-csv");
     startAction(button, "Exporting...");
     google.script.run
@@ -219,6 +292,10 @@
         toast("CSV exported");
       })
       .withFailureHandler(error => {
+        if (handleAccessError(error)) {
+          finishAction(button, "Export CSV");
+          return;
+        }
         finishAction(button, "Export CSV");
         toast(error.message || String(error), "error");
       })
@@ -226,6 +303,10 @@
   }
 
   function exportPdf() {
+    if (!state.pinToken) {
+      showPinModal();
+      return;
+    }
     const button = $("#export-pdf");
     startAction(button, "Building PDF...");
     google.script.run
@@ -244,6 +325,10 @@
         toast("PDF report exported");
       })
       .withFailureHandler(error => {
+        if (handleAccessError(error)) {
+          finishAction(button, "Export PDF report");
+          return;
+        }
         finishAction(button, "Export PDF report");
         toast(error.message || String(error), "error");
       })
@@ -259,8 +344,76 @@
       floor: form.floor.value,
       drink: form.drink.value,
       excludeBankHolidays: form.excludeBankHolidays.checked,
-      excludeClosedPeriods: form.excludeClosedPeriods.checked
+      excludeClosedPeriods: form.excludeClosedPeriods.checked,
+      pinToken: state.pinToken
     };
+  }
+
+  function initAccessGate() {
+    state.pinToken = sessionStorage.getItem("munichReportingPinToken") || "";
+    if (state.pinToken) {
+      unlockDashboard();
+      runReport();
+      return;
+    }
+    showPinModal();
+  }
+
+  function submitPin(event) {
+    event.preventDefault();
+    const input = $("#pin-input");
+    const button = $("#pin-submit");
+    const error = $("#pin-error");
+    if (error) {
+      error.hidden = true;
+      error.textContent = "";
+    }
+    startAction(button, "Checking...");
+    google.script.run
+      .withSuccessHandler(result => {
+        finishAction(button, "Unlock dashboard");
+        state.pinToken = result.token || "";
+        sessionStorage.setItem("munichReportingPinToken", state.pinToken);
+        if (input) input.value = "";
+        unlockDashboard();
+        runReport();
+      })
+      .withFailureHandler(err => {
+        finishAction(button, "Unlock dashboard");
+        if (error) {
+          error.textContent = err.message || String(err);
+          error.hidden = false;
+        }
+        if (input) {
+          input.select();
+          input.focus();
+        }
+      })
+      .verifyReportingPin(input ? input.value : "");
+  }
+
+  function showPinModal() {
+    document.body.classList.add("access-locked");
+    const modal = $("#pin-modal");
+    if (modal) modal.hidden = false;
+    window.setTimeout(() => $("#pin-input")?.focus(), 50);
+  }
+
+  function unlockDashboard() {
+    document.body.classList.remove("access-locked");
+    const modal = $("#pin-modal");
+    if (modal) modal.hidden = true;
+  }
+
+  function handleAccessError(error) {
+    const message = error && error.message ? error.message : String(error || "");
+    if (message.indexOf("reporting PIN") === -1) return false;
+    sessionStorage.removeItem("munichReportingPinToken");
+    state.pinToken = "";
+    clearReportProgressTimer();
+    showPinModal();
+    toast("Please enter the reporting PIN again.", "error");
+    return true;
   }
 
   function metric(label, value, helper, tone, icon, action) {
@@ -386,7 +539,10 @@
 
   function startReportProgress() {
     clearReportProgressTimer();
+    const runId = state.progressRunId + 1;
+    state.progressRunId = runId;
     state.progressStartedAt = Date.now();
+    updateReportProgress(0, "Starting report", "Checking filters and preparing the reporting request...", { force: true });
     updateReportProgress(5, "Starting report", "Checking filters and preparing the reporting request...");
     const stages = [
       { at: 600, value: 16, label: "Reading live sheet rows", detail: "Checking any current drink-log entries for the selected range..." },
@@ -397,13 +553,14 @@
       { at: 15800, value: 90, label: "Nearly there", detail: "Waiting for Apps Script to return the finished report..." }
     ];
     stages.forEach(stage => {
-      window.setTimeout(() => {
-        if (!state.progressStartedAt) return;
+      const timeout = window.setTimeout(() => {
+        if (!state.progressStartedAt || state.progressRunId !== runId) return;
         updateReportProgress(stage.value, stage.label, stage.detail);
       }, stage.at);
+      state.progressTimeouts.push(timeout);
     });
     state.progressTimer = window.setInterval(() => {
-      if (!state.progressStartedAt) return;
+      if (!state.progressStartedAt || state.progressRunId !== runId) return;
       const elapsed = Date.now() - state.progressStartedAt;
       const softProgress = Math.min(94, 90 + Math.floor(Math.max(0, elapsed - 15800) / 3000));
       const current = Number($("#report-progress-fill").dataset.progress || 0);
@@ -427,15 +584,17 @@
     clearReportProgressTimer();
   }
 
-  function updateReportProgress(value, label, detail) {
+  function updateReportProgress(value, label, detail, options) {
     const panel = $("#report-progress");
     if (!panel) return;
-    const percent = Math.max(0, Math.min(100, Math.round(value)));
+    const fill = $("#report-progress-fill");
+    const requested = Math.max(0, Math.min(100, Math.round(value)));
+    const current = Number(fill.dataset.progress || 0);
+    const percent = options && options.force ? requested : Math.max(current, requested);
     panel.hidden = false;
     $("#report-progress-label").textContent = label;
     $("#report-progress-percent").textContent = percent + "%";
     $("#report-progress-detail").textContent = detail;
-    const fill = $("#report-progress-fill");
     fill.style.setProperty("--progress", percent + "%");
     fill.dataset.progress = String(percent);
   }
@@ -445,6 +604,8 @@
       window.clearInterval(state.progressTimer);
       state.progressTimer = null;
     }
+    state.progressTimeouts.forEach(timeout => window.clearTimeout(timeout));
+    state.progressTimeouts = [];
     state.progressStartedAt = 0;
   }
 

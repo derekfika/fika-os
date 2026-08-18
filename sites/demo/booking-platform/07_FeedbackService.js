@@ -21,8 +21,8 @@ function sendDemoFeedbackRequest_(dashboardBooking) {
   try {
     if (!SITE_CONFIG.feedback.enabled) return { sent: false, reason: "Feedback is disabled." };
     const settings = getPlatformSettings_();
-    const recipient = normaliseDemoFeedbackRecipient_(settings.DEMO_FEEDBACK_RECIPIENT);
-    if (!recipient) return { sent: false, reason: "No feedback recipient configured." };
+    const recipient = normaliseDemoFeedbackRecipient_(dashboardBooking.hostEmail);
+    if (!recipient) return { sent: false, reason: "The booking contact email is invalid." };
 
     const webAppUrl = String(settings.FEEDBACK_WEB_APP_URL || SITE_CONFIG.feedback.webAppUrl || "").trim();
     if (!/^https:\/\/\S+\/exec(?:\?|$)/i.test(webAppUrl)) {
@@ -62,7 +62,7 @@ function sendDemoFeedbackRequest_(dashboardBooking) {
 }
 
 function normaliseDemoFeedbackRecipient_(value) {
-  const email = String(value || SITE_CONFIG.feedback.recipient || "").trim();
+  const email = String(value || "").trim();
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ? email : "";
 }
 

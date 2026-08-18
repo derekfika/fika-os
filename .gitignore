@@ -106,6 +106,11 @@ google-service-account*.json
 # ----------------------------------------------------------
 .npm-cache/
 .artifact-work/
+local-data/integration-hub/
+local-data/cpu-production/
+apps/menu-planning/fixtures/*-import-report.json
+apps/menu-planning/.next/
+apps/menu-planning/tsconfig.tsbuildinfo
 
 # ----------------------------------------------------------
 # Release artefacts
@@ -120,3 +125,44 @@ google-service-account*.json
 # Windows recycle
 # ----------------------------------------------------------
 $RECYCLE.BIN/
+
+
+# ----------------------------------------------------------
+# Local cache / generated application data
+# ----------------------------------------------------------
+.npm-cache/
+.artifact-work/
+local-data/
+local-data-backup-*/
+local-data-restored-*/
+restored-data-safety-copies/
+recovery/
+.git-backup/
+secrets/
+
+# Menu Planning generated import reports
+apps/menu-planning/fixtures/*-import-report.json
+
+# ----------------------------------------------------------
+# Temporary/generated working files
+# ----------------------------------------------------------
+tmp-menu-deck/
+FIKA-RESTORED-DATA.json
+repo-files.txt
+*.tsbuildinfo
+
+# ----------------------------------------------------------
+# Internal documents not intended for source control
+# ----------------------------------------------------------
+assets/Employee Hub - BrightHR.pdf
+
+# Generated font encodings
+assets/fonts/*.b64.txt
+
+# Operational menu source files
+Menu Data/
+
+# Commercial / unverified font binaries
+assets/fonts/GILROY-*.TTF
+assets/fonts/VimSM*.otf
+assets/Fika Brand Guidelines v1.0 (1).pdf

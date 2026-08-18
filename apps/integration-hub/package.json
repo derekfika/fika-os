@@ -1,0 +1,58 @@
+{
+  "name": "fika-integration-hub",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "scripts": {
+    "dev": "next dev -p 3200",
+    "build": "next build",
+    "start": "next start -p 3200",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "test": "tsx --test tests/*.test.ts",
+    "emulators": "firebase emulators:start --config firebase.json",
+    "emulators:export": "firebase emulators:export ../../local-data/integration-hub/emulator-export --config firebase.json --force",
+    "emulators:import": "firebase emulators:start --config firebase.json --import ../../local-data/integration-hub/emulator-export --export-on-exit ../../local-data/integration-hub/emulator-export",
+    "recovery:backup": "tsx scripts/emulator-backup.ts",
+    "recovery:verify": "tsx scripts/verify-emulator-restore.ts",
+    "migration:core-readiness": "tsx scripts/core-data-migration-readiness.ts",
+    "migration:oploc-readiness": "tsx scripts/oploc-alignment-readiness.ts",
+    "worker:angel-court:local": "tsx scripts/angel-court-inbox-worker.ts",
+    "worker:angel-court:gmail": "tsx scripts/angel-court-gmail-worker.ts",
+    "worker:angel-court:gmail:scheduler": "tsx scripts/angel-court-gmail-scheduler.ts",
+    "auth:gmail": "tsx scripts/auth-gmail.ts",
+    "auth:cpu-calendar": "tsx scripts/auth-cpu-calendar.ts",
+    "seed": "tsx scripts/seed.ts",
+    "seed:test-bookings": "tsx scripts/seed-test-bookings.ts",
+    "reset:test-bookings": "tsx scripts/reset-test-bookings.ts",
+    "clear:local-bookings": "tsx scripts/clear-local-bookings.ts",
+    "fixture:workbook": "tsx scripts/create-fixture-workbook.ts",
+    "reset": "tsx scripts/reset.ts",
+    "reset:services": "tsx scripts/reset-services.ts"
+  },
+  "dependencies": {
+    "firebase-admin": "^13.4.0",
+    "jszip": "^3.10.1",
+    "lucide-react": "^0.468.0",
+    "next": "^16.2.12",
+    "papaparse": "^5.5.3",
+    "react": "^19.2.6",
+    "react-dom": "^19.2.6",
+    "xlsx": "^0.18.5",
+    "zod": "^4.1.12"
+  },
+  "devDependencies": {
+    "@types/node": "^22.19.19",
+    "@types/papaparse": "^5.3.16",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "eslint": "^9.39.4",
+    "eslint-config-next": "^16.2.12",
+    "firebase-tools": "^14.19.1",
+    "tsx": "^4.20.6",
+    "typescript": "^5.9.3"
+  }
+}

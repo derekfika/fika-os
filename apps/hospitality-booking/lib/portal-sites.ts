@@ -1,0 +1,53 @@
+export type PortalSiteKey = "mnk" | "angel-court" | "cfc" | "munich-re";
+
+export type PortalSiteConfig = {
+  key: PortalSiteKey;
+  label: string;
+  displayName: string;
+  logoPath: string;
+  cssClass: string;
+  bookingEndpoint: string;
+};
+
+export const portalSites: Record<PortalSiteKey, PortalSiteConfig> = {
+  mnk: {
+    key: "mnk",
+    label: "MNK",
+    displayName: "MNK International",
+    logoPath: "/brand/mnk/mnk-international-logo.png",
+    cssClass: "site-mnk",
+    bookingEndpoint: "/api/bookings/mnk",
+  },
+  "angel-court": {
+    key: "angel-court",
+    label: "Angel Court",
+    displayName: "Angel Court Bank",
+    logoPath: "/brand/angel-court/angel-court-bank-logo.png",
+    cssClass: "site-angel-court",
+    // Angel Court uses the existing typed booking contract; siteId scopes the record.
+    bookingEndpoint: "/api/bookings/mnk",
+  },
+  cfc: {
+    key: "cfc",
+    label: "CFC",
+    displayName: "CFC Underwriting",
+    logoPath: "/brand/cfc/cfc-positive-logo.svg",
+    cssClass: "site-cfc",
+    bookingEndpoint: "/api/bookings/mnk",
+  },
+  "munich-re": {
+    key: "munich-re",
+    label: "Munich Re",
+    displayName: "Munich Re",
+    logoPath: "/brand/munich-re/munich-re-logo.svg",
+    cssClass: "site-munich-re",
+    // The shared typed booking contract is scoped by siteId.
+    bookingEndpoint: "/api/bookings/mnk",
+  },
+};
+
+export function portalSite(key: string | undefined): PortalSiteConfig {
+  return portalSites[
+    key === "angel-court" || key === "cfc" || key === "munich-re" ? key : "mnk"
+  ];
+}

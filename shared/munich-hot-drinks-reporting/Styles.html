@@ -34,6 +34,125 @@ body {
 
 button, input, select { font: inherit; }
 
+body.access-locked {
+  display: block;
+  overflow: hidden;
+}
+
+body.access-locked .sidebar,
+body.access-locked main {
+  display: none;
+}
+
+.pin-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 28px;
+  background:
+    radial-gradient(circle at 78% 18%, rgba(255,128,0,.16), transparent 25%),
+    radial-gradient(circle at 20% 90%, rgba(0,83,138,.18), transparent 30%),
+    linear-gradient(135deg, #f8fcfd, #e9f2f7);
+}
+
+.pin-modal::before {
+  content: "";
+  position: absolute;
+  right: -72px;
+  bottom: -96px;
+  width: 320px;
+  height: 320px;
+  border: 44px solid rgba(0,83,138,.08);
+  border-radius: 50%;
+}
+
+.pin-card {
+  position: relative;
+  width: min(430px, 100%);
+  padding: 30px;
+  border: 1px solid rgba(0,83,138,.14);
+  border-radius: 22px;
+  background:
+    radial-gradient(circle at 94% 0%, rgba(0,83,138,.08), transparent 34%),
+    #fff;
+  box-shadow: 0 34px 90px rgba(0,45,76,.18);
+}
+
+.pin-logo {
+  width: 172px;
+  margin-bottom: 26px;
+}
+
+.pin-logo svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.pin-card > span {
+  display: block;
+  color: var(--munich);
+  font-size: 12px;
+  font-weight: 950;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+}
+
+.pin-card h1 {
+  margin: 7px 0 8px;
+  color: var(--ink);
+  font-size: 34px;
+  line-height: 1;
+  letter-spacing: 0;
+}
+
+.pin-card p {
+  margin: 0 0 22px;
+  color: var(--muted);
+  font-size: 15px;
+  font-weight: 750;
+  line-height: 1.45;
+}
+
+.pin-card label {
+  display: grid;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 950;
+  letter-spacing: .7px;
+  text-transform: uppercase;
+}
+
+.pin-card input {
+  width: 100%;
+  min-height: 56px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 0 16px;
+  color: var(--ink);
+  background: #f8fbfd;
+  font-size: 22px;
+  font-weight: 900;
+  letter-spacing: 6px;
+}
+
+.pin-card button {
+  width: 100%;
+  margin-top: 18px;
+}
+
+.pin-card small {
+  display: block;
+  margin-top: 12px;
+  color: var(--danger);
+  font-size: 13px;
+  font-weight: 850;
+}
+
 button {
   min-height: 42px;
   border: 0;
@@ -699,7 +818,7 @@ input:focus, select:focus {
   display: block;
   height: 9px;
   border-radius: 999px;
-  background: linear-gradient(90deg, rgba(0,83,138,.08), rgba(0,83,138,.85), var(--orange));
+  background: linear-gradient(90deg, #edf5f9 0%, #9ec6da 38%, #00538A 68%, var(--orange) 100%);
 }
 
 .heatmap {
@@ -712,6 +831,11 @@ input:focus, select:focus {
   grid-template-columns: 110px repeat(var(--cols), minmax(82px, 1fr));
   gap: 7px;
   animation: cardIn .32s ease both;
+}
+
+.heatmap-grid-compact {
+  min-width: 0;
+  grid-template-columns: 110px repeat(var(--cols), minmax(120px, 1fr));
 }
 
 .heat-head, .heat-day {
@@ -745,8 +869,8 @@ input:focus, select:focus {
   font-size: 13px;
   font-weight: 950;
   background:
-    linear-gradient(135deg, rgba(255,255,255,.52), rgba(255,255,255,0)),
-    rgba(0,83,138,var(--heat));
+    linear-gradient(135deg, rgba(255,255,255,.28), rgba(255,255,255,0)),
+    var(--heat-color);
   box-shadow: inset 0 0 0 1px rgba(255,255,255,.24);
   transition: transform .14s ease, box-shadow .14s ease;
 }

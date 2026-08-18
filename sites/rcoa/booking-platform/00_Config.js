@@ -10,7 +10,7 @@ const SITE_CONFIG = Object.freeze({
   siteEmailAddress: "derek@fikacatering.com",
   notificationRecipients: [],
   feedback: {
-    enabled: true,
+    enabled: false,
     recipient: "derek@fikacatering.com",
     webAppUrl: "https://script.google.com/macros/s/AKfycbxt3mSCTPMyXGi4VfZGHo2rwWsI7afe_AZfoifSH10MtDQYiRfCsWwqDQwAvPzU2SjE/exec"
   },

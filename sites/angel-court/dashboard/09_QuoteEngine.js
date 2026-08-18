@@ -9,7 +9,10 @@ function generateQuoteForRow(rowNumber) {
 
   const previousStatus = booking.status || "";
   booking = ensureLineItemTimes_(booking);
-  booking = recalculateDashboardTotals_(booking, 0.08);
+  booking = recalculateDashboardTotals_(
+    booking,
+    getConfiguredNumber_("MGMT_FEE_PERCENT", 0.08)
+  );
   booking = validateBooking_(booking);
 
   if (booking.validationErrors.length > 0) {
@@ -180,7 +183,7 @@ function ensureLineItemTimes_(booking) {
 function clearAndRefillQuoteDoc_(doc, booking) {
   const replacements = getQuoteReplacements_(booking);
   const sections = [doc.getBody(), doc.getHeader(), doc.getFooter()].filter(Boolean);
-  const requiredTokens = ["<SITE>", "<CLIENT>"];
+  const requiredTokens = getRequiredQuoteTokens_(booking);
 
   assertQuoteTokensPresent_(sections, requiredTokens);
 
@@ -195,6 +198,16 @@ function clearAndRefillQuoteDoc_(doc, booking) {
   const body = doc.getBody();
   styleQuoteNotes_(body, booking.notes || "");
   replaceQuoteOrderPlaceholder_(body, booking.items || []);
+}
+
+function getRequiredQuoteTokens_(booking) {
+  const requiredTokens = ["<SITE>", "<CLIENT>", "<MGMTFEE>"];
+
+  if (String((booking && booking.notes) || "").trim()) {
+    requiredTokens.push("<NOTES>");
+  }
+
+  return requiredTokens;
 }
 
 function getQuoteReplacements_(booking) {

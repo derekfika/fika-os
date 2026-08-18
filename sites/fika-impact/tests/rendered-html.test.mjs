@@ -83,6 +83,9 @@ test("preserves simulation, controls, motion safety, and static deployment confi
   assert.match(css, /height:\s*100svh/);
   assert.match(css, /overflow:\s*hidden/);
   assert.match(css, /prefers-reduced-motion:\s*reduce/);
+  assert.match(css, /--ink-deep:\s*#280f8c/);
+  assert.match(css, /\.presentation-brand > span \{ color: var\(--mint\)/);
+  assert.match(css, /\.brand-headline[^}]*letter-spacing:\s*-\.035em/);
   assert.match(presentation, /useReducedMotion/);
   assert.match(nextConfig, /output:\s*"export"/);
   assert.match(nextConfig, /basePath/);

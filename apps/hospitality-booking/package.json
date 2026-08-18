@@ -1,0 +1,33 @@
+{
+  "name": "fika-hospitality-booking",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=22.13.0" },
+  "scripts": {
+    "dev": "next dev --webpack -p 3300",
+    "build": "next build",
+    "start": "next start -p 3300",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "test": "tsx --test tests/*.test.ts",
+    "generate:mnk-menu": "node scripts/convert-mnk-menu.mjs",
+    "auth:google-menu": "node scripts/google-menu-auth.mjs"
+  },
+  "dependencies": {
+    "lucide-react": "^0.468.0",
+    "next": "^16.2.12",
+    "react": "^19.2.6",
+    "react-dom": "^19.2.6",
+    "zod": "^4.1.12"
+  },
+  "devDependencies": {
+    "@types/node": "^22.19.19",
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
+    "eslint": "^9.39.4",
+    "eslint-config-next": "^16.2.12",
+    "tsx": "^4.20.6",
+    "typescript": "^5.9.3"
+  }
+}

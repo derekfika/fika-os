@@ -45,7 +45,7 @@ const MENU_SCHEMA = Object.freeze([
 
   menuItem_("deli_working_lunch", "Lunch", "Deli Style Working Lunch", "Meat, fish and vegetarian fillings on artisan breads; 3 pieces per person, vegetable crisps and whole fruit.", "Per person · minimum 8", 10.95, 8, 8, 3, [], 210),
   menuItem_("salad_box", "Lunch", "Salad Box", "", "1 box · serves 8", 25, 1, null, 3, [
-    choice_("salad", "Choose salad", "select", true, ["Mediterranean", "Grilled Chicken Caesar", "Hot Smoked Salmon Niçoise"])
+    choice_("salad", "Choose salads", "multi", true, ["Mediterranean", "Grilled Chicken Caesar", "Hot Smoked Salmon Niçoise"])
   ], 220),
 
   menuItem_("exotic_fruit_20", "Lunch Add-ons", "Exotic Fruit Box", "", "Per box · serves up to 20", 52.5, 1, null, 3, [], 300),

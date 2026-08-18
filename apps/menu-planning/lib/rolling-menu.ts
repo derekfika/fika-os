@@ -1,0 +1,74 @@
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import * as XLSX from "xlsx";
+export * from "./rolling-menu-types";
+import { ROLLING_SLOTS, type RollingAllocation, type RollingDay, type RollingEntry, type RollingSnapshot, type RollingSlot, type RollingWeek, type RollingWeekStatus } from "./rolling-menu-types";
+import { titleCase } from "./text";
+interface Stored { version: 1; weeks: RollingWeek[]; days: RollingDay[]; entries: RollingEntry[]; }
+
+const file = join(process.cwd(), "local-data", "menu-planning", "rolling-menu-weeks.json");
+const now = () => new Date().toISOString();
+const slug = (value: string) => value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+const read = (): Stored => {
+  if (!existsSync(file)) return { version: 1, weeks: [], days: [], entries: [] };
+  try { return JSON.parse(readFileSync(file, "utf8")) as Stored; } catch { return { version: 1, weeks: [], days: [], entries: [] }; }
+};
+const write = (value: Stored) => { mkdirSync(dirname(file), { recursive: true }); const tmp = `${file}.tmp`; writeFileSync(tmp, JSON.stringify(value, null, 2)); renameSync(tmp, file); };
+const dateFromName = (name: string) => { const m = name.match(/(\d{2})[._-](\d{2})[._-](\d{2,4})/); if (!m) return undefined; const y = m[3].length === 2 ? `20${m[3]}` : m[3]; return `${y}-${m[2]}-${m[1]}`; };
+const addDays = (iso: string, days: number) => { const d = new Date(`${iso}T00:00:00Z`); d.setUTCDate(d.getUTCDate() + days); return d.toISOString().slice(0, 10); };
+const dayName = (date: string) => new Date(`${date}T00:00:00Z`).toLocaleDateString("en-GB", { weekday: "long", timeZone: "UTC" });
+const slotOf = (value: unknown): RollingSlot | undefined => { const text = String(value ?? "").trim().toUpperCase(); if (ROLLING_SLOTS.includes(text as RollingSlot)) return text as RollingSlot; if (/^EXTRAS/.test(text)) return "EXTRAS 1"; return undefined; };
+const governedDestinationAliases: Record<string, { id: string; label: string }> = {
+  haleon: { id: "oploc:46701265-15af-48f4-a230-1d27ca21bc59", label: "Haleon" },
+  haelon: { id: "oploc:46701265-15af-48f4-a230-1d27ca21bc59", label: "Haleon" },
+  x: { id: "oploc:b835d8ee-b187-49d1-9072-7348b04bfd2d", label: "FIKA Xchange" },
+  "fika xchange": { id: "oploc:b835d8ee-b187-49d1-9072-7348b04bfd2d", label: "FIKA Xchange" },
+  nesta: { id: "oploc:83c79eb4-4033-408c-96d7-6c496ed6f6c9", label: "Nesta" },
+  comm: { id: "oploc:8449a63b-4df8-42f7-8b73-1d2c8669f58c", label: "Commerzbank" },
+  commerce: { id: "oploc:8449a63b-4df8-42f7-8b73-1d2c8669f58c", label: "Commerzbank" },
+  commerzbank: { id: "oploc:8449a63b-4df8-42f7-8b73-1d2c8669f58c", label: "Commerzbank" },
+  angel: { id: "oploc:24a93500-d75d-4fe0-8beb-672d36f9da10", label: "One Angel Court" },
+  angeel: { id: "oploc:24a93500-d75d-4fe0-8beb-672d36f9da10", label: "One Angel Court" },
+  "one angel court": { id: "oploc:24a93500-d75d-4fe0-8beb-672d36f9da10", label: "One Angel Court" },
+  bp: { id: "oploc:a358ef5f-297b-4816-bbf5-7fef470e81d7", label: "Bridgepoint" },
+  bridgepoint: { id: "oploc:a358ef5f-297b-4816-bbf5-7fef470e81d7", label: "Bridgepoint" },
+  mk: { id: "oploc:66e621fa-6e6f-4f46-9aed-462313abbe8f", label: "MNK" },
+  mnk: { id: "oploc:66e621fa-6e6f-4f46-9aed-462313abbe8f", label: "MNK" },
+};
+const normaliseDestination = (allocation: RollingAllocation): RollingAllocation => {
+  const governed = governedDestinationAliases[allocation.destinationLabel.trim().toLocaleLowerCase()];
+  return governed ? { ...allocation, destinationId: governed.id, destinationLabel: governed.label } : { ...allocation, destinationId: undefined };
+};
+export function migrateSavedDestinations() {
+  const db = read(); let changed = 0; let governed = 0; let oneOff = 0;
+  db.entries = db.entries.map(entry => ({ ...entry, allocations: entry.allocations.map(allocation => { const next = normaliseDestination(allocation); if (next.destinationId) governed += 1; else oneOff += 1; if (next.destinationId !== allocation.destinationId || next.destinationLabel !== allocation.destinationLabel) changed += 1; return next; }) }));
+  if (changed) write(db);
+  return { changed, governed, oneOff, entries: db.entries.length };
+}
+
+export function emptyWeek(weekCommencing: string, actor = "local-menu-planner"): RollingSnapshot {
+  const id = `rolling-week:${weekCommencing}`; const days = Array.from({ length: 7 }, (_, i) => ({ id: `${id}:day:${i + 1}`, date: addDays(weekCommencing, i), dayName: dayName(addDays(weekCommencing, i)), entryIds: [] }));
+  const week: RollingWeek = { id, weekCommencing, weekEnding: addDays(weekCommencing, 6), status: "draft", version: 1, dayIds: days.map(d => d.id), entryIds: [], sourceFiles: [], customSlots: [], audit: [{ action: "week-created", at: now(), by: actor }] };
+  return { week, days, entries: [] };
+}
+export function listWeeks(): RollingWeek[] { return read().weeks.sort((a, b) => a.weekCommencing.localeCompare(b.weekCommencing)); }
+export function listAllEntries(): RollingEntry[] { return structuredClone(read().entries); }
+export function getWeek(weekId?: string): RollingSnapshot {
+  const db = read(); const week = weekId ? db.weeks.find(w => w.id === weekId) : db.weeks.slice().sort((a, b) => b.weekCommencing.localeCompare(a.weekCommencing))[0];
+  if (!week) return emptyWeek(new Date().toISOString().slice(0, 10));
+  return { week: structuredClone(week), days: structuredClone(db.days.filter(d => week.dayIds.includes(d.id))), entries: structuredClone(db.entries.filter(e => week.entryIds.includes(e.id))) };
+}
+export function saveSnapshot(snapshot: RollingSnapshot) { const db = read(); const existing = db.weeks.find(w => w.id === snapshot.week.id); if (existing) { db.days = db.days.filter(d => !existing.dayIds.includes(d.id)); db.entries = db.entries.filter(e => !existing.entryIds.includes(e.id)); } const wi = db.weeks.findIndex(w => w.id === snapshot.week.id); if (wi >= 0) db.weeks[wi] = structuredClone(snapshot.week); else db.weeks.push(structuredClone(snapshot.week)); db.days.push(...snapshot.days.map(value => structuredClone(value))); db.entries.push(...snapshot.entries.map(value => structuredClone(value))); write(db); return getWeek(snapshot.week.id); }
+export function createEntry(weekId: string, dayId: string, slot: string, itemLabel: string, actor = "local-menu-planner", itemId?: string) { const snapshot = getWeek(weekId); if (snapshot.week.status === "published") throw Object.assign(new Error("Published weeks are read-only. Duplicate the week to make changes."), { status: 409 }); const day = snapshot.days.find(d => d.id === dayId); if (!day) throw Object.assign(new Error("Menu day was not found."), { status: 404 }); if (snapshot.entries.some(e => e.dayId === dayId && e.slot === slot)) throw Object.assign(new Error("That menu slot already has a dish."), { status: 409 }); const id = `${snapshot.week.id}:entry:${slot.toLowerCase().replace(/[^a-z0-9]+/g, "-")}:${Date.now()}`; const entry: RollingEntry = { id, dayId, date: day.date, slot, itemId, itemLabel: titleCase(itemLabel), portions: 0, allocations: [], allergens: {}, audit: [{ action: "entry-created", at: now(), by: actor }] }; snapshot.entries.push(entry); day.entryIds.push(id); snapshot.week.entryIds.push(id); snapshot.week.version += 1; return saveSnapshot(snapshot); }
+export function addMenuSlot(weekId: string, slot: string, actor = "local-menu-planner") { const snapshot = getWeek(weekId); const clean = slot.trim().toUpperCase().replace(/\s+/g, " "); if (!clean) throw Object.assign(new Error("A menu slot name is required."), { status: 422 }); if (!/^(SALAD|EXTRAS) \d+$/.test(clean) && !/^[A-Z][A-Z0-9 /&-]{1,39}$/.test(clean)) throw Object.assign(new Error("Use a governed slot such as Salad, Side, or a named category."), { status: 422 }); if (snapshot.week.status === "published") throw Object.assign(new Error("Published weeks are read-only. Duplicate the week to make changes."), { status: 409 }); if (ROLLING_SLOTS.includes(clean as RollingSlot) || snapshot.week.customSlots?.includes(clean)) throw Object.assign(new Error("That menu slot already exists."), { status: 409 }); snapshot.week.customSlots = [...(snapshot.week.customSlots || []), clean]; snapshot.week.version += 1; return saveSnapshot(snapshot); }
+export function removeMenuSlot(weekId: string, slot: string, actor = "local-menu-planner") { const snapshot = getWeek(weekId); const clean = slot.trim().toUpperCase().replace(/\s+/g, " "); if (snapshot.week.status === "published") throw Object.assign(new Error("Published weeks are read-only. Duplicate the week to make changes."), { status: 409 }); if (snapshot.entries.some(entry => entry.slot === clean && entry.itemLabel.trim())) throw Object.assign(new Error("A menu slot with a dish on any day cannot be removed."), { status: 409 }); if (!ROLLING_SLOTS.includes(clean as RollingSlot) && !snapshot.week.customSlots?.includes(clean)) throw Object.assign(new Error("That menu slot does not exist."), { status: 404 }); snapshot.week.customSlots = (snapshot.week.customSlots || []).filter(value => value !== clean); snapshot.week.removedSlots = Array.from(new Set([...(snapshot.week.removedSlots || []), clean])); snapshot.week.version += 1; snapshot.week.audit.push({ action: "menu-slot-removed", at: now(), by: actor }); return saveSnapshot(snapshot); }
+export function updateEntry(weekId: string, entryId: string, patch: Partial<Pick<RollingEntry, "itemId" | "itemLabel" | "portions" | "slot" | "allocations" | "allergens" | "mayContainNotes">>, actor = "local-menu-planner") { const snapshot = getWeek(weekId); const entry = snapshot.entries.find(e => e.id === entryId); if (!entry) throw Object.assign(new Error("Menu entry was not found."), { status: 404 }); if (snapshot.week.status === "published") throw Object.assign(new Error("Published weeks are read-only. Duplicate the week to make changes."), { status: 409 }); Object.assign(entry, { ...patch, ...(patch.itemLabel !== undefined ? { itemLabel: titleCase(patch.itemLabel) } : {}) }); entry.audit.push({ action: "entry-amended", at: now(), by: actor }); return saveSnapshot(snapshot); }
+export function duplicateWeek(weekId: string, weekCommencing: string, actor = "local-menu-planner") { const source = getWeek(weekId); const next = emptyWeek(weekCommencing, actor); const dayMap = new Map(source.days.map((d, i) => [d.id, next.days[i]?.id])); next.entries = source.entries.map(e => ({ ...structuredClone(e), id: `${next.week.id}:entry:${e.id.split(":entry:").pop()}`, dayId: dayMap.get(e.dayId) || next.days[0].id, date: addDays(weekCommencing, source.days.findIndex(d => d.id === e.dayId)), audit: [{ action: "entry-copied", at: now(), by: actor }] })); next.days.forEach(d => d.entryIds = next.entries.filter(e => e.dayId === d.id).map(e => e.id)); next.week.entryIds = next.entries.map(e => e.id); next.week.sourceFiles = source.week.sourceFiles.slice(); next.week.customSlots = source.week.customSlots?.slice() || []; next.week.removedSlots = source.week.removedSlots?.slice() || []; return saveSnapshot(next); }
+export function validateWeek(snapshot: RollingSnapshot): string[] { const errors: string[] = []; if (!snapshot.entries.length) errors.push("Add at least one menu entry."); for (const entry of snapshot.entries) { if (!entry.itemLabel.trim()) errors.push(`${entry.slot} needs a dish name.`); if (!Number.isFinite(entry.portions) || entry.portions <= 0) errors.push(`${entry.itemLabel || entry.slot} needs a positive portion total.`); if (!entry.allocations.length) errors.push(`${entry.itemLabel || entry.slot} needs a destination allocation.`); if (!Object.keys(entry.allergens).length) errors.push(`${entry.itemLabel || entry.slot} needs an explicit allergen review.`); } return errors; }
+
+export function importWorkbook(buffer: ArrayBuffer | Buffer, workbookName: string, actor = "historical-importer"): { snapshot: RollingSnapshot; warnings: string[]; recognisedEntries: number } {
+  const date = dateFromName(workbookName) || "2026-08-17"; const snapshot = emptyWeek(date, actor); const wb = XLSX.read(buffer, { type: "buffer" }); const warnings: string[] = [];
+  const sheets = wb.SheetNames.filter(n => /^(mon|tue|wed|thurs|thu|fri)$/i.test(n));
+  for (const sheetName of sheets) { const dayIndex = ["mon", "tue", "wed", "thurs", "thu", "fri"].findIndex(v => v === sheetName.toLowerCase()); if (dayIndex < 0) continue; const day = snapshot.days[dayIndex]; const rows = XLSX.utils.sheet_to_json<unknown[]>(wb.Sheets[sheetName], { header: 1, defval: "" }); const headerIndex = rows.findIndex(r => String(r[0]).toUpperCase() === "PRODUCT"); if (headerIndex < 0) { warnings.push(`${sheetName}: product header not found`); continue; } const header = rows[headerIndex] as unknown[]; for (let i = headerIndex + 1; i < rows.length; i++) { const row = rows[i] as unknown[]; const slot = slotOf(row[0]); const label = String(row[1] ?? "").trim(); if (!slot || !label || /^total/i.test(label)) continue; const allocations: RollingAllocation[] = []; for (let c = 2; c < header.length; c++) { const quantity = Number(row[c]); if (!Number.isFinite(quantity) || quantity <= 0) continue; const destinationLabel = String(header[c] ?? "").trim(); if (!destinationLabel || /^total$/i.test(destinationLabel)) continue; allocations.push({ destinationLabel, quantity, sourceLabel: destinationLabel }); } const portions = allocations.reduce((sum, a) => sum + a.quantity, 0); const id = `${snapshot.week.id}:entry:${sheetName}:${i + 1}:${slug(label)}`; const entry: RollingEntry = { id, dayId: day.id, date: day.date, slot, itemLabel: titleCase(label.replace(/\s+/g, " ")), portions, allocations, allergens: {}, source: { workbook: workbookName, sheet: sheetName, range: `A${i + 1}`, rawText: JSON.stringify(row) }, audit: [{ action: "historical-source-imported", at: now(), by: actor }] }; snapshot.entries.push(entry); day.entryIds.push(id); } }
+  snapshot.week.entryIds = snapshot.entries.map(e => e.id); snapshot.week.sourceFiles = [workbookName]; return { snapshot, warnings, recognisedEntries: snapshot.entries.length };
+}

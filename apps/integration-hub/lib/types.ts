@@ -1,0 +1,11 @@
+import type { CanonicalEntityType, MappingDefinition, SourceImport, StagingRecord, SyncRun } from "./schemas";
+
+export type ColumnProfile = { name: string; inferredType: string; blankPercentage: number; uniqueValues: number; examples: string[]; likelyIdentifier: boolean; sensitive: boolean };
+export type WorksheetProfile = { name: string; rowCount: number; columnCount: number; headerRow: number; columns: ColumnProfile[]; warnings: string[]; preview: Record<string, unknown>[]; sourceRows: number[] };
+export type WorkbookProfile = { importId: string; filename: string; fileHash: string; worksheets: WorksheetProfile[]; proposedEntity: CanonicalEntityType | "Unknown Dataset"; draftSchema: { status: "draft-proposal"; fields: { name: string; type: string; nullable: boolean }[] } };
+export type Activity = { activityId: string; timestamp: string; actorId: string; actorName: string; action: string; entityReference: string; source: string; correlationId: string; summary: string };
+export type FieldProvenance = { source: "provider" | "spreadsheet" | "manual-correction" | "rota-enrichment"; actorId: string; timestamp: string; reason: string; previousValue?: unknown; newValue?: unknown };
+export type CanonicalLifecycle = "draft" | "needs-review" | "published" | "archived";
+export type CanonicalRecord = { canonicalId: string; entityType: CanonicalEntityType; record: Record<string, unknown>; dataHash: string; lifecycleStatus?: CanonicalLifecycle; publicationStatus?: "published" | "withdrawn"; publishedAt?: string; archivedAt?: string; fieldProvenance?: Record<string, FieldProvenance[]> };
+export type HubState = { imports: SourceImport[]; staging: StagingRecord[]; canonical: CanonicalRecord[]; mappings: MappingDefinition[]; syncRuns: SyncRun[]; activity: Activity[]; profiles: WorkbookProfile[]; manifests: PromotionManifest[]; stagingGenerations?: Record<string, string> };
+export type PromotionManifest = { manifestId: string; version: number; createdAt: string; createdBy: string; schemaVersion: string; mappingVersions: number[]; sourceHashes: string[]; countsByEntity: Record<string, number>; reviewCounts: Record<string, number>; blockingErrorCount: number; externalIdentityConflicts: number; dataHashes: string[]; intendedTarget: "fika-os-dev"; uploadOccurred: false; valid: boolean; blockers: string[] };

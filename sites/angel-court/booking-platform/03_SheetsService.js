@@ -147,7 +147,7 @@ function adaptClientBookingForDashboard_(booking) {
 
   const notes = buildDashboardNotes_(booking);
   const validationErrors = [];
-  if (!booking.client.companyName) validationErrors.push("Missing company");
+  if (!booking.client.clientCompanyName) validationErrors.push("Missing client company");
   if (!booking.event.eventDate) validationErrors.push("Missing event date");
   if (!serviceTimes.length) validationErrors.push("Missing service time");
   if (!booking.event.guestCount) validationErrors.push("Missing pax");
@@ -165,8 +165,8 @@ function adaptClientBookingForDashboard_(booking) {
     sourceEmailSubject: "Client booking request " + booking.bookingId,
     source: booking.source,
     sourceType: "CLIENT_PLATFORM",
-    clientCompany: booking.client.companyName,
-    hostName: booking.client.name,
+    clientCompany: booking.client.clientCompanyName,
+    hostName: booking.client.clientName,
     hostEmail: booking.client.email,
     hostPhone: booking.client.phone,
     invoiceReference: booking.client.invoiceReference || "",
@@ -418,6 +418,7 @@ function buildDashboardNotes_(booking) {
   const dietary = dietarySummary_(booking.dietaries);
   return [
     "Submitted through Client Booking Platform.",
+    "Requested by: " + booking.client.name + " (" + booking.client.companyName + ")",
     booking.specialInstructions ? "Special instructions: " + booking.specialInstructions : "",
     booking.client.invoiceReference ? "Invoice reference: " + booking.client.invoiceReference : "",
     booking.event.roomOrArea ? "Room / area: " + booking.event.roomOrArea : "",

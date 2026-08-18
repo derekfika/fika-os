@@ -7,7 +7,26 @@
   <meta name="theme-color" content="#00538A">
   <?!= include_("Styles"); ?>
 </head>
-<body>
+<body class="access-locked">
+  <div id="pin-modal" class="pin-modal" role="dialog" aria-modal="true" aria-labelledby="pin-title">
+    <form id="pin-form" class="pin-card">
+      <div class="pin-logo">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 560 120" role="img" aria-label="Munich Re logo">
+          <g fill="#00538A">
+            <path d="M28 18h70l28 42-28 42H28L0 60 28 18Zm8 12L16 60l20 30h56l20-30-20-30H36Z"/>
+            <path d="M21 48h86v8H21zM21 64h86v8H21z"/>
+            <text x="155" y="78" font-family="Arial, Helvetica, sans-serif" font-size="58" font-weight="700" letter-spacing="-2">Munich Re</text>
+          </g>
+        </svg>
+      </div>
+      <span>Client reporting access</span>
+      <h1 id="pin-title">Enter PIN</h1>
+      <p>Access is restricted for this reporting dashboard.</p>
+      <label>PIN<input id="pin-input" name="pin" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="8" autocomplete="off"></label>
+      <button id="pin-submit" class="primary-action" type="submit">Unlock dashboard</button>
+      <small id="pin-error" hidden></small>
+    </form>
+  </div>
   <aside class="sidebar">
     <div class="brand">
       <span class="brand-mark">
@@ -111,11 +130,16 @@
           <div class="panel-heading">
             <div>
               <span>Service pattern</span>
-              <h2>Hourly heatmap</h2>
+              <h2>Demand heatmap</h2>
             </div>
             <div class="panel-tools">
+              <label class="mini-select">Interval<select id="heatmap-granularity">
+                <option value="hourly">Hourly</option>
+                <option value="quarter">15 min</option>
+              </select></label>
               <label class="mini-select">View<select id="heatmap-mode">
                 <option value="total">Total drinks</option>
+                <option value="average">Average drinks</option>
                 <option value="topDrink">Top drink type</option>
               </select></label>
               <div class="heat-legend"><i></i><span>Low</span><strong>High</strong></div>

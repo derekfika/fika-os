@@ -86,7 +86,10 @@ function updateBookingFromDashboard(rowNumber, patch, expectedBookingId) {
     booking[key] = patch[key];
   });
 
-  booking = recalculateDashboardTotals_(booking, 0.08);
+  booking = recalculateDashboardTotals_(
+    booking,
+    getConfiguredNumber_("MGMT_FEE_PERCENT", 0.08)
+  );
 
   const newEventDate = booking.eventDate || "";
   const newServiceTimes = JSON.stringify(booking.serviceTimes || []);

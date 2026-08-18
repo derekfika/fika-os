@@ -114,7 +114,6 @@ function Save-ProjectConfiguration {
   if ([string]::IsNullOrWhiteSpace($Name)) { throw "Enter a project name." }
   if ([string]::IsNullOrWhiteSpace($Group)) { throw "Enter a project group." }
   if ([string]::IsNullOrWhiteSpace($ClaspUser)) { throw "Enter the clasp username/account alias." }
-  if ([string]::IsNullOrWhiteSpace($ScriptId)) { throw "Enter the Apps Script Script ID." }
 
   $entries = New-Object System.Collections.Generic.List[object]
   $matched = $false
@@ -157,27 +156,77 @@ function Save-ProjectConfiguration {
 
   $claspPath = Join-Path $fullPath ".clasp.json"
   $claspObject = $null
-  if (Test-Path -LiteralPath $claspPath) {
-    try {
-      $claspObject = Get-Content -LiteralPath $claspPath -Raw | ConvertFrom-Json
-    } catch {
-      throw "The existing .clasp.json file is not valid JSON: $claspPath"
+  if (-not [string]::IsNullOrWhiteSpace($ScriptId)) {
+    if (Test-Path -LiteralPath $claspPath) {
+      try {
+        $claspObject = Get-Content -LiteralPath $claspPath -Raw | ConvertFrom-Json
+      } catch {
+        throw "The existing .clasp.json file is not valid JSON: $claspPath"
+      }
+    }
+    if ($null -eq $claspObject) {
+      $claspObject = [pscustomobject]@{ scriptId = $ScriptId.Trim(); rootDir = "." }
+    } elseif ($claspObject.PSObject.Properties.Name -contains "scriptId") {
+      $claspObject.scriptId = $ScriptId.Trim()
+    } else {
+      $claspObject | Add-Member -NotePropertyName "scriptId" -NotePropertyValue $ScriptId.Trim()
+    }
+    if (-not ($claspObject.PSObject.Properties.Name -contains "rootDir")) {
+      $claspObject | Add-Member -NotePropertyName "rootDir" -NotePropertyValue "."
     }
   }
-  if ($null -eq $claspObject) {
-    $claspObject = [pscustomobject]@{ scriptId = $ScriptId.Trim(); rootDir = "." }
-  } elseif ($claspObject.PSObject.Properties.Name -contains "scriptId") {
-    $claspObject.scriptId = $ScriptId.Trim()
-  } else {
-    $claspObject | Add-Member -NotePropertyName "scriptId" -NotePropertyValue $ScriptId.Trim()
-  }
-  if (-not ($claspObject.PSObject.Properties.Name -contains "rootDir")) {
-    $claspObject | Add-Member -NotePropertyName "rootDir" -NotePropertyValue "."
-  }
-  $json = @($entries) | ConvertTo-Json -Depth 5
-  $claspJson = $claspObject | ConvertTo-Json -Depth 5
+  $entryArray = @($entries | ForEach-Object { $_ })
+  $json = ConvertTo-Json -InputObject $entryArray -Depth 5
   [System.IO.File]::WriteAllText($script:ConfigPath, $json + [Environment]::NewLine, (New-Object System.Text.UTF8Encoding($false)))
-  [System.IO.File]::WriteAllText($claspPath, $claspJson + [Environment]::NewLine, (New-Object System.Text.UTF8Encoding($false)))
+  if ($null -ne $claspObject) {
+    $claspJson = $claspObject | ConvertTo-Json -Depth 5
+    [System.IO.File]::WriteAllText($claspPath, $claspJson + [Environment]::NewLine, (New-Object System.Text.UTF8Encoding($false)))
+  }
+}
+
+function Set-ProjectDeploymentId {
+  param(
+    [string]$RelativePath,
+    [string]$DeploymentId
+  )
+
+  if ([string]::IsNullOrWhiteSpace($DeploymentId)) {
+    throw "A deployment ID was not supplied."
+  }
+
+  $normalisedPath = $RelativePath.Replace('\', '/').Trim('/')
+  $entries = New-Object System.Collections.Generic.List[object]
+  $matched = $false
+
+  foreach ($entry in @(Read-ProjectConfig)) {
+    if (([string]$entry.path).Replace('\', '/').Trim('/').Equals(
+      $normalisedPath,
+      [System.StringComparison]::OrdinalIgnoreCase
+    )) {
+      $entries.Add([pscustomobject]@{
+        name = [string]$entry.name
+        group = [string]$entry.group
+        path = [string]$entry.path
+        claspUser = [string]$entry.claspUser
+        deploymentId = $DeploymentId.Trim()
+      })
+      $matched = $true
+    } else {
+      $entries.Add($entry)
+    }
+  }
+
+  if (-not $matched) {
+    throw "The project could not be found in projects.json: $RelativePath"
+  }
+
+  $entryArray = @($entries | ForEach-Object { $_ })
+  $json = ConvertTo-Json -InputObject $entryArray -Depth 5
+  [System.IO.File]::WriteAllText(
+    $script:ConfigPath,
+    $json + [Environment]::NewLine,
+    (New-Object System.Text.UTF8Encoding($false))
+  )
 }
 
 function Show-ProjectEditor {
@@ -230,7 +279,7 @@ function Show-ProjectEditor {
   $textBoxes["Path"].Size = New-Object System.Drawing.Size(348, 25)
 
   $help = New-Object System.Windows.Forms.Label
-  $help.Text = "The Script ID is saved to the project's .clasp.json file. The Deployment ID and username are saved to the release-project list."
+  $help.Text = "Leave Script ID blank for a new project, then use Create Apps Script. Existing Script IDs are saved to .clasp.json; deployment IDs and usernames are saved to the release-project list."
   $help.Location = New-Object System.Drawing.Point(22, 310)
   $help.Size = New-Object System.Drawing.Size(575, 38)
   $help.ForeColor = [System.Drawing.Color]::FromArgb(90, 90, 90)
@@ -403,31 +452,37 @@ $form.Controls.Add($grid)
 $selectAllButton = New-Object System.Windows.Forms.Button
 $selectAllButton.Text = "Select all"
 $selectAllButton.Location = New-Object System.Drawing.Point(24, 402)
-$selectAllButton.Size = New-Object System.Drawing.Size(90, 30)
+$selectAllButton.Size = New-Object System.Drawing.Size(80, 30)
 $form.Controls.Add($selectAllButton)
 
 $selectNoneButton = New-Object System.Windows.Forms.Button
 $selectNoneButton.Text = "Select none"
-$selectNoneButton.Location = New-Object System.Drawing.Point(120, 402)
-$selectNoneButton.Size = New-Object System.Drawing.Size(90, 30)
+$selectNoneButton.Location = New-Object System.Drawing.Point(110, 402)
+$selectNoneButton.Size = New-Object System.Drawing.Size(80, 30)
 $form.Controls.Add($selectNoneButton)
 
 $configButton = New-Object System.Windows.Forms.Button
 $configButton.Text = "Edit selected"
-$configButton.Location = New-Object System.Drawing.Point(216, 402)
-$configButton.Size = New-Object System.Drawing.Size(110, 30)
+$configButton.Location = New-Object System.Drawing.Point(196, 402)
+$configButton.Size = New-Object System.Drawing.Size(100, 30)
 $form.Controls.Add($configButton)
 
 $addProjectButton = New-Object System.Windows.Forms.Button
 $addProjectButton.Text = "Add project"
-$addProjectButton.Location = New-Object System.Drawing.Point(332, 402)
-$addProjectButton.Size = New-Object System.Drawing.Size(100, 30)
+$addProjectButton.Location = New-Object System.Drawing.Point(302, 402)
+$addProjectButton.Size = New-Object System.Drawing.Size(90, 30)
 $form.Controls.Add($addProjectButton)
+
+$createProjectButton = New-Object System.Windows.Forms.Button
+$createProjectButton.Text = "Create Apps Script"
+$createProjectButton.Location = New-Object System.Drawing.Point(398, 402)
+$createProjectButton.Size = New-Object System.Drawing.Size(140, 30)
+$form.Controls.Add($createProjectButton)
 
 $actionsGroup = New-Object System.Windows.Forms.GroupBox
 $actionsGroup.Text = "Actions"
-$actionsGroup.Location = New-Object System.Drawing.Point(448, 398)
-$actionsGroup.Size = New-Object System.Drawing.Size(590, 66)
+$actionsGroup.Location = New-Object System.Drawing.Point(550, 398)
+$actionsGroup.Size = New-Object System.Drawing.Size(488, 66)
 $actionsGroup.Anchor = "Top,Left,Right"
 $form.Controls.Add($actionsGroup)
 
@@ -442,21 +497,21 @@ $deployCheck = New-Object System.Windows.Forms.CheckBox
 $deployCheck.Text = "Deploy web app"
 $deployCheck.Checked = $true
 $deployCheck.AutoSize = $true
-$deployCheck.Location = New-Object System.Drawing.Point(165, 28)
+$deployCheck.Location = New-Object System.Drawing.Point(155, 28)
 $actionsGroup.Controls.Add($deployCheck)
 
 $commitCheck = New-Object System.Windows.Forms.CheckBox
 $commitCheck.Text = "Git commit"
 $commitCheck.Checked = $false
 $commitCheck.AutoSize = $true
-$commitCheck.Location = New-Object System.Drawing.Point(300, 28)
+$commitCheck.Location = New-Object System.Drawing.Point(280, 28)
 $actionsGroup.Controls.Add($commitCheck)
 
 $gitPushCheck = New-Object System.Windows.Forms.CheckBox
 $gitPushCheck.Text = "Git push"
 $gitPushCheck.Checked = $false
 $gitPushCheck.AutoSize = $true
-$gitPushCheck.Location = New-Object System.Drawing.Point(400, 28)
+$gitPushCheck.Location = New-Object System.Drawing.Point(370, 28)
 $actionsGroup.Controls.Add($gitPushCheck)
 
 $messageLabel = New-Object System.Windows.Forms.Label
@@ -523,6 +578,7 @@ function Set-InterfaceEnabled {
   $selectNoneButton.Enabled = $Enabled
   $configButton.Enabled = $Enabled
   $addProjectButton.Enabled = $Enabled
+  $createProjectButton.Enabled = $Enabled
   $loginButton.Enabled = $Enabled
   $loginAllButton.Enabled = $Enabled
   $actionsGroup.Enabled = $Enabled
@@ -561,13 +617,13 @@ function Load-ProjectGrid {
 
 function Get-SelectedProjects {
   $selected = New-Object System.Collections.Generic.List[object]
-  $grid.EndEdit()
+  $grid.EndEdit() | Out-Null
   foreach ($row in $grid.Rows) {
     if ([bool]$row.Cells["Selected"].Value) {
       $selected.Add($row.Tag)
     }
   }
-  return @($selected)
+  return @($selected | ForEach-Object { $_ })
 }
 
 function Invoke-NativeTool {
@@ -578,20 +634,37 @@ function Invoke-NativeTool {
   )
 
   Add-LogLine ("> " + (Split-Path -Leaf $Command) + " " + ($Arguments -join " ")) ([System.Drawing.Color]::FromArgb(125, 239, 184))
+  $outputLines = New-Object System.Collections.Generic.List[string]
+  $exitCode = 0
+  $previousErrorActionPreference = $ErrorActionPreference
   Push-Location -LiteralPath $WorkingDirectory
   try {
+    # Native tools such as Git commonly write non-fatal warnings to stderr.
+    # PowerShell 5 converts redirected stderr into ErrorRecord objects, and the
+    # script-wide Stop preference would otherwise turn those warnings into
+    # terminating exceptions before the native exit code can be checked.
+    $ErrorActionPreference = "Continue"
     & $Command @Arguments 2>&1 | ForEach-Object {
-      Add-LogLine ([string]$_)
+      $line = [string]$_
+      $outputLines.Add($line)
+      Add-LogLine $line
     }
     $exitCode = $LASTEXITCODE
   } finally {
+    $ErrorActionPreference = $previousErrorActionPreference
     Pop-Location
   }
 
   if ($null -eq $exitCode) { $exitCode = 0 }
   if ($exitCode -ne 0) {
+    $combinedOutput = $outputLines -join " "
+    if ($combinedOutput -match "invalid_grant|invalid_rapt|reauth") {
+      throw "Google authorization has expired. Use Login one profile, complete Google verification, then retry."
+    }
     throw "Command failed with exit code $exitCode."
   }
+
+  return @($outputLines | ForEach-Object { $_ })
 }
 
 $selectAllButton.Add_Click({
@@ -625,6 +698,90 @@ $addProjectButton.Add_Click({
   }
 })
 
+$createProjectButton.Add_Click({
+  if ($script:IsRunning) { return }
+  if ($grid.SelectedRows.Count -eq 0) {
+    [System.Windows.Forms.MessageBox]::Show("Select the project row to create in Apps Script.", "Choose a project", "OK", "Information") | Out-Null
+    return
+  }
+
+  $project = $grid.SelectedRows[0].Tag
+  if (-not $project.Configured -or [string]::IsNullOrWhiteSpace($project.ClaspUser)) {
+    [System.Windows.Forms.MessageBox]::Show("Configure the project name, folder and clasp username first.", "Project setup required", "OK", "Warning") | Out-Null
+    return
+  }
+  if ($project.Linked) {
+    [System.Windows.Forms.MessageBox]::Show("This project is already linked to Apps Script.", "Already linked", "OK", "Information") | Out-Null
+    return
+  }
+
+  $answer = [System.Windows.Forms.MessageBox]::Show(
+    "Create a new standalone Apps Script project for:`n`n" + $project.Name +
+      "`n`nClasp profile: " + $project.ClaspUser +
+      "`n`nThe new Script ID will be saved in this project folder.",
+    "Create Apps Script project",
+    "YesNo",
+    "Warning"
+  )
+  if ($answer -ne [System.Windows.Forms.DialogResult]::Yes) { return }
+
+  $script:IsRunning = $true
+  Set-InterfaceEnabled -Enabled $false
+  $statusLabel.Text = "Creating Apps Script project..."
+  Add-LogLine ""
+  Add-LogLine ("=== Create Apps Script: " + $project.Name + " ===") ([System.Drawing.Color]::FromArgb(255, 232, 0))
+
+  try {
+    $clasp = Resolve-ClaspCommand
+    $manifestPath = Join-Path $project.FullPath "appsscript.json"
+    $manifestBeforeCreate = $(if (Test-Path -LiteralPath $manifestPath) {
+      Get-Content -LiteralPath $manifestPath -Raw
+    } else {
+      $null
+    })
+    $arguments = @($clasp.Prefix) + @(
+      "--user", $project.ClaspUser,
+      "create", "--type", "standalone",
+      "--title", $project.Name,
+      "--rootDir", "."
+    )
+    try {
+      Invoke-NativeTool -Command $clasp.Command -Arguments $arguments -WorkingDirectory $project.FullPath | Out-Null
+    } finally {
+      if ($null -ne $manifestBeforeCreate) {
+        [System.IO.File]::WriteAllText(
+          $manifestPath,
+          $manifestBeforeCreate,
+          (New-Object System.Text.UTF8Encoding($false))
+        )
+      }
+    }
+    if (-not (Test-Path -LiteralPath (Join-Path $project.FullPath ".clasp.json"))) {
+      throw "Apps Script did not create the expected .clasp.json link file."
+    }
+    Load-ProjectGrid
+    $statusLabel.Text = "Apps Script project created"
+    [System.Windows.Forms.MessageBox]::Show(
+      "The Apps Script project was created and linked. You can now push and deploy it.",
+      "Project created",
+      "OK",
+      "Information"
+    ) | Out-Null
+  } catch {
+    Add-LogLine ("CREATE FAILED: " + $_.Exception.Message) ([System.Drawing.Color]::FromArgb(255, 110, 110))
+    $statusLabel.Text = "Project creation failed"
+    [System.Windows.Forms.MessageBox]::Show(
+      "The Apps Script project was not created.`n`n" + $_.Exception.Message + "`n`nSee the activity log for details.",
+      "Creation failed",
+      "OK",
+      "Error"
+    ) | Out-Null
+  } finally {
+    $script:IsRunning = $false
+    Set-InterfaceEnabled -Enabled $true
+  }
+})
+
 $loginButton.Add_Click({
   if ($script:IsRunning) { return }
 
@@ -651,7 +808,7 @@ $loginButton.Add_Click({
 
   try {
     $clasp = Resolve-ClaspCommand
-    $arguments = @($clasp.Prefix) + @("login", "--user", $claspUser)
+    $arguments = @($clasp.Prefix) + @("--user", $claspUser, "login")
     Invoke-NativeTool -Command $clasp.Command -Arguments $arguments -WorkingDirectory $script:WorkspaceRoot
     Add-LogLine ("Clasp login completed for alias '" + $claspUser + "'.") ([System.Drawing.Color]::FromArgb(117, 239, 184))
     $statusLabel.Text = "Clasp login completed"
@@ -713,7 +870,7 @@ $loginAllButton.Add_Click({
       $statusLabel.Text = "Authorizing $claspUser ($profileNumber of $($aliases.Count))..."
       Add-LogLine ""
       Add-LogLine ("--- Profile " + $profileNumber + " of " + $aliases.Count + ": " + $claspUser + " ---") ([System.Drawing.Color]::FromArgb(98, 186, 234))
-      $arguments = @($clasp.Prefix) + @("login", "--user", $claspUser)
+      $arguments = @($clasp.Prefix) + @("--user", $claspUser, "login")
       Invoke-NativeTool -Command $clasp.Command -Arguments $arguments -WorkingDirectory $script:WorkspaceRoot
     }
 
@@ -779,7 +936,7 @@ $runButton.Add_Click({
     "`n`nActions:`n" + (($actionNames | ForEach-Object { "- " + $_ }) -join "`n")
 
   if ($deployCheck.Checked -and $missingDeployments.Count -gt 0) {
-    $summary += "`n`nDeployment will be skipped because no ID is recorded for:`n" +
+    $summary += "`n`nA first web-app deployment will be created and its ID saved for:`n" +
       (($missingDeployments | ForEach-Object { "- " + $_.Name }) -join "`n")
   }
 
@@ -816,9 +973,26 @@ $runButton.Add_Click({
 
         if ($deployCheck.Checked) {
           if ([string]::IsNullOrWhiteSpace($project.DeploymentId)) {
-            Add-LogLine "Deployment skipped: no deployment ID is recorded." ([System.Drawing.Color]::FromArgb(255, 193, 7))
+            Add-LogLine "Creating the first web-app deployment..." ([System.Drawing.Color]::FromArgb(98, 186, 234))
+            $arguments = @($clasp.Prefix) + @(
+              "--user", $project.ClaspUser,
+              "deploy", "--description", $description
+            )
+            $deployOutput = @(Invoke-NativeTool -Command $clasp.Command -Arguments $arguments -WorkingDirectory $project.FullPath)
+            $deploymentMatch = [regex]::Match(($deployOutput -join "`n"), "AKfy[a-zA-Z0-9_-]+")
+            if (-not $deploymentMatch.Success) {
+              throw "The deployment was created, but its deployment ID could not be read from clasp output. Add the ID with Edit selected before deploying again."
+            }
+            $newDeploymentId = $deploymentMatch.Value
+            Set-ProjectDeploymentId -RelativePath $project.RelativePath -DeploymentId $newDeploymentId
+            $project.DeploymentId = $newDeploymentId
+            Add-LogLine ("Saved new deployment ID: " + $newDeploymentId) ([System.Drawing.Color]::FromArgb(117, 239, 184))
           } else {
-            $arguments = @($clasp.Prefix) + @("--user", $project.ClaspUser, "deploy", "--deploymentId", $project.DeploymentId, "--description", $description)
+            $arguments = @($clasp.Prefix) + @(
+              "--user", $project.ClaspUser,
+              "redeploy", $project.DeploymentId,
+              "--description", $description
+            )
             Invoke-NativeTool -Command $clasp.Command -Arguments $arguments -WorkingDirectory $project.FullPath
           }
         }

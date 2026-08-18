@@ -1,0 +1,31 @@
+{
+  "sourceFile": "Master Allergen Checker (1).xlsx",
+  "sourceRole": "operational template evidence",
+  "allergenColumns": [
+    "noKeyAllergens",
+    "peanuts",
+    "otherNuts",
+    "gluten",
+    "sesame",
+    "molluscs",
+    "fish",
+    "soya",
+    "celery",
+    "shellfish",
+    "eggs",
+    "milk",
+    "mustard",
+    "lupin",
+    "sulphites",
+    "mayContain"
+  ],
+  "operationalChecks": [
+    "foodPreparedBy",
+    "completionOverseenBy",
+    "preServiceCheckBy",
+    "serviceArea",
+    "serviceTime",
+    "weekEndingDate"
+  ],
+  "rule": "Allergen values are entered or reviewed by an authorised food-safety user; they are never inferred from an item name."
+}

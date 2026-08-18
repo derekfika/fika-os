@@ -1,0 +1,9 @@
+[
+  { "scenario": "new order", "canonicalId": "production-order:v1:fixture-new", "status": "draft", "requiredBy": "2026-08-03T09:00" },
+  { "scenario": "needs review", "canonicalId": "production-order:v1:fixture-review", "status": "needs_review", "requiredBy": "2026-08-03T10:00" },
+  { "scenario": "blocked", "canonicalId": "production-order:v1:fixture-blocked", "status": "blocked", "requiredBy": "2026-08-03T08:00", "exceptions": ["Missing explicit conversion"] },
+  { "scenario": "in production", "canonicalId": "production-order:v1:fixture-running", "status": "in_production", "requiredBy": "2026-08-03T11:00" },
+  { "scenario": "completed", "canonicalId": "production-order:v1:fixture-complete", "status": "complete", "requiredBy": "2026-08-02T12:00" },
+  { "scenario": "late amendment", "canonicalId": "production-order:v1:fixture-amended", "status": "needs_review", "requiredBy": "2026-08-03T09:30", "version": 2, "amendment": true },
+  { "scenario": "production exception", "canonicalId": "production-order:v1:fixture-exception", "status": "needs_review", "requiredBy": "2026-08-03T13:00", "exceptions": ["Unclear preparation quantity"] }
+]

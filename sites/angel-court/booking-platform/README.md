@@ -54,7 +54,9 @@ Once a booking has been written successfully to `Dashboard Data`, the platform s
 
 ## Invoice references
 
-Clients can optionally enter an invoice, purchase-order, cost-centre or internal reference. It is stored in the canonical booking JSON as `client.invoiceReference`, mapped to `invoiceReference` in the dashboard booking, included in dashboard notes and notification emails, and exposed to quote templates as either `<INVOICEREFERENCE>` or `<INVOICE_REFERENCE>`.
+Requesters must enter an invoice, purchase-order, cost-centre or internal reference. It is stored in the canonical booking JSON as `client.invoiceReference`, mapped to `invoiceReference` in the dashboard booking, included in dashboard notes and notification emails, and exposed to quote templates as either `<INVOICEREFERENCE>` or `<INVOICE_REFERENCE>`.
+
+The contact screen records the requester's name, company, email and phone separately from the end client's name and company. Dashboard and quote generation use `client.clientName` as the host/client name and `client.clientCompanyName` as the client company.
 
 ## Dashboard compatibility
 

@@ -1,0 +1,26 @@
+{
+  "purpose": "Local CPU Production acceptance scenarios for Liana's workflow",
+  "source": "Synthetic fixtures only; no live Firebase, Sheets, Calendar, email or WhatsApp data.",
+  "scenarios": [
+    { "id": "sandwich-one-site", "kind": "sandwich", "site": "Optiver", "status": "needs_review" },
+    { "id": "sandwich-multiple-types", "kind": "sandwich", "lineCount": 4, "status": "accepted" },
+    { "id": "summer-rolls", "kind": "summer-roll", "status": "accepted" },
+    { "id": "multiple-sites", "kind": "multi-site", "siteCount": 3, "status": "scheduled" },
+    { "id": "due-today", "timing": "today", "status": "in_production" },
+    { "id": "due-tomorrow", "timing": "tomorrow", "status": "accepted" },
+    { "id": "dietary-requirements", "dietary": true, "status": "needs_review" },
+    { "id": "confirmed-allergen-evidence", "allergenEvidence": "confirmed", "status": "accepted" },
+    { "id": "missing-allergen-evidence", "allergenEvidence": "missing", "status": "blocked" },
+    { "id": "may-contain-evidence", "allergenEvidence": "may_contain", "status": "needs_review" },
+    { "id": "conflicting-allergen-evidence", "allergenEvidence": "conflicting", "status": "blocked" },
+    { "id": "late-amendment", "amendment": "late", "status": "needs_review" },
+    { "id": "in-production", "status": "in_production" },
+    { "id": "partially-complete", "status": "partially_complete" },
+    { "id": "shortfall", "shortfall": true, "status": "partially_complete" },
+    { "id": "substitution", "substitution": true, "status": "partially_complete" },
+    { "id": "blocked", "status": "blocked" },
+    { "id": "completed", "status": "complete" },
+    { "id": "empty-queue", "status": "empty" },
+    { "id": "long-production-notes", "longNotes": true, "status": "needs_review" }
+  ]
+}

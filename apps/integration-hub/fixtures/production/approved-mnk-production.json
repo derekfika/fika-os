@@ -1,0 +1,19 @@
+{
+  "bookingId": "booking:mnk:fixture",
+  "quoteRevisionId": "quote:booking:mnk:fixture:r1",
+  "requiredBy": "2026-08-04T12:00",
+  "productionLocationId": "oploc:66e621fa-6e6f-4f46-9aed-462313abbe8f",
+  "lines": [
+    {
+      "sourceBookingLineId": "booking:mnk:fixture:line:1",
+      "itemName": "Deli Style Sandwich Lunch",
+      "customerQuantity": 4,
+      "customerUnit": "platter",
+      "productionQuantity": 48,
+      "productionUnit": "portion",
+      "conversionRule": "Explicit configured production conversion",
+      "choices": [],
+      "dietaries": {}
+    }
+  ]
+}

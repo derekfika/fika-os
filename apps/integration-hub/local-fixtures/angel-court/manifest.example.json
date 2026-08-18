@@ -1,0 +1,11 @@
+[
+  {
+    "messageId": "fixture-message-001",
+    "threadId": "fixture-thread-001",
+    "attachmentName": "angel-court-booking.xlsx",
+    "file": "angel-court-booking.xlsx",
+    "receivedAt": "2026-08-14T09:00:00.000Z",
+    "from": "seven@fikacatering.com",
+    "subject": "Angel Court booking"
+  }
+]

@@ -51,7 +51,7 @@ const MENU_SCHEMA = Object.freeze([
   menuItem_("deli_sandwich_lunch", "Lunch", "Deli Style Sandwich Lunch", "Three pieces per person. Meat, fish and vegetarian fillings on artisan breads such as ciabatta, focaccia, baguettes and wraps, served with hand cooked vegetable crisps.", "Per person", 9, 8, 8, 3, [], 200),
   menuItem_("individual_boxed_lunch", "Lunch Boxes", "Individual Boxed Lunch", "Deli style sandwich, pasta salad, vegetable crisps, sausage roll and mini traybake. Vegan and gluten-free available on request.", "Per person", 14.95, 8, 8, 3, [], 210),
   menuItem_("salad_protein_lunch_platter", "Lunch", "Salad & Protein Lunch Platter", "Three composite salads plus one meat protein, one fish protein and one veggie or vegan protein.", "Per person", 14, 8, 8, 3, [], 220),
-  menuItem_("rice_paper_rolls", "Lunch", "Freshly Wrapped Rice Paper Rolls", "12 wraps per platter, each platter contains one flavour with dipping sauce.", "Feeds 3", 45, 1, null, 3, [
+  menuItem_("rice_paper_rolls", "Lunch", "Freshly Wrapped Rice Paper Rolls", "12 wraps per platter, each platter contains one flavour with dipping sauce.", "Feeds 3", 45, 3, null, 3, [
     choice_("flavour", "Choose flavour", "multi", true, ["Crayfish and avocado", "Hot smoked trout", "Char-siu pulled chicken", "Lemongrass, ginger & chilli chicken", "Rainbow vegetable roll (vegan)", "Hoisin tofu and rainbow veg (vegan)"])
   ], 230),
   menuItem_("grazing_charcuterie_box", "Grazing Boxes", "Grazing Box - Charcuterie", "Cobble Lane cured British charcuterie, Gordal olives, sun blush tomatoes, baby gherkins, stuffed cherrybell peppers, artisan breads, olive oil and balsamic.", "Feeds 10", 75, 1, null, 3, [], 240),
@@ -59,7 +59,7 @@ const MENU_SCHEMA = Object.freeze([
   menuItem_("picnic_box", "Grazing Boxes", "Picnic Box", "Freshly baked sausage rolls, Scotch eggs, pork pies, chicken skewers and tomato quiche with Stokes beer chutney and red onion marmalade.", "Feeds 10", 75, 1, null, 3, [], 260),
   menuItem_("vegan_box", "Grazing Boxes", "Vegan Box", "Vegan mezze with rainbow radish, cucumber and carrot shards, edamame beans, sweet potato falafel, olives, little gem spears, cherry tomatoes, pickles, toasted pita and three hummus flavours.", "Feeds 10", 60, 1, null, 3, [], 270),
   menuItem_("salad_boxes", "Salads & Sushi", "Salad Boxes", "Mediterranean, grilled chicken Caesar, hot smoked salmon Nicoise, or weekly salad box on request.", "Feeds 8 as a side", 25, 1, null, 3, [
-    choice_("salad", "Choose salad", "select", true, ["Mediterranean", "Grilled chicken Caesar", "Hot smoked salmon Nicoise", "Weekly salad box"])
+    choice_("salad", "Choose salads", "multi", true, ["Mediterranean", "Grilled chicken Caesar", "Hot smoked salmon Nicoise", "Weekly salad box"])
   ], 280),
   menuItem_("weekly_salad_box", "Salads & Sushi", "Weekly Salad Box", "Weekly salad boxes available. Menu on request.", "Per box", 20, 1, null, 3, [], 290),
   menuItem_("deluxe_sushi_box", "Salads & Sushi", "Deluxe Sushi Box", "84 pieces. Mixed selection of nigiri, maki and uramaki served with pickled ginger, wasabi and soy.", "Feeds 8 to 12 people", 160, 1, null, 3, [], 300),

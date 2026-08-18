@@ -16,6 +16,7 @@ function onOpen() {
     .createMenu("Hot Drink Tally")
     .addItem("Set up sheets", "setupHotDrinkTally")
     .addItem("Install nightly archive", "installNightlyArchiveTrigger")
+    .addItem("Verify launch readiness", "verifyHotDrinkLaunchReadiness")
     .addItem("Archive completed days now", "archiveCompletedDrinkLogDays")
     .addToUi();
 }

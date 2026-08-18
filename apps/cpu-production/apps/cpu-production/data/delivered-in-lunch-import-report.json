@@ -1,0 +1,3485 @@
+{
+  "importedAt": "2026-08-17T00:00:00Z",
+  "sources": [
+    {
+      "file": "WC 20_07_2026 (1).xlsx",
+      "sheets": [
+        "mon",
+        "fikamon",
+        "tue",
+        "fikatue",
+        "wed",
+        "fikawed",
+        "thurs",
+        "fikathurs",
+        "fri",
+        "WC 13072026"
+      ],
+      "productionRows": 210,
+      "allergenRows": 92
+    },
+    {
+      "file": "_WC 13_07_2026.xlsx",
+      "sheets": [
+        "mon",
+        "fikamon",
+        "tue",
+        "fikatue",
+        "wed",
+        "fikawed",
+        "thurs",
+        "fikathurs",
+        "fri",
+        "WC 13072026"
+      ],
+      "productionRows": 210,
+      "allergenRows": 92
+    },
+    {
+      "file": "_ WC 06_07_2026.xlsx",
+      "sheets": [
+        "mon",
+        "fikamon",
+        "tue",
+        "fikatue",
+        "wed",
+        "fikawed",
+        "thurs",
+        "fikathurs",
+        "fri",
+        "WC 06072026"
+      ],
+      "productionRows": 202,
+      "allergenRows": 92
+    }
+  ],
+  "productionRows": 622,
+  "allergenRows": 276,
+  "categories": {
+    "Salad 1": 33,
+    "Salad 2": 30,
+    "Salad 3": 30,
+    "Salad 4": 30,
+    "Salad 5": 30,
+    "Salad 6": 30,
+    "Cold protein": 30,
+    "Soup": 30,
+    "Hot meat": 30,
+    "Hot veg / vegan": 30,
+    "Extras / sides": 319
+  },
+  "fieldsUnavailable": [
+    "effective price date",
+    "site-specific quantities in the reusable catalogue",
+    "recipe/ingredient detail"
+  ],
+  "conflicts": [
+    {
+      "title": "Mixed Leaf Salad",
+      "categories": [
+        "Salad 1",
+        "Salad 4"
+      ],
+      "source": "WC 20_07_2026 (1).xlsx"
+    },
+    {
+      "title": "Mixed Leaf Salad",
+      "categories": [
+        "Salad 1",
+        "Salad 4"
+      ],
+      "source": "WC 20_07_2026 (1).xlsx"
+    },
+    {
+      "title": "Tomato, Cucumber, Avocado, Red Onion",
+      "categories": [
+        "Salad 2",
+        "Salad 5"
+      ],
+      "source": "_WC 13_07_2026.xlsx"
+    },
+    {
+      "title": "Roasted Summer Squash, Kale & Butterbean",
+      "categories": [
+        "Salad 4",
+        "Salad 6"
+      ],
+      "source": "_WC 13_07_2026.xlsx"
+    },
+    {
+      "title": "Tomato, Cucumber, Avocado, Red Onion",
+      "categories": [
+        "Salad 2",
+        "Salad 5"
+      ],
+      "source": "_WC 13_07_2026.xlsx"
+    },
+    {
+      "title": "Roasted Summer Squash, Kale & Butterbean",
+      "categories": [
+        "Salad 4",
+        "Salad 6"
+      ],
+      "source": "_WC 13_07_2026.xlsx"
+    },
+    {
+      "title": "Roast Carrot,Edamame Bean,And Sesame Seaweed Salad",
+      "categories": [
+        "Salad 2",
+        "Salad 5"
+      ],
+      "source": "_ WC 06_07_2026.xlsx"
+    },
+    {
+      "title": "Mixed Leaf Salad",
+      "categories": [
+        "Salad 1",
+        "Salad 6"
+      ],
+      "source": "_ WC 06_07_2026.xlsx"
+    },
+    {
+      "title": "Roast Carrot,Edamame Bean,And Sesame Seaweed Salad",
+      "categories": [
+        "Salad 2",
+        "Salad 5"
+      ],
+      "source": "_ WC 06_07_2026.xlsx"
+    },
+    {
+      "title": "Mixed Leaf Salad",
+      "categories": [
+        "Salad 1",
+        "Salad 6"
+      ],
+      "source": "_ WC 06_07_2026.xlsx"
+    },
+    {
+      "title": "Roast Carrot,Edamame Bean,And Sesame Seaweed Salad",
+      "categories": [
+        "Salad 2",
+        "Salad 5"
+      ],
+      "source": "_ WC 06_07_2026.xlsx"
+    },
+    {
+      "title": "Orzo Pastra With Black Lentil Charred Peppers,Madrass Dressing",
+      "categories": [
+        "Salad 3",
+        "Salad 6"
+      ],
+      "source": "_ WC 06_07_2026.xlsx"
+    },
+    {
+      "title": "Roast Carrot,Edamame Bean,And Sesame Seaweed Salad",
+      "categories": [
+        "Salad 2",
+        "Salad 5"
+      ],
+      "source": "_ WC 06_07_2026.xlsx"
+    },
+    {
+      "title": "Orzo Pastra With Black Lentil Charred Peppers,Madrass Dressing",
+      "categories": [
+        "Salad 3",
+        "Salad 6"
+      ],
+      "source": "_ WC 06_07_2026.xlsx"
+    },
+    {
+      "title": "Mixed Leaf Salad",
+      "categories": [
+        "Salad 1",
+        "Salad 4"
+      ],
+      "source": "_ WC 06_07_2026.xlsx"
+    },
+    {
+      "title": "Sweetcorn Shredded Fennell With Tomato Dressing",
+      "categories": [
+        "Salad 4",
+        "Salad 5"
+      ],
+      "source": "_ WC 06_07_2026.xlsx"
+    },
+    {
+      "title": "Roast Beetroot With Smoked Paprika And Apricot Dressing",
+      "categories": [
+        "Salad 2",
+        "Salad 6"
+      ],
+      "source": "_ WC 06_07_2026.xlsx"
+    },
+    {
+      "title": "Mixed Leaf Salad",
+      "categories": [
+        "Salad 1",
+        "Salad 4"
+      ],
+      "source": "_ WC 06_07_2026.xlsx"
+    },
+    {
+      "title": "Sweetcorn Shredded Fennell With Tomato Dressing",
+      "categories": [
+        "Salad 4",
+        "Salad 5"
+      ],
+      "source": "_ WC 06_07_2026.xlsx"
+    },
+    {
+      "title": "Roast Beetroot With Smoked Paprika And Apricot Dressing",
+      "categories": [
+        "Salad 2",
+        "Salad 6"
+      ],
+      "source": "_ WC 06_07_2026.xlsx"
+    }
+  ],
+  "itemCount": 214,
+  "items": [
+    {
+      "id": "production:delivered-in-lunch:4-bean-smokey-gumbo",
+      "title": "4 Bean Smokey Gumbo",
+      "category": "Soup",
+      "sourceEvidence": [
+        "source:_ WC 06_07_2026.xlsx",
+        "sheet:thurs",
+        "row:10",
+        "category:Soup",
+        "row:33",
+        "sheet:fikathurs",
+        "row:14",
+        "allergen-evidence:source-provided-no-inference"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:5-spiced-chicken-thigh-with-soy-and-honey",
+      "title": "5 Spiced Chicken Thigh With Soy And Honey",
+      "category": "Hot meat",
+      "sourceEvidence": [
+        "source:_ WC 06_07_2026.xlsx",
+        "sheet:mon",
+        "row:11",
+        "category:Hot meat",
+        "row:31",
+        "sheet:fikamon",
+        "row:15",
+        "allergen-evidence:source-provided-no-inference"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:alergen-matrix",
+      "title": "Alergen Matrix",
+      "category": "Extras / sides",
+      "sourceEvidence": [
+        "source:WC 20_07_2026 (1).xlsx",
+        "sheet:wed",
+        "row:27",
+        "category:Extras / sides",
+        "source:_WC 13_07_2026.xlsx",
+        "source:_ WC 06_07_2026.xlsx"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:asian-greens-with-yuzu-dressing",
+      "title": "Asian Greens With Yuzu Dressing",
+      "category": "Salad 2",
+      "sourceEvidence": [
+        "source:_WC 13_07_2026.xlsx",
+        "sheet:thurs",
+        "row:4",
+        "category:Salad 2",
+        "row:27",
+        "sheet:fikathurs",
+        "row:11",
+        "allergen-evidence:source-provided-no-inference"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:asian-slaw-with-teryaki-and-crispy-lotus-root",
+      "title": "Asian Slaw With Teryaki And Crispy Lotus Root",
+      "category": "Salad 4",
+      "sourceEvidence": [
+        "source:WC 20_07_2026 (1).xlsx",
+        "sheet:tue",
+        "row:6",
+        "category:Salad 4",
+        "row:30",
+        "sheet:fikatue",
+        "row:13",
+        "allergen-evidence:source-provided-no-inference"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:avocardo-cremma",
+      "title": "Avocardo Cremma",
+      "category": "Extras / sides",
+      "sourceEvidence": [
+        "source:WC 20_07_2026 (1).xlsx",
+        "sheet:wed",
+        "row:19",
+        "category:Extras / sides",
+        "row:45",
+        "sheet:fikawed",
+        "row:22",
+        "allergen-evidence:source-provided-no-inference"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:avocardo-with-tomato-and-cucumber",
+      "title": "Avocardo With Tomato And Cucumber",
+      "category": "Salad 2",
+      "sourceEvidence": [
+        "source:_WC 13_07_2026.xlsx",
+        "sheet:wed",
+        "row:4",
+        "category:Salad 2",
+        "row:30",
+        "sheet:fikawed",
+        "row:11",
+        "allergen-evidence:source-provided-no-inference"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:balti-sauce",
+      "title": "Balti Sauce",
+      "category": "Extras / sides",
+      "sourceEvidence": [
+        "source:_WC 13_07_2026.xlsx",
+        "sheet:fri",
+        "row:18",
+        "category:Extras / sides",
+        "row:41"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:basil-and-rocket-pesto",
+      "title": "Basil And Rocket Pesto",
+      "category": "Extras / sides",
+      "sourceEvidence": [
+        "source:WC 20_07_2026 (1).xlsx",
+        "sheet:mon",
+        "row:17",
+        "category:Extras / sides",
+        "row:37",
+        "sheet:fikamon",
+        "row:21",
+        "allergen-evidence:source-provided-no-inference"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:basmati-rice-with-cardamon-and-cumin",
+      "title": "Basmati Rice With Cardamon And Cumin",
+      "category": "Extras / sides",
+      "sourceEvidence": [
+        "source:_WC 13_07_2026.xlsx",
+        "sheet:fri",
+        "row:13",
+        "category:Extras / sides",
+        "row:36"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:bean-sprout-coriander-lime-and-mint-asian-raw-slaw",
+      "title": "Bean Sprout,Coriander Lime And Mint Asian Raw Slaw",
+      "category": "Salad 4",
+      "sourceEvidence": [
+        "source:_ WC 06_07_2026.xlsx",
+        "sheet:mon",
+        "row:6",
+        "category:Salad 4",
+        "row:26",
+        "sheet:fikamon",
+        "row:13",
+        "allergen-evidence:source-provided-no-inference"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:beef-barbacoa-with-chipotle-choilli-and-herbs",
+      "title": "Beef Barbacoa With Chipotle Choilli And Herbs",
+      "category": "Hot meat",
+      "sourceEvidence": [
+        "source:_ WC 06_07_2026.xlsx",
+        "sheet:thurs",
+        "row:11",
+        "category:Hot meat",
+        "row:34",
+        "sheet:fikathurs",
+        "row:15",
+        "allergen-evidence:source-provided-no-inference"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:beetroot-and-sweet-potato-falafall",
+      "title": "Beetroot And Sweet Potato Falafall",
+      "category": "Hot veg / vegan",
+      "sourceEvidence": [
+        "source:_WC 13_07_2026.xlsx",
+        "sheet:tue",
+        "row:12",
+        "category:Hot veg / vegan",
+        "row:36",
+        "sheet:fikatue",
+        "row:16",
+        "allergen-evidence:source-provided-no-inference"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:beetroot-with-apricot-and-smoked-paprika",
+      "title": "Beetroot With Apricot And Smoked Paprika",
+      "category": "Salad 6",
+      "sourceEvidence": [
+        "source:_WC 13_07_2026.xlsx",
+        "sheet:mon",
+        "row:8",
+        "category:Salad 6",
+        "row:28"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:black-bean-and-cornmeal-frittars",
+      "title": "Black Bean And Cornmeal Frittars",
+      "category": "Hot veg / vegan",
+      "sourceEvidence": [
+        "source:_WC 13_07_2026.xlsx",
+        "sheet:wed",
+        "row:14",
+        "category:Hot veg / vegan",
+        "row:40",
+        "sheet:fikawed",
+        "row:17",
+        "allergen-evidence:source-provided-no-inference"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:black-olive-tapenade",
+      "title": "Black Olive Tapenade",
+      "category": "Extras / sides",
+      "sourceEvidence": [
+        "source:_WC 13_07_2026.xlsx",
+        "sheet:tue",
+        "row:20",
+        "category:Extras / sides",
+        "row:44",
+        "sheet:fikatue",
+        "row:24",
+        "allergen-evidence:source-provided-no-inference"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:black-rice-vinegar-dipping-sauce",
+      "title": "Black Rice Vinegar Dipping Sauce",
+      "category": "Extras / sides",
+      "sourceEvidence": [
+        "source:WC 20_07_2026 (1).xlsx",
+        "sheet:tue",
+        "row:15",
+        "category:Extras / sides",
+        "row:39",
+        "sheet:fikatue",
+        "row:19",
+        "allergen-evidence:source-provided-no-inference"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:bombay-cauliflowercoconut-yogurt-and-pomegranit",
+      "title": "Bombay Cauliflowercoconut Yogurt And Pomegranit",
+      "category": "Salad 2",
+      "sourceEvidence": [
+        "source:_WC 13_07_2026.xlsx",
+        "sheet:fri",
+        "row:4",
+        "category:Salad 2",
+        "row:27"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:bombay-potato-vegan-pie",
+      "title": "Bombay Potato Vegan Pie",
+      "category": "Hot veg / vegan",
+      "sourceEvidence": [
+        "source:WC 20_07_2026 (1).xlsx",
+        "sheet:thurs",
+        "row:12",
+        "category:Hot veg / vegan",
+        "row:35",
+        "sheet:fikathurs",
+        "row:16",
+        "allergen-evidence:source-provided-no-inference"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:braised-mexican-red-rice",
+      "title": "Braised Mexican Red Rice",
+      "category": "Extras / sides",
+      "sourceEvidence": [
+        "source:_ WC 06_07_2026.xlsx",
+        "sheet:thurs",
+        "row:14",
+        "category:Extras / sides",
+        "row:37",
+        "sheet:fikathurs",
+        "row:18",
+        "allergen-evidence:source-provided-no-inference"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:braised-scenten-basmati-rice",
+      "title": "Braised Scenten Basmati Rice",
+      "category": "Extras / sides",
+      "sourceEvidence": [
+        "source:WC 20_07_2026 (1).xlsx",
+        "sheet:fri",
+        "row:15",
+        "category:Extras / sides",
+        "row:38"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:broccoli-edamamae-with-black-rice-vinegar-and-toasted-sesame-oli",
+      "title": "Broccoli Edamamae With Black Rice Vinegar And Toasted Sesame Oli",
+      "category": "Salad 3",
+      "sourceEvidence": [
+        "source:WC 20_07_2026 (1).xlsx",
+        "sheet:fri",
+        "row:5",
+        "category:Salad 3",
+        "row:28"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:bulgogi-smoked-and-pulled-beef-brisket",
+      "title": "Bulgogi Smoked And Pulled Beef Brisket",
+      "category": "Hot meat",
+      "sourceEvidence": [
+        "source:WC 20_07_2026 (1).xlsx",
+        "sheet:tue",
+        "row:11",
+        "category:Hot meat",
+        "row:35",
+        "sheet:fikatue",
+        "row:15",
+        "allergen-evidence:source-provided-no-inference"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:butterd-mash-potato",
+      "title": "Butterd Mash Potato",
+      "category": "Extras / sides",
+      "sourceEvidence": [
+        "source:WC 20_07_2026 (1).xlsx",
+        "sheet:thurs",
+        "row:16",
+        "category:Extras / sides",
+        "row:39",
+        "sheet:fikathurs",
+        "row:20",
+        "allergen-evidence:source-provided-no-inference"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:butternut-and-sweet-potato",
+      "title": "Butternut And Sweet Potato",
+      "category": "Soup",
+      "sourceEvidence": [
+        "source:_WC 13_07_2026.xlsx",
+        "sheet:mon",
+        "row:10",
+        "category:Soup",
+        "row:30",
+        "sheet:fikamon",
+        "row:14",
+        "allergen-evidence:source-provided-no-inference"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:caramalised-onions",
+      "title": "Caramalised Onions",
+      "category": "Extras / sides",
+      "sourceEvidence": [
+        "source:_WC 13_07_2026.xlsx",
+        "sheet:mon",
+        "row:18",
+        "category:Extras / sides",
+        "row:38",
+        "sheet:fikamon",
+        "row:22",
+        "allergen-evidence:source-provided-no-inference"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:cauliflower-wings-with-chipotle-spice",
+      "title": "Cauliflower Wings With Chipotle Spice",
+      "category": "Extras / sides",
+      "sourceEvidence": [
+        "source:WC 20_07_2026 (1).xlsx",
+        "sheet:wed",
+        "row:13",
+        "category:Extras / sides",
+        "row:39",
+        "sheet:fikawed",
+        "row:16",
+        "allergen-evidence:source-provided-no-inference"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:celeriac-carrot-white-cabbage-slaw",
+      "title": "Celeriac, Carrot & White Cabbage Slaw",
+      "category": "Salad 3",
+      "sourceEvidence": [
+        "source:_WC 13_07_2026.xlsx",
+        "sheet:mon",
+        "row:5",
+        "category:Salad 3",
+        "row:25",
+        "sheet:fikamon",
+        "row:12",
+        "allergen-evidence:source-provided-no-inference"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:charred-sticky-bbq-chicken-thigh-skewer",
+      "title": "Charred Sticky Bbq Chicken Thigh Skewer",
+      "category": "Hot meat",
+      "sourceEvidence": [
+        "source:_ WC 06_07_2026.xlsx",
+        "sheet:wed",
+        "row:12",
+        "category:Hot meat",
+        "row:38",
+        "sheet:fri",
+        "row:11",
+        "row:31",
+        "sheet:fikawed",
+        "row:15",
+        "allergen-evidence:source-provided-no-inference"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:charred-sweetcorn-with-vegan-feta-and-lime",
+      "title": "Charred Sweetcorn With Vegan Feta And Lime",
+      "category": "Salad 2",
+      "sourceEvidence": [
+        "source:WC 20_07_2026 (1).xlsx",
+        "sheet:wed",
+        "row:4",
+        "category:Salad 2",
+        "row:30",
+        "sheet:fikawed",
+        "row:11",
+        "allergen-evidence:source-provided-no-inference"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:chick-pea-green-bean-with-crispy-onions-and-nighella-seed",
+      "title": "Chick Pea,Green Bean With Crispy Onions And Nighella Seed",
+      "category": "Salad 2",
+      "sourceEvidence": [
+        "source:_ WC 06_07_2026.xlsx",
+        "sheet:tue",
+        "row:4",
+        "category:Salad 2",
+        "row:28",
+        "sheet:wed",
+        "row:9",
+        "category:Extras / sides",
+        "row:35",
+        "sheet:fikatue",
+        "row:11",
+        "allergen-evidence:source-provided-no-inference"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:chickpea-potato-and-spinach-rogan-josh",
+      "title": "Chickpea,Potato And Spinach Rogan Josh",
+      "category": "Hot veg / vegan",
+      "sourceEvidence": [
+        "source:_ WC 06_07_2026.xlsx",
+        "sheet:tue",
+        "row:12",
+        "category:Hot veg / vegan",
+        "row:36",
+        "sheet:fikatue",
+        "row:16",
+        "allergen-evidence:source-provided-no-inference"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:chilli-pickled-onions",
+      "title": "Chilli Pickled Onions",
+      "category": "Extras / sides",
+      "sourceEvidence": [
+        "source:_ WC 06_07_2026.xlsx",
+        "sheet:wed",
+        "row:20",
+        "category:Extras / sides",
+        "row:46",
+        "sheet:fri",
+        "row:18",
+        "row:38",
+        "sheet:fikawed",
+        "row:23",
+        "allergen-evidence:source-provided-no-inference"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:chimichiri-sauce",
+      "title": "Chimichiri Sauce",
+      "category": "Extras / sides",
+      "sourceEvidence": [
+        "source:WC 20_07_2026 (1).xlsx",
+        "sheet:wed",
+        "row:20",
+        "category:Extras / sides",
+        "row:46",
+        "sheet:fikawed",
+        "row:23",
+        "allergen-evidence:source-provided-no-inference"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:chimichurie-chicken-breast-strips",
+      "title": "Chimichurie Chicken Breast Strips",
+      "category": "Hot meat",
+      "sourceEvidence": [
+        "source:WC 20_07_2026 (1).xlsx",
+        "sheet:wed",
+        "row:12",
+        "category:Hot meat",
+        "row:38",
+        "sheet:fikawed",
+        "row:15",
+        "allergen-evidence:source-provided-no-inference"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:chipotle-salsa",
+      "title": "Chipotle Salsa",
+      "category": "Extras / sides",
+      "sourceEvidence": [
+        "source:_ WC 06_07_2026.xlsx",
+        "sheet:wed",
+        "row:18",
+        "category:Extras / sides",
+        "row:44",
+        "sheet:fri",
+        "row:16",
+        "row:36",
+        "sheet:fikawed",
+        "row:21",
+        "allergen-evidence:source-provided-no-inference"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:chopped-chives-and-parsley",
+      "title": "Chopped Chives And Parsley",
+      "category": "Extras / sides",
+      "sourceEvidence": [
+        "source:WC 20_07_2026 (1).xlsx",
+        "sheet:thurs",
+        "row:18",
+        "category:Extras / sides",
+        "row:41",
+        "sheet:fikathurs",
+        "row:22",
+        "allergen-evidence:source-provided-no-inference"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:classic-arrabiata-with-roast-peppers-black-olives-and-chilli",
+      "title": "Classic Arrabiata With Roast Peppers, Black Olives And Chilli",
+      "category": "Extras / sides",
+      "sourceEvidence": [
+        "source:WC 20_07_2026 (1).xlsx",
+        "sheet:mon",
+        "row:16",
+        "category:Extras / sides",
+        "row:36",
+        "sheet:fikamon",
+        "row:20",
+        "allergen-evidence:source-provided-no-inference"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:classic-minestronie-with-vegan-pesto",
+      "title": "Classic Minestronie With Vegan Pesto",
+      "category": "Soup",
+      "sourceEvidence": [
+        "source:_WC 13_07_2026.xlsx",
+        "sheet:tue",
+        "row:10",
+        "category:Soup",
+        "row:34",
+        "sheet:fikatue",
+        "row:14",
+        "allergen-evidence:source-provided-no-inference"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:coconut-shavings",
+      "title": "Coconut Shavings",
+      "category": "Extras / sides",
+      "sourceEvidence": [
+        "source:_WC 13_07_2026.xlsx",
+        "sheet:fri",
+        "row:22",
+        "category:Extras / sides",
+        "row:45"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:cold-protein",
+      "title": "Cold Protein",
+      "category": "Cold protein",
+      "sourceEvidence": [
+        "source:WC 20_07_2026 (1).xlsx",
+        "sheet:mon",
+        "row:9",
+        "category:Cold protein",
+        "row:29",
+        "sheet:wed",
+        "row:10",
+        "row:36",
+        "sheet:fri",
+        "row:32"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:corn-bread",
+      "title": "Corn Bread",
+      "category": "Extras / sides",
+      "sourceEvidence": [
+        "source:_ WC 06_07_2026.xlsx",
+        "sheet:thurs",
+        "row:13",
+        "category:Extras / sides",
+        "row:36",
+        "sheet:fikathurs",
+        "row:17",
+        "allergen-evidence:source-provided-no-inference"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:country-vegetable",
+      "title": "Country Vegetable",
+      "category": "Soup",
+      "sourceEvidence": [
+        "source:_WC 13_07_2026.xlsx",
+        "sheet:thurs",
+        "row:10",
+        "category:Soup",
+        "row:33",
+        "sheet:fikathurs",
+        "row:14",
+        "allergen-evidence:source-provided-no-inference"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:cous-cous-with-sundried-tomato-black-olive-and-basil-r-rocket-pesto",
+      "title": "Cous Cous With Sundried Tomato,Black Olive And Basil R,Rocket Pesto",
+      "category": "Salad 3",
+      "sourceEvidence": [
+        "source:_ WC 06_07_2026.xlsx",
+        "sheet:wed",
+        "row:5",
+        "category:Salad 3",
+        "row:31",
+        "sheet:fri",
+        "row:25",
+        "sheet:fikawed",
+        "row:12",
+        "allergen-evidence:source-provided-no-inference"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:crispy-fried-polenta",
+      "title": "Crispy Fried Polenta",
+      "category": "Extras / sides",
+      "sourceEvidence": [
+        "source:_ WC 06_07_2026.xlsx",
+        "sheet:wed",
+        "row:16",
+        "category:Extras / sides",
+        "row:28",
+        "row:42",
+        "sheet:fri",
+        "row:14",
+        "row:34",
+        "sheet:fikawed",
+        "row:19",
+        "allergen-evidence:source-provided-no-inference"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:crispy-fried-tofu-with-shitake-mushroom-and-hoi-sin-sauce",
+      "title": "Crispy Fried Tofu With Shitake Mushroom And Hoi Sin Sauce",
+      "category": "Hot veg / vegan",
+      "sourceEvidence": [
+        "source:_WC 13_07_2026.xlsx",
+        "sheet:thurs",
+        "row:12",
+        "category:Hot veg / vegan",
+        "row:35",
+        "sheet:fikathurs",
+        "row:16",
+        "allergen-evidence:source-provided-no-inference"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:crispy-miso-glazed-aubergine-with-sesame-dressing",
+      "title": "Crispy Miso Glazed Aubergine With Sesame Dressing",
+      "category": "Hot veg / vegan",
+      "sourceEvidence": [
+        "source:WC 20_07_2026 (1).xlsx",
+        "sheet:fri",
+        "row:12",
+        "category:Hot veg / vegan",
+        "row:35"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:crispy-onions",
+      "title": "Crispy Onions",
+      "category": "Extras / sides",
+      "sourceEvidence": [
+        "source:WC 20_07_2026 (1).xlsx",
+        "sheet:thurs",
+        "row:17",
+        "category:Extras / sides",
+        "row:40",
+        "sheet:fri",
+        "source:_WC 13_07_2026.xlsx",
+        "row:21",
+        "row:44",
+        "sheet:fikathurs",
+        "allergen-evidence:source-provided-no-inference"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:crispy-potato-with-kimchi-spice",
+      "title": "Crispy Potato With Kimchi Spice",
+      "category": "Extras / sides",
+      "sourceEvidence": [
+        "source:_ WC 06_07_2026.xlsx",
+        "sheet:mon",
+        "row:14",
+        "category:Extras / sides",
+        "row:34",
+        "sheet:fikamon",
+        "row:18",
+        "allergen-evidence:source-provided-no-inference"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:crispy-shallots-and-toasted-sesame-seeds",
+      "title": "Crispy Shallots And Toasted Sesame Seeds",
+      "category": "Extras / sides",
+      "sourceEvidence": [
+        "source:WC 20_07_2026 (1).xlsx",
+        "sheet:tue",
+        "row:19",
+        "category:Extras / sides",
+        "row:43",
+        "sheet:fikatue",
+        "row:23",
+        "allergen-evidence:source-provided-no-inference"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:crispy-soy-and-honey-glazed-tofu",
+      "title": "Crispy Soy And Honey Glazed Tofu",
+      "category": "Hot veg / vegan",
+      "sourceEvidence": [
+        "source:_ WC 06_07_2026.xlsx",
+        "sheet:mon",
+        "row:12",
+        "category:Hot veg / vegan",
+        "row:32",
+        "sheet:fikamon",
+        "row:16",
+        "allergen-evidence:source-provided-no-inference"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:cucumber-plum-tomato-and-herb-salad",
+      "title": "Cucumber,Plum Tomato,And Herb Salad",
+      "category": "Salad 4",
+      "sourceEvidence": [
+        "source:_ WC 06_07_2026.xlsx",
+        "sheet:tue",
+        "row:6",
+        "category:Salad 4",
+        "row:30",
+        "sheet:fikatue",
+        "row:13",
+        "allergen-evidence:source-provided-no-inference"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:curried-carrot-and-corriander",
+      "title": "Curried Carrot And Corriander",
+      "category": "Soup",
+      "sourceEvidence": [
+        "source:_ WC 06_07_2026.xlsx",
+        "sheet:tue",
+        "row:10",
+        "category:Soup",
+        "row:34",
+        "sheet:fikatue",
+        "row:14",
+        "allergen-evidence:source-provided-no-inference"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:dessert",
+      "title": "Dessert",
+      "category": "Extras / sides",
+      "sourceEvidence": [
+        "source:WC 20_07_2026 (1).xlsx",
+        "sheet:wed",
+        "row:22",
+        "category:Extras / sides",
+        "row:48",
+        "source:_WC 13_07_2026.xlsx",
+        "source:_ WC 06_07_2026.xlsx"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:dish",
+      "title": "Dish",
+      "category": "Extras / sides",
+      "sourceEvidence": [
+        "source:WC 20_07_2026 (1).xlsx",
+        "sheet:mon",
+        "row:22",
+        "category:Extras / sides",
+        "sheet:thurs",
+        "row:25",
+        "sheet:fri",
+        "source:_WC 13_07_2026.xlsx",
+        "source:_ WC 06_07_2026.xlsx"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:edamame",
+      "title": "Edamame",
+      "category": "Extras / sides",
+      "sourceEvidence": [
+        "source:WC 20_07_2026 (1).xlsx",
+        "sheet:tue",
+        "row:18",
+        "category:Extras / sides",
+        "row:42",
+        "sheet:fikatue",
+        "row:22",
+        "allergen-evidence:source-provided-no-inference"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:edemame-and-charred-corn-with-sesame-oil",
+      "title": "Edemame And Charred Corn With Sesame Oil",
+      "category": "Salad 1",
+      "sourceEvidence": [
+        "source:_WC 13_07_2026.xlsx",
+        "sheet:thurs",
+        "row:3",
+        "category:Salad 1",
+        "row:26",
+        "sheet:fikathurs",
+        "row:10",
+        "allergen-evidence:source-provided-no-inference"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:edememe-toasted-sesamesoy-pickled-onions-smashed-cucumber",
+      "title": "Edememe,Toasted Sesamesoy Pickled Onions,Smashed Cucumber",
+      "category": "Salad 3",
+      "sourceEvidence": [
+        "source:WC 20_07_2026 (1).xlsx",
+        "sheet:tue",
+        "row:5",
+        "category:Salad 3",
+        "row:29",
+        "sheet:fikatue",
+        "row:12",
+        "allergen-evidence:source-provided-no-inference"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:extras",
+      "title": "Extras",
+      "category": "Extras / sides",
+      "sourceEvidence": [
+        "source:WC 20_07_2026 (1).xlsx",
+        "sheet:thurs",
+        "row:23",
+        "category:Extras / sides",
+        "row:45",
+        "sheet:fri",
+        "row:20",
+        "row:21",
+        "row:22",
+        "row:43",
+        "row:44",
+        "row:46",
+        "source:_WC 13_07_2026.xlsx",
+        "source:_ WC 06_07_2026.xlsx"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:fika-slaw-with-curry-leaf-and-fresh-coriander",
+      "title": "Fika Slaw With Curry Leaf And Fresh Coriander",
+      "category": "Salad 1",
+      "sourceEvidence": [
+        "source:_ WC 06_07_2026.xlsx",
+        "sheet:tue",
+        "row:3",
+        "category:Salad 1",
+        "row:27",
+        "sheet:fikatue",
+        "row:10",
+        "allergen-evidence:source-provided-no-inference"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:fika-slaw-with-pineapple-and-jalepeno-dressing",
+      "title": "Fika Slaw With Pineapple And Jalepeno Dressing",
+      "category": "Salad 2",
+      "sourceEvidence": [
+        "source:_ WC 06_07_2026.xlsx",
+        "sheet:thurs",
+        "row:4",
+        "category:Salad 2",
+        "row:27",
+        "sheet:fikathurs",
+        "row:11",
+        "allergen-evidence:source-provided-no-inference"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:flat-bread",
+      "title": "Flat Bread",
+      "category": "Extras / sides",
+      "sourceEvidence": [
+        "source:_ WC 06_07_2026.xlsx",
+        "sheet:wed",
+        "row:15",
+        "category:Extras / sides",
+        "row:41",
+        "sheet:fri",
+        "row:13",
+        "row:33",
+        "sheet:fikawed",
+        "row:18",
+        "allergen-evidence:source-provided-no-inference"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:flat-breads-with-za-atar-oil",
+      "title": "Flat Breads With Za’Atar Oil",
+      "category": "Extras / sides",
+      "sourceEvidence": [
+        "source:_WC 13_07_2026.xlsx",
+        "sheet:tue",
+        "row:14",
+        "category:Extras / sides",
+        "row:38",
+        "sheet:fikatue",
+        "row:18",
+        "allergen-evidence:source-provided-no-inference"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:foccaci-garlic-bread",
+      "title": "Foccaci Garlic Bread",
+      "category": "Extras / sides",
+      "sourceEvidence": [
+        "source:WC 20_07_2026 (1).xlsx",
+        "sheet:mon",
+        "row:14",
+        "category:Extras / sides",
+        "row:34",
+        "sheet:fikamon",
+        "row:18",
+        "allergen-evidence:source-provided-no-inference"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:franconian-beef-hotdog-with-brioche-bun",
+      "title": "Franconian Beef Hotdog With Brioche Bun",
+      "category": "Hot meat",
+      "sourceEvidence": [
+        "source:_WC 13_07_2026.xlsx",
+        "sheet:mon",
+        "row:11",
+        "category:Hot meat",
+        "row:31",
+        "sheet:fikamon",
+        "row:15",
+        "allergen-evidence:source-provided-no-inference"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:fried-bbq-spiced-cauliflower-wings",
+      "title": "Fried Bbq Spiced Cauliflower Wings",
+      "category": "Hot veg / vegan",
+      "sourceEvidence": [
+        "source:_ WC 06_07_2026.xlsx",
+        "sheet:wed",
+        "row:14",
+        "category:Hot veg / vegan",
+        "row:40",
+        "sheet:fri",
+        "row:12",
+        "row:32",
+        "sheet:fikawed",
+        "row:17",
+        "allergen-evidence:source-provided-no-inference"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:goa-style-potato-and-cauliflower-spinach-curry",
+      "title": "Goa Style Potato And Cauliflower, Spinach Curry",
+      "category": "Hot veg / vegan",
+      "sourceEvidence": [
+        "source:_WC 13_07_2026.xlsx",
+        "sheet:fri",
+        "row:12",
+        "category:Hot veg / vegan",
+        "row:35"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:gochujang-and-soy-pickled-cucumber",
+      "title": "Gochujang And Soy Pickled Cucumber",
+      "category": "Extras / sides",
+      "sourceEvidence": [
+        "source:_WC 13_07_2026.xlsx",
+        "sheet:thurs",
+        "row:15",
+        "category:Extras / sides",
+        "row:38",
+        "sheet:fikathurs",
+        "row:19",
+        "allergen-evidence:source-provided-no-inference"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:gochujang-ketchup",
+      "title": "Gochujang Ketchup",
+      "category": "Extras / sides",
+      "sourceEvidence": [
+        "source:_WC 13_07_2026.xlsx",
+        "sheet:mon",
+        "row:16",
+        "category:Extras / sides",
+        "row:36",
+        "sheet:fikamon",
+        "row:20",
+        "allergen-evidence:source-provided-no-inference"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:grated-carrott-with-ponzu-and-bean-sprouts",
+      "title": "Grated Carrott With Ponzu And Bean Sprouts",
+      "category": "Salad 1",
+      "sourceEvidence": [
+        "source:WC 20_07_2026 (1).xlsx",
+        "sheet:tue",
+        "row:3",
+        "category:Salad 1",
+        "row:27",
+        "sheet:fikatue",
+        "row:10",
+        "allergen-evidence:source-provided-no-inference"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:grated-hot-honey-carrot",
+      "title": "Grated Hot Honey Carrot",
+      "category": "Extras / sides",
+      "sourceEvidence": [
+        "source:_WC 13_07_2026.xlsx",
+        "sheet:tue",
+        "row:18",
+        "category:Extras / sides",
+        "row:42",
+        "sheet:fikatue",
+        "row:22",
+        "allergen-evidence:source-provided-no-inference"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:grated-parmasamn",
+      "title": "Grated Parmasamn",
+      "category": "Extras / sides",
+      "sourceEvidence": [
+        "source:WC 20_07_2026 (1).xlsx",
+        "sheet:mon",
+        "row:15",
+        "category:Extras / sides",
+        "row:35",
+        "sheet:fikamon",
+        "row:19",
+        "allergen-evidence:source-provided-no-inference"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:green-bean-and-chilli-roasted-carrott-with-miso",
+      "title": "Green Bean And Chilli Roasted Carrott With Miso",
+      "category": "Salad 3",
+      "sourceEvidence": [
+        "source:_WC 13_07_2026.xlsx",
+        "sheet:thurs",
+        "row:5",
+        "category:Salad 3",
+        "row:28",
+        "sheet:fikathurs",
+        "row:12",
+        "allergen-evidence:source-provided-no-inference"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:green-curry-spiced-chickpea-with-fresh-coriander",
+      "title": "Green Curry Spiced Chickpea With Fresh Coriander",
+      "category": "Soup",
+      "sourceEvidence": [
+        "source:_ WC 06_07_2026.xlsx",
+        "sheet:mon",
+        "row:10",
+        "category:Soup",
+        "row:30",
+        "sheet:fikamon",
+        "row:14",
+        "allergen-evidence:source-provided-no-inference"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:grilled-artichoke-roast-new-potato-red-pepper-and-sundried-tomato-pesto",
+      "title": "Grilled Artichoke Roast New Potato Red Pepper And Sundried Tomato Pesto",
+      "category": "Salad 4",
+      "sourceEvidence": [
+        "source:WC 20_07_2026 (1).xlsx",
+        "sheet:mon",
+        "row:6",
+        "category:Salad 4",
+        "row:26",
+        "sheet:fikamon",
+        "row:13",
+        "allergen-evidence:source-provided-no-inference"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:grilled-sweetcorn-lime-sour-cream-and-chipotle",
+      "title": "Grilled Sweetcorn Lime Sour Cream And Chipotle",
+      "category": "Extras / sides",
+      "sourceEvidence": [
+        "source:_WC 13_07_2026.xlsx",
+        "sheet:mon",
+        "row:13",
+        "category:Extras / sides",
+        "row:33",
+        "sheet:fikamon",
+        "row:17",
+        "allergen-evidence:source-provided-no-inference"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:guacamole",
+      "title": "Guacamole",
+      "category": "Extras / sides",
+      "sourceEvidence": [
+        "source:_ WC 06_07_2026.xlsx",
+        "sheet:thurs",
+        "row:16",
+        "category:Extras / sides",
+        "row:39",
+        "sheet:fikathurs",
+        "row:20",
+        "allergen-evidence:source-provided-no-inference"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:heritage-tomatorocket-and-toasted-seeds",
+      "title": "Heritage Tomatorocket And Toasted Seeds",
+      "category": "Salad 3",
+      "sourceEvidence": [
+        "source:WC 20_07_2026 (1).xlsx",
+        "sheet:thurs",
+        "row:5",
+        "category:Salad 3",
+        "row:28",
+        "sheet:fikathurs",
+        "row:12",
+        "allergen-evidence:source-provided-no-inference"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:hoi-sin-with-pineapple",
+      "title": "Hoi Sin With Pineapple",
+      "category": "Extras / sides",
+      "sourceEvidence": [
+        "source:_WC 13_07_2026.xlsx",
+        "sheet:thurs",
+        "row:19",
+        "category:Extras / sides",
+        "row:42",
+        "sheet:fikathurs",
+        "row:23",
+        "allergen-evidence:source-provided-no-inference"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:hoi-sin-with-sechuan-pepper",
+      "title": "Hoi Sin With Sechuan Pepper",
+      "category": "Extras / sides",
+      "sourceEvidence": [
+        "source:_ WC 06_07_2026.xlsx",
+        "sheet:mon",
+        "row:17",
+        "category:Extras / sides",
+        "row:37",
+        "sheet:fikamon",
+        "row:21",
+        "allergen-evidence:source-provided-no-inference"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:honey-and-thyme-roasted-carrots",
+      "title": "Honey And Thyme Roasted Carrots",
+      "category": "Extras / sides",
+      "sourceEvidence": [
+        "source:WC 20_07_2026 (1).xlsx",
+        "sheet:thurs",
+        "row:15",
+        "category:Extras / sides",
+        "row:38",
+        "sheet:fikathurs",
+        "row:19",
+        "allergen-evidence:source-provided-no-inference"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:hot-fish",
+      "title": "Hot Fish",
+      "category": "Extras / sides",
+      "sourceEvidence": [
+        "source:_WC 13_07_2026.xlsx",
+        "sheet:wed",
+        "row:13",
+        "category:Extras / sides",
+        "row:39",
+        "source:_ WC 06_07_2026.xlsx"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:hot-honey-grated-carrot",
+      "title": "Hot Honey Grated Carrot",
+      "category": "Extras / sides",
+      "sourceEvidence": [
+        "source:_ WC 06_07_2026.xlsx",
+        "sheet:mon",
+        "row:19",
+        "category:Extras / sides",
+        "row:39",
+        "sheet:wed",
+        "row:45",
+        "sheet:fri",
+        "row:17",
+        "row:37",
+        "sheet:fikamon",
+        "row:23",
+        "sheet:fikawed",
+        "row:22",
+        "allergen-evidence:source-provided-no-inference"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:house-fried-tortilla-chips",
+      "title": "House Fried Tortilla Chips",
+      "category": "Extras / sides",
+      "sourceEvidence": [
+        "source:_WC 13_07_2026.xlsx",
+        "sheet:wed",
+        "row:16",
+        "category:Extras / sides",
+        "row:28",
+        "row:42",
+        "sheet:fikawed",
+        "row:19",
+        "allergen-evidence:source-provided-no-inference"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:jacket-filling",
+      "title": "Jacket Filling",
+      "category": "Extras / sides",
+      "sourceEvidence": [
+        "source:WC 20_07_2026 (1).xlsx",
+        "sheet:tue",
+        "row:22",
+        "category:Extras / sides",
+        "source:_WC 13_07_2026.xlsx",
+        "source:_ WC 06_07_2026.xlsx"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:jacket-fillings",
+      "title": "Jacket Fillings",
+      "category": "Extras / sides",
+      "sourceEvidence": [
+        "source:WC 20_07_2026 (1).xlsx",
+        "sheet:wed",
+        "row:24",
+        "category:Extras / sides",
+        "row:25",
+        "row:50",
+        "row:51",
+        "sheet:thurs",
+        "row:22",
+        "source:_WC 13_07_2026.xlsx",
+        "row:21",
+        "row:44",
+        "source:_ WC 06_07_2026.xlsx"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:jackets",
+      "title": "Jackets",
+      "category": "Extras / sides",
+      "sourceEvidence": [
+        "source:_ WC 06_07_2026.xlsx",
+        "sheet:thurs",
+        "row:20",
+        "category:Extras / sides",
+        "row:43"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:jackets-filling",
+      "title": "Jackets Filling",
+      "category": "Extras / sides",
+      "sourceEvidence": [
+        "source:WC 20_07_2026 (1).xlsx",
+        "sheet:tue",
+        "row:23",
+        "category:Extras / sides",
+        "row:46",
+        "source:_WC 13_07_2026.xlsx",
+        "source:_ WC 06_07_2026.xlsx"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:jalapeno-salsa",
+      "title": "Jalapeno Salsa",
+      "category": "Extras / sides",
+      "sourceEvidence": [
+        "source:_WC 13_07_2026.xlsx",
+        "sheet:wed",
+        "row:18",
+        "category:Extras / sides",
+        "row:44",
+        "sheet:fikawed",
+        "row:21",
+        "allergen-evidence:source-provided-no-inference"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:jalepeno",
+      "title": "Jalepeno",
+      "category": "Extras / sides",
+      "sourceEvidence": [
+        "source:_ WC 06_07_2026.xlsx",
+        "sheet:thurs",
+        "row:19",
+        "category:Extras / sides",
+        "row:42",
+        "sheet:fikathurs",
+        "row:23",
+        "allergen-evidence:source-provided-no-inference"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:jalepenos",
+      "title": "Jalepenos",
+      "category": "Extras / sides",
+      "sourceEvidence": [
+        "source:_WC 13_07_2026.xlsx",
+        "sheet:tue",
+        "row:16",
+        "category:Extras / sides",
+        "row:40",
+        "sheet:fikatue",
+        "row:20",
+        "allergen-evidence:source-provided-no-inference"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:katsu-curry-sauce",
+      "title": "Katsu Curry Sauce",
+      "category": "Extras / sides",
+      "sourceEvidence": [
+        "source:WC 20_07_2026 (1).xlsx",
+        "sheet:fri",
+        "row:14",
+        "category:Extras / sides",
+        "row:37"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:kimchi-slaw",
+      "title": "Kimchi Slaw",
+      "category": "Extras / sides",
+      "sourceEvidence": [
+        "source:_WC 13_07_2026.xlsx",
+        "sheet:thurs",
+        "row:16",
+        "category:Extras / sides",
+        "row:39",
+        "source:_ WC 06_07_2026.xlsx",
+        "sheet:mon",
+        "row:18",
+        "row:38",
+        "sheet:fikathurs",
+        "row:20",
+        "sheet:fikamon",
+        "row:22",
+        "allergen-evidence:source-provided-no-inference"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:kimichi",
+      "title": "Kimichi",
+      "category": "Extras / sides",
+      "sourceEvidence": [
+        "source:_WC 13_07_2026.xlsx",
+        "sheet:mon",
+        "row:19",
+        "category:Extras / sides",
+        "row:39",
+        "sheet:fikamon",
+        "row:23",
+        "allergen-evidence:source-provided-no-inference"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:korean-bbq-chicken-thigh-with-soy-pear-marinade",
+      "title": "Korean Bbq Chicken Thigh With Soy Pear Marinade",
+      "category": "Hot meat",
+      "sourceEvidence": [
+        "source:_WC 13_07_2026.xlsx",
+        "sheet:thurs",
+        "row:11",
+        "category:Hot meat",
+        "row:34",
+        "sheet:fikathurs",
+        "row:15",
+        "allergen-evidence:source-provided-no-inference"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:korma-sauce",
+      "title": "Korma Sauce",
+      "category": "Extras / sides",
+      "sourceEvidence": [
+        "source:_WC 13_07_2026.xlsx",
+        "sheet:fri",
+        "row:17",
+        "category:Extras / sides",
+        "row:40"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:lamb-kofta-charcoal-grilled-with-cumin-paprika",
+      "title": "Lamb Kofta, Charcoal-Grilled With Cumin & Paprika,",
+      "category": "Hot meat",
+      "sourceEvidence": [
+        "source:_WC 13_07_2026.xlsx",
+        "sheet:tue",
+        "row:11",
+        "category:Hot meat",
+        "row:35",
+        "sheet:fikatue",
+        "row:15",
+        "allergen-evidence:source-provided-no-inference"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:lamb-rogan-josh",
+      "title": "Lamb Rogan Josh",
+      "category": "Hot meat",
+      "sourceEvidence": [
+        "source:_ WC 06_07_2026.xlsx",
+        "sheet:tue",
+        "row:11",
+        "category:Hot meat",
+        "row:35",
+        "sheet:fikatue",
+        "row:15",
+        "allergen-evidence:source-provided-no-inference"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:large-vegetable-spring-rolls",
+      "title": "Large Vegetable Spring Rolls",
+      "category": "Extras / sides",
+      "sourceEvidence": [
+        "source:WC 20_07_2026 (1).xlsx",
+        "sheet:fri",
+        "row:16",
+        "category:Extras / sides",
+        "row:39"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:leek-and-potato",
+      "title": "Leek And Potato",
+      "category": "Soup",
+      "sourceEvidence": [
+        "source:WC 20_07_2026 (1).xlsx",
+        "sheet:mon",
+        "row:10",
+        "category:Soup",
+        "row:30",
+        "source:_WC 13_07_2026.xlsx",
+        "sheet:wed",
+        "row:11",
+        "row:37",
+        "sheet:fikamon",
+        "row:14",
+        "sheet:fikawed",
+        "allergen-evidence:source-provided-no-inference"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:lemon-coconut-vegan-yogurt",
+      "title": "Lemon Coconut Vegan Yogurt",
+      "category": "Extras / sides",
+      "sourceEvidence": [
+        "source:_ WC 06_07_2026.xlsx",
+        "sheet:tue",
+        "row:17",
+        "category:Extras / sides",
+        "row:41",
+        "sheet:fikatue",
+        "row:21",
+        "allergen-evidence:source-provided-no-inference"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:lemon-lime-and-chipotle-sour-cream",
+      "title": "Lemon,Lime And Chipotle Sour Cream",
+      "category": "Extras / sides",
+      "sourceEvidence": [
+        "source:_ WC 06_07_2026.xlsx",
+        "sheet:thurs",
+        "row:17",
+        "category:Extras / sides",
+        "row:40",
+        "sheet:fikathurs",
+        "row:21",
+        "allergen-evidence:source-provided-no-inference"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:lemon-lime-and-mint-vegan-yogurt",
+      "title": "Lemon,Lime And Mint Vegan Yogurt",
+      "category": "Extras / sides",
+      "sourceEvidence": [
+        "source:_ WC 06_07_2026.xlsx",
+        "sheet:fri",
+        "row:19",
+        "category:Extras / sides",
+        "row:39"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:lemopn-and-lime-and-mint-vegan-yogurt",
+      "title": "Lemopn And Lime And Mint Vegan Yogurt",
+      "category": "Extras / sides",
+      "sourceEvidence": [
+        "source:_ WC 06_07_2026.xlsx",
+        "sheet:wed",
+        "row:21",
+        "category:Extras / sides",
+        "row:47",
+        "sheet:fikawed",
+        "row:24",
+        "allergen-evidence:source-provided-no-inference"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:lentil-and-bean-chilli",
+      "title": "Lentil And Bean Chilli",
+      "category": "Extras / sides",
+      "sourceEvidence": [
+        "source:_ WC 06_07_2026.xlsx",
+        "sheet:thurs",
+        "row:22",
+        "category:Extras / sides",
+        "row:45"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:lime-and-coriander-rice",
+      "title": "Lime And Coriander Rice",
+      "category": "Extras / sides",
+      "sourceEvidence": [
+        "source:_WC 13_07_2026.xlsx",
+        "sheet:wed",
+        "row:15",
+        "category:Extras / sides",
+        "row:41",
+        "sheet:fikawed",
+        "row:18",
+        "allergen-evidence:source-provided-no-inference"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:lime-and-coriander-sour-cream",
+      "title": "Lime And Coriander Sour Cream",
+      "category": "Extras / sides",
+      "sourceEvidence": [
+        "source:_WC 13_07_2026.xlsx",
+        "sheet:wed",
+        "row:19",
+        "category:Extras / sides",
+        "row:45",
+        "sheet:fikawed",
+        "row:22",
+        "allergen-evidence:source-provided-no-inference"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:mac-and-cheese-bites",
+      "title": "Mac And Cheese Bites",
+      "category": "Extras / sides",
+      "sourceEvidence": [
+        "source:_WC 13_07_2026.xlsx",
+        "sheet:mon",
+        "row:15",
+        "category:Extras / sides",
+        "row:35",
+        "sheet:fikamon",
+        "row:19",
+        "allergen-evidence:source-provided-no-inference"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:madras-spiced-pickled-pink-opnions",
+      "title": "Madras Spiced Pickled Pink Opnions",
+      "category": "Extras / sides",
+      "sourceEvidence": [
+        "source:_WC 13_07_2026.xlsx",
+        "sheet:fri",
+        "row:20",
+        "category:Extras / sides",
+        "row:43"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:mango-chutney",
+      "title": "Mango Chutney",
+      "category": "Extras / sides",
+      "sourceEvidence": [
+        "source:_WC 13_07_2026.xlsx",
+        "sheet:fri",
+        "row:23",
+        "category:Extras / sides",
+        "row:46",
+        "source:_ WC 06_07_2026.xlsx",
+        "sheet:tue",
+        "row:16",
+        "row:40",
+        "sheet:fikatue",
+        "row:20",
+        "allergen-evidence:source-provided-no-inference"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:masala-roasted-carrot-with-chickpeas-ans-lentils",
+      "title": "Masala Roasted Carrot With Chickpeas Ans Lentils",
+      "category": "Salad 4",
+      "sourceEvidence": [
+        "source:_WC 13_07_2026.xlsx",
+        "sheet:fri",
+        "row:6",
+        "category:Salad 4",
+        "row:29"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:mini-popodoms",
+      "title": "Mini Popodoms",
+      "category": "Extras / sides",
+      "sourceEvidence": [
+        "source:_ WC 06_07_2026.xlsx",
+        "sheet:tue",
+        "row:15",
+        "category:Extras / sides",
+        "row:39",
+        "sheet:fikatue",
+        "row:19",
+        "allergen-evidence:source-provided-no-inference"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:mini-spring-rolls",
+      "title": "Mini Spring Rolls",
+      "category": "Extras / sides",
+      "sourceEvidence": [
+        "source:_ WC 06_07_2026.xlsx",
+        "sheet:mon",
+        "row:15",
+        "category:Extras / sides",
+        "row:35",
+        "sheet:fikamon",
+        "row:19",
+        "allergen-evidence:source-provided-no-inference"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:mini-vegetable-samosa",
+      "title": "Mini Vegetable Samosa",
+      "category": "Extras / sides",
+      "sourceEvidence": [
+        "source:_ WC 06_07_2026.xlsx",
+        "sheet:tue",
+        "row:14",
+        "category:Extras / sides",
+        "row:38",
+        "sheet:fikatue",
+        "row:18",
+        "allergen-evidence:source-provided-no-inference"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:mixed-bean-salad-smoked-paprika-and-tomato-vinegarette",
+      "title": "Mixed Bean Salad,Smoked Paprika And Tomato Vinegarette",
+      "category": "Salad 4",
+      "sourceEvidence": [
+        "source:_WC 13_07_2026.xlsx",
+        "sheet:wed",
+        "row:6",
+        "category:Salad 4",
+        "row:32",
+        "sheet:fikawed",
+        "row:13",
+        "allergen-evidence:source-provided-no-inference"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:mixed-bean-with-harissa-and-chickpea",
+      "title": "Mixed Bean With Harissa And Chickpea",
+      "category": "Salad 5",
+      "sourceEvidence": [
+        "source:_WC 13_07_2026.xlsx",
+        "sheet:mon",
+        "row:7",
+        "category:Salad 5",
+        "row:27"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:mixed-chicken-breast",
+      "title": "Mixed Chicken Breast",
+      "category": "Cold protein",
+      "sourceEvidence": [
+        "source:WC 20_07_2026 (1).xlsx",
+        "sheet:tue",
+        "row:9",
+        "category:Cold protein",
+        "row:33",
+        "sheet:thurs",
+        "row:32",
+        "source:_WC 13_07_2026.xlsx",
+        "sheet:mon",
+        "row:29",
+        "sheet:wed",
+        "row:10",
+        "row:36",
+        "sheet:fri",
+        "source:_ WC 06_07_2026.xlsx"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:mixed-fika-leaf-salad",
+      "title": "Mixed Fika Leaf Salad",
+      "category": "Salad 1",
+      "sourceEvidence": [
+        "source:_ WC 06_07_2026.xlsx",
+        "sheet:mon",
+        "row:3",
+        "category:Salad 1",
+        "row:23",
+        "sheet:fikamon",
+        "row:10",
+        "allergen-evidence:source-provided-no-inference"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:mixed-leaf-and-baby-watercress-salad",
+      "title": "Mixed Leaf And Baby Watercress Salad",
+      "category": "Salad 1",
+      "sourceEvidence": [
+        "source:_ WC 06_07_2026.xlsx",
+        "sheet:wed",
+        "row:3",
+        "category:Salad 1",
+        "row:29",
+        "sheet:fri",
+        "row:23",
+        "sheet:fikawed",
+        "row:10",
+        "allergen-evidence:source-provided-no-inference"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:mixed-leaf-salad",
+      "title": "Mixed Leaf Salad",
+      "category": "Salad 1",
+      "sourceEvidence": [
+        "source:WC 20_07_2026 (1).xlsx",
+        "sheet:mon",
+        "row:3",
+        "category:Salad 1",
+        "row:23",
+        "sheet:wed",
+        "row:6",
+        "category:Salad 4",
+        "row:32",
+        "source:_WC 13_07_2026.xlsx",
+        "sheet:fri",
+        "row:26",
+        "source:_ WC 06_07_2026.xlsx",
+        "sheet:tue",
+        "row:8",
+        "category:Salad 6",
+        "sheet:thurs",
+        "row:29",
+        "sheet:fikamon",
+        "row:10",
+        "sheet:fikawed",
+        "row:13",
+        "sheet:fikathurs",
+        "allergen-evidence:source-provided-no-inference"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:mixed-leaf-salad-with-watercress",
+      "title": "Mixed Leaf Salad With Watercress",
+      "category": "Salad 4",
+      "sourceEvidence": [
+        "source:_WC 13_07_2026.xlsx",
+        "sheet:tue",
+        "row:6",
+        "category:Salad 4",
+        "row:30",
+        "sheet:fikatue",
+        "row:13",
+        "allergen-evidence:source-provided-no-inference"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:mixed-leaf-salad-with-wild-rocket",
+      "title": "Mixed Leaf Salad With Wild Rocket",
+      "category": "Salad 1",
+      "sourceEvidence": [
+        "source:WC 20_07_2026 (1).xlsx",
+        "sheet:fri",
+        "row:3",
+        "category:Salad 1",
+        "row:26"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:mustard-greens",
+      "title": "Mustard Greens",
+      "category": "Salad 2",
+      "sourceEvidence": [
+        "source:WC 20_07_2026 (1).xlsx",
+        "sheet:tue",
+        "row:4",
+        "category:Salad 2",
+        "row:28",
+        "sheet:fikatue",
+        "row:11",
+        "allergen-evidence:source-provided-no-inference"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:orecchiuete-vegan-pasta",
+      "title": "Orecchiuete Vegan Pasta",
+      "category": "Extras / sides",
+      "sourceEvidence": [
+        "source:WC 20_07_2026 (1).xlsx",
+        "sheet:mon",
+        "row:13",
+        "category:Extras / sides",
+        "row:33",
+        "sheet:fikamon",
+        "row:17",
+        "allergen-evidence:source-provided-no-inference"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:orzo-pasta-with-sundried-tomato-kalamata-olivesand-torn-basil",
+      "title": "Orzo Pasta With Sundried Tomato,Kalamata Olivesand Torn Basil",
+      "category": "Salad 2",
+      "sourceEvidence": [
+        "source:WC 20_07_2026 (1).xlsx",
+        "sheet:mon",
+        "row:4",
+        "category:Salad 2",
+        "row:24",
+        "sheet:fikamon",
+        "row:11",
+        "allergen-evidence:source-provided-no-inference"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:orzo-pastra-with-black-lentil-charred-peppers-madrass-dressing",
+      "title": "Orzo Pastra With Black Lentil Charred Peppers,Madrass Dressing",
+      "category": "Salad 3",
+      "sourceEvidence": [
+        "source:_ WC 06_07_2026.xlsx",
+        "sheet:tue",
+        "row:5",
+        "category:Salad 3",
+        "row:29",
+        "sheet:wed",
+        "row:8",
+        "category:Salad 6",
+        "row:34",
+        "sheet:fikatue",
+        "row:12",
+        "allergen-evidence:source-provided-no-inference"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:panko-crumbed-chiclken-thigh-nuggets-fried-and-seasoned",
+      "title": "Panko Crumbed Chiclken Thigh Nuggets Fried And Seasoned",
+      "category": "Hot meat",
+      "sourceEvidence": [
+        "source:WC 20_07_2026 (1).xlsx",
+        "sheet:fri",
+        "row:11",
+        "category:Hot meat",
+        "row:34"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:parsley-liquor",
+      "title": "Parsley Liquor",
+      "category": "Extras / sides",
+      "sourceEvidence": [
+        "source:WC 20_07_2026 (1).xlsx",
+        "sheet:thurs",
+        "row:13",
+        "category:Extras / sides",
+        "row:36",
+        "sheet:fikathurs",
+        "row:17",
+        "allergen-evidence:source-provided-no-inference"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:pickled-cucumber-and-red-onion",
+      "title": "Pickled Cucumber And Red Onion",
+      "category": "Extras / sides",
+      "sourceEvidence": [
+        "source:_WC 13_07_2026.xlsx",
+        "sheet:tue",
+        "row:15",
+        "category:Extras / sides",
+        "row:39",
+        "sheet:fikatue",
+        "row:19",
+        "allergen-evidence:source-provided-no-inference"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:pickled-diakon-carrot-and-kale-slaw",
+      "title": "Pickled Diakon, Carrot And Kale Slaw",
+      "category": "Salad 2",
+      "sourceEvidence": [
+        "source:WC 20_07_2026 (1).xlsx",
+        "sheet:fri",
+        "row:4",
+        "category:Salad 2",
+        "row:27"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:pickled-pink-onions",
+      "title": "Pickled Pink Onions",
+      "category": "Extras / sides",
+      "sourceEvidence": [
+        "source:_ WC 06_07_2026.xlsx",
+        "sheet:tue",
+        "row:18",
+        "category:Extras / sides",
+        "row:42",
+        "sheet:fikatue",
+        "row:22",
+        "allergen-evidence:source-provided-no-inference"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:pickled-red-chilli",
+      "title": "Pickled Red Chilli",
+      "category": "Extras / sides",
+      "sourceEvidence": [
+        "source:_WC 13_07_2026.xlsx",
+        "sheet:thurs",
+        "row:17",
+        "category:Extras / sides",
+        "row:40",
+        "sheet:fikathurs",
+        "row:21",
+        "allergen-evidence:source-provided-no-inference"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:pickled-shallot",
+      "title": "Pickled Shallot",
+      "category": "Extras / sides",
+      "sourceEvidence": [
+        "source:WC 20_07_2026 (1).xlsx",
+        "sheet:fri",
+        "row:18",
+        "category:Extras / sides",
+        "row:41"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:pico-de-gallo",
+      "title": "Pico De Gallo",
+      "category": "Extras / sides",
+      "sourceEvidence": [
+        "source:_ WC 06_07_2026.xlsx",
+        "sheet:thurs",
+        "row:18",
+        "category:Extras / sides",
+        "row:41",
+        "sheet:fikathurs",
+        "row:22",
+        "allergen-evidence:source-provided-no-inference"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:pilau-rice",
+      "title": "Pilau Rice",
+      "category": "Extras / sides",
+      "sourceEvidence": [
+        "source:_ WC 06_07_2026.xlsx",
+        "sheet:tue",
+        "row:13",
+        "category:Extras / sides",
+        "row:37",
+        "sheet:fikatue",
+        "row:17",
+        "allergen-evidence:source-provided-no-inference"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:pinto-beans",
+      "title": "Pinto Beans",
+      "category": "Extras / sides",
+      "sourceEvidence": [
+        "source:_ WC 06_07_2026.xlsx",
+        "sheet:thurs",
+        "row:15",
+        "category:Extras / sides",
+        "row:38",
+        "sheet:fikathurs",
+        "row:19",
+        "allergen-evidence:source-provided-no-inference"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:plain-jacket-potato",
+      "title": "Plain Jacket Potato",
+      "category": "Extras / sides",
+      "sourceEvidence": [
+        "source:_WC 13_07_2026.xlsx",
+        "sheet:tue",
+        "row:21",
+        "category:Extras / sides",
+        "row:45"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:plain-jackets",
+      "title": "Plain Jackets",
+      "category": "Extras / sides",
+      "sourceEvidence": [
+        "source:WC 20_07_2026 (1).xlsx",
+        "sheet:tue",
+        "row:21",
+        "category:Extras / sides",
+        "row:45",
+        "sheet:wed",
+        "row:23",
+        "row:49",
+        "sheet:thurs",
+        "row:44",
+        "source:_WC 13_07_2026.xlsx",
+        "row:20",
+        "row:43",
+        "source:_ WC 06_07_2026.xlsx"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:plaini-jacket-potato",
+      "title": "Plaini Jacket Potato",
+      "category": "Extras / sides",
+      "sourceEvidence": [
+        "source:_ WC 06_07_2026.xlsx",
+        "sheet:wed",
+        "row:23",
+        "category:Extras / sides",
+        "row:49"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:ponzu-soy-sauce",
+      "title": "Ponzu Soy Sauce",
+      "category": "Extras / sides",
+      "sourceEvidence": [
+        "source:WC 20_07_2026 (1).xlsx",
+        "sheet:tue",
+        "row:16",
+        "category:Extras / sides",
+        "row:40",
+        "sheet:fikatue",
+        "row:20",
+        "allergen-evidence:source-provided-no-inference"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:poppodoms",
+      "title": "Poppodoms",
+      "category": "Extras / sides",
+      "sourceEvidence": [
+        "source:_WC 13_07_2026.xlsx",
+        "sheet:fri",
+        "row:16",
+        "category:Extras / sides",
+        "row:39"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:punjabi-samosa",
+      "title": "Punjabi Samosa",
+      "category": "Extras / sides",
+      "sourceEvidence": [
+        "source:_WC 13_07_2026.xlsx",
+        "sheet:fri",
+        "row:14",
+        "category:Extras / sides",
+        "row:37"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:quinoa-red-kidney-bean-and-baby-spinach",
+      "title": "Quinoa,Red Kidney Bean And Baby Spinach",
+      "category": "Salad 3",
+      "sourceEvidence": [
+        "source:WC 20_07_2026 (1).xlsx",
+        "sheet:wed",
+        "row:5",
+        "category:Salad 3",
+        "row:31",
+        "sheet:fikawed",
+        "row:12",
+        "allergen-evidence:source-provided-no-inference"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:raita-with-coconut-yogurt-cumin-and-mint",
+      "title": "Raita With Coconut Yogurt Cumin And Mint",
+      "category": "Extras / sides",
+      "sourceEvidence": [
+        "source:_WC 13_07_2026.xlsx",
+        "sheet:fri",
+        "row:19",
+        "category:Extras / sides",
+        "row:42"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:red-pepper-plain-hommus",
+      "title": "Red Pepper / Plain Hommus",
+      "category": "Extras / sides",
+      "sourceEvidence": [
+        "source:_WC 13_07_2026.xlsx",
+        "sheet:tue",
+        "row:19",
+        "category:Extras / sides",
+        "row:43",
+        "sheet:fikatue",
+        "row:23",
+        "allergen-evidence:source-provided-no-inference"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:roast-beetroot-with-smoked-paprika-and-apricot-dressing",
+      "title": "Roast Beetroot With Smoked Paprika And Apricot Dressing",
+      "category": "Salad 2",
+      "sourceEvidence": [
+        "source:_ WC 06_07_2026.xlsx",
+        "sheet:wed",
+        "row:4",
+        "category:Salad 2",
+        "row:30",
+        "sheet:thurs",
+        "row:8",
+        "category:Salad 6",
+        "row:31",
+        "sheet:fri",
+        "row:24",
+        "sheet:fikawed",
+        "row:11",
+        "allergen-evidence:source-provided-no-inference"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:roast-carrot-edamame-bean-and-sesame-seaweed-salad",
+      "title": "Roast Carrot,Edamame Bean,And Sesame Seaweed Salad",
+      "category": "Salad 2",
+      "sourceEvidence": [
+        "source:_ WC 06_07_2026.xlsx",
+        "sheet:mon",
+        "row:4",
+        "category:Salad 2",
+        "row:24",
+        "sheet:tue",
+        "row:7",
+        "category:Salad 5",
+        "row:31",
+        "sheet:wed",
+        "row:33",
+        "sheet:fikamon",
+        "row:11",
+        "allergen-evidence:source-provided-no-inference"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:roast-sweet-potato-charred-corn-red-peppers-and-baby-spinach",
+      "title": "Roast Sweet Potato,Charred Corn Red Peppers And Baby Spinach",
+      "category": "Salad 1",
+      "sourceEvidence": [
+        "source:_ WC 06_07_2026.xlsx",
+        "sheet:thurs",
+        "row:3",
+        "category:Salad 1",
+        "row:26",
+        "sheet:fikathurs",
+        "row:10",
+        "allergen-evidence:source-provided-no-inference"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:roasted-aubergine-vegan-feta-red-pepper-mint",
+      "title": "Roasted Aubergine, Vegan Feta, Red Pepper & Mint",
+      "category": "Salad 2",
+      "sourceEvidence": [
+        "source:_WC 13_07_2026.xlsx",
+        "sheet:tue",
+        "row:4",
+        "category:Salad 2",
+        "row:28",
+        "sheet:fikatue",
+        "row:11",
+        "allergen-evidence:source-provided-no-inference"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:roasted-beets-toasted-coconut-and-picklked-shallot",
+      "title": "Roasted Beets Toasted Coconut And Picklked Shallot",
+      "category": "Salad 2",
+      "sourceEvidence": [
+        "source:WC 20_07_2026 (1).xlsx",
+        "sheet:thurs",
+        "row:4",
+        "category:Salad 2",
+        "row:27",
+        "sheet:fikathurs",
+        "row:11",
+        "allergen-evidence:source-provided-no-inference"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:roasted-butternut-baby-spinach-pomegranate-with-sumac",
+      "title": "Roasted Butternut, Baby Spinach,Pomegranate With Sumac",
+      "category": "Salad 1",
+      "sourceEvidence": [
+        "source:_WC 13_07_2026.xlsx",
+        "sheet:tue",
+        "row:3",
+        "category:Salad 1",
+        "row:27",
+        "sheet:fikatue",
+        "row:10",
+        "allergen-evidence:source-provided-no-inference"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:roasted-corn-on-the-cob",
+      "title": "Roasted Corn On The Cob",
+      "category": "Extras / sides",
+      "sourceEvidence": [
+        "source:WC 20_07_2026 (1).xlsx",
+        "sheet:wed",
+        "row:15",
+        "category:Extras / sides",
+        "row:41",
+        "sheet:fikawed",
+        "row:18",
+        "allergen-evidence:source-provided-no-inference"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:roasted-red-onion-gravy",
+      "title": "Roasted Red Onion Gravy",
+      "category": "Extras / sides",
+      "sourceEvidence": [
+        "source:WC 20_07_2026 (1).xlsx",
+        "sheet:thurs",
+        "row:14",
+        "category:Extras / sides",
+        "row:37",
+        "sheet:fikathurs",
+        "row:18",
+        "allergen-evidence:source-provided-no-inference"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:roasted-summer-squash-kale-butterbean",
+      "title": "Roasted Summer Squash, Kale & Butterbean",
+      "category": "Salad 4",
+      "sourceEvidence": [
+        "source:_WC 13_07_2026.xlsx",
+        "sheet:mon",
+        "row:6",
+        "category:Salad 4",
+        "row:26",
+        "sheet:tue",
+        "row:8",
+        "category:Salad 6",
+        "row:32",
+        "sheet:fikamon",
+        "row:13",
+        "allergen-evidence:source-provided-no-inference"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:roasted-vine-tomato-and-basil",
+      "title": "Roasted Vine Tomato And Basil",
+      "category": "Soup",
+      "sourceEvidence": [
+        "source:WC 20_07_2026 (1).xlsx",
+        "sheet:thurs",
+        "row:10",
+        "category:Soup",
+        "row:33",
+        "sheet:fikathurs",
+        "row:14",
+        "allergen-evidence:source-provided-no-inference"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:roasted-wild-mushroom-with-sage-and-garlic",
+      "title": "Roasted Wild Mushroom With Sage And Garlic",
+      "category": "Hot veg / vegan",
+      "sourceEvidence": [
+        "source:WC 20_07_2026 (1).xlsx",
+        "sheet:mon",
+        "row:12",
+        "category:Hot veg / vegan",
+        "row:32",
+        "sheet:fikamon",
+        "row:16",
+        "allergen-evidence:source-provided-no-inference"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:rocket-watercress-with-toasted-pumpkin-seeds",
+      "title": "Rocket,Watercress With Toasted Pumpkin Seeds",
+      "category": "Salad 1",
+      "sourceEvidence": [
+        "source:_WC 13_07_2026.xlsx",
+        "sheet:mon",
+        "row:3",
+        "category:Salad 1",
+        "row:23",
+        "sheet:fikamon",
+        "row:10",
+        "allergen-evidence:source-provided-no-inference"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:saffron-couscous",
+      "title": "Saffron Couscous",
+      "category": "Extras / sides",
+      "sourceEvidence": [
+        "source:_WC 13_07_2026.xlsx",
+        "sheet:tue",
+        "row:13",
+        "category:Extras / sides",
+        "row:37",
+        "sheet:fikatue",
+        "row:17",
+        "allergen-evidence:source-provided-no-inference"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:salad-1",
+      "title": "Salad 1",
+      "category": "Salad 1",
+      "sourceEvidence": [
+        "source:WC 20_07_2026 (1).xlsx",
+        "sheet:tue",
+        "row:25",
+        "category:Salad 1",
+        "source:_WC 13_07_2026.xlsx",
+        "source:_ WC 06_07_2026.xlsx"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:salad-5",
+      "title": "Salad 5",
+      "category": "Salad 5",
+      "sourceEvidence": [
+        "source:WC 20_07_2026 (1).xlsx",
+        "sheet:mon",
+        "row:7",
+        "category:Salad 5",
+        "row:27",
+        "sheet:tue",
+        "row:31",
+        "sheet:wed",
+        "row:33",
+        "sheet:thurs",
+        "row:30",
+        "sheet:fri",
+        "source:_WC 13_07_2026.xlsx",
+        "source:_ WC 06_07_2026.xlsx"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:salad-6",
+      "title": "Salad 6",
+      "category": "Salad 6",
+      "sourceEvidence": [
+        "source:WC 20_07_2026 (1).xlsx",
+        "sheet:mon",
+        "row:8",
+        "category:Salad 6",
+        "row:28",
+        "sheet:tue",
+        "row:32",
+        "sheet:wed",
+        "row:34",
+        "sheet:thurs",
+        "row:31",
+        "sheet:fri",
+        "source:_WC 13_07_2026.xlsx",
+        "source:_ WC 06_07_2026.xlsx"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:salad-7",
+      "title": "Salad 7",
+      "category": "Extras / sides",
+      "sourceEvidence": [
+        "source:WC 20_07_2026 (1).xlsx",
+        "sheet:wed",
+        "row:9",
+        "category:Extras / sides",
+        "source:_WC 13_07_2026.xlsx"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:salad7",
+      "title": "Salad7",
+      "category": "Extras / sides",
+      "sourceEvidence": [
+        "source:WC 20_07_2026 (1).xlsx",
+        "sheet:wed",
+        "row:35",
+        "category:Extras / sides",
+        "source:_WC 13_07_2026.xlsx"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:sesame-steamed-rice",
+      "title": "Sesame Steamed Rice",
+      "category": "Extras / sides",
+      "sourceEvidence": [
+        "source:_WC 13_07_2026.xlsx",
+        "sheet:thurs",
+        "row:13",
+        "category:Extras / sides",
+        "row:36",
+        "sheet:fikathurs",
+        "row:17",
+        "allergen-evidence:source-provided-no-inference"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:shredd-chipotle-beef",
+      "title": "Shredd Chipotle Beef",
+      "category": "Extras / sides",
+      "sourceEvidence": [
+        "source:_ WC 06_07_2026.xlsx",
+        "sheet:thurs",
+        "row:21",
+        "category:Extras / sides",
+        "row:44"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:shredded-iceberg",
+      "title": "Shredded Iceberg",
+      "category": "Extras / sides",
+      "sourceEvidence": [
+        "source:_WC 13_07_2026.xlsx",
+        "sheet:tue",
+        "row:17",
+        "category:Extras / sides",
+        "row:41",
+        "sheet:fikatue",
+        "row:21",
+        "allergen-evidence:source-provided-no-inference"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:shredded-kale-ceaser-with-all-the-trimmings",
+      "title": "Shredded Kale Ceaser With All The Trimmings",
+      "category": "Salad 3",
+      "sourceEvidence": [
+        "source:_WC 13_07_2026.xlsx",
+        "sheet:wed",
+        "row:5",
+        "category:Salad 3",
+        "row:31",
+        "sheet:fikawed",
+        "row:12",
+        "allergen-evidence:source-provided-no-inference"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:shredded-smoked-pork-cuban-style-with-citrus",
+      "title": "Shredded Smoked Pork Cuban Style With Citrus",
+      "category": "Hot meat",
+      "sourceEvidence": [
+        "source:_WC 13_07_2026.xlsx",
+        "sheet:wed",
+        "row:12",
+        "category:Hot meat",
+        "row:38",
+        "sheet:fikawed",
+        "row:15",
+        "allergen-evidence:source-provided-no-inference"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:siracha-mayonaise",
+      "title": "Siracha Mayonaise",
+      "category": "Extras / sides",
+      "sourceEvidence": [
+        "source:_ WC 06_07_2026.xlsx",
+        "sheet:mon",
+        "row:16",
+        "category:Extras / sides",
+        "row:36",
+        "sheet:fikamon",
+        "row:20",
+        "allergen-evidence:source-provided-no-inference"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:sliced-red-chilli",
+      "title": "Sliced Red Chilli",
+      "category": "Extras / sides",
+      "sourceEvidence": [
+        "source:WC 20_07_2026 (1).xlsx",
+        "sheet:fri",
+        "row:19",
+        "category:Extras / sides",
+        "row:42"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:smashed-cucumber-mint-chilli-and-mango",
+      "title": "Smashed Cucumber Mint Chilli And Mango",
+      "category": "Salad 3",
+      "sourceEvidence": [
+        "source:_WC 13_07_2026.xlsx",
+        "sheet:fri",
+        "row:5",
+        "category:Salad 3",
+        "row:28"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:smashed-cucumber-with-edemame-and-soy-pickled-onions",
+      "title": "Smashed Cucumber With Edemame And Soy Pickled Onions",
+      "category": "Salad 4",
+      "sourceEvidence": [
+        "source:_WC 13_07_2026.xlsx",
+        "sheet:thurs",
+        "row:6",
+        "category:Salad 4",
+        "row:29",
+        "sheet:fikathurs",
+        "row:13",
+        "allergen-evidence:source-provided-no-inference"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:smashed-cucumber-soy-chilli-and-spiced-pickled-red-onion",
+      "title": "Smashed Cucumber,Soy,Chilli And Spiced Pickled Red Onion",
+      "category": "Salad 3",
+      "sourceEvidence": [
+        "source:_ WC 06_07_2026.xlsx",
+        "sheet:mon",
+        "row:5",
+        "category:Salad 3",
+        "row:25",
+        "sheet:fikamon",
+        "row:12",
+        "allergen-evidence:source-provided-no-inference"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:smashed-pinto-beans-woith-chipotle-and-adobo",
+      "title": "Smashed Pinto Beans Woith Chipotle And Adobo",
+      "category": "Extras / sides",
+      "sourceEvidence": [
+        "source:_WC 13_07_2026.xlsx",
+        "sheet:wed",
+        "row:17",
+        "category:Extras / sides",
+        "row:43",
+        "sheet:fikawed",
+        "row:20",
+        "allergen-evidence:source-provided-no-inference"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:smoked-chickpea-salad-tomatoes-wilted-greens-harissa",
+      "title": "Smoked Chickpea Salad, Tomatoes, Wilted Greens, Harissa",
+      "category": "Salad 3",
+      "sourceEvidence": [
+        "source:_WC 13_07_2026.xlsx",
+        "sheet:tue",
+        "row:5",
+        "category:Salad 3",
+        "row:29",
+        "sheet:fikatue",
+        "row:12",
+        "allergen-evidence:source-provided-no-inference"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:smoked-paprika-and-garlic-wedges",
+      "title": "Smoked Paprika And Garlic Wedges",
+      "category": "Extras / sides",
+      "sourceEvidence": [
+        "source:_WC 13_07_2026.xlsx",
+        "sheet:mon",
+        "row:14",
+        "category:Extras / sides",
+        "row:34",
+        "sheet:fikamon",
+        "row:18",
+        "allergen-evidence:source-provided-no-inference"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:smoked-pulled-chicken-arrabiata",
+      "title": "Smoked Pulled Chicken Arrabiata",
+      "category": "Hot meat",
+      "sourceEvidence": [
+        "source:WC 20_07_2026 (1).xlsx",
+        "sheet:mon",
+        "row:11",
+        "category:Hot meat",
+        "row:31",
+        "sheet:fikamon",
+        "row:15",
+        "allergen-evidence:source-provided-no-inference"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:smokey-paprika-and-garlic-roasted-new-potatos",
+      "title": "Smokey Paprika And Garlic Roasted New Potatos",
+      "category": "Hot veg / vegan",
+      "sourceEvidence": [
+        "source:WC 20_07_2026 (1).xlsx",
+        "sheet:wed",
+        "row:14",
+        "category:Hot veg / vegan",
+        "row:40",
+        "sheet:fikawed",
+        "row:17",
+        "allergen-evidence:source-provided-no-inference"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:soup",
+      "title": "Soup",
+      "category": "Soup",
+      "sourceEvidence": [
+        "source:WC 20_07_2026 (1).xlsx",
+        "sheet:fri",
+        "row:10",
+        "category:Soup",
+        "row:33",
+        "source:_WC 13_07_2026.xlsx"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:sour-cream-with-chives",
+      "title": "Sour Cream With Chives",
+      "category": "Extras / sides",
+      "sourceEvidence": [
+        "source:WC 20_07_2026 (1).xlsx",
+        "sheet:wed",
+        "row:18",
+        "category:Extras / sides",
+        "row:44",
+        "sheet:fikawed",
+        "row:21",
+        "allergen-evidence:source-provided-no-inference"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:spiced-chickpea-and-coriander",
+      "title": "Spiced Chickpea And Coriander",
+      "category": "Soup",
+      "sourceEvidence": [
+        "source:WC 20_07_2026 (1).xlsx",
+        "sheet:tue",
+        "row:10",
+        "category:Soup",
+        "row:34",
+        "sheet:fikatue",
+        "row:14",
+        "allergen-evidence:source-provided-no-inference"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:spicy-lentil-chilli-with-chared-red-peppers",
+      "title": "Spicy Lentil Chilli With Chared Red Peppers",
+      "category": "Hot veg / vegan",
+      "sourceEvidence": [
+        "source:_ WC 06_07_2026.xlsx",
+        "sheet:thurs",
+        "row:12",
+        "category:Hot veg / vegan",
+        "row:35",
+        "sheet:fikathurs",
+        "row:16",
+        "allergen-evidence:source-provided-no-inference"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:starch-sides",
+      "title": "Starch/Sides",
+      "category": "Extras / sides",
+      "sourceEvidence": [
+        "source:WC 20_07_2026 (1).xlsx",
+        "sheet:mon",
+        "row:19",
+        "category:Extras / sides",
+        "row:39",
+        "sheet:tue",
+        "row:20",
+        "row:44",
+        "sheet:wed",
+        "row:21",
+        "row:47",
+        "source:_WC 13_07_2026.xlsx",
+        "source:_ WC 06_07_2026.xlsx"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:steak-and-harveys-ale-pie",
+      "title": "Steak And Harveys Ale Pie",
+      "category": "Hot meat",
+      "sourceEvidence": [
+        "source:WC 20_07_2026 (1).xlsx",
+        "sheet:thurs",
+        "row:11",
+        "category:Hot meat",
+        "row:34",
+        "sheet:fikathurs",
+        "row:15",
+        "allergen-evidence:source-provided-no-inference"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:steamed-bao-bun",
+      "title": "Steamed Bao Bun",
+      "category": "Extras / sides",
+      "sourceEvidence": [
+        "source:_ WC 06_07_2026.xlsx",
+        "sheet:mon",
+        "row:13",
+        "category:Extras / sides",
+        "row:33",
+        "sheet:fikamon",
+        "row:17",
+        "allergen-evidence:source-provided-no-inference"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:steamed-sushi-rice",
+      "title": "Steamed Sushi Rice",
+      "category": "Extras / sides",
+      "sourceEvidence": [
+        "source:WC 20_07_2026 (1).xlsx",
+        "sheet:tue",
+        "row:13",
+        "category:Extras / sides",
+        "row:37",
+        "sheet:fikatue",
+        "row:17",
+        "allergen-evidence:source-provided-no-inference"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:sticky-bbq-sauce",
+      "title": "Sticky Bbq Sauce",
+      "category": "Extras / sides",
+      "sourceEvidence": [
+        "source:_ WC 06_07_2026.xlsx",
+        "sheet:wed",
+        "row:17",
+        "category:Extras / sides",
+        "row:43",
+        "sheet:fri",
+        "row:15",
+        "row:35",
+        "sheet:fikawed",
+        "row:20",
+        "allergen-evidence:source-provided-no-inference"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:sticky-date-brown-sauce",
+      "title": "Sticky Date Brown Sauce",
+      "category": "Extras / sides",
+      "sourceEvidence": [
+        "source:WC 20_07_2026 (1).xlsx",
+        "sheet:thurs",
+        "row:20",
+        "category:Extras / sides",
+        "row:43",
+        "sheet:fikathurs",
+        "row:24",
+        "allergen-evidence:source-provided-no-inference"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:stokes-beer-and-onion-marmalade",
+      "title": "Stokes Beer And Onion Marmalade",
+      "category": "Extras / sides",
+      "sourceEvidence": [
+        "source:WC 20_07_2026 (1).xlsx",
+        "sheet:thurs",
+        "row:19",
+        "category:Extras / sides",
+        "row:42",
+        "sheet:fikathurs",
+        "row:23",
+        "allergen-evidence:source-provided-no-inference"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:sundried-tomato-and-roast-rerd-pepper-pesto",
+      "title": "Sundried Tomato And Roast Rerd Pepper Pesto",
+      "category": "Extras / sides",
+      "sourceEvidence": [
+        "source:WC 20_07_2026 (1).xlsx",
+        "sheet:mon",
+        "row:18",
+        "category:Extras / sides",
+        "row:38",
+        "sheet:fikamon",
+        "row:22",
+        "allergen-evidence:source-provided-no-inference"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:sweet-chilli-sauce",
+      "title": "Sweet Chilli Sauce",
+      "category": "Extras / sides",
+      "sourceEvidence": [
+        "source:WC 20_07_2026 (1).xlsx",
+        "sheet:tue",
+        "row:17",
+        "category:Extras / sides",
+        "row:41",
+        "sheet:fikatue",
+        "row:21",
+        "allergen-evidence:source-provided-no-inference"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:sweetcoprn-and-potato-chowder",
+      "title": "Sweetcoprn And Potato Chowder",
+      "category": "Soup",
+      "sourceEvidence": [
+        "source:_ WC 06_07_2026.xlsx",
+        "sheet:wed",
+        "row:11",
+        "category:Soup",
+        "row:37",
+        "sheet:fri",
+        "row:10",
+        "row:30",
+        "sheet:fikawed",
+        "row:14",
+        "allergen-evidence:source-provided-no-inference"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:sweetcorn-and-jalepeno-relish",
+      "title": "Sweetcorn And Jalepeno Relish",
+      "category": "Extras / sides",
+      "sourceEvidence": [
+        "source:_WC 13_07_2026.xlsx",
+        "sheet:wed",
+        "row:20",
+        "category:Extras / sides",
+        "row:46",
+        "sheet:fikawed",
+        "row:23",
+        "allergen-evidence:source-provided-no-inference"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:sweetcorn-shredded-fennell-with-tomato-dressing",
+      "title": "Sweetcorn Shredded Fennell With Tomato Dressing",
+      "category": "Salad 4",
+      "sourceEvidence": [
+        "source:_ WC 06_07_2026.xlsx",
+        "sheet:wed",
+        "row:6",
+        "category:Salad 4",
+        "row:32",
+        "sheet:thurs",
+        "row:7",
+        "category:Salad 5",
+        "row:30",
+        "sheet:fri",
+        "row:26",
+        "sheet:fikawed",
+        "row:13",
+        "allergen-evidence:source-provided-no-inference"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:taboon-flatbreads-with-noigella-and-geee",
+      "title": "Taboon Flatbreads With Noigella And Geee",
+      "category": "Extras / sides",
+      "sourceEvidence": [
+        "source:_WC 13_07_2026.xlsx",
+        "sheet:fri",
+        "row:15",
+        "category:Extras / sides",
+        "row:38"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:tandorie-marinated-chickenthigh-skewers",
+      "title": "Tandorie Marinated Chickenthigh Skewers",
+      "category": "Hot meat",
+      "sourceEvidence": [
+        "source:_WC 13_07_2026.xlsx",
+        "sheet:fri",
+        "row:11",
+        "category:Hot meat",
+        "row:34"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:toasted-almonds",
+      "title": "Toasted Almonds",
+      "category": "Extras / sides",
+      "sourceEvidence": [
+        "source:_ WC 06_07_2026.xlsx",
+        "sheet:tue",
+        "row:19",
+        "category:Extras / sides",
+        "row:43",
+        "sheet:fikatue",
+        "row:23",
+        "allergen-evidence:source-provided-no-inference"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:toasted-sesame-seeds",
+      "title": "Toasted Sesame Seeds",
+      "category": "Extras / sides",
+      "sourceEvidence": [
+        "source:_WC 13_07_2026.xlsx",
+        "sheet:thurs",
+        "row:18",
+        "category:Extras / sides",
+        "row:41",
+        "sheet:fikathurs",
+        "row:22",
+        "allergen-evidence:source-provided-no-inference"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:tomato-and-black-bean",
+      "title": "Tomato And Black Bean",
+      "category": "Soup",
+      "sourceEvidence": [
+        "source:WC 20_07_2026 (1).xlsx",
+        "sheet:wed",
+        "row:11",
+        "category:Soup",
+        "row:37",
+        "sheet:fikawed",
+        "row:14",
+        "allergen-evidence:source-provided-no-inference"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:tomato-and-chipotle-salsa",
+      "title": "Tomato And Chipotle Salsa",
+      "category": "Extras / sides",
+      "sourceEvidence": [
+        "source:WC 20_07_2026 (1).xlsx",
+        "sheet:wed",
+        "row:17",
+        "category:Extras / sides",
+        "row:43",
+        "sheet:fikawed",
+        "row:20",
+        "allergen-evidence:source-provided-no-inference"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:tomato-cucumber-and-pink-pickled-onions",
+      "title": "Tomato Cucumber And Pink Pickled Onions",
+      "category": "Salad 3",
+      "sourceEvidence": [
+        "source:_ WC 06_07_2026.xlsx",
+        "sheet:thurs",
+        "row:5",
+        "category:Salad 3",
+        "row:28",
+        "sheet:fikathurs",
+        "row:12",
+        "allergen-evidence:source-provided-no-inference"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:tomato-cucumber-pickled-pink-onions-and-fresh-coriander",
+      "title": "Tomato Cucumber,Pickled Pink Onions And Fresh Coriander",
+      "category": "Salad 1",
+      "sourceEvidence": [
+        "source:WC 20_07_2026 (1).xlsx",
+        "sheet:wed",
+        "row:3",
+        "category:Salad 1",
+        "row:29",
+        "sheet:fikawed",
+        "row:10",
+        "allergen-evidence:source-provided-no-inference"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:tomato-relish",
+      "title": "Tomato Relish",
+      "category": "Extras / sides",
+      "sourceEvidence": [
+        "source:_WC 13_07_2026.xlsx",
+        "sheet:mon",
+        "row:17",
+        "category:Extras / sides",
+        "row:37",
+        "sheet:fikamon",
+        "row:21",
+        "allergen-evidence:source-provided-no-inference"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:tomato-cucumber-avocado-red-onion",
+      "title": "Tomato, Cucumber, Avocado, Red Onion",
+      "category": "Salad 2",
+      "sourceEvidence": [
+        "source:_WC 13_07_2026.xlsx",
+        "sheet:mon",
+        "row:4",
+        "category:Salad 2",
+        "row:24",
+        "sheet:tue",
+        "row:7",
+        "category:Salad 5",
+        "row:31",
+        "sheet:fikamon",
+        "row:11",
+        "allergen-evidence:source-provided-no-inference"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:tonkatasu-roasted-aubergine",
+      "title": "Tonkatasu Roasted Aubergine",
+      "category": "Hot veg / vegan",
+      "sourceEvidence": [
+        "source:WC 20_07_2026 (1).xlsx",
+        "sheet:tue",
+        "row:12",
+        "category:Hot veg / vegan",
+        "row:36",
+        "sheet:fikatue",
+        "row:16",
+        "allergen-evidence:source-provided-no-inference"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:tonkatasu-sauce",
+      "title": "Tonkatasu Sauce",
+      "category": "Extras / sides",
+      "sourceEvidence": [
+        "source:WC 20_07_2026 (1).xlsx",
+        "sheet:fri",
+        "row:13",
+        "category:Extras / sides",
+        "row:36"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:trio-of-tomatos-oregano-shaved-fennell-and-orange-dressing",
+      "title": "Trio Of Tomatos Oregano Shaved Fennell And Orange Dressing",
+      "category": "Salad 3",
+      "sourceEvidence": [
+        "source:WC 20_07_2026 (1).xlsx",
+        "sheet:mon",
+        "row:5",
+        "category:Salad 3",
+        "row:25",
+        "sheet:fikamon",
+        "row:12",
+        "allergen-evidence:source-provided-no-inference"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:tumeric-roasted-cauliflower-grains-and-mustard-dressing",
+      "title": "Tumeric Roasted Cauliflower Grains And Mustard Dressing",
+      "category": "Salad 1",
+      "sourceEvidence": [
+        "source:WC 20_07_2026 (1).xlsx",
+        "sheet:thurs",
+        "row:3",
+        "category:Salad 1",
+        "row:26",
+        "sheet:fikathurs",
+        "row:10",
+        "allergen-evidence:source-provided-no-inference"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:udon-noodle-with-chinese-cabbage-coriander-ansd-sesame-pesto",
+      "title": "Udon Noodle With Chinese Cabbage,Coriander Ansd Sesame Pesto",
+      "category": "Salad 4",
+      "sourceEvidence": [
+        "source:WC 20_07_2026 (1).xlsx",
+        "sheet:fri",
+        "row:6",
+        "category:Salad 4",
+        "row:29"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:vegan-frankfurter-with-pretzel-vegan-bun",
+      "title": "Vegan Frankfurter With Pretzel Vegan Bun",
+      "category": "Hot veg / vegan",
+      "sourceEvidence": [
+        "source:_WC 13_07_2026.xlsx",
+        "sheet:mon",
+        "row:12",
+        "category:Hot veg / vegan",
+        "row:32",
+        "sheet:fikamon",
+        "row:16",
+        "allergen-evidence:source-provided-no-inference"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:vegetable-gyoza",
+      "title": "Vegetable Gyoza",
+      "category": "Extras / sides",
+      "sourceEvidence": [
+        "source:WC 20_07_2026 (1).xlsx",
+        "sheet:tue",
+        "row:14",
+        "category:Extras / sides",
+        "row:38",
+        "source:_WC 13_07_2026.xlsx",
+        "sheet:thurs",
+        "row:37",
+        "sheet:fikatue",
+        "row:18",
+        "sheet:fikathurs",
+        "allergen-evidence:source-provided-no-inference"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:warm-taboon-breads",
+      "title": "Warm Taboon Breads",
+      "category": "Extras / sides",
+      "sourceEvidence": [
+        "source:WC 20_07_2026 (1).xlsx",
+        "sheet:wed",
+        "row:16",
+        "category:Extras / sides",
+        "row:28",
+        "row:42",
+        "sheet:fikawed",
+        "row:19",
+        "allergen-evidence:source-provided-no-inference"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:watermelon-with-mango-and-chilli",
+      "title": "Watermelon With Mango And Chilli",
+      "category": "Salad 1",
+      "sourceEvidence": [
+        "source:_WC 13_07_2026.xlsx",
+        "sheet:wed",
+        "row:3",
+        "category:Salad 1",
+        "row:29",
+        "sheet:fikawed",
+        "row:10",
+        "allergen-evidence:source-provided-no-inference"
+      ]
+    },
+    {
+      "id": "production:delivered-in-lunch:wild-rocket-baby-waterscress-and-house-dressing",
+      "title": "Wild Rocket Baby Waterscress And House Dressing",
+      "category": "Salad 4",
+      "sourceEvidence": [
+        "source:WC 20_07_2026 (1).xlsx",
+        "sheet:thurs",
+        "row:6",
+        "category:Salad 4",
+        "row:29",
+        "sheet:fikathurs",
+        "row:13",
+        "allergen-evidence:source-provided-no-inference"
+      ]
+    }
+  ]
+}

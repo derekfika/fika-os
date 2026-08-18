@@ -1,0 +1,2380 @@
+{
+  "schemaVersion": "fika.hospitality-menu-catalogue.v1",
+  "generatedAt": "deterministic-from-source",
+  "source": {
+    "path": "sites/mnk/booking-platform/01_MenuData.js",
+    "itemCount": 43
+  },
+  "categories": [
+    {
+      "canonicalId": "hospitality-menu-category:mnk:drinks",
+      "name": "Drinks"
+    },
+    {
+      "canonicalId": "hospitality-menu-category:mnk:sweet-treats",
+      "name": "Sweet treats"
+    },
+    {
+      "canonicalId": "hospitality-menu-category:mnk:breakfast",
+      "name": "Breakfast"
+    },
+    {
+      "canonicalId": "hospitality-menu-category:mnk:lunch",
+      "name": "Lunch"
+    },
+    {
+      "canonicalId": "hospitality-menu-category:mnk:lunch-boxes",
+      "name": "Lunch Boxes"
+    },
+    {
+      "canonicalId": "hospitality-menu-category:mnk:grazing-boxes",
+      "name": "Grazing Boxes"
+    },
+    {
+      "canonicalId": "hospitality-menu-category:mnk:salads-sushi",
+      "name": "Salads & Sushi"
+    },
+    {
+      "canonicalId": "hospitality-menu-category:mnk:grazing-events",
+      "name": "Grazing Events"
+    },
+    {
+      "canonicalId": "hospitality-menu-category:mnk:afternoon",
+      "name": "Afternoon"
+    },
+    {
+      "canonicalId": "hospitality-menu-category:mnk:finger-food",
+      "name": "Finger Food"
+    },
+    {
+      "canonicalId": "hospitality-menu-category:mnk:fork-buffet-bowl-food",
+      "name": "Fork Buffet & Bowl Food"
+    },
+    {
+      "canonicalId": "hospitality-menu-category:mnk:canapes",
+      "name": "Canapes"
+    },
+    {
+      "canonicalId": "hospitality-menu-category:mnk:dining",
+      "name": "Dining"
+    },
+    {
+      "canonicalId": "hospitality-menu-category:mnk:bespoke-events",
+      "name": "Bespoke Events"
+    }
+  ],
+  "items": [
+    {
+      "canonicalId": "hospitality-menu-item:mnk:bloom_filter_coffee",
+      "source": {
+        "provider": "mnk-booking-platform",
+        "sourcePath": "01_MenuData.js:MENU_SCHEMA",
+        "sourceItemId": "bloom_filter_coffee"
+      },
+      "name": "Bloom Filter Coffee",
+      "description": "Ethical filter coffee, served per person.",
+      "category": "Drinks",
+      "pricing": {
+        "unitPrice": 3,
+        "currency": "GBP",
+        "basis": "per_item",
+        "servingInfo": "Per person",
+        "vatRate": null
+      },
+      "orderingConstraints": {
+        "minimumQuantity": 1,
+        "minimumGuests": null,
+        "noticeRequiredDays": 3,
+        "serves": null,
+        "suggestionType": null,
+        "suggestionLabel": "",
+        "suggestionUnit": "units"
+      },
+      "optionGroups": [],
+      "dietaryInformation": [],
+      "allergenInformation": [],
+      "lifecycleState": "active",
+      "sortOrder": 10
+    },
+    {
+      "canonicalId": "hospitality-menu-item:mnk:specialty_tea_coffee",
+      "source": {
+        "provider": "mnk-booking-platform",
+        "sourcePath": "01_MenuData.js:MENU_SCHEMA",
+        "sourceItemId": "specialty_tea_coffee"
+      },
+      "name": "Specialty Tea & Coffee",
+      "description": "Specialty teas and coffee, served per person.",
+      "category": "Drinks",
+      "pricing": {
+        "unitPrice": 3.5,
+        "currency": "GBP",
+        "basis": "per_item",
+        "servingInfo": "Per person",
+        "vatRate": null
+      },
+      "orderingConstraints": {
+        "minimumQuantity": 1,
+        "minimumGuests": null,
+        "noticeRequiredDays": 3,
+        "serves": null,
+        "suggestionType": null,
+        "suggestionLabel": "",
+        "suggestionUnit": "units"
+      },
+      "optionGroups": [],
+      "dietaryInformation": [],
+      "allergenInformation": [],
+      "lifecycleState": "active",
+      "sortOrder": 20
+    },
+    {
+      "canonicalId": "hospitality-menu-item:mnk:belu_water",
+      "source": {
+        "provider": "mnk-booking-platform",
+        "sourcePath": "01_MenuData.js:MENU_SCHEMA",
+        "sourceItemId": "belu_water"
+      },
+      "name": "Belu Water Bottle",
+      "description": "750ml still or sparkling mineral water. All profits go to WaterAid.",
+      "category": "Drinks",
+      "pricing": {
+        "unitPrice": 3.95,
+        "currency": "GBP",
+        "basis": "per_item",
+        "servingInfo": "Per bottle",
+        "vatRate": null
+      },
+      "orderingConstraints": {
+        "minimumQuantity": 1,
+        "minimumGuests": null,
+        "noticeRequiredDays": 3,
+        "serves": null,
+        "suggestionType": null,
+        "suggestionLabel": "",
+        "suggestionUnit": "units"
+      },
+      "optionGroups": [
+        {
+          "id": "water",
+          "label": "Choose water",
+          "selectionType": "select",
+          "required": true,
+          "options": [
+            {
+              "id": "water:still",
+              "label": "Still"
+            },
+            {
+              "id": "water:sparkling",
+              "label": "Sparkling"
+            },
+            {
+              "id": "water:mixed",
+              "label": "Mixed"
+            }
+          ]
+        }
+      ],
+      "dietaryInformation": [],
+      "allergenInformation": [],
+      "lifecycleState": "active",
+      "sortOrder": 30
+    },
+    {
+      "canonicalId": "hospitality-menu-item:mnk:canned_drinks",
+      "source": {
+        "provider": "mnk-booking-platform",
+        "sourcePath": "01_MenuData.js:MENU_SCHEMA",
+        "sourceItemId": "canned_drinks"
+      },
+      "name": "A Selection of Canned Drinks",
+      "description": "Coke, Diet Coke, Coke Zero, Sprite and Fanta Orange.",
+      "category": "Drinks",
+      "pricing": {
+        "unitPrice": 1.75,
+        "currency": "GBP",
+        "basis": "per_item",
+        "servingInfo": "Per can",
+        "vatRate": null
+      },
+      "orderingConstraints": {
+        "minimumQuantity": 1,
+        "minimumGuests": null,
+        "noticeRequiredDays": 3,
+        "serves": null,
+        "suggestionType": null,
+        "suggestionLabel": "",
+        "suggestionUnit": "units"
+      },
+      "optionGroups": [],
+      "dietaryInformation": [],
+      "allergenInformation": [],
+      "lifecycleState": "active",
+      "sortOrder": 40
+    },
+    {
+      "canonicalId": "hospitality-menu-item:mnk:fresh_juice_250",
+      "source": {
+        "provider": "mnk-booking-platform",
+        "sourcePath": "01_MenuData.js:MENU_SCHEMA",
+        "sourceItemId": "fresh_juice_250"
+      },
+      "name": "Fresh Squeezed & Pressed Juice",
+      "description": "250ml bottle. Orange, seasonal apple, carrot pear & ginger, or seasonal blood orange.",
+      "category": "Drinks",
+      "pricing": {
+        "unitPrice": 3,
+        "currency": "GBP",
+        "basis": "per_item",
+        "servingInfo": "Per bottle",
+        "vatRate": null
+      },
+      "orderingConstraints": {
+        "minimumQuantity": 1,
+        "minimumGuests": null,
+        "noticeRequiredDays": 3,
+        "serves": null,
+        "suggestionType": null,
+        "suggestionLabel": "",
+        "suggestionUnit": "units"
+      },
+      "optionGroups": [
+        {
+          "id": "flavour",
+          "label": "Choose flavour",
+          "selectionType": "select",
+          "required": true,
+          "options": [
+            {
+              "id": "flavour:orange",
+              "label": "Orange"
+            },
+            {
+              "id": "flavour:seasonal-apple",
+              "label": "Seasonal apple"
+            },
+            {
+              "id": "flavour:carrot-pear-ginger",
+              "label": "Carrot, pear & ginger"
+            },
+            {
+              "id": "flavour:blood-orange-seasonal",
+              "label": "Blood orange (seasonal)"
+            },
+            {
+              "id": "flavour:mixed",
+              "label": "Mixed"
+            }
+          ]
+        }
+      ],
+      "dietaryInformation": [],
+      "allergenInformation": [],
+      "lifecycleState": "active",
+      "sortOrder": 50
+    },
+    {
+      "canonicalId": "hospitality-menu-item:mnk:fresh_juice_1l",
+      "source": {
+        "provider": "mnk-booking-platform",
+        "sourcePath": "01_MenuData.js:MENU_SCHEMA",
+        "sourceItemId": "fresh_juice_1l"
+      },
+      "name": "Fresh Squeezed & Pressed Juice",
+      "description": "1L bottle. Orange, seasonal apple, carrot pear & ginger, or seasonal blood orange.",
+      "category": "Drinks",
+      "pricing": {
+        "unitPrice": 9,
+        "currency": "GBP",
+        "basis": "per_item",
+        "servingInfo": "Per bottle",
+        "vatRate": null
+      },
+      "orderingConstraints": {
+        "minimumQuantity": 1,
+        "minimumGuests": null,
+        "noticeRequiredDays": 3,
+        "serves": null,
+        "suggestionType": null,
+        "suggestionLabel": "",
+        "suggestionUnit": "units"
+      },
+      "optionGroups": [
+        {
+          "id": "flavour",
+          "label": "Choose flavour",
+          "selectionType": "select",
+          "required": true,
+          "options": [
+            {
+              "id": "flavour:orange",
+              "label": "Orange"
+            },
+            {
+              "id": "flavour:seasonal-apple",
+              "label": "Seasonal apple"
+            },
+            {
+              "id": "flavour:carrot-pear-ginger",
+              "label": "Carrot, pear & ginger"
+            },
+            {
+              "id": "flavour:blood-orange-seasonal",
+              "label": "Blood orange (seasonal)"
+            },
+            {
+              "id": "flavour:mixed",
+              "label": "Mixed"
+            }
+          ]
+        }
+      ],
+      "dietaryInformation": [],
+      "allergenInformation": [],
+      "lifecycleState": "active",
+      "sortOrder": 60
+    },
+    {
+      "canonicalId": "hospitality-menu-item:mnk:ginger_shot",
+      "source": {
+        "provider": "mnk-booking-platform",
+        "sourcePath": "01_MenuData.js:MENU_SCHEMA",
+        "sourceItemId": "ginger_shot"
+      },
+      "name": "Fresh Pressed Ginger, Turmeric & Lemon Shot",
+      "category": "Drinks",
+      "pricing": {
+        "unitPrice": 3,
+        "currency": "GBP",
+        "basis": "per_item",
+        "servingInfo": "80ml shot",
+        "vatRate": null
+      },
+      "orderingConstraints": {
+        "minimumQuantity": 1,
+        "minimumGuests": null,
+        "noticeRequiredDays": 3,
+        "serves": null,
+        "suggestionType": null,
+        "suggestionLabel": "",
+        "suggestionUnit": "units"
+      },
+      "optionGroups": [],
+      "dietaryInformation": [],
+      "allergenInformation": [],
+      "lifecycleState": "active",
+      "sortOrder": 70
+    },
+    {
+      "canonicalId": "hospitality-menu-item:mnk:smoothie_1l",
+      "source": {
+        "provider": "mnk-booking-platform",
+        "sourcePath": "01_MenuData.js:MENU_SCHEMA",
+        "sourceItemId": "smoothie_1l"
+      },
+      "name": "Freshly Made Smoothie",
+      "description": "1L bottle. Green Glow, Berry Boost or Island Breeze.",
+      "category": "Drinks",
+      "pricing": {
+        "unitPrice": 12,
+        "currency": "GBP",
+        "basis": "per_item",
+        "servingInfo": "Per bottle",
+        "vatRate": null
+      },
+      "orderingConstraints": {
+        "minimumQuantity": 1,
+        "minimumGuests": null,
+        "noticeRequiredDays": 3,
+        "serves": null,
+        "suggestionType": null,
+        "suggestionLabel": "",
+        "suggestionUnit": "units"
+      },
+      "optionGroups": [
+        {
+          "id": "flavour",
+          "label": "Choose flavour",
+          "selectionType": "select",
+          "required": true,
+          "options": [
+            {
+              "id": "flavour:green-glow",
+              "label": "Green Glow"
+            },
+            {
+              "id": "flavour:berry-boost",
+              "label": "Berry Boost"
+            },
+            {
+              "id": "flavour:island-breeze",
+              "label": "Island Breeze"
+            },
+            {
+              "id": "flavour:mixed",
+              "label": "Mixed"
+            }
+          ]
+        }
+      ],
+      "dietaryInformation": [],
+      "allergenInformation": [],
+      "lifecycleState": "active",
+      "sortOrder": 80
+    },
+    {
+      "canonicalId": "hospitality-menu-item:mnk:cookie_box",
+      "source": {
+        "provider": "mnk-booking-platform",
+        "sourcePath": "01_MenuData.js:MENU_SCHEMA",
+        "sourceItemId": "cookie_box"
+      },
+      "name": "Freshly Baked Cookie Box",
+      "description": "24 freshly baked mixed cookies including milk chocolate, double chocolate, white chocolate, chocolate chip and Carnivals Smarties cookies.",
+      "category": "Sweet treats",
+      "pricing": {
+        "unitPrice": 40,
+        "currency": "GBP",
+        "basis": "per_item",
+        "servingInfo": "Box of 24",
+        "vatRate": null
+      },
+      "orderingConstraints": {
+        "minimumQuantity": 1,
+        "minimumGuests": null,
+        "noticeRequiredDays": 3,
+        "serves": null,
+        "suggestionType": null,
+        "suggestionLabel": "",
+        "suggestionUnit": "units"
+      },
+      "optionGroups": [],
+      "dietaryInformation": [],
+      "allergenInformation": [],
+      "lifecycleState": "active",
+      "sortOrder": 100
+    },
+    {
+      "canonicalId": "hospitality-menu-item:mnk:tray_bake_box",
+      "source": {
+        "provider": "mnk-booking-platform",
+        "sourcePath": "01_MenuData.js:MENU_SCHEMA",
+        "sourceItemId": "tray_bake_box"
+      },
+      "name": "Tray Bake Box",
+      "description": "Medium box contains 24 pieces and can be cut into 48 smaller bites. Example flavours include caramel Rolo brownie, caramelised biscuit brownie, raspberry & white chocolate blondies, and lemon & white chocolate blondies.",
+      "category": "Sweet treats",
+      "pricing": {
+        "unitPrice": 75,
+        "currency": "GBP",
+        "basis": "per_item",
+        "servingInfo": "Box of 24 pieces",
+        "vatRate": null
+      },
+      "orderingConstraints": {
+        "minimumQuantity": 1,
+        "minimumGuests": null,
+        "noticeRequiredDays": 3,
+        "serves": null,
+        "suggestionType": null,
+        "suggestionLabel": "",
+        "suggestionUnit": "units"
+      },
+      "optionGroups": [],
+      "dietaryInformation": [],
+      "allergenInformation": [],
+      "lifecycleState": "active",
+      "sortOrder": 110
+    },
+    {
+      "canonicalId": "hospitality-menu-item:mnk:exotic_fruit_box",
+      "source": {
+        "provider": "mnk-booking-platform",
+        "sourcePath": "01_MenuData.js:MENU_SCHEMA",
+        "sourceItemId": "exotic_fruit_box"
+      },
+      "name": "Exotic Fruit Box",
+      "description": "Watermelon, cantaloupe melon, honey dew melon, pineapple, kiwi, passion fruit and strawberries.",
+      "category": "Breakfast",
+      "pricing": {
+        "unitPrice": 52.5,
+        "currency": "GBP",
+        "basis": "per_item",
+        "servingInfo": "Serves 20 people",
+        "vatRate": null
+      },
+      "orderingConstraints": {
+        "minimumQuantity": 1,
+        "minimumGuests": null,
+        "noticeRequiredDays": 3,
+        "serves": 20,
+        "suggestionType": "ceil_by_guests",
+        "suggestionLabel": "Suggested for your guest count",
+        "suggestionUnit": "boxes"
+      },
+      "optionGroups": [],
+      "dietaryInformation": [],
+      "allergenInformation": [],
+      "lifecycleState": "active",
+      "sortOrder": 120
+    },
+    {
+      "canonicalId": "hospitality-menu-item:mnk:mini_pastries",
+      "source": {
+        "provider": "mnk-booking-platform",
+        "sourcePath": "01_MenuData.js:MENU_SCHEMA",
+        "sourceItemId": "mini_pastries"
+      },
+      "name": "Mini Pastries",
+      "description": "A selection of two mini Danish and bite-size chocolate muffins per person, garnished with strawberries and icing sugar.",
+      "category": "Breakfast",
+      "pricing": {
+        "unitPrice": 36,
+        "currency": "GBP",
+        "basis": "per_item",
+        "servingInfo": "Box feeds 12 people",
+        "vatRate": null
+      },
+      "orderingConstraints": {
+        "minimumQuantity": 1,
+        "minimumGuests": null,
+        "noticeRequiredDays": 3,
+        "serves": 12,
+        "suggestionType": "ceil_by_guests",
+        "suggestionLabel": "Suggested for your guest count",
+        "suggestionUnit": "boxes"
+      },
+      "optionGroups": [],
+      "dietaryInformation": [],
+      "allergenInformation": [],
+      "lifecycleState": "active",
+      "sortOrder": 130
+    },
+    {
+      "canonicalId": "hospitality-menu-item:mnk:large_pastries",
+      "source": {
+        "provider": "mnk-booking-platform",
+        "sourcePath": "01_MenuData.js:MENU_SCHEMA",
+        "sourceItemId": "large_pastries"
+      },
+      "name": "Freshly Baked Large Pastries",
+      "description": "Four plain croissants, four raspberry croissants and four almond croissants.",
+      "category": "Breakfast",
+      "pricing": {
+        "unitPrice": 42,
+        "currency": "GBP",
+        "basis": "per_item",
+        "servingInfo": "Box of 12 pastries",
+        "vatRate": null
+      },
+      "orderingConstraints": {
+        "minimumQuantity": 1,
+        "minimumGuests": null,
+        "noticeRequiredDays": 3,
+        "serves": 12,
+        "suggestionType": "ceil_by_guests",
+        "suggestionLabel": "Suggested for your guest count",
+        "suggestionUnit": "boxes"
+      },
+      "optionGroups": [],
+      "dietaryInformation": [],
+      "allergenInformation": [],
+      "lifecycleState": "active",
+      "sortOrder": 140
+    },
+    {
+      "canonicalId": "hospitality-menu-item:mnk:filled_savoury_croissant",
+      "source": {
+        "provider": "mnk-booking-platform",
+        "sourcePath": "01_MenuData.js:MENU_SCHEMA",
+        "sourceItemId": "filled_savoury_croissant"
+      },
+      "name": "Filled Savoury Croissant",
+      "description": "Four Swiss cheese, Wiltshire ham & vine tomato; four free-range egg mayonnaise, sun blush tomato & roquette; four smoked Chalk Stream trout, cream cheese & dill.",
+      "category": "Breakfast",
+      "pricing": {
+        "unitPrice": 60,
+        "currency": "GBP",
+        "basis": "per_item",
+        "servingInfo": "Box of 12 pastries",
+        "vatRate": null
+      },
+      "orderingConstraints": {
+        "minimumQuantity": 1,
+        "minimumGuests": null,
+        "noticeRequiredDays": 3,
+        "serves": 12,
+        "suggestionType": "ceil_by_guests",
+        "suggestionLabel": "Suggested for your guest count",
+        "suggestionUnit": "boxes"
+      },
+      "optionGroups": [],
+      "dietaryInformation": [],
+      "allergenInformation": [],
+      "lifecycleState": "active",
+      "sortOrder": 150
+    },
+    {
+      "canonicalId": "hospitality-menu-item:mnk:vegan_savoury_croissant",
+      "source": {
+        "provider": "mnk-booking-platform",
+        "sourcePath": "01_MenuData.js:MENU_SCHEMA",
+        "sourceItemId": "vegan_savoury_croissant"
+      },
+      "name": "Vegan Savoury Croissant",
+      "description": "Four smashed avocado & sun blushed tomatoes; four smoked Applewood cheese, green tomato chutney & roquette; four roast portobello mushroom, baby spinach & vegan feta.",
+      "category": "Breakfast",
+      "pricing": {
+        "unitPrice": 65,
+        "currency": "GBP",
+        "basis": "per_item",
+        "servingInfo": "Box of 12 pastries",
+        "vatRate": null
+      },
+      "orderingConstraints": {
+        "minimumQuantity": 1,
+        "minimumGuests": null,
+        "noticeRequiredDays": 3,
+        "serves": 12,
+        "suggestionType": "ceil_by_guests",
+        "suggestionLabel": "Suggested for your guest count",
+        "suggestionUnit": "boxes"
+      },
+      "optionGroups": [],
+      "dietaryInformation": [],
+      "allergenInformation": [],
+      "lifecycleState": "active",
+      "sortOrder": 160
+    },
+    {
+      "canonicalId": "hospitality-menu-item:mnk:bagel_box",
+      "source": {
+        "provider": "mnk-booking-platform",
+        "sourcePath": "01_MenuData.js:MENU_SCHEMA",
+        "sourceItemId": "bagel_box"
+      },
+      "name": "Bagel Box",
+      "description": "12 bagels cut in half. Choose smoked trout, crispy bacon & egg mayonnaise, roasted red pepper with smashed avocado, or mixed.",
+      "category": "Breakfast",
+      "pricing": {
+        "unitPrice": 72,
+        "currency": "GBP",
+        "basis": "per_item",
+        "servingInfo": "12 bagels cut in half",
+        "vatRate": null
+      },
+      "orderingConstraints": {
+        "minimumQuantity": 1,
+        "minimumGuests": null,
+        "noticeRequiredDays": 3,
+        "serves": 12,
+        "suggestionType": "ceil_by_guests",
+        "suggestionLabel": "Suggested for your guest count",
+        "suggestionUnit": "boxes"
+      },
+      "optionGroups": [
+        {
+          "id": "selection",
+          "label": "Choose bagel selection",
+          "selectionType": "select",
+          "required": true,
+          "options": [
+            {
+              "id": "selection:chapel-swan-smoked-trout-soft-cream-cheese-dill",
+              "label": "Chapel Swan smoked trout, soft cream cheese & dill"
+            },
+            {
+              "id": "selection:crispy-bacon-free-range-egg-mayonnaise",
+              "label": "Crispy bacon & free range egg mayonnaise"
+            },
+            {
+              "id": "selection:roasted-red-pepper-smashed-avocado-baby-spinach",
+              "label": "Roasted red pepper, smashed avocado & baby spinach"
+            },
+            {
+              "id": "selection:mixed",
+              "label": "Mixed"
+            }
+          ]
+        }
+      ],
+      "dietaryInformation": [],
+      "allergenInformation": [],
+      "lifecycleState": "active",
+      "sortOrder": 170
+    },
+    {
+      "canonicalId": "hospitality-menu-item:mnk:breakfast_pots",
+      "source": {
+        "provider": "mnk-booking-platform",
+        "sourcePath": "01_MenuData.js:MENU_SCHEMA",
+        "sourceItemId": "breakfast_pots"
+      },
+      "name": "Breakfast Pots",
+      "description": "Weekly changing menu. Options include fruit salad, Greek yoghurt, vegan yoghurt, free range boiled egg & baby spinach, smashed avocado with smoked salmon and egg, or overnight oats.",
+      "category": "Breakfast",
+      "pricing": {
+        "unitPrice": 3.95,
+        "currency": "GBP",
+        "basis": "per_item",
+        "servingInfo": "Per pot - minimum 12 per item",
+        "vatRate": null
+      },
+      "orderingConstraints": {
+        "minimumQuantity": 12,
+        "minimumGuests": null,
+        "noticeRequiredDays": 3,
+        "serves": null,
+        "suggestionType": null,
+        "suggestionLabel": "",
+        "suggestionUnit": "units"
+      },
+      "optionGroups": [
+        {
+          "id": "pot",
+          "label": "Choose pot",
+          "selectionType": "select",
+          "required": true,
+          "options": [
+            {
+              "id": "pot:fruit-salad",
+              "label": "Fruit salad"
+            },
+            {
+              "id": "pot:house-made-greek-yoghurt",
+              "label": "House made Greek yoghurt"
+            },
+            {
+              "id": "pot:vegan-yoghurt",
+              "label": "Vegan yoghurt"
+            },
+            {
+              "id": "pot:free-range-boiled-egg-baby-spinach",
+              "label": "Free range boiled egg & baby spinach"
+            },
+            {
+              "id": "pot:smashed-avocado-smoked-salmon-free-range-boiled-egg",
+              "label": "Smashed avocado, smoked salmon & free range boiled egg"
+            },
+            {
+              "id": "pot:overnight-oats",
+              "label": "Overnight oats"
+            },
+            {
+              "id": "pot:mixed",
+              "label": "Mixed"
+            }
+          ]
+        }
+      ],
+      "dietaryInformation": [],
+      "allergenInformation": [],
+      "lifecycleState": "active",
+      "sortOrder": 180
+    },
+    {
+      "canonicalId": "hospitality-menu-item:mnk:healthy_plant_power_breakfast",
+      "source": {
+        "provider": "mnk-booking-platform",
+        "sourcePath": "01_MenuData.js:MENU_SCHEMA",
+        "sourceItemId": "healthy_plant_power_breakfast"
+      },
+      "name": "Healthy Plant Power Breakfast",
+      "description": "Example menu includes seasonal poached fruit with coconut chia, vegan banana bread, sourdough crostini with smashed avocado, flapjack and fresh ginger shot.",
+      "category": "Breakfast",
+      "pricing": {
+        "unitPrice": 22,
+        "currency": "GBP",
+        "basis": "per_item",
+        "servingInfo": "Per person",
+        "vatRate": null
+      },
+      "orderingConstraints": {
+        "minimumQuantity": 1,
+        "minimumGuests": null,
+        "noticeRequiredDays": 3,
+        "serves": null,
+        "suggestionType": null,
+        "suggestionLabel": "",
+        "suggestionUnit": "units"
+      },
+      "optionGroups": [],
+      "dietaryInformation": [],
+      "allergenInformation": [],
+      "lifecycleState": "active",
+      "sortOrder": 190
+    },
+    {
+      "canonicalId": "hospitality-menu-item:mnk:deli_sandwich_lunch",
+      "source": {
+        "provider": "mnk-booking-platform",
+        "sourcePath": "01_MenuData.js:MENU_SCHEMA",
+        "sourceItemId": "deli_sandwich_lunch"
+      },
+      "name": "Deli Style Sandwich Lunch",
+      "description": "Three pieces per person. Meat, fish and vegetarian fillings on artisan breads such as ciabatta, focaccia, baguettes and wraps, served with hand cooked vegetable crisps.",
+      "category": "Lunch",
+      "pricing": {
+        "unitPrice": 9,
+        "currency": "GBP",
+        "basis": "per_item",
+        "servingInfo": "Per person",
+        "vatRate": null
+      },
+      "orderingConstraints": {
+        "minimumQuantity": 8,
+        "minimumGuests": 8,
+        "noticeRequiredDays": 3,
+        "serves": null,
+        "suggestionType": null,
+        "suggestionLabel": "",
+        "suggestionUnit": "units"
+      },
+      "optionGroups": [],
+      "dietaryInformation": [],
+      "allergenInformation": [],
+      "lifecycleState": "active",
+      "sortOrder": 200
+    },
+    {
+      "canonicalId": "hospitality-menu-item:mnk:individual_boxed_lunch",
+      "source": {
+        "provider": "mnk-booking-platform",
+        "sourcePath": "01_MenuData.js:MENU_SCHEMA",
+        "sourceItemId": "individual_boxed_lunch"
+      },
+      "name": "Individual Boxed Lunch",
+      "description": "Deli style sandwich, pasta salad, vegetable crisps, sausage roll and mini traybake. Vegan and gluten-free available on request.",
+      "category": "Lunch Boxes",
+      "pricing": {
+        "unitPrice": 14.95,
+        "currency": "GBP",
+        "basis": "per_item",
+        "servingInfo": "Per person",
+        "vatRate": null
+      },
+      "orderingConstraints": {
+        "minimumQuantity": 8,
+        "minimumGuests": 8,
+        "noticeRequiredDays": 3,
+        "serves": null,
+        "suggestionType": null,
+        "suggestionLabel": "",
+        "suggestionUnit": "units"
+      },
+      "optionGroups": [],
+      "dietaryInformation": [],
+      "allergenInformation": [],
+      "lifecycleState": "active",
+      "sortOrder": 210
+    },
+    {
+      "canonicalId": "hospitality-menu-item:mnk:salad_protein_lunch_platter",
+      "source": {
+        "provider": "mnk-booking-platform",
+        "sourcePath": "01_MenuData.js:MENU_SCHEMA",
+        "sourceItemId": "salad_protein_lunch_platter"
+      },
+      "name": "Salad & Protein Lunch Platter",
+      "description": "Three composite salads plus one meat protein, one fish protein and one veggie or vegan protein.",
+      "category": "Lunch",
+      "pricing": {
+        "unitPrice": 14,
+        "currency": "GBP",
+        "basis": "per_item",
+        "servingInfo": "Per person",
+        "vatRate": null
+      },
+      "orderingConstraints": {
+        "minimumQuantity": 8,
+        "minimumGuests": 8,
+        "noticeRequiredDays": 3,
+        "serves": null,
+        "suggestionType": null,
+        "suggestionLabel": "",
+        "suggestionUnit": "units"
+      },
+      "optionGroups": [],
+      "dietaryInformation": [],
+      "allergenInformation": [],
+      "lifecycleState": "active",
+      "sortOrder": 220
+    },
+    {
+      "canonicalId": "hospitality-menu-item:mnk:rice_paper_rolls",
+      "source": {
+        "provider": "mnk-booking-platform",
+        "sourcePath": "01_MenuData.js:MENU_SCHEMA",
+        "sourceItemId": "rice_paper_rolls"
+      },
+      "name": "Freshly Wrapped Rice Paper Rolls",
+      "description": "12 wraps per platter, each platter contains one flavour with dipping sauce.",
+      "category": "Lunch",
+      "pricing": {
+        "unitPrice": 45,
+        "currency": "GBP",
+        "basis": "per_item",
+        "servingInfo": "Feeds 3",
+        "vatRate": null
+      },
+      "orderingConstraints": {
+        "minimumQuantity": 3,
+        "minimumGuests": null,
+        "noticeRequiredDays": 3,
+        "serves": 3,
+        "suggestionType": "ceil_by_guests",
+        "suggestionLabel": "Suggested for your guest count",
+        "suggestionUnit": "platters"
+      },
+      "optionGroups": [
+        {
+          "id": "flavour",
+          "label": "Choose flavour",
+          "selectionType": "multi",
+          "required": true,
+          "options": [
+            {
+              "id": "flavour:crayfish-and-avocado",
+              "label": "Crayfish and avocado"
+            },
+            {
+              "id": "flavour:hot-smoked-trout",
+              "label": "Hot smoked trout"
+            },
+            {
+              "id": "flavour:char-siu-pulled-chicken",
+              "label": "Char-siu pulled chicken"
+            },
+            {
+              "id": "flavour:lemongrass-ginger-chilli-chicken",
+              "label": "Lemongrass, ginger & chilli chicken"
+            },
+            {
+              "id": "flavour:rainbow-vegetable-roll-vegan",
+              "label": "Rainbow vegetable roll (vegan)"
+            },
+            {
+              "id": "flavour:hoisin-tofu-and-rainbow-veg-vegan",
+              "label": "Hoisin tofu and rainbow veg (vegan)"
+            }
+          ]
+        }
+      ],
+      "dietaryInformation": [],
+      "allergenInformation": [],
+      "lifecycleState": "active",
+      "sortOrder": 230
+    },
+    {
+      "canonicalId": "hospitality-menu-item:mnk:grazing_charcuterie_box",
+      "source": {
+        "provider": "mnk-booking-platform",
+        "sourcePath": "01_MenuData.js:MENU_SCHEMA",
+        "sourceItemId": "grazing_charcuterie_box"
+      },
+      "name": "Grazing Box - Charcuterie",
+      "description": "Cobble Lane cured British charcuterie, Gordal olives, sun blush tomatoes, baby gherkins, stuffed cherrybell peppers, artisan breads, olive oil and balsamic.",
+      "category": "Grazing Boxes",
+      "pricing": {
+        "unitPrice": 75,
+        "currency": "GBP",
+        "basis": "per_item",
+        "servingInfo": "Feeds 10",
+        "vatRate": null
+      },
+      "orderingConstraints": {
+        "minimumQuantity": 1,
+        "minimumGuests": null,
+        "noticeRequiredDays": 3,
+        "serves": 10,
+        "suggestionType": "ceil_by_guests",
+        "suggestionLabel": "Suggested for your guest count",
+        "suggestionUnit": "boxes"
+      },
+      "optionGroups": [],
+      "dietaryInformation": [],
+      "allergenInformation": [],
+      "lifecycleState": "active",
+      "sortOrder": 240
+    },
+    {
+      "canonicalId": "hospitality-menu-item:mnk:cheese_box",
+      "source": {
+        "provider": "mnk-booking-platform",
+        "sourcePath": "01_MenuData.js:MENU_SCHEMA",
+        "sourceItemId": "cheese_box"
+      },
+      "name": "Cheese Box",
+      "description": "British county cheeses including Wookey Hole Cheddar, Colston Bassett Stilton, Hampshire Tunworth and Cornish Yarg in nettles with Stokes beer chutney and artisan biscuits.",
+      "category": "Grazing Boxes",
+      "pricing": {
+        "unitPrice": 75,
+        "currency": "GBP",
+        "basis": "per_item",
+        "servingInfo": "Feeds 10",
+        "vatRate": null
+      },
+      "orderingConstraints": {
+        "minimumQuantity": 1,
+        "minimumGuests": null,
+        "noticeRequiredDays": 3,
+        "serves": 10,
+        "suggestionType": "ceil_by_guests",
+        "suggestionLabel": "Suggested for your guest count",
+        "suggestionUnit": "boxes"
+      },
+      "optionGroups": [],
+      "dietaryInformation": [],
+      "allergenInformation": [],
+      "lifecycleState": "active",
+      "sortOrder": 250
+    },
+    {
+      "canonicalId": "hospitality-menu-item:mnk:picnic_box",
+      "source": {
+        "provider": "mnk-booking-platform",
+        "sourcePath": "01_MenuData.js:MENU_SCHEMA",
+        "sourceItemId": "picnic_box"
+      },
+      "name": "Picnic Box",
+      "description": "Freshly baked sausage rolls, Scotch eggs, pork pies, chicken skewers and tomato quiche with Stokes beer chutney and red onion marmalade.",
+      "category": "Grazing Boxes",
+      "pricing": {
+        "unitPrice": 75,
+        "currency": "GBP",
+        "basis": "per_item",
+        "servingInfo": "Feeds 10",
+        "vatRate": null
+      },
+      "orderingConstraints": {
+        "minimumQuantity": 1,
+        "minimumGuests": null,
+        "noticeRequiredDays": 3,
+        "serves": 10,
+        "suggestionType": "ceil_by_guests",
+        "suggestionLabel": "Suggested for your guest count",
+        "suggestionUnit": "boxes"
+      },
+      "optionGroups": [],
+      "dietaryInformation": [],
+      "allergenInformation": [],
+      "lifecycleState": "active",
+      "sortOrder": 260
+    },
+    {
+      "canonicalId": "hospitality-menu-item:mnk:vegan_box",
+      "source": {
+        "provider": "mnk-booking-platform",
+        "sourcePath": "01_MenuData.js:MENU_SCHEMA",
+        "sourceItemId": "vegan_box"
+      },
+      "name": "Vegan Box",
+      "description": "Vegan mezze with rainbow radish, cucumber and carrot shards, edamame beans, sweet potato falafel, olives, little gem spears, cherry tomatoes, pickles, toasted pita and three hummus flavours.",
+      "category": "Grazing Boxes",
+      "pricing": {
+        "unitPrice": 60,
+        "currency": "GBP",
+        "basis": "per_item",
+        "servingInfo": "Feeds 10",
+        "vatRate": null
+      },
+      "orderingConstraints": {
+        "minimumQuantity": 1,
+        "minimumGuests": null,
+        "noticeRequiredDays": 3,
+        "serves": 10,
+        "suggestionType": "ceil_by_guests",
+        "suggestionLabel": "Suggested for your guest count",
+        "suggestionUnit": "boxes"
+      },
+      "optionGroups": [],
+      "dietaryInformation": [],
+      "allergenInformation": [],
+      "lifecycleState": "active",
+      "sortOrder": 270
+    },
+    {
+      "canonicalId": "hospitality-menu-item:mnk:salad_boxes",
+      "source": {
+        "provider": "mnk-booking-platform",
+        "sourcePath": "01_MenuData.js:MENU_SCHEMA",
+        "sourceItemId": "salad_boxes"
+      },
+      "name": "Salad Boxes",
+      "description": "Mediterranean, grilled chicken Caesar, hot smoked salmon Nicoise, or weekly salad box on request.",
+      "category": "Salads & Sushi",
+      "pricing": {
+        "unitPrice": 25,
+        "currency": "GBP",
+        "basis": "per_item",
+        "servingInfo": "Feeds 8 as a side",
+        "vatRate": null
+      },
+      "orderingConstraints": {
+        "minimumQuantity": 1,
+        "minimumGuests": null,
+        "noticeRequiredDays": 3,
+        "serves": 8,
+        "suggestionType": "ceil_by_guests",
+        "suggestionLabel": "Suggested for your guest count",
+        "suggestionUnit": "boxes"
+      },
+      "optionGroups": [
+        {
+          "id": "salad",
+          "label": "Choose salads",
+          "selectionType": "multi",
+          "required": true,
+          "options": [
+            {
+              "id": "salad:mediterranean",
+              "label": "Mediterranean"
+            },
+            {
+              "id": "salad:grilled-chicken-caesar",
+              "label": "Grilled chicken Caesar"
+            },
+            {
+              "id": "salad:hot-smoked-salmon-nicoise",
+              "label": "Hot smoked salmon Nicoise"
+            },
+            {
+              "id": "salad:weekly-salad-box",
+              "label": "Weekly salad box"
+            }
+          ]
+        }
+      ],
+      "dietaryInformation": [],
+      "allergenInformation": [],
+      "lifecycleState": "active",
+      "sortOrder": 280
+    },
+    {
+      "canonicalId": "hospitality-menu-item:mnk:weekly_salad_box",
+      "source": {
+        "provider": "mnk-booking-platform",
+        "sourcePath": "01_MenuData.js:MENU_SCHEMA",
+        "sourceItemId": "weekly_salad_box"
+      },
+      "name": "Weekly Salad Box",
+      "description": "Weekly salad boxes available. Menu on request.",
+      "category": "Salads & Sushi",
+      "pricing": {
+        "unitPrice": 20,
+        "currency": "GBP",
+        "basis": "per_item",
+        "servingInfo": "Per box",
+        "vatRate": null
+      },
+      "orderingConstraints": {
+        "minimumQuantity": 1,
+        "minimumGuests": null,
+        "noticeRequiredDays": 3,
+        "serves": null,
+        "suggestionType": null,
+        "suggestionLabel": "",
+        "suggestionUnit": "units"
+      },
+      "optionGroups": [],
+      "dietaryInformation": [],
+      "allergenInformation": [],
+      "lifecycleState": "active",
+      "sortOrder": 290
+    },
+    {
+      "canonicalId": "hospitality-menu-item:mnk:deluxe_sushi_box",
+      "source": {
+        "provider": "mnk-booking-platform",
+        "sourcePath": "01_MenuData.js:MENU_SCHEMA",
+        "sourceItemId": "deluxe_sushi_box"
+      },
+      "name": "Deluxe Sushi Box",
+      "description": "84 pieces. Mixed selection of nigiri, maki and uramaki served with pickled ginger, wasabi and soy.",
+      "category": "Salads & Sushi",
+      "pricing": {
+        "unitPrice": 160,
+        "currency": "GBP",
+        "basis": "per_item",
+        "servingInfo": "Feeds 8 to 12 people",
+        "vatRate": null
+      },
+      "orderingConstraints": {
+        "minimumQuantity": 1,
+        "minimumGuests": null,
+        "noticeRequiredDays": 3,
+        "serves": 10,
+        "suggestionType": "ceil_by_guests",
+        "suggestionLabel": "Suggested for your guest count",
+        "suggestionUnit": "boxes"
+      },
+      "optionGroups": [],
+      "dietaryInformation": [],
+      "allergenInformation": [],
+      "lifecycleState": "active",
+      "sortOrder": 300
+    },
+    {
+      "canonicalId": "hospitality-menu-item:mnk:vegan_sushi_box",
+      "source": {
+        "provider": "mnk-booking-platform",
+        "sourcePath": "01_MenuData.js:MENU_SCHEMA",
+        "sourceItemId": "vegan_sushi_box"
+      },
+      "name": "Vegan Sushi Box",
+      "description": "72 pieces. Mixed plant based selection of nigiri, maki and uramaki served with pickled ginger, wasabi and soy.",
+      "category": "Salads & Sushi",
+      "pricing": {
+        "unitPrice": 120,
+        "currency": "GBP",
+        "basis": "per_item",
+        "servingInfo": "Feeds 8 to 12 people",
+        "vatRate": null
+      },
+      "orderingConstraints": {
+        "minimumQuantity": 1,
+        "minimumGuests": null,
+        "noticeRequiredDays": 3,
+        "serves": 10,
+        "suggestionType": "ceil_by_guests",
+        "suggestionLabel": "Suggested for your guest count",
+        "suggestionUnit": "boxes"
+      },
+      "optionGroups": [],
+      "dietaryInformation": [],
+      "allergenInformation": [],
+      "lifecycleState": "active",
+      "sortOrder": 310
+    },
+    {
+      "canonicalId": "hospitality-menu-item:mnk:glow_bowl",
+      "source": {
+        "provider": "mnk-booking-platform",
+        "sourcePath": "01_MenuData.js:MENU_SCHEMA",
+        "sourceItemId": "glow_bowl"
+      },
+      "name": "Fika Glow Bowl",
+      "description": "Individual salad bowl. Choose avocado Mex, sweet potato & quinoa, Mediterranean veg, or Asian prawn & edamame.",
+      "category": "Salads & Sushi",
+      "pricing": {
+        "unitPrice": 12.95,
+        "currency": "GBP",
+        "basis": "per_item",
+        "servingInfo": "Per person",
+        "vatRate": null
+      },
+      "orderingConstraints": {
+        "minimumQuantity": 8,
+        "minimumGuests": 8,
+        "noticeRequiredDays": 3,
+        "serves": null,
+        "suggestionType": null,
+        "suggestionLabel": "",
+        "suggestionUnit": "units"
+      },
+      "optionGroups": [
+        {
+          "id": "bowl",
+          "label": "Choose bowl",
+          "selectionType": "select",
+          "required": true,
+          "options": [
+            {
+              "id": "bowl:avocado-mex-bowl",
+              "label": "Avocado Mex Bowl"
+            },
+            {
+              "id": "bowl:sweet-potato-quinoa-bowl",
+              "label": "Sweet Potato & Quinoa Bowl"
+            },
+            {
+              "id": "bowl:mediterranean-veg-bowl",
+              "label": "Mediterranean Veg Bowl"
+            },
+            {
+              "id": "bowl:asian-prawn-edamame-bowl",
+              "label": "Asian Prawn & Edamame Bowl"
+            },
+            {
+              "id": "bowl:mixed",
+              "label": "Mixed"
+            }
+          ]
+        }
+      ],
+      "dietaryInformation": [],
+      "allergenInformation": [],
+      "lifecycleState": "active",
+      "sortOrder": 320
+    },
+    {
+      "canonicalId": "hospitality-menu-item:mnk:picnic_grazing_table",
+      "source": {
+        "provider": "mnk-booking-platform",
+        "sourcePath": "01_MenuData.js:MENU_SCHEMA",
+        "sourceItemId": "picnic_grazing_table"
+      },
+      "name": "Picnic Grazing Table",
+      "description": "British charcuterie, sausage rolls, olives, breads, crudites, falafel, hummus, British county cheese board, artisan biscuits and fresh cut fruit.",
+      "category": "Grazing Events",
+      "pricing": {
+        "unitPrice": 24.95,
+        "currency": "GBP",
+        "basis": "per_item",
+        "servingInfo": "Per person - minimum 20",
+        "vatRate": null
+      },
+      "orderingConstraints": {
+        "minimumQuantity": 20,
+        "minimumGuests": 20,
+        "noticeRequiredDays": 7,
+        "serves": null,
+        "suggestionType": null,
+        "suggestionLabel": "",
+        "suggestionUnit": "units"
+      },
+      "optionGroups": [],
+      "dietaryInformation": [],
+      "allergenInformation": [],
+      "lifecycleState": "active",
+      "sortOrder": 400
+    },
+    {
+      "canonicalId": "hospitality-menu-item:mnk:grazing_sweet_table",
+      "source": {
+        "provider": "mnk-booking-platform",
+        "sourcePath": "01_MenuData.js:MENU_SCHEMA",
+        "sourceItemId": "grazing_sweet_table"
+      },
+      "name": "Grazing Sweet Table",
+      "description": "Lemon mousse, tiramisu coffee shots, mini pavlova, salted caramel canelles, mini passion fruit meringue pies and macaroon tower.",
+      "category": "Grazing Events",
+      "pricing": {
+        "unitPrice": 18.95,
+        "currency": "GBP",
+        "basis": "per_item",
+        "servingInfo": "Per person - minimum 20",
+        "vatRate": null
+      },
+      "orderingConstraints": {
+        "minimumQuantity": 20,
+        "minimumGuests": 20,
+        "noticeRequiredDays": 7,
+        "serves": null,
+        "suggestionType": null,
+        "suggestionLabel": "",
+        "suggestionUnit": "units"
+      },
+      "optionGroups": [],
+      "dietaryInformation": [],
+      "allergenInformation": [],
+      "lifecycleState": "active",
+      "sortOrder": 410
+    },
+    {
+      "canonicalId": "hospitality-menu-item:mnk:grazing_cups",
+      "source": {
+        "provider": "mnk-booking-platform",
+        "sourcePath": "01_MenuData.js:MENU_SCHEMA",
+        "sourceItemId": "grazing_cups"
+      },
+      "name": "Grazing Cups",
+      "description": "Individual cups with charcuterie, cheese with olives and crisp breads, falafel and dried fruit, and pretzels.",
+      "category": "Grazing Events",
+      "pricing": {
+        "unitPrice": 12.95,
+        "currency": "GBP",
+        "basis": "per_item",
+        "servingInfo": "Per person - minimum 30 cups",
+        "vatRate": null
+      },
+      "orderingConstraints": {
+        "minimumQuantity": 30,
+        "minimumGuests": 30,
+        "noticeRequiredDays": 7,
+        "serves": null,
+        "suggestionType": null,
+        "suggestionLabel": "",
+        "suggestionUnit": "units"
+      },
+      "optionGroups": [],
+      "dietaryInformation": [],
+      "allergenInformation": [],
+      "lifecycleState": "active",
+      "sortOrder": 420
+    },
+    {
+      "canonicalId": "hospitality-menu-item:mnk:afternoon_tea",
+      "source": {
+        "provider": "mnk-booking-platform",
+        "sourcePath": "01_MenuData.js:MENU_SCHEMA",
+        "sourceItemId": "afternoon_tea"
+      },
+      "name": "Afternoon Tea",
+      "description": "Three bridge rolls from six fillings, colourful macaroon, salted caramel canelles, lemon mousse, Black Forest gateau, passion fruit meringue, and teas with milk and cream.",
+      "category": "Afternoon",
+      "pricing": {
+        "unitPrice": 21.95,
+        "currency": "GBP",
+        "basis": "per_item",
+        "servingInfo": "Per person",
+        "vatRate": null
+      },
+      "orderingConstraints": {
+        "minimumQuantity": 8,
+        "minimumGuests": 8,
+        "noticeRequiredDays": 3,
+        "serves": null,
+        "suggestionType": null,
+        "suggestionLabel": "",
+        "suggestionUnit": "units"
+      },
+      "optionGroups": [],
+      "dietaryInformation": [],
+      "allergenInformation": [],
+      "lifecycleState": "active",
+      "sortOrder": 430
+    },
+    {
+      "canonicalId": "hospitality-menu-item:mnk:finger_food",
+      "source": {
+        "provider": "mnk-booking-platform",
+        "sourcePath": "01_MenuData.js:MENU_SCHEMA",
+        "sourceItemId": "finger_food"
+      },
+      "name": "Finger Food",
+      "description": "Minimum recommended four pieces per person. Choose meat, fish, vegetarian, vegan and dessert options from the brochure selection.",
+      "category": "Finger Food",
+      "pricing": {
+        "unitPrice": 3.95,
+        "currency": "GBP",
+        "basis": "per_item",
+        "servingInfo": "Per piece",
+        "vatRate": null
+      },
+      "orderingConstraints": {
+        "minimumQuantity": 4,
+        "minimumGuests": null,
+        "noticeRequiredDays": 3,
+        "serves": null,
+        "suggestionType": null,
+        "suggestionLabel": "",
+        "suggestionUnit": "units"
+      },
+      "optionGroups": [
+        {
+          "id": "selection",
+          "label": "Selection style",
+          "selectionType": "select",
+          "required": true,
+          "options": [
+            {
+              "id": "selection:mixed-brochure-selection",
+              "label": "Mixed brochure selection"
+            },
+            {
+              "id": "selection:meat-focused",
+              "label": "Meat focused"
+            },
+            {
+              "id": "selection:fish-focused",
+              "label": "Fish focused"
+            },
+            {
+              "id": "selection:vegetarian-focused",
+              "label": "Vegetarian focused"
+            },
+            {
+              "id": "selection:vegan-focused",
+              "label": "Vegan focused"
+            },
+            {
+              "id": "selection:dessert-focused",
+              "label": "Dessert focused"
+            }
+          ]
+        }
+      ],
+      "dietaryInformation": [],
+      "allergenInformation": [],
+      "lifecycleState": "active",
+      "sortOrder": 440
+    },
+    {
+      "canonicalId": "hospitality-menu-item:mnk:hot_fork_buffet_gold",
+      "source": {
+        "provider": "mnk-booking-platform",
+        "sourcePath": "01_MenuData.js:MENU_SCHEMA",
+        "sourceItemId": "hot_fork_buffet_gold"
+      },
+      "name": "Hot Fork Buffet - Gold Package",
+      "description": "Meat, fish, vegan, two sides, four salads and one dessert. Menu on request.",
+      "category": "Fork Buffet & Bowl Food",
+      "pricing": {
+        "unitPrice": 28,
+        "currency": "GBP",
+        "basis": "per_item",
+        "servingInfo": "Per person",
+        "vatRate": null
+      },
+      "orderingConstraints": {
+        "minimumQuantity": 12,
+        "minimumGuests": 12,
+        "noticeRequiredDays": 7,
+        "serves": null,
+        "suggestionType": null,
+        "suggestionLabel": "",
+        "suggestionUnit": "units"
+      },
+      "optionGroups": [],
+      "dietaryInformation": [],
+      "allergenInformation": [],
+      "lifecycleState": "active",
+      "sortOrder": 450
+    },
+    {
+      "canonicalId": "hospitality-menu-item:mnk:hot_fork_buffet_silver",
+      "source": {
+        "provider": "mnk-booking-platform",
+        "sourcePath": "01_MenuData.js:MENU_SCHEMA",
+        "sourceItemId": "hot_fork_buffet_silver"
+      },
+      "name": "Hot Fork Buffet - Silver Package",
+      "description": "Meat, vegan, two sides and four salads. Menu on request.",
+      "category": "Fork Buffet & Bowl Food",
+      "pricing": {
+        "unitPrice": 20,
+        "currency": "GBP",
+        "basis": "per_item",
+        "servingInfo": "Per person",
+        "vatRate": null
+      },
+      "orderingConstraints": {
+        "minimumQuantity": 12,
+        "minimumGuests": 12,
+        "noticeRequiredDays": 7,
+        "serves": null,
+        "suggestionType": null,
+        "suggestionLabel": "",
+        "suggestionUnit": "units"
+      },
+      "optionGroups": [],
+      "dietaryInformation": [],
+      "allergenInformation": [],
+      "lifecycleState": "active",
+      "sortOrder": 460
+    },
+    {
+      "canonicalId": "hospitality-menu-item:mnk:bowl_food",
+      "source": {
+        "provider": "mnk-booking-platform",
+        "sourcePath": "01_MenuData.js:MENU_SCHEMA",
+        "sourceItemId": "bowl_food"
+      },
+      "name": "Bowl Food",
+      "description": "Three bowls per person. Example menu includes chorizo jambalaya, plant based cumin lamb meatball tagine and hot smoked salmon Caesar salad.",
+      "category": "Fork Buffet & Bowl Food",
+      "pricing": {
+        "unitPrice": 30,
+        "currency": "GBP",
+        "basis": "per_item",
+        "servingInfo": "Per person",
+        "vatRate": null
+      },
+      "orderingConstraints": {
+        "minimumQuantity": 20,
+        "minimumGuests": 20,
+        "noticeRequiredDays": 7,
+        "serves": null,
+        "suggestionType": null,
+        "suggestionLabel": "",
+        "suggestionUnit": "units"
+      },
+      "optionGroups": [],
+      "dietaryInformation": [],
+      "allergenInformation": [],
+      "lifecycleState": "active",
+      "sortOrder": 470
+    },
+    {
+      "canonicalId": "hospitality-menu-item:mnk:canapes",
+      "source": {
+        "provider": "mnk-booking-platform",
+        "sourcePath": "01_MenuData.js:MENU_SCHEMA",
+        "sourceItemId": "canapes"
+      },
+      "name": "Fika Canapes",
+      "description": "Six items per person. Hot canapes can only be offered on sites with an oven or a hire charge.",
+      "category": "Canapes",
+      "pricing": {
+        "unitPrice": 30,
+        "currency": "GBP",
+        "basis": "per_item",
+        "servingInfo": "Per person - minimum 20",
+        "vatRate": null
+      },
+      "orderingConstraints": {
+        "minimumQuantity": 20,
+        "minimumGuests": 20,
+        "noticeRequiredDays": 7,
+        "serves": null,
+        "suggestionType": null,
+        "suggestionLabel": "",
+        "suggestionUnit": "units"
+      },
+      "optionGroups": [],
+      "dietaryInformation": [],
+      "allergenInformation": [],
+      "lifecycleState": "active",
+      "sortOrder": 480
+    },
+    {
+      "canonicalId": "hospitality-menu-item:mnk:corporate_dining",
+      "source": {
+        "provider": "mnk-booking-platform",
+        "sourcePath": "01_MenuData.js:MENU_SCHEMA",
+        "sourceItemId": "corporate_dining"
+      },
+      "name": "Fika Corporate Dining",
+      "description": "Bespoke seated dining menus served with homemade focaccia and flavoured butters. One menu per booking.",
+      "category": "Dining",
+      "pricing": {
+        "unitPrice": 45,
+        "currency": "GBP",
+        "basis": "per_item",
+        "servingInfo": "Per person - minimum 12",
+        "vatRate": null
+      },
+      "orderingConstraints": {
+        "minimumQuantity": 12,
+        "minimumGuests": 12,
+        "noticeRequiredDays": 7,
+        "serves": null,
+        "suggestionType": null,
+        "suggestionLabel": "",
+        "suggestionUnit": "units"
+      },
+      "optionGroups": [],
+      "dietaryInformation": [],
+      "allergenInformation": [],
+      "lifecycleState": "active",
+      "sortOrder": 490
+    },
+    {
+      "canonicalId": "hospitality-menu-item:mnk:christmas_themed_menu",
+      "source": {
+        "provider": "mnk-booking-platform",
+        "sourcePath": "01_MenuData.js:MENU_SCHEMA",
+        "sourceItemId": "christmas_themed_menu"
+      },
+      "name": "Example Christmas Themed Menu",
+      "description": "Roast turkey with trimmings, butternut squash wellington, roast potatoes, honey glazed roots, Brussels sprouts, chocolate orange cheesecake, mince pies and brandy cream.",
+      "category": "Bespoke Events",
+      "pricing": {
+        "unitPrice": 25,
+        "currency": "GBP",
+        "basis": "per_item",
+        "servingInfo": "Per person - minimum 50 - from price",
+        "vatRate": null
+      },
+      "orderingConstraints": {
+        "minimumQuantity": 50,
+        "minimumGuests": 50,
+        "noticeRequiredDays": 10,
+        "serves": null,
+        "suggestionType": null,
+        "suggestionLabel": "",
+        "suggestionUnit": "units"
+      },
+      "optionGroups": [],
+      "dietaryInformation": [],
+      "allergenInformation": [],
+      "lifecycleState": "active",
+      "sortOrder": 500
+    },
+    {
+      "canonicalId": "hospitality-menu-item:mnk:bespoke_event",
+      "source": {
+        "provider": "mnk-booking-platform",
+        "sourcePath": "01_MenuData.js:MENU_SCHEMA",
+        "sourceItemId": "bespoke_event"
+      },
+      "name": "Bespoke Event Menu",
+      "description": "For Thanksgiving, Christmas, Valentine's Day or other themed events. The team will create a tailored proposal.",
+      "category": "Bespoke Events",
+      "pricing": {
+        "unitPrice": 0,
+        "currency": "GBP",
+        "basis": "per_item",
+        "servingInfo": "Price on request",
+        "vatRate": null
+      },
+      "orderingConstraints": {
+        "minimumQuantity": 1,
+        "minimumGuests": null,
+        "noticeRequiredDays": 7,
+        "serves": null,
+        "suggestionType": null,
+        "suggestionLabel": "",
+        "suggestionUnit": "units"
+      },
+      "optionGroups": [],
+      "dietaryInformation": [],
+      "allergenInformation": [],
+      "lifecycleState": "active",
+      "sortOrder": 510
+    }
+  ],
+  "validationReport": {
+    "sourceItemCount": 43,
+    "generatedItemCount": 43,
+    "missingCanonicalFields": [
+      {
+        "sourceId": "bloom_filter_coffee",
+        "field": "dietaryInformation",
+        "reason": "Legacy source provides an empty dietary tag list."
+      },
+      {
+        "sourceId": "bloom_filter_coffee",
+        "field": "allergenInformation",
+        "reason": "Legacy source provides an empty allergen list."
+      },
+      {
+        "sourceId": "bloom_filter_coffee",
+        "field": "vatRate",
+        "reason": "Legacy menu source does not provide an item-level VAT rate."
+      },
+      {
+        "sourceId": "specialty_tea_coffee",
+        "field": "dietaryInformation",
+        "reason": "Legacy source provides an empty dietary tag list."
+      },
+      {
+        "sourceId": "specialty_tea_coffee",
+        "field": "allergenInformation",
+        "reason": "Legacy source provides an empty allergen list."
+      },
+      {
+        "sourceId": "specialty_tea_coffee",
+        "field": "vatRate",
+        "reason": "Legacy menu source does not provide an item-level VAT rate."
+      },
+      {
+        "sourceId": "belu_water",
+        "field": "dietaryInformation",
+        "reason": "Legacy source provides an empty dietary tag list."
+      },
+      {
+        "sourceId": "belu_water",
+        "field": "allergenInformation",
+        "reason": "Legacy source provides an empty allergen list."
+      },
+      {
+        "sourceId": "belu_water",
+        "field": "vatRate",
+        "reason": "Legacy menu source does not provide an item-level VAT rate."
+      },
+      {
+        "sourceId": "canned_drinks",
+        "field": "dietaryInformation",
+        "reason": "Legacy source provides an empty dietary tag list."
+      },
+      {
+        "sourceId": "canned_drinks",
+        "field": "allergenInformation",
+        "reason": "Legacy source provides an empty allergen list."
+      },
+      {
+        "sourceId": "canned_drinks",
+        "field": "vatRate",
+        "reason": "Legacy menu source does not provide an item-level VAT rate."
+      },
+      {
+        "sourceId": "fresh_juice_250",
+        "field": "dietaryInformation",
+        "reason": "Legacy source provides an empty dietary tag list."
+      },
+      {
+        "sourceId": "fresh_juice_250",
+        "field": "allergenInformation",
+        "reason": "Legacy source provides an empty allergen list."
+      },
+      {
+        "sourceId": "fresh_juice_250",
+        "field": "vatRate",
+        "reason": "Legacy menu source does not provide an item-level VAT rate."
+      },
+      {
+        "sourceId": "fresh_juice_1l",
+        "field": "dietaryInformation",
+        "reason": "Legacy source provides an empty dietary tag list."
+      },
+      {
+        "sourceId": "fresh_juice_1l",
+        "field": "allergenInformation",
+        "reason": "Legacy source provides an empty allergen list."
+      },
+      {
+        "sourceId": "fresh_juice_1l",
+        "field": "vatRate",
+        "reason": "Legacy menu source does not provide an item-level VAT rate."
+      },
+      {
+        "sourceId": "ginger_shot",
+        "field": "dietaryInformation",
+        "reason": "Legacy source provides an empty dietary tag list."
+      },
+      {
+        "sourceId": "ginger_shot",
+        "field": "allergenInformation",
+        "reason": "Legacy source provides an empty allergen list."
+      },
+      {
+        "sourceId": "ginger_shot",
+        "field": "vatRate",
+        "reason": "Legacy menu source does not provide an item-level VAT rate."
+      },
+      {
+        "sourceId": "smoothie_1l",
+        "field": "dietaryInformation",
+        "reason": "Legacy source provides an empty dietary tag list."
+      },
+      {
+        "sourceId": "smoothie_1l",
+        "field": "allergenInformation",
+        "reason": "Legacy source provides an empty allergen list."
+      },
+      {
+        "sourceId": "smoothie_1l",
+        "field": "vatRate",
+        "reason": "Legacy menu source does not provide an item-level VAT rate."
+      },
+      {
+        "sourceId": "cookie_box",
+        "field": "dietaryInformation",
+        "reason": "Legacy source provides an empty dietary tag list."
+      },
+      {
+        "sourceId": "cookie_box",
+        "field": "allergenInformation",
+        "reason": "Legacy source provides an empty allergen list."
+      },
+      {
+        "sourceId": "cookie_box",
+        "field": "vatRate",
+        "reason": "Legacy menu source does not provide an item-level VAT rate."
+      },
+      {
+        "sourceId": "tray_bake_box",
+        "field": "dietaryInformation",
+        "reason": "Legacy source provides an empty dietary tag list."
+      },
+      {
+        "sourceId": "tray_bake_box",
+        "field": "allergenInformation",
+        "reason": "Legacy source provides an empty allergen list."
+      },
+      {
+        "sourceId": "tray_bake_box",
+        "field": "vatRate",
+        "reason": "Legacy menu source does not provide an item-level VAT rate."
+      },
+      {
+        "sourceId": "exotic_fruit_box",
+        "field": "dietaryInformation",
+        "reason": "Legacy source provides an empty dietary tag list."
+      },
+      {
+        "sourceId": "exotic_fruit_box",
+        "field": "allergenInformation",
+        "reason": "Legacy source provides an empty allergen list."
+      },
+      {
+        "sourceId": "exotic_fruit_box",
+        "field": "vatRate",
+        "reason": "Legacy menu source does not provide an item-level VAT rate."
+      },
+      {
+        "sourceId": "mini_pastries",
+        "field": "dietaryInformation",
+        "reason": "Legacy source provides an empty dietary tag list."
+      },
+      {
+        "sourceId": "mini_pastries",
+        "field": "allergenInformation",
+        "reason": "Legacy source provides an empty allergen list."
+      },
+      {
+        "sourceId": "mini_pastries",
+        "field": "vatRate",
+        "reason": "Legacy menu source does not provide an item-level VAT rate."
+      },
+      {
+        "sourceId": "large_pastries",
+        "field": "dietaryInformation",
+        "reason": "Legacy source provides an empty dietary tag list."
+      },
+      {
+        "sourceId": "large_pastries",
+        "field": "allergenInformation",
+        "reason": "Legacy source provides an empty allergen list."
+      },
+      {
+        "sourceId": "large_pastries",
+        "field": "vatRate",
+        "reason": "Legacy menu source does not provide an item-level VAT rate."
+      },
+      {
+        "sourceId": "filled_savoury_croissant",
+        "field": "dietaryInformation",
+        "reason": "Legacy source provides an empty dietary tag list."
+      },
+      {
+        "sourceId": "filled_savoury_croissant",
+        "field": "allergenInformation",
+        "reason": "Legacy source provides an empty allergen list."
+      },
+      {
+        "sourceId": "filled_savoury_croissant",
+        "field": "vatRate",
+        "reason": "Legacy menu source does not provide an item-level VAT rate."
+      },
+      {
+        "sourceId": "vegan_savoury_croissant",
+        "field": "dietaryInformation",
+        "reason": "Legacy source provides an empty dietary tag list."
+      },
+      {
+        "sourceId": "vegan_savoury_croissant",
+        "field": "allergenInformation",
+        "reason": "Legacy source provides an empty allergen list."
+      },
+      {
+        "sourceId": "vegan_savoury_croissant",
+        "field": "vatRate",
+        "reason": "Legacy menu source does not provide an item-level VAT rate."
+      },
+      {
+        "sourceId": "bagel_box",
+        "field": "dietaryInformation",
+        "reason": "Legacy source provides an empty dietary tag list."
+      },
+      {
+        "sourceId": "bagel_box",
+        "field": "allergenInformation",
+        "reason": "Legacy source provides an empty allergen list."
+      },
+      {
+        "sourceId": "bagel_box",
+        "field": "vatRate",
+        "reason": "Legacy menu source does not provide an item-level VAT rate."
+      },
+      {
+        "sourceId": "breakfast_pots",
+        "field": "dietaryInformation",
+        "reason": "Legacy source provides an empty dietary tag list."
+      },
+      {
+        "sourceId": "breakfast_pots",
+        "field": "allergenInformation",
+        "reason": "Legacy source provides an empty allergen list."
+      },
+      {
+        "sourceId": "breakfast_pots",
+        "field": "vatRate",
+        "reason": "Legacy menu source does not provide an item-level VAT rate."
+      },
+      {
+        "sourceId": "healthy_plant_power_breakfast",
+        "field": "dietaryInformation",
+        "reason": "Legacy source provides an empty dietary tag list."
+      },
+      {
+        "sourceId": "healthy_plant_power_breakfast",
+        "field": "allergenInformation",
+        "reason": "Legacy source provides an empty allergen list."
+      },
+      {
+        "sourceId": "healthy_plant_power_breakfast",
+        "field": "vatRate",
+        "reason": "Legacy menu source does not provide an item-level VAT rate."
+      },
+      {
+        "sourceId": "deli_sandwich_lunch",
+        "field": "dietaryInformation",
+        "reason": "Legacy source provides an empty dietary tag list."
+      },
+      {
+        "sourceId": "deli_sandwich_lunch",
+        "field": "allergenInformation",
+        "reason": "Legacy source provides an empty allergen list."
+      },
+      {
+        "sourceId": "deli_sandwich_lunch",
+        "field": "vatRate",
+        "reason": "Legacy menu source does not provide an item-level VAT rate."
+      },
+      {
+        "sourceId": "individual_boxed_lunch",
+        "field": "dietaryInformation",
+        "reason": "Legacy source provides an empty dietary tag list."
+      },
+      {
+        "sourceId": "individual_boxed_lunch",
+        "field": "allergenInformation",
+        "reason": "Legacy source provides an empty allergen list."
+      },
+      {
+        "sourceId": "individual_boxed_lunch",
+        "field": "vatRate",
+        "reason": "Legacy menu source does not provide an item-level VAT rate."
+      },
+      {
+        "sourceId": "salad_protein_lunch_platter",
+        "field": "dietaryInformation",
+        "reason": "Legacy source provides an empty dietary tag list."
+      },
+      {
+        "sourceId": "salad_protein_lunch_platter",
+        "field": "allergenInformation",
+        "reason": "Legacy source provides an empty allergen list."
+      },
+      {
+        "sourceId": "salad_protein_lunch_platter",
+        "field": "vatRate",
+        "reason": "Legacy menu source does not provide an item-level VAT rate."
+      },
+      {
+        "sourceId": "rice_paper_rolls",
+        "field": "dietaryInformation",
+        "reason": "Legacy source provides an empty dietary tag list."
+      },
+      {
+        "sourceId": "rice_paper_rolls",
+        "field": "allergenInformation",
+        "reason": "Legacy source provides an empty allergen list."
+      },
+      {
+        "sourceId": "rice_paper_rolls",
+        "field": "vatRate",
+        "reason": "Legacy menu source does not provide an item-level VAT rate."
+      },
+      {
+        "sourceId": "grazing_charcuterie_box",
+        "field": "dietaryInformation",
+        "reason": "Legacy source provides an empty dietary tag list."
+      },
+      {
+        "sourceId": "grazing_charcuterie_box",
+        "field": "allergenInformation",
+        "reason": "Legacy source provides an empty allergen list."
+      },
+      {
+        "sourceId": "grazing_charcuterie_box",
+        "field": "vatRate",
+        "reason": "Legacy menu source does not provide an item-level VAT rate."
+      },
+      {
+        "sourceId": "cheese_box",
+        "field": "dietaryInformation",
+        "reason": "Legacy source provides an empty dietary tag list."
+      },
+      {
+        "sourceId": "cheese_box",
+        "field": "allergenInformation",
+        "reason": "Legacy source provides an empty allergen list."
+      },
+      {
+        "sourceId": "cheese_box",
+        "field": "vatRate",
+        "reason": "Legacy menu source does not provide an item-level VAT rate."
+      },
+      {
+        "sourceId": "picnic_box",
+        "field": "dietaryInformation",
+        "reason": "Legacy source provides an empty dietary tag list."
+      },
+      {
+        "sourceId": "picnic_box",
+        "field": "allergenInformation",
+        "reason": "Legacy source provides an empty allergen list."
+      },
+      {
+        "sourceId": "picnic_box",
+        "field": "vatRate",
+        "reason": "Legacy menu source does not provide an item-level VAT rate."
+      },
+      {
+        "sourceId": "vegan_box",
+        "field": "dietaryInformation",
+        "reason": "Legacy source provides an empty dietary tag list."
+      },
+      {
+        "sourceId": "vegan_box",
+        "field": "allergenInformation",
+        "reason": "Legacy source provides an empty allergen list."
+      },
+      {
+        "sourceId": "vegan_box",
+        "field": "vatRate",
+        "reason": "Legacy menu source does not provide an item-level VAT rate."
+      },
+      {
+        "sourceId": "salad_boxes",
+        "field": "dietaryInformation",
+        "reason": "Legacy source provides an empty dietary tag list."
+      },
+      {
+        "sourceId": "salad_boxes",
+        "field": "allergenInformation",
+        "reason": "Legacy source provides an empty allergen list."
+      },
+      {
+        "sourceId": "salad_boxes",
+        "field": "vatRate",
+        "reason": "Legacy menu source does not provide an item-level VAT rate."
+      },
+      {
+        "sourceId": "weekly_salad_box",
+        "field": "dietaryInformation",
+        "reason": "Legacy source provides an empty dietary tag list."
+      },
+      {
+        "sourceId": "weekly_salad_box",
+        "field": "allergenInformation",
+        "reason": "Legacy source provides an empty allergen list."
+      },
+      {
+        "sourceId": "weekly_salad_box",
+        "field": "vatRate",
+        "reason": "Legacy menu source does not provide an item-level VAT rate."
+      },
+      {
+        "sourceId": "deluxe_sushi_box",
+        "field": "dietaryInformation",
+        "reason": "Legacy source provides an empty dietary tag list."
+      },
+      {
+        "sourceId": "deluxe_sushi_box",
+        "field": "allergenInformation",
+        "reason": "Legacy source provides an empty allergen list."
+      },
+      {
+        "sourceId": "deluxe_sushi_box",
+        "field": "vatRate",
+        "reason": "Legacy menu source does not provide an item-level VAT rate."
+      },
+      {
+        "sourceId": "vegan_sushi_box",
+        "field": "dietaryInformation",
+        "reason": "Legacy source provides an empty dietary tag list."
+      },
+      {
+        "sourceId": "vegan_sushi_box",
+        "field": "allergenInformation",
+        "reason": "Legacy source provides an empty allergen list."
+      },
+      {
+        "sourceId": "vegan_sushi_box",
+        "field": "vatRate",
+        "reason": "Legacy menu source does not provide an item-level VAT rate."
+      },
+      {
+        "sourceId": "glow_bowl",
+        "field": "dietaryInformation",
+        "reason": "Legacy source provides an empty dietary tag list."
+      },
+      {
+        "sourceId": "glow_bowl",
+        "field": "allergenInformation",
+        "reason": "Legacy source provides an empty allergen list."
+      },
+      {
+        "sourceId": "glow_bowl",
+        "field": "vatRate",
+        "reason": "Legacy menu source does not provide an item-level VAT rate."
+      },
+      {
+        "sourceId": "picnic_grazing_table",
+        "field": "dietaryInformation",
+        "reason": "Legacy source provides an empty dietary tag list."
+      },
+      {
+        "sourceId": "picnic_grazing_table",
+        "field": "allergenInformation",
+        "reason": "Legacy source provides an empty allergen list."
+      },
+      {
+        "sourceId": "picnic_grazing_table",
+        "field": "vatRate",
+        "reason": "Legacy menu source does not provide an item-level VAT rate."
+      },
+      {
+        "sourceId": "grazing_sweet_table",
+        "field": "dietaryInformation",
+        "reason": "Legacy source provides an empty dietary tag list."
+      },
+      {
+        "sourceId": "grazing_sweet_table",
+        "field": "allergenInformation",
+        "reason": "Legacy source provides an empty allergen list."
+      },
+      {
+        "sourceId": "grazing_sweet_table",
+        "field": "vatRate",
+        "reason": "Legacy menu source does not provide an item-level VAT rate."
+      },
+      {
+        "sourceId": "grazing_cups",
+        "field": "dietaryInformation",
+        "reason": "Legacy source provides an empty dietary tag list."
+      },
+      {
+        "sourceId": "grazing_cups",
+        "field": "allergenInformation",
+        "reason": "Legacy source provides an empty allergen list."
+      },
+      {
+        "sourceId": "grazing_cups",
+        "field": "vatRate",
+        "reason": "Legacy menu source does not provide an item-level VAT rate."
+      },
+      {
+        "sourceId": "afternoon_tea",
+        "field": "dietaryInformation",
+        "reason": "Legacy source provides an empty dietary tag list."
+      },
+      {
+        "sourceId": "afternoon_tea",
+        "field": "allergenInformation",
+        "reason": "Legacy source provides an empty allergen list."
+      },
+      {
+        "sourceId": "afternoon_tea",
+        "field": "vatRate",
+        "reason": "Legacy menu source does not provide an item-level VAT rate."
+      },
+      {
+        "sourceId": "finger_food",
+        "field": "dietaryInformation",
+        "reason": "Legacy source provides an empty dietary tag list."
+      },
+      {
+        "sourceId": "finger_food",
+        "field": "allergenInformation",
+        "reason": "Legacy source provides an empty allergen list."
+      },
+      {
+        "sourceId": "finger_food",
+        "field": "vatRate",
+        "reason": "Legacy menu source does not provide an item-level VAT rate."
+      },
+      {
+        "sourceId": "hot_fork_buffet_gold",
+        "field": "dietaryInformation",
+        "reason": "Legacy source provides an empty dietary tag list."
+      },
+      {
+        "sourceId": "hot_fork_buffet_gold",
+        "field": "allergenInformation",
+        "reason": "Legacy source provides an empty allergen list."
+      },
+      {
+        "sourceId": "hot_fork_buffet_gold",
+        "field": "vatRate",
+        "reason": "Legacy menu source does not provide an item-level VAT rate."
+      },
+      {
+        "sourceId": "hot_fork_buffet_silver",
+        "field": "dietaryInformation",
+        "reason": "Legacy source provides an empty dietary tag list."
+      },
+      {
+        "sourceId": "hot_fork_buffet_silver",
+        "field": "allergenInformation",
+        "reason": "Legacy source provides an empty allergen list."
+      },
+      {
+        "sourceId": "hot_fork_buffet_silver",
+        "field": "vatRate",
+        "reason": "Legacy menu source does not provide an item-level VAT rate."
+      },
+      {
+        "sourceId": "bowl_food",
+        "field": "dietaryInformation",
+        "reason": "Legacy source provides an empty dietary tag list."
+      },
+      {
+        "sourceId": "bowl_food",
+        "field": "allergenInformation",
+        "reason": "Legacy source provides an empty allergen list."
+      },
+      {
+        "sourceId": "bowl_food",
+        "field": "vatRate",
+        "reason": "Legacy menu source does not provide an item-level VAT rate."
+      },
+      {
+        "sourceId": "canapes",
+        "field": "dietaryInformation",
+        "reason": "Legacy source provides an empty dietary tag list."
+      },
+      {
+        "sourceId": "canapes",
+        "field": "allergenInformation",
+        "reason": "Legacy source provides an empty allergen list."
+      },
+      {
+        "sourceId": "canapes",
+        "field": "vatRate",
+        "reason": "Legacy menu source does not provide an item-level VAT rate."
+      },
+      {
+        "sourceId": "corporate_dining",
+        "field": "dietaryInformation",
+        "reason": "Legacy source provides an empty dietary tag list."
+      },
+      {
+        "sourceId": "corporate_dining",
+        "field": "allergenInformation",
+        "reason": "Legacy source provides an empty allergen list."
+      },
+      {
+        "sourceId": "corporate_dining",
+        "field": "vatRate",
+        "reason": "Legacy menu source does not provide an item-level VAT rate."
+      },
+      {
+        "sourceId": "christmas_themed_menu",
+        "field": "dietaryInformation",
+        "reason": "Legacy source provides an empty dietary tag list."
+      },
+      {
+        "sourceId": "christmas_themed_menu",
+        "field": "allergenInformation",
+        "reason": "Legacy source provides an empty allergen list."
+      },
+      {
+        "sourceId": "christmas_themed_menu",
+        "field": "vatRate",
+        "reason": "Legacy menu source does not provide an item-level VAT rate."
+      },
+      {
+        "sourceId": "bespoke_event",
+        "field": "dietaryInformation",
+        "reason": "Legacy source provides an empty dietary tag list."
+      },
+      {
+        "sourceId": "bespoke_event",
+        "field": "allergenInformation",
+        "reason": "Legacy source provides an empty allergen list."
+      },
+      {
+        "sourceId": "bespoke_event",
+        "field": "vatRate",
+        "reason": "Legacy menu source does not provide an item-level VAT rate."
+      }
+    ]
+  }
+}

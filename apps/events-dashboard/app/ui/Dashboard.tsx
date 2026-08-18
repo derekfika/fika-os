@@ -11,8 +11,9 @@ import {
   AlertTriangle,
   SlidersHorizontal,
 } from "lucide-react";
-import type { EventRecord, Staffing, Production, EventTask } from "@/lib/types";
+import type { EventRecord, Staffing, Production, EventTask, EventZone, EventAssignment } from "@/lib/types";
 import { PUBLIC_CONFIG as C } from "@/lib/config";
+import { emptyHubContract, type HubOperatingReadContract } from "@/lib/hub-operating-read-contract";
 type Ready = {
   percentage: number;
   complete: boolean;
@@ -24,6 +25,8 @@ type Ready = {
 };
 type RecordView = EventRecord & { readiness: Ready };
 type Actor = { id: string; name: string; development: boolean };
+type StaffingSuggestion = { legendId: string; label: string; eligibility: "primary" | "secondary" | "fallback"; suggestionRank: number; teams: string[]; reason: string };
+type ActiveLegend = { canonicalId: string; label: string };
 const blank = (): EventRecord => ({
   recordType: "EVENT",
   eventId: "",
@@ -42,6 +45,9 @@ const blank = (): EventRecord => ({
   timezone: "Europe/London",
   pax: null,
   responsibleOplocId: "",
+  operationalAreaId: "",
+  serviceArrangementIds: [],
+  equipmentAssetIds: [],
   siteId: "",
   eventContact: "",
   accountableOwnerId: "",
@@ -54,6 +60,7 @@ const blank = (): EventRecord => ({
   history: [],
 });
 const id = () => crypto.randomUUID();
+const referenceIds = (event: EventRecord) => [event.responsibleOplocId, event.operationalAreaId, event.siteId, event.accountableOwnerId, ...event.contributorIds, ...(event.serviceArrangementIds || []), ...(event.equipmentAssetIds || []), ...event.staffingRequirements.flatMap(requirement => [requirement.locationId, ...requirement.assignedPersonIds]), ...event.productionRequirements.flatMap(requirement => [requirement.productionUnitId, requirement.responsiblePersonId]), ...event.tasks.map(task => task.ownerId)].filter(Boolean);
 export default function Dashboard() {
   const [records, setRecords] = useState<RecordView[]>([]),
     [actor, setActor] = useState<Actor | null>(null),
@@ -62,7 +69,10 @@ export default function Dashboard() {
     [current, setCurrent] = useState<EventRecord | null>(null),
     [tab, setTab] = useState("Overview"),
     [dirty, setDirty] = useState(false),
-    [filters, setFilters] = useState<Record<string, string>>({});
+    [filters, setFilters] = useState<Record<string, string>>({}),
+    [staffingSuggestions, setStaffingSuggestions] = useState<Record<string, StaffingSuggestion[]>>({}),
+    [activeLegends, setActiveLegends] = useState<ActiveLegend[]>([]),
+    [hub, setHub] = useState<HubOperatingReadContract>(emptyHubContract());
   async function load() {
     setLoading(true);
     try {
@@ -70,6 +80,7 @@ export default function Dashboard() {
         j = await r.json();
       if (!r.ok) throw Error(j.error.message);
       setRecords(j.records);
+      void loadHub(j.records.flatMap(referenceIds));
       setActor(j.actor);
       setError("");
     } catch (e) {
@@ -81,6 +92,14 @@ export default function Dashboard() {
   useEffect(() => {
     load();
   }, []);
+  async function loadHub(ids: string[] = []) {
+    const response = await fetch(`/api/hub-operating-read-contract${ids.length ? `?ids=${encodeURIComponent(ids.join(","))}` : ""}`, { cache: "no-store" });
+    const body = await response.json();
+    if (!response.ok) throw Error(body.error?.message || "Governed operating references could not be loaded.");
+    setHub(body); return body as HubOperatingReadContract;
+  }
+  useEffect(() => { void loadHub().catch(cause => setError((cause as Error).message)); }, []);
+  useEffect(() => { const suggestions = Object.fromEntries(hub.eventRoles.map(role => [role.label, role.suggestions])); setStaffingSuggestions(suggestions); setActiveLegends(hub.legends); }, [hub]);
   useEffect(() => {
     const f = (e: BeforeUnloadEvent) => {
       if (dirty) e.preventDefault();
@@ -208,7 +227,7 @@ export default function Dashboard() {
             />
           </div>
         </section>
-        <Filters values={filters} set={setFilters} />
+        <Filters values={filters} set={setFilters} hub={hub} />
         {error && (
           <div className="error">
             <AlertTriangle />
@@ -223,6 +242,7 @@ export default function Dashboard() {
               <EventCard
                 key={r.eventId}
                 r={r}
+                hub={hub}
                 open={() => {
                   setCurrent(r);
                   setTab("Overview");
@@ -235,7 +255,7 @@ export default function Dashboard() {
           )}
         </section>
       </main>
-      {current && (
+        {current && (
         <div className="modal" role="dialog" aria-modal="true">
           <div className="editor">
             <header>
@@ -248,7 +268,7 @@ export default function Dashboard() {
               </button>
             </header>
             <nav>
-              {["Overview", "Staffing", "Production", "Tasks", "Activity"].map(
+              {["Overview", "Delivery Plan", "Team", "Run Sheet"].map(
                 (t) => (
                   <button
                     className={tab === t ? "active" : ""}
@@ -262,24 +282,21 @@ export default function Dashboard() {
             </nav>
             <div className="body">
               {tab === "Overview" ? (
-                <Overview e={current} change={change} />
-              ) : tab === "Staffing" ? (
-                <StaffingEditor
-                  rows={current.staffingRequirements}
-                  set={(x) => change({ staffingRequirements: x })}
-                />
-              ) : tab === "Production" ? (
+                <Overview e={current} change={change} hub={hub} />
+              ) : tab === "Team" ? (
+                <TeamEditor e={current} change={change} hub={hub} suggestions={staffingSuggestions} activeLegends={activeLegends} />
+              ) : tab === "Delivery Plan" ? (
                 <ProductionEditor
                   rows={current.productionRequirements}
                   set={(x) => change({ productionRequirements: x })}
+                  hub={hub}
                 />
-              ) : tab === "Tasks" ? (
+              ) : (
                 <TaskEditor
                   rows={current.tasks}
                   set={(x) => change({ tasks: x })}
+                  hub={hub}
                 />
-              ) : (
-                <Activity e={current as RecordView} />
               )}
             </div>
             <footer>
@@ -304,12 +321,19 @@ const input = (e: EventRecord) => ({
   timezone: e.timezone,
   pax: e.pax,
   responsibleOplocId: e.responsibleOplocId,
+  operationalAreaId: e.operationalAreaId || "",
+  serviceArrangementIds: e.serviceArrangementIds || [],
+  equipmentAssetIds: e.equipmentAssetIds || [],
   siteId: e.siteId,
   eventContact: e.eventContact,
   accountableOwnerId: e.accountableOwnerId,
   contributorIds: e.contributorIds,
   lifecycleStatus: e.lifecycleStatus,
   staffingRequirements: e.staffingRequirements,
+  eventZones: e.eventZones || [],
+  eventAssignments: e.eventAssignments || [],
+  requirements: e.requirements || [],
+  risks: e.risks || [],
   productionRequirements: e.productionRequirements,
   tasks: e.tasks,
 });
@@ -325,14 +349,16 @@ const Empty = ({ text }: { text: string }) => (
     <h3>{text}</h3>
   </div>
 );
-const name = (xs: readonly { id: string; name: string }[], v: string) =>
-  xs.find((x) => x.id === v)?.name || "Unassigned";
+const hubName = (hub: HubOperatingReadContract, id: string) =>
+  [...hub.oplocs, ...hub.operationalAreas, ...hub.legends, ...hub.historical].find((item) => item.canonicalId === id)?.label || (id ? `Historic reference: ${id}` : "Unassigned");
 function Filters({
   values,
   set,
+  hub,
 }: {
   values: Record<string, string>;
   set: (x: Record<string, string>) => void;
+  hub: HubOperatingReadContract;
 }) {
   const [open, setOpen] = useState(true);
   const f = (k: string, v: string) => set({ ...values, [k]: v });
@@ -367,13 +393,13 @@ function Filters({
         label="OPLOC"
         value={values.responsibleOplocId}
         onChange={(v) => f("responsibleOplocId", v)}
-        list={C.oplocs}
+        list={hub.oplocs.map(item => ({ id: item.canonicalId, name: item.label }))}
       />
       <Select
-        label="Site"
-        value={values.siteId}
-        onChange={(v) => f("siteId", v)}
-        list={C.sites}
+        label="Operational Area"
+        value={values.operationalAreaId}
+        onChange={(v) => f("operationalAreaId", v)}
+        list={hub.operationalAreas.map(item => ({ id: item.canonicalId, name: item.label }))}
       />
       <Select
         label="Event type"
@@ -391,7 +417,7 @@ function Filters({
         label="Owner"
         value={values.accountableOwnerId}
         onChange={(v) => f("accountableOwnerId", v)}
-        list={C.people}
+        list={hub.legends.map(item => ({ id: item.canonicalId, name: item.label }))}
       />
       <Select
         label="Readiness"
@@ -416,7 +442,7 @@ function Filters({
     </section>
   );
 }
-function EventCard({ r, open }: { r: RecordView; open: () => void }) {
+function EventCard({ r, open, hub }: { r: RecordView; open: () => void; hub: HubOperatingReadContract }) {
   const cancelled = r.lifecycleStatus === "Cancelled";
   return (
     <button
@@ -435,9 +461,9 @@ function EventCard({ r, open }: { r: RecordView; open: () => void }) {
           "Unscheduled"
         }
       />
-      <Cell l="Site" v={name(C.sites, r.siteId)} />
-      <Cell l="OPLOC" v={name(C.oplocs, r.responsibleOplocId)} />
-      <Cell l="Owner" v={name(C.people, r.accountableOwnerId)} />
+      <Cell l="Area" v={hubName(hub, r.operationalAreaId || r.siteId)} />
+      <Cell l="OPLOC" v={hubName(hub, r.responsibleOplocId)} />
+      <Cell l="Owner" v={hubName(hub, r.accountableOwnerId)} />
       <div><small>Lifecycle</small><StatusBadge status={r.lifecycleStatus} /></div>
       <Cell
         l="Readiness"
@@ -475,9 +501,11 @@ const StatusBadge = ({ status }: { status: string }) => (
 function Overview({
   e,
   change,
+  hub,
 }: {
   e: EventRecord;
   change: (x: Partial<EventRecord>) => void;
+  hub: HubOperatingReadContract;
 }) {
   return (
     <div className="grid">
@@ -533,53 +561,52 @@ function Overview({
       <Select
         label="Responsible OPLOC"
         value={e.responsibleOplocId}
-        onChange={(v) => change({ responsibleOplocId: v })}
-        list={C.oplocs}
+        onChange={(v) => change({ responsibleOplocId: v, operationalAreaId: "", serviceArrangementIds: [], equipmentAssetIds: [] })}
+        list={hub.oplocs.map(item => ({ id: item.canonicalId, name: item.label }))}
       />
       <Select
-        label="Service / delivery site"
-        value={e.siteId}
-        onChange={(v) => change({ siteId: v })}
-        list={C.sites}
+        label="Operational Area"
+        value={e.operationalAreaId || ""}
+        onChange={(v) => change({ operationalAreaId: v, serviceArrangementIds: [], equipmentAssetIds: [] })}
+        list={hub.operationalAreas.filter(item => item.oplocId === e.responsibleOplocId).map(item => ({ id: item.canonicalId, name: item.label }))}
       />
+      {e.siteId && !e.operationalAreaId && <p className="wide form-help">Legacy service-site reference retained: {hubName(hub, e.siteId)}. Select an Operational Area only after an authorised review; the original value remains in this Event record.</p>}
+      <label className="wide">Available service arrangements<select multiple value={e.serviceArrangementIds || []} onChange={(x) => change({ serviceArrangementIds: [...x.target.selectedOptions].map(option => option.value) })}>{hub.serviceArrangements.filter(item => item.oplocId === e.responsibleOplocId && (!item.operationalAreaId || item.operationalAreaId === e.operationalAreaId)).map(item => <option key={item.canonicalId} value={item.canonicalId}>{item.label} — {item.operationalAreaLabel || "OPLOC-wide"}</option>)}</select><small>Active arrangements only. This does not create or modify Hub services.</small></label>
+      <label className="wide">Available equipment<select multiple value={e.equipmentAssetIds || []} onChange={(x) => change({ equipmentAssetIds: [...x.target.selectedOptions].map(option => option.value) })}>{hub.equipmentAssets.filter(item => item.oplocId === e.responsibleOplocId && (!item.operationalAreaId || item.operationalAreaId === e.operationalAreaId)).map(item => <option key={item.canonicalId} value={item.assetId}>{item.label} — {item.operationalAreaLabel || "OPLOC-wide"}</option>)}</select><small>Current allocation evidence only; no live availability is claimed.</small></label>
       <Field
         label="Event Contact"
         value={e.eventContact}
         set={(v) => change({ eventContact: v })}
       />
       <Select
-        label="Accountable owner"
+        label="Event Lead"
         value={e.accountableOwnerId}
         onChange={(v) => change({ accountableOwnerId: v })}
-        list={C.people}
+        list={hub.legends.map(item => ({ id: item.canonicalId, name: item.label }))}
       />
-      <label className="wide">
-        Contributors
-        <select
-          multiple
-          value={e.contributorIds}
-          onChange={(x) =>
-            change({
-              contributorIds: [...x.target.selectedOptions].map((o) => o.value),
-            })
-          }
-        >
-          {C.people.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.name}
-            </option>
-          ))}
-        </select>
-      </label>
+      {e.contributorIds.length > 0 && <p className="wide form-help">Legacy contributor references are retained for history only. New Event planning uses Event Assignments in Team.</p>}
     </div>
   );
 }
+function TeamEditor({ e, change, hub, suggestions, activeLegends }: { e: EventRecord; change: (patch: Partial<EventRecord>) => void; hub: HubOperatingReadContract; suggestions: Record<string, StaffingSuggestion[]>; activeLegends: ActiveLegend[] }) {
+  const zones = e.eventZones || [];
+  const assignments = e.eventAssignments || [];
+  const overlaps = assignments.filter((assignment, index) => assignments.some((other, otherIndex) => index !== otherIndex && assignment.legendId && assignment.legendId === other.legendId && assignment.shiftStart && assignment.shiftEnd && other.shiftStart && other.shiftEnd && assignment.shiftStart < other.shiftEnd && other.shiftStart < assignment.shiftEnd)).map(assignment => assignment.id);
+  return <><Editor title="Event Zones / Service Points" icon={<CheckSquare />} add={() => change({ eventZones: [...zones, { id: id(), name: "", purpose: "", notes: "" }] })}>{zones.map((zone, index) => <Row key={zone.id} remove={() => change({ eventZones: zones.filter((_, item) => item !== index) })}><Field label="Service point" value={zone.name} set={(value) => change({ eventZones: zones.map((item, n) => n === index ? { ...item, name: value } : item) })} /><Field label="Purpose" value={zone.purpose} set={(value) => change({ eventZones: zones.map((item, n) => n === index ? { ...item, purpose: value } : item) })} /><Field label="Notes" wide value={zone.notes} set={(value) => change({ eventZones: zones.map((item, n) => n === index ? { ...item, notes: value } : item) })} /></Row>)}</Editor><Editor title="Event Assignments" icon={<Users />} add={() => change({ eventAssignments: [...assignments, { id: id(), legendId: "", eventRole: "", eventZoneId: "", shiftStart: "", shiftEnd: "", timingNotes: "", manualAssignmentReason: "" }] })}>{assignments.map((assignment, index) => <Row key={assignment.id} remove={() => change({ eventAssignments: assignments.filter((_, item) => item !== index) })}><Select label="Legend" value={assignment.legendId} onChange={(value) => change({ eventAssignments: assignments.map((item, n) => n === index ? { ...item, legendId: value } : item) })} list={hub.legends.map(item => ({ id: item.canonicalId, name: item.label }))} /><Select label="Event role" value={assignment.eventRole} onChange={(value) => change({ eventAssignments: assignments.map((item, n) => n === index ? { ...item, eventRole: value } : item) })} list={hub.eventRoles.map(item => ({ id: item.label, name: item.label }))} /><Select label="Service point" value={assignment.eventZoneId} onChange={(value) => change({ eventAssignments: assignments.map((item, n) => n === index ? { ...item, eventZoneId: value } : item) })} list={zones.map(item => ({ id: item.id, name: item.name || "Untitled service point" }))} /><Field label="Shift start" type="time" value={assignment.shiftStart} set={(value) => change({ eventAssignments: assignments.map((item, n) => n === index ? { ...item, shiftStart: value } : item) })} /><Field label="Shift end" type="time" value={assignment.shiftEnd} set={(value) => change({ eventAssignments: assignments.map((item, n) => n === index ? { ...item, shiftEnd: value } : item) })} /><Field label="Timing notes" wide value={assignment.timingNotes} set={(value) => change({ eventAssignments: assignments.map((item, n) => n === index ? { ...item, timingNotes: value } : item) })} /><Field label="Manual overlap / assignment reason" wide value={assignment.manualAssignmentReason} set={(value) => change({ eventAssignments: assignments.map((item, n) => n === index ? { ...item, manualAssignmentReason: value } : item) })} />{overlaps.includes(assignment.id) && <p className="wide form-help">Overlapping shift for this Legend. Record an operational reason before retaining it.</p>}</Row>)}</Editor><StaffingEditor rows={e.staffingRequirements} set={(rows) => change({ staffingRequirements: rows })} suggestions={suggestions} activeLegends={activeLegends} hub={hub} /></>;
+}
+
 function StaffingEditor({
   rows,
   set,
+  suggestions,
+  activeLegends,
+  hub,
 }: {
   rows: Staffing[];
   set: (x: Staffing[]) => void;
+  suggestions: Record<string, StaffingSuggestion[]>;
+  activeLegends: ActiveLegend[];
+  hub: HubOperatingReadContract;
 }) {
   return (
     <Editor
@@ -608,7 +635,7 @@ function StaffingEditor({
             label="Role"
             value={r.role}
             onChange={(v) => setAt(rows, set, i, { role: v })}
-            list={C.staffRoles}
+            list={hub.eventRoles.map(item => ({ id: item.label, name: item.label }))}
           />
           <Field
             label="Required"
@@ -647,7 +674,7 @@ function StaffingEditor({
             label="Working location"
             value={r.locationId}
             onChange={(v) => setAt(rows, set, i, { locationId: v })}
-            list={[...C.oplocs, ...C.sites]}
+            list={[...hub.oplocs, ...hub.operationalAreas].map(item => ({ id: item.canonicalId, name: item.label }))}
           />
           <label className="wide">
             Assigned Legends
@@ -662,17 +689,21 @@ function StaffingEditor({
                 })
               }
             >
-              {C.people.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
-                </option>
-              ))}
+              {activeLegends.map((legend) => <option key={legend.canonicalId} value={legend.canonicalId}>{legend.label}</option>)}
+              {(suggestions[r.role] || [])
+                .map((suggestion) => (
+                  <option key={suggestion.legendId} value={suggestion.legendId}>
+                    {suggestion.label} — {suggestion.reason}
+                  </option>
+                ))}
             </select>
             <small>
               {r.assignedPersonIds.length} of {r.requiredHeadcount}{" "}
               assigned—planning only, not a rota entry.
             </small>
+            {(suggestions[r.role] || []).length > 0 && <span className="form-help">Suggested in governed eligibility order: {(suggestions[r.role] || []).map((suggestion) => `${suggestion.label} (${suggestion.reason})`).join("; ")}. You may still select another active Legend manually.</span>}
           </label>
+          <Field label="Manual selection reason" wide value={r.manualSelectionReason || ""} set={(v) => setAt(rows, set, i, { manualSelectionReason: v })} />
           <Field
             label="Notes"
             wide
@@ -687,9 +718,11 @@ function StaffingEditor({
 function ProductionEditor({
   rows,
   set,
+  hub,
 }: {
   rows: Production[];
   set: (x: Production[]) => void;
+  hub: HubOperatingReadContract;
 }) {
   return (
     <Editor
@@ -738,11 +771,10 @@ function ProductionEditor({
             value={r.requiredAt}
             set={(v) => setAt(rows, set, i, { requiredAt: v })}
           />
-          <Select
-            label="Intended producer"
+          <Field
+            label="Intended producer reference"
             value={r.productionUnitId}
-            onChange={(v) => setAt(rows, set, i, { productionUnitId: v })}
-            list={C.productionUnits}
+            set={(v) => setAt(rows, set, i, { productionUnitId: v })}
           />
           <Field
             label="Destination"
@@ -753,7 +785,7 @@ function ProductionEditor({
             label="Responsible person"
             value={r.responsiblePersonId}
             onChange={(v) => setAt(rows, set, i, { responsiblePersonId: v })}
-            list={C.people}
+            list={hub.legends.map(item => ({ id: item.canonicalId, name: item.label }))}
           />
           <Select
             label="Planning status"
@@ -785,9 +817,11 @@ function ProductionEditor({
 function TaskEditor({
   rows,
   set,
+  hub,
 }: {
   rows: EventTask[];
   set: (x: EventTask[]) => void;
+  hub: HubOperatingReadContract;
 }) {
   return (
     <Editor
@@ -820,7 +854,7 @@ function TaskEditor({
             label="Owner"
             value={r.ownerId}
             onChange={(v) => setAt(rows, set, i, { ownerId: v })}
-            list={C.people}
+            list={hub.legends.map(item => ({ id: item.canonicalId, name: item.label }))}
           />
           <Field
             label="Due"

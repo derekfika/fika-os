@@ -1,6 +1,6 @@
 function sendNewBookingNotification_(booking, integration) {
   try {
-    const recipientConfig = parseNotificationRecipients_(SITE_CONFIG.siteEmailAddress);
+    const recipientConfig = parseNotificationRecipients_(booking.client.email);
 
     if (!recipientConfig.valid.length) {
       return {
@@ -19,15 +19,11 @@ function sendNewBookingNotification_(booking, integration) {
     }
 
     const eventType = eventTypeLabel_(booking.order.eventType);
-    const subject =
-      "New " + SITE_CONFIG.clientFacingName + " booking request | " +
-      booking.event.eventDate +
-      " | " +
-      booking.client.companyName;
+    const subject = SITE_CONFIG.clientFacingName +
+      " booking request received | " + booking.bookingId;
     const plainText = buildBookingNotificationText_(
       booking,
-      eventType,
-      integration
+      eventType
     );
 
     MailApp.sendEmail({
@@ -36,8 +32,7 @@ function sendNewBookingNotification_(booking, integration) {
       body: plainText,
       htmlBody: buildBookingNotificationHtml_(
         booking,
-        eventType,
-        integration
+        eventType
       ),
       name: SITE_CONFIG.clientFacingName
     });
@@ -97,10 +92,12 @@ function getBookingNotificationDashboardUrl_(configuredUrl) {
   }
 }
 
-function buildBookingNotificationText_(booking, eventType, integration) {
+function buildBookingNotificationText_(booking, eventType) {
   const lineItems = buildBookingNotificationLineItemsText_(booking);
   return [
-    "A new " + SITE_CONFIG.clientFacingName + " booking request is ready for review.",
+    "Hi " + booking.client.name + ",",
+    "",
+    "Thank you. Your " + SITE_CONFIG.clientFacingName + " booking request has been received.",
     "",
     "Reference: " + booking.bookingId,
     "Company: " + booking.client.companyName,
@@ -120,18 +117,17 @@ function buildBookingNotificationText_(booking, eventType, integration) {
       booking.event.roomOrArea
     ].filter(Boolean).join(" / "),
     "Estimated total: " + formatNotificationMoney_(booking.order.netTotal),
-    "Request status: " + integration.dashboardStatus,
     "",
     "Line items:",
     lineItems || "No line items were captured.",
     "",
-    "Please review the request and prepare the quote."
+    "This request is subject to confirmation. The hospitality team will contact you once it has been reviewed."
   ].filter(function(line, index, values) {
     return line !== "" || values[index - 1] !== "";
   }).join("\n");
 }
 
-function buildBookingNotificationHtml_(booking, eventType, integration) {
+function buildBookingNotificationHtml_(booking, eventType) {
   const rows = [
     ["Reference", booking.bookingId],
     ["Company", booking.client.companyName],
@@ -148,8 +144,7 @@ function buildBookingNotificationHtml_(booking, eventType, integration) {
       booking.event.floorLevel,
       booking.event.roomOrArea
     ].filter(Boolean).join(" / ")],
-    ["Estimated total", formatNotificationMoney_(booking.order.netTotal)],
-    ["Request status", integration.dashboardStatus]
+    ["Estimated total", formatNotificationMoney_(booking.order.netTotal)]
   ];
   const lineItemsHtml = buildBookingNotificationLineItemsHtml_(booking);
 
@@ -158,10 +153,10 @@ function buildBookingNotificationHtml_(booking, eventType, integration) {
     '<div style="background:#2C1951;color:#fff;padding:24px 28px 26px;border-radius:0">',
     '<img src="https://www.rcoa.ac.uk/themes/custom/rcoa_base/images/rcoa-logo-white.svg" alt="Royal College of Anaesthetists" style="display:block;width:144px;height:auto;margin:0 0 18px">',
     '<div style="font-size:11px;font-weight:bold;letter-spacing:1.7px;text-transform:uppercase;opacity:.78">Hospitality booking request</div>',
-    '<h1 style="font-family:Arial,sans-serif;font-size:28px;line-height:1.08;margin:8px 0 0;color:#fff">New ' + escapeNotificationHtml_(SITE_CONFIG.clientFacingName) + ' booking</h1>',
+    '<h1 style="font-family:Arial,sans-serif;font-size:28px;line-height:1.08;margin:8px 0 0;color:#fff">Booking request received</h1>',
     '</div>',
     '<div style="padding:28px;background:#fff;border-top:0;border-radius:0">',
-    '<p style="margin:0 0 18px;color:#655D70;font-size:14px;line-height:1.5">A new client booking request is ready for review. The requested menu items are included below.</p>',
+    '<p style="margin:0 0 18px;color:#655D70;font-size:14px;line-height:1.5">Hi ' + escapeNotificationHtml_(booking.client.name) + ', thank you. Your hospitality booking request has been received. The requested menu items are included below.</p>',
     '<table style="width:100%;border-collapse:collapse;margin:0 0 24px">',
     rows.map(function(row) {
       return '<tr>' +
@@ -176,7 +171,7 @@ function buildBookingNotificationHtml_(booking, eventType, integration) {
     '</table>',
     '<h2 style="font-size:15px;letter-spacing:1.3px;text-transform:uppercase;margin:0 0 12px;color:#2C1951">Line items</h2>',
     lineItemsHtml || '<p style="margin:0 0 22px;color:#655D70">No line items were captured.</p>',
-    '<p style="font-size:12px;color:#655D70;margin:24px 0 0">Please review the request and prepare the quote.</p>',
+    '<p style="font-size:12px;color:#655D70;margin:24px 0 0">This request is subject to confirmation. The hospitality team will contact you once it has been reviewed.</p>',
     '</div>',
     '</div>'
   ].join("");

@@ -1,3 +1,7 @@
+const HOT_DRINK_ARCHIVE_ROW_CACHE_PREFIX = "HDR_ARCHIVE_";
+const HOT_DRINK_ARCHIVE_ROW_CACHE_SECONDS = 21600;
+const HOT_DRINK_ARCHIVE_ROW_CACHE_MAX_CHARS = 90000;
+
 function installNightlyArchiveTrigger() {
   getArchiveFolder_();
   ScriptApp.getProjectTriggers().forEach(function(trigger) {
@@ -173,8 +177,13 @@ function readArchivedLogRowsForDateRange_(startDate, endDate) {
 
 function readArchiveFileRows_(file) {
   try {
+    const cacheKey = archiveRowsCacheKey_(file);
+    const cache = CacheService.getScriptCache();
+    const cached = cache.get(cacheKey);
+    if (cached) return JSON.parse(cached);
+
     const archive = JSON.parse(file.getBlob().getDataAsString());
-    return (archive.rows || []).map(function(row) {
+    const rows = (archive.rows || []).map(function(row) {
       return {
         rowNumber: 0,
         headerMap: {},
@@ -191,10 +200,26 @@ function readArchiveFileRows_(file) {
         archived: true
       };
     });
+    cacheArchiveRows_(cache, cacheKey, rows);
+    return rows;
   } catch (error) {
     logAudit_("ARCHIVE_READ_ERROR", "", "", "", getUser_(), file.getName() + ": " + (error.message || String(error)));
     return [];
   }
+}
+
+function cacheArchiveRows_(cache, cacheKey, rows) {
+  try {
+    const payload = JSON.stringify(rows);
+    if (payload.length > HOT_DRINK_ARCHIVE_ROW_CACHE_MAX_CHARS) return;
+    cache.put(cacheKey, payload, HOT_DRINK_ARCHIVE_ROW_CACHE_SECONDS);
+  } catch (error) {
+    // Large archive days simply bypass cache; the JSON file remains canonical.
+  }
+}
+
+function archiveRowsCacheKey_(file) {
+  return HOT_DRINK_ARCHIVE_ROW_CACHE_PREFIX + file.getId().replace(/[^A-Za-z0-9_]/g, "_") + "_" + file.getLastUpdated().getTime();
 }
 
 function getArchiveFolder_() {

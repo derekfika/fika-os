@@ -1,0 +1,14 @@
+{
+  "workbook": "WC 20_07_2026.xlsx",
+  "observedSheets": ["mon", "fikamon", "tue", "fikatue", "wed", "fikawed", "thurs", "fikathurs", "fri", "WC 13072026"],
+  "structure": "Five day menu sheets paired with allergen-checker sheets and a weekly total sheet.",
+  "daySheets": ["mon", "tue", "wed", "thurs", "fri"],
+  "allergenSheets": ["fikamon", "fikatue", "fikawed", "fikathurs"],
+  "sourceObservations": [
+    "Day sheets use PRODUCT/DISH headers and site columns with totals.",
+    "Site labels vary by sheet (for example ANGEL, angeel, comm, commerce, MK and BP).",
+    "Allergen sheets contain an ALLERGEN CHECKER layout and may-contain instruction text.",
+    "Source evidence must be reviewed before publication; no allergens are inferred from dish names."
+  ],
+  "sourceFileRetainedOutsideCanonicalRecords": true
+}

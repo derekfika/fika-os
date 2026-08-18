@@ -1,6 +1,14 @@
 function runBookingPlatformTests() {
   const payload = {
-    client: { name: "Alex Smith", email: "alex@example.com", phone: "07123456789", companyName: "Example Ltd", invoiceReference: "PO-12345" },
+    client: {
+      name: "Alex Smith",
+      email: "alex@example.com",
+      phone: "07123456789",
+      companyName: "Requester Ltd",
+      invoiceReference: "PO-12345",
+      clientName: "Jamie Client",
+      clientCompanyName: "Example Client Ltd"
+    },
     event: {
       eventDate: futureWeekday_(15),
       startTime: "09:00",
@@ -27,6 +35,12 @@ function runBookingPlatformTests() {
   tampered.order.items[0].lineTotal = 0.1;
   const protectedBooking = buildServerBooking_(tampered);
   const dashboardBooking = adaptClientBookingForDashboard_(protectedBooking);
+  const missingReferencePayload = JSON.parse(JSON.stringify(payload));
+  missingReferencePayload.client.invoiceReference = "";
+  const missingClientNamePayload = JSON.parse(JSON.stringify(payload));
+  missingClientNamePayload.client.clientName = "";
+  const missingClientCompanyPayload = JSON.parse(JSON.stringify(payload));
+  missingClientCompanyPayload.client.clientCompanyName = "";
 
   const tests = [
     { name: "valid payload passes", ok: validation.ok },
@@ -37,8 +51,13 @@ function runBookingPlatformTests() {
     { name: "dashboard adapter produces READY booking", ok: dashboardBooking.status === "READY" },
     { name: "dashboard adapter produces quote item shape", ok: dashboardBooking.items[0].section === "Breakfast" && dashboardBooking.items[0].qty === 10 },
     { name: "dashboard adapter preserves client payload", ok: dashboardBooking.clientBooking.bookingId === protectedBooking.bookingId },
+    { name: "dashboard adapter uses client company", ok: dashboardBooking.clientCompany === "Example Client Ltd" },
+    { name: "dashboard adapter uses client name as host", ok: dashboardBooking.hostName === "Jamie Client" },
     { name: "dashboard adapter adds 8% management fee", ok: dashboardBooking.mgmtFee === 3.16 && dashboardBooking.netPrice === 42.66 },
     { name: "invoice reference reaches dashboard JSON", ok: dashboardBooking.invoiceReference === "PO-12345" && dashboardBooking.notes.indexOf("PO-12345") !== -1 },
+    { name: "invoice reference is mandatory", ok: !validateBookingRequest_(buildServerBooking_(missingReferencePayload)).ok },
+    { name: "client name is mandatory", ok: !validateBookingRequest_(buildServerBooking_(missingClientNamePayload)).ok },
+    { name: "client company is mandatory", ok: !validateBookingRequest_(buildServerBooking_(missingClientCompanyPayload)).ok },
     { name: "serving suggestion schema is public", ok: getPublicPlatformConfig().menu.find(function(item) { return item.id === "mini_pastries"; }).serves === 12 },
     { name: "removed Classic Working Lunch is not public", ok: !getPublicPlatformConfig().menu.some(function(item) { return item.id === "classic_working_lunch"; }) },
     { name: "spreadsheet URL ID extraction", ok: extractSpreadsheetId_("https://docs.google.com/spreadsheets/d/1ExampleSpreadsheetId123456789/edit#gid=0") === "1ExampleSpreadsheetId123456789" },

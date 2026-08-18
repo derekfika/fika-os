@@ -429,12 +429,43 @@
       border-spacing: .8mm;
       font-size: 7.3px;
     }
+    .heat-table.compact {
+      border-spacing: .55mm;
+      font-size: 6.7px;
+    }
+    .heat-table.compact th, .heat-table.compact td {
+      padding: .95mm;
+    }
+    .quarter-section {
+      margin-top: 2.4mm;
+      padding-top: 2mm;
+      border-top: 1px solid #dfeaf1;
+    }
+    .quarter-heading {
+      display: flex;
+      justify-content: space-between;
+      align-items: end;
+      gap: 4mm;
+      margin-bottom: .8mm;
+    }
+    .quarter-heading h3 {
+      margin: 0;
+      color: var(--munich-dark);
+      font-size: 11px;
+    }
+    .quarter-heading span {
+      color: var(--muted);
+      font-size: 7.4px;
+      font-weight: 800;
+      letter-spacing: .5px;
+      text-transform: uppercase;
+    }
     .heat {
       color: #03283d;
       font-weight: 800;
       background:
-        linear-gradient(135deg, rgba(255,255,255,.45), rgba(255,255,255,0)),
-        rgba(0,83,138,var(--heat));
+        linear-gradient(135deg, rgba(255,255,255,.28), rgba(255,255,255,0)),
+        var(--heat-color);
     }
     .heat.zero {
       color: #8a98a3;
@@ -460,7 +491,7 @@
       width: 32mm;
       height: 3mm;
       border-radius: 99mm;
-      background: linear-gradient(90deg, rgba(0,83,138,.08), rgba(0,83,138,.75), var(--orange));
+      background: linear-gradient(90deg, #edf5f9 0%, #9ec6da 38%, #00538A 68%, var(--orange) 100%);
     }
     .notes {
       display: grid;
@@ -659,12 +690,38 @@
                 var value = report.heatmap[day][bucket] || 0;
                 var closed = report.heatmapBucketMeta[bucketIndex] && report.heatmapBucketMeta[bucketIndex].closed && report.filters.closedPeriods === "Excluded";
               ?>
-                <td class="heat <?= closed ? 'closed' : (value ? '' : 'zero') ?>" style="--heat:<?= heatOpacity_(value, report.heatmapMax) ?>"><?= closed ? 'Closed' : value ?></td>
+                <td class="heat <?= closed ? 'closed' : (value ? '' : 'zero') ?>" style="--heat-color:<?= heatColor_(value, report.heatmapMax) ?>"><?= closed ? 'Closed' : value ?></td>
               <? } ?>
             </tr>
           <? } ?>
         </tbody>
       </table>
+      <? if (report.quarterHourRows.length && report.quarterHourBuckets.length) { ?>
+        <div class="quarter-section">
+          <div class="quarter-heading">
+            <h3>15-minute average demand</h3>
+            <span><?= report.quarterHourAverageLabel ?></span>
+          </div>
+          <table class="heat-table compact">
+            <thead>
+              <tr>
+                <th>15 min</th>
+                <? for (var qb = 0; qb < report.quarterHourBuckets.length; qb++) { ?><th><?= report.quarterHourBuckets[qb] ?></th><? } ?>
+              </tr>
+            </thead>
+            <tbody>
+              <? for (var qr = 0; qr < report.quarterHourRows.length; qr++) { var quarter = report.quarterHourRows[qr]; ?>
+                <tr>
+                  <th><?= quarter.interval ?></th>
+                  <? for (var qc = 0; qc < quarter.cells.length; qc++) { var cell = quarter.cells[qc]; ?>
+                    <td class="heat <?= cell.average ? '' : 'zero' ?>" style="--heat-color:<?= heatColor_(cell.average, report.quarterHourMax) ?>"><?= cell.average ?></td>
+                  <? } ?>
+                </tr>
+              <? } ?>
+            </tbody>
+          </table>
+        </div>
+      <? } ?>
     <? } ?>
     <div class="notes">
       <div class="note"><span>Active days</span><strong><?= report.activeDays ?></strong></div>

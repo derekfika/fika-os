@@ -1,0 +1,4994 @@
+{
+  "contractVersion": "fika.mnk-legacy-menu-import.candidates.v1",
+  "generatedAt": "2026-07-30T00:00:00.000Z",
+  "source": {
+    "path": "sites/mnk/booking-platform/01_MenuData.js",
+    "recordCount": 43,
+    "sourceHash": "32735b26f7c2b3473be7"
+  },
+  "configuration": {
+    "oplocId": "oploc:mnk-development-fixture",
+    "priceEffectiveFrom": "2026-01-01",
+    "vatRate": 0.2,
+    "configuredAsDevelopmentFixture": true
+  },
+  "items": [
+    {
+      "schemaVersion": "0.1.0",
+      "version": 1,
+      "createdAt": "2026-07-30T00:00:00.000Z",
+      "createdBy": "migration:mnk-menu-source",
+      "updatedAt": "2026-07-30T00:00:00.000Z",
+      "updatedBy": "migration:mnk-menu-source",
+      "active": true,
+      "externalIdentities": [],
+      "provenanceIds": [
+        "source:mnk-menu:bloom_filter_coffee"
+      ],
+      "ownership": {
+        "providerOwned": {
+          "sourceFile": "sites/mnk/booking-platform/01_MenuData.js"
+        },
+        "fikaOwned": {}
+      },
+      "entityType": "Hospitality Menu Item",
+      "canonicalId": "hospitality-menu-item:mnk:bloom_filter_coffee",
+      "name": "Bloom Filter Coffee",
+      "description": "Ethical filter coffee, served per person.",
+      "category": "Drinks",
+      "lifecycleState": "active",
+      "dietaryInformation": [],
+      "allergenInformation": [],
+      "providerMappings": [
+        {
+          "provider": "mnk-booking-platform",
+          "sourceItemId": "bloom_filter_coffee",
+          "sourceVersion": "01_MenuData.js"
+        }
+      ]
+    },
+    {
+      "schemaVersion": "0.1.0",
+      "version": 1,
+      "createdAt": "2026-07-30T00:00:00.000Z",
+      "createdBy": "migration:mnk-menu-source",
+      "updatedAt": "2026-07-30T00:00:00.000Z",
+      "updatedBy": "migration:mnk-menu-source",
+      "active": true,
+      "externalIdentities": [],
+      "provenanceIds": [
+        "source:mnk-menu:specialty_tea_coffee"
+      ],
+      "ownership": {
+        "providerOwned": {
+          "sourceFile": "sites/mnk/booking-platform/01_MenuData.js"
+        },
+        "fikaOwned": {}
+      },
+      "entityType": "Hospitality Menu Item",
+      "canonicalId": "hospitality-menu-item:mnk:specialty_tea_coffee",
+      "name": "Specialty Tea & Coffee",
+      "description": "Specialty teas and coffee, served per person.",
+      "category": "Drinks",
+      "lifecycleState": "active",
+      "dietaryInformation": [],
+      "allergenInformation": [],
+      "providerMappings": [
+        {
+          "provider": "mnk-booking-platform",
+          "sourceItemId": "specialty_tea_coffee",
+          "sourceVersion": "01_MenuData.js"
+        }
+      ]
+    },
+    {
+      "schemaVersion": "0.1.0",
+      "version": 1,
+      "createdAt": "2026-07-30T00:00:00.000Z",
+      "createdBy": "migration:mnk-menu-source",
+      "updatedAt": "2026-07-30T00:00:00.000Z",
+      "updatedBy": "migration:mnk-menu-source",
+      "active": true,
+      "externalIdentities": [],
+      "provenanceIds": [
+        "source:mnk-menu:belu_water"
+      ],
+      "ownership": {
+        "providerOwned": {
+          "sourceFile": "sites/mnk/booking-platform/01_MenuData.js"
+        },
+        "fikaOwned": {}
+      },
+      "entityType": "Hospitality Menu Item",
+      "canonicalId": "hospitality-menu-item:mnk:belu_water",
+      "name": "Belu Water Bottle",
+      "description": "750ml still or sparkling mineral water. All profits go to WaterAid.",
+      "category": "Drinks",
+      "lifecycleState": "active",
+      "dietaryInformation": [],
+      "allergenInformation": [],
+      "providerMappings": [
+        {
+          "provider": "mnk-booking-platform",
+          "sourceItemId": "belu_water",
+          "sourceVersion": "01_MenuData.js"
+        }
+      ]
+    },
+    {
+      "schemaVersion": "0.1.0",
+      "version": 1,
+      "createdAt": "2026-07-30T00:00:00.000Z",
+      "createdBy": "migration:mnk-menu-source",
+      "updatedAt": "2026-07-30T00:00:00.000Z",
+      "updatedBy": "migration:mnk-menu-source",
+      "active": true,
+      "externalIdentities": [],
+      "provenanceIds": [
+        "source:mnk-menu:canned_drinks"
+      ],
+      "ownership": {
+        "providerOwned": {
+          "sourceFile": "sites/mnk/booking-platform/01_MenuData.js"
+        },
+        "fikaOwned": {}
+      },
+      "entityType": "Hospitality Menu Item",
+      "canonicalId": "hospitality-menu-item:mnk:canned_drinks",
+      "name": "A Selection of Canned Drinks",
+      "description": "Coke, Diet Coke, Coke Zero, Sprite and Fanta Orange.",
+      "category": "Drinks",
+      "lifecycleState": "active",
+      "dietaryInformation": [],
+      "allergenInformation": [],
+      "providerMappings": [
+        {
+          "provider": "mnk-booking-platform",
+          "sourceItemId": "canned_drinks",
+          "sourceVersion": "01_MenuData.js"
+        }
+      ]
+    },
+    {
+      "schemaVersion": "0.1.0",
+      "version": 1,
+      "createdAt": "2026-07-30T00:00:00.000Z",
+      "createdBy": "migration:mnk-menu-source",
+      "updatedAt": "2026-07-30T00:00:00.000Z",
+      "updatedBy": "migration:mnk-menu-source",
+      "active": true,
+      "externalIdentities": [],
+      "provenanceIds": [
+        "source:mnk-menu:fresh_juice_250"
+      ],
+      "ownership": {
+        "providerOwned": {
+          "sourceFile": "sites/mnk/booking-platform/01_MenuData.js"
+        },
+        "fikaOwned": {}
+      },
+      "entityType": "Hospitality Menu Item",
+      "canonicalId": "hospitality-menu-item:mnk:fresh_juice_250",
+      "name": "Fresh Squeezed & Pressed Juice",
+      "description": "250ml bottle. Orange, seasonal apple, carrot pear & ginger, or seasonal blood orange.",
+      "category": "Drinks",
+      "lifecycleState": "active",
+      "dietaryInformation": [],
+      "allergenInformation": [],
+      "providerMappings": [
+        {
+          "provider": "mnk-booking-platform",
+          "sourceItemId": "fresh_juice_250",
+          "sourceVersion": "01_MenuData.js"
+        }
+      ]
+    },
+    {
+      "schemaVersion": "0.1.0",
+      "version": 1,
+      "createdAt": "2026-07-30T00:00:00.000Z",
+      "createdBy": "migration:mnk-menu-source",
+      "updatedAt": "2026-07-30T00:00:00.000Z",
+      "updatedBy": "migration:mnk-menu-source",
+      "active": true,
+      "externalIdentities": [],
+      "provenanceIds": [
+        "source:mnk-menu:fresh_juice_1l"
+      ],
+      "ownership": {
+        "providerOwned": {
+          "sourceFile": "sites/mnk/booking-platform/01_MenuData.js"
+        },
+        "fikaOwned": {}
+      },
+      "entityType": "Hospitality Menu Item",
+      "canonicalId": "hospitality-menu-item:mnk:fresh_juice_1l",
+      "name": "Fresh Squeezed & Pressed Juice",
+      "description": "1L bottle. Orange, seasonal apple, carrot pear & ginger, or seasonal blood orange.",
+      "category": "Drinks",
+      "lifecycleState": "active",
+      "dietaryInformation": [],
+      "allergenInformation": [],
+      "providerMappings": [
+        {
+          "provider": "mnk-booking-platform",
+          "sourceItemId": "fresh_juice_1l",
+          "sourceVersion": "01_MenuData.js"
+        }
+      ]
+    },
+    {
+      "schemaVersion": "0.1.0",
+      "version": 1,
+      "createdAt": "2026-07-30T00:00:00.000Z",
+      "createdBy": "migration:mnk-menu-source",
+      "updatedAt": "2026-07-30T00:00:00.000Z",
+      "updatedBy": "migration:mnk-menu-source",
+      "active": true,
+      "externalIdentities": [],
+      "provenanceIds": [
+        "source:mnk-menu:ginger_shot"
+      ],
+      "ownership": {
+        "providerOwned": {
+          "sourceFile": "sites/mnk/booking-platform/01_MenuData.js"
+        },
+        "fikaOwned": {}
+      },
+      "entityType": "Hospitality Menu Item",
+      "canonicalId": "hospitality-menu-item:mnk:ginger_shot",
+      "name": "Fresh Pressed Ginger, Turmeric & Lemon Shot",
+      "category": "Drinks",
+      "lifecycleState": "active",
+      "dietaryInformation": [],
+      "allergenInformation": [],
+      "providerMappings": [
+        {
+          "provider": "mnk-booking-platform",
+          "sourceItemId": "ginger_shot",
+          "sourceVersion": "01_MenuData.js"
+        }
+      ]
+    },
+    {
+      "schemaVersion": "0.1.0",
+      "version": 1,
+      "createdAt": "2026-07-30T00:00:00.000Z",
+      "createdBy": "migration:mnk-menu-source",
+      "updatedAt": "2026-07-30T00:00:00.000Z",
+      "updatedBy": "migration:mnk-menu-source",
+      "active": true,
+      "externalIdentities": [],
+      "provenanceIds": [
+        "source:mnk-menu:smoothie_1l"
+      ],
+      "ownership": {
+        "providerOwned": {
+          "sourceFile": "sites/mnk/booking-platform/01_MenuData.js"
+        },
+        "fikaOwned": {}
+      },
+      "entityType": "Hospitality Menu Item",
+      "canonicalId": "hospitality-menu-item:mnk:smoothie_1l",
+      "name": "Freshly Made Smoothie",
+      "description": "1L bottle. Green Glow, Berry Boost or Island Breeze.",
+      "category": "Drinks",
+      "lifecycleState": "active",
+      "dietaryInformation": [],
+      "allergenInformation": [],
+      "providerMappings": [
+        {
+          "provider": "mnk-booking-platform",
+          "sourceItemId": "smoothie_1l",
+          "sourceVersion": "01_MenuData.js"
+        }
+      ]
+    },
+    {
+      "schemaVersion": "0.1.0",
+      "version": 1,
+      "createdAt": "2026-07-30T00:00:00.000Z",
+      "createdBy": "migration:mnk-menu-source",
+      "updatedAt": "2026-07-30T00:00:00.000Z",
+      "updatedBy": "migration:mnk-menu-source",
+      "active": true,
+      "externalIdentities": [],
+      "provenanceIds": [
+        "source:mnk-menu:cookie_box"
+      ],
+      "ownership": {
+        "providerOwned": {
+          "sourceFile": "sites/mnk/booking-platform/01_MenuData.js"
+        },
+        "fikaOwned": {}
+      },
+      "entityType": "Hospitality Menu Item",
+      "canonicalId": "hospitality-menu-item:mnk:cookie_box",
+      "name": "Freshly Baked Cookie Box",
+      "description": "24 freshly baked mixed cookies including milk chocolate, double chocolate, white chocolate, chocolate chip and Carnivals Smarties cookies.",
+      "category": "Sweet treats",
+      "lifecycleState": "active",
+      "dietaryInformation": [],
+      "allergenInformation": [],
+      "providerMappings": [
+        {
+          "provider": "mnk-booking-platform",
+          "sourceItemId": "cookie_box",
+          "sourceVersion": "01_MenuData.js"
+        }
+      ]
+    },
+    {
+      "schemaVersion": "0.1.0",
+      "version": 1,
+      "createdAt": "2026-07-30T00:00:00.000Z",
+      "createdBy": "migration:mnk-menu-source",
+      "updatedAt": "2026-07-30T00:00:00.000Z",
+      "updatedBy": "migration:mnk-menu-source",
+      "active": true,
+      "externalIdentities": [],
+      "provenanceIds": [
+        "source:mnk-menu:tray_bake_box"
+      ],
+      "ownership": {
+        "providerOwned": {
+          "sourceFile": "sites/mnk/booking-platform/01_MenuData.js"
+        },
+        "fikaOwned": {}
+      },
+      "entityType": "Hospitality Menu Item",
+      "canonicalId": "hospitality-menu-item:mnk:tray_bake_box",
+      "name": "Tray Bake Box",
+      "description": "Medium box contains 24 pieces and can be cut into 48 smaller bites. Example flavours include caramel Rolo brownie, caramelised biscuit brownie, raspberry & white chocolate blondies, and lemon & white chocolate blondies.",
+      "category": "Sweet treats",
+      "lifecycleState": "active",
+      "dietaryInformation": [],
+      "allergenInformation": [],
+      "providerMappings": [
+        {
+          "provider": "mnk-booking-platform",
+          "sourceItemId": "tray_bake_box",
+          "sourceVersion": "01_MenuData.js"
+        }
+      ]
+    },
+    {
+      "schemaVersion": "0.1.0",
+      "version": 1,
+      "createdAt": "2026-07-30T00:00:00.000Z",
+      "createdBy": "migration:mnk-menu-source",
+      "updatedAt": "2026-07-30T00:00:00.000Z",
+      "updatedBy": "migration:mnk-menu-source",
+      "active": true,
+      "externalIdentities": [],
+      "provenanceIds": [
+        "source:mnk-menu:exotic_fruit_box"
+      ],
+      "ownership": {
+        "providerOwned": {
+          "sourceFile": "sites/mnk/booking-platform/01_MenuData.js"
+        },
+        "fikaOwned": {}
+      },
+      "entityType": "Hospitality Menu Item",
+      "canonicalId": "hospitality-menu-item:mnk:exotic_fruit_box",
+      "name": "Exotic Fruit Box",
+      "description": "Watermelon, cantaloupe melon, honey dew melon, pineapple, kiwi, passion fruit and strawberries.",
+      "category": "Breakfast",
+      "lifecycleState": "active",
+      "dietaryInformation": [],
+      "allergenInformation": [],
+      "providerMappings": [
+        {
+          "provider": "mnk-booking-platform",
+          "sourceItemId": "exotic_fruit_box",
+          "sourceVersion": "01_MenuData.js"
+        }
+      ]
+    },
+    {
+      "schemaVersion": "0.1.0",
+      "version": 1,
+      "createdAt": "2026-07-30T00:00:00.000Z",
+      "createdBy": "migration:mnk-menu-source",
+      "updatedAt": "2026-07-30T00:00:00.000Z",
+      "updatedBy": "migration:mnk-menu-source",
+      "active": true,
+      "externalIdentities": [],
+      "provenanceIds": [
+        "source:mnk-menu:mini_pastries"
+      ],
+      "ownership": {
+        "providerOwned": {
+          "sourceFile": "sites/mnk/booking-platform/01_MenuData.js"
+        },
+        "fikaOwned": {}
+      },
+      "entityType": "Hospitality Menu Item",
+      "canonicalId": "hospitality-menu-item:mnk:mini_pastries",
+      "name": "Mini Pastries",
+      "description": "A selection of two mini Danish and bite-size chocolate muffins per person, garnished with strawberries and icing sugar.",
+      "category": "Breakfast",
+      "lifecycleState": "active",
+      "dietaryInformation": [],
+      "allergenInformation": [],
+      "providerMappings": [
+        {
+          "provider": "mnk-booking-platform",
+          "sourceItemId": "mini_pastries",
+          "sourceVersion": "01_MenuData.js"
+        }
+      ]
+    },
+    {
+      "schemaVersion": "0.1.0",
+      "version": 1,
+      "createdAt": "2026-07-30T00:00:00.000Z",
+      "createdBy": "migration:mnk-menu-source",
+      "updatedAt": "2026-07-30T00:00:00.000Z",
+      "updatedBy": "migration:mnk-menu-source",
+      "active": true,
+      "externalIdentities": [],
+      "provenanceIds": [
+        "source:mnk-menu:large_pastries"
+      ],
+      "ownership": {
+        "providerOwned": {
+          "sourceFile": "sites/mnk/booking-platform/01_MenuData.js"
+        },
+        "fikaOwned": {}
+      },
+      "entityType": "Hospitality Menu Item",
+      "canonicalId": "hospitality-menu-item:mnk:large_pastries",
+      "name": "Freshly Baked Large Pastries",
+      "description": "Four plain croissants, four raspberry croissants and four almond croissants.",
+      "category": "Breakfast",
+      "lifecycleState": "active",
+      "dietaryInformation": [],
+      "allergenInformation": [],
+      "providerMappings": [
+        {
+          "provider": "mnk-booking-platform",
+          "sourceItemId": "large_pastries",
+          "sourceVersion": "01_MenuData.js"
+        }
+      ]
+    },
+    {
+      "schemaVersion": "0.1.0",
+      "version": 1,
+      "createdAt": "2026-07-30T00:00:00.000Z",
+      "createdBy": "migration:mnk-menu-source",
+      "updatedAt": "2026-07-30T00:00:00.000Z",
+      "updatedBy": "migration:mnk-menu-source",
+      "active": true,
+      "externalIdentities": [],
+      "provenanceIds": [
+        "source:mnk-menu:filled_savoury_croissant"
+      ],
+      "ownership": {
+        "providerOwned": {
+          "sourceFile": "sites/mnk/booking-platform/01_MenuData.js"
+        },
+        "fikaOwned": {}
+      },
+      "entityType": "Hospitality Menu Item",
+      "canonicalId": "hospitality-menu-item:mnk:filled_savoury_croissant",
+      "name": "Filled Savoury Croissant",
+      "description": "Four Swiss cheese, Wiltshire ham & vine tomato; four free-range egg mayonnaise, sun blush tomato & roquette; four smoked Chalk Stream trout, cream cheese & dill.",
+      "category": "Breakfast",
+      "lifecycleState": "active",
+      "dietaryInformation": [],
+      "allergenInformation": [],
+      "providerMappings": [
+        {
+          "provider": "mnk-booking-platform",
+          "sourceItemId": "filled_savoury_croissant",
+          "sourceVersion": "01_MenuData.js"
+        }
+      ]
+    },
+    {
+      "schemaVersion": "0.1.0",
+      "version": 1,
+      "createdAt": "2026-07-30T00:00:00.000Z",
+      "createdBy": "migration:mnk-menu-source",
+      "updatedAt": "2026-07-30T00:00:00.000Z",
+      "updatedBy": "migration:mnk-menu-source",
+      "active": true,
+      "externalIdentities": [],
+      "provenanceIds": [
+        "source:mnk-menu:vegan_savoury_croissant"
+      ],
+      "ownership": {
+        "providerOwned": {
+          "sourceFile": "sites/mnk/booking-platform/01_MenuData.js"
+        },
+        "fikaOwned": {}
+      },
+      "entityType": "Hospitality Menu Item",
+      "canonicalId": "hospitality-menu-item:mnk:vegan_savoury_croissant",
+      "name": "Vegan Savoury Croissant",
+      "description": "Four smashed avocado & sun blushed tomatoes; four smoked Applewood cheese, green tomato chutney & roquette; four roast portobello mushroom, baby spinach & vegan feta.",
+      "category": "Breakfast",
+      "lifecycleState": "active",
+      "dietaryInformation": [],
+      "allergenInformation": [],
+      "providerMappings": [
+        {
+          "provider": "mnk-booking-platform",
+          "sourceItemId": "vegan_savoury_croissant",
+          "sourceVersion": "01_MenuData.js"
+        }
+      ]
+    },
+    {
+      "schemaVersion": "0.1.0",
+      "version": 1,
+      "createdAt": "2026-07-30T00:00:00.000Z",
+      "createdBy": "migration:mnk-menu-source",
+      "updatedAt": "2026-07-30T00:00:00.000Z",
+      "updatedBy": "migration:mnk-menu-source",
+      "active": true,
+      "externalIdentities": [],
+      "provenanceIds": [
+        "source:mnk-menu:bagel_box"
+      ],
+      "ownership": {
+        "providerOwned": {
+          "sourceFile": "sites/mnk/booking-platform/01_MenuData.js"
+        },
+        "fikaOwned": {}
+      },
+      "entityType": "Hospitality Menu Item",
+      "canonicalId": "hospitality-menu-item:mnk:bagel_box",
+      "name": "Bagel Box",
+      "description": "12 bagels cut in half. Choose smoked trout, crispy bacon & egg mayonnaise, roasted red pepper with smashed avocado, or mixed.",
+      "category": "Breakfast",
+      "lifecycleState": "active",
+      "dietaryInformation": [],
+      "allergenInformation": [],
+      "providerMappings": [
+        {
+          "provider": "mnk-booking-platform",
+          "sourceItemId": "bagel_box",
+          "sourceVersion": "01_MenuData.js"
+        }
+      ]
+    },
+    {
+      "schemaVersion": "0.1.0",
+      "version": 1,
+      "createdAt": "2026-07-30T00:00:00.000Z",
+      "createdBy": "migration:mnk-menu-source",
+      "updatedAt": "2026-07-30T00:00:00.000Z",
+      "updatedBy": "migration:mnk-menu-source",
+      "active": true,
+      "externalIdentities": [],
+      "provenanceIds": [
+        "source:mnk-menu:breakfast_pots"
+      ],
+      "ownership": {
+        "providerOwned": {
+          "sourceFile": "sites/mnk/booking-platform/01_MenuData.js"
+        },
+        "fikaOwned": {}
+      },
+      "entityType": "Hospitality Menu Item",
+      "canonicalId": "hospitality-menu-item:mnk:breakfast_pots",
+      "name": "Breakfast Pots",
+      "description": "Weekly changing menu. Options include fruit salad, Greek yoghurt, vegan yoghurt, free range boiled egg & baby spinach, smashed avocado with smoked salmon and egg, or overnight oats.",
+      "category": "Breakfast",
+      "lifecycleState": "active",
+      "dietaryInformation": [],
+      "allergenInformation": [],
+      "providerMappings": [
+        {
+          "provider": "mnk-booking-platform",
+          "sourceItemId": "breakfast_pots",
+          "sourceVersion": "01_MenuData.js"
+        }
+      ]
+    },
+    {
+      "schemaVersion": "0.1.0",
+      "version": 1,
+      "createdAt": "2026-07-30T00:00:00.000Z",
+      "createdBy": "migration:mnk-menu-source",
+      "updatedAt": "2026-07-30T00:00:00.000Z",
+      "updatedBy": "migration:mnk-menu-source",
+      "active": true,
+      "externalIdentities": [],
+      "provenanceIds": [
+        "source:mnk-menu:healthy_plant_power_breakfast"
+      ],
+      "ownership": {
+        "providerOwned": {
+          "sourceFile": "sites/mnk/booking-platform/01_MenuData.js"
+        },
+        "fikaOwned": {}
+      },
+      "entityType": "Hospitality Menu Item",
+      "canonicalId": "hospitality-menu-item:mnk:healthy_plant_power_breakfast",
+      "name": "Healthy Plant Power Breakfast",
+      "description": "Example menu includes seasonal poached fruit with coconut chia, vegan banana bread, sourdough crostini with smashed avocado, flapjack and fresh ginger shot.",
+      "category": "Breakfast",
+      "lifecycleState": "active",
+      "dietaryInformation": [],
+      "allergenInformation": [],
+      "providerMappings": [
+        {
+          "provider": "mnk-booking-platform",
+          "sourceItemId": "healthy_plant_power_breakfast",
+          "sourceVersion": "01_MenuData.js"
+        }
+      ]
+    },
+    {
+      "schemaVersion": "0.1.0",
+      "version": 1,
+      "createdAt": "2026-07-30T00:00:00.000Z",
+      "createdBy": "migration:mnk-menu-source",
+      "updatedAt": "2026-07-30T00:00:00.000Z",
+      "updatedBy": "migration:mnk-menu-source",
+      "active": true,
+      "externalIdentities": [],
+      "provenanceIds": [
+        "source:mnk-menu:deli_sandwich_lunch"
+      ],
+      "ownership": {
+        "providerOwned": {
+          "sourceFile": "sites/mnk/booking-platform/01_MenuData.js"
+        },
+        "fikaOwned": {}
+      },
+      "entityType": "Hospitality Menu Item",
+      "canonicalId": "hospitality-menu-item:mnk:deli_sandwich_lunch",
+      "name": "Deli Style Sandwich Lunch",
+      "description": "Three pieces per person. Meat, fish and vegetarian fillings on artisan breads such as ciabatta, focaccia, baguettes and wraps, served with hand cooked vegetable crisps.",
+      "category": "Lunch",
+      "lifecycleState": "active",
+      "dietaryInformation": [],
+      "allergenInformation": [],
+      "providerMappings": [
+        {
+          "provider": "mnk-booking-platform",
+          "sourceItemId": "deli_sandwich_lunch",
+          "sourceVersion": "01_MenuData.js"
+        }
+      ]
+    },
+    {
+      "schemaVersion": "0.1.0",
+      "version": 1,
+      "createdAt": "2026-07-30T00:00:00.000Z",
+      "createdBy": "migration:mnk-menu-source",
+      "updatedAt": "2026-07-30T00:00:00.000Z",
+      "updatedBy": "migration:mnk-menu-source",
+      "active": true,
+      "externalIdentities": [],
+      "provenanceIds": [
+        "source:mnk-menu:individual_boxed_lunch"
+      ],
+      "ownership": {
+        "providerOwned": {
+          "sourceFile": "sites/mnk/booking-platform/01_MenuData.js"
+        },
+        "fikaOwned": {}
+      },
+      "entityType": "Hospitality Menu Item",
+      "canonicalId": "hospitality-menu-item:mnk:individual_boxed_lunch",
+      "name": "Individual Boxed Lunch",
+      "description": "Deli style sandwich, pasta salad, vegetable crisps, sausage roll and mini traybake. Vegan and gluten-free available on request.",
+      "category": "Lunch Boxes",
+      "lifecycleState": "active",
+      "dietaryInformation": [],
+      "allergenInformation": [],
+      "providerMappings": [
+        {
+          "provider": "mnk-booking-platform",
+          "sourceItemId": "individual_boxed_lunch",
+          "sourceVersion": "01_MenuData.js"
+        }
+      ]
+    },
+    {
+      "schemaVersion": "0.1.0",
+      "version": 1,
+      "createdAt": "2026-07-30T00:00:00.000Z",
+      "createdBy": "migration:mnk-menu-source",
+      "updatedAt": "2026-07-30T00:00:00.000Z",
+      "updatedBy": "migration:mnk-menu-source",
+      "active": true,
+      "externalIdentities": [],
+      "provenanceIds": [
+        "source:mnk-menu:salad_protein_lunch_platter"
+      ],
+      "ownership": {
+        "providerOwned": {
+          "sourceFile": "sites/mnk/booking-platform/01_MenuData.js"
+        },
+        "fikaOwned": {}
+      },
+      "entityType": "Hospitality Menu Item",
+      "canonicalId": "hospitality-menu-item:mnk:salad_protein_lunch_platter",
+      "name": "Salad & Protein Lunch Platter",
+      "description": "Three composite salads plus one meat protein, one fish protein and one veggie or vegan protein.",
+      "category": "Lunch",
+      "lifecycleState": "active",
+      "dietaryInformation": [],
+      "allergenInformation": [],
+      "providerMappings": [
+        {
+          "provider": "mnk-booking-platform",
+          "sourceItemId": "salad_protein_lunch_platter",
+          "sourceVersion": "01_MenuData.js"
+        }
+      ]
+    },
+    {
+      "schemaVersion": "0.1.0",
+      "version": 1,
+      "createdAt": "2026-07-30T00:00:00.000Z",
+      "createdBy": "migration:mnk-menu-source",
+      "updatedAt": "2026-07-30T00:00:00.000Z",
+      "updatedBy": "migration:mnk-menu-source",
+      "active": true,
+      "externalIdentities": [],
+      "provenanceIds": [
+        "source:mnk-menu:rice_paper_rolls"
+      ],
+      "ownership": {
+        "providerOwned": {
+          "sourceFile": "sites/mnk/booking-platform/01_MenuData.js"
+        },
+        "fikaOwned": {}
+      },
+      "entityType": "Hospitality Menu Item",
+      "canonicalId": "hospitality-menu-item:mnk:rice_paper_rolls",
+      "name": "Freshly Wrapped Rice Paper Rolls",
+      "description": "12 wraps per platter, each platter contains one flavour with dipping sauce.",
+      "category": "Lunch",
+      "lifecycleState": "active",
+      "dietaryInformation": [],
+      "allergenInformation": [],
+      "providerMappings": [
+        {
+          "provider": "mnk-booking-platform",
+          "sourceItemId": "rice_paper_rolls",
+          "sourceVersion": "01_MenuData.js"
+        }
+      ]
+    },
+    {
+      "schemaVersion": "0.1.0",
+      "version": 1,
+      "createdAt": "2026-07-30T00:00:00.000Z",
+      "createdBy": "migration:mnk-menu-source",
+      "updatedAt": "2026-07-30T00:00:00.000Z",
+      "updatedBy": "migration:mnk-menu-source",
+      "active": true,
+      "externalIdentities": [],
+      "provenanceIds": [
+        "source:mnk-menu:grazing_charcuterie_box"
+      ],
+      "ownership": {
+        "providerOwned": {
+          "sourceFile": "sites/mnk/booking-platform/01_MenuData.js"
+        },
+        "fikaOwned": {}
+      },
+      "entityType": "Hospitality Menu Item",
+      "canonicalId": "hospitality-menu-item:mnk:grazing_charcuterie_box",
+      "name": "Grazing Box - Charcuterie",
+      "description": "Cobble Lane cured British charcuterie, Gordal olives, sun blush tomatoes, baby gherkins, stuffed cherrybell peppers, artisan breads, olive oil and balsamic.",
+      "category": "Grazing Boxes",
+      "lifecycleState": "active",
+      "dietaryInformation": [],
+      "allergenInformation": [],
+      "providerMappings": [
+        {
+          "provider": "mnk-booking-platform",
+          "sourceItemId": "grazing_charcuterie_box",
+          "sourceVersion": "01_MenuData.js"
+        }
+      ]
+    },
+    {
+      "schemaVersion": "0.1.0",
+      "version": 1,
+      "createdAt": "2026-07-30T00:00:00.000Z",
+      "createdBy": "migration:mnk-menu-source",
+      "updatedAt": "2026-07-30T00:00:00.000Z",
+      "updatedBy": "migration:mnk-menu-source",
+      "active": true,
+      "externalIdentities": [],
+      "provenanceIds": [
+        "source:mnk-menu:cheese_box"
+      ],
+      "ownership": {
+        "providerOwned": {
+          "sourceFile": "sites/mnk/booking-platform/01_MenuData.js"
+        },
+        "fikaOwned": {}
+      },
+      "entityType": "Hospitality Menu Item",
+      "canonicalId": "hospitality-menu-item:mnk:cheese_box",
+      "name": "Cheese Box",
+      "description": "British county cheeses including Wookey Hole Cheddar, Colston Bassett Stilton, Hampshire Tunworth and Cornish Yarg in nettles with Stokes beer chutney and artisan biscuits.",
+      "category": "Grazing Boxes",
+      "lifecycleState": "active",
+      "dietaryInformation": [],
+      "allergenInformation": [],
+      "providerMappings": [
+        {
+          "provider": "mnk-booking-platform",
+          "sourceItemId": "cheese_box",
+          "sourceVersion": "01_MenuData.js"
+        }
+      ]
+    },
+    {
+      "schemaVersion": "0.1.0",
+      "version": 1,
+      "createdAt": "2026-07-30T00:00:00.000Z",
+      "createdBy": "migration:mnk-menu-source",
+      "updatedAt": "2026-07-30T00:00:00.000Z",
+      "updatedBy": "migration:mnk-menu-source",
+      "active": true,
+      "externalIdentities": [],
+      "provenanceIds": [
+        "source:mnk-menu:picnic_box"
+      ],
+      "ownership": {
+        "providerOwned": {
+          "sourceFile": "sites/mnk/booking-platform/01_MenuData.js"
+        },
+        "fikaOwned": {}
+      },
+      "entityType": "Hospitality Menu Item",
+      "canonicalId": "hospitality-menu-item:mnk:picnic_box",
+      "name": "Picnic Box",
+      "description": "Freshly baked sausage rolls, Scotch eggs, pork pies, chicken skewers and tomato quiche with Stokes beer chutney and red onion marmalade.",
+      "category": "Grazing Boxes",
+      "lifecycleState": "active",
+      "dietaryInformation": [],
+      "allergenInformation": [],
+      "providerMappings": [
+        {
+          "provider": "mnk-booking-platform",
+          "sourceItemId": "picnic_box",
+          "sourceVersion": "01_MenuData.js"
+        }
+      ]
+    },
+    {
+      "schemaVersion": "0.1.0",
+      "version": 1,
+      "createdAt": "2026-07-30T00:00:00.000Z",
+      "createdBy": "migration:mnk-menu-source",
+      "updatedAt": "2026-07-30T00:00:00.000Z",
+      "updatedBy": "migration:mnk-menu-source",
+      "active": true,
+      "externalIdentities": [],
+      "provenanceIds": [
+        "source:mnk-menu:vegan_box"
+      ],
+      "ownership": {
+        "providerOwned": {
+          "sourceFile": "sites/mnk/booking-platform/01_MenuData.js"
+        },
+        "fikaOwned": {}
+      },
+      "entityType": "Hospitality Menu Item",
+      "canonicalId": "hospitality-menu-item:mnk:vegan_box",
+      "name": "Vegan Box",
+      "description": "Vegan mezze with rainbow radish, cucumber and carrot shards, edamame beans, sweet potato falafel, olives, little gem spears, cherry tomatoes, pickles, toasted pita and three hummus flavours.",
+      "category": "Grazing Boxes",
+      "lifecycleState": "active",
+      "dietaryInformation": [],
+      "allergenInformation": [],
+      "providerMappings": [
+        {
+          "provider": "mnk-booking-platform",
+          "sourceItemId": "vegan_box",
+          "sourceVersion": "01_MenuData.js"
+        }
+      ]
+    },
+    {
+      "schemaVersion": "0.1.0",
+      "version": 1,
+      "createdAt": "2026-07-30T00:00:00.000Z",
+      "createdBy": "migration:mnk-menu-source",
+      "updatedAt": "2026-07-30T00:00:00.000Z",
+      "updatedBy": "migration:mnk-menu-source",
+      "active": true,
+      "externalIdentities": [],
+      "provenanceIds": [
+        "source:mnk-menu:salad_boxes"
+      ],
+      "ownership": {
+        "providerOwned": {
+          "sourceFile": "sites/mnk/booking-platform/01_MenuData.js"
+        },
+        "fikaOwned": {}
+      },
+      "entityType": "Hospitality Menu Item",
+      "canonicalId": "hospitality-menu-item:mnk:salad_boxes",
+      "name": "Salad Boxes",
+      "description": "Mediterranean, grilled chicken Caesar, hot smoked salmon Nicoise, or weekly salad box on request.",
+      "category": "Salads & Sushi",
+      "lifecycleState": "active",
+      "dietaryInformation": [],
+      "allergenInformation": [],
+      "providerMappings": [
+        {
+          "provider": "mnk-booking-platform",
+          "sourceItemId": "salad_boxes",
+          "sourceVersion": "01_MenuData.js"
+        }
+      ]
+    },
+    {
+      "schemaVersion": "0.1.0",
+      "version": 1,
+      "createdAt": "2026-07-30T00:00:00.000Z",
+      "createdBy": "migration:mnk-menu-source",
+      "updatedAt": "2026-07-30T00:00:00.000Z",
+      "updatedBy": "migration:mnk-menu-source",
+      "active": true,
+      "externalIdentities": [],
+      "provenanceIds": [
+        "source:mnk-menu:weekly_salad_box"
+      ],
+      "ownership": {
+        "providerOwned": {
+          "sourceFile": "sites/mnk/booking-platform/01_MenuData.js"
+        },
+        "fikaOwned": {}
+      },
+      "entityType": "Hospitality Menu Item",
+      "canonicalId": "hospitality-menu-item:mnk:weekly_salad_box",
+      "name": "Weekly Salad Box",
+      "description": "Weekly salad boxes available. Menu on request.",
+      "category": "Salads & Sushi",
+      "lifecycleState": "active",
+      "dietaryInformation": [],
+      "allergenInformation": [],
+      "providerMappings": [
+        {
+          "provider": "mnk-booking-platform",
+          "sourceItemId": "weekly_salad_box",
+          "sourceVersion": "01_MenuData.js"
+        }
+      ]
+    },
+    {
+      "schemaVersion": "0.1.0",
+      "version": 1,
+      "createdAt": "2026-07-30T00:00:00.000Z",
+      "createdBy": "migration:mnk-menu-source",
+      "updatedAt": "2026-07-30T00:00:00.000Z",
+      "updatedBy": "migration:mnk-menu-source",
+      "active": true,
+      "externalIdentities": [],
+      "provenanceIds": [
+        "source:mnk-menu:deluxe_sushi_box"
+      ],
+      "ownership": {
+        "providerOwned": {
+          "sourceFile": "sites/mnk/booking-platform/01_MenuData.js"
+        },
+        "fikaOwned": {}
+      },
+      "entityType": "Hospitality Menu Item",
+      "canonicalId": "hospitality-menu-item:mnk:deluxe_sushi_box",
+      "name": "Deluxe Sushi Box",
+      "description": "84 pieces. Mixed selection of nigiri, maki and uramaki served with pickled ginger, wasabi and soy.",
+      "category": "Salads & Sushi",
+      "lifecycleState": "active",
+      "dietaryInformation": [],
+      "allergenInformation": [],
+      "providerMappings": [
+        {
+          "provider": "mnk-booking-platform",
+          "sourceItemId": "deluxe_sushi_box",
+          "sourceVersion": "01_MenuData.js"
+        }
+      ]
+    },
+    {
+      "schemaVersion": "0.1.0",
+      "version": 1,
+      "createdAt": "2026-07-30T00:00:00.000Z",
+      "createdBy": "migration:mnk-menu-source",
+      "updatedAt": "2026-07-30T00:00:00.000Z",
+      "updatedBy": "migration:mnk-menu-source",
+      "active": true,
+      "externalIdentities": [],
+      "provenanceIds": [
+        "source:mnk-menu:vegan_sushi_box"
+      ],
+      "ownership": {
+        "providerOwned": {
+          "sourceFile": "sites/mnk/booking-platform/01_MenuData.js"
+        },
+        "fikaOwned": {}
+      },
+      "entityType": "Hospitality Menu Item",
+      "canonicalId": "hospitality-menu-item:mnk:vegan_sushi_box",
+      "name": "Vegan Sushi Box",
+      "description": "72 pieces. Mixed plant based selection of nigiri, maki and uramaki served with pickled ginger, wasabi and soy.",
+      "category": "Salads & Sushi",
+      "lifecycleState": "active",
+      "dietaryInformation": [],
+      "allergenInformation": [],
+      "providerMappings": [
+        {
+          "provider": "mnk-booking-platform",
+          "sourceItemId": "vegan_sushi_box",
+          "sourceVersion": "01_MenuData.js"
+        }
+      ]
+    },
+    {
+      "schemaVersion": "0.1.0",
+      "version": 1,
+      "createdAt": "2026-07-30T00:00:00.000Z",
+      "createdBy": "migration:mnk-menu-source",
+      "updatedAt": "2026-07-30T00:00:00.000Z",
+      "updatedBy": "migration:mnk-menu-source",
+      "active": true,
+      "externalIdentities": [],
+      "provenanceIds": [
+        "source:mnk-menu:glow_bowl"
+      ],
+      "ownership": {
+        "providerOwned": {
+          "sourceFile": "sites/mnk/booking-platform/01_MenuData.js"
+        },
+        "fikaOwned": {}
+      },
+      "entityType": "Hospitality Menu Item",
+      "canonicalId": "hospitality-menu-item:mnk:glow_bowl",
+      "name": "Fika Glow Bowl",
+      "description": "Individual salad bowl. Choose avocado Mex, sweet potato & quinoa, Mediterranean veg, or Asian prawn & edamame.",
+      "category": "Salads & Sushi",
+      "lifecycleState": "active",
+      "dietaryInformation": [],
+      "allergenInformation": [],
+      "providerMappings": [
+        {
+          "provider": "mnk-booking-platform",
+          "sourceItemId": "glow_bowl",
+          "sourceVersion": "01_MenuData.js"
+        }
+      ]
+    },
+    {
+      "schemaVersion": "0.1.0",
+      "version": 1,
+      "createdAt": "2026-07-30T00:00:00.000Z",
+      "createdBy": "migration:mnk-menu-source",
+      "updatedAt": "2026-07-30T00:00:00.000Z",
+      "updatedBy": "migration:mnk-menu-source",
+      "active": true,
+      "externalIdentities": [],
+      "provenanceIds": [
+        "source:mnk-menu:picnic_grazing_table"
+      ],
+      "ownership": {
+        "providerOwned": {
+          "sourceFile": "sites/mnk/booking-platform/01_MenuData.js"
+        },
+        "fikaOwned": {}
+      },
+      "entityType": "Hospitality Menu Item",
+      "canonicalId": "hospitality-menu-item:mnk:picnic_grazing_table",
+      "name": "Picnic Grazing Table",
+      "description": "British charcuterie, sausage rolls, olives, breads, crudites, falafel, hummus, British county cheese board, artisan biscuits and fresh cut fruit.",
+      "category": "Grazing Events",
+      "lifecycleState": "active",
+      "dietaryInformation": [],
+      "allergenInformation": [],
+      "providerMappings": [
+        {
+          "provider": "mnk-booking-platform",
+          "sourceItemId": "picnic_grazing_table",
+          "sourceVersion": "01_MenuData.js"
+        }
+      ]
+    },
+    {
+      "schemaVersion": "0.1.0",
+      "version": 1,
+      "createdAt": "2026-07-30T00:00:00.000Z",
+      "createdBy": "migration:mnk-menu-source",
+      "updatedAt": "2026-07-30T00:00:00.000Z",
+      "updatedBy": "migration:mnk-menu-source",
+      "active": true,
+      "externalIdentities": [],
+      "provenanceIds": [
+        "source:mnk-menu:grazing_sweet_table"
+      ],
+      "ownership": {
+        "providerOwned": {
+          "sourceFile": "sites/mnk/booking-platform/01_MenuData.js"
+        },
+        "fikaOwned": {}
+      },
+      "entityType": "Hospitality Menu Item",
+      "canonicalId": "hospitality-menu-item:mnk:grazing_sweet_table",
+      "name": "Grazing Sweet Table",
+      "description": "Lemon mousse, tiramisu coffee shots, mini pavlova, salted caramel canelles, mini passion fruit meringue pies and macaroon tower.",
+      "category": "Grazing Events",
+      "lifecycleState": "active",
+      "dietaryInformation": [],
+      "allergenInformation": [],
+      "providerMappings": [
+        {
+          "provider": "mnk-booking-platform",
+          "sourceItemId": "grazing_sweet_table",
+          "sourceVersion": "01_MenuData.js"
+        }
+      ]
+    },
+    {
+      "schemaVersion": "0.1.0",
+      "version": 1,
+      "createdAt": "2026-07-30T00:00:00.000Z",
+      "createdBy": "migration:mnk-menu-source",
+      "updatedAt": "2026-07-30T00:00:00.000Z",
+      "updatedBy": "migration:mnk-menu-source",
+      "active": true,
+      "externalIdentities": [],
+      "provenanceIds": [
+        "source:mnk-menu:grazing_cups"
+      ],
+      "ownership": {
+        "providerOwned": {
+          "sourceFile": "sites/mnk/booking-platform/01_MenuData.js"
+        },
+        "fikaOwned": {}
+      },
+      "entityType": "Hospitality Menu Item",
+      "canonicalId": "hospitality-menu-item:mnk:grazing_cups",
+      "name": "Grazing Cups",
+      "description": "Individual cups with charcuterie, cheese with olives and crisp breads, falafel and dried fruit, and pretzels.",
+      "category": "Grazing Events",
+      "lifecycleState": "active",
+      "dietaryInformation": [],
+      "allergenInformation": [],
+      "providerMappings": [
+        {
+          "provider": "mnk-booking-platform",
+          "sourceItemId": "grazing_cups",
+          "sourceVersion": "01_MenuData.js"
+        }
+      ]
+    },
+    {
+      "schemaVersion": "0.1.0",
+      "version": 1,
+      "createdAt": "2026-07-30T00:00:00.000Z",
+      "createdBy": "migration:mnk-menu-source",
+      "updatedAt": "2026-07-30T00:00:00.000Z",
+      "updatedBy": "migration:mnk-menu-source",
+      "active": true,
+      "externalIdentities": [],
+      "provenanceIds": [
+        "source:mnk-menu:afternoon_tea"
+      ],
+      "ownership": {
+        "providerOwned": {
+          "sourceFile": "sites/mnk/booking-platform/01_MenuData.js"
+        },
+        "fikaOwned": {}
+      },
+      "entityType": "Hospitality Menu Item",
+      "canonicalId": "hospitality-menu-item:mnk:afternoon_tea",
+      "name": "Afternoon Tea",
+      "description": "Three bridge rolls from six fillings, colourful macaroon, salted caramel canelles, lemon mousse, Black Forest gateau, passion fruit meringue, and teas with milk and cream.",
+      "category": "Afternoon",
+      "lifecycleState": "active",
+      "dietaryInformation": [],
+      "allergenInformation": [],
+      "providerMappings": [
+        {
+          "provider": "mnk-booking-platform",
+          "sourceItemId": "afternoon_tea",
+          "sourceVersion": "01_MenuData.js"
+        }
+      ]
+    },
+    {
+      "schemaVersion": "0.1.0",
+      "version": 1,
+      "createdAt": "2026-07-30T00:00:00.000Z",
+      "createdBy": "migration:mnk-menu-source",
+      "updatedAt": "2026-07-30T00:00:00.000Z",
+      "updatedBy": "migration:mnk-menu-source",
+      "active": true,
+      "externalIdentities": [],
+      "provenanceIds": [
+        "source:mnk-menu:finger_food"
+      ],
+      "ownership": {
+        "providerOwned": {
+          "sourceFile": "sites/mnk/booking-platform/01_MenuData.js"
+        },
+        "fikaOwned": {}
+      },
+      "entityType": "Hospitality Menu Item",
+      "canonicalId": "hospitality-menu-item:mnk:finger_food",
+      "name": "Finger Food",
+      "description": "Minimum recommended four pieces per person. Choose meat, fish, vegetarian, vegan and dessert options from the brochure selection.",
+      "category": "Finger Food",
+      "lifecycleState": "active",
+      "dietaryInformation": [],
+      "allergenInformation": [],
+      "providerMappings": [
+        {
+          "provider": "mnk-booking-platform",
+          "sourceItemId": "finger_food",
+          "sourceVersion": "01_MenuData.js"
+        }
+      ]
+    },
+    {
+      "schemaVersion": "0.1.0",
+      "version": 1,
+      "createdAt": "2026-07-30T00:00:00.000Z",
+      "createdBy": "migration:mnk-menu-source",
+      "updatedAt": "2026-07-30T00:00:00.000Z",
+      "updatedBy": "migration:mnk-menu-source",
+      "active": true,
+      "externalIdentities": [],
+      "provenanceIds": [
+        "source:mnk-menu:hot_fork_buffet_gold"
+      ],
+      "ownership": {
+        "providerOwned": {
+          "sourceFile": "sites/mnk/booking-platform/01_MenuData.js"
+        },
+        "fikaOwned": {}
+      },
+      "entityType": "Hospitality Menu Item",
+      "canonicalId": "hospitality-menu-item:mnk:hot_fork_buffet_gold",
+      "name": "Hot Fork Buffet - Gold Package",
+      "description": "Meat, fish, vegan, two sides, four salads and one dessert. Menu on request.",
+      "category": "Fork Buffet & Bowl Food",
+      "lifecycleState": "active",
+      "dietaryInformation": [],
+      "allergenInformation": [],
+      "providerMappings": [
+        {
+          "provider": "mnk-booking-platform",
+          "sourceItemId": "hot_fork_buffet_gold",
+          "sourceVersion": "01_MenuData.js"
+        }
+      ]
+    },
+    {
+      "schemaVersion": "0.1.0",
+      "version": 1,
+      "createdAt": "2026-07-30T00:00:00.000Z",
+      "createdBy": "migration:mnk-menu-source",
+      "updatedAt": "2026-07-30T00:00:00.000Z",
+      "updatedBy": "migration:mnk-menu-source",
+      "active": true,
+      "externalIdentities": [],
+      "provenanceIds": [
+        "source:mnk-menu:hot_fork_buffet_silver"
+      ],
+      "ownership": {
+        "providerOwned": {
+          "sourceFile": "sites/mnk/booking-platform/01_MenuData.js"
+        },
+        "fikaOwned": {}
+      },
+      "entityType": "Hospitality Menu Item",
+      "canonicalId": "hospitality-menu-item:mnk:hot_fork_buffet_silver",
+      "name": "Hot Fork Buffet - Silver Package",
+      "description": "Meat, vegan, two sides and four salads. Menu on request.",
+      "category": "Fork Buffet & Bowl Food",
+      "lifecycleState": "active",
+      "dietaryInformation": [],
+      "allergenInformation": [],
+      "providerMappings": [
+        {
+          "provider": "mnk-booking-platform",
+          "sourceItemId": "hot_fork_buffet_silver",
+          "sourceVersion": "01_MenuData.js"
+        }
+      ]
+    },
+    {
+      "schemaVersion": "0.1.0",
+      "version": 1,
+      "createdAt": "2026-07-30T00:00:00.000Z",
+      "createdBy": "migration:mnk-menu-source",
+      "updatedAt": "2026-07-30T00:00:00.000Z",
+      "updatedBy": "migration:mnk-menu-source",
+      "active": true,
+      "externalIdentities": [],
+      "provenanceIds": [
+        "source:mnk-menu:bowl_food"
+      ],
+      "ownership": {
+        "providerOwned": {
+          "sourceFile": "sites/mnk/booking-platform/01_MenuData.js"
+        },
+        "fikaOwned": {}
+      },
+      "entityType": "Hospitality Menu Item",
+      "canonicalId": "hospitality-menu-item:mnk:bowl_food",
+      "name": "Bowl Food",
+      "description": "Three bowls per person. Example menu includes chorizo jambalaya, plant based cumin lamb meatball tagine and hot smoked salmon Caesar salad.",
+      "category": "Fork Buffet & Bowl Food",
+      "lifecycleState": "active",
+      "dietaryInformation": [],
+      "allergenInformation": [],
+      "providerMappings": [
+        {
+          "provider": "mnk-booking-platform",
+          "sourceItemId": "bowl_food",
+          "sourceVersion": "01_MenuData.js"
+        }
+      ]
+    },
+    {
+      "schemaVersion": "0.1.0",
+      "version": 1,
+      "createdAt": "2026-07-30T00:00:00.000Z",
+      "createdBy": "migration:mnk-menu-source",
+      "updatedAt": "2026-07-30T00:00:00.000Z",
+      "updatedBy": "migration:mnk-menu-source",
+      "active": true,
+      "externalIdentities": [],
+      "provenanceIds": [
+        "source:mnk-menu:canapes"
+      ],
+      "ownership": {
+        "providerOwned": {
+          "sourceFile": "sites/mnk/booking-platform/01_MenuData.js"
+        },
+        "fikaOwned": {}
+      },
+      "entityType": "Hospitality Menu Item",
+      "canonicalId": "hospitality-menu-item:mnk:canapes",
+      "name": "Fika Canapes",
+      "description": "Six items per person. Hot canapes can only be offered on sites with an oven or a hire charge.",
+      "category": "Canapes",
+      "lifecycleState": "active",
+      "dietaryInformation": [],
+      "allergenInformation": [],
+      "providerMappings": [
+        {
+          "provider": "mnk-booking-platform",
+          "sourceItemId": "canapes",
+          "sourceVersion": "01_MenuData.js"
+        }
+      ]
+    },
+    {
+      "schemaVersion": "0.1.0",
+      "version": 1,
+      "createdAt": "2026-07-30T00:00:00.000Z",
+      "createdBy": "migration:mnk-menu-source",
+      "updatedAt": "2026-07-30T00:00:00.000Z",
+      "updatedBy": "migration:mnk-menu-source",
+      "active": true,
+      "externalIdentities": [],
+      "provenanceIds": [
+        "source:mnk-menu:corporate_dining"
+      ],
+      "ownership": {
+        "providerOwned": {
+          "sourceFile": "sites/mnk/booking-platform/01_MenuData.js"
+        },
+        "fikaOwned": {}
+      },
+      "entityType": "Hospitality Menu Item",
+      "canonicalId": "hospitality-menu-item:mnk:corporate_dining",
+      "name": "Fika Corporate Dining",
+      "description": "Bespoke seated dining menus served with homemade focaccia and flavoured butters. One menu per booking.",
+      "category": "Dining",
+      "lifecycleState": "active",
+      "dietaryInformation": [],
+      "allergenInformation": [],
+      "providerMappings": [
+        {
+          "provider": "mnk-booking-platform",
+          "sourceItemId": "corporate_dining",
+          "sourceVersion": "01_MenuData.js"
+        }
+      ]
+    },
+    {
+      "schemaVersion": "0.1.0",
+      "version": 1,
+      "createdAt": "2026-07-30T00:00:00.000Z",
+      "createdBy": "migration:mnk-menu-source",
+      "updatedAt": "2026-07-30T00:00:00.000Z",
+      "updatedBy": "migration:mnk-menu-source",
+      "active": true,
+      "externalIdentities": [],
+      "provenanceIds": [
+        "source:mnk-menu:christmas_themed_menu"
+      ],
+      "ownership": {
+        "providerOwned": {
+          "sourceFile": "sites/mnk/booking-platform/01_MenuData.js"
+        },
+        "fikaOwned": {}
+      },
+      "entityType": "Hospitality Menu Item",
+      "canonicalId": "hospitality-menu-item:mnk:christmas_themed_menu",
+      "name": "Example Christmas Themed Menu",
+      "description": "Roast turkey with trimmings, butternut squash wellington, roast potatoes, honey glazed roots, Brussels sprouts, chocolate orange cheesecake, mince pies and brandy cream.",
+      "category": "Bespoke Events",
+      "lifecycleState": "active",
+      "dietaryInformation": [],
+      "allergenInformation": [],
+      "providerMappings": [
+        {
+          "provider": "mnk-booking-platform",
+          "sourceItemId": "christmas_themed_menu",
+          "sourceVersion": "01_MenuData.js"
+        }
+      ]
+    },
+    {
+      "schemaVersion": "0.1.0",
+      "version": 1,
+      "createdAt": "2026-07-30T00:00:00.000Z",
+      "createdBy": "migration:mnk-menu-source",
+      "updatedAt": "2026-07-30T00:00:00.000Z",
+      "updatedBy": "migration:mnk-menu-source",
+      "active": true,
+      "externalIdentities": [],
+      "provenanceIds": [
+        "source:mnk-menu:bespoke_event"
+      ],
+      "ownership": {
+        "providerOwned": {
+          "sourceFile": "sites/mnk/booking-platform/01_MenuData.js"
+        },
+        "fikaOwned": {}
+      },
+      "entityType": "Hospitality Menu Item",
+      "canonicalId": "hospitality-menu-item:mnk:bespoke_event",
+      "name": "Bespoke Event Menu",
+      "description": "For Thanksgiving, Christmas, Valentine's Day or other themed events. The team will create a tailored proposal.",
+      "category": "Bespoke Events",
+      "lifecycleState": "active",
+      "dietaryInformation": [],
+      "allergenInformation": [],
+      "providerMappings": [
+        {
+          "provider": "mnk-booking-platform",
+          "sourceItemId": "bespoke_event",
+          "sourceVersion": "01_MenuData.js"
+        }
+      ]
+    }
+  ],
+  "offerings": [
+    {
+      "schemaVersion": "0.1.0",
+      "version": 1,
+      "createdAt": "2026-07-30T00:00:00.000Z",
+      "createdBy": "migration:mnk-menu-source",
+      "updatedAt": "2026-07-30T00:00:00.000Z",
+      "updatedBy": "migration:mnk-menu-source",
+      "active": true,
+      "externalIdentities": [],
+      "provenanceIds": [
+        "source:mnk-menu:07c5903cf65e6094d8ad"
+      ],
+      "ownership": {
+        "providerOwned": {
+          "sourceFile": "sites/mnk/booking-platform/01_MenuData.js"
+        },
+        "fikaOwned": {}
+      },
+      "entityType": "Hospitality Menu Offering",
+      "canonicalId": "hospitality-menu-offering:mnk:07c5903cf65e6094d8ad",
+      "hospitalityMenuItemId": "hospitality-menu-item:mnk:bloom_filter_coffee",
+      "oplocId": "oploc:mnk-development-fixture",
+      "offeringMode": "standard",
+      "lifecycleState": "active",
+      "minimumQuantity": 1,
+      "noticeRequiredDays": 3,
+      "configuration": {
+        "servingInfo": "Per person",
+        "serves": null,
+        "suggestionType": null,
+        "suggestionLabel": "",
+        "suggestionUnit": "units",
+        "sortOrder": 10,
+        "choices": []
+      }
+    },
+    {
+      "schemaVersion": "0.1.0",
+      "version": 1,
+      "createdAt": "2026-07-30T00:00:00.000Z",
+      "createdBy": "migration:mnk-menu-source",
+      "updatedAt": "2026-07-30T00:00:00.000Z",
+      "updatedBy": "migration:mnk-menu-source",
+      "active": true,
+      "externalIdentities": [],
+      "provenanceIds": [
+        "source:mnk-menu:ee620e871f424a8921af"
+      ],
+      "ownership": {
+        "providerOwned": {
+          "sourceFile": "sites/mnk/booking-platform/01_MenuData.js"
+        },
+        "fikaOwned": {}
+      },
+      "entityType": "Hospitality Menu Offering",
+      "canonicalId": "hospitality-menu-offering:mnk:ee620e871f424a8921af",
+      "hospitalityMenuItemId": "hospitality-menu-item:mnk:specialty_tea_coffee",
+      "oplocId": "oploc:mnk-development-fixture",
+      "offeringMode": "standard",
+      "lifecycleState": "active",
+      "minimumQuantity": 1,
+      "noticeRequiredDays": 3,
+      "configuration": {
+        "servingInfo": "Per person",
+        "serves": null,
+        "suggestionType": null,
+        "suggestionLabel": "",
+        "suggestionUnit": "units",
+        "sortOrder": 20,
+        "choices": []
+      }
+    },
+    {
+      "schemaVersion": "0.1.0",
+      "version": 1,
+      "createdAt": "2026-07-30T00:00:00.000Z",
+      "createdBy": "migration:mnk-menu-source",
+      "updatedAt": "2026-07-30T00:00:00.000Z",
+      "updatedBy": "migration:mnk-menu-source",
+      "active": true,
+      "externalIdentities": [],
+      "provenanceIds": [
+        "source:mnk-menu:fa59bebb55e772944351"
+      ],
+      "ownership": {
+        "providerOwned": {
+          "sourceFile": "sites/mnk/booking-platform/01_MenuData.js"
+        },
+        "fikaOwned": {}
+      },
+      "entityType": "Hospitality Menu Offering",
+      "canonicalId": "hospitality-menu-offering:mnk:fa59bebb55e772944351",
+      "hospitalityMenuItemId": "hospitality-menu-item:mnk:belu_water",
+      "oplocId": "oploc:mnk-development-fixture",
+      "offeringMode": "standard",
+      "lifecycleState": "active",
+      "minimumQuantity": 1,
+      "noticeRequiredDays": 3,
+      "configuration": {
+        "servingInfo": "Per bottle",
+        "serves": null,
+        "suggestionType": null,
+        "suggestionLabel": "",
+        "suggestionUnit": "units",
+        "sortOrder": 30,
+        "choices": [
+          {
+            "id": "water",
+            "label": "Choose water",
+            "controlType": "select",
+            "required": true,
+            "options": [
+              {
+                "id": "water:still",
+                "label": "Still"
+              },
+              {
+                "id": "water:sparkling",
+                "label": "Sparkling"
+              },
+              {
+                "id": "water:mixed",
+                "label": "Mixed"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "schemaVersion": "0.1.0",
+      "version": 1,
+      "createdAt": "2026-07-30T00:00:00.000Z",
+      "createdBy": "migration:mnk-menu-source",
+      "updatedAt": "2026-07-30T00:00:00.000Z",
+      "updatedBy": "migration:mnk-menu-source",
+      "active": true,
+      "externalIdentities": [],
+      "provenanceIds": [
+        "source:mnk-menu:16154f5ad19083ce91c2"
+      ],
+      "ownership": {
+        "providerOwned": {
+          "sourceFile": "sites/mnk/booking-platform/01_MenuData.js"
+        },
+        "fikaOwned": {}
+      },
+      "entityType": "Hospitality Menu Offering",
+      "canonicalId": "hospitality-menu-offering:mnk:16154f5ad19083ce91c2",
+      "hospitalityMenuItemId": "hospitality-menu-item:mnk:canned_drinks",
+      "oplocId": "oploc:mnk-development-fixture",
+      "offeringMode": "standard",
+      "lifecycleState": "active",
+      "minimumQuantity": 1,
+      "noticeRequiredDays": 3,
+      "configuration": {
+        "servingInfo": "Per can",
+        "serves": null,
+        "suggestionType": null,
+        "suggestionLabel": "",
+        "suggestionUnit": "units",
+        "sortOrder": 40,
+        "choices": []
+      }
+    },
+    {
+      "schemaVersion": "0.1.0",
+      "version": 1,
+      "createdAt": "2026-07-30T00:00:00.000Z",
+      "createdBy": "migration:mnk-menu-source",
+      "updatedAt": "2026-07-30T00:00:00.000Z",
+      "updatedBy": "migration:mnk-menu-source",
+      "active": true,
+      "externalIdentities": [],
+      "provenanceIds": [
+        "source:mnk-menu:f6dbc4549320f7ce7320"
+      ],
+      "ownership": {
+        "providerOwned": {
+          "sourceFile": "sites/mnk/booking-platform/01_MenuData.js"
+        },
+        "fikaOwned": {}
+      },
+      "entityType": "Hospitality Menu Offering",
+      "canonicalId": "hospitality-menu-offering:mnk:f6dbc4549320f7ce7320",
+      "hospitalityMenuItemId": "hospitality-menu-item:mnk:fresh_juice_250",
+      "oplocId": "oploc:mnk-development-fixture",
+      "offeringMode": "standard",
+      "lifecycleState": "active",
+      "minimumQuantity": 1,
+      "noticeRequiredDays": 3,
+      "configuration": {
+        "servingInfo": "Per bottle",
+        "serves": null,
+        "suggestionType": null,
+        "suggestionLabel": "",
+        "suggestionUnit": "units",
+        "sortOrder": 50,
+        "choices": [
+          {
+            "id": "flavour",
+            "label": "Choose flavour",
+            "controlType": "select",
+            "required": true,
+            "options": [
+              {
+                "id": "flavour:orange",
+                "label": "Orange"
+              },
+              {
+                "id": "flavour:seasonal-apple",
+                "label": "Seasonal apple"
+              },
+              {
+                "id": "flavour:carrot-pear-ginger",
+                "label": "Carrot, pear & ginger"
+              },
+              {
+                "id": "flavour:blood-orange-seasonal",
+                "label": "Blood orange (seasonal)"
+              },
+              {
+                "id": "flavour:mixed",
+                "label": "Mixed"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "schemaVersion": "0.1.0",
+      "version": 1,
+      "createdAt": "2026-07-30T00:00:00.000Z",
+      "createdBy": "migration:mnk-menu-source",
+      "updatedAt": "2026-07-30T00:00:00.000Z",
+      "updatedBy": "migration:mnk-menu-source",
+      "active": true,
+      "externalIdentities": [],
+      "provenanceIds": [
+        "source:mnk-menu:9f698d5ae7fd52e2f5ae"
+      ],
+      "ownership": {
+        "providerOwned": {
+          "sourceFile": "sites/mnk/booking-platform/01_MenuData.js"
+        },
+        "fikaOwned": {}
+      },
+      "entityType": "Hospitality Menu Offering",
+      "canonicalId": "hospitality-menu-offering:mnk:9f698d5ae7fd52e2f5ae",
+      "hospitalityMenuItemId": "hospitality-menu-item:mnk:fresh_juice_1l",
+      "oplocId": "oploc:mnk-development-fixture",
+      "offeringMode": "standard",
+      "lifecycleState": "active",
+      "minimumQuantity": 1,
+      "noticeRequiredDays": 3,
+      "configuration": {
+        "servingInfo": "Per bottle",
+        "serves": null,
+        "suggestionType": null,
+        "suggestionLabel": "",
+        "suggestionUnit": "units",
+        "sortOrder": 60,
+        "choices": [
+          {
+            "id": "flavour",
+            "label": "Choose flavour",
+            "controlType": "select",
+            "required": true,
+            "options": [
+              {
+                "id": "flavour:orange",
+                "label": "Orange"
+              },
+              {
+                "id": "flavour:seasonal-apple",
+                "label": "Seasonal apple"
+              },
+              {
+                "id": "flavour:carrot-pear-ginger",
+                "label": "Carrot, pear & ginger"
+              },
+              {
+                "id": "flavour:blood-orange-seasonal",
+                "label": "Blood orange (seasonal)"
+              },
+              {
+                "id": "flavour:mixed",
+                "label": "Mixed"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "schemaVersion": "0.1.0",
+      "version": 1,
+      "createdAt": "2026-07-30T00:00:00.000Z",
+      "createdBy": "migration:mnk-menu-source",
+      "updatedAt": "2026-07-30T00:00:00.000Z",
+      "updatedBy": "migration:mnk-menu-source",
+      "active": true,
+      "externalIdentities": [],
+      "provenanceIds": [
+        "source:mnk-menu:fff52fe833cdd5dd31a5"
+      ],
+      "ownership": {
+        "providerOwned": {
+          "sourceFile": "sites/mnk/booking-platform/01_MenuData.js"
+        },
+        "fikaOwned": {}
+      },
+      "entityType": "Hospitality Menu Offering",
+      "canonicalId": "hospitality-menu-offering:mnk:fff52fe833cdd5dd31a5",
+      "hospitalityMenuItemId": "hospitality-menu-item:mnk:ginger_shot",
+      "oplocId": "oploc:mnk-development-fixture",
+      "offeringMode": "standard",
+      "lifecycleState": "active",
+      "minimumQuantity": 1,
+      "noticeRequiredDays": 3,
+      "configuration": {
+        "servingInfo": "80ml shot",
+        "serves": null,
+        "suggestionType": null,
+        "suggestionLabel": "",
+        "suggestionUnit": "units",
+        "sortOrder": 70,
+        "choices": []
+      }
+    },
+    {
+      "schemaVersion": "0.1.0",
+      "version": 1,
+      "createdAt": "2026-07-30T00:00:00.000Z",
+      "createdBy": "migration:mnk-menu-source",
+      "updatedAt": "2026-07-30T00:00:00.000Z",
+      "updatedBy": "migration:mnk-menu-source",
+      "active": true,
+      "externalIdentities": [],
+      "provenanceIds": [
+        "source:mnk-menu:98afc897b3ab51f3617b"
+      ],
+      "ownership": {
+        "providerOwned": {
+          "sourceFile": "sites/mnk/booking-platform/01_MenuData.js"
+        },
+        "fikaOwned": {}
+      },
+      "entityType": "Hospitality Menu Offering",
+      "canonicalId": "hospitality-menu-offering:mnk:98afc897b3ab51f3617b",
+      "hospitalityMenuItemId": "hospitality-menu-item:mnk:smoothie_1l",
+      "oplocId": "oploc:mnk-development-fixture",
+      "offeringMode": "standard",
+      "lifecycleState": "active",
+      "minimumQuantity": 1,
+      "noticeRequiredDays": 3,
+      "configuration": {
+        "servingInfo": "Per bottle",
+        "serves": null,
+        "suggestionType": null,
+        "suggestionLabel": "",
+        "suggestionUnit": "units",
+        "sortOrder": 80,
+        "choices": [
+          {
+            "id": "flavour",
+            "label": "Choose flavour",
+            "controlType": "select",
+            "required": true,
+            "options": [
+              {
+                "id": "flavour:green-glow",
+                "label": "Green Glow"
+              },
+              {
+                "id": "flavour:berry-boost",
+                "label": "Berry Boost"
+              },
+              {
+                "id": "flavour:island-breeze",
+                "label": "Island Breeze"
+              },
+              {
+                "id": "flavour:mixed",
+                "label": "Mixed"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "schemaVersion": "0.1.0",
+      "version": 1,
+      "createdAt": "2026-07-30T00:00:00.000Z",
+      "createdBy": "migration:mnk-menu-source",
+      "updatedAt": "2026-07-30T00:00:00.000Z",
+      "updatedBy": "migration:mnk-menu-source",
+      "active": true,
+      "externalIdentities": [],
+      "provenanceIds": [
+        "source:mnk-menu:eb49d88556b2328191ae"
+      ],
+      "ownership": {
+        "providerOwned": {
+          "sourceFile": "sites/mnk/booking-platform/01_MenuData.js"
+        },
+        "fikaOwned": {}
+      },
+      "entityType": "Hospitality Menu Offering",
+      "canonicalId": "hospitality-menu-offering:mnk:eb49d88556b2328191ae",
+      "hospitalityMenuItemId": "hospitality-menu-item:mnk:cookie_box",
+      "oplocId": "oploc:mnk-development-fixture",
+      "offeringMode": "standard",
+      "lifecycleState": "active",
+      "minimumQuantity": 1,
+      "noticeRequiredDays": 3,
+      "configuration": {
+        "servingInfo": "Box of 24",
+        "serves": null,
+        "suggestionType": null,
+        "suggestionLabel": "",
+        "suggestionUnit": "units",
+        "sortOrder": 100,
+        "choices": []
+      }
+    },
+    {
+      "schemaVersion": "0.1.0",
+      "version": 1,
+      "createdAt": "2026-07-30T00:00:00.000Z",
+      "createdBy": "migration:mnk-menu-source",
+      "updatedAt": "2026-07-30T00:00:00.000Z",
+      "updatedBy": "migration:mnk-menu-source",
+      "active": true,
+      "externalIdentities": [],
+      "provenanceIds": [
+        "source:mnk-menu:faabdabc46849b9b3055"
+      ],
+      "ownership": {
+        "providerOwned": {
+          "sourceFile": "sites/mnk/booking-platform/01_MenuData.js"
+        },
+        "fikaOwned": {}
+      },
+      "entityType": "Hospitality Menu Offering",
+      "canonicalId": "hospitality-menu-offering:mnk:faabdabc46849b9b3055",
+      "hospitalityMenuItemId": "hospitality-menu-item:mnk:tray_bake_box",
+      "oplocId": "oploc:mnk-development-fixture",
+      "offeringMode": "standard",
+      "lifecycleState": "active",
+      "minimumQuantity": 1,
+      "noticeRequiredDays": 3,
+      "configuration": {
+        "servingInfo": "Box of 24 pieces",
+        "serves": null,
+        "suggestionType": null,
+        "suggestionLabel": "",
+        "suggestionUnit": "units",
+        "sortOrder": 110,
+        "choices": []
+      }
+    },
+    {
+      "schemaVersion": "0.1.0",
+      "version": 1,
+      "createdAt": "2026-07-30T00:00:00.000Z",
+      "createdBy": "migration:mnk-menu-source",
+      "updatedAt": "2026-07-30T00:00:00.000Z",
+      "updatedBy": "migration:mnk-menu-source",
+      "active": true,
+      "externalIdentities": [],
+      "provenanceIds": [
+        "source:mnk-menu:6de44299ba987b566cc0"
+      ],
+      "ownership": {
+        "providerOwned": {
+          "sourceFile": "sites/mnk/booking-platform/01_MenuData.js"
+        },
+        "fikaOwned": {}
+      },
+      "entityType": "Hospitality Menu Offering",
+      "canonicalId": "hospitality-menu-offering:mnk:6de44299ba987b566cc0",
+      "hospitalityMenuItemId": "hospitality-menu-item:mnk:exotic_fruit_box",
+      "oplocId": "oploc:mnk-development-fixture",
+      "offeringMode": "standard",
+      "lifecycleState": "active",
+      "minimumQuantity": 1,
+      "noticeRequiredDays": 3,
+      "configuration": {
+        "servingInfo": "Serves 20 people",
+        "serves": 20,
+        "suggestionType": "ceil_by_guests",
+        "suggestionLabel": "Suggested for your guest count",
+        "suggestionUnit": "boxes",
+        "sortOrder": 120,
+        "choices": []
+      }
+    },
+    {
+      "schemaVersion": "0.1.0",
+      "version": 1,
+      "createdAt": "2026-07-30T00:00:00.000Z",
+      "createdBy": "migration:mnk-menu-source",
+      "updatedAt": "2026-07-30T00:00:00.000Z",
+      "updatedBy": "migration:mnk-menu-source",
+      "active": true,
+      "externalIdentities": [],
+      "provenanceIds": [
+        "source:mnk-menu:1d44752c5703c9c9111b"
+      ],
+      "ownership": {
+        "providerOwned": {
+          "sourceFile": "sites/mnk/booking-platform/01_MenuData.js"
+        },
+        "fikaOwned": {}
+      },
+      "entityType": "Hospitality Menu Offering",
+      "canonicalId": "hospitality-menu-offering:mnk:1d44752c5703c9c9111b",
+      "hospitalityMenuItemId": "hospitality-menu-item:mnk:mini_pastries",
+      "oplocId": "oploc:mnk-development-fixture",
+      "offeringMode": "standard",
+      "lifecycleState": "active",
+      "minimumQuantity": 1,
+      "noticeRequiredDays": 3,
+      "configuration": {
+        "servingInfo": "Box feeds 12 people",
+        "serves": 12,
+        "suggestionType": "ceil_by_guests",
+        "suggestionLabel": "Suggested for your guest count",
+        "suggestionUnit": "boxes",
+        "sortOrder": 130,
+        "choices": []
+      }
+    },
+    {
+      "schemaVersion": "0.1.0",
+      "version": 1,
+      "createdAt": "2026-07-30T00:00:00.000Z",
+      "createdBy": "migration:mnk-menu-source",
+      "updatedAt": "2026-07-30T00:00:00.000Z",
+      "updatedBy": "migration:mnk-menu-source",
+      "active": true,
+      "externalIdentities": [],
+      "provenanceIds": [
+        "source:mnk-menu:f8ef0c6b866ff6354db4"
+      ],
+      "ownership": {
+        "providerOwned": {
+          "sourceFile": "sites/mnk/booking-platform/01_MenuData.js"
+        },
+        "fikaOwned": {}
+      },
+      "entityType": "Hospitality Menu Offering",
+      "canonicalId": "hospitality-menu-offering:mnk:f8ef0c6b866ff6354db4",
+      "hospitalityMenuItemId": "hospitality-menu-item:mnk:large_pastries",
+      "oplocId": "oploc:mnk-development-fixture",
+      "offeringMode": "standard",
+      "lifecycleState": "active",
+      "minimumQuantity": 1,
+      "noticeRequiredDays": 3,
+      "configuration": {
+        "servingInfo": "Box of 12 pastries",
+        "serves": 12,
+        "suggestionType": "ceil_by_guests",
+        "suggestionLabel": "Suggested for your guest count",
+        "suggestionUnit": "boxes",
+        "sortOrder": 140,
+        "choices": []
+      }
+    },
+    {
+      "schemaVersion": "0.1.0",
+      "version": 1,
+      "createdAt": "2026-07-30T00:00:00.000Z",
+      "createdBy": "migration:mnk-menu-source",
+      "updatedAt": "2026-07-30T00:00:00.000Z",
+      "updatedBy": "migration:mnk-menu-source",
+      "active": true,
+      "externalIdentities": [],
+      "provenanceIds": [
+        "source:mnk-menu:35895f66f5e2a3059575"
+      ],
+      "ownership": {
+        "providerOwned": {
+          "sourceFile": "sites/mnk/booking-platform/01_MenuData.js"
+        },
+        "fikaOwned": {}
+      },
+      "entityType": "Hospitality Menu Offering",
+      "canonicalId": "hospitality-menu-offering:mnk:35895f66f5e2a3059575",
+      "hospitalityMenuItemId": "hospitality-menu-item:mnk:filled_savoury_croissant",
+      "oplocId": "oploc:mnk-development-fixture",
+      "offeringMode": "standard",
+      "lifecycleState": "active",
+      "minimumQuantity": 1,
+      "noticeRequiredDays": 3,
+      "configuration": {
+        "servingInfo": "Box of 12 pastries",
+        "serves": 12,
+        "suggestionType": "ceil_by_guests",
+        "suggestionLabel": "Suggested for your guest count",
+        "suggestionUnit": "boxes",
+        "sortOrder": 150,
+        "choices": []
+      }
+    },
+    {
+      "schemaVersion": "0.1.0",
+      "version": 1,
+      "createdAt": "2026-07-30T00:00:00.000Z",
+      "createdBy": "migration:mnk-menu-source",
+      "updatedAt": "2026-07-30T00:00:00.000Z",
+      "updatedBy": "migration:mnk-menu-source",
+      "active": true,
+      "externalIdentities": [],
+      "provenanceIds": [
+        "source:mnk-menu:208ea67a1c97430d42ad"
+      ],
+      "ownership": {
+        "providerOwned": {
+          "sourceFile": "sites/mnk/booking-platform/01_MenuData.js"
+        },
+        "fikaOwned": {}
+      },
+      "entityType": "Hospitality Menu Offering",
+      "canonicalId": "hospitality-menu-offering:mnk:208ea67a1c97430d42ad",
+      "hospitalityMenuItemId": "hospitality-menu-item:mnk:vegan_savoury_croissant",
+      "oplocId": "oploc:mnk-development-fixture",
+      "offeringMode": "standard",
+      "lifecycleState": "active",
+      "minimumQuantity": 1,
+      "noticeRequiredDays": 3,
+      "configuration": {
+        "servingInfo": "Box of 12 pastries",
+        "serves": 12,
+        "suggestionType": "ceil_by_guests",
+        "suggestionLabel": "Suggested for your guest count",
+        "suggestionUnit": "boxes",
+        "sortOrder": 160,
+        "choices": []
+      }
+    },
+    {
+      "schemaVersion": "0.1.0",
+      "version": 1,
+      "createdAt": "2026-07-30T00:00:00.000Z",
+      "createdBy": "migration:mnk-menu-source",
+      "updatedAt": "2026-07-30T00:00:00.000Z",
+      "updatedBy": "migration:mnk-menu-source",
+      "active": true,
+      "externalIdentities": [],
+      "provenanceIds": [
+        "source:mnk-menu:c69093d58e9b4aa19886"
+      ],
+      "ownership": {
+        "providerOwned": {
+          "sourceFile": "sites/mnk/booking-platform/01_MenuData.js"
+        },
+        "fikaOwned": {}
+      },
+      "entityType": "Hospitality Menu Offering",
+      "canonicalId": "hospitality-menu-offering:mnk:c69093d58e9b4aa19886",
+      "hospitalityMenuItemId": "hospitality-menu-item:mnk:bagel_box",
+      "oplocId": "oploc:mnk-development-fixture",
+      "offeringMode": "standard",
+      "lifecycleState": "active",
+      "minimumQuantity": 1,
+      "noticeRequiredDays": 3,
+      "configuration": {
+        "servingInfo": "12 bagels cut in half",
+        "serves": 12,
+        "suggestionType": "ceil_by_guests",
+        "suggestionLabel": "Suggested for your guest count",
+        "suggestionUnit": "boxes",
+        "sortOrder": 170,
+        "choices": [
+          {
+            "id": "selection",
+            "label": "Choose bagel selection",
+            "controlType": "select",
+            "required": true,
+            "options": [
+              {
+                "id": "selection:chapel-swan-smoked-trout-soft-cream-cheese-dill",
+                "label": "Chapel Swan smoked trout, soft cream cheese & dill"
+              },
+              {
+                "id": "selection:crispy-bacon-free-range-egg-mayonnaise",
+                "label": "Crispy bacon & free range egg mayonnaise"
+              },
+              {
+                "id": "selection:roasted-red-pepper-smashed-avocado-baby-spinach",
+                "label": "Roasted red pepper, smashed avocado & baby spinach"
+              },
+              {
+                "id": "selection:mixed",
+                "label": "Mixed"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "schemaVersion": "0.1.0",
+      "version": 1,
+      "createdAt": "2026-07-30T00:00:00.000Z",
+      "createdBy": "migration:mnk-menu-source",
+      "updatedAt": "2026-07-30T00:00:00.000Z",
+      "updatedBy": "migration:mnk-menu-source",
+      "active": true,
+      "externalIdentities": [],
+      "provenanceIds": [
+        "source:mnk-menu:9a073c7c2bb8dd10d7dd"
+      ],
+      "ownership": {
+        "providerOwned": {
+          "sourceFile": "sites/mnk/booking-platform/01_MenuData.js"
+        },
+        "fikaOwned": {}
+      },
+      "entityType": "Hospitality Menu Offering",
+      "canonicalId": "hospitality-menu-offering:mnk:9a073c7c2bb8dd10d7dd",
+      "hospitalityMenuItemId": "hospitality-menu-item:mnk:breakfast_pots",
+      "oplocId": "oploc:mnk-development-fixture",
+      "offeringMode": "standard",
+      "lifecycleState": "active",
+      "minimumQuantity": 12,
+      "noticeRequiredDays": 3,
+      "configuration": {
+        "servingInfo": "Per pot - minimum 12 per item",
+        "serves": null,
+        "suggestionType": null,
+        "suggestionLabel": "",
+        "suggestionUnit": "units",
+        "sortOrder": 180,
+        "choices": [
+          {
+            "id": "pot",
+            "label": "Choose pot",
+            "controlType": "select",
+            "required": true,
+            "options": [
+              {
+                "id": "pot:fruit-salad",
+                "label": "Fruit salad"
+              },
+              {
+                "id": "pot:house-made-greek-yoghurt",
+                "label": "House made Greek yoghurt"
+              },
+              {
+                "id": "pot:vegan-yoghurt",
+                "label": "Vegan yoghurt"
+              },
+              {
+                "id": "pot:free-range-boiled-egg-baby-spinach",
+                "label": "Free range boiled egg & baby spinach"
+              },
+              {
+                "id": "pot:smashed-avocado-smoked-salmon-free-range-boiled-egg",
+                "label": "Smashed avocado, smoked salmon & free range boiled egg"
+              },
+              {
+                "id": "pot:overnight-oats",
+                "label": "Overnight oats"
+              },
+              {
+                "id": "pot:mixed",
+                "label": "Mixed"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "schemaVersion": "0.1.0",
+      "version": 1,
+      "createdAt": "2026-07-30T00:00:00.000Z",
+      "createdBy": "migration:mnk-menu-source",
+      "updatedAt": "2026-07-30T00:00:00.000Z",
+      "updatedBy": "migration:mnk-menu-source",
+      "active": true,
+      "externalIdentities": [],
+      "provenanceIds": [
+        "source:mnk-menu:ab2981751e87afbbec92"
+      ],
+      "ownership": {
+        "providerOwned": {
+          "sourceFile": "sites/mnk/booking-platform/01_MenuData.js"
+        },
+        "fikaOwned": {}
+      },
+      "entityType": "Hospitality Menu Offering",
+      "canonicalId": "hospitality-menu-offering:mnk:ab2981751e87afbbec92",
+      "hospitalityMenuItemId": "hospitality-menu-item:mnk:healthy_plant_power_breakfast",
+      "oplocId": "oploc:mnk-development-fixture",
+      "offeringMode": "standard",
+      "lifecycleState": "active",
+      "minimumQuantity": 1,
+      "noticeRequiredDays": 3,
+      "configuration": {
+        "servingInfo": "Per person",
+        "serves": null,
+        "suggestionType": null,
+        "suggestionLabel": "",
+        "suggestionUnit": "units",
+        "sortOrder": 190,
+        "choices": []
+      }
+    },
+    {
+      "schemaVersion": "0.1.0",
+      "version": 1,
+      "createdAt": "2026-07-30T00:00:00.000Z",
+      "createdBy": "migration:mnk-menu-source",
+      "updatedAt": "2026-07-30T00:00:00.000Z",
+      "updatedBy": "migration:mnk-menu-source",
+      "active": true,
+      "externalIdentities": [],
+      "provenanceIds": [
+        "source:mnk-menu:0b624e926f3ec0465551"
+      ],
+      "ownership": {
+        "providerOwned": {
+          "sourceFile": "sites/mnk/booking-platform/01_MenuData.js"
+        },
+        "fikaOwned": {}
+      },
+      "entityType": "Hospitality Menu Offering",
+      "canonicalId": "hospitality-menu-offering:mnk:0b624e926f3ec0465551",
+      "hospitalityMenuItemId": "hospitality-menu-item:mnk:deli_sandwich_lunch",
+      "oplocId": "oploc:mnk-development-fixture",
+      "offeringMode": "standard",
+      "lifecycleState": "active",
+      "minimumQuantity": 8,
+      "minimumGuests": 8,
+      "noticeRequiredDays": 3,
+      "configuration": {
+        "servingInfo": "Per person",
+        "serves": null,
+        "suggestionType": null,
+        "suggestionLabel": "",
+        "suggestionUnit": "units",
+        "sortOrder": 200,
+        "choices": []
+      }
+    },
+    {
+      "schemaVersion": "0.1.0",
+      "version": 1,
+      "createdAt": "2026-07-30T00:00:00.000Z",
+      "createdBy": "migration:mnk-menu-source",
+      "updatedAt": "2026-07-30T00:00:00.000Z",
+      "updatedBy": "migration:mnk-menu-source",
+      "active": true,
+      "externalIdentities": [],
+      "provenanceIds": [
+        "source:mnk-menu:0ead09f5f2fe9bc46766"
+      ],
+      "ownership": {
+        "providerOwned": {
+          "sourceFile": "sites/mnk/booking-platform/01_MenuData.js"
+        },
+        "fikaOwned": {}
+      },
+      "entityType": "Hospitality Menu Offering",
+      "canonicalId": "hospitality-menu-offering:mnk:0ead09f5f2fe9bc46766",
+      "hospitalityMenuItemId": "hospitality-menu-item:mnk:individual_boxed_lunch",
+      "oplocId": "oploc:mnk-development-fixture",
+      "offeringMode": "standard",
+      "lifecycleState": "active",
+      "minimumQuantity": 8,
+      "minimumGuests": 8,
+      "noticeRequiredDays": 3,
+      "configuration": {
+        "servingInfo": "Per person",
+        "serves": null,
+        "suggestionType": null,
+        "suggestionLabel": "",
+        "suggestionUnit": "units",
+        "sortOrder": 210,
+        "choices": []
+      }
+    },
+    {
+      "schemaVersion": "0.1.0",
+      "version": 1,
+      "createdAt": "2026-07-30T00:00:00.000Z",
+      "createdBy": "migration:mnk-menu-source",
+      "updatedAt": "2026-07-30T00:00:00.000Z",
+      "updatedBy": "migration:mnk-menu-source",
+      "active": true,
+      "externalIdentities": [],
+      "provenanceIds": [
+        "source:mnk-menu:b79181c6e109f5faf6ec"
+      ],
+      "ownership": {
+        "providerOwned": {
+          "sourceFile": "sites/mnk/booking-platform/01_MenuData.js"
+        },
+        "fikaOwned": {}
+      },
+      "entityType": "Hospitality Menu Offering",
+      "canonicalId": "hospitality-menu-offering:mnk:b79181c6e109f5faf6ec",
+      "hospitalityMenuItemId": "hospitality-menu-item:mnk:salad_protein_lunch_platter",
+      "oplocId": "oploc:mnk-development-fixture",
+      "offeringMode": "standard",
+      "lifecycleState": "active",
+      "minimumQuantity": 8,
+      "minimumGuests": 8,
+      "noticeRequiredDays": 3,
+      "configuration": {
+        "servingInfo": "Per person",
+        "serves": null,
+        "suggestionType": null,
+        "suggestionLabel": "",
+        "suggestionUnit": "units",
+        "sortOrder": 220,
+        "choices": []
+      }
+    },
+    {
+      "schemaVersion": "0.1.0",
+      "version": 1,
+      "createdAt": "2026-07-30T00:00:00.000Z",
+      "createdBy": "migration:mnk-menu-source",
+      "updatedAt": "2026-07-30T00:00:00.000Z",
+      "updatedBy": "migration:mnk-menu-source",
+      "active": true,
+      "externalIdentities": [],
+      "provenanceIds": [
+        "source:mnk-menu:60f52519a196ecdbae03"
+      ],
+      "ownership": {
+        "providerOwned": {
+          "sourceFile": "sites/mnk/booking-platform/01_MenuData.js"
+        },
+        "fikaOwned": {}
+      },
+      "entityType": "Hospitality Menu Offering",
+      "canonicalId": "hospitality-menu-offering:mnk:60f52519a196ecdbae03",
+      "hospitalityMenuItemId": "hospitality-menu-item:mnk:rice_paper_rolls",
+      "oplocId": "oploc:mnk-development-fixture",
+      "offeringMode": "standard",
+      "lifecycleState": "active",
+      "minimumQuantity": 3,
+      "noticeRequiredDays": 3,
+      "configuration": {
+        "servingInfo": "Feeds 3",
+        "serves": 3,
+        "suggestionType": "ceil_by_guests",
+        "suggestionLabel": "Suggested for your guest count",
+        "suggestionUnit": "platters",
+        "sortOrder": 230,
+        "choices": [
+          {
+            "id": "flavour",
+            "label": "Choose flavour",
+            "controlType": "multi",
+            "required": true,
+            "options": [
+              {
+                "id": "flavour:crayfish-and-avocado",
+                "label": "Crayfish and avocado"
+              },
+              {
+                "id": "flavour:hot-smoked-trout",
+                "label": "Hot smoked trout"
+              },
+              {
+                "id": "flavour:char-siu-pulled-chicken",
+                "label": "Char-siu pulled chicken"
+              },
+              {
+                "id": "flavour:lemongrass-ginger-chilli-chicken",
+                "label": "Lemongrass, ginger & chilli chicken"
+              },
+              {
+                "id": "flavour:rainbow-vegetable-roll-vegan",
+                "label": "Rainbow vegetable roll (vegan)"
+              },
+              {
+                "id": "flavour:hoisin-tofu-and-rainbow-veg-vegan",
+                "label": "Hoisin tofu and rainbow veg (vegan)"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "schemaVersion": "0.1.0",
+      "version": 1,
+      "createdAt": "2026-07-30T00:00:00.000Z",
+      "createdBy": "migration:mnk-menu-source",
+      "updatedAt": "2026-07-30T00:00:00.000Z",
+      "updatedBy": "migration:mnk-menu-source",
+      "active": true,
+      "externalIdentities": [],
+      "provenanceIds": [
+        "source:mnk-menu:bedf1ea3cf6ac124df46"
+      ],
+      "ownership": {
+        "providerOwned": {
+          "sourceFile": "sites/mnk/booking-platform/01_MenuData.js"
+        },
+        "fikaOwned": {}
+      },
+      "entityType": "Hospitality Menu Offering",
+      "canonicalId": "hospitality-menu-offering:mnk:bedf1ea3cf6ac124df46",
+      "hospitalityMenuItemId": "hospitality-menu-item:mnk:grazing_charcuterie_box",
+      "oplocId": "oploc:mnk-development-fixture",
+      "offeringMode": "standard",
+      "lifecycleState": "active",
+      "minimumQuantity": 1,
+      "noticeRequiredDays": 3,
+      "configuration": {
+        "servingInfo": "Feeds 10",
+        "serves": 10,
+        "suggestionType": "ceil_by_guests",
+        "suggestionLabel": "Suggested for your guest count",
+        "suggestionUnit": "boxes",
+        "sortOrder": 240,
+        "choices": []
+      }
+    },
+    {
+      "schemaVersion": "0.1.0",
+      "version": 1,
+      "createdAt": "2026-07-30T00:00:00.000Z",
+      "createdBy": "migration:mnk-menu-source",
+      "updatedAt": "2026-07-30T00:00:00.000Z",
+      "updatedBy": "migration:mnk-menu-source",
+      "active": true,
+      "externalIdentities": [],
+      "provenanceIds": [
+        "source:mnk-menu:67ca9b1ced13bb33ca88"
+      ],
+      "ownership": {
+        "providerOwned": {
+          "sourceFile": "sites/mnk/booking-platform/01_MenuData.js"
+        },
+        "fikaOwned": {}
+      },
+      "entityType": "Hospitality Menu Offering",
+      "canonicalId": "hospitality-menu-offering:mnk:67ca9b1ced13bb33ca88",
+      "hospitalityMenuItemId": "hospitality-menu-item:mnk:cheese_box",
+      "oplocId": "oploc:mnk-development-fixture",
+      "offeringMode": "standard",
+      "lifecycleState": "active",
+      "minimumQuantity": 1,
+      "noticeRequiredDays": 3,
+      "configuration": {
+        "servingInfo": "Feeds 10",
+        "serves": 10,
+        "suggestionType": "ceil_by_guests",
+        "suggestionLabel": "Suggested for your guest count",
+        "suggestionUnit": "boxes",
+        "sortOrder": 250,
+        "choices": []
+      }
+    },
+    {
+      "schemaVersion": "0.1.0",
+      "version": 1,
+      "createdAt": "2026-07-30T00:00:00.000Z",
+      "createdBy": "migration:mnk-menu-source",
+      "updatedAt": "2026-07-30T00:00:00.000Z",
+      "updatedBy": "migration:mnk-menu-source",
+      "active": true,
+      "externalIdentities": [],
+      "provenanceIds": [
+        "source:mnk-menu:8395cd9017b735ab1174"
+      ],
+      "ownership": {
+        "providerOwned": {
+          "sourceFile": "sites/mnk/booking-platform/01_MenuData.js"
+        },
+        "fikaOwned": {}
+      },
+      "entityType": "Hospitality Menu Offering",
+      "canonicalId": "hospitality-menu-offering:mnk:8395cd9017b735ab1174",
+      "hospitalityMenuItemId": "hospitality-menu-item:mnk:picnic_box",
+      "oplocId": "oploc:mnk-development-fixture",
+      "offeringMode": "standard",
+      "lifecycleState": "active",
+      "minimumQuantity": 1,
+      "noticeRequiredDays": 3,
+      "configuration": {
+        "servingInfo": "Feeds 10",
+        "serves": 10,
+        "suggestionType": "ceil_by_guests",
+        "suggestionLabel": "Suggested for your guest count",
+        "suggestionUnit": "boxes",
+        "sortOrder": 260,
+        "choices": []
+      }
+    },
+    {
+      "schemaVersion": "0.1.0",
+      "version": 1,
+      "createdAt": "2026-07-30T00:00:00.000Z",
+      "createdBy": "migration:mnk-menu-source",
+      "updatedAt": "2026-07-30T00:00:00.000Z",
+      "updatedBy": "migration:mnk-menu-source",
+      "active": true,
+      "externalIdentities": [],
+      "provenanceIds": [
+        "source:mnk-menu:f81cd81ab39c64ac56fa"
+      ],
+      "ownership": {
+        "providerOwned": {
+          "sourceFile": "sites/mnk/booking-platform/01_MenuData.js"
+        },
+        "fikaOwned": {}
+      },
+      "entityType": "Hospitality Menu Offering",
+      "canonicalId": "hospitality-menu-offering:mnk:f81cd81ab39c64ac56fa",
+      "hospitalityMenuItemId": "hospitality-menu-item:mnk:vegan_box",
+      "oplocId": "oploc:mnk-development-fixture",
+      "offeringMode": "standard",
+      "lifecycleState": "active",
+      "minimumQuantity": 1,
+      "noticeRequiredDays": 3,
+      "configuration": {
+        "servingInfo": "Feeds 10",
+        "serves": 10,
+        "suggestionType": "ceil_by_guests",
+        "suggestionLabel": "Suggested for your guest count",
+        "suggestionUnit": "boxes",
+        "sortOrder": 270,
+        "choices": []
+      }
+    },
+    {
+      "schemaVersion": "0.1.0",
+      "version": 1,
+      "createdAt": "2026-07-30T00:00:00.000Z",
+      "createdBy": "migration:mnk-menu-source",
+      "updatedAt": "2026-07-30T00:00:00.000Z",
+      "updatedBy": "migration:mnk-menu-source",
+      "active": true,
+      "externalIdentities": [],
+      "provenanceIds": [
+        "source:mnk-menu:2cf0c57d7ee9757de6a6"
+      ],
+      "ownership": {
+        "providerOwned": {
+          "sourceFile": "sites/mnk/booking-platform/01_MenuData.js"
+        },
+        "fikaOwned": {}
+      },
+      "entityType": "Hospitality Menu Offering",
+      "canonicalId": "hospitality-menu-offering:mnk:2cf0c57d7ee9757de6a6",
+      "hospitalityMenuItemId": "hospitality-menu-item:mnk:salad_boxes",
+      "oplocId": "oploc:mnk-development-fixture",
+      "offeringMode": "standard",
+      "lifecycleState": "active",
+      "minimumQuantity": 1,
+      "noticeRequiredDays": 3,
+      "configuration": {
+        "servingInfo": "Feeds 8 as a side",
+        "serves": 8,
+        "suggestionType": "ceil_by_guests",
+        "suggestionLabel": "Suggested for your guest count",
+        "suggestionUnit": "boxes",
+        "sortOrder": 280,
+        "choices": [
+          {
+            "id": "salad",
+            "label": "Choose salads",
+            "controlType": "multi",
+            "required": true,
+            "options": [
+              {
+                "id": "salad:mediterranean",
+                "label": "Mediterranean"
+              },
+              {
+                "id": "salad:grilled-chicken-caesar",
+                "label": "Grilled chicken Caesar"
+              },
+              {
+                "id": "salad:hot-smoked-salmon-nicoise",
+                "label": "Hot smoked salmon Nicoise"
+              },
+              {
+                "id": "salad:weekly-salad-box",
+                "label": "Weekly salad box"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "schemaVersion": "0.1.0",
+      "version": 1,
+      "createdAt": "2026-07-30T00:00:00.000Z",
+      "createdBy": "migration:mnk-menu-source",
+      "updatedAt": "2026-07-30T00:00:00.000Z",
+      "updatedBy": "migration:mnk-menu-source",
+      "active": true,
+      "externalIdentities": [],
+      "provenanceIds": [
+        "source:mnk-menu:d0a34bae274247c86edd"
+      ],
+      "ownership": {
+        "providerOwned": {
+          "sourceFile": "sites/mnk/booking-platform/01_MenuData.js"
+        },
+        "fikaOwned": {}
+      },
+      "entityType": "Hospitality Menu Offering",
+      "canonicalId": "hospitality-menu-offering:mnk:d0a34bae274247c86edd",
+      "hospitalityMenuItemId": "hospitality-menu-item:mnk:weekly_salad_box",
+      "oplocId": "oploc:mnk-development-fixture",
+      "offeringMode": "standard",
+      "lifecycleState": "active",
+      "minimumQuantity": 1,
+      "noticeRequiredDays": 3,
+      "configuration": {
+        "servingInfo": "Per box",
+        "serves": null,
+        "suggestionType": null,
+        "suggestionLabel": "",
+        "suggestionUnit": "units",
+        "sortOrder": 290,
+        "choices": []
+      }
+    },
+    {
+      "schemaVersion": "0.1.0",
+      "version": 1,
+      "createdAt": "2026-07-30T00:00:00.000Z",
+      "createdBy": "migration:mnk-menu-source",
+      "updatedAt": "2026-07-30T00:00:00.000Z",
+      "updatedBy": "migration:mnk-menu-source",
+      "active": true,
+      "externalIdentities": [],
+      "provenanceIds": [
+        "source:mnk-menu:4d429bd0d671b037b106"
+      ],
+      "ownership": {
+        "providerOwned": {
+          "sourceFile": "sites/mnk/booking-platform/01_MenuData.js"
+        },
+        "fikaOwned": {}
+      },
+      "entityType": "Hospitality Menu Offering",
+      "canonicalId": "hospitality-menu-offering:mnk:4d429bd0d671b037b106",
+      "hospitalityMenuItemId": "hospitality-menu-item:mnk:deluxe_sushi_box",
+      "oplocId": "oploc:mnk-development-fixture",
+      "offeringMode": "standard",
+      "lifecycleState": "active",
+      "minimumQuantity": 1,
+      "noticeRequiredDays": 3,
+      "configuration": {
+        "servingInfo": "Feeds 8 to 12 people",
+        "serves": 10,
+        "suggestionType": "ceil_by_guests",
+        "suggestionLabel": "Suggested for your guest count",
+        "suggestionUnit": "boxes",
+        "sortOrder": 300,
+        "choices": []
+      }
+    },
+    {
+      "schemaVersion": "0.1.0",
+      "version": 1,
+      "createdAt": "2026-07-30T00:00:00.000Z",
+      "createdBy": "migration:mnk-menu-source",
+      "updatedAt": "2026-07-30T00:00:00.000Z",
+      "updatedBy": "migration:mnk-menu-source",
+      "active": true,
+      "externalIdentities": [],
+      "provenanceIds": [
+        "source:mnk-menu:960197f2677dc3c8adb3"
+      ],
+      "ownership": {
+        "providerOwned": {
+          "sourceFile": "sites/mnk/booking-platform/01_MenuData.js"
+        },
+        "fikaOwned": {}
+      },
+      "entityType": "Hospitality Menu Offering",
+      "canonicalId": "hospitality-menu-offering:mnk:960197f2677dc3c8adb3",
+      "hospitalityMenuItemId": "hospitality-menu-item:mnk:vegan_sushi_box",
+      "oplocId": "oploc:mnk-development-fixture",
+      "offeringMode": "standard",
+      "lifecycleState": "active",
+      "minimumQuantity": 1,
+      "noticeRequiredDays": 3,
+      "configuration": {
+        "servingInfo": "Feeds 8 to 12 people",
+        "serves": 10,
+        "suggestionType": "ceil_by_guests",
+        "suggestionLabel": "Suggested for your guest count",
+        "suggestionUnit": "boxes",
+        "sortOrder": 310,
+        "choices": []
+      }
+    },
+    {
+      "schemaVersion": "0.1.0",
+      "version": 1,
+      "createdAt": "2026-07-30T00:00:00.000Z",
+      "createdBy": "migration:mnk-menu-source",
+      "updatedAt": "2026-07-30T00:00:00.000Z",
+      "updatedBy": "migration:mnk-menu-source",
+      "active": true,
+      "externalIdentities": [],
+      "provenanceIds": [
+        "source:mnk-menu:33cec70f48e3a82b4a29"
+      ],
+      "ownership": {
+        "providerOwned": {
+          "sourceFile": "sites/mnk/booking-platform/01_MenuData.js"
+        },
+        "fikaOwned": {}
+      },
+      "entityType": "Hospitality Menu Offering",
+      "canonicalId": "hospitality-menu-offering:mnk:33cec70f48e3a82b4a29",
+      "hospitalityMenuItemId": "hospitality-menu-item:mnk:glow_bowl",
+      "oplocId": "oploc:mnk-development-fixture",
+      "offeringMode": "standard",
+      "lifecycleState": "active",
+      "minimumQuantity": 8,
+      "minimumGuests": 8,
+      "noticeRequiredDays": 3,
+      "configuration": {
+        "servingInfo": "Per person",
+        "serves": null,
+        "suggestionType": null,
+        "suggestionLabel": "",
+        "suggestionUnit": "units",
+        "sortOrder": 320,
+        "choices": [
+          {
+            "id": "bowl",
+            "label": "Choose bowl",
+            "controlType": "select",
+            "required": true,
+            "options": [
+              {
+                "id": "bowl:avocado-mex-bowl",
+                "label": "Avocado Mex Bowl"
+              },
+              {
+                "id": "bowl:sweet-potato-quinoa-bowl",
+                "label": "Sweet Potato & Quinoa Bowl"
+              },
+              {
+                "id": "bowl:mediterranean-veg-bowl",
+                "label": "Mediterranean Veg Bowl"
+              },
+              {
+                "id": "bowl:asian-prawn-edamame-bowl",
+                "label": "Asian Prawn & Edamame Bowl"
+              },
+              {
+                "id": "bowl:mixed",
+                "label": "Mixed"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "schemaVersion": "0.1.0",
+      "version": 1,
+      "createdAt": "2026-07-30T00:00:00.000Z",
+      "createdBy": "migration:mnk-menu-source",
+      "updatedAt": "2026-07-30T00:00:00.000Z",
+      "updatedBy": "migration:mnk-menu-source",
+      "active": true,
+      "externalIdentities": [],
+      "provenanceIds": [
+        "source:mnk-menu:eb26fecb7aa3ed286b82"
+      ],
+      "ownership": {
+        "providerOwned": {
+          "sourceFile": "sites/mnk/booking-platform/01_MenuData.js"
+        },
+        "fikaOwned": {}
+      },
+      "entityType": "Hospitality Menu Offering",
+      "canonicalId": "hospitality-menu-offering:mnk:eb26fecb7aa3ed286b82",
+      "hospitalityMenuItemId": "hospitality-menu-item:mnk:picnic_grazing_table",
+      "oplocId": "oploc:mnk-development-fixture",
+      "offeringMode": "standard",
+      "lifecycleState": "active",
+      "minimumQuantity": 20,
+      "minimumGuests": 20,
+      "noticeRequiredDays": 7,
+      "configuration": {
+        "servingInfo": "Per person - minimum 20",
+        "serves": null,
+        "suggestionType": null,
+        "suggestionLabel": "",
+        "suggestionUnit": "units",
+        "sortOrder": 400,
+        "choices": []
+      }
+    },
+    {
+      "schemaVersion": "0.1.0",
+      "version": 1,
+      "createdAt": "2026-07-30T00:00:00.000Z",
+      "createdBy": "migration:mnk-menu-source",
+      "updatedAt": "2026-07-30T00:00:00.000Z",
+      "updatedBy": "migration:mnk-menu-source",
+      "active": true,
+      "externalIdentities": [],
+      "provenanceIds": [
+        "source:mnk-menu:cde15f1ddf3266c57315"
+      ],
+      "ownership": {
+        "providerOwned": {
+          "sourceFile": "sites/mnk/booking-platform/01_MenuData.js"
+        },
+        "fikaOwned": {}
+      },
+      "entityType": "Hospitality Menu Offering",
+      "canonicalId": "hospitality-menu-offering:mnk:cde15f1ddf3266c57315",
+      "hospitalityMenuItemId": "hospitality-menu-item:mnk:grazing_sweet_table",
+      "oplocId": "oploc:mnk-development-fixture",
+      "offeringMode": "standard",
+      "lifecycleState": "active",
+      "minimumQuantity": 20,
+      "minimumGuests": 20,
+      "noticeRequiredDays": 7,
+      "configuration": {
+        "servingInfo": "Per person - minimum 20",
+        "serves": null,
+        "suggestionType": null,
+        "suggestionLabel": "",
+        "suggestionUnit": "units",
+        "sortOrder": 410,
+        "choices": []
+      }
+    },
+    {
+      "schemaVersion": "0.1.0",
+      "version": 1,
+      "createdAt": "2026-07-30T00:00:00.000Z",
+      "createdBy": "migration:mnk-menu-source",
+      "updatedAt": "2026-07-30T00:00:00.000Z",
+      "updatedBy": "migration:mnk-menu-source",
+      "active": true,
+      "externalIdentities": [],
+      "provenanceIds": [
+        "source:mnk-menu:54851cf1ad2e489325f4"
+      ],
+      "ownership": {
+        "providerOwned": {
+          "sourceFile": "sites/mnk/booking-platform/01_MenuData.js"
+        },
+        "fikaOwned": {}
+      },
+      "entityType": "Hospitality Menu Offering",
+      "canonicalId": "hospitality-menu-offering:mnk:54851cf1ad2e489325f4",
+      "hospitalityMenuItemId": "hospitality-menu-item:mnk:grazing_cups",
+      "oplocId": "oploc:mnk-development-fixture",
+      "offeringMode": "standard",
+      "lifecycleState": "active",
+      "minimumQuantity": 30,
+      "minimumGuests": 30,
+      "noticeRequiredDays": 7,
+      "configuration": {
+        "servingInfo": "Per person - minimum 30 cups",
+        "serves": null,
+        "suggestionType": null,
+        "suggestionLabel": "",
+        "suggestionUnit": "units",
+        "sortOrder": 420,
+        "choices": []
+      }
+    },
+    {
+      "schemaVersion": "0.1.0",
+      "version": 1,
+      "createdAt": "2026-07-30T00:00:00.000Z",
+      "createdBy": "migration:mnk-menu-source",
+      "updatedAt": "2026-07-30T00:00:00.000Z",
+      "updatedBy": "migration:mnk-menu-source",
+      "active": true,
+      "externalIdentities": [],
+      "provenanceIds": [
+        "source:mnk-menu:2c3cb89aee8909f7d647"
+      ],
+      "ownership": {
+        "providerOwned": {
+          "sourceFile": "sites/mnk/booking-platform/01_MenuData.js"
+        },
+        "fikaOwned": {}
+      },
+      "entityType": "Hospitality Menu Offering",
+      "canonicalId": "hospitality-menu-offering:mnk:2c3cb89aee8909f7d647",
+      "hospitalityMenuItemId": "hospitality-menu-item:mnk:afternoon_tea",
+      "oplocId": "oploc:mnk-development-fixture",
+      "offeringMode": "standard",
+      "lifecycleState": "active",
+      "minimumQuantity": 8,
+      "minimumGuests": 8,
+      "noticeRequiredDays": 3,
+      "configuration": {
+        "servingInfo": "Per person",
+        "serves": null,
+        "suggestionType": null,
+        "suggestionLabel": "",
+        "suggestionUnit": "units",
+        "sortOrder": 430,
+        "choices": []
+      }
+    },
+    {
+      "schemaVersion": "0.1.0",
+      "version": 1,
+      "createdAt": "2026-07-30T00:00:00.000Z",
+      "createdBy": "migration:mnk-menu-source",
+      "updatedAt": "2026-07-30T00:00:00.000Z",
+      "updatedBy": "migration:mnk-menu-source",
+      "active": true,
+      "externalIdentities": [],
+      "provenanceIds": [
+        "source:mnk-menu:4aac43ab0486aa001b4d"
+      ],
+      "ownership": {
+        "providerOwned": {
+          "sourceFile": "sites/mnk/booking-platform/01_MenuData.js"
+        },
+        "fikaOwned": {}
+      },
+      "entityType": "Hospitality Menu Offering",
+      "canonicalId": "hospitality-menu-offering:mnk:4aac43ab0486aa001b4d",
+      "hospitalityMenuItemId": "hospitality-menu-item:mnk:finger_food",
+      "oplocId": "oploc:mnk-development-fixture",
+      "offeringMode": "standard",
+      "lifecycleState": "active",
+      "minimumQuantity": 4,
+      "noticeRequiredDays": 3,
+      "configuration": {
+        "servingInfo": "Per piece",
+        "serves": null,
+        "suggestionType": null,
+        "suggestionLabel": "",
+        "suggestionUnit": "units",
+        "sortOrder": 440,
+        "choices": [
+          {
+            "id": "selection",
+            "label": "Selection style",
+            "controlType": "select",
+            "required": true,
+            "options": [
+              {
+                "id": "selection:mixed-brochure-selection",
+                "label": "Mixed brochure selection"
+              },
+              {
+                "id": "selection:meat-focused",
+                "label": "Meat focused"
+              },
+              {
+                "id": "selection:fish-focused",
+                "label": "Fish focused"
+              },
+              {
+                "id": "selection:vegetarian-focused",
+                "label": "Vegetarian focused"
+              },
+              {
+                "id": "selection:vegan-focused",
+                "label": "Vegan focused"
+              },
+              {
+                "id": "selection:dessert-focused",
+                "label": "Dessert focused"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "schemaVersion": "0.1.0",
+      "version": 1,
+      "createdAt": "2026-07-30T00:00:00.000Z",
+      "createdBy": "migration:mnk-menu-source",
+      "updatedAt": "2026-07-30T00:00:00.000Z",
+      "updatedBy": "migration:mnk-menu-source",
+      "active": true,
+      "externalIdentities": [],
+      "provenanceIds": [
+        "source:mnk-menu:05c550ba0210faf06ed2"
+      ],
+      "ownership": {
+        "providerOwned": {
+          "sourceFile": "sites/mnk/booking-platform/01_MenuData.js"
+        },
+        "fikaOwned": {}
+      },
+      "entityType": "Hospitality Menu Offering",
+      "canonicalId": "hospitality-menu-offering:mnk:05c550ba0210faf06ed2",
+      "hospitalityMenuItemId": "hospitality-menu-item:mnk:hot_fork_buffet_gold",
+      "oplocId": "oploc:mnk-development-fixture",
+      "offeringMode": "standard",
+      "lifecycleState": "active",
+      "minimumQuantity": 12,
+      "minimumGuests": 12,
+      "noticeRequiredDays": 7,
+      "configuration": {
+        "servingInfo": "Per person",
+        "serves": null,
+        "suggestionType": null,
+        "suggestionLabel": "",
+        "suggestionUnit": "units",
+        "sortOrder": 450,
+        "choices": []
+      }
+    },
+    {
+      "schemaVersion": "0.1.0",
+      "version": 1,
+      "createdAt": "2026-07-30T00:00:00.000Z",
+      "createdBy": "migration:mnk-menu-source",
+      "updatedAt": "2026-07-30T00:00:00.000Z",
+      "updatedBy": "migration:mnk-menu-source",
+      "active": true,
+      "externalIdentities": [],
+      "provenanceIds": [
+        "source:mnk-menu:709f0d86ae3ba2bb3e7c"
+      ],
+      "ownership": {
+        "providerOwned": {
+          "sourceFile": "sites/mnk/booking-platform/01_MenuData.js"
+        },
+        "fikaOwned": {}
+      },
+      "entityType": "Hospitality Menu Offering",
+      "canonicalId": "hospitality-menu-offering:mnk:709f0d86ae3ba2bb3e7c",
+      "hospitalityMenuItemId": "hospitality-menu-item:mnk:hot_fork_buffet_silver",
+      "oplocId": "oploc:mnk-development-fixture",
+      "offeringMode": "standard",
+      "lifecycleState": "active",
+      "minimumQuantity": 12,
+      "minimumGuests": 12,
+      "noticeRequiredDays": 7,
+      "configuration": {
+        "servingInfo": "Per person",
+        "serves": null,
+        "suggestionType": null,
+        "suggestionLabel": "",
+        "suggestionUnit": "units",
+        "sortOrder": 460,
+        "choices": []
+      }
+    },
+    {
+      "schemaVersion": "0.1.0",
+      "version": 1,
+      "createdAt": "2026-07-30T00:00:00.000Z",
+      "createdBy": "migration:mnk-menu-source",
+      "updatedAt": "2026-07-30T00:00:00.000Z",
+      "updatedBy": "migration:mnk-menu-source",
+      "active": true,
+      "externalIdentities": [],
+      "provenanceIds": [
+        "source:mnk-menu:a2dd3fe243ac660491b1"
+      ],
+      "ownership": {
+        "providerOwned": {
+          "sourceFile": "sites/mnk/booking-platform/01_MenuData.js"
+        },
+        "fikaOwned": {}
+      },
+      "entityType": "Hospitality Menu Offering",
+      "canonicalId": "hospitality-menu-offering:mnk:a2dd3fe243ac660491b1",
+      "hospitalityMenuItemId": "hospitality-menu-item:mnk:bowl_food",
+      "oplocId": "oploc:mnk-development-fixture",
+      "offeringMode": "standard",
+      "lifecycleState": "active",
+      "minimumQuantity": 20,
+      "minimumGuests": 20,
+      "noticeRequiredDays": 7,
+      "configuration": {
+        "servingInfo": "Per person",
+        "serves": null,
+        "suggestionType": null,
+        "suggestionLabel": "",
+        "suggestionUnit": "units",
+        "sortOrder": 470,
+        "choices": []
+      }
+    },
+    {
+      "schemaVersion": "0.1.0",
+      "version": 1,
+      "createdAt": "2026-07-30T00:00:00.000Z",
+      "createdBy": "migration:mnk-menu-source",
+      "updatedAt": "2026-07-30T00:00:00.000Z",
+      "updatedBy": "migration:mnk-menu-source",
+      "active": true,
+      "externalIdentities": [],
+      "provenanceIds": [
+        "source:mnk-menu:9a2a609850b7757f6e8f"
+      ],
+      "ownership": {
+        "providerOwned": {
+          "sourceFile": "sites/mnk/booking-platform/01_MenuData.js"
+        },
+        "fikaOwned": {}
+      },
+      "entityType": "Hospitality Menu Offering",
+      "canonicalId": "hospitality-menu-offering:mnk:9a2a609850b7757f6e8f",
+      "hospitalityMenuItemId": "hospitality-menu-item:mnk:canapes",
+      "oplocId": "oploc:mnk-development-fixture",
+      "offeringMode": "standard",
+      "lifecycleState": "active",
+      "minimumQuantity": 20,
+      "minimumGuests": 20,
+      "noticeRequiredDays": 7,
+      "configuration": {
+        "servingInfo": "Per person - minimum 20",
+        "serves": null,
+        "suggestionType": null,
+        "suggestionLabel": "",
+        "suggestionUnit": "units",
+        "sortOrder": 480,
+        "choices": []
+      }
+    },
+    {
+      "schemaVersion": "0.1.0",
+      "version": 1,
+      "createdAt": "2026-07-30T00:00:00.000Z",
+      "createdBy": "migration:mnk-menu-source",
+      "updatedAt": "2026-07-30T00:00:00.000Z",
+      "updatedBy": "migration:mnk-menu-source",
+      "active": true,
+      "externalIdentities": [],
+      "provenanceIds": [
+        "source:mnk-menu:8d9a3df102e3824f4e84"
+      ],
+      "ownership": {
+        "providerOwned": {
+          "sourceFile": "sites/mnk/booking-platform/01_MenuData.js"
+        },
+        "fikaOwned": {}
+      },
+      "entityType": "Hospitality Menu Offering",
+      "canonicalId": "hospitality-menu-offering:mnk:8d9a3df102e3824f4e84",
+      "hospitalityMenuItemId": "hospitality-menu-item:mnk:corporate_dining",
+      "oplocId": "oploc:mnk-development-fixture",
+      "offeringMode": "standard",
+      "lifecycleState": "active",
+      "minimumQuantity": 12,
+      "minimumGuests": 12,
+      "noticeRequiredDays": 7,
+      "configuration": {
+        "servingInfo": "Per person - minimum 12",
+        "serves": null,
+        "suggestionType": null,
+        "suggestionLabel": "",
+        "suggestionUnit": "units",
+        "sortOrder": 490,
+        "choices": []
+      }
+    },
+    {
+      "schemaVersion": "0.1.0",
+      "version": 1,
+      "createdAt": "2026-07-30T00:00:00.000Z",
+      "createdBy": "migration:mnk-menu-source",
+      "updatedAt": "2026-07-30T00:00:00.000Z",
+      "updatedBy": "migration:mnk-menu-source",
+      "active": true,
+      "externalIdentities": [],
+      "provenanceIds": [
+        "source:mnk-menu:3ee3bc6d03b358c2ef14"
+      ],
+      "ownership": {
+        "providerOwned": {
+          "sourceFile": "sites/mnk/booking-platform/01_MenuData.js"
+        },
+        "fikaOwned": {}
+      },
+      "entityType": "Hospitality Menu Offering",
+      "canonicalId": "hospitality-menu-offering:mnk:3ee3bc6d03b358c2ef14",
+      "hospitalityMenuItemId": "hospitality-menu-item:mnk:christmas_themed_menu",
+      "oplocId": "oploc:mnk-development-fixture",
+      "offeringMode": "standard",
+      "lifecycleState": "active",
+      "minimumQuantity": 50,
+      "minimumGuests": 50,
+      "noticeRequiredDays": 10,
+      "configuration": {
+        "servingInfo": "Per person - minimum 50 - from price",
+        "serves": null,
+        "suggestionType": null,
+        "suggestionLabel": "",
+        "suggestionUnit": "units",
+        "sortOrder": 500,
+        "choices": []
+      }
+    },
+    {
+      "schemaVersion": "0.1.0",
+      "version": 1,
+      "createdAt": "2026-07-30T00:00:00.000Z",
+      "createdBy": "migration:mnk-menu-source",
+      "updatedAt": "2026-07-30T00:00:00.000Z",
+      "updatedBy": "migration:mnk-menu-source",
+      "active": true,
+      "externalIdentities": [],
+      "provenanceIds": [
+        "source:mnk-menu:c53fe9ffc7b92c645c74"
+      ],
+      "ownership": {
+        "providerOwned": {
+          "sourceFile": "sites/mnk/booking-platform/01_MenuData.js"
+        },
+        "fikaOwned": {}
+      },
+      "entityType": "Hospitality Menu Offering",
+      "canonicalId": "hospitality-menu-offering:mnk:c53fe9ffc7b92c645c74",
+      "hospitalityMenuItemId": "hospitality-menu-item:mnk:bespoke_event",
+      "oplocId": "oploc:mnk-development-fixture",
+      "offeringMode": "quote_only",
+      "lifecycleState": "active",
+      "minimumQuantity": 1,
+      "noticeRequiredDays": 7,
+      "configuration": {
+        "servingInfo": "Price on request",
+        "serves": null,
+        "suggestionType": null,
+        "suggestionLabel": "",
+        "suggestionUnit": "units",
+        "sortOrder": 510,
+        "choices": []
+      }
+    }
+  ],
+  "prices": [
+    {
+      "schemaVersion": "0.1.0",
+      "version": 1,
+      "createdAt": "2026-07-30T00:00:00.000Z",
+      "createdBy": "migration:mnk-menu-source",
+      "updatedAt": "2026-07-30T00:00:00.000Z",
+      "updatedBy": "migration:mnk-menu-source",
+      "active": true,
+      "externalIdentities": [],
+      "provenanceIds": [
+        "source:mnk-menu:2de5f2c7968cd9b6e3f2"
+      ],
+      "ownership": {
+        "providerOwned": {
+          "sourceFile": "sites/mnk/booking-platform/01_MenuData.js"
+        },
+        "fikaOwned": {}
+      },
+      "entityType": "Hospitality Menu Price",
+      "canonicalId": "hospitality-menu-price:mnk:2de5f2c7968cd9b6e3f2",
+      "hospitalityMenuOfferingId": "hospitality-menu-offering:mnk:07c5903cf65e6094d8ad",
+      "amount": 3,
+      "currency": "GBP",
+      "vatRate": 0.2,
+      "effectiveFrom": "2026-01-01",
+      "lifecycleState": "active"
+    },
+    {
+      "schemaVersion": "0.1.0",
+      "version": 1,
+      "createdAt": "2026-07-30T00:00:00.000Z",
+      "createdBy": "migration:mnk-menu-source",
+      "updatedAt": "2026-07-30T00:00:00.000Z",
+      "updatedBy": "migration:mnk-menu-source",
+      "active": true,
+      "externalIdentities": [],
+      "provenanceIds": [
+        "source:mnk-menu:38dea980530963e5d844"
+      ],
+      "ownership": {
+        "providerOwned": {
+          "sourceFile": "sites/mnk/booking-platform/01_MenuData.js"
+        },
+        "fikaOwned": {}
+      },
+      "entityType": "Hospitality Menu Price",
+      "canonicalId": "hospitality-menu-price:mnk:38dea980530963e5d844",
+      "hospitalityMenuOfferingId": "hospitality-menu-offering:mnk:ee620e871f424a8921af",
+      "amount": 3.5,
+      "currency": "GBP",
+      "vatRate": 0.2,
+      "effectiveFrom": "2026-01-01",
+      "lifecycleState": "active"
+    },
+    {
+      "schemaVersion": "0.1.0",
+      "version": 1,
+      "createdAt": "2026-07-30T00:00:00.000Z",
+      "createdBy": "migration:mnk-menu-source",
+      "updatedAt": "2026-07-30T00:00:00.000Z",
+      "updatedBy": "migration:mnk-menu-source",
+      "active": true,
+      "externalIdentities": [],
+      "provenanceIds": [
+        "source:mnk-menu:19a86d182d6948aff07d"
+      ],
+      "ownership": {
+        "providerOwned": {
+          "sourceFile": "sites/mnk/booking-platform/01_MenuData.js"
+        },
+        "fikaOwned": {}
+      },
+      "entityType": "Hospitality Menu Price",
+      "canonicalId": "hospitality-menu-price:mnk:19a86d182d6948aff07d",
+      "hospitalityMenuOfferingId": "hospitality-menu-offering:mnk:fa59bebb55e772944351",
+      "amount": 3.95,
+      "currency": "GBP",
+      "vatRate": 0.2,
+      "effectiveFrom": "2026-01-01",
+      "lifecycleState": "active"
+    },
+    {
+      "schemaVersion": "0.1.0",
+      "version": 1,
+      "createdAt": "2026-07-30T00:00:00.000Z",
+      "createdBy": "migration:mnk-menu-source",
+      "updatedAt": "2026-07-30T00:00:00.000Z",
+      "updatedBy": "migration:mnk-menu-source",
+      "active": true,
+      "externalIdentities": [],
+      "provenanceIds": [
+        "source:mnk-menu:178b40316bd9e3377f06"
+      ],
+      "ownership": {
+        "providerOwned": {
+          "sourceFile": "sites/mnk/booking-platform/01_MenuData.js"
+        },
+        "fikaOwned": {}
+      },
+      "entityType": "Hospitality Menu Price",
+      "canonicalId": "hospitality-menu-price:mnk:178b40316bd9e3377f06",
+      "hospitalityMenuOfferingId": "hospitality-menu-offering:mnk:16154f5ad19083ce91c2",
+      "amount": 1.75,
+      "currency": "GBP",
+      "vatRate": 0.2,
+      "effectiveFrom": "2026-01-01",
+      "lifecycleState": "active"
+    },
+    {
+      "schemaVersion": "0.1.0",
+      "version": 1,
+      "createdAt": "2026-07-30T00:00:00.000Z",
+      "createdBy": "migration:mnk-menu-source",
+      "updatedAt": "2026-07-30T00:00:00.000Z",
+      "updatedBy": "migration:mnk-menu-source",
+      "active": true,
+      "externalIdentities": [],
+      "provenanceIds": [
+        "source:mnk-menu:e28867af1ab0ba0da5ed"
+      ],
+      "ownership": {
+        "providerOwned": {
+          "sourceFile": "sites/mnk/booking-platform/01_MenuData.js"
+        },
+        "fikaOwned": {}
+      },
+      "entityType": "Hospitality Menu Price",
+      "canonicalId": "hospitality-menu-price:mnk:e28867af1ab0ba0da5ed",
+      "hospitalityMenuOfferingId": "hospitality-menu-offering:mnk:f6dbc4549320f7ce7320",
+      "amount": 3,
+      "currency": "GBP",
+      "vatRate": 0.2,
+      "effectiveFrom": "2026-01-01",
+      "lifecycleState": "active"
+    },
+    {
+      "schemaVersion": "0.1.0",
+      "version": 1,
+      "createdAt": "2026-07-30T00:00:00.000Z",
+      "createdBy": "migration:mnk-menu-source",
+      "updatedAt": "2026-07-30T00:00:00.000Z",
+      "updatedBy": "migration:mnk-menu-source",
+      "active": true,
+      "externalIdentities": [],
+      "provenanceIds": [
+        "source:mnk-menu:79e6d5f0ef09aa93361b"
+      ],
+      "ownership": {
+        "providerOwned": {
+          "sourceFile": "sites/mnk/booking-platform/01_MenuData.js"
+        },
+        "fikaOwned": {}
+      },
+      "entityType": "Hospitality Menu Price",
+      "canonicalId": "hospitality-menu-price:mnk:79e6d5f0ef09aa93361b",
+      "hospitalityMenuOfferingId": "hospitality-menu-offering:mnk:9f698d5ae7fd52e2f5ae",
+      "amount": 9,
+      "currency": "GBP",
+      "vatRate": 0.2,
+      "effectiveFrom": "2026-01-01",
+      "lifecycleState": "active"
+    },
+    {
+      "schemaVersion": "0.1.0",
+      "version": 1,
+      "createdAt": "2026-07-30T00:00:00.000Z",
+      "createdBy": "migration:mnk-menu-source",
+      "updatedAt": "2026-07-30T00:00:00.000Z",
+      "updatedBy": "migration:mnk-menu-source",
+      "active": true,
+      "externalIdentities": [],
+      "provenanceIds": [
+        "source:mnk-menu:679f3bbb9128cc443300"
+      ],
+      "ownership": {
+        "providerOwned": {
+          "sourceFile": "sites/mnk/booking-platform/01_MenuData.js"
+        },
+        "fikaOwned": {}
+      },
+      "entityType": "Hospitality Menu Price",
+      "canonicalId": "hospitality-menu-price:mnk:679f3bbb9128cc443300",
+      "hospitalityMenuOfferingId": "hospitality-menu-offering:mnk:fff52fe833cdd5dd31a5",
+      "amount": 3,
+      "currency": "GBP",
+      "vatRate": 0.2,
+      "effectiveFrom": "2026-01-01",
+      "lifecycleState": "active"
+    },
+    {
+      "schemaVersion": "0.1.0",
+      "version": 1,
+      "createdAt": "2026-07-30T00:00:00.000Z",
+      "createdBy": "migration:mnk-menu-source",
+      "updatedAt": "2026-07-30T00:00:00.000Z",
+      "updatedBy": "migration:mnk-menu-source",
+      "active": true,
+      "externalIdentities": [],
+      "provenanceIds": [
+        "source:mnk-menu:d777067f31183c706cc7"
+      ],
+      "ownership": {
+        "providerOwned": {
+          "sourceFile": "sites/mnk/booking-platform/01_MenuData.js"
+        },
+        "fikaOwned": {}
+      },
+      "entityType": "Hospitality Menu Price",
+      "canonicalId": "hospitality-menu-price:mnk:d777067f31183c706cc7",
+      "hospitalityMenuOfferingId": "hospitality-menu-offering:mnk:98afc897b3ab51f3617b",
+      "amount": 12,
+      "currency": "GBP",
+      "vatRate": 0.2,
+      "effectiveFrom": "2026-01-01",
+      "lifecycleState": "active"
+    },
+    {
+      "schemaVersion": "0.1.0",
+      "version": 1,
+      "createdAt": "2026-07-30T00:00:00.000Z",
+      "createdBy": "migration:mnk-menu-source",
+      "updatedAt": "2026-07-30T00:00:00.000Z",
+      "updatedBy": "migration:mnk-menu-source",
+      "active": true,
+      "externalIdentities": [],
+      "provenanceIds": [
+        "source:mnk-menu:2e6c05b39e3b6052c9f1"
+      ],
+      "ownership": {
+        "providerOwned": {
+          "sourceFile": "sites/mnk/booking-platform/01_MenuData.js"
+        },
+        "fikaOwned": {}
+      },
+      "entityType": "Hospitality Menu Price",
+      "canonicalId": "hospitality-menu-price:mnk:2e6c05b39e3b6052c9f1",
+      "hospitalityMenuOfferingId": "hospitality-menu-offering:mnk:eb49d88556b2328191ae",
+      "amount": 40,
+      "currency": "GBP",
+      "vatRate": 0.2,
+      "effectiveFrom": "2026-01-01",
+      "lifecycleState": "active"
+    },
+    {
+      "schemaVersion": "0.1.0",
+      "version": 1,
+      "createdAt": "2026-07-30T00:00:00.000Z",
+      "createdBy": "migration:mnk-menu-source",
+      "updatedAt": "2026-07-30T00:00:00.000Z",
+      "updatedBy": "migration:mnk-menu-source",
+      "active": true,
+      "externalIdentities": [],
+      "provenanceIds": [
+        "source:mnk-menu:6a105e5997e2fd35e9d2"
+      ],
+      "ownership": {
+        "providerOwned": {
+          "sourceFile": "sites/mnk/booking-platform/01_MenuData.js"
+        },
+        "fikaOwned": {}
+      },
+      "entityType": "Hospitality Menu Price",
+      "canonicalId": "hospitality-menu-price:mnk:6a105e5997e2fd35e9d2",
+      "hospitalityMenuOfferingId": "hospitality-menu-offering:mnk:faabdabc46849b9b3055",
+      "amount": 75,
+      "currency": "GBP",
+      "vatRate": 0.2,
+      "effectiveFrom": "2026-01-01",
+      "lifecycleState": "active"
+    },
+    {
+      "schemaVersion": "0.1.0",
+      "version": 1,
+      "createdAt": "2026-07-30T00:00:00.000Z",
+      "createdBy": "migration:mnk-menu-source",
+      "updatedAt": "2026-07-30T00:00:00.000Z",
+      "updatedBy": "migration:mnk-menu-source",
+      "active": true,
+      "externalIdentities": [],
+      "provenanceIds": [
+        "source:mnk-menu:bdd04c19a6f7b2b5e102"
+      ],
+      "ownership": {
+        "providerOwned": {
+          "sourceFile": "sites/mnk/booking-platform/01_MenuData.js"
+        },
+        "fikaOwned": {}
+      },
+      "entityType": "Hospitality Menu Price",
+      "canonicalId": "hospitality-menu-price:mnk:bdd04c19a6f7b2b5e102",
+      "hospitalityMenuOfferingId": "hospitality-menu-offering:mnk:6de44299ba987b566cc0",
+      "amount": 52.5,
+      "currency": "GBP",
+      "vatRate": 0.2,
+      "effectiveFrom": "2026-01-01",
+      "lifecycleState": "active"
+    },
+    {
+      "schemaVersion": "0.1.0",
+      "version": 1,
+      "createdAt": "2026-07-30T00:00:00.000Z",
+      "createdBy": "migration:mnk-menu-source",
+      "updatedAt": "2026-07-30T00:00:00.000Z",
+      "updatedBy": "migration:mnk-menu-source",
+      "active": true,
+      "externalIdentities": [],
+      "provenanceIds": [
+        "source:mnk-menu:732a37112914799bfab4"
+      ],
+      "ownership": {
+        "providerOwned": {
+          "sourceFile": "sites/mnk/booking-platform/01_MenuData.js"
+        },
+        "fikaOwned": {}
+      },
+      "entityType": "Hospitality Menu Price",
+      "canonicalId": "hospitality-menu-price:mnk:732a37112914799bfab4",
+      "hospitalityMenuOfferingId": "hospitality-menu-offering:mnk:1d44752c5703c9c9111b",
+      "amount": 36,
+      "currency": "GBP",
+      "vatRate": 0.2,
+      "effectiveFrom": "2026-01-01",
+      "lifecycleState": "active"
+    },
+    {
+      "schemaVersion": "0.1.0",
+      "version": 1,
+      "createdAt": "2026-07-30T00:00:00.000Z",
+      "createdBy": "migration:mnk-menu-source",
+      "updatedAt": "2026-07-30T00:00:00.000Z",
+      "updatedBy": "migration:mnk-menu-source",
+      "active": true,
+      "externalIdentities": [],
+      "provenanceIds": [
+        "source:mnk-menu:39e8b65adb6c45d1d717"
+      ],
+      "ownership": {
+        "providerOwned": {
+          "sourceFile": "sites/mnk/booking-platform/01_MenuData.js"
+        },
+        "fikaOwned": {}
+      },
+      "entityType": "Hospitality Menu Price",
+      "canonicalId": "hospitality-menu-price:mnk:39e8b65adb6c45d1d717",
+      "hospitalityMenuOfferingId": "hospitality-menu-offering:mnk:f8ef0c6b866ff6354db4",
+      "amount": 42,
+      "currency": "GBP",
+      "vatRate": 0.2,
+      "effectiveFrom": "2026-01-01",
+      "lifecycleState": "active"
+    },
+    {
+      "schemaVersion": "0.1.0",
+      "version": 1,
+      "createdAt": "2026-07-30T00:00:00.000Z",
+      "createdBy": "migration:mnk-menu-source",
+      "updatedAt": "2026-07-30T00:00:00.000Z",
+      "updatedBy": "migration:mnk-menu-source",
+      "active": true,
+      "externalIdentities": [],
+      "provenanceIds": [
+        "source:mnk-menu:5c0fe9e5b2eb6e69d639"
+      ],
+      "ownership": {
+        "providerOwned": {
+          "sourceFile": "sites/mnk/booking-platform/01_MenuData.js"
+        },
+        "fikaOwned": {}
+      },
+      "entityType": "Hospitality Menu Price",
+      "canonicalId": "hospitality-menu-price:mnk:5c0fe9e5b2eb6e69d639",
+      "hospitalityMenuOfferingId": "hospitality-menu-offering:mnk:35895f66f5e2a3059575",
+      "amount": 60,
+      "currency": "GBP",
+      "vatRate": 0.2,
+      "effectiveFrom": "2026-01-01",
+      "lifecycleState": "active"
+    },
+    {
+      "schemaVersion": "0.1.0",
+      "version": 1,
+      "createdAt": "2026-07-30T00:00:00.000Z",
+      "createdBy": "migration:mnk-menu-source",
+      "updatedAt": "2026-07-30T00:00:00.000Z",
+      "updatedBy": "migration:mnk-menu-source",
+      "active": true,
+      "externalIdentities": [],
+      "provenanceIds": [
+        "source:mnk-menu:3f7dfd8d1d3e766af15e"
+      ],
+      "ownership": {
+        "providerOwned": {
+          "sourceFile": "sites/mnk/booking-platform/01_MenuData.js"
+        },
+        "fikaOwned": {}
+      },
+      "entityType": "Hospitality Menu Price",
+      "canonicalId": "hospitality-menu-price:mnk:3f7dfd8d1d3e766af15e",
+      "hospitalityMenuOfferingId": "hospitality-menu-offering:mnk:208ea67a1c97430d42ad",
+      "amount": 65,
+      "currency": "GBP",
+      "vatRate": 0.2,
+      "effectiveFrom": "2026-01-01",
+      "lifecycleState": "active"
+    },
+    {
+      "schemaVersion": "0.1.0",
+      "version": 1,
+      "createdAt": "2026-07-30T00:00:00.000Z",
+      "createdBy": "migration:mnk-menu-source",
+      "updatedAt": "2026-07-30T00:00:00.000Z",
+      "updatedBy": "migration:mnk-menu-source",
+      "active": true,
+      "externalIdentities": [],
+      "provenanceIds": [
+        "source:mnk-menu:b2a20799501ba3aa58a2"
+      ],
+      "ownership": {
+        "providerOwned": {
+          "sourceFile": "sites/mnk/booking-platform/01_MenuData.js"
+        },
+        "fikaOwned": {}
+      },
+      "entityType": "Hospitality Menu Price",
+      "canonicalId": "hospitality-menu-price:mnk:b2a20799501ba3aa58a2",
+      "hospitalityMenuOfferingId": "hospitality-menu-offering:mnk:c69093d58e9b4aa19886",
+      "amount": 72,
+      "currency": "GBP",
+      "vatRate": 0.2,
+      "effectiveFrom": "2026-01-01",
+      "lifecycleState": "active"
+    },
+    {
+      "schemaVersion": "0.1.0",
+      "version": 1,
+      "createdAt": "2026-07-30T00:00:00.000Z",
+      "createdBy": "migration:mnk-menu-source",
+      "updatedAt": "2026-07-30T00:00:00.000Z",
+      "updatedBy": "migration:mnk-menu-source",
+      "active": true,
+      "externalIdentities": [],
+      "provenanceIds": [
+        "source:mnk-menu:9a7432b1b985b88a4bfe"
+      ],
+      "ownership": {
+        "providerOwned": {
+          "sourceFile": "sites/mnk/booking-platform/01_MenuData.js"
+        },
+        "fikaOwned": {}
+      },
+      "entityType": "Hospitality Menu Price",
+      "canonicalId": "hospitality-menu-price:mnk:9a7432b1b985b88a4bfe",
+      "hospitalityMenuOfferingId": "hospitality-menu-offering:mnk:9a073c7c2bb8dd10d7dd",
+      "amount": 3.95,
+      "currency": "GBP",
+      "vatRate": 0.2,
+      "effectiveFrom": "2026-01-01",
+      "lifecycleState": "active"
+    },
+    {
+      "schemaVersion": "0.1.0",
+      "version": 1,
+      "createdAt": "2026-07-30T00:00:00.000Z",
+      "createdBy": "migration:mnk-menu-source",
+      "updatedAt": "2026-07-30T00:00:00.000Z",
+      "updatedBy": "migration:mnk-menu-source",
+      "active": true,
+      "externalIdentities": [],
+      "provenanceIds": [
+        "source:mnk-menu:0c79b4cbf16fd3a87007"
+      ],
+      "ownership": {
+        "providerOwned": {
+          "sourceFile": "sites/mnk/booking-platform/01_MenuData.js"
+        },
+        "fikaOwned": {}
+      },
+      "entityType": "Hospitality Menu Price",
+      "canonicalId": "hospitality-menu-price:mnk:0c79b4cbf16fd3a87007",
+      "hospitalityMenuOfferingId": "hospitality-menu-offering:mnk:ab2981751e87afbbec92",
+      "amount": 22,
+      "currency": "GBP",
+      "vatRate": 0.2,
+      "effectiveFrom": "2026-01-01",
+      "lifecycleState": "active"
+    },
+    {
+      "schemaVersion": "0.1.0",
+      "version": 1,
+      "createdAt": "2026-07-30T00:00:00.000Z",
+      "createdBy": "migration:mnk-menu-source",
+      "updatedAt": "2026-07-30T00:00:00.000Z",
+      "updatedBy": "migration:mnk-menu-source",
+      "active": true,
+      "externalIdentities": [],
+      "provenanceIds": [
+        "source:mnk-menu:9d978cd5cf3602ca18de"
+      ],
+      "ownership": {
+        "providerOwned": {
+          "sourceFile": "sites/mnk/booking-platform/01_MenuData.js"
+        },
+        "fikaOwned": {}
+      },
+      "entityType": "Hospitality Menu Price",
+      "canonicalId": "hospitality-menu-price:mnk:9d978cd5cf3602ca18de",
+      "hospitalityMenuOfferingId": "hospitality-menu-offering:mnk:0b624e926f3ec0465551",
+      "amount": 9,
+      "currency": "GBP",
+      "vatRate": 0.2,
+      "effectiveFrom": "2026-01-01",
+      "lifecycleState": "active"
+    },
+    {
+      "schemaVersion": "0.1.0",
+      "version": 1,
+      "createdAt": "2026-07-30T00:00:00.000Z",
+      "createdBy": "migration:mnk-menu-source",
+      "updatedAt": "2026-07-30T00:00:00.000Z",
+      "updatedBy": "migration:mnk-menu-source",
+      "active": true,
+      "externalIdentities": [],
+      "provenanceIds": [
+        "source:mnk-menu:58270e4e549502ad2430"
+      ],
+      "ownership": {
+        "providerOwned": {
+          "sourceFile": "sites/mnk/booking-platform/01_MenuData.js"
+        },
+        "fikaOwned": {}
+      },
+      "entityType": "Hospitality Menu Price",
+      "canonicalId": "hospitality-menu-price:mnk:58270e4e549502ad2430",
+      "hospitalityMenuOfferingId": "hospitality-menu-offering:mnk:0ead09f5f2fe9bc46766",
+      "amount": 14.95,
+      "currency": "GBP",
+      "vatRate": 0.2,
+      "effectiveFrom": "2026-01-01",
+      "lifecycleState": "active"
+    },
+    {
+      "schemaVersion": "0.1.0",
+      "version": 1,
+      "createdAt": "2026-07-30T00:00:00.000Z",
+      "createdBy": "migration:mnk-menu-source",
+      "updatedAt": "2026-07-30T00:00:00.000Z",
+      "updatedBy": "migration:mnk-menu-source",
+      "active": true,
+      "externalIdentities": [],
+      "provenanceIds": [
+        "source:mnk-menu:ecd6e29f4b83ff931396"
+      ],
+      "ownership": {
+        "providerOwned": {
+          "sourceFile": "sites/mnk/booking-platform/01_MenuData.js"
+        },
+        "fikaOwned": {}
+      },
+      "entityType": "Hospitality Menu Price",
+      "canonicalId": "hospitality-menu-price:mnk:ecd6e29f4b83ff931396",
+      "hospitalityMenuOfferingId": "hospitality-menu-offering:mnk:b79181c6e109f5faf6ec",
+      "amount": 14,
+      "currency": "GBP",
+      "vatRate": 0.2,
+      "effectiveFrom": "2026-01-01",
+      "lifecycleState": "active"
+    },
+    {
+      "schemaVersion": "0.1.0",
+      "version": 1,
+      "createdAt": "2026-07-30T00:00:00.000Z",
+      "createdBy": "migration:mnk-menu-source",
+      "updatedAt": "2026-07-30T00:00:00.000Z",
+      "updatedBy": "migration:mnk-menu-source",
+      "active": true,
+      "externalIdentities": [],
+      "provenanceIds": [
+        "source:mnk-menu:a497a530d4e4102712ce"
+      ],
+      "ownership": {
+        "providerOwned": {
+          "sourceFile": "sites/mnk/booking-platform/01_MenuData.js"
+        },
+        "fikaOwned": {}
+      },
+      "entityType": "Hospitality Menu Price",
+      "canonicalId": "hospitality-menu-price:mnk:a497a530d4e4102712ce",
+      "hospitalityMenuOfferingId": "hospitality-menu-offering:mnk:60f52519a196ecdbae03",
+      "amount": 45,
+      "currency": "GBP",
+      "vatRate": 0.2,
+      "effectiveFrom": "2026-01-01",
+      "lifecycleState": "active"
+    },
+    {
+      "schemaVersion": "0.1.0",
+      "version": 1,
+      "createdAt": "2026-07-30T00:00:00.000Z",
+      "createdBy": "migration:mnk-menu-source",
+      "updatedAt": "2026-07-30T00:00:00.000Z",
+      "updatedBy": "migration:mnk-menu-source",
+      "active": true,
+      "externalIdentities": [],
+      "provenanceIds": [
+        "source:mnk-menu:7da239d9c417eaeb03f9"
+      ],
+      "ownership": {
+        "providerOwned": {
+          "sourceFile": "sites/mnk/booking-platform/01_MenuData.js"
+        },
+        "fikaOwned": {}
+      },
+      "entityType": "Hospitality Menu Price",
+      "canonicalId": "hospitality-menu-price:mnk:7da239d9c417eaeb03f9",
+      "hospitalityMenuOfferingId": "hospitality-menu-offering:mnk:bedf1ea3cf6ac124df46",
+      "amount": 75,
+      "currency": "GBP",
+      "vatRate": 0.2,
+      "effectiveFrom": "2026-01-01",
+      "lifecycleState": "active"
+    },
+    {
+      "schemaVersion": "0.1.0",
+      "version": 1,
+      "createdAt": "2026-07-30T00:00:00.000Z",
+      "createdBy": "migration:mnk-menu-source",
+      "updatedAt": "2026-07-30T00:00:00.000Z",
+      "updatedBy": "migration:mnk-menu-source",
+      "active": true,
+      "externalIdentities": [],
+      "provenanceIds": [
+        "source:mnk-menu:01a0af11876eb0d774a8"
+      ],
+      "ownership": {
+        "providerOwned": {
+          "sourceFile": "sites/mnk/booking-platform/01_MenuData.js"
+        },
+        "fikaOwned": {}
+      },
+      "entityType": "Hospitality Menu Price",
+      "canonicalId": "hospitality-menu-price:mnk:01a0af11876eb0d774a8",
+      "hospitalityMenuOfferingId": "hospitality-menu-offering:mnk:67ca9b1ced13bb33ca88",
+      "amount": 75,
+      "currency": "GBP",
+      "vatRate": 0.2,
+      "effectiveFrom": "2026-01-01",
+      "lifecycleState": "active"
+    },
+    {
+      "schemaVersion": "0.1.0",
+      "version": 1,
+      "createdAt": "2026-07-30T00:00:00.000Z",
+      "createdBy": "migration:mnk-menu-source",
+      "updatedAt": "2026-07-30T00:00:00.000Z",
+      "updatedBy": "migration:mnk-menu-source",
+      "active": true,
+      "externalIdentities": [],
+      "provenanceIds": [
+        "source:mnk-menu:f76279ea5862a3773823"
+      ],
+      "ownership": {
+        "providerOwned": {
+          "sourceFile": "sites/mnk/booking-platform/01_MenuData.js"
+        },
+        "fikaOwned": {}
+      },
+      "entityType": "Hospitality Menu Price",
+      "canonicalId": "hospitality-menu-price:mnk:f76279ea5862a3773823",
+      "hospitalityMenuOfferingId": "hospitality-menu-offering:mnk:8395cd9017b735ab1174",
+      "amount": 75,
+      "currency": "GBP",
+      "vatRate": 0.2,
+      "effectiveFrom": "2026-01-01",
+      "lifecycleState": "active"
+    },
+    {
+      "schemaVersion": "0.1.0",
+      "version": 1,
+      "createdAt": "2026-07-30T00:00:00.000Z",
+      "createdBy": "migration:mnk-menu-source",
+      "updatedAt": "2026-07-30T00:00:00.000Z",
+      "updatedBy": "migration:mnk-menu-source",
+      "active": true,
+      "externalIdentities": [],
+      "provenanceIds": [
+        "source:mnk-menu:c24a3faecb8346a94018"
+      ],
+      "ownership": {
+        "providerOwned": {
+          "sourceFile": "sites/mnk/booking-platform/01_MenuData.js"
+        },
+        "fikaOwned": {}
+      },
+      "entityType": "Hospitality Menu Price",
+      "canonicalId": "hospitality-menu-price:mnk:c24a3faecb8346a94018",
+      "hospitalityMenuOfferingId": "hospitality-menu-offering:mnk:f81cd81ab39c64ac56fa",
+      "amount": 60,
+      "currency": "GBP",
+      "vatRate": 0.2,
+      "effectiveFrom": "2026-01-01",
+      "lifecycleState": "active"
+    },
+    {
+      "schemaVersion": "0.1.0",
+      "version": 1,
+      "createdAt": "2026-07-30T00:00:00.000Z",
+      "createdBy": "migration:mnk-menu-source",
+      "updatedAt": "2026-07-30T00:00:00.000Z",
+      "updatedBy": "migration:mnk-menu-source",
+      "active": true,
+      "externalIdentities": [],
+      "provenanceIds": [
+        "source:mnk-menu:eb429d082c6f488c7e15"
+      ],
+      "ownership": {
+        "providerOwned": {
+          "sourceFile": "sites/mnk/booking-platform/01_MenuData.js"
+        },
+        "fikaOwned": {}
+      },
+      "entityType": "Hospitality Menu Price",
+      "canonicalId": "hospitality-menu-price:mnk:eb429d082c6f488c7e15",
+      "hospitalityMenuOfferingId": "hospitality-menu-offering:mnk:2cf0c57d7ee9757de6a6",
+      "amount": 25,
+      "currency": "GBP",
+      "vatRate": 0.2,
+      "effectiveFrom": "2026-01-01",
+      "lifecycleState": "active"
+    },
+    {
+      "schemaVersion": "0.1.0",
+      "version": 1,
+      "createdAt": "2026-07-30T00:00:00.000Z",
+      "createdBy": "migration:mnk-menu-source",
+      "updatedAt": "2026-07-30T00:00:00.000Z",
+      "updatedBy": "migration:mnk-menu-source",
+      "active": true,
+      "externalIdentities": [],
+      "provenanceIds": [
+        "source:mnk-menu:7c8d619880492cfc42ae"
+      ],
+      "ownership": {
+        "providerOwned": {
+          "sourceFile": "sites/mnk/booking-platform/01_MenuData.js"
+        },
+        "fikaOwned": {}
+      },
+      "entityType": "Hospitality Menu Price",
+      "canonicalId": "hospitality-menu-price:mnk:7c8d619880492cfc42ae",
+      "hospitalityMenuOfferingId": "hospitality-menu-offering:mnk:d0a34bae274247c86edd",
+      "amount": 20,
+      "currency": "GBP",
+      "vatRate": 0.2,
+      "effectiveFrom": "2026-01-01",
+      "lifecycleState": "active"
+    },
+    {
+      "schemaVersion": "0.1.0",
+      "version": 1,
+      "createdAt": "2026-07-30T00:00:00.000Z",
+      "createdBy": "migration:mnk-menu-source",
+      "updatedAt": "2026-07-30T00:00:00.000Z",
+      "updatedBy": "migration:mnk-menu-source",
+      "active": true,
+      "externalIdentities": [],
+      "provenanceIds": [
+        "source:mnk-menu:d30daaf419126565d093"
+      ],
+      "ownership": {
+        "providerOwned": {
+          "sourceFile": "sites/mnk/booking-platform/01_MenuData.js"
+        },
+        "fikaOwned": {}
+      },
+      "entityType": "Hospitality Menu Price",
+      "canonicalId": "hospitality-menu-price:mnk:d30daaf419126565d093",
+      "hospitalityMenuOfferingId": "hospitality-menu-offering:mnk:4d429bd0d671b037b106",
+      "amount": 160,
+      "currency": "GBP",
+      "vatRate": 0.2,
+      "effectiveFrom": "2026-01-01",
+      "lifecycleState": "active"
+    },
+    {
+      "schemaVersion": "0.1.0",
+      "version": 1,
+      "createdAt": "2026-07-30T00:00:00.000Z",
+      "createdBy": "migration:mnk-menu-source",
+      "updatedAt": "2026-07-30T00:00:00.000Z",
+      "updatedBy": "migration:mnk-menu-source",
+      "active": true,
+      "externalIdentities": [],
+      "provenanceIds": [
+        "source:mnk-menu:3cf6d862b4bd9aeda801"
+      ],
+      "ownership": {
+        "providerOwned": {
+          "sourceFile": "sites/mnk/booking-platform/01_MenuData.js"
+        },
+        "fikaOwned": {}
+      },
+      "entityType": "Hospitality Menu Price",
+      "canonicalId": "hospitality-menu-price:mnk:3cf6d862b4bd9aeda801",
+      "hospitalityMenuOfferingId": "hospitality-menu-offering:mnk:960197f2677dc3c8adb3",
+      "amount": 120,
+      "currency": "GBP",
+      "vatRate": 0.2,
+      "effectiveFrom": "2026-01-01",
+      "lifecycleState": "active"
+    },
+    {
+      "schemaVersion": "0.1.0",
+      "version": 1,
+      "createdAt": "2026-07-30T00:00:00.000Z",
+      "createdBy": "migration:mnk-menu-source",
+      "updatedAt": "2026-07-30T00:00:00.000Z",
+      "updatedBy": "migration:mnk-menu-source",
+      "active": true,
+      "externalIdentities": [],
+      "provenanceIds": [
+        "source:mnk-menu:f452d2c936c3951bf534"
+      ],
+      "ownership": {
+        "providerOwned": {
+          "sourceFile": "sites/mnk/booking-platform/01_MenuData.js"
+        },
+        "fikaOwned": {}
+      },
+      "entityType": "Hospitality Menu Price",
+      "canonicalId": "hospitality-menu-price:mnk:f452d2c936c3951bf534",
+      "hospitalityMenuOfferingId": "hospitality-menu-offering:mnk:33cec70f48e3a82b4a29",
+      "amount": 12.95,
+      "currency": "GBP",
+      "vatRate": 0.2,
+      "effectiveFrom": "2026-01-01",
+      "lifecycleState": "active"
+    },
+    {
+      "schemaVersion": "0.1.0",
+      "version": 1,
+      "createdAt": "2026-07-30T00:00:00.000Z",
+      "createdBy": "migration:mnk-menu-source",
+      "updatedAt": "2026-07-30T00:00:00.000Z",
+      "updatedBy": "migration:mnk-menu-source",
+      "active": true,
+      "externalIdentities": [],
+      "provenanceIds": [
+        "source:mnk-menu:bd67143f1a0b11c305f2"
+      ],
+      "ownership": {
+        "providerOwned": {
+          "sourceFile": "sites/mnk/booking-platform/01_MenuData.js"
+        },
+        "fikaOwned": {}
+      },
+      "entityType": "Hospitality Menu Price",
+      "canonicalId": "hospitality-menu-price:mnk:bd67143f1a0b11c305f2",
+      "hospitalityMenuOfferingId": "hospitality-menu-offering:mnk:eb26fecb7aa3ed286b82",
+      "amount": 24.95,
+      "currency": "GBP",
+      "vatRate": 0.2,
+      "effectiveFrom": "2026-01-01",
+      "lifecycleState": "active"
+    },
+    {
+      "schemaVersion": "0.1.0",
+      "version": 1,
+      "createdAt": "2026-07-30T00:00:00.000Z",
+      "createdBy": "migration:mnk-menu-source",
+      "updatedAt": "2026-07-30T00:00:00.000Z",
+      "updatedBy": "migration:mnk-menu-source",
+      "active": true,
+      "externalIdentities": [],
+      "provenanceIds": [
+        "source:mnk-menu:fde6f2f61dd778892ba3"
+      ],
+      "ownership": {
+        "providerOwned": {
+          "sourceFile": "sites/mnk/booking-platform/01_MenuData.js"
+        },
+        "fikaOwned": {}
+      },
+      "entityType": "Hospitality Menu Price",
+      "canonicalId": "hospitality-menu-price:mnk:fde6f2f61dd778892ba3",
+      "hospitalityMenuOfferingId": "hospitality-menu-offering:mnk:cde15f1ddf3266c57315",
+      "amount": 18.95,
+      "currency": "GBP",
+      "vatRate": 0.2,
+      "effectiveFrom": "2026-01-01",
+      "lifecycleState": "active"
+    },
+    {
+      "schemaVersion": "0.1.0",
+      "version": 1,
+      "createdAt": "2026-07-30T00:00:00.000Z",
+      "createdBy": "migration:mnk-menu-source",
+      "updatedAt": "2026-07-30T00:00:00.000Z",
+      "updatedBy": "migration:mnk-menu-source",
+      "active": true,
+      "externalIdentities": [],
+      "provenanceIds": [
+        "source:mnk-menu:35b1a0bb2b5fcaa663f3"
+      ],
+      "ownership": {
+        "providerOwned": {
+          "sourceFile": "sites/mnk/booking-platform/01_MenuData.js"
+        },
+        "fikaOwned": {}
+      },
+      "entityType": "Hospitality Menu Price",
+      "canonicalId": "hospitality-menu-price:mnk:35b1a0bb2b5fcaa663f3",
+      "hospitalityMenuOfferingId": "hospitality-menu-offering:mnk:54851cf1ad2e489325f4",
+      "amount": 12.95,
+      "currency": "GBP",
+      "vatRate": 0.2,
+      "effectiveFrom": "2026-01-01",
+      "lifecycleState": "active"
+    },
+    {
+      "schemaVersion": "0.1.0",
+      "version": 1,
+      "createdAt": "2026-07-30T00:00:00.000Z",
+      "createdBy": "migration:mnk-menu-source",
+      "updatedAt": "2026-07-30T00:00:00.000Z",
+      "updatedBy": "migration:mnk-menu-source",
+      "active": true,
+      "externalIdentities": [],
+      "provenanceIds": [
+        "source:mnk-menu:0bf46918c4c21a6732ca"
+      ],
+      "ownership": {
+        "providerOwned": {
+          "sourceFile": "sites/mnk/booking-platform/01_MenuData.js"
+        },
+        "fikaOwned": {}
+      },
+      "entityType": "Hospitality Menu Price",
+      "canonicalId": "hospitality-menu-price:mnk:0bf46918c4c21a6732ca",
+      "hospitalityMenuOfferingId": "hospitality-menu-offering:mnk:2c3cb89aee8909f7d647",
+      "amount": 21.95,
+      "currency": "GBP",
+      "vatRate": 0.2,
+      "effectiveFrom": "2026-01-01",
+      "lifecycleState": "active"
+    },
+    {
+      "schemaVersion": "0.1.0",
+      "version": 1,
+      "createdAt": "2026-07-30T00:00:00.000Z",
+      "createdBy": "migration:mnk-menu-source",
+      "updatedAt": "2026-07-30T00:00:00.000Z",
+      "updatedBy": "migration:mnk-menu-source",
+      "active": true,
+      "externalIdentities": [],
+      "provenanceIds": [
+        "source:mnk-menu:e0204d118e901bd43592"
+      ],
+      "ownership": {
+        "providerOwned": {
+          "sourceFile": "sites/mnk/booking-platform/01_MenuData.js"
+        },
+        "fikaOwned": {}
+      },
+      "entityType": "Hospitality Menu Price",
+      "canonicalId": "hospitality-menu-price:mnk:e0204d118e901bd43592",
+      "hospitalityMenuOfferingId": "hospitality-menu-offering:mnk:4aac43ab0486aa001b4d",
+      "amount": 3.95,
+      "currency": "GBP",
+      "vatRate": 0.2,
+      "effectiveFrom": "2026-01-01",
+      "lifecycleState": "active"
+    },
+    {
+      "schemaVersion": "0.1.0",
+      "version": 1,
+      "createdAt": "2026-07-30T00:00:00.000Z",
+      "createdBy": "migration:mnk-menu-source",
+      "updatedAt": "2026-07-30T00:00:00.000Z",
+      "updatedBy": "migration:mnk-menu-source",
+      "active": true,
+      "externalIdentities": [],
+      "provenanceIds": [
+        "source:mnk-menu:1787fb1dee917ae55c84"
+      ],
+      "ownership": {
+        "providerOwned": {
+          "sourceFile": "sites/mnk/booking-platform/01_MenuData.js"
+        },
+        "fikaOwned": {}
+      },
+      "entityType": "Hospitality Menu Price",
+      "canonicalId": "hospitality-menu-price:mnk:1787fb1dee917ae55c84",
+      "hospitalityMenuOfferingId": "hospitality-menu-offering:mnk:05c550ba0210faf06ed2",
+      "amount": 28,
+      "currency": "GBP",
+      "vatRate": 0.2,
+      "effectiveFrom": "2026-01-01",
+      "lifecycleState": "active"
+    },
+    {
+      "schemaVersion": "0.1.0",
+      "version": 1,
+      "createdAt": "2026-07-30T00:00:00.000Z",
+      "createdBy": "migration:mnk-menu-source",
+      "updatedAt": "2026-07-30T00:00:00.000Z",
+      "updatedBy": "migration:mnk-menu-source",
+      "active": true,
+      "externalIdentities": [],
+      "provenanceIds": [
+        "source:mnk-menu:807d36f6e7900b0c2db1"
+      ],
+      "ownership": {
+        "providerOwned": {
+          "sourceFile": "sites/mnk/booking-platform/01_MenuData.js"
+        },
+        "fikaOwned": {}
+      },
+      "entityType": "Hospitality Menu Price",
+      "canonicalId": "hospitality-menu-price:mnk:807d36f6e7900b0c2db1",
+      "hospitalityMenuOfferingId": "hospitality-menu-offering:mnk:709f0d86ae3ba2bb3e7c",
+      "amount": 20,
+      "currency": "GBP",
+      "vatRate": 0.2,
+      "effectiveFrom": "2026-01-01",
+      "lifecycleState": "active"
+    },
+    {
+      "schemaVersion": "0.1.0",
+      "version": 1,
+      "createdAt": "2026-07-30T00:00:00.000Z",
+      "createdBy": "migration:mnk-menu-source",
+      "updatedAt": "2026-07-30T00:00:00.000Z",
+      "updatedBy": "migration:mnk-menu-source",
+      "active": true,
+      "externalIdentities": [],
+      "provenanceIds": [
+        "source:mnk-menu:ee6bcbb45d170a22133a"
+      ],
+      "ownership": {
+        "providerOwned": {
+          "sourceFile": "sites/mnk/booking-platform/01_MenuData.js"
+        },
+        "fikaOwned": {}
+      },
+      "entityType": "Hospitality Menu Price",
+      "canonicalId": "hospitality-menu-price:mnk:ee6bcbb45d170a22133a",
+      "hospitalityMenuOfferingId": "hospitality-menu-offering:mnk:a2dd3fe243ac660491b1",
+      "amount": 30,
+      "currency": "GBP",
+      "vatRate": 0.2,
+      "effectiveFrom": "2026-01-01",
+      "lifecycleState": "active"
+    },
+    {
+      "schemaVersion": "0.1.0",
+      "version": 1,
+      "createdAt": "2026-07-30T00:00:00.000Z",
+      "createdBy": "migration:mnk-menu-source",
+      "updatedAt": "2026-07-30T00:00:00.000Z",
+      "updatedBy": "migration:mnk-menu-source",
+      "active": true,
+      "externalIdentities": [],
+      "provenanceIds": [
+        "source:mnk-menu:8d85e4d1af90ce8ed980"
+      ],
+      "ownership": {
+        "providerOwned": {
+          "sourceFile": "sites/mnk/booking-platform/01_MenuData.js"
+        },
+        "fikaOwned": {}
+      },
+      "entityType": "Hospitality Menu Price",
+      "canonicalId": "hospitality-menu-price:mnk:8d85e4d1af90ce8ed980",
+      "hospitalityMenuOfferingId": "hospitality-menu-offering:mnk:9a2a609850b7757f6e8f",
+      "amount": 30,
+      "currency": "GBP",
+      "vatRate": 0.2,
+      "effectiveFrom": "2026-01-01",
+      "lifecycleState": "active"
+    },
+    {
+      "schemaVersion": "0.1.0",
+      "version": 1,
+      "createdAt": "2026-07-30T00:00:00.000Z",
+      "createdBy": "migration:mnk-menu-source",
+      "updatedAt": "2026-07-30T00:00:00.000Z",
+      "updatedBy": "migration:mnk-menu-source",
+      "active": true,
+      "externalIdentities": [],
+      "provenanceIds": [
+        "source:mnk-menu:e7a4efadf7ed830961ac"
+      ],
+      "ownership": {
+        "providerOwned": {
+          "sourceFile": "sites/mnk/booking-platform/01_MenuData.js"
+        },
+        "fikaOwned": {}
+      },
+      "entityType": "Hospitality Menu Price",
+      "canonicalId": "hospitality-menu-price:mnk:e7a4efadf7ed830961ac",
+      "hospitalityMenuOfferingId": "hospitality-menu-offering:mnk:8d9a3df102e3824f4e84",
+      "amount": 45,
+      "currency": "GBP",
+      "vatRate": 0.2,
+      "effectiveFrom": "2026-01-01",
+      "lifecycleState": "active"
+    },
+    {
+      "schemaVersion": "0.1.0",
+      "version": 1,
+      "createdAt": "2026-07-30T00:00:00.000Z",
+      "createdBy": "migration:mnk-menu-source",
+      "updatedAt": "2026-07-30T00:00:00.000Z",
+      "updatedBy": "migration:mnk-menu-source",
+      "active": true,
+      "externalIdentities": [],
+      "provenanceIds": [
+        "source:mnk-menu:bfa0a8b37b46fb624ba5"
+      ],
+      "ownership": {
+        "providerOwned": {
+          "sourceFile": "sites/mnk/booking-platform/01_MenuData.js"
+        },
+        "fikaOwned": {}
+      },
+      "entityType": "Hospitality Menu Price",
+      "canonicalId": "hospitality-menu-price:mnk:bfa0a8b37b46fb624ba5",
+      "hospitalityMenuOfferingId": "hospitality-menu-offering:mnk:3ee3bc6d03b358c2ef14",
+      "amount": 25,
+      "currency": "GBP",
+      "vatRate": 0.2,
+      "effectiveFrom": "2026-01-01",
+      "lifecycleState": "active"
+    }
+  ],
+  "candidates": [
+    {
+      "sourceKey": "bloom_filter_coffee",
+      "sourceEvidence": {
+        "file": "sites/mnk/booking-platform/01_MenuData.js",
+        "legacyId": "bloom_filter_coffee"
+      },
+      "itemId": "hospitality-menu-item:mnk:bloom_filter_coffee",
+      "offeringId": "hospitality-menu-offering:mnk:07c5903cf65e6094d8ad",
+      "reviewOutcome": "standard",
+      "priceId": "hospitality-menu-price:mnk:2de5f2c7968cd9b6e3f2",
+      "status": "draft-review-candidate"
+    },
+    {
+      "sourceKey": "specialty_tea_coffee",
+      "sourceEvidence": {
+        "file": "sites/mnk/booking-platform/01_MenuData.js",
+        "legacyId": "specialty_tea_coffee"
+      },
+      "itemId": "hospitality-menu-item:mnk:specialty_tea_coffee",
+      "offeringId": "hospitality-menu-offering:mnk:ee620e871f424a8921af",
+      "reviewOutcome": "standard",
+      "priceId": "hospitality-menu-price:mnk:38dea980530963e5d844",
+      "status": "draft-review-candidate"
+    },
+    {
+      "sourceKey": "belu_water",
+      "sourceEvidence": {
+        "file": "sites/mnk/booking-platform/01_MenuData.js",
+        "legacyId": "belu_water"
+      },
+      "itemId": "hospitality-menu-item:mnk:belu_water",
+      "offeringId": "hospitality-menu-offering:mnk:fa59bebb55e772944351",
+      "reviewOutcome": "standard",
+      "priceId": "hospitality-menu-price:mnk:19a86d182d6948aff07d",
+      "status": "draft-review-candidate"
+    },
+    {
+      "sourceKey": "canned_drinks",
+      "sourceEvidence": {
+        "file": "sites/mnk/booking-platform/01_MenuData.js",
+        "legacyId": "canned_drinks"
+      },
+      "itemId": "hospitality-menu-item:mnk:canned_drinks",
+      "offeringId": "hospitality-menu-offering:mnk:16154f5ad19083ce91c2",
+      "reviewOutcome": "standard",
+      "priceId": "hospitality-menu-price:mnk:178b40316bd9e3377f06",
+      "status": "draft-review-candidate"
+    },
+    {
+      "sourceKey": "fresh_juice_250",
+      "sourceEvidence": {
+        "file": "sites/mnk/booking-platform/01_MenuData.js",
+        "legacyId": "fresh_juice_250"
+      },
+      "itemId": "hospitality-menu-item:mnk:fresh_juice_250",
+      "offeringId": "hospitality-menu-offering:mnk:f6dbc4549320f7ce7320",
+      "reviewOutcome": "standard",
+      "priceId": "hospitality-menu-price:mnk:e28867af1ab0ba0da5ed",
+      "status": "draft-review-candidate"
+    },
+    {
+      "sourceKey": "fresh_juice_1l",
+      "sourceEvidence": {
+        "file": "sites/mnk/booking-platform/01_MenuData.js",
+        "legacyId": "fresh_juice_1l"
+      },
+      "itemId": "hospitality-menu-item:mnk:fresh_juice_1l",
+      "offeringId": "hospitality-menu-offering:mnk:9f698d5ae7fd52e2f5ae",
+      "reviewOutcome": "standard",
+      "priceId": "hospitality-menu-price:mnk:79e6d5f0ef09aa93361b",
+      "status": "draft-review-candidate"
+    },
+    {
+      "sourceKey": "ginger_shot",
+      "sourceEvidence": {
+        "file": "sites/mnk/booking-platform/01_MenuData.js",
+        "legacyId": "ginger_shot"
+      },
+      "itemId": "hospitality-menu-item:mnk:ginger_shot",
+      "offeringId": "hospitality-menu-offering:mnk:fff52fe833cdd5dd31a5",
+      "reviewOutcome": "standard",
+      "priceId": "hospitality-menu-price:mnk:679f3bbb9128cc443300",
+      "status": "draft-review-candidate"
+    },
+    {
+      "sourceKey": "smoothie_1l",
+      "sourceEvidence": {
+        "file": "sites/mnk/booking-platform/01_MenuData.js",
+        "legacyId": "smoothie_1l"
+      },
+      "itemId": "hospitality-menu-item:mnk:smoothie_1l",
+      "offeringId": "hospitality-menu-offering:mnk:98afc897b3ab51f3617b",
+      "reviewOutcome": "standard",
+      "priceId": "hospitality-menu-price:mnk:d777067f31183c706cc7",
+      "status": "draft-review-candidate"
+    },
+    {
+      "sourceKey": "cookie_box",
+      "sourceEvidence": {
+        "file": "sites/mnk/booking-platform/01_MenuData.js",
+        "legacyId": "cookie_box"
+      },
+      "itemId": "hospitality-menu-item:mnk:cookie_box",
+      "offeringId": "hospitality-menu-offering:mnk:eb49d88556b2328191ae",
+      "reviewOutcome": "standard",
+      "priceId": "hospitality-menu-price:mnk:2e6c05b39e3b6052c9f1",
+      "status": "draft-review-candidate"
+    },
+    {
+      "sourceKey": "tray_bake_box",
+      "sourceEvidence": {
+        "file": "sites/mnk/booking-platform/01_MenuData.js",
+        "legacyId": "tray_bake_box"
+      },
+      "itemId": "hospitality-menu-item:mnk:tray_bake_box",
+      "offeringId": "hospitality-menu-offering:mnk:faabdabc46849b9b3055",
+      "reviewOutcome": "standard",
+      "priceId": "hospitality-menu-price:mnk:6a105e5997e2fd35e9d2",
+      "status": "draft-review-candidate"
+    },
+    {
+      "sourceKey": "exotic_fruit_box",
+      "sourceEvidence": {
+        "file": "sites/mnk/booking-platform/01_MenuData.js",
+        "legacyId": "exotic_fruit_box"
+      },
+      "itemId": "hospitality-menu-item:mnk:exotic_fruit_box",
+      "offeringId": "hospitality-menu-offering:mnk:6de44299ba987b566cc0",
+      "reviewOutcome": "standard",
+      "priceId": "hospitality-menu-price:mnk:bdd04c19a6f7b2b5e102",
+      "status": "draft-review-candidate"
+    },
+    {
+      "sourceKey": "mini_pastries",
+      "sourceEvidence": {
+        "file": "sites/mnk/booking-platform/01_MenuData.js",
+        "legacyId": "mini_pastries"
+      },
+      "itemId": "hospitality-menu-item:mnk:mini_pastries",
+      "offeringId": "hospitality-menu-offering:mnk:1d44752c5703c9c9111b",
+      "reviewOutcome": "standard",
+      "priceId": "hospitality-menu-price:mnk:732a37112914799bfab4",
+      "status": "draft-review-candidate"
+    },
+    {
+      "sourceKey": "large_pastries",
+      "sourceEvidence": {
+        "file": "sites/mnk/booking-platform/01_MenuData.js",
+        "legacyId": "large_pastries"
+      },
+      "itemId": "hospitality-menu-item:mnk:large_pastries",
+      "offeringId": "hospitality-menu-offering:mnk:f8ef0c6b866ff6354db4",
+      "reviewOutcome": "standard",
+      "priceId": "hospitality-menu-price:mnk:39e8b65adb6c45d1d717",
+      "status": "draft-review-candidate"
+    },
+    {
+      "sourceKey": "filled_savoury_croissant",
+      "sourceEvidence": {
+        "file": "sites/mnk/booking-platform/01_MenuData.js",
+        "legacyId": "filled_savoury_croissant"
+      },
+      "itemId": "hospitality-menu-item:mnk:filled_savoury_croissant",
+      "offeringId": "hospitality-menu-offering:mnk:35895f66f5e2a3059575",
+      "reviewOutcome": "standard",
+      "priceId": "hospitality-menu-price:mnk:5c0fe9e5b2eb6e69d639",
+      "status": "draft-review-candidate"
+    },
+    {
+      "sourceKey": "vegan_savoury_croissant",
+      "sourceEvidence": {
+        "file": "sites/mnk/booking-platform/01_MenuData.js",
+        "legacyId": "vegan_savoury_croissant"
+      },
+      "itemId": "hospitality-menu-item:mnk:vegan_savoury_croissant",
+      "offeringId": "hospitality-menu-offering:mnk:208ea67a1c97430d42ad",
+      "reviewOutcome": "standard",
+      "priceId": "hospitality-menu-price:mnk:3f7dfd8d1d3e766af15e",
+      "status": "draft-review-candidate"
+    },
+    {
+      "sourceKey": "bagel_box",
+      "sourceEvidence": {
+        "file": "sites/mnk/booking-platform/01_MenuData.js",
+        "legacyId": "bagel_box"
+      },
+      "itemId": "hospitality-menu-item:mnk:bagel_box",
+      "offeringId": "hospitality-menu-offering:mnk:c69093d58e9b4aa19886",
+      "reviewOutcome": "standard",
+      "priceId": "hospitality-menu-price:mnk:b2a20799501ba3aa58a2",
+      "status": "draft-review-candidate"
+    },
+    {
+      "sourceKey": "breakfast_pots",
+      "sourceEvidence": {
+        "file": "sites/mnk/booking-platform/01_MenuData.js",
+        "legacyId": "breakfast_pots"
+      },
+      "itemId": "hospitality-menu-item:mnk:breakfast_pots",
+      "offeringId": "hospitality-menu-offering:mnk:9a073c7c2bb8dd10d7dd",
+      "reviewOutcome": "standard",
+      "priceId": "hospitality-menu-price:mnk:9a7432b1b985b88a4bfe",
+      "status": "draft-review-candidate"
+    },
+    {
+      "sourceKey": "healthy_plant_power_breakfast",
+      "sourceEvidence": {
+        "file": "sites/mnk/booking-platform/01_MenuData.js",
+        "legacyId": "healthy_plant_power_breakfast"
+      },
+      "itemId": "hospitality-menu-item:mnk:healthy_plant_power_breakfast",
+      "offeringId": "hospitality-menu-offering:mnk:ab2981751e87afbbec92",
+      "reviewOutcome": "standard",
+      "priceId": "hospitality-menu-price:mnk:0c79b4cbf16fd3a87007",
+      "status": "draft-review-candidate"
+    },
+    {
+      "sourceKey": "deli_sandwich_lunch",
+      "sourceEvidence": {
+        "file": "sites/mnk/booking-platform/01_MenuData.js",
+        "legacyId": "deli_sandwich_lunch"
+      },
+      "itemId": "hospitality-menu-item:mnk:deli_sandwich_lunch",
+      "offeringId": "hospitality-menu-offering:mnk:0b624e926f3ec0465551",
+      "reviewOutcome": "standard",
+      "priceId": "hospitality-menu-price:mnk:9d978cd5cf3602ca18de",
+      "status": "draft-review-candidate"
+    },
+    {
+      "sourceKey": "individual_boxed_lunch",
+      "sourceEvidence": {
+        "file": "sites/mnk/booking-platform/01_MenuData.js",
+        "legacyId": "individual_boxed_lunch"
+      },
+      "itemId": "hospitality-menu-item:mnk:individual_boxed_lunch",
+      "offeringId": "hospitality-menu-offering:mnk:0ead09f5f2fe9bc46766",
+      "reviewOutcome": "standard",
+      "priceId": "hospitality-menu-price:mnk:58270e4e549502ad2430",
+      "status": "draft-review-candidate"
+    },
+    {
+      "sourceKey": "salad_protein_lunch_platter",
+      "sourceEvidence": {
+        "file": "sites/mnk/booking-platform/01_MenuData.js",
+        "legacyId": "salad_protein_lunch_platter"
+      },
+      "itemId": "hospitality-menu-item:mnk:salad_protein_lunch_platter",
+      "offeringId": "hospitality-menu-offering:mnk:b79181c6e109f5faf6ec",
+      "reviewOutcome": "standard",
+      "priceId": "hospitality-menu-price:mnk:ecd6e29f4b83ff931396",
+      "status": "draft-review-candidate"
+    },
+    {
+      "sourceKey": "rice_paper_rolls",
+      "sourceEvidence": {
+        "file": "sites/mnk/booking-platform/01_MenuData.js",
+        "legacyId": "rice_paper_rolls"
+      },
+      "itemId": "hospitality-menu-item:mnk:rice_paper_rolls",
+      "offeringId": "hospitality-menu-offering:mnk:60f52519a196ecdbae03",
+      "reviewOutcome": "standard",
+      "priceId": "hospitality-menu-price:mnk:a497a530d4e4102712ce",
+      "status": "draft-review-candidate"
+    },
+    {
+      "sourceKey": "grazing_charcuterie_box",
+      "sourceEvidence": {
+        "file": "sites/mnk/booking-platform/01_MenuData.js",
+        "legacyId": "grazing_charcuterie_box"
+      },
+      "itemId": "hospitality-menu-item:mnk:grazing_charcuterie_box",
+      "offeringId": "hospitality-menu-offering:mnk:bedf1ea3cf6ac124df46",
+      "reviewOutcome": "standard",
+      "priceId": "hospitality-menu-price:mnk:7da239d9c417eaeb03f9",
+      "status": "draft-review-candidate"
+    },
+    {
+      "sourceKey": "cheese_box",
+      "sourceEvidence": {
+        "file": "sites/mnk/booking-platform/01_MenuData.js",
+        "legacyId": "cheese_box"
+      },
+      "itemId": "hospitality-menu-item:mnk:cheese_box",
+      "offeringId": "hospitality-menu-offering:mnk:67ca9b1ced13bb33ca88",
+      "reviewOutcome": "standard",
+      "priceId": "hospitality-menu-price:mnk:01a0af11876eb0d774a8",
+      "status": "draft-review-candidate"
+    },
+    {
+      "sourceKey": "picnic_box",
+      "sourceEvidence": {
+        "file": "sites/mnk/booking-platform/01_MenuData.js",
+        "legacyId": "picnic_box"
+      },
+      "itemId": "hospitality-menu-item:mnk:picnic_box",
+      "offeringId": "hospitality-menu-offering:mnk:8395cd9017b735ab1174",
+      "reviewOutcome": "standard",
+      "priceId": "hospitality-menu-price:mnk:f76279ea5862a3773823",
+      "status": "draft-review-candidate"
+    },
+    {
+      "sourceKey": "vegan_box",
+      "sourceEvidence": {
+        "file": "sites/mnk/booking-platform/01_MenuData.js",
+        "legacyId": "vegan_box"
+      },
+      "itemId": "hospitality-menu-item:mnk:vegan_box",
+      "offeringId": "hospitality-menu-offering:mnk:f81cd81ab39c64ac56fa",
+      "reviewOutcome": "standard",
+      "priceId": "hospitality-menu-price:mnk:c24a3faecb8346a94018",
+      "status": "draft-review-candidate"
+    },
+    {
+      "sourceKey": "salad_boxes",
+      "sourceEvidence": {
+        "file": "sites/mnk/booking-platform/01_MenuData.js",
+        "legacyId": "salad_boxes"
+      },
+      "itemId": "hospitality-menu-item:mnk:salad_boxes",
+      "offeringId": "hospitality-menu-offering:mnk:2cf0c57d7ee9757de6a6",
+      "reviewOutcome": "standard",
+      "priceId": "hospitality-menu-price:mnk:eb429d082c6f488c7e15",
+      "status": "draft-review-candidate"
+    },
+    {
+      "sourceKey": "weekly_salad_box",
+      "sourceEvidence": {
+        "file": "sites/mnk/booking-platform/01_MenuData.js",
+        "legacyId": "weekly_salad_box"
+      },
+      "itemId": "hospitality-menu-item:mnk:weekly_salad_box",
+      "offeringId": "hospitality-menu-offering:mnk:d0a34bae274247c86edd",
+      "reviewOutcome": "standard",
+      "priceId": "hospitality-menu-price:mnk:7c8d619880492cfc42ae",
+      "status": "draft-review-candidate"
+    },
+    {
+      "sourceKey": "deluxe_sushi_box",
+      "sourceEvidence": {
+        "file": "sites/mnk/booking-platform/01_MenuData.js",
+        "legacyId": "deluxe_sushi_box"
+      },
+      "itemId": "hospitality-menu-item:mnk:deluxe_sushi_box",
+      "offeringId": "hospitality-menu-offering:mnk:4d429bd0d671b037b106",
+      "reviewOutcome": "standard",
+      "priceId": "hospitality-menu-price:mnk:d30daaf419126565d093",
+      "status": "draft-review-candidate"
+    },
+    {
+      "sourceKey": "vegan_sushi_box",
+      "sourceEvidence": {
+        "file": "sites/mnk/booking-platform/01_MenuData.js",
+        "legacyId": "vegan_sushi_box"
+      },
+      "itemId": "hospitality-menu-item:mnk:vegan_sushi_box",
+      "offeringId": "hospitality-menu-offering:mnk:960197f2677dc3c8adb3",
+      "reviewOutcome": "standard",
+      "priceId": "hospitality-menu-price:mnk:3cf6d862b4bd9aeda801",
+      "status": "draft-review-candidate"
+    },
+    {
+      "sourceKey": "glow_bowl",
+      "sourceEvidence": {
+        "file": "sites/mnk/booking-platform/01_MenuData.js",
+        "legacyId": "glow_bowl"
+      },
+      "itemId": "hospitality-menu-item:mnk:glow_bowl",
+      "offeringId": "hospitality-menu-offering:mnk:33cec70f48e3a82b4a29",
+      "reviewOutcome": "standard",
+      "priceId": "hospitality-menu-price:mnk:f452d2c936c3951bf534",
+      "status": "draft-review-candidate"
+    },
+    {
+      "sourceKey": "picnic_grazing_table",
+      "sourceEvidence": {
+        "file": "sites/mnk/booking-platform/01_MenuData.js",
+        "legacyId": "picnic_grazing_table"
+      },
+      "itemId": "hospitality-menu-item:mnk:picnic_grazing_table",
+      "offeringId": "hospitality-menu-offering:mnk:eb26fecb7aa3ed286b82",
+      "reviewOutcome": "standard",
+      "priceId": "hospitality-menu-price:mnk:bd67143f1a0b11c305f2",
+      "status": "draft-review-candidate"
+    },
+    {
+      "sourceKey": "grazing_sweet_table",
+      "sourceEvidence": {
+        "file": "sites/mnk/booking-platform/01_MenuData.js",
+        "legacyId": "grazing_sweet_table"
+      },
+      "itemId": "hospitality-menu-item:mnk:grazing_sweet_table",
+      "offeringId": "hospitality-menu-offering:mnk:cde15f1ddf3266c57315",
+      "reviewOutcome": "standard",
+      "priceId": "hospitality-menu-price:mnk:fde6f2f61dd778892ba3",
+      "status": "draft-review-candidate"
+    },
+    {
+      "sourceKey": "grazing_cups",
+      "sourceEvidence": {
+        "file": "sites/mnk/booking-platform/01_MenuData.js",
+        "legacyId": "grazing_cups"
+      },
+      "itemId": "hospitality-menu-item:mnk:grazing_cups",
+      "offeringId": "hospitality-menu-offering:mnk:54851cf1ad2e489325f4",
+      "reviewOutcome": "standard",
+      "priceId": "hospitality-menu-price:mnk:35b1a0bb2b5fcaa663f3",
+      "status": "draft-review-candidate"
+    },
+    {
+      "sourceKey": "afternoon_tea",
+      "sourceEvidence": {
+        "file": "sites/mnk/booking-platform/01_MenuData.js",
+        "legacyId": "afternoon_tea"
+      },
+      "itemId": "hospitality-menu-item:mnk:afternoon_tea",
+      "offeringId": "hospitality-menu-offering:mnk:2c3cb89aee8909f7d647",
+      "reviewOutcome": "standard",
+      "priceId": "hospitality-menu-price:mnk:0bf46918c4c21a6732ca",
+      "status": "draft-review-candidate"
+    },
+    {
+      "sourceKey": "finger_food",
+      "sourceEvidence": {
+        "file": "sites/mnk/booking-platform/01_MenuData.js",
+        "legacyId": "finger_food"
+      },
+      "itemId": "hospitality-menu-item:mnk:finger_food",
+      "offeringId": "hospitality-menu-offering:mnk:4aac43ab0486aa001b4d",
+      "reviewOutcome": "standard",
+      "priceId": "hospitality-menu-price:mnk:e0204d118e901bd43592",
+      "status": "draft-review-candidate"
+    },
+    {
+      "sourceKey": "hot_fork_buffet_gold",
+      "sourceEvidence": {
+        "file": "sites/mnk/booking-platform/01_MenuData.js",
+        "legacyId": "hot_fork_buffet_gold"
+      },
+      "itemId": "hospitality-menu-item:mnk:hot_fork_buffet_gold",
+      "offeringId": "hospitality-menu-offering:mnk:05c550ba0210faf06ed2",
+      "reviewOutcome": "standard",
+      "priceId": "hospitality-menu-price:mnk:1787fb1dee917ae55c84",
+      "status": "draft-review-candidate"
+    },
+    {
+      "sourceKey": "hot_fork_buffet_silver",
+      "sourceEvidence": {
+        "file": "sites/mnk/booking-platform/01_MenuData.js",
+        "legacyId": "hot_fork_buffet_silver"
+      },
+      "itemId": "hospitality-menu-item:mnk:hot_fork_buffet_silver",
+      "offeringId": "hospitality-menu-offering:mnk:709f0d86ae3ba2bb3e7c",
+      "reviewOutcome": "standard",
+      "priceId": "hospitality-menu-price:mnk:807d36f6e7900b0c2db1",
+      "status": "draft-review-candidate"
+    },
+    {
+      "sourceKey": "bowl_food",
+      "sourceEvidence": {
+        "file": "sites/mnk/booking-platform/01_MenuData.js",
+        "legacyId": "bowl_food"
+      },
+      "itemId": "hospitality-menu-item:mnk:bowl_food",
+      "offeringId": "hospitality-menu-offering:mnk:a2dd3fe243ac660491b1",
+      "reviewOutcome": "standard",
+      "priceId": "hospitality-menu-price:mnk:ee6bcbb45d170a22133a",
+      "status": "draft-review-candidate"
+    },
+    {
+      "sourceKey": "canapes",
+      "sourceEvidence": {
+        "file": "sites/mnk/booking-platform/01_MenuData.js",
+        "legacyId": "canapes"
+      },
+      "itemId": "hospitality-menu-item:mnk:canapes",
+      "offeringId": "hospitality-menu-offering:mnk:9a2a609850b7757f6e8f",
+      "reviewOutcome": "standard",
+      "priceId": "hospitality-menu-price:mnk:8d85e4d1af90ce8ed980",
+      "status": "draft-review-candidate"
+    },
+    {
+      "sourceKey": "corporate_dining",
+      "sourceEvidence": {
+        "file": "sites/mnk/booking-platform/01_MenuData.js",
+        "legacyId": "corporate_dining"
+      },
+      "itemId": "hospitality-menu-item:mnk:corporate_dining",
+      "offeringId": "hospitality-menu-offering:mnk:8d9a3df102e3824f4e84",
+      "reviewOutcome": "standard",
+      "priceId": "hospitality-menu-price:mnk:e7a4efadf7ed830961ac",
+      "status": "draft-review-candidate"
+    },
+    {
+      "sourceKey": "christmas_themed_menu",
+      "sourceEvidence": {
+        "file": "sites/mnk/booking-platform/01_MenuData.js",
+        "legacyId": "christmas_themed_menu"
+      },
+      "itemId": "hospitality-menu-item:mnk:christmas_themed_menu",
+      "offeringId": "hospitality-menu-offering:mnk:3ee3bc6d03b358c2ef14",
+      "reviewOutcome": "standard",
+      "priceId": "hospitality-menu-price:mnk:bfa0a8b37b46fb624ba5",
+      "status": "draft-review-candidate"
+    },
+    {
+      "sourceKey": "bespoke_event",
+      "sourceEvidence": {
+        "file": "sites/mnk/booking-platform/01_MenuData.js",
+        "legacyId": "bespoke_event"
+      },
+      "itemId": "hospitality-menu-item:mnk:bespoke_event",
+      "offeringId": "hospitality-menu-offering:mnk:c53fe9ffc7b92c645c74",
+      "reviewOutcome": "quote_only",
+      "priceId": null,
+      "note": "Legacy zero is not a commercial price.",
+      "status": "draft-review-candidate"
+    }
+  ],
+  "report": {
+    "standardOfferings": 42,
+    "quoteOnlyOfferings": 1,
+    "unavailableSourceFields": [
+      "price effective date",
+      "OPLOC canonical ID",
+      "operational-area scope",
+      "VAT treatment confirmation"
+    ],
+    "foodSafetyNote": "dietaryInformation and allergenInformation are retained exactly as empty source arrays where empty; descriptions were not inferred."
+  }
+}

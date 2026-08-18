@@ -1,9 +1,4 @@
 export const EVENT_TYPES=["Client Event","Internal Event","Mobilisation","Training","Coffee Event","Other"] as const;
 export const LIFECYCLES=["Draft","Planned","Confirmed","In Progress","Completed","Cancelled"] as const;
 export const TASK_STATUSES=["To Do","In Progress","Blocked","Done","Cancelled"] as const;
-export const OPLOCS=[{id:"oploc:synthetic-north",name:"North House"},{id:"oploc:synthetic-central",name:"Central Production"}] as const;
-export const SITES=[{id:"site:synthetic-atrium",name:"Atrium",oplocId:"oploc:synthetic-north"},{id:"site:synthetic-suite",name:"Event Suite",oplocId:"oploc:synthetic-north"},{id:"site:synthetic-dispatch",name:"Dispatch",oplocId:"oploc:synthetic-central"}] as const;
-export const PEOPLE=[{id:"person:synthetic-operations-lead",name:"Operations Lead"},{id:"person:synthetic-event-coordinator",name:"Event Coordinator"},{id:"person:synthetic-team-member",name:"Team Member"},{id:"person:synthetic-production-lead",name:"Production Lead"}] as const;
-export const STAFF_ROLES=["Event Lead","Event Coordinator","Front of House","Bar","Chef","Kitchen Porter","Driver","Other"] as const;
-export const PRODUCTION_UNITS=[{id:"production-unit:synthetic-central",name:"Central Production",oplocId:"oploc:synthetic-central"},{id:"production-unit:synthetic-site",name:"Site Team",oplocId:"oploc:synthetic-north"}] as const;
-export const PUBLIC_CONFIG={eventTypes:EVENT_TYPES,lifecycles:LIFECYCLES,taskStatuses:TASK_STATUSES,oplocs:OPLOCS,sites:SITES,people:PEOPLE,staffRoles:STAFF_ROLES,productionUnits:PRODUCTION_UNITS,timezone:"Europe/London"};
+export const PUBLIC_CONFIG={eventTypes:EVENT_TYPES,lifecycles:LIFECYCLES,taskStatuses:TASK_STATUSES,timezone:"Europe/London"};

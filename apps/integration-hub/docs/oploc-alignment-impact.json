@@ -1,0 +1,21 @@
+{
+  "format": "fika.integration-hub-oploc-impact.v1",
+  "assessedAt": "2026-07-28",
+  "authority": ["LOC-001", "LOC-002", "LOC-003", "LOC-004", "LOC-006", "TYPE-001", "TYPE-002", "TYPE-003"],
+  "findings": [
+    { "path": "lib/schemas.ts", "classification": "Development-only contract", "finding": "Site was registered as a separate canonical entity and Site Assignment required siteId.", "resolution": "Retain Site only as a legacy compatibility validator; OPLOC is the only publishable location identity; Site Assignment now references oplocId only." },
+    { "path": "lib/schema-catalogue.ts", "classification": "UI mismatch", "finding": "Site was presented alongside OPLOC as a canonical definition.", "resolution": "Expose definition status and label Site as a legacy source candidate." },
+    { "path": "app/api/hub/route.ts", "classification": "Stored-data mismatch", "finding": "Square locations are staged as Site and 18 matching records exist in staging and canonical candidate storage.", "resolution": "Preserve existing records; add non-destructive OPLOC compatibility proposals and stop before changing IDs." },
+    { "path": "lib/mapping.ts", "classification": "Development-only contract", "finding": "Site fields and required references assumed a separate location entity.", "resolution": "Keep legacy transformation compatibility while preventing Site publication and new canonical use." },
+    { "path": "lib/governance-repository.ts", "classification": "API mismatch", "finding": "Source mappings used a generic target and publication did not gate every Future Candidate type.", "resolution": "Location mappings require oplocId; publication eligibility requires Accepted Canon status." },
+    { "path": "app/ui/DataRegistry.tsx", "classification": "UI mismatch", "finding": "Filters and columns described Site and OPLOC as peer identities.", "resolution": "Use OPLOC terminology and present Site records as compatibility candidates." },
+    { "path": "app/ui/DataGovernance.tsx", "classification": "UI mismatch", "finding": "Rota labels were mapped to a generic canonical Site target.", "resolution": "Review only against existing OPLOCs or an explicit new OPLOC proposal." },
+    { "path": "lib/data-governance.ts", "classification": "Naming mismatch only", "finding": "Placement evidence and issue wording used Site labels where the source merely supplies location text.", "resolution": "Use source location label and retain original evidence without canonical inference." },
+    { "path": "docs/canonical-foundation-readiness.md", "classification": "Documentation mismatch", "finding": "The prior readiness report recorded the conflict but did not state the now-authoritative correction.", "resolution": "Supersede its location interpretation through the OPLOC alignment readiness report." },
+    { "path": "fika-platform-specs/schemas/fika-booking.schema.json", "classification": "Requires governed decision", "finding": "Historical supporting booking draft uses siteId.", "resolution": "Do not silently rewrite; later governed booking revision should use OPLOC where current authority requires it." },
+    { "path": "fika-platform-specs/schemas/pack-5", "classification": "Already aligned", "finding": "Accepted Event schemas use operationalLocationId.", "resolution": "No change." },
+    { "path": "apps/integration-hub", "classification": "Already aligned", "finding": "No parentOplocId or OPLOC parent/child hierarchy exists.", "resolution": "Continue rejecting hierarchy fields." },
+    { "path": "deferred Square Till snapshots", "classification": "Deferred and safely isolated", "finding": "Till and variation data remains outside active workflows.", "resolution": "No processing, migration or redesign." },
+    { "path": "docs/business-decisions/cap-001-operational-capability-definition.md", "classification": "Requires governed decision", "finding": "The Domain Dictionary calls OPCAP canonical while CAP-001 metadata remains Draft.", "resolution": "Do not implement the capability catalogue in this stage; retain the requirement for governed status reconciliation." }
+  ]
+}

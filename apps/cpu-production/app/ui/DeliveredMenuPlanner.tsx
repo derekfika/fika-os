@@ -1,0 +1,69 @@
+"use client";
+
+import { useEffect, useMemo, useState } from "react";
+import type { AllergenCellState } from "../lib/production-plan";
+import { matrixColumns } from "./allergen-matrix";
+
+type Category =
+  | "Salad 1" | "Salad 2" | "Salad 3" | "Salad 4" | "Salad 5" | "Salad 6"
+  | "Cold protein" | "Soup" | "Hot meat" | "Hot veg / vegan" | "Extras / sides";
+type Item = { id: string; title: string; category?: Category; itemType?: string; allergens?: Record<string, string>; mayContainNotes?: string };
+type Entry = { id: string; title: string; category: Category; slot: number; portions: number; allergens: Record<string, string>; mayContainNotes?: string; sourceEvidence?: string[] };
+type Day = { date: string; day: string; entries: Entry[] };
+type Week = { weekStarting: string; days: Day[] };
+type Plan = { id: string; name: string; weekStarting: string; weeks: Week[]; sourceImports?: { fileName: string; importedAt: string; candidateCount: number; sheets: string[] }[] };
+type Candidate = { id: string; title: string; day: string; sourceFile: string; sourceSheet: string; sourceRow: number; siteQuantities?: Record<string, number>; quantityTotal: number; allergens: Record<string, string>; mayContainNotes: string; sourceEvidence: string[]; category?: Category };
+
+const days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"];
+const categories: Array<{ key: Category; label: string; slots: number }> = [
+  ...([1, 2, 3, 4, 5, 6] as const).map((slot) => ({ key: `Salad ${slot}` as Category, label: `SALAD ${slot}`, slots: 1 })),
+  { key: "Cold protein", label: "COLD PROTEIN", slots: 1 }, { key: "Soup", label: "SOUP", slots: 1 },
+  { key: "Hot meat", label: "HOT MEAT", slots: 1 }, { key: "Hot veg / vegan", label: "HOT VEG / VEGAN", slots: 1 },
+  { key: "Extras / sides", label: "EXTRAS / SIDES", slots: 7 },
+];
+const iso = (date: Date) => date.toISOString().slice(0, 10);
+function monday(value: string) { const date = new Date(`${value}T12:00:00`); const offset = (date.getDay() + 6) % 7; date.setDate(date.getDate() - offset); return iso(date); }
+function addDays(value: string, amount: number) { const date = new Date(`${value}T12:00:00`); date.setDate(date.getDate() + amount); return iso(date); }
+function emptyWeeks(start: string): Week[] { return Array.from({ length: 6 }, (_, week) => ({ weekStarting: addDays(start, week * 7), days: days.map((day, index) => ({ day, date: addDays(start, week * 7 + index), entries: [] })) })); }
+function slug(value: string) { return value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 70) || "item"; }
+function categoryFor(item: Item | Candidate): Category { return item.category || "Extras / sides"; }
+function itemFits(item: Item, category: Category) {
+  // Salad slots are interchangeable in the rolling plan. Keep the six slots
+  // for layout and weekly composition, but let every governed salad item be
+  // selected in any of them regardless of the workbook's original slot.
+  if (category.startsWith("Salad ")) {
+    return item.category?.startsWith("Salad ") || item.itemType === "salad";
+  }
+  if (item.category) return item.category === category;
+  if (category === "Extras / sides") return true;
+  return false;
+}
+
+export default function DeliveredMenuPlanner() {
+  const [items, setItems] = useState<Item[]>([]); const [plans, setPlans] = useState<Plan[]>([]);
+  const [start, setStart] = useState(monday(iso(new Date()))); const [name, setName] = useState("Delivered-in lunch rolling menu");
+  const [weeks, setWeeks] = useState<Week[]>(emptyWeeks(start)); const [candidates, setCandidates] = useState<Candidate[]>([]); const [source, setSource] = useState("");
+  const [message, setMessage] = useState(""); const [error, setError] = useState(""); const [selectedWeek, setSelectedWeek] = useState(0); const [selectedDay, setSelectedDay] = useState(0);
+  const currentDay = weeks[selectedWeek]?.days[selectedDay];
+  const totalEntries = useMemo(() => weeks.reduce((sum, week) => sum + week.days.reduce((daySum, day) => daySum + day.entries.length, 0), 0), [weeks]);
+
+  useEffect(() => { void Promise.all([fetch("/api/sandwiches?parentMenuItemKey=delivered-in-lunch", { cache: "no-store" }).then((r) => r.json()), fetch("/api/menu-plans", { cache: "no-store" }).then((r) => r.json())]).then(([library, stored]) => { setItems(library.productionItems || library.sandwiches || []); setPlans(stored.plans || []); const plan = (stored.plans || [])[0] as Plan | undefined; if (plan) { setName(plan.name); setStart(plan.weekStarting); setWeeks(plan.weeks); } }); }, []);
+  function updateDay(weekIndex: number, dayIndex: number, entries: Entry[]) { setWeeks((previous) => previous.map((week, wi) => wi !== weekIndex ? week : { ...week, days: week.days.map((day, di) => di === dayIndex ? { ...day, entries } : day) })); }
+  function addEntry(category: Category, slot: number, item?: Item, customTitle?: string) {
+    if (!currentDay) return; const title = item?.title || customTitle?.trim(); if (!title) return;
+    const entry: Entry = { id: `entry:${slug(title)}:${currentDay.date}:${category}:${slot}`, title, category, slot, portions: 1, allergens: item?.allergens || {}, mayContainNotes: item?.mayContainNotes || "" };
+    updateDay(selectedWeek, selectedDay, [...currentDay.entries.filter((existing) => !(existing.category === category && existing.slot === slot)), entry]);
+  }
+  function cycle(entry: Entry, key: string) { const state = entry.allergens[key] || "clear"; const next: AllergenCellState = state === "clear" ? "contains" : state === "contains" ? "may_contain" : "clear"; const allergens = { ...entry.allergens, [key]: next }; updateDay(selectedWeek, selectedDay, currentDay.entries.map((item) => item.id === entry.id ? { ...item, allergens } : item)); }
+  async function importWorkbook(file: File) { setError(""); setMessage("Reading workbook and preserving menu/allergen evidence…"); const form = new FormData(); form.append("file", file); const response = await fetch("/api/menu-plans/import", { method: "POST", body: form }); const body = await response.json(); if (!response.ok) { setError(body.error || "Import failed."); setMessage(""); return; } setCandidates(body.candidates || []); setSource(body.sourceFile || file.name); setMessage(`${body.candidates?.length || 0} menu candidates found. Review before adding them to the plan.`); }
+  function addCandidates() { const next = weeks.map((week) => ({ ...week, days: week.days.map((day) => ({ ...day, entries: [...day.entries] })) })); candidates.forEach((candidate) => { const week = next.findIndex((item) => item.weekStarting === start); const dayIndex = Math.max(0, days.findIndex((day) => day.toLowerCase().startsWith(candidate.day))); const category = categoryFor(candidate); if (week >= 0 && dayIndex >= 0) { const slot = next[week].days[dayIndex].entries.filter((entry) => entry.category === category).length; next[week].days[dayIndex].entries.push({ id: `entry:${slug(candidate.title)}:${candidate.day}:${candidate.sourceRow}`, title: candidate.title.replace(/\b\w/g, (char) => char.toUpperCase()), category, slot, portions: Math.max(1, candidate.quantityTotal), allergens: candidate.allergens, mayContainNotes: candidate.mayContainNotes, sourceEvidence: candidate.sourceEvidence }); } }); setWeeks(next); setCandidates([]); setMessage("Reviewed candidates added to week one; source evidence remains attached."); }
+  async function save() { setError(""); const plan = { id: `delivered-menu:${start}`, name, weekStarting: start, weeks, sourceImports: source ? [{ fileName: source, importedAt: new Date().toISOString(), candidateCount: totalEntries, sheets: [] }] : [] }; const response = await fetch("/api/menu-plans", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(plan) }); if (!response.ok) { setError((await response.json()).error || "Menu could not be saved."); return; } setPlans((previous) => [...previous.filter((item) => item.id !== plan.id), plan as Plan]); setMessage("Six-week menu saved locally and ready for review."); }
+  return <section className="menu-planner" aria-labelledby="menu-planner-title"><header className="menu-plan-header"><div><p className="eyebrow">CPU MENU MANAGEMENT</p><h2 id="menu-planner-title">Six-week delivered-in menu</h2><p>Choose a week, then a day. Each slot only accepts the kind of menu item it represents.</p></div><div className="menu-plan-actions"><label>Week commencing<input type="date" value={start} onChange={(event) => { const value = monday(event.target.value); setStart(value); setWeeks(emptyWeeks(value)); }} /></label><input aria-label="Menu plan name" value={name} onChange={(event) => setName(event.target.value)} /><button type="button" onClick={() => void save()}>Save six-week menu</button></div></header>
+    {message && <p className="menu-plan-message" role="status">{message}</p>}{error && <p className="menu-plan-error" role="alert">{error}</p>}
+    <div className="menu-plan-import"><div><h3>Import an existing workbook · Brian’s workbook</h3><p>Upload an XLSX menu or allergen checker. Imported workbooks remain evidence; nothing is published automatically.</p></div><label className="menu-plan-upload">Choose XLSX<input type="file" accept=".xlsx,.xls" onChange={(event) => { const file = event.target.files?.[0]; if (file) void importWorkbook(file); }} /></label></div>
+    {candidates.length > 0 && <div className="menu-plan-candidates"><h3>Review imported menu candidates</h3><p>{candidates.length} rows from <strong>{source}</strong>. Confirm the source evidence and category before adding them.</p><button type="button" onClick={addCandidates}>Add reviewed candidates to week one</button><div className="menu-plan-candidate-list">{candidates.map((candidate, index) => <div key={candidate.id}><strong>{candidate.title}</strong><span>{candidate.day} · {candidate.quantityTotal} portions · {candidate.sourceSheet} row {candidate.sourceRow}</span><select aria-label={`Category for ${candidate.title}`} value={candidate.category || "Extras / sides"} onChange={(event) => setCandidates((previous) => previous.map((item, candidateIndex) => candidateIndex === index ? { ...item, category: event.target.value as Category } : item))}>{categories.map((item) => <option key={item.key} value={item.key}>{item.label}</option>)}</select></div>)}</div></div>}
+    <div className="menu-plan-tabs" role="tablist" aria-label="Menu weeks">{weeks.map((week, index) => <button type="button" role="tab" aria-selected={selectedWeek === index} className={selectedWeek === index ? "selected" : ""} key={week.weekStarting} onClick={() => setSelectedWeek(index)}>Week {index + 1}<small>{week.weekStarting}</small></button>)}</div>
+    <div className="menu-plan-day-tabs" role="tablist" aria-label="Menu days">{weeks[selectedWeek]?.days.map((day, index) => <button type="button" role="tab" aria-selected={selectedDay === index} className={selectedDay === index ? "selected" : ""} key={day.date} onClick={() => setSelectedDay(index)}>{day.day}<small>{day.date}</small><b>{day.entries.length}</b></button>)}</div>
+    {currentDay && <article className="menu-plan-single-day"><header><div><p className="eyebrow">{currentDay.day.toUpperCase()} MENU</p><h3>{currentDay.day}, {currentDay.date}</h3></div><span>{currentDay.entries.length} planned items</span></header><div className="menu-plan-category-list">{categories.map((category) => Array.from({ length: category.slots }, (_, slot) => { const entry = currentDay.entries.find((item) => item.category === category.key && item.slot === slot); const options = items.filter((item) => itemFits(item, category.key)); return <div className="menu-plan-slot" key={`${category.key}-${slot}`}><div className="menu-plan-slot-label"><strong>{category.label}</strong>{category.slots > 1 && <small>{slot + 1}</small>}</div><div className="menu-plan-slot-editor"><select value={entry?.title || ""} onChange={(event) => { const item = options.find((candidate) => candidate.title === event.target.value); if (item) addEntry(category.key, slot, item); }}><option value="">Choose saved item…</option>{options.map((item) => <option key={item.id} value={item.title}>{item.title}</option>)}</select><input aria-label={`New ${category.label} item`} placeholder="Or type a new item" defaultValue={entry && !items.some((item) => item.title === entry.title) ? entry.title : ""} onKeyDown={(event) => { if (event.key === "Enter") addEntry(category.key, slot, undefined, event.currentTarget.value); }} />{entry && <div className="menu-plan-entry"><strong>{entry.title}</strong><input type="number" min="1" value={entry.portions} onChange={(event) => updateDay(selectedWeek, selectedDay, currentDay.entries.map((item) => item.id === entry.id ? { ...item, portions: Math.max(1, Number(event.target.value) || 1) } : item))} aria-label={`Portions for ${entry.title}`} /><div className="menu-plan-allergen-header" aria-hidden="true">{matrixColumns.map(([key, label]) => <span key={key}>{label}</span>)}</div><div className="menu-plan-allergens">{matrixColumns.map(([key, label]) => <button type="button" key={key} title={`${label}: ${entry.allergens[key] || "clear"}`} className={`menu-plan-cell menu-plan-cell--${entry.allergens[key] || "clear"}`} onClick={() => cycle(entry, key)}>{entry.allergens[key] === "contains" ? "✓" : entry.allergens[key] === "may_contain" ? "MC" : ""}</button>)}</div><button type="button" className="menu-plan-remove" onClick={() => updateDay(selectedWeek, selectedDay, currentDay.entries.filter((item) => item.id !== entry.id))}>Remove</button></div>}</div></div>; }))}</div></article>}
+    <p className="menu-plan-footnote">{plans.length ? `${plans.length} saved rolling plan${plans.length === 1 ? "" : "s"}.` : "No rolling menu saved yet."} Allergen states are entered by the production team and are never inferred from item names.</p></section>;
+}

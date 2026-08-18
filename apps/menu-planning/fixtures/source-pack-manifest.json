@@ -1,0 +1,1641 @@
+{
+  "version": "1.0.0",
+  "generatedAt": "2026-08-18T00:00:00.000Z",
+  "packs": [
+    {
+      "id": "source-pack:regional-menus-2026",
+      "kind": "regional_recipe_pack",
+      "label": "Regional menus and recipes",
+      "sourceName": "REGIONAL MENUS 2026",
+      "evidenceOnly": true,
+      "reviewState": "unreviewed",
+      "fileCount": 77,
+      "workbookCount": 0,
+      "candidateSignals": 0,
+      "files": [
+        {
+          "relativePath": "REGIONAL MENUS 2026/KOREA/KOREA RECIPE 1-10/korea 1.docx",
+          "extension": ".docx",
+          "bytes": 16924,
+          "evidenceOnly": true,
+          "reviewState": "unreviewed"
+        },
+        {
+          "relativePath": "REGIONAL MENUS 2026/KOREA/KOREA RECIPE 1-10/korea 10.docx",
+          "extension": ".docx",
+          "bytes": 16944,
+          "evidenceOnly": true,
+          "reviewState": "unreviewed"
+        },
+        {
+          "relativePath": "REGIONAL MENUS 2026/KOREA/KOREA RECIPE 1-10/korea 2.docx",
+          "extension": ".docx",
+          "bytes": 16533,
+          "evidenceOnly": true,
+          "reviewState": "unreviewed"
+        },
+        {
+          "relativePath": "REGIONAL MENUS 2026/KOREA/KOREA RECIPE 1-10/korea 3.docx",
+          "extension": ".docx",
+          "bytes": 17598,
+          "evidenceOnly": true,
+          "reviewState": "unreviewed"
+        },
+        {
+          "relativePath": "REGIONAL MENUS 2026/KOREA/KOREA RECIPE 1-10/korea 4.docx",
+          "extension": ".docx",
+          "bytes": 17270,
+          "evidenceOnly": true,
+          "reviewState": "unreviewed"
+        },
+        {
+          "relativePath": "REGIONAL MENUS 2026/KOREA/KOREA RECIPE 1-10/korea 5.docx",
+          "extension": ".docx",
+          "bytes": 16765,
+          "evidenceOnly": true,
+          "reviewState": "unreviewed"
+        },
+        {
+          "relativePath": "REGIONAL MENUS 2026/KOREA/KOREA RECIPE 1-10/korea 6.docx",
+          "extension": ".docx",
+          "bytes": 16722,
+          "evidenceOnly": true,
+          "reviewState": "unreviewed"
+        },
+        {
+          "relativePath": "REGIONAL MENUS 2026/KOREA/KOREA RECIPE 1-10/korea 7.docx",
+          "extension": ".docx",
+          "bytes": 16447,
+          "evidenceOnly": true,
+          "reviewState": "unreviewed"
+        },
+        {
+          "relativePath": "REGIONAL MENUS 2026/KOREA/KOREA RECIPE 1-10/korea 8.docx",
+          "extension": ".docx",
+          "bytes": 17148,
+          "evidenceOnly": true,
+          "reviewState": "unreviewed"
+        },
+        {
+          "relativePath": "REGIONAL MENUS 2026/KOREA/KOREA RECIPE 1-10/korea 9.docx",
+          "extension": ".docx",
+          "bytes": 16804,
+          "evidenceOnly": true,
+          "reviewState": "unreviewed"
+        },
+        {
+          "relativePath": "REGIONAL MENUS 2026/KOREA/Korea.docx",
+          "extension": ".docx",
+          "bytes": 30336,
+          "evidenceOnly": true,
+          "reviewState": "unreviewed"
+        },
+        {
+          "relativePath": "REGIONAL MENUS 2026/MOROCCO/MOROCCAN RERCIPE1-10/moroccan 4.docx",
+          "extension": ".docx",
+          "bytes": 16503,
+          "evidenceOnly": true,
+          "reviewState": "unreviewed"
+        },
+        {
+          "relativePath": "REGIONAL MENUS 2026/MOROCCO/MOROCCAN RERCIPE1-10/moroccan 5.docx",
+          "extension": ".docx",
+          "bytes": 16506,
+          "evidenceOnly": true,
+          "reviewState": "unreviewed"
+        },
+        {
+          "relativePath": "REGIONAL MENUS 2026/MOROCCO/MOROCCAN RERCIPE1-10/moroccan 6.docx",
+          "extension": ".docx",
+          "bytes": 16560,
+          "evidenceOnly": true,
+          "reviewState": "unreviewed"
+        },
+        {
+          "relativePath": "REGIONAL MENUS 2026/MOROCCO/MOROCCAN RERCIPE1-10/moroccan 7.docx",
+          "extension": ".docx",
+          "bytes": 16586,
+          "evidenceOnly": true,
+          "reviewState": "unreviewed"
+        },
+        {
+          "relativePath": "REGIONAL MENUS 2026/MOROCCO/MOROCCAN RERCIPE1-10/moroccan 8.docx",
+          "extension": ".docx",
+          "bytes": 16270,
+          "evidenceOnly": true,
+          "reviewState": "unreviewed"
+        },
+        {
+          "relativePath": "REGIONAL MENUS 2026/MOROCCO/MOROCCAN RERCIPE1-10/moroccan 9.docx",
+          "extension": ".docx",
+          "bytes": 16839,
+          "evidenceOnly": true,
+          "reviewState": "unreviewed"
+        },
+        {
+          "relativePath": "REGIONAL MENUS 2026/MOROCCO/MOROCCAN RERCIPE1-10/morocco 1.docx",
+          "extension": ".docx",
+          "bytes": 16871,
+          "evidenceOnly": true,
+          "reviewState": "unreviewed"
+        },
+        {
+          "relativePath": "REGIONAL MENUS 2026/MOROCCO/MOROCCAN RERCIPE1-10/morocco 2.docx",
+          "extension": ".docx",
+          "bytes": 16432,
+          "evidenceOnly": true,
+          "reviewState": "unreviewed"
+        },
+        {
+          "relativePath": "REGIONAL MENUS 2026/MOROCCO/MOROCCAN RERCIPE1-10/morocco 3.docx",
+          "extension": ".docx",
+          "bytes": 16255,
+          "evidenceOnly": true,
+          "reviewState": "unreviewed"
+        },
+        {
+          "relativePath": "REGIONAL MENUS 2026/MOROCCO/MOROCCAN RERCIPE1-10/moroccon 10.docx",
+          "extension": ".docx",
+          "bytes": 16334,
+          "evidenceOnly": true,
+          "reviewState": "unreviewed"
+        },
+        {
+          "relativePath": "REGIONAL MENUS 2026/MOROCCO/Moroccan menu.docx",
+          "extension": ".docx",
+          "bytes": 29921,
+          "evidenceOnly": true,
+          "reviewState": "unreviewed"
+        },
+        {
+          "relativePath": "REGIONAL MENUS 2026/THAILAND/THAILAND RECIPE1-10/THAI 1.docx",
+          "extension": ".docx",
+          "bytes": 17346,
+          "evidenceOnly": true,
+          "reviewState": "unreviewed"
+        },
+        {
+          "relativePath": "REGIONAL MENUS 2026/THAILAND/THAILAND RECIPE1-10/THAI 10.docx",
+          "extension": ".docx",
+          "bytes": 16510,
+          "evidenceOnly": true,
+          "reviewState": "unreviewed"
+        },
+        {
+          "relativePath": "REGIONAL MENUS 2026/THAILAND/THAILAND RECIPE1-10/THAI 2.docx",
+          "extension": ".docx",
+          "bytes": 17361,
+          "evidenceOnly": true,
+          "reviewState": "unreviewed"
+        },
+        {
+          "relativePath": "REGIONAL MENUS 2026/THAILAND/THAILAND RECIPE1-10/THAI 3.docx",
+          "extension": ".docx",
+          "bytes": 17802,
+          "evidenceOnly": true,
+          "reviewState": "unreviewed"
+        },
+        {
+          "relativePath": "REGIONAL MENUS 2026/THAILAND/THAILAND RECIPE1-10/THAI 4.docx",
+          "extension": ".docx",
+          "bytes": 16220,
+          "evidenceOnly": true,
+          "reviewState": "unreviewed"
+        },
+        {
+          "relativePath": "REGIONAL MENUS 2026/THAILAND/THAILAND RECIPE1-10/THAI 5.docx",
+          "extension": ".docx",
+          "bytes": 17081,
+          "evidenceOnly": true,
+          "reviewState": "unreviewed"
+        },
+        {
+          "relativePath": "REGIONAL MENUS 2026/THAILAND/THAILAND RECIPE1-10/THAI 6.docx",
+          "extension": ".docx",
+          "bytes": 16351,
+          "evidenceOnly": true,
+          "reviewState": "unreviewed"
+        },
+        {
+          "relativePath": "REGIONAL MENUS 2026/THAILAND/THAILAND RECIPE1-10/THAI 7.docx",
+          "extension": ".docx",
+          "bytes": 16339,
+          "evidenceOnly": true,
+          "reviewState": "unreviewed"
+        },
+        {
+          "relativePath": "REGIONAL MENUS 2026/THAILAND/THAILAND RECIPE1-10/THAI 8.docx",
+          "extension": ".docx",
+          "bytes": 16045,
+          "evidenceOnly": true,
+          "reviewState": "unreviewed"
+        },
+        {
+          "relativePath": "REGIONAL MENUS 2026/THAILAND/THAILAND RECIPE1-10/THAI 9.docx",
+          "extension": ".docx",
+          "bytes": 16385,
+          "evidenceOnly": true,
+          "reviewState": "unreviewed"
+        },
+        {
+          "relativePath": "REGIONAL MENUS 2026/THAILAND/Thailand MENU.docx",
+          "extension": ".docx",
+          "bytes": 28632,
+          "evidenceOnly": true,
+          "reviewState": "unreviewed"
+        },
+        {
+          "relativePath": "REGIONAL MENUS 2026/TUSCAN/TUSCAN RECIPE1-10/4 TUSCAN.docx",
+          "extension": ".docx",
+          "bytes": 16502,
+          "evidenceOnly": true,
+          "reviewState": "unreviewed"
+        },
+        {
+          "relativePath": "REGIONAL MENUS 2026/TUSCAN/TUSCAN RECIPE1-10/tuscan 1.docx",
+          "extension": ".docx",
+          "bytes": 17068,
+          "evidenceOnly": true,
+          "reviewState": "unreviewed"
+        },
+        {
+          "relativePath": "REGIONAL MENUS 2026/TUSCAN/TUSCAN RECIPE1-10/tuscan 10.docx",
+          "extension": ".docx",
+          "bytes": 16622,
+          "evidenceOnly": true,
+          "reviewState": "unreviewed"
+        },
+        {
+          "relativePath": "REGIONAL MENUS 2026/TUSCAN/TUSCAN RECIPE1-10/tuscan 2.docx",
+          "extension": ".docx",
+          "bytes": 17366,
+          "evidenceOnly": true,
+          "reviewState": "unreviewed"
+        },
+        {
+          "relativePath": "REGIONAL MENUS 2026/TUSCAN/TUSCAN RECIPE1-10/tuscan 3.docx",
+          "extension": ".docx",
+          "bytes": 17363,
+          "evidenceOnly": true,
+          "reviewState": "unreviewed"
+        },
+        {
+          "relativePath": "REGIONAL MENUS 2026/TUSCAN/TUSCAN RECIPE1-10/tuscan 5.docx",
+          "extension": ".docx",
+          "bytes": 16429,
+          "evidenceOnly": true,
+          "reviewState": "unreviewed"
+        },
+        {
+          "relativePath": "REGIONAL MENUS 2026/TUSCAN/TUSCAN RECIPE1-10/tuscan 6.docx",
+          "extension": ".docx",
+          "bytes": 16376,
+          "evidenceOnly": true,
+          "reviewState": "unreviewed"
+        },
+        {
+          "relativePath": "REGIONAL MENUS 2026/TUSCAN/TUSCAN RECIPE1-10/tuscan 7.docx",
+          "extension": ".docx",
+          "bytes": 16313,
+          "evidenceOnly": true,
+          "reviewState": "unreviewed"
+        },
+        {
+          "relativePath": "REGIONAL MENUS 2026/TUSCAN/TUSCAN RECIPE1-10/tuscan 8.docx",
+          "extension": ".docx",
+          "bytes": 16191,
+          "evidenceOnly": true,
+          "reviewState": "unreviewed"
+        },
+        {
+          "relativePath": "REGIONAL MENUS 2026/TUSCAN/TUSCAN RECIPE1-10/tuscan 9.docx",
+          "extension": ".docx",
+          "bytes": 16456,
+          "evidenceOnly": true,
+          "reviewState": "unreviewed"
+        },
+        {
+          "relativePath": "REGIONAL MENUS 2026/TUSCAN/Tuscan MENU.docx",
+          "extension": ".docx",
+          "bytes": 329313,
+          "evidenceOnly": true,
+          "reviewState": "unreviewed"
+        },
+        {
+          "relativePath": "REGIONAL MENUS 2026/india/RECIPES 1-10/india recipe 1.docx",
+          "extension": ".docx",
+          "bytes": 17526,
+          "evidenceOnly": true,
+          "reviewState": "unreviewed"
+        },
+        {
+          "relativePath": "REGIONAL MENUS 2026/india/RECIPES 1-10/india recipe 10.docx",
+          "extension": ".docx",
+          "bytes": 16422,
+          "evidenceOnly": true,
+          "reviewState": "unreviewed"
+        },
+        {
+          "relativePath": "REGIONAL MENUS 2026/india/RECIPES 1-10/india recipe 2.docx",
+          "extension": ".docx",
+          "bytes": 17292,
+          "evidenceOnly": true,
+          "reviewState": "unreviewed"
+        },
+        {
+          "relativePath": "REGIONAL MENUS 2026/india/RECIPES 1-10/india recipe 3.docx",
+          "extension": ".docx",
+          "bytes": 17230,
+          "evidenceOnly": true,
+          "reviewState": "unreviewed"
+        },
+        {
+          "relativePath": "REGIONAL MENUS 2026/india/RECIPES 1-10/india recipe 4.docx",
+          "extension": ".docx",
+          "bytes": 17148,
+          "evidenceOnly": true,
+          "reviewState": "unreviewed"
+        },
+        {
+          "relativePath": "REGIONAL MENUS 2026/india/RECIPES 1-10/india recipe 5.docx",
+          "extension": ".docx",
+          "bytes": 16692,
+          "evidenceOnly": true,
+          "reviewState": "unreviewed"
+        },
+        {
+          "relativePath": "REGIONAL MENUS 2026/india/RECIPES 1-10/india recipe 6.docx",
+          "extension": ".docx",
+          "bytes": 16709,
+          "evidenceOnly": true,
+          "reviewState": "unreviewed"
+        },
+        {
+          "relativePath": "REGIONAL MENUS 2026/india/RECIPES 1-10/india recipe 7.docx",
+          "extension": ".docx",
+          "bytes": 16509,
+          "evidenceOnly": true,
+          "reviewState": "unreviewed"
+        },
+        {
+          "relativePath": "REGIONAL MENUS 2026/india/RECIPES 1-10/india recipe 8.docx",
+          "extension": ".docx",
+          "bytes": 16748,
+          "evidenceOnly": true,
+          "reviewState": "unreviewed"
+        },
+        {
+          "relativePath": "REGIONAL MENUS 2026/india/RECIPES 1-10/india recipe 9.docx",
+          "extension": ".docx",
+          "bytes": 17880,
+          "evidenceOnly": true,
+          "reviewState": "unreviewed"
+        },
+        {
+          "relativePath": "REGIONAL MENUS 2026/india/india menu.docx",
+          "extension": ".docx",
+          "bytes": 142409,
+          "evidenceOnly": true,
+          "reviewState": "unreviewed"
+        },
+        {
+          "relativePath": "REGIONAL MENUS 2026/mexico/Mexican.docx",
+          "extension": ".docx",
+          "bytes": 142454,
+          "evidenceOnly": true,
+          "reviewState": "unreviewed"
+        },
+        {
+          "relativePath": "REGIONAL MENUS 2026/mexico/mexico recipe1-10/mexican 1.docx",
+          "extension": ".docx",
+          "bytes": 17370,
+          "evidenceOnly": true,
+          "reviewState": "unreviewed"
+        },
+        {
+          "relativePath": "REGIONAL MENUS 2026/mexico/mexico recipe1-10/mexican 10.docx",
+          "extension": ".docx",
+          "bytes": 16669,
+          "evidenceOnly": true,
+          "reviewState": "unreviewed"
+        },
+        {
+          "relativePath": "REGIONAL MENUS 2026/mexico/mexico recipe1-10/mexican 2.docx",
+          "extension": ".docx",
+          "bytes": 16081,
+          "evidenceOnly": true,
+          "reviewState": "unreviewed"
+        },
+        {
+          "relativePath": "REGIONAL MENUS 2026/mexico/mexico recipe1-10/mexican 3.docx",
+          "extension": ".docx",
+          "bytes": 16705,
+          "evidenceOnly": true,
+          "reviewState": "unreviewed"
+        },
+        {
+          "relativePath": "REGIONAL MENUS 2026/mexico/mexico recipe1-10/mexican 4.docx",
+          "extension": ".docx",
+          "bytes": 17405,
+          "evidenceOnly": true,
+          "reviewState": "unreviewed"
+        },
+        {
+          "relativePath": "REGIONAL MENUS 2026/mexico/mexico recipe1-10/mexican 5.docx",
+          "extension": ".docx",
+          "bytes": 16959,
+          "evidenceOnly": true,
+          "reviewState": "unreviewed"
+        },
+        {
+          "relativePath": "REGIONAL MENUS 2026/mexico/mexico recipe1-10/mexican 6.docx",
+          "extension": ".docx",
+          "bytes": 16371,
+          "evidenceOnly": true,
+          "reviewState": "unreviewed"
+        },
+        {
+          "relativePath": "REGIONAL MENUS 2026/mexico/mexico recipe1-10/mexican 7.docx",
+          "extension": ".docx",
+          "bytes": 16599,
+          "evidenceOnly": true,
+          "reviewState": "unreviewed"
+        },
+        {
+          "relativePath": "REGIONAL MENUS 2026/mexico/mexico recipe1-10/mexican 8.docx",
+          "extension": ".docx",
+          "bytes": 16858,
+          "evidenceOnly": true,
+          "reviewState": "unreviewed"
+        },
+        {
+          "relativePath": "REGIONAL MENUS 2026/mexico/mexico recipe1-10/mexican 9.docx",
+          "extension": ".docx",
+          "bytes": 16402,
+          "evidenceOnly": true,
+          "reviewState": "unreviewed"
+        },
+        {
+          "relativePath": "REGIONAL MENUS 2026/sichuan/Sichuan.docx",
+          "extension": ".docx",
+          "bytes": 19521,
+          "evidenceOnly": true,
+          "reviewState": "unreviewed"
+        },
+        {
+          "relativePath": "REGIONAL MENUS 2026/sichuan/sichuan recipe1-10/sechuan 4.docx",
+          "extension": ".docx",
+          "bytes": 16827,
+          "evidenceOnly": true,
+          "reviewState": "unreviewed"
+        },
+        {
+          "relativePath": "REGIONAL MENUS 2026/sichuan/sichuan recipe1-10/sechuan 5.docx",
+          "extension": ".docx",
+          "bytes": 16927,
+          "evidenceOnly": true,
+          "reviewState": "unreviewed"
+        },
+        {
+          "relativePath": "REGIONAL MENUS 2026/sichuan/sichuan recipe1-10/sichuan 1.docx",
+          "extension": ".docx",
+          "bytes": 18159,
+          "evidenceOnly": true,
+          "reviewState": "unreviewed"
+        },
+        {
+          "relativePath": "REGIONAL MENUS 2026/sichuan/sichuan recipe1-10/sichuan 10.docx",
+          "extension": ".docx",
+          "bytes": 17114,
+          "evidenceOnly": true,
+          "reviewState": "unreviewed"
+        },
+        {
+          "relativePath": "REGIONAL MENUS 2026/sichuan/sichuan recipe1-10/sichuan 2.docx",
+          "extension": ".docx",
+          "bytes": 16775,
+          "evidenceOnly": true,
+          "reviewState": "unreviewed"
+        },
+        {
+          "relativePath": "REGIONAL MENUS 2026/sichuan/sichuan recipe1-10/sichuan 3.docx",
+          "extension": ".docx",
+          "bytes": 16863,
+          "evidenceOnly": true,
+          "reviewState": "unreviewed"
+        },
+        {
+          "relativePath": "REGIONAL MENUS 2026/sichuan/sichuan recipe1-10/sichuan 6.docx",
+          "extension": ".docx",
+          "bytes": 16715,
+          "evidenceOnly": true,
+          "reviewState": "unreviewed"
+        },
+        {
+          "relativePath": "REGIONAL MENUS 2026/sichuan/sichuan recipe1-10/sichuan 7.docx",
+          "extension": ".docx",
+          "bytes": 16844,
+          "evidenceOnly": true,
+          "reviewState": "unreviewed"
+        },
+        {
+          "relativePath": "REGIONAL MENUS 2026/sichuan/sichuan recipe1-10/sichuan 8.docx",
+          "extension": ".docx",
+          "bytes": 16783,
+          "evidenceOnly": true,
+          "reviewState": "unreviewed"
+        },
+        {
+          "relativePath": "REGIONAL MENUS 2026/sichuan/sichuan recipe1-10/sichuan 9.docx",
+          "extension": ".docx",
+          "bytes": 17067,
+          "evidenceOnly": true,
+          "reviewState": "unreviewed"
+        }
+      ]
+    },
+    {
+      "id": "source-pack:weekly-menus-haleon",
+      "kind": "delivered_in_lunch_workbooks",
+      "label": "Weekly delivered-in lunch menus",
+      "sourceName": "WEEKLEY MENUS NUMBERS HALEON",
+      "evidenceOnly": true,
+      "reviewState": "unreviewed",
+      "fileCount": 15,
+      "workbookCount": 14,
+      "candidateSignals": 1885,
+      "files": [
+        {
+          "relativePath": "WEEKLEY MENUS NUMBERS HALEON/  WC 06_07_2026.xlsx",
+          "extension": ".xlsx",
+          "bytes": 260508,
+          "evidenceOnly": true,
+          "reviewState": "unreviewed",
+          "workbook": {
+            "sheets": [
+              {
+                "name": "mon",
+                "rows": 996,
+                "columns": 18,
+                "structure": "day-menu",
+                "candidateSignals": 32
+              },
+              {
+                "name": "fikamon",
+                "rows": 1004,
+                "columns": 21,
+                "structure": "allergen-review",
+                "candidateSignals": 0
+              },
+              {
+                "name": "tue",
+                "rows": 1004,
+                "columns": 18,
+                "structure": "day-menu",
+                "candidateSignals": 36
+              },
+              {
+                "name": "fikatue",
+                "rows": 1005,
+                "columns": 21,
+                "structure": "allergen-review",
+                "candidateSignals": 0
+              },
+              {
+                "name": "wed",
+                "rows": 1009,
+                "columns": 18,
+                "structure": "day-menu",
+                "candidateSignals": 40
+              },
+              {
+                "name": "fikawed",
+                "rows": 1007,
+                "columns": 21,
+                "structure": "allergen-review",
+                "candidateSignals": 0
+              },
+              {
+                "name": "thurs",
+                "rows": 1001,
+                "columns": 18,
+                "structure": "day-menu",
+                "candidateSignals": 40
+              },
+              {
+                "name": "fikathurs",
+                "rows": 1004,
+                "columns": 21,
+                "structure": "allergen-review",
+                "candidateSignals": 0
+              },
+              {
+                "name": "fri",
+                "rows": 996,
+                "columns": 18,
+                "structure": "day-menu",
+                "candidateSignals": 32
+              },
+              {
+                "name": "WC 06072026",
+                "rows": 1004,
+                "columns": 8,
+                "structure": "day-menu",
+                "candidateSignals": 0
+              }
+            ]
+          }
+        },
+        {
+          "relativePath": "WEEKLEY MENUS NUMBERS HALEON/  WC 29_06_2026.xlsx",
+          "extension": ".xlsx",
+          "bytes": 258878,
+          "evidenceOnly": true,
+          "reviewState": "unreviewed",
+          "workbook": {
+            "sheets": [
+              {
+                "name": "mon",
+                "rows": 996,
+                "columns": 18,
+                "structure": "day-menu",
+                "candidateSignals": 32
+              },
+              {
+                "name": "fikamon",
+                "rows": 1004,
+                "columns": 21,
+                "structure": "allergen-review",
+                "candidateSignals": 0
+              },
+              {
+                "name": "tue",
+                "rows": 1004,
+                "columns": 18,
+                "structure": "day-menu",
+                "candidateSignals": 38
+              },
+              {
+                "name": "fikatue",
+                "rows": 1005,
+                "columns": 21,
+                "structure": "allergen-review",
+                "candidateSignals": 0
+              },
+              {
+                "name": "wed",
+                "rows": 1007,
+                "columns": 18,
+                "structure": "day-menu",
+                "candidateSignals": 42
+              },
+              {
+                "name": "fikawed",
+                "rows": 1007,
+                "columns": 21,
+                "structure": "allergen-review",
+                "candidateSignals": 0
+              },
+              {
+                "name": "thurs",
+                "rows": 999,
+                "columns": 18,
+                "structure": "day-menu",
+                "candidateSignals": 34
+              },
+              {
+                "name": "fikathurs",
+                "rows": 1003,
+                "columns": 21,
+                "structure": "allergen-review",
+                "candidateSignals": 0
+              },
+              {
+                "name": "fri",
+                "rows": 996,
+                "columns": 18,
+                "structure": "day-menu",
+                "candidateSignals": 2
+              },
+              {
+                "name": "WC 22062026",
+                "rows": 1004,
+                "columns": 7,
+                "structure": "day-menu",
+                "candidateSignals": 0
+              }
+            ]
+          }
+        },
+        {
+          "relativePath": "WEEKLEY MENUS NUMBERS HALEON/ WC 13_07_2026.xlsx",
+          "extension": ".xlsx",
+          "bytes": 261862,
+          "evidenceOnly": true,
+          "reviewState": "unreviewed",
+          "workbook": {
+            "sheets": [
+              {
+                "name": "mon",
+                "rows": 996,
+                "columns": 18,
+                "structure": "day-menu",
+                "candidateSignals": 35
+              },
+              {
+                "name": "fikamon",
+                "rows": 1004,
+                "columns": 21,
+                "structure": "allergen-review",
+                "candidateSignals": 0
+              },
+              {
+                "name": "tue",
+                "rows": 1004,
+                "columns": 18,
+                "structure": "day-menu",
+                "candidateSignals": 38
+              },
+              {
+                "name": "fikatue",
+                "rows": 1005,
+                "columns": 21,
+                "structure": "allergen-review",
+                "candidateSignals": 0
+              },
+              {
+                "name": "wed",
+                "rows": 1009,
+                "columns": 18,
+                "structure": "day-menu",
+                "candidateSignals": 32
+              },
+              {
+                "name": "fikawed",
+                "rows": 1007,
+                "columns": 21,
+                "structure": "allergen-review",
+                "candidateSignals": 0
+              },
+              {
+                "name": "thurs",
+                "rows": 1001,
+                "columns": 18,
+                "structure": "day-menu",
+                "candidateSignals": 34
+              },
+              {
+                "name": "fikathurs",
+                "rows": 1004,
+                "columns": 21,
+                "structure": "allergen-review",
+                "candidateSignals": 0
+              },
+              {
+                "name": "fri",
+                "rows": 1005,
+                "columns": 18,
+                "structure": "day-menu",
+                "candidateSignals": 38
+              },
+              {
+                "name": "WC 13072026",
+                "rows": 1004,
+                "columns": 8,
+                "structure": "day-menu",
+                "candidateSignals": 0
+              }
+            ]
+          }
+        },
+        {
+          "relativePath": "WEEKLEY MENUS NUMBERS HALEON/ WC 15_06_2026.xlsx",
+          "extension": ".xlsx",
+          "bytes": 55592,
+          "evidenceOnly": true,
+          "reviewState": "unreviewed",
+          "workbook": {
+            "sheets": [
+              {
+                "name": "Monday",
+                "rows": 996,
+                "columns": 18,
+                "structure": "day-menu",
+                "candidateSignals": 34
+              },
+              {
+                "name": "Tuesday",
+                "rows": 997,
+                "columns": 18,
+                "structure": "day-menu",
+                "candidateSignals": 29
+              },
+              {
+                "name": "Wednesday",
+                "rows": 1007,
+                "columns": 18,
+                "structure": "day-menu",
+                "candidateSignals": 34
+              },
+              {
+                "name": "Thursday",
+                "rows": 1001,
+                "columns": 18,
+                "structure": "day-menu",
+                "candidateSignals": 30
+              },
+              {
+                "name": "Friday",
+                "rows": 996,
+                "columns": 18,
+                "structure": "day-menu",
+                "candidateSignals": 2
+              },
+              {
+                "name": "WC 08062026",
+                "rows": 1004,
+                "columns": 7,
+                "structure": "day-menu",
+                "candidateSignals": 0
+              }
+            ]
+          }
+        },
+        {
+          "relativePath": "WEEKLEY MENUS NUMBERS HALEON/ WC 22_06_2026.xlsx",
+          "extension": ".xlsx",
+          "bytes": 245074,
+          "evidenceOnly": true,
+          "reviewState": "unreviewed",
+          "workbook": {
+            "sheets": [
+              {
+                "name": "mon",
+                "rows": 996,
+                "columns": 18,
+                "structure": "day-menu",
+                "candidateSignals": 36
+              },
+              {
+                "name": "fikamon",
+                "rows": 1003,
+                "columns": 20,
+                "structure": "allergen-review",
+                "candidateSignals": 0
+              },
+              {
+                "name": "tue",
+                "rows": 999,
+                "columns": 18,
+                "structure": "day-menu",
+                "candidateSignals": 36
+              },
+              {
+                "name": "fikatue",
+                "rows": 1003,
+                "columns": 20,
+                "structure": "allergen-review",
+                "candidateSignals": 0
+              },
+              {
+                "name": "wed",
+                "rows": 1000,
+                "columns": 18,
+                "structure": "day-menu",
+                "candidateSignals": 39
+              },
+              {
+                "name": "fikawed",
+                "rows": 1004,
+                "columns": 20,
+                "structure": "allergen-review",
+                "candidateSignals": 0
+              },
+              {
+                "name": "thurs",
+                "rows": 1001,
+                "columns": 18,
+                "structure": "day-menu",
+                "candidateSignals": 34
+              },
+              {
+                "name": "fikathurs",
+                "rows": 1003,
+                "columns": 20,
+                "structure": "allergen-review",
+                "candidateSignals": 0
+              },
+              {
+                "name": "fri",
+                "rows": 996,
+                "columns": 18,
+                "structure": "day-menu",
+                "candidateSignals": 2
+              },
+              {
+                "name": "WC 22062026",
+                "rows": 1004,
+                "columns": 7,
+                "structure": "day-menu",
+                "candidateSignals": 0
+              }
+            ]
+          }
+        },
+        {
+          "relativePath": "WEEKLEY MENUS NUMBERS HALEON/ WC 24_08_2026.xlsx",
+          "extension": ".xlsx",
+          "bytes": 305329,
+          "evidenceOnly": true,
+          "reviewState": "unreviewed",
+          "workbook": {
+            "sheets": [
+              {
+                "name": "mon",
+                "rows": 996,
+                "columns": 18,
+                "structure": "day-menu",
+                "candidateSignals": 1
+              },
+              {
+                "name": "fikamon",
+                "rows": 1004,
+                "columns": 21,
+                "structure": "allergen-review",
+                "candidateSignals": 0
+              },
+              {
+                "name": "tue",
+                "rows": 1004,
+                "columns": 18,
+                "structure": "day-menu",
+                "candidateSignals": 0
+              },
+              {
+                "name": "fikatue",
+                "rows": 1005,
+                "columns": 21,
+                "structure": "allergen-review",
+                "candidateSignals": 0
+              },
+              {
+                "name": "wed",
+                "rows": 1007,
+                "columns": 18,
+                "structure": "day-menu",
+                "candidateSignals": 1
+              },
+              {
+                "name": "fikawed",
+                "rows": 1007,
+                "columns": 21,
+                "structure": "allergen-review",
+                "candidateSignals": 0
+              },
+              {
+                "name": "thurs",
+                "rows": 1001,
+                "columns": 18,
+                "structure": "day-menu",
+                "candidateSignals": 2
+              },
+              {
+                "name": "fikathurs",
+                "rows": 1005,
+                "columns": 21,
+                "structure": "allergen-review",
+                "candidateSignals": 0
+              },
+              {
+                "name": "fri",
+                "rows": 1005,
+                "columns": 18,
+                "structure": "day-menu",
+                "candidateSignals": 2
+              },
+              {
+                "name": "fikafri",
+                "rows": 1007,
+                "columns": 21,
+                "structure": "allergen-review",
+                "candidateSignals": 0
+              },
+              {
+                "name": "WC 27072026",
+                "rows": 1004,
+                "columns": 8,
+                "structure": "day-menu",
+                "candidateSignals": 0
+              }
+            ]
+          }
+        },
+        {
+          "relativePath": "WEEKLEY MENUS NUMBERS HALEON/WC 03_08_2026.xlsx",
+          "extension": ".xlsx",
+          "bytes": 311876,
+          "evidenceOnly": true,
+          "reviewState": "unreviewed",
+          "workbook": {
+            "sheets": [
+              {
+                "name": "mon",
+                "rows": 996,
+                "columns": 18,
+                "structure": "day-menu",
+                "candidateSignals": 26
+              },
+              {
+                "name": "fikamon",
+                "rows": 1004,
+                "columns": 21,
+                "structure": "allergen-review",
+                "candidateSignals": 0
+              },
+              {
+                "name": "tue",
+                "rows": 1004,
+                "columns": 18,
+                "structure": "day-menu",
+                "candidateSignals": 28
+              },
+              {
+                "name": "fikatue",
+                "rows": 1005,
+                "columns": 21,
+                "structure": "allergen-review",
+                "candidateSignals": 0
+              },
+              {
+                "name": "wed",
+                "rows": 1007,
+                "columns": 18,
+                "structure": "day-menu",
+                "candidateSignals": 28
+              },
+              {
+                "name": "fikawed",
+                "rows": 1007,
+                "columns": 21,
+                "structure": "allergen-review",
+                "candidateSignals": 0
+              },
+              {
+                "name": "thurs",
+                "rows": 1001,
+                "columns": 18,
+                "structure": "day-menu",
+                "candidateSignals": 30
+              },
+              {
+                "name": "fikathurs",
+                "rows": 1005,
+                "columns": 21,
+                "structure": "allergen-review",
+                "candidateSignals": 0
+              },
+              {
+                "name": "fri",
+                "rows": 1005,
+                "columns": 18,
+                "structure": "day-menu",
+                "candidateSignals": 24
+              },
+              {
+                "name": "fikafri",
+                "rows": 1007,
+                "columns": 21,
+                "structure": "allergen-review",
+                "candidateSignals": 0
+              },
+              {
+                "name": "WC 27072026",
+                "rows": 1004,
+                "columns": 8,
+                "structure": "day-menu",
+                "candidateSignals": 0
+              }
+            ]
+          }
+        },
+        {
+          "relativePath": "WEEKLEY MENUS NUMBERS HALEON/WC 08_06_2026.xlsx",
+          "extension": ".xlsx",
+          "bytes": 56290,
+          "evidenceOnly": true,
+          "reviewState": "unreviewed",
+          "workbook": {
+            "sheets": [
+              {
+                "name": "Monday",
+                "rows": 996,
+                "columns": 18,
+                "structure": "day-menu",
+                "candidateSignals": 36
+              },
+              {
+                "name": "Tuesday",
+                "rows": 997,
+                "columns": 18,
+                "structure": "day-menu",
+                "candidateSignals": 33
+              },
+              {
+                "name": "Wednesday",
+                "rows": 1007,
+                "columns": 18,
+                "structure": "day-menu",
+                "candidateSignals": 46
+              },
+              {
+                "name": "Thursday",
+                "rows": 999,
+                "columns": 18,
+                "structure": "day-menu",
+                "candidateSignals": 38
+              },
+              {
+                "name": "Friday",
+                "rows": 996,
+                "columns": 18,
+                "structure": "day-menu",
+                "candidateSignals": 2
+              },
+              {
+                "name": "WC 08062026",
+                "rows": 1004,
+                "columns": 7,
+                "structure": "day-menu",
+                "candidateSignals": 0
+              }
+            ]
+          }
+        },
+        {
+          "relativePath": "WEEKLEY MENUS NUMBERS HALEON/WC 10_08_2026.xlsx",
+          "extension": ".xlsx",
+          "bytes": 311640,
+          "evidenceOnly": true,
+          "reviewState": "unreviewed",
+          "workbook": {
+            "sheets": [
+              {
+                "name": "mon",
+                "rows": 996,
+                "columns": 18,
+                "structure": "day-menu",
+                "candidateSignals": 25
+              },
+              {
+                "name": "fikamon",
+                "rows": 1004,
+                "columns": 21,
+                "structure": "allergen-review",
+                "candidateSignals": 0
+              },
+              {
+                "name": "tue",
+                "rows": 1004,
+                "columns": 18,
+                "structure": "day-menu",
+                "candidateSignals": 24
+              },
+              {
+                "name": "fikatue",
+                "rows": 1005,
+                "columns": 21,
+                "structure": "allergen-review",
+                "candidateSignals": 0
+              },
+              {
+                "name": "wed",
+                "rows": 1007,
+                "columns": 18,
+                "structure": "day-menu",
+                "candidateSignals": 28
+              },
+              {
+                "name": "fikawed",
+                "rows": 1007,
+                "columns": 21,
+                "structure": "allergen-review",
+                "candidateSignals": 0
+              },
+              {
+                "name": "thurs",
+                "rows": 1001,
+                "columns": 18,
+                "structure": "day-menu",
+                "candidateSignals": 28
+              },
+              {
+                "name": "fikathurs",
+                "rows": 1005,
+                "columns": 21,
+                "structure": "allergen-review",
+                "candidateSignals": 0
+              },
+              {
+                "name": "fri",
+                "rows": 1005,
+                "columns": 18,
+                "structure": "day-menu",
+                "candidateSignals": 27
+              },
+              {
+                "name": "fikafri",
+                "rows": 1007,
+                "columns": 21,
+                "structure": "allergen-review",
+                "candidateSignals": 0
+              },
+              {
+                "name": "WC 27072026",
+                "rows": 1004,
+                "columns": 8,
+                "structure": "day-menu",
+                "candidateSignals": 0
+              }
+            ]
+          }
+        },
+        {
+          "relativePath": "WEEKLEY MENUS NUMBERS HALEON/WC 11.05.26",
+          "extension": ".26",
+          "bytes": 33136,
+          "evidenceOnly": true,
+          "reviewState": "unreviewed"
+        },
+        {
+          "relativePath": "WEEKLEY MENUS NUMBERS HALEON/WC 17_08_2026.xlsx",
+          "extension": ".xlsx",
+          "bytes": 311218,
+          "evidenceOnly": true,
+          "reviewState": "unreviewed",
+          "workbook": {
+            "sheets": [
+              {
+                "name": "mon",
+                "rows": 996,
+                "columns": 18,
+                "structure": "day-menu",
+                "candidateSignals": 29
+              },
+              {
+                "name": "fikamon",
+                "rows": 1004,
+                "columns": 21,
+                "structure": "allergen-review",
+                "candidateSignals": 0
+              },
+              {
+                "name": "tue",
+                "rows": 1004,
+                "columns": 18,
+                "structure": "day-menu",
+                "candidateSignals": 30
+              },
+              {
+                "name": "fikatue",
+                "rows": 1005,
+                "columns": 21,
+                "structure": "allergen-review",
+                "candidateSignals": 0
+              },
+              {
+                "name": "wed",
+                "rows": 1007,
+                "columns": 18,
+                "structure": "day-menu",
+                "candidateSignals": 30
+              },
+              {
+                "name": "fikawed",
+                "rows": 1007,
+                "columns": 21,
+                "structure": "allergen-review",
+                "candidateSignals": 0
+              },
+              {
+                "name": "thurs",
+                "rows": 1001,
+                "columns": 18,
+                "structure": "day-menu",
+                "candidateSignals": 30
+              },
+              {
+                "name": "fikathurs",
+                "rows": 1005,
+                "columns": 21,
+                "structure": "allergen-review",
+                "candidateSignals": 0
+              },
+              {
+                "name": "fri",
+                "rows": 1005,
+                "columns": 18,
+                "structure": "day-menu",
+                "candidateSignals": 24
+              },
+              {
+                "name": "WC 27072026",
+                "rows": 1004,
+                "columns": 8,
+                "structure": "day-menu",
+                "candidateSignals": 0
+              },
+              {
+                "name": "fikafri",
+                "rows": 1007,
+                "columns": 21,
+                "structure": "allergen-review",
+                "candidateSignals": 0
+              }
+            ]
+          }
+        },
+        {
+          "relativePath": "WEEKLEY MENUS NUMBERS HALEON/WC 18.0.26.xlsx",
+          "extension": ".xlsx",
+          "bytes": 54678,
+          "evidenceOnly": true,
+          "reviewState": "unreviewed",
+          "workbook": {
+            "sheets": [
+              {
+                "name": "Monday",
+                "rows": 1000,
+                "columns": 18,
+                "structure": "day-menu",
+                "candidateSignals": 26
+              },
+              {
+                "name": "Tuesday",
+                "rows": 1000,
+                "columns": 18,
+                "structure": "day-menu",
+                "candidateSignals": 37
+              },
+              {
+                "name": "Wednesday",
+                "rows": 1010,
+                "columns": 18,
+                "structure": "day-menu",
+                "candidateSignals": 34
+              },
+              {
+                "name": "Thursday",
+                "rows": 1000,
+                "columns": 18,
+                "structure": "day-menu",
+                "candidateSignals": 33
+              },
+              {
+                "name": "Friday",
+                "rows": 1000,
+                "columns": 18,
+                "structure": "day-menu",
+                "candidateSignals": 4
+              },
+              {
+                "name": "WC 18.05.26",
+                "rows": 1002,
+                "columns": 7,
+                "structure": "day-menu",
+                "candidateSignals": 0
+              }
+            ]
+          }
+        },
+        {
+          "relativePath": "WEEKLEY MENUS NUMBERS HALEON/WC 20_07_2026.xlsx",
+          "extension": ".xlsx",
+          "bytes": 261210,
+          "evidenceOnly": true,
+          "reviewState": "unreviewed",
+          "workbook": {
+            "sheets": [
+              {
+                "name": "mon",
+                "rows": 996,
+                "columns": 18,
+                "structure": "day-menu",
+                "candidateSignals": 27
+              },
+              {
+                "name": "fikamon",
+                "rows": 1004,
+                "columns": 21,
+                "structure": "allergen-review",
+                "candidateSignals": 0
+              },
+              {
+                "name": "tue",
+                "rows": 1004,
+                "columns": 18,
+                "structure": "day-menu",
+                "candidateSignals": 32
+              },
+              {
+                "name": "fikatue",
+                "rows": 1005,
+                "columns": 21,
+                "structure": "allergen-review",
+                "candidateSignals": 0
+              },
+              {
+                "name": "wed",
+                "rows": 1009,
+                "columns": 18,
+                "structure": "day-menu",
+                "candidateSignals": 32
+              },
+              {
+                "name": "fikawed",
+                "rows": 1007,
+                "columns": 21,
+                "structure": "allergen-review",
+                "candidateSignals": 0
+              },
+              {
+                "name": "thurs",
+                "rows": 1001,
+                "columns": 18,
+                "structure": "day-menu",
+                "candidateSignals": 36
+              },
+              {
+                "name": "fikathurs",
+                "rows": 1005,
+                "columns": 21,
+                "structure": "allergen-review",
+                "candidateSignals": 0
+              },
+              {
+                "name": "fri",
+                "rows": 1005,
+                "columns": 18,
+                "structure": "day-menu",
+                "candidateSignals": 28
+              },
+              {
+                "name": "WC 13072026",
+                "rows": 1004,
+                "columns": 8,
+                "structure": "day-menu",
+                "candidateSignals": 0
+              }
+            ]
+          }
+        },
+        {
+          "relativePath": "WEEKLEY MENUS NUMBERS HALEON/WC 25_05_26.xlsx",
+          "extension": ".xlsx",
+          "bytes": 51698,
+          "evidenceOnly": true,
+          "reviewState": "unreviewed",
+          "workbook": {
+            "sheets": [
+              {
+                "name": "Monday",
+                "rows": 996,
+                "columns": 18,
+                "structure": "day-menu",
+                "candidateSignals": 2
+              },
+              {
+                "name": "Tuesday",
+                "rows": 997,
+                "columns": 18,
+                "structure": "day-menu",
+                "candidateSignals": 29
+              },
+              {
+                "name": "Wednesday",
+                "rows": 997,
+                "columns": 18,
+                "structure": "day-menu",
+                "candidateSignals": 26
+              },
+              {
+                "name": "Thursday",
+                "rows": 996,
+                "columns": 18,
+                "structure": "day-menu",
+                "candidateSignals": 23
+              },
+              {
+                "name": "Friday",
+                "rows": 996,
+                "columns": 18,
+                "structure": "day-menu",
+                "candidateSignals": 2
+              },
+              {
+                "name": "WC250526",
+                "rows": 1002,
+                "columns": 7,
+                "structure": "day-menu",
+                "candidateSignals": 0
+              }
+            ]
+          }
+        },
+        {
+          "relativePath": "WEEKLEY MENUS NUMBERS HALEON/WC 27_07_2026.xlsx",
+          "extension": ".xlsx",
+          "bytes": 312211,
+          "evidenceOnly": true,
+          "reviewState": "unreviewed",
+          "workbook": {
+            "sheets": [
+              {
+                "name": "mon",
+                "rows": 996,
+                "columns": 18,
+                "structure": "day-menu",
+                "candidateSignals": 25
+              },
+              {
+                "name": "fikamon",
+                "rows": 1004,
+                "columns": 21,
+                "structure": "allergen-review",
+                "candidateSignals": 0
+              },
+              {
+                "name": "tue",
+                "rows": 1004,
+                "columns": 18,
+                "structure": "day-menu",
+                "candidateSignals": 32
+              },
+              {
+                "name": "fikatue",
+                "rows": 1005,
+                "columns": 21,
+                "structure": "allergen-review",
+                "candidateSignals": 0
+              },
+              {
+                "name": "wed",
+                "rows": 1007,
+                "columns": 18,
+                "structure": "day-menu",
+                "candidateSignals": 38
+              },
+              {
+                "name": "fikawed",
+                "rows": 1007,
+                "columns": 21,
+                "structure": "allergen-review",
+                "candidateSignals": 0
+              },
+              {
+                "name": "thurs",
+                "rows": 1001,
+                "columns": 18,
+                "structure": "day-menu",
+                "candidateSignals": 36
+              },
+              {
+                "name": "fikathurs",
+                "rows": 1005,
+                "columns": 21,
+                "structure": "allergen-review",
+                "candidateSignals": 0
+              },
+              {
+                "name": "fri",
+                "rows": 1005,
+                "columns": 18,
+                "structure": "day-menu",
+                "candidateSignals": 30
+              },
+              {
+                "name": "fikafri",
+                "rows": 1007,
+                "columns": 21,
+                "structure": "allergen-review",
+                "candidateSignals": 0
+              },
+              {
+                "name": "WC 27072026",
+                "rows": 1004,
+                "columns": 8,
+                "structure": "day-menu",
+                "candidateSignals": 0
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ],
+  "rules": [
+    "Source files are retained as evidence and are never canonical truth by themselves.",
+    "Rows and recipe content remain unreviewed until a menu item is deliberately created or mapped.",
+    "Display-name similarity may suggest a match but never silently maps or merges records.",
+    "CPU Production consumes published menu data; it does not own menu creation or recipes."
+  ]
+}

@@ -255,7 +255,10 @@
         const email = value("client.email");
         if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) errors.push("Add a valid work email.");
         requireField("client.phone", "Add a contact number.", errors);
-        requireField("client.companyName", "Add your company name.", errors);
+        requireField("client.companyName", "Add your company.", errors);
+        requireField("client.invoiceReference", "Add a reference number.", errors);
+        requireField("client.clientName", "Add the client name.", errors);
+        requireField("client.clientCompanyName", "Add the client company.", errors);
       }
       if (step === 2) {
         requireField("event.eventDate", "Choose an event date.", errors);
@@ -547,8 +550,10 @@
         reviewRow("Name", value("client.name")) +
         reviewRow("Email", value("client.email")) +
         reviewRow("Phone", value("client.phone")) +
-        reviewRow("Company", value("client.companyName")) +
-        (value("client.invoiceReference") ? reviewRow("Invoice reference", value("client.invoiceReference")) : "") +
+        reviewRow("Your company", value("client.companyName")) +
+        reviewRow("Invoice reference", value("client.invoiceReference")) +
+        reviewRow("Client name", value("client.clientName")) +
+        reviewRow("Client company", value("client.clientCompanyName")) +
         '</div>' +
         '<div class="review-block"><h3>Event</h3>' +
         reviewRow("Occasion", eventType()?.label || "") +
@@ -582,8 +587,12 @@
     function handleSubmission(result) {
       if (!result?.ok) return submissionFailed((result?.errors || ["The request could not be submitted."]).join(" "));
       state.submitted = true;
+      const button = $("#next-button");
+      button.disabled = true;
+      button.textContent = "Sent";
       $$(".form-step").forEach(section => section.classList.remove("active"));
-      $(".form-actions").hidden = true;
+      $(".form-actions").hidden = false;
+      $("#back-button").style.visibility = "hidden";
       $(".stepper").hidden = true;
       $("#confirmation").hidden = false;
       $("#confirmation-reference").textContent = result.bookingId;

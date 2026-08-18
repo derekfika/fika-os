@@ -26,7 +26,7 @@
 2. Open Extensions > Apps Script.
 3. Add these files to the Apps Script project.
 4. Run `setupHotDrinkTally` once and approve permissions.
-5. Run `installNightlyArchiveTrigger` once to archive completed days to Drive at 02:00 daily.
+5. Run `ensureHotDrinkLaunchReadiness` once to create/verify the archive folder and install the evening archive trigger for 20:00 daily.
 6. Deploy > New deployment > Web app.
 7. Set “Execute as” to “Me”.
 8. Set access to the audience needed for the tablets.
@@ -45,6 +45,6 @@ The setup function creates:
 
 The tally screen prioritises speed: taps are saved immediately to a local browser queue, visible counters update instantly, and the app syncs batches to Sheets in the background every minute or sooner during a rush. If sync fails, queued taps stay on the tablet and retry automatically.
 
-Completed days can be archived from `Drink_Log` into Drive JSON files by running `archiveCompletedDrinkLogDays` manually or installing the nightly trigger. Reporting reads both live Sheet rows and archived JSON rows.
+Completed days can be archived from `Drink_Log` into Drive JSON files by running `archiveCompletedDrinkLogDays` manually or installing the nightly trigger. The scheduled `nightlyArchiveDrinkLog` run archives rows up to and including the current day at 20:00, after verifying the JSON file before the sheet is trimmed. Reporting reads both live Sheet rows and archived JSON rows.
 
 If the tally and reporting apps are separate Apps Script projects, use `getHotDrinkArchiveFolderId()` in the app that installs the archive trigger, then run `setHotDrinkArchiveFolderId("FOLDER_ID")` in the other app so both projects read the same archive folder.

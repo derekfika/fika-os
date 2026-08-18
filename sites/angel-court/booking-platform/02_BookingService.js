@@ -53,7 +53,9 @@ function buildServerBooking_(payload) {
       email: clean_(client.email).toLowerCase(),
       phone: clean_(client.phone),
       companyName: clean_(client.companyName),
-      invoiceReference: clean_(client.invoiceReference)
+      invoiceReference: clean_(client.invoiceReference),
+      clientName: clean_(client.clientName),
+      clientCompanyName: clean_(client.clientCompanyName)
     },
     event: {
       eventDate: clean_(event.eventDate),
@@ -170,10 +172,13 @@ function validateBookingRequest_(booking) {
   const e = booking.event;
   const eventType = findEventType_(booking.order.eventType);
 
-  if (!c.name) errors.push("Client name is required.");
+  if (!c.name) errors.push("Your name is required.");
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(c.email)) errors.push("A valid email address is required.");
   if (!c.phone) errors.push("Phone number is required.");
-  if (!c.companyName) errors.push("Company name is required.");
+  if (!c.companyName) errors.push("Your company is required.");
+  if (!c.invoiceReference) errors.push("Reference number is required.");
+  if (!c.clientName) errors.push("Client name is required.");
+  if (!c.clientCompanyName) errors.push("Client company is required.");
   if (!/^\d{4}-\d{2}-\d{2}$/.test(e.eventDate)) errors.push("Event date is required.");
   if (!/^\d{2}:\d{2}$/.test(e.startTime)) errors.push("Start time is required.");
   if (eventType && eventType.id === "bespoke" && !/^\d{2}:\d{2}$/.test(e.endTime)) errors.push("End time is required for bespoke events.");

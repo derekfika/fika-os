@@ -1,9 +1,19 @@
 const HOT_DRINKS_REPORTING_WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"];
+const HOT_DRINKS_REPORT_CACHE_PREFIX = "HDR_REPORT_";
+const HOT_DRINKS_REPORT_CACHE_SECONDS = 180;
+const HOT_DRINKS_REPORT_CACHE_MAX_CHARS = 90000;
 
 function getDashboardReport(filters) {
+  requireReportingAccess_(filters || {});
+  return getDashboardReportForFilters_(filters || {});
+}
+
+function getDashboardReportForFilters_(filters) {
   setupHotDrinkTally();
   const settings = getSettings_();
   const normalized = normalizeFilters_(filters || {});
+  const cachedReport = getCachedDashboardReport_(normalized, settings);
+  if (cachedReport) return cachedReport;
   const rows = getLogRowsForDateRange_(normalized.startDate, normalized.endDate).filter(function(row) {
     return row.status === "ACTIVE" && row.date >= normalized.startDate && row.date <= normalized.endDate;
   }).filter(function(row) {
@@ -19,15 +29,18 @@ function getDashboardReport(filters) {
 
   const summary = summarizeRows_(rows, normalized, settings);
   maybeCacheDashboardReport_(normalized, summary);
-  return { ok: true, filters: normalized, settings: settings, summary: summary };
+  const report = { ok: true, filters: normalized, settings: settings, summary: summary };
+  putCachedDashboardReport_(normalized, settings, report);
+  return report;
 }
 
 function refreshDashboardData() {
-  return getDashboardReport({ preset: "today" });
+  return getDashboardReportForFilters_({ preset: "today" });
 }
 
 function exportFilteredCsv(filters) {
-  const report = getDashboardReport(filters);
+  requireReportingAccess_(filters || {});
+  const report = getDashboardReportForFilters_(filters || {});
   const normalized = report.filters;
   const settings = report.settings;
   const rows = getLogRowsForDateRange_(normalized.startDate, normalized.endDate).filter(function(row) {
@@ -53,7 +66,8 @@ function exportFilteredCsv(filters) {
 }
 
 function exportPdfReport(filters) {
-  const report = getDashboardReport(filters);
+  requireReportingAccess_(filters || {});
+  const report = getDashboardReportForFilters_(filters || {});
   const normalized = report.filters;
   const summary = report.summary;
   const template = HtmlService.createTemplateFromFile("PdfReport");
@@ -138,11 +152,21 @@ function summarizeRows_(rows, filters, settings) {
   const heatmap = {};
   const heatmapDrinkTop = {};
   const hourlyDrinkMix = {};
+  const quarterHourBuckets = buildQuarterHourBuckets_();
+  const quarterHourHeatmap = {};
+  const quarterHourDrinkTop = {};
   let excludedClosedPeriodRows = 0;
   settings.drinks.forEach(function(drink) { byDrink[drink] = 0; });
   settings.floors.forEach(function(floor) { byFloor[floor] = 0; });
   HOT_DRINKS_CONFIG.timeBuckets.forEach(function(bucket) {
     hourlyDrinkMix[bucket.label] = makeDrinkCountMap_(settings.drinks);
+  });
+  quarterHourBuckets.intervals.forEach(function(interval) {
+    quarterHourHeatmap[interval] = {};
+    quarterHourDrinkTop[interval] = {};
+    quarterHourBuckets.hours.forEach(function(hour) {
+      quarterHourHeatmap[interval][hour.label] = 0;
+    });
   });
   HOT_DRINKS_REPORTING_WEEKDAYS.forEach(function(day) {
     byWeekday[day] = 0;
@@ -165,12 +189,18 @@ function summarizeRows_(rows, filters, settings) {
       heatmap[weekday][bucket.label] += 1;
       hourlyDrinkMix[bucket.label][row.drink] = (hourlyDrinkMix[bucket.label][row.drink] || 0) + 1;
       heatmapDrinkTop[weekday][bucket.label] = topDrinkForBucket_(heatmapDrinkTop[weekday][bucket.label], row.drink);
+      const quarterBucket = quarterBucketForTime_(row.time, quarterHourBuckets.buckets);
+      if (quarterBucket) {
+        quarterHourHeatmap[quarterBucket.interval][quarterBucket.hourLabel] += 1;
+        quarterHourDrinkTop[quarterBucket.interval][quarterBucket.hourLabel] = topDrinkForBucket_(quarterHourDrinkTop[quarterBucket.interval][quarterBucket.hourLabel], row.drink);
+      }
     } else if (bucket && filters.excludeClosedPeriods && bucket.closed) {
       excludedClosedPeriodRows += 1;
     }
   });
 
   const activeDates = Object.keys(byDate);
+  const activeDatesByWeekday = countActiveDatesByWeekday_(activeDates);
   const drinkMix = {};
   Object.keys(byDrink).forEach(function(drink) {
     drinkMix[drink] = rows.length ? Math.round((byDrink[drink] / rows.length) * 1000) / 10 : 0;
@@ -182,6 +212,7 @@ function summarizeRows_(rows, filters, settings) {
     byFloor: byFloor,
     byWeekday: byWeekday,
     byDate: byDate,
+    activeDatesByWeekday: activeDatesByWeekday,
     byHour: byHour,
     averagePerDay: activeDates.length ? round_(rows.length / activeDates.length) : 0,
     averageByWeekday: averageByWeekday_(byDate),
@@ -194,6 +225,9 @@ function summarizeRows_(rows, filters, settings) {
     busiestDay: maxKey_(byDate),
     heatmap: heatmap,
     heatmapDrinkTop: finalizeHeatmapDrinkTop_(heatmapDrinkTop, heatmap),
+    quarterHourHeatmap: quarterHourHeatmap,
+    quarterHourDrinkTop: finalizeQuarterHourDrinkTop_(quarterHourDrinkTop, quarterHourHeatmap),
+    quarterHourBuckets: quarterHourBuckets,
     hourlyDrinkMix: buildHourlyDrinkMix_(hourlyDrinkMix),
     excludedClosedPeriodRows: excludedClosedPeriodRows,
     drinkMix: drinkMix,
@@ -228,12 +262,77 @@ function finalizeHeatmapDrinkTop_(heatmapDrinkTop, heatmap) {
   return output;
 }
 
+function finalizeQuarterHourDrinkTop_(drinkTopByHour, heatmapByHour) {
+  const output = {};
+  Object.keys(heatmapByHour || {}).forEach(function(hour) {
+    output[hour] = finalizeHeatmapDrinkTop_(drinkTopByHour[hour] || {}, heatmapByHour[hour] || {});
+  });
+  return output;
+}
+
 function buildHourlyDrinkMix_(hourlyDrinkMix) {
   return Object.keys(hourlyDrinkMix).map(function(bucket) {
     const drinks = hourlyDrinkMix[bucket] || {};
     const total = Object.keys(drinks).reduce(function(sum, drink) { return sum + Number(drinks[drink] || 0); }, 0);
     return { bucket: bucket, total: total, drinks: drinks };
   });
+}
+
+function buildQuarterHourBuckets_() {
+  const buckets = [];
+  const seenHours = {};
+  const seenIntervals = {};
+  const hours = [];
+  const intervals = [];
+  HOT_DRINKS_CONFIG.timeBuckets.filter(function(bucket) {
+    return !bucket.closed;
+  }).forEach(function(bucket) {
+    let cursor = reportMinutesFromTime_(bucket.start);
+    const end = reportMinutesFromTime_(bucket.end);
+    const hourStart = reportTimeFromMinutes_(Math.floor(cursor / 60) * 60);
+    const hour = { value: hourStart, label: bucket.label };
+    if (!seenHours[hour.label]) {
+      seenHours[hour.label] = true;
+      hours.push(hour);
+    }
+    while (cursor < end) {
+      const next = Math.min(cursor + 15, end);
+      const interval = ":" + reportTimeFromMinutes_(cursor).split(":")[1];
+      const quarter = {
+        label: reportTimeFromMinutes_(cursor) + "-" + reportTimeFromMinutes_(next),
+        start: reportTimeFromMinutes_(cursor),
+        end: reportTimeFromMinutes_(next),
+        hour: hour.value,
+        hourLabel: hour.label,
+        interval: interval,
+        closed: false
+      };
+      if (!seenIntervals[interval]) {
+        seenIntervals[interval] = true;
+        intervals.push(interval);
+      }
+      buckets.push(quarter);
+      cursor = next;
+    }
+  });
+  intervals.sort(function(a, b) { return a.localeCompare(b); });
+  return { hours: hours, intervals: intervals, buckets: buckets };
+}
+
+function quarterBucketForTime_(time, buckets) {
+  const value = timeKey_(time);
+  return (buckets || []).find(function(bucket) {
+    return value >= bucket.start + ":00" && value < bucket.end + ":00";
+  }) || null;
+}
+
+function reportMinutesFromTime_(time) {
+  const parts = String(time || "00:00").split(":").map(Number);
+  return parts[0] * 60 + parts[1];
+}
+
+function reportTimeFromMinutes_(minutes) {
+  return String(Math.floor(minutes / 60)).padStart(2, "0") + ":" + String(minutes % 60).padStart(2, "0");
 }
 
 function maybeCacheDashboardReport_(filters, summary) {
@@ -245,6 +344,49 @@ function maybeCacheDashboardReport_(filters, summary) {
 function cacheDashboardReport_(filters, summary) {
   const sheet = getOrCreateSheet_(getSpreadsheet_(), HOT_DRINKS_CONFIG.sheets.dashboardData, DASHBOARD_DATA_HEADERS);
   sheet.appendRow([new Date(), filters.startDate, filters.endDate, JSON.stringify(filters), JSON.stringify(summary)]);
+}
+
+function getCachedDashboardReport_(filters, settings) {
+  if (!isDashboardReportCacheable_(filters)) return null;
+  try {
+    const cached = CacheService.getScriptCache().get(dashboardReportCacheKey_(filters, settings));
+    return cached ? JSON.parse(cached) : null;
+  } catch (error) {
+    return null;
+  }
+}
+
+function putCachedDashboardReport_(filters, settings, report) {
+  if (!isDashboardReportCacheable_(filters)) return;
+  try {
+    const payload = JSON.stringify(report);
+    if (payload.length > HOT_DRINKS_REPORT_CACHE_MAX_CHARS) return;
+    CacheService.getScriptCache().put(dashboardReportCacheKey_(filters, settings), payload, HOT_DRINKS_REPORT_CACHE_SECONDS);
+  } catch (error) {
+    // Cache misses are acceptable; Drive and Sheets remain the source of truth.
+  }
+}
+
+function isDashboardReportCacheable_(filters) {
+  return String(filters.endDate || "") < Utilities.formatDate(new Date(), HOT_DRINKS_CONFIG.timezone, "yyyy-MM-dd");
+}
+
+function dashboardReportCacheKey_(filters, settings) {
+  const signature = JSON.stringify({
+    filters: filters,
+    settings: {
+      floors: settings.floors,
+      drinks: settings.drinks,
+      bankHolidays: settings.bankHolidays,
+      closedDays: settings.closedDays
+    }
+  });
+  return HOT_DRINKS_REPORT_CACHE_PREFIX + digestCacheKey_(signature);
+}
+
+function digestCacheKey_(value) {
+  const digest = Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, value);
+  return Utilities.base64EncodeWebSafe(digest).replace(/=+$/, "");
 }
 
 function averageByWeekday_(byDate) {
@@ -263,6 +405,16 @@ function averageForWeekdays_(byDate, weekdays) {
   const dates = Object.keys(byDate).filter(function(date) { return weekdays.indexOf(weekdayName_(date)) !== -1; });
   const total = dates.reduce(function(sum, date) { return sum + byDate[date]; }, 0);
   return dates.length ? round_(total / dates.length) : 0;
+}
+
+function countActiveDatesByWeekday_(dates) {
+  const counts = {};
+  HOT_DRINKS_REPORTING_WEEKDAYS.forEach(function(day) { counts[day] = 0; });
+  (dates || []).forEach(function(date) {
+    const weekday = weekdayName_(date);
+    if (counts[weekday] != null) counts[weekday] += 1;
+  });
+  return counts;
 }
 
 function averageMap_(map, divisor) {
@@ -337,6 +489,7 @@ function buildPdfReportModel_(filters, summary, settings) {
   const mostPopularDrink = drinkRows.length ? drinkRows.slice().sort(function(a, b) { return b.value - a.value; })[0] : null;
   const floorSplit = floorRows.map(function(row) { return row.label + " " + row.percent + "%"; }).join(" / ") || "-";
   const hourlyDrinkRows = buildPdfHourlyDrinkRows_(summary.hourlyDrinkMix || [], drinks, drinkColors);
+  const quarterHourRows = buildPdfQuarterHourRows_(summary.quarterHourHeatmap || {}, summary.quarterHourBuckets || {}, activeDays);
 
   return {
     title: "Hot Drink Usage Report",
@@ -381,6 +534,10 @@ function buildPdfReportModel_(filters, summary, settings) {
     heatmapBucketMeta: HOT_DRINKS_CONFIG.timeBuckets,
     heatmap: displayHeatmap,
     heatmapMax: heatmapMax,
+    quarterHourRows: quarterHourRows.rows,
+    quarterHourBuckets: quarterHourRows.buckets,
+    quarterHourMax: quarterHourRows.max,
+    quarterHourAverageLabel: activeDays ? "Average drinks per active service day" : "Average drinks per active service day",
     hourlyDrinkRows: hourlyDrinkRows,
     drinks: drinks,
     drinkColors: drinkColors,
@@ -426,6 +583,24 @@ function buildPdfHourlyDrinkRows_(rows, drinks, colors) {
       segments: segments
     };
   });
+}
+
+function buildPdfQuarterHourRows_(heatmap, buckets, activeDays) {
+  const hours = (buckets.hours || []).map(function(hour) { return hour.label; });
+  const intervals = (buckets.intervals || []).filter(function(interval) {
+    return heatmap[interval];
+  });
+  let max = 1;
+  const rows = intervals.map(function(interval) {
+    const cells = hours.map(function(hour) {
+      const total = Number((heatmap[interval] || {})[hour] || 0);
+      const average = activeDays ? round_(total / activeDays) : 0;
+      max = Math.max(max, average);
+      return { hour: hour, total: total, average: average };
+    });
+    return { interval: interval, cells: cells };
+  });
+  return { buckets: hours, rows: rows, max: max };
 }
 
 function mapRows_(map, total, percentages) {
@@ -475,6 +650,24 @@ function heatOpacity_(value, max) {
   const number = Number(value || 0);
   if (!number) return 0.04;
   return Math.max(0.12, Math.min(0.9, number / Math.max(1, max)));
+}
+
+function heatColor_(value, max) {
+  const number = Number(value || 0);
+  if (!number) return "#f3f7fa";
+  const intensity = Math.max(0.08, Math.min(1, number / Math.max(1, max)));
+  const stops = [
+    { at: 0, color: [232, 242, 247] },
+    { at: 0.55, color: [0, 83, 138] },
+    { at: 1, color: [255, 128, 0] }
+  ];
+  const start = intensity <= stops[1].at ? stops[0] : stops[1];
+  const end = intensity <= stops[1].at ? stops[1] : stops[2];
+  const progress = (intensity - start.at) / Math.max(0.001, end.at - start.at);
+  const channel = function(index) {
+    return Math.round(start.color[index] + (end.color[index] - start.color[index]) * progress);
+  };
+  return "rgb(" + channel(0) + ", " + channel(1) + ", " + channel(2) + ")";
 }
 
 function formatDisplayDate_(dateString) {

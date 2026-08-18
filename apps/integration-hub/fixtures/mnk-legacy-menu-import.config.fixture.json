@@ -1,0 +1,6 @@
+{
+  "oplocId": "oploc:mnk-development-fixture",
+  "priceEffectiveFrom": "2026-01-01",
+  "vatRate": 0.2,
+  "configuredAsDevelopmentFixture": true
+}

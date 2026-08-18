@@ -499,8 +499,12 @@
     function handleSubmission(result) {
       if (!result?.ok) return submissionFailed((result?.errors || ["The request could not be submitted."]).join(" "));
       state.submitted = true;
+      const button = $("#next-button");
+      button.disabled = true;
+      button.textContent = "Sent";
       $$(".form-step").forEach(section => section.classList.remove("active"));
-      $(".form-actions").hidden = true;
+      $(".form-actions").hidden = false;
+      $("#back-button").style.visibility = "hidden";
       $(".stepper").hidden = true;
       $("#confirmation").hidden = false;
       $("#confirmation-reference").textContent = result.bookingId;

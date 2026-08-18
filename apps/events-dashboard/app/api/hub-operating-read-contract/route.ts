@@ -1,0 +1,6 @@
+import { NextRequest, NextResponse } from "next/server";
+import { requireActor } from "@/lib/auth";
+import { errorResponse } from "@/lib/api";
+import { HUB_OPERATING_READ_CONTRACT_VERSION } from "@/lib/hub-operating-read-contract";
+
+export async function GET(request: NextRequest) { try { requireActor(request); const hub = process.env.INTEGRATION_HUB_URL || (process.env.NODE_ENV !== "production" ? "http://localhost:3200" : ""); if (!hub) return NextResponse.json({ error: { message: "The Hub operating read source is not configured." } }, { status: 503 }); const ids = request.nextUrl.searchParams.get("ids") || ""; const response = await fetch(`${hub}/api/events-read-contract${ids ? `?ids=${encodeURIComponent(ids)}` : ""}`, { headers: { cookie: request.headers.get("cookie") || "" }, cache: "no-store" }); const body = await response.json(); if (!response.ok) return NextResponse.json({ error: body.error || { message: "The Hub operating read source is unavailable." } }, { status: response.status }); if (body.contractVersion !== HUB_OPERATING_READ_CONTRACT_VERSION) return NextResponse.json({ error: { message: "The Hub operating read contract version is not supported." } }, { status: 502 }); return NextResponse.json(body, { headers: { "Cache-Control": "no-store, max-age=0" } }); } catch (error) { return errorResponse(error); } }

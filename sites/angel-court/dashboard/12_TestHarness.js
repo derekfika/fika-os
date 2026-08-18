@@ -251,12 +251,29 @@ function testArchiveLogic_() {
 
 function testQuoteHelpers_() {
   const booking = makeDashboardTestBooking_();
+  booking.notes = "1x No Onions";
   const replacements = getQuoteReplacements_(booking);
 
   assertDashboardEqual_(replacements["<SITE>"], "OAC", "Quote site replacement failed.");
   assertDashboardEqual_(replacements["<CLIENT>"], "Example Client", "Quote client replacement failed.");
   assertDashboardEqual_(makeQuoteName_(booking), "OAC_Example Client_Alex Example_Breakfast", "Quote name failed.");
   assertDashboardEqual_(replacements["<MGMTFEE>"], "GBP 9.60", "Quote management fee replacement failed.");
+  assertDashboardEqual_(replacements["<NOTES>"], "1x No Onions", "Quote dietary requirements replacement failed.");
+  assertDashboardTest_(
+    ["<SITE>", "<CLIENT>", "<MGMTFEE>"].every(function(token) {
+      return Object.prototype.hasOwnProperty.call(replacements, token);
+    }),
+    "Required quote replacements should include site, client and management fee."
+  );
+  assertDashboardTest_(
+    getRequiredQuoteTokens_(booking).indexOf("<NOTES>") !== -1,
+    "Quotes with dietary requirements must require the notes placeholder."
+  );
+  booking.notes = "";
+  assertDashboardTest_(
+    getRequiredQuoteTokens_(booking).indexOf("<NOTES>") === -1,
+    "Quotes without dietary requirements should not require the notes placeholder."
+  );
   const recalculated = recalculateDashboardTotals_({
     items: [{ name: "Pastries", qty: 12, unitPrice: 10 }]
   }, 0.08);

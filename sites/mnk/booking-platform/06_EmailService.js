@@ -1,12 +1,6 @@
 function sendNewBookingNotification_(booking, integration) {
   try {
-    const settings = getPlatformSettings_();
-    const recipientConfig = parseNotificationRecipients_(
-      [
-        settings.SITE_EMAIL_ADDRESS,
-        settings.NOTIFICATION_RECIPIENTS
-      ].filter(Boolean).join(",")
-    );
+    const recipientConfig = parseNotificationRecipients_(booking.client.email);
 
     if (!recipientConfig.valid.length) {
       return {
@@ -24,20 +18,12 @@ function sendNewBookingNotification_(booking, integration) {
       );
     }
 
-    const dashboardUrl = getBookingNotificationDashboardUrl_(
-      settings.DASHBOARD_URL
-    );
     const eventType = eventTypeLabel_(booking.order.eventType);
-    const subject =
-      "New " + SITE_CONFIG.clientFacingName + " booking request | " +
-      booking.event.eventDate +
-      " | " +
-      booking.client.companyName;
+    const subject = SITE_CONFIG.clientFacingName +
+      " booking request received | " + booking.bookingId;
     const plainText = buildBookingNotificationText_(
       booking,
-      eventType,
-      dashboardUrl,
-      integration
+      eventType
     );
 
     MailApp.sendEmail({
@@ -46,9 +32,7 @@ function sendNewBookingNotification_(booking, integration) {
       body: plainText,
       htmlBody: buildBookingNotificationHtml_(
         booking,
-        eventType,
-        dashboardUrl,
-        integration
+        eventType
       ),
       name: SITE_CONFIG.clientFacingName
     });
@@ -108,9 +92,11 @@ function getBookingNotificationDashboardUrl_(configuredUrl) {
   }
 }
 
-function buildBookingNotificationText_(booking, eventType, dashboardUrl, integration) {
+function buildBookingNotificationText_(booking, eventType) {
   return [
-    "A new booking request has been added to the " + SITE_CONFIG.clientFacingName + " dashboard.",
+    "Hi " + booking.client.name + ",",
+    "",
+    "Thank you. Your " + SITE_CONFIG.clientFacingName + " booking request has been received.",
     "",
     "Reference: " + booking.bookingId,
     "Company: " + booking.client.companyName,
@@ -130,17 +116,14 @@ function buildBookingNotificationText_(booking, eventType, dashboardUrl, integra
       booking.event.roomOrArea
     ].filter(Boolean).join(" / "),
     "Estimated total: " + formatNotificationMoney_(booking.order.netTotal),
-    "Dashboard status: " + integration.dashboardStatus,
-    dashboardUrl ? "" : "",
-    dashboardUrl ? "Open dashboard: " + dashboardUrl : "",
     "",
-    "Please review the request and prepare the quote."
+    "This request is subject to confirmation. The hospitality team will contact you once it has been reviewed."
   ].filter(function(line, index, values) {
     return line !== "" || values[index - 1] !== "";
   }).join("\n");
 }
 
-function buildBookingNotificationHtml_(booking, eventType, dashboardUrl, integration) {
+function buildBookingNotificationHtml_(booking, eventType) {
   const rows = [
     ["Reference", booking.bookingId],
     ["Company", booking.client.companyName],
@@ -157,18 +140,17 @@ function buildBookingNotificationHtml_(booking, eventType, dashboardUrl, integra
       booking.event.floorLevel,
       booking.event.roomOrArea
     ].filter(Boolean).join(" / ")],
-    ["Estimated total", formatNotificationMoney_(booking.order.netTotal)],
-    ["Dashboard status", integration.dashboardStatus]
+    ["Estimated total", formatNotificationMoney_(booking.order.netTotal)]
   ];
 
   return [
     '<div style="font-family:Arial,sans-serif;color:#07506f;max-width:620px">',
     '<div style="background:#176f8e;color:#fff;padding:24px 28px;border-radius:0">',
     '<div style="font-size:12px;font-weight:bold;letter-spacing:1.4px;text-transform:uppercase">Hospitality brochure 2026</div>',
-    '<h1 style="font-size:26px;margin:8px 0 0">New ' + escapeNotificationHtml_(SITE_CONFIG.clientFacingName) + ' booking</h1>',
+    '<h1 style="font-size:26px;margin:8px 0 0">Booking request received</h1>',
     '</div>',
     '<div style="padding:26px 28px;border:1px solid #c7dfe8;border-top:0;border-radius:0">',
-    '<p style="margin-top:0;color:#4d7890">A new client booking request is ready for review.</p>',
+    '<p style="margin-top:0;color:#4d7890">Hi ' + escapeNotificationHtml_(booking.client.name) + ', thank you. Your hospitality booking request has been received.</p>',
     '<table style="width:100%;border-collapse:collapse">',
     rows.map(function(row) {
       return '<tr>' +
@@ -181,12 +163,7 @@ function buildBookingNotificationHtml_(booking, eventType, dashboardUrl, integra
         '</tr>';
     }).join(""),
     '</table>',
-    dashboardUrl
-      ? '<p style="margin:24px 0 8px"><a href="' +
-        escapeNotificationHtml_(dashboardUrl) +
-        '" style="display:inline-block;background:#176f8e;color:#fff;padding:12px 18px;border-radius:0;text-decoration:none;font-weight:bold">Open hospitality dashboard</a></p>'
-      : "",
-    '<p style="font-size:12px;color:#4d7890;margin-bottom:0">Please review the request and prepare the quote.</p>',
+    '<p style="font-size:12px;color:#4d7890;margin-bottom:0">This request is subject to confirmation. The hospitality team will contact you once it has been reviewed.</p>',
     '</div>',
     '</div>'
   ].join("");

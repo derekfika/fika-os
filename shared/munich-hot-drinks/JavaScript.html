@@ -7,7 +7,8 @@
     queue: [],
     syncing: false,
     lastTap: null,
-    pendingFloor: null
+    pendingFloor: null,
+    syncTimer: null
   };
   const queueKey = "munichHotDrinkTapQueue";
   const syncIntervalMs = 60000;
@@ -33,6 +34,11 @@
     updateQueueStatus();
     setInterval(syncQueue, syncIntervalMs);
     window.addEventListener("online", syncQueue);
+    window.addEventListener("beforeunload", event => {
+      if (!state.queue.length) return;
+      event.preventDefault();
+      event.returnValue = "There are unsynced drink taps on this tablet.";
+    });
     document.addEventListener("visibilitychange", () => {
       if (document.visibilityState === "hidden") syncQueue();
     });
@@ -117,11 +123,17 @@
     };
     state.lastTap = payload;
     state.queue.push(payload);
-    saveQueue();
+    if (!saveQueue()) {
+      state.queue.pop();
+      state.lastTap = state.queue[state.queue.length - 1] || null;
+      showError("This tablet could not save the tap locally. Please stop and tell a manager before continuing.");
+      return;
+    }
     applyOptimisticCount(drink, 1);
     flashButton(button);
     burstPlusOne(button);
     updateQueueStatus();
+    scheduleSyncSoon();
     $("#error-panel").hidden = true;
     if (state.queue.length >= maxBatchSize) syncQueue();
   }
@@ -129,7 +141,11 @@
   function undoLast() {
     if (state.queue.length) {
       const removed = state.queue.pop();
-      saveQueue();
+      if (!saveQueue()) {
+        state.queue.push(removed);
+        showError("This tablet could not update the local queue. Please retry before continuing.");
+        return;
+      }
       if (removed && removed.drink) applyOptimisticCount(removed.drink, -1);
       state.lastTap = state.queue[state.queue.length - 1] || null;
       updateQueueStatus();
@@ -149,6 +165,7 @@
   }
 
   function syncQueue() {
+    clearScheduledSync();
     if (state.syncing || !state.queue.length || !navigator.onLine) {
       updateQueueStatus();
       return;
@@ -161,7 +178,11 @@
     google.script.run
       .withSuccessHandler(result => {
         state.queue.splice(0, batch.length);
-        saveQueue();
+        if (!saveQueue()) {
+          state.syncing = false;
+          showError("The batch reached the sheet, but this tablet could not update its local queue. Please reload the app before continuing.");
+          return;
+        }
         state.syncing = false;
         if (result && result.counts) setCounts(applyQueueCounts(result.counts));
         $("#error-panel").hidden = true;
@@ -174,6 +195,17 @@
         setTimeout(syncQueue, 10000);
       })
       .recordDrinkTapBatch(batch);
+  }
+
+  function scheduleSyncSoon() {
+    clearScheduledSync();
+    state.syncTimer = setTimeout(syncQueue, 2000);
+  }
+
+  function clearScheduledSync() {
+    if (!state.syncTimer) return;
+    clearTimeout(state.syncTimer);
+    state.syncTimer = null;
   }
 
   function refreshCounts() {
@@ -272,7 +304,12 @@
   }
 
   function saveQueue() {
-    localStorage.setItem(queueKey, JSON.stringify(state.queue));
+    try {
+      localStorage.setItem(queueKey, JSON.stringify(state.queue));
+      return true;
+    } catch (error) {
+      return false;
+    }
   }
 
   function applyQueueCounts(counts) {

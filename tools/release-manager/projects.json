@@ -1,107 +1,114 @@
 [
-  {
-    "name": "Angel Court Hospitality Dashboard",
-    "group": "Angel Court",
-    "path": "sites/angel-court/dashboard",
-    "claspUser": "hospitality",
-    "deploymentId": "AKfycbyLnNKaZVHf8ZcTbJOwZ9RQDxq5OYs4uO6gRZ0WXrcNfJtEuqvgz1_zlNupVmnfXQAU"
-  },
-  {
-    "name": "Angel Court Booking Platform",
-    "group": "Angel Court",
-    "path": "sites/angel-court/booking-platform",
-    "claspUser": "hospitality",
-    "deploymentId": "AKfycbzPU_s9PqvJnVKXT1LAi9ApoIM3SYDbkPkhzACkjis2hso8ZnKTCpRCR7E-3XG4uzAN"
-  },
-  {
-    "name": "MNK Hospitality Dashboard",
-    "group": "MNK",
-    "path": "sites/mnk/dashboard",
-    "claspUser": "mnk",
-    "deploymentId": "AKfycbwOeeeYOuSOedH_ePM53NteMZWVKg2jsN4Mhc6iviw2vkj0_p_eeHFoBFkhfYTyBE1u"
-  },
-  {
-    "name": "MNK Booking Platform",
-    "group": "MNK",
-    "path": "sites/mnk/booking-platform",
-    "claspUser": "mnk",
-    "deploymentId": "AKfycbzPS0r6WCzQBK5uS8vK24_J-9IJTFAnhLZmaQlexJgke7JDiy9Qs_gzLpS1n4R-a1MB"
-  },
-  {
-    "name": "MNK Client Dashboard",
-    "group": "MNK",
-    "path": "sites/mnk/client-dashboard",
-    "claspUser": "mnk",
-    "deploymentId": "AKfycbzWUXyhI0JaUSSi-_bNVkVcZUVpxJaSA9sPWSVt3RYpcR08TaWFmsAd_o0lKS6lbffXrA"
-  },
-  {
-    "name": "Demo Hospitality Dashboard",
-    "group": "Demo",
-    "path": "sites/demo/dashboard",
-    "claspUser": "derek",
-    "deploymentId": "AKfycbzz8_F6NJENmXIRmAFZAliGIjTEQpZ5nn107Oq21HfjRx4JcR2GpdQANkvBeVgdcE7x"
-  },
-  {
-    "name": "Demo Booking Platform",
-    "group": "Demo",
-    "path": "sites/demo/booking-platform",
-    "claspUser": "derek",
-    "deploymentId": "AKfycbwpG_q6xIaAsKaUrITW4LA1NImALjot8n1i-PqsQYBAMICa2gkiVi5bPdEoeDPjdUoi"
-  },
-  {
-    "name": "CFC Booking Platform",
-    "group": "CFC",
-    "path": "sites/cfc/booking-platform",
-    "claspUser": "derek",
-    "deploymentId": ""
-  },
-  {
-    "name": "58 Victoria Embankment Dashboard",
-    "group": "58 Victoria Embankment",
-    "path": "sites/58-victoria-embankment/dashboard",
-    "claspUser": "hospitality",
-    "deploymentId": ""
-  },
-  {
-    "name": "CPU Dashboard",
-    "group": "Shared",
-    "path": "shared/cpu-dashboard",
-    "claspUser": "cpu",
-    "deploymentId": "AKfycbzVXHRI8nl1qdyXymcJIC_OG4p_RsVwrN7NvZwWjMWFidh3R7XEn09ZYWtDGiBz2M1l"
-  },
-  {
-    "name": "Client Feedback Portal",
-    "group": "Shared",
-    "path": "shared/client-feedback-portal",
-    "claspUser": "derek",
-    "deploymentId": "AKfycbxt3mSCTPMyXGi4VfZGHo2rwWsI7afe_AZfoifSH10MtDQYiRfCsWwqDQwAvPzU2SjE"
-  },
-  {
-    "name": "Hospitality Feedback Reporting Dashboard",
-    "group": "Shared",
-    "path": "shared/feedback-reporting-dashboard",
-    "claspUser": "derek",
-    "deploymentId": "AKfycbwvD4UynRxmDuxKvBZWr-7a3ZQZH2XO3Db1d-L5-2v7Hk9VBKjb0RYZeN-mnIN20cCt"
-  },
-  {
-    "name": "Munich RE Hot Drinks Tally",
-    "group": "Munich RE",
-    "path": "shared/munich-hot-drinks",
-    "claspUser": "derek",
-    "deploymentId": "AKfycbzYVXfF7lnCf3PKJpie5aZTkbwytgf0Y_6vUrukQAELMkefT-zrb0fOry2Q5gLrJ3Ov"
-  },
-  {
-    "name": "Munich RE Hot Drinks Reporting",
-    "group": "Munich RE",
-    "path": "shared/munich-hot-drinks-reporting",
-    "claspUser": "derek",
-    "deploymentId": "AKfycbywwS2A0pULd5ml33wT_BDeCUAZzQJn2duRm5E6SabxiMUcLhsg719TAJu8Y983QQhc"
-  },
-  {
-    "name": "Workforce Operations Platform",
-    "group": "Shared",
-    "path": "shared/workforce-operations-platform",
-    "claspUser": "derek",
-    "deploymentId": "AKfycby66hUERHfHe3v1B-Ok66lXp92xpma7nzdwAITzdyNiqtf7uEgSQWEXqOitO5SMBo-f"
-  }
+    {
+        "name":  "Angel Court Hospitality Dashboard",
+        "group":  "Angel Court",
+        "path":  "sites/angel-court/dashboard",
+        "claspUser":  "hospitality",
+        "deploymentId":  "AKfycbyLnNKaZVHf8ZcTbJOwZ9RQDxq5OYs4uO6gRZ0WXrcNfJtEuqvgz1_zlNupVmnfXQAU"
+    },
+    {
+        "name":  "Angel Court Booking Platform",
+        "group":  "Angel Court",
+        "path":  "sites/angel-court/booking-platform",
+        "claspUser":  "hospitality",
+        "deploymentId":  "AKfycbzPU_s9PqvJnVKXT1LAi9ApoIM3SYDbkPkhzACkjis2hso8ZnKTCpRCR7E-3XG4uzAN"
+    },
+    {
+        "name":  "MNK Hospitality Dashboard",
+        "group":  "MNK",
+        "path":  "sites/mnk/dashboard",
+        "claspUser":  "mnk",
+        "deploymentId":  "AKfycbwOeeeYOuSOedH_ePM53NteMZWVKg2jsN4Mhc6iviw2vkj0_p_eeHFoBFkhfYTyBE1u"
+    },
+    {
+        "name":  "MNK Booking Platform",
+        "group":  "MNK",
+        "path":  "sites/mnk/booking-platform",
+        "claspUser":  "mnk",
+        "deploymentId":  "AKfycbzPS0r6WCzQBK5uS8vK24_J-9IJTFAnhLZmaQlexJgke7JDiy9Qs_gzLpS1n4R-a1MB"
+    },
+    {
+        "name":  "MNK Client Dashboard",
+        "group":  "MNK",
+        "path":  "sites/mnk/client-dashboard",
+        "claspUser":  "mnk",
+        "deploymentId":  "AKfycbzWUXyhI0JaUSSi-_bNVkVcZUVpxJaSA9sPWSVt3RYpcR08TaWFmsAd_o0lKS6lbffXrA"
+    },
+    {
+        "name":  "Demo Hospitality Dashboard",
+        "group":  "Demo",
+        "path":  "sites/demo/dashboard",
+        "claspUser":  "derek",
+        "deploymentId":  "AKfycbzz8_F6NJENmXIRmAFZAliGIjTEQpZ5nn107Oq21HfjRx4JcR2GpdQANkvBeVgdcE7x"
+    },
+    {
+        "name":  "Demo Booking Platform",
+        "group":  "Demo",
+        "path":  "sites/demo/booking-platform",
+        "claspUser":  "derek",
+        "deploymentId":  "AKfycbwpG_q6xIaAsKaUrITW4LA1NImALjot8n1i-PqsQYBAMICa2gkiVi5bPdEoeDPjdUoi"
+    },
+    {
+        "name":  "RCoA Hospitality Booking Platform",
+        "group":  "RCoA",
+        "path":  "sites/rcoa/booking-platform",
+        "claspUser":  "derek",
+        "deploymentId":  "AKfycbwagMz8Y15bOoSR-73W6VDPTrKPhiqRbCcIfnwVoCvMdizA7MnsvzRxOhRkJuG5Y5wU"
+    },
+    {
+        "name":  "CFC Booking Platform",
+        "group":  "CFC",
+        "path":  "sites/cfc/booking-platform",
+        "claspUser":  "derek",
+        "deploymentId":  ""
+    },
+    {
+        "name":  "58 Victoria Embankment Dashboard",
+        "group":  "58 Victoria Embankment",
+        "path":  "sites/58-victoria-embankment/dashboard",
+        "claspUser":  "hospitality",
+        "deploymentId":  ""
+    },
+    {
+        "name":  "CPU Dashboard",
+        "group":  "Shared",
+        "path":  "shared/cpu-dashboard",
+        "claspUser":  "cpu",
+        "deploymentId":  "AKfycbzVXHRI8nl1qdyXymcJIC_OG4p_RsVwrN7NvZwWjMWFidh3R7XEn09ZYWtDGiBz2M1l"
+    },
+    {
+        "name":  "Client Feedback Portal",
+        "group":  "Shared",
+        "path":  "shared/client-feedback-portal",
+        "claspUser":  "derek",
+        "deploymentId":  "AKfycbxt3mSCTPMyXGi4VfZGHo2rwWsI7afe_AZfoifSH10MtDQYiRfCsWwqDQwAvPzU2SjE"
+    },
+    {
+        "name":  "Hospitality Feedback Reporting Dashboard",
+        "group":  "Shared",
+        "path":  "shared/feedback-reporting-dashboard",
+        "claspUser":  "derek",
+        "deploymentId":  "AKfycbwvD4UynRxmDuxKvBZWr-7a3ZQZH2XO3Db1d-L5-2v7Hk9VBKjb0RYZeN-mnIN20cCt"
+    },
+    {
+        "name":  "Munich RE Hot Drinks Tally",
+        "group":  "Munich RE",
+        "path":  "shared/munich-hot-drinks",
+        "claspUser":  "derek",
+        "deploymentId":  "AKfycbzYVXfF7lnCf3PKJpie5aZTkbwytgf0Y_6vUrukQAELMkefT-zrb0fOry2Q5gLrJ3Ov"
+    },
+    {
+        "name":  "Munich RE Hot Drinks Reporting",
+        "group":  "Munich RE",
+        "path":  "shared/munich-hot-drinks-reporting",
+        "claspUser":  "derek",
+        "deploymentId":  "AKfycbywwS2A0pULd5ml33wT_BDeCUAZzQJn2duRm5E6SabxiMUcLhsg719TAJu8Y983QQhc"
+    },
+    {
+        "name":  "Workforce Operations Platform",
+        "group":  "Shared",
+        "path":  "shared/workforce-operations-platform",
+        "claspUser":  "derek",
+        "deploymentId":  "AKfycby66hUERHfHe3v1B-Ok66lXp92xpma7nzdwAITzdyNiqtf7uEgSQWEXqOitO5SMBo-f"
+    }
 ]

@@ -1,0 +1,4493 @@
+{
+  "schemaVersion": "0.1.0",
+  "parentMenuItemKey": "delivered-in-lunch",
+  "sourceFile": "WC 20_07_2026 (1).xlsx",
+  "sourceWeekCommencing": "2026-07-20",
+  "mappingPolicy": "Site labels are preserved as evidence; canonical OPLOC IDs are intentionally unset until governed.",
+  "plans": [
+    {
+      "day": "Monday",
+      "sourceSheet": "mon",
+      "sourceRow": 3,
+      "productGroup": "SALAD 1",
+      "title": "mixed leaf salad",
+      "siteQuantities": []
+    },
+    {
+      "day": "Monday",
+      "sourceSheet": "mon",
+      "sourceRow": 4,
+      "productGroup": "SALAD 2",
+      "title": "orzo pasta with sundried tomato,kalamata olivesand torn basil",
+      "siteQuantities": []
+    },
+    {
+      "day": "Monday",
+      "sourceSheet": "mon",
+      "sourceRow": 5,
+      "productGroup": "SALAD 3",
+      "title": "trio of tomatos oregano shaved fennell and orange dressing",
+      "siteQuantities": []
+    },
+    {
+      "day": "Monday",
+      "sourceSheet": "mon",
+      "sourceRow": 6,
+      "productGroup": "SALAD 4",
+      "title": "grilled artichoke roast new potato red pepper and sundried tomato pesto",
+      "siteQuantities": []
+    },
+    {
+      "day": "Monday",
+      "sourceSheet": "mon",
+      "sourceRow": 10,
+      "productGroup": "SOUP",
+      "title": "leek and potato",
+      "siteQuantities": [
+        {
+          "sourceSiteKey": "haelon",
+          "siteLabel": "Haleon (source-only)",
+          "canonicalOplocId": null,
+          "quantity": 5,
+          "mappingStatus": "source-only"
+        }
+      ]
+    },
+    {
+      "day": "Monday",
+      "sourceSheet": "mon",
+      "sourceRow": 11,
+      "productGroup": "HOT MEAT",
+      "title": "smoked pulled chicken arrabiata",
+      "siteQuantities": [
+        {
+          "sourceSiteKey": "haelon",
+          "siteLabel": "Haleon (source-only)",
+          "canonicalOplocId": null,
+          "quantity": 25,
+          "mappingStatus": "source-only"
+        }
+      ]
+    },
+    {
+      "day": "Monday",
+      "sourceSheet": "mon",
+      "sourceRow": 12,
+      "productGroup": "HOT VEG VEGAN",
+      "title": "roasted wild mushroom with sage and garlic",
+      "siteQuantities": [
+        {
+          "sourceSiteKey": "haelon",
+          "siteLabel": "Haleon (source-only)",
+          "canonicalOplocId": null,
+          "quantity": 5,
+          "mappingStatus": "source-only"
+        }
+      ]
+    },
+    {
+      "day": "Monday",
+      "sourceSheet": "mon",
+      "sourceRow": 13,
+      "productGroup": "starch/sides",
+      "title": "orecchiuete vegan pasta",
+      "siteQuantities": []
+    },
+    {
+      "day": "Monday",
+      "sourceSheet": "mon",
+      "sourceRow": 14,
+      "productGroup": "starch/sides",
+      "title": "foccaci garlic bread",
+      "siteQuantities": []
+    },
+    {
+      "day": "Monday",
+      "sourceSheet": "mon",
+      "sourceRow": 15,
+      "productGroup": "starch/sides",
+      "title": "grated parmasamn",
+      "siteQuantities": []
+    },
+    {
+      "day": "Monday",
+      "sourceSheet": "mon",
+      "sourceRow": 16,
+      "productGroup": "sauce",
+      "title": "classic arrabiata with roast peppers, black olives and chilli",
+      "siteQuantities": []
+    },
+    {
+      "day": "Monday",
+      "sourceSheet": "mon",
+      "sourceRow": 17,
+      "productGroup": "sauce",
+      "title": "basil and rocket pesto",
+      "siteQuantities": []
+    },
+    {
+      "day": "Monday",
+      "sourceSheet": "mon",
+      "sourceRow": 18,
+      "productGroup": "starch/sides",
+      "title": "sundried tomato and roast rerd pepper pesto",
+      "siteQuantities": []
+    },
+    {
+      "day": "Monday",
+      "sourceSheet": "mon",
+      "sourceRow": 23,
+      "productGroup": "SALAD 1",
+      "title": "mixed leaf salad",
+      "siteQuantities": []
+    },
+    {
+      "day": "Monday",
+      "sourceSheet": "mon",
+      "sourceRow": 24,
+      "productGroup": "SALAD 2",
+      "title": "orzo pasta with sundried tomato,kalamata olivesand torn basil",
+      "siteQuantities": []
+    },
+    {
+      "day": "Monday",
+      "sourceSheet": "mon",
+      "sourceRow": 25,
+      "productGroup": "SALAD 3",
+      "title": "trio of tomatos oregano shaved fennell and orange dressing",
+      "siteQuantities": []
+    },
+    {
+      "day": "Monday",
+      "sourceSheet": "mon",
+      "sourceRow": 26,
+      "productGroup": "SALAD 4",
+      "title": "grilled artichoke roast new potato red pepper and sundried tomato pesto",
+      "siteQuantities": []
+    },
+    {
+      "day": "Monday",
+      "sourceSheet": "mon",
+      "sourceRow": 30,
+      "productGroup": "SOUP",
+      "title": "leek and potato",
+      "siteQuantities": []
+    },
+    {
+      "day": "Monday",
+      "sourceSheet": "mon",
+      "sourceRow": 31,
+      "productGroup": "HOT MEAT",
+      "title": "smoked pulled chicken arrabiata",
+      "siteQuantities": []
+    },
+    {
+      "day": "Monday",
+      "sourceSheet": "mon",
+      "sourceRow": 32,
+      "productGroup": "HOT VEG VEGAN",
+      "title": "roasted wild mushroom with sage and garlic",
+      "siteQuantities": []
+    },
+    {
+      "day": "Monday",
+      "sourceSheet": "mon",
+      "sourceRow": 33,
+      "productGroup": "starch/sides",
+      "title": "orecchiuete vegan pasta",
+      "siteQuantities": []
+    },
+    {
+      "day": "Monday",
+      "sourceSheet": "mon",
+      "sourceRow": 34,
+      "productGroup": "starch/sides",
+      "title": "foccaci garlic bread",
+      "siteQuantities": []
+    },
+    {
+      "day": "Monday",
+      "sourceSheet": "mon",
+      "sourceRow": 35,
+      "productGroup": "starch/sides",
+      "title": "grated parmasamn",
+      "siteQuantities": []
+    },
+    {
+      "day": "Monday",
+      "sourceSheet": "mon",
+      "sourceRow": 36,
+      "productGroup": "sauce",
+      "title": "classic arrabiata with roast peppers, black olives and chilli",
+      "siteQuantities": []
+    },
+    {
+      "day": "Monday",
+      "sourceSheet": "mon",
+      "sourceRow": 37,
+      "productGroup": "sauce",
+      "title": "basil and rocket pesto",
+      "siteQuantities": []
+    },
+    {
+      "day": "Monday",
+      "sourceSheet": "mon",
+      "sourceRow": 38,
+      "productGroup": "starch/sides",
+      "title": "sundried tomato and roast rerd pepper pesto",
+      "siteQuantities": []
+    },
+    {
+      "day": "Tuesday",
+      "sourceSheet": "tue",
+      "sourceRow": 3,
+      "productGroup": "SALAD 1",
+      "title": "grated carrott with ponzu and bean sprouts",
+      "siteQuantities": [
+        {
+          "sourceSiteKey": "haelon",
+          "siteLabel": "Haleon (source-only)",
+          "canonicalOplocId": null,
+          "quantity": 10,
+          "mappingStatus": "source-only"
+        },
+        {
+          "sourceSiteKey": "x",
+          "siteLabel": "Unresolved source column X",
+          "canonicalOplocId": null,
+          "quantity": 15,
+          "mappingStatus": "label-confirmed-id-pending"
+        },
+        {
+          "sourceSiteKey": "angel",
+          "siteLabel": "Angel Court",
+          "canonicalOplocId": null,
+          "quantity": 10,
+          "mappingStatus": "label-confirmed-id-pending"
+        },
+        {
+          "sourceSiteKey": "comm",
+          "siteLabel": "Commerzbank",
+          "canonicalOplocId": null,
+          "quantity": 10,
+          "mappingStatus": "label-confirmed-id-pending"
+        }
+      ]
+    },
+    {
+      "day": "Tuesday",
+      "sourceSheet": "tue",
+      "sourceRow": 4,
+      "productGroup": "SALAD 2",
+      "title": "mustard greens",
+      "siteQuantities": [
+        {
+          "sourceSiteKey": "haelon",
+          "siteLabel": "Haleon (source-only)",
+          "canonicalOplocId": null,
+          "quantity": 10,
+          "mappingStatus": "source-only"
+        },
+        {
+          "sourceSiteKey": "x",
+          "siteLabel": "Unresolved source column X",
+          "canonicalOplocId": null,
+          "quantity": 10,
+          "mappingStatus": "label-confirmed-id-pending"
+        },
+        {
+          "sourceSiteKey": "angel",
+          "siteLabel": "Angel Court",
+          "canonicalOplocId": null,
+          "quantity": 10,
+          "mappingStatus": "label-confirmed-id-pending"
+        },
+        {
+          "sourceSiteKey": "comm",
+          "siteLabel": "Commerzbank",
+          "canonicalOplocId": null,
+          "quantity": 10,
+          "mappingStatus": "label-confirmed-id-pending"
+        }
+      ]
+    },
+    {
+      "day": "Tuesday",
+      "sourceSheet": "tue",
+      "sourceRow": 5,
+      "productGroup": "SALAD 3",
+      "title": "edememe,toasted sesamesoy pickled onions,smashed cucumber",
+      "siteQuantities": [
+        {
+          "sourceSiteKey": "haelon",
+          "siteLabel": "Haleon (source-only)",
+          "canonicalOplocId": null,
+          "quantity": 10,
+          "mappingStatus": "source-only"
+        },
+        {
+          "sourceSiteKey": "x",
+          "siteLabel": "Unresolved source column X",
+          "canonicalOplocId": null,
+          "quantity": 10,
+          "mappingStatus": "label-confirmed-id-pending"
+        },
+        {
+          "sourceSiteKey": "angel",
+          "siteLabel": "Angel Court",
+          "canonicalOplocId": null,
+          "quantity": 10,
+          "mappingStatus": "label-confirmed-id-pending"
+        },
+        {
+          "sourceSiteKey": "comm",
+          "siteLabel": "Commerzbank",
+          "canonicalOplocId": null,
+          "quantity": 10,
+          "mappingStatus": "label-confirmed-id-pending"
+        }
+      ]
+    },
+    {
+      "day": "Tuesday",
+      "sourceSheet": "tue",
+      "sourceRow": 6,
+      "productGroup": "SALAD 4",
+      "title": "asian slaw with teryaki and crispy lotus root",
+      "siteQuantities": [
+        {
+          "sourceSiteKey": "haelon",
+          "siteLabel": "Haleon (source-only)",
+          "canonicalOplocId": null,
+          "quantity": 10,
+          "mappingStatus": "source-only"
+        },
+        {
+          "sourceSiteKey": "x",
+          "siteLabel": "Unresolved source column X",
+          "canonicalOplocId": null,
+          "quantity": 10,
+          "mappingStatus": "label-confirmed-id-pending"
+        },
+        {
+          "sourceSiteKey": "angel",
+          "siteLabel": "Angel Court",
+          "canonicalOplocId": null,
+          "quantity": 10,
+          "mappingStatus": "label-confirmed-id-pending"
+        },
+        {
+          "sourceSiteKey": "comm",
+          "siteLabel": "Commerzbank",
+          "canonicalOplocId": null,
+          "quantity": 10,
+          "mappingStatus": "label-confirmed-id-pending"
+        }
+      ]
+    },
+    {
+      "day": "Tuesday",
+      "sourceSheet": "tue",
+      "sourceRow": 9,
+      "productGroup": "COLD PROTEIN",
+      "title": "mixed chicken breast",
+      "siteQuantities": [
+        {
+          "sourceSiteKey": "comm",
+          "siteLabel": "Commerzbank",
+          "canonicalOplocId": null,
+          "quantity": 20,
+          "mappingStatus": "label-confirmed-id-pending"
+        }
+      ]
+    },
+    {
+      "day": "Tuesday",
+      "sourceSheet": "tue",
+      "sourceRow": 10,
+      "productGroup": "SOUP",
+      "title": "spiced chickpea and coriander",
+      "siteQuantities": [
+        {
+          "sourceSiteKey": "haelon",
+          "siteLabel": "Haleon (source-only)",
+          "canonicalOplocId": null,
+          "quantity": 5,
+          "mappingStatus": "source-only"
+        }
+      ]
+    },
+    {
+      "day": "Tuesday",
+      "sourceSheet": "tue",
+      "sourceRow": 11,
+      "productGroup": "HOT MEAT",
+      "title": "bulgogi smoked and pulled beef brisket",
+      "siteQuantities": [
+        {
+          "sourceSiteKey": "haelon",
+          "siteLabel": "Haleon (source-only)",
+          "canonicalOplocId": null,
+          "quantity": 25,
+          "mappingStatus": "source-only"
+        }
+      ]
+    },
+    {
+      "day": "Tuesday",
+      "sourceSheet": "tue",
+      "sourceRow": 12,
+      "productGroup": "HOT VEG VEGAN",
+      "title": "tonkatasu roasted aubergine",
+      "siteQuantities": [
+        {
+          "sourceSiteKey": "haelon",
+          "siteLabel": "Haleon (source-only)",
+          "canonicalOplocId": null,
+          "quantity": 5,
+          "mappingStatus": "source-only"
+        }
+      ]
+    },
+    {
+      "day": "Tuesday",
+      "sourceSheet": "tue",
+      "sourceRow": 13,
+      "productGroup": "starch/sides",
+      "title": "steamed sushi rice",
+      "siteQuantities": []
+    },
+    {
+      "day": "Tuesday",
+      "sourceSheet": "tue",
+      "sourceRow": 14,
+      "productGroup": "starch/sides",
+      "title": "vegetable gyoza",
+      "siteQuantities": []
+    },
+    {
+      "day": "Tuesday",
+      "sourceSheet": "tue",
+      "sourceRow": 15,
+      "productGroup": "starch/sides",
+      "title": "black rice vinegar dipping sauce",
+      "siteQuantities": []
+    },
+    {
+      "day": "Tuesday",
+      "sourceSheet": "tue",
+      "sourceRow": 16,
+      "productGroup": "starch/sides",
+      "title": "ponzu soy sauce",
+      "siteQuantities": []
+    },
+    {
+      "day": "Tuesday",
+      "sourceSheet": "tue",
+      "sourceRow": 17,
+      "productGroup": "starch/sides",
+      "title": "sweet chilli sauce",
+      "siteQuantities": []
+    },
+    {
+      "day": "Tuesday",
+      "sourceSheet": "tue",
+      "sourceRow": 18,
+      "productGroup": "starch/sides",
+      "title": "edamame",
+      "siteQuantities": []
+    },
+    {
+      "day": "Tuesday",
+      "sourceSheet": "tue",
+      "sourceRow": 19,
+      "productGroup": "starch/sides",
+      "title": "crispy shallots and toasted sesame seeds",
+      "siteQuantities": []
+    },
+    {
+      "day": "Tuesday",
+      "sourceSheet": "tue",
+      "sourceRow": 21,
+      "productGroup": "jackets",
+      "title": "plain jackets",
+      "siteQuantities": []
+    },
+    {
+      "day": "Tuesday",
+      "sourceSheet": "tue",
+      "sourceRow": 27,
+      "productGroup": "SALAD 1",
+      "title": "grated carrott with ponzu and bean sprouts",
+      "siteQuantities": []
+    },
+    {
+      "day": "Tuesday",
+      "sourceSheet": "tue",
+      "sourceRow": 28,
+      "productGroup": "SALAD 2",
+      "title": "mustard greens",
+      "siteQuantities": []
+    },
+    {
+      "day": "Tuesday",
+      "sourceSheet": "tue",
+      "sourceRow": 29,
+      "productGroup": "SALAD 3",
+      "title": "edememe,toasted sesamesoy pickled onions,smashed cucumber",
+      "siteQuantities": []
+    },
+    {
+      "day": "Tuesday",
+      "sourceSheet": "tue",
+      "sourceRow": 30,
+      "productGroup": "SALAD 4",
+      "title": "asian slaw with teryaki and crispy lotus root",
+      "siteQuantities": []
+    },
+    {
+      "day": "Tuesday",
+      "sourceSheet": "tue",
+      "sourceRow": 33,
+      "productGroup": "COLD PROTEIN",
+      "title": "mixed chicken breast",
+      "siteQuantities": []
+    },
+    {
+      "day": "Tuesday",
+      "sourceSheet": "tue",
+      "sourceRow": 34,
+      "productGroup": "SOUP",
+      "title": "spiced chickpea and coriander",
+      "siteQuantities": []
+    },
+    {
+      "day": "Tuesday",
+      "sourceSheet": "tue",
+      "sourceRow": 35,
+      "productGroup": "HOT MEAT",
+      "title": "bulgogi smoked and pulled beef brisket",
+      "siteQuantities": []
+    },
+    {
+      "day": "Tuesday",
+      "sourceSheet": "tue",
+      "sourceRow": 36,
+      "productGroup": "HOT VEG VEGAN",
+      "title": "tonkatasu roasted aubergine",
+      "siteQuantities": []
+    },
+    {
+      "day": "Tuesday",
+      "sourceSheet": "tue",
+      "sourceRow": 37,
+      "productGroup": "starch/sides",
+      "title": "steamed sushi rice",
+      "siteQuantities": []
+    },
+    {
+      "day": "Tuesday",
+      "sourceSheet": "tue",
+      "sourceRow": 38,
+      "productGroup": "starch/sides",
+      "title": "vegetable gyoza",
+      "siteQuantities": []
+    },
+    {
+      "day": "Tuesday",
+      "sourceSheet": "tue",
+      "sourceRow": 39,
+      "productGroup": "starch/sides",
+      "title": "black rice vinegar dipping sauce",
+      "siteQuantities": []
+    },
+    {
+      "day": "Tuesday",
+      "sourceSheet": "tue",
+      "sourceRow": 40,
+      "productGroup": "starch/sides",
+      "title": "ponzu soy sauce",
+      "siteQuantities": []
+    },
+    {
+      "day": "Tuesday",
+      "sourceSheet": "tue",
+      "sourceRow": 41,
+      "productGroup": "starch/sides",
+      "title": "sweet chilli sauce",
+      "siteQuantities": []
+    },
+    {
+      "day": "Tuesday",
+      "sourceSheet": "tue",
+      "sourceRow": 42,
+      "productGroup": "starch/sides",
+      "title": "edamame",
+      "siteQuantities": []
+    },
+    {
+      "day": "Tuesday",
+      "sourceSheet": "tue",
+      "sourceRow": 43,
+      "productGroup": "starch/sides",
+      "title": "crispy shallots and toasted sesame seeds",
+      "siteQuantities": []
+    },
+    {
+      "day": "Tuesday",
+      "sourceSheet": "tue",
+      "sourceRow": 45,
+      "productGroup": "jacket filling",
+      "title": "plain jackets",
+      "siteQuantities": []
+    },
+    {
+      "day": "Wednesday",
+      "sourceSheet": "wed",
+      "sourceRow": 3,
+      "productGroup": "SALAD 1",
+      "title": "tomato cucumber,pickled pink onions and fresh coriander",
+      "siteQuantities": []
+    },
+    {
+      "day": "Wednesday",
+      "sourceSheet": "wed",
+      "sourceRow": 4,
+      "productGroup": "SALAD 2",
+      "title": "charred sweetcorn with vegan feta and lime",
+      "siteQuantities": []
+    },
+    {
+      "day": "Wednesday",
+      "sourceSheet": "wed",
+      "sourceRow": 5,
+      "productGroup": "SALAD 3",
+      "title": "quinoa,red kidney bean and baby spinach",
+      "siteQuantities": []
+    },
+    {
+      "day": "Wednesday",
+      "sourceSheet": "wed",
+      "sourceRow": 6,
+      "productGroup": "SALAD 4",
+      "title": "mixed leaf salad",
+      "siteQuantities": []
+    },
+    {
+      "day": "Wednesday",
+      "sourceSheet": "wed",
+      "sourceRow": 11,
+      "productGroup": "SOUP",
+      "title": "tomato and black bean",
+      "siteQuantities": [
+        {
+          "sourceSiteKey": "haelon",
+          "siteLabel": "Haleon (source-only)",
+          "canonicalOplocId": null,
+          "quantity": 5,
+          "mappingStatus": "source-only"
+        }
+      ]
+    },
+    {
+      "day": "Wednesday",
+      "sourceSheet": "wed",
+      "sourceRow": 12,
+      "productGroup": "HOT MEAT",
+      "title": "chimichurie chicken breast strips",
+      "siteQuantities": [
+        {
+          "sourceSiteKey": "haelon",
+          "siteLabel": "Haleon (source-only)",
+          "canonicalOplocId": null,
+          "quantity": 25,
+          "mappingStatus": "source-only"
+        }
+      ]
+    },
+    {
+      "day": "Wednesday",
+      "sourceSheet": "wed",
+      "sourceRow": 13,
+      "productGroup": "HOT FISH",
+      "title": "cauliflower wings with chipotle spice",
+      "siteQuantities": [
+        {
+          "sourceSiteKey": "haelon",
+          "siteLabel": "Haleon (source-only)",
+          "canonicalOplocId": null,
+          "quantity": 5,
+          "mappingStatus": "source-only"
+        }
+      ]
+    },
+    {
+      "day": "Wednesday",
+      "sourceSheet": "wed",
+      "sourceRow": 14,
+      "productGroup": "HOT VEG VEGAN",
+      "title": "smokey paprika and garlic roasted new potatos",
+      "siteQuantities": []
+    },
+    {
+      "day": "Wednesday",
+      "sourceSheet": "wed",
+      "sourceRow": 15,
+      "productGroup": "starch/sides",
+      "title": "roasted corn on the cob",
+      "siteQuantities": []
+    },
+    {
+      "day": "Wednesday",
+      "sourceSheet": "wed",
+      "sourceRow": 16,
+      "productGroup": "starch/sides",
+      "title": "warm taboon breads",
+      "siteQuantities": []
+    },
+    {
+      "day": "Wednesday",
+      "sourceSheet": "wed",
+      "sourceRow": 17,
+      "productGroup": "starch/sides",
+      "title": "tomato and chipotle salsa",
+      "siteQuantities": []
+    },
+    {
+      "day": "Wednesday",
+      "sourceSheet": "wed",
+      "sourceRow": 18,
+      "productGroup": "starch/sides",
+      "title": "sour cream with chives",
+      "siteQuantities": []
+    },
+    {
+      "day": "Wednesday",
+      "sourceSheet": "wed",
+      "sourceRow": 19,
+      "productGroup": "starch/sides",
+      "title": "avocardo cremma",
+      "siteQuantities": []
+    },
+    {
+      "day": "Wednesday",
+      "sourceSheet": "wed",
+      "sourceRow": 20,
+      "productGroup": "starch/sides",
+      "title": "chimichiri sauce",
+      "siteQuantities": []
+    },
+    {
+      "day": "Wednesday",
+      "sourceSheet": "wed",
+      "sourceRow": 23,
+      "productGroup": "jackets",
+      "title": "plain jackets",
+      "siteQuantities": []
+    },
+    {
+      "day": "Wednesday",
+      "sourceSheet": "wed",
+      "sourceRow": 28,
+      "productGroup": "starch/sides",
+      "title": "warm taboon breads",
+      "siteQuantities": []
+    },
+    {
+      "day": "Wednesday",
+      "sourceSheet": "wed",
+      "sourceRow": 29,
+      "productGroup": "SALAD 1",
+      "title": "tomato cucumber,pickled pink onions and fresh coriander",
+      "siteQuantities": []
+    },
+    {
+      "day": "Wednesday",
+      "sourceSheet": "wed",
+      "sourceRow": 30,
+      "productGroup": "SALAD 2",
+      "title": "charred sweetcorn with vegan feta and lime",
+      "siteQuantities": []
+    },
+    {
+      "day": "Wednesday",
+      "sourceSheet": "wed",
+      "sourceRow": 31,
+      "productGroup": "SALAD 3",
+      "title": "quinoa,red kidney bean and baby spinach",
+      "siteQuantities": []
+    },
+    {
+      "day": "Wednesday",
+      "sourceSheet": "wed",
+      "sourceRow": 32,
+      "productGroup": "SALAD 4",
+      "title": "mixed leaf salad",
+      "siteQuantities": []
+    },
+    {
+      "day": "Wednesday",
+      "sourceSheet": "wed",
+      "sourceRow": 37,
+      "productGroup": "SOUP",
+      "title": "tomato and black bean",
+      "siteQuantities": []
+    },
+    {
+      "day": "Wednesday",
+      "sourceSheet": "wed",
+      "sourceRow": 38,
+      "productGroup": "HOT MEAT",
+      "title": "chimichurie chicken breast strips",
+      "siteQuantities": []
+    },
+    {
+      "day": "Wednesday",
+      "sourceSheet": "wed",
+      "sourceRow": 39,
+      "productGroup": "HOT FISH",
+      "title": "cauliflower wings with chipotle spice",
+      "siteQuantities": []
+    },
+    {
+      "day": "Wednesday",
+      "sourceSheet": "wed",
+      "sourceRow": 40,
+      "productGroup": "HOT VEG VEGAN",
+      "title": "smokey paprika and garlic roasted new potatos",
+      "siteQuantities": []
+    },
+    {
+      "day": "Wednesday",
+      "sourceSheet": "wed",
+      "sourceRow": 41,
+      "productGroup": "starch/sides",
+      "title": "roasted corn on the cob",
+      "siteQuantities": []
+    },
+    {
+      "day": "Wednesday",
+      "sourceSheet": "wed",
+      "sourceRow": 42,
+      "productGroup": "starch/sides",
+      "title": "warm taboon breads",
+      "siteQuantities": []
+    },
+    {
+      "day": "Wednesday",
+      "sourceSheet": "wed",
+      "sourceRow": 43,
+      "productGroup": "starch/sides",
+      "title": "tomato and chipotle salsa",
+      "siteQuantities": []
+    },
+    {
+      "day": "Wednesday",
+      "sourceSheet": "wed",
+      "sourceRow": 44,
+      "productGroup": "starch/sides",
+      "title": "sour cream with chives",
+      "siteQuantities": []
+    },
+    {
+      "day": "Wednesday",
+      "sourceSheet": "wed",
+      "sourceRow": 45,
+      "productGroup": "starch/sides",
+      "title": "avocardo cremma",
+      "siteQuantities": []
+    },
+    {
+      "day": "Wednesday",
+      "sourceSheet": "wed",
+      "sourceRow": 46,
+      "productGroup": "starch/sides",
+      "title": "chimichiri sauce",
+      "siteQuantities": []
+    },
+    {
+      "day": "Wednesday",
+      "sourceSheet": "wed",
+      "sourceRow": 49,
+      "productGroup": "jackets",
+      "title": "plain jackets",
+      "siteQuantities": []
+    },
+    {
+      "day": "Thursday",
+      "sourceSheet": "thurs",
+      "sourceRow": 3,
+      "productGroup": "SALAD 1",
+      "title": "tumeric roasted cauliflower grains and mustard dressing",
+      "siteQuantities": []
+    },
+    {
+      "day": "Thursday",
+      "sourceSheet": "thurs",
+      "sourceRow": 4,
+      "productGroup": "SALAD 2",
+      "title": "roasted beets toasted coconut and picklked shallot",
+      "siteQuantities": []
+    },
+    {
+      "day": "Thursday",
+      "sourceSheet": "thurs",
+      "sourceRow": 5,
+      "productGroup": "SALAD 3",
+      "title": "heritage tomatorocket and toasted seeds",
+      "siteQuantities": []
+    },
+    {
+      "day": "Thursday",
+      "sourceSheet": "thurs",
+      "sourceRow": 6,
+      "productGroup": "SALAD 4",
+      "title": "wild rocket baby waterscress and house dressing",
+      "siteQuantities": []
+    },
+    {
+      "day": "Thursday",
+      "sourceSheet": "thurs",
+      "sourceRow": 9,
+      "productGroup": "COLD PROTEIN",
+      "title": "mixed chicken breast",
+      "siteQuantities": []
+    },
+    {
+      "day": "Thursday",
+      "sourceSheet": "thurs",
+      "sourceRow": 10,
+      "productGroup": "SOUP",
+      "title": "roasted vine tomato and basil",
+      "siteQuantities": [
+        {
+          "sourceSiteKey": "haelon",
+          "siteLabel": "Haleon (source-only)",
+          "canonicalOplocId": null,
+          "quantity": 5,
+          "mappingStatus": "source-only"
+        }
+      ]
+    },
+    {
+      "day": "Thursday",
+      "sourceSheet": "thurs",
+      "sourceRow": 11,
+      "productGroup": "HOT MEAT",
+      "title": "steak and harveys ale pie",
+      "siteQuantities": [
+        {
+          "sourceSiteKey": "haelon",
+          "siteLabel": "Haleon (source-only)",
+          "canonicalOplocId": null,
+          "quantity": 40,
+          "mappingStatus": "source-only"
+        }
+      ]
+    },
+    {
+      "day": "Thursday",
+      "sourceSheet": "thurs",
+      "sourceRow": 12,
+      "productGroup": "HOT VEG VEGAN",
+      "title": "bombay potato vegan pie",
+      "siteQuantities": [
+        {
+          "sourceSiteKey": "haelon",
+          "siteLabel": "Haleon (source-only)",
+          "canonicalOplocId": null,
+          "quantity": 5,
+          "mappingStatus": "source-only"
+        }
+      ]
+    },
+    {
+      "day": "Thursday",
+      "sourceSheet": "thurs",
+      "sourceRow": 13,
+      "productGroup": "starch/sides",
+      "title": "parsley liquor",
+      "siteQuantities": []
+    },
+    {
+      "day": "Thursday",
+      "sourceSheet": "thurs",
+      "sourceRow": 14,
+      "productGroup": "starch/sides",
+      "title": "roasted red onion gravy",
+      "siteQuantities": []
+    },
+    {
+      "day": "Thursday",
+      "sourceSheet": "thurs",
+      "sourceRow": 15,
+      "productGroup": "starch/sides",
+      "title": "honey and thyme roasted carrots",
+      "siteQuantities": []
+    },
+    {
+      "day": "Thursday",
+      "sourceSheet": "thurs",
+      "sourceRow": 16,
+      "productGroup": "starch/sides",
+      "title": "butterd mash potato",
+      "siteQuantities": []
+    },
+    {
+      "day": "Thursday",
+      "sourceSheet": "thurs",
+      "sourceRow": 17,
+      "productGroup": "starch/sides",
+      "title": "crispy onions",
+      "siteQuantities": []
+    },
+    {
+      "day": "Thursday",
+      "sourceSheet": "thurs",
+      "sourceRow": 18,
+      "productGroup": "starch/sides",
+      "title": "chopped chives and parsley",
+      "siteQuantities": []
+    },
+    {
+      "day": "Thursday",
+      "sourceSheet": "thurs",
+      "sourceRow": 19,
+      "productGroup": "starch/sides",
+      "title": "stokes beer and onion marmalade",
+      "siteQuantities": []
+    },
+    {
+      "day": "Thursday",
+      "sourceSheet": "thurs",
+      "sourceRow": 20,
+      "productGroup": "starch/sides",
+      "title": "sticky date brown sauce",
+      "siteQuantities": []
+    },
+    {
+      "day": "Thursday",
+      "sourceSheet": "thurs",
+      "sourceRow": 21,
+      "productGroup": "jackets",
+      "title": "plain jackets",
+      "siteQuantities": []
+    },
+    {
+      "day": "Thursday",
+      "sourceSheet": "thurs",
+      "sourceRow": 26,
+      "productGroup": "SALAD 1",
+      "title": "tumeric roasted cauliflower grains and mustard dressing",
+      "siteQuantities": []
+    },
+    {
+      "day": "Thursday",
+      "sourceSheet": "thurs",
+      "sourceRow": 27,
+      "productGroup": "SALAD 2",
+      "title": "roasted beets toasted coconut and picklked shallot",
+      "siteQuantities": []
+    },
+    {
+      "day": "Thursday",
+      "sourceSheet": "thurs",
+      "sourceRow": 28,
+      "productGroup": "SALAD 3",
+      "title": "heritage tomatorocket and toasted seeds",
+      "siteQuantities": []
+    },
+    {
+      "day": "Thursday",
+      "sourceSheet": "thurs",
+      "sourceRow": 29,
+      "productGroup": "SALAD 4",
+      "title": "wild rocket baby waterscress and house dressing",
+      "siteQuantities": []
+    },
+    {
+      "day": "Thursday",
+      "sourceSheet": "thurs",
+      "sourceRow": 32,
+      "productGroup": "COLD PROTEIN",
+      "title": "mixed chicken breast",
+      "siteQuantities": []
+    },
+    {
+      "day": "Thursday",
+      "sourceSheet": "thurs",
+      "sourceRow": 33,
+      "productGroup": "SOUP",
+      "title": "roasted vine tomato and basil",
+      "siteQuantities": []
+    },
+    {
+      "day": "Thursday",
+      "sourceSheet": "thurs",
+      "sourceRow": 34,
+      "productGroup": "HOT MEAT",
+      "title": "steak and harveys ale pie",
+      "siteQuantities": []
+    },
+    {
+      "day": "Thursday",
+      "sourceSheet": "thurs",
+      "sourceRow": 35,
+      "productGroup": "HOT VEG VEGAN",
+      "title": "bombay potato vegan pie",
+      "siteQuantities": []
+    },
+    {
+      "day": "Thursday",
+      "sourceSheet": "thurs",
+      "sourceRow": 36,
+      "productGroup": "starch/sides",
+      "title": "parsley liquor",
+      "siteQuantities": []
+    },
+    {
+      "day": "Thursday",
+      "sourceSheet": "thurs",
+      "sourceRow": 37,
+      "productGroup": "starch/sides",
+      "title": "roasted red onion gravy",
+      "siteQuantities": []
+    },
+    {
+      "day": "Thursday",
+      "sourceSheet": "thurs",
+      "sourceRow": 38,
+      "productGroup": "starch/sides",
+      "title": "honey and thyme roasted carrots",
+      "siteQuantities": []
+    },
+    {
+      "day": "Thursday",
+      "sourceSheet": "thurs",
+      "sourceRow": 39,
+      "productGroup": "starch/sides",
+      "title": "butterd mash potato",
+      "siteQuantities": []
+    },
+    {
+      "day": "Thursday",
+      "sourceSheet": "thurs",
+      "sourceRow": 40,
+      "productGroup": "starch/sides",
+      "title": "crispy onions",
+      "siteQuantities": []
+    },
+    {
+      "day": "Thursday",
+      "sourceSheet": "thurs",
+      "sourceRow": 41,
+      "productGroup": "starch/sides",
+      "title": "chopped chives and parsley",
+      "siteQuantities": []
+    },
+    {
+      "day": "Thursday",
+      "sourceSheet": "thurs",
+      "sourceRow": 42,
+      "productGroup": "starch/sides",
+      "title": "stokes beer and onion marmalade",
+      "siteQuantities": []
+    },
+    {
+      "day": "Thursday",
+      "sourceSheet": "thurs",
+      "sourceRow": 43,
+      "productGroup": "starch/sides",
+      "title": "sticky date brown sauce",
+      "siteQuantities": []
+    },
+    {
+      "day": "Thursday",
+      "sourceSheet": "thurs",
+      "sourceRow": 44,
+      "productGroup": "jackets",
+      "title": "plain jackets",
+      "siteQuantities": []
+    },
+    {
+      "day": "Friday",
+      "sourceSheet": "fri",
+      "sourceRow": 3,
+      "productGroup": "SALAD 1",
+      "title": "mixed leaf salad with wild rocket",
+      "siteQuantities": []
+    },
+    {
+      "day": "Friday",
+      "sourceSheet": "fri",
+      "sourceRow": 4,
+      "productGroup": "SALAD 2",
+      "title": "pickled diakon, carrot and kale slaw",
+      "siteQuantities": []
+    },
+    {
+      "day": "Friday",
+      "sourceSheet": "fri",
+      "sourceRow": 5,
+      "productGroup": "SALAD 3",
+      "title": "broccoli edamamae with black rice vinegar and toasted sesame oli",
+      "siteQuantities": []
+    },
+    {
+      "day": "Friday",
+      "sourceSheet": "fri",
+      "sourceRow": 6,
+      "productGroup": "SALAD 4",
+      "title": "udon noodle with chinese cabbage,coriander ansd sesame pesto",
+      "siteQuantities": []
+    },
+    {
+      "day": "Friday",
+      "sourceSheet": "fri",
+      "sourceRow": 11,
+      "productGroup": "HOT MEAT",
+      "title": "panko crumbed chiclken thigh nuggets fried and seasoned",
+      "siteQuantities": []
+    },
+    {
+      "day": "Friday",
+      "sourceSheet": "fri",
+      "sourceRow": 12,
+      "productGroup": "HOT VEG VEGAN",
+      "title": "crispy miso glazed aubergine with sesame dressing",
+      "siteQuantities": []
+    },
+    {
+      "day": "Friday",
+      "sourceSheet": "fri",
+      "sourceRow": 13,
+      "productGroup": "EXTRAS",
+      "title": "tonkatasu sauce",
+      "siteQuantities": []
+    },
+    {
+      "day": "Friday",
+      "sourceSheet": "fri",
+      "sourceRow": 14,
+      "productGroup": "EXTRAS",
+      "title": "katsu curry sauce",
+      "siteQuantities": []
+    },
+    {
+      "day": "Friday",
+      "sourceSheet": "fri",
+      "sourceRow": 15,
+      "productGroup": "EXTRAS",
+      "title": "braised scenten basmati rice",
+      "siteQuantities": []
+    },
+    {
+      "day": "Friday",
+      "sourceSheet": "fri",
+      "sourceRow": 16,
+      "productGroup": "EXTRAS",
+      "title": "large vegetable spring rolls",
+      "siteQuantities": []
+    },
+    {
+      "day": "Friday",
+      "sourceSheet": "fri",
+      "sourceRow": 17,
+      "productGroup": "EXTRAS",
+      "title": "crispy onions",
+      "siteQuantities": []
+    },
+    {
+      "day": "Friday",
+      "sourceSheet": "fri",
+      "sourceRow": 18,
+      "productGroup": "EXTRAS",
+      "title": "pickled shallot",
+      "siteQuantities": []
+    },
+    {
+      "day": "Friday",
+      "sourceSheet": "fri",
+      "sourceRow": 19,
+      "productGroup": "EXTRAS",
+      "title": "sliced red chilli",
+      "siteQuantities": []
+    },
+    {
+      "day": "Friday",
+      "sourceSheet": "fri",
+      "sourceRow": 26,
+      "productGroup": "SALAD 1",
+      "title": "mixed leaf salad with wild rocket",
+      "siteQuantities": []
+    },
+    {
+      "day": "Friday",
+      "sourceSheet": "fri",
+      "sourceRow": 27,
+      "productGroup": "SALAD 2",
+      "title": "pickled diakon, carrot and kale slaw",
+      "siteQuantities": []
+    },
+    {
+      "day": "Friday",
+      "sourceSheet": "fri",
+      "sourceRow": 28,
+      "productGroup": "SALAD 3",
+      "title": "broccoli edamamae with black rice vinegar and toasted sesame oli",
+      "siteQuantities": []
+    },
+    {
+      "day": "Friday",
+      "sourceSheet": "fri",
+      "sourceRow": 29,
+      "productGroup": "SALAD 4",
+      "title": "udon noodle with chinese cabbage,coriander ansd sesame pesto",
+      "siteQuantities": []
+    },
+    {
+      "day": "Friday",
+      "sourceSheet": "fri",
+      "sourceRow": 34,
+      "productGroup": "HOT MEAT",
+      "title": "panko crumbed chiclken thigh nuggets fried and seasoned",
+      "siteQuantities": []
+    },
+    {
+      "day": "Friday",
+      "sourceSheet": "fri",
+      "sourceRow": 35,
+      "productGroup": "HOT VEG VEGAN",
+      "title": "crispy miso glazed aubergine with sesame dressing",
+      "siteQuantities": []
+    },
+    {
+      "day": "Friday",
+      "sourceSheet": "fri",
+      "sourceRow": 36,
+      "productGroup": "EXTRAS",
+      "title": "tonkatasu sauce",
+      "siteQuantities": []
+    },
+    {
+      "day": "Friday",
+      "sourceSheet": "fri",
+      "sourceRow": 37,
+      "productGroup": "EXTRAS",
+      "title": "katsu curry sauce",
+      "siteQuantities": []
+    },
+    {
+      "day": "Friday",
+      "sourceSheet": "fri",
+      "sourceRow": 38,
+      "productGroup": "EXTRAS",
+      "title": "braised scenten basmati rice",
+      "siteQuantities": []
+    },
+    {
+      "day": "Friday",
+      "sourceSheet": "fri",
+      "sourceRow": 39,
+      "productGroup": "EXTRAS",
+      "title": "large vegetable spring rolls",
+      "siteQuantities": []
+    },
+    {
+      "day": "Friday",
+      "sourceSheet": "fri",
+      "sourceRow": 40,
+      "productGroup": "EXTRAS",
+      "title": "crispy onions",
+      "siteQuantities": []
+    },
+    {
+      "day": "Friday",
+      "sourceSheet": "fri",
+      "sourceRow": 41,
+      "productGroup": "EXTRAS",
+      "title": "pickled shallot",
+      "siteQuantities": []
+    },
+    {
+      "day": "Friday",
+      "sourceSheet": "fri",
+      "sourceRow": 42,
+      "productGroup": "EXTRAS",
+      "title": "sliced red chilli",
+      "siteQuantities": []
+    }
+  ],
+  "allergenEvidence": [
+    {
+      "day": "Monday",
+      "sourceSheet": "fikamon",
+      "sourceRow": 10,
+      "title": "mixed leaf salad",
+      "allergens": {
+        "noKeyAllergens": "contains",
+        "peanuts": "",
+        "otherNuts": "",
+        "gluten": "",
+        "sesame": "",
+        "molluscs": "",
+        "fish": "",
+        "soya": "",
+        "celery": "",
+        "shellfish": "",
+        "eggs": "",
+        "milk": "",
+        "mustard": "",
+        "lupin": "",
+        "sulphites": ""
+      },
+      "mayContainNotes": ""
+    },
+    {
+      "day": "Monday",
+      "sourceSheet": "fikamon",
+      "sourceRow": 11,
+      "title": "orzo pasta with sundried tomato,kalamata olivesand torn basil",
+      "allergens": {
+        "noKeyAllergens": "",
+        "peanuts": "",
+        "otherNuts": "",
+        "gluten": "contains",
+        "sesame": "",
+        "molluscs": "",
+        "fish": "",
+        "soya": "",
+        "celery": "",
+        "shellfish": "",
+        "eggs": "",
+        "milk": "",
+        "mustard": "",
+        "lupin": "",
+        "sulphites": "contains"
+      },
+      "mayContainNotes": ""
+    },
+    {
+      "day": "Monday",
+      "sourceSheet": "fikamon",
+      "sourceRow": 12,
+      "title": "trio of tomatos oregano shaved fennell and orange dressing",
+      "allergens": {
+        "noKeyAllergens": "",
+        "peanuts": "",
+        "otherNuts": "",
+        "gluten": "",
+        "sesame": "",
+        "molluscs": "",
+        "fish": "",
+        "soya": "",
+        "celery": "",
+        "shellfish": "",
+        "eggs": "",
+        "milk": "",
+        "mustard": "",
+        "lupin": "",
+        "sulphites": "contains"
+      },
+      "mayContainNotes": ""
+    },
+    {
+      "day": "Monday",
+      "sourceSheet": "fikamon",
+      "sourceRow": 13,
+      "title": "grilled artichoke roast new potato red pepper and sundried tomato pesto",
+      "allergens": {
+        "noKeyAllergens": "contains",
+        "peanuts": "",
+        "otherNuts": "",
+        "gluten": "",
+        "sesame": "",
+        "molluscs": "",
+        "fish": "",
+        "soya": "",
+        "celery": "",
+        "shellfish": "",
+        "eggs": "",
+        "milk": "",
+        "mustard": "",
+        "lupin": "",
+        "sulphites": ""
+      },
+      "mayContainNotes": ""
+    },
+    {
+      "day": "Monday",
+      "sourceSheet": "fikamon",
+      "sourceRow": 14,
+      "title": "leek and potato",
+      "allergens": {
+        "noKeyAllergens": "contains",
+        "peanuts": "",
+        "otherNuts": "",
+        "gluten": "",
+        "sesame": "",
+        "molluscs": "",
+        "fish": "",
+        "soya": "",
+        "celery": "",
+        "shellfish": "",
+        "eggs": "",
+        "milk": "",
+        "mustard": "",
+        "lupin": "",
+        "sulphites": ""
+      },
+      "mayContainNotes": ""
+    },
+    {
+      "day": "Monday",
+      "sourceSheet": "fikamon",
+      "sourceRow": 15,
+      "title": "smoked pulled chicken arrabiata",
+      "allergens": {
+        "noKeyAllergens": "",
+        "peanuts": "",
+        "otherNuts": "",
+        "gluten": "",
+        "sesame": "",
+        "molluscs": "",
+        "fish": "",
+        "soya": "",
+        "celery": "",
+        "shellfish": "",
+        "eggs": "",
+        "milk": "",
+        "mustard": "",
+        "lupin": "",
+        "sulphites": "contains"
+      },
+      "mayContainNotes": ""
+    },
+    {
+      "day": "Monday",
+      "sourceSheet": "fikamon",
+      "sourceRow": 16,
+      "title": "roasted wild mushroom with sage and garlic",
+      "allergens": {
+        "noKeyAllergens": "contains",
+        "peanuts": "",
+        "otherNuts": "",
+        "gluten": "",
+        "sesame": "",
+        "molluscs": "",
+        "fish": "",
+        "soya": "",
+        "celery": "",
+        "shellfish": "",
+        "eggs": "",
+        "milk": "",
+        "mustard": "",
+        "lupin": "",
+        "sulphites": ""
+      },
+      "mayContainNotes": ""
+    },
+    {
+      "day": "Monday",
+      "sourceSheet": "fikamon",
+      "sourceRow": 17,
+      "title": "orecchiuete vegan pasta",
+      "allergens": {
+        "noKeyAllergens": "",
+        "peanuts": "may_contain",
+        "otherNuts": "",
+        "gluten": "contains",
+        "sesame": "",
+        "molluscs": "",
+        "fish": "may_contain",
+        "soya": "may_contain",
+        "celery": "may_contain",
+        "shellfish": "may_contain",
+        "eggs": "may_contain",
+        "milk": "may_contain",
+        "mustard": "may_contain",
+        "lupin": "",
+        "sulphites": ""
+      },
+      "mayContainNotes": "WHEAT"
+    },
+    {
+      "day": "Monday",
+      "sourceSheet": "fikamon",
+      "sourceRow": 18,
+      "title": "foccaci garlic bread",
+      "allergens": {
+        "noKeyAllergens": "",
+        "peanuts": "may_contain",
+        "otherNuts": "",
+        "gluten": "contains",
+        "sesame": "may_contain",
+        "molluscs": "",
+        "fish": "",
+        "soya": "may_contain",
+        "celery": "",
+        "shellfish": "",
+        "eggs": "may_contain",
+        "milk": "contains",
+        "mustard": "may_contain",
+        "lupin": "may_contain",
+        "sulphites": ""
+      },
+      "mayContainNotes": "WHEAT"
+    },
+    {
+      "day": "Monday",
+      "sourceSheet": "fikamon",
+      "sourceRow": 19,
+      "title": "grated parmasamn",
+      "allergens": {
+        "noKeyAllergens": "",
+        "peanuts": "",
+        "otherNuts": "",
+        "gluten": "",
+        "sesame": "",
+        "molluscs": "",
+        "fish": "",
+        "soya": "",
+        "celery": "",
+        "shellfish": "",
+        "eggs": "contains",
+        "milk": "contains",
+        "mustard": "",
+        "lupin": "",
+        "sulphites": ""
+      },
+      "mayContainNotes": ""
+    },
+    {
+      "day": "Monday",
+      "sourceSheet": "fikamon",
+      "sourceRow": 20,
+      "title": "classic arrabiata with roast peppers, black olives and chilli",
+      "allergens": {
+        "noKeyAllergens": "",
+        "peanuts": "",
+        "otherNuts": "",
+        "gluten": "",
+        "sesame": "",
+        "molluscs": "",
+        "fish": "",
+        "soya": "",
+        "celery": "",
+        "shellfish": "",
+        "eggs": "",
+        "milk": "",
+        "mustard": "",
+        "lupin": "",
+        "sulphites": "contains"
+      },
+      "mayContainNotes": ""
+    },
+    {
+      "day": "Monday",
+      "sourceSheet": "fikamon",
+      "sourceRow": 21,
+      "title": "basil and rocket pesto",
+      "allergens": {
+        "noKeyAllergens": "contains",
+        "peanuts": "",
+        "otherNuts": "",
+        "gluten": "",
+        "sesame": "",
+        "molluscs": "",
+        "fish": "",
+        "soya": "",
+        "celery": "",
+        "shellfish": "",
+        "eggs": "",
+        "milk": "",
+        "mustard": "",
+        "lupin": "",
+        "sulphites": ""
+      },
+      "mayContainNotes": ""
+    },
+    {
+      "day": "Monday",
+      "sourceSheet": "fikamon",
+      "sourceRow": 22,
+      "title": "sundried tomato and roast rerd pepper pesto",
+      "allergens": {
+        "noKeyAllergens": "contains",
+        "peanuts": "",
+        "otherNuts": "",
+        "gluten": "",
+        "sesame": "",
+        "molluscs": "",
+        "fish": "",
+        "soya": "",
+        "celery": "",
+        "shellfish": "",
+        "eggs": "",
+        "milk": "",
+        "mustard": "",
+        "lupin": "",
+        "sulphites": ""
+      },
+      "mayContainNotes": ""
+    },
+    {
+      "day": "Monday",
+      "sourceSheet": "fikamon",
+      "sourceRow": 24,
+      "title": "Date",
+      "allergens": {
+        "noKeyAllergens": "",
+        "peanuts": "",
+        "otherNuts": "",
+        "gluten": "",
+        "sesame": "",
+        "molluscs": "",
+        "fish": "",
+        "soya": "",
+        "celery": "",
+        "shellfish": "",
+        "eggs": "",
+        "milk": "",
+        "mustard": "",
+        "lupin": "",
+        "sulphites": ""
+      },
+      "mayContainNotes": "Service Area"
+    },
+    {
+      "day": "Tuesday",
+      "sourceSheet": "fikatue",
+      "sourceRow": 10,
+      "title": "grated carrott with ponzu and bean sprouts",
+      "allergens": {
+        "noKeyAllergens": "",
+        "peanuts": "",
+        "otherNuts": "may_contain",
+        "gluten": "contains",
+        "sesame": "",
+        "molluscs": "",
+        "fish": "",
+        "soya": "contains",
+        "celery": "",
+        "shellfish": "",
+        "eggs": "",
+        "milk": "",
+        "mustard": "",
+        "lupin": "",
+        "sulphites": ""
+      },
+      "mayContainNotes": "WHEAT"
+    },
+    {
+      "day": "Tuesday",
+      "sourceSheet": "fikatue",
+      "sourceRow": 11,
+      "title": "mustard greens",
+      "allergens": {
+        "noKeyAllergens": "",
+        "peanuts": "",
+        "otherNuts": "",
+        "gluten": "",
+        "sesame": "",
+        "molluscs": "",
+        "fish": "",
+        "soya": "",
+        "celery": "",
+        "shellfish": "",
+        "eggs": "",
+        "milk": "",
+        "mustard": "contains",
+        "lupin": "",
+        "sulphites": ""
+      },
+      "mayContainNotes": ""
+    },
+    {
+      "day": "Tuesday",
+      "sourceSheet": "fikatue",
+      "sourceRow": 12,
+      "title": "edememe,toasted sesamesoy pickled onions,smashed cucumber",
+      "allergens": {
+        "noKeyAllergens": "",
+        "peanuts": "",
+        "otherNuts": "",
+        "gluten": "",
+        "sesame": "contains",
+        "molluscs": "",
+        "fish": "",
+        "soya": "contains",
+        "celery": "",
+        "shellfish": "",
+        "eggs": "",
+        "milk": "",
+        "mustard": "",
+        "lupin": "",
+        "sulphites": "contains"
+      },
+      "mayContainNotes": ""
+    },
+    {
+      "day": "Tuesday",
+      "sourceSheet": "fikatue",
+      "sourceRow": 13,
+      "title": "asian slaw with teryaki and crispy lotus root",
+      "allergens": {
+        "noKeyAllergens": "",
+        "peanuts": "",
+        "otherNuts": "",
+        "gluten": "contains",
+        "sesame": "",
+        "molluscs": "",
+        "fish": "",
+        "soya": "contains",
+        "celery": "",
+        "shellfish": "",
+        "eggs": "",
+        "milk": "",
+        "mustard": "",
+        "lupin": "",
+        "sulphites": ""
+      },
+      "mayContainNotes": "WHEAT"
+    },
+    {
+      "day": "Tuesday",
+      "sourceSheet": "fikatue",
+      "sourceRow": 14,
+      "title": "spiced chickpea and coriander",
+      "allergens": {
+        "noKeyAllergens": "contains",
+        "peanuts": "",
+        "otherNuts": "",
+        "gluten": "",
+        "sesame": "",
+        "molluscs": "",
+        "fish": "",
+        "soya": "",
+        "celery": "",
+        "shellfish": "",
+        "eggs": "",
+        "milk": "",
+        "mustard": "",
+        "lupin": "",
+        "sulphites": ""
+      },
+      "mayContainNotes": ""
+    },
+    {
+      "day": "Tuesday",
+      "sourceSheet": "fikatue",
+      "sourceRow": 15,
+      "title": "bulgogi smoked and pulled beef brisket",
+      "allergens": {
+        "noKeyAllergens": "",
+        "peanuts": "",
+        "otherNuts": "may_contain",
+        "gluten": "contains",
+        "sesame": "contains",
+        "molluscs": "",
+        "fish": "",
+        "soya": "contains",
+        "celery": "",
+        "shellfish": "",
+        "eggs": "",
+        "milk": "",
+        "mustard": "",
+        "lupin": "",
+        "sulphites": ""
+      },
+      "mayContainNotes": "wheat"
+    },
+    {
+      "day": "Tuesday",
+      "sourceSheet": "fikatue",
+      "sourceRow": 16,
+      "title": "tonkatasu roasted aubergine",
+      "allergens": {
+        "noKeyAllergens": "",
+        "peanuts": "",
+        "otherNuts": "may_contain",
+        "gluten": "",
+        "sesame": "",
+        "molluscs": "",
+        "fish": "",
+        "soya": "contains",
+        "celery": "",
+        "shellfish": "",
+        "eggs": "",
+        "milk": "",
+        "mustard": "",
+        "lupin": "",
+        "sulphites": ""
+      },
+      "mayContainNotes": ""
+    },
+    {
+      "day": "Tuesday",
+      "sourceSheet": "fikatue",
+      "sourceRow": 17,
+      "title": "steamed sushi rice",
+      "allergens": {
+        "noKeyAllergens": "contains",
+        "peanuts": "",
+        "otherNuts": "",
+        "gluten": "",
+        "sesame": "",
+        "molluscs": "",
+        "fish": "",
+        "soya": "",
+        "celery": "",
+        "shellfish": "",
+        "eggs": "",
+        "milk": "",
+        "mustard": "",
+        "lupin": "",
+        "sulphites": ""
+      },
+      "mayContainNotes": ""
+    },
+    {
+      "day": "Tuesday",
+      "sourceSheet": "fikatue",
+      "sourceRow": 18,
+      "title": "vegetable gyoza",
+      "allergens": {
+        "noKeyAllergens": "",
+        "peanuts": "",
+        "otherNuts": "",
+        "gluten": "contains",
+        "sesame": "",
+        "molluscs": "",
+        "fish": "",
+        "soya": "contains",
+        "celery": "may_contain",
+        "shellfish": "",
+        "eggs": "",
+        "milk": "",
+        "mustard": "may_contain",
+        "lupin": "",
+        "sulphites": ""
+      },
+      "mayContainNotes": "WHEAT"
+    },
+    {
+      "day": "Tuesday",
+      "sourceSheet": "fikatue",
+      "sourceRow": 19,
+      "title": "black rice vinegar dipping sauce",
+      "allergens": {
+        "noKeyAllergens": "contains",
+        "peanuts": "",
+        "otherNuts": "",
+        "gluten": "",
+        "sesame": "",
+        "molluscs": "",
+        "fish": "",
+        "soya": "",
+        "celery": "",
+        "shellfish": "",
+        "eggs": "",
+        "milk": "",
+        "mustard": "",
+        "lupin": "",
+        "sulphites": ""
+      },
+      "mayContainNotes": ""
+    },
+    {
+      "day": "Tuesday",
+      "sourceSheet": "fikatue",
+      "sourceRow": 20,
+      "title": "ponzu soy sauce",
+      "allergens": {
+        "noKeyAllergens": "",
+        "peanuts": "",
+        "otherNuts": "may_contain",
+        "gluten": "contains",
+        "sesame": "",
+        "molluscs": "",
+        "fish": "",
+        "soya": "contains",
+        "celery": "",
+        "shellfish": "",
+        "eggs": "",
+        "milk": "",
+        "mustard": "",
+        "lupin": "",
+        "sulphites": ""
+      },
+      "mayContainNotes": "WHEAT"
+    },
+    {
+      "day": "Tuesday",
+      "sourceSheet": "fikatue",
+      "sourceRow": 21,
+      "title": "sweet chilli sauce",
+      "allergens": {
+        "noKeyAllergens": "contains",
+        "peanuts": "",
+        "otherNuts": "",
+        "gluten": "",
+        "sesame": "",
+        "molluscs": "",
+        "fish": "",
+        "soya": "",
+        "celery": "",
+        "shellfish": "",
+        "eggs": "",
+        "milk": "",
+        "mustard": "",
+        "lupin": "",
+        "sulphites": ""
+      },
+      "mayContainNotes": ""
+    },
+    {
+      "day": "Tuesday",
+      "sourceSheet": "fikatue",
+      "sourceRow": 22,
+      "title": "edamame",
+      "allergens": {
+        "noKeyAllergens": "",
+        "peanuts": "",
+        "otherNuts": "",
+        "gluten": "",
+        "sesame": "",
+        "molluscs": "",
+        "fish": "",
+        "soya": "contains",
+        "celery": "",
+        "shellfish": "",
+        "eggs": "",
+        "milk": "",
+        "mustard": "",
+        "lupin": "",
+        "sulphites": ""
+      },
+      "mayContainNotes": ""
+    },
+    {
+      "day": "Tuesday",
+      "sourceSheet": "fikatue",
+      "sourceRow": 23,
+      "title": "crispy shallots and toasted sesame seeds",
+      "allergens": {
+        "noKeyAllergens": "",
+        "peanuts": "",
+        "otherNuts": "",
+        "gluten": "contains",
+        "sesame": "contains",
+        "molluscs": "",
+        "fish": "",
+        "soya": "",
+        "celery": "",
+        "shellfish": "",
+        "eggs": "",
+        "milk": "",
+        "mustard": "",
+        "lupin": "",
+        "sulphites": ""
+      },
+      "mayContainNotes": "WHEAT"
+    },
+    {
+      "day": "Tuesday",
+      "sourceSheet": "fikatue",
+      "sourceRow": 25,
+      "title": "Date",
+      "allergens": {
+        "noKeyAllergens": "",
+        "peanuts": "",
+        "otherNuts": "",
+        "gluten": "",
+        "sesame": "",
+        "molluscs": "",
+        "fish": "",
+        "soya": "",
+        "celery": "",
+        "shellfish": "",
+        "eggs": "",
+        "milk": "",
+        "mustard": "",
+        "lupin": "",
+        "sulphites": ""
+      },
+      "mayContainNotes": "Service Area"
+    },
+    {
+      "day": "Wednesday",
+      "sourceSheet": "fikawed",
+      "sourceRow": 10,
+      "title": "tomato cucumber,pickled pink onions and fresh coriander",
+      "allergens": {
+        "noKeyAllergens": "",
+        "peanuts": "",
+        "otherNuts": "",
+        "gluten": "",
+        "sesame": "",
+        "molluscs": "",
+        "fish": "",
+        "soya": "",
+        "celery": "",
+        "shellfish": "",
+        "eggs": "",
+        "milk": "",
+        "mustard": "",
+        "lupin": "",
+        "sulphites": "contains"
+      },
+      "mayContainNotes": ""
+    },
+    {
+      "day": "Wednesday",
+      "sourceSheet": "fikawed",
+      "sourceRow": 11,
+      "title": "charred sweetcorn with vegan feta and lime",
+      "allergens": {
+        "noKeyAllergens": "contains",
+        "peanuts": "",
+        "otherNuts": "",
+        "gluten": "",
+        "sesame": "",
+        "molluscs": "",
+        "fish": "",
+        "soya": "",
+        "celery": "",
+        "shellfish": "",
+        "eggs": "",
+        "milk": "",
+        "mustard": "",
+        "lupin": "",
+        "sulphites": ""
+      },
+      "mayContainNotes": ""
+    },
+    {
+      "day": "Wednesday",
+      "sourceSheet": "fikawed",
+      "sourceRow": 12,
+      "title": "quinoa,red kidney bean and baby spinach",
+      "allergens": {
+        "noKeyAllergens": "contains",
+        "peanuts": "",
+        "otherNuts": "",
+        "gluten": "",
+        "sesame": "",
+        "molluscs": "",
+        "fish": "",
+        "soya": "",
+        "celery": "",
+        "shellfish": "",
+        "eggs": "",
+        "milk": "",
+        "mustard": "",
+        "lupin": "",
+        "sulphites": ""
+      },
+      "mayContainNotes": ""
+    },
+    {
+      "day": "Wednesday",
+      "sourceSheet": "fikawed",
+      "sourceRow": 13,
+      "title": "mixed leaf salad",
+      "allergens": {
+        "noKeyAllergens": "contains",
+        "peanuts": "",
+        "otherNuts": "",
+        "gluten": "",
+        "sesame": "",
+        "molluscs": "",
+        "fish": "",
+        "soya": "",
+        "celery": "",
+        "shellfish": "",
+        "eggs": "",
+        "milk": "",
+        "mustard": "",
+        "lupin": "",
+        "sulphites": ""
+      },
+      "mayContainNotes": ""
+    },
+    {
+      "day": "Wednesday",
+      "sourceSheet": "fikawed",
+      "sourceRow": 14,
+      "title": "tomato and black bean",
+      "allergens": {
+        "noKeyAllergens": "contains",
+        "peanuts": "",
+        "otherNuts": "",
+        "gluten": "",
+        "sesame": "",
+        "molluscs": "",
+        "fish": "",
+        "soya": "",
+        "celery": "",
+        "shellfish": "",
+        "eggs": "",
+        "milk": "",
+        "mustard": "",
+        "lupin": "",
+        "sulphites": ""
+      },
+      "mayContainNotes": ""
+    },
+    {
+      "day": "Wednesday",
+      "sourceSheet": "fikawed",
+      "sourceRow": 15,
+      "title": "chimichurie chicken breast strips",
+      "allergens": {
+        "noKeyAllergens": "contains",
+        "peanuts": "",
+        "otherNuts": "",
+        "gluten": "",
+        "sesame": "",
+        "molluscs": "",
+        "fish": "",
+        "soya": "",
+        "celery": "",
+        "shellfish": "",
+        "eggs": "",
+        "milk": "",
+        "mustard": "",
+        "lupin": "",
+        "sulphites": ""
+      },
+      "mayContainNotes": ""
+    },
+    {
+      "day": "Wednesday",
+      "sourceSheet": "fikawed",
+      "sourceRow": 16,
+      "title": "cauliflower wings with chipotle spice",
+      "allergens": {
+        "noKeyAllergens": "",
+        "peanuts": "may_contain",
+        "otherNuts": "",
+        "gluten": "contains",
+        "sesame": "",
+        "molluscs": "",
+        "fish": "",
+        "soya": "",
+        "celery": "",
+        "shellfish": "",
+        "eggs": "",
+        "milk": "",
+        "mustard": "",
+        "lupin": "",
+        "sulphites": ""
+      },
+      "mayContainNotes": "BARLEY WHEAT"
+    },
+    {
+      "day": "Wednesday",
+      "sourceSheet": "fikawed",
+      "sourceRow": 17,
+      "title": "smokey paprika and garlic roasted new potatos",
+      "allergens": {
+        "noKeyAllergens": "contains",
+        "peanuts": "",
+        "otherNuts": "",
+        "gluten": "",
+        "sesame": "",
+        "molluscs": "",
+        "fish": "",
+        "soya": "",
+        "celery": "",
+        "shellfish": "",
+        "eggs": "",
+        "milk": "",
+        "mustard": "",
+        "lupin": "",
+        "sulphites": ""
+      },
+      "mayContainNotes": ""
+    },
+    {
+      "day": "Wednesday",
+      "sourceSheet": "fikawed",
+      "sourceRow": 18,
+      "title": "roasted corn on the cob",
+      "allergens": {
+        "noKeyAllergens": "contains",
+        "peanuts": "",
+        "otherNuts": "",
+        "gluten": "",
+        "sesame": "",
+        "molluscs": "",
+        "fish": "",
+        "soya": "",
+        "celery": "",
+        "shellfish": "",
+        "eggs": "",
+        "milk": "",
+        "mustard": "",
+        "lupin": "",
+        "sulphites": ""
+      },
+      "mayContainNotes": ""
+    },
+    {
+      "day": "Wednesday",
+      "sourceSheet": "fikawed",
+      "sourceRow": 19,
+      "title": "warm taboon breads",
+      "allergens": {
+        "noKeyAllergens": "",
+        "peanuts": "",
+        "otherNuts": "",
+        "gluten": "contains",
+        "sesame": "",
+        "molluscs": "",
+        "fish": "",
+        "soya": "",
+        "celery": "",
+        "shellfish": "",
+        "eggs": "",
+        "milk": "",
+        "mustard": "",
+        "lupin": "",
+        "sulphites": ""
+      },
+      "mayContainNotes": "WHEAT"
+    },
+    {
+      "day": "Wednesday",
+      "sourceSheet": "fikawed",
+      "sourceRow": 20,
+      "title": "tomato and chipotle salsa",
+      "allergens": {
+        "noKeyAllergens": "",
+        "peanuts": "",
+        "otherNuts": "",
+        "gluten": "",
+        "sesame": "",
+        "molluscs": "",
+        "fish": "",
+        "soya": "",
+        "celery": "",
+        "shellfish": "",
+        "eggs": "",
+        "milk": "",
+        "mustard": "may_contain",
+        "lupin": "",
+        "sulphites": "contains"
+      },
+      "mayContainNotes": ""
+    },
+    {
+      "day": "Wednesday",
+      "sourceSheet": "fikawed",
+      "sourceRow": 21,
+      "title": "sour cream with chives",
+      "allergens": {
+        "noKeyAllergens": "",
+        "peanuts": "",
+        "otherNuts": "",
+        "gluten": "",
+        "sesame": "",
+        "molluscs": "",
+        "fish": "",
+        "soya": "",
+        "celery": "",
+        "shellfish": "",
+        "eggs": "",
+        "milk": "contains",
+        "mustard": "",
+        "lupin": "",
+        "sulphites": ""
+      },
+      "mayContainNotes": ""
+    },
+    {
+      "day": "Wednesday",
+      "sourceSheet": "fikawed",
+      "sourceRow": 22,
+      "title": "avocardo cremma",
+      "allergens": {
+        "noKeyAllergens": "contains",
+        "peanuts": "",
+        "otherNuts": "",
+        "gluten": "",
+        "sesame": "",
+        "molluscs": "",
+        "fish": "",
+        "soya": "",
+        "celery": "",
+        "shellfish": "",
+        "eggs": "",
+        "milk": "",
+        "mustard": "",
+        "lupin": "",
+        "sulphites": ""
+      },
+      "mayContainNotes": ""
+    },
+    {
+      "day": "Wednesday",
+      "sourceSheet": "fikawed",
+      "sourceRow": 23,
+      "title": "chimichiri sauce",
+      "allergens": {
+        "noKeyAllergens": "",
+        "peanuts": "may_contain",
+        "otherNuts": "may_contain",
+        "gluten": "",
+        "sesame": "",
+        "molluscs": "",
+        "fish": "",
+        "soya": "",
+        "celery": "",
+        "shellfish": "",
+        "eggs": "",
+        "milk": "",
+        "mustard": "",
+        "lupin": "",
+        "sulphites": ""
+      },
+      "mayContainNotes": "ALL NUTS"
+    },
+    {
+      "day": "Wednesday",
+      "sourceSheet": "fikawed",
+      "sourceRow": 27,
+      "title": "Date",
+      "allergens": {
+        "noKeyAllergens": "",
+        "peanuts": "",
+        "otherNuts": "",
+        "gluten": "",
+        "sesame": "",
+        "molluscs": "",
+        "fish": "",
+        "soya": "",
+        "celery": "",
+        "shellfish": "",
+        "eggs": "",
+        "milk": "",
+        "mustard": "",
+        "lupin": "",
+        "sulphites": ""
+      },
+      "mayContainNotes": "Service Area"
+    },
+    {
+      "day": "Thursday",
+      "sourceSheet": "fikathurs",
+      "sourceRow": 10,
+      "title": "tumeric roasted cauliflower grains and mustard dressing",
+      "allergens": {
+        "noKeyAllergens": "",
+        "peanuts": "",
+        "otherNuts": "",
+        "gluten": "contains",
+        "sesame": "",
+        "molluscs": "",
+        "fish": "",
+        "soya": "",
+        "celery": "",
+        "shellfish": "",
+        "eggs": "",
+        "milk": "",
+        "mustard": "contains",
+        "lupin": "",
+        "sulphites": ""
+      },
+      "mayContainNotes": "WHEAT BARLEY"
+    },
+    {
+      "day": "Thursday",
+      "sourceSheet": "fikathurs",
+      "sourceRow": 11,
+      "title": "roasted beets toasted coconut and picklked shallot",
+      "allergens": {
+        "noKeyAllergens": "",
+        "peanuts": "",
+        "otherNuts": "",
+        "gluten": "",
+        "sesame": "",
+        "molluscs": "",
+        "fish": "",
+        "soya": "",
+        "celery": "",
+        "shellfish": "",
+        "eggs": "",
+        "milk": "",
+        "mustard": "",
+        "lupin": "",
+        "sulphites": "contains"
+      },
+      "mayContainNotes": ""
+    },
+    {
+      "day": "Thursday",
+      "sourceSheet": "fikathurs",
+      "sourceRow": 12,
+      "title": "heritage tomatorocket and toasted seeds",
+      "allergens": {
+        "noKeyAllergens": "contains",
+        "peanuts": "",
+        "otherNuts": "",
+        "gluten": "",
+        "sesame": "",
+        "molluscs": "",
+        "fish": "",
+        "soya": "",
+        "celery": "",
+        "shellfish": "",
+        "eggs": "",
+        "milk": "",
+        "mustard": "",
+        "lupin": "",
+        "sulphites": ""
+      },
+      "mayContainNotes": ""
+    },
+    {
+      "day": "Thursday",
+      "sourceSheet": "fikathurs",
+      "sourceRow": 13,
+      "title": "wild rocket baby waterscress and house dressing",
+      "allergens": {
+        "noKeyAllergens": "contains",
+        "peanuts": "",
+        "otherNuts": "",
+        "gluten": "",
+        "sesame": "",
+        "molluscs": "",
+        "fish": "",
+        "soya": "",
+        "celery": "",
+        "shellfish": "",
+        "eggs": "",
+        "milk": "",
+        "mustard": "",
+        "lupin": "",
+        "sulphites": ""
+      },
+      "mayContainNotes": ""
+    },
+    {
+      "day": "Thursday",
+      "sourceSheet": "fikathurs",
+      "sourceRow": 14,
+      "title": "roasted vine tomato and basil",
+      "allergens": {
+        "noKeyAllergens": "contains",
+        "peanuts": "",
+        "otherNuts": "",
+        "gluten": "",
+        "sesame": "",
+        "molluscs": "",
+        "fish": "",
+        "soya": "",
+        "celery": "",
+        "shellfish": "",
+        "eggs": "",
+        "milk": "",
+        "mustard": "",
+        "lupin": "",
+        "sulphites": ""
+      },
+      "mayContainNotes": ""
+    },
+    {
+      "day": "Thursday",
+      "sourceSheet": "fikathurs",
+      "sourceRow": 15,
+      "title": "steak and harveys ale pie",
+      "allergens": {
+        "noKeyAllergens": "",
+        "peanuts": "",
+        "otherNuts": "",
+        "gluten": "contains",
+        "sesame": "",
+        "molluscs": "",
+        "fish": "",
+        "soya": "may_contain",
+        "celery": "may_contain",
+        "shellfish": "",
+        "eggs": "",
+        "milk": "may_contain",
+        "mustard": "",
+        "lupin": "",
+        "sulphites": "contains"
+      },
+      "mayContainNotes": "WHEAT"
+    },
+    {
+      "day": "Thursday",
+      "sourceSheet": "fikathurs",
+      "sourceRow": 16,
+      "title": "bombay potato vegan pie",
+      "allergens": {
+        "noKeyAllergens": "",
+        "peanuts": "",
+        "otherNuts": "",
+        "gluten": "contains",
+        "sesame": "",
+        "molluscs": "",
+        "fish": "",
+        "soya": "may_contain",
+        "celery": "may_contain",
+        "shellfish": "",
+        "eggs": "",
+        "milk": "may_contain",
+        "mustard": "",
+        "lupin": "",
+        "sulphites": "contains"
+      },
+      "mayContainNotes": "WHEAT"
+    },
+    {
+      "day": "Thursday",
+      "sourceSheet": "fikathurs",
+      "sourceRow": 17,
+      "title": "parsley liquor",
+      "allergens": {
+        "noKeyAllergens": "",
+        "peanuts": "",
+        "otherNuts": "",
+        "gluten": "",
+        "sesame": "",
+        "molluscs": "",
+        "fish": "",
+        "soya": "may_contain",
+        "celery": "may_contain",
+        "shellfish": "",
+        "eggs": "contains",
+        "milk": "contains",
+        "mustard": "may_contain",
+        "lupin": "",
+        "sulphites": ""
+      },
+      "mayContainNotes": ""
+    },
+    {
+      "day": "Thursday",
+      "sourceSheet": "fikathurs",
+      "sourceRow": 18,
+      "title": "roasted red onion gravy",
+      "allergens": {
+        "noKeyAllergens": "",
+        "peanuts": "",
+        "otherNuts": "",
+        "gluten": "contains",
+        "sesame": "",
+        "molluscs": "",
+        "fish": "",
+        "soya": "",
+        "celery": "",
+        "shellfish": "",
+        "eggs": "",
+        "milk": "",
+        "mustard": "",
+        "lupin": "",
+        "sulphites": ""
+      },
+      "mayContainNotes": "WHEAT"
+    },
+    {
+      "day": "Thursday",
+      "sourceSheet": "fikathurs",
+      "sourceRow": 19,
+      "title": "honey and thyme roasted carrots",
+      "allergens": {
+        "noKeyAllergens": "contains",
+        "peanuts": "",
+        "otherNuts": "",
+        "gluten": "",
+        "sesame": "",
+        "molluscs": "",
+        "fish": "",
+        "soya": "",
+        "celery": "",
+        "shellfish": "",
+        "eggs": "",
+        "milk": "",
+        "mustard": "",
+        "lupin": "",
+        "sulphites": ""
+      },
+      "mayContainNotes": ""
+    },
+    {
+      "day": "Thursday",
+      "sourceSheet": "fikathurs",
+      "sourceRow": 20,
+      "title": "butterd mash potato",
+      "allergens": {
+        "noKeyAllergens": "",
+        "peanuts": "",
+        "otherNuts": "",
+        "gluten": "",
+        "sesame": "",
+        "molluscs": "",
+        "fish": "",
+        "soya": "",
+        "celery": "",
+        "shellfish": "",
+        "eggs": "",
+        "milk": "contains",
+        "mustard": "",
+        "lupin": "",
+        "sulphites": ""
+      },
+      "mayContainNotes": ""
+    },
+    {
+      "day": "Thursday",
+      "sourceSheet": "fikathurs",
+      "sourceRow": 21,
+      "title": "crispy onions",
+      "allergens": {
+        "noKeyAllergens": "",
+        "peanuts": "",
+        "otherNuts": "",
+        "gluten": "contains",
+        "sesame": "",
+        "molluscs": "",
+        "fish": "",
+        "soya": "",
+        "celery": "",
+        "shellfish": "",
+        "eggs": "",
+        "milk": "",
+        "mustard": "",
+        "lupin": "",
+        "sulphites": ""
+      },
+      "mayContainNotes": "WHEAT"
+    },
+    {
+      "day": "Thursday",
+      "sourceSheet": "fikathurs",
+      "sourceRow": 22,
+      "title": "chopped chives and parsley",
+      "allergens": {
+        "noKeyAllergens": "contains",
+        "peanuts": "",
+        "otherNuts": "",
+        "gluten": "",
+        "sesame": "",
+        "molluscs": "",
+        "fish": "",
+        "soya": "",
+        "celery": "",
+        "shellfish": "",
+        "eggs": "",
+        "milk": "",
+        "mustard": "",
+        "lupin": "",
+        "sulphites": ""
+      },
+      "mayContainNotes": ""
+    },
+    {
+      "day": "Thursday",
+      "sourceSheet": "fikathurs",
+      "sourceRow": 23,
+      "title": "stokes beer and onion marmalade",
+      "allergens": {
+        "noKeyAllergens": "",
+        "peanuts": "",
+        "otherNuts": "",
+        "gluten": "contains",
+        "sesame": "",
+        "molluscs": "",
+        "fish": "",
+        "soya": "",
+        "celery": "",
+        "shellfish": "",
+        "eggs": "",
+        "milk": "",
+        "mustard": "contains",
+        "lupin": "",
+        "sulphites": ""
+      },
+      "mayContainNotes": "WHEAT BARLEY"
+    },
+    {
+      "day": "Thursday",
+      "sourceSheet": "fikathurs",
+      "sourceRow": 24,
+      "title": "sticky date brown sauce",
+      "allergens": {
+        "noKeyAllergens": "",
+        "peanuts": "",
+        "otherNuts": "",
+        "gluten": "contains",
+        "sesame": "",
+        "molluscs": "",
+        "fish": "",
+        "soya": "",
+        "celery": "",
+        "shellfish": "",
+        "eggs": "",
+        "milk": "",
+        "mustard": "",
+        "lupin": "",
+        "sulphites": ""
+      },
+      "mayContainNotes": "BARLEY"
+    },
+    {
+      "day": "Thursday",
+      "sourceSheet": "fikathurs",
+      "sourceRow": 25,
+      "title": "Date",
+      "allergens": {
+        "noKeyAllergens": "",
+        "peanuts": "",
+        "otherNuts": "",
+        "gluten": "",
+        "sesame": "",
+        "molluscs": "",
+        "fish": "",
+        "soya": "",
+        "celery": "",
+        "shellfish": "",
+        "eggs": "",
+        "milk": "",
+        "mustard": "",
+        "lupin": "",
+        "sulphites": ""
+      },
+      "mayContainNotes": "Service Area"
+    }
+  ],
+  "items": [
+    {
+      "id": "production:delivered-in-lunch:mixed-leaf-salad",
+      "title": "mixed leaf salad",
+      "allergens": {
+        "noKeyAllergens": "contains",
+        "peanuts": "",
+        "otherNuts": "",
+        "gluten": "",
+        "sesame": "",
+        "molluscs": "",
+        "fish": "",
+        "soya": "",
+        "celery": "",
+        "shellfish": "",
+        "eggs": "",
+        "milk": "",
+        "mustard": "",
+        "lupin": "",
+        "sulphites": ""
+      },
+      "mayContainNotes": "",
+      "itemType": "other",
+      "parentMenuItemKey": "delivered-in-lunch",
+      "sourceEvidence": [
+        "fikamon!A10",
+        "fikawed!A13"
+      ],
+      "updatedAt": "2026-07-20T00:00:00Z",
+      "updatedBy": "brian-workbook-import"
+    },
+    {
+      "id": "production:delivered-in-lunch:orzo-pasta-with-sundried-tomato-kalamata-olivesand-torn-basil",
+      "title": "orzo pasta with sundried tomato,kalamata olivesand torn basil",
+      "allergens": {
+        "noKeyAllergens": "",
+        "peanuts": "",
+        "otherNuts": "",
+        "gluten": "contains",
+        "sesame": "",
+        "molluscs": "",
+        "fish": "",
+        "soya": "",
+        "celery": "",
+        "shellfish": "",
+        "eggs": "",
+        "milk": "",
+        "mustard": "",
+        "lupin": "",
+        "sulphites": "contains"
+      },
+      "mayContainNotes": "",
+      "itemType": "other",
+      "parentMenuItemKey": "delivered-in-lunch",
+      "sourceEvidence": [
+        "fikamon!A11"
+      ],
+      "updatedAt": "2026-07-20T00:00:00Z",
+      "updatedBy": "brian-workbook-import"
+    },
+    {
+      "id": "production:delivered-in-lunch:trio-of-tomatos-oregano-shaved-fennell-and-orange-dressing",
+      "title": "trio of tomatos oregano shaved fennell and orange dressing",
+      "allergens": {
+        "noKeyAllergens": "",
+        "peanuts": "",
+        "otherNuts": "",
+        "gluten": "",
+        "sesame": "",
+        "molluscs": "",
+        "fish": "",
+        "soya": "",
+        "celery": "",
+        "shellfish": "",
+        "eggs": "",
+        "milk": "",
+        "mustard": "",
+        "lupin": "",
+        "sulphites": "contains"
+      },
+      "mayContainNotes": "",
+      "itemType": "other",
+      "parentMenuItemKey": "delivered-in-lunch",
+      "sourceEvidence": [
+        "fikamon!A12"
+      ],
+      "updatedAt": "2026-07-20T00:00:00Z",
+      "updatedBy": "brian-workbook-import"
+    },
+    {
+      "id": "production:delivered-in-lunch:grilled-artichoke-roast-new-potato-red-pepper-and-sundried-tomato-pesto",
+      "title": "grilled artichoke roast new potato red pepper and sundried tomato pesto",
+      "allergens": {
+        "noKeyAllergens": "contains",
+        "peanuts": "",
+        "otherNuts": "",
+        "gluten": "",
+        "sesame": "",
+        "molluscs": "",
+        "fish": "",
+        "soya": "",
+        "celery": "",
+        "shellfish": "",
+        "eggs": "",
+        "milk": "",
+        "mustard": "",
+        "lupin": "",
+        "sulphites": ""
+      },
+      "mayContainNotes": "",
+      "itemType": "other",
+      "parentMenuItemKey": "delivered-in-lunch",
+      "sourceEvidence": [
+        "fikamon!A13"
+      ],
+      "updatedAt": "2026-07-20T00:00:00Z",
+      "updatedBy": "brian-workbook-import"
+    },
+    {
+      "id": "production:delivered-in-lunch:leek-and-potato",
+      "title": "leek and potato",
+      "allergens": {
+        "noKeyAllergens": "contains",
+        "peanuts": "",
+        "otherNuts": "",
+        "gluten": "",
+        "sesame": "",
+        "molluscs": "",
+        "fish": "",
+        "soya": "",
+        "celery": "",
+        "shellfish": "",
+        "eggs": "",
+        "milk": "",
+        "mustard": "",
+        "lupin": "",
+        "sulphites": ""
+      },
+      "mayContainNotes": "",
+      "itemType": "other",
+      "parentMenuItemKey": "delivered-in-lunch",
+      "sourceEvidence": [
+        "fikamon!A14"
+      ],
+      "updatedAt": "2026-07-20T00:00:00Z",
+      "updatedBy": "brian-workbook-import"
+    },
+    {
+      "id": "production:delivered-in-lunch:smoked-pulled-chicken-arrabiata",
+      "title": "smoked pulled chicken arrabiata",
+      "allergens": {
+        "noKeyAllergens": "",
+        "peanuts": "",
+        "otherNuts": "",
+        "gluten": "",
+        "sesame": "",
+        "molluscs": "",
+        "fish": "",
+        "soya": "",
+        "celery": "",
+        "shellfish": "",
+        "eggs": "",
+        "milk": "",
+        "mustard": "",
+        "lupin": "",
+        "sulphites": "contains"
+      },
+      "mayContainNotes": "",
+      "itemType": "other",
+      "parentMenuItemKey": "delivered-in-lunch",
+      "sourceEvidence": [
+        "fikamon!A15"
+      ],
+      "updatedAt": "2026-07-20T00:00:00Z",
+      "updatedBy": "brian-workbook-import"
+    },
+    {
+      "id": "production:delivered-in-lunch:roasted-wild-mushroom-with-sage-and-garlic",
+      "title": "roasted wild mushroom with sage and garlic",
+      "allergens": {
+        "noKeyAllergens": "contains",
+        "peanuts": "",
+        "otherNuts": "",
+        "gluten": "",
+        "sesame": "",
+        "molluscs": "",
+        "fish": "",
+        "soya": "",
+        "celery": "",
+        "shellfish": "",
+        "eggs": "",
+        "milk": "",
+        "mustard": "",
+        "lupin": "",
+        "sulphites": ""
+      },
+      "mayContainNotes": "",
+      "itemType": "other",
+      "parentMenuItemKey": "delivered-in-lunch",
+      "sourceEvidence": [
+        "fikamon!A16"
+      ],
+      "updatedAt": "2026-07-20T00:00:00Z",
+      "updatedBy": "brian-workbook-import"
+    },
+    {
+      "id": "production:delivered-in-lunch:orecchiuete-vegan-pasta",
+      "title": "orecchiuete vegan pasta",
+      "allergens": {
+        "noKeyAllergens": "",
+        "peanuts": "may_contain",
+        "otherNuts": "",
+        "gluten": "contains",
+        "sesame": "",
+        "molluscs": "",
+        "fish": "may_contain",
+        "soya": "may_contain",
+        "celery": "may_contain",
+        "shellfish": "may_contain",
+        "eggs": "may_contain",
+        "milk": "may_contain",
+        "mustard": "may_contain",
+        "lupin": "",
+        "sulphites": ""
+      },
+      "mayContainNotes": "WHEAT",
+      "itemType": "other",
+      "parentMenuItemKey": "delivered-in-lunch",
+      "sourceEvidence": [
+        "fikamon!A17"
+      ],
+      "updatedAt": "2026-07-20T00:00:00Z",
+      "updatedBy": "brian-workbook-import"
+    },
+    {
+      "id": "production:delivered-in-lunch:foccaci-garlic-bread",
+      "title": "foccaci garlic bread",
+      "allergens": {
+        "noKeyAllergens": "",
+        "peanuts": "may_contain",
+        "otherNuts": "",
+        "gluten": "contains",
+        "sesame": "may_contain",
+        "molluscs": "",
+        "fish": "",
+        "soya": "may_contain",
+        "celery": "",
+        "shellfish": "",
+        "eggs": "may_contain",
+        "milk": "contains",
+        "mustard": "may_contain",
+        "lupin": "may_contain",
+        "sulphites": ""
+      },
+      "mayContainNotes": "WHEAT",
+      "itemType": "other",
+      "parentMenuItemKey": "delivered-in-lunch",
+      "sourceEvidence": [
+        "fikamon!A18"
+      ],
+      "updatedAt": "2026-07-20T00:00:00Z",
+      "updatedBy": "brian-workbook-import"
+    },
+    {
+      "id": "production:delivered-in-lunch:grated-parmasamn",
+      "title": "grated parmasamn",
+      "allergens": {
+        "noKeyAllergens": "",
+        "peanuts": "",
+        "otherNuts": "",
+        "gluten": "",
+        "sesame": "",
+        "molluscs": "",
+        "fish": "",
+        "soya": "",
+        "celery": "",
+        "shellfish": "",
+        "eggs": "contains",
+        "milk": "contains",
+        "mustard": "",
+        "lupin": "",
+        "sulphites": ""
+      },
+      "mayContainNotes": "",
+      "itemType": "other",
+      "parentMenuItemKey": "delivered-in-lunch",
+      "sourceEvidence": [
+        "fikamon!A19"
+      ],
+      "updatedAt": "2026-07-20T00:00:00Z",
+      "updatedBy": "brian-workbook-import"
+    },
+    {
+      "id": "production:delivered-in-lunch:classic-arrabiata-with-roast-peppers-black-olives-and-chilli",
+      "title": "classic arrabiata with roast peppers, black olives and chilli",
+      "allergens": {
+        "noKeyAllergens": "",
+        "peanuts": "",
+        "otherNuts": "",
+        "gluten": "",
+        "sesame": "",
+        "molluscs": "",
+        "fish": "",
+        "soya": "",
+        "celery": "",
+        "shellfish": "",
+        "eggs": "",
+        "milk": "",
+        "mustard": "",
+        "lupin": "",
+        "sulphites": "contains"
+      },
+      "mayContainNotes": "",
+      "itemType": "other",
+      "parentMenuItemKey": "delivered-in-lunch",
+      "sourceEvidence": [
+        "fikamon!A20"
+      ],
+      "updatedAt": "2026-07-20T00:00:00Z",
+      "updatedBy": "brian-workbook-import"
+    },
+    {
+      "id": "production:delivered-in-lunch:basil-and-rocket-pesto",
+      "title": "basil and rocket pesto",
+      "allergens": {
+        "noKeyAllergens": "contains",
+        "peanuts": "",
+        "otherNuts": "",
+        "gluten": "",
+        "sesame": "",
+        "molluscs": "",
+        "fish": "",
+        "soya": "",
+        "celery": "",
+        "shellfish": "",
+        "eggs": "",
+        "milk": "",
+        "mustard": "",
+        "lupin": "",
+        "sulphites": ""
+      },
+      "mayContainNotes": "",
+      "itemType": "other",
+      "parentMenuItemKey": "delivered-in-lunch",
+      "sourceEvidence": [
+        "fikamon!A21"
+      ],
+      "updatedAt": "2026-07-20T00:00:00Z",
+      "updatedBy": "brian-workbook-import"
+    },
+    {
+      "id": "production:delivered-in-lunch:sundried-tomato-and-roast-rerd-pepper-pesto",
+      "title": "sundried tomato and roast rerd pepper pesto",
+      "allergens": {
+        "noKeyAllergens": "contains",
+        "peanuts": "",
+        "otherNuts": "",
+        "gluten": "",
+        "sesame": "",
+        "molluscs": "",
+        "fish": "",
+        "soya": "",
+        "celery": "",
+        "shellfish": "",
+        "eggs": "",
+        "milk": "",
+        "mustard": "",
+        "lupin": "",
+        "sulphites": ""
+      },
+      "mayContainNotes": "",
+      "itemType": "other",
+      "parentMenuItemKey": "delivered-in-lunch",
+      "sourceEvidence": [
+        "fikamon!A22"
+      ],
+      "updatedAt": "2026-07-20T00:00:00Z",
+      "updatedBy": "brian-workbook-import"
+    },
+    {
+      "id": "production:delivered-in-lunch:date",
+      "title": "Date",
+      "allergens": {
+        "noKeyAllergens": "",
+        "peanuts": "",
+        "otherNuts": "",
+        "gluten": "",
+        "sesame": "",
+        "molluscs": "",
+        "fish": "",
+        "soya": "",
+        "celery": "",
+        "shellfish": "",
+        "eggs": "",
+        "milk": "",
+        "mustard": "",
+        "lupin": "",
+        "sulphites": ""
+      },
+      "mayContainNotes": "Service Area",
+      "itemType": "other",
+      "parentMenuItemKey": "delivered-in-lunch",
+      "sourceEvidence": [
+        "fikamon!A24",
+        "fikathurs!A25",
+        "fikatue!A25",
+        "fikawed!A27"
+      ],
+      "updatedAt": "2026-07-20T00:00:00Z",
+      "updatedBy": "brian-workbook-import"
+    },
+    {
+      "id": "production:delivered-in-lunch:grated-carrott-with-ponzu-and-bean-sprouts",
+      "title": "grated carrott with ponzu and bean sprouts",
+      "allergens": {
+        "noKeyAllergens": "",
+        "peanuts": "",
+        "otherNuts": "may_contain",
+        "gluten": "contains",
+        "sesame": "",
+        "molluscs": "",
+        "fish": "",
+        "soya": "contains",
+        "celery": "",
+        "shellfish": "",
+        "eggs": "",
+        "milk": "",
+        "mustard": "",
+        "lupin": "",
+        "sulphites": ""
+      },
+      "mayContainNotes": "WHEAT",
+      "itemType": "other",
+      "parentMenuItemKey": "delivered-in-lunch",
+      "sourceEvidence": [
+        "fikatue!A10"
+      ],
+      "updatedAt": "2026-07-20T00:00:00Z",
+      "updatedBy": "brian-workbook-import"
+    },
+    {
+      "id": "production:delivered-in-lunch:mustard-greens",
+      "title": "mustard greens",
+      "allergens": {
+        "noKeyAllergens": "",
+        "peanuts": "",
+        "otherNuts": "",
+        "gluten": "",
+        "sesame": "",
+        "molluscs": "",
+        "fish": "",
+        "soya": "",
+        "celery": "",
+        "shellfish": "",
+        "eggs": "",
+        "milk": "",
+        "mustard": "contains",
+        "lupin": "",
+        "sulphites": ""
+      },
+      "mayContainNotes": "",
+      "itemType": "other",
+      "parentMenuItemKey": "delivered-in-lunch",
+      "sourceEvidence": [
+        "fikatue!A11"
+      ],
+      "updatedAt": "2026-07-20T00:00:00Z",
+      "updatedBy": "brian-workbook-import"
+    },
+    {
+      "id": "production:delivered-in-lunch:edememe-toasted-sesamesoy-pickled-onions-smashed-cucumber",
+      "title": "edememe,toasted sesamesoy pickled onions,smashed cucumber",
+      "allergens": {
+        "noKeyAllergens": "",
+        "peanuts": "",
+        "otherNuts": "",
+        "gluten": "",
+        "sesame": "contains",
+        "molluscs": "",
+        "fish": "",
+        "soya": "contains",
+        "celery": "",
+        "shellfish": "",
+        "eggs": "",
+        "milk": "",
+        "mustard": "",
+        "lupin": "",
+        "sulphites": "contains"
+      },
+      "mayContainNotes": "",
+      "itemType": "other",
+      "parentMenuItemKey": "delivered-in-lunch",
+      "sourceEvidence": [
+        "fikatue!A12"
+      ],
+      "updatedAt": "2026-07-20T00:00:00Z",
+      "updatedBy": "brian-workbook-import"
+    },
+    {
+      "id": "production:delivered-in-lunch:asian-slaw-with-teryaki-and-crispy-lotus-root",
+      "title": "asian slaw with teryaki and crispy lotus root",
+      "allergens": {
+        "noKeyAllergens": "",
+        "peanuts": "",
+        "otherNuts": "",
+        "gluten": "contains",
+        "sesame": "",
+        "molluscs": "",
+        "fish": "",
+        "soya": "contains",
+        "celery": "",
+        "shellfish": "",
+        "eggs": "",
+        "milk": "",
+        "mustard": "",
+        "lupin": "",
+        "sulphites": ""
+      },
+      "mayContainNotes": "WHEAT",
+      "itemType": "other",
+      "parentMenuItemKey": "delivered-in-lunch",
+      "sourceEvidence": [
+        "fikatue!A13"
+      ],
+      "updatedAt": "2026-07-20T00:00:00Z",
+      "updatedBy": "brian-workbook-import"
+    },
+    {
+      "id": "production:delivered-in-lunch:spiced-chickpea-and-coriander",
+      "title": "spiced chickpea and coriander",
+      "allergens": {
+        "noKeyAllergens": "contains",
+        "peanuts": "",
+        "otherNuts": "",
+        "gluten": "",
+        "sesame": "",
+        "molluscs": "",
+        "fish": "",
+        "soya": "",
+        "celery": "",
+        "shellfish": "",
+        "eggs": "",
+        "milk": "",
+        "mustard": "",
+        "lupin": "",
+        "sulphites": ""
+      },
+      "mayContainNotes": "",
+      "itemType": "other",
+      "parentMenuItemKey": "delivered-in-lunch",
+      "sourceEvidence": [
+        "fikatue!A14"
+      ],
+      "updatedAt": "2026-07-20T00:00:00Z",
+      "updatedBy": "brian-workbook-import"
+    },
+    {
+      "id": "production:delivered-in-lunch:bulgogi-smoked-and-pulled-beef-brisket",
+      "title": "bulgogi smoked and pulled beef brisket",
+      "allergens": {
+        "noKeyAllergens": "",
+        "peanuts": "",
+        "otherNuts": "may_contain",
+        "gluten": "contains",
+        "sesame": "contains",
+        "molluscs": "",
+        "fish": "",
+        "soya": "contains",
+        "celery": "",
+        "shellfish": "",
+        "eggs": "",
+        "milk": "",
+        "mustard": "",
+        "lupin": "",
+        "sulphites": ""
+      },
+      "mayContainNotes": "wheat",
+      "itemType": "other",
+      "parentMenuItemKey": "delivered-in-lunch",
+      "sourceEvidence": [
+        "fikatue!A15"
+      ],
+      "updatedAt": "2026-07-20T00:00:00Z",
+      "updatedBy": "brian-workbook-import"
+    },
+    {
+      "id": "production:delivered-in-lunch:tonkatasu-roasted-aubergine",
+      "title": "tonkatasu roasted aubergine",
+      "allergens": {
+        "noKeyAllergens": "",
+        "peanuts": "",
+        "otherNuts": "may_contain",
+        "gluten": "",
+        "sesame": "",
+        "molluscs": "",
+        "fish": "",
+        "soya": "contains",
+        "celery": "",
+        "shellfish": "",
+        "eggs": "",
+        "milk": "",
+        "mustard": "",
+        "lupin": "",
+        "sulphites": ""
+      },
+      "mayContainNotes": "",
+      "itemType": "other",
+      "parentMenuItemKey": "delivered-in-lunch",
+      "sourceEvidence": [
+        "fikatue!A16"
+      ],
+      "updatedAt": "2026-07-20T00:00:00Z",
+      "updatedBy": "brian-workbook-import"
+    },
+    {
+      "id": "production:delivered-in-lunch:steamed-sushi-rice",
+      "title": "steamed sushi rice",
+      "allergens": {
+        "noKeyAllergens": "contains",
+        "peanuts": "",
+        "otherNuts": "",
+        "gluten": "",
+        "sesame": "",
+        "molluscs": "",
+        "fish": "",
+        "soya": "",
+        "celery": "",
+        "shellfish": "",
+        "eggs": "",
+        "milk": "",
+        "mustard": "",
+        "lupin": "",
+        "sulphites": ""
+      },
+      "mayContainNotes": "",
+      "itemType": "other",
+      "parentMenuItemKey": "delivered-in-lunch",
+      "sourceEvidence": [
+        "fikatue!A17"
+      ],
+      "updatedAt": "2026-07-20T00:00:00Z",
+      "updatedBy": "brian-workbook-import"
+    },
+    {
+      "id": "production:delivered-in-lunch:vegetable-gyoza",
+      "title": "vegetable gyoza",
+      "allergens": {
+        "noKeyAllergens": "",
+        "peanuts": "",
+        "otherNuts": "",
+        "gluten": "contains",
+        "sesame": "",
+        "molluscs": "",
+        "fish": "",
+        "soya": "contains",
+        "celery": "may_contain",
+        "shellfish": "",
+        "eggs": "",
+        "milk": "",
+        "mustard": "may_contain",
+        "lupin": "",
+        "sulphites": ""
+      },
+      "mayContainNotes": "WHEAT",
+      "itemType": "other",
+      "parentMenuItemKey": "delivered-in-lunch",
+      "sourceEvidence": [
+        "fikatue!A18"
+      ],
+      "updatedAt": "2026-07-20T00:00:00Z",
+      "updatedBy": "brian-workbook-import"
+    },
+    {
+      "id": "production:delivered-in-lunch:black-rice-vinegar-dipping-sauce",
+      "title": "black rice vinegar dipping sauce",
+      "allergens": {
+        "noKeyAllergens": "contains",
+        "peanuts": "",
+        "otherNuts": "",
+        "gluten": "",
+        "sesame": "",
+        "molluscs": "",
+        "fish": "",
+        "soya": "",
+        "celery": "",
+        "shellfish": "",
+        "eggs": "",
+        "milk": "",
+        "mustard": "",
+        "lupin": "",
+        "sulphites": ""
+      },
+      "mayContainNotes": "",
+      "itemType": "other",
+      "parentMenuItemKey": "delivered-in-lunch",
+      "sourceEvidence": [
+        "fikatue!A19"
+      ],
+      "updatedAt": "2026-07-20T00:00:00Z",
+      "updatedBy": "brian-workbook-import"
+    },
+    {
+      "id": "production:delivered-in-lunch:ponzu-soy-sauce",
+      "title": "ponzu soy sauce",
+      "allergens": {
+        "noKeyAllergens": "",
+        "peanuts": "",
+        "otherNuts": "may_contain",
+        "gluten": "contains",
+        "sesame": "",
+        "molluscs": "",
+        "fish": "",
+        "soya": "contains",
+        "celery": "",
+        "shellfish": "",
+        "eggs": "",
+        "milk": "",
+        "mustard": "",
+        "lupin": "",
+        "sulphites": ""
+      },
+      "mayContainNotes": "WHEAT",
+      "itemType": "other",
+      "parentMenuItemKey": "delivered-in-lunch",
+      "sourceEvidence": [
+        "fikatue!A20"
+      ],
+      "updatedAt": "2026-07-20T00:00:00Z",
+      "updatedBy": "brian-workbook-import"
+    },
+    {
+      "id": "production:delivered-in-lunch:sweet-chilli-sauce",
+      "title": "sweet chilli sauce",
+      "allergens": {
+        "noKeyAllergens": "contains",
+        "peanuts": "",
+        "otherNuts": "",
+        "gluten": "",
+        "sesame": "",
+        "molluscs": "",
+        "fish": "",
+        "soya": "",
+        "celery": "",
+        "shellfish": "",
+        "eggs": "",
+        "milk": "",
+        "mustard": "",
+        "lupin": "",
+        "sulphites": ""
+      },
+      "mayContainNotes": "",
+      "itemType": "other",
+      "parentMenuItemKey": "delivered-in-lunch",
+      "sourceEvidence": [
+        "fikatue!A21"
+      ],
+      "updatedAt": "2026-07-20T00:00:00Z",
+      "updatedBy": "brian-workbook-import"
+    },
+    {
+      "id": "production:delivered-in-lunch:edamame",
+      "title": "edamame",
+      "allergens": {
+        "noKeyAllergens": "",
+        "peanuts": "",
+        "otherNuts": "",
+        "gluten": "",
+        "sesame": "",
+        "molluscs": "",
+        "fish": "",
+        "soya": "contains",
+        "celery": "",
+        "shellfish": "",
+        "eggs": "",
+        "milk": "",
+        "mustard": "",
+        "lupin": "",
+        "sulphites": ""
+      },
+      "mayContainNotes": "",
+      "itemType": "other",
+      "parentMenuItemKey": "delivered-in-lunch",
+      "sourceEvidence": [
+        "fikatue!A22"
+      ],
+      "updatedAt": "2026-07-20T00:00:00Z",
+      "updatedBy": "brian-workbook-import"
+    },
+    {
+      "id": "production:delivered-in-lunch:crispy-shallots-and-toasted-sesame-seeds",
+      "title": "crispy shallots and toasted sesame seeds",
+      "allergens": {
+        "noKeyAllergens": "",
+        "peanuts": "",
+        "otherNuts": "",
+        "gluten": "contains",
+        "sesame": "contains",
+        "molluscs": "",
+        "fish": "",
+        "soya": "",
+        "celery": "",
+        "shellfish": "",
+        "eggs": "",
+        "milk": "",
+        "mustard": "",
+        "lupin": "",
+        "sulphites": ""
+      },
+      "mayContainNotes": "WHEAT",
+      "itemType": "other",
+      "parentMenuItemKey": "delivered-in-lunch",
+      "sourceEvidence": [
+        "fikatue!A23"
+      ],
+      "updatedAt": "2026-07-20T00:00:00Z",
+      "updatedBy": "brian-workbook-import"
+    },
+    {
+      "id": "production:delivered-in-lunch:tomato-cucumber-pickled-pink-onions-and-fresh-coriander",
+      "title": "tomato cucumber,pickled pink onions and fresh coriander",
+      "allergens": {
+        "noKeyAllergens": "",
+        "peanuts": "",
+        "otherNuts": "",
+        "gluten": "",
+        "sesame": "",
+        "molluscs": "",
+        "fish": "",
+        "soya": "",
+        "celery": "",
+        "shellfish": "",
+        "eggs": "",
+        "milk": "",
+        "mustard": "",
+        "lupin": "",
+        "sulphites": "contains"
+      },
+      "mayContainNotes": "",
+      "itemType": "other",
+      "parentMenuItemKey": "delivered-in-lunch",
+      "sourceEvidence": [
+        "fikawed!A10"
+      ],
+      "updatedAt": "2026-07-20T00:00:00Z",
+      "updatedBy": "brian-workbook-import"
+    },
+    {
+      "id": "production:delivered-in-lunch:charred-sweetcorn-with-vegan-feta-and-lime",
+      "title": "charred sweetcorn with vegan feta and lime",
+      "allergens": {
+        "noKeyAllergens": "contains",
+        "peanuts": "",
+        "otherNuts": "",
+        "gluten": "",
+        "sesame": "",
+        "molluscs": "",
+        "fish": "",
+        "soya": "",
+        "celery": "",
+        "shellfish": "",
+        "eggs": "",
+        "milk": "",
+        "mustard": "",
+        "lupin": "",
+        "sulphites": ""
+      },
+      "mayContainNotes": "",
+      "itemType": "other",
+      "parentMenuItemKey": "delivered-in-lunch",
+      "sourceEvidence": [
+        "fikawed!A11"
+      ],
+      "updatedAt": "2026-07-20T00:00:00Z",
+      "updatedBy": "brian-workbook-import"
+    },
+    {
+      "id": "production:delivered-in-lunch:quinoa-red-kidney-bean-and-baby-spinach",
+      "title": "quinoa,red kidney bean and baby spinach",
+      "allergens": {
+        "noKeyAllergens": "contains",
+        "peanuts": "",
+        "otherNuts": "",
+        "gluten": "",
+        "sesame": "",
+        "molluscs": "",
+        "fish": "",
+        "soya": "",
+        "celery": "",
+        "shellfish": "",
+        "eggs": "",
+        "milk": "",
+        "mustard": "",
+        "lupin": "",
+        "sulphites": ""
+      },
+      "mayContainNotes": "",
+      "itemType": "other",
+      "parentMenuItemKey": "delivered-in-lunch",
+      "sourceEvidence": [
+        "fikawed!A12"
+      ],
+      "updatedAt": "2026-07-20T00:00:00Z",
+      "updatedBy": "brian-workbook-import"
+    },
+    {
+      "id": "production:delivered-in-lunch:tomato-and-black-bean",
+      "title": "tomato and black bean",
+      "allergens": {
+        "noKeyAllergens": "contains",
+        "peanuts": "",
+        "otherNuts": "",
+        "gluten": "",
+        "sesame": "",
+        "molluscs": "",
+        "fish": "",
+        "soya": "",
+        "celery": "",
+        "shellfish": "",
+        "eggs": "",
+        "milk": "",
+        "mustard": "",
+        "lupin": "",
+        "sulphites": ""
+      },
+      "mayContainNotes": "",
+      "itemType": "other",
+      "parentMenuItemKey": "delivered-in-lunch",
+      "sourceEvidence": [
+        "fikawed!A14"
+      ],
+      "updatedAt": "2026-07-20T00:00:00Z",
+      "updatedBy": "brian-workbook-import"
+    },
+    {
+      "id": "production:delivered-in-lunch:chimichurie-chicken-breast-strips",
+      "title": "chimichurie chicken breast strips",
+      "allergens": {
+        "noKeyAllergens": "contains",
+        "peanuts": "",
+        "otherNuts": "",
+        "gluten": "",
+        "sesame": "",
+        "molluscs": "",
+        "fish": "",
+        "soya": "",
+        "celery": "",
+        "shellfish": "",
+        "eggs": "",
+        "milk": "",
+        "mustard": "",
+        "lupin": "",
+        "sulphites": ""
+      },
+      "mayContainNotes": "",
+      "itemType": "other",
+      "parentMenuItemKey": "delivered-in-lunch",
+      "sourceEvidence": [
+        "fikawed!A15"
+      ],
+      "updatedAt": "2026-07-20T00:00:00Z",
+      "updatedBy": "brian-workbook-import"
+    },
+    {
+      "id": "production:delivered-in-lunch:cauliflower-wings-with-chipotle-spice",
+      "title": "cauliflower wings with chipotle spice",
+      "allergens": {
+        "noKeyAllergens": "",
+        "peanuts": "may_contain",
+        "otherNuts": "",
+        "gluten": "contains",
+        "sesame": "",
+        "molluscs": "",
+        "fish": "",
+        "soya": "",
+        "celery": "",
+        "shellfish": "",
+        "eggs": "",
+        "milk": "",
+        "mustard": "",
+        "lupin": "",
+        "sulphites": ""
+      },
+      "mayContainNotes": "BARLEY WHEAT",
+      "itemType": "other",
+      "parentMenuItemKey": "delivered-in-lunch",
+      "sourceEvidence": [
+        "fikawed!A16"
+      ],
+      "updatedAt": "2026-07-20T00:00:00Z",
+      "updatedBy": "brian-workbook-import"
+    },
+    {
+      "id": "production:delivered-in-lunch:smokey-paprika-and-garlic-roasted-new-potatos",
+      "title": "smokey paprika and garlic roasted new potatos",
+      "allergens": {
+        "noKeyAllergens": "contains",
+        "peanuts": "",
+        "otherNuts": "",
+        "gluten": "",
+        "sesame": "",
+        "molluscs": "",
+        "fish": "",
+        "soya": "",
+        "celery": "",
+        "shellfish": "",
+        "eggs": "",
+        "milk": "",
+        "mustard": "",
+        "lupin": "",
+        "sulphites": ""
+      },
+      "mayContainNotes": "",
+      "itemType": "other",
+      "parentMenuItemKey": "delivered-in-lunch",
+      "sourceEvidence": [
+        "fikawed!A17"
+      ],
+      "updatedAt": "2026-07-20T00:00:00Z",
+      "updatedBy": "brian-workbook-import"
+    },
+    {
+      "id": "production:delivered-in-lunch:roasted-corn-on-the-cob",
+      "title": "roasted corn on the cob",
+      "allergens": {
+        "noKeyAllergens": "contains",
+        "peanuts": "",
+        "otherNuts": "",
+        "gluten": "",
+        "sesame": "",
+        "molluscs": "",
+        "fish": "",
+        "soya": "",
+        "celery": "",
+        "shellfish": "",
+        "eggs": "",
+        "milk": "",
+        "mustard": "",
+        "lupin": "",
+        "sulphites": ""
+      },
+      "mayContainNotes": "",
+      "itemType": "other",
+      "parentMenuItemKey": "delivered-in-lunch",
+      "sourceEvidence": [
+        "fikawed!A18"
+      ],
+      "updatedAt": "2026-07-20T00:00:00Z",
+      "updatedBy": "brian-workbook-import"
+    },
+    {
+      "id": "production:delivered-in-lunch:warm-taboon-breads",
+      "title": "warm taboon breads",
+      "allergens": {
+        "noKeyAllergens": "",
+        "peanuts": "",
+        "otherNuts": "",
+        "gluten": "contains",
+        "sesame": "",
+        "molluscs": "",
+        "fish": "",
+        "soya": "",
+        "celery": "",
+        "shellfish": "",
+        "eggs": "",
+        "milk": "",
+        "mustard": "",
+        "lupin": "",
+        "sulphites": ""
+      },
+      "mayContainNotes": "WHEAT",
+      "itemType": "other",
+      "parentMenuItemKey": "delivered-in-lunch",
+      "sourceEvidence": [
+        "fikawed!A19"
+      ],
+      "updatedAt": "2026-07-20T00:00:00Z",
+      "updatedBy": "brian-workbook-import"
+    },
+    {
+      "id": "production:delivered-in-lunch:tomato-and-chipotle-salsa",
+      "title": "tomato and chipotle salsa",
+      "allergens": {
+        "noKeyAllergens": "",
+        "peanuts": "",
+        "otherNuts": "",
+        "gluten": "",
+        "sesame": "",
+        "molluscs": "",
+        "fish": "",
+        "soya": "",
+        "celery": "",
+        "shellfish": "",
+        "eggs": "",
+        "milk": "",
+        "mustard": "may_contain",
+        "lupin": "",
+        "sulphites": "contains"
+      },
+      "mayContainNotes": "",
+      "itemType": "other",
+      "parentMenuItemKey": "delivered-in-lunch",
+      "sourceEvidence": [
+        "fikawed!A20"
+      ],
+      "updatedAt": "2026-07-20T00:00:00Z",
+      "updatedBy": "brian-workbook-import"
+    },
+    {
+      "id": "production:delivered-in-lunch:sour-cream-with-chives",
+      "title": "sour cream with chives",
+      "allergens": {
+        "noKeyAllergens": "",
+        "peanuts": "",
+        "otherNuts": "",
+        "gluten": "",
+        "sesame": "",
+        "molluscs": "",
+        "fish": "",
+        "soya": "",
+        "celery": "",
+        "shellfish": "",
+        "eggs": "",
+        "milk": "contains",
+        "mustard": "",
+        "lupin": "",
+        "sulphites": ""
+      },
+      "mayContainNotes": "",
+      "itemType": "other",
+      "parentMenuItemKey": "delivered-in-lunch",
+      "sourceEvidence": [
+        "fikawed!A21"
+      ],
+      "updatedAt": "2026-07-20T00:00:00Z",
+      "updatedBy": "brian-workbook-import"
+    },
+    {
+      "id": "production:delivered-in-lunch:avocardo-cremma",
+      "title": "avocardo cremma",
+      "allergens": {
+        "noKeyAllergens": "contains",
+        "peanuts": "",
+        "otherNuts": "",
+        "gluten": "",
+        "sesame": "",
+        "molluscs": "",
+        "fish": "",
+        "soya": "",
+        "celery": "",
+        "shellfish": "",
+        "eggs": "",
+        "milk": "",
+        "mustard": "",
+        "lupin": "",
+        "sulphites": ""
+      },
+      "mayContainNotes": "",
+      "itemType": "other",
+      "parentMenuItemKey": "delivered-in-lunch",
+      "sourceEvidence": [
+        "fikawed!A22"
+      ],
+      "updatedAt": "2026-07-20T00:00:00Z",
+      "updatedBy": "brian-workbook-import"
+    },
+    {
+      "id": "production:delivered-in-lunch:chimichiri-sauce",
+      "title": "chimichiri sauce",
+      "allergens": {
+        "noKeyAllergens": "",
+        "peanuts": "may_contain",
+        "otherNuts": "may_contain",
+        "gluten": "",
+        "sesame": "",
+        "molluscs": "",
+        "fish": "",
+        "soya": "",
+        "celery": "",
+        "shellfish": "",
+        "eggs": "",
+        "milk": "",
+        "mustard": "",
+        "lupin": "",
+        "sulphites": ""
+      },
+      "mayContainNotes": "ALL NUTS",
+      "itemType": "other",
+      "parentMenuItemKey": "delivered-in-lunch",
+      "sourceEvidence": [
+        "fikawed!A23"
+      ],
+      "updatedAt": "2026-07-20T00:00:00Z",
+      "updatedBy": "brian-workbook-import"
+    },
+    {
+      "id": "production:delivered-in-lunch:tumeric-roasted-cauliflower-grains-and-mustard-dressing",
+      "title": "tumeric roasted cauliflower grains and mustard dressing",
+      "allergens": {
+        "noKeyAllergens": "",
+        "peanuts": "",
+        "otherNuts": "",
+        "gluten": "contains",
+        "sesame": "",
+        "molluscs": "",
+        "fish": "",
+        "soya": "",
+        "celery": "",
+        "shellfish": "",
+        "eggs": "",
+        "milk": "",
+        "mustard": "contains",
+        "lupin": "",
+        "sulphites": ""
+      },
+      "mayContainNotes": "WHEAT BARLEY",
+      "itemType": "other",
+      "parentMenuItemKey": "delivered-in-lunch",
+      "sourceEvidence": [
+        "fikathurs!A10"
+      ],
+      "updatedAt": "2026-07-20T00:00:00Z",
+      "updatedBy": "brian-workbook-import"
+    },
+    {
+      "id": "production:delivered-in-lunch:roasted-beets-toasted-coconut-and-picklked-shallot",
+      "title": "roasted beets toasted coconut and picklked shallot",
+      "allergens": {
+        "noKeyAllergens": "",
+        "peanuts": "",
+        "otherNuts": "",
+        "gluten": "",
+        "sesame": "",
+        "molluscs": "",
+        "fish": "",
+        "soya": "",
+        "celery": "",
+        "shellfish": "",
+        "eggs": "",
+        "milk": "",
+        "mustard": "",
+        "lupin": "",
+        "sulphites": "contains"
+      },
+      "mayContainNotes": "",
+      "itemType": "other",
+      "parentMenuItemKey": "delivered-in-lunch",
+      "sourceEvidence": [
+        "fikathurs!A11"
+      ],
+      "updatedAt": "2026-07-20T00:00:00Z",
+      "updatedBy": "brian-workbook-import"
+    },
+    {
+      "id": "production:delivered-in-lunch:heritage-tomatorocket-and-toasted-seeds",
+      "title": "heritage tomatorocket and toasted seeds",
+      "allergens": {
+        "noKeyAllergens": "contains",
+        "peanuts": "",
+        "otherNuts": "",
+        "gluten": "",
+        "sesame": "",
+        "molluscs": "",
+        "fish": "",
+        "soya": "",
+        "celery": "",
+        "shellfish": "",
+        "eggs": "",
+        "milk": "",
+        "mustard": "",
+        "lupin": "",
+        "sulphites": ""
+      },
+      "mayContainNotes": "",
+      "itemType": "other",
+      "parentMenuItemKey": "delivered-in-lunch",
+      "sourceEvidence": [
+        "fikathurs!A12"
+      ],
+      "updatedAt": "2026-07-20T00:00:00Z",
+      "updatedBy": "brian-workbook-import"
+    },
+    {
+      "id": "production:delivered-in-lunch:wild-rocket-baby-waterscress-and-house-dressing",
+      "title": "wild rocket baby waterscress and house dressing",
+      "allergens": {
+        "noKeyAllergens": "contains",
+        "peanuts": "",
+        "otherNuts": "",
+        "gluten": "",
+        "sesame": "",
+        "molluscs": "",
+        "fish": "",
+        "soya": "",
+        "celery": "",
+        "shellfish": "",
+        "eggs": "",
+        "milk": "",
+        "mustard": "",
+        "lupin": "",
+        "sulphites": ""
+      },
+      "mayContainNotes": "",
+      "itemType": "other",
+      "parentMenuItemKey": "delivered-in-lunch",
+      "sourceEvidence": [
+        "fikathurs!A13"
+      ],
+      "updatedAt": "2026-07-20T00:00:00Z",
+      "updatedBy": "brian-workbook-import"
+    },
+    {
+      "id": "production:delivered-in-lunch:roasted-vine-tomato-and-basil",
+      "title": "roasted vine tomato and basil",
+      "allergens": {
+        "noKeyAllergens": "contains",
+        "peanuts": "",
+        "otherNuts": "",
+        "gluten": "",
+        "sesame": "",
+        "molluscs": "",
+        "fish": "",
+        "soya": "",
+        "celery": "",
+        "shellfish": "",
+        "eggs": "",
+        "milk": "",
+        "mustard": "",
+        "lupin": "",
+        "sulphites": ""
+      },
+      "mayContainNotes": "",
+      "itemType": "other",
+      "parentMenuItemKey": "delivered-in-lunch",
+      "sourceEvidence": [
+        "fikathurs!A14"
+      ],
+      "updatedAt": "2026-07-20T00:00:00Z",
+      "updatedBy": "brian-workbook-import"
+    },
+    {
+      "id": "production:delivered-in-lunch:steak-and-harveys-ale-pie",
+      "title": "steak and harveys ale pie",
+      "allergens": {
+        "noKeyAllergens": "",
+        "peanuts": "",
+        "otherNuts": "",
+        "gluten": "contains",
+        "sesame": "",
+        "molluscs": "",
+        "fish": "",
+        "soya": "may_contain",
+        "celery": "may_contain",
+        "shellfish": "",
+        "eggs": "",
+        "milk": "may_contain",
+        "mustard": "",
+        "lupin": "",
+        "sulphites": "contains"
+      },
+      "mayContainNotes": "WHEAT",
+      "itemType": "other",
+      "parentMenuItemKey": "delivered-in-lunch",
+      "sourceEvidence": [
+        "fikathurs!A15"
+      ],
+      "updatedAt": "2026-07-20T00:00:00Z",
+      "updatedBy": "brian-workbook-import"
+    },
+    {
+      "id": "production:delivered-in-lunch:bombay-potato-vegan-pie",
+      "title": "bombay potato vegan pie",
+      "allergens": {
+        "noKeyAllergens": "",
+        "peanuts": "",
+        "otherNuts": "",
+        "gluten": "contains",
+        "sesame": "",
+        "molluscs": "",
+        "fish": "",
+        "soya": "may_contain",
+        "celery": "may_contain",
+        "shellfish": "",
+        "eggs": "",
+        "milk": "may_contain",
+        "mustard": "",
+        "lupin": "",
+        "sulphites": "contains"
+      },
+      "mayContainNotes": "WHEAT",
+      "itemType": "other",
+      "parentMenuItemKey": "delivered-in-lunch",
+      "sourceEvidence": [
+        "fikathurs!A16"
+      ],
+      "updatedAt": "2026-07-20T00:00:00Z",
+      "updatedBy": "brian-workbook-import"
+    },
+    {
+      "id": "production:delivered-in-lunch:parsley-liquor",
+      "title": "parsley liquor",
+      "allergens": {
+        "noKeyAllergens": "",
+        "peanuts": "",
+        "otherNuts": "",
+        "gluten": "",
+        "sesame": "",
+        "molluscs": "",
+        "fish": "",
+        "soya": "may_contain",
+        "celery": "may_contain",
+        "shellfish": "",
+        "eggs": "contains",
+        "milk": "contains",
+        "mustard": "may_contain",
+        "lupin": "",
+        "sulphites": ""
+      },
+      "mayContainNotes": "",
+      "itemType": "other",
+      "parentMenuItemKey": "delivered-in-lunch",
+      "sourceEvidence": [
+        "fikathurs!A17"
+      ],
+      "updatedAt": "2026-07-20T00:00:00Z",
+      "updatedBy": "brian-workbook-import"
+    },
+    {
+      "id": "production:delivered-in-lunch:roasted-red-onion-gravy",
+      "title": "roasted red onion gravy",
+      "allergens": {
+        "noKeyAllergens": "",
+        "peanuts": "",
+        "otherNuts": "",
+        "gluten": "contains",
+        "sesame": "",
+        "molluscs": "",
+        "fish": "",
+        "soya": "",
+        "celery": "",
+        "shellfish": "",
+        "eggs": "",
+        "milk": "",
+        "mustard": "",
+        "lupin": "",
+        "sulphites": ""
+      },
+      "mayContainNotes": "WHEAT",
+      "itemType": "other",
+      "parentMenuItemKey": "delivered-in-lunch",
+      "sourceEvidence": [
+        "fikathurs!A18"
+      ],
+      "updatedAt": "2026-07-20T00:00:00Z",
+      "updatedBy": "brian-workbook-import"
+    },
+    {
+      "id": "production:delivered-in-lunch:honey-and-thyme-roasted-carrots",
+      "title": "honey and thyme roasted carrots",
+      "allergens": {
+        "noKeyAllergens": "contains",
+        "peanuts": "",
+        "otherNuts": "",
+        "gluten": "",
+        "sesame": "",
+        "molluscs": "",
+        "fish": "",
+        "soya": "",
+        "celery": "",
+        "shellfish": "",
+        "eggs": "",
+        "milk": "",
+        "mustard": "",
+        "lupin": "",
+        "sulphites": ""
+      },
+      "mayContainNotes": "",
+      "itemType": "other",
+      "parentMenuItemKey": "delivered-in-lunch",
+      "sourceEvidence": [
+        "fikathurs!A19"
+      ],
+      "updatedAt": "2026-07-20T00:00:00Z",
+      "updatedBy": "brian-workbook-import"
+    },
+    {
+      "id": "production:delivered-in-lunch:butterd-mash-potato",
+      "title": "butterd mash potato",
+      "allergens": {
+        "noKeyAllergens": "",
+        "peanuts": "",
+        "otherNuts": "",
+        "gluten": "",
+        "sesame": "",
+        "molluscs": "",
+        "fish": "",
+        "soya": "",
+        "celery": "",
+        "shellfish": "",
+        "eggs": "",
+        "milk": "contains",
+        "mustard": "",
+        "lupin": "",
+        "sulphites": ""
+      },
+      "mayContainNotes": "",
+      "itemType": "other",
+      "parentMenuItemKey": "delivered-in-lunch",
+      "sourceEvidence": [
+        "fikathurs!A20"
+      ],
+      "updatedAt": "2026-07-20T00:00:00Z",
+      "updatedBy": "brian-workbook-import"
+    },
+    {
+      "id": "production:delivered-in-lunch:crispy-onions",
+      "title": "crispy onions",
+      "allergens": {
+        "noKeyAllergens": "",
+        "peanuts": "",
+        "otherNuts": "",
+        "gluten": "contains",
+        "sesame": "",
+        "molluscs": "",
+        "fish": "",
+        "soya": "",
+        "celery": "",
+        "shellfish": "",
+        "eggs": "",
+        "milk": "",
+        "mustard": "",
+        "lupin": "",
+        "sulphites": ""
+      },
+      "mayContainNotes": "WHEAT",
+      "itemType": "other",
+      "parentMenuItemKey": "delivered-in-lunch",
+      "sourceEvidence": [
+        "fikathurs!A21"
+      ],
+      "updatedAt": "2026-07-20T00:00:00Z",
+      "updatedBy": "brian-workbook-import"
+    },
+    {
+      "id": "production:delivered-in-lunch:chopped-chives-and-parsley",
+      "title": "chopped chives and parsley",
+      "allergens": {
+        "noKeyAllergens": "contains",
+        "peanuts": "",
+        "otherNuts": "",
+        "gluten": "",
+        "sesame": "",
+        "molluscs": "",
+        "fish": "",
+        "soya": "",
+        "celery": "",
+        "shellfish": "",
+        "eggs": "",
+        "milk": "",
+        "mustard": "",
+        "lupin": "",
+        "sulphites": ""
+      },
+      "mayContainNotes": "",
+      "itemType": "other",
+      "parentMenuItemKey": "delivered-in-lunch",
+      "sourceEvidence": [
+        "fikathurs!A22"
+      ],
+      "updatedAt": "2026-07-20T00:00:00Z",
+      "updatedBy": "brian-workbook-import"
+    },
+    {
+      "id": "production:delivered-in-lunch:stokes-beer-and-onion-marmalade",
+      "title": "stokes beer and onion marmalade",
+      "allergens": {
+        "noKeyAllergens": "",
+        "peanuts": "",
+        "otherNuts": "",
+        "gluten": "contains",
+        "sesame": "",
+        "molluscs": "",
+        "fish": "",
+        "soya": "",
+        "celery": "",
+        "shellfish": "",
+        "eggs": "",
+        "milk": "",
+        "mustard": "contains",
+        "lupin": "",
+        "sulphites": ""
+      },
+      "mayContainNotes": "WHEAT BARLEY",
+      "itemType": "other",
+      "parentMenuItemKey": "delivered-in-lunch",
+      "sourceEvidence": [
+        "fikathurs!A23"
+      ],
+      "updatedAt": "2026-07-20T00:00:00Z",
+      "updatedBy": "brian-workbook-import"
+    },
+    {
+      "id": "production:delivered-in-lunch:sticky-date-brown-sauce",
+      "title": "sticky date brown sauce",
+      "allergens": {
+        "noKeyAllergens": "",
+        "peanuts": "",
+        "otherNuts": "",
+        "gluten": "contains",
+        "sesame": "",
+        "molluscs": "",
+        "fish": "",
+        "soya": "",
+        "celery": "",
+        "shellfish": "",
+        "eggs": "",
+        "milk": "",
+        "mustard": "",
+        "lupin": "",
+        "sulphites": ""
+      },
+      "mayContainNotes": "BARLEY",
+      "itemType": "other",
+      "parentMenuItemKey": "delivered-in-lunch",
+      "sourceEvidence": [
+        "fikathurs!A24"
+      ],
+      "updatedAt": "2026-07-20T00:00:00Z",
+      "updatedBy": "brian-workbook-import"
+    }
+  ]
+}
