@@ -17,6 +17,18 @@ This dictionary records the canonical vocabulary and controlled candidate terms 
 - **Owner:** Operations.
 - **Status:** Canonical.
 
+## Address
+
+- **Definition:** Canonical structured master data identifying a physical postal address independently of any Operational Location or provider record.
+- **Purpose:** Lets OPLOC and other authorised domains reference one reviewed address through a stable Address ID while preserving provider evidence separately.
+- **Owner:** Operations; authority is exercised through role-based permissions under AUTHMOD.
+- **Status:** Canonical; accepted through ADDR-001 on 2026-07-29. Individual Address records require separate review, approval and publication.
+
+### Definition history
+
+- **Before 2026-07-29:** LOC-003 established that physical address master data did not belong to OPLOC, but no governed Address contract existed.
+- **2026-07-29:** Derek explicitly authorised Address as separate canonical master data. OPLOC retains only `addressReference`; provider or legacy address values remain evidence until reviewed.
+
 ## Location Type
 
 - **Definition:** The primary classification that describes an OPLOC's fundamental operating model without replacing its identity.
@@ -28,15 +40,37 @@ This dictionary records the canonical vocabulary and controlled candidate terms 
 
 - **Definition:** A reusable business function that an OPLOC may enable to support how FIKA operates, independently of the OPLOC's identity or Location Type.
 - **Purpose:** Describes what an OPLOC is able to do without defining how the relevant domain operates internally.
-- **Owner:** Platform and Operations teams for the approved catalogue; accountable domain owners remain required for individual capabilities.
-- **Status:** Canonical; catalogue refinement remains governed discovery.
+- **Owner:** Operations Leadership owns the organisation-wide catalogue; the relevant domain owner owns each capability's business meaning and lifecycle. Platform Governance maintains technical representation without becoming business authority.
+- **Status:** Canonical; accepted through CAP-001 on 2026-07-28. Catalogue entries and capability enablement remain separately governed.
+
+### Definition history
+
+- **Before 2026-07-28:** The dictionary described OPCAP as Canonical while CAP-001 metadata remained Draft, creating a status mismatch.
+- **2026-07-28:** Derek explicitly accepted CAP-001 without changing its Decision. Later the same day, Derek confirmed that every completed Pack 1–8 Decision—including CAP-002 through CAP-004—was already accepted and that the remaining Draft labels were metadata errors. Individual catalogue entries and OPLOC enablement records still require their own governed record decisions.
 
 ## Legend
 
-- **Definition:** FIKA people terminology used in operational discovery; its precise boundary across employees, workers, contractors and other contributors is not yet canonically defined.
-- **Purpose:** TODO — confirm the business population, responsibilities and relationship to workforce concepts.
-- **Owner:** TODO.
-- **Status:** Future Candidate.
+- **Definition:** The durable canonical identity of a human recognised by FIKA OS.
+- **Purpose:** Preserves one reviewed FIKA identity independently of provider identities and changing employment or operational relationships.
+- **Owner:** TODO — the governed BDR identifier and role-based business owner must be registered through the established decision process.
+- **Status:** Canonical; the definition was explicitly accepted by Derek on 2026-07-28. Individual records remain subject to separate review and publication.
+
+### Definition history
+
+- **Before 2026-07-28:** Future Candidate whose population and boundary were unresolved.
+- **2026-07-28:** Derek accepted the durable human-identity boundary. Employment, Absence, emergency contacts, training, qualifications, Operational Assignments, performance information, provider-specific HR records and restricted HR evidence remain separate.
+
+## Operational Assignment
+
+- **Definition:** An effective-dated, formally recognised and ongoing operational relationship between one Legend and one OPLOC.
+- **Purpose:** Answers who has an approved ongoing operational connection to an Operational Location without turning employment, rota evidence or occasional cover into the relationship itself.
+- **Owner:** TODO — the governed BDR identifier and role-based business owner must be registered through the established decision process.
+- **Status:** Canonical; the definition was explicitly accepted by Derek on 2026-07-28. Individual assignments remain subject to separate review and publication.
+
+### Definition history
+
+- **Before 2026-07-28:** Proposed discovery distinct from the development-only Site Assignment contract.
+- **2026-07-28:** Derek accepted Operational Assignment as the durable Legend-to-OPLOC relationship. It does not represent Employment, a rota shift, occasional cover, historical appearance, future scheduled work or an inference from frequency.
 
 ## Service Arrangement
 
@@ -102,6 +136,7 @@ This dictionary records the canonical vocabulary and controlled candidate terms 
 
 ## Sources
 
+- [ADDR-001 — Canonical Address Master Data](../business-decisions/addr-001-canonical-address.md)
 - [CLIENT-001 — Client and Client Contact Definition](../business-decisions/client-001-client-definition.md)
 - [LOC-001 — Operational Location Definition](../business-decisions/loc-001-operational-location.md)
 - [LOC-002 — Operational Location Name](../business-decisions/loc-002-operational-location-name.md)

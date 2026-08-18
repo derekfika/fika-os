@@ -1,0 +1,22 @@
+{
+  "schemaVersion": "1.0.0-draft.1",
+  "contract": { "name": "fika.booking-to-production-command", "version": "1.0.0-draft.1", "schemaId": "urn:fika:schema:draft:booking-to-production-command:1" },
+  "commandId": "command:synthetic-booking-100-v2",
+  "operation": "evaluate_accepted_amendment",
+  "issuedAt": "2026-07-28T10:00:00+01:00",
+  "sourceSystemId": "app:synthetic-hospitality",
+  "idempotencyKey": "idempotency:synthetic-booking-100-v2-amendment",
+  "orchestration": { "orchestrationId": "orchestration:synthetic-booking-100-v2", "correlationId": "correlation:synthetic-booking-100", "causationId": "booking-amendment:synthetic-100-a1", "priorCommandId": "command:synthetic-booking-100-v1" },
+  "authorityContext": { "issuingServiceId": "service:synthetic-orchestrator", "assignmentReference": "assignment:synthetic-service", "authorityGrantReference": "grant:synthetic-production-command", "authorityValidationRequired": true },
+  "bookingIntent": {
+    "bookingId": "booking:synthetic-100", "acceptedBookingVersion": 2,
+    "serviceCommitment": { "serviceWindow": { "startAt": "2026-08-03T12:30:00+01:00", "endAt": "2026-08-03T13:00:00+01:00" }, "timezone": "Europe/London", "destination": { "operationalLocationId": "oploc:synthetic-destination", "displayLabel": "Synthetic Destination" } },
+    "items": [{ "bookingItemId": "booking-item:synthetic-100-1", "itemReference": "catalogue-item:synthetic-lunch", "orderedQuantity": { "value": 24, "unitStatus": "known", "unit": { "label": "portions", "code": "unit:portion" } }, "choices": [], "uncertainties": [] }],
+    "dietaryInformationStatus": "withheld_or_incomplete"
+  },
+  "bookingChange": { "changeType": "amendment", "changeId": "booking-amendment:synthetic-100-a1", "priorAcceptedBookingVersion": 1, "effectiveAt": "2026-07-28T09:55:00+01:00", "reasonReference": "reason:synthetic-quantity-change" },
+  "provenance": { "sourceContractReferences": [{ "schemaId": "https://fika-os.local/schemas/pack-4/booking-amendment-action.schema.json", "schemaVersion": "pack-4-draft", "specificationCommit": "463094d12c4105ceb05c73979025165ddfa7ba7d" }], "sourceRecordedAt": "2026-07-28T09:56:00+01:00", "lineageReferences": ["booking-history:synthetic-100-v1", "booking-history:synthetic-100-v2"] },
+  "warnings": ["dietary safety information requires authorised resolution"],
+  "uncertainties": ["affected Production state is not caller-authoritative"],
+  "exclusions": ["prior Production outcome identities excluded from command authority"]
+}

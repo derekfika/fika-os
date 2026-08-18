@@ -2,7 +2,8 @@
 
 - **Decision ID:** PROD-002
 - **Workbook Decision ID:** DEC-PROD-002
-- **Status:** Draft
+- **Status:** Accepted
+- **Status history:** Pack approval was complete; Draft metadata corrected to Accepted on 2026-07-28 by explicit owner instruction. Decision wording is unchanged.
 - **Date:** 2026-07-12T08:54:24.133Z
 - **Decision owner:** Derek / Production / Logistics
 - **Related domains:** Production, Booking

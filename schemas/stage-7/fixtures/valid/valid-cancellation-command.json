@@ -1,0 +1,17 @@
+{
+  "schemaVersion": "1.0.0-draft.1",
+  "contract": { "name": "fika.booking-to-production-command", "version": "1.0.0-draft.1", "schemaId": "urn:fika:schema:draft:booking-to-production-command:1" },
+  "commandId": "command:synthetic-booking-100-v3",
+  "operation": "evaluate_accepted_cancellation",
+  "issuedAt": "2026-07-29T11:00:00+01:00",
+  "sourceSystemId": "app:synthetic-hospitality",
+  "idempotencyKey": "idempotency:synthetic-booking-100-v3-cancellation",
+  "orchestration": { "orchestrationId": "orchestration:synthetic-booking-100-v3", "correlationId": "correlation:synthetic-booking-100", "causationId": "booking-cancellation:synthetic-100-c1", "priorCommandId": "command:synthetic-booking-100-v2" },
+  "authorityContext": { "issuingServiceId": "service:synthetic-orchestrator", "authorityValidationRequired": true },
+  "bookingIntent": { "bookingId": "booking:synthetic-100", "acceptedBookingVersion": 3, "serviceCommitment": { "serviceAt": "2026-08-03T12:30:00+01:00", "timezone": "Europe/London", "destination": { "operationalLocationId": "oploc:synthetic-destination", "displayLabel": "Synthetic Destination" } }, "items": [], "dietaryInformationStatus": "unknown" },
+  "bookingChange": { "changeType": "cancellation", "changeId": "booking-cancellation:synthetic-100-c1", "priorAcceptedBookingVersion": 2, "effectiveAt": "2026-07-29T10:58:00+01:00", "reasonReference": "reason:synthetic-cancellation" },
+  "provenance": { "sourceContractReferences": [{ "schemaId": "https://fika-os.local/schemas/pack-4/booking-amendment-action.schema.json", "schemaVersion": "pack-4-draft", "specificationCommit": "463094d12c4105ceb05c73979025165ddfa7ba7d" }], "sourceRecordedAt": "2026-07-29T10:59:00+01:00", "lineageReferences": ["booking-history:synthetic-100-v3"] },
+  "warnings": ["Production cancellation outcome remains Production-owned"],
+  "uncertainties": ["Production commencement state is not asserted"],
+  "exclusions": ["no deletion or lifecycle outcome requested"]
+}

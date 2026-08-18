@@ -1,0 +1,10 @@
+{
+  "schemaVersion": "1.0.0-draft.1",
+  "contract": { "name": "fika.booking-to-production-command", "version": "1.0.0-draft.1", "schemaId": "urn:fika:schema:draft:booking-to-production-command:1" },
+  "commandId": "command:invalid-item", "operation": "evaluate_accepted_booking", "issuedAt": "2026-07-27T09:00:00+01:00", "sourceSystemId": "app:synthetic-hospitality", "idempotencyKey": "idempotency:invalid-item",
+  "orchestration": { "orchestrationId": "orchestration:invalid-item", "correlationId": "correlation:invalid-item", "causationId": "booking-fact:invalid-item" },
+  "authorityContext": { "issuingServiceId": "service:synthetic-orchestrator", "authorityValidationRequired": true },
+  "bookingIntent": { "bookingId": "booking:synthetic-invalid", "acceptedBookingVersion": 1, "serviceCommitment": { "serviceAt": "2026-08-03T12:30:00+01:00", "timezone": "Europe/London", "destination": { "operationalLocationId": "oploc:synthetic-destination", "displayLabel": "Synthetic Destination" } }, "items": [{ "itemReference": "catalogue-item:synthetic", "orderedQuantity": { "value": 10, "unitStatus": "known", "unit": { "label": "portions" } }, "choices": [], "uncertainties": [] }], "dietaryInformationStatus": "unknown" },
+  "provenance": { "sourceContractReferences": [{ "schemaId": "synthetic:schema", "schemaVersion": "1", "specificationCommit": "463094d12c4105ceb05c73979025165ddfa7ba7d" }], "sourceRecordedAt": "2026-07-27T08:59:00+01:00", "lineageReferences": ["booking-history:synthetic-invalid"] },
+  "warnings": [], "uncertainties": [], "exclusions": []
+}

@@ -2,7 +2,8 @@
 
 - **Decision ID:** CAP-003
 - **Workbook Decision ID:** DEC-CAP-003
-- **Status:** Draft
+- **Status:** Accepted
+- **Status history:** Pack approval was complete; Draft metadata corrected to Accepted on 2026-07-28 by explicit owner instruction. Decision wording is unchanged.
 - **Date:** 2026-07-12T09:22:16.752Z
 - **Decision owner:** Derek / Domain owners
 - **Related domains:** Operational Capability, Configuration

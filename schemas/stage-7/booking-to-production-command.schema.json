@@ -1,0 +1,268 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:fika:schema:draft:booking-to-production-command:1",
+  "title": "Booking-to-Production Command",
+  "description": "Draft Stage 7 command contract for one attributable accepted Booking version or change. It is not a Production Order, dashboard row, Calendar event, orchestration aggregate or canonical persistence record.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "contract",
+    "commandId",
+    "operation",
+    "issuedAt",
+    "sourceSystemId",
+    "idempotencyKey",
+    "orchestration",
+    "authorityContext",
+    "bookingIntent",
+    "provenance",
+    "warnings",
+    "uncertainties",
+    "exclusions"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "1.0.0-draft.1" },
+    "contract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "version", "schemaId"],
+      "properties": {
+        "name": { "const": "fika.booking-to-production-command" },
+        "version": { "const": "1.0.0-draft.1" },
+        "schemaId": { "const": "urn:fika:schema:draft:booking-to-production-command:1" }
+      }
+    },
+    "commandId": { "$ref": "#/$defs/stableId" },
+    "operation": {
+      "type": "string",
+      "enum": ["evaluate_accepted_booking", "evaluate_accepted_amendment", "evaluate_accepted_cancellation"],
+      "description": "Provisional operation vocabulary requiring authority review before adoption. Each value requests Production evaluation; none declares a Production outcome."
+    },
+    "issuedAt": { "$ref": "#/$defs/dateTime" },
+    "sourceSystemId": { "$ref": "#/$defs/stableId" },
+    "idempotencyKey": { "$ref": "#/$defs/stableId" },
+    "orchestration": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["orchestrationId", "correlationId", "causationId"],
+      "properties": {
+        "orchestrationId": { "$ref": "#/$defs/stableId" },
+        "correlationId": { "$ref": "#/$defs/stableId" },
+        "causationId": { "$ref": "#/$defs/stableId" },
+        "priorCommandId": { "$ref": "#/$defs/stableId" }
+      }
+    },
+    "authorityContext": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["issuingServiceId", "authorityValidationRequired"],
+      "properties": {
+        "issuingServiceId": { "$ref": "#/$defs/stableId" },
+        "initiatingActorId": { "$ref": "#/$defs/stableId" },
+        "assignmentReference": { "$ref": "#/$defs/stableId" },
+        "authorityGrantReference": { "$ref": "#/$defs/stableId" },
+        "authorityValidationRequired": { "const": true }
+      }
+    },
+    "bookingIntent": { "$ref": "#/$defs/bookingIntent" },
+    "bookingChange": { "$ref": "#/$defs/bookingChange" },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sourceContractReferences", "sourceRecordedAt", "lineageReferences"],
+      "properties": {
+        "sourceContractReferences": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 12,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/contractReference" }
+        },
+        "sourceRecordedAt": { "$ref": "#/$defs/dateTime" },
+        "lineageReferences": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 20,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/stableId" }
+        }
+      }
+    },
+    "warnings": { "$ref": "#/$defs/evidenceList" },
+    "uncertainties": { "$ref": "#/$defs/evidenceList" },
+    "exclusions": { "$ref": "#/$defs/evidenceList" }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "operation": { "const": "evaluate_accepted_booking" } }, "required": ["operation"] },
+      "then": { "not": { "required": ["bookingChange"] } }
+    },
+    {
+      "if": { "properties": { "operation": { "const": "evaluate_accepted_amendment" } }, "required": ["operation"] },
+      "then": {
+        "required": ["bookingChange"],
+        "properties": { "bookingChange": { "properties": { "changeType": { "const": "amendment" } } } }
+      }
+    },
+    {
+      "if": { "properties": { "operation": { "const": "evaluate_accepted_cancellation" } }, "required": ["operation"] },
+      "then": {
+        "required": ["bookingChange"],
+        "properties": { "bookingChange": { "properties": { "changeType": { "const": "cancellation" } } } }
+      }
+    }
+  ],
+  "$defs": {
+    "stableId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[A-Za-z][A-Za-z0-9_.:-]*$" },
+    "dateTime": { "type": "string", "format": "date-time", "maxLength": 40 },
+    "timezone": { "type": "string", "minLength": 1, "maxLength": 64, "pattern": "^[A-Za-z_]+(?:/[A-Za-z0-9_+.-]+)+$" },
+    "evidenceList": {
+      "type": "array",
+      "maxItems": 50,
+      "uniqueItems": true,
+      "items": { "type": "string", "minLength": 1, "maxLength": 200 }
+    },
+    "contractReference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaId", "schemaVersion", "specificationCommit"],
+      "properties": {
+        "schemaId": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "schemaVersion": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "specificationCommit": { "type": "string", "pattern": "^[0-9a-f]{40}$" }
+      }
+    },
+    "bookingIntent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["bookingId", "acceptedBookingVersion", "serviceCommitment", "items", "dietaryInformationStatus"],
+      "properties": {
+        "bookingId": { "$ref": "#/$defs/stableId" },
+        "acceptedBookingVersion": { "type": "integer", "minimum": 1 },
+        "serviceCommitment": { "$ref": "#/$defs/serviceCommitment" },
+        "items": {
+          "type": "array",
+          "maxItems": 200,
+          "items": { "$ref": "#/$defs/bookingItemIntent" }
+        },
+        "dietaryInformationStatus": { "enum": ["not_supplied", "references_supplied", "withheld_or_incomplete", "unknown"] },
+        "dietaryRequirementReferences": {
+          "type": "array",
+          "maxItems": 100,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/stableId" }
+        },
+        "sanitisedInstructions": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["sanitised", "text"],
+          "properties": {
+            "sanitised": { "const": true },
+            "text": { "type": "string", "minLength": 1, "maxLength": 500 }
+          }
+        }
+      }
+    },
+    "serviceCommitment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["timezone", "destination"],
+      "properties": {
+        "serviceAt": { "$ref": "#/$defs/dateTime" },
+        "serviceWindow": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["startAt", "endAt"],
+          "properties": {
+            "startAt": { "$ref": "#/$defs/dateTime" },
+            "endAt": { "$ref": "#/$defs/dateTime" }
+          }
+        },
+        "timezone": { "$ref": "#/$defs/timezone" },
+        "destination": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["operationalLocationId", "displayLabel"],
+          "properties": {
+            "operationalLocationId": { "$ref": "#/$defs/stableId" },
+            "displayLabel": { "type": "string", "minLength": 1, "maxLength": 160 },
+            "serviceLocationReference": { "$ref": "#/$defs/stableId" }
+          }
+        }
+      },
+      "oneOf": [
+        { "required": ["serviceAt"], "not": { "required": ["serviceWindow"] } },
+        { "required": ["serviceWindow"], "not": { "required": ["serviceAt"] } }
+      ]
+    },
+    "bookingItemIntent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["bookingItemId", "itemReference", "orderedQuantity", "choices", "uncertainties"],
+      "properties": {
+        "bookingItemId": { "$ref": "#/$defs/stableId" },
+        "itemReference": { "$ref": "#/$defs/stableId" },
+        "displayDescription": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "orderedQuantity": { "$ref": "#/$defs/orderedQuantity" },
+        "choices": {
+          "type": "array",
+          "maxItems": 20,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["choiceReference", "valueReference"],
+            "properties": {
+              "choiceReference": { "$ref": "#/$defs/stableId" },
+              "valueReference": { "$ref": "#/$defs/stableId" }
+            }
+          }
+        },
+        "uncertainties": { "$ref": "#/$defs/evidenceList" }
+      }
+    },
+    "orderedQuantity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["value", "unitStatus"],
+      "properties": {
+        "value": { "type": "number", "exclusiveMinimum": 0 },
+        "unitStatus": { "enum": ["known", "unresolved"] },
+        "unit": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["label"],
+          "properties": {
+            "label": { "type": "string", "minLength": 1, "maxLength": 80 },
+            "code": { "$ref": "#/$defs/stableId" }
+          }
+        },
+        "uncertaintyReference": { "$ref": "#/$defs/stableId" }
+      },
+      "oneOf": [
+        { "properties": { "unitStatus": { "const": "known" } }, "required": ["unit"], "not": { "required": ["uncertaintyReference"] } },
+        { "properties": { "unitStatus": { "const": "unresolved" } }, "required": ["uncertaintyReference"], "not": { "required": ["unit"] } }
+      ]
+    },
+    "bookingChange": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["changeType", "changeId", "priorAcceptedBookingVersion", "effectiveAt"],
+      "properties": {
+        "changeType": { "enum": ["amendment", "cancellation"] },
+        "changeId": { "$ref": "#/$defs/stableId" },
+        "priorAcceptedBookingVersion": { "type": "integer", "minimum": 1 },
+        "effectiveAt": { "$ref": "#/$defs/dateTime" },
+        "reasonReference": { "$ref": "#/$defs/stableId" }
+      }
+    }
+  },
+  "x-fika-status": "Draft for authority review; not adopted",
+  "x-fika-operation-vocabulary-status": "Provisional pending business authority",
+  "x-fika-preparse-limits": {
+    "maximumDocumentBytes": 262144,
+    "maximumJsonNestingDepth": 12,
+    "enforcement": "Required before JSON parsing; not enforceable by JSON Schema"
+  },
+  "x-fika-source-authority": ["BOOK-001", "BOOK-002", "BOOK-003", "BOOK-006", "BOOK-007", "PROD-001", "PROD-002", "PROD-003", "PROD-004", "PROD-005", "ADR-004", "ADR-005", "ADR-006", "ADR-008", "ADR-009"]
+}

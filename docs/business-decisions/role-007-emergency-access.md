@@ -2,7 +2,8 @@
 
 - **Decision ID:** ROLE-007
 - **Workbook Decision ID:** DEC-ROLE-007
-- **Status:** Draft
+- **Status:** Accepted
+- **Status history:** Pack approval was complete; Draft metadata corrected to Accepted on 2026-07-28 by explicit owner instruction. Decision wording is unchanged.
 - **Date:** 2026-07-12T09:14:56.775Z
 - **Decision owner:** Derek / Security
 - **Related domains:** Roles and Permissions

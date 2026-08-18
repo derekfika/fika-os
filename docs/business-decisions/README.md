@@ -8,7 +8,7 @@ BDRs are distinct from Architectural Decision Records in [`docs/decisions`](../d
 
 ## Current status
 
-Stage 4 is complete. All **54 canonical decisions** have generated BDRs: **20 Accepted** and **34 Draft**. Pack 1 is accepted and Frozen for current downstream use; Pack 3 Service BDRs are Accepted; remaining BDR metadata stays Draft unless changed through governed authority.
+Stage 4 is complete. All **54 Pack 1–8 canonical decisions** have generated BDRs: **54 Accepted** and **0 Draft**. Packs 1–8 are Accepted; earlier Draft labels on completed Pack decisions were corrected on 2026-07-28 by explicit owner instruction. Pack 1 remains Frozen for current downstream use. ADDR-001 was subsequently authorised and accepted by the project owner on 2026-07-29, bringing the repository total to **55 Accepted BDRs**.
 
 ## Pack 1 freeze
 
@@ -49,7 +49,7 @@ The [FIKA Business Knowledge Workbook](https://docs.google.com/spreadsheets/d/19
 3. Add context and rationale only where evidence supports them.
 4. Use `TODO` rather than infer missing consequences or trade-offs.
 5. Cross-link dependencies and direct dependants.
-6. Validate that all 54 identifiers appear once and only once.
+6. Validate that every governed identifier appears once and only once.
 7. Do not update schemas, architecture or code during BDR generation.
 8. Change a BDR to Accepted only after human review of its explanatory sections.
 
@@ -59,19 +59,23 @@ Use [`000-template.md`](000-template.md) for future records. The filename is ret
 
 ## BDR index
 
+### Address
+
+- [ADDR-001 — Canonical Address Master Data](addr-001-canonical-address.md) — Accepted
+
 ### Booking
 
-- [BOOK-001 — Booking Service Time](book-001-booking-service-time.md) — Draft
-- [BOOK-002 — Booking Item Quantities and Units](book-002-booking-item-quantity-units.md) — Draft
-- [BOOK-003 — Dietary and Allergen Requirements](book-003-dietary-allergen-references.md) — Draft
-- [BOOK-004 — Immutable Pricing and Amendments](book-004-immutable-pricing-amendments.md) — Draft
-- [BOOK-005 — VAT, Rounding and Totals](book-005-vat-rounding-totals.md) — Draft
-- [BOOK-006 — Booking Amendments, Cancellations and Declines](book-006-booking-amendment-cancellation-decline.md) — Draft
-- [BOOK-007 — Booking Source References](book-007-booking-source-references.md) — Draft
+- [BOOK-001 — Booking Service Time](book-001-booking-service-time.md) — Accepted
+- [BOOK-002 — Booking Item Quantities and Units](book-002-booking-item-quantity-units.md) — Accepted
+- [BOOK-003 — Dietary and Allergen Requirements](book-003-dietary-allergen-references.md) — Accepted
+- [BOOK-004 — Immutable Pricing and Amendments](book-004-immutable-pricing-amendments.md) — Accepted
+- [BOOK-005 — VAT, Rounding and Totals](book-005-vat-rounding-totals.md) — Accepted
+- [BOOK-006 — Booking Amendments, Cancellations and Declines](book-006-booking-amendment-cancellation-decline.md) — Accepted
+- [BOOK-007 — Booking Source References](book-007-booking-source-references.md) — Accepted
 
 ### Brand
 
-- [BRAND-001 — Brand and White-Labelling Overrides](brand-001-brand-overrides.md) — Draft
+- [BRAND-001 — Brand and White-Labelling Overrides](brand-001-brand-overrides.md) — Accepted
 
 ### Client
 
@@ -79,28 +83,28 @@ Use [`000-template.md`](000-template.md) for future records. The filename is ret
 
 ### Configuration
 
-- [CFG-001 — Configuration Ownership](cfg-001-configuration-ownership.md) — Draft
-- [CFG-002 — Configuration Inheritance](cfg-002-configuration-inheritance.md) — Draft
-- [CFG-003 — Configuration Variation and Approval](cfg-003-configuration-variation-approval.md) — Draft
+- [CFG-001 — Configuration Ownership](cfg-001-configuration-ownership.md) — Accepted
+- [CFG-002 — Configuration Inheritance](cfg-002-configuration-inheritance.md) — Accepted
+- [CFG-003 — Configuration Variation and Approval](cfg-003-configuration-variation-approval.md) — Accepted
 
 ### Events
 
-- [EVT-001 — Event Qualification Boundary](evt-001-event-qualification.md) — Draft
-- [EVT-002 — Event Governance](evt-002-event-governance.md) — Draft
+- [EVT-001 — Event Qualification Boundary](evt-001-event-qualification.md) — Accepted
+- [EVT-002 — Event Governance](evt-002-event-governance.md) — Accepted
 
 ### Mobilisation
 
-- [MOB-001 — Canonical Mobilisation Journey](mob-001-mobilisation-journey.md) — Draft
-- [MOB-002 — Mobilisation Ownership](mob-002-mobilisation-ownership.md) — Draft
-- [MOB-003 — Mobilisation Readiness](mob-003-mobilisation-readiness.md) — Draft
-- [MOB-004 — Mobilisation Task Classification](mob-004-mobilisation-task-classification.md) — Draft
+- [MOB-001 — Canonical Mobilisation Journey](mob-001-mobilisation-journey.md) — Accepted
+- [MOB-002 — Mobilisation Ownership](mob-002-mobilisation-ownership.md) — Accepted
+- [MOB-003 — Mobilisation Readiness](mob-003-mobilisation-readiness.md) — Accepted
+- [MOB-004 — Mobilisation Task Classification](mob-004-mobilisation-task-classification.md) — Accepted
 
 ### Operational Capability
 
-- [CAP-001 — Operational Capability Definition](cap-001-operational-capability-definition.md) — Draft
-- [CAP-002 — Capability Optionality and Dependencies](cap-002-capability-optionality-dependencies.md) — Draft
-- [CAP-003 — Capability Overrides](cap-003-capability-overrides.md) — Draft
-- [CAP-004 — Capability, Domain and Permission Boundary](cap-004-capability-domain-permission-boundary.md) — Draft
+- [CAP-001 — Operational Capability Definition](cap-001-operational-capability-definition.md) — Accepted
+- [CAP-002 — Capability Optionality and Dependencies](cap-002-capability-optionality-dependencies.md) — Accepted
+- [CAP-003 — Capability Overrides](cap-003-capability-overrides.md) — Accepted
+- [CAP-004 — Capability, Domain and Permission Boundary](cap-004-capability-domain-permission-boundary.md) — Accepted
 
 ### Operational Location
 
@@ -116,21 +120,21 @@ Use [`000-template.md`](000-template.md) for future records. The filename is ret
 
 ### Production
 
-- [PROD-001 — Production Order Eligibility](prod-001-production-order-eligibility.md) — Draft
-- [PROD-002 — Booking and Production Timing](prod-002-booking-production-timing.md) — Draft
-- [PROD-003 — Production Units, Yields and Aggregation](prod-003-production-units-yields.md) — Draft
-- [PROD-004 — Production Amendments and Cancellations](prod-004-production-amendments-cancellations.md) — Draft
-- [PROD-005 — Multi-Facility Production Routing](prod-005-multi-facility-production-routing.md) — Draft
+- [PROD-001 — Production Order Eligibility](prod-001-production-order-eligibility.md) — Accepted
+- [PROD-002 — Booking and Production Timing](prod-002-booking-production-timing.md) — Accepted
+- [PROD-003 — Production Units, Yields and Aggregation](prod-003-production-units-yields.md) — Accepted
+- [PROD-004 — Production Amendments and Cancellations](prod-004-production-amendments-cancellations.md) — Accepted
+- [PROD-005 — Multi-Facility Production Routing](prod-005-multi-facility-production-routing.md) — Accepted
 
 ### Roles and Permissions
 
-- [ROLE-001 — Role Catalogue Ownership](role-001-role-catalogue-ownership.md) — Draft
-- [ROLE-002 — Roles, Responsibilities, Assignments and Authority](role-002-roles-responsibilities-assignments.md) — Draft
-- [ROLE-003 — Permission Action Vocabulary](role-003-permission-actions.md) — Draft
-- [ROLE-004 — Assignment Scopes](role-004-assignment-scopes.md) — Draft
-- [ROLE-005 — Approval and Publication Separation](role-005-approval-publication-separation.md) — Draft
-- [ROLE-006 — Access Boundaries](role-006-access-boundaries.md) — Draft
-- [ROLE-007 — Emergency Access](role-007-emergency-access.md) — Draft
+- [ROLE-001 — Role Catalogue Ownership](role-001-role-catalogue-ownership.md) — Accepted
+- [ROLE-002 — Roles, Responsibilities, Assignments and Authority](role-002-roles-responsibilities-assignments.md) — Accepted
+- [ROLE-003 — Permission Action Vocabulary](role-003-permission-actions.md) — Accepted
+- [ROLE-004 — Assignment Scopes](role-004-assignment-scopes.md) — Accepted
+- [ROLE-005 — Approval and Publication Separation](role-005-approval-publication-separation.md) — Accepted
+- [ROLE-006 — Access Boundaries](role-006-access-boundaries.md) — Accepted
+- [ROLE-007 — Emergency Access](role-007-emergency-access.md) — Accepted
 
 ### Service
 
@@ -147,4 +151,4 @@ Use [`000-template.md`](000-template.md) for future records. The filename is ret
 
 ### Waste
 
-- [WASTE-001 — Waste as a Business Domain](waste-001-waste-domain.md) — Draft
+- [WASTE-001 — Waste as a Business Domain](waste-001-waste-domain.md) — Accepted

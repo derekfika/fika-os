@@ -2,7 +2,7 @@
 
 - **Decision ID:** CAP-001
 - **Workbook Decision ID:** DEC-CAP-001
-- **Status:** Draft
+- **Status:** Accepted
 - **Date:** 2026-07-12T08:54:24.133Z
 - **Decision owner:** Derek / Domain owners
 - **Related domains:** Operational Capability, Mobilisation
@@ -74,6 +74,11 @@ Capability specifications must identify the accountable business owner, the role
 ## Future considerations
 
 Future work must confirm the role-based approval boundary for catalogue changes and the evidence required for each capability lifecycle transition.
+
+## Acceptance history
+
+- **2026-07-28:** Derek explicitly approved CAP-001. The Decision text is unchanged. This accepts the Operational Capability definition and catalogue boundary; it does not accept CAP-002 through CAP-004, approve catalogue entries or enable a capability at any OPLOC.
+- **2026-07-28 (later clarification):** Derek confirmed that all completed Pack 1–8 Decisions, including CAP-002 through CAP-004, were already approved and that their Draft labels were metadata errors. Individual catalogue entries and enablement records remain separately governed.
 
 ## Revision 2 governance note
 

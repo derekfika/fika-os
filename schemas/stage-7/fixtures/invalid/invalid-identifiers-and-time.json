@@ -1,0 +1,10 @@
+{
+  "schemaVersion": "1.0.0-draft.1",
+  "contract": { "name": "fika.booking-to-production-command", "version": "1.0.0-draft.1", "schemaId": "urn:fika:schema:draft:booking-to-production-command:1" },
+  "commandId": "same", "operation": "evaluate_accepted_booking", "issuedAt": "not-a-time", "sourceSystemId": "app:synthetic-hospitality", "idempotencyKey": "same with spaces",
+  "orchestration": { "orchestrationId": "same", "correlationId": "same", "causationId": "same" },
+  "authorityContext": { "issuingServiceId": "service:synthetic-orchestrator", "authorityValidationRequired": true },
+  "bookingIntent": { "bookingId": "booking:synthetic-invalid", "acceptedBookingVersion": 1, "serviceCommitment": { "serviceAt": "invalid", "timezone": "GMT", "destination": { "operationalLocationId": "oploc:synthetic-destination", "displayLabel": "Synthetic Destination" } }, "items": [], "dietaryInformationStatus": "unknown" },
+  "provenance": { "sourceContractReferences": [{ "schemaId": "synthetic:schema", "schemaVersion": "1", "specificationCommit": "463094d12c4105ceb05c73979025165ddfa7ba7d" }], "sourceRecordedAt": "invalid", "lineageReferences": ["booking-history:synthetic-invalid"] },
+  "warnings": [], "uncertainties": [], "exclusions": []
+}

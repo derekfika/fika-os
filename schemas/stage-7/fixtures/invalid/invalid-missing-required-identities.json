@@ -1,0 +1,9 @@
+{
+  "schemaVersion": "1.0.0-draft.1",
+  "contract": { "name": "fika.booking-to-production-command", "version": "1.0.0-draft.1", "schemaId": "urn:fika:schema:draft:booking-to-production-command:1" },
+  "operation": "evaluate_accepted_booking", "issuedAt": "2026-07-27T09:00:00+01:00", "sourceSystemId": "app:synthetic-hospitality",
+  "orchestration": { "orchestrationId": "orchestration:invalid-missing", "correlationId": "correlation:invalid-missing", "causationId": "booking-fact:invalid-missing" },
+  "authorityContext": { "issuingServiceId": "service:synthetic-orchestrator", "authorityValidationRequired": true },
+  "bookingIntent": { "serviceCommitment": { "serviceAt": "2026-08-03T12:30:00+01:00", "timezone": "Europe/London", "destination": { "operationalLocationId": "oploc:synthetic-destination", "displayLabel": "Synthetic Destination" } }, "items": [], "dietaryInformationStatus": "unknown" },
+  "warnings": [], "uncertainties": [], "exclusions": []
+}

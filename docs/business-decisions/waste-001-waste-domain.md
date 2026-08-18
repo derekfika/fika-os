@@ -2,7 +2,8 @@
 
 - **Decision ID:** WASTE-001
 - **Workbook Decision ID:** DEC-WASTE-001
-- **Status:** Draft
+- **Status:** Accepted
+- **Status history:** Pack approval was complete; Draft metadata corrected to Accepted on 2026-07-28 by explicit owner instruction. Decision wording is unchanged.
 - **Date:** 2026-07-12T08:33:47.768Z
 - **Decision owner:** Derek / Operations
 - **Related domains:** Waste

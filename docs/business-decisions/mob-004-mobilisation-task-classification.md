@@ -2,7 +2,8 @@
 
 - **Decision ID:** MOB-004
 - **Workbook Decision ID:** DEC-MOB-004
-- **Status:** Draft
+- **Status:** Accepted
+- **Status history:** Pack approval was complete; Draft metadata corrected to Accepted on 2026-07-28 by explicit owner instruction. Decision wording is unchanged.
 - **Date:** 2026-07-12T09:14:56.775Z
 - **Decision owner:** Derek / Mobilisation owner / Domain owners
 - **Related domains:** Mobilisation, Operational Capability
