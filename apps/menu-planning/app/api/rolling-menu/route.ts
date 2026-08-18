@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { addMenuSlot, createEntry, duplicateWeek, emptyWeek, getWeek, listWeeks, removeMenuSlot, saveSnapshot, updateEntry, validateWeek } from "@/lib/rolling-menu";
+import { addMenuSlot, cleanDuplicateEntries, createEntry, duplicateWeek, emptyWeek, getWeek, listWeeks, removeMenuSlot, saveSnapshot, updateEntry, validateWeek } from "@/lib/rolling-menu";
 
 export async function GET(request: NextRequest) {
   const snapshot = getWeek(request.nextUrl.searchParams.get("weekId") || undefined);
@@ -33,6 +33,10 @@ export async function POST(request: NextRequest) {
     if (action === "remove-menu-slot") {
       const snapshot = removeMenuSlot(String(body.weekId), String(body.slot || ""));
       return NextResponse.json({ snapshot, weeks: listWeeks(), blockers: validateWeek(snapshot) });
+    }
+    if (action === "clean-duplicate-entries") {
+      const result = cleanDuplicateEntries(String(body.weekId));
+      return NextResponse.json({ snapshot: result.snapshot, removed: result.removed, weeks: listWeeks(), blockers: validateWeek(result.snapshot) });
     }
     if (action === "publish") {
       const snapshot = getWeek(String(body.weekId)); const blockers = validateWeek(snapshot);

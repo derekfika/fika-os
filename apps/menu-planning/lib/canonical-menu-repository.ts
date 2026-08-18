@@ -85,3 +85,28 @@ export async function promoteSourceCandidate(candidate: MenuItem, actor = "local
   await writeItems(items);
   return item;
 }
+
+const mergeNoise = new Set(["salad", "dish", "main", "protein", "breast", "leaf", "leaves"]);
+const mergeKey = (value: string) => value.toLocaleLowerCase().replace(/&/g, "and").replace(/[^a-z0-9]+/g, " ").trim().split(/\s+/).filter(Boolean).filter(token => !mergeNoise.has(token)).sort().join(" ");
+const richness = (item: MenuItem) => Number(item.mayContainReviewed) * 100 + item.allergenEvidence.length * 5 + Number(Boolean(item.ingredients?.length)) * 3 + Number(Boolean(item.description || item.preparationDescription || item.methodSteps?.length));
+
+export async function mergeSimilarCanonicalItems(actor = "automatic-dish-normaliser") {
+  const items = await readItems();
+  const active = items.filter(item => item.reviewStatus !== "archived");
+  const groups = new Map<string, MenuItem[]>();
+  for (const item of active) { const key = `${normaliseDishCategory(item.category)}|${mergeKey(item.displayName)}`; if (key.endsWith("|")) continue; groups.set(key, [...(groups.get(key) || []), item]); }
+  const mapping: Record<string, string> = {};
+  let merged = 0;
+  for (const candidates of groups.values()) {
+    if (candidates.length < 2) continue;
+    const winner = candidates.slice().sort((a, b) => richness(b) - richness(a) || a.displayName.length - b.displayName.length)[0];
+    for (const loser of candidates) { if (loser.canonicalId === winner.canonicalId) continue; mapping[loser.canonicalId] = winner.canonicalId; loser.reviewStatus = "archived"; loser.recipeStatus = "archived"; loser.audit.push({ action: "automatically-merged-into-canonical-dish", at: new Date().toISOString(), by: actor }); merged += 1; }
+    winner.audit.push({ action: "automatic-dish-merge-survivor", at: new Date().toISOString(), by: actor });
+  }
+  const winners = new Map<string, MenuItem>();
+  for (const item of items.filter(item => item.reviewStatus !== "archived")) { const key = `${normaliseDishCategory(item.category)}|${mergeKey(item.displayName)}`; if (key.endsWith("|")) continue; winners.set(key, item); }
+  const aliases: Record<string, string> = {};
+  for (const item of items) { const winner = winners.get(`${normaliseDishCategory(item.category)}|${mergeKey(item.displayName)}`); if (winner && winner.canonicalId !== item.canonicalId) { mapping[item.canonicalId] = winner.canonicalId; aliases[item.displayName.toLocaleLowerCase()] = winner.displayName; } }
+  if (merged) await writeItems(items);
+  return { mapping, aliases, merged };
+}
