@@ -1,11 +1,8 @@
 import type { InternalMatrixSignature, PlannedMenuItem } from "../lib/production-plan";
+import { CANONICAL_ALLERGEN_COLUMNS } from "../../../shared/allergen-contract";
 
 /** Keep this order aligned with the digital checker and the printed master sheet. */
-export const matrixColumns = [
-  ["noKeyAllergens", "No key allergens"], ["peanuts", "Peanuts"], ["otherNuts", "Tree nuts"], ["gluten", "Gluten"],
-  ["sesame", "Sesame"], ["molluscs", "Molluscs"], ["fish", "Fish"], ["soya", "Soya"], ["celery", "Celery"],
-  ["shellfish", "Shellfish"], ["eggs", "Eggs"], ["milk", "Milk"], ["mustard", "Mustard"], ["lupin", "Lupin"], ["sulphites", "Sulphites"],
-] as const;
+export const matrixColumns = CANONICAL_ALLERGEN_COLUMNS;
 
 const escapeHtml = (value: string) => value.replace(/[&<>"']/g, character => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[character] || character));
 const mayContainNotes = (_allergens: Record<string, string>, notes?: string) => notes?.trim() || "";

@@ -88,7 +88,7 @@ test("delivered-in lunch creator supports governed OPLOCs, one-off locations and
   assert.match(page, /titleCaseLabel/);
   assert.match(page, /cpu-create-allergen-matrix/);
   assert.match(page, /cpu-create-allergen-cell--\$\{state\}/);
-  assert.match(page, /noKeyAllergens/);
+  assert.match(page, /CANONICAL_ALLERGEN_COLUMNS/);
   assert.match(page, /mayContainNotes/);
 });
 
@@ -133,9 +133,8 @@ test("Liana production view captures nested menu items and sub-item allergen evi
   assert.match(liana, /Add rows/);
   assert.match(liana, /allergen-cell--\$\{state\}/);
   assert.match(liana, /may_contain/);
-  assert.match(liana, /cycle/);
-  assert.match(liana, /key === "noKeyAllergens"/);
-  assert.match(liana, /allergens\.noKeyAllergens = "clear"/);
+  assert.match(liana, /toggleOperationalAllergen/);
+  assert.match(liana, /CANONICAL_ALLERGEN_COLUMNS/);
   assert.match(liana, /sourceLineId/);
   assert.match(liana, /mergeOriginalItems/);
   assert.doesNotMatch(liana, /portions/);
@@ -144,7 +143,7 @@ test("Liana production view captures nested menu items and sub-item allergen evi
   assert.match(liana, /order\.guestCount/);
   assert.match(liana, /order\.lines\.reduce/);
   assert.match(liana, /sourceLineId/);
-  assert.match(liana, /allergens\.noKeyAllergens = "clear"/);
+  assert.match(liana, /CANONICAL_ALLERGEN_COLUMNS/);
   assert.match(liana, /Saved production item/);
   assert.match(liana, /Save production item/);
   assert.match(liana, /\/api\/sandwiches/);
@@ -173,7 +172,7 @@ test("allergen checker uses the master-style purple header and four-state cells"
     /allergen-checker thead th[^\{]*\{[^}]*background:\s*#4f34c7/,
   );
   assert.match(css, /allergen-cell--may_contain.*MC|may_contain/);
-  assert.match(liana, /clear[\s\S]*contains[\s\S]*may_contain[\s\S]*clear/);
+  assert.match(liana, /toggleOperationalAllergen/);
   assert.match(allergenMatrix, /<th>Chef<br>Printed name \/ signature<\/th>/);
   assert.match(
     allergenMatrix,
@@ -184,7 +183,7 @@ test("allergen checker uses the master-style purple header and four-state cells"
   assert.doesNotMatch(allergenMatrix, /Verified by Location Manager/);
   assert.match(allergenMatrix, /Week commencing date/);
   assert.match(allergenMatrix, /weekCommencing/);
-  assert.match(allergenMatrix, /Tree nuts/);
+  assert.match(allergenMatrix, /CANONICAL_ALLERGEN_COLUMNS/);
   assert.match(allergenMatrix, /Service area \/ service type \/ service time/);
   assert.match(allergenMatrix, /serviceType/);
   assert.match(allergenMatrix, /serviceDay/);

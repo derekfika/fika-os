@@ -9,6 +9,7 @@ import type { AllergenCellState, InternalMatrixSignature, PlannedMenuItem, Produ
 import { allergenMatrixHtml } from "../../ui/allergen-matrix";
 import { renderPdfLocally } from "../../lib/local-pdf";
 import { notifyBookingConfirmedForProductionOrder } from "@hub/lib/hospitality-booking-service";
+import { normaliseOperationalAllergens } from "../../../../shared/allergen-contract";
 import {
   productionOrderDetail,
   transitionProductionOrder,
@@ -85,9 +86,12 @@ const storePath = storeCandidates.find(candidate => existsSync(candidate)) || st
 async function loadPlans() {
   try {
     const saved = JSON.parse(await fs.readFile(storePath, "utf8")) as Record<string, ProductionPlan>;
-    for (const [id, plan] of Object.entries(saved)) plans.set(id, plan);
+    for (const [id, plan] of Object.entries(saved)) plans.set(id, normalisePlanAllergens(plan));
   } catch { /* first local run */ }
   return plans;
+}
+function normalisePlanAllergens(plan: ProductionPlan): ProductionPlan {
+  return { ...plan, menuItems: plan.menuItems.map(item => ({ ...item, subItems: item.subItems.map(sub => ({ ...sub, allergens: normaliseOperationalAllergens(sub.allergens) })) })) };
 }
 async function persistPlans() {
   await fs.mkdir(path.dirname(storePath), { recursive: true });
@@ -188,9 +192,9 @@ export async function POST(request: NextRequest) {
     if (command.action === "reject") await syncCanonicalLifecycle(command.orderId, "rejected", command.reason);
     if (command.action === "clarify") { plan.status = "needs_clarification"; plan.clarificationNote = command.note; plan.audit.push({ action: "clarification-requested", at: timestamp, by: command.actor, reason: command.note }); updateLocalFixture(command.orderId, order => ({ ...order, status: "needs_clarification", version: order.version + 1 })); }
     if (command.action === "clarify") await syncCanonicalLifecycle(command.orderId, "needs_clarification", command.note);
-    if (command.action === "save-plan") { plan.status = "planning"; plan.menuItems = (await mergeOriginalItems({ ...plan, menuItems: command.menuItems }, command.orderId)).menuItems; plan.planningNotes = command.planningNotes; plan.audit.push({ action: "plan-saved", at: timestamp, by: command.actor }); updateLocalFixture(command.orderId, order => ({ ...order, status: "planning", version: order.version + 1 })); }
+    if (command.action === "save-plan") { plan.status = "planning"; plan.menuItems = (await mergeOriginalItems({ ...plan, menuItems: normalisePlanAllergens({ ...plan, menuItems: command.menuItems }).menuItems }, command.orderId)).menuItems; plan.planningNotes = command.planningNotes; plan.audit.push({ action: "plan-saved", at: timestamp, by: command.actor }); updateLocalFixture(command.orderId, order => ({ ...order, status: "planning", version: order.version + 1 })); }
     if (command.action === "mark-planned") {
-      plan.menuItems = (await mergeOriginalItems({ ...plan, menuItems: command.menuItems }, command.orderId)).menuItems;
+      plan.menuItems = (await mergeOriginalItems({ ...plan, menuItems: normalisePlanAllergens({ ...plan, menuItems: command.menuItems }).menuItems }, command.orderId)).menuItems;
       plan.planningNotes = command.planningNotes;
       const subItems = plan.menuItems.flatMap(item => item.subItems);
       if (!plan.menuItems.length || plan.menuItems.some(item => !item.name.trim() || !item.subItems.length) || subItems.some(item => !item.name.trim() || item.evidenceStatus !== "completed")) throw Object.assign(new Error("Complete every menu item, sub-item name and allergen checker before marking the plan Planned."), { status: 422 });

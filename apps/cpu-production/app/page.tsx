@@ -11,6 +11,7 @@ import { matrixColumns } from "./ui/allergen-matrix";
 import LianaOrderDetail from "./ui/LianaOrderDetail";
 import ProductionCalendar from "./ui/ProductionCalendar";
 import DeliveredMenuPlanner from "./ui/DeliveredMenuPlanner";
+import { CANONICAL_ALLERGEN_COLUMNS, normaliseOperationalAllergens, toggleOperationalAllergen, type CanonicalAllergenKey } from "../../shared/allergen-contract";
 
 const statuses: ProductionStatus[] = [
   "received",
@@ -666,23 +667,12 @@ type CreateLine = { id: string; itemId: string; newItemTitle: string; quantity: 
 
 const OTHER_OPLOC = "__other__";
 const titleCaseLabel = (value: string) => value.replace(/[_-]+/g, " ").replace(/\s+/g, " ").trim().toLowerCase().replace(/\b\w/g, (character) => character.toUpperCase());
-const emptyCreatorAllergens = (): Record<string, AllergenCellState> => Object.fromEntries(matrixColumns.map(([key]) => [key, "clear" as AllergenCellState]));
+const emptyCreatorAllergens = (): Record<string, AllergenCellState> => Object.fromEntries(CANONICAL_ALLERGEN_COLUMNS.map(([key]) => [key, "clear" as AllergenCellState]));
 const normaliseCreatorAllergens = (raw?: Record<string, string>) => {
-  const result = emptyCreatorAllergens();
-  for (const [key, value] of Object.entries(raw || {})) {
-    if (value === "contains" || value === "may_contain") result[key] = value;
-  }
-  return result;
+  return { ...emptyCreatorAllergens(), ...normaliseOperationalAllergens(raw) };
 };
-const cycleCreatorAllergen = (state: AllergenCellState): AllergenCellState => state === "clear" ? "contains" : state === "contains" ? "may_contain" : "clear";
 const toggleCreatorAllergen = (current: Record<string, AllergenCellState>, key: string) => {
-  const next = { ...current };
-  const state = cycleCreatorAllergen(current[key] || "clear");
-  if (key === "noKeyAllergens" && state !== "clear") {
-    for (const other of Object.keys(next)) next[other] = "clear";
-  } else if (key !== "noKeyAllergens" && state !== "clear") next.noKeyAllergens = "clear";
-  next[key] = state;
-  return next;
+  return { ...emptyCreatorAllergens(), ...toggleOperationalAllergen(current, key as CanonicalAllergenKey) };
 };
 
 function CpuCreate({ onSaved }: { onSaved: () => Promise<void> }) {

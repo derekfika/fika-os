@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { addMenuSlot, cleanDuplicateEntries, createEntry, duplicateWeek, emptyWeek, getWeek, listWeeks, removeMenuSlot, saveSnapshot, updateEntry, validateWeek } from "@/lib/rolling-menu";
+import { addMenuSlot, assertWeekDateAvailable, cleanDuplicateEntries, createEntry, duplicateWeek, emptyWeek, getWeek, listWeeks, publishWeek, removeMenuSlot, saveSnapshot, updateEntry, validateWeek } from "@/lib/rolling-menu";
 
 export async function GET(request: NextRequest) {
   const snapshot = getWeek(request.nextUrl.searchParams.get("weekId") || undefined);
@@ -11,6 +11,7 @@ export async function POST(request: NextRequest) {
     const body = await request.json() as Record<string, unknown>;
     const action = String(body.action || "");
     if (action === "create-week") {
+      assertWeekDateAvailable(String(body.weekCommencing));
       const snapshot = saveSnapshot(emptyWeek(String(body.weekCommencing), "local-menu-planner"));
       return NextResponse.json({ snapshot, weeks: listWeeks(), blockers: validateWeek(snapshot) });
     }
@@ -40,9 +41,9 @@ export async function POST(request: NextRequest) {
     }
     if (action === "publish") {
       const snapshot = getWeek(String(body.weekId)); const blockers = validateWeek(snapshot);
+      if (snapshot.week.status === "published") return NextResponse.json({ error: { message: "This menu week is already published." } }, { status: 409 });
       if (blockers.length) return NextResponse.json({ error: { message: blockers.join(" ") } }, { status: 422 });
-      snapshot.week.status = "published"; snapshot.week.version += 1; snapshot.week.audit.push({ action: "week-published", at: new Date().toISOString(), by: "local-menu-planner" });
-      const saved = saveSnapshot(snapshot); return NextResponse.json({ snapshot: saved, weeks: listWeeks(), blockers: [] });
+      const saved = publishWeek(String(body.weekId)); return NextResponse.json({ snapshot: saved, weeks: listWeeks(), blockers: [] });
     }
     return NextResponse.json({ error: { message: "Unknown rolling menu command." } }, { status: 400 });
   } catch (error) { return NextResponse.json({ error: { message: error instanceof Error ? error.message : "Rolling menu command failed." } }, { status: 400 }); }

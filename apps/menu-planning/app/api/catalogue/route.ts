@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { filterCatalogueEntries, listCatalogueEntries } from "@/lib/catalogue";
-import { mergeSimilarCanonicalItems } from "@/lib/canonical-menu-repository";
+import { createCanonicalMenuItem, mergeSimilarCanonicalItems } from "@/lib/canonical-menu-repository";
 import { repointDishIds } from "@/lib/rolling-menu";
 
 export async function GET(request: Request) {
@@ -16,7 +16,12 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const body = await request.json() as { action?: string };
+  const body = await request.json() as { action?: string; displayName?: string; category?: string; description?: string; preparationNotes?: string; allergenEvidence?: Array<{ allergen: string; value: "contains" | "free_from" | "may_contain" | "unknown"; source: string; reviewedBy?: string; reviewedAt?: string; notes?: string }> };
+  if (body.action === "create-dish") {
+    if (!body.displayName?.trim()) return NextResponse.json({ error: "A dish name is required." }, { status: 422 });
+    const item = await createCanonicalMenuItem({ ...body, displayName: body.displayName! });
+    return NextResponse.json({ item }, { status: 201 });
+  }
   if (body.action !== "merge-similar-dishes") return NextResponse.json({ error: "Unknown catalogue command." }, { status: 400 });
   const result = await mergeSimilarCanonicalItems();
   const updatedEntries = repointDishIds(result.mapping, result.aliases);

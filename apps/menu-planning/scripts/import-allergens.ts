@@ -2,15 +2,11 @@ import { existsSync, readFileSync, readdirSync, renameSync, writeFileSync } from
 import { join } from "node:path";
 import * as XLSX from "xlsx";
 import type { AllergenMap, RollingEntry } from "../lib/rolling-menu-types";
+import { CANONICAL_ALLERGEN_KEYS } from "../../shared/allergen-contract";
 
 const menuDataRoot = process.env.FIKA_MENU_DATA_ROOT || join(process.cwd(), "..", "..", "Menu Data");
 const rollingFile = join(process.cwd(), "local-data", "menu-planning", "rolling-menu-weeks.json");
-const allergenColumns: Array<[string, string]> = [
-  ["NO KEY ALLERGENS", "no_key_allergens"], ["ALL OTHER NUTS", "tree_nuts"], ["PEANUTS", "peanuts"],
-  ["GLUTEN", "gluten"], ["SESAME", "sesame"], ["MOLLUSCS", "molluscs"], ["FISH", "fish"],
-  ["SOYA", "soya"], ["CELERY", "celery"], ["SHELLFISH", "shellfish"], ["EGGS", "eggs"],
-  ["MILK", "milk"], ["MUSTARD", "mustard"], ["LUPIN", "lupin"], ["SULPHITES", "sulphites"],
-];
+const allergenColumns: Array<[string, string]> = CANONICAL_ALLERGEN_KEYS.map((key) => [key === "no_key_allergens" ? "NO KEY ALLERGENS" : key === "tree_nuts" ? "ALL OTHER NUTS" : key.toUpperCase(), key]);
 const normalise = (value: unknown) => String(value ?? "").toLocaleLowerCase().replace(/[^a-z0-9]+/g, "");
 const headerText = (value: unknown) => String(value ?? "").trim().toLocaleUpperCase();
 const marker = (value: unknown) => String(value ?? "").trim().toLocaleUpperCase();

@@ -1,5 +1,6 @@
+import type { OperationalAllergenState } from "../../../shared/allergen-contract";
 export type PlanStatus = "draft" | "planning" | "planned" | "rejected" | "needs_clarification";
-export type AllergenCellState = "clear" | "contains" | "may_contain";
+export type AllergenCellState = OperationalAllergenState;
 export type PlannedSubItem = {
   id: string;
   name: string;

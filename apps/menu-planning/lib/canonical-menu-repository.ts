@@ -3,6 +3,7 @@ import path from "node:path";
 import type { MenuItem } from "./domain";
 import { deterministicId } from "./domain";
 import { normaliseDishCategory } from "./dish-categories";
+import { titleCase } from "./text";
 import type { RollingEntry } from "./rolling-menu-types";
 
 const filePath = path.join(process.cwd(), "local-data", "menu-planning", "canonical-menu-items.json");
@@ -22,6 +23,33 @@ async function writeItems(items: MenuItem[]) {
 }
 
 export async function listCanonicalMenuItems() { return readItems(); }
+
+export async function createCanonicalMenuItem(input: { displayName: string; category?: string; description?: string; preparationNotes?: string; allergenEvidence?: MenuItem["allergenEvidence"] }, actor = "local-menu-planner") {
+  const items = await readItems();
+  const displayName = titleCase(input.displayName);
+  const existing = items.find(item => item.displayName.trim().toLocaleLowerCase() === displayName.toLocaleLowerCase());
+  if (existing) return existing;
+  const at = new Date().toISOString();
+  const item: MenuItem = {
+    canonicalId: deterministicId("menu-item", "local", displayName, at),
+    sourceName: displayName,
+    displayName,
+    description: input.description?.trim() || undefined,
+    preparationNotes: input.preparationNotes?.trim() || undefined,
+    category: normaliseDishCategory(input.category),
+    weekId: "menu-week:menu-planning",
+    dayId: "",
+    sourceReference: { workbook: "Menu Planning", sheet: "Local dish creation" },
+    revision: 1,
+    reviewStatus: "unreviewed",
+    allergenEvidence: input.allergenEvidence || [],
+    mayContainReviewed: Boolean(input.allergenEvidence?.length),
+    audit: [{ action: "locally-created-in-menu-planning", at, by: actor }],
+  };
+  items.push(item);
+  await writeItems(items);
+  return item;
+}
 
 /** Promote imported rolling-menu labels into reusable records once, without replacing reviewed records. */
 export async function syncRollingEntries(entries: RollingEntry[], actor = "rolling-menu-migration") {

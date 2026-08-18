@@ -12,27 +12,12 @@ import type {
 import "./liana.css";
 import { allergenMatrixHtml, mayContainNotes } from "./allergen-matrix";
 import { DELI_STYLE_PARENT_KEY, isDeliStyleParent } from "../../lib/production-item-scope";
-
-const allergenColumns = [
-  ["noKeyAllergens", "No key allergens"],
-  ["peanuts", "Peanuts"],
-  ["otherNuts", "Tree nuts"],
-  ["gluten", "Gluten"],
-  ["sesame", "Sesame"],
-  ["molluscs", "Molluscs"],
-  ["fish", "Fish"],
-  ["soya", "Soya"],
-  ["celery", "Celery"],
-  ["shellfish", "Shellfish"],
-  ["eggs", "Eggs"],
-  ["milk", "Milk"],
-  ["mustard", "Mustard"],
-  ["lupin", "Lupin"],
-  ["sulphites", "Sulphites"],
-] as const;
+import { CANONICAL_ALLERGEN_COLUMNS, normaliseOperationalAllergens, toggleOperationalAllergen, type CanonicalAllergenKey } from "../../../shared/allergen-contract";
+import { matrixColumns } from "./allergen-matrix";
+const allergenColumns = matrixColumns;
 
 function emptyAllergens(): Record<string, AllergenCellState> {
-  return Object.fromEntries(allergenColumns.map(([key]) => [key, "clear"]));
+  return Object.fromEntries(CANONICAL_ALLERGEN_COLUMNS.map(([key]) => [key, "clear"]));
 }
 
 function initialMenuItems(order: ProductionOrder): PlannedMenuItem[] {
@@ -78,14 +63,6 @@ function mergeOriginalItems(
       ],
     }));
   return [...saved, ...originals];
-}
-
-function cycle(state: AllergenCellState): AllergenCellState {
-  return state === "clear"
-    ? "contains"
-    : state === "contains"
-      ? "may_contain"
-      : "clear";
 }
 
 function dietarySummary(order: ProductionOrder) {
@@ -385,13 +362,7 @@ export default function LianaOrderDetail({
   const removeMenuItem = (id: string) =>
     setMenuItems((items) => items.filter((item) => item.id !== id));
   const toggleCell = (menuId: string, sub: PlannedSubItem, key: string) => {
-    const next = cycle(sub.allergens[key] || "clear");
-    const allergens = { ...sub.allergens };
-    if (key === "noKeyAllergens" && next !== "clear")
-      for (const other of Object.keys(allergens)) allergens[other] = "clear";
-    if (key !== "noKeyAllergens" && next !== "clear")
-      allergens.noKeyAllergens = "clear";
-    allergens[key] = next;
+    const allergens = toggleOperationalAllergen(sub.allergens, key as CanonicalAllergenKey);
     updateSubItem(menuId, sub.id, {
       allergens,
       evidenceStatus: "not_completed",
@@ -406,7 +377,7 @@ export default function LianaOrderDetail({
     if (productionItem)
       updateSubItem(menuId, sub.id, {
         name: productionItem.title,
-        allergens: { ...emptyAllergens(), ...productionItem.allergens },
+        allergens: { ...emptyAllergens(), ...normaliseOperationalAllergens(productionItem.allergens) },
         mayContainNotes: productionItem.mayContainNotes || "",
         evidenceStatus: "not_completed",
       });
