@@ -12,6 +12,7 @@ import LianaOrderDetail from "./ui/LianaOrderDetail";
 import ProductionCalendar from "./ui/ProductionCalendar";
 import DeliveredMenuPlanner from "./ui/DeliveredMenuPlanner";
 import PublishedMenuView from "./ui/PublishedMenuView";
+import GrabAndGoProductionView from "./ui/GrabAndGoProductionView";
 import { CANONICAL_ALLERGEN_COLUMNS, normaliseOperationalAllergens, toggleOperationalAllergen, type CanonicalAllergenKey } from "../../shared/allergen-contract";
 
 const statuses: ProductionStatus[] = [
@@ -47,12 +48,13 @@ function visibleStatus(order: ProductionOrder): ProductionStatus {
     return order.status;
   return order.workflowStatus;
 }
-type View = "calendar" | "queue" | "run-sheet" | "totals" | "menu-planning" | "published-menus";
-type ProductionDashboardView = "production" | "hospitality" | "site_manager";
+type View = "calendar" | "queue" | "run-sheet" | "totals" | "menu-planning" | "published-menus" | "grab-and-go";
+type ProductionDashboardView = "production" | "hospitality" | "site_manager" | "grab_and_go";
 const dashboardViewLabels: Record<string, string> = {
   liana: "Production chef · sandwiches",
   craig: "Hospitality chef",
-  site_manager: "Site manager / head chef",
+  site_manager: "Delivered-In production",
+  grab_and_go: "Grab & Go production",
 };
 dashboardViewLabels.production = "Production chef · sandwiches";
 dashboardViewLabels.hospitality = "Hospitality chef";
@@ -61,6 +63,7 @@ function initialDashboardView(): ProductionDashboardView {
   const value = new URLSearchParams(window.location.search).get("view");
   if (value === "hospitality" || value === "craig") return "hospitality";
   if (value === "site_manager") return "site_manager";
+  if (value === "grab_and_go") return "grab_and_go";
   return "production";
 }
 
@@ -83,7 +86,11 @@ export default function CpuProduction() {
   const [error, setError] = useState("");
   useEffect(() => {
     const next = initialDashboardView();
-    if (next !== "production") setDashboardView(next);
+    if (next !== "production") {
+      setDashboardView(next);
+      if (next === "site_manager") setView("published-menus");
+      if (next === "grab_and_go") setView("grab-and-go");
+    }
   }, []);
   const load = async (): Promise<ProductionOrder[]> => {
     const response = await fetch(`/api/production?view=${dashboardView}`, {
@@ -194,6 +201,7 @@ export default function CpuProduction() {
               "production",
               "hospitality",
               "site_manager",
+              "grab_and_go",
             ] as ProductionDashboardView[]
           ).map((item) => (
             <button
@@ -202,6 +210,8 @@ export default function CpuProduction() {
               key={item}
               onClick={() => {
                 setDashboardView(item);
+                setView(item === "site_manager" ? "published-menus" : item === "grab_and_go" ? "grab-and-go" : "calendar");
+                setShowCreate(false);
                 window.history.replaceState({}, "", `/?view=${item}`);
               }}
             >
@@ -232,9 +242,11 @@ export default function CpuProduction() {
                   ? "Production queue"
                   : view === "run-sheet"
                     ? "Run sheet"
-                    : view === "menu-planning"
-                      ? "Six-week menu planner"
-                      : "Aggregated totals"}
+                : view === "published-menus"
+                        ? "Published delivered-in menus"
+                        : view === "grab-and-go"
+                          ? "Grab & Go production"
+                        : "Aggregated totals"}
             </h2>
             <p>
               {view === "calendar"
@@ -267,40 +279,15 @@ export default function CpuProduction() {
             >
               Totals
             </button>
-            {dashboardView === "site_manager" && (
-              view === "menu-planning" ? (
-                <button
-                  type="button"
-                  onClick={() => setView("calendar")}
-                  aria-label="Close six-week menu planner"
-                >
-                  Close planner
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  className=""
-                  onClick={() => { setView("menu-planning"); setShowCreate(false); }}
-                >
-                  Six-week menu planner
-                </button>
-              )
-            )}
-            {dashboardView === "site_manager" && <button type="button" onClick={() => { setView("published-menus"); setShowCreate(false); }}>Published delivered-in menus</button>}
             <button onClick={() => void load()} aria-label="Refresh production">
               ↻
             </button>
-            {dashboardView === "site_manager" && (
-              <button onClick={() => setShowCreate((value) => !value)}>
-                Create delivered-in lunch
-              </button>
-            )}
             <button onClick={() => void scanCpuCalendar()}>
               Scan CPU calendar
             </button>
           </div>
         </div>
-        {view !== "menu-planning" && <div className="cpu-filters">
+        {view !== "menu-planning" && view !== "published-menus" && view !== "grab-and-go" && <div className="cpu-filters">
           <label>
             Date
             <input
@@ -344,7 +331,7 @@ export default function CpuProduction() {
           </button>
         </div>}
         {error && <p role="alert">{error}</p>}
-        {view === "published-menus" ? <PublishedMenuView /> : view === "menu-planning" ? <DeliveredMenuPlanner /> : showCreate && (
+        {view === "published-menus" ? <PublishedMenuView /> : view === "grab-and-go" ? <GrabAndGoProductionView /> : view === "menu-planning" ? <DeliveredMenuPlanner /> : showCreate && (
           <CpuCreate
             onSaved={async () => {
               setShowCreate(false);

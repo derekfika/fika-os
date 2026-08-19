@@ -106,6 +106,18 @@ async function assertDriveFolder(folderId: string, headers: Record<string, strin
   }
 }
 
+export function weekFolderName(weekCommencing?: string) { return weekCommencing ? `WC_${weekCommencing}` : undefined; }
+async function resolveWeekFolder(rootFolderId: string, weekCommencing: string | undefined, headers: Record<string, string>, operation: string) {
+  await assertDriveFolder(rootFolderId, headers, operation);
+  const name = weekFolderName(weekCommencing);
+  if (!name) return rootFolderId;
+  const query = `'${rootFolderId}' in parents and name = '${name}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false`;
+  const existing = await json<{ files?: Array<{ id: string }> }>(await googleFetch(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(query)}&spaces=drive&fields=files(id)&pageSize=1`, { headers }, `${operation} week folder lookup`));
+  if (existing.files?.[0]?.id) return existing.files[0].id;
+  const created = await json<{ id: string }>(await googleFetch("https://www.googleapis.com/drive/v3/files?supportsAllDrives=true&fields=id", { method: "POST", headers: { ...headers, "content-type": "application/json" }, body: JSON.stringify({ name, parents: [rootFolderId], mimeType: "application/vnd.google-apps.folder" }) }, `${operation} week folder creation`));
+  return created.id;
+}
+
 function contentAnchor(presentation: Presentation): MenuAnchor | null {
   for (const slide of presentation.slides || []) for (const element of slide.pageElements || []) {
     const text = element.shape?.text?.textElements?.map(item => item.textRun?.content || "").join("") || "";
@@ -221,12 +233,12 @@ export async function createGoogleMenu(output: MenuOutput, siteKey = "mnk", sett
 
 /** Save a generated quote beside the site's generated menu files. The file name
  * is supplied by the caller and is used as the idempotency key in that folder. */
-export async function saveGoogleDriveHtml(input: { name: string; html: string; siteKey?: string; folderId?: string }) {
-  const folderId = driveResourceId(input.folderId || outputFolderId(input.siteKey || "mnk"));
-  if (!folderId || folderId === "your_drive_folder_id") return null;
+export async function saveGoogleDriveHtml(input: { name: string; html: string; siteKey?: string; folderId?: string; weekCommencing?: string }) {
+  const rootFolderId = driveResourceId(input.folderId || outputFolderId(input.siteKey || "mnk"));
+  if (!rootFolderId || rootFolderId === "your_drive_folder_id") return null;
   const token = await accessToken();
   const headers = { Authorization: `Bearer ${token}` };
-  await assertDriveFolder(folderId, headers, "Quote");
+  const folderId = await resolveWeekFolder(rootFolderId, input.weekCommencing, headers, "Quote");
   const escapedName = input.name.replaceAll("\\", "\\\\").replaceAll("'", "\\'");
   const query = `'${folderId}' in parents and name = '${escapedName}' and trashed = false`;
   const existing = await json<{ files?: Array<{ id: string; webViewLink?: string }> }>(await googleFetch(
@@ -250,12 +262,12 @@ export async function saveGoogleDriveHtml(input: { name: string; html: string; s
   return { fileId: uploaded.id, driveUrl: uploaded.webViewLink || `https://drive.google.com/open?id=${uploaded.id}`, reused: false };
 }
 
-export async function saveGoogleDrivePdf(input: { name: string; pdfBase64: string; siteKey?: string; folderId?: string }) {
-  const folderId = driveResourceId(input.folderId || outputFolderId(input.siteKey || "mnk"));
-  if (!folderId || folderId === "your_drive_folder_id") return null;
+export async function saveGoogleDrivePdf(input: { name: string; pdfBase64: string; siteKey?: string; folderId?: string; weekCommencing?: string }) {
+  const rootFolderId = driveResourceId(input.folderId || outputFolderId(input.siteKey || "mnk"));
+  if (!rootFolderId || rootFolderId === "your_drive_folder_id") return null;
   const token = await accessToken();
   const headers = { Authorization: `Bearer ${token}` };
-  await assertDriveFolder(folderId, headers, "Allergen matrix");
+  const folderId = await resolveWeekFolder(rootFolderId, input.weekCommencing, headers, "Allergen matrix");
   const escapedName = input.name.replaceAll("\\", "\\\\").replaceAll("'", "\\'");
   const query = `'${folderId}' in parents and name = '${escapedName}' and trashed = false`;
   const existing = await json<{ files?: Array<{ id: string; webViewLink?: string }> }>(await googleFetch(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(query)}&spaces=drive&fields=files(id,webViewLink)&pageSize=1`, { headers }, "Google Drive matrix lookup"));

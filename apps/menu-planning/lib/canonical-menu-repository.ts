@@ -19,7 +19,8 @@ async function readItems(): Promise<MenuItem[]> {
 
 async function writeItems(items: MenuItem[]) {
   await mkdir(path.dirname(filePath), { recursive: true });
-  await writeFile(filePath, JSON.stringify({ version: 1, items }, null, 2) + "\n", "utf8");
+  const normalised = items.map(item => ({ ...item, displayName: titleCase(item.displayName) }));
+  await writeFile(filePath, JSON.stringify({ version: 1, items: normalised }, null, 2) + "\n", "utf8");
 }
 
 export async function listCanonicalMenuItems() { return readItems(); }
@@ -28,7 +29,7 @@ export async function createCanonicalMenuItem(input: { displayName: string; cate
   const items = await readItems();
   const displayName = titleCase(input.displayName);
   const existing = items.find(item => item.displayName.trim().toLocaleLowerCase() === displayName.toLocaleLowerCase());
-  if (existing) return existing;
+  if (existing) { if (existing.displayName !== displayName) { existing.displayName = displayName; await writeItems(items); } return existing; }
   const at = new Date().toISOString();
   const item: MenuItem = {
     canonicalId: deterministicId("menu-item", "local", displayName, at),
@@ -56,7 +57,7 @@ export async function syncRollingEntries(entries: RollingEntry[], actor = "rolli
   const items = await readItems();
   let changed = false;
   for (const entry of entries) {
-    const name = entry.itemLabel.trim();
+    const name = titleCase(entry.itemLabel.trim());
     if (!name) continue;
     const existing = items.find(item => item.canonicalId === entry.itemId || item.displayName.toLowerCase() === name.toLowerCase());
     const at = new Date().toISOString();
@@ -64,6 +65,7 @@ export async function syncRollingEntries(entries: RollingEntry[], actor = "rolli
       .filter(([, value]) => value !== "clear")
       .map(([allergen, value]) => ({ allergen, value: value === "may_contain" ? "may_contain" as const : "contains" as const, source: entry.source?.workbook || "Imported rolling menu", reviewedBy: actor, reviewedAt: at }));
     if (existing) {
+      if (existing.displayName !== name) { existing.displayName = name; changed = true; }
       if (!existing.mayContainReviewed && Object.keys(entry.allergens || {}).length) {
         existing.allergenEvidence = allergenEvidence;
         existing.mayContainReviewed = true;
@@ -95,6 +97,7 @@ export async function syncRollingEntries(entries: RollingEntry[], actor = "rolli
 export function canonicalFromSourceCandidate(candidate: MenuItem, actor = "local-menu-reviewer", at = new Date().toISOString()): MenuItem {
   return {
     ...structuredClone(candidate),
+    displayName: titleCase(candidate.displayName),
     category: normaliseDishCategory(candidate.category),
     reviewStatus: "unreviewed",
     recipeStatus: "draft",
@@ -107,7 +110,7 @@ export function canonicalFromSourceCandidate(candidate: MenuItem, actor = "local
 export async function promoteSourceCandidate(candidate: MenuItem, actor = "local-menu-reviewer") {
   const items = await readItems();
   const existing = items.find((item) => item.canonicalId === candidate.canonicalId);
-  if (existing) return existing;
+  if (existing) { const displayName = titleCase(existing.displayName); if (existing.displayName !== displayName) { existing.displayName = displayName; await writeItems(items); } return existing; }
   const item = canonicalFromSourceCandidate(candidate, actor);
   items.push(item);
   await writeItems(items);

@@ -4,9 +4,11 @@ import { readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { test } from "node:test";
 import * as XLSX from "xlsx";
-import { applyEntryPatch, assertWeekDateAvailable, createEntry, duplicateWeek, emptyWeek, getWeek, importWorkbook, publishWeek, saveSnapshot, updateEntry, validateWeek, ROLLING_SLOTS } from "../lib/rolling-menu";
+import { addMenuSlot, applyEntryPatch, assertWeekDateAvailable, createEntry, duplicateWeek, emptyWeek, getWeek, importWorkbook, publishWeek, removeMenuSlot, saveSnapshot, updateEntry, validateWeek, ROLLING_SLOTS } from "../lib/rolling-menu";
 import { createCanonicalMenuItem, listCanonicalMenuItems } from "../lib/canonical-menu-repository";
-import { createPublishedMenuDay, getMenuPublication, publicationPreview, publishedDayMatrixHtml, type MenuPublicationSignoff } from "../lib/menu-publication";
+import { createPublishedMenuDay, currentPublishedDays, getMenuPublication, publicationPreview, publicationState, publishedDayMatrixHtml, withdrawPublishedMenuDay, type MenuPublicationSignoff } from "../lib/menu-publication";
+import { resolveAllergenSnapshot } from "../lib/allergen-resolution";
+import { notifyCpuPublicationChanged } from "../lib/publication-notification";
 import type { RollingEntry } from "../lib/rolling-menu-types";
 
 test("rolling menu importer preserves slots, destination quantities and source evidence", () => {
@@ -56,7 +58,8 @@ test("week lifecycle prevents collisions, publishes once, and duplicates publish
     assert.throws(() => publishWeek(source.week.id), (error: any) => error.status === 409 && error.message.includes("already published"));
     assert.equal(getWeek(source.week.id).week.version, version);
     assert.equal(getWeek(source.week.id).week.audit.length, auditCount);
-    assert.throws(() => createEntry(source.week.id, source.days[0].id, "SALAD 1", "Dish"), (error: any) => error.status === 409);
+    const amended = createEntry(source.week.id, source.days[0].id, "SALAD 1", "Dish");
+    assert.equal(amended.entries[0].itemLabel, "Dish");
 
     const copied = duplicateWeek(source.week.id, duplicateDate);
     assert.equal(copied.week.status, "draft");
@@ -81,6 +84,9 @@ test("menu days publish independently and revisions supersede only that day", as
     const sign = (dayId: string): MenuPublicationSignoff => { const day = publicationPreview(getWeek(week.week.id), dayId)[0]; const signature = { printedName: "Signed Chef", signatureDataUrl: "data:image/png;base64,c2ln", signedAt: "2026-08-19T12:00:00.000Z", actor: "test", attestation: "Reviewed" }; return { date: day.date, productionChef: signature, headChefSiteManager: { ...signature, printedName: "Head Chef" }, dayContentHash: day.contentHash }; };
     const mondayPublication = createPublishedMenuDay(week.week.id, week.days[0].id, sign(week.days[0].id), "test");
     assert.equal(getWeek(week.week.id).week.status, "partially_published");
+    addMenuSlot(week.week.id, "SALAD 7");
+    removeMenuSlot(week.week.id, "SALAD 7");
+    assert.equal(getMenuPublication(mondayPublication.publicationId)?.days.find(day => day.sourceDayId === week.days[0].id)?.status, "published");
     const tuesdayPublication = createPublishedMenuDay(week.week.id, week.days[1].id, sign(week.days[1].id), "test");
     assert.equal(tuesdayPublication.days.find(day => day.sourceDayId === week.days[0].id)?.status, "published");
     const mondayVersion = mondayPublication.days.find(day => day.sourceDayId === week.days[0].id)?.version;
@@ -89,7 +95,13 @@ test("menu days publish independently and revisions supersede only that day", as
     const firstThursday = createPublishedMenuDay(week.week.id, week.days[3].id, firstThursdaySignoff, "test");
     const firstThursdaySnapshot = getMenuPublication(firstThursday.publicationId)?.days.find(day => day.sourceDayId === week.days[3].id);
     assert.equal(firstThursdaySnapshot?.version, 1);
+    assert.equal(publicationState(getWeek(week.week.id))[week.days[3].id].hasUnpublishedChanges, false);
     updateEntryForTest(week.week.id, thursday.id, "Thursday Dish Revised");
+    const pending = publicationState(getWeek(week.week.id))[week.days[3].id];
+    assert.equal(pending.hasCurrentPublication, true);
+    assert.equal(pending.hasUnpublishedChanges, true);
+    assert.equal(getMenuPublication(firstThursday.publicationId)?.days.find(day => day.sourceDayId === week.days[3].id)?.entries[0].dishName, "Thursday Dish");
+    assert.equal(currentPublishedDays(getMenuPublication(firstThursday.publicationId)!).find(day => day.sourceDayId === week.days[3].id)?.version, 1);
     assert.throws(() => createPublishedMenuDay(week.week.id, week.days[3].id, firstThursdaySignoff, "test"), (error: any) => error.status === 409 && error.message.includes("current day content"));
     const revised = createPublishedMenuDay(week.week.id, week.days[3].id, sign(week.days[3].id), "test");
     const history = getMenuPublication(revised.publicationId)!.days.filter(day => day.sourceDayId === week.days[3].id);
@@ -120,6 +132,44 @@ test("published day matrix keeps all canonical allergen columns", async () => {
     if (rollingBefore) await writeFile(rollingFile, rollingBefore); else await rm(rollingFile, { force: true });
     if (publicationBefore) await writeFile(publicationFile, publicationBefore); else await rm(publicationFile, { force: true });
   }
+});
+
+test("canonical allergen evidence resolves identically for planner readiness and publication", () => {
+  const entry: RollingEntry = { id: "entry:canonical", dayId: "day:canonical", date: "2026-08-17", slot: "SALAD 1", itemId: "dish:canonical", itemLabel: "Canonical Dish", portions: 10, allocations: [{ destinationLabel: "Haleon", quantity: 10 }], allergens: {}, audit: [] };
+  const dish = { canonicalId: "dish:canonical", displayName: "Canonical Dish", allergenEvidence: [{ allergen: "sesame", value: "contains" as const }], mayContainReviewed: true };
+  const resolved = resolveAllergenSnapshot(entry, dish);
+  assert.equal(resolved.unresolved.length, 0);
+  assert.equal(resolved.allergens.sesame, "contains");
+  const invalidated = resolveAllergenSnapshot({ ...entry, allergenReviewInvalidated: true }, dish);
+  assert.ok(invalidated.unresolved.length > 0);
+  const unknown = resolveAllergenSnapshot(entry, { ...dish, allergenEvidence: [{ allergen: "sesame", value: "unknown" as const }] });
+  assert.ok(unknown.unresolved.length > 0);
+  assert.notEqual(unknown.allergens.sesame, "contains");
+});
+
+test("withdrawal removes a day from the current projection and republishing creates the next version", async () => {
+  const rollingFile = join(process.cwd(), "local-data", "menu-planning", "rolling-menu-weeks.json");
+  const publicationFile = join(process.cwd(), "local-data", "menu-planning", "menu-publications.json");
+  const rollingBefore = existsSync(rollingFile) ? await readFile(rollingFile) : undefined;
+  const publicationBefore = existsSync(publicationFile) ? await readFile(publicationFile) : undefined;
+  const week = emptyWeek(`2096-05-${String((Date.now() % 20) + 1).padStart(2, "0")}`);
+  try {
+    saveSnapshot(week); const created = createEntry(week.week.id, week.days[1].id, "SOUP", "Withdrawable Dish", "test", "dish:withdrawable"); const entry = created.entries.find(value => value.dayId === week.days[1].id)!; updateEntryForTest(week.week.id, entry.id); const preview = publicationPreview(getWeek(week.week.id), week.days[1].id)[0]; const signature = { printedName: "Production Chef", signatureDataUrl: "data:image/png;base64,c2ln", signedAt: "2026-08-19T12:00:00.000Z", actor: "test", attestation: "Reviewed" }; const signoff = { date: preview.date, productionChef: signature, headChefSiteManager: { ...signature, printedName: "Head Chef" }, dayContentHash: preview.contentHash };
+    const first = createPublishedMenuDay(week.week.id, week.days[1].id, signoff, "test"); const dayId = first.days.find(day => day.sourceDayId === week.days[1].id)!.publicationDayId; const withdrawn = withdrawPublishedMenuDay(first.publicationId, dayId, "Correction required", "test"); const withdrawnDay = withdrawn.days.find(day => day.publicationDayId === dayId)!; assert.equal(withdrawnDay.status, "withdrawn"); assert.equal(currentPublishedDays(withdrawn).length, 0); assert.equal(withdrawnDay.withdrawal?.reason, "Correction required");
+    const republishedPreview = publicationPreview(getWeek(week.week.id), week.days[1].id)[0]; const republished = createPublishedMenuDay(week.week.id, week.days[1].id, { ...signoff, dayContentHash: republishedPreview.contentHash }, "test"); assert.equal(republished.days.filter(day => day.sourceDayId === week.days[1].id).at(-1)?.version, 2);
+  } finally { if (rollingBefore) await writeFile(rollingFile, rollingBefore); else await rm(rollingFile, { force: true }); if (publicationBefore) await writeFile(publicationFile, publicationBefore); else await rm(publicationFile, { force: true }); }
+});
+
+test("CPU publication notification is best effort and carries only invalidation metadata", async () => {
+  const originalFetch = globalThis.fetch;
+  let requestBody = "";
+  try {
+    globalThis.fetch = (async (_input, init) => { requestBody = String(init?.body || ""); return new Response(null, { status: 204 }); }) as typeof fetch;
+    assert.equal(await notifyCpuPublicationChanged({ event: "publication_changed", publicationDayId: "publication:day:v2", serviceDate: "2026-08-24", version: 2, action: "amended" }), true);
+    assert.deepEqual(JSON.parse(requestBody), { event: "publication_changed", publicationDayId: "publication:day:v2", serviceDate: "2026-08-24", version: 2, action: "amended" });
+    globalThis.fetch = (async () => new Response(null, { status: 503 })) as typeof fetch;
+    assert.equal(await notifyCpuPublicationChanged({ event: "publication_changed", publicationDayId: "publication:day:v2", serviceDate: "2026-08-24", version: 2, action: "withdrawn" }), false);
+  } finally { globalThis.fetch = originalFetch; }
 });
 
 function updateEntryForTest(weekId: string, entryId: string, label?: string) {

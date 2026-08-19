@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getMenuPublication, listMenuPublications } from "@/lib/menu-publication";
+import { archivePublishedDayMatrix, getMenuPublication, listMenuPublications, withdrawPublishedMenuDay } from "@/lib/menu-publication";
 
 export async function GET(request: NextRequest) {
   const publicationId = request.nextUrl.searchParams.get("publicationId");
@@ -9,4 +9,17 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ publication });
   }
   return NextResponse.json({ publications: listMenuPublications() });
+}
+
+export async function POST(request: NextRequest) {
+  try {
+    const body = await request.json() as { action?: string; publicationId?: string; publicationDayId?: string; reason?: string; actor?: string };
+    if (!body.publicationId || !body.publicationDayId) return NextResponse.json({ error: { message: "Publication and publication day are required." } }, { status: 422 });
+    if (body.action === "withdraw") return NextResponse.json({ publication: withdrawPublishedMenuDay(body.publicationId, body.publicationDayId, body.reason || "", body.actor || "local-menu-planner") });
+    if (body.action === "retry-archive") {
+      const archive = await archivePublishedDayMatrix(body.publicationId, body.publicationDayId);
+      return NextResponse.json({ publication: getMenuPublication(body.publicationId), archive });
+    }
+    return NextResponse.json({ error: { message: "Unknown publication command." } }, { status: 400 });
+  } catch (error) { const status = error && typeof error === "object" && "status" in error ? Number((error as { status?: unknown }).status) || 400 : 400; return NextResponse.json({ error: { message: error instanceof Error ? error.message : "Publication command failed." } }, { status }); }
 }

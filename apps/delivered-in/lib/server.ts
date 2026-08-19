@@ -1,0 +1,37 @@
+import type { NextRequest } from "next/server";
+import { assertAuthorisedOploc, projectPublishedWeeks, type Site, type SiteAccess, type SourcePublication } from "./projection";
+import { siteMenuState } from "./site-menu";
+import { latestSiteMenuArtifact } from "./site-menu-store";
+
+const hubBase = () => (process.env.INTEGRATION_HUB_BASE_URL || "http://localhost:3200").replace(/\/$/, "");
+const menuBase = () => (process.env.MENU_PLANNING_BASE_URL || "http://localhost:3500").replace(/\/$/, "");
+const failure = (message: string, status = 502) => Object.assign(new Error(message), { status });
+
+export async function resolveAccess(request: NextRequest): Promise<{ access: SiteAccess; sites: Site[] }> {
+  const response = await fetch(`${hubBase()}/api/delivered-in/access`, { headers: { cookie: request.headers.get("cookie") || "" }, cache: "no-store" });
+  const body = await response.json() as { access?: SiteAccess; sites?: Site[]; error?: { message?: string } };
+  if (!response.ok || !body.access || !body.sites) throw failure(body.error?.message || "Delivered-In access could not be resolved.", response.status || 502);
+  return { access: body.access, sites: body.sites };
+}
+
+export async function projectedWeeks(request: NextRequest, requestedOplocId?: string) {
+  const resolved = await resolveAccess(request); const access = resolved.access; const sites = resolved.sites;
+  if (!access.oplocIds.length) return { access, sites, selectedOplocId: undefined, weeks: [] };
+  const selectedOplocId = requestedOplocId || (access.oplocIds.length === 1 ? access.oplocIds[0] : undefined);
+  if (!selectedOplocId) return { access, sites, selectedOplocId: undefined, weeks: [] };
+  assertAuthorisedOploc(access, selectedOplocId);
+  const response = await fetch(`${menuBase()}/api/rolling-menu/publications`, { cache: "no-store" });
+  const body = await response.json() as { publications?: SourcePublication[]; error?: { message?: string } };
+  if (!response.ok) throw failure(body.error?.message || "Published Delivered-In menus could not be loaded.");
+  const weeks = projectPublishedWeeks(body.publications || [], selectedOplocId).map(week => ({ ...week, days: week.days.map(day => ({ ...day, siteMenu: siteMenuState(day, latestSiteMenuArtifact(selectedOplocId, day.sourceDayId)) })) }));
+  return { access, sites, selectedOplocId, weeks };
+}
+
+export async function projectedAllergenDay(request: NextRequest, requestedOplocId: string, publicationDayId: string) {
+  const result = await projectedWeeks(request, requestedOplocId);
+  for (const week of result.weeks) {
+    const day = week.days.find(candidate => candidate.publicationDayId === publicationDayId);
+    if (day) return { ...day, site: result.sites.find(site => site.oplocId === requestedOplocId) };
+  }
+  throw failure("The signed published day was not found for this site.", 404);
+}

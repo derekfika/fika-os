@@ -17,7 +17,7 @@ export async function POST(req: NextRequest) {
     if (!response.ok) response = await fetch(`${endpoint}/accounts:signUp?key=local-only`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ email, password: PASSWORD, returnSecureToken: true }) });
     if (!response.ok) throw Object.assign(new Error("Local Authentication emulator is unavailable."), { status: 503 });
     const data = await response.json() as { idToken: string };
-    const result = NextResponse.json({ actor: { name: role === "integration-admin" ? "Integration Administrator" : role === "reviewer" ? "Integration Reviewer" : "Integration Viewer", role, synthetic: true } });
+    const result = NextResponse.json({ actor: { name: role === "integration-admin" ? "Integration Administrator" : role === "reviewer" ? "Integration Reviewer" : "Integration Viewer", email, role, synthetic: true } });
     result.cookies.set("fika_hub_token", data.idToken, { httpOnly: true, sameSite: "strict", secure: false, maxAge: 3600, path: "/" });
     return result;
   } catch (error) { return errorResponse(error); }

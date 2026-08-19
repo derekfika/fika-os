@@ -2,7 +2,10 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { filterProductionOrdersForDashboard } from "../lib/dashboard-views";
+import { aggregateProductionTotals, currentPublishedDays, groupEntriesByDestination, publishedMatrixUrl, sortPublishedMenuPublications, summarizePublishedDays } from "../lib/published-menu-selection";
+import { publishPublicationChanged, publicationEventStream, subscribeToPublicationChanges } from "../lib/publication-events";
 import { localFixtureOrders } from "../app/api/local-fixtures";
+import { buildGrabAndGoProduction, effectiveGrabAndGoOrders, type GrabAndGoProduct, type GrabAndGoSourceOrder } from "../lib/grab-and-go-read";
 
 const page = readFileSync(new URL("../app/page.tsx", import.meta.url), "utf8");
 const route = readFileSync(
@@ -59,6 +62,8 @@ const menuImportRoute = readFileSync(
 );
 const publishedMenusRoute = readFileSync(new URL("../app/api/menu-publications/route.ts", import.meta.url), "utf8");
 const publishedMenusView = readFileSync(new URL("../app/ui/PublishedMenuView.tsx", import.meta.url), "utf8");
+const publicationEventsRoute = readFileSync(new URL("../app/api/menu-publications/events/route.ts", import.meta.url), "utf8");
+const publicationInvalidateRoute = readFileSync(new URL("../app/api/menu-publications/invalidate/route.ts", import.meta.url), "utf8");
 
 test("CPU Production is a queue-first workspace with a CPU-created order path", () => {
   assert.match(page, /Production, <em>in hand/);
@@ -71,10 +76,125 @@ test("CPU Production is a queue-first workspace with a CPU-created order path", 
 test("Head Chef receives immutable Menu Planning publication days as a read-only projection", () => {
   assert.match(publishedMenusRoute, /MENU_PLANNING_BASE_URL/);
   assert.match(publishedMenusRoute, /format.*matrix/);
-  assert.match(publishedMenusView, /HEAD CHEF · READ-ONLY/);
+  assert.match(publishedMenusRoute, /publicationDayId/);
+  assert.match(publishedMenusRoute, /status === "published"/);
+  assert.match(publishedMenusRoute, /publishedAllergenMatrixHtml/);
+  assert.match(publishedMenusRoute, /requireActor/);
+  assert.match(publishedMenusView, /Head chef · Read only/);
   assert.match(publishedMenusView, /Not published/);
-  assert.match(publishedMenusView, /disabled=\{!published\}/);
-  assert.match(page, /Published delivered-in menus/);
+  assert.match(publishedMenusView, /currentPublishedDays/);
+  assert.match(publishedMenusView, /sortPublishedMenuPublications/);
+  assert.match(publishedMenusView, /Published v\$\{day\.version\}/);
+  assert.match(publishedMenusView, /Signed allergen matrix/);
+  assert.match(publishedMenusView, /publicationDayId/);
+  assert.match(publishedMenusView, /groupEntriesByDestination/);
+  assert.match(publishedMenusView, /publishedMatrixUrl/);
+  assert.match(publishedMenusView, /window\.open\(publishedMatrixUrl\(selected\.publicationId, day\.publicationDayId\)/);
+  assert.doesNotMatch(publishedMenusView, /fetch\(`\/api\/menu-publications\?publicationId/);
+  assert.match(publishedMenusView, /blocked by your browser/);
+  assert.match(publishedMenusView, /production-calendar/);
+  assert.match(publishedMenusView, /calendar-grid/);
+  assert.match(publishedMenusView, /published-day-section/);
+  assert.doesNotMatch(publishedMenusView, /ViewMode/);
+  assert.match(publishedMenusView, /published-week-board/);
+  assert.match(publishedMenusView, /published-day-section/);
+  assert.match(publishedMenusView, /published-week-summary/);
+  assert.match(publishedMenusView, /published-day-jumps/);
+  assert.match(publishedMenusView, /Production totals/);
+  assert.match(publishedMenusView, /By destination/);
+  assert.match(publishedMenusView, /EventSource\("\/api\/menu-publications\/events"\)/);
+  assert.match(publishedMenusView, /setInterval\(.*30000/);
+  assert.match(publishedMenusView, /visibilitychange/);
+  assert.match(publicationEventsRoute, /text\/event-stream/);
+  assert.match(publicationInvalidateRoute, /publishPublicationChanged/);
+  assert.match(publishedMenusView, /aggregateProductionTotals/);
+  assert.match(publishedMenusView, /No production menu published/);
+  assert.match(publishedMenusView, /href=\{`#published-day-\$\{date\}`\}/);
+  assert.match(page, /item === "grab_and_go" \? "grab-and-go"/);
+  assert.match(page, /if \(next === "site_manager"\) setView\("published-menus"\)/);
+  assert.match(page, /if \(next === "grab_and_go"\) setView\("grab-and-go"\)/);
+});
+
+test("published menu selection keeps only the latest version for each service date", () => {
+  const current = currentPublishedDays([
+    { date: "2026-08-24", version: 1, status: "superseded" },
+    { date: "2026-08-24", version: 2, status: "published" },
+    { date: "2026-08-25", version: 1, status: "published" },
+  ]);
+  assert.equal(current.get("2026-08-24")?.version, 2);
+  assert.equal(current.get("2026-08-25")?.version, 1);
+  assert.equal(current.has("source-day-id"), false);
+});
+
+test("published menu weeks are ordered newest first", () => {
+  const sorted = sortPublishedMenuPublications([
+    { weekCommencing: "2026-08-17" },
+    { weekCommencing: "2026-08-24" },
+  ]);
+  assert.deepEqual(sorted.map(item => item.weekCommencing), ["2026-08-24", "2026-08-17"]);
+});
+
+test("published production groups allocations by destination and keeps destination quantities", () => {
+  const groups = groupEntriesByDestination([
+    { slot: "SALAD 1", dishName: "Mixed Baby Leaf", portions: 20, allocations: [{ destinationLabel: "Haleon", quantity: 10 }, { destinationLabel: "FIKA Xchange", quantity: 10 }] },
+    { slot: "HOT MEAT", dishName: "Jerk Chicken", portions: 25, allocations: [{ destinationLabel: "Haleon", quantity: 25 }] },
+  ]);
+  assert.deepEqual(groups.map(group => [group.destinationLabel, group.total]), [["Haleon", 35], ["FIKA Xchange", 10]]);
+  assert.deepEqual(groups[0].entries.map(entry => entry.quantity), [10, 25]);
+  assert.equal(groups[1].entries[0].quantity, 10);
+  assert.deepEqual(summarizePublishedDays([{ groups }, { groups: [{ destinationLabel: "Commerzbank", total: 20, entries: [] }] }]), { portions: 65, locations: 3, days: 2 });
+});
+
+test("production totals aggregate canonical dishes and legacy names without merging different dishes", () => {
+  const totals = aggregateProductionTotals([
+    { slot: "SALAD 1", canonicalDishId: "dish:leaf", dishName: "Mixed Baby Leaf", portions: 20, allocations: [{ destinationLabel: "Haleon", quantity: 10 }, { destinationLabel: "FIKA Xchange", quantity: 10 }] },
+    { slot: "SALAD 2", canonicalDishId: "dish:leaf", dishName: "Mixed Baby Leaf", portions: 5, allocations: [{ destinationLabel: "Haleon", quantity: 5 }] },
+    { slot: "SALAD 1", dishName: "Mixed Leaf Salad", portions: 4, allocations: [{ destinationLabel: "Haleon", quantity: 4 }] },
+    { slot: "SALAD 1", dishName: "Mixed Leaf Salad", portions: 3, allocations: [{ destinationLabel: "FIKA Xchange", quantity: 3 }] },
+    { slot: "SALAD 1", dishName: "Different Salad", portions: 2, allocations: [{ destinationLabel: "Haleon", quantity: 2 }] },
+  ]);
+  assert.deepEqual(totals.map(item => [item.dishName, item.quantity]), [["Mixed Baby Leaf", 25], ["Mixed Leaf Salad", 7], ["Different Salad", 2]]);
+});
+
+test("signed matrix URL keeps the exact publication and day identity", () => {
+  assert.equal(publishedMatrixUrl("publication:week 1", "publication:day:v2"), "/api/menu-publications?publicationId=publication%3Aweek%201&publicationDayId=publication%3Aday%3Av2&format=matrix");
+});
+
+test("CPU publication events invalidate without carrying menu snapshots", () => {
+  let received = "";
+  const unsubscribe = subscribeToPublicationChanges(event => { received = publicationEventStream(event); });
+  publishPublicationChanged({ event: "publication_changed", publicationDayId: "publication:day:v2", serviceDate: "2026-08-24", version: 2, action: "amended" });
+  unsubscribe();
+  assert.match(received, /event: publication_changed/);
+  assert.match(received, /publication:day:v2/);
+  assert.doesNotMatch(received, /entries|dishName|snapshot/);
+});
+
+test("Grab & Go production aggregates current submitted orders by product and destination", () => {
+  const catalogue: GrabAndGoProduct[] = [
+    { productId: "pot", name: "Fruit Pot", category: "grab_250ml", sortOrder: 1, active: true },
+    { productId: "salad", name: "Stacking Salad", category: "stacking_salad_750ml", sortOrder: 2, active: true },
+  ];
+  const order = (oplocId: string, version: number, status: GrabAndGoSourceOrder["status"], quantity: number): GrabAndGoSourceOrder => ({ orderId: `${oplocId}:order`, oplocId, deliveryDate: "2026-08-24", status, version, submittedAt: "2026-08-19T12:00:00Z", lines: [{ productId: "pot", productName: "Fruit Pot", quantity }] });
+  const production = buildGrabAndGoProduction("2026-08-24", [order("haleon", 1, "cancelled", 10), order("haleon", 2, "submitted", 4), order("xchange", 1, "submitted", 6), { ...order("draft", 1, "cancelled", 20), status: "draft" }], catalogue, { haleon: "Haleon", xchange: "FIKA Xchange", draft: "Draft" });
+  assert.equal(effectiveGrabAndGoOrders([order("haleon", 1, "submitted", 99), order("haleon", 2, "submitted", 4)], "2026-08-24")[0].version, 2);
+  assert.deepEqual(production.totals.map(item => [item.productId, item.quantity]), [["pot", 10]]);
+  assert.deepEqual(production.destinations.map(destination => [destination.siteName, destination.totalItems]), [["Haleon", 4], ["FIKA Xchange", 6]]);
+  assert.equal(production.totals[0].quantity, production.destinations.reduce((sum, destination) => sum + destination.items[0].quantity, 0));
+});
+
+test("Grab & Go CPU view keeps categories, zero quantities, and the separate top-level workflow", () => {
+  const view = readFileSync(new URL("../app/ui/GrabAndGoProductionView.tsx", import.meta.url), "utf8");
+  assert.match(view, /useState<ProductionMode>\("totals"\)/);
+  assert.match(view, /mode === "totals" \?/);
+  assert.match(view, /onClick=\{\(\) => setMode\("destination"\)\}/);
+  assert.match(view, /selectedDate/);
+  assert.match(view, /Production totals/);
+  assert.match(view, /By destination/);
+  assert.match(view, /Grab n Go · 250ml/);
+  assert.match(page, /Grab & Go production/);
+  const production = buildGrabAndGoProduction("2026-08-24", [{ orderId: "order", oplocId: "site", deliveryDate: "2026-08-24", status: "submitted", version: 1, submittedAt: "now", lines: [{ productId: "pot", productName: "Fruit Pot", quantity: 0 }] }], [{ productId: "pot", name: "Fruit Pot", category: "grab_250ml", sortOrder: 1, active: true }]);
+  assert.equal(production.totals.length, 0);
 });
 
 test("CPU-created commands carry idempotency and delivery context", () => {
@@ -83,8 +203,8 @@ test("CPU-created commands carry idempotency and delivery context", () => {
   assert.match(route, /createCpuProductionOrder/);
 });
 
-test("delivered-in lunch creator is manager-only and uses reusable scoped items", () => {
-  assert.match(page, /dashboardView === "site_manager"/);
+test("legacy delivered-in lunch creator remains isolated from the four-workspace navigation", () => {
+  assert.match(page, /function CpuCreate/);
   assert.match(page, /parentMenuItemKey=delivered-in-lunch/);
   assert.match(page, /Create draft production order/);
   assert.match(page, /CPU-created Delivered-in Lunch draft/);
@@ -110,12 +230,13 @@ test("delivered-in lunch creator can save and reuse new menu items", () => {
   assert.match(page, /Save new item/);
 });
 
-test("site managers have a six-week delivered-in menu planner", () => {
-  assert.match(page, /Six-week menu planner/);
-  assert.match(page, /view === "menu-planning"/);
-  assert.match(page, /Close planner/);
-  assert.match(page, /aria-label="Close six-week menu planner"/);
-  assert.match(page, /onClick=\{\(\) => setView\("calendar"\)\}/);
+test("CPU exposes four clear production workspaces and removes obsolete manager controls", () => {
+  assert.match(page, /site_manager: "Delivered-In production"/);
+  assert.match(page, /grab_and_go: "Grab & Go production"/);
+  assert.match(page, /"grab_and_go"/);
+  assert.doesNotMatch(page, /Six-week menu planner/);
+  assert.doesNotMatch(page, /Published delivered-in menus<\/button>/);
+  assert.doesNotMatch(page, /Create delivered-in lunch<\/button>/);
   assert.match(page, /<DeliveredMenuPlanner/);
   assert.match(menuPlanner, /Six-week delivered-in menu/);
   assert.match(menuPlanner, /Week \{index \+ 1\}/);
@@ -225,7 +346,7 @@ test("CPU dashboard opens with a Monday-to-Friday production heads-up", () => {
 test("production views use Connections routing without duplicating bookings", () => {
   assert.match(page, /Production chef/);
   assert.match(page, /Hospitality chef/);
-  assert.match(page, /Site manager \/ head chef/);
+  assert.match(page, /Delivered-In production/);
   assert.match(page, /api\/production\?view=\$\{dashboardView\}/);
   assert.match(route, /hospitalityMenuProductionRouting/);
   assert.match(dashboardViews, /site_manager.*return orders/s);

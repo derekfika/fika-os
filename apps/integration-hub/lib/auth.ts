@@ -1,11 +1,11 @@
 import { auth } from "./firebase-admin";
 
 export type HubRole = "integration-admin" | "reviewer" | "viewer";
-export type Actor = { uid: string; name: string; role: HubRole; synthetic: true };
+export type Actor = { uid: string; name: string; email?: string; role: HubRole; synthetic: true };
 const ROLE_EMAILS: Record<string, Actor> = {
-  "admin@local.fika": { uid: "", name: "Integration Administrator", role: "integration-admin", synthetic: true },
-  "reviewer@local.fika": { uid: "", name: "Integration Reviewer", role: "reviewer", synthetic: true },
-  "viewer@local.fika": { uid: "", name: "Integration Viewer", role: "viewer", synthetic: true },
+  "admin@local.fika": { uid: "", name: "Integration Administrator", email: "admin@local.fika", role: "integration-admin", synthetic: true },
+  "reviewer@local.fika": { uid: "", name: "Integration Reviewer", email: "reviewer@local.fika", role: "reviewer", synthetic: true },
+  "viewer@local.fika": { uid: "", name: "Integration Viewer", email: "viewer@local.fika", role: "viewer", synthetic: true },
 };
 
 type RequestWithAuthCookie = { cookies: { get(name: string): { value?: string } | undefined } };
