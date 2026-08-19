@@ -5,7 +5,7 @@ import { assertAuthorisedOploc, assertPublishedAllocationIntegrity, projectPubli
 import { groupSiteMenuEntries, siteMenuSectionForSlot, siteMenuState, type SiteMenuArtifact } from "../lib/site-menu";
 import { buildDeliveredInMenuRequests, weekFolderName } from "../lib/google-site-menu";
 import { titleCase } from "../../menu-planning/lib/text";
-import { applyOrderAction, isBeforeOrderCutoff, orderIdFor, productsForDeliveryDate, rotationWeekForDate, type GrabAndGoProduct } from "../lib/grab-and-go";
+import { applyOrderAction, deliveryCutoff, isBeforeOrderCutoff, orderIdFor, productsForDeliveryDate, rotationWeekForDate, type GrabAndGoProduct } from "../lib/grab-and-go";
 
 const haleon = "oploc:46701265-15af-48f4-a230-1d27ca21bc59";
 const xchange = "oploc:b835d8ee-b187-49d1-9072-7348b04bfd2d";
@@ -121,11 +121,19 @@ test("Grab & Go orders are OPLOC-scoped, snapshot products, and preserve audit h
   assert.equal(created.lines[0].productName, "Week One Pot");
   assert.equal(created.lines[0].price, 1.85);
   assert.throws(() => applyOrderAction(created, { action: "amend", oplocId: xchange, deliveryDate: "2026-08-24", rotationWeek: 1, lines: [{ productId: "grab:week1", quantity: 2 }], actor: "other@local.fika", at: "2026-08-23T11:00:00" }, grabProducts), (error: any) => error.status === 403);
-  const amended = applyOrderAction(created, { action: "amend", oplocId: haleon, deliveryDate: "2026-08-24", rotationWeek: 1, lines: [{ productId: "grab:week1", quantity: 7 }], actor: "site@local.fika", at: "2026-08-23T11:59:30" }, grabProducts);
+  const amended = applyOrderAction(created, { action: "amend", expectedVersion: 1, oplocId: haleon, deliveryDate: "2026-08-24", rotationWeek: 1, lines: [{ productId: "grab:week1", quantity: 7 }], actor: "site@local.fika", at: "2026-08-23T11:59:30" }, grabProducts);
   assert.equal(amended.version, 2);
   assert.equal(amended.lines[0].quantity, 7);
   assert.equal(amended.history.length, 2);
   assert.equal(amended.history[0].lines[0].quantity, 4);
+});
+
+test("Grab & Go commands are strict and reject stale versions", () => {
+  const created = applyOrderAction(undefined, { action: "submit", oplocId: haleon, deliveryDate: "2026-08-24", rotationWeek: 1, lines: [{ productId: "grab:week1", quantity: 4 }], actor: "site@local.fika", at: "2026-08-23T10:00:00Z" }, grabProducts);
+  assert.throws(() => applyOrderAction(created, { action: "submit", oplocId: haleon, deliveryDate: "2026-08-24", rotationWeek: 1, lines: [{ productId: "grab:week1", quantity: 5 }], actor: "site@local.fika", at: "2026-08-23T10:01:00Z" }, grabProducts), (error: any) => error.status === 409 && error.message.includes("Submit only creates"));
+  assert.throws(() => applyOrderAction(created, { action: "amend", expectedVersion: 0, oplocId: haleon, deliveryDate: "2026-08-24", rotationWeek: 1, lines: [{ productId: "grab:week1", quantity: 5 }], actor: "site@local.fika", at: "2026-08-23T10:01:00Z" }, grabProducts), (error: any) => error.status === 409 && error.message.includes("Refresh"));
+  assert.throws(() => applyOrderAction(undefined, { action: "amend", expectedVersion: 1, oplocId: haleon, deliveryDate: "2026-08-24", rotationWeek: 1, lines: [{ productId: "grab:week1", quantity: 5 }], actor: "site@local.fika", at: "2026-08-23T10:01:00Z" }, grabProducts), (error: any) => error.status === 404);
+  assert.throws(() => applyOrderAction(undefined, { action: "cancel", expectedVersion: 1, oplocId: haleon, deliveryDate: "2026-08-24", rotationWeek: 1, actor: "site@local.fika", at: "2026-08-23T10:01:00Z" }, grabProducts), (error: any) => error.status === 404);
 });
 
 test("Grab & Go submit, amend and cancel are blocked at the next-day noon cutoff", () => {
@@ -133,7 +141,14 @@ test("Grab & Go submit, amend and cancel are blocked at the next-day noon cutoff
   assert.equal(isBeforeOrderCutoff("2026-08-24", new Date("2026-08-23T12:00:00")), false);
   const created = applyOrderAction(undefined, { action: "submit", oplocId: haleon, deliveryDate: "2026-08-24", rotationWeek: 1, lines: [{ productId: "grab:week1", quantity: 1 }], actor: "site@local.fika", at: "2026-08-23T11:00:00" }, grabProducts);
   assert.throws(() => applyOrderAction(created, { action: "amend", oplocId: haleon, deliveryDate: "2026-08-24", rotationWeek: 1, lines: [{ productId: "grab:week1", quantity: 2 }], actor: "site@local.fika", at: "2026-08-23T12:00:00" }, grabProducts), (error: any) => error.status === 409);
-  const cancelled = applyOrderAction(created, { action: "cancel", oplocId: haleon, deliveryDate: "2026-08-24", rotationWeek: 1, actor: "site@local.fika", at: "2026-08-23T11:30:00" }, grabProducts);
+  const cancelled = applyOrderAction(created, { action: "cancel", expectedVersion: 1, oplocId: haleon, deliveryDate: "2026-08-24", rotationWeek: 1, actor: "site@local.fika", at: "2026-08-23T11:30:00" }, grabProducts);
   assert.equal(cancelled.status, "cancelled");
   assert.equal(cancelled.history[1].action, "cancelled");
+});
+
+test("Grab & Go cutoff is explicitly Europe/London across GMT and BST", () => {
+  assert.equal(deliveryCutoff("2026-01-05").toISOString(), "2026-01-04T12:00:00.000Z");
+  assert.equal(deliveryCutoff("2026-07-06").toISOString(), "2026-07-05T11:00:00.000Z");
+  assert.equal(isBeforeOrderCutoff("2026-07-06", new Date("2026-07-05T10:59:59.000Z")), true);
+  assert.equal(isBeforeOrderCutoff("2026-07-06", new Date("2026-07-05T11:00:00.000Z")), false);
 });

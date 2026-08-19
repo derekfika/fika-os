@@ -183,6 +183,24 @@ test("Grab & Go production aggregates current submitted orders by product and de
   assert.equal(production.totals[0].quantity, production.destinations.reduce((sum, destination) => sum + destination.items[0].quantity, 0));
 });
 
+test("Grab & Go production honours submitted snapshots when catalogue changes or disappears", () => {
+  const submitted: GrabAndGoSourceOrder = { orderId: "order", oplocId: "site", deliveryDate: "2026-08-24", status: "submitted", version: 1, submittedAt: "now", lines: [{ productId: "pot", productName: "Original Fruit Pot", category: "grab_250ml", sortOrder: 1, quantity: 4, price: 1.85 }] };
+  const renamedOrInactive = [{ productId: "pot", name: "Renamed Fruit Pot", category: "grab_250ml" as const, sortOrder: 99, active: false }];
+  const production = buildGrabAndGoProduction("2026-08-24", [submitted], renamedOrInactive, { site: "Haleon" });
+  assert.deepEqual(production.totals.map(item => [item.productName, item.quantity]), [["Original Fruit Pot", 4]]);
+  const withoutCatalogue = buildGrabAndGoProduction("2026-08-24", [submitted], [], { site: "Haleon" });
+  assert.deepEqual(withoutCatalogue.destinations[0].items.map(item => [item.productName, item.quantity]), [["Original Fruit Pot", 4]]);
+});
+
+test("CPU Grab & Go source is an API boundary, not a Delivered-In filesystem read", () => {
+  const source = readFileSync(new URL("../lib/grab-and-go-read.ts", import.meta.url), "utf8");
+  const route = readFileSync(new URL("../app/api/grab-and-go/route.ts", import.meta.url), "utf8");
+  assert.match(source, /DELIVERED_IN_GRAB_AND_GO_API_URL/);
+  assert.match(source, /readGrabAndGoSource/);
+  assert.doesNotMatch(source, /readFileSync|local-data|grab-and-go-orders\.json|grab-and-go-catalogue\.json/);
+  assert.doesNotMatch(route, /readFileSync|local-data|grab-and-go-orders\.json/);
+});
+
 test("Grab & Go CPU view keeps categories, zero quantities, and the separate top-level workflow", () => {
   const view = readFileSync(new URL("../app/ui/GrabAndGoProductionView.tsx", import.meta.url), "utf8");
   assert.match(view, /useState<ProductionMode>\("totals"\)/);

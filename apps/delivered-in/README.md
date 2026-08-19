@@ -24,4 +24,6 @@ Generated menus and Delivered-In allergen PDFs are placed beneath a deterministi
 
 The `Grab & Go` navigation loads the CPU-owned catalogue seeded from `Master Grab n Go.xlsx`. Orders are scoped to the authenticated OPLOC and are available for upcoming Monday and Wednesday deliveries only. The next-day production cutoff is 12:00 local time; after that cutoff an order is read-only. Set `GRAB_N_GO_ROTATION_WEEK_1_DATE` to the governed date for rotation week 1 (default `2026-08-24`).
 
-Catalogue records and auditable order history are stored locally under `local-data/delivered-in/` for this local Phase 1 workflow. Orders retain stable OPLOC/product IDs and snapshot the product name and price at each submission or amendment.
+Catalogue records and auditable order history are stored locally under `local-data/delivered-in/` for this local Phase 1 workflow. Orders retain stable OPLOC/product IDs and snapshot the product name, category, sort order and price at each submission or amendment.
+
+CPU Production reads submitted Grab & Go fulfilment truth through `GET /api/delivered-in/grab-and-go/production`; it does not read this app's files. Set `DELIVERED_IN_GRAB_AND_GO_API_URL` in CPU Production when the apps are deployed separately, and optionally set `DELIVERED_IN_INTERNAL_API_TOKEN` in both apps for the service-to-service request.
