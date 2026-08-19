@@ -12,6 +12,7 @@ import { readRollingState, updateRollingState } from "./operational-store";
 export interface Stored { version: 1; weeks: RollingWeek[]; days: RollingDay[]; entries: RollingEntry[]; }
 
 const now = () => new Date().toISOString();
+const operationalDate = () => { const parts = Object.fromEntries(new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/London", year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(new Date()).filter(part => part.type !== "literal").map(part => [part.type, part.value])); return `${parts.year}-${parts.month}-${parts.day}`; };
 const slug = (value: string) => value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
 const read = (): Stored => readRollingState<Stored>();
 const write = (value: Stored) => { updateRollingState<Stored>(current => { Object.assign(current, structuredClone(value)); }); };
@@ -41,8 +42,15 @@ export function assertWeekDateAvailable(weekCommencing: string) {
 }
 export function listWeeks(): RollingWeek[] { return read().weeks.sort((a, b) => a.weekCommencing.localeCompare(b.weekCommencing)); }
 export function listAllEntries(): RollingEntry[] { return structuredClone(read().entries); }
+export function defaultWeekForDate(weeks: RollingWeek[], date = operationalDate()) {
+  const ordered = weeks.slice().sort((a, b) => a.weekCommencing.localeCompare(b.weekCommencing));
+  const current = ordered.find(week => week.weekCommencing <= date && week.weekEnding >= date);
+  return current || ordered.slice().sort((a, b) => Math.abs(Date.parse(`${a.weekCommencing}T00:00:00Z`) - Date.parse(`${date}T00:00:00Z`)) - Math.abs(Date.parse(`${b.weekCommencing}T00:00:00Z`) - Date.parse(`${date}T00:00:00Z`)) || a.weekCommencing.localeCompare(b.weekCommencing))[0];
+}
 export function snapshotFromStored(db: Stored, weekId?: string): RollingSnapshot {
-  const week = weekId ? db.weeks.find(w => w.id === weekId) : db.weeks.slice().sort((a, b) => b.weekCommencing.localeCompare(a.weekCommencing))[0];
+  const ordered = db.weeks.slice().sort((a, b) => a.weekCommencing.localeCompare(b.weekCommencing));
+  const today = operationalDate();
+  const week = weekId ? db.weeks.find(w => w.id === weekId) : defaultWeekForDate(ordered, today);
   if (!week) return emptyWeek(new Date().toISOString().slice(0, 10));
   return { week: structuredClone(week), days: structuredClone(db.days.filter(d => week.dayIds.includes(d.id))), entries: structuredClone(db.entries.filter(e => week.entryIds.includes(e.id))) };
 }

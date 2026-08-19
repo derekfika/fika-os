@@ -52,6 +52,8 @@ const Cpu = z
       endTime: z.string().optional(),
     }),
     productionLocationId: z.string().optional(),
+    destinationOplocId: z.string().optional(),
+    requiresDelivery: z.boolean().optional().default(true),
     deliveryLocation: z.string().trim().min(1),
     floorRoom: z.string().optional(),
     contact: z.string().optional(),

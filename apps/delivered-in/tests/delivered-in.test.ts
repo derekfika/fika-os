@@ -8,7 +8,7 @@ import { groupSiteMenuEntries, siteMenuSectionForSlot, siteMenuState, type SiteM
 import { buildDeliveredInMenuRequests, weekFolderName } from "../lib/google-site-menu";
 import { titleCase } from "../../menu-planning/lib/text";
 import { applyOrderAction, deliveryCutoff, isBeforeOrderCutoff, orderIdFor, productsForDeliveryDate, rotationWeekForDate, type GrabAndGoProduct } from "../lib/grab-and-go";
-import { getGrabAndGoOrder, listGrabAndGoOrders, saveGrabAndGoOrder } from "../lib/grab-and-go-store";
+import { getGrabAndGoOrder, listGrabAndGoOrders, replayGrabAndGoOutbox, saveGrabAndGoOrder } from "../lib/grab-and-go-store";
 
 const haleon = "oploc:46701265-15af-48f4-a230-1d27ca21bc59";
 const xchange = "oploc:b835d8ee-b187-49d1-9072-7348b04bfd2d";
@@ -172,6 +172,29 @@ test("Grab & Go persistence rejects the second amendment from the same expected 
     saveGrabAndGoOrder(first, 1);
     assert.throws(() => saveGrabAndGoOrder(stale, 1), (error: any) => error.status === 409);
     assert.equal(getGrabAndGoOrder(initial.oplocId, deliveryDate)?.lines[0].quantity, 2);
+  } finally {
+    if (existsSync(databaseFile)) unlinkSync(databaseFile);
+    if (hadDatabase) { copyFileSync(backupFile, databaseFile); unlinkSync(backupFile); }
+  }
+});
+
+test("Grab & Go outbox delivery does not hold the SQLite writer during a slow consumer", async () => {
+  const databaseFile = join(process.cwd(), "local-data", "delivered-in", "grab-and-go.sqlite");
+  const backupFile = `${databaseFile}.slow-backup`;
+  const hadDatabase = existsSync(databaseFile);
+  if (hadDatabase) copyFileSync(databaseFile, backupFile);
+  try {
+    if (existsSync(databaseFile)) unlinkSync(databaseFile);
+    const deliveryDate = "2099-09-02";
+    const product: GrabAndGoProduct = { productId: "product:slow-test", name: "Slow Test", category: "grab_250ml", rotationWeeks: [rotationWeekForDate(deliveryDate)], allowedDeliveryWeekdays: ["Wednesday"], active: true, sortOrder: 1, price: 1 };
+    const initial = applyOrderAction(undefined, { action: "submit", oplocId: "oploc:slow-test", deliveryDate, rotationWeek: 1, lines: [{ productId: product.productId, quantity: 1 }], actor: "test", at: "2099-08-20T09:00:00Z" }, [product]);
+    saveGrabAndGoOrder(initial);
+    const replay = replayGrabAndGoOutbox(async () => { await new Promise(resolve => setTimeout(resolve, 250)); });
+    await new Promise(resolve => setTimeout(resolve, 25));
+    const amended = applyOrderAction(initial, { action: "amend", oplocId: initial.oplocId, deliveryDate, rotationWeek: 1, lines: [{ productId: product.productId, quantity: 2 }], expectedVersion: 1, actor: "writer", at: "2099-08-20T09:01:00Z" }, [product]);
+    saveGrabAndGoOrder(amended, 1);
+    assert.equal(getGrabAndGoOrder(initial.oplocId, deliveryDate)?.version, 2);
+    await replay;
   } finally {
     if (existsSync(databaseFile)) unlinkSync(databaseFile);
     if (hadDatabase) { copyFileSync(backupFile, databaseFile); unlinkSync(backupFile); }

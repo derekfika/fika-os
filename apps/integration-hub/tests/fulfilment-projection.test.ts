@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createDomainEvent } from "../../shared/domain-events";
-import { fulfilmentFromGrabAndGoOrder, fulfilmentFromProductionOrder, fulfilmentFromPublishedMenuDay } from "../../shared/fulfilment-requirement";
+import { fulfilmentFromGrabAndGoOrder, fulfilmentFromProductionOrder, fulfilmentFromPublishedMenuDay, productionStatusToFulfilmentStatus } from "../../shared/fulfilment-requirement";
 import { applyFulfilmentEvent, listFulfilmentReceipts, listFulfilmentRequirements, normaliseFulfilmentEvent, shouldApplyFulfilmentVersion } from "../lib/fulfilment-projection";
 import { db } from "../lib/firebase-admin";
 import { stableDocumentId } from "../lib/canonical-editor";
@@ -40,6 +40,16 @@ test("canonical destination identity prevents display labels from merging requir
   assert.notEqual(haleon.destinationOplocId, other.destinationOplocId);
 });
 
+test("ProductionOrder lifecycle maps explicitly to Fulfilment lifecycle", () => {
+  assert.equal(productionStatusToFulfilmentStatus("received"), "pending");
+  assert.equal(productionStatusToFulfilmentStatus("draft"), "pending");
+  assert.equal(productionStatusToFulfilmentStatus("needs_review"), "pending");
+  assert.equal(productionStatusToFulfilmentStatus("planning"), "ready_for_planning");
+  assert.equal(productionStatusToFulfilmentStatus("ready"), "ready_for_planning");
+  assert.equal(productionStatusToFulfilmentStatus("cancelled"), "withdrawn");
+  assert.equal(productionStatusToFulfilmentStatus("accepted", "production-order:v2"), "withdrawn");
+});
+
 test("the central store receives all three sources and applies amendments, withdrawal and duplicate replay safely", async () => {
   const suffix = `${Date.now()}:${process.pid}`;
   const menu = { ...menuDay, sourceDayId: `rolling-week:contract:${suffix}` };
@@ -54,6 +64,9 @@ test("the central store receives all three sources and applies amendments, withd
   try {
     for (const event of events) assert.equal((await applyFulfilmentEvent(event)).applied, true);
     assert.equal((await applyFulfilmentEvent(events[0])).duplicate, true);
+    const sameVersionConflict = fulfilmentFromGrabAndGoOrder({ ...grab, lines: [{ ...grab.lines[0], quantity: 8 }] }, "site", "2026-08-20T10:01:00Z");
+    const conflictResult = await applyFulfilmentEvent(createDomainEvent({ eventType: "fulfilment.requirement.amended", sourceAggregateId: sameVersionConflict.canonicalId, sourceVersion: sameVersionConflict.sourceVersion, occurredAt: "2026-08-20T10:01:00Z", payload: sameVersionConflict }));
+    assert.match(conflictResult.error || "", /same source version/i);
     const amended = fulfilmentFromGrabAndGoOrder({ ...grab, version: 4, lines: [{ ...grab.lines[0], quantity: 9 }] }, "site", "2026-08-21T10:00:00Z", requirements[1]);
     const amendedEvent = createDomainEvent({ eventType: "fulfilment.requirement.amended", sourceAggregateId: amended.canonicalId, sourceVersion: amended.sourceVersion, occurredAt: "2026-08-21T10:00:00Z", payload: amended });
     assert.equal((await applyFulfilmentEvent(amendedEvent)).applied, true);
@@ -66,6 +79,7 @@ test("the central store receives all three sources and applies amendments, withd
     assert.equal(listed.find(item => item.sourceEntityId === grab.orderId)?.status, "withdrawn");
     const receipts = await listFulfilmentReceipts();
     assert.ok(receipts.some(item => item.eventId === amendedEvent.eventId && item.outcome === "processed"));
+    assert.ok(receipts.some(item => item.outcome === "conflict" && item.requirementId === requirements[1].canonicalId));
   } finally {
     const requirementsSnapshot = await db.collection("fikaFulfilmentRequirementsV1").get();
     const receiptsSnapshot = await db.collection("fikaDomainEventInboxV1").get();

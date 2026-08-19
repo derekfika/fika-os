@@ -6,6 +6,7 @@ import {
   type FulfilmentRequirement,
   type GrabAndGoFulfilmentSource,
   type ProductionOrderFulfilmentSource,
+  fulfilmentRequirementContentEqual,
 } from "../../shared/fulfilment-requirement";
 import { db } from "./firebase-admin";
 import { stableDocumentId } from "./canonical-editor";
@@ -52,6 +53,11 @@ export async function stageFulfilmentEvent(transaction: Transaction, event: Dura
   const requirementRef = requirements().doc(stableDocumentId(requirement.canonicalId));
   const currentSnapshot = await transaction.get(requirementRef);
   const current = currentSnapshot.exists ? currentSnapshot.data() as FulfilmentRequirement : undefined;
+  if (current && current.sourceVersion === requirement.sourceVersion) {
+    const outcome = fulfilmentRequirementContentEqual(current, requirement) ? "noop" : "conflict";
+    transaction.create(receiptRef, { consumerName: FULFILMENT_CONSUMER, eventId: event.eventId, sourceAggregateId: event.sourceAggregateId, requirementId: requirement.canonicalId, sourceVersion: event.sourceVersion, processedAt: new Date().toISOString(), outcome, ...(outcome === "conflict" ? { error: "Same source version contained different Fulfilment content; reconciliation is required." } : {}) });
+    return { applied: false, duplicate: false, requirement: current, ...(outcome === "conflict" ? { error: "Same source version contained different Fulfilment content; reconciliation is required." } : {}) } as const;
+  }
   if (!shouldApplyFulfilmentVersion(current, requirement)) {
     transaction.create(receiptRef, { consumerName: FULFILMENT_CONSUMER, eventId: event.eventId, sourceAggregateId: event.sourceAggregateId, requirementId: requirement.canonicalId, sourceVersion: event.sourceVersion, processedAt: new Date().toISOString(), outcome: "ignored_stale" });
     return { applied: false, duplicate: false, requirement: current } as const;
@@ -74,6 +80,11 @@ export async function applyFulfilmentEvent(event: DurableDomainEvent): Promise<F
     const ref = requirements().doc(stableDocumentId(requirement.canonicalId));
     const currentSnapshot = await transaction.get(ref);
     const current = currentSnapshot.exists ? currentSnapshot.data() as FulfilmentRequirement : undefined;
+    if (current && current.sourceVersion === requirement.sourceVersion) {
+      const outcome = fulfilmentRequirementContentEqual(current, requirement) ? "noop" : "conflict";
+      transaction.create(receiptRef, { consumerName: FULFILMENT_CONSUMER, eventId: event.eventId, sourceAggregateId: event.sourceAggregateId, requirementId: requirement.canonicalId, sourceVersion: event.sourceVersion, processedAt: new Date().toISOString(), outcome, ...(outcome === "conflict" ? { error: "Same source version contained different Fulfilment content; reconciliation is required." } : {}) });
+      return { applied: false, duplicate: false, requirement: current, ...(outcome === "conflict" ? { error: "Same source version contained different Fulfilment content; reconciliation is required." } : {}) };
+    }
     if (!shouldApplyFulfilmentVersion(current, requirement)) {
       transaction.create(receiptRef, { consumerName: FULFILMENT_CONSUMER, eventId: event.eventId, sourceAggregateId: event.sourceAggregateId, requirementId: requirement.canonicalId, sourceVersion: event.sourceVersion, processedAt: new Date().toISOString(), outcome: "ignored_stale" });
       return { applied: false, duplicate: false, requirement: current };

@@ -6,7 +6,7 @@ import { appDataPath } from "../../shared/app-data-path";
 type DocumentMap = Record<string, unknown>;
 export type TransactionState = { rolling: DocumentMap; publications: DocumentMap };
 
-const databaseFile = appDataPath("menu-planning", "menu-planning", "operational.sqlite");
+const databaseFile = () => process.env.MENU_PLANNING_DB_PATH || appDataPath("menu-planning", "menu-planning", process.argv.includes("--test") ? "operational.test.sqlite" : "operational.sqlite");
 const rollingJson = appDataPath("menu-planning", "menu-planning", "rolling-menu-weeks.json");
 const publicationsJson = appDataPath("menu-planning", "menu-planning", "menu-publications.json");
 const unavailable = (message: string, cause?: unknown) => Object.assign(new Error(message, cause ? { cause } : undefined), { status: 503 });
@@ -25,14 +25,15 @@ function readSeed(file: string, fallback: DocumentMap, label: string) {
 function open() {
   let database: DatabaseSync | undefined;
   try {
-    mkdirSync(dirname(databaseFile), { recursive: true });
-    database = new DatabaseSync(databaseFile);
+    const file = databaseFile();
+    mkdirSync(dirname(file), { recursive: true });
+    database = new DatabaseSync(file);
     database.exec("PRAGMA journal_mode = WAL; PRAGMA busy_timeout = 5000; CREATE TABLE IF NOT EXISTS operational_documents (document_key TEXT PRIMARY KEY, document_json TEXT NOT NULL, updated_at TEXT NOT NULL);");
     const count = Number((database.prepare("SELECT COUNT(*) AS count FROM operational_documents").get() as { count: number }).count);
     if (count === 0) {
       const now = new Date().toISOString();
       const rolling = readSeed(rollingJson, { version: 1, weeks: [], days: [], entries: [] }, "Rolling menu data");
-      const publications = readSeed(publicationsJson, { version: 2, publications: [], events: [], fulfilmentRequirements: [] }, "Menu publication data");
+      const publications = readSeed(publicationsJson, { version: 2, publications: [], events: [] }, "Menu publication data");
       database.exec("BEGIN IMMEDIATE");
       const insert = database.prepare("INSERT INTO operational_documents (document_key, document_json, updated_at) VALUES (?, ?, ?)");
       try { insert.run("rolling", JSON.stringify(rolling), now); insert.run("publications", JSON.stringify(publications), now); database.exec("COMMIT"); } catch (cause) { try { database.exec("ROLLBACK"); } catch { /* preserve original persistence error */ } throw cause; }
@@ -64,26 +65,6 @@ export function withMenuPlanningTransaction<T>(mutator: (state: TransactionState
   try {
     const state: TransactionState = { rolling: parseDocument(database, "rolling"), publications: parseDocument(database, "publications") };
     const result = mutator(state);
-    const updatedAt = new Date().toISOString();
-    const update = database.prepare("UPDATE operational_documents SET document_json = ?, updated_at = ? WHERE document_key = ?");
-    update.run(JSON.stringify(state.rolling), updatedAt, "rolling");
-    update.run(JSON.stringify(state.publications), updatedAt, "publications");
-    database.exec("COMMIT");
-    return result;
-  } catch (cause) {
-    try { database.exec("ROLLBACK"); } catch { /* preserve the original persistence error */ }
-    throw cause;
-  } finally {
-    database.close();
-  }
-}
-
-export async function withMenuPlanningAsyncTransaction<T>(mutator: (state: TransactionState) => Promise<T>) {
-  const database = open();
-  database.exec("BEGIN IMMEDIATE");
-  try {
-    const state: TransactionState = { rolling: parseDocument(database, "rolling"), publications: parseDocument(database, "publications") };
-    const result = await mutator(state);
     const updatedAt = new Date().toISOString();
     const update = database.prepare("UPDATE operational_documents SET document_json = ?, updated_at = ? WHERE document_key = ?");
     update.run(JSON.stringify(state.rolling), updatedAt, "rolling");

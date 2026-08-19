@@ -4,11 +4,13 @@ import { readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { test } from "node:test";
 import * as XLSX from "xlsx";
-import { addMenuSlot, applyEntryPatch, assertWeekDateAvailable, createEntry, duplicateWeek, emptyWeek, getWeek, importWorkbook, publishWeek, removeMenuSlot, saveSnapshot, updateEntry, validateWeek, ROLLING_SLOTS } from "../lib/rolling-menu";
+import { addMenuSlot, applyEntryPatch, assertWeekDateAvailable, createEntry, defaultWeekForDate, duplicateWeek, emptyWeek, getWeek, importWorkbook, publishWeek, removeMenuSlot, saveSnapshot, updateEntry, validateWeek, ROLLING_SLOTS } from "../lib/rolling-menu";
 import { createCanonicalMenuItem, listCanonicalMenuItems } from "../lib/canonical-menu-repository";
 import { createPublishedMenuDay, currentPublishedDays, getMenuPublication, listMenuPublicationEvents, listMenuPublications, publicationPreview, publicationState, publishedDayMatrixHtml, replayMenuPublicationOutbox, withdrawPublishedMenuDay, type MenuPublicationSignoff } from "../lib/menu-publication";
 import { resolveAllergenSnapshot } from "../lib/allergen-resolution";
 import type { RollingEntry } from "../lib/rolling-menu-types";
+
+process.env.MENU_PLANNING_DB_PATH = join(process.cwd(), "local-data", "menu-planning", "operational.test.sqlite");
 
 test("rolling menu importer preserves slots, destination quantities and source evidence", () => {
   const sheet = XLSX.utils.aoa_to_sheet([
@@ -29,8 +31,14 @@ test("rolling menu importer preserves slots, destination quantities and source e
   assert.equal(result.snapshot.entries[0].slot, "SALAD 1");
 });
 
+test("planner default week prefers the current service week over distant future test data", () => {
+  const current = emptyWeek("2026-08-17").week;
+  const future = emptyWeek("2099-01-12").week;
+  assert.equal(defaultWeekForDate([future, current], "2026-08-19")?.weekCommencing, "2026-08-17");
+});
+
 test("Menu Planning persistence failure is not presented as an empty publication list", () => {
-  const databaseFile = join(process.cwd(), "local-data", "menu-planning", "operational.sqlite");
+  const databaseFile = join(process.cwd(), "local-data", "menu-planning", "operational.test.sqlite");
   const backupFile = `${databaseFile}.failure-backup`;
   const hadDatabase = existsSync(databaseFile);
   if (hadDatabase) copyFileSync(databaseFile, backupFile);

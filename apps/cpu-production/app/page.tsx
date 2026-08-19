@@ -731,7 +731,8 @@ function CpuCreate({ onSaved }: { onSaved: () => Promise<void> }) {
         requiredBy: `${date}T${time}`,
         serviceWindow: { startTime: time },
         deliveryLocation: site,
-        ...(oplocId && oplocId !== OTHER_OPLOC ? { productionLocationId: oplocId } : {}),
+        ...(oplocId && oplocId !== OTHER_OPLOC ? { destinationOplocId: oplocId } : {}),
+        requiresDelivery: true,
         serviceType: "Delivered-in lunch",
         pax: totalQuantity,
         lines: selectedLines.map(({ item, quantity, note, allergens, mayContainNotes }) => ({

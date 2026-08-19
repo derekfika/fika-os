@@ -52,7 +52,16 @@ export function sourceContentHash(value: unknown) { return crypto.createHash("sh
 function safePart(value: string) { return value.replace(/[^A-Za-z0-9:_-]+/g, "_"); }
 export function fulfilmentRequirementIdentity(sourceDomain: FulfilmentSourceDomain, sourceEntityId: string, destinationOplocId: string) { return `fulfilment-requirement:${sourceDomain}:${safePart(sourceEntityId)}:${safePart(destinationOplocId)}`; }
 function requireDestination(destinationOplocId: string | undefined, label: string) { if (!destinationOplocId?.trim()) throw Object.assign(new Error(`Cannot create a Fulfilment Requirement for ${label} without a canonical destination OPLOC ID.`), { status: 422 }); return destinationOplocId; }
-function sourceStatus(status: string) { return ["cancelled", "withdrawn", "superseded", "rejected"].includes(status) ? "withdrawn" as const : "ready_for_planning" as const; }
+export function productionStatusToFulfilmentStatus(status: string, supersededBy?: string): FulfilmentRequirementStatus {
+  if (supersededBy || ["cancelled", "withdrawn", "superseded", "rejected"].includes(status)) return "withdrawn";
+  if (["accepted", "planning", "planned", "scheduled", "in_production", "partially_complete", "ready", "complete", "menu_available"].includes(status)) return "ready_for_planning";
+  if (["amended"].includes(status)) return "amended";
+  return "pending";
+}
+
+export function fulfilmentRequirementContentEqual(left: FulfilmentRequirement, right: FulfilmentRequirement) {
+  return left.sourceVersion === right.sourceVersion && left.sourceContentHash === right.sourceContentHash && left.idempotencyKey === right.idempotencyKey;
+}
 
 export type ProductionOrderFulfilmentSource = {
   canonicalId: string;
@@ -65,12 +74,13 @@ export type ProductionOrderFulfilmentSource = {
   requiredBy: string;
   serviceWindow?: { startTime: string; endTime?: string };
   status: string;
+  supersededBy?: string;
   lines: Array<{ canonicalId: string; sourceMenuItemId?: string; sourceOfferingId?: string; itemName: string; customerQuantity: number; customerUnit: string; productionQuantity?: number; productionUnit?: string; sortOrder: number }>;
 };
 
 export function fulfilmentFromProductionOrder(order: ProductionOrderFulfilmentSource, by: string, at = new Date().toISOString(), previous?: FulfilmentRequirement) {
   const destinationOplocId = requireDestination(order.destinationOplocId, order.canonicalId);
-  const source: SourceProjection = { sourceDomain: "cpu-production", sourceEntityId: order.canonicalId, sourceVersion: order.version, sourceContentHash: sourceContentHash(order), destinationOplocId, destinationLabelSnapshot: order.destinationLabel || destinationOplocId, serviceDate: order.serviceDate || order.requiredBy.slice(0, 10), lines: order.lines.map(line => ({ sourceLineId: line.canonicalId, canonicalItemId: line.sourceMenuItemId || line.sourceOfferingId, displayName: line.itemName, quantity: line.productionQuantity ?? line.customerQuantity, unit: line.productionUnit || line.customerUnit, sortOrder: line.sortOrder })), status: sourceStatus(order.status), context: { at, by, productionLocationId: order.productionLocationId, readyAt: order.requiredBy, requiredDeliveryWindow: order.serviceWindow } };
+  const source: SourceProjection = { sourceDomain: "cpu-production", sourceEntityId: order.canonicalId, sourceVersion: order.version, sourceContentHash: sourceContentHash(order), destinationOplocId, destinationLabelSnapshot: order.destinationLabel || destinationOplocId, serviceDate: order.serviceDate || order.requiredBy.slice(0, 10), lines: order.lines.map(line => ({ sourceLineId: line.canonicalId, canonicalItemId: line.sourceMenuItemId || line.sourceOfferingId, displayName: line.itemName, quantity: line.productionQuantity ?? line.customerQuantity, unit: line.productionUnit || line.customerUnit, sortOrder: line.sortOrder })), status: productionStatusToFulfilmentStatus(order.status, order.supersededBy), context: { at, by, productionLocationId: order.productionLocationId, readyAt: order.requiredBy, requiredDeliveryWindow: order.serviceWindow } };
   return materialiseFulfilmentRequirement(source, previous);
 }
 
