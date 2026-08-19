@@ -50,7 +50,7 @@ const stable = (value: unknown): string => {
 
 export function sourceContentHash(value: unknown) { return crypto.createHash("sha256").update(stable(value)).digest("hex"); }
 function safePart(value: string) { return value.replace(/[^A-Za-z0-9:_-]+/g, "_"); }
-function requirementIdentity(sourceDomain: FulfilmentSourceDomain, sourceEntityId: string, destinationOplocId: string) { return `fulfilment-requirement:${sourceDomain}:${safePart(sourceEntityId)}:${safePart(destinationOplocId)}`; }
+export function fulfilmentRequirementIdentity(sourceDomain: FulfilmentSourceDomain, sourceEntityId: string, destinationOplocId: string) { return `fulfilment-requirement:${sourceDomain}:${safePart(sourceEntityId)}:${safePart(destinationOplocId)}`; }
 function requireDestination(destinationOplocId: string | undefined, label: string) { if (!destinationOplocId?.trim()) throw Object.assign(new Error(`Cannot create a Fulfilment Requirement for ${label} without a canonical destination OPLOC ID.`), { status: 422 }); return destinationOplocId; }
 function sourceStatus(status: string) { return ["cancelled", "withdrawn", "superseded", "rejected"].includes(status) ? "withdrawn" as const : "ready_for_planning" as const; }
 
@@ -74,12 +74,12 @@ export function fulfilmentFromProductionOrder(order: ProductionOrderFulfilmentSo
   return materialiseFulfilmentRequirement(source, previous);
 }
 
-export type PublishedMenuDayFulfilmentSource = { publicationDayId: string; version: number; contentHash: string; date: string; status: "published" | "superseded" | "withdrawn"; entries: Array<{ sourceEntryId: string; canonicalDishId?: string; dishName: string; slot: string; allocations: Array<{ destinationId?: string; destinationLabel: string; quantity: number }> }> };
+export type PublishedMenuDayFulfilmentSource = { publicationDayId: string; sourceDayId: string; version: number; contentHash: string; date: string; status: "published" | "superseded" | "withdrawn"; entries: Array<{ sourceEntryId: string; canonicalDishId?: string; dishName: string; slot: string; allocations: Array<{ destinationId?: string; destinationLabel: string; quantity: number }> }> };
 
 export function fulfilmentFromPublishedMenuDay(day: PublishedMenuDayFulfilmentSource, destinationOplocId: string, previous?: FulfilmentRequirement) {
   const allocations = day.entries.flatMap(entry => entry.allocations.filter(allocation => allocation.destinationId === destinationOplocId).map(allocation => ({ entry, allocation })));
   const firstLabel = allocations[0]?.allocation.destinationLabel || destinationOplocId;
-  const source: SourceProjection = { sourceDomain: "menu-planning", sourceEntityId: day.publicationDayId, sourceVersion: day.version, sourceContentHash: day.contentHash, destinationOplocId: requireDestination(destinationOplocId, day.publicationDayId), destinationLabelSnapshot: firstLabel, serviceDate: day.date, lines: allocations.map(({ entry, allocation }, index) => ({ sourceLineId: entry.sourceEntryId, canonicalItemId: entry.canonicalDishId, displayName: entry.dishName, quantity: allocation.quantity, unit: "portion", sortOrder: index })), status: day.status === "withdrawn" ? "withdrawn" : "ready_for_planning", context: { by: "menu-planning-publication" } };
+  const source: SourceProjection = { sourceDomain: "menu-planning", sourceEntityId: day.sourceDayId, sourceVersion: day.version, sourceContentHash: day.contentHash, destinationOplocId: requireDestination(destinationOplocId, day.publicationDayId), destinationLabelSnapshot: firstLabel, serviceDate: day.date, lines: allocations.map(({ entry, allocation }, index) => ({ sourceLineId: entry.sourceEntryId, canonicalItemId: entry.canonicalDishId, displayName: entry.dishName, quantity: allocation.quantity, unit: "portion", sortOrder: index })), status: day.status === "withdrawn" ? "withdrawn" : "ready_for_planning", context: { by: "menu-planning-publication" } };
   return materialiseFulfilmentRequirement(source, previous);
 }
 
@@ -92,7 +92,7 @@ export function fulfilmentFromGrabAndGoOrder(order: GrabAndGoFulfilmentSource, b
 
 export function materialiseFulfilmentRequirement(source: SourceProjection, previous?: FulfilmentRequirement): FulfilmentRequirement {
   const at = source.context.at || new Date().toISOString();
-  const identity = requirementIdentity(source.sourceDomain, source.sourceEntityId, source.destinationOplocId);
+  const identity = fulfilmentRequirementIdentity(source.sourceDomain, source.sourceEntityId, source.destinationOplocId);
   const idempotencyKey = `${source.sourceDomain}:${source.sourceEntityId}:${source.destinationOplocId}:v${source.sourceVersion}:${source.sourceContentHash || sourceContentHash(source.lines)}`;
   const unchanged = previous && previous.sourceVersion === source.sourceVersion && previous.sourceContentHash === source.sourceContentHash && previous.status === source.status && (Boolean(source.sourceContentHash) || stable(previous.lines) === stable(source.lines));
   if (unchanged) return previous;

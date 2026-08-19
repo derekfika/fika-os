@@ -6,9 +6,8 @@ import { test } from "node:test";
 import * as XLSX from "xlsx";
 import { addMenuSlot, applyEntryPatch, assertWeekDateAvailable, createEntry, duplicateWeek, emptyWeek, getWeek, importWorkbook, publishWeek, removeMenuSlot, saveSnapshot, updateEntry, validateWeek, ROLLING_SLOTS } from "../lib/rolling-menu";
 import { createCanonicalMenuItem, listCanonicalMenuItems } from "../lib/canonical-menu-repository";
-import { createPublishedMenuDay, currentPublishedDays, getMenuPublication, publicationPreview, publicationState, publishedDayMatrixHtml, withdrawPublishedMenuDay, type MenuPublicationSignoff } from "../lib/menu-publication";
+import { createPublishedMenuDay, currentPublishedDays, getMenuPublication, listMenuPublicationEvents, publicationPreview, publicationState, publishedDayMatrixHtml, replayMenuPublicationOutbox, withdrawPublishedMenuDay, type MenuPublicationSignoff } from "../lib/menu-publication";
 import { resolveAllergenSnapshot } from "../lib/allergen-resolution";
-import { notifyCpuPublicationChanged } from "../lib/publication-notification";
 import type { RollingEntry } from "../lib/rolling-menu-types";
 
 test("rolling menu importer preserves slots, destination quantities and source evidence", () => {
@@ -102,6 +101,12 @@ test("menu days publish independently and revisions supersede only that day", as
     for (const entry of [monday, tuesday, thursday]) updateEntryForTest(week.week.id, entry.id);
     const sign = (dayId: string): MenuPublicationSignoff => { const day = publicationPreview(getWeek(week.week.id), dayId)[0]; const signature = { printedName: "Signed Chef", signatureDataUrl: "data:image/png;base64,c2ln", signedAt: "2026-08-19T12:00:00.000Z", actor: "test", attestation: "Reviewed" }; return { date: day.date, productionChef: signature, headChefSiteManager: { ...signature, printedName: "Head Chef" }, dayContentHash: day.contentHash }; };
     const mondayPublication = createPublishedMenuDay(week.week.id, week.days[0].id, sign(week.days[0].id), "test");
+    const publicationEvents = listMenuPublicationEvents();
+    assert.ok(publicationEvents.some(event => event.eventType === "menu.day.published" && event.sourceVersion === 1));
+    assert.ok(publicationEvents.some(event => event.eventType === "fulfilment.requirement.created"));
+    const replayed = await replayMenuPublicationOutbox(() => undefined);
+    assert.equal(replayed.failed, 0);
+    assert.equal((await replayMenuPublicationOutbox(() => { throw new Error("duplicate delivery"); })).delivered, 0);
     assert.equal(getWeek(week.week.id).week.status, "partially_published");
     addMenuSlot(week.week.id, "SALAD 7");
     removeMenuSlot(week.week.id, "SALAD 7");
@@ -177,18 +182,6 @@ test("withdrawal removes a day from the current projection and republishing crea
     const first = createPublishedMenuDay(week.week.id, week.days[1].id, signoff, "test"); const dayId = first.days.find(day => day.sourceDayId === week.days[1].id)!.publicationDayId; const withdrawn = withdrawPublishedMenuDay(first.publicationId, dayId, "Correction required", "test"); const withdrawnDay = withdrawn.days.find(day => day.publicationDayId === dayId)!; assert.equal(withdrawnDay.status, "withdrawn"); assert.equal(currentPublishedDays(withdrawn).length, 0); assert.equal(withdrawnDay.withdrawal?.reason, "Correction required");
     const republishedPreview = publicationPreview(getWeek(week.week.id), week.days[1].id)[0]; const republished = createPublishedMenuDay(week.week.id, week.days[1].id, { ...signoff, dayContentHash: republishedPreview.contentHash }, "test"); assert.equal(republished.days.filter(day => day.sourceDayId === week.days[1].id).at(-1)?.version, 2);
   } finally { if (rollingBefore) await writeFile(rollingFile, rollingBefore); else await rm(rollingFile, { force: true }); if (publicationBefore) await writeFile(publicationFile, publicationBefore); else await rm(publicationFile, { force: true }); }
-});
-
-test("CPU publication notification is best effort and carries only invalidation metadata", async () => {
-  const originalFetch = globalThis.fetch;
-  let requestBody = "";
-  try {
-    globalThis.fetch = (async (_input, init) => { requestBody = String(init?.body || ""); return new Response(null, { status: 204 }); }) as typeof fetch;
-    assert.equal(await notifyCpuPublicationChanged({ event: "publication_changed", publicationDayId: "publication:day:v2", serviceDate: "2026-08-24", version: 2, action: "amended" }), true);
-    assert.deepEqual(JSON.parse(requestBody), { event: "publication_changed", publicationDayId: "publication:day:v2", serviceDate: "2026-08-24", version: 2, action: "amended" });
-    globalThis.fetch = (async () => new Response(null, { status: 503 })) as typeof fetch;
-    assert.equal(await notifyCpuPublicationChanged({ event: "publication_changed", publicationDayId: "publication:day:v2", serviceDate: "2026-08-24", version: 2, action: "withdrawn" }), false);
-  } finally { globalThis.fetch = originalFetch; }
 });
 
 function updateEntryForTest(weekId: string, entryId: string, label?: string) {

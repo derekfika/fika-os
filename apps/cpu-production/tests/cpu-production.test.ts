@@ -7,6 +7,8 @@ import { publishPublicationChanged, publicationEventStream, subscribeToPublicati
 import { localFixtureOrders } from "../app/api/local-fixtures";
 import { buildGrabAndGoProduction, effectiveGrabAndGoOrders, type GrabAndGoProduct, type GrabAndGoSourceOrder } from "../lib/grab-and-go-read";
 import { fulfilmentFromGrabAndGoOrder, fulfilmentFromProductionOrder, fulfilmentFromPublishedMenuDay } from "../../shared/fulfilment-requirement";
+import { createDomainEvent, replayDueEvents } from "../../shared/domain-events";
+import { reconcileFulfilmentRequirements } from "../../shared/fulfilment-reconciliation";
 
 const page = readFileSync(new URL("../app/page.tsx", import.meta.url), "utf8");
 const route = readFileSync(
@@ -195,7 +197,7 @@ test("Grab & Go production honours submitted snapshots when catalogue changes or
 
 test("CPU, published-menu and Grab & Go sources normalise to one Fulfilment Requirement contract", () => {
   const production = fulfilmentFromProductionOrder({ canonicalId: "production-order:v1:hospitality", version: 1, productionLocationId: "oploc:cpux", destinationOplocId: "oploc:haleon", destinationLabel: "Haleon", serviceDate: "2026-08-24", requiredBy: "2026-08-24T09:00:00", serviceWindow: { startTime: "12:00" }, status: "ready", lines: [{ canonicalId: "production-line:1", sourceMenuItemId: "menu:dish", itemName: "Mixed Leaf", customerQuantity: 10, customerUnit: "portion", productionQuantity: 10, productionUnit: "portion", sortOrder: 0 }] }, "cpu");
-  const published = fulfilmentFromPublishedMenuDay({ publicationDayId: "publication:day:v1", version: 2, contentHash: "hash-day", date: "2026-08-24", status: "published", entries: [{ sourceEntryId: "entry:salad", canonicalDishId: "dish:salad", dishName: "Mixed Leaf", slot: "SALAD 1", allocations: [{ destinationId: "oploc:haleon", destinationLabel: "Haleon", quantity: 7 }] }] }, "oploc:haleon");
+  const published = fulfilmentFromPublishedMenuDay({ publicationDayId: "publication:day:v1", sourceDayId: "rolling-week:day:1", version: 2, contentHash: "hash-day", date: "2026-08-24", status: "published", entries: [{ sourceEntryId: "entry:salad", canonicalDishId: "dish:salad", dishName: "Mixed Leaf", slot: "SALAD 1", allocations: [{ destinationId: "oploc:haleon", destinationLabel: "Haleon", quantity: 7 }] }] }, "oploc:haleon");
   const grab = fulfilmentFromGrabAndGoOrder({ orderId: "grab-and-go:oploc:haleon:2026-08-24", oplocId: "oploc:haleon", deliveryDate: "2026-08-24", version: 3, status: "submitted", lines: [{ productId: "grab:pot", productName: "Fruit Pot", quantity: 4, sortOrder: 0 }] }, "site");
   for (const requirement of [production, published, grab]) {
     assert.equal(requirement.entityType, "Fulfilment Requirement");
@@ -227,7 +229,7 @@ test("Fulfilment Requirement identity is idempotent, versions amendments, and pr
 });
 
 test("Fulfilment Requirements keep canonical destinations distinct from matching labels", () => {
-  const day = { publicationDayId: "publication:day:v1", version: 1, contentHash: "hash", date: "2026-08-24", status: "published" as const, entries: [{ sourceEntryId: "entry:one", canonicalDishId: "dish:one", dishName: "Dish One", slot: "SALAD 1", allocations: [{ destinationId: "oploc:one", destinationLabel: "Shared label", quantity: 2 }, { destinationId: "oploc:two", destinationLabel: "Shared label", quantity: 3 }] }] };
+  const day = { publicationDayId: "publication:day:v1", sourceDayId: "rolling-week:day:1", version: 1, contentHash: "hash", date: "2026-08-24", status: "published" as const, entries: [{ sourceEntryId: "entry:one", canonicalDishId: "dish:one", dishName: "Dish One", slot: "SALAD 1", allocations: [{ destinationId: "oploc:one", destinationLabel: "Shared label", quantity: 2 }, { destinationId: "oploc:two", destinationLabel: "Shared label", quantity: 3 }] }] };
   const one = fulfilmentFromPublishedMenuDay(day, "oploc:one");
   const two = fulfilmentFromPublishedMenuDay(day, "oploc:two");
   assert.notEqual(one.canonicalId, two.canonicalId);
@@ -557,4 +559,36 @@ test("local CPU fixtures cover two weeks of portal bookings with routed menu and
   assert.ok(fixtures.some(order => order.status === "complete"));
   assert.ok(fixtures.some(order => Object.keys(order.lines.flatMap(line => Object.keys(line.dietaries))).length > 0));
   assert.ok(fixtures.every(order => order.lines.every(line => line.sourceMenuItemId)));
+});
+
+test("durable events survive consumer outage, replay idempotently, and protect source ordering", async () => {
+  const v1 = createDomainEvent({ eventType: "fulfilment.requirement.created", sourceAggregateId: "requirement:one", sourceVersion: 1, occurredAt: "2026-08-24T08:00:00Z", payload: { quantity: 10 } });
+  const v2 = createDomainEvent({ eventType: "fulfilment.requirement.amended", sourceAggregateId: "requirement:one", sourceVersion: 2, occurredAt: "2026-08-24T08:01:00Z", payload: { quantity: 12 } });
+  let unavailable = true;
+  const applied: number[] = [];
+  const first = await replayDueEvents([v2, v1], (event) => {
+    if (unavailable) { unavailable = false; throw new Error("consumer unavailable"); }
+    applied.push(event.sourceVersion);
+  }, new Date("2026-08-24T08:02:00Z"));
+  assert.equal(first.delivered, 1);
+  assert.equal(first.failed, 1);
+  const second = await replayDueEvents(first.events, event => { applied.push(event.sourceVersion); }, new Date("2026-08-24T08:03:00Z"));
+  assert.deepEqual(applied, [2]);
+  assert.equal(second.delivered, 0);
+  assert.equal(second.events.filter(event => event.delivery.status === "delivered").length, 2);
+});
+
+test("fulfilment reconciliation identifies missing, stale, withdrawn and failed handoffs", () => {
+  const source = { orderId: "order:one", oplocId: "oploc:one", deliveryDate: "2026-08-24", version: 2, status: "submitted" as const, lines: [{ productId: "product:one", productName: "Mixed Leaf", quantity: 4, sortOrder: 0 }] };
+  const requirement = fulfilmentFromGrabAndGoOrder(source, "site", "2026-08-24T08:00:00Z");
+  const failed = createDomainEvent({ eventType: "grab-and-go.order.submitted", sourceAggregateId: source.orderId, sourceVersion: source.version, occurredAt: "2026-08-24T08:00:00Z", payload: source });
+  const failedWithMetadata = { ...failed, delivery: { ...failed.delivery, status: "failed" as const, attempts: 1, lastError: "Delivered-In unavailable" } };
+  const expected = [{ sourceDomain: "grab-and-go" as const, sourceEntityId: source.orderId, sourceVersion: 3, destinationOplocId: source.oplocId, status: "active" as const }];
+  const issues = reconcileFulfilmentRequirements(expected, [requirement], [failedWithMetadata]);
+  assert.ok(issues.some(issue => issue.kind === "stale_requirement"));
+  assert.ok(issues.some(issue => issue.kind === "failed_event"));
+  const withdrawnIssues = reconcileFulfilmentRequirements([{ ...expected[0], status: "withdrawn" }], [requirement], []);
+  assert.ok(withdrawnIssues.some(issue => issue.kind === "withdrawn_source_still_active"));
+  const missingIssues = reconcileFulfilmentRequirements(expected, [], []);
+  assert.ok(missingIssues.some(issue => issue.kind === "missing_requirement"));
 });
