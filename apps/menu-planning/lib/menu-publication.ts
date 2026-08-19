@@ -46,15 +46,19 @@ function appendPublicationEvents(stored: StoredPublications, publication: MenuPu
   const addEvent = (event: DurableDomainEvent) => { if (!stored.events.some(existing => existing.eventId === event.eventId)) stored.events.push(event); };
   addEvent(createDomainEvent({ eventType: `menu.day.${action}`, sourceAggregateId: `${publication.publicationId}:${day.sourceDayId}`, sourceVersion: day.version, occurredAt, payload: { publicationId: publication.publicationId, publicationDayId: day.publicationDayId, sourceDayId: day.sourceDayId, serviceDate: day.date, version: day.version, contentHash: day.contentHash, status: day.status, actor } }));
   const currentDestinations = [...new Set(day.entries.flatMap(entry => entry.allocations.map(allocation => allocation.destinationId).filter((id): id is string => Boolean(id))))];
-  const previousDestinations = stored.fulfilmentRequirements
-    .filter(requirement => requirement.sourceDomain === "menu-planning" && requirement.sourceEntityId === day.sourceDayId)
-    .map(requirement => requirement.destinationOplocId);
+  const previousDestinations = stored.events
+    .map(event => event.payload as Partial<FulfilmentRequirement>)
+    .filter(requirement => requirement.entityType === "Fulfilment Requirement" && requirement.sourceDomain === "menu-planning" && requirement.sourceEntityId === day.sourceDayId)
+    .map(requirement => requirement.destinationOplocId)
+    .filter((id): id is string => Boolean(id));
   const destinations = [...new Set([...currentDestinations, ...previousDestinations])];
   for (const destinationOplocId of destinations) {
-    const previous = stored.fulfilmentRequirements.find(requirement => requirement.canonicalId === fulfilmentRequirementIdentity("menu-planning", day.sourceDayId, destinationOplocId));
+    const previous = stored.events
+      .map(event => event.payload as FulfilmentRequirement)
+      .filter(requirement => requirement?.entityType === "Fulfilment Requirement" && requirement.canonicalId === fulfilmentRequirementIdentity("menu-planning", day.sourceDayId, destinationOplocId))
+      .sort((a, b) => b.sourceVersion - a.sourceVersion)[0];
     const requirement = fulfilmentFromPublishedMenuDay(currentDestinations.includes(destinationOplocId) ? day : { ...day, status: "withdrawn" }, destinationOplocId, previous);
-    stored.fulfilmentRequirements = [...stored.fulfilmentRequirements.filter(value => value.canonicalId !== requirement.canonicalId), requirement];
-    addEvent(createDomainEvent({ eventType: `fulfilment.requirement.${requirement.status === "withdrawn" ? "withdrawn" : previous ? "amended" : "created"}`, sourceAggregateId: requirement.canonicalId, sourceVersion: requirement.version, occurredAt, payload: requirement, causationId: `${publication.publicationId}:${day.sourceDayId}:v${day.version}` }));
+    addEvent(createDomainEvent({ eventType: `fulfilment.requirement.${requirement.status === "withdrawn" ? "withdrawn" : previous ? "amended" : "created"}`, sourceAggregateId: requirement.canonicalId, sourceVersion: requirement.sourceVersion, occurredAt, payload: requirement, causationId: `${publication.publicationId}:${day.sourceDayId}:v${day.version}` }));
   }
 }
 export function listMenuPublications() { return read().publications.map(clone); }

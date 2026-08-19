@@ -52,10 +52,12 @@ export function saveGrabAndGoOrder(order: GrabAndGoOrder, expectedVersion?: numb
   const action = order.status === "cancelled" ? "cancelled" : previous ? "amended" : "submitted";
   const addEvent = (event: DurableDomainEvent) => { if (!stored.events.some(existing => existing.eventId === event.eventId)) stored.events.push(event); };
   addEvent(createDomainEvent({ eventType: `grab-and-go.order.${action}`, sourceAggregateId: order.orderId, sourceVersion: order.version, occurredAt: order.updatedAt, payload: { orderId: order.orderId, oplocId: order.oplocId, deliveryDate: order.deliveryDate, version: order.version, status: order.status } }));
-  const previousRequirement = stored.fulfilmentRequirements.find(requirement => requirement.sourceEntityId === order.orderId);
+  const previousRequirement = stored.events
+    .map(event => event.payload as FulfilmentRequirement)
+    .filter(requirement => requirement?.entityType === "Fulfilment Requirement" && requirement.sourceEntityId === order.orderId)
+    .sort((a, b) => b.sourceVersion - a.sourceVersion)[0];
   const requirement = fulfilmentFromGrabAndGoOrder(order, order.updatedBy, order.updatedAt, previousRequirement);
-  stored.fulfilmentRequirements = [...stored.fulfilmentRequirements.filter(value => value.canonicalId !== requirement.canonicalId), requirement];
-  addEvent(createDomainEvent({ eventType: `fulfilment.requirement.${requirement.status === "withdrawn" ? "withdrawn" : previousRequirement ? "amended" : "created"}`, sourceAggregateId: requirement.canonicalId, sourceVersion: requirement.version, occurredAt: order.updatedAt, payload: requirement, causationId: order.orderId }));
+  addEvent(createDomainEvent({ eventType: `fulfilment.requirement.${requirement.status === "withdrawn" ? "withdrawn" : previousRequirement ? "amended" : "created"}`, sourceAggregateId: requirement.canonicalId, sourceVersion: requirement.sourceVersion, occurredAt: order.updatedAt, payload: requirement, causationId: order.orderId }));
   return order;
   });
 }

@@ -2,7 +2,7 @@ import { fulfilmentRequirementIdentity, type FulfilmentRequirement } from "./ful
 import type { DurableDomainEvent } from "./domain-events";
 
 export type ExpectedFulfilmentSource = { sourceDomain: FulfilmentRequirement["sourceDomain"]; sourceEntityId: string; sourceVersion: number; destinationOplocId: string; status: "active" | "withdrawn" };
-export type FulfilmentReconciliationIssue = { kind: "missing_requirement" | "stale_requirement" | "withdrawn_source_still_active" | "failed_event"; requirementId?: string; sourceEntityId?: string; detail: string };
+export type FulfilmentReconciliationIssue = { kind: "missing_requirement" | "stale_requirement" | "withdrawn_source_still_active" | "failed_event" | "unresolved_destination" | "receipt_behind"; requirementId?: string; sourceEntityId?: string; detail: string };
 
 export function reconcileFulfilmentRequirements(expected: ExpectedFulfilmentSource[], actual: FulfilmentRequirement[], events: DurableDomainEvent[] = []): FulfilmentReconciliationIssue[] {
   const byId = new Map(actual.map(requirement => [requirement.canonicalId, requirement]));

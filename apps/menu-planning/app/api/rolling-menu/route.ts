@@ -3,6 +3,8 @@ import { addMenuSlot, assertWeekDateAvailable, cleanDuplicateEntries, createEntr
 import { archivePublishedDayMatrix, createPublishedMenuDay, getMenuPublication, publicationDayBlockers, publicationPreview, publicationState, type MenuPublicationSignoff } from "@/lib/menu-publication";
 import { requireMutationActor, requirePublicationActor, resolveMenuActor } from "@/lib/auth";
 import { readGovernedOplocs } from "@/lib/oploc-authority";
+import { forwardFulfilmentEvent } from "../../../../shared/fulfilment-client";
+import { replayMenuPublicationOutbox } from "@/lib/menu-publication";
 
 export async function GET(request: NextRequest) {
   const snapshot = getWeek(request.nextUrl.searchParams.get("weekId") || undefined);
@@ -49,6 +51,7 @@ export async function POST(request: NextRequest) {
       requirePublicationActor(actor);
       const oplocs = await readGovernedOplocs(request);
       const publication = createPublishedMenuDay(String(body.weekId), dayId, (body.signoff || {}) as MenuPublicationSignoff, actor.uid, new Set(oplocs.map(oploc => oploc.canonicalId)));
+      void replayMenuPublicationOutbox(forwardFulfilmentEvent).catch(() => undefined);
       const publishedDay = publication.days.find(day => day.sourceDayId === dayId && day.status === "published");
       if (publishedDay) await archivePublishedDayMatrix(publication.publicationId, publishedDay.publicationDayId);
       const saved = getWeek(String(body.weekId)); return NextResponse.json({ snapshot: saved, publication: getMenuPublication(publication.publicationId), weeks: listWeeks(), blockers: validateWeek(saved), publicationState: publicationState(saved) });
