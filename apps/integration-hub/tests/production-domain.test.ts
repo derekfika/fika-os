@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createCpuProductionOrder, productionOrderV1Id, productionRequirementId } from "../lib/production-domain";
+import { transitionProductionOrder } from "../lib/production-domain";
+import { db } from "../lib/firebase-admin";
 import type { ProductionLine } from "../lib/production-domain";
 
 test("production identifiers are stable and distinct by source booking and quote", () => {
@@ -31,4 +33,27 @@ test("CPU delivery creation requires a canonical destination OPLOC", async () =>
     }, "cpu-destination-test"),
     (error: any) => error.status === 422 && /canonical destination OPLOC/i.test(error.message),
   );
+});
+
+test("explicitly internal CPU production creates no Fulfilment work on create or transition", async () => {
+  const idempotencyKey = `cpu-internal-test:${Date.now()}`;
+  const result = await createCpuProductionOrder({ uid: "test", name: "Test", role: "integration-admin", synthetic: true }, {
+    clientName: "Internal prep",
+    serviceDate: "2026-08-24",
+    deliveryDateTime: "2026-08-24T09:00:00Z",
+    requiredBy: "2026-08-24T09:00:00Z",
+    serviceWindow: { startTime: "09:00" },
+    requiresDelivery: false,
+    deliveryLocation: "CPU internal",
+    serviceType: "Internal production",
+    pax: 1,
+    lines: [{ itemName: "Internal dish", customerQuantity: 1, customerUnit: "portion" }],
+  }, idempotencyKey);
+  assert.equal(result.order.requiresDelivery, false);
+  const receiptsBefore = await db.collection("fikaDomainEventInboxV1").get();
+  assert.equal(receiptsBefore.docs.some(doc => doc.data().sourceAggregateId === result.order.canonicalId), false);
+  const next = await transitionProductionOrder({ uid: "test", name: "Test", role: "integration-admin", synthetic: true }, result.order.canonicalId, result.order.version, "needs_review", "Review internal work.");
+  assert.equal(next.requiresDelivery, false);
+  const receiptsAfter = await db.collection("fikaDomainEventInboxV1").get();
+  assert.equal(receiptsAfter.docs.some(doc => doc.data().sourceAggregateId === result.order.canonicalId), false);
 });

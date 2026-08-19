@@ -59,6 +59,16 @@ export function productionStatusToFulfilmentStatus(status: string, supersededBy?
   return "pending";
 }
 
+export function productionOrderRequiresFulfilment(order: { requiresDelivery?: boolean }) { return order.requiresDelivery !== false; }
+
+export function materialiseFulfilmentStatus(previous: FulfilmentRequirement | undefined, sourceStatus: FulfilmentRequirementStatus): FulfilmentRequirementStatus {
+  if (sourceStatus === "withdrawn") return "withdrawn";
+  if (!previous) return sourceStatus;
+  if (sourceStatus === "pending") return "pending";
+  if (sourceStatus === "ready_for_planning") return previous.status === "pending" || previous.status === "withdrawn" ? "ready_for_planning" : "amended";
+  return previous.status === "pending" || previous.status === "withdrawn" ? "pending" : "amended";
+}
+
 export function fulfilmentRequirementContentEqual(left: FulfilmentRequirement, right: FulfilmentRequirement) {
   return left.sourceVersion === right.sourceVersion && left.sourceContentHash === right.sourceContentHash && left.idempotencyKey === right.idempotencyKey;
 }
@@ -68,6 +78,7 @@ export type ProductionOrderFulfilmentSource = {
   version: number;
   schemaVersion?: string;
   productionLocationId?: string;
+  requiresDelivery?: boolean;
   destinationOplocId?: string;
   destinationLabel?: string;
   serviceDate?: string;
@@ -107,6 +118,6 @@ export function materialiseFulfilmentRequirement(source: SourceProjection, previ
   const unchanged = previous && previous.sourceVersion === source.sourceVersion && previous.sourceContentHash === source.sourceContentHash && previous.status === source.status && (Boolean(source.sourceContentHash) || stable(previous.lines) === stable(source.lines));
   if (unchanged) return previous;
   const version = previous ? previous.version + 1 : 1;
-  const status = previous && source.status !== "withdrawn" ? "amended" as const : source.status;
+  const status = materialiseFulfilmentStatus(previous, source.status);
   return { canonicalId: identity, entityType: "Fulfilment Requirement", schemaVersion: FULFILMENT_REQUIREMENT_SCHEMA_VERSION, version, sourceDomain: source.sourceDomain, sourceEntityId: source.sourceEntityId, sourceVersion: source.sourceVersion, ...(source.sourceContentHash ? { sourceContentHash: source.sourceContentHash } : {}), ...(source.context.productionLocationId ? { productionLocationId: source.context.productionLocationId } : {}), destinationOplocId: source.destinationOplocId, destinationLabelSnapshot: source.destinationLabelSnapshot, serviceDate: source.serviceDate, ...(source.context.readyAt ? { readyAt: source.context.readyAt } : {}), ...(source.context.requiredDeliveryWindow ? { requiredDeliveryWindow: source.context.requiredDeliveryWindow } : {}), lines: source.lines.map((line, index) => ({ canonicalId: `${identity}:line:${index + 1}`, sourceLineId: line.sourceLineId, ...(line.canonicalItemId ? { canonicalItemId: line.canonicalItemId } : {}), displayNameSnapshot: line.displayName, quantity: line.quantity, unit: line.unit, sortOrder: line.sortOrder })), status, createdAt: previous?.createdAt || at, createdBy: previous?.createdBy || source.context.by, updatedAt: at, updatedBy: source.context.by, audit: [...(previous?.audit || []), { action: previous ? (status === "withdrawn" ? "fulfilment-withdrawn" : "fulfilment-amended") : "fulfilment-requirement-created", at, by: source.context.by, sourceVersion: source.sourceVersion, idempotencyKey, ...(status === "withdrawn" ? { reason: "Upstream source was cancelled or withdrawn." } : {}) }], idempotencyKey };
 }

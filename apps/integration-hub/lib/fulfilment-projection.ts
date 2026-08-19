@@ -7,6 +7,7 @@ import {
   type GrabAndGoFulfilmentSource,
   type ProductionOrderFulfilmentSource,
   fulfilmentRequirementContentEqual,
+  productionOrderRequiresFulfilment,
 } from "../../shared/fulfilment-requirement";
 import { db } from "./firebase-admin";
 import { stableDocumentId } from "./canonical-editor";
@@ -38,10 +39,16 @@ export function normaliseFulfilmentEvent(event: DurableDomainEvent): FulfilmentR
 }
 
 export function shouldApplyFulfilmentVersion(current: FulfilmentRequirement | undefined, incoming: FulfilmentRequirement) {
-  return !current || incoming.sourceVersion >= current.sourceVersion;
+  return !current || incoming.sourceVersion > current.sourceVersion;
+}
+
+function isNonDeliveryProductionEvent(event: DurableDomainEvent) {
+  const productionOrder = (event.payload as { productionOrder?: ProductionOrderFulfilmentSource })?.productionOrder;
+  return Boolean(productionOrder && !productionOrderRequiresFulfilment(productionOrder));
 }
 
 export async function stageFulfilmentEvent(transaction: Transaction, event: DurableDomainEvent) {
+  if (isNonDeliveryProductionEvent(event)) return { applied: false, duplicate: false, skipped: true } as const;
   const receiptRef = inbox().doc(`${FULFILMENT_CONSUMER}:${stableDocumentId(event.eventId)}`);
   const receipt = await transaction.get(receiptRef);
   if (receipt.exists) return { applied: false, duplicate: true } as const;
@@ -68,6 +75,7 @@ export async function stageFulfilmentEvent(transaction: Transaction, event: Dura
 }
 
 export async function applyFulfilmentEvent(event: DurableDomainEvent): Promise<FulfilmentProjectionResult> {
+  if (isNonDeliveryProductionEvent(event)) return { applied: false, duplicate: false };
   return db.runTransaction(async transaction => {
     const receiptRef = inbox().doc(`${FULFILMENT_CONSUMER}:${stableDocumentId(event.eventId)}`);
     const receipt = await transaction.get(receiptRef);

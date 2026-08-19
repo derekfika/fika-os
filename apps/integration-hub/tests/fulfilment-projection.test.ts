@@ -27,7 +27,7 @@ test("central projection accepts source snapshots, is idempotent, and rejects st
   const event = createDomainEvent({ eventType: "fulfilment.requirement.created", sourceAggregateId: requirement.canonicalId, sourceVersion: requirement.sourceVersion, occurredAt: "2026-08-20T10:00:00Z", payload: requirement });
   assert.deepEqual(normaliseFulfilmentEvent(event), requirement);
   assert.equal(shouldApplyFulfilmentVersion(undefined, requirement), true);
-  assert.equal(shouldApplyFulfilmentVersion(requirement, requirement), true);
+  assert.equal(shouldApplyFulfilmentVersion(requirement, requirement), false);
   const stale = { ...requirement, sourceVersion: 2 };
   assert.equal(shouldApplyFulfilmentVersion(requirement, stale), false);
   assert.equal(event.eventId, `fulfilment.requirement.created:${requirement.canonicalId}:v${requirement.sourceVersion}`);
@@ -48,6 +48,21 @@ test("ProductionOrder lifecycle maps explicitly to Fulfilment lifecycle", () => 
   assert.equal(productionStatusToFulfilmentStatus("ready"), "ready_for_planning");
   assert.equal(productionStatusToFulfilmentStatus("cancelled"), "withdrawn");
   assert.equal(productionStatusToFulfilmentStatus("accepted", "production-order:v2"), "withdrawn");
+});
+
+test("Fulfilment materialisation preserves pending and ready lifecycle semantics", () => {
+  const draft = fulfilmentFromProductionOrder({ ...productionOrder, status: "draft" }, "cpu");
+  const needsReview = fulfilmentFromProductionOrder({ ...productionOrder, version: 2, status: "needs_review" }, "cpu", "2026-08-20T10:00:00Z", draft);
+  const accepted = fulfilmentFromProductionOrder({ ...productionOrder, version: 3, status: "accepted" }, "cpu", "2026-08-21T10:00:00Z", needsReview);
+  const planning = fulfilmentFromProductionOrder({ ...productionOrder, version: 4, status: "planning" }, "cpu", "2026-08-22T10:00:00Z", accepted);
+  const amended = fulfilmentFromProductionOrder({ ...productionOrder, version: 5, status: "planning", lines: [{ ...productionOrder.lines[0], productionQuantity: 8 }] }, "cpu", "2026-08-23T10:00:00Z", planning);
+  const withdrawn = fulfilmentFromProductionOrder({ ...productionOrder, version: 6, status: "cancelled" }, "cpu", "2026-08-24T10:00:00Z", amended);
+  assert.equal(draft.status, "pending");
+  assert.equal(needsReview.status, "pending");
+  assert.equal(accepted.status, "ready_for_planning");
+  assert.equal(planning.status, "amended");
+  assert.equal(amended.status, "amended");
+  assert.equal(withdrawn.status, "withdrawn");
 });
 
 test("the central store receives all three sources and applies amendments, withdrawal and duplicate replay safely", async () => {
