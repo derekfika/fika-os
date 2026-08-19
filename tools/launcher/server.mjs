@@ -2,7 +2,8 @@ import { createServer } from "node:http";
 import { spawn } from "node:child_process";
 import { execFileSync } from "node:child_process";
 import { readFile } from "node:fs/promises";
-import { extname, join, normalize } from "node:path";
+import { existsSync } from "node:fs";
+import { dirname, extname, join, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const directory = fileURLToPath(new URL(".", import.meta.url));
@@ -86,11 +87,21 @@ function killProcessTree(record) {
 }
 
 function spawnApp(app, record) {
-  const command = process.platform === "win32" ? (process.env.ComSpec || "cmd.exe") : "npm";
-  const args = process.platform === "win32" ? ["/d", "/s", "/c", "npm.cmd run dev"] : ["run", "dev"];
+  let command = "npm";
+  let args = ["run", "dev"];
+  if (process.platform === "win32") {
+    const npmCli = join(dirname(process.execPath), "node_modules", "npm", "bin", "npm-cli.js");
+    if (existsSync(npmCli)) {
+      command = process.execPath;
+      args = [npmCli, "run", "dev"];
+    } else {
+      command = process.env.ComSpec || "cmd.exe";
+      args = ["/d", "/s", "/c", "npm.cmd run dev"];
+    }
+  }
   const child = spawn(command, args, {
     cwd: join(workspaceRoot, app.directory),
-    detached: true,
+    detached: false,
     stdio: ["ignore", "pipe", "pipe"],
     windowsHide: true,
     env: { ...process.env, PORT: String(app.port) },
