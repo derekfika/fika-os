@@ -1,4 +1,5 @@
 import { createServer } from "node:http";
+import { spawn } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import { extname, join, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -7,8 +8,12 @@ const directory = fileURLToPath(new URL(".", import.meta.url));
 const workspaceRoot = join(directory, "..", "..");
 const port = Number(process.env.LAUNCHER_PORT || 3100);
 const apps = JSON.parse(await readFile(join(directory, "apps.json"), "utf8"));
+const startingApps = new Map();
 
 async function checkApp(app) {
+  const startedAt = startingApps.get(app.id);
+  if (startedAt && Date.now() - startedAt < 15000) return { id: app.id, status: "starting" };
+  if (startedAt) startingApps.delete(app.id);
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 2500);
 
@@ -18,12 +23,32 @@ async function checkApp(app) {
       redirect: "manual",
       headers: { "user-agent": "FIKA OS local launcher" },
     });
-    return { id: app.id, status: response.status >= 200 && response.status < 500 ? "online" : "offline" };
+    const status = response.status >= 200 && response.status < 500 ? "online" : "offline";
+    if (status === "online") startingApps.delete(app.id);
+    return { id: app.id, status };
   } catch {
     return { id: app.id, status: "offline" };
   } finally {
     clearTimeout(timeout);
   }
+}
+
+function startApp(app) {
+  if (!app.directory || app.planned) return { ok: false, message: `${app.name} is not available to start yet.` };
+  if (startingApps.has(app.id)) return { ok: true, message: `${app.name} is already starting.` };
+
+  const command = process.platform === "win32" ? "npm.cmd" : "npm";
+  const child = spawn(command, ["run", "dev"], {
+    cwd: join(workspaceRoot, app.directory),
+    detached: true,
+    stdio: "ignore",
+    windowsHide: true,
+    env: { ...process.env, PORT: String(app.port) },
+  });
+  child.unref();
+  child.once("error", () => startingApps.delete(app.id));
+  startingApps.set(app.id, Date.now());
+  return { ok: true, message: `Starting ${app.name}.` };
 }
 
 function send(response, status, body, contentType) {
@@ -41,6 +66,13 @@ const server = createServer(async (request, response) => {
   if (url.pathname === "/status") {
     const statuses = await Promise.all(apps.map(checkApp));
     return send(response, 200, JSON.stringify({ refreshedAt: new Date().toISOString(), statuses }), "application/json; charset=utf-8");
+  }
+
+  if (request.method === "POST" && url.pathname.startsWith("/start/")) {
+    const app = apps.find((item) => item.id === decodeURIComponent(url.pathname.slice("/start/".length)));
+    if (!app) return send(response, 404, JSON.stringify({ ok: false, message: "App not found." }), "application/json; charset=utf-8");
+    const result = startApp(app);
+    return send(response, result.ok ? 202 : 409, JSON.stringify(result), "application/json; charset=utf-8");
   }
 
   const requested = url.pathname === "/" ? "index.html" : url.pathname.slice(1);

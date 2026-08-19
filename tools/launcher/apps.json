@@ -5,6 +5,8 @@
     "section": "Core Platform",
     "description": "The shared operational data and integration surface.",
     "url": "http://localhost:3200",
+    "port": 3200,
+    "directory": "apps/integration-hub",
     "core": true
   },
   {
@@ -13,6 +15,8 @@
     "section": "Operations",
     "description": "Production planning, intake, and fulfilment visibility.",
     "url": "http://localhost:3400",
+    "port": 3400,
+    "directory": "apps/cpu-production",
     "core": true
   },
   {
@@ -21,6 +25,8 @@
     "section": "Operations",
     "description": "Plan menus, recipes, allergens, and operational handoffs.",
     "url": "http://localhost:3500",
+    "port": 3500,
+    "directory": "apps/menu-planning",
     "core": true
   },
   {
@@ -29,6 +35,8 @@
     "section": "Operations",
     "description": "Track delivered-in goods and receiving workflows.",
     "url": "http://localhost:3800",
+    "port": 3800,
+    "directory": "apps/delivered-in",
     "core": true
   },
   {
@@ -37,6 +45,7 @@
     "section": "Operations",
     "description": "Planned logistics coordination and movement visibility.",
     "url": "http://localhost:3900",
+    "port": 3900,
     "planned": true
   },
   {
@@ -44,20 +53,26 @@
     "name": "Hospitality Booking",
     "section": "Commercial / Service",
     "description": "Hospitality bookings, menus, and service coordination.",
-    "url": "http://localhost:3300"
+    "url": "http://localhost:3300",
+    "port": 3300,
+    "directory": "apps/hospitality-booking"
   },
   {
     "id": "events-dashboard",
     "name": "Events Dashboard",
     "section": "Commercial / Service",
     "description": "A live view of events, requirements, and delivery status.",
-    "url": "http://localhost:3700"
+    "url": "http://localhost:3700",
+    "port": 3700,
+    "directory": "apps/events-dashboard"
   },
   {
     "id": "beverage-innovation",
     "name": "Beverage Innovation",
     "section": "Commercial / Service",
     "description": "Explore beverage development and innovation workstreams.",
-    "url": "http://localhost:3600"
+    "url": "http://localhost:3600",
+    "port": 3600,
+    "directory": "apps/beverage-innovation"
   }
 ]
