@@ -5,15 +5,17 @@ import { deterministicId } from "./domain";
 import { normaliseDishCategory } from "./dish-categories";
 import { titleCase } from "./text";
 import type { RollingEntry } from "./rolling-menu-types";
+import { appDataPath } from "../../shared/app-data-path";
 
-const filePath = path.join(process.cwd(), "local-data", "menu-planning", "canonical-menu-items.json");
+const filePath = appDataPath("menu-planning", "menu-planning", "canonical-menu-items.json");
 
 async function readItems(): Promise<MenuItem[]> {
   try {
     const value = JSON.parse(await readFile(filePath, "utf8")) as { items?: MenuItem[] };
     return Array.isArray(value.items) ? value.items : [];
-  } catch {
-    return [];
+  } catch (cause) {
+    if ((cause as NodeJS.ErrnoException).code === "ENOENT") return [];
+    throw Object.assign(new Error("Canonical menu catalogue is unavailable; no catalogue was loaded.", { cause }), { status: 503 });
   }
 }
 

@@ -70,7 +70,7 @@ export function publicationState(snapshot: RollingSnapshot): Record<string, Publ
     return [day.id, state];
   }));
 }
-export function createPublishedMenuDay(weekId: string, dayId: string, signoff: MenuPublicationSignoff, actor = "local-menu-planner") {
+export function createPublishedMenuDay(weekId: string, dayId: string, signoff: MenuPublicationSignoff, actor = "local-menu-planner", governedOplocIds?: Set<string>) {
   const expectedWeekVersion = getWeek(weekId).week.version;
   return withMenuPlanningTransaction(state => {
     const rolling = state.rolling as unknown as RollingMenuStored;
@@ -80,7 +80,7 @@ export function createPublishedMenuDay(weekId: string, dayId: string, signoff: M
     const day = snapshot.days.find(value => value.id === dayId);
     if (!day) throw Object.assign(new Error("Menu day was not found."), { status: 404 });
     if (!entries.length) throw Object.assign(new Error("This menu day has no populated entries."), { status: 422 });
-    const errors = validateWeek({ ...snapshot, entries });
+    const errors = validateWeek({ ...snapshot, entries }, { governedOplocIds, requireCanonicalDishId: Boolean(governedOplocIds) });
     if (errors.length) throw Object.assign(new Error(errors.join(" ")), { status: 422 });
     const preview = buildPublishedDay(snapshot, day);
     const productionChefReady = Boolean(signoff?.productionChef?.printedName.trim() && signoff.productionChef.signatureDataUrl);

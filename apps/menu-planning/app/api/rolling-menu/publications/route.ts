@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { archivePublishedDayMatrix, getMenuPublication, listMenuPublications, withdrawPublishedMenuDay } from "@/lib/menu-publication";
+import { requirePublicationActor, resolveMenuActor } from "@/lib/auth";
 
 export async function GET(request: NextRequest) {
   const publicationId = request.nextUrl.searchParams.get("publicationId");
@@ -14,8 +15,9 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json() as { action?: string; publicationId?: string; publicationDayId?: string; reason?: string; actor?: string };
+    const actor = requirePublicationActor(await resolveMenuActor(request));
     if (!body.publicationId || !body.publicationDayId) return NextResponse.json({ error: { message: "Publication and publication day are required." } }, { status: 422 });
-    if (body.action === "withdraw") return NextResponse.json({ publication: withdrawPublishedMenuDay(body.publicationId, body.publicationDayId, body.reason || "", body.actor || "local-menu-planner") });
+    if (body.action === "withdraw") return NextResponse.json({ publication: withdrawPublishedMenuDay(body.publicationId, body.publicationDayId, body.reason || "", actor.uid) });
     if (body.action === "retry-archive") {
       const archive = await archivePublishedDayMatrix(body.publicationId, body.publicationDayId);
       return NextResponse.json({ publication: getMenuPublication(body.publicationId), archive });

@@ -6,10 +6,11 @@ import { latestSiteMenuArtifact } from "./site-menu-store";
 const hubBase = () => (process.env.INTEGRATION_HUB_BASE_URL || "http://localhost:3200").replace(/\/$/, "");
 const menuBase = () => (process.env.MENU_PLANNING_BASE_URL || "http://localhost:3500").replace(/\/$/, "");
 const failure = (message: string, status = 502) => Object.assign(new Error(message), { status });
+async function readJson<T>(response: Response, label: string): Promise<T> { const text = await response.text(); if (!response.headers.get("content-type")?.includes("application/json")) throw failure(`${label} returned a non-JSON response (${response.status}); the source service may be unavailable.`); try { return JSON.parse(text) as T; } catch (cause) { throw Object.assign(failure(`${label} returned invalid JSON; no empty projection was used.`), { cause }); } }
 
 export async function resolveAccess(request: NextRequest): Promise<{ access: SiteAccess; sites: Site[] }> {
   const response = await fetch(`${hubBase()}/api/delivered-in/access`, { headers: { cookie: request.headers.get("cookie") || "" }, cache: "no-store" });
-  const body = await response.json() as { access?: SiteAccess; sites?: Site[]; error?: { message?: string } };
+  const body = await readJson<{ access?: SiteAccess; sites?: Site[]; error?: { message?: string } }>(response, "Integration Hub access service");
   if (!response.ok || !body.access || !body.sites) throw failure(body.error?.message || "Delivered-In access could not be resolved.", response.status || 502);
   return { access: body.access, sites: body.sites };
 }
@@ -21,7 +22,7 @@ export async function projectedWeeks(request: NextRequest, requestedOplocId?: st
   if (!selectedOplocId) return { access, sites, selectedOplocId: undefined, weeks: [] };
   assertAuthorisedOploc(access, selectedOplocId);
   const response = await fetch(`${menuBase()}/api/rolling-menu/publications`, { cache: "no-store" });
-  const body = await response.json() as { publications?: SourcePublication[]; error?: { message?: string } };
+  const body = await readJson<{ publications?: SourcePublication[]; error?: { message?: string } }>(response, "Menu Planning publication service");
   if (!response.ok) throw failure(body.error?.message || "Published Delivered-In menus could not be loaded.");
   const weeks = projectPublishedWeeks(body.publications || [], selectedOplocId).map(week => ({ ...week, days: week.days.map(day => ({ ...day, siteMenu: siteMenuState(day, latestSiteMenuArtifact(selectedOplocId, day.sourceDayId)) })) }));
   return { access, sites, selectedOplocId, weeks };

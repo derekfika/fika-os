@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { assertLocalSafety } from "@/lib/safety";
 import { errorResponse } from "@/lib/api";
+import { requireActor } from "@/lib/auth";
 
 const Request = z.object({ role: z.enum(["integration-admin", "reviewer", "viewer"]) }).strict();
 const EMAILS = { "integration-admin": "admin@local.fika", reviewer: "reviewer@local.fika", viewer: "viewer@local.fika" } as const;
@@ -27,4 +28,11 @@ export async function DELETE() {
   const result = NextResponse.json({ signedOut: true });
   result.cookies.set("fika_hub_token", "", { maxAge: 0, path: "/" });
   return result;
+}
+
+export async function GET(req: NextRequest) {
+  try {
+    const actor = await requireActor(req);
+    return NextResponse.json({ actor });
+  } catch (error) { return errorResponse(error); }
 }

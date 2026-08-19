@@ -1,15 +1,7 @@
-import { NextResponse } from "next/server";
-import { connectionsOverview } from "../../../../integration-hub/lib/connections-service";
+import { NextRequest, NextResponse } from "next/server";
+import { readGovernedOplocs } from "@/lib/oploc-authority";
 
-export async function GET() {
-  try {
-    const overview = await connectionsOverview();
-    const oplocs = overview.oplocs
-      .filter((oploc) => oploc.lifecycleState === "active")
-      .map((oploc) => ({ canonicalId: oploc.canonicalId, label: oploc.label || oploc.canonicalId }))
-      .sort((a, b) => a.label.localeCompare(b.label));
-    return NextResponse.json({ oplocs }, { headers: { "Cache-Control": "no-store" } });
-  } catch {
-    return NextResponse.json({ oplocs: [] }, { headers: { "Cache-Control": "no-store" } });
-  }
+export async function GET(request: NextRequest) {
+  try { return NextResponse.json({ oplocs: (await readGovernedOplocs(request)).sort((a, b) => a.label.localeCompare(b.label)) }, { headers: { "Cache-Control": "no-store" } }); }
+  catch (error) { return NextResponse.json({ error: { message: error instanceof Error ? error.message : "OPLOC authority is unavailable." } }, { status: Number((error as { status?: number }).status) || 503 }); }
 }
