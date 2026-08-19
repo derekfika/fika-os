@@ -7,18 +7,6 @@ $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $MyInvocation.MyCommand.Path
 $hub = Join-Path $root "apps\integration-hub"
 $firebase = Join-Path $hub "node_modules\.bin\firebase.cmd"
-$apps = @(
-  @{ Name = "Integration Hub"; Directory = "apps\integration-hub"; Port = 3200; Command = "npm.cmd run dev" },
-  @{ Name = "MNK Hospitality"; Directory = "apps\hospitality-booking"; Port = 3300; Command = "npm.cmd run dev" },
-  @{ Name = "CPU Production"; Directory = "apps\cpu-production"; Port = 3400; Command = "npm.cmd run dev" },
-  @{ Name = "Menu Planning"; Directory = "apps\menu-planning"; Port = 3500; Command = "npm.cmd run dev" },
-  @{ Name = "Beverage Innovation"; Directory = "apps\beverage-innovation"; Port = 3600; Command = "npm.cmd run dev" },
-  @{ Name = "Delivered-In"; Directory = "apps\delivered-in"; Port = 3800; Command = "npm.cmd run dev" },
-  # These commands run through cmd.exe, so use cmd syntax rather than PowerShell
-  # environment-variable syntax. The explicit PORT keeps Events deterministic
-  # when its Next.js defaults change.
-  @{ Name = "Events Dashboard"; Directory = "apps\events-dashboard"; Port = 3700; Command = 'set "PORT=3700" && npm.cmd run dev' }
-)
 
 function Test-Port([int]$port) {
   return [bool](Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue)
@@ -61,16 +49,12 @@ if (!$NoEmulator) {
 if (!$NoEmulator) {
   Write-Host "Waiting for Firebase Auth/Firestore emulators..."
   if (!(Wait-ForPorts @(8085, 9099))) {
-    Write-Warning "Firebase emulators were not ready after 60 seconds; apps will still be started."
+    Write-Warning "Firebase emulators were not ready after 60 seconds; launcher will still be started."
   } else {
     Write-Host "Firebase emulators are ready"
   }
 } else {
   Start-Sleep -Seconds 1
-}
-foreach ($app in $apps) {
-  if (Test-Port $app.Port) { Write-Host "$($app.Name) already appears to be running on $($app.Port)" }
-  else { Start-Tab $app.Name $app.Directory $app.Command }
 }
 
 if (!(Test-Port 3100)) {
@@ -83,11 +67,5 @@ if (!$NoBrowser) {
 
 Write-Host "`nFIKA OS local workspace started.`n"
 Write-Host "Launcher http://localhost:3100"
-Write-Host "Hub  http://localhost:3200"
-Write-Host "MNK  http://localhost:3300/mnk"
-Write-Host "CPU  http://localhost:3400"
-Write-Host "Menu http://localhost:3500"
-Write-Host "Drinks http://localhost:3600"
-Write-Host "Events http://localhost:3700"
-Write-Host "Emulator UI http://127.0.0.1:4005"
-Write-Host "Use Stop-FIKA-OS-All.ps1 to stop only these local processes."
+Write-Host "Firebase emulator UI http://127.0.0.1:4005"
+Write-Host "Apps are started from the launcher. Use Stop-FIKA-OS-All.ps1 to stop reserved local processes."

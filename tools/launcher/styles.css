@@ -32,7 +32,7 @@ button.refresh span { font-size: 13px; }
 .card h3 { margin: 0; font-size: 15px; line-height: 1.2; }
 .status { display: inline-flex; align-items: center; gap: 5px; color: var(--muted); font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; white-space: nowrap; }
 .status i { width: 7px; height: 7px; border-radius: 50%; background: #b6afba; }
-.status.online { color: #287354; }.status.online i { background: #40b87a; }.status.offline { color: #9b5960; }.status.offline i { background: #d47c85; }.status.checking i { background: #d0b24a; }.status.starting { color: #8b6b18; }.status.starting i { background: #d0b24a; animation: pulse 1s infinite; }
+.status.online { color: #287354; }.status.online i { background: #40b87a; }.status.offline { color: #9b5960; }.status.offline i { background: #d47c85; }.status.failed { color: #a14450; }.status.failed i { background: #d15d6a; }.status.checking i { background: #d0b24a; }.status.starting { color: #8b6b18; }.status.starting i { background: #d0b24a; animation: pulse 1s infinite; }
 .planned { padding: 3px 6px; border-radius: 4px; color: #775d19; background: #fff5ce; font-size: 9px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
 .card p { flex: 1; margin: 14px 0 13px; color: var(--muted); font-size: 12px; line-height: 1.45; }
 .url { margin-bottom: 12px; color: #a09aa7; font-family: ui-monospace, monospace; font-size: 10px; }
