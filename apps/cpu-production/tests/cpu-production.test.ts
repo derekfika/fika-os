@@ -6,6 +6,7 @@ import { aggregateProductionTotals, currentPublishedDays, groupEntriesByDestinat
 import { publishPublicationChanged, publicationEventStream, subscribeToPublicationChanges } from "../lib/publication-events";
 import { localFixtureOrders } from "../app/api/local-fixtures";
 import { buildGrabAndGoProduction, effectiveGrabAndGoOrders, type GrabAndGoProduct, type GrabAndGoSourceOrder } from "../lib/grab-and-go-read";
+import { fulfilmentFromGrabAndGoOrder, fulfilmentFromProductionOrder, fulfilmentFromPublishedMenuDay } from "../../shared/fulfilment-requirement";
 
 const page = readFileSync(new URL("../app/page.tsx", import.meta.url), "utf8");
 const route = readFileSync(
@@ -190,6 +191,51 @@ test("Grab & Go production honours submitted snapshots when catalogue changes or
   assert.deepEqual(production.totals.map(item => [item.productName, item.quantity]), [["Original Fruit Pot", 4]]);
   const withoutCatalogue = buildGrabAndGoProduction("2026-08-24", [submitted], [], { site: "Haleon" });
   assert.deepEqual(withoutCatalogue.destinations[0].items.map(item => [item.productName, item.quantity]), [["Original Fruit Pot", 4]]);
+});
+
+test("CPU, published-menu and Grab & Go sources normalise to one Fulfilment Requirement contract", () => {
+  const production = fulfilmentFromProductionOrder({ canonicalId: "production-order:v1:hospitality", version: 1, productionLocationId: "oploc:cpux", destinationOplocId: "oploc:haleon", destinationLabel: "Haleon", serviceDate: "2026-08-24", requiredBy: "2026-08-24T09:00:00", serviceWindow: { startTime: "12:00" }, status: "ready", lines: [{ canonicalId: "production-line:1", sourceMenuItemId: "menu:dish", itemName: "Mixed Leaf", customerQuantity: 10, customerUnit: "portion", productionQuantity: 10, productionUnit: "portion", sortOrder: 0 }] }, "cpu");
+  const published = fulfilmentFromPublishedMenuDay({ publicationDayId: "publication:day:v1", version: 2, contentHash: "hash-day", date: "2026-08-24", status: "published", entries: [{ sourceEntryId: "entry:salad", canonicalDishId: "dish:salad", dishName: "Mixed Leaf", slot: "SALAD 1", allocations: [{ destinationId: "oploc:haleon", destinationLabel: "Haleon", quantity: 7 }] }] }, "oploc:haleon");
+  const grab = fulfilmentFromGrabAndGoOrder({ orderId: "grab-and-go:oploc:haleon:2026-08-24", oplocId: "oploc:haleon", deliveryDate: "2026-08-24", version: 3, status: "submitted", lines: [{ productId: "grab:pot", productName: "Fruit Pot", quantity: 4, sortOrder: 0 }] }, "site");
+  for (const requirement of [production, published, grab]) {
+    assert.equal(requirement.entityType, "Fulfilment Requirement");
+    assert.equal(requirement.destinationOplocId, "oploc:haleon");
+    assert.equal(requirement.lines[0].quantity, requirement === production ? 10 : requirement === published ? 7 : 4);
+    assert.ok(requirement.sourceEntityId);
+    assert.ok(requirement.idempotencyKey);
+  }
+  assert.equal(production.sourceDomain, "cpu-production");
+  assert.equal(published.sourceContentHash, "hash-day");
+  assert.equal(grab.lines[0].canonicalItemId, "grab:pot");
+});
+
+test("Fulfilment Requirement identity is idempotent, versions amendments, and propagates withdrawal", () => {
+  const source = { orderId: "grab-and-go:oploc:one:2026-08-24", oplocId: "oploc:one", deliveryDate: "2026-08-24", version: 1, status: "submitted" as const, lines: [{ productId: "grab:pot", productName: "Fruit Pot", quantity: 4, sortOrder: 0 }] };
+  const first = fulfilmentFromGrabAndGoOrder(source, "site", "2026-08-20T10:00:00Z");
+  const same = fulfilmentFromGrabAndGoOrder(source, "site", "2026-08-20T10:01:00Z", first);
+  assert.deepEqual(same, first);
+  const amended = fulfilmentFromGrabAndGoOrder({ ...source, version: 2, lines: [{ ...source.lines[0], quantity: 6 }] }, "site", "2026-08-21T10:00:00Z", first);
+  assert.equal(amended.canonicalId, first.canonicalId);
+  assert.equal(amended.version, 2);
+  assert.equal(amended.status, "amended");
+  assert.equal(amended.lines[0].quantity, 6);
+  const withdrawn = fulfilmentFromGrabAndGoOrder({ ...source, version: 3, status: "cancelled" }, "site", "2026-08-22T10:00:00Z", amended);
+  const withdrawnFromHistory = fulfilmentFromGrabAndGoOrder({ ...source, version: 3, status: "cancelled" }, "site", "2026-08-22T10:00:00Z", amended);
+  assert.equal(withdrawn.status, "withdrawn");
+  assert.equal(withdrawn.version, 3);
+  assert.deepEqual(withdrawnFromHistory, withdrawn);
+});
+
+test("Fulfilment Requirements keep canonical destinations distinct from matching labels", () => {
+  const day = { publicationDayId: "publication:day:v1", version: 1, contentHash: "hash", date: "2026-08-24", status: "published" as const, entries: [{ sourceEntryId: "entry:one", canonicalDishId: "dish:one", dishName: "Dish One", slot: "SALAD 1", allocations: [{ destinationId: "oploc:one", destinationLabel: "Shared label", quantity: 2 }, { destinationId: "oploc:two", destinationLabel: "Shared label", quantity: 3 }] }] };
+  const one = fulfilmentFromPublishedMenuDay(day, "oploc:one");
+  const two = fulfilmentFromPublishedMenuDay(day, "oploc:two");
+  assert.notEqual(one.canonicalId, two.canonicalId);
+  assert.equal(one.destinationOplocId, "oploc:one");
+  assert.equal(two.destinationOplocId, "oploc:two");
+  assert.equal(one.lines[0].canonicalItemId, "dish:one");
+  assert.equal(one.lines[0].quantity, 2);
+  assert.equal(two.lines[0].quantity, 3);
 });
 
 test("CPU Grab & Go source is an API boundary, not a Delivered-In filesystem read", () => {
