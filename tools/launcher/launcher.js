@@ -16,7 +16,7 @@ async function startApp(app) {
     const result = await response.json();
     if (!response.ok) throw new Error(result.message || `Could not start ${app.name}`);
     summary.textContent = result.status === "online" ? `${app.name} is already running` : `Starting ${app.name}…`;
-    await watchStatuses();
+    await watchStatus(app.id);
   } catch (error) {
     statuses.set(app.id, "failed");
     summary.textContent = error.message;
@@ -25,7 +25,7 @@ async function startApp(app) {
 }
 
 async function startGroup(group) {
-  if ([...statuses.values()].some((status) => status === "checking")) await refreshStatus();
+  if ([...statuses.values()].some((status) => status === "checking")) await refreshStatus({ reset: false });
   const targets = apps.filter((app) => !app.planned && group(app));
   const offlineTargets = targets.filter((app) => ["offline", "failed"].includes(statuses.get(app.id)));
   if (!offlineTargets.length) {
@@ -35,10 +35,10 @@ async function startGroup(group) {
   await Promise.all(offlineTargets.map((app) => startApp(app)));
 }
 
-async function watchStatuses() {
+async function watchStatus(appId) {
   for (let attempt = 0; attempt < 35; attempt += 1) {
-    await refreshStatus();
-    if (![...statuses.values()].some((status) => status === "starting")) return;
+    await refreshStatus({ reset: false });
+    if (statuses.get(appId) !== "starting") return;
     await new Promise((resolve) => window.setTimeout(resolve, 1000));
   }
 }
@@ -54,15 +54,20 @@ function render() {
 
 function card(app) {
   const status = statuses.get(app.id) || "checking";
+  const statusBadge = ["checking", "starting"].includes(status)
+    ? '<span class="status pending" aria-hidden="true"></span>'
+    : `<span class="status ${status}"><i></i>${status}</span>`;
   const action = ["offline", "failed"].includes(status) && !app.planned
     ? `<button class="open start" data-start="${app.id}">${status === "failed" ? "Retry" : "Start app"} <span>▶</span></button>`
     : `<button class="open" data-open="${app.id}" ${status === "starting" || status === "checking" || app.planned ? "disabled" : ""}>${status === "starting" ? "Starting…" : status === "checking" ? "Checking…" : app.planned ? "Coming soon" : "Open app"} <span>${app.planned ? "·" : "↗"}</span></button>`;
-  return `<article class="card"><div class="card-top"><div class="app-title"><span class="app-glyph">${app.name.slice(0, 1)}</span><h3>${app.name}</h3></div><span class="status ${status}"><i></i>${status}</span></div>${app.planned ? '<span class="planned">Coming soon</span>' : ""}<p>${app.description}</p><div class="url">${app.url.replace("http://", "")}</div>${action}</article>`;
+  return `<article class="card"><div class="card-top"><div class="app-title"><span class="app-glyph">${app.name.slice(0, 1)}</span><h3>${app.name}</h3></div>${statusBadge}</div>${app.planned ? '<span class="planned">Coming soon</span>' : ""}<p>${app.description}</p><div class="url">${app.url.replace("http://", "")}</div>${action}</article>`;
 }
 
-async function refreshStatus() {
-  statuses = new Map(apps.map((app) => [app.id, "checking"]));
-  render();
+async function refreshStatus({ reset = true } = {}) {
+  if (reset) {
+    statuses = new Map(apps.map((app) => [app.id, "checking"]));
+    render();
+  }
   try {
     const response = await fetch("/status", { cache: "no-store" });
     const data = await response.json();

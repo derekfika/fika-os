@@ -31,6 +31,7 @@ button.refresh span { font-size: 13px; }
 .card-top { display: flex; justify-content: space-between; gap: 8px; align-items: flex-start; }.app-title { display: flex; align-items: center; gap: 8px; }.app-glyph { display: grid; place-items: center; width: 24px; height: 24px; flex: 0 0 24px; border-radius: 7px 7px 7px 2px; color: var(--purple); background: #eee4f6; font-size: 12px; font-weight: 700; }
 .card h3 { margin: 0; font-size: 15px; line-height: 1.2; }
 .status { display: inline-flex; align-items: center; gap: 5px; color: var(--muted); font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; white-space: nowrap; }
+.status.pending { visibility: hidden; width: 7px; height: 7px; }
 .status i { width: 7px; height: 7px; border-radius: 50%; background: #b6afba; }
 .status.online { color: #287354; }.status.online i { background: #40b87a; }.status.offline { color: #9b5960; }.status.offline i { background: #d47c85; }.status.failed { color: #a14450; }.status.failed i { background: #d15d6a; }.status.checking i { background: #d0b24a; }.status.starting { color: #8b6b18; }.status.starting i { background: #d0b24a; animation: pulse 1s infinite; }
 .planned { padding: 3px 6px; border-radius: 4px; color: #775d19; background: #fff5ce; font-size: 9px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
