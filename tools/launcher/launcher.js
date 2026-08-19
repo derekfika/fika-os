@@ -72,6 +72,7 @@ async function refreshStatus() {
     summary.textContent = failed ? `${online} online · ${failed} failed` : `${online} of ${apps.length} apps online`;
     refreshed.textContent = `Last refreshed ${new Date(data.refreshedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`;
   } catch {
+    statuses = new Map(apps.map((app) => [app.id, statuses.get(app.id) === "starting" ? "starting" : "failed"]));
     summary.textContent = "Status service unavailable";
   }
   render();
