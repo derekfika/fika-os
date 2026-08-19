@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>FIKA OS · Local Development Hub</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <header class="hero">
+        <div class="brand-mark" aria-hidden="true">F</div>
+        <div>
+          <p class="eyebrow">FIKA OS <span>·</span> LOCAL DEVELOPMENT HUB</p>
+          <h1>Everything in one place.</h1>
+          <p class="intro">A calm home screen for the local FIKA OS platform.</p>
+        </div>
+        <span class="environment"><i></i> LOCAL · FIREBASE EMULATOR</span>
+      </header>
+
+      <section class="actions" aria-label="Launcher actions">
+        <button class="primary" data-action="core">Open Core Apps <span>↗</span></button>
+        <button data-action="all">Open All Apps <span>↗</span></button>
+        <button class="refresh" data-action="refresh">↻ <span>Refresh Status</span></button>
+      </section>
+
+      <div id="app-sections" aria-live="polite"></div>
+
+      <footer><span id="summary">Checking local apps…</span><span id="refreshed"></span></footer>
+    </main>
+    <script src="/launcher.js" type="module"></script>
+  </body>
+</html>

@@ -1,0 +1,63 @@
+[
+  {
+    "id": "integration-hub",
+    "name": "Integration Hub",
+    "section": "Core Platform",
+    "description": "The shared operational data and integration surface.",
+    "url": "http://localhost:3200",
+    "core": true
+  },
+  {
+    "id": "cpu-production",
+    "name": "CPU Production",
+    "section": "Operations",
+    "description": "Production planning, intake, and fulfilment visibility.",
+    "url": "http://localhost:3400",
+    "core": true
+  },
+  {
+    "id": "menu-planning",
+    "name": "Menu Planning",
+    "section": "Operations",
+    "description": "Plan menus, recipes, allergens, and operational handoffs.",
+    "url": "http://localhost:3500",
+    "core": true
+  },
+  {
+    "id": "delivered-in",
+    "name": "Delivered-In",
+    "section": "Operations",
+    "description": "Track delivered-in goods and receiving workflows.",
+    "url": "http://localhost:3800",
+    "core": true
+  },
+  {
+    "id": "logistics",
+    "name": "Logistics",
+    "section": "Operations",
+    "description": "Planned logistics coordination and movement visibility.",
+    "url": "http://localhost:3900",
+    "planned": true
+  },
+  {
+    "id": "hospitality-booking",
+    "name": "Hospitality Booking",
+    "section": "Commercial / Service",
+    "description": "Hospitality bookings, menus, and service coordination.",
+    "url": "http://localhost:3300"
+  },
+  {
+    "id": "events-dashboard",
+    "name": "Events Dashboard",
+    "section": "Commercial / Service",
+    "description": "A live view of events, requirements, and delivery status.",
+    "url": "http://localhost:3700"
+  },
+  {
+    "id": "beverage-innovation",
+    "name": "Beverage Innovation",
+    "section": "Commercial / Service",
+    "description": "Explore beverage development and innovation workstreams.",
+    "url": "http://localhost:3600"
+  }
+]

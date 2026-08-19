@@ -7,13 +7,13 @@ $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $MyInvocation.MyCommand.Path
 $hub = Join-Path $root "apps\integration-hub"
 $firebase = Join-Path $hub "node_modules\.bin\firebase.cmd"
-
 $apps = @(
   @{ Name = "Integration Hub"; Directory = "apps\integration-hub"; Port = 3200; Command = "npm.cmd run dev" },
   @{ Name = "MNK Hospitality"; Directory = "apps\hospitality-booking"; Port = 3300; Command = "npm.cmd run dev" },
   @{ Name = "CPU Production"; Directory = "apps\cpu-production"; Port = 3400; Command = "npm.cmd run dev" },
   @{ Name = "Menu Planning"; Directory = "apps\menu-planning"; Port = 3500; Command = "npm.cmd run dev" },
   @{ Name = "Beverage Innovation"; Directory = "apps\beverage-innovation"; Port = 3600; Command = "npm.cmd run dev" },
+  @{ Name = "Delivered-In"; Directory = "apps\delivered-in"; Port = 3800; Command = "npm.cmd run dev" },
   # These commands run through cmd.exe, so use cmd syntax rather than PowerShell
   # environment-variable syntax. The explicit PORT keeps Events deterministic
   # when its Next.js defaults change.
@@ -73,13 +73,16 @@ foreach ($app in $apps) {
   else { Start-Tab $app.Name $app.Directory $app.Command }
 }
 
+if (!(Test-Port 3100)) {
+  Start-Tab "FIKA OS Launcher" "tools\launcher" "npm.cmd run start"
+} else { Write-Host "FIKA OS Launcher already appears to be running on 3100" }
+
 if (!$NoBrowser) {
-  Start-Process "http://localhost:3200"
-  Start-Process "http://localhost:3300/mnk"
-  Start-Process "http://localhost:3400"
+  if (Wait-ForPorts @(3100) 10) { Start-Process "http://localhost:3100" }
 }
 
 Write-Host "`nFIKA OS local workspace started.`n"
+Write-Host "Launcher http://localhost:3100"
 Write-Host "Hub  http://localhost:3200"
 Write-Host "MNK  http://localhost:3300/mnk"
 Write-Host "CPU  http://localhost:3400"

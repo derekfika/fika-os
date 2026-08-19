@@ -1,4 +1,4 @@
-$ports = @(3200, 3300, 3400, 3500, 3600, 3700, 8085, 9099)
+$ports = @(3100, 3200, 3300, 3400, 3500, 3600, 3700, 3800, 8085, 9099)
 $processIds = Get-NetTCPConnection -State Listen -ErrorAction SilentlyContinue |
   Where-Object { $ports -contains $_.LocalPort } |
   Select-Object -ExpandProperty OwningProcess -Unique
@@ -9,4 +9,3 @@ foreach ($processId in $processIds) {
   }
 }
 Write-Host "FIKA OS local workspace stopped."
-

@@ -1,0 +1,40 @@
+@font-face { font-family: Ubuntu; src: url("/../../assets/fonts/Ubuntu-R.ttf"); }
+@font-face { font-family: Ubuntu; src: url("/../../assets/fonts/Ubuntu-B.ttf"); font-weight: 700; }
+:root { color-scheme: light; --ink: #272333; --muted: #736c7e; --purple: #5f2d91; --mint: #c8f3df; --line: #e8e1ed; --surface: #fff; }
+* { box-sizing: border-box; }
+body { margin: 0; min-height: 100vh; color: var(--ink); background: radial-gradient(circle at 85% 0%, #f0e8f8 0, transparent 32rem), #faf9fb; font-family: Ubuntu, system-ui, sans-serif; }
+.shell { max-width: 1120px; margin: 0 auto; padding: 48px 28px 28px; }
+.hero { display: flex; align-items: flex-start; gap: 18px; position: relative; padding: 8px 0 34px; }
+.brand-mark { display: grid; place-items: center; width: 48px; height: 48px; flex: 0 0 48px; border-radius: 15px 15px 15px 4px; color: #fff; background: var(--purple); font-size: 28px; font-weight: 700; box-shadow: 0 8px 20px #5f2d9130; }
+.eyebrow { margin: 2px 0 10px; color: var(--purple); font-size: 12px; font-weight: 700; letter-spacing: .13em; }
+.eyebrow span { color: #a5a0ad; padding: 0 5px; }
+h1 { margin: 0; font-size: clamp(30px, 4vw, 46px); line-height: 1.05; letter-spacing: -.04em; }
+.intro { margin: 10px 0 0; color: var(--muted); font-size: 16px; }
+.environment { margin-left: auto; padding: 9px 12px; border: 1px solid #b9e8d2; border-radius: 999px; color: #287354; background: #effbf5; font-size: 11px; font-weight: 700; letter-spacing: .08em; white-space: nowrap; }
+.environment i { display: inline-block; width: 7px; height: 7px; margin-right: 7px; border-radius: 50%; background: #40b87a; }
+.actions { display: flex; gap: 10px; align-items: center; padding: 18px 0 36px; border-top: 1px solid var(--line); }
+button { border: 1px solid #dcd3e5; border-radius: 9px; padding: 11px 15px; color: var(--purple); background: #fff; font: inherit; font-size: 13px; font-weight: 700; cursor: pointer; transition: transform .15s, box-shadow .15s, background .15s; }
+button:hover { transform: translateY(-1px); box-shadow: 0 5px 15px #3c235d15; }
+button.primary { border-color: var(--purple); color: #fff; background: var(--purple); }
+button span { margin-left: 8px; font-size: 16px; }
+button.refresh { margin-left: auto; border-color: transparent; background: transparent; font-weight: 400; }
+button.refresh span { font-size: 13px; }
+.section { margin-bottom: 32px; }
+.section-heading { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 12px; }
+.section h2 { margin: 0; font-size: 15px; letter-spacing: .01em; }
+.section-count { color: #a19aa9; font-size: 12px; }
+.cards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+.card { display: flex; min-height: 170px; flex-direction: column; padding: 17px; border: 1px solid var(--line); border-radius: 13px; background: rgba(255,255,255,.82); box-shadow: 0 3px 10px #33214408; }
+.card:hover { border-color: #cdb9dd; box-shadow: 0 8px 22px #33214412; }
+.card-top { display: flex; justify-content: space-between; gap: 8px; align-items: flex-start; }
+.card h3 { margin: 0; font-size: 15px; line-height: 1.2; }
+.status { display: inline-flex; align-items: center; gap: 5px; color: var(--muted); font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; white-space: nowrap; }
+.status i { width: 7px; height: 7px; border-radius: 50%; background: #b6afba; }
+.status.online { color: #287354; }.status.online i { background: #40b87a; }.status.offline { color: #9b5960; }.status.offline i { background: #d47c85; }.status.checking i { background: #d0b24a; }
+.planned { padding: 3px 6px; border-radius: 4px; color: #775d19; background: #fff5ce; font-size: 9px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
+.card p { flex: 1; margin: 14px 0 13px; color: var(--muted); font-size: 12px; line-height: 1.45; }
+.url { margin-bottom: 12px; color: #a09aa7; font-family: ui-monospace, monospace; font-size: 10px; }
+.open { width: 100%; padding: 8px 10px; border-color: #e2d8e9; font-size: 12px; text-align: left; }.open span { float: right; }
+footer { display: flex; justify-content: space-between; padding-top: 4px; color: #9e98a5; font-size: 11px; }
+@media (max-width: 900px) { .cards { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 620px) { .shell { padding: 28px 18px; }.hero { flex-wrap: wrap; }.environment { margin-left: 66px; }.actions { flex-wrap: wrap; }.refresh { margin-left: 0 !important; }.cards { grid-template-columns: 1fr; } }
