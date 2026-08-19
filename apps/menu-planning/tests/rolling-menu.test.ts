@@ -1,12 +1,12 @@
 import assert from "node:assert/strict";
-import { existsSync } from "node:fs";
+import { copyFileSync, existsSync, unlinkSync, writeFileSync } from "node:fs";
 import { readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { test } from "node:test";
 import * as XLSX from "xlsx";
 import { addMenuSlot, applyEntryPatch, assertWeekDateAvailable, createEntry, duplicateWeek, emptyWeek, getWeek, importWorkbook, publishWeek, removeMenuSlot, saveSnapshot, updateEntry, validateWeek, ROLLING_SLOTS } from "../lib/rolling-menu";
 import { createCanonicalMenuItem, listCanonicalMenuItems } from "../lib/canonical-menu-repository";
-import { createPublishedMenuDay, currentPublishedDays, getMenuPublication, listMenuPublicationEvents, publicationPreview, publicationState, publishedDayMatrixHtml, replayMenuPublicationOutbox, withdrawPublishedMenuDay, type MenuPublicationSignoff } from "../lib/menu-publication";
+import { createPublishedMenuDay, currentPublishedDays, getMenuPublication, listMenuPublicationEvents, listMenuPublications, publicationPreview, publicationState, publishedDayMatrixHtml, replayMenuPublicationOutbox, withdrawPublishedMenuDay, type MenuPublicationSignoff } from "../lib/menu-publication";
 import { resolveAllergenSnapshot } from "../lib/allergen-resolution";
 import type { RollingEntry } from "../lib/rolling-menu-types";
 
@@ -27,6 +27,21 @@ test("rolling menu importer preserves slots, destination quantities and source e
   assert.deepEqual(result.snapshot.entries[0].allergens, {});
   assert.equal(result.snapshot.entries[0].source?.workbook, "WC 17_08_2026.xlsx");
   assert.equal(result.snapshot.entries[0].slot, "SALAD 1");
+});
+
+test("Menu Planning persistence failure is not presented as an empty publication list", () => {
+  const databaseFile = join(process.cwd(), "local-data", "menu-planning", "operational.sqlite");
+  const backupFile = `${databaseFile}.failure-backup`;
+  const hadDatabase = existsSync(databaseFile);
+  if (hadDatabase) copyFileSync(databaseFile, backupFile);
+  try {
+    if (existsSync(databaseFile)) unlinkSync(databaseFile);
+    writeFileSync(databaseFile, "corrupt persistence");
+    assert.throws(() => listMenuPublications(), (error: any) => error.status === 503 && /unavailable/i.test(error.message));
+  } finally {
+    if (existsSync(databaseFile)) unlinkSync(databaseFile);
+    if (hadDatabase) { copyFileSync(backupFile, databaseFile); unlinkSync(backupFile); }
+  }
 });
 
 test("blank rolling week has seven days and the governed slot catalogue", () => {
@@ -93,7 +108,7 @@ test("menu days publish independently and revisions supersede only that day", as
   const publicationFile = join(process.cwd(), "local-data", "menu-planning", "menu-publications.json");
   const rollingBefore = existsSync(rollingFile) ? await readFile(rollingFile) : undefined;
   const publicationBefore = existsSync(publicationFile) ? await readFile(publicationFile) : undefined;
-  const week = emptyWeek(`2096-03-${String((Date.now() % 20) + 1).padStart(2, "0")}`);
+  const week = emptyWeek(`2096-03-${String(Math.floor(Math.random() * 20) + 1).padStart(2, "0")}`);
   try {
     saveSnapshot(week);
     const add = (dayIndex: number, label: string) => { const result = createEntry(week.week.id, week.days[dayIndex].id, "SALAD 1", label, "test", `dish:${label}`); return result.entries.find(entry => entry.dayId === week.days[dayIndex].id)!; };
@@ -101,6 +116,7 @@ test("menu days publish independently and revisions supersede only that day", as
     for (const entry of [monday, tuesday, thursday]) updateEntryForTest(week.week.id, entry.id);
     const sign = (dayId: string): MenuPublicationSignoff => { const day = publicationPreview(getWeek(week.week.id), dayId)[0]; const signature = { printedName: "Signed Chef", signatureDataUrl: "data:image/png;base64,c2ln", signedAt: "2026-08-19T12:00:00.000Z", actor: "test", attestation: "Reviewed" }; return { date: day.date, productionChef: signature, headChefSiteManager: { ...signature, printedName: "Head Chef" }, dayContentHash: day.contentHash }; };
     const mondayPublication = createPublishedMenuDay(week.week.id, week.days[0].id, sign(week.days[0].id), "test");
+    assert.equal(getWeek(week.week.id).week.dayStatuses?.[week.days[0].id], "published");
     const publicationEvents = listMenuPublicationEvents();
     assert.ok(publicationEvents.some(event => event.eventType === "menu.day.published" && event.sourceVersion === 1));
     assert.ok(publicationEvents.some(event => event.eventType === "fulfilment.requirement.created"));
@@ -179,7 +195,7 @@ test("withdrawal removes a day from the current projection and republishing crea
   const week = emptyWeek(`2096-05-${String((Date.now() % 20) + 1).padStart(2, "0")}`);
   try {
     saveSnapshot(week); const created = createEntry(week.week.id, week.days[1].id, "SOUP", "Withdrawable Dish", "test", "dish:withdrawable"); const entry = created.entries.find(value => value.dayId === week.days[1].id)!; updateEntryForTest(week.week.id, entry.id); const preview = publicationPreview(getWeek(week.week.id), week.days[1].id)[0]; const signature = { printedName: "Production Chef", signatureDataUrl: "data:image/png;base64,c2ln", signedAt: "2026-08-19T12:00:00.000Z", actor: "test", attestation: "Reviewed" }; const signoff = { date: preview.date, productionChef: signature, headChefSiteManager: { ...signature, printedName: "Head Chef" }, dayContentHash: preview.contentHash };
-    const first = createPublishedMenuDay(week.week.id, week.days[1].id, signoff, "test"); const dayId = first.days.find(day => day.sourceDayId === week.days[1].id)!.publicationDayId; const withdrawn = withdrawPublishedMenuDay(first.publicationId, dayId, "Correction required", "test"); const withdrawnDay = withdrawn.days.find(day => day.publicationDayId === dayId)!; assert.equal(withdrawnDay.status, "withdrawn"); assert.equal(currentPublishedDays(withdrawn).length, 0); assert.equal(withdrawnDay.withdrawal?.reason, "Correction required");
+    const first = createPublishedMenuDay(week.week.id, week.days[1].id, signoff, "test"); const dayId = first.days.find(day => day.sourceDayId === week.days[1].id)!.publicationDayId; const withdrawn = withdrawPublishedMenuDay(first.publicationId, dayId, "Correction required", "test"); const withdrawnDay = withdrawn.days.find(day => day.publicationDayId === dayId)!; assert.equal(withdrawnDay.status, "withdrawn"); assert.equal(currentPublishedDays(withdrawn).length, 0); assert.equal(withdrawnDay.withdrawal?.reason, "Correction required"); assert.ok(listMenuPublicationEvents().some(event => event.eventType === "menu.day.withdrawn" && event.sourceVersion === 1));
     const republishedPreview = publicationPreview(getWeek(week.week.id), week.days[1].id)[0]; const republished = createPublishedMenuDay(week.week.id, week.days[1].id, { ...signoff, dayContentHash: republishedPreview.contentHash }, "test"); assert.equal(republished.days.filter(day => day.sourceDayId === week.days[1].id).at(-1)?.version, 2);
   } finally { if (rollingBefore) await writeFile(rollingFile, rollingBefore); else await rm(rollingFile, { force: true }); if (publicationBefore) await writeFile(publicationFile, publicationBefore); else await rm(publicationFile, { force: true }); }
 });

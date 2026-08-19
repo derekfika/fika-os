@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { existsSync, unlinkSync, copyFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { test } from "node:test";
 import { resolveDeliveredInAccess } from "../../integration-hub/lib/delivered-in-access";
 import { assertAuthorisedOploc, assertPublishedAllocationIntegrity, projectPublishedWeeks, siteDayTotal, type SourcePublication } from "../lib/projection";
@@ -6,6 +8,7 @@ import { groupSiteMenuEntries, siteMenuSectionForSlot, siteMenuState, type SiteM
 import { buildDeliveredInMenuRequests, weekFolderName } from "../lib/google-site-menu";
 import { titleCase } from "../../menu-planning/lib/text";
 import { applyOrderAction, deliveryCutoff, isBeforeOrderCutoff, orderIdFor, productsForDeliveryDate, rotationWeekForDate, type GrabAndGoProduct } from "../lib/grab-and-go";
+import { getGrabAndGoOrder, listGrabAndGoOrders, saveGrabAndGoOrder } from "../lib/grab-and-go-store";
 
 const haleon = "oploc:46701265-15af-48f4-a230-1d27ca21bc59";
 const xchange = "oploc:b835d8ee-b187-49d1-9072-7348b04bfd2d";
@@ -151,4 +154,41 @@ test("Grab & Go cutoff is explicitly Europe/London across GMT and BST", () => {
   assert.equal(deliveryCutoff("2026-07-06").toISOString(), "2026-07-05T11:00:00.000Z");
   assert.equal(isBeforeOrderCutoff("2026-07-06", new Date("2026-07-05T10:59:59.000Z")), true);
   assert.equal(isBeforeOrderCutoff("2026-07-06", new Date("2026-07-05T11:00:00.000Z")), false);
+});
+
+test("Grab & Go persistence rejects the second amendment from the same expected version", () => {
+  const databaseFile = join(process.cwd(), "local-data", "delivered-in", "grab-and-go.sqlite");
+  const backupFile = `${databaseFile}.test-backup`;
+  const hadDatabase = existsSync(databaseFile);
+  if (hadDatabase) copyFileSync(databaseFile, backupFile);
+  try {
+    if (existsSync(databaseFile)) unlinkSync(databaseFile);
+    const deliveryDate = "2099-08-24";
+    const product: GrabAndGoProduct = { productId: "product:transaction-test", name: "Transaction Test", category: "grab_250ml", rotationWeeks: [rotationWeekForDate(deliveryDate)], allowedDeliveryWeekdays: ["Monday"], active: true, sortOrder: 1, price: 1 };
+    const initial = applyOrderAction(undefined, { action: "submit", oplocId: "oploc:transaction-test", deliveryDate, rotationWeek: 1, lines: [{ productId: product.productId, quantity: 1 }], actor: "test", at: "2099-08-20T09:00:00Z" }, [product]);
+    saveGrabAndGoOrder(initial);
+    const first = applyOrderAction(initial, { action: "amend", oplocId: initial.oplocId, deliveryDate, rotationWeek: 1, lines: [{ productId: product.productId, quantity: 2 }], expectedVersion: 1, actor: "first", at: "2099-08-20T10:00:00Z" }, [product]);
+    const stale = applyOrderAction(initial, { action: "amend", oplocId: initial.oplocId, deliveryDate, rotationWeek: 1, lines: [{ productId: product.productId, quantity: 3 }], expectedVersion: 1, actor: "stale", at: "2099-08-20T10:01:00Z" }, [product]);
+    saveGrabAndGoOrder(first, 1);
+    assert.throws(() => saveGrabAndGoOrder(stale, 1), (error: any) => error.status === 409);
+    assert.equal(getGrabAndGoOrder(initial.oplocId, deliveryDate)?.lines[0].quantity, 2);
+  } finally {
+    if (existsSync(databaseFile)) unlinkSync(databaseFile);
+    if (hadDatabase) { copyFileSync(backupFile, databaseFile); unlinkSync(backupFile); }
+  }
+});
+
+test("Grab & Go persistence failure is not presented as an empty order list", () => {
+  const databaseFile = join(process.cwd(), "local-data", "delivered-in", "grab-and-go.sqlite");
+  const backupFile = `${databaseFile}.failure-backup`;
+  const hadDatabase = existsSync(databaseFile);
+  if (hadDatabase) copyFileSync(databaseFile, backupFile);
+  try {
+    if (existsSync(databaseFile)) unlinkSync(databaseFile);
+    writeFileSync(databaseFile, "corrupt persistence");
+    assert.throws(() => listGrabAndGoOrders(), (error: any) => error.status === 503 && /unavailable/i.test(error.message));
+  } finally {
+    if (existsSync(databaseFile)) unlinkSync(databaseFile);
+    if (hadDatabase) { copyFileSync(backupFile, databaseFile); unlinkSync(backupFile); }
+  }
 });
