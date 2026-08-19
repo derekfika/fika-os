@@ -37,6 +37,25 @@ test("blank rolling week has seven days and the governed slot catalogue", () => 
   assert.equal(validateWeek(week).length, 1);
 });
 
+test("publication readiness enforces governed destinations and allocation invariants", () => {
+  const base = emptyWeek("2095-01-06");
+  const entry = (overrides: Partial<RollingEntry> = {}): RollingEntry => ({ id: "entry:integrity", dayId: base.days[0].id, date: base.days[0].date, slot: "SALAD 1", itemId: "dish:integrity", itemLabel: "Integrity Dish", portions: 10, allocations: [{ destinationId: "oploc:46701265-15af-48f4-a230-1d27ca21bc59", destinationLabel: "Haleon", quantity: 10 }], allergens: { no_key_allergens: "contains" }, audit: [], ...overrides });
+  const check = (overrides: Partial<RollingEntry>) => validateWeek({ ...base, entries: [entry(overrides)] });
+  assert.ok(check({ allocations: [{ destinationLabel: "Unknown venue", quantity: 10 }] }).some(error => error.includes("unresolved destination")));
+  assert.ok(check({ portions: 11 }).some(error => error.includes("must equal portions")));
+  assert.ok(check({ allocations: [{ destinationId: "oploc:46701265-15af-48f4-a230-1d27ca21bc59", destinationLabel: "Haleon", quantity: 5 }, { destinationId: "oploc:46701265-15af-48f4-a230-1d27ca21bc59", destinationLabel: "Haleon", quantity: 5 }] }).some(error => error.includes("duplicate destination")));
+  assert.ok(check({ allocations: [{ destinationId: "oploc:46701265-15af-48f4-a230-1d27ca21bc59", destinationLabel: "Haleon", quantity: 0 }] }).some(error => error.includes("positive quantity")));
+  assert.deepEqual(check({}), []);
+});
+
+test("historical unresolved destination data remains readable but cannot publish unchanged", () => {
+  const week = emptyWeek("2095-02-03");
+  const entry: RollingEntry = { id: "entry:historical", dayId: week.days[0].id, date: week.days[0].date, slot: "SOUP", itemId: "dish:historical", itemLabel: "Historical Dish", portions: 10, allocations: [{ destinationLabel: "Legacy venue", quantity: 10 }], allergens: { no_key_allergens: "contains" }, audit: [] };
+  const snapshot = { ...week, entries: [entry] };
+  assert.equal(snapshot.entries[0].allocations[0].destinationId, undefined);
+  assert.ok(validateWeek(snapshot).some(error => error.includes("unresolved destination")));
+});
+
 test("week lifecycle prevents collisions, publishes once, and duplicates published weeks as drafts", async () => {
   const rollingFile = join(process.cwd(), "local-data", "menu-planning", "rolling-menu-weeks.json");
   const before = existsSync(rollingFile) ? await readFile(rollingFile) : undefined;

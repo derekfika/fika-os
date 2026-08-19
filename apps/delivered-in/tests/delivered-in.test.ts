@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { resolveDeliveredInAccess } from "../../integration-hub/lib/delivered-in-access";
-import { assertAuthorisedOploc, projectPublishedWeeks, siteDayTotal, type SourcePublication } from "../lib/projection";
+import { assertAuthorisedOploc, assertPublishedAllocationIntegrity, projectPublishedWeeks, siteDayTotal, type SourcePublication } from "../lib/projection";
 import { groupSiteMenuEntries, siteMenuSectionForSlot, siteMenuState, type SiteMenuArtifact } from "../lib/site-menu";
 import { buildDeliveredInMenuRequests, weekFolderName } from "../lib/google-site-menu";
 import { titleCase } from "../../menu-planning/lib/text";
@@ -26,6 +26,12 @@ test("Delivered-In projection filters by canonical destination ID and quantity",
   assert.equal(siteDayTotal(weeks[0].days[0]), 10);
   assertAuthorisedOploc({ email: "viewer@local.fika", oplocIds: [haleon], permissions: ["delivered_in.view"] }, haleon);
   assert.throws(() => assertAuthorisedOploc({ email: "viewer@local.fika", oplocIds: [haleon], permissions: [] }, xchange), (error: any) => error.status === 403);
+});
+
+test("Delivered-In preserves the exact governed published allocation and rejects corrupt identity", () => {
+  const published = projectPublishedWeeks([source([day()])], haleon)[0].days[0];
+  assert.equal(published.entries[0].quantity, 10);
+  assert.throws(() => assertPublishedAllocationIntegrity("publication:week", day(), { ...day().entries[0], allocations: [{ destinationLabel: "Unknown venue", quantity: 10 }] }), (error: any) => error.status === 502 && error.message.includes("integrity error"));
 });
 
 test("superseded and withdrawn days are excluded while latest current version is used", () => {
