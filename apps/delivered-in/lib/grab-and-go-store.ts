@@ -1,5 +1,5 @@
 import { DatabaseSync } from "node:sqlite";
-import { existsSync, mkdirSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, renameSync } from "node:fs";
 import { dirname, join } from "node:path";
 import type { GrabAndGoOrder, GrabAndGoProduct } from "./grab-and-go";
 import { createDomainEvent, replayDueEvents, type DurableDomainEvent } from "../../shared/domain-events";
@@ -17,12 +17,26 @@ function seed(): Stored {
 }
 function open() {
   let database: DatabaseSync | undefined;
+  const initialise = (candidate: DatabaseSync, initial?: Stored) => {
+    candidate.exec("PRAGMA journal_mode = WAL; PRAGMA busy_timeout = 5000; CREATE TABLE IF NOT EXISTS grab_and_go_state (state_id INTEGER PRIMARY KEY CHECK (state_id = 1), state_json TEXT NOT NULL, updated_at TEXT NOT NULL);");
+    const row = candidate.prepare("SELECT state_json FROM grab_and_go_state WHERE state_id = 1").get() as { state_json?: string } | undefined;
+    if (!row) candidate.prepare("INSERT INTO grab_and_go_state (state_id, state_json, updated_at) VALUES (1, ?, ?)").run(JSON.stringify(initial || seed()), new Date().toISOString());
+    return candidate;
+  };
+  const recoverCorruptDatabase = (cause: unknown) => {
+    const restored = seed();
+    const backup = `${databaseFile}.corrupt-${new Date().toISOString().replace(/[:.]/g, "-")}.bak`;
+    try { database?.close(); } catch { /* preserve the original corruption for the backup move */ }
+    renameSync(databaseFile, backup);
+    database = new DatabaseSync(databaseFile);
+    return initialise(database, restored);
+  };
   try {
     mkdirSync(dirname(databaseFile), { recursive: true }); database = new DatabaseSync(databaseFile);
-    database.exec("PRAGMA journal_mode = WAL; PRAGMA busy_timeout = 5000; CREATE TABLE IF NOT EXISTS grab_and_go_state (state_id INTEGER PRIMARY KEY CHECK (state_id = 1), state_json TEXT NOT NULL, updated_at TEXT NOT NULL);");
-    const row = database.prepare("SELECT state_json FROM grab_and_go_state WHERE state_id = 1").get() as { state_json?: string } | undefined;
-    if (!row) database.prepare("INSERT INTO grab_and_go_state (state_id, state_json, updated_at) VALUES (1, ?, ?)").run(JSON.stringify(seed()), new Date().toISOString());
-    return database;
+    try { return initialise(database); } catch (cause) {
+      if (!existsSync(file)) throw cause;
+      return recoverCorruptDatabase(cause);
+    }
   } catch (cause) { try { database?.close(); } catch { /* preserve original persistence error */ } if (cause && typeof cause === "object" && "status" in cause) throw cause; throw unavailable("Grab & Go operational persistence is unavailable.", cause); }
 }
 function parse(database: DatabaseSync): Stored {
