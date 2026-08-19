@@ -57,6 +57,8 @@ const menuImportRoute = readFileSync(
   new URL("../app/api/menu-plans/import/route.ts", import.meta.url),
   "utf8",
 );
+const publishedMenusRoute = readFileSync(new URL("../app/api/menu-publications/route.ts", import.meta.url), "utf8");
+const publishedMenusView = readFileSync(new URL("../app/ui/PublishedMenuView.tsx", import.meta.url), "utf8");
 
 test("CPU Production is a queue-first workspace with a CPU-created order path", () => {
   assert.match(page, /Production, <em>in hand/);
@@ -64,6 +66,15 @@ test("CPU Production is a queue-first workspace with a CPU-created order path", 
   assert.match(page, /Create delivered-in lunch/);
   assert.match(route, /cpu-create/);
   assert.match(route, /sourceReference/);
+});
+
+test("Head Chef receives immutable Menu Planning publication days as a read-only projection", () => {
+  assert.match(publishedMenusRoute, /MENU_PLANNING_BASE_URL/);
+  assert.match(publishedMenusRoute, /format.*matrix/);
+  assert.match(publishedMenusView, /HEAD CHEF · READ-ONLY/);
+  assert.match(publishedMenusView, /Not published/);
+  assert.match(publishedMenusView, /disabled=\{!published\}/);
+  assert.match(page, /Published delivered-in menus/);
 });
 
 test("CPU-created commands carry idempotency and delivery context", () => {

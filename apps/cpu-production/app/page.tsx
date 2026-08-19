@@ -11,6 +11,7 @@ import { matrixColumns } from "./ui/allergen-matrix";
 import LianaOrderDetail from "./ui/LianaOrderDetail";
 import ProductionCalendar from "./ui/ProductionCalendar";
 import DeliveredMenuPlanner from "./ui/DeliveredMenuPlanner";
+import PublishedMenuView from "./ui/PublishedMenuView";
 import { CANONICAL_ALLERGEN_COLUMNS, normaliseOperationalAllergens, toggleOperationalAllergen, type CanonicalAllergenKey } from "../../shared/allergen-contract";
 
 const statuses: ProductionStatus[] = [
@@ -46,7 +47,7 @@ function visibleStatus(order: ProductionOrder): ProductionStatus {
     return order.status;
   return order.workflowStatus;
 }
-type View = "calendar" | "queue" | "run-sheet" | "totals" | "menu-planning";
+type View = "calendar" | "queue" | "run-sheet" | "totals" | "menu-planning" | "published-menus";
 type ProductionDashboardView = "production" | "hospitality" | "site_manager";
 const dashboardViewLabels: Record<string, string> = {
   liana: "Production chef · sandwiches",
@@ -285,6 +286,7 @@ export default function CpuProduction() {
                 </button>
               )
             )}
+            {dashboardView === "site_manager" && <button type="button" onClick={() => { setView("published-menus"); setShowCreate(false); }}>Published delivered-in menus</button>}
             <button onClick={() => void load()} aria-label="Refresh production">
               ↻
             </button>
@@ -342,7 +344,7 @@ export default function CpuProduction() {
           </button>
         </div>}
         {error && <p role="alert">{error}</p>}
-        {view === "menu-planning" ? <DeliveredMenuPlanner /> : showCreate && (
+        {view === "published-menus" ? <PublishedMenuView /> : view === "menu-planning" ? <DeliveredMenuPlanner /> : showCreate && (
           <CpuCreate
             onSaved={async () => {
               setShowCreate(false);
