@@ -1,13 +1,14 @@
 import { DatabaseSync } from "node:sqlite";
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { appDataPath } from "../../shared/app-data-path";
 
 type DocumentMap = Record<string, unknown>;
 export type TransactionState = { rolling: DocumentMap; publications: DocumentMap };
 
-const databaseFile = join(process.cwd(), "local-data", "menu-planning", "operational.sqlite");
-const rollingJson = join(process.cwd(), "local-data", "menu-planning", "rolling-menu-weeks.json");
-const publicationsJson = join(process.cwd(), "local-data", "menu-planning", "menu-publications.json");
+const databaseFile = appDataPath("menu-planning", "menu-planning", "operational.sqlite");
+const rollingJson = appDataPath("menu-planning", "menu-planning", "rolling-menu-weeks.json");
+const publicationsJson = appDataPath("menu-planning", "menu-planning", "menu-publications.json");
 const unavailable = (message: string, cause?: unknown) => Object.assign(new Error(message, cause ? { cause } : undefined), { status: 503 });
 
 function readSeed(file: string, fallback: DocumentMap, label: string) {

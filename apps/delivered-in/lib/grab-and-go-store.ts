@@ -5,10 +5,11 @@ import type { GrabAndGoOrder, GrabAndGoProduct } from "./grab-and-go";
 import { createDomainEvent, replayDueEvents, type DurableDomainEvent } from "../../shared/domain-events";
 import { fulfilmentFromGrabAndGoOrder, type FulfilmentRequirement } from "../../shared/fulfilment-requirement";
 import { reconcileFulfilmentRequirements } from "../../shared/fulfilment-reconciliation";
+import { appDataPath } from "../../shared/app-data-path";
 
 type Stored = { version: 1; orders: GrabAndGoOrder[]; events: DurableDomainEvent[]; fulfilmentRequirements: FulfilmentRequirement[] };
-const file = join(process.cwd(), "local-data", "delivered-in", "grab-and-go-orders.json");
-const databaseFile = join(process.cwd(), "local-data", "delivered-in", "grab-and-go.sqlite");
+const file = appDataPath("delivered-in", "delivered-in", "grab-and-go-orders.json");
+const databaseFile = appDataPath("delivered-in", "delivered-in", "grab-and-go.sqlite");
 const unavailable = (message: string, cause?: unknown) => Object.assign(new Error(message, cause ? { cause } : undefined), { status: 503 });
 function seed(): Stored {
   if (!existsSync(file)) return { version: 1, orders: [], events: [], fulfilmentRequirements: [] };
@@ -36,7 +37,7 @@ async function withAsyncTransaction<T>(mutator: (stored: Stored) => Promise<T>) 
   const database = open(); database.exec("BEGIN IMMEDIATE");
   try { const stored = parse(database); const result = await mutator(stored); database.prepare("UPDATE grab_and_go_state SET state_json = ?, updated_at = ? WHERE state_id = 1").run(JSON.stringify(stored), new Date().toISOString()); database.exec("COMMIT"); return result; } catch (cause) { try { database.exec("ROLLBACK"); } catch { /* preserve original failure */ } throw cause; } finally { database.close(); }
 }
-const catalogueFile = join(process.cwd(), "local-data", "delivered-in", "grab-and-go-catalogue.json");
+const catalogueFile = appDataPath("delivered-in", "delivered-in", "grab-and-go-catalogue.json");
 export function readGrabAndGoCatalogue(): GrabAndGoProduct[] { try { const value = JSON.parse(readFileSync(catalogueFile, "utf8")) as { products?: GrabAndGoProduct[] }; if (!Array.isArray(value.products)) throw new Error("products is not an array"); return value.products; } catch (cause) { throw unavailable("Grab & Go catalogue is unavailable; no product list was loaded.", cause); } }
 export function listGrabAndGoOrders(oplocId?: string) { return read().orders.filter(order => !oplocId || order.oplocId === oplocId); }
 export function getGrabAndGoOrder(oplocId: string, deliveryDate: string) { return read().orders.find(order => order.oplocId === oplocId && order.deliveryDate === deliveryDate); }

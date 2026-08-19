@@ -13,6 +13,7 @@ import { createDomainEvent, replayDueEvents, type DurableDomainEvent } from "../
 import { fulfilmentFromPublishedMenuDay, fulfilmentRequirementIdentity, type FulfilmentRequirement } from "../../shared/fulfilment-requirement";
 import { reconcileFulfilmentRequirements } from "../../shared/fulfilment-reconciliation";
 import { readPublicationState, updatePublicationState, withMenuPlanningAsyncTransaction, withMenuPlanningTransaction } from "./operational-store";
+import { appDataPath } from "../../shared/app-data-path";
 
 export const PUBLICATION_ATTESTATION = "I confirm that I have reviewed the allergen information shown for this day's published menu and that it reflects the approved information available at the time of publication.";
 export type MenuPublicationSignature = { printedName: string; signatureDataUrl?: string; signedAt: string; actor: string; attestation: string };
@@ -30,7 +31,7 @@ const write = (value: StoredPublications) => { updatePublicationState<StoredPubl
 const clone = <T>(value: T): T => structuredClone(value);
 export const publishedDayMatrixHtml = publishedAllergenMatrixHtml;
 const populatedWeekdays = (snapshot: RollingSnapshot) => snapshot.days.slice(0, 5).filter(day => snapshot.entries.some(entry => entry.dayId === day.id && entry.itemLabel.trim()));
-const canonicalItems = (): MenuItem[] => { try { return (JSON.parse(readFileSync(join(process.cwd(), "local-data", "menu-planning", "canonical-menu-items.json"), "utf8")) as { items?: MenuItem[] }).items || []; } catch { return []; } };
+const canonicalItems = (): MenuItem[] => { try { return (JSON.parse(readFileSync(appDataPath("menu-planning", "menu-planning", "canonical-menu-items.json"), "utf8")) as { items?: MenuItem[] }).items || []; } catch { return []; } };
 const publishedEntry = (entry: RollingEntry, canonicalDish?: MenuItem): PublishedMenuEntry => { const resolved = resolveAllergenSnapshot(entry, canonicalDish); return { sourceEntryId: entry.id, slot: entry.slot, ...(entry.itemId ? { canonicalDishId: entry.itemId } : {}), dishName: entry.itemLabel, portions: entry.portions, allocations: entry.allocations.map(allocation => ({ destinationId: allocation.destinationId, destinationLabel: allocation.destinationLabel, quantity: allocation.quantity })), allergens: clone(resolved.allergens), mayContainNotes: entry.mayContainNotes || resolved.mayContainNotes }; };
 export function buildPublishedDay(snapshot: RollingSnapshot, day: RollingDay) { const items = canonicalItems(); const entries = snapshot.entries.filter(entry => entry.dayId === day.id && entry.itemLabel.trim()).map(entry => publishedEntry(entry, items.find(item => item.canonicalId === entry.itemId || item.displayName.trim().toLocaleLowerCase() === entry.itemLabel.trim().toLocaleLowerCase()))); const stableDay = { sourceDayId: day.id, date: day.date, dayName: day.dayName, entries }; return { ...stableDay, contentHash: contentHash(stableDay) }; }
 export function publicationPreview(snapshot: RollingSnapshot, dayId?: string) { return (dayId ? snapshot.days.filter(day => day.id === dayId) : populatedWeekdays(snapshot)).map(day => buildPublishedDay(snapshot, day)); }
