@@ -13,6 +13,7 @@
     "dev:beverage": "npm --prefix apps/beverage-innovation run dev",
     "dev:events": "npm --prefix apps/events-dashboard run dev",
     "dev:delivered": "npm --prefix apps/delivered-in run dev",
+    "dev:logistics": "npm --prefix apps/logistics run dev",
     "dev:launcher": "node tools/launcher/server.mjs",
 
     "dev:browser": "wait-on http://localhost:3100 && start chrome http://localhost:3100"

@@ -46,7 +46,7 @@
     "description": "Planned logistics coordination and movement visibility.",
     "url": "http://localhost:3900",
     "port": 3900,
-    "planned": true
+    "directory": "apps/logistics"
   },
   {
     "id": "hospitality-booking",

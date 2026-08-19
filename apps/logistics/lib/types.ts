@@ -1,0 +1,8 @@
+import type { FulfilmentRequirement } from "../../shared/fulfilment-requirement";
+
+export type MovementType = "delivery" | "collection" | "transfer";
+export type MovementRequest = { canonicalId:string; entityType:"Movement Request"; type:MovementType; serviceDate:string; fromOplocId?:string; toOplocId?:string; requiredTime?:string; window?:{startTime:string;endTime?:string}; items:{description:string;quantity:number;unit?:string}[]; notes?:string; createdBy:string; status:"open"|"planned"|"completed"|"cancelled"; version:number; createdAt:string; updatedAt:string; audit:{action:string;at:string;by:string;version:number}[] };
+export type RequirementRef = { requirementId:string; sourceVersion:number };
+export type DeliveryStop = { canonicalId:string; runId:string; sequence:number; locationOplocId:string; locationLabelSnapshot:string; requirementRefs:RequirementRef[]; movementRequestId?:string; movementType?:MovementType; requiredTime?:string; window?:{startTime:string;endTime?:string}; status:"planned"|"arrived"|"completed"|"issue"; notes?:string; createdAt:string; updatedAt:string; version:number; audit:{action:string;at:string;by:string;version:number}[] };
+export type DeliveryRun = { canonicalId:string; serviceDate:string; status:"draft"|"planned"|"ready"|"dispatched"|"completed"; driverId?:string; driverLabel?:string; vehicleLabel?:string; orderedStopIds:string[]; version:number; createdAt:string; updatedAt:string; audit:{action:string;at:string;by:string;version:number}[] };
+export type PlanningItem = { kind:"fulfilment"; requirement:FulfilmentRequirement } | { kind:"movement"; movement:MovementRequest };

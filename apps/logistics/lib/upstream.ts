@@ -1,0 +1,3 @@
+import type { FulfilmentRequirement } from "../../shared/fulfilment-requirement";
+const hub = process.env.FIKA_HUB_URL || "http://localhost:3200";
+export async function fetchRequirements(serviceDate?:string):Promise<FulfilmentRequirement[]> { const response = await fetch(`${hub}/api/fulfilment-requirements${serviceDate ? `?serviceDate=${encodeURIComponent(serviceDate)}` : ""}`, { cache:"no-store" }); if (!response.ok) throw new Error(`Integration Hub fulfilment read failed (${response.status}).`); const body = await response.json() as {requirements?:FulfilmentRequirement[]}; return body.requirements || []; }
