@@ -254,7 +254,15 @@ async function shutdown(reason, exitCode = 0) {
   console.log(`\nStopping FIKA OS (${reason}). Waiting for Firebase export and child processes...`);
   for (const [id, child] of children) {
     setState(id, "stopping");
-    try { child.kill(id === "firebase" ? "SIGINT" : "SIGTERM"); } catch {}
+    if (id === "firebase") {
+      // Firebase needs SIGINT so its --export-on-exit snapshot is written.
+      try { child.kill("SIGINT"); } catch {}
+    } else if (process.platform === "win32") {
+      // npm launches Next as a descendant; killing only npm leaves orphaned ports.
+      killTree(child);
+    } else {
+      try { child.kill("SIGTERM"); } catch {}
+    }
   }
   const deadline = Date.now() + 90000;
   while (children.size && Date.now() < deadline) await sleep(500);
