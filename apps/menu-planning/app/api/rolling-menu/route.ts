@@ -5,11 +5,14 @@ import { requireMutationActor, requirePublicationActor, resolveMenuActor } from 
 import { readGovernedOplocs } from "@/lib/oploc-authority";
 import { forwardFulfilmentEvent } from "../../../../shared/fulfilment-client";
 import { replayMenuPublicationOutbox } from "@/lib/menu-publication";
+import { listCatalogueEntries } from "@/lib/catalogue";
 
 export async function GET(request: NextRequest) {
   const snapshot = getWeek(request.nextUrl.searchParams.get("weekId") || undefined);
   const previewDayId = request.nextUrl.searchParams.get("dayId") || undefined;
-  return NextResponse.json({ snapshot, weeks: listWeeks(), blockers: validateWeek(snapshot), publicationState: publicationState(snapshot), ...(request.nextUrl.searchParams.get("publicationPreview") === "true" ? { publicationPreview: publicationPreview(snapshot, previewDayId), dayBlockers: previewDayId ? publicationDayBlockers(snapshot, previewDayId) : [] } : {}) });
+  const publicationPreviewRequested = request.nextUrl.searchParams.get("publicationPreview") === "true";
+  const governedOplocIds = publicationPreviewRequested ? new Set((await readGovernedOplocs(request)).map(oploc => oploc.canonicalId)) : undefined;
+  return NextResponse.json({ snapshot, weeks: listWeeks(), blockers: validateWeek(snapshot), publicationState: publicationState(snapshot), ...(publicationPreviewRequested ? { publicationPreview: publicationPreview(snapshot, previewDayId), dayBlockers: previewDayId ? publicationDayBlockers(snapshot, previewDayId, governedOplocIds) : [] } : {}) });
 }
 
 export async function POST(request: NextRequest) {
@@ -49,6 +52,9 @@ export async function POST(request: NextRequest) {
     if (action === "publish") {
       const dayId = String(body.dayId || "");
       requirePublicationActor(actor);
+      // Reconcile exact imported dish names before the publication gate runs.
+      // This persists the canonical identity; it does not bypass allergen review.
+      await listCatalogueEntries();
       const oplocs = await readGovernedOplocs(request);
       const publication = createPublishedMenuDay(String(body.weekId), dayId, (body.signoff || {}) as MenuPublicationSignoff, actor.uid, new Set(oplocs.map(oploc => oploc.canonicalId)));
       void replayMenuPublicationOutbox(forwardFulfilmentEvent).catch(() => undefined);

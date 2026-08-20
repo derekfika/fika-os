@@ -162,6 +162,11 @@ assets/Employee Hub - BrightHR.pdf
 # Generated font encodings
 assets/fonts/*.b64.txt
 
+# Local emulator exports and framework-generated app guidance
+apps/integration-hub/firebase-export-*/
+apps/beverage-innovation/AGENTS.md
+apps/beverage-innovation/CLAUDE.md
+
 # Operational menu source files
 Menu Data/
 

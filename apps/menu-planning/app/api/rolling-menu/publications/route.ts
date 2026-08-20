@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { archivePublishedDayMatrix, getMenuPublication, listMenuPublications, withdrawPublishedMenuDay } from "@/lib/menu-publication";
+import { archivePublishedDayMatrix, getMenuPublication, listMenuPublications, withdrawPublishedMenuDay, withdrawPublishedMenuWeek } from "@/lib/menu-publication";
 import { requirePublicationActor, resolveMenuActor } from "@/lib/auth";
 import { forwardFulfilmentEvent } from "../../../../../shared/fulfilment-client";
 import { replayMenuPublicationOutbox } from "@/lib/menu-publication";
@@ -18,7 +18,13 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json() as { action?: string; publicationId?: string; publicationDayId?: string; reason?: string; actor?: string };
     const actor = requirePublicationActor(await resolveMenuActor(request));
-    if (!body.publicationId || !body.publicationDayId) return NextResponse.json({ error: { message: "Publication and publication day are required." } }, { status: 422 });
+    if (!body.publicationId) return NextResponse.json({ error: { message: "Publication is required." } }, { status: 422 });
+    if (body.action === "withdraw-week") {
+      const publication = withdrawPublishedMenuWeek(body.publicationId, body.reason || "", actor.uid);
+      void replayMenuPublicationOutbox(forwardFulfilmentEvent).catch(() => undefined);
+      return NextResponse.json({ publication });
+    }
+    if (!body.publicationDayId) return NextResponse.json({ error: { message: "Publication day is required." } }, { status: 422 });
     if (body.action === "withdraw") { const publication = withdrawPublishedMenuDay(body.publicationId, body.publicationDayId, body.reason || "", actor.uid); void replayMenuPublicationOutbox(forwardFulfilmentEvent).catch(() => undefined); return NextResponse.json({ publication }); }
     if (body.action === "retry-archive") {
       const archive = await archivePublishedDayMatrix(body.publicationId, body.publicationDayId);

@@ -29,6 +29,9 @@ const session = {
   apps: {},
 };
 let stopping = false;
+let firebaseExportPath;
+let liveBackupTimer;
+let liveBackupInFlight = false;
 
 const sleep = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
 
@@ -100,6 +103,7 @@ function firebasePaths(mode) {
   fs.mkdirSync(path.join(root, "local-data", "integration-hub", "recovery"), { recursive: true });
   const stamp = new Date().toISOString().replaceAll(":", "-").replaceAll(".", "-");
   const exportPath = path.join(root, "local-data", "integration-hub", "recovery", `session-${stamp}`);
+  firebaseExportPath = exportPath;
   const args = ["emulators:start", "--only", "auth,firestore", "--config", firebaseConfig, "--project", "fika-os-local"];
 
   if (mode === "fresh") {
@@ -119,6 +123,52 @@ function firebasePaths(mode) {
   console.log("Import:", importPath);
   console.log("Shutdown export:", exportPath);
   return args;
+}
+
+function promoteExport(exportPath, label = "Firebase export") {
+  const metadata = path.join(exportPath, "firestore_export", "firestore_export.overall_export_metadata");
+  if (!fs.existsSync(metadata)) {
+    console.error(`${label} was not found at ${exportPath}; retaining the previous restore pointer.`);
+    return;
+  }
+  let pointer;
+  try { pointer = JSON.parse(fs.readFileSync(pointerFile, "utf8")); } catch { pointer = { format: "fika.restored-emulator-pointer.v1", projectId: "fika-os-local" }; }
+  const next = { ...pointer, format: "fika.restored-emulator-pointer.v1", projectId: "fika-os-local", verifiedAt: new Date().toISOString(), restoredDataPath: exportPath, recoverySource: pointer.recoverySource || pointer.restoredDataPath || exportPath };
+  const temp = `${pointerFile}.tmp-${process.pid}`;
+  fs.writeFileSync(temp, JSON.stringify(next, null, 2));
+  fs.renameSync(temp, pointerFile);
+  console.log(`Updated FIKA-RESTORED-DATA.json to the latest verified ${label.toLowerCase()}.`);
+}
+
+function promoteShutdownExport() {
+  if (!firebaseExportPath) return;
+  promoteExport(firebaseExportPath, "Firebase shutdown export");
+}
+
+function runFirebaseExport(exportPath) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, [firebaseCli, "emulators:export", "--project", "fika-os-local", "--only", "auth,firestore", "--force", exportPath], { cwd: hubRoot, env: { ...process.env, FIREBASE_EMULATOR_HOST: "127.0.0.1" }, stdio: ["ignore", "ignore", "pipe"], windowsHide: true });
+    let stderr = "";
+    child.stderr.on("data", chunk => { stderr += String(chunk); });
+    child.once("error", reject);
+    child.once("exit", code => code === 0 ? resolve(undefined) : reject(new Error(`Firebase live export exited with code ${code}: ${stderr.trim()}`)));
+  });
+}
+
+async function exportLiveBackup(reason) {
+  if (liveBackupInFlight || stopping && reason === "interval") return;
+  liveBackupInFlight = true;
+  const stamp = new Date().toISOString().replaceAll(":", "-").replaceAll(".", "-");
+  const exportPath = path.join(root, "local-data", "integration-hub", "recovery", `autosave-${stamp}`);
+  try {
+    fs.mkdirSync(path.dirname(exportPath), { recursive: true });
+    await runFirebaseExport(exportPath);
+    promoteExport(exportPath, `Firebase ${reason} export`);
+  } catch (error) {
+    console.error(`Firebase ${reason} export failed; the previous restore pointer is retained: ${error.message}`);
+  } finally {
+    liveBackupInFlight = false;
+  }
 }
 
 function setState(id, state, extra = {}) {
@@ -248,8 +298,10 @@ function stopRequested() {
 async function shutdown(reason, exitCode = 0) {
   if (stopping) return;
   stopping = true;
+  if (liveBackupTimer) clearInterval(liveBackupTimer);
   session.state = "stopping";
   session.stopReason = reason;
+  await exportLiveBackup("pre-shutdown");
   writeSession();
   console.log(`\nStopping FIKA OS (${reason}). Waiting for Firebase export and child processes...`);
   for (const [id, child] of children) {
@@ -271,6 +323,7 @@ async function shutdown(reason, exitCode = 0) {
     for (const child of children.values()) killTree(child);
   }
   await sleep(1000);
+  promoteShutdownExport();
   removeSession();
   process.exitCode = exitCode;
 }
@@ -292,6 +345,8 @@ async function runSupervisor(mode) {
   await spawnManaged("firebase", process.execPath, [firebaseCli, ...firebaseArgs], hubRoot, { FIREBASE_EMULATOR_HOST: "127.0.0.1" });
   await waitForPorts(firebasePorts, 120000, "firebase");
   setState("firebase", "online", { ports: firebasePorts });
+  await exportLiveBackup("startup");
+  liveBackupTimer = setInterval(() => { void exportLiveBackup("periodic"); }, 60000);
   console.log("Firebase Auth and Firestore are available.");
 
   session.state = "starting-apps";

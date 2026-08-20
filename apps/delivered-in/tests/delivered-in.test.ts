@@ -3,7 +3,7 @@ import { existsSync, unlinkSync, copyFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 import { resolveDeliveredInAccess } from "../../integration-hub/lib/delivered-in-access";
-import { assertAuthorisedOploc, assertPublishedAllocationIntegrity, projectPublishedWeeks, siteDayTotal, type SourcePublication } from "../lib/projection";
+import { assertAuthorisedOploc, assertPublishedAllocationIntegrity, isRelevantPublishedWeek, operationalDateLondon, projectPublishedWeeks, siteDayTotal, type SourcePublication } from "../lib/projection";
 import { groupSiteMenuEntries, siteMenuSectionForSlot, siteMenuState, type SiteMenuArtifact } from "../lib/site-menu";
 import { buildDeliveredInMenuRequests, weekFolderName } from "../lib/google-site-menu";
 import { titleCase } from "../../menu-planning/lib/text";
@@ -29,6 +29,22 @@ test("Delivered-In projection filters by canonical destination ID and quantity",
   assert.equal(siteDayTotal(weeks[0].days[0]), 10);
   assertAuthorisedOploc({ email: "viewer@local.fika", oplocIds: [haleon], permissions: ["delivered_in.view"] }, haleon);
   assert.throws(() => assertAuthorisedOploc({ email: "viewer@local.fika", oplocIds: [haleon], permissions: [] }, xchange), (error: any) => error.status === 403);
+});
+
+test("Delivered-In excludes synthetic test weeks outside the operational horizon", () => {
+  assert.equal(operationalDateLondon(new Date("2026-08-20T23:30:00Z")), "2026-08-21");
+  assert.equal(isRelevantPublishedWeek(source([]), "2026-08-20"), true);
+  assert.equal(isRelevantPublishedWeek({ ...source([]), weekCommencing: "2096-05-02", weekEnding: "2096-05-08" }, "2026-08-20"), false);
+  const weeks = projectPublishedWeeks([
+    source([day()]),
+    { ...source([day()]), publicationId: "publication:test", weekCommencing: "2096-05-02", weekEnding: "2096-05-08" },
+  ], haleon, undefined, "2026-08-20");
+  assert.deepEqual(weeks.map(week => week.weekCommencing), ["2026-08-24"]);
+});
+
+test("Delivered-In accepts a live governed OPLOC set for restored venues", () => {
+  const restoredHaleon = "oploc:bb4c7eea-87f5-4e79-8ed6-b973b24ded7b";
+  assert.equal(projectPublishedWeeks([source([day({ entries: [{ ...day().entries[0], allocations: [{ destinationId: restoredHaleon, destinationLabel: "Haleon", quantity: 10 }] } as SourcePublication["days"][number]["entries"][number]] })])], restoredHaleon, new Set([restoredHaleon]), "2026-08-20")[0].days[0].entries[0].quantity, 10);
 });
 
 test("Delivered-In preserves the exact governed published allocation and rejects corrupt identity", () => {

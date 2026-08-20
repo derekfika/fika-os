@@ -4,9 +4,9 @@ import { readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { test } from "node:test";
 import * as XLSX from "xlsx";
-import { addMenuSlot, applyEntryPatch, assertWeekDateAvailable, createEntry, defaultWeekForDate, duplicateWeek, emptyWeek, getWeek, importWorkbook, publishWeek, removeMenuSlot, saveSnapshot, updateEntry, validateWeek, ROLLING_SLOTS } from "../lib/rolling-menu";
+import { addMenuSlot, applyEntryPatch, assertWeekDateAvailable, attachCanonicalDishIds, createEntry, defaultWeekForDate, duplicateWeek, emptyWeek, getWeek, importWorkbook, publishWeek, removeMenuSlot, saveSnapshot, updateEntry, validateWeek, ROLLING_SLOTS } from "../lib/rolling-menu";
 import { createCanonicalMenuItem, listCanonicalMenuItems } from "../lib/canonical-menu-repository";
-import { createPublishedMenuDay, currentPublishedDays, getMenuPublication, listMenuPublicationEvents, listMenuPublications, publicationPreview, publicationState, publishedDayMatrixHtml, replayMenuPublicationOutbox, withdrawPublishedMenuDay, type MenuPublicationSignoff } from "../lib/menu-publication";
+import { createPublishedMenuDay, currentPublishedDays, getMenuPublication, listMenuPublicationEvents, listMenuPublications, publicationPreview, publicationState, publishedDayMatrixHtml, replayMenuPublicationOutbox, withdrawPublishedMenuDay, withdrawPublishedMenuWeek, type MenuPublicationSignoff } from "../lib/menu-publication";
 import { resolveAllergenSnapshot } from "../lib/allergen-resolution";
 import type { RollingEntry } from "../lib/rolling-menu-types";
 
@@ -208,6 +208,29 @@ test("withdrawal removes a day from the current projection and republishing crea
   } finally { if (rollingBefore) await writeFile(rollingFile, rollingBefore); else await rm(rollingFile, { force: true }); if (publicationBefore) await writeFile(publicationFile, publicationBefore); else await rm(publicationFile, { force: true }); }
 });
 
+test("week withdrawal withdraws every currently published day and preserves a reason", async () => {
+  const rollingFile = join(process.cwd(), "local-data", "menu-planning", "rolling-menu-weeks.json");
+  const publicationFile = join(process.cwd(), "local-data", "menu-planning", "menu-publications.json");
+  const rollingBefore = existsSync(rollingFile) ? await readFile(rollingFile) : undefined;
+  const publicationBefore = existsSync(publicationFile) ? await readFile(publicationFile) : undefined;
+  const week = emptyWeek(`2096-06-${String((Date.now() % 20) + 1).padStart(2, "0")}`);
+  try {
+    const withdrawalEventsBefore = listMenuPublicationEvents().filter(event => event.eventType === "menu.day.withdrawn").length;
+    saveSnapshot(week);
+    const entries = [0, 2].map(index => { const created = createEntry(week.week.id, week.days[index].id, "SOUP", `Week Dish ${index}`, "test", `dish:week-${index}`); const entry = created.entries.find(value => value.dayId === week.days[index].id)!; updateEntryForTest(week.week.id, entry.id); return index; });
+    const signature = { printedName: "Production Chef", signatureDataUrl: "data:image/png;base64,c2ln", signedAt: "2026-08-19T12:00:00.000Z", actor: "test", attestation: "Reviewed" };
+    let publication = createPublishedMenuDay(week.week.id, week.days[entries[0]].id, (() => { const preview = publicationPreview(getWeek(week.week.id), week.days[entries[0]].id)[0]; return { date: preview.date, productionChef: signature, headChefSiteManager: { ...signature, printedName: "Head Chef" }, dayContentHash: preview.contentHash }; })(), "test");
+    const preview = publicationPreview(getWeek(week.week.id), week.days[entries[1]].id)[0];
+    publication = createPublishedMenuDay(week.week.id, week.days[entries[1]].id, { date: preview.date, productionChef: signature, headChefSiteManager: { ...signature, printedName: "Head Chef" }, dayContentHash: preview.contentHash }, "test");
+    const withdrawn = withdrawPublishedMenuWeek(publication.publicationId, "Week cancelled by operations", "test");
+    assert.equal(currentPublishedDays(withdrawn).length, 0);
+    const withdrawnCount = withdrawn.days.filter(day => day.status === "withdrawn").length;
+    assert.ok(withdrawnCount >= 2);
+    assert.ok(withdrawn.days.filter(day => day.status === "withdrawn").every(day => day.withdrawal?.reason === "Week cancelled by operations"));
+    assert.equal(listMenuPublicationEvents().filter(event => event.eventType === "menu.day.withdrawn").length - withdrawalEventsBefore, withdrawnCount);
+  } finally { if (rollingBefore) await writeFile(rollingFile, rollingBefore); else await rm(rollingFile, { force: true }); if (publicationBefore) await writeFile(publicationFile, publicationBefore); else await rm(publicationFile, { force: true }); }
+});
+
 function updateEntryForTest(weekId: string, entryId: string, label?: string) {
   return updateEntry(weekId, entryId, { ...(label ? { itemLabel: label, itemId: `dish:${label}` } : {}), portions: 10, allocations: [{ destinationLabel: "Haleon", quantity: 10 }], allergens: { no_key_allergens: "contains" }, allergenReviewInvalidated: false });
 }
@@ -260,6 +283,21 @@ test("locally created dishes persist once and rolling entries keep the same cano
     assert.equal(reloadedWeek.entries[0].itemId, created.canonicalId);
   } finally {
     if (canonicalBefore) await writeFile(canonicalFile, canonicalBefore); else await rm(canonicalFile, { force: true });
+    if (rollingBefore) await writeFile(rollingFile, rollingBefore); else await rm(rollingFile, { force: true });
+  }
+});
+
+test("exact imported dish names receive their existing canonical identity before publication", async () => {
+  const rollingFile = join(process.cwd(), "local-data", "menu-planning", "rolling-menu-weeks.json");
+  const rollingBefore = existsSync(rollingFile) ? await readFile(rollingFile) : undefined;
+  const week = emptyWeek(`2099-02-${String((Date.now() % 20) + 1).padStart(2, "0")}`);
+  try {
+    saveSnapshot(week);
+    createEntry(week.week.id, week.days[0].id, "SALAD 1", "Existing Canonical Dish", "test");
+    assert.equal(getWeek(week.week.id).entries[0].itemId, undefined);
+    assert.equal(attachCanonicalDishIds([{ canonicalId: "dish:existing", displayName: "Existing Canonical Dish", reviewStatus: "unreviewed" }]), 1);
+    assert.equal(getWeek(week.week.id).entries[0].itemId, "dish:existing");
+  } finally {
     if (rollingBefore) await writeFile(rollingFile, rollingBefore); else await rm(rollingFile, { force: true });
   }
 });

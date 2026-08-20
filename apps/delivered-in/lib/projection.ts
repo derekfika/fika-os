@@ -9,11 +9,32 @@ export type ProjectedDay = { publicationId: string; publicationDayId: string; so
 export type ProjectedWeek = { publicationId: string; weekCommencing: string; weekEnding: string; days: ProjectedDay[] };
 import { GOVERNED_OPLOC_BY_ID } from "../../shared/governed-oplocs";
 
+const OPERATIONAL_TIME_ZONE = "Europe/London";
+const OPERATIONAL_WEEK_HORIZON_DAYS = 42;
+
+export function operationalDateLondon(now = new Date()) {
+  const parts = new Intl.DateTimeFormat("en-GB", { timeZone: OPERATIONAL_TIME_ZONE, year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(now);
+  const values = Object.fromEntries(parts.filter(part => part.type !== "literal").map(part => [part.type, part.value]));
+  return `${values.year}-${values.month}-${values.day}`;
+}
+
+function addDays(dateKey: string, days: number) {
+  const date = new Date(`${dateKey}T12:00:00Z`);
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+
+export function isRelevantPublishedWeek(publication: SourcePublication, asOf = operationalDateLondon()) {
+  const currentWeekCommencing = addDays(asOf, -(new Date(`${asOf}T12:00:00Z`).getUTCDay() || 7) + 1);
+  const horizon = addDays(currentWeekCommencing, OPERATIONAL_WEEK_HORIZON_DAYS);
+  return publication.weekEnding >= currentWeekCommencing && publication.weekCommencing <= horizon;
+}
+
 export function assertAuthorisedOploc(access: SiteAccess, requestedOplocId: string) { if (!access.oplocIds.includes(requestedOplocId)) throw Object.assign(new Error("You are not authorised to view this Delivered-In site."), { status: 403 }); }
 
-export function assertPublishedAllocationIntegrity(publicationId: string, day: SourceDay, entry: SourceEntry) {
+export function assertPublishedAllocationIntegrity(publicationId: string, day: SourceDay, entry: SourceEntry, governedOplocIds = new Set(GOVERNED_OPLOC_BY_ID.keys())) {
   for (const allocation of entry.allocations) {
-    if (!allocation.destinationId || !GOVERNED_OPLOC_BY_ID.has(allocation.destinationId)) {
+    if (!allocation.destinationId || !governedOplocIds.has(allocation.destinationId)) {
       throw Object.assign(
         new Error(`Published Delivered-In integrity error: ${publicationId} ${day.dayName} contains an unresolved destination for ${entry.dishName}.`),
         { status: 502 },
@@ -28,8 +49,8 @@ export function assertPublishedAllocationIntegrity(publicationId: string, day: S
   }
 }
 
-export function projectPublishedWeeks(publications: SourcePublication[], selectedOplocId: string): ProjectedWeek[] {
-  return publications.map(publication => {
+export function projectPublishedWeeks(publications: SourcePublication[], selectedOplocId: string, governedOplocIds?: Set<string>, asOf = operationalDateLondon()): ProjectedWeek[] {
+  return publications.filter(publication => isRelevantPublishedWeek(publication, asOf)).map(publication => {
     const latestByDate = new Map<string, SourceDay>();
     for (const day of publication.days) {
       if (day.status !== "published") continue;
@@ -55,7 +76,7 @@ export function projectPublishedWeeks(publications: SourcePublication[], selecte
           ...(day.driveArchive?.pdfDriveUrl ? { drivePdfUrl: day.driveArchive.pdfDriveUrl } : {}),
           ...(day.driveArchive?.pdfFileName ? { drivePdfFileName: day.driveArchive.pdfFileName } : {}),
           entries: day.entries.flatMap(entry => {
-            assertPublishedAllocationIntegrity(publication.publicationId, day, entry);
+            assertPublishedAllocationIntegrity(publication.publicationId, day, entry, governedOplocIds);
             return entry.allocations
               .filter(allocation => allocation.destinationId === selectedOplocId)
               .map(allocation => ({

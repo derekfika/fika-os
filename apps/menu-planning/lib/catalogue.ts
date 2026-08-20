@@ -1,7 +1,7 @@
 import { listCanonicalMenuItems } from "./canonical-menu-repository";
 import type { MenuItem } from "./domain";
 import { normaliseDishCategory } from "./dish-categories";
-import { listAllEntries } from "./rolling-menu";
+import { attachCanonicalDishIds, listAllEntries } from "./rolling-menu";
 import { syncRollingEntries } from "./canonical-menu-repository";
 
 export type CatalogueKind = "canonical";
@@ -61,8 +61,9 @@ function canonicalEntry(item: MenuItem): CatalogueEntry {
 
 /** The catalogue is deliberately backed only by explicitly promoted canonical records. */
 export async function listCatalogueEntries(): Promise<CatalogueEntry[]> {
-  await syncRollingEntries(listAllEntries());
-  return (await listCanonicalMenuItems()).map(canonicalEntry).sort((a, b) => a.name.localeCompare(b.name));
+  const items = await syncRollingEntries(listAllEntries());
+  attachCanonicalDishIds(items);
+  return items.map(canonicalEntry).sort((a, b) => a.name.localeCompare(b.name));
 }
 
 export function filterCatalogueEntries(entries: CatalogueEntry[], filters: { query?: string; category?: string; usage?: string; status?: string }) {
