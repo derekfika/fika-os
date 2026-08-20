@@ -1,4 +1,5 @@
 import { createServer } from "node:http";
+import net from "node:net";
 import { readFile, writeFile } from "node:fs/promises";
 import { extname, join, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -23,6 +24,16 @@ async function isReachable(app) {
   }
 }
 
+function isPortOpen(port, timeout = 1000) {
+  return new Promise((resolve) => {
+    const socket = net.createConnection({ host: "127.0.0.1", port });
+    const finish = (open) => { socket.destroy(); resolve(open); };
+    socket.once("connect", () => finish(true));
+    socket.once("error", () => finish(false));
+    socket.setTimeout(timeout, () => finish(false));
+  });
+}
+
 async function readSession() {
   try {
     const session = JSON.parse(await readFile(sessionFile, "utf8"));
@@ -38,6 +49,9 @@ async function checkApp(app, session) {
   const supervisorState = session?.apps?.[app.id]?.state;
   const online = await isReachable(app);
   if (online) return { id: app.id, status: "online" };
+  // Next can bind its port before the first page compilation finishes.
+  // Treat that listener as reachable so the card cannot remain stuck on Starting.
+  if (await isPortOpen(app.port)) return { id: app.id, status: "online" };
   if (supervisorState === "starting" || supervisorState === "stopping") return { id: app.id, status: "starting" };
   if (supervisorState === "error") return { id: app.id, status: "error", message: session.apps[app.id].message };
   return { id: app.id, status: "offline" };
