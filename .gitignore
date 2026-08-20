@@ -43,6 +43,7 @@ logs/
 *.seed
 .fika-os-session.json
 .fika-os-stop-request.json
+.fika-os-control-request.json
 
 # ----------------------------------------------------------
 # OS Files

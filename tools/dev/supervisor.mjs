@@ -9,6 +9,7 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..")
 const appsFile = path.join(root, "tools", "launcher", "apps.json");
 const sessionFile = path.join(root, ".fika-os-session.json");
 const stopRequestFile = path.join(root, ".fika-os-stop-request.json");
+const controlRequestFile = path.join(root, ".fika-os-control-request.json");
 const pointerFile = path.join(root, "FIKA-RESTORED-DATA.json");
 const hubRoot = path.join(root, "apps", "integration-hub");
 const firebaseConfig = path.join(hubRoot, "firebase.json");
@@ -139,6 +140,42 @@ function killTree(child) {
   }
 }
 
+async function stopApp(id) {
+  const child = children.get(id);
+  if (!child) return false;
+  setState(id, "stopping");
+  if (process.platform === "win32") {
+    // npm launches Next as a child process; killing only npm can leave the app port orphaned.
+    killTree(child);
+  } else {
+    try { child.kill("SIGTERM"); } catch {}
+  }
+  const deadline = Date.now() + 5000;
+  while (children.has(id) && Date.now() < deadline) await sleep(250);
+  if (children.has(id)) {
+    killTree(child);
+    await sleep(500);
+  }
+  if (!children.has(id)) setState(id, "offline", { message: undefined });
+  return true;
+}
+
+async function handleControlRequest() {
+  let request;
+  try {
+    request = JSON.parse(fs.readFileSync(controlRequestFile, "utf8"));
+    fs.unlinkSync(controlRequestFile);
+  } catch {
+    return;
+  }
+  if (request.action !== "stop") return;
+  if (request.target === "all") {
+    await Promise.all(apps.map((app) => stopApp(app.id)));
+  } else if (appById.has(request.target)) {
+    await stopApp(request.target);
+  }
+}
+
 function spawnManaged(id, command, args, cwd, env = {}) {
   const child = spawn(command, args, {
     cwd,
@@ -264,9 +301,10 @@ async function runSupervisor(mode) {
 
   while (!stopping) {
     if (stopRequested()) await shutdown("fikaos stop");
+    await handleControlRequest();
     await sleep(500);
   }
-  return exitCode ?? 0;
+  return 0;
 }
 
 function readSession() {
@@ -281,7 +319,12 @@ function printStatus() {
   }
   console.log(`FIKA OS is running (PID ${current.pid}, state ${current.state}, mode ${current.mode}).`);
   for (const port of ports) console.log(`  :${port} ${portOwner(port) ? `LISTENING PID ${portOwner(port)}` : "free"}`);
-  for (const [id, record] of Object.entries(current.apps || {})) console.log(`  ${id}: ${record.state}${record.pid ? ` (PID ${record.pid})` : ""}`);
+  for (const [id, record] of Object.entries(current.apps || {})) {
+    const app = apps.find((candidate) => candidate.id === id);
+    const listening = app && portOwner(app.port);
+    const effectiveState = record.state === "starting" && listening ? "online" : record.state;
+    console.log(`  ${id}: ${effectiveState}${record.pid ? ` (PID ${record.pid})` : ""}`);
+  }
   return 0;
 }
 

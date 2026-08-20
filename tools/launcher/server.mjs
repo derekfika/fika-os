@@ -1,11 +1,12 @@
 import { createServer } from "node:http";
-import { readFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import { extname, join, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const directory = fileURLToPath(new URL(".", import.meta.url));
 const workspaceRoot = join(directory, "..", "..");
 const sessionFile = join(workspaceRoot, ".fika-os-session.json");
+const controlRequestFile = join(workspaceRoot, ".fika-os-control-request.json");
 const port = Number(process.env.LAUNCHER_PORT || 3100);
 const apps = JSON.parse(await readFile(join(directory, "apps.json"), "utf8"));
 
@@ -47,6 +48,15 @@ function send(response, status, body, contentType) {
   response.end(body);
 }
 
+async function requestStop(target) {
+  const session = await readSession();
+  if (!session) return { status: 409, body: { error: "FIKA OS supervisor is not running." } };
+  const app = target === "all" ? undefined : apps.find((candidate) => candidate.id === target);
+  if (target !== "all" && (!app || app.planned)) return { status: 404, body: { error: "This app cannot be stopped." } };
+  await writeFile(controlRequestFile, JSON.stringify({ action: "stop", target, requestedAt: new Date().toISOString() }));
+  return { status: 200, body: { ok: true, target } };
+}
+
 const server = createServer(async (request, response) => {
   const url = new URL(request.url, `http://${request.headers.host}`);
 
@@ -56,6 +66,11 @@ const server = createServer(async (request, response) => {
     const statuses = await Promise.all(apps.map((app) => checkApp(app, session)));
     const supervisor = session ? { pid: session.pid, state: session.state, mode: session.mode } : { state: "offline" };
     return send(response, 200, JSON.stringify({ refreshedAt: new Date().toISOString(), supervisor, statuses }), "application/json; charset=utf-8");
+  }
+  if (request.method === "POST" && (url.pathname === "/stop-all" || url.pathname.startsWith("/stop/"))) {
+    const target = url.pathname === "/stop-all" ? "all" : url.pathname.slice("/stop/".length);
+    const result = await requestStop(target);
+    return send(response, result.status, JSON.stringify(result.body), "application/json; charset=utf-8");
   }
 
   const requested = url.pathname === "/" ? "index.html" : url.pathname.slice(1);
