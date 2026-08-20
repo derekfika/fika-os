@@ -1,6 +1,6 @@
 # FIKA OS local workspace
 
-Double-click `fikaos.bat` (or use `Start-FIKA-OS-All.cmd`) to start the Firebase Auth/Firestore emulator and the local launcher. It opens one browser page: the FIKA OS launcher. Apps are started independently from their launcher cards.
+Double-click `fikaos.bat` to start the single foreground FIKA OS supervisor. It restores the verified local Firebase dataset, starts Firebase and all local apps on their fixed ports, starts the passive launcher, and opens one browser page: the FIKA OS launcher. Use `Start-FIKA-OS-All.cmd` as the legacy fallback.
 
 | App | URL | Port |
 |---|---|---:|
@@ -15,6 +15,6 @@ Double-click `fikaos.bat` (or use `Start-FIKA-OS-All.cmd`) to start the Firebase
 | Logistics (planned) | http://localhost:3900 | 3900 |
 | Firebase Emulator UI | http://127.0.0.1:4005 | 4005 |
 
-Use `Stop-FIKA-OS-All.ps1` when finished. It stops processes listening on these reserved local development ports only. It does not stop unrelated applications or modify emulator exports.
+Use `fikaos stop` for a graceful supervisor shutdown, including Firebase export-on-exit. `fikaos status` reports the known session and port state. `Stop-FIKA-OS-All.ps1` remains available as a legacy fallback and force-stop tool.
 
-The launcher waits for the Auth and Firestore emulator ports before starting (up to 60 seconds). It imports `FIKA-RESTORED-DATA.json` when that verified local data pointer exists. Otherwise it starts an empty local emulator. It never connects to production Firebase.
+Normal `fikaos` requires the verified `FIKA-RESTORED-DATA.json` pointer and imports its Firestore/Auth export. On shutdown Firebase writes a new session export under `local-data/integration-hub/recovery/`. `fikaos --fresh` is the only blank-emulator path. The launcher only reports status and opens running apps; it never starts or stops processes.

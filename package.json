@@ -2,9 +2,7 @@
   "name": "fika-os-local",
   "private": true,
   "scripts": {
-    "dev": "concurrently --names FIREBASE,LAUNCHER,BROWSER \"npm run dev:firebase\" \"npm run dev:launcher\" \"npm run dev:browser\"",
-
-    "dev:firebase": "cd apps/integration-hub && npx firebase emulators:start --only auth,firestore --config firebase.json --project fika-os-local",
+    "dev": "node tools/dev/supervisor.mjs",
 
     "dev:hub": "npm --prefix apps/integration-hub run dev",
     "dev:hospitality": "npm --prefix apps/hospitality-booking run dev",

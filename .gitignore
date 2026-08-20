@@ -41,6 +41,8 @@ logs/
 *.pid
 *.pid.lock
 *.seed
+.fika-os-session.json
+.fika-os-stop-request.json
 
 # ----------------------------------------------------------
 # OS Files
