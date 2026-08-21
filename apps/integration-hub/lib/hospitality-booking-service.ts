@@ -174,6 +174,7 @@ type IngestionResult = {
   validationWarnings: string[];
 };
 const bookings = () => db.collection("fikaBookings");
+const sourceMappings = () => db.collection("integrationHubSourceMappings");
 const bookingAudit = () => db.collection("fikaBookingAudit");
 const productionOrders = () => db.collection("fikaProductionOrders");
 const productionOrderV1s = () => db.collection("fikaProductionOrdersV1");
@@ -351,6 +352,24 @@ export function canonicalBookingId(sourceBookingId: string) {
     .slice(0, 32);
   return `booking:mnk:${digest}`;
 }
+
+/** Resolve a portal site through governed source mapping; labels are not identity. */
+export function resolveHospitalityDestinationOploc(
+  payload: Pick<MnkBookingPayload, "siteId" | "site">,
+  mappings: Array<Record<string, unknown>>,
+  canonicalRecords: CanonicalRecord[],
+) {
+  const sourceIdentifiers = [payload.siteId, payload.site].map(value => String(value || "").trim().toLowerCase()).filter(Boolean);
+  if (!sourceIdentifiers.length) return undefined;
+  const mapping = mappings.find(candidate =>
+    sourceIdentifiers.includes(String(candidate.sourceIdentifier || "").trim().toLowerCase()) &&
+    String(candidate.mappingStatus || "") === "confirmed" &&
+    Boolean(String(candidate.sourceEntityType || "")),
+  );
+  const destination = String(mapping?.oplocId || mapping?.targetCanonicalId || "").trim();
+  const target = canonicalRecords.find(record => record.entityType === "OPLOC" && record.canonicalId === destination && record.lifecycleStatus !== "archived" && record.publicationStatus !== "withdrawn" && record.record.lifecycleState === "active");
+  return target?.canonicalId;
+}
 export function productionOrderId(bookingId: string) {
   return `production-order:${bookingId}`;
 }
@@ -501,26 +520,42 @@ export function ingestMnkBookingFromExisting(
   payload: MnkBookingPayload,
   menuRecords: CanonicalRecord[],
   now?: string,
+  destinationOplocId?: string,
 ): IngestionResult {
   if (existing)
     return { booking: existing, created: false, validationWarnings: [] };
-  return buildMnkCanonicalBooking(payload, menuRecords, now);
+  const result = buildMnkCanonicalBooking(payload, menuRecords, now);
+  if (destinationOplocId) result.booking.service.oplocId = destinationOplocId;
+  return result;
 }
 
 export async function ingestMnkBooking(
   payload: MnkBookingPayload,
 ): Promise<IngestionResult> {
   const result = await db.runTransaction(async (transaction) => {
-    const [existingSnapshot, menusSnapshot] = await Promise.all([
+    const [existingSnapshot, menusSnapshot, mappingsSnapshot] = await Promise.all([
       transaction.get(bookings().doc(canonicalBookingId(payload.bookingId))),
       transaction.get(canonical()),
+      transaction.get(sourceMappings()),
     ]);
+    const canonicalRecords = menusSnapshot.docs.map((document) => document.data() as CanonicalRecord);
+    if (existingSnapshot.exists) {
+      return ingestMnkBookingFromExisting(existingSnapshot.data() as CanonicalBooking, payload, canonicalRecords);
+    }
+    const destinationOplocId = resolveHospitalityDestinationOploc(
+      payload,
+      mappingsSnapshot.docs.map(document => document.data() as Record<string, unknown>),
+      canonicalRecords,
+    );
+    if (!destinationOplocId) throw conflict("This delivery-requiring Hospitality Booking has no confirmed canonical destination OPLOC; resolve the governed site mapping before submission.");
     const result = ingestMnkBookingFromExisting(
       existingSnapshot.exists
         ? (existingSnapshot.data() as CanonicalBooking)
         : undefined,
       payload,
-      menusSnapshot.docs.map((document) => document.data() as CanonicalRecord),
+      canonicalRecords,
+      undefined,
+      destinationOplocId,
     );
     if (!result.created) return result;
     transaction.create(

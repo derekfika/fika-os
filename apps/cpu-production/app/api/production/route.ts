@@ -11,11 +11,6 @@ import {
 } from "@hub/lib/production-domain";
 import { hospitalityMenuProductionRouting } from "@hub/lib/connections-service";
 import { localFixtureOrders, updateLocalFixture } from "../local-fixtures";
-import {
-  filterProductionOrdersForDashboard,
-  normaliseProductionDashboardView,
-  type ProductionDashboardView,
-} from "../../../lib/dashboard-views";
 import { filterProductionOrdersForScope, normaliseProductionScope, type ProductionScope } from "../../../lib/production-scope";
 
 const localActor = {
@@ -137,13 +132,11 @@ export async function GET(request: NextRequest) {
     const actor = await actorFor(request);
     assertPermission(actor, "canonical.view");
     const id = request.nextUrl.searchParams.get("canonicalId");
-    const view = parseDashboardView(request.nextUrl.searchParams.get("view"));
     const scope = normaliseProductionScope(request.nextUrl.searchParams.get("scope"));
-    const allProduction = request.nextUrl.searchParams.get("allProduction") === "true";
     if (id?.startsWith("production-order:v1:fixture:")) {
       const order = localFixtureOrders().find((item) => item.canonicalId === id);
-      const filtered = order ? (await ordersForScope(await ordersForView([order], view, allProduction), scope))[0] : undefined;
-      return NextResponse.json({ order: filtered, view, scope });
+      const filtered = order ? (await ordersForScope([order], scope))[0] : undefined;
+      return NextResponse.json({ order: filtered, scope });
     }
     const fetched = await productionQueue();
     // In local development, keep the existing emulator orders visible while
@@ -158,8 +151,8 @@ export async function GET(request: NextRequest) {
         ),
       )]
       : fetched;
-    const orders = await ordersForScope(await ordersForView(sourceOrders, view, allProduction), scope);
-    return NextResponse.json({ orders, view, scope, localFixtures: process.env.NODE_ENV !== "production" && process.env.FIKA_ENABLE_LOCAL_PRODUCTION_FIXTURES === "true" });
+    const orders = await ordersForScope(sourceOrders, scope);
+    return NextResponse.json({ orders, scope, localFixtures: process.env.NODE_ENV !== "production" && process.env.FIKA_ENABLE_LOCAL_PRODUCTION_FIXTURES === "true" });
   } catch (error) {
     return NextResponse.json(
       { error: { message: (error as Error).message } },
@@ -173,23 +166,6 @@ async function ordersForScope(orders: Awaited<ReturnType<typeof productionQueue>
   return filterProductionOrdersForScope(orders, scope, await hospitalityMenuProductionRouting());
 }
 
-function parseDashboardView(value: string | null): ProductionDashboardView {
-  return normaliseProductionDashboardView(value);
-}
-
-async function ordersForView(
-  orders: Awaited<ReturnType<typeof productionQueue>>,
-  view: ProductionDashboardView,
-  allProduction = false,
-) {
-  if (allProduction) return orders;
-  if (view === "site_manager") return orders;
-  return filterProductionOrdersForDashboard(
-    orders,
-    view,
-    await hospitalityMenuProductionRouting(),
-  );
-}
 export async function POST(request: NextRequest) {
   try {
     const actor = await actorFor(request, ["integration-admin", "reviewer"]);

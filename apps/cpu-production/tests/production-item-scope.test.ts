@@ -24,12 +24,13 @@ test("delivered-in lunch items remain separate from hospitality menu items", () 
 
 test("production type scope filters canonical order lines without inventing records", () => {
   const base = { canonicalId: "order", origin: "hospitality_booking", lines: [
-    { canonicalId: "line:sandwich", sourceMenuItemId: "menu:sandwich" },
-    { canonicalId: "line:hospitality", sourceMenuItemId: "menu:hospitality" },
+    { canonicalId: "line:sandwich", sourceMenuItemId: "menu:sandwich", workstream: "sandwiches" },
+    { canonicalId: "line:hospitality", sourceMenuItemId: "menu:hospitality", workstream: "hospitality" },
   ] } as never;
   const routing: ProductionRouting = { "menu:sandwich": ["liana"], "menu:hospitality": ["craig"] };
   assert.equal(filterProductionOrdersForScope([base], "all", routing).length, 1);
   assert.deepEqual(filterProductionOrdersForScope([base], "sandwiches", routing)[0].lines.map((line) => line.canonicalId), ["line:sandwich"]);
-  assert.deepEqual(filterProductionOrdersForScope([base], "hospitality", routing)[0].lines.map((line) => line.canonicalId), ["line:hospitality"]);
-  assert.deepEqual(filterProductionOrdersForScope([base], "grab_and_go", routing), []);
+  assert.deepEqual(filterProductionOrdersForScope([base], "hospitality", routing)[0].lines.map((line) => line.canonicalId), ["line:sandwich", "line:hospitality"]);
+  const grab = { canonicalId: "grab", origin: "grab_and_go", lines: [{ canonicalId: "line:sandwich", sourceMenuItemId: "menu:sandwich", workstream: "grab_and_go" }] } as never;
+  assert.deepEqual(filterProductionOrdersForScope([grab], "grab_and_go", routing)[0].lines.map((line) => line.canonicalId), ["line:sandwich"]);
 });

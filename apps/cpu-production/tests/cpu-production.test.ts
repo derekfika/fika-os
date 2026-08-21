@@ -113,9 +113,8 @@ test("Head Chef receives immutable Menu Planning publication days as a read-only
   assert.match(publishedMenusView, /aggregateProductionTotals/);
   assert.match(publishedMenusView, /No production menu published/);
   assert.match(publishedMenusView, /href=\{`#published-day-\$\{date\}`\}/);
-  assert.match(page, /item === "grab_and_go" \? "grab-and-go"/);
-  assert.match(page, /if \(next === "site_manager"\) setView\("published-menus"\)/);
-  assert.match(page, /if \(next === "grab_and_go"\) setView\("grab-and-go"\)/);
+  assert.match(page, /productionScopes/);
+  assert.match(page, /scope=\$\{productionScope\}/);
 });
 
 test("published menu selection keeps only the latest version for each service date", () => {
@@ -296,10 +295,12 @@ test("delivered-in lunch creator can save and reuse new menu items", () => {
   assert.match(page, /Save new item/);
 });
 
-test("CPU exposes four clear production workspaces and removes obsolete manager controls", () => {
-  assert.match(page, /site_manager: "Delivered-In production"/);
-  assert.match(page, /grab_and_go: "Grab & Go production"/);
-  assert.match(page, /"grab_and_go"/);
+test("CPU exposes five canonical production scopes and removes obsolete manager controls", () => {
+  assert.match(page, /All production/);
+  assert.match(page, /Sandwiches/);
+  assert.match(page, /Hospitality/);
+  assert.match(page, /Delivered-In/);
+  assert.match(page, /Grab &amp; Go/);
   assert.doesNotMatch(page, /Six-week menu planner/);
   assert.doesNotMatch(page, /Published delivered-in menus<\/button>/);
   assert.doesNotMatch(page, /Create delivered-in lunch<\/button>/);
@@ -410,10 +411,9 @@ test("CPU dashboard opens with a Monday-to-Friday production heads-up", () => {
 });
 
 test("production views use Connections routing without duplicating bookings", () => {
-  assert.match(page, /Production chef/);
-  assert.match(page, /Hospitality chef/);
-  assert.match(page, /Delivered-In production/);
-  assert.match(page, /api\/production\?view=\$\{dashboardView\}/);
+  assert.match(page, /productionScope/);
+  assert.doesNotMatch(page, /dashboardView/);
+  assert.match(page, /api\/production\?scope=\$\{productionScope\}/);
   assert.match(route, /hospitalityMenuProductionRouting/);
   assert.match(dashboardViews, /site_manager.*return orders/s);
   assert.match(dashboardViews, /assigned\.includes\(/);

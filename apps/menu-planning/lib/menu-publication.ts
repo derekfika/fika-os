@@ -10,9 +10,9 @@ import { resolveAllergenSnapshot } from "./allergen-resolution";
 import type { MenuItem } from "./domain";
 import { publishedAllergenMatrixHtml } from "../../shared/published-allergen-matrix";
 import { claimEvent, createDomainEvent, eventIsDue, markEventDelivered, markEventFailed, type DurableDomainEvent } from "../../shared/domain-events";
-import { fulfilmentFromPublishedMenuDay, fulfilmentRequirementIdentity, type FulfilmentRequirement } from "../../shared/fulfilment-requirement";
 import { readPublicationState, updatePublicationState, withMenuPlanningTransaction } from "./operational-store";
 import { appDataPath } from "../../shared/app-data-path";
+import type { FulfilmentRequirement } from "../../shared/fulfilment-requirement";
 
 export const PUBLICATION_ATTESTATION = "I confirm that I have reviewed the allergen information shown for this day's published menu and that it reflects the approved information available at the time of publication.";
 export type MenuPublicationSignature = { printedName: string; signatureDataUrl?: string; signedAt: string; actor: string; attestation: string };
@@ -45,18 +45,14 @@ function appendPublicationEvents(stored: StoredPublications, publication: MenuPu
   addEvent(createDomainEvent({ eventType: `menu.day.${action}`, sourceAggregateId: `${publication.publicationId}:${day.sourceDayId}`, sourceVersion: day.version, occurredAt, payload: { publicationId: publication.publicationId, publicationDayId: day.publicationDayId, sourceDayId: day.sourceDayId, serviceDate: day.date, version: day.version, contentHash: day.contentHash, status: day.status, actor } }));
   const currentDestinations = [...new Set(day.entries.flatMap(entry => entry.allocations.map(allocation => allocation.destinationId).filter((id): id is string => Boolean(id))))];
   const previousDestinations = stored.events
-    .map(event => event.payload as Partial<FulfilmentRequirement>)
-    .filter(requirement => requirement.entityType === "Fulfilment Requirement" && requirement.sourceDomain === "menu-planning" && requirement.sourceEntityId === day.sourceDayId)
-    .map(requirement => requirement.destinationOplocId)
+    .map(event => event.payload as { sourceDomain?: string; sourceEntityId?: string; destinationOplocId?: string })
+    .filter(value => value.sourceDomain === "menu-planning" && value.sourceEntityId === day.sourceDayId)
+    .map(value => value.destinationOplocId)
     .filter((id): id is string => Boolean(id));
   const destinations = [...new Set([...currentDestinations, ...previousDestinations])];
   for (const destinationOplocId of destinations) {
-    const previous = stored.events
-      .map(event => event.payload as FulfilmentRequirement)
-      .filter(requirement => requirement?.entityType === "Fulfilment Requirement" && requirement.canonicalId === fulfilmentRequirementIdentity("menu-planning", day.sourceDayId, destinationOplocId))
-      .sort((a, b) => b.sourceVersion - a.sourceVersion)[0];
-    const requirement = fulfilmentFromPublishedMenuDay(currentDestinations.includes(destinationOplocId) ? day : { ...day, status: "withdrawn" }, destinationOplocId, previous);
-    addEvent(createDomainEvent({ eventType: `fulfilment.requirement.${requirement.status === "withdrawn" ? "withdrawn" : previous ? "amended" : "created"}`, sourceAggregateId: requirement.canonicalId, sourceVersion: requirement.sourceVersion, occurredAt, payload: requirement, causationId: `${publication.publicationId}:${day.sourceDayId}:v${day.version}` }));
+    const active = currentDestinations.includes(destinationOplocId);
+    addEvent(createDomainEvent({ eventType: "production.materialise", sourceAggregateId: `${publication.publicationId}:${day.sourceDayId}:${destinationOplocId}`, sourceVersion: day.version, occurredAt, payload: { sourceDomain: "menu-planning", sourceEntityId: day.sourceDayId, sourcePublicationDayId: day.publicationDayId, sourceVersion: day.version, sourceContentHash: day.contentHash, destinationOplocId, destinationLabel: day.entries.flatMap(entry => entry.allocations).find(allocation => allocation.destinationId === destinationOplocId)?.destinationLabel || destinationOplocId, serviceDate: day.date, status: active ? action === "withdrawn" ? "withdrawn" : action === "amended" ? "amended" : "published" : "withdrawn", lines: active ? day.entries.flatMap(entry => entry.allocations.filter(allocation => allocation.destinationId === destinationOplocId).map(allocation => ({ sourceLineId: entry.sourceEntryId, canonicalItemId: entry.canonicalDishId, itemName: entry.dishName, quantity: allocation.quantity, unit: "portion", workstream: "delivered_in" as const }))) : [{ sourceLineId: `${day.sourceDayId}:withdrawn`, itemName: "Withdrawn Delivered-In menu", quantity: 0, unit: "portion", workstream: "delivered_in" as const }] }, causationId: `${publication.publicationId}:${day.sourceDayId}:v${day.version}` }));
   }
 }
 export function listMenuPublications() { return read().publications.map(clone); }

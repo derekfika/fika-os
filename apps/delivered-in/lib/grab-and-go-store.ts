@@ -4,8 +4,8 @@ import { existsSync, mkdirSync, readFileSync, renameSync } from "node:fs";
 import { dirname, join } from "node:path";
 import type { GrabAndGoOrder, GrabAndGoProduct } from "./grab-and-go";
 import { claimEvent, createDomainEvent, eventIsDue, markEventDelivered, markEventFailed, type DurableDomainEvent } from "../../shared/domain-events";
-import { fulfilmentFromGrabAndGoOrder, type FulfilmentRequirement } from "../../shared/fulfilment-requirement";
 import { appDataPath } from "../../shared/app-data-path";
+import type { FulfilmentRequirement } from "../../shared/fulfilment-requirement";
 
 type Stored = { version: 1; orders: GrabAndGoOrder[]; events: DurableDomainEvent[]; /** Legacy migration field; central Integration Hub is authoritative. */ fulfilmentRequirements?: FulfilmentRequirement[] };
 const file = appDataPath("delivered-in", "delivered-in", "grab-and-go-orders.json");
@@ -43,18 +43,7 @@ function parse(database: DatabaseSync): Stored {
   try { const row = database.prepare("SELECT state_json FROM grab_and_go_state WHERE state_id = 1").get() as { state_json?: string } | undefined; if (!row?.state_json) throw new Error("missing state"); const value = JSON.parse(row.state_json) as Stored; if (!Array.isArray(value.orders) || !Array.isArray(value.events)) throw new Error("invalid state"); return { version: 1, orders: value.orders, events: value.events }; } catch (cause) { throw unavailable("Grab & Go order data is unavailable; no order list was loaded.", cause); }
 }
 const read = (): Stored => { const database = open(); try { return parse(database); } finally { database.close(); } };
-function backfillMissingFulfilmentEvents(stored: Stored) {
-  for (const order of stored.orders) {
-    const hasRequirementEvent = stored.events.some(event => event.eventType.startsWith("fulfilment.requirement.") && event.sourceVersion === order.version && (event.sourceAggregateId === order.orderId || (event.payload as Partial<FulfilmentRequirement>)?.sourceEntityId === order.orderId));
-    if (hasRequirementEvent) continue;
-    const previousRequirement = stored.events
-      .map(event => event.payload as FulfilmentRequirement)
-      .filter(requirement => requirement?.entityType === "Fulfilment Requirement" && requirement.sourceEntityId === order.orderId)
-      .sort((a, b) => b.sourceVersion - a.sourceVersion)[0];
-    const requirement = fulfilmentFromGrabAndGoOrder(order, order.updatedBy, order.updatedAt, previousRequirement);
-    stored.events.push(createDomainEvent({ eventType: `fulfilment.requirement.${requirement.status === "withdrawn" ? "withdrawn" : previousRequirement ? "amended" : "created"}`, sourceAggregateId: requirement.canonicalId, sourceVersion: requirement.sourceVersion, occurredAt: order.updatedAt, payload: requirement, causationId: order.orderId }));
-  }
-}
+function backfillMissingFulfilmentEvents(_stored: Stored) { /* CPU materialisation owns the only production-bound fulfilment path. */ }
 function withTransaction<T>(mutator: (stored: Stored) => T) {
   const database = open(); database.exec("BEGIN IMMEDIATE");
   try { const stored = parse(database); const result = mutator(stored); database.prepare("UPDATE grab_and_go_state SET state_json = ?, updated_at = ? WHERE state_id = 1").run(JSON.stringify(stored), new Date().toISOString()); database.exec("COMMIT"); return result; } catch (cause) { try { database.exec("ROLLBACK"); } catch { /* preserve original failure */ } throw cause; } finally { database.close(); }
@@ -74,12 +63,6 @@ export function saveGrabAndGoOrder(order: GrabAndGoOrder, expectedVersion?: numb
   const action = order.status === "cancelled" ? "cancelled" : previous ? "amended" : "submitted";
   const addEvent = (event: DurableDomainEvent) => { if (!stored.events.some(existing => existing.eventId === event.eventId)) stored.events.push(event); };
   addEvent(createDomainEvent({ eventType: `grab-and-go.order.${action}`, sourceAggregateId: order.orderId, sourceVersion: order.version, occurredAt: order.updatedAt, payload: { orderId: order.orderId, oplocId: order.oplocId, deliveryDate: order.deliveryDate, version: order.version, status: order.status } }));
-  const previousRequirement = stored.events
-    .map(event => event.payload as FulfilmentRequirement)
-    .filter(requirement => requirement?.entityType === "Fulfilment Requirement" && requirement.sourceEntityId === order.orderId)
-    .sort((a, b) => b.sourceVersion - a.sourceVersion)[0];
-  const requirement = fulfilmentFromGrabAndGoOrder(order, order.updatedBy, order.updatedAt, previousRequirement);
-  addEvent(createDomainEvent({ eventType: `fulfilment.requirement.${requirement.status === "withdrawn" ? "withdrawn" : previousRequirement ? "amended" : "created"}`, sourceAggregateId: requirement.canonicalId, sourceVersion: requirement.sourceVersion, occurredAt: order.updatedAt, payload: requirement, causationId: order.orderId }));
   return order;
   });
 }

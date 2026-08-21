@@ -3,8 +3,7 @@ import { applyOrderAction, availableDeliveryDates, deliveryCutoff, isBeforeOrder
 import { readGrabAndGoCatalogue, getGrabAndGoOrder, listGrabAndGoOrders, saveGrabAndGoOrder } from "@/lib/grab-and-go-store";
 import { assertAuthorisedOploc } from "@/lib/projection";
 import { resolveAccess } from "@/lib/server";
-import { forwardFulfilmentEvent } from "../../../../../shared/fulfilment-client";
-import { replayGrabAndGoOutbox } from "@/lib/grab-and-go-store";
+import { forwardProductionMaterialisation } from "../../../../../shared/production-client";
 
 export const dynamic = "force-dynamic";
 
@@ -40,7 +39,7 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json() as { oplocId?: string; deliveryDate?: string; action?: "submit" | "amend" | "cancel"; expectedVersion?: number; lines?: Array<{ productId: string; quantity: number }> };
     if (!body.deliveryDate || !body.action || !["submit", "amend", "cancel"].includes(body.action)) return NextResponse.json({ error: { message: "A delivery date and valid order action are required." } }, { status: 422 });
-    const { selected, access } = await authorisedSite(request, body.oplocId); const catalogue = readGrabAndGoCatalogue(); const existing = getGrabAndGoOrder(selected, body.deliveryDate); const order = applyOrderAction(existing, { action: body.action, oplocId: selected, deliveryDate: body.deliveryDate, rotationWeek: rotationWeekForDate(body.deliveryDate), lines: body.lines, expectedVersion: body.expectedVersion, actor: access.email }, catalogue); saveGrabAndGoOrder(order, body.action === "submit" ? undefined : body.expectedVersion); void replayGrabAndGoOutbox(forwardFulfilmentEvent).catch(() => undefined);
+    const { selected, access } = await authorisedSite(request, body.oplocId); const catalogue = readGrabAndGoCatalogue(); const existing = getGrabAndGoOrder(selected, body.deliveryDate); const order = applyOrderAction(existing, { action: body.action, oplocId: selected, deliveryDate: body.deliveryDate, rotationWeek: rotationWeekForDate(body.deliveryDate), lines: body.lines, expectedVersion: body.expectedVersion, actor: access.email }, catalogue); saveGrabAndGoOrder(order, body.action === "submit" ? undefined : body.expectedVersion); await forwardProductionMaterialisation({ sourceDomain: "grab-and-go", sourceEntityId: order.orderId, sourceVersion: order.version, destinationOplocId: order.oplocId, destinationLabel: order.oplocId, serviceDate: order.deliveryDate, requiredBy: `${order.deliveryDate}T08:00`, status: order.status, lines: order.lines.map((line, index) => ({ sourceLineId: `${order.orderId}:line:${line.productId}`, canonicalItemId: line.productId, itemName: line.productName, quantity: line.quantity, unit: "item", workstream: "grab_and_go", })) });
     return NextResponse.json({ order }, { status: existing ? 200 : 201 });
   } catch (error) { return NextResponse.json({ error: { message: error instanceof Error ? error.message : "The Grab & Go order could not be saved." } }, { status: Number((error as { status?: number }).status) || 502 }); }
 }

@@ -49,23 +49,6 @@ function visibleStatus(order: ProductionOrder): ProductionStatus {
   return order.workflowStatus;
 }
 type View = "calendar" | "queue" | "run-sheet" | "totals" | "menu-planning" | "published-menus" | "grab-and-go";
-type ProductionDashboardView = "production" | "hospitality" | "site_manager" | "grab_and_go";
-const dashboardViewLabels: Record<string, string> = {
-  liana: "Production chef · sandwiches",
-  craig: "Hospitality chef",
-  site_manager: "Delivered-In production",
-  grab_and_go: "Grab & Go production",
-};
-dashboardViewLabels.production = "Production chef · sandwiches";
-dashboardViewLabels.hospitality = "Hospitality chef";
-function initialDashboardView(): ProductionDashboardView {
-  if (typeof window === "undefined") return "production";
-  const value = new URLSearchParams(window.location.search).get("view");
-  if (value === "hospitality" || value === "craig") return "hospitality";
-  if (value === "site_manager") return "site_manager";
-  if (value === "grab_and_go") return "grab_and_go";
-  return "production";
-}
 
 export default function CpuProduction() {
   const [orders, setOrders] = useState<ProductionOrder[]>([]);
@@ -75,23 +58,11 @@ export default function CpuProduction() {
   const [date, setDate] = useState("");
   const [productionScope, setProductionScope] = useState<ProductionScope>("all");
   const [view, setView] = useState<View>("calendar");
-  // Keep the server and first client render identical. The URL-backed role
-  // view is applied after hydration so the navigation cannot mismatch.
-  const [dashboardView, setDashboardView] =
-    useState<ProductionDashboardView>("production");
   const [selected, setSelected] = useState<ProductionOrder>();
   const [showCreate, setShowCreate] = useState(false);
   const [error, setError] = useState("");
-  useEffect(() => {
-    const next = initialDashboardView();
-    if (next !== "production") {
-      setDashboardView(next);
-      if (next === "site_manager") setView("published-menus");
-      if (next === "grab_and_go") setView("grab-and-go");
-    }
-  }, []);
   const load = async (): Promise<ProductionOrder[]> => {
-    const response = await fetch(`/api/production?view=${dashboardView}&scope=${productionScope}&allProduction=${dashboardView === "production"}`, {
+    const response = await fetch(`/api/production?scope=${productionScope}`, {
       cache: "no-store",
     });
     const body = await response.json();
@@ -123,12 +94,7 @@ export default function CpuProduction() {
   };
   useEffect(() => {
     void load();
-  }, [dashboardView, productionScope]);
-  useEffect(() => {
-    // A selected order belongs to the role-specific projection that opened it.
-    // Do not carry a stale detail panel across dashboard views.
-    setSelected(undefined);
-  }, [dashboardView]);
+  }, [productionScope]);
   const sites = [
     ...new Set(
       orders.map((order) => order.productionLocationId).filter(Boolean),
@@ -196,34 +162,6 @@ export default function CpuProduction() {
           {productionScopes.map((scope) => (
             <button type="button" key={scope.id} className={productionScope === scope.id ? "selected" : ""} onClick={() => { setProductionScope(scope.id); setStatus(""); }}>
               {scope.label}
-            </button>
-          ))}
-        </nav>
-        <nav
-          className="cpu-dashboard-switcher"
-          aria-label="Production dashboard view"
-        >
-          <span>Production view</span>
-          {(
-            [
-              "production",
-              "hospitality",
-              "site_manager",
-              "grab_and_go",
-            ] as ProductionDashboardView[]
-          ).map((item) => (
-            <button
-              type="button"
-              className={dashboardView === item ? "selected" : ""}
-              key={item}
-              onClick={() => {
-                setDashboardView(item);
-                setView(item === "site_manager" ? "published-menus" : item === "grab_and_go" ? "grab-and-go" : "calendar");
-                setShowCreate(false);
-                window.history.replaceState({}, "", `/?view=${item}`);
-              }}
-            >
-              {dashboardViewLabels[item]}
             </button>
           ))}
         </nav>

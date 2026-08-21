@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createCpuProductionOrder, productionOrderV1Id, productionRequirementId } from "../lib/production-domain";
+import { createCpuProductionOrder, materialisedProductionId, productionOrderV1Id, productionRequirementId } from "../lib/production-domain";
 import { transitionProductionOrder } from "../lib/production-domain";
 import { db } from "../lib/firebase-admin";
 import type { ProductionLine } from "../lib/production-domain";
@@ -10,6 +10,12 @@ test("production identifiers are stable and distinct by source booking and quote
   assert.equal(productionOrderV1Id("booking:mnk:one", 2), "production-order:v1:booking:mnk:one:r2");
   assert.equal(productionRequirementId("booking:mnk:one", "quote:booking:mnk:one:r1"), "production-requirement:booking:mnk:one:quote:booking:mnk:one:r1");
   assert.notEqual(productionRequirementId("booking:mnk:one", "quote:booking:mnk:one:r1"), productionRequirementId("booking:mnk:one", "quote:booking:mnk:one:r2"));
+});
+
+test("external production identities are deterministic per source and destination", () => {
+  const input = { sourceDomain: "grab-and-go" as const, sourceEntityId: "UAT-WC240826:haleon:2026-08-24", destinationOplocId: "oploc:haleon" };
+  assert.equal(materialisedProductionId(input), materialisedProductionId(input));
+  assert.notEqual(materialisedProductionId(input), materialisedProductionId({ ...input, destinationOplocId: "oploc:xchange" }));
 });
 
 test("production contracts keep customer and preparation quantities separate", async () => {

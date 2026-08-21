@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildMnkCanonicalBooking, canonicalBookingId, ingestMnkBookingFromExisting, menuForMnkPortal } from "../lib/hospitality-booking-service";
+import { buildMnkCanonicalBooking, canonicalBookingId, ingestMnkBookingFromExisting, menuForMnkPortal, resolveHospitalityDestinationOploc } from "../lib/hospitality-booking-service";
 import type { CanonicalRecord } from "../lib/types";
 
 const menu = (state: "active" | "archived" = "active"): CanonicalRecord => ({ canonicalId: "hospitality-menu-item:abc12345", entityType: "Hospitality Menu Item", lifecycleStatus: "published", dataHash: "x", record: { lifecycleState: state, name: "Breakfast box", category: "Breakfast", unitPrice: 12, vatRate: .2, providerMappings: [{ provider: "mnk-booking-platform", sourceItemId: "breakfast_box" }], dietaryInformation: [], allergenInformation: [] } });
@@ -26,6 +26,19 @@ test("site-scoped canonical mappings are used once a portal catalogue is promote
   assert.equal(result.validationWarnings.length, 0);
 });
 test("canonical booking ID is deterministic across retry payloads", () => { assert.equal(canonicalBookingId("MNK-ONE"), canonicalBookingId("MNK-ONE")); });
+test("governed Hospitality site mapping supplies the canonical destination OPLOC", () => {
+  const records: CanonicalRecord[] = [{ canonicalId: "oploc:mnk", entityType: "OPLOC", lifecycleStatus: "published", publicationStatus: "published", dataHash: "x", record: { lifecycleState: "active" } }];
+  const mappings = [{ sourceIdentifier: "mnk", sourceEntityType: "provider-location", mappingStatus: "confirmed", oplocId: "oploc:mnk" }];
+  assert.equal(resolveHospitalityDestinationOploc({ siteId: "mnk" }, mappings, records), "oploc:mnk");
+  const result = buildMnkCanonicalBooking(payload, [menu()], "2026-07-30T10:01:00.000Z");
+  result.booking.service.oplocId = "oploc:mnk";
+  assert.equal(result.booking.service.oplocId, "oploc:mnk");
+  assert.equal(result.booking.service.roomOrArea, undefined);
+});
+test("unmapped delivery site cannot be resolved from customer-facing labels", () => {
+  const records: CanonicalRecord[] = [{ canonicalId: "oploc:mnk", entityType: "OPLOC", lifecycleStatus: "published", publicationStatus: "published", dataHash: "x", record: { lifecycleState: "active" } }];
+  assert.equal(resolveHospitalityDestinationOploc({ siteId: "unknown" }, [{ sourceIdentifier: "MNK", mappingStatus: "confirmed", oplocId: "oploc:mnk" }], records), undefined);
+});
 test("a retry returns the existing canonical Booking rather than creating a duplicate", () => { const first = buildMnkCanonicalBooking(payload, [menu()]).booking; const retry = ingestMnkBookingFromExisting(first, payload, [menu()]); assert.equal(retry.created, false); assert.equal(retry.booking.canonicalId, first.canonicalId); });
 test("canonical booking ingestion enforces a three-box minimum for governed summer rolls", () => {
   const minimumMenu = menu();

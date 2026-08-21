@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { archivePublishedDayMatrix, getMenuPublication, listMenuPublications, withdrawPublishedMenuDay, withdrawPublishedMenuWeek } from "@/lib/menu-publication";
 import { requirePublicationActor, resolveMenuActor } from "@/lib/auth";
-import { forwardFulfilmentEvent } from "../../../../../shared/fulfilment-client";
+import { forwardProductionMaterialisationEvent } from "../../../../../shared/production-client";
 import { replayMenuPublicationOutbox } from "@/lib/menu-publication";
 
 export async function GET(request: NextRequest) {
@@ -21,11 +21,11 @@ export async function POST(request: NextRequest) {
     if (!body.publicationId) return NextResponse.json({ error: { message: "Publication is required." } }, { status: 422 });
     if (body.action === "withdraw-week") {
       const publication = withdrawPublishedMenuWeek(body.publicationId, body.reason || "", actor.uid);
-      void replayMenuPublicationOutbox(forwardFulfilmentEvent).catch(() => undefined);
+      void replayMenuPublicationOutbox(forwardProductionMaterialisationEvent).catch(() => undefined);
       return NextResponse.json({ publication });
     }
     if (!body.publicationDayId) return NextResponse.json({ error: { message: "Publication day is required." } }, { status: 422 });
-    if (body.action === "withdraw") { const publication = withdrawPublishedMenuDay(body.publicationId, body.publicationDayId, body.reason || "", actor.uid); void replayMenuPublicationOutbox(forwardFulfilmentEvent).catch(() => undefined); return NextResponse.json({ publication }); }
+    if (body.action === "withdraw") { const publication = withdrawPublishedMenuDay(body.publicationId, body.publicationDayId, body.reason || "", actor.uid); void replayMenuPublicationOutbox(forwardProductionMaterialisationEvent).catch(() => undefined); return NextResponse.json({ publication }); }
     if (body.action === "retry-archive") {
       const archive = await archivePublishedDayMatrix(body.publicationId, body.publicationDayId);
       return NextResponse.json({ publication: getMenuPublication(body.publicationId), archive });

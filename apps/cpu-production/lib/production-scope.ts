@@ -19,9 +19,12 @@ export function normaliseProductionScope(value: string | null | undefined): Prod
 
 function orderTypes(order: ProductionOrder, routing: ProductionRouting): Set<Exclude<ProductionScope, "all">> {
   const types = new Set<Exclude<ProductionScope, "all">>();
-  if (order.origin === "cpu_created" || order.origin === "legacy_import") types.add("delivered_in");
+  if (order.origin === "grab_and_go") types.add("grab_and_go");
+  if (order.origin === "hospitality_booking") types.add("hospitality");
+  if (order.origin === "menu_planning" || order.origin === "cpu_created" || order.origin === "legacy_import") types.add("delivered_in");
   for (const line of order.lines) {
     const ids = [line.sourceMenuItemId, line.sourceOfferingId].filter((value): value is string => Boolean(value));
+    if (line.workstream && line.workstream !== "unassigned") types.add(line.workstream);
     const assignments = ids.flatMap((id) => routing[id] || []);
     if (assignments.includes("liana")) types.add("sandwiches");
     if (assignments.includes("craig")) types.add("hospitality");
@@ -38,9 +41,8 @@ export function filterProductionOrdersForScope(
   routing: ProductionRouting,
 ): ProductionOrder[] {
   if (scope === "all") return orders;
-  if (scope === "grab_and_go") return [];
   return orders
-    .map((order) => ({ ...order, lines: order.lines.filter((line) => {
+    .map((order) => ({ ...order, lines: order.origin === "hospitality_booking" && scope === "hospitality" ? order.lines : order.lines.filter((line) => {
       const scoped = orderTypes({ ...order, lines: [line] }, routing);
       return scoped.has(scope);
     }) }))

@@ -7,15 +7,17 @@ import { createDomainEvent } from "../../shared/domain-events";
 import { stageDomainEvent } from "./domain-event-outbox";
 import { stageFulfilmentEvent } from "./fulfilment-projection";
 import { productionOrderRequiresFulfilment } from "../../shared/fulfilment-requirement";
+import { hospitalityMenuProductionRouting } from "./connections-service";
 
 export const PRODUCTION_SCHEMA_VERSION = "0.1.0";
 export type ProductionStatus = "received" | "draft" | "needs_review" | "accepted" | "planning" | "planned" | "amended" | "menu_available" | "rejected" | "needs_clarification" | "scheduled" | "in_production" | "partially_complete" | "ready" | "complete" | "cancelled" | "blocked" | "failed" | "reconciliation_required";
 export type ProductionException = { canonicalId: string; severity: "info" | "warning" | "blocking"; status: "open" | "resolved"; description: string; createdAt: string; createdBy: string; resolvedAt?: string; resolvedBy?: string; resolutionNotes?: string; audit: ProductionAuditEvent[] };
 export type ProductionAuditEvent = { action: string; at: string; by: string; previousState?: string; newState?: string; reason?: string; correlationId?: string; causationId?: string; idempotencyKey?: string };
-export type ProductionLine = { canonicalId: string; sourceBookingLineId: string; sourceMenuItemId?: string; sourceOfferingId?: string; itemName: string; description?: string; customerQuantity: number; customerUnit: string; productionQuantity?: number; productionUnit?: string; actualQuantity?: number; shortfallQuantity?: number; substitution?: string; wasteQuantity?: number; conversionSnapshot?: { quantity: number; unit: string; rule: string }; choices?: unknown[]; servingGuidance?: string; productionInstructions?: string; dietaries: Record<string, unknown>; allergenEvidenceStatus?: "confirmed" | "unreviewed" | "missing" | "conflicting"; status: "pending" | "ready" | "complete" | "exception"; sortOrder: number; exceptions?: string[] };
+export type ProductionWorkstream = "sandwiches" | "hospitality" | "delivered_in" | "grab_and_go" | "unassigned";
+export type ProductionLine = { canonicalId: string; sourceBookingLineId: string; sourceMenuItemId?: string; sourceOfferingId?: string; itemName: string; description?: string; customerQuantity: number; customerUnit: string; productionQuantity?: number; productionUnit?: string; actualQuantity?: number; shortfallQuantity?: number; substitution?: string; wasteQuantity?: number; conversionSnapshot?: { quantity: number; unit: string; rule: string }; choices?: unknown[]; servingGuidance?: string; productionInstructions?: string; dietaries: Record<string, unknown>; allergenEvidenceStatus?: "confirmed" | "unreviewed" | "missing" | "conflicting"; status: "pending" | "ready" | "complete" | "exception"; sortOrder: number; exceptions?: string[]; workstream?: ProductionWorkstream };
 export type ProductionRequirement = { canonicalId: string; entityType: "Production Requirement"; schemaVersion: string; version: number; sourceBookingId: string; sourceBookingRevision: number; sourceQuoteRevisionId: string; productionLocationId?: string; requestedServiceDate: string; serviceWindow: { startTime: string; endTime?: string }; requiredBy: string; status: "draft" | "needs_review" | "accepted" | "cancelled"; sourceSnapshot: { booking: CanonicalBooking; quote: unknown }; createdAt: string; createdBy: string; updatedAt: string; updatedBy: string; audit: ProductionAuditEvent[] };
-export type ProductionOrigin = "hospitality_booking" | "cpu_created" | "legacy_import";
-export type ProductionOrder = { canonicalId: string; entityType: "Production Order"; schemaVersion: string; version: number; requirementIds: string[]; sourceBookingId: string; sourceQuoteRevisionId: string; productionLocationId?: string; requiresDelivery?: boolean; destinationOplocId?: string; destinationLabel?: string; clientName?: string; serviceType?: string; serviceDate?: string; guestCount?: number; requiredBy: string; serviceWindow: { startTime: string; endTime?: string }; status: ProductionStatus; /** Local planning projection, kept separate from the governed Production lifecycle. */ workflowStatus?: ProductionStatus; priority: "normal" | "high" | "urgent"; lines: ProductionLine[]; exceptions: ProductionException[]; operationalNotes?: string; origin: ProductionOrigin; currentRevision: number; createdAt: string; createdBy: string; acceptedAt?: string; startedAt?: string; completedAt?: string; supersededBy?: string; idempotencyKey: string; externalReferences: string[]; audit: ProductionAuditEvent[] };
+export type ProductionOrigin = "hospitality_booking" | "cpu_created" | "legacy_import" | "menu_planning" | "grab_and_go";
+export type ProductionOrder = { canonicalId: string; entityType: "Production Order"; schemaVersion: string; version: number; requirementIds: string[]; sourceBookingId: string; sourceQuoteRevisionId: string; sourceEntityId?: string; sourceVersion?: number; sourceContentHash?: string; sourcePublicationDayId?: string; productionLocationId?: string; requiresDelivery?: boolean; destinationOplocId?: string; destinationLabel?: string; clientName?: string; serviceType?: string; serviceDate?: string; guestCount?: number; requiredBy: string; serviceWindow: { startTime: string; endTime?: string }; status: ProductionStatus; /** Local planning projection, kept separate from the governed Production lifecycle. */ workflowStatus?: ProductionStatus; priority: "normal" | "high" | "urgent"; lines: ProductionLine[]; exceptions: ProductionException[]; operationalNotes?: string; origin: ProductionOrigin; currentRevision: number; createdAt: string; createdBy: string; acceptedAt?: string; startedAt?: string; completedAt?: string; supersededBy?: string; idempotencyKey: string; externalReferences: string[]; audit: ProductionAuditEvent[] };
 
 const requirements = () => db.collection("fikaProductionRequirements");
 const orders = () => db.collection("fikaProductionOrdersV1");
@@ -42,11 +44,13 @@ export function productionOrderV1Id(bookingId: string, bookingVersion?: number) 
 
 export async function createProductionFromApprovedBooking(actor: Actor, bookingId: string, idempotencyKey: string, conversions: Record<string, { quantity: number; unit: string }> = {}) {
   if (!idempotencyKey.trim()) throw conflict("An idempotency key is required for production hand-off.");
+  const routing = await hospitalityMenuProductionRouting();
   return db.runTransaction(async transaction => {
     const bookingSnapshot = await transaction.get(bookings().doc(bookingId));
     if (!bookingSnapshot.exists) throw conflict("Booking was not found.");
     const booking = bookingSnapshot.data() as CanonicalBooking;
     if (booking.lifecycleStatus !== "Approved") throw conflict("Only an approved Booking can create production work.");
+    if (!booking.service.oplocId?.trim()) throw conflict("A delivery-requiring Hospitality Production Order needs a confirmed canonical destination OPLOC.");
     const quote = booking.quoteState?.revisions.find(item => item.id === booking.quoteState?.currentRevisionId);
     if (!quote || quote.stale || quote.id !== booking.quoteState?.currentRevisionId) throw conflict("A current approved Quote Revision is required.");
     const baseOrderRef = orders().doc(stableDocumentId(productionOrderV1Id(bookingId)));
@@ -66,11 +70,13 @@ export async function createProductionFromApprovedBooking(actor: Actor, bookingI
       const configured = conversions[item.itemId];
       const explicitRule = explicitMnkConversions[item.itemId] || Object.entries(explicitMnkConversions).find(([key]) => item.itemId.endsWith(`:${key}`))?.[1];
       const conversion = configured ? { quantity: configured.quantity, unit: configured.unit, rule: "Explicit production conversion configuration." } : explicitRule ? { quantity: item.quantity * explicitRule.multiplier, unit: explicitRule.unit, rule: explicitRule.rule } : undefined;
-      const line: ProductionLine = { canonicalId: `production-line:${bookingId}:${index + 1}`, sourceBookingLineId: `${bookingId}:line:${index + 1}`, ...(item.menuItemId ? { sourceMenuItemId: item.menuItemId } : {}), itemName: item.itemName || item.itemId, ...(item.description ? { description: item.description } : {}), customerQuantity: item.quantity, customerUnit: item.servingInfo || "ordered unit", ...(conversion ? { productionQuantity: conversion.quantity, productionUnit: conversion.unit, conversionSnapshot: { ...conversion, rule: "Explicit configured production conversion." } } : {}), ...(item.choices ? { choices: structuredClone(item.choices) } : {}), ...(item.servingInfo ? { servingGuidance: item.servingInfo } : {}), dietaries: structuredClone(booking.dietaries), status: conversion ? "ready" : "exception", sortOrder: index };
+      const assignments = [item.menuItemId, item.itemId].filter((value): value is string => Boolean(value)).flatMap(value => routing[value] || []);
+      const workstream: ProductionWorkstream = assignments.includes("liana") ? "sandwiches" : assignments.includes("craig") ? "hospitality" : assignments.includes("site_manager") ? "delivered_in" : "unassigned";
+      const line: ProductionLine = { canonicalId: `production-line:${bookingId}:${index + 1}`, sourceBookingLineId: `${bookingId}:line:${index + 1}`, ...(item.menuItemId ? { sourceMenuItemId: item.menuItemId } : {}), itemName: item.itemName || item.itemId, ...(item.description ? { description: item.description } : {}), customerQuantity: item.quantity, customerUnit: item.servingInfo || "ordered unit", ...(conversion ? { productionQuantity: conversion.quantity, productionUnit: conversion.unit, conversionSnapshot: { ...conversion, rule: "Explicit configured production conversion." } } : {}), ...(item.choices ? { choices: structuredClone(item.choices) } : {}), ...(item.servingInfo ? { servingGuidance: item.servingInfo } : {}), dietaries: structuredClone(booking.dietaries), status: conversion ? "ready" : "exception", sortOrder: index, workstream };
       return { ...line, status: conversion ? "ready" : "pending" };
     });
     const status: ProductionStatus = exceptions.length ? "needs_review" : "draft";
-    const order: ProductionOrder = { canonicalId: orderId, entityType: "Production Order", schemaVersion: PRODUCTION_SCHEMA_VERSION, version: 1, requirementIds: [requirementId], sourceBookingId: bookingId, sourceQuoteRevisionId: quote.id, productionLocationId: process.env.CPU_PRODUCTION_LOCATION_ID, ...(booking.service.oplocId ? { destinationOplocId: booking.service.oplocId } : {}), destinationLabel: booking.service.portalSiteLabel || booking.service.roomOrArea || booking.service.deliveryPoint, clientName: booking.client.companyName, ...(booking.order.eventType ? { serviceType: booking.order.eventType } : {}), serviceDate: booking.service.eventDate, guestCount: booking.service.guestCount, requiredBy: requirement.requiredBy, serviceWindow: requirement.serviceWindow, status, priority: "normal", lines, exceptions, origin: "hospitality_booking", currentRevision: 1, createdAt: now, createdBy: actor.uid, idempotencyKey, externalReferences: [], audit: [{ action: "production-order-created", at: now, by: actor.uid, newState: status, reason: existingBase?.status === "amended" ? "Replacement Production Order created for the amended Booking and current Quote Revision." : "Internal Production Order created without external CPU or Calendar side effects.", idempotencyKey }] };
+    const order: ProductionOrder = { canonicalId: orderId, entityType: "Production Order", schemaVersion: PRODUCTION_SCHEMA_VERSION, version: 1, requirementIds: [requirementId], sourceBookingId: bookingId, sourceQuoteRevisionId: quote.id, productionLocationId: process.env.CPU_PRODUCTION_LOCATION_ID, requiresDelivery: true, destinationOplocId: booking.service.oplocId, destinationLabel: [booking.service.portalSiteLabel, booking.service.roomOrArea || booking.service.deliveryPoint].filter(Boolean).join(" · ") || booking.service.oplocId, clientName: booking.client.companyName, ...(booking.order.eventType ? { serviceType: booking.order.eventType } : {}), serviceDate: booking.service.eventDate, guestCount: booking.service.guestCount, requiredBy: requirement.requiredBy, serviceWindow: requirement.serviceWindow, status, priority: "normal", lines, exceptions, origin: "hospitality_booking", currentRevision: 1, createdAt: now, createdBy: actor.uid, idempotencyKey, externalReferences: [], audit: [{ action: "production-order-created", at: now, by: actor.uid, newState: status, reason: existingBase?.status === "amended" ? "Replacement Production Order created for the amended Booking and current Quote Revision." : "Internal Production Order created without external CPU or Calendar side effects.", idempotencyKey }] };
     const event = createDomainEvent({ eventType: "production.order.created", sourceAggregateId: order.canonicalId, sourceVersion: order.version, occurredAt: now, correlationId: idempotencyKey, payload: { canonicalId: order.canonicalId, version: order.version, status: order.status, sourceBookingId: order.sourceBookingId, serviceDate: order.serviceDate, productionLocationId: order.productionLocationId, destinationOplocId: order.destinationOplocId, destinationLabel: order.destinationLabel, lineIds: order.lines.map(line => line.canonicalId), productionOrder: order } });
     if (productionOrderRequiresFulfilment(order)) await stageFulfilmentEvent(transaction, event);
     if (existingBase?.status === "amended") transaction.set(baseOrderRef, { supersededBy: orderId }, { merge: true });
@@ -168,6 +174,55 @@ export async function createCpuProductionOrder(actor: Actor, input: CpuCreatedPr
     transaction.create(ref, order);
     stageDomainEvent(transaction, event);
     return { created: true, status: "created" as const, order };
+  });
+}
+
+export type ExternalProductionMaterialisation = {
+  sourceDomain: "grab-and-go" | "menu-planning";
+  sourceEntityId: string;
+  sourceVersion: number;
+  sourceContentHash?: string;
+  sourcePublicationDayId?: string;
+  destinationOplocId: string;
+  destinationLabel?: string;
+  serviceDate: string;
+  requiredBy?: string;
+  serviceWindow?: { startTime: string; endTime?: string };
+  status: "submitted" | "published" | "amended" | "cancelled" | "withdrawn";
+  lines: Array<{ sourceLineId: string; canonicalItemId?: string; itemName: string; quantity: number; unit: string; workstream?: ProductionWorkstream }>;
+};
+
+export function materialisedProductionId(input: Pick<ExternalProductionMaterialisation, "sourceDomain" | "sourceEntityId" | "destinationOplocId">) {
+  const safe = (value: string) => value.replace(/[^A-Za-z0-9:_-]+/g, "_");
+  return `production-order:v1:${input.sourceDomain}:${safe(input.sourceEntityId)}:${safe(input.destinationOplocId)}`;
+}
+
+/** Converts an upstream production-bound record into the one canonical CPU order. */
+export async function materialiseExternalProductionOrder(actor: Actor, input: ExternalProductionMaterialisation) {
+  if (!input.sourceEntityId.trim() || !input.destinationOplocId.trim()) throw conflict("A source entity and canonical destination are required.");
+  return db.runTransaction(async transaction => {
+    const canonicalId = materialisedProductionId(input);
+    const ref = orders().doc(stableDocumentId(canonicalId));
+    const snapshot = await transaction.get(ref);
+    const previous = snapshot.exists ? snapshot.data() as ProductionOrder : undefined;
+    const status: ProductionStatus = input.status === "cancelled" || input.status === "withdrawn" ? "cancelled" : input.sourceDomain === "menu-planning" ? "menu_available" : "received";
+    if (previous && previous.sourceVersion === input.sourceVersion && previous.sourceContentHash === input.sourceContentHash && previous.status === status) return { created: false, duplicate: true, order: previous };
+    const now = new Date().toISOString();
+    const order: ProductionOrder = {
+      ...(previous || {}), canonicalId, entityType: "Production Order", schemaVersion: PRODUCTION_SCHEMA_VERSION,
+      version: (previous?.version || 0) + 1, currentRevision: (previous?.currentRevision || 0) + 1,
+      requirementIds: previous?.requirementIds || [], sourceBookingId: previous?.sourceBookingId || canonicalId, sourceQuoteRevisionId: previous?.sourceQuoteRevisionId || "",
+      sourceEntityId: input.sourceEntityId, sourceVersion: input.sourceVersion, ...(input.sourceContentHash ? { sourceContentHash: input.sourceContentHash } : {}), ...(input.sourcePublicationDayId ? { sourcePublicationDayId: input.sourcePublicationDayId } : {}),
+      origin: input.sourceDomain === "grab-and-go" ? "grab_and_go" : "menu_planning", requiresDelivery: true, destinationOplocId: input.destinationOplocId, destinationLabel: input.destinationLabel || input.destinationOplocId,
+      serviceType: input.sourceDomain === "grab-and-go" ? "Grab & Go" : "Delivered-In menu", serviceDate: input.serviceDate, requiredBy: input.requiredBy || `${input.serviceDate}T00:00`, serviceWindow: input.serviceWindow || { startTime: "00:00" },
+      status, priority: previous?.priority || "normal", lines: input.lines.map((line, index) => ({ canonicalId: `${canonicalId}:line:${index + 1}`, sourceBookingLineId: line.sourceLineId, ...(line.canonicalItemId ? { sourceMenuItemId: line.canonicalItemId } : {}), itemName: line.itemName, customerQuantity: line.quantity, customerUnit: line.unit, productionQuantity: line.quantity, productionUnit: line.unit, conversionSnapshot: { quantity: line.quantity, unit: line.unit, rule: "Explicit upstream source quantity." }, dietaries: {}, status: status === "cancelled" ? "exception" as const : "ready" as const, sortOrder: index, workstream: line.workstream || (input.sourceDomain === "grab-and-go" ? "grab_and_go" : "delivered_in") })),
+      exceptions: [], createdAt: previous?.createdAt || now, createdBy: previous?.createdBy || actor.uid, idempotencyKey: `materialise:${input.sourceDomain}:${input.sourceEntityId}:${input.destinationOplocId}`, externalReferences: previous?.externalReferences || [], audit: [...(previous?.audit || []), { action: previous ? "external-production-order-amended" : "external-production-order-created", at: now, by: actor.uid, previousState: previous?.status, newState: status, reason: `Materialised from ${input.sourceDomain}.` }],
+    };
+    const event = createDomainEvent({ eventType: status === "cancelled" ? "production.order.withdrawn" : previous ? "production.order.amended" : "production.order.created", sourceAggregateId: canonicalId, sourceVersion: order.version, occurredAt: now, correlationId: order.idempotencyKey, payload: { canonicalId, version: order.version, status, productionOrder: order } });
+    await stageFulfilmentEvent(transaction, event);
+    transaction.set(ref, order);
+    stageDomainEvent(transaction, event);
+    return { created: !previous, duplicate: false, order };
   });
 }
 
