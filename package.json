@@ -15,6 +15,9 @@
     "dev:launcher": "node tools/launcher/server.mjs",
 
     "dev:browser": "wait-on http://localhost:3100 && start chrome http://localhost:3100"
+    ,"uat:seed-week": "node tools/uat/week.mjs seed"
+    ,"uat:verify-week": "node tools/uat/week.mjs verify"
+    ,"uat:cleanup-week": "node tools/uat/week.mjs cleanup"
   },
   "devDependencies": {
     "concurrently": "^9.2.1",

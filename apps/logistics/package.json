@@ -2,6 +2,27 @@
   "name": "fika-logistics",
   "private": true,
   "type": "module",
-  "scripts": {"dev":"next dev --webpack -p 3900","build":"next build","start":"next start -p 3900","typecheck":"tsc --noEmit","test":"tsx --test tests/*.test.ts"},
-  "dependencies": {"@types/node":"^22.19.19","@types/react":"^19.2.14","@types/react-dom":"^19.2.3","firebase-admin":"^13.4.0","next":"^16.2.12","react":"^19.2.6","react-dom":"^19.2.6","tsx":"^4.20.6","typescript":"^5.9.3"}
+  "scripts": {
+    "dev": "next dev --webpack -p 3900",
+    "build": "next build",
+    "start": "next start -p 3900",
+    "typecheck": "tsc --noEmit",
+    "test": "tsx --test tests/*.test.ts",
+    "test:integration": "tsx --test tests/api.integration.ts",
+    "test:e2e": "playwright test"
+  },
+  "dependencies": {
+    "@types/node": "^22.19.19",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "firebase-admin": "^13.4.0",
+    "next": "^16.2.12",
+    "react": "^19.2.6",
+    "react-dom": "^19.2.6",
+    "tsx": "^4.20.6",
+    "typescript": "^5.9.3"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.62.1"
+  }
 }
