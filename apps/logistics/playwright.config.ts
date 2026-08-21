@@ -14,6 +14,7 @@ export default defineConfig({
     video: "retain-on-failure",
   },
   projects: [
+    { name: "golden-week", use: { ...devices["Desktop Chrome"] }, testMatch: /golden-week\.spec\.ts/ },
     { name: "desktop-chromium", use: { ...devices["Desktop Chrome"] }, testMatch: /desktop\.spec\.ts/ },
     { name: "mobile-chromium", use: { ...devices["Pixel 7"] }, testMatch: /mobile\.spec\.ts/ },
   ],

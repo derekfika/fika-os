@@ -1,11 +1,12 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import goldenWeek from "./golden-week.json" with { type: "json" };
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
-const marker = "UAT-WC240826";
-const note = "FIKA OS UAT — safe to delete";
-const dates = ["2026-08-24", "2026-08-25", "2026-08-26", "2026-08-27", "2026-08-28"];
+const marker = goldenWeek.marker;
+const note = goldenWeek.note;
+const dates = goldenWeek.week.dates;
 const urls = {
   hub: process.env.UAT_HUB_URL || "http://localhost:3200",
   menu: process.env.UAT_MENU_URL || "http://localhost:3500",
@@ -85,13 +86,14 @@ async function seedGrabAndGo(manifest, cookie, oplocs) {
   const catalogue = (await request(urls.delivered, `/api/delivered-in/grab-and-go?oplocId=${encodeURIComponent(oplocs.byLabel.get("haleon")?.canonicalId || "")}`, {}, cookie)).body.catalogue || [];
   const products = catalogue.filter(item => item.active).slice(0, 4);
   if (products.length < 2) { manifest.warnings.push("Grab & Go catalogue returned fewer than two active products; no synthetic products were created."); return; }
-  for (const date of ["2026-08-24", "2026-08-26"]) {
-    for (const [label, count] of [["Haleon", 1], ["FIKA Xchange", 2]]) {
+  for (const date of goldenWeek.grabAndGo.dates) {
+    for (const siteConfig of goldenWeek.grabAndGo.sites) {
+      const { label } = siteConfig;
       const site = oplocs.byLabel.get(label.toLowerCase());
       const current = (await request(urls.delivered, `/api/delivered-in/grab-and-go?oplocId=${encodeURIComponent(site.canonicalId)}`, {}, cookie)).body.orders?.find(order => order.deliveryDate === date);
       const id = `grab-and-go:${site.canonicalId}:${date}`;
       if (current) { remember(manifest, "grab-and-go", id, date, { existing: true }); continue; }
-      const lines = products.slice(0, count === 1 ? 4 : 3).map((product, index) => ({ productId: product.productId, quantity: (count === 1 ? [8, 6, 5, 4] : [5, 4, 3])[index] }));
+      const lines = products.slice(0, siteConfig.productCount).map((product, index) => ({ productId: product.productId, quantity: siteConfig.quantities[index] }));
       await request(urls.delivered, "/api/delivered-in/grab-and-go", { method: "POST", body: JSON.stringify({ oplocId: site.canonicalId, deliveryDate: date, action: "submit", lines }) }, cookie);
       remember(manifest, "grab-and-go", id, date, { created: true });
     }
@@ -99,8 +101,7 @@ async function seedGrabAndGo(manifest, cookie, oplocs) {
 }
 
 async function seedHospitality(manifest, cookie, oplocs) {
-  const sites = [{ key: "mnk", label: "MNK", destination: "MNK", date: "2026-08-24", time: "11:30", guests: 18 }, { key: "angel-court", label: "Angel Court", destination: "One Angel Court", date: "2026-08-24", time: "12:30", guests: 12 }, { key: "mnk", label: "MNK", destination: "MNK", date: "2026-08-25", time: "08:30", guests: 10 }, { key: "angel-court", label: "Angel Court", destination: "One Angel Court", date: "2026-08-27", time: "12:00", guests: 15 }];
-  for (const item of sites) {
+  for (const item of goldenWeek.hospitality) {
     const site = oplocs.byLabel.get(item.destination.toLowerCase());
     const workspace = (await request(urls.hub, `/api/hospitality-bookings?site=${encodeURIComponent(item.key)}`, {}, cookie)).body;
     const existing = (workspace.bookings || []).find(booking => booking.source?.sourceBookingId === `${marker}:${item.key}:${item.date}:${item.time}`);
@@ -128,11 +129,11 @@ async function seedHospitality(manifest, cookie, oplocs) {
 
 async function seedLogistics(manifest, cookie, oplocs) {
   manifest.warnings.push("Governed OPLOC 'FIKA DC' was not present in the emulator; WCC was used as the governed warehouse-side source and this substitution is recorded.");
-  const movements = [
-    { canonicalId: `movement:${marker}:mon-delivery`, entityType: "Movement Request", serviceDate: "2026-08-24", type: "delivery", fromOplocId: oplocs.byLabel.get("wcc").canonicalId, toOplocId: oplocs.byLabel.get("haleon").canonicalId, requiredTime: "09:30", items: [{ description: "Hot cupboards / insulated units", quantity: 2, unit: "units" }], notes: `${note} · ${marker}`, createdBy: "Franco", status: "open", version: 1, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), audit: [] },
-    { canonicalId: `movement:${marker}:mon-collection`, entityType: "Movement Request", serviceDate: "2026-08-24", type: "collection", fromOplocId: oplocs.byLabel.get("one angel court").canonicalId, toOplocId: oplocs.byLabel.get("wcc").canonicalId, requiredTime: "16:30", items: [{ description: "Cambro boxes", quantity: 4, unit: "boxes" }], notes: `${note} · ${marker}`, createdBy: "Franco", status: "open", version: 1, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), audit: [] },
-    { canonicalId: `movement:${marker}:wed-transfer`, entityType: "Movement Request", serviceDate: "2026-08-26", type: "transfer", fromOplocId: oplocs.byLabel.get("wcc").canonicalId, toOplocId: oplocs.byLabel.get("fika xchange").canonicalId, requiredTime: "10:30", items: [{ description: "Insulated lunch loads", quantity: 3, unit: "loads" }], notes: `${note} · ${marker}`, createdBy: "Franco", status: "open", version: 1, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), audit: [] },
-  ];
+  const movements = goldenWeek.logistics.movements.map((item) => ({
+    canonicalId: `movement:${marker}:${item.id}`, entityType: "Movement Request", serviceDate: item.date, type: item.type,
+    fromOplocId: oplocs.byLabel.get(item.from.toLowerCase()).canonicalId, toOplocId: oplocs.byLabel.get(item.to.toLowerCase()).canonicalId,
+    requiredTime: item.requiredTime, items: [{ description: item.id === "mon-delivery" ? "Hot cupboards / insulated units" : item.id === "mon-collection" ? "Cambro boxes" : "Insulated lunch loads", quantity: item.quantity, unit: item.unit }], notes: `${note} · ${marker}`, createdBy: "Franco", status: "open", version: 1, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), audit: []
+  }));
   for (const movement of movements) {
     const day = (await request(urls.logistics, `/api/logistics?serviceDate=${movement.serviceDate}`, {}, cookie)).body;
     const current = (day.movements || []).find(item => item.canonicalId === movement.canonicalId);
@@ -143,15 +144,16 @@ async function seedLogistics(manifest, cookie, oplocs) {
   // Wednesday is intentionally left as the manual dispatch-planning day.
   // Remove only this runner's deterministic Wednesday logistics documents so
   // repeated local seeds cannot leave stale runs or assignments behind.
-  const wednesdayState = (await request(urls.logistics, "/api/logistics?serviceDate=2026-08-26", {}, cookie)).body;
-  for (const stop of (wednesdayState.stops || []).filter(item => String(item.runId || "").startsWith(`run:${marker}:2026-08-26:`) || String(item.canonicalId).startsWith(`stop:${marker}:`))) {
+  const unplannedDate = goldenWeek.logistics.unplannedDate;
+  const wednesdayState = (await request(urls.logistics, `/api/logistics?serviceDate=${unplannedDate}`, {}, cookie)).body;
+  for (const stop of (wednesdayState.stops || []).filter(item => String(item.runId || "").startsWith(`run:${marker}:${unplannedDate}:`) || String(item.canonicalId).startsWith(`stop:${marker}:`))) {
     await fetch(`http://127.0.0.1:8085/v1/projects/fika-os-local/databases/(default)/documents/fikaLogisticsDeliveryStopsV1/${encodeURIComponent(stop.canonicalId)}`, { method: "DELETE", headers: { Authorization: "Bearer owner" } });
   }
-  for (const run of (wednesdayState.runs || []).filter(item => String(item.canonicalId).startsWith(`run:${marker}:2026-08-26:`))) {
+  for (const run of (wednesdayState.runs || []).filter(item => String(item.canonicalId).startsWith(`run:${marker}:${unplannedDate}:`))) {
     await fetch(`http://127.0.0.1:8085/v1/projects/fika-os-local/databases/(default)/documents/fikaLogisticsDeliveryRunsV1/${encodeURIComponent(run.canonicalId)}`, { method: "DELETE", headers: { Authorization: "Bearer owner" } });
   }
-  for (const date of dates.filter(item => item !== "2026-08-26")) {
-    for (const driver of ["Franco", "Dee"]) {
+  for (const date of goldenWeek.logistics.runDates) {
+    for (const driver of ["Franco", "Dee"].slice(0, goldenWeek.logistics.runsPerDate)) {
       const id = `run:${marker}:${date}:${driver.toLowerCase()}`;
       const current = (await request(urls.logistics, `/api/logistics?serviceDate=${date}`, {}, cookie)).body.runs?.find(run => run.canonicalId === id);
       if (current) { remember(manifest, "run", id, date, { existing: true }); continue; }
@@ -161,7 +163,7 @@ async function seedLogistics(manifest, cookie, oplocs) {
   }
   // Drive the real planner assignment command for any currently eligible work.
   // The command re-reads canonical requirements and applies its own transaction.
-  for (const date of dates.filter(item => item !== "2026-08-26")) {
+  for (const date of goldenWeek.logistics.runDates) {
     const state = (await request(urls.logistics, `/api/logistics?serviceDate=${date}`, {}, cookie)).body;
     const runsForDate = (state.runs || []).filter(run => run.canonicalId.startsWith(`run:${marker}:${date}:`));
     if (!runsForDate.length) continue;

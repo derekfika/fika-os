@@ -18,6 +18,10 @@
     ,"uat:seed-week": "node tools/uat/week.mjs seed"
     ,"uat:verify-week": "node tools/uat/week.mjs verify"
     ,"uat:cleanup-week": "node tools/uat/week.mjs cleanup"
+    ,"golden-week:seed": "node tools/uat/week.mjs seed"
+    ,"golden-week:verify": "node tools/uat/week.mjs verify"
+    ,"golden-week:cleanup": "node tools/uat/week.mjs cleanup"
+    ,"golden-week:e2e": "npm --prefix apps/logistics run test:e2e -- --project=golden-week"
   },
   "devDependencies": {
     "concurrently": "^9.2.1",

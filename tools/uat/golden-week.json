@@ -1,0 +1,21 @@
+{
+  "marker": "UAT-WC240826",
+  "note": "FIKA OS UAT — safe to delete",
+  "week": { "start": "2026-08-24", "end": "2026-08-28", "dates": ["2026-08-24", "2026-08-25", "2026-08-26", "2026-08-27", "2026-08-28"] },
+  "hospitality": [
+    { "key": "mnk", "label": "MNK", "destination": "MNK", "date": "2026-08-24", "time": "11:30", "guests": 18 },
+    { "key": "angel-court", "label": "Angel Court", "destination": "One Angel Court", "date": "2026-08-24", "time": "12:30", "guests": 12 },
+    { "key": "mnk", "label": "MNK", "destination": "MNK", "date": "2026-08-25", "time": "08:30", "guests": 10 },
+    { "key": "angel-court", "label": "Angel Court", "destination": "One Angel Court", "date": "2026-08-27", "time": "12:00", "guests": 15 }
+  ],
+  "grabAndGo": { "dates": ["2026-08-24", "2026-08-26"], "sites": [
+    { "label": "Haleon", "productCount": 4, "quantities": [8, 6, 5, 4] },
+    { "label": "FIKA Xchange", "productCount": 3, "quantities": [5, 4, 3] }
+  ] },
+  "logistics": { "movements": [
+    { "id": "mon-delivery", "date": "2026-08-24", "type": "delivery", "from": "WCC", "to": "Haleon", "requiredTime": "09:30", "quantity": 2, "unit": "units" },
+    { "id": "mon-collection", "date": "2026-08-24", "type": "collection", "from": "One Angel Court", "to": "WCC", "requiredTime": "16:30", "quantity": 4, "unit": "boxes" },
+    { "id": "wed-transfer", "date": "2026-08-26", "type": "transfer", "from": "WCC", "to": "FIKA Xchange", "requiredTime": "10:30", "quantity": 3, "unit": "loads" }
+  ], "runDates": ["2026-08-24", "2026-08-25", "2026-08-27", "2026-08-28"], "runsPerDate": 2, "unplannedDate": "2026-08-26" },
+  "expected": { "hospitalityBookings": 4, "grabAndGoOrders": 4, "publishedMenuDays": 4, "ownedMovements": 3, "ownedRuns": 8, "scopeLabels": ["All production", "Sandwiches", "Hospitality", "Delivered-In", "Grab & Go"] }
+}
