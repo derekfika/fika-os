@@ -85,7 +85,7 @@ function dietarySummary(order: ProductionOrder) {
     .join(" · ");
 }
 
-function SignatureModal({
+export function SignatureModal({
   role,
   onCancel,
   onConfirm,

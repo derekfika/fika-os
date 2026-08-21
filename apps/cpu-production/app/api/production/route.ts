@@ -2,12 +2,14 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { requireActor } from "@hub/lib/auth";
 import { assertPermission } from "@hub/lib/authmod";
+import { db } from "@hub/lib/firebase-admin";
 import {
   createCpuProductionOrder,
   productionQueue,
   productionOrderDetail,
   transitionProductionOrder,
   updateProductionLines,
+  reportProductionAllergenDiscrepancy,
 } from "@hub/lib/production-domain";
 import { hospitalityMenuProductionRouting } from "@hub/lib/connections-service";
 import { localFixtureOrders, updateLocalFixture } from "../local-fixtures";
@@ -127,6 +129,7 @@ const UpdateLines = z
       .min(1),
   })
   .strict();
+const AllergenDiscrepancy = z.object({ action: z.literal("report-allergen-discrepancy"), canonicalId: z.string().min(8), expectedVersion: z.number().int().positive(), note: z.string().trim().min(3) }).strict();
 export async function GET(request: NextRequest) {
   try {
     const actor = await actorFor(request);
@@ -151,7 +154,7 @@ export async function GET(request: NextRequest) {
         ),
       )]
       : fetched;
-    const orders = await ordersForScope(sourceOrders, scope);
+    const orders = await withReadableDestinations(await ordersForScope(sourceOrders, scope));
     return NextResponse.json({ orders, scope, localFixtures: process.env.NODE_ENV !== "production" && process.env.FIKA_ENABLE_LOCAL_PRODUCTION_FIXTURES === "true" });
   } catch (error) {
     return NextResponse.json(
@@ -164,6 +167,23 @@ export async function GET(request: NextRequest) {
 async function ordersForScope(orders: Awaited<ReturnType<typeof productionQueue>>, scope: ProductionScope) {
   if (scope === "all") return orders;
   return filterProductionOrdersForScope(orders, scope, await hospitalityMenuProductionRouting());
+}
+
+async function withReadableDestinations(orders: Awaited<ReturnType<typeof productionQueue>>) {
+  const snapshot = await db.collection("integrationHubCanonical").get();
+  const labels = new Map(snapshot.docs
+    .map(document => document.data() as { entityType?: string; canonicalId?: string; record?: { approvedName?: string; lifecycleState?: string } })
+    .filter(record => record.entityType === "OPLOC" && record.canonicalId && record.record?.approvedName && record.record.lifecycleState !== "decommissioned")
+    .map(record => [record.canonicalId!, String(record.record!.approvedName)] as const));
+  return orders.map(order => {
+    const id = order.destinationOplocId;
+    const label = id ? labels.get(id) : undefined;
+    if (!id || !label) return order;
+    const current = order.destinationLabel?.trim();
+    if (!current || current === id) return { ...order, destinationLabel: label };
+    if (current.startsWith(`${id} · `)) return { ...order, destinationLabel: `${label} · ${current.slice(id.length + 3)}` };
+    return order;
+  });
 }
 
 export async function POST(request: NextRequest) {
@@ -242,6 +262,10 @@ export async function POST(request: NextRequest) {
           command.lines,
         ),
       });
+    }
+    if (raw?.action === "report-allergen-discrepancy") {
+      const command = AllergenDiscrepancy.parse(raw);
+      return NextResponse.json(await reportProductionAllergenDiscrepancy(actor, command.canonicalId, command.expectedVersion, command.note));
     }
     const command = Transition.parse(raw);
     if (command.canonicalId.startsWith("production-order:v1:fixture:")) {

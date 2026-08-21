@@ -2,6 +2,8 @@
 
 import { useMemo, useState } from "react";
 import type { ProductionOrder } from "@hub/lib/production-domain";
+import { cpuAttentionLabel, cpuDestinationLabel, cpuLifecycle, cpuLifecycleLabels, cpuRequiredTime, cpuSourceLabel } from "../../lib/production-presentation";
+import { orderSummary, productionJobCount, sourceHeading } from "../../lib/production-day";
 import "./production-calendar.css";
 import "./production-card-overrides.css";
 
@@ -21,7 +23,6 @@ export function dateKey(date: Date) { return `${date.getFullYear()}-${String(dat
 function shortDate(date: Date) { return date.toLocaleDateString("en-GB", { day: "numeric", month: "short" }); }
 function longDate(date: Date) { return date.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "short" }); }
 function guestCount(order: ProductionOrder) { return order.guestCount || order.lines.reduce((sum, line) => sum + (line.customerQuantity || 0), 0); }
-function workflowStatus(order: ProductionOrder) { return !order.workflowStatus || order.workflowStatus === "draft" ? order.status : order.workflowStatus; }
 function dietarySummary(order: ProductionOrder) {
   const values = new Map<string, number>();
   for (const line of order.lines) for (const [key, value] of Object.entries(line.dietaries || {})) {
@@ -31,7 +32,7 @@ function dietarySummary(order: ProductionOrder) {
   return [...values.entries()].map(([key, value]) => `${key.replace(/([a-z])([A-Z])/g, "$1 $2").replaceAll("_", " ")}: ${value}`).join(" · ");
 }
 
-export default function ProductionCalendar({ orders, open }: { orders: ProductionOrder[]; open: (order: ProductionOrder) => void }) {
+export default function ProductionCalendar({ orders, open, onDayOpen, reviewAllergens }: { orders: ProductionOrder[]; open: (order: ProductionOrder) => void; onDayOpen?: (date: string) => void; reviewAllergens?: (date: string) => void }) {
   const [weekOffset, setWeekOffset] = useState(0);
   const weekStart = useMemo(() => {
     const date = mondayOf(new Date());
@@ -53,7 +54,7 @@ export default function ProductionCalendar({ orders, open }: { orders: Productio
         <div>
           <small>Weekly production heads-up</small>
           <h2>{longDate(weekStart)} - {longDate(days[4].date)}</h2>
-          <p>{weekOrders.length} booking{weekOrders.length === 1 ? "" : "s"} in this week's production view.</p>
+          <p>{productionJobCount(weekOrders)} production job{productionJobCount(weekOrders) === 1 ? "" : "s"} in this week's view.</p>
         </div>
         <nav className="calendar-nav" aria-label="Calendar week navigation">
           <button type="button" onClick={() => setWeekOffset(value => value - 1)} aria-label="Previous week">←</button>
@@ -64,20 +65,18 @@ export default function ProductionCalendar({ orders, open }: { orders: Productio
       <div className="calendar-grid">
         {days.map(day => (
           <article className={`calendar-day${day.orders.length ? " has-work" : ""}`} key={day.key}>
-            <header><strong>{day.name}</strong><span>{shortDate(day.date)}</span></header>
-            {day.orders.length ? <><div className="calendar-day-summary"><strong>{day.orders.length} booking{day.orders.length === 1 ? "" : "s"}</strong><span>{day.orders.reduce((sum, order) => sum + guestCount(order), 0)} guests</span><span>{day.orders.reduce((sum, order) => sum + order.lines.reduce((total, line) => total + (line.productionQuantity || 0), 0), 0) || "—"} planned</span><span>{day.orders.filter(order => !["planned", "menu_available", "complete"].includes(workflowStatus(order))).length} need attention</span></div>{day.orders.map(order => {
+            <header><strong>{day.name}</strong><span>{shortDate(day.date)}{onDayOpen && <button type="button" className="calendar-day-open" onClick={() => onDayOpen(day.key)}>Day</button>}</span></header>
+            {day.orders.length ? <><div className="calendar-day-summary"><strong>{productionJobCount(day.orders)} production job{productionJobCount(day.orders) === 1 ? "" : "s"}</strong><span>{day.orders.filter(order => order.origin === "menu_planning").reduce((sum, order) => sum + order.lines.reduce((total, line) => total + (line.productionQuantity || 0), 0), 0) || "—"} lunch portions</span><span>{day.orders.filter(order => Boolean(cpuAttentionLabel(order))).length} need attention</span>{reviewAllergens && day.orders.some(order => order.origin === "menu_planning") && <button type="button" className="calendar-day-open" onClick={() => reviewAllergens(day.key)}>Delivered-In allergens</button>}</div>{day.orders.map(order => {
               const customerPax = guestCount(order);
-              const itemSummary = order.lines.map(line => `${line.customerQuantity} × ${line.itemName}`).join(", ");
-              const status = workflowStatus(order);
+              const status = cpuLifecycle(order);
               const dietaries = dietarySummary(order);
               return (
                 <button className={`production-card production-card--${status}`} type="button" key={order.canonicalId} onClick={() => open(order)}>
-                  <div className="production-card-top"><strong>{order.requiredBy.slice(11, 16)}</strong><span className={`calendar-status calendar-status--${status}`}>{status.replaceAll("_", " ")}</span></div>
-                  <div className="production-card-destination"><small>Going to:</small><h3>{order.destinationLabel || "Destination not assigned"}</h3></div>
-                  <p className="production-card-client"><b>Booked by:</b> {order.clientName || "Client not assigned"}</p>
-                  <p className="production-card-items">{itemSummary || "No production lines"}</p>
+                  <div className="production-card-top"><strong>{cpuRequiredTime(order)}</strong><span className={`calendar-status calendar-status--${status}`}>{cpuLifecycleLabels[status]}</span></div>
+                  <div className="production-card-destination"><small>{sourceHeading(order)}</small><h3>{cpuDestinationLabel(order)}</h3></div>
+                  <p className="production-card-client"><b>{cpuSourceLabel(order)}:</b> {orderSummary(order)}</p>
                   {dietaries && <p className="production-card-dietaries"><b>Dietary:</b> {dietaries}</p>}
-                  <div className="production-card-meta"><span>{customerPax} pax</span><span>Chef sets quantities</span></div>
+                  <div className="production-card-meta"><span>{customerPax} pax</span><span>{order.lines.length} production line{order.lines.length === 1 ? "" : "s"}</span></div>
                   {order.exceptions.length > 0 && <div className="calendar-exceptions"><small className="calendar-exception">{order.exceptions.length} exception{order.exceptions.length === 1 ? "" : "s"} needs attention</small><small className="calendar-exception-detail">{order.exceptions[0].description}</small></div>}
                 </button>
               );

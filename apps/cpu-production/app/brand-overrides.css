@@ -12,6 +12,7 @@ h1,h2,h3,h4{font-family:var(--display)}
 .cpu-toolbar-actions button:hover,.cpu-create button:hover{background:var(--brand-primary)}
 .cpu-toolbar-actions button{color:#fff!important}
 .cpu-filters input,.cpu-filters select,.cpu-toolbar button,.cpu-create input,.cpu-create textarea,.cpu-create select{font-family:var(--body);border-color:var(--border)}
+.calendar-day>header span{display:flex;align-items:center;gap:5px}.calendar-day-open{padding:3px 5px;border:1px solid var(--border);border-radius:5px;background:#fff;color:var(--brand-primary);font-size:.6rem;font-weight:900;cursor:pointer}
 .production-calendar{border-radius:1.25rem;background:var(--surface)}
 .calendar-header small{color:var(--brand-primary)}
 .calendar-header h2{font-size:1.7rem}
@@ -24,4 +25,4 @@ h1,h2,h3,h4{font-family:var(--display)}
 .liana-detail{font-family:var(--body)}
 .liana-fullscreen{font-family:var(--body)}
 .liana-fullscreen h2,.checker-title h3{font-family:var(--display);letter-spacing:-.03em}
-.cpu-summary button.status-accepted{background:#e2fbf2;color:#11604c}.cpu-summary button.status-planned{background:#dff4ff;color:#145a76}.cpu-summary button.status-complete{background:#d8f7e9;color:#11604c}.cpu-summary button.status-cancelled{background:#fbe4eb;color:#8f2140}.cpu-summary button.status-blocked,.cpu-summary button.status-needs_review{background:#fff0ce;color:#704800}.cpu-summary button.status-in_production{background:#dff4ff;color:#145a76}.cpu-status--accepted{background:#e2fbf2;color:#11604c}.cpu-status--planned{background:#dff4ff;color:#145a76}.cpu-status--complete{background:#d8f7e9;color:#11604c}.cpu-status--cancelled{background:#fbe4eb;color:#8f2140}.cpu-status--blocked,.cpu-status--needs_review{background:#fff0ce;color:#704800}
+.cpu-summary button.status-received{background:#f1edf8;color:#665d73}.cpu-summary button.status-accepted{background:#e2fbf2;color:#11604c}.cpu-summary button.status-planning{background:#eeeaff;color:#4329b2}.cpu-summary button.status-ready{background:#d8f7e9;color:#11604c}.cpu-summary button.status-complete{background:#d8f7e9;color:#11604c}.cpu-summary button.status-in_production{background:#dff4ff;color:#145a76}.cpu-status--received{background:#f1edf8;color:#665d73}.cpu-status--accepted{background:#e2fbf2;color:#11604c}.cpu-status--planning{background:#eeeaff;color:#4329b2}.cpu-status--ready,.cpu-status--complete{background:#d8f7e9;color:#11604c}.cpu-status--in_production{background:#dff4ff;color:#145a76}

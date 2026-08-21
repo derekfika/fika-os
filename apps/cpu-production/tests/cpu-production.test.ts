@@ -23,6 +23,10 @@ const calendar = readFileSync(
   new URL("../app/ui/ProductionCalendar.tsx", import.meta.url),
   "utf8",
 );
+const scope = readFileSync(
+  new URL("../lib/production-scope.ts", import.meta.url),
+  "utf8",
+);
 const productionRoute = readFileSync(
   new URL("../app/api/production/route.ts", import.meta.url),
   "utf8",
@@ -296,11 +300,12 @@ test("delivered-in lunch creator can save and reuse new menu items", () => {
 });
 
 test("CPU exposes five canonical production scopes and removes obsolete manager controls", () => {
-  assert.match(page, /All production/);
-  assert.match(page, /Sandwiches/);
-  assert.match(page, /Hospitality/);
-  assert.match(page, /Delivered-In/);
-  assert.match(page, /Grab &amp; Go/);
+  assert.match(page, /productionScopes/);
+  assert.match(scope, /All production/);
+  assert.match(scope, /Sandwiches/);
+  assert.match(scope, /Hospitality/);
+  assert.match(scope, /Delivered-In/);
+  assert.match(scope, /Grab & Go/);
   assert.doesNotMatch(page, /Six-week menu planner/);
   assert.doesNotMatch(page, /Published delivered-in menus<\/button>/);
   assert.doesNotMatch(page, /Create delivered-in lunch<\/button>/);
@@ -406,8 +411,8 @@ test("allergen checker uses the master-style purple header and four-state cells"
 test("CPU dashboard opens with a Monday-to-Friday production heads-up", () => {
   assert.match(page, /view === "calendar"[\s\S]*<ProductionCalendar/);
   assert.match(calendar, /Monday.*Tuesday.*Wednesday.*Thursday.*Friday/);
-  assert.match(calendar, /Going to:/);
-  assert.match(calendar, /Chef sets quantities/);
+  assert.match(calendar, /Destination/);
+  assert.match(calendar, /production line/);
 });
 
 test("production views use Connections routing without duplicating bookings", () => {
@@ -543,9 +548,9 @@ test("weekly calendar uses local operational date keys and is not trapped by the
   assert.match(calendar, /calendar-day-summary/);
   assert.match(calendar, /Dietary:/);
   assert.match(calendar, /production-card--\$\{status\}/);
-  assert.match(calendar, /workflowStatus/);
+  assert.match(calendar, /cpuLifecycle/);
   assert.match(page, /production-plan/);
-  assert.match(page, /"planned"/);
+  assert.match(page, /workflowStatus/);
 });
 
 test("local CPU fixtures cover two weeks of portal bookings with routed menu and dietary data", () => {

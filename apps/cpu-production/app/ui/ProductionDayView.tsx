@@ -1,0 +1,27 @@
+"use client";
+
+import type { ProductionOrder } from "@hub/lib/production-domain";
+import { aggregateDeliveredIn, categorySummary, destination, firstDeliveredInOrder, groupByRequiredTime, lifecycle, orderDate, orderQuantity, orderSummary, sourceHeading } from "../../lib/production-day";
+import { cpuAttentionLabel, cpuRequiredTime, cpuSourceLabel } from "../../lib/production-presentation";
+import "./production-day.css";
+import "./production-day-navigation.css";
+
+function formatDate(date: string) { return new Date(`${date}T12:00:00`).toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" }); }
+
+export default function ProductionDayView({ orders, date, open, onChangeDate, reviewAllergens }: { orders: ProductionOrder[]; date: string; open: (order: ProductionOrder) => void; onChangeDate: (date: string) => void; reviewAllergens: (date: string) => void }) {
+  const dayOrders = orders.filter(order => orderDate(order) === date).sort((a, b) => a.requiredBy.localeCompare(b.requiredBy));
+  const deliveredIn = aggregateDeliveredIn(dayOrders);
+  const grabAndGo = dayOrders.filter(order => order.origin === "grab_and_go");
+  const hospitality = dayOrders.filter(order => order.origin === "hospitality_booking");
+  const other = dayOrders.filter(order => !["grab_and_go", "menu_planning", "hospitality_booking"].includes(order.origin));
+  const deliveredInOrder = firstDeliveredInOrder(dayOrders);
+  const shiftDate = (amount: number) => { const next = new Date(`${date}T12:00:00`); next.setDate(next.getDate() + amount); onChangeDate(next.toISOString().slice(0, 10)); };
+  return <section className="production-day" aria-label="Daily production view">
+    <header className="production-day-header"><div><small>Chef production board</small><h2>{formatDate(date)}</h2><p>{categorySummary(dayOrders)}{dayOrders.some(order => cpuAttentionLabel(order)) ? ` · ${dayOrders.filter(order => cpuAttentionLabel(order)).length} attention` : ""}</p></div><nav className="calendar-nav" aria-label="Day navigation"><button type="button" onClick={() => shiftDate(-1)} aria-label="Previous day">←</button><button type="button" onClick={() => onChangeDate(new Date().toISOString().slice(0, 10))}>Today</button><button type="button" onClick={() => shiftDate(1)} aria-label="Next day">→</button></nav></header>
+    {!dayOrders.length && <div className="calendar-empty">No production jobs required today.</div>}
+    {grabAndGo.length > 0 && <section className="production-day-section"><header><h3>Grab &amp; Go</h3><span>{grabAndGo.length} destination allocation{grabAndGo.length === 1 ? "" : "s"}</span></header>{groupByRequiredTime(grabAndGo).map(group => <div className="production-day-time-group" key={group.time}><h4>{group.time} <span>Grab &amp; Go</span></h4>{group.orders.map(order => <button type="button" className="production-day-job" key={order.canonicalId} onClick={() => open(order)}><strong>{destination(order)}</strong><span>{orderSummary(order)}</span><small>{lifecycle(order)}{cpuAttentionLabel(order) ? ` · ${cpuAttentionLabel(order)}` : ""}</small></button>)}</div>)}</section>}
+    {deliveredIn.length > 0 && <section className="production-day-section"><header><div><h3>Delivered-In lunch</h3><span>{deliveredIn.reduce((sum, row) => sum + row.total, 0).toLocaleString()} portions · {deliveredIn.length} dishes · {new Set(dayOrders.filter(order => order.origin === "menu_planning").map(destination)).size} destinations</span></div><div className="production-day-section-actions">{deliveredInOrder && <button type="button" className="production-day-open" onClick={() => open(deliveredInOrder)}>Open production</button>}<button type="button" className="production-day-open" onClick={() => reviewAllergens(date)}>Delivered-In allergens</button></div></header><div className="production-day-table-wrap"><table className="production-day-table"><thead><tr><th>Dish</th><th>Total</th><th>Destination allocations</th></tr></thead><tbody>{deliveredIn.map(row => <tr key={row.key}><th>{row.dishName}</th><td>{row.total}</td><td>{row.destinations.map(item => `${item.label} ${item.quantity}`).join(" · ")}</td></tr>)}</tbody></table></div><p className="production-day-source-note">Published Menu Planning quantities · {dayOrders.filter(order => order.origin === "menu_planning").map(lifecycle).filter((value, index, values) => values.indexOf(value) === index).join(" · ")}</p></section>}
+    {hospitality.length > 0 && <section className="production-day-section"><header><h3>Hospitality</h3><span>{hospitality.length} production job{hospitality.length === 1 ? "" : "s"}</span></header><div className="production-day-hospitality">{hospitality.map(order => <button type="button" className="production-day-job" key={order.canonicalId} onClick={() => open(order)}><strong>{destination(order)}</strong><span>{order.guestCount || orderQuantity(order)} pax · {order.lines.length} line{order.lines.length === 1 ? "" : "s"}</span><small>{cpuRequiredTime(order)} · {sourceHeading(order)} · {lifecycle(order)}</small></button>)}</div></section>}
+    {other.length > 0 && <section className="production-day-section"><header><h3>Other production</h3><span>{other.length} job{other.length === 1 ? "" : "s"}</span></header>{other.map(order => <button type="button" className="production-day-job" key={order.canonicalId} onClick={() => open(order)}><strong>{destination(order)}</strong><span>{orderSummary(order)}</span><small>{cpuSourceLabel(order)} · {lifecycle(order)}</small></button>)}</section>}
+  </section>;
+}

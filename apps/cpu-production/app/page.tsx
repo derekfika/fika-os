@@ -10,23 +10,17 @@ import type { AllergenCellState } from "./lib/production-plan";
 import { matrixColumns } from "./ui/allergen-matrix";
 import LianaOrderDetail from "./ui/LianaOrderDetail";
 import ProductionCalendar from "./ui/ProductionCalendar";
+import ProductionDayView from "./ui/ProductionDayView";
+import DeliveredInProductionDetail from "./ui/DeliveredInProductionDetail";
 import DeliveredMenuPlanner from "./ui/DeliveredMenuPlanner";
 import PublishedMenuView from "./ui/PublishedMenuView";
 import GrabAndGoProductionView from "./ui/GrabAndGoProductionView";
 import { CANONICAL_ALLERGEN_COLUMNS, normaliseOperationalAllergens, toggleOperationalAllergen, type CanonicalAllergenKey } from "../../shared/allergen-contract";
 import { productionScopes, type ProductionScope } from "../lib/production-scope";
+import { cpuAttentionKey, cpuAttentionLabel, cpuDestinationLabel, cpuDestinationOptionLabel, cpuLifecycle, cpuLifecycleLabels, cpuReference, cpuRequiredTime, cpuSourceLabel, type CpuLifecycle } from "../lib/production-presentation";
+import { relatedDeliveredInOrders, orderDate } from "../lib/production-day";
 
-const statuses: ProductionStatus[] = [
-  "needs_review",
-  "accepted",
-  "planning",
-  "planned",
-  "ready",
-  "in_production",
-  "blocked",
-  "needs_clarification",
-  "complete",
-];
+const statuses: CpuLifecycle[] = ["received", "accepted", "planning", "ready", "in_production", "complete"];
 const terminalStatuses = new Set<ProductionStatus>([
   "in_production",
   "partially_complete",
@@ -48,7 +42,7 @@ function visibleStatus(order: ProductionOrder): ProductionStatus {
     return order.status;
   return order.workflowStatus;
 }
-type View = "calendar" | "queue" | "run-sheet" | "totals" | "menu-planning" | "published-menus" | "grab-and-go";
+type View = "calendar" | "day" | "queue" | "run-sheet" | "totals" | "menu-planning" | "published-menus" | "grab-and-go";
 
 export default function CpuProduction() {
   const [orders, setOrders] = useState<ProductionOrder[]>([]);
@@ -56,6 +50,7 @@ export default function CpuProduction() {
   const [origin, setOrigin] = useState("");
   const [site, setSite] = useState("");
   const [date, setDate] = useState("");
+  const [dayDate, setDayDate] = useState(new Date().toISOString().slice(0, 10));
   const [productionScope, setProductionScope] = useState<ProductionScope>("all");
   const [view, setView] = useState<View>("calendar");
   const [selected, setSelected] = useState<ProductionOrder>();
@@ -97,19 +92,20 @@ export default function CpuProduction() {
   }, [productionScope]);
   const sites = [
     ...new Set(
-      orders.map((order) => order.productionLocationId).filter(Boolean),
+      orders.map((order) => order.destinationOplocId).filter(Boolean),
     ),
   ] as string[];
   const baseVisible = orders.filter(
     (order) =>
-      (!status || visibleStatus(order) === status) &&
+      (!status || cpuLifecycle(order) === status) &&
       (!origin || order.origin === origin) &&
-      (!site || order.productionLocationId === site),
+      (!site || order.destinationOplocId === site),
   );
   const visible = baseVisible.filter(
     (order) => !date || order.requiredBy.startsWith(date),
   );
   const todayKey = new Date().toLocaleDateString("en-CA");
+  const openOrder = (order: ProductionOrder) => { if (order.origin === "menu_planning") { window.location.href = `/allergens?date=${encodeURIComponent(orderDate(order))}&dish=${encodeURIComponent(order.lines[0]?.sourceMenuItemId || order.lines[0]?.itemName || "")}`; return; } setSelected(order); };
   const totals = useMemo(
     () =>
       visible
@@ -130,7 +126,7 @@ export default function CpuProduction() {
         <div className="cpu-sidebar-label">CPU PRODUCTION</div>
         <nav aria-label="CPU Production navigation" className="cpu-sidebar-nav">
           {[
-            ["▦", "Overview", "calendar"], ["☷", "Queue", "queue"],
+            ["▦", "Overview", "calendar"], ["◷", "Day", "day"], ["☷", "Queue", "queue"],
             ["▤", "Run sheet", "run-sheet"], ["▥", "Totals", "totals"],
             ["□", "Calendar", "calendar"],
           ].map(([icon, label, target]) => (
@@ -173,9 +169,9 @@ export default function CpuProduction() {
               onClick={() => setStatus(status === item ? "" : item)}
             >
               <strong>
-                {visible.filter((order) => visibleStatus(order) === item).length}
+                {visible.filter((order) => cpuLifecycle(order) === item).length}
               </strong>
-              <span>{item.replaceAll("_", " ")}</span>
+              <span>{cpuLifecycleLabels[item]}</span>
             </button>
           ))}
         </section>
@@ -186,6 +182,8 @@ export default function CpuProduction() {
             <h2>
               {view === "calendar"
                 ? "Production week"
+                : view === "day"
+                  ? "Production day"
                 : view === "queue"
                   ? "Production queue"
                   : view === "run-sheet"
@@ -209,6 +207,7 @@ export default function CpuProduction() {
             >
               Week
             </button>
+            <button className={view === "day" ? "selected" : ""} onClick={() => setView("day")}>Day</button>
             <button
               className={view === "queue" ? "selected" : ""}
               onClick={() => setView("queue")}
@@ -248,9 +247,10 @@ export default function CpuProduction() {
               onChange={(event) => setSite(event.target.value)}
             >
               <option value="">All sites</option>
-              {sites.map((item) => (
-                <option key={item}>{item}</option>
-              ))}
+              {sites.map((item) => {
+                const order = orders.find(candidate => candidate.destinationOplocId === item);
+                return <option value={item} key={item}>{order ? cpuDestinationOptionLabel(order) : item}</option>;
+              })}
             </select>
           </label>
           <label>
@@ -261,7 +261,9 @@ export default function CpuProduction() {
             >
               <option value="">All origins</option>
               <option value="hospitality_booking">Hospitality booking</option>
-              <option value="cpu_created">CPU created</option>
+              <option value="grab_and_go">Grab &amp; Go order</option>
+              <option value="menu_planning">Published menu</option>
+              <option value="cpu_created">CPU-created work</option>
             </select>
           </label>
           <button
@@ -285,9 +287,10 @@ export default function CpuProduction() {
           />
         )}
         {view === "calendar" && (
-          <ProductionCalendar orders={baseVisible} open={setSelected} />
+          <ProductionCalendar orders={baseVisible} open={openOrder} onDayOpen={(selectedDate) => { setDayDate(selectedDate); setView("day"); }} reviewAllergens={(selectedDate) => { window.location.href = `/allergens?date=${encodeURIComponent(selectedDate)}`; }} />
         )}
-        {view === "queue" && <Queue orders={visible} open={setSelected} />}
+        {view === "day" && <ProductionDayView orders={baseVisible} date={dayDate} open={openOrder} onChangeDate={setDayDate} reviewAllergens={(selectedDate) => { window.location.href = `/allergens?date=${encodeURIComponent(selectedDate)}`; }} />}
+        {view === "queue" && <Queue orders={visible} open={openOrder} />}
         {view === "run-sheet" && <RunSheet orders={visible} />}
         {view === "totals" && <Totals totals={totals} orders={visible} />}
         </section>
@@ -295,7 +298,14 @@ export default function CpuProduction() {
         </div>
       </div>
       </div>
-      {selected && (
+      {selected && selected.origin === "menu_planning" ? (
+        <DeliveredInProductionDetail
+          order={selected}
+          orders={relatedDeliveredInOrders(orders, selected)}
+          close={() => setSelected(undefined)}
+          onSaved={async () => { const nextOrders = await load(); const refreshed = nextOrders.find(order => order.canonicalId === selected.canonicalId); if (refreshed) setSelected(refreshed); }}
+        />
+      ) : selected && (
         <LianaOrderDetail
           order={selected}
           close={() => setSelected(undefined)}
@@ -319,17 +329,17 @@ function OperationsRail({ orders, date }: { orders: ProductionOrder[]; date: str
   const todayOrders = orders
     .filter((order) => order.requiredBy.startsWith(date))
     .sort((a, b) => a.requiredBy.localeCompare(b.requiredBy));
-  const attention = orders.filter((order) => ["needs_review", "needs_clarification", "blocked"].includes(visibleStatus(order)));
-  const attentionByStatus = (status: ProductionStatus) => attention.filter((order) => visibleStatus(order) === status).length;
+  const attention = orders.filter((order) => Boolean(cpuAttentionLabel(order)));
+  const attentionByStatus = (status: string) => attention.filter((order) => cpuAttentionKey(order) === status).length;
   return <aside className="cpu-operations-rail">
     <section className="cpu-rail-panel">
       <div className="cpu-rail-heading"><div><span className="cpu-eyebrow">LIVE OPERATIONS</span><h2>Today&apos;s production</h2></div><button type="button" aria-label="More options">•••</button></div>
-      <div className="cpu-booking-list">{todayOrders.length ? todayOrders.map((order) => { const status = visibleStatus(order); return <button type="button" className={`cpu-booking cpu-booking--${status}`} key={order.canonicalId}><time>{order.requiredBy.slice(11, 16)}</time><div><strong>{order.clientName || order.destinationLabel || "Production"}</strong><small>{order.destinationLabel ? `Site: ${order.destinationLabel}` : "Site not assigned"}{order.guestCount !== undefined ? `　♙ ${order.guestCount} guests` : ""}</small></div><span className={`cpu-mini-status cpu-mini-status--${status}`}>{status.replaceAll("_", " ")}</span><b>›</b></button>; }) : <div className="cpu-empty cpu-empty--rail"><h3>No production scheduled today</h3><p>Real CPU work for this date will appear here.</p></div>}</div>
+      <div className="cpu-booking-list">{todayOrders.length ? todayOrders.map((order) => { const lifecycle = cpuLifecycle(order); return <button type="button" className={`cpu-booking cpu-booking--${lifecycle}`} key={order.canonicalId}><time>{cpuRequiredTime(order)}</time><div><strong>{order.clientName || cpuDestinationLabel(order)}</strong><small>{cpuSourceLabel(order)} · {cpuDestinationLabel(order)}{order.guestCount !== undefined ? `　♙ ${order.guestCount} guests` : ""}</small></div><span className={`cpu-mini-status cpu-mini-status--${lifecycle}`}>{cpuLifecycleLabels[lifecycle]}</span><b>›</b></button>; }) : <div className="cpu-empty cpu-empty--rail"><h3>No production scheduled today</h3><p>Real CPU work for this date will appear here.</p></div>}</div>
       {todayOrders.length > 0 && <button type="button" className="cpu-rail-link">View all production <span>›</span></button>}
     </section>
     <section className="cpu-rail-panel cpu-attention-panel">
       <div className="cpu-rail-heading"><div><span className="cpu-eyebrow">INTERVENTION QUEUE</span><h2>Needs your attention</h2></div><span className="cpu-attention-count">{attention.length}</span></div>
-      {(["needs_review", "needs_clarification", "blocked"] as ProductionStatus[]).map((status) => <button type="button" className="cpu-attention-row" key={status}><span className={`cpu-attention-dot cpu-dot--${status === "needs_review" ? "review" : status === "blocked" ? "blocked" : "clarify"}`}/><span><strong>{status.replaceAll("_", " ")}</strong><small>{attentionByStatus(status)} production record{attentionByStatus(status) === 1 ? "" : "s"}</small></span><b>›</b></button>)}
+      {["needs_review", "needs_clarification", "blocked", "amended"].map((status) => <button type="button" className="cpu-attention-row" key={status}><span className={`cpu-attention-dot cpu-dot--${status === "needs_review" ? "review" : status === "blocked" ? "blocked" : "clarify"}`}/><span><strong>{status === "needs_review" ? "Needs review" : status === "needs_clarification" ? "Needs clarification" : status === "blocked" ? "Blocked" : "Amended"}</strong><small>{attentionByStatus(status)} production record{attentionByStatus(status) === 1 ? "" : "s"}</small></span><b>›</b></button>)}
     </section>
   </aside>;
 }
@@ -358,7 +368,7 @@ function Queue({
               <th>Required ready</th>
               <th>Reference</th>
               <th>Origin</th>
-              <th>Location</th>
+              <th>Destination</th>
               <th>Lines</th>
               <th>Priority</th>
               <th>Status</th>
@@ -370,36 +380,32 @@ function Queue({
             {orders.map((order) => (
               <tr key={order.canonicalId}>
                 <td data-label="Required ready">
-                  <strong>{order.requiredBy.replace("T", " ")}</strong>
-                  <small>{order.serviceWindow.startTime}</small>
+                  <strong>{order.requiredBy ? `${order.requiredBy.slice(0, 10)} · ${cpuRequiredTime(order)}` : "Time TBC"}</strong>
+                  <small>{cpuRequiredTime(order)}</small>
                 </td>
                 <td data-label="Reference">
-                  <strong>{order.sourceBookingId}</strong>
+                  <strong>{cpuReference(order)}</strong>
                   <small>{order.canonicalId}</small>
                 </td>
                 <td data-label="Origin">
-                  {order.origin === "cpu_created"
-                    ? "CPU created"
-                    : "Hospitality"}
+                  {cpuSourceLabel(order)}
                 </td>
-                <td data-label="Location">
-                  {order.productionLocationId || "Not assigned"}
+                <td data-label="Destination">
+                  {cpuDestinationLabel(order)}
                 </td>
                 <td data-label="Lines">{order.lines.length}</td>
                 <td data-label="Priority">{order.priority}</td>
                 <td data-label="Status">
                   <span
-                    className={`cpu-status cpu-status--${visibleStatus(order)}`}
+                    className={`cpu-status cpu-status--${cpuLifecycle(order)}`}
                   >
-                    {visibleStatus(order).replaceAll("_", " ")}
+                    {cpuLifecycleLabels[cpuLifecycle(order)]}
                   </span>
                 </td>
                 <td data-label="Attention">
                   {order.exceptions.length
                     ? `${order.exceptions.length} exception(s)`
-                    : order.version > 1
-                      ? "Amended"
-                      : "—"}
+                    : cpuAttentionLabel(order) || "—"}
                 </td>
                 <td>
                   <button onClick={() => open(order)}>Open</button>
