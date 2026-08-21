@@ -7,9 +7,10 @@ h1,h2,h3,h4{font-family:var(--display)}
 .cpu-summary button,.production-calendar,.cpu-queue,.cpu-run-sheet article,.cpu-totals>div:not(.cpu-empty),.cpu-create,.cpu-detail{border:1px solid var(--border);box-shadow:0 14px 38px rgba(40,15,140,.1)}
 .cpu-summary button.active{background:#efecff;box-shadow:0 0 0 3px var(--brand-primary)}
 .cpu-toolbar h2,.calendar-header h2,.cpu-create h2{font-family:var(--display);text-transform:uppercase;color:var(--brand-dark);letter-spacing:-.03em}
-.cpu-toolbar-actions button,.cpu-create button{border-radius:8px;background:var(--brand-dark);font-family:var(--body);font-weight:700}
+.cpu-toolbar-actions button,.cpu-create button{border-radius:8px;background:var(--brand-dark);font-family:var(--body);font-weight:700}.cpu-toolbar-actions button{color:#fff}
 .cpu-toolbar-actions button.selected{background:var(--brand-primary)}
 .cpu-toolbar-actions button:hover,.cpu-create button:hover{background:var(--brand-primary)}
+.cpu-toolbar-actions button{color:#fff!important}
 .cpu-filters input,.cpu-filters select,.cpu-toolbar button,.cpu-create input,.cpu-create textarea,.cpu-create select{font-family:var(--body);border-color:var(--border)}
 .production-calendar{border-radius:1.25rem;background:var(--surface)}
 .calendar-header small{color:var(--brand-primary)}

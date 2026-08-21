@@ -16,6 +16,7 @@ import {
   normaliseProductionDashboardView,
   type ProductionDashboardView,
 } from "../../../lib/dashboard-views";
+import { filterProductionOrdersForScope, normaliseProductionScope, type ProductionScope } from "../../../lib/production-scope";
 
 const localActor = {
   uid: "local-cpu",
@@ -137,10 +138,12 @@ export async function GET(request: NextRequest) {
     assertPermission(actor, "canonical.view");
     const id = request.nextUrl.searchParams.get("canonicalId");
     const view = parseDashboardView(request.nextUrl.searchParams.get("view"));
+    const scope = normaliseProductionScope(request.nextUrl.searchParams.get("scope"));
+    const allProduction = request.nextUrl.searchParams.get("allProduction") === "true";
     if (id?.startsWith("production-order:v1:fixture:")) {
       const order = localFixtureOrders().find((item) => item.canonicalId === id);
-      const filtered = order ? (await ordersForView([order], view))[0] : undefined;
-      return NextResponse.json({ order: filtered, view });
+      const filtered = order ? (await ordersForScope(await ordersForView([order], view, allProduction), scope))[0] : undefined;
+      return NextResponse.json({ order: filtered, view, scope });
     }
     const fetched = await productionQueue();
     // In local development, keep the existing emulator orders visible while
@@ -155,14 +158,19 @@ export async function GET(request: NextRequest) {
         ),
       )]
       : fetched;
-    const orders = await ordersForView(sourceOrders, view);
-    return NextResponse.json({ orders, view, localFixtures: process.env.NODE_ENV !== "production" && process.env.FIKA_ENABLE_LOCAL_PRODUCTION_FIXTURES === "true" });
+    const orders = await ordersForScope(await ordersForView(sourceOrders, view, allProduction), scope);
+    return NextResponse.json({ orders, view, scope, localFixtures: process.env.NODE_ENV !== "production" && process.env.FIKA_ENABLE_LOCAL_PRODUCTION_FIXTURES === "true" });
   } catch (error) {
     return NextResponse.json(
       { error: { message: (error as Error).message } },
       { status: (error as { status?: number }).status || 500 },
     );
   }
+}
+
+async function ordersForScope(orders: Awaited<ReturnType<typeof productionQueue>>, scope: ProductionScope) {
+  if (scope === "all") return orders;
+  return filterProductionOrdersForScope(orders, scope, await hospitalityMenuProductionRouting());
 }
 
 function parseDashboardView(value: string | null): ProductionDashboardView {
@@ -172,7 +180,9 @@ function parseDashboardView(value: string | null): ProductionDashboardView {
 async function ordersForView(
   orders: Awaited<ReturnType<typeof productionQueue>>,
   view: ProductionDashboardView,
+  allProduction = false,
 ) {
+  if (allProduction) return orders;
   if (view === "site_manager") return orders;
   return filterProductionOrdersForDashboard(
     orders,

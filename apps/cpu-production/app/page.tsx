@@ -14,18 +14,18 @@ import DeliveredMenuPlanner from "./ui/DeliveredMenuPlanner";
 import PublishedMenuView from "./ui/PublishedMenuView";
 import GrabAndGoProductionView from "./ui/GrabAndGoProductionView";
 import { CANONICAL_ALLERGEN_COLUMNS, normaliseOperationalAllergens, toggleOperationalAllergen, type CanonicalAllergenKey } from "../../shared/allergen-contract";
+import { productionScopes, type ProductionScope } from "../lib/production-scope";
 
 const statuses: ProductionStatus[] = [
-  "received",
   "needs_review",
   "accepted",
   "planning",
   "planned",
+  "ready",
   "in_production",
-  "complete",
-  "cancelled",
   "blocked",
   "needs_clarification",
+  "complete",
 ];
 const terminalStatuses = new Set<ProductionStatus>([
   "in_production",
@@ -73,6 +73,7 @@ export default function CpuProduction() {
   const [origin, setOrigin] = useState("");
   const [site, setSite] = useState("");
   const [date, setDate] = useState("");
+  const [productionScope, setProductionScope] = useState<ProductionScope>("all");
   const [view, setView] = useState<View>("calendar");
   // Keep the server and first client render identical. The URL-backed role
   // view is applied after hydration so the navigation cannot mismatch.
@@ -80,9 +81,6 @@ export default function CpuProduction() {
     useState<ProductionDashboardView>("production");
   const [selected, setSelected] = useState<ProductionOrder>();
   const [showCreate, setShowCreate] = useState(false);
-  const [scanOpen, setScanOpen] = useState(false);
-  const [scanMessage, setScanMessage] = useState("");
-  const [scanError, setScanError] = useState("");
   const [error, setError] = useState("");
   useEffect(() => {
     const next = initialDashboardView();
@@ -93,7 +91,7 @@ export default function CpuProduction() {
     }
   }, []);
   const load = async (): Promise<ProductionOrder[]> => {
-    const response = await fetch(`/api/production?view=${dashboardView}`, {
+    const response = await fetch(`/api/production?view=${dashboardView}&scope=${productionScope}&allProduction=${dashboardView === "production"}`, {
       cache: "no-store",
     });
     const body = await response.json();
@@ -125,24 +123,7 @@ export default function CpuProduction() {
   };
   useEffect(() => {
     void load();
-  }, [dashboardView]);
-  async function scanCpuCalendar() {
-    setScanOpen(true);
-    setScanError("");
-    setScanMessage("Reading the CPUX calendar…");
-    try {
-      setScanMessage("Reading new spreadsheet attachments…");
-      const response = await fetch("/api/calendar/scan", { method: "POST", cache: "no-store" });
-      const body = await response.json();
-      if (!response.ok) throw new Error(body.error || "CPU calendar scan failed.");
-      const result = body.result || {};
-      setScanMessage(`Reconciled ${result.attachments || 0} attachment(s): ${result.imported || 0} new booking(s), ${result.updated || 0} already linked, ${result.review || 0} needing review.`);
-      await load();
-    } catch (scanFailure) {
-      setScanError(scanFailure instanceof Error ? scanFailure.message : "CPU calendar scan failed.");
-      setScanMessage("");
-    }
-  }
+  }, [dashboardView, productionScope]);
   useEffect(() => {
     // A selected order belongs to the role-specific projection that opened it.
     // Do not carry a stale detail panel across dashboard views.
@@ -162,6 +143,7 @@ export default function CpuProduction() {
   const visible = baseVisible.filter(
     (order) => !date || order.requiredBy.startsWith(date),
   );
+  const todayKey = new Date().toLocaleDateString("en-CA");
   const totals = useMemo(
     () =>
       visible
@@ -176,21 +158,47 @@ export default function CpuProduction() {
     [visible],
   );
   return (
-    <main>
-      <header className="cpu-header">
-        <div>
-          <p>FIKA OS · CPU Production</p>
-          <h1>
-            Production, <em>in hand.</em>
-          </h1>
-          <p>
-            See what needs preparing, when it is required and where intervention
-            is needed.
-          </p>
-        </div>
-        <small>Operational application · governed Production domain</small>
-      </header>
-      <div className="cpu-main">
+    <main className="cpu-app-shell">
+      <aside className="cpu-sidebar">
+        <div className="cpu-brand">FIKA OS</div>
+        <div className="cpu-sidebar-label">CPU PRODUCTION</div>
+        <nav aria-label="CPU Production navigation" className="cpu-sidebar-nav">
+          {[
+            ["▦", "Overview", "calendar"], ["☷", "Queue", "queue"],
+            ["▤", "Run sheet", "run-sheet"], ["▥", "Totals", "totals"],
+            ["□", "Calendar", "calendar"],
+          ].map(([icon, label, target]) => (
+            <button type="button" key={label} className={view === target ? "selected" : ""} onClick={() => setView(target as View)}>
+              <span>{icon}</span>{label}
+            </button>
+          ))}
+        </nav>
+        <div className="cpu-sidebar-rule" />
+        <nav aria-label="Utility navigation" className="cpu-sidebar-nav cpu-sidebar-nav--utility">
+          <button type="button"><span>⚙</span>Settings</button>
+          <button type="button"><span>?</span>Help &amp; support</button>
+        </nav>
+        <div className="cpu-user-card"><div className="cpu-avatar">DB</div><div><strong>Derek Buckley</strong><small>CPU Manager</small></div><span>⌄</span></div>
+      </aside>
+      <div className="cpu-workspace">
+        <header className="cpu-header">
+          <div>
+            <p className="cpu-kicker">FIKA OS · CPU</p>
+            <h1>Production, <em>in hand.</em></h1>
+            <p>See what needs preparing, when it is required and where intervention is needed.</p>
+          </div>
+          <div className="cpu-header-tools"><button type="button">▣ &nbsp; {new Date().toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })} &nbsp;⌄</button></div>
+          <small>Operational application&nbsp; · &nbsp;governed Production domain</small>
+        </header>
+        <div className="cpu-main">
+        <nav className="cpu-production-scope" aria-label="Production type scope">
+          <span>Scope</span>
+          {productionScopes.map((scope) => (
+            <button type="button" key={scope.id} className={productionScope === scope.id ? "selected" : ""} onClick={() => { setProductionScope(scope.id); setStatus(""); }}>
+              {scope.label}
+            </button>
+          ))}
+        </nav>
         <nav
           className="cpu-dashboard-switcher"
           aria-label="Production dashboard view"
@@ -219,7 +227,7 @@ export default function CpuProduction() {
             </button>
           ))}
         </nav>
-        <section className="cpu-summary">
+        <section className="cpu-summary" aria-label="Production status overview">
           {statuses.map((item) => (
             <button
               className={`status-${item} ${status === item ? "active" : ""}`}
@@ -227,12 +235,14 @@ export default function CpuProduction() {
               onClick={() => setStatus(status === item ? "" : item)}
             >
               <strong>
-                {orders.filter((order) => visibleStatus(order) === item).length}
+                {visible.filter((order) => visibleStatus(order) === item).length}
               </strong>
               <span>{item.replaceAll("_", " ")}</span>
             </button>
           ))}
         </section>
+        <div className="cpu-dashboard-columns">
+        <section className="cpu-production-panel">
         <div className="cpu-toolbar">
           <div>
             <h2>
@@ -281,9 +291,6 @@ export default function CpuProduction() {
             </button>
             <button onClick={() => void load()} aria-label="Refresh production">
               ↻
-            </button>
-            <button onClick={() => void scanCpuCalendar()}>
-              Scan CPU calendar
             </button>
           </div>
         </div>
@@ -345,6 +352,10 @@ export default function CpuProduction() {
         {view === "queue" && <Queue orders={visible} open={setSelected} />}
         {view === "run-sheet" && <RunSheet orders={visible} />}
         {view === "totals" && <Totals totals={totals} orders={visible} />}
+        </section>
+        <OperationsRail orders={visible} date={date || todayKey} />
+        </div>
+      </div>
       </div>
       {selected && (
         <LianaOrderDetail
@@ -362,18 +373,27 @@ export default function CpuProduction() {
           }}
         />
       )}
-      {scanOpen && (
-        <div className="cpu-scan-backdrop" role="dialog" aria-modal="true" aria-labelledby="cpu-scan-title">
-          <section className="cpu-scan-modal">
-            <h2 id="cpu-scan-title">Scanning CPUX calendar</h2>
-            {scanError ? <p role="alert" className="cpu-scan-error">{scanError}</p> : <p>{scanMessage || "Working…"}</p>}
-            {!scanError && <div className="cpu-scan-progress" aria-label="Scan in progress"><span /></div>}
-            <button type="button" onClick={() => setScanOpen(false)}>{scanError || scanMessage.startsWith("Reconciled") ? "Close" : "Run in background"}</button>
-          </section>
-        </div>
-      )}
     </main>
   );
+}
+
+function OperationsRail({ orders, date }: { orders: ProductionOrder[]; date: string }) {
+  const todayOrders = orders
+    .filter((order) => order.requiredBy.startsWith(date))
+    .sort((a, b) => a.requiredBy.localeCompare(b.requiredBy));
+  const attention = orders.filter((order) => ["needs_review", "needs_clarification", "blocked"].includes(visibleStatus(order)));
+  const attentionByStatus = (status: ProductionStatus) => attention.filter((order) => visibleStatus(order) === status).length;
+  return <aside className="cpu-operations-rail">
+    <section className="cpu-rail-panel">
+      <div className="cpu-rail-heading"><div><span className="cpu-eyebrow">LIVE OPERATIONS</span><h2>Today&apos;s production</h2></div><button type="button" aria-label="More options">•••</button></div>
+      <div className="cpu-booking-list">{todayOrders.length ? todayOrders.map((order) => { const status = visibleStatus(order); return <button type="button" className={`cpu-booking cpu-booking--${status}`} key={order.canonicalId}><time>{order.requiredBy.slice(11, 16)}</time><div><strong>{order.clientName || order.destinationLabel || "Production"}</strong><small>{order.destinationLabel ? `Site: ${order.destinationLabel}` : "Site not assigned"}{order.guestCount !== undefined ? `　♙ ${order.guestCount} guests` : ""}</small></div><span className={`cpu-mini-status cpu-mini-status--${status}`}>{status.replaceAll("_", " ")}</span><b>›</b></button>; }) : <div className="cpu-empty cpu-empty--rail"><h3>No production scheduled today</h3><p>Real CPU work for this date will appear here.</p></div>}</div>
+      {todayOrders.length > 0 && <button type="button" className="cpu-rail-link">View all production <span>›</span></button>}
+    </section>
+    <section className="cpu-rail-panel cpu-attention-panel">
+      <div className="cpu-rail-heading"><div><span className="cpu-eyebrow">INTERVENTION QUEUE</span><h2>Needs your attention</h2></div><span className="cpu-attention-count">{attention.length}</span></div>
+      {(["needs_review", "needs_clarification", "blocked"] as ProductionStatus[]).map((status) => <button type="button" className="cpu-attention-row" key={status}><span className={`cpu-attention-dot cpu-dot--${status === "needs_review" ? "review" : status === "blocked" ? "blocked" : "clarify"}`}/><span><strong>{status.replaceAll("_", " ")}</strong><small>{attentionByStatus(status)} production record{attentionByStatus(status) === 1 ? "" : "s"}</small></span><b>›</b></button>)}
+    </section>
+  </aside>;
 }
 
 function Queue({
