@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { existsSync, promises as fs } from "node:fs";
 import path from "node:path";
-import { productionItemId } from "../../../lib/production-item-id";
+import { legacyProductionItemId, productionItemId } from "../../../lib/production-item-id";
 
 const libraryUrl = () => process.env.MENU_PLANNING_URL || "http://localhost:3500";
 function repositoryRoot() {
@@ -80,10 +80,10 @@ async function localFallback(request: NextRequest, method: "GET" | "POST") {
   const now = new Date().toISOString();
   const parentMenuItemKey = body.parentMenuItemKey?.trim() || undefined;
   const id = productionItemId(title, parentMenuItemKey);
-  const legacyId = `sandwich:${title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 80) || "untitled"}`;
+  const legacyId = legacyProductionItemId(title);
   const previous = productionItems.find((item) => item.id === id) || productionItems.find((item) => item.id === legacyId && (!item.parentMenuItemKey || item.parentMenuItemKey === parentMenuItemKey));
   const productionItem: SavedProductionItem = { id, title, allergens: body.allergens || {}, mayContainNotes: body.mayContainNotes?.trim() || "", itemType: body.itemType || previous?.itemType || "sandwich", category: body.category || previous?.category, sourceEvidence: body.sourceEvidence || previous?.sourceEvidence || [], ...(parentMenuItemKey ? { parentMenuItemKey } : previous?.parentMenuItemKey ? { parentMenuItemKey: previous.parentMenuItemKey } : {}), createdAt: previous?.createdAt || now, updatedAt: now, updatedBy: body.updatedBy || "production-chef" };
-  const next = mergeProductionItems(productionItems.filter((item) => item.id !== id && item.id !== legacyId), [productionItem]);
+  const next = mergeProductionItems(productionItems.filter((item) => item.id !== id && (item.id !== legacyId || (item.parentMenuItemKey && item.parentMenuItemKey !== parentMenuItemKey))), [productionItem]);
   await fs.mkdir(path.dirname(localLibraryPath()), { recursive: true });
   await fs.writeFile(localLibraryPath(), JSON.stringify(next, null, 2), "utf8");
   return NextResponse.json({ productionItem, sandwich: productionItem, productionItems: next, sandwiches: next });

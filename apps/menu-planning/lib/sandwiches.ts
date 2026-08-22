@@ -1,6 +1,7 @@
 import { existsSync, promises as fs } from "node:fs";
 import path from "node:path";
 import { sandwichAllergenColumns, type SavedSandwich, type SandwichAllergens } from "./sandwich-types";
+import { legacyProductionItemId, productionItemId } from "../../shared/production-item-id";
 export { sandwichAllergenColumns, type SavedSandwich, type SandwichAllergens } from "./sandwich-types";
 
 function repositoryRoot() {
@@ -15,7 +16,6 @@ const filePath = path.join(repositoryRoot(), "local-data", "menu-planning", "sav
 let loaded = false;
 const records = new Map<string, SavedSandwich>();
 
-function slug(value: string) { return value.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 80) || "untitled"; }
 function normaliseAllergens(input: SandwichAllergens): SandwichAllergens {
   const next = Object.fromEntries(sandwichAllergenColumns.map(([key]) => [key, input[key] || "clear"])) as SandwichAllergens;
   if (next.noKeyAllergens !== "clear") {
@@ -41,10 +41,14 @@ export async function saveSandwich(
   if (!cleanTitle) throw Object.assign(new Error("A sandwich title is required."), { status: 422 });
   await loadSavedSandwiches();
   const now = new Date().toISOString();
-  const id = `sandwich:${slug(cleanTitle)}`;
+  const id = productionItemId(cleanTitle, parentMenuItemKey);
+  const legacyId = legacyProductionItemId(cleanTitle);
   const previous = records.get(id);
+  const legacy = records.get(legacyId);
+  const migratableLegacy = legacy && legacyId !== id && (!legacy.parentMenuItemKey || legacy.parentMenuItemKey === parentMenuItemKey) ? legacy : undefined;
   const record: SavedSandwich = { id, title: cleanTitle, allergens: normaliseAllergens(allergens), mayContainNotes: mayContainNotes.trim(), ...(parentMenuItemKey ? { parentMenuItemKey } : {}), createdAt: previous?.createdAt || now, updatedAt: now, updatedBy };
   records.set(id, record);
+  if (migratableLegacy && legacyId !== id) records.delete(legacyId);
   await fs.mkdir(path.dirname(filePath), { recursive: true });
   await fs.writeFile(filePath, JSON.stringify([...records.values()], null, 2), "utf8");
   return record;

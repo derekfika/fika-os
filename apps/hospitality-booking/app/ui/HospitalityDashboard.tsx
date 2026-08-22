@@ -18,7 +18,6 @@ const statuses = [
   "New",
   "Reviewed",
   "Quoted",
-  "Approved",
   "Completed",
   "Cancelled",
 ] as const;
@@ -257,9 +256,7 @@ export default function HospitalityDashboard({
   const newCount = bookings.filter(
     (item) => item.lifecycleStatus === "New",
   ).length;
-  const approvedCount = bookings.filter(
-    (item) => item.lifecycleStatus === "Approved",
-  ).length;
+  const readyForCpuCount = bookings.filter((item) => item.deliveryChargeRequired !== false && quoteReadyForCpu(item)).length;
   const attentionCount = bookings.filter(
     (item) =>
       item.lifecycleStatus === "New" || item.lifecycleStatus === "Reviewed",
@@ -803,7 +800,7 @@ export default function HospitalityDashboard({
           >
             <Metric value={newCount} label="New requests" tone="mint" />
             <Metric value={attentionCount} label="Need review" tone="violet" />
-            <Metric value={approvedCount} label="Approved" tone="paper" />
+            <Metric value={readyForCpuCount} label="Ready for CPU" tone="paper" />
           </div>
         </section>
 
@@ -1228,7 +1225,7 @@ function BookingDetail({
             Cancel booking
           </button>
         )}
-        {availableActions(booking)
+        {availableActions(booking, productionOrder)
           .filter((action) => action !== "Production")
           .map((action) => (
             <button
@@ -1245,7 +1242,9 @@ function BookingDetail({
                     : booking.quoteState?.currentRevisionId ? "Open quote" : "Generate quote"
                   : action === "QuotePdfRetry"
                     ? "Retry quote PDF save"
-                  : "Send to CPU"}
+                    : action === "Completed"
+                      ? "Mark complete"
+                      : "Send to CPU"}
             </button>
           ))}
         {quoteReadyForCpu(booking) && !productionOrder && booking.deliveryChargeRequired !== false && (
@@ -1345,7 +1344,7 @@ function BookingDetail({
           <div className="manager-status-list">
             <div>
               <span>Booking</span>
-              <strong>{booking.lifecycleStatus}</strong>
+              <strong>{workflowLabel(booking.lifecycleStatus)}</strong>
             </div>
             <div>
               <span>CPU plan</span>
@@ -1765,8 +1764,7 @@ function AmendmentModal({
         <h2>Edit customer request</h2>
         <p>
           Saving retains the submitted intent and marks any current quote stale.
-          The amended Booking returns to review before a new quote can be
-          approved.
+          The amended Booking returns to review before a new current quote can be sent to CPU.
         </p>
         <div className="amendment-grid">
           <p className="field-group-label wide">Requester details</p>
@@ -2058,22 +2056,26 @@ function Fact({ label, value }: { label: string; value: string }) {
 function StatusPill({ status }: { status: Status }) {
   return (
     <span className={`booking-status booking-status--${status.toLowerCase()}`}>
-      {status}
+      {workflowLabel(status)}
     </span>
   );
+}
+function workflowLabel(status: Status) {
+  return status === "Approved" ? "Ready for CPU" : status;
 }
 function pretty(value: string) {
   return value
     .replace(/([A-Z])/g, " $1")
     .replace(/^./, (character) => character.toUpperCase());
 }
-function availableActions(booking: CanonicalBooking): WorkflowAction[] {
+function availableActions(booking: CanonicalBooking, productionOrder?: ProductionOrder): WorkflowAction[] {
   if (booking.lifecycleStatus === "New") return ["Reviewed"];
   if (booking.lifecycleStatus === "Reviewed") return ["Quoted"];
   if (["Quoted", "Approved"].includes(booking.lifecycleStatus)) {
     const current = booking.quoteState?.revisions.find((revision) => revision.id === booking.quoteState?.currentRevisionId);
     if (current?.stale) return ["Quoted"];
     if (current && current.pdfStatus !== "saved") return ["QuotePdfRetry"];
+    if (productionOrder || booking.deliveryChargeRequired === false) return ["Completed"];
     return ["Production"];
   }
   return [];
@@ -2098,7 +2100,7 @@ function commandHelp(action: WorkflowAction) {
   return (
     {
       Reviewed:
-        "Confirm the booking’s commercial intent, timing, delivery context and dietary requirements.",
+        "Confirm the booking details before generating its current quote.",
       Quoted:
         "Creates a new immutable commercial snapshot revision. Existing revisions remain auditable.",
       QuotePdfRetry:

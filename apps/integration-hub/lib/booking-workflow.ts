@@ -7,7 +7,7 @@ export type WorkflowCommand =
   | { action: "review"; checks: Partial<ReviewChecks>; notes?: string }
   | { action: "quote"; regenerate?: boolean }
   | { action: "quote-pdf-status"; revisionId: string; status: QuotePdfStatus; driveFileId?: string; driveUrl?: string; error?: string }
-  | { action: "amend"; reason: string; patch: { client: { name: string; email: string; phone?: string; companyName: string; invoiceReference?: string }; service: { eventDate: string; startTime: string; endTime?: string; guestCount: number; floorLevel?: string; roomOrArea?: string; deliveryPoint?: string; onsiteContactName?: string; onsiteContactPhone?: string }; order: { eventType?: string; items: Array<{ itemId: string; itemName?: string; category?: string; description?: string; servingInfo?: string; unitPrice: number; quantity: number; choices?: unknown[]; comments?: string }> }; notes?: string; deliveryChargeRequired?: boolean } }
+  | { action: "amend"; reason: string; patch: { client: { name: string; email: string; phone?: string; companyName: string; requester?: { name: string; email: string; phone?: string; companyName: string }; clientName?: string; clientCompany?: string; invoiceReference?: string }; service: { eventDate: string; startTime: string; endTime?: string; guestCount: number; floorLevel?: string; roomOrArea?: string; deliveryPoint?: string; onsiteContactName?: string; onsiteContactPhone?: string }; order: { eventType?: string; items: Array<{ itemId: string; itemName?: string; category?: string; description?: string; servingInfo?: string; unitPrice: number; quantity: number; choices?: unknown[]; comments?: string }> }; notes?: string; deliveryChargeRequired?: boolean } }
   | { action: "approve"; quoteRevisionId: string }
   | { action: "complete"; notes?: string }
   | { action: "cancel"; reason: string; removeCalendar?: boolean; cancelProduction?: boolean; notify?: boolean };
@@ -38,7 +38,11 @@ export function assertWorkflowCommand(booking: { lifecycleStatus: BookingStatus;
   if (command.action === "quote" && !["Reviewed", "Quoted"].includes(booking.lifecycleStatus)) throw workflowError("Review the Booking before generating a quote.");
   if (command.action === "amend" && !command.reason.trim()) throw workflowError("An amendment reason is required.");
   if (command.action === "approve") throw workflowError("Quote approval has been removed. Send the current quote to CPU instead.");
-  if (command.action === "complete" && !["Quoted", "Approved"].includes(booking.lifecycleStatus)) throw workflowError("Only a quoted Booking can be completed.");
+  if (command.action === "complete") {
+    if (!["Quoted", "Approved"].includes(booking.lifecycleStatus)) throw workflowError("Only a quoted Booking can be completed.");
+    const current = booking.quoteState?.revisions.find((revision) => revision.id === booking.quoteState?.currentRevisionId);
+    if (!current || current.stale || current.pdfStatus !== "saved" || !current.driveFileId) throw workflowError("Complete the current quote PDF save before marking this Booking complete.");
+  }
   if (command.action === "cancel" && ["Completed", "Cancelled"].includes(booking.lifecycleStatus)) throw workflowError("A completed or cancelled Booking cannot be cancelled again.");
 }
 

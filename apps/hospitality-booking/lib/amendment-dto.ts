@@ -17,6 +17,14 @@ export function amendmentPatchDto(draft: AmendmentDraft) {
       email: client.email,
       ...(client.phone ? { phone: client.phone } : {}),
       companyName: client.companyName,
+      ...(client.requester ? { requester: {
+        name: client.requester.name,
+        email: client.requester.email,
+        ...(client.requester.phone ? { phone: client.requester.phone } : {}),
+        companyName: client.requester.companyName,
+      } } : {}),
+      ...(client.clientName ? { clientName: client.clientName } : {}),
+      ...(client.clientCompany ? { clientCompany: client.clientCompany } : {}),
       ...(client.invoiceReference ? { invoiceReference: client.invoiceReference } : {}),
     },
     service: {
