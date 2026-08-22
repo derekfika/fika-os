@@ -40,7 +40,7 @@ FIKA can rely on new capabilities without losing business continuity, auditabili
 
 ## Current status
 
-**Planned.** No rollout is authorised by the documentation refactor.
+**In progress — UAT validation.** Hospitality booking, quote/Drive, allergen, CPU production, menu-generation and logistics/mobile-driver paths are being exercised as one connected workflow. The implementation changelog records the current acceptance evidence and known exception. Production rollout remains unauthorised until the required business acceptance, operational-readiness and release evidence is complete.
 
 ## Dependencies on earlier stages
 
@@ -62,4 +62,3 @@ Stage 9 uses rollout results, operational feedback and measured outcomes as new 
 - [Testing strategy](../engineering/testing-strategy.md)
 - [Definition of Done](../engineering/definition-of-done.md)
 - [Branching and release standards](../engineering/branching-and-release.md)
-
