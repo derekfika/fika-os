@@ -8,6 +8,7 @@ import { sha256 } from "./profiler";
 import { parseCanonical } from "./schemas";
 import {
   assertWorkflowCommand,
+  applyQuotePdfPersistence,
   type DashboardWorkflow,
   type QuoteRevision,
   type WorkflowCommand,
@@ -698,13 +699,10 @@ export async function bookingWorkspace(siteId?: string) {
   const storedRows = snapshot.docs
     .map((document) => document.data() as CanonicalBooking)
     .map((booking) => {
-      // Compatibility for bookings quoted before the simplified workflow was
-      // introduced: a current quote is now the approval point, so expose the
-      // same operational status without adding a separate approval action.
-      const currentQuote = booking.quoteState?.revisions.find((revision) => revision.id === booking.quoteState?.currentRevisionId);
-      return booking.lifecycleStatus === "Quoted" && currentQuote && !currentQuote.stale
-        ? { ...booking, lifecycleStatus: "Approved" as const }
-        : booking;
+      // Preserve stored legacy Approved values as-is. Do not promote active
+      // Quoted bookings into an approval-era state merely because a revision
+      // exists; PDF persistence is now the operational readiness boundary.
+      return booking;
     })
     .filter((booking) => !siteId || booking.service.portalSiteId === siteId);
   // Development fixtures exercise the same canonical Booking contract as a
@@ -957,6 +955,7 @@ export async function executeBookingWorkflow(
         snapshot: snapshotData,
         documentReference: id,
         stale: false,
+        pdfStatus: "pending",
       };
       next.order = {
         ...next.order,
@@ -971,10 +970,15 @@ export async function executeBookingWorkflow(
           quote,
         ],
       };
-      // A generated quote is the manager's approval point in the simplified
-      // workflow. Keep the separate approve command retired, but expose the
-      // resulting booking as Approved for the operational hand-off.
-      next.lifecycleStatus = "Approved";
+      // A quote is not ready for CPU hand-off until its PDF has been persisted.
+      // Keep the active workflow in Quoted; Approved remains a legacy read value.
+      next.lifecycleStatus = "Quoted";
+    }
+    if (command.action === "quote-pdf-status") {
+      next.quoteState = {
+        ...next.quoteState!,
+        revisions: applyQuotePdfPersistence(next.quoteState!.revisions, next.quoteState!.currentRevisionId, command.revisionId, command.status, command.driveFileId, command.driveUrl, command.error),
+      };
     }
     let notificationKind: BookingNotificationKind | undefined;
     if (command.action === "approve") {
@@ -1087,7 +1091,9 @@ export async function executeBookingWorkflow(
     const reason =
       command.action === "cancel" || command.action === "amend"
         ? command.reason
-        : `${command.action} workflow command`;
+        : command.action === "quote-pdf-status"
+          ? `${command.status === "saved" ? "Quote PDF saved to Drive" : "Quote PDF persistence failed"}${command.error ? `: ${command.error}` : ""}`
+          : `${command.action} workflow command`;
     next.statusHistory = [
       ...current.statusHistory,
       {

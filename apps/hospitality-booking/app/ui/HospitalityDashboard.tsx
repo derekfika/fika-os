@@ -6,6 +6,7 @@ import { MailSearch, RefreshCw, Settings } from "lucide-react";
 import type { CanonicalBooking } from "../../../integration-hub/lib/hospitality-booking-service";
 import { dailyRunSheetHtml } from "../../lib/run-sheet";
 import { quoteHtml } from "../../lib/quote-document";
+import { amendmentPatchDto } from "../../lib/amendment-dto";
 import type { ProductionOrder } from "../../../integration-hub/lib/hospitality-booking-service";
 import type { DashboardQuoteSettings } from "../../../integration-hub/lib/quote-engine";
 import { mnkMenuHtml } from "../../lib/mnk-menu-output";
@@ -22,7 +23,7 @@ const statuses = [
   "Cancelled",
 ] as const;
 type Status = CanonicalBooking["lifecycleStatus"];
-type WorkflowAction = Exclude<Status, "New"> | "Production" | "Amend";
+type WorkflowAction = Exclude<Status, "New"> | "Production" | "Amend" | "QuotePdfRetry";
 type Amendment = {
   client: CanonicalBooking["client"];
   service: CanonicalBooking["service"];
@@ -270,8 +271,38 @@ export default function HospitalityDashboard({
       ? "0%"
       : `${((scanStepIndex + 1) / inboxScanSteps.length) * 100}%`;
 
+  const persistQuotePdf = async (booking: CanonicalBooking, quote: { id: string; revision: number }) => {
+    const quoteResponse = await fetch("/api/quotes/drive", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        name: `Quote_${booking.service.eventDate}_${booking.client.companyName}_r${quote.revision}.pdf`.replace(/[^A-Za-z0-9._-]+/g, "_"),
+        html: quoteHtml(booking),
+        siteKey: site.key,
+      }),
+    });
+    const quoteBody = await quoteResponse.json() as { error?: { message?: string }; saved?: { fileId?: string; driveUrl?: string } };
+    if (!quoteResponse.ok || !quoteBody.saved?.fileId) throw new Error(quoteBody.error?.message || "The quote PDF could not be saved to Drive.");
+    const statusResponse = await fetch("/api/dashboard-bookings", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ canonicalId: booking.canonicalId, expectedVersion: booking.version, action: "quote-pdf-status", revisionId: quote.id, status: "saved", driveFileId: quoteBody.saved.fileId, driveUrl: quoteBody.saved.driveUrl }),
+    });
+    const statusBody = await statusResponse.json();
+    if (!statusResponse.ok) throw new Error(statusBody.error?.message || "The quote PDF was saved but could not be recorded against the quote.");
+    return statusBody.booking as CanonicalBooking;
+  };
+
   const act = async () => {
     if (!selected || !pending) return;
+    if (pending === "QuotePdfRetry") {
+      const current = selected.quoteState?.revisions.find((revision) => revision.id === selected.quoteState?.currentRevisionId);
+      if (!current) return;
+      try { setSelected(await persistQuotePdf(selected, current)); setError(""); } catch (cause) { setError((cause as Error).message); }
+      setPending(null);
+      await load();
+      return;
+    }
     const base = {
       canonicalId: selected.canonicalId,
       expectedVersion: selected.version,
@@ -282,12 +313,7 @@ export default function HospitalityDashboard({
             ...base,
             action: "amend",
             reason: amendment.reason,
-            patch: {
-              client: amendment.client,
-              service: amendment.service,
-              notes: amendment.notes,
-              deliveryChargeRequired: amendment.deliveryChargeRequired,
-            },
+            patch: amendmentPatchDto(amendment),
           }
         : pending === "Reviewed"
           ? { ...base, action: "review", checks: reviewChecks, notes: reason }
@@ -322,6 +348,7 @@ export default function HospitalityDashboard({
     }
     setSelected(body.booking || selected);
     if (pending === "Quoted" && body.booking) {
+      let pdfSaved = false;
       try {
         const quote = body.booking.quoteState?.revisions?.find(
           (revision: { id: string }) =>
@@ -342,16 +369,49 @@ export default function HospitalityDashboard({
           });
           const quoteBody = (await quoteResponse.json()) as {
             error?: { message?: string };
+            saved?: { fileId?: string; driveUrl?: string };
           };
-          if (!quoteResponse.ok)
+          if (!quoteResponse.ok || !quoteBody.saved?.fileId) {
             setError(
               `Quote created, but Drive saving failed: ${quoteBody.error?.message || "unknown error"}`,
             );
+          } else {
+            const statusResponse = await fetch("/api/dashboard-bookings", {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({
+                canonicalId: body.booking.canonicalId,
+                expectedVersion: body.booking.version,
+                action: "quote-pdf-status",
+                revisionId: quote.id,
+                status: "saved",
+                driveFileId: quoteBody.saved.fileId,
+                driveUrl: quoteBody.saved.driveUrl,
+              }),
+            });
+            const statusBody = await statusResponse.json();
+            if (!statusResponse.ok) setError(statusBody.error?.message || "The quote PDF was saved but could not be recorded against the quote.");
+            else { pdfSaved = true; setSelected(statusBody.booking || body.booking); }
+          }
         }
       } catch (cause) {
         setError(
           `Quote created, but Drive saving failed: ${(cause as Error).message}`,
         );
+      }
+      if (!pdfSaved && body.booking.quoteState?.currentRevisionId) {
+        await fetch("/api/dashboard-bookings", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            canonicalId: body.booking.canonicalId,
+            expectedVersion: body.booking.version,
+            action: "quote-pdf-status",
+            revisionId: body.booking.quoteState.currentRevisionId,
+            status: "failed",
+            error: "The quote PDF could not be persisted to Drive.",
+          }),
+        }).catch(() => undefined);
       }
     }
     setPending(null);
@@ -404,7 +464,9 @@ export default function HospitalityDashboard({
   };
   const openQuote = (booking: CanonicalBooking) => {
     try {
-      openPrintSheet(quoteHtml(booking));
+      const current = booking.quoteState?.revisions.find((revision) => revision.id === booking.quoteState?.currentRevisionId);
+      if (current?.driveUrl && current.pdfStatus === "saved") window.open(current.driveUrl, "_blank", "noopener,noreferrer");
+      else openPrintSheet(quoteHtml(booking));
     } catch (cause) {
       setError((cause as Error).message);
     }
@@ -515,32 +577,6 @@ export default function HospitalityDashboard({
       onsiteContactName,
       onsiteContactPhone,
     } = amendment.service;
-    const order = {
-      eventType: amendment.order.eventType,
-      items: amendment.order.items.map(
-        ({
-          itemId,
-          itemName,
-          category,
-          description,
-          servingInfo,
-          unitPrice,
-          quantity,
-          choices,
-          comments,
-        }) => ({
-          itemId,
-          itemName,
-          category,
-          description,
-          servingInfo,
-          unitPrice,
-          quantity,
-          choices,
-          comments,
-        }),
-      ),
-    };
     const response = await fetch("/api/dashboard-bookings", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -549,23 +585,21 @@ export default function HospitalityDashboard({
         expectedVersion: selected.version,
         action: "amend",
         reason: amendment.reason,
-        patch: {
-          client: amendment.client,
-          service: {
-            eventDate,
-            startTime,
-            endTime,
-            guestCount,
-            floorLevel,
-            roomOrArea,
-            deliveryPoint,
-            onsiteContactName,
-            onsiteContactPhone,
-          },
-          order,
-          notes: amendment.notes,
-          deliveryChargeRequired: amendment.deliveryChargeRequired,
-        },
+          patch: amendmentPatchDto({
+            ...amendment,
+            service: {
+              ...amendment.service,
+              eventDate,
+              startTime,
+              endTime,
+              guestCount,
+              floorLevel,
+              roomOrArea,
+              deliveryPoint,
+              onsiteContactName,
+              onsiteContactPhone,
+            },
+          }),
       }),
     });
     const body = await response.json();
@@ -949,7 +983,7 @@ export default function HospitalityDashboard({
                   </p>
                 </fieldset>
               )}
-              {pending !== "Quoted" && pending !== "Production" && (
+              {pending !== "Quoted" && pending !== "Production" && pending !== "QuotePdfRetry" && (
                 <label>
                   {pending === "Cancelled"
                     ? "Cancellation reason"
@@ -969,6 +1003,8 @@ export default function HospitalityDashboard({
                 <button className="primary">
                   {pending === "Production"
                     ? "Create production hand-off"
+                    : pending === "QuotePdfRetry"
+                      ? "Retry PDF save"
                     : "Confirm command"}
                 </button>
               </footer>
@@ -1207,10 +1243,12 @@ function BookingDetail({
                   ? booking.quoteState?.currentRevisionId && booking.quoteState.revisions.some((revision) => revision.id === booking.quoteState?.currentRevisionId && revision.stale)
                     ? "Regenerate quote"
                     : booking.quoteState?.currentRevisionId ? "Open quote" : "Generate quote"
+                  : action === "QuotePdfRetry"
+                    ? "Retry quote PDF save"
                   : "Send to CPU"}
             </button>
           ))}
-        {["Quoted", "Approved"].includes(booking.lifecycleStatus) && !productionOrder && booking.deliveryChargeRequired !== false && (
+        {quoteReadyForCpu(booking) && !productionOrder && booking.deliveryChargeRequired !== false && (
           <button
             type="button"
             className="primary"
@@ -1251,7 +1289,7 @@ function BookingDetail({
         {booking.client.invoiceReference && (
           <Fact label="Invoice / PO" value={booking.client.invoiceReference} />
         )}
-        <Fact label="Charge delivery" value={booking.deliveryChargeRequired === false ? "No" : "Yes"} />
+        <Fact label="Produced by CPU" value={booking.deliveryChargeRequired === false ? "No" : "Yes"} />
       </div>
       <section className="booking-detail__section">
         <div className="booking-detail__section-title">
@@ -1317,9 +1355,7 @@ function BookingDetail({
           <button
             type="button"
             className="manager-cpu-action"
-            disabled={
-              Boolean(productionOrder) || !["Quoted", "Approved"].includes(booking.lifecycleStatus) || booking.deliveryChargeRequired === false
-            }
+              disabled={Boolean(productionOrder) || !quoteReadyForCpu(booking) || booking.deliveryChargeRequired === false}
             onClick={() => setPending("Production")}
           >
             <strong>{productionOrder ? "Sent to CPU" : "Send to CPU"}</strong>
@@ -1327,10 +1363,10 @@ function BookingDetail({
               {productionOrder
                 ? "Production hand-off recorded"
                 : booking.deliveryChargeRequired === false
-                  ? "CPU delivery is not required for this booking"
-                  : ["Quoted", "Approved"].includes(booking.lifecycleStatus)
-                  ? "Send this quoted booking to production"
-                  : "Available after the booking is approved"}
+                  ? "The site will produce this booking internally"
+                  : quoteReadyForCpu(booking)
+                    ? "Send this quoted booking to production"
+                    : "Available after the quote PDF is saved to Drive"}
             </small>
           </button>
           <div className="manager-document-actions">
@@ -1343,7 +1379,9 @@ function BookingDetail({
               <strong>Open quote</strong>
               <small>
                 {booking.quoteState?.currentRevisionId
-                  ? "Current quote revision"
+                  ? booking.quoteState.revisions.find((revision) => revision.id === booking.quoteState?.currentRevisionId)?.pdfStatus === "saved"
+                    ? "Current quote PDF in Drive"
+                    : "PDF persistence required before CPU hand-off"
                   : "Quote not generated"}
               </small>
             </button>
@@ -1839,7 +1877,7 @@ function AmendmentModal({
               })
             }
           />
-            CPU delivery required (add the configured delivery charge to this quote)
+            Produced by CPU (No means the site will produce this booking internally)
         </label>
         <label>
           Operational notes
@@ -2034,9 +2072,16 @@ function availableActions(booking: CanonicalBooking): WorkflowAction[] {
   if (booking.lifecycleStatus === "Reviewed") return ["Quoted"];
   if (["Quoted", "Approved"].includes(booking.lifecycleStatus)) {
     const current = booking.quoteState?.revisions.find((revision) => revision.id === booking.quoteState?.currentRevisionId);
-    return [ ...(current?.stale ? (["Quoted"] as WorkflowAction[]) : []), "Production" ];
+    if (current?.stale) return ["Quoted"];
+    if (current && current.pdfStatus !== "saved") return ["QuotePdfRetry"];
+    return ["Production"];
   }
   return [];
+}
+
+function quoteReadyForCpu(booking: CanonicalBooking) {
+  const current = booking.quoteState?.revisions.find((revision) => revision.id === booking.quoteState?.currentRevisionId);
+  return ["Quoted", "Approved"].includes(booking.lifecycleStatus) && Boolean(current && !current.stale && current.pdfStatus === "saved" && current.driveFileId);
 }
 function commandTitle(action: WorkflowAction) {
   return (
@@ -2056,6 +2101,8 @@ function commandHelp(action: WorkflowAction) {
         "Confirm the booking’s commercial intent, timing, delivery context and dietary requirements.",
       Quoted:
         "Creates a new immutable commercial snapshot revision. Existing revisions remain auditable.",
+      QuotePdfRetry:
+        "Retry saving the current immutable quote PDF to Drive without creating a new commercial revision.",
       Production:
         "Sends the current quote and booking snapshot to the CPU production dashboard.",
       Completed:
@@ -2288,7 +2335,7 @@ function BookingAmendmentPanel({
               })
             }
           />
-            CPU delivery required (add the configured delivery charge to the replacement quote)
+            Produced by CPU (No means the site will produce this booking internally)
         </label>
         <label>
           Operational notes

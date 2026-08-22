@@ -2,6 +2,15 @@
 
 This file records user-facing workflow changes delivered in the repository. Detailed architectural authority remains in `fika-platform-specs/`; this is the implementation history and UAT handoff record.
 
+## 2026-08-22 — Targeted UAT repair pass
+
+- Manager amendments now submit a strict client/service/order DTO, including edited quantities and items, while preserving rice-paper-roll minimum validation and quote staleness.
+- Manager wording now uses “Produced by CPU — Yes / No”; the existing internal `deliveryChargeRequired` field remains compatible.
+- Quote PDFs are rendered from the branded quote HTML through the local Chrome/Edge renderer, so layout and multi-page content are retained rather than flattened/truncated.
+- Quote PDF Drive persistence is recorded against the immutable revision and gates CPU hand-off. Failed saves are audited and retryable without creating a new commercial revision; stored PDFs open directly where available.
+- Active quote approval behaviour remains retired, with legacy `Approved` records retained only for compatibility and `Completed` still supported.
+- Saved production-item IDs now include their parent menu scope, preventing same-title items in different menus from overwriting one another.
+
 ## 2026-08-22 — Hospitality, CPU and logistics UAT increment
 
 ### Booking and quoting
@@ -36,4 +45,3 @@ This file records user-facing workflow changes delivered in the repository. Deta
 - Logistics typecheck passes; all 27 logistics tests pass.
 - Hospitality typecheck and test suite pass (30 tests).
 - CPU typecheck passes; the suite has one known legacy saved-allergen fixture failure requiring fixture reconciliation.
-

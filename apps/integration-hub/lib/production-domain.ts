@@ -53,7 +53,8 @@ export async function createProductionFromApprovedBooking(actor: Actor, bookingI
     if (booking.deliveryChargeRequired === false) throw conflict("CPU delivery is not selected for this Booking, so no CPU production hand-off is required.");
     if (!booking.service.oplocId?.trim()) throw conflict("A delivery-requiring Hospitality Production Order needs a confirmed canonical destination OPLOC.");
     const quote = booking.quoteState?.revisions.find(item => item.id === booking.quoteState?.currentRevisionId);
-    if (!quote || quote.stale || quote.id !== booking.quoteState?.currentRevisionId) throw conflict("A current approved Quote Revision is required.");
+    if (!quote || quote.stale || quote.id !== booking.quoteState?.currentRevisionId) throw conflict("A current Quote Revision is required.");
+    if (quote.pdfStatus !== "saved" || !quote.driveFileId) throw conflict("The current quote PDF must be saved to Drive before sending this Booking to CPU.");
     const baseOrderRef = orders().doc(stableDocumentId(productionOrderV1Id(bookingId)));
     const baseOrderSnapshot = await transaction.get(baseOrderRef);
     const existingBase = baseOrderSnapshot.exists ? baseOrderSnapshot.data() as ProductionOrder : undefined;
