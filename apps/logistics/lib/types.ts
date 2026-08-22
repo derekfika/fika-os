@@ -7,7 +7,9 @@ export type MovementRequest = {
   type: MovementType;
   serviceDate: string;
   fromOplocId?: string;
+  fromAddress?: string;
   toOplocId?: string;
+  toAddress?: string;
   requiredTime?: string;
   window?: { startTime: string; endTime?: string };
   items: { description: string; quantity: number; unit?: string }[];
@@ -25,7 +27,7 @@ export type StopIssue = {
   reportedAt: string;
   reportedBy: string;
   description: string;
-  category?: "Access" | "Delay" | "Missing item" | "Vehicle" | "Other";
+  category?: "Cannot access building" | "Customer unavailable" | "Missing / incorrect load" | "Running late" | "Vehicle issue" | "Other" | "Access" | "Delay" | "Missing item" | "Vehicle";
   status: "open" | "resolved";
   resolvedAt?: string;
   resolvedBy?: string;
@@ -52,6 +54,11 @@ export type DeliveryStop = {
   /** Logistics' intended operating time; never replaces upstream required timing. */
   plannedArrivalTime?: string;
   plannedWindow?: { startTime: string; endTime?: string };
+  loaded?: boolean;
+  completedFromStatus?: "planned" | "arrived";
+  postponedFromServiceDate?: string;
+  postponedAt?: string;
+  postponedBy?: string;
   status: "planned" | "arrived" | "completed" | "issue";
   issues?: StopIssue[];
   notes?: string;
@@ -64,6 +71,10 @@ export type DeliveryRun = {
   canonicalId: string;
   serviceDate: string;
   status: "draft" | "planned" | "ready" | "dispatched" | "completed";
+  returnToCpuRequired?: boolean;
+  returnToCpuPending?: boolean;
+  returnedToCpuAt?: string;
+  returnedToCpuBy?: string;
   driverId?: string;
   driverLabel?: string;
   vehicleLabel?: string;

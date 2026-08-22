@@ -1,11 +1,12 @@
 import type { Actor } from "./auth";
 import type { CanonicalRecord } from "./types";
-import { GOVERNED_OPLOC_BY_ID, GOVERNED_OPLOCS } from "../../shared/governed-oplocs";
+import { GOVERNED_OPLOC_BY_ID } from "../../shared/governed-oplocs";
 
 export const DELIVERED_IN_PERMISSIONS = ["delivered_in.view", "delivered_in.allergens.view"] as const;
 export type DeliveredInPermission = typeof DELIVERED_IN_PERMISSIONS[number];
 export type DeliveredInAccess = { email: string; oplocIds: string[]; permissions: DeliveredInPermission[] };
-export type DeliveredInSite = { oplocId: string; label: string };
+export type DeliveredInSite = { oplocId: string; label: string; services: { deliveredIn: boolean; grabAndGo: boolean } };
+export type DeliveredInService = "delivered-in" | "grab-and-go";
 
 const FIXTURE_SITE_ASSIGNMENTS: Record<string, string[]> = {
   "admin@local.fika": [],
@@ -13,12 +14,21 @@ const FIXTURE_SITE_ASSIGNMENTS: Record<string, string[]> = {
   "viewer@local.fika": ["oploc:46701265-15af-48f4-a230-1d27ca21bc59"],
 };
 
-const activeOplocs = (records: CanonicalRecord[]) => records.filter(record => record.entityType === "OPLOC" && record.lifecycleStatus !== "archived" && record.record.lifecycleState === "active" && record.publicationStatus !== "withdrawn");
+const activeOplocs = (records: CanonicalRecord[]) => records.filter(record => record.entityType === "OPLOC" && record.lifecycleStatus !== "archived" && record.record.lifecycleState === "active" && record.publicationStatus === "published");
+const serviceMatches = (name: string, service: DeliveredInService) => { const value = name.toLocaleLowerCase().replaceAll("&", "and"); return service === "grab-and-go" ? value.includes("grab") && value.includes("go") : value.includes("delivered") && value.includes("in"); };
+function serviceEnabledOplocs(records: CanonicalRecord[], service: DeliveredInService) {
+  const today = new Date().toISOString().slice(0, 10);
+  const definitions = new Set(records.filter(record => record.entityType === "Service Definition" && record.lifecycleStatus !== "archived" && record.record.lifecycleState === "active" && serviceMatches(String(record.record.serviceName || ""), service)).map(record => record.canonicalId));
+  return new Set(records.filter(record => record.entityType === "Service Arrangement" && record.lifecycleStatus !== "archived" && record.record.lifecycleState === "active" && definitions.has(String(record.record.serviceDefinitionId || "")) && String(record.record.effectiveFrom || "") <= today && (!record.record.effectiveTo || String(record.record.effectiveTo) >= today)).map(record => String(record.record.oplocId || "")));
+}
 
-export function resolveDeliveredInAccess(actor: Pick<Actor, "email" | "role">, records: CanonicalRecord[] = []): { access: DeliveredInAccess; sites: DeliveredInSite[] } {
+export function resolveDeliveredInAccess(actor: Pick<Actor, "email" | "role">, records: CanonicalRecord[] = [], service: DeliveredInService = "delivered-in"): { access: DeliveredInAccess; sites: DeliveredInSite[] } {
   const all = activeOplocs(records);
-  const assigned = actor.role === "integration-admin" ? (all.length ? all.map(record => record.canonicalId) : GOVERNED_OPLOCS.map(oploc => oploc.id)) : FIXTURE_SITE_ASSIGNMENTS[actor.email || ""] || [];
-  const oplocIds = Array.from(new Set(assigned.filter(id => actor.role === "integration-admin" || all.length === 0 || all.some(record => record.canonicalId === id))));
+  const enabled = serviceEnabledOplocs(records, service);
+  const deliveredIn = serviceEnabledOplocs(records, "delivered-in");
+  const grabAndGo = serviceEnabledOplocs(records, "grab-and-go");
+  const assigned = actor.role === "integration-admin" ? all.map(record => record.canonicalId) : FIXTURE_SITE_ASSIGNMENTS[actor.email || ""] || [];
+  const oplocIds = Array.from(new Set(assigned.filter(id => all.some(record => record.canonicalId === id) && enabled.has(id))));
   const labelById = new Map(all.map(record => [record.canonicalId, String(record.record.approvedName || record.canonicalId)]));
-  return { access: { email: actor.email || "", oplocIds, permissions: [...DELIVERED_IN_PERMISSIONS] }, sites: oplocIds.map(oplocId => ({ oplocId, label: labelById.get(oplocId) || GOVERNED_OPLOC_BY_ID.get(oplocId)?.label || oplocId })) };
+  return { access: { email: actor.email || "", oplocIds, permissions: [...DELIVERED_IN_PERMISSIONS] }, sites: oplocIds.map(oplocId => ({ oplocId, label: labelById.get(oplocId) || GOVERNED_OPLOC_BY_ID.get(oplocId)?.label || oplocId, services: { deliveredIn: deliveredIn.has(oplocId), grabAndGo: grabAndGo.has(oplocId) } })) };
 }

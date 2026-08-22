@@ -648,6 +648,101 @@
     background: #ffe4e7;
     color: #a32643;
   }
+  .spinner {
+    display: inline-block;
+    width: 1em;
+    height: 1em;
+    margin-right: 8px;
+    border: 2px solid currentColor;
+    border-right-color: transparent;
+    border-radius: 50%;
+    animation: hospitality-spin 0.7s linear infinite;
+    animation-play-state: running;
+    will-change: transform;
+    vertical-align: -0.12em;
+  }
+  @keyframes hospitality-spin {
+    to { transform: rotate(360deg); }
+  }
+  .amendmentProgressModal {
+    width: min(620px, 100%);
+  }
+  .amendmentProgressTrack {
+    height: 8px;
+    overflow: hidden;
+    border-radius: 999px;
+    background: #e8e2f4;
+  }
+  .amendmentProgressTrack span {
+    display: block;
+    height: 100%;
+    border-radius: inherit;
+    background: linear-gradient(90deg, #4f34c7, #4df7c2);
+    transition: width .25s ease;
+  }
+  .amendmentProgressSteps {
+    display: grid;
+    gap: 10px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .amendmentProgressSteps li {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 10px 12px;
+    border: 1px solid #e1deeb;
+    border-radius: 10px;
+    color: #665d73;
+  }
+  .amendmentProgressSteps li > span {
+    display: grid;
+    flex: 0 0 24px;
+    width: 24px;
+    height: 24px;
+    place-items: center;
+    border-radius: 50%;
+    background: #e8e2f4;
+    color: #665d73;
+    font-weight: 900;
+  }
+  .amendmentProgressSteps li > div {
+    display: grid;
+    gap: 2px;
+  }
+  .amendmentProgressSteps small {
+    color: #665d73;
+  }
+  .amendmentProgressStep--active {
+    border-color: #4f34c7 !important;
+    background: #f7f4ff;
+    color: #24163b !important;
+  }
+  .amendmentProgressStep--active > span {
+    background: #4f34c7 !important;
+    color: #fff !important;
+  }
+  .amendmentProgressStep--complete > span {
+    background: #4df7c2 !important;
+    color: #24163b !important;
+  }
+  .amendmentProgressStep--error {
+    border-color: #ae2645 !important;
+    background: #fff0f2;
+    color: #ae2645 !important;
+  }
+  .amendmentProgressStep--error > span {
+    background: #ae2645 !important;
+    color: #fff !important;
+  }
+  .amendmentProgressError {
+    margin: 0;
+    padding: 10px 12px;
+    border-left: 4px solid #ae2645;
+    background: #fff0f2;
+    color: #ae2645;
+  }
   :global(.hospitality-dashboard__detail) {
     min-height: 560px;
     border: 1px solid #e1deeb;

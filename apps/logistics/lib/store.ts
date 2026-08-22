@@ -48,14 +48,21 @@ export function normalizeStop(value: DocumentData): DeliveryStop {
   } as DeliveryStop;
 }
 export async function listState(serviceDate?: string) {
-  const [runSnap, stopSnap, movementSnap] = await Promise.all([
-    runs().get(),
-    stops().get(),
-    movements().get(),
+  const [runSnap, movementSnap] = await Promise.all([
+    serviceDate ? runs().where("serviceDate", "==", serviceDate).get() : runs().get(),
+    serviceDate ? movements().where("serviceDate", "==", serviceDate).get() : movements().get(),
   ]);
+  const runIds = runSnap.docs.map((doc) => doc.id);
+  const stopSnapshots = serviceDate
+    ? await Promise.all(Array.from({ length: Math.max(1, Math.ceil(runIds.length / 30)) }, (_, index) => {
+        const chunk = runIds.slice(index * 30, index * 30 + 30);
+        return chunk.length ? stops().where("runId", "in", chunk).get() : Promise.resolve(undefined);
+      }))
+    : [await stops().get()];
+  const stopDocs = stopSnapshots.flatMap((snapshot) => snapshot?.docs || []);
   const state = {
     runs: runSnap.docs.map((d) => d.data() as DeliveryRun),
-    stops: stopSnap.docs.map((d) => normalizeStop(d.data())),
+    stops: stopDocs.map((d) => normalizeStop(d.data())),
     movements: movementSnap.docs.map((d) => d.data() as MovementRequest),
   };
   return serviceDate ? scopeState(state, serviceDate) : state;

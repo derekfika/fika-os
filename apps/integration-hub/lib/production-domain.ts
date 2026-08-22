@@ -58,13 +58,34 @@ export async function createProductionFromApprovedBooking(actor: Actor, bookingI
     const baseOrderRef = orders().doc(stableDocumentId(productionOrderV1Id(bookingId)));
     const baseOrderSnapshot = await transaction.get(baseOrderRef);
     const existingBase = baseOrderSnapshot.exists ? baseOrderSnapshot.data() as ProductionOrder : undefined;
+    const now = new Date().toISOString();
+    const markBookingSentToCpu = () => {
+      const nextBooking: CanonicalBooking = {
+        ...booking,
+        version: booking.version + 1,
+        lifecycleStatus: "Sent to CPU",
+        updatedAt: now,
+        updatedBy: actor.uid,
+        statusHistory: [
+          ...(booking.statusHistory || []),
+          { status: "Sent to CPU", changedAt: now, changedBy: actor.uid, reason: "Production hand-off recorded." },
+        ],
+        audit: [
+          ...(booking.audit || []),
+          { action: "booking-sent-to-cpu", at: now, by: actor.uid, reason: "Production hand-off recorded." },
+        ],
+      };
+      transaction.set(bookingSnapshot.ref, nextBooking);
+    };
     const orderId = existingBase?.status === "amended"
       ? productionOrderV1Id(bookingId, booking.version)
       : productionOrderV1Id(bookingId);
     const orderRef = orders().doc(stableDocumentId(orderId));
     const existing = orderId === productionOrderV1Id(bookingId) ? baseOrderSnapshot : await transaction.get(orderRef);
-    if (existing.exists && (existing.data() as ProductionOrder).status !== "amended") return { created: false, status: "already_exists" as const, requirement: undefined, order: existing.data() as ProductionOrder };
-    const now = new Date().toISOString();
+    if (existing.exists && (existing.data() as ProductionOrder).status !== "amended") {
+      markBookingSentToCpu();
+      return { created: false, status: "already_exists" as const, requirement: undefined, order: existing.data() as ProductionOrder };
+    }
     const requirementId = productionRequirementId(bookingId, quote.id);
     const requirement: ProductionRequirement = { canonicalId: requirementId, entityType: "Production Requirement", schemaVersion: PRODUCTION_SCHEMA_VERSION, version: 1, sourceBookingId: bookingId, sourceBookingRevision: booking.version, sourceQuoteRevisionId: quote.id, productionLocationId: booking.service.oplocId, requestedServiceDate: booking.service.eventDate, serviceWindow: { startTime: booking.service.startTime, ...(booking.service.endTime ? { endTime: booking.service.endTime } : {}) }, requiredBy: `${booking.service.eventDate}T${booking.service.startTime}`, status: "needs_review", sourceSnapshot: { booking: structuredClone(booking), quote: structuredClone(quote.snapshot) }, createdAt: now, createdBy: actor.uid, updatedAt: now, updatedBy: actor.uid, audit: [{ action: "production-requirement-created", at: now, by: actor.uid, newState: "needs_review", reason: "Created from Booking and current Quote Revision.", idempotencyKey }] };
     const exceptions: ProductionException[] = [];
@@ -84,6 +105,7 @@ export async function createProductionFromApprovedBooking(actor: Actor, bookingI
     if (existingBase?.status === "amended") transaction.set(baseOrderRef, { supersededBy: orderId }, { merge: true });
     transaction.create(requirements().doc(stableDocumentId(requirementId)), requirement);
     transaction.create(orderRef, order);
+    markBookingSentToCpu();
     stageDomainEvent(transaction, event);
     return { created: true, status: "created" as const, requirement, order };
   });
@@ -150,8 +172,10 @@ export async function latestProductionOrderForBooking(bookingId: string) {
   return order ? enrichOrder(withoutAutomaticQuantityBlockers(order)) : undefined;
 }
 
-export async function productionQueue() {
-  const snapshot = await orders().orderBy("requiredBy", "asc").get();
+export async function productionQueue(serviceDate?: string) {
+  const snapshot = serviceDate
+    ? await orders().where("serviceDate", "==", serviceDate).get()
+    : await orders().orderBy("requiredBy", "asc").get();
   return Promise.all(
     snapshot.docs
       .map(item => item.data() as ProductionOrder)
@@ -200,6 +224,12 @@ export function materialisedProductionId(input: Pick<ExternalProductionMateriali
   return `production-order:v1:${input.sourceDomain}:${safe(input.sourceEntityId)}:${safe(input.destinationOplocId)}`;
 }
 
+export function externalProductionStatus(input: Pick<ExternalProductionMaterialisation, "sourceDomain" | "status">): ProductionStatus {
+  if (input.status === "cancelled" || input.status === "withdrawn") return "cancelled";
+  if (input.sourceDomain === "grab-and-go") return "planned";
+  return input.sourceDomain === "menu-planning" ? "menu_available" : "received";
+}
+
 /** Converts an upstream production-bound record into the one canonical CPU order. */
 export async function materialiseExternalProductionOrder(actor: Actor, input: ExternalProductionMaterialisation) {
   if (!input.sourceEntityId.trim() || !input.destinationOplocId.trim()) throw conflict("A source entity and canonical destination are required.");
@@ -208,7 +238,11 @@ export async function materialiseExternalProductionOrder(actor: Actor, input: Ex
     const ref = orders().doc(stableDocumentId(canonicalId));
     const snapshot = await transaction.get(ref);
     const previous = snapshot.exists ? snapshot.data() as ProductionOrder : undefined;
-    const status: ProductionStatus = input.status === "cancelled" || input.status === "withdrawn" ? "cancelled" : input.sourceDomain === "menu-planning" ? "menu_available" : "received";
+    // Grab & Go is individually labelled at source, so it does not need the
+    // normal CPU acceptance/allergen-review gate. It is ready to plan as soon
+    // as the site submits the quantities. Menu publications retain their
+    // separate publication state and hospitality work follows the usual flow.
+    const status = externalProductionStatus(input);
     if (previous && previous.sourceVersion === input.sourceVersion && previous.sourceContentHash === input.sourceContentHash && previous.status === status) return { created: false, duplicate: true, order: previous };
     const now = new Date().toISOString();
     const order: ProductionOrder = {

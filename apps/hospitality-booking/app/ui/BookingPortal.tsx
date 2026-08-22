@@ -76,6 +76,14 @@ const dietaryNames: Record<string, string> = {
   otherCount: "Other",
 };
 const draftKey = (siteKey: PortalSiteKey) => `fika-hospitality-booking-draft:${siteKey}`;
+function minimumQuantityFor(item: PortalMenuItem) {
+  return Math.max(
+    1,
+    item.minimumQuantity || 1,
+    Number(item.servingInfo?.match(/minimum\s+(\d+)/i)?.[1] || 1),
+    /rice paper rolls?/i.test(item.name) ? 3 : 1,
+  );
+}
 
 export default function BookingPortal({
   siteKey = "mnk",
@@ -130,6 +138,16 @@ export default function BookingPortal({
   const [resetOpen, setResetOpen] = useState(false);
   const [draftReady, setDraftReady] = useState(false);
   const [restoredDraft, setRestoredDraft] = useState(false);
+  const stepHistoryKey = "fikaMnkBookingStep";
+  const changeStep = (next: number | ((current: number) => number)) => {
+    setStep((current) => {
+      const resolved = Math.min(4, Math.max(0, typeof next === "function" ? next(current) : next));
+      if (resolved !== current) {
+        window.history.pushState({ ...window.history.state, [stepHistoryKey]: resolved }, "", window.location.href);
+      }
+      return resolved;
+    });
+  };
   useEffect(() => {
     try {
       const saved = window.localStorage.getItem(draftKey(site.key));
@@ -172,6 +190,25 @@ export default function BookingPortal({
   }, [draftReady, site.key, occasion, step, category, lines, details, contact, dietaries, acks]);
 
   useEffect(() => {
+    const savedStep = window.history.state?.[stepHistoryKey];
+    if (typeof savedStep !== "number") {
+      window.history.replaceState({ ...window.history.state, [stepHistoryKey]: step }, "", window.location.href);
+    }
+    const onPopState = (event: PopStateEvent) => {
+      const previousStep = event.state?.[stepHistoryKey];
+      setStep(typeof previousStep === "number" ? Math.min(4, Math.max(0, previousStep)) : 0);
+    };
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, []);
+
+  useEffect(() => {
+    if (draftReady) {
+      window.history.replaceState({ ...window.history.state, [stepHistoryKey]: step }, "", window.location.href);
+    }
+  }, [draftReady]);
+
+  useEffect(() => {
     fetch(`/api/reference-data?site=${encodeURIComponent(site.key)}`)
       .then((response) => response.json())
       .then((data) => setMenu(data.menu || []) as void)
@@ -207,7 +244,7 @@ export default function BookingPortal({
   );
   const setQuantity = (item: PortalMenuItem, quantity: number) =>
     setLines((current) => {
-      const minimum = Math.max(1, item.minimumQuantity || 1, /rice paper rolls?/i.test(item.name) ? 3 : 1);
+      const minimum = minimumQuantityFor(item);
       const requested = Number.isFinite(quantity) ? Math.floor(quantity) : 0;
       const nextQuantity = requested > 0 ? Math.max(minimum, requested) : 0;
       return nextQuantity > 0
@@ -258,10 +295,10 @@ export default function BookingPortal({
       return setError("Choose at least one menu item to continue.");
     if (step === 2) {
       const belowMinimum = selected.find(
-        (value) => value.quantity < Math.max(1, value.item.minimumQuantity || 1),
+        (value) => value.quantity < minimumQuantityFor(value.item),
       );
       if (belowMinimum) {
-        const minimum = Math.max(1, belowMinimum.item.minimumQuantity || 1);
+        const minimum = minimumQuantityFor(belowMinimum.item);
         return setError(
           `${belowMinimum.item.name} requires at least ${minimum} ${minimum === 1 ? "box/item" : "boxes"}.`,
         );
@@ -269,12 +306,22 @@ export default function BookingPortal({
     }
     if (step === 3 && !Object.values(acks).every(Boolean))
       return setError("Please confirm the three acknowledgements before reviewing your booking.");
-    setStep((value) => Math.min(4, value + 1));
+    changeStep((value) => Math.min(4, value + 1));
   };
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
     const submitter = (event.nativeEvent as SubmitEvent).submitter;
     if (step === 4 && !submitter) return;
+    const belowMinimum = selected.find(
+      (value) => value.quantity < minimumQuantityFor(value.item),
+    );
+    if (belowMinimum) {
+      const minimum = minimumQuantityFor(belowMinimum.item);
+      changeStep(2);
+      return setError(
+        `${belowMinimum.item.name} requires at least ${minimum} ${minimum === 1 ? "box/item" : "boxes"}.`,
+      );
+    }
     const dietaryTotal = [
       dietaries.vegetarian,
       dietaries.vegan,
@@ -289,7 +336,7 @@ export default function BookingPortal({
     if (dietaries.allergyDetails && !dietaries.severeAllergyAcknowledged)
       return setError("Please acknowledge the severe allergy notice.");
     if (!Object.values(acks).every(Boolean)) {
-      setStep(3);
+      changeStep(3);
       return setError("Please confirm the three acknowledgements before sending.");
     }
     const clientName = String(site.key === "angel-court" ? contact.clientName : contact.requesterName || contact.clientName || "").trim();
@@ -325,7 +372,7 @@ export default function BookingPortal({
       const path = issue?.path.join(".") || "";
       const message = issue?.message || "";
       if (path.startsWith("acknowledgements") || message.toLowerCase().includes("expected true")) {
-        setStep(3);
+        changeStep(3);
         return setError("Please confirm each acknowledgement before sending.");
       }
       if (path === "eventDate") return setError("Please add a valid service date.");
@@ -404,7 +451,7 @@ export default function BookingPortal({
   };
   const resetBooking = () => {
     setOccasion("");
-    setStep(0);
+    changeStep(0);
     setCategory("");
     setLines([]);
     setDetails({
@@ -508,7 +555,7 @@ export default function BookingPortal({
               key={label}
               disabled={index > step}
               className={step === index ? "active" : ""}
-              onClick={() => setStep(index)}
+              onClick={() => changeStep(index)}
             >
               <b>0{index + 1}</b>
               {label}
@@ -565,7 +612,7 @@ export default function BookingPortal({
               type="button"
               className="back"
               disabled={step === 0}
-              onClick={() => setStep((value) => value - 1)}
+              onClick={() => changeStep((value) => value - 1)}
             >
               Back
             </button>
@@ -909,7 +956,7 @@ function Plan({
                   type="button"
                   aria-label={`Remove one ${item.name}`}
                   onClick={() => {
-                    const minimum = Math.max(1, item.minimumQuantity || 1, /rice paper rolls?/i.test(item.name) ? 3 : 1);
+                    const minimum = minimumQuantityFor(item);
                     const current = line?.quantity || 0;
                     setQuantity(item, current > minimum ? current - 1 : 0);
                   }}
@@ -918,7 +965,7 @@ function Plan({
                 </button>
                 <input
                   aria-label={`${item.name} quantity`}
-                    min={/rice paper rolls?/i.test(item.name) ? 3 : 0}
+                    min={minimumQuantityFor(item)}
                   type="number"
                   value={line?.quantity || ""}
                   onChange={(event) =>
@@ -933,9 +980,9 @@ function Plan({
                   +
                 </button>
               </div>
-              {(item.minimumQuantity || 1) > 1 && (
+              {minimumQuantityFor(item) > 1 && (
                 <p className="minimum-quantity-note">
-                  Minimum {item.minimumQuantity} boxes
+                  Minimum {minimumQuantityFor(item)} boxes
                 </p>
               )}
             </article>

@@ -12,7 +12,8 @@ export async function GET(request: NextRequest) {
     const actor = await requireActor(request);
     assertPermission(actor, "canonical.view");
     const snapshot = await db.collection("integrationHubCanonical").get();
-    return NextResponse.json(resolveDeliveredInAccess(actor, snapshot.docs.map(document => document.data() as CanonicalRecord)), { headers: { "Cache-Control": "no-store, max-age=0" } });
+    const service = request.nextUrl.searchParams.get("service") === "grab-and-go" ? "grab-and-go" : "delivered-in";
+    return NextResponse.json(resolveDeliveredInAccess(actor, snapshot.docs.map(document => document.data() as CanonicalRecord), service), { headers: { "Cache-Control": "no-store, max-age=0" } });
   } catch (error) {
     return NextResponse.json({ error: { message: error instanceof Error ? error.message : "Delivered-In access could not be resolved." } }, { status: Number((error as { status?: number }).status) || 403 });
   }

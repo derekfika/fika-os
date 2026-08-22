@@ -99,6 +99,7 @@ export type CanonicalBooking = {
     | "New"
     | "Reviewed"
     | "Quoted"
+    | "Sent to CPU"
     | "Approved"
     | "Completed"
     | "Cancelled";
@@ -871,6 +872,9 @@ export async function executeBookingWorkflow(
       const priorOrders = await transaction.get(
         productionOrderV1s().where("sourceBookingId", "==", canonicalId),
       );
+      const priorRequirements = await transaction.get(
+        db.collection("fikaProductionRequirements").where("sourceBookingId", "==", canonicalId),
+      );
       for (const prior of priorOrders.docs) {
         const order = prior.data() as ProductionOrderV1;
         if (order.status === "cancelled" || order.status === "amended") continue;
@@ -897,9 +901,6 @@ export async function executeBookingWorkflow(
           { merge: true },
         );
       }
-      const priorRequirements = await transaction.get(
-        db.collection("fikaProductionRequirements").where("sourceBookingId", "==", canonicalId),
-      );
       for (const prior of priorRequirements.docs) {
         const requirement = prior.data() as { status?: string; audit?: unknown[] };
         if (requirement.status === "cancelled") continue;
@@ -1008,6 +1009,13 @@ export async function executeBookingWorkflow(
             productionOrderV1s().where("sourceBookingId", "==", canonicalId),
           )
         : undefined;
+      const priorRequirements = command.cancelProduction
+        ? await transaction.get(
+            db
+              .collection("fikaProductionRequirements")
+              .where("sourceBookingId", "==", canonicalId),
+          )
+        : undefined;
       const activeOrders = (priorOrders?.docs || []).filter((prior) => {
         const order = prior.data() as ProductionOrderV1;
         return !["cancelled", "amended"].includes(order.status);
@@ -1037,13 +1045,6 @@ export async function executeBookingWorkflow(
           { merge: true },
         );
       }
-      const priorRequirements = command.cancelProduction
-        ? await transaction.get(
-            db
-              .collection("fikaProductionRequirements")
-              .where("sourceBookingId", "==", canonicalId),
-          )
-        : undefined;
       for (const prior of priorRequirements?.docs || []) {
         const requirement = prior.data() as {
           status?: string;

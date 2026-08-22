@@ -135,13 +135,14 @@ export async function GET(request: NextRequest) {
     const actor = await actorFor(request);
     assertPermission(actor, "canonical.view");
     const id = request.nextUrl.searchParams.get("canonicalId");
+    const serviceDate = request.nextUrl.searchParams.get("serviceDate") || undefined;
     const scope = normaliseProductionScope(request.nextUrl.searchParams.get("scope"));
     if (id?.startsWith("production-order:v1:fixture:")) {
       const order = localFixtureOrders().find((item) => item.canonicalId === id);
       const filtered = order ? (await ordersForScope([order], scope))[0] : undefined;
       return NextResponse.json({ order: filtered, scope });
     }
-    const fetched = await productionQueue();
+    const fetched = await productionQueue(serviceDate);
     // In local development, keep the existing emulator orders visible while
     // adding the deterministic two-week fixture set.  The fixture IDs are
     // stable, so retries/reloads cannot duplicate them.  Never inject these
@@ -174,6 +175,7 @@ async function ordersForScope(orders: Awaited<ReturnType<typeof productionQueue>
 }
 
 async function withReadableDestinations(orders: Awaited<ReturnType<typeof productionQueue>>) {
+  if (!orders.length) return orders;
   const snapshot = await db.collection("integrationHubCanonical").get();
   const labels = new Map(snapshot.docs
     .map(document => document.data() as { entityType?: string; canonicalId?: string; record?: { approvedName?: string; lifecycleState?: string } })

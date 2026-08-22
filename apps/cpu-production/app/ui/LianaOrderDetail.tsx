@@ -95,10 +95,12 @@ export function SignatureModal({
   role,
   onCancel,
   onConfirm,
+  busy = false,
 }: {
   role: InternalMatrixSignature["role"];
   onCancel: () => void;
   onConfirm: (printedName: string, signatureDataUrl: string) => void;
+  busy?: boolean;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const drawing = useRef(false);
@@ -176,6 +178,7 @@ export function SignatureModal({
             type="button"
             className="liana-close"
             onClick={onCancel}
+            disabled={busy}
             aria-label="Close signature pad"
           >
             ×
@@ -190,6 +193,7 @@ export function SignatureModal({
           <input
             value={printedName}
             onChange={(event) => setPrintedName(event.target.value)}
+            disabled={busy}
             autoFocus
           />
         </label>
@@ -204,7 +208,7 @@ export function SignatureModal({
           aria-label="Signature drawing area"
         />
         <div className="signature-modal-actions">
-          <button type="button" className="button button-soft" onClick={clear}>
+          <button type="button" className="button button-soft" onClick={clear} disabled={busy}>
             Clear
           </button>
           <label>
@@ -212,6 +216,7 @@ export function SignatureModal({
               type="checkbox"
               checked={attest}
               onChange={(event) => setAttest(event.target.checked)}
+              disabled={busy}
             />{" "}
             I confirm this matrix is accurate
           </label>
@@ -219,8 +224,9 @@ export function SignatureModal({
             type="button"
             className="button button-purple"
             onClick={confirm}
+            disabled={busy}
           >
-            Save signature
+            {busy ? "Saving signature…" : "Save signature"}
           </button>
         </div>
         {error && (
@@ -919,6 +925,7 @@ export default function LianaOrderDetail({
       {signingRole && (
         <SignatureModal
           role={signingRole}
+          busy={busy}
           onCancel={() => setSigningRole(undefined)}
           onConfirm={(printedName, signatureDataUrl) =>
             void signMatrix(signingRole, printedName, signatureDataUrl)

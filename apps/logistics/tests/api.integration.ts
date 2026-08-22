@@ -89,6 +89,22 @@ const responseBody = async (body: unknown) => {
   );
   return { response, body: (await response.json()) as Record<string, unknown> };
 };
+const markRunLoaded = async (runId: string) => {
+  let currentRun = (await runs().doc(runId).get()).data() as DeliveryRun;
+  const snapshots = await stops().where("runId", "==", runId).get();
+  for (const snapshot of snapshots.docs) {
+    const result = await responseBody({
+      action: "mark-stop-loaded",
+      runId,
+      stopId: snapshot.id,
+      expectedRunVersion: currentRun.version,
+      expectedStopVersion: (snapshot.data() as DeliveryStop).version,
+    });
+    assert.equal(result.response.status, 200);
+    currentRun = result.body.run as DeliveryRun;
+  }
+  return currentRun;
+};
 const seed = async (
   collection: FirebaseFirestore.CollectionReference,
   value: Record<string, unknown>,
@@ -176,6 +192,33 @@ test("collection-required assignment schedules one linked collection after the d
   assert.equal((await runs().doc(runId).get()).data()?.orderedStopIds.length, 0);
   assert.equal((await runs().doc(runId).get()).exists, true);
   assert.equal((await runs().doc(runId).get()).data()?.audit.at(-1).action, "returned-to-planning");
+});
+
+test("collection can be postponed to a future run day and remains outstanding", async (t) => {
+  const id = prefix();
+  t.after(() => cleanup(id));
+  const runId = `${id}:run`;
+  const targetRunId = `${id}:target-run`;
+  const deliveryId = `${id}:delivery`;
+  const collectionId = `${id}:collection`;
+  const targetDate = "2099-01-05";
+  await seed(runs(), { ...run(runId), status: "planned", driverId: "franco", driverLabel: "Franco", orderedStopIds: [deliveryId, collectionId] });
+  await seed(runs(), { ...run(targetRunId), serviceDate: targetDate, driverId: "franco", driverLabel: "Franco" });
+  const base = { runId, locationOplocId: "oploc:integration-destination", locationLabelSnapshot: "Integration Destination", requirementRefs: [], movementRequestIds: [], status: "planned" as const, createdAt: "now", updatedAt: "now", version: 1, audit: [] };
+  await seed(stops(), { ...base, canonicalId: deliveryId, sequence: 1, movementType: "delivery" as const, linkedStopId: collectionId, linkedOperation: "delivery" as const });
+  await seed(stops(), { ...base, canonicalId: collectionId, sequence: 2, movementType: "collection" as const, linkedStopId: deliveryId, linkedOperation: "collection" as const });
+  let result = await responseBody({ action: "mark-stop-loaded", runId, stopId: deliveryId, loaded: true, expectedRunVersion: 1, expectedStopVersion: 1 });
+  assert.equal(result.response.status, 200);
+  result = await responseBody({ action: "dispatch-run", runId, expectedRunVersion: 2 });
+  assert.equal(result.response.status, 200);
+  result = await responseBody({ action: "defer-collection", runId, stopId: collectionId, targetServiceDate: targetDate, expectedRunVersion: 3, expectedStopVersion: 1 });
+  assert.equal(result.response.status, 200);
+  assert.deepEqual(((await runs().doc(runId).get()).data() as DeliveryRun).orderedStopIds, [deliveryId]);
+  assert.deepEqual(((await runs().doc(targetRunId).get()).data() as DeliveryRun).orderedStopIds, [collectionId]);
+  const moved = (await stops().doc(collectionId).get()).data() as DeliveryStop;
+  assert.equal(moved.runId, targetRunId);
+  assert.equal(moved.postponedFromServiceDate, serviceDate);
+  assert.equal(moved.status, "planned");
 });
 
 test("schedule-stop and clear-stop-schedule are version-safe and audited", async (t) => {
@@ -644,10 +687,11 @@ test("lifecycle readiness, dispatch and completion are explicit and versioned", 
     expectedRunVersion: 2,
   });
   assert.equal(result.response.status, 200);
+  const loadedRun = await markRunLoaded(runId);
   result = await responseBody({
     action: "dispatch-run",
     runId,
-    expectedRunVersion: 3,
+    expectedRunVersion: loadedRun.version,
   });
   assert.equal(result.response.status, 200);
   const stopSnap = (await stops().where("runId", "==", runId).get()).docs[0];
@@ -670,10 +714,16 @@ test("lifecycle readiness, dispatch and completion are explicit and versioned", 
     expectedStopVersion: (arrived.data() as DeliveryStop).version,
   });
   assert.equal(result.response.status, 200);
-  assert.equal(
-    ((await runs().doc(runId).get()).data() as DeliveryRun).status,
-    "completed",
-  );
+  const readyToReturn = (await runs().doc(runId).get()).data() as DeliveryRun;
+  assert.equal(readyToReturn.status, "dispatched");
+  assert.equal(readyToReturn.returnToCpuPending, true);
+  result = await responseBody({
+    action: "confirm-returned-to-cpu",
+    runId,
+    expectedRunVersion: readyToReturn.version,
+  });
+  assert.equal(result.response.status, 200);
+  assert.equal((result.body as unknown as DeliveryRun).status, "completed");
 });
 
 test("ready runs lock structural planning until explicitly returned", async (t) => {
@@ -735,7 +785,12 @@ test("reporting and resolving an issue preserves execution status and audit stat
     runId,
     expectedRunVersion: 2,
   });
-  await responseBody({ action: "dispatch-run", runId, expectedRunVersion: 3 });
+  const loadedRun = await markRunLoaded(runId);
+  await responseBody({
+    action: "dispatch-run",
+    runId,
+    expectedRunVersion: loadedRun.version,
+  });
   let stopSnap = (await stops().where("runId", "==", runId).get()).docs[0];
   let currentRun = (await runs().doc(runId).get()).data() as DeliveryRun;
   let result = await responseBody({
@@ -806,8 +861,13 @@ test("defer moves an ordinary stop later and rejects breaking a transfer", async
     runId,
     expectedRunVersion: 2,
   });
-  await responseBody({ action: "dispatch-run", runId, expectedRunVersion: 3 });
-  let savedRun = (await runs().doc(runId).get()).data() as DeliveryRun;
+  let savedRun = await markRunLoaded(runId);
+  await responseBody({
+    action: "dispatch-run",
+    runId,
+    expectedRunVersion: savedRun.version,
+  });
+  savedRun = (await runs().doc(runId).get()).data() as DeliveryRun;
   const firstStop = (
     await stops().doc(savedRun.orderedStopIds[0]).get()
   ).data() as DeliveryStop;
@@ -841,10 +901,11 @@ test("defer moves an ordinary stop later and rejects breaking a transfer", async
     runId: transferRun,
     expectedRunVersion: 2,
   });
+  const loadedTransferRun = await markRunLoaded(transferRun);
   await responseBody({
     action: "dispatch-run",
     runId: transferRun,
-    expectedRunVersion: 3,
+    expectedRunVersion: loadedTransferRun.version,
   });
   const transferRunSaved = (
     await runs().doc(transferRun).get()

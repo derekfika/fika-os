@@ -38,7 +38,7 @@ test("Angel Court has a separate site route configuration and uses the guideline
 
 test("Angel Court menu fixture retains brochure content without inventing allergen data", () => {
   assert.ok(localAngelCourtMenuCatalogue.items.length >= 20);
-  assert.ok(localAngelCourtMenuCatalogue.items.some((item) => item.name === "Classic Working Lunch"));
+  assert.ok(!localAngelCourtMenuCatalogue.items.some((item) => item.name === "Classic Working Lunch"));
   assert.equal(
     localAngelCourtMenuCatalogue.items.find((item) => item.name === "Exotic Fruit Box")?.description,
     "Watermelon, cantaloupe melon, honeydew melon, pineapple, kiwi, passion fruit and strawberries.",
@@ -125,7 +125,7 @@ test("shared booking portal clamps summer rolls to the governed minimum", () => 
   const portal = fs.readFileSync(new URL("../app/ui/BookingPortal.tsx", import.meta.url), "utf8");
   assert.match(portal, /Math\.max\(minimum, requested\)/);
   assert.match(portal, /requires at least \$\{minimum\}/);
-  assert.match(portal, /Minimum \{item\.minimumQuantity\} boxes/);
+  assert.match(portal, /Minimum \{minimumQuantityFor\(item\)\} boxes/);
 });
 
 test("Angel Court captures client identity and an optional invoice or PO reference", () => {

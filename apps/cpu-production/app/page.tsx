@@ -15,10 +15,13 @@ import DeliveredInProductionDetail from "./ui/DeliveredInProductionDetail";
 import DeliveredMenuPlanner from "./ui/DeliveredMenuPlanner";
 import PublishedMenuView from "./ui/PublishedMenuView";
 import GrabAndGoProductionView from "./ui/GrabAndGoProductionView";
+import GrabAndGoOrderDetail from "./ui/GrabAndGoOrderDetail";
+import HospitalityProductionDetail from "./ui/HospitalityProductionDetail";
+import ProductionOrderDetail from "./ui/ProductionOrderDetail";
 import { CANONICAL_ALLERGEN_COLUMNS, normaliseOperationalAllergens, toggleOperationalAllergen, type CanonicalAllergenKey } from "../../shared/allergen-contract";
 import { productionScopes, type ProductionScope } from "../lib/production-scope";
 import { cpuAttentionKey, cpuAttentionLabel, cpuDestinationLabel, cpuDestinationOptionLabel, cpuLifecycle, cpuLifecycleLabels, cpuReference, cpuRequiredTime, cpuSourceLabel, type CpuLifecycle } from "../lib/production-presentation";
-import { relatedDeliveredInOrders, orderDate } from "../lib/production-day";
+import { relatedDeliveredInOrders } from "../lib/production-day";
 
 const statuses: CpuLifecycle[] = ["received", "accepted", "planning", "planned", "ready", "in_production", "complete"];
 const terminalStatuses = new Set<ProductionStatus>([
@@ -54,38 +57,45 @@ export default function CpuProduction() {
   const [productionScope, setProductionScope] = useState<ProductionScope>("all");
   const [view, setView] = useState<View>("calendar");
   const [selected, setSelected] = useState<ProductionOrder>();
+  const [showHospitalityAllergens, setShowHospitalityAllergens] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
   const [error, setError] = useState("");
-  const load = async (): Promise<ProductionOrder[]> => {
-    const response = await fetch(`/api/production?scope=${productionScope}`, {
-      cache: "no-store",
-    });
-    const body = await response.json();
-    if (!response.ok) {
-      setError(body.error?.message || "Could not load production.");
-      return [];
-    }
-    const nextOrders: ProductionOrder[] = body.orders || [];
-    let planStatuses: Record<string, ProductionStatus> = {};
+  const [refreshing, setRefreshing] = useState(false);
+  const load = async (showFeedback = false): Promise<ProductionOrder[]> => {
+    if (showFeedback) setRefreshing(true);
     try {
-      const planResponse = await fetch("/api/production-plan", {
+      const response = await fetch(`/api/production?scope=${productionScope}`, {
         cache: "no-store",
       });
-      const planBody = (await planResponse.json()) as {
-        plans?: Array<{ orderId: string; status: ProductionStatus }>;
-      };
-      planStatuses = Object.fromEntries(
-        (planBody.plans || []).map((plan) => [plan.orderId, plan.status]),
-      );
-    } catch {
-      /* Production remains usable if the planning projection is unavailable. */
+      const body = await response.json();
+      if (!response.ok) {
+        setError(body.error?.message || "Could not load production.");
+        return [];
+      }
+      const nextOrders: ProductionOrder[] = body.orders || [];
+      let planStatuses: Record<string, ProductionStatus> = {};
+      try {
+        const planResponse = await fetch("/api/production-plan", {
+          cache: "no-store",
+        });
+        const planBody = (await planResponse.json()) as {
+          plans?: Array<{ orderId: string; status: ProductionStatus }>;
+        };
+        planStatuses = Object.fromEntries(
+          (planBody.plans || []).map((plan) => [plan.orderId, plan.status]),
+        );
+      } catch {
+        /* Production remains usable if the planning projection is unavailable. */
+      }
+      const projectedOrders = nextOrders.map((order) => ({
+        ...order,
+        workflowStatus: planStatuses[order.canonicalId] || order.workflowStatus,
+      }));
+      setOrders(projectedOrders);
+      return projectedOrders;
+    } finally {
+      if (showFeedback) setRefreshing(false);
     }
-    const projectedOrders = nextOrders.map((order) => ({
-      ...order,
-      workflowStatus: planStatuses[order.canonicalId] || order.workflowStatus,
-    }));
-    setOrders(projectedOrders);
-    return projectedOrders;
   };
   useEffect(() => {
     void load();
@@ -105,7 +115,10 @@ export default function CpuProduction() {
     (order) => !date || order.requiredBy.startsWith(date),
   );
   const todayKey = new Date().toLocaleDateString("en-CA");
-  const openOrder = (order: ProductionOrder) => { if (order.origin === "menu_planning") { window.location.href = `/allergens?date=${encodeURIComponent(orderDate(order))}&dish=${encodeURIComponent(order.lines[0]?.sourceMenuItemId || order.lines[0]?.itemName || "")}`; return; } setSelected(order); };
+  const openOrder = (order: ProductionOrder) => {
+    setShowHospitalityAllergens(false);
+    setSelected(order);
+  };
   const totals = useMemo(
     () =>
       visible
@@ -226,8 +239,8 @@ export default function CpuProduction() {
             >
               Totals
             </button>
-            <button onClick={() => void load()} aria-label="Refresh production">
-              ↻
+            <button onClick={() => void load(true)} disabled={refreshing} aria-busy={refreshing} aria-label="Refresh production">
+              {refreshing ? "Refreshing…" : "↻"}
             </button>
           </div>
         </div>
@@ -294,21 +307,38 @@ export default function CpuProduction() {
         {view === "run-sheet" && <RunSheet orders={visible} />}
         {view === "totals" && <Totals totals={totals} orders={visible} />}
         </section>
-        <OperationsRail orders={visible} date={date || todayKey} />
+        <OperationsRail orders={visible} date={date || todayKey} open={openOrder} />
         </div>
       </div>
       </div>
-      {selected && selected.origin === "menu_planning" ? (
+      {selected && selected.origin === "grab_and_go" ? (
+        <GrabAndGoOrderDetail
+          order={selected}
+          close={() => setSelected(undefined)}
+        />
+      ) : selected && selected.origin === "hospitality_booking" && !showHospitalityAllergens ? (
+        <HospitalityProductionDetail
+          order={selected}
+          close={() => setSelected(undefined)}
+          openAllergens={() => setShowHospitalityAllergens(true)}
+        />
+      ) : selected && selected.origin === "menu_planning" ? (
         <DeliveredInProductionDetail
           order={selected}
           orders={relatedDeliveredInOrders(orders, selected)}
           close={() => setSelected(undefined)}
           onSaved={async () => { const nextOrders = await load(); const refreshed = nextOrders.find(order => order.canonicalId === selected.canonicalId); if (refreshed) setSelected(refreshed); }}
         />
+      ) : selected && !showHospitalityAllergens ? (
+        <ProductionOrderDetail
+          order={selected}
+          close={() => setSelected(undefined)}
+          openPlanner={() => setShowHospitalityAllergens(true)}
+        />
       ) : selected && (
         <LianaOrderDetail
           order={selected}
-          close={() => setSelected(undefined)}
+          close={() => selected.origin === "hospitality_booking" ? setShowHospitalityAllergens(false) : setSelected(undefined)}
           onSaved={async (close = true) => {
             const nextOrders = await load();
             if (close) setSelected(undefined);
@@ -325,7 +355,7 @@ export default function CpuProduction() {
   );
 }
 
-function OperationsRail({ orders, date }: { orders: ProductionOrder[]; date: string }) {
+function OperationsRail({ orders, date, open }: { orders: ProductionOrder[]; date: string; open: (order: ProductionOrder) => void }) {
   const todayOrders = orders
     .filter((order) => order.requiredBy.startsWith(date))
     .sort((a, b) => a.requiredBy.localeCompare(b.requiredBy));
@@ -334,7 +364,7 @@ function OperationsRail({ orders, date }: { orders: ProductionOrder[]; date: str
   return <aside className="cpu-operations-rail">
     <section className="cpu-rail-panel">
       <div className="cpu-rail-heading"><div><span className="cpu-eyebrow">LIVE OPERATIONS</span><h2>Today&apos;s production</h2></div><button type="button" aria-label="More options">•••</button></div>
-      <div className="cpu-booking-list">{todayOrders.length ? todayOrders.map((order) => { const lifecycle = cpuLifecycle(order); return <button type="button" className={`cpu-booking cpu-booking--${lifecycle}`} key={order.canonicalId}><time>{cpuRequiredTime(order)}</time><div><strong>{order.clientName || cpuDestinationLabel(order)}</strong><small>{cpuSourceLabel(order)} · {cpuDestinationLabel(order)}{order.guestCount !== undefined ? `　♙ ${order.guestCount} guests` : ""}</small></div><span className={`cpu-mini-status cpu-mini-status--${lifecycle}`}>{cpuLifecycleLabels[lifecycle]}</span><b>›</b></button>; }) : <div className="cpu-empty cpu-empty--rail"><h3>No production scheduled today</h3><p>Real CPU work for this date will appear here.</p></div>}</div>
+      <div className="cpu-booking-list">{todayOrders.length ? todayOrders.map((order) => { const lifecycle = cpuLifecycle(order); return <button type="button" className={`cpu-booking cpu-booking--${lifecycle}`} key={order.canonicalId} onClick={() => open(order)}><time>{cpuRequiredTime(order)}</time><div><strong>{order.clientName || cpuDestinationLabel(order)}</strong><small>{cpuSourceLabel(order)} · {cpuDestinationLabel(order)}{order.guestCount !== undefined ? `　♙ ${order.guestCount} guests` : ""}</small></div><span className={`cpu-mini-status cpu-mini-status--${lifecycle}`}>{cpuLifecycleLabels[lifecycle]}</span><b>›</b></button>; }) : <div className="cpu-empty cpu-empty--rail"><h3>No production scheduled today</h3><p>Real CPU work for this date will appear here.</p></div>}</div>
       {todayOrders.length > 0 && <button type="button" className="cpu-rail-link">View all production <span>›</span></button>}
     </section>
     <section className="cpu-rail-panel cpu-attention-panel">

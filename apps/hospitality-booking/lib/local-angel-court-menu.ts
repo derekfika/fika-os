@@ -33,13 +33,6 @@ const sourceRows: Array<[string, string, string, number, string]> = [
   ["fresh-juice", "Fresh squeezed or pressed juice", "Drinks", 3, "Per person"],
   ["water", "Bottled still or sparkling water", "Drinks", 3.5, "750ml"],
   [
-    "classic-working-lunch",
-    "Classic Working Lunch",
-    "Lunch",
-    9.95,
-    "Per person · minimum 10",
-  ],
-  [
     "deli-style-sandwich",
     "Deli Style Sandwich",
     "Lunch",
@@ -101,8 +94,6 @@ const brochureDescriptions: Record<string, string> = {
   "soft-drinks": "Coke, Diet Coke, Coke Zero and Sprite.",
   "fresh-juice":
     "Fresh squeezed orange juice, apple juice or carrot, pear and ginger.",
-  "classic-working-lunch":
-    "A selection of meat, fish, vegetarian and vegan fillings on traditional breads, with 1.5 rounds per person, hand-cooked vegetable crisps and whole fruit pieces.",
   "deli-style-sandwich":
     "A selection of meat, fish and vegetarian fillings on artisan breads such as ciabatta, focaccia, baguettes and wraps. Three pieces per person, with hand-cooked vegetable crisps and whole fruit pieces. Sandwich platters come in separate meat, fish, vegetarian or vegan boxes.",
   "salad-boxes":
@@ -156,7 +147,10 @@ const items: HospitalityMenuItem[] = sourceRows.map(
       vatRate: null,
     },
     orderingConstraints: {
-      minimumQuantity: sourceItemId === "wrapped" ? 3 : 1,
+      minimumQuantity: Math.max(
+        sourceItemId === "wrapped" ? 3 : 1,
+        Number(servingInfo.match(/minimum\s+(\d+)/i)?.[1] || 1),
+      ),
       minimumGuests: null,
       noticeRequiredDays:
         category === "Canapes" ||

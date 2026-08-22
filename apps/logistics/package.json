@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "next dev --webpack -p 3900",
+    "dev": "next dev -p 3900",
     "build": "next build",
     "start": "next start -p 3900",
     "typecheck": "tsc --noEmit",

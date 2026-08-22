@@ -17,4 +17,12 @@ Double-click `fikaos.bat` to start the single foreground FIKA OS supervisor. It 
 
 Use `fikaos stop` for a graceful supervisor shutdown, including Firebase export-on-exit. `fikaos status` reports the known session and port state. `Stop-FIKA-OS-All.ps1` remains available as a legacy fallback and force-stop tool.
 
-Normal `fikaos` requires the verified `FIKA-RESTORED-DATA.json` pointer and imports its Firestore/Auth export. On shutdown Firebase writes a new session export under `local-data/integration-hub/recovery/`. `fikaos --fresh` is the only blank-emulator path. The launcher only reports status and opens running apps; it never starts or stops processes.
+Normal `fikaos` requires the verified `FIKA-RESTORED-DATA.json` pointer and imports its Firestore/Auth export. On shutdown Firebase writes a new session export under `local-data/integration-hub/recovery/`. `fikaos --fresh` is the only blank-emulator path. The launcher reports status, opens running apps, and can request a targeted app start/retry when an individual app is offline. The supervisor remains the owner of process lifecycle.
+
+## Live cost discipline
+
+Keep Firebase and other metered-service usage deliberately low. Follow
+[COST-EFFICIENCY.md](COST-EFFICIENCY.md) for all new work: prefer scoped queries
+and cached reference data, avoid short polling loops, pause refreshes for hidden
+tabs, write only on real changes, and add a usage estimate before introducing a
+new recurring read or write path.

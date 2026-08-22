@@ -74,6 +74,7 @@ export type PlannerStopView = {
   window?: { startTime: string; endTime?: string };
   plannedArrivalTime?: string;
   plannedWindow?: { startTime: string; endTime?: string };
+  loaded?: boolean;
   requirementCount: number;
   movementCount: number;
   movementTypes: MovementType[];
@@ -86,13 +87,20 @@ export type PlannerStopView = {
   linkedStopId?: string;
   linkedOperation?: "delivery" | "collection";
   originatingLoadKey?: string;
+  operationalStatus: "scheduled" | "dispatched" | "in_progress" | "delivered" | "collected" | "attention";
 };
+export type LiveRunStatus = "planned" | "dispatched" | "in_progress" | "returning_to_cpu" | "returned" | "complete" | "attention";
 export type PlannerRunView = {
   runId: string;
   serviceDate: string;
   driver?: string;
   vehicle?: string;
   status: DeliveryRun["status"];
+  operationalStatus: LiveRunStatus;
+  returnToCpuRequired: boolean;
+  returnReady: boolean;
+  completedCollections: number;
+  remainingCollections: number;
   version: number;
   stopCount: number;
   scheduledStopCount: number;
@@ -133,6 +141,31 @@ export type PlannerQueueState = "unassigned" | "needs_time" | "attention" | "sch
 
 export function hasUsableSchedule(stop: Pick<PlannerStopView, "plannedArrivalTime" | "plannedWindow">) {
   return Boolean(stop.plannedWindow?.startTime || stop.plannedArrivalTime);
+}
+
+function isCollectionView(stop: Pick<PlannerStopView, "lane" | "movementTypes">) {
+  return stop.lane === "collection" || stop.movementTypes.includes("collection");
+}
+
+export function liveStopStatus(
+  stop: Pick<PlannerStopView, "status" | "attention" | "lane" | "movementTypes">,
+  runStatus: DeliveryRun["status"],
+): PlannerStopView["operationalStatus"] {
+  if (stop.attention.length || stop.status === "issue") return "attention";
+  if (stop.status === "completed") return isCollectionView(stop) ? "collected" : "delivered";
+  if (stop.status === "arrived") return "in_progress";
+  return runStatus === "dispatched" ? "dispatched" : "scheduled";
+}
+
+export function liveRunStatus(
+  run: Pick<DeliveryRun, "status" | "returnToCpuPending" | "returnedToCpuAt" | "returnToCpuRequired">,
+  stops: Array<Pick<PlannerStopView, "operationalStatus">>,
+): LiveRunStatus {
+  if (stops.some((stop) => stop.operationalStatus === "attention")) return "attention";
+  if (run.status === "completed") return run.returnedToCpuAt ? "returned" : "complete";
+  if (run.returnToCpuPending) return "returning_to_cpu";
+  if (run.status === "dispatched") return stops.some((stop) => stop.operationalStatus === "delivered" || stop.operationalStatus === "collected" || stop.operationalStatus === "in_progress") ? "in_progress" : "dispatched";
+  return "planned";
 }
 
 function stopForRequirement(group: PlannerWorkGroup, ref: PlannerRequirementRef, runs: PlannerRunView[]) {
@@ -446,6 +479,13 @@ export function buildPlannerDay(input: {
                 label: oplocLabel(movement.fromOplocId),
               },
             }
+          : movement.fromAddress
+            ? {
+                from: {
+                  id: `one-off:${movement.canonicalId}:from`,
+                  label: movement.fromAddress,
+                },
+              }
           : {}),
         ...(movement.toOplocId
           ? {
@@ -454,6 +494,13 @@ export function buildPlannerDay(input: {
                 label: oplocLabel(movement.toOplocId),
               },
             }
+          : movement.toAddress
+            ? {
+                to: {
+                  id: `one-off:${movement.canonicalId}:to`,
+                  label: movement.toAddress,
+                },
+              }
           : {}),
         requiredTime: movement.requiredTime,
         window: movement.window,
@@ -515,6 +562,7 @@ export function buildPlannerDay(input: {
           window: stop.window,
           plannedArrivalTime: stop.plannedArrivalTime,
           plannedWindow: stop.plannedWindow,
+          loaded: Boolean(stop.loaded),
           requirementCount: stop.requirementRefs.length,
           movementCount: (
             stop.movementRequestIds ||
@@ -576,6 +624,10 @@ export function buildPlannerDay(input: {
           return { ...stop, attention: Array.from(new Set([...stop.attention, "Collection precedes delivery"])) };
         return stop;
       });
+      const liveStops = stopViews.map((stop) => ({
+        ...stop,
+        operationalStatus: liveStopStatus(stop, run.status),
+      }));
       const blockers: string[] = [];
       if (!run.driverLabel) blockers.push("No driver assigned");
       if (!stopViews.length) blockers.push("No stops");
@@ -592,17 +644,26 @@ export function buildPlannerDay(input: {
         )
           blockers.push(`Blocking attention at ${stop.destination.label}`);
       });
+      const returnToCpuRequired = run.returnToCpuRequired !== false;
+      const completedCollections = liveStops.filter((stop) => stop.operationalStatus === "collected").length;
+      const remainingCollections = liveStops.filter((stop) => isCollectionView(stop) && stop.operationalStatus !== "collected").length;
+      const returnReady = returnToCpuRequired && run.status !== "completed" && liveStops.length > 0 && liveStops.every((stop) => stop.operationalStatus === "delivered" || stop.operationalStatus === "collected");
       return {
         runId: run.canonicalId,
         serviceDate: run.serviceDate,
         driver: run.driverLabel,
         vehicle: run.vehicleLabel,
         status: run.status,
+        operationalStatus: liveRunStatus({ ...run, returnToCpuRequired }, liveStops),
+        returnToCpuRequired,
+        returnReady,
+        completedCollections,
+        remainingCollections,
         version: run.version,
         stopCount: stopViews.length,
         scheduledStopCount: stopViews.filter(hasUsableSchedule).length,
         needsTimeStopCount: stopViews.filter((stop) => !hasUsableSchedule(stop)).length,
-        completedStops: stopViews.filter((stop) => stop.status === "completed")
+        completedStops: liveStops.filter((stop) => stop.operationalStatus === "delivered" || stop.operationalStatus === "collected")
           .length,
         openIssueCount: runStops.reduce(
           (count, stop) =>
@@ -624,7 +685,7 @@ export function buildPlannerDay(input: {
             }
           : undefined,
         readiness: { ready: !blockers.length, blockers },
-        stops: stopViews,
+        stops: liveStops,
       };
     });
   const workGroups = Array.from(groups.values());

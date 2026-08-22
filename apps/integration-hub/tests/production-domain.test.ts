@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createCpuProductionOrder, materialisedProductionId, productionOrderV1Id, productionRequirementId } from "../lib/production-domain";
+import { createCpuProductionOrder, externalProductionStatus, materialisedProductionId, productionOrderV1Id, productionRequirementId } from "../lib/production-domain";
 import { transitionProductionOrder } from "../lib/production-domain";
 import { db } from "../lib/firebase-admin";
 import type { ProductionLine } from "../lib/production-domain";
@@ -16,6 +16,13 @@ test("external production identities are deterministic per source and destinatio
   const input = { sourceDomain: "grab-and-go" as const, sourceEntityId: "UAT-WC240826:haleon:2026-08-24", destinationOplocId: "oploc:haleon" };
   assert.equal(materialisedProductionId(input), materialisedProductionId(input));
   assert.notEqual(materialisedProductionId(input), materialisedProductionId({ ...input, destinationOplocId: "oploc:xchange" }));
+});
+
+test("Grab & Go external production is immediately plannable without CPU acceptance", () => {
+  assert.equal(externalProductionStatus({ sourceDomain: "grab-and-go", status: "submitted" }), "planned");
+  assert.equal(externalProductionStatus({ sourceDomain: "grab-and-go", status: "amended" }), "planned");
+  assert.equal(externalProductionStatus({ sourceDomain: "grab-and-go", status: "cancelled" }), "cancelled");
+  assert.equal(externalProductionStatus({ sourceDomain: "menu-planning", status: "published" }), "menu_available");
 });
 
 test("production contracts keep customer and preparation quantities separate", async () => {

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import { MailSearch, RefreshCw, Settings } from "lucide-react";
 import type { CanonicalBooking } from "../../../integration-hub/lib/hospitality-booking-service";
@@ -13,11 +13,13 @@ import { mnkMenuHtml } from "../../lib/mnk-menu-output";
 import type { MenuOutput } from "../../lib/mnk-menu-output";
 import styles from "./HospitalityDashboard.module.css";
 import { portalSite, type PortalSiteKey } from "@/lib/portal-sites";
+import { formatQuoteFilenameDate } from "../../../integration-hub/lib/quote-engine";
 
 const statuses = [
   "New",
   "Reviewed",
   "Quoted",
+  "Sent to CPU",
   "Completed",
   "Cancelled",
 ] as const;
@@ -32,12 +34,33 @@ type Amendment = {
   reason: string;
 };
 type InboxScanPhase = "connecting" | "messages" | "attachments" | "staging" | "complete" | "error";
+type AmendmentProgress = {
+  status: "running" | "complete" | "error";
+  currentStep: number;
+  error?: string;
+  steps: Array<{ label: string; state: "pending" | "active" | "complete" | "error"; detail?: string }>;
+};
 const inboxScanSteps: Array<{ key: Exclude<InboxScanPhase, "complete" | "error">; label: string }> = [
   { key: "connecting", label: "Connect to the authorised Gmail inbox" },
   { key: "messages", label: "Read messages newer than the last successful scan" },
   { key: "attachments", label: "Inspect booking attachments and extract source evidence" },
   { key: "staging", label: "Stage new Angel Court booking candidates" },
 ];
+
+async function readDashboardJson(response: Response) {
+  const raw = await response.text();
+  try {
+    return raw ? JSON.parse(raw) : {};
+  } catch {
+    throw new Error(`The booking update returned an unexpected server response (${response.status}). Please try again.`);
+  }
+}
+
+function quoteFilename(eventDate: string, companyName: string, revision: number, extension: "pdf" | "html") {
+  const revisionSuffix = revision > 1 ? `_Revision_${revision}` : "";
+  return `Quote_${formatQuoteFilenameDate(eventDate)}_${companyName}${revisionSuffix}.${extension}`
+    .replace(/[^A-Za-z0-9._-]+/g, "_");
+}
 
 export default function HospitalityDashboard({
   siteKey = "mnk",
@@ -53,6 +76,9 @@ export default function HospitalityDashboard({
   const [filter, setFilter] = useState("");
   const [error, setError] = useState("");
   const [pending, setPending] = useState<WorkflowAction | null>(null);
+  const [actionBusy, setActionBusy] = useState(false);
+  const [actionStage, setActionStage] = useState("Working…");
+  const [amendmentProgress, setAmendmentProgress] = useState<AmendmentProgress | null>(null);
   const [reason, setReason] = useState("");
   const [reviewChecks, setReviewChecks] = useState({
     commercialIntent: false,
@@ -106,8 +132,11 @@ export default function HospitalityDashboard({
       | undefined
     >
   >({});
+  // Menu outputs change only when a menu is regenerated. Avoid rereading the
+  // whole output collection on every dashboard refresh.
+  const menuCacheLoadedAt = useRef(0);
 
-  const load = async () => {
+  const load = async (clearError = true) => {
     setLoading(true);
     try {
       const response = await fetch(
@@ -120,19 +149,22 @@ export default function HospitalityDashboard({
       setBookings(body.bookings);
       setProductionOrders(body.productionOrders || {});
       setQuoteSettings(body.quoteSettings || null);
-      const menuResponse = await fetch("/api/menus", { cache: "no-store" });
-      if (menuResponse.ok) {
-        const menuBody = (await menuResponse.json()) as {
-          outputs?: MenuOutput[];
-        };
-        setMenuOutputs(
-          Object.fromEntries(
-            (menuBody.outputs || []).filter((output) => output.templateVersion === "mnk-hospitality-menu-v2").map((output) => [
-              output.bookingId,
-              output,
-            ]),
-          ),
-        );
+      if (Date.now() - menuCacheLoadedAt.current >= 60_000) {
+        const menuResponse = await fetch("/api/menus", { cache: "no-store" });
+        if (menuResponse.ok) {
+          const menuBody = (await menuResponse.json()) as {
+            outputs?: MenuOutput[];
+          };
+          setMenuOutputs(
+            Object.fromEntries(
+              (menuBody.outputs || []).filter((output) => output.templateVersion === "mnk-hospitality-menu-v2").map((output) => [
+                output.bookingId,
+                output,
+              ]),
+            ),
+          );
+          menuCacheLoadedAt.current = Date.now();
+        }
       }
       setSelected(
         (current) =>
@@ -141,7 +173,7 @@ export default function HospitalityDashboard({
               item.canonicalId === current?.canonicalId,
           ) || current,
       );
-      setError("");
+      if (clearError) setError("");
     } catch (cause) {
       setError((cause as Error).message);
     } finally {
@@ -235,13 +267,17 @@ export default function HospitalityDashboard({
   // while the production team is working without requiring a manual refresh.
   useEffect(() => {
     if (!selected) return;
-    const timer = window.setInterval(() => void load(), 5000);
+    // Keep the manager view reasonably fresh without turning every open tab
+    // into a high-frequency Firestore read loop.
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === "visible") void load();
+    }, 30_000);
     return () => window.clearInterval(timer);
   }, [selected?.canonicalId, site.key]);
 
   const signInLocally = async () => {
     const response = await fetch("/api/local-session", { method: "POST" });
-    const body = await response.json();
+    const body = await readDashboardJson(response);
     if (!response.ok) {
       setError(body.error?.message || "Local sign-in was unavailable.");
       return;
@@ -273,31 +309,33 @@ export default function HospitalityDashboard({
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
-        name: `Quote_${booking.service.eventDate}_${booking.client.companyName}_r${quote.revision}.pdf`.replace(/[^A-Za-z0-9._-]+/g, "_"),
+        name: quoteFilename(booking.service.eventDate, booking.client.companyName, quote.revision, "pdf"),
         html: quoteHtml(booking),
         siteKey: site.key,
       }),
     });
-    const quoteBody = await quoteResponse.json() as { error?: { message?: string }; saved?: { fileId?: string; driveUrl?: string } };
+    const quoteBody = await readDashboardJson(quoteResponse) as { error?: { message?: string }; saved?: { fileId?: string; driveUrl?: string } };
     if (!quoteResponse.ok || !quoteBody.saved?.fileId) throw new Error(quoteBody.error?.message || "The quote PDF could not be saved to Drive.");
     const statusResponse = await fetch("/api/dashboard-bookings", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ canonicalId: booking.canonicalId, expectedVersion: booking.version, action: "quote-pdf-status", revisionId: quote.id, status: "saved", driveFileId: quoteBody.saved.fileId, driveUrl: quoteBody.saved.driveUrl }),
     });
-    const statusBody = await statusResponse.json();
+    const statusBody = await readDashboardJson(statusResponse) as { error?: { message?: string }; booking?: CanonicalBooking };
     if (!statusResponse.ok) throw new Error(statusBody.error?.message || "The quote PDF was saved but could not be recorded against the quote.");
     return statusBody.booking as CanonicalBooking;
   };
 
-  const act = async () => {
+  const performAction = async () => {
+    setError("");
     if (!selected || !pending) return;
+    setActionStage(pending === "Quoted" || pending === "QuotePdfRetry" ? "Creating quote…" : "Saving changes…");
     if (pending === "QuotePdfRetry") {
       const current = selected.quoteState?.revisions.find((revision) => revision.id === selected.quoteState?.currentRevisionId);
       if (!current) return;
       try { setSelected(await persistQuotePdf(selected, current)); setError(""); } catch (cause) { setError((cause as Error).message); }
       setPending(null);
-      await load();
+      await load(false);
       return;
     }
     const base = {
@@ -345,6 +383,7 @@ export default function HospitalityDashboard({
     }
     setSelected(body.booking || selected);
     if (pending === "Quoted" && body.booking) {
+      setActionStage("Saving quote PDF…");
       let pdfSaved = false;
       try {
         const quote = body.booking.quoteState?.revisions?.find(
@@ -356,10 +395,7 @@ export default function HospitalityDashboard({
             method: "POST",
             headers: { "content-type": "application/json" },
             body: JSON.stringify({
-              name: `Quote_${body.booking.service.eventDate}_${body.booking.client.companyName}_r${quote.revision}.html`.replace(
-                /[^A-Za-z0-9._-]+/g,
-                "_",
-              ),
+              name: quoteFilename(body.booking.service.eventDate, body.booking.client.companyName, quote.revision, "html"),
               html: quoteHtml(body.booking),
               siteKey: site.key,
             }),
@@ -373,6 +409,7 @@ export default function HospitalityDashboard({
               `Quote created, but Drive saving failed: ${quoteBody.error?.message || "unknown error"}`,
             );
           } else {
+            setActionStage("Recording quote status…");
             const statusResponse = await fetch("/api/dashboard-bookings", {
               method: "POST",
               headers: { "content-type": "application/json" },
@@ -414,7 +451,17 @@ export default function HospitalityDashboard({
     setPending(null);
     setReason("");
     setAmendment(null);
-    await load();
+    await load(pending !== "Quoted");
+  };
+
+  const act = async () => {
+    setActionStage("Working…");
+    setActionBusy(true);
+    try {
+      await performAction();
+    } finally {
+      setActionBusy(false);
+    }
   };
 
   const openPrintSheet = (html: string) => {
@@ -548,10 +595,11 @@ export default function HospitalityDashboard({
     openPrintSheet(dailyRunSheetHtml(matching));
   };
   const openAmendment = (booking: CanonicalBooking) => {
+    const order = structuredClone(booking.order);
     setAmendment({
       client: structuredClone(booking.client),
       service: structuredClone(booking.service),
-      order: structuredClone(booking.order),
+      order: { ...order, items: order.items.map((item) => ({ ...item, quantity: Number(item.quantity) || 0 })) },
       notes: booking.notes || "",
       deliveryChargeRequired: booking.deliveryChargeRequired !== false,
       reason: "",
@@ -563,49 +611,99 @@ export default function HospitalityDashboard({
       setError("Explain why this Booking is being amended.");
       return;
     }
-    const {
-      eventDate,
-      startTime,
-      endTime,
-      guestCount,
-      floorLevel,
-      roomOrArea,
-      deliveryPoint,
-      onsiteContactName,
-      onsiteContactPhone,
-    } = amendment.service;
-    const response = await fetch("/api/dashboard-bookings", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
+    const steps = [
+      "Save amended booking",
+      "Regenerate quote",
+      "Save quote PDF",
+      "Send updated order to CPU",
+      "Update Logistics",
+    ];
+    setError("");
+    setAmendmentProgress({
+      status: "running",
+      currentStep: 0,
+      steps: steps.map((label, index) => ({ label, state: index === 0 ? "active" : "pending" })),
+    });
+    const setStep = (index: number, state: AmendmentProgress["steps"][number]["state"], detail?: string) => {
+      setAmendmentProgress((current) => current ? {
+        ...current,
+        currentStep: index,
+        steps: current.steps.map((step, stepIndex) => stepIndex === index ? { ...step, state, ...(detail ? { detail } : {}) } : step),
+      } : current);
+    };
+    const post = async (body: Record<string, unknown>) => {
+      const response = await fetch("/api/dashboard-bookings", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const parsed = await readDashboardJson(response) as { error?: { message?: string }; booking?: CanonicalBooking; productionOrder?: ProductionOrder };
+      if (!response.ok) throw new Error(parsed.error?.message || "The booking workflow could not be completed.");
+      return parsed;
+    };
+    try {
+      const amended = await post({
         canonicalId: selected.canonicalId,
         expectedVersion: selected.version,
         action: "amend",
         reason: amendment.reason,
-          patch: amendmentPatchDto({
-            ...amendment,
-            service: {
-              ...amendment.service,
-              eventDate,
-              startTime,
-              endTime,
-              guestCount,
-              floorLevel,
-              roomOrArea,
-              deliveryPoint,
-              onsiteContactName,
-              onsiteContactPhone,
-            },
-          }),
-      }),
-    });
-    const body = await response.json();
-    if (!response.ok) {
-      setError(body.error?.message || "Could not save the Booking amendment.");
-      return;
+        patch: amendmentPatchDto(amendment),
+      });
+      if (!amended.booking) throw new Error("The amendment was saved but no updated booking was returned.");
+      setSelected(amended.booking);
+      setStep(0, "complete");
+
+      setStep(1, "active");
+      const quoted = await post({
+        canonicalId: amended.booking.canonicalId,
+        expectedVersion: amended.booking.version,
+        action: "quote",
+        regenerate: true,
+      });
+      if (!quoted.booking) throw new Error("The quote was regenerated but no updated booking was returned.");
+      setSelected(quoted.booking);
+      setStep(1, "complete");
+
+      const quote = quoted.booking.quoteState?.revisions.find((revision) => revision.id === quoted.booking?.quoteState?.currentRevisionId);
+      if (!quote) throw new Error("The regenerated quote revision could not be found.");
+      setStep(2, "active");
+      const withSavedPdf = await persistQuotePdf(quoted.booking, quote);
+      setSelected(withSavedPdf);
+      setStep(2, "complete");
+
+      if (withSavedPdf.deliveryChargeRequired === false) {
+        setStep(3, "complete", "No CPU hand-off is required for this site-produced booking.");
+        setStep(4, "complete", "No Logistics movement is required.");
+      } else {
+        setStep(3, "active");
+        const handoff = await post({
+          canonicalId: withSavedPdf.canonicalId,
+          expectedVersion: withSavedPdf.version,
+          action: "production-handoff",
+        });
+        setStep(3, "complete");
+        setStep(4, "active");
+        await load(false);
+        setStep(4, "complete", handoff.productionOrder ? "CPU and Logistics now use the amended date and service time." : undefined);
+      }
+      await load(false);
+      setAmendment(null);
+      setAmendmentProgress((current) => current ? { ...current, status: "complete", currentStep: steps.length - 1 } : current);
+    } catch (cause) {
+      const message = (cause as Error).message || "The amendment workflow could not be completed.";
+      setError(message);
+      setAmendmentProgress((current) => {
+        if (!current) return current;
+        const activeIndex = current.steps.findIndex((step) => step.state === "active");
+        return {
+          ...current,
+          status: "error",
+          error: message,
+          currentStep: activeIndex >= 0 ? activeIndex : current.currentStep,
+          steps: current.steps.map((step, index) => index === (activeIndex >= 0 ? activeIndex : current.currentStep) ? { ...step, state: "error", detail: message } : step),
+        };
+      });
     }
-    setAmendment(null);
-    await load();
   };
   const saveQuoteSettings = async () => {
     if (!quoteSettings) return;
@@ -994,11 +1092,14 @@ export default function HospitalityDashboard({
                 </label>
               )}
               <footer>
-                <button type="button" onClick={() => setPending(null)}>
+                <button type="button" onClick={() => setPending(null)} disabled={actionBusy}>
                   Cancel
                 </button>
-                <button className="primary">
-                  {pending === "Production"
+                <button className="primary" disabled={actionBusy}>
+                  {actionBusy && <span className={styles.spinner} aria-hidden="true" />}
+                  {actionBusy
+                    ? actionStage
+                    : pending === "Production"
                     ? "Create production hand-off"
                     : pending === "QuotePdfRetry"
                       ? "Retry PDF save"
@@ -1006,6 +1107,44 @@ export default function HospitalityDashboard({
                 </button>
               </footer>
             </form>
+          </div>
+        )}
+        {amendmentProgress && (
+          <div className="modal-backdrop" role="presentation">
+            <section className={`modal ${styles.amendmentProgressModal}`} role="dialog" aria-modal="true" aria-labelledby="amendment-progress-title">
+              <p className="eyebrow">Amendment workflow</p>
+              <h2 id="amendment-progress-title">
+                {amendmentProgress.status === "complete"
+                  ? "Booking updated across FIKA OS"
+                  : amendmentProgress.status === "error"
+                    ? "Amendment needs attention"
+                    : "Updating booking everywhere"}
+              </h2>
+              <p>
+                {amendmentProgress.status === "complete"
+                  ? "The amended quote, CPU order and Logistics timing are now aligned."
+                  : "The amended booking is being reissued through the operational workflow."}
+              </p>
+              <div className={styles.amendmentProgressTrack} aria-hidden="true">
+                <span style={{ width: `${((amendmentProgress.steps.filter((step) => step.state === "complete").length + (amendmentProgress.status === "running" ? 0.35 : 0)) / amendmentProgress.steps.length) * 100}%` }} />
+              </div>
+              <ol className={styles.amendmentProgressSteps}>
+                {amendmentProgress.steps.map((step, index) => (
+                  <li key={step.label} className={styles[`amendmentProgressStep--${step.state}`]} aria-current={step.state === "active" ? "step" : undefined}>
+                    <span>{step.state === "complete" ? "✓" : step.state === "error" ? "!" : index + 1}</span>
+                    <div><strong>{step.label}</strong>{step.detail && <small>{step.detail}</small>}</div>
+                  </li>
+                ))}
+              </ol>
+              {amendmentProgress.error && <p className={styles.amendmentProgressError} role="alert">{amendmentProgress.error}</p>}
+              {amendmentProgress.status !== "running" && (
+                <footer>
+                  <button type="button" className="primary" onClick={() => setAmendmentProgress(null)}>
+                    {amendmentProgress.status === "complete" ? "Done" : "Close and review"}
+                  </button>
+                </footer>
+              )}
+            </section>
           </div>
         )}
         {runSheetOpen && (
@@ -1247,7 +1386,7 @@ function BookingDetail({
                       : "Send to CPU"}
             </button>
           ))}
-        {quoteReadyForCpu(booking) && !productionOrder && booking.deliveryChargeRequired !== false && (
+        {quoteReadyForCpu(booking) && !productionOrderMatchesCurrentQuote(booking, productionOrder) && booking.deliveryChargeRequired !== false && (
           <button
             type="button"
             className="primary"
@@ -1348,18 +1487,18 @@ function BookingDetail({
             </div>
             <div>
               <span>CPU plan</span>
-              <strong>{productionOrder?.state || "Not started"}</strong>
+              <strong>{productionOrderMatchesCurrentQuote(booking, productionOrder) ? productionOrder?.state : productionOrder ? "Ready to reissue" : "Not started"}</strong>
             </div>
           </div>
           <button
             type="button"
             className="manager-cpu-action"
-              disabled={Boolean(productionOrder) || !quoteReadyForCpu(booking) || booking.deliveryChargeRequired === false}
+            disabled={Boolean(productionOrderMatchesCurrentQuote(booking, productionOrder)) || !quoteReadyForCpu(booking) || booking.deliveryChargeRequired === false}
             onClick={() => setPending("Production")}
           >
-            <strong>{productionOrder ? "Sent to CPU" : "Send to CPU"}</strong>
+            <strong>{productionOrderMatchesCurrentQuote(booking, productionOrder) ? "Sent to CPU" : "Send to CPU"}</strong>
             <small>
-              {productionOrder
+              {productionOrderMatchesCurrentQuote(booking, productionOrder)
                 ? "Production hand-off recorded"
                 : booking.deliveryChargeRequired === false
                   ? "The site will produce this booking internally"
@@ -2075,10 +2214,15 @@ function availableActions(booking: CanonicalBooking, productionOrder?: Productio
     const current = booking.quoteState?.revisions.find((revision) => revision.id === booking.quoteState?.currentRevisionId);
     if (current?.stale) return ["Quoted"];
     if (current && current.pdfStatus !== "saved") return ["QuotePdfRetry"];
-    if (productionOrder || booking.deliveryChargeRequired === false) return ["Completed"];
+    if (productionOrderMatchesCurrentQuote(booking, productionOrder) || booking.deliveryChargeRequired === false) return ["Completed"];
     return ["Production"];
   }
+  if (booking.lifecycleStatus === "Sent to CPU" && productionOrder) return ["Completed"];
   return [];
+}
+function productionOrderMatchesCurrentQuote(booking: CanonicalBooking, productionOrder?: ProductionOrder) {
+  const currentRevisionId = booking.quoteState?.currentRevisionId;
+  return Boolean(productionOrder && currentRevisionId && productionOrder.sourceReferences.quoteRevisionId === currentRevisionId);
 }
 
 function quoteReadyForCpu(booking: CanonicalBooking) {
@@ -2314,8 +2458,12 @@ function BookingAmendmentPanel({
                   type="number"
                   min={/rice paper rolls?/i.test(String(item.itemName || "")) ? 3 : 0}
                   value={item.quantity}
+                  onFocus={(event) => event.currentTarget.select()}
                   onChange={(event) =>
-                    changeQuantity(index, Number(event.target.value || 0))
+                    changeQuantity(
+                      index,
+                      Number(event.target.value.replace(/^0+(?=\d)/, "") || 0),
+                    )
                   }
                 />
               </label>

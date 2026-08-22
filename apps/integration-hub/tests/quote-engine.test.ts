@@ -20,3 +20,11 @@ test("Angel Court 100+ guest quotes require an end time", () => {
 });
 test("branded quote renderer uses FIKA typography and a scan-friendly commercial layout", () => { const quote = calculateQuoteSnapshot(booking, defaultDashboardQuoteSettings("mnk-hospitality")); const html = brandedQuoteDocumentHtml(quote, { id: "quote:test:r1", revision: 1, createdAt: "2026-07-31T10:00:00.000Z" }, "/api/brand-assets/fika-logo-white.png"); assert.match(html, /GILROY-REGULAR\.TTF/); assert.match(html, /Hospitality quotation/); assert.match(html, /Total to pay/); assert.match(html, /fika-logo-white\.png/); });
 test("compact quote renderer keeps the reference in the quiet footer", () => { const quote = calculateQuoteSnapshot(booking, defaultDashboardQuoteSettings("mnk-hospitality")); const html = compactBrandedQuoteDocumentHtml(quote, { id: "quote:test:r1", revision: 1, createdAt: "2026-07-31T10:00:00.000Z" }); assert.doesNotMatch(html, /meta-label\">Quote reference/); assert.match(html, /footer-reference\">Quote reference/); });
+test("compact quote renderer uses human-readable service details and hides the first revision label", () => {
+  const quote = calculateQuoteSnapshot({ ...booking, order: { ...booking.order, eventType: "lunch" } }, defaultDashboardQuoteSettings("mnk-hospitality"));
+  const html = compactBrandedQuoteDocumentHtml(quote, { id: "quote:test:r1", revision: 1, createdAt: "2026-07-31T10:00:00.000Z" });
+  assert.match(html, />Lunch</);
+  assert.match(html, />1 August 2026 · 12:00</);
+  assert.match(html, /Generated 31 July 2026 at 11:00/);
+  assert.doesNotMatch(html, /Revision 1/);
+});

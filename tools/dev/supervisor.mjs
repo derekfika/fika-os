@@ -69,6 +69,37 @@ function portOwner(port) {
   return undefined;
 }
 
+function listeningPortOwners() {
+  if (process.platform !== "win32") return [];
+  try {
+    const output = execFileSync("netstat.exe", ["-ano", "-p", "tcp"], { encoding: "utf8" });
+    const owners = new Map();
+    for (const line of output.split(/\r?\n/)) {
+      const match = line.match(/\s+TCP\s+\S+:(\d+)\s+\S+\s+LISTENING\s+(\d+)/i);
+      if (!match) continue;
+      const port = Number(match[1]);
+      const pid = Number(match[2]);
+      if (ports.includes(port) && pid) owners.set(pid, (owners.get(pid) || []).concat(port));
+    }
+    return [...owners.entries()].map(([pid, ownedPorts]) => ({ pid, ports: ownedPorts }));
+  } catch {
+    return [];
+  }
+}
+
+function forceStopOrphanedPorts() {
+  const owners = listeningPortOwners().filter(({ pid }) => pid !== process.pid);
+  for (const { pid, ports: ownedPorts } of owners) {
+    try {
+      execFileSync("taskkill.exe", ["/pid", String(pid), "/t", "/f"], { stdio: "ignore", windowsHide: true });
+      console.log(`Stopped orphaned FIKA process tree ${pid} (ports ${ownedPorts.join(", ")}).`);
+    } catch {
+      console.error(`Could not stop orphaned FIKA process ${pid} (ports ${ownedPorts.join(", ")}).`);
+    }
+  }
+  return owners.length;
+}
+
 function checkPort(port, timeout = 400) {
   return new Promise((resolve) => {
     const socket = net.createConnection({ host: "127.0.0.1", port });
@@ -218,11 +249,17 @@ async function handleControlRequest() {
   } catch {
     return;
   }
-  if (request.action !== "stop") return;
-  if (request.target === "all") {
-    await Promise.all(apps.map((app) => stopApp(app.id)));
-  } else if (appById.has(request.target)) {
-    await stopApp(request.target);
+  if (request.action === "stop") {
+    if (request.target === "all") {
+      await Promise.all(apps.map((app) => stopApp(app.id)));
+    } else if (appById.has(request.target)) {
+      await stopApp(request.target);
+    }
+    return;
+  }
+  if (request.action === "start" && appById.has(request.target)) {
+    const app = appById.get(request.target);
+    if (!children.has(app.id)) await startApp(app);
   }
 }
 
@@ -394,7 +431,8 @@ function printStatus() {
 function requestStop() {
   const current = readSession();
   if (!current || !processIsAlive(current.pid)) {
-    console.log("FIKA OS is not running.");
+    const stopped = forceStopOrphanedPorts();
+    console.log(stopped ? "FIKA OS supervisor is not running; orphaned FIKA ports were stopped." : "FIKA OS is not running and its reserved ports are free.");
     try { fs.unlinkSync(sessionFile); } catch {}
     return 0;
   }

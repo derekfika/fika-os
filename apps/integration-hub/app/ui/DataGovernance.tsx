@@ -374,8 +374,8 @@ export default function DataGovernance({
               ))}
             </select>
           </label>
-          <button onClick={() => void load()}>
-            <RefreshCw /> Refresh
+          <button onClick={() => void load()} disabled={loading} aria-busy={loading}>
+            <RefreshCw /> {loading ? "Refreshing…" : "Refresh"}
           </button>
         </div>
         <div className="table-wrap">

@@ -70,6 +70,14 @@ async function requestStop(target) {
   await writeFile(controlRequestFile, JSON.stringify({ action: "stop", target, requestedAt: new Date().toISOString() }));
   return { status: 200, body: { ok: true, target } };
 }
+async function requestStart(target) {
+  const session = await readSession();
+  if (!session) return { status: 409, body: { error: "FIKA OS supervisor is not running." } };
+  const app = apps.find((candidate) => candidate.id === target);
+  if (!app || app.planned) return { status: 404, body: { error: "This app cannot be started." } };
+  await writeFile(controlRequestFile, JSON.stringify({ action: "start", target, requestedAt: new Date().toISOString() }));
+  return { status: 200, body: { ok: true, target } };
+}
 
 const server = createServer(async (request, response) => {
   const url = new URL(request.url, `http://${request.headers.host}`);
@@ -84,6 +92,10 @@ const server = createServer(async (request, response) => {
   if (request.method === "POST" && (url.pathname === "/stop-all" || url.pathname.startsWith("/stop/"))) {
     const target = url.pathname === "/stop-all" ? "all" : url.pathname.slice("/stop/".length);
     const result = await requestStop(target);
+    return send(response, result.status, JSON.stringify(result.body), "application/json; charset=utf-8");
+  }
+  if (request.method === "POST" && url.pathname.startsWith("/start/")) {
+    const result = await requestStart(url.pathname.slice("/start/".length));
     return send(response, result.status, JSON.stringify(result.body), "application/json; charset=utf-8");
   }
 

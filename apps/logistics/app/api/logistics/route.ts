@@ -27,6 +27,7 @@ import {
 } from "@/lib/planning";
 import { operationalDate } from "@/lib/date";
 import { operationalWeek } from "@/lib/week";
+import { restoredStopStatus } from "@/lib/mobile-driver";
 import type { PlannerWeekSummary } from "@/lib/planner-read-model";
 import type { DeliveryRun, DeliveryStop, MovementRequest } from "@/lib/types";
 import type { FulfilmentRequirement } from "../../../../shared/fulfilment-requirement";
@@ -144,25 +145,14 @@ export async function GET(request: NextRequest) {
   const requestedWeek =
     request.nextUrl.searchParams.get("weekCommencing") || undefined;
   const cookie = request.headers.get("cookie") || undefined;
-  const allState = await listState();
   if (requestedWeek) {
     const dates = operationalWeek(requestedWeek);
     const requirementsResult = await fetchRequirements(undefined, cookie).catch(
       () => [],
     );
-    const summaries: PlannerWeekSummary[] = dates.map((serviceDate) => {
-      const state = {
-        runs: allState.runs.filter((run) => run.serviceDate === serviceDate),
-        stops: allState.stops.filter((stop) =>
-          allState.runs.some(
-            (run) =>
-              run.serviceDate === serviceDate && run.canonicalId === stop.runId,
-          ),
-        ),
-        movements: allState.movements.filter(
-          (movement) => movement.serviceDate === serviceDate,
-        ),
-      };
+    const dayStates = await Promise.all(dates.map((serviceDate) => listState(serviceDate)));
+    const summaries: PlannerWeekSummary[] = dates.map((serviceDate, index) => {
+      const state = dayStates[index];
       const requirements = requirementsResult.filter(
         (requirement) => requirement.serviceDate === serviceDate,
       );
@@ -210,19 +200,25 @@ export async function GET(request: NextRequest) {
     });
     return NextResponse.json({ weekCommencing: dates[0], days: summaries });
   }
+  const runState = requestedRunId ? await listState() : undefined;
   const runDate = requestedRunId
-    ? allState.runs.find((run) => run.canonicalId === requestedRunId)
-        ?.serviceDate
+    ? runState?.runs.find((run) => run.canonicalId === requestedRunId)?.serviceDate
     : undefined;
   const date = requestedDate || runDate || operationalDate();
-  const state = await listState(date);
-  const collectionRequiredKeys = await listCollectionPreferenceKeys();
-  const [requirementsResult, oplocsResult, productionResult] =
-    await Promise.allSettled([
-      fetchRequirements(date, cookie),
-      fetchOplocs(cookie),
-      fetchProductionContexts(date, cookie),
-    ]);
+  const [state, collectionRequiredKeys, requirementsResult, oplocsResult] = await Promise.all([
+    listState(date),
+    listCollectionPreferenceKeys(),
+    fetchRequirements(date, cookie).then((value) => ({ status: "fulfilled" as const, value })).catch((reason) => ({ status: "rejected" as const, reason })),
+    fetchOplocs(cookie).then((value) => ({ status: "fulfilled" as const, value })).catch((reason) => ({ status: "rejected" as const, reason })),
+  ]);
+  // Keep the upstream reads independently tolerant: one unavailable source
+  // should not prevent the local Logistics snapshot from rendering.
+  const needsProductionEnrichment =
+    requirementsResult.status !== "fulfilled" ||
+    requirementsResult.value.some((requirement) => requirement.sourceDomain === "cpu-production");
+  const productionResult = needsProductionEnrichment
+    ? await fetchProductionContexts(date, cookie).then((value) => ({ status: "fulfilled" as const, value })).catch((reason) => ({ status: "rejected" as const, reason }))
+    : { status: "fulfilled" as const, value: [] };
   const requirements =
     requirementsResult.status === "fulfilled" ? requirementsResult.value : [];
   const oplocs = oplocsResult.status === "fulfilled" ? oplocsResult.value : [];
@@ -284,7 +280,7 @@ export async function POST(request: NextRequest) {
       expectedSourceVersions?: Record<string, number>;
       expectedStopVersion?: number;
       issueDescription?: string;
-      issueCategory?: "Access" | "Delay" | "Missing item" | "Vehicle" | "Other";
+      issueCategory?: "Cannot access building" | "Customer unavailable" | "Missing / incorrect load" | "Running late" | "Vehicle issue" | "Other" | "Access" | "Delay" | "Missing item" | "Vehicle";
       issueId?: string;
       resolutionNotes?: string;
       groupKey?: string;
@@ -293,6 +289,9 @@ export async function POST(request: NextRequest) {
       driverLabel?: string;
       serviceDate?: string;
       confirmDirect?: boolean;
+      loaded?: boolean;
+      returnToCpuRequired?: boolean;
+      targetServiceDate?: string;
       plannedArrivalTime?: string;
       plannedWindow?: { startTime: string; endTime?: string };
     };
@@ -324,6 +323,7 @@ export async function POST(request: NextRequest) {
           driverId: item.driver.toLowerCase(),
           driverLabel: item.driver,
           vehicleLabel: item.slot === "van-1" ? "Van 1" : "Van 2",
+          returnToCpuRequired: true,
           orderedStopIds: [], version: 1, createdAt: now, updatedAt: now,
           audit: [{ action: "vehicle-day-run-created", at: now, by, version: 1 }],
         };
@@ -343,6 +343,23 @@ export async function POST(request: NextRequest) {
         const run = snap.data() as DeliveryRun;
         if (run.version !== body.expectedRunVersion) throw new HttpError(409, "This run changed elsewhere. Refresh before changing its driver.");
         const next = { ...run, driverId: body.driverLabel!.toLowerCase(), driverLabel: body.driverLabel, version: run.version + 1, updatedAt: now, audit: [...run.audit, { action: "driver-assigned", at: now, by, version: run.version + 1 }] };
+        transaction.set(ref, next);
+        return next;
+      });
+      return NextResponse.json(result);
+    }
+    if (body.action === "set-run-return-required" && body.runId && typeof body.returnToCpuRequired === "boolean") {
+      const current = (await listState()).runs.find((run) => run.canonicalId === body.runId);
+      if (!current) throw new HttpError(404, "Run not found.");
+      if (body.expectedRunVersion === undefined) throw new HttpError(422, "A current run version is required.");
+      if (current.status === "dispatched" || current.status === "completed") throw new HttpError(422, "Return settings cannot change after dispatch.");
+      const result = await db.runTransaction(async (transaction) => {
+        const ref = runs().doc(current.canonicalId);
+        const snap = await transaction.get(ref);
+        if (!snap.exists) throw new HttpError(404, "Run not found.");
+        const run = snap.data() as DeliveryRun;
+        if (run.version !== body.expectedRunVersion) throw new HttpError(409, "This run changed elsewhere. Refresh before changing its return setting.");
+        const next = { ...run, returnToCpuRequired: body.returnToCpuRequired, version: run.version + 1, updatedAt: now, audit: [...run.audit, { action: "run-return-setting-changed", at: now, by, version: run.version + 1 }] };
         transaction.set(ref, next);
         return next;
       });
@@ -371,11 +388,13 @@ export async function POST(request: NextRequest) {
         version: 1,
         createdAt: now,
         updatedAt: now,
+        returnToCpuRequired: true,
         audit: [],
       };
       return NextResponse.json(
         await saveRun({
           ...run,
+          returnToCpuRequired: run.returnToCpuRequired !== false,
           createdAt: run.createdAt || now,
           updatedAt: now,
           audit: [
@@ -391,6 +410,7 @@ export async function POST(request: NextRequest) {
         "return-run-to-planning",
         "dispatch-run",
         "complete-run",
+        "confirm-returned-to-cpu",
       ].includes(body.action) &&
       body.runId
     ) {
@@ -403,7 +423,13 @@ export async function POST(request: NextRequest) {
           422,
           "A current run version is required for lifecycle changes.",
         );
-      if (body.action === "mark-run-ready" || (body.action === "dispatch-run" && current.status === "planned")) {
+      if (body.action === "confirm-returned-to-cpu") {
+        if (current.status !== "dispatched" || current.returnToCpuRequired === false || !current.returnToCpuPending)
+          throw new HttpError(422, "This run is not ready to confirm as returned to CPU.");
+        const state = await listState(current.serviceDate);
+        if (state.stops.filter((stop) => stop.runId === current.canonicalId).some((stop) => stop.status !== "completed" || (stop.issues || []).some((issue) => issue.status === "open")))
+          throw new HttpError(422, "All deliveries and required collections must be complete first.");
+      } else if (body.action === "mark-run-ready" || (body.action === "dispatch-run" && current.status === "planned")) {
         let requirements: FulfilmentRequirement[];
         try {
           requirements = await fetchRequirements(
@@ -447,10 +473,23 @@ export async function POST(request: NextRequest) {
         if (body.action === "mark-run-ready") assertTransition(current.status, "ready");
       } else if (body.action === "return-run-to-planning")
         assertTransition(current.status, "planned");
-      else if (body.action === "dispatch-run")
+      else if (body.action === "dispatch-run") {
+        const state = await listState(current.serviceDate);
+        const deliveryStops = state.stops.filter(
+          (stop) => stop.runId === current.canonicalId && stop.linkedOperation !== "collection" && stop.movementType !== "collection",
+        );
+        if (deliveryStops.some((stop) => !stop.loaded))
+          throw new HttpError(422, "Every delivery must be marked loaded before dispatch.");
         assertTransition(current.status, "dispatched");
+      }
       else {
         const state = await listState(current.serviceDate);
+        if (
+          body.action === "complete-run" &&
+          current.returnToCpuRequired !== false &&
+          !current.returnedToCpuAt
+        )
+          throw new HttpError(422, "Confirm the return to CPU before completing this run.");
         if (
           state.stops
             .filter((stop) => stop.runId === current.canonicalId)
@@ -467,7 +506,7 @@ export async function POST(request: NextRequest) {
           ? "ready"
           : body.action === "return-run-to-planning"
             ? "planned"
-            : body.action === "dispatch-run"
+          : body.action === "dispatch-run"
               ? "dispatched"
               : "completed";
       const result = await db.runTransaction(async (transaction) => {
@@ -484,6 +523,7 @@ export async function POST(request: NextRequest) {
         const next = {
           ...run,
           status: nextStatus as DeliveryRun["status"],
+          ...(body.action === "confirm-returned-to-cpu" ? { returnToCpuPending: false, returnedToCpuAt: now, returnedToCpuBy: by } : {}),
           version: run.version + 1,
           updatedAt: now,
           audit: [
@@ -1220,10 +1260,10 @@ export async function POST(request: NextRequest) {
               {
                 from: movement!.fromOplocId
                   ? labelFor(oplocs, movement!.fromOplocId)
-                  : undefined,
+                  : movement!.fromAddress,
                 to: movement!.toOplocId
                   ? labelFor(oplocs, movement!.toOplocId)
-                  : undefined,
+                  : movement!.toAddress,
               },
               by,
             );
@@ -1270,6 +1310,9 @@ export async function POST(request: NextRequest) {
       [
         "arrive-stop",
         "complete-stop",
+        "undo-completion",
+        "mark-stop-loaded",
+        "defer-collection",
         "report-issue",
         "defer-stop",
         "resolve-issue",
@@ -1286,6 +1329,9 @@ export async function POST(request: NextRequest) {
         (body.action === "report-issue" || body.action === "resolve-issue") ===
           false &&
         body.action !== "defer-stop" &&
+        body.action !== "mark-stop-loaded" &&
+        body.action !== "undo-completion" &&
+        body.action !== "defer-collection" &&
         body.action !== "arrive-stop" &&
         body.action !== "complete-stop"
       )
@@ -1313,21 +1359,118 @@ export async function POST(request: NextRequest) {
           );
         if (stop.runId !== run.canonicalId)
           throw new HttpError(422, "Stop does not belong to this run.");
-        if (body.action !== "resolve-issue" && run.status !== "dispatched")
+        if (
+          body.action !== "resolve-issue" &&
+          body.action !== "mark-stop-loaded" &&
+          body.action !== "undo-completion" &&
+          body.action !== "defer-collection" &&
+          run.status !== "dispatched"
+        )
           throw new HttpError(
             422,
             "The driver can execute stops only after the run has been dispatched.",
           );
         if (body.action === "resolve-issue" && run.status === "completed")
           throw new HttpError(422, "Completed runs are read-only.");
+        if (body.action === "defer-collection" && run.status === "completed")
+          throw new HttpError(422, "Completed runs are read-only.");
         const runStopSnap = await transaction.get(
           stops().where("runId", "==", run.canonicalId),
         );
+        if (body.action === "defer-collection") {
+          if (stop.linkedOperation !== "collection" && stop.movementType !== "collection")
+            throw new HttpError(422, "Only collection stops can be postponed.");
+          if (stop.status === "completed")
+            throw new HttpError(422, "Completed collections cannot be postponed.");
+          if (!body.targetServiceDate || body.targetServiceDate <= run.serviceDate)
+            throw new HttpError(422, "Choose a future collection date.");
+          const allRunsSnap = await transaction.get(runs());
+          const allRuns = allRunsSnap.docs.map((doc) => doc.data() as DeliveryRun);
+          const target = allRuns.find((candidate) =>
+            candidate.serviceDate === body.targetServiceDate &&
+            (candidate.status === "draft" || candidate.status === "planned") &&
+            ((run.driverId && candidate.driverId === run.driverId) ||
+              (!run.driverId && run.driverLabel && candidate.driverLabel === run.driverLabel)),
+          );
+          const targetRun: DeliveryRun = target || {
+            canonicalId: `run:${body.targetServiceDate}:deferred-collections:${run.driverId || run.driverLabel?.toLowerCase() || "unassigned"}`,
+            serviceDate: body.targetServiceDate,
+            status: "draft",
+            returnToCpuRequired: true,
+            driverId: run.driverId,
+            driverLabel: run.driverLabel,
+            vehicleLabel: run.vehicleLabel,
+            orderedStopIds: [],
+            version: 1,
+            createdAt: now,
+            updatedAt: now,
+            audit: [{ action: "deferred-collection-run-created", at: now, by, version: 1 }],
+          };
+          const sourceStops = runStopSnap.docs
+            .map((doc) => normalizeStop(doc.data()))
+            .filter((item) => item.canonicalId !== stop.canonicalId);
+          const moved = {
+            ...stop,
+            runId: targetRun.canonicalId,
+            sequence: targetRun.orderedStopIds.length + 1,
+            postponedFromServiceDate: run.serviceDate,
+            postponedAt: now,
+            postponedBy: by,
+            version: stop.version + 1,
+            updatedAt: now,
+            audit: [...stop.audit, { action: "collection-postponed", at: now, by, version: stop.version + 1 }],
+          };
+          const targetStopsSnap = target ? await transaction.get(stops().where("runId", "==", target.canonicalId)) : undefined;
+          const targetStops = (targetStopsSnap?.docs || []).map((doc) => normalizeStop(doc.data()));
+          const orderedSource = orderedTransferStops(sourceStops);
+          const orderedTarget = orderedTransferStops([...targetStops.filter((item) => item.canonicalId !== stop.canonicalId), moved]);
+          orderedSource.forEach((item) => transaction.set(stops().doc(item.canonicalId), item));
+          orderedTarget.forEach((item) => transaction.set(stops().doc(item.canonicalId), item));
+          const sourceRemaining = orderedSource.filter((item) => item.status !== "completed");
+          const sourceNext = {
+            ...run,
+            orderedStopIds: orderedSource.map((item) => item.canonicalId),
+            ...(sourceRemaining.length === 0 && run.returnToCpuRequired !== false ? { returnToCpuPending: true } : {}),
+            ...(sourceRemaining.length === 0 && run.returnToCpuRequired === false ? { status: "completed" as const } : {}),
+            version: run.version + 1,
+            updatedAt: now,
+            audit: [...run.audit, { action: "collection-postponed", at: now, by, version: run.version + 1 }],
+          };
+          const targetNext = {
+            ...targetRun,
+            orderedStopIds: orderedTarget.map((item) => item.canonicalId),
+            version: targetRun.version + 1,
+            updatedAt: now,
+            audit: [...targetRun.audit, { action: "collection-postponed-in", at: now, by, version: targetRun.version + 1 }],
+          };
+          transaction.set(runs().doc(run.canonicalId), sourceNext);
+          transaction.set(runs().doc(targetRun.canonicalId), targetNext);
+          return { run: sourceNext, targetRun: targetNext, stop: moved };
+        }
         const allStops = runStopSnap.docs.map((doc) =>
           normalizeStop(doc.data()),
         );
         let nextStop: DeliveryStop = { ...stop };
         let nextRun: DeliveryRun = { ...run };
+        if (body.action === "mark-stop-loaded") {
+          if (run.status === "completed")
+            throw new HttpError(422, "Completed runs are read-only.");
+          nextStop = {
+            ...stop,
+            loaded: body.loaded !== false,
+            version: stop.version + 1,
+            updatedAt: now,
+            audit: [
+              ...stop.audit,
+              {
+                action: body.loaded === false ? "stop-unloaded" : "stop-loaded",
+                at: now,
+                by,
+                version: stop.version + 1,
+              },
+            ],
+          };
+        }
         if (body.action === "arrive-stop") {
           if (stop.status !== "planned")
             throw new HttpError(
@@ -1361,6 +1504,7 @@ export async function POST(request: NextRequest) {
           nextStop = {
             ...stop,
             status: "completed",
+            completedFromStatus: stop.status === "arrived" ? "arrived" : "planned",
             version: stop.version + 1,
             updatedAt: now,
             audit: [
@@ -1379,21 +1523,69 @@ export async function POST(request: NextRequest) {
               item.status !== "completed",
           );
           if (!remaining.length) {
-            assertTransition(run.status, "completed");
+            const hasOpenIssues = allStops.some((item) => (item.issues || []).some((issue) => issue.status === "open"));
+            if (run.returnToCpuRequired !== false && !hasOpenIssues) {
+              nextRun = {
+                ...run,
+                returnToCpuPending: true,
+                version: run.version + 1,
+                updatedAt: now,
+                audit: [...run.audit, { action: "run-ready-to-return-to-cpu", at: now, by, version: run.version + 1 }],
+              };
+            } else {
+              assertTransition(run.status, "completed");
+              nextRun = {
+                ...run,
+                status: "completed",
+                version: run.version + 1,
+                updatedAt: now,
+                audit: [...run.audit, { action: "run-completed", at: now, by, version: run.version + 1 }],
+              };
+            }
+          }
+        }
+        if (body.action === "undo-completion") {
+          if (stop.status !== "completed")
+            throw new HttpError(422, "Only completed stops can be undone.");
+          const { completedFromStatus, ...rest } = stop;
+          nextStop = {
+            ...rest,
+            status: restoredStopStatus({ completedFromStatus }),
+            version: stop.version + 1,
+            updatedAt: now,
+            audit: [
+              ...stop.audit,
+              {
+                action: "stop-completion-undone",
+                at: now,
+                by,
+                version: stop.version + 1,
+              },
+            ],
+          };
+          if (run.status === "completed") {
             nextRun = {
               ...run,
-              status: "completed",
+              status: "dispatched",
               version: run.version + 1,
               updatedAt: now,
               audit: [
                 ...run.audit,
                 {
-                  action: "run-completed",
+                  action: "run-completion-undone",
                   at: now,
                   by,
                   version: run.version + 1,
                 },
               ],
+            };
+          } else if (run.returnToCpuPending) {
+            nextRun = {
+              ...run,
+              returnToCpuPending: false,
+              version: run.version + 1,
+              updatedAt: now,
+              audit: [...run.audit, { action: "run-return-readiness-undone", at: now, by, version: run.version + 1 }],
             };
           }
         }

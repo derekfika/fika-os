@@ -8,8 +8,8 @@ import { forwardProductionMaterialisation } from "../../../../../shared/producti
 export const dynamic = "force-dynamic";
 
 async function authorisedSite(request: NextRequest, requested?: string) {
-  const resolved = await resolveAccess(request); const selected = requested || (resolved.access.oplocIds.length === 1 ? resolved.access.oplocIds[0] : undefined);
-  if (!selected) throw Object.assign(new Error("Select an authorised Delivered-In site first."), { status: 422 });
+  const resolved = await resolveAccess(request, "grab-and-go"); const selected = requested || (resolved.access.oplocIds.length === 1 ? resolved.access.oplocIds[0] : undefined);
+  if (!selected) throw Object.assign(new Error("Select an OPLOC with Grab & Go enabled first."), { status: 422 });
   assertAuthorisedOploc(resolved.access, selected);
   return { selected, access: resolved.access };
 }

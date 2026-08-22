@@ -2,6 +2,7 @@ import type { NextRequest } from "next/server";
 import { assertAuthorisedOploc, projectPublishedWeeks, type Site, type SiteAccess, type SourcePublication } from "./projection";
 import { siteMenuState } from "./site-menu";
 import { latestSiteMenuArtifact } from "./site-menu-store";
+import type { DeliveredInService } from "../../integration-hub/lib/delivered-in-access";
 
 const hubBase = () => (process.env.INTEGRATION_HUB_BASE_URL || "http://localhost:3200").replace(/\/$/, "");
 const menuBase = () => (process.env.MENU_PLANNING_BASE_URL || "http://localhost:3500").replace(/\/$/, "");
@@ -15,8 +16,11 @@ async function resolveGovernedOplocIds(request: NextRequest) {
   return new Set(body.oplocs.map(oploc => oploc.canonicalId).filter((id): id is string => Boolean(id)));
 }
 
-export async function resolveAccess(request: NextRequest): Promise<{ access: SiteAccess; sites: Site[] }> {
-  const response = await fetch(`${hubBase()}/api/delivered-in/access`, { headers: { cookie: request.headers.get("cookie") || "" }, cache: "no-store" });
+export async function resolveAccess(request: NextRequest, service: DeliveredInService = "delivered-in"): Promise<{ access: SiteAccess; sites: Site[] }> {
+  // Keep the default route URL compatible with older local Hub processes;
+  // only Grab & Go needs the explicit service selector.
+  const accessUrl = service === "grab-and-go" ? `${hubBase()}/api/delivered-in/access?service=grab-and-go` : `${hubBase()}/api/delivered-in/access`;
+  const response = await fetch(accessUrl, { headers: { cookie: request.headers.get("cookie") || "" }, cache: "no-store" });
   const body = await readJson<{ access?: SiteAccess; sites?: Site[]; error?: { message?: string } }>(response, "Integration Hub access service");
   if (!response.ok || !body.access || !body.sites) throw failure(body.error?.message || "Delivered-In access could not be resolved.", response.status || 502);
   return { access: body.access, sites: body.sites };

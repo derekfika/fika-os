@@ -39,7 +39,11 @@ type WeekData = { weekCommencing: string; days: PlannerWeekSummary[] };
 type Draft = {
   type: "delivery" | "collection" | "transfer";
   from: string;
+  fromAddress: string;
+  fromOneOff: boolean;
   to: string;
+  toAddress: string;
+  toOneOff: boolean;
   requiredTime: string;
   start: string;
   end: string;
@@ -50,7 +54,11 @@ type Draft = {
 const blank: Draft = {
   type: "delivery",
   from: "",
+  fromAddress: "",
+  fromOneOff: false,
   to: "",
+  toAddress: "",
+  toOneOff: false,
   requiredTime: "",
   start: "",
   end: "",
@@ -81,6 +89,7 @@ export default function Planner() {
   const [assigning, setAssigning] = useState<string>();
   const [targetRun, setTargetRun] = useState("");
   const [newRunDriver, setNewRunDriver] = useState("Franco");
+  const [newRunReturnToCpu, setNewRunReturnToCpu] = useState(true);
   const [showRunCreate, setShowRunCreate] = useState(false);
   const [queueFilter, setQueueFilter] = useState<"all" | "unassigned" | "needs_time" | "attention">("all");
   const [queueTypeFilter, setQueueTypeFilter] = useState<"all" | "delivery" | "collection" | "transfer">("all");
@@ -137,13 +146,18 @@ export default function Planner() {
       setDate(requestedDate);
       setWeekCommencing(mondayOf(requestedDate));
     }
+    // Render the selected day immediately. Vehicle-day provisioning runs in
+    // the background and must not trigger a second full dashboard load.
     void load();
-    void ensureVehicleDayRuns(requestedDate || date).then(() => load());
+    void ensureVehicleDayRuns(requestedDate || date);
     void loadWeek();
+    const liveChannel = typeof BroadcastChannel === "undefined" ? undefined : new BroadcastChannel("fika-logistics-live");
+    const onLiveChange = (event: MessageEvent<{ serviceDate?: string }>) => { if (!event.data?.serviceDate || event.data.serviceDate === date) void load(true); };
+    liveChannel?.addEventListener("message", onLiveChange);
     const timer = window.setInterval(() => {
       if (document.visibilityState === "visible") void load(true);
-    }, 15000);
-    return () => window.clearInterval(timer);
+    }, 30_000);
+    return () => { window.clearInterval(timer); liveChannel?.removeEventListener("message", onLiveChange); liveChannel?.close(); };
   }, [date]);
   useEffect(() => {
     void loadWeek();
@@ -188,6 +202,7 @@ export default function Planner() {
         status: "draft",
         driverId: newRunDriver.toLowerCase(),
         driverLabel: newRunDriver,
+        returnToCpuRequired: newRunReturnToCpu,
         orderedStopIds: [],
         version: 1,
         createdAt: new Date().toISOString(),
@@ -240,11 +255,11 @@ export default function Planner() {
     if (
       !draft.description.trim() ||
       Number(draft.quantity) < 1 ||
-      (draft.type !== "collection" && !draft.to) ||
-      (draft.type !== "delivery" && !draft.from)
+      (draft.type !== "collection" && !draft.toAddress.trim() && !draft.to) ||
+      (draft.type !== "delivery" && !draft.fromAddress.trim() && !draft.from)
     )
       return setError(
-        "Select the required OPLOCs and add an item with quantity.",
+        "Choose a governed OPLOC or enter a one-off address for each required endpoint, then add an item with quantity.",
       );
     const now = new Date().toISOString();
     const movement: MovementRequest = {
@@ -253,7 +268,9 @@ export default function Planner() {
       type: draft.type,
       serviceDate: date,
       ...(draft.from ? { fromOplocId: draft.from } : {}),
+      ...(draft.fromAddress.trim() ? { fromAddress: draft.fromAddress.trim() } : {}),
       ...(draft.to ? { toOplocId: draft.to } : {}),
+      ...(draft.toAddress.trim() ? { toAddress: draft.toAddress.trim() } : {}),
       ...(draft.requiredTime ? { requiredTime: draft.requiredTime } : {}),
       ...(draft.start
         ? {
@@ -297,6 +314,7 @@ export default function Planner() {
     draft={draft}
     showRunCreate={showRunCreate}
     newRunDriver={newRunDriver}
+    newRunReturnToCpu={newRunReturnToCpu}
     queueFilter={queueFilter}
     queueTypeFilter={queueTypeFilter}
     runs={runs}
@@ -311,6 +329,7 @@ export default function Planner() {
     setDraft={setDraft}
     setShowRunCreate={setShowRunCreate}
     setNewRunDriver={setNewRunDriver}
+    setNewRunReturnToCpu={setNewRunReturnToCpu}
     setQueueFilter={setQueueFilter}
     setQueueTypeFilter={setQueueTypeFilter}
     setInspector={setInspector}
@@ -376,9 +395,9 @@ export default function Planner() {
       <SelectedDayHeading planner={data?.planner} date={date}>
         <div className="day-actions">
           <button className="secondary" onClick={() => setShowMovement(true)} disabled={!data?.planner.upstreamHealth.oplocs.available}>＋ New movement</button>
-          <button className="secondary" onClick={() => void load(true)} disabled={refreshing}>↻ Refresh</button>
+          <button className="secondary" onClick={() => void load(true)} disabled={refreshing} aria-busy={refreshing}>{refreshing ? "Refreshing…" : "↻ Refresh"}</button>
           <a href={runs.length === 1 ? `/mobile?run=${encodeURIComponent(runs[0].runId)}` : "/mobile"}>Driver view →</a>
-          {showRunCreate && <RunCreatePopover driver={newRunDriver} setDriver={setNewRunDriver} onCreate={createRun} onClose={() => setShowRunCreate(false)} />}
+          {showRunCreate && <RunCreatePopover driver={newRunDriver} setDriver={setNewRunDriver} returnToCpuRequired={newRunReturnToCpu} setReturnToCpuRequired={setNewRunReturnToCpu} onCreate={createRun} onClose={() => setShowRunCreate(false)} />}
         </div>
       </SelectedDayHeading>
       <div className="control-tower" aria-label="Dispatch control tower">
@@ -484,6 +503,7 @@ type RealPlannerProps = {
   draft: Draft;
   showRunCreate: boolean;
   newRunDriver: string;
+  newRunReturnToCpu: boolean;
   queueFilter: "all" | "unassigned" | "needs_time" | "attention";
   queueTypeFilter: "all" | "delivery" | "collection" | "transfer";
   runs: PlannerDay["runs"];
@@ -498,6 +518,7 @@ type RealPlannerProps = {
   setDraft: (value: Draft) => void;
   setShowRunCreate: (value: boolean) => void;
   setNewRunDriver: (value: string) => void;
+  setNewRunReturnToCpu: (value: boolean) => void;
   setQueueFilter: (value: "all" | "unassigned" | "needs_time" | "attention") => void;
   setQueueTypeFilter: (value: "all" | "delivery" | "collection" | "transfer") => void;
   setInspector: (value: RealPlannerProps["inspector"]) => void;
@@ -636,8 +657,8 @@ function RealPlanner(props: RealPlannerProps) {
       <div className="mock-updated">{props.refreshing ? "Refreshing…" : props.data?.fetchedAt ? `Last updated ${new Date(props.data.fetchedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}` : "Waiting for data"}<Health health={data?.planner.upstreamHealth} /></div>
       {props.error && <div className="alert" role="alert">{props.error}</div>}
       {props.showMovement && <MovementForm draft={props.draft} setDraft={props.setDraft} oplocs={data?.oplocs || []} onClose={() => props.setShowMovement(false)} onSave={props.createMovement} busy={props.busy} />}
-      <section className="mock-selected-day"><div><span>▣</span><strong>{selectedDateLabel}</strong><small>{summary?.loads || 0} loads · {runs.length} vans &nbsp;·&nbsp; {summary?.deliveries || 0} deliveries · {summary?.collections || 0} collections &nbsp;·&nbsp; {summary?.transfers || 0} transfers · {summary?.attention || 0} attention</small></div><div className="mock-actions"><button onClick={() => props.setShowMovement(true)} disabled={!data?.planner.upstreamHealth.oplocs.available}>＋ New movement</button><button onClick={() => void props.load(true)} disabled={props.refreshing}>↻ Refresh</button><a href={runs.length === 1 ? `/mobile?run=${encodeURIComponent(runs[0].runId)}` : "/mobile"}>▦ Driver view</a></div></section>
-      {props.showRunCreate && <RunCreatePopover driver={props.newRunDriver} setDriver={props.setNewRunDriver} onCreate={props.createRun} onClose={() => props.setShowRunCreate(false)} />}
+      <section className="mock-selected-day"><div><span>▣</span><strong>{selectedDateLabel}</strong><small>{summary?.loads || 0} loads · {runs.length} vans &nbsp;·&nbsp; {summary?.deliveries || 0} deliveries · {summary?.collections || 0} collections &nbsp;·&nbsp; {summary?.transfers || 0} transfers · {summary?.attention || 0} attention</small></div><div className="mock-actions"><button onClick={() => props.setShowMovement(true)} disabled={!data?.planner.upstreamHealth.oplocs.available}>＋ New movement</button><button onClick={() => void props.load(true)} disabled={props.refreshing} aria-busy={props.refreshing}>{props.refreshing ? "Refreshing…" : "↻ Refresh"}</button><a href={runs.length === 1 ? `/mobile?run=${encodeURIComponent(runs[0].runId)}` : "/mobile"}>▦ Driver view</a></div></section>
+      {props.showRunCreate && <RunCreatePopover driver={props.newRunDriver} setDriver={props.setNewRunDriver} returnToCpuRequired={props.newRunReturnToCpu} setReturnToCpuRequired={props.setNewRunReturnToCpu} onCreate={props.createRun} onClose={() => props.setShowRunCreate(false)} />}
       <section className="mock-workspace">
         <aside className="mock-queue" aria-label="Planning queue"><header><div><span>QUEUE</span><h2>Planning queue <em>({queueGroups.length + queueMovements.length})</em></h2><p className="queue-subtitle">Work still needing assignment, timing or review.</p></div><button className="mock-filter-icon">⌯</button></header><div className="mock-filter-pills" role="tablist" aria-label="Planning queue state"><button className={props.queueFilter === "all" ? "active" : ""} onClick={() => props.setQueueFilter("all")}>All <b>{countFor("all")}</b></button><button className={props.queueFilter === "unassigned" ? "active" : ""} onClick={() => props.setQueueFilter("unassigned")}>Unassigned <b>{countFor("unassigned")}</b></button><button className={props.queueFilter === "needs_time" ? "active" : ""} onClick={() => props.setQueueFilter("needs_time")}>Needs time <b>{countFor("needs_time")}</b></button><button className={props.queueFilter === "attention" ? "active" : ""} onClick={() => props.setQueueFilter("attention")}>Attention <b>{countFor("attention")}</b></button></div><div className="mock-secondary-filter"><label>Type <select value={props.queueTypeFilter} onChange={(event) => props.setQueueTypeFilter(event.target.value as RealPlannerProps["queueTypeFilter"])}><option value="all">All work</option><option value="delivery">Delivery</option><option value="collection">Collection</option><option value="transfer">Transfer</option></select></label></div><div className="mock-queue-list">{!data && <Empty title="Loading operational work" body="Connecting to upstream work and local runs." />}{data && !data.planner.upstreamHealth.fulfilment.available && <div className="degraded-note">Incoming work is unavailable; existing local runs remain visible.</div>}{data && !filteredGroups.length && !filteredMovements.length && <Empty title="No work in this queue" body="Fully scheduled work stays on the dispatch timeline." />}{filteredGroups.map((group) => <RealQueueGroup key={group.groupKey} group={group} runs={runs} queueState={queueStateForGroup(group)} assigning={props.assigning === group.groupKey} targetRun={props.targetRun} onInspect={() => props.setInspector({ kind: "group", id: group.groupKey })} onAssign={() => { props.setAssigning(group.groupKey); props.setTargetRun(runs.length === 1 ? runs[0].runId : ""); props.setInspector({ kind: "group", id: group.groupKey }); }} setTargetRun={props.setTargetRun} onConfirm={() => props.assignGroup(group)} onDragStart={(event) => queueDragStart(event, { kind: "group", id: group.groupKey, label: group.destinationLabel, type: "Delivery", load: group.unitBreakdown.map((item) => `${item.quantity} ${item.unit}`).join(" · ") })} />)}{filteredMovements.map((movement) => <RealQueueMovement key={movement.movementId} movement={movement} runs={runs} queueState={queueStateForMovement(movement)} assigning={props.assigning === movement.movementId} targetRun={props.targetRun} onInspect={() => props.setInspector({ kind: "movement", id: movement.movementId })} onAssign={() => { props.setAssigning(movement.movementId); props.setTargetRun(runs.length === 1 ? runs[0].runId : ""); props.setInspector({ kind: "movement", id: movement.movementId }); }} setTargetRun={props.setTargetRun} onConfirm={() => props.assignMovement(movement)} onDragStart={(event) => queueDragStart(event, { kind: "movement", id: movement.movementId, label: movement.to?.label || movement.from?.label || "Movement", type: typeText(movement.type), load: movement.items.map((item) => `${item.quantity} × ${item.description}`).join(" · ") })} />)}</div></aside>
         <section className="mock-schedule" aria-label="Dispatch schedule"><header className="mock-schedule-head"><div><span>PLANNING SURFACE · {selectedDateLabel}</span><h2>Dispatch schedule</h2></div><strong>{runs.length} runs · {summary?.scheduledStops || 0} scheduled · {summary?.needsTime || 0} needs time</strong></header><div className="mock-legend"><span><i className="green-dot" /> Delivery</span><span><i className="blue-dot" /> Collection</span><span><i className="amber-dot" /> Transfer</span><span><i className="red-dot" /> Attention</span><div><button className="active">Day</button><button disabled>Week</button><button>⚙</button></div></div><RealTimeline runs={runs} serviceDate={date} onStop={(runId, stopId) => props.setInspector({ kind: "stop", id: stopId, runId })} onRun={(runId) => props.setInspector({ kind: "run", id: runId })} onSchedule={scheduleStop} onQueueDrop={(kind, id, runId, time, lane, collectionRequired) => assignQueueItem(kind, id, runId, time, lane, collectionRequired)} /><RealScheduleSummary planner={data?.planner} /></section>
@@ -755,7 +776,7 @@ function LegacyStableTimeline({ runs, serviceDate, onStop, onRun, onSchedule, on
     setPreview(undefined);
   };
   if (!runs.length) return <div className="mock-timeline"><Empty title="No dispatch runs" body="Create a run to start assigning work to a driver." /></div>;
-  return <div className="mock-timeline" style={{ "--timeline-scale": timelineZoom } as CSSProperties}><div className="timeline-tools" aria-label="Timeline zoom"><span>Timeline</span><button onClick={() => setTimelineZoom((value) => Math.max(1, value - 0.25))} aria-label="Zoom out">−</button><span>{Math.round(timelineZoom * 100)}%</span><button onClick={() => setTimelineZoom((value) => Math.min(2.5, value + 0.25))} aria-label="Zoom in">＋</button></div><div className="mock-ruler"><span>Time</span>{hours.map((hour) => <b key={hour}>{hour}</b>)}</div>{runs.map((run, index) => { const needsTime = run.stops.filter((stop) => !hasUsableSchedule(stop)).length; const scheduled = run.stops.length - needsTime; return <div className="mock-driver-row" key={run.runId}><div className="mock-driver" onDragOver={(event) => { event.preventDefault(); event.currentTarget.classList.add("drop-target"); }} onDragLeave={(event) => event.currentTarget.classList.remove("drop-target")} onDrop={(event) => { event.preventDefault(); const queue = event.dataTransfer.getData("application/x-logistics-queue"); if (queue) { const payload = JSON.parse(queue) as { kind: "group" | "movement"; id: string }; onQueueDrop(payload.kind, payload.id, run.runId); } event.currentTarget.classList.remove("drop-target"); }}><b>{(run.driver || "??").slice(0, 2).toUpperCase()}</b><div><strong>{run.driver || "Unassigned"}</strong><span><button className="mock-run-link" onClick={() => onRun(run.runId)}>Run {index + 1} · {run.status.toUpperCase()}</button></span><small>{scheduled} scheduled · {needsTime} needs time</small></div></div><div className="mock-track" onPointerMove={(event) => { if (!resize || resize.pointerId !== event.pointerId) return; const end = timeAt(event, event.currentTarget); const validEnd = minutes(end) <= minutes(resize.start) ? resize.start : end; updatePreview(run.runId, resize.start, run.stops.find((item) => item.stopId === resize.stopId)?.destination.label || "Stop", resize.stopId, validEnd); }} onPointerUp={(event) => { if (!resize || resize.pointerId !== event.pointerId) return; const end = timeAt(event, event.currentTarget); if (minutes(end) > minutes(resize.start)) onSchedule(run.runId, resize.stopId, run.runId, resize.start, end); else setPreview(undefined); setResize(undefined); }} onDragOver={(event) => { event.preventDefault(); const queue = event.dataTransfer.getData("application/x-logistics-queue"); const value = event.dataTransfer.getData("application/x-logistics-stop"); if (queue) updatePreview(run.runId, timeAt(event, event.currentTarget), "Work"); else if (value) { const [, stopId] = value.split("|"); const stop = runs.flatMap((item) => item.stops).find((item) => item.stopId === stopId); updatePreview(run.runId, timeAt(event, event.currentTarget), stop?.destination.label || "Stop", stopId); } event.currentTarget.classList.add("drop-target"); }} onDragLeave={(event) => event.currentTarget.classList.remove("drop-target")} onDrop={(event) => { handleDrop(event, run, event.currentTarget); event.currentTarget.classList.remove("drop-target"); }}>{hours.map((hour) => <i key={hour} />)}{nowPosition !== undefined && <i className="mock-now-line" style={{ left: `${nowPosition}%` }} />}{preview?.runId === run.runId && <div className={`timeline-preview ${preview.overlap ? "overlap" : ""}`} style={{ left: `${timePosition(preview.time) ?? 0}%` }}><b>{preview.time}{preview.end ? `–${preview.end}` : ""}</b><span>{preview.label}</span>{preview.overlap && <em>⚠ Overlaps another stop</em>}</div>}{run.stops.filter(hasUsableSchedule).map((stop) => { const time = stop.plannedWindow?.startTime || stop.plannedArrivalTime!; const end = stop.plannedWindow?.endTime; const left = timePosition(time); const width = end ? Math.max(1.5, (minutes(end) - minutes(time)) / (11 * 60) * 100 : 3); return <button draggable={stop.movementTypes.includes("transfer") ? false : true} key={stop.stopId} className={`mock-stop ${stop.movementTypes[0] || "delivery"} ${stop.attention.length ? "attention" : ""}`} style={{ left: `${left ?? 0}%`, width: `${width}%` }} onDragStart={(event) => { event.dataTransfer.setData("application/x-logistics-stop", `${run.runId}|${stop.stopId}`); }} onClick={() => onStop(run.runId, stop.stopId)} onPointerDown={(event) => { const target = event.target as HTMLElement; if (!target.classList.contains("resize-handle")) return; event.preventDefault(); event.stopPropagation(); event.currentTarget.setPointerCapture(event.pointerId); setResize({ runId: run.runId, stopId: stop.stopId, start: time, pointerId: event.pointerId }); }}><small>{time}{end ? `–${end}` : ""}</small><strong>{stop.destination.label}</strong><span>{formatWindow(stop.plannedWindow) || stop.unitBreakdown.map((item) => `${item.quantity} ${item.unit}`).join(" · ") || "Work"}</span>{end && <i className="resize-handle" aria-label="Resize planned window" />}</button>; })}</div></div>; })}</div>;
+  return <div className="mock-timeline" style={{ "--timeline-scale": timelineZoom } as CSSProperties}><div className="timeline-tools" aria-label="Timeline zoom"><span>Timeline</span><button onClick={() => setTimelineZoom((value) => Math.max(1, value - 0.25))} aria-label="Zoom out">−</button><span>{Math.round(timelineZoom * 100)}%</span><button onClick={() => setTimelineZoom((value) => Math.min(2.5, value + 0.25))} aria-label="Zoom in">＋</button></div><div className="mock-ruler"><span>Time</span>{hours.map((hour) => <b key={hour}>{hour}</b>)}</div>{runs.map((run, index) => { const needsTime = run.stops.filter((stop) => !hasUsableSchedule(stop)).length; const scheduled = run.stops.length - needsTime; return <div className="mock-driver-row" key={run.runId}><div className="mock-driver" onDragOver={(event) => { event.preventDefault(); event.currentTarget.classList.add("drop-target"); }} onDragLeave={(event) => event.currentTarget.classList.remove("drop-target")} onDrop={(event) => { event.preventDefault(); const queue = event.dataTransfer.getData("application/x-logistics-queue"); if (queue) { const payload = JSON.parse(queue) as { kind: "group" | "movement"; id: string }; onQueueDrop(payload.kind, payload.id, run.runId); } event.currentTarget.classList.remove("drop-target"); }}><b>{(run.driver || "??").slice(0, 2).toUpperCase()}</b><div><strong>{run.driver || "Unassigned"}</strong><span><button className="mock-run-link" onClick={() => onRun(run.runId)}>Run {index + 1} · {liveStatusLabel(run.operationalStatus)}</button></span><small>{run.completedStops} / {run.stopCount} stops complete · {run.remainingCollections} collections remaining</small></div></div><div className="mock-track" onPointerMove={(event) => { if (!resize || resize.pointerId !== event.pointerId) return; const end = timeAt(event, event.currentTarget); const validEnd = minutes(end) <= minutes(resize.start) ? resize.start : end; updatePreview(run.runId, resize.start, run.stops.find((item) => item.stopId === resize.stopId)?.destination.label || "Stop", resize.stopId, validEnd); }} onPointerUp={(event) => { if (!resize || resize.pointerId !== event.pointerId) return; const end = timeAt(event, event.currentTarget); if (minutes(end) > minutes(resize.start)) onSchedule(run.runId, resize.stopId, run.runId, resize.start, end); else setPreview(undefined); setResize(undefined); }} onDragOver={(event) => { event.preventDefault(); const queue = event.dataTransfer.getData("application/x-logistics-queue"); const value = event.dataTransfer.getData("application/x-logistics-stop"); if (queue) updatePreview(run.runId, timeAt(event, event.currentTarget), "Work"); else if (value) { const [, stopId] = value.split("|"); const stop = runs.flatMap((item) => item.stops).find((item) => item.stopId === stopId); updatePreview(run.runId, timeAt(event, event.currentTarget), stop?.destination.label || "Stop", stopId); } event.currentTarget.classList.add("drop-target"); }} onDragLeave={(event) => event.currentTarget.classList.remove("drop-target")} onDrop={(event) => { handleDrop(event, run, event.currentTarget); event.currentTarget.classList.remove("drop-target"); }}>{hours.map((hour) => <i key={hour} />)}{nowPosition !== undefined && <i className="mock-now-line" style={{ left: `${nowPosition}%` }} />}{preview?.runId === run.runId && <div className={`timeline-preview ${preview.overlap ? "overlap" : ""}`} style={{ left: `${timePosition(preview.time) ?? 0}%` }}><b>{preview.time}{preview.end ? `–${preview.end}` : ""}</b><span>{preview.label}</span>{preview.overlap && <em>⚠ Overlaps another stop</em>}</div>}{run.stops.filter(hasUsableSchedule).map((stop) => { const time = stop.plannedWindow?.startTime || stop.plannedArrivalTime!; const end = stop.plannedWindow?.endTime; const left = timePosition(time); const width = end ? Math.max(1.5, (minutes(end) - minutes(time)) / (11 * 60) * 100 : 3); return <button draggable={stop.movementTypes.includes("transfer") ? false : true} key={stop.stopId} className={`mock-stop ${stop.movementTypes[0] || "delivery"} ${stop.attention.length ? "attention" : ""} status-${stop.operationalStatus}`} style={{ left: `${left ?? 0}%`, width: `${width}%` }} onDragStart={(event) => { event.dataTransfer.setData("application/x-logistics-stop", `${run.runId}|${stop.stopId}`); }} onClick={() => onStop(run.runId, stop.stopId)} onPointerDown={(event) => { const target = event.target as HTMLElement; if (!target.classList.contains("resize-handle")) return; event.preventDefault(); event.stopPropagation(); event.currentTarget.setPointerCapture(event.pointerId); setResize({ runId: run.runId, stopId: stop.stopId, start: time, pointerId: event.pointerId }); }}><small>{time}{end ? `–${end}` : ""}</small><strong>{stop.destination.label}</strong><span>{stopOperationalStatusLabel(stop.operationalStatus)} · {formatWindow(stop.plannedWindow) || stop.unitBreakdown.map((item) => `${item.quantity} ${item.unit}`).join(" · ") || "Work"}</span>{end && <i className="resize-handle" aria-label="Resize planned window" />}</button>; })}</div></div>; })}</div>;
 }
 
 */
@@ -781,12 +802,16 @@ function StableTimelineLane({ run, lane, zoom, onStop: inspectStop, onSchedule, 
 }
 
 function RealTimeline({ runs, onStop, onRun, onSchedule, onQueueDrop }: { runs: PlannerDay["runs"]; serviceDate: string; onStop: (runId: string, stopId: string) => void; onRun: (runId: string) => void; onSchedule: (sourceRunId: string, stopId: string, targetRunId: string, time: string, end?: string) => void; onQueueDrop: (kind: "group" | "movement", runId: string, targetRunId: string, time?: string, lane?: "delivery" | "collection", collectionRequired?: boolean) => void; }) {
-  const [zoom, setZoom] = useState(1.5);
-  const [verticalZoom, setVerticalZoom] = useState(1);
+  const verticalBase = 1.75;
+  const horizontalDefault = 1;
+  const horizontalStep = 0.25;
+  const verticalStep = verticalBase * 0.25;
+  const [zoom, setZoom] = useState(horizontalDefault);
+  const [verticalZoom, setVerticalZoom] = useState(verticalBase);
   const hours = (start: number) => Array.from({ length: 7 }, (_, index) => start + index);
   if (!runs.length) return <div className="mock-timeline"><Empty title="No dispatch runs" body="Vehicle-day runs will appear automatically." /></div>;
   const renderGroup = (lane: "delivery" | "collection", label: string, start: number) => <section className={`stable-group ${lane}-group`} aria-label={label}><header className="stable-section-heading"><strong>{label}</strong></header><div className={`stable-ruler ${lane}-ruler`}><span aria-hidden="true" />{hours(start).map((hour, index) => <b key={hour} style={{ "--ruler-position": index } as CSSProperties}>{String(hour).padStart(2, "0")}:00</b>)}</div>{runs.map((run, index) => <div className="stable-vehicle-row" key={`${lane}-${run.runId}`}><div className="stable-driver"><strong>{run.vehicle || `Van ${index + 1}`}</strong><span>{run.driver || "Select driver"}</span><small>{run.scheduledStopCount} scheduled · {run.needsTimeStopCount} needs time</small></div><StableTimelineLane run={run} lane={lane} zoom={zoom} onStop={onStop} onSchedule={onSchedule} onQueueDrop={onQueueDrop} /></div>)}</section>;
-  return <div className="mock-timeline stable-timeline" style={{ "--timeline-scale": zoom, "--timeline-vertical-scale": verticalZoom } as CSSProperties}><div className="timeline-tools" aria-label="Timeline zoom"><span className="timeline-tools-title">Timeline</span><span className="timeline-tools-label">Horizontal</span><button aria-label="Zoom timeline out horizontally" onClick={() => setZoom((value) => Math.max(.75, value - .25))}>−</button><span>{Math.round((zoom / 1.5) * 100)}%</span><button aria-label="Zoom timeline in horizontally" onClick={() => setZoom((value) => Math.min(2.25, value + .25))}>＋</button><span className="timeline-tools-label">Vertical</span><button aria-label="Zoom timeline out vertically" onClick={() => setVerticalZoom((value) => Math.max(.75, value - .25))}>−</button><span>{Math.round(verticalZoom * 100)}%</span><button aria-label="Zoom timeline in vertically" onClick={() => setVerticalZoom((value) => Math.min(2, value + .25))}>＋</button><button aria-label="Reset timeline zoom" onClick={() => { setZoom(1.5); setVerticalZoom(1); }}>Reset</button></div>{renderGroup("delivery", "DELIVERIES · 06:00–12:00", 6)}{renderGroup("collection", "COLLECTIONS · 12:00–18:00", 12)}</div>;
+  return <div className="mock-timeline stable-timeline" style={{ "--timeline-scale": zoom, "--timeline-vertical-scale": verticalZoom } as CSSProperties}><div className="timeline-tools" aria-label="Timeline zoom"><span className="timeline-tools-title">Timeline</span><span className="timeline-tools-label">Horizontal</span><button aria-label="Zoom timeline out horizontally" onClick={() => setZoom((value) => Math.max(horizontalDefault * 0.5, value - horizontalStep))}>−</button><span>{Math.round(zoom * 100)}%</span><button aria-label="Zoom timeline in horizontally" onClick={() => setZoom((value) => Math.min(2.5, value + horizontalStep))}>＋</button><span className="timeline-tools-label">Vertical</span><button aria-label="Zoom timeline out vertically" onClick={() => setVerticalZoom((value) => Math.max(verticalBase * 0.5, value - verticalStep))}>−</button><span>{Math.round((verticalZoom / verticalBase) * 100)}%</span><button aria-label="Zoom timeline in vertically" onClick={() => setVerticalZoom((value) => Math.min(verticalBase * 2, value + verticalStep))}>＋</button><button aria-label="Reset timeline zoom" onClick={() => { setZoom(horizontalDefault); setVerticalZoom(verticalBase); }}>Reset</button></div>{renderGroup("delivery", "DELIVERIES · 06:00–12:00", 6)}{renderGroup("collection", "COLLECTIONS · 12:00–18:00", 12)}</div>;
 }
 
 function VehicleViewportTimeline({ runs, serviceDate, onStop, onRun, onSchedule, onQueueDrop }: { runs: PlannerDay["runs"]; serviceDate: string; onStop: (runId: string, stopId: string) => void; onRun: (runId: string) => void; onSchedule: (sourceRunId: string, stopId: string, targetRunId: string, time: string, end?: string) => void; onQueueDrop: (kind: "group" | "movement", runId: string, targetRunId: string, time?: string, lane?: "delivery" | "collection") => void; }) {
@@ -1034,9 +1059,11 @@ function Inspector({
       {assigning === movement.movementId && <RunChooser runs={runs} targetRun={targetRun} setTargetRun={setTargetRun} onConfirm={() => onAssignMovement(movement)} />}
     </>}
     {run && <>
-      <InspectorMeta label="Status" value={run.status.toUpperCase()} />
+      <InspectorMeta label="Status" value={liveStatusLabel(run.operationalStatus)} />
       <InspectorMeta label="Vehicle" value={run.vehicle || "No vehicle label"} />
-      <p>{run.completedStops} of {run.stopCount} stops complete</p>
+      <p>{run.completedStops} of {run.stopCount} stops complete · {run.remainingCollections} collection{run.remainingCollections === 1 ? "" : "s"} remaining</p>
+      <label className="collection-toggle inspector-collection-toggle"><input type="checkbox" checked={run.returnToCpuRequired} disabled={run.status === "dispatched" || run.status === "completed"} onChange={(event) => onAction({ action: "set-run-return-required", by: "Franco", runId: run.runId, returnToCpuRequired: event.target.checked, expectedRunVersion: run.version })} /> Return to CPU required</label>
+      {run.returnReady && <p className="context-line">All deliveries and collections complete · ready to return to CPU.</p>}
       {run.readiness.blockers.map((item) => <div className="attention-note" key={item}>⚠ {item}</div>)}
       <div className="inspector-actions">
         {run.status === "planned" && <button disabled={!run.readiness.ready} onClick={() => onAction({ action: "mark-run-ready", by: "Franco", runId: run.runId, expectedRunVersion: run.version })}>Mark ready</button>}
@@ -1055,6 +1082,14 @@ function ScheduleEditor({ stop, run, rawStop, onAction }: { stop: PlannerDay["ru
 
 function InspectorMeta({ label, value }: { label: string; value: string }) {
   return <p className="inspector-meta"><span>{label}</span><strong>{value}</strong></p>;
+}
+
+function liveStatusLabel(status: PlannerDay["runs"][number]["operationalStatus"]) {
+  return status === "in_progress" ? "In progress" : status === "returning_to_cpu" ? "Returning to CPU" : status === "attention" ? "Attention" : status === "returned" ? "Returned" : status[0].toUpperCase() + status.slice(1);
+}
+
+function stopOperationalStatusLabel(status: PlannerDay["runs"][number]["stops"][number]["operationalStatus"]) {
+  return status === "in_progress" ? "In progress" : status === "dispatched" ? "Dispatched" : status === "delivered" ? "Delivered" : status === "collected" ? "Collected" : status === "attention" ? "Attention" : "Scheduled";
 }
 
 function ScheduleSummary({ planner }: { planner?: PlannerDay }) {
@@ -1076,11 +1111,15 @@ function ScheduleSummary({ planner }: { planner?: PlannerDay }) {
 function RunCreatePopover({
   driver,
   setDriver,
+  returnToCpuRequired,
+  setReturnToCpuRequired,
   onCreate,
   onClose,
 }: {
   driver: string;
   setDriver: (value: string) => void;
+  returnToCpuRequired: boolean;
+  setReturnToCpuRequired: (value: boolean) => void;
   onCreate: () => void;
   onClose: () => void;
 }) {
@@ -1100,6 +1139,7 @@ function RunCreatePopover({
           <option>Dee</option>
         </select>
       </label>
+      <label className="collection-toggle"><input type="checkbox" checked={returnToCpuRequired} onChange={(event) => setReturnToCpuRequired(event.target.checked)} /> Return to CPU required</label>
       <button onClick={onCreate}>Create run</button>
       <button className="popover-close" onClick={onClose}>
         Cancel
@@ -1538,11 +1578,11 @@ function RunPanel({
           <h3>{run.driver || "Unassigned driver"}</h3>
           <label className="run-driver-control">Driver <select value={run.driver || ""} aria-label="Driver" onChange={(event) => onAction({ action: "set-run-driver", by: "Franco", runId: run.runId, driverLabel: event.target.value, expectedRunVersion: run.version })}><option value="">Select driver</option><option>Franco</option><option>Dee</option></select></label>
         </div>
-        <span className="run-status">{run.status}</span>
+        <span className="run-status">{liveStatusLabel(run.operationalStatus)}</span>
       </header>
       <div className="run-summary">
         <span>
-          {run.completedStops} / {run.stopCount} stops complete
+          {run.completedStops} / {run.stopCount} stops complete · {run.remainingCollections} collection{run.remainingCollections === 1 ? "" : "s"} remaining
         </span>
         {run.vehicle && <span>{run.vehicle}</span>}
         {run.openIssueCount > 0 && (
@@ -1616,10 +1656,6 @@ function RunPanel({
       <a href={`/mobile?run=${encodeURIComponent(run.runId)}`}>
         Open driver workflow →
       </a>
-      <details className="debug-meta">
-        <summary>Run details</summary>
-        <small>{run.runId}</small>
-      </details>
     </article>
   );
 }
@@ -1627,6 +1663,11 @@ function swap(values: string[], a: number, b: number) {
   const next = [...values];
   [next[a], next[b]] = [next[b], next[a]];
   return next;
+}
+function PostponeCollectionControl({ run, stop, onAction }: { run: PlannerDay["runs"][number]; stop: DeliveryStop; onAction: (payload: object) => void }) {
+  const [targetDate, setTargetDate] = useState(addOperationalDays(run.serviceDate, 1));
+  const dates = Array.from({ length: 14 }, (_, index) => addOperationalDays(run.serviceDate, index + 1));
+  return <div className="postpone-collection"><label>Postpone collection<select value={targetDate} onChange={(event) => setTargetDate(event.target.value)}>{dates.map((date) => <option key={date} value={date}>{formatOperationalDate(date, { weekday: "short", day: "numeric", month: "short" })}</option>)}</select></label><button onClick={() => onAction({ action: "defer-collection", by: "Franco", runId: run.runId, stopId: stop.canonicalId, targetServiceDate: targetDate, expectedRunVersion: run.version, expectedStopVersion: stop.version })}>Postpone collection</button></div>;
 }
 function StopPanel({
   stop,
@@ -1670,7 +1711,7 @@ function StopPanel({
               .join(" · ")}
           </small>
         </span>
-        <em>{stop.status}</em>
+        <em>{stopOperationalStatusLabel(stop.operationalStatus)}</em>
       </button>
       {stop.attention.length > 0 && (
         <div className="attention-note">⚠ {stop.attention.join(" · ")}</div>
@@ -1701,6 +1742,8 @@ function StopPanel({
           ))}
       {expanded && rawStop && (
         <div className="stop-detail">
+          {stop.lane === "delivery" && <button className="load-action" onClick={() => onAction({ action: "mark-stop-loaded", loaded: !rawStop.loaded, by: "Franco", runId: run.runId, stopId: stop.stopId, expectedRunVersion: run.version, expectedStopVersion: rawStop.version })}>{rawStop.loaded ? "✓ Loaded · remove mark" : "Mark delivery as loaded"}</button>}
+          {stop.lane === "collection" && run.status !== "completed" && <PostponeCollectionControl run={run} stop={rawStop} onAction={onAction} />}
           <p>
             {stop.combinedLines
               .map(
@@ -1708,6 +1751,7 @@ function StopPanel({
               )
               .join(" · ")}
           </p>
+          {rawStop.postponedFromServiceDate && <p className="postponed-note">Outstanding collection · postponed from {formatOperationalDate(rawStop.postponedFromServiceDate, { weekday: "short", day: "numeric", month: "short" })}</p>}
           {rawStop.requirementRefs.map((ref) => (
             <div className="attached-work" key={ref.requirementId}>
               <span>
@@ -1717,11 +1761,7 @@ function StopPanel({
                   )?.sourceDomain || "menu-planning",
                 )}
               </span>
-              <strong>
-                {rawRequirements.find(
-                  (item) => item.canonicalId === ref.requirementId,
-                )?.sourceEntityId || ref.requirementId}
-              </strong>
+              <strong>Included delivery load</strong>
               <button
                 onClick={() =>
                   onAction({
@@ -1742,7 +1782,7 @@ function StopPanel({
           {rawStop.movementRequestIds.map((movementId) => (
             <div className="attached-work" key={movementId}>
               <span>Movement</span>
-              <strong>{movementId}</strong>
+              <strong>Included movement</strong>
               <button
                 onClick={() =>
                   onAction({
@@ -1867,18 +1907,20 @@ function MovementForm({
         <div>
           <p className="eyebrow">Logistics-owned work</p>
           <h2>New movement</h2>
+          <p className="movement-form-subtitle">
+            Add a delivery, collection or transfer to the planning queue.
+          </p>
         </div>
-        <button className="close" onClick={onClose}>
+        <button className="close" onClick={onClose} aria-label="Close new movement form">
           ×
         </button>
       </header>
-      {!oplocs.length ? (
-        <Empty
-          title="Governed OPLOCs unavailable"
-          body="New movements are disabled until Integration Hub locations recover."
-        />
-      ) : (
-        <>
+      {!oplocs.length && (
+        <div className="movement-form-notice">
+          Integration Hub locations are unavailable. You can still enter a one-off address.
+        </div>
+      )}
+      <>
           <div className="form-grid">
             <label>
               Type
@@ -1898,6 +1940,10 @@ function MovementForm({
                 label="From OPLOC"
                 value={draft.from}
                 onChange={(value) => field("from", value)}
+                address={draft.fromAddress}
+                onAddressChange={(value) => field("fromAddress", value)}
+                oneOff={draft.fromOneOff}
+                onOneOffChange={(value) => setDraft({ ...draft, fromOneOff: value, ...(value ? { from: "" } : { fromAddress: "" }) })}
                 oplocs={oplocs}
               />
             )}
@@ -1906,6 +1952,10 @@ function MovementForm({
                 label="To OPLOC"
                 value={draft.to}
                 onChange={(value) => field("to", value)}
+                address={draft.toAddress}
+                onAddressChange={(value) => field("toAddress", value)}
+                oneOff={draft.toOneOff}
+                onOneOffChange={(value) => setDraft({ ...draft, toOneOff: value, ...(value ? { to: "" } : { toAddress: "" }) })}
                 oplocs={oplocs}
               />
             )}
@@ -1965,8 +2015,7 @@ function MovementForm({
               Create movement
             </button>
           </footer>
-        </>
-      )}
+      </>
     </section>
   );
 }
@@ -1974,24 +2023,53 @@ function OplocField({
   label,
   value,
   onChange,
+  address,
+  onAddressChange,
+  oneOff,
+  onOneOffChange,
   oplocs,
 }: {
   label: string;
   value: string;
   onChange: (value: string) => void;
+  address: string;
+  onAddressChange: (value: string) => void;
+  oneOff: boolean;
+  onOneOffChange: (value: boolean) => void;
   oplocs: Oploc[];
 }) {
   return (
-    <label>
-      {label}
-      <select value={value} onChange={(event) => onChange(event.target.value)}>
-        <option value="">Select governed site</option>
-        {oplocs.map((oploc) => (
-          <option key={oploc.id} value={oploc.id}>
-            {oploc.label}
-          </option>
-        ))}
-      </select>
-    </label>
+    <div className="location-field">
+      {!oneOff ? (
+        <label>
+          {label}
+          <select value={value} onChange={(event) => onChange(event.target.value)}>
+            <option value="">Select governed site</option>
+            {oplocs.map((oploc) => (
+              <option key={oploc.id} value={oploc.id}>
+                {oploc.label}
+              </option>
+            ))}
+          </select>
+        </label>
+      ) : (
+        <label>
+          One-off address
+          <input
+            value={address}
+            onChange={(event) => onAddressChange(event.target.value)}
+            placeholder="Enter address or collection point"
+          />
+        </label>
+      )}
+      <label className="one-off-toggle">
+        <input
+          type="checkbox"
+          checked={oneOff}
+          onChange={(event) => onOneOffChange(event.target.checked)}
+        />
+        Use one-off address
+      </label>
+    </div>
   );
 }

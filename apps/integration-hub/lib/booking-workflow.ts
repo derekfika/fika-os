@@ -1,4 +1,4 @@
-export type BookingStatus = "New" | "Reviewed" | "Quoted" | "Approved" | "Completed" | "Cancelled";
+export type BookingStatus = "New" | "Reviewed" | "Quoted" | "Sent to CPU" | "Approved" | "Completed" | "Cancelled";
 export type ReviewChecks = { commercialIntent: boolean; serviceTiming: boolean; deliveryContext: boolean; dietaryRequirements: boolean };
 export type QuotePdfStatus = "pending" | "saved" | "failed";
 export type QuoteRevision = { id: string; revision: number; createdAt: string; createdBy: string; commercialVersion: number; snapshot: unknown; documentReference: string; stale: boolean; pdfStatus?: QuotePdfStatus; driveFileId?: string; driveUrl?: string; pdfError?: string };
@@ -39,7 +39,7 @@ export function assertWorkflowCommand(booking: { lifecycleStatus: BookingStatus;
   if (command.action === "amend" && !command.reason.trim()) throw workflowError("An amendment reason is required.");
   if (command.action === "approve") throw workflowError("Quote approval has been removed. Send the current quote to CPU instead.");
   if (command.action === "complete") {
-    if (!["Quoted", "Approved"].includes(booking.lifecycleStatus)) throw workflowError("Only a quoted Booking can be completed.");
+    if (!["Quoted", "Sent to CPU", "Approved"].includes(booking.lifecycleStatus)) throw workflowError("Only a quoted or CPU-submitted Booking can be completed.");
     const current = booking.quoteState?.revisions.find((revision) => revision.id === booking.quoteState?.currentRevisionId);
     if (!current || current.stale || current.pdfStatus !== "saved" || !current.driveFileId) throw workflowError("Complete the current quote PDF save before marking this Booking complete.");
   }
