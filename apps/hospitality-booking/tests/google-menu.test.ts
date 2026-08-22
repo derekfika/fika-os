@@ -31,10 +31,25 @@ test("Angel Court menu layout stays inside the white panel and uses its typograp
     allergenFontSize: 17,
     itemColor: { red: 0.54, green: 0.3, blue: 0.13 },
   });
-  const itemShape = requests.find((request) => "createShape" in request && String((request as { createShape?: { objectId?: string } }).createShape?.objectId).includes("menu-item")) as { createShape: { elementProperties: { transform: { translateX: number } } } };
+  const itemShape = requests.find((request) => "createShape" in request && String((request as { createShape?: { objectId?: string } }).createShape?.objectId).includes("menu-content")) as { createShape: { elementProperties: { transform: { translateX: number } } } };
   assert.equal(itemShape.createShape.elementProperties.transform.translateX, 1_750_000);
   const styles = requests.filter((request) => "updateTextStyle" in request) as Array<{ updateTextStyle: { style: { fontSize: { magnitude: number }; foregroundColor?: { opaqueColor?: { rgbColor?: { red?: number } } } } } }>;
   assert.deepEqual(styles.map((entry) => entry.updateTextStyle.style.fontSize.magnitude), [17, 17]);
   assert.equal(styles[0].updateTextStyle.style.foregroundColor?.opaqueColor?.rgbColor?.red, 0.54);
   assert.equal(styles[1].updateTextStyle.style.foregroundColor?.opaqueColor?.rgbColor?.red, 1);
+});
+
+test("long menus stay together in one bounded content box instead of overflowing", () => {
+  const requests = buildGoogleMenuRequests({
+    id: "menu-long", fileName: "menu", bookingId: "booking-long", planId: "plan-long",
+    planUpdatedAt: "2026-08-05T00:00:00Z", generatedAt: "2026-08-05T00:00:00Z",
+    generatedBy: "test", templateVersion: "mnk-hospitality-menu-v1",
+    booking: { companyName: "Fika", destination: "MNK", date: "2026-08-05", time: "12:00", guestCount: 10 },
+    items: Array.from({ length: 8 }, (_, index) => ({ menuItem: "Lunch", name: `Menu item ${index + 1}`, allergens: ["gluten"], mayContain: [] })),
+  }, { pageSize: { width: { magnitude: 10_000_000 }, height: { magnitude: 5_625_000 } }, slides: [{ objectId: "slide-1", pageElements: [] }] });
+  const createdShapes = requests.filter((request) => "createShape" in request);
+  assert.equal(createdShapes.length, 1);
+  const inserted = requests.find((request) => "insertText" in request) as { insertText: { text: string } };
+  assert.match(inserted.insertText.text, /Menu item 1/);
+  assert.match(inserted.insertText.text, /Menu item 8/);
 });

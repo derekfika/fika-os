@@ -78,7 +78,19 @@ function templateConfig(siteKey = "mnk", overrideTemplateId?: string): MenuTempl
       itemColor: { red: 0.54, green: 0.30, blue: 0.13 },
     };
   }
-  return { templateId: overrideTemplateId || process.env.GOOGLE_MENU_TEMPLATE_ID };
+  return {
+    templateId: overrideTemplateId || process.env.GOOGLE_MENU_TEMPLATE_ID,
+    // MNK's portrait template contains a small empty footer box. It is not a
+    // content anchor, so use the known white panel bounds instead of allowing
+    // anchor discovery to clip the menu at the bottom of the slide.
+    contentLeft: 450_000,
+    contentRight: 450_000,
+    contentTop: 1_800_000,
+    contentBottom: 700_000,
+    preserveAnchor: true,
+    itemFontSize: 15,
+    allergenFontSize: 10,
+  };
 }
 
 function outputFolderId(siteKey = "mnk") {
@@ -158,14 +170,14 @@ function titleCase(value: string) { return value.replace(/[A-Za-zÀ-ÿ]+/g, word
 
 function menuRequests(output: MenuOutput, anchor: NonNullable<ReturnType<typeof contentAnchor>>, presentation: Presentation, config: MenuTemplateConfig = {}) {
   const pageWidth = presentation.pageSize?.width?.magnitude || 10_000_000;
-  const pageHeight = presentation.pageSize?.height?.magnitude || 5_625_000;
+  const slideHeight = presentation.pageSize?.height?.magnitude || 5_625_000;
   const x = config.contentLeft ?? anchor.element.transform?.translateX ?? 600_000;
   const contentWidth = Math.max(3_000_000, config.contentLeft !== undefined || config.contentRight !== undefined
     ? pageWidth - x - (config.contentRight ?? 0)
     : pageWidth - 1_200_000);
   const anchorY = config.contentTop ?? anchor.element.transform?.translateY ?? 0;
   const anchorHeight = config.contentTop !== undefined || config.contentBottom !== undefined
-    ? pageHeight - anchorY - (config.contentBottom ?? 0)
+    ? slideHeight - anchorY - (config.contentBottom ?? 0)
     : anchor.element.size?.height?.magnitude || 3_000_000;
   const blocks = output.items.map(item => {
     const allergen = item.allergens.length ? `(${item.allergens.map(titleCase).join(", ")})` : "";
@@ -178,29 +190,48 @@ function menuRequests(output: MenuOutput, anchor: NonNullable<ReturnType<typeof 
       allergenHeight: allergen ? Math.max(300000, allergenLines * 220000 + 90000) : 0,
     };
   });
-  const gap = blocks.length > 6 ? 90000 : 180000;
-  const totalHeight = blocks.reduce((sum, block) => sum + block.itemHeight + block.allergenHeight + gap, 0);
-  // Centre the block in the template's content area, then apply a modest
-  // lower optical bias. The bias is bounded so longer menus still move up
-  // rather than colliding with the footer.
-  const opticalBias = 350000;
-  const centredOffset = (anchorHeight - totalHeight) / 2;
-  let y = anchorY + Math.max(180000, Math.min(centredOffset + opticalBias, 1_650_000));
-  const requests: Array<Record<string, unknown>> = anchor.generated || !anchor.element.objectId || config.preserveAnchor ? [] : [{ deleteObject: { objectId: anchor.element.objectId } }];
-  output.items.forEach((item, index) => {
-    const itemId = `fika-menu-item-${index}`;
-    const itemName = item.name.trim();
-    const block = blocks[index];
-    const allergen = block.allergen;
-    requests.push({ createShape: { objectId: itemId, shapeType: "TEXT_BOX", elementProperties: { pageObjectId: anchor.slide.objectId, size: { width: { magnitude: contentWidth, unit: "EMU" }, height: { magnitude: block.itemHeight, unit: "EMU" } }, transform: { scaleX: 1, scaleY: 1, translateX: x, translateY: y, unit: "EMU" } } } }, { insertText: { objectId: itemId, text: itemName } }, { updateTextStyle: { objectId: itemId, style: { fontFamily: "Montserrat", fontSize: { magnitude: config.itemFontSize || 18, unit: "PT" }, bold: true, foregroundColor: { opaqueColor: { rgbColor: config.itemColor || { red: 0.06, green: 0.3, blue: 0.42 } } } }, textRange: { type: "ALL" }, fields: "fontFamily,fontSize,bold,foregroundColor" } }, { updateParagraphStyle: { objectId: itemId, style: { alignment: "CENTER" }, textRange: { type: "ALL" }, fields: "alignment" } });
-    y += block.itemHeight;
-    if (allergen) {
-      const allergenId = `fika-menu-allergen-${index}`;
-      requests.push({ createShape: { objectId: allergenId, shapeType: "TEXT_BOX", elementProperties: { pageObjectId: anchor.slide.objectId, size: { width: { magnitude: contentWidth, unit: "EMU" }, height: { magnitude: block.allergenHeight, unit: "EMU" } }, transform: { scaleX: 1, scaleY: 1, translateX: x, translateY: y, unit: "EMU" } } } }, { insertText: { objectId: allergenId, text: allergen } }, { updateTextStyle: { objectId: allergenId, style: { fontFamily: "Montserrat", fontSize: { magnitude: config.allergenFontSize || 14, unit: "PT" }, foregroundColor: { opaqueColor: { rgbColor: { red: 1, green: 0, blue: 0 } } } }, textRange: { type: "ALL" }, fields: "fontFamily,fontSize,foregroundColor" } }, { updateParagraphStyle: { objectId: allergenId, style: { alignment: "CENTER" }, textRange: { type: "ALL" }, fields: "alignment" } });
-      y += block.allergenHeight;
+  // Keep the generated content in one bounded text box. The previous
+  // implementation created one shape per line and relied on estimated EMU
+  // heights; in the real MNK template that allowed later shapes to overflow
+  // the slide and made a menu appear to contain only its last visible item.
+  const contentId = "fika-menu-content";
+  const pagePadding = 180000;
+  const contentHeight = Math.max(1_000_000, anchorHeight - pagePadding * 2);
+  const itemFontSize = config.itemFontSize || 15;
+  const allergenFontSize = config.allergenFontSize || 10;
+  const lines: string[] = [];
+  const ranges: Array<{ start: number; end: number; allergen: boolean }> = [];
+  let cursor = 0;
+  blocks.forEach((block, index) => {
+    const itemLine = block.item.name.trim();
+    lines.push(itemLine);
+    const itemStart = cursor;
+    cursor += itemLine.length;
+    ranges.push({ start: itemStart, end: cursor, allergen: false });
+    if (block.allergen) {
+      lines.push(block.allergen);
+      cursor += 1;
+      ranges.push({ start: cursor, end: cursor + block.allergen.length, allergen: true });
+      cursor += block.allergen.length;
     }
-    y += 180000;
+    if (index < blocks.length - 1) {
+      lines.push("");
+      cursor += 1;
+    }
+    cursor += 1;
   });
+  const text = lines.join("\n");
+  const requests: Array<Record<string, unknown>> = anchor.generated || !anchor.element.objectId || config.preserveAnchor
+    ? []
+    : [{ deleteObject: { objectId: anchor.element.objectId } }];
+  requests.push(
+    { createShape: { objectId: contentId, shapeType: "TEXT_BOX", elementProperties: { pageObjectId: anchor.slide.objectId, size: { width: { magnitude: contentWidth, unit: "EMU" }, height: { magnitude: contentHeight, unit: "EMU" } }, transform: { scaleX: 1, scaleY: 1, translateX: x, translateY: anchorY + pagePadding, unit: "EMU" } } } },
+    { insertText: { objectId: contentId, text } },
+    { updateShapeProperties: { objectId: contentId, shapeProperties: { contentAlignment: "MIDDLE" }, fields: "contentAlignment" } },
+    { updateTextStyle: { objectId: contentId, style: { fontFamily: "Montserrat", fontSize: { magnitude: itemFontSize, unit: "PT" }, bold: true, foregroundColor: { opaqueColor: { rgbColor: config.itemColor || { red: 0.06, green: 0.3, blue: 0.42 } } } }, textRange: { type: "ALL" }, fields: "fontFamily,fontSize,bold,foregroundColor" } },
+    { updateParagraphStyle: { objectId: contentId, style: { alignment: "CENTER" }, textRange: { type: "ALL" }, fields: "alignment" } },
+  );
+  ranges.filter(range => range.allergen).forEach(range => requests.push({ updateTextStyle: { objectId: contentId, style: { fontFamily: "Montserrat", fontSize: { magnitude: allergenFontSize, unit: "PT" }, bold: false, foregroundColor: { opaqueColor: { rgbColor: { red: 1, green: 0, blue: 0 } } } }, textRange: { type: "FIXED_RANGE", startIndex: range.start, endIndex: range.end }, fields: "fontFamily,fontSize,bold,foregroundColor" } }));
   return requests;
 }
 
@@ -262,12 +293,12 @@ export async function saveGoogleDriveHtml(input: { name: string; html: string; s
   return { fileId: uploaded.id, driveUrl: uploaded.webViewLink || `https://drive.google.com/open?id=${uploaded.id}`, reused: false };
 }
 
-export async function saveGoogleDrivePdf(input: { name: string; pdfBase64: string; siteKey?: string; folderId?: string; weekCommencing?: string }) {
+export async function saveGoogleDrivePdf(input: { name: string; pdfBase64: string; siteKey?: string; folderId?: string; weekCommencing?: string; folderLabel?: string }) {
   const rootFolderId = driveResourceId(input.folderId || outputFolderId(input.siteKey || "mnk"));
   if (!rootFolderId || rootFolderId === "your_drive_folder_id") return null;
   const token = await accessToken();
   const headers = { Authorization: `Bearer ${token}` };
-  const folderId = await resolveWeekFolder(rootFolderId, input.weekCommencing, headers, "Allergen matrix");
+  const folderId = await resolveWeekFolder(rootFolderId, input.weekCommencing, headers, input.folderLabel || "Allergen matrix");
   const escapedName = input.name.replaceAll("\\", "\\\\").replaceAll("'", "\\'");
   const query = `'${folderId}' in parents and name = '${escapedName}' and trashed = false`;
   const existing = await json<{ files?: Array<{ id: string; webViewLink?: string }> }>(await googleFetch(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(query)}&spaces=drive&fields=files(id,webViewLink)&pageSize=1`, { headers }, "Google Drive matrix lookup"));

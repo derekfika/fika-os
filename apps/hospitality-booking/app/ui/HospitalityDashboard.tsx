@@ -21,7 +21,7 @@ const statuses = [
   "Completed",
   "Cancelled",
 ] as const;
-type Status = (typeof statuses)[number];
+type Status = CanonicalBooking["lifecycleStatus"];
 type WorkflowAction = Exclude<Status, "New"> | "Production" | "Amend";
 type Amendment = {
   client: CanonicalBooking["client"];
@@ -92,6 +92,7 @@ export default function HospitalityDashboard({
     {},
   );
   const [menuBusy, setMenuBusy] = useState(false);
+  const [menuReadiness, setMenuReadiness] = useState<Record<string, { available: boolean; reason: string }>>({});
   const [matrixArtifacts, setMatrixArtifacts] = useState<
     Record<
       string,
@@ -126,7 +127,7 @@ export default function HospitalityDashboard({
         };
         setMenuOutputs(
           Object.fromEntries(
-            (menuBody.outputs || []).map((output) => [
+            (menuBody.outputs || []).filter((output) => output.templateVersion === "mnk-hospitality-menu-v2").map((output) => [
               output.bookingId,
               output,
             ]),
@@ -219,7 +220,24 @@ export default function HospitalityDashboard({
           }));
       })
       .catch(() => undefined);
-  }, [selected?.canonicalId]);
+  }, [selected?.canonicalId, selected?.version]);
+
+  useEffect(() => {
+    if (!selected) return;
+    const bookingId = selected.canonicalId;
+    void fetch(`/api/menus?bookingId=${encodeURIComponent(bookingId)}&readiness=1`, { cache: "no-store" })
+      .then((response) => response.json())
+      .then((body) => setMenuReadiness((current) => ({ ...current, [bookingId]: body.readiness || { available: false, reason: "Menu readiness is unavailable." } })))
+      .catch(() => setMenuReadiness((current) => ({ ...current, [bookingId]: { available: false, reason: "Menu readiness is unavailable." } })));
+  }, [selected?.canonicalId, selected?.version, productionOrders[selected?.canonicalId || ""]?.updatedAt]);
+
+  // CPU planning is a shared projection, so keep an open manager panel current
+  // while the production team is working without requiring a manual refresh.
+  useEffect(() => {
+    if (!selected) return;
+    const timer = window.setInterval(() => void load(), 5000);
+    return () => window.clearInterval(timer);
+  }, [selected?.canonicalId, site.key]);
 
   const signInLocally = async () => {
     const response = await fetch("/api/local-session", { method: "POST" });
@@ -279,13 +297,7 @@ export default function HospitalityDashboard({
                 action: "quote",
                 regenerate: Boolean(selected.quoteState?.currentRevisionId),
               }
-            : pending === "Approved"
-              ? {
-                  ...base,
-                  action: "approve",
-                  quoteRevisionId: selected.quoteState?.currentRevisionId,
-                }
-              : pending === "Production"
+            : pending === "Production"
                 ? { ...base, action: "production-handoff" }
                 : pending === "Completed"
                   ? { ...base, action: "complete", notes: reason }
@@ -592,6 +604,18 @@ export default function HospitalityDashboard({
     setSettingsOpen(false);
   };
 
+  const selectedProductionOrder = selected
+    ? productionOrders[selected.canonicalId]
+    : undefined;
+  const selectedMenuOutput = selected
+    ? menuOutputs[selected.canonicalId]
+    : undefined;
+  const selectedMenuStale = Boolean(
+    selectedMenuOutput?.planUpdatedAt &&
+      selectedProductionOrder?.updatedAt &&
+      selectedMenuOutput.planUpdatedAt < selectedProductionOrder.updatedAt,
+  );
+
   return (
     <div className={styles.scope}>
       <main className={`hospitality-dashboard ${site.cssClass}`}>
@@ -847,8 +871,11 @@ export default function HospitalityDashboard({
                   booking={selected}
                   siteKey={site.key}
                   siteLabel={site.label}
-                  productionOrder={productionOrders[selected.canonicalId]}
-                  menuOutput={menuOutputs[selected.canonicalId]}
+                  productionOrder={selectedProductionOrder}
+                  menuOutput={selectedMenuOutput}
+                  menuStale={selectedMenuStale}
+                  menuReady={Boolean(menuReadiness[selected.canonicalId]?.available)}
+                  menuReadyReason={menuReadiness[selected.canonicalId]?.reason || "Waiting for menu items and allergen information."}
                   matrixArtifact={matrixArtifacts[selected.canonicalId]}
                   menuBusy={menuBusy}
                   setPending={setPending}
@@ -887,40 +914,7 @@ export default function HospitalityDashboard({
               <p className="eyebrow">Governed workflow command</p>
               <h2>{commandTitle(pending)}</h2>
               <p>{commandHelp(pending)}</p>
-              {pending === "Reviewed" && (
-                <fieldset className="workflow-checks">
-                  <legend>Manager review checks</legend>
-                  {(
-                    [
-                      "commercialIntent",
-                      "serviceTiming",
-                      "deliveryContext",
-                      "dietaryRequirements",
-                    ] as const
-                  ).map((key) => (
-                    <label key={key}>
-                      <input
-                        type="checkbox"
-                        checked={reviewChecks[key]}
-                        onChange={(event) =>
-                          setReviewChecks((current) => ({
-                            ...current,
-                            [key]: event.target.checked,
-                          }))
-                        }
-                      />
-                      {pretty(key)}
-                    </label>
-                  ))}
-                </fieldset>
-              )}
-              {pending === "Approved" && (
-                <p className="workflow-callout">
-                  Approving quote revision{" "}
-                  {selected?.quoteState?.currentRevisionId || "not available"}.
-                  Production is a separate follow-on action.
-                </p>
-              )}
+              {pending === "Reviewed" && <p className="workflow-callout">Review the booking details and edit anything that needs correcting. This simply records that the manager has reviewed it; there is no separate intent checklist.</p>}
               {pending === "Cancelled" && (
                 <fieldset className="workflow-checks">
                   <legend>Cancellation follow-up</legend>
@@ -1064,6 +1058,9 @@ function BookingPane({
   siteLabel,
   productionOrder,
   menuOutput,
+  menuStale,
+  menuReady,
+  menuReadyReason,
   matrixArtifact,
   menuBusy,
   setPending,
@@ -1081,6 +1078,9 @@ function BookingPane({
   siteLabel: string;
   productionOrder?: ProductionOrder;
   menuOutput?: MenuOutput;
+  menuStale: boolean;
+  menuReady: boolean;
+  menuReadyReason: string;
   matrixArtifact?: {
     html?: string;
     localUrl?: string;
@@ -1116,6 +1116,9 @@ function BookingPane({
       siteLabel={siteLabel}
       productionOrder={productionOrder}
       menuOutput={menuOutput}
+      menuStale={menuStale}
+      menuReady={menuReady}
+      menuReadyReason={menuReadyReason}
       matrixArtifact={matrixArtifact}
       menuBusy={menuBusy}
       setPending={setPending}
@@ -1132,6 +1135,9 @@ function BookingDetail({
   siteLabel,
   productionOrder,
   menuOutput,
+  menuStale,
+  menuReady,
+  menuReadyReason,
   matrixArtifact,
   menuBusy,
   setPending,
@@ -1144,6 +1150,9 @@ function BookingDetail({
   siteLabel: string;
   productionOrder?: ProductionOrder;
   menuOutput?: MenuOutput;
+  menuStale: boolean;
+  menuReady: boolean;
+  menuReadyReason: string;
   matrixArtifact?: {
     html?: string;
     localUrl?: string;
@@ -1195,11 +1204,13 @@ function BookingDetail({
               {action === "Reviewed"
                 ? "Review booking"
                 : action === "Quoted"
-                  ? "Generate quote"
-                  : "Approve current quote"}
+                  ? booking.quoteState?.currentRevisionId && booking.quoteState.revisions.some((revision) => revision.id === booking.quoteState?.currentRevisionId && revision.stale)
+                    ? "Regenerate quote"
+                    : booking.quoteState?.currentRevisionId ? "Open quote" : "Generate quote"
+                  : "Send to CPU"}
             </button>
           ))}
-        {booking.lifecycleStatus === "Approved" && !productionOrder && (
+        {["Quoted", "Approved"].includes(booking.lifecycleStatus) && !productionOrder && booking.deliveryChargeRequired !== false && (
           <button
             type="button"
             className="primary"
@@ -1240,6 +1251,7 @@ function BookingDetail({
         {booking.client.invoiceReference && (
           <Fact label="Invoice / PO" value={booking.client.invoiceReference} />
         )}
+        <Fact label="Charge delivery" value={booking.deliveryChargeRequired === false ? "No" : "Yes"} />
       </div>
       <section className="booking-detail__section">
         <div className="booking-detail__section-title">
@@ -1306,7 +1318,7 @@ function BookingDetail({
             type="button"
             className="manager-cpu-action"
             disabled={
-              Boolean(productionOrder) || booking.lifecycleStatus !== "Approved"
+              Boolean(productionOrder) || !["Quoted", "Approved"].includes(booking.lifecycleStatus) || booking.deliveryChargeRequired === false
             }
             onClick={() => setPending("Production")}
           >
@@ -1314,8 +1326,10 @@ function BookingDetail({
             <small>
               {productionOrder
                 ? "Production hand-off recorded"
-                : booking.lifecycleStatus === "Approved"
-                  ? "Send this approved booking to production"
+                : booking.deliveryChargeRequired === false
+                  ? "CPU delivery is not required for this booking"
+                  : ["Quoted", "Approved"].includes(booking.lifecycleStatus)
+                  ? "Send this quoted booking to production"
                   : "Available after the booking is approved"}
             </small>
           </button>
@@ -1357,28 +1371,52 @@ function BookingDetail({
                 <small>Available after signing</small>
               </button>
             )}
-            <button
-              type="button"
-              className="manager-document-action"
-              onClick={() => menuOutput && onOpenMenu(menuOutput)}
-              disabled={!menuOutput}
-            >
-              <strong>Open menu</strong>
-              <small>
-                {menuOutput
-                  ? `${siteLabel} menu`
-                  : "Available when the menu is generated"}
-              </small>
-            </button>
+            {menuOutput ? (
+              <>
+                <button
+                  type="button"
+                  className="manager-document-action"
+                  onClick={() => onOpenMenu(menuOutput)}
+                >
+                  <strong>Open menu</strong>
+                  <small>{menuStale ? "Open the previous generated menu" : `${siteLabel} menu`}</small>
+                </button>
+                <button
+                  type="button"
+                  className="manager-document-action"
+                  onClick={() => void onGenerateMenu(booking)}
+                  disabled={menuBusy || !menuReady}
+                >
+                  <strong>Regenerate menu</strong>
+                  <small>
+                    {menuStale
+                      ? "Allergen or production details have changed"
+                    : menuReadyReason}
+                  </small>
+                </button>
+              </>
+            ) : (
+              <button
+                type="button"
+                className="manager-document-action"
+                onClick={() => void onGenerateMenu(booking)}
+                disabled={menuBusy || !menuReady}
+              >
+                <strong>Generate menu</strong>
+                <small>{menuReady ? "Generate from the Planned CPU revision" : menuReadyReason}</small>
+              </button>
+            )}
           </div>
           <div className="menu-output-actions manager-legacy-output">
             <p className="output-block__label">Hospitality menu</p>
             <p className="workflow-callout">
-              {menuOutput
+              {menuOutput && !menuStale
                 ? `${siteLabel} menu generated from the planned CPU revision.`
+                : menuOutput
+                  ? "The CPU allergen or production revision changed. Regenerate the menu before service."
                 : "Generate this menu after the production team marks the CPU plan Planned."}
             </p>
-            {menuOutput ? (
+            {menuOutput && !menuStale ? (
               <>
                 <button type="button" onClick={() => onOpenMenu(menuOutput)}>
                   Open menu
@@ -1386,7 +1424,7 @@ function BookingDetail({
                 <button
                   type="button"
                   onClick={() => void onGenerateMenu(booking)}
-                  disabled={menuBusy}
+                  disabled={menuBusy || !menuReady}
                 >
                   {menuBusy ? "Regenerating…" : "Regenerate menu"}
                 </button>
@@ -1395,9 +1433,9 @@ function BookingDetail({
               <button
                 type="button"
                 onClick={() => void onGenerateMenu(booking)}
-                disabled={menuBusy}
+                disabled={menuBusy || !menuReady}
               >
-                {menuBusy ? "Generating…" : `Generate ${siteLabel} menu`}
+                {menuBusy ? "Generating…" : menuOutput ? `Regenerate ${siteLabel} menu` : `Generate ${siteLabel} menu`}
               </button>
             )}
           </div>
@@ -1801,7 +1839,7 @@ function AmendmentModal({
               })
             }
           />
-          Add the configured CPU delivery charge to this quote
+            CPU delivery required (add the configured delivery charge to this quote)
         </label>
         <label>
           Operational notes
@@ -1993,18 +2031,11 @@ function pretty(value: string) {
 }
 function availableActions(booking: CanonicalBooking): WorkflowAction[] {
   if (booking.lifecycleStatus === "New") return ["Reviewed"];
-  if (
-    booking.lifecycleStatus === "Reviewed" ||
-    booking.lifecycleStatus === "Quoted"
-  )
-    return [
-      "Quoted",
-      ...(booking.lifecycleStatus === "Quoted"
-        ? (["Approved"] as WorkflowAction[])
-        : []),
-    ];
-  if (booking.lifecycleStatus === "Approved")
-    return ["Production", "Completed"];
+  if (booking.lifecycleStatus === "Reviewed") return ["Quoted"];
+  if (["Quoted", "Approved"].includes(booking.lifecycleStatus)) {
+    const current = booking.quoteState?.revisions.find((revision) => revision.id === booking.quoteState?.currentRevisionId);
+    return [ ...(current?.stale ? (["Quoted"] as WorkflowAction[]) : []), "Production" ];
+  }
   return [];
 }
 function commandTitle(action: WorkflowAction) {
@@ -2012,11 +2043,10 @@ function commandTitle(action: WorkflowAction) {
     {
       Reviewed: "Confirm manager review",
       Quoted: "Generate quote",
-      Approved: "Approve current quote",
-      Production: "Create production hand-off",
+      Production: "Send to CPU",
       Completed: "Record completion",
       Cancelled: "Cancel Booking",
-    } as Record<WorkflowAction, string>
+    } as Partial<Record<WorkflowAction, string>>
   )[action];
 }
 function commandHelp(action: WorkflowAction) {
@@ -2026,15 +2056,13 @@ function commandHelp(action: WorkflowAction) {
         "Confirm the booking’s commercial intent, timing, delivery context and dietary requirements.",
       Quoted:
         "Creates a new immutable commercial snapshot revision. Existing revisions remain auditable.",
-      Approved:
-        "Approval is against the current quote revision only. It does not create production automatically.",
       Production:
-        "Creates one idempotent internal production-order hand-off. CPU is not contacted by this command.",
+        "Sends the current quote and booking snapshot to the CPU production dashboard.",
       Completed:
         "Record that the operational service is complete, retaining notes and actor evidence.",
       Cancelled:
         "Retains the Booking and its history. Requested external follow-up stays visible as not configured until an adapter exists.",
-    } as Record<WorkflowAction, string>
+    } as Partial<Record<WorkflowAction, string>>
   )[action];
 }
 function formatDate(value: string) {
@@ -2093,7 +2121,7 @@ function BookingAmendmentPanel({
       order: {
         ...amendment.order,
         items: amendment.order.items.map((item, itemIndex) =>
-          itemIndex === index ? { ...item, quantity } : item,
+          itemIndex === index ? { ...item, quantity: /rice paper rolls?/i.test(String(item.itemName || "")) && quantity > 0 ? Math.max(3, quantity) : quantity } : item,
         ),
       },
     });
@@ -2235,7 +2263,7 @@ function BookingAmendmentPanel({
                 Quantity
                 <input
                   type="number"
-                  min="0"
+                  min={/rice paper rolls?/i.test(String(item.itemName || "")) ? 3 : 0}
                   value={item.quantity}
                   onChange={(event) =>
                     changeQuantity(index, Number(event.target.value || 0))
@@ -2260,7 +2288,7 @@ function BookingAmendmentPanel({
               })
             }
           />
-          Add the configured CPU delivery charge to the replacement quote
+            CPU delivery required (add the configured delivery charge to the replacement quote)
         </label>
         <label>
           Operational notes

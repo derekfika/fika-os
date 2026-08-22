@@ -77,13 +77,25 @@ function assertPlanningOpen(run: DeliveryRun) {
       `Run is ${run.status}; return it to planning before changing its structure.`,
     );
 }
+function addMinutesToTime(value: string, minutes: number) {
+  const [hours, mins] = value.split(":").map(Number);
+  const total = Math.min(23 * 60 + 59, hours * 60 + mins + minutes);
+  return `${String(Math.floor(total / 60)).padStart(2, "0")}:${String(total % 60).padStart(2, "0")}`;
+}
+function collectionScheduleForDelivery(delivery: DeliveryStop) {
+  const deliveryStart = delivery.plannedWindow?.startTime || delivery.plannedArrivalTime;
+  if (!deliveryStart) return {};
+  return {
+    plannedArrivalTime: addMinutesToTime(deliveryStart, 6 * 60),
+  };
+}
 function assertTransition(
   status: DeliveryRun["status"],
   next: DeliveryRun["status"],
 ) {
   const allowed: Record<DeliveryRun["status"], DeliveryRun["status"][]> = {
     draft: ["planned"],
-    planned: ["ready"],
+    planned: ["ready", "dispatched"],
     ready: ["planned", "dispatched"],
     dispatched: ["completed"],
     completed: [],
@@ -391,7 +403,7 @@ export async function POST(request: NextRequest) {
           422,
           "A current run version is required for lifecycle changes.",
         );
-      if (body.action === "mark-run-ready") {
+      if (body.action === "mark-run-ready" || (body.action === "dispatch-run" && current.status === "planned")) {
         let requirements: FulfilmentRequirement[];
         try {
           requirements = await fetchRequirements(
@@ -432,7 +444,7 @@ export async function POST(request: NextRequest) {
             { error: "Run is not ready", blockers },
             { status: 422 },
           );
-        assertTransition(current.status, "ready");
+        if (body.action === "mark-run-ready") assertTransition(current.status, "ready");
       } else if (body.action === "return-run-to-planning")
         assertTransition(current.status, "planned");
       else if (body.action === "dispatch-run")
@@ -655,7 +667,14 @@ export async function POST(request: NextRequest) {
             const collection = linkedCollectionForDelivery(delivery, run.canonicalId, by, now);
             const markedDelivery = { ...delivery, collectionRequired: true, linkedStopId: collection.canonicalId, linkedOperation: "delivery" as const, originatingLoadKey: delivery.canonicalId, updatedAt: now, version: delivery.version + 1, audit: [...delivery.audit, { action: "collection-required", at: now, by, version: delivery.version + 1 }] };
             working = working.map((stop) => stop.canonicalId === delivery.canonicalId ? markedDelivery : stop);
-            working.push({ ...collection, linkedStopId: markedDelivery.canonicalId });
+            working.push({
+              ...collection,
+              linkedStopId: markedDelivery.canonicalId,
+              ...collectionScheduleForDelivery({
+                ...markedDelivery,
+                ...(planned || {}),
+              }),
+            });
           }
         }
         if (planned) {

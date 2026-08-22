@@ -20,7 +20,7 @@ import { productionScopes, type ProductionScope } from "../lib/production-scope"
 import { cpuAttentionKey, cpuAttentionLabel, cpuDestinationLabel, cpuDestinationOptionLabel, cpuLifecycle, cpuLifecycleLabels, cpuReference, cpuRequiredTime, cpuSourceLabel, type CpuLifecycle } from "../lib/production-presentation";
 import { relatedDeliveredInOrders, orderDate } from "../lib/production-day";
 
-const statuses: CpuLifecycle[] = ["received", "accepted", "planning", "ready", "in_production", "complete"];
+const statuses: CpuLifecycle[] = ["received", "accepted", "planning", "planned", "ready", "in_production", "complete"];
 const terminalStatuses = new Set<ProductionStatus>([
   "in_production",
   "partially_complete",
@@ -661,7 +661,14 @@ function CpuCreate({ onSaved }: { onSaved: () => Promise<void> }) {
       const response = await fetch("/api/sandwiches", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ title, parentMenuItemKey: "delivered-in-lunch", updatedBy: "production-chef" }),
+        body: JSON.stringify({
+          title,
+          allergens: lines[index]?.allergens || emptyCreatorAllergens(),
+          mayContainNotes: lines[index]?.mayContainNotes || "",
+          parentMenuItemKey: "delivered-in-lunch",
+          itemType: "sandwich",
+          updatedBy: "production-chef",
+        }),
       });
       const body = await response.json() as { productionItem?: DeliveredItem; sandwich?: DeliveredItem; error?: { message?: string } };
       const item = body.productionItem || body.sandwich;
@@ -680,6 +687,30 @@ function CpuCreate({ onSaved }: { onSaved: () => Promise<void> }) {
       .filter((line) => line.item && line.quantity > 0);
     if (!site.trim() || !date || !time || !selectedLines.length) {
       setError("Choose a destination, date, service time and at least one item with a quantity.");
+      return;
+    }
+    try {
+      // Persist the current checker values as library records before creating
+      // the order, so a new or amended hospitality item is available next time.
+      const saves = await Promise.all(selectedLines.map(async (line) => {
+        const response = await fetch("/api/sandwiches", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            title: line.item!.title,
+            allergens: line.allergens,
+            mayContainNotes: line.mayContainNotes,
+            parentMenuItemKey: "delivered-in-lunch",
+            updatedBy: "production-chef",
+          }),
+        });
+        const body = await response.json() as { error?: { message?: string } };
+        if (!response.ok) throw new Error(body.error?.message || `Could not save ${line.item!.title}.`);
+        return body;
+      }));
+      void saves;
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not save the allergen checker items.");
       return;
     }
     const key = `delivered-in:${date}:${(oplocId || otherSite).trim().toLowerCase().replace(/[^a-z0-9]+/g, "-")}:${lines.map((line) => `${line.itemId}:${line.quantity}`).join("|")}`;
@@ -764,7 +795,7 @@ function CpuCreate({ onSaved }: { onSaved: () => Promise<void> }) {
               <label>Menu item<select required={!line.newItemTitle} value={line.itemId} onChange={(event) => { const item = items.find((candidate) => candidate.id === event.target.value); updateLine(index, { itemId: event.target.value, newItemTitle: "", allergens: normaliseCreatorAllergens(item?.allergens), mayContainNotes: item?.mayContainNotes || "" }); }}><option value="">Choose a delivered-in item…</option>{items.map((item) => <option key={item.id} value={item.id}>{titleCaseLabel(item.title)}</option>)}</select><span className="cpu-create-new-item__or">or</span><input value={line.newItemTitle} onChange={(event) => updateLine(index, { newItemTitle: event.target.value, itemId: "" })} placeholder="Type a new item title" /><button type="button" className="cpu-create-new-item__save" onClick={() => void saveNewItem(index)}>Save new item</button></label>
               <label>Portions<input required min="1" type="number" value={line.quantity} onChange={(event) => updateLine(index, { quantity: Number(event.target.value) })} /></label>
               <label>Production note <input value={line.note} onChange={(event) => updateLine(index, { note: event.target.value })} placeholder="Optional" /></label>
-              <div className="cpu-create-line__matrix-wrap"><table className="cpu-create-allergen-matrix"><colgroup>{matrixColumns.map(([key]) => <col key={key} />)}</colgroup><thead><tr>{matrixColumns.map(([key, label]) => <th key={key}>{label}</th>)}</tr></thead><tbody><tr>{matrixColumns.map(([key, label]) => { const state = line.allergens[key] || "clear"; return <td key={key}><button type="button" aria-label={`${label} for ${titleCaseLabel(items.find((item) => item.id === line.itemId)?.title || "menu item")}: ${state}`} className={`cpu-create-allergen-cell cpu-create-allergen-cell--${state}`} onClick={() => updateLine(index, { allergens: toggleCreatorAllergen(line.allergens, key) })}>{state === "contains" ? "✓" : state === "may_contain" ? "MC" : ""}</button></td>; })}</tr></tbody></table><label>May contain notes (gluten / tree nuts)<input value={line.mayContainNotes} onChange={(event) => updateLine(index, { mayContainNotes: event.target.value })} placeholder="Optional" /></label></div>
+              <div className="cpu-create-line__matrix-wrap"><table className="cpu-create-allergen-matrix"><colgroup>{matrixColumns.map(([key]) => <col key={key} />)}</colgroup><thead><tr>{matrixColumns.map(([key, label]) => <th key={key}>{label}</th>)}</tr></thead><tbody><tr>{matrixColumns.map(([key, label]) => { const state = line.allergens[key] || "clear"; return <td key={key}><button type="button" aria-label={`${label} for ${titleCaseLabel(items.find((item) => item.id === line.itemId)?.title || "menu item")}: ${state}`} className={`cpu-create-allergen-cell cpu-create-allergen-cell--${state}`} onClick={() => updateLine(index, { allergens: toggleCreatorAllergen(line.allergens, key) })}>{state === "contains" ? "✓" : state === "may_contain" ? "MC" : ""}</button></td>; })}</tr></tbody></table><label>Notes<input value={line.mayContainNotes} onChange={(event) => updateLine(index, { mayContainNotes: event.target.value })} placeholder="Specific gluten, tree nut or other details" /></label></div>
               {lines.length > 1 && <button type="button" className="cpu-create-line__remove" onClick={() => setLines((current) => current.filter((_, lineIndex) => lineIndex !== index))}>Remove</button>}
             </div>
           ))}

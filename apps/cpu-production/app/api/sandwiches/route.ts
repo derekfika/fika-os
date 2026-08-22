@@ -29,14 +29,25 @@ type SavedProductionItem = {
   category?: "Salad 1" | "Salad 2" | "Salad 3" | "Salad 4" | "Salad 5" | "Salad 6" | "Cold protein" | "Soup" | "Hot meat" | "Hot veg / vegan" | "Extras / sides";
 };
 
+function productionItemKey(item: SavedProductionItem) {
+  return `${item.parentMenuItemKey || ""}:${item.title.trim().toLocaleLowerCase()}`;
+}
+
+function mergeProductionItems(...groups: SavedProductionItem[][]) {
+  const byTitleAndScope = new Map<string, SavedProductionItem>();
+  for (const group of groups) {
+    for (const item of group) byTitleAndScope.set(productionItemKey(item), item);
+  }
+  return [...byTitleAndScope.values()].sort((a, b) => a.title.localeCompare(b.title));
+}
+
 async function localProductionItems() {
   try {
     const saved = JSON.parse(await fs.readFile(localLibraryPath(), "utf8")) as SavedProductionItem[];
     try {
       const seeded = JSON.parse(await fs.readFile(seedLibraryPath(), "utf8")) as SavedProductionItem[];
       const delivered = JSON.parse(await fs.readFile(deliveredInSeedLibraryPath(), "utf8")) as SavedProductionItem[];
-      const byId = new Map([...seeded, ...delivered, ...saved].map((item) => [item.id, item]));
-      return [...byId.values()].sort((a, b) => a.title.localeCompare(b.title));
+      return mergeProductionItems(seeded, delivered, saved);
     } catch {
       return saved;
     }
@@ -45,7 +56,7 @@ async function localProductionItems() {
       const seeded = JSON.parse(await fs.readFile(seedLibraryPath(), "utf8")) as SavedProductionItem[];
       try {
         const delivered = JSON.parse(await fs.readFile(deliveredInSeedLibraryPath(), "utf8")) as SavedProductionItem[];
-        return [...new Map([...seeded, ...delivered].map((item) => [item.id, item])).values()];
+        return mergeProductionItems(seeded, delivered);
       } catch {
         return seeded;
       }
@@ -69,7 +80,7 @@ async function localFallback(request: NextRequest, method: "GET" | "POST") {
   const id = `sandwich:${title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 80) || "untitled"}`;
   const previous = productionItems.find((item) => item.id === id);
   const productionItem: SavedProductionItem = { id, title, allergens: body.allergens || {}, mayContainNotes: body.mayContainNotes?.trim() || "", itemType: body.itemType || previous?.itemType || "sandwich", category: body.category || previous?.category, sourceEvidence: body.sourceEvidence || previous?.sourceEvidence || [], ...(body.parentMenuItemKey ? { parentMenuItemKey: body.parentMenuItemKey } : previous?.parentMenuItemKey ? { parentMenuItemKey: previous.parentMenuItemKey } : {}), createdAt: previous?.createdAt || now, updatedAt: now, updatedBy: body.updatedBy || "production-chef" };
-  const next = [...productionItems.filter((item) => item.id !== id), productionItem].sort((a, b) => a.title.localeCompare(b.title));
+  const next = mergeProductionItems(productionItems.filter((item) => item.id !== id), [productionItem]);
   await fs.mkdir(path.dirname(localLibraryPath()), { recursive: true });
   await fs.writeFile(localLibraryPath(), JSON.stringify(next, null, 2), "utf8");
   return NextResponse.json({ productionItem, sandwich: productionItem, productionItems: next, sandwiches: next });
@@ -80,13 +91,17 @@ async function forward(request: NextRequest, method: "GET" | "POST") {
     const response = await fetch(`${libraryUrl()}/api/sandwiches${method === "GET" ? request.nextUrl.search : ""}`, { method, headers: method === "POST" ? { "content-type": "application/json" } : undefined, body: method === "POST" ? await request.clone().text() : undefined, cache: "no-store" });
     const body = await response.text();
     if (!response.ok || body.trimStart().startsWith("<!DOCTYPE")) return localFallback(request, method);
+    // Keep a local durable copy as well as the shared menu-planning record.
+    // This means the CPU checker retains user-entered allergen evidence even
+    // when the remote menu-planning service is later unavailable.
+    if (method === "POST") await localFallback(request, "POST");
     // Keep the shared seed candidates visible even when the menu-planning app is running.
     // The remote library remains authoritative for existing IDs; seeds only fill gaps.
     try {
       const remote = JSON.parse(body) as { sandwiches?: SavedProductionItem[]; productionItems?: SavedProductionItem[] };
       const remoteItems = remote.productionItems || remote.sandwiches || [];
       const seeded = await localProductionItems();
-      const merged = [...new Map([...seeded, ...remoteItems].map((item) => [item.id, item])).values()].sort((a, b) => a.title.localeCompare(b.title));
+      const merged = mergeProductionItems(seeded, remoteItems);
       const parentMenuItemKey = request.nextUrl.searchParams.get("parentMenuItemKey");
       const scoped = parentMenuItemKey ? merged.filter((item) => item.parentMenuItemKey === parentMenuItemKey) : merged;
       // Keep the stable response shape expected by the CPU planner: productionItems, sandwiches: productionItems.

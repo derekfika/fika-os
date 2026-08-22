@@ -20,6 +20,7 @@ export async function POST(request: NextRequest) {
         }
       } catch { /* environment fallback below */ }
     }
+    folderId = folderId || process.env.GOOGLE_MATRIX_OUTPUT_FOLDER_ID;
     try {
       const saved = await saveGoogleDrivePdf({ name: body.name.trim(), pdfBase64: body.pdfBase64, siteKey: body.siteKey, folderId, weekCommencing: body.weekCommencing });
       return saved ? NextResponse.json({ saved }) : NextResponse.json({ saved: null, configured: false }, { status: 503 });

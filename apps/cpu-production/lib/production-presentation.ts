@@ -1,22 +1,24 @@
 import type { ProductionOrder, ProductionStatus } from "@hub/lib/production-domain";
 
-export type CpuLifecycle = "received" | "accepted" | "planning" | "ready" | "in_production" | "complete";
+export type CpuLifecycle = "received" | "accepted" | "planning" | "planned" | "ready" | "in_production" | "complete";
 
 export const cpuLifecycleLabels: Record<CpuLifecycle, string> = {
   received: "Received",
   accepted: "Accepted",
   planning: "Planning",
+  planned: "Planned",
   ready: "Ready",
   in_production: "In production",
   complete: "Complete",
 };
 
-const lifecycleOrder: CpuLifecycle[] = ["received", "accepted", "planning", "ready", "in_production", "complete"];
+const lifecycleOrder: CpuLifecycle[] = ["received", "accepted", "planning", "planned", "ready", "in_production", "complete"];
 
 export function cpuLifecycle(order: ProductionOrder): CpuLifecycle {
   const status = (order.workflowStatus && order.workflowStatus !== "draft" ? order.workflowStatus : order.status) as ProductionStatus;
   if (status === "accepted") return "accepted";
-  if (["planning", "planned", "menu_available"].includes(status)) return "planning";
+  if (status === "planned") return "planned";
+  if (["planning", "menu_available"].includes(status)) return "planning";
   if (["ready", "scheduled"].includes(status)) return "ready";
   if (["in_production", "partially_complete"].includes(status)) return "in_production";
   if (status === "complete") return "complete";

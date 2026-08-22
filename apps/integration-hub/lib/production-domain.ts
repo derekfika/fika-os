@@ -17,7 +17,7 @@ export type ProductionWorkstream = "sandwiches" | "hospitality" | "delivered_in"
 export type ProductionLine = { canonicalId: string; sourceBookingLineId: string; sourceMenuItemId?: string; sourceOfferingId?: string; itemName: string; description?: string; customerQuantity: number; customerUnit: string; productionQuantity?: number; productionUnit?: string; actualQuantity?: number; shortfallQuantity?: number; substitution?: string; wasteQuantity?: number; conversionSnapshot?: { quantity: number; unit: string; rule: string }; choices?: unknown[]; servingGuidance?: string; productionInstructions?: string; dietaries: Record<string, unknown>; allergenEvidenceStatus?: "confirmed" | "unreviewed" | "missing" | "conflicting"; approvedAllergenSnapshot?: { allergens: Record<string, string>; mayContainNotes?: string; sourcePublicationDayId?: string; sourceVersion?: number; sourceContentHash?: string }; status: "pending" | "ready" | "complete" | "exception"; sortOrder: number; exceptions?: string[]; workstream?: ProductionWorkstream };
 export type ProductionRequirement = { canonicalId: string; entityType: "Production Requirement"; schemaVersion: string; version: number; sourceBookingId: string; sourceBookingRevision: number; sourceQuoteRevisionId: string; productionLocationId?: string; requestedServiceDate: string; serviceWindow: { startTime: string; endTime?: string }; requiredBy: string; status: "draft" | "needs_review" | "accepted" | "cancelled"; sourceSnapshot: { booking: CanonicalBooking; quote: unknown }; createdAt: string; createdBy: string; updatedAt: string; updatedBy: string; audit: ProductionAuditEvent[] };
 export type ProductionOrigin = "hospitality_booking" | "cpu_created" | "legacy_import" | "menu_planning" | "grab_and_go";
-export type ProductionOrder = { canonicalId: string; entityType: "Production Order"; schemaVersion: string; version: number; requirementIds: string[]; sourceBookingId: string; sourceQuoteRevisionId: string; sourceEntityId?: string; sourceVersion?: number; sourceContentHash?: string; sourcePublicationDayId?: string; productionLocationId?: string; requiresDelivery?: boolean; destinationOplocId?: string; destinationLabel?: string; clientName?: string; serviceType?: string; serviceDate?: string; guestCount?: number; requiredBy: string; serviceWindow: { startTime: string; endTime?: string }; status: ProductionStatus; /** Local planning projection, kept separate from the governed Production lifecycle. */ workflowStatus?: ProductionStatus; priority: "normal" | "high" | "urgent"; lines: ProductionLine[]; exceptions: ProductionException[]; operationalNotes?: string; origin: ProductionOrigin; currentRevision: number; createdAt: string; createdBy: string; acceptedAt?: string; startedAt?: string; completedAt?: string; supersededBy?: string; idempotencyKey: string; externalReferences: string[]; audit: ProductionAuditEvent[] };
+export type ProductionOrder = { canonicalId: string; entityType: "Production Order"; schemaVersion: string; version: number; requirementIds: string[]; sourceBookingId: string; sourceQuoteRevisionId: string; sourceEntityId?: string; sourceVersion?: number; sourceContentHash?: string; sourcePublicationDayId?: string; productionLocationId?: string; requiresDelivery?: boolean; destinationOplocId?: string; destinationLabel?: string; clientName?: string; serviceType?: string; serviceDate?: string; guestCount?: number; requiredBy: string; serviceWindow: { startTime: string; endTime?: string }; status: ProductionStatus; /** Local planning projection, kept separate from the governed Production lifecycle. */ workflowStatus?: ProductionStatus; priority: "normal" | "high" | "urgent"; lines: ProductionLine[]; exceptions: ProductionException[]; operationalNotes?: string; origin: ProductionOrigin; currentRevision: number; createdAt: string; createdBy: string; updatedAt?: string; acceptedAt?: string; startedAt?: string; completedAt?: string; supersededBy?: string; idempotencyKey: string; externalReferences: string[]; audit: ProductionAuditEvent[] };
 
 const requirements = () => db.collection("fikaProductionRequirements");
 const orders = () => db.collection("fikaProductionOrdersV1");
@@ -49,7 +49,8 @@ export async function createProductionFromApprovedBooking(actor: Actor, bookingI
     const bookingSnapshot = await transaction.get(bookings().doc(bookingId));
     if (!bookingSnapshot.exists) throw conflict("Booking was not found.");
     const booking = bookingSnapshot.data() as CanonicalBooking;
-    if (booking.lifecycleStatus !== "Approved") throw conflict("Only an approved Booking can create production work.");
+    if (!['Quoted', 'Approved'].includes(booking.lifecycleStatus)) throw conflict("Generate a current quote before sending this Booking to CPU.");
+    if (booking.deliveryChargeRequired === false) throw conflict("CPU delivery is not selected for this Booking, so no CPU production hand-off is required.");
     if (!booking.service.oplocId?.trim()) throw conflict("A delivery-requiring Hospitality Production Order needs a confirmed canonical destination OPLOC.");
     const quote = booking.quoteState?.revisions.find(item => item.id === booking.quoteState?.currentRevisionId);
     if (!quote || quote.stale || quote.id !== booking.quoteState?.currentRevisionId) throw conflict("A current approved Quote Revision is required.");
@@ -64,7 +65,7 @@ export async function createProductionFromApprovedBooking(actor: Actor, bookingI
     if (existing.exists && (existing.data() as ProductionOrder).status !== "amended") return { created: false, status: "already_exists" as const, requirement: undefined, order: existing.data() as ProductionOrder };
     const now = new Date().toISOString();
     const requirementId = productionRequirementId(bookingId, quote.id);
-    const requirement: ProductionRequirement = { canonicalId: requirementId, entityType: "Production Requirement", schemaVersion: PRODUCTION_SCHEMA_VERSION, version: 1, sourceBookingId: bookingId, sourceBookingRevision: booking.version, sourceQuoteRevisionId: quote.id, productionLocationId: booking.service.oplocId, requestedServiceDate: booking.service.eventDate, serviceWindow: { startTime: booking.service.startTime, ...(booking.service.endTime ? { endTime: booking.service.endTime } : {}) }, requiredBy: `${booking.service.eventDate}T${booking.service.startTime}`, status: "needs_review", sourceSnapshot: { booking: structuredClone(booking), quote: structuredClone(quote.snapshot) }, createdAt: now, createdBy: actor.uid, updatedAt: now, updatedBy: actor.uid, audit: [{ action: "production-requirement-created", at: now, by: actor.uid, newState: "needs_review", reason: "Created from approved Booking and current Quote Revision.", idempotencyKey }] };
+    const requirement: ProductionRequirement = { canonicalId: requirementId, entityType: "Production Requirement", schemaVersion: PRODUCTION_SCHEMA_VERSION, version: 1, sourceBookingId: bookingId, sourceBookingRevision: booking.version, sourceQuoteRevisionId: quote.id, productionLocationId: booking.service.oplocId, requestedServiceDate: booking.service.eventDate, serviceWindow: { startTime: booking.service.startTime, ...(booking.service.endTime ? { endTime: booking.service.endTime } : {}) }, requiredBy: `${booking.service.eventDate}T${booking.service.startTime}`, status: "needs_review", sourceSnapshot: { booking: structuredClone(booking), quote: structuredClone(quote.snapshot) }, createdAt: now, createdBy: actor.uid, updatedAt: now, updatedBy: actor.uid, audit: [{ action: "production-requirement-created", at: now, by: actor.uid, newState: "needs_review", reason: "Created from Booking and current Quote Revision.", idempotencyKey }] };
     const exceptions: ProductionException[] = [];
     const lines: ProductionLine[] = booking.order.items.map((item, index) => {
       const configured = conversions[item.itemId];
@@ -142,7 +143,7 @@ export async function latestProductionOrderForBooking(bookingId: string) {
   const snapshot = await orders().where("sourceBookingId", "==", bookingId).get();
   const candidates = snapshot.docs
     .map(item => item.data() as ProductionOrder)
-    .filter(order => !order.supersededBy)
+    .filter(order => !order.supersededBy && order.status !== "amended")
     .sort((a, b) => (b.version - a.version) || b.createdAt.localeCompare(a.createdAt));
   const order = candidates[0];
   return order ? enrichOrder(withoutAutomaticQuantityBlockers(order)) : undefined;
@@ -153,7 +154,8 @@ export async function productionQueue() {
   return Promise.all(
     snapshot.docs
       .map(item => item.data() as ProductionOrder)
-      .filter(order => !order.supersededBy)
+      .filter(order => !order.supersededBy && order.status !== "amended")
+      .filter(order => !(order.origin === "hospitality_booking" && order.requiresDelivery === false))
       .map(order => enrichOrder(withoutAutomaticQuantityBlockers(order))),
   );
 }

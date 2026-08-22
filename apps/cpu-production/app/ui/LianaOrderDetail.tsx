@@ -11,10 +11,16 @@ import type {
 } from "../lib/production-plan";
 import "./liana.css";
 import { allergenMatrixHtml, mayContainNotes } from "./allergen-matrix";
-import { DELI_STYLE_PARENT_KEY, isDeliStyleParent } from "../../lib/production-item-scope";
 import { CANONICAL_ALLERGEN_COLUMNS, normaliseOperationalAllergens, toggleOperationalAllergen, type CanonicalAllergenKey } from "../../../shared/allergen-contract";
 import { matrixColumns } from "./allergen-matrix";
+import { DELI_STYLE_PARENT_KEY, isDeliStyleParent } from "../../lib/production-item-scope";
 const allergenColumns = matrixColumns;
+
+function menuItemLibraryKey(name: string) {
+  if (isDeliStyleParent(name)) return DELI_STYLE_PARENT_KEY;
+  const slug = name.trim().toLocaleLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 80);
+  return `menu-item:${slug || "untitled"}`;
+}
 
 function emptyAllergens(): Record<string, AllergenCellState> {
   return Object.fromEntries(CANONICAL_ALLERGEN_COLUMNS.map(([key]) => [key, "clear"]));
@@ -254,6 +260,7 @@ export default function LianaOrderDetail({
       title: string;
       allergens: Record<string, AllergenCellState>;
       mayContainNotes?: string;
+      parentMenuItemKey?: string;
     }>
   >([]);
 
@@ -274,7 +281,7 @@ export default function LianaOrderDetail({
       .catch(() =>
         setMessage("Could not load the saved draft; a new draft is shown."),
       );
-    void fetch(`/api/sandwiches?parentMenuItemKey=${DELI_STYLE_PARENT_KEY}`, { cache: "no-store" })
+    void fetch("/api/sandwiches", { cache: "no-store" })
       .then((response) => response.json())
       .then((body) => {
         const items = Array.isArray(body.productionItems) ? body.productionItems : body.sandwiches;
@@ -371,8 +378,6 @@ export default function LianaOrderDetail({
   const completeSubItem = (menuId: string, sub: PlannedSubItem) =>
     updateSubItem(menuId, sub.id, { evidenceStatus: "completed" });
   const applySandwich = (menuId: string, sub: PlannedSubItem, id: string) => {
-    const parent = menuItems.find((item) => item.id === menuId);
-    if (!parent || !isDeliStyleParent(parent.name)) return;
     const productionItem = savedProductionItems.find((item) => item.id === id);
     if (productionItem)
       updateSubItem(menuId, sub.id, {
@@ -382,13 +387,15 @@ export default function LianaOrderDetail({
         evidenceStatus: "not_completed",
       });
   };
-  const saveSandwich = async (sub: PlannedSubItem) => {
+  const saveSandwich = async (menuId: string, sub: PlannedSubItem) => {
     if (!sub.name.trim()) {
       setMessage("Give the production item a title before saving it.");
       return;
     }
     setBusy(true);
     setMessage("");
+    const parent = menuItems.find((item) => item.id === menuId);
+    const parentMenuItemKey = menuItemLibraryKey(parent?.name || "");
     try {
       const response = await fetch("/api/sandwiches", {
         method: "POST",
@@ -397,7 +404,7 @@ export default function LianaOrderDetail({
           title: sub.name,
           allergens: sub.allergens,
           mayContainNotes: sub.mayContainNotes || "",
-          parentMenuItemKey: DELI_STYLE_PARENT_KEY,
+          parentMenuItemKey,
           updatedBy: "production-chef",
         }),
       });
@@ -409,12 +416,7 @@ export default function LianaOrderDetail({
       const returnedItems = Array.isArray(body.sandwiches)
         ? body.sandwiches
         : [...savedProductionItems, body.productionItem || body.sandwich];
-      setSavedProductionItems(
-        returnedItems.filter(
-          (item: { parentMenuItemKey?: string }) =>
-            item.parentMenuItemKey === DELI_STYLE_PARENT_KEY,
-        ),
-      );
+      setSavedProductionItems(returnedItems);
       setMessage(`Saved “${sub.name.trim()}” for next time.`);
     } catch (error) {
       setMessage((error as Error).message);
@@ -455,7 +457,9 @@ export default function LianaOrderDetail({
           ? "Plan marked Planned. The menu planning team can now generate the menu."
           : "Partial plan saved. The booking status is now Planning.",
       );
-      await onSaved(action === "mark-planned");
+      // Keep the detail panel open after planning so the signature controls
+      // become available in the same view.
+      await onSaved(false);
     }
     setBusy(false);
   };
@@ -706,8 +710,8 @@ export default function LianaOrderDetail({
                 />
                 {!menuItem.subItems.length && (
                   <p className="checker-empty">
-                    Add the individual sandwiches, wraps or other sub-items made
-                    for this menu item.
+                    Add the individual menu items or other sub-items made for this
+                    menu item.
                   </p>
                 )}
                 {menuItem.subItems.length > 0 && (
@@ -728,7 +732,7 @@ export default function LianaOrderDetail({
                             <th key={label}>{label}</th>
                           ))}
                           <th>
-                            May contain notes
+                            Notes
                             <br />
                             Gluten / tree nuts
                           </th>
@@ -739,9 +743,9 @@ export default function LianaOrderDetail({
                         {menuItem.subItems.map((sub) => (
                           <tr key={sub.id}>
                             <th>
-                              {isDeliStyleParent(menuItem.name) ? <select
+                              <select
                                 className="saved-sandwich-select"
-                                aria-label={`Saved production item for ${sub.name || "new sub-item"}`}
+                                aria-label={`Saved menu item for ${sub.name || "new sub-item"}`}
                                 value=""
                                 onChange={(event) =>
                                   applySandwich(
@@ -751,13 +755,13 @@ export default function LianaOrderDetail({
                                   )
                                 }
                               >
-                                <option value="">Saved production item…</option>
-                                {savedProductionItems.map((productionItem) => (
+                                <option value="">Choose a saved menu item…</option>
+                                {savedProductionItems.filter((productionItem) => productionItem.parentMenuItemKey === menuItemLibraryKey(menuItem.name)).map((productionItem) => (
                                   <option key={productionItem.id} value={productionItem.id}>
                                     {productionItem.title}
                                   </option>
                                 ))}
-                              </select> : null}
+                              </select>
                               <textarea
                                 className="subitem-name-cell"
                                 rows={2}
@@ -776,9 +780,9 @@ export default function LianaOrderDetail({
                                   type="button"
                                   className="save-sandwich"
                                   disabled={busy || !sub.name.trim()}
-                                  onClick={() => void saveSandwich(sub)}
+                                  onClick={() => void saveSandwich(menuItem.id, sub)}
                                 >
-                                  Save production item
+                                  Save menu item
                                 </button>
                                 <button
                                   type="button"
@@ -814,14 +818,14 @@ export default function LianaOrderDetail({
                             })}
                             <td className="may-contain-notes">
                               <textarea
-                                aria-label={`May contain notes for ${sub.name || "sub-item"}`}
+                                aria-label={`Notes for ${sub.name || "sub-item"}`}
                                 value={sub.mayContainNotes || ""}
                                 onChange={(event) =>
                                   updateSubItem(menuItem.id, sub.id, {
                                     mayContainNotes: event.target.value,
                                   })
                                 }
-                                placeholder="Enter gluten or tree nut details"
+                                placeholder="Enter specific gluten, tree nut or other details"
                               />
                             </td>
                             <td>

@@ -8,7 +8,7 @@ export type MenuOutput = {
   planUpdatedAt: string;
   generatedAt: string;
   generatedBy: string;
-  templateVersion: "mnk-hospitality-menu-v1";
+  templateVersion: "mnk-hospitality-menu-v1" | "mnk-hospitality-menu-v2";
   google?: { fileId: string; presentationUrl: string; driveUrl: string };
   booking: { companyName: string; destination: string; date: string; time: string; guestCount: number };
   items: Array<{ menuItem: string; name: string; allergens: string[]; mayContain: string[] }>;

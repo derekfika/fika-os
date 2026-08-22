@@ -151,7 +151,8 @@ export type CanonicalBooking = {
 export type ProductionOrder = {
   canonicalId: string;
   bookingId: string;
-  state: "Requested" | "Cancelled" | "Uncertain";
+  state: "Requested" | "Planned" | "Cancelled" | "Uncertain";
+  updatedAt?: string;
   createdAt: string;
   createdBy: string;
   attempts: Array<{
@@ -430,7 +431,7 @@ export function buildMnkCanonicalBooking(
         `${payload.site || "MNK"} menu item '${item.itemId}' is not mapped to an active canonical Hospitality Menu Item.`,
       );
     if (menuItem) {
-      const minimumQuantity = Number(menuItem.record.minimumQuantity || 1);
+      const minimumQuantity = Math.max(Number(menuItem.record.minimumQuantity || 1), /rice paper rolls?/i.test(String(item.itemName || menuItem.record.name)) ? 3 : 1);
       if (
         Number.isFinite(minimumQuantity) &&
         minimumQuantity > 1 &&
@@ -696,6 +697,15 @@ export async function bookingWorkspace(siteId?: string) {
   const snapshot = await bookings().orderBy("service.eventDate", "asc").get();
   const storedRows = snapshot.docs
     .map((document) => document.data() as CanonicalBooking)
+    .map((booking) => {
+      // Compatibility for bookings quoted before the simplified workflow was
+      // introduced: a current quote is now the approval point, so expose the
+      // same operational status without adding a separate approval action.
+      const currentQuote = booking.quoteState?.revisions.find((revision) => revision.id === booking.quoteState?.currentRevisionId);
+      return booking.lifecycleStatus === "Quoted" && currentQuote && !currentQuote.stale
+        ? { ...booking, lifecycleStatus: "Approved" as const }
+        : booking;
+    })
     .filter((booking) => !siteId || booking.service.portalSiteId === siteId);
   // Development fixtures exercise the same canonical Booking contract as a
   // submitted portal booking, but are never written to Firestore.  Stored
@@ -710,8 +720,10 @@ export async function bookingWorkspace(siteId?: string) {
       : storedRows;
   const orders = await Promise.all(
     rows.map(async (booking) => {
-      const modern = await latestProductionOrderForBooking(booking.canonicalId)
-        || await productionOrderDetail(productionOrderV1Id(booking.canonicalId));
+      const modern = booking.deliveryChargeRequired === false
+        ? undefined
+        : await latestProductionOrderForBooking(booking.canonicalId)
+          || await productionOrderDetail(productionOrderV1Id(booking.canonicalId));
       if (modern) {
         const state: ProductionOrder["state"] =
           modern.status === "cancelled"
@@ -723,6 +735,8 @@ export async function bookingWorkspace(siteId?: string) {
                   "reconciliation_required",
                 ].includes(modern.status)
               ? "Uncertain"
+              : modern.status === "planned" || modern.status === "menu_available"
+                ? "Planned"
               : "Requested";
         return [
           booking.canonicalId,
@@ -730,6 +744,7 @@ export async function bookingWorkspace(siteId?: string) {
             canonicalId: modern.canonicalId,
             bookingId: modern.sourceBookingId,
             state,
+            updatedAt: modern.updatedAt,
             createdAt: modern.createdAt,
             createdBy: modern.createdBy,
             attempts: [
@@ -794,7 +809,12 @@ export async function executeBookingWorkflow(
       next.dashboardWorkflow = {
         ...next.dashboardWorkflow,
         review: {
-          checks: command.checks,
+          checks: {
+            commercialIntent: command.checks.commercialIntent ?? true,
+            serviceTiming: command.checks.serviceTiming ?? true,
+            deliveryContext: command.checks.deliveryContext ?? true,
+            dietaryRequirements: command.checks.dietaryRequirements ?? true,
+          },
           reviewedAt: now,
           reviewedBy: actor.uid,
           ...(optional(command.notes)
@@ -816,6 +836,8 @@ export async function executeBookingWorkflow(
         }));
       if (!items.length)
         throw conflict("Keep at least one menu line on the Booking.");
+      const ricePaperLine = items.find((item) => /rice paper rolls?/i.test(String(item.itemName || "")) && item.quantity < 3);
+      if (ricePaperLine) throw conflict("Rice paper rolls require a minimum quantity of 3 boxes.");
       next.client = structuredClone(patch.client);
       next.service = { ...next.service, ...structuredClone(patch.service) };
       if (
@@ -835,7 +857,7 @@ export async function executeBookingWorkflow(
         grossTotal: items.reduce((total, item) => total + item.lineTotal, 0),
       };
       next.notes = optional(patch.notes);
-      next.deliveryChargeRequired = Boolean(patch.deliveryChargeRequired);
+      next.deliveryChargeRequired = patch.deliveryChargeRequired ?? current.deliveryChargeRequired ?? true;
       next.commercialVersion = (current.commercialVersion || 1) + 1;
       next.quoteState = {
         ...next.quoteState!,
@@ -949,7 +971,10 @@ export async function executeBookingWorkflow(
           quote,
         ],
       };
-      next.lifecycleStatus = "Quoted";
+      // A generated quote is the manager's approval point in the simplified
+      // workflow. Keep the separate approve command retired, but expose the
+      // resulting booking as Approved for the operational hand-off.
+      next.lifecycleStatus = "Approved";
     }
     let notificationKind: BookingNotificationKind | undefined;
     if (command.action === "approve") {
@@ -1208,6 +1233,8 @@ export async function createProductionOrder(
             "reconciliation_required",
           ].includes(order.status)
         ? "Uncertain"
+        : order.status === "planned" || order.status === "menu_available"
+          ? "Planned"
         : "Requested";
   return {
     created: result.created,
@@ -1215,6 +1242,7 @@ export async function createProductionOrder(
       canonicalId: order.canonicalId,
       bookingId: order.sourceBookingId,
       state,
+      updatedAt: order.updatedAt,
       createdAt: order.createdAt,
       createdBy: order.createdBy,
       attempts: [

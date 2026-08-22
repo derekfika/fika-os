@@ -34,12 +34,12 @@ function order(overrides: Partial<ProductionOrder> = {}): ProductionOrder {
 
 test("CPU presentation exposes one common lifecycle while retaining source state as attention", () => {
   assert.equal(cpuLifecycle(order({ status: "draft" })), "received");
-  assert.equal(cpuLifecycle(order({ status: "planned" })), "planning");
+  assert.equal(cpuLifecycle(order({ status: "planned" })), "planned");
   assert.equal(cpuLifecycle(order({ status: "scheduled" })), "ready");
   assert.equal(cpuLifecycle(order({ status: "in_production" })), "in_production");
   assert.equal(cpuLifecycle(order({ status: "needs_review" })), "received");
   assert.equal(cpuAttentionLabel(order({ status: "needs_review" })), "Needs review");
-  assert.deepEqual(Object.values(cpuLifecycleLabels), ["Received", "Accepted", "Planning", "Ready", "In production", "Complete"]);
+  assert.deepEqual(Object.values(cpuLifecycleLabels), ["Received", "Accepted", "Planning", "Planned", "Ready", "In production", "Complete"]);
 });
 
 test("CPU presentation names source, destination timing, and exceptions explicitly", () => {

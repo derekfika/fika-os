@@ -146,7 +146,11 @@ export async function GET(request: NextRequest) {
     // adding the deterministic two-week fixture set.  The fixture IDs are
     // stable, so retries/reloads cannot duplicate them.  Never inject these
     // records into a production deployment.
-    const sourceOrders = process.env.NODE_ENV !== "production" && process.env.FIKA_ENABLE_LOCAL_PRODUCTION_FIXTURES === "true"
+    // Keep the normal dashboard clean. Fixture orders remain available through
+    // the explicit canonicalId fixture endpoint for focused development tests,
+    // but must not appear alongside real emulator production work.
+    const includeLocalFixtures = request.nextUrl.searchParams.get("includeFixtures") === "true" && process.env.NODE_ENV !== "production" && process.env.FIKA_ENABLE_LOCAL_PRODUCTION_FIXTURES === "true";
+    const sourceOrders = includeLocalFixtures
       ? [...fetched, ...localFixtureOrders().filter(fixture =>
         !fetched.some(order =>
           order.canonicalId === fixture.canonicalId ||
@@ -155,7 +159,7 @@ export async function GET(request: NextRequest) {
       )]
       : fetched;
     const orders = await withReadableDestinations(await ordersForScope(sourceOrders, scope));
-    return NextResponse.json({ orders, scope, localFixtures: process.env.NODE_ENV !== "production" && process.env.FIKA_ENABLE_LOCAL_PRODUCTION_FIXTURES === "true" });
+    return NextResponse.json({ orders, scope, localFixtures: includeLocalFixtures });
   } catch (error) {
     return NextResponse.json(
       { error: { message: (error as Error).message } },

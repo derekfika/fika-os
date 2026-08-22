@@ -348,8 +348,8 @@ test("Liana production view captures nested menu items and sub-item allergen evi
   assert.match(liana, /order\.lines\.reduce/);
   assert.match(liana, /sourceLineId/);
   assert.match(liana, /CANONICAL_ALLERGEN_COLUMNS/);
-  assert.match(liana, /Saved production item/);
-  assert.match(liana, /Save production item/);
+  assert.match(liana, /Saved menu item/);
+  assert.match(liana, /Save menu item/);
   assert.match(liana, /\/api\/sandwiches/);
   const libraryRoute = readFileSync(
     new URL("../app/api/sandwiches/route.ts", import.meta.url),
@@ -391,8 +391,8 @@ test("allergen checker uses the master-style purple header and four-state cells"
   assert.match(allergenMatrix, /Service area \/ service type \/ service time/);
   assert.match(allergenMatrix, /serviceType/);
   assert.match(allergenMatrix, /serviceDay/);
-  assert.match(liana, /May contain notes/);
-  assert.match(liana, /Enter gluten or tree nut details/);
+  assert.match(liana, /Notes/);
+  assert.match(liana, /Enter specific gluten, tree nut or other details/);
   assert.match(liana, /Internal FIKA sign-off/);
   assert.match(liana, /sign-matrix/);
   assert.match(liana, /SignatureModal/);

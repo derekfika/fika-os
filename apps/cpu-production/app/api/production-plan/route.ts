@@ -46,8 +46,13 @@ async function syncCanonicalLifecycle(
   if (target === "accepted" && order.status === "draft") {
     await step("needs_review");
   }
-  if (target === "planned" && order.status === "accepted") {
-    await step("planning");
+  if (target === "planned") {
+    // A local CPU plan can be completed directly from a newly created
+    // hospitality hand-off. Keep the governed production lifecycle in sync by
+    // walking the same explicit transitions a chef would use.
+    if (order.status === "draft") await step("needs_review");
+    if (order.status === "needs_review") await step("accepted");
+    if (order.status === "accepted") await step("planning");
   }
   if (order.status !== target) {
     const allowed =
@@ -105,6 +110,10 @@ async function loadOrder(orderId: string) {
     return localFixtureOrders().find(item => item.canonicalId === orderId);
   }
 }
+async function isVisibleForCpu(orderId: string) {
+  const order = await loadOrder(orderId);
+  return !(order?.origin === "hospitality_booking" && order.requiresDelivery === false);
+}
 function initialPlan(orderId: string, order?: Awaited<ReturnType<typeof productionOrderDetail>> | ProductionOrder): ProductionPlan {
   const timestamp = now();
   return { id: `production-plan:${orderId}`, orderId, status: "draft", menuItems: (order?.lines || []).map((line, index) => ({ id: `menu-item:${orderId}:${index + 1}`, sourceLineId: line.canonicalId, name: line.itemName, note: "", subItems: [{ id: `sub-item:${orderId}:${index + 1}:1`, name: "", quantity: line.customerQuantity, allergens: {}, note: "", evidenceStatus: "not_completed" }] })), planningNotes: "", updatedAt: timestamp, updatedBy: "local-fixture", audit: [{ action: "plan-created", at: timestamp, by: "local-fixture" }] };
@@ -154,15 +163,16 @@ async function createMatrixArtifact(plan: ProductionPlan, orderId: string, actor
 
 export async function GET(request: NextRequest) {
   await loadPlans();
-  const entries = [...plans.values()].filter(plan => plan.status === "planned");
+  const visibleStoredPlans = (await Promise.all([...plans.values()].map(async plan => ({ plan, visible: await isVisibleForCpu(plan.orderId) })))).filter(item => item.visible).map(item => item.plan);
+  const entries = visibleStoredPlans.filter(plan => plan.status === "planned");
   const orderId = request.nextUrl.searchParams.get("orderId");
   if (orderId && request.nextUrl.searchParams.get("download") === "pdf") {
     const artifact = (await getPlan(orderId)).matrixArtifact;
     if (!artifact?.pdfPath || !existsSync(artifact.pdfPath)) return NextResponse.json({ error: { message: "A local PDF has not been generated for this matrix." } }, { status: 404 });
     return new NextResponse(await fs.readFile(artifact.pdfPath), { headers: { "content-type": "application/pdf", "content-disposition": `inline; filename="${artifact.fileName}"` } });
   }
-  const visiblePlans = await Promise.all([...plans.values()].map(plan => mergeOriginalItems(plan, plan.orderId)));
-  const selectedPlan = orderId ? await mergeOriginalItems(await getPlan(orderId), orderId) : undefined;
+  const visiblePlans = await Promise.all(visibleStoredPlans.map(plan => mergeOriginalItems(plan, plan.orderId)));
+  const selectedPlan = orderId && await isVisibleForCpu(orderId) ? await mergeOriginalItems(await getPlan(orderId), orderId) : undefined;
   return NextResponse.json({ plan: selectedPlan, plans: visiblePlans, notifications: entries.map(plan => ({ id: `notification:${plan.id}`, title: "New production plan ready for menu generation.", orderId: plan.orderId, plannedItemCount: plan.menuItems.reduce((sum, item) => sum + item.subItems.length, 0), at: plan.updatedAt })), menus: entries.map(plan => ({ planId: plan.id, orderId: plan.orderId, clientSite: localFixtureOrders().find(order => order.canonicalId === plan.orderId)?.destinationLabel || "Site not assigned", items: plan.menuItems.flatMap(item => item.subItems.map(subItem => ({ menuItem: item.name, name: subItem.name, quantity: subItem.quantity, allergens: Object.entries(subItem.allergens).filter(([, state]) => state === "contains").map(([key]) => key), mayContain: Object.entries(subItem.allergens).filter(([, state]) => state === "may_contain").map(([key]) => key) }))) })) });
 }
 
@@ -170,6 +180,7 @@ export async function POST(request: NextRequest) {
   try {
     await loadPlans();
     const command = Command.parse(await request.json());
+    if (!(await isVisibleForCpu(command.orderId))) throw Object.assign(new Error("CPU delivery is not selected for this booking, so no CPU production work is required."), { status: 422 });
     const plan = await getPlan(command.orderId);
     const timestamp = now();
     let notification: { status: string; reason?: string } | undefined;
@@ -192,12 +203,29 @@ export async function POST(request: NextRequest) {
     if (command.action === "reject") await syncCanonicalLifecycle(command.orderId, "rejected", command.reason);
     if (command.action === "clarify") { plan.status = "needs_clarification"; plan.clarificationNote = command.note; plan.audit.push({ action: "clarification-requested", at: timestamp, by: command.actor, reason: command.note }); updateLocalFixture(command.orderId, order => ({ ...order, status: "needs_clarification", version: order.version + 1 })); }
     if (command.action === "clarify") await syncCanonicalLifecycle(command.orderId, "needs_clarification", command.note);
-    if (command.action === "save-plan") { plan.status = "planning"; plan.menuItems = (await mergeOriginalItems({ ...plan, menuItems: normalisePlanAllergens({ ...plan, menuItems: command.menuItems }).menuItems }, command.orderId)).menuItems; plan.planningNotes = command.planningNotes; plan.audit.push({ action: "plan-saved", at: timestamp, by: command.actor }); updateLocalFixture(command.orderId, order => ({ ...order, status: "planning", version: order.version + 1 })); }
+    if (command.action === "save-plan") {
+      const nextMenuItems = (await mergeOriginalItems({ ...plan, menuItems: normalisePlanAllergens({ ...plan, menuItems: command.menuItems }).menuItems }, command.orderId)).menuItems;
+      plan.status = "planning";
+      plan.menuItems = nextMenuItems;
+      plan.planningNotes = command.planningNotes;
+      // Any edit invalidates prior sign-off and the archived PDF. The next
+      // Planned -> sign flow will replace the same Drive file with the new PDF.
+      plan.signatures = undefined;
+      plan.matrixArtifact = undefined;
+      plan.audit.push({ action: "plan-saved", at: timestamp, by: command.actor });
+      updateLocalFixture(command.orderId, order => ({ ...order, status: "planning", version: order.version + 1 }));
+    }
     if (command.action === "mark-planned") {
-      plan.menuItems = (await mergeOriginalItems({ ...plan, menuItems: normalisePlanAllergens({ ...plan, menuItems: command.menuItems }).menuItems }, command.orderId)).menuItems;
+      const nextMenuItems = (await mergeOriginalItems({ ...plan, menuItems: normalisePlanAllergens({ ...plan, menuItems: command.menuItems }).menuItems }, command.orderId)).menuItems;
+      const contentChanged = JSON.stringify(plan.menuItems) !== JSON.stringify(nextMenuItems);
+      plan.menuItems = nextMenuItems;
       plan.planningNotes = command.planningNotes;
       const subItems = plan.menuItems.flatMap(item => item.subItems);
       if (!plan.menuItems.length || plan.menuItems.some(item => !item.name.trim() || !item.subItems.length) || subItems.some(item => !item.name.trim() || item.evidenceStatus !== "completed")) throw Object.assign(new Error("Complete every menu item, sub-item name and allergen checker before marking the plan Planned."), { status: 422 });
+      if (contentChanged) {
+        plan.signatures = undefined;
+        plan.matrixArtifact = undefined;
+      }
       plan.status = "planned"; plan.audit.push({ action: "plan-marked-planned", at: timestamp, by: command.actor }); updateLocalFixture(command.orderId, order => ({ ...order, status: "planned", version: order.version + 1 }));
       await syncCanonicalLifecycle(command.orderId, "planned", "Production plan marked Planned by the production chef.");
     }

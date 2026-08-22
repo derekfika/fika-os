@@ -147,7 +147,7 @@ test("create-run persists a versioned audited run in the emulator", async (t) =>
   assert.equal(saved.audit[0].action, "run-created");
 });
 
-test("collection-required assignment exposes one linked untimed collection and returns the pair to planning", async (t) => {
+test("collection-required assignment schedules one linked collection after the delivery", async (t) => {
   const id = prefix();
   t.after(async () => { upstreamRequirements = []; await collectionPreferences().doc(encodeURIComponent(`${serviceDate}:oploc:integration-destination:10:15-10:45`)).delete(); await cleanup(id); });
   const req = requirement(`${id}:load`);
@@ -164,7 +164,7 @@ test("collection-required assignment exposes one linked untimed collection and r
   const delivery = savedStops.find((stop) => stop.linkedOperation === "delivery")!;
   const collection = savedStops.find((stop) => stop.linkedOperation === "collection")!;
   assert.equal(collection.linkedStopId, delivery.canonicalId);
-  assert.equal(collection.plannedArrivalTime, undefined);
+  assert.equal(collection.plannedArrivalTime, "16:15");
   assert.equal(savedRun.orderedStopIds.length, 2);
   const scheduled = await responseBody({ action: "schedule-stop", by: "integration-test", runId, stopId: collection.canonicalId, plannedArrivalTime: "13:00", expectedRunVersion: savedRun.version, expectedStopVersion: collection.version });
   assert.equal(scheduled.response.status, 200);

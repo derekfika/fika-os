@@ -11,11 +11,33 @@ const storePath = path.join(process.cwd(), "local-data", "hospitality-booking", 
 async function readOutputs(): Promise<MenuOutput[]> { try { return JSON.parse(await fs.readFile(storePath, "utf8")) as MenuOutput[]; } catch { return []; } }
 async function writeOutputs(outputs: MenuOutput[]) { await fs.mkdir(path.dirname(storePath), { recursive: true }); await fs.writeFile(storePath, JSON.stringify(outputs, null, 2), "utf8"); }
 function cpuBase() { return (process.env.CPU_PRODUCTION_BASE_URL || "http://localhost:3400").replace(/\/$/, ""); }
+function planReadiness(plan?: { status: string; menuItems?: Array<{ name?: string; subItems?: Array<{ name?: string; allergens?: Record<string, string> }> }> }) {
+  if (!plan) return { available: false, reason: "The CPU plan is not available yet." };
+  if (plan.status !== "planned") return { available: false, reason: "The CPU plan must be marked Planned first." };
+  const subItems = (plan.menuItems || []).flatMap((item) => item.subItems || []).filter((item) => item.name?.trim());
+  if (!subItems.length) return { available: false, reason: "Menu items are not available yet." };
+  if (subItems.some((item) => !item.allergens || !Object.keys(item.allergens).length)) return { available: false, reason: "Allergen information is not complete yet." };
+  return { available: true, reason: "Menu items and allergen information are ready." };
+}
 
 export async function GET(request: NextRequest) {
   const bookingId = request.nextUrl.searchParams.get("bookingId");
   const outputs = await readOutputs();
-  return NextResponse.json({ outputs: bookingId ? outputs.filter(output => output.bookingId === bookingId) : outputs });
+  if (!bookingId || request.nextUrl.searchParams.get("readiness") !== "1") return NextResponse.json({ outputs: bookingId ? outputs.filter(output => output.bookingId === bookingId) : outputs });
+  const bookingResponse = await hubUserFetch("/api/hospitality-bookings", request.headers.get("cookie"));
+  const bookingBody = await bookingResponse.json() as { bookings?: CanonicalBooking[]; error?: { message?: string } };
+  if (!bookingResponse.ok) return NextResponse.json({ readiness: { available: false, reason: bookingBody.error?.message || "The Booking could not be loaded." } }, { status: bookingResponse.status });
+  const booking = bookingBody.bookings?.find((item) => item.canonicalId === bookingId);
+  if (!booking) return NextResponse.json({ readiness: { available: false, reason: "The Booking could not be found." } }, { status: 404 });
+  const candidates = [...new Set([`production-order:v1:${booking.canonicalId}`, `production-order:${booking.canonicalId}`, booking.canonicalId, booking.source.sourceBookingId])];
+  let plan: { id: string; status: string; updatedAt: string; menuItems: Array<{ name: string; subItems: Array<{ name: string; allergens: Record<string, string> }> }> } | undefined;
+  for (const candidate of candidates) {
+    const response = await fetch(`${cpuBase()}/api/production-plan?orderId=${encodeURIComponent(candidate)}`, { cache: "no-store" });
+    const body = await response.json() as { plan?: typeof plan };
+    if (body.plan && body.plan.status === "planned") { plan = body.plan; break; }
+    plan ||= body.plan;
+  }
+  return NextResponse.json({ readiness: { ...planReadiness(plan), planId: plan?.id, planUpdatedAt: plan?.updatedAt } });
 }
 
 export async function POST(request: NextRequest) {
@@ -27,7 +49,9 @@ export async function POST(request: NextRequest) {
     if (!bookingResponse.ok) throw Error(bookingBody.error?.message || "The canonical Booking could not be loaded.");
     const booking = bookingBody.bookings?.find(item => item.canonicalId === body.bookingId);
     if (!booking) return NextResponse.json({ error: { message: "The Booking could not be found." } }, { status: 404 });
-    const candidates = [...new Set([body.productionOrderId, `production-order:v1:${body.bookingId}`, `production-order:${body.bookingId}`, body.bookingId].filter(Boolean))] as string[];
+    // Prefer the shared canonical production-order ID, while retaining the
+    // original portal reference as a compatibility fallback for this booking.
+    const candidates = [...new Set([body.productionOrderId, `production-order:v1:${body.bookingId}`, `production-order:${body.bookingId}`, body.bookingId, booking.source.sourceBookingId].filter(Boolean))] as string[];
     let cpuBody: { plan?: { id: string; status: string; updatedAt: string; menuItems: Array<{ name: string; subItems: Array<{ name: string; allergens: Record<string, string> }> }> }; error?: { message?: string } } = {};
     for (const cpuOrderId of candidates) {
       const cpuResponse = await fetch(`${cpuBase()}/api/production-plan?orderId=${encodeURIComponent(cpuOrderId)}`, { cache: "no-store" });
@@ -36,10 +60,11 @@ export async function POST(request: NextRequest) {
       if (!cpuBody.plan) cpuBody = candidate;
     }
     if (!cpuBody.plan) throw Error(cpuBody.error?.message || "The CPU plan could not be loaded.");
-    if (cpuBody.plan.status !== "planned") return NextResponse.json({ error: { message: "The production team must mark the CPU plan Planned before the menu planning team can generate a menu." } }, { status: 409 });
+    const readiness = planReadiness(cpuBody.plan);
+    if (!readiness.available) return NextResponse.json({ error: { message: readiness.reason } }, { status: 409 });
     const generatedAt = new Date().toISOString();
     const bookingContext = menuBookingContext(booking);
-    const output: MenuOutput = { id: `menu-output:${body.bookingId}:${generatedAt.replace(/[^0-9]/g, "").slice(0, 14)}`, fileName: menuFileName(bookingContext), bookingId: body.bookingId, planId: cpuBody.plan.id, planUpdatedAt: cpuBody.plan.updatedAt, generatedAt, generatedBy: body.actor || "menu-planning", templateVersion: "mnk-hospitality-menu-v1", booking: bookingContext, items: cpuBody.plan.menuItems.flatMap(menuItem => menuItem.subItems.filter(subItem => subItem.name.trim()).map(subItem => ({ menuItem: menuItem.name, name: subItem.name, allergens: Object.entries(subItem.allergens).filter(([, state]) => state === "contains").map(([key]) => key), mayContain: Object.entries(subItem.allergens).filter(([, state]) => state === "may_contain").map(([key]) => key) }))) };
+    const output: MenuOutput = { id: `menu-output:${body.bookingId}:${generatedAt.replace(/[^0-9]/g, "").slice(0, 14)}`, fileName: menuFileName(bookingContext), bookingId: body.bookingId, planId: cpuBody.plan.id, planUpdatedAt: cpuBody.plan.updatedAt, generatedAt, generatedBy: body.actor || "menu-planning", templateVersion: "mnk-hospitality-menu-v2", booking: bookingContext, items: cpuBody.plan.menuItems.flatMap(menuItem => menuItem.subItems.filter(subItem => subItem.name.trim()).map(subItem => ({ menuItem: menuItem.name, name: subItem.name, allergens: Object.entries(subItem.allergens).filter(([key, state]) => key !== "no_key_allergens" && state === "contains").map(([key]) => key), mayContain: Object.entries(subItem.allergens).filter(([key, state]) => key !== "no_key_allergens" && state === "may_contain").map(([key]) => key) }))) };
     let persisted = output;
     try {
       const google = await createGoogleMenu(output, booking.service.portalSiteId || "mnk", { folderId: body.driveFolderId, templateId: body.menuTemplateId });
@@ -48,7 +73,10 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: { message: `Menu was not created in Google Slides: ${(error as Error).message}` } }, { status: 502 });
     }
     const outputs = await readOutputs();
-    await writeOutputs([...outputs, persisted]);
+    // A booking has one current menu output. Regeneration replaces the prior
+    // revision so the dashboard and local persistence cannot drift into a
+    // list of stale duplicate menus.
+    await writeOutputs([...outputs.filter(item => item.bookingId !== persisted.bookingId), persisted]);
     return NextResponse.json({ output: persisted });
   } catch (error) { return NextResponse.json({ error: { message: (error as Error).message } }, { status: 400 }); }
 }

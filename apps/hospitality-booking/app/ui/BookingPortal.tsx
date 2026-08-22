@@ -14,7 +14,7 @@ type Line = {
   quantity: number;
   choices: Record<string, ChoiceValue>;
 };
-const steps = ["Choose", "Details", "Plan", "Submit"];
+const steps = ["Choose", "Details", "Plan", "Dietaries", "One last look"];
 const occasions = [
   { id: "breakfast", label: "Breakfast", copy: "Start the day brilliantly." },
   { id: "lunch", label: "Lunch", copy: "A considered lunchtime spread." },
@@ -75,6 +75,7 @@ const dietaryNames: Record<string, string> = {
   halal: "Halal",
   otherCount: "Other",
 };
+const draftKey = (siteKey: PortalSiteKey) => `fika-hospitality-booking-draft:${siteKey}`;
 
 export default function BookingPortal({
   siteKey = "mnk",
@@ -125,7 +126,51 @@ export default function BookingPortal({
   });
   const [error, setError] = useState("");
   const [confirmation, setConfirmation] = useState("");
+  const [sending, setSending] = useState(false);
   const [resetOpen, setResetOpen] = useState(false);
+  const [draftReady, setDraftReady] = useState(false);
+  const [restoredDraft, setRestoredDraft] = useState(false);
+  useEffect(() => {
+    try {
+      const saved = window.localStorage.getItem(draftKey(site.key));
+      if (saved) {
+        const draft = JSON.parse(saved) as Partial<{
+          occasion: string;
+          step: number;
+          category: string;
+          lines: Line[];
+          details: typeof details;
+          contact: typeof contact;
+          dietaries: typeof dietaries;
+          acks: typeof acks;
+        }>;
+        if (draft.occasion) setOccasion(draft.occasion);
+        if (typeof draft.step === "number") setStep(Math.min(4, Math.max(0, draft.step)));
+        if (draft.category) setCategory(draft.category);
+        if (Array.isArray(draft.lines)) setLines(draft.lines);
+        if (draft.details) setDetails((current) => ({ ...current, ...draft.details }));
+        if (draft.contact) setContact((current) => ({ ...current, ...draft.contact }));
+        if (draft.dietaries) setDietaries((current) => ({ ...current, ...draft.dietaries }));
+        if (draft.acks) setAcks((current) => ({ ...current, ...draft.acks }));
+        setRestoredDraft(true);
+      }
+    } catch {
+      window.localStorage.removeItem(draftKey(site.key));
+    } finally {
+      setDraftReady(true);
+    }
+  }, [site.key]);
+
+  useEffect(() => {
+    if (!draftReady) return;
+    const draft = { occasion, step, category, lines, details, contact, dietaries, acks };
+    try {
+      window.localStorage.setItem(draftKey(site.key), JSON.stringify(draft));
+    } catch {
+      // Private browsing or a full storage quota should not block booking.
+    }
+  }, [draftReady, site.key, occasion, step, category, lines, details, contact, dietaries, acks]);
+
   useEffect(() => {
     fetch(`/api/reference-data?site=${encodeURIComponent(site.key)}`)
       .then((response) => response.json())
@@ -162,7 +207,7 @@ export default function BookingPortal({
   );
   const setQuantity = (item: PortalMenuItem, quantity: number) =>
     setLines((current) => {
-      const minimum = Math.max(1, item.minimumQuantity || 1);
+      const minimum = Math.max(1, item.minimumQuantity || 1, /rice paper rolls?/i.test(item.name) ? 3 : 1);
       const requested = Number.isFinite(quantity) ? Math.floor(quantity) : 0;
       const nextQuantity = requested > 0 ? Math.max(minimum, requested) : 0;
       return nextQuantity > 0
@@ -196,8 +241,7 @@ export default function BookingPortal({
     contact.requesterCompany &&
     contact.requesterEmail &&
     contact.requesterPhone &&
-    contact.clientName &&
-    contact.clientCompany &&
+    (site.key === "angel-court" ? contact.clientName && contact.clientCompany : true) &&
     details.eventDate &&
     details.startTime &&
     details.guestCount > 0 &&
@@ -223,10 +267,14 @@ export default function BookingPortal({
         );
       }
     }
-    setStep((value) => Math.min(3, value + 1));
+    if (step === 3 && !Object.values(acks).every(Boolean))
+      return setError("Please confirm the three acknowledgements before reviewing your booking.");
+    setStep((value) => Math.min(4, value + 1));
   };
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
+    const submitter = (event.nativeEvent as SubmitEvent).submitter;
+    if (step === 4 && !submitter) return;
     const dietaryTotal = [
       dietaries.vegetarian,
       dietaries.vegan,
@@ -240,26 +288,51 @@ export default function BookingPortal({
       return setError("Dietary counts cannot exceed the number of guests.");
     if (dietaries.allergyDetails && !dietaries.severeAllergyAcknowledged)
       return setError("Please acknowledge the severe allergy notice.");
+    if (!Object.values(acks).every(Boolean)) {
+      setStep(3);
+      return setError("Please confirm the three acknowledgements before sending.");
+    }
+    const clientName = String(site.key === "angel-court" ? contact.clientName : contact.requesterName || contact.clientName || "").trim();
+    const clientCompany = String(site.key === "angel-court" ? contact.clientCompany : contact.requesterCompany || contact.clientCompany || "").trim();
+    const eventType = occasions.some((item) => item.id === occasion) ? occasion : "bespoke";
     const parsed = BookingInput.safeParse({
-      ...contact,
-      clientEmail: contact.requesterEmail,
-      clientPhone: contact.requesterPhone,
-      companyName: contact.requesterCompany,
-      ...details,
-      endTime: details.endTime || undefined,
-      eventType: occasion || "bespoke",
+      clientName,
+      clientEmail: String(contact.requesterEmail || "").trim(),
+      clientPhone: String(contact.requesterPhone || "").trim(),
+      companyName: clientCompany,
+      requesterName: String(contact.requesterName || "").trim() || undefined,
+      requesterEmail: String(contact.requesterEmail || "").trim() || undefined,
+      requesterPhone: String(contact.requesterPhone || "").trim() || undefined,
+      requesterCompany: String(contact.requesterCompany || "").trim() || undefined,
+      clientCompany,
+      invoiceReference: String(contact.invoiceReference || "").trim() || undefined,
+      eventDate: String(details.eventDate || "").trim(),
+      startTime: String(details.startTime || "").trim(),
+      endTime: String(details.endTime || "").trim() || undefined,
+      guestCount: Number(details.guestCount),
+      floorLevel: String(details.floorLevel || "").trim() || undefined,
+      roomOrArea: String(details.roomOrArea || "").trim() || undefined,
+      deliveryPoint: String(details.deliveryPoint || "").trim() || undefined,
+      eventType,
       acknowledgements: {
-        quoteSubjectToConfirmation:
-          acks.quoteSubjectToConfirmation || undefined,
-        noticePolicyAccepted: acks.noticePolicyAccepted || undefined,
-        dietaryResponsibilityAccepted:
-          acks.dietaryResponsibilityAccepted || undefined,
+        quoteSubjectToConfirmation: true,
+        noticePolicyAccepted: true,
+        dietaryResponsibilityAccepted: true,
       },
     });
-    if (!parsed.success)
-      return setError(
-        parsed.error.issues[0]?.message || "Please review the request.",
-      );
+    if (!parsed.success) {
+      const issue = parsed.error.issues[0];
+      const path = issue?.path.join(".") || "";
+      const message = issue?.message || "";
+      if (path.startsWith("acknowledgements") || message.toLowerCase().includes("expected true")) {
+        setStep(3);
+        return setError("Please confirm each acknowledgement before sending.");
+      }
+      if (path === "eventDate") return setError("Please add a valid service date.");
+      if (path === "startTime") return setError("Please add a valid service time.");
+      if (path === "roomOrArea") return setError("Please add a floor, room or delivery point.");
+      return setError(message === "Invalid input" ? `Please review ${path || "the booking details"} before sending.` : message || `Please review ${path || "the booking details"} before sending.`);
+    }
     const payload = {
       bookingId: portalBookingId(site.key),
       submittedAt: new Date().toISOString(),
@@ -276,8 +349,8 @@ export default function BookingPortal({
           phone: contact.requesterPhone,
           companyName: contact.requesterCompany,
         },
-        clientName: contact.clientName,
-        clientCompany: contact.clientCompany,
+      clientName,
+      clientCompany,
         ...(contact.invoiceReference.trim()
           ? { invoiceReference: contact.invoiceReference.trim() }
           : {}),
@@ -314,16 +387,19 @@ export default function BookingPortal({
       acknowledgements: acks,
       specialInstructions: contact.specialInstructions,
     };
+    setSending(true);
     const response = await fetch("/api/bookings", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(payload),
     });
     const json = await response.json();
+    setSending(false);
     if (!response.ok)
       return setError(json.error?.message || "We could not send your request.");
+    window.localStorage.removeItem(draftKey(site.key));
     setConfirmation(
-      `Thank you. Your request is safely with FIKA as ${json.canonicalBookingId}. We will review it before confirming anything.`,
+      "Thank you. Your request is safely with FIKA. We will review it before confirming anything.",
     );
   };
   const resetBooking = () => {
@@ -370,6 +446,7 @@ export default function BookingPortal({
     setError("");
     setConfirmation("");
     setResetOpen(false);
+    window.localStorage.removeItem(draftKey(site.key));
   };
   useEffect(() => {
     if (!resetOpen) return;
@@ -397,6 +474,7 @@ export default function BookingPortal({
   return (
     <main className={`mnk ${site.cssClass}`}>
       <Top site={site} onStartAgain={() => setResetOpen(true)} />
+      {restoredDraft && <p className="draft-restored" role="status">Your unfinished booking has been restored.</p>}
       {resetOpen && <ResetModal onCancel={() => setResetOpen(false)} onConfirm={resetBooking} />}
       <section className="mnk-hero">
         <p className="eyebrow">{site.label} hospitality</p>
@@ -437,7 +515,11 @@ export default function BookingPortal({
             </button>
           ))}
         </aside>
-        <form className="workspace" onSubmit={submit}>
+        <form className="workspace" onSubmit={submit} onKeyDown={(event) => {
+          if (step === 4 && event.key === "Enter" && (event.target as HTMLElement).tagName !== "BUTTON") {
+            event.preventDefault();
+          }
+        }}>
           {error && <p className="error">{error}</p>}
           {step === 0 && (
             <Choose
@@ -448,6 +530,7 @@ export default function BookingPortal({
           )}
           {step === 1 && (
             <Details
+              siteKey={site.key}
               contact={contact}
               setContact={setContact}
               details={details}
@@ -476,6 +559,7 @@ export default function BookingPortal({
               setAcks={setAcks}
             />
           )}
+          {step === 4 && <FinalReview site={site} contact={contact} details={details} selected={selected} total={total} dietaries={dietaries} acks={acks} />}
           <footer>
             <button
               type="button"
@@ -485,16 +569,16 @@ export default function BookingPortal({
             >
               Back
             </button>
-            {step < 3 ? (
+            {step < 4 ? (
               <button type="button" className="primary" onClick={next}>
                 Continue
               </button>
             ) : (
-              <button className="primary">Send request</button>
+              <button className="primary" disabled={sending || !Object.values(acks).every(Boolean)}>{sending ? "Sending…" : Object.values(acks).every(Boolean) ? "Send request" : "Complete acknowledgements"}</button>
             )}
           </footer>
         </form>
-        <Summary occasion={occasion} selected={selected} total={total} />
+        <Summary occasion={occasion} selected={selected} total={total} details={details} />
       </div>
     </main>
   );
@@ -597,11 +681,13 @@ function Choose({
   );
 }
 function Details({
+  siteKey,
   contact,
   setContact,
   details,
   setDetails,
 }: {
+  siteKey: PortalSiteKey;
   contact: Record<string, string>;
   setContact: (value: any) => void;
   details: Record<string, string | number>;
@@ -650,23 +736,17 @@ function Details({
             }
           />
         </label>
-        <p className="field-group-label wide">Who is the booking for?</p>
-        <label>
-          Client name
-          <input
-            required
-            value={contact.clientName}
-            onChange={(e) => setContact({ ...contact, clientName: e.target.value })}
-          />
-        </label>
-        <label>
-          Client company
-          <input
-            required
-            value={contact.clientCompany}
-            onChange={(e) => setContact({ ...contact, clientCompany: e.target.value })}
-          />
-        </label>
+        {siteKey === "angel-court" && <>
+          <p className="field-group-label wide">Who is the booking for?</p>
+          <label>
+            Client name
+            <input required value={contact.clientName} onChange={(e) => setContact({ ...contact, clientName: e.target.value })} />
+          </label>
+          <label>
+            Client company
+            <input required value={contact.clientCompany} onChange={(e) => setContact({ ...contact, clientCompany: e.target.value })} />
+          </label>
+        </>}
         <label className="wide">
           Invoice / PO reference <small>(optional)</small>
           <input
@@ -829,7 +909,7 @@ function Plan({
                   type="button"
                   aria-label={`Remove one ${item.name}`}
                   onClick={() => {
-                    const minimum = Math.max(1, item.minimumQuantity || 1);
+                    const minimum = Math.max(1, item.minimumQuantity || 1, /rice paper rolls?/i.test(item.name) ? 3 : 1);
                     const current = line?.quantity || 0;
                     setQuantity(item, current > minimum ? current - 1 : 0);
                   }}
@@ -838,7 +918,7 @@ function Plan({
                 </button>
                 <input
                   aria-label={`${item.name} quantity`}
-                  min="0"
+                    min={/rice paper rolls?/i.test(item.name) ? 3 : 0}
                   type="number"
                   value={line?.quantity || ""}
                   onChange={(event) =>
@@ -960,7 +1040,29 @@ function Submit({
     </section>
   );
 }
-function Summary({ occasion, selected, total }: any) {
+
+function FinalReview({ site, contact, details, selected, total, dietaries, acks }: any) {
+  const client = site.key === "angel-court" ? `${contact.clientName} · ${contact.clientCompany}` : `${contact.requesterName} · ${contact.requesterCompany}`;
+  return <section className="submit final-review">
+    <p className="eyebrow">One last look</p>
+    <h2>Check your booking before sending</h2>
+    <p className="intro">Please check the key details below. You can go back to make changes.</p>
+    <div className="final-review__facts">
+      {[['Booking for', client], ['When', `${humanDate(details.eventDate)} · ${humanTime(details.startTime)}`], ['Guests', `${details.guestCount} pax`], ['Where', details.roomOrArea || details.floorLevel || details.deliveryPoint]].map(([label, value]) => <div key={label as string}><small>{label}</small><strong>{value}</strong></div>)}
+    </div>
+    <div className="final-review__order"><div className="final-review__order-head"><span>Order summary</span><span>Net estimate</span></div>{selected.map((value: any) => <div className="final-review__line" key={value.item.id}><span><strong>{value.quantity} × {value.item.name}</strong>{value.item.servingInfo && <small>{value.item.servingInfo}</small>}</span><b>£{(value.quantity * value.item.unitPrice).toFixed(2)}</b></div>)}<div className="final-review__total"><span>Menu total</span><strong>£{total.toFixed(2)}</strong></div></div>
+    <div className={`final-review__notice ${Object.values(acks).every(Boolean) ? "" : "final-review__notice--attention"}`}><strong>{Object.values(acks).every(Boolean) ? "Ready to send" : "One more step"}</strong><span>{Object.values(acks).every(Boolean) ? (Object.entries(dietaries).filter(([, value]) => value && value !== false).length ? "Dietary information is included with this request." : "No dietary requirements recorded.") + " Your request will be reviewed before anything is confirmed." : "Please go back to Dietaries and confirm each acknowledgement before sending."}</span></div>
+  </section>;
+}
+function humanDate(value: string) {
+  const date = new Date(`${value}T12:00:00`);
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
+}
+function humanTime(value: string) {
+  const match = /^([0-9]{2}):([0-9]{2})$/.exec(value);
+  return match ? `${match[1]}:${match[2]}` : value;
+}
+function Summary({ occasion, selected, total, details }: any) {
   return (
     <aside className="summary">
       <p className="eyebrow">Your request</p>
@@ -969,6 +1071,7 @@ function Summary({ occasion, selected, total }: any) {
           ? occasions.find((item) => item.id === occasion)?.label
           : "Choose an occasion"}
       </h3>
+      <p><b>{details.guestCount} pax</b>{details.eventDate ? ` · ${humanDate(details.eventDate)}` : ""}</p>
       {selected.length ? (
         <ul>
           {selected.map((value: any) => (
