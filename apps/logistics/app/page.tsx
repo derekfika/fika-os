@@ -938,7 +938,16 @@ function StableTimelineLane({ run, lane, startHour, zoom, onStop: inspectStop, o
       if (!draggingStop) return;
       const drag = event as unknown as DragEvent;
       const target = (drag.target as HTMLElement | null)?.closest(".stable-lane");
-      if (!target) window.dispatchEvent(new CustomEvent("logistics-drag-time", { detail: { stopId: draggingStop.stopId, start: draggingStop.start, valid: false } }));
+      if (!target) {
+        window.dispatchEvent(new CustomEvent("logistics-drag-time", { detail: { stopId: draggingStop.stopId, start: draggingStop.start, valid: false } }));
+        return;
+      }
+      const rect = target.getBoundingClientRect();
+      const raw = Math.max(0, Math.min(24 * 60, ((drag.clientX - rect.left) / rect.width) * 24 * 60));
+      const snapped = Math.round(raw / 15) * 15;
+      const start = `${String(Math.floor(snapped / 60)).padStart(2, "0")}:${String(snapped % 60).padStart(2, "0")}`;
+      const targetLane = target.classList.contains("collection") ? "collection" : "delivery";
+      window.dispatchEvent(new CustomEvent("logistics-drag-time", { detail: { stopId: draggingStop.stopId, start, valid: targetLane === lane } }));
     };
     window.addEventListener("logistics-drag-time", update);
     document.addEventListener("dragover", outsideTimeline, true);

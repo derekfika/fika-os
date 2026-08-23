@@ -359,7 +359,7 @@
 .real-planner .stable-drag-preview strong { margin-top:4px; font-size:10px; }
 .real-planner .stable-drag-preview.invalid { border-color:#9a94aa; border-left-color:#9a94aa; background:#efedf2; color:#77718b; filter:grayscale(1); }
 .real-planner .stable-stop.drag-invalid { opacity:.42; filter:grayscale(1); }
-.real-planner .stable-group { width:calc(var(--timeline-base-width) * 4 * var(--timeline-scale, 1)); min-width:calc(var(--timeline-base-width) * 4 * var(--timeline-scale, 1)); }
+.real-planner .stable-group { width:calc(var(--timeline-base-width) * 4 * var(--timeline-scale, 1)); min-width:calc(var(--timeline-base-width) * 4 * var(--timeline-scale, 1)); overflow:visible; }
 .real-planner .stable-ruler-canvas { width:100%; min-width:100%; transform:none !important; }
 .real-planner .stable-vehicle-row { width:100%; min-width:100%; }
 .real-planner .stable-lane { width:100% !important; transform:none !important; }
