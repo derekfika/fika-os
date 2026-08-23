@@ -152,20 +152,30 @@ const similarDishNames = (left: string, right: string) => {
   const leftKey = [...leftTokens].sort().join("");
   const rightKey = [...rightTokens].sort().join("");
   const editSimilarity = 1 - levenshtein(leftKey, rightKey) / Math.max(leftKey.length, rightKey.length);
-  return (leftTokens.size >= 3 && (jaccard >= 0.72 || (containment >= 0.86 && editSimilarity >= 0.7))) || editSimilarity >= 0.91;
+  // The catalogue is deliberately forgiving: two shared ingredients in the same
+  // governed category are enough to treat a dish as a likely naming variant.
+  return (leftTokens.size >= 3 && overlap >= 2 && (jaccard >= 0.35 || containment >= 0.5)) || (leftTokens.size >= 3 && (jaccard >= 0.58 || (containment >= 0.76 && editSimilarity >= 0.62))) || editSimilarity >= 0.91;
 };
 const richness = (item: MenuItem) => Number(item.mayContainReviewed) * 100 + item.allergenEvidence.length * 5 + Number(Boolean(item.ingredients?.length)) * 3 + Number(Boolean(item.description || item.preparationDescription || item.methodSteps?.length));
 
 const allergenEvidenceKey = (evidence: MenuItem["allergenEvidence"][number]) => `${evidence.allergen.toLocaleLowerCase()}|${evidence.value}|${evidence.source.toLocaleLowerCase()}|${evidence.reviewedBy || ""}`;
 const mergeAllergenEvidence = (items: MenuItem[]) => [...new Map(items.flatMap(item => item.allergenEvidence).map(evidence => [allergenEvidenceKey(evidence), evidence])).values()];
 
-export async function mergeSimilarCanonicalItems(actor = "automatic-dish-normaliser") {
+/** Returns fuzzy groups for deliberate review without changing the catalogue. */
+export async function previewSimilarCanonicalItems() {
+  const active = (await readItems()).filter(item => item.reviewStatus !== "archived"); const groups: MenuItem[][] = [];
+  for (const item of active) { const category = normaliseDishCategory(item.category); const matching = groups.find(group => normaliseDishCategory(group[0].category) === category && group.some(candidate => similarDishNames(candidate.displayName, item.displayName))); if (matching) matching.push(item); else groups.push([item]); }
+  return groups.filter(group => group.length > 1).map(group => { const ordered = group.slice().sort((a, b) => richness(b) - richness(a) || a.displayName.length - b.displayName.length); return { category: normaliseDishCategory(ordered[0].category), survivor: { id: ordered[0].canonicalId, name: ordered[0].displayName }, candidates: ordered.map(item => ({ id: item.canonicalId, name: item.displayName, allergenCount: item.allergenEvidence.length, hasRecipe: Boolean(item.ingredients?.length || item.methodSteps?.length || item.preparationDescription) })) }; });
+}
+
+export async function mergeSimilarCanonicalItems(actor = "automatic-dish-normaliser", selectedIds?: Set<string>) {
   const items = await readItems();
-  const active = items.filter(item => item.reviewStatus !== "archived");
+  const inScope = (item: MenuItem) => !selectedIds || selectedIds.has(item.canonicalId);
+  const active = items.filter(item => item.reviewStatus !== "archived" && inScope(item));
   const groups: MenuItem[][] = [];
   for (const item of active) {
     const category = normaliseDishCategory(item.category);
-    const matching = groups.find(group => normaliseDishCategory(group[0].category) === category && similarDishNames(group[0].displayName, item.displayName));
+    const matching = groups.find(group => normaliseDishCategory(group[0].category) === category && group.some(candidate => similarDishNames(candidate.displayName, item.displayName)));
     if (matching) matching.push(item);
     else { const group = [item]; groups.push(group); }
   }
@@ -181,9 +191,9 @@ export async function mergeSimilarCanonicalItems(actor = "automatic-dish-normali
     winner.audit.push({ action: "automatic-dish-merge-survivor", at: new Date().toISOString(), by: actor });
   }
   const winners = new Map<string, MenuItem>();
-  for (const item of items.filter(item => item.reviewStatus !== "archived")) { const key = `${normaliseDishCategory(item.category)}|${mergeKey(item.displayName)}`; if (key.endsWith("|")) continue; winners.set(key, item); }
+  for (const item of items.filter(item => item.reviewStatus !== "archived" && inScope(item))) { const key = `${normaliseDishCategory(item.category)}|${mergeKey(item.displayName)}`; if (key.endsWith("|")) continue; winners.set(key, item); }
   const aliases: Record<string, string> = {};
-  for (const item of items) { const winner = winners.get(`${normaliseDishCategory(item.category)}|${mergeKey(item.displayName)}`); if (winner && winner.canonicalId !== item.canonicalId) { mapping[item.canonicalId] = winner.canonicalId; aliases[item.displayName.toLocaleLowerCase()] = winner.displayName; } }
+  for (const item of items.filter(inScope)) { const winner = winners.get(`${normaliseDishCategory(item.category)}|${mergeKey(item.displayName)}`); if (winner && winner.canonicalId !== item.canonicalId) { mapping[item.canonicalId] = winner.canonicalId; aliases[item.displayName.toLocaleLowerCase()] = winner.displayName; } }
   if (merged) await writeItems(items);
   return { mapping, aliases, merged };
 }
