@@ -202,9 +202,7 @@ export default function SandwichesPage() {
                         className={`allergen-cell allergen-cell--${value}`}
                         onClick={() => toggle(key)}
                       >
-                        {value === "contains"
-                          ? "✓"
-                          : value === "may_contain"
+                        {value === "may_contain"
                             ? "MC"
                             : ""}
                       </button>

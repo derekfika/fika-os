@@ -815,9 +815,7 @@ export default function LianaOrderDetail({
                                   >
                                     {state === "may_contain"
                                       ? "MC"
-                                      : state === "contains"
-                                        ? "✓"
-                                        : ""}
+                                      : ""}
                                   </button>
                                 </td>
                               );
