@@ -4,6 +4,7 @@ export type DishPickerItem = {
   category?: string;
   subcategory?: string;
   description?: string;
+  usage?: string[];
   usageCount?: number;
   lastServed?: string;
   allergenEvidence?: Array<{ allergen: string; value: "contains" | "free_from" | "may_contain" | "unknown" }>;

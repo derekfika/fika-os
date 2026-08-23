@@ -1,0 +1,18 @@
+"use client";
+import { useCallback, useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import type { RollingSnapshot, RollingEntry } from "@/lib/rolling-menu-types";
+import { ROLLING_SLOTS } from "@/lib/rolling-menu-types";
+export type Dish = { id: string; name: string; category?: string; description?: string; usage?: string[] };
+export function useRollingData() {
+  const [snapshot, setSnapshot] = useState<RollingSnapshot>(); const [weeks, setWeeks] = useState<Array<{ id: string; weekCommencing: string }>>([]); const [dishes, setDishes] = useState<Dish[]>([]); const [message, setMessage] = useState(""); const [error, setError] = useState("");
+  const params = useSearchParams(); const requestedWeek = params.get("week");
+  const load = useCallback(async (weekId?: string) => { const query = weekId ? `?weekId=${encodeURIComponent(weekId)}` : ""; const response = await fetch(`/api/rolling-menu${query}`, { cache: "no-store" }); const body = await response.json(); if (!response.ok) { setError(body.error?.message || "Menu could not be loaded."); return; } setSnapshot(body.snapshot); setWeeks(body.weeks || []); }, []);
+  useEffect(() => { void load(requestedWeek || undefined); }, [load, requestedWeek]);
+  useEffect(() => { void fetch("/api/catalogue", { cache: "no-store" }).then(response => response.json()).then(body => setDishes((body.entries || []).map((entry: { id: string; name: string; category?: string; description?: string; usage?: string[] }) => entry))).catch(() => undefined); }, []);
+  const command = useCallback(async (action: string, extra: Record<string, unknown> = {}) => { setMessage("Saving…"); const response = await fetch("/api/rolling-menu", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action, ...extra }) }); const body = await response.json(); if (!response.ok) { setError(body.error?.message || "Could not save."); setMessage(""); return false; } setSnapshot(body.snapshot); setWeeks(body.weeks || []); setMessage("Saved"); window.setTimeout(() => setMessage(""), 1200); return true; }, []);
+  return { snapshot, setSnapshot, weeks, dishes, message, error, setError, load, command };
+}
+export const slotLabel = (slot: string) => slot.replace(/^SALAD \d+$/, "Salad").replace("COLD PROTEIN", "Cold protein").replace("HOT VEG VEGAN", "Hot veg / vegan").replace("HOT MEAT", "Hot meat").replace(/^EXTRAS \d+$/, "Side").replace("SOUP", "Soup");
+export const groupedSlots = (snapshot: RollingSnapshot) => { const slots = Array.from(new Set([...ROLLING_SLOTS, ...(snapshot.week.customSlots || []), ...snapshot.entries.map(entry => entry.slot)])).filter(slot => !snapshot.week.removedSlots?.includes(slot)); const groups: Array<[string, string[]]> = [["SALADS", slots.filter(slot => slot.startsWith("SALAD "))], ["COLD", slots.filter(slot => slot === "COLD PROTEIN")], ["HOT", slots.filter(slot => ["SOUP", "HOT MEAT", "HOT VEG VEGAN"].includes(slot))], ["SIDES", slots.filter(slot => slot.startsWith("EXTRAS ") || !["COLD PROTEIN", "SOUP", "HOT MEAT", "HOT VEG VEGAN"].includes(slot) && !slot.startsWith("SALAD "))]]; return groups.filter(([, values]) => values.length); };
+export function patchEntry(entry: RollingEntry, patch: Record<string, unknown>) { return { action: "update-entry", weekId: entry.id.split(":entry:")[0], entryId: entry.id, patch }; }

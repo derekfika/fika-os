@@ -3,7 +3,7 @@ import path from "node:path";
 import type { MenuItem } from "./domain";
 import { deterministicId } from "./domain";
 import { normaliseDishCategory } from "./dish-categories";
-import { titleCase } from "./text";
+import { normaliseDishName } from "./text";
 import type { RollingEntry } from "./rolling-menu-types";
 import { appDataPath } from "../../shared/app-data-path";
 
@@ -21,7 +21,7 @@ async function readItems(): Promise<MenuItem[]> {
 
 async function writeItems(items: MenuItem[]) {
   await mkdir(path.dirname(filePath), { recursive: true });
-  const normalised = items.map(item => ({ ...item, displayName: titleCase(item.displayName) }));
+  const normalised = items.map(item => ({ ...item, displayName: normaliseDishName(item.displayName) }));
   await writeFile(filePath, JSON.stringify({ version: 1, items: normalised }, null, 2) + "\n", "utf8");
 }
 
@@ -29,7 +29,7 @@ export async function listCanonicalMenuItems() { return readItems(); }
 
 export async function createCanonicalMenuItem(input: { displayName: string; category?: string; description?: string; preparationNotes?: string; allergenEvidence?: MenuItem["allergenEvidence"] }, actor = "local-menu-planner") {
   const items = await readItems();
-  const displayName = titleCase(input.displayName);
+  const displayName = normaliseDishName(input.displayName);
   const existing = items.find(item => item.displayName.trim().toLocaleLowerCase() === displayName.toLocaleLowerCase());
   if (existing) { if (existing.displayName !== displayName) { existing.displayName = displayName; await writeItems(items); } return existing; }
   const at = new Date().toISOString();
@@ -59,7 +59,7 @@ export async function syncRollingEntries(entries: RollingEntry[], actor = "rolli
   const items = await readItems();
   let changed = false;
   for (const entry of entries) {
-    const name = titleCase(entry.itemLabel.trim());
+    const name = normaliseDishName(entry.itemLabel);
     if (!name) continue;
     const existing = items.find(item => item.canonicalId === entry.itemId || item.displayName.toLowerCase() === name.toLowerCase());
     const at = new Date().toISOString();
@@ -99,7 +99,7 @@ export async function syncRollingEntries(entries: RollingEntry[], actor = "rolli
 export function canonicalFromSourceCandidate(candidate: MenuItem, actor = "local-menu-reviewer", at = new Date().toISOString()): MenuItem {
   return {
     ...structuredClone(candidate),
-    displayName: titleCase(candidate.displayName),
+    displayName: normaliseDishName(candidate.displayName),
     category: normaliseDishCategory(candidate.category),
     reviewStatus: "unreviewed",
     recipeStatus: "draft",
@@ -112,28 +112,72 @@ export function canonicalFromSourceCandidate(candidate: MenuItem, actor = "local
 export async function promoteSourceCandidate(candidate: MenuItem, actor = "local-menu-reviewer") {
   const items = await readItems();
   const existing = items.find((item) => item.canonicalId === candidate.canonicalId);
-  if (existing) { const displayName = titleCase(existing.displayName); if (existing.displayName !== displayName) { existing.displayName = displayName; await writeItems(items); } return existing; }
+  if (existing) { const displayName = normaliseDishName(existing.displayName); if (existing.displayName !== displayName) { existing.displayName = displayName; await writeItems(items); } return existing; }
   const item = canonicalFromSourceCandidate(candidate, actor);
   items.push(item);
   await writeItems(items);
   return item;
 }
 
-const mergeNoise = new Set(["salad", "dish", "main", "protein", "breast", "leaf", "leaves"]);
-const mergeKey = (value: string) => value.toLocaleLowerCase().replace(/&/g, "and").replace(/[^a-z0-9]+/g, " ").trim().split(/\s+/).filter(Boolean).filter(token => !mergeNoise.has(token)).sort().join(" ");
+const mergeNoise = new Set(["salad", "dish", "main", "protein", "breast", "leaf", "leaves", "fresh", "style", "styled"]);
+const stemMergeToken = (token: string) => {
+  if (token.endsWith("ies") && token.length > 5) return `${token.slice(0, -3)}y`;
+  if (token.endsWith("es") && token.length > 5) return token.slice(0, -2);
+  if (token.endsWith("s") && token.length > 4) return token.slice(0, -1);
+  return token;
+};
+const mergeTokens = (value: string) => normaliseDishName(value).toLocaleLowerCase("en-GB").replace(/&/g, " and ").replace(/[^a-z0-9]+/g, " ").trim().split(/\s+/).filter(Boolean).map(stemMergeToken).filter(token => !mergeNoise.has(token));
+const mergeKey = (value: string) => [...new Set(mergeTokens(value))].sort().join(" ");
+const levenshtein = (left: string, right: string) => {
+  const previous = Array.from({ length: right.length + 1 }, (_, index) => index);
+  for (let row = 1; row <= left.length; row++) {
+    let diagonal = previous[0];
+    previous[0] = row;
+    for (let column = 1; column <= right.length; column++) {
+      const above = previous[column];
+      previous[column] = left[row - 1] === right[column - 1] ? diagonal : Math.min(diagonal + 1, above + 1, previous[column - 1] + 1);
+      diagonal = above;
+    }
+  }
+  return previous[right.length];
+};
+const similarDishNames = (left: string, right: string) => {
+  const leftTokens = new Set(mergeTokens(left));
+  const rightTokens = new Set(mergeTokens(right));
+  if (!leftTokens.size || !rightTokens.size) return false;
+  const overlap = [...leftTokens].filter(token => rightTokens.has(token)).length;
+  const union = new Set([...leftTokens, ...rightTokens]).size;
+  const containment = overlap / Math.min(leftTokens.size, rightTokens.size);
+  const jaccard = overlap / union;
+  const leftKey = [...leftTokens].sort().join("");
+  const rightKey = [...rightTokens].sort().join("");
+  const editSimilarity = 1 - levenshtein(leftKey, rightKey) / Math.max(leftKey.length, rightKey.length);
+  return (leftTokens.size >= 3 && (jaccard >= 0.72 || (containment >= 0.86 && editSimilarity >= 0.7))) || editSimilarity >= 0.91;
+};
 const richness = (item: MenuItem) => Number(item.mayContainReviewed) * 100 + item.allergenEvidence.length * 5 + Number(Boolean(item.ingredients?.length)) * 3 + Number(Boolean(item.description || item.preparationDescription || item.methodSteps?.length));
+
+const allergenEvidenceKey = (evidence: MenuItem["allergenEvidence"][number]) => `${evidence.allergen.toLocaleLowerCase()}|${evidence.value}|${evidence.source.toLocaleLowerCase()}|${evidence.reviewedBy || ""}`;
+const mergeAllergenEvidence = (items: MenuItem[]) => [...new Map(items.flatMap(item => item.allergenEvidence).map(evidence => [allergenEvidenceKey(evidence), evidence])).values()];
 
 export async function mergeSimilarCanonicalItems(actor = "automatic-dish-normaliser") {
   const items = await readItems();
   const active = items.filter(item => item.reviewStatus !== "archived");
-  const groups = new Map<string, MenuItem[]>();
-  for (const item of active) { const key = `${normaliseDishCategory(item.category)}|${mergeKey(item.displayName)}`; if (key.endsWith("|")) continue; groups.set(key, [...(groups.get(key) || []), item]); }
+  const groups: MenuItem[][] = [];
+  for (const item of active) {
+    const category = normaliseDishCategory(item.category);
+    const matching = groups.find(group => normaliseDishCategory(group[0].category) === category && similarDishNames(group[0].displayName, item.displayName));
+    if (matching) matching.push(item);
+    else { const group = [item]; groups.push(group); }
+  }
   const mapping: Record<string, string> = {};
   let merged = 0;
-  for (const candidates of groups.values()) {
+  for (const candidates of groups) {
     if (candidates.length < 2) continue;
     const winner = candidates.slice().sort((a, b) => richness(b) - richness(a) || a.displayName.length - b.displayName.length)[0];
-    for (const loser of candidates) { if (loser.canonicalId === winner.canonicalId) continue; mapping[loser.canonicalId] = winner.canonicalId; loser.reviewStatus = "archived"; loser.recipeStatus = "archived"; loser.audit.push({ action: "automatically-merged-into-canonical-dish", at: new Date().toISOString(), by: actor }); merged += 1; }
+    const at = new Date().toISOString();
+    winner.allergenEvidence = mergeAllergenEvidence(candidates);
+    winner.mayContainReviewed = candidates.some(item => item.mayContainReviewed);
+    for (const loser of candidates) { if (loser.canonicalId === winner.canonicalId) continue; mapping[loser.canonicalId] = winner.canonicalId; loser.reviewStatus = "archived"; loser.recipeStatus = "archived"; loser.audit.push({ action: "automatically-merged-into-canonical-dish", at, by: actor }); merged += 1; }
     winner.audit.push({ action: "automatic-dish-merge-survivor", at: new Date().toISOString(), by: actor });
   }
   const winners = new Map<string, MenuItem>();

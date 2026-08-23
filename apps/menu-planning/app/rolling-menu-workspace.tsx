@@ -9,6 +9,7 @@ import { CANONICAL_DISH_CATEGORIES, categoryForSlot } from "@/lib/dish-categorie
 import { resolveAllergenSnapshot } from "@/lib/allergen-resolution";
 import type { PublicationDayState } from "@/lib/menu-publication";
 import { CANONICAL_ALLERGEN_KEYS } from "../../shared/allergen-contract";
+import MenuPlanningShell from "./menu-planning-shell";
 
 const ALLERGENS = CANONICAL_ALLERGEN_KEYS;
 const display = (value: string) => value.replaceAll("_", " ").replace(/\b\w/g, c => c.toUpperCase());
@@ -135,25 +136,9 @@ export default function RollingMenuWorkspace() {
   const hasPublishedWeek = Boolean(currentPublication?.days.some(publicationDay => publicationDay.status === "published"));
   const publishLabel = hasCurrentPublication ? (hasUnpublishedChanges ? "Publish amendment" : `Published v${dayPublication?.currentVersion}`) : `Publish ${day.dayName}`;
 
-  return <main style={styles.shell}>
-    <div style={styles.appFrame}>
-      <aside style={styles.sidebar} aria-label="FIKA OS navigation">
-        <div style={styles.sidebarBrand}><strong>FIKA</strong> <span>OS</span></div>
-        <div style={styles.sidebarKicker}>MENU PLANNING</div>
-        <nav style={styles.sidebarNav}>
-          <Link href="/" style={styles.sidebarLinkActive}>▣ <span>Delivered-In Menus</span></Link>
-          <Link href="/" style={styles.sidebarLink}>▤ <span>Menu Planner</span></Link>
-          <Link href="/catalogue" style={styles.sidebarLink}>▧ <span>Templates &amp; dishes</span></Link>
-          <Link href="/catalogue" style={styles.sidebarLink}>◇ <span>Allergens</span></Link>
-          <Link href="/" style={styles.sidebarLink}>⌖ <span>Destinations</span></Link>
-          <Link href="/catalogue" style={styles.sidebarLink}>◈ <span>Ingredients</span></Link>
-          <Link href="/" style={styles.sidebarLink}>▥ <span>Reports</span></Link>
-        </nav>
-        <div style={styles.sidebarFooter}><Link href="/" style={styles.sidebarLink}>⚙ <span>Settings</span></Link><Link href="/" style={styles.sidebarLink}>? <span>Help &amp; support</span></Link><div style={styles.profile}><span style={styles.avatar}>DB</span><span><strong>Derek Buckley</strong><small>Menu Manager</small></span><b>⌄</b></div></div>
-      </aside>
-      <div style={styles.workspace}>
-    <header style={styles.header}><div><div style={styles.brand}>FIKA OS <span>/</span> Menu Planning <span>/</span> <b>Delivered-In Menus</b></div><h1 style={styles.title}>Delivered-In Menus</h1></div><div style={styles.headerRight}><span style={styles.user}>Menu planner</span><button style={styles.secondary} aria-expanded={showMore} aria-haspopup="menu" onClick={() => setShowMore(value => !value)}>Menu ▾</button></div></header>
-    {showMore && <div role="menu" style={styles.moreMenu}><Link role="menuitem" style={styles.moreLink} href="/">Delivered-In Menus</Link><Link role="menuitem" style={styles.moreLink} href="/catalogue">Dish Library</Link><Link role="menuitem" style={styles.moreLink} href="/dishes/new">Create dish</Link><button style={styles.moreAction} onClick={() => fileRef.current?.click()}>Import historical workbook</button><input ref={fileRef} type="file" accept=".xlsx,.xls" hidden onChange={async event => { const file = event.target.files?.[0]; if (!file) return; const response = await fetch("/api/rolling-menu/import", { method: "POST", headers: { "content-type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "x-workbook-name": file.name }, body: await file.arrayBuffer() }); const body = await response.json(); if (!response.ok) setError(body.error?.message || "Import failed."); else { setSnapshot(body.snapshot); setWeeks(body.weeks || []); setPublicationState(body.publicationState || {}); setDayId(body.snapshot.days[0]?.id || ""); setMessage("Imported"); } }} /></div>}
+  return <MenuPlanningShell section="Planner">
+    <header style={styles.header}><div><div style={styles.brand}>Planner <span>/</span> <b>Delivered-In</b></div><h1 style={styles.title}>Planner</h1></div><div style={styles.headerRight}><button style={styles.secondary} aria-expanded={showMore} aria-haspopup="menu" onClick={() => setShowMore(value => !value)}>Menu ▾</button></div></header>
+    {showMore && <div role="menu" style={styles.moreMenu}><Link role="menuitem" style={styles.moreLink} href="/catalogue">Dish Library</Link><Link role="menuitem" style={styles.moreLink} href="/history">History &amp; Imports</Link><Link role="menuitem" style={styles.moreLink} href="/dishes/new">Create dish</Link><button style={styles.moreAction} onClick={() => fileRef.current?.click()}>Import historical workbook</button><input ref={fileRef} type="file" accept=".xlsx,.xls" hidden onChange={async event => { const file = event.target.files?.[0]; if (!file) return; const response = await fetch("/api/rolling-menu/import", { method: "POST", headers: { "content-type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "x-workbook-name": file.name }, body: await file.arrayBuffer() }); const body = await response.json(); if (!response.ok) setError(body.error?.message || "Import failed."); else { setSnapshot(body.snapshot); setWeeks(body.weeks || []); setPublicationState(body.publicationState || {}); setDayId(body.snapshot.days[0]?.id || ""); setMessage("Imported"); } }} /></div>}
     {error && <div style={styles.error}>{error}</div>}
      <section style={styles.weekBar}><button style={styles.iconButton} onClick={() => { const index = weeks.findIndex(item => item.id === snapshot.week.id); const previous = weeks[index - 1]; if (previous) void load(previous.id); }}>‹</button><button style={styles.weekTitle} onClick={() => setWeekDialog({ action: "create-week", title: "Create week", initial: snapshot.week.weekCommencing })}>WC {new Date(`${snapshot.week.weekCommencing}T00:00:00Z`).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }).toUpperCase()}</button><button style={styles.iconButton} onClick={() => { const index = weeks.findIndex(item => item.id === snapshot.week.id); const next = weeks[index + 1]; if (next) void load(next.id); }}>›</button><span style={styles.statusBadge}>{display(snapshot.week.status)}</span><button style={styles.primary} disabled={hasCurrentPublication && !hasUnpublishedChanges} title={hasCurrentPublication && !hasUnpublishedChanges ? `${day.dayName} v${dayPublication?.currentVersion} is already current.` : legacyPublication ? "Legacy published week: the first governed publication creates this day's v1." : `Publish ${day.dayName}`} onClick={() => void beginPublish()}>{publishLabel}</button>{currentDayPublication && currentPublication && <button style={styles.danger} onClick={() => setWithdrawalTarget({ scope: "day", title: `Withdraw ${day.dayName}`, publicationId: currentPublication.publicationId, publicationDayId: currentDayPublication.publicationDayId })}>Withdraw day</button>}{hasPublishedWeek && currentPublication && <button style={styles.danger} onClick={() => setWithdrawalTarget({ scope: "week", title: `Withdraw week WC ${snapshot.week.weekCommencing}`, publicationId: currentPublication.publicationId })}>Withdraw week</button>}<button style={styles.secondary} onClick={() => setWeekDialog({ action: "duplicate-week", title: "Duplicate week" })}>Duplicate</button><button style={styles.secondary} onClick={() => setWeekDialog({ action: "create-week", title: "Start blank week" })}>Start blank</button></section>
     {dayPublication?.hasCurrentPublication && <div style={styles.saveState}>{day.dayName} · Published v{dayPublication.currentVersion}{dayPublication.hasUnpublishedChanges ? " · Unpublished changes" : " ✓"}</div>}
@@ -171,9 +156,7 @@ export default function RollingMenuWorkspace() {
     {newDish && <CreateDishDrawer slot={newDish.slot as RollingSlot} items={catalogue} onClose={() => setNewDish(undefined)} onUseExisting={async item => { const ok = newDish.entry ? await command("update-entry", { weekId: snapshot.week.id, entryId: newDish.entry.id, patch: { itemId: item.id, itemLabel: item.name } }) : await command("create-entry", { weekId: snapshot.week.id, dayId: newDish.dayId, slot: newDish.slot, itemId: item.id, itemLabel: item.name }); if (ok) setNewDish(undefined); }} onSave={createReusableDish} />}
      {publishDays && <PublishSignoffModal days={publishDays} onClose={() => setPublishDays(undefined)} onComplete={async signoffs => { const targetDay = publishDays[0]; const ok = await command("publish", { weekId: snapshot.week.id, dayId: targetDay && snapshot.days.find(item => item.date === targetDay.date)?.id, signoff: signoffs[0] }); if (ok) setPublishDays(undefined); }} />}
      {withdrawalTarget && <WithdrawalModal target={withdrawalTarget} onClose={() => setWithdrawalTarget(undefined)} onConfirm={withdraw} />}
-      </div>
-    </div>
-  </main>;
+  </MenuPlanningShell>;
 }
 
 function WeeklyPlanner({ snapshot, slots, items, history, onSelect, onClear, onCreate, onAddSlot, onRemoveSlot }: { snapshot: RollingSnapshot; slots: string[]; history: RollingEntry[]; items: DishPickerItem[]; onSelect: (dayId: string, slot: string, entry: RollingEntry | undefined, item: DishPickerItem) => Promise<boolean>; onClear: (dayId: string, slot: string, entry?: RollingEntry) => void; onCreate: (dayId: string, slot: string, entry?: RollingEntry) => void; onAddSlot: () => void; onRemoveSlot: (slot: string) => void }) {

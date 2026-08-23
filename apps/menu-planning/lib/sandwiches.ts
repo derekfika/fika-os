@@ -2,6 +2,7 @@ import { existsSync, promises as fs } from "node:fs";
 import path from "node:path";
 import { sandwichAllergenColumns, type SavedSandwich, type SandwichAllergens } from "./sandwich-types";
 import { legacyProductionItemId, productionItemId } from "../../shared/production-item-id";
+import { normaliseDishName } from "./text";
 export { sandwichAllergenColumns, type SavedSandwich, type SandwichAllergens } from "./sandwich-types";
 
 function repositoryRoot() {
@@ -26,7 +27,7 @@ function normaliseAllergens(input: SandwichAllergens): SandwichAllergens {
 export async function loadSavedSandwiches() {
   if (loaded) return records;
   loaded = true;
-  try { const saved = JSON.parse(await fs.readFile(filePath, "utf8")) as SavedSandwich[]; for (const record of saved) records.set(record.id, record); } catch { /* first local run */ }
+  try { const saved = JSON.parse(await fs.readFile(filePath, "utf8")) as SavedSandwich[]; for (const record of saved) records.set(record.id, { ...record, title: normaliseDishName(record.title) }); } catch { /* first local run */ }
   return records;
 }
 export async function listSavedSandwiches() { await loadSavedSandwiches(); return [...records.values()].sort((a, b) => a.title.localeCompare(b.title)); }
@@ -37,7 +38,7 @@ export async function saveSandwich(
   mayContainNotes = "",
   parentMenuItemKey = "deli-style-sandwich-lunch",
 ) {
-  const cleanTitle = title.trim();
+  const cleanTitle = normaliseDishName(title);
   if (!cleanTitle) throw Object.assign(new Error("A sandwich title is required."), { status: 422 });
   await loadSavedSandwiches();
   const now = new Date().toISOString();

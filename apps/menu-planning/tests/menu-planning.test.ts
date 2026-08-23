@@ -66,9 +66,10 @@ test("governed menu commands preserve recipe history and block unsafe publicatio
 });
 
 test("saved sandwiches keep a stable title and mutually exclusive allergen pattern", async () => {
-  const first = await saveSandwich("Test saved sandwich", { gluten: "contains", milk: "may_contain" }, "test");
-  const second = await saveSandwich("Test saved sandwich", { noKeyAllergens: "contains", gluten: "contains" }, "test");
+  const first = await saveSandwich("test saved sandwich", { gluten: "contains", milk: "may_contain" }, "test");
+  const second = await saveSandwich("test saved sandwich", { noKeyAllergens: "contains", gluten: "contains" }, "test");
   assert.equal(first.id, second.id);
+  assert.equal(second.title, "Test Saved Sandwich");
   assert.equal(second.allergens.noKeyAllergens, "contains");
   assert.equal(second.allergens.gluten, "clear");
   assert.ok((await listSavedSandwiches()).some(item => item.id === first.id));

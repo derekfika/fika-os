@@ -5,8 +5,9 @@ export type RollingDayPublicationStatus = "draft" | "ready" | "published" | "sup
 import type { CanonicalAllergenMap, OperationalAllergenState } from "../../shared/allergen-contract";
 export type AllergenState = OperationalAllergenState;
 export type AllergenMap = CanonicalAllergenMap;
-export interface RollingAllocation { destinationId?: string; destinationLabel: string; quantity: number; sourceLabel?: string; }
+export interface RollingAllocation { destinationId?: string; destinationLabel: string; destinationAddress?: string; quantity: number; sourceLabel?: string; }
 export interface RollingEntry { id: string; dayId: string; date: string; slot: string; itemId?: string; itemLabel: string; portions: number; allocations: RollingAllocation[]; allergens: AllergenMap; mayContainNotes?: string; allergenReviewInvalidated?: boolean; source?: { workbook: string; sheet: string; range: string; rawText?: string }; audit: Array<{ action: string; at: string; by: string }>; }
-export interface RollingDay { id: string; date: string; dayName: string; entryIds: string[]; }
+export interface RollingOneOffDestination { id: string; label: string; address?: string; addressStatus: "pending" | "confirmed"; }
+export interface RollingDay { id: string; date: string; dayName: string; entryIds: string[]; oneOffDestinations?: RollingOneOffDestination[]; }
 export interface RollingWeek { id: string; weekCommencing: string; weekEnding: string; status: RollingWeekStatus; version: number; dayIds: string[]; entryIds: string[]; sourceFiles: string[]; customSlots?: string[]; removedSlots?: string[]; dayStatuses?: Record<string, RollingDayPublicationStatus>; audit: Array<{ action: string; at: string; by: string }>; }
 export interface RollingSnapshot { week: RollingWeek; days: RollingDay[]; entries: RollingEntry[]; }

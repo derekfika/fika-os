@@ -1,17 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
-import { addMenuSlot, assertWeekDateAvailable, cleanDuplicateEntries, createEntry, duplicateWeek, emptyWeek, getWeek, listWeeks, removeMenuSlot, saveSnapshot, updateEntry, validateWeek } from "@/lib/rolling-menu";
+import { addMenuSlot, addOneOffDestination, assertWeekDateAvailable, cleanDuplicateEntries, createEntry, duplicateWeek, emptyWeek, getWeek, listWeeks, removeMenuSlot, saveSnapshot, updateEntry, validateWeek } from "@/lib/rolling-menu";
 import { archivePublishedDayMatrix, createPublishedMenuDay, getMenuPublication, publicationDayBlockers, publicationPreview, publicationState, type MenuPublicationSignoff } from "@/lib/menu-publication";
 import { requireMutationActor, requirePublicationActor, resolveMenuActor } from "@/lib/auth";
-import { readGovernedOplocs } from "@/lib/oploc-authority";
+import { readDeliveredInOplocs } from "@/lib/oploc-authority";
 import { forwardProductionMaterialisationEvent } from "../../../../shared/production-client";
 import { replayMenuPublicationOutbox } from "@/lib/menu-publication";
 import { listCatalogueEntries } from "@/lib/catalogue";
 
 export async function GET(request: NextRequest) {
-  const snapshot = getWeek(request.nextUrl.searchParams.get("weekId") || undefined);
+  const requestedWeek = request.nextUrl.searchParams.get("weekId") || undefined;
+  const matchingWeek = requestedWeek ? listWeeks().find(week => week.id === requestedWeek || week.weekCommencing === requestedWeek) : undefined;
+  const snapshot = getWeek(matchingWeek?.id || requestedWeek);
   const previewDayId = request.nextUrl.searchParams.get("dayId") || undefined;
   const publicationPreviewRequested = request.nextUrl.searchParams.get("publicationPreview") === "true";
-  const governedOplocIds = publicationPreviewRequested ? new Set((await readGovernedOplocs(request)).map(oploc => oploc.canonicalId)) : undefined;
+  const governedOplocIds = publicationPreviewRequested ? new Set((await readDeliveredInOplocs(request)).map(oploc => oploc.canonicalId)) : undefined;
   return NextResponse.json({ snapshot, weeks: listWeeks(), blockers: validateWeek(snapshot), publicationState: publicationState(snapshot), ...(publicationPreviewRequested ? { publicationPreview: publicationPreview(snapshot, previewDayId), dayBlockers: previewDayId ? publicationDayBlockers(snapshot, previewDayId, governedOplocIds) : [] } : {}) });
 }
 
@@ -37,6 +39,10 @@ export async function POST(request: NextRequest) {
       const snapshot = createEntry(String(body.weekId), String(body.dayId), String(body.slot) as never, String(body.itemLabel || ""), actor.uid, body.itemId ? String(body.itemId) : undefined);
       return NextResponse.json({ snapshot, weeks: listWeeks(), blockers: validateWeek(snapshot), publicationState: publicationState(snapshot) });
     }
+    if (action === "add-one-off-destination") {
+      const snapshot = addOneOffDestination(String(body.weekId), String(body.dayId), String(body.label || ""), String(body.address || ""), actor.uid);
+      return NextResponse.json({ snapshot, weeks: listWeeks(), blockers: validateWeek(snapshot), publicationState: publicationState(snapshot) });
+    }
     if (action === "add-menu-slot") {
       const snapshot = addMenuSlot(String(body.weekId), String(body.slot || ""), actor.uid);
       return NextResponse.json({ snapshot, weeks: listWeeks(), blockers: validateWeek(snapshot), publicationState: publicationState(snapshot) });
@@ -55,7 +61,7 @@ export async function POST(request: NextRequest) {
       // Reconcile exact imported dish names before the publication gate runs.
       // This persists the canonical identity; it does not bypass allergen review.
       await listCatalogueEntries();
-      const oplocs = await readGovernedOplocs(request);
+      const oplocs = await readDeliveredInOplocs(request);
       const publication = createPublishedMenuDay(String(body.weekId), dayId, (body.signoff || {}) as MenuPublicationSignoff, actor.uid, new Set(oplocs.map(oploc => oploc.canonicalId)));
       void replayMenuPublicationOutbox(forwardProductionMaterialisationEvent).catch(() => undefined);
       const publishedDay = publication.days.find(day => day.sourceDayId === dayId && day.status === "published");
