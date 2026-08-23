@@ -20,8 +20,8 @@ import HospitalityProductionDetail from "./ui/HospitalityProductionDetail";
 import ProductionOrderDetail from "./ui/ProductionOrderDetail";
 import { CANONICAL_ALLERGEN_COLUMNS, normaliseOperationalAllergens, toggleOperationalAllergen, type CanonicalAllergenKey } from "../../shared/allergen-contract";
 import { productionScopes, type ProductionScope } from "../lib/production-scope";
-import { cpuAttentionKey, cpuAttentionLabel, cpuDestinationLabel, cpuDestinationOptionLabel, cpuLifecycle, cpuLifecycleLabels, cpuReference, cpuRequiredTime, cpuSourceLabel, type CpuLifecycle } from "../lib/production-presentation";
-import { relatedDeliveredInOrders } from "../lib/production-day";
+import { cpuAttentionKey, cpuAttentionLabel, cpuDestinationLabel, cpuDestinationOptionLabel, cpuLifecycle, cpuLifecycleLabels, cpuRequiredTime, cpuSourceLabel, type CpuLifecycle } from "../lib/production-presentation";
+import { orderDate, relatedDeliveredInOrders } from "../lib/production-day";
 import { cpuProjectionToOrders, dashboardOperationalDate, filterCpuProjectionForScope, weekCommencingFor } from "../lib/cpu-dashboard-adapter";
 
 const statuses: CpuLifecycle[] = ["received", "accepted", "planning", "planned", "ready", "in_production", "complete"];
@@ -68,7 +68,7 @@ export default function CpuProduction() {
   const load = async (showFeedback = false): Promise<ProductionOrder[]> => {
     if (showFeedback) setRefreshing(true);
     try {
-      const isDayProjection = view === "day";
+      const isDayProjection = view === "day" || view === "totals";
       const projectionDate = isDayProjection ? dayDate : weekCommencing;
       const cacheKey = `fika-cpu-projection:${productionScope}:${projectionDate}`;
       // Compatibility marker for existing dashboard contract checks: /api/production?scope=${productionScope}
@@ -121,6 +121,7 @@ export default function CpuProduction() {
   const visible = baseVisible.filter(
     (order) => !date || order.requiredBy.startsWith(date),
   );
+  const totalsVisible = baseVisible.filter((order) => orderDate(order) === (date || dayDate));
   const todayKey = new Date().toLocaleDateString("en-CA");
   const openOrder = async (order: Pick<ProductionOrder, "canonicalId">) => {
     setShowHospitalityAllergens(false);
@@ -136,19 +137,19 @@ export default function CpuProduction() {
       setDetailError(cause instanceof Error ? cause.message : "Could not load the canonical Production Order.");
     } finally { setDetailLoading(false); }
   };
-  const totals = useMemo(
-    () =>
-      visible
-        .flatMap((order) => order.lines)
-        .reduce<Record<string, number>>((sum, line) => {
-          if (line.customerQuantity !== undefined && line.customerUnit) {
-            const key = `${line.itemName} · ${line.customerUnit}`;
-            sum[key] = (sum[key] || 0) + line.customerQuantity;
-          }
-          return sum;
-        }, {}),
-    [visible],
-  );
+  const dailyTotals = useMemo(() => totalsVisible.flatMap((order) => order.lines).reduce<Record<string, number>>((sum, line) => {
+    if (line.customerQuantity !== undefined && line.customerUnit) {
+      const key = `${line.itemName} · ${line.customerUnit}`;
+      sum[key] = (sum[key] || 0) + line.customerQuantity;
+    }
+    return sum;
+  }, {}), [totalsVisible]);
+  const sourceTotals = useMemo(() => totalsVisible.reduce<Record<string, Record<string, number>>>((sum, order) => {
+    const source = cpuSourceLabel(order);
+    const bucket = sum[source] || (sum[source] = {});
+    for (const line of order.lines) bucket[line.customerUnit] = (bucket[line.customerUnit] || 0) + line.customerQuantity;
+    return sum;
+  }, {}), [totalsVisible]);
   return (
     <main className="cpu-app-shell">
       <aside className="cpu-sidebar">
@@ -322,7 +323,7 @@ export default function CpuProduction() {
         {view === "day" && <ProductionDayView orders={baseVisible} date={dayDate} open={openOrder} onChangeDate={(nextDate) => { setDayDate(nextDate); setWeekCommencing(weekCommencingFor(nextDate)); }} reviewAllergens={(selectedDate) => { window.location.href = `/allergens?date=${encodeURIComponent(selectedDate)}`; }} />}
         {view === "queue" && <Queue orders={visible} open={openOrder} />}
         {view === "run-sheet" && <RunSheet orders={visible} />}
-        {view === "totals" && <Totals totals={totals} orders={visible} />}
+        {view === "totals" && <Totals totals={dailyTotals} sourceTotals={sourceTotals} orders={totalsVisible} date={date || dayDate} />}
         </section>
         <OperationsRail orders={visible} date={date || todayKey} open={openOrder} />
         </div>
@@ -424,8 +425,8 @@ function Queue({
                   <small>{cpuRequiredTime(order)}</small>
                 </td>
                 <td data-label="Reference">
-                  <strong>{cpuReference(order)}</strong>
-                  <small>{order.canonicalId}</small>
+                  <strong>{order.clientName || cpuDestinationLabel(order)}</strong>
+                  <small>{cpuSourceLabel(order)} · {cpuDestinationLabel(order)}</small>
                 </td>
                 <td data-label="Origin">
                   {cpuSourceLabel(order)}
@@ -504,16 +505,28 @@ function RunSheet({ orders }: { orders: ProductionOrder[] }) {
 
 function Totals({
   totals,
+  sourceTotals,
   orders,
+  date,
 }: {
   totals: Record<string, number>;
+  sourceTotals: Record<string, Record<string, number>>;
   orders: ProductionOrder[];
+  date: string;
 }) {
   return (
     <section className="cpu-totals">
+      <header>
+        <small>Daily chef production view</small>
+        <h2>{new Date(`${date}T12:00:00Z`).toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric", timeZone: "UTC" })}</h2>
+        <p>{orders.length} production order{orders.length === 1 ? "" : "s"} · all customer-ordered quantities in this day</p>
+      </header>
+      <div className="cpu-total-source-summary">
+        {Object.entries(sourceTotals).map(([source, quantities]) => <div key={source}><strong>{Object.values(quantities).reduce((sum, value) => sum + value, 0).toLocaleString()}</strong><span>{source}</span><small>{Object.entries(quantities).map(([unit, value]) => `${value.toLocaleString()} ${unit}`).join(" · ")}</small></div>)}
+      </div>
+      <h3>Everything to produce</h3>
       <p>
-        {orders.length} order{orders.length === 1 ? "" : "s"} in the selected
-        view.
+        Quantities grouped by item and unit across all production sources.
       </p>
       {Object.keys(totals).length ? (
         Object.entries(totals).map(([key, value]) => (
