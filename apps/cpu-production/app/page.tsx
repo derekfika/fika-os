@@ -16,6 +16,7 @@ import DeliveredMenuPlanner from "./ui/DeliveredMenuPlanner";
 import PublishedMenuView from "./ui/PublishedMenuView";
 import GrabAndGoProductionView from "./ui/GrabAndGoProductionView";
 import GrabAndGoOrderDetail from "./ui/GrabAndGoOrderDetail";
+import "./totals.css";
 import HospitalityProductionDetail from "./ui/HospitalityProductionDetail";
 import ProductionOrderDetail from "./ui/ProductionOrderDetail";
 import { CANONICAL_ALLERGEN_COLUMNS, normaliseOperationalAllergens, toggleOperationalAllergen, type CanonicalAllergenKey } from "../../shared/allergen-contract";
@@ -47,6 +48,8 @@ function visibleStatus(order: ProductionOrder): ProductionStatus {
   return order.workflowStatus;
 }
 type View = "calendar" | "day" | "queue" | "run-sheet" | "totals" | "menu-planning" | "published-menus" | "grab-and-go";
+type TotalProgress = "not_started" | "in_progress" | "produced";
+type DailyTotal = { key: string; name: string; unit: string; quantity: number; progress: TotalProgress };
 
 export default function CpuProduction() {
   const [orders, setOrders] = useState<ProductionOrder[]>([]);
@@ -137,10 +140,13 @@ export default function CpuProduction() {
       setDetailError(cause instanceof Error ? cause.message : "Could not load the canonical Production Order.");
     } finally { setDetailLoading(false); }
   };
-  const dailyTotals = useMemo(() => totalsVisible.flatMap((order) => order.lines).reduce<Record<string, number>>((sum, line) => {
+  const dailyTotals = useMemo(() => totalsVisible.flatMap((order) => order.lines.map((line) => ({ order, line }))).reduce<Record<string, DailyTotal>>((sum, { order, line }) => {
     if (line.customerQuantity !== undefined && line.customerUnit) {
       const key = `${line.itemName} · ${line.customerUnit}`;
-      sum[key] = (sum[key] || 0) + line.customerQuantity;
+      const progress: TotalProgress = order.status === "complete" || line.status === "complete" ? "produced" : ["in_production", "partially_complete", "ready"].includes(order.status) ? "in_progress" : "not_started";
+      const current = sum[key];
+      const rank = { not_started: 0, in_progress: 1, produced: 2 };
+      sum[key] = { key, name: line.itemName, unit: line.customerUnit, quantity: (current?.quantity || 0) + line.customerQuantity, progress: current && rank[current.progress] > rank[progress] ? current.progress : progress };
     }
     return sum;
   }, {}), [totalsVisible]);
@@ -323,7 +329,7 @@ export default function CpuProduction() {
         {view === "day" && <ProductionDayView orders={baseVisible} date={dayDate} open={openOrder} onChangeDate={(nextDate) => { setDayDate(nextDate); setWeekCommencing(weekCommencingFor(nextDate)); }} reviewAllergens={(selectedDate) => { window.location.href = `/allergens?date=${encodeURIComponent(selectedDate)}`; }} />}
         {view === "queue" && <Queue orders={visible} open={openOrder} />}
         {view === "run-sheet" && <RunSheet orders={visible} />}
-        {view === "totals" && <Totals totals={dailyTotals} sourceTotals={sourceTotals} orders={totalsVisible} date={date || dayDate} />}
+        {view === "totals" && <Totals totals={Object.values(dailyTotals)} sourceTotals={sourceTotals} orders={totalsVisible} date={date || dayDate} />}
         </section>
         <OperationsRail orders={visible} date={date || todayKey} open={openOrder} />
         </div>
@@ -509,11 +515,24 @@ function Totals({
   orders,
   date,
 }: {
-  totals: Record<string, number>;
+  totals: DailyTotal[];
   sourceTotals: Record<string, Record<string, number>>;
   orders: ProductionOrder[];
   date: string;
 }) {
+  const storageKey = `fika-cpu-total-progress:${date}`;
+  const [progress, setProgress] = useState<Record<string, TotalProgress>>({});
+  useEffect(() => {
+    try { setProgress(JSON.parse(window.localStorage.getItem(storageKey) || "{}") as Record<string, TotalProgress>); } catch { setProgress({}); }
+  }, [storageKey]);
+  const cycle = (key: string, current: TotalProgress) => {
+    const next: TotalProgress = current === "not_started" ? "in_progress" : current === "in_progress" ? "produced" : "not_started";
+    setProgress((previous) => {
+      const updated = { ...previous, [key]: next };
+      try { window.localStorage.setItem(storageKey, JSON.stringify(updated)); } catch { /* local persistence is optional */ }
+      return updated;
+    });
+  };
   return (
     <section className="cpu-totals">
       <header>
@@ -528,13 +547,16 @@ function Totals({
       <p>
         Quantities grouped by item and unit across all production sources.
       </p>
-      {Object.keys(totals).length ? (
-        Object.entries(totals).map(([key, value]) => (
-          <div key={key}>
-            <strong>{value}</strong>
-            <span>{key}</span>
-          </div>
-        ))
+      {totals.length ? (
+        totals.map((total) => {
+          const state = progress[total.key] || total.progress;
+          const label = state === "in_progress" ? "In progress" : state === "produced" ? "Produced" : "Not started";
+          return <button type="button" className={`cpu-total-card cpu-total-card--${state}`} key={total.key} onClick={() => cycle(total.key, state)} aria-label={`${total.name}, ${total.quantity} ${total.unit}, ${label}. Click to advance status.`}>
+            <strong>{total.quantity.toLocaleString()}</strong>
+            <span>{total.name}</span>
+            <small>{total.unit} · {label}</small>
+          </button>;
+        })
       ) : (
         <div className="cpu-empty">
           <h3>No recorded production totals.</h3>
