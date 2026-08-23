@@ -431,9 +431,9 @@ export async function POST(request: NextRequest) {
       const job = body.job || (await listDeliveryLoadState()).jobs.find((item) => item.id === body.jobId);
       if (!job) throw new HttpError(404, "Logistics job not found.");
       const scheduledTime = body.scheduledTime || job.requestedWindow?.startTime;
-      if (!job.originOplocId || !job.destinationOplocId || !scheduledTime)
+      const originOplocId = job.originOplocId || (job.sourceType === "grab-and-go" || (job.sourceType === "cpu-production" && job.sourceId.includes("grab-and-go")) ? CPU_PRODUCTION_LOCATION_ID : undefined);
+      if (!originOplocId || !job.destinationOplocId || !scheduledTime)
         throw new HttpError(422, "Job cannot be assigned without canonical OPLOC IDs and a scheduled time; it remains unassigned.");
-      const originOplocId = job.originOplocId;
       const destinationOplocId = job.destinationOplocId;
       const result = await db.runTransaction(async (transaction) => {
         const loadId = `load:${job.serviceDate}:${originOplocId}:${destinationOplocId}:${scheduledTime}`;
@@ -443,10 +443,10 @@ export async function POST(request: NextRequest) {
         const [loadSnap, assignmentSnap] = await Promise.all([transaction.get(loadRef), transaction.get(assignmentQuery)]);
         const load = loadSnap.exists ? loadSnap.data() as import("@/lib/types").DeliveryLoad : createLoad({ serviceDate: job.serviceDate, originOplocId, destinationOplocId, scheduledTime, destinationLabelSnapshot: job.destinationLabelSnapshot, by, now });
         const existing = assignmentSnap.docs.map((doc) => doc.data() as import("@/lib/types").LogisticsAssignment);
-        const next = assignJob({ ...job, requestedWindow: { ...(job.requestedWindow || {}), startTime: scheduledTime } }, load, existing, by, now);
+        const next = assignJob({ ...job, originOplocId, requestedWindow: { ...(job.requestedWindow || {}), startTime: scheduledTime } }, load, existing, by, now);
         const priorLoadRefs = existing.filter((item) => item.loadId !== load.id).map((item) => deliveryLoads().doc(item.loadId));
         const priorLoadSnaps = await Promise.all(priorLoadRefs.map((ref) => transaction.get(ref)));
-        transaction.set(jobRef, { ...job, requestedWindow: { ...(job.requestedWindow || {}), startTime: scheduledTime }, updatedAt: now });
+        transaction.set(jobRef, { ...job, originOplocId, requestedWindow: { ...(job.requestedWindow || {}), startTime: scheduledTime }, updatedAt: now });
         for (const prior of existing.filter((item) => item.loadId !== load.id)) transaction.delete(logisticsAssignments().doc(`${prior.jobId}:${prior.loadId}`));
         transaction.set(logisticsAssignments().doc(`${job.id}:${load.id}`), next.assignment);
         transaction.set(loadRef, next.load);
