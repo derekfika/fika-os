@@ -30,11 +30,12 @@ export function validateRequirementForPlanning(
     );
   if (requirement.status === "withdrawn")
     throw new Error("Withdrawn fulfilment work cannot be newly planned.");
-  if (requirement.status === "pending")
+  if (requirement.status === "pending" && requirement.sourceDomain !== "cpu-production")
     throw new Error("Pending fulfilment work is not ready for planning.");
   if (
     requirement.status !== "ready_for_planning" &&
-    requirement.status !== "amended"
+    requirement.status !== "amended" &&
+    !(requirement.status === "pending" && requirement.sourceDomain === "cpu-production")
   )
     throw new Error("Fulfilment work is not currently plannable.");
 }

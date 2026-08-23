@@ -364,7 +364,7 @@ test("mobile multiple-run priority favours dispatched, then ready, then planned"
     ["dispatched", "ready", "planned"],
   );
 });
-test("server planning validation rejects stale, withdrawn and pending requirements", () => {
+test("server planning validation rejects stale, withdrawn and non-CPU pending requirements", () => {
   assert.throws(
     () =>
       validateRequirementForPlanning(
@@ -384,10 +384,16 @@ test("server planning validation rejects stale, withdrawn and pending requiremen
   assert.throws(
     () =>
       validateRequirementForPlanning(
-        requirement("cpu-production", "pending", "pending"),
+        requirement("menu-planning", "pending", "pending"),
         1,
       ),
     /Pending/,
+  );
+  assert.doesNotThrow(() =>
+    validateRequirementForPlanning(
+      requirement("cpu-production", "pending-cpu", "pending"),
+      1,
+    ),
   );
   assert.doesNotThrow(() =>
     validateRequirementForPlanning(

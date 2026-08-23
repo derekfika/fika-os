@@ -11,12 +11,10 @@ export function buildLogisticsDayProjection(input: { serviceDate: string; jobs: 
   const projectedLoads: LogisticsProjectionLoad[] = loads.map((load) => {
     const childJobs = assignments.filter((item) => item.loadId === load.id).map((item) => jobs.find((job) => job.id === item.jobId)).filter(Boolean) as LogisticsJob[];
     const collectedCount = childJobs.filter((job) => job.collectionStatus === "collected").length;
-    const hasAttention = childJobs.some((job) => job.productionReadiness !== "ready");
-    return { id: load.id, serviceDate: load.serviceDate, originOplocId: load.originOplocId, destinationOplocId: load.destinationOplocId, destinationLabelSnapshot: load.destinationLabelSnapshot, scheduledTime: load.scheduledTime, status: load.status, driverId: load.driverId, vehicleId: load.vehicleId, runId: load.runId, jobs: childJobs.map((job) => ({ id: job.id, sourceType: job.sourceType, sourceId: job.sourceId, collectionStatus: job.collectionStatus, productionReadiness: job.productionReadiness, totalUnits: totalUnits(job) })), jobCount: childJobs.length, totalUnits: childJobs.reduce((sum, job) => sum + totalUnits(job), 0), collectedCount, readiness: hasAttention ? "attention" : collectedCount < childJobs.length ? "awaiting_collection" : "ready" };
+    return { id: load.id, serviceDate: load.serviceDate, originOplocId: load.originOplocId, destinationOplocId: load.destinationOplocId, destinationLabelSnapshot: load.destinationLabelSnapshot, scheduledTime: load.scheduledTime, status: load.status, driverId: load.driverId, vehicleId: load.vehicleId, runId: load.runId, jobs: childJobs.map((job) => ({ id: job.id, sourceType: job.sourceType, sourceId: job.sourceId, collectionStatus: job.collectionStatus, productionReadiness: job.productionReadiness, totalUnits: totalUnits(job) })), jobCount: childJobs.length, totalUnits: childJobs.reduce((sum, job) => sum + totalUnits(job), 0), collectedCount, readiness: collectedCount < childJobs.length ? "awaiting_collection" : "ready" };
   });
   const exceptions = jobs.flatMap((job) => [
     ...(!job.originOplocId || !job.destinationOplocId ? [`${job.id}: missing canonical OPLOC`] : []),
-    ...(job.productionReadiness !== "ready" ? [`${job.destinationLabelSnapshot || "Delivery"}: production hand-off is not ready`] : []),
     ...(!job.requestedWindow?.startTime ? [`${job.id}: unresolved timing`] : []),
   ]);
   const now = input.now || new Date().toISOString();

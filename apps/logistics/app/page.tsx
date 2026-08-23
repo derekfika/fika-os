@@ -233,7 +233,7 @@ export default function Planner() {
     const eligible = group.requirementRefs.filter(
       (ref) =>
         !ref.runId &&
-        (ref.status === "ready_for_planning" || ref.status === "amended"),
+        (ref.status === "ready_for_planning" || ref.status === "amended" || (ref.status === "pending" && ref.sourceDomain === "cpu-production")),
     );
     if (!eligible.length)
       return setError(
@@ -612,7 +612,7 @@ function RealPlanner(props: RealPlannerProps) {
       }
       const group = groups.find((item) => item.groupKey === id);
       if (!group) return;
-      const eligible = group.requirementRefs.filter((ref) => !ref.runId && (ref.status === "ready_for_planning" || ref.status === "amended"));
+      const eligible = group.requirementRefs.filter((ref) => !ref.runId && (ref.status === "ready_for_planning" || ref.status === "amended" || (ref.status === "pending" && ref.sourceDomain === "cpu-production")));
       if (!eligible.length) return;
       void props.act({ action: "assign-group", by: "Franco", runId: targetRunId, expectedRunVersion: run.version, requirementIds: eligible.map((ref) => ref.requirementId), expectedSourceVersions: Object.fromEntries(eligible.map((ref) => [ref.requirementId, ref.sourceVersion])), ...(group.collectionRequired || collectionRequired ? { collectionRequired: true } : {}), ...(time ? { plannedArrivalTime: time } : {}) });
     } else {
@@ -707,7 +707,7 @@ function queueDragStart(event: DragEvent, payload: { kind: "group" | "movement";
   window.setTimeout(() => preview.remove(), 0);
 }
 function RealQueueGroup({ group, runs, queueState, assigning, targetRun, onInspect: inspect, onAssign, setTargetRun, onConfirm, onDragStart }: { group: PlannerWorkGroup; runs: PlannerDay["runs"]; queueState: ReturnType<typeof workGroupQueueState>; assigning: boolean; targetRun: string; onInspect: () => void; onAssign: () => void; setTargetRun: (value: string) => void; onConfirm: () => void; onDragStart: (event: DragEvent) => void; }) {
-  const eligible = group.requirementRefs.filter((ref) => !ref.runId && (ref.status === "ready_for_planning" || ref.status === "amended"));
+  const eligible = group.requirementRefs.filter((ref) => !ref.runId && (ref.status === "ready_for_planning" || ref.status === "amended" || (ref.status === "pending" && ref.sourceDomain === "cpu-production")));
   const assigned = group.requirementRefs.find((ref) => ref.runId);
   const assignedRun = assigned?.runId ? runs.find((run) => run.runId === assigned.runId) : undefined;
   const collectionPending = groupCollectionPending(group, runs);
@@ -920,7 +920,7 @@ function WorkQueueItem({
   onConfirm: () => void;
 }) {
   const eligible = group.requirementRefs.filter(
-    (ref) => !ref.runId && (ref.status === "ready_for_planning" || ref.status === "amended"),
+    (ref) => !ref.runId && (ref.status === "ready_for_planning" || ref.status === "amended" || (ref.status === "pending" && ref.sourceDomain === "cpu-production")),
   );
   return (
     <article className="queue-item" data-testid="unassigned-item">
@@ -1407,7 +1407,7 @@ function WorkGroupCard({
   const eligible = group.requirementRefs.filter(
     (ref) =>
       !ref.runId &&
-      (ref.status === "ready_for_planning" || ref.status === "amended"),
+      (ref.status === "ready_for_planning" || ref.status === "amended" || (ref.status === "pending" && ref.sourceDomain === "cpu-production")),
   );
   return (
     <article
