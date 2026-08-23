@@ -4,7 +4,7 @@ import { cpuAttentionLabel, cpuDestinationLabel, cpuLifecycle, cpuLifecycleLabel
 
 export type DeliveredInDishTotal = { key: string; dishName: string; total: number; destinations: Array<{ label: string; quantity: number }> };
 export type DeliveredInDishRow = { key: string; name: string; quantity: number; destinations: Array<{ label: string; quantity: number }>; snapshot?: NonNullable<ProductionLine["approvedAllergenSnapshot"]>; reviewed: boolean };
-export type AllergenReviewRow = DeliveredInDishRow & { sources: string[]; attention: boolean };
+export type AllergenReviewRow = DeliveredInDishRow & { sources: string[]; attention: boolean; dietaries: Record<string, unknown>; notes: string[] };
 
 export function orderDate(order: ProductionOrder) { return order.serviceDate || order.requiredBy.slice(0, 10); }
 export function orderQuantity(order: ProductionOrder) { return order.lines.reduce((sum, line) => sum + (line.productionQuantity ?? line.customerQuantity), 0); }
@@ -48,12 +48,14 @@ export function buildAllergenReviewRows(orders: ProductionOrder[]): AllergenRevi
   const grouped = new Map<string, AllergenReviewRow & { destinationMap: Map<string, number>; allergens: Record<string, OperationalAllergenState> }>();
   for (const order of orders) for (const line of order.lines) {
     const key = `${order.origin}:${line.sourceMenuItemId || line.itemName.trim().toLowerCase()}`;
-    const current = grouped.get(key) || ({ key, name: line.itemName, quantity: 0, destinations: [], sources: [], attention: false, destinationMap: new Map<string, number>(), allergens: {}, reviewed: true } as AllergenReviewRow & { destinationMap: Map<string, number>; allergens: Record<string, OperationalAllergenState> });
+    const current = grouped.get(key) || ({ key, name: line.itemName, quantity: 0, destinations: [], sources: [], attention: false, dietaries: {}, notes: [], destinationMap: new Map<string, number>(), allergens: {}, reviewed: true } as AllergenReviewRow & { destinationMap: Map<string, number>; allergens: Record<string, OperationalAllergenState> });
     const quantity = line.productionQuantity ?? line.customerQuantity;
     const label = destination(order);
     current.quantity += quantity;
     current.destinationMap.set(label, (current.destinationMap.get(label) || 0) + quantity);
     current.sources = [...new Set([...current.sources, cpuSourceLabel(order)])];
+    current.dietaries = { ...current.dietaries, ...line.dietaries };
+    if (line.productionInstructions) current.notes = [...new Set([...current.notes, line.productionInstructions])];
     current.attention ||= !line.approvedAllergenSnapshot || line.allergenEvidenceStatus === "missing" || line.allergenEvidenceStatus === "conflicting";
     current.reviewed = current.reviewed && line.allergenEvidenceStatus === "confirmed";
     if (line.approvedAllergenSnapshot) {

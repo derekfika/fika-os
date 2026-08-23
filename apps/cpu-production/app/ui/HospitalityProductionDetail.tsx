@@ -2,6 +2,7 @@
 
 import type { ProductionOrder } from "@hub/lib/production-domain";
 import "./hospitality-production-detail.css";
+import BookingContext from "./BookingContext";
 
 function dateLabel(order: ProductionOrder) {
   const date = order.serviceDate || order.requiredBy.slice(0, 10);
@@ -62,6 +63,7 @@ export default function HospitalityProductionDetail({
           <div><dt>Destination</dt><dd>{order.destinationLabel || order.destinationOplocId || "Not assigned"}</dd></div>
         </dl>
       </section>
+      <BookingContext order={order} />
       <footer>
         <button type="button" className="hospitality-production-detail__allergens" onClick={openAllergens}>Open allergen editor</button>
         <button type="button" onClick={close}>Close</button>

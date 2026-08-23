@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { buildCpuDayProjection } from "../lib/cpu-projection";
+import { cpuProjectionToOrders } from "../lib/cpu-dashboard-adapter";
 import type { ProductionOrder } from "@hub/lib/production-domain";
 import type { ProductionPlan } from "../app/lib/production-plan";
 
@@ -36,4 +37,14 @@ test("CPU projection excludes superseded and cancelled canonical work", () => {
 test("CPU all-day projection keeps the service date on each order", () => {
   const projection = buildCpuDayProjection("all", [order("order:1", "2026-08-24"), order("order:2", "2026-08-25")]);
   assert.deepEqual(projection.orders.map((item) => item.serviceDate), ["2026-08-24", "2026-08-25"]);
+});
+
+test("CPU projection preserves booking dietary and note context", () => {
+  const source = { ...order("order:context"), bookingDietaries: { vegetarian: 3, gluten_free: 1 }, bookingNotes: "Use the side entrance.", lines: [{ ...order("order:context").lines[0], dietaries: { vegetarian: 3 }, productionInstructions: "Label each portion." }] };
+  const projection = buildCpuDayProjection("2026-08-24", [source]);
+  const hydrated = cpuProjectionToOrders(projection)[0];
+  assert.deepEqual(projection.orders[0].bookingDietaries, { vegetarian: 3, gluten_free: 1 });
+  assert.equal(projection.orders[0].bookingNotes, "Use the side entrance.");
+  assert.deepEqual(hydrated.lines[0].dietaries, { vegetarian: 3 });
+  assert.equal(hydrated.lines[0].productionInstructions, "Label each portion.");
 });
