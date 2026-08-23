@@ -39,7 +39,8 @@ async function actorFor(
   }
 }
 async function rebuildCpuProjection(serviceDate: string, lastChangeSequence?: number) {
-  const [orders, planSnapshot, previous] = await Promise.all([productionQueue(serviceDate === "all" ? undefined : serviceDate), cpuPlans().get(), cpuProjections().doc(serviceDate).get()]);
+  const [rawOrders, planSnapshot, previous] = await Promise.all([productionQueue(serviceDate === "all" ? undefined : serviceDate), cpuPlans().get(), cpuProjections().doc(serviceDate).get()]);
+  const orders = await withReadableDestinations(rawOrders);
   const plans = planSnapshot.docs.map((document) => document.data() as import("../../lib/production-plan").ProductionPlan);
   const projection = buildCpuDayProjection(serviceDate, orders, plans, lastChangeSequence ?? Number(previous.data()?.lastChangeSequence || 0), Number(previous.data()?.revision || 0) + 1);
   await cpuProjections().doc(serviceDate).set(projection);
@@ -175,7 +176,9 @@ export async function GET(request: NextRequest) {
     if (request.nextUrl.searchParams.get("projection") === "1") {
       const week = request.nextUrl.searchParams.get("weekCommencing");
       const stored = await cpuProjections().doc(week ? `week:${week}` : projectionDate).get();
-      return NextResponse.json({ projection: stored.exists ? stored.data() : week ? await rebuildCpuWeekProjection(week) : await rebuildCpuProjection(projectionDate) });
+      const storedData = stored.data() as { orders?: Array<{ destinationLabel?: string; destinationOplocId?: string }> } | undefined;
+      const needsReadableDestinations = storedData?.orders?.some((order) => order.destinationOplocId && order.destinationLabel === order.destinationOplocId);
+      return NextResponse.json({ projection: stored.exists && !needsReadableDestinations ? stored.data() : week ? await rebuildCpuWeekProjection(week) : await rebuildCpuProjection(projectionDate) });
     }
     if (request.nextUrl.searchParams.has("changesSince")) {
       const after = Number(request.nextUrl.searchParams.get("changesSince") || 0);

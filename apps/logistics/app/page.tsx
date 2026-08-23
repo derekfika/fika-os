@@ -112,12 +112,6 @@ export default function Planner() {
       if (!response.ok)
         throw new Error(body.error || "Logistics could not be loaded.");
       let projection = body.projection as LogisticsDayProjection | undefined;
-      if (!projection || (projection.summary.queuedJobs === 0 && projection.summary.loads === 0 && projection.summary.assignedJobs === 0)) {
-        setError("Projection is unseeded. Reconciling existing Logistics work…");
-        await fetch("/api/logistics", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "reconcile-logistics-day", serviceDate: date, by: "Franco" }) });
-        const retry = await fetch(`/api/logistics?projection=1&serviceDate=${date}`, { cache: "no-store" });
-        projection = (await retry.json()).projection as LogisticsDayProjection;
-      }
       if (!projection) throw new Error("Logistics projection is unavailable.");
       setData({ ...projectionToDashboardData(projection), projection });
       try { window.localStorage.setItem(`fika-logistics-day:${date}`, JSON.stringify(projection)); } catch { /* Cache failure must not affect operations. */ }

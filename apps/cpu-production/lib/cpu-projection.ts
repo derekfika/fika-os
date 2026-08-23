@@ -26,8 +26,27 @@ export function buildCpuDayProjection(serviceDate: string, orders: ProductionOrd
   return { serviceDate, revision, lastChangeSequence, orders: projected, summary: { orders: projected.length, ready: projected.filter((order) => order.planningReadiness === "ready").length, attention: projected.filter((order) => order.attention.length > 0).length, planned: projected.filter((order) => order.workflowStatus === "planned").length, totalUnits: projected.reduce((sum, order) => sum + order.quantities.reduce((total, item) => total + item.quantity, 0), 0) }, rebuiltAt: now };
 }
 
+async function withReadableDestinations(orders: ProductionOrder[]) {
+  if (!orders.length) return orders;
+  const snapshot = await db.collection("integrationHubCanonical").get();
+  const labels = new Map(snapshot.docs
+    .map(document => document.data() as { entityType?: string; canonicalId?: string; record?: { approvedName?: string; lifecycleState?: string } })
+    .filter(record => record.entityType === "OPLOC" && record.canonicalId && record.record?.approvedName && record.record.lifecycleState !== "decommissioned")
+    .map(record => [record.canonicalId!, String(record.record!.approvedName)] as const));
+  return orders.map(order => {
+    const id = order.destinationOplocId;
+    const label = id ? labels.get(id) : undefined;
+    if (!id || !label) return order;
+    const current = order.destinationLabel?.trim();
+    if (!current || current === id) return { ...order, destinationLabel: label };
+    if (current.startsWith(`${id} · `)) return { ...order, destinationLabel: `${label} · ${current.slice(id.length + 3)}` };
+    return order;
+  });
+}
+
 export async function rebuildCpuDayProjection(serviceDate: string, lastChangeSequence?: number) {
-  const [orders, planSnapshot, previous] = await Promise.all([productionQueue(serviceDate), cpuPlans().get(), cpuProjections().doc(serviceDate).get()]);
+  const [rawOrders, planSnapshot, previous] = await Promise.all([productionQueue(serviceDate), cpuPlans().get(), cpuProjections().doc(serviceDate).get()]);
+  const orders = await withReadableDestinations(rawOrders);
   const plans = planSnapshot.docs.map((document) => document.data() as ProductionPlan);
   const projection = buildCpuDayProjection(serviceDate, orders, plans, lastChangeSequence ?? Number(previous.data()?.lastChangeSequence || 0), Number(previous.data()?.revision || 0) + 1);
   await cpuProjections().doc(serviceDate).set(projection);
@@ -35,7 +54,8 @@ export async function rebuildCpuDayProjection(serviceDate: string, lastChangeSeq
 }
 
 export async function rebuildCpuWeekProjection(weekCommencing: string, lastChangeSequence?: number) {
-  const [orders, planSnapshot, previous] = await Promise.all([productionQueue(), cpuPlans().get(), cpuProjections().doc(`week:${weekCommencing}`).get()]);
+  const [rawOrders, planSnapshot, previous] = await Promise.all([productionQueue(), cpuPlans().get(), cpuProjections().doc(`week:${weekCommencing}`).get()]);
+  const orders = await withReadableDestinations(rawOrders);
   const plans = planSnapshot.docs.map((document) => document.data() as ProductionPlan);
   const projection = buildCpuDayProjection("all", orders.filter((order) => order.serviceDate && weekDates(weekCommencing).includes(order.serviceDate)), plans, lastChangeSequence ?? Number(previous.data()?.lastChangeSequence || 0), Number(previous.data()?.revision || 0) + 1);
   const week: CpuWeekProjection = { serviceDate: weekCommencing, weekCommencing, revision: projection.revision, lastChangeSequence: projection.lastChangeSequence, orders: projection.orders, summary: projection.summary, rebuiltAt: projection.rebuiltAt };

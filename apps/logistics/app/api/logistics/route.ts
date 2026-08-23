@@ -155,6 +155,46 @@ async function rebuildLogisticsProjection(serviceDate: string, actorId: string, 
   return saveLogisticsProjection(buildLogisticsDayProjection({ serviceDate, ...state, runs: legacyState.runs, lastChangeSequence, now: new Date().toISOString(), revision: Date.now() }));
 }
 
+async function reconcileLogisticsDay(serviceDate: string, by: string, cookie?: string) {
+  const requirements = await fetchRequirements(serviceDate, cookie);
+  const oplocs = await fetchOplocs(cookie);
+  const existing = (await listDeliveryLoadState(serviceDate)).jobs;
+  const existingBySource = new Map(existing.map((job) => [`${job.sourceType}:${job.sourceId}`, job]));
+  let created = 0;
+  let updated = 0;
+  let lastChangeSequence = 0;
+  const now = new Date().toISOString();
+  for (const requirement of requirements.filter((item) => item.serviceDate === serviceDate && item.status !== "withdrawn")) {
+    const key = `${requirement.sourceDomain}:${requirement.sourceEntityId}`;
+    const prior = existingBySource.get(key);
+    const readiness = requirement.status === "pending" ? "pending" as const : requirement.status === "amended" ? "attention" as const : "ready" as const;
+    const next = {
+      id: prior?.id || `logistics-job:${requirement.canonicalId}`,
+      sourceType: requirement.sourceDomain,
+      sourceId: requirement.sourceEntityId,
+      sourceVersion: requirement.sourceVersion,
+      serviceDate: requirement.serviceDate,
+      ...(requirement.productionLocationId ? { originOplocId: requirement.productionLocationId } : {}),
+      destinationOplocId: requirement.destinationOplocId,
+      destinationLabelSnapshot: oplocs.find((oploc) => oploc.id === requirement.destinationOplocId)?.label || requirement.destinationLabelSnapshot,
+      ...(requirement.requiredDeliveryWindow ? { requestedWindow: requirement.requiredDeliveryWindow } : requirement.readyAt ? { requestedWindow: { startTime: requirement.readyAt.slice(11, 16) } } : {}),
+      productionReadiness: readiness,
+      collectionStatus: prior?.collectionStatus || "awaiting" as const,
+      contents: requirement.lines.map((line) => ({ description: line.displayNameSnapshot, quantity: line.quantity, unit: line.unit })),
+      createdAt: prior?.createdAt || now,
+      updatedAt: now,
+      version: (prior?.version || 0) + 1,
+      audit: [...(prior?.audit || []), { action: prior ? "reconciled-job-updated" : "reconciled-job-created", at: now, by, version: (prior?.version || 0) + 1 }],
+    } as import("@/lib/types").LogisticsJob;
+    await saveLogisticsJob(next);
+    const event = await appendLogisticsChange({ serviceDate: next.serviceDate, entityType: "logisticsJob", entityId: next.id, changeType: prior ? "reconciled-job-updated" : "reconciled-job-created", revision: next.version, changedAt: now, actorId: by });
+    lastChangeSequence = Math.max(lastChangeSequence, event.sequence);
+    if (prior) updated++; else created++;
+  }
+  const projection = await rebuildLogisticsProjection(serviceDate, by, lastChangeSequence);
+  return { created, updated, projection, requirements };
+}
+
 export async function GET(request: NextRequest) {
   const requestedRunId = request.nextUrl.searchParams.get("runId") || undefined;
   const requestedDate =
@@ -172,7 +212,16 @@ export async function GET(request: NextRequest) {
   if (request.nextUrl.searchParams.get("projection") === "1") {
     const serviceDate = requestedDate || operationalDate();
     const startedAt = performance.now();
-    const projection = await getLogisticsProjection(serviceDate) || await rebuildLogisticsProjection(serviceDate, "read-rebuild");
+    let projection = await getLogisticsProjection(serviceDate);
+    const empty = !projection || (projection.summary.queuedJobs === 0 && projection.summary.loads === 0 && projection.summary.assignedJobs === 0);
+    if (empty) {
+      const requirements = await fetchRequirements(serviceDate, cookie).catch(() => []);
+      if (requirements.some((requirement) => requirement.status !== "withdrawn")) {
+        projection = (await reconcileLogisticsDay(serviceDate, "read-reconcile", cookie)).projection;
+      } else {
+        projection = await rebuildLogisticsProjection(serviceDate, "read-rebuild");
+      }
+    }
     return NextResponse.json({ projection, metrics: { projectionFetchMs: Math.round(performance.now() - startedAt), dashboardReadyMs: Math.round(performance.now() - startedAt) } });
   }
   if (request.nextUrl.searchParams.has("changesSince")) {
@@ -352,40 +401,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ projection, metrics: { projectionRebuildMs: Math.round(performance.now() - startedAt) } });
     }
     if (body.action === "reconcile-logistics-day" && body.serviceDate) {
-      const requirements = await fetchRequirements(body.serviceDate, request.headers.get("cookie") || undefined);
-      const oplocs = await fetchOplocs(request.headers.get("cookie") || undefined);
-      const existing = (await listDeliveryLoadState(body.serviceDate)).jobs;
-      const existingBySource = new Map(existing.map((job) => [`${job.sourceType}:${job.sourceId}`, job]));
-      let created = 0; let updated = 0; let lastChangeSequence = 0;
-      for (const requirement of requirements.filter((item) => item.serviceDate === body.serviceDate && item.status !== "withdrawn")) {
-        const key = `${requirement.sourceDomain}:${requirement.sourceEntityId}`;
-        const prior = existingBySource.get(key);
-        const readiness = requirement.status === "pending" ? "pending" as const : requirement.status === "amended" ? "attention" as const : "ready" as const;
-        const next = {
-          id: prior?.id || `logistics-job:${requirement.canonicalId}`,
-          sourceType: requirement.sourceDomain,
-          sourceId: requirement.sourceEntityId,
-          sourceVersion: requirement.sourceVersion,
-          serviceDate: requirement.serviceDate,
-          ...(requirement.productionLocationId ? { originOplocId: requirement.productionLocationId } : {}),
-          destinationOplocId: requirement.destinationOplocId,
-          destinationLabelSnapshot: oplocs.find((oploc) => oploc.id === requirement.destinationOplocId)?.label || requirement.destinationLabelSnapshot,
-          ...(requirement.requiredDeliveryWindow ? { requestedWindow: requirement.requiredDeliveryWindow } : requirement.readyAt ? { requestedWindow: { startTime: requirement.readyAt.slice(11, 16) } } : {}),
-          productionReadiness: readiness,
-          collectionStatus: prior?.collectionStatus || "awaiting" as const,
-          contents: requirement.lines.map((line) => ({ description: line.displayNameSnapshot, quantity: line.quantity, unit: line.unit })),
-          createdAt: prior?.createdAt || now,
-          updatedAt: now,
-          version: (prior?.version || 0) + 1,
-          audit: [...(prior?.audit || []), { action: prior ? "reconciled-job-updated" : "reconciled-job-created", at: now, by, version: (prior?.version || 0) + 1 }],
-        } as import("@/lib/types").LogisticsJob;
-        await saveLogisticsJob(next);
-        const event = await appendLogisticsChange({ serviceDate: next.serviceDate, entityType: "logisticsJob", entityId: next.id, changeType: prior ? "reconciled-job-updated" : "reconciled-job-created", revision: next.version, changedAt: now, actorId: by });
-        lastChangeSequence = Math.max(lastChangeSequence, event.sequence);
-        if (prior) updated++; else created++;
-      }
-      const projection = await rebuildLogisticsProjection(body.serviceDate, by, lastChangeSequence);
-      return NextResponse.json({ created, updated, projection, warning: requirements.some((item) => !item.productionLocationId) ? "Some jobs have no canonical origin OPLOC and remain safely unassigned." : undefined });
+      const result = await reconcileLogisticsDay(body.serviceDate, by, request.headers.get("cookie") || undefined);
+      return NextResponse.json({ ...result, warning: result.requirements.some((item) => !item.productionLocationId) ? "Some jobs have no canonical origin OPLOC and remain safely unassigned." : undefined });
     }
     if (body.action === "save-logistics-job" && body.job) {
       if (!body.job.originOplocId || !body.job.destinationOplocId)
