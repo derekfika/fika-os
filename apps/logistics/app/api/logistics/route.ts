@@ -463,6 +463,33 @@ export async function POST(request: NextRequest) {
       await rebuildLogisticsProjection(job.serviceDate, by, event.sequence);
       return NextResponse.json(result);
     }
+    if (body.action === "reschedule-delivery-load" && body.loadId && body.scheduledTime) {
+      const result = await db.runTransaction(async (transaction) => {
+        const loadRef = deliveryLoads().doc(body.loadId!);
+        const loadSnap = await transaction.get(loadRef);
+        if (!loadSnap.exists) throw new HttpError(404, "Delivery load not found.");
+        const load = loadSnap.data() as import("@/lib/types").DeliveryLoad;
+        const nextVersion = load.version + 1;
+        transaction.update(loadRef, {
+          scheduledTime: body.scheduledTime,
+          updatedAt: now,
+          version: nextVersion,
+          audit: [...load.audit, { action: "load-rescheduled", at: now, by, version: nextVersion }],
+        });
+        return { ...load, scheduledTime: body.scheduledTime, updatedAt: now, version: nextVersion };
+      });
+      const event = await appendLogisticsChange({
+        serviceDate: result.serviceDate,
+        entityType: "deliveryLoad",
+        entityId: result.id,
+        changeType: "load-rescheduled",
+        revision: result.version,
+        changedAt: now,
+        actorId: by,
+      });
+      await rebuildLogisticsProjection(result.serviceDate, by, event.sequence);
+      return NextResponse.json(result);
+    }
     if (body.action === "remove-job-from-load" && body.jobId) {
       const result = await db.runTransaction(async (transaction) => {
         const assignmentSnap = await transaction.get(logisticsAssignments().where("jobId", "==", body.jobId));

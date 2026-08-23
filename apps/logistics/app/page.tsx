@@ -595,6 +595,12 @@ function RealPlanner(props: RealPlannerProps) {
   const countFor = (filter: RealPlannerProps["queueFilter"]) => filter === "all" ? queueGroups.length + queueMovements.length : groups.filter((group) => queueStateForGroup(group) === filter).length + movements.filter((movement) => queueStateForMovement(movement) === filter).length;
   const selectedDateLabel = formatOperationalDate(date, { weekday: "long", day: "numeric", month: "long" }).toUpperCase();
   const scheduleStop = (sourceRunId: string, stopId: string, targetRunId: string, time: string, end?: string) => {
+    if (data?.projection && stopId.startsWith("projection-stop:")) {
+      const loadId = stopId.slice("projection-stop:".length);
+      if (!loadId || !time) return;
+      void props.act({ action: "reschedule-delivery-load", loadId, scheduledTime: time, by: "Franco" });
+      return;
+    }
     const sourceRun = runs.find((run) => run.runId === sourceRunId);
     const targetRun = runs.find((run) => run.runId === targetRunId);
     const rawStop = data?.stops.find((item) => item.canonicalId === stopId);
