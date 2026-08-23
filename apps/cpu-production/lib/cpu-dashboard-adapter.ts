@@ -3,6 +3,7 @@ import type { CpuDayProjection } from "./cpu-projection";
 import type { ProductionScope } from "./production-scope";
 
 export function weekCommencingFor(serviceDate: string) { const date = new Date(`${serviceDate}T00:00:00Z`); const day = date.getUTCDay() || 7; date.setUTCDate(date.getUTCDate() - day + 1); return date.toISOString().slice(0, 10); }
+export function dashboardOperationalDate(now = new Date()) { const date = new Date(now); const day = date.getUTCDay(); if (day === 0) date.setUTCDate(date.getUTCDate() + 1); else if (day === 6) date.setUTCDate(date.getUTCDate() + 2); return date.toISOString().slice(0, 10); }
 
 /** Rehydrates the compact day read model into the shape used by the existing UI. */
 export function cpuProjectionToOrders(projection: CpuDayProjection): ProductionOrder[] {

@@ -22,7 +22,7 @@ import { CANONICAL_ALLERGEN_COLUMNS, normaliseOperationalAllergens, toggleOperat
 import { productionScopes, type ProductionScope } from "../lib/production-scope";
 import { cpuAttentionKey, cpuAttentionLabel, cpuDestinationLabel, cpuDestinationOptionLabel, cpuLifecycle, cpuLifecycleLabels, cpuReference, cpuRequiredTime, cpuSourceLabel, type CpuLifecycle } from "../lib/production-presentation";
 import { relatedDeliveredInOrders } from "../lib/production-day";
-import { cpuProjectionToOrders, filterCpuProjectionForScope, weekCommencingFor } from "../lib/cpu-dashboard-adapter";
+import { cpuProjectionToOrders, dashboardOperationalDate, filterCpuProjectionForScope, weekCommencingFor } from "../lib/cpu-dashboard-adapter";
 
 const statuses: CpuLifecycle[] = ["received", "accepted", "planning", "planned", "ready", "in_production", "complete"];
 const terminalStatuses = new Set<ProductionStatus>([
@@ -54,7 +54,8 @@ export default function CpuProduction() {
   const [origin, setOrigin] = useState("");
   const [site, setSite] = useState("");
   const [date, setDate] = useState("");
-  const [dayDate, setDayDate] = useState(new Date().toISOString().slice(0, 10));
+  const [dayDate, setDayDate] = useState(dashboardOperationalDate());
+  const [weekCommencing, setWeekCommencing] = useState(weekCommencingFor(dashboardOperationalDate()));
   const [productionScope, setProductionScope] = useState<ProductionScope>("all");
   const [view, setView] = useState<View>("calendar");
   const [selected, setSelected] = useState<ProductionOrder>();
@@ -68,7 +69,7 @@ export default function CpuProduction() {
     if (showFeedback) setRefreshing(true);
     try {
       const isDayProjection = view === "day";
-      const projectionDate = isDayProjection ? dayDate : weekCommencingFor(dayDate);
+      const projectionDate = isDayProjection ? dayDate : weekCommencing;
       const cacheKey = `fika-cpu-projection:${productionScope}:${projectionDate}`;
       // Compatibility marker for existing dashboard contract checks: /api/production?scope=${productionScope}
       const cached = window.localStorage.getItem(cacheKey);
@@ -105,7 +106,7 @@ export default function CpuProduction() {
   };
   useEffect(() => {
     void load();
-  }, [productionScope, view, dayDate]);
+  }, [productionScope, view, dayDate, weekCommencing]);
   const sites = [
     ...new Set(
       orders.map((order) => order.destinationOplocId).filter(Boolean),
@@ -316,9 +317,9 @@ export default function CpuProduction() {
           />
         )}
         {view === "calendar" && (
-          <ProductionCalendar orders={baseVisible} open={openOrder} onDayOpen={(selectedDate) => { setDayDate(selectedDate); setView("day"); }} reviewAllergens={(selectedDate) => { window.location.href = `/allergens?date=${encodeURIComponent(selectedDate)}`; }} />
+          <ProductionCalendar orders={baseVisible} open={openOrder} weekCommencing={weekCommencing} onWeekChange={(nextWeek) => setWeekCommencing(nextWeek)} onDayOpen={(selectedDate) => { setDayDate(selectedDate); setWeekCommencing(weekCommencingFor(selectedDate)); setView("day"); }} reviewAllergens={(selectedDate) => { window.location.href = `/allergens?date=${encodeURIComponent(selectedDate)}`; }} />
         )}
-        {view === "day" && <ProductionDayView orders={baseVisible} date={dayDate} open={openOrder} onChangeDate={setDayDate} reviewAllergens={(selectedDate) => { window.location.href = `/allergens?date=${encodeURIComponent(selectedDate)}`; }} />}
+        {view === "day" && <ProductionDayView orders={baseVisible} date={dayDate} open={openOrder} onChangeDate={(nextDate) => { setDayDate(nextDate); setWeekCommencing(weekCommencingFor(nextDate)); }} reviewAllergens={(selectedDate) => { window.location.href = `/allergens?date=${encodeURIComponent(selectedDate)}`; }} />}
         {view === "queue" && <Queue orders={visible} open={openOrder} />}
         {view === "run-sheet" && <RunSheet orders={visible} />}
         {view === "totals" && <Totals totals={totals} orders={visible} />}

@@ -16,7 +16,7 @@ export function buildLogisticsDayProjection(input: { serviceDate: string; jobs: 
   });
   const exceptions = jobs.flatMap((job) => [
     ...(!job.originOplocId || !job.destinationOplocId ? [`${job.id}: missing canonical OPLOC`] : []),
-    ...(job.productionReadiness !== "ready" ? [`${job.id}: production not ready`] : []),
+    ...(job.productionReadiness !== "ready" ? [`${job.destinationLabelSnapshot || "Delivery"}: production hand-off is not ready`] : []),
     ...(!job.requestedWindow?.startTime ? [`${job.id}: unresolved timing`] : []),
   ]);
   const now = input.now || new Date().toISOString();

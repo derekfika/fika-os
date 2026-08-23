@@ -32,13 +32,10 @@ function dietarySummary(order: ProductionOrder) {
   return [...values.entries()].map(([key, value]) => `${key.replace(/([a-z])([A-Z])/g, "$1 $2").replaceAll("_", " ")}: ${value}`).join(" · ");
 }
 
-export default function ProductionCalendar({ orders, open, onDayOpen, reviewAllergens }: { orders: ProductionOrder[]; open: (order: ProductionOrder) => void; onDayOpen?: (date: string) => void; reviewAllergens?: (date: string) => void }) {
+export default function ProductionCalendar({ orders, open, weekCommencing, onWeekChange, onDayOpen, reviewAllergens }: { orders: ProductionOrder[]; open: (order: ProductionOrder) => void; weekCommencing?: string; onWeekChange?: (weekCommencing: string) => void; onDayOpen?: (date: string) => void; reviewAllergens?: (date: string) => void }) {
   const [weekOffset, setWeekOffset] = useState(0);
-  const weekStart = useMemo(() => {
-    const date = mondayOf(new Date());
-    date.setDate(date.getDate() + weekOffset * 7);
-    return date;
-  }, [weekOffset]);
+  const weekStart = useMemo(() => weekCommencing ? new Date(`${weekCommencing}T00:00:00`) : (() => { const date = mondayOf(new Date()); date.setDate(date.getDate() + weekOffset * 7); return date; })(), [weekCommencing, weekOffset]);
+  const shiftWeek = (delta: number) => { const next = new Date(weekStart); next.setDate(next.getDate() + delta * 7); setWeekOffset(value => value + delta); onWeekChange?.(dateKey(next)); };
   const days = dayNames.map((name, index) => {
     const date = new Date(weekStart);
     date.setDate(date.getDate() + index);
@@ -57,9 +54,9 @@ export default function ProductionCalendar({ orders, open, onDayOpen, reviewAlle
           <p>{productionJobCount(weekOrders)} production job{productionJobCount(weekOrders) === 1 ? "" : "s"} in this week's view.</p>
         </div>
         <nav className="calendar-nav" aria-label="Calendar week navigation">
-          <button type="button" onClick={() => setWeekOffset(value => value - 1)} aria-label="Previous week">←</button>
-          <button type="button" onClick={() => setWeekOffset(0)}>This week</button>
-          <button type="button" onClick={() => setWeekOffset(value => value + 1)} aria-label="Next week">→</button>
+              <button type="button" onClick={() => shiftWeek(-1)} aria-label="Previous week">←</button>
+              <button type="button" onClick={() => { const today = mondayOf(new Date()); setWeekOffset(0); onWeekChange?.(dateKey(today)); }}>This week</button>
+              <button type="button" onClick={() => shiftWeek(1)} aria-label="Next week">→</button>
         </nav>
       </header>
       <div className="calendar-grid">
