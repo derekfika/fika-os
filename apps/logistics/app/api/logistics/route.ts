@@ -174,7 +174,7 @@ async function reconcileLogisticsDay(serviceDate: string, by: string, cookie?: s
     const key = `${requirement.sourceDomain}:${requirement.sourceEntityId}`;
     const prior = existingBySource.get(key);
     const readiness = requirement.status === "pending" ? "pending" as const : requirement.status === "amended" ? "attention" as const : "ready" as const;
-    const originOplocId = requirement.productionLocationId || (requirement.sourceDomain === "grab-and-go" || (requirement.sourceDomain === "cpu-production" && requirement.sourceEntityId.includes("grab-and-go")) ? CPU_PRODUCTION_LOCATION_ID : undefined);
+    const originOplocId = requirement.productionLocationId || CPU_PRODUCTION_LOCATION_ID;
     const next = {
       id: prior?.id || `logistics-job:${requirement.canonicalId}`,
       sourceType: requirement.sourceDomain,
@@ -431,7 +431,7 @@ export async function POST(request: NextRequest) {
       const job = body.job || (await listDeliveryLoadState()).jobs.find((item) => item.id === body.jobId);
       if (!job) throw new HttpError(404, "Logistics job not found.");
       const scheduledTime = body.scheduledTime || job.requestedWindow?.startTime;
-      const originOplocId = job.originOplocId || (job.sourceType === "grab-and-go" || (job.sourceType === "cpu-production" && job.sourceId.includes("grab-and-go")) ? CPU_PRODUCTION_LOCATION_ID : undefined);
+      const originOplocId = job.originOplocId || CPU_PRODUCTION_LOCATION_ID;
       if (!originOplocId || !job.destinationOplocId || !scheduledTime)
         throw new HttpError(422, "Job cannot be assigned without canonical OPLOC IDs and a scheduled time; it remains unassigned.");
       const destinationOplocId = job.destinationOplocId;
