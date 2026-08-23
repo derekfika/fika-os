@@ -697,6 +697,19 @@ function RealPlanner(props: RealPlannerProps) {
     window.addEventListener("logistics-collection-preference-updated", refresh);
     return () => window.removeEventListener("logistics-collection-preference-updated", refresh);
   }, [props.load]);
+  useEffect(() => {
+    const hideNativeDragImage = (event: Event) => {
+      const target = event.target as HTMLElement | null;
+      const drag = event as unknown as DragEvent;
+      if (!target?.closest(".stable-stop") || !drag.dataTransfer) return;
+      const image = document.createElement("canvas");
+      image.width = 1;
+      image.height = 1;
+      drag.dataTransfer.setDragImage(image, 0, 0);
+    };
+    document.addEventListener("dragstart", hideNativeDragImage, true);
+    return () => document.removeEventListener("dragstart", hideNativeDragImage, true);
+  }, []);
   return <main className="mock-tower real-planner">
     <header className="mock-shell">
       <div className="mock-brand"><img src="/brand-assets/logos/fika_logo_white_png.png" alt="FIKA" /><span>OS</span></div>
@@ -801,11 +814,13 @@ function ScrollableRealTimeline({ runs, onStop, onSchedule, onQueueDrop }: { run
   const [collectionStart, setCollectionStart] = useState(12);
   const [zoom, setZoom] = useState(1);
   const [verticalZoom, setVerticalZoom] = useState(1);
+  const timelineRef = useRef<HTMLDivElement>(null);
   const move = useCallback((lane: "delivery" | "collection", amount: number) => {
     const setter = lane === "delivery" ? setDeliveryStart : setCollectionStart;
     setter((value) => Math.max(0, Math.min(18, value + amount)));
-  }, []);
-  const timelineRef = useRef<HTMLDivElement>(null);
+    const element = timelineRef.current;
+    if (element) element.scrollLeft += amount * ((940 * zoom) / 24);
+  }, [zoom]);
   const wheelZoomDelta = useRef(0);
   const wheelPanDelta = useRef(0);
   const handleWheel = useCallback((event: WheelEvent) => {
