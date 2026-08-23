@@ -571,6 +571,12 @@ function RealPlanner(props: RealPlannerProps) {
       props.setInspector(undefined);
       return;
     }
+    if (data?.projection && action.action === "defer-stop" && action.stopId) {
+      const rawStop = data.stops.find((item) => item.canonicalId === action.stopId);
+      for (const ref of rawStop?.requirementRefs || []) await props.act({ action: "remove-job-from-load", jobId: ref.requirementId, by: "Franco" });
+      props.setInspector(undefined);
+      return;
+    }
     if (action.action === "return-stop-to-planning" && action.runId && action.stopId) {
       await returnStopToPlanning(action.runId, action.stopId);
       return;
@@ -1802,7 +1808,6 @@ function StopPanel({
               </span>
               <div className="attached-work__copy">
                 <strong>Included in this delivery</strong>
-                <small>{ref.requirementId}</small>
               </div>
               <button className="job-view-button" onClick={() => setSelectedJobId(ref.requirementId)}>View job</button>
               <button
@@ -1845,42 +1850,6 @@ function StopPanel({
             </div>
           ))}
           <div className="correction-row">
-            <button
-              disabled={index === 0}
-              onClick={() =>
-                onAction({
-                  action: "reorder",
-                  by: "Franco",
-                  runId: run.runId,
-                  stopIds: swap(
-                    run.stops.map((item) => item.stopId),
-                    index,
-                    index - 1,
-                  ),
-                  expectedRunVersion: run.version,
-                })
-              }
-            >
-              ↑ Up
-            </button>
-            <button
-              disabled={index === run.stops.length - 1}
-              onClick={() =>
-                onAction({
-                  action: "reorder",
-                  by: "Franco",
-                  runId: run.runId,
-                  stopIds: swap(
-                    run.stops.map((item) => item.stopId),
-                    index,
-                    index + 1,
-                  ),
-                  expectedRunVersion: run.version,
-                })
-              }
-            >
-              ↓ Down
-            </button>
             <select
               defaultValue=""
               onChange={(event) => {
@@ -1930,12 +1899,12 @@ function StopPanel({
   );
 }
 
-function JobDetailScreen({ jobId, sourceType, sourceId, contents, notes, onBack }: { jobId: string; sourceType?: string; sourceId?: string; contents: Array<{ description: string; quantity: number; unit: string }>; notes?: string; onBack: () => void }) {
+function JobDetailScreen({ sourceType, contents, notes, onBack }: { jobId: string; sourceType?: string; sourceId?: string; contents: Array<{ description: string; quantity: number; unit: string }>; notes?: string; onBack: () => void }) {
   return <section className="job-detail-screen" aria-label="Production job detail">
     <button type="button" className="job-detail-back" onClick={onBack}>← Back to delivery</button>
     <p className="eyebrow">CPU production job</p>
     <h3>What this job contains</h3>
-    <p className="job-detail-reference">{sourceType ? sourceLabel(sourceType as FulfilmentRequirement["sourceDomain"]) : "Production"}{sourceId ? ` · ${sourceId}` : ""}</p>
+    <p className="job-detail-reference">{sourceType ? sourceLabel(sourceType as FulfilmentRequirement["sourceDomain"]) : "Production"}</p>
     <div className="job-detail-items">{contents.map((item, index) => <div className="job-detail-item" key={`${item.description}-${index}`}><strong>{item.quantity.toLocaleString()}</strong><span>{item.unit}</span><p>{item.description}</p></div>)}</div>
     {notes && <div className="job-detail-notes"><strong>Notes from CPU</strong><p>{notes}</p></div>}
     {!contents.length && <p className="context-line">No item detail was included in the current CPU hand-off.</p>}
