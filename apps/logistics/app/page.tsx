@@ -1731,6 +1731,7 @@ function StopPanel({
   onToggle: () => void;
   onAction: (payload: object) => void;
 }) {
+  const collectionRequired = Boolean(rawStop?.collectionRequired || stop.linkedStopId);
   const [selectedJobId, setSelectedJobId] = useState<string>();
   const selectedProjectionJob = selectedJobId ? projection?.planningQueue.find((job) => job.id === selectedJobId) || projection?.deliveryLoads.flatMap((load) => load.jobs).find((job) => job.id === selectedJobId) : undefined;
   const selectedRequirement = selectedJobId ? rawRequirements.find((requirement) => requirement.canonicalId === selectedJobId) : undefined;
@@ -1878,20 +1879,21 @@ function StopPanel({
                   </option>
                 ))}
             </select>
-            <button
+            {collectionRequired && <button
               onClick={() =>
                 onAction({
-                  action: "defer-stop",
+                  action: "defer-collection",
                   by: "Franco",
                   runId: run.runId,
                   stopId: stop.stopId,
+                  targetServiceDate: addOperationalDays(run.serviceDate, 1),
                   expectedRunVersion: run.version,
                   expectedStopVersion: rawStop.version,
                 })
               }
             >
-              Defer
-            </button>
+              Defer collection
+            </button>}
           </div>
         </div>
       )}
