@@ -475,8 +475,7 @@ function RunSheet({ orders }: { orders: ProductionOrder[] }) {
               <header>
                 <strong>{order.requiredBy.replace("T", " · ")}</strong>
                 <span>
-                  {order.sourceBookingId} ·{" "}
-                  {order.productionLocationId || "Unassigned"}
+                  {cpuSourceLabel(order)} · {cpuDestinationLabel(order)}
                 </span>
               </header>
               {order.lines.map((line) => (
