@@ -322,6 +322,7 @@ export default function Planner() {
     weekData={weekData}
     data={data}
     error={error}
+    setError={setError}
     busy={busy}
     refreshing={refreshing}
     showMovement={showMovement}
@@ -511,6 +512,7 @@ type RealPlannerProps = {
   weekData?: WeekData;
   data?: Data;
   error: string;
+  setError: (value: string) => void;
   busy: boolean;
   refreshing: boolean;
   showMovement: boolean;
@@ -594,7 +596,11 @@ function RealPlanner(props: RealPlannerProps) {
   const queueMovements = movements.filter((movement) => queueStateForMovement(movement) !== "scheduled");
   const countFor = (filter: RealPlannerProps["queueFilter"]) => filter === "all" ? queueGroups.length + queueMovements.length : groups.filter((group) => queueStateForGroup(group) === filter).length + movements.filter((movement) => queueStateForMovement(movement) === filter).length;
   const selectedDateLabel = formatOperationalDate(date, { weekday: "long", day: "numeric", month: "long" }).toUpperCase();
-  const scheduleStop = (sourceRunId: string, stopId: string, targetRunId: string, time: string, end?: string) => {
+  const scheduleStop = (sourceRunId: string, stopId: string, targetRunId: string, time: string, end?: string, lane?: "delivery" | "collection") => {
+    if (lane === "collection" && data?.projection) {
+      props.setError("Delivery jobs can only be scheduled in the delivery timeline.");
+      return;
+    }
     if (data?.projection && stopId.startsWith("projection-stop:")) {
       const loadId = stopId.slice("projection-stop:".length);
       if (!loadId || !time) return;
@@ -611,10 +617,14 @@ function RealPlanner(props: RealPlannerProps) {
   };
   const assignQueueItem = (kind: "group" | "movement", id: string, targetRunId: string, time?: string, lane?: "delivery" | "collection", collectionRequired?: boolean) => {
     if (data?.projection && kind === "group") {
+      if (lane === "collection") {
+        props.setError("Delivery jobs can only be scheduled in the delivery timeline.");
+        return;
+      }
       const group = groups.find((item) => item.groupKey === id);
       const jobId = group?.requirementRefs[0]?.requirementId;
       if (!jobId || !time) return;
-      void props.act({ action: "assign-job-to-load", jobId, scheduledTime: time, targetRunId, by: "Franco" });
+      void props.act({ action: "assign-job-to-load", jobId, scheduledTime: time, targetRunId, lane, by: "Franco" });
       return;
     }
     const run = runs.find((item) => item.runId === targetRunId);
@@ -839,7 +849,7 @@ function LegacyStableTimeline({ runs, serviceDate, onStop, onRun, onSchedule, on
 }
 
 */
-function StableTimelineLane({ run, lane, zoom, onStop: inspectStop, onSchedule, onQueueDrop }: { run: PlannerDay["runs"][number]; lane: "delivery" | "collection"; zoom: number; onStop: (runId: string, stopId: string) => void; onSchedule: (sourceRunId: string, stopId: string, targetRunId: string, time: string, end?: string) => void; onQueueDrop: (kind: "group" | "movement", id: string, runId: string, time?: string, lane?: "delivery" | "collection", collectionRequired?: boolean) => void; }) {
+function StableTimelineLane({ run, lane, zoom, onStop: inspectStop, onSchedule, onQueueDrop }: { run: PlannerDay["runs"][number]; lane: "delivery" | "collection"; zoom: number; onStop: (runId: string, stopId: string) => void; onSchedule: (sourceRunId: string, stopId: string, targetRunId: string, time: string, end?: string, lane?: "delivery" | "collection") => void; onQueueDrop: (kind: "group" | "movement", id: string, runId: string, time?: string, lane?: "delivery" | "collection", collectionRequired?: boolean) => void; }) {
   const [gesture, setGesture] = useState<{ mode: "move" | "resize"; stopId: string; start: string; end?: string; pointerId: number }>();
   const [live, setLive] = useState<{ start: string; end?: string }>();
   const origin = lane === "delivery" ? 6 * 60 : 12 * 60;

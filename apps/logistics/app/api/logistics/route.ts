@@ -403,6 +403,7 @@ export async function POST(request: NextRequest) {
       loadId?: string;
       jobId?: string;
       scheduledTime?: string;
+      lane?: "delivery" | "collection";
       collectionStatus?: "awaiting" | "collected";
     };
     const by = body.by || "Franco";
@@ -428,6 +429,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(saved);
     }
     if (body.action === "assign-job-to-load" && (body.job || body.jobId)) {
+      if (body.lane === "collection") throw new HttpError(422, "Delivery jobs cannot be assigned to the collection timeline.");
       const job = body.job || (await listDeliveryLoadState()).jobs.find((item) => item.id === body.jobId);
       if (!job) throw new HttpError(404, "Logistics job not found.");
       const scheduledTime = body.scheduledTime || job.requestedWindow?.startTime;
