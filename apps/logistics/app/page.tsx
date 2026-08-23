@@ -560,7 +560,17 @@ function groupCollectionPending(group: PlannerWorkGroup, runs: PlannerDay["runs"
 function RealPlanner(props: RealPlannerProps) {
   const { data, weekData, date, weekCommencing, runs, groups, movements } = props;
   const handleInspectorAction = async (payload: object) => {
-    const action = payload as { action?: string; runId?: string; stopId?: string };
+    const action = payload as { action?: string; runId?: string; stopId?: string; requirementId?: string };
+    if (data?.projection && action.action === "unassign-requirement" && action.requirementId) {
+      await props.act({ action: "remove-job-from-load", jobId: action.requirementId, by: "Franco" });
+      return;
+    }
+    if (data?.projection && action.action === "return-stop-to-planning" && action.stopId) {
+      const rawStop = data.stops.find((item) => item.canonicalId === action.stopId);
+      for (const ref of rawStop?.requirementRefs || []) await props.act({ action: "remove-job-from-load", jobId: ref.requirementId, by: "Franco" });
+      props.setInspector(undefined);
+      return;
+    }
     if (action.action === "return-stop-to-planning" && action.runId && action.stopId) {
       await returnStopToPlanning(action.runId, action.stopId);
       return;
@@ -1782,7 +1792,10 @@ function StopPanel({
                   )?.sourceDomain || "menu-planning",
                 )}
               </span>
-              <strong>Included delivery load</strong>
+              <div className="attached-work__copy">
+                <strong>Included in this delivery</strong>
+                <small>{ref.requirementId}</small>
+              </div>
               <button
                 onClick={() =>
                   onAction({
@@ -1803,7 +1816,10 @@ function StopPanel({
           {rawStop.movementRequestIds.map((movementId) => (
             <div className="attached-work" key={movementId}>
               <span>Movement</span>
-              <strong>Included movement</strong>
+                <div className="attached-work__copy">
+                  <strong>Included movement</strong>
+                  <small>{movementId}</small>
+                </div>
               <button
                 onClick={() =>
                   onAction({
