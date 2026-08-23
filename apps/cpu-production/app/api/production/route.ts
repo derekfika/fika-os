@@ -14,6 +14,8 @@ import {
 import { hospitalityMenuProductionRouting } from "@hub/lib/connections-service";
 import { localFixtureOrders, updateLocalFixture } from "../local-fixtures";
 import { filterProductionOrdersForScope, normaliseProductionScope, type ProductionScope } from "../../../lib/production-scope";
+import { appendCpuChange, buildCpuDayProjection, cpuPlans, cpuProjections, listCpuChanges } from "../../../lib/cpu-projection";
+import type { ProductionOrder } from "@hub/lib/production-domain";
 
 const localActor = {
   uid: "local-cpu",
@@ -35,6 +37,22 @@ async function actorFor(
       return localActor;
     throw error;
   }
+}
+async function rebuildCpuProjection(serviceDate: string, lastChangeSequence?: number) {
+  const [orders, planSnapshot, previous] = await Promise.all([productionQueue(serviceDate === "all" ? undefined : serviceDate), cpuPlans().get(), cpuProjections().doc(serviceDate).get()]);
+  const plans = planSnapshot.docs.map((document) => document.data() as import("../../lib/production-plan").ProductionPlan);
+  const projection = buildCpuDayProjection(serviceDate, orders, plans, lastChangeSequence ?? Number(previous.data()?.lastChangeSequence || 0), Number(previous.data()?.revision || 0) + 1);
+  await cpuProjections().doc(serviceDate).set(projection);
+  return projection;
+}
+
+async function recordCpuChange(canonicalId: string, actorId: string, changeType: string, order?: ProductionOrder) {
+  const current = order || await productionOrderDetail(canonicalId);
+  const serviceDate = current?.serviceDate;
+  if (!serviceDate) return current;
+  const event = await appendCpuChange({ serviceDate, entityType: "productionOrder", entityId: canonicalId, revision: current.version, changeType, actorId, changedAt: new Date().toISOString() });
+  await rebuildCpuProjection(serviceDate, event.sequence);
+  return current;
 }
 
 const Cpu = z
@@ -132,6 +150,12 @@ const UpdateLines = z
 const AllergenDiscrepancy = z.object({ action: z.literal("report-allergen-discrepancy"), canonicalId: z.string().min(8), expectedVersion: z.number().int().positive(), note: z.string().trim().min(3) }).strict();
 export async function GET(request: NextRequest) {
   try {
+    const projectionDate = request.nextUrl.searchParams.get("serviceDate") || new Date().toISOString().slice(0, 10);
+    if (request.nextUrl.searchParams.get("projection") === "1") {
+      const stored = await cpuProjections().doc(projectionDate).get();
+      return NextResponse.json({ projection: stored.exists ? stored.data() : await rebuildCpuProjection(projectionDate) });
+    }
+    if (request.nextUrl.searchParams.has("changesSince")) return NextResponse.json({ changes: await listCpuChanges(Number(request.nextUrl.searchParams.get("changesSince") || 0), projectionDate), projection: (await cpuProjections().doc(projectionDate).get()).data() || null });
     const actor = await actorFor(request);
     assertPermission(actor, "canonical.view");
     const id = request.nextUrl.searchParams.get("canonicalId");
@@ -197,11 +221,15 @@ export async function POST(request: NextRequest) {
     const actor = await actorFor(request, ["integration-admin", "reviewer"]);
     assertPermission(actor, "canonical.edit");
     const raw = await request.json();
+    if (raw?.action === "rebuild-cpu-projection") {
+      const serviceDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).parse(raw.serviceDate);
+      return NextResponse.json({ projection: await rebuildCpuProjection(serviceDate) });
+    }
     if (raw?.action === "cpu-create") {
       const command = Cpu.parse(raw);
-      return NextResponse.json(
-        await createCpuProductionOrder(actor, command, command.idempotencyKey),
-      );
+      const result = await createCpuProductionOrder(actor, command, command.idempotencyKey);
+      if (result.order) await recordCpuChange(result.order.canonicalId, actor.uid, result.created ? "created" : "replayed", result.order);
+      return NextResponse.json(result);
     }
     if (raw?.action === "update-lines") {
       const command = UpdateLines.parse(raw);
@@ -260,18 +288,20 @@ export async function POST(request: NextRequest) {
         }));
         return NextResponse.json({ order: updated, localFixture: true });
       }
-      return NextResponse.json({
-        order: await updateProductionLines(
+      const order = await updateProductionLines(
           actor,
           command.canonicalId,
           command.expectedVersion,
           command.lines,
-        ),
-      });
+        );
+      await recordCpuChange(command.canonicalId, actor.uid, "lines-updated");
+      return NextResponse.json({ order });
     }
     if (raw?.action === "report-allergen-discrepancy") {
       const command = AllergenDiscrepancy.parse(raw);
-      return NextResponse.json(await reportProductionAllergenDiscrepancy(actor, command.canonicalId, command.expectedVersion, command.note));
+      const result = await reportProductionAllergenDiscrepancy(actor, command.canonicalId, command.expectedVersion, command.note);
+      await recordCpuChange(command.canonicalId, actor.uid, "allergen-discrepancy", result.order);
+      return NextResponse.json(result);
     }
     const command = Transition.parse(raw);
     if (command.canonicalId.startsWith("production-order:v1:fixture:")) {
@@ -293,15 +323,15 @@ export async function POST(request: NextRequest) {
       }));
       return NextResponse.json({ order: updated, localFixture: true });
     }
-    return NextResponse.json({
-      order: await transitionProductionOrder(
+    const order = await transitionProductionOrder(
         actor,
         command.canonicalId,
         command.expectedVersion,
         command.status,
         command.reason,
-      ),
-    });
+      );
+    await recordCpuChange(command.canonicalId, actor.uid, "status-changed", order);
+    return NextResponse.json({ order });
   } catch (error) {
     return NextResponse.json(
       { error: { message: (error as Error).message } },

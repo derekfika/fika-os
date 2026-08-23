@@ -89,7 +89,7 @@ export async function listDeliveryLoadState(serviceDate?: string) {
   const [jobSnap, loadSnap, assignmentSnap] = await Promise.all([
     serviceDate ? logisticsJobs().where("serviceDate", "==", serviceDate).get() : logisticsJobs().get(),
     serviceDate ? deliveryLoads().where("serviceDate", "==", serviceDate).get() : deliveryLoads().get(),
-    logisticsAssignments().get(),
+    serviceDate ? logisticsAssignments().where("serviceDate", "==", serviceDate).get() : logisticsAssignments().get(),
   ]);
   return { jobs: jobSnap.docs.map((d) => d.data() as LogisticsJob), loads: loadSnap.docs.map((d) => d.data() as DeliveryLoad), assignments: assignmentSnap.docs.map((d) => d.data() as LogisticsAssignment) };
 }
@@ -98,8 +98,9 @@ export async function saveDeliveryLoad(load: DeliveryLoad) { await deliveryLoads
 export async function saveLogisticsProjection(projection: LogisticsDayProjection) { await logisticsDayProjections().doc(projection.serviceDate).set(projection); return projection; }
 export async function getLogisticsProjection(serviceDate: string) { const snapshot = await logisticsDayProjections().doc(serviceDate).get(); return snapshot.exists ? snapshot.data() as LogisticsDayProjection : undefined; }
 export async function listLogisticsChanges(after = 0, serviceDate?: string) {
-  const snapshot = await logisticsChanges().where("sequence", ">", after).orderBy("sequence", "asc").get();
-  return snapshot.docs.map((doc) => doc.data() as LogisticsChangeEvent).filter((event) => !serviceDate || event.entityType === "deliveryLoad" || event.entityType === "logisticsJob" || event.entityType === "assignment");
+  const query = serviceDate ? logisticsChanges().where("serviceDate", "==", serviceDate).where("sequence", ">", after).orderBy("sequence", "asc") : logisticsChanges().where("sequence", ">", after).orderBy("sequence", "asc");
+  const snapshot = await query.get();
+  return snapshot.docs.map((doc) => doc.data() as LogisticsChangeEvent);
 }
 export async function appendLogisticsChange(input: Omit<LogisticsChangeEvent, "sequence">) {
   return db.runTransaction(async (transaction) => {

@@ -16,6 +16,7 @@ import {
   type ProductionStatus,
   type ProductionOrder,
 } from "@hub/lib/production-domain";
+import { appendCpuChange, cpuPlans, rebuildCpuDayProjection } from "../../../lib/cpu-projection";
 
 export const dynamic = "force-dynamic";
 
@@ -89,6 +90,11 @@ const storeCandidates = [
 ];
 const storePath = storeCandidates.find(candidate => existsSync(candidate)) || storeCandidates[0];
 async function loadPlans() {
+  const firestore = await cpuPlans().get();
+  if (!firestore.empty) {
+    for (const document of firestore.docs) plans.set(document.id, normalisePlanAllergens(document.data() as ProductionPlan));
+    return plans;
+  }
   try {
     const saved = JSON.parse(await fs.readFile(storePath, "utf8")) as Record<string, ProductionPlan>;
     for (const [id, plan] of Object.entries(saved)) plans.set(id, normalisePlanAllergens(plan));
@@ -99,8 +105,10 @@ function normalisePlanAllergens(plan: ProductionPlan): ProductionPlan {
   return { ...plan, menuItems: plan.menuItems.map(item => ({ ...item, subItems: item.subItems.map(sub => ({ ...sub, allergens: normaliseOperationalAllergens(sub.allergens) })) })) };
 }
 async function persistPlans() {
-  await fs.mkdir(path.dirname(storePath), { recursive: true });
-  await fs.writeFile(storePath, JSON.stringify(Object.fromEntries(plans), null, 2), "utf8");
+  const { db } = await import("@hub/lib/firebase-admin");
+  const batch = db.batch();
+  for (const [id, plan] of plans) batch.set(cpuPlans().doc(id), plan);
+  await batch.commit();
 }
 function now() { return new Date().toISOString(); }
 async function loadOrder(orderId: string) {
@@ -267,6 +275,11 @@ export async function POST(request: NextRequest) {
     }
     plan.updatedAt = timestamp; plan.updatedBy = command.actor;
     await persistPlans();
+    const changedOrder = await loadOrder(command.orderId);
+    if (changedOrder?.serviceDate) {
+      const event = await appendCpuChange({ serviceDate: changedOrder.serviceDate, entityType: "productionPlan", entityId: plan.id, revision: plan.audit.length, changeType: command.action, actorId: command.actor, changedAt: timestamp });
+      await rebuildCpuDayProjection(changedOrder.serviceDate, event.sequence);
+    }
     return NextResponse.json({ plan, matrixArtifact: plan.matrixArtifact, notification: notification || (plan.status === "planned" ? { title: "New production plan ready for menu generation.", orderId: plan.orderId } : undefined) });
   } catch (error) { return NextResponse.json({ error: { message: (error as Error).message } }, { status: (error as { status?: number }).status || 400 }); }
 }

@@ -27,7 +27,7 @@ export function assignJob(job: LogisticsJob, load: DeliveryLoad, existing: Logis
   if (!compatibleLoad(job, load)) throw new Error("Job is not compatible with this delivery load.");
   const prior = existing.find((item) => item.jobId === job.id);
   if (prior?.loadId === load.id) return { assignment: prior, load, movedFrom: undefined };
-  const assignment: LogisticsAssignment = { jobId: job.id, loadId: load.id, assignedAt: now, assignedBy: by, audit: [{ action: prior ? "job-moved" : "job-assigned", at: now, by }] };
+  const assignment: LogisticsAssignment = { jobId: job.id, loadId: load.id, serviceDate: load.serviceDate, assignedAt: now, assignedBy: by, audit: [{ action: prior ? "job-moved" : "job-assigned", at: now, by }] };
   return { assignment, load: { ...load, updatedAt: now, version: load.version + 1, audit: [...load.audit, { action: prior ? "job-moved" : "job-assigned", at: now, by, version: load.version + 1 }] }, movedFrom: prior?.loadId };
 }
 

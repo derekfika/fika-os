@@ -136,6 +136,7 @@ export type DeliveryLoad = {
 export type LogisticsAssignment = {
   jobId: string;
   loadId: string;
+  serviceDate?: string;
   assignedAt: string;
   assignedBy: string;
   audit: { action: string; at: string; by: string }[];
@@ -143,6 +144,7 @@ export type LogisticsAssignment = {
 
 export type LogisticsChangeEvent = {
   sequence: number;
+  serviceDate?: string;
   entityType: "logisticsJob" | "deliveryLoad" | "assignment";
   entityId: string;
   changeType: string;

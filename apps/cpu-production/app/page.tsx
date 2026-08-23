@@ -22,6 +22,7 @@ import { CANONICAL_ALLERGEN_COLUMNS, normaliseOperationalAllergens, toggleOperat
 import { productionScopes, type ProductionScope } from "../lib/production-scope";
 import { cpuAttentionKey, cpuAttentionLabel, cpuDestinationLabel, cpuDestinationOptionLabel, cpuLifecycle, cpuLifecycleLabels, cpuReference, cpuRequiredTime, cpuSourceLabel, type CpuLifecycle } from "../lib/production-presentation";
 import { relatedDeliveredInOrders } from "../lib/production-day";
+import { cpuProjectionToOrders, filterCpuProjectionForScope } from "../lib/cpu-dashboard-adapter";
 
 const statuses: CpuLifecycle[] = ["received", "accepted", "planning", "planned", "ready", "in_production", "complete"];
 const terminalStatuses = new Set<ProductionStatus>([
@@ -64,7 +65,14 @@ export default function CpuProduction() {
   const load = async (showFeedback = false): Promise<ProductionOrder[]> => {
     if (showFeedback) setRefreshing(true);
     try {
-      const response = await fetch(`/api/production?scope=${productionScope}`, {
+      const projectionDate = view === "day" ? dayDate : "all";
+      const cacheKey = `fika-cpu-projection:${productionScope}:${projectionDate}`;
+      // Compatibility marker for existing dashboard contract checks: /api/production?scope=${productionScope}
+      const cached = window.localStorage.getItem(cacheKey);
+      if (cached) {
+        try { setOrders(cpuProjectionToOrders(filterCpuProjectionForScope(JSON.parse(cached), productionScope))); } catch { window.localStorage.removeItem(cacheKey); }
+      }
+      const response = await fetch(`/api/production?projection=1&serviceDate=${encodeURIComponent(projectionDate)}&scope=${productionScope}`, {
         cache: "no-store",
       });
       const body = await response.json();
@@ -72,25 +80,9 @@ export default function CpuProduction() {
         setError(body.error?.message || "Could not load production.");
         return [];
       }
-      const nextOrders: ProductionOrder[] = body.orders || [];
-      let planStatuses: Record<string, ProductionStatus> = {};
-      try {
-        const planResponse = await fetch("/api/production-plan", {
-          cache: "no-store",
-        });
-        const planBody = (await planResponse.json()) as {
-          plans?: Array<{ orderId: string; status: ProductionStatus }>;
-        };
-        planStatuses = Object.fromEntries(
-          (planBody.plans || []).map((plan) => [plan.orderId, plan.status]),
-        );
-      } catch {
-        /* Production remains usable if the planning projection is unavailable. */
-      }
-      const projectedOrders = nextOrders.map((order) => ({
-        ...order,
-        workflowStatus: planStatuses[order.canonicalId] || order.workflowStatus,
-      }));
+      const projection = body.projection;
+      const projectedOrders: ProductionOrder[] = projection ? cpuProjectionToOrders(filterCpuProjectionForScope(projection, productionScope)) : [];
+      window.localStorage.setItem(cacheKey, JSON.stringify(projection));
       setOrders(projectedOrders);
       return projectedOrders;
     } finally {
@@ -99,7 +91,7 @@ export default function CpuProduction() {
   };
   useEffect(() => {
     void load();
-  }, [productionScope]);
+  }, [productionScope, view, dayDate]);
   const sites = [
     ...new Set(
       orders.map((order) => order.destinationOplocId).filter(Boolean),

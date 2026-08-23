@@ -376,7 +376,7 @@ export async function POST(request: NextRequest) {
           audit: [...(prior?.audit || []), { action: prior ? "reconciled-job-updated" : "reconciled-job-created", at: now, by, version: (prior?.version || 0) + 1 }],
         } as import("@/lib/types").LogisticsJob;
         await saveLogisticsJob(next);
-        const event = await appendLogisticsChange({ entityType: "logisticsJob", entityId: next.id, changeType: prior ? "reconciled-job-updated" : "reconciled-job-created", revision: next.version, changedAt: now, actorId: by });
+        const event = await appendLogisticsChange({ serviceDate: next.serviceDate, entityType: "logisticsJob", entityId: next.id, changeType: prior ? "reconciled-job-updated" : "reconciled-job-created", revision: next.version, changedAt: now, actorId: by });
         lastChangeSequence = Math.max(lastChangeSequence, event.sequence);
         if (prior) updated++; else created++;
       }
@@ -387,7 +387,7 @@ export async function POST(request: NextRequest) {
       if (!body.job.originOplocId || !body.job.destinationOplocId)
         throw new HttpError(422, "Logistics jobs require canonical origin and destination OPLOC IDs.");
       const saved = await saveLogisticsJob(body.job);
-      const event = await appendLogisticsChange({ entityType: "logisticsJob", entityId: saved.id, changeType: "job-created-or-updated", revision: saved.version, changedAt: now, actorId: by });
+      const event = await appendLogisticsChange({ serviceDate: saved.serviceDate, entityType: "logisticsJob", entityId: saved.id, changeType: "job-created-or-updated", revision: saved.version, changedAt: now, actorId: by });
       await rebuildLogisticsProjection(saved.serviceDate, by, event.sequence);
       return NextResponse.json(saved);
     }
@@ -403,7 +403,7 @@ export async function POST(request: NextRequest) {
         const loadId = `load:${job.serviceDate}:${originOplocId}:${destinationOplocId}:${scheduledTime}`;
         const loadRef = deliveryLoads().doc(loadId);
         const jobRef = logisticsJobs().doc(job.id);
-        const assignmentQuery = logisticsAssignments().where("jobId", "==", job.id);
+        const assignmentQuery = logisticsAssignments().where("jobId", "==", job.id).where("serviceDate", "==", job.serviceDate);
         const [loadSnap, assignmentSnap] = await Promise.all([transaction.get(loadRef), transaction.get(assignmentQuery)]);
         const load = loadSnap.exists ? loadSnap.data() as import("@/lib/types").DeliveryLoad : createLoad({ serviceDate: job.serviceDate, originOplocId, destinationOplocId, scheduledTime, destinationLabelSnapshot: job.destinationLabelSnapshot, by, now });
         const existing = assignmentSnap.docs.map((doc) => doc.data() as import("@/lib/types").LogisticsAssignment);
@@ -423,7 +423,7 @@ export async function POST(request: NextRequest) {
         }
         return next.load;
       });
-      const event = await appendLogisticsChange({ entityType: "assignment", entityId: job.id, relatedEntityId: result.id, changeType: "job-assigned", revision: result.version, changedAt: now, actorId: by });
+      const event = await appendLogisticsChange({ serviceDate: job.serviceDate, entityType: "assignment", entityId: job.id, relatedEntityId: result.id, changeType: "job-assigned", revision: result.version, changedAt: now, actorId: by });
       await rebuildLogisticsProjection(job.serviceDate, by, event.sequence);
       return NextResponse.json(result);
     }
@@ -443,7 +443,7 @@ export async function POST(request: NextRequest) {
         return removeAssignment([assignment], body.jobId!, by, now).removed;
       });
       if (result) {
-        const event = await appendLogisticsChange({ entityType: "assignment", entityId: result.jobId, relatedEntityId: result.loadId, changeType: "job-removed", revision: 1, changedAt: now, actorId: by });
+        const event = await appendLogisticsChange({ serviceDate: result.serviceDate, entityType: "assignment", entityId: result.jobId, relatedEntityId: result.loadId, changeType: "job-removed", revision: 1, changedAt: now, actorId: by });
         const jobState = await listDeliveryLoadState();
         await rebuildLogisticsProjection(jobState.jobs.find((job) => job.id === result.jobId)?.serviceDate || operationalDate(), by, event.sequence);
       }
@@ -453,7 +453,7 @@ export async function POST(request: NextRequest) {
       const job = body.job || (await listDeliveryLoadState()).jobs.find((item) => item.id === body.jobId);
       if (!job) throw new HttpError(404, "Logistics job not found.");
       const nextJob = await saveLogisticsJob(setJobCollectionStatus(job, body.collectionStatus, by, now));
-      const event = await appendLogisticsChange({ entityType: "logisticsJob", entityId: nextJob.id, changeType: "collection-status-changed", revision: nextJob.version, changedAt: now, actorId: by });
+      const event = await appendLogisticsChange({ serviceDate: nextJob.serviceDate, entityType: "logisticsJob", entityId: nextJob.id, changeType: "collection-status-changed", revision: nextJob.version, changedAt: now, actorId: by });
       await rebuildLogisticsProjection(nextJob.serviceDate, by, event.sequence);
       return NextResponse.json(nextJob);
     }
@@ -471,7 +471,7 @@ export async function POST(request: NextRequest) {
         transaction.set(loadRef, next);
         return next;
       });
-      const event = await appendLogisticsChange({ entityType: "deliveryLoad", entityId: result.id, changeType: "load-dispatched", revision: result.version, changedAt: now, actorId: by });
+      const event = await appendLogisticsChange({ serviceDate: result.serviceDate, entityType: "deliveryLoad", entityId: result.id, changeType: "load-dispatched", revision: result.version, changedAt: now, actorId: by });
       await rebuildLogisticsProjection(result.serviceDate, by, event.sequence);
       return NextResponse.json(result);
     }
