@@ -598,7 +598,7 @@ function RealPlanner(props: RealPlannerProps) {
     if (data?.projection && stopId.startsWith("projection-stop:")) {
       const loadId = stopId.slice("projection-stop:".length);
       if (!loadId || !time) return;
-      void props.act({ action: "reschedule-delivery-load", loadId, scheduledTime: time, by: "Franco" });
+      void props.act({ action: "reschedule-delivery-load", loadId, scheduledTime: time, targetRunId, by: "Franco" });
       return;
     }
     const sourceRun = runs.find((run) => run.runId === sourceRunId);
@@ -614,7 +614,7 @@ function RealPlanner(props: RealPlannerProps) {
       const group = groups.find((item) => item.groupKey === id);
       const jobId = group?.requirementRefs[0]?.requirementId;
       if (!jobId || !time) return;
-      void props.act({ action: "assign-job-to-load", jobId, scheduledTime: time, by: "Franco" });
+      void props.act({ action: "assign-job-to-load", jobId, scheduledTime: time, targetRunId, by: "Franco" });
       return;
     }
     const run = runs.find((item) => item.runId === targetRunId);

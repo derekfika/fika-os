@@ -441,7 +441,7 @@ export async function POST(request: NextRequest) {
         const jobRef = logisticsJobs().doc(job.id);
         const assignmentQuery = logisticsAssignments().where("jobId", "==", job.id).where("serviceDate", "==", job.serviceDate);
         const [loadSnap, assignmentSnap] = await Promise.all([transaction.get(loadRef), transaction.get(assignmentQuery)]);
-        const load = loadSnap.exists ? loadSnap.data() as import("@/lib/types").DeliveryLoad : createLoad({ serviceDate: job.serviceDate, originOplocId, destinationOplocId, scheduledTime, destinationLabelSnapshot: job.destinationLabelSnapshot, by, now });
+      const load = loadSnap.exists ? loadSnap.data() as import("@/lib/types").DeliveryLoad : { ...createLoad({ serviceDate: job.serviceDate, originOplocId, destinationOplocId, scheduledTime, destinationLabelSnapshot: job.destinationLabelSnapshot, by, now }), ...(body.targetRunId ? { runId: body.targetRunId } : {}) };
         const existing = assignmentSnap.docs.map((doc) => doc.data() as import("@/lib/types").LogisticsAssignment);
         const next = assignJob({ ...job, originOplocId, requestedWindow: { ...(job.requestedWindow || {}), startTime: scheduledTime } }, load, existing, by, now);
         const priorLoadRefs = existing.filter((item) => item.loadId !== load.id).map((item) => deliveryLoads().doc(item.loadId));
@@ -449,7 +449,8 @@ export async function POST(request: NextRequest) {
         transaction.set(jobRef, { ...job, originOplocId, requestedWindow: { ...(job.requestedWindow || {}), startTime: scheduledTime }, updatedAt: now });
         for (const prior of existing.filter((item) => item.loadId !== load.id)) transaction.delete(logisticsAssignments().doc(`${prior.jobId}:${prior.loadId}`));
         transaction.set(logisticsAssignments().doc(`${job.id}:${load.id}`), next.assignment);
-        transaction.set(loadRef, next.load);
+        const nextLoad = body.targetRunId ? { ...next.load, runId: body.targetRunId } : next.load;
+        transaction.set(loadRef, nextLoad);
         for (const [index, prior] of existing.filter((item) => item.loadId !== load.id).entries()) {
           const priorSnap = priorLoadSnaps[index];
           if (priorSnap.exists) {
@@ -457,7 +458,7 @@ export async function POST(request: NextRequest) {
             transaction.update(priorLoadRefs[index], { updatedAt: now, version: priorLoad.version + 1, audit: [...priorLoad.audit, { action: "job-moved-out", at: now, by, version: priorLoad.version + 1 }] });
           }
         }
-        return next.load;
+        return nextLoad;
       });
       const event = await appendLogisticsChange({ serviceDate: job.serviceDate, entityType: "assignment", entityId: job.id, relatedEntityId: result.id, changeType: "job-assigned", revision: result.version, changedAt: now, actorId: by });
       await rebuildLogisticsProjection(job.serviceDate, by, event.sequence);
@@ -472,6 +473,7 @@ export async function POST(request: NextRequest) {
         const nextVersion = load.version + 1;
         transaction.update(loadRef, {
           scheduledTime: body.scheduledTime,
+          ...(body.targetRunId ? { runId: body.targetRunId } : {}),
           updatedAt: now,
           version: nextVersion,
           audit: [...load.audit, { action: "load-rescheduled", at: now, by, version: nextVersion }],
@@ -488,7 +490,7 @@ export async function POST(request: NextRequest) {
         actorId: by,
       });
       await rebuildLogisticsProjection(result.serviceDate, by, event.sequence);
-      return NextResponse.json(result);
+      return NextResponse.json(body.targetRunId ? { ...result, runId: body.targetRunId } : result);
     }
     if (body.action === "remove-job-from-load" && body.jobId) {
       const result = await db.runTransaction(async (transaction) => {
