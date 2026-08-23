@@ -184,9 +184,12 @@ export async function productionQueue(serviceDate?: string) {
     : await orders().orderBy("requiredBy", "asc").get();
   return Promise.all(
     snapshot.docs
-      .map(item => item.data() as ProductionOrder)
-      .filter(order => !order.supersededBy && order.status !== "amended")
-      .filter(order => !(order.origin === "hospitality_booking" && order.requiresDelivery === false))
+    .map(item => item.data() as ProductionOrder)
+    .filter(order => !order.supersededBy && order.status !== "amended")
+    // Test-only CPU internal records must never leak into the operational
+    // queue when local integration tests share the emulator with the apps.
+    .filter(order => !(process.env.NODE_ENV !== "production" && order.idempotencyKey.startsWith("cpu-internal-test:")))
+    .filter(order => !(order.origin === "hospitality_booking" && order.requiresDelivery === false))
       .map(order => enrichOrder(withoutAutomaticQuantityBlockers(order))),
   );
 }

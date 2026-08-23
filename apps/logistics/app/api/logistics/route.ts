@@ -158,13 +158,18 @@ async function rebuildLogisticsProjection(serviceDate: string, actorId: string, 
 async function reconcileLogisticsDay(serviceDate: string, by: string, cookie?: string) {
   const requirements = await fetchRequirements(serviceDate, cookie);
   const oplocs = await fetchOplocs(cookie);
-  const existing = (await listDeliveryLoadState(serviceDate)).jobs;
+  const existingState = await listDeliveryLoadState(serviceDate);
+  const existing = existingState.jobs;
+  const assignedJobIds = new Set(existingState.assignments.map((assignment) => assignment.jobId));
+  const activeRequirements = requirements.filter((item) => item.serviceDate === serviceDate && item.status !== "withdrawn");
+  const hasNativeGrabAndGo = (requirement: FulfilmentRequirement) => activeRequirements.some((item) => item.sourceDomain === "grab-and-go" && item.serviceDate === requirement.serviceDate && item.destinationOplocId === requirement.destinationOplocId);
+  const reconciledRequirements = activeRequirements.filter((requirement) => !(requirement.sourceDomain === "cpu-production" && requirement.sourceEntityId.includes("grab-and-go") && hasNativeGrabAndGo(requirement)));
   const existingBySource = new Map(existing.map((job) => [`${job.sourceType}:${job.sourceId}`, job]));
   let created = 0;
   let updated = 0;
   let lastChangeSequence = 0;
   const now = new Date().toISOString();
-  for (const requirement of requirements.filter((item) => item.serviceDate === serviceDate && item.status !== "withdrawn")) {
+  for (const requirement of reconciledRequirements) {
     const key = `${requirement.sourceDomain}:${requirement.sourceEntityId}`;
     const prior = existingBySource.get(key);
     const readiness = requirement.status === "pending" ? "pending" as const : requirement.status === "amended" ? "attention" as const : "ready" as const;
@@ -190,6 +195,14 @@ async function reconcileLogisticsDay(serviceDate: string, by: string, cookie?: s
     const event = await appendLogisticsChange({ serviceDate: next.serviceDate, entityType: "logisticsJob", entityId: next.id, changeType: prior ? "reconciled-job-updated" : "reconciled-job-created", revision: next.version, changedAt: now, actorId: by });
     lastChangeSequence = Math.max(lastChangeSequence, event.sequence);
     if (prior) updated++; else created++;
+  }
+  for (const job of existing) {
+    if (assignedJobIds.has(job.id) || reconciledRequirements.some((requirement) => requirement.sourceDomain === job.sourceType && requirement.sourceEntityId === job.sourceId)) continue;
+    if (job.sourceType === "cpu-production" && job.sourceId.includes("grab-and-go") && hasNativeGrabAndGo({ sourceDomain: "cpu-production", sourceEntityId: job.sourceId, serviceDate: job.serviceDate, destinationOplocId: job.destinationOplocId } as FulfilmentRequirement)) {
+      await logisticsJobs().doc(job.id).delete();
+      const event = await appendLogisticsChange({ serviceDate: job.serviceDate, entityType: "logisticsJob", entityId: job.id, changeType: "legacy-grab-and-go-job-removed", revision: job.version + 1, changedAt: now, actorId: by });
+      lastChangeSequence = Math.max(lastChangeSequence, event.sequence);
+    }
   }
   const projection = await rebuildLogisticsProjection(serviceDate, by, lastChangeSequence);
   return { created, updated, projection, requirements };

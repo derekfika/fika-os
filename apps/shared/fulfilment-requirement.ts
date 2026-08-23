@@ -76,6 +76,9 @@ export function fulfilmentRequirementContentEqual(left: FulfilmentRequirement, r
 export type ProductionOrderFulfilmentSource = {
   canonicalId: string;
   version: number;
+  sourceEntityId?: string;
+  sourceVersion?: number;
+  origin?: "hospitality_booking" | "cpu_created" | "legacy_import" | "menu_planning" | "grab_and_go";
   schemaVersion?: string;
   productionLocationId?: string;
   requiresDelivery?: boolean;
@@ -91,7 +94,8 @@ export type ProductionOrderFulfilmentSource = {
 
 export function fulfilmentFromProductionOrder(order: ProductionOrderFulfilmentSource, by: string, at = new Date().toISOString(), previous?: FulfilmentRequirement) {
   const destinationOplocId = requireDestination(order.destinationOplocId, order.canonicalId);
-  const source: SourceProjection = { sourceDomain: "cpu-production", sourceEntityId: order.canonicalId, sourceVersion: order.version, sourceContentHash: sourceContentHash(order), destinationOplocId, destinationLabelSnapshot: order.destinationLabel || destinationOplocId, serviceDate: order.serviceDate || order.requiredBy.slice(0, 10), lines: order.lines.map(line => ({ sourceLineId: line.canonicalId, canonicalItemId: line.sourceMenuItemId || line.sourceOfferingId, displayName: line.itemName, quantity: line.productionQuantity ?? line.customerQuantity, unit: line.productionUnit || line.customerUnit, sortOrder: line.sortOrder })), status: productionStatusToFulfilmentStatus(order.status, order.supersededBy), context: { at, by, productionLocationId: order.productionLocationId, readyAt: order.requiredBy, requiredDeliveryWindow: order.serviceWindow } };
+  const isGrabAndGo = order.origin === "grab_and_go";
+  const source: SourceProjection = { sourceDomain: isGrabAndGo ? "grab-and-go" : "cpu-production", sourceEntityId: isGrabAndGo ? (order.sourceEntityId || order.canonicalId) : order.canonicalId, sourceVersion: isGrabAndGo ? (order.sourceVersion || order.version) : order.version, sourceContentHash: sourceContentHash(order), destinationOplocId, destinationLabelSnapshot: order.destinationLabel || destinationOplocId, serviceDate: order.serviceDate || order.requiredBy.slice(0, 10), lines: order.lines.map(line => ({ sourceLineId: line.canonicalId, canonicalItemId: line.sourceMenuItemId || line.sourceOfferingId, displayName: line.itemName, quantity: line.productionQuantity ?? line.customerQuantity, unit: line.productionUnit || line.customerUnit, sortOrder: line.sortOrder })), status: isGrabAndGo ? (order.status === "cancelled" || order.status === "withdrawn" ? "withdrawn" : "ready_for_planning") : productionStatusToFulfilmentStatus(order.status, order.supersededBy), context: { at, by, productionLocationId: isGrabAndGo ? undefined : order.productionLocationId, readyAt: isGrabAndGo ? undefined : order.requiredBy, requiredDeliveryWindow: isGrabAndGo ? undefined : order.serviceWindow } };
   return materialiseFulfilmentRequirement(source, previous);
 }
 
