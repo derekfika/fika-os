@@ -17,7 +17,18 @@ import {
   collectionPreferences,
   listCollectionPreferenceKeys,
   saveCollectionPreference,
+  listDeliveryLoadState,
+  logisticsJobs,
+  deliveryLoads,
+  logisticsAssignments,
+  saveLogisticsJob,
+  appendLogisticsChange,
+  getLogisticsProjection,
+  listLogisticsChanges,
+  saveLogisticsProjection,
 } from "@/lib/store";
+import { assignJob, assertDispatchable, createLoad, removeAssignment, setJobCollectionStatus } from "@/lib/delivery-loads";
+import { buildLogisticsDayProjection } from "@/lib/logistics-projection";
 import {
   assignMovementStops,
   combineStop,
@@ -138,6 +149,11 @@ function clearPlannedSchedule(stop: DeliveryStop, now: string, by: string) {
   } as DeliveryStop;
 }
 
+async function rebuildLogisticsProjection(serviceDate: string, actorId: string, lastChangeSequence?: number) {
+  const [state, legacyState] = await Promise.all([listDeliveryLoadState(serviceDate), listState(serviceDate)]);
+  return saveLogisticsProjection(buildLogisticsDayProjection({ serviceDate, ...state, runs: legacyState.runs, lastChangeSequence, now: new Date().toISOString(), revision: Date.now() }));
+}
+
 export async function GET(request: NextRequest) {
   const requestedRunId = request.nextUrl.searchParams.get("runId") || undefined;
   const requestedDate =
@@ -145,6 +161,26 @@ export async function GET(request: NextRequest) {
   const requestedWeek =
     request.nextUrl.searchParams.get("weekCommencing") || undefined;
   const cookie = request.headers.get("cookie") || undefined;
+  if (request.nextUrl.searchParams.get("diagnostic") === "1") {
+    const serviceDate = requestedDate || operationalDate();
+    const [requirements, state, projection] = await Promise.all([fetchRequirements(serviceDate, cookie), listState(serviceDate), getLogisticsProjection(serviceDate)]);
+    const legacy = buildPlannerDay({ serviceDate, requirements, runs: state.runs, stops: state.stops, movements: state.movements, oplocs: [], health: { fulfilment: { available: true }, oplocs: { available: true }, enrichment: { available: true } } });
+    const comparison = { jobs: requirements.length, unassignedJobs: requirements.filter((requirement) => !state.stops.some((stop) => stop.requirementRefs.some((ref) => ref.requirementId === requirement.canonicalId))).length, deliveryLoads: legacy.summary.loads, collectedJobs: 0, projection: { jobs: projection ? projection.summary.queuedJobs + projection.summary.assignedJobs : 0, unassignedJobs: projection?.summary.queuedJobs || 0, deliveryLoads: projection?.summary.loads || 0, collectedJobs: projection?.summary.collectedJobs || 0 } };
+    return NextResponse.json({ serviceDate, comparison, status: comparison.jobs === comparison.projection.jobs && comparison.unassignedJobs === comparison.projection.unassignedJobs && comparison.deliveryLoads === comparison.projection.deliveryLoads ? "In sync" : "Projection out of sync" });
+  }
+  if (request.nextUrl.searchParams.get("projection") === "1") {
+    const serviceDate = requestedDate || operationalDate();
+    const startedAt = performance.now();
+    const projection = await getLogisticsProjection(serviceDate) || await rebuildLogisticsProjection(serviceDate, "read-rebuild");
+    return NextResponse.json({ projection, metrics: { projectionFetchMs: Math.round(performance.now() - startedAt), dashboardReadyMs: Math.round(performance.now() - startedAt) } });
+  }
+  if (request.nextUrl.searchParams.has("changesSince")) {
+    const after = Number(request.nextUrl.searchParams.get("changesSince") || 0);
+    const startedAt = performance.now();
+    const changes = await listLogisticsChanges(Number.isFinite(after) ? after : 0, requestedDate);
+    const projection = requestedDate ? await getLogisticsProjection(requestedDate) : undefined;
+    return NextResponse.json({ changes, projection, metrics: { incrementalUpdateMs: Math.round(performance.now() - startedAt) } });
+  }
   if (requestedWeek) {
     const dates = operationalWeek(requestedWeek);
     const requirementsResult = await fetchRequirements(undefined, cookie).catch(
@@ -211,6 +247,7 @@ export async function GET(request: NextRequest) {
     fetchRequirements(date, cookie).then((value) => ({ status: "fulfilled" as const, value })).catch((reason) => ({ status: "rejected" as const, reason })),
     fetchOplocs(cookie).then((value) => ({ status: "fulfilled" as const, value })).catch((reason) => ({ status: "rejected" as const, reason })),
   ]);
+  const loadState = await listDeliveryLoadState(date);
   // Keep the upstream reads independently tolerant: one unavailable source
   // should not prevent the local Logistics snapshot from rendering.
   const needsProductionEnrichment =
@@ -224,6 +261,7 @@ export async function GET(request: NextRequest) {
   const oplocs = oplocsResult.status === "fulfilled" ? oplocsResult.value : [];
   const production =
     productionResult.status === "fulfilled" ? productionResult.value : [];
+  const projection = await getLogisticsProjection(date);
   const health = {
     fulfilment:
       requirementsResult.status === "fulfilled"
@@ -240,6 +278,8 @@ export async function GET(request: NextRequest) {
   } as const;
   return NextResponse.json({
     ...state,
+    ...loadState,
+    ...(projection ? { projection } : {}),
     requirements,
     oplocs,
     serviceDate: date,
@@ -294,9 +334,147 @@ export async function POST(request: NextRequest) {
       targetServiceDate?: string;
       plannedArrivalTime?: string;
       plannedWindow?: { startTime: string; endTime?: string };
+      job?: import("@/lib/types").LogisticsJob;
+      loadId?: string;
+      jobId?: string;
+      scheduledTime?: string;
+      collectionStatus?: "awaiting" | "collected";
     };
     const by = body.by || "Franco";
     const now = new Date().toISOString();
+    if (body.action === "rebuild-logistics-projection" && body.serviceDate) {
+      const startedAt = performance.now();
+      const projection = await rebuildLogisticsProjection(body.serviceDate, by);
+      return NextResponse.json({ projection, metrics: { projectionRebuildMs: Math.round(performance.now() - startedAt) } });
+    }
+    if (body.action === "reconcile-logistics-day" && body.serviceDate) {
+      const requirements = await fetchRequirements(body.serviceDate, request.headers.get("cookie") || undefined);
+      const oplocs = await fetchOplocs(request.headers.get("cookie") || undefined);
+      const existing = (await listDeliveryLoadState(body.serviceDate)).jobs;
+      const existingBySource = new Map(existing.map((job) => [`${job.sourceType}:${job.sourceId}`, job]));
+      let created = 0; let updated = 0; let lastChangeSequence = 0;
+      for (const requirement of requirements.filter((item) => item.serviceDate === body.serviceDate && item.status !== "withdrawn")) {
+        const key = `${requirement.sourceDomain}:${requirement.sourceEntityId}`;
+        const prior = existingBySource.get(key);
+        const readiness = requirement.status === "pending" ? "pending" as const : requirement.status === "amended" ? "attention" as const : "ready" as const;
+        const next = {
+          id: prior?.id || `logistics-job:${requirement.canonicalId}`,
+          sourceType: requirement.sourceDomain,
+          sourceId: requirement.sourceEntityId,
+          sourceVersion: requirement.sourceVersion,
+          serviceDate: requirement.serviceDate,
+          ...(requirement.productionLocationId ? { originOplocId: requirement.productionLocationId } : {}),
+          destinationOplocId: requirement.destinationOplocId,
+          destinationLabelSnapshot: oplocs.find((oploc) => oploc.id === requirement.destinationOplocId)?.label || requirement.destinationLabelSnapshot,
+          ...(requirement.requiredDeliveryWindow ? { requestedWindow: requirement.requiredDeliveryWindow } : requirement.readyAt ? { requestedWindow: { startTime: requirement.readyAt.slice(11, 16) } } : {}),
+          productionReadiness: readiness,
+          collectionStatus: prior?.collectionStatus || "awaiting" as const,
+          contents: requirement.lines.map((line) => ({ description: line.displayNameSnapshot, quantity: line.quantity, unit: line.unit })),
+          createdAt: prior?.createdAt || now,
+          updatedAt: now,
+          version: (prior?.version || 0) + 1,
+          audit: [...(prior?.audit || []), { action: prior ? "reconciled-job-updated" : "reconciled-job-created", at: now, by, version: (prior?.version || 0) + 1 }],
+        } as import("@/lib/types").LogisticsJob;
+        await saveLogisticsJob(next);
+        const event = await appendLogisticsChange({ entityType: "logisticsJob", entityId: next.id, changeType: prior ? "reconciled-job-updated" : "reconciled-job-created", revision: next.version, changedAt: now, actorId: by });
+        lastChangeSequence = Math.max(lastChangeSequence, event.sequence);
+        if (prior) updated++; else created++;
+      }
+      const projection = await rebuildLogisticsProjection(body.serviceDate, by, lastChangeSequence);
+      return NextResponse.json({ created, updated, projection, warning: requirements.some((item) => !item.productionLocationId) ? "Some jobs have no canonical origin OPLOC and remain safely unassigned." : undefined });
+    }
+    if (body.action === "save-logistics-job" && body.job) {
+      if (!body.job.originOplocId || !body.job.destinationOplocId)
+        throw new HttpError(422, "Logistics jobs require canonical origin and destination OPLOC IDs.");
+      const saved = await saveLogisticsJob(body.job);
+      const event = await appendLogisticsChange({ entityType: "logisticsJob", entityId: saved.id, changeType: "job-created-or-updated", revision: saved.version, changedAt: now, actorId: by });
+      await rebuildLogisticsProjection(saved.serviceDate, by, event.sequence);
+      return NextResponse.json(saved);
+    }
+    if (body.action === "assign-job-to-load" && (body.job || body.jobId)) {
+      const job = body.job || (await listDeliveryLoadState()).jobs.find((item) => item.id === body.jobId);
+      if (!job) throw new HttpError(404, "Logistics job not found.");
+      const scheduledTime = body.scheduledTime || job.requestedWindow?.startTime;
+      if (!job.originOplocId || !job.destinationOplocId || !scheduledTime)
+        throw new HttpError(422, "Job cannot be assigned without canonical OPLOC IDs and a scheduled time; it remains unassigned.");
+      const originOplocId = job.originOplocId;
+      const destinationOplocId = job.destinationOplocId;
+      const result = await db.runTransaction(async (transaction) => {
+        const loadId = `load:${job.serviceDate}:${originOplocId}:${destinationOplocId}:${scheduledTime}`;
+        const loadRef = deliveryLoads().doc(loadId);
+        const jobRef = logisticsJobs().doc(job.id);
+        const assignmentQuery = logisticsAssignments().where("jobId", "==", job.id);
+        const [loadSnap, assignmentSnap] = await Promise.all([transaction.get(loadRef), transaction.get(assignmentQuery)]);
+        const load = loadSnap.exists ? loadSnap.data() as import("@/lib/types").DeliveryLoad : createLoad({ serviceDate: job.serviceDate, originOplocId, destinationOplocId, scheduledTime, destinationLabelSnapshot: job.destinationLabelSnapshot, by, now });
+        const existing = assignmentSnap.docs.map((doc) => doc.data() as import("@/lib/types").LogisticsAssignment);
+        const next = assignJob({ ...job, requestedWindow: { ...(job.requestedWindow || {}), startTime: scheduledTime } }, load, existing, by, now);
+        const priorLoadRefs = existing.filter((item) => item.loadId !== load.id).map((item) => deliveryLoads().doc(item.loadId));
+        const priorLoadSnaps = await Promise.all(priorLoadRefs.map((ref) => transaction.get(ref)));
+        transaction.set(jobRef, { ...job, requestedWindow: { ...(job.requestedWindow || {}), startTime: scheduledTime }, updatedAt: now });
+        for (const prior of existing.filter((item) => item.loadId !== load.id)) transaction.delete(logisticsAssignments().doc(`${prior.jobId}:${prior.loadId}`));
+        transaction.set(logisticsAssignments().doc(`${job.id}:${load.id}`), next.assignment);
+        transaction.set(loadRef, next.load);
+        for (const [index, prior] of existing.filter((item) => item.loadId !== load.id).entries()) {
+          const priorSnap = priorLoadSnaps[index];
+          if (priorSnap.exists) {
+            const priorLoad = priorSnap.data() as import("@/lib/types").DeliveryLoad;
+            transaction.update(priorLoadRefs[index], { updatedAt: now, version: priorLoad.version + 1, audit: [...priorLoad.audit, { action: "job-moved-out", at: now, by, version: priorLoad.version + 1 }] });
+          }
+        }
+        return next.load;
+      });
+      const event = await appendLogisticsChange({ entityType: "assignment", entityId: job.id, relatedEntityId: result.id, changeType: "job-assigned", revision: result.version, changedAt: now, actorId: by });
+      await rebuildLogisticsProjection(job.serviceDate, by, event.sequence);
+      return NextResponse.json(result);
+    }
+    if (body.action === "remove-job-from-load" && body.jobId) {
+      const result = await db.runTransaction(async (transaction) => {
+        const assignmentSnap = await transaction.get(logisticsAssignments().where("jobId", "==", body.jobId));
+        if (!assignmentSnap.docs.length) throw new HttpError(404, "Job is not assigned to a delivery load.");
+        const assignment = assignmentSnap.docs[0].data() as import("@/lib/types").LogisticsAssignment;
+        const loadRef = deliveryLoads().doc(assignment.loadId);
+        const [loadSnap, loadAssignments] = await Promise.all([transaction.get(loadRef), transaction.get(logisticsAssignments().where("loadId", "==", assignment.loadId))]);
+        transaction.delete(logisticsAssignments().doc(`${assignment.jobId}:${assignment.loadId}`));
+        if (loadSnap.exists && loadAssignments.docs.length <= 1) transaction.delete(loadRef);
+        else if (loadSnap.exists) {
+          const load = loadSnap.data() as import("@/lib/types").DeliveryLoad;
+          transaction.update(loadRef, { updatedAt: now, version: load.version + 1, audit: [...load.audit, { action: "job-removed", at: now, by, version: load.version + 1 }] });
+        }
+        return removeAssignment([assignment], body.jobId!, by, now).removed;
+      });
+      if (result) {
+        const event = await appendLogisticsChange({ entityType: "assignment", entityId: result.jobId, relatedEntityId: result.loadId, changeType: "job-removed", revision: 1, changedAt: now, actorId: by });
+        const jobState = await listDeliveryLoadState();
+        await rebuildLogisticsProjection(jobState.jobs.find((job) => job.id === result.jobId)?.serviceDate || operationalDate(), by, event.sequence);
+      }
+      return NextResponse.json(result);
+    }
+    if (body.action === "set-job-collection" && (body.job || body.jobId) && body.collectionStatus) {
+      const job = body.job || (await listDeliveryLoadState()).jobs.find((item) => item.id === body.jobId);
+      if (!job) throw new HttpError(404, "Logistics job not found.");
+      const nextJob = await saveLogisticsJob(setJobCollectionStatus(job, body.collectionStatus, by, now));
+      const event = await appendLogisticsChange({ entityType: "logisticsJob", entityId: nextJob.id, changeType: "collection-status-changed", revision: nextJob.version, changedAt: now, actorId: by });
+      await rebuildLogisticsProjection(nextJob.serviceDate, by, event.sequence);
+      return NextResponse.json(nextJob);
+    }
+    if (body.action === "dispatch-delivery-load" && body.loadId) {
+      const result = await db.runTransaction(async (transaction) => {
+        const loadRef = deliveryLoads().doc(body.loadId!);
+        const loadSnap = await transaction.get(loadRef);
+        if (!loadSnap.exists) throw new HttpError(404, "Delivery load not found.");
+        const load = loadSnap.data() as import("@/lib/types").DeliveryLoad;
+        const [jobsSnap, assignmentsSnap] = await Promise.all([transaction.get(logisticsJobs().where("serviceDate", "==", load.serviceDate)), transaction.get(logisticsAssignments().where("loadId", "==", load.id))]);
+        const jobs = jobsSnap.docs.map((doc) => doc.data() as import("@/lib/types").LogisticsJob);
+        const assignments = assignmentsSnap.docs.map((doc) => doc.data() as import("@/lib/types").LogisticsAssignment);
+        try { assertDispatchable(load, jobs, assignments); } catch (error) { throw new HttpError(422, error instanceof Error ? error.message : "Load is not ready to dispatch."); }
+        const next = { ...load, status: "dispatched" as const, dispatchedAt: now, updatedAt: now, version: load.version + 1, audit: [...load.audit, { action: "load-dispatched", at: now, by, version: load.version + 1 }] };
+        transaction.set(loadRef, next);
+        return next;
+      });
+      const event = await appendLogisticsChange({ entityType: "deliveryLoad", entityId: result.id, changeType: "load-dispatched", revision: result.version, changedAt: now, actorId: by });
+      await rebuildLogisticsProjection(result.serviceDate, by, event.sequence);
+      return NextResponse.json(result);
+    }
     if (body.action === "set-collection-required" && body.groupKey && typeof body.collectionRequired === "boolean") {
       return NextResponse.json(await saveCollectionPreference(body.groupKey, body.collectionRequired, by, now));
     }

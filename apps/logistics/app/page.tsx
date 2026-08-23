@@ -15,6 +15,8 @@ import type {
   PlannerWorkGroup,
   PlannerWeekSummary,
 } from "../lib/planner-read-model";
+import type { LogisticsDayProjection } from "../lib/types";
+import { projectionToDashboardData } from "../lib/projection-dashboard-adapter";
 import { operationalDate } from "../lib/date";
 import {
   addOperationalDays,
@@ -34,6 +36,7 @@ type Data = {
   serviceDate: string;
   fetchedAt?: string;
   planner: PlannerDay;
+  projection?: LogisticsDayProjection;
 };
 type WeekData = { weekCommencing: string; days: PlannerWeekSummary[] };
 type Draft = {
@@ -96,41 +99,50 @@ export default function Planner() {
 
   const load = async (silent = false) => {
     if (silent) setRefreshing(true);
+    let cached: LogisticsDayProjection | undefined;
     try {
-      const response = await fetch(`/api/logistics?serviceDate=${date}`, {
+      const cachedValue = window.localStorage.getItem(`fika-logistics-day:${date}`);
+      if (cachedValue) { cached = JSON.parse(cachedValue) as LogisticsDayProjection; setData({ ...projectionToDashboardData(cached), projection: cached }); }
+    } catch { /* Cache is an optimisation only. */ }
+    try {
+      const response = await fetch(`/api/logistics?projection=1&serviceDate=${date}`, {
         cache: "no-store",
       });
       const body = await response.json();
       if (!response.ok)
         throw new Error(body.error || "Logistics could not be loaded.");
-      setData(body);
-      setLastUpdated(body.fetchedAt);
-      if (!body.planner.upstreamHealth.fulfilment.available)
-        setError(
-          "Integration Hub fulfilment is unavailable; existing runs remain visible and incoming work cannot currently refresh.",
-        );
-      else if (!body.planner.upstreamHealth.oplocs.available)
-        setError(
-          "Integration Hub OPLOCs are unavailable; existing snapshots remain visible and new movement locations are disabled.",
-        );
-      else setError("");
+      let projection = body.projection as LogisticsDayProjection | undefined;
+      if (!projection || (projection.summary.queuedJobs === 0 && projection.summary.loads === 0 && projection.summary.assignedJobs === 0)) {
+        setError("Projection is unseeded. Reconciling existing Logistics work…");
+        await fetch("/api/logistics", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "reconcile-logistics-day", serviceDate: date, by: "Franco" }) });
+        const retry = await fetch(`/api/logistics?projection=1&serviceDate=${date}`, { cache: "no-store" });
+        projection = (await retry.json()).projection as LogisticsDayProjection;
+      }
+      if (!projection) throw new Error("Logistics projection is unavailable.");
+      setData({ ...projectionToDashboardData(projection), projection });
+      try { window.localStorage.setItem(`fika-logistics-day:${date}`, JSON.stringify(projection)); } catch { /* Cache failure must not affect operations. */ }
+      setLastUpdated(new Date().toISOString());
+      setError("");
+      const changes = await fetch(`/api/logistics?changesSince=${cached?.lastChangeSequence ?? projection.lastChangeSequence}&serviceDate=${date}`, { cache: "no-store" });
+      if (changes.ok) {
+        const changed = await changes.json();
+        if (changed.projection && changed.projection.lastChangeSequence > projection.lastChangeSequence) {
+          const next = changed.projection as LogisticsDayProjection;
+          setData({ ...projectionToDashboardData(next), projection: next });
+          try { window.localStorage.setItem(`fika-logistics-day:${date}`, JSON.stringify(next)); } catch { /* Cache failure must not affect operations. */ }
+        }
+      }
     } catch (cause) {
-      setError(
-        cause instanceof Error
-          ? cause.message
-          : "Logistics could not be loaded.",
-      );
+      setError(cached ? `Sync failed; showing the last valid Logistics projection. ${cause instanceof Error ? cause.message : "Retrying shortly."}` : cause instanceof Error ? cause.message : "Logistics projection could not be loaded.");
     } finally {
       if (silent) setRefreshing(false);
     }
   };
   const loadWeek = async (week = weekCommencing) => {
     try {
-      const response = await fetch(`/api/logistics?weekCommencing=${week}`, {
-        cache: "no-store",
-      });
-      if (!response.ok) throw new Error("Week summary could not be loaded.");
-      setWeekData(await response.json());
+      const days = operationalWeek(week);
+      const responses = await Promise.all(days.map((day) => fetch(`/api/logistics?projection=1&serviceDate=${day}`, { cache: "no-store" }).then((response) => response.json())));
+      setWeekData({ weekCommencing: days[0], days: days.map((day, index) => { const projection = responses[index].projection as LogisticsDayProjection | undefined; return { serviceDate: day, loads: projection?.summary.loads || 0, ready: projection?.deliveryLoads.filter((load) => load.readiness === "ready").length || 0, unplanned: projection?.summary.queuedJobs || 0, runs: projection?.runs.length || 0, attention: projection?.exceptions.length || 0, completedStops: 0, stopCount: projection?.deliveryLoads.length || 0, deliveries: projection?.summary.assignedJobs || 0, collections: 0, transfers: 0 }; }) });
     } catch {
       setWeekData(undefined);
     }
@@ -212,6 +224,14 @@ export default function Planner() {
     });
   };
   const assignGroup = (group: PlannerWorkGroup) => {
+    if (data?.projection) {
+      const jobId = group.requirementRefs[0]?.requirementId;
+      if (!jobId) return setError("This projection queue item has no LogisticsJob identity.");
+      const scheduledTime = group.deliveryWindow?.startTime || group.requiredTimes[0];
+      if (!scheduledTime) return setError("Set a delivery time before assigning this job.");
+      void act({ action: "assign-job-to-load", jobId, scheduledTime, by: "Franco" });
+      return;
+    }
     const run =
       runs.find((item) => item.runId === targetRun) ||
       (runs.length === 1 ? runs[0] : undefined);
@@ -574,6 +594,13 @@ function RealPlanner(props: RealPlannerProps) {
     else void props.act({ action: "move-stop", by: "Franco", runId: sourceRunId, targetRunId, stopId, ...timing, expectedRunVersion: sourceRun.version, expectedTargetRunVersion: targetRun.version, expectedStopVersion: rawStop.version });
   };
   const assignQueueItem = (kind: "group" | "movement", id: string, targetRunId: string, time?: string, lane?: "delivery" | "collection", collectionRequired?: boolean) => {
+    if (data?.projection && kind === "group") {
+      const group = groups.find((item) => item.groupKey === id);
+      const jobId = group?.requirementRefs[0]?.requirementId;
+      if (!jobId || !time) return;
+      void props.act({ action: "assign-job-to-load", jobId, scheduledTime: time, by: "Franco" });
+      return;
+    }
     const run = runs.find((item) => item.runId === targetRunId);
     if (!run) return;
     if (kind === "group") {

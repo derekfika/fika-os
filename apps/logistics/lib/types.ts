@@ -92,3 +92,66 @@ export type LogisticsHealth = {
   fulfilment: UpstreamHealth;
   oplocs: UpstreamHealth;
 };
+
+/** A logistics-owned projection of one independently trackable fulfilment job. */
+export type LogisticsJob = {
+  id: string;
+  sourceType: string;
+  sourceId: string;
+  sourceVersion?: number;
+  serviceDate: string;
+  originOplocId?: string;
+  destinationOplocId?: string;
+  destinationLabelSnapshot?: string;
+  requestedWindow?: { startTime: string; endTime?: string };
+  productionReadiness: "pending" | "ready" | "attention";
+  collectionStatus: "awaiting" | "collected";
+  contents: { description: string; quantity: number; unit: string }[];
+  notes?: string;
+  createdAt: string;
+  updatedAt: string;
+  version: number;
+  audit: { action: string; at: string; by: string; version: number }[];
+};
+
+export type DeliveryLoad = {
+  id: string;
+  serviceDate: string;
+  originOplocId: string;
+  destinationOplocId: string;
+  destinationLabelSnapshot?: string;
+  scheduledTime: string;
+  status: "planned" | "ready" | "dispatched" | "delivered" | "cancelled";
+  driverId?: string;
+  vehicleId?: string;
+  runId?: string;
+  dispatchedAt?: string;
+  deliveredAt?: string;
+  createdAt: string;
+  updatedAt: string;
+  version: number;
+  audit: { action: string; at: string; by: string; version: number }[];
+};
+
+export type LogisticsAssignment = {
+  jobId: string;
+  loadId: string;
+  assignedAt: string;
+  assignedBy: string;
+  audit: { action: string; at: string; by: string }[];
+};
+
+export type LogisticsChangeEvent = {
+  sequence: number;
+  entityType: "logisticsJob" | "deliveryLoad" | "assignment";
+  entityId: string;
+  changeType: string;
+  revision: number;
+  changedAt: string;
+  actorId: string;
+  relatedEntityId?: string;
+};
+
+export type LogisticsProjectionJob = Pick<LogisticsJob, "id" | "sourceType" | "sourceId" | "serviceDate" | "originOplocId" | "destinationOplocId" | "destinationLabelSnapshot" | "requestedWindow" | "productionReadiness" | "collectionStatus"> & { totalUnits: number; assignedLoadId?: string };
+export type LogisticsProjectionLoad = Pick<DeliveryLoad, "id" | "serviceDate" | "originOplocId" | "destinationOplocId" | "destinationLabelSnapshot" | "scheduledTime" | "status" | "driverId" | "vehicleId" | "runId"> & { jobs: Array<Pick<LogisticsJob, "id" | "sourceType" | "sourceId" | "collectionStatus" | "productionReadiness"> & { totalUnits: number }>; jobCount: number; totalUnits: number; collectedCount: number; readiness: "ready" | "attention" | "awaiting_collection" };
+export type LogisticsDayProjection = { serviceDate: string; revision: number; lastChangeSequence: number; planningQueue: LogisticsProjectionJob[]; deliveryLoads: LogisticsProjectionLoad[]; runs: Array<Pick<DeliveryRun, "canonicalId" | "status" | "driverId" | "driverLabel" | "vehicleLabel">>; exceptions: string[]; summary: { queuedJobs: number; loads: number; assignedJobs: number; collectedJobs: number }; rebuiltAt: string };

@@ -1,11 +1,17 @@
 import { db } from "./firebase";
 import type { DocumentData } from "firebase-admin/firestore";
-import type { DeliveryRun, DeliveryStop, MovementRequest } from "./types";
+import type { DeliveryLoad, DeliveryRun, DeliveryStop, LogisticsAssignment, LogisticsChangeEvent, LogisticsDayProjection, LogisticsJob, MovementRequest } from "./types";
 import { scopeState } from "./planning";
 export const runs = () => db.collection("fikaLogisticsDeliveryRunsV1");
 export const stops = () => db.collection("fikaLogisticsDeliveryStopsV1");
 export const movements = () => db.collection("fikaLogisticsMovementRequestsV1");
 export const collectionPreferences = () => db.collection("fikaLogisticsCollectionPreferencesV1");
+export const logisticsJobs = () => db.collection("fikaLogisticsJobsV1");
+export const deliveryLoads = () => db.collection("fikaLogisticsDeliveryLoadsV1");
+export const logisticsAssignments = () => db.collection("fikaLogisticsAssignmentsV1");
+export const logisticsChanges = () => db.collection("fikaLogisticsChangesV1");
+export const logisticsChangeCursor = () => db.collection("fikaLogisticsChangeCursorV1");
+export const logisticsDayProjections = () => db.collection("fikaLogisticsDayProjectionsV1");
 const preferenceId = (groupKey: string) => encodeURIComponent(groupKey);
 export async function listCollectionPreferenceKeys() {
   const snapshot = await collectionPreferences().where("collectionRequired", "==", true).get();
@@ -78,4 +84,31 @@ export async function saveStop(stop: DeliveryStop) {
 export async function saveMovement(movement: MovementRequest) {
   await movements().doc(movement.canonicalId).set(movement);
   return movement;
+}
+export async function listDeliveryLoadState(serviceDate?: string) {
+  const [jobSnap, loadSnap, assignmentSnap] = await Promise.all([
+    serviceDate ? logisticsJobs().where("serviceDate", "==", serviceDate).get() : logisticsJobs().get(),
+    serviceDate ? deliveryLoads().where("serviceDate", "==", serviceDate).get() : deliveryLoads().get(),
+    logisticsAssignments().get(),
+  ]);
+  return { jobs: jobSnap.docs.map((d) => d.data() as LogisticsJob), loads: loadSnap.docs.map((d) => d.data() as DeliveryLoad), assignments: assignmentSnap.docs.map((d) => d.data() as LogisticsAssignment) };
+}
+export async function saveLogisticsJob(job: LogisticsJob) { await logisticsJobs().doc(job.id).set(job); return job; }
+export async function saveDeliveryLoad(load: DeliveryLoad) { await deliveryLoads().doc(load.id).set(load); return load; }
+export async function saveLogisticsProjection(projection: LogisticsDayProjection) { await logisticsDayProjections().doc(projection.serviceDate).set(projection); return projection; }
+export async function getLogisticsProjection(serviceDate: string) { const snapshot = await logisticsDayProjections().doc(serviceDate).get(); return snapshot.exists ? snapshot.data() as LogisticsDayProjection : undefined; }
+export async function listLogisticsChanges(after = 0, serviceDate?: string) {
+  const snapshot = await logisticsChanges().where("sequence", ">", after).orderBy("sequence", "asc").get();
+  return snapshot.docs.map((doc) => doc.data() as LogisticsChangeEvent).filter((event) => !serviceDate || event.entityType === "deliveryLoad" || event.entityType === "logisticsJob" || event.entityType === "assignment");
+}
+export async function appendLogisticsChange(input: Omit<LogisticsChangeEvent, "sequence">) {
+  return db.runTransaction(async (transaction) => {
+    const cursorRef = logisticsChangeCursor().doc("global");
+    const cursorSnap = await transaction.get(cursorRef);
+    const sequence = Number(cursorSnap.data()?.sequence || 0) + 1;
+    const event = { ...input, sequence };
+    transaction.set(cursorRef, { sequence });
+    transaction.create(logisticsChanges().doc(String(sequence).padStart(20, "0")), event);
+    return event;
+  });
 }
