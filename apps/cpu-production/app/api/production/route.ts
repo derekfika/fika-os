@@ -14,7 +14,7 @@ import {
 import { hospitalityMenuProductionRouting } from "@hub/lib/connections-service";
 import { localFixtureOrders, updateLocalFixture } from "../local-fixtures";
 import { filterProductionOrdersForScope, normaliseProductionScope, type ProductionScope } from "../../../lib/production-scope";
-import { appendCpuChange, buildCpuDayProjection, cpuPlans, cpuProjections, listCpuChanges } from "../../../lib/cpu-projection";
+import { appendCpuChange, buildCpuDayProjection, cpuPlans, cpuProjections, listCpuChanges, listCpuWeekChanges, rebuildCpuWeekProjection, weekCommencingFor } from "../../../lib/cpu-projection";
 import type { ProductionOrder } from "@hub/lib/production-domain";
 
 const localActor = {
@@ -52,6 +52,7 @@ async function recordCpuChange(canonicalId: string, actorId: string, changeType:
   if (!serviceDate) return current;
   const event = await appendCpuChange({ serviceDate, entityType: "productionOrder", entityId: canonicalId, revision: current.version, changeType, actorId, changedAt: new Date().toISOString() });
   await rebuildCpuProjection(serviceDate, event.sequence);
+  await rebuildCpuWeekProjection(weekCommencingFor(serviceDate), event.sequence);
   return current;
 }
 
@@ -150,14 +151,38 @@ const UpdateLines = z
 const AllergenDiscrepancy = z.object({ action: z.literal("report-allergen-discrepancy"), canonicalId: z.string().min(8), expectedVersion: z.number().int().positive(), note: z.string().trim().min(3) }).strict();
 export async function GET(request: NextRequest) {
   try {
-    const projectionDate = request.nextUrl.searchParams.get("serviceDate") || new Date().toISOString().slice(0, 10);
-    if (request.nextUrl.searchParams.get("projection") === "1") {
-      const stored = await cpuProjections().doc(projectionDate).get();
-      return NextResponse.json({ projection: stored.exists ? stored.data() : await rebuildCpuProjection(projectionDate) });
-    }
-    if (request.nextUrl.searchParams.has("changesSince")) return NextResponse.json({ changes: await listCpuChanges(Number(request.nextUrl.searchParams.get("changesSince") || 0), projectionDate), projection: (await cpuProjections().doc(projectionDate).get()).data() || null });
     const actor = await actorFor(request);
     assertPermission(actor, "canonical.view");
+    const projectionDate = request.nextUrl.searchParams.get("serviceDate") || new Date().toISOString().slice(0, 10);
+    if (request.nextUrl.searchParams.get("diagnostic") === "1") {
+      const week = request.nextUrl.searchParams.get("weekCommencing");
+      const projection = (await cpuProjections().doc(week ? `week:${week}` : projectionDate).get()).data() as { orders?: Array<Record<string, unknown>> } | undefined;
+      const canonical = await productionQueue(week ? undefined : projectionDate);
+      const weekEnd = week ? (() => { const date = new Date(`${week}T00:00:00Z`); date.setUTCDate(date.getUTCDate() + 4); return date.toISOString().slice(0, 10); })() : undefined;
+      const canonicalById = new Map(canonical.filter((order) => !week || ((order.serviceDate || "") >= week && (order.serviceDate || "") <= weekEnd!)).map((order) => [order.canonicalId, order]));
+      const projectedIds = new Set((projection?.orders || []).map((order) => String(order.id)));
+      const missing = [...canonicalById.keys()].filter((id) => !projectedIds.has(id));
+      const unexpected = [...projectedIds].filter((id) => !canonicalById.has(id));
+      const planSnapshot = await cpuPlans().get();
+      const expected = buildCpuDayProjection(week ? "all" : projectionDate, [...canonicalById.values()], planSnapshot.docs.map((document) => document.data() as import("../../lib/production-plan").ProductionPlan));
+      const projectedById = new Map((projection?.orders || []).map((order) => [String(order.id), order]));
+      const fieldMismatches = expected.orders.filter((order) => {
+        const actual = projectedById.get(order.id);
+        return actual && JSON.stringify({ status: order.status, workflowStatus: order.workflowStatus, productionScope: order.productionScope, destination: order.destinationOplocId, quantities: order.quantities, attention: order.attention }) !== JSON.stringify({ status: actual.status, workflowStatus: actual.workflowStatus, productionScope: actual.productionScope, destination: actual.destinationOplocId, quantities: actual.quantities, attention: actual.attention });
+      }).map((order) => order.id);
+      return NextResponse.json({ scope: week ? { weekCommencing: week } : { serviceDate: projectionDate }, comparison: { canonicalCount: canonicalById.size, projectionCount: projection?.orders?.length || 0, missing, unexpected, fieldMismatches }, status: missing.length || unexpected.length || fieldMismatches.length ? "Projection out of sync" : "In sync" });
+    }
+    if (request.nextUrl.searchParams.get("projection") === "1") {
+      const week = request.nextUrl.searchParams.get("weekCommencing");
+      const stored = await cpuProjections().doc(week ? `week:${week}` : projectionDate).get();
+      return NextResponse.json({ projection: stored.exists ? stored.data() : week ? await rebuildCpuWeekProjection(week) : await rebuildCpuProjection(projectionDate) });
+    }
+    if (request.nextUrl.searchParams.has("changesSince")) {
+      const after = Number(request.nextUrl.searchParams.get("changesSince") || 0);
+      const week = request.nextUrl.searchParams.get("weekCommencing");
+      const changes = week ? await listCpuWeekChanges(after, week) : await listCpuChanges(after, projectionDate);
+      return NextResponse.json({ changes, projection: (await cpuProjections().doc(week ? `week:${week}` : projectionDate).get()).data() || null });
+    }
     const id = request.nextUrl.searchParams.get("canonicalId");
     const serviceDate = request.nextUrl.searchParams.get("serviceDate") || undefined;
     const scope = normaliseProductionScope(request.nextUrl.searchParams.get("scope"));
@@ -223,7 +248,8 @@ export async function POST(request: NextRequest) {
     const raw = await request.json();
     if (raw?.action === "rebuild-cpu-projection") {
       const serviceDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).parse(raw.serviceDate);
-      return NextResponse.json({ projection: await rebuildCpuProjection(serviceDate) });
+      const projection = await rebuildCpuProjection(serviceDate);
+      return NextResponse.json({ projection: await rebuildCpuWeekProjection(weekCommencingFor(serviceDate)), dayProjection: projection });
     }
     if (raw?.action === "cpu-create") {
       const command = Cpu.parse(raw);

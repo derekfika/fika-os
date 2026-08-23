@@ -26,6 +26,7 @@ import {
   getLogisticsProjection,
   listLogisticsChanges,
   saveLogisticsProjection,
+  repairLegacyAssignmentServiceDates,
 } from "@/lib/store";
 import { assignJob, assertDispatchable, createLoad, removeAssignment, setJobCollectionStatus } from "@/lib/delivery-loads";
 import { buildLogisticsDayProjection } from "@/lib/logistics-projection";
@@ -342,6 +343,9 @@ export async function POST(request: NextRequest) {
     };
     const by = body.by || "Franco";
     const now = new Date().toISOString();
+    if (body.action === "repair-logistics-assignment-dates") {
+      return NextResponse.json({ migration: await repairLegacyAssignmentServiceDates() });
+    }
     if (body.action === "rebuild-logistics-projection" && body.serviceDate) {
       const startedAt = performance.now();
       const projection = await rebuildLogisticsProjection(body.serviceDate, by);

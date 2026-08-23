@@ -22,7 +22,7 @@ import { CANONICAL_ALLERGEN_COLUMNS, normaliseOperationalAllergens, toggleOperat
 import { productionScopes, type ProductionScope } from "../lib/production-scope";
 import { cpuAttentionKey, cpuAttentionLabel, cpuDestinationLabel, cpuDestinationOptionLabel, cpuLifecycle, cpuLifecycleLabels, cpuReference, cpuRequiredTime, cpuSourceLabel, type CpuLifecycle } from "../lib/production-presentation";
 import { relatedDeliveredInOrders } from "../lib/production-day";
-import { cpuProjectionToOrders, filterCpuProjectionForScope } from "../lib/cpu-dashboard-adapter";
+import { cpuProjectionToOrders, filterCpuProjectionForScope, weekCommencingFor } from "../lib/cpu-dashboard-adapter";
 
 const statuses: CpuLifecycle[] = ["received", "accepted", "planning", "planned", "ready", "in_production", "complete"];
 const terminalStatuses = new Set<ProductionStatus>([
@@ -58,6 +58,8 @@ export default function CpuProduction() {
   const [productionScope, setProductionScope] = useState<ProductionScope>("all");
   const [view, setView] = useState<View>("calendar");
   const [selected, setSelected] = useState<ProductionOrder>();
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [detailError, setDetailError] = useState("");
   const [showHospitalityAllergens, setShowHospitalityAllergens] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
   const [error, setError] = useState("");
@@ -65,14 +67,15 @@ export default function CpuProduction() {
   const load = async (showFeedback = false): Promise<ProductionOrder[]> => {
     if (showFeedback) setRefreshing(true);
     try {
-      const projectionDate = view === "day" ? dayDate : "all";
+      const isDayProjection = view === "day";
+      const projectionDate = isDayProjection ? dayDate : weekCommencingFor(dayDate);
       const cacheKey = `fika-cpu-projection:${productionScope}:${projectionDate}`;
       // Compatibility marker for existing dashboard contract checks: /api/production?scope=${productionScope}
       const cached = window.localStorage.getItem(cacheKey);
       if (cached) {
         try { setOrders(cpuProjectionToOrders(filterCpuProjectionForScope(JSON.parse(cached), productionScope))); } catch { window.localStorage.removeItem(cacheKey); }
       }
-      const response = await fetch(`/api/production?projection=1&serviceDate=${encodeURIComponent(projectionDate)}&scope=${productionScope}`, {
+      const response = await fetch(`/api/production?projection=1&${isDayProjection ? `serviceDate=${encodeURIComponent(projectionDate)}` : `weekCommencing=${encodeURIComponent(projectionDate)}`}&scope=${productionScope}`, {
         cache: "no-store",
       });
       const body = await response.json();
@@ -84,6 +87,17 @@ export default function CpuProduction() {
       const projectedOrders: ProductionOrder[] = projection ? cpuProjectionToOrders(filterCpuProjectionForScope(projection, productionScope)) : [];
       window.localStorage.setItem(cacheKey, JSON.stringify(projection));
       setOrders(projectedOrders);
+      try {
+        const changes = await fetch(`/api/production?changesSince=${projection.lastChangeSequence || 0}&${isDayProjection ? `serviceDate=${encodeURIComponent(projectionDate)}` : `weekCommencing=${encodeURIComponent(projectionDate)}`}`, { cache: "no-store" });
+        const changeBody = await changes.json();
+        const newer = changeBody.projection;
+        if (changes.ok && newer && Number(newer.lastChangeSequence || 0) > Number(projection.lastChangeSequence || 0)) {
+          const refreshed = cpuProjectionToOrders(filterCpuProjectionForScope(newer, productionScope));
+          window.localStorage.setItem(cacheKey, JSON.stringify(newer));
+          setOrders(refreshed);
+          return refreshed;
+        }
+      } catch { /* retain the valid current projection when incremental sync is unavailable */ }
       return projectedOrders;
     } finally {
       if (showFeedback) setRefreshing(false);
@@ -107,9 +121,19 @@ export default function CpuProduction() {
     (order) => !date || order.requiredBy.startsWith(date),
   );
   const todayKey = new Date().toLocaleDateString("en-CA");
-  const openOrder = (order: ProductionOrder) => {
+  const openOrder = async (order: Pick<ProductionOrder, "canonicalId">) => {
     setShowHospitalityAllergens(false);
-    setSelected(order);
+    setSelected(undefined);
+    setDetailError("");
+    setDetailLoading(true);
+    try {
+      const response = await fetch(`/api/production?canonicalId=${encodeURIComponent(order.canonicalId)}`, { cache: "no-store" });
+      const body = await response.json();
+      if (!response.ok || !body.order) throw new Error(body.error?.message || "Could not load the canonical Production Order.");
+      setSelected(body.order as ProductionOrder);
+    } catch (cause) {
+      setDetailError(cause instanceof Error ? cause.message : "Could not load the canonical Production Order.");
+    } finally { setDetailLoading(false); }
   };
   const totals = useMemo(
     () =>
@@ -303,6 +327,8 @@ export default function CpuProduction() {
         </div>
       </div>
       </div>
+      {detailLoading && <div className="cpu-detail-state" role="status">Loading canonical production order…</div>}
+      {detailError && <div className="cpu-detail-state" role="alert">{detailError}</div>}
       {selected && selected.origin === "grab_and_go" ? (
         <GrabAndGoOrderDetail
           order={selected}
@@ -319,7 +345,7 @@ export default function CpuProduction() {
           order={selected}
           orders={relatedDeliveredInOrders(orders, selected)}
           close={() => setSelected(undefined)}
-          onSaved={async () => { const nextOrders = await load(); const refreshed = nextOrders.find(order => order.canonicalId === selected.canonicalId); if (refreshed) setSelected(refreshed); }}
+          onSaved={async () => { await load(); await openOrder(selected); }}
         />
       ) : selected && !showHospitalityAllergens ? (
         <ProductionOrderDetail
@@ -331,16 +357,7 @@ export default function CpuProduction() {
         <LianaOrderDetail
           order={selected}
           close={() => selected.origin === "hospitality_booking" ? setShowHospitalityAllergens(false) : setSelected(undefined)}
-          onSaved={async (close = true) => {
-            const nextOrders = await load();
-            if (close) setSelected(undefined);
-            else {
-              const refreshed = nextOrders.find(
-                (order) => order.canonicalId === selected.canonicalId,
-              );
-              if (refreshed) setSelected(refreshed);
-            }
-          }}
+          onSaved={async (close = true) => { await load(); if (close) setSelected(undefined); else await openOrder(selected); }}
         />
       )}
     </main>

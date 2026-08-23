@@ -2,6 +2,7 @@ import { db } from "./firebase";
 import type { DocumentData } from "firebase-admin/firestore";
 import type { DeliveryLoad, DeliveryRun, DeliveryStop, LogisticsAssignment, LogisticsChangeEvent, LogisticsDayProjection, LogisticsJob, MovementRequest } from "./types";
 import { scopeState } from "./planning";
+import { resolveLegacyAssignmentServiceDate } from "./assignment-migration";
 export const runs = () => db.collection("fikaLogisticsDeliveryRunsV1");
 export const stops = () => db.collection("fikaLogisticsDeliveryStopsV1");
 export const movements = () => db.collection("fikaLogisticsMovementRequestsV1");
@@ -101,6 +102,30 @@ export async function listLogisticsChanges(after = 0, serviceDate?: string) {
   const query = serviceDate ? logisticsChanges().where("serviceDate", "==", serviceDate).where("sequence", ">", after).orderBy("sequence", "asc") : logisticsChanges().where("sequence", ">", after).orderBy("sequence", "asc");
   const snapshot = await query.get();
   return snapshot.docs.map((doc) => doc.data() as LogisticsChangeEvent);
+}
+export async function repairLegacyAssignmentServiceDates() {
+  const [assignmentSnap, jobSnap, loadSnap] = await Promise.all([logisticsAssignments().get(), logisticsJobs().get(), deliveryLoads().get()]);
+  const jobs = new Map(jobSnap.docs.map((doc) => [doc.id, doc.data() as LogisticsJob]));
+  const loads = new Map(loadSnap.docs.map((doc) => [doc.id, doc.data() as DeliveryLoad]));
+  const batch = db.batch();
+  const repaired: string[] = [];
+  const unresolved: Array<{ assignmentId: string; reason: string }> = [];
+  for (const document of assignmentSnap.docs) {
+    const assignment = document.data() as LogisticsAssignment;
+    if (assignment.serviceDate) continue;
+    const jobDate = jobs.get(assignment.jobId)?.serviceDate;
+    const loadDate = loads.get(assignment.loadId)?.serviceDate;
+    const resolution = resolveLegacyAssignmentServiceDate(jobDate, loadDate);
+    const serviceDate = resolution.serviceDate;
+    if (serviceDate) {
+      batch.set(document.ref, { serviceDate }, { merge: true });
+      repaired.push(document.id);
+    } else {
+      unresolved.push({ assignmentId: document.id, reason: String(resolution.reason || "Unable to resolve assignment service date") });
+    }
+  }
+  if (repaired.length) await batch.commit();
+  return { repaired, unresolved };
 }
 export async function appendLogisticsChange(input: Omit<LogisticsChangeEvent, "sequence">) {
   return db.runTransaction(async (transaction) => {

@@ -2,6 +2,8 @@ import type { ProductionOrder, ProductionLine } from "@hub/lib/production-domain
 import type { CpuDayProjection } from "./cpu-projection";
 import type { ProductionScope } from "./production-scope";
 
+export function weekCommencingFor(serviceDate: string) { const date = new Date(`${serviceDate}T00:00:00Z`); const day = date.getUTCDay() || 7; date.setUTCDate(date.getUTCDate() - day + 1); return date.toISOString().slice(0, 10); }
+
 /** Rehydrates the compact day read model into the shape used by the existing UI. */
 export function cpuProjectionToOrders(projection: CpuDayProjection): ProductionOrder[] {
   return projection.orders.map((row) => {
