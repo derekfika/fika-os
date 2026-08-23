@@ -16,7 +16,7 @@ function dateLabel(order: ProductionOrder) {
 }
 
 function quantity(order: ProductionOrder) {
-  return order.lines.reduce((total, line) => total + (line.productionQuantity ?? line.customerQuantity), 0);
+  return order.lines.reduce((total, line) => total + line.customerQuantity, 0);
 }
 
 export default function HospitalityProductionDetail({
@@ -48,8 +48,8 @@ export default function HospitalityProductionDetail({
         <div className="hospitality-production-detail__lines">
           {order.lines.map((line) => (
             <div key={line.canonicalId}>
-              <strong>{(line.productionQuantity ?? line.customerQuantity).toLocaleString()}</strong>
-              <span>{line.itemName}<small>{line.productionUnit || line.customerUnit}</small></span>
+              <strong>{line.customerQuantity.toLocaleString()}</strong>
+              <span>{line.itemName}<small>{line.customerQuantity} {line.customerUnit} ordered</small></span>
             </div>
           ))}
         </div>

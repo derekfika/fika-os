@@ -7,9 +7,9 @@ export type DeliveredInDishRow = { key: string; name: string; quantity: number; 
 export type AllergenReviewRow = DeliveredInDishRow & { sources: string[]; attention: boolean; dietaries: Record<string, unknown>; notes: string[] };
 
 export function orderDate(order: ProductionOrder) { return order.serviceDate || order.requiredBy.slice(0, 10); }
-export function orderQuantity(order: ProductionOrder) { return order.lines.reduce((sum, line) => sum + (line.productionQuantity ?? line.customerQuantity), 0); }
+export function orderQuantity(order: ProductionOrder) { return order.lines.reduce((sum, line) => sum + line.customerQuantity, 0); }
 export function orderLineCount(order: ProductionOrder) { return order.lines.length; }
-export function orderSummary(order: ProductionOrder) { return `${orderQuantity(order).toLocaleString()} ${order.origin === "menu_planning" ? "portions" : "items"} · ${orderLineCount(order)} line${orderLineCount(order) === 1 ? "" : "s"}`; }
+export function orderSummary(order: ProductionOrder) { const ordered = orderQuantity(order); const unit = order.origin === "menu_planning" ? "portions" : "items"; return `${ordered.toLocaleString()} ${unit} ordered · ${orderLineCount(order)} line${orderLineCount(order) === 1 ? "" : "s"}`; }
 export function sourceHeading(order: ProductionOrder) { return order.origin === "menu_planning" ? "Delivered-In lunch" : cpuSourceLabel(order).replace(/ order$/, ""); }
 export function requiredTime(order: ProductionOrder) { return cpuRequiredTime(order); }
 export function destination(order: ProductionOrder) { return cpuDestinationLabel(order); }
@@ -37,7 +37,7 @@ export function buildDeliveredInDishRows(orders: ProductionOrder[]): DeliveredIn
   for (const order of orders) for (const line of order.lines) {
     const key = line.sourceMenuItemId || line.itemName.trim().toLowerCase();
     const current = rows.get(key) || ({ key, name: line.itemName, quantity: 0, destinations: [], destinationMap: new Map<string, number>(), allergens: {} as Record<string, OperationalAllergenState>, snapshot: undefined, reviewed: true } as DeliveredInDishRow & { destinationMap: Map<string, number>; allergens: Record<string, OperationalAllergenState> });
-    const quantity = line.productionQuantity ?? line.customerQuantity; const label = destination(order);
+    const quantity = line.customerQuantity; const label = destination(order);
     current.quantity += quantity; current.destinationMap.set(label, (current.destinationMap.get(label) || 0) + quantity); current.reviewed = current.reviewed && line.allergenEvidenceStatus === "confirmed";
     if (line.approvedAllergenSnapshot) { current.snapshot ||= line.approvedAllergenSnapshot; for (const [keyName, state] of Object.entries(line.approvedAllergenSnapshot.allergens)) current.allergens[keyName] = mergeAllergenState(current.allergens[keyName], state); }
     rows.set(key, current);
@@ -49,7 +49,7 @@ export function buildAllergenReviewRows(orders: ProductionOrder[]): AllergenRevi
   for (const order of orders) for (const line of order.lines) {
     const key = `${order.origin}:${line.sourceMenuItemId || line.itemName.trim().toLowerCase()}`;
     const current = grouped.get(key) || ({ key, name: line.itemName, quantity: 0, destinations: [], sources: [], attention: false, dietaries: {}, notes: [], destinationMap: new Map<string, number>(), allergens: {}, reviewed: true } as AllergenReviewRow & { destinationMap: Map<string, number>; allergens: Record<string, OperationalAllergenState> });
-    const quantity = line.productionQuantity ?? line.customerQuantity;
+    const quantity = line.customerQuantity;
     const label = destination(order);
     current.quantity += quantity;
     current.destinationMap.set(label, (current.destinationMap.get(label) || 0) + quantity);
@@ -85,7 +85,7 @@ export function aggregateDeliveredIn(orders: ProductionOrder[]): DeliveredInDish
     for (const line of order.lines) {
       const key = line.sourceMenuItemId || line.itemName.trim().toLowerCase();
       const existing = totals.get(key) || { dishName: line.itemName, total: 0, destinations: new Map<string, number>() };
-      const quantity = line.productionQuantity ?? line.customerQuantity;
+      const quantity = line.customerQuantity;
       existing.total += quantity;
       existing.destinations.set(label, (existing.destinations.get(label) || 0) + quantity);
       totals.set(key, existing);

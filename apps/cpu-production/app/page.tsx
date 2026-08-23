@@ -141,9 +141,9 @@ export default function CpuProduction() {
       visible
         .flatMap((order) => order.lines)
         .reduce<Record<string, number>>((sum, line) => {
-          if (line.productionQuantity !== undefined && line.productionUnit) {
-            const key = `${line.itemName} · ${line.productionUnit}`;
-            sum[key] = (sum[key] || 0) + line.productionQuantity;
+          if (line.customerQuantity !== undefined && line.customerUnit) {
+            const key = `${line.itemName} · ${line.customerUnit}`;
+            sum[key] = (sum[key] || 0) + line.customerQuantity;
           }
           return sum;
         }, {}),

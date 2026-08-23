@@ -17,7 +17,7 @@ test("Delivered-In day aggregation consolidates the same dish across destination
 test("Day grouping keeps operational times and compact quantities separate from dish detail", () => {
   const first = { ...order("Haleon", 10), requiredBy: "2026-08-24T08:00" };
   const second = { ...order("FIKA Xchange", 10), canonicalId: "production-order:fika", requiredBy: "2026-08-24T08:00" };
-  assert.equal(orderSummary(first), "10 portions · 1 line");
+  assert.equal(orderSummary(first), "10 portions ordered · 1 line");
   assert.equal(groupByRequiredTime([first, second])[0].orders.length, 2);
 });
 

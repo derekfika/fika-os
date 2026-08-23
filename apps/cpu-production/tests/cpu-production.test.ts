@@ -404,6 +404,8 @@ test("allergen checker uses the master-style purple header and four-state cells"
   assert.match(planRoute, /allergen-matrix-signed/);
   assert.match(planRoute, /createMatrixArtifact\(plan, command.orderId/);
   assert.match(planRoute, /allergen-matrix-archived/);
+  assert.match(planRoute, /plan\.signatures = undefined/);
+  assert.match(planRoute, /plan\.matrixArtifact = undefined/);
   assert.match(planRoute, /signatureDataUrl/);
   assert.match(planRoute, /Mark the allergen matrix Planned before signing it/);
 });
