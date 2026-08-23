@@ -3,6 +3,7 @@ import { db } from "./firebase-admin";
 import type { Actor } from "./auth";
 import type { CanonicalBooking } from "./hospitality-booking-service";
 import { stableDocumentId } from "./canonical-editor";
+import { CPU_PRODUCTION_LOCATION_ID } from "../../shared/production-location";
 import { createDomainEvent } from "../../shared/domain-events";
 import { stageDomainEvent } from "./domain-event-outbox";
 import { stageFulfilmentEvent } from "./fulfilment-projection";
@@ -259,6 +260,7 @@ export async function materialiseExternalProductionOrder(actor: Actor, input: Ex
       version: (previous?.version || 0) + 1, currentRevision: (previous?.currentRevision || 0) + 1,
       requirementIds: previous?.requirementIds || [], sourceBookingId: previous?.sourceBookingId || canonicalId, sourceQuoteRevisionId: previous?.sourceQuoteRevisionId || "",
       sourceEntityId: input.sourceEntityId, sourceVersion: input.sourceVersion, ...(input.sourceContentHash ? { sourceContentHash: input.sourceContentHash } : {}), ...(input.sourcePublicationDayId ? { sourcePublicationDayId: input.sourcePublicationDayId } : {}),
+      productionLocationId: previous?.productionLocationId || CPU_PRODUCTION_LOCATION_ID,
       origin: input.sourceDomain === "grab-and-go" ? "grab_and_go" : "menu_planning", requiresDelivery: true, destinationOplocId: input.destinationOplocId, destinationLabel: input.destinationLabel || input.destinationOplocId,
       serviceType: input.sourceDomain === "grab-and-go" ? "Grab & Go" : "Delivered-In menu", serviceDate: input.serviceDate, requiredBy: input.requiredBy || `${input.serviceDate}T00:00`, serviceWindow: input.serviceWindow || { startTime: "00:00" },
       status, priority: previous?.priority || "normal", lines: input.lines.map((line, index) => ({ canonicalId: `${canonicalId}:line:${index + 1}`, sourceBookingLineId: line.sourceLineId, ...(line.canonicalItemId ? { sourceMenuItemId: line.canonicalItemId } : {}), itemName: line.itemName, customerQuantity: line.quantity, customerUnit: line.unit, productionQuantity: line.quantity, productionUnit: line.unit, conversionSnapshot: { quantity: line.quantity, unit: line.unit, rule: "Explicit upstream source quantity." }, dietaries: {}, ...(line.approvedAllergenSnapshot ? { approvedAllergenSnapshot: structuredClone(line.approvedAllergenSnapshot), allergenEvidenceStatus: "confirmed" as const } : { allergenEvidenceStatus: "unreviewed" as const }), status: status === "cancelled" ? "exception" as const : "ready" as const, sortOrder: index, workstream: line.workstream || (input.sourceDomain === "grab-and-go" ? "grab_and_go" : "delivered_in") })),

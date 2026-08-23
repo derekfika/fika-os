@@ -29,6 +29,7 @@ import {
   repairLegacyAssignmentServiceDates,
 } from "@/lib/store";
 import { assignJob, assertDispatchable, createLoad, removeAssignment, setJobCollectionStatus } from "@/lib/delivery-loads";
+import { CPU_PRODUCTION_LOCATION_ID } from "../../../../shared/production-location";
 import { buildLogisticsDayProjection } from "@/lib/logistics-projection";
 import {
   assignMovementStops,
@@ -173,13 +174,14 @@ async function reconcileLogisticsDay(serviceDate: string, by: string, cookie?: s
     const key = `${requirement.sourceDomain}:${requirement.sourceEntityId}`;
     const prior = existingBySource.get(key);
     const readiness = requirement.status === "pending" ? "pending" as const : requirement.status === "amended" ? "attention" as const : "ready" as const;
+    const originOplocId = requirement.productionLocationId || (requirement.sourceDomain === "grab-and-go" || (requirement.sourceDomain === "cpu-production" && requirement.sourceEntityId.includes("grab-and-go")) ? CPU_PRODUCTION_LOCATION_ID : undefined);
     const next = {
       id: prior?.id || `logistics-job:${requirement.canonicalId}`,
       sourceType: requirement.sourceDomain,
       sourceId: requirement.sourceEntityId,
       sourceVersion: requirement.sourceVersion,
       serviceDate: requirement.serviceDate,
-      ...(requirement.productionLocationId ? { originOplocId: requirement.productionLocationId } : {}),
+      ...(originOplocId ? { originOplocId } : {}),
       destinationOplocId: requirement.destinationOplocId,
       destinationLabelSnapshot: oplocs.find((oploc) => oploc.id === requirement.destinationOplocId)?.label || requirement.destinationLabelSnapshot,
       ...(requirement.requiredDeliveryWindow ? { requestedWindow: requirement.requiredDeliveryWindow } : requirement.readyAt ? { requestedWindow: { startTime: requirement.readyAt.slice(11, 16) } } : {}),
