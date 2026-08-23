@@ -695,7 +695,7 @@ function RealPlanner(props: RealPlannerProps) {
         <section className="mock-schedule" aria-label="Dispatch schedule"><header className="mock-schedule-head"><div><span>PLANNING SURFACE · {selectedDateLabel}</span><h2>Dispatch schedule</h2></div><strong>{runs.length} runs · {summary?.scheduledStops || 0} scheduled · {summary?.needsTime || 0} needs time</strong></header><div className="mock-legend"><span><i className="green-dot" /> Delivery</span><span><i className="blue-dot" /> Collection</span><span><i className="amber-dot" /> Transfer</span><span><i className="red-dot" /> Attention</span><div><button className="active">Day</button><button disabled>Week</button><button>⚙</button></div></div><RealTimeline runs={runs} serviceDate={date} onStop={(runId, stopId) => props.setInspector({ kind: "stop", id: stopId, runId })} onRun={(runId) => props.setInspector({ kind: "run", id: runId })} onSchedule={scheduleStop} onQueueDrop={(kind, id, runId, time, lane, collectionRequired) => assignQueueItem(kind, id, runId, time, lane, collectionRequired)} /><RealScheduleSummary planner={data?.planner} /></section>
       </section>
     </div>
-    {props.inspector && data && <Inspector selection={props.inspector} planner={data.planner} rawRequirements={data.requirements} rawStops={data.stops} onClose={() => props.setInspector(undefined)} onAction={handleInspectorAction} runs={runs} targetRun={props.targetRun} setTargetRun={props.setTargetRun} assigning={props.assigning} setAssigning={props.setAssigning} onAssignGroup={props.assignGroup} onAssignMovement={props.assignMovement} />}
+    {props.inspector && data && <Inspector selection={props.inspector} planner={data.planner} projection={data.projection} rawRequirements={data.requirements} rawStops={data.stops} onClose={() => props.setInspector(undefined)} onAction={handleInspectorAction} runs={runs} targetRun={props.targetRun} setTargetRun={props.setTargetRun} assigning={props.assigning} setAssigning={props.setAssigning} onAssignGroup={props.assignGroup} onAssignMovement={props.assignMovement} />}
   </main>;
 }
 
@@ -1038,6 +1038,7 @@ function DriverTimeline({
 function Inspector({
   selection,
   planner,
+  projection,
   rawRequirements,
   rawStops,
   onClose,
@@ -1052,6 +1053,7 @@ function Inspector({
 }: {
   selection: { kind: "group"; id: string } | { kind: "movement"; id: string } | { kind: "stop"; id: string; runId: string } | { kind: "run"; id: string };
   planner: PlannerDay;
+  projection?: LogisticsDayProjection;
   rawRequirements: FulfilmentRequirement[];
   rawStops: DeliveryStop[];
   onClose: () => void;
@@ -1101,7 +1103,7 @@ function Inspector({
         {run.status === "ready" && <button className="secondary" onClick={() => onAction({ action: "return-run-to-planning", by: "Franco", runId: run.runId, expectedRunVersion: run.version })}>Return to planning</button>}
       </div>
     </>}
-    {stop && rawStop && <><div className="inspector-actions"><button className="secondary" onClick={() => onAction({ action: "return-stop-to-planning", by: "Franco", runId: rawStop.runId, stopId: stop.stopId, expectedRunVersion: planner.runs.find((item) => item.runId === rawStop.runId)!.version, expectedStopVersion: rawStop.version })}>Return to planning queue</button></div><ScheduleEditor stop={stop} run={planner.runs.find((item) => item.runId === rawStop.runId)!} rawStop={rawStop} onAction={onAction} /><StopPanel stop={stop} index={Math.max(0, stop.sequence - 1)} run={planner.runs.find((item) => item.runId === rawStop.runId)!} runs={runs} rawStop={rawStop} rawRequirements={rawRequirements} expanded onToggle={() => undefined} onAction={onAction} /></>}
+    {stop && rawStop && <><div className="inspector-actions"><button className="secondary" onClick={() => onAction({ action: "return-stop-to-planning", by: "Franco", runId: rawStop.runId, stopId: stop.stopId, expectedRunVersion: planner.runs.find((item) => item.runId === rawStop.runId)!.version, expectedStopVersion: rawStop.version })}>Return to planning queue</button></div><ScheduleEditor stop={stop} run={planner.runs.find((item) => item.runId === rawStop.runId)!} rawStop={rawStop} onAction={onAction} /><StopPanel stop={stop} index={Math.max(0, stop.sequence - 1)} run={planner.runs.find((item) => item.runId === rawStop.runId)!} runs={runs} rawStop={rawStop} rawRequirements={rawRequirements} projection={projection} expanded onToggle={() => undefined} onAction={onAction} /></>}
   </aside>;
 }
 
@@ -1707,6 +1709,7 @@ function StopPanel({
   runs,
   rawStop,
   rawRequirements,
+  projection,
   expanded,
   onToggle,
   onAction,
@@ -1717,10 +1720,14 @@ function StopPanel({
   runs: PlannerDay["runs"];
   rawStop?: DeliveryStop;
   rawRequirements: FulfilmentRequirement[];
+  projection?: LogisticsDayProjection;
   expanded: boolean;
   onToggle: () => void;
   onAction: (payload: object) => void;
 }) {
+  const [selectedJobId, setSelectedJobId] = useState<string>();
+  const selectedProjectionJob = selectedJobId ? projection?.planningQueue.find((job) => job.id === selectedJobId) || projection?.deliveryLoads.flatMap((load) => load.jobs).find((job) => job.id === selectedJobId) : undefined;
+  const selectedRequirement = selectedJobId ? rawRequirements.find((requirement) => requirement.canonicalId === selectedJobId) : undefined;
   return (
     <div className={`stop-panel ${stop.status}`}>
       <button className="stop-main" onClick={onToggle}>
@@ -1773,6 +1780,7 @@ function StopPanel({
           ))}
       {expanded && rawStop && (
         <div className="stop-detail">
+          {selectedJobId && <JobDetailScreen jobId={selectedJobId} sourceType={selectedProjectionJob?.sourceType || selectedRequirement?.sourceDomain} sourceId={selectedProjectionJob?.sourceId || selectedRequirement?.sourceEntityId} contents={selectedProjectionJob?.contents || selectedRequirement?.lines.map((line) => ({ description: line.displayNameSnapshot, quantity: line.quantity, unit: line.unit })) || []} notes={selectedProjectionJob?.notes} onBack={() => setSelectedJobId(undefined)} />}
           {stop.lane === "delivery" && <button className="load-action" onClick={() => onAction({ action: "mark-stop-loaded", loaded: !rawStop.loaded, by: "Franco", runId: run.runId, stopId: stop.stopId, expectedRunVersion: run.version, expectedStopVersion: rawStop.version })}>{rawStop.loaded ? "✓ Loaded · remove mark" : "Mark delivery as loaded"}</button>}
           {stop.lane === "collection" && run.status !== "completed" && <PostponeCollectionControl run={run} stop={rawStop} onAction={onAction} />}
           <p>
@@ -1796,6 +1804,7 @@ function StopPanel({
                 <strong>Included in this delivery</strong>
                 <small>{ref.requirementId}</small>
               </div>
+              <button className="job-view-button" onClick={() => setSelectedJobId(ref.requirementId)}>View job</button>
               <button
                 onClick={() =>
                   onAction({
@@ -1919,6 +1928,18 @@ function StopPanel({
       )}
     </div>
   );
+}
+
+function JobDetailScreen({ jobId, sourceType, sourceId, contents, notes, onBack }: { jobId: string; sourceType?: string; sourceId?: string; contents: Array<{ description: string; quantity: number; unit: string }>; notes?: string; onBack: () => void }) {
+  return <section className="job-detail-screen" aria-label="Production job detail">
+    <button type="button" className="job-detail-back" onClick={onBack}>← Back to delivery</button>
+    <p className="eyebrow">CPU production job</p>
+    <h3>What this job contains</h3>
+    <p className="job-detail-reference">{sourceType ? sourceLabel(sourceType as FulfilmentRequirement["sourceDomain"]) : "Production"}{sourceId ? ` · ${sourceId}` : ""}</p>
+    <div className="job-detail-items">{contents.map((item, index) => <div className="job-detail-item" key={`${item.description}-${index}`}><strong>{item.quantity.toLocaleString()}</strong><span>{item.unit}</span><p>{item.description}</p></div>)}</div>
+    {notes && <div className="job-detail-notes"><strong>Notes from CPU</strong><p>{notes}</p></div>}
+    {!contents.length && <p className="context-line">No item detail was included in the current CPU hand-off.</p>}
+  </section>;
 }
 
 function MovementForm({
