@@ -805,10 +805,34 @@ function ScrollableRealTimeline({ runs, onStop, onSchedule, onQueueDrop }: { run
     const setter = lane === "delivery" ? setDeliveryStart : setCollectionStart;
     setter((value) => Math.max(0, Math.min(18, value + amount)));
   };
+  const handleWheel = (event: React.WheelEvent<HTMLDivElement>) => {
+    const horizontalDelta = event.deltaX || (event.shiftKey ? event.deltaY : 0);
+    const isPinch = event.ctrlKey || event.metaKey;
+    const isHorizontalPan = Math.abs(horizontalDelta) > 0 && Math.abs(horizontalDelta) >= Math.abs(event.deltaY);
+    const target = event.target as HTMLElement;
+    const lane = target.closest(".collection-group") ? "collection" : "delivery";
+
+    // Pro Tools / Premiere-style gesture model: wheel or pinch changes timeline
+    // scale, while a horizontal trackpad gesture pans the active lane through
+    // the full day. Browsers expose trackpad pinch as ctrl/meta + wheel.
+    if (isPinch || !isHorizontalPan) {
+      const direction = event.deltaY < 0 ? 1 : -1;
+      if (event.deltaY !== 0) {
+        event.preventDefault();
+        setZoom((value) => Math.max(0.5, Math.min(2.5, value + direction * 0.25)));
+      }
+      return;
+    }
+
+    if (horizontalDelta !== 0) {
+      event.preventDefault();
+      move(lane, horizontalDelta > 0 ? 1 : -1);
+    }
+  };
   const timeLabel = (hour: number) => `${String(hour).padStart(2, "0")}:00`;
   const group = (lane: "delivery" | "collection", start: number) => <section className={`stable-group ${lane}-group`}><header className="stable-section-heading"><strong>{lane === "delivery" ? "DELIVERIES" : "COLLECTIONS"} · {timeLabel(start)}–{timeLabel(start + 6)}</strong><span className="timeline-scroll-controls"><button aria-label={`Scroll ${lane} earlier`} disabled={start === 0} onClick={() => move(lane, -1)}>←</button><button aria-label={`Scroll ${lane} later`} disabled={start === 18} onClick={() => move(lane, 1)}>→</button></span></header><div className={`stable-ruler ${lane}-ruler`}><span aria-hidden="true" />{Array.from({ length: 7 }, (_, index) => start + index).map((hour, index) => <b key={hour} style={{ "--ruler-position": index } as CSSProperties}>{timeLabel(hour)}</b>)}</div>{runs.map((run, index) => <div className="stable-vehicle-row" key={`${lane}-${run.runId}`}><div className="stable-driver"><strong>{run.vehicle || `Van ${index + 1}`}</strong><span>{run.driver || "Select driver"}</span><small>{run.scheduledStopCount} scheduled · {run.needsTimeStopCount} needs time</small></div><StableTimelineLane run={run} lane={lane} startHour={start} zoom={zoom} onStop={onStop} onSchedule={onSchedule} onQueueDrop={onQueueDrop} /></div>)}</section>;
   if (!runs.length) return <div className="mock-timeline"><Empty title="No vehicles available" body="Vehicles will appear automatically for the selected day." /></div>;
-  return <div className="mock-timeline stable-timeline" style={{ "--timeline-scale": zoom, "--timeline-vertical-scale": verticalZoom } as CSSProperties}><div className="timeline-tools" aria-label="Timeline controls"><span className="timeline-tools-title">Timeline</span><span className="timeline-tools-label">Horizontal</span><button aria-label="Zoom timeline out" onClick={() => setZoom((value) => Math.max(0.5, value - 0.25))}>−</button><input aria-label="Timeline horizontal zoom" type="range" min="0.5" max="2.5" step="0.25" value={zoom} onChange={(event) => setZoom(Number(event.target.value))} /><span>{Math.round(zoom * 100)}%</span><button aria-label="Zoom timeline in" onClick={() => setZoom((value) => Math.min(2.5, value + 0.25))}>＋</button><span className="timeline-tools-label">Vertical</span><button aria-label="Zoom rows out" onClick={() => setVerticalZoom((value) => Math.max(0.5, value - 0.25))}>−</button><span>{Math.round(verticalZoom * 100)}%</span><button aria-label="Zoom rows in" onClick={() => setVerticalZoom((value) => Math.min(2.5, value + 0.25))}>＋</button><button onClick={() => { setZoom(1); setVerticalZoom(1); setDeliveryStart(6); setCollectionStart(12); }}>Fit 6h</button><span className="timeline-tools-hint">Scroll each lane with ← → · full day 00:00–24:00</span></div>{group("delivery", deliveryStart)}{group("collection", collectionStart)}</div>;
+  return <div className="mock-timeline stable-timeline" onWheel={handleWheel} style={{ "--timeline-scale": zoom, "--timeline-vertical-scale": verticalZoom } as CSSProperties}><div className="timeline-tools" aria-label="Timeline controls"><span className="timeline-tools-title">Timeline</span><span className="timeline-tools-label">Horizontal</span><button aria-label="Zoom timeline out" title="Zoom out with mouse wheel or trackpad pinch" onClick={() => setZoom((value) => Math.max(0.5, value - 0.25))}>−</button><input aria-label="Timeline horizontal zoom" title="Timeline zoom" type="range" min="0.5" max="2.5" step="0.25" value={zoom} onChange={(event) => setZoom(Number(event.target.value))} /><span>{Math.round(zoom * 100)}%</span><button aria-label="Zoom timeline in" title="Zoom in with mouse wheel or trackpad pinch" onClick={() => setZoom((value) => Math.min(2.5, value + 0.25))}>＋</button><span className="timeline-tools-label">Vertical</span><button aria-label="Zoom rows out" onClick={() => setVerticalZoom((value) => Math.max(0.5, value - 0.25))}>−</button><span>{Math.round(verticalZoom * 100)}%</span><button aria-label="Zoom rows in" onClick={() => setVerticalZoom((value) => Math.min(2.5, value + 0.25))}>＋</button><button onClick={() => { setZoom(1); setVerticalZoom(1); setDeliveryStart(6); setCollectionStart(12); }}>Fit 6h</button><span className="timeline-tools-hint">Wheel / pinch: zoom · horizontal swipe: pan lane · full day 00:00–24:00</span></div>{group("delivery", deliveryStart)}{group("collection", collectionStart)}</div>;
 }
 
 /* function RealTimeline({ runs, serviceDate, onStop, onRun, onSchedule, onQueueDrop }: { runs: PlannerDay["runs"]; serviceDate: string; onStop: (runId: string, stopId: string) => void; onRun: (runId: string) => void; onSchedule: (sourceRunId: string, stopId: string, targetRunId: string, time: string, end?: string) => void; onQueueDrop: (kind: "group" | "movement", runId: string, targetRunId: string, time?: string) => void; }) {
