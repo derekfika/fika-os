@@ -357,6 +357,8 @@
 .real-planner .stable-drag-preview small, .real-planner .stable-drag-preview strong { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .real-planner .stable-drag-preview small { font-size:9px; font-weight:900; }
 .real-planner .stable-drag-preview strong { margin-top:4px; font-size:10px; }
+.real-planner .stable-drag-preview.invalid { border-color:#9a94aa; border-left-color:#9a94aa; background:#efedf2; color:#77718b; filter:grayscale(1); }
+.real-planner .stable-stop.drag-invalid { opacity:.42; filter:grayscale(1); }
 .real-planner .stable-stop { position:absolute; top:calc(20px * var(--timeline-vertical-scale, 1)); min-width:54px; height:calc(46px * var(--timeline-vertical-scale, 1)); padding:7px 8px; overflow:hidden; border:1px solid #bce8d4; border-left:4px solid #58bd39; border-radius:5px; background:#eefaf3; color:#252044; text-align:left; cursor:grab; touch-action:none; }
 .real-planner .stable-stop.collection { border-color:#b8ddf4; border-left-color:#218ac3; background:#f0f8fd; }
 .real-planner .stable-stop.attention { border-color:#f0a0a9; border-left-color:#ef4353; }
