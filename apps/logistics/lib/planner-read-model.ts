@@ -202,6 +202,9 @@ export type PlannerWeekSummary = {
   ready: number;
   unplanned: number;
   runs: number;
+  scheduled?: number;
+  needsTime?: number;
+  queue?: number;
   attention: number;
   completedStops: number;
   stopCount: number;
