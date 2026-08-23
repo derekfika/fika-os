@@ -191,6 +191,12 @@ export async function GET(request: NextRequest) {
       const filtered = order ? (await ordersForScope([order], scope))[0] : undefined;
       return NextResponse.json({ order: filtered, scope });
     }
+    if (id) {
+      const order = await productionOrderDetail(id);
+      if (!order) return NextResponse.json({ error: { message: "Production Order was not found." } }, { status: 404 });
+      const readable = await withReadableDestinations([order]);
+      return NextResponse.json({ order: readable[0], scope });
+    }
     const fetched = await productionQueue(serviceDate);
     // In local development, keep the existing emulator orders visible while
     // adding the deterministic two-week fixture set.  The fixture IDs are
