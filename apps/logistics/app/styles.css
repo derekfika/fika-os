@@ -295,6 +295,13 @@
 .real-planner .mock-ruler, .real-planner .mock-driver-row { min-width: calc(940px * var(--timeline-scale, 1)); }
 .real-planner .timeline-tools { display: flex; align-items: center; justify-content: flex-end; gap: 6px; padding: 5px 10px; border-bottom: 1px solid #ece8f4; color: #77718b; font-size: 10px; font-weight: 800; }
 .real-planner .timeline-tools button { min-width: 24px; border: 1px solid #ded9ed; border-radius: 5px; background: #fff; color: #4f34c7; font-weight: 900; }
+.real-planner .timeline-tools input[type="range"] { width: 92px; accent-color: #4f34c7; cursor: ew-resize; }
+.real-planner .timeline-tools-title { margin-right: 4px; color: #280f8c; font-size: 10px; font-weight: 900; letter-spacing: .06em; text-transform: uppercase; }
+.real-planner .timeline-tools-label { color: #9a94aa; font-size: 9px; font-weight: 900; text-transform: uppercase; }
+.real-planner .timeline-tools-hint { margin-left: auto; color: #9a94aa; font-size: 9px; font-weight: 700; }
+.real-planner .timeline-scroll-controls { display: inline-flex; gap: 3px; margin-left: auto; }
+.real-planner .timeline-scroll-controls button { width: 22px; height: 20px; padding: 0; border: 1px solid #ded9ed; border-radius: 4px; background: #fff; color: #4f34c7; font-size: 12px; font-weight: 900; line-height: 1; }
+.real-planner .timeline-scroll-controls button:disabled { opacity: .35; cursor: not-allowed; }
 .real-planner .mock-stop { box-sizing: border-box; min-width: 3%; transition: box-shadow 80ms ease, transform 80ms ease; }
 .real-planner .mock-stop:active { transform: translateY(-2px); box-shadow: 0 5px 12px rgba(40, 15, 140, .16); }
 .real-planner .mock-stop.gesture-active { z-index: 5; transform: translateY(-3px); box-shadow: 0 7px 16px rgba(40, 15, 140, .2); }
