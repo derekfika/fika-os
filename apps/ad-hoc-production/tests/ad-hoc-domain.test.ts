@@ -1,0 +1,9 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { blankAllergens, lineAllergensComplete, menuHtml, quoteFor, reviewBlockers, type AdHocLine } from "../lib/ad-hoc-domain";
+const line = (overrides: Partial<AdHocLine> = {}): AdHocLine => ({ id:"line:1", title:"Salmon lunch", quantity:10, unit:"portions", allergens:Object.fromEntries(["no_key_allergens","peanuts","tree_nuts","gluten","sesame","molluscs","fish","soya","celery","shellfish","eggs","milk","mustard","lupin","sulphites"].map(k=>[k,"clear"])), sortOrder:0, ...overrides });
+test("free text remains a request-owned line and does not require a canonical dish",()=>assert.equal(line().canonicalDishId, undefined));
+test("unrecorded allergens are distinct from explicit clear",()=>{const candidate=line({allergens:blankAllergens()}); assert.equal(lineAllergensComplete(candidate),false); assert.equal(line().allergens.gluten,"clear");});
+test("review blocks incomplete allergen declarations, missing pricing, and quote bypass reason",()=>{const request={serviceDate:"2026-08-24",requiredReadyTime:"09:00",destination:{mode:"one_off" as const,identity:"d",label:"Client",address:"1 Street"},lines:[line({allergens:blankAllergens()})],quoteRequired:true,quoteBypassReason:undefined}; assert.ok(reviewBlockers(request).some(item=>item.includes("allergens"))); assert.ok(reviewBlockers({...request,lines:[line()]}).some(item=>item.includes("price"))); assert.ok(reviewBlockers({...request,quoteRequired:false,lines:[line()]}).some(item=>item.includes("Record")));});
+test("quote revisions are immutable snapshots with VAT",()=>{const quote=quoteFor({lines:[line({unitPrice:12.5})],deliveryCharge:10,vatRate:.2,version:2},"actor"); assert.equal(quote.total,162); assert.equal(quote.revision,1);});
+test("client menu uses current request titles",()=>assert.match(menuHtml({title:"Board lunch",clientName:"Acme",serviceDate:"2026-08-24",lines:[line()]}),/Salmon lunch/));

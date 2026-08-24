@@ -15,7 +15,7 @@ const hubRoot = path.join(root, "apps", "integration-hub");
 const firebaseConfig = path.join(hubRoot, "firebase.json");
 const firebaseCli = path.join(hubRoot, "node_modules", "firebase-tools", "lib", "bin", "firebase.js");
 const npmCli = path.join(path.dirname(process.execPath), "node_modules", "npm", "bin", "npm-cli.js");
-const ports = [3100, 3200, 3300, 3400, 3500, 3600, 3700, 3800, 3900, 4005, 8085, 9099];
+const ports = [3100, 3200, 3300, 3400, 3500, 3600, 3700, 3800, 3900, 4000, 4005, 8085, 9099];
 const firebasePorts = [8085, 9099];
 const apps = JSON.parse(fs.readFileSync(appsFile, "utf8"));
 const appById = new Map(apps.map((app) => [app.id, app]));

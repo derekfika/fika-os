@@ -22,7 +22,7 @@ import ProductionOrderDetail from "./ui/ProductionOrderDetail";
 import { CANONICAL_ALLERGEN_COLUMNS, normaliseOperationalAllergens, toggleOperationalAllergen, type CanonicalAllergenKey } from "../../shared/allergen-contract";
 import { productionScopes, type ProductionScope } from "../lib/production-scope";
 import { cpuAttentionKey, cpuAttentionLabel, cpuDestinationLabel, cpuDestinationOptionLabel, cpuLifecycle, cpuLifecycleLabels, cpuRequiredTime, cpuSourceLabel, type CpuLifecycle } from "../lib/production-presentation";
-import { orderDate, relatedDeliveredInOrders } from "../lib/production-day";
+import { orderDate } from "../lib/production-day";
 import { cpuProjectionToOrders, dashboardOperationalDate, filterCpuProjectionForScope, weekCommencingFor } from "../lib/cpu-dashboard-adapter";
 
 const statuses: CpuLifecycle[] = ["received", "accepted", "planning", "planned", "ready", "in_production", "complete"];
@@ -155,7 +155,6 @@ export default function CpuProduction() {
           {[
             ["▦", "Overview", "calendar"], ["◷", "Day", "day"], ["☷", "Queue", "queue"],
             ["▤", "Run sheet", "run-sheet"], ["▥", "Totals", "totals"],
-            ["□", "Calendar", "calendar"],
           ].map(([icon, label, target]) => (
             <button type="button" key={label} className={view === target ? "selected" : ""} onClick={() => setView(target as View)}>
               <span>{icon}</span>{label}
@@ -164,10 +163,9 @@ export default function CpuProduction() {
         </nav>
         <div className="cpu-sidebar-rule" />
         <nav aria-label="Utility navigation" className="cpu-sidebar-nav cpu-sidebar-nav--utility">
-          <button type="button"><span>⚙</span>Settings</button>
-          <button type="button"><span>?</span>Help &amp; support</button>
+          <span className="cpu-sidebar-nav-note">Settings and help are coming soon.</span>
         </nav>
-        <div className="cpu-user-card"><div className="cpu-avatar">DB</div><div><strong>Derek Buckley</strong><small>CPU Manager</small></div><span>⌄</span></div>
+        <div className="cpu-user-card"><div className="cpu-avatar">OS</div><div><strong>CPU Production</strong><small>Local workspace</small></div></div>
       </aside>
       <div className="cpu-workspace">
         <header className="cpu-header">
@@ -176,7 +174,7 @@ export default function CpuProduction() {
             <h1>Production, <em>in hand.</em></h1>
             <p>See what needs preparing, when it is required and where intervention is needed.</p>
           </div>
-          <div className="cpu-header-tools"><button type="button">▣ &nbsp; {new Date().toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })} &nbsp;⌄</button></div>
+          <div className="cpu-header-tools"><button type="button" onClick={() => { window.location.href = "http://localhost:4000"; }}>＋ Ad-hoc production</button><button type="button">▣ &nbsp; {new Date().toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })} &nbsp;⌄</button></div>
           <small>Operational application&nbsp; · &nbsp;governed Production domain</small>
         </header>
         <div className="cpu-main">
@@ -341,7 +339,7 @@ export default function CpuProduction() {
       ) : selected && selected.origin === "menu_planning" ? (
         <DeliveredInProductionDetail
           order={selected}
-          orders={relatedDeliveredInOrders(orders, selected)}
+          orders={[selected]}
           close={() => setSelected(undefined)}
           onSaved={async () => { await load(); await openOrder(selected); }}
         />

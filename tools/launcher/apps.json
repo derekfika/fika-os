@@ -20,6 +20,15 @@
     "core": true
   },
   {
+    "id": "ad-hoc-production",
+    "name": "Ad-Hoc Production",
+    "section": "Operations",
+    "description": "Create bespoke production requests and send them into CPU.",
+    "url": "http://localhost:4000",
+    "port": 4000,
+    "directory": "apps/ad-hoc-production"
+  },
+  {
     "id": "menu-planning",
     "name": "Menu Planning",
     "section": "Operations",
