@@ -1,5 +1,5 @@
-import type { AuthPrincipal, AuthorityGrant, EffectivePeriod } from "./model";
-import { idempotentId, isEffective, now } from "./model";
+import type { AuthPrincipal, AuthorityGrant, AuthModAction, DelegationRecord, EffectivePeriod } from "./model";
+import { assertValidEffectivePeriod, idempotentId, isEffective, now } from "./model";
 import { auditEvent } from "./audit";
 import type { AuthModRepository } from "./repository";
 
@@ -7,6 +7,8 @@ export const PERSON_REQUIRED_AUTHORITIES = ["authmod", "authmod.admin", "menu.pu
 export function isPersonRequiredAuthority(resource: string) { return (PERSON_REQUIRED_AUTHORITIES as readonly string[]).includes(resource); }
 
 export async function grantAuthority(repository: AuthModRepository, input: { subjectId: string; subjectType: "interactive" | "service"; actor: AuthPrincipal; appId: string; resource: string; action: AuthorityGrant["action"]; scope: AuthorityGrant["scope"]; provenance?: AuthorityGrant["provenance"]; effectivePeriod?: EffectivePeriod; reason: string }) {
+  if (!input.reason?.trim() || input.reason.trim().toLowerCase() === "authmod administrator change") throw Object.assign(new Error("A specific reason is required for authority changes."), { status: 422, code: "AUTHMOD_REASON_REQUIRED" });
+  const effectivePeriod = input.effectivePeriod?.effectiveTo && !input.effectivePeriod.effectiveFrom ? { ...input.effectivePeriod, effectiveFrom: "1970-01-01T00:00:00.000Z" } : input.effectivePeriod; assertValidEffectivePeriod(effectivePeriod, false);
   if (isPersonRequiredAuthority(input.resource)) {
     if (input.subjectType !== "interactive") throw Object.assign(new Error("This authority requires a person identity."), { status: 422, code: "AUTHMOD_PERSON_REQUIRED" });
     const target = await repository.getIdentity(input.subjectId);
@@ -14,10 +16,23 @@ export async function grantAuthority(repository: AuthModRepository, input: { sub
   }
   const id = idempotentId("authority", input.subjectType, input.subjectId, input.appId, input.resource, input.action, input.scope.kind, ...input.scope.ids);
   const existing = (await repository.listAuthorityGrants(input.subjectId, input.subjectType)).find(value => value.id === id); const timestamp = now();
-  const grant: AuthorityGrant = { id, subjectType: input.subjectType, subjectId: input.subjectId, appId: input.appId, resource: input.resource, action: input.action, scope: input.scope, status: "active", provenance: input.provenance || "explicit-special-authority", effectiveFrom: input.effectivePeriod?.effectiveFrom, effectiveTo: input.effectivePeriod?.effectiveTo, reason: input.reason, grantedBy: input.actor.id, version: (existing?.version || 0) + 1, createdAt: existing?.createdAt || timestamp, updatedAt: timestamp };
+  const grant: AuthorityGrant = { id, subjectType: input.subjectType, subjectId: input.subjectId, appId: input.appId, resource: input.resource, action: input.action, scope: input.scope, status: "active", provenance: input.provenance || "explicit-special-authority", effectiveFrom: effectivePeriod?.effectiveFrom, effectiveTo: effectivePeriod?.effectiveTo, reason: input.reason, grantedBy: input.actor.id, version: (existing?.version || 0) + 1, createdAt: existing?.createdAt || timestamp, updatedAt: timestamp };
   const audit = auditEvent({ actor: input.actor, targetType: "AuthorityGrant", targetId: grant.id, action: "authority-granted", beforeState: existing, afterState: grant, provenance: grant.provenance, outcome: "committed", scope: grant.scope });
   await repository.saveAuthorityGrantWithAudit(grant, audit, existing?.version);
   return grant;
+}
+const ACTION_RANK: Record<AuthModAction, number> = { View: 1, Contribute: 2, Manage: 3, Approve: 4, Publish: 5, Administer: 6 };
+function scopeWithin(source: AuthorityGrant["scope"], requested: AuthorityGrant["scope"]) { if (source.kind === "organisation") return requested.kind === "organisation" || requested.kind === "oploc" || requested.kind === "resource"; return source.kind === requested.kind && requested.ids.every(id => source.ids.includes(id)); }
+export async function createDelegation(repository: AuthModRepository, input: { delegatorId: string; delegateId: string; sourceGrantId: string; action: AuthModAction; scope: AuthorityGrant["scope"]; effectiveFrom: string; effectiveTo: string; actor: AuthPrincipal; reason: string }) {
+  assertValidEffectivePeriod({ effectiveFrom: input.effectiveFrom, effectiveTo: input.effectiveTo }, true); if (!input.reason?.trim()) throw Object.assign(new Error("A reason is required for delegation."), { status: 422, code: "AUTHMOD_REASON_REQUIRED" });
+  const source = (await repository.listAuthorityGrants(input.delegatorId, "interactive")).find(value => value.id === input.sourceGrantId); if (!source || !isEffective(source)) throw Object.assign(new Error("Delegation source authority is not currently effective."), { status: 422, code: "AUTHMOD_DELEGATION_SOURCE_INVALID" });
+  if (source.delegationSourceGrantId) throw Object.assign(new Error("Recursive delegation is not supported."), { status: 422, code: "AUTHMOD_DELEGATION_RECURSIVE" });
+  if (ACTION_RANK[input.action] > ACTION_RANK[source.action] || !scopeWithin(source.scope, input.scope)) throw Object.assign(new Error("Delegated authority cannot exceed the source authority."), { status: 422, code: "AUTHMOD_DELEGATION_EXCEEDS_SOURCE" });
+  if (source.effectiveTo && Date.parse(input.effectiveTo) > Date.parse(source.effectiveTo)) throw Object.assign(new Error("Delegation cannot outlive its source authority."), { status: 422, code: "AUTHMOD_DELEGATION_OUTLIVES_SOURCE" });
+  if (isPersonRequiredAuthority(source.resource)) { const target = await repository.getIdentity(input.delegateId); if (!target || target.identityKind !== "person") throw Object.assign(new Error("Delegated authority requires a person identity."), { status: 422, code: "AUTHMOD_PERSON_REQUIRED" }); }
+  const id = idempotentId("delegation", source.id, input.delegateId, input.action, input.scope.kind, ...input.scope.ids); const timestamp = now(); const grant: AuthorityGrant = { id: idempotentId("authority", "interactive", input.delegateId, source.appId || "", source.resource, input.action, input.scope.kind, ...input.scope.ids), subjectType: "interactive", subjectId: input.delegateId, appId: source.appId, resource: source.resource, action: input.action, scope: input.scope, status: "active", provenance: "explicit-special-authority", accessType: "delegated", delegationSourceGrantId: source.id, effectiveFrom: input.effectiveFrom, effectiveTo: input.effectiveTo, reason: input.reason, grantedBy: input.actor.id, version: 1, createdAt: timestamp, updatedAt: timestamp };
+  const delegation: DelegationRecord = { id, delegatorId: input.delegatorId, delegateId: input.delegateId, sourceAuthorityGrantId: source.id, delegatedAuthorityGrantId: grant.id, appId: source.appId || "", resource: source.resource, action: input.action, scope: input.scope, status: "active", effectiveFrom: input.effectiveFrom, effectiveTo: input.effectiveTo, reason: input.reason, createdBy: input.actor.id, createdAt: timestamp, updatedAt: timestamp, version: 1 };
+  const audit = auditEvent({ actor: input.actor, targetType: "DelegationRecord", targetId: delegation.id, action: "delegation-created", afterState: { delegation, grant }, provenance: "explicit-special-authority", outcome: "committed", scope: input.scope }); await repository.saveDelegationWithGrant({ delegation, grant, audit }); return { delegation, grant };
 }
 export async function grantAuthmodAdmin(repository: AuthModRepository, input: { identityId: string; actor: AuthPrincipal; reason: string }) {
   return grantAuthority(repository, { subjectId: input.identityId, subjectType: "interactive", actor: input.actor, appId: "integration-hub", resource: "authmod", action: "Administer", scope: { kind: "organisation", ids: [] }, provenance: "explicit-special-authority", reason: input.reason });

@@ -4,6 +4,7 @@ export type RecordStatus = "active" | "revoked" | "expired" | "inactive";
 export type IdentityLinkStatus = "unmatched" | "matched" | "needs-review";
 export type PrincipalType = "interactive" | "service";
 export type IdentityKind = "person" | "operational";
+export type AccessType = "permanent" | "temporary" | "cover" | "delegated";
 export type Scope = { kind: "organisation" | "oploc" | "resource"; ids: string[] };
 export type EffectivePeriod = { effectiveFrom?: string; effectiveTo?: string };
 export type Provenance = "standard-app-access" | "explicit-special-authority" | "import" | "migration" | "manual-override" | "system";
@@ -25,17 +26,22 @@ export type ApplicationRegistryEntry = {
   version: number; createdAt: string; updatedAt: string; provenance: Provenance;
 };
 export type SiteAssignment = EffectivePeriod & {
-  id: string; identityId: string; oplocId: string; status: RecordStatus; source: Provenance; reason?: string;
+  id: string; identityId: string; oplocId: string; status: RecordStatus; source: Provenance; accessType?: AccessType; reason?: string;
   grantedBy?: string; revokedBy?: string; version: number; createdAt: string; updatedAt: string;
 };
 export type AppAssignment = EffectivePeriod & {
-  id: string; identityId: string; appId: string; status: RecordStatus; bundleId?: string; source: Provenance;
+  id: string; identityId: string; appId: string; status: RecordStatus; bundleId?: string; source: Provenance; accessType?: AccessType;
   reason?: string; grantedBy?: string; revokedBy?: string; version: number; createdAt: string; updatedAt: string;
 };
 export type AuthorityGrant = EffectivePeriod & {
   id: string; subjectType: PrincipalType; subjectId: string; appId?: string; resource: string; action: AuthModAction;
-  scope: Scope; status: RecordStatus; provenance: Provenance; bundleId?: string; reason?: string;
+  scope: Scope; status: RecordStatus; provenance: Provenance; bundleId?: string; accessType?: AccessType; delegationSourceGrantId?: string; reason?: string;
   grantedBy?: string; revokedBy?: string; version: number; createdAt: string; updatedAt: string;
+};
+export type DelegationRecord = EffectivePeriod & {
+  id: string; delegatorId: string; delegateId: string; sourceAuthorityGrantId: string; delegatedAuthorityGrantId: string;
+  appId: string; resource: string; action: AuthModAction; scope: Scope; status: RecordStatus; reason: string; createdBy: string;
+  createdAt: string; updatedAt: string; version: number;
 };
 export type ServicePrincipal = EffectivePeriod & {
   id: string; name: string; ownerDomain: string; description?: string; status: "active" | "revoked" | "expired";
@@ -99,5 +105,17 @@ export function isEffective(record: EffectivePeriod & { status: string }, at = n
   if (record.effectiveFrom && Date.parse(record.effectiveFrom) > time) return false;
   if (record.effectiveTo && Date.parse(record.effectiveTo) <= time) return false;
   return true;
+}
+export function assertValidEffectivePeriod(period?: EffectivePeriod, requiresEnd = false) {
+  if (!period?.effectiveFrom && !period?.effectiveTo && !requiresEnd) return;
+  if (!period?.effectiveFrom || !period.effectiveTo) throw Object.assign(new Error("A fixed effective period is required."), { status: 422, code: "AUTHMOD_EFFECTIVE_PERIOD_REQUIRED" });
+  if (Date.parse(period.effectiveFrom) >= Date.parse(period.effectiveTo)) throw Object.assign(new Error("effectiveFrom must be before effectiveTo."), { status: 422, code: "AUTHMOD_EFFECTIVE_PERIOD_INVALID" });
+}
+export function effectiveStatus(record: EffectivePeriod & { status: RecordStatus }, at = new Date()): "active" | "scheduled" | "expired" | "revoked" {
+  if (record.status === "revoked") return "revoked";
+  if (record.status !== "active") return record.status === "expired" ? "expired" : "revoked";
+  if (record.effectiveFrom && Date.parse(record.effectiveFrom) > at.getTime()) return "scheduled";
+  if (record.effectiveTo && Date.parse(record.effectiveTo) <= at.getTime()) return "expired";
+  return "active";
 }
 export function idempotentId(...parts: string[]) { return parts.map(part => part.trim().replace(/[^A-Za-z0-9:_-]+/g, "-")).join(":"); }

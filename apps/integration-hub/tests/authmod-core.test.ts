@@ -6,7 +6,7 @@ import {
   grantServiceAuthority, grantStandardApplicationAccess, revokeStandardApplicationAccess, createServicePrincipal,
   registerServiceCredential, revokeServicePrincipal, evaluateAuthority, resolveUserAccess, setFullAccess, transitionalCredentialMatches,
   previewAccessImport, commitAccessImport, reconcileLegendCandidate, assignSite, revokeSite, distinctActors, linkLegend,
-  assignPrimaryCustodian, getPrimaryCustodian,
+  assignPrimaryCustodian, getPrimaryCustodian, createDelegation, setIdentityStatus,
 } from "../lib/authmod-core";
 import type { AuthPrincipal } from "../lib/authmod-core";
 
@@ -29,6 +29,34 @@ test("standard application bundle is explicit, idempotent, and revocation preser
   assert.equal((await repository.getAppAssignment(first.assignment.id))?.status, "revoked");
   assert.equal((await repository.listAuthorityGrants(person.id, "interactive")).find(value => value.id === special.id)?.status, "active");
   assert.equal((await repository.listAuthorityGrants(person.id, "interactive")).filter(value => value.provenance === "standard-app-access" && value.status === "active").length, 0);
+});
+
+test("temporary app bundles share one period and expire without cleanup", async () => {
+  const repository = makeRepo(); const person = await identity(repository);
+  await grantStandardApplicationAccess(repository, { identityId: person.id, appId: "hospitality-booking", actor: admin, accessType: "temporary", effectivePeriod: { effectiveFrom: "2020-01-01T00:00:00.000Z", effectiveTo: "2020-01-02T00:00:00.000Z" }, reason: "Holiday cover." });
+  const assignment = (await repository.listAppAssignments(person.id))[0]; const grant = (await repository.listAuthorityGrants(person.id, "interactive")).find(value => value.appId === "hospitality-booking");
+  assert.equal(assignment.effectiveTo, grant?.effectiveTo); assert.equal((await resolveUserAccess(repository, { principal: { type: "interactive", id: person.id, displayName: person.displayName }, appId: "hospitality-booking" })).allowed, false);
+});
+
+test("temporary sites require a fixed end through the service boundary", async () => {
+  const repository = makeRepo(); const person = await identity(repository);
+  await assert.rejects(() => assignSite(repository, { identityId: person.id, oplocId: "oploc:mnk", actor: admin, accessType: "cover", effectivePeriod: { effectiveFrom: "2026-09-01T00:00:00.000Z" }, reason: "Cover." }), /fixed effective period/);
+});
+
+test("delegation is bounded, linked to a live source, and becomes ineffective with the source", async () => {
+  const repository = makeRepo(); const source = await identity(repository, "source@example.test"); const delegate = await identity(repository, "delegate@example.test");
+  await grantStandardApplicationAccess(repository, { identityId: delegate.id, appId: "cpu-production", actor: admin, reason: "Normal access." }); await assignSite(repository, { identityId: delegate.id, oplocId: "oploc:mnk", actor: admin, reason: "Normal site." });
+  const sourceGrant = await grantAuthority(repository, { subjectId: source.id, subjectType: "interactive", actor: admin, appId: "cpu-production", resource: "production.allergen-final-approve", action: "Approve", scope: { kind: "oploc", ids: ["oploc:mnk"] }, reason: "Source authority." });
+  const result = await createDelegation(repository, { delegatorId: source.id, delegateId: delegate.id, sourceGrantId: sourceGrant.id, action: "Approve", scope: { kind: "oploc", ids: ["oploc:mnk"] }, effectiveFrom: "2026-09-01T00:00:00.000Z", effectiveTo: "2026-09-10T00:00:00.000Z", actor: admin, reason: "Holiday cover." });
+  assert.equal(result.grant.delegationSourceGrantId, sourceGrant.id); assert.equal((await evaluateAuthority(repository, { principal: { type: "interactive", id: delegate.id, displayName: delegate.displayName }, appId: "cpu-production", resource: "production.allergen-final-approve", action: "Approve", scope: { kind: "oploc", ids: ["oploc:mnk"] } })).allowed, false);
+  await revokeAuthority(repository, { grantId: sourceGrant.id, actor: admin, reason: "Source revoked." }); assert.equal((await evaluateAuthority(repository, { principal: { type: "interactive", id: delegate.id, displayName: delegate.displayName }, appId: "cpu-production", resource: "production.allergen-final-approve", action: "Approve", scope: { kind: "oploc", ids: ["oploc:mnk"] } })).allowed, false);
+  await assert.rejects(() => createDelegation(repository, { delegatorId: source.id, delegateId: delegate.id, sourceGrantId: result.grant.id, action: "Approve", scope: { kind: "oploc", ids: ["oploc:mnk"] }, effectiveFrom: "2026-09-01T00:00:00.000Z", effectiveTo: "2026-09-10T00:00:00.000Z", actor: admin, reason: "Recursive." }), /not currently effective/);
+});
+
+test("last administrator cannot be deactivated, but another administrator permits it", async () => {
+  const repository = makeRepo(); const first = await identity(repository, "first-safety@example.test"); const second = await identity(repository, "second-safety@example.test"); await grantAuthmodAdmin(repository, { identityId: first.id, actor: admin, reason: "Admin one." });
+  await assert.rejects(() => setIdentityStatus(repository, { identityId: first.id, status: "inactive", actor: admin, reason: "Deactivate." }), /last active person/);
+  await grantAuthmodAdmin(repository, { identityId: second.id, actor: admin, reason: "Admin two." }); await setIdentityStatus(repository, { identityId: first.id, status: "inactive", actor: admin, reason: "Deactivate after handover." }); assert.equal((await repository.getIdentity(first.id))?.status, "inactive");
 });
 
 test("site and application intersection is enforced by the evaluator", async () => {

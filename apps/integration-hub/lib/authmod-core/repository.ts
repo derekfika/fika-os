@@ -1,4 +1,4 @@
-import type { AccessAuditEvent, AppAssignment, ApplicationRegistryEntry, AuditPage, AuthIdentity, AuthorityGrant, CustodianAssignment, ImportRecord, ImportRowResolution, LegendReference, ServicePrincipal, SiteAssignment } from "./model";
+import type { AccessAuditEvent, AppAssignment, ApplicationRegistryEntry, AuditPage, AuthIdentity, AuthorityGrant, CustodianAssignment, DelegationRecord, ImportRecord, ImportRowResolution, LegendReference, ServicePrincipal, SiteAssignment } from "./model";
 export type OplocReference = { id: string; label: string; active: boolean };
 export type AuthModRepository = {
   getIdentity(id: string): Promise<AuthIdentity | undefined>; listIdentities(): Promise<AuthIdentity[]>;
@@ -13,6 +13,7 @@ export type AuthModRepository = {
   listAppAssignments(identityId: string): Promise<AppAssignment[]>; getAppAssignment(id: string): Promise<AppAssignment | undefined>;
   saveAppAssignment(assignment: AppAssignment, expectedVersion?: number): Promise<void>;
   listAuthorityGrants(subjectId: string, subjectType?: "interactive" | "service"): Promise<AuthorityGrant[]>; saveAuthorityGrant(grant: AuthorityGrant, expectedVersion?: number): Promise<void>; saveAuthorityGrantWithAudit(grant: AuthorityGrant, audit: AccessAuditEvent, expectedVersion?: number): Promise<void>;
+  getDelegation(id: string): Promise<DelegationRecord | undefined>; listDelegations(delegateId?: string): Promise<DelegationRecord[]>; saveDelegationWithGrant(input: { delegation: DelegationRecord; grant: AuthorityGrant; audit: AccessAuditEvent }): Promise<void>;
   saveStandardApplicationBundle(input: { assignment: AppAssignment; grants: AuthorityGrant[]; audit?: AccessAuditEvent; expectedAssignmentVersion?: number }): Promise<void>;
   revokeStandardApplicationBundle(input: { assignment: AppAssignment; grants: AuthorityGrant[]; audit?: AccessAuditEvent; expectedAssignmentVersion?: number }): Promise<void>;
   getServicePrincipal(id: string): Promise<ServicePrincipal | undefined>; listServicePrincipals(): Promise<ServicePrincipal[]>;

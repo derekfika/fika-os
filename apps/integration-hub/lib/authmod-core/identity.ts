@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 import type { AuthIdentity, AuthPrincipal, IdentityKind } from "./model";
+import { hasAuthmodAdmin } from "./authority";
 import { normalizeEmail, now } from "./model";
 import { auditEvent } from "./audit";
 import type { AuthModRepository } from "./repository";
@@ -27,12 +28,17 @@ export async function linkLegend(repository: AuthModRepository, input: { identit
 }
 export async function setIdentityStatus(repository: AuthModRepository, input: { identityId: string; status: AuthIdentity["status"]; actor: AuthPrincipal; reason: string }) {
   const identity = await repository.getIdentity(input.identityId); if (!identity) throw Object.assign(new Error("AUTHMOD identity not found."), { status: 404 });
+  if (identity.identityKind === "person" && identity.status === "active" && input.status !== "active" && await hasAuthmodAdmin(repository, identity.id)) {
+    const others = await repository.listIdentities(); const remaining = (await Promise.all(others.filter(value => value.id !== identity.id && value.identityKind === "person" && value.status === "active").map(value => hasAuthmodAdmin(repository, value.id)))).some(Boolean);
+    if (!remaining) throw Object.assign(new Error("This is the last active person AUTHMOD Administrator. Assign another administrator before deactivating this one."), { status: 409, code: "AUTHMOD_LAST_ADMIN" });
+  }
   const next = { ...identity, status: input.status, updatedAt: now(), version: identity.version + 1 };
   const audit = auditEvent({ actor: input.actor, targetType: "AuthIdentity", targetId: identity.id, action: "identity-status-changed", beforeState: identity, afterState: next, provenance: "manual-override", outcome: input.status === "active" ? "committed" : "revoked" });
   await repository.saveIdentityWithAudit(next, audit, identity.version);
   return next;
 }
 export async function setFullAccess(repository: AuthModRepository, input: { identityId: string; fullAccess: boolean; actor: AuthPrincipal; reason: string }) {
+  if (!input.reason?.trim() || input.reason.trim().toLowerCase() === "authmod administrator change") throw Object.assign(new Error("A specific reason is required for Full Access changes."), { status: 422, code: "AUTHMOD_REASON_REQUIRED" });
   const identity = await repository.getIdentity(input.identityId); if (!identity) throw Object.assign(new Error("AUTHMOD identity not found."), { status: 404 });
   if (identity.identityKind === "operational" && input.fullAccess) throw Object.assign(new Error("Full Access is restricted to person identities."), { status: 422, code: "AUTHMOD_PERSON_REQUIRED" });
   const next = { ...identity, fullAccess: input.fullAccess, updatedAt: now(), version: identity.version + 1 };
@@ -43,6 +49,10 @@ export async function setFullAccess(repository: AuthModRepository, input: { iden
 
 export async function setIdentityKind(repository: AuthModRepository, input: { identityId: string; identityKind: IdentityKind; representedOplocId?: string; operationalPurpose?: string; actor: AuthPrincipal; reason: string }) {
   const identity = await repository.getIdentity(input.identityId); if (!identity) throw Object.assign(new Error("AUTHMOD identity not found."), { status: 404 });
+  if (identity.identityKind === "person" && input.identityKind !== "person" && identity.status === "active" && await hasAuthmodAdmin(repository, identity.id)) {
+    const others = await repository.listIdentities(); const remaining = (await Promise.all(others.filter(value => value.id !== identity.id && value.identityKind === "person" && value.status === "active").map(value => hasAuthmodAdmin(repository, value.id)))).some(Boolean);
+    if (!remaining) throw Object.assign(new Error("This is the last active person AUTHMOD Administrator. Assign another administrator before changing identity kind."), { status: 409, code: "AUTHMOD_LAST_ADMIN" });
+  }
   if (input.representedOplocId && !(await repository.getActiveOploc(input.representedOplocId))) throw Object.assign(new Error("Represented OPLOC is unknown or inactive."), { status: 422, code: "AUTHMOD_OPLOC_INVALID" });
   if (input.identityKind === "operational" && identity.legendId) throw Object.assign(new Error("Operational identities cannot carry personal Legend linkage."), { status: 422, code: "AUTHMOD_OPERATIONAL_LEGEND_LINK" });
   if (input.identityKind === "person" && (input.representedOplocId || input.operationalPurpose)) throw Object.assign(new Error("Person identities cannot carry operational account context."), { status: 422, code: "AUTHMOD_PERSON_CONTEXT_INVALID" });

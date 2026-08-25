@@ -1,9 +1,9 @@
-import type { AccessAuditEvent, AppAssignment, ApplicationRegistryEntry, AuditPage, AuthIdentity, AuthorityGrant, CustodianAssignment, ImportRecord, ImportRowResolution, LegendReference, ServicePrincipal, SiteAssignment } from "./model";
+import type { AccessAuditEvent, AppAssignment, ApplicationRegistryEntry, AuditPage, AuthIdentity, AuthorityGrant, CustodianAssignment, DelegationRecord, ImportRecord, ImportRowResolution, LegendReference, ServicePrincipal, SiteAssignment } from "./model";
 import { assertExpectedVersion, type AuthModRepository, type OplocReference } from "./repository";
 export class MemoryAuthModRepository implements AuthModRepository {
   identities = new Map<string, AuthIdentity>(); applications = new Map<string, ApplicationRegistryEntry>(); oplocs = new Map<string, OplocReference>();
   siteAssignments = new Map<string, SiteAssignment>(); appAssignments = new Map<string, AppAssignment>(); grants = new Map<string, AuthorityGrant>(); custodians = new Map<string, CustodianAssignment>();
-  principals = new Map<string, ServicePrincipal>(); imports = new Map<string, ImportRecord>(); resolutions = new Map<string, ImportRowResolution>(); audits: AccessAuditEvent[] = [];
+  principals = new Map<string, ServicePrincipal>(); delegations = new Map<string, DelegationRecord>(); imports = new Map<string, ImportRecord>(); resolutions = new Map<string, ImportRowResolution>(); audits: AccessAuditEvent[] = [];
   constructor(seed: { applications?: ApplicationRegistryEntry[]; oplocs?: OplocReference[] } = {}) {
     for (const application of seed.applications || []) this.applications.set(application.appId, application);
     for (const oploc of seed.oplocs || []) this.oplocs.set(oploc.id, oploc);
@@ -31,6 +31,8 @@ export class MemoryAuthModRepository implements AuthModRepository {
   async listAuthorityGrants(subjectId: string, subjectType?: "interactive" | "service") { return [...this.grants.values()].filter(value => value.subjectId === subjectId && (!subjectType || value.subjectType === subjectType)); }
   async saveAuthorityGrant(value: AuthorityGrant, expectedVersion?: number) { assertExpectedVersion(this.grants.get(value.id)?.version, expectedVersion); this.grants.set(value.id, value); }
   async saveAuthorityGrantWithAudit(value: AuthorityGrant, audit: AccessAuditEvent, expectedVersion?: number) { assertExpectedVersion(this.grants.get(value.id)?.version, expectedVersion); this.grants.set(value.id, value); this.audits.push(audit); }
+  async getDelegation(id: string) { return this.delegations.get(id); } async listDelegations(delegateId?: string) { return [...this.delegations.values()].filter(value => !delegateId || value.delegateId === delegateId); }
+  async saveDelegationWithGrant(input: { delegation: DelegationRecord; grant: AuthorityGrant; audit: AccessAuditEvent }) { this.delegations.set(input.delegation.id, input.delegation); this.grants.set(input.grant.id, input.grant); this.audits.push(input.audit); }
   async saveStandardApplicationBundle(input: { assignment: AppAssignment; grants: AuthorityGrant[]; audit?: AccessAuditEvent; expectedAssignmentVersion?: number }) {
     assertExpectedVersion(this.appAssignments.get(input.assignment.id)?.version, input.expectedAssignmentVersion);
     this.appAssignments.set(input.assignment.id, input.assignment);
