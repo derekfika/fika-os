@@ -19,6 +19,9 @@ export function normaliseProductionScope(value: string | null | undefined): Prod
 
 function orderTypes(order: ProductionOrder, routing: ProductionRouting): Set<Exclude<ProductionScope, "all">> {
   const types = new Set<Exclude<ProductionScope, "all">>();
+  if (order.productionCategory === "grab_and_go") types.add("grab_and_go");
+  if (order.productionCategory === "hospitality" || order.productionCategory === "events") types.add("hospitality");
+  if (order.productionCategory === "delivered_in" || order.productionCategory === "fine_dining" || order.productionCategory === "other") types.add("delivered_in");
   if (order.origin === "grab_and_go") types.add("grab_and_go");
   if (order.origin === "hospitality_booking") types.add("hospitality");
   if (order.origin === "menu_planning" || order.origin === "cpu_created" || order.origin === "legacy_import") types.add("delivered_in");

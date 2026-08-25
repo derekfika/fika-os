@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { errorResponse } from "@hub/lib/api";
 import { z } from "zod";
 import { existsSync } from "node:fs";
 import { promises as fs } from "node:fs";
@@ -17,6 +18,10 @@ import {
   type ProductionOrder,
 } from "@hub/lib/production-domain";
 import { appendCpuChange, cpuPlans, rebuildCpuDayProjection, rebuildCpuWeekProjection, weekCommencingFor } from "../../../lib/cpu-projection";
+
+function menuContentHash(menuItems: PlannedMenuItem[]) {
+  return createHash("sha256").update(JSON.stringify(menuItems)).digest("hex");
+}
 import { requireActor, type Actor } from "@hub/lib/auth";
 import { assertPermission } from "@hub/lib/authmod";
 
@@ -141,7 +146,17 @@ async function getPlan(orderId: string) {
     // Canonical hand-offs are the source of truth. Local fixtures remain a
     // development fallback, but must never be the only seed for a real order.
     const order = await loadOrder(orderId);
-    plans.set(orderId, initialPlan(orderId, order));
+    const priorPlans = (await Promise.all([...plans.values()].filter(plan => plan.orderId !== orderId).map(async plan => ({ plan, order: await loadOrder(plan.orderId) })))).filter(item => item.order?.sourceBookingId && item.order.sourceBookingId === order?.sourceBookingId).sort((a, b) => b.plan.updatedAt.localeCompare(a.plan.updatedAt));
+    const prior = priorPlans[0]?.plan;
+    if (prior && order) {
+      const menuItems = prior.menuItems.map((item, index) => {
+        const line = order.lines[index];
+        return line ? { ...item, sourceLineId: line.canonicalId, subItems: item.subItems.map(sub => ({ ...sub, quantity: line.customerQuantity })) } : item;
+      });
+      plans.set(orderId, { ...prior, id: `production-plan:${orderId}`, orderId, status: "draft", menuItems, signatures: undefined, matrixArtifact: undefined, updatedAt: now(), updatedBy: "system", audit: [...prior.audit, { action: "plan-carried-to-amended-order", at: now(), by: "system", reason: "The Booking was amended; prior allergen work was retained as a draft for the replacement CPU order." }] });
+    } else {
+      plans.set(orderId, initialPlan(orderId, order));
+    }
   }
   return plans.get(orderId)!;
 }
@@ -172,7 +187,7 @@ async function createMatrixArtifact(plan: ProductionPlan, orderId: string, actor
   let driveStatus: "saved" | "not_configured" | "failed" = "not_configured";
   let driveFileId: string | undefined; let driveUrl: string | undefined;
   try {
-    const response = await fetch(`${hospitalityBase()}/api/allergen-matrix/drive`, { method: "POST", headers: { "content-type": "application/json", ...(request.headers.get("cookie") ? { cookie: request.headers.get("cookie")! } : {}) }, body: JSON.stringify({ name: fileName, html, pdfBase64, siteKey: siteKey(order.destinationLabel) }) });
+    const response = await fetch(`${hospitalityBase()}/api/allergen-matrix/drive`, { method: "POST", headers: { "content-type": "application/json", ...(request.headers.get("cookie") ? { cookie: request.headers.get("cookie")! } : {}) }, body: JSON.stringify({ name: fileName, html, pdfBase64, siteKey: siteKey(order.destinationLabel), weekCommencing: weekCommencingFor(order.serviceDate || order.requiredBy.slice(0, 10)), oplocFolder: order.destinationLabel || order.destinationOplocId || "OPLOC" }) });
     const body = await response.json() as { saved?: { fileId?: string; driveUrl?: string } | null };
     if (response.ok && body.saved) { driveStatus = "saved"; driveFileId = body.saved.fileId; driveUrl = body.saved.driveUrl; } else if (response.status !== 503) driveStatus = "failed";
   } catch { driveStatus = "failed"; }
@@ -184,7 +199,7 @@ export async function GET(request: NextRequest) {
     const actor = await actorFor(request);
     assertPermission(actor, "canonical.view");
   } catch (error) {
-    return NextResponse.json({ error: { message: (error as Error).message } }, { status: (error as { status?: number }).status || 401 });
+    return errorResponse(error);
   }
   await loadPlans();
   const visibleStoredPlans = (await Promise.all([...plans.values()].map(async plan => ({ plan, visible: await isVisibleForCpu(plan.orderId) })))).filter(item => item.visible).map(item => item.plan);
@@ -197,7 +212,8 @@ export async function GET(request: NextRequest) {
   }
   const visiblePlans = await Promise.all(visibleStoredPlans.map(plan => mergeOriginalItems(plan, plan.orderId)));
   const selectedPlan = orderId && await isVisibleForCpu(orderId) ? await mergeOriginalItems(await getPlan(orderId), orderId) : undefined;
-  return NextResponse.json({ plan: selectedPlan, plans: visiblePlans, notifications: entries.map(plan => ({ id: `notification:${plan.id}`, title: "New production plan ready for menu generation.", orderId: plan.orderId, plannedItemCount: plan.menuItems.reduce((sum, item) => sum + item.subItems.length, 0), at: plan.updatedAt })), menus: entries.map(plan => ({ planId: plan.id, orderId: plan.orderId, clientSite: localFixtureOrders().find(order => order.canonicalId === plan.orderId)?.destinationLabel || "Site not assigned", items: plan.menuItems.flatMap(item => item.subItems.map(subItem => ({ menuItem: item.name, name: subItem.name, quantity: subItem.quantity, allergens: Object.entries(subItem.allergens).filter(([, state]) => state === "contains").map(([key]) => key), mayContain: Object.entries(subItem.allergens).filter(([, state]) => state === "may_contain").map(([key]) => key) }))) })) });
+  const selectedMatrixStatus = selectedPlan && !selectedPlan.matrixArtifact && selectedPlan.signatures?.some(signature => signature.role === "production_chef") && selectedPlan.signatures?.some(signature => signature.role === "head_chef_site_manager") ? "generating" : selectedPlan?.matrixArtifact ? "ready" : undefined;
+  return NextResponse.json({ plan: selectedPlan, matrixStatus: selectedMatrixStatus, plans: visiblePlans, notifications: entries.map(plan => ({ id: `notification:${plan.id}`, title: "New production plan ready for menu generation.", orderId: plan.orderId, plannedItemCount: plan.menuItems.reduce((sum, item) => sum + item.subItems.length, 0), at: plan.updatedAt })), menus: entries.map(plan => ({ planId: plan.id, orderId: plan.orderId, clientSite: localFixtureOrders().find(order => order.canonicalId === plan.orderId)?.destinationLabel || "Site not assigned", items: plan.menuItems.flatMap(item => item.subItems.map(subItem => ({ menuItem: item.name, name: subItem.name, quantity: subItem.quantity, allergens: Object.entries(subItem.allergens).filter(([, state]) => state === "contains").map(([key]) => key), mayContain: Object.entries(subItem.allergens).filter(([, state]) => state === "may_contain").map(([key]) => key) }))) })) });
 }
 
 export async function POST(request: NextRequest) {
@@ -232,24 +248,34 @@ export async function POST(request: NextRequest) {
     if (command.action === "clarify") await syncCanonicalLifecycle(actor, command.orderId, "needs_clarification", command.note);
     if (command.action === "save-plan") {
       const nextMenuItems = (await mergeOriginalItems({ ...plan, menuItems: normalisePlanAllergens({ ...plan, menuItems: command.menuItems }).menuItems }, command.orderId)).menuItems;
-      plan.status = "planning";
+      const matchesSignedCheckpoint = plan.signedMenuContentHash === menuContentHash(nextMenuItems);
+      plan.status = matchesSignedCheckpoint ? "planned" : "planning";
       plan.menuItems = nextMenuItems;
       plan.planningNotes = command.planningNotes;
-      // Any edit invalidates prior sign-off and the archived PDF. The next
-      // Planned -> sign flow will replace the same Drive file with the new PDF.
-      plan.signatures = undefined;
-      plan.matrixArtifact = undefined;
+      if (matchesSignedCheckpoint) {
+        plan.signatures = plan.signedSignatures;
+        plan.matrixArtifact = plan.signedMatrixArtifact;
+      } else {
+        // Keep the last signed checkpoint so an accidental allergen touch can
+        // be reverted without forcing both chefs to sign the same matrix again.
+        plan.signatures = undefined;
+        plan.matrixArtifact = undefined;
+      }
       plan.audit.push({ action: "plan-saved", at: timestamp, by: auditActor });
       updateLocalFixture(command.orderId, order => ({ ...order, status: "planning", version: order.version + 1 }));
     }
     if (command.action === "mark-planned") {
       const nextMenuItems = (await mergeOriginalItems({ ...plan, menuItems: normalisePlanAllergens({ ...plan, menuItems: command.menuItems }).menuItems }, command.orderId)).menuItems;
       const contentChanged = JSON.stringify(plan.menuItems) !== JSON.stringify(nextMenuItems);
+      const matchesSignedCheckpoint = plan.signedMenuContentHash === menuContentHash(nextMenuItems);
       plan.menuItems = nextMenuItems;
       plan.planningNotes = command.planningNotes;
       const subItems = plan.menuItems.flatMap(item => item.subItems);
       if (!plan.menuItems.length || plan.menuItems.some(item => !item.name.trim() || !item.subItems.length) || subItems.some(item => !item.name.trim() || item.evidenceStatus !== "completed")) throw Object.assign(new Error("Complete every menu item, sub-item name and allergen checker before marking the plan Planned."), { status: 422 });
-      if (contentChanged) {
+      if (matchesSignedCheckpoint) {
+        plan.signatures = plan.signedSignatures;
+        plan.matrixArtifact = plan.signedMatrixArtifact;
+      } else if (contentChanged) {
         plan.signatures = undefined;
         plan.matrixArtifact = undefined;
       }
@@ -261,15 +287,19 @@ export async function POST(request: NextRequest) {
       const subItems = plan.menuItems.flatMap(item => item.subItems);
       if (!subItems.length || subItems.some(item => !item.name.trim() || item.evidenceStatus !== "completed")) throw Object.assign(new Error("Complete every named sub-item and allergen check before signing the matrix."), { status: 422 });
       const signatures = plan.signatures || [];
+      if (signatures.some(signature => signature.role === "production_chef") && signatures.some(signature => signature.role === "head_chef_site_manager")) throw Object.assign(new Error("This allergen matrix is already fully signed and locked."), { status: 409 });
       if (signatures.some(signature => signature.role === command.role)) throw Object.assign(new Error("This signatory role has already signed this matrix."), { status: 409 });
       const signature: InternalMatrixSignature = { role: command.role, printedName: command.printedName, signedAt: timestamp, actor: auditActor, attestation: command.attestation, signatureDataUrl: command.signatureDataUrl };
       plan.signatures = [...signatures, signature];
       plan.audit.push({ action: "allergen-matrix-signed", at: timestamp, by: auditActor, reason: `${command.role}: ${command.attestation}` });
-      plan.matrixArtifact = await createMatrixArtifact(plan, command.orderId, auditActor, timestamp, request);
-      plan.audit.push({ action: "allergen-matrix-archived", at: timestamp, by: auditActor, reason: plan.matrixArtifact.driveStatus === "saved" ? "Signed matrix saved to the configured site Drive folder." : "Signed matrix retained locally; Drive archival requires attention." });
+      const fullySigned = plan.signatures.some(item => item.role === "production_chef") && plan.signatures.some(item => item.role === "head_chef_site_manager");
+      if (fullySigned) {
+        plan.audit.push({ action: "allergen-matrix-signature-complete", at: timestamp, by: auditActor, reason: "Both required signatures recorded; signed PDF generation queued." });
+      }
     }
     if (command.action === "save-matrix") {
       if (plan.status !== "planned") throw Object.assign(new Error("Mark the allergen matrix Planned before saving it to the site Drive."), { status: 422 });
+      if (!plan.signatures?.some(signature => signature.role === "production_chef") || !plan.signatures?.some(signature => signature.role === "head_chef_site_manager")) throw Object.assign(new Error("Both required signatures must be recorded before generating the allergen matrix PDF."), { status: 422 });
       const subItems = plan.menuItems.flatMap(item => item.subItems);
       if (!subItems.length || subItems.some(item => !item.name.trim() || item.evidenceStatus !== "completed")) throw Object.assign(new Error("Complete every named sub-item and allergen check before saving the matrix."), { status: 422 });
       const order = (await productionOrderDetail(command.orderId)) || localFixtureOrders().find(item => item.canonicalId === command.orderId);
@@ -285,11 +315,14 @@ export async function POST(request: NextRequest) {
       let driveStatus: "saved" | "not_configured" | "failed" = "not_configured";
       let driveFileId: string | undefined; let driveUrl: string | undefined;
       try {
-        const response = await fetch(`${hospitalityBase()}/api/allergen-matrix/drive`, { method: "POST", headers: { "content-type": "application/json", ...(request.headers.get("cookie") ? { cookie: request.headers.get("cookie")! } : {}) }, body: JSON.stringify({ name: fileName, html, pdfBase64, siteKey: siteKey(order.destinationLabel) }) });
+      const response = await fetch(`${hospitalityBase()}/api/allergen-matrix/drive`, { method: "POST", headers: { "content-type": "application/json", ...(request.headers.get("cookie") ? { cookie: request.headers.get("cookie")! } : {}) }, body: JSON.stringify({ name: fileName, html, pdfBase64, siteKey: siteKey(order.destinationLabel), weekCommencing: weekCommencingFor(order.serviceDate || order.requiredBy.slice(0, 10)), oplocFolder: order.destinationLabel || order.destinationOplocId || "OPLOC" }) });
         const body = await response.json() as { saved?: { fileId?: string; driveUrl?: string } | null };
         if (response.ok && body.saved) { driveStatus = "saved"; driveFileId = body.saved.fileId; driveUrl = body.saved.driveUrl; } else if (response.status !== 503) driveStatus = "failed";
       } catch { driveStatus = "not_configured"; }
       plan.matrixArtifact = { id: `allergen-matrix:${command.orderId}:${contentHash.slice(0, 16)}`, bookingId: order.sourceBookingId, fileName, createdAt: timestamp, createdBy: auditActor, contentHash, html, pdfPath, ...(pdfStatus === "generated" ? { localUrl: `${(process.env.CPU_PUBLIC_BASE_URL || "http://localhost:3400").replace(/\/$/, "")}/api/production-plan?orderId=${encodeURIComponent(command.orderId)}&download=pdf` } : {}), pdfStatus, ...(driveFileId ? { driveFileId } : {}), ...(driveUrl ? { driveUrl } : {}), driveStatus };
+      plan.signedMenuContentHash = menuContentHash(plan.menuItems);
+      plan.signedSignatures = plan.signatures;
+      plan.signedMatrixArtifact = plan.matrixArtifact;
       plan.audit.push({ action: "allergen-matrix-saved", at: timestamp, by: auditActor, reason: driveStatus === "saved" ? "Saved to configured site Drive folder." : "Stored locally; site Drive is not configured." });
     }
     plan.updatedAt = timestamp; plan.updatedBy = auditActor;
@@ -301,5 +334,5 @@ export async function POST(request: NextRequest) {
       await rebuildCpuWeekProjection(weekCommencingFor(changedOrder.serviceDate), event.sequence);
     }
     return NextResponse.json({ plan, matrixArtifact: plan.matrixArtifact, notification: notification || (plan.status === "planned" ? { title: "New production plan ready for menu generation.", orderId: plan.orderId } : undefined) });
-  } catch (error) { return NextResponse.json({ error: { message: (error as Error).message } }, { status: (error as { status?: number }).status || 400 }); }
+  } catch (error) { return errorResponse(error); }
 }

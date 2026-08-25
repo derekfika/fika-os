@@ -16,13 +16,11 @@ test("published Menu Planning allergen evidence is carried into canonical CPU li
   assert.match(productionDomain, /allergenEvidenceStatus: "confirmed"/);
 });
 
-test("Delivered-In CPU detail acknowledges snapshots and reports discrepancies without editing source truth", () => {
+test("Delivered-In CPU detail routes allergen review to the full-screen checker", () => {
+  assert.match(detail, /Open full allergen checker/);
   assert.match(detail, /Acknowledge approved data/);
-  assert.match(detail, /report-allergen-discrepancy/);
-  assert.match(detail, /approved allergen snapshot remains unchanged/);
-  assert.match(detail, /delivered-in-allergen-matrix/);
-  assert.match(detail, /CANONICAL_ALLERGEN_COLUMNS/);
-  assert.match(detail, /<table className=\"delivered-in-allergen-table delivered-in-allergen-matrix\">/);
+  assert.match(detail, /report discrepancies/);
+  assert.match(detail, /full Delivered-In checker/);
   assert.doesNotMatch(detail, /<td[^>]*onClick/);
   assert.match(detail, /Details \/ technical traceability/);
 });
@@ -33,7 +31,8 @@ test("CPU allergen review is a full-screen editable signed workflow", () => {
   assert.match(reviewPage, /SignatureModal/);
   assert.match(reviewMatrix, /toggleOperationalAllergen/);
   assert.match(reviewMatrix, /action: \"save-plan\"/);
-  assert.match(reviewMatrix, /action: \"mark-planned\"/);
+  assert.match(reviewMatrix, /Mark checked/);
+  assert.doesNotMatch(reviewMatrix, /Acknowledge approved data|Save CPU review|Mark ready for signature/);
   assert.match(reviewPage, /action: \"sign-matrix\"/);
   assert.match(reviewMatrix, /row\.snapshot/);
   assert.match(reviewPage, /order\.origin === "menu_planning"/);

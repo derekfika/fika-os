@@ -35,7 +35,7 @@ export function assertWorkflowCommand(booking: { lifecycleStatus: BookingStatus;
   if (command.action === "review") {
     if (booking.lifecycleStatus !== "New") throw workflowError("Only a new Booking can be reviewed.");
   }
-  if (command.action === "quote" && !["Reviewed", "Quoted"].includes(booking.lifecycleStatus)) throw workflowError("Review the Booking before generating a quote.");
+  if (command.action === "quote" && !["New", "Reviewed", "Quoted"].includes(booking.lifecycleStatus)) throw workflowError("Generate a quote only for a new or active Booking.");
   if (command.action === "amend" && !command.reason.trim()) throw workflowError("An amendment reason is required.");
   if (command.action === "approve") throw workflowError("Quote approval has been removed. Send the current quote to CPU instead.");
   if (command.action === "complete") {

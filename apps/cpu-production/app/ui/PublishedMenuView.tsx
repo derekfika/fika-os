@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { aggregateProductionTotals, currentPublishedDays, groupEntriesByDestination, publishedMatrixUrl, sortPublishedMenuPublications, summarizePublishedDays, type DestinationProductionGroup, type ProductionTotal } from "../../lib/published-menu-selection";
+import { titleCaseDish } from "../../lib/production-presentation";
 import "./production-calendar.css";
 import "./published-menu-view.css";
 import "./published-menu-polish.css";
@@ -19,8 +20,8 @@ const currentDays = (publication?: Publication) => currentPublishedDays(publicat
 const dayName = (date: string) => formatDate(date, { weekday: "long" });
 const localDateKey = () => { const date = new Date(); return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`; };
 
-function DestinationCards({ groups }: { groups: DestinationProductionGroup[] }) { return <div className="calendar-grid published-destination-list">{groups.map(group => <section className="production-card published-destination-card" key={group.destinationLabel}><div className="production-card-top"><strong>{group.destinationLabel}</strong><span className="published-destination-total">{group.total.toLocaleString()} portions</span></div><p className="published-destination-meta">{group.entries.length} dishes</p><ul>{group.entries.map((entry, index) => <li key={`${entry.slot}-${entry.dishName}-${index}`}><b>{entry.quantity} ×</b><span>{entry.dishName}<small>{entry.slot}</small></span></li>)}</ul></section>)}</div>; }
-function ProductionTotals({ totals }: { totals: ProductionTotal[] }) { return <div className="published-production-totals">{totals.map((entry, index) => <div className="published-production-total-row" key={`${entry.canonicalDishId || entry.dishName}-${index}`}><b>{entry.quantity} ×</b><span>{entry.dishName}</span><small>{entry.slot}</small></div>)}</div>; }
+function DestinationCards({ groups }: { groups: DestinationProductionGroup[] }) { return <div className="calendar-grid published-destination-list">{groups.map(group => <section className="production-card published-destination-card" key={group.destinationLabel}><div className="production-card-top"><strong>{group.destinationLabel}</strong><span className="published-destination-total">{group.total.toLocaleString()} portions</span></div><p className="published-destination-meta">{group.entries.length} dishes</p><ul>{group.entries.map((entry, index) => <li key={`${entry.slot}-${entry.dishName}-${index}`}><b>{entry.quantity} ×</b><span>{titleCaseDish(entry.dishName)}<small>{entry.slot}</small></span></li>)}</ul></section>)}</div>; }
+function ProductionTotals({ totals }: { totals: ProductionTotal[] }) { return <div className="published-production-totals">{totals.map((entry, index) => <div className="published-production-total-row" key={`${entry.canonicalDishId || entry.dishName}-${index}`}><b>{entry.quantity} ×</b><span>{titleCaseDish(entry.dishName)}</span><small>{entry.slot}</small></div>)}</div>; }
 
 export default function PublishedMenuView() {
   const [publications, setPublications] = useState<Publication[]>([]); const [selected, setSelected] = useState<Publication>(); const [mode, setMode] = useState<ProductionMode>("totals"); const [error, setError] = useState(""); const [matrixError, setMatrixError] = useState(""); const [updatedAt, setUpdatedAt] = useState<Date>();

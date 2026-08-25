@@ -19,7 +19,10 @@ export async function POST(req: NextRequest) {
     if (!response.ok) throw Object.assign(new Error("Local Authentication emulator is unavailable."), { status: 503 });
     const data = await response.json() as { idToken: string };
     const result = NextResponse.json({ actor: { name: role === "integration-admin" ? "Integration Administrator" : role === "reviewer" ? "Integration Reviewer" : "Integration Viewer", email, role, synthetic: true } });
-    result.cookies.set("fika_hub_token", data.idToken, { httpOnly: true, sameSite: "strict", secure: false, maxAge: 3600, path: "/" });
+    // Local synthetic sessions are deliberately persistent for development. The
+    // Hub renews the emulator ID token in the background, while DELETE remains
+    // the explicit sign-out path.
+    result.cookies.set("fika_hub_token", data.idToken, { httpOnly: true, sameSite: "strict", secure: false, maxAge: 60 * 60 * 24 * 365, path: "/" });
     return result;
   } catch (error) { return errorResponse(error); }
 }

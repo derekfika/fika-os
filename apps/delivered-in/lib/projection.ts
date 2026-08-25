@@ -4,10 +4,12 @@ export type SourceAllocation = { destinationId?: string; destinationLabel: strin
 export type SourceEntry = { sourceEntryId: string; slot: string; canonicalDishId?: string; dishName: string; portions: number; allocations: SourceAllocation[]; allergens: Record<string, "clear" | "contains" | "may_contain">; mayContainNotes?: string };
 export type SourceDay = { publicationDayId: string; sourceDayId: string; date: string; dayName: string; version: number; status: "published" | "superseded" | "withdrawn"; contentHash: string; entries: SourceEntry[]; allergenSignoff: { productionChef?: { printedName: string; signedAt: string }; headChefSiteManager?: { printedName: string; signedAt: string }; printedName?: string; signedAt?: string }; driveArchive?: { pdfDriveUrl?: string; pdfStatus?: string; pdfFileName?: string } };
 export type SourcePublication = { publicationId: string; sourceWeekId: string; weekCommencing: string; weekEnding: string; days: SourceDay[] };
-export type ProjectedEntry = { sourceEntryId: string; slot: string; canonicalDishId?: string; dishName: string; quantity: number; allergens: SourceEntry["allergens"]; mayContainNotes?: string };
-export type ProjectedDay = { publicationId: string; publicationDayId: string; sourceDayId: string; date: string; dayName: string; version: number; contentHash: string; weekCommencing?: string; entries: ProjectedEntry[]; allergenSignoff: SourceDay["allergenSignoff"]; drivePdfUrl?: string; drivePdfFileName?: string; siteMenu?: import("./site-menu").SiteMenuState };
+export type ProjectedEntry = { sourceEntryId: string; slot: string; canonicalDishId?: string; dishName: string; quantity: number; allergens: SourceEntry["allergens"]; mayContainNotes?: string; allergensVisible?: boolean };
+export type ProjectedDestination = { oplocId: string; label: string; portions: number };
+export type ProjectedDay = { publicationId: string; publicationDayId: string; sourceDayId: string; date: string; dayName: string; version: number; contentHash: string; weekCommencing?: string; entries: ProjectedEntry[]; destinations?: ProjectedDestination[]; allergenSignoff: SourceDay["allergenSignoff"]; cpuReview?: { status: "pending" | "signed"; signatures: Array<{ role: string; printedName: string; signedAt: string }>; drivePdfUrl?: string }; drivePdfUrl?: string; drivePdfFileName?: string; siteMenu?: import("./site-menu").SiteMenuState };
 export type ProjectedWeek = { publicationId: string; weekCommencing: string; weekEnding: string; days: ProjectedDay[] };
 import { GOVERNED_OPLOC_BY_ID } from "../../shared/governed-oplocs";
+import { titleCase } from "../../menu-planning/lib/text";
 
 const OPERATIONAL_TIME_ZONE = "Europe/London";
 const OPERATIONAL_WEEK_HORIZON_DAYS = 42;
@@ -32,8 +34,8 @@ export function isRelevantPublishedWeek(publication: SourcePublication, asOf = o
 
 export function assertAuthorisedOploc(access: SiteAccess, requestedOplocId: string) { if (!access.oplocIds.includes(requestedOplocId)) throw Object.assign(new Error("You are not authorised to view this Delivered-In site."), { status: 403 }); }
 
-export function assertPublishedAllocationIntegrity(publicationId: string, day: SourceDay, entry: SourceEntry, governedOplocIds = new Set(GOVERNED_OPLOC_BY_ID.keys())) {
-  for (const allocation of entry.allocations) {
+export function assertPublishedAllocationIntegrity(publicationId: string, day: SourceDay, entry: SourceEntry, governedOplocIds = new Set(GOVERNED_OPLOC_BY_ID.keys()), selectedOplocId?: string) {
+  for (const allocation of entry.allocations.filter(candidate => !selectedOplocId || candidate.destinationId === selectedOplocId)) {
     if (!allocation.destinationId || !governedOplocIds.has(allocation.destinationId)) {
       throw Object.assign(
         new Error(`Published Delivered-In integrity error: ${publicationId} ${day.dayName} contains an unresolved destination for ${entry.dishName}.`),
@@ -63,7 +65,14 @@ export function projectPublishedWeeks(publications: SourcePublication[], selecte
       weekEnding: publication.weekEnding,
       days: Array.from(latestByDate.values())
         .sort((a, b) => a.date.localeCompare(b.date))
-        .map(day => ({
+        .map(day => {
+          const destinations = new Map<string, ProjectedDestination>();
+          for (const entry of day.entries) for (const allocation of entry.allocations) {
+            if (!allocation.destinationId) continue;
+            const current = destinations.get(allocation.destinationId);
+            destinations.set(allocation.destinationId, { oplocId: allocation.destinationId, label: allocation.destinationLabel, portions: (current?.portions || 0) + allocation.quantity });
+          }
+          return {
           publicationId: publication.publicationId,
           publicationDayId: day.publicationDayId,
           sourceDayId: day.sourceDayId,
@@ -72,24 +81,27 @@ export function projectPublishedWeeks(publications: SourcePublication[], selecte
           version: day.version,
           contentHash: day.contentHash,
           weekCommencing: publication.weekCommencing,
+          destinations: [...destinations.values()].sort((a, b) => a.label.localeCompare(b.label)),
           allergenSignoff: day.allergenSignoff,
           ...(day.driveArchive?.pdfDriveUrl ? { drivePdfUrl: day.driveArchive.pdfDriveUrl } : {}),
           ...(day.driveArchive?.pdfFileName ? { drivePdfFileName: day.driveArchive.pdfFileName } : {}),
           entries: day.entries.flatMap(entry => {
-            assertPublishedAllocationIntegrity(publication.publicationId, day, entry, governedOplocIds);
+            // A stale destination elsewhere in the publication must not hide
+            // a valid site's published menu.
+            assertPublishedAllocationIntegrity(publication.publicationId, day, entry, governedOplocIds, selectedOplocId);
             return entry.allocations
               .filter(allocation => allocation.destinationId === selectedOplocId)
               .map(allocation => ({
                 sourceEntryId: entry.sourceEntryId,
                 slot: entry.slot,
                 canonicalDishId: entry.canonicalDishId,
-                dishName: entry.dishName,
+                dishName: titleCase(entry.dishName),
                 quantity: allocation.quantity,
                 allergens: entry.allergens,
                 mayContainNotes: entry.mayContainNotes,
               }));
           }),
-        })),
+        }; }),
     };
   }).sort((a, b) => b.weekCommencing.localeCompare(a.weekCommencing));
 }

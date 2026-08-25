@@ -402,8 +402,9 @@ test("allergen checker uses the master-style purple header and four-state cells"
   assert.match(liana, /planStatus !== "planned"/);
   assert.match(planRoute, /mayContainNotes/);
   assert.match(planRoute, /allergen-matrix-signed/);
-  assert.match(planRoute, /createMatrixArtifact\(plan, command.orderId/);
-  assert.match(planRoute, /allergen-matrix-archived/);
+  assert.match(planRoute, /save-matrix/);
+  assert.match(planRoute, /allergen-matrix-signature-complete/);
+  assert.match(planRoute, /signedMenuContentHash/);
   assert.match(planRoute, /plan\.signatures = undefined/);
   assert.match(planRoute, /plan\.matrixArtifact = undefined/);
   assert.match(planRoute, /signatureDataUrl/);
@@ -413,8 +414,8 @@ test("allergen checker uses the master-style purple header and four-state cells"
 test("CPU dashboard opens with a Monday-to-Friday production heads-up", () => {
   assert.match(page, /view === "calendar"[\s\S]*<ProductionCalendar/);
   assert.match(calendar, /Monday.*Tuesday.*Wednesday.*Thursday.*Friday/);
-  assert.match(calendar, /Destination/);
-  assert.match(calendar, /production line/);
+  assert.match(calendar, /OPLOC/);
+  assert.match(calendar, /pieces\/quantities/);
 });
 
 test("production views use Connections routing without duplicating bookings", () => {

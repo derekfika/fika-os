@@ -63,7 +63,9 @@ function canonicalEntry(item: MenuItem): CatalogueEntry {
 export async function listCatalogueEntries(): Promise<CatalogueEntry[]> {
   const items = await syncRollingEntries(listAllEntries());
   attachCanonicalDishIds(items);
-  return items.map(canonicalEntry).sort((a, b) => a.name.localeCompare(b.name));
+  // Archived records are retained for history and audit, but must not leak into
+  // operational dish pickers or normal planner catalogue results.
+  return items.filter(item => item.reviewStatus !== "archived").map(canonicalEntry).sort((a, b) => a.name.localeCompare(b.name));
 }
 
 export function filterCatalogueEntries(entries: CatalogueEntry[], filters: { query?: string; category?: string; usage?: string; status?: string }) {

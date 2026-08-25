@@ -334,12 +334,14 @@
 .postpone-collection select { min-height:36px; border:1px solid #d8d0ea; border-radius:6px; padding:7px; background:#fff; color:#31285d; }
 .postpone-collection button { min-height:40px; border:0; border-radius:7px; background:#4f34c7; color:#fff; font-weight:800; }
 .real-planner .stable-timeline { overflow-x:auto; --timeline-base-width:940px; }
-.real-planner .stable-ruler { position:relative; width:100%; min-height:32px; min-width:100%; padding:8px 10px; color:#77718b; font-size:10px; }
-.real-planner .stable-ruler b { position:absolute; top:8px; left:calc(108px + (100% - 128px) * var(--ruler-position) / 24); transform:translateX(-50%); font-size:10px; white-space:nowrap; }
-.real-planner .stable-group { width:calc(var(--timeline-base-width) * var(--timeline-scale, 1)); min-width:calc(var(--timeline-base-width) * var(--timeline-scale, 1)); border:1px solid #ece8f4; border-radius:6px; overflow:hidden; background:#fff; }
+.real-planner .stable-ruler { position:relative; box-sizing:border-box; width:100%; min-height:32px; min-width:100%; padding:8px 0; color:#77718b; font-size:10px; }
+.real-planner .stable-ruler b { position:absolute; top:8px; left:calc(100% * var(--ruler-position) / 24); transform:translateX(-50%); font-size:10px; white-space:nowrap; }
+.real-planner .stable-group { width:var(--timeline-base-width); min-width:var(--timeline-base-width); border:1px solid #ece8f4; border-radius:6px; overflow:visible; background:#fff; }
 .real-planner .stable-group + .stable-group { margin-top:10px; }
 .real-planner .stable-ruler-viewport, .real-planner .stable-lane-viewport { overflow:hidden; }
-.real-planner .stable-ruler-canvas { width:400%; min-width:400%; transition:transform 120ms ease; }
+.real-planner .stable-ruler-viewport { box-sizing:border-box; padding-left:108px; }
+.real-planner .stable-lane-viewport { background-image:linear-gradient(90deg, transparent 0, transparent calc(100% - 1px), #eeeaf5 calc(100% - 1px), #eeeaf5 100%); background-repeat:repeat-x; background-size:var(--grid-hour-width, 16.6667%) 100%; background-position-x:calc(-1 * var(--grid-offset, 0%)); }
+.real-planner .stable-ruler-canvas { width:var(--timeline-width, 400%); min-width:var(--timeline-width, 400%); transition:transform 120ms ease; }
 .real-planner .stable-lane-viewport { min-width:0; }
 .real-planner .stable-section-heading { display:flex; align-items:center; min-height:28px; padding:5px 12px; border-bottom:1px solid #ece8f4; background:#fcfbff; color:#280f8c; font-size:9px; letter-spacing:.09em; }
 .real-planner .delivery-group .stable-section-heading { color:#2f8f3b; }
@@ -350,7 +352,8 @@
 .real-planner .stable-driver strong { color:#280f8c; font-size:11px; }
 .real-planner .stable-driver span { color:#4f34c7; font-size:9px; font-weight:800; }
 .real-planner .stable-driver small { color:#77718b; font-size:8px; }
-.real-planner .stable-lane { position:relative; width:100%; min-height:calc(72px * var(--timeline-vertical-scale, 1)); background:repeating-linear-gradient(90deg, transparent 0, transparent calc(100% / 24 - 1px), #eeeaf5 calc(100% / 24 - 1px), #eeeaf5 calc(100% / 24)); }
+.real-planner .stable-lane { position:relative; width:var(--timeline-width, 400%) !important; min-height:calc(72px * var(--timeline-vertical-scale, 1)); background:transparent; }
+.real-planner .stable-lane > i { display:none; }
 .real-planner .stable-group.collection-group { border-top-color:#cfe6f3; }
 .real-planner .stable-lane.drop-target { outline:2px solid #4f34c7; outline-offset:-2px; background-color:#f3f0ff; }
 .real-planner .stable-drag-preview { position:absolute; z-index:8; top:8px; width:110px; min-height:48px; box-sizing:border-box; padding:7px 8px; overflow:hidden; border:1px dashed #4f34c7; border-left:3px solid #4f34c7; border-radius:6px; background:#f2efff; color:#280f8c; pointer-events:none; opacity:.92; box-shadow:0 4px 10px rgba(40,15,140,.14); }
@@ -359,14 +362,37 @@
 .real-planner .stable-drag-preview strong { margin-top:4px; font-size:10px; }
 .real-planner .stable-drag-preview.invalid { border-color:#9a94aa; border-left-color:#9a94aa; background:#efedf2; color:#77718b; filter:grayscale(1); }
 .real-planner .stable-stop.drag-invalid { opacity:.42; filter:grayscale(1); }
-.real-planner .stable-group { width:calc(var(--timeline-base-width) * 4 * var(--timeline-scale, 1)); min-width:calc(var(--timeline-base-width) * 4 * var(--timeline-scale, 1)); overflow:visible; }
-.real-planner .stable-ruler-canvas { width:100%; min-width:100%; transform:none !important; }
 .real-planner .stable-vehicle-row { width:100%; min-width:100%; }
-.real-planner .stable-lane { width:100% !important; transform:none !important; }
-.real-planner .stable-driver { position:sticky; left:0; z-index:6; }
+.real-planner .stable-driver { position:sticky; left:0; z-index:30; box-shadow:4px 0 8px rgba(40,15,140,.08); }
 .real-planner .stable-drag-preview { display:none !important; }
 .real-planner .stable-timeline > .timeline-tools { position:sticky; left:0; z-index:20; width:100%; box-sizing:border-box; background:#fff; }
+.real-planner .stable-timeline > .timeline-tools > button:last-child { font-size:0; }
+.real-planner .stable-timeline > .timeline-tools > button:last-child::after { content:"Fit 6h"; font-size:10px; }
 .real-planner .stable-lane .stable-drag-preview { display:none !important; }
+
+/* DayPilot Lite owns the timeline geometry. Keep the surrounding FIKA controls and
+   event treatment, but let the scheduler synchronise its ruler, grid and scroll area. */
+.real-planner .daypilot-timeline { overflow:visible; }
+.real-planner .daypilot-group { margin-top:10px; border:1px solid #ece8f4; border-radius:6px; overflow:hidden; background:#fff; }
+.real-planner .daypilot-group .stable-section-heading { min-height:34px; }
+.real-planner .daypilot-group .stable-section-heading > strong { position:static; display:block; padding-right:0; background:transparent; font-size:9px; }
+.real-planner .daypilot-group .timeline-scroll-controls { margin-left:auto; display:flex; gap:5px; }
+.real-planner .daypilot-group .timeline-scroll-controls button { min-width:26px; height:24px; border:1px solid #d8d0ea; border-radius:5px; background:#fff; color:#4f34c7; }
+.real-planner .daypilot-group .scheduler_default_main { border:0; font-family:inherit; color:#280f8c; }
+.real-planner .daypilot-group .scheduler_default_corner,
+.real-planner .daypilot-group .scheduler_default_timeheadergroup,
+.real-planner .daypilot-group .scheduler_default_timeheadercol { border-color:#ece8f4; background:#fcfbff; color:#77718b; font-size:10px; }
+.real-planner .daypilot-group .scheduler_default_rowheader,
+.real-planner .daypilot-group .scheduler_default_rowheader_inner { border-color:#ece8f4; background:#fcfbff; color:#280f8c; }
+.real-planner .daypilot-group .scheduler_default_cell { border-color:#eeeaf5; background:#fff; }
+.real-planner .daypilot-group .scheduler_default_event_inner { border-radius:6px; padding:7px 9px; box-shadow:0 2px 5px rgba(40,15,140,.08); font-size:10px; font-weight:800; }
+.real-planner .daypilot-group .fika-event-drag-source { display:block; width:100%; height:100%; cursor:grab; }
+.real-planner .daypilot-group .fika-event-drag-source:active { cursor:grabbing; }
+.real-planner .daypilot-group .scheduler_default_event.fika-event.attention .scheduler_default_event_inner { border-color:#ef4353 !important; background:#fff0f2 !important; }
+.real-planner .daypilot-group .daypilot-resource { display:flex; flex-direction:column; gap:3px; }
+.real-planner .daypilot-group .daypilot-resource strong { font-size:11px; }
+.real-planner .daypilot-group .daypilot-resource small { color:#4f34c7; font-size:9px; }
+.real-planner .daypilot-attribution { margin:7px 2px 0; color:#9992aa; font-size:9px; }
 .real-planner .stable-section-heading > strong { position:sticky; left:12px; z-index:12; display:block; padding-right:10px; background:#fcfbff; }
 .real-planner .stable-section-heading > strong { font-size:0; }
 .real-planner .delivery-group .stable-section-heading > strong::before { content:"DELIVERIES"; font-size:9px; }
@@ -412,6 +438,84 @@
   .week-navigation { width: calc(100% - 24px); }
   .page-intro, .week-strip, .selected-day-heading, .control-tower { width: calc(100% - 24px); }
 }
+
+/* Inspector polish: keep the detail view aligned with the dashboard card language. */
+.real-planner .mock-inspector {
+  width: min(410px, 94vw);
+  padding: 0 22px 28px;
+  border-left: 1px solid #e1dbef;
+  background: #fbfaff;
+  box-shadow: -18px 0 36px rgba(40, 15, 140, .14);
+}
+.real-planner .mock-inspector > header {
+  margin: 0 -22px 20px;
+  padding: 24px 22px 18px;
+  border-bottom: 0;
+  background: linear-gradient(135deg, #280f8c 0%, #4f34c7 100%);
+  color: #fff;
+}
+.real-planner .mock-inspector > header p,
+.real-planner .mock-inspector > header .eyebrow,
+.real-planner .mock-inspector > header span { color: #bfffea; }
+.real-planner .mock-inspector > header h2 { color: #fff; font-size: 23px; letter-spacing: -.025em; }
+.real-planner .mock-inspector > header button { color: #fff; font-size: 23px; }
+.real-planner .mock-inspector > .inspector-actions { margin: 0 0 14px; }
+.real-planner .mock-inspector > .inspector-actions button.secondary {
+  border-color: #cfc5ed;
+  background: #fff;
+  box-shadow: 0 2px 0 rgba(40, 15, 140, .05);
+}
+.real-planner .mock-inspector .schedule-editor {
+  margin: 0 0 18px;
+  padding: 18px;
+  border: 1px solid #dcd4f0;
+  border-radius: 16px;
+  background: #fff;
+  box-shadow: 0 8px 20px rgba(40, 15, 140, .06);
+}
+.real-planner .mock-inspector .schedule-editor h3 { margin: 0 0 7px; }
+.real-planner .mock-inspector .schedule-editor .context-line { margin: 0 0 14px; line-height: 1.35; }
+.real-planner .mock-inspector .schedule-editor label { margin-top: 11px; color: #34266e; }
+.real-planner .mock-inspector .schedule-editor input,
+.real-planner .mock-inspector select {
+  min-height: 38px;
+  border-color: #cfc5ed;
+  border-radius: 9px;
+  color: #201653;
+  font-weight: 700;
+}
+.real-planner .mock-inspector .schedule-editor .inspector-actions { margin: 16px 0 0; }
+.real-planner .mock-inspector .stop-panel { margin: 0; padding-top: 4px; border-top: 1px solid #e3ddef; }
+.real-planner .mock-inspector .stop-main { padding: 15px 0 13px; }
+.real-planner .mock-inspector .stop-main strong { font-size: 15px; letter-spacing: -.01em; }
+.real-planner .mock-inspector .stop-main small { font-size: 11px; }
+.real-planner .mock-inspector .stop-main em { font-size: 9px; font-weight: 800; }
+.real-planner .mock-inspector .sequence { width: 28px; height: 28px; background: #4f34c7; font-size: 13px; }
+.real-planner .mock-inspector .stop-detail { padding: 0 0 18px; }
+.real-planner .mock-inspector .stop-detail > .inspector-actions { margin: 0 0 14px; }
+.real-planner .mock-inspector .subloads-heading { margin: 14px 0 7px; padding-top: 13px; border-top: 1px solid #e3ddef; }
+.real-planner .mock-inspector .attached-work {
+  display: flex;
+  align-items: stretch;
+  gap: 10px;
+  margin: 0;
+  padding: 11px 0;
+  border-top: 1px solid #e3ddef;
+}
+.real-planner .mock-inspector .subload-card {
+  min-height: 50px;
+  padding: 4px 9px;
+  border-left: 3px solid #4f34c7;
+  border-radius: 0 8px 8px 0;
+  background: #f4f1ff;
+}
+.real-planner .mock-inspector .subload-card:hover { background: #ebe6ff; }
+.real-planner .mock-inspector .subload-card span { font-size: 9px; letter-spacing: .04em; }
+.real-planner .mock-inspector .subload-card strong { font-size: 13px; }
+.real-planner .mock-inspector .subload-card small { font-size: 10px; }
+.real-planner .mock-inspector .attached-work > button:not(.subload-card) { align-self: center; }
+.real-planner .mock-inspector .stop-detail > select,
+.real-planner .mock-inspector .stop-detail select { width: 100%; margin-top: 12px; padding: 0 9px; background: #fff; }
 
 /* Dispatch control tower: queue + driver timeline. */
 .control-tower {
@@ -1474,6 +1578,11 @@ button:disabled {
   border-radius: 10px;
   background: #faf9ff;
 }
+.subloads-heading { margin: 16px 0 4px; color: var(--purple); font-size: 0.68rem; font-weight: 900; letter-spacing: .12em; text-transform: uppercase; }
+.subload-card { display:grid; flex:1; min-width:0; gap:3px; border:0; padding:8px 0; background:transparent; text-align:left; cursor:pointer; }
+.subload-card span { color:var(--purple); font-size:.68rem; font-weight:900; text-transform:uppercase; }
+.subload-card strong { color:var(--purple-dark); font-size:.78rem; }
+.subload-card small { color:var(--muted); font-size:.64rem; }
 .job-detail-back {
   border: 0;
   padding: 0;

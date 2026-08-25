@@ -13,7 +13,6 @@ import { mnkMenuHtml } from "../../lib/mnk-menu-output";
 import type { MenuOutput } from "../../lib/mnk-menu-output";
 import styles from "./HospitalityDashboard.module.css";
 import { portalSite, type PortalSiteKey } from "@/lib/portal-sites";
-import { formatQuoteFilenameDate } from "../../../integration-hub/lib/quote-engine";
 
 const statuses = [
   "New",
@@ -56,10 +55,28 @@ async function readDashboardJson(response: Response) {
   }
 }
 
-function quoteFilename(eventDate: string, companyName: string, revision: number, extension: "pdf" | "html") {
-  const revisionSuffix = revision > 1 ? `_Revision_${revision}` : "";
-  return `Quote_${formatQuoteFilenameDate(eventDate)}_${companyName}${revisionSuffix}.${extension}`
+function quoteFilename(bookingId: string, companyName: string, extension: "pdf" | "html") {
+  // Keep one stable Drive filename per booking. Drive persistence updates the
+  // existing file, so an amendment replaces the current quote instead of
+  // creating confusing revision copies.
+  return `Quote_${companyName}_${bookingId}.${extension}`
     .replace(/[^A-Za-z0-9._-]+/g, "_");
+}
+
+async function saveQuoteDocument(payload: { name: string; html: string; siteKey: PortalSiteKey }) {
+  let lastMessage = "The quote PDF could not be saved to Drive.";
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const response = await fetch("/api/quotes/drive", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const body = await readDashboardJson(response) as { error?: { message?: string }; saved?: { fileId?: string; driveUrl?: string } };
+    if (response.ok && body.saved?.fileId) return body.saved;
+    lastMessage = body.error?.message || lastMessage;
+    if (attempt < 2) await new Promise((resolve) => window.setTimeout(resolve, 700 * (attempt + 1)));
+  }
+  throw new Error(lastMessage);
 }
 
 export default function HospitalityDashboard({
@@ -128,10 +145,12 @@ export default function HospitalityDashboard({
           driveUrl?: string;
           fileName: string;
           driveStatus: string;
+          status?: "generating" | "ready";
         }
       | undefined
     >
   >({});
+  const [matrixRefreshTick, setMatrixRefreshTick] = useState(0);
   // Menu outputs change only when a menu is regenerated. Avoid rereading the
   // whole output collection on every dashboard refresh.
   const menuCacheLoadedAt = useRef(0);
@@ -148,6 +167,7 @@ export default function HospitalityDashboard({
         throw Error(body.error?.message || "Could not load Bookings.");
       setBookings(body.bookings);
       setProductionOrders(body.productionOrders || {});
+      setMatrixRefreshTick((current) => current + 1);
       setQuoteSettings(body.quoteSettings || null);
       if (Date.now() - menuCacheLoadedAt.current >= 60_000) {
         const menuResponse = await fetch("/api/menus", { cache: "no-store" });
@@ -240,7 +260,7 @@ export default function HospitalityDashboard({
   useEffect(() => {
     if (!selected) return;
     void fetch(
-      `/api/allergen-matrix?bookingId=${encodeURIComponent(selected.canonicalId)}`,
+      `/api/allergen-matrix?bookingId=${encodeURIComponent(selected.canonicalId)}${productionOrders[selected.canonicalId]?.canonicalId ? `&productionOrderId=${encodeURIComponent(productionOrders[selected.canonicalId]!.canonicalId)}` : ""}`,
       { cache: "no-store" },
     )
       .then((response) => (response.ok ? response.json() : null))
@@ -248,11 +268,13 @@ export default function HospitalityDashboard({
         if (body?.artifact)
           setMatrixArtifacts((current) => ({
             ...current,
-            [selected.canonicalId]: body.artifact,
+            [selected.canonicalId]: { ...body.artifact, status: "ready" },
           }));
+        else if (body?.status === "generating")
+          setMatrixArtifacts((current) => ({ ...current, [selected.canonicalId]: { ...(current[selected.canonicalId] || {}), fileName: "", driveStatus: "generating", status: "generating" } }));
       })
       .catch(() => undefined);
-  }, [selected?.canonicalId, selected?.version]);
+  }, [selected?.canonicalId, selected?.version, matrixRefreshTick]);
 
   useEffect(() => {
     if (!selected) return;
@@ -305,32 +327,28 @@ export default function HospitalityDashboard({
       : `${((scanStepIndex + 1) / inboxScanSteps.length) * 100}%`;
 
   const persistQuotePdf = async (booking: CanonicalBooking, quote: { id: string; revision: number }) => {
-    const quoteResponse = await fetch("/api/quotes/drive", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        name: quoteFilename(booking.service.eventDate, booking.client.companyName, quote.revision, "pdf"),
-        html: quoteHtml(booking),
-        siteKey: site.key,
-      }),
-    });
-    const quoteBody = await readDashboardJson(quoteResponse) as { error?: { message?: string }; saved?: { fileId?: string; driveUrl?: string } };
-    if (!quoteResponse.ok || !quoteBody.saved?.fileId) throw new Error(quoteBody.error?.message || "The quote PDF could not be saved to Drive.");
+    const saved = await saveQuoteDocument({ name: quoteFilename(booking.canonicalId, booking.client.companyName, "pdf"), html: quoteHtml(booking), siteKey: site.key });
     const statusResponse = await fetch("/api/dashboard-bookings", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ canonicalId: booking.canonicalId, expectedVersion: booking.version, action: "quote-pdf-status", revisionId: quote.id, status: "saved", driveFileId: quoteBody.saved.fileId, driveUrl: quoteBody.saved.driveUrl }),
+      body: JSON.stringify({ canonicalId: booking.canonicalId, expectedVersion: booking.version, action: "quote-pdf-status", revisionId: quote.id, status: "saved", driveFileId: saved.fileId, driveUrl: saved.driveUrl }),
     });
     const statusBody = await readDashboardJson(statusResponse) as { error?: { message?: string }; booking?: CanonicalBooking };
     if (!statusResponse.ok) throw new Error(statusBody.error?.message || "The quote PDF was saved but could not be recorded against the quote.");
     return statusBody.booking as CanonicalBooking;
   };
 
-  const performAction = async () => {
+  const performAction = async (actionOverride?: WorkflowAction | null) => {
     setError("");
-    if (!selected || !pending) return;
-    setActionStage(pending === "Quoted" || pending === "QuotePdfRetry" ? "Creating quote…" : "Saving changes…");
-    if (pending === "QuotePdfRetry") {
+    const action = actionOverride || pending;
+    if (!selected || !action) return;
+    const quoteWindow = action === "Quoted" ? window.open("", "_blank") : null;
+    if (quoteWindow) {
+      quoteWindow.document.title = "Generating quote PDF…";
+      quoteWindow.document.body.innerHTML = "<main style=\"font-family:Arial,sans-serif;padding:40px;color:#280f8c\"><h1>Generating quote PDF…</h1><p>The quote will open here when it has finished saving.</p></main>";
+    }
+    setActionStage(action === "Quoted" || action === "QuotePdfRetry" ? "Creating quote…" : "Saving changes…");
+    if (action === "QuotePdfRetry") {
       const current = selected.quoteState?.revisions.find((revision) => revision.id === selected.quoteState?.currentRevisionId);
       if (!current) return;
       try { setSelected(await persistQuotePdf(selected, current)); setError(""); } catch (cause) { setError((cause as Error).message); }
@@ -343,31 +361,31 @@ export default function HospitalityDashboard({
       expectedVersion: selected.version,
     };
     const command =
-      pending === "Amend" && amendment
+      action === "Amend" && amendment
         ? {
             ...base,
             action: "amend",
             reason: amendment.reason,
             patch: amendmentPatchDto(amendment),
           }
-        : pending === "Reviewed"
+        : action === "Reviewed"
           ? { ...base, action: "review", checks: reviewChecks, notes: reason }
-          : pending === "Quoted"
+          : action === "Quoted"
             ? {
                 ...base,
                 action: "quote",
                 regenerate: Boolean(selected.quoteState?.currentRevisionId),
               }
-            : pending === "Production"
+            : action === "Production"
                 ? { ...base, action: "production-handoff" }
-                : pending === "Completed"
+                : action === "Completed"
                   ? { ...base, action: "complete", notes: reason }
                   : { ...base, action: "cancel", reason, ...cancelOptions };
-    if (pending === "Cancelled" && !reason.trim()) {
+    if (action === "Cancelled" && !reason.trim()) {
       setError("A cancellation reason is required.");
       return;
     }
-    if (pending === "Amend" && !amendment?.reason.trim()) {
+    if (action === "Amend" && !amendment?.reason.trim()) {
       setError("An amendment reason is required.");
       return;
     }
@@ -382,7 +400,7 @@ export default function HospitalityDashboard({
       return;
     }
     setSelected(body.booking || selected);
-    if (pending === "Quoted" && body.booking) {
+    if (action === "Quoted" && body.booking) {
       setActionStage("Saving quote PDF…");
       let pdfSaved = false;
       try {
@@ -391,41 +409,20 @@ export default function HospitalityDashboard({
             revision.id === body.booking.quoteState?.currentRevisionId,
         );
         if (quote) {
-          const quoteResponse = await fetch("/api/quotes/drive", {
+          const saved = await saveQuoteDocument({ name: quoteFilename(body.booking.canonicalId, body.booking.client.companyName, "pdf"), html: quoteHtml(body.booking), siteKey: site.key });
+          setActionStage("Recording quote status…");
+          const statusResponse = await fetch("/api/dashboard-bookings", {
             method: "POST",
             headers: { "content-type": "application/json" },
-            body: JSON.stringify({
-              name: quoteFilename(body.booking.service.eventDate, body.booking.client.companyName, quote.revision, "html"),
-              html: quoteHtml(body.booking),
-              siteKey: site.key,
-            }),
+            body: JSON.stringify({ canonicalId: body.booking.canonicalId, expectedVersion: body.booking.version, action: "quote-pdf-status", revisionId: quote.id, status: "saved", driveFileId: saved.fileId, driveUrl: saved.driveUrl }),
           });
-          const quoteBody = (await quoteResponse.json()) as {
-            error?: { message?: string };
-            saved?: { fileId?: string; driveUrl?: string };
-          };
-          if (!quoteResponse.ok || !quoteBody.saved?.fileId) {
-            setError(
-              `Quote created, but Drive saving failed: ${quoteBody.error?.message || "unknown error"}`,
-            );
-          } else {
-            setActionStage("Recording quote status…");
-            const statusResponse = await fetch("/api/dashboard-bookings", {
-              method: "POST",
-              headers: { "content-type": "application/json" },
-              body: JSON.stringify({
-                canonicalId: body.booking.canonicalId,
-                expectedVersion: body.booking.version,
-                action: "quote-pdf-status",
-                revisionId: quote.id,
-                status: "saved",
-                driveFileId: quoteBody.saved.fileId,
-                driveUrl: quoteBody.saved.driveUrl,
-              }),
-            });
-            const statusBody = await statusResponse.json();
-            if (!statusResponse.ok) setError(statusBody.error?.message || "The quote PDF was saved but could not be recorded against the quote.");
-            else { pdfSaved = true; setSelected(statusBody.booking || body.booking); }
+          const statusBody = await statusResponse.json();
+          if (!statusResponse.ok) setError(statusBody.error?.message || "The quote PDF was saved but could not be recorded against the quote.");
+          else {
+            pdfSaved = true;
+            const savedBooking = statusBody.booking || body.booking;
+            setSelected(savedBooking);
+            if (quoteWindow && saved.driveUrl) quoteWindow.location.href = saved.driveUrl;
           }
         }
       } catch (cause) {
@@ -448,17 +445,33 @@ export default function HospitalityDashboard({
         }).catch(() => undefined);
       }
     }
+    if (action === "Production") {
+      setActionStage("Completing booking…");
+      const refreshedResponse = await fetch(`/api/dashboard-bookings?site=${encodeURIComponent(site.key)}`, { cache: "no-store" });
+      const refreshedBody = await refreshedResponse.json();
+      const refreshed = refreshedBody.bookings?.find((booking: CanonicalBooking) => booking.canonicalId === selected.canonicalId) as CanonicalBooking | undefined;
+      if (refreshed) {
+        const completedResponse = await fetch("/api/dashboard-bookings", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ canonicalId: refreshed.canonicalId, expectedVersion: refreshed.version, action: "complete", notes: "Automatically completed after CPU hand-off." }),
+        });
+        const completedBody = await completedResponse.json();
+        if (!completedResponse.ok) setError(completedBody.error?.message || "The booking was sent to CPU but could not be marked complete.");
+        else setSelected(completedBody.booking || refreshed);
+      }
+    }
     setPending(null);
     setReason("");
     setAmendment(null);
-    await load(pending !== "Quoted");
+    await load(action !== "Quoted");
   };
 
-  const act = async () => {
+  const act = async (actionOverride?: WorkflowAction | null) => {
     setActionStage("Working…");
     setActionBusy(true);
     try {
-      await performAction();
+      await performAction(actionOverride);
     } finally {
       setActionBusy(false);
     }
@@ -481,7 +494,7 @@ export default function HospitalityDashboard({
       )
       .replace(
         "</body>",
-        `<nav class="fika-document-tools" aria-label="Document actions"><button type="button" id="fika-download">Download document</button><button type="button" id="fika-share">Share</button><button type="button" class="primary" id="fika-pdf">Save as PDF</button></nav><script>(function(){const source=()=>document.documentElement.outerHTML;const download=()=>{const blob=new Blob([source()],{type:"text/html"});const link=document.createElement("a");link.href=URL.createObjectURL(blob);link.download=document.title.replace(/[^A-Za-z0-9_-]+/g,"_")+".html";link.click();URL.revokeObjectURL(link.href)};document.getElementById("fika-download").onclick=download;document.getElementById("fika-pdf").onclick=()=>window.print();document.getElementById("fika-share").onclick=async()=>{if(!navigator.share){alert("Sharing is not available in this browser. Use Download document instead.");return}try{const file=new File([source()],document.title.replace(/[^A-Za-z0-9_-]+/g,"_")+".html",{type:"text/html"});await navigator.share({title:document.title,files:[file]})}catch(error){if(error.name!=="AbortError")alert("The document could not be shared. Use Download document instead.")}}})();</script></body>`,
+        `<nav class="fika-document-tools" aria-label="Document actions"><button type="button" id="fika-download">Download document</button><button type="button" id="fika-share">Share</button><button type="button" class="primary" id="fika-pdf">Save as PDF</button></nav><script>(function(){const source=()=>document.documentElement.outerHTML;const notify=(message)=>{const backdrop=document.createElement("div");backdrop.setAttribute("role","presentation");backdrop.style="position:fixed;inset:0;z-index:10000;display:grid;place-items:center;background:#24183a99";const modal=document.createElement("section");modal.setAttribute("role","dialog");modal.setAttribute("aria-modal","true");modal.setAttribute("aria-label","Document message");modal.style="width:min(420px,calc(100% - 32px));padding:24px;border-radius:16px;background:#fff;color:#24115c;box-shadow:0 18px 50px #180d4340;font:16px Arial,sans-serif";modal.innerHTML="<h2 style='margin:0 0 12px;font-size:20px'>Document action</h2><p style='margin:0 0 20px;line-height:1.5'>"+message+"</p><button type='button' style='border:0;border-radius:8px;padding:10px 18px;background:#4df7c2;color:#24115c;font-weight:700;cursor:pointer'>Close</button>";modal.querySelector("button").onclick=()=>backdrop.remove();backdrop.onclick=(event)=>{if(event.target===backdrop)backdrop.remove()};backdrop.appendChild(modal);document.body.appendChild(backdrop);modal.querySelector("button").focus()};const download=()=>{const blob=new Blob([source()],{type:"text/html"});const link=document.createElement("a");link.href=URL.createObjectURL(blob);link.download=document.title.replace(/[^A-Za-z0-9_-]+/g,"_")+".html";link.click();URL.revokeObjectURL(link.href)};document.getElementById("fika-download").onclick=download;document.getElementById("fika-pdf").onclick=()=>window.print();document.getElementById("fika-share").onclick=async()=>{if(!navigator.share){notify("Sharing is not available in this browser. Use Download document instead.");return}try{const file=new File([source()],document.title.replace(/[^A-Za-z0-9_-]+/g,"_")+".html",{type:"text/html"});await navigator.share({title:document.title,files:[file]})}catch(error){if(error.name!=="AbortError")notify("The document could not be shared. Use Download document instead.")}}})();</script></body>`,
       );
     popup.document.write(documentHtml);
     popup.document.close();
@@ -1014,6 +1027,7 @@ export default function HospitalityDashboard({
                   onCancelAmendment={() => setAmendment(null)}
                   onSaveAmendment={saveAmendment}
                   onOpenQuote={openQuote}
+                  onAction={(action) => void act(action)}
                   onGenerateMenu={generateMenu}
                   onOpenMenu={openMenu}
                 />
@@ -1242,6 +1256,7 @@ function BookingPane({
   onCancelAmendment,
   onSaveAmendment,
   onOpenQuote,
+  onAction,
   onGenerateMenu,
   onOpenMenu,
 }: {
@@ -1259,6 +1274,7 @@ function BookingPane({
     driveUrl?: string;
     fileName: string;
     driveStatus: string;
+    status?: "generating" | "ready";
   };
   menuBusy: boolean;
   setPending: (status: WorkflowAction) => void;
@@ -1268,6 +1284,7 @@ function BookingPane({
   onCancelAmendment: () => void;
   onSaveAmendment: () => Promise<void>;
   onOpenQuote: (booking: CanonicalBooking) => void;
+  onAction: (action: WorkflowAction) => void;
   onGenerateMenu: (booking: CanonicalBooking) => Promise<void>;
   onOpenMenu: (output: MenuOutput) => void;
 }) {
@@ -1296,6 +1313,7 @@ function BookingPane({
       setPending={setPending}
       onAmend={onAmend}
       onOpenQuote={onOpenQuote}
+      onAction={onAction}
       onGenerateMenu={onGenerateMenu}
       onOpenMenu={onOpenMenu}
     />
@@ -1315,6 +1333,7 @@ function BookingDetail({
   setPending,
   onAmend,
   onOpenQuote,
+  onAction,
   onGenerateMenu,
   onOpenMenu,
 }: {
@@ -1331,11 +1350,13 @@ function BookingDetail({
     driveUrl?: string;
     fileName: string;
     driveStatus: string;
+    status?: "generating" | "ready";
   };
   menuBusy: boolean;
   setPending: (status: WorkflowAction) => void;
   onAmend: (booking: CanonicalBooking) => void;
   onOpenQuote: (booking: CanonicalBooking) => void;
+  onAction: (action: WorkflowAction) => void;
   onGenerateMenu: (booking: CanonicalBooking) => Promise<void>;
   onOpenMenu: (output: MenuOutput) => void;
 }) {
@@ -1371,7 +1392,10 @@ function BookingDetail({
               key={action}
               type="button"
               className="primary"
-              onClick={() => setPending(action)}
+              onClick={() => {
+                if (action === "Quoted") onAction(action);
+                else setPending(action);
+              }}
             >
               {action === "Reviewed"
                 ? "Review booking"
@@ -1390,7 +1414,7 @@ function BookingDetail({
           <button
             type="button"
             className="primary"
-            onClick={() => setPending("Production")}
+            onClick={() => onAction("Production")}
           >
             Send to CPU
           </button>
@@ -1494,7 +1518,7 @@ function BookingDetail({
             type="button"
             className="manager-cpu-action"
             disabled={Boolean(productionOrderMatchesCurrentQuote(booking, productionOrder)) || !quoteReadyForCpu(booking) || booking.deliveryChargeRequired === false}
-            onClick={() => setPending("Production")}
+            onClick={() => onAction("Production")}
           >
             <strong>{productionOrderMatchesCurrentQuote(booking, productionOrder) ? "Sent to CPU" : "Send to CPU"}</strong>
             <small>
@@ -1537,6 +1561,11 @@ function BookingDetail({
                     : "Local signed PDF"}
                 </small>
               </a>
+            ) : matrixArtifact?.status === "generating" ? (
+              <button type="button" className="manager-document-action" disabled aria-busy="true">
+                <strong>Generating allergen matrix…</strong>
+                <small>The signed PDF is being prepared</small>
+              </button>
             ) : (
               <button
                 type="button"
@@ -2208,7 +2237,7 @@ function pretty(value: string) {
     .replace(/^./, (character) => character.toUpperCase());
 }
 function availableActions(booking: CanonicalBooking, productionOrder?: ProductionOrder): WorkflowAction[] {
-  if (booking.lifecycleStatus === "New") return ["Reviewed"];
+  if (booking.lifecycleStatus === "New") return ["Quoted"];
   if (booking.lifecycleStatus === "Reviewed") return ["Quoted"];
   if (["Quoted", "Approved"].includes(booking.lifecycleStatus)) {
     const current = booking.quoteState?.revisions.find((revision) => revision.id === booking.quoteState?.currentRevisionId);

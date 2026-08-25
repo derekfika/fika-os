@@ -167,6 +167,18 @@ apps/integration-hub/firebase-export-*/
 apps/beverage-innovation/AGENTS.md
 apps/beverage-innovation/CLAUDE.md
 
+# ----------------------------------------------------------
+# Checked-in reference/master data
+# ----------------------------------------------------------
+# Keep operational local-data ignored by default. The canonical dish
+# catalogue is deliberately allowlisted so dish, category, allergen and
+# merge/archive changes travel with the repository. Do not allowlist rolling
+# menus, SQLite files, bookings, auth exports, emulator exports, uploads or
+# recovery snapshots here.
+!apps/menu-planning/local-data/
+!apps/menu-planning/local-data/menu-planning/
+!apps/menu-planning/local-data/menu-planning/canonical-menu-items.json
+
 # Operational menu source files
 Menu Data/
 

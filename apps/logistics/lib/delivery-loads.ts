@@ -15,12 +15,12 @@ export function findCompatibleLoad(job: LogisticsJob, loads: DeliveryLoad[]) {
   return loads.find((load) => load.status !== "cancelled" && compatibleLoad(job, load));
 }
 
-export function createLoad(input: LoadKey & { destinationLabelSnapshot?: string; by: string; now?: string }): DeliveryLoad {
+export function createLoad(input: LoadKey & { destinationLabelSnapshot?: string; scheduledEnd?: string; by: string; now?: string }): DeliveryLoad {
   if (!input.originOplocId || !input.destinationOplocId || !input.scheduledTime)
     throw new Error("A load requires canonical origin and destination OPLOC IDs and a scheduled time.");
   const now = input.now || new Date().toISOString();
   const id = `load:${input.serviceDate}:${input.originOplocId}:${input.destinationOplocId}:${input.scheduledTime}`;
-  return { id, serviceDate: input.serviceDate, originOplocId: input.originOplocId, destinationOplocId: input.destinationOplocId, ...(input.destinationLabelSnapshot ? { destinationLabelSnapshot: input.destinationLabelSnapshot } : {}), scheduledTime: input.scheduledTime, status: "planned", createdAt: now, updatedAt: now, version: 1, audit: [{ action: "load-created", at: now, by: input.by, version: 1 }] };
+  return { id, serviceDate: input.serviceDate, originOplocId: input.originOplocId, destinationOplocId: input.destinationOplocId, ...(input.destinationLabelSnapshot ? { destinationLabelSnapshot: input.destinationLabelSnapshot } : {}), scheduledTime: input.scheduledTime, ...(input.scheduledEnd ? { scheduledEnd: input.scheduledEnd } : {}), status: "planned", createdAt: now, updatedAt: now, version: 1, audit: [{ action: "load-created", at: now, by: input.by, version: 1 }] };
 }
 
 export function assignJob(job: LogisticsJob, load: DeliveryLoad, existing: LogisticsAssignment[], by: string, now = new Date().toISOString()) {

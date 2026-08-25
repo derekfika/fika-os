@@ -18,6 +18,10 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json() as { action?: string; publicationId?: string; publicationDayId?: string; reason?: string; actor?: string };
     const actor = requirePublicationActor(await resolveMenuActor(request));
+    if (body.action === "retry-handoff") {
+      const handoff = await replayMenuPublicationOutbox(forwardProductionMaterialisationEvent);
+      return NextResponse.json({ handoff: { status: handoff.failed ? "pending" : "delivered", delivered: handoff.delivered, failed: handoff.failed } });
+    }
     if (!body.publicationId) return NextResponse.json({ error: { message: "Publication is required." } }, { status: 422 });
     if (body.action === "withdraw-week") {
       const publication = withdrawPublishedMenuWeek(body.publicationId, body.reason || "", actor.uid);

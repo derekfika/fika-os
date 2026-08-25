@@ -69,7 +69,7 @@ export default function RollingMenuWorkspace() {
       const response = await fetch("/api/rolling-menu", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action, ...extra }) });
       const body = await response.json();
       if (!response.ok) { setError(body.error?.message || "Command failed."); setMessage(""); return false; }
-      setError(""); setSnapshot(body.snapshot); setWeeks(body.weeks || []); setPublicationState(body.publicationState || {}); setMessage("Saved"); window.setTimeout(() => setMessage(""), 1200); return true;
+      setError(""); setSnapshot(body.snapshot); setWeeks(body.weeks || []); setPublicationState(body.publicationState || {}); const handoff = body.handoff?.status === "delivered" ? " · CPU handoff delivered" : body.handoff?.status === "pending" ? " · CPU handoff pending — retry available" : ""; setMessage(action === "publish" ? `Published${handoff}` : "Saved"); window.setTimeout(() => setMessage(""), 5000); return true;
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Command failed. Please try again."); setMessage(""); return false;
     }

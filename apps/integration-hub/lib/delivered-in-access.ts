@@ -14,7 +14,10 @@ const FIXTURE_SITE_ASSIGNMENTS: Record<string, string[]> = {
   "viewer@local.fika": ["oploc:46701265-15af-48f4-a230-1d27ca21bc59"],
 };
 
-const activeOplocs = (records: CanonicalRecord[]) => records.filter(record => record.entityType === "OPLOC" && record.lifecycleStatus !== "archived" && record.record.lifecycleState === "active" && record.publicationStatus === "published");
+// A local service arrangement is the operational opt-in for Delivered-In. Keep
+// withdrawn/archived venues out, but do not hide an active venue merely because
+// its OPLOC publication flag is still catching up with the connection record.
+const activeOplocs = (records: CanonicalRecord[]) => records.filter(record => record.entityType === "OPLOC" && record.lifecycleStatus !== "archived" && record.publicationStatus !== "withdrawn" && String(record.record.lifecycleState || "active") !== "archived");
 const serviceMatches = (name: string, service: DeliveredInService) => { const value = name.toLocaleLowerCase().replaceAll("&", "and"); return service === "grab-and-go" ? value.includes("grab") && value.includes("go") : value.includes("delivered") && value.includes("in"); };
 function serviceEnabledOplocs(records: CanonicalRecord[], service: DeliveredInService) {
   const today = new Date().toISOString().slice(0, 10);

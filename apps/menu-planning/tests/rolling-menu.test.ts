@@ -33,7 +33,7 @@ test("rolling menu importer preserves slots, destination quantities and source e
 
 test("planner default week prefers the current service week over distant future test data", () => {
   const current = emptyWeek("2026-08-17").week;
-  const future = emptyWeek("2099-01-12").week;
+  const future = emptyWeek("2029-01-12").week;
   assert.equal(defaultWeekForDate([future, current], "2026-08-19")?.weekCommencing, "2026-08-17");
 });
 
@@ -60,7 +60,7 @@ test("blank rolling week has seven days and the governed slot catalogue", () => 
 });
 
 test("publication readiness enforces governed destinations and allocation invariants", () => {
-  const base = emptyWeek("2095-01-06");
+  const base = emptyWeek("2025-01-06");
   const entry = (overrides: Partial<RollingEntry> = {}): RollingEntry => ({ id: "entry:integrity", dayId: base.days[0].id, date: base.days[0].date, slot: "SALAD 1", itemId: "dish:integrity", itemLabel: "Integrity Dish", portions: 10, allocations: [{ destinationId: "oploc:46701265-15af-48f4-a230-1d27ca21bc59", destinationLabel: "Haleon", quantity: 10 }], allergens: { no_key_allergens: "contains" }, audit: [], ...overrides });
   const check = (overrides: Partial<RollingEntry>) => validateWeek({ ...base, entries: [entry(overrides)] });
   assert.ok(check({ allocations: [{ destinationLabel: "Unknown venue", quantity: 10 }] }).some(error => error.includes("unresolved destination")));
@@ -71,7 +71,7 @@ test("publication readiness enforces governed destinations and allocation invari
 });
 
 test("historical unresolved destination data remains readable but cannot publish unchanged", () => {
-  const week = emptyWeek("2095-02-03");
+  const week = emptyWeek("2025-02-03");
   const entry: RollingEntry = { id: "entry:historical", dayId: week.days[0].id, date: week.days[0].date, slot: "SOUP", itemId: "dish:historical", itemLabel: "Historical Dish", portions: 10, allocations: [{ destinationLabel: "Legacy venue", quantity: 10 }], allergens: { no_key_allergens: "contains" }, audit: [] };
   const snapshot = { ...week, entries: [entry] };
   assert.equal(snapshot.entries[0].allocations[0].destinationId, undefined);
@@ -82,8 +82,8 @@ test("week lifecycle prevents collisions, publishes once, and duplicates publish
   const rollingFile = join(process.cwd(), "local-data", "menu-planning", "rolling-menu-weeks.json");
   const before = existsSync(rollingFile) ? await readFile(rollingFile) : undefined;
   const suffix = Date.now();
-  const sourceDate = `2097-01-${String((suffix % 20) + 1).padStart(2, "0")}`;
-  const duplicateDate = `2097-02-${String((suffix % 20) + 1).padStart(2, "0")}`;
+  const sourceDate = `2027-01-${String((suffix % 20) + 1).padStart(2, "0")}`;
+  const duplicateDate = `2027-02-${String((suffix % 20) + 1).padStart(2, "0")}`;
   try {
     const source = emptyWeek(sourceDate);
     saveSnapshot(source);
@@ -116,7 +116,7 @@ test("menu days publish independently and revisions supersede only that day", as
   const publicationFile = join(process.cwd(), "local-data", "menu-planning", "menu-publications.json");
   const rollingBefore = existsSync(rollingFile) ? await readFile(rollingFile) : undefined;
   const publicationBefore = existsSync(publicationFile) ? await readFile(publicationFile) : undefined;
-  const week = emptyWeek(`2096-03-${String(Math.floor(Math.random() * 20) + 1).padStart(2, "0")}`);
+  const week = emptyWeek(`2026-03-${String(Math.floor(Math.random() * 20) + 1).padStart(2, "0")}`);
   try {
     saveSnapshot(week);
     const add = (dayIndex: number, label: string) => { const result = createEntry(week.week.id, week.days[dayIndex].id, "SALAD 1", label, "test", `dish:${label}`); return result.entries.find(entry => entry.dayId === week.days[dayIndex].id)!; };
@@ -170,7 +170,7 @@ test("published day matrix keeps all canonical allergen columns", async () => {
   const publicationFile = join(process.cwd(), "local-data", "menu-planning", "menu-publications.json");
   const rollingBefore = existsSync(rollingFile) ? await readFile(rollingFile) : undefined;
   const publicationBefore = existsSync(publicationFile) ? await readFile(publicationFile) : undefined;
-  const week = emptyWeek(`2096-04-${String((Date.now() % 20) + 1).padStart(2, "0")}`);
+  const week = emptyWeek(`2026-04-${String((Date.now() % 20) + 1).padStart(2, "0")}`);
   try {
     saveSnapshot(week); const created = createEntry(week.week.id, week.days[0].id, "SALAD 1", "Matrix Dish", "test", "dish:matrix"); const entry = created.entries.find(value => value.dayId === week.days[0].id)!;
   updateEntryForTest(week.week.id, entry.id); const day = publicationPreview(getWeek(week.week.id), week.days[0].id)[0]; const signature = { printedName: "Signed Chef", signatureDataUrl: "data:image/png;base64,c2ln", signedAt: "2026-08-19T12:00:00.000Z", actor: "test", attestation: "Reviewed" }; const publication = createPublishedMenuDay(week.week.id, week.days[0].id, { date: day.date, productionChef: signature, headChefSiteManager: { ...signature, printedName: "Head Chef" }, dayContentHash: day.contentHash }, "test");
@@ -200,7 +200,7 @@ test("withdrawal removes a day from the current projection and republishing crea
   const publicationFile = join(process.cwd(), "local-data", "menu-planning", "menu-publications.json");
   const rollingBefore = existsSync(rollingFile) ? await readFile(rollingFile) : undefined;
   const publicationBefore = existsSync(publicationFile) ? await readFile(publicationFile) : undefined;
-  const week = emptyWeek(`2096-05-${String((Date.now() % 20) + 1).padStart(2, "0")}`);
+  const week = emptyWeek(`2026-05-${String((Date.now() % 20) + 1).padStart(2, "0")}`);
   try {
     saveSnapshot(week); const created = createEntry(week.week.id, week.days[1].id, "SOUP", "Withdrawable Dish", "test", "dish:withdrawable"); const entry = created.entries.find(value => value.dayId === week.days[1].id)!; updateEntryForTest(week.week.id, entry.id); const preview = publicationPreview(getWeek(week.week.id), week.days[1].id)[0]; const signature = { printedName: "Production Chef", signatureDataUrl: "data:image/png;base64,c2ln", signedAt: "2026-08-19T12:00:00.000Z", actor: "test", attestation: "Reviewed" }; const signoff = { date: preview.date, productionChef: signature, headChefSiteManager: { ...signature, printedName: "Head Chef" }, dayContentHash: preview.contentHash };
     const first = createPublishedMenuDay(week.week.id, week.days[1].id, signoff, "test"); const dayId = first.days.find(day => day.sourceDayId === week.days[1].id)!.publicationDayId; const withdrawn = withdrawPublishedMenuDay(first.publicationId, dayId, "Correction required", "test"); const withdrawnDay = withdrawn.days.find(day => day.publicationDayId === dayId)!; assert.equal(withdrawnDay.status, "withdrawn"); assert.equal(currentPublishedDays(withdrawn).length, 0); assert.equal(withdrawnDay.withdrawal?.reason, "Correction required"); assert.ok(listMenuPublicationEvents().some(event => event.eventType === "menu.day.withdrawn" && event.sourceVersion === 1));
@@ -213,7 +213,7 @@ test("week withdrawal withdraws every currently published day and preserves a re
   const publicationFile = join(process.cwd(), "local-data", "menu-planning", "menu-publications.json");
   const rollingBefore = existsSync(rollingFile) ? await readFile(rollingFile) : undefined;
   const publicationBefore = existsSync(publicationFile) ? await readFile(publicationFile) : undefined;
-  const week = emptyWeek(`2096-06-${String((Date.now() % 20) + 1).padStart(2, "0")}`);
+  const week = emptyWeek(`2026-06-${String((Date.now() % 20) + 1).padStart(2, "0")}`);
   try {
     const withdrawalEventsBefore = listMenuPublicationEvents().filter(event => event.eventType === "menu.day.withdrawn").length;
     saveSnapshot(week);
@@ -256,11 +256,11 @@ test("selecting the same dish preserves its allergen review", () => {
   assert.notEqual(entry.allergenReviewInvalidated, true);
 });
 
-test("a changed dish remains a publication blocker until reviewed again", () => {
+test("a changed dish does not block Menu Planning publication for allergen sign-off", () => {
   const entry = reviewedEntry();
   applyEntryPatch(entry, { itemId: "dish-b", itemLabel: "Dish B" });
   const snapshot = { week: emptyWeek("2026-08-17").week, days: [], entries: [entry] };
-  assert.ok(validateWeek(snapshot).some(error => error.includes("explicit allergen review")));
+  assert.equal(validateWeek(snapshot).some(error => error.includes("explicit allergen review")), false);
   applyEntryPatch(entry, { allergens: { no_key_allergens: "contains" }, mayContainNotes: "", allergenReviewInvalidated: false });
   assert.equal(validateWeek(snapshot).some(error => error.includes("explicit allergen review")), false);
 });
@@ -276,7 +276,7 @@ test("locally created dishes persist once and rolling entries keep the same cano
     const reloadedCatalogue = await listCanonicalMenuItems();
     assert.equal(reloadedCatalogue.find(item => item.canonicalId === created.canonicalId)?.displayName, created.displayName);
     assert.equal((await createCanonicalMenuItem({ displayName: name, category: "Salad" })).canonicalId, created.canonicalId);
-    const week = emptyWeek(`2099-01-${String((Date.now() % 20) + 1).padStart(2, "0")}`);
+    const week = emptyWeek(`2029-01-${String((Date.now() % 20) + 1).padStart(2, "0")}`);
     saveSnapshot(week);
     createEntry(week.week.id, week.days[0].id, "SALAD 1", created.displayName, "test", created.canonicalId);
     const reloadedWeek = getWeek(week.week.id);
@@ -290,7 +290,7 @@ test("locally created dishes persist once and rolling entries keep the same cano
 test("exact imported dish names receive their existing canonical identity before publication", async () => {
   const rollingFile = join(process.cwd(), "local-data", "menu-planning", "rolling-menu-weeks.json");
   const rollingBefore = existsSync(rollingFile) ? await readFile(rollingFile) : undefined;
-  const week = emptyWeek(`2099-02-${String((Date.now() % 20) + 1).padStart(2, "0")}`);
+  const week = emptyWeek(`2029-02-${String((Date.now() % 20) + 1).padStart(2, "0")}`);
   try {
     saveSnapshot(week);
     createEntry(week.week.id, week.days[0].id, "SALAD 1", "Existing Canonical Dish", "test");

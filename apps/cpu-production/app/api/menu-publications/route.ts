@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { errorResponse } from "@hub/lib/api";
 import { requireActor } from "@hub/lib/auth";
 import { assertPermission } from "@hub/lib/authmod";
 import { publishedAllergenMatrixHtml } from "../../../../shared/published-allergen-matrix";
@@ -31,6 +32,6 @@ export async function GET(request: NextRequest) {
     const html = publishedAllergenMatrixHtml({ dayName: day.dayName, date: day.date, version: day.version, contentHash: day.contentHash, entries: day.entries, allergenSignoff: { productionChef, headChefSiteManager } });
     return new NextResponse(html, { headers: { "content-type": "text/html; charset=utf-8" } });
   } catch (error) {
-    return NextResponse.json({ error: { message: error instanceof Error ? error.message : "Published menus could not be loaded." } }, { status: 502 });
+    return errorResponse(error);
   }
 }

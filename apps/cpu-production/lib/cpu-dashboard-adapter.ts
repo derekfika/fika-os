@@ -8,6 +8,7 @@ export function dashboardOperationalDate(now = new Date()) { const date = new Da
 /** Rehydrates the compact day read model into the shape used by the existing UI. */
 export function cpuProjectionToOrders(projection: CpuDayProjection): ProductionOrder[] {
   return projection.orders.map((row) => {
+    const cancellationNotice = row.cancellationNotice || (row.workflowStatus === "cancelled" ? "Booking cancelled in Manager dashboard." : undefined);
     const lines: ProductionLine[] = row.quantities.map((quantity, index) => ({
       canonicalId: `${row.id}:projection-line:${index + 1}`,
       sourceBookingLineId: `${row.id}:projection-line:${index + 1}`,
@@ -42,6 +43,7 @@ export function cpuProjectionToOrders(projection: CpuDayProjection): ProductionO
       serviceWindow: row.serviceWindow,
       status: row.status,
       workflowStatus: row.workflowStatus,
+      ...(cancellationNotice ? { cancellationNotice } : {}),
       priority: row.priority,
       lines,
       exceptions: row.attention.map((description, index) => ({

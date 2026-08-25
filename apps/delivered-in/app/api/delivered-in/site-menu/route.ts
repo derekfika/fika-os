@@ -24,6 +24,7 @@ export async function POST(request: NextRequest) {
     if (!body.oplocId || !body.publicationDayId) return NextResponse.json({ error: { message: "A site and published day are required." } }, { status: 422 });
     const day = await projectedAllergenDay(request, body.oplocId, body.publicationDayId);
     if (!day.site) return NextResponse.json({ error: { message: "The selected Delivered-In site was not found." } }, { status: 404 });
+    if (day.cpuReview?.status !== "signed") return NextResponse.json({ error: { message: "The site menu is locked until CPU has signed the allergen matrix." } }, { status: 409 });
     const access = await resolveAccess(request);
     const previous = latestSiteMenuArtifact(body.oplocId, day.sourceDayId);
     const artifact = await createGoogleSiteMenu(day, day.site, access.access.email, previous?.driveFileId);

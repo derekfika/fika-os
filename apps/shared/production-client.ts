@@ -7,7 +7,9 @@ export async function forwardProductionMaterialisation(input: ExternalProduction
   if (process.env.FIKA_INTERNAL_API_TOKEN) headers["x-fika-internal-token"] = process.env.FIKA_INTERNAL_API_TOKEN;
   const response = await fetch(`${base}/api/production/materialise`, { method: "POST", headers, body: JSON.stringify(input), signal: AbortSignal.timeout(8000) });
   if (!response.ok) throw new Error(`Integration Hub CPU production handoff failed (${response.status}).`);
-  return response.json();
+  const result = await response.json() as { cpuHandoff?: "delivered" | "pending" };
+  if (result.cpuHandoff === "pending") throw new Error("Integration Hub materialised the Production Order, but CPU projection handoff is pending.");
+  void result;
 }
 
 export async function forwardProductionMaterialisationEvent(event: DurableDomainEvent) {

@@ -177,6 +177,7 @@ export function SignatureModal({
           <button
             type="button"
             className="liana-close"
+            style={{ background: "#eeeaff", color: "#4329b2", borderRadius: 8, width: 38, height: 38, fontSize: "1.35rem", fontWeight: 900, lineHeight: 1 }}
             onClick={onCancel}
             disabled={busy}
             aria-label="Close signature pad"
@@ -208,6 +209,9 @@ export function SignatureModal({
           aria-label="Signature drawing area"
         />
         <div className="signature-modal-actions">
+          <button type="button" className="button button-soft" onClick={onCancel} disabled={busy}>
+            Cancel
+          </button>
           <button type="button" className="button button-soft" onClick={clear} disabled={busy}>
             Clear
           </button>
@@ -381,8 +385,17 @@ export default function LianaOrderDetail({
       evidenceStatus: "not_completed",
     });
   };
-  const completeSubItem = (menuId: string, sub: PlannedSubItem) =>
-    updateSubItem(menuId, sub.id, { evidenceStatus: "completed" });
+  const completeSubItem = (menuId: string, sub: PlannedSubItem) => {
+    if (planStatus === "planned") return;
+    const nextItems = menuItems.map((item) =>
+      item.id === menuId
+        ? { ...item, subItems: item.subItems.map((candidate) => candidate.id === sub.id ? { ...candidate, evidenceStatus: "completed" as const } : candidate) }
+        : item,
+    );
+    setMenuItems(nextItems);
+    const allComplete = nextItems.length > 0 && nextItems.every((item) => item.name.trim() && item.subItems.length > 0 && item.subItems.every((candidate) => candidate.name.trim() && candidate.evidenceStatus === "completed"));
+    if (allComplete) void planCommand("mark-planned", {}, nextItems);
+  };
   const applySandwich = (menuId: string, sub: PlannedSubItem, id: string) => {
     const productionItem = savedProductionItems.find((item) => item.id === id);
     if (productionItem)
@@ -433,6 +446,7 @@ export default function LianaOrderDetail({
   const planCommand = async (
     action: "save-plan" | "mark-planned",
     extra: Record<string, unknown> = {},
+    menuItemsOverride?: PlannedMenuItem[],
   ) => {
     setBusy(true);
     setMessage("");
@@ -443,7 +457,7 @@ export default function LianaOrderDetail({
         orderId: order.canonicalId,
         actor: "production-chef",
         action,
-        menuItems,
+        menuItems: menuItemsOverride || menuItems,
         planningNotes,
         ...extra,
       }),
@@ -497,8 +511,7 @@ export default function LianaOrderDetail({
         throw new Error(
           body.error?.message || "The matrix could not be signed.",
         );
-      setSignatures(
-        body.plan?.signatures || [
+      const nextSignatures = (body.plan?.signatures || [
           ...signatures,
           {
             role,
@@ -508,11 +521,16 @@ export default function LianaOrderDetail({
             attestation: "",
             signatureDataUrl,
           },
-        ],
-      );
-      setMessage(
-        `${role === "production_chef" ? "Production chef" : "Head chef / site manager"} signature recorded. ${body.matrixArtifact?.driveStatus === "saved" ? "The signed allergen checker was saved to the site Google Drive." : "The signed checker is stored locally and needs Drive attention."}`,
-      );
+        ]) as InternalMatrixSignature[];
+      setSignatures(nextSignatures);
+      const fullySigned = nextSignatures.some(signature => signature.role === "production_chef") && nextSignatures.some(signature => signature.role === "head_chef_site_manager");
+      setMessage(fullySigned ? "Both signatures recorded. Generating the signed PDF…" : `${role === "production_chef" ? "Production chef" : "Head chef / site manager"} signature recorded.`);
+      if (fullySigned) {
+        void fetch("/api/production-plan", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "save-matrix", orderId: order.canonicalId }) }).then(async artifactResponse => {
+          if (!artifactResponse.ok) { const artifactBody = await artifactResponse.json().catch(() => ({})); throw new Error(artifactBody.error?.message || "The signed PDF could not be generated."); }
+          setMessage("Signed PDF generated and ready to open.");
+        }).catch(error => setMessage(error instanceof Error ? error.message : "The signed PDF could not be generated."));
+      }
     } catch (error) {
       setMessage((error as Error).message);
     }
@@ -960,10 +978,11 @@ export default function LianaOrderDetail({
           </button>
           <button
             className="button button-mint"
-            disabled={busy || !subItems.length}
-            onClick={() => void planCommand("mark-planned")}
+            disabled
+            aria-disabled="true"
+            aria-label="Mark as Planned"
           >
-            Mark as Planned
+            {planStatus === "planned" ? "Planned automatically" : "Complete every check to plan"}
           </button>
         </div>
       </footer>

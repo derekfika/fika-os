@@ -129,6 +129,15 @@ async function resolveWeekFolder(rootFolderId: string, weekCommencing: string | 
   const created = await json<{ id: string }>(await googleFetch("https://www.googleapis.com/drive/v3/files?supportsAllDrives=true&fields=id", { method: "POST", headers: { ...headers, "content-type": "application/json" }, body: JSON.stringify({ name, parents: [rootFolderId], mimeType: "application/vnd.google-apps.folder" }) }, `${operation} week folder creation`));
   return created.id;
 }
+async function resolveChildFolder(parentFolderId: string, folderName: string | undefined, headers: Record<string, string>, operation: string) {
+  if (!folderName?.trim()) return parentFolderId;
+  const name = folderName.trim().replace(/[\\/]+/g, "-").slice(0, 120);
+  const query = `'${parentFolderId}' in parents and name = '${name.replaceAll("'", "\\'")}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false`;
+  const existing = await json<{ files?: Array<{ id: string }> }>(await googleFetch(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(query)}&spaces=drive&fields=files(id)&pageSize=1`, { headers }, `${operation} OPLOC folder lookup`));
+  if (existing.files?.[0]?.id) return existing.files[0].id;
+  const created = await json<{ id: string }>(await googleFetch("https://www.googleapis.com/drive/v3/files?supportsAllDrives=true&fields=id", { method: "POST", headers: { ...headers, "content-type": "application/json" }, body: JSON.stringify({ name, parents: [parentFolderId], mimeType: "application/vnd.google-apps.folder" }) }, `${operation} OPLOC folder creation`));
+  return created.id;
+}
 
 function contentAnchor(presentation: Presentation): MenuAnchor | null {
   for (const slide of presentation.slides || []) for (const element of slide.pageElements || []) {
@@ -293,12 +302,13 @@ export async function saveGoogleDriveHtml(input: { name: string; html: string; s
   return { fileId: uploaded.id, driveUrl: uploaded.webViewLink || `https://drive.google.com/open?id=${uploaded.id}`, reused: false };
 }
 
-export async function saveGoogleDrivePdf(input: { name: string; pdfBase64: string; siteKey?: string; folderId?: string; weekCommencing?: string; folderLabel?: string }) {
+export async function saveGoogleDrivePdf(input: { name: string; pdfBase64: string; siteKey?: string; folderId?: string; weekCommencing?: string; folderLabel?: string; oplocFolder?: string }) {
   const rootFolderId = driveResourceId(input.folderId || outputFolderId(input.siteKey || "mnk"));
   if (!rootFolderId || rootFolderId === "your_drive_folder_id") return null;
   const token = await accessToken();
   const headers = { Authorization: `Bearer ${token}` };
-  const folderId = await resolveWeekFolder(rootFolderId, input.weekCommencing, headers, input.folderLabel || "Allergen matrix");
+  const weekFolderId = await resolveWeekFolder(rootFolderId, input.weekCommencing, headers, input.folderLabel || "Allergen matrix");
+  const folderId = await resolveChildFolder(weekFolderId, input.oplocFolder, headers, input.folderLabel || "Allergen matrix");
   const escapedName = input.name.replaceAll("\\", "\\\\").replaceAll("'", "\\'");
   const query = `'${folderId}' in parents and name = '${escapedName}' and trashed = false`;
   const existing = await json<{ files?: Array<{ id: string; webViewLink?: string }> }>(await googleFetch(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(query)}&spaces=drive&fields=files(id,webViewLink)&pageSize=1`, { headers }, "Google Drive matrix lookup"));

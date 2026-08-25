@@ -1001,9 +1001,8 @@ export async function executeBookingWorkflow(
     }
     if (command.action === "cancel") {
       next.lifecycleStatus = "Cancelled";
-      // A cancellation must propagate to every governed production projection
-      // in the same workflow command. Keep the records for audit/history, but
-      // make them terminal so CPU no longer treats cancelled work as active.
+      // Keep the Production Order cancelled so downstream Logistics excludes
+      // it. CPU retains a separate warning projection until a chef dismisses it.
       const priorOrders = command.cancelProduction
         ? await transaction.get(
             productionOrderV1s().where("sourceBookingId", "==", canonicalId),
@@ -1027,6 +1026,7 @@ export async function executeBookingWorkflow(
           {
             status: "cancelled",
             workflowStatus: "cancelled",
+            cancellationNotice: `Booking cancelled: ${command.reason}`,
             version: Number(order.version || 1) + 1,
             cancelledAt: now,
             cancelledBy: actor.uid,

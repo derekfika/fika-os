@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   BookingInput,
   type PortalMenuItem,
@@ -100,7 +100,7 @@ export default function BookingPortal({
     eventDate: "",
     startTime: "",
     endTime: "",
-    guestCount: 1,
+    guestCount: 0,
     floorLevel: "",
     roomOrArea: "",
     deliveryPoint: "",
@@ -135,6 +135,8 @@ export default function BookingPortal({
   const [error, setError] = useState("");
   const [confirmation, setConfirmation] = useState("");
   const [sending, setSending] = useState(false);
+  const sendingRef = useRef(false);
+  const explicitSendRef = useRef(false);
   const [resetOpen, setResetOpen] = useState(false);
   const [draftReady, setDraftReady] = useState(false);
   const [restoredDraft, setRestoredDraft] = useState(false);
@@ -162,6 +164,19 @@ export default function BookingPortal({
           dietaries: typeof dietaries;
           acks: typeof acks;
         }>;
+        const hasDraft = Boolean(
+          draft.occasion ||
+          draft.category ||
+          (draft.lines && draft.lines.length) ||
+          draft.details?.eventDate ||
+          draft.contact?.requesterEmail ||
+          draft.contact?.requesterName ||
+          draft.step,
+        );
+        if (!hasDraft) {
+          window.localStorage.removeItem(draftKey(site.key));
+          return;
+        }
         if (draft.occasion) setOccasion(draft.occasion);
         if (typeof draft.step === "number") setStep(Math.min(4, Math.max(0, draft.step)));
         if (draft.category) setCategory(draft.category);
@@ -308,10 +323,12 @@ export default function BookingPortal({
       return setError("Please confirm the three acknowledgements before reviewing your booking.");
     changeStep((value) => Math.min(4, value + 1));
   };
-  const submit = async (event: React.FormEvent) => {
-    event.preventDefault();
-    const submitter = (event.nativeEvent as SubmitEvent).submitter;
-    if (step === 4 && !submitter) return;
+  const submit = async (event?: React.FormEvent) => {
+    event?.preventDefault();
+    const submitter = event ? (event.nativeEvent as SubmitEvent).submitter : null;
+    if (step === 4 && !explicitSendRef.current && !submitter) return;
+    explicitSendRef.current = false;
+    if (sendingRef.current) return;
     const belowMinimum = selected.find(
       (value) => value.quantity < minimumQuantityFor(value.item),
     );
@@ -434,20 +451,28 @@ export default function BookingPortal({
       acknowledgements: acks,
       specialInstructions: contact.specialInstructions,
     };
+    sendingRef.current = true;
     setSending(true);
-    const response = await fetch("/api/bookings", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(payload),
-    });
-    const json = await response.json();
-    setSending(false);
-    if (!response.ok)
-      return setError(json.error?.message || "We could not send your request.");
-    window.localStorage.removeItem(draftKey(site.key));
-    setConfirmation(
-      "Thank you. Your request is safely with FIKA. We will review it before confirming anything.",
-    );
+    try {
+      const response = await fetch("/api/bookings", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const json = await response.json();
+      if (!response.ok) {
+        setError(json.error?.message || "We could not send your request.");
+        return;
+      }
+      window.localStorage.removeItem(draftKey(site.key));
+      setRestoredDraft(false);
+      setConfirmation(
+        "Thank you. Your request is safely with FIKA. We will review it before confirming anything.",
+      );
+    } finally {
+      sendingRef.current = false;
+      setSending(false);
+    }
   };
   const resetBooking = () => {
     setOccasion("");
@@ -458,7 +483,7 @@ export default function BookingPortal({
       eventDate: "",
       startTime: "",
       endTime: "",
-      guestCount: 1,
+      guestCount: 0,
       floorLevel: "",
       roomOrArea: "",
       deliveryPoint: "",
@@ -492,6 +517,7 @@ export default function BookingPortal({
     });
     setError("");
     setConfirmation("");
+    setRestoredDraft(false);
     setResetOpen(false);
     window.localStorage.removeItem(draftKey(site.key));
   };
@@ -621,7 +647,7 @@ export default function BookingPortal({
                 Continue
               </button>
             ) : (
-              <button className="primary" disabled={sending || !Object.values(acks).every(Boolean)}>{sending ? "Sending…" : Object.values(acks).every(Boolean) ? "Send request" : "Complete acknowledgements"}</button>
+              <button type="button" className="primary" onClick={() => { explicitSendRef.current = true; void submit(); }} disabled={sending || !Object.values(acks).every(Boolean)}>{sending ? "Sending…" : Object.values(acks).every(Boolean) ? "Send request" : "Complete acknowledgements"}</button>
             )}
           </footer>
         </form>
@@ -1118,7 +1144,7 @@ function Summary({ occasion, selected, total, details }: any) {
           ? occasions.find((item) => item.id === occasion)?.label
           : "Choose an occasion"}
       </h3>
-      <p><b>{details.guestCount} pax</b>{details.eventDate ? ` · ${humanDate(details.eventDate)}` : ""}</p>
+      {(details.guestCount > 0 || details.eventDate) && <p>{details.guestCount > 0 && <b>{details.guestCount} pax</b>}{details.guestCount > 0 && details.eventDate ? " · " : ""}{details.eventDate ? humanDate(details.eventDate) : ""}</p>}
       {selected.length ? (
         <ul>
           {selected.map((value: any) => (

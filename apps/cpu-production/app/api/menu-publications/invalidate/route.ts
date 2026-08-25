@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { errorResponse } from "@hub/lib/api";
 import { publishPublicationChanged, type PublicationChangedEvent } from "../../../../lib/publication-events";
 
 export const dynamic = "force-dynamic";
@@ -11,7 +12,5 @@ export async function POST(request: NextRequest) {
     }
     publishPublicationChanged({ event: "publication_changed", publicationDayId: body.publicationDayId, serviceDate: body.serviceDate, version: Number(body.version), action: body.action });
     return NextResponse.json({ accepted: true });
-  } catch (error) {
-    return NextResponse.json({ error: { message: error instanceof Error ? error.message : "Publication invalidation failed." } }, { status: 400 });
-  }
+  } catch (error) { return errorResponse(error); }
 }

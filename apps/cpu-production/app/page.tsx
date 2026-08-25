@@ -24,6 +24,7 @@ import { productionScopes, type ProductionScope } from "../lib/production-scope"
 import { cpuAttentionKey, cpuAttentionLabel, cpuDestinationLabel, cpuDestinationOptionLabel, cpuLifecycle, cpuLifecycleLabels, cpuRequiredTime, cpuSourceLabel, type CpuLifecycle } from "../lib/production-presentation";
 import { orderDate } from "../lib/production-day";
 import { cpuProjectionToOrders, dashboardOperationalDate, filterCpuProjectionForScope, weekCommencingFor } from "../lib/cpu-dashboard-adapter";
+import { readApiResponse } from "./lib/api-response";
 
 const statuses: CpuLifecycle[] = ["received", "accepted", "planning", "planned", "ready", "in_production", "complete"];
 const terminalStatuses = new Set<ProductionStatus>([
@@ -82,7 +83,7 @@ export default function CpuProduction() {
       const response = await fetch(`/api/production?projection=1&${isDayProjection ? `serviceDate=${encodeURIComponent(projectionDate)}` : `weekCommencing=${encodeURIComponent(projectionDate)}`}&scope=${productionScope}`, {
         cache: "no-store",
       });
-      const body = await response.json();
+      const body = await readApiResponse<{ projection?: any; error?: { message?: string } }>(response);
       if (!response.ok) {
         setError(body.error?.message || "Could not load production.");
         return [];
@@ -126,19 +127,26 @@ export default function CpuProduction() {
   );
   const totalsVisible = baseVisible.filter((order) => orderDate(order) === (date || dayDate));
   const todayKey = new Date().toLocaleDateString("en-CA");
-  const openOrder = async (order: Pick<ProductionOrder, "canonicalId">) => {
-    setShowHospitalityAllergens(false);
-    setSelected(undefined);
+  const openOrder = async (order: Pick<ProductionOrder, "canonicalId">, preserveOpen = false) => {
+    if (!preserveOpen) setShowHospitalityAllergens(false);
+    if (!preserveOpen) setSelected(undefined);
     setDetailError("");
     setDetailLoading(true);
     try {
       const response = await fetch(`/api/production?canonicalId=${encodeURIComponent(order.canonicalId)}`, { cache: "no-store" });
-      const body = await response.json();
+      const body = await readApiResponse<{ order?: ProductionOrder; error?: { message?: string } }>(response);
       if (!response.ok || !body.order) throw new Error(body.error?.message || "Could not load the canonical Production Order.");
       setSelected(body.order as ProductionOrder);
     } catch (cause) {
       setDetailError(cause instanceof Error ? cause.message : "Could not load the canonical Production Order.");
     } finally { setDetailLoading(false); }
+  };
+  const acknowledgeCancelledBooking = async (order: ProductionOrder) => {
+    setError("");
+    const response = await fetch("/api/production", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "acknowledge-cancellation", canonicalId: order.canonicalId, expectedVersion: order.version }) });
+    const body = await readApiResponse<{ order?: ProductionOrder; error?: { message?: string } }>(response);
+    if (!response.ok) { setError(body.error?.message || "The cancelled booking could not be acknowledged."); return; }
+    await load(true);
   };
   const sourceTotals = useMemo(() => totalsVisible.reduce<Record<string, Record<string, number>>>((sum, order) => {
     const source = cpuSourceLabel(order);
@@ -312,14 +320,14 @@ export default function CpuProduction() {
           />
         )}
         {view === "calendar" && (
-          <ProductionCalendar orders={baseVisible} open={openOrder} weekCommencing={weekCommencing} onWeekChange={(nextWeek) => setWeekCommencing(nextWeek)} onDayOpen={(selectedDate) => { setDayDate(selectedDate); setWeekCommencing(weekCommencingFor(selectedDate)); setView("day"); }} reviewAllergens={(selectedDate) => { window.location.href = `/allergens?date=${encodeURIComponent(selectedDate)}`; }} />
+          <ProductionCalendar orders={baseVisible} open={openOrder} onCancelBooking={acknowledgeCancelledBooking} weekCommencing={weekCommencing} onWeekChange={(nextWeek) => setWeekCommencing(nextWeek)} onDayOpen={(selectedDate) => { setDayDate(selectedDate); setWeekCommencing(weekCommencingFor(selectedDate)); setView("day"); }} reviewAllergens={(selectedDate) => { window.location.href = `/allergens?date=${encodeURIComponent(selectedDate)}`; }} />
         )}
         {view === "day" && <ProductionDayView orders={baseVisible} date={dayDate} open={openOrder} onChangeDate={(nextDate) => { setDayDate(nextDate); setWeekCommencing(weekCommencingFor(nextDate)); }} reviewAllergens={(selectedDate) => { window.location.href = `/allergens?date=${encodeURIComponent(selectedDate)}`; }} />}
         {view === "queue" && <Queue orders={visible} open={openOrder} />}
         {view === "run-sheet" && <RunSheet orders={visible} />}
         {view === "totals" && <Totals sourceTotals={sourceTotals} orders={totalsVisible} date={date || dayDate} />}
         </section>
-        <OperationsRail orders={visible} date={date || todayKey} open={openOrder} />
+        <OperationsRail orders={visible} date={date || todayKey} open={openOrder} onCancelBooking={acknowledgeCancelledBooking} />
         </div>
       </div>
       </div>
@@ -353,14 +361,14 @@ export default function CpuProduction() {
         <LianaOrderDetail
           order={selected}
           close={() => selected.origin === "hospitality_booking" ? setShowHospitalityAllergens(false) : setSelected(undefined)}
-          onSaved={async (close = true) => { await load(); if (close) setSelected(undefined); else await openOrder(selected); }}
+          onSaved={async (close = true) => { await load(); if (close) setSelected(undefined); else await openOrder(selected, true); }}
         />
       )}
     </main>
   );
 }
 
-function OperationsRail({ orders, date, open }: { orders: ProductionOrder[]; date: string; open: (order: ProductionOrder) => void }) {
+function OperationsRail({ orders, date, open, onCancelBooking }: { orders: ProductionOrder[]; date: string; open: (order: ProductionOrder) => void; onCancelBooking: (order: ProductionOrder) => void }) {
   const todayOrders = orders
     .filter((order) => order.requiredBy.startsWith(date))
     .sort((a, b) => a.requiredBy.localeCompare(b.requiredBy));
@@ -369,12 +377,13 @@ function OperationsRail({ orders, date, open }: { orders: ProductionOrder[]; dat
   return <aside className="cpu-operations-rail">
     <section className="cpu-rail-panel">
       <div className="cpu-rail-heading"><div><span className="cpu-eyebrow">LIVE OPERATIONS</span><h2>Today&apos;s production</h2></div><button type="button" aria-label="More options">•••</button></div>
-      <div className="cpu-booking-list">{todayOrders.length ? todayOrders.map((order) => { const lifecycle = cpuLifecycle(order); return <button type="button" className={`cpu-booking cpu-booking--${lifecycle}`} key={order.canonicalId} onClick={() => open(order)}><time>{cpuRequiredTime(order)}</time><div><strong>{order.clientName || cpuDestinationLabel(order)}</strong><small>{cpuSourceLabel(order)} · {cpuDestinationLabel(order)}{order.guestCount !== undefined ? `　♙ ${order.guestCount} guests` : ""}</small></div><span className={`cpu-mini-status cpu-mini-status--${lifecycle}`}>{cpuLifecycleLabels[lifecycle]}</span><b>›</b></button>; }) : <div className="cpu-empty cpu-empty--rail"><h3>No production scheduled today</h3><p>Real CPU work for this date will appear here.</p></div>}</div>
+      <div className="cpu-booking-list">{todayOrders.length ? todayOrders.map((order) => { const lifecycle = cpuLifecycle(order); return <button type="button" className={`cpu-booking cpu-booking--${order.cancellationNotice ? "cancelled" : lifecycle}`} key={order.canonicalId} onClick={() => open(order)}><time>{cpuRequiredTime(order)}</time><div><strong>{order.clientName || cpuDestinationLabel(order)}</strong><small>{cpuSourceLabel(order)} · {cpuDestinationLabel(order)}{order.guestCount !== undefined ? `　♙ ${order.guestCount} guests` : ""}</small></div><span className={`cpu-mini-status cpu-mini-status--${order.cancellationNotice ? "cancelled" : lifecycle}`}>{order.cancellationNotice ? "Cancelled" : cpuLifecycleLabels[lifecycle]}</span><b>›</b></button>; }) : <div className="cpu-empty cpu-empty--rail"><h3>No production scheduled today</h3><p>Real CPU work for this date will appear here.</p></div>}</div>
       {todayOrders.length > 0 && <button type="button" className="cpu-rail-link">View all production <span>›</span></button>}
     </section>
     <section className="cpu-rail-panel cpu-attention-panel">
       <div className="cpu-rail-heading"><div><span className="cpu-eyebrow">INTERVENTION QUEUE</span><h2>Needs your attention</h2></div><span className="cpu-attention-count">{attention.length}</span></div>
-      {["needs_review", "needs_clarification", "blocked", "amended"].map((status) => <button type="button" className="cpu-attention-row" key={status}><span className={`cpu-attention-dot cpu-dot--${status === "needs_review" ? "review" : status === "blocked" ? "blocked" : "clarify"}`}/><span><strong>{status === "needs_review" ? "Needs review" : status === "needs_clarification" ? "Needs clarification" : status === "blocked" ? "Blocked" : "Amended"}</strong><small>{attentionByStatus(status)} production record{attentionByStatus(status) === 1 ? "" : "s"}</small></span><b>›</b></button>)}
+      {["cancelled_booking", "needs_review", "needs_clarification", "blocked", "amended"].map((status) => <button type="button" className="cpu-attention-row" key={status}><span className={`cpu-attention-dot cpu-dot--${status === "cancelled_booking" ? "cancelled" : status === "needs_review" ? "review" : status === "blocked" ? "blocked" : "clarify"}`}/><span><strong>{status === "cancelled_booking" ? "Cancelled booking" : status === "needs_review" ? "Needs review" : status === "needs_clarification" ? "Needs clarification" : status === "blocked" ? "Blocked" : "Amended"}</strong><small>{attentionByStatus(status)} production record{attentionByStatus(status) === 1 ? "" : "s"}</small></span><b>›</b></button>)}
+      {attention.slice(0, 5).map((order) => <div className="cpu-attention-detail" key={`detail-${order.canonicalId}`}><button type="button" className="cpu-attention-row" onClick={() => open(order)}><span className={`cpu-attention-dot cpu-dot--${order.cancellationNotice ? "cancelled" : "review"}`}/><span><strong>{order.clientName || cpuDestinationLabel(order)}</strong><small>{order.cancellationNotice || order.amendmentNotice || cpuAttentionLabel(order) || "Needs review"}</small></span><b>›</b></button>{order.cancellationNotice && <button type="button" className="cpu-attention-dismiss" aria-label={`Acknowledge cancelled booking for ${order.clientName || cpuDestinationLabel(order)}`} onClick={() => onCancelBooking(order)}>×</button>}</div>)}
     </section>
   </aside>;
 }
@@ -520,7 +529,7 @@ function Totals({
     });
   };
   const categoryTotals = useMemo(() => {
-    const categoryFor = (order: ProductionOrder) => order.origin === "menu_planning" ? "Delivered-In" : order.origin === "grab_and_go" ? "Grab & Go" : order.origin === "hospitality_booking" ? "Hospitality" : order.origin === "cpu_created" ? "CPU-created work" : "Other production";
+    const categoryFor = (order: ProductionOrder) => order.productionCategory === "fine_dining" ? "Fine Dining · Delivered-In" : order.productionCategory === "delivered_in" ? "Delivered-In" : order.productionCategory === "events" ? "Events & Corporate" : order.productionCategory === "hospitality" ? "Hospitality" : order.productionCategory === "grab_and_go" || order.origin === "grab_and_go" ? "Grab & Go" : order.origin === "menu_planning" ? "Delivered-In" : order.origin === "hospitality_booking" ? "Hospitality" : order.origin === "cpu_created" ? "CPU-created work" : "Other production";
     const grouped = new Map<string, Map<string, DailyTotal>>();
     const rank = { not_started: 0, in_progress: 1, produced: 2 };
     for (const order of orders) {

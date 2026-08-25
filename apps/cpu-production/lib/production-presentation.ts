@@ -18,6 +18,7 @@ export function cpuLifecycle(order: ProductionOrder): CpuLifecycle {
   const status = (order.workflowStatus && order.workflowStatus !== "draft" ? order.workflowStatus : order.status) as ProductionStatus;
   if (status === "accepted") return "accepted";
   if (status === "planned") return "planned";
+  if (status === "amended") return "planning";
   if (["planning", "menu_available"].includes(status)) return "planning";
   if (["ready", "scheduled"].includes(status)) return "ready";
   if (["in_production", "partially_complete"].includes(status)) return "in_production";
@@ -38,6 +39,7 @@ export function cpuSourceLabel(order: ProductionOrder) {
 }
 
 export function cpuAttentionLabel(order: ProductionOrder) {
+  if (order.cancellationNotice && !order.cpuDismissedAt) return "Cancelled booking";
   if (order.exceptions.some(exception => exception.status === "open" && exception.severity === "blocking")) return "Blocked";
   if (["blocked", "failed", "reconciliation_required"].includes(order.status)) return "Blocked";
   if (order.status === "needs_clarification") return "Needs clarification";
@@ -48,6 +50,7 @@ export function cpuAttentionLabel(order: ProductionOrder) {
 
 export function cpuAttentionKey(order: ProductionOrder) {
   const label = cpuAttentionLabel(order);
+  if (label === "Cancelled booking") return "cancelled_booking";
   return label === "Needs review" ? "needs_review" : label === "Needs clarification" ? "needs_clarification" : label === "Blocked" ? "blocked" : label === "Amended" ? "amended" : "";
 }
 
@@ -68,6 +71,10 @@ export function cpuDestinationLabel(order: ProductionOrder) {
 
 export function cpuDestinationOptionLabel(order: ProductionOrder) {
   return cpuDestinationLabel(order);
+}
+
+export function titleCaseDish(value: string) {
+  return value.trim().replace(/\s+/g, " ").toLocaleLowerCase("en-GB").replace(/\b\w/g, character => character.toLocaleUpperCase("en-GB"));
 }
 
 export function hasCpuAttention(order: ProductionOrder) { return Boolean(cpuAttentionLabel(order)); }

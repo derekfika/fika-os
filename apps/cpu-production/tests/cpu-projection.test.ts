@@ -26,12 +26,15 @@ test("CPU projection merges canonical orders with plan workflow state", () => {
   assert.equal(projection.summary.totalUnits, 10);
 });
 
-test("CPU projection excludes superseded and cancelled canonical work", () => {
+test("CPU projection retains cancellation notices and excludes superseded work", () => {
   const cancelled = { ...order("order:cancelled"), status: "cancelled" as const };
   const superseded = { ...order("order:superseded"), supersededBy: "order:new" };
   const projection = buildCpuDayProjection("2026-08-24", [cancelled, superseded]);
-  assert.deepEqual(projection.orders, []);
-  assert.equal(projection.summary.orders, 0);
+  assert.equal(projection.orders.length, 1);
+  assert.equal(projection.orders[0].id, "order:cancelled");
+  assert.equal(projection.orders[0].status, "cancelled");
+  assert.equal(projection.orders[0].cancellationNotice, "Booking cancelled in Manager dashboard.");
+  assert.equal(projection.summary.orders, 1);
 });
 
 test("CPU all-day projection keeps the service date on each order", () => {

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { errorResponse } from "@hub/lib/api";
 import * as XLSX from "xlsx";
 
 type Category = "Salad 1" | "Salad 2" | "Salad 3" | "Salad 4" | "Salad 5" | "Salad 6" | "Cold protein" | "Soup" | "Hot meat" | "Hot veg / vegan" | "Extras / sides";
@@ -40,5 +41,5 @@ export async function POST(request: NextRequest) {
       }
     }
     return NextResponse.json({ sourceFile: file.name, candidates, sheets: workbook.SheetNames, allergenSheets: workbook.SheetNames.filter((name) => name.toLowerCase().startsWith("fika")) });
-  } catch (error) { return NextResponse.json({ error: error instanceof Error ? error.message : "Workbook could not be read." }, { status: 422 }); }
+  } catch (error) { return errorResponse(error); }
 }

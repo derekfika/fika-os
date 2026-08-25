@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
+import { errorResponse } from "@hub/lib/api";
 import { requireActor } from "@hub/lib/auth";
 import { assertPermission } from "@hub/lib/authmod";
 import { db } from "@hub/lib/firebase-admin";
 import {
   createCpuProductionOrder,
+  acknowledgeProductionCancellation,
   productionQueue,
   productionOrderDetail,
   transitionProductionOrder,
@@ -16,6 +18,7 @@ import { localFixtureOrders, updateLocalFixture } from "../local-fixtures";
 import { filterProductionOrdersForScope, normaliseProductionScope, type ProductionScope } from "../../../lib/production-scope";
 import { appendCpuChange, buildCpuDayProjection, cpuPlans, cpuProjections, listCpuChanges, listCpuWeekChanges, rebuildCpuWeekProjection, weekCommencingFor } from "../../../lib/cpu-projection";
 import type { ProductionOrder } from "@hub/lib/production-domain";
+import { titleCaseDish } from "../../../lib/production-presentation";
 
 const localActor = {
   uid: "local-cpu",
@@ -37,6 +40,10 @@ async function actorFor(
       return localActor;
     throw error;
   }
+}
+function internalProjectionRequest(request: NextRequest) {
+  const configured = process.env.FIKA_INTERNAL_API_TOKEN;
+  return process.env.NODE_ENV !== "production" && !configured || Boolean(configured && request.headers.get("x-fika-internal-token") === configured);
 }
 async function rebuildCpuProjection(serviceDate: string, lastChangeSequence?: number) {
   const [rawOrders, planSnapshot, previous] = await Promise.all([productionQueue(serviceDate === "all" ? undefined : serviceDate), cpuPlans().get(), cpuProjections().doc(serviceDate).get()]);
@@ -150,6 +157,7 @@ const UpdateLines = z
   })
   .strict();
 const AllergenDiscrepancy = z.object({ action: z.literal("report-allergen-discrepancy"), canonicalId: z.string().min(8), expectedVersion: z.number().int().positive(), note: z.string().trim().min(3) }).strict();
+const AcknowledgeCancellation = z.object({ action: z.literal("acknowledge-cancellation"), canonicalId: z.string().min(8), expectedVersion: z.number().int().positive() }).strict();
 export async function GET(request: NextRequest) {
   try {
     const actor = await actorFor(request);
@@ -176,9 +184,17 @@ export async function GET(request: NextRequest) {
     if (request.nextUrl.searchParams.get("projection") === "1") {
       const week = request.nextUrl.searchParams.get("weekCommencing");
       const stored = await cpuProjections().doc(week ? `week:${week}` : projectionDate).get();
-      const storedData = stored.data() as { orders?: Array<{ destinationLabel?: string; destinationOplocId?: string }> } | undefined;
+      const storedData = stored.data() as { orders?: Array<{ id?: string; destinationLabel?: string; destinationOplocId?: string; origin?: string; status?: string; workflowStatus?: string; cancellationNotice?: string }> } | undefined;
       const needsReadableDestinations = storedData?.orders?.some((order) => order.destinationOplocId && order.destinationLabel === order.destinationOplocId);
-      return NextResponse.json({ projection: stored.exists && !needsReadableDestinations ? stored.data() : week ? await rebuildCpuWeekProjection(week) : await rebuildCpuProjection(projectionDate) });
+      const needsCancellationRefresh = storedData?.orders?.some((order) => (order.status === "cancelled" || order.workflowStatus === "cancelled" || (order.origin === "hospitality_booking" && ["draft", "needs_review"].includes(order.status || ""))) && !order.cancellationNotice);
+      const canonical = await productionQueue(week ? undefined : projectionDate);
+      const weekEnd = week ? (() => { const date = new Date(`${week}T00:00:00Z`); date.setUTCDate(date.getUTCDate() + 4); return date.toISOString().slice(0, 10); })() : undefined;
+      const canonicalIds = new Set(canonical
+        .filter((order) => !week || ((order.serviceDate || "") >= week && (order.serviceDate || "") <= weekEnd!))
+        .map((order) => order.canonicalId));
+      const projectedIds = new Set((storedData?.orders || []).map((order) => order.id).filter(Boolean));
+      const needsOrderRefresh = canonicalIds.size !== projectedIds.size || [...canonicalIds].some((id) => !projectedIds.has(id));
+      return NextResponse.json({ projection: stored.exists && !needsReadableDestinations && !needsCancellationRefresh && !needsOrderRefresh ? stored.data() : week ? await rebuildCpuWeekProjection(week) : await rebuildCpuProjection(projectionDate) });
     }
     if (request.nextUrl.searchParams.has("changesSince")) {
       const after = Number(request.nextUrl.searchParams.get("changesSince") || 0);
@@ -220,10 +236,7 @@ export async function GET(request: NextRequest) {
     const orders = await withReadableDestinations(await ordersForScope(sourceOrders, scope));
     return NextResponse.json({ orders, scope, localFixtures: includeLocalFixtures });
   } catch (error) {
-    return NextResponse.json(
-      { error: { message: (error as Error).message } },
-      { status: (error as { status?: number }).status || 500 },
-    );
+    return errorResponse(error);
   }
 }
 
@@ -242,19 +255,27 @@ async function withReadableDestinations(orders: Awaited<ReturnType<typeof produc
   return orders.map(order => {
     const id = order.destinationOplocId;
     const label = id ? labels.get(id) : undefined;
-    if (!id || !label) return order;
+    if (!id || !label) return { ...order, lines: order.lines.map(line => ({ ...line, itemName: titleCaseDish(line.itemName) })) };
     const current = order.destinationLabel?.trim();
-    if (!current || current === id) return { ...order, destinationLabel: label };
-    if (current.startsWith(`${id} · `)) return { ...order, destinationLabel: `${label} · ${current.slice(id.length + 3)}` };
-    return order;
+    if (!current || current === id) return { ...order, destinationLabel: label, lines: order.lines.map(line => ({ ...line, itemName: titleCaseDish(line.itemName) })) };
+    if (current.startsWith(`${id} · `)) return { ...order, destinationLabel: `${label} · ${current.slice(id.length + 3)}`, lines: order.lines.map(line => ({ ...line, itemName: titleCaseDish(line.itemName) })) };
+    return { ...order, lines: order.lines.map(line => ({ ...line, itemName: titleCaseDish(line.itemName) })) };
   });
 }
 
 export async function POST(request: NextRequest) {
   try {
+    const raw = await request.json();
+    if (raw?.action === "sync-production-event") {
+      if (!internalProjectionRequest(request)) return NextResponse.json({ error: { message: "Internal CPU projection access is not authorised." } }, { status: 401 });
+      const serviceDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).parse(raw.serviceDate);
+      const event = await appendCpuChange({ serviceDate, entityType: "productionOrder", entityId: z.string().min(1).parse(raw.entityId), revision: z.number().int().positive().parse(raw.revision), changeType: z.string().min(1).parse(raw.changeType), actorId: z.string().min(1).parse(raw.actorId || "integration-hub"), changedAt: z.string().min(1).parse(raw.changedAt || new Date().toISOString()), idempotencyKey: z.string().min(1).parse(raw.idempotencyKey) });
+      const dayProjection = await rebuildCpuProjection(serviceDate, event.sequence);
+      const weekProjection = await rebuildCpuWeekProjection(weekCommencingFor(serviceDate), event.sequence);
+      return NextResponse.json({ applied: true, duplicate: event.sequence < Number(raw.sequence || event.sequence), event, dayProjection, weekProjection });
+    }
     const actor = await actorFor(request, ["integration-admin", "reviewer"]);
     assertPermission(actor, "canonical.edit");
-    const raw = await request.json();
     if (raw?.action === "rebuild-cpu-projection") {
       const serviceDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).parse(raw.serviceDate);
       const projection = await rebuildCpuProjection(serviceDate);
@@ -338,6 +359,12 @@ export async function POST(request: NextRequest) {
       await recordCpuChange(command.canonicalId, actor.uid, "allergen-discrepancy", result.order);
       return NextResponse.json(result);
     }
+    if (raw?.action === "acknowledge-cancellation") {
+      const command = AcknowledgeCancellation.parse(raw);
+      const order = await acknowledgeProductionCancellation(actor, command.canonicalId, command.expectedVersion);
+      await recordCpuChange(command.canonicalId, actor.uid, "cancelled-order-dismissed", order);
+      return NextResponse.json({ order });
+    }
     const command = Transition.parse(raw);
     if (command.canonicalId.startsWith("production-order:v1:fixture:")) {
       const updated = updateLocalFixture(command.canonicalId, (current) => ({
@@ -368,9 +395,6 @@ export async function POST(request: NextRequest) {
     await recordCpuChange(command.canonicalId, actor.uid, "status-changed", order);
     return NextResponse.json({ order });
   } catch (error) {
-    return NextResponse.json(
-      { error: { message: (error as Error).message } },
-      { status: (error as { status?: number }).status || 500 },
-    );
+    return errorResponse(error);
   }
 }
