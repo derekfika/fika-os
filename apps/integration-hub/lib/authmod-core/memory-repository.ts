@@ -1,4 +1,4 @@
-import type { AccessAuditEvent, AppAssignment, ApplicationRegistryEntry, AuthIdentity, AuthorityGrant, CustodianAssignment, ImportRecord, ImportRowResolution, ServicePrincipal, SiteAssignment } from "./model";
+import type { AccessAuditEvent, AppAssignment, ApplicationRegistryEntry, AuditPage, AuthIdentity, AuthorityGrant, CustodianAssignment, ImportRecord, ImportRowResolution, LegendReference, ServicePrincipal, SiteAssignment } from "./model";
 import { assertExpectedVersion, type AuthModRepository, type OplocReference } from "./repository";
 export class MemoryAuthModRepository implements AuthModRepository {
   identities = new Map<string, AuthIdentity>(); applications = new Map<string, ApplicationRegistryEntry>(); oplocs = new Map<string, OplocReference>();
@@ -9,6 +9,7 @@ export class MemoryAuthModRepository implements AuthModRepository {
     for (const oploc of seed.oplocs || []) this.oplocs.set(oploc.id, oploc);
   }
   async getIdentity(id: string) { return this.identities.get(id); } async listIdentities() { return [...this.identities.values()]; }
+  async listLegendReferences(search = "", limit = 100) { const needle = search.trim().toLowerCase(); return [...this.identities.values()].filter(value => value.legendId && (!needle || value.displayName.toLowerCase().includes(needle))).slice(0, limit).map(value => ({ id: value.legendId!, label: value.displayName, active: value.status === "active" })); }
   async findIdentityByExternal(provider: string, uid: string) { return [...this.identities.values()].find(value => value.externalProvider === provider && value.externalUid === uid); }
   async findIdentityByEmail(email: string) { const normalized = email.trim().toLowerCase(); return [...this.identities.values()].find(value => value.normalizedEmail === normalized); }
   async findIdentityByLegend(legendId: string) { return [...this.identities.values()].find(value => value.legendId === legendId); }
@@ -45,9 +46,10 @@ export class MemoryAuthModRepository implements AuthModRepository {
   async getServicePrincipal(id: string) { return this.principals.get(id); } async listServicePrincipals() { return [...this.principals.values()]; }
   async saveServicePrincipal(value: ServicePrincipal, expectedVersion?: number) { assertExpectedVersion(this.principals.get(value.id)?.version, expectedVersion); this.principals.set(value.id, value); }
   async saveServicePrincipalWithAudit(value: ServicePrincipal, audit: AccessAuditEvent, expectedVersion?: number) { assertExpectedVersion(this.principals.get(value.id)?.version, expectedVersion); this.principals.set(value.id, value); this.audits.push(audit); }
-  async getImport(id: string) { return this.imports.get(id); }
+  async getImport(id: string) { return this.imports.get(id); } async listImports(limit = 100) { return [...this.imports.values()].sort((a, b) => b.uploadedAt.localeCompare(a.uploadedAt)).slice(0, limit); }
   async saveImport(value: ImportRecord, expectedVersion?: number) { assertExpectedVersion(this.imports.get(value.id)?.version, expectedVersion); this.imports.set(value.id, value); }
   async saveImportResolution(value: ImportRowResolution, expectedVersion?: number) { assertExpectedVersion(this.resolutions.get(value.id)?.version, expectedVersion); this.resolutions.set(value.id, value); }
   async listImportResolutions(importId: string) { return [...this.resolutions.values()].filter(value => value.importId === importId); }
+  async listAuditEvents(input: { limit?: number; cursor?: string; actorId?: string; targetId?: string } = {}): Promise<AuditPage> { const limit = Math.min(input.limit || 50, 200); const filtered = this.audits.filter(event => (!input.actorId || event.actorPrincipalId === input.actorId) && (!input.targetId || event.targetId === input.targetId)).sort((a, b) => b.timestamp.localeCompare(a.timestamp)); return { events: filtered.slice(0, limit), ...(filtered.length > limit ? { nextCursor: filtered[limit - 1].timestamp } : {}) }; }
   async appendAudit(event: AccessAuditEvent) { this.audits.push(event); }
 }

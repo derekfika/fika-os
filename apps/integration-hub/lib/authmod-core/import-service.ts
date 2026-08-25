@@ -10,8 +10,8 @@ import { grantAuthority, hasAuthmodAdmin } from "./authority";
 import type { AuthModRepository } from "./repository";
 
 const PARSER_VERSION = "authmod-import-v2";
-const TRUE = new Set(["true", "yes", "y", "1", "x", "checked"]);
-const FALSE = new Set(["false", "no", "n", "0", "", "unchecked"]);
+const TRUE = new Set(["true", "yes", "y", "1", "x", "checked", "active", "enabled"]);
+const FALSE = new Set(["false", "no", "n", "0", "", "unchecked", "inactive", "disabled", "suspended"]);
 function parseBoolean(value: string | undefined, column: string, row: number) {
   const normalized = String(value || "").trim().toLowerCase();
   if (TRUE.has(normalized)) return true;
@@ -22,11 +22,11 @@ function tryBoolean(value: string | undefined, column: string, row: number, erro
   try { return parseBoolean(value, column, row); } catch (error) { errors.push((error as Error).message); return undefined; }
 }
 function hash(value: string) { return crypto.createHash("sha256").update(value).digest("hex"); }
-function rowsFromBuffer(buffer: Buffer) {
+function rowsFromBuffer(buffer: Buffer): Record<string, string>[] {
   const workbook = XLSX.read(buffer, { type: "buffer", cellDates: false, cellFormula: false, bookVBA: false });
   const sheet = workbook.Sheets[workbook.SheetNames[0]];
   if (!sheet) throw new Error("AUTHMOD workbook has no worksheet.");
-  return XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: "" }).map(row => Object.fromEntries(Object.entries(row).map(([key, value]) => [key.trim(), String(value ?? "").trim()])));
+  return XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: "" }).map(row => { const value: Record<string, string> = Object.fromEntries(Object.entries(row).map(([key, item]) => [key.trim(), String(item ?? "").trim()])); const rawEmail = value.Email || value["Email Address"]; const displayName = value.DisplayName || [value["First Name"], value["Last Name"]].filter(Boolean).join(" "); return { ...value, ...(rawEmail ? { Email: rawEmail } : {}), ...(displayName ? { DisplayName: displayName } : {}) }; });
 }
 function changes(row: Record<string, string>, identityId: string | undefined, rowNumber: number, errors: string[]): ProposedAccessChange[] {
   const result: ProposedAccessChange[] = [];
@@ -80,7 +80,17 @@ export async function previewAccessImport(repository: AuthModRepository, input: 
   return { record, summary: record.summary, resolutions: await repository.listImportResolutions(importId) };
 }
 
-export type ImportDecision = { identityId?: string; accept: boolean; identityKind?: IdentityKind; representedOplocId?: string; operationalPurpose?: string; primaryCustodianLegendId?: string; createIdentity?: { displayName: string; email?: string; externalProvider?: string; externalUid?: string } };
+export type ImportDecision = { identityId?: string; accept: boolean; identityKind?: IdentityKind; legendId?: string; representedOplocId?: string; operationalPurpose?: string; primaryCustodianLegendId?: string; createIdentity?: { displayName: string; email?: string; externalProvider?: string; externalUid?: string } };
+
+export async function resolveAccessImportRow(repository: AuthModRepository, input: { importId: string; rowId: string; actor: AuthPrincipal; decision: ImportDecision }) {
+  if (input.actor.type !== "interactive" || !(await hasAuthmodAdmin(repository, input.actor.id))) throw Object.assign(new Error("AUTHMOD Admin authority is required."), { status: 403, code: "AUTHMOD_ADMIN_REQUIRED" });
+  const resolution = (await repository.listImportResolutions(input.importId)).find(value => value.id === input.rowId);
+  if (!resolution) throw Object.assign(new Error("Import row was not found."), { status: 404 });
+  const identity = input.decision.identityId ? await repository.getIdentity(input.decision.identityId) : undefined;
+  const next = { ...resolution, selectedIdentityId: identity?.id || resolution.selectedIdentityId, decision: input.decision.accept ? "accept" as const : "exclude" as const, decidedBy: input.actor.id, decidedAt: now(), version: resolution.version + 1 };
+  await repository.saveImportResolution(next, resolution.version);
+  return next;
+}
 
 export async function commitAccessImport(repository: AuthModRepository, input: { importId: string; actor: AuthPrincipal; decisions: Record<string, ImportDecision>; idempotencyKey: string }) {
   if (!(await hasAuthmodAdmin(repository, input.actor.id))) throw Object.assign(new Error("AUTHMOD Admin authority is required to commit an access import."), { status: 403, code: "AUTHMOD_ADMIN_REQUIRED" });
@@ -110,7 +120,7 @@ export async function commitAccessImport(repository: AuthModRepository, input: {
     if (!identity) { blocked++; continue; }
     if (decision.identityKind && (decision.identityKind !== identity.identityKind || decision.representedOplocId || decision.operationalPurpose)) await setIdentityKind(repository, { identityId: identity.id, identityKind: decision.identityKind, representedOplocId: decision.representedOplocId, operationalPurpose: decision.operationalPurpose, actor: input.actor, reason: "Reviewed AUTHMOD spreadsheet account classification." });
     if (decision.primaryCustodianLegendId) await assignPrimaryCustodian(repository, { operationalIdentityId: identity.id, custodianLegendId: decision.primaryCustodianLegendId, actor: input.actor, reason: "Reviewed AUTHMOD spreadsheet primary custodian." });
-    const canonicalLegendId = resolution.input["Legend ID"]?.trim();
+    const canonicalLegendId = decision.legendId?.trim() || resolution.input["Legend ID"]?.trim();
     if (canonicalLegendId) await linkLegend(repository, { identityId: identity.id, legendId: canonicalLegendId, actor: input.actor, reason: "Reviewed AUTHMOD spreadsheet canonical Legend reconciliation." });
     if (resolution.input.Active !== undefined && resolution.input.Active !== "") await setIdentityStatus(repository, { identityId: identity.id, status: parseBoolean(resolution.input.Active, "Active", resolution.rowNumber) ? "active" : "inactive", actor: input.actor, reason: "Reviewed AUTHMOD spreadsheet import." });
     const siteIds = Object.keys(resolution.input).filter(value => value.startsWith("site:oploc:") && parseBoolean(resolution.input[value], value, resolution.rowNumber)).map(value => value.slice("site:oploc:".length)).filter(id => activeOplocs.some(value => value.id === id));

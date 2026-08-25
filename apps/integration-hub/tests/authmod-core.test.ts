@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import * as XLSX from "xlsx";
 import {
-  MemoryAuthModRepository, V1_APPLICATIONS, createAuthIdentity, grantAuthmodAdmin, grantAuthority, hasAuthmodAdmin,
+  MemoryAuthModRepository, V1_APPLICATIONS, createAuthIdentity, grantAuthmodAdmin, grantAuthority, revokeAuthority, hasAuthmodAdmin,
   grantServiceAuthority, grantStandardApplicationAccess, revokeStandardApplicationAccess, createServicePrincipal,
   registerServiceCredential, revokeServicePrincipal, evaluateAuthority, resolveUserAccess, setFullAccess, transitionalCredentialMatches,
   previewAccessImport, commitAccessImport, reconcileLegendCandidate, assignSite, revokeSite, distinctActors, linkLegend,
@@ -280,4 +280,14 @@ test("workspace operational classification remains unresolved until reviewed", a
   const preview = await previewAccessImport(repository, { buffer: Buffer.from(XLSX.write(workbook, { type: "buffer", bookType: "xlsx" })), filename: "workspace-accounts.xlsx", actor });
   assert.equal(preview.resolutions[0].suggestedIdentityKind, "operational"); assert.equal(preview.resolutions[0].selectedIdentityId, undefined); assert.equal(preview.resolutions[0].unresolvedReasons.some(value => value.includes("classification")), true);
   const result = await commitAccessImport(repository, { importId: preview.record.id, actor, decisions: {}, idempotencyKey: "workspace-kind-1" }); assert.equal(result.status, "partial");
+});
+
+test("normal AUTHMOD administration cannot remove the last active person administrator", async () => {
+  const repository = makeRepo(); const first = await identity(repository, "first-admin@example.test"); const second = await identity(repository, "second-admin@example.test");
+  const firstGrant = await grantAuthmodAdmin(repository, { identityId: first.id, actor: admin, reason: "First administrator." }); await grantAuthmodAdmin(repository, { identityId: second.id, actor: admin, reason: "Second administrator." });
+  const actor: AuthPrincipal = { type: "interactive", id: second.id, displayName: second.displayName, identityKind: "person" };
+  await revokeAuthority(repository, { grantId: firstGrant.id, actor, reason: "Administrator rotation." });
+  assert.equal(await hasAuthmodAdmin(repository, first.id), false);
+  const secondGrant = (await repository.listAuthorityGrants(second.id, "interactive")).find(value => value.resource === "authmod");
+  await assert.rejects(() => revokeAuthority(repository, { grantId: secondGrant!.id, actor, reason: "Accidental lockout." }), /last active person/);
 });

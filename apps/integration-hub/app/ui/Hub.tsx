@@ -280,6 +280,12 @@ export default function Hub() {
               <span>{item}</span>
             </button>
           ))}
+          {payload.actor.role === "integration-admin" && (
+            <button className="active" onClick={() => { window.location.href = "/authmod"; }}>
+              <ShieldCheck />
+              <span>AUTHMOD</span>
+            </button>
+          )}
         </nav>
       </aside>
       <main>

@@ -74,6 +74,8 @@ export type AuthorizationDecision = {
   reasonCode: "allowed" | "unauthenticated" | "identity-inactive" | "service-inactive" | "app-disabled" |
   "app-not-assigned" | "oploc-not-assigned" | "authority-not-granted" | "scope-not-authorized" | "invalid-request" | "store-unavailable";
 };
+export type LegendReference = { id: string; label: string; active: boolean };
+export type AuditPage = { events: AccessAuditEvent[]; nextCursor?: string };
 
 const applicationSeed = [
   ["integration-hub", "Integration Hub", "none", "hub", "integration-hub.normal", ["View"]],
