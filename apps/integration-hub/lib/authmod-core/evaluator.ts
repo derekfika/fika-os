@@ -6,7 +6,7 @@ function deny(principal: AuthPrincipal, reasonCode: AuthorizationDecision["reaso
   return { allowed: false, principalId: principal.id, principalType: principal.type, matchedGrantIds: [], reasonCode, ...extra };
 }
 function scopeAllows(grant: Scope, requested?: Scope) {
-  if (!requested) return true;
+  if (!requested) return grant.kind === "organisation";
   if (requested.kind === "organisation") return grant.kind === "organisation";
   if (requested.kind === "oploc") return grant.kind === "organisation" || (grant.kind === "oploc" && requested.ids.every(id => grant.ids.includes(id)));
   return grant.kind === "resource" && requested.ids.every(id => grant.ids.includes(id));
@@ -20,8 +20,7 @@ async function humanBase(repository: AuthModRepository, principal: AuthPrincipal
 async function fullAccessScopeAllowed(repository: AuthModRepository, scope: Scope | undefined) {
   if (!scope || scope.kind === "organisation") return true;
   if (scope.kind !== "oploc") return false;
-  const active = await repository.listActiveOplocs();
-  return scope.ids.every(id => active.some(value => value.id === id && value.active));
+  return (await Promise.all(scope.ids.map(id => repository.getActiveOploc(id)))).every(Boolean);
 }
 export async function resolveUserAccess(repository: AuthModRepository, input: { principal: AuthPrincipal; appId?: string; oplocId?: string; oplocIds?: string[] }): Promise<AuthorizationDecision> {
   try {
@@ -36,8 +35,8 @@ export async function resolveUserAccess(repository: AuthModRepository, input: { 
     const requestedOplocIds = input.oplocIds || (input.oplocId ? [input.oplocId] : []);
     if (app.scopeModel !== "none" && requestedOplocIds.length) {
       const siteAssignments = await repository.listSiteAssignments(identity.id);
-      const activeOplocs = await repository.listActiveOplocs();
-      const siteAllowed = requestedOplocIds.every(oplocId => identity.fullAccess ? activeOplocs.some(value => value.id === oplocId && value.active) : siteAssignments.some(value => value.oplocId === oplocId && isEffective(value)));
+      const activeOplocs = await Promise.all(requestedOplocIds.map(oplocId => repository.getActiveOploc(oplocId)));
+      const siteAllowed = requestedOplocIds.every((oplocId, index) => Boolean(activeOplocs[index]) && (identity.fullAccess || siteAssignments.some(value => value.oplocId === oplocId && isEffective(value))));
       if (!siteAllowed) return deny(input.principal, "oploc-not-assigned", { appId: input.appId, scope: { kind: "oploc", ids: requestedOplocIds } });
     }
     const normalGrantIds = grants.filter(value => value.appId === input.appId && value.provenance === "standard-app-access" && isEffective(value)).map(value => value.id);
@@ -48,6 +47,8 @@ export async function evaluateAuthority(repository: AuthModRepository, input: { 
   try {
     const app = await repository.getApplication(input.appId);
     if (!app || !app.enabled) return deny(input.principal, "app-disabled", { appId: input.appId, action: input.action });
+    const operationalApp = app.scopeModel !== "none";
+    if (operationalApp && !input.scope) return deny(input.principal, "invalid-request", { appId: input.appId, action: input.action });
     if (input.principal.type === "service") {
       const service = await repository.getServicePrincipal(input.principal.id);
       if (!service || service.status !== "active" || !isEffective(service)) return deny(input.principal, "service-inactive", { appId: input.appId, action: input.action });

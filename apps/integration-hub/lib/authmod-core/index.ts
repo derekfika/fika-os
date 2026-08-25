@@ -11,3 +11,4 @@ export * from "./import-service";
 export * from "./legend-candidates";
 export * from "./registry";
 export * from "./service-principals";
+export * from "./admin-service";

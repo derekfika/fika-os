@@ -13,12 +13,15 @@ export class MemoryAuthModRepository implements AuthModRepository {
   async findIdentityByEmail(email: string) { const normalized = email.trim().toLowerCase(); return [...this.identities.values()].find(value => value.normalizedEmail === normalized); }
   async findIdentityByLegend(legendId: string) { return [...this.identities.values()].find(value => value.legendId === legendId); }
   async saveIdentity(value: AuthIdentity, expectedVersion?: number) { assertExpectedVersion(this.identities.get(value.id)?.version, expectedVersion); this.identities.set(value.id, value); }
+  async saveIdentityWithAudit(value: AuthIdentity, audit: AccessAuditEvent, expectedVersion?: number) { assertExpectedVersion(this.identities.get(value.id)?.version, expectedVersion); this.identities.set(value.id, value); this.audits.push(audit); }
   async listApplications() { return [...this.applications.values()]; } async getApplication(appId: string) { return this.applications.get(appId); }
   async saveApplication(value: ApplicationRegistryEntry, expectedVersion?: number) { assertExpectedVersion(this.applications.get(value.appId)?.version, expectedVersion); this.applications.set(value.appId, value); }
   async listActiveOplocs() { return [...this.oplocs.values()].filter(value => value.active); }
+  async getActiveOploc(oplocId: string) { const value = this.oplocs.get(oplocId); return value?.active ? value : undefined; }
   async listSiteAssignments(identityId: string) { return [...this.siteAssignments.values()].filter(value => value.identityId === identityId); }
   async getSiteAssignment(id: string) { return this.siteAssignments.get(id); }
   async saveSiteAssignment(value: SiteAssignment, expectedVersion?: number) { assertExpectedVersion(this.siteAssignments.get(value.id)?.version, expectedVersion); this.siteAssignments.set(value.id, value); }
+  async saveSiteAssignmentWithAudit(value: SiteAssignment, audit: AccessAuditEvent, expectedVersion?: number) { assertExpectedVersion(this.siteAssignments.get(value.id)?.version, expectedVersion); this.siteAssignments.set(value.id, value); this.audits.push(audit); }
   async listAppAssignments(identityId: string) { return [...this.appAssignments.values()].filter(value => value.identityId === identityId); }
   async getAppAssignment(id: string) { return this.appAssignments.get(id); }
   async saveAppAssignment(value: AppAssignment, expectedVersion?: number) { assertExpectedVersion(this.appAssignments.get(value.id)?.version, expectedVersion); this.appAssignments.set(value.id, value); }
@@ -39,6 +42,7 @@ export class MemoryAuthModRepository implements AuthModRepository {
   }
   async getServicePrincipal(id: string) { return this.principals.get(id); } async listServicePrincipals() { return [...this.principals.values()]; }
   async saveServicePrincipal(value: ServicePrincipal, expectedVersion?: number) { assertExpectedVersion(this.principals.get(value.id)?.version, expectedVersion); this.principals.set(value.id, value); }
+  async saveServicePrincipalWithAudit(value: ServicePrincipal, audit: AccessAuditEvent, expectedVersion?: number) { assertExpectedVersion(this.principals.get(value.id)?.version, expectedVersion); this.principals.set(value.id, value); this.audits.push(audit); }
   async getImport(id: string) { return this.imports.get(id); }
   async saveImport(value: ImportRecord, expectedVersion?: number) { assertExpectedVersion(this.imports.get(value.id)?.version, expectedVersion); this.imports.set(value.id, value); }
   async saveImportResolution(value: ImportRowResolution, expectedVersion?: number) { assertExpectedVersion(this.resolutions.get(value.id)?.version, expectedVersion); this.resolutions.set(value.id, value); }

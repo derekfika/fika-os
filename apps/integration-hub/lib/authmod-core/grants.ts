@@ -1,6 +1,6 @@
 import type { AuthPrincipal, AppAssignment, ApplicationRegistryEntry, AuthorityGrant, EffectivePeriod, SiteAssignment } from "./model";
 import { idempotentId, isEffective, now } from "./model";
-import { appendAudit, auditEvent } from "./audit";
+import { auditEvent } from "./audit";
 import type { AuthModRepository } from "./repository";
 
 function period(input?: EffectivePeriod) { return { ...(input?.effectiveFrom ? { effectiveFrom: input.effectiveFrom } : {}), ...(input?.effectiveTo ? { effectiveTo: input.effectiveTo } : {}) }; }
@@ -8,7 +8,7 @@ function standardGrant(app: ApplicationRegistryEntry, identityId: string, action
   const timestamp = now();
   return { id: idempotentId("grant", identityId, app.appId, action), subjectType: "human", subjectId: identityId, appId: app.appId, resource: app.standardResource, action, scope: { kind: "organisation", ids: [] }, status: "active", provenance: "standard-app-access", bundleId, ...period(effective), reason: "Standard application access bundle", grantedBy: actor.id, revokedBy: undefined, version: 1, createdAt: timestamp, updatedAt: timestamp };
 }
-export async function grantStandardApplicationAccess(repository: AuthModRepository, input: { identityId: string; appId: string; actor: AuthPrincipal; effectivePeriod?: EffectivePeriod; scopeIds?: string[]; idempotencyKey?: string }) {
+export async function grantStandardApplicationAccess(repository: AuthModRepository, input: { identityId: string; appId: string; actor: AuthPrincipal; effectivePeriod?: EffectivePeriod; idempotencyKey?: string }) {
   const app = await repository.getApplication(input.appId); if (!app || !app.enabled) throw Object.assign(new Error("Application is not enabled."), { status: 422 });
   const existing = (await repository.listAppAssignments(input.identityId)).find(value => value.appId === input.appId);
   const timestamp = now(); const bundleId = idempotentId("standard-app-access", input.identityId, input.appId);
@@ -34,17 +34,17 @@ export async function revokeStandardApplicationAccess(repository: AuthModReposit
   return { revoked: true, grantIds: standard.map(value => value.id) };
 }
 export async function assignSite(repository: AuthModRepository, input: { identityId: string; oplocId: string; actor: AuthPrincipal; effectivePeriod?: EffectivePeriod; reason?: string; source?: SiteAssignment["source"] }) {
-  const activeOplocs = await repository.listActiveOplocs(); if (!activeOplocs.some(value => value.id === input.oplocId)) throw Object.assign(new Error("Unknown or inactive OPLOC."), { status: 422 });
+  if (!(await repository.getActiveOploc(input.oplocId))) throw Object.assign(new Error("Unknown or inactive OPLOC."), { status: 422 });
   const id = idempotentId("site-assignment", input.identityId, input.oplocId); const prior = await repository.getSiteAssignment(id); const timestamp = now();
   const assignment: SiteAssignment = { id, identityId: input.identityId, oplocId: input.oplocId, status: "active", source: input.source || "manual-override", reason: input.reason, grantedBy: input.actor.id, version: (prior?.version || 0) + 1, createdAt: prior?.createdAt || timestamp, updatedAt: timestamp, ...period(input.effectivePeriod) };
-  await repository.saveSiteAssignment(assignment, prior?.version);
-  await appendAudit(repository, { actor: input.actor, targetType: "SiteAssignment", targetId: id, action: "site-assignment-granted", beforeState: prior, afterState: assignment, provenance: "manual-override", outcome: "committed", scope: { kind: "oploc", ids: [input.oplocId] } });
+  const audit = auditEvent({ actor: input.actor, targetType: "SiteAssignment", targetId: id, action: "site-assignment-granted", beforeState: prior, afterState: assignment, provenance: assignment.source, outcome: "committed", scope: { kind: "oploc", ids: [input.oplocId] } });
+  await repository.saveSiteAssignmentWithAudit(assignment, audit, prior?.version);
   return assignment;
 }
 export async function revokeSite(repository: AuthModRepository, input: { identityId: string; oplocId: string; actor: AuthPrincipal; reason?: string }) {
   const id = idempotentId("site-assignment", input.identityId, input.oplocId); const prior = await repository.getSiteAssignment(id); if (!prior) return { revoked: false };
   const next = { ...prior, status: "revoked" as const, revokedBy: input.actor.id, reason: input.reason, version: prior.version + 1, updatedAt: now() };
-  await repository.saveSiteAssignment(next, prior.version);
-  await appendAudit(repository, { actor: input.actor, targetType: "SiteAssignment", targetId: id, action: "site-assignment-revoked", beforeState: prior, afterState: next, provenance: "manual-override", outcome: "revoked", scope: { kind: "oploc", ids: [input.oplocId] } });
+  const audit = auditEvent({ actor: input.actor, targetType: "SiteAssignment", targetId: id, action: "site-assignment-revoked", beforeState: prior, afterState: next, provenance: prior.source, outcome: "revoked", scope: { kind: "oploc", ids: [input.oplocId] } });
+  await repository.saveSiteAssignmentWithAudit(next, audit, prior.version);
   return { revoked: true, assignment: next };
 }

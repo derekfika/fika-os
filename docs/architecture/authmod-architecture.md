@@ -13,6 +13,7 @@ AUTHMOD covers Integration Hub, CPU Production, Logistics, Menu Planning, Hospit
 3. **Effective access is an intersection.** A human request is authorised only when the identity is active, the app grant is active, the requested OPLOC is assigned (where the capability is site-scoped), and the action grant is active. No combined site_app permission vocabulary is needed for v1.
    The administration surface presents ordinary app access as a standard application bundle: one app choice atomically manages the AppAssignment and that app's reviewed normal View/Contribute/Manage grants. Special authority remains explicit and separate.
    Standard grants are application-normal and organisation-scoped; they do not contain a current site list. SiteAssignments are checked dynamically for every requested OPLOC.
+   Operational authority evaluation fails closed when its OPLOC scope is omitted; app-entry resolution may still omit an OPLOC. Every requested OPLOC must also be an active canonical OPLOC, not merely an effective historical SiteAssignment.
 4. **Full Access is a convenience grant, not administration or business authority.** It expands to the normal in-scope app and OPLOC set at evaluation time, but never grants AUTHMOD Admin, Approve, Publish, or safety sign-off.
 5. **Actions remain controlled:** View, Contribute, Manage, Approve, Publish, Administer. Manage does not imply Approve or Publish; Administer does not imply business authority.
 6. **Authority is explicit and effective-dated.** Job titles, BrightHR titles, email domains, app visibility, and technical access do not create grants. Temporary/delegated grants require an end date and audit evidence.
@@ -68,7 +69,7 @@ Public Hospitality customer booking submission and public static/reference route
 
 ## Audit and operational cost
 
-Use the existing durable domain/change event where it contains the required evidence; do not add a duplicate Firestore write for every mutation by default. Audit queries are bounded and paginated. No audit writes occur for reads, polling or renders. Access changes, import commits, grant revocations, service-principal changes and emergency access are meaningful mutations and require durable evidence.
+Use the existing durable domain/change event where it contains the required evidence; do not add a duplicate Firestore write for every mutation by default. Audit queries are bounded and paginated. No audit writes occur for reads, polling or renders. Access changes, import commits, grant revocations, service-principal changes and emergency access are meaningful mutations and require durable evidence. Security state and its audit event are written through repository transactions where supported.
 
 ## Explicit non-decisions
 

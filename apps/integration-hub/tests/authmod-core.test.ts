@@ -17,8 +17,8 @@ async function identity(repository: MemoryAuthModRepository, email = "sarah@exam
 
 test("standard application bundle is explicit, idempotent, and revocation preserves special grants", async () => {
   const repository = makeRepo(); const person = await identity(repository);
-  const first = await grantStandardApplicationAccess(repository, { identityId: person.id, appId: "logistics", actor: admin, scopeIds: ["oploc:mnk"] });
-  const second = await grantStandardApplicationAccess(repository, { identityId: person.id, appId: "logistics", actor: admin, scopeIds: ["oploc:mnk"] });
+  const first = await grantStandardApplicationAccess(repository, { identityId: person.id, appId: "logistics", actor: admin });
+  const second = await grantStandardApplicationAccess(repository, { identityId: person.id, appId: "logistics", actor: admin });
   assert.equal(first.assignment.id, second.assignment.id); assert.equal((await repository.listAuthorityGrants(person.id, "human")).length, 2);
   const special = await grantAuthority(repository, { subjectId: person.id, subjectType: "human", actor: admin, appId: "logistics", resource: "logistics.repair", action: "Administer", scope: { kind: "oploc", ids: ["oploc:mnk"] }, reason: "Reviewed maintenance authority." });
   await revokeStandardApplicationAccess(repository, { identityId: person.id, appId: "logistics", actor: admin, reason: "Access removed." });
@@ -30,7 +30,7 @@ test("standard application bundle is explicit, idempotent, and revocation preser
 test("site and application intersection is enforced by the evaluator", async () => {
   const repository = makeRepo(); const person = await identity(repository); const principal: AuthPrincipal = { type: "human", id: person.id, displayName: person.displayName, email: person.normalizedEmail };
   await assignSite(repository, { identityId: person.id, oplocId: "oploc:mnk", actor: admin, reason: "Approved Hospitality site access." });
-  await grantStandardApplicationAccess(repository, { identityId: person.id, appId: "hospitality-booking", actor: admin, scopeIds: ["oploc:mnk"] });
+  await grantStandardApplicationAccess(repository, { identityId: person.id, appId: "hospitality-booking", actor: admin });
   assert.equal((await resolveUserAccess(repository, { principal, appId: "hospitality-booking", oplocId: "oploc:mnk" })).allowed, true);
   assert.equal((await resolveUserAccess(repository, { principal, appId: "hospitality-booking", oplocId: "oploc:munich" })).reasonCode, "oploc-not-assigned");
 });
@@ -38,7 +38,7 @@ test("site and application intersection is enforced by the evaluator", async () 
 test("standard application access remains independent from changing site assignments", async () => {
   const repository = makeRepo(); const person = await identity(repository); const principal: AuthPrincipal = { type: "human", id: person.id, displayName: person.displayName };
   await assignSite(repository, { identityId: person.id, oplocId: "oploc:mnk", actor: admin, reason: "MNK access." });
-  const bundle = await grantStandardApplicationAccess(repository, { identityId: person.id, appId: "hospitality-booking", actor: admin, scopeIds: ["oploc:mnk"] });
+  const bundle = await grantStandardApplicationAccess(repository, { identityId: person.id, appId: "hospitality-booking", actor: admin });
   await assignSite(repository, { identityId: person.id, oplocId: "oploc:munich", actor: admin, reason: "Later Munich RE access." });
   assert.equal((await resolveUserAccess(repository, { principal, appId: "hospitality-booking", oplocId: "oploc:munich" })).allowed, true);
   await revokeSite(repository, { identityId: person.id, oplocId: "oploc:mnk", actor: admin, reason: "MNK removed." });
@@ -49,7 +49,7 @@ test("standard application access remains independent from changing site assignm
 test("scope evaluation never widens an OPLOC grant and validates every requested OPLOC", async () => {
   const repository = makeRepo(); const person = await identity(repository); const principal: AuthPrincipal = { type: "human", id: person.id, displayName: person.displayName };
   await assignSite(repository, { identityId: person.id, oplocId: "oploc:mnk", actor: admin, reason: "MNK access." });
-  await grantStandardApplicationAccess(repository, { identityId: person.id, appId: "logistics", actor: admin, scopeIds: ["oploc:mnk"] });
+  await grantStandardApplicationAccess(repository, { identityId: person.id, appId: "logistics", actor: admin });
   await grantAuthority(repository, { subjectId: person.id, subjectType: "human", actor: admin, appId: "logistics", resource: "logistics.repair", action: "Administer", scope: { kind: "oploc", ids: ["oploc:mnk"] }, reason: "Scoped test authority." });
   assert.equal((await evaluateAuthority(repository, { principal, appId: "logistics", resource: "logistics.repair", action: "Administer", scope: { kind: "organisation", ids: [] } })).allowed, false);
   assert.equal((await evaluateAuthority(repository, { principal, appId: "logistics", resource: "logistics.repair", action: "Administer", scope: { kind: "oploc", ids: ["oploc:munich"] } })).allowed, false);
@@ -88,7 +88,7 @@ test("AUTHMOD Admin is independent from Full Access", async () => {
 test("special authority is explicit and action separation is preserved", async () => {
   const repository = makeRepo(); const person = await identity(repository); const principal: AuthPrincipal = { type: "human", id: person.id, displayName: person.displayName };
   await assignSite(repository, { identityId: person.id, oplocId: "oploc:mnk", actor: admin, reason: "Approved Menu Planning site access." });
-  await grantStandardApplicationAccess(repository, { identityId: person.id, appId: "menu-planning", actor: admin, scopeIds: ["oploc:mnk"] });
+  await grantStandardApplicationAccess(repository, { identityId: person.id, appId: "menu-planning", actor: admin });
   assert.equal((await evaluateAuthority(repository, { principal, appId: "menu-planning", resource: "menu.publish", action: "Publish", scope: { kind: "oploc", ids: ["oploc:mnk"] } })).allowed, false);
   await grantAuthority(repository, { subjectId: person.id, subjectType: "human", actor: admin, appId: "menu-planning", resource: "menu.publish", action: "Publish", scope: { kind: "oploc", ids: ["oploc:mnk"] }, reason: "Approved publisher." });
   assert.equal((await evaluateAuthority(repository, { principal, appId: "menu-planning", resource: "menu.publish", action: "Publish", scope: { kind: "oploc", ids: ["oploc:mnk"] } })).allowed, true);
@@ -146,7 +146,7 @@ test("audit actor is server-derived for core mutations", async () => {
 test("expired site assignment and unavailable AUTHMOD store fail closed", async () => {
   const repository = makeRepo(); const person = await identity(repository); const principal: AuthPrincipal = { type: "human", id: person.id, displayName: person.displayName };
   await assignSite(repository, { identityId: person.id, oplocId: "oploc:mnk", actor: admin, effectivePeriod: { effectiveTo: "2020-01-01T00:00:00.000Z" }, reason: "Expired test assignment." });
-  await grantStandardApplicationAccess(repository, { identityId: person.id, appId: "hospitality-booking", actor: admin, scopeIds: ["oploc:mnk"] });
+  await grantStandardApplicationAccess(repository, { identityId: person.id, appId: "hospitality-booking", actor: admin });
   assert.equal((await resolveUserAccess(repository, { principal, appId: "hospitality-booking", oplocId: "oploc:mnk" })).reasonCode, "oploc-not-assigned");
   const unavailable = makeRepo(); unavailable.getIdentity = async () => { throw new Error("store unavailable"); };
   assert.equal((await resolveUserAccess(unavailable, { principal, appId: "hospitality-booking" })).reasonCode, "store-unavailable");
@@ -157,8 +157,56 @@ test("import commit is idempotent and signature policy rejects one actor twice",
   await grantAuthmodAdmin(repository, { identityId: operator.id, actor: admin, reason: "Test import administrator." });
   const sheet = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(sheet, XLSX.utils.json_to_sheet([{ Email: "nobody@example.test", Active: "yes" }]), "Access");
   const preview = await previewAccessImport(repository, { buffer: Buffer.from(XLSX.write(sheet, { type: "buffer", bookType: "xlsx" })), filename: "access.xlsx", actor: operatorPrincipal });
-  const first = await commitAccessImport(repository, { importId: preview.record.id, actor: operatorPrincipal, decisions: {}, idempotencyKey: "same-import" });
+  const first = await commitAccessImport(repository, { importId: preview.record.id, actor: operatorPrincipal, decisions: { [preview.resolutions[0].id]: { accept: false } }, idempotencyKey: "same-import" });
   const second = await commitAccessImport(repository, { importId: preview.record.id, actor: operatorPrincipal, decisions: {}, idempotencyKey: "same-import" });
   assert.equal(second.committedRows, first.committedRows); assert.equal(second.importId, first.importId); assert.equal(distinctActors(["uid:one", "uid:one"]), false); assert.equal(distinctActors(["uid:one", "uid:two"]), true);
   await assert.rejects(() => commitAccessImport(repository, { importId: preview.record.id, actor: operatorPrincipal, decisions: {}, idempotencyKey: "different-import" }), /already been committed/);
+});
+
+test("operational authority fails closed when OPLOC scope is omitted", async () => {
+  const repository = makeRepo(); const person = await identity(repository); const principal: AuthPrincipal = { type: "human", id: person.id, displayName: person.displayName };
+  await assignSite(repository, { identityId: person.id, oplocId: "oploc:mnk", actor: admin, reason: "Hospitality site." });
+  await grantStandardApplicationAccess(repository, { identityId: person.id, appId: "hospitality-booking", actor: admin });
+  assert.equal((await evaluateAuthority(repository, { principal, appId: "hospitality-booking", resource: "hospitality-booking.normal", action: "Manage" })).reasonCode, "invalid-request");
+  assert.equal((await evaluateAuthority(repository, { principal, appId: "hospitality-booking", resource: "hospitality-booking.normal", action: "Manage", scope: { kind: "oploc", ids: ["oploc:mnk"] } })).allowed, true);
+  await grantAuthority(repository, { subjectId: person.id, subjectType: "human", actor: admin, appId: "menu-planning", resource: "menu.publish", action: "Publish", scope: { kind: "oploc", ids: ["oploc:mnk"] }, reason: "Scoped publisher." });
+  assert.equal((await evaluateAuthority(repository, { principal, appId: "menu-planning", resource: "menu.publish", action: "Publish" })).reasonCode, "invalid-request");
+  assert.equal((await evaluateAuthority(repository, { principal, appId: "menu-planning", resource: "menu.publish", action: "Publish", scope: { kind: "oploc", ids: ["oploc:mnk"] } })).allowed, false);
+  assert.equal((await resolveUserAccess(repository, { principal, appId: "hospitality-booking" })).allowed, true);
+});
+
+test("canonical OPLOC lifecycle is required for assignments and Full Access", async () => {
+  const repository = makeRepo(); const person = await identity(repository); const principal: AuthPrincipal = { type: "human", id: person.id, displayName: person.displayName };
+  await assignSite(repository, { identityId: person.id, oplocId: "oploc:mnk", actor: admin, reason: "Active site." });
+  await grantStandardApplicationAccess(repository, { identityId: person.id, appId: "hospitality-booking", actor: admin });
+  assert.equal((await evaluateAuthority(repository, { principal, appId: "hospitality-booking", resource: "hospitality-booking.normal", action: "Manage", scope: { kind: "oploc", ids: ["oploc:mnk"] } })).allowed, true);
+  repository.oplocs.set("oploc:mnk", { id: "oploc:mnk", label: "MNK", active: false });
+  assert.equal((await evaluateAuthority(repository, { principal, appId: "hospitality-booking", resource: "hospitality-booking.normal", action: "Manage", scope: { kind: "oploc", ids: ["oploc:mnk"] } })).reasonCode, "oploc-not-assigned");
+  const full = await identity(repository, "full@example.test"); await setFullAccess(repository, { identityId: full.id, fullAccess: true, actor: admin, reason: "Normal access." });
+  const fullPrincipal: AuthPrincipal = { type: "human", id: full.id, displayName: full.displayName };
+  assert.equal((await resolveUserAccess(repository, { principal: fullPrincipal, appId: "hospitality-booking", oplocId: "oploc:mnk" })).reasonCode, "oploc-not-assigned");
+  assert.equal((await resolveUserAccess(repository, { principal: fullPrincipal, appId: "hospitality-booking", oplocId: "oploc:unknown" })).reasonCode, "oploc-not-assigned");
+});
+
+test("Legend display text is never persisted as a canonical Legend ID", async () => {
+  const repository = makeRepo(); const operator = await identity(repository, "legend-import-admin@example.test"); const existing = await identity(repository, "legend-import@example.test");
+  await grantAuthmodAdmin(repository, { identityId: operator.id, actor: admin, reason: "Import admin." });
+  const operatorPrincipal: AuthPrincipal = { type: "human", id: operator.id, displayName: operator.displayName };
+  const workbook = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet([{ Email: existing.normalizedEmail, Legend: "Sarah Jones", Active: "yes" }]), "Access");
+  const preview = await previewAccessImport(repository, { buffer: Buffer.from(XLSX.write(workbook, { type: "buffer", bookType: "xlsx" })), filename: "legend-display.xlsx", actor: operatorPrincipal });
+  await commitAccessImport(repository, { importId: preview.record.id, actor: operatorPrincipal, decisions: { [preview.resolutions[0].id]: { identityId: existing.id, accept: true } }, idempotencyKey: "legend-display-1" });
+  assert.equal((await repository.getIdentity(existing.id))?.legendId, undefined);
+});
+
+test("imports remain partial until every row is explicitly finalized and resume skips applied rows", async () => {
+  const repository = makeRepo(); const operator = await identity(repository, "partial-import-admin@example.test"); const existing = await identity(repository, "partial-existing@example.test");
+  await grantAuthmodAdmin(repository, { identityId: operator.id, actor: admin, reason: "Import admin." }); const operatorPrincipal: AuthPrincipal = { type: "human", id: operator.id, displayName: operator.displayName };
+  const workbook = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet([{ Email: existing.normalizedEmail, Active: "yes", "app:logistics": "yes" }, { Email: "unresolved-partial@example.test", Active: "yes" }]), "Access");
+  const preview = await previewAccessImport(repository, { buffer: Buffer.from(XLSX.write(workbook, { type: "buffer", bookType: "xlsx" })), filename: "partial.xlsx", actor: operatorPrincipal });
+  const first = await commitAccessImport(repository, { importId: preview.record.id, actor: operatorPrincipal, decisions: { [preview.resolutions[0].id]: { identityId: existing.id, accept: true } }, idempotencyKey: "partial-1" });
+  assert.equal(first.status, "partial"); assert.equal((await repository.listAppAssignments(existing.id)).length, 1); assert.equal((await repository.listImportResolutions(preview.record.id))[0].appliedAt !== undefined, true);
+  const second = await commitAccessImport(repository, { importId: preview.record.id, actor: operatorPrincipal, decisions: { [preview.resolutions[1].id]: { accept: false } }, idempotencyKey: "partial-2" });
+  assert.equal(second.status, "committed"); assert.equal((await repository.listAppAssignments(existing.id)).length, 1);
+  const auditsAfterFinal = repository.audits.length; const retry = await commitAccessImport(repository, { importId: preview.record.id, actor: operatorPrincipal, decisions: {}, idempotencyKey: "partial-2" });
+  assert.equal(retry.importId, preview.record.id); assert.equal(repository.audits.length, auditsAfterFinal);
 });

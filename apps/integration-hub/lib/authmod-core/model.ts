@@ -50,7 +50,7 @@ export type ImportRowResolution = {
   id: string; importId: string; rowNumber: number; rowHash: string; input: Record<string, string>; candidateIdentityIds: string[];
   matchReason?: string; confidence: "exact" | "possible" | "unmatched"; selectedIdentityId?: string;
   proposedChanges: ProposedAccessChange[]; unresolvedReasons: string[]; decision?: "accept" | "exclude" | "unresolved";
-  decidedBy?: string; decidedAt?: string; version: number;
+  decidedBy?: string; decidedAt?: string; appliedAt?: string; appliedBy?: string; appliedCommitIdempotencyKey?: string; appliedResult?: { identityId: string; appIds: string[]; oplocIds: string[]; authorityIds: string[] }; version: number;
 };
 export type ProposedAccessChange = { kind: "identity" | "site" | "app" | "authority"; target: string; operation: "create" | "activate" | "revoke" | "update"; detail?: string };
 export type AccessAuditEvent = {
