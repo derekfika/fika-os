@@ -1,0 +1,23 @@
+import type { AccessAuditEvent, AppAssignment, ApplicationRegistryEntry, AuthIdentity, AuthorityGrant, ImportRecord, ImportRowResolution, ServicePrincipal, SiteAssignment } from "./model";
+export type OplocReference = { id: string; label: string; active: boolean };
+export type AuthModRepository = {
+  getIdentity(id: string): Promise<AuthIdentity | undefined>; listIdentities(): Promise<AuthIdentity[]>;
+  findIdentityByExternal(provider: string, uid: string): Promise<AuthIdentity | undefined>; findIdentityByEmail(email: string): Promise<AuthIdentity | undefined>;
+  saveIdentity(identity: AuthIdentity, expectedVersion?: number): Promise<void>;
+  listApplications(): Promise<ApplicationRegistryEntry[]>; getApplication(appId: string): Promise<ApplicationRegistryEntry | undefined>;
+  saveApplication(application: ApplicationRegistryEntry, expectedVersion?: number): Promise<void>; listActiveOplocs(): Promise<OplocReference[]>;
+  listSiteAssignments(identityId: string): Promise<SiteAssignment[]>; getSiteAssignment(id: string): Promise<SiteAssignment | undefined>;
+  saveSiteAssignment(assignment: SiteAssignment, expectedVersion?: number): Promise<void>;
+  listAppAssignments(identityId: string): Promise<AppAssignment[]>; getAppAssignment(id: string): Promise<AppAssignment | undefined>;
+  saveAppAssignment(assignment: AppAssignment, expectedVersion?: number): Promise<void>;
+  listAuthorityGrants(subjectId: string, subjectType?: "human" | "service"): Promise<AuthorityGrant[]>; saveAuthorityGrant(grant: AuthorityGrant, expectedVersion?: number): Promise<void>;
+  saveStandardApplicationBundle(input: { assignment: AppAssignment; grants: AuthorityGrant[]; expectedAssignmentVersion?: number }): Promise<void>;
+  getServicePrincipal(id: string): Promise<ServicePrincipal | undefined>; listServicePrincipals(): Promise<ServicePrincipal[]>;
+  saveServicePrincipal(principal: ServicePrincipal, expectedVersion?: number): Promise<void>;
+  getImport(id: string): Promise<ImportRecord | undefined>; saveImport(record: ImportRecord, expectedVersion?: number): Promise<void>; saveImportResolution(resolution: ImportRowResolution, expectedVersion?: number): Promise<void>;
+  listImportResolutions(importId: string): Promise<ImportRowResolution[]>; appendAudit(event: AccessAuditEvent): Promise<void>;
+};
+export class AuthModStoreUnavailable extends Error { status = 503; code = "AUTHMOD_STORE_UNAVAILABLE"; constructor(message = "AUTHMOD authorization data is unavailable.") { super(message); } }
+export function assertExpectedVersion(actual: number | undefined, expectedVersion: number | undefined) {
+  if (expectedVersion !== undefined && actual !== expectedVersion) throw Object.assign(new Error("AUTHMOD record changed since it was read."), { status: 409, code: "AUTHMOD_VERSION_CONFLICT" });
+}

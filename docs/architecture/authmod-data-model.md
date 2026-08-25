@@ -28,6 +28,8 @@ id, identityId, oplocId, status, effectiveFrom/effectiveTo, source, reason, gran
 
 id, identityId, appId, status, effective period, optional scope policy, source, grantedBy and version. App assignment alone does not authorize a site-scoped request.
 
+Normal application access is managed through a standard application bundle. The bundle atomically creates or updates this AppAssignment and the application's normal explicit AuthorityGrant records. Each generated grant carries bundleId and provenance standard-app-access. Revocation expires the assignment and those bundle-owned grants, while independently granted special authority remains preserved.
+
 ### AuthorityGrant
 
 id, subject type/id (identity or service principal), action from the six-value vocabulary, resource/capability, app/domain, scope reference(s), effective period, status, optional assignment/role reference, grant reason, granted/revoked by, version and provenance. Explicit grants are preferred over role expansion in the evaluator. Publish and Approve never inherit from Manage or Administer.
