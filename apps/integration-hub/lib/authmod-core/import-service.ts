@@ -111,7 +111,7 @@ export async function commitAccessImport(repository: AuthModRepository, input: {
     const decision = input.decisions[resolution.id];
     if (!decision) { if (resolution.decision !== "exclude") unresolved++; continue; }
     if (!decision.accept) {
-      await repository.saveImportResolution({ ...resolution, decision: "exclude", decidedBy: input.actor.id, decidedAt: now(), version: resolution.version + 1 }, resolution.version);
+      await repository.saveImportResolution({ ...resolution, decision: "exclude", decidedBy: input.actor.id, decidedAt: now(), appliedAt: now(), appliedBy: input.actor.id, appliedCommitIdempotencyKey: input.idempotencyKey, appliedResult: { identityId: resolution.selectedIdentityId || "", appIds: [], oplocIds: [], authorityIds: [] }, version: resolution.version + 1 }, resolution.version);
       continue;
     }
     const nonIdentityErrors = resolution.unresolvedReasons.filter(reason => !genericIdentityReason(reason));
