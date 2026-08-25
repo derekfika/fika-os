@@ -53,7 +53,7 @@ export type ServiceCredentialKey = {
   expiresAt?: string; revokedAt?: string;
 };
 export type ImportRecord = {
-  id: string; sourceKind: "spreadsheet"; originalFilename?: string; fileHash: string; parserVersion: string;
+  id: string; sourceKind: "spreadsheet"; mode: "workspace-bootstrap" | "authmod-access"; originalFilename?: string; fileHash: string; parserVersion: string;
   status: "uploaded" | "previewed" | "partial" | "committed" | "rejected" | "superseded"; rowCount: number; previewId?: string;
   uploadedBy: string; uploadedAt: string; committedAt?: string; committedBy?: string; commitIdempotencyKey?: string; summary?: ImportSummary; version: number;
 };

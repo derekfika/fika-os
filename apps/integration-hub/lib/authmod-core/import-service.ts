@@ -9,7 +9,7 @@ import { assignSite, grantStandardApplicationAccess } from "./grants";
 import { grantAuthority, hasAuthmodAdmin } from "./authority";
 import type { AuthModRepository } from "./repository";
 
-const PARSER_VERSION = "authmod-import-v2";
+export const PARSER_VERSION = "authmod-import-v3-workspace-headers";
 const TRUE = new Set(["true", "yes", "y", "1", "x", "checked", "active", "enabled"]);
 const FALSE = new Set(["false", "no", "n", "0", "", "unchecked", "inactive", "disabled", "suspended"]);
 function parseBoolean(value: string | undefined, column: string, row: number) {
@@ -22,11 +22,15 @@ function tryBoolean(value: string | undefined, column: string, row: number, erro
   try { return parseBoolean(value, column, row); } catch (error) { errors.push((error as Error).message); return undefined; }
 }
 function hash(value: string) { return crypto.createHash("sha256").update(value).digest("hex"); }
-function rowsFromBuffer(buffer: Buffer): Record<string, string>[] {
+type ParsedImport = { rows: Record<string, string>[]; mode: ImportRecord["mode"] };
+const workspaceHeaders = new Map([["first name", "First Name"], ["last name", "Last Name"], ["email address", "Email Address"], ["status", "Status"], ["last sign in", "Last Sign In"], ["email usage", "Email Usage"]]);
+function canonicalHeader(key: string) { const cleaned = key.replace(/^\uFEFF/, "").trim(); const base = cleaned.replace(/\s*\[(?:required|read only)\]\s*$/i, "").replace(/\s+/g, " ").toLowerCase(); return workspaceHeaders.get(base) || cleaned; }
+function rowsFromBuffer(buffer: Buffer): ParsedImport {
   const workbook = XLSX.read(buffer, { type: "buffer", cellDates: false, cellFormula: false, bookVBA: false });
   const sheet = workbook.Sheets[workbook.SheetNames[0]];
   if (!sheet) throw new Error("AUTHMOD workbook has no worksheet.");
-  return XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: "" }).map(row => { const value: Record<string, string> = Object.fromEntries(Object.entries(row).map(([key, item]) => [key.trim(), String(item ?? "").trim()])); const rawEmail = value.Email || value["Email Address"]; const displayName = value.DisplayName || [value["First Name"], value["Last Name"]].filter(Boolean).join(" "); return { ...value, ...(rawEmail ? { Email: rawEmail } : {}), ...(displayName ? { DisplayName: displayName } : {}) }; });
+  const sourceRows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: "" }); const headers = Object.keys(sourceRows[0] || {}).map(canonicalHeader); const mode = headers.some(value => ["First Name", "Last Name", "Email Address", "Last Sign In", "Email Usage"].includes(value)) ? "workspace-bootstrap" : "authmod-access";
+  return { mode, rows: sourceRows.map(row => { const value: Record<string, string> = {}; for (const [key, item] of Object.entries(row)) { const original = key.replace(/^\uFEFF/, "").trim(); const text = String(item ?? "").trim(); value[original] = text; const canonical = canonicalHeader(original); if (canonical !== original && value[canonical] === undefined) value[canonical] = text; } const rawEmail = value.Email || value["Email Address"]; const displayName = value.DisplayName || [value["First Name"], value["Last Name"]].filter(Boolean).join(" "); return { ...value, ...(rawEmail ? { Email: rawEmail } : {}), ...(displayName ? { DisplayName: displayName } : {}) }; }) };
 }
 function changes(row: Record<string, string>, identityId: string | undefined, rowNumber: number, errors: string[]): ProposedAccessChange[] {
   const result: ProposedAccessChange[] = [];
@@ -45,10 +49,10 @@ function genericIdentityReason(value: string) { return value === "Identity requi
 
 export async function previewAccessImport(repository: AuthModRepository, input: { buffer: Buffer; filename: string; actor: AuthPrincipal }) {
   if (input.actor.type !== "interactive" || !(await hasAuthmodAdmin(repository, input.actor.id))) throw Object.assign(new Error("AUTHMOD Admin authority is required to preview an access import."), { status: 403, code: "AUTHMOD_ADMIN_REQUIRED" });
-  const raw = rowsFromBuffer(input.buffer); const fileHash = hash(input.buffer.toString("base64")); const importId = idempotentId("authmod-import", fileHash);
+  const parsed = rowsFromBuffer(input.buffer); const raw = parsed.rows; const fileHash = hash(input.buffer.toString("base64")); const importId = idempotentId("authmod-import", PARSER_VERSION, fileHash);
   const prior = await repository.getImport(importId);
   if (prior?.status === "previewed" || prior?.status === "partial" || prior?.status === "committed") return { record: prior, summary: prior.summary || { matched: 0, possibleMatches: 0, unmatched: 0, newUsers: 0, permissionChanges: 0, deactivations: 0, unresolved: 0 }, resolutions: await repository.listImportResolutions(importId) };
-  const record: ImportRecord = { id: importId, sourceKind: "spreadsheet", originalFilename: input.filename, fileHash, parserVersion: PARSER_VERSION, status: "previewed", rowCount: raw.length, previewId: "preview:" + crypto.randomUUID(), uploadedBy: input.actor.id, uploadedAt: now(), version: 1 };
+  const record: ImportRecord = { id: importId, sourceKind: "spreadsheet", mode: parsed.mode, originalFilename: input.filename, fileHash, parserVersion: PARSER_VERSION, status: "previewed", rowCount: raw.length, previewId: "preview:" + crypto.randomUUID(), uploadedBy: input.actor.id, uploadedAt: now(), version: 1 };
   let matched = 0, possibleMatches = 0, unmatched = 0, newUsers = 0, permissionChanges = 0, deactivations = 0, unresolved = 0;
   const activeOplocs = await repository.listActiveOplocs(); const applications = await repository.listApplications(); const knownApps = new Set(applications.map(value => value.appId));
   for (const [index, row] of raw.entries()) {
@@ -60,12 +64,12 @@ export async function previewAccessImport(repository: AuthModRepository, input: 
     const candidates = exact ? [exact.id] : (email ? (await repository.listIdentities()).filter(identity => identity.normalizedEmail?.split("@")[0] === email.split("@")[0]).map(identity => identity.id) : []);
     const confidence = exact ? "exact" as const : candidates.length ? "possible" as const : "unmatched" as const;
     if (confidence === "exact") matched++; else if (confidence === "possible") { possibleMatches++; unresolved++; } else { unmatched++; newUsers++; unresolved++; }
-    const errors: string[] = []; const proposed = changes(row, exact?.id, rowNumber, errors); permissionChanges += proposed.length;
-    for (const column of Object.keys(row).filter(value => value.startsWith("site:oploc:"))) {
+    const errors: string[] = []; const proposed = parsed.mode === "workspace-bootstrap" ? [] : changes(row, exact?.id, rowNumber, errors); permissionChanges += proposed.length;
+    for (const column of Object.keys(row).filter(value => parsed.mode !== "workspace-bootstrap" && value.startsWith("site:oploc:"))) {
       const enabled = tryBoolean(row[column], column, rowNumber, errors);
       if (enabled && !activeOplocs.some(value => value.id === column.slice("site:oploc:".length))) errors.push("Unknown or inactive OPLOC column: " + column);
     }
-    for (const column of Object.keys(row).filter(value => value.startsWith("app:"))) {
+    for (const column of Object.keys(row).filter(value => parsed.mode !== "workspace-bootstrap" && value.startsWith("app:"))) {
       const enabled = tryBoolean(row[column], column, rowNumber, errors);
       if (enabled && !knownApps.has(column.slice("app:".length))) errors.push("Unknown application column: " + column);
     }
@@ -112,13 +116,22 @@ export async function commitAccessImport(repository: AuthModRepository, input: {
     }
     const nonIdentityErrors = resolution.unresolvedReasons.filter(reason => !genericIdentityReason(reason));
     if (nonIdentityErrors.length) { blocked++; continue; }
-    let identity = decision.identityId ? await repository.getIdentity(decision.identityId) : undefined;
+    let identity = decision.identityId
+      ? await repository.getIdentity(decision.identityId)
+      : resolution.selectedIdentityId
+        ? await repository.getIdentity(resolution.selectedIdentityId)
+        : undefined;
+    if (prior.mode === "workspace-bootstrap" && decision.identityKind === "operational" && !decision.representedOplocId && !decision.operationalPurpose) { blocked++; continue; }
     if (!identity && decision.createIdentity) {
       if (!decision.identityKind) { blocked++; continue; }
       identity = await createAuthIdentity(repository, { actor: input.actor, displayName: decision.createIdentity.displayName, email: decision.createIdentity.email || resolution.input.Email, externalProvider: decision.createIdentity.externalProvider, externalUid: decision.createIdentity.externalUid, identityKind: decision.identityKind, representedOplocId: decision.representedOplocId, operationalPurpose: decision.operationalPurpose, status: "active", provenance: "import" });
     }
     if (!identity) { blocked++; continue; }
     if (decision.identityKind && (decision.identityKind !== identity.identityKind || decision.representedOplocId || decision.operationalPurpose)) await setIdentityKind(repository, { identityId: identity.id, identityKind: decision.identityKind, representedOplocId: decision.representedOplocId, operationalPurpose: decision.operationalPurpose, actor: input.actor, reason: "Reviewed AUTHMOD spreadsheet account classification." });
+    if (prior.mode === "workspace-bootstrap") {
+      const applied = { ...resolution, decision: "accept" as const, selectedIdentityId: identity.id, decidedBy: input.actor.id, decidedAt: resolution.decidedAt || now(), unresolvedReasons: [], appliedAt: now(), appliedBy: input.actor.id, appliedCommitIdempotencyKey: input.idempotencyKey, appliedResult: { identityId: identity.id, appIds: [], oplocIds: [], authorityIds: [] }, version: resolution.version + 1 };
+      await repository.saveImportResolution(applied, resolution.version); committed++; continue;
+    }
     if (decision.primaryCustodianLegendId) await assignPrimaryCustodian(repository, { operationalIdentityId: identity.id, custodianLegendId: decision.primaryCustodianLegendId, actor: input.actor, reason: "Reviewed AUTHMOD spreadsheet primary custodian." });
     const canonicalLegendId = decision.legendId?.trim() || resolution.input["Legend ID"]?.trim();
     if (canonicalLegendId) await linkLegend(repository, { identityId: identity.id, legendId: canonicalLegendId, actor: input.actor, reason: "Reviewed AUTHMOD spreadsheet canonical Legend reconciliation." });

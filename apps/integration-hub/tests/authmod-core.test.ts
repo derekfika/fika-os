@@ -151,6 +151,15 @@ test("Legend candidates default to no access and spreadsheet unresolved rows can
   assert.equal((await repository.listApplications()).length, 7);
 });
 
+test("real Workspace headers use identity-bootstrap mode and grant zero access", async () => {
+  const repository = makeRepo(); const operator = await identity(repository, "workspace-importer@example.test"); const actor: AuthPrincipal = { type: "interactive", id: operator.id, displayName: operator.displayName }; await grantAuthmodAdmin(repository, { identityId: operator.id, actor: admin, reason: "Workspace import administrator." });
+  const rows = Array.from({ length: 39 }, (_, index) => ({ "First Name [Required]": index === 0 ? "Tia" : "User", "Last Name [Required]": index === 0 ? "Banya" : String(index), "Email Address [Required]": `workspace-${index}@example.test`, "Status [READ ONLY]": "Active", "Last Sign In [READ ONLY]": "2026-08-25", "Email Usage [READ ONLY]": "Used" }));
+  const workbook = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(rows), "Users"); const preview = await previewAccessImport(repository, { buffer: Buffer.from(XLSX.write(workbook, { type: "buffer", bookType: "xlsx" })), filename: "workspace-users.xlsx", actor });
+  assert.equal(preview.record.mode, "workspace-bootstrap"); assert.equal(preview.record.rowCount, 39); assert.equal(preview.resolutions[0].input.DisplayName, "Tia Banya"); assert.equal(preview.resolutions[0].input.Email, "workspace-0@example.test"); assert.equal(preview.resolutions[0].input["Status [READ ONLY]"], "Active");
+  const decisions = Object.fromEntries(preview.resolutions.map((row, index) => [row.id, { accept: true, identityKind: index === 0 ? "person" as const : "operational" as const, ...(index === 0 ? {} : { operationalPurpose: "Logistics" }), createIdentity: { displayName: index === 0 ? "Tia Banya" : `User ${index}`, email: `workspace-${index}@example.test` } }])); const result = await commitAccessImport(repository, { importId: preview.record.id, actor, decisions, idempotencyKey: "workspace-bootstrap-1" });
+  assert.equal(result.committedRows, 39); const imported = (await repository.listIdentities()).filter(value => value.provenance === "import"); assert.equal(imported.length, 39); assert.equal(imported.every(value => !value.fullAccess), true); assert.equal((await Promise.all(imported.map(value => repository.listAppAssignments(value.id)))).flat().length, 0); assert.equal((await Promise.all(imported.map(value => repository.listSiteAssignments(value.id)))).flat().length, 0); assert.equal((await Promise.all(imported.map(value => repository.listAuthorityGrants(value.id, "interactive")))).flat().length, 0);
+});
+
 test("Legend reconciliation links once and conflicts require review", async () => {
   const repository = makeRepo(); const first = await identity(repository, "legend@example.test");
   const linked = await reconcileLegendCandidate(repository, { actor: admin, legendId: "legend:1", displayName: "Legend Person", email: "legend@example.test", active: true });
