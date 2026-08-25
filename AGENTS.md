@@ -26,6 +26,7 @@ Useful repository context:
 - `COST-EFFICIENCY.md` — standing performance and metered-service guardrails.
 - `LOCAL-WORKSPACE.md` — local supervisor, ports and emulator workflow.
 - `CHANGELOG.md` — recent notable changes where maintained.
+- `docs/ai/LOGGING-AUDIT-STRATEGY.md` — mandatory platform rules for business audit evidence, technical diagnostics and archival.
 - `docs/ai/CODEBASE-AUDIT-PROTOCOL.md` — mandatory process for a formal whole-codebase audit.
 
 ---
@@ -201,6 +202,34 @@ If SQLite or file-backed operational data is used, inspect concurrency, locking,
 
 If Firestore is used, inspect query bounds, indexes, read/write amplification, emulator-vs-production differences and direct-client access rules.
 
+### 5.1 Logging, audit and operational evidence
+
+`docs/ai/LOGGING-AUDIT-STRATEGY.md` is a standing platform requirement.
+
+FIKA OS must be able to reconstruct important business mutations without turning routine telemetry into a high-volume Firestore workload.
+
+Keep these concerns separate:
+
+- **business audit/domain events** — durable append-only evidence of meaningful state changes;
+- **technical/application logs** — structured diagnostics for failures, latency, retries and runtime behaviour;
+- **Google Drive archive** — optional batched long-term exported copies, not the live audit database.
+
+Prefer an existing durable domain/change event to also serve as audit evidence when it already contains the required actor/entity/version/source/lineage information. Do not automatically add a third duplicate audit write beside every state write and domain event.
+
+Meaningful business mutations should leave durable evidence at the authoritative server/domain boundary. Important state changes must not depend on a best-effort client-side logging request after the real mutation succeeds.
+
+Where practical, record authoritative state plus its audit/domain event atomically. Where stores/services differ, use an existing durable outbox/change-stack/retry-safe mechanism rather than silently accepting an audit gap.
+
+Do not create Firestore audit documents for page views, renders, polling cycles, cache refreshes or successful reads that cause no business change.
+
+Business audit/history queries must be bounded and paginated/cursor-based as volume grows. Do not subscribe every dashboard to a complete audit stream.
+
+Technical logs should not default to one Firestore write per log line. Never log credentials, tokens, secrets or unnecessary sensitive payloads.
+
+If Google Drive archival is introduced, export events/logs in deliberate batches at an agreed cadence. Do not update a Drive file once per individual event and do not make Drive the authority for current operational state.
+
+Cross-app evidence should preserve stable IDs/correlation/causation references so a booking/request can be traced through Production, Fulfilment and Logistics without name matching.
+
 ---
 
 ## 6. Performance and cost invariants
@@ -284,7 +313,8 @@ For changed operational flows consider:
 - `Europe/London` date boundary;
 - allergen `UNRECORDED` vs `CLEAR` where relevant;
 - governed OPLOC vs one-off destination where relevant;
-- persistence/restart behaviour where relevant.
+- persistence/restart behaviour where relevant;
+- durable audit/domain evidence for critical state changes where relevant.
 
 Use isolated test databases/data stores. A green test that depends on state left by another test is not a reliable test.
 
@@ -294,9 +324,10 @@ The Golden Week UAT tooling is intended as an end-to-end contract for representa
 
 ## 9. Formal audit mode
 
-When instructed to perform a codebase audit, read and obey:
+When instructed to perform a codebase audit, read and obey both:
 
-`docs/ai/CODEBASE-AUDIT-PROTOCOL.md`
+- `docs/ai/CODEBASE-AUDIT-PROTOCOL.md`
+- `docs/ai/LOGGING-AUDIT-STRATEGY.md`
 
 Audit mode is **read-only by default**.
 
@@ -312,6 +343,8 @@ The audit must distinguish:
 - test/documentation gap;
 - intentionally accepted behaviour;
 - area inspected with no finding.
+
+Every core-app audit must explicitly assess auditability/observability: whether important mutations can be reconstructed with stable actor, action, entity, version, source and cross-app lineage evidence, without excessive recurring read/write behaviour.
 
 ---
 
@@ -343,6 +376,7 @@ A strong completion report states:
 - downstream/upstream implications;
 - tests/typecheck/build/E2E actually run;
 - known limitations or intentionally deferred work;
-- any new operational or cost behaviour.
+- any new operational or cost behaviour;
+- any new or changed audit/logging behaviour for meaningful mutations.
 
-A formal audit completion report must instead follow the output requirements in `docs/ai/CODEBASE-AUDIT-PROTOCOL.md`.
+A formal audit completion report must instead follow the output requirements in `docs/ai/CODEBASE-AUDIT-PROTOCOL.md` and the auditability requirements in `docs/ai/LOGGING-AUDIT-STRATEGY.md`.
