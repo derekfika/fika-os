@@ -11,6 +11,7 @@ export class MemoryAuthModRepository implements AuthModRepository {
   async getIdentity(id: string) { return this.identities.get(id); } async listIdentities() { return [...this.identities.values()]; }
   async findIdentityByExternal(provider: string, uid: string) { return [...this.identities.values()].find(value => value.externalProvider === provider && value.externalUid === uid); }
   async findIdentityByEmail(email: string) { const normalized = email.trim().toLowerCase(); return [...this.identities.values()].find(value => value.normalizedEmail === normalized); }
+  async findIdentityByLegend(legendId: string) { return [...this.identities.values()].find(value => value.legendId === legendId); }
   async saveIdentity(value: AuthIdentity, expectedVersion?: number) { assertExpectedVersion(this.identities.get(value.id)?.version, expectedVersion); this.identities.set(value.id, value); }
   async listApplications() { return [...this.applications.values()]; } async getApplication(appId: string) { return this.applications.get(appId); }
   async saveApplication(value: ApplicationRegistryEntry, expectedVersion?: number) { assertExpectedVersion(this.applications.get(value.appId)?.version, expectedVersion); this.applications.set(value.appId, value); }
@@ -23,10 +24,18 @@ export class MemoryAuthModRepository implements AuthModRepository {
   async saveAppAssignment(value: AppAssignment, expectedVersion?: number) { assertExpectedVersion(this.appAssignments.get(value.id)?.version, expectedVersion); this.appAssignments.set(value.id, value); }
   async listAuthorityGrants(subjectId: string, subjectType?: "human" | "service") { return [...this.grants.values()].filter(value => value.subjectId === subjectId && (!subjectType || value.subjectType === subjectType)); }
   async saveAuthorityGrant(value: AuthorityGrant, expectedVersion?: number) { assertExpectedVersion(this.grants.get(value.id)?.version, expectedVersion); this.grants.set(value.id, value); }
-  async saveStandardApplicationBundle(input: { assignment: AppAssignment; grants: AuthorityGrant[]; expectedAssignmentVersion?: number }) {
+  async saveAuthorityGrantWithAudit(value: AuthorityGrant, audit: AccessAuditEvent, expectedVersion?: number) { assertExpectedVersion(this.grants.get(value.id)?.version, expectedVersion); this.grants.set(value.id, value); this.audits.push(audit); }
+  async saveStandardApplicationBundle(input: { assignment: AppAssignment; grants: AuthorityGrant[]; audit?: AccessAuditEvent; expectedAssignmentVersion?: number }) {
     assertExpectedVersion(this.appAssignments.get(input.assignment.id)?.version, input.expectedAssignmentVersion);
     this.appAssignments.set(input.assignment.id, input.assignment);
     for (const grant of input.grants) this.grants.set(grant.id, grant);
+    if (input.audit) this.audits.push(input.audit);
+  }
+  async revokeStandardApplicationBundle(input: { assignment: AppAssignment; grants: AuthorityGrant[]; audit?: AccessAuditEvent; expectedAssignmentVersion?: number }) {
+    assertExpectedVersion(this.appAssignments.get(input.assignment.id)?.version, input.expectedAssignmentVersion);
+    this.appAssignments.set(input.assignment.id, input.assignment);
+    for (const grant of input.grants) this.grants.set(grant.id, grant);
+    if (input.audit) this.audits.push(input.audit);
   }
   async getServicePrincipal(id: string) { return this.principals.get(id); } async listServicePrincipals() { return [...this.principals.values()]; }
   async saveServicePrincipal(value: ServicePrincipal, expectedVersion?: number) { assertExpectedVersion(this.principals.get(value.id)?.version, expectedVersion); this.principals.set(value.id, value); }

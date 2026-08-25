@@ -15,7 +15,7 @@ export type AuthIdentity = EffectivePeriod & {
 };
 export type ApplicationRegistryEntry = {
   appId: string; displayName: string; enabled: boolean; launchVisible: boolean; route?: string; baseUrl?: string;
-  scopeModel: "none" | "oploc" | "mixed"; standardBundleId: string; standardActions: AuthModAction[];
+  scopeModel: "none" | "oploc" | "mixed"; standardBundleId: string; standardResource: string; standardActions: AuthModAction[];
   version: number; createdAt: string; updatedAt: string; provenance: Provenance;
 };
 export type SiteAssignment = EffectivePeriod & {
@@ -42,7 +42,7 @@ export type ServiceCredentialKey = {
 };
 export type ImportRecord = {
   id: string; sourceKind: "spreadsheet"; originalFilename?: string; fileHash: string; parserVersion: string;
-  status: "uploaded" | "previewed" | "committed" | "rejected" | "superseded"; rowCount: number; previewId?: string;
+  status: "uploaded" | "previewed" | "partial" | "committed" | "rejected" | "superseded"; rowCount: number; previewId?: string;
   uploadedBy: string; uploadedAt: string; committedAt?: string; committedBy?: string; commitIdempotencyKey?: string; summary?: ImportSummary; version: number;
 };
 export type ImportSummary = { matched: number; possibleMatches: number; unmatched: number; newUsers: number; permissionChanges: number; deactivations: number; unresolved: number };
@@ -70,17 +70,17 @@ export type AuthorizationDecision = {
 };
 
 const applicationSeed = [
-  ["integration-hub", "Integration Hub", "none", "hub", ["View"]],
-  ["cpu-production", "CPU Production", "oploc", "cpu-normal", ["View", "Manage"]],
-  ["logistics", "Logistics", "oploc", "logistics-normal", ["View", "Manage"]],
-  ["menu-planning", "Menu Planning", "oploc", "menu-normal", ["View", "Contribute", "Manage"]],
-  ["hospitality-booking", "Hospitality Booking", "oploc", "hospitality-normal", ["View", "Contribute", "Manage"]],
-  ["delivered-in", "Delivered-In", "oploc", "delivered-normal", ["View", "Contribute", "Manage"]],
-  ["ad-hoc-production", "Ad-Hoc Production", "mixed", "ad-hoc-normal", ["View", "Contribute", "Manage"]],
+  ["integration-hub", "Integration Hub", "none", "hub", "integration-hub.normal", ["View"]],
+  ["cpu-production", "CPU Production", "oploc", "cpu-normal", "cpu-production.normal", ["View", "Manage"]],
+  ["logistics", "Logistics", "oploc", "logistics-normal", "logistics.normal", ["View", "Manage"]],
+  ["menu-planning", "Menu Planning", "oploc", "menu-normal", "menu-planning.normal", ["View", "Contribute", "Manage"]],
+  ["hospitality-booking", "Hospitality Booking", "oploc", "hospitality-normal", "hospitality-booking.normal", ["View", "Contribute", "Manage"]],
+  ["delivered-in", "Delivered-In", "oploc", "delivered-normal", "delivered-in.normal", ["View", "Contribute", "Manage"]],
+  ["ad-hoc-production", "Ad-Hoc Production", "mixed", "ad-hoc-normal", "ad-hoc-production.normal", ["View", "Contribute", "Manage"]],
 ] as const;
-export const V1_APPLICATIONS: readonly ApplicationRegistryEntry[] = applicationSeed.map(([appId, displayName, scopeModel, standardBundleId, standardActions]) => ({
+export const V1_APPLICATIONS: readonly ApplicationRegistryEntry[] = applicationSeed.map(([appId, displayName, scopeModel, standardBundleId, standardResource, standardActions]) => ({
   appId, displayName, enabled: true, launchVisible: true, route: appId === "integration-hub" ? "/" : "/" + appId,
-  scopeModel, standardBundleId, standardActions: [...standardActions] as AuthModAction[], version: 1,
+  scopeModel, standardBundleId, standardResource, standardActions: [...standardActions] as AuthModAction[], version: 1,
   createdAt: "2026-01-01T00:00:00.000Z", updatedAt: "2026-01-01T00:00:00.000Z", provenance: "migration" as const,
 }));
 export function now() { return new Date().toISOString(); }

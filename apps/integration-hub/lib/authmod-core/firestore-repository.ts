@@ -10,28 +10,40 @@ function save<T extends { version: number }>(name: string, id: string, value: T,
 export class FirestoreAuthModRepository implements AuthModRepository {
   async getIdentity(id: string) { const snapshot = await db.collection(collections.identities).doc(id).get(); return snapshot.exists ? snapshot.data() as AuthIdentity : undefined; }
   async listIdentities() { return readAll<AuthIdentity>(collections.identities); }
-  async findIdentityByExternal(provider: string, uid: string) { return (await this.listIdentities()).find(value => value.externalProvider === provider && value.externalUid === uid); }
-  async findIdentityByEmail(email: string) { return (await this.listIdentities()).find(value => value.normalizedEmail === email.trim().toLowerCase()); }
+  async findIdentityByExternal(provider: string, uid: string) { const snapshot = await db.collection(collections.identities).where("externalProvider", "==", provider).where("externalUid", "==", uid).limit(1).get(); return snapshot.empty ? undefined : snapshot.docs[0].data() as AuthIdentity; }
+  async findIdentityByEmail(email: string) { const snapshot = await db.collection(collections.identities).where("normalizedEmail", "==", email.trim().toLowerCase()).limit(1).get(); return snapshot.empty ? undefined : snapshot.docs[0].data() as AuthIdentity; }
+  async findIdentityByLegend(legendId: string) { const snapshot = await db.collection(collections.identities).where("legendId", "==", legendId).limit(1).get(); return snapshot.empty ? undefined : snapshot.docs[0].data() as AuthIdentity; }
   async saveIdentity(value: AuthIdentity, expectedVersion?: number) { await save(collections.identities, value.id, value, expectedVersion); }
   async listApplications() { return readAll<ApplicationRegistryEntry>(collections.applications); }
   async getApplication(appId: string) { const snapshot = await db.collection(collections.applications).doc(appId).get(); return snapshot.exists ? snapshot.data() as ApplicationRegistryEntry : undefined; }
   async saveApplication(value: ApplicationRegistryEntry, expectedVersion?: number) { await save(collections.applications, value.appId, value, expectedVersion); }
   async listActiveOplocs() { const records = await readAll<{ canonicalId?: string; entityType?: string; lifecycleStatus?: string; publicationStatus?: string; record?: Record<string, unknown> }>("integrationHubCanonical"); return records.filter(record => record.entityType === "OPLOC" && record.canonicalId && record.lifecycleStatus !== "archived" && record.publicationStatus !== "withdrawn" && String(record.record?.lifecycleState || "active") === "active").map(record => ({ id: record.canonicalId!, label: String(record.record?.approvedName || record.canonicalId), active: true })); }
-  async listSiteAssignments(identityId: string) { return (await readAll<SiteAssignment>(collections.sites)).filter(value => value.identityId === identityId); }
+  async listSiteAssignments(identityId: string) { const snapshot = await db.collection(collections.sites).where("identityId", "==", identityId).get(); return snapshot.docs.map(document => document.data() as SiteAssignment); }
   async getSiteAssignment(id: string) { const snapshot = await db.collection(collections.sites).doc(id).get(); return snapshot.exists ? snapshot.data() as SiteAssignment : undefined; }
   async saveSiteAssignment(value: SiteAssignment, expectedVersion?: number) { await save(collections.sites, value.id, value, expectedVersion); }
-  async listAppAssignments(identityId: string) { return (await readAll<AppAssignment>(collections.apps)).filter(value => value.identityId === identityId); }
+  async listAppAssignments(identityId: string) { const snapshot = await db.collection(collections.apps).where("identityId", "==", identityId).get(); return snapshot.docs.map(document => document.data() as AppAssignment); }
   async getAppAssignment(id: string) { const snapshot = await db.collection(collections.apps).doc(id).get(); return snapshot.exists ? snapshot.data() as AppAssignment : undefined; }
   async saveAppAssignment(value: AppAssignment, expectedVersion?: number) { await save(collections.apps, value.id, value, expectedVersion); }
-  async listAuthorityGrants(subjectId: string, subjectType?: "human" | "service") { return (await readAll<AuthorityGrant>(collections.grants)).filter(value => value.subjectId === subjectId && (!subjectType || value.subjectType === subjectType)); }
+  async listAuthorityGrants(subjectId: string, subjectType?: "human" | "service") { const query = subjectType ? db.collection(collections.grants).where("subjectId", "==", subjectId).where("subjectType", "==", subjectType) : db.collection(collections.grants).where("subjectId", "==", subjectId); const snapshot = await query.get(); return snapshot.docs.map(document => document.data() as AuthorityGrant); }
   async saveAuthorityGrant(value: AuthorityGrant, expectedVersion?: number) { await save(collections.grants, value.id, value, expectedVersion); }
-  async saveStandardApplicationBundle(input: { assignment: AppAssignment; grants: AuthorityGrant[]; expectedAssignmentVersion?: number }) {
+  async saveAuthorityGrantWithAudit(value: AuthorityGrant, audit: AccessAuditEvent, expectedVersion?: number) { await db.runTransaction(async transaction => { const ref = db.collection(collections.grants).doc(value.id); const snapshot = await transaction.get(ref); assertExpectedVersion(snapshot.exists ? Number(snapshot.data()?.version) : undefined, expectedVersion); transaction.set(ref, value as unknown as DocumentData); transaction.create(db.collection(collections.audits).doc(audit.id), audit as unknown as DocumentData); }); }
+  async saveStandardApplicationBundle(input: { assignment: AppAssignment; grants: AuthorityGrant[]; audit?: AccessAuditEvent; expectedAssignmentVersion?: number }) {
     await db.runTransaction(async transaction => {
       const assignmentRef = db.collection(collections.apps).doc(input.assignment.id);
       const assignmentSnapshot = await transaction.get(assignmentRef);
       assertExpectedVersion(assignmentSnapshot.exists ? Number(assignmentSnapshot.data()?.version) : undefined, input.expectedAssignmentVersion);
       transaction.set(assignmentRef, input.assignment as unknown as DocumentData);
       for (const grant of input.grants) transaction.set(db.collection(collections.grants).doc(grant.id), grant as unknown as DocumentData);
+      if (input.audit) transaction.create(db.collection(collections.audits).doc(input.audit.id), input.audit as unknown as DocumentData);
+    });
+  }
+  async revokeStandardApplicationBundle(input: { assignment: AppAssignment; grants: AuthorityGrant[]; audit?: AccessAuditEvent; expectedAssignmentVersion?: number }) {
+    await db.runTransaction(async transaction => {
+      const assignmentRef = db.collection(collections.apps).doc(input.assignment.id); const snapshot = await transaction.get(assignmentRef);
+      assertExpectedVersion(snapshot.exists ? Number(snapshot.data()?.version) : undefined, input.expectedAssignmentVersion);
+      transaction.set(assignmentRef, input.assignment as unknown as DocumentData);
+      for (const grant of input.grants) transaction.set(db.collection(collections.grants).doc(grant.id), grant as unknown as DocumentData);
+      if (input.audit) transaction.create(db.collection(collections.audits).doc(input.audit.id), input.audit as unknown as DocumentData);
     });
   }
   async getServicePrincipal(id: string) { const snapshot = await db.collection(collections.services).doc(id).get(); return snapshot.exists ? snapshot.data() as ServicePrincipal : undefined; }
@@ -40,6 +52,6 @@ export class FirestoreAuthModRepository implements AuthModRepository {
   async getImport(id: string) { const snapshot = await db.collection(collections.imports).doc(id).get(); return snapshot.exists ? snapshot.data() as ImportRecord : undefined; }
   async saveImport(value: ImportRecord, expectedVersion?: number) { await save(collections.imports, value.id, value, expectedVersion); }
   async saveImportResolution(value: ImportRowResolution, expectedVersion?: number) { await save(collections.resolutions, value.id, value, expectedVersion); }
-  async listImportResolutions(importId: string) { return (await readAll<ImportRowResolution>(collections.resolutions)).filter(value => value.importId === importId); }
+  async listImportResolutions(importId: string) { const snapshot = await db.collection(collections.resolutions).where("importId", "==", importId).get(); return snapshot.docs.map(document => document.data() as ImportRowResolution); }
   async appendAudit(event: AccessAuditEvent) { await db.collection(collections.audits).doc(event.id).create(event); }
 }

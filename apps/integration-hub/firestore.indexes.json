@@ -1,1 +1,1 @@
-{"indexes":[],"fieldOverrides":[]}
+{"indexes":[{"collectionGroup":"authmodIdentities","queryScope":"COLLECTION","fields":[{"fieldPath":"externalProvider","order":"ASCENDING"},{"fieldPath":"externalUid","order":"ASCENDING"}]},{"collectionGroup":"authmodAuthorityGrants","queryScope":"COLLECTION","fields":[{"fieldPath":"subjectId","order":"ASCENDING"},{"fieldPath":"subjectType","order":"ASCENDING"}]}],"fieldOverrides":[]}

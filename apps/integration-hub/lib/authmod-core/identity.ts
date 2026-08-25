@@ -14,6 +14,8 @@ export async function createAuthIdentity(repository: AuthModRepository, input: {
 }
 export async function linkLegend(repository: AuthModRepository, input: { identityId: string; legendId: string; actor: AuthPrincipal; reason: string }) {
   const identity = await repository.getIdentity(input.identityId); if (!identity) throw Object.assign(new Error("AUTHMOD identity not found."), { status: 404 });
+  const linked = await repository.findIdentityByLegend(input.legendId);
+  if (linked && linked.id !== identity.id) throw Object.assign(new Error("Legend is already linked to another AUTHMOD identity."), { status: 409, code: "AUTHMOD_LEGEND_CONFLICT" });
   const timestamp = now(); const next = { ...identity, legendId: input.legendId, identityLinkStatus: "matched" as const, updatedAt: timestamp, version: identity.version + 1 };
   await repository.saveIdentity(next, identity.version);
   await appendAudit(repository, { actor: input.actor, targetType: "AuthIdentity", targetId: identity.id, action: "legend-linked", beforeState: identity, afterState: next, provenance: "manual-override", outcome: "committed" });

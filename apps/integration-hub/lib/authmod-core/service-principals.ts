@@ -1,7 +1,8 @@
 import crypto from "node:crypto";
 import type { AuthPrincipal, AuthorityGrant, EffectivePeriod, ServicePrincipal } from "./model";
-import { idempotentId, now } from "./model";
+import { idempotentId, isEffective, now } from "./model";
 import { appendAudit } from "./audit";
+import { grantAuthority } from "./authority";
 import type { AuthModRepository } from "./repository";
 
 export async function createServicePrincipal(repository: AuthModRepository, input: { actor: AuthPrincipal; name: string; ownerDomain: string; description?: string; allowedAudiences: string[]; effectivePeriod?: EffectivePeriod }) {
@@ -27,15 +28,13 @@ export async function revokeServicePrincipal(repository: AuthModRepository, inpu
 }
 export async function grantServiceAuthority(repository: AuthModRepository, input: { principalId: string; actor: AuthPrincipal; appId: string; resource: string; action: AuthorityGrant["action"]; scope: AuthorityGrant["scope"]; effectivePeriod?: EffectivePeriod; reason: string }) {
   const principal = await repository.getServicePrincipal(input.principalId); if (!principal || principal.status !== "active") throw Object.assign(new Error("Service principal is not active."), { status: 422 });
-  const id = idempotentId("service-grant", input.principalId, input.appId, input.resource, input.action, input.scope.kind, ...input.scope.ids);
-  const existing = (await repository.listAuthorityGrants(input.principalId, "service")).find(value => value.id === id); const timestamp = now();
-  const grant: AuthorityGrant = { id, subjectType: "service", subjectId: input.principalId, appId: input.appId, resource: input.resource, action: input.action, scope: input.scope, status: "active", provenance: "explicit-special-authority", reason: input.reason, grantedBy: input.actor.id, version: (existing?.version || 0) + 1, createdAt: existing?.createdAt || timestamp, updatedAt: timestamp, ...input.effectivePeriod };
-  await repository.saveAuthorityGrant(grant, existing?.version);
-  await appendAudit(repository, { actor: input.actor, targetType: "AuthorityGrant", targetId: id, action: "service-authority-granted", afterState: grant, provenance: "explicit-special-authority", outcome: "committed", scope: input.scope });
-  return grant;
+  return grantAuthority(repository, { subjectId: input.principalId, subjectType: "service", actor: input.actor, appId: input.appId, resource: input.resource, action: input.action, scope: input.scope, provenance: "explicit-special-authority", effectivePeriod: input.effectivePeriod, reason: input.reason });
 }
-export function transitionalCredentialMatches(input: { presentedToken?: string; expectedToken?: string; principal: ServicePrincipal; keyId?: string }) {
-  if (!input.presentedToken || !input.expectedToken || input.presentedToken !== input.expectedToken || input.principal.status !== "active") return false;
+export function transitionalCredentialMatches(input: { presentedToken?: string; expectedToken?: string; principal: ServicePrincipal; keyId?: string; audience?: string }) {
+  if (!input.presentedToken || !input.expectedToken || input.principal.status !== "active" || !isEffective(input.principal)) return false;
+  if (input.audience && !input.principal.allowedAudiences.includes(input.audience)) return false;
+  const presented = Buffer.from(input.presentedToken); const expected = Buffer.from(input.expectedToken);
+  if (presented.length !== expected.length || !crypto.timingSafeEqual(presented, expected)) return false;
   const key = input.principal.credentialKeys.find(value => value.keyId === input.keyId && !value.revokedAt && (!value.expiresAt || Date.parse(value.expiresAt) > Date.now()));
   return Boolean(key && key.scheme === "shared-token-transitional");
 }

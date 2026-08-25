@@ -28,7 +28,7 @@ id, identityId, oplocId, status, effectiveFrom/effectiveTo, source, reason, gran
 
 id, identityId, appId, status, effective period, optional scope policy, source, grantedBy and version. App assignment alone does not authorize a site-scoped request.
 
-Normal application access is managed through a standard application bundle. The bundle atomically creates or updates this AppAssignment and the application's normal explicit AuthorityGrant records. Each generated grant carries bundleId and provenance standard-app-access. Revocation expires the assignment and those bundle-owned grants, while independently granted special authority remains preserved.
+Normal application access is managed through a standard application bundle. The bundle atomically creates or updates this AppAssignment and the application's normal explicit AuthorityGrant records. Each generated grant carries bundleId and provenance standard-app-access, uses the registered normal resource, and has organisation scope; it never snapshots current OPLOC IDs. Revocation expires the assignment and those bundle-owned grants, while independently granted special authority remains preserved. Current SiteAssignments are evaluated separately for every requested OPLOC.
 
 ### AuthorityGrant
 
@@ -68,4 +68,4 @@ For a human request, deny unless: identity is active; session is valid; app is e
 
 ## Storage and migration notes
 
-Use the Integration Hub's canonical persistence boundary initially because it already owns Legend/OPLOC canonical records and server-side auth code. Keep AUTHMOD aggregates logically separate from ordinary canonical provider records. Access mutations should use optimistic versioning/idempotency and write durable state plus existing domain/audit evidence atomically where the store permits. Do not commit mutable local-data as AUTHMOD truth.
+Use the Integration Hub's canonical persistence boundary initially because it already owns Legend/OPLOC canonical records and server-side auth code. Keep AUTHMOD aggregates logically separate from ordinary canonical provider records. Access mutations should use optimistic versioning/idempotency and write durable state plus existing domain/audit evidence atomically where the store permits. Standard bundle grant/revoke uses one repository transaction for the assignment, bundle-owned grants and audit event. Runtime lookups use identity/app/site/grant keyed queries; administrative list views may use separately bounded queries. The Firestore adapter requires composite indexes for externalProvider plus externalUid on authmodIdentities and subjectId plus subjectType on authmodAuthorityGrants. Do not commit mutable local-data as AUTHMOD truth.

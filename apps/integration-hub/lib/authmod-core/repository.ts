@@ -2,7 +2,7 @@ import type { AccessAuditEvent, AppAssignment, ApplicationRegistryEntry, AuthIde
 export type OplocReference = { id: string; label: string; active: boolean };
 export type AuthModRepository = {
   getIdentity(id: string): Promise<AuthIdentity | undefined>; listIdentities(): Promise<AuthIdentity[]>;
-  findIdentityByExternal(provider: string, uid: string): Promise<AuthIdentity | undefined>; findIdentityByEmail(email: string): Promise<AuthIdentity | undefined>;
+  findIdentityByExternal(provider: string, uid: string): Promise<AuthIdentity | undefined>; findIdentityByEmail(email: string): Promise<AuthIdentity | undefined>; findIdentityByLegend(legendId: string): Promise<AuthIdentity | undefined>;
   saveIdentity(identity: AuthIdentity, expectedVersion?: number): Promise<void>;
   listApplications(): Promise<ApplicationRegistryEntry[]>; getApplication(appId: string): Promise<ApplicationRegistryEntry | undefined>;
   saveApplication(application: ApplicationRegistryEntry, expectedVersion?: number): Promise<void>; listActiveOplocs(): Promise<OplocReference[]>;
@@ -10,8 +10,9 @@ export type AuthModRepository = {
   saveSiteAssignment(assignment: SiteAssignment, expectedVersion?: number): Promise<void>;
   listAppAssignments(identityId: string): Promise<AppAssignment[]>; getAppAssignment(id: string): Promise<AppAssignment | undefined>;
   saveAppAssignment(assignment: AppAssignment, expectedVersion?: number): Promise<void>;
-  listAuthorityGrants(subjectId: string, subjectType?: "human" | "service"): Promise<AuthorityGrant[]>; saveAuthorityGrant(grant: AuthorityGrant, expectedVersion?: number): Promise<void>;
-  saveStandardApplicationBundle(input: { assignment: AppAssignment; grants: AuthorityGrant[]; expectedAssignmentVersion?: number }): Promise<void>;
+  listAuthorityGrants(subjectId: string, subjectType?: "human" | "service"): Promise<AuthorityGrant[]>; saveAuthorityGrant(grant: AuthorityGrant, expectedVersion?: number): Promise<void>; saveAuthorityGrantWithAudit(grant: AuthorityGrant, audit: AccessAuditEvent, expectedVersion?: number): Promise<void>;
+  saveStandardApplicationBundle(input: { assignment: AppAssignment; grants: AuthorityGrant[]; audit?: AccessAuditEvent; expectedAssignmentVersion?: number }): Promise<void>;
+  revokeStandardApplicationBundle(input: { assignment: AppAssignment; grants: AuthorityGrant[]; audit?: AccessAuditEvent; expectedAssignmentVersion?: number }): Promise<void>;
   getServicePrincipal(id: string): Promise<ServicePrincipal | undefined>; listServicePrincipals(): Promise<ServicePrincipal[]>;
   saveServicePrincipal(principal: ServicePrincipal, expectedVersion?: number): Promise<void>;
   getImport(id: string): Promise<ImportRecord | undefined>; saveImport(record: ImportRecord, expectedVersion?: number): Promise<void>; saveImportResolution(resolution: ImportRowResolution, expectedVersion?: number): Promise<void>;
