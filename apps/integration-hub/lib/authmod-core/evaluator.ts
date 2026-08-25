@@ -1,6 +1,7 @@
 import type { AuthModRepository } from "./repository";
 import { isEffective } from "./model";
 import type { AuthPrincipal, AuthorizationDecision, AuthModAction, Scope } from "./model";
+import { isPersonRequiredAuthority } from "./authority";
 
 function deny(principal: AuthPrincipal, reasonCode: AuthorizationDecision["reasonCode"], extra: Partial<AuthorizationDecision> = {}): AuthorizationDecision {
   return { allowed: false, principalId: principal.id, principalType: principal.type, matchedGrantIds: [], reasonCode, ...extra };
@@ -11,11 +12,11 @@ function scopeAllows(grant: Scope, requested?: Scope) {
   if (requested.kind === "oploc") return grant.kind === "organisation" || (grant.kind === "oploc" && requested.ids.every(id => grant.ids.includes(id)));
   return grant.kind === "resource" && requested.ids.every(id => grant.ids.includes(id));
 }
-async function humanBase(repository: AuthModRepository, principal: AuthPrincipal, appId?: string) {
-  if (principal.type !== "human") return { identity: undefined, grants: [] };
+async function interactiveBase(repository: AuthModRepository, principal: AuthPrincipal) {
+  if (principal.type !== "interactive") return { identity: undefined, grants: [] };
   const identity = await repository.getIdentity(principal.id);
   if (!identity) return { identity: undefined, grants: [] };
-  return { identity, grants: await repository.listAuthorityGrants(principal.id, "human") };
+  return { identity, grants: await repository.listAuthorityGrants(principal.id, "interactive") };
 }
 async function fullAccessScopeAllowed(repository: AuthModRepository, scope: Scope | undefined) {
   if (!scope || scope.kind === "organisation") return true;
@@ -24,23 +25,24 @@ async function fullAccessScopeAllowed(repository: AuthModRepository, scope: Scop
 }
 export async function resolveUserAccess(repository: AuthModRepository, input: { principal: AuthPrincipal; appId?: string; oplocId?: string; oplocIds?: string[] }): Promise<AuthorizationDecision> {
   try {
-    const { identity, grants } = await humanBase(repository, input.principal);
+    const { identity, grants } = await interactiveBase(repository, input.principal);
     if (!identity) return deny(input.principal, "unauthenticated");
     if (identity.status !== "active") return deny(input.principal, "identity-inactive");
-    if (!input.appId) return { allowed: true, principalId: input.principal.id, principalType: "human", matchedGrantIds: [], reasonCode: "allowed" };
+    if (!input.appId) return { allowed: true, principalId: input.principal.id, principalType: "interactive", matchedGrantIds: [], reasonCode: "allowed" };
     const app = await repository.getApplication(input.appId);
     if (!app || !app.enabled) return deny(input.principal, "app-disabled", { appId: input.appId });
+    const hasFullAccess = identity.identityKind === "person" && identity.fullAccess;
     const assignment = (await repository.listAppAssignments(identity.id)).find(value => value.appId === input.appId && isEffective(value));
-    if (!assignment && !identity.fullAccess) return deny(input.principal, "app-not-assigned", { appId: input.appId });
+    if (!assignment && !hasFullAccess) return deny(input.principal, "app-not-assigned", { appId: input.appId });
     const requestedOplocIds = input.oplocIds || (input.oplocId ? [input.oplocId] : []);
     if (app.scopeModel !== "none" && requestedOplocIds.length) {
       const siteAssignments = await repository.listSiteAssignments(identity.id);
       const activeOplocs = await Promise.all(requestedOplocIds.map(oplocId => repository.getActiveOploc(oplocId)));
-      const siteAllowed = requestedOplocIds.every((oplocId, index) => Boolean(activeOplocs[index]) && (identity.fullAccess || siteAssignments.some(value => value.oplocId === oplocId && isEffective(value))));
+      const siteAllowed = requestedOplocIds.every((oplocId, index) => Boolean(activeOplocs[index]) && (hasFullAccess || siteAssignments.some(value => value.oplocId === oplocId && isEffective(value))));
       if (!siteAllowed) return deny(input.principal, "oploc-not-assigned", { appId: input.appId, scope: { kind: "oploc", ids: requestedOplocIds } });
     }
     const normalGrantIds = grants.filter(value => value.appId === input.appId && value.provenance === "standard-app-access" && isEffective(value)).map(value => value.id);
-    return { allowed: true, principalId: identity.id, principalType: "human", appId: input.appId, scope: input.oplocId ? { kind: "oploc", ids: [input.oplocId] } : undefined, matchedGrantIds: normalGrantIds, reasonCode: "allowed" };
+    return { allowed: true, principalId: identity.id, principalType: "interactive", appId: input.appId, scope: input.oplocId ? { kind: "oploc", ids: [input.oplocId] } : undefined, matchedGrantIds: normalGrantIds, reasonCode: "allowed" };
   } catch { return deny(input.principal, "store-unavailable"); }
 }
 export async function evaluateAuthority(repository: AuthModRepository, input: { principal: AuthPrincipal; appId: string; resource: string; action: AuthModAction; scope?: Scope }): Promise<AuthorizationDecision> {
@@ -60,8 +62,9 @@ export async function evaluateAuthority(repository: AuthModRepository, input: { 
     if (!base.allowed) return { ...base, action: input.action };
     const identity = await repository.getIdentity(input.principal.id);
     if (!identity || identity.status !== "active") return deny(input.principal, "identity-inactive", { appId: input.appId, action: input.action });
-    const grants = await repository.listAuthorityGrants(identity.id, "human");
-    if (identity.fullAccess && app.standardResource === input.resource && app.standardActions.includes(input.action) && await fullAccessScopeAllowed(repository, input.scope)) return { ...base, allowed: true, action: input.action, scope: input.scope, matchedGrantIds: [], reasonCode: "allowed" };
+    const grants = await repository.listAuthorityGrants(identity.id, "interactive");
+    if (isPersonRequiredAuthority(input.resource) && identity.identityKind !== "person") return deny(input.principal, "authority-not-granted", { appId: input.appId, action: input.action, scope: input.scope });
+    if (identity.identityKind === "person" && identity.fullAccess && app.standardResource === input.resource && app.standardActions.includes(input.action) && await fullAccessScopeAllowed(repository, input.scope)) return { ...base, allowed: true, action: input.action, scope: input.scope, matchedGrantIds: [], reasonCode: "allowed" };
     const requestedScope = input.scope;
     const matched = grants.filter(value => value.appId === input.appId && value.resource === input.resource && value.action === input.action && isEffective(value) && scopeAllows(value.scope, requestedScope));
     if (!matched.length) return deny(input.principal, "authority-not-granted", { appId: input.appId, action: input.action, scope: input.scope });

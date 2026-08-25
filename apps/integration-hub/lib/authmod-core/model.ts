@@ -2,16 +2,22 @@ export const AUTHMOD_ACTIONS = ["View", "Contribute", "Manage", "Approve", "Publ
 export type AuthModAction = (typeof AUTHMOD_ACTIONS)[number];
 export type RecordStatus = "active" | "revoked" | "expired" | "inactive";
 export type IdentityLinkStatus = "unmatched" | "matched" | "needs-review";
-export type PrincipalType = "human" | "service";
+export type PrincipalType = "interactive" | "service";
+export type IdentityKind = "person" | "operational";
 export type Scope = { kind: "organisation" | "oploc" | "resource"; ids: string[] };
 export type EffectivePeriod = { effectiveFrom?: string; effectiveTo?: string };
 export type Provenance = "standard-app-access" | "explicit-special-authority" | "import" | "migration" | "manual-override" | "system";
 
 export type AuthIdentity = EffectivePeriod & {
   id: string; externalProvider?: string; externalUid?: string; normalizedEmail?: string; displayName: string;
+  identityKind: IdentityKind; representedOplocId?: string; operationalPurpose?: string;
   legendId?: string; identityLinkStatus: IdentityLinkStatus; status: "active" | "inactive" | "revoked";
   fullAccess: boolean;
   provenance: Provenance; createdAt: string; updatedAt: string; version: number;
+};
+export type CustodianAssignment = EffectivePeriod & {
+  id: string; operationalIdentityId: string; custodianLegendId: string; status: RecordStatus; reason?: string;
+  assignedBy: string; revokedBy?: string; provenance: Provenance; version: number; createdAt: string; updatedAt: string;
 };
 export type ApplicationRegistryEntry = {
   appId: string; displayName: string; enabled: boolean; launchVisible: boolean; route?: string; baseUrl?: string;
@@ -48,20 +54,20 @@ export type ImportRecord = {
 export type ImportSummary = { matched: number; possibleMatches: number; unmatched: number; newUsers: number; permissionChanges: number; deactivations: number; unresolved: number };
 export type ImportRowResolution = {
   id: string; importId: string; rowNumber: number; rowHash: string; input: Record<string, string>; candidateIdentityIds: string[];
-  matchReason?: string; confidence: "exact" | "possible" | "unmatched"; selectedIdentityId?: string;
+  matchReason?: string; confidence: "exact" | "possible" | "unmatched"; selectedIdentityId?: string; suggestedIdentityKind?: IdentityKind;
   proposedChanges: ProposedAccessChange[]; unresolvedReasons: string[]; decision?: "accept" | "exclude" | "unresolved";
   decidedBy?: string; decidedAt?: string; appliedAt?: string; appliedBy?: string; appliedCommitIdempotencyKey?: string; appliedResult?: { identityId: string; appIds: string[]; oplocIds: string[]; authorityIds: string[] }; version: number;
 };
 export type ProposedAccessChange = { kind: "identity" | "site" | "app" | "authority"; target: string; operation: "create" | "activate" | "revoke" | "update"; detail?: string };
 export type AccessAuditEvent = {
   id: string; timestamp: string; actorPrincipalId: string; actorPrincipalType: PrincipalType;
-  actorSnapshot: { displayName: string; email?: string }; targetType: string; targetId: string; action: string;
+  actorSnapshot: { displayName: string; email?: string; identityKind?: IdentityKind; representedOplocId?: string; primaryCustodianLegendId?: string }; targetType: string; targetId: string; action: string;
   beforeState?: unknown; afterState?: unknown; scope: Scope; provenance: Provenance; correlationId?: string;
   idempotencyKey?: string; outcome: "allowed" | "committed" | "revoked" | "denied" | "rejected";
 };
-export type HumanPrincipal = { type: "human"; id: string; externalProvider?: string; externalUid?: string; displayName: string; email?: string };
+export type InteractivePrincipal = { type: "interactive"; id: string; externalProvider?: string; externalUid?: string; displayName: string; email?: string; identityKind?: IdentityKind; representedOplocId?: string; primaryCustodianLegendId?: string };
 export type ServicePrincipalIdentity = { type: "service"; id: string; displayName: string; credentialKeyId?: string };
-export type AuthPrincipal = HumanPrincipal | ServicePrincipalIdentity;
+export type AuthPrincipal = InteractivePrincipal | ServicePrincipalIdentity;
 export type AuthorizationDecision = {
   allowed: boolean; principalId: string; principalType: PrincipalType; appId?: string; action?: AuthModAction;
   scope?: Scope; matchedGrantIds: string[];

@@ -6,14 +6,14 @@ import type { AuthModRepository } from "./repository";
 function period(input?: EffectivePeriod) { return { ...(input?.effectiveFrom ? { effectiveFrom: input.effectiveFrom } : {}), ...(input?.effectiveTo ? { effectiveTo: input.effectiveTo } : {}) }; }
 function standardGrant(app: ApplicationRegistryEntry, identityId: string, action: AuthorityGrant["action"], bundleId: string, actor: AuthPrincipal, effective?: EffectivePeriod): AuthorityGrant {
   const timestamp = now();
-  return { id: idempotentId("grant", identityId, app.appId, action), subjectType: "human", subjectId: identityId, appId: app.appId, resource: app.standardResource, action, scope: { kind: "organisation", ids: [] }, status: "active", provenance: "standard-app-access", bundleId, ...period(effective), reason: "Standard application access bundle", grantedBy: actor.id, revokedBy: undefined, version: 1, createdAt: timestamp, updatedAt: timestamp };
+  return { id: idempotentId("grant", identityId, app.appId, action), subjectType: "interactive", subjectId: identityId, appId: app.appId, resource: app.standardResource, action, scope: { kind: "organisation", ids: [] }, status: "active", provenance: "standard-app-access", bundleId, ...period(effective), reason: "Standard application access bundle", grantedBy: actor.id, revokedBy: undefined, version: 1, createdAt: timestamp, updatedAt: timestamp };
 }
 export async function grantStandardApplicationAccess(repository: AuthModRepository, input: { identityId: string; appId: string; actor: AuthPrincipal; effectivePeriod?: EffectivePeriod; idempotencyKey?: string }) {
   const app = await repository.getApplication(input.appId); if (!app || !app.enabled) throw Object.assign(new Error("Application is not enabled."), { status: 422 });
   const existing = (await repository.listAppAssignments(input.identityId)).find(value => value.appId === input.appId);
   const timestamp = now(); const bundleId = idempotentId("standard-app-access", input.identityId, input.appId);
   const assignment: AppAssignment = { id: idempotentId("app-assignment", input.identityId, input.appId), identityId: input.identityId, appId: input.appId, status: "active", bundleId, source: "standard-app-access", reason: "Standard application access", grantedBy: input.actor.id, version: (existing?.version || 0) + 1, createdAt: existing?.createdAt || timestamp, updatedAt: timestamp, ...period(input.effectivePeriod) };
-  const existingGrants = await repository.listAuthorityGrants(input.identityId, "human");
+  const existingGrants = await repository.listAuthorityGrants(input.identityId, "interactive");
   const grants = app.standardActions.map(action => {
     const prior = existingGrants.find(value => value.id === idempotentId("grant", input.identityId, app.appId, action));
     return { ...standardGrant(app, input.identityId, action, bundleId, input.actor, input.effectivePeriod), ...(prior ? { version: prior.version + 1, createdAt: prior.createdAt } : {}) };
@@ -26,7 +26,7 @@ export async function revokeStandardApplicationAccess(repository: AuthModReposit
   const assignment = (await repository.listAppAssignments(input.identityId)).find(value => value.appId === input.appId);
   if (!assignment) return { revoked: false, grantIds: [] as string[] };
   const timestamp = now(); const nextAssignment = { ...assignment, status: "revoked" as const, revokedBy: input.actor.id, reason: input.reason, version: assignment.version + 1, updatedAt: timestamp };
-  const grants = await repository.listAuthorityGrants(input.identityId, "human");
+  const grants = await repository.listAuthorityGrants(input.identityId, "interactive");
   const standard = grants.filter(value => value.appId === input.appId && value.provenance === "standard-app-access" && value.bundleId === assignment.bundleId && isEffective(value));
   const revoked = standard.map(grant => ({ ...grant, status: "revoked" as const, revokedBy: input.actor.id, reason: input.reason, version: grant.version + 1, updatedAt: timestamp }));
   const audit = auditEvent({ actor: input.actor, targetType: "AppAssignment", targetId: assignment.id, action: "standard-application-access-revoked", beforeState: assignment, afterState: { assignment: nextAssignment, revokedGrantIds: standard.map(value => value.id) }, provenance: "standard-app-access", outcome: "revoked", scope: { kind: "organisation", ids: [] }, idempotencyKey: input.idempotencyKey });

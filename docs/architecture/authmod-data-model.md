@@ -6,7 +6,11 @@ Status: proposed canonical model. Names are logical aggregates, not a commitment
 
 ### AuthIdentity
 
-id (immutable FIKA ID), externalProvider and externalUid (unique provider key), normalized email, display-name snapshot, optional legendId, identity-link status (unmatched, matched, needs-review), employment/status state, created/updated timestamps, provenance, and record version. Email changes update the attribute and provenance; they do not change id.
+id (immutable FIKA ID), externalProvider and externalUid (unique provider key), normalized email, display-name snapshot, `identityKind` (`person` or `operational`), optional represented canonical OPLOC ID and operational purpose, optional person `legendId`, identity-link status (unmatched, matched, needs-review), employment/status state, created/updated timestamps, provenance, and record version. Email changes update the attribute and provenance; they do not change id. A person identity represents an identifiable individual; an operational identity represents an interactive Workspace account and is not a Legend or service principal.
+
+### CustodianAssignment
+
+Separate effective-dated aggregate linking an operational AuthIdentity to one primary canonical Legend custodian. Custody can change while the operational identity ID, account, access history and audit history remain stable. Custodianship is governance metadata only and grants no application, site or authority access.
 
 Legend linkage is explicit and reviewable. BrightHR-created Legends enter AUTHMOD as active candidates with no access grants. Matching may use provider UID/email and reviewed evidence; name-only matches are suggestions, never silent authorization.
 
@@ -58,13 +62,15 @@ id, source kind/file name/hash, uploaded by authenticated actor, uploadedAt, par
 
 importId, row number/stable row hash, normalized input, candidate identity IDs with confidence/reason, selected identity ID if reviewed, proposed changes, unresolved fields, reviewer/decision/time, appliedAt/appliedBy/commit idempotency key and commit status. Each row must be accepted/applied, explicitly excluded, unresolved or blocked. Low-confidence or unmatched rows remain visible and cannot be committed as an identity grant without an explicit resolution. Bootstrap imports are merge-only: true grants/activations are proposed; false/blank app, site and special cells mean no change, while explicit Active/Full Access false values are meaningful updates. A committed import is final only when every row is accepted or explicitly excluded; otherwise it remains partial and can be resumed without reapplying applied rows.
 
+Reviewed account reconciliation may add optional `Account Type`, `Represented OPLOC ID`, `Operational Purpose` and `Primary Custodian Legend ID` columns. These use canonical IDs where applicable; raw Workspace exports do not need to contain them, and email/display-name patterns never authoritatively classify or link an account.
+
 ### AccessAuditEvent
 
 Append-only event with event ID, timestamp, authenticated actor principal ID, actor display/email snapshot, target subject ID/type, action, before/after redacted state, affected scope IDs, source (authmod-ui, spreadsheet-import, system-migration, service), correlation/causation IDs, reason, outcome and schema version. Sensitive credentials and unnecessary personal data are excluded.
 
 ## Evaluation rules
 
-For a human request, deny unless: identity is active; session is valid; app is enabled and assigned (or Full Access expands to it); requested OPLOC is assigned for a scoped capability; explicit action grant is active and within dates; and any separation-of-duties constraint passes. For a service request, use the service principal and service grant path only. Any missing store, malformed grant, stale version or dependency error is deny/503 according to whether the caller should retry.
+For an interactive request, deny unless: identity is active; session is valid; app is enabled and assigned (or Full Access expands to it); requested OPLOC is assigned for a scoped capability; explicit action grant is active and within dates; and any separation-of-duties constraint passes. Full Access is person-only. `authmod.admin`, `menu.publish`, `production.allergen-sign` and `production.allergen-final-approve` are person-required policies enforced by the core evaluator and grant service, regardless of UI input. For a service request, use the service principal and service grant path only. Any missing store, malformed grant, stale version or dependency error is deny/503 according to whether the caller should retry.
 
 ## Storage and migration notes
 

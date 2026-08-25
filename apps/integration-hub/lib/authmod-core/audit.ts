@@ -9,7 +9,7 @@ export function auditEvent(input: {
 }): AccessAuditEvent {
   return {
     id: crypto.randomUUID(), timestamp: new Date().toISOString(), actorPrincipalId: input.actor.id,
-    actorPrincipalType: input.actor.type, actorSnapshot: { displayName: input.actor.displayName, ...("email" in input.actor && input.actor.email ? { email: input.actor.email } : {}) },
+    actorPrincipalType: input.actor.type, actorSnapshot: { displayName: input.actor.displayName, ...(input.actor.type === "interactive" && input.actor.email ? { email: input.actor.email } : {}), ...(input.actor.type === "interactive" && input.actor.identityKind ? { identityKind: input.actor.identityKind } : {}), ...(input.actor.type === "interactive" && input.actor.representedOplocId ? { representedOplocId: input.actor.representedOplocId } : {}), ...(input.actor.type === "interactive" && input.actor.primaryCustodianLegendId ? { primaryCustodianLegendId: input.actor.primaryCustodianLegendId } : {}) },
     targetType: input.targetType, targetId: input.targetId, action: input.action, beforeState: input.beforeState,
     afterState: input.afterState, scope: input.scope || { kind: "organisation", ids: [] }, provenance: input.provenance,
     correlationId: input.correlationId, idempotencyKey: input.idempotencyKey, outcome: input.outcome,

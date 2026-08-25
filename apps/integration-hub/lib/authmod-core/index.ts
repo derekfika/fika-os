@@ -12,3 +12,4 @@ export * from "./legend-candidates";
 export * from "./registry";
 export * from "./service-principals";
 export * from "./admin-service";
+export * from "./custodianship";

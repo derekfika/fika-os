@@ -8,9 +8,9 @@ AUTHMOD covers Integration Hub, CPU Production, Logistics, Menu Planning, Hospit
 
 ## Design decisions
 
-1. **Identity, application access, OPLOC access and authority are separate.** A user is identified by an immutable internal AuthIdentity ID, linked to an external Firebase UID and, where available, a canonical Legend ID. Email is a matching/display attribute, not identity.
+1. **Legend, interactive identity, operational account, custodian and service principal are separate.** An immutable AuthIdentity ID represents an interactive account and has `identityKind: person | operational`; a person identity may link to one canonical Legend, while an operational identity may represent an OPLOC or function and is never that Legend. Email is a matching/display attribute, not identity. ServicePrincipal represents software, not a shared Workspace account.
 2. **The runtime source is FIKA-owned AUTHMOD persistence.** Workspace spreadsheets are import sources and optional future bulk-edit sources only. Applications never query a spreadsheet on a request path.
-3. **Effective access is an intersection.** A human request is authorised only when the identity is active, the app grant is active, the requested OPLOC is assigned (where the capability is site-scoped), and the action grant is active. No combined site_app permission vocabulary is needed for v1.
+3. **Effective access is an intersection.** An interactive request is authorised only when the identity is active, the app grant is active, the requested OPLOC is assigned (where the capability is site-scoped), and the action grant is active. Operational accounts are legitimate interactive principals for normal operations. No combined site_app permission vocabulary is needed for v1.
    The administration surface presents ordinary app access as a standard application bundle: one app choice atomically manages the AppAssignment and that app's reviewed normal View/Contribute/Manage grants. Special authority remains explicit and separate.
    Standard grants are application-normal and organisation-scoped; they do not contain a current site list. SiteAssignments are checked dynamically for every requested OPLOC.
    Operational authority evaluation fails closed when its OPLOC scope is omitted; app-entry resolution may still omit an OPLOC. Every requested OPLOC must also be an active canonical OPLOC, not merely an effective historical SiteAssignment.
@@ -18,6 +18,7 @@ AUTHMOD covers Integration Hub, CPU Production, Logistics, Menu Planning, Hospit
 5. **Actions remain controlled:** View, Contribute, Manage, Approve, Publish, Administer. Manage does not imply Approve or Publish; Administer does not imply business authority.
 6. **Authority is explicit and effective-dated.** Job titles, BrightHR titles, email domains, app visibility, and technical access do not create grants. Temporary/delegated grants require an end date and audit evidence.
 7. **Separate service principals represent machine callers.** A service principal has its own stable ID, credentials/keys metadata, resource/action grants, scope, status and audit trail. It is never a fake employee and does not inherit a human's access.
+   Custodianship is a separate audited governance relationship: a person Legend may be custodian of one or more operational identities, but custody grants no access and does not change the authenticated actor.
 8. **Fail closed.** An unavailable AUTHMOD decision denies protected requests. Development-only synthetic fallbacks remain behind explicit local safety checks until central production login exists.
 9. **Central session, local enforcement.** Firebase may remain the identity provider. Integration Hub should exchange verified Firebase identity proof for a short-lived, revocable, HttpOnly central session; every app calls the shared authorization decision layer or verifies the same session. The launch panel is UX, not security.
 10. **Audit is server-derived.** Actor UID/principal ID, display/email snapshot, target, action, before/after state, scope, timestamp, source, correlation/causation and outcome are captured at the authoritative write boundary. Client fields such as by, actor, updatedBy and generatedBy are never trusted as actor proof.
@@ -65,7 +66,7 @@ Current Firebase emulator sign-in is retained as a local-only scaffold. Phase B 
 
 ## Public and service boundaries
 
-Public Hospitality customer booking submission and public static/reference routes stay outside normal employee guards. Internal Hospitality management and its write APIs are human-authorized and OPLOC-scoped. Bridge routes use dedicated service credentials. CPU projections consumed by Delivered-In use a service principal, so a Delivered-In human does not need CPU application access.
+Public Hospitality customer booking submission and public static/reference routes stay outside normal employee guards. Internal Hospitality management and its write APIs are interactive-authorized and OPLOC-scoped. Bridge routes use dedicated service credentials. CPU projections consumed by Delivered-In use a service principal, so a Delivered-In interactive account does not need CPU application access.
 
 ## Audit and operational cost
 

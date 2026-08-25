@@ -4,7 +4,7 @@ import { commitAccessImport, previewAccessImport, type ImportDecision } from "./
 import type { AuthModRepository } from "./repository";
 
 export async function requireAuthmodAdmin(repository: AuthModRepository, principal: AuthPrincipal) {
-  if (principal.type !== "human" || !(await hasAuthmodAdmin(repository, principal.id))) throw Object.assign(new Error("AUTHMOD Admin authority is required."), { status: 403, code: "AUTHMOD_ADMIN_REQUIRED" });
+  if (principal.type !== "interactive" || !(await hasAuthmodAdmin(repository, principal.id))) throw Object.assign(new Error("AUTHMOD Admin authority is required."), { status: 403, code: "AUTHMOD_ADMIN_REQUIRED" });
   return principal;
 }
 
