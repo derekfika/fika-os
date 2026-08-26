@@ -8,6 +8,7 @@ export type PortalSiteConfig = {
   cssClass: string;
   bookingEndpoint: string;
   portalPath: string;
+  oplocAliases: string[];
 };
 
 export const portalSites: Record<PortalSiteKey, PortalSiteConfig> = {
@@ -19,6 +20,7 @@ export const portalSites: Record<PortalSiteKey, PortalSiteConfig> = {
     cssClass: "site-mnk",
     bookingEndpoint: "/api/bookings/mnk",
     portalPath: "/mnk",
+    oplocAliases: ["mnk", "funding circle"],
   },
   "angel-court": {
     key: "angel-court",
@@ -29,6 +31,7 @@ export const portalSites: Record<PortalSiteKey, PortalSiteConfig> = {
     // Angel Court uses the existing typed booking contract; siteId scopes the record.
     bookingEndpoint: "/api/bookings/mnk",
     portalPath: "/angel-court",
+    oplocAliases: ["angel court", "one angel court"],
   },
   cfc: {
     key: "cfc",
@@ -38,6 +41,7 @@ export const portalSites: Record<PortalSiteKey, PortalSiteConfig> = {
     cssClass: "site-cfc",
     bookingEndpoint: "/api/bookings/mnk",
     portalPath: "/cfc",
+    oplocAliases: ["cfc"],
   },
   "munich-re": {
     key: "munich-re",
@@ -48,6 +52,7 @@ export const portalSites: Record<PortalSiteKey, PortalSiteConfig> = {
     // The shared typed booking contract is scoped by siteId.
     bookingEndpoint: "/api/bookings/mnk",
     portalPath: "/munich-re",
+    oplocAliases: ["munich re"],
   },
 };
 
@@ -55,4 +60,15 @@ export function portalSite(key: string | undefined): PortalSiteConfig {
   return portalSites[
     key === "angel-court" || key === "cfc" || key === "munich-re" ? key : "mnk"
   ];
+}
+
+function normaliseSiteValue(value: string) {
+  return value.trim().toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+}
+
+export function portalSiteForOploc(site: { id: string; label: string }): PortalSiteConfig | undefined {
+  const values = [site.id, site.label].map(normaliseSiteValue);
+  return Object.values(portalSites).find((candidate) =>
+    candidate.oplocAliases.some((alias) => values.includes(normaliseSiteValue(alias)))
+  );
 }

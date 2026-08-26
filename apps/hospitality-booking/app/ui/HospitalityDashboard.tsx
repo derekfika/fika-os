@@ -81,8 +81,14 @@ async function saveQuoteDocument(payload: { name: string; html: string; siteKey:
 
 export default function HospitalityDashboard({
   siteKey = "mnk",
+  oplocId,
+  availableSites,
+  onSiteChange,
 }: {
   siteKey?: PortalSiteKey;
+  oplocId?: string;
+  availableSites?: Array<{ id: string; label: string; active: boolean; portalSiteKey: PortalSiteKey }>;
+  onSiteChange?: (oplocId: string) => void;
 }) {
   const site = portalSite(siteKey);
   const [bookings, setBookings] = useState<CanonicalBooking[]>([]);
@@ -774,6 +780,14 @@ export default function HospitalityDashboard({
           </a>
           <div>
             <small>{site.label} operational workspace</small>
+            {availableSites && onSiteChange && (
+              <label aria-label="Hospitality site">
+                Site <select value={oplocId || ""} onChange={(event) => onSiteChange(event.target.value)}>
+                  {availableSites.map((available) => <option value={available.id} key={available.id}>{available.label}</option>)}
+                </select>
+              </label>
+            )}
+            <a className="start-again" href={site.portalPath} target="_blank" rel="noopener noreferrer">View Portal</a>
             {site.key === "angel-court" && (
               <>
                 <button type="button" onClick={() => void forceAngelCourtScan()} disabled={scanBusy}>

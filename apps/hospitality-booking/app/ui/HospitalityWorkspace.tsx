@@ -1,18 +1,11 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import BookingPortal from "./BookingPortal";
+import HospitalityDashboard from "./HospitalityDashboard";
 import type { PortalSiteKey } from "@/lib/portal-sites";
 
-type Site = { id: string; label: string; active: boolean };
+type Site = { id: string; label: string; active: boolean; portalSiteKey: PortalSiteKey };
 const rememberedKey = "fika-hospitality-active-oploc";
-function siteKey(site: Site): PortalSiteKey {
-  const value = `${site.id} ${site.label}`.toLowerCase();
-  if (value.includes("angel")) return "angel-court";
-  if (value.includes("munich")) return "munich-re";
-  if (value.includes("cfc")) return "cfc";
-  return "mnk";
-}
 
 export default function HospitalityWorkspace() {
   const [sites, setSites] = useState<Site[]>([]);
@@ -45,5 +38,5 @@ export default function HospitalityWorkspace() {
   if (error) return <main className="mnk"><section className="success-screen"><h1>Hospitality access unavailable</h1><p>{error}</p><a href="http://localhost:3200/">Return to FIKA OS</a></section></main>;
   if (!sites.length) return <main className="mnk"><section className="success-screen"><h1>Hospitality access unavailable</h1><p>Your account does not currently have access to a Hospitality location.</p><a href="http://localhost:3200/">Return to FIKA OS</a></section></main>;
   if (!active) return <main className="mnk"><section className="success-screen"><h1>Hospitality access unavailable</h1><p>That Hospitality location is not authorised for your account.</p><a href="http://localhost:3200/">Return to FIKA OS</a></section></main>;
-  return <BookingPortal key={active.id} siteKey={siteKey(active)} oplocId={active.id} siteLabel={active.label} availableSites={sites} dashboardMode onSiteChange={next => { const selected = sites.find(site => site.id === next); if (!selected) return; setActiveId(selected.id); window.localStorage.setItem(rememberedKey, selected.id); window.history.pushState({}, "", `/workspace?oploc=${encodeURIComponent(selected.id)}`); }} />;
+  return <HospitalityDashboard key={active.id} siteKey={active.portalSiteKey} oplocId={active.id} availableSites={sites} onSiteChange={next => { const selected = sites.find(site => site.id === next); if (!selected) return; setActiveId(selected.id); window.localStorage.setItem(rememberedKey, selected.id); window.history.pushState({}, "", `/workspace?oploc=${encodeURIComponent(selected.id)}`); }} />;
 }

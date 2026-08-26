@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import test from "node:test";
 import { BookingInput } from "../lib/mnk-contract";
-import { portalSite } from "../lib/portal-sites";
+import { portalSite, portalSiteForOploc } from "../lib/portal-sites";
 import { localAngelCourtMenuCatalogue } from "../lib/local-angel-court-menu";
 import { localCfcMenuCatalogue } from "../lib/local-cfc-menu";
 import { localMnkMenuCatalogue } from "../lib/local-mnk-menu";
@@ -24,6 +24,23 @@ test("portal actions use the configured public route for each site", () => {
   assert.equal(portalSite("mnk").portalPath, "/mnk");
   assert.equal(portalSite("angel-court").portalPath, "/angel-court");
   assert.equal(portalSite("munich-re").portalPath, "/munich-re");
+});
+
+test("workspace uses the internal dashboard and filters OPLOCs through the portal registry", () => {
+  const workspace = fs.readFileSync(new URL("../app/ui/HospitalityWorkspace.tsx", import.meta.url), "utf8");
+  const access = fs.readFileSync(new URL("../app/api/access/route.ts", import.meta.url), "utf8");
+  assert.match(workspace, /HospitalityDashboard/);
+  assert.doesNotMatch(workspace, /BookingPortal/);
+  assert.match(access, /portalSiteForOploc/);
+  assert.equal(portalSiteForOploc({ id: "oploc:funding-circle", label: "Funding Circle" })?.key, "mnk");
+  assert.equal(portalSiteForOploc({ id: "oploc:cpu-xchange", label: "CPU Xchange" }), undefined);
+});
+
+test("dashboard portal action uses the selected configured portal in a new tab", () => {
+  const dashboard = fs.readFileSync(new URL("../app/ui/HospitalityDashboard.tsx", import.meta.url), "utf8");
+  assert.match(dashboard, /href=\{site\.portalPath\}/);
+  assert.match(dashboard, /target="_blank"/);
+  assert.match(dashboard, /availableSites/);
 });
 
 test("MNK portal uses the locally retained official brand asset", () => {
