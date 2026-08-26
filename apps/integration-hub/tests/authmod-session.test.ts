@@ -1,6 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createFikaSessionCookie, principalFromSession, requireFikaSession, resolveSessionIdentity, assertRecentVerifiedFirebaseIdentity } from "../lib/fika-session";
+import { cookieOptions, createFikaSessionCookie, principalFromSession, requireFikaSession, resolveSessionIdentity, assertRecentVerifiedFirebaseIdentity } from "../lib/fika-session";
+import { assertSameOrigin } from "../lib/csrf";
+import { sessionCookieConfig } from "../lib/runtime-config";
 import { MemoryAuthModRepository } from "../lib/authmod-core";
 import { createAuthIdentity } from "../lib/authmod-core/identity";
 import { assignPrimaryCustodian } from "../lib/authmod-core/custodianship";
@@ -17,6 +19,41 @@ test("session cookie exchange uses Firebase session-cookie API and bounded lifet
   assert.equal(cookie, "server-session-cookie"); assert.equal(received, 60_000);
   assert.notEqual(cookie, "short-lived-id-token");
   await assert.rejects(() => createFikaSessionCookie("token", 14 * 24 * 60 * 60 + 1, { createSessionCookie: async () => "", verifySessionCookie: async () => decoded() }));
+});
+
+test("session cookies are secure on hosted runtimes and usable on localhost", () => {
+  const priorMode = process.env.FIKA_RUNTIME_MODE;
+  const priorFirestoreHost = process.env.FIRESTORE_EMULATOR_HOST;
+  const priorAuthHost = process.env.FIREBASE_AUTH_EMULATOR_HOST;
+  const priorProject = process.env.FIREBASE_PROJECT_ID;
+  try {
+    process.env.FIKA_RUNTIME_MODE = "staging";
+    delete process.env.FIRESTORE_EMULATOR_HOST;
+    delete process.env.FIREBASE_AUTH_EMULATOR_HOST;
+    process.env.FIREBASE_PROJECT_ID = "fika-os-dev";
+    assert.deepEqual(cookieOptions(), { httpOnly: true, path: "/", sameSite: "lax", secure: true, maxAge: sessionCookieConfig().maxAge });
+    process.env.FIKA_RUNTIME_MODE = "local";
+    process.env.FIREBASE_PROJECT_ID = "fika-os-local";
+    assert.equal(cookieOptions().secure, false);
+    assert.equal("domain" in cookieOptions(), false);
+  } finally {
+    if (priorMode === undefined) delete process.env.FIKA_RUNTIME_MODE; else process.env.FIKA_RUNTIME_MODE = priorMode;
+    if (priorFirestoreHost === undefined) delete process.env.FIRESTORE_EMULATOR_HOST; else process.env.FIRESTORE_EMULATOR_HOST = priorFirestoreHost;
+    if (priorAuthHost === undefined) delete process.env.FIREBASE_AUTH_EMULATOR_HOST; else process.env.FIREBASE_AUTH_EMULATOR_HOST = priorAuthHost;
+    if (priorProject === undefined) delete process.env.FIREBASE_PROJECT_ID; else process.env.FIREBASE_PROJECT_ID = priorProject;
+  }
+});
+
+test("same-origin protection accepts App Hosting forwarded origin and rejects mismatches", () => {
+  const priorMode = process.env.FIKA_RUNTIME_MODE;
+  try {
+    process.env.FIKA_RUNTIME_MODE = "staging";
+    const request = new Request("http://internal:3000/api/auth/session", { headers: { origin: "https://staging-os.fikacatering.com", "x-forwarded-proto": "https", "x-forwarded-host": "staging-os.fikacatering.com" } });
+    assert.doesNotThrow(() => assertSameOrigin(request));
+    assert.throws(() => assertSameOrigin(new Request(request, { headers: { origin: "https://evil.example", "x-forwarded-proto": "https", "x-forwarded-host": "staging-os.fikacatering.com" } })), /not allowed/);
+  } finally {
+    if (priorMode === undefined) delete process.env.FIKA_RUNTIME_MODE; else process.env.FIKA_RUNTIME_MODE = priorMode;
+  }
 });
 
 test("recent verified Workspace identity policy rejects stale, unverified, and non-FIKA users", () => {
