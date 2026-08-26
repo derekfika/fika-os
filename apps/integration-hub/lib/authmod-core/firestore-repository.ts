@@ -1,24 +1,38 @@
 import type { DocumentData } from "firebase-admin/firestore";
 import { db } from "../firebase-admin";
 import type { AccessAuditEvent, AppAssignment, ApplicationRegistryEntry, AuditPage, AuthIdentity, AuthorityGrant, CustodianAssignment, DelegationRecord, ImportRecord, ImportRowResolution, LegendReference, ServicePrincipal, SiteAssignment } from "./model";
-import { assertExpectedVersion, type AuthModRepository, type OplocReference } from "./repository";
+import { assertExpectedVersion, AuthModStoreUnavailable, type AuthModRepository, type OplocReference } from "./repository";
 import { isTerminatedLegend } from "../connection-rules";
 import type { CanonicalRecord } from "../types";
 const collections = { identities: "authmodIdentities", custodians: "authmodCustodianAssignments", applications: "authmodApplications", sites: "authmodSiteAssignments", apps: "authmodAppAssignments", grants: "authmodAuthorityGrants", delegations: "authmodDelegations", services: "authmodServicePrincipals", imports: "authmodImports", resolutions: "authmodImportResolutions", audits: "authmodAccessAudit" } as const;
-async function readAll<T>(name: string) { return (await db.collection(name).get()).docs.map(document => document.data() as T); }
+const firestoreResource = (collection: string) => `Firestore database (default), collection ${collection}`;
+export function translateAuthmodFirestoreError(error: unknown, operation: string, collection: string) {
+  const candidate = error as { code?: unknown; message?: unknown };
+  const code = String(candidate.code || "");
+  const message = String(candidate.message || "");
+  if (code === "5" || code.toUpperCase().includes("NOT_FOUND") || message.toUpperCase().includes("NOT_FOUND")) {
+    console.error("AUTHMOD Firestore resource unavailable", { operation, resource: firestoreResource(collection), errorCode: code || "NOT_FOUND" });
+    return new AuthModStoreUnavailable("AUTHMOD staging authorization storage is unavailable. Contact an administrator to verify the staging Firestore database and bootstrap.", "AUTHMOD_STORE_RESOURCE_NOT_FOUND");
+  }
+  return error;
+}
+async function firestoreRead<T>(operation: string, collection: string, read: () => Promise<T>) {
+  try { return await read(); } catch (error) { throw translateAuthmodFirestoreError(error, operation, collection); }
+}
+async function readAll<T>(name: string) { return (await firestoreRead("readAll", name, () => db.collection(name).get())).docs.map(document => document.data() as T); }
 type CanonicalOploc = { canonicalId?: string; entityType?: string; lifecycleStatus?: string; publicationStatus?: string; record?: Record<string, unknown> };
 function activeOploc(record: CanonicalOploc, oplocId: string) { return record.entityType === "OPLOC" && record.canonicalId === oplocId && record.lifecycleStatus !== "archived" && record.publicationStatus !== "withdrawn" && String(record.record?.lifecycleState || "active") === "active"; }
 function save<T extends { version: number }>(name: string, id: string, value: T, expectedVersion?: number) {
   return db.runTransaction(async transaction => { const ref = db.collection(name).doc(id); const snapshot = await transaction.get(ref); assertExpectedVersion(snapshot.exists ? Number(snapshot.data()?.version) : undefined, expectedVersion); transaction.set(ref, value as unknown as DocumentData); });
 }
 export class FirestoreAuthModRepository implements AuthModRepository {
-  async getIdentity(id: string) { const snapshot = await db.collection(collections.identities).doc(id).get(); return snapshot.exists ? snapshot.data() as AuthIdentity : undefined; }
+  async getIdentity(id: string) { const snapshot = await firestoreRead("getIdentity", collections.identities, () => db.collection(collections.identities).doc(id).get()); return snapshot.exists ? snapshot.data() as AuthIdentity : undefined; }
   async listIdentities() { return readAll<AuthIdentity>(collections.identities); }
   async listLegendReferences(search = "", limit = 100) { const records = await readAll<CanonicalRecord>("integrationHubCanonical"); const legends = records.filter(value => value.entityType === "Legend"); const employments = records.filter(value => value.entityType === "Employment"); const needle = search.trim().toLowerCase(); return legends.filter(value => value.canonicalId && value.lifecycleStatus !== "archived" && !isTerminatedLegend(value, employments) && (!needle || String(value.record.displayName || value.record.preferredName || value.canonicalId).toLowerCase().includes(needle))).slice(0, Math.min(limit, 1000)).map(value => ({ id: value.canonicalId, label: String(value.record.displayName || value.record.preferredName || value.canonicalId), active: true })); }
   async findIdentityByExternal(provider: string, uid: string) { return (await this.findIdentitiesByExternal(provider, uid, 1))[0]; }
-  async findIdentitiesByExternal(provider: string, uid: string, limit = 2) { const snapshot = await db.collection(collections.identities).where("externalProvider", "==", provider).where("externalUid", "==", uid).limit(Math.min(limit, 10)).get(); return snapshot.docs.map(document => document.data() as AuthIdentity); }
+  async findIdentitiesByExternal(provider: string, uid: string, limit = 2) { const snapshot = await firestoreRead("findIdentitiesByExternal", collections.identities, () => db.collection(collections.identities).where("externalProvider", "==", provider).where("externalUid", "==", uid).limit(Math.min(limit, 10)).get()); return snapshot.docs.map(document => document.data() as AuthIdentity); }
   async findIdentityByEmail(email: string) { return (await this.findIdentitiesByEmail(email, 1))[0]; }
-  async findIdentitiesByEmail(email: string, limit = 2) { const snapshot = await db.collection(collections.identities).where("normalizedEmail", "==", email.trim().toLowerCase()).limit(Math.min(limit, 10)).get(); return snapshot.docs.map(document => document.data() as AuthIdentity); }
+  async findIdentitiesByEmail(email: string, limit = 2) { const snapshot = await firestoreRead("findIdentitiesByEmail", collections.identities, () => db.collection(collections.identities).where("normalizedEmail", "==", email.trim().toLowerCase()).limit(Math.min(limit, 10)).get()); return snapshot.docs.map(document => document.data() as AuthIdentity); }
   async findIdentityByLegend(legendId: string) { const snapshot = await db.collection(collections.identities).where("legendId", "==", legendId).limit(1).get(); return snapshot.empty ? undefined : snapshot.docs[0].data() as AuthIdentity; }
   async saveIdentity(value: AuthIdentity, expectedVersion?: number) { await save(collections.identities, value.id, value, expectedVersion); }
   async saveIdentityWithAudit(value: AuthIdentity, audit: AccessAuditEvent, expectedVersion?: number) { await db.runTransaction(async transaction => { const ref = db.collection(collections.identities).doc(value.id); const snapshot = await transaction.get(ref); assertExpectedVersion(snapshot.exists ? Number(snapshot.data()?.version) : undefined, expectedVersion); transaction.set(ref, value as unknown as DocumentData); transaction.create(db.collection(collections.audits).doc(audit.id), audit as unknown as DocumentData); }); }

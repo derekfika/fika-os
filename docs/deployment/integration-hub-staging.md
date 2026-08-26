@@ -64,6 +64,18 @@ Before the first alpha sign-in:
 
 The existing server-side Firestore repository uses the real `fika-os-dev` project outside local mode. Its local filesystem snapshot/upload helpers are not a durable hosted data store; avoid enabling workflows that depend on those local artifacts until a hosted storage boundary is provided.
 
+### Deliberate AUTHMOD alpha bootstrap
+
+After the `(default)` Firestore database has been created in `fika-os-dev`, run the one-time command below from an operator environment with Application Default Credentials for that project and an existing Firebase Auth user:
+
+```text
+FIKA_RUNTIME_MODE=staging FIREBASE_PROJECT_ID=fika-os-dev npm run authmod:bootstrap:staging -- --email person@fikacatering.com
+```
+
+On Windows PowerShell, set the same two environment variables with `$env:FIKA_RUNTIME_MODE` and `$env:FIREBASE_PROJECT_ID` before running the command. The command is intentionally restricted to `fika-os-dev`, refuses emulator variables, resolves the nominated Firebase Auth user, and creates only the V1 application registry, one active person `AuthIdentity`, its explicit AUTHMOD Administrator grant, Integration Hub application access, and their audit events. It is idempotent for already-created records and does not import local emulator exports, local fixture identities, OPLOCs, site assignments or broad user access. Additional people and application/site access must be granted through the reviewed AUTHMOD workflow.
+
+If `/api/auth/session` reports `AUTHMOD_STORE_RESOURCE_NOT_FOUND`, verify that the Firestore `(default)` database exists in `fika-os-dev` before running the bootstrap. An empty `authmodIdentities` collection is safe and produces a normal deny-by-default `AUTHMOD_IDENTITY_NOT_FOUND`; a missing Firestore database is an infrastructure bootstrap failure.
+
 ## Firebase Console/App Hosting checklist
 
 - Create the App Hosting backend in project `fika-os-dev` from the GitHub repository and set root directory `apps/integration-hub`.

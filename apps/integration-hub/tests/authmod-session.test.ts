@@ -8,6 +8,7 @@ import { createAuthIdentity } from "../lib/authmod-core/identity";
 import { assignPrimaryCustodian } from "../lib/authmod-core/custodianship";
 import type { AuthPrincipal } from "../lib/authmod-core";
 import { validateReturnTo } from "../lib/safe-return-to";
+import { translateAuthmodFirestoreError } from "../lib/authmod-core/firestore-repository";
 
 const actor: AuthPrincipal = { type: "interactive", id: "admin", displayName: "Test admin", email: "admin@fikacatering.com", identityKind: "person" };
 const decoded = (overrides: Record<string, unknown> = {}) => ({ uid: "firebase:uid", email: "user@fikacatering.com", email_verified: true, auth_time: Math.floor(Date.now() / 1000), ...overrides }) as never;
@@ -112,4 +113,11 @@ test("duplicate normalized email or external UID fails closed before binding", a
   await assert.rejects(() => resolveSessionIdentity(repository, { uid: "new", email: "duplicate@fikacatering.com", name: "Duplicate" }), /administrator review/);
   repository.identities.delete(second.id); repository.identities.set(second.id, { ...second, externalProvider: "firebase", externalUid: "same" }); repository.identities.set(first.id, { ...first, externalProvider: "firebase", externalUid: "same" });
   await assert.rejects(() => resolveSessionIdentity(repository, { uid: "same", email: "different@fikacatering.com", name: "Conflict" }), /administrator review/);
+});
+test("missing hosted AUTHMOD Firestore resources become a safe diagnostic code", () => {
+  const translated = translateAuthmodFirestoreError({ code: 5, message: "5 NOT_FOUND:" }, "findIdentitiesByExternal", "authmodIdentities") as Error & { status?: number; code?: string };
+  assert.equal(translated.code, "AUTHMOD_STORE_RESOURCE_NOT_FOUND");
+  assert.equal(translated.status, 503);
+  assert.match(translated.message, /staging Firestore database/);
+  assert.doesNotMatch(translated.message, /NOT_FOUND/);
 });

@@ -21,7 +21,11 @@ export type AuthModRepository = {
   getImport(id: string): Promise<ImportRecord | undefined>; listImports(limit?: number): Promise<ImportRecord[]>; saveImport(record: ImportRecord, expectedVersion?: number): Promise<void>; saveImportResolution(resolution: ImportRowResolution, expectedVersion?: number): Promise<void>;
   listImportResolutions(importId: string): Promise<ImportRowResolution[]>; listAuditEvents(input?: { limit?: number; cursor?: string; actorId?: string; targetId?: string }): Promise<AuditPage>; appendAudit(event: AccessAuditEvent): Promise<void>;
 };
-export class AuthModStoreUnavailable extends Error { status = 503; code = "AUTHMOD_STORE_UNAVAILABLE"; constructor(message = "AUTHMOD authorization data is unavailable.") { super(message); } }
+export class AuthModStoreUnavailable extends Error {
+  status = 503;
+  code: string;
+  constructor(message = "AUTHMOD authorization data is unavailable.", code = "AUTHMOD_STORE_UNAVAILABLE") { super(message); this.code = code; }
+}
 export function assertExpectedVersion(actual: number | undefined, expectedVersion: number | undefined) {
   if (expectedVersion !== undefined && actual !== expectedVersion) throw Object.assign(new Error("AUTHMOD record changed since it was read."), { status: 409, code: "AUTHMOD_VERSION_CONFLICT" });
 }

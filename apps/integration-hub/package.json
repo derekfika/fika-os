@@ -26,6 +26,7 @@
     "auth:gmail": "tsx scripts/auth-gmail.ts",
     "auth:cpu-calendar": "tsx scripts/auth-cpu-calendar.ts",
     "seed": "tsx scripts/seed.ts",
+    "authmod:bootstrap:staging": "tsx scripts/bootstrap-staging-authmod.ts",
     "seed:test-bookings": "tsx scripts/seed-test-bookings.ts",
     "reset:test-bookings": "tsx scripts/reset-test-bookings.ts",
     "clear:local-bookings": "tsx scripts/clear-local-bookings.ts",
