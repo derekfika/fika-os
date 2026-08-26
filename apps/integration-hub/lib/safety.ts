@@ -6,6 +6,7 @@ export function assertLocalSafety(env: NodeJS.ProcessEnv = process.env) {
   if (runtime.mode !== "local") throw new Error("This operation is local-development only.");
   process.env.FIREBASE_PROJECT_ID = runtime.projectId;
   process.env.FIRESTORE_EMULATOR_HOST = runtime.firestoreHost;
+  if (runtime.authMode !== "emulator" || !runtime.authHost) throw new Error("Local synthetic authentication requires the Firebase Auth emulator.");
   process.env.FIREBASE_AUTH_EMULATOR_HOST = runtime.authHost;
   return { projectId: runtime.projectId, firestoreHost: runtime.firestoreHost, authHost: runtime.authHost };
 }

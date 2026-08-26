@@ -6,11 +6,13 @@ import { getFikaRuntimeConfig } from "./runtime-config";
 const runtime = getFikaRuntimeConfig();
 if (runtime.mode === "local") {
   process.env.FIRESTORE_EMULATOR_HOST = runtime.firestoreHost;
-  process.env.FIREBASE_AUTH_EMULATOR_HOST = runtime.authHost;
+  if (runtime.authMode === "emulator") process.env.FIREBASE_AUTH_EMULATOR_HOST = runtime.authHost;
 }
-const existingApp = getApps()[0];
-const app = existingApp || initializeApp({ projectId: runtime.projectId });
+const defaultApp = getApps().find(candidate => candidate.name === "[DEFAULT]") || initializeApp({ projectId: runtime.projectId });
+const authApp = runtime.authMode === "cloud"
+  ? getApps().find(candidate => candidate.name === "fika-auth") || initializeApp({ projectId: runtime.authProjectId }, "fika-auth")
+  : defaultApp;
 
-export const auth = getAuth(app);
-export const db = getFirestore(app);
-if (!existingApp) db.settings({ ignoreUndefinedProperties: true });
+export const auth = getAuth(authApp);
+export const db = getFirestore(defaultApp);
+if (defaultApp.name === "[DEFAULT]") db.settings({ ignoreUndefinedProperties: true });
