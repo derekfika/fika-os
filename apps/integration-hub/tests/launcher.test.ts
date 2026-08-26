@@ -5,10 +5,19 @@ import { MemoryAuthModRepository } from "../lib/authmod-core";
 import { V1_APPLICATIONS } from "../lib/authmod-core/model";
 import { createAuthIdentity } from "../lib/authmod-core/identity";
 import { assignSite, grantStandardApplicationAccess } from "../lib/authmod-core/grants";
+import { ensureV1ApplicationRegistry } from "../lib/authmod-core/registry";
 import type { AuthPrincipal } from "../lib/authmod-core";
 
 const actor: AuthPrincipal = { type: "interactive", id: "actor", displayName: "Admin", email: "admin@fikacatering.com", identityKind: "person" };
 const setup = () => new MemoryAuthModRepository({ applications: [...V1_APPLICATIONS], oplocs: [{ id: "oploc:mnk", label: "MNK", active: true }] });
+
+test("empty application registry bootstrap creates exactly the seven V1 apps and preserves governed changes", async () => {
+  const repository = new MemoryAuthModRepository();
+  const created = await ensureV1ApplicationRegistry(repository, actor);
+  assert.equal(created.length, 7); assert.deepEqual((await repository.listApplications()).map(value => value.appId), V1_APPLICATIONS.map(value => value.appId));
+  const governed = { ...(await repository.getApplication("logistics"))!, enabled: false, version: 9 }; await repository.saveApplication(governed);
+  assert.equal((await ensureV1ApplicationRegistry(repository, actor)).length, 0); assert.equal((await repository.getApplication("logistics"))?.enabled, false); assert.equal((await repository.listApplications()).length, 7);
+});
 
 test("launcher shows only the currently effective assigned application", async () => {
   const repository = setup(); const identity = await createAuthIdentity(repository, { actor, displayName: "Person", email: "person@fikacatering.com", externalProvider: "firebase", externalUid: "person", provenance: "import" });

@@ -14,3 +14,7 @@ export async function seedApplicationRegistry(repository: AuthModRepository, act
   }
   return created;
 }
+
+export async function ensureV1ApplicationRegistry(repository: AuthModRepository, actor: AuthPrincipal) {
+  return seedApplicationRegistry(repository, actor);
+}

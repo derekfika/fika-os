@@ -1,6 +1,6 @@
 import { auth } from "./firebase-admin";
 import { assertLocalSafety } from "./safety";
-import { createAuthIdentity, grantAuthmodAdmin, grantStandardApplicationAccess, type AuthModRepository, type AuthPrincipal } from "./authmod-core";
+import { createAuthIdentity, ensureV1ApplicationRegistry, grantAuthmodAdmin, grantStandardApplicationAccess, type AuthModRepository, type AuthPrincipal } from "./authmod-core";
 import { auditEvent } from "./authmod-core/audit";
 
 const fixtures = {
@@ -23,13 +23,15 @@ export async function ensureLocalFixtureIdentity(repository: AuthModRepository, 
     await repository.saveIdentityWithAudit(next, auditEvent({ actor, targetType: "AuthIdentity", targetId: identity.id, action: "auth-identity-bound", afterState: { externalProvider: "firebase", externalUid: uid }, provenance: "system", outcome: "committed" }), identity.version);
     identity = next;
   }
+  const fixtureActor: AuthPrincipal = { type: "interactive", id: identity.id, displayName: identity.displayName, email: identity.normalizedEmail, identityKind: identity.identityKind };
+  await ensureV1ApplicationRegistry(repository, fixtureActor);
   if (role === "integration-admin") {
     const grants = await repository.listAuthorityGrants(identity.id, "interactive");
-    if (!grants.some(value => value.resource === "authmod" && value.action === "Administer" && value.status === "active")) await grantAuthmodAdmin(repository, { identityId: identity.id, actor: { type: "interactive", id: identity.id, displayName: identity.displayName, email: identity.normalizedEmail, identityKind: identity.identityKind }, reason: "Explicit local development bootstrap." });
+    if (!grants.some(value => value.resource === "authmod" && value.action === "Administer" && value.status === "active")) await grantAuthmodAdmin(repository, { identityId: identity.id, actor: fixtureActor, reason: "Explicit local development bootstrap." });
   }
   if (await repository.getApplication("integration-hub")) {
     const access = await repository.listAppAssignments(identity.id);
-    if (!access.some(value => value.appId === "integration-hub" && value.status === "active")) await grantStandardApplicationAccess(repository, { identityId: identity.id, appId: "integration-hub", actor: { type: "interactive", id: identity.id, displayName: identity.displayName, email: identity.normalizedEmail, identityKind: identity.identityKind }, reason: "Explicit local development fixture access." });
+    if (!access.some(value => value.appId === "integration-hub" && value.status === "active")) await grantStandardApplicationAccess(repository, { identityId: identity.id, appId: "integration-hub", actor: fixtureActor, reason: "Explicit local development fixture access." });
   }
   return identity;
 }
