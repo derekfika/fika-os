@@ -10,8 +10,10 @@ const config = {
   appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
 };
 
+export function hasFikaFirebaseClientConfig() { return Boolean(config.apiKey && config.authDomain && config.projectId && config.appId); }
+
 export function getFikaFirebaseAuth() {
-  if (!config.apiKey || !config.authDomain || !config.projectId || !config.appId) throw new Error("Firebase web configuration is not available.");
+  if (!hasFikaFirebaseClientConfig()) throw new Error("Firebase web configuration is not available.");
   return getAuth(getApps()[0] || initializeApp(config));
 }
 
