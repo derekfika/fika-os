@@ -9,8 +9,8 @@ The matrix maps observed capabilities to the controlled actions. It is a target 
 | AUTHMOD user/app/site/grant administration |  |  |  |  |  | yes | organisation | authmod.admin; not Full Access. |
 | AUTHMOD import preview/reconciliation | yes | yes | yes |  |  | yes for commit | organisation | Upload/preview is not a grant commit. |
 | CPU production queue/plan | yes | yes | yes |  |  |  | production/site | Route-specific classification to confirm in Phase E. |
-| CPU production allergen sign | yes |  |  | yes |  |  | production/site and signatory role | Must prove explicit sign authority; ignore request role. |
-| CPU final allergen approval | yes |  |  | yes |  |  | production/site and final role | Distinct actor from production sign where two signatures are required. |
+| CPU production allergen sign | yes |  |  | yes |  |  | production/site and signatory role | Explicit authority may be held by a person or operational identity; the allergen record captures the human signatory evidence separately. |
+| CPU final allergen approval | yes |  |  | yes |  |  | production/site and final role | Explicit authority may be held by a person or operational identity; distinct allergen-record signatory evidence remains required where two signatures are required. |
 | Menu Planning rolling menu/catalogue/recipes | yes | yes | yes |  |  |  | menu/site as applicable | Existing routes are mixed; guard inventory required. |
 | Menu Planning publication/withdrawal | yes |  |  |  | yes |  | publication/site audience | Separate menu.publish; Hub Admin does not imply it. |
 | Logistics planning/jobs/assignment/loads | yes |  | yes |  |  |  | logistics domain/OPLOC | Do not classify every POST as Manage without route review. |

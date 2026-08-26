@@ -287,10 +287,16 @@ test("operational identities receive normal scoped access but not person-require
   await assert.rejects(() => setFullAccess(repository, { identityId: operational.id, fullAccess: true, actor: admin, reason: "Invalid operational Full Access." }), /person identities/);
   await repository.saveIdentity({ ...operational, fullAccess: true, version: operational.version + 1 }, operational.version);
   assert.equal((await resolveUserAccess(repository, { principal, appId: "logistics" })).reasonCode, "app-not-assigned");
-  const personRequired = [["integration-hub", "authmod", "Administer"], ["menu-planning", "menu.publish", "Publish"], ["cpu-production", "production.allergen-sign", "Approve"], ["cpu-production", "production.allergen-final-approve", "Approve"]] as const;
+  const personRequired = [["integration-hub", "authmod", "Administer"], ["menu-planning", "menu.publish", "Publish"]] as const;
   for (const [appId, resource, action] of personRequired) {
     await assert.rejects(() => grantAuthority(repository, { subjectId: operational.id, subjectType: "interactive", actor: admin, appId, resource, action, scope: { kind: "oploc", ids: ["oploc:mnk"] }, reason: "Invalid operational authority." }), /person identity/);
   }
+  await grantStandardApplicationAccess(repository, { identityId: operational.id, appId: "cpu-production", actor: admin });
+  assert.equal((await evaluateAuthority(repository, { principal, appId: "cpu-production", resource: "production.allergen-sign", action: "Approve", scope: { kind: "oploc", ids: ["oploc:mnk"] } })).allowed, false);
+  const sign = await grantAuthority(repository, { subjectId: operational.id, subjectType: "interactive", actor: admin, appId: "cpu-production", resource: "production.allergen-sign", action: "Approve", scope: { kind: "oploc", ids: ["oploc:mnk"] }, reason: "Explicit operational allergen signing authority." });
+  const final = await grantAuthority(repository, { subjectId: operational.id, subjectType: "interactive", actor: admin, appId: "cpu-production", resource: "production.allergen-final-approve", action: "Approve", scope: { kind: "oploc", ids: ["oploc:mnk"] }, reason: "Explicit operational final allergen authority." });
+  assert.equal((await evaluateAuthority(repository, { principal, appId: "cpu-production", resource: sign.resource, action: sign.action, scope: sign.scope })).allowed, true);
+  assert.equal((await evaluateAuthority(repository, { principal, appId: "cpu-production", resource: final.resource, action: final.action, scope: final.scope })).allowed, true);
 });
 
 test("person-required policy denies erroneous operational grants and allows person grants", async () => {
@@ -317,7 +323,8 @@ test("operational actor audit remains operational and does not claim the custodi
   const repository = makeRepo(); const operational = await operationalIdentity(repository, "audit-mnk@example.test", { representedOplocId: "oploc:mnk" });
   const actor: AuthPrincipal = { type: "interactive", id: operational.id, displayName: operational.displayName, identityKind: "operational", representedOplocId: "oploc:mnk", primaryCustodianLegendId: "legend:tia" };
   await grantStandardApplicationAccess(repository, { identityId: operational.id, appId: "logistics", actor });
-  const audit = repository.audits.at(-1); assert.equal(audit?.actorPrincipalId, operational.id); assert.equal(audit?.actorPrincipalType, "interactive"); assert.equal(audit?.actorSnapshot.identityKind, "operational"); assert.equal(audit?.actorSnapshot.primaryCustodianLegendId, "legend:tia");
+  await grantAuthority(repository, { subjectId: operational.id, subjectType: "interactive", actor, appId: "cpu-production", resource: "production.allergen-sign", action: "Approve", scope: { kind: "oploc", ids: ["oploc:mnk"] }, reason: "Operational shared-device signing capability." });
+  const audit = repository.audits.at(-1); assert.equal(audit?.actorPrincipalId, operational.id); assert.equal(audit?.actorPrincipalType, "interactive"); assert.equal(audit?.actorSnapshot.identityKind, "operational"); assert.equal(audit?.actorSnapshot.primaryCustodianLegendId, "legend:tia"); assert.equal("signatoryName" in (audit?.actorSnapshot || {}), false);
 });
 
 test("workspace operational classification remains unresolved until reviewed", async () => {
