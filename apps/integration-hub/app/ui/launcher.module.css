@@ -17,3 +17,4 @@
 .appCard[data-accent="pink"]:after{background:radial-gradient(circle,rgba(190,40,109,.18),transparent 68%)}
 .appCard[data-accent="orange"]:after{background:radial-gradient(circle,rgba(217,80,29,.18),transparent 68%)}
 @media(max-width:620px){.workspace{padding:30px 18px}.appSection:first-child .appCards{max-width:none}}
+.sideLogo{font-size:0;width:88px;height:38px;margin-left:14px;background:url('/fika-logo-white.png') center/contain no-repeat}.sideLogo br{display:none}
