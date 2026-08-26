@@ -1,0 +1,28 @@
+# Firebase App Hosting staging configuration for the Integration Hub.
+# Configure the backend root directory as apps/integration-hub.
+env:
+  - variable: FIKA_RUNTIME_MODE
+    value: staging
+    availability:
+      - BUILD
+      - RUNTIME
+  - variable: FIREBASE_PROJECT_ID
+    value: fika-os-dev
+    availability:
+      - BUILD
+      - RUNTIME
+  - variable: FIKA_ALLOWED_EMAIL_DOMAINS
+    value: fikacatering.com
+    availability:
+      - BUILD
+      - RUNTIME
+  - variable: BRIGHTHR_MODE
+    value: fixture
+    availability:
+      - BUILD
+      - RUNTIME
+  - variable: SQUARE_MODE
+    value: fixture
+    availability:
+      - BUILD
+      - RUNTIME

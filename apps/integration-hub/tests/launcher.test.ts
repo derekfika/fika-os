@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildLauncher } from "../lib/launcher";
+import { appHref, buildLauncher } from "../lib/launcher";
 import { MemoryAuthModRepository } from "../lib/authmod-core";
 import { V1_APPLICATIONS } from "../lib/authmod-core/model";
 import { createAuthIdentity } from "../lib/authmod-core/identity";
@@ -10,6 +10,18 @@ import type { AuthPrincipal } from "../lib/authmod-core";
 
 const actor: AuthPrincipal = { type: "interactive", id: "actor", displayName: "Admin", email: "admin@fikacatering.com", identityKind: "person" };
 const setup = () => new MemoryAuthModRepository({ applications: [...V1_APPLICATIONS], oplocs: [{ id: "oploc:mnk", label: "MNK", active: true }] });
+
+test("staging launcher never falls back to localhost application URLs", () => {
+  const priorMode = process.env.FIKA_RUNTIME_MODE;
+  const priorCpuUrl = process.env.FIKA_APP_CPU_URL;
+  process.env.FIKA_RUNTIME_MODE = "staging";
+  delete process.env.FIKA_APP_CPU_URL;
+  try { assert.equal(appHref("cpu-production"), undefined); }
+  finally {
+    if (priorMode === undefined) delete process.env.FIKA_RUNTIME_MODE; else process.env.FIKA_RUNTIME_MODE = priorMode;
+    if (priorCpuUrl === undefined) delete process.env.FIKA_APP_CPU_URL; else process.env.FIKA_APP_CPU_URL = priorCpuUrl;
+  }
+});
 
 test("empty application registry bootstrap creates exactly the seven V1 apps and preserves governed changes", async () => {
   const repository = new MemoryAuthModRepository();
