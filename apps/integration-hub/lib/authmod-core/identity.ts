@@ -26,6 +26,18 @@ export async function linkLegend(repository: AuthModRepository, input: { identit
   await repository.saveIdentityWithAudit(next, audit, identity.version);
   return next;
 }
+
+export async function bindExternalIdentity(repository: AuthModRepository, input: { identityId: string; externalProvider: string; externalUid: string; actor: AuthPrincipal; reason: string }) {
+  const identity = await repository.getIdentity(input.identityId); if (!identity) throw Object.assign(new Error("AUTHMOD identity not found."), { status: 403, code: "AUTHMOD_IDENTITY_NOT_FOUND" });
+  const existing = await repository.findIdentityByExternal(input.externalProvider, input.externalUid);
+  if (existing && existing.id !== identity.id) throw Object.assign(new Error("Firebase identity is already bound to another AUTHMOD identity."), { status: 403, code: "AUTHMOD_EXTERNAL_IDENTITY_CONFLICT" });
+  if (identity.externalProvider && identity.externalUid && (identity.externalProvider !== input.externalProvider || identity.externalUid !== input.externalUid)) throw Object.assign(new Error("AUTHMOD identity is already bound to a different external identity."), { status: 403, code: "AUTHMOD_EXTERNAL_IDENTITY_CONFLICT" });
+  if (identity.externalProvider === input.externalProvider && identity.externalUid === input.externalUid) return identity;
+  const next = { ...identity, externalProvider: input.externalProvider, externalUid: input.externalUid, updatedAt: now(), version: identity.version + 1 };
+  const audit = auditEvent({ actor: input.actor, targetType: "AuthIdentity", targetId: identity.id, action: "auth-identity-bound", afterState: { externalProvider: input.externalProvider, externalUid: input.externalUid }, provenance: "system", outcome: "committed" });
+  await repository.saveIdentityWithAudit(next, audit, identity.version);
+  return next;
+}
 export async function setIdentityStatus(repository: AuthModRepository, input: { identityId: string; status: AuthIdentity["status"]; actor: AuthPrincipal; reason: string }) {
   const identity = await repository.getIdentity(input.identityId); if (!identity) throw Object.assign(new Error("AUTHMOD identity not found."), { status: 404 });
   if (identity.identityKind === "person" && identity.status === "active" && input.status !== "active" && await hasAuthmodAdmin(repository, identity.id)) {

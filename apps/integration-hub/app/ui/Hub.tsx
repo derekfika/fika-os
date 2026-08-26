@@ -79,7 +79,6 @@ const views = [
 type View = (typeof views)[number];
 
 export default function Hub() {
-  const PERSISTED_ADMIN_KEY = "fika_hub_persist_admin";
   const [payload, setPayload] = useState<Payload | null>(null),
     [view, setView] = useState<View>("Overview"),
     [loading, setLoading] = useState(true),
@@ -97,7 +96,6 @@ export default function Hub() {
       const j = await readJson<Payload & { error?: { message?: string } }>(r);
       if (!r.ok) throw Error(j.error?.message || "Could not load the Integration Hub.");
       setPayload(j);
-      if (j.actor.role === "integration-admin") window.localStorage.setItem(PERSISTED_ADMIN_KEY, "true");
       setError("");
       return true;
     } catch (e) {
@@ -108,30 +106,18 @@ export default function Hub() {
     }
   }
   useEffect(() => {
-    void (async () => {
-      const loaded = await load();
-      if (!loaded && window.localStorage.getItem(PERSISTED_ADMIN_KEY) === "true") {
-        const response = await fetch("/api/auth/session", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ role: "integration-admin" }) });
-        if (response.ok) await load();
-      }
-    })();
+    void load();
   }, []);
   async function refreshLocalSession() {
     const role = payload?.actor.role;
     if (!role) return false;
-    const response = await fetch("/api/auth/session", {
+    const response = await fetch("/api/auth/local-session", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ role }),
     });
     return response.ok;
   }
-  useEffect(() => {
-    const timer = window.setInterval(() => {
-      if (window.localStorage.getItem(PERSISTED_ADMIN_KEY) === "true") void fetch("/api/auth/session", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ role: "integration-admin" }) });
-    }, 45 * 60 * 1000);
-    return () => window.clearInterval(timer);
-  }, []);
   async function command(body: Record<string, unknown>) {
     setLoading(true);
     setProgress(operationLabel(body));
@@ -261,7 +247,6 @@ export default function Hub() {
           aria-label="Sign out"
           onClick={async () => {
             await fetch("/api/auth/session", { method: "DELETE" });
-            window.localStorage.removeItem(PERSISTED_ADMIN_KEY);
             setPayload(null);
           }}
         >
@@ -423,14 +408,12 @@ function Login({
           className="primary"
           disabled={loading}
           onClick={async () => {
-            const r = await fetch("/api/auth/session", {
+            const r = await fetch("/api/auth/local-session", {
               method: "POST",
               headers: { "content-type": "application/json" },
               body: JSON.stringify({ role }),
             });
             if (r.ok) {
-              if (role === "integration-admin") window.localStorage.setItem("fika_hub_persist_admin", "true");
-              else window.localStorage.removeItem("fika_hub_persist_admin");
               await done();
             }
             else {

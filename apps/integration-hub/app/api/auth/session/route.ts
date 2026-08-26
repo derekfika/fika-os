@@ -1,41 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { assertLocalSafety } from "@/lib/safety";
 import { errorResponse } from "@/lib/api";
-import { requireActor } from "@/lib/auth";
-
-const Request = z.object({ role: z.enum(["integration-admin", "reviewer", "viewer"]) }).strict();
-const EMAILS = { "integration-admin": "admin@local.fika", reviewer: "reviewer@local.fika", viewer: "viewer@local.fika" } as const;
-const PASSWORD = "Synthetic-Local-Only-2026!";
-
-export async function POST(req: NextRequest) {
-  try {
-    const { authHost } = assertLocalSafety();
-    const { role } = Request.parse(await req.json());
-    const email = EMAILS[role];
-    const endpoint = `http://${authHost}/identitytoolkit.googleapis.com/v1`;
-    let response = await fetch(`${endpoint}/accounts:signInWithPassword?key=local-only`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ email, password: PASSWORD, returnSecureToken: true }) });
-    if (!response.ok) response = await fetch(`${endpoint}/accounts:signUp?key=local-only`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ email, password: PASSWORD, returnSecureToken: true }) });
-    if (!response.ok) throw Object.assign(new Error("Local Authentication emulator is unavailable."), { status: 503 });
-    const data = await response.json() as { idToken: string };
-    const result = NextResponse.json({ actor: { name: role === "integration-admin" ? "Integration Administrator" : role === "reviewer" ? "Integration Reviewer" : "Integration Viewer", email, role, synthetic: true } });
-    // Local synthetic sessions are deliberately persistent for development. The
-    // Hub renews the emulator ID token in the background, while DELETE remains
-    // the explicit sign-out path.
-    result.cookies.set("fika_hub_token", data.idToken, { httpOnly: true, sameSite: "strict", secure: false, maxAge: 60 * 60 * 24 * 365, path: "/" });
-    return result;
-  } catch (error) { return errorResponse(error); }
-}
-
-export async function DELETE() {
-  const result = NextResponse.json({ signedOut: true });
-  result.cookies.set("fika_hub_token", "", { maxAge: 0, path: "/" });
-  return result;
-}
-
-export async function GET(req: NextRequest) {
-  try {
-    const actor = await requireActor(req);
-    return NextResponse.json({ actor });
-  } catch (error) { return errorResponse(error); }
-}
+import { auth } from "@/lib/firebase-admin";
+import { FirestoreAuthModRepository } from "@/lib/authmod-core";
+import { assertRecentVerifiedFirebaseIdentity, clearCookieOptions, cookieOptions, createFikaSessionCookie, requireFikaSession, resolveSessionIdentity } from "@/lib/fika-session";
+import { assertSameOrigin, CSRF_COOKIE, validCsrf } from "@/lib/csrf";
+const Body = z.object({ idToken: z.string().min(1), csrfToken: z.string().min(1) }).strict();
+export async function POST(request: NextRequest) { try { assertSameOrigin(request); const body = Body.parse(await request.json()); if (!validCsrf(request.cookies.get(CSRF_COOKIE)?.value, body.csrfToken)) throw Object.assign(new Error("Invalid CSRF token."), { status: 403, code: "FIKA_CSRF_INVALID" }); const decoded = await auth.verifyIdToken(body.idToken, true); assertRecentVerifiedFirebaseIdentity(decoded); const repository = new FirestoreAuthModRepository(); const identity = await resolveSessionIdentity(repository, { uid: decoded.uid, email: decoded.email, name: decoded.name }); const session = await createFikaSessionCookie(body.idToken); const response = NextResponse.json({ authenticated: true, principal: { identityId: identity.id, displayName: identity.displayName, email: identity.normalizedEmail, identityKind: identity.identityKind } }); response.cookies.set("fika_os_session", session, cookieOptions()); return response; } catch (error) { return errorResponse(error); } }
+export async function GET(request: NextRequest) { try { const principal = await requireFikaSession(request); return NextResponse.json({ authenticated: true, principal: { identityId: principal.authmodIdentityId, displayName: principal.displayName, email: principal.email, identityKind: principal.identityKind } }, { headers: { "Cache-Control": "no-store" } }); } catch (error) { return errorResponse(error); } }
+export async function DELETE() { const response = NextResponse.json({ signedOut: true }); response.cookies.set("fika_os_session", "", clearCookieOptions()); return response; }

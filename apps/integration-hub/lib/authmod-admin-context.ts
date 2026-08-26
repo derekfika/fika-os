@@ -1,7 +1,6 @@
-import { assertLocalSafety } from "./safety";
-import { requireActor } from "./auth";
+import { requireFikaSession } from "./fika-session";
 import type { AuthPrincipal } from "./authmod-core";
-import { createAuthIdentity, grantAuthmodAdmin, hasAuthmodAdmin, getPrimaryCustodian, FirestoreAuthModRepository } from "./authmod-core";
+import { hasAuthmodAdmin, getPrimaryCustodian, FirestoreAuthModRepository } from "./authmod-core";
 import type { AuthModRepository } from "./authmod-core";
 
 export function principalFromIdentity(identity: { id: string; displayName: string; normalizedEmail?: string; identityKind: "person" | "operational"; representedOplocId?: string }, custodianLegendId?: string): AuthPrincipal {
@@ -9,17 +8,11 @@ export function principalFromIdentity(identity: { id: string; displayName: strin
 }
 
 export async function requireAuthmodAdminContext(request: Request) {
-  assertLocalSafety();
-  const actor = await requireActor(request as unknown as { cookies: { get(name: string): { value?: string } | undefined } }, ["integration-admin"]);
   const repository: AuthModRepository = new FirestoreAuthModRepository();
-  let identity = await repository.findIdentityByExternal("local", actor.uid);
-  const bootstrapActor: AuthPrincipal = { type: "interactive", id: `local-bootstrap:${actor.uid}`, displayName: actor.name, email: actor.email, identityKind: "person" };
-  if (!identity) {
-    identity = await createAuthIdentity(repository, { actor: bootstrapActor, displayName: actor.name, email: actor.email, externalProvider: "local", externalUid: actor.uid, identityKind: "person", provenance: "system" });
-    await grantAuthmodAdmin(repository, { identityId: identity.id, actor: principalFromIdentity(identity), reason: "Local-only Phase C AUTHMOD bootstrap." });
-  }
-  const custodian = identity.identityKind === "operational" ? await getPrimaryCustodian(repository, identity.id) : undefined;
-  const principal = principalFromIdentity(identity, custodian?.custodianLegendId);
-  if (!(await hasAuthmodAdmin(repository, identity.id))) throw Object.assign(new Error("An active person AUTHMOD Administrator account is required."), { status: 403, code: "AUTHMOD_ADMIN_REQUIRED" });
-  return { actor, principal, identity, repository };
+  const session = await requireFikaSession(request as unknown as { cookies: { get(name: string): { value?: string } | undefined } }, repository);
+  const identity = await repository.getIdentity(session.authmodIdentityId);
+  if (!identity) throw Object.assign(new Error("AUTHMOD identity not found."), { status: 403, code: "AUTHMOD_IDENTITY_NOT_FOUND" });
+  const principal = principalFromIdentity(identity, session.primaryCustodianLegendId);
+  if (identity.identityKind !== "person" || !(await hasAuthmodAdmin(repository, identity.id))) throw Object.assign(new Error("An active person AUTHMOD Administrator account is required."), { status: 403, code: "AUTHMOD_ADMIN_REQUIRED" });
+  return { actor: { uid: session.firebaseUid, name: session.displayName, email: session.email, role: "integration-admin" as const, synthetic: false as const }, principal, identity, repository };
 }

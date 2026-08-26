@@ -1,20 +1,13 @@
 import path from "node:path";
-
-const SAFE_PROJECTS = new Set(["fika-os-local", "demo-fika-os"]);
-const LOOPBACK = /^(127\.0\.0\.1|localhost):\d+$/;
+import { getFikaRuntimeConfig } from "./runtime-config";
 
 export function assertLocalSafety(env: NodeJS.ProcessEnv = process.env) {
-  const projectId = env.FIREBASE_PROJECT_ID || "fika-os-local";
-  const firestoreHost = env.FIRESTORE_EMULATOR_HOST || "127.0.0.1:8085";
-  const authHost = env.FIREBASE_AUTH_EMULATOR_HOST || "127.0.0.1:9099";
-  if (!SAFE_PROJECTS.has(projectId)) throw new Error(`Unsafe Firebase project: ${projectId}`);
-  if (!LOOPBACK.test(firestoreHost) || !LOOPBACK.test(authHost)) {
-    throw new Error("Integration Hub requires loopback Firebase emulators.");
-  }
-  process.env.FIREBASE_PROJECT_ID = projectId;
-  process.env.FIRESTORE_EMULATOR_HOST = firestoreHost;
-  process.env.FIREBASE_AUTH_EMULATOR_HOST = authHost;
-  return { projectId, firestoreHost, authHost };
+  const runtime = getFikaRuntimeConfig(env);
+  if (runtime.mode !== "local") throw new Error("This operation is local-development only.");
+  process.env.FIREBASE_PROJECT_ID = runtime.projectId;
+  process.env.FIRESTORE_EMULATOR_HOST = runtime.firestoreHost;
+  process.env.FIREBASE_AUTH_EMULATOR_HOST = runtime.authHost;
+  return { projectId: runtime.projectId, firestoreHost: runtime.firestoreHost, authHost: runtime.authHost };
 }
 
 export function dataRoot() {
