@@ -20,6 +20,12 @@ test("MNK portal has a dedicated route while preserving the legacy root entry po
   assert.match(dashboardCompat, /redirect\("\/mnk\/dashboard"\)/);
 });
 
+test("portal actions use the configured public route for each site", () => {
+  assert.equal(portalSite("mnk").portalPath, "/mnk");
+  assert.equal(portalSite("angel-court").portalPath, "/angel-court");
+  assert.equal(portalSite("munich-re").portalPath, "/munich-re");
+});
+
 test("MNK portal uses the locally retained official brand asset", () => {
   const site = portalSite("mnk");
   assert.equal(site.logoPath, "/brand/mnk/mnk-international-logo.png");

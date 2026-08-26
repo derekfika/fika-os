@@ -7,6 +7,7 @@ export type PortalSiteConfig = {
   logoPath: string;
   cssClass: string;
   bookingEndpoint: string;
+  portalPath: string;
 };
 
 export const portalSites: Record<PortalSiteKey, PortalSiteConfig> = {
@@ -17,6 +18,7 @@ export const portalSites: Record<PortalSiteKey, PortalSiteConfig> = {
     logoPath: "/brand/mnk/mnk-international-logo.png",
     cssClass: "site-mnk",
     bookingEndpoint: "/api/bookings/mnk",
+    portalPath: "/mnk",
   },
   "angel-court": {
     key: "angel-court",
@@ -26,6 +28,7 @@ export const portalSites: Record<PortalSiteKey, PortalSiteConfig> = {
     cssClass: "site-angel-court",
     // Angel Court uses the existing typed booking contract; siteId scopes the record.
     bookingEndpoint: "/api/bookings/mnk",
+    portalPath: "/angel-court",
   },
   cfc: {
     key: "cfc",
@@ -34,6 +37,7 @@ export const portalSites: Record<PortalSiteKey, PortalSiteConfig> = {
     logoPath: "/brand/cfc/cfc-positive-logo.svg",
     cssClass: "site-cfc",
     bookingEndpoint: "/api/bookings/mnk",
+    portalPath: "/cfc",
   },
   "munich-re": {
     key: "munich-re",
@@ -43,6 +47,7 @@ export const portalSites: Record<PortalSiteKey, PortalSiteConfig> = {
     cssClass: "site-munich-re",
     // The shared typed booking contract is scoped by siteId.
     bookingEndpoint: "/api/bookings/mnk",
+    portalPath: "/munich-re",
   },
 };
 

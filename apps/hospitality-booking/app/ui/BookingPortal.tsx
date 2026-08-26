@@ -91,12 +91,14 @@ export default function BookingPortal({
   siteLabel,
   availableSites,
   onSiteChange,
+  dashboardMode,
 }: {
   siteKey?: PortalSiteKey;
   oplocId?: string;
   siteLabel?: string;
   availableSites?: Array<{ id: string; label: string }>;
   onSiteChange?: (oplocId: string) => void;
+  dashboardMode?: boolean;
 }) {
   const site = portalSite(siteKey);
   const [menu, setMenu] = useState<PortalMenuItem[]>([]);
@@ -540,7 +542,7 @@ export default function BookingPortal({
   if (confirmation)
     return (
       <main className={`mnk ${site.cssClass}`}>
-        <Top site={site} siteLabel={siteLabel} availableSites={availableSites} activeOplocId={oplocId} onSiteChange={onSiteChange} onStartAgain={() => setResetOpen(true)} />
+        <Top site={site} siteLabel={siteLabel} availableSites={availableSites} activeOplocId={oplocId} onSiteChange={onSiteChange} dashboardMode={dashboardMode} onStartAgain={() => setResetOpen(true)} />
         <section className="success-screen">
           <p className="eyebrow">Request received</p>
           <h1>We’re on it.</h1>
@@ -554,7 +556,7 @@ export default function BookingPortal({
     );
   return (
     <main className={`mnk ${site.cssClass}`}>
-      <Top site={site} siteLabel={siteLabel} availableSites={availableSites} activeOplocId={oplocId} onSiteChange={onSiteChange} onStartAgain={() => setResetOpen(true)} />
+      <Top site={site} siteLabel={siteLabel} availableSites={availableSites} activeOplocId={oplocId} onSiteChange={onSiteChange} dashboardMode={dashboardMode} onStartAgain={() => setResetOpen(true)} />
       {restoredDraft && <p className="draft-restored" role="status">Your unfinished booking has been restored.</p>}
       {resetOpen && <ResetModal onCancel={() => setResetOpen(false)} onConfirm={resetBooking} />}
       <section className="mnk-hero">
@@ -670,6 +672,7 @@ function Top({
   availableSites,
   activeOplocId,
   onSiteChange,
+  dashboardMode,
   onStartAgain,
 }: {
   site: ReturnType<typeof portalSite>;
@@ -677,16 +680,18 @@ function Top({
   availableSites?: Array<{ id: string; label: string }>;
   activeOplocId?: string;
   onSiteChange?: (oplocId: string) => void;
+  dashboardMode?: boolean;
   onStartAgain: () => void;
 }) {
   return (
     <header className="mnk-top">
       <div className="mnk-brand-lockup">
         <img src={site.logoPath} alt={site.displayName} />
-        <span>Hospitality</span>
+        <span>{dashboardMode ? "Hospitality Dashboard" : "Hospitality"}</span>
       </div>
       <div className="mnk-top-actions">
-        {availableSites && activeOplocId && onSiteChange ? availableSites.length > 1 ? <label>Site: <select aria-label="Hospitality site" value={activeOplocId} onChange={(event) => onSiteChange(event.target.value)}>{availableSites.map(option => <option value={option.id} key={option.id}>{option.label}</option>)}</select></label> : <small>Site: {siteLabel || site.label}</small> : <small>{site.label} booking</small>}
+        {availableSites && activeOplocId && onSiteChange ? <>{availableSites.length > 1 ? <label>Site: <select aria-label="Hospitality site" value={activeOplocId} onChange={(event) => onSiteChange(event.target.value)}>{availableSites.map(option => <option value={option.id} key={option.id}>{option.label}</option>)}</select></label> : <small>Site: {siteLabel || site.label}</small>}{dashboardMode && <a className="start-again" href={site.portalPath} target="_blank" rel="noopener noreferrer">View Portal</a>}</> : <small>{site.label} booking</small>}
+        {dashboardMode && (!availableSites || !activeOplocId || !onSiteChange) && <a className="start-again" href={site.portalPath} target="_blank" rel="noopener noreferrer">View Portal</a>}
         <button className="start-again" type="button" onClick={onStartAgain}>
           Start again
         </button>
