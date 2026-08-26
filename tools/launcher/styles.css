@@ -43,24 +43,3 @@ button.refresh span { font-size: 13px; }
 footer { display: flex; justify-content: space-between; padding-top: 4px; color: #9e98a5; font-size: 11px; }
 @media (max-width: 900px) { .cards { grid-template-columns: repeat(2, 1fr); } }
 @media (max-width: 620px) { .shell { padding: 28px 18px; }.hero { flex-wrap: wrap; }.environment { margin-left: 66px; }.actions { flex-wrap: wrap; }.refresh { margin-left: 0 !important; }.cards { grid-template-columns: 1fr; } }
-
-/* My FIKA OS home screen */
-.home-page { min-height: 100vh; padding: 72px clamp(24px, 5vw, 72px); color: #211344; background: #f8f6f1; font-family: Arial, sans-serif; }
-.home-header { max-width: 1120px; margin: 0 auto 42px; display: flex; justify-content: space-between; align-items: end; gap: 20px; }
-.home-logo { display: flex; align-items: center; gap: 9px; font-weight: 700; letter-spacing: .04em; }
-.home-logo svg { width: 24px; height: 24px; fill: none; stroke: #211344; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.9; }
-.home-header h1 { margin: 33px 0 6px; font-size: clamp(48px, 5vw, 64px); line-height: .95; letter-spacing: -.07em; }
-.home-header p { margin: 0; color: #766b88; font-size: 16px; }
-.home-signout { display: inline-flex; align-items: center; border: 1px solid #d9d0ee; border-radius: 10px; padding: 11px 14px; color: #3d269d; background: #fff; font: inherit; font-size: 16px; }
-.home-grid { max-width: 1120px; margin: auto; display: grid; grid-template-columns: repeat(4, 1fr); gap: 18px; }
-.home-tile { min-height: 150px; padding: 23px; display: flex; flex-direction: column; justify-content: space-between; border: 1px solid #e2daf4; border-radius: 18px; color: inherit; background: #fff; text-decoration: none; }
-.home-tile:hover { transform: translateY(-2px); box-shadow: 0 12px 28px #24114d14; }
-.home-tile h2 { margin: 0 0 9px; font-size: 22px; line-height: 1.1; }
-.home-tile p { margin: 0; color: #766b88; line-height: 1.45; }
-.home-tile span { display: flex; align-items: center; color: #4f34c7; font-size: 14px; font-weight: 700; }
-.home-tile-disabled { cursor: default; }
-.home-tile-disabled:hover { transform: none; box-shadow: none; }
-.home-tile-admin { color: #fff; border-color: #211344; background: #211344; }
-.home-tile-admin p, .home-tile-admin span { color: #d9cff3; }
-@media (max-width: 900px) { .home-grid { grid-template-columns: repeat(2, 1fr); } }
-@media (max-width: 600px) { .home-page { padding: 30px 16px; }.home-header { align-items: start; flex-direction: column; margin-bottom: 28px; }.home-signout { align-self: stretch; justify-content: center; }.home-grid { grid-template-columns: 1fr; }.home-tile { min-height: 132px; } }
