@@ -46,3 +46,11 @@ test("browser Firebase configuration is complete only when every public field ex
   }), true);
   assert.equal(hasFirebaseClientConfig({ NEXT_PUBLIC_FIREBASE_PROJECT_ID: "fika-os-staging" }), false);
 });
+
+test("Firebase Admin can be imported repeatedly without reapplying Firestore settings", async () => {
+  const first = await import("../lib/firebase-admin");
+  const repeatedModule = "../lib/firebase-admin?repeat=1";
+  const second = await import(repeatedModule);
+  assert.equal(first.db, second.db);
+  assert.equal(first.auth, second.auth);
+});
