@@ -66,3 +66,13 @@ test("returnTo accepts FIKA paths and configured app origins but rejects open re
   assert.throws(() => validateReturnTo("https://evil.example"), /not allowed/);
   assert.throws(() => validateReturnTo("//evil.example"), /not allowed/);
 });
+
+test("duplicate normalized email or external UID fails closed before binding", async () => {
+  const repository = new MemoryAuthModRepository();
+  const first = await createAuthIdentity(repository, { actor, displayName: "First", email: "duplicate@fikacatering.com", provenance: "import" });
+  const second = { ...first, id: "authid:second", externalProvider: undefined, externalUid: undefined, version: 1 };
+  repository.identities.set(second.id, second);
+  await assert.rejects(() => resolveSessionIdentity(repository, { uid: "new", email: "duplicate@fikacatering.com", name: "Duplicate" }), /administrator review/);
+  repository.identities.delete(second.id); repository.identities.set(second.id, { ...second, externalProvider: "firebase", externalUid: "same" }); repository.identities.set(first.id, { ...first, externalProvider: "firebase", externalUid: "same" });
+  await assert.rejects(() => resolveSessionIdentity(repository, { uid: "same", email: "different@fikacatering.com", name: "Conflict" }), /administrator review/);
+});

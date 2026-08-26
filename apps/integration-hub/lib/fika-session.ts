@@ -29,9 +29,13 @@ export function assertRecentVerifiedFirebaseIdentity(decoded: Pick<DecodedIdToke
 }
 
 export async function resolveSessionIdentity(repository: AuthModRepository, decoded: Pick<DecodedIdToken, "uid" | "email" | "name">, actor?: AuthPrincipal) {
-  let identity = await repository.findIdentityByExternal("firebase", decoded.uid);
+  const externalMatches = await repository.findIdentitiesByExternal("firebase", decoded.uid, 2);
+  if (externalMatches.length > 1) throw new FikaSessionError("This external identity needs administrator review.", 403, "AUTHMOD_EXTERNAL_IDENTITY_CONFLICT");
+  let identity = externalMatches[0];
   if (!identity && decoded.email) {
-    identity = await repository.findIdentityByEmail(decoded.email);
+    const emailMatches = await repository.findIdentitiesByEmail(decoded.email, 2);
+    if (emailMatches.length > 1) throw new FikaSessionError("This FIKA OS account needs administrator review before sign-in.", 403, "AUTHMOD_EMAIL_IDENTITY_CONFLICT");
+    identity = emailMatches[0];
     if (identity) {
       const bindingActor = actor || { type: "interactive", id: identity.id, displayName: identity.displayName, email: identity.normalizedEmail, identityKind: identity.identityKind };
       identity = await bindExternalIdentity(repository, { identityId: identity.id, externalProvider: "firebase", externalUid: decoded.uid, actor: bindingActor, reason: "Firebase Workspace session identity binding." });

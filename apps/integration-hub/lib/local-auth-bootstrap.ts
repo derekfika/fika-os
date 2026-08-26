@@ -1,6 +1,6 @@
 import { auth } from "./firebase-admin";
 import { assertLocalSafety } from "./safety";
-import { createAuthIdentity, grantAuthmodAdmin, type AuthModRepository, type AuthPrincipal } from "./authmod-core";
+import { createAuthIdentity, grantAuthmodAdmin, grantStandardApplicationAccess, type AuthModRepository, type AuthPrincipal } from "./authmod-core";
 import { auditEvent } from "./authmod-core/audit";
 
 const fixtures = {
@@ -26,6 +26,10 @@ export async function ensureLocalFixtureIdentity(repository: AuthModRepository, 
   if (role === "integration-admin") {
     const grants = await repository.listAuthorityGrants(identity.id, "interactive");
     if (!grants.some(value => value.resource === "authmod" && value.action === "Administer" && value.status === "active")) await grantAuthmodAdmin(repository, { identityId: identity.id, actor: { type: "interactive", id: identity.id, displayName: identity.displayName, email: identity.normalizedEmail, identityKind: identity.identityKind }, reason: "Explicit local development bootstrap." });
+  }
+  if (await repository.getApplication("integration-hub")) {
+    const access = await repository.listAppAssignments(identity.id);
+    if (!access.some(value => value.appId === "integration-hub" && value.status === "active")) await grantStandardApplicationAccess(repository, { identityId: identity.id, appId: "integration-hub", actor: { type: "interactive", id: identity.id, displayName: identity.displayName, email: identity.normalizedEmail, identityKind: identity.identityKind }, reason: "Explicit local development fixture access." });
   }
   return identity;
 }

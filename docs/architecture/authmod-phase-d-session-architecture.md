@@ -36,4 +36,8 @@ The local-only `/api/auth/local-session` endpoint is an explicit emulator adapte
 
 ## Deferred work
 
-Phase D.2/D.3 will complete client Google sign-in UX, deployment configuration and broader session adoption as required. Phase E owns operational route enforcement and migration of remaining legacy Hub role checks. Emergency break-glass, real custom domains, service-token migration and full application redirects remain deferred.
+Phase D.2 establishes the front door: `/` is My FIKA OS, `/hub` is the existing Integration Hub governance workspace, and `/authmod` remains Access Administration. The launcher reads current AUTHMOD application/site access through `/api/launcher`; it does not copy grants into the session or create assignments merely to show tiles. Full Access expands only registered normal applications, while `authmod.admin` is a separate administration tile. Operational accounts are shown as themselves, with custodian context never substituted as actor. An authenticated identity with zero applications receives a valid empty state.
+
+The client login uses the prepared Firebase web SDK and GoogleAuthProvider, with popup and redirect fallback. It exchanges the Firebase ID token once for the server session cookie, clears Firebase client state, and never uses browser storage as authentication proof. Local fixture buttons are displayed only when the server reports local runtime mode.
+
+Phase D.3 will complete client Google sign-in UX hardening, deployment configuration and broader session adoption as required. Phase E owns operational route enforcement and migration of remaining legacy Hub role checks. Emergency break-glass, real custom domains, service-token migration, full application redirects and Firebase authorized-domain deployment remain deferred.

@@ -1,0 +1,32 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { buildLauncher } from "../lib/launcher";
+import { MemoryAuthModRepository } from "../lib/authmod-core";
+import { V1_APPLICATIONS } from "../lib/authmod-core/model";
+import { createAuthIdentity } from "../lib/authmod-core/identity";
+import { assignSite, grantStandardApplicationAccess } from "../lib/authmod-core/grants";
+import type { AuthPrincipal } from "../lib/authmod-core";
+
+const actor: AuthPrincipal = { type: "interactive", id: "actor", displayName: "Admin", email: "admin@fikacatering.com", identityKind: "person" };
+const setup = () => new MemoryAuthModRepository({ applications: [...V1_APPLICATIONS], oplocs: [{ id: "oploc:mnk", label: "MNK", active: true }] });
+
+test("launcher shows only the currently effective assigned application", async () => {
+  const repository = setup(); const identity = await createAuthIdentity(repository, { actor, displayName: "Person", email: "person@fikacatering.com", externalProvider: "firebase", externalUid: "person", provenance: "import" });
+  await assignSite(repository, { identityId: identity.id, oplocId: "oploc:mnk", actor, reason: "Assigned site." }); await grantStandardApplicationAccess(repository, { identityId: identity.id, appId: "cpu-production", actor, reason: "Assigned application." });
+  const data = await buildLauncher(repository, { type: "interactive", id: identity.id, displayName: identity.displayName, email: identity.normalizedEmail, identityKind: identity.identityKind });
+  assert.deepEqual(data.applications.map(value => value.appId), ["cpu-production"]); assert.equal(data.canAdministerAuthmod, false);
+});
+
+test("Full Access expands normal enabled applications without creating assignments or admin access", async () => {
+  const repository = setup(); const identity = await createAuthIdentity(repository, { actor, displayName: "Full Person", email: "full@fikacatering.com", externalProvider: "firebase", externalUid: "full", provenance: "import" });
+  const full = { ...identity, fullAccess: true, version: identity.version + 1 }; await repository.saveIdentity(full);
+  const data = await buildLauncher(repository, { type: "interactive", id: identity.id, displayName: identity.displayName, email: identity.normalizedEmail, identityKind: identity.identityKind });
+  assert.ok(data.applications.some(value => value.appId === "cpu-production")); assert.equal(data.canAdministerAuthmod, false); assert.equal((await repository.listAppAssignments(identity.id)).length, 0);
+});
+
+test("operational and zero-access accounts remain truthful launcher states", async () => {
+  const repository = setup(); const operational = await createAuthIdentity(repository, { actor, displayName: "CPU Production", email: "cpux@fikacatering.com", externalProvider: "firebase", externalUid: "cpu", identityKind: "operational", provenance: "import" });
+  const empty = await createAuthIdentity(repository, { actor, displayName: "Empty", email: "empty@fikacatering.com", externalProvider: "firebase", externalUid: "empty", provenance: "import" });
+  const operationalData = await buildLauncher(repository, { type: "interactive", id: operational.id, displayName: operational.displayName, email: operational.normalizedEmail, identityKind: operational.identityKind }); const emptyData = await buildLauncher(repository, { type: "interactive", id: empty.id, displayName: empty.displayName, email: empty.normalizedEmail, identityKind: empty.identityKind });
+  assert.equal(operationalData.applications.length, 0); assert.equal(emptyData.applications.length, 0); assert.equal(operationalData.canAdministerAuthmod, false);
+});

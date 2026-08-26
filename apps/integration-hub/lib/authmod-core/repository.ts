@@ -3,7 +3,7 @@ export type OplocReference = { id: string; label: string; active: boolean };
 export type AuthModRepository = {
   getIdentity(id: string): Promise<AuthIdentity | undefined>; listIdentities(): Promise<AuthIdentity[]>;
   listLegendReferences(search?: string, limit?: number): Promise<LegendReference[]>;
-  findIdentityByExternal(provider: string, uid: string): Promise<AuthIdentity | undefined>; findIdentityByEmail(email: string): Promise<AuthIdentity | undefined>; findIdentityByLegend(legendId: string): Promise<AuthIdentity | undefined>;
+  findIdentityByExternal(provider: string, uid: string): Promise<AuthIdentity | undefined>; findIdentitiesByExternal(provider: string, uid: string, limit?: number): Promise<AuthIdentity[]>; findIdentityByEmail(email: string): Promise<AuthIdentity | undefined>; findIdentitiesByEmail(email: string, limit?: number): Promise<AuthIdentity[]>; findIdentityByLegend(legendId: string): Promise<AuthIdentity | undefined>;
   saveIdentity(identity: AuthIdentity, expectedVersion?: number): Promise<void>; saveIdentityWithAudit(identity: AuthIdentity, audit: AccessAuditEvent, expectedVersion?: number): Promise<void>;
   listCustodianAssignments(operationalIdentityId: string): Promise<CustodianAssignment[]>; saveCustodianHandover(input: { prior?: CustodianAssignment; next: CustodianAssignment; audit: AccessAuditEvent; expectedPriorVersion?: number }): Promise<void>;
   listApplications(): Promise<ApplicationRegistryEntry[]>; getApplication(appId: string): Promise<ApplicationRegistryEntry | undefined>;

@@ -10,8 +10,10 @@ export class MemoryAuthModRepository implements AuthModRepository {
   }
   async getIdentity(id: string) { return this.identities.get(id); } async listIdentities() { return [...this.identities.values()]; }
   async listLegendReferences(search = "", limit = 100) { const needle = search.trim().toLowerCase(); return [...this.identities.values()].filter(value => value.legendId && (!needle || value.displayName.toLowerCase().includes(needle))).slice(0, limit).map(value => ({ id: value.legendId!, label: value.displayName, active: value.status === "active" })); }
-  async findIdentityByExternal(provider: string, uid: string) { return [...this.identities.values()].find(value => value.externalProvider === provider && value.externalUid === uid); }
-  async findIdentityByEmail(email: string) { const normalized = email.trim().toLowerCase(); return [...this.identities.values()].find(value => value.normalizedEmail === normalized); }
+  async findIdentityByExternal(provider: string, uid: string) { return (await this.findIdentitiesByExternal(provider, uid, 1))[0]; }
+  async findIdentitiesByExternal(provider: string, uid: string, limit = 2) { return [...this.identities.values()].filter(value => value.externalProvider === provider && value.externalUid === uid).slice(0, limit); }
+  async findIdentityByEmail(email: string) { return (await this.findIdentitiesByEmail(email, 1))[0]; }
+  async findIdentitiesByEmail(email: string, limit = 2) { const normalized = email.trim().toLowerCase(); return [...this.identities.values()].filter(value => value.normalizedEmail === normalized).slice(0, limit); }
   async findIdentityByLegend(legendId: string) { return [...this.identities.values()].find(value => value.legendId === legendId); }
   async saveIdentity(value: AuthIdentity, expectedVersion?: number) { assertExpectedVersion(this.identities.get(value.id)?.version, expectedVersion); this.identities.set(value.id, value); }
   async saveIdentityWithAudit(value: AuthIdentity, audit: AccessAuditEvent, expectedVersion?: number) { assertExpectedVersion(this.identities.get(value.id)?.version, expectedVersion); this.identities.set(value.id, value); this.audits.push(audit); }

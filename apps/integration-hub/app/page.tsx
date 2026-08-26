@@ -1,2 +1,2 @@
-import Hub from "./ui/Hub";
-export default function Page() { return <Hub />; }
+import Launcher from "./ui/Launcher";
+export default function Page() { return <Launcher />; }
