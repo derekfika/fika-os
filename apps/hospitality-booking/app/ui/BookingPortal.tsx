@@ -87,8 +87,16 @@ function minimumQuantityFor(item: PortalMenuItem) {
 
 export default function BookingPortal({
   siteKey = "mnk",
+  oplocId,
+  siteLabel,
+  availableSites,
+  onSiteChange,
 }: {
   siteKey?: PortalSiteKey;
+  oplocId?: string;
+  siteLabel?: string;
+  availableSites?: Array<{ id: string; label: string }>;
+  onSiteChange?: (oplocId: string) => void;
 }) {
   const site = portalSite(siteKey);
   const [menu, setMenu] = useState<PortalMenuItem[]>([]);
@@ -224,7 +232,7 @@ export default function BookingPortal({
   }, [draftReady]);
 
   useEffect(() => {
-    fetch(`/api/reference-data?site=${encodeURIComponent(site.key)}`)
+    fetch(`/api/reference-data?site=${encodeURIComponent(site.key)}${oplocId ? `&oplocId=${encodeURIComponent(oplocId)}` : ""}`)
       .then((response) => response.json())
       .then((data) => setMenu(data.menu || []) as void)
       .catch(() =>
@@ -401,7 +409,7 @@ export default function BookingPortal({
       bookingId: portalBookingId(site.key),
       submittedAt: new Date().toISOString(),
       site: site.label,
-      siteId: site.key,
+      siteId: oplocId || site.key,
       client: {
         name: contact.requesterName,
         email: contact.requesterEmail,
@@ -532,7 +540,7 @@ export default function BookingPortal({
   if (confirmation)
     return (
       <main className={`mnk ${site.cssClass}`}>
-        <Top site={site} onStartAgain={() => setResetOpen(true)} />
+        <Top site={site} siteLabel={siteLabel} availableSites={availableSites} activeOplocId={oplocId} onSiteChange={onSiteChange} onStartAgain={() => setResetOpen(true)} />
         <section className="success-screen">
           <p className="eyebrow">Request received</p>
           <h1>We’re on it.</h1>
@@ -546,7 +554,7 @@ export default function BookingPortal({
     );
   return (
     <main className={`mnk ${site.cssClass}`}>
-      <Top site={site} onStartAgain={() => setResetOpen(true)} />
+      <Top site={site} siteLabel={siteLabel} availableSites={availableSites} activeOplocId={oplocId} onSiteChange={onSiteChange} onStartAgain={() => setResetOpen(true)} />
       {restoredDraft && <p className="draft-restored" role="status">Your unfinished booking has been restored.</p>}
       {resetOpen && <ResetModal onCancel={() => setResetOpen(false)} onConfirm={resetBooking} />}
       <section className="mnk-hero">
@@ -658,9 +666,17 @@ export default function BookingPortal({
 }
 function Top({
   site,
+  siteLabel,
+  availableSites,
+  activeOplocId,
+  onSiteChange,
   onStartAgain,
 }: {
   site: ReturnType<typeof portalSite>;
+  siteLabel?: string;
+  availableSites?: Array<{ id: string; label: string }>;
+  activeOplocId?: string;
+  onSiteChange?: (oplocId: string) => void;
   onStartAgain: () => void;
 }) {
   return (
@@ -670,7 +686,7 @@ function Top({
         <span>Hospitality</span>
       </div>
       <div className="mnk-top-actions">
-        <small>{site.label} booking</small>
+        {availableSites && activeOplocId && onSiteChange ? availableSites.length > 1 ? <label>Site: <select aria-label="Hospitality site" value={activeOplocId} onChange={(event) => onSiteChange(event.target.value)}>{availableSites.map(option => <option value={option.id} key={option.id}>{option.label}</option>)}</select></label> : <small>Site: {siteLabel || site.label}</small> : <small>{site.label} booking</small>}
         <button className="start-again" type="button" onClick={onStartAgain}>
           Start again
         </button>

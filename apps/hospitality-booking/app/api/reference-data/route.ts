@@ -46,14 +46,15 @@ function localCompatibilityMenu(siteKey = "mnk") {
 }
 
 export async function GET(request: Request) {
-  const siteKey = new URL(request.url).searchParams.get("site") || "mnk";
+  const url = new URL(request.url);
+  const siteKey = url.searchParams.get("site") || "mnk";
   try {
     if (siteKey === "angel-court" || siteKey === "cfc" || siteKey === "munich-re") {
       return NextResponse.json(localCompatibilityMenu(siteKey), {
         headers: { "Cache-Control": "no-store, max-age=0" },
       });
     }
-    const oplocId = process.env.FIKA_MNK_OPLOC_ID?.trim();
+    const oplocId = url.searchParams.get("oplocId")?.trim() || process.env.FIKA_MNK_OPLOC_ID?.trim();
     if (oplocId) {
       const serviceDate = new Date().toISOString().slice(0, 10);
       const response = await hubFetch(
