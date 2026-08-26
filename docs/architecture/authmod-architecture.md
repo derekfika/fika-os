@@ -54,7 +54,7 @@ The registry is FIKA-owned and keyed by stable IDs: integration-hub, cpu-product
 Keep v1 small and evidence-based:
 
 - Menu Planning: menu.publish (Publish, separate from Hub Administer).
-- CPU Production: production.allergen-sign (Approve/sign production role) and production.allergen-final-approve (Approve/final role), both scoped to the relevant production/site context.
+- CPU Production: production.allergen-sign (Approve/sign production role) and production.allergen-final-approve (Approve/final role), explicit organisation-level capabilities. The authenticated account must still have CPU access and any relevant site access for the workflow; the authority itself is not tied to an OPLOC.
 - Logistics: logistics.repair, logistics.reconcile, logistics.reset or a reviewed equivalent only if route analysis confirms they are privileged maintenance actions.
 - Integration Hub: authmod.admin (Administer), separate from business approval/publication.
 

@@ -12,7 +12,7 @@ The matrix maps observed capabilities to the controlled actions. It is a target 
 | CPU production allergen sign | yes |  |  | yes |  |  | production/site and signatory role | Explicit authority may be held by a person or operational identity; the allergen record captures the human signatory evidence separately. |
 | CPU final allergen approval | yes |  |  | yes |  |  | production/site and final role | Explicit authority may be held by a person or operational identity; distinct allergen-record signatory evidence remains required where two signatures are required. |
 | Menu Planning rolling menu/catalogue/recipes | yes | yes | yes |  |  |  | menu/site as applicable | Existing routes are mixed; guard inventory required. |
-| Menu Planning publication/withdrawal | yes |  |  |  | yes |  | publication/site audience | Separate menu.publish; Hub Admin does not imply it. |
+| Menu Planning publication/withdrawal | yes |  |  |  | yes |  | organisation authority; normal site access still applies to the workflow | Separate menu.publish; Hub Admin does not imply it. |
 | Logistics planning/jobs/assignment/loads | yes |  | yes |  |  |  | logistics domain/OPLOC | Do not classify every POST as Manage without route review. |
 | Logistics dispatch/collection status | yes |  | yes |  |  |  | relevant movement/site | Explicit action mapping and actor from session. |
 | Logistics repair/reconcile/reset/projection rebuild | yes |  |  |  |  | yes or dedicated reviewed authority | organisation/date scope | Privileged maintenance; exact actions still unresolved. |
