@@ -128,11 +128,11 @@ export async function commitAccessImport(repository: AuthModRepository, input: {
     }
     if (!identity) { blocked++; continue; }
     if (decision.identityKind && (decision.identityKind !== identity.identityKind || decision.representedOplocId || decision.operationalPurpose)) await setIdentityKind(repository, { identityId: identity.id, identityKind: decision.identityKind, representedOplocId: decision.representedOplocId, operationalPurpose: decision.operationalPurpose, actor: input.actor, reason: "Reviewed AUTHMOD spreadsheet account classification." });
+    if (decision.primaryCustodianLegendId && identity.identityKind === "operational") await assignPrimaryCustodian(repository, { operationalIdentityId: identity.id, custodianLegendId: decision.primaryCustodianLegendId, actor: input.actor, reason: "Reviewed AUTHMOD spreadsheet primary custodian." });
     if (prior.mode === "workspace-bootstrap") {
       const applied = { ...resolution, decision: "accept" as const, selectedIdentityId: identity.id, decidedBy: input.actor.id, decidedAt: resolution.decidedAt || now(), unresolvedReasons: [], appliedAt: now(), appliedBy: input.actor.id, appliedCommitIdempotencyKey: input.idempotencyKey, appliedResult: { identityId: identity.id, appIds: [], oplocIds: [], authorityIds: [] }, version: resolution.version + 1 };
       await repository.saveImportResolution(applied, resolution.version); committed++; continue;
     }
-    if (decision.primaryCustodianLegendId) await assignPrimaryCustodian(repository, { operationalIdentityId: identity.id, custodianLegendId: decision.primaryCustodianLegendId, actor: input.actor, reason: "Reviewed AUTHMOD spreadsheet primary custodian." });
     const canonicalLegendId = decision.legendId?.trim() || resolution.input["Legend ID"]?.trim();
     if (canonicalLegendId) await linkLegend(repository, { identityId: identity.id, legendId: canonicalLegendId, actor: input.actor, reason: "Reviewed AUTHMOD spreadsheet canonical Legend reconciliation." });
     if (resolution.input.Active !== undefined && resolution.input.Active !== "") await setIdentityStatus(repository, { identityId: identity.id, status: parseBoolean(resolution.input.Active, "Active", resolution.rowNumber) ? "active" : "inactive", actor: input.actor, reason: "Reviewed AUTHMOD spreadsheet import." });
