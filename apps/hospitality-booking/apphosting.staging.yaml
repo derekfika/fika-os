@@ -16,6 +16,9 @@ env:
   - variable: FIKA_HUB_BASE_URL
     value: https://fika-os-staging--fika-os-dev.europe-west4.hosted.app
     availability: [BUILD, RUNTIME]
+  - variable: MNK_CANON_BRIDGE_TOKEN
+    secret: MNK_CANON_BRIDGE_TOKEN
+    availability: [RUNTIME]
   - variable: NEXT_PUBLIC_FIKA_HUB_URL
     value: https://fika-os-staging--fika-os-dev.europe-west4.hosted.app
     availability: [BUILD, RUNTIME]
