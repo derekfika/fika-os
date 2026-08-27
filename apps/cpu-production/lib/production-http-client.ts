@@ -29,6 +29,33 @@ export function hubJson<T>(request: NextRequest, path: string, init: RequestInit
   return callHub(request, path, init, validate);
 }
 
+export type CpuCalendarScanResult = {
+  runId: string;
+  calendarId: string;
+  events: number;
+  imported: number;
+  updated: number;
+  skipped: number;
+  review: number;
+  lastScanAt: string;
+  state: "succeeded" | "failed";
+};
+
+const isRecord = (value: unknown): value is Record<string, unknown> => Boolean(value && typeof value === "object" && !Array.isArray(value));
+const isCalendarScanResult = (value: unknown): value is CpuCalendarScanResult =>
+  isRecord(value) && typeof value.runId === "string" && typeof value.calendarId === "string" &&
+  ["events", "imported", "updated", "skipped", "review"].every(key => typeof value[key] === "number") &&
+  typeof value.lastScanAt === "string" && (value.state === "succeeded" || value.state === "failed");
+const isCalendarState = (value: unknown): value is Record<string, unknown> => isRecord(value);
+
+export function cpuCalendarScanState(request: NextRequest) {
+  return hubJson(request, "/api/cpu/calendar/scan", { method: "GET", headers: { accept: "application/json" } }, isCalendarState);
+}
+
+export function runCpuCalendarScan(request: NextRequest) {
+  return hubJson(request, "/api/cpu/calendar/scan", { method: "POST", headers: { "content-type": "application/json", accept: "application/json" }, body: JSON.stringify({ force: true }) }, (value): value is { result: CpuCalendarScanResult } => isRecord(value) && isCalendarScanResult(value.result));
+}
+
 const isOrder = (value: unknown): value is ProductionOrder => Boolean(value && typeof value === "object" && typeof (value as { canonicalId?: unknown }).canonicalId === "string" && typeof (value as { version?: unknown }).version === "number");
 const hasOrder = (value: unknown): value is { order: ProductionOrder } => Boolean(value && typeof value === "object" && isOrder((value as { order?: unknown }).order));
 const hasOrders = (value: unknown): value is { orders: ProductionOrder[] } => Boolean(value && typeof value === "object" && Array.isArray((value as { orders?: unknown }).orders));

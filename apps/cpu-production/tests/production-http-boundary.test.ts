@@ -52,3 +52,18 @@ test("CPU routing and Hospitality notification paths use Hub HTTP boundaries", a
   assert.match(routing, /hospitalityMenuProductionRouting/);
   assert.match(notification, /notifyBookingConfirmedForProductionOrder/);
 });
+
+test("CPU calendar scan uses the authenticated Hub HTTP boundary", async () => {
+  const route = await readFile(join(process.cwd(), "app/api/calendar/scan/route.ts"), "utf8");
+  for (const forbidden of ["@hub/lib/cpu-calendar-runner", "@hub/lib/google-calendar-client", "@hub/lib/auth", "@hub/lib/authmod", "@hub/lib/firebase-admin", "apps/integration-hub/"]) assert.equal(route.includes(forbidden), false, `calendar route imports forbidden runtime: ${forbidden}`);
+  assert.match(route, /cpuCalendarScanState/);
+  assert.match(route, /runCpuCalendarScan/);
+  const client = await readFile(join(process.cwd(), "lib/production-http-client.ts"), "utf8");
+  assert.match(client, /\/api\/cpu\/calendar\/scan/);
+  assert.match(client, /JSON\.stringify\(\{ force: true \}\)/);
+  assert.match(client, /request\.headers\.get\("cookie"\)/);
+  const hubRoute = await readFile(join(process.cwd(), "../integration-hub/app/api/cpu/calendar/scan/route.ts"), "utf8");
+  assert.match(hubRoute, /requireActor\(request/);
+  assert.match(hubRoute, /assertPermission\(actor, "canonical\.edit"\)/);
+  assert.match(hubRoute, /runCpuCalendarScan\(command\)/);
+});
