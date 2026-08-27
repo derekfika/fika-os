@@ -19,3 +19,6 @@ env:
   - variable: NEXT_PUBLIC_FIKA_HUB_URL
     value: https://fika-os-staging--fika-os-dev.europe-west4.hosted.app
     availability: [BUILD, RUNTIME]
+  - variable: FIKA_INTERNAL_API_TOKEN
+    secret: FIKA_INTERNAL_API_TOKEN
+    availability: [RUNTIME]
