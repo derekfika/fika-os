@@ -21,6 +21,11 @@ env:
     availability:
       - BUILD
       - RUNTIME
+  - variable: FIKA_APP_CPU_URL
+    value: https://cpu-staging.fikacatering.com
+    availability:
+      - BUILD
+      - RUNTIME
   - variable: FIKA_APP_MENU_PLANNING_URL
     value: https://menu-planning-staging.fikacatering.com
     availability:
@@ -29,7 +34,7 @@ env:
   # The generated hosted.app origin remains available for backend smoke tests;
   # customer/staff returnTo values use the cookie-compatible custom hostname.
   - variable: FIKA_ALLOWED_APP_ORIGINS
-    value: https://hospitality-staging.fikacatering.com,https://fika-hospitality-staging--fika-os-dev.europe-west4.hosted.app
+    value: https://cpu-staging.fikacatering.com,https://menu-planning-staging.fikacatering.com,https://hospitality-staging.fikacatering.com,https://fika-hospitality-staging--fika-os-dev.europe-west4.hosted.app,https://fika-cpu-production-staging--fika-os-dev.europe-west4.hosted.app
     availability:
       - BUILD
       - RUNTIME
