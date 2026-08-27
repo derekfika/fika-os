@@ -7,7 +7,9 @@ import { requirePublicationActor, resolveMenuActor } from "@/lib/auth";
 /** Temporary server-only, read-only staging diagnostic. Remove after runtime diagnosis. */
 export async function GET(request: NextRequest) {
   try {
-    const expectedToken = process.env.FIKA_INTERNAL_API_TOKEN;
+    // This secret is runtime-only in App Hosting; dynamic lookup prevents the
+    // build from treating its unavailable build-time value as permanently empty.
+    const expectedToken = process.env["FIKA_INTERNAL_API_TOKEN"];
     const suppliedToken = request.headers.get("x-fika-internal-token");
     if (!expectedToken || suppliedToken !== expectedToken) requirePublicationActor(await resolveMenuActor(request));
 
