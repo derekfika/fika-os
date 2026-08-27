@@ -1,0 +1,13 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Menu Planning uses server-side Google credentials and the existing AUTHMOD
+    // HTTP boundary. Browser clients have no direct operational Firestore access.
+    match /fikaMenuPlanningWeeks/{path=**} { allow read, write: if false; }
+    match /fikaMenuPlanningPublications/{path=**} { allow read, write: if false; }
+    match /fikaMenuPlanningEvents/{path=**} { allow read, write: if false; }
+    match /fikaMenuPlanningOutbox/{path=**} { allow read, write: if false; }
+    match /fikaMenuPlanningArchiveMetadata/{path=**} { allow read, write: if false; }
+    match /fikaMenuPlanningCatalogue/{path=**} { allow read, write: if false; }
+  }
+}

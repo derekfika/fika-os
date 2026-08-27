@@ -13,7 +13,7 @@ export function toggleOperationalAllergen(current: CanonicalAllergenMap, key: Ca
 
 export type GovernedOploc = { id: string; label: string };
 export const GOVERNED_OPLOCS: readonly GovernedOploc[] = [
-  ["oploc:bb4c7eea-87f5-4e79-8ed6-b973b24ded7b", "Haleon"], ["oploc:b835d8ee-b187-49d1-9072-7348b04bfd2d", "FIKA Xchange"], ["oploc:24a93500-d75d-4fe0-8beb-672d36f9da10", "One Angel Court"], ["oploc:8449a63b-4df8-42f7-8b73-1d2c8669f58c", "Commerzbank"], ["oploc:83c79eb4-4033-408c-96d7-6c496ed6f6c9", "Nesta"], ["oploc:a358ef5f-297b-4816-bbf5-7fef470e81d7", "Bridgepoint"], ["oploc:66e621fa-6e6f-4f46-9aed-462313abbe8f", "MNK"],
+  ["oploc:bb4c7eea-87f5-4e79-8ed6-b973b24ded7b", "Haleon"], ["oploc:b835d8ee-b187-49d1-9072-7348b04bfd2d", "FIKA Xchange"], ["oploc:24a93500-d75d-4fe0-8beb-672d36f9da10", "One Angel Court"], ["oploc:8449a63b-4df8-42f7-8b73-1d2c8669f58c", "Commerzbank"], ["oploc:83c79eb4-4033-408c-96d7-6c496ed6f6c9", "Nesta"], ["oploc:a358ef5f-297b-4816-bbf5-7fef470e81d7", "Bridgepoint"], ["oploc:66e621fa-6e6f-4f46-9aed-462313abbe8f", "MNK"], ["oploc:4e7b2838-95de-49c8-bf04-55200841d4cb", "Wise"],
 ].map(([id, label]) => ({ id, label }));
 const aliases: Record<string, GovernedOploc> = Object.fromEntries([
   ...GOVERNED_OPLOCS.flatMap(item => [[item.label.toLowerCase(), item], [item.id, item]]),

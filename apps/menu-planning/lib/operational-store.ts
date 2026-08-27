@@ -88,3 +88,8 @@ export function updateRollingState<T>(mutator: (rolling: T) => void) {
 export function updatePublicationState<T>(mutator: (publications: T) => void) {
   return withMenuPlanningTransaction(state => { mutator(state.publications as T); return state.publications as T; });
 }
+
+// The hosted adapter is async because Firestore transactions are async. It is
+// exported from the operational-store boundary so Phase 2B can switch the
+// application call sites without exposing Firestore to route/browser code.
+export { MenuPlanningFirestoreRepository, MENU_PLANNING_COLLECTIONS, ExpectedVersionConflict, assertExpectedVersion, type HostedTransactionState } from "./firestore-operational-store";

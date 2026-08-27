@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
-import { copyFileSync, existsSync, unlinkSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdtempSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
 import { readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import * as XLSX from "xlsx";
@@ -10,7 +11,9 @@ import { createPublishedMenuDay, currentPublishedDays, getMenuPublication, listM
 import { resolveAllergenSnapshot } from "../lib/allergen-resolution";
 import type { RollingEntry } from "../lib/rolling-menu-types";
 
-process.env.MENU_PLANNING_DB_PATH = join(process.cwd(), "local-data", "menu-planning", "operational.test.sqlite");
+const isolatedDatabaseDirectory = mkdtempSync(join(tmpdir(), "fika-menu-planning-test-"));
+process.env.MENU_PLANNING_DB_PATH = join(isolatedDatabaseDirectory, "operational.sqlite");
+process.on("exit", () => rmSync(isolatedDatabaseDirectory, { recursive: true, force: true }));
 
 test("rolling menu importer preserves slots, destination quantities and source evidence", () => {
   const sheet = XLSX.utils.aoa_to_sheet([
@@ -38,7 +41,7 @@ test("planner default week prefers the current service week over distant future 
 });
 
 test("Menu Planning persistence failure is not presented as an empty publication list", () => {
-  const databaseFile = join(process.cwd(), "local-data", "menu-planning", "operational.test.sqlite");
+  const databaseFile = process.env.MENU_PLANNING_DB_PATH!;
   const backupFile = `${databaseFile}.failure-backup`;
   const hadDatabase = existsSync(databaseFile);
   if (hadDatabase) copyFileSync(databaseFile, backupFile);
@@ -127,7 +130,7 @@ test("menu days publish independently and revisions supersede only that day", as
     assert.equal(getWeek(week.week.id).week.dayStatuses?.[week.days[0].id], "published");
     const publicationEvents = listMenuPublicationEvents();
     assert.ok(publicationEvents.some(event => event.eventType === "menu.day.published" && event.sourceVersion === 1));
-    assert.ok(publicationEvents.some(event => event.eventType === "fulfilment.requirement.created"));
+    assert.ok(publicationEvents.some(event => event.eventType === "production.materialise"));
     const replayed = await replayMenuPublicationOutbox(() => undefined);
     assert.equal(replayed.failed, 0);
     assert.equal((await replayMenuPublicationOutbox(() => { throw new Error("duplicate delivery"); })).delivered, 0);

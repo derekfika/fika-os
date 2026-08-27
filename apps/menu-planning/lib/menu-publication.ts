@@ -79,6 +79,7 @@ export function createPublishedMenuDay(weekId: string, dayId: string, signoff: M
     const errors = validateWeek({ ...snapshot, entries }, { governedOplocIds, requireCanonicalDishId: Boolean(governedOplocIds) });
     if (errors.length) throw Object.assign(new Error(errors.join(" ")), { status: 422 });
     const preview = buildPublishedDay(snapshot, day);
+    if (signoff.dayContentHash && signoff.dayContentHash !== preview.contentHash) throw conflict("The current day content changed after sign-off. Review and sign again before publishing.");
     const stored = state.publications as unknown as StoredPublications;
     let publication = stored.publications.find(value => value.sourceWeekId === snapshot.week.id);
     if (!publication) { publication = { publicationId: `menu-publication:${snapshot.week.id}`, sourceWeekId: snapshot.week.id, weekCommencing: snapshot.week.weekCommencing, weekEnding: snapshot.week.weekEnding, days: [], audit: [] }; stored.publications.push(publication); }
