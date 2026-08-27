@@ -5,6 +5,7 @@ import { MemoryAuthModRepository } from "../lib/authmod-core";
 import { V1_APPLICATIONS } from "../lib/authmod-core/model";
 import { createAuthIdentity } from "../lib/authmod-core/identity";
 import { assignSite, grantStandardApplicationAccess } from "../lib/authmod-core/grants";
+import { grantAuthmodAdmin } from "../lib/authmod-core";
 import { ensureV1ApplicationRegistry } from "../lib/authmod-core/registry";
 import type { AuthPrincipal } from "../lib/authmod-core";
 
@@ -43,6 +44,20 @@ test("Full Access expands normal enabled applications without creating assignmen
   const full = { ...identity, fullAccess: true, version: identity.version + 1 }; await repository.saveIdentity(full);
   const data = await buildLauncher(repository, { type: "interactive", id: identity.id, displayName: identity.displayName, email: identity.normalizedEmail, identityKind: identity.identityKind });
   assert.ok(data.applications.some(value => value.appId === "cpu-production")); assert.equal(data.canAdministerAuthmod, false); assert.equal((await repository.listAppAssignments(identity.id)).length, 0);
+});
+
+test("AUTHMOD administrator sees every registered application without per-app assignments", async () => {
+  const repository = setup(); const identity = await createAuthIdentity(repository, { actor, displayName: "Administrator", email: "administrator@fikacatering.com", externalProvider: "firebase", externalUid: "administrator", provenance: "import" });
+  await grantAuthmodAdmin(repository, { identityId: identity.id, actor, reason: "Launcher administrator access." });
+  const data = await buildLauncher(repository, { type: "interactive", id: identity.id, displayName: identity.displayName, email: identity.normalizedEmail, identityKind: identity.identityKind });
+  assert.deepEqual(data.applications.map(value => value.appId), V1_APPLICATIONS.map(value => value.appId)); assert.equal(data.canAdministerAuthmod, true);
+});
+
+test("restricted site account receives only its effective app and site access", async () => {
+  const repository = setup(); const identity = await createAuthIdentity(repository, { actor, displayName: "Restricted", email: "restricted@fikacatering.com", externalProvider: "firebase", externalUid: "restricted", provenance: "import" });
+  await assignSite(repository, { identityId: identity.id, oplocId: "oploc:mnk", actor, reason: "Restricted site assignment." }); await grantStandardApplicationAccess(repository, { identityId: identity.id, appId: "hospitality-booking", actor, reason: "Restricted application assignment." });
+  const data = await buildLauncher(repository, { type: "interactive", id: identity.id, displayName: identity.displayName, email: identity.normalizedEmail, identityKind: identity.identityKind });
+  assert.deepEqual(data.applications.map(value => value.appId), ["hospitality-booking"]);
 });
 
 test("operational and zero-access accounts remain truthful launcher states", async () => {

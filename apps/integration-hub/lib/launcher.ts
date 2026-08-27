@@ -10,12 +10,13 @@ export function appHref(appId: string) { if (appId === "integration-hub") return
 export type LauncherApplication = { appId: string; label: string; purpose: string; href: string; available: true };
 export async function buildLauncher(repository: AuthModRepository, principal: AuthPrincipal) {
   const applications: LauncherApplication[] = [];
+  const globalAdministrator = principal.type === "interactive" && await hasAuthmodAdmin(repository, principal.id);
   for (const app of (await repository.listApplications()).filter(value => value.enabled && value.launchVisible)) {
     const href = appHref(app.appId); if (!href) continue;
-    const access = await resolveLauncherAppAccess(repository, principal, app);
+    const access = globalAdministrator || await resolveLauncherAppAccess(repository, principal, app);
     if (access) applications.push({ appId: app.appId, label: app.displayName, purpose: purposes[app.appId] || "FIKA OS operational application", href, available: true });
   }
-  return { principal: { displayName: principal.displayName, email: principal.type === "interactive" ? principal.email : undefined, identityKind: principal.type === "interactive" ? principal.identityKind : undefined }, applications, canAdministerAuthmod: principal.type === "interactive" && await hasAuthmodAdmin(repository, principal.id) };
+  return { principal: { displayName: principal.displayName, email: principal.type === "interactive" ? principal.email : undefined, identityKind: principal.type === "interactive" ? principal.identityKind : undefined }, applications, canAdministerAuthmod: globalAdministrator };
 }
 async function resolveLauncherAppAccess(repository: AuthModRepository, principal: AuthPrincipal, app: ApplicationRegistryEntry) {
   if (app.scopeModel === "none") return (await resolveUserAccess(repository, { principal, appId: app.appId })).allowed;
