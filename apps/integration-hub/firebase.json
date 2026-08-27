@@ -1,5 +1,6 @@
 {
   "firestore": { "rules": "firestore.rules", "indexes": "firestore.indexes.json" },
+  "apphosting": [{ "backendId": "fika-hospitality-staging", "rootDir": "../hospitality-booking" }],
   "emulators": {
     "auth": { "port": 9099 },
     "firestore": { "port": 8085 },
