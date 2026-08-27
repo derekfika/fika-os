@@ -1,6 +1,7 @@
 "use client";
 import Image from "next/image";
 import { useEffect, useState } from "react";
+import { getRedirectResult, signInWithPopup, signInWithRedirect, signOut } from "firebase/auth";
 import {
   AlertTriangle,
   BookOpen,
@@ -36,12 +37,20 @@ import ActivityAudit from "./ActivityAudit";
 import GovernedDecisionModal from "./GovernedDecisionModal";
 import Connections from "./Connections";
 import HospitalityBookings from "./HospitalityBookings";
+import { getFikaFirebaseAuth, getFikaGoogleProvider, hasFikaFirebaseClientConfig } from "@/lib/firebase-client";
 
 type Payload = {
   actor: { name: string; role: string };
-  safety: { localOnly: boolean; cloudWrites: boolean; projectId: string };
+  safety: { localOnly: boolean; cloudWrites: boolean; mode: "local" | "staging" | "production"; projectId: string };
   state: HubState;
 };
+type RuntimePayload = { mode?: "local" | "staging" | "production"; projectId?: string; localEmulatorAvailable?: boolean; googleWorkspaceAvailable?: boolean };
+function environmentBadge(runtime?: RuntimePayload) {
+  if (runtime?.mode === "local") return "LOCAL · Emulator";
+  if (runtime?.mode === "staging" && runtime.projectId) return `STAGING · ${runtime.projectId}`;
+  if (runtime?.mode === "production" && runtime.projectId) return `PRODUCTION · ${runtime.projectId}`;
+  return "ENVIRONMENT · Unknown";
+}
 const empty: HubState = {
   imports: [],
   staging: [],
@@ -83,7 +92,9 @@ export default function Hub() {
     [view, setView] = useState<View>("Overview"),
     [loading, setLoading] = useState(true),
     [progress, setProgress] = useState<string | SyncProgress>(""),
-    [error, setError] = useState("");
+    [error, setError] = useState(""),
+    [runtimeBadge, setRuntimeBadge] = useState("ENVIRONMENT · Unknown"),
+    [runtimeConfig, setRuntimeConfig] = useState<RuntimePayload>();
   async function load(): Promise<boolean> {
     setLoading(true);
     try {
@@ -107,6 +118,25 @@ export default function Hub() {
   }
   useEffect(() => {
     void load();
+  }, []);
+  useEffect(() => {
+    if (payload) {
+      setRuntimeBadge(environmentBadge(payload.safety));
+      return;
+    }
+    void fetch("/api/auth/runtime", { cache: "no-store" })
+      .then(response => response.json() as Promise<RuntimePayload>)
+      .then(runtime => { setRuntimeConfig(runtime); setRuntimeBadge(environmentBadge(runtime)); })
+      .catch(() => undefined);
+  }, [payload]);
+  useEffect(() => {
+    void (async () => {
+      try {
+        if (!hasFikaFirebaseClientConfig()) return;
+        const result = await getRedirectResult(getFikaFirebaseAuth());
+        if (result) await exchangeGoogleUser(result.user, getFikaFirebaseAuth(), load);
+      } catch { /* The normal sign-in controls report actionable errors. */ }
+    })();
   }, []);
   async function refreshLocalSession() {
     const role = payload?.actor.role;
@@ -216,7 +246,7 @@ export default function Hub() {
       setProgress("");
     }
   }
-  if (!payload) return <Login loading={loading} error={error} done={load} onError={setError} />;
+  if (!payload) return <Login loading={loading} error={error} done={load} onError={setError} runtime={runtimeConfig} runtimeBadge={runtimeBadge} />;
   const state = payload.state || empty;
   return (
     <div className="shell">
@@ -236,7 +266,7 @@ export default function Hub() {
           <h1>Integration Hub</h1>
         </div>
         <div className="local-banner">
-          <ShieldCheck /> Local development <span>— no cloud data</span>
+          <ShieldCheck /> {runtimeBadge}
         </div>
         <div className="identity">
           <b>{payload.actor.role.replaceAll("-", " ")}</b>
@@ -359,18 +389,63 @@ export default function Hub() {
   );
 }
 
+async function exchangeGoogleUser(user: { getIdToken(): Promise<string> }, auth: ReturnType<typeof getFikaFirebaseAuth>, done: () => Promise<boolean>) {
+  const idToken = await user.getIdToken();
+  const csrfResponse = await fetch("/api/auth/csrf", { cache: "no-store", credentials: "include" });
+  const csrf = await csrfResponse.json() as { csrfToken: string };
+  const response = await fetch("/api/auth/session", { method: "POST", headers: { "content-type": "application/json", origin: window.location.origin }, credentials: "include", body: JSON.stringify({ idToken, csrfToken: csrf.csrfToken }) });
+  await signOut(auth);
+  if (!response.ok) throw new Error("FIKA OS could not complete sign-in. Try again.");
+  await done();
+}
+
 function Login({
   loading,
   error,
   done,
   onError,
+  runtimeBadge,
+  runtime,
 }: {
   loading: boolean;
   error: string;
   done: () => Promise<boolean>;
   onError: (message: string) => void;
+  runtimeBadge: string;
+  runtime?: RuntimePayload;
 }) {
   const [role, setRole] = useState("integration-admin");
+  const [busy, setBusy] = useState(false);
+  const isLocal = runtime?.mode === "local";
+  async function googleSignIn() {
+    if (!hasFikaFirebaseClientConfig() || !runtime?.googleWorkspaceAvailable) {
+      onError("FIKA OS Google sign-in is not configured for this environment. Contact an administrator.");
+      return;
+    }
+    setBusy(true);
+    onError("");
+    try {
+      const auth = getFikaFirebaseAuth();
+      const provider = getFikaGoogleProvider();
+      provider.setCustomParameters({ hd: "fikacatering.com" });
+      try {
+        const result = await signInWithPopup(auth, provider);
+        await exchangeGoogleUser(result.user, auth, done);
+      } catch (cause) {
+        const code = (cause as { code?: string }).code;
+        if (code === "auth/popup-closed-by-user") return;
+        if (code === "auth/popup-blocked" || code === "auth/operation-not-supported-in-this-environment") {
+          await signInWithRedirect(auth, provider);
+          return;
+        }
+        throw cause;
+      }
+    } catch (cause) {
+      onError((cause as Error).message.includes("FIKA") ? (cause as Error).message : "FIKA OS could not complete sign-in. Try again.");
+    } finally {
+      setBusy(false);
+    }
+  }
   return (
     <main className="login">
       <section>
@@ -388,7 +463,7 @@ function Login({
           computer.
         </p>
         <div className="local-banner">
-          <ShieldCheck /> Local development — no cloud data
+          <ShieldCheck /> {runtimeBadge}
         </div>
         {error && (
           <div className="error">
@@ -396,39 +471,26 @@ function Login({
             {error}
           </div>
         )}
-        <label>
-          Synthetic local identity
-          <select value={role} onChange={(e) => setRole(e.target.value)}>
-            <option value="integration-admin">Integration Administrator</option>
-            <option value="reviewer">Reviewer</option>
-            <option value="viewer">Viewer</option>
-          </select>
-        </label>
-        <button
-          className="primary"
-          disabled={loading}
-          onClick={async () => {
-            const r = await fetch("/api/auth/local-session", {
-              method: "POST",
-              headers: { "content-type": "application/json" },
-              body: JSON.stringify({ role }),
-            });
-            if (r.ok) {
-              await done();
-            }
-            else {
-              try {
-                const body = await readJson<{ error?: { message?: string } }>(r);
-                throw new Error(body.error?.message || "Local sign-in failed.");
-              } catch (error) {
-                // The parent load will clear this once the session is valid.
-                onError((error as Error).message);
-              }
-            }
-          }}
-        >
-          {loading ? "Connecting to local emulators…" : "Enter local workspace"}
-        </button>
+        {isLocal ? <>
+          <label>
+            Synthetic local identity
+            <select value={role} onChange={(e) => setRole(e.target.value)}>
+              <option value="integration-admin">Integration Administrator</option>
+              <option value="reviewer">Reviewer</option>
+              <option value="viewer">Viewer</option>
+            </select>
+          </label>
+          <button className="primary" disabled={loading || busy} onClick={async () => {
+            const r = await fetch("/api/auth/local-session", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ role }) });
+            if (r.ok) await done();
+            else { const body = await readJson<{ error?: { message?: string } }>(r); onError(body.error?.message || "Local sign-in failed."); }
+          }}>
+            {loading ? "Connecting to local emulator…" : "Enter local workspace"}
+          </button>
+        </> : <>
+          <button className="primary" disabled={loading || busy} onClick={() => void googleSignIn()}>{busy ? "Signing in…" : "Continue with Google"}</button>
+          <small>Use your FIKA Google Workspace account.</small>
+        </>}
       </section>
     </main>
   );

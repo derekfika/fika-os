@@ -17,6 +17,7 @@ import { resolveStagingReferences, unresolvedRequiredReference } from "@/lib/ref
 import { isImportDeferred } from "@/lib/import-policy";
 import { confirmedSourceMappings, resolveApprovedCanonicalLifecycle } from "@/lib/governance-repository";
 import { redactHubState } from "@/lib/redaction";
+import { getFikaRuntimeConfig } from "@/lib/runtime-config";
 
 const Action = z.discriminatedUnion("action", [
   z.object({ action: z.literal("save-mapping"), importId: z.string(), worksheet: z.string(), targetEntity: z.enum(CanonicalEntityNames), fields: z.array(z.object({ source: z.string(), target: z.string().nullable(), transform: z.enum(["none", "trim", "lowercase", "number", "date"]), constant: z.string().optional(), externalIdentifier: z.boolean(), confidence: z.number().min(0).max(1) }).strict()).optional() }).strict(),
@@ -32,7 +33,8 @@ export async function GET(req: NextRequest) {
   try {
     const actor = await requireActor(req);
     const state = await getState();
-    return NextResponse.json({ actor, safety: { localOnly: true, cloudWrites: false, projectId: process.env.FIREBASE_PROJECT_ID }, state: redactHubState(state, actor.role) });
+    const runtime = getFikaRuntimeConfig();
+    return NextResponse.json({ actor, safety: { localOnly: runtime.mode === "local", cloudWrites: false, mode: runtime.mode, projectId: runtime.projectId }, state: redactHubState(state, actor.role) });
   } catch (error) { return errorResponse(error); }
 }
 

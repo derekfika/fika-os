@@ -19,6 +19,8 @@
     "recovery:backup": "tsx scripts/emulator-backup.ts",
     "recovery:verify": "tsx scripts/verify-emulator-restore.ts",
     "migration:core-readiness": "tsx scripts/core-data-migration-readiness.ts",
+    "migration:batch1:dry-run": "tsx scripts/migrate-batch1.ts",
+    "migration:batch2": "tsx scripts/migrate-batch2.ts",
     "migration:oploc-readiness": "tsx scripts/oploc-alignment-readiness.ts",
     "worker:angel-court:local": "tsx scripts/angel-court-inbox-worker.ts",
     "worker:angel-court:gmail": "tsx scripts/angel-court-gmail-worker.ts",
