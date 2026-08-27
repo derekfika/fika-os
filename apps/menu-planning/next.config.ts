@@ -1,8 +1,6 @@
-import path from "node:path";
 import type { NextConfig } from "next";
 
-// Keep the build boundary at apps/ so shared contracts remain available while
-// unrelated application trees are not traced into App Hosting builds.
-const buildBoundary = path.resolve(__dirname, "..");
-const config: NextConfig = { turbopack: { root: buildBoundary }, outputFileTracingRoot: buildBoundary };
+// Keep App Hosting's project root at this app. A monorepo-wide root causes
+// NFT/type analysis to walk unrelated sibling applications.
+const config: NextConfig = { turbopack: { root: __dirname } };
 export default config;

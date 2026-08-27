@@ -1,12 +1,11 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { appDataPath } from "../../shared/app-data-path";
+import { appDataPath, resolveGovernedOploc } from "./fika-contracts";
 import * as XLSX from "xlsx";
 export * from "./rolling-menu-types";
 import { ROLLING_SLOTS, type RollingAllocation, type RollingDay, type RollingEntry, type RollingSnapshot, type RollingSlot, type RollingWeek, type RollingWeekStatus } from "./rolling-menu-types";
 import { normaliseDishName, titleCase } from "./text";
 import type { MenuItem } from "./domain";
-import { resolveGovernedOploc } from "../../shared/governed-oplocs";
 import { readRollingState, updateRollingState } from "./operational-store";
 export interface Stored { version: 1; weeks: RollingWeek[]; days: RollingDay[]; entries: RollingEntry[]; }
 

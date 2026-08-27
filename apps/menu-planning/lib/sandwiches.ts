@@ -1,7 +1,7 @@
 import { existsSync, promises as fs } from "node:fs";
 import path from "node:path";
 import { sandwichAllergenColumns, type SavedSandwich, type SandwichAllergens } from "./sandwich-types";
-import { legacyProductionItemId, productionItemId } from "../../shared/production-item-id";
+import { legacyProductionItemId, productionItemId } from "./fika-contracts";
 import { normaliseDishName } from "./text";
 import { assertOperationalStoreAvailable } from "./hosted-runtime";
 export { sandwichAllergenColumns, type SavedSandwich, type SandwichAllergens } from "./sandwich-types";

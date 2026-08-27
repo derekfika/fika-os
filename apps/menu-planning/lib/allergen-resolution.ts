@@ -1,4 +1,4 @@
-import { CANONICAL_ALLERGEN_KEYS, type CanonicalAllergenMap } from "../../shared/allergen-contract";
+import { CANONICAL_ALLERGEN_KEYS, type CanonicalAllergenMap } from "./fika-contracts";
 import type { RollingEntry } from "./rolling-menu-types";
 
 type Evidence = { allergen: string; value: "contains" | "free_from" | "may_contain" | "unknown" };

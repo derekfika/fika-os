@@ -8,7 +8,7 @@ import { rankDishPickerItems, similarDishNames, type DishPickerItem } from "@/li
 import { CANONICAL_DISH_CATEGORIES, categoryForSlot } from "@/lib/dish-categories";
 import { resolveAllergenSnapshot } from "@/lib/allergen-resolution";
 import type { PublicationDayState } from "@/lib/menu-publication";
-import { CANONICAL_ALLERGEN_KEYS } from "../../shared/allergen-contract";
+import { CANONICAL_ALLERGEN_KEYS } from "@/lib/fika-contracts";
 import MenuPlanningShell from "./menu-planning-shell";
 
 const ALLERGENS = CANONICAL_ALLERGEN_KEYS;

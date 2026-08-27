@@ -3,11 +3,11 @@ import { addMenuSlot, addOneOffDestination, assertWeekDateAvailable, cleanDuplic
 import { archivePublishedDayMatrix, createPublishedMenuDay, getMenuPublication, publicationDayBlockers, publicationPreview, publicationState, type MenuPublicationSignoff } from "@/lib/menu-publication";
 import { requireMutationActor, requirePublicationActor, resolveMenuActor } from "@/lib/auth";
 import { readDeliveredInOplocs } from "@/lib/oploc-authority";
-import { forwardProductionMaterialisationEvent } from "../../../../shared/production-client";
+import { forwardProductionMaterialisationEvent } from "@/lib/production-client";
 import { replayMenuPublicationOutbox } from "@/lib/menu-publication";
 import { listCatalogueEntries } from "@/lib/catalogue";
 import { resolveAllergenSnapshot } from "@/lib/allergen-resolution";
-import { GOVERNED_OPLOCS } from "../../../../shared/governed-oplocs";
+import { GOVERNED_OPLOCS } from "@/lib/fika-contracts";
 
 async function resolvedSnapshot(snapshot: Awaited<ReturnType<typeof getWeek>>) {
   const catalogue = await listCatalogueEntries();

@@ -2,7 +2,7 @@ export const ROLLING_SLOTS = ["SALAD 1", "SALAD 2", "SALAD 3", "SALAD 4", "SALAD
 export type RollingSlot = typeof ROLLING_SLOTS[number];
 export type RollingWeekStatus = "draft" | "needs_review" | "ready" | "partially_published" | "published" | "archived";
 export type RollingDayPublicationStatus = "draft" | "ready" | "published" | "superseded";
-import type { CanonicalAllergenMap, OperationalAllergenState } from "../../shared/allergen-contract";
+import type { CanonicalAllergenMap, OperationalAllergenState } from "./fika-contracts";
 export type AllergenState = OperationalAllergenState;
 export type AllergenMap = CanonicalAllergenMap;
 export interface RollingAllocation { destinationId?: string; destinationLabel: string; destinationAddress?: string; quantity: number; sourceLabel?: string; }

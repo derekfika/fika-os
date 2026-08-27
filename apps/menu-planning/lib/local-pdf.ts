@@ -14,7 +14,7 @@ function browserPath() {
 export async function renderPdfLocally(html: string, outputPath: string) {
   const browser = browserPath();
   if (!browser) throw new Error("No local Chrome or Edge PDF renderer was found.");
-  const inputPath = path.join(os.tmpdir(), `fika-menu-matrix-${Date.now()}-${Math.random().toString(36).slice(2)}.html`);
+  const inputPath = path.join(/*turbopackIgnore: true*/ os.tmpdir(), `fika-menu-matrix-${Date.now()}-${Math.random().toString(36).slice(2)}.html`);
   await fs.writeFile(inputPath, html, "utf8");
   await fs.mkdir(path.dirname(outputPath), { recursive: true });
   try {

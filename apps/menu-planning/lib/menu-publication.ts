@@ -2,17 +2,15 @@ import { createHash, randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import type { CanonicalAllergenMap } from "../../shared/allergen-contract";
+import type { CanonicalAllergenMap } from "./fika-contracts";
 import type { RollingDay, RollingEntry, RollingSnapshot } from "./rolling-menu-types";
 import { getWeek, listWeeks, replaceSnapshotInStored, saveSnapshot, snapshotFromStored, validateWeek, type Stored as RollingMenuStored } from "./rolling-menu";
 import { renderPdfLocally } from "./local-pdf";
 import { resolveAllergenSnapshot } from "./allergen-resolution";
 import type { MenuItem } from "./domain";
-import { publishedAllergenMatrixHtml } from "../../shared/published-allergen-matrix";
-import { claimEvent, createDomainEvent, eventIsDue, markEventDelivered, markEventFailed, type DurableDomainEvent } from "../../shared/domain-events";
+import { publishedAllergenMatrixHtml, claimEvent, createDomainEvent, eventIsDue, markEventDelivered, markEventFailed, type DurableDomainEvent, type FulfilmentRequirement } from "./fika-contracts";
 import { readPublicationState, updatePublicationState, withMenuPlanningTransaction } from "./operational-store";
-import { appDataPath } from "../../shared/app-data-path";
-import type { FulfilmentRequirement } from "../../shared/fulfilment-requirement";
+import { appDataPath } from "./fika-contracts";
 
 export const PUBLICATION_ATTESTATION = "I confirm that I have reviewed the allergen information shown for this day's published menu and that it reflects the approved information available at the time of publication.";
 export type MenuPublicationSignature = { printedName: string; signatureDataUrl?: string; signedAt: string; actor: string; attestation: string };
@@ -155,7 +153,7 @@ export async function archivePublishedDayMatrix(publicationId: string, publicati
   const html = publishedDayMatrixHtml(day); const pdfFileName = `Delivered-In_${publication.weekCommencing}_${day.dayName}_v${day.version}_Allergen-Matrix.pdf`.replace(/[^A-Za-z0-9._-]+/g, "_"); const base = (process.env.HOSPITALITY_BOOKING_BASE_URL || "http://localhost:3300").replace(/\/$/, ""); const archivedAt = now();
   let archive: DriveArchive = { status: "failed", account: process.env.MENU_PUBLICATION_DRIVE_ACCOUNT_LABEL || "Configured Google Drive account", fileName: pdfFileName, pdfFileName, pdfStatus: "unavailable", archivedAt };
   let pdfBase64: string | undefined;
-  try { const outputPath = join(process.env.TEMP || process.env.TMP || ".", pdfFileName); await renderPdfLocally(html, outputPath); pdfBase64 = (await readFile(outputPath)).toString("base64"); } catch { /* The archive remains failed until a PDF can be generated. */ }
+  try { const outputPath = join(/*turbopackIgnore: true*/ process.env.TEMP || process.env.TMP || ".", pdfFileName); await renderPdfLocally(html, outputPath); pdfBase64 = (await readFile(outputPath)).toString("base64"); } catch { /* The archive remains failed until a PDF can be generated. */ }
   if (pdfBase64) try {
     const response = await fetch(`${base}/api/allergen-matrix/drive`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name: pdfFileName, html, pdfBase64, siteKey: process.env.MENU_PUBLICATION_DRIVE_SITE_KEY || "delivered-in", weekCommencing: publication.weekCommencing }), signal: AbortSignal.timeout(8000) });
     const body = await response.json() as { saved?: { fileId?: string; driveUrl?: string } | null };

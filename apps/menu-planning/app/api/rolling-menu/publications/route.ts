@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { archivePublishedDayMatrix, getMenuPublication, listMenuPublications, withdrawPublishedMenuDay, withdrawPublishedMenuWeek } from "@/lib/menu-publication";
 import { requirePublicationActor, resolveMenuActor } from "@/lib/auth";
-import { forwardProductionMaterialisationEvent } from "../../../../../shared/production-client";
+import { forwardProductionMaterialisationEvent } from "@/lib/production-client";
 import { replayMenuPublicationOutbox } from "@/lib/menu-publication";
 
 export async function GET(request: NextRequest) {

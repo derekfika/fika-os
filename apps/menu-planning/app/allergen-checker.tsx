@@ -4,7 +4,7 @@ import { useSearchParams } from "next/navigation";
 import MenuPlanningShell from "./menu-planning-shell";
 import PlanningContextNav from "./planning-context-nav";
 import { useRollingData } from "./planner-data";
-import { CANONICAL_ALLERGEN_COLUMNS, toggleOperationalAllergen, type CanonicalAllergenMap, type CanonicalAllergenKey } from "../../shared/allergen-contract";
+import { CANONICAL_ALLERGEN_COLUMNS, toggleOperationalAllergen, type CanonicalAllergenMap, type CanonicalAllergenKey } from "@/lib/fika-contracts";
 
 export default function AllergenChecker() {
   const { snapshot, weeks, error, command } = useRollingData();

@@ -5,7 +5,7 @@ import { deterministicId } from "./domain";
 import { normaliseDishCategory } from "./dish-categories";
 import { normaliseDishName } from "./text";
 import type { RollingEntry } from "./rolling-menu-types";
-import { appDataPath } from "../../shared/app-data-path";
+import { appDataPath } from "./fika-contracts";
 import { assertOperationalStoreAvailable } from "./hosted-runtime";
 
 const filePath = appDataPath("menu-planning", "menu-planning", "canonical-menu-items.json");

@@ -1,7 +1,7 @@
 import { DatabaseSync } from "node:sqlite";
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { appDataPath } from "../../shared/app-data-path";
+import { appDataPath } from "./fika-contracts";
 import { assertOperationalStoreAvailable } from "./hosted-runtime";
 
 type DocumentMap = Record<string, unknown>;
