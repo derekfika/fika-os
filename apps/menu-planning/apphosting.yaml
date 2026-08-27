@@ -1,0 +1,21 @@
+# Menu Planning App Hosting staging runtime. The backend is explicitly bound
+# to the staging environment so hosted requests select Firestore, never SQLite.
+env:
+  - variable: FIKA_RUNTIME_MODE
+    value: staging
+    availability: [BUILD, RUNTIME]
+  - variable: FIREBASE_PROJECT_ID
+    value: fika-os-dev
+    availability: [BUILD, RUNTIME]
+  - variable: FIKA_ALLOWED_EMAIL_DOMAINS
+    value: fikacatering.com
+    availability: [BUILD, RUNTIME]
+  - variable: FIKA_SESSION_COOKIE_DOMAIN
+    value: .fikacatering.com
+    availability: [BUILD, RUNTIME]
+  - variable: FIKA_HUB_BASE_URL
+    value: https://fika-os-staging--fika-os-dev.europe-west4.hosted.app
+    availability: [BUILD, RUNTIME]
+  - variable: NEXT_PUBLIC_FIKA_HUB_URL
+    value: https://fika-os-staging--fika-os-dev.europe-west4.hosted.app
+    availability: [BUILD, RUNTIME]
