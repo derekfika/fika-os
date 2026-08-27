@@ -16,6 +16,16 @@ env:
     availability:
       - BUILD
       - RUNTIME
+  - variable: FIKA_APP_HOSPITALITY_URL
+    value: https://fika-hospitality-staging--fika-os-dev.europe-west4.hosted.app/workspace
+    availability:
+      - BUILD
+      - RUNTIME
+  - variable: FIKA_SESSION_COOKIE_DOMAIN
+    value: .fikacatering.com
+    availability:
+      - BUILD
+      - RUNTIME
   - variable: BRIGHTHR_MODE
     value: fixture
     availability:
