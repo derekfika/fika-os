@@ -90,3 +90,13 @@ test("CPU published-menu reads use the Menu Planning HTTP boundary", async () =>
   assert.match(legacyPlans, /resolveMenuActor\(request\)/);
   assert.match(legacyPlans, /requireMutationActor/);
 });
+
+test("CPU routes own their generic API error helper", async () => {
+  for (const file of ["app/api/production/route.ts", "app/api/production-plan/route.ts", "app/api/grab-and-go/route.ts", "app/api/menu-publications/invalidate/route.ts"]) {
+    const source = await readFile(join(process.cwd(), file), "utf8");
+    assert.equal(source.includes("@hub/lib/api"), false, `${file} still imports the Hub API helper`);
+    assert.match(source, /lib\/api/);
+  }
+  const helper = await readFile(join(process.cwd(), "lib/api.ts"), "utf8");
+  assert.doesNotMatch(helper, /apps\/integration-hub|firebase-admin|production-domain|authmod/);
+});

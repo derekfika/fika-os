@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { errorResponse } from "@hub/lib/api";
+import { errorResponse } from "../../../lib/api";
 import { z } from "zod";
 import { existsSync, promises as fs } from "node:fs";
 import path from "node:path";

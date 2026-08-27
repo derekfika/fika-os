@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { errorResponse } from "@hub/lib/api";
+import { errorResponse } from "../../../lib/api";
 import { requireCpuActor } from "../../../lib/cpu-access-client";
 import { acknowledgeProductionCancellation, createCpuProductionOrder, productionOrderDetail, productionQueue, reportProductionAllergenDiscrepancy, transitionProductionOrder, updateProductionLines } from "../../../lib/production-http-client";
 import { ordersForScope } from "../../../lib/cpu-routing";
