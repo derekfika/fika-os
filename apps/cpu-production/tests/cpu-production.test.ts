@@ -81,12 +81,12 @@ test("CPU Production is a queue-first workspace with a CPU-created order path", 
 });
 
 test("Head Chef receives immutable Menu Planning publication days as a read-only projection", () => {
-  assert.match(publishedMenusRoute, /MENU_PLANNING_BASE_URL/);
+  assert.match(publishedMenusRoute, /menuPlanningJson/);
   assert.match(publishedMenusRoute, /format.*matrix/);
   assert.match(publishedMenusRoute, /publicationDayId/);
   assert.match(publishedMenusRoute, /status === "published"/);
   assert.match(publishedMenusRoute, /publishedAllergenMatrixHtml/);
-  assert.match(publishedMenusRoute, /requireActor/);
+  assert.match(publishedMenusRoute, /requireCpuActor/);
   assert.match(publishedMenusView, /Head chef · Read only/);
   assert.match(publishedMenusView, /Not published/);
   assert.match(publishedMenusView, /currentPublishedDays/);
@@ -355,9 +355,9 @@ test("Liana production view captures nested menu items and sub-item allergen evi
     new URL("../app/api/sandwiches/route.ts", import.meta.url),
     "utf8",
   );
-  assert.match(libraryRoute, /production-items-seed\.json/);
-  assert.match(libraryRoute, /productionItems, sandwiches: productionItems/);
-  assert.match(libraryRoute, /sourceEvidence/);
+  assert.match(libraryRoute, /menuPlanningJson/);
+  assert.match(libraryRoute, /productionItems: items, sandwiches: items/);
+  assert.doesNotMatch(libraryRoute, /local-data\/menu-planning|saved-sandwiches\.json|production-items-seed\.json/);
 });
 
 test("CPU planning seeds real canonical hand-offs before local fixture fallback", () => {

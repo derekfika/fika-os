@@ -5,13 +5,19 @@ import { forwardProductionMaterialisationEvent } from "@/lib/production-client";
 import { replayMenuPublicationOutbox } from "@/lib/menu-publication";
 
 export async function GET(request: NextRequest) {
-  const publicationId = request.nextUrl.searchParams.get("publicationId");
-  if (publicationId) {
-    const publication = getMenuPublication(publicationId);
-    if (!publication) return NextResponse.json({ error: { message: "Menu publication was not found." } }, { status: 404 });
-    return NextResponse.json({ publication });
+  try {
+    await resolveMenuActor(request);
+    const publicationId = request.nextUrl.searchParams.get("publicationId");
+    if (publicationId) {
+      const publication = getMenuPublication(publicationId);
+      if (!publication) return NextResponse.json({ error: { message: "Menu publication was not found." } }, { status: 404 });
+      return NextResponse.json({ publication }, { headers: { "Cache-Control": "no-store" } });
+    }
+    return NextResponse.json({ publications: listMenuPublications() }, { headers: { "Cache-Control": "no-store" } });
+  } catch (error) {
+    const status = error && typeof error === "object" && "status" in error ? Number((error as { status?: unknown }).status) || 503 : 503;
+    return NextResponse.json({ error: { message: error instanceof Error ? error.message : "Menu publication read failed." } }, { status });
   }
-  return NextResponse.json({ publications: listMenuPublications() });
 }
 
 export async function POST(request: NextRequest) {

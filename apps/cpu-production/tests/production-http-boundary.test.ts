@@ -67,3 +67,20 @@ test("CPU calendar scan uses the authenticated Hub HTTP boundary", async () => {
   assert.match(hubRoute, /assertPermission\(actor, "canonical\.edit"\)/);
   assert.match(hubRoute, /runCpuCalendarScan\(command\)/);
 });
+
+test("CPU published-menu reads use the Menu Planning HTTP boundary", async () => {
+  const route = await readFile(join(process.cwd(), "app/api/menu-publications/route.ts"), "utf8");
+  for (const forbidden of ["@hub/lib/api", "@hub/lib/auth", "@hub/lib/authmod", "apps/menu-planning/", "operational-store", "operational.sqlite", "local-data/menu-planning", "../../../../shared/published-allergen-matrix"]) assert.equal(route.includes(forbidden), false, `publication route imports forbidden runtime: ${forbidden}`);
+  assert.match(route, /menuPlanningJson/);
+  assert.match(route, /requireCpuActor/);
+  const client = await readFile(join(process.cwd(), "lib/menu-planning-http-client.ts"), "utf8");
+  assert.match(client, /MENU_PLANNING_BASE_URL/);
+  assert.match(client, /request\.headers\.get\("cookie"\)/);
+  assert.match(client, /cache: "no-store"/);
+  const menuRoute = await readFile(join(process.cwd(), "../menu-planning/app/api/rolling-menu/publications/route.ts"), "utf8");
+  assert.match(menuRoute, /resolveMenuActor\(request\)/);
+  assert.match(menuRoute, /getMenuPublication/);
+  const sandwiches = await readFile(join(process.cwd(), "app/api/sandwiches/route.ts"), "utf8");
+  for (const forbidden of ["node:fs", "local-data/menu-planning", "saved-sandwiches.json", "@hub/lib"]) assert.equal(sandwiches.includes(forbidden), false, `sandwich route imports forbidden runtime: ${forbidden}`);
+  assert.match(sandwiches, /menuPlanningJson/);
+});
