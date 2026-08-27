@@ -1,5 +1,5 @@
 import type { Transaction } from "firebase-admin/firestore";
-import type { DurableDomainEvent } from "../../shared/domain-events";
+import type { DurableDomainEvent } from "@fika/contracts/domain-events";
 import {
   fulfilmentFromGrabAndGoOrder,
   fulfilmentFromProductionOrder,
@@ -8,10 +8,10 @@ import {
   type ProductionOrderFulfilmentSource,
   fulfilmentRequirementContentEqual,
   productionOrderRequiresFulfilment,
-} from "../../shared/fulfilment-requirement";
+} from "@fika/contracts/fulfilment-requirement";
 import { db } from "./firebase-admin";
 import { stableDocumentId } from "./canonical-editor";
-import { reconcileFulfilmentRequirements, type ExpectedFulfilmentSource, type FulfilmentReconciliationIssue } from "../../shared/fulfilment-reconciliation";
+import { reconcileFulfilmentRequirements, type ExpectedFulfilmentSource, type FulfilmentReconciliationIssue } from "@fika/contracts/fulfilment-reconciliation";
 
 export const FULFILMENT_CONSUMER = "integration-hub.fulfilment-requirements";
 const requirements = () => db.collection("fikaFulfilmentRequirementsV1");

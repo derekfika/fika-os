@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { ProductionOrder } from "@hub/lib/production-domain";
+import type { ProductionOrder } from "@fika/contracts";
 import type {
   AllergenCellState,
   InternalMatrixSignature,
@@ -11,7 +11,7 @@ import type {
 } from "../lib/production-plan";
 import "./liana.css";
 import { allergenMatrixHtml, mayContainNotes } from "./allergen-matrix";
-import { CANONICAL_ALLERGEN_COLUMNS, normaliseOperationalAllergens, toggleOperationalAllergen, type CanonicalAllergenKey } from "../../../shared/allergen-contract";
+import { CANONICAL_ALLERGEN_COLUMNS, normaliseOperationalAllergens, toggleOperationalAllergen, type CanonicalAllergenKey } from "@fika/contracts";
 import { matrixColumns } from "./allergen-matrix";
 import { DELI_STYLE_PARENT_KEY, isDeliStyleParent } from "../../lib/production-item-scope";
 const allergenColumns = matrixColumns;

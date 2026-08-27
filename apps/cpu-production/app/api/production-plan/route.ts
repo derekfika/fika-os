@@ -10,13 +10,12 @@ import type { AllergenCellState, InternalMatrixSignature, PlannedMenuItem, Produ
 import { allergenMatrixHtml } from "../../ui/allergen-matrix";
 import { renderPdfLocally } from "../../lib/local-pdf";
 import { notifyBookingConfirmedForProductionOrder } from "@hub/lib/hospitality-booking-service";
-import { normaliseOperationalAllergens } from "../../../../shared/allergen-contract";
+import { normaliseOperationalAllergens } from "@fika/contracts";
 import {
   productionOrderDetail,
   transitionProductionOrder,
-  type ProductionStatus,
-  type ProductionOrder,
 } from "@hub/lib/production-domain";
+import type { ProductionOrder, ProductionStatus } from "@fika/contracts";
 import { appendCpuChange, cpuPlans, rebuildCpuDayProjection, rebuildCpuWeekProjection, weekCommencingFor } from "../../../lib/cpu-projection";
 
 function menuContentHash(menuItems: PlannedMenuItem[]) {

@@ -17,7 +17,7 @@ import { hospitalityMenuProductionRouting } from "@hub/lib/connections-service";
 import { localFixtureOrders, updateLocalFixture } from "../local-fixtures";
 import { filterProductionOrdersForScope, normaliseProductionScope, type ProductionScope } from "../../../lib/production-scope";
 import { appendCpuChange, buildCpuDayProjection, cpuPlans, cpuProjections, listCpuChanges, listCpuWeekChanges, rebuildCpuWeekProjection, weekCommencingFor } from "../../../lib/cpu-projection";
-import type { ProductionOrder } from "@hub/lib/production-domain";
+import type { ProductionOrder } from "@fika/contracts";
 import { titleCaseDish } from "../../../lib/production-presentation";
 
 const localActor = {

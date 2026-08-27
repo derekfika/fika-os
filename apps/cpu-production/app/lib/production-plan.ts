@@ -1,4 +1,4 @@
-import type { OperationalAllergenState } from "../../../shared/allergen-contract";
+import type { OperationalAllergenState } from "@fika/contracts";
 export type PlanStatus = "draft" | "planning" | "planned" | "rejected" | "needs_clarification";
 export type AllergenCellState = OperationalAllergenState;
 export type PlannedSubItem = {

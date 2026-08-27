@@ -1,4 +1,4 @@
-import type { ProductionOrder, ProductionStatus } from "@hub/lib/production-domain";
+import type { ProductionOrder, ProductionStatus } from "@fika/contracts";
 
 export type CpuLifecycle = "received" | "accepted" | "planning" | "planned" | "ready" | "in_production" | "complete";
 

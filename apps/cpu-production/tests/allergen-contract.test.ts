@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
-import { CANONICAL_ALLERGEN_KEYS, CANONICAL_ALLERGEN_COLUMNS, normaliseOperationalAllergens } from "../../shared/allergen-contract";
+import { CANONICAL_ALLERGEN_KEYS, CANONICAL_ALLERGEN_COLUMNS, normaliseOperationalAllergens } from "@fika/contracts";
 
 test("legacy CPU saved allergen data is readable as canonical data", () => {
   const fixture = JSON.parse(readFileSync(new URL("../local-data/cpu-production/plans.json", import.meta.url), "utf8")) as Record<string, { menuItems?: Array<{ subItems?: Array<{ allergens?: Record<string, string> }> }> }>;

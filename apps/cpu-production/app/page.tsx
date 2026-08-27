@@ -5,7 +5,7 @@ import type { FormEvent } from "react";
 import type {
   ProductionOrder,
   ProductionStatus,
-} from "@hub/lib/production-domain";
+} from "@fika/contracts";
 import type { AllergenCellState } from "./lib/production-plan";
 import { matrixColumns } from "./ui/allergen-matrix";
 import LianaOrderDetail from "./ui/LianaOrderDetail";
@@ -19,7 +19,7 @@ import GrabAndGoOrderDetail from "./ui/GrabAndGoOrderDetail";
 import "./totals.css";
 import HospitalityProductionDetail from "./ui/HospitalityProductionDetail";
 import ProductionOrderDetail from "./ui/ProductionOrderDetail";
-import { CANONICAL_ALLERGEN_COLUMNS, normaliseOperationalAllergens, toggleOperationalAllergen, type CanonicalAllergenKey } from "../../shared/allergen-contract";
+import { CANONICAL_ALLERGEN_COLUMNS, normaliseOperationalAllergens, toggleOperationalAllergen, type CanonicalAllergenKey } from "@fika/contracts";
 import { productionScopes, type ProductionScope } from "../lib/production-scope";
 import { cpuAttentionKey, cpuAttentionLabel, cpuDestinationLabel, cpuDestinationOptionLabel, cpuLifecycle, cpuLifecycleLabels, cpuRequiredTime, cpuSourceLabel, type CpuLifecycle } from "../lib/production-presentation";
 import { orderDate } from "../lib/production-day";

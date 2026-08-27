@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { buildCpuDayProjection } from "../lib/cpu-projection";
 import { cpuProjectionToOrders } from "../lib/cpu-dashboard-adapter";
-import type { ProductionOrder } from "@hub/lib/production-domain";
+import type { ProductionOrder } from "@fika/contracts";
 import type { ProductionPlan } from "../app/lib/production-plan";
 
 const order = (id: string, date = "2026-08-24"): ProductionOrder => ({

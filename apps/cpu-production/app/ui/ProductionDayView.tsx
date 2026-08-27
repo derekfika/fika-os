@@ -1,6 +1,6 @@
 "use client";
 
-import type { ProductionOrder } from "@hub/lib/production-domain";
+import type { ProductionOrder } from "@fika/contracts";
 import { aggregateDeliveredIn, categorySummary, destination, firstDeliveredInOrder, groupByRequiredTime, lifecycle, orderDate, orderQuantity, orderSummary, sourceHeading } from "../../lib/production-day";
 import { cpuAttentionLabel, cpuRequiredTime, cpuSourceLabel } from "../../lib/production-presentation";
 import "./production-day.css";

@@ -1,6 +1,6 @@
 import type { Transaction } from "firebase-admin/firestore";
 import { db } from "./firebase-admin";
-import type { DurableDomainEvent } from "../../shared/domain-events";
+import type { DurableDomainEvent } from "@fika/contracts/domain-events";
 
 const events = () => db.collection("fikaDomainEventsV1");
 

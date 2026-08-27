@@ -1,4 +1,5 @@
-import { productionQueue, type ProductionOrder, type ProductionStatus } from "@hub/lib/production-domain";
+import { productionQueue } from "@hub/lib/production-domain";
+import type { ProductionOrder, ProductionStatus } from "@fika/contracts";
 import type { ProductionPlan } from "../app/lib/production-plan";
 import { db } from "@hub/lib/firebase-admin";
 

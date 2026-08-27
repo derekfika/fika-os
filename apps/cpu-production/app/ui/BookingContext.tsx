@@ -1,4 +1,4 @@
-import type { ProductionOrder } from "@hub/lib/production-domain";
+import type { ProductionOrder } from "@fika/contracts";
 import "./booking-context.css";
 
 function present(value: unknown) {

@@ -1,4 +1,4 @@
-import type { ProductionOrder } from "@hub/lib/production-domain";
+import type { ProductionOrder } from "@fika/contracts";
 
 /**
  * Deterministic local-only data for exercising the CPU dashboard.  Keeping the

@@ -1,1 +1,1 @@
-export { productionItemId, legacyProductionItemId } from "../../shared/production-item-id";
+export { productionItemId, legacyProductionItemId } from "@fika/contracts";

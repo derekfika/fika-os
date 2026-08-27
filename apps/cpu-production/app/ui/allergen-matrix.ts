@@ -1,5 +1,5 @@
 import type { InternalMatrixSignature, PlannedMenuItem } from "../lib/production-plan";
-import { CANONICAL_ALLERGEN_COLUMNS } from "../../../shared/allergen-contract";
+import { CANONICAL_ALLERGEN_COLUMNS } from "@fika/contracts";
 
 /** Keep this order aligned with the digital checker and the printed master sheet. */
 export const matrixColumns = CANONICAL_ALLERGEN_COLUMNS;

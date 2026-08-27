@@ -37,6 +37,7 @@
     "reset:services": "tsx scripts/reset-services.ts"
   },
   "dependencies": {
+    "@fika/contracts": "file:../../packages/fika-contracts-0.1.0.tgz",
     "firebase": "^11.10.0",
     "firebase-admin": "^13.4.0",
     "jszip": "^3.10.1",

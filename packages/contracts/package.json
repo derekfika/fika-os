@@ -1,0 +1,17 @@
+{
+  "name": "@fika/contracts",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": { "build": "tsc -p tsconfig.json", "typecheck": "tsc -p tsconfig.json --noEmit", "test": "tsx --test tests/*.test.ts" },
+  "devDependencies": { "@types/node": "22.19.19", "tsx": "4.20.6", "typescript": "5.9.3" },
+  "exports": {
+    ".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" },
+    "./production": { "types": "./dist/production.d.ts", "default": "./dist/production.js" },
+    "./allergen-contract": { "types": "./dist/allergen-contract.d.ts", "default": "./dist/allergen-contract.js" },
+    "./fulfilment-requirement": { "types": "./dist/fulfilment-requirement.d.ts", "default": "./dist/fulfilment-requirement.js" },
+    "./fulfilment-reconciliation": { "types": "./dist/fulfilment-reconciliation.d.ts", "default": "./dist/fulfilment-reconciliation.js" },
+    "./domain-events": { "types": "./dist/domain-events.d.ts", "default": "./dist/domain-events.js" },
+    "./production-item-id": { "types": "./dist/production-item-id.d.ts", "default": "./dist/production-item-id.js" }
+  }
+}

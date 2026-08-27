@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import type { ProductionOrder } from "@hub/lib/production-domain";
+import type { ProductionOrder } from "@fika/contracts";
 import { buildDeliveredInDishRows, deliveredInTotals } from "../../lib/production-day";
 import { cpuAttentionLabel, cpuLifecycle, cpuLifecycleLabels, cpuRequiredTime } from "../../lib/production-presentation";
 import "./delivered-in-production-detail.css";

@@ -1,4 +1,4 @@
-import type { ProductionOrder, ProductionLine } from "@hub/lib/production-domain";
+import type { ProductionOrder, ProductionLine } from "@fika/contracts";
 import type { CpuDayProjection } from "./cpu-projection";
 import type { ProductionScope } from "./production-scope";
 

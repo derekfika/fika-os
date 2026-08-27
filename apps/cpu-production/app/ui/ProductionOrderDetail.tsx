@@ -1,6 +1,6 @@
 "use client";
 
-import type { ProductionOrder } from "@hub/lib/production-domain";
+import type { ProductionOrder } from "@fika/contracts";
 import "./production-order-detail.css";
 import BookingContext from "./BookingContext";
 

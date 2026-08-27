@@ -1,5 +1,4 @@
-import type { ExternalProductionMaterialisation } from "../integration-hub/lib/production-domain";
-import type { DurableDomainEvent } from "./domain-events";
+import type { ProductionMaterialisation as ExternalProductionMaterialisation, DurableDomainEvent } from "@fika/contracts";
 
 export async function forwardProductionMaterialisation(input: ExternalProductionMaterialisation) {
   const base = (process.env.INTEGRATION_HUB_BASE_URL || "http://localhost:3200").replace(/\/$/, "");

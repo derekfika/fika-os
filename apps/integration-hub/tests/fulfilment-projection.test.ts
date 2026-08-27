@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createDomainEvent } from "../../shared/domain-events";
-import { fulfilmentFromGrabAndGoOrder, fulfilmentFromProductionOrder, fulfilmentFromPublishedMenuDay, productionStatusToFulfilmentStatus } from "../../shared/fulfilment-requirement";
+import { createDomainEvent } from "@fika/contracts/domain-events";
+import { fulfilmentFromGrabAndGoOrder, fulfilmentFromProductionOrder, fulfilmentFromPublishedMenuDay, productionStatusToFulfilmentStatus } from "@fika/contracts/fulfilment-requirement";
 import { applyFulfilmentEvent, listFulfilmentReceipts, listFulfilmentRequirements, normaliseFulfilmentEvent, shouldApplyFulfilmentVersion } from "../lib/fulfilment-projection";
 import { db } from "../lib/firebase-admin";
 import { stableDocumentId } from "../lib/canonical-editor";

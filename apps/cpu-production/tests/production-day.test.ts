@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import type { ProductionOrder } from "@hub/lib/production-domain";
+import type { ProductionOrder } from "@fika/contracts";
 import { aggregateDeliveredIn, categorySummary, deliveredInTotals, firstDeliveredInOrder, groupByRequiredTime, orderSummary } from "../lib/production-day";
 import { readFileSync } from "node:fs";
 import { buildAllergenReviewRows, buildDeliveredInAllergenReview, buildDeliveredInDishRows } from "../lib/production-day";

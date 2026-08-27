@@ -6,8 +6,8 @@ import { aggregateProductionTotals, currentPublishedDays, groupEntriesByDestinat
 import { publishPublicationChanged, publicationEventStream, subscribeToPublicationChanges } from "../lib/publication-events";
 import { localFixtureOrders } from "../app/api/local-fixtures";
 import { buildGrabAndGoProduction, effectiveGrabAndGoOrders, type GrabAndGoProduct, type GrabAndGoSourceOrder } from "../lib/grab-and-go-read";
-import { fulfilmentFromGrabAndGoOrder, fulfilmentFromProductionOrder, fulfilmentFromPublishedMenuDay } from "../../shared/fulfilment-requirement";
-import { createDomainEvent, replayDueEvents } from "../../shared/domain-events";
+import { fulfilmentFromGrabAndGoOrder, fulfilmentFromProductionOrder, fulfilmentFromPublishedMenuDay } from "@fika/contracts";
+import { createDomainEvent, replayDueEvents } from "@fika/contracts";
 import { reconcileFulfilmentRequirements } from "../../shared/fulfilment-reconciliation";
 
 const page = readFileSync(new URL("../app/page.tsx", import.meta.url), "utf8");

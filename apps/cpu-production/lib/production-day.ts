@@ -1,5 +1,5 @@
-import type { ProductionLine, ProductionOrder } from "@hub/lib/production-domain";
-import type { OperationalAllergenState } from "../../shared/allergen-contract";
+import type { ProductionLine, ProductionOrder } from "@fika/contracts";
+import type { OperationalAllergenState } from "@fika/contracts";
 import { cpuAttentionLabel, cpuDestinationLabel, cpuLifecycle, cpuLifecycleLabels, cpuRequiredTime, cpuSourceLabel } from "./production-presentation";
 
 export type DeliveredInDishTotal = { key: string; dishName: string; total: number; destinations: Array<{ label: string; quantity: number }> };
