@@ -33,3 +33,11 @@ test("CPU projection runtime has no Hub persistence or canonical repository impo
   assert.match(adapter, /FIRESTORE_EMULATOR_HOST/);
   assert.match(config, /FIREBASE_PROJECT_ID|GCLOUD_PROJECT/);
 });
+
+test("hosted production-plan runtime has no local plan-file persistence", async () => {
+  const source = await readFile(join(process.cwd(), "app/api/production-plan/route.ts"), "utf8");
+  for (const forbidden of ["plans.json", "writeFile", "@hub/lib/firebase-admin", "@hub/lib/production-domain", "@hub/lib/auth", "@hub/lib/authmod"]) assert.equal(source.includes(forbidden), false, `unexpected hosted plan dependency: ${forbidden}`);
+  const loadPlans = source.slice(source.indexOf("async function loadPlans"), source.indexOf("function normalisePlanAllergens"));
+  assert.equal(loadPlans.includes("fs.readFile"), false);
+  assert.match(source, /createProductionPlanRepository/);
+});

@@ -361,9 +361,9 @@ test("Liana production view captures nested menu items and sub-item allergen evi
 });
 
 test("CPU planning seeds real canonical hand-offs before local fixture fallback", () => {
-  assert.match(planRoute, /productionOrderDetail\(orderId\)/);
-  assert.match(planRoute, /productionOrderDetail\(orderId\) \|\| localFixtureOrders/);
-  assert.match(planRoute, /await getPlan\(orderId\)/);
+  assert.match(planRoute, /productionOrderDetail\(request, orderId\)/);
+  assert.match(planRoute, /isLocalRuntime\(\) \? localFixtureOrders/);
+  assert.match(planRoute, /await getPlan\(request, orderId\)/);
 });
 
 test("allergen checker uses the master-style purple header and four-state cells", () => {
