@@ -61,6 +61,7 @@ function parseDocument(database: DatabaseSync, key: "rolling" | "publications") 
 }
 
 export type MenuPlanningOperationalStore = {
+  readonly kind: "sqlite" | "firestore";
   readRollingState<T>(): Promise<T>;
   readPublicationState<T>(): Promise<T>;
   runTransaction<T>(mutator: (state: TransactionState) => T | Promise<T>, expected?: { weekId?: string; weekVersion?: number }): Promise<T>;
@@ -87,6 +88,7 @@ function withMenuPlanningTransactionSync<T>(mutator: (state: TransactionState) =
 }
 
 class SqliteOperationalStore implements MenuPlanningOperationalStore {
+  readonly kind = "sqlite" as const;
   async readRollingState<T>() { const database = open(); try { return parseDocument(database, "rolling") as T; } finally { database.close(); } }
   async readPublicationState<T>() { const database = open(); try { return parseDocument(database, "publications") as T; } finally { database.close(); } }
   async runTransaction<T>(mutator: (state: TransactionState) => T | Promise<T>) {
@@ -97,6 +99,7 @@ class SqliteOperationalStore implements MenuPlanningOperationalStore {
 }
 
 class FirestoreOperationalStore implements MenuPlanningOperationalStore {
+  readonly kind = "firestore" as const;
   constructor(private readonly repository = new MenuPlanningFirestoreRepository()) {}
   readRollingState<T>() { return this.repository.readRollingState() as Promise<T>; }
   readPublicationState<T>() { return this.repository.readPublicationState() as Promise<T>; }

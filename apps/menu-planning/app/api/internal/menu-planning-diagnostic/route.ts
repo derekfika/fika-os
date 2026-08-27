@@ -34,7 +34,7 @@ export async function GET(request: NextRequest) {
       FIREBASE_PROJECT_ID: process.env.FIREBASE_PROJECT_ID || null,
       GCLOUD_PROJECT: process.env.GCLOUD_PROJECT || null,
       FIRESTORE_EMULATOR_HOST: Boolean(process.env.FIRESTORE_EMULATOR_HOST),
-      selectedOperationalAdapter: store.constructor.name === "FirestoreOperationalStore" ? "firestore" : "sqlite",
+      selectedOperationalAdapter: store.kind,
       resolvedFirestoreProjectId: projectId || null,
       resolvedFirestoreDatabaseId: settings?.databaseId || "(default)",
       directWeeks: { count: direct.size, firstIds: direct.docs.slice(0, 3).map(doc => doc.id) },
