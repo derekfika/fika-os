@@ -3,12 +3,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import { MailSearch, RefreshCw, Settings } from "lucide-react";
-import type { CanonicalBooking } from "../../../integration-hub/lib/hospitality-booking-service";
+import type { CanonicalBooking, ProductionOrder, DashboardQuoteSettings } from "@/lib/canonical-types";
 import { dailyRunSheetHtml } from "../../lib/run-sheet";
 import { quoteHtml } from "../../lib/quote-document";
 import { amendmentPatchDto } from "../../lib/amendment-dto";
-import type { ProductionOrder } from "../../../integration-hub/lib/hospitality-booking-service";
-import type { DashboardQuoteSettings } from "../../../integration-hub/lib/quote-engine";
 import { mnkMenuHtml } from "../../lib/mnk-menu-output";
 import type { MenuOutput } from "../../lib/mnk-menu-output";
 import styles from "./HospitalityDashboard.module.css";

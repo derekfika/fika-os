@@ -1,4 +1,4 @@
-import type { CanonicalBooking } from "../../integration-hub/lib/hospitality-booking-service";
+import type { CanonicalBooking } from "@/lib/canonical-types";
 
 const escapeHtml = (value: unknown) => String(value ?? "")
   .replaceAll("&", "&amp;")

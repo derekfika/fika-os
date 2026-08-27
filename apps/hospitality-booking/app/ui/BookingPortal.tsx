@@ -7,6 +7,7 @@ import {
   portalBookingId,
 } from "@/lib/mnk-contract";
 import { portalSite, type PortalSiteKey } from "@/lib/portal-sites";
+import { capGallagherMinimum, GALLAGHER_MINIMUM_GUESTS, isGallagherBooking } from "@/lib/gallagher-rules";
 
 type ChoiceValue = string | string[];
 type Line = {
@@ -76,13 +77,13 @@ const dietaryNames: Record<string, string> = {
   otherCount: "Other",
 };
 const draftKey = (siteKey: PortalSiteKey) => `fika-hospitality-booking-draft:${siteKey}`;
-function minimumQuantityFor(item: PortalMenuItem) {
-  return Math.max(
+function minimumQuantityFor(item: PortalMenuItem, gallagher = false) {
+  return capGallagherMinimum(Math.max(
     1,
     item.minimumQuantity || 1,
     Number(item.servingInfo?.match(/minimum\s+(\d+)/i)?.[1] || 1),
     /rice paper rolls?/i.test(item.name) ? 3 : 1,
-  );
+  ), gallagher);
 }
 
 export default function BookingPortal({
@@ -252,6 +253,10 @@ export default function BookingPortal({
     if (!categories.includes(category)) setCategory(categories[0] || "");
   }, [categories, category]);
   const visible = menu.filter((item) => item.category === category);
+  const gallagher = isGallagherBooking({
+    companyName: site.key === "angel-court" ? contact.clientCompany : contact.requesterCompany,
+    email: contact.requesterEmail,
+  });
   const selected = lines
     .map((line) => ({
       ...line,
@@ -269,7 +274,7 @@ export default function BookingPortal({
   );
   const setQuantity = (item: PortalMenuItem, quantity: number) =>
     setLines((current) => {
-      const minimum = minimumQuantityFor(item);
+      const minimum = minimumQuantityFor(item, gallagher);
       const requested = Number.isFinite(quantity) ? Math.floor(quantity) : 0;
       const nextQuantity = requested > 0 ? Math.max(minimum, requested) : 0;
       return nextQuantity > 0
@@ -306,7 +311,8 @@ export default function BookingPortal({
     (site.key === "angel-court" ? contact.clientName && contact.clientCompany : true) &&
     details.eventDate &&
     details.startTime &&
-    details.guestCount > 0 &&
+    details.guestCount >= (gallagher ? GALLAGHER_MINIMUM_GUESTS : 1) &&
+    (!gallagher || contact.invoiceReference.trim()) &&
     (details.floorLevel || details.roomOrArea || details.deliveryPoint);
   const next = () => {
     setError("");
@@ -320,10 +326,10 @@ export default function BookingPortal({
       return setError("Choose at least one menu item to continue.");
     if (step === 2) {
       const belowMinimum = selected.find(
-        (value) => value.quantity < minimumQuantityFor(value.item),
+        (value) => value.quantity < minimumQuantityFor(value.item, gallagher),
       );
       if (belowMinimum) {
-        const minimum = minimumQuantityFor(belowMinimum.item);
+        const minimum = minimumQuantityFor(belowMinimum.item, gallagher);
         return setError(
           `${belowMinimum.item.name} requires at least ${minimum} ${minimum === 1 ? "box/item" : "boxes"}.`,
         );
@@ -340,10 +346,10 @@ export default function BookingPortal({
     explicitSendRef.current = false;
     if (sendingRef.current) return;
     const belowMinimum = selected.find(
-      (value) => value.quantity < minimumQuantityFor(value.item),
+      (value) => value.quantity < minimumQuantityFor(value.item, gallagher),
     );
     if (belowMinimum) {
-      const minimum = minimumQuantityFor(belowMinimum.item);
+      const minimum = minimumQuantityFor(belowMinimum.item, gallagher);
       changeStep(2);
       return setError(
         `${belowMinimum.item.name} requires at least ${minimum} ${minimum === 1 ? "box/item" : "boxes"}.`,
@@ -362,6 +368,14 @@ export default function BookingPortal({
       return setError("Dietary counts cannot exceed the number of guests.");
     if (dietaries.allergyDetails && !dietaries.severeAllergyAcknowledged)
       return setError("Please acknowledge the severe allergy notice.");
+    if (gallagher && details.guestCount < GALLAGHER_MINIMUM_GUESTS) {
+      changeStep(1);
+      return setError(`Gallagher bookings require at least ${GALLAGHER_MINIMUM_GUESTS} guests.`);
+    }
+    if (gallagher && !contact.invoiceReference.trim()) {
+      changeStep(1);
+      return setError("Gallagher bookings require an Invoice / PO reference.");
+    }
     if (!Object.values(acks).every(Boolean)) {
       changeStep(3);
       return setError("Please confirm the three acknowledgements before sending.");
@@ -618,6 +632,7 @@ export default function BookingPortal({
               setContact={setContact}
               details={details}
               setDetails={setDetails}
+              gallagher={gallagher}
             />
           )}
           {step === 2 && (
@@ -630,6 +645,7 @@ export default function BookingPortal({
               setQuantity={setQuantity}
               setChoice={setChoice}
               details={details}
+              gallagher={gallagher}
             />
           )}
           {step === 3 && (
@@ -780,12 +796,14 @@ function Details({
   setContact,
   details,
   setDetails,
+  gallagher,
 }: {
   siteKey: PortalSiteKey;
   contact: Record<string, string>;
   setContact: (value: any) => void;
   details: Record<string, string | number>;
   setDetails: (value: any) => void;
+  gallagher: boolean;
 }) {
   return (
     <section>
@@ -842,8 +860,9 @@ function Details({
           </label>
         </>}
         <label className="wide">
-          Invoice / PO reference <small>(optional)</small>
+          Invoice / PO reference <small>{gallagher ? "(required for Gallagher)" : "(optional)"}</small>
           <input
+            required={gallagher}
             value={contact.invoiceReference || ""}
             onChange={(e) => setContact({ ...contact, invoiceReference: e.target.value })}
             placeholder="Add a client invoice or purchase order reference"
@@ -914,6 +933,7 @@ function Plan({
   lines,
   setQuantity,
   setChoice,
+  gallagher,
 }: any) {
   return (
     <section>
@@ -1003,7 +1023,7 @@ function Plan({
                   type="button"
                   aria-label={`Remove one ${item.name}`}
                   onClick={() => {
-                    const minimum = minimumQuantityFor(item);
+                    const minimum = minimumQuantityFor(item, gallagher);
                     const current = line?.quantity || 0;
                     setQuantity(item, current > minimum ? current - 1 : 0);
                   }}
@@ -1012,7 +1032,7 @@ function Plan({
                 </button>
                 <input
                   aria-label={`${item.name} quantity`}
-                    min={minimumQuantityFor(item)}
+                    min={minimumQuantityFor(item, gallagher)}
                   type="number"
                   value={line?.quantity || ""}
                   onChange={(event) =>
@@ -1027,9 +1047,9 @@ function Plan({
                   +
                 </button>
               </div>
-              {minimumQuantityFor(item) > 1 && (
+              {minimumQuantityFor(item, gallagher) > 1 && (
                 <p className="minimum-quantity-note">
-                  Minimum {minimumQuantityFor(item)} boxes
+                  Minimum {minimumQuantityFor(item, gallagher)} boxes
                 </p>
               )}
             </article>

@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { saveGoogleDrivePdf } from "@/lib/google-menu";
 import { hubUserFetch } from "@/lib/hub";
-import { renderPdfLocally } from "../../../../../menu-planning/lib/local-pdf";
+import { renderPdfLocally } from "@/lib/local-pdf";
 
 export async function POST(request: NextRequest) {
   try {

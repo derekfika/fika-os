@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { hubUserFetch } from "@/lib/hub";
-import type { CanonicalBooking } from "../../../../integration-hub/lib/hospitality-booking-service";
+import type { CanonicalBooking } from "@/lib/canonical-types";
 import type { MenuOutput } from "@/lib/mnk-menu-output";
 import { menuBookingContext, menuFileName } from "@/lib/mnk-menu-output";
 import { createGoogleMenu } from "@/lib/google-menu";

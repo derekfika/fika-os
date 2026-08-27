@@ -1,31 +1,7 @@
-import { existsSync, readFileSync } from "node:fs";
-import path from "node:path";
-
-/**
- * Server-only local fallback. Normal deployed environments use injected
- * secrets; this only prevents a launcher with the wrong working directory
- * from silently losing the portal's own local bridge configuration.
- */
-function bridgeSetting(key: "FIKA_HUB_BASE_URL" | "MNK_CANON_BRIDGE_TOKEN") {
-  const supplied = process.env[key]?.trim();
-  if (supplied) return supplied;
-
-  const candidates = [
-    path.resolve(process.cwd(), ".env.local"),
-    path.resolve(process.cwd(), "apps/hospitality-booking/.env.local"),
-    path.resolve(process.cwd(), "../.env.local"),
-    path.resolve(process.cwd(), "hospitality-booking/.env.local"),
-    path.resolve(process.cwd(), "../apps/hospitality-booking/.env.local"),
-    path.join(path.parse(process.cwd()).root, "FIKA", "apps", "hospitality-booking", ".env.local"),
-  ];
-  for (const file of candidates) {
-    if (!existsSync(file)) continue;
-    const line = readFileSync(file, "utf8").split(/\r?\n/).find(value => value.startsWith(`${key}=`));
-    const value = line?.slice(key.length + 1).trim();
-    if (value) return value;
-  }
-  return undefined;
-}
+/** Configuration is injected by Next/App Hosting; Next loads local .env.local
+ * automatically during development, so no repository filesystem probing is
+ * needed here. */
+function bridgeSetting(key: "FIKA_HUB_BASE_URL" | "MNK_CANON_BRIDGE_TOKEN") { return process.env[key]?.trim() || undefined; }
 
 export function isLocalBridgeEnvironment() {
   const base = bridgeSetting("FIKA_HUB_BASE_URL");

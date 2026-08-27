@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { dailyRunSheetHtml, dailyRunSheetTitle, deliveryContext, runSheetHtml, runSheetTitle } from "../lib/run-sheet";
-import type { CanonicalBooking } from "../../integration-hub/lib/hospitality-booking-service";
+import type { CanonicalBooking } from "../lib/canonical-types";
 
 const booking: CanonicalBooking = {
   canonicalId: "booking:mnk:test", entityType: "Booking", schemaVersion: "0.1.0", version: 1, lifecycleStatus: "Approved",
