@@ -100,8 +100,9 @@ test("session principal contains identity context only, not live access entitlem
 
 test("returnTo accepts FIKA paths and configured app origins but rejects open redirects", () => {
   assert.equal(validateReturnTo("/authmod/accounts/example"), "/authmod/accounts/example");
-  assert.equal(validateReturnTo("https://hub.fikacatering.com/authmod?tab=accounts", ["https://hub.fikacatering.com"]), "/authmod?tab=accounts");
-  assert.equal(validateReturnTo("https://hospitality-staging.fikacatering.com/hospitality/manage", ["https://hospitality-staging.fikacatering.com"]), "/hospitality/manage");
+  assert.equal(validateReturnTo("https://hub.fikacatering.com/authmod?tab=accounts#users", ["https://hub.fikacatering.com"]), "https://hub.fikacatering.com/authmod?tab=accounts#users");
+  assert.equal(validateReturnTo("https://cpu-staging.fikacatering.com/", ["https://cpu-staging.fikacatering.com"]), "https://cpu-staging.fikacatering.com/");
+  assert.equal(validateReturnTo("https://hospitality-staging.fikacatering.com/hospitality/manage", ["https://hospitality-staging.fikacatering.com"]), "https://hospitality-staging.fikacatering.com/hospitality/manage");
   assert.throws(() => validateReturnTo("https://evil.example"), /not allowed/);
   assert.throws(() => validateReturnTo("//evil.example"), /not allowed/);
 });

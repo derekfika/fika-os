@@ -3,7 +3,7 @@ export function validateReturnTo(value: string | null | undefined, allowedOrigin
   if (value.startsWith("/") && !value.startsWith("//") && !/[\u0000-\u001f\\]/.test(value)) return value;
   try {
     const target = new URL(value);
-    if (allowedOrigins.includes(target.origin)) return `${target.pathname}${target.search}${target.hash}`;
+    if (allowedOrigins.includes(target.origin)) return target.href;
   } catch { /* invalid destinations are rejected below */ }
   throw Object.assign(new Error("The requested return destination is not allowed."), { status: 400, code: "FIKA_RETURN_TO_INVALID" });
 }
