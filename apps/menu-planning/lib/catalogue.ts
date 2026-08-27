@@ -61,11 +61,16 @@ function canonicalEntry(item: MenuItem): CatalogueEntry {
 
 /** The catalogue is deliberately backed only by explicitly promoted canonical records. */
 export async function listCatalogueEntries(): Promise<CatalogueEntry[]> {
-  const items = await syncRollingEntries(await listAllEntries());
-  await attachCanonicalDishIds(items);
+  const items = await listCanonicalMenuItems();
   // Archived records are retained for history and audit, but must not leak into
   // operational dish pickers or normal planner catalogue results.
   return items.filter(item => item.reviewStatus !== "archived").map(canonicalEntry).sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/** Explicit maintenance reconciliation for imports and publication preparation. */
+export async function reconcileCatalogueFromRollingEntries() {
+  const items = await syncRollingEntries(await listAllEntries());
+  await attachCanonicalDishIds(items);
 }
 
 export function filterCatalogueEntries(entries: CatalogueEntry[], filters: { query?: string; category?: string; usage?: string; status?: string }) {

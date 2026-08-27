@@ -4,16 +4,21 @@ import { createCanonicalMenuItem, mergeSimilarCanonicalItems, previewSimilarCano
 import { repointDishIds } from "@/lib/rolling-menu";
 
 export async function GET(request: Request) {
-  if (new URL(request.url).searchParams.get("duplicates") === "preview") return NextResponse.json({ groups: await previewSimilarCanonicalItems() });
-  const url = new URL(request.url);
-  const entries = await listCatalogueEntries();
-  const filtered = filterCatalogueEntries(entries, {
-    query: url.searchParams.get("q") || undefined,
-    category: url.searchParams.get("category") || undefined,
-    usage: url.searchParams.get("usage") || undefined,
-    status: url.searchParams.get("status") || undefined,
-  });
-  return NextResponse.json({ entries: filtered, total: entries.length, filteredCount: filtered.length, categories: [...new Set(entries.map((entry) => entry.category))].sort() });
+  try {
+    if (new URL(request.url).searchParams.get("duplicates") === "preview") return NextResponse.json({ groups: await previewSimilarCanonicalItems() });
+    const url = new URL(request.url);
+    const entries = await listCatalogueEntries();
+    const filtered = filterCatalogueEntries(entries, {
+      query: url.searchParams.get("q") || undefined,
+      category: url.searchParams.get("category") || undefined,
+      usage: url.searchParams.get("usage") || undefined,
+      status: url.searchParams.get("status") || undefined,
+    });
+    return NextResponse.json({ entries: filtered, total: entries.length, filteredCount: filtered.length, categories: [...new Set(entries.map((entry) => entry.category))].sort() });
+  } catch (error) {
+    const status = error && typeof error === "object" && "status" in error && typeof (error as { status?: unknown }).status === "number" ? (error as { status: number }).status : 500;
+    return NextResponse.json({ error: { message: error instanceof Error ? error.message : "Catalogue could not be loaded." } }, { status });
+  }
 }
 
 export async function POST(request: Request) {

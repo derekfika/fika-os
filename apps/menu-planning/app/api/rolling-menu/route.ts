@@ -5,7 +5,7 @@ import { requireMutationActor, requirePublicationActor, resolveMenuActor } from 
 import { readDeliveredInOplocs } from "@/lib/oploc-authority";
 import { forwardProductionMaterialisationEvent } from "@/lib/production-client";
 import { replayMenuPublicationOutbox } from "@/lib/menu-publication";
-import { listCatalogueEntries } from "@/lib/catalogue";
+import { listCatalogueEntries, reconcileCatalogueFromRollingEntries } from "@/lib/catalogue";
 import { resolveAllergenSnapshot } from "@/lib/allergen-resolution";
 import { GOVERNED_OPLOCS } from "@/lib/fika-contracts";
 
@@ -20,16 +20,21 @@ async function resolvedSnapshot(snapshot: Awaited<ReturnType<typeof getWeek>>) {
 }
 
 export async function GET(request: NextRequest) {
-  const requestedWeek = request.nextUrl.searchParams.get("weekId") || undefined;
-  const weeks = await listWeeks();
-  const matchingWeek = requestedWeek ? weeks.find(week => week.id === requestedWeek || week.weekCommencing === requestedWeek) : undefined;
-  const snapshot = await getWeek(matchingWeek?.id || requestedWeek);
-  const previewDayId = request.nextUrl.searchParams.get("dayId") || undefined;
-  const publicationPreviewRequested = request.nextUrl.searchParams.get("publicationPreview") === "true";
-  const governedOplocs = publicationPreviewRequested ? await readDeliveredInOplocs(request) : undefined;
-  const governedLabels = new Set(governedOplocs?.map(oploc => oploc.label.toLocaleLowerCase()));
-  const governedOplocIds = governedOplocs ? new Set([...governedOplocs.map(oploc => oploc.canonicalId), ...GOVERNED_OPLOCS.filter(oploc => governedLabels.has(oploc.label.toLocaleLowerCase())).map(oploc => oploc.id)]) : undefined;
-  return NextResponse.json({ snapshot: await resolvedSnapshot(snapshot), weeks, blockers: validateWeek(snapshot), publicationState: await publicationState(snapshot), ...(publicationPreviewRequested ? { publicationPreview: publicationPreview(snapshot, previewDayId), dayBlockers: previewDayId ? publicationDayBlockers(snapshot, previewDayId, governedOplocIds) : [] } : {}) });
+  try {
+    const requestedWeek = request.nextUrl.searchParams.get("weekId") || undefined;
+    const weeks = await listWeeks();
+    const matchingWeek = requestedWeek ? weeks.find(week => week.id === requestedWeek || week.weekCommencing === requestedWeek) : undefined;
+    const snapshot = await getWeek(matchingWeek?.id || requestedWeek);
+    const previewDayId = request.nextUrl.searchParams.get("dayId") || undefined;
+    const publicationPreviewRequested = request.nextUrl.searchParams.get("publicationPreview") === "true";
+    const governedOplocs = publicationPreviewRequested ? await readDeliveredInOplocs(request) : undefined;
+    const governedLabels = new Set(governedOplocs?.map(oploc => oploc.label.toLocaleLowerCase()));
+    const governedOplocIds = governedOplocs ? new Set([...governedOplocs.map(oploc => oploc.canonicalId), ...GOVERNED_OPLOCS.filter(oploc => governedLabels.has(oploc.label.toLocaleLowerCase())).map(oploc => oploc.id)]) : undefined;
+    return NextResponse.json({ snapshot: await resolvedSnapshot(snapshot), weeks, blockers: validateWeek(snapshot), publicationState: await publicationState(snapshot), ...(publicationPreviewRequested ? { publicationPreview: publicationPreview(snapshot, previewDayId), dayBlockers: previewDayId ? publicationDayBlockers(snapshot, previewDayId, governedOplocIds) : [] } : {}) });
+  } catch (error) {
+    const status = error && typeof error === "object" && "status" in error && typeof (error as { status?: unknown }).status === "number" ? (error as { status: number }).status : 500;
+    return NextResponse.json({ error: { message: error instanceof Error ? error.message : "Rolling menu could not be loaded." } }, { status });
+  }
 }
 
 export async function POST(request: NextRequest) {
@@ -83,7 +88,7 @@ export async function POST(request: NextRequest) {
       requirePublicationActor(actor);
       // Reconcile exact imported dish names before the publication gate runs.
       // This persists the canonical identity; it does not bypass allergen review.
-      await listCatalogueEntries();
+      await reconcileCatalogueFromRollingEntries();
       const oplocs = await readDeliveredInOplocs(request);
       const publication = await createPublishedMenuDay(String(body.weekId), dayId, (body.signoff || {}) as MenuPublicationSignoff, actor.uid, new Set(oplocs.map(oploc => oploc.canonicalId)));
       const handoff = await replayMenuPublicationOutbox(forwardProductionMaterialisationEvent);

@@ -53,13 +53,13 @@ export default function RollingMenuWorkspace() {
 
   const load = async (weekId?: string) => {
     const response = await fetch(`/api/rolling-menu${weekId ? `?weekId=${encodeURIComponent(weekId)}` : ""}`, { cache: "no-store" });
-    const body = await response.json();
+    const body = await response.json().catch(() => ({}));
     if (!response.ok) { setError(body.error?.message || "Menu could not be loaded."); return; }
     setSnapshot(body.snapshot); setWeeks(body.weeks || []); setPublicationState(body.publicationState || {}); setDayId(current => body.snapshot.days.some((day: { id: string }) => day.id === current) ? current : body.snapshot.days[0]?.id || "");
     try { const publicationResponse = await fetch("/api/rolling-menu/publications", { cache: "no-store" }); const publicationBody = await publicationResponse.json(); if (publicationResponse.ok) setPublications(publicationBody.publications || []); } catch { /* Publication controls remain unavailable if the list cannot be read. */ }
   };
   useEffect(() => { void load(); }, []);
-  useEffect(() => { void fetch("/api/catalogue", { cache: "no-store" }).then(response => response.json()).then(body => setCatalogue((body.entries || []).map((entry: Record<string, unknown>) => { const item = entry.item as Record<string, unknown> | undefined; return { id: String(entry.id), name: titleCase(String(entry.displayName ?? entry.name ?? "")), category: entry.category ? String(entry.category) : undefined, subcategory: entry.subcategory ? String(entry.subcategory) : undefined, description: item?.description ? String(item.description) : undefined, allergenEvidence: Array.isArray(item?.allergenEvidence) ? item.allergenEvidence as DishPickerItem["allergenEvidence"] : [], mayContainReviewed: item?.mayContainReviewed === true }; }))).catch(() => undefined); }, []);
+  useEffect(() => { void fetch("/api/catalogue", { cache: "no-store" }).then(async response => { const body = await response.json().catch(() => ({})); if (!response.ok) throw new Error(body.error?.message || `Catalogue could not be loaded (HTTP ${response.status}).`); return body; }).then(body => setCatalogue((body.entries || []).map((entry: Record<string, unknown>) => { const item = entry.item as Record<string, unknown> | undefined; return { id: String(entry.id), name: titleCase(String(entry.displayName ?? entry.name ?? "")), category: entry.category ? String(entry.category) : undefined, subcategory: entry.subcategory ? String(entry.subcategory) : undefined, description: item?.description ? String(item.description) : undefined, allergenEvidence: Array.isArray(item?.allergenEvidence) ? item.allergenEvidence as DishPickerItem["allergenEvidence"] : [], mayContainReviewed: item?.mayContainReviewed === true }; }))).catch((cause: Error) => setError(cause.message)); }, []);
   useEffect(() => { void fetch("/api/oplocs", { cache: "no-store" }).then(response => response.json()).then(body => setOplocs(body.oplocs || [])).catch(() => setOplocs([])); }, []);
   useEffect(() => { latestCatalogue = catalogue; }, [catalogue]);
 
