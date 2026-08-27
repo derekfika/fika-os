@@ -1,17 +1,25 @@
 import { NextRequest, NextResponse } from "next/server";
+import { timingSafeEqual } from "node:crypto";
 import { Firestore } from "@google-cloud/firestore";
 import { getMenuPlanningOperationalStore, MenuPlanningFirestoreRepository } from "@/lib/operational-store";
 import { listWeeks } from "@/lib/rolling-menu";
-import { requirePublicationActor, resolveMenuActor } from "@/lib/auth";
 
 /** Temporary server-only, read-only staging diagnostic. Remove after runtime diagnosis. */
 export async function GET(request: NextRequest) {
   try {
-    // This secret is runtime-only in App Hosting; dynamic lookup prevents the
-    // build from treating its unavailable build-time value as permanently empty.
     const expectedToken = process.env["FIKA_INTERNAL_API_TOKEN"];
     const suppliedToken = request.headers.get("x-fika-internal-token");
-    if (!expectedToken || suppliedToken !== expectedToken) requirePublicationActor(await resolveMenuActor(request));
+    if (!expectedToken) {
+      return NextResponse.json({ code: "DIAGNOSTIC_TOKEN_NOT_CONFIGURED" }, { status: 503 });
+    }
+    if (!suppliedToken) {
+      return NextResponse.json({ code: "DIAGNOSTIC_TOKEN_REQUIRED" }, { status: 401 });
+    }
+    const expectedBytes = Buffer.from(expectedToken, "utf8");
+    const suppliedBytes = Buffer.from(suppliedToken, "utf8");
+    if (expectedBytes.length !== suppliedBytes.length || !timingSafeEqual(expectedBytes, suppliedBytes)) {
+      return NextResponse.json({ code: "DIAGNOSTIC_TOKEN_MISMATCH" }, { status: 403 });
+    }
 
     const projectId = process.env.FIREBASE_PROJECT_ID || process.env.GCLOUD_PROJECT || "";
     const database = new Firestore({ projectId: projectId || undefined });
