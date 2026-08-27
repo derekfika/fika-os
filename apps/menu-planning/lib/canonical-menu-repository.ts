@@ -37,6 +37,19 @@ async function writeItems(items: MenuItem[]) {
 
 export async function listCanonicalMenuItems() { return readItems(); }
 
+export async function listCanonicalMenuItemsByIds(ids: string[]) {
+  const wanted = [...new Set(ids.filter(Boolean))];
+  if (!wanted.length) return [];
+  if (["staging", "production"].includes(process.env.FIKA_RUNTIME_MODE || "")) {
+    if (!process.env.FIREBASE_PROJECT_ID && !process.env.GCLOUD_PROJECT) throw Object.assign(new Error("Hosted Menu Planning catalogue is not configured."), { status: 503 });
+    const db = new Firestore({ projectId: process.env.FIREBASE_PROJECT_ID || process.env.GCLOUD_PROJECT });
+    const records = await Promise.all(Array.from({ length: Math.ceil(wanted.length / 30) }, (_, index) => db.collection("fikaMenuPlanningCatalogue").where("kind", "==", "dish").where("id", "in", wanted.slice(index * 30, index * 30 + 30)).get()));
+    return records.flatMap(snapshot => snapshot.docs.map(document => (document.data().record || document.data()) as MenuItem));
+  }
+  const items = await readItems();
+  return items.filter(item => wanted.includes(item.canonicalId));
+}
+
 export async function createCanonicalMenuItem(input: { displayName: string; category?: string; description?: string; preparationNotes?: string; allergenEvidence?: MenuItem["allergenEvidence"] }, actor = "local-menu-planner") {
   const items = await readItems();
   const displayName = normaliseDishName(input.displayName);

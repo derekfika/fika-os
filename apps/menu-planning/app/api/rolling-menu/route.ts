@@ -1,21 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
-import { addMenuSlot, addOneOffDestination, assertWeekDateAvailable, cleanDuplicateEntries, copyWeekIntoWeek, createEntry, duplicateWeek, emptyWeek, getWeek, listWeeks, removeMenuSlot, resetWeek, saveSnapshot, snapshotFromStored, updateEntry, validateWeek, type Stored } from "@/lib/rolling-menu";
+import { addMenuSlot, addOneOffDestination, assertWeekDateAvailable, cleanDuplicateEntries, copyWeekIntoWeek, createEntry, defaultWeekForDate, duplicateWeek, emptyWeek, getWeek, listWeeks, removeMenuSlot, resetWeek, saveSnapshot, updateEntry, validateWeek } from "@/lib/rolling-menu";
 import { archivePublishedDayMatrix, createPublishedMenuDay, getMenuPublication, publicationDayBlockers, publicationPreview, publicationState, type MenuPublicationSignoff } from "@/lib/menu-publication";
 import { requireMutationActor, requirePublicationActor, resolveMenuActor } from "@/lib/auth";
 import { readDeliveredInOplocs } from "@/lib/oploc-authority";
 import { forwardProductionMaterialisationEvent } from "@/lib/production-client";
 import { replayMenuPublicationOutbox } from "@/lib/menu-publication";
-import { listCatalogueEntries, reconcileCatalogueFromRollingEntries } from "@/lib/catalogue";
+import { listCatalogueEntries, listCatalogueEntriesForIds, reconcileCatalogueFromRollingEntries } from "@/lib/catalogue";
 import { resolveAllergenSnapshot } from "@/lib/allergen-resolution";
 import { GOVERNED_OPLOCS } from "@/lib/fika-contracts";
-import { readRollingState } from "@/lib/operational-store";
+import { getWeekSnapshot, listWeekSummaries } from "@/lib/operational-store";
+import type { RollingWeek } from "@/lib/rolling-menu-types";
 
-async function resolvedSnapshot(snapshot: Awaited<ReturnType<typeof getWeek>>, onCatalogueTiming?: (durationMs: number) => void) {
-  const catalogueStarted = performance.now();
-  const catalogue = await listCatalogueEntries();
-  onCatalogueTiming?.(performance.now() - catalogueStarted);
+async function resolvedSnapshot(snapshot: Awaited<ReturnType<typeof getWeek>>, catalogue?: Awaited<ReturnType<typeof listCatalogueEntriesForIds>>) {
+  const resolvedCatalogue = catalogue || await listCatalogueEntries();
   const entries = snapshot.entries.map(entry => {
-    const dish = catalogue.find(item => item.id === entry.itemId || item.name.trim().toLocaleLowerCase() === entry.itemLabel.trim().toLocaleLowerCase())?.item;
+    const dish = resolvedCatalogue.find(item => item.id === entry.itemId || item.name.trim().toLocaleLowerCase() === entry.itemLabel.trim().toLocaleLowerCase())?.item;
     const resolved = resolveAllergenSnapshot(entry, dish ? { canonicalId: dish.canonicalId, displayName: dish.displayName, allergenEvidence: dish.allergenEvidence, mayContainReviewed: dish.mayContainReviewed, mayContainNotes: dish.mayContainNotes } : undefined);
     return { ...entry, allergens: resolved.allergens, mayContainNotes: entry.mayContainNotes || resolved.mayContainNotes };
   });
@@ -26,23 +25,31 @@ export async function GET(request: NextRequest) {
   try {
     const requestedWeek = request.nextUrl.searchParams.get("weekId") || undefined;
     const totalStarted = performance.now();
-    const rollingStarted = performance.now();
-    const state = await readRollingState<Stored>();
-    const rollingStateMs = performance.now() - rollingStarted;
-    const weeks = state.weeks.slice().sort((a, b) => a.weekCommencing.localeCompare(b.weekCommencing));
+    const summaryStarted = performance.now();
+    const weeks = (await listWeekSummaries<RollingWeek>()).slice().sort((a, b) => a.weekCommencing.localeCompare(b.weekCommencing));
+    const rollingStateMs = performance.now() - summaryStarted;
+    if (request.nextUrl.searchParams.get("summariesOnly") === "true") {
+      console.info("Menu Planning rolling-menu summaries timings", { rollingStateMs, totalMs: performance.now() - totalStarted });
+      return NextResponse.json({ weeks });
+    }
     const matchingWeek = requestedWeek ? weeks.find(week => week.id === requestedWeek || week.weekCommencing === requestedWeek) : undefined;
-    const snapshot = snapshotFromStored(state, matchingWeek?.id || requestedWeek);
+    const selectedWeek = matchingWeek || defaultWeekForDate(weeks);
+    const selectedReadStarted = performance.now();
+    const storedSnapshot = selectedWeek ? await getWeekSnapshot<Awaited<ReturnType<typeof getWeek>>>(selectedWeek.id) : undefined;
+    const selectedWeekMs = performance.now() - selectedReadStarted;
+    const snapshot = storedSnapshot || emptyWeek(requestedWeek || new Date().toISOString().slice(0, 10));
     const previewDayId = request.nextUrl.searchParams.get("dayId") || undefined;
     const publicationPreviewRequested = request.nextUrl.searchParams.get("publicationPreview") === "true";
     const governedOplocs = publicationPreviewRequested ? await readDeliveredInOplocs(request) : undefined;
     const governedLabels = new Set(governedOplocs?.map(oploc => oploc.label.toLocaleLowerCase()));
     const governedOplocIds = governedOplocs ? new Set([...governedOplocs.map(oploc => oploc.canonicalId), ...GOVERNED_OPLOCS.filter(oploc => governedLabels.has(oploc.label.toLocaleLowerCase())).map(oploc => oploc.id)]) : undefined;
-    let catalogueMs = 0;
-    const resolved = await resolvedSnapshot(snapshot, durationMs => { catalogueMs = durationMs; });
+    const catalogueStarted = performance.now();
     const publicationStarted = performance.now();
-    const currentPublicationState = await publicationState(snapshot);
+    const [catalogue, currentPublicationState] = await Promise.all([listCatalogueEntriesForIds(snapshot.entries.map(entry => entry.itemId || "")), publicationState(snapshot)]);
+    const catalogueMs = performance.now() - catalogueStarted;
     const publicationStateMs = performance.now() - publicationStarted;
-    console.info("Menu Planning rolling-menu GET timings", { rollingStateMs, catalogueMs, publicationStateMs, totalMs: performance.now() - totalStarted });
+    const resolved = await resolvedSnapshot(snapshot, catalogue);
+    console.info("Menu Planning rolling-menu GET timings", { rollingStateMs, selectedWeekMs, catalogueMs, publicationStateMs, totalMs: performance.now() - totalStarted });
     return NextResponse.json({ snapshot: resolved, weeks, blockers: validateWeek(snapshot), publicationState: currentPublicationState, ...(publicationPreviewRequested ? { publicationPreview: publicationPreview(snapshot, previewDayId), dayBlockers: previewDayId ? publicationDayBlockers(snapshot, previewDayId, governedOplocIds) : [] } : {}) });
   } catch (error) {
     const status = error && typeof error === "object" && "status" in error && typeof (error as { status?: unknown }).status === "number" ? (error as { status: number }).status : 500;

@@ -9,7 +9,7 @@ import { renderPdfLocally } from "./local-pdf";
 import { resolveAllergenSnapshot } from "./allergen-resolution";
 import type { MenuItem } from "./domain";
 import { publishedAllergenMatrixHtml, claimEvent, createDomainEvent, eventIsDue, markEventDelivered, markEventFailed, type DurableDomainEvent, type FulfilmentRequirement } from "./fika-contracts";
-import { readPublicationState, updatePublicationState, withMenuPlanningTransaction } from "./operational-store";
+import { readPublicationState, readPublicationStateForWeek, updatePublicationState, withMenuPlanningTransaction } from "./operational-store";
 import { cwd } from "node:process";
 
 export const PUBLICATION_ATTESTATION = "I confirm that I have reviewed the allergen information shown for this day's published menu and that it reflects the approved information available at the time of publication.";
@@ -59,7 +59,7 @@ export async function listMenuPublications() { return (await read()).publication
 export async function getMenuPublication(publicationId: string) { const publication = (await read()).publications.find(value => value.publicationId === publicationId); return publication ? clone(publication) : undefined; }
 export type PublicationDayState = { currentPublicationDayId?: string; currentVersion?: number; currentContentHash?: string; hasCurrentPublication: boolean; hasUnpublishedChanges: boolean; legacy: boolean; status: "published" | "draft" | "legacy" };
 export async function publicationState(snapshot: RollingSnapshot): Promise<Record<string, PublicationDayState>> {
-  const publication = (await read()).publications.find(value => value.sourceWeekId === snapshot.week.id);
+  const publication = (await readPublicationStateForWeek<StoredPublications>(snapshot.week.id)).publications.find(value => value.sourceWeekId === snapshot.week.id);
   return Object.fromEntries(snapshot.days.slice(0, 5).map(day => {
     const current = publication?.days.filter(value => value.sourceDayId === day.id && value.status === "published").sort((a, b) => b.version - a.version)[0];
     const legacy = !current && !publication && snapshot.week.status === "published" && !snapshot.week.dayStatuses;

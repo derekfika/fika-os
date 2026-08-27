@@ -1,4 +1,4 @@
-import { listCanonicalMenuItems } from "./canonical-menu-repository";
+import { listCanonicalMenuItems, listCanonicalMenuItemsByIds } from "./canonical-menu-repository";
 import type { MenuItem } from "./domain";
 import { normaliseDishCategory } from "./dish-categories";
 import { attachCanonicalDishIds, listAllEntries } from "./rolling-menu";
@@ -65,6 +65,10 @@ export async function listCatalogueEntries(): Promise<CatalogueEntry[]> {
   // Archived records are retained for history and audit, but must not leak into
   // operational dish pickers or normal planner catalogue results.
   return items.filter(item => item.reviewStatus !== "archived").map(canonicalEntry).sort((a, b) => a.name.localeCompare(b.name));
+}
+
+export async function listCatalogueEntriesForIds(ids: string[]): Promise<CatalogueEntry[]> {
+  return (await listCanonicalMenuItemsByIds(ids)).filter(item => item.reviewStatus !== "archived").map(canonicalEntry).sort((a, b) => a.name.localeCompare(b.name));
 }
 
 /** Explicit maintenance reconciliation for imports and publication preparation. */

@@ -63,7 +63,10 @@ function parseDocument(database: DatabaseSync, key: "rolling" | "publications") 
 export type MenuPlanningOperationalStore = {
   readonly kind: "sqlite" | "firestore";
   readRollingState<T>(): Promise<T>;
+  listWeekSummaries<T>(): Promise<T[]>;
+  getWeekSnapshot<T>(weekId: string): Promise<T | undefined>;
   readPublicationState<T>(): Promise<T>;
+  readPublicationStateForWeek<T>(weekId: string): Promise<T>;
   runTransaction<T>(mutator: (state: TransactionState) => T | Promise<T>, expected?: { weekId?: string; weekVersion?: number }): Promise<T>;
   updateRollingState<T>(mutator: (rolling: T) => void | Promise<void>): Promise<T>;
   updatePublicationState<T>(mutator: (publications: T) => void | Promise<void>): Promise<T>;
@@ -90,7 +93,10 @@ function withMenuPlanningTransactionSync<T>(mutator: (state: TransactionState) =
 class SqliteOperationalStore implements MenuPlanningOperationalStore {
   readonly kind = "sqlite" as const;
   async readRollingState<T>() { const database = open(); try { return parseDocument(database, "rolling") as T; } finally { database.close(); } }
+  async listWeekSummaries<T>() { return (await this.readRollingState<{ weeks: T[] }>()).weeks; }
+  async getWeekSnapshot<T>(weekId: string) { const state = await this.readRollingState<{ weeks: Array<{ id: string; dayIds: string[]; entryIds: string[] }>; days: unknown[]; entries: unknown[] }>(); const week = state.weeks.find(candidate => candidate.id === weekId); return week ? { week, days: state.days.filter((day: any) => week.dayIds.includes(day.id)), entries: state.entries.filter((entry: any) => week.entryIds.includes(entry.id)) } as T : undefined; }
   async readPublicationState<T>() { const database = open(); try { return parseDocument(database, "publications") as T; } finally { database.close(); } }
+  async readPublicationStateForWeek<T>(weekId: string) { const state = await this.readPublicationState<{ version: number; publications: Array<{ sourceWeekId: string }>; events: unknown[] }>(); return { ...state, publications: state.publications.filter(publication => publication.sourceWeekId === weekId), events: [] } as T; }
   async runTransaction<T>(mutator: (state: TransactionState) => T | Promise<T>) {
     return withMenuPlanningTransactionSync(state => { const result = mutator(state); if (result instanceof Promise) throw new Error("SQLite operational mutators must remain synchronous internally."); return result; });
   }
@@ -102,7 +108,10 @@ class FirestoreOperationalStore implements MenuPlanningOperationalStore {
   readonly kind = "firestore" as const;
   constructor(private readonly repository = new MenuPlanningFirestoreRepository()) {}
   readRollingState<T>() { return this.repository.readRollingState() as Promise<T>; }
+  listWeekSummaries<T>() { return this.repository.listWeekSummaries() as Promise<T[]>; }
+  getWeekSnapshot<T>(weekId: string) { return this.repository.getWeekSnapshot(weekId) as Promise<T | undefined>; }
   readPublicationState<T>() { return this.repository.readPublicationState() as Promise<T>; }
+  readPublicationStateForWeek<T>(weekId: string) { return this.repository.readPublicationStateForWeek(weekId) as Promise<T>; }
   runTransaction<T>(mutator: (state: HostedTransactionState) => T | Promise<T>, expected?: { weekId?: string; weekVersion?: number }) { return this.repository.runTransaction(mutator, expected); }
   updateRollingState<T>(mutator: (rolling: T) => void | Promise<void>) { return this.runTransaction(async state => { await mutator(state.rolling as T); return state.rolling as T; }); }
   updatePublicationState<T>(mutator: (publications: T) => void | Promise<void>) { return this.runTransaction(async state => { await mutator(state.publications as T); return state.publications as T; }); }
@@ -120,7 +129,10 @@ export function getMenuPlanningOperationalStore(): MenuPlanningOperationalStore 
 }
 
 export function readRollingState<T>() { return getMenuPlanningOperationalStore().readRollingState<T>(); }
+export function listWeekSummaries<T>() { return getMenuPlanningOperationalStore().listWeekSummaries<T>(); }
+export function getWeekSnapshot<T>(weekId: string) { return getMenuPlanningOperationalStore().getWeekSnapshot<T>(weekId); }
 export function readPublicationState<T>() { return getMenuPlanningOperationalStore().readPublicationState<T>(); }
+export function readPublicationStateForWeek<T>(weekId: string) { return getMenuPlanningOperationalStore().readPublicationStateForWeek<T>(weekId); }
 
 export function withMenuPlanningTransaction<T>(mutator: (state: TransactionState) => T | Promise<T>, expected?: { weekId?: string; weekVersion?: number }) { return getMenuPlanningOperationalStore().runTransaction(mutator, expected); }
 

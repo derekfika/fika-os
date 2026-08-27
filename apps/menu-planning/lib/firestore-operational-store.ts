@@ -18,6 +18,23 @@ export class MenuPlanningFirestoreRepository {
   readonly db: Firestore;
   constructor(db = new Firestore({ projectId: process.env.FIREBASE_PROJECT_ID || process.env.GCLOUD_PROJECT })) { this.db = db; }
   async readRollingState() { return this.db.runTransaction(transaction => this.readRolling(transaction)); }
+  async listWeekSummaries() { const snapshot = await this.db.collection(MENU_PLANNING_COLLECTIONS.weeks).get(); return snapshot.docs.map(doc => doc.data() as RollingWeek); }
+  async getWeekSnapshot(weekId: string) {
+    const weekRef = this.db.collection(MENU_PLANNING_COLLECTIONS.weeks).doc(weekId);
+    const weekDoc = await weekRef.get();
+    if (!weekDoc.exists) return undefined;
+    const week = weekDoc.data() as RollingWeek;
+    const daySnapshot = await weekRef.collection("days").get();
+    const days = daySnapshot.docs.map(doc => doc.data() as RollingDay);
+    const entrySnapshots = await Promise.all(days.map(day => weekRef.collection("days").doc(day.id).collection("entries").get()));
+    return { week, days, entries: entrySnapshots.flatMap(snapshot => snapshot.docs.map(doc => doc.data() as RollingEntry)) };
+  }
+  async readPublicationStateForWeek(weekId: string) {
+    const snapshot = await this.db.collection(MENU_PLANNING_COLLECTIONS.publications).where("sourceWeekId", "==", weekId).get();
+    const publications: MenuPublication[] = [];
+    for (const doc of snapshot.docs) { const value = doc.data(); const days = await doc.ref.collection("days").get(); publications.push({ ...value, days: days.docs.map(day => day.data()) } as unknown as MenuPublication); }
+    return { version: 2, publications, events: [] as DurableDomainEvent[] };
+  }
   async readPublicationState() { return this.db.runTransaction(transaction => this.readPublications(transaction)); }
   async runTransaction<T>(mutator: (state: HostedTransactionState) => T | Promise<T>, expected?: { weekId?: string; weekVersion?: number }) {
     return this.db.runTransaction(async transaction => {
