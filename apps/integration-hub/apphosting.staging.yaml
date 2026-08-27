@@ -36,3 +36,7 @@ env:
     availability:
       - BUILD
       - RUNTIME
+  - variable: MNK_CANON_BRIDGE_TOKEN
+    secret: MNK_CANON_BRIDGE_TOKEN
+    availability:
+      - RUNTIME
