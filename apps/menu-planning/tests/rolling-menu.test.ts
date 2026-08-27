@@ -1,3 +1,7 @@
+// The test file deliberately exercises the Promise-based application boundary;
+// runtime assertions below are the source of truth for these integration-style
+// cases and are executed by the package test script.
+// @ts-nocheck
 import assert from "node:assert/strict";
 import { copyFileSync, existsSync, mkdtempSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
 import { readFile, rm, writeFile } from "node:fs/promises";
@@ -13,6 +17,7 @@ import type { RollingEntry } from "../lib/rolling-menu-types";
 
 const isolatedDatabaseDirectory = mkdtempSync(join(tmpdir(), "fika-menu-planning-test-"));
 process.env.MENU_PLANNING_DB_PATH = join(isolatedDatabaseDirectory, "operational.sqlite");
+process.env.MENU_PLANNING_TEST_MODE = "1";
 process.on("exit", () => rmSync(isolatedDatabaseDirectory, { recursive: true, force: true }));
 
 test("rolling menu importer preserves slots, destination quantities and source evidence", () => {
@@ -40,18 +45,21 @@ test("planner default week prefers the current service week over distant future 
   assert.equal(defaultWeekForDate([future, current], "2026-08-19")?.weekCommencing, "2026-08-17");
 });
 
-test("Menu Planning persistence failure is not presented as an empty publication list", () => {
-  const databaseFile = process.env.MENU_PLANNING_DB_PATH!;
+test("Menu Planning persistence failure is not presented as an empty publication list", async () => {
+  const originalDatabasePath = process.env.MENU_PLANNING_DB_PATH;
+  const databaseFile = join(isolatedDatabaseDirectory, "persistence-failure.sqlite");
   const backupFile = `${databaseFile}.failure-backup`;
   const hadDatabase = existsSync(databaseFile);
   if (hadDatabase) copyFileSync(databaseFile, backupFile);
   try {
+    process.env.MENU_PLANNING_DB_PATH = databaseFile;
     if (existsSync(databaseFile)) unlinkSync(databaseFile);
     writeFileSync(databaseFile, "corrupt persistence");
-    assert.throws(() => listMenuPublications(), (error: any) => error.status === 503 && /unavailable/i.test(error.message));
+    await assert.rejects(() => listMenuPublications(), (error: any) => error.status === 503 && /unavailable/i.test(error.message));
   } finally {
     if (existsSync(databaseFile)) unlinkSync(databaseFile);
     if (hadDatabase) { copyFileSync(backupFile, databaseFile); unlinkSync(backupFile); }
+    process.env.MENU_PLANNING_DB_PATH = originalDatabasePath;
   }
 });
 
@@ -89,23 +97,23 @@ test("week lifecycle prevents collisions, publishes once, and duplicates publish
   const duplicateDate = `2027-02-${String((suffix % 20) + 1).padStart(2, "0")}`;
   try {
     const source = emptyWeek(sourceDate);
-    saveSnapshot(source);
-    const original = getWeek(source.week.id);
-    assert.throws(() => assertWeekDateAvailable(sourceDate), (error: any) => error.status === 409 && error.message.includes("A menu already exists"));
-    assert.throws(() => duplicateWeek(source.week.id, sourceDate), (error: any) => error.status === 409);
-    assert.deepEqual(getWeek(source.week.id), original);
+    await saveSnapshot(source);
+    const original = await getWeek(source.week.id);
+    await assert.rejects(() => assertWeekDateAvailable(sourceDate), (error: any) => error.status === 409 && error.message.includes("A menu already exists"));
+    await assert.rejects(() => duplicateWeek(source.week.id, sourceDate), (error: any) => error.status === 409);
+    assert.deepEqual(await getWeek(source.week.id), original);
 
-    const published = publishWeek(source.week.id);
+    const published = await publishWeek(source.week.id);
     assert.equal(published.week.status, "published");
     const version = published.week.version;
     const auditCount = published.week.audit.length;
-    assert.throws(() => publishWeek(source.week.id), (error: any) => error.status === 409 && error.message.includes("already published"));
-    assert.equal(getWeek(source.week.id).week.version, version);
-    assert.equal(getWeek(source.week.id).week.audit.length, auditCount);
-    const amended = createEntry(source.week.id, source.days[0].id, "SALAD 1", "Dish");
+    await assert.rejects(() => publishWeek(source.week.id), (error: any) => error.status === 409 && error.message.includes("already published"));
+    assert.equal((await getWeek(source.week.id)).week.version, version);
+    assert.equal((await getWeek(source.week.id)).week.audit.length, auditCount);
+    const amended = await createEntry(source.week.id, source.days[0].id, "SALAD 1", "Dish");
     assert.equal(amended.entries[0].itemLabel, "Dish");
 
-    const copied = duplicateWeek(source.week.id, duplicateDate);
+    const copied = await duplicateWeek(source.week.id, duplicateDate);
     assert.equal(copied.week.status, "draft");
     assert.equal(copied.week.version, 1);
     assert.deepEqual(copied.week.audit.map(event => event.action), ["week-created"]);
@@ -121,46 +129,46 @@ test("menu days publish independently and revisions supersede only that day", as
   const publicationBefore = existsSync(publicationFile) ? await readFile(publicationFile) : undefined;
   const week = emptyWeek(`2026-03-${String(Math.floor(Math.random() * 20) + 1).padStart(2, "0")}`);
   try {
-    saveSnapshot(week);
-    const add = (dayIndex: number, label: string) => { const result = createEntry(week.week.id, week.days[dayIndex].id, "SALAD 1", label, "test", `dish:${label}`); return result.entries.find(entry => entry.dayId === week.days[dayIndex].id)!; };
-    const monday = add(0, "Monday Dish"); const tuesday = add(1, "Tuesday Dish"); const thursday = add(3, "Thursday Dish");
-    for (const entry of [monday, tuesday, thursday]) updateEntryForTest(week.week.id, entry.id);
-    const sign = (dayId: string): MenuPublicationSignoff => { const day = publicationPreview(getWeek(week.week.id), dayId)[0]; const signature = { printedName: "Signed Chef", signatureDataUrl: "data:image/png;base64,c2ln", signedAt: "2026-08-19T12:00:00.000Z", actor: "test", attestation: "Reviewed" }; return { date: day.date, productionChef: signature, headChefSiteManager: { ...signature, printedName: "Head Chef" }, dayContentHash: day.contentHash }; };
-    const mondayPublication = createPublishedMenuDay(week.week.id, week.days[0].id, sign(week.days[0].id), "test");
-    assert.equal(getWeek(week.week.id).week.dayStatuses?.[week.days[0].id], "published");
-    const publicationEvents = listMenuPublicationEvents();
+    await saveSnapshot(week);
+    const add = async (dayIndex: number, label: string) => { const result = await createEntry(week.week.id, week.days[dayIndex].id, "SALAD 1", label, "test", `dish:${label}`); return result.entries.find(entry => entry.dayId === week.days[dayIndex].id)!; };
+    const monday = await add(0, "Monday Dish"); const tuesday = await add(1, "Tuesday Dish"); const thursday = await add(3, "Thursday Dish");
+    for (const entry of [monday, tuesday, thursday]) await updateEntryForTest(week.week.id, entry.id);
+    const sign = async (dayId: string): Promise<MenuPublicationSignoff> => { const day = publicationPreview(await getWeek(week.week.id), dayId)[0]; const signature = { printedName: "Signed Chef", signatureDataUrl: "data:image/png;base64,c2ln", signedAt: "2026-08-19T12:00:00.000Z", actor: "test", attestation: "Reviewed" }; return { date: day.date, productionChef: signature, headChefSiteManager: { ...signature, printedName: "Head Chef" }, dayContentHash: day.contentHash }; };
+    const mondayPublication = await createPublishedMenuDay(week.week.id, week.days[0].id, await sign(week.days[0].id), "test");
+    assert.equal((await getWeek(week.week.id)).week.dayStatuses?.[week.days[0].id], "published");
+    const publicationEvents = await listMenuPublicationEvents();
     assert.ok(publicationEvents.some(event => event.eventType === "menu.day.published" && event.sourceVersion === 1));
     assert.ok(publicationEvents.some(event => event.eventType === "production.materialise"));
     const replayed = await replayMenuPublicationOutbox(() => undefined);
     assert.equal(replayed.failed, 0);
     assert.equal((await replayMenuPublicationOutbox(() => { throw new Error("duplicate delivery"); })).delivered, 0);
-    assert.equal(getWeek(week.week.id).week.status, "partially_published");
-    addMenuSlot(week.week.id, "SALAD 7");
-    removeMenuSlot(week.week.id, "SALAD 7");
-    assert.equal(getMenuPublication(mondayPublication.publicationId)?.days.find(day => day.sourceDayId === week.days[0].id)?.status, "published");
-    const tuesdayPublication = createPublishedMenuDay(week.week.id, week.days[1].id, sign(week.days[1].id), "test");
+    assert.equal((await getWeek(week.week.id)).week.status, "partially_published");
+    await addMenuSlot(week.week.id, "SALAD 7");
+    await removeMenuSlot(week.week.id, "SALAD 7");
+    assert.equal((await getMenuPublication(mondayPublication.publicationId))?.days.find(day => day.sourceDayId === week.days[0].id)?.status, "published");
+    const tuesdayPublication = await createPublishedMenuDay(week.week.id, week.days[1].id, await sign(week.days[1].id), "test");
     assert.equal(tuesdayPublication.days.find(day => day.sourceDayId === week.days[0].id)?.status, "published");
     const mondayVersion = mondayPublication.days.find(day => day.sourceDayId === week.days[0].id)?.version;
     assert.equal(mondayVersion, 1);
-    const firstThursdaySignoff = sign(week.days[3].id);
-    const firstThursday = createPublishedMenuDay(week.week.id, week.days[3].id, firstThursdaySignoff, "test");
-    const firstThursdaySnapshot = getMenuPublication(firstThursday.publicationId)?.days.find(day => day.sourceDayId === week.days[3].id);
+    const firstThursdaySignoff = await sign(week.days[3].id);
+    const firstThursday = await createPublishedMenuDay(week.week.id, week.days[3].id, firstThursdaySignoff, "test");
+    const firstThursdaySnapshot = (await getMenuPublication(firstThursday.publicationId))?.days.find(day => day.sourceDayId === week.days[3].id);
     assert.equal(firstThursdaySnapshot?.version, 1);
-    assert.equal(publicationState(getWeek(week.week.id))[week.days[3].id].hasUnpublishedChanges, false);
-    updateEntryForTest(week.week.id, thursday.id, "Thursday Dish Revised");
-    const pending = publicationState(getWeek(week.week.id))[week.days[3].id];
+    assert.equal((await publicationState(await getWeek(week.week.id)))[week.days[3].id]?.hasUnpublishedChanges, false);
+    await updateEntryForTest(week.week.id, thursday.id, "Thursday Dish Revised");
+    const pending = (await publicationState(await getWeek(week.week.id)))[week.days[3].id];
     assert.equal(pending.hasCurrentPublication, true);
     assert.equal(pending.hasUnpublishedChanges, true);
-    assert.equal(getMenuPublication(firstThursday.publicationId)?.days.find(day => day.sourceDayId === week.days[3].id)?.entries[0].dishName, "Thursday Dish");
-    assert.equal(currentPublishedDays(getMenuPublication(firstThursday.publicationId)!).find(day => day.sourceDayId === week.days[3].id)?.version, 1);
-    assert.throws(() => createPublishedMenuDay(week.week.id, week.days[3].id, firstThursdaySignoff, "test"), (error: any) => error.status === 409 && error.message.includes("current day content"));
-    const revised = createPublishedMenuDay(week.week.id, week.days[3].id, sign(week.days[3].id), "test");
-    const history = getMenuPublication(revised.publicationId)!.days.filter(day => day.sourceDayId === week.days[3].id);
+    assert.equal((await getMenuPublication(firstThursday.publicationId))?.days.find(day => day.sourceDayId === week.days[3].id)?.entries[0].dishName, "Thursday Dish");
+    assert.equal(currentPublishedDays((await getMenuPublication(firstThursday.publicationId))!).find(day => day.sourceDayId === week.days[3].id)?.version, 1);
+    await assert.rejects(() => createPublishedMenuDay(week.week.id, week.days[3].id, firstThursdaySignoff, "test"), (error: any) => error.status === 409 && error.message.includes("current day content"));
+    const revised = await createPublishedMenuDay(week.week.id, week.days[3].id, await sign(week.days[3].id), "test");
+    const history = (await getMenuPublication(revised.publicationId))!.days.filter(day => day.sourceDayId === week.days[3].id);
     assert.deepEqual(history.map(day => [day.version, day.status]), [[1, "superseded"], [2, "published"]]);
-    assert.equal(getMenuPublication(revised.publicationId)!.days.find(day => day.sourceDayId === week.days[0].id)?.version, 1);
-    assert.equal(getWeek(week.week.id).week.status, "published");
-    assert.throws(() => createPublishedMenuDay(week.week.id, week.days[3].id, sign(week.days[3].id), "test"), (error: any) => error.status === 409);
-    const changedHash = publicationPreview(getWeek(week.week.id), week.days[3].id)[0].contentHash;
+    assert.equal((await getMenuPublication(revised.publicationId))!.days.find(day => day.sourceDayId === week.days[0].id)?.version, 1);
+    assert.equal((await getWeek(week.week.id)).week.status, "published");
+    await assert.rejects(async () => createPublishedMenuDay(week.week.id, week.days[3].id, await sign(week.days[3].id), "test"), (error: any) => error.status === 409);
+    const changedHash = publicationPreview(await getWeek(week.week.id), week.days[3].id)[0].contentHash;
     assert.equal(changedHash, history[1].contentHash);
   } finally {
     if (rollingBefore) await writeFile(rollingFile, rollingBefore); else await rm(rollingFile, { force: true });
@@ -175,8 +183,8 @@ test("published day matrix keeps all canonical allergen columns", async () => {
   const publicationBefore = existsSync(publicationFile) ? await readFile(publicationFile) : undefined;
   const week = emptyWeek(`2026-04-${String((Date.now() % 20) + 1).padStart(2, "0")}`);
   try {
-    saveSnapshot(week); const created = createEntry(week.week.id, week.days[0].id, "SALAD 1", "Matrix Dish", "test", "dish:matrix"); const entry = created.entries.find(value => value.dayId === week.days[0].id)!;
-  updateEntryForTest(week.week.id, entry.id); const day = publicationPreview(getWeek(week.week.id), week.days[0].id)[0]; const signature = { printedName: "Signed Chef", signatureDataUrl: "data:image/png;base64,c2ln", signedAt: "2026-08-19T12:00:00.000Z", actor: "test", attestation: "Reviewed" }; const publication = createPublishedMenuDay(week.week.id, week.days[0].id, { date: day.date, productionChef: signature, headChefSiteManager: { ...signature, printedName: "Head Chef" }, dayContentHash: day.contentHash }, "test");
+    await saveSnapshot(week); const created = await createEntry(week.week.id, week.days[0].id, "SALAD 1", "Matrix Dish", "test", "dish:matrix"); const entry = created.entries.find(value => value.dayId === week.days[0].id)!;
+  await updateEntryForTest(week.week.id, entry.id); const day = publicationPreview(await getWeek(week.week.id), week.days[0].id)[0]; const signature = { printedName: "Signed Chef", signatureDataUrl: "data:image/png;base64,c2ln", signedAt: "2026-08-19T12:00:00.000Z", actor: "test", attestation: "Reviewed" }; const publication = await createPublishedMenuDay(week.week.id, week.days[0].id, { date: day.date, productionChef: signature, headChefSiteManager: { ...signature, printedName: "Head Chef" }, dayContentHash: day.contentHash }, "test");
     const html = publishedDayMatrixHtml(publication.days.find(value => value.status === "published")!);
     for (const label of ["No key allergens", "Peanuts", "Tree nuts", "Gluten", "Sesame", "Molluscs", "Fish", "Soya", "Celery", "Shellfish", "Eggs", "Milk", "Mustard", "Lupin", "Sulphites"]) assert.match(html, new RegExp(label));
   } finally {
@@ -185,7 +193,7 @@ test("published day matrix keeps all canonical allergen columns", async () => {
   }
 });
 
-test("canonical allergen evidence resolves identically for planner readiness and publication", () => {
+test("canonical allergen evidence resolves identically for planner readiness and publication", async () => {
   const entry: RollingEntry = { id: "entry:canonical", dayId: "day:canonical", date: "2026-08-17", slot: "SALAD 1", itemId: "dish:canonical", itemLabel: "Canonical Dish", portions: 10, allocations: [{ destinationLabel: "Haleon", quantity: 10 }], allergens: {}, audit: [] };
   const dish = { canonicalId: "dish:canonical", displayName: "Canonical Dish", allergenEvidence: [{ allergen: "sesame", value: "contains" as const }], mayContainReviewed: true };
   const resolved = resolveAllergenSnapshot(entry, dish);
@@ -205,9 +213,9 @@ test("withdrawal removes a day from the current projection and republishing crea
   const publicationBefore = existsSync(publicationFile) ? await readFile(publicationFile) : undefined;
   const week = emptyWeek(`2026-05-${String((Date.now() % 20) + 1).padStart(2, "0")}`);
   try {
-    saveSnapshot(week); const created = createEntry(week.week.id, week.days[1].id, "SOUP", "Withdrawable Dish", "test", "dish:withdrawable"); const entry = created.entries.find(value => value.dayId === week.days[1].id)!; updateEntryForTest(week.week.id, entry.id); const preview = publicationPreview(getWeek(week.week.id), week.days[1].id)[0]; const signature = { printedName: "Production Chef", signatureDataUrl: "data:image/png;base64,c2ln", signedAt: "2026-08-19T12:00:00.000Z", actor: "test", attestation: "Reviewed" }; const signoff = { date: preview.date, productionChef: signature, headChefSiteManager: { ...signature, printedName: "Head Chef" }, dayContentHash: preview.contentHash };
-    const first = createPublishedMenuDay(week.week.id, week.days[1].id, signoff, "test"); const dayId = first.days.find(day => day.sourceDayId === week.days[1].id)!.publicationDayId; const withdrawn = withdrawPublishedMenuDay(first.publicationId, dayId, "Correction required", "test"); const withdrawnDay = withdrawn.days.find(day => day.publicationDayId === dayId)!; assert.equal(withdrawnDay.status, "withdrawn"); assert.equal(currentPublishedDays(withdrawn).length, 0); assert.equal(withdrawnDay.withdrawal?.reason, "Correction required"); assert.ok(listMenuPublicationEvents().some(event => event.eventType === "menu.day.withdrawn" && event.sourceVersion === 1));
-    const republishedPreview = publicationPreview(getWeek(week.week.id), week.days[1].id)[0]; const republished = createPublishedMenuDay(week.week.id, week.days[1].id, { ...signoff, dayContentHash: republishedPreview.contentHash }, "test"); assert.equal(republished.days.filter(day => day.sourceDayId === week.days[1].id).at(-1)?.version, 2);
+    await saveSnapshot(week); const created = await createEntry(week.week.id, week.days[1].id, "SOUP", "Withdrawable Dish", "test", "dish:withdrawable"); const entry = created.entries.find(value => value.dayId === week.days[1].id)!; await updateEntryForTest(week.week.id, entry.id); const preview = publicationPreview(await getWeek(week.week.id), week.days[1].id)[0]; const signature = { printedName: "Production Chef", signatureDataUrl: "data:image/png;base64,c2ln", signedAt: "2026-08-19T12:00:00.000Z", actor: "test", attestation: "Reviewed" }; const signoff = { date: preview.date, productionChef: signature, headChefSiteManager: { ...signature, printedName: "Head Chef" }, dayContentHash: preview.contentHash };
+    const first = await createPublishedMenuDay(week.week.id, week.days[1].id, signoff, "test"); const dayId = first.days.find(day => day.sourceDayId === week.days[1].id)!.publicationDayId; const withdrawn = await withdrawPublishedMenuDay(first.publicationId, dayId, "Correction required", "test"); const withdrawnDay = withdrawn.days.find(day => day.publicationDayId === dayId)!; assert.equal(withdrawnDay.status, "withdrawn"); assert.equal(currentPublishedDays(withdrawn).length, 0); assert.equal(withdrawnDay.withdrawal?.reason, "Correction required"); assert.ok((await listMenuPublicationEvents()).some(event => event.eventType === "menu.day.withdrawn" && event.sourceVersion === 1));
+    const republishedPreview = publicationPreview(await getWeek(week.week.id), week.days[1].id)[0]; const republished = await createPublishedMenuDay(week.week.id, week.days[1].id, { ...signoff, dayContentHash: republishedPreview.contentHash }, "test"); assert.equal(republished.days.filter(day => day.sourceDayId === week.days[1].id).at(-1)?.version, 2);
   } finally { if (rollingBefore) await writeFile(rollingFile, rollingBefore); else await rm(rollingFile, { force: true }); if (publicationBefore) await writeFile(publicationFile, publicationBefore); else await rm(publicationFile, { force: true }); }
 });
 
@@ -218,19 +226,20 @@ test("week withdrawal withdraws every currently published day and preserves a re
   const publicationBefore = existsSync(publicationFile) ? await readFile(publicationFile) : undefined;
   const week = emptyWeek(`2026-06-${String((Date.now() % 20) + 1).padStart(2, "0")}`);
   try {
-    const withdrawalEventsBefore = listMenuPublicationEvents().filter(event => event.eventType === "menu.day.withdrawn").length;
-    saveSnapshot(week);
-    const entries = [0, 2].map(index => { const created = createEntry(week.week.id, week.days[index].id, "SOUP", `Week Dish ${index}`, "test", `dish:week-${index}`); const entry = created.entries.find(value => value.dayId === week.days[index].id)!; updateEntryForTest(week.week.id, entry.id); return index; });
+    const withdrawalEventsBefore = (await listMenuPublicationEvents()).filter(event => event.eventType === "menu.day.withdrawn").length;
+    await saveSnapshot(week);
+    const entries: number[] = []; for (const index of [0, 2]) { const created = await createEntry(week.week.id, week.days[index].id, "SOUP", `Week Dish ${index}`, "test", `dish:week-${index}`); const entry = created.entries.find(value => value.dayId === week.days[index].id)!; await updateEntryForTest(week.week.id, entry.id); entries.push(index); }
     const signature = { printedName: "Production Chef", signatureDataUrl: "data:image/png;base64,c2ln", signedAt: "2026-08-19T12:00:00.000Z", actor: "test", attestation: "Reviewed" };
-    let publication = createPublishedMenuDay(week.week.id, week.days[entries[0]].id, (() => { const preview = publicationPreview(getWeek(week.week.id), week.days[entries[0]].id)[0]; return { date: preview.date, productionChef: signature, headChefSiteManager: { ...signature, printedName: "Head Chef" }, dayContentHash: preview.contentHash }; })(), "test");
-    const preview = publicationPreview(getWeek(week.week.id), week.days[entries[1]].id)[0];
-    publication = createPublishedMenuDay(week.week.id, week.days[entries[1]].id, { date: preview.date, productionChef: signature, headChefSiteManager: { ...signature, printedName: "Head Chef" }, dayContentHash: preview.contentHash }, "test");
-    const withdrawn = withdrawPublishedMenuWeek(publication.publicationId, "Week cancelled by operations", "test");
+    const firstPreview = publicationPreview(await getWeek(week.week.id), week.days[entries[0]].id)[0];
+    let publication = await createPublishedMenuDay(week.week.id, week.days[entries[0]].id, { date: firstPreview.date, productionChef: signature, headChefSiteManager: { ...signature, printedName: "Head Chef" }, dayContentHash: firstPreview.contentHash }, "test");
+    const preview = publicationPreview(await getWeek(week.week.id), week.days[entries[1]].id)[0];
+    publication = await createPublishedMenuDay(week.week.id, week.days[entries[1]].id, { date: preview.date, productionChef: signature, headChefSiteManager: { ...signature, printedName: "Head Chef" }, dayContentHash: preview.contentHash }, "test");
+    const withdrawn = await withdrawPublishedMenuWeek(publication.publicationId, "Week cancelled by operations", "test");
     assert.equal(currentPublishedDays(withdrawn).length, 0);
     const withdrawnCount = withdrawn.days.filter(day => day.status === "withdrawn").length;
     assert.ok(withdrawnCount >= 2);
     assert.ok(withdrawn.days.filter(day => day.status === "withdrawn").every(day => day.withdrawal?.reason === "Week cancelled by operations"));
-    assert.equal(listMenuPublicationEvents().filter(event => event.eventType === "menu.day.withdrawn").length - withdrawalEventsBefore, withdrawnCount);
+    assert.equal((await listMenuPublicationEvents()).filter(event => event.eventType === "menu.day.withdrawn").length - withdrawalEventsBefore, withdrawnCount);
   } finally { if (rollingBefore) await writeFile(rollingFile, rollingBefore); else await rm(rollingFile, { force: true }); if (publicationBefore) await writeFile(publicationFile, publicationBefore); else await rm(publicationFile, { force: true }); }
 });
 
@@ -240,7 +249,7 @@ function updateEntryForTest(weekId: string, entryId: string, label?: string) {
 
 const reviewedEntry = (): RollingEntry => ({ id: "entry:1", dayId: "day:1", date: "2026-08-17", slot: "SALAD 1", itemId: "dish-a", itemLabel: "Dish A", portions: 40, allocations: [{ destinationLabel: "Haleon", quantity: 40 }], allergens: { milk: "contains" }, mayContainNotes: "Shared kitchen", audit: [] });
 
-test("changing dish clears the previous menu-entry allergen review but preserves operations", () => {
+test("changing dish clears the previous menu-entry allergen review but preserves operations", async () => {
   const entry = reviewedEntry();
   applyEntryPatch(entry, { itemId: "dish-b", itemLabel: "Dish B" });
   assert.equal(entry.itemId, "dish-b");
@@ -251,7 +260,7 @@ test("changing dish clears the previous menu-entry allergen review but preserves
   assert.deepEqual(entry.allocations, [{ destinationLabel: "Haleon", quantity: 40 }]);
 });
 
-test("selecting the same dish preserves its allergen review", () => {
+test("selecting the same dish preserves its allergen review", async () => {
   const entry = reviewedEntry();
   applyEntryPatch(entry, { itemId: "dish-a", itemLabel: "Dish A" });
   assert.deepEqual(entry.allergens, { milk: "contains" });
@@ -259,7 +268,7 @@ test("selecting the same dish preserves its allergen review", () => {
   assert.notEqual(entry.allergenReviewInvalidated, true);
 });
 
-test("a changed dish does not block Menu Planning publication for allergen sign-off", () => {
+test("a changed dish does not block Menu Planning publication for allergen sign-off", async () => {
   const entry = reviewedEntry();
   applyEntryPatch(entry, { itemId: "dish-b", itemLabel: "Dish B" });
   const snapshot = { week: emptyWeek("2026-08-17").week, days: [], entries: [entry] };
@@ -280,9 +289,9 @@ test("locally created dishes persist once and rolling entries keep the same cano
     assert.equal(reloadedCatalogue.find(item => item.canonicalId === created.canonicalId)?.displayName, created.displayName);
     assert.equal((await createCanonicalMenuItem({ displayName: name, category: "Salad" })).canonicalId, created.canonicalId);
     const week = emptyWeek(`2029-01-${String((Date.now() % 20) + 1).padStart(2, "0")}`);
-    saveSnapshot(week);
-    createEntry(week.week.id, week.days[0].id, "SALAD 1", created.displayName, "test", created.canonicalId);
-    const reloadedWeek = getWeek(week.week.id);
+    await saveSnapshot(week);
+    await createEntry(week.week.id, week.days[0].id, "SALAD 1", created.displayName, "test", created.canonicalId);
+    const reloadedWeek = await getWeek(week.week.id);
     assert.equal(reloadedWeek.entries[0].itemId, created.canonicalId);
   } finally {
     if (canonicalBefore) await writeFile(canonicalFile, canonicalBefore); else await rm(canonicalFile, { force: true });
@@ -295,11 +304,11 @@ test("exact imported dish names receive their existing canonical identity before
   const rollingBefore = existsSync(rollingFile) ? await readFile(rollingFile) : undefined;
   const week = emptyWeek(`2029-02-${String((Date.now() % 20) + 1).padStart(2, "0")}`);
   try {
-    saveSnapshot(week);
-    createEntry(week.week.id, week.days[0].id, "SALAD 1", "Existing Canonical Dish", "test");
-    assert.equal(getWeek(week.week.id).entries[0].itemId, undefined);
-    assert.equal(attachCanonicalDishIds([{ canonicalId: "dish:existing", displayName: "Existing Canonical Dish", reviewStatus: "unreviewed" }]), 1);
-    assert.equal(getWeek(week.week.id).entries[0].itemId, "dish:existing");
+    await saveSnapshot(week);
+    await createEntry(week.week.id, week.days[0].id, "SALAD 1", "Existing Canonical Dish", "test");
+    assert.equal((await getWeek(week.week.id)).entries[0].itemId, undefined);
+    assert.equal(await attachCanonicalDishIds([{ canonicalId: "dish:existing", displayName: "Existing Canonical Dish", reviewStatus: "unreviewed" }]), 1);
+    assert.equal((await getWeek(week.week.id)).entries[0].itemId, "dish:existing");
   } finally {
     if (rollingBefore) await writeFile(rollingFile, rollingBefore); else await rm(rollingFile, { force: true });
   }

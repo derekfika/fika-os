@@ -10,7 +10,7 @@ import { resolveAllergenSnapshot } from "./allergen-resolution";
 import type { MenuItem } from "./domain";
 import { publishedAllergenMatrixHtml, claimEvent, createDomainEvent, eventIsDue, markEventDelivered, markEventFailed, type DurableDomainEvent, type FulfilmentRequirement } from "./fika-contracts";
 import { readPublicationState, updatePublicationState, withMenuPlanningTransaction } from "./operational-store";
-import { appDataPath } from "./fika-contracts";
+import { cwd } from "node:process";
 
 export const PUBLICATION_ATTESTATION = "I confirm that I have reviewed the allergen information shown for this day's published menu and that it reflects the approved information available at the time of publication.";
 export type MenuPublicationSignature = { printedName: string; signatureDataUrl?: string; signedAt: string; actor: string; attestation: string };
@@ -23,12 +23,14 @@ type StoredPublications = { version: 2; publications: MenuPublication[]; events:
 const now = () => new Date().toISOString();
 const stable = (value: unknown): string => { if (Array.isArray(value)) return `[${value.map(stable).join(",")}]`; if (value && typeof value === "object") return `{${Object.keys(value as Record<string, unknown>).sort().map(key => `${JSON.stringify(key)}:${stable((value as Record<string, unknown>)[key])}`).join(",")}}`; return JSON.stringify(value); };
 export const contentHash = (value: unknown) => createHash("sha256").update(stable(value)).digest("hex");
-const read = (): StoredPublications => { const value = readPublicationState<Partial<StoredPublications>>(); if (!Array.isArray(value.publications)) throw Object.assign(new Error("Menu publication data is unavailable; no publication list was loaded."), { status: 503 }); return { version: 2, publications: value.publications, events: Array.isArray(value.events) ? value.events : [] }; };
-const write = (value: StoredPublications) => { updatePublicationState<StoredPublications>(current => { Object.assign(current, structuredClone(value)); }); };
+const read = async (): Promise<StoredPublications> => { const value = await readPublicationState<Partial<StoredPublications>>(); if (!Array.isArray(value.publications)) throw Object.assign(new Error("Menu publication data is unavailable; no publication list was loaded."), { status: 503 }); return { version: 2, publications: value.publications, events: Array.isArray(value.events) ? value.events : [] }; };
+const write = async (value: StoredPublications) => { await updatePublicationState<StoredPublications>(current => { Object.assign(current, structuredClone(value)); }); };
 const clone = <T>(value: T): T => structuredClone(value);
 export const publishedDayMatrixHtml = publishedAllergenMatrixHtml;
 const populatedWeekdays = (snapshot: RollingSnapshot) => snapshot.days.slice(0, 5).filter(day => snapshot.entries.some(entry => entry.dayId === day.id && entry.itemLabel.trim()));
-const canonicalItems = (): MenuItem[] => { try { return (JSON.parse(readFileSync(appDataPath("menu-planning", "menu-planning", "canonical-menu-items.json"), "utf8")) as { items?: MenuItem[] }).items || []; } catch { return []; } };
+// Publication previews are pure transformations. The local catalogue read is
+// explicitly scoped to this app so NFT never treats it as a monorepo root.
+const canonicalItems = (): MenuItem[] => { try { return (JSON.parse(readFileSync(join(/*turbopackIgnore: true*/ cwd(), "local-data", "menu-planning", "canonical-menu-items.json"), "utf8")) as { items?: MenuItem[] }).items || []; } catch { return []; } };
 const publishedEntry = (entry: RollingEntry, canonicalDish?: MenuItem): PublishedMenuEntry => { const resolved = resolveAllergenSnapshot(entry, canonicalDish); return { sourceEntryId: entry.id, slot: entry.slot, ...(canonicalDish?.canonicalId ? { canonicalDishId: canonicalDish.canonicalId } : {}), dishName: entry.itemLabel, portions: entry.portions, allocations: entry.allocations.map(allocation => ({ destinationId: allocation.destinationId, destinationLabel: allocation.destinationLabel, quantity: allocation.quantity })), allergens: clone(resolved.allergens), mayContainNotes: entry.mayContainNotes || resolved.mayContainNotes }; };
 export function buildPublishedDay(snapshot: RollingSnapshot, day: RollingDay) { const items = canonicalItems(); const entries = snapshot.entries.filter(entry => entry.dayId === day.id && entry.itemLabel.trim()).map(entry => { const label = entry.itemLabel.trim().toLocaleLowerCase(); const canonicalDish = items.find(item => item.displayName.trim().toLocaleLowerCase() === label) || items.find(item => item.canonicalId === entry.itemId && item.displayName.trim().toLocaleLowerCase() === label); return publishedEntry(entry, canonicalDish); }); const stableDay = { sourceDayId: day.id, date: day.date, dayName: day.dayName, entries }; return { ...stableDay, contentHash: contentHash(stableDay) }; }
 export function publicationPreview(snapshot: RollingSnapshot, dayId?: string) { return (dayId ? snapshot.days.filter(day => day.id === dayId) : populatedWeekdays(snapshot)).map(day => buildPublishedDay(snapshot, day)); }
@@ -53,11 +55,11 @@ function appendPublicationEvents(stored: StoredPublications, publication: MenuPu
     addEvent(createDomainEvent({ eventType: "production.materialise", sourceAggregateId: `${publication.publicationId}:${day.sourceDayId}:${destinationOplocId}`, sourceVersion: day.version, occurredAt, payload: { sourceDomain: "menu-planning", sourceEntityId: day.sourceDayId, sourcePublicationDayId: day.publicationDayId, sourceVersion: day.version, sourceContentHash: day.contentHash, destinationOplocId, destinationLabel: day.entries.flatMap(entry => entry.allocations).find(allocation => allocation.destinationId === destinationOplocId)?.destinationLabel || destinationOplocId, serviceDate: day.date, status: active ? action === "withdrawn" ? "withdrawn" : action === "amended" ? "amended" : "published" : "withdrawn", lines: active ? day.entries.flatMap(entry => entry.allocations.filter(allocation => allocation.destinationId === destinationOplocId).map(allocation => ({ sourceLineId: entry.sourceEntryId, canonicalItemId: entry.canonicalDishId, itemName: entry.dishName, quantity: allocation.quantity, unit: "portion", workstream: "delivered_in" as const, approvedAllergenSnapshot: { allergens: entry.allergens, mayContainNotes: entry.mayContainNotes, sourcePublicationDayId: day.publicationDayId, sourceVersion: day.version, sourceContentHash: day.contentHash } }))) : [{ sourceLineId: `${day.sourceDayId}:withdrawn`, itemName: "Withdrawn Delivered-In menu", quantity: 0, unit: "portion", workstream: "delivered_in" as const }] }, causationId: `${publication.publicationId}:${day.sourceDayId}:v${day.version}` }));
   }
 }
-export function listMenuPublications() { return read().publications.map(clone); }
-export function getMenuPublication(publicationId: string) { const publication = read().publications.find(value => value.publicationId === publicationId); return publication ? clone(publication) : undefined; }
+export async function listMenuPublications() { return (await read()).publications.map(clone); }
+export async function getMenuPublication(publicationId: string) { const publication = (await read()).publications.find(value => value.publicationId === publicationId); return publication ? clone(publication) : undefined; }
 export type PublicationDayState = { currentPublicationDayId?: string; currentVersion?: number; currentContentHash?: string; hasCurrentPublication: boolean; hasUnpublishedChanges: boolean; legacy: boolean; status: "published" | "draft" | "legacy" };
-export function publicationState(snapshot: RollingSnapshot): Record<string, PublicationDayState> {
-  const publication = read().publications.find(value => value.sourceWeekId === snapshot.week.id);
+export async function publicationState(snapshot: RollingSnapshot): Promise<Record<string, PublicationDayState>> {
+  const publication = (await read()).publications.find(value => value.sourceWeekId === snapshot.week.id);
   return Object.fromEntries(snapshot.days.slice(0, 5).map(day => {
     const current = publication?.days.filter(value => value.sourceDayId === day.id && value.status === "published").sort((a, b) => b.version - a.version)[0];
     const legacy = !current && !publication && snapshot.week.status === "published" && !snapshot.week.dayStatuses;
@@ -66,8 +68,8 @@ export function publicationState(snapshot: RollingSnapshot): Record<string, Publ
     return [day.id, state];
   }));
 }
-export function createPublishedMenuDay(weekId: string, dayId: string, signoff: MenuPublicationSignoff, actor = "local-menu-planner", governedOplocIds?: Set<string>) {
-  const expectedWeekVersion = getWeek(weekId).week.version;
+export async function createPublishedMenuDay(weekId: string, dayId: string, signoff: MenuPublicationSignoff, actor = "local-menu-planner", governedOplocIds?: Set<string>) {
+  const expectedWeekVersion = (await getWeek(weekId)).week.version;
   return withMenuPlanningTransaction(state => {
     const rolling = state.rolling as unknown as RollingMenuStored;
     const snapshot = snapshotFromStored(rolling, weekId);
@@ -101,12 +103,12 @@ export function createPublishedMenuDay(weekId: string, dayId: string, signoff: M
   });
 }
 export function currentPublishedDays(publication: MenuPublication) { return publication.days.filter(day => day.status === "published"); }
-export function listMenuPublicationEvents() { return read().events.map(clone); }
+export async function listMenuPublicationEvents() { return (await read()).events.map(clone); }
 export async function replayMenuPublicationOutbox(consumer: (event: DurableDomainEvent) => Promise<void> | void, at = new Date()) {
   let delivered = 0; let failed = 0;
   while (true) {
     const claimId = `menu-replay:${randomUUID()}`;
-    const claimed = withMenuPlanningTransaction(state => {
+    const claimed = await withMenuPlanningTransaction(state => {
       const stored = state.publications as unknown as StoredPublications; stored.events ||= [];
       const sorted = stored.events.slice().sort((a, b) => a.sourceAggregateId.localeCompare(b.sourceAggregateId) || a.sourceVersion - b.sourceVersion || a.eventId.localeCompare(b.eventId));
       const event = sorted.find(candidate => eventIsDue(candidate, at) && !sorted.some(previous => previous.sourceAggregateId === candidate.sourceAggregateId && previous.sourceVersion < candidate.sourceVersion && previous.delivery.status !== "delivered"));
@@ -116,17 +118,17 @@ export async function replayMenuPublicationOutbox(consumer: (event: DurableDomai
     if (!claimed) break;
     try {
       await consumer(claimed);
-      withMenuPlanningTransaction(state => { const stored = state.publications as unknown as StoredPublications; const index = stored.events.findIndex(event => event.eventId === claimed.eventId && event.delivery.claimId === claimId); if (index >= 0) stored.events[index] = markEventDelivered(stored.events[index], new Date().toISOString()); });
+      await withMenuPlanningTransaction(state => { const stored = state.publications as unknown as StoredPublications; const index = stored.events.findIndex(event => event.eventId === claimed.eventId && event.delivery.claimId === claimId); if (index >= 0) stored.events[index] = markEventDelivered(stored.events[index], new Date().toISOString()); });
       delivered += 1;
     } catch (error) {
-      withMenuPlanningTransaction(state => { const stored = state.publications as unknown as StoredPublications; const index = stored.events.findIndex(event => event.eventId === claimed.eventId && event.delivery.claimId === claimId); if (index >= 0) stored.events[index] = markEventFailed(stored.events[index], error, new Date().toISOString()); });
+      await withMenuPlanningTransaction(state => { const stored = state.publications as unknown as StoredPublications; const index = stored.events.findIndex(event => event.eventId === claimed.eventId && event.delivery.claimId === claimId); if (index >= 0) stored.events[index] = markEventFailed(stored.events[index], error, new Date().toISOString()); });
       failed += 1;
     }
   }
   return { delivered, failed };
 }
-export function publicationSourceWeeks() { return listWeeks().filter(week => week.status === "published" || week.status === "partially_published"); }
-export function withdrawPublishedMenuDay(publicationId: string, publicationDayId: string, reason: string, actor = "local-menu-planner") {
+export async function publicationSourceWeeks() { return (await listWeeks()).filter(week => week.status === "published" || week.status === "partially_published"); }
+export async function withdrawPublishedMenuDay(publicationId: string, publicationDayId: string, reason: string, actor = "local-menu-planner") {
   if (!reason.trim()) throw Object.assign(new Error("A withdrawal reason is required."), { status: 422 });
   return withMenuPlanningTransaction(state => {
     const stored = state.publications as unknown as StoredPublications;
@@ -139,18 +141,18 @@ export function withdrawPublishedMenuDay(publicationId: string, publicationDayId
     return clone(publication);
   });
 }
-export function withdrawPublishedMenuWeek(publicationId: string, reason: string, actor = "local-menu-planner") {
+export async function withdrawPublishedMenuWeek(publicationId: string, reason: string, actor = "local-menu-planner") {
   if (!reason.trim()) throw Object.assign(new Error("A withdrawal reason is required."), { status: 422 });
-  const publication = getMenuPublication(publicationId);
+  const publication = await getMenuPublication(publicationId);
   if (!publication) throw Object.assign(new Error("Menu publication was not found."), { status: 404 });
   const publishedDays = publication.days.filter(day => day.status === "published");
   if (!publishedDays.length) throw conflict("This menu week has no current published days to withdraw.");
   let updated = publication;
-  for (const day of publishedDays) updated = withdrawPublishedMenuDay(publicationId, day.publicationDayId, reason, actor);
+  for (const day of publishedDays) updated = await withdrawPublishedMenuDay(publicationId, day.publicationDayId, reason, actor);
   return updated;
 }
 export async function archivePublishedDayMatrix(publicationId: string, publicationDayId: string) {
-  const publication = getMenuPublication(publicationId); const day = publication?.days.find(value => value.publicationDayId === publicationDayId); if (!publication || !day) throw new Error("Published menu day was not found.");
+  const publication = await getMenuPublication(publicationId); const day = publication?.days.find(value => value.publicationDayId === publicationDayId); if (!publication || !day) throw new Error("Published menu day was not found.");
   const html = publishedDayMatrixHtml(day); const pdfFileName = `Delivered-In_${publication.weekCommencing}_${day.dayName}_v${day.version}_Allergen-Matrix.pdf`.replace(/[^A-Za-z0-9._-]+/g, "_"); const base = (process.env.HOSPITALITY_BOOKING_BASE_URL || "http://localhost:3300").replace(/\/$/, ""); const archivedAt = now();
   let archive: DriveArchive = { status: "failed", account: process.env.MENU_PUBLICATION_DRIVE_ACCOUNT_LABEL || "Configured Google Drive account", fileName: pdfFileName, pdfFileName, pdfStatus: "unavailable", archivedAt };
   let pdfBase64: string | undefined;
@@ -160,6 +162,6 @@ export async function archivePublishedDayMatrix(publicationId: string, publicati
     const body = await response.json() as { saved?: { fileId?: string; driveUrl?: string } | null };
     archive = { ...archive, status: response.ok && body.saved ? "saved" : response.status === 503 ? "not_configured" : "failed", pdfStatus: response.ok && body.saved ? "saved" : response.status === 503 ? "not_configured" : "failed", ...(body.saved?.fileId ? { fileId: body.saved.fileId, pdfFileId: body.saved.fileId } : {}), ...(body.saved?.driveUrl ? { driveUrl: body.saved.driveUrl, pdfDriveUrl: body.saved.driveUrl } : {}) };
   } catch { /* Publication remains available; the PDF archive status is retained for retry/attention. */ }
-  const stored = read(); const target = stored.publications.find(value => value.publicationId === publicationId)?.days.find(value => value.publicationDayId === publicationDayId); if (target) { target.driveArchive = archive; write(stored); }
+  const stored = await read(); const target = stored.publications.find(value => value.publicationId === publicationId)?.days.find(value => value.publicationDayId === publicationDayId); if (target) { target.driveArchive = archive; await write(stored); }
   return archive;
 }

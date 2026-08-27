@@ -63,11 +63,11 @@ export class MenuPlanningFirestoreRepository {
     for (const publication of after.publications) {
       const previous = beforePubs.get(publication.publicationId);
       const root = this.db.collection(MENU_PLANNING_COLLECTIONS.publications).doc(publication.publicationId);
-      transaction.set(root, omit(publication as unknown as Record<string, unknown>, "days"));
+      if (!previous || digest(omit(previous as unknown as Record<string, unknown>, "days")) !== digest(omit(publication as unknown as Record<string, unknown>, "days"))) transaction.set(root, omit(publication as unknown as Record<string, unknown>, "days"));
       if (previous) for (const oldDay of previous.days) if (!publication.days.some(day => day.publicationDayId === oldDay.publicationDayId)) throw new ExpectedVersionConflict(`Publication day ${oldDay.publicationDayId} cannot be deleted.`);
       for (const day of publication.days) { const old = previous?.days.find(value => value.publicationDayId === day.publicationDayId); if (old && digest(old) !== digest(day)) throw new ExpectedVersionConflict(`Immutable publication day ${day.publicationDayId} differs from stored state.`); if (!old) transaction.set(root.collection("days").doc(day.publicationDayId), { ...day, publicationId: publication.publicationId }); }
     }
     const beforeEvents = new Map(before.events.map(value => [value.eventId, value]));
-    for (const event of after.events) { const old = beforeEvents.get(event.eventId); if (old && digest(old) !== digest(event) && old.delivery.status === "delivered" && event.delivery.status !== "delivered") throw new ExpectedVersionConflict(`Delivered event ${event.eventId} cannot be rewound.`); transaction.set(this.db.collection(MENU_PLANNING_COLLECTIONS.events).doc(event.eventId), event); transaction.set(this.db.collection(MENU_PLANNING_COLLECTIONS.outbox).doc(event.eventId), event); }
+    for (const event of after.events) { const old = beforeEvents.get(event.eventId); if (old && digest(old) !== digest(event) && old.delivery.status === "delivered" && event.delivery.status !== "delivered") throw new ExpectedVersionConflict(`Delivered event ${event.eventId} cannot be rewound.`); if (!old || digest(old) !== digest(event)) { transaction.set(this.db.collection(MENU_PLANNING_COLLECTIONS.events).doc(event.eventId), event); transaction.set(this.db.collection(MENU_PLANNING_COLLECTIONS.outbox).doc(event.eventId), event); } }
   }
 }

@@ -7,10 +7,16 @@ import { normaliseDishName } from "./text";
 import type { RollingEntry } from "./rolling-menu-types";
 import { appDataPath } from "./fika-contracts";
 import { assertOperationalStoreAvailable } from "./hosted-runtime";
+import { Firestore } from "@google-cloud/firestore";
 
 const filePath = appDataPath("menu-planning", "menu-planning", "canonical-menu-items.json");
 
 async function readItems(): Promise<MenuItem[]> {
+  if (["staging", "production"].includes(process.env.FIKA_RUNTIME_MODE || "")) {
+    if (!process.env.FIREBASE_PROJECT_ID && !process.env.GCLOUD_PROJECT) throw Object.assign(new Error("Hosted Menu Planning catalogue is not configured."), { status: 503 });
+    const snapshot = await new Firestore({ projectId: process.env.FIREBASE_PROJECT_ID || process.env.GCLOUD_PROJECT }).collection("fikaMenuPlanningCatalogue").where("kind", "==", "dish").get();
+    return snapshot.docs.map(document => (document.data().record || document.data()) as MenuItem);
+  }
   assertOperationalStoreAvailable();
   try {
     const value = JSON.parse(await readFile(filePath, "utf8")) as { items?: MenuItem[] };
@@ -22,6 +28,7 @@ async function readItems(): Promise<MenuItem[]> {
 }
 
 async function writeItems(items: MenuItem[]) {
+  if (["staging", "production"].includes(process.env.FIKA_RUNTIME_MODE || "")) throw Object.assign(new Error("Hosted Menu Planning catalogue is read-only until its mutation API is enabled."), { status: 503 });
   assertOperationalStoreAvailable();
   await mkdir(path.dirname(filePath), { recursive: true });
   const normalised = items.map(item => ({ ...item, displayName: normaliseDishName(item.displayName) }));

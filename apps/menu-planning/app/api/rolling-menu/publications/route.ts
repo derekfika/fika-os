@@ -7,11 +7,11 @@ import { replayMenuPublicationOutbox } from "@/lib/menu-publication";
 export async function GET(request: NextRequest) {
   const publicationId = request.nextUrl.searchParams.get("publicationId");
   if (publicationId) {
-    const publication = getMenuPublication(publicationId);
+    const publication = await getMenuPublication(publicationId);
     if (!publication) return NextResponse.json({ error: { message: "Menu publication was not found." } }, { status: 404 });
     return NextResponse.json({ publication });
   }
-  return NextResponse.json({ publications: listMenuPublications() });
+  return NextResponse.json({ publications: await listMenuPublications() });
 }
 
 export async function POST(request: NextRequest) {
@@ -24,15 +24,15 @@ export async function POST(request: NextRequest) {
     }
     if (!body.publicationId) return NextResponse.json({ error: { message: "Publication is required." } }, { status: 422 });
     if (body.action === "withdraw-week") {
-      const publication = withdrawPublishedMenuWeek(body.publicationId, body.reason || "", actor.uid);
+      const publication = await withdrawPublishedMenuWeek(body.publicationId, body.reason || "", actor.uid);
       void replayMenuPublicationOutbox(forwardProductionMaterialisationEvent).catch(() => undefined);
       return NextResponse.json({ publication });
     }
     if (!body.publicationDayId) return NextResponse.json({ error: { message: "Publication day is required." } }, { status: 422 });
-    if (body.action === "withdraw") { const publication = withdrawPublishedMenuDay(body.publicationId, body.publicationDayId, body.reason || "", actor.uid); void replayMenuPublicationOutbox(forwardProductionMaterialisationEvent).catch(() => undefined); return NextResponse.json({ publication }); }
+    if (body.action === "withdraw") { const publication = await withdrawPublishedMenuDay(body.publicationId, body.publicationDayId, body.reason || "", actor.uid); void replayMenuPublicationOutbox(forwardProductionMaterialisationEvent).catch(() => undefined); return NextResponse.json({ publication }); }
     if (body.action === "retry-archive") {
       const archive = await archivePublishedDayMatrix(body.publicationId, body.publicationDayId);
-      return NextResponse.json({ publication: getMenuPublication(body.publicationId), archive });
+      return NextResponse.json({ publication: await getMenuPublication(body.publicationId), archive });
     }
     return NextResponse.json({ error: { message: "Unknown publication command." } }, { status: 400 });
   } catch (error) { const status = error && typeof error === "object" && "status" in error ? Number((error as { status?: unknown }).status) || 400 : 400; return NextResponse.json({ error: { message: error instanceof Error ? error.message : "Publication command failed." } }, { status }); }

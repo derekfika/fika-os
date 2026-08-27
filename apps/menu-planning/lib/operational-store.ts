@@ -1,15 +1,15 @@
 import { DatabaseSync } from "node:sqlite";
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { appDataPath } from "./fika-contracts";
 import { assertOperationalStoreAvailable } from "./hosted-runtime";
+import { MenuPlanningFirestoreRepository, type HostedTransactionState } from "./firestore-operational-store";
 
 type DocumentMap = Record<string, unknown>;
 export type TransactionState = { rolling: DocumentMap; publications: DocumentMap };
 
-const databaseFile = () => process.env.MENU_PLANNING_DB_PATH || appDataPath("menu-planning", "menu-planning", process.argv.includes("--test") ? "operational.test.sqlite" : "operational.sqlite");
-const rollingJson = appDataPath("menu-planning", "menu-planning", "rolling-menu-weeks.json");
-const publicationsJson = appDataPath("menu-planning", "menu-planning", "menu-publications.json");
+const databaseFile = () => process.env.MENU_PLANNING_DB_PATH || join(/*turbopackIgnore: true*/ process.cwd(), "local-data", "menu-planning", process.argv.includes("--test") ? "operational.test.sqlite" : "operational.sqlite");
+const rollingJson = join(/*turbopackIgnore: true*/ process.cwd(), "local-data", "menu-planning", "rolling-menu-weeks.json");
+const publicationsJson = join(/*turbopackIgnore: true*/ process.cwd(), "local-data", "menu-planning", "menu-publications.json");
 const unavailable = (message: string, cause?: unknown) => Object.assign(new Error(message, cause ? { cause } : undefined), { status: 503 });
 
 function readSeed(file: string, fallback: DocumentMap, label: string) {
@@ -34,8 +34,10 @@ function open() {
     const count = Number((database.prepare("SELECT COUNT(*) AS count FROM operational_documents").get() as { count: number }).count);
     if (count === 0) {
       const now = new Date().toISOString();
-      const rolling = readSeed(rollingJson, { version: 1, weeks: [], days: [], entries: [] }, "Rolling menu data");
-      const publications = readSeed(publicationsJson, { version: 2, publications: [], events: [] }, "Menu publication data");
+      // Tests always opt into a fresh temporary database and must never seed
+      // from the mutable local operational files.
+      const rolling = process.env.MENU_PLANNING_TEST_MODE === "1" ? { version: 1, weeks: [], days: [], entries: [] } : readSeed(rollingJson, { version: 1, weeks: [], days: [], entries: [] }, "Rolling menu data");
+      const publications = process.env.MENU_PLANNING_TEST_MODE === "1" ? { version: 2, publications: [], events: [] } : readSeed(publicationsJson, { version: 2, publications: [], events: [] }, "Menu publication data");
       database.exec("BEGIN IMMEDIATE");
       const insert = database.prepare("INSERT INTO operational_documents (document_key, document_json, updated_at) VALUES (?, ?, ?)");
       try { insert.run("rolling", JSON.stringify(rolling), now); insert.run("publications", JSON.stringify(publications), now); database.exec("COMMIT"); } catch (cause) { try { database.exec("ROLLBACK"); } catch { /* preserve original persistence error */ } throw cause; }
@@ -58,10 +60,15 @@ function parseDocument(database: DatabaseSync, key: "rolling" | "publications") 
   }
 }
 
-export function readRollingState<T>() { const database = open(); try { return parseDocument(database, "rolling") as T; } finally { database.close(); } }
-export function readPublicationState<T>() { const database = open(); try { return parseDocument(database, "publications") as T; } finally { database.close(); } }
+export type MenuPlanningOperationalStore = {
+  readRollingState<T>(): Promise<T>;
+  readPublicationState<T>(): Promise<T>;
+  runTransaction<T>(mutator: (state: TransactionState) => T | Promise<T>, expected?: { weekId?: string; weekVersion?: number }): Promise<T>;
+  updateRollingState<T>(mutator: (rolling: T) => void | Promise<void>): Promise<T>;
+  updatePublicationState<T>(mutator: (publications: T) => void | Promise<void>): Promise<T>;
+};
 
-export function withMenuPlanningTransaction<T>(mutator: (state: TransactionState) => T) {
+function withMenuPlanningTransactionSync<T>(mutator: (state: TransactionState) => T) {
   const database = open();
   database.exec("BEGIN IMMEDIATE");
   try {
@@ -74,20 +81,49 @@ export function withMenuPlanningTransaction<T>(mutator: (state: TransactionState
     database.exec("COMMIT");
     return result;
   } catch (cause) {
-    try { database.exec("ROLLBACK"); } catch { /* preserve the original persistence error */ }
+    try { database.exec("ROLLBACK"); } catch { /* preserve original persistence error */ }
     throw cause;
-  } finally {
-    database.close();
+  } finally { database.close(); }
+}
+
+class SqliteOperationalStore implements MenuPlanningOperationalStore {
+  async readRollingState<T>() { const database = open(); try { return parseDocument(database, "rolling") as T; } finally { database.close(); } }
+  async readPublicationState<T>() { const database = open(); try { return parseDocument(database, "publications") as T; } finally { database.close(); } }
+  async runTransaction<T>(mutator: (state: TransactionState) => T | Promise<T>) {
+    return withMenuPlanningTransactionSync(state => { const result = mutator(state); if (result instanceof Promise) throw new Error("SQLite operational mutators must remain synchronous internally."); return result; });
   }
+  async updateRollingState<T>(mutator: (rolling: T) => void | Promise<void>) { return this.runTransaction(state => { const result = mutator(state.rolling as T); if (result instanceof Promise) throw new Error("SQLite operational mutators must remain synchronous internally."); return state.rolling as T; }); }
+  async updatePublicationState<T>(mutator: (publications: T) => void | Promise<void>) { return this.runTransaction(state => { const result = mutator(state.publications as T); if (result instanceof Promise) throw new Error("SQLite operational mutators must remain synchronous internally."); return state.publications as T; }); }
 }
 
-export function updateRollingState<T>(mutator: (rolling: T) => void) {
-  return withMenuPlanningTransaction(state => { mutator(state.rolling as T); return state.rolling as T; });
+class FirestoreOperationalStore implements MenuPlanningOperationalStore {
+  constructor(private readonly repository = new MenuPlanningFirestoreRepository()) {}
+  readRollingState<T>() { return this.repository.readRollingState() as Promise<T>; }
+  readPublicationState<T>() { return this.repository.readPublicationState() as Promise<T>; }
+  runTransaction<T>(mutator: (state: HostedTransactionState) => T | Promise<T>, expected?: { weekId?: string; weekVersion?: number }) { return this.repository.runTransaction(mutator, expected); }
+  updateRollingState<T>(mutator: (rolling: T) => void | Promise<void>) { return this.runTransaction(async state => { await mutator(state.rolling as T); return state.rolling as T; }); }
+  updatePublicationState<T>(mutator: (publications: T) => void | Promise<void>) { return this.runTransaction(async state => { await mutator(state.publications as T); return state.publications as T; }); }
 }
 
-export function updatePublicationState<T>(mutator: (publications: T) => void) {
-  return withMenuPlanningTransaction(state => { mutator(state.publications as T); return state.publications as T; });
+let selectedStore: MenuPlanningOperationalStore | undefined;
+export function getMenuPlanningOperationalStore(): MenuPlanningOperationalStore {
+  if (selectedStore) return selectedStore;
+  const mode = process.env.FIKA_RUNTIME_MODE || "local";
+  if (["staging", "production"].includes(mode)) {
+    if (!process.env.FIREBASE_PROJECT_ID && !process.env.GCLOUD_PROJECT) throw Object.assign(new Error("Menu Planning Firestore persistence is not configured; hosted mode never falls back to local data."), { status: 503, code: "MENU_OPERATIONAL_STORE_NOT_CONFIGURED" });
+    selectedStore = new FirestoreOperationalStore();
+  } else selectedStore = new SqliteOperationalStore();
+  return selectedStore;
 }
+
+export function readRollingState<T>() { return getMenuPlanningOperationalStore().readRollingState<T>(); }
+export function readPublicationState<T>() { return getMenuPlanningOperationalStore().readPublicationState<T>(); }
+
+export function withMenuPlanningTransaction<T>(mutator: (state: TransactionState) => T | Promise<T>, expected?: { weekId?: string; weekVersion?: number }) { return getMenuPlanningOperationalStore().runTransaction(mutator, expected); }
+
+export function updateRollingState<T>(mutator: (rolling: T) => void | Promise<void>) { return getMenuPlanningOperationalStore().updateRollingState(mutator); }
+
+export function updatePublicationState<T>(mutator: (publications: T) => void | Promise<void>) { return getMenuPlanningOperationalStore().updatePublicationState(mutator); }
 
 // The hosted adapter is async because Firestore transactions are async. It is
 // exported from the operational-store boundary so Phase 2B can switch the

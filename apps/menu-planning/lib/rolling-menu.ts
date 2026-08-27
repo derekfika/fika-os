@@ -12,8 +12,8 @@ export interface Stored { version: 1; weeks: RollingWeek[]; days: RollingDay[]; 
 const now = () => new Date().toISOString();
 const operationalDate = () => { const parts = Object.fromEntries(new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/London", year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(new Date()).filter(part => part.type !== "literal").map(part => [part.type, part.value])); return `${parts.year}-${parts.month}-${parts.day}`; };
 const slug = (value: string) => value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
-const read = (): Stored => readRollingState<Stored>();
-const write = (value: Stored) => { updateRollingState<Stored>(current => { Object.assign(current, structuredClone(value)); }); };
+const read = async (): Promise<Stored> => readRollingState<Stored>();
+const write = async (value: Stored) => { await updateRollingState<Stored>(current => { Object.assign(current, structuredClone(value)); }); };
 const dateFromName = (name: string) => { const m = name.match(/(\d{2})[._-](\d{2})[._-](\d{2,4})/); if (!m) return undefined; const y = m[3].length === 2 ? `20${m[3]}` : m[3]; return `${y}-${m[2]}-${m[1]}`; };
 const addDays = (iso: string, days: number) => { const d = new Date(`${iso}T00:00:00Z`); d.setUTCDate(d.getUTCDate() + days); return d.toISOString().slice(0, 10); };
 const dayName = (date: string) => new Date(`${date}T00:00:00Z`).toLocaleDateString("en-GB", { weekday: "long", timeZone: "UTC" });
@@ -27,10 +27,10 @@ const normaliseDestination = (allocation: RollingAllocation): RollingAllocation 
   return { ...allocation, destinationId: undefined };
 };
 
-export function repointDestinationId(oldId: string, newId: string, newLabel: string, actor = "oploc-identity-recovery") {
+export async function repointDestinationId(oldId: string, newId: string, newLabel: string, actor = "oploc-identity-recovery") {
   let updated = 0;
-  for (const week of listWeeks()) {
-    const snapshot = getWeek(week.id);
+  for (const week of await listWeeks()) {
+    const snapshot = await getWeek(week.id);
     let changed = false;
     for (const entry of snapshot.entries) {
       const allocations = entry.allocations.map(allocation => allocation.destinationId === oldId ? { ...allocation, destinationId: newId, destinationLabel: newLabel } : allocation);
@@ -41,14 +41,14 @@ export function repointDestinationId(oldId: string, newId: string, newLabel: str
         changed = true;
       }
     }
-    if (changed) { snapshot.week.version += 1; saveSnapshot(snapshot); }
+    if (changed) { snapshot.week.version += 1; await saveSnapshot(snapshot); }
   }
   return updated;
 }
-export function migrateSavedDestinations() {
-  const db = read(); let changed = 0; let governed = 0; let oneOff = 0;
+export async function migrateSavedDestinations() {
+  const db = await read(); let changed = 0; let governed = 0; let oneOff = 0;
   db.entries = db.entries.map(entry => ({ ...entry, allocations: entry.allocations.map(allocation => { const next = normaliseDestination(allocation); if (next.destinationId) governed += 1; else oneOff += 1; if (next.destinationId !== allocation.destinationId || next.destinationLabel !== allocation.destinationLabel) changed += 1; return next; }) }));
-  if (changed) write(db);
+  if (changed) await write(db);
   return { changed, governed, oneOff, entries: db.entries.length };
 }
 
@@ -58,11 +58,11 @@ export function emptyWeek(weekCommencing: string, actor = "local-menu-planner"):
   return { week, days, entries: [] };
 }
 const weekConflict = (weekCommencing: string) => Object.assign(new Error(`A menu already exists for WC ${new Date(`${weekCommencing}T00:00:00Z`).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" })}.`), { status: 409 });
-export function assertWeekDateAvailable(weekCommencing: string) {
-  if (listWeeks().some(week => week.weekCommencing === weekCommencing)) throw weekConflict(weekCommencing);
+export async function assertWeekDateAvailable(weekCommencing: string) {
+  if ((await listWeeks()).some(week => week.weekCommencing === weekCommencing)) throw weekConflict(weekCommencing);
 }
-export function listWeeks(): RollingWeek[] { return read().weeks.sort((a, b) => a.weekCommencing.localeCompare(b.weekCommencing)); }
-export function listAllEntries(): RollingEntry[] { return structuredClone(read().entries); }
+export async function listWeeks(): Promise<RollingWeek[]> { return (await read()).weeks.sort((a, b) => a.weekCommencing.localeCompare(b.weekCommencing)); }
+export async function listAllEntries(): Promise<RollingEntry[]> { return structuredClone((await read()).entries); }
 export function defaultWeekForDate(weeks: RollingWeek[], date = operationalDate()) {
   const ordered = weeks.slice().sort((a, b) => a.weekCommencing.localeCompare(b.weekCommencing));
   const current = ordered.find(week => week.weekCommencing <= date && week.weekEnding >= date);
@@ -81,9 +81,9 @@ export function replaceSnapshotInStored(db: Stored, snapshot: RollingSnapshot) {
   const wi = db.weeks.findIndex(w => w.id === snapshot.week.id); if (wi >= 0) db.weeks[wi] = structuredClone(snapshot.week); else db.weeks.push(structuredClone(snapshot.week));
   db.days.push(...snapshot.days.map(value => structuredClone(value))); db.entries.push(...snapshot.entries.map(value => structuredClone(value)));
 }
-export function getWeek(weekId?: string): RollingSnapshot { return snapshotFromStored(read(), weekId); }
-export function addOneOffDestination(weekId: string, dayId: string, label: string, address: string, actor = "local-menu-planner") {
-  const snapshot = getWeek(weekId); const day = snapshot.days.find(item => item.id === dayId);
+export async function getWeek(weekId?: string): Promise<RollingSnapshot> { return snapshotFromStored(await read(), weekId); }
+export async function addOneOffDestination(weekId: string, dayId: string, label: string, address: string, actor = "local-menu-planner") {
+  const snapshot = await getWeek(weekId); const day = snapshot.days.find(item => item.id === dayId);
   const cleanLabel = label.trim(); const cleanAddress = address.trim();
   if (!day) throw Object.assign(new Error("Menu day was not found."), { status: 404 });
   if (!cleanLabel) throw Object.assign(new Error("A one-off location name is required."), { status: 422 });
@@ -95,26 +95,26 @@ export function addOneOffDestination(weekId: string, dayId: string, label: strin
 }
 // Working edits must not downgrade or mutate immutable publication state.
 const markDayDraft = (_snapshot: RollingSnapshot, _dayId: string) => {};
-export function saveSnapshot(snapshot: RollingSnapshot) {
-  updateRollingState<Stored>(db => {
+export async function saveSnapshot(snapshot: RollingSnapshot) {
+  await updateRollingState<Stored>(db => {
     replaceSnapshotInStored(db, snapshot);
   });
-  return getWeek(snapshot.week.id);
+  return snapshot;
 }
-export function createEntry(weekId: string, dayId: string, slot: string, itemLabel: string, actor = "local-menu-planner", itemId?: string) { const snapshot = getWeek(weekId); const day = snapshot.days.find(d => d.id === dayId); if (!day) throw Object.assign(new Error("Menu day was not found."), { status: 404 }); if (snapshot.entries.some(e => e.dayId === dayId && e.slot === slot)) throw Object.assign(new Error("That menu slot already has a dish."), { status: 409 }); markDayDraft(snapshot, dayId); const id = `${snapshot.week.id}:entry:${dayId}:${slot.toLowerCase().replace(/[^a-z0-9]+/g, "-")}:${Date.now()}`; const entry: RollingEntry = { id, dayId, date: day.date, slot, itemId, itemLabel: normaliseDishName(itemLabel), portions: 0, allocations: [], allergens: {}, audit: [{ action: "entry-created", at: now(), by: actor }] }; snapshot.entries.push(entry); day.entryIds.push(id); snapshot.week.entryIds.push(id); snapshot.week.version += 1; return saveSnapshot(snapshot); }
-export function addMenuSlot(weekId: string, slot: string, actor = "local-menu-planner") { const snapshot = getWeek(weekId); const clean = slot.trim().toUpperCase().replace(/\s+/g, " "); if (!clean) throw Object.assign(new Error("A menu slot name is required."), { status: 422 }); if (!/^(SALAD|EXTRAS) \d+$/.test(clean) && !/^[A-Z][A-Z0-9 /&-]{1,39}$/.test(clean)) throw Object.assign(new Error("Use a governed slot such as Salad, Side, or a named category."), { status: 422 }); if (ROLLING_SLOTS.includes(clean as RollingSlot) || snapshot.week.customSlots?.includes(clean)) throw Object.assign(new Error("That menu slot already exists."), { status: 409 }); snapshot.week.customSlots = [...(snapshot.week.customSlots || []), clean]; snapshot.week.version += 1; return saveSnapshot(snapshot); }
-export function removeMenuSlot(weekId: string, slot: string, actor = "local-menu-planner") { const snapshot = getWeek(weekId); const clean = slot.trim().toUpperCase().replace(/\s+/g, " "); if (snapshot.entries.some(entry => entry.slot === clean && entry.itemLabel.trim())) throw Object.assign(new Error("A menu slot with a dish on any day cannot be removed."), { status: 409 }); if (!ROLLING_SLOTS.includes(clean as RollingSlot) && !snapshot.week.customSlots?.includes(clean)) throw Object.assign(new Error("That menu slot does not exist."), { status: 404 }); snapshot.week.customSlots = (snapshot.week.customSlots || []).filter(value => value !== clean); snapshot.week.removedSlots = Array.from(new Set([...(snapshot.week.removedSlots || []), clean])); snapshot.week.version += 1; snapshot.week.audit.push({ action: "menu-slot-removed", at: now(), by: actor }); return saveSnapshot(snapshot); }
-export function cleanDuplicateEntries(weekId: string, actor = "local-menu-planner") { const snapshot = getWeek(weekId); const groups = new Map<string, RollingEntry[]>(); for (const entry of snapshot.entries) { const key = `${entry.dayId}|${entry.slot}|${entry.itemLabel.trim().toLocaleLowerCase()}`; groups.set(key, [...(groups.get(key) || []), entry]); } const remove = new Set<string>(); for (const entries of groups.values()) { if (entries.length < 2) continue; const ranked = entries.slice().sort((a, b) => (Number(b.portions > 0) * 4 + b.allocations.length * 2 + Object.values(b.allergens).filter(value => value !== "clear").length) - (Number(a.portions > 0) * 4 + a.allocations.length * 2 + Object.values(a.allergens).filter(value => value !== "clear").length)); for (const duplicate of ranked.slice(1)) remove.add(duplicate.id); } if (!remove.size) return { snapshot, removed: 0 }; snapshot.entries = snapshot.entries.filter(entry => !remove.has(entry.id)); snapshot.days.forEach(day => { day.entryIds = snapshot.entries.filter(entry => entry.dayId === day.id).map(entry => entry.id); }); snapshot.week.entryIds = snapshot.entries.map(entry => entry.id); snapshot.week.version += 1; snapshot.week.audit.push({ action: "duplicate-menu-entries-cleaned", at: now(), by: actor }); return { snapshot: saveSnapshot(snapshot), removed: remove.size }; }
-export function repointDishIds(mapping: Record<string, string>, aliases: Record<string, string> = {}, actor = "automatic-dish-normaliser") { let updated = 0; for (const week of listWeeks()) { const snapshot = getWeek(week.id); let changed = false; for (const entry of snapshot.entries) { const next = (entry.itemId && mapping[entry.itemId]) || aliases[entry.itemLabel.toLocaleLowerCase()]; if (next) { if (entry.itemId && mapping[entry.itemId]) entry.itemId = next; if (aliases[entry.itemLabel.toLocaleLowerCase()]) entry.itemLabel = next; entry.audit.push({ action: "dish-reference-repointed", at: now(), by: actor }); updated += 1; changed = true; } } if (changed) { snapshot.week.version += 1; saveSnapshot(snapshot); } } return updated; }
-export function attachCanonicalDishIds(items: Array<{ canonicalId: string; displayName: string; reviewStatus?: string }>, actor = "rolling-menu-migration") { let updated = 0; const active = items.filter(item => item.reviewStatus !== "archived"); for (const week of listWeeks()) { const snapshot = getWeek(week.id); let changed = false; for (const entry of snapshot.entries) { if (entry.itemId) continue; const match = active.find(item => item.displayName.trim().toLocaleLowerCase() === entry.itemLabel.trim().toLocaleLowerCase()); if (!match) continue; entry.itemId = match.canonicalId; entry.audit.push({ action: "canonical-dish-identity-attached", at: now(), by: actor }); updated += 1; changed = true; } if (changed) { snapshot.week.version += 1; saveSnapshot(snapshot); } } return updated; }
+export async function createEntry(weekId: string, dayId: string, slot: string, itemLabel: string, actor = "local-menu-planner", itemId?: string) { const snapshot = await getWeek(weekId); const day = snapshot.days.find(d => d.id === dayId); if (!day) throw Object.assign(new Error("Menu day was not found."), { status: 404 }); if (snapshot.entries.some(e => e.dayId === dayId && e.slot === slot)) throw Object.assign(new Error("That menu slot already has a dish."), { status: 409 }); markDayDraft(snapshot, dayId); const id = `${snapshot.week.id}:entry:${dayId}:${slot.toLowerCase().replace(/[^a-z0-9]+/g, "-")}:${Date.now()}`; const entry: RollingEntry = { id, dayId, date: day.date, slot, itemId, itemLabel: normaliseDishName(itemLabel), portions: 0, allocations: [], allergens: {}, audit: [{ action: "entry-created", at: now(), by: actor }] }; snapshot.entries.push(entry); day.entryIds.push(id); snapshot.week.entryIds.push(id); snapshot.week.version += 1; return saveSnapshot(snapshot); }
+export async function addMenuSlot(weekId: string, slot: string, actor = "local-menu-planner") { const snapshot = await getWeek(weekId); const clean = slot.trim().toUpperCase().replace(/\s+/g, " "); if (!clean) throw Object.assign(new Error("A menu slot name is required."), { status: 422 }); if (!/^(SALAD|EXTRAS) \d+$/.test(clean) && !/^[A-Z][A-Z0-9 /&-]{1,39}$/.test(clean)) throw Object.assign(new Error("Use a governed slot such as Salad, Side, or a named category."), { status: 422 }); if (ROLLING_SLOTS.includes(clean as RollingSlot) || snapshot.week.customSlots?.includes(clean)) throw Object.assign(new Error("That menu slot already exists."), { status: 409 }); snapshot.week.customSlots = [...(snapshot.week.customSlots || []), clean]; snapshot.week.version += 1; return saveSnapshot(snapshot); }
+export async function removeMenuSlot(weekId: string, slot: string, actor = "local-menu-planner") { const snapshot = await getWeek(weekId); const clean = slot.trim().toUpperCase().replace(/\s+/g, " "); if (snapshot.entries.some(entry => entry.slot === clean && entry.itemLabel.trim())) throw Object.assign(new Error("A menu slot with a dish on any day cannot be removed."), { status: 409 }); if (!ROLLING_SLOTS.includes(clean as RollingSlot) && !snapshot.week.customSlots?.includes(clean)) throw Object.assign(new Error("That menu slot does not exist."), { status: 404 }); snapshot.week.customSlots = (snapshot.week.customSlots || []).filter(value => value !== clean); snapshot.week.removedSlots = Array.from(new Set([...(snapshot.week.removedSlots || []), clean])); snapshot.week.version += 1; snapshot.week.audit.push({ action: "menu-slot-removed", at: now(), by: actor }); return saveSnapshot(snapshot); }
+export async function cleanDuplicateEntries(weekId: string, actor = "local-menu-planner") { const snapshot = await getWeek(weekId); const groups = new Map<string, RollingEntry[]>(); for (const entry of snapshot.entries) { const key = `${entry.dayId}|${entry.slot}|${entry.itemLabel.trim().toLocaleLowerCase()}`; groups.set(key, [...(groups.get(key) || []), entry]); } const remove = new Set<string>(); for (const entries of groups.values()) { if (entries.length < 2) continue; const ranked = entries.slice().sort((a, b) => (Number(b.portions > 0) * 4 + b.allocations.length * 2 + Object.values(b.allergens).filter(value => value !== "clear").length) - (Number(a.portions > 0) * 4 + a.allocations.length * 2 + Object.values(a.allergens).filter(value => value !== "clear").length)); for (const duplicate of ranked.slice(1)) remove.add(duplicate.id); } if (!remove.size) return { snapshot, removed: 0 }; snapshot.entries = snapshot.entries.filter(entry => !remove.has(entry.id)); snapshot.days.forEach(day => { day.entryIds = snapshot.entries.filter(entry => entry.dayId === day.id).map(entry => entry.id); }); snapshot.week.entryIds = snapshot.entries.map(entry => entry.id); snapshot.week.version += 1; snapshot.week.audit.push({ action: "duplicate-menu-entries-cleaned", at: now(), by: actor }); return { snapshot: await saveSnapshot(snapshot), removed: remove.size }; }
+export async function repointDishIds(mapping: Record<string, string>, aliases: Record<string, string> = {}, actor = "automatic-dish-normaliser") { let updated = 0; for (const week of await listWeeks()) { const snapshot = await getWeek(week.id); let changed = false; for (const entry of snapshot.entries) { const next = (entry.itemId && mapping[entry.itemId]) || aliases[entry.itemLabel.toLocaleLowerCase()]; if (next) { if (entry.itemId && mapping[entry.itemId]) entry.itemId = next; if (aliases[entry.itemLabel.toLocaleLowerCase()]) entry.itemLabel = next; entry.audit.push({ action: "dish-reference-repointed", at: now(), by: actor }); updated += 1; changed = true; } } if (changed) { snapshot.week.version += 1; await saveSnapshot(snapshot); } } return updated; }
+export async function attachCanonicalDishIds(items: Array<{ canonicalId: string; displayName: string; reviewStatus?: string }>, actor = "rolling-menu-migration") { let updated = 0; const active = items.filter(item => item.reviewStatus !== "archived"); for (const week of await listWeeks()) { const snapshot = await getWeek(week.id); let changed = false; for (const entry of snapshot.entries) { if (entry.itemId) continue; const match = active.find(item => item.displayName.trim().toLocaleLowerCase() === entry.itemLabel.trim().toLocaleLowerCase()); if (!match) continue; entry.itemId = match.canonicalId; entry.audit.push({ action: "canonical-dish-identity-attached", at: now(), by: actor }); updated += 1; changed = true; } if (changed) { snapshot.week.version += 1; await saveSnapshot(snapshot); } } return updated; }
 export function applyEntryPatch(entry: RollingEntry, patch: Partial<Pick<RollingEntry, "itemId" | "itemLabel" | "portions" | "slot" | "allocations" | "allergens" | "mayContainNotes" | "allergenReviewInvalidated">>) { const nextItemId = patch.itemId !== undefined ? patch.itemId || "" : entry.itemId || ""; const nextLabel = patch.itemLabel !== undefined ? normaliseDishName(patch.itemLabel).toLocaleLowerCase() : entry.itemLabel.trim().toLocaleLowerCase(); const dishChanged = nextItemId !== (entry.itemId || "") || nextLabel !== entry.itemLabel.trim().toLocaleLowerCase(); const restoringReview = patch.allergenReviewInvalidated === false && patch.allergens !== undefined; Object.assign(entry, { ...patch, ...(patch.itemLabel !== undefined ? { itemLabel: normaliseDishName(patch.itemLabel) } : {}), ...(dishChanged && !restoringReview ? { allergens: {}, mayContainNotes: "", allergenReviewInvalidated: true } : {}) }); return dishChanged; }
-export function updateEntry(weekId: string, entryId: string, patch: Partial<Pick<RollingEntry, "itemId" | "itemLabel" | "portions" | "slot" | "allocations" | "allergens" | "mayContainNotes" | "allergenReviewInvalidated">>, actor = "local-menu-planner") { const snapshot = getWeek(weekId); const entry = snapshot.entries.find(e => e.id === entryId); if (!entry) throw Object.assign(new Error("Menu entry was not found."), { status: 404 }); markDayDraft(snapshot, entry.dayId); applyEntryPatch(entry, patch); if (patch.allocations !== undefined) entry.allocations = patch.allocations.map(normaliseDestination); if (patch.allergens !== undefined) entry.allergenReviewInvalidated = false; entry.audit.push({ action: "entry-amended", at: now(), by: actor }); snapshot.week.version += 1; return saveSnapshot(snapshot); }
-export function publishWeek(weekId: string, actor = "local-menu-planner") { const snapshot = getWeek(weekId); if (snapshot.week.status === "published") throw Object.assign(new Error("This menu week is already published."), { status: 409 }); snapshot.week.status = "published"; snapshot.week.dayStatuses = undefined; snapshot.week.version += 1; snapshot.week.audit.push({ action: "week-published", at: now(), by: actor }); return saveSnapshot(snapshot); }
-export function duplicateWeek(weekId: string, weekCommencing: string, actor = "local-menu-planner") { assertWeekDateAvailable(weekCommencing); const source = getWeek(weekId); const next = emptyWeek(weekCommencing, actor); const dayMap = new Map(source.days.map((d, i) => [d.id, next.days[i]?.id])); next.entries = source.entries.map(e => ({ ...structuredClone(e), id: `${next.week.id}:entry:${e.id.split(":entry:").pop()}`, dayId: dayMap.get(e.dayId) || next.days[0].id, date: addDays(weekCommencing, source.days.findIndex(d => d.id === e.dayId)), audit: [{ action: "entry-copied", at: now(), by: actor }] })); next.days.forEach(d => d.entryIds = next.entries.filter(e => e.dayId === d.id).map(e => e.id)); next.week.entryIds = next.entries.map(e => e.id); next.week.sourceFiles = source.week.sourceFiles.slice(); next.week.customSlots = source.week.customSlots?.slice() || []; next.week.removedSlots = source.week.removedSlots?.slice() || []; return saveSnapshot(next); }
-export function copyWeekIntoWeek(sourceWeekId: string, targetWeekId: string, actor = "local-menu-planner") {
+export async function updateEntry(weekId: string, entryId: string, patch: Partial<Pick<RollingEntry, "itemId" | "itemLabel" | "portions" | "slot" | "allocations" | "allergens" | "mayContainNotes" | "allergenReviewInvalidated">>, actor = "local-menu-planner") { const snapshot = await getWeek(weekId); const entry = snapshot.entries.find(e => e.id === entryId); if (!entry) throw Object.assign(new Error("Menu entry was not found."), { status: 404 }); markDayDraft(snapshot, entry.dayId); applyEntryPatch(entry, patch); if (patch.allocations !== undefined) entry.allocations = patch.allocations.map(normaliseDestination); if (patch.allergens !== undefined) entry.allergenReviewInvalidated = false; entry.audit.push({ action: "entry-amended", at: now(), by: actor }); snapshot.week.version += 1; return saveSnapshot(snapshot); }
+export async function publishWeek(weekId: string, actor = "local-menu-planner") { const snapshot = await getWeek(weekId); if (snapshot.week.status === "published") throw Object.assign(new Error("This menu week is already published."), { status: 409 }); snapshot.week.status = "published"; snapshot.week.dayStatuses = undefined; snapshot.week.version += 1; snapshot.week.audit.push({ action: "week-published", at: now(), by: actor }); return saveSnapshot(snapshot); }
+export async function duplicateWeek(weekId: string, weekCommencing: string, actor = "local-menu-planner") { await assertWeekDateAvailable(weekCommencing); const source = await getWeek(weekId); const next = emptyWeek(weekCommencing, actor); const dayMap = new Map(source.days.map((d, i) => [d.id, next.days[i]?.id])); next.entries = source.entries.map(e => ({ ...structuredClone(e), id: `${next.week.id}:entry:${e.id.split(":entry:").pop()}`, dayId: dayMap.get(e.dayId) || next.days[0].id, date: addDays(weekCommencing, source.days.findIndex(d => d.id === e.dayId)), audit: [{ action: "entry-copied", at: now(), by: actor }] })); next.days.forEach(d => d.entryIds = next.entries.filter(e => e.dayId === d.id).map(e => e.id)); next.week.entryIds = next.entries.map(e => e.id); next.week.sourceFiles = source.week.sourceFiles.slice(); next.week.customSlots = source.week.customSlots?.slice() || []; next.week.removedSlots = source.week.removedSlots?.slice() || []; return saveSnapshot(next); }
+export async function copyWeekIntoWeek(sourceWeekId: string, targetWeekId: string, actor = "local-menu-planner") {
   if (sourceWeekId === targetWeekId) throw Object.assign(new Error("Choose a different week to copy from."), { status: 422 });
-  const source = getWeek(sourceWeekId);
-  const target = getWeek(targetWeekId);
+  const source = await getWeek(sourceWeekId);
+  const target = await getWeek(targetWeekId);
   const sourceDayIndex = new Map(source.days.map((day, index) => [day.id, index]));
   const copyStamp = Date.now();
   target.days = target.days.map((day, index) => ({ ...day, entryIds: [], oneOffDestinations: structuredClone(source.days[index]?.oneOffDestinations || []) }));
@@ -134,8 +134,8 @@ export function copyWeekIntoWeek(sourceWeekId: string, targetWeekId: string, act
   target.week.audit.push({ action: `week-plan-copied-from:${source.week.id}`, at: now(), by: actor });
   return saveSnapshot(target);
 }
-export function resetWeek(weekId: string, actor = "local-menu-planner") {
-  const target = getWeek(weekId);
+export async function resetWeek(weekId: string, actor = "local-menu-planner") {
+  const target = await getWeek(weekId);
   target.entries = [];
   target.days = target.days.map(day => ({ ...day, entryIds: [], oneOffDestinations: [] }));
   target.week.entryIds = [];
