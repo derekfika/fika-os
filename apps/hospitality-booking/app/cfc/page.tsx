@@ -1,5 +1,5 @@
-import { redirect } from "next/navigation";
+import BookingPortal from "../ui/BookingPortal";
 
 export default function CfcBookingPage() {
-  redirect("/hospitality/cfc");
+  return <BookingPortal siteKey="cfc" />;
 }

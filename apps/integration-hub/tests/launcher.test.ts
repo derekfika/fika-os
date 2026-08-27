@@ -28,8 +28,8 @@ test("staging launcher targets Hospitality on the cookie-compatible custom hostn
   const priorMode = process.env.FIKA_RUNTIME_MODE;
   const priorHospitalityUrl = process.env.FIKA_APP_HOSPITALITY_URL;
   process.env.FIKA_RUNTIME_MODE = "staging";
-  process.env.FIKA_APP_HOSPITALITY_URL = "https://hospitality-staging.fikacatering.com/hospitality/manage";
-  try { assert.equal(appHref("hospitality-booking"), "https://hospitality-staging.fikacatering.com/hospitality/manage"); }
+  process.env.FIKA_APP_HOSPITALITY_URL = "https://hospitality-staging.fikacatering.com/manage";
+  try { assert.equal(appHref("hospitality-booking"), "https://hospitality-staging.fikacatering.com/manage"); }
   finally {
     if (priorMode === undefined) delete process.env.FIKA_RUNTIME_MODE; else process.env.FIKA_RUNTIME_MODE = priorMode;
     if (priorHospitalityUrl === undefined) delete process.env.FIKA_APP_HOSPITALITY_URL; else process.env.FIKA_APP_HOSPITALITY_URL = priorHospitalityUrl;

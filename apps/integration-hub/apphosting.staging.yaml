@@ -17,7 +17,7 @@ env:
       - BUILD
       - RUNTIME
   - variable: FIKA_APP_HOSPITALITY_URL
-    value: https://hospitality-staging.fikacatering.com/hospitality/manage
+    value: https://hospitality-staging.fikacatering.com/manage
     availability:
       - BUILD
       - RUNTIME

@@ -1,6 +1,5 @@
-import BookingPortal from "../../ui/BookingPortal";
-import { portalSite } from "../../../lib/portal-sites";
+import { redirect } from "next/navigation";
 
 export default function HospitalityMnkPage() {
-  return <BookingPortal siteKey="mnk" oplocId={portalSite("mnk").canonicalOplocId} />;
+  redirect("/mnk");
 }

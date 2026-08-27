@@ -1,5 +1,5 @@
-import { redirect } from "next/navigation";
+import BookingPortal from "../ui/BookingPortal";
 
 export default function AngelCourtBookingPage() {
-  redirect("/hospitality/angel-court");
+  return <BookingPortal siteKey="angel-court" />;
 }

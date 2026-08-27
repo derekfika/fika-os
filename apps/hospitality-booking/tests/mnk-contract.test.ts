@@ -15,17 +15,18 @@ test("MNK portal has a dedicated route while preserving the legacy root entry po
   const root = fs.readFileSync(new URL("../app/page.tsx", import.meta.url), "utf8");
   const dashboard = fs.readFileSync(new URL("../app/mnk/dashboard/page.tsx", import.meta.url), "utf8");
   const dashboardCompat = fs.readFileSync(new URL("../app/dashboard/page.tsx", import.meta.url), "utf8");
-  assert.match(route, /redirect\("\/hospitality\/mnk"\)/);
-  assert.match(root, /redirect\("\/hospitality\/mnk"\)/);
-  assert.match(dashboard, /redirect\("\/hospitality\/manage\?site=mnk"\)/);
-  assert.match(dashboardCompat, /redirect\("\/hospitality\/manage"\)/);
-  assert.match(fs.readFileSync(new URL("../app/hospitality/mnk/page.tsx", import.meta.url), "utf8"), /BookingPortal.*siteKey="mnk"/s);
+  assert.match(route, /BookingPortal.*siteKey="mnk"/s);
+  assert.match(root, /redirect\("\/mnk"\)/);
+  assert.match(dashboard, /redirect\("\/manage\?site=mnk"\)/);
+  assert.match(dashboardCompat, /redirect\("\/manage"\)/);
+  assert.match(fs.readFileSync(new URL("../app/hospitality/mnk/page.tsx", import.meta.url), "utf8"), /redirect\("\/mnk"\)/);
 });
 
 test("portal actions use the configured public route for each site", () => {
-  assert.equal(portalSite("mnk").portalPath, "/hospitality/mnk");
-  assert.equal(portalSite("angel-court").portalPath, "/hospitality/angel-court");
-  assert.equal(portalSite("munich-re").portalPath, "/hospitality/munich-re");
+  assert.equal(portalSite("mnk").portalPath, "/mnk");
+  assert.equal(portalSite("angel-court").portalPath, "/angel-court");
+  assert.equal(portalSite("cfc").portalPath, "/cfc");
+  assert.equal(portalSite("munich-re").portalPath, "/munich-re");
 });
 
 test("workspace uses the internal dashboard and filters OPLOCs through the portal registry", () => {
@@ -55,8 +56,8 @@ test("Angel Court has a separate site route configuration and uses the guideline
   const route = fs.readFileSync(new URL("../app/angel-court/page.tsx", import.meta.url), "utf8");
   const dashboard = fs.readFileSync(new URL("../app/angel-court/dashboard/page.tsx", import.meta.url), "utf8");
   const site = portalSite("angel-court");
-  assert.match(route, /redirect\("\/hospitality\/angel-court"\)/);
-  assert.match(dashboard, /redirect\("\/hospitality\/manage\?site=angel-court"\)/);
+  assert.match(route, /BookingPortal.*siteKey="angel-court"/s);
+  assert.match(dashboard, /redirect\("\/manage\?site=angel-court"\)/);
   assert.equal(site.logoPath, "/brand/angel-court/angel-court-bank-logo.png");
   assert.equal(fs.existsSync(new URL("../public/brand/angel-court/angel-court-bank-logo.png", import.meta.url)), true);
 });
@@ -80,8 +81,8 @@ test("CFC has a separate branded route and brochure-derived menu fixture", () =>
   const route = fs.readFileSync(new URL("../app/cfc/page.tsx", import.meta.url), "utf8");
   const dashboard = fs.readFileSync(new URL("../app/cfc/dashboard/page.tsx", import.meta.url), "utf8");
   const site = portalSite("cfc");
-  assert.match(route, /redirect\("\/hospitality\/cfc"\)/);
-  assert.match(dashboard, /redirect\("\/hospitality\/manage\?site=cfc"\)/);
+  assert.match(route, /BookingPortal.*siteKey="cfc"/s);
+  assert.match(dashboard, /redirect\("\/manage\?site=cfc"\)/);
   assert.equal(site.logoPath, "/brand/cfc/cfc-positive-logo.svg");
   assert.equal(fs.existsSync(new URL("../public/brand/cfc/cfc-positive-logo.svg", import.meta.url)), true);
   assert.ok(localCfcMenuCatalogue.items.length >= 30);
@@ -93,8 +94,8 @@ test("Munich Re has a separate portal, dashboard and generic brochure menu fixtu
   const route = fs.readFileSync(new URL("../app/munich-re/page.tsx", import.meta.url), "utf8");
   const dashboard = fs.readFileSync(new URL("../app/munich-re/dashboard/page.tsx", import.meta.url), "utf8");
   const site = portalSite("munich-re");
-  assert.match(route, /redirect\("\/hospitality\/munich-re"\)/);
-  assert.match(dashboard, /redirect\("\/hospitality\/manage\?site=munich-re"\)/);
+  assert.match(route, /BookingPortal.*siteKey="munich-re"/s);
+  assert.match(dashboard, /redirect\("\/manage\?site=munich-re"\)/);
   assert.equal(site.logoPath, "/brand/munich-re/munich-re-logo.svg");
   assert.equal(fs.existsSync(new URL("../public/brand/munich-re/munich-re-logo.svg", import.meta.url)), true);
   assert.ok(localMunichReMenuCatalogue.items.length >= 30);
@@ -126,7 +127,7 @@ test("every shared booking portal exposes a safe start-again workflow", () => {
   assert.match(portal, /setDietaries\(\{/);
   assert.match(portal, /setAcks\(\{/);
   for (const route of ["mnk", "angel-court", "cfc", "munich-re"]) {
-    const source = fs.readFileSync(new URL(`../app/hospitality/${route}/page.tsx`, import.meta.url), "utf8");
+    const source = fs.readFileSync(new URL(`../app/${route}/page.tsx`, import.meta.url), "utf8");
     assert.match(source, /BookingPortal/);
   }
 });
@@ -155,8 +156,10 @@ test("shared booking portal clamps summer rolls to the governed minimum", () => 
 
 test("canonical Hospitality routes use the shared workspace and public portal", () => {
   const manager = fs.readFileSync(new URL("../app/hospitality/manage/page.tsx", import.meta.url), "utf8");
+  const canonicalManager = fs.readFileSync(new URL("../app/manage/page.tsx", import.meta.url), "utf8");
   const workspace = fs.readFileSync(new URL("../app/ui/HospitalityWorkspace.tsx", import.meta.url), "utf8");
-  assert.match(manager, /HospitalityWorkspace/);
+  assert.match(manager, /redirect\("\/manage"\)/);
+  assert.match(canonicalManager, /HospitalityWorkspace/);
   assert.match(workspace, /fetch\("\/api\/access"/);
   assert.match(workspace, /available\.find\(site => site\.portalSiteKey === requestedSite\)/);
   assert.match(workspace, /availableSites/);

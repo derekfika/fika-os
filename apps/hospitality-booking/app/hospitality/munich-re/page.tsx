@@ -1,5 +1,5 @@
-import BookingPortal from "../../ui/BookingPortal";
+import { redirect } from "next/navigation";
 
 export default function HospitalityMunichRePage() {
-  return <BookingPortal siteKey="munich-re" />;
+  redirect("/munich-re");
 }

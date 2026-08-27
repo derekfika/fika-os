@@ -20,7 +20,7 @@ export const portalSites: Record<PortalSiteKey, PortalSiteConfig> = {
     logoPath: "/brand/mnk/mnk-international-logo.png",
     cssClass: "site-mnk",
     bookingEndpoint: "/api/bookings/mnk",
-    portalPath: "/hospitality/mnk",
+    portalPath: "/mnk",
     oplocAliases: ["mnk", "funding circle"],
     canonicalOplocId: "oploc:66e621fa-6e6f-4f46-9aed-462313abbe8f",
   },
@@ -32,7 +32,7 @@ export const portalSites: Record<PortalSiteKey, PortalSiteConfig> = {
     cssClass: "site-angel-court",
     // Angel Court uses the existing typed booking contract; siteId scopes the record.
     bookingEndpoint: "/api/bookings/mnk",
-    portalPath: "/hospitality/angel-court",
+    portalPath: "/angel-court",
     oplocAliases: ["angel court", "one angel court"],
   },
   cfc: {
@@ -42,7 +42,7 @@ export const portalSites: Record<PortalSiteKey, PortalSiteConfig> = {
     logoPath: "/brand/cfc/cfc-positive-logo.svg",
     cssClass: "site-cfc",
     bookingEndpoint: "/api/bookings/mnk",
-    portalPath: "/hospitality/cfc",
+    portalPath: "/cfc",
     oplocAliases: ["cfc"],
   },
   "munich-re": {
@@ -53,7 +53,7 @@ export const portalSites: Record<PortalSiteKey, PortalSiteConfig> = {
     cssClass: "site-munich-re",
     // The shared typed booking contract is scoped by siteId.
     bookingEndpoint: "/api/bookings/mnk",
-    portalPath: "/hospitality/munich-re",
+    portalPath: "/munich-re",
     oplocAliases: ["munich re"],
   },
 };
