@@ -1,5 +1,5 @@
-import HospitalityDashboard from "../../ui/HospitalityDashboard";
+import { redirect } from "next/navigation";
 
 export default function MunichReDashboardPage() {
-  return <HospitalityDashboard siteKey="munich-re" />;
+  redirect("/hospitality/manage?site=munich-re");
 }

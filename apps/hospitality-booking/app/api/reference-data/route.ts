@@ -121,6 +121,10 @@ export async function GET(request: Request) {
       throw Error("The Canon menu catalogue is empty.");
   } catch (error) {
     if (!isLocalBridgeEnvironment()) {
+      console.error("[hospitality-reference-data] governed catalogue request failed", {
+        siteKey,
+        message: (error as Error).message,
+      });
       return NextResponse.json(
         { error: { message: (error as Error).message } },
         { status: 503 },

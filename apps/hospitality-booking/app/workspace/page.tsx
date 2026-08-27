@@ -1,2 +1,5 @@
-import HospitalityWorkspace from "../ui/HospitalityWorkspace";
-export default function WorkspacePage() { return <HospitalityWorkspace />; }
+import { redirect } from "next/navigation";
+
+export default function WorkspacePage() {
+  redirect("/hospitality/manage");
+}

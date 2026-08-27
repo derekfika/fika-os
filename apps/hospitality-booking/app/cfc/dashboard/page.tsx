@@ -1,5 +1,5 @@
-import HospitalityDashboard from "../../ui/HospitalityDashboard";
+import { redirect } from "next/navigation";
 
 export default function CfcDashboardPage() {
-  return <HospitalityDashboard siteKey="cfc" />;
+  redirect("/hospitality/manage?site=cfc");
 }

@@ -1,5 +1,5 @@
-import HospitalityDashboard from "../../ui/HospitalityDashboard";
+import { redirect } from "next/navigation";
 
 export default function AngelCourtDashboardPage() {
-  return <HospitalityDashboard siteKey="angel-court" />;
+  redirect("/hospitality/manage?site=angel-court");
 }

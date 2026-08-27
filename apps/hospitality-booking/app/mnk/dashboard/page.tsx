@@ -1,5 +1,5 @@
-import HospitalityDashboard from "../../ui/HospitalityDashboard";
+import { redirect } from "next/navigation";
 
 export default function MnkDashboardPage() {
-  return <HospitalityDashboard />;
+  redirect("/hospitality/manage?site=mnk");
 }
