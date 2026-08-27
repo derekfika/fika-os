@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { addMenuSlot, addOneOffDestination, assertWeekDateAvailable, cleanDuplicateEntries, copyWeekIntoWeek, createEntry, duplicateWeek, emptyWeek, getWeek, listWeeks, removeMenuSlot, resetWeek, saveSnapshot, updateEntry, validateWeek } from "@/lib/rolling-menu";
+import { addMenuSlot, addOneOffDestination, assertWeekDateAvailable, cleanDuplicateEntries, copyWeekIntoWeek, createEntry, duplicateWeek, emptyWeek, getWeek, listWeeks, removeMenuSlot, resetWeek, saveSnapshot, snapshotFromStored, updateEntry, validateWeek, type Stored } from "@/lib/rolling-menu";
 import { archivePublishedDayMatrix, createPublishedMenuDay, getMenuPublication, publicationDayBlockers, publicationPreview, publicationState, type MenuPublicationSignoff } from "@/lib/menu-publication";
 import { requireMutationActor, requirePublicationActor, resolveMenuActor } from "@/lib/auth";
 import { readDeliveredInOplocs } from "@/lib/oploc-authority";
@@ -8,9 +8,12 @@ import { replayMenuPublicationOutbox } from "@/lib/menu-publication";
 import { listCatalogueEntries, reconcileCatalogueFromRollingEntries } from "@/lib/catalogue";
 import { resolveAllergenSnapshot } from "@/lib/allergen-resolution";
 import { GOVERNED_OPLOCS } from "@/lib/fika-contracts";
+import { readRollingState } from "@/lib/operational-store";
 
-async function resolvedSnapshot(snapshot: Awaited<ReturnType<typeof getWeek>>) {
+async function resolvedSnapshot(snapshot: Awaited<ReturnType<typeof getWeek>>, onCatalogueTiming?: (durationMs: number) => void) {
+  const catalogueStarted = performance.now();
   const catalogue = await listCatalogueEntries();
+  onCatalogueTiming?.(performance.now() - catalogueStarted);
   const entries = snapshot.entries.map(entry => {
     const dish = catalogue.find(item => item.id === entry.itemId || item.name.trim().toLocaleLowerCase() === entry.itemLabel.trim().toLocaleLowerCase())?.item;
     const resolved = resolveAllergenSnapshot(entry, dish ? { canonicalId: dish.canonicalId, displayName: dish.displayName, allergenEvidence: dish.allergenEvidence, mayContainReviewed: dish.mayContainReviewed, mayContainNotes: dish.mayContainNotes } : undefined);
@@ -22,15 +25,25 @@ async function resolvedSnapshot(snapshot: Awaited<ReturnType<typeof getWeek>>) {
 export async function GET(request: NextRequest) {
   try {
     const requestedWeek = request.nextUrl.searchParams.get("weekId") || undefined;
-    const weeks = await listWeeks();
+    const totalStarted = performance.now();
+    const rollingStarted = performance.now();
+    const state = await readRollingState<Stored>();
+    const rollingStateMs = performance.now() - rollingStarted;
+    const weeks = state.weeks.slice().sort((a, b) => a.weekCommencing.localeCompare(b.weekCommencing));
     const matchingWeek = requestedWeek ? weeks.find(week => week.id === requestedWeek || week.weekCommencing === requestedWeek) : undefined;
-    const snapshot = await getWeek(matchingWeek?.id || requestedWeek);
+    const snapshot = snapshotFromStored(state, matchingWeek?.id || requestedWeek);
     const previewDayId = request.nextUrl.searchParams.get("dayId") || undefined;
     const publicationPreviewRequested = request.nextUrl.searchParams.get("publicationPreview") === "true";
     const governedOplocs = publicationPreviewRequested ? await readDeliveredInOplocs(request) : undefined;
     const governedLabels = new Set(governedOplocs?.map(oploc => oploc.label.toLocaleLowerCase()));
     const governedOplocIds = governedOplocs ? new Set([...governedOplocs.map(oploc => oploc.canonicalId), ...GOVERNED_OPLOCS.filter(oploc => governedLabels.has(oploc.label.toLocaleLowerCase())).map(oploc => oploc.id)]) : undefined;
-    return NextResponse.json({ snapshot: await resolvedSnapshot(snapshot), weeks, blockers: validateWeek(snapshot), publicationState: await publicationState(snapshot), ...(publicationPreviewRequested ? { publicationPreview: publicationPreview(snapshot, previewDayId), dayBlockers: previewDayId ? publicationDayBlockers(snapshot, previewDayId, governedOplocIds) : [] } : {}) });
+    let catalogueMs = 0;
+    const resolved = await resolvedSnapshot(snapshot, durationMs => { catalogueMs = durationMs; });
+    const publicationStarted = performance.now();
+    const currentPublicationState = await publicationState(snapshot);
+    const publicationStateMs = performance.now() - publicationStarted;
+    console.info("Menu Planning rolling-menu GET timings", { rollingStateMs, catalogueMs, publicationStateMs, totalMs: performance.now() - totalStarted });
+    return NextResponse.json({ snapshot: resolved, weeks, blockers: validateWeek(snapshot), publicationState: currentPublicationState, ...(publicationPreviewRequested ? { publicationPreview: publicationPreview(snapshot, previewDayId), dayBlockers: previewDayId ? publicationDayBlockers(snapshot, previewDayId, governedOplocIds) : [] } : {}) });
   } catch (error) {
     const status = error && typeof error === "object" && "status" in error && typeof (error as { status?: unknown }).status === "number" ? (error as { status: number }).status : 500;
     return NextResponse.json({ error: { message: error instanceof Error ? error.message : "Rolling menu could not be loaded." } }, { status });

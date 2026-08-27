@@ -6,7 +6,7 @@ test("rolling-menu read path resolves catalogue data without reconciliation writ
   const source = readFileSync(new URL("../app/api/rolling-menu/route.ts", import.meta.url), "utf8");
   const getBody = source.slice(source.indexOf("export async function GET"), source.indexOf("export async function POST"));
   assert.doesNotMatch(getBody, /syncRollingEntries|attachCanonicalDishIds|saveSnapshot|updateRollingState/);
-  assert.match(getBody, /resolvedSnapshot\(snapshot\)/);
+  assert.match(getBody, /resolvedSnapshot\(snapshot, durationMs/);
 });
 
 test("catalogue and rolling-menu GET handlers return structured JSON errors", () => {
