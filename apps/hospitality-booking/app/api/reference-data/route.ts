@@ -4,6 +4,8 @@ import { localMnkMenuCatalogue } from "@/lib/local-mnk-menu";
 import { localAngelCourtMenuCatalogue } from "@/lib/local-angel-court-menu";
 import { localCfcMenuCatalogue } from "@/lib/local-cfc-menu";
 import { localMunichReMenuCatalogue } from "@/lib/local-munich-re-menu";
+import { filterPricedMenu, isFinitePrice } from "@/lib/reference-data-validation";
+import { portalSite } from "@/lib/portal-sites";
 
 function localCompatibilityMenu(siteKey = "mnk") {
   const catalogue =
@@ -54,7 +56,9 @@ export async function GET(request: Request) {
         headers: { "Cache-Control": "no-store, max-age=0" },
       });
     }
-    const oplocId = url.searchParams.get("oplocId")?.trim() || process.env.FIKA_MNK_OPLOC_ID?.trim();
+    const oplocId = url.searchParams.get("oplocId")?.trim()
+      || process.env.FIKA_MNK_OPLOC_ID?.trim()
+      || (siteKey === "mnk" ? portalSite("mnk").canonicalOplocId : undefined);
     if (oplocId) {
       const serviceDate = new Date().toISOString().slice(0, 10);
       const response = await hubFetch(
@@ -77,7 +81,7 @@ export async function GET(request: Request) {
           name: offering.name,
           description: offering.description,
           category: offering.category,
-          unitPrice: offering.price.amount,
+          unitPrice: offering.price?.amount,
           vatRate: offering.price.vatRate,
           dietaryInformation: offering.dietaryInformation,
           allergenInformation: offering.allergenInformation,
@@ -94,7 +98,12 @@ export async function GET(request: Request) {
             }),
           ),
           servingInfo: offering.configuration?.servingInfo,
-        }));
+        }))
+        .filter((item: { canonicalId?: unknown; name?: unknown; unitPrice?: unknown }) => {
+          const valid = isFinitePrice(item.unitPrice);
+          if (!valid) console.warn("[hospitality-reference-data] excluded offering with invalid price", { itemId: item.canonicalId, name: item.name });
+          return valid;
+        });
       return NextResponse.json(
         { contractVersion: body.contractVersion, source: body.source, menu },
         { headers: { "Cache-Control": "no-store, max-age=0" } },
@@ -105,9 +114,7 @@ export async function GET(request: Request) {
     if (!response.ok)
       throw Error(body.error?.message || "Canonical menu data is unavailable.");
     const pricedLegacyMenu = Array.isArray(body.menu)
-      ? body.menu.filter((item: Record<string, unknown>) =>
-          Number.isFinite(Number(item.unitPrice)),
-        )
+      ? filterPricedMenu(body.menu as Array<{ unitPrice?: unknown }>)
       : [];
     // The older endpoint predates separate Offerings and Prices. Never pass an
     // unpriced Menu Item into this price-dependent booking UI.

@@ -237,7 +237,12 @@ export default function BookingPortal({
   useEffect(() => {
     fetch(`/api/reference-data?site=${encodeURIComponent(site.key)}${oplocId ? `&oplocId=${encodeURIComponent(oplocId)}` : ""}`)
       .then((response) => response.json())
-      .then((data) => setMenu(data.menu || []) as void)
+      .then((data) => {
+        const validMenu = (Array.isArray(data.menu) ? data.menu : []).filter(
+          (item: PortalMenuItem) => typeof item.unitPrice === "number" && Number.isFinite(item.unitPrice),
+        );
+        setMenu(validMenu);
+      })
       .catch(() =>
         setError(`The ${site.label} catalogue could not be loaded.`),
       );
@@ -959,7 +964,7 @@ function Plan({
               <span>{item.servingInfo}</span>
               <h3>{item.name}</h3>
               <p>{item.description}</p>
-              <strong>£{item.unitPrice.toFixed(2)}</strong>
+              {typeof item.unitPrice === "number" && Number.isFinite(item.unitPrice) ? <strong>£{item.unitPrice.toFixed(2)}</strong> : <strong>Price unavailable</strong>}
               {item.optionGroups?.map((group) => {
                 const isMulti = ["multi", "checkbox", "checkboxes"].includes(
                   (group.selectionType || "select").toLowerCase(),
@@ -1193,7 +1198,7 @@ function Summary({ occasion, selected, total, details }: any) {
               <span>
                 {value.quantity} × {value.item.name}
               </span>
-              <b>£{(value.quantity * value.item.unitPrice).toFixed(2)}</b>
+              {typeof value.item.unitPrice === "number" && Number.isFinite(value.item.unitPrice) ? <b>£{(value.quantity * value.item.unitPrice).toFixed(2)}</b> : <b>Price unavailable</b>}
             </li>
           ))}
         </ul>
@@ -1202,7 +1207,7 @@ function Summary({ occasion, selected, total, details }: any) {
       )}
       <div className="summary-total">
         <span>Estimated total</span>
-        <strong>£{total.toFixed(2)}</strong>
+        <strong>£{Number.isFinite(total) ? total.toFixed(2) : "Price unavailable"}</strong>
       </div>
       <small>
         Prices are subject to final confirmation. VAT, labour and hire may apply

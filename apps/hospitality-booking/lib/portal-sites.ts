@@ -9,6 +9,7 @@ export type PortalSiteConfig = {
   bookingEndpoint: string;
   portalPath: string;
   oplocAliases: string[];
+  canonicalOplocId?: string;
 };
 
 export const portalSites: Record<PortalSiteKey, PortalSiteConfig> = {
@@ -21,6 +22,7 @@ export const portalSites: Record<PortalSiteKey, PortalSiteConfig> = {
     bookingEndpoint: "/api/bookings/mnk",
     portalPath: "/hospitality/mnk",
     oplocAliases: ["mnk", "funding circle"],
+    canonicalOplocId: "oploc:66e621fa-6e6f-4f46-9aed-462313abbe8f",
   },
   "angel-court": {
     key: "angel-court",

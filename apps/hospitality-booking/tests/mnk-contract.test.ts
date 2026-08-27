@@ -7,6 +7,7 @@ import { localAngelCourtMenuCatalogue } from "../lib/local-angel-court-menu";
 import { localCfcMenuCatalogue } from "../lib/local-cfc-menu";
 import { localMnkMenuCatalogue } from "../lib/local-mnk-menu";
 import { localMunichReMenuCatalogue } from "../lib/local-munich-re-menu";
+import { filterPricedMenu } from "../lib/reference-data-validation";
 test("MNK journey retains the required contact, service and acknowledgement validation", () => { const value = BookingInput.safeParse({ clientName: "Host", clientEmail: "host@example.com", clientPhone: "1", companyName: "Client", eventDate: "2026-08-01", startTime: "12:00", guestCount: 5, roomOrArea: "Boardroom", eventType: "lunch", acknowledgements: { quoteSubjectToConfirmation: true, noticePolicyAccepted: true, dietaryResponsibilityAccepted: true } }); assert.equal(value.success, true); });
 test("MNK journey rejects a request without service location context", () => { const value = BookingInput.safeParse({ clientName: "Host", clientEmail: "host@example.com", clientPhone: "1", companyName: "Client", eventDate: "2026-08-01", startTime: "12:00", guestCount: 5, eventType: "lunch", acknowledgements: { quoteSubjectToConfirmation: true, noticePolicyAccepted: true, dietaryResponsibilityAccepted: true } }); assert.equal(value.success, false); });
 test("MNK portal has a dedicated route while preserving the legacy root entry point", () => {
@@ -159,6 +160,17 @@ test("canonical Hospitality routes use the shared workspace and public portal", 
   assert.match(workspace, /fetch\("\/api\/access"/);
   assert.match(workspace, /available\.find\(site => site\.portalSiteKey === requestedSite\)/);
   assert.match(workspace, /availableSites/);
+});
+
+test("null, empty and non-numeric prices are not orderable", () => {
+  const priced = filterPricedMenu([
+    { id: "valid", unitPrice: 12.5 },
+    { id: "null", unitPrice: null },
+    { id: "empty", unitPrice: "" },
+    { id: "text", unitPrice: "12.5" },
+    { id: "nan", unitPrice: Number.NaN },
+  ]);
+  assert.deepEqual(priced.map((item) => item.id), ["valid"]);
 });
 
 test("Angel Court captures client identity and an optional invoice or PO reference", () => {
