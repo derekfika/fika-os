@@ -4,6 +4,7 @@ const isHosted = () => ["staging", "production"].includes(process.env.FIKA_RUNTI
 const hubUrl = () => (process.env.FIKA_HUB_BASE_URL || "").replace(/\/$/, "");
 
 export async function middleware(request: NextRequest) {
+  if (request.nextUrl.pathname === "/api/internal/menu-planning-diagnostic") return NextResponse.next();
   if (!isHosted()) return NextResponse.next();
   const response = await fetch(`${hubUrl()}/api/menu-planning/access`, { headers: { cookie: request.headers.get("cookie") || "" }, cache: "no-store" }).catch(() => undefined);
   if (response?.ok) return NextResponse.next();
