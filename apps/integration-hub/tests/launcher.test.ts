@@ -24,6 +24,18 @@ test("staging launcher never falls back to localhost application URLs", () => {
   }
 });
 
+test("staging launcher targets Hospitality on the cookie-compatible custom hostname", () => {
+  const priorMode = process.env.FIKA_RUNTIME_MODE;
+  const priorHospitalityUrl = process.env.FIKA_APP_HOSPITALITY_URL;
+  process.env.FIKA_RUNTIME_MODE = "staging";
+  process.env.FIKA_APP_HOSPITALITY_URL = "https://hospitality-staging.fikacatering.com/hospitality/manage";
+  try { assert.equal(appHref("hospitality-booking"), "https://hospitality-staging.fikacatering.com/hospitality/manage"); }
+  finally {
+    if (priorMode === undefined) delete process.env.FIKA_RUNTIME_MODE; else process.env.FIKA_RUNTIME_MODE = priorMode;
+    if (priorHospitalityUrl === undefined) delete process.env.FIKA_APP_HOSPITALITY_URL; else process.env.FIKA_APP_HOSPITALITY_URL = priorHospitalityUrl;
+  }
+});
+
 test("empty application registry bootstrap creates exactly the seven V1 apps and preserves governed changes", async () => {
   const repository = new MemoryAuthModRepository();
   const created = await ensureV1ApplicationRegistry(repository, actor);
