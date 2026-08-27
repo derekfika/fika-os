@@ -1,47 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { existsSync, promises as fs } from "node:fs";
-import path from "node:path";
+import { requireCpuActor } from "../../../lib/cpu-access-client";
+import { menuPlanningJson } from "../../../lib/menu-planning-http-client";
 
-export type DeliveredMenuEntry = {
-  id: string;
-  title: string;
-  portions: number;
-  allergens: Record<string, string>;
-  mayContainNotes?: string;
-  sourceEvidence?: string[];
-};
-export type DeliveredMenuPlan = {
-  id: string;
-  name: string;
-  weekStarting: string;
-  weeks: Array<{ weekStarting: string; days: Array<{ date: string; day: string; entries: DeliveredMenuEntry[] }> }>;
-  sourceImports?: Array<{ fileName: string; importedAt: string; candidateCount: number; sheets: string[] }>;
-  updatedAt: string;
-};
-
-function root() {
-  let current = process.cwd();
-  for (let i = 0; i < 5; i += 1) {
-    if (existsSync(path.join(current, "local-data", "menu-planning"))) return current;
-    current = path.dirname(current);
-  }
-  return path.resolve(process.cwd(), "..", "..");
-}
-const filePath = () => path.join(root(), "local-data", "menu-planning", "delivered-in-menus.json");
-async function readPlans(): Promise<DeliveredMenuPlan[]> {
-  try { return JSON.parse(await fs.readFile(filePath(), "utf8")) as DeliveredMenuPlan[]; } catch { return []; }
-}
-export async function GET() { return NextResponse.json({ plans: await readPlans() }, { headers: { "cache-control": "no-store" } }); }
-export async function POST(request: NextRequest) {
-  const body = await request.json() as Partial<DeliveredMenuPlan>;
-  if (!body.name?.trim() || !/^\d{4}-\d{2}-\d{2}$/.test(body.weekStarting || "") || !Array.isArray(body.weeks)) {
-    return NextResponse.json({ error: "Name, week starting date and six-week plan are required." }, { status: 422 });
-  }
-  const weekStarting = body.weekStarting as string;
-  const now = new Date().toISOString();
-  const plan: DeliveredMenuPlan = { id: body.id || `delivered-menu:${weekStarting}`, name: body.name.trim(), weekStarting, weeks: body.weeks as DeliveredMenuPlan["weeks"], sourceImports: body.sourceImports || [], updatedAt: now };
-  const next = [...(await readPlans()).filter((item) => item.id !== plan.id), plan];
-  await fs.mkdir(path.dirname(filePath()), { recursive: true });
-  await fs.writeFile(filePath(), JSON.stringify(next, null, 2), "utf8");
-  return NextResponse.json({ plan });
-}
+type MenuPlan = { id: string; name: string; weekStarting: string; weeks: Array<{ weekStarting: string; days: Array<{ date: string; day: string; entries: Array<Record<string, unknown>> }> }>; sourceImports?: Array<{ fileName: string; importedAt: string; candidateCount: number; sheets: string[] }>; updatedAt: string };
+const isMenuPlansResponse = (value: unknown): value is { plans: MenuPlan[] } => Boolean(value && typeof value === "object" && Array.isArray((value as { plans?: unknown }).plans));
+const isMenuPlanResponse = (value: unknown): value is { plan: MenuPlan } => Boolean(value && typeof value === "object" && (value as { plan?: unknown }).plan);
+function errorResponse(error: unknown) { const status = typeof (error as { status?: unknown }).status === "number" ? (error as { status: number }).status : 503; return NextResponse.json({ error: { message: error instanceof Error ? error.message : "Menu Planning plans are unavailable." } }, { status }); }
+export async function GET(request: NextRequest) { try { await requireCpuActor(request); return NextResponse.json(await menuPlanningJson(request, "/api/legacy-menu-plans", isMenuPlansResponse), { headers: { "Cache-Control": "no-store" } }); } catch (error) { return errorResponse(error); } }
+export async function POST(request: NextRequest) { try { await requireCpuActor(request); const body = await request.clone().text(); return NextResponse.json(await menuPlanningJson(request, "/api/legacy-menu-plans", isMenuPlanResponse, { method: "POST", headers: { "content-type": "application/json" }, body })); } catch (error) { return errorResponse(error); } }

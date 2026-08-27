@@ -318,14 +318,14 @@ test("CPU exposes five canonical production scopes and removes obsolete manager 
   assert.match(menuPlanner, /category\?\.startsWith\("Salad "\)/);
 });
 
-test("menu workbook imports remain reviewable evidence and plans are persisted locally", () => {
+test("menu workbook imports remain reviewable evidence and plans use the Menu Planning boundary", () => {
   assert.match(menuImportRoute, /XLSX\.read/);
   assert.match(menuImportRoute, /needs_review/);
   assert.match(menuImportRoute, /sourceEvidence/);
   assert.match(menuImportRoute, /allergenSheets/);
   assert.match(menuImportRoute, /mon|tue|wed|thurs|fri/);
-  assert.match(menuPlansRoute, /delivered-menu:/);
-  assert.match(menuPlansRoute, /delivered-in-menus\.json/);
+  assert.match(menuPlansRoute, /legacy-menu-plans/);
+  assert.doesNotMatch(menuPlansRoute, /local-data\/menu-planning|delivered-in-menus\.json/);
   assert.match(menuPlanner, /may_contain/);
   assert.match(menuPlanner, /Allergen states are entered by the production team/);
 });
