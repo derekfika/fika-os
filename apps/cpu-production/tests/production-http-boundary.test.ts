@@ -8,6 +8,17 @@ test("CPU canonical production route has no direct Hub canonical authority impor
   for (const forbidden of ["@hub/lib/production-domain", "@hub/lib/auth", "@hub/lib/authmod", "@hub/lib/firebase-admin"]) assert.equal(source.includes(forbidden), false, `unexpected direct import: ${forbidden}`);
 });
 
+test("Delivered-In review reads canonical Production through the authenticated CPU HTTP boundary", async () => {
+  const route = await readFile(join(process.cwd(), "app/api/delivered-in/review/route.ts"), "utf8");
+  for (const forbidden of ["@hub/lib/production-domain", "@hub/lib/auth", "@hub/lib/authmod", "@hub/lib/firebase-admin", "apps/integration-hub/"]) assert.equal(route.includes(forbidden), false, `unexpected Delivered-In runtime dependency: ${forbidden}`);
+  assert.match(route, /productionQueue\(request, serviceDate\)/);
+  const client = await readFile(join(process.cwd(), "lib/production-http-client.ts"), "utf8");
+  assert.match(client, /\/api\/production/);
+  assert.match(client, /request\.headers\.get\("cookie"\)/);
+  assert.match(client, /cache: "no-store"/);
+  assert.match(client, /AbortSignal\.timeout\(8_000\)/);
+});
+
 test("CPU production HTTP client forwards the canonical Hub endpoint boundary", async () => {
   const source = await readFile(join(process.cwd(), "lib/production-http-client.ts"), "utf8");
   assert.match(source, /\/api\/production/);

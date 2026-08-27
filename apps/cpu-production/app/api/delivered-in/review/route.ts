@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { productionQueue } from "@hub/lib/production-domain";
+import { productionQueue } from "../../../../lib/production-http-client";
 import { cpuPlans } from "../../../../lib/cpu-projection";
 import { promises as fs } from "node:fs";
 import path from "node:path";
@@ -41,7 +41,7 @@ export async function GET(request: NextRequest) {
   const oplocId = request.nextUrl.searchParams.get("oplocId");
   if (!serviceDate || !oplocId) return NextResponse.json({ error: { message: "A service date and OPLOC are required." } }, { status: 422 });
   try {
-    const orders = (await productionQueue(serviceDate)).filter(order => order.origin === "menu_planning");
+    const orders = (await productionQueue(request, serviceDate)).filter(order => order.origin === "menu_planning");
     const planSnapshot = await cpuPlans().get();
     const plans = new Map(planSnapshot.docs.map(document => [document.id, document.data() as ReviewPlan]));
     const signatures = new Map<string, ReviewSignature>();
