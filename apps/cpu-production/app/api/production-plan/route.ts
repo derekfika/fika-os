@@ -329,8 +329,8 @@ export async function POST(request: NextRequest) {
     const changedOrder = await loadOrder(command.orderId);
     if (changedOrder?.serviceDate) {
       const event = await appendCpuChange({ serviceDate: changedOrder.serviceDate, entityType: "productionPlan", entityId: plan.id, revision: plan.audit.length, changeType: command.action, actorId: actor.uid, changedAt: timestamp });
-      await rebuildCpuDayProjection(changedOrder.serviceDate, event.sequence);
-      await rebuildCpuWeekProjection(weekCommencingFor(changedOrder.serviceDate), event.sequence);
+      await rebuildCpuDayProjection(request, changedOrder.serviceDate, event.sequence);
+      await rebuildCpuWeekProjection(request, weekCommencingFor(changedOrder.serviceDate), event.sequence);
     }
     return NextResponse.json({ plan, matrixArtifact: plan.matrixArtifact, notification: notification || (plan.status === "planned" ? { title: "New production plan ready for menu generation.", orderId: plan.orderId } : undefined) });
   } catch (error) { return errorResponse(error); }

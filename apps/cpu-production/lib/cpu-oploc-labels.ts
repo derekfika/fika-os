@@ -1,4 +1,4 @@
-import { db } from "@hub/lib/firebase-admin";
+import { db } from "./firebase-admin";
 import type { ProductionOrder } from "@fika/contracts";
 import { titleCaseDish } from "./production-presentation";
 

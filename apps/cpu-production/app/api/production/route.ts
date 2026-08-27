@@ -37,7 +37,7 @@ async function recordCpuChange(request: NextRequest, canonicalId: string, actorI
   if (!serviceDate) return current;
   const event = await appendCpuChange({ serviceDate, entityType: "productionOrder", entityId: canonicalId, revision: current.version, changeType, actorId, changedAt: new Date().toISOString() });
   await rebuildCpuProjection(request, serviceDate, event.sequence);
-  await rebuildCpuWeekProjection(weekCommencingFor(serviceDate), event.sequence);
+  await rebuildCpuWeekProjection(request, weekCommencingFor(serviceDate), event.sequence);
   return current;
 }
 
@@ -170,7 +170,7 @@ export async function GET(request: NextRequest) {
         .map((order) => order.canonicalId));
       const projectedIds = new Set((storedData?.orders || []).map((order) => order.id).filter(Boolean));
       const needsOrderRefresh = canonicalIds.size !== projectedIds.size || [...canonicalIds].some((id) => !projectedIds.has(id));
-      return NextResponse.json({ projection: stored.exists && !needsReadableDestinations && !needsCancellationRefresh && !needsOrderRefresh ? stored.data() : week ? await rebuildCpuWeekProjection(week) : await rebuildCpuProjection(request, projectionDate) });
+      return NextResponse.json({ projection: stored.exists && !needsReadableDestinations && !needsCancellationRefresh && !needsOrderRefresh ? stored.data() : week ? await rebuildCpuWeekProjection(request, week) : await rebuildCpuProjection(request, projectionDate) });
     }
     if (request.nextUrl.searchParams.has("changesSince")) {
       const after = Number(request.nextUrl.searchParams.get("changesSince") || 0);
@@ -224,14 +224,14 @@ export async function POST(request: NextRequest) {
       const serviceDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).parse(raw.serviceDate);
       const event = await appendCpuChange({ serviceDate, entityType: "productionOrder", entityId: z.string().min(1).parse(raw.entityId), revision: z.number().int().positive().parse(raw.revision), changeType: z.string().min(1).parse(raw.changeType), actorId: z.string().min(1).parse(raw.actorId || "integration-hub"), changedAt: z.string().min(1).parse(raw.changedAt || new Date().toISOString()), idempotencyKey: z.string().min(1).parse(raw.idempotencyKey) });
       const dayProjection = await rebuildCpuProjection(request, serviceDate, event.sequence);
-      const weekProjection = await rebuildCpuWeekProjection(weekCommencingFor(serviceDate), event.sequence);
+      const weekProjection = await rebuildCpuWeekProjection(request, weekCommencingFor(serviceDate), event.sequence);
       return NextResponse.json({ applied: true, duplicate: event.sequence < Number(raw.sequence || event.sequence), event, dayProjection, weekProjection });
     }
     const actor = await actorFor(request);
     if (raw?.action === "rebuild-cpu-projection") {
       const serviceDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).parse(raw.serviceDate);
       const projection = await rebuildCpuProjection(request, serviceDate);
-      return NextResponse.json({ projection: await rebuildCpuWeekProjection(weekCommencingFor(serviceDate)), dayProjection: projection });
+      return NextResponse.json({ projection: await rebuildCpuWeekProjection(request, weekCommencingFor(serviceDate)), dayProjection: projection });
     }
     if (raw?.action === "cpu-create") {
       const command = Cpu.parse(raw);
