@@ -539,7 +539,7 @@ test("CPU plans hand completed allergen evidence to Tia without external side ef
 });
 
 test("CPU acceptance has a confirmation-email seam for canonical hospitality hand-offs", () => {
-  assert.match(planRoute, /notifyBookingConfirmedForProductionOrder/);
+  assert.match(planRoute, /production-confirmation/);
   assert.match(planRoute, /productionOrderDetail/);
 });
 

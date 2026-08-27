@@ -25,6 +25,10 @@ async function callHub<T>(request: NextRequest, path: string, init: RequestInit,
   return body;
 }
 
+export function hubJson<T>(request: NextRequest, path: string, init: RequestInit, validate: (value: unknown) => value is T) {
+  return callHub(request, path, init, validate);
+}
+
 const isOrder = (value: unknown): value is ProductionOrder => Boolean(value && typeof value === "object" && typeof (value as { canonicalId?: unknown }).canonicalId === "string" && typeof (value as { version?: unknown }).version === "number");
 const hasOrder = (value: unknown): value is { order: ProductionOrder } => Boolean(value && typeof value === "object" && isOrder((value as { order?: unknown }).order));
 const hasOrders = (value: unknown): value is { orders: ProductionOrder[] } => Boolean(value && typeof value === "object" && Array.isArray((value as { orders?: unknown }).orders));

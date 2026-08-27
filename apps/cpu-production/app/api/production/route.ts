@@ -24,7 +24,7 @@ function internalProjectionRequest(request: NextRequest) {
 }
 async function rebuildCpuProjection(request: NextRequest, serviceDate: string, lastChangeSequence?: number) {
   const [rawOrders, planSnapshot, previous] = await Promise.all([productionQueue(request, serviceDate === "all" ? undefined : serviceDate), cpuPlans().get(), cpuProjections().doc(serviceDate).get()]);
-  const orders = await withReadableDestinations(rawOrders);
+  const orders = await withReadableDestinations(request, rawOrders);
   const plans = planSnapshot.docs.map((document) => document.data() as import("../../lib/production-plan").ProductionPlan);
   const projection = buildCpuDayProjection(serviceDate, orders, plans, lastChangeSequence ?? Number(previous.data()?.lastChangeSequence || 0), Number(previous.data()?.revision || 0) + 1);
   await cpuProjections().doc(serviceDate).set(projection);
@@ -183,13 +183,13 @@ export async function GET(request: NextRequest) {
     const scope = normaliseProductionScope(request.nextUrl.searchParams.get("scope"));
     if (id?.startsWith("production-order:v1:fixture:")) {
       const order = localFixtureOrders().find((item) => item.canonicalId === id);
-      const filtered = order ? (await ordersForScope([order], scope))[0] : undefined;
+      const filtered = order ? (await ordersForScope(request, [order], scope))[0] : undefined;
       return NextResponse.json({ order: filtered, scope });
     }
     if (id) {
       const order = await productionOrderDetail(request, id);
       if (!order) return NextResponse.json({ error: { message: "Production Order was not found." } }, { status: 404 });
-      const readable = await withReadableDestinations([order]);
+      const readable = await withReadableDestinations(request, [order]);
       return NextResponse.json({ order: readable[0], scope });
     }
     const fetched = await productionQueue(request, serviceDate);
@@ -209,7 +209,7 @@ export async function GET(request: NextRequest) {
         ),
       )]
       : fetched;
-    const orders = await withReadableDestinations(await ordersForScope(sourceOrders, scope));
+    const orders = await withReadableDestinations(request, await ordersForScope(request, sourceOrders, scope));
     return NextResponse.json({ orders, scope, localFixtures: includeLocalFixtures });
   } catch (error) {
     return errorResponse(error);

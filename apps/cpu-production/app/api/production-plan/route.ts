@@ -8,13 +8,13 @@ import { localFixtureOrders, updateLocalFixture } from "../local-fixtures";
 import type { AllergenCellState, InternalMatrixSignature, PlannedMenuItem, ProductionPlan } from "../../lib/production-plan";
 import { allergenMatrixHtml } from "../../ui/allergen-matrix";
 import { renderPdfLocally } from "../../lib/local-pdf";
-import { notifyBookingConfirmedForProductionOrder } from "@hub/lib/hospitality-booking-service";
 import { normaliseOperationalAllergens } from "@fika/contracts";
 import { productionOrderDetail, transitionProductionOrder } from "../../../lib/production-http-client";
 import type { ProductionOrder, ProductionStatus } from "@fika/contracts";
 import { appendCpuChange, rebuildCpuDayProjection, rebuildCpuWeekProjection, weekCommencingFor } from "../../../lib/cpu-projection";
 import { createProductionPlanRepository } from "../../../lib/production-plan-repository";
 import { requireCpuActor } from "../../../lib/cpu-access-client";
+import { hubJson } from "../../../lib/production-http-client";
 
 function menuContentHash(menuItems: PlannedMenuItem[]) {
   return createHash("sha256").update(JSON.stringify(menuItems)).digest("hex");
@@ -196,7 +196,7 @@ export async function POST(request: NextRequest) {
       if (command.orderId.startsWith("production-order:v1:booking:")) {
         try {
           const order = await productionOrderDetail(request, command.orderId);
-          if (order) notification = await notifyBookingConfirmedForProductionOrder(order.sourceBookingId);
+          if (order) notification = await hubJson(request, "/api/hospitality/production-confirmation", { method: "POST", headers: { "content-type": "application/json", accept: "application/json" }, body: JSON.stringify({ action: "notify-booking-confirmed", sourceBookingId: order.sourceBookingId }) }, (value): value is { status: string; reason?: string } => Boolean(value && typeof value === "object" && typeof (value as { status?: unknown }).status === "string"));
         } catch (error) {
           notification = { status: "failed", reason: `Confirmation email could not be prepared: ${(error as Error).message}` };
         }

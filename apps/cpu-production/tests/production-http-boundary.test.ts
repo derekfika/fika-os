@@ -41,3 +41,14 @@ test("hosted production-plan runtime has no local plan-file persistence", async 
   assert.equal(loadPlans.includes("fs.readFile"), false);
   assert.match(source, /createProductionPlanRepository/);
 });
+
+test("CPU routing and Hospitality notification paths use Hub HTTP boundaries", async () => {
+  for (const file of ["lib/cpu-routing.ts", "lib/cpu-oploc-labels.ts", "app/api/oplocs/route.ts", "app/api/production-plan/route.ts"]) {
+    const source = await readFile(join(process.cwd(), file), "utf8");
+    for (const forbidden of ["@hub/lib/connections-service", "@hub/lib/hospitality-booking-service"]) assert.equal(source.includes(forbidden), false, `${file} imports forbidden Hub implementation: ${forbidden}`);
+  }
+  const routing = await readFile(join(process.cwd(), "../integration-hub/app/api/cpu-production/routing/route.ts"), "utf8");
+  const notification = await readFile(join(process.cwd(), "../integration-hub/app/api/hospitality/production-confirmation/route.ts"), "utf8");
+  assert.match(routing, /hospitalityMenuProductionRouting/);
+  assert.match(notification, /notifyBookingConfirmedForProductionOrder/);
+});
