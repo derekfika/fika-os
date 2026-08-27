@@ -6,10 +6,10 @@ const failure = (message: string, status: number) => Object.assign(new Error(mes
 
 export async function resolveMenuActor(request: NextRequest): Promise<MenuActor> {
   try {
-    const response = await fetch(`${hubBase()}/api/auth/session`, { headers: { cookie: request.headers.get("cookie") || "" }, cache: "no-store" });
-    const body = await response.json() as { actor?: MenuActor; error?: { message?: string } };
-    if (!response.ok || !body.actor) throw failure(body.error?.message || "An authenticated Menu Planning session is required.", response.status || 401);
-    return body.actor;
+    const response = await fetch(`${hubBase()}/api/menu-planning/access`, { headers: { cookie: request.headers.get("cookie") || "" }, cache: "no-store" });
+    const body = await response.json() as { principal?: { identityId: string; email?: string }; canManage?: boolean; canPublish?: boolean; error?: { message?: string } };
+    if (!response.ok || !body.principal) throw failure(body.error?.message || "An authenticated Menu Planning session is required.", response.status || 401);
+    return { uid: body.principal.identityId, email: body.principal.email, role: body.canPublish ? "integration-admin" : body.canManage ? "reviewer" : "viewer" };
   } catch (error) {
     if (process.env.NODE_ENV !== "production" && !request.headers.get("cookie")) return { uid: "local-menu-planner", email: "admin@local.fika", role: "integration-admin", synthetic: true };
     if (error && typeof error === "object" && "status" in error) throw error;

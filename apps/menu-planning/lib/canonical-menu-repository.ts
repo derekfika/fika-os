@@ -6,10 +6,12 @@ import { normaliseDishCategory } from "./dish-categories";
 import { normaliseDishName } from "./text";
 import type { RollingEntry } from "./rolling-menu-types";
 import { appDataPath } from "../../shared/app-data-path";
+import { assertOperationalStoreAvailable } from "./hosted-runtime";
 
 const filePath = appDataPath("menu-planning", "menu-planning", "canonical-menu-items.json");
 
 async function readItems(): Promise<MenuItem[]> {
+  assertOperationalStoreAvailable();
   try {
     const value = JSON.parse(await readFile(filePath, "utf8")) as { items?: MenuItem[] };
     return Array.isArray(value.items) ? value.items : [];
@@ -20,6 +22,7 @@ async function readItems(): Promise<MenuItem[]> {
 }
 
 async function writeItems(items: MenuItem[]) {
+  assertOperationalStoreAvailable();
   await mkdir(path.dirname(filePath), { recursive: true });
   const normalised = items.map(item => ({ ...item, displayName: normaliseDishName(item.displayName) }));
   await writeFile(filePath, JSON.stringify({ version: 1, items: normalised }, null, 2) + "\n", "utf8");

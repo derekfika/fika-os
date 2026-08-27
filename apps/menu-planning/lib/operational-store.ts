@@ -2,6 +2,7 @@ import { DatabaseSync } from "node:sqlite";
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { appDataPath } from "../../shared/app-data-path";
+import { assertOperationalStoreAvailable } from "./hosted-runtime";
 
 type DocumentMap = Record<string, unknown>;
 export type TransactionState = { rolling: DocumentMap; publications: DocumentMap };
@@ -23,6 +24,7 @@ function readSeed(file: string, fallback: DocumentMap, label: string) {
 }
 
 function open() {
+  assertOperationalStoreAvailable();
   let database: DatabaseSync | undefined;
   try {
     const file = databaseFile();

@@ -2,11 +2,13 @@ import { demoSnapshot } from "@/fixtures/demo";
 import { publicationBlockers, type MenuSnapshot } from "./domain";
 import { normaliseDishName } from "./text";
 import { normaliseDishCategory } from "./dish-categories";
+import { assertOperationalStoreAvailable } from "./hosted-runtime";
 
 let state: MenuSnapshot = structuredClone(demoSnapshot);
 state.items.forEach(item => { item.category = normaliseDishCategory(item.category); });
-export function getMenuSnapshot() { return structuredClone(state); }
+export function getMenuSnapshot() { assertOperationalStoreAvailable(); return structuredClone(state); }
 export function runMenuCommand(command: { action: string; itemId?: string; dayId?: string; exceptionId?: string; allocationId?: string; displayName?: string; description?: string; preparationDescription?: string; category?: string; subcategory?: string; recipeStatus?: "draft" | "active" | "under_review" | "archived"; ingredients?: Array<{ name: string; quantity?: number; unit?: string; rawText?: string }>; yield?: number; yieldUnit?: string; yieldDescription?: string; portionSize?: number; servingGuidance?: string; preparationNotes?: string; holdingStorageNotes?: string; methodSteps?: string[]; mayContainNotes?: string; allergenEvidence?: MenuSnapshot["items"][number]["allergenEvidence"]; sourceEvidence?: { document: string; excerpt?: string; importedAt: string }; sourceReference?: { workbook: string; sheet: string; range?: string; rawValue?: unknown }; importedCandidate?: MenuSnapshot["items"][number]; reason?: string; siteId?: string; sourceSiteName?: string; plannedQuantity?: number; quantityUnit?: string; allergen?: string; allergenValue?: "contains" | "free_from" | "may_contain" | "unknown"; evidenceSource?: string }) {
+  assertOperationalStoreAvailable();
   const now = new Date().toISOString();
   if (command.action === "create-item") {
     if (!command.displayName?.trim()) throw Object.assign(new Error("A dish name is required."), { status: 422 });

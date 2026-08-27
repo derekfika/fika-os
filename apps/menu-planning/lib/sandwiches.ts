@@ -3,6 +3,7 @@ import path from "node:path";
 import { sandwichAllergenColumns, type SavedSandwich, type SandwichAllergens } from "./sandwich-types";
 import { legacyProductionItemId, productionItemId } from "../../shared/production-item-id";
 import { normaliseDishName } from "./text";
+import { assertOperationalStoreAvailable } from "./hosted-runtime";
 export { sandwichAllergenColumns, type SavedSandwich, type SandwichAllergens } from "./sandwich-types";
 
 function repositoryRoot() {
@@ -25,6 +26,7 @@ function normaliseAllergens(input: SandwichAllergens): SandwichAllergens {
   return next;
 }
 export async function loadSavedSandwiches() {
+  assertOperationalStoreAvailable();
   if (loaded) return records;
   loaded = true;
   try { const saved = JSON.parse(await fs.readFile(filePath, "utf8")) as SavedSandwich[]; for (const record of saved) records.set(record.id, { ...record, title: normaliseDishName(record.title) }); } catch { /* first local run */ }
@@ -38,6 +40,7 @@ export async function saveSandwich(
   mayContainNotes = "",
   parentMenuItemKey = "deli-style-sandwich-lunch",
 ) {
+  assertOperationalStoreAvailable();
   const cleanTitle = normaliseDishName(title);
   if (!cleanTitle) throw Object.assign(new Error("A sandwich title is required."), { status: 422 });
   await loadSavedSandwiches();
