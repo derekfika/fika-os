@@ -14,8 +14,7 @@ export function useRollingData() {
   const [snapshot, setSnapshot] = useState<RollingSnapshot>(); const [weeks, setWeeks] = useState<Array<{ id: string; weekCommencing: string }>>([]); const weeksRef = useRef(weeks); const [dishes, setDishes] = useState<Dish[]>([]); const [publicationState, setPublicationState] = useState<Record<string, PublicationDayState>>({}); const [message, setMessage] = useState(""); const [error, setError] = useState("");
   const params = useSearchParams(); const requestedWeek = params.get("week");
   const load = useCallback(async (weekId?: string) => { try {
-    let availableWeeks = weeksRef.current;
-    if (!availableWeeks.length) { const summaryBody = await readJson(await fetch("/api/rolling-menu?summariesOnly=true", { cache: "no-store" })); availableWeeks = summaryBody.weeks || []; weeksRef.current = availableWeeks; setWeeks(availableWeeks); }
+    const availableWeeks = weeksRef.current;
     const target = weekId || (requestedWeek ? availableWeeks.find(item => item.id === requestedWeek || item.weekCommencing === requestedWeek)?.id : undefined);
     const cached = target ? weekCache.get(target) : undefined;
     if (cached) { setSnapshot(cached.snapshot); setPublicationState(cached.publicationState); setError(""); }

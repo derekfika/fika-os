@@ -6,7 +6,10 @@ const hubUrl = () => (process.env.FIKA_HUB_BASE_URL || "").replace(/\/$/, "");
 export async function middleware(request: NextRequest) {
   if (request.nextUrl.pathname === "/api/internal/menu-planning-diagnostic") return NextResponse.next();
   if (!isHosted()) return NextResponse.next();
-  const response = await fetch(`${hubUrl()}/api/menu-planning/access`, { headers: { cookie: request.headers.get("cookie") || "" }, cache: "no-store" }).catch(() => undefined);
+  const totalStarted = performance.now();
+  const accessStarted = performance.now();
+  const response = await fetch(`${hubUrl()}/api/menu-planning/access?mode=admission`, { headers: { cookie: request.headers.get("cookie") || "" }, cache: "no-store" }).catch(() => undefined);
+  console.info("Menu Planning middleware timing", { hubAccessMs: performance.now() - accessStarted, totalMs: performance.now() - totalStarted, status: response?.status || 503 });
   if (response?.ok) return NextResponse.next();
   if (request.nextUrl.pathname.startsWith("/api/")) return NextResponse.json({ error: { message: response?.status === 403 ? "Menu Planning access is denied." : "Menu Planning authentication service is unavailable." } }, { status: response?.status === 403 ? 403 : response?.status === 401 ? 401 : 503 });
   const target = new URL(process.env.NEXT_PUBLIC_FIKA_HUB_URL || hubUrl() || request.nextUrl.origin);

@@ -28,10 +28,12 @@ test("ordinary rolling-menu APIs still require normal Menu Planning access", asy
   const originalFetch = globalThis.fetch;
   process.env.FIKA_RUNTIME_MODE = "staging";
   process.env.FIKA_HUB_BASE_URL = "https://hub.example";
-  globalThis.fetch = (async () => new Response(null, { status: 401 })) as typeof fetch;
+  let calledUrl = "";
+  globalThis.fetch = (async input => { calledUrl = String(input); return new Response(null, { status: 401 }); }) as typeof fetch;
   try {
     const response = await middleware(requestFor("/api/rolling-menu"));
     assert.equal(response.status, 401);
+    assert.equal(calledUrl, "https://hub.example/api/menu-planning/access?mode=admission");
   } finally {
     globalThis.fetch = originalFetch;
     if (originalMode === undefined) delete process.env.FIKA_RUNTIME_MODE;
