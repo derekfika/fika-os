@@ -29,8 +29,22 @@ test("hosted mutation auth uses FIKA_HUB_BASE_URL and forwards the session cooki
 });
 
 test("hosted mutation auth has an explicit missing-Hub configuration failure", () => {
-  const source = readFileSync(new URL("../lib/auth.ts", import.meta.url), "utf8");
+  const source = readFileSync(new URL("../lib/hub-url.ts", import.meta.url), "utf8");
   assert.match(source, /hosted\(\) && !configured/);
-  assert.match(source, /MENU_AUTHMOD_ENDPOINT_NOT_CONFIGURED/);
+  assert.match(source, /MENU_HUB_ENDPOINT_NOT_CONFIGURED/);
   assert.match(source, /configured \|\| "http:\/\/localhost:3200"/);
+});
+
+test("publication clients share the canonical Hub resolver and do not use a hosted localhost fallback", () => {
+  const oplocSource = readFileSync(new URL("../lib/oploc-authority.ts", import.meta.url), "utf8");
+  const productionSource = readFileSync(new URL("../lib/production-client.ts", import.meta.url), "utf8");
+  assert.match(oplocSource, /menuPlanningHubBaseUrl/);
+  assert.match(productionSource, /menuPlanningHubBaseUrl/);
+  assert.doesNotMatch(oplocSource, /INTEGRATION_HUB_BASE_URL \|\| "http:\/\/localhost:3200"/);
+  assert.doesNotMatch(productionSource, /INTEGRATION_HUB_BASE_URL \|\| "http:\/\/localhost:3200"/);
+});
+
+test("publication resolves authority before catalogue reconciliation", () => {
+  const source = readFileSync(new URL("../app/api/rolling-menu/route.ts", import.meta.url), "utf8");
+  assert.ok(source.indexOf("const oplocs = await readDeliveredInOplocs(request)") < source.indexOf("await reconcileCatalogueFromRollingEntries()"));
 });
