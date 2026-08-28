@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { errorResponse } from "@/lib/api";
 import { FirestoreAuthModRepository } from "@/lib/authmod-core";
-import { evaluateAuthority, resolveUserAccess } from "@/lib/authmod-core/evaluator";
+import { createAuthModEvaluationContext, evaluateAuthority, resolveUserAccess } from "@/lib/authmod-core/evaluator";
 import { requireFikaSession } from "@/lib/fika-session";
 
 export async function GET(request: NextRequest) {
@@ -12,8 +12,9 @@ export async function GET(request: NextRequest) {
     const sessionMs = performance.now() - sessionStarted;
     const repository = new FirestoreAuthModRepository();
     const principal = { type: "interactive" as const, id: session.authmodIdentityId, displayName: session.displayName, email: session.email, identityKind: session.identityKind };
+    const context = createAuthModEvaluationContext(repository, principal);
     const appAccessStarted = performance.now();
-    const app = await resolveUserAccess(repository, { principal, appId: "menu-planning" });
+    const app = await resolveUserAccess(repository, { principal, appId: "menu-planning" }, context);
     const appAccessMs = performance.now() - appAccessStarted;
     if (!app.allowed) throw Object.assign(new Error("Your account does not currently have Menu Planning access."), { status: app.reasonCode === "store-unavailable" ? 503 : 403 });
     if (request.nextUrl.searchParams.get("mode") === "admission") {
@@ -28,9 +29,9 @@ export async function GET(request: NextRequest) {
     const oplocAccessStarted = performance.now();
     const publishAuthorityStarted = performance.now();
     for (const oploc of activeOplocs) {
-      if ((await resolveUserAccess(repository, { principal, appId: "menu-planning", oplocId: oploc.id })).allowed) {
+      if ((await resolveUserAccess(repository, { principal, appId: "menu-planning", oplocId: oploc.id }, context)).allowed) {
         oplocs.push(oploc);
-        canPublish ||= (await evaluateAuthority(repository, { principal, appId: "menu-planning", resource: "menu.publish", action: "Publish", scope: { kind: "oploc", ids: [oploc.id] } })).allowed;
+        canPublish ||= (await evaluateAuthority(repository, { principal, appId: "menu-planning", resource: "menu.publish", action: "Publish", scope: { kind: "oploc", ids: [oploc.id] } }, context)).allowed;
       }
     }
     const perOplocAccessMs = performance.now() - oplocAccessStarted;
