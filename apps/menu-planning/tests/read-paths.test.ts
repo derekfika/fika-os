@@ -25,6 +25,11 @@ test("hosted rolling reads use targeted week and publication paths", () => {
   assert.match(repository, /getWeekSnapshot\(weekId: string\)/);
   assert.match(repository, /where\("sourceWeekId", "==", weekId\)/);
   assert.match(planner, /weekCache/);
-  assert.match(planner, /summariesOnly=true/);
+  assert.match(planner, /summariesOnly/);
   assert.match(planner, /neighbor/);
+  assert.match(planner, /getCachedWeek|putCachedWeek/);
+  assert.match(planner, /history\.pushState/);
+  assert.match(planner, /popstate/);
+  assert.doesNotMatch(planner, /router\.push/);
+  assert.match(readFileSync(new URL("../lib/menu-week-cache.ts", import.meta.url), "utf8"), /fika-menu-planning/);
 });

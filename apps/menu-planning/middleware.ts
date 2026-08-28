@@ -10,7 +10,13 @@ export async function middleware(request: NextRequest) {
   const accessStarted = performance.now();
   const response = await fetch(`${hubUrl()}/api/menu-planning/access?mode=admission`, { headers: { cookie: request.headers.get("cookie") || "" }, cache: "no-store" }).catch(() => undefined);
   console.info("Menu Planning middleware timing", { hubAccessMs: performance.now() - accessStarted, totalMs: performance.now() - totalStarted, status: response?.status || 503 });
-  if (response?.ok) return NextResponse.next();
+  if (response?.ok) {
+    const admission = await response.clone().json().catch(() => undefined);
+    const identity = typeof admission?.principal?.id === "string" ? admission.principal.id : "";
+    const next = NextResponse.next();
+    if (identity) next.headers.set("x-fika-menu-identity", identity);
+    return next;
+  }
   if (request.nextUrl.pathname.startsWith("/api/")) return NextResponse.json({ error: { message: response?.status === 403 ? "Menu Planning access is denied." : "Menu Planning authentication service is unavailable." } }, { status: response?.status === 403 ? 403 : response?.status === 401 ? 401 : 503 });
   const target = new URL(process.env.NEXT_PUBLIC_FIKA_HUB_URL || hubUrl() || request.nextUrl.origin);
   target.searchParams.set("returnTo", request.nextUrl.href);
