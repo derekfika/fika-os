@@ -11,7 +11,7 @@ import { test } from "node:test";
 import * as XLSX from "xlsx";
 import { addMenuSlot, applyEntryPatch, assertWeekDateAvailable, attachCanonicalDishIds, createEntry, defaultWeekForDate, duplicateWeek, emptyWeek, getWeek, importWorkbook, publishWeek, removeMenuSlot, saveSnapshot, updateEntry, validateWeek, ROLLING_SLOTS } from "../lib/rolling-menu";
 import { createCanonicalMenuItem, listCanonicalMenuItems } from "../lib/canonical-menu-repository";
-import { createPublishedMenuDay, currentPublishedDays, getMenuPublication, listMenuPublicationEvents, listMenuPublications, publicationPreview, publicationState, publishedDayMatrixHtml, replayMenuPublicationOutbox, withdrawPublishedMenuDay, withdrawPublishedMenuWeek, type MenuPublicationSignoff } from "../lib/menu-publication";
+import { buildPublishedDay, createPublishedMenuDay, currentPublishedDays, getMenuPublication, listMenuPublicationEvents, listMenuPublications, publicationPreview, publicationState, publishedDayMatrixHtml, replayMenuPublicationOutbox, withdrawPublishedMenuDay, withdrawPublishedMenuWeek, type MenuPublicationSignoff } from "../lib/menu-publication";
 import { resolveAllergenSnapshot } from "../lib/allergen-resolution";
 import type { RollingEntry } from "../lib/rolling-menu-types";
 
@@ -248,6 +248,43 @@ function updateEntryForTest(weekId: string, entryId: string, label?: string) {
 }
 
 const reviewedEntry = (): RollingEntry => ({ id: "entry:1", dayId: "day:1", date: "2026-08-17", slot: "SALAD 1", itemId: "dish-a", itemLabel: "Dish A", portions: 40, allocations: [{ destinationLabel: "Haleon", quantity: 40 }], allergens: { milk: "contains" }, mayContainNotes: "Shared kitchen", audit: [] });
+
+function containsUndefined(value: unknown): boolean {
+  if (Array.isArray(value)) return value.some(containsUndefined);
+  if (value && typeof value === "object") return Object.values(value).some(item => item === undefined || containsUndefined(item));
+  return false;
+}
+
+test("publication and production graphs omit absent optional Firestore fields", async () => {
+  const week = emptyWeek(`2029-03-${String((Date.now() % 20) + 1).padStart(2, "0")}`);
+  const rollingFile = join(process.cwd(), "local-data", "menu-planning", "rolling-menu-weeks.json");
+  const publicationFile = join(process.cwd(), "local-data", "menu-planning", "menu-publications.json");
+  const rollingBefore = existsSync(rollingFile) ? await readFile(rollingFile) : undefined;
+  const publicationBefore = existsSync(publicationFile) ? await readFile(publicationFile) : undefined;
+  try {
+    await saveSnapshot(week);
+    const created = await createEntry(week.week.id, week.days[0].id, "SALAD 1", "Serialization Dish", "test", "dish:serialization");
+    const entry = created.entries.find(value => value.dayId === week.days[0].id)!;
+    await updateEntryForTest(week.week.id, entry.id);
+    const preview = publicationPreview(await getWeek(week.week.id), week.days[0].id)[0];
+    const optionalPreview = buildPublishedDay({ week: week.week, days: week.days, entries: [{ ...entry, itemId: undefined, mayContainNotes: undefined, allocations: [{ destinationLabel: "Unmapped venue", quantity: 10 }] }] }, week.days[0]);
+    assert.equal("mayContainNotes" in optionalPreview.entries[0], false);
+    assert.equal("canonicalDishId" in optionalPreview.entries[0], false);
+    assert.equal("destinationId" in optionalPreview.entries[0].allocations[0], false);
+    assert.equal(containsUndefined(optionalPreview), false);
+    assert.equal(containsUndefined(preview), false);
+    const signature = { printedName: "Production Chef", signedAt: "2026-08-19T12:00:00.000Z", actor: "test", attestation: "Reviewed" };
+    const publication = await createPublishedMenuDay(week.week.id, week.days[0].id, { date: preview.date, productionChef: signature, headChefSiteManager: signature, dayContentHash: preview.contentHash }, "test");
+    assert.equal(containsUndefined(publication), false);
+    const events = (await listMenuPublicationEvents()).filter(event => event.sourceAggregateId.includes(week.week.id));
+    assert.ok(events.length >= 2);
+    assert.ok(events.every(event => containsUndefined(event) === false));
+    assert.equal((await publicationState(await getWeek(week.week.id)))[week.days[0].id].hasUnpublishedChanges, false);
+  } finally {
+    if (rollingBefore) await writeFile(rollingFile, rollingBefore); else await rm(rollingFile, { force: true });
+    if (publicationBefore) await writeFile(publicationFile, publicationBefore); else await rm(publicationFile, { force: true });
+  }
+});
 
 test("changing dish clears the previous menu-entry allergen review but preserves operations", async () => {
   const entry = reviewedEntry();
