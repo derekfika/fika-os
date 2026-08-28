@@ -11,6 +11,7 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev
 COPY server.mjs ./
+COPY renderer.mjs ./
 
 USER node
 EXPOSE 8080
