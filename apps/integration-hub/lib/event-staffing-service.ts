@@ -7,6 +7,7 @@ import { isTerminatedLegend } from "./connection-rules";
 import { sha256 } from "./profiler";
 import { parseCanonical, type CanonicalEntityType } from "./schemas";
 import type { CanonicalRecord } from "./types";
+import { listCanonicalRecordsByTypes } from "./canonical-oplocs";
 
 const canonical = () => db.collection("integrationHubCanonical");
 const revisions = () => db.collection("integrationHubCanonicalRevisions");
@@ -23,8 +24,8 @@ export type EventStaffingCommand =
 export type EventSuggestion = { legendId: string; label: string; eventRoleId: string; eventRoleLabel: string; eligibility: keyof typeof tiers; suggestionRank: number; teams: string[]; reason: string };
 
 export async function eventStaffingOverview() {
-  const snapshot = await canonical().get();
-  return eventStaffingOverviewFromRecords(snapshot.docs.map(document => document.data() as CanonicalRecord));
+  const records = await listCanonicalRecordsByTypes(["Employment", "Legend", "Operational Team", "Event Role", "Team Membership", "Event Staffing Preference"]);
+  return eventStaffingOverviewFromRecords(records as CanonicalRecord[]);
 }
 
 export function eventStaffingOverviewFromRecords(records: CanonicalRecord[]) {
@@ -42,8 +43,8 @@ export function eventStaffingOverviewFromRecords(records: CanonicalRecord[]) {
 }
 
 export async function eventStaffingSuggestions(eventRoleName: string) {
-  const snapshot = await canonical().get();
-  return suggestionsFromRecords(snapshot.docs.map(document => document.data() as CanonicalRecord), eventRoleName);
+  const records = await listCanonicalRecordsByTypes(["Employment", "Legend", "Operational Team", "Event Role", "Team Membership", "Event Staffing Preference"]);
+  return suggestionsFromRecords(records as CanonicalRecord[], eventRoleName);
 }
 
 export function suggestionsFromRecords(records: CanonicalRecord[], eventRoleName: string, today = new Date().toISOString().slice(0, 10)): EventSuggestion[] {

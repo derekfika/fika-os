@@ -1,6 +1,7 @@
 import { productionQueue, type ProductionOrder, type ProductionStatus } from "@hub/lib/production-domain";
 import type { ProductionPlan } from "../app/lib/production-plan";
 import { db } from "@hub/lib/firebase-admin";
+import { getActiveCanonicalOplocLabels } from "@hub/lib/canonical-oplocs";
 
 export type CpuChangeEvent = { sequence: number; serviceDate: string; entityType: "productionOrder" | "productionPlan"; entityId: string; revision: number; changeType: string; actorId: string; changedAt: string; idempotencyKey?: string };
 export type CpuProjectionLine = { name: string; quantity: number; unit: string; productionQuantity?: number; productionUnit?: string; dietaries: Record<string, unknown>; notes?: string };
@@ -29,11 +30,7 @@ export function buildCpuDayProjection(serviceDate: string, orders: ProductionOrd
 
 async function withReadableDestinations(orders: ProductionOrder[]) {
   if (!orders.length) return orders;
-  const snapshot = await db.collection("integrationHubCanonical").get();
-  const labels = new Map(snapshot.docs
-    .map(document => document.data() as { entityType?: string; canonicalId?: string; record?: { approvedName?: string; lifecycleState?: string } })
-    .filter(record => record.entityType === "OPLOC" && record.canonicalId && record.record?.approvedName && record.record.lifecycleState !== "decommissioned")
-    .map(record => [record.canonicalId!, String(record.record!.approvedName)] as const));
+  const labels = await getActiveCanonicalOplocLabels(orders.map(order => order.destinationOplocId || ""));
   return orders.map(order => {
     const id = order.destinationOplocId;
     const label = id ? labels.get(id) : undefined;

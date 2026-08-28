@@ -6,6 +6,7 @@ import { db } from "./firebase-admin";
 import { sha256 } from "./profiler";
 import { parseCanonical } from "./schemas";
 import type { CanonicalRecord } from "./types";
+import { listCanonicalRecordsByTypes } from "./canonical-oplocs";
 
 export const HOSPITALITY_PORTAL_READ_CONTRACT_VERSION = "fika.hospitality-menu-read.v2";
 type MenuEntity = "Hospitality Menu Item" | "Hospitality Menu Offering" | "Hospitality Menu Price" | "Hospitality Brochure Import" | "Hospitality Brochure Candidate";
@@ -142,7 +143,7 @@ export function hospitalityPortalReadFromRecords(records: CanonicalRecord[], req
 }
 
 export async function hospitalityPortalReadContract(request: HospitalityPortalReadRequest) {
-  const snapshot = await canonical().get(); return hospitalityPortalReadFromRecords(snapshot.docs.map(document => document.data() as CanonicalRecord), request);
+  const records = await listCanonicalRecordsByTypes(["Hospitality Menu Item", "Hospitality Menu Offering", "Hospitality Menu Price"]); return hospitalityPortalReadFromRecords(records as CanonicalRecord[], request);
 }
 
 export function assertNoPriceForQuoteOnly(offering: CanonicalRecord, price: CanonicalRecord) {

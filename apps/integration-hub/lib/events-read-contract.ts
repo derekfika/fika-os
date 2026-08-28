@@ -1,14 +1,14 @@
-import { db } from "./firebase-admin";
 import { eventStaffingOverviewFromRecords, suggestionsFromRecords } from "./event-staffing-service";
 import { isTerminatedLegend } from "./connection-rules";
 import type { CanonicalRecord } from "./types";
+import { listCanonicalRecordsByTypes } from "./canonical-oplocs";
 
 export const HUB_OPERATING_READ_CONTRACT_VERSION = "fika.hub-operating-read.v1";
 type Reference = { canonicalId: string; label: string; lifecycleStatus: string; parent?: { canonicalId: string; label: string } };
 
 export async function eventsOperatingReadContract(referenceIds: string[] = []) {
-  const snapshot = await db.collection("integrationHubCanonical").get();
-  return eventsOperatingReadContractFromRecords(snapshot.docs.map(document => document.data() as CanonicalRecord), referenceIds);
+  const records = await listCanonicalRecordsByTypes(["OPLOC", "Operational Area", "Service Definition", "Service Arrangement", "Equipment Asset", "Equipment Allocation", "Employment", "Legend", "Operational Team", "Team Membership", "Event Role", "Event Staffing Preference"]);
+  return eventsOperatingReadContractFromRecords(records as CanonicalRecord[], referenceIds);
 }
 
 export function eventsOperatingReadContractFromRecords(records: CanonicalRecord[], referenceIds: string[] = []) {

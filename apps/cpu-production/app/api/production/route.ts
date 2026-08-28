@@ -19,6 +19,7 @@ import { filterProductionOrdersForScope, normaliseProductionScope, type Producti
 import { appendCpuChange, buildCpuDayProjection, cpuPlans, cpuProjections, listCpuChanges, listCpuWeekChanges, rebuildCpuWeekProjection, weekCommencingFor } from "../../../lib/cpu-projection";
 import type { ProductionOrder } from "@hub/lib/production-domain";
 import { titleCaseDish } from "../../../lib/production-presentation";
+import { getActiveCanonicalOplocLabels } from "@hub/lib/canonical-oplocs";
 
 const localActor = {
   uid: "local-cpu",
@@ -247,11 +248,7 @@ async function ordersForScope(orders: Awaited<ReturnType<typeof productionQueue>
 
 async function withReadableDestinations(orders: Awaited<ReturnType<typeof productionQueue>>) {
   if (!orders.length) return orders;
-  const snapshot = await db.collection("integrationHubCanonical").get();
-  const labels = new Map(snapshot.docs
-    .map(document => document.data() as { entityType?: string; canonicalId?: string; record?: { approvedName?: string; lifecycleState?: string } })
-    .filter(record => record.entityType === "OPLOC" && record.canonicalId && record.record?.approvedName && record.record.lifecycleState !== "decommissioned")
-    .map(record => [record.canonicalId!, String(record.record!.approvedName)] as const));
+  const labels = await getActiveCanonicalOplocLabels(orders.map(order => order.destinationOplocId || ""));
   return orders.map(order => {
     const id = order.destinationOplocId;
     const label = id ? labels.get(id) : undefined;
