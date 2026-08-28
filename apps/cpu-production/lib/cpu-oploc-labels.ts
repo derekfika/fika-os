@@ -1,39 +1,27 @@
 import type { ProductionOrder } from "@fika/contracts";
 import { titleCaseDish } from "./production-presentation";
-import { db } from "./firebase-admin";
+import type { NextRequest } from "next/server";
+import { hubJson } from "./production-http-client";
 
-type CanonicalOplocRecord = {
-  canonicalId?: string;
-  entityType?: string;
-  lifecycleStatus?: string;
-  publicationStatus?: string;
-  record?: Record<string, unknown>;
-};
+type OplocLabelsResponse = { oplocs: Array<{ canonicalId: string; label: string }> };
 
-function isActiveCanonicalOploc(record: CanonicalOplocRecord) {
-  return record.entityType === "OPLOC" && Boolean(record.canonicalId) && record.lifecycleStatus !== "archived" && record.publicationStatus !== "withdrawn" && String(record.record?.lifecycleState || "active") === "active";
+function isOplocLabelsResponse(value: unknown): value is OplocLabelsResponse {
+  return Boolean(value && typeof value === "object" && Array.isArray((value as { oplocs?: unknown }).oplocs) && (value as { oplocs: unknown[] }).oplocs.every((item) => Boolean(item && typeof item === "object" && typeof (item as { canonicalId?: unknown }).canonicalId === "string" && typeof (item as { label?: unknown }).label === "string")));
 }
 
-async function activeOplocLabels(ids: string[]) {
-  const wanted = [...new Set(ids.filter(Boolean))];
-  const records: CanonicalOplocRecord[] = [];
-  for (let index = 0; index < wanted.length; index += 30) {
-    const chunk = wanted.slice(index, index + 30);
-    if (!chunk.length) continue;
-    const snapshot = await db.collection("integrationHubCanonical").where("entityType", "==", "OPLOC").where("canonicalId", "in", chunk).get();
-    records.push(...snapshot.docs.map(document => document.data() as CanonicalOplocRecord));
-  }
-  return new Map(records.filter(isActiveCanonicalOploc).map(record => [record.canonicalId!, String(record.record?.approvedName || record.canonicalId)] as const));
+async function activeOplocLabels(request: NextRequest, ids: string[]) {
+  const response = await hubJson(request, "/api/oploc-labels", { method: "POST", headers: { "content-type": "application/json", accept: "application/json" }, body: JSON.stringify({ oplocIds: [...new Set(ids.filter(Boolean))] }) }, isOplocLabelsResponse);
+  return new Map(response.oplocs.map(({ canonicalId, label }) => [canonicalId, label] as const));
 }
 
-export async function withReadableDestinations(orders: ProductionOrder[]) {
+export async function withReadableDestinations(request: NextRequest, orders: ProductionOrder[]) {
   if (!orders.length) return orders;
   const needsLookup = orders.some(order => {
     const current = order.destinationLabel?.trim();
     return Boolean(order.destinationOplocId && (!current || current === order.destinationOplocId));
   });
   const labels = needsLookup
-    ? await activeOplocLabels(orders.map(order => order.destinationOplocId || ""))
+    ? await activeOplocLabels(request, orders.map(order => order.destinationOplocId || ""))
     : new Map<string, string>();
   return orders.map(order => { const id = order.destinationOplocId; const label = id ? labels.get(id) : undefined; const current = order.destinationLabel?.trim(); const destinationLabel = !id || !label || (!current || current === id) ? (current && current !== id ? current : label) : current.startsWith(`${id} · `) ? `${label} · ${current.slice(id.length + 3)}` : current; return { ...order, ...(destinationLabel ? { destinationLabel } : {}), lines: order.lines.map(line => ({ ...line, itemName: titleCaseDish(line.itemName) })) }; });
 }
