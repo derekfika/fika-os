@@ -25,6 +25,12 @@ env:
   - variable: GOOGLE_WORKSPACE_DWD_SERVICE_ACCOUNT_JSON
     secret: GOOGLE_WORKSPACE_DWD_SERVICE_ACCOUNT_JSON
     availability: [RUNTIME]
+  - variable: FIKA_PDF_RENDERER_URL
+    value: https://fika-pdf-renderer-staging-6tc4airnza-ez.a.run.app
+    availability: [RUNTIME]
+  - variable: FIKA_PDF_RENDERER_TOKEN
+    secret: FIKA_PDF_RENDERER_TOKEN
+    availability: [RUNTIME]
   - variable: NEXT_PUBLIC_FIKA_HUB_URL
     value: https://fika-os-staging--fika-os-dev.europe-west4.hosted.app
     availability: [BUILD, RUNTIME]
