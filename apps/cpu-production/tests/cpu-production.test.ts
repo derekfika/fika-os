@@ -418,6 +418,14 @@ test("CPU dashboard opens with a Monday-to-Friday production heads-up", () => {
   assert.match(calendar, /pieces\/quantities/);
 });
 
+test("CPU dashboard opens from projection and hydrates canonical detail", () => {
+  assert.match(page, /const projected = orders\.find/);
+  assert.match(page, /setSelected\(projected\)/);
+  assert.match(page, /cpu-detail-panel-visible/);
+  assert.match(page, /cpu-detail-canonical-hydration/);
+  assert.match(page, /detailCache/);
+});
+
 test("production views use Connections routing without duplicating bookings", () => {
   assert.match(page, /productionScope/);
   assert.doesNotMatch(page, /dashboardView/);

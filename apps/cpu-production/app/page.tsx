@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import type {
   ProductionOrder,
@@ -69,6 +69,7 @@ export default function CpuProduction() {
   const [showCreate, setShowCreate] = useState(false);
   const [error, setError] = useState("");
   const [refreshing, setRefreshing] = useState(false);
+  const detailCache = useRef(new Map<string, ProductionOrder>());
   const load = async (showFeedback = false): Promise<ProductionOrder[]> => {
     if (showFeedback) setRefreshing(true);
     try {
@@ -90,6 +91,10 @@ export default function CpuProduction() {
       }
       const projection = body.projection;
       const projectedOrders: ProductionOrder[] = projection ? cpuProjectionToOrders(filterCpuProjectionForScope(projection, productionScope)) : [];
+      for (const [key, cachedOrder] of detailCache.current) {
+        const current = projectedOrders.find((candidate) => candidate.canonicalId === cachedOrder.canonicalId);
+        if (!current || current.version !== cachedOrder.version) detailCache.current.delete(key);
+      }
       window.localStorage.setItem(cacheKey, JSON.stringify(projection));
       setOrders(projectedOrders);
       try {
@@ -110,7 +115,7 @@ export default function CpuProduction() {
   };
   useEffect(() => {
     void load();
-  }, [productionScope, view, dayDate, weekCommencing]);
+  }, [productionScope, view === "day" || view === "totals" ? "day" : "week", view === "day" || view === "totals" ? dayDate : weekCommencing]);
   const sites = [
     ...new Set(
       orders.map((order) => order.destinationOplocId).filter(Boolean),
@@ -129,14 +134,28 @@ export default function CpuProduction() {
   const todayKey = new Date().toLocaleDateString("en-CA");
   const openOrder = async (order: Pick<ProductionOrder, "canonicalId">, preserveOpen = false) => {
     if (!preserveOpen) setShowHospitalityAllergens(false);
-    if (!preserveOpen) setSelected(undefined);
     setDetailError("");
+    const projected = orders.find((candidate) => candidate.canonicalId === order.canonicalId);
+    const cacheKey = projected ? `${projected.canonicalId}:${projected.version}` : undefined;
+    const cached = cacheKey ? detailCache.current.get(cacheKey) : undefined;
+    if (cached) {
+      setSelected(cached);
+      setDetailLoading(false);
+      return;
+    }
+    if (projected) setSelected(projected);
+    else if (!preserveOpen) setSelected(undefined);
     setDetailLoading(true);
+    performance.mark("cpu-detail-click");
+    if (projected) performance.measure("cpu-detail-panel-visible", "cpu-detail-click");
     try {
       const response = await fetch(`/api/production?canonicalId=${encodeURIComponent(order.canonicalId)}`, { cache: "no-store" });
       const body = await readApiResponse<{ order?: ProductionOrder; error?: { message?: string } }>(response);
       if (!response.ok || !body.order) throw new Error(body.error?.message || "Could not load the canonical Production Order.");
-      setSelected(body.order as ProductionOrder);
+      const hydrated = body.order as ProductionOrder;
+      detailCache.current.set(`${hydrated.canonicalId}:${hydrated.version}`, hydrated);
+      setSelected(hydrated);
+      performance.measure("cpu-detail-canonical-hydration", "cpu-detail-click");
     } catch (cause) {
       setDetailError(cause instanceof Error ? cause.message : "Could not load the canonical Production Order.");
     } finally { setDetailLoading(false); }
