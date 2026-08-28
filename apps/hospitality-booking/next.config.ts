@@ -5,5 +5,8 @@ import type { NextConfig } from "next";
 const config: NextConfig = {
   turbopack: { root: __dirname },
   serverExternalPackages: ["@sparticuz/chromium", "puppeteer-core"],
+  outputFileTracingIncludes: {
+    "/api/quotes/drive": ["./node_modules/@sparticuz/chromium/bin/**/*"],
+  },
 };
 export default config;
