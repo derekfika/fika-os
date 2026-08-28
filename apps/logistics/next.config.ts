@@ -7,6 +7,9 @@ const nextConfig: NextConfig = {
     root: path.resolve(__dirname, "../.."),
     resolveAlias: {
       "firebase-admin": "./apps/logistics/node_modules/firebase-admin",
+      "firebase-admin/app": "./apps/logistics/node_modules/firebase-admin/app",
+      "firebase-admin/auth": "./apps/logistics/node_modules/firebase-admin/auth",
+      "firebase-admin/firestore": "./apps/logistics/node_modules/firebase-admin/firestore",
       jszip: "./apps/logistics/node_modules/jszip",
       papaparse: "./apps/logistics/node_modules/papaparse",
       xlsx: "./apps/logistics/node_modules/xlsx",
