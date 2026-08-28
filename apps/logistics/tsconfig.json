@@ -28,6 +28,9 @@
     "paths": {
       "@/*": [
         "./*"
+      ],
+      "@hub/*": [
+        "../integration-hub/*"
       ]
     },
     "allowJs": true,

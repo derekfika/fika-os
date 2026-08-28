@@ -1,8 +1,9 @@
 import type { FulfilmentRequirement } from "../../shared/fulfilment-requirement";
+import { requiredUpstreamUrl } from "./runtime";
 export type GovernedOploc = { id:string; label:string; address?:string };
 export type ProductionContext = { canonicalId:string; sourceBookingId?:string; status?:string; workflowStatus?:string; serviceDate?:string; clientName?:string; serviceType?:string; guestCount?:number; origin?:string; destinationLabel?:string; requiredBy?:string; serviceWindow?:{startTime:string;endTime?:string}; operationalNotes?:string };
-const hub = process.env.FIKA_HUB_URL || "http://localhost:3200";
-const cpu = process.env.FIKA_CPU_URL || "http://localhost:3400";
+const hub = requiredUpstreamUrl("FIKA_HUB_BASE_URL");
+const cpu = requiredUpstreamUrl("FIKA_CPU_BASE_URL");
 function requestInit(cookie?:string): RequestInit { const headers: Record<string,string> = {}; if (cookie) headers.cookie = cookie; if (process.env.FIKA_INTERNAL_API_TOKEN) headers["x-fika-internal-token"] = process.env.FIKA_INTERNAL_API_TOKEN; return { cache:"no-store", ...(Object.keys(headers).length ? { headers } : {}) }; }
 export async function fetchRequirements(serviceDate?:string, cookie?:string):Promise<FulfilmentRequirement[]> { const response = await fetch(`${hub}/api/fulfilment-requirements${serviceDate ? `?serviceDate=${encodeURIComponent(serviceDate)}` : ""}`, requestInit(cookie)); if (!response.ok) throw new Error(`Integration Hub fulfilment read failed (${response.status}).`); const body = await response.json() as {requirements?:FulfilmentRequirement[]}; return body.requirements || []; }
 export async function fetchOplocs(cookie?:string):Promise<GovernedOploc[]> { const response = await fetch(`${hub}/api/oplocs`, requestInit(cookie)); if (!response.ok) throw new Error(`Integration Hub OPLOC read failed (${response.status}).`); const body = await response.json() as {oplocs?:Array<{canonicalId:string;label:string;address?:string}>}; const oplocs=(body.oplocs || []).map(oploc=>({id:oploc.canonicalId,label:oploc.label.trim(),...(oploc.address?.trim() ? { address: oploc.address.trim() } : {})})); if (!oplocs.length) throw new Error("Integration Hub returned no governed OPLOCs."); return oplocs; }

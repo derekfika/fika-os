@@ -585,6 +585,11 @@ type RealPlannerProps = {
 
 function groupCollectionPending(group: PlannerWorkGroup, runs: PlannerDay["runs"]) {
   if (!group.collectionRequired) return false;
+  if (group.groupKey.startsWith("projection-collection:")) {
+    const stopId = group.requirementRefs.find((ref) => ref.stopId)?.stopId;
+    const stop = stopId ? runs.flatMap((run) => run.stops).find((item) => item.stopId === stopId) : undefined;
+    return Boolean(stop && !hasUsableSchedule(stop));
+  }
   return group.requirementRefs.some((ref) => {
     if (!ref.runId || !ref.stopId) return false;
     const delivery = runs.find((run) => run.runId === ref.runId)?.stops.find((stop) => stop.stopId === ref.stopId);
@@ -596,10 +601,24 @@ function groupCollectionPending(group: PlannerWorkGroup, runs: PlannerDay["runs"
 
 function RealPlanner(props: RealPlannerProps) {
   const { data, weekData, date, weekCommencing, runs, groups, movements } = props;
+  useEffect(() => {
+    const selection = props.inspector;
+    if (!selection) return;
+    if (selection.kind === "group" && !groups.some((group) => group.groupKey === selection.id)) {
+      props.setInspector(undefined);
+    } else if (selection.kind === "movement" && !movements.some((movement) => movement.movementId === selection.id)) {
+      props.setInspector(undefined);
+    } else if (selection.kind === "stop" && !runs.some((run) => run.runId === selection.runId && run.stops.some((stop) => stop.stopId === selection.id))) {
+      props.setInspector(undefined);
+    } else if (selection.kind === "run" && !runs.some((run) => run.runId === selection.id)) {
+      props.setInspector(undefined);
+    }
+  }, [groups, movements, props, runs]);
   const projectionLoadIdsForStop = (stopId: string) => {
-    const load = data?.projection?.deliveryLoads.find((item) => `projection-stop:${item.id}` === stopId);
+    const load = data?.projection?.deliveryLoads.find((item) => [`projection-stop:${item.id}`, `projection-stop:delivery:${item.id}`, `projection-stop:collection:${item.id}`].includes(stopId));
     return load?.loadIds?.length ? load.loadIds : stopId.startsWith("projection-stop:") ? [stopId.slice("projection-stop:".length)] : [];
   };
+  const projectionLoadIdForStop = (stopId: string) => stopId.split(":").slice(2).join(":") || stopId.slice("projection-stop:".length);
   const handleInspectorAction = async (payload: object) => {
     const action = payload as { action?: string; runId?: string; stopId?: string; requirementId?: string; plannedArrivalTime?: string; plannedWindow?: { startTime: string; endTime?: string }; loaded?: boolean };
     if (data?.projection && action.stopId?.startsWith("projection-stop:") && action.action === "schedule-stop") {
@@ -641,6 +660,23 @@ function RealPlanner(props: RealPlannerProps) {
   };
   const queueStateForGroup = (group: PlannerWorkGroup) => groupCollectionPending(group, runs) ? "needs_time" as const : workGroupQueueState(group, runs);
   const queueStateForMovement = (movement: PlannerMovementView) => movementQueueState(movement, runs);
+  const nextAvailableTime = (targetRunId: string, lane: "delivery" | "collection", requested: string, destinationId: string, excludeStopId?: string) => {
+    let candidate = requested;
+    let changed = true;
+    while (changed) {
+      changed = false;
+      for (const stop of runs.find((run) => run.runId === targetRunId)?.stops || []) {
+        if (stop.stopId === excludeStopId || stop.lane !== lane || stop.destination.id === destinationId || !hasUsableSchedule(stop)) continue;
+        const start = stop.plannedWindow?.startTime || stop.plannedArrivalTime!;
+        const end = stop.plannedWindow?.endTime || addClockMinutes(start, 15);
+        if (clockMinutes(candidate) < clockMinutes(end) && clockMinutes(candidate) >= clockMinutes(start)) {
+          candidate = end;
+          changed = true;
+        }
+      }
+    }
+    return candidate;
+  };
   const includeState = (state: ReturnType<typeof workGroupQueueState>) => props.queueFilter === "all" || props.queueFilter === state;
   const includeType = (type: "delivery" | "collection" | "transfer") => props.queueTypeFilter === "all" || props.queueTypeFilter === type;
   const filteredGroups = groups.filter((group) => queueStateForGroup(group) !== "scheduled" && includeState(queueStateForGroup(group)) && includeType("delivery"));
@@ -651,34 +687,36 @@ function RealPlanner(props: RealPlannerProps) {
   const countFor = (filter: RealPlannerProps["queueFilter"]) => filter === "all" ? queueGroups.length + queueMovements.length : groups.filter((group) => queueStateForGroup(group) === filter).length + movements.filter((movement) => queueStateForMovement(movement) === filter).length;
   const selectedDateLabel = formatOperationalDate(date, { weekday: "long", day: "numeric", month: "long" }).toUpperCase();
   const scheduleStop = (sourceRunId: string, stopId: string, targetRunId: string, time: string, end?: string, lane?: "delivery" | "collection") => {
-    if (lane === "collection" && data?.projection) {
-      props.setError("Delivery jobs can only be scheduled in the delivery timeline.");
-      return;
-    }
     if (data?.projection && stopId.startsWith("projection-stop:")) {
       const loadIds = projectionLoadIdsForStop(stopId);
       if (!loadIds.length || !time) return;
-      void (async () => { for (const loadId of loadIds) await props.act({ action: "reschedule-delivery-load", loadId, scheduledTime: time, ...(end ? { scheduledEnd: end } : {}), targetRunId, by: "Franco" }); })();
+      const collection = stopId.startsWith("projection-stop:collection:");
+      const rawStop = data.stops.find((item) => item.canonicalId === stopId);
+      const safeTime = nextAvailableTime(targetRunId, collection ? "collection" : "delivery", time, rawStop?.locationOplocId || "", stopId);
+      void (async () => { for (const loadId of loadIds) await props.act({ action: "reschedule-delivery-load", loadId: collection ? projectionLoadIdForStop(stopId) : loadId, scheduledTime: safeTime, ...(end ? { scheduledEnd: addClockMinutes(safeTime, Math.max(15, clockMinutes(end) - clockMinutes(time))) } : {}), targetRunId, ...(collection ? { lane: "collection" } : {}), by: "Franco" }); })();
       return;
     }
     const sourceRun = runs.find((run) => run.runId === sourceRunId);
     const targetRun = runs.find((run) => run.runId === targetRunId);
     const rawStop = data?.stops.find((item) => item.canonicalId === stopId);
     if (!sourceRun || !targetRun || !rawStop) return;
-    const timing = end ? { plannedWindow: { startTime: time, endTime: end } } : { plannedArrivalTime: time };
+    const safeTime = nextAvailableTime(targetRunId, lane === "collection" || rawStop.movementType === "collection" ? "collection" : "delivery", time, rawStop.locationOplocId, stopId);
+    const timing = end ? { plannedWindow: { startTime: safeTime, endTime: addClockMinutes(safeTime, Math.max(15, clockMinutes(end) - clockMinutes(time))) } } : { plannedArrivalTime: safeTime };
     if (sourceRunId === targetRunId) void props.act({ action: "schedule-stop", by: "Franco", runId: sourceRunId, stopId, ...timing, expectedRunVersion: sourceRun.version, expectedStopVersion: rawStop.version });
     else void props.act({ action: "move-stop", by: "Franco", runId: sourceRunId, targetRunId, stopId, ...timing, expectedRunVersion: sourceRun.version, expectedTargetRunVersion: targetRun.version, expectedStopVersion: rawStop.version });
   };
   const assignQueueItem = (kind: "group" | "movement", id: string, targetRunId: string, time?: string, lane?: "delivery" | "collection", collectionRequired?: boolean) => {
     if (data?.projection && kind === "group") {
       if (lane === "collection") {
-        props.setError("Delivery jobs can only be scheduled in the delivery timeline.");
+        const loadId = id.startsWith("projection-collection:") ? id.slice("projection-collection:".length) : "";
+        if (loadId && time) void props.act({ action: "reschedule-delivery-load", loadId, scheduledTime: time, targetRunId, lane: "collection", by: "Franco" });
         return;
       }
       const group = groups.find((item) => item.groupKey === id);
       const jobId = group?.requirementRefs[0]?.requirementId;
       if (!jobId || !time) return;
-      void props.act({ action: "assign-job-to-load", jobId, scheduledTime: time, targetRunId, lane, by: "Franco" });
+      const safeTime = nextAvailableTime(targetRunId, "delivery", time, group?.destinationOplocId || "");
+      void props.act({ action: "assign-job-to-load", jobId, scheduledTime: safeTime, targetRunId, lane, ...(group?.collectionRequired || collectionRequired ? { collectionRequired: true } : {}), by: "Franco" });
       return;
     }
     const run = runs.find((item) => item.runId === targetRunId);
@@ -700,12 +738,14 @@ function RealPlanner(props: RealPlannerProps) {
       if (!group) return;
       const eligible = group.requirementRefs.filter((ref) => !ref.runId && (ref.status === "ready_for_planning" || ref.status === "amended" || (ref.status === "pending" && ref.sourceDomain === "cpu-production")));
       if (!eligible.length) return;
-      void props.act({ action: "assign-group", by: "Franco", runId: targetRunId, expectedRunVersion: run.version, requirementIds: eligible.map((ref) => ref.requirementId), expectedSourceVersions: Object.fromEntries(eligible.map((ref) => [ref.requirementId, ref.sourceVersion])), ...(group.collectionRequired || collectionRequired ? { collectionRequired: true } : {}), ...(time ? { plannedArrivalTime: time } : {}) });
+      const safeTime = time ? nextAvailableTime(targetRunId, "delivery", time, group.destinationOplocId) : time;
+      void props.act({ action: "assign-group", by: "Franco", runId: targetRunId, expectedRunVersion: run.version, requirementIds: eligible.map((ref) => ref.requirementId), expectedSourceVersions: Object.fromEntries(eligible.map((ref) => [ref.requirementId, ref.sourceVersion])), ...(group.collectionRequired || collectionRequired ? { collectionRequired: true } : {}), ...(safeTime ? { plannedArrivalTime: safeTime } : {}) });
     } else {
       const movement = movements.find((item) => item.movementId === id);
       if (!movement || movement.assignedStops.length) return;
       if (lane && movement.type !== lane && !(movement.type === "transfer" && lane === "collection")) return;
-      void props.act({ action: "assign", by: "Franco", runId: targetRunId, expectedRunVersion: run.version, movementId: id, ...(time ? { plannedArrivalTime: time } : {}) });
+      const safeTime = time ? nextAvailableTime(targetRunId, lane === "collection" ? "collection" : "delivery", time, movement.to?.id || movement.from?.id || "") : time;
+      void props.act({ action: "assign", by: "Franco", runId: targetRunId, expectedRunVersion: run.version, movementId: id, ...(safeTime ? { plannedArrivalTime: safeTime } : {}) });
     }
   };
   const returnStopToPlanning = async (runId: string, stopId: string) => {
@@ -756,8 +796,7 @@ function RealPlanner(props: RealPlannerProps) {
   return <main className="mock-tower real-planner">
     <header className="mock-shell">
       <div className="mock-brand"><img src="/brand-assets/logos/fika_logo_white_png.png" alt="FIKA" /><span>OS</span></div>
-      <div className="mock-context"><span>Operations workspace</span><strong>Logistics</strong></div><span className="mock-chevron">⌄</span><div className="mock-shell-spacer" />
-      <div className="mock-environment"><i /> Local development <span>— no cloud data</span></div><div className="mock-bell">♧</div><div className="mock-avatar">DM</div><span className="mock-chevron">⌄</span>
+      <div className="mock-context"><span>Operations workspace</span><strong>Logistics</strong></div><div className="mock-shell-spacer" />
     </header>
     <div className="mock-canvas">
       <section className="mock-heading"><h1>Logistics</h1><p>Plan and dispatch daily deliveries.</p></section>
@@ -874,23 +913,29 @@ function DayPilotTimeline({ runs, serviceDate, onStop, onSchedule, onQueueDrop }
     if (!ready) return;
     try { window.localStorage.setItem("fika-logistics-timeline", JSON.stringify({ deliveryStart, collectionStart, zoom, verticalZoom })); } catch { /* Preferences are an optimisation only. */ }
   }, [collectionStart, deliveryStart, ready, verticalZoom, zoom]);
+  const alignTimeline = (control: DayPilot.Scheduler | null, start: number) => {
+    if (!control) return;
+    try {
+      control.scrollTo(`${serviceDate}T${String(start).padStart(2, "0")}:00:00`);
+    } catch {
+      // DayPilot can briefly have no viewport while it is updating. The retry
+      // below is intentionally guarded so a transient update cannot crash the page.
+    }
+  };
   useEffect(() => {
-    deliveryControl.current?.scrollTo(`${serviceDate}T${String(deliveryStart).padStart(2, "0")}:00:00`);
-  }, [deliveryStart, serviceDate]);
-  useEffect(() => {
-    collectionControl.current?.scrollTo(`${serviceDate}T${String(collectionStart).padStart(2, "0")}:00:00`);
-  }, [collectionStart, serviceDate]);
-  useEffect(() => {
-    const frame = window.requestAnimationFrame(() => {
+    let cancelled = false;
+    let frame = 0;
+    const align = (attempt: number) => {
+      if (cancelled) return;
       const cellWidth = Math.max(20, Math.round((145 * zoom) / 4));
-      deliveryControl.current?.update({ scale: "CellDuration", cellDuration: 15, cellWidth, snapToGrid: true });
-      collectionControl.current?.update({ scale: "CellDuration", cellDuration: 15, cellWidth, snapToGrid: true });
-      deliveryControl.current?.scrollTo(`${serviceDate}T${String(deliveryStart).padStart(2, "0")}:00:00`);
-      collectionControl.current?.scrollTo(`${serviceDate}T${String(collectionStart).padStart(2, "0")}:00:00`);
-      deliveryControl.current?.setScrollX(deliveryStart * Math.round(145 * zoom));
-      collectionControl.current?.setScrollX(collectionStart * Math.round(145 * zoom));
-    });
-    return () => window.cancelAnimationFrame(frame);
+      try { deliveryControl.current?.update({ scale: "CellDuration", cellDuration: 15, cellWidth, snapToGrid: true }); } catch { /* wait for DayPilot's viewport */ }
+      try { collectionControl.current?.update({ scale: "CellDuration", cellDuration: 15, cellWidth, snapToGrid: true }); } catch { /* wait for DayPilot's viewport */ }
+      alignTimeline(deliveryControl.current, deliveryStart);
+      alignTimeline(collectionControl.current, collectionStart);
+      if (attempt < 3) frame = window.requestAnimationFrame(() => align(attempt + 1));
+    };
+    frame = window.requestAnimationFrame(() => align(0));
+    return () => { cancelled = true; window.cancelAnimationFrame(frame); };
   }, [collectionStart, deliveryStart, serviceDate, zoom]);
   useEffect(() => {
     setOptimisticSchedules((current) => {
@@ -915,17 +960,13 @@ function DayPilotTimeline({ runs, serviceDate, onStop, onSchedule, onQueueDrop }
     const end = optimistic?.end || stop.plannedWindow?.endTime || addClockMinutes(start, 15);
     return { id: stop.stopId, text: `${stop.destination.label} · ${start}`, start: `${serviceDate}T${start}:00`, end: `${serviceDate}T${end}:00`, resource: resourceId(lane, run.runId), cssClass: `fika-event ${stop.attention.length ? "attention" : ""}`, tags: { runId: run.runId, stopId: stop.stopId, lane } } satisfies DayPilot.EventData;
   }));
-  const scheduler = (lane: "delivery" | "collection", start: number, controlRef: React.MutableRefObject<DayPilot.Scheduler | null>) => <DayPilotScheduler controlRef={controlRef} startDate={`${serviceDate}T00:00:00`} days={1} scale="CellDuration" cellDuration={15} cellWidth={Math.max(20, Math.round((145 * zoom) / 4))} rowHeaderWidth={108} rowMarginTop={6} rowMarginBottom={6} eventHeight={Math.max(42, Math.round(52 * verticalZoom))} height={Math.max(160, runs.length * Math.round(78 * verticalZoom) + 38)} heightSpec="Auto" timeFormat="Clock24Hours" timeHeaders={[{ groupBy: "Hour", format: "HH:mm" }]} resources={resources(lane)} events={events(lane)} eventMoveHandling="Update" eventResizeHandling="Update" snapToGrid={true} eventTextWrappingEnabled={true} onEventClick={(args) => { const tags = args.e.data.tags as { runId: string; stopId: string }; onStop(tags.runId, tags.stopId); }} onEventMoved={(args) => { const tags = args.e.data.tags as { runId: string; stopId: string; lane: "delivery" | "collection" }; const startTime = quarterTime(time(args.newStart)); const endTime = quarterTime(time(args.newEnd)); setOptimisticSchedules((current) => ({ ...current, [tags.stopId]: { start: startTime, end: endTime } })); const target = resourceParts(String(args.newResource)); onSchedule(tags.runId, tags.stopId, target.runId, startTime, endTime, target.lane); }} onEventResized={(args) => { const tags = args.e.data.tags as { runId: string; stopId: string; lane: "delivery" | "collection" }; const startTime = quarterTime(time(args.newStart)); const endTime = quarterTime(time(args.newEnd)); setOptimisticSchedules((current) => ({ ...current, [tags.stopId]: { start: startTime, end: endTime } })); onSchedule(tags.runId, tags.stopId, tags.runId, startTime, endTime, tags.lane); }} onBeforeEventRender={(args) => { const tags = args.data.tags as { runId?: string; stopId?: string; lane?: "delivery" | "collection" } | undefined; const eventLane = tags?.lane || lane; const stopId = tags?.stopId || String(args.data.id); const resource = String(args.data.resource || ""); const runId = tags?.runId || resource.slice(resource.indexOf(":") + 1); args.data.backColor = eventLane === "collection" ? "#f0f8fd" : "#eefaf3"; args.data.borderColor = eventLane === "collection" ? "#218ac3" : "#58bd39"; args.data.fontColor = "#280f8c"; args.data.html = `<span class="fika-event-drag-source" draggable="true" data-stop-id="${stopId}" data-run-id="${runId}"><strong>${args.data.text}</strong></span>`; }} />;
+  const scheduler = (lane: "delivery" | "collection", start: number, controlRef: React.MutableRefObject<DayPilot.Scheduler | null>) => <DayPilotScheduler controlRef={controlRef} startDate={`${serviceDate}T${String(start).padStart(2, "0")}:00:00`} days={1} scale="CellDuration" cellDuration={15} cellWidth={Math.max(20, Math.round((145 * zoom) / 4))} rowHeaderWidth={108} rowMarginTop={6} rowMarginBottom={6} eventHeight={Math.max(42, Math.round(52 * verticalZoom))} height={Math.max(160, runs.length * Math.round(78 * verticalZoom) + 38)} heightSpec="Auto" timeFormat="Clock24Hours" timeHeaders={[{ groupBy: "Hour", format: "HH:mm" }]} resources={resources(lane)} events={events(lane)} eventMoveHandling="Update" eventResizeHandling="Update" snapToGrid={true} eventTextWrappingEnabled={true} dynamicEventRendering="Disabled" progressiveRowRendering={false} scrollDelayEvents={0} scrollDelayRows={0} onEventClick={(args) => { const tags = args.e.data.tags as { runId: string; stopId: string }; onStop(tags.runId, tags.stopId); }} onEventMoved={(args) => { const tags = args.e.data.tags as { runId: string; stopId: string; lane: "delivery" | "collection" }; const startTime = quarterTime(time(args.newStart)); const endTime = quarterTime(time(args.newEnd)); setOptimisticSchedules((current) => ({ ...current, [tags.stopId]: { start: startTime, end: endTime } })); const target = resourceParts(String(args.newResource)); onSchedule(tags.runId, tags.stopId, target.runId, startTime, endTime, target.lane); }} onEventResized={(args) => { const tags = args.e.data.tags as { runId: string; stopId: string; lane: "delivery" | "collection" }; const startTime = quarterTime(time(args.newStart)); const endTime = quarterTime(time(args.newEnd)); setOptimisticSchedules((current) => ({ ...current, [tags.stopId]: { start: startTime, end: endTime } })); onSchedule(tags.runId, tags.stopId, tags.runId, startTime, endTime, tags.lane); }} onBeforeEventRender={(args) => { const tags = args.data.tags as { runId?: string; stopId?: string; lane?: "delivery" | "collection" } | undefined; const eventLane = tags?.lane || lane; const stopId = tags?.stopId || String(args.data.id); const resource = String(args.data.resource || ""); const runId = tags?.runId || resource.slice(resource.indexOf(":") + 1); args.data.backColor = eventLane === "collection" ? "#f0f8fd" : "#eefaf3"; args.data.borderColor = eventLane === "collection" ? "#218ac3" : "#58bd39"; args.data.fontColor = "#280f8c"; args.data.html = `<strong>${args.data.text}</strong>`; }} />;
   useEffect(() => {
     const root = document.querySelector<HTMLElement>(".daypilot-timeline");
     if (!root) return;
-    const dragStart = (event: Event) => {
-      const drag = event as unknown as globalThis.DragEvent;
-      const source = (drag.target as HTMLElement | null)?.closest<HTMLElement>(".fika-event-drag-source");
-      if (!source || !drag.dataTransfer) return;
-      drag.dataTransfer.effectAllowed = "move";
-      drag.dataTransfer.setData("application/x-logistics-stop", `${source.dataset.runId}|${source.dataset.stopId}`);
-    };
+    // DayPilot owns movement of timeline events. Nested browser draggable
+    // elements compete with it and cause the event to jump while dragging.
+    root.querySelectorAll<HTMLElement>(".fika-event-drag-source").forEach((element) => element.removeAttribute("draggable"));
     const allowDrop = (event: Event) => {
       const drag = event as unknown as globalThis.DragEvent;
       if (!drag.dataTransfer?.types.includes("application/x-logistics-queue")) return;
@@ -948,15 +989,18 @@ function DayPilotTimeline({ runs, serviceDate, onStop, onSchedule, onQueueDrop }
       const remembered = lastQueueDrag.current?.lane === lane ? lastQueueDrag.current : undefined;
       if (!coords && !remembered) return;
       const target = resourceParts(remembered?.rowId || String(coords?.row.id));
+      // DayPilot's coordinates are already calculated from the current
+      // pointer position. Applying a second clientX delta shifted drops twice
+      // and was the source of the inaccurate placement.
+      const pointerTime = remembered?.time || coords!.time;
       const payload = JSON.parse(value) as { kind: "group" | "movement"; id: string };
       const collectionRequired = drag.dataTransfer?.getData("application/x-logistics-collection-required") === "true";
-      onQueueDrop(payload.kind, payload.id, target.runId, quarterTime(time(remembered?.time || coords!.time)), lane, collectionRequired);
+      onQueueDrop(payload.kind, payload.id, target.runId, quarterTime(time(pointerTime)), lane, collectionRequired);
       lastQueueDrag.current = undefined;
     };
     root.addEventListener("dragover", allowDrop);
     root.addEventListener("drop", handleDrop);
-    document.addEventListener("dragstart", dragStart, true);
-    return () => { root.removeEventListener("dragover", allowDrop); root.removeEventListener("drop", handleDrop); document.removeEventListener("dragstart", dragStart, true); };
+    return () => { root.removeEventListener("dragover", allowDrop); root.removeEventListener("drop", handleDrop); };
   }, [onQueueDrop]);
   const shift = (lane: "delivery" | "collection", amount: number) => { const setter = lane === "delivery" ? setDeliveryStart : setCollectionStart; setter((value) => Math.max(lane === "collection" ? 12 : 6, Math.min(18, value + amount))); };
   if (!runs.length) return <div className="mock-timeline"><Empty title="No vehicles available" body="Vehicles will appear automatically for the selected day." /></div>;
@@ -2069,9 +2113,10 @@ function StopPanel({
 }) {
   const collectionRequired = Boolean(rawStop?.collectionRequired || stop.linkedStopId);
   const [selectedJobId, setSelectedJobId] = useState<string>();
+  const [removedSubloadIds, setRemovedSubloadIds] = useState<string[]>([]);
   const selectedProjectionJob = selectedJobId ? projection?.planningQueue.find((job) => job.id === selectedJobId) || projection?.deliveryLoads.flatMap((load) => load.jobs).find((job) => job.id === selectedJobId) : undefined;
   const selectedRequirement = selectedJobId ? rawRequirements.find((requirement) => requirement.canonicalId === selectedJobId) : undefined;
-  const subloads = rawStop?.requirementRefs.map((ref) => {
+  const subloads = rawStop?.requirementRefs.filter((ref) => !removedSubloadIds.includes(ref.requirementId)).map((ref) => {
     const projectionJob = projection?.planningQueue.find((job) => job.id === ref.requirementId) || projection?.deliveryLoads.flatMap((load) => load.jobs).find((job) => job.id === ref.requirementId);
     const requirement = rawRequirements.find((item) => item.canonicalId === ref.requirementId);
     const contents = projectionJob?.contents || requirement?.lines.map((line) => ({ description: line.displayNameSnapshot, quantity: line.quantity, unit: line.unit })) || [];
@@ -2122,8 +2167,7 @@ function StopPanel({
                     expectedRunVersion: run.version,
                     expectedStopVersion: rawStop.version,
                     resolutionNotes: "Resolved by planner",
-                  })
-                }
+                  })}
               >
                 Resolve
               </button>
@@ -2151,7 +2195,9 @@ function StopPanel({
                 <small>View subload details →</small>
               </button>
               <button
-                onClick={() =>
+                onClick={() => {
+                  setRemovedSubloadIds((current) => [...current, ref.requirementId]);
+                  if (selectedJobId === ref.requirementId) setSelectedJobId(undefined);
                   onAction({
                     action: "unassign-requirement",
                     by: "Franco",
@@ -2160,8 +2206,8 @@ function StopPanel({
                     requirementId: ref.requirementId,
                     expectedRunVersion: run.version,
                     expectedStopVersion: rawStop.version,
-                  })
-                }
+                  });
+                }}
               >
                 Unassign
               </button>

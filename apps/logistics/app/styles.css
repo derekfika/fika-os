@@ -237,6 +237,26 @@
   }
 }
 
+.detail-subloads { display: grid; gap: 8px; margin: 10px 0 0; padding: 0; list-style: none; }
+.detail-subloads li { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 11px; border: 1px solid #e7e4f0; border-radius: 10px; background: #faf9fd; }
+.detail-subloads li span { min-width: 0; }
+.detail-subloads li label { display: flex; align-items: center; min-width: 0; gap: 10px; cursor: pointer; }
+.detail-subloads li input { width: 20px; height: 20px; flex: 0 0 auto; accent-color: #4f20c1; }
+.detail-subloads b, .detail-subloads small { display: block; }
+.detail-subloads b { color: #4f20c1; font-size: 10px; letter-spacing: .06em; text-transform: uppercase; }
+.detail-subloads small { margin-top: 3px; overflow: hidden; color: #69697a; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.detail-subloads li > strong { flex: 0 0 auto; color: #191a35; font-size: 13px; }
+.subload-card { display: flex; width: 100%; align-items: center; gap: 10px; padding: 0; border: 0; background: transparent; color: inherit; text-align: left; }
+.subload-card .subload-check { display: grid; width: 23px; height: 23px; flex: 0 0 23px; place-items: center; border: 2px solid #cfc9df; border-radius: 7px; color: #fff; font-size: 14px; font-weight: 900; }
+.subload-card.is-loaded .subload-check { border-color: #19b982; background: #19b982; }
+.subload-card.is-delivered .subload-check { border-color: #168bd0; background: #168bd0; }
+.subload-card span:nth-child(2) { flex: 1 1 auto; min-width: 0; }
+.subload-card > strong { flex: 0 0 auto; color: #191a35; font-size: 13px; }
+.subload-card em { display: block; margin-top: 3px; color: #77778a; font-size: 10px; font-style: normal; }
+.subload-card.is-loaded em { color: #15946b; font-weight: 800; }
+.subload-card.is-delivered em { color: #168bd0; font-weight: 800; }
+.detail-help { margin-top: -2px !important; margin-bottom: 9px !important; color: #77778a !important; font-size: 11px !important; }
+
 /* Keep the sheet controls clear of the status row on smaller screens. */
 .stop-detail-sheet { padding-top: 50px; }
 .loaded-tag { color: #0c9a6b; font-style: normal; }
@@ -868,6 +888,8 @@
   font-display: swap;
 }
 :root {
+  --font-display: "FIKA Vim", sans-serif;
+  --font-body: "FIKA Gilroy", Arial, sans-serif;
   --purple: var(--color-brand-primary);
   --purple-dark: var(--color-brand-dark);
   --purple-ink: var(--color-text-primary);

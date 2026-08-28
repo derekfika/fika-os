@@ -78,10 +78,13 @@ export function selectMobileRuns(
     draft: 3,
     completed: 4,
   };
-  return runs
-    .filter(
-      (run) => run.serviceDate === serviceDate && run.driverLabel === driver,
-    )
+  const dated = runs.filter((run) => run.serviceDate === serviceDate);
+  const assigned = dated.filter((run) => run.driverLabel === driver);
+  // Projection-backed days can contain an unassigned route while dispatch is
+  // being set up. Keep that route visible in the driver view instead of
+  // presenting an empty day; once a driver is assigned the exact match wins.
+  const visible = assigned.length ? assigned : dated.filter((run) => !run.driverLabel);
+  return visible
     .sort(
       (a, b) =>
         priority[a.status] - priority[b.status] ||

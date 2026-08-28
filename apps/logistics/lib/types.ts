@@ -55,6 +55,8 @@ export type DeliveryStop = {
   plannedArrivalTime?: string;
   plannedWindow?: { startTime: string; endTime?: string };
   loaded?: boolean;
+  loadedRequirementIds?: string[];
+  deliveredRequirementIds?: string[];
   completedFromStatus?: "planned" | "arrived";
   postponedFromServiceDate?: string;
   postponedAt?: string;
@@ -122,6 +124,10 @@ export type DeliveryLoad = {
   destinationLabelSnapshot?: string;
   scheduledTime: string;
   scheduledEnd?: string;
+  collectionRequired?: boolean;
+  collectionScheduledTime?: string;
+  collectionScheduledEnd?: string;
+  collectionRunId?: string;
   loaded?: boolean;
   status: "planned" | "ready" | "dispatched" | "delivered" | "cancelled";
   driverId?: string;
@@ -157,5 +163,5 @@ export type LogisticsChangeEvent = {
 };
 
 export type LogisticsProjectionJob = Pick<LogisticsJob, "id" | "sourceType" | "sourceId" | "serviceDate" | "originOplocId" | "destinationOplocId" | "destinationLabelSnapshot" | "requestedWindow" | "productionReadiness" | "collectionStatus" | "contents" | "notes"> & { totalUnits: number; assignedLoadId?: string };
-export type LogisticsProjectionLoad = Pick<DeliveryLoad, "id" | "serviceDate" | "originOplocId" | "destinationOplocId" | "destinationLabelSnapshot" | "scheduledTime" | "scheduledEnd" | "loaded" | "status" | "driverId" | "vehicleId" | "runId"> & { loadIds?: string[]; jobs: Array<Pick<LogisticsJob, "id" | "sourceType" | "sourceId" | "collectionStatus" | "productionReadiness" | "contents" | "notes"> & { totalUnits: number }>; jobCount: number; totalUnits: number; collectedCount: number; readiness: "ready" | "attention" | "awaiting_collection" };
+export type LogisticsProjectionLoad = Pick<DeliveryLoad, "id" | "serviceDate" | "originOplocId" | "destinationOplocId" | "destinationLabelSnapshot" | "scheduledTime" | "scheduledEnd" | "collectionRequired" | "collectionScheduledTime" | "collectionScheduledEnd" | "collectionRunId" | "loaded" | "status" | "driverId" | "vehicleId" | "runId"> & { loadIds?: string[]; jobs: Array<Pick<LogisticsJob, "id" | "sourceType" | "sourceId" | "collectionStatus" | "productionReadiness" | "contents" | "notes"> & { totalUnits: number }>; jobCount: number; totalUnits: number; collectedCount: number; readiness: "ready" | "attention" | "awaiting_collection" };
 export type LogisticsDayProjection = { serviceDate: string; revision: number; lastChangeSequence: number; planningQueue: LogisticsProjectionJob[]; deliveryLoads: LogisticsProjectionLoad[]; runs: Array<Pick<DeliveryRun, "canonicalId" | "status" | "driverId" | "driverLabel" | "vehicleLabel">>; exceptions: string[]; summary: { queuedJobs: number; loads: number; assignedJobs: number; collectedJobs: number }; rebuiltAt: string };

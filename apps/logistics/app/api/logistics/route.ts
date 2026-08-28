@@ -1,5 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
+import { errorResponse } from "@hub/lib/api";
+import { assertSameOrigin } from "@hub/lib/csrf";
 import { db } from "@/lib/firebase";
+import { requireLogisticsAccess } from "@/lib/auth";
+import { hostedRuntime } from "@/lib/runtime";
 import {
   fetchOplocs,
   fetchProductionContexts,
@@ -96,6 +100,41 @@ function addMinutesToTime(value: string, minutes: number) {
   const [hours, mins] = value.split(":").map(Number);
   const total = Math.min(23 * 60 + 59, hours * 60 + mins + minutes);
   return `${String(Math.floor(total / 60)).padStart(2, "0")}:${String(total % 60).padStart(2, "0")}`;
+}
+function collectionScheduleForDelivery(delivery: DeliveryStop) {
+  const deliveryStart = delivery.plannedWindow?.startTime || delivery.plannedArrivalTime;
+  if (!deliveryStart) return {};
+  return { plannedArrivalTime: addMinutesToTime(deliveryStart, 6 * 60) };
+}
+function loadTimesOverlap(start: string, end: string | undefined, otherStart: string, otherEnd: string | undefined) {
+  const toMinutes = (value: string) => Number(value.slice(0, 2)) * 60 + Number(value.slice(3, 5));
+  const aStart = toMinutes(start);
+  const aEnd = toMinutes(end || addMinutesToTime(start, 15));
+  const bStart = toMinutes(otherStart);
+  const bEnd = toMinutes(otherEnd || addMinutesToTime(otherStart, 15));
+  return aStart < bEnd && bStart < aEnd;
+}
+function nextAvailableLoadTime(loads: import("@/lib/types").DeliveryLoad[], input: { loadId?: string; runId?: string; lane: "delivery" | "collection"; destinationOplocId: string; start: string; end?: string }) {
+  let candidate = input.start;
+  let changed = true;
+  while (changed) {
+    changed = false;
+    const conflict = loads.find((load) => {
+    if (load.id === input.loadId || load.status === "cancelled") return false;
+    if (!input.runId) return false;
+    const sameRun = input.lane === "collection" ? (load.collectionRunId || load.runId) === input.runId : load.runId === input.runId;
+    if (!sameRun || (input.lane === "delivery" ? load.destinationOplocId : load.originOplocId) === input.destinationOplocId) return false;
+    const otherStart = input.lane === "collection" ? load.collectionScheduledTime : load.scheduledTime;
+    const otherEnd = input.lane === "collection" ? load.collectionScheduledEnd : load.scheduledEnd;
+    return Boolean(otherStart && loadTimesOverlap(candidate, input.end, otherStart, otherEnd));
+    });
+    if (!conflict) continue;
+    const conflictStart = input.lane === "collection" ? conflict.collectionScheduledTime! : conflict.scheduledTime;
+    const conflictEnd = input.lane === "collection" ? conflict.collectionScheduledEnd : conflict.scheduledEnd;
+    candidate = addMinutesToTime(conflictEnd || conflictStart, 15 - (conflictEnd ? 0 : 15));
+    changed = true;
+  }
+  return candidate;
 }
 function assertTransition(
   status: DeliveryRun["status"],
@@ -241,7 +280,7 @@ async function reconcileLogisticsDay(serviceDate: string, by: string, cookie?: s
   return { created, updated, projection, requirements };
 }
 
-export async function GET(request: NextRequest) {
+async function getLogistics(request: NextRequest) {
   const requestedRunId = request.nextUrl.searchParams.get("runId") || undefined;
   const requestedDate =
     request.nextUrl.searchParams.get("serviceDate") || undefined;
@@ -411,6 +450,8 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
+    const principal = await requireLogisticsAccess(request);
+    if (hostedRuntime()) assertSameOrigin(request);
     const body = (await request.json()) as {
       action: string;
       by?: string;
@@ -452,8 +493,31 @@ export async function POST(request: NextRequest) {
       lane?: "delivery" | "collection";
       collectionStatus?: "awaiting" | "collected";
     };
-    const by = body.by || "Franco";
+    const by = principal.displayName;
     const now = new Date().toISOString();
+    // The mobile view can receive projection-backed stops from the same
+    // logistics timeline as desktop. Resolve those display IDs to their
+    // canonical delivery load instead of sending them through the legacy
+    // run/stop execution branch.
+    if (body.stopId?.startsWith("projection-stop:") && ["mark-stop-loaded", "mark-subload-loaded", "mark-subload-delivered", "complete-stop", "undo-completion"].includes(body.action)) {
+      const projectionStopParts = body.stopId.split(":");
+      const loadId = projectionStopParts.length >= 3 ? projectionStopParts.slice(2).join(":") : body.stopId.slice("projection-stop:".length);
+      const result = await db.runTransaction(async (transaction) => {
+        const loadRef = deliveryLoads().doc(loadId);
+        const loadSnap = await transaction.get(loadRef);
+        if (!loadSnap.exists) throw new HttpError(404, "Delivery load not found.");
+        const load = loadSnap.data() as import("@/lib/types").DeliveryLoad;
+        const loaded = body.action === "mark-stop-loaded" || body.action === "mark-subload-loaded" ? body.loaded !== false : load.loaded;
+        const status = body.action === "complete-stop" || body.action === "mark-subload-delivered" ? "delivered" as const : body.action === "undo-completion" ? "planned" as const : load.status;
+        const nextVersion = load.version + 1;
+        const next = { ...load, loaded, status, ...(status === "delivered" ? { deliveredAt: now } : { deliveredAt: undefined }), updatedAt: now, version: nextVersion, audit: [...load.audit, { action: body.action, at: now, by, version: nextVersion }] };
+        transaction.set(loadRef, next);
+        return next;
+      });
+      const event = await appendLogisticsChange({ serviceDate: result.serviceDate, entityType: "deliveryLoad", entityId: result.id, changeType: body.action, revision: result.version, changedAt: now, actorId: by });
+      await rebuildLogisticsProjection(result.serviceDate, by, event.sequence);
+      return NextResponse.json({ load: result });
+    }
     if (body.action === "repair-logistics-assignment-dates") {
       return NextResponse.json({ migration: await repairLegacyAssignmentServiceDates() });
     }
@@ -475,10 +539,10 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(saved);
     }
     if (body.action === "assign-job-to-load" && (body.job || body.jobId)) {
-      if (body.lane === "collection") throw new HttpError(422, "Delivery jobs cannot be assigned to the collection timeline.");
+      if (body.lane === "collection") throw new HttpError(422, "Choose the delivery timeline first; collection is scheduled from the linked collection card.");
       const job = body.job || (await listDeliveryLoadState()).jobs.find((item) => item.id === body.jobId);
       if (!job) throw new HttpError(404, "Logistics job not found.");
-      const scheduledTime = body.scheduledTime || job.requestedWindow?.startTime;
+      let scheduledTime = body.scheduledTime || job.requestedWindow?.startTime;
       const originOplocId = job.originOplocId || CPU_PRODUCTION_LOCATION_ID;
       if (!originOplocId || !job.destinationOplocId || !scheduledTime)
         throw new HttpError(422, "Job cannot be assigned without canonical OPLOC IDs and a scheduled time; it remains unassigned.");
@@ -488,21 +552,26 @@ export async function POST(request: NextRequest) {
           throw new HttpError(422, "The selected vehicle run is no longer available. Refresh Logistics and try again.");
       }
       const destinationOplocId = job.destinationOplocId;
+      const existingLoads = (await listDeliveryLoadState(job.serviceDate)).loads;
+      const requestedEnd = body.scheduledEnd || job.requestedWindow?.endTime;
+      const requestedDuration = requestedEnd ? Math.max(15, Number(requestedEnd.slice(0, 2)) * 60 + Number(requestedEnd.slice(3, 5)) - (Number(scheduledTime.slice(0, 2)) * 60 + Number(scheduledTime.slice(3, 5)))) : undefined;
+      scheduledTime = nextAvailableLoadTime(existingLoads, { runId: body.targetRunId, lane: "delivery", destinationOplocId, start: scheduledTime, end: requestedEnd });
+      const scheduledEnd = requestedDuration === undefined ? undefined : addMinutesToTime(scheduledTime, requestedDuration);
       const result = await db.runTransaction(async (transaction) => {
         const loadId = `load:${job.serviceDate}:${originOplocId}:${destinationOplocId}:${scheduledTime}`;
         const loadRef = deliveryLoads().doc(loadId);
         const jobRef = logisticsJobs().doc(job.id);
         const assignmentQuery = logisticsAssignments().where("jobId", "==", job.id).where("serviceDate", "==", job.serviceDate);
         const [loadSnap, assignmentSnap] = await Promise.all([transaction.get(loadRef), transaction.get(assignmentQuery)]);
-      const load = loadSnap.exists ? loadSnap.data() as import("@/lib/types").DeliveryLoad : { ...createLoad({ serviceDate: job.serviceDate, originOplocId, destinationOplocId, scheduledTime, scheduledEnd: job.requestedWindow?.endTime, destinationLabelSnapshot: job.destinationLabelSnapshot, by, now }), ...(body.targetRunId ? { runId: body.targetRunId } : {}) };
+        const load = loadSnap.exists ? loadSnap.data() as import("@/lib/types").DeliveryLoad : { ...createLoad({ serviceDate: job.serviceDate, originOplocId, destinationOplocId, scheduledTime, ...(scheduledEnd ? { scheduledEnd } : {}), destinationLabelSnapshot: job.destinationLabelSnapshot, by, now }), ...(body.targetRunId ? { runId: body.targetRunId } : {}) };
         const existing = assignmentSnap.docs.map((doc) => doc.data() as import("@/lib/types").LogisticsAssignment);
         const next = assignJob({ ...job, originOplocId, requestedWindow: { ...(job.requestedWindow || {}), startTime: scheduledTime } }, load, existing, by, now);
         const priorLoadRefs = existing.filter((item) => item.loadId !== load.id).map((item) => deliveryLoads().doc(item.loadId));
         const priorLoadSnaps = await Promise.all(priorLoadRefs.map((ref) => transaction.get(ref)));
-        transaction.set(jobRef, { ...job, originOplocId, requestedWindow: { ...(job.requestedWindow || {}), startTime: scheduledTime }, updatedAt: now });
+        transaction.set(jobRef, { ...job, originOplocId, requestedWindow: { ...(job.requestedWindow || {}), startTime: scheduledTime, ...(scheduledEnd ? { endTime: scheduledEnd } : {}) }, updatedAt: now });
         for (const prior of existing.filter((item) => item.loadId !== load.id)) transaction.delete(logisticsAssignments().doc(`${prior.jobId}:${prior.loadId}`));
         transaction.set(logisticsAssignments().doc(`${job.id}:${load.id}`), next.assignment);
-        const nextLoad = body.targetRunId ? { ...next.load, runId: body.targetRunId } : next.load;
+        const nextLoad = { ...next.load, ...(body.collectionRequired ? { collectionRequired: true } : {}), ...(body.targetRunId ? { runId: body.targetRunId } : {}) };
         transaction.set(loadRef, nextLoad);
         for (const [index, prior] of existing.filter((item) => item.loadId !== load.id).entries()) {
           const priorSnap = priorLoadSnaps[index];
@@ -519,21 +588,25 @@ export async function POST(request: NextRequest) {
     }
     if (body.action === "reschedule-delivery-load" && body.loadId && body.scheduledTime) {
       validatePlannedSchedule(undefined, { startTime: body.scheduledTime, ...(body.scheduledEnd ? { endTime: body.scheduledEnd } : {}) });
+      const currentLoads = (await listDeliveryLoadState()).loads;
+      const currentLoad = currentLoads.find((load) => load.id === body.loadId);
+      const requestedDuration = body.scheduledEnd ? Math.max(15, Number(body.scheduledEnd.slice(0, 2)) * 60 + Number(body.scheduledEnd.slice(3, 5)) - (Number(body.scheduledTime.slice(0, 2)) * 60 + Number(body.scheduledTime.slice(3, 5)))) : undefined;
+      const effectiveScheduledTime = currentLoad ? nextAvailableLoadTime(currentLoads, { loadId: currentLoad.id, runId: body.targetRunId || (body.lane === "collection" ? currentLoad.collectionRunId || currentLoad.runId : currentLoad.runId), lane: body.lane === "collection" ? "collection" : "delivery", destinationOplocId: body.lane === "collection" ? currentLoad.originOplocId : currentLoad.destinationOplocId, start: body.scheduledTime, end: body.scheduledEnd }) : body.scheduledTime;
+      const effectiveScheduledEnd = requestedDuration === undefined ? undefined : addMinutesToTime(effectiveScheduledTime, requestedDuration);
       const result = await db.runTransaction(async (transaction) => {
         const loadRef = deliveryLoads().doc(body.loadId!);
         const loadSnap = await transaction.get(loadRef);
         if (!loadSnap.exists) throw new HttpError(404, "Delivery load not found.");
         const load = loadSnap.data() as import("@/lib/types").DeliveryLoad;
         const nextVersion = load.version + 1;
+        const collection = body.lane === "collection";
         transaction.update(loadRef, {
-          scheduledTime: body.scheduledTime,
-          ...(body.scheduledEnd ? { scheduledEnd: body.scheduledEnd } : {}),
-          ...(body.targetRunId ? { runId: body.targetRunId } : {}),
+          ...(collection ? { collectionScheduledTime: effectiveScheduledTime, ...(effectiveScheduledEnd ? { collectionScheduledEnd: effectiveScheduledEnd } : {}), ...(body.targetRunId ? { collectionRunId: body.targetRunId } : {}) } : { scheduledTime: effectiveScheduledTime, ...(effectiveScheduledEnd ? { scheduledEnd: effectiveScheduledEnd } : {}), ...(body.targetRunId ? { runId: body.targetRunId } : {}) }),
           updatedAt: now,
           version: nextVersion,
-          audit: [...load.audit, { action: "load-rescheduled", at: now, by, version: nextVersion }],
+          audit: [...load.audit, { action: collection ? "collection-rescheduled" : "load-rescheduled", at: now, by, version: nextVersion }],
         });
-        return { ...load, scheduledTime: body.scheduledTime, ...(body.scheduledEnd ? { scheduledEnd: body.scheduledEnd } : {}), updatedAt: now, version: nextVersion };
+        return { ...load, ...(collection ? { collectionScheduledTime: effectiveScheduledTime, ...(effectiveScheduledEnd ? { collectionScheduledEnd: effectiveScheduledEnd } : {}), ...(body.targetRunId ? { collectionRunId: body.targetRunId } : {}) } : { scheduledTime: effectiveScheduledTime, ...(effectiveScheduledEnd ? { scheduledEnd: effectiveScheduledEnd } : {}), ...(body.targetRunId ? { runId: body.targetRunId } : {}) }), updatedAt: now, version: nextVersion };
       });
       const event = await appendLogisticsChange({
         serviceDate: result.serviceDate,
@@ -606,6 +679,7 @@ export async function POST(request: NextRequest) {
         const [jobsSnap, assignmentsSnap] = await Promise.all([transaction.get(logisticsJobs().where("serviceDate", "==", load.serviceDate)), transaction.get(logisticsAssignments().where("loadId", "==", load.id))]);
         const jobs = jobsSnap.docs.map((doc) => doc.data() as import("@/lib/types").LogisticsJob);
         const assignments = assignmentsSnap.docs.map((doc) => doc.data() as import("@/lib/types").LogisticsAssignment);
+        if (load.collectionRequired && !load.collectionScheduledTime) throw new HttpError(422, "Collection timing is required before this delivery can be dispatched.");
         try { assertDispatchable(load, jobs, assignments); } catch (error) { throw new HttpError(422, error instanceof Error ? error.message : "Load is not ready to dispatch."); }
         const next = { ...load, status: "dispatched" as const, dispatchedAt: now, updatedAt: now, version: load.version + 1, audit: [...load.audit, { action: "load-dispatched", at: now, by, version: load.version + 1 }] };
         transaction.set(loadRef, next);
@@ -798,6 +872,13 @@ export async function POST(request: NextRequest) {
         );
         if (deliveryStops.some((stop) => !stop.loaded))
           throw new HttpError(422, "Every delivery must be marked loaded before dispatch.");
+        const outstandingCollection = deliveryStops.find((delivery) => {
+          if (!delivery.collectionRequired || !delivery.linkedStopId) return false;
+          const collection = state.stops.find((stop) => stop.canonicalId === delivery.linkedStopId);
+          return !collection || !collection.plannedArrivalTime && !collection.plannedWindow?.startTime;
+        });
+        if (outstandingCollection)
+          throw new HttpError(422, `Collection timing is required for ${outstandingCollection.locationLabelSnapshot} before dispatch.`);
         assertTransition(current.status, "dispatched");
       }
       else {
@@ -1028,6 +1109,7 @@ export async function POST(request: NextRequest) {
             working.push({
               ...collection,
               linkedStopId: markedDelivery.canonicalId,
+              ...collectionScheduleForDelivery({ ...markedDelivery, ...(planned || {}) }),
             });
           }
         }
@@ -1626,6 +1708,8 @@ export async function POST(request: NextRequest) {
         "complete-stop",
         "undo-completion",
         "mark-stop-loaded",
+        "mark-subload-loaded",
+        "mark-subload-delivered",
         "defer-collection",
         "report-issue",
         "defer-stop",
@@ -1644,6 +1728,8 @@ export async function POST(request: NextRequest) {
           false &&
         body.action !== "defer-stop" &&
         body.action !== "mark-stop-loaded" &&
+        body.action !== "mark-subload-loaded" &&
+        body.action !== "mark-subload-delivered" &&
         body.action !== "undo-completion" &&
         body.action !== "defer-collection" &&
         body.action !== "arrive-stop" &&
@@ -1676,6 +1762,8 @@ export async function POST(request: NextRequest) {
         if (
           body.action !== "resolve-issue" &&
           body.action !== "mark-stop-loaded" &&
+          body.action !== "mark-subload-loaded" &&
+          body.action !== "mark-subload-delivered" &&
           body.action !== "undo-completion" &&
           body.action !== "defer-collection" &&
           run.status !== "dispatched"
@@ -1784,6 +1872,36 @@ export async function POST(request: NextRequest) {
               },
             ],
           };
+        }
+        if (body.action === "mark-subload-loaded") {
+          if (!body.requirementId || !stop.requirementRefs.some((ref) => ref.requirementId === body.requirementId))
+            throw new HttpError(422, "That subload is not attached to this stop.");
+          const current = new Set(stop.loadedRequirementIds || []);
+          if (body.loaded === false) current.delete(body.requirementId);
+          else current.add(body.requirementId);
+          const loadedRequirementIds = [...current].filter((id) => stop.requirementRefs.some((ref) => ref.requirementId === id));
+          nextStop = {
+            ...stop,
+            loadedRequirementIds,
+            loaded: loadedRequirementIds.length === stop.requirementRefs.length,
+            version: stop.version + 1,
+            updatedAt: now,
+            audit: [...stop.audit, { action: body.loaded === false ? "subload-unloaded" : "subload-loaded", at: now, by, version: stop.version + 1 }],
+          };
+        }
+        if (body.action === "mark-subload-delivered") {
+          if (!body.requirementId || !stop.requirementRefs.some((ref) => ref.requirementId === body.requirementId))
+            throw new HttpError(422, "That subload is not attached to this stop.");
+          const deliveredRequirementIds = [...new Set([...(stop.deliveredRequirementIds || []), body.requirementId])].filter((id) => stop.requirementRefs.some((ref) => ref.requirementId === id));
+          nextStop = {
+            ...stop,
+            deliveredRequirementIds,
+            status: deliveredRequirementIds.length === stop.requirementRefs.length ? "completed" : stop.status,
+            version: stop.version + 1,
+            updatedAt: now,
+            audit: [...stop.audit, { action: "subload-delivered", at: now, by, version: stop.version + 1 }],
+          };
+          if (nextStop.status === "completed") nextRun = { ...run, version: run.version + 1, updatedAt: now, audit: [...run.audit, { action: "stop-completed", at: now, by, version: run.version + 1 }] };
         }
         if (body.action === "arrive-stop") {
           if (stop.status !== "planned")
@@ -2103,5 +2221,16 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     const status = error instanceof HttpError ? error.status : 400;
     return NextResponse.json({ error: messageOf(error) }, { status });
+  }
+}
+
+export async function GET(request: NextRequest) {
+  try {
+    await requireLogisticsAccess(request);
+    const response = await getLogistics(request);
+    response.headers.set("Cache-Control", "no-store, max-age=0");
+    return response;
+  } catch (error) {
+    return errorResponse(error);
   }
 }
