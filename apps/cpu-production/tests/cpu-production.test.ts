@@ -355,7 +355,7 @@ test("Liana production view captures nested menu items and sub-item allergen evi
     new URL("../app/api/sandwiches/route.ts", import.meta.url),
     "utf8",
   );
-  assert.match(libraryRoute, /menuPlanningJson/);
+  assert.match(libraryRoute, /createProductionItemRepository/);
   assert.match(libraryRoute, /productionItems: items, sandwiches: items/);
   assert.doesNotMatch(libraryRoute, /local-data\/menu-planning|saved-sandwiches\.json|production-items-seed\.json/);
 });

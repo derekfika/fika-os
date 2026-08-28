@@ -93,7 +93,8 @@ test("CPU published-menu reads use the Menu Planning HTTP boundary", async () =>
   assert.match(menuRoute, /getMenuPublication/);
   const sandwiches = await readFile(join(process.cwd(), "app/api/sandwiches/route.ts"), "utf8");
   for (const forbidden of ["node:fs", "local-data/menu-planning", "saved-sandwiches.json", "@hub/lib"]) assert.equal(sandwiches.includes(forbidden), false, `sandwich route imports forbidden runtime: ${forbidden}`);
-  assert.match(sandwiches, /menuPlanningJson/);
+  assert.match(sandwiches, /createProductionItemRepository/);
+  assert.doesNotMatch(sandwiches, /menuPlanningJson|menu-planning-http-client/);
   const plans = await readFile(join(process.cwd(), "app/api/menu-plans/route.ts"), "utf8");
   for (const forbidden of ["node:fs", "local-data/menu-planning", "delivered-in-menus.json", "@hub/lib"]) assert.equal(plans.includes(forbidden), false, `menu-plan route imports forbidden runtime: ${forbidden}`);
   assert.match(plans, /\/api\/legacy-menu-plans/);
