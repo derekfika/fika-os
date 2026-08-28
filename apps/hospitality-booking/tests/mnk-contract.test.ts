@@ -136,6 +136,11 @@ test("portal submission excludes option-only lines with no quantity", () => {
   const portal = fs.readFileSync(new URL("../app/ui/BookingPortal.tsx", import.meta.url), "utf8");
   assert.match(portal, /\.filter\(\(value\) => value\.item && value\.quantity > 0\)/);
 });
+test("shared portal submissions keep site identity separate from canonical OPLOC context", () => {
+  const portal = fs.readFileSync(new URL("../app/ui/BookingPortal.tsx", import.meta.url), "utf8");
+  assert.match(portal, /siteId: site\.key/);
+  assert.doesNotMatch(portal, /siteId: oplocId \|\| site\.key/);
+});
 
 test("summer rolls require three boxes while retaining flavour choices across portal catalogues", () => {
   const mnk = localMnkMenuCatalogue.items.find((item) => item.name === "Freshly Wrapped Rice Paper Rolls");

@@ -430,7 +430,9 @@ export default function BookingPortal({
       bookingId: portalBookingId(site.key),
       submittedAt: new Date().toISOString(),
       site: site.label,
-      siteId: oplocId || site.key,
+      // portalSiteId is the stable portal key. The Hub, not the browser,
+      // resolves the governed canonical OPLOC for the booking.
+      siteId: site.key,
       client: {
         name: contact.requesterName,
         email: contact.requesterEmail,

@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import HospitalityDashboard from "./HospitalityDashboard";
-import type { PortalSiteKey } from "@/lib/portal-sites";
+import { portalSite, type PortalSiteKey } from "@/lib/portal-sites";
 
 type Site = { id: string; label: string; active: boolean; portalSiteKey: PortalSiteKey };
 const rememberedKey = "fika-hospitality-active-oploc";
@@ -23,6 +23,7 @@ export default function HospitalityWorkspace() {
       const requestedSite = params.get("site");
       const remembered = window.localStorage.getItem(rememberedKey);
       const chosen = available.find(site => site.id === explicit)?.id
+        || available.find(site => site.portalSiteKey === requestedSite && portalSite(site.portalSiteKey).canonicalOplocId === site.id)?.id
         || available.find(site => site.portalSiteKey === requestedSite)?.id
         || available.find(site => site.id === remembered)?.id
         || available[0]?.id || "";

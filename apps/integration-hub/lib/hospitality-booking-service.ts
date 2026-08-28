@@ -30,6 +30,7 @@ import {
   type ProductionOrder as ProductionOrderV1,
 } from "./production-domain";
 import { localBookingFixtures } from "./local-booking-fixtures";
+import { capGallagherMinimum, GALLAGHER_MINIMUM_GUESTS, isGallagherBooking } from "./gallagher-rules";
 
 export const MNK_BOOKING_INGESTION_CONTRACT_VERSION =
   "fika.booking-ingestion.mnk.v1";
@@ -362,7 +363,8 @@ export function resolveHospitalityDestinationOploc(
   mappings: Array<Record<string, unknown>>,
   canonicalRecords: CanonicalRecord[],
 ) {
-  const sourceIdentifiers = [payload.siteId, payload.site].map(value => String(value || "").trim().toLowerCase()).filter(Boolean);
+  const portalSiteId = portalSiteKeyForPayload(payload);
+  const sourceIdentifiers = [portalSiteId, payload.site].map(value => String(value || "").trim().toLowerCase()).filter(Boolean);
   if (!sourceIdentifiers.length) return undefined;
   const mapping = mappings.find(candidate =>
     sourceIdentifiers.includes(String(candidate.sourceIdentifier || "").trim().toLowerCase()) &&
@@ -389,7 +391,8 @@ export function buildMnkCanonicalBooking(
       record.lifecycleStatus !== "archived" &&
       record.record.lifecycleState === "active",
   );
-  const expectedProvider = providerForSite(payload.siteId);
+  const portalSiteId = portalSiteKeyForPayload(payload);
+  const expectedProvider = providerForSite(portalSiteId);
   const menuByItemId = new Map(
     activeMenuItems.flatMap((record) => [
       [record.canonicalId, record] as const,
@@ -412,7 +415,7 @@ export function buildMnkCanonicalBooking(
   // Keep those submitted commercial snapshots intact during that transition;
   // MNK remains strict because its canonical catalogue is already governed.
   const siteCompatibilityMode = Boolean(
-    payload.siteId && payload.siteId !== "mnk",
+    portalSiteId !== "mnk",
   );
   const items = payload.order.items.map((item) => {
     const menuItem = menuByItemId.get(item.itemId);
@@ -426,14 +429,22 @@ export function buildMnkCanonicalBooking(
       );
     else if (!menuItem && siteCompatibilityMode)
       warnings.push(
-        `${payload.site || payload.siteId} menu item '${item.itemId}' is retained as site-scoped compatibility evidence until its canonical Menu Item mapping is promoted.`,
+        `${payload.site || portalSiteId} menu item '${item.itemId}' is retained as site-scoped compatibility evidence until its canonical Menu Item mapping is promoted.`,
       );
     else if (!menuItem)
       throw conflict(
         `${payload.site || "MNK"} menu item '${item.itemId}' is not mapped to an active canonical Hospitality Menu Item.`,
       );
-    if (menuItem) {
-      const minimumQuantity = Math.max(Number(menuItem.record.minimumQuantity || 1), /rice paper rolls?/i.test(String(item.itemName || menuItem.record.name)) ? 3 : 1);
+    if (menuItem || item.servingInfo) {
+      const gallagher = isGallagherBooking({
+        companyName: payload.client.clientCompany || payload.client.companyName,
+        email: payload.client.email || payload.client.requester?.email,
+      });
+      const minimumQuantity = capGallagherMinimum(Math.max(
+        Number(menuItem?.record.minimumQuantity || 1),
+        Number(String(item.servingInfo || "").match(/minimum\s+(\d+)/i)?.[1] || 1),
+        /rice paper rolls?/i.test(String(item.itemName || menuItem?.record.name)) ? 3 : 1,
+      ), gallagher);
       if (
         Number.isFinite(minimumQuantity) &&
         minimumQuantity > 1 &&
@@ -472,7 +483,7 @@ export function buildMnkCanonicalBooking(
       client: structuredClone(payload.client),
       service: {
         ...structuredClone(payload.event),
-        ...(payload.siteId ? { portalSiteId: payload.siteId } : {}),
+        ...(portalSiteId ? { portalSiteId } : {}),
         ...(payload.site ? { portalSiteLabel: payload.site } : {}),
       },
       order: {
@@ -695,8 +706,23 @@ export async function saveDashboardQuoteSettings(
   });
 }
 
-export async function bookingWorkspace(siteId?: string) {
-  const snapshot = await bookings().orderBy("service.eventDate", "asc").get();
+export async function bookingWorkspace(siteId?: string, authorisedOplocId?: string, includeArchive = false) {
+  const today = londonBusinessDate();
+  if (siteId && authorisedOplocId) {
+    const mappingSnapshot = await sourceMappings().get();
+    const portalSourceIdentifiers = new Set([siteId.trim().toLowerCase(), siteId.trim().toLowerCase().replace(/-/g, " ")]);
+    const mapped = mappingSnapshot.docs.some(document => {
+      const mapping = document.data() as Record<string, unknown>;
+      return portalSourceIdentifiers.has(String(mapping.sourceIdentifier || "").trim().toLowerCase()) &&
+        String(mapping.oplocId || mapping.targetCanonicalId || "").trim() === authorisedOplocId &&
+        String(mapping.mappingStatus || "") === "confirmed" &&
+        Boolean(String(mapping.sourceEntityType || ""));
+    });
+    if (!mapped) throw Object.assign(new Error("The requested Hospitality portal is not governed by the authorised OPLOC."), { status: 403 });
+  }
+  const snapshot = includeArchive
+    ? await bookings().orderBy("service.eventDate", "asc").get()
+    : await bookings().where("service.eventDate", ">=", today).orderBy("service.eventDate", "asc").get();
   const storedRows = snapshot.docs
     .map((document) => document.data() as CanonicalBooking)
     .map((booking) => {
@@ -705,7 +731,8 @@ export async function bookingWorkspace(siteId?: string) {
       // exists; PDF persistence is now the operational readiness boundary.
       return booking;
     })
-    .filter((booking) => !siteId || booking.service.portalSiteId === siteId);
+    .filter((booking) => includeArchive || booking.service.eventDate >= today)
+    .filter((booking) => !siteId || (authorisedOplocId && booking.service.oplocId === authorisedOplocId) || (booking.service.portalSiteId === siteId && !booking.service.oplocId));
   // Development fixtures exercise the same canonical Booking contract as a
   // submitted portal booking, but are never written to Firestore.  Stored
   // records win on ID so a local fixture can never mask real emulator data.
@@ -713,7 +740,8 @@ export async function bookingWorkspace(siteId?: string) {
       process.env.FIKA_ENABLE_LOCAL_BOOKING_FIXTURES === "true";
     const rows = includeLocalFixtures
       ? [...storedRows, ...localBookingFixtures.filter((fixture) =>
-          (!siteId || fixture.service.portalSiteId === siteId) &&
+          (includeArchive || fixture.service.eventDate >= today) &&
+          (!siteId || (authorisedOplocId && fixture.service.oplocId === authorisedOplocId) || (fixture.service.portalSiteId === siteId && !fixture.service.oplocId)) &&
           !storedRows.some((stored) => stored.canonicalId === fixture.canonicalId),
         )].sort((a, b) => a.service.eventDate.localeCompare(b.service.eventDate))
       : storedRows;
@@ -1341,6 +1369,14 @@ function validatePayload(payload: MnkBookingPayload) {
     payload.event.guestCount < 1
   )
     throw conflict("MNK service date, time and guest count are required.");
+  const gallagher = isGallagherBooking({
+    companyName: payload.client.clientCompany || payload.client.companyName,
+    email: payload.client.email || payload.client.requester?.email,
+  });
+  if (gallagher && payload.event.guestCount < GALLAGHER_MINIMUM_GUESTS)
+    throw conflict(`Gallagher bookings require at least ${GALLAGHER_MINIMUM_GUESTS} guests.`);
+  if (gallagher && !payload.client.invoiceReference?.trim())
+    throw conflict("Gallagher bookings require an Invoice / PO reference.");
   if (
     !Array.isArray(payload.order?.items) ||
     !Number.isFinite(payload.order.netTotal)
@@ -1376,6 +1412,21 @@ function providerForSite(siteId?: string) {
     default:
       return "mnk-booking-platform";
   }
+}
+function portalSiteKeyForPayload(payload: Pick<MnkBookingPayload, "siteId" | "site">) {
+  const value = String(payload.siteId || "").trim().toLowerCase();
+  if (["mnk", "angel-court", "cfc", "munich-re"].includes(value)) return value;
+  const label = String(payload.site || "").trim().toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+  if (label === "mnk" || label === "mnk international") return "mnk";
+  if (label === "angel court" || label === "one angel court") return "angel-court";
+  if (label === "cfc" || label === "cfc underwriting") return "cfc";
+  if (label === "munich re") return "munich-re";
+  return undefined;
+}
+function londonBusinessDate(date = new Date()) {
+  const parts = new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/London", year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(date);
+  const values = Object.fromEntries(parts.filter(part => part.type !== "literal").map(part => [part.type, part.value]));
+  return `${values.year}-${values.month}-${values.day}`;
 }
 function isPortalMapping(value: unknown, provider: string) {
   return Boolean(

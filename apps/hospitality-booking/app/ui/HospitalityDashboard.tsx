@@ -163,7 +163,7 @@ export default function HospitalityDashboard({
     setLoading(true);
     try {
       const response = await fetch(
-        `/api/dashboard-bookings?site=${encodeURIComponent(site.key)}`,
+        `/api/dashboard-bookings?site=${encodeURIComponent(site.key)}${oplocId ? `&oploc=${encodeURIComponent(oplocId)}` : ""}`,
         { cache: "no-store" },
       );
       const body = await response.json();
@@ -451,7 +451,7 @@ export default function HospitalityDashboard({
     }
     if (action === "Production") {
       setActionStage("Completing booking…");
-      const refreshedResponse = await fetch(`/api/dashboard-bookings?site=${encodeURIComponent(site.key)}`, { cache: "no-store" });
+      const refreshedResponse = await fetch(`/api/dashboard-bookings?site=${encodeURIComponent(site.key)}${oplocId ? `&oploc=${encodeURIComponent(oplocId)}` : ""}`, { cache: "no-store" });
       const refreshedBody = await refreshedResponse.json();
       const refreshed = refreshedBody.bookings?.find((booking: CanonicalBooking) => booking.canonicalId === selected.canonicalId) as CanonicalBooking | undefined;
       if (refreshed) {
