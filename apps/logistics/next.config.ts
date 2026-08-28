@@ -10,6 +10,8 @@ const nextConfig: NextConfig = {
       "firebase-admin/app": "./node_modules/firebase-admin/app",
       "firebase-admin/auth": "./node_modules/firebase-admin/auth",
       "firebase-admin/firestore": "./node_modules/firebase-admin/firestore",
+      next: "./node_modules/next",
+      "next/server": "./node_modules/next/server",
       jszip: "./node_modules/jszip",
       papaparse: "./node_modules/papaparse",
       xlsx: "./node_modules/xlsx",
