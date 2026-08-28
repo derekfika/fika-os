@@ -1,7 +1,8 @@
 import type { DurableDomainEvent, ExternalProductionMaterialisation } from "./fika-contracts";
+import { menuPlanningHubBaseUrl } from "./hub-url";
 
 export async function forwardProductionMaterialisation(input: ExternalProductionMaterialisation) {
-  const base = (process.env.INTEGRATION_HUB_BASE_URL || "http://localhost:3200").replace(/\/$/, "");
+  const base = menuPlanningHubBaseUrl();
   const headers: Record<string, string> = { "content-type": "application/json" };
   if (process.env.FIKA_INTERNAL_API_TOKEN) headers["x-fika-internal-token"] = process.env.FIKA_INTERNAL_API_TOKEN;
   const response = await fetch(`${base}/api/production/materialise`, { method: "POST", headers, body: JSON.stringify(input), signal: AbortSignal.timeout(8000) });

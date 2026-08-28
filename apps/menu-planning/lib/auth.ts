@@ -1,17 +1,12 @@
 import type { NextRequest } from "next/server";
+import { menuPlanningHubBaseUrl } from "./hub-url";
 
 export type MenuActor = { uid: string; email?: string; role: "integration-admin" | "reviewer" | "viewer"; synthetic?: boolean };
-const hosted = () => ["staging", "production"].includes(process.env.FIKA_RUNTIME_MODE || "");
-const hubBase = () => {
-  const configured = process.env.FIKA_HUB_BASE_URL || process.env.INTEGRATION_HUB_BASE_URL;
-  if (hosted() && !configured) throw Object.assign(new Error("Menu Planning AUTHMOD endpoint is not configured for hosted runtime."), { status: 503, code: "MENU_AUTHMOD_ENDPOINT_NOT_CONFIGURED" });
-  return (configured || "http://localhost:3200").replace(/\/$/, "");
-};
 const failure = (message: string, status: number) => Object.assign(new Error(message), { status });
 
 export async function resolveMenuActor(request: NextRequest): Promise<MenuActor> {
   try {
-    const response = await fetch(`${hubBase()}/api/menu-planning/access`, { headers: { cookie: request.headers.get("cookie") || "" }, cache: "no-store" });
+    const response = await fetch(`${menuPlanningHubBaseUrl()}/api/menu-planning/access`, { headers: { cookie: request.headers.get("cookie") || "" }, cache: "no-store" });
     const body = await response.json() as { principal?: { identityId: string; email?: string }; canManage?: boolean; canPublish?: boolean; error?: { message?: string } };
     if (!response.ok || !body.principal) throw failure(body.error?.message || "An authenticated Menu Planning session is required.", response.status || 401);
     return { uid: body.principal.identityId, email: body.principal.email, role: body.canPublish ? "integration-admin" : body.canManage ? "reviewer" : "viewer" };

@@ -29,8 +29,8 @@ test("hosted mutation auth uses FIKA_HUB_BASE_URL and forwards the session cooki
 });
 
 test("hosted mutation auth has an explicit missing-Hub configuration failure", () => {
-  const source = readFileSync(new URL("../lib/auth.ts", import.meta.url), "utf8");
+  const source = readFileSync(new URL("../lib/hub-url.ts", import.meta.url), "utf8");
   assert.match(source, /hosted\(\) && !configured/);
-  assert.match(source, /MENU_AUTHMOD_ENDPOINT_NOT_CONFIGURED/);
-  assert.match(source, /configured \|\| "http:\/\/localhost:3200"/);
+  assert.match(source, /MENU_HUB_ENDPOINT_NOT_CONFIGURED/);
+  assert.match(source, /menuPlanningHubBaseUrl/);
 });
