@@ -24,8 +24,9 @@ function readableErrorMessage(error: unknown) {
   return message && !technical ? message : "We couldn’t complete that request. Please try again, and report it if it keeps happening.";
 }
 
-export function errorResponse(error: unknown) {
+export function errorResponse(error: unknown, requestId?: string) {
   const e = error as { message?: string; status?: number; code?: string };
-  console.error("API request failed", error);
-  return NextResponse.json({ error: { code: e.code || "INVALID_REQUEST", message: readableErrorMessage(error) } }, { status: e.status || 400 });
+  const safeRequestId = requestId || crypto.randomUUID();
+  console.error("API request failed", { code: e.code || "INVALID_REQUEST", status: e.status || 400, requestId: safeRequestId });
+  return NextResponse.json({ error: { code: e.code || "INVALID_REQUEST", message: readableErrorMessage(error), requestId: safeRequestId } }, { status: e.status || 400, headers: { "x-request-id": safeRequestId } });
 }

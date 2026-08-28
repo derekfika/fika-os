@@ -37,5 +37,5 @@ export async function GET(request: NextRequest) {
     const publishAuthorityMs = performance.now() - publishAuthorityStarted;
     console.info("Integration Hub Menu Planning access timing", { sessionMs, appAccessMs, listActiveOplocsMs, perOplocAccessMs, publishAuthorityMs, totalMs: performance.now() - totalStarted });
     return NextResponse.json({ principal, oplocs, canManage: true, canPublish }, { headers: { "Cache-Control": "no-store" } });
-  } catch (error) { return errorResponse(error); }
+  } catch (error) { return errorResponse(error, request.headers.get("x-request-id") || undefined); }
 }

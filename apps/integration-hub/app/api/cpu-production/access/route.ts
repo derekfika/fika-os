@@ -16,5 +16,5 @@ export async function GET(request: NextRequest) {
       if ((await resolveUserAccess(repository, { principal, appId: "cpu-production", oplocId: oploc.id })).allowed) oplocs.push(oploc);
     }
     return NextResponse.json({ principal, oplocs }, { headers: { "Cache-Control": "no-store" } });
-  } catch (error) { return errorResponse(error); }
+  } catch (error) { return errorResponse(error, request.headers.get("x-request-id") || undefined); }
 }

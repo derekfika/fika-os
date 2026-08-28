@@ -1,0 +1,41 @@
+export type AdmissionStatus = 401 | 403 | 500 | 503;
+export type AdmissionKind = "missing-session" | "invalid-session" | "access-denied" | "account-not-set-up" | "account-inactive" | "authmod-unavailable" | "app-misconfigured" | "app-unavailable";
+
+export type AdmissionFailure = {
+  status: AdmissionStatus;
+  kind: AdmissionKind;
+  code: string;
+  message: string;
+  supportingText?: string;
+  action: "sign-in" | "retry" | "launcher";
+};
+
+type UpstreamError = { error?: { code?: unknown; message?: unknown; requestId?: unknown }; requestId?: unknown };
+
+const text = (value: unknown) => typeof value === "string" ? value : undefined;
+
+export function admissionFailure(application: string, status: number, body?: UpstreamError, requestId?: string): AdmissionFailure {
+  const upstreamCode = text(body?.error?.code) || "";
+  const id = text(body?.error?.requestId) || text(body?.requestId) || requestId;
+  if (status === 401) {
+    const missing = upstreamCode === "FIKA_SESSION_MISSING";
+    return { status: 401, kind: missing ? "missing-session" : "invalid-session", code: missing ? "FIKA_SESSION_MISSING" : "FIKA_SESSION_INVALID", message: missing ? "Your FIKA OS session is missing or has expired." : "Your FIKA OS session is no longer valid.", action: "sign-in", ...(id ? { supportingText: `Reference: ${id}` } : {}) };
+  }
+  if (status === 403) {
+    if (upstreamCode === "AUTHMOD_IDENTITY_NOT_FOUND") return { status: 403, kind: "account-not-set-up", code: "AUTHMOD_IDENTITY_NOT_FOUND", message: "Your FIKA OS account has not been set up yet.", supportingText: "Contact a FIKA OS administrator.", action: "launcher" };
+    if (upstreamCode === "AUTHMOD_IDENTITY_INACTIVE") return { status: 403, kind: "account-inactive", code: "AUTHMOD_IDENTITY_INACTIVE", message: "Your FIKA OS account is currently inactive.", action: "launcher" };
+    return { status: 403, kind: "access-denied", code: upstreamCode || "APP_ACCESS_DENIED", message: `You’re signed in, but your account does not have access to ${application}.`, supportingText: "If you think you should have access, contact a FIKA OS administrator.", action: "launcher" };
+  }
+  if (status === 503 && (upstreamCode === "AUTHMOD_STORE_UNAVAILABLE" || upstreamCode.startsWith("AUTHMOD_"))) return { status: 503, kind: "authmod-unavailable", code: upstreamCode || "AUTHMOD_UNAVAILABLE", message: "FIKA OS couldn’t check your access right now.", supportingText: "This is usually temporary. Try again in a moment.", action: "retry" };
+  if (status === 503 && (upstreamCode.endsWith("_NOT_CONFIGURED") || upstreamCode.includes("ENDPOINT_NOT_CONFIGURED"))) return { status: 503, kind: "app-misconfigured", code: upstreamCode || "APP_NOT_CONFIGURED", message: `${application} is not fully configured for this environment.`, supportingText: "The FIKA OS administrator has been given diagnostic information.", action: "retry" };
+  return { status: (status >= 500 ? status === 500 ? 500 : 503 : 503), kind: "app-unavailable", code: upstreamCode || "APP_UNAVAILABLE", message: `${application} is temporarily unavailable.`, action: "retry", ...(id ? { supportingText: `Reference: ${id}` } : {}) };
+}
+
+export function admissionJson(failure: AdmissionFailure, requestId?: string) {
+  const code = failure.kind === "access-denied" ? "APP_ACCESS_DENIED" : failure.kind === "account-not-set-up" ? "APP_ACCOUNT_NOT_SET_UP" : failure.kind === "account-inactive" ? "APP_ACCOUNT_INACTIVE" : failure.kind === "authmod-unavailable" ? "AUTHMOD_UNAVAILABLE" : failure.kind === "app-misconfigured" ? "APP_NOT_CONFIGURED" : failure.code;
+  return { error: { code, message: failure.message, ...(requestId ? { requestId } : {}) } };
+}
+
+export function parseAdmissionBody(response: Response) {
+  return response.clone().json().catch(() => undefined) as Promise<UpstreamError | undefined>;
+}

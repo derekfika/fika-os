@@ -22,6 +22,7 @@
 .contentGrid{grid-template-columns:minmax(0,1fr) 286px;grid-template-areas:"ops utility" "lower utility" "lower activity";align-items:start}.mainContent{display:contents}.mainContent>.appSection:first-child{grid-area:ops}.mainContent>.lowerGrid{grid-area:lower}.mainContent>.activity{grid-area:activity}.utility{grid-area:utility;grid-template-columns:1fr}
 @media(max-width:850px){.contentGrid{display:block}.mainContent{display:block}.utility{grid-template-columns:repeat(2,minmax(0,1fr));margin-top:20px}.activity{margin-top:20px}}
 @media(max-width:620px){.utility{grid-template-columns:1fr}}
+.launchError{display:grid;gap:6px;margin:0 0 24px;padding:17px 19px;border-left:4px solid #d9501d;border-radius:10px;background:#fff4db;color:#24154f}.launchError span{color:#4b4453}.launchError small{color:#887f99}
 .workspace{padding-left:clamp(38px,4vw,72px);padding-right:clamp(38px,3vw,56px)}
 .header,.contentGrid{max-width:1760px}
 .contentGrid{grid-template-columns:minmax(0,1fr) 286px;gap:18px}
