@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import test from "node:test";
 import { BookingInput } from "../lib/mnk-contract";
-import { portalSite, portalSiteForOploc } from "../lib/portal-sites";
+import { portalSite, portalSiteForAuthorisedOploc, portalSiteForOploc, preferredOplocForPortalSite } from "../lib/portal-sites";
 import { localAngelCourtMenuCatalogue } from "../lib/local-angel-court-menu";
 import { localCfcMenuCatalogue } from "../lib/local-cfc-menu";
 import { localMnkMenuCatalogue } from "../lib/local-mnk-menu";
@@ -34,9 +34,26 @@ test("workspace uses the internal dashboard and filters OPLOCs through the porta
   const access = fs.readFileSync(new URL("../app/api/access/route.ts", import.meta.url), "utf8");
   assert.match(workspace, /HospitalityDashboard/);
   assert.doesNotMatch(workspace, /BookingPortal/);
-  assert.match(access, /portalSiteForOploc/);
+  assert.match(access, /portalSiteForAuthorisedOploc/);
   assert.equal(portalSiteForOploc({ id: "oploc:funding-circle", label: "Funding Circle" })?.key, "mnk");
   assert.equal(portalSiteForOploc({ id: "oploc:cpu-xchange", label: "CPU Xchange" }), undefined);
+});
+
+test("MNK manager workspace resolves the canonical OPLOC and rejects Funding Circle as an alias", () => {
+  const canonicalMnk = "oploc:66e621fa-6e6f-4f46-9aed-462313abbe8f";
+  const sites = [
+    { id: "oploc:4405b735-765a-4a87-87bd-196ed10ca00f", portalSiteKey: "mnk" as const },
+    { id: canonicalMnk, portalSiteKey: "mnk" as const },
+  ];
+  assert.equal(preferredOplocForPortalSite("mnk", sites), canonicalMnk);
+  assert.equal(
+    portalSiteForAuthorisedOploc({ id: "oploc:4405b735-765a-4a87-87bd-196ed10ca00f", label: "Funding Circle" }),
+    undefined,
+  );
+  assert.equal(portalSiteForAuthorisedOploc({ id: canonicalMnk, label: "MNK" })?.key, "mnk");
+  assert.equal(portalSiteForAuthorisedOploc({ id: "oploc:angel-court", label: "One Angel Court" })?.key, "angel-court");
+  assert.equal(portalSiteForAuthorisedOploc({ id: "oploc:cfc", label: "CFC" })?.key, "cfc");
+  assert.equal(portalSiteForAuthorisedOploc({ id: "oploc:munich-re", label: "Munich RE" })?.key, "munich-re");
 });
 
 test("dashboard portal action uses the selected configured portal in a new tab", () => {
@@ -166,7 +183,7 @@ test("canonical Hospitality routes use the shared workspace and public portal", 
   assert.match(manager, /redirect\("\/manage"\)/);
   assert.match(canonicalManager, /HospitalityWorkspace/);
   assert.match(workspace, /fetch\("\/api\/access"/);
-  assert.match(workspace, /available\.find\(site => site\.portalSiteKey === requestedSite\)/);
+  assert.match(workspace, /preferredOplocForPortalSite/);
   assert.match(workspace, /availableSites/);
 });
 

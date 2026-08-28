@@ -74,3 +74,23 @@ export function portalSiteForOploc(site: { id: string; label: string }): PortalS
     candidate.oplocAliases.some((alias) => values.includes(normaliseSiteValue(alias)))
   );
 }
+
+/**
+ * Resolve an OPLOC for the manager access list without treating a distinct
+ * governed OPLOC as an alias for a portal with a configured canonical OPLOC.
+ */
+export function portalSiteForAuthorisedOploc(site: { id: string; label: string }): PortalSiteConfig | undefined {
+  const portal = portalSiteForOploc(site);
+  return portal?.canonicalOplocId && portal.canonicalOplocId !== site.id ? undefined : portal;
+}
+
+export type PortalWorkspaceSite = { id: string; portalSiteKey: PortalSiteKey };
+
+export function preferredOplocForPortalSite(
+  siteKey: string | undefined,
+  sites: readonly PortalWorkspaceSite[],
+): string | undefined {
+  const portal = portalSite(siteKey);
+  return sites.find((site) => site.portalSiteKey === portal.key && portal.canonicalOplocId === site.id)?.id
+    || sites.find((site) => site.portalSiteKey === portal.key)?.id;
+}
