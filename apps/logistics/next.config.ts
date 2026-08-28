@@ -18,6 +18,5 @@ const nextConfig: NextConfig = {
       zod: "./node_modules/zod",
     },
   },
-  outputFileTracingRoot: path.resolve(__dirname, "../.."),
 };
 export default nextConfig;
