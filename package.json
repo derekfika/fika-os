@@ -23,6 +23,13 @@
     ,"golden-week:cleanup": "node tools/uat/week.mjs cleanup"
     ,"golden-week:e2e": "npm --prefix apps/logistics run test:e2e -- --project=golden-week"
   },
+  "dependencies": {
+    "firebase-admin": "^13.4.0",
+    "jszip": "^3.10.1",
+    "papaparse": "^5.5.3",
+    "xlsx": "^0.18.5",
+    "zod": "^4.1.12"
+  },
   "devDependencies": {
     "concurrently": "^9.2.1",
     "wait-on": "^8.0.0"
