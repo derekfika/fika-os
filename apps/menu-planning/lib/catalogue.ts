@@ -1,7 +1,7 @@
 import { listCanonicalMenuItems, listCanonicalMenuItemsByIds } from "./canonical-menu-repository";
 import type { MenuItem } from "./domain";
 import { normaliseDishCategory } from "./dish-categories";
-import { attachCanonicalDishIds, listAllEntries } from "./rolling-menu";
+import { attachCanonicalDishIds, getWeek, listAllEntries } from "./rolling-menu";
 import { syncRollingEntries } from "./canonical-menu-repository";
 
 export type CatalogueKind = "canonical";
@@ -72,9 +72,10 @@ export async function listCatalogueEntriesForIds(ids: string[]): Promise<Catalog
 }
 
 /** Explicit maintenance reconciliation for imports and publication preparation. */
-export async function reconcileCatalogueFromRollingEntries() {
-  const items = await syncRollingEntries(await listAllEntries());
-  await attachCanonicalDishIds(items);
+export async function reconcileCatalogueFromRollingEntries(scope?: { weekId: string; dayId: string }) {
+  const entries = scope ? getWeek(scope.weekId).then(snapshot => snapshot.entries.filter(entry => entry.dayId === scope.dayId)) : listAllEntries();
+  const items = await syncRollingEntries(await entries);
+  await attachCanonicalDishIds(items, "rolling-menu-migration", scope);
 }
 
 export function filterCatalogueEntries(entries: CatalogueEntry[], filters: { query?: string; category?: string; usage?: string; status?: string }) {

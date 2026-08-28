@@ -108,7 +108,7 @@ export async function POST(request: NextRequest) {
       requirePublicationActor(actor);
       // Reconcile exact imported dish names before the publication gate runs.
       // This persists the canonical identity; it does not bypass allergen review.
-      await reconcileCatalogueFromRollingEntries();
+      await reconcileCatalogueFromRollingEntries({ weekId: String(body.weekId), dayId });
       const oplocs = await readDeliveredInOplocs(request);
       const publication = await createPublishedMenuDay(String(body.weekId), dayId, (body.signoff || {}) as MenuPublicationSignoff, actor.uid, new Set(oplocs.map(oploc => oploc.canonicalId)));
       const handoff = await replayMenuPublicationOutbox(forwardProductionMaterialisationEvent);

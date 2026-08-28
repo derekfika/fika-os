@@ -23,7 +23,25 @@ test("catalogue reads do not reconcile or mutate rolling state", () => {
   assert.match(source, /export async function reconcileCatalogueFromRollingEntries/);
 });
 
-test("hosted catalogue writes remain explicitly blocked", () => {
+test("hosted catalogue writes are targeted and transaction guarded", () => {
   const source = readFileSync(new URL("../lib/canonical-menu-repository.ts", import.meta.url), "utf8");
-  assert.match(source, /Hosted Menu Planning catalogue is read-only until its mutation API is enabled/);
+  assert.match(source, /fikaMenuPlanningCatalogue/);
+  assert.match(source, /runTransaction/);
+  assert.match(source, /changed = items\.filter/);
+  assert.doesNotMatch(source, /read-only until its mutation API is enabled/);
+});
+
+test("publication reconciliation is scoped to the selected day", () => {
+  const catalogue = readFileSync(new URL("../lib/catalogue.ts", import.meta.url), "utf8");
+  const rolling = readFileSync(new URL("../lib/rolling-menu.ts", import.meta.url), "utf8");
+  assert.match(catalogue, /scope\?: \{ weekId: string; dayId: string \}/);
+  assert.match(catalogue, /entry\.dayId === scope\.dayId/);
+  assert.match(rolling, /scope\?\.dayId/);
+});
+
+test("hosted reconciliation preserves reviewed catalogue records", () => {
+  const source = readFileSync(new URL("../lib/canonical-menu-repository.ts", import.meta.url), "utf8");
+  assert.match(source, /const reviewed = existing\.reviewStatus !== "unreviewed" \|\| existing\.mayContainReviewed/);
+  assert.match(source, /existing\.displayName !== name && !reviewed/);
+  assert.match(source, /existingRecord\.revision > item\.revision/);
 });

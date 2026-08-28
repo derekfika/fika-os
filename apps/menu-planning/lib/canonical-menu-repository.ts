@@ -27,8 +27,35 @@ async function readItems(): Promise<MenuItem[]> {
   }
 }
 
+const hosted = () => ["staging", "production"].includes(process.env.FIKA_RUNTIME_MODE || "");
+const hostedDb = () => {
+  const projectId = process.env.FIREBASE_PROJECT_ID || process.env.GCLOUD_PROJECT;
+  if (!projectId) throw Object.assign(new Error("Hosted Menu Planning catalogue is not configured."), { status: 503 });
+  return new Firestore({ projectId });
+};
+const hostedDocument = (item: MenuItem) => ({ id: item.canonicalId, kind: "dish", source: "menu-planning-local", record: item, reconciliationStatus: "reconciled", schemaVersion: "1.0.0" });
+const recordsEqual = (left: unknown, right: unknown) => JSON.stringify(left) === JSON.stringify(right);
+
 async function writeItems(items: MenuItem[]) {
-  if (["staging", "production"].includes(process.env.FIKA_RUNTIME_MODE || "")) throw Object.assign(new Error("Hosted Menu Planning catalogue is read-only until its mutation API is enabled."), { status: 503 });
+  if (hosted()) {
+    const db = hostedDb();
+    const current = await db.collection("fikaMenuPlanningCatalogue").where("kind", "==", "dish").get();
+    const currentById = new Map(current.docs.map(document => [document.id, document.data()]));
+    const changed = items.filter(item => !recordsEqual(currentById.get(item.canonicalId)?.record, item));
+    if (!changed.length) return;
+    await db.runTransaction(async transaction => {
+      const refs = changed.map(item => db.collection("fikaMenuPlanningCatalogue").doc(item.canonicalId));
+      const latest = await transaction.getAll(...refs);
+      latest.forEach((document, index) => {
+        const item = changed[index];
+        const existing = document.exists ? document.data() : undefined;
+        const existingRecord = existing?.record as MenuItem | undefined;
+        if (existingRecord && existingRecord.revision > item.revision && existingRecord.reviewStatus !== "unreviewed") return;
+        transaction.set(refs[index], { ...(existing || hostedDocument(item)), id: item.canonicalId, kind: "dish", record: item }, { merge: true });
+      });
+    });
+    return;
+  }
   assertOperationalStoreAvailable();
   await mkdir(path.dirname(filePath), { recursive: true });
   const normalised = items.map(item => ({ ...item, displayName: normaliseDishName(item.displayName) }));
@@ -57,7 +84,7 @@ export async function createCanonicalMenuItem(input: { displayName: string; cate
   if (existing) { if (existing.displayName !== displayName) { existing.displayName = displayName; await writeItems(items); } return existing; }
   const at = new Date().toISOString();
   const item: MenuItem = {
-    canonicalId: deterministicId("menu-item", "local", displayName, at),
+    canonicalId: deterministicId("menu-item", "local", displayName),
     sourceName: displayName,
     displayName,
     description: input.description?.trim() || undefined,
@@ -90,7 +117,8 @@ export async function syncRollingEntries(entries: RollingEntry[], actor = "rolli
       .filter(([, value]) => value !== "clear")
       .map(([allergen, value]) => ({ allergen, value: value === "may_contain" ? "may_contain" as const : "contains" as const, source: entry.source?.workbook || "Imported rolling menu", reviewedBy: actor, reviewedAt: at }));
     if (existing) {
-      if (existing.displayName !== name) { existing.displayName = name; changed = true; }
+      const reviewed = existing.reviewStatus !== "unreviewed" || existing.mayContainReviewed;
+      if (existing.displayName !== name && !reviewed) { existing.displayName = name; changed = true; }
       if (!existing.mayContainReviewed && Object.keys(entry.allergens || {}).length) {
         existing.allergenEvidence = allergenEvidence;
         existing.mayContainReviewed = true;
