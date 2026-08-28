@@ -4,6 +4,7 @@
   "type": "module",
   "scripts": {
     "dev": "next dev -p 3900",
+    "prebuild": "npm install --prefix ../.. --omit=dev --ignore-scripts",
     "build": "next build",
     "start": "next start -p 3900",
     "typecheck": "tsc --noEmit",
