@@ -13,8 +13,14 @@ function browserPath() {
   ].find(candidate => existsSync(candidate));
 }
 
-export function isHostedPdfRuntime() {
-  return process.env.FIKA_RUNTIME_MODE === "staging" || process.env.FIKA_RUNTIME_MODE === "production";
+export function isHostedPdfRuntime(env: NodeJS.ProcessEnv = process.env, platform = process.platform) {
+  const mode = env.FIKA_RUNTIME_MODE?.trim().toLowerCase();
+  if (mode === "local") return false;
+  if (mode === "staging" || mode === "production") return true;
+  // K_SERVICE is set by Cloud Run, including Firebase App Hosting services.
+  // The Linux production guard also prevents a misconfigured hosted service
+  // from attempting Windows browser discovery.
+  return Boolean(env.K_SERVICE || env.K_REVISION || (platform === "linux" && env.NODE_ENV === "production"));
 }
 
 export async function renderPdfLocally(html: string, outputPath: string) {
@@ -56,8 +62,21 @@ export async function renderPdfWithBrowser(html: string, launch: () => Promise<P
 }
 
 async function renderPdfHosted(html: string) {
-  const executablePath = await chromium.executablePath();
-  return renderPdfWithBrowser(html, () => puppeteer.launch({ args: chromium.args, executablePath, headless: true }) as unknown as Promise<PdfBrowser>);
+  try {
+    const executablePath = await chromium.executablePath();
+    return await renderPdfWithBrowser(html, () => puppeteer.launch({ args: chromium.args, executablePath, headless: true }) as unknown as Promise<PdfBrowser>);
+  } catch (error) {
+    throw new Error(`HOSTED_CHROMIUM_ERROR: ${(error as Error).message}`, { cause: error });
+  }
+}
+
+export async function renderPdfToBufferWithRuntime(
+  html: string,
+  runtimes: { hosted: (value: string) => Promise<Buffer>; local: (value: string) => Promise<Buffer> },
+  env: NodeJS.ProcessEnv = process.env,
+) {
+  if (isHostedPdfRuntime(env)) return runtimes.hosted(html);
+  return runtimes.local(html);
 }
 
 export async function renderPdfToBuffer(html: string) {
