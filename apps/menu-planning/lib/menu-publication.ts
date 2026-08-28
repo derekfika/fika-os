@@ -128,10 +128,10 @@ export async function replayMenuPublicationOutbox(consumer: (event: DurableDomai
     if (!claimed) break;
     try {
       await consumer(claimed);
-      await withMenuPlanningTransaction(state => { const stored = state.publications as unknown as StoredPublications; const index = stored.events.findIndex(event => event.eventId === claimed.eventId && event.delivery.claimId === claimId); if (index >= 0) stored.events[index] = markEventDelivered(stored.events[index], new Date().toISOString()); });
+      await withMenuPlanningTransaction(state => { const stored = state.publications as unknown as StoredPublications; const index = stored.events.findIndex(event => event.eventId === claimed.eventId && event.delivery.claimId === claimId); if (index >= 0) stored.events[index] = normalizePublicationValue(markEventDelivered(stored.events[index], new Date().toISOString())); });
       delivered += 1;
     } catch (error) {
-      await withMenuPlanningTransaction(state => { const stored = state.publications as unknown as StoredPublications; const index = stored.events.findIndex(event => event.eventId === claimed.eventId && event.delivery.claimId === claimId); if (index >= 0) stored.events[index] = markEventFailed(stored.events[index], error, new Date().toISOString()); });
+      await withMenuPlanningTransaction(state => { const stored = state.publications as unknown as StoredPublications; const index = stored.events.findIndex(event => event.eventId === claimed.eventId && event.delivery.claimId === claimId); if (index >= 0) stored.events[index] = normalizePublicationValue(markEventFailed(stored.events[index], error, new Date().toISOString())); });
       failed += 1;
     }
   }
