@@ -3,6 +3,24 @@ import { NextRequest, NextResponse } from "next/server";
 const isHosted = () => ["staging", "production"].includes(process.env.FIKA_RUNTIME_MODE || "");
 const hubUrl = () => (process.env.FIKA_HUB_BASE_URL || "").replace(/\/$/, "");
 
+function publicRequestUrl(request: NextRequest) {
+  const configured = process.env.CPU_PUBLIC_BASE_URL || process.env.CPU_PRODUCTION_BASE_URL;
+  if (configured) {
+    try {
+      const base = new URL(configured);
+      if (["http:", "https:"].includes(base.protocol)) return new URL(`${request.nextUrl.pathname}${request.nextUrl.search}${request.nextUrl.hash}`, base);
+    } catch {
+      // Fall through to the proxy's public forwarded origin.
+    }
+  }
+  const forwardedProto = request.headers.get("x-forwarded-proto")?.split(",")[0]?.trim();
+  const forwardedHost = request.headers.get("x-forwarded-host")?.split(",")[0]?.trim();
+  if (forwardedProto && forwardedHost && ["http", "https"].includes(forwardedProto)) {
+    return new URL(`${request.nextUrl.pathname}${request.nextUrl.search}${request.nextUrl.hash}`, `${forwardedProto}://${forwardedHost}`);
+  }
+  return request.nextUrl;
+}
+
 export async function middleware(request: NextRequest) {
   if (!isHosted()) return NextResponse.next();
   const response = await fetch(`${hubUrl()}/api/cpu-production/access`, {
@@ -17,7 +35,7 @@ export async function middleware(request: NextRequest) {
     );
   }
   const target = new URL(process.env.NEXT_PUBLIC_FIKA_HUB_URL || hubUrl() || request.nextUrl.origin);
-  target.searchParams.set("returnTo", request.nextUrl.href);
+  target.searchParams.set("returnTo", publicRequestUrl(request).href);
   return NextResponse.redirect(target);
 }
 
