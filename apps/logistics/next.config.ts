@@ -9,6 +9,13 @@ const nextConfig: NextConfig = {
   output: "standalone",
   experimental: { externalDir: true },
   outputFileTracingRoot: appRoot,
+  webpack(config) {
+    config.resolve.modules = [
+      path.join(appRoot, "node_modules"),
+      ...(config.resolve.modules ?? []),
+    ];
+    return config;
+  },
 };
 
 export default nextConfig;
