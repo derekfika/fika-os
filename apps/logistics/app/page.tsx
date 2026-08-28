@@ -20,6 +20,7 @@ import type {
 import type { LogisticsDayProjection } from "../lib/types";
 import { projectionToDashboardData } from "../lib/projection-dashboard-adapter";
 import { operationalDate } from "../lib/date";
+import { clientErrorDetails, requireSuccessfulResponse } from "../lib/client-errors";
 import {
   addOperationalDays,
   formatOperationalDate,
@@ -89,6 +90,9 @@ export default function Planner() {
   const [weekData, setWeekData] = useState<WeekData>();
   const [data, setData] = useState<Data>();
   const [error, setError] = useState("");
+  const [errorReference, setErrorReference] = useState("");
+  const [authRequired, setAuthRequired] = useState(false);
+  const requestsBlocked = useRef(false);
   const [busy, setBusy] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<string>();
@@ -109,6 +113,14 @@ export default function Planner() {
   const [showRunCreate, setShowRunCreate] = useState(false);
   const [queueFilter, setQueueFilter] = useState<"all" | "unassigned" | "needs_time" | "attention">("all");
   const [queueTypeFilter, setQueueTypeFilter] = useState<"all" | "delivery" | "collection" | "transfer">("all");
+
+  const recordError = (cause: unknown, fallback: string) => {
+    const details = clientErrorDetails(cause, fallback);
+    if ([401, 403, 503].includes(details.status)) requestsBlocked.current = true;
+    if ([401, 403].includes(details.status)) setAuthRequired(true);
+    setError(details.message);
+    setErrorReference(details.requestId || "");
+  };
 
   useEffect(() => {
     const requestedDate = new URLSearchParams(window.location.search).get("serviceDate");
@@ -131,6 +143,7 @@ export default function Planner() {
   }, [date, weekCommencing, viewPreferencesReady]);
 
   const load = async (silent = false) => {
+    if (requestsBlocked.current) return;
     if (silent) setRefreshing(true);
     let cached: LogisticsDayProjection | undefined;
     try {
@@ -141,9 +154,7 @@ export default function Planner() {
       const response = await fetch(`/api/logistics?projection=1&serviceDate=${date}`, {
         cache: "no-store",
       });
-      const body = await response.json();
-      if (!response.ok)
-        throw new Error(body.error || "Logistics could not be loaded.");
+      const body = await requireSuccessfulResponse(response, "Logistics could not be loaded.");
       let projection = body.projection as LogisticsDayProjection | undefined;
       if (!projection) throw new Error("Logistics projection is unavailable.");
       setData({ ...projectionToDashboardData(projection), projection });
@@ -151,33 +162,35 @@ export default function Planner() {
       setLastUpdated(new Date().toISOString());
       setError("");
       const changes = await fetch(`/api/logistics?changesSince=${cached?.lastChangeSequence ?? projection.lastChangeSequence}&serviceDate=${date}`, { cache: "no-store" });
-      if (changes.ok) {
-        const changed = await changes.json();
-        if (changed.projection && changed.projection.lastChangeSequence > projection.lastChangeSequence) {
-          const next = changed.projection as LogisticsDayProjection;
-          setData({ ...projectionToDashboardData(next), projection: next });
-          try { window.localStorage.setItem(`fika-logistics-day:${date}`, JSON.stringify(next)); } catch { /* Cache failure must not affect operations. */ }
-        }
+      const changed = await requireSuccessfulResponse(changes, "Logistics changes could not be loaded.");
+      if (changed.projection && (changed.projection as LogisticsDayProjection).lastChangeSequence > projection.lastChangeSequence) {
+        const next = changed.projection as LogisticsDayProjection;
+        setData({ ...projectionToDashboardData(next), projection: next });
+        try { window.localStorage.setItem(`fika-logistics-day:${date}`, JSON.stringify(next)); } catch { /* Cache failure must not affect operations. */ }
       }
     } catch (cause) {
-      setError(cached ? `Sync failed; showing the last valid Logistics projection. ${cause instanceof Error ? cause.message : "Retrying shortly."}` : cause instanceof Error ? cause.message : "Logistics projection could not be loaded.");
+      recordError(cause, cached ? "Sync failed; showing the last valid Logistics projection." : "Logistics projection could not be loaded.");
     } finally {
       if (silent) setRefreshing(false);
     }
   };
   const loadWeek = async (week = weekCommencing) => {
+    if (requestsBlocked.current) return;
     try {
       const days = operationalWeek(week);
-      const responses = await Promise.all(days.map((day) => fetch(`/api/logistics?projection=1&serviceDate=${day}`, { cache: "no-store" }).then((response) => response.json())));
+      const responses = await Promise.all(days.map((day) => fetch(`/api/logistics?projection=1&serviceDate=${day}`, { cache: "no-store" }).then((response) => requireSuccessfulResponse(response, `Logistics could not load ${day}.`))));
       setWeekData({ weekCommencing: days[0], days: days.map((day, index) => { const projection = responses[index].projection as LogisticsDayProjection | undefined; const loads = projection?.deliveryLoads || []; const scheduled = loads.filter((load) => Boolean(load.scheduledTime)).length; const needsTime = loads.length - scheduled; return { serviceDate: day, loads: loads.length, ready: loads.filter((load) => load.readiness === "ready").length, unplanned: projection?.summary.queuedJobs || 0, queue: projection?.summary.queuedJobs || 0, scheduled, needsTime, runs: 0, attention: projection?.exceptions.length || 0, completedStops: loads.filter((load) => load.status === "delivered").length, stopCount: loads.length, deliveries: loads.length, collections: 0, transfers: 0 }; }) });
-    } catch {
+    } catch (cause) {
+      recordError(cause, "Logistics week data could not be loaded.");
       setWeekData(undefined);
     }
   };
   const ensureVehicleDayRuns = async (serviceDate: string) => {
+    if (requestsBlocked.current) return;
     try {
-      await fetch("/api/logistics", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "ensure-vehicle-day-runs", by: "Franco", serviceDate }) });
-    } catch { /* The read model remains usable if automatic provisioning is temporarily unavailable. */ }
+      const response = await fetch("/api/logistics", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "ensure-vehicle-day-runs", by: "Franco", serviceDate }) });
+      await requireSuccessfulResponse(response, "Vehicle-day runs could not be prepared.");
+    } catch (cause) { recordError(cause, "Vehicle-day runs could not be prepared."); }
   };
   useEffect(() => {
     if (!viewPreferencesReady) return;
@@ -189,13 +202,13 @@ export default function Planner() {
     // Render the selected day immediately. Vehicle-day provisioning runs in
     // the background and must not trigger a second full dashboard load.
     void load();
-    void ensureVehicleDayRuns(requestedDate || date);
+    if (!requestsBlocked.current) void ensureVehicleDayRuns(requestedDate || date);
     void loadWeek();
     const liveChannel = typeof BroadcastChannel === "undefined" ? undefined : new BroadcastChannel("fika-logistics-live");
     const onLiveChange = (event: MessageEvent<{ serviceDate?: string }>) => { if (!event.data?.serviceDate || event.data.serviceDate === date) void load(true); };
     liveChannel?.addEventListener("message", onLiveChange);
     const timer = window.setInterval(() => {
-      if (document.visibilityState === "visible") void load(true);
+      if (document.visibilityState === "visible" && !requestsBlocked.current) void load(true);
     }, 30_000);
     return () => { window.clearInterval(timer); liveChannel?.removeEventListener("message", onLiveChange); liveChannel?.close(); };
   }, [date, viewPreferencesReady]);
@@ -213,13 +226,12 @@ export default function Planner() {
         headers: { "content-type": "application/json" },
         body: JSON.stringify(payload),
       });
-      const body = await response.json();
-      if (!response.ok) throw new Error(body.error || "Action failed.");
+      await requireSuccessfulResponse(response, "Action failed.");
       await load();
       setAssigning(undefined);
       return true;
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Action failed.");
+      recordError(cause, "Action failed.");
       return false;
     } finally {
       setBusy(false);
@@ -357,6 +369,9 @@ export default function Planner() {
     weekData={weekData}
     data={data}
     error={error}
+    errorReference={errorReference}
+    authRequired={authRequired}
+    onSignInAgain={() => { window.location.assign(process.env.NEXT_PUBLIC_FIKA_HUB_URL || "/"); }}
     setError={setError}
     busy={busy}
     refreshing={refreshing}
@@ -547,6 +562,9 @@ type RealPlannerProps = {
   weekData?: WeekData;
   data?: Data;
   error: string;
+  errorReference: string;
+  authRequired: boolean;
+  onSignInAgain: () => void;
   setError: (value: string) => void;
   busy: boolean;
   refreshing: boolean;
@@ -803,7 +821,7 @@ function RealPlanner(props: RealPlannerProps) {
       <section className="mock-week-nav" aria-label="Operational week navigation"><button aria-label="Previous week" onClick={() => { const next = addOperationalDays(weekCommencing, -7); props.setWeekCommencing(next); props.setDate(next); }}>‹</button><strong>WC {formatWeekRange(weekCommencing)}</strong><button className="mock-this-week" onClick={() => { const next = mondayOf(operationalDate()); props.setWeekCommencing(next); props.setDate(next); }}>This week</button><button aria-label="Next week" onClick={() => { const next = addOperationalDays(weekCommencing, 7); props.setWeekCommencing(next); props.setDate(next); }}>›</button></section>
       <section className="mock-day-cards" aria-label="Operational week">{operationalWeek(weekCommencing).map((day) => { const item = weekData?.days.find((summaryItem) => summaryItem.serviceDate === day); return <button key={day} className={day === date ? "selected" : ""} aria-pressed={day === date} onClick={() => props.setDate(day)}><div className="mock-day-title"><strong>{formatOperationalDate(day, { weekday: "short", day: "numeric", month: "short" })}</strong>{day === date && <b>✓</b>}</div><div className="mock-day-metrics"><span><i className="purple-dot" />{item?.loads || 0} loads</span><span><i className="purple-dot" />{item?.scheduled || 0} scheduled</span><span><i className="green-dot" />{item?.queue || 0} in queue</span><span><i className="blue-dot" />{item?.needsTime || 0} needs time</span><span><i className="red-dot" />{item?.attention || 0} attention</span></div></button>; })}</section>
       <div className="mock-updated">{props.refreshing ? "Refreshing…" : props.data?.fetchedAt ? `Last updated ${new Date(props.data.fetchedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}` : "Waiting for data"}<Health health={data?.planner.upstreamHealth} /></div>
-      {props.error && <div className="alert" role="alert">{props.error}</div>}
+      {props.error && <div className="alert" role="alert"><span>{props.error}{props.errorReference && <> <small>Reference: {props.errorReference}</small></>}</span>{props.authRequired && <button className="secondary" onClick={props.onSignInAgain}>Sign in again</button>}</div>}
       {props.showMovement && <MovementForm draft={props.draft} setDraft={props.setDraft} oplocs={data?.oplocs || []} onClose={() => props.setShowMovement(false)} onSave={props.createMovement} busy={props.busy} />}
       <section className="mock-selected-day"><div><span>▣</span><strong>{selectedDateLabel}</strong><small>{summary?.loads || 0} loads · {runs.length} vans &nbsp;·&nbsp; {summary?.scheduledStops || 0} scheduled · {queueGroups.length + queueMovements.length} in queue · {summary?.needsTime || 0} needs time · {summary?.attention || 0} attention</small></div><div className="mock-actions"><button onClick={() => props.setShowMovement(true)} disabled={!data?.planner.upstreamHealth.oplocs.available}>＋ New movement</button><button onClick={() => void props.load(true)} disabled={props.refreshing} aria-busy={props.refreshing}>{props.refreshing ? "Refreshing…" : "↻ Refresh"}</button><a href={runs.length === 1 ? `/mobile?run=${encodeURIComponent(runs[0].runId)}` : "/mobile"}>▦ Driver view</a></div></section>
       {props.showRunCreate && <RunCreatePopover driver={props.newRunDriver} setDriver={props.setNewRunDriver} returnToCpuRequired={props.newRunReturnToCpu} setReturnToCpuRequired={props.setNewRunReturnToCpu} onCreate={props.createRun} onClose={() => props.setShowRunCreate(false)} />}

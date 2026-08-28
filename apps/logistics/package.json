@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "next dev -p 3900",
     "prebuild": "npm ci --prefix ../.. --omit=dev --ignore-scripts",
-    "build": "next build --webpack",
+    "build": "next build --webpack && node scripts/prepare-standalone-assets.mjs",
     "start": "next start -p 3900",
     "typecheck": "tsc --noEmit",
     "test": "tsx --test tests/*.test.ts",

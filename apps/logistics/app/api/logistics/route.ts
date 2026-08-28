@@ -2220,7 +2220,7 @@ export async function POST(request: NextRequest) {
     throw new HttpError(400, "Unknown Logistics action.");
   } catch (error) {
     const status = error instanceof HttpError ? error.status : 400;
-    return NextResponse.json({ error: messageOf(error) }, { status });
+    return errorResponse(Object.assign(error instanceof Error ? error : new Error(messageOf(error)), { status }), request.headers.get("x-request-id") || undefined);
   }
 }
 
@@ -2231,6 +2231,6 @@ export async function GET(request: NextRequest) {
     response.headers.set("Cache-Control", "no-store, max-age=0");
     return response;
   } catch (error) {
-    return errorResponse(error);
+    return errorResponse(error, request.headers.get("x-request-id") || undefined);
   }
 }

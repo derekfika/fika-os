@@ -4,6 +4,7 @@ import { sessionCookieConfig, allowedEmailDomains } from "./runtime-config";
 import { bindExternalIdentity } from "./authmod-core/identity";
 import { FirestoreAuthModRepository } from "./authmod-core";
 import { getPrimaryCustodian, type AuthIdentity, type AuthModRepository, type AuthPrincipal } from "./authmod-core";
+import { logAuthDiagnostic } from "../../../shared/auth-diagnostics";
 
 export type FikaSessionPrincipal = {
   firebaseUid: string;
@@ -57,12 +58,15 @@ export async function createFikaSessionCookie(idToken: string, expiresInSeconds 
   return authApi.createSessionCookie(idToken, { expiresIn: expiresInSeconds * 1000 });
 }
 
-export async function requireFikaSession(request: { cookies: { get(name: string): { value?: string } | undefined } }, repository: AuthModRepository = new FirestoreAuthModRepository(), authApi: SessionAuth = auth): Promise<FikaSessionPrincipal> {
+export async function requireFikaSession(request: { cookies: { get(name: string): { value?: string } | undefined }; headers?: { get(name: string): string | null } }, repository: AuthModRepository = new FirestoreAuthModRepository(), authApi: SessionAuth = auth): Promise<FikaSessionPrincipal> {
   const cookie = request.cookies.get(sessionCookieConfig().name)?.value;
-  if (!cookie) throw new FikaSessionError("Authentication is required.", 401, "FIKA_SESSION_MISSING");
+  if (!cookie) { logAuthDiagnostic(request, { authStage: "firebase-session-cookie-read", status: 401, code: "FIKA_SESSION_MISSING", cookieName: sessionCookieConfig().name }); throw new FikaSessionError("Authentication is required.", 401, "FIKA_SESSION_MISSING"); }
   let decoded: DecodedIdToken;
-  try { decoded = await authApi.verifySessionCookie(cookie, true); } catch { throw new FikaSessionError("The FIKA OS session is invalid or expired."); }
+  try { decoded = await authApi.verifySessionCookie(cookie, true); }
+  catch { logAuthDiagnostic(request, { authStage: "firebase-session-cookie-verification", status: 401, code: "FIKA_SESSION_INVALID", cookieName: sessionCookieConfig().name }); throw new FikaSessionError("The FIKA OS session is invalid or expired."); }
+  logAuthDiagnostic(request, { authStage: "firebase-session-cookie-verification", status: 200, code: "FIKA_SESSION_VERIFIED", cookieName: sessionCookieConfig().name });
   const identity = await resolveSessionIdentity(repository, { uid: decoded.uid, email: decoded.email, name: decoded.name });
+  logAuthDiagnostic(request, { authStage: "authmod-identity-resolution", status: 200, code: "AUTHMOD_IDENTITY_RESOLVED", cookieName: sessionCookieConfig().name });
   return principalFromSession(repository, identity, decoded.uid);
 }
 

@@ -7,6 +7,7 @@ import { operationalDate } from "../../lib/date";
 import { movementsForStop, selectMobileRuns } from "../../lib/planning";
 import { projectionToDashboardData } from "../../lib/projection-dashboard-adapter";
 import { announceDriverChange, driverIssueTypes, showDispatchChecklist, stopCounts, stopIsCollection } from "../../lib/mobile-driver";
+import { responseErrorDetails, LogisticsResponseError } from "../../lib/client-errors";
 
 type Data = { requirements: FulfilmentRequirement[]; runs: DeliveryRun[]; stops: DeliveryStop[]; movements: MovementRequest[]; oplocs: { id: string; label: string; address?: string }[]; serviceDate: string; projection?: Parameters<typeof projectionToDashboardData>[0] };
 type View = "deliveries" | "collections" | "messages" | "more";
@@ -32,7 +33,7 @@ export default function Mobile() {
   const date = selectedDate;
   const availableDates = useMemo(() => dateOptions(), []);
 
-  const load = async () => { try { const response = await fetch(`/api/logistics?serviceDate=${date}`, { cache: "no-store" }); const body = await response.json().catch(() => null); if (!response.ok) throw new Error(body?.error || "Logistics is temporarily unavailable."); const fallback = body?.projection ? projectionToDashboardData(body.projection) : undefined; const useFallback = fallback && (!body.runs?.length || !body.stops?.length); setData(useFallback ? { ...fallback, requirements: body.requirements || fallback.requirements, movements: body.movements || fallback.movements, oplocs: body.oplocs || fallback.oplocs, projection: body.projection } : body); setError(""); } catch (cause) { setError(cause instanceof Error ? cause.message : "Logistics is temporarily unavailable."); } };
+  const load = async () => { try { const response = await fetch(`/api/logistics?serviceDate=${date}`, { cache: "no-store" }); const body = await response.json().catch(() => null); if (!response.ok) throw new LogisticsResponseError(responseErrorDetails(body, response.status, "Logistics is temporarily unavailable.")); const fallback = body?.projection ? projectionToDashboardData(body.projection) : undefined; const useFallback = fallback && (!body.runs?.length || !body.stops?.length); setData(useFallback ? { ...fallback, requirements: body.requirements || fallback.requirements, movements: body.movements || fallback.movements, oplocs: body.oplocs || fallback.oplocs, projection: body.projection } : body); setError(""); } catch (cause) { setError(cause instanceof LogisticsResponseError ? `${cause.message}${cause.details.requestId ? ` Reference: ${cause.details.requestId}` : ""}` : cause instanceof Error ? cause.message : "Logistics is temporarily unavailable."); } };
   useEffect(() => { void load(); }, [selectedDate]);
 
   const runs = useMemo(() => selectMobileRuns(data?.runs || [], driver, date), [data?.runs, driver, date]);
@@ -53,7 +54,7 @@ export default function Mobile() {
   async function execute(action: string, stop: DeliveryStop, extra: Record<string, unknown> = {}) {
     const run = runs.find((item) => item.canonicalId === stop.runId); if (!run) return;
     const response = await fetch("/api/logistics", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action, by: driver, runId: run.canonicalId, expectedRunVersion: run.version, stopId: stop.canonicalId, expectedStopVersion: stop.version, ...extra }) });
-    const body = await response.json().catch(() => null); if (!response.ok) { setError(body?.error || "The operation could not be completed."); return; }
+    const body = await response.json().catch(() => null); if (!response.ok) { const details = responseErrorDetails(body, response.status, "The operation could not be completed."); setError(`${details.message}${details.requestId ? ` Reference: ${details.requestId}` : ""}`); return; }
     setError(""); setSelectedStop(undefined); setIssueStop(undefined); setIssueText(""); announceDriverChange(date); await load();
     if (action === "complete-stop" && body?.run && body?.stop) {
       const label = stop.movementType === "collection" ? "Collection marked collected" : "Delivery marked delivered";
@@ -64,7 +65,7 @@ export default function Mobile() {
   async function dispatchRun(run: DeliveryRun) {
     const response = await fetch("/api/logistics", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "dispatch-run", by: driver, runId: run.canonicalId, expectedRunVersion: run.version }) });
     const body = await response.json().catch(() => null);
-    if (!response.ok) { setRetryDispatchRun(run); setError(body?.error || "The vehicle could not be dispatched."); return; }
+    if (!response.ok) { setRetryDispatchRun(run); const details = responseErrorDetails(body, response.status, "The vehicle could not be dispatched."); setError(`${details.message}${details.requestId ? ` Reference: ${details.requestId}` : ""}`); return; }
     setRetryDispatchRun(undefined); setError("");
     announceDriverChange(date); await load();
   }
@@ -73,13 +74,13 @@ export default function Mobile() {
     const current = undoAction;
     const response = await fetch("/api/logistics", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "undo-completion", by: driver, runId: current.run.canonicalId, expectedRunVersion: current.run.version, stopId: current.stop.canonicalId, expectedStopVersion: current.stop.version }) });
     const body = await response.json().catch(() => null);
-    if (!response.ok) { setError(body?.error || "The completion could not be undone. Refresh and try again."); return; }
+    if (!response.ok) { const details = responseErrorDetails(body, response.status, "The completion could not be undone. Refresh and try again."); setError(`${details.message}${details.requestId ? ` Reference: ${details.requestId}` : ""}`); return; }
     setUndoAction(undefined); setError(""); announceDriverChange(date); await load();
   }
   async function confirmReturned(run: DeliveryRun) {
     const response = await fetch("/api/logistics", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "confirm-returned-to-cpu", by: driver, runId: run.canonicalId, expectedRunVersion: run.version }) });
     const body = await response.json().catch(() => null);
-    if (!response.ok) { setError(body?.error || "The return could not be confirmed. Refresh and try again."); return; }
+    if (!response.ok) { const details = responseErrorDetails(body, response.status, "The return could not be confirmed. Refresh and try again."); setError(`${details.message}${details.requestId ? ` Reference: ${details.requestId}` : ""}`); return; }
     setError(""); announceDriverChange(date); await load();
   }
   const reportIssue = () => { if (issueStop) void execute("report-issue", issueStop, { issueCategory: issueType, issueDescription: issueText.trim() ? `${issueType}: ${issueText.trim()}` : issueType }); };
