@@ -9,7 +9,6 @@
   "scripts": {
     "dev": "next dev -p 3300",
     "build": "next build",
-    "postbuild": "node scripts/ensure-chromium-standalone.mjs",
     "start": "next start -p 3300",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
@@ -18,10 +17,8 @@
     "auth:google-menu": "node scripts/google-menu-auth.mjs"
   },
   "dependencies": {
-    "@sparticuz/chromium": "^149.0.0",
     "lucide-react": "^0.468.0",
     "next": "^16.2.12",
-    "puppeteer-core": "^25.9.0",
     "react": "^19.2.6",
     "react-dom": "^19.2.6",
     "zod": "^4.1.12"

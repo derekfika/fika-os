@@ -2,8 +2,6 @@ import { promises as fs, existsSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { spawn } from "node:child_process";
-import chromium from "@sparticuz/chromium";
-import puppeteer from "puppeteer-core";
 
 function browserPath() {
   return process.env.CHROME_PATH || [
@@ -17,9 +15,6 @@ export function isHostedPdfRuntime(env: NodeJS.ProcessEnv = process.env, platfor
   const mode = env.FIKA_RUNTIME_MODE?.trim().toLowerCase();
   if (mode === "local") return false;
   if (mode === "staging" || mode === "production") return true;
-  // K_SERVICE is set by Cloud Run, including Firebase App Hosting services.
-  // The Linux production guard also prevents a misconfigured hosted service
-  // from attempting Windows browser discovery.
   return Boolean(env.K_SERVICE || env.K_REVISION || (platform === "linux" && env.NODE_ENV === "production"));
 }
 
@@ -44,43 +39,31 @@ export async function renderPdfLocally(html: string, outputPath: string) {
   }
 }
 
-type PdfBrowser = { newPage(): Promise<{ setContent(html: string, options?: { waitUntil: "networkidle0" }): Promise<void>; evaluate(callback: () => Promise<void>): Promise<void>; pdf(options: { format: "A4"; printBackground: boolean; preferCSSPageSize: boolean }): Promise<Uint8Array> }>; close(): Promise<void> };
-
-export async function renderPdfWithBrowser(html: string, launch: () => Promise<PdfBrowser>) {
-  const browser = await launch();
+export async function renderPdfViaService(html: string, env: NodeJS.ProcessEnv = process.env, fetcher = fetch) {
+  const endpoint = env.FIKA_PDF_RENDERER_URL?.trim();
+  const token = env.FIKA_PDF_RENDERER_TOKEN?.trim();
+  if (!endpoint) throw new Error("PDF_RENDERER_ERROR: hosted PDF renderer URL is not configured.");
+  if (!token) throw new Error("PDF_RENDERER_ERROR: hosted PDF renderer authentication is not configured.");
   try {
-    const page = await browser.newPage();
-    await page.setContent(html, { waitUntil: "networkidle0" });
-    await page.evaluate(async () => { await document.fonts?.ready; });
-    const pdf = await page.pdf({ format: "A4", printBackground: true, preferCSSPageSize: true });
-    const bytes = Buffer.from(pdf);
-    if (!bytes.length || bytes.subarray(0, 5).toString() !== "%PDF-") throw new Error("Hosted PDF renderer produced invalid PDF bytes.");
+    const response = await fetcher(`${endpoint.replace(/\/$/, "")}/render/pdf`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-fika-renderer-token": token },
+      body: JSON.stringify({ html, options: { format: "A4", printBackground: true } }),
+      cache: "no-store",
+    });
+    const bytes = Buffer.from(await response.arrayBuffer());
+    if (!response.ok) throw new Error(`renderer returned HTTP ${response.status}`);
+    if (!bytes.length || bytes.subarray(0, 5).toString() !== "%PDF-") throw new Error("renderer returned invalid PDF bytes");
     return bytes;
-  } finally {
-    await browser.close();
-  }
-}
-
-async function renderPdfHosted(html: string) {
-  try {
-    const executablePath = await chromium.executablePath();
-    return await renderPdfWithBrowser(html, () => puppeteer.launch({ args: chromium.args, executablePath, headless: true }) as unknown as Promise<PdfBrowser>);
   } catch (error) {
-    throw new Error(`HOSTED_CHROMIUM_ERROR: ${(error as Error).message}`, { cause: error });
+    const message = error instanceof Error ? error.message : String(error);
+    if (message.startsWith("PDF_RENDERER_ERROR:")) throw error;
+    throw new Error(`PDF_RENDERER_ERROR: ${message}`, { cause: error });
   }
-}
-
-export async function renderPdfToBufferWithRuntime(
-  html: string,
-  runtimes: { hosted: (value: string) => Promise<Buffer>; local: (value: string) => Promise<Buffer> },
-  env: NodeJS.ProcessEnv = process.env,
-) {
-  if (isHostedPdfRuntime(env)) return runtimes.hosted(html);
-  return runtimes.local(html);
 }
 
 export async function renderPdfToBuffer(html: string) {
-  if (isHostedPdfRuntime()) return renderPdfHosted(html);
+  if (isHostedPdfRuntime()) return renderPdfViaService(html);
   const outputPath = path.join(os.tmpdir(), `fika-quote-${Date.now()}-${Math.random().toString(36).slice(2)}.pdf`);
   try {
     await renderPdfLocally(html, outputPath);
