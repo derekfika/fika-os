@@ -19,6 +19,9 @@ env:
   - variable: FIKA_MNK_OPLOC_ID
     value: oploc:66e621fa-6e6f-4f46-9aed-462313abbe8f
     availability: [BUILD, RUNTIME]
+  - variable: GOOGLE_DRIVE_OWNER_EMAIL_OPLOC_66E621FA_6E6F_4F46_9AED_462313ABBE8F
+    value: mnk@fikacatering.com
+    availability: [RUNTIME]
   - variable: MNK_CANON_BRIDGE_TOKEN
     secret: MNK_CANON_BRIDGE_TOKEN
     availability: [RUNTIME]
