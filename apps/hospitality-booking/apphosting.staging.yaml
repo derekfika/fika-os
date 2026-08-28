@@ -22,6 +22,9 @@ env:
   - variable: MNK_CANON_BRIDGE_TOKEN
     secret: MNK_CANON_BRIDGE_TOKEN
     availability: [RUNTIME]
+  - variable: GOOGLE_WORKSPACE_DWD_SERVICE_ACCOUNT_JSON
+    secret: GOOGLE_WORKSPACE_DWD_SERVICE_ACCOUNT_JSON
+    availability: [RUNTIME]
   - variable: NEXT_PUBLIC_FIKA_HUB_URL
     value: https://fika-os-staging--fika-os-dev.europe-west4.hosted.app
     availability: [BUILD, RUNTIME]

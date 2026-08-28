@@ -187,7 +187,7 @@ async function createMatrixArtifact(plan: ProductionPlan, orderId: string, actor
   let driveStatus: "saved" | "not_configured" | "failed" = "not_configured";
   let driveFileId: string | undefined; let driveUrl: string | undefined;
   try {
-    const response = await fetch(`${hospitalityBase()}/api/allergen-matrix/drive`, { method: "POST", headers: { "content-type": "application/json", ...(request.headers.get("cookie") ? { cookie: request.headers.get("cookie")! } : {}) }, body: JSON.stringify({ name: fileName, html, pdfBase64, siteKey: siteKey(order.destinationLabel), weekCommencing: weekCommencingFor(order.serviceDate || order.requiredBy.slice(0, 10)), oplocFolder: order.destinationLabel || order.destinationOplocId || "OPLOC" }) });
+    const response = await fetch(`${hospitalityBase()}/api/allergen-matrix/drive`, { method: "POST", headers: { "content-type": "application/json", ...(request.headers.get("cookie") ? { cookie: request.headers.get("cookie")! } : {}) }, body: JSON.stringify({ name: fileName, html, pdfBase64, weekCommencing: weekCommencingFor(order.serviceDate || order.requiredBy.slice(0, 10)) }) });
     const body = await response.json() as { saved?: { fileId?: string; driveUrl?: string } | null };
     if (response.ok && body.saved) { driveStatus = "saved"; driveFileId = body.saved.fileId; driveUrl = body.saved.driveUrl; } else if (response.status !== 503) driveStatus = "failed";
   } catch { driveStatus = "failed"; }
@@ -315,7 +315,7 @@ export async function POST(request: NextRequest) {
       let driveStatus: "saved" | "not_configured" | "failed" = "not_configured";
       let driveFileId: string | undefined; let driveUrl: string | undefined;
       try {
-      const response = await fetch(`${hospitalityBase()}/api/allergen-matrix/drive`, { method: "POST", headers: { "content-type": "application/json", ...(request.headers.get("cookie") ? { cookie: request.headers.get("cookie")! } : {}) }, body: JSON.stringify({ name: fileName, html, pdfBase64, siteKey: siteKey(order.destinationLabel), weekCommencing: weekCommencingFor(order.serviceDate || order.requiredBy.slice(0, 10)), oplocFolder: order.destinationLabel || order.destinationOplocId || "OPLOC" }) });
+      const response = await fetch(`${hospitalityBase()}/api/allergen-matrix/drive`, { method: "POST", headers: { "content-type": "application/json", ...(request.headers.get("cookie") ? { cookie: request.headers.get("cookie")! } : {}) }, body: JSON.stringify({ name: fileName, html, pdfBase64, weekCommencing: weekCommencingFor(order.serviceDate || order.requiredBy.slice(0, 10)) }) });
         const body = await response.json() as { saved?: { fileId?: string; driveUrl?: string } | null };
         if (response.ok && body.saved) { driveStatus = "saved"; driveFileId = body.saved.fileId; driveUrl = body.saved.driveUrl; } else if (response.status !== 503) driveStatus = "failed";
       } catch { driveStatus = "not_configured"; }

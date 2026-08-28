@@ -42,13 +42,14 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json() as { bookingId?: string; productionOrderId?: string; actor?: string; driveFolderId?: string; menuTemplateId?: string };
+    const body = await request.json() as { bookingId?: string; productionOrderId?: string; actor?: string };
     if (!body.bookingId) return NextResponse.json({ error: { message: "A Booking is required." } }, { status: 400 });
-    const bookingResponse = await hubUserFetch("/api/hospitality-bookings", request.headers.get("cookie"));
-    const bookingBody = await bookingResponse.json() as { bookings?: CanonicalBooking[]; error?: { message?: string } };
+    const bookingResponse = await hubUserFetch(`/api/hospitality-bookings?canonicalId=${encodeURIComponent(body.bookingId)}`, request.headers.get("cookie"));
+    const bookingBody = await bookingResponse.json() as { booking?: CanonicalBooking; quoteSettings?: { googleMenuFolderId?: string; googleMenuTemplateId?: string }; error?: { message?: string } };
     if (!bookingResponse.ok) throw Error(bookingBody.error?.message || "The canonical Booking could not be loaded.");
-    const booking = bookingBody.bookings?.find(item => item.canonicalId === body.bookingId);
+    const booking = bookingBody.booking;
     if (!booking) return NextResponse.json({ error: { message: "The Booking could not be found." } }, { status: 404 });
+    if (!booking.service.oplocId) return NextResponse.json({ error: { message: "The Booking has no canonical OPLOC." } }, { status: 409 });
     // Prefer the shared canonical production-order ID, while retaining the
     // original portal reference as a compatibility fallback for this booking.
     const candidates = [...new Set([body.productionOrderId, `production-order:v1:${body.bookingId}`, `production-order:${body.bookingId}`, body.bookingId, booking.source.sourceBookingId].filter(Boolean))] as string[];
@@ -67,7 +68,7 @@ export async function POST(request: NextRequest) {
     const output: MenuOutput = { id: `menu-output:${body.bookingId}:${generatedAt.replace(/[^0-9]/g, "").slice(0, 14)}`, fileName: menuFileName(bookingContext), bookingId: body.bookingId, planId: cpuBody.plan.id, planUpdatedAt: cpuBody.plan.updatedAt, generatedAt, generatedBy: body.actor || "menu-planning", templateVersion: "mnk-hospitality-menu-v2", booking: bookingContext, items: cpuBody.plan.menuItems.flatMap(menuItem => menuItem.subItems.filter(subItem => subItem.name.trim()).map(subItem => ({ menuItem: menuItem.name, name: subItem.name, allergens: Object.entries(subItem.allergens).filter(([key, state]) => key !== "no_key_allergens" && state === "contains").map(([key]) => key), mayContain: Object.entries(subItem.allergens).filter(([key, state]) => key !== "no_key_allergens" && state === "may_contain").map(([key]) => key) }))) };
     let persisted = output;
     try {
-      const google = await createGoogleMenu(output, booking.service.portalSiteId || "mnk", { folderId: body.driveFolderId, templateId: body.menuTemplateId });
+      const google = await createGoogleMenu(output, { type: "oploc-workspace", oplocId: booking.service.oplocId }, { siteKey: booking.service.portalSiteId || "mnk", folderId: bookingBody.quoteSettings?.googleMenuFolderId, templateId: bookingBody.quoteSettings?.googleMenuTemplateId });
       if (google) persisted = { ...output, google };
     } catch (error) {
       return NextResponse.json({ error: { message: `Menu was not created in Google Slides: ${(error as Error).message}` } }, { status: 502 });

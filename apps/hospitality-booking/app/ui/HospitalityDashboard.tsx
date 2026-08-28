@@ -61,7 +61,7 @@ function quoteFilename(bookingId: string, companyName: string, extension: "pdf" 
     .replace(/[^A-Za-z0-9._-]+/g, "_");
 }
 
-async function saveQuoteDocument(payload: { name: string; html: string; siteKey: PortalSiteKey }) {
+async function saveQuoteDocument(payload: { name: string; html: string; canonicalId: string }) {
   let lastMessage = "The quote PDF could not be saved to Drive.";
   for (let attempt = 0; attempt < 3; attempt += 1) {
     const response = await fetch("/api/quotes/drive", {
@@ -331,7 +331,7 @@ export default function HospitalityDashboard({
       : `${((scanStepIndex + 1) / inboxScanSteps.length) * 100}%`;
 
   const persistQuotePdf = async (booking: CanonicalBooking, quote: { id: string; revision: number }) => {
-    const saved = await saveQuoteDocument({ name: quoteFilename(booking.canonicalId, booking.client.companyName, "pdf"), html: quoteHtml(booking), siteKey: site.key });
+    const saved = await saveQuoteDocument({ name: quoteFilename(booking.canonicalId, booking.client.companyName, "pdf"), html: quoteHtml(booking), canonicalId: booking.canonicalId });
     const statusResponse = await fetch("/api/dashboard-bookings", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -428,7 +428,7 @@ export default function HospitalityDashboard({
             revision.id === body.booking.quoteState?.currentRevisionId,
         );
         if (quote) {
-          const saved = await saveQuoteDocument({ name: quoteFilename(body.booking.canonicalId, body.booking.client.companyName, "pdf"), html: quoteHtml(body.booking), siteKey: site.key });
+          const saved = await saveQuoteDocument({ name: quoteFilename(body.booking.canonicalId, body.booking.client.companyName, "pdf"), html: quoteHtml(body.booking), canonicalId: body.booking.canonicalId });
           setActionStage("Recording quote status…");
           const statusResponse = await fetch("/api/dashboard-bookings", {
             method: "POST",

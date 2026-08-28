@@ -1,8 +1,5 @@
-import { promises as fs } from "node:fs";
 import type { MenuOutput } from "@/lib/mnk-menu-output";
-
-type OAuthClient = { installed?: { client_id: string; client_secret: string; token_uri?: string } };
-type OAuthToken = { access_token?: string; refresh_token?: string; expiry_date?: number; token_type?: string };
+import { driveAccessToken, driveFolderPath, resolveDriveOwner, type DriveOwner, type ResolvedDriveOwner } from "./drive-owner";
 
 const json = async <T>(response: Response): Promise<T> => {
   const text = await response.text();
@@ -20,24 +17,10 @@ async function googleFetch(input: string, init: RequestInit, label: string, time
   finally { clearTimeout(timer); }
 }
 
-async function accessToken(): Promise<string> {
-  const tokenPath = process.env.GOOGLE_OAUTH_TOKEN_FILE;
-  const clientPath = process.env.GOOGLE_OAUTH_CLIENT_FILE;
-  if (!tokenPath || !clientPath) throw new Error("Google OAuth client and token files are not configured.");
-  const [client, token] = await Promise.all([
-    fs.readFile(clientPath, "utf8").then(value => JSON.parse(value) as OAuthClient),
-    fs.readFile(tokenPath, "utf8").then(value => JSON.parse(value) as OAuthToken),
-  ]);
-  const installed = client.installed;
-  if (!installed?.client_id || !installed.client_secret || !token.refresh_token) throw new Error("Google OAuth token is missing a refresh token.");
-  if (token.access_token && (!token.expiry_date || token.expiry_date > Date.now() + 60_000)) return token.access_token;
-  const response = await googleFetch(installed.token_uri || "https://oauth2.googleapis.com/token", {
-    method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({ client_id: installed.client_id, client_secret: installed.client_secret, refresh_token: token.refresh_token, grant_type: "refresh_token" }),
-  }, "Google OAuth refresh");
-  const refreshed = await json<{ access_token: string; expires_in?: number }>(response);
-  await fs.writeFile(tokenPath, JSON.stringify({ ...token, ...refreshed, expiry_date: Date.now() + (refreshed.expires_in || 3600) * 1000 }, null, 2), "utf8");
-  return refreshed.access_token;
+async function driveHeaders(owner: DriveOwner) {
+  const resolved = resolveDriveOwner(owner);
+  const token = await driveAccessToken(resolved);
+  return { owner: resolved, headers: { Authorization: `Bearer ${token}` } };
 }
 
 type Presentation = { pageSize?: { width?: { magnitude?: number }; height?: { magnitude?: number } }; slides?: Array<{ objectId: string; pageElements?: Array<{ objectId: string; size?: { width?: { magnitude?: number }; height?: { magnitude?: number } }; transform?: { translateX?: number; translateY?: number; scaleX?: number; scaleY?: number }; shape?: { text?: { textElements?: Array<{ textRun?: { content?: string } }> } } }> }> };
@@ -93,11 +76,6 @@ function templateConfig(siteKey = "mnk", overrideTemplateId?: string): MenuTempl
   };
 }
 
-function outputFolderId(siteKey = "mnk") {
-  const suffix = siteKey.toUpperCase().replace(/[^A-Z0-9]+/g, "_");
-  return process.env[`GOOGLE_MENU_OUTPUT_FOLDER_ID_${suffix}`] || process.env.GOOGLE_MENU_OUTPUT_FOLDER_ID;
-}
-
 /** Accept either a Drive folder/file ID or a copied Drive URL. Users commonly
  * paste the whole `/folders/<id>` link (sometimes with trailing punctuation)
  * into .env.local; the Google APIs require only the stable ID. */
@@ -137,6 +115,17 @@ async function resolveChildFolder(parentFolderId: string, folderName: string | u
   if (existing.files?.[0]?.id) return existing.files[0].id;
   const created = await json<{ id: string }>(await googleFetch("https://www.googleapis.com/drive/v3/files?supportsAllDrives=true&fields=id", { method: "POST", headers: { ...headers, "content-type": "application/json" }, body: JSON.stringify({ name, parents: [parentFolderId], mimeType: "application/vnd.google-apps.folder" }) }, `${operation} OPLOC folder creation`));
   return created.id;
+}
+
+async function resolveArtifactFolder(owner: ResolvedDriveOwner, configuredFolderId: string | undefined, artifactType: "quote" | "menu" | "production", headers: Record<string, string>, operation: string) {
+  const configured = driveResourceId(configuredFolderId || owner.configuredRootFolderId);
+  if (configured) {
+    await assertDriveFolder(configured, headers, operation);
+    return configured;
+  }
+  let parent = "root";
+  for (const folder of driveFolderPath(owner, artifactType)) parent = await resolveChildFolder(parent, folder, headers, operation);
+  return parent;
 }
 
 function contentAnchor(presentation: Presentation): MenuAnchor | null {
@@ -252,14 +241,13 @@ export function buildGoogleMenuRequests(output: MenuOutput, presentation: Presen
 }
 
 /** Copies the approved native template and replaces its explicit text tokens. */
-export async function createGoogleMenu(output: MenuOutput, siteKey = "mnk", settings?: { folderId?: string; templateId?: string }) {
-  const config = templateConfig(siteKey, settings?.templateId);
+export async function createGoogleMenu(output: MenuOutput, owner: DriveOwner, settings?: { folderId?: string; templateId?: string; siteKey?: string }) {
+  const config = templateConfig(settings?.siteKey, settings?.templateId);
   const templateId = driveResourceId(config.templateId);
-  const folderId = driveResourceId(settings?.folderId || outputFolderId(siteKey));
-  if (!templateId || !folderId || folderId === "your_drive_folder_id") return null;
-  const token = await accessToken();
-  const headers = { Authorization: `Bearer ${token}`, "content-type": "application/json" };
-  await assertDriveFolder(folderId, headers, "Hospitality menu");
+  if (!templateId) return null;
+  const { owner: resolved, headers: authHeaders } = await driveHeaders(owner);
+  const headers = { ...authHeaders, "content-type": "application/json" };
+  const folderId = await resolveArtifactFolder(resolved, settings?.folderId, "menu", headers, "Hospitality menu");
   const copy = await json<{ id: string; webViewLink?: string }>(await googleFetch(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(templateId)}/copy?supportsAllDrives=true&fields=id,webViewLink`, {
     method: "POST", headers, body: JSON.stringify({ name: output.fileName, parents: [folderId] }),
   }, "Google Drive template copy"));
@@ -273,11 +261,9 @@ export async function createGoogleMenu(output: MenuOutput, siteKey = "mnk", sett
 
 /** Save a generated quote beside the site's generated menu files. The file name
  * is supplied by the caller and is used as the idempotency key in that folder. */
-export async function saveGoogleDriveHtml(input: { name: string; html: string; siteKey?: string; folderId?: string; weekCommencing?: string }) {
-  const rootFolderId = driveResourceId(input.folderId || outputFolderId(input.siteKey || "mnk"));
-  if (!rootFolderId || rootFolderId === "your_drive_folder_id") return null;
-  const token = await accessToken();
-  const headers = { Authorization: `Bearer ${token}` };
+export async function saveGoogleDriveHtml(input: { name: string; html: string; owner: DriveOwner; folderId?: string; weekCommencing?: string }) {
+  const { owner, headers } = await driveHeaders(input.owner);
+  const rootFolderId = await resolveArtifactFolder(owner, input.folderId, "quote", headers, "Quote");
   const folderId = await resolveWeekFolder(rootFolderId, input.weekCommencing, headers, "Quote");
   const escapedName = input.name.replaceAll("\\", "\\\\").replaceAll("'", "\\'");
   const query = `'${folderId}' in parents and name = '${escapedName}' and trashed = false`;
@@ -302,13 +288,11 @@ export async function saveGoogleDriveHtml(input: { name: string; html: string; s
   return { fileId: uploaded.id, driveUrl: uploaded.webViewLink || `https://drive.google.com/open?id=${uploaded.id}`, reused: false };
 }
 
-export async function saveGoogleDrivePdf(input: { name: string; pdfBase64: string; siteKey?: string; folderId?: string; weekCommencing?: string; folderLabel?: string; oplocFolder?: string }) {
-  const rootFolderId = driveResourceId(input.folderId || outputFolderId(input.siteKey || "mnk"));
-  if (!rootFolderId || rootFolderId === "your_drive_folder_id") return null;
-  const token = await accessToken();
-  const headers = { Authorization: `Bearer ${token}` };
+export async function saveGoogleDrivePdf(input: { name: string; pdfBase64: string; owner: DriveOwner; folderId?: string; weekCommencing?: string; folderLabel?: string }) {
+  const { owner, headers } = await driveHeaders(input.owner);
+  const rootFolderId = await resolveArtifactFolder(owner, input.folderId, "production", headers, input.folderLabel || "Allergen matrix");
   const weekFolderId = await resolveWeekFolder(rootFolderId, input.weekCommencing, headers, input.folderLabel || "Allergen matrix");
-  const folderId = await resolveChildFolder(weekFolderId, input.oplocFolder, headers, input.folderLabel || "Allergen matrix");
+  const folderId = weekFolderId;
   const escapedName = input.name.replaceAll("\\", "\\\\").replaceAll("'", "\\'");
   const query = `'${folderId}' in parents and name = '${escapedName}' and trashed = false`;
   const existing = await json<{ files?: Array<{ id: string; webViewLink?: string }> }>(await googleFetch(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(query)}&spaces=drive&fields=files(id,webViewLink)&pageSize=1`, { headers }, "Google Drive matrix lookup"));

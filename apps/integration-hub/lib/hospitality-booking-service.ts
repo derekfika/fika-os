@@ -184,6 +184,10 @@ export async function getBookingByCanonicalId(canonicalId: string) {
   if (!snapshot.exists) throw conflict("Booking was not found.");
   return snapshot.data() as CanonicalBooking;
 }
+
+export async function getDashboardQuoteSettingsForBooking(booking: Pick<CanonicalBooking, "service">) {
+  return getDashboardQuoteSettings(dashboardIdForSite(booking.service.portalSiteId));
+}
 const sourceMappings = () => db.collection("integrationHubSourceMappings");
 const bookingAudit = () => db.collection("fikaBookingAudit");
 const productionOrders = () => db.collection("fikaProductionOrders");

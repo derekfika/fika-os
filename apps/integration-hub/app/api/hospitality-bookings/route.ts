@@ -7,7 +7,7 @@ import { resolveUserAccess } from "@/lib/authmod-core/evaluator";
 import { requireFikaSession } from "@/lib/fika-session";
 import { assertPermission } from "@/lib/authmod";
 import { assertHospitalityBookingMutationAccess } from "@/lib/hospitality-booking-authorization";
-import { bookingWorkspace, createProductionOrder, executeBookingWorkflow, getBookingByCanonicalId, saveDashboardQuoteSettings } from "@/lib/hospitality-booking-service";
+import { bookingWorkspace, createProductionOrder, executeBookingWorkflow, getBookingByCanonicalId, getDashboardQuoteSettingsForBooking, saveDashboardQuoteSettings } from "@/lib/hospitality-booking-service";
 
 const Base = { canonicalId: z.string().min(8), expectedVersion: z.number().int().positive() };
 const Change = z.discriminatedUnion("action", [
@@ -24,6 +24,16 @@ const Settings = z.object({ action: z.literal("save-quote-settings"), dashboardI
 export async function GET(request: NextRequest) { try {
   const actor = await requireActor(request);
   assertPermission(actor, "canonical.view");
+  const canonicalId = request.nextUrl.searchParams.get("canonicalId") || undefined;
+  if (canonicalId) {
+    const booking = await getBookingByCanonicalId(canonicalId);
+    const session = await requireFikaSession(request);
+    const repository = new FirestoreAuthModRepository();
+    const principal = { type: "interactive" as const, id: session.authmodIdentityId, displayName: session.displayName, email: session.email, identityKind: session.identityKind };
+    const decision = await resolveUserAccess(repository, { principal, appId: "hospitality-booking", oplocId: booking.service.oplocId });
+    if (!decision.allowed && actor.role !== "integration-admin" && actor.role !== "reviewer") throw Object.assign(new Error("That Hospitality location is not authorised for your account."), { status: 403 });
+    return NextResponse.json({ booking, quoteSettings: await getDashboardQuoteSettingsForBooking(booking) }, { headers: { "Cache-Control": "no-store, max-age=0" } });
+  }
   const site = request.nextUrl.searchParams.get("site") || undefined;
   const oploc = request.nextUrl.searchParams.get("oploc") || undefined;
   const includeArchive = request.nextUrl.searchParams.get("archive") === "true";
