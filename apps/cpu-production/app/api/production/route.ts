@@ -22,6 +22,10 @@ function internalProjectionRequest(request: NextRequest) {
   const configured = process.env.FIKA_INTERNAL_API_TOKEN;
   return process.env.NODE_ENV !== "production" && !configured || Boolean(configured && request.headers.get("x-fika-internal-token") === configured);
 }
+function withServerTiming(response: NextResponse, timings: Record<string, number>) {
+  response.headers.set("Server-Timing", Object.entries(timings).map(([name, duration]) => `${name};dur=${Math.max(0, duration).toFixed(1)}`).join(", "));
+  return response;
+}
 async function rebuildCpuProjection(request: NextRequest, serviceDate: string, lastChangeSequence?: number) {
   const [rawOrders, planSnapshot, previous] = await Promise.all([productionQueue(request, serviceDate === "all" ? undefined : serviceDate), cpuPlans().get(), cpuProjections().doc(serviceDate).get()]);
   const orders = await withReadableDestinations(request, rawOrders);
@@ -158,25 +162,35 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ scope: week ? { weekCommencing: week } : { serviceDate: projectionDate }, comparison: { canonicalCount: canonicalById.size, projectionCount: projection?.orders?.length || 0, missing, unexpected, fieldMismatches }, status: missing.length || unexpected.length || fieldMismatches.length ? "Projection out of sync" : "In sync" });
     }
     if (request.nextUrl.searchParams.get("projection") === "1") {
+      const startedAt = performance.now();
       const week = request.nextUrl.searchParams.get("weekCommencing");
+      const storedStartedAt = performance.now();
       const stored = await cpuProjections().doc(week ? `week:${week}` : projectionDate).get();
+      const storedDuration = performance.now() - storedStartedAt;
       const storedData = stored.data() as { orders?: Array<{ id?: string; destinationLabel?: string; destinationOplocId?: string; origin?: string; status?: string; workflowStatus?: string; cancellationNotice?: string }> } | undefined;
       const needsReadableDestinations = storedData?.orders?.some((order) => order.destinationOplocId && order.destinationLabel === order.destinationOplocId);
       const needsCancellationRefresh = storedData?.orders?.some((order) => (order.status === "cancelled" || order.workflowStatus === "cancelled" || (order.origin === "hospitality_booking" && ["draft", "needs_review"].includes(order.status || ""))) && !order.cancellationNotice);
+      const canonicalStartedAt = performance.now();
       const canonical = await productionQueue(request, week ? undefined : projectionDate);
+      const canonicalDuration = performance.now() - canonicalStartedAt;
       const weekEnd = week ? (() => { const date = new Date(`${week}T00:00:00Z`); date.setUTCDate(date.getUTCDate() + 4); return date.toISOString().slice(0, 10); })() : undefined;
       const canonicalIds = new Set(canonical
         .filter((order) => !week || ((order.serviceDate || "") >= week && (order.serviceDate || "") <= weekEnd!))
         .map((order) => order.canonicalId));
       const projectedIds = new Set((storedData?.orders || []).map((order) => order.id).filter(Boolean));
       const needsOrderRefresh = canonicalIds.size !== projectedIds.size || [...canonicalIds].some((id) => !projectedIds.has(id));
-      return NextResponse.json({ projection: stored.exists && !needsReadableDestinations && !needsCancellationRefresh && !needsOrderRefresh ? stored.data() : week ? await rebuildCpuWeekProjection(request, week) : await rebuildCpuProjection(request, projectionDate) });
+      const response = NextResponse.json({ projection: stored.exists && !needsReadableDestinations && !needsCancellationRefresh && !needsOrderRefresh ? stored.data() : week ? await rebuildCpuWeekProjection(request, week) : await rebuildCpuProjection(request, projectionDate) });
+      return withServerTiming(response, { stored: storedDuration, canonical: canonicalDuration, total: performance.now() - startedAt });
     }
     if (request.nextUrl.searchParams.has("changesSince")) {
+      const startedAt = performance.now();
       const after = Number(request.nextUrl.searchParams.get("changesSince") || 0);
       const week = request.nextUrl.searchParams.get("weekCommencing");
+      const queryStartedAt = performance.now();
       const changes = week ? await listCpuWeekChanges(after, week) : await listCpuChanges(after, projectionDate);
-      return NextResponse.json({ changes, projection: (await cpuProjections().doc(week ? `week:${week}` : projectionDate).get()).data() || null });
+      const queryDuration = performance.now() - queryStartedAt;
+      const response = NextResponse.json({ changes, projection: (await cpuProjections().doc(week ? `week:${week}` : projectionDate).get()).data() || null });
+      return withServerTiming(response, { changes: queryDuration, total: performance.now() - startedAt });
     }
     const id = request.nextUrl.searchParams.get("canonicalId");
     const serviceDate = request.nextUrl.searchParams.get("serviceDate") || undefined;

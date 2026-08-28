@@ -64,6 +64,12 @@ test("CPU routing and Hospitality notification paths use Hub HTTP boundaries", a
   assert.match(notification, /notifyBookingConfirmedForProductionOrder/);
 });
 
+test("CPU staging declares the incremental change query index", async () => {
+  const indexes = JSON.parse(await readFile(join(process.cwd(), "../integration-hub/firestore.indexes.json"), "utf8")) as { indexes: Array<{ collectionGroup: string; fields: Array<{ fieldPath: string; order: string }> }> };
+  const index = indexes.indexes.find((candidate) => candidate.collectionGroup === "fikaCpuProductionChangesV1");
+  assert.deepEqual(index?.fields.map((field) => [field.fieldPath, field.order]), [["serviceDate", "ASCENDING"], ["sequence", "ASCENDING"]]);
+});
+
 test("CPU calendar scan uses the authenticated Hub HTTP boundary", async () => {
   const route = await readFile(join(process.cwd(), "app/api/calendar/scan/route.ts"), "utf8");
   for (const forbidden of ["@hub/lib/cpu-calendar-runner", "@hub/lib/google-calendar-client", "@hub/lib/auth", "@hub/lib/authmod", "@hub/lib/firebase-admin", "apps/integration-hub/"]) assert.equal(route.includes(forbidden), false, `calendar route imports forbidden runtime: ${forbidden}`);
