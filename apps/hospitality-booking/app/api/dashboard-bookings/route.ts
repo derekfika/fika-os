@@ -13,9 +13,13 @@ async function readHubJson(response: Response) {
 export async function GET(request: NextRequest) {
   try {
     const site = request.nextUrl.searchParams.get("site");
-    const path = site
-      ? `/api/hospitality-bookings?site=${encodeURIComponent(site)}`
-      : "/api/hospitality-bookings";
+    const oploc = request.nextUrl.searchParams.get("oploc");
+    const archive = request.nextUrl.searchParams.get("archive");
+    const params = new URLSearchParams();
+    if (site) params.set("site", site);
+    if (oploc) params.set("oploc", oploc);
+    if (archive) params.set("archive", archive);
+    const path = params.toString() ? `/api/hospitality-bookings?${params}` : "/api/hospitality-bookings";
     const response = await hubUserFetch(path, request.headers.get("cookie"));
     const body = await readHubJson(response);
     return NextResponse.json(body, { status: response.status });
