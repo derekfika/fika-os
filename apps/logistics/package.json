@@ -4,8 +4,7 @@
   "type": "module",
   "scripts": {
     "dev": "next dev -p 3900",
-    "prebuild": "npm install --prefix ../.. --omit=dev --ignore-scripts",
-    "build": "next build",
+    "build": "next build --webpack",
     "start": "next start -p 3900",
     "typecheck": "tsc --noEmit",
     "test": "tsx --test tests/*.test.ts",
@@ -19,7 +18,7 @@
     "@types/react-dom": "^19.2.3",
     "firebase-admin": "^13.4.0",
     "jszip": "^3.10.1",
-    "next": "^16.2.12",
+    "next": "16.2.12",
     "papaparse": "^5.5.3",
     "react": "^19.2.6",
     "react-dom": "^19.2.6",
