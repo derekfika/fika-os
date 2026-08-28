@@ -351,6 +351,19 @@ export default function HospitalityDashboard({
       quoteWindow.document.title = "Generating quote PDF…";
       quoteWindow.document.body.innerHTML = "<main style=\"font-family:Arial,sans-serif;padding:40px;color:#280f8c\"><h1>Generating quote PDF…</h1><p>The quote will open here when it has finished saving.</p></main>";
     }
+    const showQuoteWindowFailure = (message: string) => {
+      if (!quoteWindow || quoteWindow.closed) return;
+      quoteWindow.document.title = "Quote generation failed";
+      quoteWindow.document.body.innerHTML = "";
+      const main = quoteWindow.document.createElement("main");
+      main.style.cssText = "font-family:Arial,sans-serif;padding:40px;color:#280f8c";
+      const heading = quoteWindow.document.createElement("h1");
+      heading.textContent = "Quote generation failed";
+      const detail = quoteWindow.document.createElement("p");
+      detail.textContent = message;
+      main.append(heading, detail);
+      quoteWindow.document.body.appendChild(main);
+    };
     setActionStage(action === "Quoted" || action === "QuotePdfRetry" ? "Creating quote…" : "Saving changes…");
     if (action === "QuotePdfRetry") {
       const current = selected.quoteState?.revisions.find((revision) => revision.id === selected.quoteState?.currentRevisionId);
@@ -398,9 +411,11 @@ export default function HospitalityDashboard({
       headers: { "content-type": "application/json" },
       body: JSON.stringify(command),
     });
-    const body = await response.json();
+    const body = await readDashboardJson(response);
     if (!response.ok) {
-      setError(body.error?.message || "Could not update this Booking.");
+      const message = body.error?.message || "Could not update this Booking.";
+      setError(message);
+      if (action === "Quoted") showQuoteWindowFailure(message);
       return;
     }
     setSelected(body.booking || selected);
@@ -420,8 +435,12 @@ export default function HospitalityDashboard({
             headers: { "content-type": "application/json" },
             body: JSON.stringify({ canonicalId: body.booking.canonicalId, expectedVersion: body.booking.version, action: "quote-pdf-status", revisionId: quote.id, status: "saved", driveFileId: saved.fileId, driveUrl: saved.driveUrl }),
           });
-          const statusBody = await statusResponse.json();
-          if (!statusResponse.ok) setError(statusBody.error?.message || "The quote PDF was saved but could not be recorded against the quote.");
+          const statusBody = await readDashboardJson(statusResponse);
+          if (!statusResponse.ok) {
+            const message = statusBody.error?.message || "The quote PDF was saved but could not be recorded against the quote.";
+            setError(message);
+            showQuoteWindowFailure(message);
+          }
           else {
             pdfSaved = true;
             const savedBooking = statusBody.booking || body.booking;
@@ -430,9 +449,9 @@ export default function HospitalityDashboard({
           }
         }
       } catch (cause) {
-        setError(
-          `Quote created, but Drive saving failed: ${(cause as Error).message}`,
-        );
+        const message = `Quote created, but Drive saving failed: ${(cause as Error).message}`;
+        setError(message);
+        showQuoteWindowFailure(message);
       }
       if (!pdfSaved && body.booking.quoteState?.currentRevisionId) {
         await fetch("/api/dashboard-bookings", {

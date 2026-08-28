@@ -178,6 +178,12 @@ type IngestionResult = {
   validationWarnings: string[];
 };
 const bookings = () => db.collection("fikaBookings");
+
+export async function getBookingByCanonicalId(canonicalId: string) {
+  const snapshot = await bookings().doc(canonicalId).get();
+  if (!snapshot.exists) throw conflict("Booking was not found.");
+  return snapshot.data() as CanonicalBooking;
+}
 const sourceMappings = () => db.collection("integrationHubSourceMappings");
 const bookingAudit = () => db.collection("fikaBookingAudit");
 const productionOrders = () => db.collection("fikaProductionOrders");

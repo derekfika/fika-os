@@ -6,7 +6,8 @@ import { FirestoreAuthModRepository } from "@/lib/authmod-core";
 import { resolveUserAccess } from "@/lib/authmod-core/evaluator";
 import { requireFikaSession } from "@/lib/fika-session";
 import { assertPermission } from "@/lib/authmod";
-import { bookingWorkspace, createProductionOrder, executeBookingWorkflow, saveDashboardQuoteSettings } from "@/lib/hospitality-booking-service";
+import { assertHospitalityBookingMutationAccess } from "@/lib/hospitality-booking-authorization";
+import { bookingWorkspace, createProductionOrder, executeBookingWorkflow, getBookingByCanonicalId, saveDashboardQuoteSettings } from "@/lib/hospitality-booking-service";
 
 const Base = { canonicalId: z.string().min(8), expectedVersion: z.number().int().positive() };
 const Change = z.discriminatedUnion("action", [
@@ -36,4 +37,19 @@ export async function GET(request: NextRequest) { try {
   }
   return NextResponse.json(await bookingWorkspace(site, oploc, includeArchive), { headers: { "Cache-Control": "no-store, max-age=0" } });
 } catch (error) { return errorResponse(error); } }
-export async function POST(request: NextRequest) { try { const actor = await requireActor(request, ["integration-admin", "reviewer"]); assertPermission(actor, "canonical.edit"); const raw = await request.json(); if (raw?.action === "save-quote-settings") return NextResponse.json({ quoteSettings: await saveDashboardQuoteSettings(actor, Settings.parse(raw)) }); const change = Change.parse(raw); if (change.action === "production-handoff") return NextResponse.json(await createProductionOrder(actor, change.canonicalId, change.expectedVersion)); return NextResponse.json(await executeBookingWorkflow(actor, change.canonicalId, change.expectedVersion, change)); } catch (error) { return errorResponse(error); } }
+export async function POST(request: NextRequest) { try {
+  const actor = await requireActor(request);
+  const raw = await request.json();
+  if (raw?.action === "save-quote-settings") {
+    assertPermission(actor, "canonical.edit");
+    return NextResponse.json({ quoteSettings: await saveDashboardQuoteSettings(actor, Settings.parse(raw)) });
+  }
+  const change = Change.parse(raw);
+  const session = await requireFikaSession(request);
+  const repository = new FirestoreAuthModRepository();
+  const principal = { type: "interactive" as const, id: session.authmodIdentityId, displayName: session.displayName, email: session.email, identityKind: session.identityKind };
+  const booking = await getBookingByCanonicalId(change.canonicalId);
+  await assertHospitalityBookingMutationAccess(repository, principal, booking, actor.role === "integration-admin" || actor.role === "reviewer");
+  if (change.action === "production-handoff") return NextResponse.json(await createProductionOrder(actor, change.canonicalId, change.expectedVersion));
+  return NextResponse.json(await executeBookingWorkflow(actor, change.canonicalId, change.expectedVersion, change));
+} catch (error) { return errorResponse(error); } }
