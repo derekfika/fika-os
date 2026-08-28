@@ -27,7 +27,7 @@ export function buildCpuDayProjection(serviceDate: string, orders: ProductionOrd
 
 export async function rebuildCpuDayProjection(request: NextRequest, serviceDate: string, lastChangeSequence?: number) {
   const [rawOrders, planSnapshot, previous] = await Promise.all([productionQueue(request, serviceDate), cpuPlans().get(), cpuProjections().doc(serviceDate).get()]);
-  const orders = await withReadableDestinations(request, rawOrders);
+  const orders = await withReadableDestinations(rawOrders);
   const plans = planSnapshot.docs.map((document) => document.data() as ProductionPlan);
   const projection = buildCpuDayProjection(serviceDate, orders, plans, lastChangeSequence ?? Number(previous.data()?.lastChangeSequence || 0), Number(previous.data()?.revision || 0) + 1);
   await cpuProjections().doc(serviceDate).set(projection);
@@ -36,7 +36,7 @@ export async function rebuildCpuDayProjection(request: NextRequest, serviceDate:
 
 export async function rebuildCpuWeekProjection(request: NextRequest, weekCommencing: string, lastChangeSequence?: number) {
   const [rawOrders, planSnapshot, previous] = await Promise.all([productionQueue(request), cpuPlans().get(), cpuProjections().doc(`week:${weekCommencing}`).get()]);
-  const orders = await withReadableDestinations(request, rawOrders);
+  const orders = await withReadableDestinations(rawOrders);
   const plans = planSnapshot.docs.map((document) => document.data() as ProductionPlan);
   const projection = buildCpuDayProjection("all", orders.filter((order) => order.serviceDate && weekDates(weekCommencing).includes(order.serviceDate)), plans, lastChangeSequence ?? Number(previous.data()?.lastChangeSequence || 0), Number(previous.data()?.revision || 0) + 1);
   const week: CpuWeekProjection = { serviceDate: weekCommencing, weekCommencing, revision: projection.revision, lastChangeSequence: projection.lastChangeSequence, orders: projection.orders, summary: projection.summary, rebuiltAt: projection.rebuiltAt };

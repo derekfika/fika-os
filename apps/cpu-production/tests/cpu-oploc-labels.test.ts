@@ -1,36 +1,22 @@
-import { strict as assert } from "node:assert";
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
-import { NextRequest } from "next/server";
-import { withReadableDestinations } from "../lib/cpu-oploc-labels";
-import type { ProductionOrder } from "@fika/contracts";
 
-const order = (destinationLabel: string | undefined) => ({
-  canonicalId: "production-order:test",
-  version: 1,
-  destinationOplocId: "oploc:site",
-  ...(destinationLabel === undefined ? {} : { destinationLabel }),
-  lines: [{ itemName: "test dish" }],
-} as unknown as ProductionOrder);
+const helper = readFileSync(new URL("../lib/cpu-oploc-labels.ts", import.meta.url), "utf8");
+const route = readFileSync(new URL("../app/api/production/route.ts", import.meta.url), "utf8");
+const projection = readFileSync(new URL("../lib/cpu-projection.ts", import.meta.url), "utf8");
 
-test("readable destination labels skip the OPLOC Hub lookup", async () => {
-  const originalFetch = globalThis.fetch;
-  let calls = 0;
-  globalThis.fetch = (async () => { calls += 1; return new Response(JSON.stringify({ oplocs: [] }), { status: 200 }); }) as typeof fetch;
-  try {
-    const result = await withReadableDestinations(new NextRequest("http://localhost"), [order("Site One")]);
-    assert.equal(calls, 0);
-    assert.equal(result[0].destinationLabel, "Site One");
-    assert.equal(result[0].lines[0].itemName, "Test Dish");
-  } finally { globalThis.fetch = originalFetch; }
+test("CPU destination enrichment uses bounded batched OPLOC reads", () => {
+  assert.doesNotMatch(helper, /\/api\/oplocs/);
+  assert.doesNotMatch(helper, /collection\(["']integrationHubCanonical["']\)\.get\(\)/);
+  assert.match(helper, /where\("entityType", "==", "OPLOC"\)/);
+  assert.match(helper, /where\("canonicalId", "in", chunk\)/);
+  assert.match(helper, /index \+= 30/);
 });
 
-test("ID-only destination labels still use OPLOC enrichment", async () => {
-  const originalFetch = globalThis.fetch;
-  let calls = 0;
-  globalThis.fetch = (async () => { calls += 1; return new Response(JSON.stringify({ oplocs: [{ canonicalId: "oploc:site", label: "Site One" }] }), { status: 200 }); }) as typeof fetch;
-  try {
-    const result = await withReadableDestinations(new NextRequest("http://localhost"), [order("oploc:site")]);
-    assert.equal(calls, 1);
-    assert.equal(result[0].destinationLabel, "Site One");
-  } finally { globalThis.fetch = originalFetch; }
+test("CPU production list, detail and projection paths delegate to bounded enrichment", () => {
+  assert.doesNotMatch(route, /collection\(["']integrationHubCanonical["']\)\.get\(\)/);
+  assert.doesNotMatch(projection, /collection\(["']integrationHubCanonical["']\)\.get\(\)/);
+  assert.match(route, /withReadableDestinations\(/);
+  assert.match(projection, /withReadableDestinations\(/);
 });
