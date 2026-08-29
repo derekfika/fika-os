@@ -28,6 +28,18 @@
     "paths": {
       "@/*": [
         "./*"
+      ],
+      "firebase-admin": [
+        "./node_modules/firebase-admin"
+      ],
+      "firebase-admin/*": [
+        "./node_modules/firebase-admin/*"
+      ],
+      "zod": [
+        "./node_modules/zod"
+      ],
+      "xlsx": [
+        "./node_modules/xlsx"
       ]
     },
     "incremental": true,
