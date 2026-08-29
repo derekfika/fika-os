@@ -6,6 +6,7 @@ import { groupedSlots, slotLabel, useRollingData, type Dish } from "./planner-da
 import PlanningContextNav from "./planning-context-nav";
 import { rankDishPickerItems } from "@/lib/dish-picker";
 import { categoryForSlot } from "@/lib/dish-categories";
+import { invalidateCatalogueCache } from "@/lib/menu-catalogue-cache";
 
 export default function WeekPlanner() {
   const { snapshot, weeks, dishes, message, error, command, selectWeek } = useRollingData();
@@ -15,7 +16,7 @@ export default function WeekPlanner() {
   const [resetOpen, setResetOpen] = useState(false);
   if (!snapshot) return <MenuPlanningShell section="Week Planner"><div className="menu-loading">Loading Week Planner…</div></MenuPlanningShell>;
   const choose = async (dish: Dish) => { if (!picker) return; const entry = snapshot.entries.find(item => item.dayId === picker.dayId && item.slot === picker.slot); await command(entry ? "update-entry" : "create-entry", entry ? { weekId: snapshot.week.id, entryId: entry.id, patch: { itemId: dish.id, itemLabel: dish.name } } : { weekId: snapshot.week.id, dayId: picker.dayId, slot: picker.slot, itemId: dish.id, itemLabel: dish.name }); setPicker(undefined); };
-  const createDish = async (name: string) => { const response = await fetch("/api/catalogue", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "create-dish", displayName: name, category: categoryForSlot(picker?.slot || "") }) }); const body = await response.json(); if (!response.ok) throw new Error(body.error?.message || body.error || "The dish could not be created."); const item = body.item as { canonicalId: string; displayName: string; category: string }; await choose({ id: item.canonicalId, name: item.displayName, category: item.category }); };
+  const createDish = async (name: string) => { const response = await fetch("/api/catalogue", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "create-dish", displayName: name, category: categoryForSlot(picker?.slot || "") }) }); const body = await response.json(); if (!response.ok) throw new Error(body.error?.message || body.error || "The dish could not be created."); await invalidateCatalogueCache(); const item = body.item as { canonicalId: string; displayName: string; category: string }; await choose({ id: item.canonicalId, name: item.displayName, category: item.category }); };
   const weekDate = (offset: number) => { const date = new Date(`${snapshot.week.weekCommencing}T00:00:00Z`); date.setUTCDate(date.getUTCDate() + offset); return date.toISOString().slice(0, 10); };
   const duplicate = () => { const source = weeks.find(item => item.id !== snapshot.week.id); if (source) setDuplicateSourceId(source.id); };
   const blank = async () => { setDialog({ title: "Start blank week", label: "Blank week commencing (Monday)", value: weekDate(7), inputType: "date", submit: async target => { if (await command("create-week", { weekCommencing: target })) { window.history.pushState({}, "", `/?week=${target}`); window.dispatchEvent(new PopStateEvent("popstate")); } } }); };
