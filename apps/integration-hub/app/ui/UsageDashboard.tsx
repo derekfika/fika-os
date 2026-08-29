@@ -1,6 +1,7 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
 import styles from "./usage-dashboard.module.css";
+import { chartTickIndexes } from "@/lib/usage-chart";
 import type { UsageDashboard as UsageData, UsageMetric, UsagePoint } from "@/lib/usage-observatory";
 
 const labels: Record<UsageMetric, string> = { reads: "Reads", writes: "Writes", deletes: "Deletes" };
@@ -52,7 +53,7 @@ export default function UsageDashboard() {
 }
 function Bars({ label, points, resolution }: { label: string; points: UsagePoint[]; resolution: UsageData["resolution"] }) {
   const max = Math.max(1, ...points.map(point => point.value)); const ticks = [0, 0.25, 0.5, 0.75, 1];
-  const tickIndexes = points.length < 2 ? [0] : Array.from(new Set([0, Math.floor((points.length - 1) / 2), points.length - 1]));
+  const tickIndexes = chartTickIndexes(points.length, resolution);
   const tickLabel = (point: UsagePoint) => { const date = new Date(point.timestamp); return resolution === "1d" ? date.toLocaleDateString("en-GB", { day: "numeric", month: "short", timeZone: "Europe/London" }) : date.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", timeZone: "Europe/London" }); };
   return <div className={styles.series}><strong>{label}</strong><div className={styles.chartFrame}><div className={styles.yTicks}>{ticks.slice().reverse().map(tick => <span key={tick}>{format.format(Math.round(max * tick))}</span>)}</div><div className={styles.chartPlot}><div className={styles.gridlines}>{ticks.map(tick => <i key={tick} style={{ bottom: tick * 100 + "%" }} />)}</div><div className={styles.bars} aria-label={label + " over selected range"}>{points.map(point => <span key={point.timestamp} title={format.format(point.value) + " operations"} style={{ height: Math.max(2, point.value / max * 100) + "%" }} />)}</div><div className={styles.xTicks}>{tickIndexes.map(index => <span key={points[index]?.timestamp || index}>{points[index] ? tickLabel(points[index]) : "—"}</span>)}</div></div></div></div>;
 }

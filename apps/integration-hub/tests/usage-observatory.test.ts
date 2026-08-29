@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { chartTickIndexes } from "../lib/usage-chart";
 import { aggregateDaily, calculateBaseline, calculateStatus, loadUsageDashboard, londonDayStart, monitoringQueryParameters, monitoringRequestShape, normalizeMonitoringError, parseUsageRange, resolutionForDuration } from "../lib/usage-observatory";
 
 const config = { projectId: "fika-os-local", watchPercent: 0.5, highPercent: 0.75, criticalPercent: 0.9, spikeMultiplier: 2, maxWindowDays: 31, cacheTtlMs: 180000 };
@@ -24,6 +25,14 @@ test("short diagnostic windows use fine-grained resolutions", () => {
   assert.equal(resolutionForDuration(15 * 60000), "1m");
   assert.equal(resolutionForDuration(30 * 60000), "1m");
   assert.equal(resolutionForDuration(60 * 60000), "1m");
+});
+
+test("chart tick density stays readable for each selected resolution", () => {
+  assert.deepEqual(chartTickIndexes(15, "1m"), [0, 7, 14]);
+  assert.equal(chartTickIndexes(289, "5m").length, 4);
+  assert.equal(chartTickIndexes(169, "1h").length, 5);
+  assert.equal(chartTickIndexes(8, "1d").length, 7);
+  assert.deepEqual(chartTickIndexes(0, "1m"), [0]);
 });
 
 test("London day start handles BST and GMT deliberately", () => {
