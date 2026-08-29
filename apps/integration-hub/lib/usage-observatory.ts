@@ -21,7 +21,7 @@ export type UsageDashboard = {
   range: UsageRange;
   resolution: UsageResolution;
   source: { label: string; projectId: string };
-  totals: Record<UsageMetric, number>;
+  totals: Record<UsageMetric, number | null>;
   allowance?: { reads: number; used: number; percent: number; remaining: number; status: UsageStatus };
   timeline: Record<UsageMetric, UsagePoint[]>;
   dailyTotals7d: UsagePoint[];
@@ -29,6 +29,7 @@ export type UsageDashboard = {
   appUsage: { available: false; message: string; rows: never[] };
   queryInsights: { available: false; message: string; url: string };
   deployMarkers: { available: false; message: string };
+  metricErrors: Partial<Record<UsageMetric, string>>;
 };
 
 const METRIC_TYPES: Record<UsageMetric, string> = {
@@ -36,6 +37,24 @@ const METRIC_TYPES: Record<UsageMetric, string> = {
   writes: "firestore.googleapis.com/document/write_ops_count",
   deletes: "firestore.googleapis.com/document/delete_ops_count",
 };
+const FIRESTORE_RESOURCE_TYPE = "firestore.googleapis.com/Database";
+export type MonitoringRequestShape = { metricType: string; resourceType: string; projectId: string; startTime: string; endTime: string; alignmentPeriod: string; perSeriesAligner: "ALIGN_SUM"; crossSeriesReducer: "REDUCE_SUM"; groupByFields: string[] };
+
+export function monitoringRequestShape(metric: UsageMetric, range: UsageRange, resolution: UsageResolution, projectId: string): MonitoringRequestShape {
+  return { metricType: METRIC_TYPES[metric], resourceType: FIRESTORE_RESOURCE_TYPE, projectId, startTime: range.start, endTime: range.end, alignmentPeriod: alignmentPeriod(resolution), perSeriesAligner: "ALIGN_SUM", crossSeriesReducer: "REDUCE_SUM", groupByFields: [] };
+}
+
+export function normalizeMonitoringError(body: unknown, httpStatus: number): string {
+  const error = body && typeof body === "object" && "error" in body ? (body as { error?: unknown }).error : body;
+  if (!error || typeof error !== "object") return "Google Monitoring returned HTTP " + httpStatus + ".";
+  const value = error as { code?: unknown; status?: unknown; message?: unknown; details?: unknown };
+  const details = Array.isArray(value.details) ? value.details.map(detail => typeof detail === "string" ? detail : JSON.stringify(detail)).join("; ") : value.details ? JSON.stringify(value.details) : "";
+  return ["Google Monitoring returned HTTP " + httpStatus + ".", value.code ? "code=" + String(value.code) : "", value.status ? "status=" + String(value.status) : "", value.message ? "message=" + String(value.message) : "", details ? "details=" + details : ""].filter(Boolean).join(" ");
+}
+export function monitoringQueryParameters(metric: UsageMetric, range: UsageRange, resolution: UsageResolution, projectId: string): URLSearchParams {
+  const shape = monitoringRequestShape(metric, range, resolution, projectId);
+  return new URLSearchParams({ filter: "metric.type = \"".concat(shape.metricType, "\" AND resource.type = \"", shape.resourceType, "\""), "interval.startTime": shape.startTime, "interval.endTime": shape.endTime, "aggregation.alignmentPeriod": shape.alignmentPeriod, "aggregation.perSeriesAligner": shape.perSeriesAligner, "aggregation.crossSeriesReducer": shape.crossSeriesReducer, view: "FULL" });
+}
 
 export function getUsageConfig(env: Record<string, string | undefined> = process.env): UsageConfig {
   const runtime = getFikaRuntimeConfig(env);
@@ -129,18 +148,14 @@ export function createMonitoringClient(fetchImpl: typeof fetch = fetch): Monitor
     const client = await auth.getClient();
     const token = await client.getAccessToken();
     if (!token.token) throw new Error("Google Monitoring credentials are not available to the server runtime.");
-    const params = new URLSearchParams({
-      filter: "metric.type = \"".concat(metricType, "\""),
-      "interval.startTime": range.start,
-      "interval.endTime": range.end,
-      aggregation: JSON.stringify({ alignmentPeriod: alignmentPeriod(resolution), perSeriesAligner: "ALIGN_SUM", crossSeriesReducer: "REDUCE_SUM" }),
-      view: "FULL",
-    });
+    const metric = (Object.entries(METRIC_TYPES).find(([, value]) => value === metricType)?.[0] || "reads") as UsageMetric;
+    const params = monitoringQueryParameters(metric, range, resolution, projectId);
     const response = await fetchImpl("https://monitoring.googleapis.com/v3/projects/" + encodeURIComponent(projectId) + "/timeSeries?" + params, { headers: { Authorization: "Bearer " + token.token }, cache: "no-store" });
-    if (!response.ok) throw new Error("Google Monitoring returned HTTP " + response.status + ".");
-    const body = await response.json() as MonitoringResponse;
+    const body = await response.json().catch(() => undefined) as MonitoringResponse | unknown;
+    if (!response.ok) throw new Error(normalizeMonitoringError(body, response.status));
+    const monitoringBody = body as MonitoringResponse;
     const totals = new Map<string, number>();
-    for (const series of body.timeSeries || []) for (const point of series.points || []) {
+    for (const series of monitoringBody.timeSeries || []) for (const point of series.points || []) {
       const timestamp = point.interval?.endTime;
       if (!timestamp) continue;
       const value = Number(point.value?.int64Value ?? point.value?.doubleValue ?? 0);
@@ -165,12 +180,14 @@ export async function loadUsageDashboard(input: { range?: UsageRange; now?: Date
   if (!input.client && inFlight) return inFlight;
   const client = input.client || createMonitoringClient();
   const promise = (async () => {
-    const metrics = await Promise.all((Object.keys(METRIC_TYPES) as UsageMetric[]).map(metric => client.query(METRIC_TYPES[metric], range, resolution)));
-    const totals = Object.fromEntries((Object.keys(METRIC_TYPES) as UsageMetric[]).map((metric, index) => [metric, Math.round(metrics[index].reduce((sum, point) => sum + point.value, 0))])) as Record<UsageMetric, number>;
-    const allowance = config.dailyReadAllowance ? { reads: config.dailyReadAllowance, used: totals.reads, percent: totals.reads / config.dailyReadAllowance, remaining: Math.max(0, config.dailyReadAllowance - totals.reads), status: calculateStatus(totals.reads / config.dailyReadAllowance, config) } : undefined;
+    const results = await Promise.all((Object.keys(METRIC_TYPES) as UsageMetric[]).map(async metric => { try { return { metric, points: await client.query(METRIC_TYPES[metric], range, resolution) }; } catch (error) { const message = error instanceof Error ? error.message : "Monitoring metric failed."; console.error("[usage-observatory] Monitoring query failed", { metric, metricType: METRIC_TYPES[metric], range, resolution, error: message }); return { metric, error: message }; } }));
+    const metrics = Object.fromEntries(results.map(result => [result.metric, "points" in result ? result.points : []])) as Record<UsageMetric, UsagePoint[]>;
+    const metricErrors = Object.fromEntries(results.filter(result => "error" in result).map(result => [result.metric, result.error])) as Partial<Record<UsageMetric, string>>;
+    const totals = Object.fromEntries((Object.keys(METRIC_TYPES) as UsageMetric[]).map(metric => [metric, metricErrors[metric] ? null : Math.round(metrics[metric].reduce((sum, point) => sum + point.value, 0))])) as Record<UsageMetric, number | null>;
+    const allowance = config.dailyReadAllowance && totals.reads !== null ? { reads: config.dailyReadAllowance, used: totals.reads, percent: totals.reads / config.dailyReadAllowance, remaining: Math.max(0, config.dailyReadAllowance - totals.reads), status: calculateStatus(totals.reads / config.dailyReadAllowance, config) } : undefined;
     const data: UsageDashboard = {
       generatedAt: new Date().toISOString(), range, resolution, source: { label: "Google Cloud Monitoring · Firestore document operation metrics", projectId: config.projectId },
-      totals, allowance, timeline: { reads: metrics[0], writes: metrics[1], deletes: metrics[2] }, dailyTotals7d: aggregateDaily(metrics[0], now), baseline: calculateBaseline(metrics[0], config.spikeMultiplier),
+      totals, allowance, timeline: metrics, dailyTotals7d: aggregateDaily(metrics.reads, now), baseline: calculateBaseline(metrics.reads, config.spikeMultiplier), metricErrors,
       appUsage: { available: false, message: "Native Firestore operation metrics do not expose trustworthy FIKA app attribution. No app shares are inferred.", rows: [] },
       queryInsights: { available: false, message: "Query Insights is not exposed through a supported server API for this dashboard.", url: "https://console.firebase.google.com/project/" + encodeURIComponent(config.projectId) + "/firestore/usage/query-insights" },
       deployMarkers: { available: false, message: "No authoritative deploy marker source is configured." },

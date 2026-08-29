@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { aggregateDaily, calculateBaseline, calculateStatus, londonDayStart, parseUsageRange, resolutionForDuration } from "../lib/usage-observatory";
+import { aggregateDaily, calculateBaseline, calculateStatus, loadUsageDashboard, londonDayStart, monitoringQueryParameters, monitoringRequestShape, normalizeMonitoringError, parseUsageRange, resolutionForDuration } from "../lib/usage-observatory";
 
 const config = { projectId: "fika-os-local", watchPercent: 0.5, highPercent: 0.75, criticalPercent: 0.9, spikeMultiplier: 2, maxWindowDays: 31, cacheTtlMs: 180000 };
 
@@ -43,4 +43,48 @@ test("usage API is administrator guarded and does not scan operational Firestore
   const route = readFileSync(new URL("../app/api/usage/route.ts", import.meta.url), "utf8");
   assert.match(route, /requireAuthmodAdminContext/);
   assert.doesNotMatch(route, /collection\(|getDocs\(|onSnapshot\(/);
+});
+
+test("Monitoring request shape uses exact Firestore database metrics and nested REST fields", () => {
+  const range = { start: "2026-08-29T12:05:00.000Z", end: "2026-08-29T12:20:00.000Z", timezone: "Europe/London" as const };
+  const shape = monitoringRequestShape("reads", range, "1m", "fika-os-dev");
+  assert.equal(shape.metricType, "firestore.googleapis.com/document/read_ops_count");
+  assert.equal(shape.resourceType, "firestore.googleapis.com/Database");
+  assert.equal(shape.projectId, "fika-os-dev");
+  assert.equal(shape.startTime, range.start);
+  assert.equal(shape.endTime, range.end);
+  assert.equal(shape.alignmentPeriod, "60s");
+  assert.equal(shape.perSeriesAligner, "ALIGN_SUM");
+  assert.equal(shape.crossSeriesReducer, "REDUCE_SUM");
+  assert.deepEqual(shape.groupByFields, []);
+  const params = monitoringQueryParameters("reads", range, "1m", "fika-os-dev");
+  assert.equal(params.get("aggregation.alignmentPeriod"), "60s");
+  assert.equal(params.get("aggregation.perSeriesAligner"), "ALIGN_SUM");
+  assert.equal(params.get("aggregation.crossSeriesReducer"), "REDUCE_SUM");
+  assert.equal(params.get("aggregation"), null);
+  assert.match(params.get("filter") || "", /metric\.type = \"firestore\.googleapis\.com\/document\/read_ops_count\"/);
+  assert.match(params.get("filter") || "", /resource\.type = \"firestore\.googleapis\.com\/Database\"/);
+  assert.equal(monitoringRequestShape("writes", range, "5m", "fika-os-dev").metricType, "firestore.googleapis.com/document/write_ops_count");
+  assert.equal(monitoringRequestShape("deletes", range, "5m", "fika-os-dev").metricType, "firestore.googleapis.com/document/delete_ops_count");
+});
+
+test("structured Monitoring errors retain rejected query details without credentials", () => {
+  const message = normalizeMonitoringError({ error: { code: 400, status: "INVALID_ARGUMENT", message: "Invalid value at 'aggregation'", details: [{ fieldViolations: [{ field: "aggregation" }] }] } }, 400);
+  assert.match(message, /code=400/);
+  assert.match(message, /INVALID_ARGUMENT/);
+  assert.match(message, /aggregation/);
+  assert.doesNotMatch(message, /Bearer|token|secret/i);
+});
+
+test("metric failures are isolated and successful operation totals remain available", async () => {
+  const config = { projectId: "fika-os-local", watchPercent: 0.5, highPercent: 0.75, criticalPercent: 0.9, spikeMultiplier: 2, maxWindowDays: 31, cacheTtlMs: 180000 };
+  const client = { query: async (metricType: string) => {
+    if (metricType.endsWith("delete_ops_count")) throw new Error("delete metric rejected");
+    return [{ timestamp: "2026-08-29T12:00:00.000Z", value: metricType.endsWith("read_ops_count") ? 7 : 3 }];
+  } };
+  const data = await loadUsageDashboard({ now: new Date("2026-08-29T12:30:00.000Z"), config, client });
+  assert.equal(data.totals.reads, 7);
+  assert.equal(data.totals.writes, 3);
+  assert.equal(data.totals.deletes, null);
+  assert.equal(data.metricErrors.deletes, "delete metric rejected");
 });
