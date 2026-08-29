@@ -1,4 +1,4 @@
-import { db } from "@fika/server-shared/firebase-admin";
+import { db } from "../lib/firebase-admin";
 import { stableDocumentId } from "@fika/server-shared/stable-document-id";
 import { listGrabAndGoOrders, listSiteMenuArtifacts } from "../lib/migration-compat";
 

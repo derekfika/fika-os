@@ -5,14 +5,10 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./firebase-admin": "./src/firebase-admin.ts",
     "./stable-document-id": "./src/stable-document-id.ts",
     "./delivered-in-access": "./src/delivered-in-access.ts",
     "./drive-owner": "./src/drive-owner.ts",
     "./governed-oplocs": "./src/governed-oplocs.ts",
     "./runtime-config": "./src/runtime-config.ts"
-  },
-  "dependencies": {
-    "firebase-admin": "^13.4.0"
   }
 }

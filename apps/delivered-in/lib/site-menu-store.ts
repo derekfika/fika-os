@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "
 import { dirname, join } from "node:path";
 import type { SiteMenuArtifact } from "./site-menu";
 import { appDataPath } from "../../shared/app-data-path";
-import { db } from "@fika/server-shared/firebase-admin";
+import { db } from "./firebase-admin";
 import { stableDocumentId } from "@fika/server-shared/stable-document-id";
 import { recordDeliveredInAppReadBudget } from "./delivered-in-read-budget";
 
