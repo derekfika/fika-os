@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { ProductionOrder } from "@hub/lib/production-domain";
+import type { ProductionOrder } from "../../lib/production-types";
 import type {
   AllergenCellState,
   InternalMatrixSignature,

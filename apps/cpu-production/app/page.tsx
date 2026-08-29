@@ -5,7 +5,7 @@ import type { FormEvent } from "react";
 import type {
   ProductionOrder,
   ProductionStatus,
-} from "@hub/lib/production-domain";
+} from "../lib/production-types";
 import type { AllergenCellState } from "./lib/production-plan";
 import { matrixColumns } from "./ui/allergen-matrix";
 import LianaOrderDetail from "./ui/LianaOrderDetail";

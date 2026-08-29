@@ -29,9 +29,6 @@
       "@/*": [
         "./*"
       ],
-      "@hub/*": [
-        "../integration-hub/*"
-      ]
     },
     "allowJs": true,
     "incremental": true

@@ -1,4 +1,4 @@
-import type { ProductionLine, ProductionOrder } from "@hub/lib/production-domain";
+import type { ProductionLine, ProductionOrder } from "./production-types";
 import type { OperationalAllergenState } from "../../shared/allergen-contract";
 import { cpuAttentionLabel, cpuDestinationLabel, cpuLifecycle, cpuLifecycleLabels, cpuRequiredTime, cpuSourceLabel } from "./production-presentation";
 

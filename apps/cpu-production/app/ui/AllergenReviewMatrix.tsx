@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { CANONICAL_ALLERGEN_COLUMNS, toggleOperationalAllergen, type CanonicalAllergenKey, type OperationalAllergenState } from "../../../shared/allergen-contract";
-import type { ProductionOrder } from "@hub/lib/production-domain";
+import type { ProductionOrder } from "../../lib/production-types";
 import { allergenReviewKey, type AllergenReviewRow } from "../../lib/production-day";
 import { bookingContextEntries } from "./BookingContext";
 import { titleCaseDish } from "../../lib/production-presentation";

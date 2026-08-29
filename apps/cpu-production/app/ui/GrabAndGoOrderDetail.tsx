@@ -1,6 +1,6 @@
 "use client";
 
-import type { ProductionOrder } from "@hub/lib/production-domain";
+import type { ProductionOrder } from "../../lib/production-types";
 import "./grab-and-go-order-detail.css";
 
 const dateLabel = (order: ProductionOrder) => new Date(`${order.serviceDate || order.requiredBy.slice(0, 10)}T12:00:00Z`).toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric", timeZone: "UTC" });

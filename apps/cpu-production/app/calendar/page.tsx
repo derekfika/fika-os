@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
-import type { ProductionOrder } from "@hub/lib/production-domain";
+import type { ProductionOrder } from "../../lib/production-types";
 import ProductionCalendar from "../ui/ProductionCalendar";
 import LianaOrderDetail from "../ui/LianaOrderDetail";
 import "./page.css";

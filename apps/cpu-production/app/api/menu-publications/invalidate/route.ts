@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { errorResponse } from "@hub/lib/api";
+import { errorResponse } from "../../../../lib/api";
 import { publishPublicationChanged, type PublicationChangedEvent } from "../../../../lib/publication-events";
 
 export const dynamic = "force-dynamic";

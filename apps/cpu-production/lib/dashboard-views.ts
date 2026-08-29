@@ -1,4 +1,4 @@
-import type { ProductionOrder } from "@hub/lib/production-domain";
+import type { ProductionOrder } from "./production-types";
 
 export type ProductionDashboardView =
   | "production"

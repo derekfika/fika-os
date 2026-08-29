@@ -1,25 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { errorResponse } from "@hub/lib/api";
-import { requireActor } from "@hub/lib/auth";
-import { assertPermission } from "@hub/lib/authmod";
-import { db } from "@hub/lib/firebase-admin";
-import {
-  createCpuProductionOrder,
-  acknowledgeProductionCancellation,
-  productionQueue,
-  productionOrderDetail,
-  transitionProductionOrder,
-  updateProductionLines,
-  reportProductionAllergenDiscrepancy,
-} from "@hub/lib/production-domain";
-import { hospitalityMenuProductionRouting } from "@hub/lib/connections-service";
+import { errorResponse } from "../../../lib/api";
+import { requireCpuActor } from "../../../lib/cpu-access-client";
+import { acknowledgeProductionCancellation, createCpuProductionOrder, productionOrderDetail, productionQueue, productionQueueForWeek, reportProductionAllergenDiscrepancy, transitionProductionOrder, updateProductionLines } from "../../../lib/production-http-client";
+import { ordersForScope } from "../../../lib/cpu-routing";
+import { withReadableDestinations } from "../../../lib/cpu-oploc-labels";
+// Scope filtering remains backed by the existing hospitalityMenuProductionRouting adapter.
 import { localFixtureOrders, updateLocalFixture } from "../local-fixtures";
-import { filterProductionOrdersForScope, normaliseProductionScope, type ProductionScope } from "../../../lib/production-scope";
-import { appendCpuChange, buildCpuDayProjection, cpuProjections, hasCpuChangesSince, listCpuChanges, listCpuWeekChanges, rebuildCpuWeekProjection, weekCommencingFor, loadPlansForOrders } from "../../../lib/cpu-projection";
-import type { ProductionOrder } from "@hub/lib/production-domain";
-import { titleCaseDish } from "../../../lib/production-presentation";
-import { getActiveCanonicalOplocLabels } from "@hub/lib/canonical-oplocs";
+import { normaliseProductionScope } from "../../../lib/production-scope";
+import { appendCpuChange, buildCpuDayProjection, cpuProjections, listCpuChanges, listCpuWeekChanges, rebuildCpuDayProjection, rebuildCpuWeekProjection, weekCommencingFor } from "../../../lib/cpu-projection";
+import { loadPlansForOrders } from "../../../lib/cpu-projection-repository";
+import type { ProductionOrder } from "../../../lib/production-types";
 
 const localActor = {
   uid: "local-cpu",
@@ -27,41 +18,31 @@ const localActor = {
   role: "integration-admin" as const,
   synthetic: true as const,
 };
-async function actorFor(
-  request: NextRequest,
-  allowed?: ("integration-admin" | "reviewer" | "viewer")[],
-) {
-  try {
-    return await requireActor(request, allowed);
-  } catch (error) {
-    if (
-      process.env.NODE_ENV !== "production" &&
-      (error as { status?: number }).status === 401
-    )
-      return localActor;
-    throw error;
-  }
-}
+const actorFor = (request: NextRequest) => requireCpuActor(request);
 function internalProjectionRequest(request: NextRequest) {
   const configured = process.env.FIKA_INTERNAL_API_TOKEN;
   return process.env.NODE_ENV !== "production" && !configured || Boolean(configured && request.headers.get("x-fika-internal-token") === configured);
 }
-async function rebuildCpuProjection(serviceDate: string, lastChangeSequence?: number) {
-  const [rawOrders, previous] = await Promise.all([productionQueue(serviceDate === "all" ? undefined : serviceDate), cpuProjections().doc(serviceDate).get()]);
-  const orders = await withReadableDestinations(rawOrders);
+function withServerTiming(response: NextResponse, timings: Record<string, number>) {
+  response.headers.set("Server-Timing", Object.entries(timings).map(([name, duration]) => `${name};dur=${Math.max(0, duration).toFixed(1)}`).join(", "));
+  return response;
+}
+async function rebuildCpuProjection(request: NextRequest, serviceDate: string, lastChangeSequence?: number) {
+  const [rawOrders, previous] = await Promise.all([productionQueue(request, serviceDate === "all" ? undefined : serviceDate), cpuProjections().doc(serviceDate).get()]);
+  const orders = await withReadableDestinations(request, rawOrders);
   const plans = await loadPlansForOrders(orders.map(order => order.canonicalId));
   const projection = buildCpuDayProjection(serviceDate, orders, plans, lastChangeSequence ?? Number(previous.data()?.lastChangeSequence || 0), Number(previous.data()?.revision || 0) + 1);
   await cpuProjections().doc(serviceDate).set(projection);
   return projection;
 }
 
-async function recordCpuChange(canonicalId: string, actorId: string, changeType: string, order?: ProductionOrder) {
-  const current = order || await productionOrderDetail(canonicalId);
+async function recordCpuChange(request: NextRequest, canonicalId: string, actorId: string, changeType: string, order?: ProductionOrder) {
+  const current = order || await productionOrderDetail(request, canonicalId);
   const serviceDate = current?.serviceDate;
   if (!serviceDate) return current;
   const event = await appendCpuChange({ serviceDate, entityType: "productionOrder", entityId: canonicalId, revision: current.version, changeType, actorId, changedAt: new Date().toISOString() });
-  await rebuildCpuProjection(serviceDate, event.sequence);
-  await rebuildCpuWeekProjection(weekCommencingFor(serviceDate), event.sequence);
+  await rebuildCpuProjection(request, serviceDate, event.sequence);
+  await rebuildCpuWeekProjection(request, weekCommencingFor(serviceDate), event.sequence);
   return current;
 }
 
@@ -162,19 +143,17 @@ const AcknowledgeCancellation = z.object({ action: z.literal("acknowledge-cancel
 export async function GET(request: NextRequest) {
   try {
     const actor = await actorFor(request);
-    assertPermission(actor, "canonical.view");
     const projectionDate = request.nextUrl.searchParams.get("serviceDate") || new Date().toISOString().slice(0, 10);
     if (request.nextUrl.searchParams.get("diagnostic") === "1") {
       const week = request.nextUrl.searchParams.get("weekCommencing");
       const projection = (await cpuProjections().doc(week ? `week:${week}` : projectionDate).get()).data() as { orders?: Array<Record<string, unknown>> } | undefined;
-      const canonical = await productionQueue(week ? undefined : projectionDate);
+      const canonical = week ? await productionQueueForWeek(request, week) : await productionQueue(request, projectionDate);
       const weekEnd = week ? (() => { const date = new Date(`${week}T00:00:00Z`); date.setUTCDate(date.getUTCDate() + 4); return date.toISOString().slice(0, 10); })() : undefined;
       const canonicalById = new Map(canonical.filter((order) => !week || ((order.serviceDate || "") >= week && (order.serviceDate || "") <= weekEnd!)).map((order) => [order.canonicalId, order]));
       const projectedIds = new Set((projection?.orders || []).map((order) => String(order.id)));
       const missing = [...canonicalById.keys()].filter((id) => !projectedIds.has(id));
       const unexpected = [...projectedIds].filter((id) => !canonicalById.has(id));
-      const plans = await loadPlansForOrders([...canonicalById.keys()]);
-      const expected = buildCpuDayProjection(week ? "all" : projectionDate, [...canonicalById.values()], plans);
+      const expected = buildCpuDayProjection(week ? "all" : projectionDate, [...canonicalById.values()], await loadPlansForOrders([...canonicalById.keys()]));
       const projectedById = new Map((projection?.orders || []).map((order) => [String(order.id), order]));
       const fieldMismatches = expected.orders.filter((order) => {
         const actual = projectedById.get(order.id);
@@ -183,35 +162,51 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ scope: week ? { weekCommencing: week } : { serviceDate: projectionDate }, comparison: { canonicalCount: canonicalById.size, projectionCount: projection?.orders?.length || 0, missing, unexpected, fieldMismatches }, status: missing.length || unexpected.length || fieldMismatches.length ? "Projection out of sync" : "In sync" });
     }
     if (request.nextUrl.searchParams.get("projection") === "1") {
+      const startedAt = performance.now();
       const week = request.nextUrl.searchParams.get("weekCommencing");
+      const storedStartedAt = performance.now();
       const stored = await cpuProjections().doc(week ? `week:${week}` : projectionDate).get();
+      const storedDuration = performance.now() - storedStartedAt;
       const storedData = stored.data() as { orders?: Array<{ id?: string; destinationLabel?: string; destinationOplocId?: string; origin?: string; status?: string; workflowStatus?: string; cancellationNotice?: string }> } | undefined;
       const needsReadableDestinations = storedData?.orders?.some((order) => order.destinationOplocId && order.destinationLabel === order.destinationOplocId);
       const needsCancellationRefresh = storedData?.orders?.some((order) => (order.status === "cancelled" || order.workflowStatus === "cancelled" || (order.origin === "hospitality_booking" && ["draft", "needs_review"].includes(order.status || ""))) && !order.cancellationNotice);
-      const hasChanges = stored.exists && await hasCpuChangesSince(Number((stored.data() as { lastChangeSequence?: number }).lastChangeSequence || 0), week ? undefined : projectionDate, week || undefined);
-      return NextResponse.json({ projection: stored.exists && !needsReadableDestinations && !needsCancellationRefresh && !hasChanges ? stored.data() : week ? await rebuildCpuWeekProjection(week) : await rebuildCpuProjection(projectionDate) });
+      const canonicalStartedAt = performance.now();
+      const canonical = week ? await productionQueueForWeek(request, week) : await productionQueue(request, projectionDate);
+      const canonicalDuration = performance.now() - canonicalStartedAt;
+      const weekEnd = week ? (() => { const date = new Date(`${week}T00:00:00Z`); date.setUTCDate(date.getUTCDate() + 4); return date.toISOString().slice(0, 10); })() : undefined;
+      const canonicalIds = new Set(canonical
+        .filter((order) => !week || ((order.serviceDate || "") >= week && (order.serviceDate || "") <= weekEnd!))
+        .map((order) => order.canonicalId));
+      const projectedIds = new Set((storedData?.orders || []).map((order) => order.id).filter(Boolean));
+      const needsOrderRefresh = canonicalIds.size !== projectedIds.size || [...canonicalIds].some((id) => !projectedIds.has(id));
+      const response = NextResponse.json({ projection: stored.exists && !needsReadableDestinations && !needsCancellationRefresh && !needsOrderRefresh ? stored.data() : week ? await rebuildCpuWeekProjection(request, week) : await rebuildCpuProjection(request, projectionDate) });
+      return withServerTiming(response, { stored: storedDuration, canonical: canonicalDuration, total: performance.now() - startedAt });
     }
     if (request.nextUrl.searchParams.has("changesSince")) {
+      const startedAt = performance.now();
       const after = Number(request.nextUrl.searchParams.get("changesSince") || 0);
       const week = request.nextUrl.searchParams.get("weekCommencing");
+      const queryStartedAt = performance.now();
       const changes = week ? await listCpuWeekChanges(after, week) : await listCpuChanges(after, projectionDate);
-      return NextResponse.json({ changes, projection: (await cpuProjections().doc(week ? `week:${week}` : projectionDate).get()).data() || null });
+      const queryDuration = performance.now() - queryStartedAt;
+      const response = NextResponse.json({ changes, projection: (await cpuProjections().doc(week ? `week:${week}` : projectionDate).get()).data() || null });
+      return withServerTiming(response, { changes: queryDuration, total: performance.now() - startedAt });
     }
     const id = request.nextUrl.searchParams.get("canonicalId");
     const serviceDate = request.nextUrl.searchParams.get("serviceDate") || undefined;
     const scope = normaliseProductionScope(request.nextUrl.searchParams.get("scope"));
     if (id?.startsWith("production-order:v1:fixture:")) {
       const order = localFixtureOrders().find((item) => item.canonicalId === id);
-      const filtered = order ? (await ordersForScope([order], scope))[0] : undefined;
+      const filtered = order ? (await ordersForScope(request, [order], scope))[0] : undefined;
       return NextResponse.json({ order: filtered, scope });
     }
     if (id) {
-      const order = await productionOrderDetail(id);
+      const order = await productionOrderDetail(request, id);
       if (!order) return NextResponse.json({ error: { message: "Production Order was not found." } }, { status: 404 });
-      const readable = await withReadableDestinations([order]);
+      const readable = await withReadableDestinations(request, [order]);
       return NextResponse.json({ order: readable[0], scope });
     }
-    const fetched = await productionQueue(serviceDate);
+    const fetched = await productionQueue(request, serviceDate);
     // In local development, keep the existing emulator orders visible while
     // adding the deterministic two-week fixture set.  The fixture IDs are
     // stable, so retries/reloads cannot duplicate them.  Never inject these
@@ -228,31 +223,11 @@ export async function GET(request: NextRequest) {
         ),
       )]
       : fetched;
-    const orders = await withReadableDestinations(await ordersForScope(sourceOrders, scope));
+    const orders = await withReadableDestinations(request, await ordersForScope(request, sourceOrders, scope));
     return NextResponse.json({ orders, scope, localFixtures: includeLocalFixtures });
   } catch (error) {
     return errorResponse(error);
   }
-}
-
-async function ordersForScope(orders: Awaited<ReturnType<typeof productionQueue>>, scope: ProductionScope) {
-  if (scope === "all") return orders;
-  const menuItemIds = orders.flatMap(order => order.lines.flatMap(line => [line.sourceMenuItemId, line.sourceOfferingId].filter((value): value is string => Boolean(value))));
-  return filterProductionOrdersForScope(orders, scope, await hospitalityMenuProductionRouting(menuItemIds));
-}
-
-async function withReadableDestinations(orders: Awaited<ReturnType<typeof productionQueue>>) {
-  if (!orders.length) return orders;
-  const labels = await getActiveCanonicalOplocLabels(orders.map(order => order.destinationOplocId || ""));
-  return orders.map(order => {
-    const id = order.destinationOplocId;
-    const label = id ? labels.get(id) : undefined;
-    if (!id || !label) return { ...order, lines: order.lines.map(line => ({ ...line, itemName: titleCaseDish(line.itemName) })) };
-    const current = order.destinationLabel?.trim();
-    if (!current || current === id) return { ...order, destinationLabel: label, lines: order.lines.map(line => ({ ...line, itemName: titleCaseDish(line.itemName) })) };
-    if (current.startsWith(`${id} · `)) return { ...order, destinationLabel: `${label} · ${current.slice(id.length + 3)}`, lines: order.lines.map(line => ({ ...line, itemName: titleCaseDish(line.itemName) })) };
-    return { ...order, lines: order.lines.map(line => ({ ...line, itemName: titleCaseDish(line.itemName) })) };
-  });
 }
 
 export async function POST(request: NextRequest) {
@@ -262,21 +237,20 @@ export async function POST(request: NextRequest) {
       if (!internalProjectionRequest(request)) return NextResponse.json({ error: { message: "Internal CPU projection access is not authorised." } }, { status: 401 });
       const serviceDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).parse(raw.serviceDate);
       const event = await appendCpuChange({ serviceDate, entityType: "productionOrder", entityId: z.string().min(1).parse(raw.entityId), revision: z.number().int().positive().parse(raw.revision), changeType: z.string().min(1).parse(raw.changeType), actorId: z.string().min(1).parse(raw.actorId || "integration-hub"), changedAt: z.string().min(1).parse(raw.changedAt || new Date().toISOString()), idempotencyKey: z.string().min(1).parse(raw.idempotencyKey) });
-      const dayProjection = await rebuildCpuProjection(serviceDate, event.sequence);
-      const weekProjection = await rebuildCpuWeekProjection(weekCommencingFor(serviceDate), event.sequence);
+      const dayProjection = await rebuildCpuProjection(request, serviceDate, event.sequence);
+      const weekProjection = await rebuildCpuWeekProjection(request, weekCommencingFor(serviceDate), event.sequence);
       return NextResponse.json({ applied: true, duplicate: event.sequence < Number(raw.sequence || event.sequence), event, dayProjection, weekProjection });
     }
-    const actor = await actorFor(request, ["integration-admin", "reviewer"]);
-    assertPermission(actor, "canonical.edit");
+    const actor = await actorFor(request);
     if (raw?.action === "rebuild-cpu-projection") {
       const serviceDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).parse(raw.serviceDate);
-      const projection = await rebuildCpuProjection(serviceDate);
-      return NextResponse.json({ projection: await rebuildCpuWeekProjection(weekCommencingFor(serviceDate)), dayProjection: projection });
+      const projection = await rebuildCpuProjection(request, serviceDate);
+      return NextResponse.json({ projection: await rebuildCpuWeekProjection(request, weekCommencingFor(serviceDate)), dayProjection: projection });
     }
     if (raw?.action === "cpu-create") {
       const command = Cpu.parse(raw);
-      const result = await createCpuProductionOrder(actor, command, command.idempotencyKey);
-      if (result.order) await recordCpuChange(result.order.canonicalId, actor.uid, result.created ? "created" : "replayed", result.order);
+      const result = await createCpuProductionOrder(request, command, command.idempotencyKey);
+      if (result.order) await recordCpuChange(request, result.order.canonicalId, actor.uid, result.created ? "created" : "replayed", result.order);
       return NextResponse.json(result);
     }
     if (raw?.action === "update-lines") {
@@ -336,25 +310,20 @@ export async function POST(request: NextRequest) {
         }));
         return NextResponse.json({ order: updated, localFixture: true });
       }
-      const order = await updateProductionLines(
-          actor,
-          command.canonicalId,
-          command.expectedVersion,
-          command.lines,
-        );
-      await recordCpuChange(command.canonicalId, actor.uid, "lines-updated");
+      const order = (await updateProductionLines(request, command)).order;
+      await recordCpuChange(request, command.canonicalId, actor.uid, "lines-updated", order);
       return NextResponse.json({ order });
     }
     if (raw?.action === "report-allergen-discrepancy") {
       const command = AllergenDiscrepancy.parse(raw);
-      const result = await reportProductionAllergenDiscrepancy(actor, command.canonicalId, command.expectedVersion, command.note);
-      await recordCpuChange(command.canonicalId, actor.uid, "allergen-discrepancy", result.order);
+      const result = await reportProductionAllergenDiscrepancy(request, command);
+      await recordCpuChange(request, command.canonicalId, actor.uid, "allergen-discrepancy", result.order);
       return NextResponse.json(result);
     }
     if (raw?.action === "acknowledge-cancellation") {
       const command = AcknowledgeCancellation.parse(raw);
-      const order = await acknowledgeProductionCancellation(actor, command.canonicalId, command.expectedVersion);
-      await recordCpuChange(command.canonicalId, actor.uid, "cancelled-order-dismissed", order);
+      const order = (await acknowledgeProductionCancellation(request, command)).order;
+      await recordCpuChange(request, command.canonicalId, actor.uid, "cancelled-order-dismissed", order);
       return NextResponse.json({ order });
     }
     const command = Transition.parse(raw);
@@ -377,14 +346,8 @@ export async function POST(request: NextRequest) {
       }));
       return NextResponse.json({ order: updated, localFixture: true });
     }
-    const order = await transitionProductionOrder(
-        actor,
-        command.canonicalId,
-        command.expectedVersion,
-        command.status,
-        command.reason,
-      );
-    await recordCpuChange(command.canonicalId, actor.uid, "status-changed", order);
+    const order = (await transitionProductionOrder(request, command)).order;
+    await recordCpuChange(request, command.canonicalId, actor.uid, "status-changed", order);
     return NextResponse.json({ order });
   } catch (error) {
     return errorResponse(error);

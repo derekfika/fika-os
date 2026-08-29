@@ -1,63 +1,41 @@
 import { NextRequest, NextResponse } from "next/server";
-import { errorResponse } from "@hub/lib/api";
+import { errorResponse } from "../../../lib/api";
 import { z } from "zod";
-import { existsSync } from "node:fs";
-import { promises as fs } from "node:fs";
+import { existsSync, promises as fs } from "node:fs";
 import path from "node:path";
 import { createHash } from "node:crypto";
 import { localFixtureOrders, updateLocalFixture } from "../local-fixtures";
 import type { AllergenCellState, InternalMatrixSignature, PlannedMenuItem, ProductionPlan } from "../../lib/production-plan";
 import { allergenMatrixHtml } from "../../ui/allergen-matrix";
 import { renderPdfLocally } from "../../lib/local-pdf";
-import { notifyBookingConfirmedForProductionOrder } from "@hub/lib/hospitality-booking-service";
 import { normaliseOperationalAllergens } from "../../../../shared/allergen-contract";
-import {
-  productionOrderDetail,
-  transitionProductionOrder,
-  type ProductionStatus,
-  type ProductionOrder,
-} from "@hub/lib/production-domain";
-import { appendCpuChange, cpuPlans, loadPlansForOrders, rebuildCpuDayProjection, rebuildCpuWeekProjection, weekCommencingFor } from "../../../lib/cpu-projection";
+import { productionOrderDetail, transitionProductionOrder } from "../../../lib/production-http-client";
+import type { ProductionOrder, ProductionStatus } from "../../../lib/production-types";
+import { appendCpuChange, rebuildCpuDayProjection, rebuildCpuWeekProjection, weekCommencingFor } from "../../../lib/cpu-projection";
+import { loadPlansForOrders } from "../../../lib/cpu-projection-repository";
+import { createProductionPlanRepository } from "../../../lib/production-plan-repository";
+import { requireCpuActor } from "../../../lib/cpu-access-client";
+import { hubJson } from "../../../lib/production-http-client";
 
 function menuContentHash(menuItems: PlannedMenuItem[]) {
   return createHash("sha256").update(JSON.stringify(menuItems)).digest("hex");
 }
-import { requireActor, type Actor } from "@hub/lib/auth";
-import { assertPermission } from "@hub/lib/authmod";
 
 export const dynamic = "force-dynamic";
 
-const canonicalCpuActor = {
-  uid: "local-cpu",
-  name: "Production chef (local)",
-  role: "integration-admin" as const,
-  synthetic: true as const,
-};
-async function actorFor(request: NextRequest): Promise<Actor> {
-  try { return await requireActor(request, ["integration-admin", "reviewer"]); }
-  catch (error) {
-    if (process.env.NODE_ENV !== "production" && (error as { status?: number }).status === 401) return canonicalCpuActor;
-    throw error;
-  }
-}
+const actorFor = (request: NextRequest) => requireCpuActor(request);
 
 async function syncCanonicalLifecycle(
-  actor: Actor,
+  request: NextRequest,
   orderId: string,
   target: "accepted" | "planned" | "rejected" | "needs_clarification",
   reason: string,
 ) {
   if (orderId.startsWith("production-order:v1:fixture:")) return undefined;
-  let order = await productionOrderDetail(orderId);
+  let order = await productionOrderDetail(request, orderId);
   if (!order) return undefined;
   const step = async (status: ProductionStatus) => {
-    order = await transitionProductionOrder(
-      actor,
-      orderId,
-      order!.version,
-      status,
-      reason,
-    );
+    order = (await transitionProductionOrder(request, { action: "transition", canonicalId: orderId, expectedVersion: order!.version, status, reason })).order;
   };
   if (target === "accepted" && order.status === "draft") {
     await step("needs_review");
@@ -96,62 +74,44 @@ const Command = z.discriminatedUnion("action", [
 ]);
 
 const plans = new Map<string, ProductionPlan>();
-// The app is commonly started both from apps/cpu-production and from the
-// monorepo root. Resolve the same local plan store in either case so a saved
-// Planned state is visible to the dashboard regardless of launch directory.
-const storeCandidates = [
-  path.join(process.cwd(), "local-data", "cpu-production", "plans.json"),
-  path.join(process.cwd(), "apps", "cpu-production", "local-data", "cpu-production", "plans.json"),
-];
-const storePath = storeCandidates.find(candidate => existsSync(candidate)) || storeCandidates[0];
+const planRepository = createProductionPlanRepository();
+const isLocalRuntime = () => (process.env.FIKA_RUNTIME_MODE || "local") === "local";
 async function loadPlans() {
-  const firestore = await cpuPlans().get();
-  if (!firestore.empty) {
-    for (const document of firestore.docs) plans.set(document.id, normalisePlanAllergens(document.data() as ProductionPlan));
-    return plans;
-  }
-  try {
-    const saved = JSON.parse(await fs.readFile(storePath, "utf8")) as Record<string, ProductionPlan>;
-    for (const [id, plan] of Object.entries(saved)) plans.set(id, normalisePlanAllergens(plan));
-  } catch { /* first local run */ }
+  for (const plan of await planRepository.list()) plans.set(plan.orderId, normalisePlanAllergens(plan));
   return plans;
 }
 function normalisePlanAllergens(plan: ProductionPlan): ProductionPlan {
   return { ...plan, menuItems: plan.menuItems.map(item => ({ ...item, subItems: item.subItems.map(sub => ({ ...sub, allergens: normaliseOperationalAllergens(sub.allergens) })) })) };
 }
-async function persistPlans() {
-  const { db } = await import("@hub/lib/firebase-admin");
-  const batch = db.batch();
-  for (const [id, plan] of plans) batch.set(cpuPlans().doc(id), plan);
-  await batch.commit();
-}
+async function persistPlan(plan: ProductionPlan, expectedUpdatedAt?: string) { await planRepository.save(plan, expectedUpdatedAt); }
 function now() { return new Date().toISOString(); }
-async function loadOrder(orderId: string) {
+async function loadOrder(request: NextRequest, orderId: string) {
   try {
-    return await productionOrderDetail(orderId) || localFixtureOrders().find(item => item.canonicalId === orderId);
+    const order = await productionOrderDetail(request, orderId);
+    return order || (isLocalRuntime() ? localFixtureOrders().find(item => item.canonicalId === orderId) : undefined);
   } catch {
-    return localFixtureOrders().find(item => item.canonicalId === orderId);
+    if (isLocalRuntime()) return localFixtureOrders().find(item => item.canonicalId === orderId);
+    throw Object.assign(new Error("Canonical Production data is unavailable."), { status: 503 });
   }
 }
-async function isVisibleForCpu(orderId: string) {
-  const order = await loadOrder(orderId);
+async function isVisibleForCpu(request: NextRequest, orderId: string) {
+  const order = await loadOrder(request, orderId);
   return !(order?.origin === "hospitality_booking" && order.requiresDelivery === false);
 }
 function initialPlan(orderId: string, order?: Awaited<ReturnType<typeof productionOrderDetail>> | ProductionOrder): ProductionPlan {
   const timestamp = now();
   return { id: `production-plan:${orderId}`, orderId, status: "draft", menuItems: (order?.lines || []).map((line, index) => ({ id: `menu-item:${orderId}:${index + 1}`, sourceLineId: line.canonicalId, name: line.itemName, note: "", subItems: [{ id: `sub-item:${orderId}:${index + 1}:1`, name: "", quantity: line.customerQuantity, allergens: {}, note: "", evidenceStatus: "not_completed" }] })), planningNotes: "", updatedAt: timestamp, updatedBy: "local-fixture", audit: [{ action: "plan-created", at: timestamp, by: "local-fixture" }] };
 }
-async function getPlan(orderId: string) {
+async function getPlan(request: NextRequest, orderId: string) {
   if (!plans.has(orderId)) {
-    const targeted = await loadPlansForOrders([orderId]);
-    const persisted = targeted[0];
+    const persisted = (await loadPlansForOrders([orderId]))[0];
     if (persisted) plans.set(orderId, normalisePlanAllergens(persisted));
   }
   if (!plans.has(orderId)) {
     // Canonical hand-offs are the source of truth. Local fixtures remain a
     // development fallback, but must never be the only seed for a real order.
-    const order = await loadOrder(orderId);
-    const priorPlans = (await Promise.all([...plans.values()].filter(plan => plan.orderId !== orderId).map(async plan => ({ plan, order: await loadOrder(plan.orderId) })))).filter(item => item.order?.sourceBookingId && item.order.sourceBookingId === order?.sourceBookingId).sort((a, b) => b.plan.updatedAt.localeCompare(a.plan.updatedAt));
+    const order = await loadOrder(request, orderId);
+    const priorPlans = (await Promise.all([...plans.values()].filter(plan => plan.orderId !== orderId).map(async plan => ({ plan, order: await loadOrder(request, plan.orderId) })))).filter(item => item.order?.sourceBookingId && item.order.sourceBookingId === order?.sourceBookingId).sort((a, b) => b.plan.updatedAt.localeCompare(a.plan.updatedAt));
     const prior = priorPlans[0]?.plan;
     if (prior && order) {
       const menuItems = prior.menuItems.map((item, index) => {
@@ -167,8 +127,8 @@ async function getPlan(orderId: string) {
 }
 function hospitalityBase() { return (process.env.HOSPITALITY_BOOKING_BASE_URL || "http://localhost:3300").replace(/\/$/, ""); }
 function siteKey(label?: string) { const value = (label || "").toLowerCase(); return value.includes("angel") ? "angel-court" : value.includes("cfc") ? "cfc" : value.includes("munich") ? "munich-re" : "mnk"; }
-async function mergeOriginalItems(plan: ProductionPlan, orderId: string): Promise<ProductionPlan> {
-  const order = await loadOrder(orderId);
+async function mergeOriginalItems(request: NextRequest, plan: ProductionPlan, orderId: string): Promise<ProductionPlan> {
+  const order = await loadOrder(request, orderId);
   if (!order) return plan;
   const existing = new Set(plan.menuItems.map(item => item.sourceLineId || item.id));
   const missing = order.lines.filter(line => !existing.has(line.canonicalId)).map((line, index) => ({ id: `menu-item:${orderId}:original:${index}`, sourceLineId: line.canonicalId, name: line.itemName, note: "", subItems: [{ id: `sub-item:${orderId}:original:${index}`, name: "", quantity: line.customerQuantity, allergens: {}, note: "", evidenceStatus: "not_completed" as const }] }));
@@ -179,20 +139,20 @@ async function createMatrixArtifact(plan: ProductionPlan, orderId: string, actor
   if (plan.status !== "planned") throw Object.assign(new Error("Mark the allergen matrix Planned before saving it to the site Drive."), { status: 422 });
   const subItems = plan.menuItems.flatMap(item => item.subItems);
   if (!subItems.length || subItems.some(item => !item.name.trim() || item.evidenceStatus !== "completed")) throw Object.assign(new Error("Complete every named sub-item and allergen check before saving the matrix."), { status: 422 });
-  const order = (await productionOrderDetail(orderId)) || localFixtureOrders().find(item => item.canonicalId === orderId);
+  const order = await loadOrder(request, orderId);
   if (!order) throw Object.assign(new Error("The production order could not be loaded."), { status: 404 });
   const html = allergenMatrixHtml({ clientName: order.clientName, destinationLabel: order.destinationLabel, serviceType: order.serviceType, serviceDate: order.serviceDate, serviceWindow: order.serviceWindow, requiredBy: order.requiredBy }, plan.menuItems, plan.signatures || []);
   const contentHash = createHash("sha256").update(html).digest("hex");
   if (plan.matrixArtifact?.contentHash === contentHash) return plan.matrixArtifact;
   const fileName = `${(order.serviceDate || order.requiredBy.slice(0, 10))}_${(order.clientName || "booking")}_${(order.destinationLabel || "site")}_Allergen-Matrix.pdf`.replace(/[^A-Za-z0-9._-]+/g, "_");
-  const pdfPath = path.join(path.dirname(storePath), "matrices", fileName);
+  const pdfPath = path.join(process.cwd(), "data", "cpu-production", "matrices", fileName);
   let pdfBase64: string | undefined;
   let pdfStatus: "generated" | "unavailable" = "unavailable";
   try { await renderPdfLocally(html, pdfPath); pdfBase64 = (await fs.readFile(pdfPath)).toString("base64"); pdfStatus = "generated"; } catch { /* print-ready HTML remains available */ }
   let driveStatus: "saved" | "not_configured" | "failed" = "not_configured";
   let driveFileId: string | undefined; let driveUrl: string | undefined;
   try {
-    const response = await fetch(`${hospitalityBase()}/api/allergen-matrix/drive`, { method: "POST", headers: { "content-type": "application/json", ...(request.headers.get("cookie") ? { cookie: request.headers.get("cookie")! } : {}) }, body: JSON.stringify({ name: fileName, html, pdfBase64, weekCommencing: weekCommencingFor(order.serviceDate || order.requiredBy.slice(0, 10)) }) });
+    const response = await fetch(`${hospitalityBase()}/api/allergen-matrix/drive`, { method: "POST", headers: { "content-type": "application/json", ...(request.headers.get("cookie") ? { cookie: request.headers.get("cookie")! } : {}) }, body: JSON.stringify({ name: fileName, html, pdfBase64, siteKey: siteKey(order.destinationLabel), weekCommencing: weekCommencingFor(order.serviceDate || order.requiredBy.slice(0, 10)), oplocFolder: order.destinationLabel || order.destinationOplocId || "OPLOC" }) });
     const body = await response.json() as { saved?: { fileId?: string; driveUrl?: string } | null };
     if (response.ok && body.saved) { driveStatus = "saved"; driveFileId = body.saved.fileId; driveUrl = body.saved.driveUrl; } else if (response.status !== 503) driveStatus = "failed";
   } catch { driveStatus = "failed"; }
@@ -202,27 +162,20 @@ async function createMatrixArtifact(plan: ProductionPlan, orderId: string, actor
 export async function GET(request: NextRequest) {
   try {
     const actor = await actorFor(request);
-    assertPermission(actor, "canonical.view");
   } catch (error) {
     return errorResponse(error);
   }
+  await loadPlans();
+  const visibleStoredPlans = (await Promise.all([...plans.values()].map(async plan => ({ plan, visible: await isVisibleForCpu(request, plan.orderId) })))).filter(item => item.visible).map(item => item.plan);
+  const entries = visibleStoredPlans.filter(plan => plan.status === "planned");
   const orderId = request.nextUrl.searchParams.get("orderId");
   if (orderId && request.nextUrl.searchParams.get("download") === "pdf") {
-    const artifact = (await getPlan(orderId)).matrixArtifact;
+    const artifact = (await getPlan(request, orderId)).matrixArtifact;
     if (!artifact?.pdfPath || !existsSync(artifact.pdfPath)) return NextResponse.json({ error: { message: "A local PDF has not been generated for this matrix." } }, { status: 404 });
     return new NextResponse(await fs.readFile(artifact.pdfPath), { headers: { "content-type": "application/pdf", "content-disposition": `inline; filename="${artifact.fileName}"` } });
   }
-  if (orderId) await getPlan(orderId);
-  else await loadPlans();
-  if (orderId) {
-    const selectedPlan = await isVisibleForCpu(orderId) ? await mergeOriginalItems(await getPlan(orderId), orderId) : undefined;
-    const selectedMatrixStatus = selectedPlan && !selectedPlan.matrixArtifact && selectedPlan.signatures?.some(signature => signature.role === "production_chef") && selectedPlan.signatures?.some(signature => signature.role === "head_chef_site_manager") ? "generating" : selectedPlan?.matrixArtifact ? "ready" : undefined;
-    return NextResponse.json({ plan: selectedPlan, matrixStatus: selectedMatrixStatus });
-  }
-  const visibleStoredPlans = (await Promise.all([...plans.values()].map(async plan => ({ plan, visible: await isVisibleForCpu(plan.orderId) })))).filter(item => item.visible).map(item => item.plan);
-  const entries = visibleStoredPlans.filter(plan => plan.status === "planned");
-  const visiblePlans = await Promise.all(visibleStoredPlans.map(plan => mergeOriginalItems(plan, plan.orderId)));
-  const selectedPlan = orderId && await isVisibleForCpu(orderId) ? await mergeOriginalItems(await getPlan(orderId), orderId) : undefined;
+  const visiblePlans = await Promise.all(visibleStoredPlans.map(plan => mergeOriginalItems(request, plan, plan.orderId)));
+  const selectedPlan = orderId && await isVisibleForCpu(request, orderId) ? await mergeOriginalItems(request, await getPlan(request, orderId), orderId) : undefined;
   const selectedMatrixStatus = selectedPlan && !selectedPlan.matrixArtifact && selectedPlan.signatures?.some(signature => signature.role === "production_chef") && selectedPlan.signatures?.some(signature => signature.role === "head_chef_site_manager") ? "generating" : selectedPlan?.matrixArtifact ? "ready" : undefined;
   return NextResponse.json({ plan: selectedPlan, matrixStatus: selectedMatrixStatus, plans: visiblePlans, notifications: entries.map(plan => ({ id: `notification:${plan.id}`, title: "New production plan ready for menu generation.", orderId: plan.orderId, plannedItemCount: plan.menuItems.reduce((sum, item) => sum + item.subItems.length, 0), at: plan.updatedAt })), menus: entries.map(plan => ({ planId: plan.id, orderId: plan.orderId, clientSite: localFixtureOrders().find(order => order.canonicalId === plan.orderId)?.destinationLabel || "Site not assigned", items: plan.menuItems.flatMap(item => item.subItems.map(subItem => ({ menuItem: item.name, name: subItem.name, quantity: subItem.quantity, allergens: Object.entries(subItem.allergens).filter(([, state]) => state === "contains").map(([key]) => key), mayContain: Object.entries(subItem.allergens).filter(([, state]) => state === "may_contain").map(([key]) => key) }))) })) });
 }
@@ -230,35 +183,36 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const actor = await actorFor(request);
-    assertPermission(actor, "canonical.edit");
     await loadPlans();
     const command = Command.parse(await request.json());
     const auditActor = actor.name || actor.uid;
-    if (!(await isVisibleForCpu(command.orderId))) throw Object.assign(new Error("CPU delivery is not selected for this booking, so no CPU production work is required."), { status: 422 });
-    const plan = await getPlan(command.orderId);
+    if (!(await isVisibleForCpu(request, command.orderId))) throw Object.assign(new Error("CPU delivery is not selected for this booking, so no CPU production work is required."), { status: 422 });
+    const hadStoredPlan = plans.has(command.orderId);
+    const plan = await getPlan(request, command.orderId);
+    const expectedUpdatedAt = hadStoredPlan ? plan.updatedAt : undefined;
     const timestamp = now();
     let notification: { status: string; reason?: string } | undefined;
     if (command.action === "accept") {
       plan.status = "planning"; plan.acceptedBy = auditActor; plan.acceptedAt = timestamp; plan.audit.push({ action: "order-accepted", at: timestamp, by: auditActor }); updateLocalFixture(command.orderId, order => ({ ...order, status: "accepted", version: order.version + 1 }));
-      await syncCanonicalLifecycle(actor, command.orderId, "accepted", "Production chef accepted the governed Production Order.");
+      await syncCanonicalLifecycle(request, command.orderId, "accepted", "Production chef accepted the governed Production Order.");
       // Local fixture orders remain self-contained. Only a governed Booking
       // hand-off gets the confirmation-email seam, and email failure must not
       // prevent the production chef from accepting the production work.
       if (command.orderId.startsWith("production-order:v1:booking:")) {
         try {
-          const order = await productionOrderDetail(command.orderId);
-          if (order) notification = await notifyBookingConfirmedForProductionOrder(order.sourceBookingId);
+          const order = await productionOrderDetail(request, command.orderId);
+          if (order) notification = await hubJson(request, "/api/hospitality/production-confirmation", { method: "POST", headers: { "content-type": "application/json", accept: "application/json" }, body: JSON.stringify({ action: "notify-booking-confirmed", sourceBookingId: order.sourceBookingId }) }, (value): value is { status: string; reason?: string } => Boolean(value && typeof value === "object" && typeof (value as { status?: unknown }).status === "string"));
         } catch (error) {
           notification = { status: "failed", reason: `Confirmation email could not be prepared: ${(error as Error).message}` };
         }
       }
     }
     if (command.action === "reject") { plan.status = "rejected"; plan.rejectionReason = command.reason; plan.audit.push({ action: "order-rejected", at: timestamp, by: auditActor, reason: command.reason }); updateLocalFixture(command.orderId, order => ({ ...order, status: "rejected", version: order.version + 1 })); }
-    if (command.action === "reject") await syncCanonicalLifecycle(actor, command.orderId, "rejected", command.reason);
+    if (command.action === "reject") await syncCanonicalLifecycle(request, command.orderId, "rejected", command.reason);
     if (command.action === "clarify") { plan.status = "needs_clarification"; plan.clarificationNote = command.note; plan.audit.push({ action: "clarification-requested", at: timestamp, by: auditActor, reason: command.note }); updateLocalFixture(command.orderId, order => ({ ...order, status: "needs_clarification", version: order.version + 1 })); }
-    if (command.action === "clarify") await syncCanonicalLifecycle(actor, command.orderId, "needs_clarification", command.note);
+    if (command.action === "clarify") await syncCanonicalLifecycle(request, command.orderId, "needs_clarification", command.note);
     if (command.action === "save-plan") {
-      const nextMenuItems = (await mergeOriginalItems({ ...plan, menuItems: normalisePlanAllergens({ ...plan, menuItems: command.menuItems }).menuItems }, command.orderId)).menuItems;
+      const nextMenuItems = (await mergeOriginalItems(request, { ...plan, menuItems: normalisePlanAllergens({ ...plan, menuItems: command.menuItems }).menuItems }, command.orderId)).menuItems;
       const matchesSignedCheckpoint = plan.signedMenuContentHash === menuContentHash(nextMenuItems);
       plan.status = matchesSignedCheckpoint ? "planned" : "planning";
       plan.menuItems = nextMenuItems;
@@ -276,7 +230,7 @@ export async function POST(request: NextRequest) {
       updateLocalFixture(command.orderId, order => ({ ...order, status: "planning", version: order.version + 1 }));
     }
     if (command.action === "mark-planned") {
-      const nextMenuItems = (await mergeOriginalItems({ ...plan, menuItems: normalisePlanAllergens({ ...plan, menuItems: command.menuItems }).menuItems }, command.orderId)).menuItems;
+      const nextMenuItems = (await mergeOriginalItems(request, { ...plan, menuItems: normalisePlanAllergens({ ...plan, menuItems: command.menuItems }).menuItems }, command.orderId)).menuItems;
       const contentChanged = JSON.stringify(plan.menuItems) !== JSON.stringify(nextMenuItems);
       const matchesSignedCheckpoint = plan.signedMenuContentHash === menuContentHash(nextMenuItems);
       plan.menuItems = nextMenuItems;
@@ -291,7 +245,7 @@ export async function POST(request: NextRequest) {
         plan.matrixArtifact = undefined;
       }
       plan.status = "planned"; plan.audit.push({ action: "plan-marked-planned", at: timestamp, by: auditActor }); updateLocalFixture(command.orderId, order => ({ ...order, status: "planned", version: order.version + 1 }));
-      await syncCanonicalLifecycle(actor, command.orderId, "planned", "Production plan marked Planned by the production chef.");
+      await syncCanonicalLifecycle(request, command.orderId, "planned", "Production plan marked Planned by the production chef.");
     }
     if (command.action === "sign-matrix") {
       if (plan.status !== "planned") throw Object.assign(new Error("Mark the allergen matrix Planned before signing it."), { status: 422 });
@@ -313,20 +267,20 @@ export async function POST(request: NextRequest) {
       if (!plan.signatures?.some(signature => signature.role === "production_chef") || !plan.signatures?.some(signature => signature.role === "head_chef_site_manager")) throw Object.assign(new Error("Both required signatures must be recorded before generating the allergen matrix PDF."), { status: 422 });
       const subItems = plan.menuItems.flatMap(item => item.subItems);
       if (!subItems.length || subItems.some(item => !item.name.trim() || item.evidenceStatus !== "completed")) throw Object.assign(new Error("Complete every named sub-item and allergen check before saving the matrix."), { status: 422 });
-      const order = (await productionOrderDetail(command.orderId)) || localFixtureOrders().find(item => item.canonicalId === command.orderId);
+      const order = await loadOrder(request, command.orderId);
       if (!order) throw Object.assign(new Error("The production order could not be loaded."), { status: 404 });
       const html = allergenMatrixHtml({ clientName: order.clientName, destinationLabel: order.destinationLabel, serviceType: order.serviceType, serviceDate: order.serviceDate, serviceWindow: order.serviceWindow, requiredBy: order.requiredBy }, plan.menuItems, plan.signatures || []);
       const contentHash = createHash("sha256").update(html).digest("hex");
       if (plan.matrixArtifact?.contentHash === contentHash) return NextResponse.json({ plan, matrixArtifact: plan.matrixArtifact });
       const fileName = `${(order.serviceDate || order.requiredBy.slice(0, 10))}_${(order.clientName || "booking")}_${(order.destinationLabel || "site")}_Allergen-Matrix.pdf`.replace(/[^A-Za-z0-9._-]+/g, "_");
-      const pdfPath = path.join(path.dirname(storePath), "matrices", fileName);
+      const pdfPath = path.join(process.cwd(), "data", "cpu-production", "matrices", fileName);
       let pdfBase64: string | undefined;
       let pdfStatus: "generated" | "unavailable" = "unavailable";
       try { await renderPdfLocally(html, pdfPath); pdfBase64 = (await fs.readFile(pdfPath)).toString("base64"); pdfStatus = "generated"; } catch { /* print-ready HTML remains available */ }
       let driveStatus: "saved" | "not_configured" | "failed" = "not_configured";
       let driveFileId: string | undefined; let driveUrl: string | undefined;
       try {
-      const response = await fetch(`${hospitalityBase()}/api/allergen-matrix/drive`, { method: "POST", headers: { "content-type": "application/json", ...(request.headers.get("cookie") ? { cookie: request.headers.get("cookie")! } : {}) }, body: JSON.stringify({ name: fileName, html, pdfBase64, weekCommencing: weekCommencingFor(order.serviceDate || order.requiredBy.slice(0, 10)) }) });
+      const response = await fetch(`${hospitalityBase()}/api/allergen-matrix/drive`, { method: "POST", headers: { "content-type": "application/json", ...(request.headers.get("cookie") ? { cookie: request.headers.get("cookie")! } : {}) }, body: JSON.stringify({ name: fileName, html, pdfBase64, siteKey: siteKey(order.destinationLabel), weekCommencing: weekCommencingFor(order.serviceDate || order.requiredBy.slice(0, 10)), oplocFolder: order.destinationLabel || order.destinationOplocId || "OPLOC" }) });
         const body = await response.json() as { saved?: { fileId?: string; driveUrl?: string } | null };
         if (response.ok && body.saved) { driveStatus = "saved"; driveFileId = body.saved.fileId; driveUrl = body.saved.driveUrl; } else if (response.status !== 503) driveStatus = "failed";
       } catch { driveStatus = "not_configured"; }
@@ -337,12 +291,12 @@ export async function POST(request: NextRequest) {
       plan.audit.push({ action: "allergen-matrix-saved", at: timestamp, by: auditActor, reason: driveStatus === "saved" ? "Saved to configured site Drive folder." : "Stored locally; site Drive is not configured." });
     }
     plan.updatedAt = timestamp; plan.updatedBy = auditActor;
-    await persistPlans();
-    const changedOrder = await loadOrder(command.orderId);
+    await persistPlan(plan, expectedUpdatedAt);
+    const changedOrder = await loadOrder(request, command.orderId);
     if (changedOrder?.serviceDate) {
       const event = await appendCpuChange({ serviceDate: changedOrder.serviceDate, entityType: "productionPlan", entityId: plan.id, revision: plan.audit.length, changeType: command.action, actorId: actor.uid, changedAt: timestamp });
-      await rebuildCpuDayProjection(changedOrder.serviceDate, event.sequence);
-      await rebuildCpuWeekProjection(weekCommencingFor(changedOrder.serviceDate), event.sequence);
+      await rebuildCpuDayProjection(request, changedOrder.serviceDate, event.sequence);
+      await rebuildCpuWeekProjection(request, weekCommencingFor(changedOrder.serviceDate), event.sequence);
     }
     return NextResponse.json({ plan, matrixArtifact: plan.matrixArtifact, notification: notification || (plan.status === "planned" ? { title: "New production plan ready for menu generation.", orderId: plan.orderId } : undefined) });
   } catch (error) { return errorResponse(error); }

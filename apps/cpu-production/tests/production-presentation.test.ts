@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import type { ProductionOrder } from "@hub/lib/production-domain";
+import type { ProductionOrder } from "../lib/production-types";
 import { cpuAttentionLabel, cpuLifecycle, cpuLifecycleLabels, cpuRequiredTime, cpuSourceLabel } from "../lib/production-presentation";
 
 function order(overrides: Partial<ProductionOrder> = {}): ProductionOrder {

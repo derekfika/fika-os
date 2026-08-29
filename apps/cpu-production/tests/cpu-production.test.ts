@@ -82,12 +82,13 @@ test("CPU Production is a queue-first workspace with a CPU-created order path", 
 });
 
 test("Head Chef receives immutable Menu Planning publication days as a read-only projection", () => {
-  assert.match(publishedMenusRoute, /MENU_PLANNING_BASE_URL/);
+  assert.match(publishedMenusRoute, /menuPlanningJson/);
+  assert.match(readFileSync(new URL("../lib/menu-planning-http-client.ts", import.meta.url), "utf8"), /MENU_PLANNING_BASE_URL/);
   assert.match(publishedMenusRoute, /format.*matrix/);
   assert.match(publishedMenusRoute, /publicationDayId/);
   assert.match(publishedMenusRoute, /status === "published"/);
   assert.match(publishedMenusRoute, /publishedAllergenMatrixHtml/);
-  assert.match(publishedMenusRoute, /requireActor/);
+  assert.match(publishedMenusRoute, /requireCpuActor/);
   assert.match(publishedMenusView, /Head chef · Read only/);
   assert.match(publishedMenusView, /Not published/);
   assert.match(publishedMenusView, /currentPublishedDays/);
@@ -124,10 +125,11 @@ test("Head Chef receives immutable Menu Planning publication days as a read-only
 
 test("CPU read paths use bounded and targeted Firestore shapes", () => {
   assert.match(projection, /productionQueueForWeek/);
-  assert.match(route, /hasCpuChangesSince/);
+  assert.match(route, /changesSince/);
+  assert.match(route, /listCpuWeekChanges/);
   assert.doesNotMatch(route, /cpuPlans\(\)\.get\(\)/);
   assert.match(planRoute, /loadPlansForOrders/);
-  assert.match(planRoute, /if \(orderId\) await getPlan\(orderId\)/);
+  assert.match(planRoute, /loadPlansForOrders\(\[orderId\]\)/);
   const allergenPage = readFileSync(new URL("../app/allergens/page.tsx", import.meta.url), "utf8");
   assert.match(allergenPage, /serviceDate=.*selectedDate/);
   assert.doesNotMatch(allergenPage, /\/api\/production\?scope=all/);
@@ -375,9 +377,10 @@ test("Liana production view captures nested menu items and sub-item allergen evi
 });
 
 test("CPU planning seeds real canonical hand-offs before local fixture fallback", () => {
-  assert.match(planRoute, /productionOrderDetail\(orderId\)/);
-  assert.match(planRoute, /productionOrderDetail\(orderId\) \|\| localFixtureOrders/);
-  assert.match(planRoute, /await getPlan\(orderId\)/);
+  assert.match(planRoute, /productionOrderDetail\(request, orderId\)/);
+  assert.match(planRoute, /order \|\| \(isLocalRuntime\(\) \? localFixtureOrders/);
+  assert.match(planRoute, /await getPlan\(request, orderId\)/);
+  assert.match(planRoute, /production-http-client/);
 });
 
 test("allergen checker uses the master-style purple header and four-state cells", () => {
@@ -553,7 +556,9 @@ test("CPU plans hand completed allergen evidence to Tia without external side ef
 });
 
 test("CPU acceptance has a confirmation-email seam for canonical hospitality hand-offs", () => {
-  assert.match(planRoute, /notifyBookingConfirmedForProductionOrder/);
+  assert.match(planRoute, /hubJson/);
+  assert.match(planRoute, /\/api\/hospitality\/production-confirmation/);
+  assert.doesNotMatch(planRoute, /@hub\/lib\/hospitality-booking-service/);
   assert.match(planRoute, /productionOrderDetail/);
 });
 

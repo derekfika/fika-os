@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { productionQueue } from "@hub/lib/production-domain";
-import { cpuPlans } from "../../../../lib/cpu-projection";
+import { productionQueue } from "../../../../lib/production-http-client";
+import { loadPlansForOrders } from "../../../../lib/cpu-projection-repository";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { allergenMatrixHtml } from "../../../ui/allergen-matrix";
@@ -41,9 +41,9 @@ export async function GET(request: NextRequest) {
   const oplocId = request.nextUrl.searchParams.get("oplocId");
   if (!serviceDate || !oplocId) return NextResponse.json({ error: { message: "A service date and OPLOC are required." } }, { status: 422 });
   try {
-    const orders = (await productionQueue(serviceDate)).filter(order => order.origin === "menu_planning");
-    const planSnapshot = await cpuPlans().get();
-    const plans = new Map(planSnapshot.docs.map(document => [document.id, document.data() as ReviewPlan]));
+    const orders = (await productionQueue(request, serviceDate)).filter(order => order.origin === "menu_planning");
+    const planRecords = await loadPlansForOrders(orders.map(order => order.canonicalId));
+    const plans = new Map(planRecords.map(plan => [plan.orderId, plan as ReviewPlan]));
     const signatures = new Map<string, ReviewSignature>();
     for (const plan of plans.values()) for (const signature of plan.signatures || []) signatures.set(signature.role, signature);
     const signatureList = [...signatures.values()];

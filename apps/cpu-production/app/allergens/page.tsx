@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { ProductionOrder } from "@hub/lib/production-domain";
+import type { ProductionOrder } from "../../lib/production-types";
 import type { InternalMatrixSignature } from "../lib/production-plan";
 import AllergenReviewMatrix from "../ui/AllergenReviewMatrix";
 import { SignatureModal } from "../ui/LianaOrderDetail";

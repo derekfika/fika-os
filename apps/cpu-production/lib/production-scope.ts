@@ -1,4 +1,4 @@
-import type { ProductionOrder } from "@hub/lib/production-domain";
+import type { ProductionOrder } from "./production-types";
 
 export type ProductionScope = "all" | "sandwiches" | "hospitality" | "delivered_in" | "grab_and_go";
 export type ProductionRouting = Record<string, ("liana" | "craig" | "site_manager")[]>;

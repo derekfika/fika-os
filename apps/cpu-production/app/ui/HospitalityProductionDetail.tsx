@@ -1,6 +1,6 @@
 "use client";
 
-import type { ProductionOrder } from "@hub/lib/production-domain";
+import type { ProductionOrder } from "../../lib/production-types";
 import "./hospitality-production-detail.css";
 import BookingContext from "./BookingContext";
 

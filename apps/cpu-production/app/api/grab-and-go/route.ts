@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { errorResponse } from "@hub/lib/api";
+import { errorResponse } from "../../../lib/api";
 import { buildGrabAndGoProduction, readGrabAndGoSource, relevantGrabAndGoDates, type GrabAndGoSourceOrder } from "../../../lib/grab-and-go-read";
 
 export const dynamic = "force-dynamic";
