@@ -22,6 +22,7 @@ const appDefinitions: AppDefinition[] = [
   { appId: "ad-hoc-production", label: "Ad-Hoc Production", purpose: "One-off production requirements", section: "planning", icon: Plus, accent: "orange" },
   { appId: "integration-hub", label: "Integration Hub", purpose: "Data governance and integrations", section: "administration", icon: Database, accent: "purple" },
   { appId: "authmod", label: "Access Administration", purpose: "AUTHMOD access control", section: "administration", icon: ShieldCheck, accent: "purple" },
+  { appId: "usage", label: "Usage Observatory", purpose: "Platform usage and cost signals", section: "administration", icon: ChartNoAxesCombined, accent: "blue" },
 ];
 const favourites = ["cpu-production", "menu-planning", "delivered-in", "logistics"];
 const navItems: { icon: LucideIcon; label: string; active: boolean }[] = [[House, "Home", true], [LayoutGrid, "My Apps", false], [ChartNoAxesCombined, "Activity", false], [FileText, "Reports", false], [Bell, "Alerts", false], [Settings, "Settings", false]].map(([icon, label, active]) => ({ icon: icon as LucideIcon, label: label as string, active: active as boolean }));
@@ -43,7 +44,7 @@ export default function Launcher() {
 }
 
 function LauncherHome({ data, logout, launchError }: { data: LauncherData; logout: () => Promise<void>; launchError: LaunchError | null }) {
-  const available = useMemo(() => new Map(data.applications.map(app => [app.appId, app])), [data.applications]);
+  const available = useMemo(() => new Map([...data.applications, ...(data.canAdministerAuthmod ? [{ appId: "usage", label: "Usage Observatory", purpose: "Platform usage and cost signals", href: "/usage" }] : [])].map(app => [app.appId, app])), [data.applications, data.canAdministerAuthmod]);
   const availableApps = appDefinitions.filter(app => available.has(app.appId));
   const renderCard = (definition: AppDefinition) => { const app = definition.appId === "authmod" ? data.canAdministerAuthmod ? { href: "/authmod" } : undefined : available.get(definition.appId); if (!app) return null; const Icon = definition.icon; const content = <><div className={styles.cardIcon} data-accent={definition.accent}><Icon size={27} /></div><h3>{definition.label}</h3><p>{definition.purpose}</p><div className={styles.cardFooter}><span className={styles.cardRule} /><span className={styles.cardArrow}><ArrowRight size={19} /></span></div></>; return <a className={styles.appCard} data-accent={definition.accent} href={app.href} target="_blank" rel="noopener noreferrer" key={definition.appId}>{content}</a>; };
   const sectionApps = (section: AppDefinition["section"]) => appDefinitions.filter(app => app.section === section && (app.appId === "authmod" ? data.canAdministerAuthmod : available.has(app.appId)));
