@@ -9,6 +9,7 @@
     "./delivered-in-access": "./src/delivered-in-access.ts",
     "./drive-owner": "./src/drive-owner.ts",
     "./governed-oplocs": "./src/governed-oplocs.ts",
-    "./runtime-config": "./src/runtime-config.ts"
+    "./runtime-config": "./src/runtime-config.ts",
+    "./external-production": "./src/external-production.ts"
   }
 }

@@ -3,7 +3,7 @@ import { applyOrderAction, availableDeliveryDates, deliveryCutoff, isBeforeOrder
 import { readGrabAndGoCatalogue, getGrabAndGoOrderHosted, listGrabAndGoOrdersHosted, saveGrabAndGoOrderHosted } from "@/lib/grab-and-go-store";
 import { assertAuthorisedOploc } from "@/lib/projection";
 import { resolveAccess } from "@/lib/server";
-import { forwardProductionMaterialisation } from "../../../../../shared/production-client";
+import { forwardProductionMaterialisation } from "../../../../lib/production-client";
 
 export const dynamic = "force-dynamic";
 

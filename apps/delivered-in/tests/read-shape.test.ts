@@ -62,3 +62,10 @@ test("Delivered-In Google generation reuses DWD in hosted mode and local OAuth o
   assert.match(owner, /appId: "cpu-production" \| "delivered-in"/);
   assert.doesNotMatch(google, /process\.env\.GOOGLE_OAUTH_CLIENT_FILE/);
 });
+
+test("Delivered-In production dependency graph has no sibling application source imports", async () => {
+  const productionClient = await readFile(new URL("../lib/production-client.ts", import.meta.url), "utf8");
+  const route = await readFile(new URL("../app/api/delivered-in/grab-and-go/route.ts", import.meta.url), "utf8");
+  assert.doesNotMatch(productionClient, /integration-hub|hospitality-booking|menu-planning|ad-hoc-production/);
+  assert.doesNotMatch(route, /\.\.\/\.\.\/\.\.\/\.\.\/\.\.\/shared/);
+});

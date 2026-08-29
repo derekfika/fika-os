@@ -9,6 +9,10 @@ import { stageDomainEvent } from "./domain-event-outbox";
 import { stageFulfilmentEvent } from "./fulfilment-projection";
 import { productionOrderRequiresFulfilment } from "../../shared/fulfilment-requirement";
 import { hospitalityMenuProductionRouting } from "./connections-service";
+import { adaptCpuProductionWorkstreams } from "../../shared/production-workstreams";
+import { recordDeliveredInReadBudget } from "./delivered-in-read-budget";
+import type { ExternalProductionMaterialisation } from "@fika/server-shared/external-production";
+export type { ExternalProductionMaterialisation } from "@fika/server-shared/external-production";
 
 export const PRODUCTION_SCHEMA_VERSION = "0.1.0";
 export type ProductionStatus = "received" | "draft" | "needs_review" | "accepted" | "planning" | "planned" | "amended" | "menu_available" | "rejected" | "needs_clarification" | "scheduled" | "in_production" | "partially_complete" | "ready" | "complete" | "cancelled" | "blocked" | "failed" | "reconciliation_required";
@@ -97,7 +101,7 @@ export async function createProductionFromApprovedBooking(actor: Actor, bookingI
       const explicitRule = explicitMnkConversions[item.itemId] || Object.entries(explicitMnkConversions).find(([key]) => item.itemId.endsWith(`:${key}`))?.[1];
       const conversion = configured ? { quantity: configured.quantity, unit: configured.unit, rule: "Explicit production conversion configuration." } : explicitRule ? { quantity: item.quantity * explicitRule.multiplier, unit: explicitRule.unit, rule: explicitRule.rule } : undefined;
       const assignments = [item.menuItemId, item.itemId].filter((value): value is string => Boolean(value)).flatMap(value => routing[value] || []);
-      const workstream: ProductionWorkstream = assignments.includes("liana") ? "sandwiches" : assignments.includes("craig") ? "hospitality" : assignments.includes("site_manager") ? "delivered_in" : "unassigned";
+      const workstream: ProductionWorkstream = adaptCpuProductionWorkstreams(assignments).workstreams[0] || "unassigned";
       const line: ProductionLine = { canonicalId: `production-line:${bookingId}:${index + 1}`, sourceBookingLineId: `${bookingId}:line:${index + 1}`, ...(item.menuItemId ? { sourceMenuItemId: item.menuItemId } : {}), itemName: item.itemName || item.itemId, ...(item.description ? { description: item.description } : {}), customerQuantity: item.quantity, customerUnit: item.servingInfo || "ordered unit", ...(conversion ? { productionQuantity: conversion.quantity, productionUnit: conversion.unit, conversionSnapshot: { ...conversion, rule: "Explicit configured production conversion." } } : {}), ...(item.choices ? { choices: structuredClone(item.choices) } : {}), ...(item.servingInfo ? { servingGuidance: item.servingInfo } : {}), ...(item.comments ? { productionInstructions: item.comments } : {}), dietaries: structuredClone(booking.dietaries), status: conversion ? "ready" : "exception", sortOrder: index, workstream };
       return { ...line, status: conversion ? "ready" : "pending" };
     });
@@ -189,10 +193,9 @@ export async function latestProductionOrderForBooking(bookingId: string) {
   return order ? enrichOrder(withoutAutomaticQuantityBlockers(order)) : undefined;
 }
 
-export async function productionQueue(serviceDate?: string) {
-  const snapshot = serviceDate
-    ? await orders().where("serviceDate", "==", serviceDate).get()
-    : await orders().orderBy("requiredBy", "asc").get();
+export async function productionQueue(serviceDate: string) {
+  const snapshot = await orders().where("serviceDate", "==", serviceDate).get();
+  recordDeliveredInReadBudget({ stage: "discovery", canonicalOrderDocs: snapshot.size, serviceDate, knownId: false });
   return Promise.all(
     snapshot.docs
     .map(item => item.data() as ProductionOrder)
@@ -222,7 +225,7 @@ export async function productionQueueForWeek(weekCommencing: string) {
       .map(order => enrichOrder(withoutAutomaticQuantityBlockers(order))),
   );
 }
-export async function productionOrderDetail(canonicalId: string) { const snapshot = await orders().doc(stableDocumentId(canonicalId)).get(); return snapshot.exists ? enrichOrder(withoutAutomaticQuantityBlockers(snapshot.data() as ProductionOrder)) : undefined; }
+export async function productionOrderDetail(canonicalId: string) { const snapshot = await orders().doc(stableDocumentId(canonicalId)).get(); recordDeliveredInReadBudget({ stage: "known_order_lookup", canonicalOrderDocs: snapshot.exists ? 1 : 0, knownId: true }); return snapshot.exists ? enrichOrder(withoutAutomaticQuantityBlockers(snapshot.data() as ProductionOrder)) : undefined; }
 
 export type CpuCreatedProductionInput = { clientName: string; serviceDate: string; deliveryDateTime: string; requiredBy: string; serviceWindow: { startTime: string; endTime?: string }; productionLocationId?: string; productionCategory?: ProductionCategory; destinationOplocId?: string; requiresDelivery?: boolean; deliveryLocation: string; destinationAddress?: ProductionDestinationAddress; floorRoom?: string; contact?: string; serviceType: string; pax: number; lines: Array<{ itemName: string; customerQuantity: number; customerUnit: string; productionQuantity?: number; productionUnit?: string; dietary?: Record<string, unknown>; approvedAllergenSnapshot?: { allergens: Record<string, string>; mayContainNotes?: string }; notes?: string }>; priority?: "normal" | "high" | "urgent"; sourceReference?: string; sourceEntityId?: string; sourceVersion?: number; notes?: string };
 export async function createCpuProductionOrder(actor: Actor, input: CpuCreatedProductionInput, idempotencyKey: string) {
@@ -241,21 +244,6 @@ export async function createCpuProductionOrder(actor: Actor, input: CpuCreatedPr
     return { created: true, status: "created" as const, order };
   });
 }
-
-export type ExternalProductionMaterialisation = {
-  sourceDomain: "grab-and-go" | "menu-planning";
-  sourceEntityId: string;
-  sourceVersion: number;
-  sourceContentHash?: string;
-  sourcePublicationDayId?: string;
-  destinationOplocId: string;
-  destinationLabel?: string;
-  serviceDate: string;
-  requiredBy?: string;
-  serviceWindow?: { startTime: string; endTime?: string };
-  status: "submitted" | "published" | "amended" | "cancelled" | "withdrawn";
-  lines: Array<{ sourceLineId: string; canonicalItemId?: string; itemName: string; quantity: number; unit: string; workstream?: ProductionWorkstream; approvedAllergenSnapshot?: { allergens: Record<string, string>; mayContainNotes?: string; sourcePublicationDayId?: string; sourceVersion?: number; sourceContentHash?: string } }>;
-};
 
 export function materialisedProductionId(input: Pick<ExternalProductionMaterialisation, "sourceDomain" | "sourceEntityId" | "destinationOplocId">) {
   const safe = (value: string) => value.replace(/[^A-Za-z0-9:_-]+/g, "_");
