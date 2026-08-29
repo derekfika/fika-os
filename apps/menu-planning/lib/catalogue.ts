@@ -1,4 +1,4 @@
-import { listCanonicalMenuItems, listCanonicalMenuItemsByIds } from "./canonical-menu-repository";
+import { getCanonicalMenuItemById, listCanonicalMenuItems, listCanonicalMenuItemsByIds } from "./canonical-menu-repository";
 import type { MenuItem } from "./domain";
 import { normaliseDishCategory } from "./dish-categories";
 import { attachCanonicalDishIds, getWeek, listAllEntries } from "./rolling-menu";
@@ -69,6 +69,11 @@ export async function listCatalogueEntries(): Promise<CatalogueEntry[]> {
 
 export async function listCatalogueEntriesForIds(ids: string[]): Promise<CatalogueEntry[]> {
   return (await listCanonicalMenuItemsByIds(ids)).filter(item => item.reviewStatus !== "archived").map(canonicalEntry).sort((a, b) => a.name.localeCompare(b.name));
+}
+
+export async function getCatalogueEntryById(id: string): Promise<CatalogueEntry | undefined> {
+  const item = await getCanonicalMenuItemById(id);
+  return item && item.reviewStatus !== "archived" ? canonicalEntry(item) : undefined;
 }
 
 /** Explicit maintenance reconciliation for imports and publication preparation. */
