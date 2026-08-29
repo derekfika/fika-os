@@ -1,12 +1,12 @@
 import { Firestore, type DocumentData, type DocumentSnapshot, type QuerySnapshot, type Transaction } from "@google-cloud/firestore";
 import { createHash } from "node:crypto";
 import { claimEvent, eventIsDue, type DurableDomainEvent } from "./fika-contracts";
-import type { MenuPublication } from "./menu-publication";
+import type { CompiledPublishedWeekSnapshot, MenuPublication } from "./menu-publication";
 import type { RollingDay, RollingEntry, RollingSnapshot, RollingWeek } from "./rolling-menu-types";
 import { recordMenuPlanningReadBudget } from "./read-budget";
 
 export const MENU_PLANNING_COLLECTIONS = {
-  weeks: "fikaMenuPlanningWeeks", publications: "fikaMenuPlanningPublications", events: "fikaMenuPlanningEvents", outbox: "fikaMenuPlanningOutbox", archive: "fikaMenuPlanningArchiveMetadata", catalogue: "fikaMenuPlanningCatalogue",
+  weeks: "fikaMenuPlanningWeeks", publications: "fikaMenuPlanningPublications", events: "fikaMenuPlanningEvents", outbox: "fikaMenuPlanningOutbox", archive: "fikaMenuPlanningArchiveMetadata", catalogue: "fikaMenuPlanningCatalogue", publishedSnapshots: "fikaMenuPlanningPublishedSnapshots",
 } as const;
 export type HostedTransactionState = { rolling: { version?: number; weeks: RollingWeek[]; days: RollingDay[]; entries: RollingEntry[] }; publications: { version: number; publications: MenuPublication[]; events: DurableDomainEvent[] } };
 export type MenuPlanningTransactionScope = { weekId?: string; sourceWeekId?: string; includeEvents?: boolean };
@@ -36,6 +36,14 @@ export class MenuPlanningFirestoreRepository {
     const publications: MenuPublication[] = [];
     for (const doc of snapshot.docs) { const value = doc.data(); const days = await doc.ref.collection("days").get(); publications.push({ ...value, days: days.docs.map(day => day.data()) } as unknown as MenuPublication); }
     return { version: 2, publications, events: [] as DurableDomainEvent[] };
+  }
+  async getPublishedSnapshot(publicationId: string, version?: number) {
+    const publication = await this.db.collection(MENU_PLANNING_COLLECTIONS.publications).doc(publicationId).get();
+    if (!publication.exists) return undefined;
+    const id = version ? `${publicationId}:snapshot:v${version}` : publication.data()?.compiledSnapshotId as string | undefined;
+    if (!id) return undefined;
+    const snapshot = await this.db.collection(MENU_PLANNING_COLLECTIONS.publishedSnapshots).doc(id).get();
+    return snapshot.exists ? snapshot.data() as CompiledPublishedWeekSnapshot : undefined;
   }
   async readPublicationState() { return this.db.runTransaction(transaction => this.readPublications(transaction)); }
   async updateEvent(eventId: string, mutator: (event: DurableDomainEvent) => DurableDomainEvent | undefined) {
@@ -117,6 +125,8 @@ export class MenuPlanningFirestoreRepository {
       if (previous) for (const oldDay of previous.days) if (!publication.days.some(day => day.publicationDayId === oldDay.publicationDayId)) throw new ExpectedVersionConflict(`Publication day ${oldDay.publicationDayId} cannot be deleted.`);
       for (const day of publication.days) { const old = previous?.days.find(value => value.publicationDayId === day.publicationDayId); if (old && digest(old) !== digest(day)) throw new ExpectedVersionConflict(`Immutable publication day ${day.publicationDayId} differs from stored state.`); if (!old) transaction.set(root.collection("days").doc(day.publicationDayId), { ...day, publicationId: publication.publicationId }); }
     }
+    const snapshots = (after as unknown as { snapshots?: Record<string, CompiledPublishedWeekSnapshot> }).snapshots || {};
+    for (const [snapshotId, snapshot] of Object.entries(snapshots)) transaction.set(this.db.collection(MENU_PLANNING_COLLECTIONS.publishedSnapshots).doc(snapshotId), snapshot);
     const beforeEvents = new Map(before.events.map(value => [value.eventId, value]));
     for (const event of after.events) { const old = beforeEvents.get(event.eventId); if (old && digest(old) !== digest(event) && old.delivery.status === "delivered" && event.delivery.status !== "delivered") throw new ExpectedVersionConflict(`Delivered event ${event.eventId} cannot be rewound.`); if (!old || digest(old) !== digest(event)) { transaction.set(this.db.collection(MENU_PLANNING_COLLECTIONS.events).doc(event.eventId), event); transaction.set(this.db.collection(MENU_PLANNING_COLLECTIONS.outbox).doc(event.eventId), event); } }
   }

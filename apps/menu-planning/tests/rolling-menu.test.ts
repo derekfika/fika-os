@@ -11,7 +11,7 @@ import { test } from "node:test";
 import * as XLSX from "xlsx";
 import { addMenuSlot, applyEntryPatch, assertWeekDateAvailable, attachCanonicalDishIds, createEntry, defaultWeekForDate, duplicateWeek, emptyWeek, getWeek, importWorkbook, publishWeek, removeMenuSlot, saveSnapshot, updateEntry, validateWeek, ROLLING_SLOTS } from "../lib/rolling-menu";
 import { createCanonicalMenuItem, listCanonicalMenuItems } from "../lib/canonical-menu-repository";
-import { buildPublishedDay, createPublishedMenuDay, currentPublishedDays, getMenuPublication, listMenuPublicationEvents, listMenuPublications, publicationPreview, publicationState, publishedDayMatrixHtml, replayMenuPublicationOutbox, withdrawPublishedMenuDay, withdrawPublishedMenuWeek, type MenuPublicationSignoff } from "../lib/menu-publication";
+import { buildCompiledPublicationSnapshot, buildPublishedDay, createPublishedMenuDay, currentPublishedDays, getCompiledPublicationSnapshot, getMenuPublication, listMenuPublicationEvents, listMenuPublications, publicationPreview, publicationState, publishedDayMatrixHtml, replayMenuPublicationOutbox, withdrawPublishedMenuDay, withdrawPublishedMenuWeek, type MenuPublicationSignoff } from "../lib/menu-publication";
 import { resolveAllergenSnapshot } from "../lib/allergen-resolution";
 import type { RollingEntry } from "../lib/rolling-menu-types";
 
@@ -134,7 +134,13 @@ test("menu days publish independently and revisions supersede only that day", as
     const monday = await add(0, "Monday Dish"); const tuesday = await add(1, "Tuesday Dish"); const thursday = await add(3, "Thursday Dish");
     for (const entry of [monday, tuesday, thursday]) await updateEntryForTest(week.week.id, entry.id);
     const sign = async (dayId: string): Promise<MenuPublicationSignoff> => { const day = publicationPreview(await getWeek(week.week.id), dayId)[0]; const signature = { printedName: "Signed Chef", signatureDataUrl: "data:image/png;base64,c2ln", signedAt: "2026-08-19T12:00:00.000Z", actor: "test", attestation: "Reviewed" }; return { date: day.date, productionChef: signature, headChefSiteManager: { ...signature, printedName: "Head Chef" }, dayContentHash: day.contentHash }; };
+    const sourceWeekVersion = (await getWeek(week.week.id)).week.version;
     const mondayPublication = await createPublishedMenuDay(week.week.id, week.days[0].id, await sign(week.days[0].id), "test");
+    const mondayCompiledSnapshot = await getCompiledPublicationSnapshot(mondayPublication.publicationId, 1);
+    assert.equal(mondayCompiledSnapshot?.publicationVersion, 1);
+    assert.equal(mondayCompiledSnapshot?.sourceWeekVersion, sourceWeekVersion);
+    assert.equal(mondayCompiledSnapshot?.days.length, 1);
+    assert.match(mondayCompiledSnapshot?.contentHash || "", /^[a-f0-9]{64}$/);
     assert.equal((await getWeek(week.week.id)).week.dayStatuses?.[week.days[0].id], "published");
     const publicationEvents = await listMenuPublicationEvents();
     assert.ok(publicationEvents.some(event => event.eventType === "menu.day.published" && event.sourceVersion === 1));
@@ -170,10 +176,17 @@ test("menu days publish independently and revisions supersede only that day", as
     await assert.rejects(async () => createPublishedMenuDay(week.week.id, week.days[3].id, await sign(week.days[3].id), "test"), (error: any) => error.status === 409);
     const changedHash = publicationPreview(await getWeek(week.week.id), week.days[3].id)[0].contentHash;
     assert.equal(changedHash, history[1].contentHash);
+    assert.deepEqual(await getCompiledPublicationSnapshot(revised.publicationId, 1), mondayCompiledSnapshot);
+    assert.equal((await getCompiledPublicationSnapshot(revised.publicationId))?.publicationVersion, 4);
   } finally {
     if (rollingBefore) await writeFile(rollingFile, rollingBefore); else await rm(rollingFile, { force: true });
     if (publicationBefore) await writeFile(publicationFile, publicationBefore); else await rm(publicationFile, { force: true });
   }
+});
+
+test("compiled publication snapshots reject oversized payloads before persistence", () => {
+  const huge = "x".repeat(950 * 1024);
+  assert.throws(() => buildCompiledPublicationSnapshot({ publicationId: "publication:large", sourceWeekId: "week:large", weekCommencing: "2026-05-04", weekEnding: "2026-05-08", publicationVersion: 1, days: [{ publicationDayId: "day:large", sourceDayId: "day:large", date: "2026-05-04", dayName: "Monday", version: 1, status: "published", publishedAt: "2026-05-04T10:00:00.000Z", publishedBy: "test", contentHash: "hash", entries: [{ sourceEntryId: "entry:large", slot: "SOUP", dishName: huge, portions: 1, allocations: [], allergens: {} }] }], audit: [] }, 1), (error: any) => error.status === 413);
 });
 
 test("published day matrix keeps all canonical allergen columns", async () => {

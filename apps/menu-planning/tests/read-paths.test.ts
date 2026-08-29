@@ -98,6 +98,19 @@ test("manifest and Allergen Checker paths avoid unnecessary full catalogue reads
   assert.match(checker, /entry\.allergens/);
 });
 
+test("compiled publication snapshots use a separate targeted read model", () => {
+  const publication = readFileSync(new URL("../lib/menu-publication.ts", import.meta.url), "utf8");
+  const repository = readFileSync(new URL("../lib/firestore-operational-store.ts", import.meta.url), "utf8");
+  const route = readFileSync(new URL("../app/api/rolling-menu/publications/[publicationId]/snapshot/route.ts", import.meta.url), "utf8");
+  assert.match(publication, /buildCompiledPublicationSnapshot/);
+  assert.match(publication, /contentHash\(base\)/);
+  assert.match(publication, /MAX_COMPILED_SNAPSHOT_BYTES/);
+  assert.match(repository, /fikaMenuPlanningPublishedSnapshots/);
+  assert.match(repository, /getPublishedSnapshot\(publicationId/);
+  assert.match(route, /getCompiledPublicationSnapshot/);
+  assert.match(route, /params: Promise/);
+});
+
 test("catalogue manifest comparison is version based", () => {
   assert.equal(catalogueManifestMatches({ schemaVersion: 1, catalogueVersion: 42 }, { schemaVersion: 1, catalogueVersion: 42 }), true);
   assert.equal(catalogueManifestMatches({ schemaVersion: 1, catalogueVersion: 42 }, { schemaVersion: 1, catalogueVersion: 43 }), false);
