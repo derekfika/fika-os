@@ -1,8 +1,10 @@
 "use client";
 
 export type CachedCatalogueEntry = Record<string, unknown> & { id: string };
-export type CachedCatalogue = { namespace: string; schemaVersion: number; cachedAt: number; recordCount: number; entries: CachedCatalogueEntry[]; categories: string[] };
-export type CatalogueFetchResult = { entries: CachedCatalogueEntry[]; categories?: string[]; identity?: string };
+export type CatalogueManifest = { schemaVersion: number; catalogueVersion: number; updatedAt?: string; dishCount?: number };
+export type CachedCatalogue = { namespace: string; schemaVersion: number; cachedAt: number; manifestCheckedAt?: number; recordCount: number; entries: CachedCatalogueEntry[]; categories: string[]; manifest?: CatalogueManifest };
+export type CatalogueFetchResult = { entries: CachedCatalogueEntry[]; categories?: string[]; identity?: string; manifest?: CatalogueManifest };
+export const catalogueManifestMatches = (cached?: CatalogueManifest, current?: CatalogueManifest) => Boolean(cached && current && cached.schemaVersion === current.schemaVersion && cached.catalogueVersion === current.catalogueVersion);
 
 const databaseName = "fika-menu-planning";
 const databaseVersion = 2;
@@ -80,12 +82,26 @@ export async function putCachedCatalogue(entries: CachedCatalogueEntry[], namesp
       const prefix = `${namespace}|`;
       records.delete(IDBKeyRange.bound(prefix, `${prefix}\uffff`));
       entries.forEach(entry => records.put({ ...entry, cacheKey: `${namespace}|${entry.id}` }));
-      transaction.objectStore(metadataStore).put({ namespace, schemaVersion, cachedAt: Date.now(), recordCount: entries.length, categories }, metadataKey(namespace));
+      transaction.objectStore(metadataStore).put({ namespace, schemaVersion, cachedAt: Date.now(), manifestCheckedAt: Date.now(), recordCount: entries.length, categories }, metadataKey(namespace));
       transaction.oncomplete = () => resolve();
       transaction.onerror = () => reject(transaction.error || new Error("Catalogue cache write failed."));
     });
     debug("updated", { recordCount: entries.length });
   } catch (error) { debug("write-fallback", { reason: error instanceof Error ? error.message : "IndexedDB unavailable" }); }
+}
+
+async function putCatalogueMetadata(namespace: string, patch: Partial<CachedCatalogue>) {
+  try {
+    const db = await openDatabase();
+    await new Promise<void>((resolve, reject) => {
+      const transaction = db.transaction(metadataStore, "readwrite");
+      const store = transaction.objectStore(metadataStore);
+      const request = store.get(metadataKey(namespace));
+      request.onsuccess = () => { if (request.result) store.put({ ...request.result, ...patch }, metadataKey(namespace)); };
+      transaction.oncomplete = () => resolve();
+      transaction.onerror = () => reject(transaction.error || new Error("Catalogue metadata update failed."));
+    });
+  } catch { /* Manifest diagnostics never invalidate a usable cache. */ }
 }
 
 export async function putCachedCatalogueItem(entry: CachedCatalogueEntry, namespace = catalogueCacheNamespace()) {
@@ -119,18 +135,30 @@ export async function clearCatalogueCache() {
   try { const db = await openDatabase(); await new Promise<void>((resolve, reject) => { const transaction = db.transaction([recordStore, metadataStore], "readwrite"); transaction.objectStore(recordStore).clear(); transaction.objectStore(metadataStore).clear(); transaction.oncomplete = () => resolve(); transaction.onerror = () => reject(transaction.error); }); } catch { /* Cache cleanup is best effort. */ }
 }
 
-export async function loadCachedCatalogue(fetcher: () => Promise<CatalogueFetchResult>, onUpdate?: (entries: CachedCatalogueEntry[]) => void) {
+export async function loadCachedCatalogue(fetcher: () => Promise<CatalogueFetchResult>, onUpdate?: (entries: CachedCatalogueEntry[]) => void, manifestFetcher?: () => Promise<CatalogueManifest>) {
   const namespace = catalogueCacheNamespace();
   const cached = await getCachedCatalogue(namespace);
-  const stale = cached ? Date.now() - cached.cachedAt >= CATALOGUE_CACHE_TTL_MS : false;
   if (cached) {
-    if (stale) void refreshCatalogue(fetcher, namespace, onUpdate).catch(error => debug("background-fallback", { reason: error instanceof Error ? error.message : "refresh failed" }));
+    const checkDue = !cached.manifest || !cached.manifestCheckedAt || Date.now() - cached.manifestCheckedAt >= CATALOGUE_CACHE_TTL_MS;
+    if (namespace && manifestFetcher && checkDue) void revalidateCatalogue(cached, namespace, fetcher, manifestFetcher, onUpdate);
+    else if (!manifestFetcher && Date.now() - cached.cachedAt >= CATALOGUE_CACHE_TTL_MS) void refreshCatalogue(fetcher, namespace, onUpdate).catch(error => debug("background-fallback", { reason: error instanceof Error ? error.message : "refresh failed" }));
     return cached.entries;
   }
   return refreshCatalogue(fetcher, namespace, onUpdate);
 }
 
 const refreshInFlight = new Map<string, Promise<CachedCatalogueEntry[]>>();
+const manifestInFlight = new Map<string, Promise<void>>();
+async function revalidateCatalogue(cached: CachedCatalogue, namespace: string, fetcher: () => Promise<CatalogueFetchResult>, manifestFetcher: () => Promise<CatalogueManifest>, onUpdate?: (entries: CachedCatalogueEntry[]) => void) {
+  const existing = manifestInFlight.get(namespace);
+  if (existing) return existing;
+  const check = manifestFetcher().then(async manifest => {
+    await putCatalogueMetadata(namespace, { manifest, manifestCheckedAt: Date.now() });
+    if (!catalogueManifestMatches(cached.manifest, manifest)) await refreshCatalogue(fetcher, namespace, onUpdate);
+  }).catch(error => { debug("manifest-fallback", { reason: error instanceof Error ? error.message : "manifest unavailable" }); return putCatalogueMetadata(namespace, { manifestCheckedAt: Date.now() }); }).finally(() => { manifestInFlight.delete(namespace); });
+  manifestInFlight.set(namespace, check);
+  return check;
+}
 async function refreshCatalogue(fetcher: () => Promise<CatalogueFetchResult>, previousNamespace?: string, onUpdate?: (entries: CachedCatalogueEntry[]) => void) {
   const key = previousNamespace || "uncached";
   const existing = refreshInFlight.get(key);
@@ -140,6 +168,7 @@ async function refreshCatalogue(fetcher: () => Promise<CatalogueFetchResult>, pr
     if (result.identity && typeof window !== "undefined") { try { window.sessionStorage.setItem("fika-menu-identity", result.identity); } catch { /* Storage access is optional. */ } }
     const namespace = catalogueCacheNamespace(result.identity) || previousNamespace;
     await putCachedCatalogue(result.entries, namespace, result.categories || []);
+    if (namespace && result.manifest) await putCatalogueMetadata(namespace, { manifest: result.manifest, manifestCheckedAt: Date.now() });
     onUpdate?.(result.entries);
     return result.entries;
   }).finally(() => { refreshInFlight.delete(key); });

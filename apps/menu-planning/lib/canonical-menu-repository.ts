@@ -9,6 +9,7 @@ import { appDataPath } from "./fika-contracts";
 import { assertOperationalStoreAvailable } from "./hosted-runtime";
 import { Firestore } from "@google-cloud/firestore";
 import { recordMenuPlanningReadBudget } from "./read-budget";
+import { CATALOGUE_MANIFEST_ID, type CatalogueManifest, getCatalogueManifest } from "./catalogue-manifest";
 
 const filePath = appDataPath("menu-planning", "menu-planning", "canonical-menu-items.json");
 const HOSTED_CATALOGUE_TTL_MS = 60_000;
@@ -58,6 +59,8 @@ async function writeItems(items: MenuItem[]) {
     await db.runTransaction(async transaction => {
       const refs = changed.map(item => db.collection("fikaMenuPlanningCatalogue").doc(item.canonicalId));
       const latest = await transaction.getAll(...refs);
+      const manifestRef = db.collection("fikaMenuPlanningCatalogue").doc(CATALOGUE_MANIFEST_ID);
+      const manifest = await transaction.get(manifestRef);
       latest.forEach((document, index) => {
         const item = changed[index];
         const existing = document.exists ? document.data() : undefined;
@@ -65,6 +68,9 @@ async function writeItems(items: MenuItem[]) {
         if (existingRecord && existingRecord.revision > item.revision && existingRecord.reviewStatus !== "unreviewed") return;
         transaction.set(refs[index], { ...(existing || hostedDocument(item)), id: item.canonicalId, kind: "dish", record: item }, { merge: true });
       });
+      const previous = manifest.exists ? manifest.data() : undefined;
+      const nextManifest: CatalogueManifest = { schemaVersion: 1, catalogueVersion: Number(previous?.catalogueVersion || 0) + 1, updatedAt: new Date().toISOString(), dishCount: items.filter(item => item.reviewStatus !== "archived").length };
+      transaction.set(manifestRef, { kind: "catalogue-manifest", ...nextManifest }, { merge: true });
       });
     invalidateHostedCatalogueCache();
     return;
@@ -72,8 +78,12 @@ async function writeItems(items: MenuItem[]) {
   assertOperationalStoreAvailable();
   await mkdir(path.dirname(filePath), { recursive: true });
   const normalised = items.map(item => ({ ...item, displayName: normaliseDishName(item.displayName) }));
-  await writeFile(filePath, JSON.stringify({ version: 1, items: normalised }, null, 2) + "\n", "utf8");
+  let version = 0;
+  try { version = Number((JSON.parse(await readFile(filePath, "utf8")) as { version?: number }).version || 0); } catch { /* First local catalogue write. */ }
+  await writeFile(filePath, JSON.stringify({ version: version + 1, updatedAt: new Date().toISOString(), items: normalised }, null, 2) + "\n", "utf8");
 }
+
+export { getCatalogueManifest };
 
 export async function listCanonicalMenuItems() { return readItems(); }
 
@@ -83,11 +93,26 @@ export async function listCanonicalMenuItemsByIds(ids: string[]) {
   if (["staging", "production"].includes(process.env.FIKA_RUNTIME_MODE || "")) {
     if (!process.env.FIREBASE_PROJECT_ID && !process.env.GCLOUD_PROJECT) throw Object.assign(new Error("Hosted Menu Planning catalogue is not configured."), { status: 503 });
     const db = new Firestore({ projectId: process.env.FIREBASE_PROJECT_ID || process.env.GCLOUD_PROJECT });
-    const records = await Promise.all(Array.from({ length: Math.ceil(wanted.length / 30) }, (_, index) => db.collection("fikaMenuPlanningCatalogue").where("kind", "==", "dish").where("id", "in", wanted.slice(index * 30, index * 30 + 30)).get()));
-    return records.flatMap(snapshot => snapshot.docs.map(document => (document.data().record || document.data()) as MenuItem));
+    const records = await Promise.all(Array.from(
+      { length: Math.ceil(wanted.length / 100) },
+      (_, index) => db.getAll(...wanted.slice(index * 100, index * 100 + 100).map(id => db.collection("fikaMenuPlanningCatalogue").doc(id))),
+    ));
+    return records.flatMap(documents => documents.filter(document => document.exists && document.data()?.kind === "dish").map(document => (document.data()!.record || document.data()) as MenuItem));
   }
   const items = await readItems();
   return items.filter(item => wanted.includes(item.canonicalId));
+}
+
+export async function getCanonicalMenuItemById(id: string) {
+  const cleanId = id.trim();
+  if (!cleanId) return undefined;
+  if (hosted()) {
+    if (!process.env.FIREBASE_PROJECT_ID && !process.env.GCLOUD_PROJECT) throw Object.assign(new Error("Hosted Menu Planning catalogue is not configured."), { status: 503 });
+    const document = await new Firestore({ projectId: process.env.FIREBASE_PROJECT_ID || process.env.GCLOUD_PROJECT }).collection("fikaMenuPlanningCatalogue").doc(cleanId).get();
+    if (!document.exists || document.data()?.kind !== "dish") return undefined;
+    return (document.data()!.record || document.data()) as MenuItem;
+  }
+  return (await readItems()).find(item => item.canonicalId === cleanId);
 }
 
 export async function createCanonicalMenuItem(input: { displayName: string; category?: string; description?: string; preparationNotes?: string; allergenEvidence?: MenuItem["allergenEvidence"] }, actor = "local-menu-planner") {

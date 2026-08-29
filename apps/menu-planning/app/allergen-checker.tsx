@@ -7,7 +7,7 @@ import { useRollingData } from "./planner-data";
 import { CANONICAL_ALLERGEN_COLUMNS, toggleOperationalAllergen, type CanonicalAllergenMap, type CanonicalAllergenKey } from "@/lib/fika-contracts";
 
 export default function AllergenChecker() {
-  const { snapshot, weeks, error, command } = useRollingData();
+  const { snapshot, weeks, error, command } = useRollingData({ loadCatalogue: false });
   const params = useSearchParams();
   if (!snapshot) return <MenuPlanningShell section="Allergen Checker"><div className="menu-loading">Loading Allergen Checker…</div></MenuPlanningShell>;
   const day = snapshot.days.find(item => item.date === params.get("day") || item.id === params.get("day")) || snapshot.days[0];

@@ -1,20 +1,27 @@
 import { NextResponse } from "next/server";
-import { filterCatalogueEntries, listCatalogueEntries } from "@/lib/catalogue";
+import { filterCatalogueEntries, getCatalogueEntryById, listCatalogueEntries } from "@/lib/catalogue";
 import { createCanonicalMenuItem, mergeSimilarCanonicalItems, previewSimilarCanonicalItems } from "@/lib/canonical-menu-repository";
 import { repointDishIds } from "@/lib/rolling-menu";
+import { getCatalogueManifest } from "@/lib/catalogue-manifest";
 
 export async function GET(request: Request) {
   try {
     if (new URL(request.url).searchParams.get("duplicates") === "preview") return NextResponse.json({ groups: await previewSimilarCanonicalItems() });
     const url = new URL(request.url);
-    const entries = await listCatalogueEntries();
+    if (url.searchParams.get("manifest") === "true") return NextResponse.json(await getCatalogueManifest());
+    const id = url.searchParams.get("id");
+    if (id) {
+      const entry = await getCatalogueEntryById(id);
+      return entry ? NextResponse.json({ entry }) : NextResponse.json({ error: { message: "Catalogue item was not found." } }, { status: 404 });
+    }
+    const [entries, manifest] = await Promise.all([listCatalogueEntries(), getCatalogueManifest()]);
     const filtered = filterCatalogueEntries(entries, {
       query: url.searchParams.get("q") || undefined,
       category: url.searchParams.get("category") || undefined,
       usage: url.searchParams.get("usage") || undefined,
       status: url.searchParams.get("status") || undefined,
     });
-    return NextResponse.json({ entries: filtered, total: entries.length, filteredCount: filtered.length, categories: [...new Set(entries.map((entry) => entry.category))].sort() });
+    return NextResponse.json({ entries: filtered, total: entries.length, filteredCount: filtered.length, categories: [...new Set(entries.map((entry) => entry.category))].sort(), manifest });
   } catch (error) {
     const status = error && typeof error === "object" && "status" in error && typeof (error as { status?: unknown }).status === "number" ? (error as { status: number }).status : 500;
     return NextResponse.json({ error: { message: error instanceof Error ? error.message : "Catalogue could not be loaded." } }, { status });
