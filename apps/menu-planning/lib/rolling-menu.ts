@@ -6,7 +6,7 @@ export * from "./rolling-menu-types";
 import { ROLLING_SLOTS, type RollingAllocation, type RollingDay, type RollingEntry, type RollingSnapshot, type RollingSlot, type RollingWeek, type RollingWeekStatus } from "./rolling-menu-types";
 import { normaliseDishName, titleCase } from "./text";
 import type { MenuItem } from "./domain";
-import { readRollingState, updateRollingState } from "./operational-store";
+import { readRollingState, updateRollingState, withMenuPlanningTransaction } from "./operational-store";
 export interface Stored { version: 1; weeks: RollingWeek[]; days: RollingDay[]; entries: RollingEntry[]; }
 const now = () => new Date().toISOString();
 const operationalDate = () => { const parts = Object.fromEntries(new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/London", year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(new Date()).filter(part => part.type !== "literal").map(part => [part.type, part.value])); return `${parts.year}-${parts.month}-${parts.day}`; };
@@ -95,9 +95,9 @@ export async function addOneOffDestination(weekId: string, dayId: string, label:
 // Working edits must not downgrade or mutate immutable publication state.
 const markDayDraft = (_snapshot: RollingSnapshot, _dayId: string) => {};
 export async function saveSnapshot(snapshot: RollingSnapshot) {
-  await updateRollingState<Stored>(db => {
-    replaceSnapshotInStored(db, snapshot);
-  });
+  await withMenuPlanningTransaction(state => {
+    replaceSnapshotInStored(state.rolling as unknown as Stored, snapshot);
+  }, undefined, { weekId: snapshot.week.id, sourceWeekId: "__none__", includeEvents: false });
   return snapshot;
 }
 export async function createEntry(weekId: string, dayId: string, slot: string, itemLabel: string, actor = "local-menu-planner", itemId?: string) { const snapshot = await getWeek(weekId); const day = snapshot.days.find(d => d.id === dayId); if (!day) throw Object.assign(new Error("Menu day was not found."), { status: 404 }); if (snapshot.entries.some(e => e.dayId === dayId && e.slot === slot)) throw Object.assign(new Error("That menu slot already has a dish."), { status: 409 }); markDayDraft(snapshot, dayId); const id = `${snapshot.week.id}:entry:${dayId}:${slot.toLowerCase().replace(/[^a-z0-9]+/g, "-")}:${Date.now()}`; const entry: RollingEntry = { id, dayId, date: day.date, slot, itemId, itemLabel: normaliseDishName(itemLabel), portions: 0, allocations: [], allergens: {}, audit: [{ action: "entry-created", at: now(), by: actor }] }; snapshot.entries.push(entry); day.entryIds.push(id); snapshot.week.entryIds.push(id); snapshot.week.version += 1; return saveSnapshot(snapshot); }

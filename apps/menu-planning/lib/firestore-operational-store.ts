@@ -1,13 +1,15 @@
-import { Firestore, type DocumentData, type Transaction } from "@google-cloud/firestore";
+import { Firestore, type DocumentData, type DocumentSnapshot, type QuerySnapshot, type Transaction } from "@google-cloud/firestore";
 import { createHash } from "node:crypto";
-import type { DurableDomainEvent } from "./fika-contracts";
+import { claimEvent, eventIsDue, type DurableDomainEvent } from "./fika-contracts";
 import type { MenuPublication } from "./menu-publication";
 import type { RollingDay, RollingEntry, RollingSnapshot, RollingWeek } from "./rolling-menu-types";
+import { recordMenuPlanningReadBudget } from "./read-budget";
 
 export const MENU_PLANNING_COLLECTIONS = {
   weeks: "fikaMenuPlanningWeeks", publications: "fikaMenuPlanningPublications", events: "fikaMenuPlanningEvents", outbox: "fikaMenuPlanningOutbox", archive: "fikaMenuPlanningArchiveMetadata", catalogue: "fikaMenuPlanningCatalogue",
 } as const;
 export type HostedTransactionState = { rolling: { version?: number; weeks: RollingWeek[]; days: RollingDay[]; entries: RollingEntry[] }; publications: { version: number; publications: MenuPublication[]; events: DurableDomainEvent[] } };
+export type MenuPlanningTransactionScope = { weekId?: string; sourceWeekId?: string; includeEvents?: boolean };
 export class ExpectedVersionConflict extends Error { status = 409 as const; }
 const digest = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
 const omit = (value: Record<string, unknown>, key: string) => Object.fromEntries(Object.entries(value).filter(([name]) => name !== key));
@@ -36,10 +38,41 @@ export class MenuPlanningFirestoreRepository {
     return { version: 2, publications, events: [] as DurableDomainEvent[] };
   }
   async readPublicationState() { return this.db.runTransaction(transaction => this.readPublications(transaction)); }
-  async runTransaction<T>(mutator: (state: HostedTransactionState) => T | Promise<T>, expected?: { weekId?: string; weekVersion?: number }) {
+  async updateEvent(eventId: string, mutator: (event: DurableDomainEvent) => DurableDomainEvent | undefined) {
     return this.db.runTransaction(async transaction => {
-      const before = { rolling: await this.readRolling(transaction), publications: await this.readPublications(transaction) };
-      if (expected?.weekId && expected.weekVersion !== undefined) assertExpectedVersion(before.rolling.weeks.find(week => week.id === expected.weekId)?.version, expected.weekVersion, expected.weekId);
+      const ref = this.db.collection(MENU_PLANNING_COLLECTIONS.events).doc(eventId);
+      const document = await transaction.get(ref);
+      if (!document.exists) return undefined;
+      const next = mutator(document.data() as DurableDomainEvent);
+      if (next) {
+        transaction.set(ref, next);
+        transaction.set(this.db.collection(MENU_PLANNING_COLLECTIONS.outbox).doc(eventId), next);
+      }
+      return next;
+    });
+  }
+  async claimNextEvent(claimId: string, at = new Date()) {
+    return this.db.runTransaction(async transaction => {
+      const events = await transaction.get(this.db.collection(MENU_PLANNING_COLLECTIONS.events).where("delivery.status", "in", ["pending", "failed"]).limit(100));
+      const candidates = events.docs.map(document => document.data() as DurableDomainEvent).filter(event => eventIsDue(event, at)).sort((a, b) => a.sourceAggregateId.localeCompare(b.sourceAggregateId) || a.sourceVersion - b.sourceVersion || a.eventId.localeCompare(b.eventId));
+      for (const candidate of candidates) {
+        const aggregate = await transaction.get(this.db.collection(MENU_PLANNING_COLLECTIONS.events).where("sourceAggregateId", "==", candidate.sourceAggregateId));
+        const blocked = aggregate.docs.some(document => { const previous = document.data() as DurableDomainEvent; return previous.sourceVersion < candidate.sourceVersion && previous.delivery.status !== "delivered"; });
+        if (blocked) continue;
+        const next = claimEvent(candidate, claimId, at.toISOString());
+        const ref = this.db.collection(MENU_PLANNING_COLLECTIONS.events).doc(candidate.eventId);
+        transaction.set(ref, next);
+        transaction.set(this.db.collection(MENU_PLANNING_COLLECTIONS.outbox).doc(candidate.eventId), next);
+        return next;
+      }
+      return undefined;
+    });
+  }
+  async runTransaction<T>(mutator: (state: HostedTransactionState) => T | Promise<T>, expected?: { weekId?: string; weekVersion?: number }, scope: MenuPlanningTransactionScope = {}) {
+    return this.db.runTransaction(async transaction => {
+      const before = { rolling: await this.readRolling(transaction, scope.weekId), publications: await this.readPublications(transaction, scope.sourceWeekId, scope.includeEvents !== false) };
+      recordMenuPlanningReadBudget({ operation: "transaction", reads: { weeks: before.rolling.weeks.length, days: before.rolling.days.length, entries: before.rolling.entries.length, publications: before.publications.publications.length, publicationDays: before.publications.publications.reduce((total, publication) => total + publication.days.length, 0), events: before.publications.events.length, scoped: scope.weekId || scope.sourceWeekId ? 1 : 0 } });
+      if (expected?.weekId && expected.weekVersion !== undefined) assertExpectedVersion(before.rolling.weeks.find((week: RollingWeek) => week.id === expected.weekId)?.version, expected.weekVersion, expected.weekId);
       const state = structuredClone(before) as HostedTransactionState;
       const result = await mutator(state);
       await this.writeRollingDiff(transaction, before.rolling, state.rolling);
@@ -47,9 +80,9 @@ export class MenuPlanningFirestoreRepository {
       return result;
     });
   }
-  private async readRolling(transaction: Transaction) {
-    const weekSnap = await transaction.get(this.db.collection(MENU_PLANNING_COLLECTIONS.weeks));
-    const weeks = weekSnap.docs.map(doc => doc.data() as RollingWeek);
+  private async readRolling(transaction: Transaction, weekId?: string) {
+    const weekSnap = weekId ? await transaction.get(this.db.collection(MENU_PLANNING_COLLECTIONS.weeks).doc(weekId)) : await transaction.get(this.db.collection(MENU_PLANNING_COLLECTIONS.weeks));
+    const weeks: RollingWeek[] = weekId ? ((weekSnap as DocumentSnapshot).exists ? [(weekSnap as DocumentSnapshot).data() as RollingWeek] : []) : (weekSnap as QuerySnapshot).docs.map(doc => doc.data() as RollingWeek);
     const dayRefs = weeks.flatMap(week => (week.dayIds || []).map(id => this.db.collection(MENU_PLANNING_COLLECTIONS.weeks).doc(week.id).collection("days").doc(id)));
     const daySnap = dayRefs.length ? await transaction.getAll(...dayRefs) : [];
     const days = daySnap.filter(doc => doc.exists).map(doc => doc.data() as RollingDay);
@@ -57,13 +90,13 @@ export class MenuPlanningFirestoreRepository {
     const entrySnap = entryRefs.length ? await transaction.getAll(...entryRefs) : [];
     return { weeks, days, entries: entrySnap.filter(doc => doc.exists).map(doc => doc.data() as RollingEntry) };
   }
-  private async readPublications(transaction: Transaction) {
-    const root = await transaction.get(this.db.collection(MENU_PLANNING_COLLECTIONS.publications));
+  private async readPublications(transaction: Transaction, sourceWeekId?: string, includeEvents = true) {
+    const root = sourceWeekId ? await transaction.get(this.db.collection(MENU_PLANNING_COLLECTIONS.publications).where("sourceWeekId", "==", sourceWeekId)) : await transaction.get(this.db.collection(MENU_PLANNING_COLLECTIONS.publications));
     const publications: MenuPublication[] = [];
     const days: DocumentData[] = [];
     for (const doc of root.docs) { const value = doc.data(); publications.push({ ...value, days: [] } as unknown as MenuPublication); const daySnap = await transaction.get(doc.ref.collection("days")); days.push(...daySnap.docs.map(day => day.data())); }
     for (const publication of publications) publication.days = days.filter(day => day.publicationId === publication.publicationId) as MenuPublication["days"];
-    const eventSnap = await transaction.get(this.db.collection(MENU_PLANNING_COLLECTIONS.events));
+    const eventSnap = includeEvents ? await transaction.get(this.db.collection(MENU_PLANNING_COLLECTIONS.events)) : { docs: [] as Array<{ data(): DocumentData }> };
     return { version: 2, publications, events: eventSnap.docs.map(doc => doc.data() as DurableDomainEvent) };
   }
   private async writeRollingDiff(transaction: Transaction, before: HostedTransactionState["rolling"], after: HostedTransactionState["rolling"]) {

@@ -12,7 +12,8 @@ import { getWeekSnapshot, listWeekSummaries } from "@/lib/operational-store";
 import type { RollingWeek } from "@/lib/rolling-menu-types";
 
 async function resolvedSnapshot(snapshot: Awaited<ReturnType<typeof getWeek>>, catalogue?: Awaited<ReturnType<typeof listCatalogueEntriesForIds>>) {
-  const resolvedCatalogue = catalogue || await listCatalogueEntries();
+  const referencedIds = snapshot.entries.filter(entry => entry.itemLabel.trim()).map(entry => entry.itemId || "");
+  const resolvedCatalogue = catalogue || (referencedIds.every(Boolean) ? await listCatalogueEntriesForIds(referencedIds) : await listCatalogueEntries());
   const entries = snapshot.entries.map(entry => {
     const dish = resolvedCatalogue.find(item => item.id === entry.itemId || item.name.trim().toLocaleLowerCase() === entry.itemLabel.trim().toLocaleLowerCase())?.item;
     const resolved = resolveAllergenSnapshot(entry, dish ? { canonicalId: dish.canonicalId, displayName: dish.displayName, allergenEvidence: dish.allergenEvidence, mayContainReviewed: dish.mayContainReviewed, mayContainNotes: dish.mayContainNotes } : undefined);

@@ -8,8 +8,8 @@ import { getWeek, listWeeks, replaceSnapshotInStored, saveSnapshot, snapshotFrom
 import { renderPdfLocally } from "./local-pdf";
 import { resolveAllergenSnapshot } from "./allergen-resolution";
 import type { MenuItem } from "./domain";
-import { publishedAllergenMatrixHtml, claimEvent, createDomainEvent, eventIsDue, markEventDelivered, markEventFailed, type DurableDomainEvent, type FulfilmentRequirement } from "./fika-contracts";
-import { readPublicationState, readPublicationStateForWeek, updatePublicationState, withMenuPlanningTransaction } from "./operational-store";
+import { publishedAllergenMatrixHtml, createDomainEvent, markEventDelivered, markEventFailed, type DurableDomainEvent, type FulfilmentRequirement } from "./fika-contracts";
+import { claimNextMenuPlanningEvent, readPublicationState, readPublicationStateForWeek, updateMenuPlanningEvent, updatePublicationState, withMenuPlanningTransaction } from "./operational-store";
 import { cwd } from "node:process";
 
 export const PUBLICATION_ATTESTATION = "I confirm that I have reviewed the allergen information shown for this day's published menu and that it reflects the approved information available at the time of publication.";
@@ -54,10 +54,9 @@ function appendPublicationEvents(stored: StoredPublications, publication: MenuPu
   const addEvent = (event: DurableDomainEvent) => { if (!stored.events.some(existing => existing.eventId === event.eventId)) stored.events.push(event); };
   addEvent(createDomainEvent({ eventType: `menu.day.${action}`, sourceAggregateId: `${publication.publicationId}:${day.sourceDayId}`, sourceVersion: day.version, occurredAt, payload: { publicationId: publication.publicationId, publicationDayId: day.publicationDayId, sourceDayId: day.sourceDayId, serviceDate: day.date, version: day.version, contentHash: day.contentHash, status: day.status, actor } }));
   const currentDestinations = [...new Set(day.entries.flatMap(entry => entry.allocations.map(allocation => allocation.destinationId).filter((id): id is string => Boolean(id))))];
-  const previousDestinations = stored.events
-    .map(event => event.payload as { sourceDomain?: string; sourceEntityId?: string; destinationOplocId?: string })
-    .filter(value => value.sourceDomain === "menu-planning" && value.sourceEntityId === day.sourceDayId)
-    .map(value => value.destinationOplocId)
+  const previousDestinations = publication.days
+    .filter(candidate => candidate.sourceDayId === day.sourceDayId)
+    .flatMap(candidate => candidate.entries.flatMap(entry => entry.allocations.map(allocation => allocation.destinationId)))
     .filter((id): id is string => Boolean(id));
   const destinations = [...new Set([...currentDestinations, ...previousDestinations])];
   for (const destinationOplocId of destinations) {
@@ -110,7 +109,7 @@ export async function createPublishedMenuDay(weekId: string, dayId: string, sign
     snapshot.week.version += 1; snapshot.week.audit.push({ action: "menu-day-published", at: publishedAt, by: actor });
     replaceSnapshotInStored(rolling, snapshot);
     return clone(publication);
-  });
+  }, { weekId, weekVersion: expectedWeekVersion }, { weekId, sourceWeekId: weekId, includeEvents: false });
 }
 export function currentPublishedDays(publication: MenuPublication) { return publication.days.filter(day => day.status === "published"); }
 export async function listMenuPublicationEvents() { return (await read()).events.map(clone); }
@@ -118,20 +117,14 @@ export async function replayMenuPublicationOutbox(consumer: (event: DurableDomai
   let delivered = 0; let failed = 0;
   while (true) {
     const claimId = `menu-replay:${randomUUID()}`;
-    const claimed = await withMenuPlanningTransaction(state => {
-      const stored = state.publications as unknown as StoredPublications; stored.events ||= [];
-      const sorted = stored.events.slice().sort((a, b) => a.sourceAggregateId.localeCompare(b.sourceAggregateId) || a.sourceVersion - b.sourceVersion || a.eventId.localeCompare(b.eventId));
-      const event = sorted.find(candidate => eventIsDue(candidate, at) && !sorted.some(previous => previous.sourceAggregateId === candidate.sourceAggregateId && previous.sourceVersion < candidate.sourceVersion && previous.delivery.status !== "delivered"));
-      if (!event) return undefined;
-      const next = claimEvent(event, claimId, at.toISOString()); const index = stored.events.findIndex(candidate => candidate.eventId === event.eventId); stored.events[index] = next; return structuredClone(next);
-    });
+    const claimed = await claimNextMenuPlanningEvent(claimId, at);
     if (!claimed) break;
     try {
       await consumer(claimed);
-      await withMenuPlanningTransaction(state => { const stored = state.publications as unknown as StoredPublications; const index = stored.events.findIndex(event => event.eventId === claimed.eventId && event.delivery.claimId === claimId); if (index >= 0) stored.events[index] = normalizePublicationValue(markEventDelivered(stored.events[index], new Date().toISOString())); });
+      await updateMenuPlanningEvent(claimed.eventId, event => event.delivery.claimId === claimId ? normalizePublicationValue(markEventDelivered(event, new Date().toISOString())) : undefined);
       delivered += 1;
     } catch (error) {
-      await withMenuPlanningTransaction(state => { const stored = state.publications as unknown as StoredPublications; const index = stored.events.findIndex(event => event.eventId === claimed.eventId && event.delivery.claimId === claimId); if (index >= 0) stored.events[index] = normalizePublicationValue(markEventFailed(stored.events[index], error, new Date().toISOString())); });
+      await updateMenuPlanningEvent(claimed.eventId, event => event.delivery.claimId === claimId ? normalizePublicationValue(markEventFailed(event, error, new Date().toISOString())) : undefined);
       failed += 1;
     }
   }
@@ -149,7 +142,7 @@ export async function withdrawPublishedMenuDay(publicationId: string, publicatio
     const at = now(); day.status = "withdrawn"; day.withdrawal = { actor, at, reason: reason.trim() }; publication.audit.push({ action: "menu-day-withdrawn", at, by: actor, publicationDayId }); appendPublicationEvents(stored, publication, day, "withdrawn", actor);
     const rolling = state.rolling as unknown as RollingMenuStored; const snapshot = snapshotFromStored(rolling, publication.sourceWeekId); snapshot.week.dayStatuses = { ...(snapshot.week.dayStatuses || {}), [day.sourceDayId]: "draft" }; snapshot.week.status = "partially_published"; snapshot.week.version += 1; snapshot.week.audit.push({ action: "menu-day-withdrawn", at, by: actor }); replaceSnapshotInStored(rolling, snapshot);
     return clone(publication);
-  });
+  }, undefined, { weekId: publicationId.replace(/^menu-publication:/, ""), sourceWeekId: publicationId.replace(/^menu-publication:/, ""), includeEvents: false });
 }
 export async function withdrawPublishedMenuWeek(publicationId: string, reason: string, actor = "local-menu-planner") {
   if (!reason.trim()) throw Object.assign(new Error("A withdrawal reason is required."), { status: 422 });

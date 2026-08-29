@@ -8,14 +8,25 @@ import type { RollingEntry } from "./rolling-menu-types";
 import { appDataPath } from "./fika-contracts";
 import { assertOperationalStoreAvailable } from "./hosted-runtime";
 import { Firestore } from "@google-cloud/firestore";
+import { recordMenuPlanningReadBudget } from "./read-budget";
 
 const filePath = appDataPath("menu-planning", "menu-planning", "canonical-menu-items.json");
+const HOSTED_CATALOGUE_TTL_MS = 60_000;
+let hostedCatalogueCache: { expiresAt: number; items: MenuItem[] } | undefined;
+const hostedCatalogue = () => ["staging", "production"].includes(process.env.FIKA_RUNTIME_MODE || "");
 
 async function readItems(): Promise<MenuItem[]> {
-  if (["staging", "production"].includes(process.env.FIKA_RUNTIME_MODE || "")) {
+  if (hostedCatalogue()) {
     if (!process.env.FIREBASE_PROJECT_ID && !process.env.GCLOUD_PROJECT) throw Object.assign(new Error("Hosted Menu Planning catalogue is not configured."), { status: 503 });
+    if (hostedCatalogueCache && hostedCatalogueCache.expiresAt > Date.now()) {
+      recordMenuPlanningReadBudget({ operation: "catalogue", reads: { cacheHit: 1, documents: hostedCatalogueCache.items.length } });
+      return structuredClone(hostedCatalogueCache.items);
+    }
     const snapshot = await new Firestore({ projectId: process.env.FIREBASE_PROJECT_ID || process.env.GCLOUD_PROJECT }).collection("fikaMenuPlanningCatalogue").where("kind", "==", "dish").get();
-    return snapshot.docs.map(document => (document.data().record || document.data()) as MenuItem);
+    const items = snapshot.docs.map(document => (document.data().record || document.data()) as MenuItem);
+    hostedCatalogueCache = { expiresAt: Date.now() + HOSTED_CATALOGUE_TTL_MS, items: structuredClone(items) };
+    recordMenuPlanningReadBudget({ operation: "catalogue", reads: { cacheHit: 0, documents: items.length, ttlMs: HOSTED_CATALOGUE_TTL_MS } });
+    return structuredClone(items);
   }
   assertOperationalStoreAvailable();
   try {
@@ -27,7 +38,8 @@ async function readItems(): Promise<MenuItem[]> {
   }
 }
 
-const hosted = () => ["staging", "production"].includes(process.env.FIKA_RUNTIME_MODE || "");
+const hosted = hostedCatalogue;
+export function invalidateHostedCatalogueCache() { hostedCatalogueCache = undefined; }
 const hostedDb = () => {
   const projectId = process.env.FIREBASE_PROJECT_ID || process.env.GCLOUD_PROJECT;
   if (!projectId) throw Object.assign(new Error("Hosted Menu Planning catalogue is not configured."), { status: 503 });
@@ -53,7 +65,8 @@ async function writeItems(items: MenuItem[]) {
         if (existingRecord && existingRecord.revision > item.revision && existingRecord.reviewStatus !== "unreviewed") return;
         transaction.set(refs[index], { ...(existing || hostedDocument(item)), id: item.canonicalId, kind: "dish", record: item }, { merge: true });
       });
-    });
+      });
+    invalidateHostedCatalogueCache();
     return;
   }
   assertOperationalStoreAvailable();

@@ -33,3 +33,24 @@ test("hosted rolling reads use targeted week and publication paths", () => {
   assert.doesNotMatch(planner, /router\.push/);
   assert.match(readFileSync(new URL("../lib/menu-week-cache.ts", import.meta.url), "utf8"), /fika-menu-planning/);
 });
+
+test("hosted mutation and publication paths expose bounded transaction scopes", () => {
+  const repository = readFileSync(new URL("../lib/firestore-operational-store.ts", import.meta.url), "utf8");
+  const rolling = readFileSync(new URL("../lib/rolling-menu.ts", import.meta.url), "utf8");
+  const publication = readFileSync(new URL("../lib/menu-publication.ts", import.meta.url), "utf8");
+  assert.match(repository, /scope\.weekId/);
+  assert.match(repository, /scope\.sourceWeekId/);
+  assert.match(repository, /includeEvents !== false/);
+  assert.match(rolling, /sourceWeekId: "__none__", includeEvents: false/);
+  assert.match(publication, /sourceWeekId: weekId, includeEvents: false/);
+  assert.match(publication, /updateMenuPlanningEvent\(claimed\.eventId/);
+  assert.match(publication, /claimNextMenuPlanningEvent\(claimId, at\)/);
+  assert.match(repository, /where\("delivery\.status", "in", \["pending", "failed"\]\)/);
+});
+
+test("catalogue read budget has explicit bounded cache invalidation", () => {
+  const repository = readFileSync(new URL("../lib/canonical-menu-repository.ts", import.meta.url), "utf8");
+  assert.match(repository, /HOSTED_CATALOGUE_TTL_MS/);
+  assert.match(repository, /invalidateHostedCatalogueCache/);
+  assert.match(repository, /recordMenuPlanningReadBudget/);
+});
