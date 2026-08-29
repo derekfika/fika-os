@@ -1,0 +1,13 @@
+{
+  "indexes": [
+    {
+      "collectionGroup": "fikaLogisticsChangesV1",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "serviceDate", "order": "ASCENDING" },
+        { "fieldPath": "sequence", "order": "ASCENDING" }
+      ]
+    }
+  ],
+  "fieldOverrides": []
+}

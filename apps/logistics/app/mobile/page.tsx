@@ -15,7 +15,7 @@ type DriverMessage = { id: string; title: string; body: string; meta: string };
 type UndoAction = { run: DeliveryRun; stop: DeliveryStop; label: string };
 
 export default function Mobile() {
-  const [driver, setDriver] = useState("Franco");
+  const [driverId, setDriverId] = useState("");
   const [data, setData] = useState<Data>();
   const [view, setView] = useState<View>("deliveries");
   const [selectedStop, setSelectedStop] = useState<DeliveryStop>();
@@ -27,7 +27,7 @@ export default function Mobile() {
   const [retryDispatchRun, setRetryDispatchRun] = useState<DeliveryRun>();
   const [selectedDate, setSelectedDate] = useState(operationalDate());
   const [messages, setMessages] = useState<DriverMessage[]>([
-    { id: "planner-update", title: "Planner update", body: "Your route is ready for today. Drive safe, Franco.", meta: "08:32 · Dispatch" },
+    { id: "planner-update", title: "Planner update", body: "Your route is ready for today. Drive safe.", meta: "08:32 · Dispatch" },
     { id: "site-notice", title: "Site notice", body: "Bridgepoint reception is using the side entrance today.", meta: "Yesterday · Operations" },
   ]);
   const date = selectedDate;
@@ -35,8 +35,11 @@ export default function Mobile() {
 
   const load = async () => { try { const response = await fetch(`/api/logistics?serviceDate=${date}`, { cache: "no-store" }); const body = await response.json().catch(() => null); if (!response.ok) throw new LogisticsResponseError(responseErrorDetails(body, response.status, "Logistics is temporarily unavailable.")); const fallback = body?.projection ? projectionToDashboardData(body.projection) : undefined; const useFallback = fallback && (!body.runs?.length || !body.stops?.length); setData(useFallback ? { ...fallback, requirements: body.requirements || fallback.requirements, movements: body.movements || fallback.movements, oplocs: body.oplocs || fallback.oplocs, projection: body.projection } : body); setError(""); } catch (cause) { setError(cause instanceof LogisticsResponseError ? `${cause.message}${cause.details.requestId ? ` Reference: ${cause.details.requestId}` : ""}` : cause instanceof Error ? cause.message : "Logistics is temporarily unavailable."); } };
   useEffect(() => { void load(); }, [selectedDate]);
+  useEffect(() => { if (!driverId) setDriverId(data?.runs.find((run) => run.driverId)?.driverId || ""); }, [data?.runs, driverId]);
 
-  const runs = useMemo(() => selectMobileRuns(data?.runs || [], driver, date), [data?.runs, driver, date]);
+  const driverOptions = useMemo(() => Array.from(new Map((data?.runs || []).filter((run) => run.driverId && run.driverLabel && run.driverId.toLowerCase() !== run.driverLabel.toLowerCase()).map((run) => [run.driverId, run.driverLabel])).entries()), [data?.runs]);
+  const driver = driverOptions.find(([id]) => id === driverId)?.[1] || "Unassigned driver";
+  const runs = useMemo(() => selectMobileRuns(data?.runs || [], driverId, date), [data?.runs, driverId, date]);
   const stops = useMemo(() => runs
     .flatMap((run) => run.orderedStopIds.map((id) => data?.stops.find((stop) => stop.canonicalId === id)).filter(Boolean) as DeliveryStop[])
     .sort((a, b) => mobileStopMinutes(a) - mobileStopMinutes(b) || a.sequence - b.sequence), [runs, data?.stops]);
@@ -53,7 +56,7 @@ export default function Mobile() {
 
   async function execute(action: string, stop: DeliveryStop, extra: Record<string, unknown> = {}) {
     const run = runs.find((item) => item.canonicalId === stop.runId); if (!run) return;
-    const response = await fetch("/api/logistics", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action, by: driver, runId: run.canonicalId, expectedRunVersion: run.version, stopId: stop.canonicalId, expectedStopVersion: stop.version, ...extra }) });
+    const response = await fetch("/api/logistics", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action, runId: run.canonicalId, expectedRunVersion: run.version, stopId: stop.canonicalId, expectedStopVersion: stop.version, ...extra }) });
     const body = await response.json().catch(() => null); if (!response.ok) { const details = responseErrorDetails(body, response.status, "The operation could not be completed."); setError(`${details.message}${details.requestId ? ` Reference: ${details.requestId}` : ""}`); return; }
     setError(""); setSelectedStop(undefined); setIssueStop(undefined); setIssueText(""); announceDriverChange(date); await load();
     if (action === "complete-stop" && body?.run && body?.stop) {
@@ -63,7 +66,7 @@ export default function Mobile() {
     }
   }
   async function dispatchRun(run: DeliveryRun) {
-    const response = await fetch("/api/logistics", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "dispatch-run", by: driver, runId: run.canonicalId, expectedRunVersion: run.version }) });
+    const response = await fetch("/api/logistics", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "dispatch-run", runId: run.canonicalId, expectedRunVersion: run.version }) });
     const body = await response.json().catch(() => null);
     if (!response.ok) { setRetryDispatchRun(run); const details = responseErrorDetails(body, response.status, "The vehicle could not be dispatched."); setError(`${details.message}${details.requestId ? ` Reference: ${details.requestId}` : ""}`); return; }
     setRetryDispatchRun(undefined); setError("");
@@ -72,13 +75,13 @@ export default function Mobile() {
   async function undoCompletion() {
     if (!undoAction) return;
     const current = undoAction;
-    const response = await fetch("/api/logistics", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "undo-completion", by: driver, runId: current.run.canonicalId, expectedRunVersion: current.run.version, stopId: current.stop.canonicalId, expectedStopVersion: current.stop.version }) });
+    const response = await fetch("/api/logistics", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "undo-completion", runId: current.run.canonicalId, expectedRunVersion: current.run.version, stopId: current.stop.canonicalId, expectedStopVersion: current.stop.version }) });
     const body = await response.json().catch(() => null);
     if (!response.ok) { const details = responseErrorDetails(body, response.status, "The completion could not be undone. Refresh and try again."); setError(`${details.message}${details.requestId ? ` Reference: ${details.requestId}` : ""}`); return; }
     setUndoAction(undefined); setError(""); announceDriverChange(date); await load();
   }
   async function confirmReturned(run: DeliveryRun) {
-    const response = await fetch("/api/logistics", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "confirm-returned-to-cpu", by: driver, runId: run.canonicalId, expectedRunVersion: run.version }) });
+    const response = await fetch("/api/logistics", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "confirm-returned-to-cpu", runId: run.canonicalId, expectedRunVersion: run.version }) });
     const body = await response.json().catch(() => null);
     if (!response.ok) { const details = responseErrorDetails(body, response.status, "The return could not be confirmed. Refresh and try again."); setError(`${details.message}${details.requestId ? ` Reference: ${details.requestId}` : ""}`); return; }
     setError(""); announceDriverChange(date); await load();
@@ -86,7 +89,7 @@ export default function Mobile() {
   const reportIssue = () => { if (issueStop) void execute("report-issue", issueStop, { issueCategory: issueType, issueDescription: issueText.trim() ? `${issueType}: ${issueText.trim()}` : issueType }); };
 
   return <main className="driver-app">
-    <header className="driver-hero"><div className="driver-topline"><a href="/" aria-label="Back to planner">← Planner</a><span className="driver-bell" aria-label="Notifications">♧<i /></span></div><p className="driver-eyebrow">FIKA OS · DRIVER</p><div className="driver-title-row"><h1>{view === "collections" ? "Collections" : view === "deliveries" ? "Deliveries" : view === "messages" ? "Messages" : "More"}</h1><span className="driver-live">● LIVE</span></div><div className="driver-filters"><label><span>▣</span><select aria-label="Service date" value={selectedDate} onChange={(event) => setSelectedDate(event.target.value)}>{availableDates.map((option) => <option key={option} value={option}>{formatDate(option)}</option>)}</select></label><label><span>♙</span><select aria-label="Driver" value={driver} onChange={(event) => setDriver(event.target.value)}><option>Franco</option><option>Dee</option></select></label></div></header>
+    <header className="driver-hero"><div className="driver-topline"><a href="/" aria-label="Back to planner">← Planner</a><span className="driver-bell" aria-label="Notifications">♧<i /></span></div><p className="driver-eyebrow">FIKA OS · DRIVER</p><div className="driver-title-row"><h1>{view === "collections" ? "Collections" : view === "deliveries" ? "Deliveries" : view === "messages" ? "Messages" : "More"}</h1><span className="driver-live">● LIVE</span></div><div className="driver-filters"><label><span>▣</span><select aria-label="Service date" value={selectedDate} onChange={(event) => setSelectedDate(event.target.value)}>{availableDates.map((option) => <option key={option} value={option}>{formatDate(option)}</option>)}</select></label><label><span>♙</span><select aria-label="Driver" value={driverId} onChange={(event) => setDriverId(event.target.value)}><option value="">Unassigned driver</option>{driverOptions.map(([id, label]) => <option key={id} value={id}>{label}</option>)}</select></label></div></header>
     {error && <div className="driver-alert" role="alert">{error}<button onClick={() => retryDispatchRun ? void dispatchRun(retryDispatchRun) : void load()}>{retryDispatchRun ? "Retry dispatch" : "Retry"}</button></div>}
     {!data ? <section className="driver-empty">Loading your day…</section> : view === "messages" ? <Messages messages={messages} onDismiss={(id) => setMessages((current) => current.filter((message) => message.id !== id))} onClear={() => setMessages([])} /> : view === "more" ? <More driver={driver} runs={runs} /> : <>
       {runs.filter((run) => showDispatchChecklist(run.status)).map((run) => { const runStops = stops.filter((stop) => stop.runId === run.canonicalId && !stopIsCollection(stop)); const loaded = runStops.filter((stop) => stop.loaded).length; return <section className="driver-departure" key={run.canonicalId}><div><p className="driver-section-kicker">LOAD CHECK</p><strong>{run.vehicleLabel || "Your vehicle"} · {loaded} of {runStops.length} deliveries loaded</strong><span>Tap each delivery below to confirm it is on the vehicle before leaving.</span></div><button disabled={!runStops.length || loaded !== runStops.length} onClick={() => void dispatchRun(run)}>{loaded === runStops.length ? "Dispatch vehicle" : "Load all deliveries"}</button></section>; })}

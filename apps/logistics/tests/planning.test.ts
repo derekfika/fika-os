@@ -364,6 +364,12 @@ test("mobile multiple-run priority favours dispatched, then ready, then planned"
     ["dispatched", "ready", "planned"],
   );
 });
+test("mobile driver selection prefers governed IDs while retaining legacy reads", () => {
+  const governed = { ...run("governed", "2026-08-20", "Franco"), driverId: "legend:driver-franco" };
+  const legacy = { ...run("legacy", "2026-08-20", "Dee"), driverId: "dee" };
+  assert.deepEqual(selectMobileRuns([governed, legacy], "legend:driver-franco", "2026-08-20").map((item) => item.canonicalId), ["governed"]);
+  assert.deepEqual(selectMobileRuns([governed, legacy], "Dee", "2026-08-20").map((item) => item.canonicalId), ["legacy"]);
+});
 test("server planning validation rejects stale, withdrawn and non-CPU pending requirements", () => {
   assert.throws(
     () =>

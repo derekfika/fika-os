@@ -13,6 +13,14 @@ export const logisticsAssignments = () => db.collection("fikaLogisticsAssignment
 export const logisticsChanges = () => db.collection("fikaLogisticsChangesV1");
 export const logisticsChangeCursor = () => db.collection("fikaLogisticsChangeCursorV1");
 export const logisticsDayProjections = () => db.collection("fikaLogisticsDayProjectionsV1");
+export const LOGISTICS_CHANGE_LIMIT = 200;
+const readBudgetEnabled = () => process.env.LOGISTICS_READ_BUDGET === "1";
+function reportRead(operation: string, documents: number) {
+  if (readBudgetEnabled()) console.info(`[logistics-read-budget] ${operation} documents=${documents}`);
+}
+export function reportLogisticsReadPath(operation: string) {
+  if (readBudgetEnabled()) console.info(`[logistics-read-budget] ${operation}`);
+}
 const preferenceId = (groupKey: string) => encodeURIComponent(groupKey);
 export async function listCollectionPreferenceKeys() {
   const snapshot = await collectionPreferences().where("collectionRequired", "==", true).get();
@@ -72,7 +80,23 @@ export async function listState(serviceDate?: string) {
     stops: stopDocs.map((d) => normalizeStop(d.data())),
     movements: movementSnap.docs.map((d) => d.data() as MovementRequest),
   };
+  reportRead(`state${serviceDate ? `:${serviceDate}` : ":all"}`, runSnap.size + movementSnap.size + stopDocs.length);
   return serviceDate ? scopeState(state, serviceDate) : state;
+}
+export async function getRun(runId: string) {
+  const snapshot = await runs().doc(runId).get();
+  reportRead("run:direct", snapshot.exists ? 1 : 0);
+  return snapshot.exists ? snapshot.data() as DeliveryRun : undefined;
+}
+export async function getLogisticsJob(jobId: string) {
+  const snapshot = await logisticsJobs().doc(jobId).get();
+  reportRead("job:direct", snapshot.exists ? 1 : 0);
+  return snapshot.exists ? snapshot.data() as LogisticsJob : undefined;
+}
+export async function getDeliveryLoad(loadId: string) {
+  const snapshot = await deliveryLoads().doc(loadId).get();
+  reportRead("load:direct", snapshot.exists ? 1 : 0);
+  return snapshot.exists ? snapshot.data() as DeliveryLoad : undefined;
 }
 export async function saveRun(run: DeliveryRun) {
   await runs().doc(run.canonicalId).set(run);
@@ -92,16 +116,36 @@ export async function listDeliveryLoadState(serviceDate?: string) {
     serviceDate ? deliveryLoads().where("serviceDate", "==", serviceDate).get() : deliveryLoads().get(),
     serviceDate ? logisticsAssignments().where("serviceDate", "==", serviceDate).get() : logisticsAssignments().get(),
   ]);
+  reportRead(`delivery-load-state${serviceDate ? `:${serviceDate}` : ":all"}`, jobSnap.size + loadSnap.size + assignmentSnap.size);
   return { jobs: jobSnap.docs.map((d) => d.data() as LogisticsJob), loads: loadSnap.docs.map((d) => d.data() as DeliveryLoad), assignments: assignmentSnap.docs.map((d) => d.data() as LogisticsAssignment) };
 }
 export async function saveLogisticsJob(job: LogisticsJob) { await logisticsJobs().doc(job.id).set(job); return job; }
 export async function saveDeliveryLoad(load: DeliveryLoad) { await deliveryLoads().doc(load.id).set(load); return load; }
 export async function saveLogisticsProjection(projection: LogisticsDayProjection) { await logisticsDayProjections().doc(projection.serviceDate).set(projection); return projection; }
-export async function getLogisticsProjection(serviceDate: string) { const snapshot = await logisticsDayProjections().doc(serviceDate).get(); return snapshot.exists ? snapshot.data() as LogisticsDayProjection : undefined; }
+export async function getLogisticsProjection(serviceDate: string) { const snapshot = await logisticsDayProjections().doc(serviceDate).get(); reportRead(`projection:${serviceDate}`, snapshot.exists ? 1 : 0); return snapshot.exists ? snapshot.data() as LogisticsDayProjection : undefined; }
+export async function listPlanningAttention(serviceDates: string[], expectedSourceKeys?: Map<string, Set<string>>) {
+  const projections = await Promise.all(serviceDates.map((serviceDate) => getLogisticsProjection(serviceDate)));
+  const attention = projections.flatMap((projection, index) => {
+    const projectedKeys = new Set([...(projection?.planningQueue || []).map((job) => `${job.sourceType}:${job.sourceId}`), ...(projection?.deliveryLoads || []).flatMap((load) => load.jobs.map((job) => `${job.sourceType}:${job.sourceId}`))]);
+    const missing = [...(expectedSourceKeys?.get(serviceDates[index]) || [])].filter((key) => !projectedKeys.has(key)).length;
+    const count = Math.max(projection?.summary.queuedJobs || 0, missing);
+    return count > 0 ? [{ serviceDate: serviceDates[index], count }] : [];
+  });
+  reportRead(`planning-attention:${serviceDates.length}`, attention.length);
+  return attention;
+}
+export async function getLogisticsSyncHead() {
+  const snapshot = await logisticsChangeCursor().doc("global").get();
+  reportRead("sync-head", snapshot.exists ? 1 : 0);
+  return { sequence: Number(snapshot.data()?.sequence || 0), updatedAt: snapshot.data()?.updatedAt as string | undefined };
+}
 export async function listLogisticsChanges(after = 0, serviceDate?: string) {
-  const query = serviceDate ? logisticsChanges().where("serviceDate", "==", serviceDate).where("sequence", ">", after).orderBy("sequence", "asc") : logisticsChanges().where("sequence", ">", after).orderBy("sequence", "asc");
+  const query = serviceDate ? logisticsChanges().where("serviceDate", "==", serviceDate).where("sequence", ">", after).orderBy("sequence", "asc").limit(LOGISTICS_CHANGE_LIMIT + 1) : logisticsChanges().where("sequence", ">", after).orderBy("sequence", "asc").limit(LOGISTICS_CHANGE_LIMIT + 1);
   const snapshot = await query.get();
-  return snapshot.docs.map((doc) => doc.data() as LogisticsChangeEvent);
+  reportRead(`changes-since:${after}${serviceDate ? `:${serviceDate}` : ""}`, snapshot.size);
+  const documents = snapshot.docs.slice(0, LOGISTICS_CHANGE_LIMIT);
+  const changes = documents.map((doc) => doc.data() as LogisticsChangeEvent);
+  return { changes, hasMore: snapshot.size > LOGISTICS_CHANGE_LIMIT, nextCursor: changes.at(-1)?.sequence ?? after };
 }
 export async function repairLegacyAssignmentServiceDates() {
   const [assignmentSnap, jobSnap, loadSnap] = await Promise.all([logisticsAssignments().get(), logisticsJobs().get(), deliveryLoads().get()]);
@@ -133,7 +177,7 @@ export async function appendLogisticsChange(input: Omit<LogisticsChangeEvent, "s
     const cursorSnap = await transaction.get(cursorRef);
     const sequence = Number(cursorSnap.data()?.sequence || 0) + 1;
     const event = { ...input, sequence };
-    transaction.set(cursorRef, { sequence });
+    transaction.set(cursorRef, { sequence, updatedAt: input.changedAt });
     transaction.create(logisticsChanges().doc(String(sequence).padStart(20, "0")), event);
     return event;
   });

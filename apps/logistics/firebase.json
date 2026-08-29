@@ -1,4 +1,5 @@
 {
+  "firestore": { "indexes": "firestore.indexes.json" },
   "apphosting": {
     "backendId": "fika-logistics-staging",
     "rootDir": ".",

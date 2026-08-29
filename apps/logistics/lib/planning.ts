@@ -68,7 +68,7 @@ export function chooseTargetRun(runs: DeliveryRun[], selectedRunId?: string) {
 }
 export function selectMobileRuns(
   runs: DeliveryRun[],
-  driver: string,
+  driverId: string,
   serviceDate: string,
 ) {
   const priority: Record<DeliveryRun["status"], number> = {
@@ -79,7 +79,10 @@ export function selectMobileRuns(
     completed: 4,
   };
   const dated = runs.filter((run) => run.serviceDate === serviceDate);
-  const assigned = dated.filter((run) => run.driverLabel === driver);
+  const assigned = dated.filter((run) =>
+    run.driverId === driverId ||
+    (run.driverLabel === driverId && (!run.driverId || !run.driverId.includes(":"))),
+  );
   // Projection-backed days can contain an unassigned route while dispatch is
   // being set up. Keep that route visible in the driver view instead of
   // presenting an empty day; once a driver is assigned the exact match wins.
@@ -93,11 +96,11 @@ export function selectMobileRuns(
 }
 export function selectMobileRun(
   runs: DeliveryRun[],
-  driver: string,
+  driverId: string,
   serviceDate: string,
   requestedRunId?: string,
 ) {
-  const matching = selectMobileRuns(runs, driver, serviceDate);
+  const matching = selectMobileRuns(runs, driverId, serviceDate);
   return requestedRunId
     ? matching.find((run) => run.canonicalId === requestedRunId)
     : matching.length === 1

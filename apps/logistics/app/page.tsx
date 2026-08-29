@@ -21,6 +21,8 @@ import type { LogisticsDayProjection } from "../lib/types";
 import { projectionToDashboardData } from "../lib/projection-dashboard-adapter";
 import { operationalDate } from "../lib/date";
 import { clientErrorDetails, requireSuccessfulResponse } from "../lib/client-errors";
+import { drainIncrementalPages } from "../lib/incremental-sync";
+import { readCachedProjection, writeCachedProjection } from "../lib/logistics-cache";
 import {
   addOperationalDays,
   formatOperationalDate,
@@ -96,6 +98,7 @@ export default function Planner() {
   const [busy, setBusy] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<string>();
+  const [planningAttention, setPlanningAttention] = useState<Array<{ serviceDate: string; count: number }>>([]);
   const [showMovement, setShowMovement] = useState(false);
   const [draft, setDraft] = useState(blank);
   const [expandedGroup, setExpandedGroup] = useState<string>();
@@ -108,7 +111,7 @@ export default function Planner() {
   >();
   const [assigning, setAssigning] = useState<string>();
   const [targetRun, setTargetRun] = useState("");
-  const [newRunDriver, setNewRunDriver] = useState("Franco");
+  const [newRunDriverId, setNewRunDriverId] = useState("");
   const [newRunReturnToCpu, setNewRunReturnToCpu] = useState(true);
   const [showRunCreate, setShowRunCreate] = useState(false);
   const [queueFilter, setQueueFilter] = useState<"all" | "unassigned" | "needs_time" | "attention">("all");
@@ -146,11 +149,20 @@ export default function Planner() {
     if (requestsBlocked.current) return;
     if (silent) setRefreshing(true);
     let cached: LogisticsDayProjection | undefined;
+    let cacheScope = "";
     try {
-      const cachedValue = window.localStorage.getItem(`fika-logistics-day:${date}`);
-      if (cachedValue) { cached = JSON.parse(cachedValue) as LogisticsDayProjection; setData({ ...projectionToDashboardData(cached), projection: cached }); }
-    } catch { /* Cache is an optimisation only. */ }
-    try {
+      const headResponse = await fetch(`/api/logistics?syncHead=1&serviceDate=${date}`, { cache: "no-store" });
+      const head = await requireSuccessfulResponse(headResponse, "Logistics sync state could not be checked.");
+      cacheScope = headResponse.headers.get("x-logistics-cache-scope") || "";
+      if (cacheScope) {
+        cached = await readCachedProjection(cacheScope, date);
+        if (cached) { setData({ ...projectionToDashboardData(cached), projection: cached }); }
+      }
+      if (cached && Number(head.sequence) === cached.lastChangeSequence) {
+        setLastUpdated(new Date().toISOString());
+        setError("");
+        return;
+      }
       const response = await fetch(`/api/logistics?projection=1&serviceDate=${date}`, {
         cache: "no-store",
       });
@@ -158,15 +170,17 @@ export default function Planner() {
       let projection = body.projection as LogisticsDayProjection | undefined;
       if (!projection) throw new Error("Logistics projection is unavailable.");
       setData({ ...projectionToDashboardData(projection), projection });
-      try { window.localStorage.setItem(`fika-logistics-day:${date}`, JSON.stringify(projection)); } catch { /* Cache failure must not affect operations. */ }
+      if (cacheScope) await writeCachedProjection(cacheScope, projection);
       setLastUpdated(new Date().toISOString());
       setError("");
-      const changes = await fetch(`/api/logistics?changesSince=${cached?.lastChangeSequence ?? projection.lastChangeSequence}&serviceDate=${date}`, { cache: "no-store" });
-      const changed = await requireSuccessfulResponse(changes, "Logistics changes could not be loaded.");
-      if (changed.projection && (changed.projection as LogisticsDayProjection).lastChangeSequence > projection.lastChangeSequence) {
-        const next = changed.projection as LogisticsDayProjection;
-        setData({ ...projectionToDashboardData(next), projection: next });
-        try { window.localStorage.setItem(`fika-logistics-day:${date}`, JSON.stringify(next)); } catch { /* Cache failure must not affect operations. */ }
+      const drained = await drainIncrementalPages(cached?.lastChangeSequence ?? projection.lastChangeSequence, async (cursor) => {
+        const changes = await fetch(`/api/logistics?changesSince=${cursor}&serviceDate=${date}`, { cache: "no-store" });
+        const changed = await requireSuccessfulResponse(changes, "Logistics changes could not be loaded.");
+        return { hasMore: Boolean(changed.hasMore), nextCursor: Number(changed.nextCursor ?? cursor), projection: changed.projection as LogisticsDayProjection | undefined };
+      });
+      if (drained.latestProjection && drained.latestProjection.lastChangeSequence >= drained.cursor && drained.latestProjection !== projection) {
+        setData({ ...projectionToDashboardData(drained.latestProjection), projection: drained.latestProjection });
+        if (cacheScope) await writeCachedProjection(cacheScope, drained.latestProjection);
       }
     } catch (cause) {
       recordError(cause, cached ? "Sync failed; showing the last valid Logistics projection." : "Logistics projection could not be loaded.");
@@ -188,7 +202,7 @@ export default function Planner() {
   const ensureVehicleDayRuns = async (serviceDate: string) => {
     if (requestsBlocked.current) return;
     try {
-      const response = await fetch("/api/logistics", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "ensure-vehicle-day-runs", by: "Franco", serviceDate }) });
+      const response = await fetch("/api/logistics", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "ensure-vehicle-day-runs", serviceDate }) });
       await requireSuccessfulResponse(response, "Vehicle-day runs could not be prepared.");
     } catch (cause) { recordError(cause, "Vehicle-day runs could not be prepared."); }
   };
@@ -207,15 +221,33 @@ export default function Planner() {
     const liveChannel = typeof BroadcastChannel === "undefined" ? undefined : new BroadcastChannel("fika-logistics-live");
     const onLiveChange = (event: MessageEvent<{ serviceDate?: string }>) => { if (!event.data?.serviceDate || event.data.serviceDate === date) void load(true); };
     liveChannel?.addEventListener("message", onLiveChange);
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "visible" && !requestsBlocked.current) void load(true);
+    };
+    document.addEventListener("visibilitychange", onVisibilityChange);
     const timer = window.setInterval(() => {
       if (document.visibilityState === "visible" && !requestsBlocked.current) void load(true);
-    }, 30_000);
-    return () => { window.clearInterval(timer); liveChannel?.removeEventListener("message", onLiveChange); liveChannel?.close(); };
+    }, 15 * 60_000);
+    return () => { window.clearInterval(timer); document.removeEventListener("visibilitychange", onVisibilityChange); liveChannel?.removeEventListener("message", onLiveChange); liveChannel?.close(); };
   }, [date, viewPreferencesReady]);
   useEffect(() => {
     if (!viewPreferencesReady) return;
     void loadWeek();
   }, [weekCommencing, viewPreferencesReady]);
+  const checkPlanningAttention = async () => {
+    if (requestsBlocked.current || document.visibilityState !== "visible") return;
+    try {
+      const response = await fetch(`/api/logistics?planningAttention=1&serviceDate=${operationalDate()}&days=14`, { cache: "no-store" });
+      const body = await requireSuccessfulResponse(response, "Planning attention could not be checked.");
+      setPlanningAttention((body.attention || []) as Array<{ serviceDate: string; count: number }>);
+    } catch (cause) { recordError(cause, "Planning attention could not be checked."); }
+  };
+  useEffect(() => {
+    if (!viewPreferencesReady) return;
+    void checkPlanningAttention();
+    const timer = window.setInterval(() => { void checkPlanningAttention(); }, 5 * 60_000);
+    return () => window.clearInterval(timer);
+  }, [viewPreferencesReady]);
 
   async function act(payload: object): Promise<boolean> {
     setBusy(true);
@@ -248,13 +280,12 @@ export default function Planner() {
     setShowRunCreate(false);
     void act({
       action: "create-run",
-      by: "Franco",
       run: {
         canonicalId: `run:${date}:${Date.now()}`,
         serviceDate: date,
         status: "draft",
-        driverId: newRunDriver.toLowerCase(),
-        driverLabel: newRunDriver,
+        driverId: newRunDriverId || undefined,
+        driverLabel: data?.runs.find((item) => item.driverId === newRunDriverId)?.driverLabel,
         returnToCpuRequired: newRunReturnToCpu,
         orderedStopIds: [],
         version: 1,
@@ -270,7 +301,7 @@ export default function Planner() {
       if (!jobId) return setError("This projection queue item has no LogisticsJob identity.");
       const scheduledTime = group.deliveryWindow?.startTime || group.requiredTimes[0];
       if (!scheduledTime) return setError("Set a delivery time before assigning this job.");
-      void act({ action: "assign-job-to-load", jobId, scheduledTime, by: "Franco" });
+      void act({ action: "assign-job-to-load", jobId, scheduledTime });
       return;
     }
     const run =
@@ -288,7 +319,6 @@ export default function Planner() {
       );
     void act({
       action: "assign-group",
-      by: "Franco",
       runId: run.runId,
       expectedRunVersion: run.version,
       requirementIds: eligible.map((ref) => ref.requirementId),
@@ -306,7 +336,6 @@ export default function Planner() {
       return setError("Choose a target run before assigning movement work.");
     void act({
       action: "assign",
-      by: "Franco",
       runId: run.runId,
       expectedRunVersion: run.version,
       movementId: movement.movementId,
@@ -354,7 +383,6 @@ export default function Planner() {
       createdAt: now,
       updatedAt: now,
       audit: [
-        { action: "movement-created", at: now, by: "Franco", version: 1 },
       ],
     };
     void act({ action: "save-movement", movement }).then(() => {
@@ -378,7 +406,7 @@ export default function Planner() {
     showMovement={showMovement}
     draft={draft}
     showRunCreate={showRunCreate}
-    newRunDriver={newRunDriver}
+    newRunDriverId={newRunDriverId}
     newRunReturnToCpu={newRunReturnToCpu}
     queueFilter={queueFilter}
     queueTypeFilter={queueTypeFilter}
@@ -393,7 +421,7 @@ export default function Planner() {
     setShowMovement={setShowMovement}
     setDraft={setDraft}
     setShowRunCreate={setShowRunCreate}
-    setNewRunDriver={setNewRunDriver}
+    setNewRunDriverId={setNewRunDriverId}
     setNewRunReturnToCpu={setNewRunReturnToCpu}
     setQueueFilter={setQueueFilter}
     setQueueTypeFilter={setQueueTypeFilter}
@@ -447,6 +475,11 @@ export default function Planner() {
           {error}
         </div>
       )}
+      {planningAttention.length > 0 && (
+        <div className="degraded-note" role="status">
+          New or unplanned work needs planning: {planningAttention.map((item) => `${item.serviceDate} (${item.count})`).join(" · ")}
+        </div>
+      )}
       {showMovement && (
         <MovementForm
           draft={draft}
@@ -462,7 +495,7 @@ export default function Planner() {
           <button className="secondary" onClick={() => setShowMovement(true)} disabled={!data?.planner.upstreamHealth.oplocs.available}>＋ New movement</button>
           <button className="secondary" onClick={() => void load(true)} disabled={refreshing} aria-busy={refreshing}>{refreshing ? "Refreshing…" : "↻ Refresh"}</button>
           <a href={runs.length === 1 ? `/mobile?run=${encodeURIComponent(runs[0].runId)}` : "/mobile"}>Driver view →</a>
-          {showRunCreate && <RunCreatePopover driver={newRunDriver} setDriver={setNewRunDriver} returnToCpuRequired={newRunReturnToCpu} setReturnToCpuRequired={setNewRunReturnToCpu} onCreate={createRun} onClose={() => setShowRunCreate(false)} />}
+          {showRunCreate && <RunCreatePopover driverId={newRunDriverId} setDriverId={setNewRunDriverId} driverOptions={data?.runs || []} returnToCpuRequired={newRunReturnToCpu} setReturnToCpuRequired={setNewRunReturnToCpu} onCreate={createRun} onClose={() => setShowRunCreate(false)} />}
         </div>
       </SelectedDayHeading>
       <div className="control-tower" aria-label="Dispatch control tower">
@@ -571,7 +604,7 @@ type RealPlannerProps = {
   showMovement: boolean;
   draft: Draft;
   showRunCreate: boolean;
-  newRunDriver: string;
+  newRunDriverId: string;
   newRunReturnToCpu: boolean;
   queueFilter: "all" | "unassigned" | "needs_time" | "attention";
   queueTypeFilter: "all" | "delivery" | "collection" | "transfer";
@@ -586,7 +619,7 @@ type RealPlannerProps = {
   setShowMovement: (value: boolean) => void;
   setDraft: (value: Draft) => void;
   setShowRunCreate: (value: boolean) => void;
-  setNewRunDriver: (value: string) => void;
+  setNewRunDriverId: (value: string) => void;
   setNewRunReturnToCpu: (value: boolean) => void;
   setQueueFilter: (value: "all" | "unassigned" | "needs_time" | "attention") => void;
   setQueueTypeFilter: (value: "all" | "delivery" | "collection" | "transfer") => void;
@@ -643,30 +676,30 @@ function RealPlanner(props: RealPlannerProps) {
       const loadIds = projectionLoadIdsForStop(action.stopId);
       const scheduledTime = action.plannedWindow?.startTime || action.plannedArrivalTime;
       if (loadIds.length && scheduledTime && action.runId) {
-        for (const loadId of loadIds) await props.act({ action: "reschedule-delivery-load", loadId, scheduledTime, ...(action.plannedWindow?.endTime ? { scheduledEnd: action.plannedWindow.endTime } : {}), targetRunId: action.runId, by: "Franco" });
+        for (const loadId of loadIds) await props.act({ action: "reschedule-delivery-load", loadId, scheduledTime, ...(action.plannedWindow?.endTime ? { scheduledEnd: action.plannedWindow.endTime } : {}), targetRunId: action.runId });
       }
       return;
     }
     if (data?.projection && action.action === "unassign-requirement" && action.requirementId) {
-      await props.act({ action: "remove-job-from-load", jobId: action.requirementId, by: "Franco" });
+      await props.act({ action: "remove-job-from-load", jobId: action.requirementId });
       return;
     }
     if (data?.projection && action.action === "mark-stop-loaded" && action.stopId) {
       const loadIds = projectionLoadIdsForStop(action.stopId);
       if (loadIds.length) {
-        for (const loadId of loadIds) await props.act({ action: "mark-delivery-load-loaded", loadId, loaded: action.loaded, by: "Franco" });
+        for (const loadId of loadIds) await props.act({ action: "mark-delivery-load-loaded", loadId, loaded: action.loaded });
         return;
       }
     }
     if (data?.projection && action.action === "return-stop-to-planning" && action.stopId) {
       const rawStop = data.stops.find((item) => item.canonicalId === action.stopId);
-      for (const ref of rawStop?.requirementRefs || []) await props.act({ action: "remove-job-from-load", jobId: ref.requirementId, by: "Franco" });
+      for (const ref of rawStop?.requirementRefs || []) await props.act({ action: "remove-job-from-load", jobId: ref.requirementId });
       props.setInspector(undefined);
       return;
     }
     if (data?.projection && action.action === "defer-stop" && action.stopId) {
       const rawStop = data.stops.find((item) => item.canonicalId === action.stopId);
-      for (const ref of rawStop?.requirementRefs || []) await props.act({ action: "remove-job-from-load", jobId: ref.requirementId, by: "Franco" });
+      for (const ref of rawStop?.requirementRefs || []) await props.act({ action: "remove-job-from-load", jobId: ref.requirementId });
       props.setInspector(undefined);
       return;
     }
@@ -711,7 +744,7 @@ function RealPlanner(props: RealPlannerProps) {
       const collection = stopId.startsWith("projection-stop:collection:");
       const rawStop = data.stops.find((item) => item.canonicalId === stopId);
       const safeTime = nextAvailableTime(targetRunId, collection ? "collection" : "delivery", time, rawStop?.locationOplocId || "", stopId);
-      void (async () => { for (const loadId of loadIds) await props.act({ action: "reschedule-delivery-load", loadId: collection ? projectionLoadIdForStop(stopId) : loadId, scheduledTime: safeTime, ...(end ? { scheduledEnd: addClockMinutes(safeTime, Math.max(15, clockMinutes(end) - clockMinutes(time))) } : {}), targetRunId, ...(collection ? { lane: "collection" } : {}), by: "Franco" }); })();
+      void (async () => { for (const loadId of loadIds) await props.act({ action: "reschedule-delivery-load", loadId: collection ? projectionLoadIdForStop(stopId) : loadId, scheduledTime: safeTime, ...(end ? { scheduledEnd: addClockMinutes(safeTime, Math.max(15, clockMinutes(end) - clockMinutes(time))) } : {}), targetRunId, ...(collection ? { lane: "collection" } : {}) }); })();
       return;
     }
     const sourceRun = runs.find((run) => run.runId === sourceRunId);
@@ -720,21 +753,21 @@ function RealPlanner(props: RealPlannerProps) {
     if (!sourceRun || !targetRun || !rawStop) return;
     const safeTime = nextAvailableTime(targetRunId, lane === "collection" || rawStop.movementType === "collection" ? "collection" : "delivery", time, rawStop.locationOplocId, stopId);
     const timing = end ? { plannedWindow: { startTime: safeTime, endTime: addClockMinutes(safeTime, Math.max(15, clockMinutes(end) - clockMinutes(time))) } } : { plannedArrivalTime: safeTime };
-    if (sourceRunId === targetRunId) void props.act({ action: "schedule-stop", by: "Franco", runId: sourceRunId, stopId, ...timing, expectedRunVersion: sourceRun.version, expectedStopVersion: rawStop.version });
-    else void props.act({ action: "move-stop", by: "Franco", runId: sourceRunId, targetRunId, stopId, ...timing, expectedRunVersion: sourceRun.version, expectedTargetRunVersion: targetRun.version, expectedStopVersion: rawStop.version });
+    if (sourceRunId === targetRunId) void props.act({ action: "schedule-stop", runId: sourceRunId, stopId, ...timing, expectedRunVersion: sourceRun.version, expectedStopVersion: rawStop.version });
+    else void props.act({ action: "move-stop", runId: sourceRunId, targetRunId, stopId, ...timing, expectedRunVersion: sourceRun.version, expectedTargetRunVersion: targetRun.version, expectedStopVersion: rawStop.version });
   };
   const assignQueueItem = (kind: "group" | "movement", id: string, targetRunId: string, time?: string, lane?: "delivery" | "collection", collectionRequired?: boolean) => {
     if (data?.projection && kind === "group") {
       if (lane === "collection") {
         const loadId = id.startsWith("projection-collection:") ? id.slice("projection-collection:".length) : "";
-        if (loadId && time) void props.act({ action: "reschedule-delivery-load", loadId, scheduledTime: time, targetRunId, lane: "collection", by: "Franco" });
+        if (loadId && time) void props.act({ action: "reschedule-delivery-load", loadId, scheduledTime: time, targetRunId, lane: "collection" });
         return;
       }
       const group = groups.find((item) => item.groupKey === id);
       const jobId = group?.requirementRefs[0]?.requirementId;
       if (!jobId || !time) return;
       const safeTime = nextAvailableTime(targetRunId, "delivery", time, group?.destinationOplocId || "");
-      void props.act({ action: "assign-job-to-load", jobId, scheduledTime: safeTime, targetRunId, lane, ...(group?.collectionRequired || collectionRequired ? { collectionRequired: true } : {}), by: "Franco" });
+      void props.act({ action: "assign-job-to-load", jobId, scheduledTime: safeTime, targetRunId, lane, ...(group?.collectionRequired || collectionRequired ? { collectionRequired: true } : {}) });
       return;
     }
     const run = runs.find((item) => item.runId === targetRunId);
@@ -748,8 +781,8 @@ function RealPlanner(props: RealPlannerProps) {
         const rawStop = data?.stops.find((item) => item.canonicalId === collection.stop.stopId);
         if (!rawStop) return;
         const timing = { plannedArrivalTime: time };
-        if (collection.run.runId === targetRunId) void props.act({ action: "schedule-stop", by: "Franco", runId: targetRunId, stopId: collection.stop.stopId, ...timing, expectedRunVersion: collection.run.version, expectedStopVersion: rawStop.version });
-        else void props.act({ action: "move-stop", by: "Franco", runId: collection.run.runId, targetRunId, stopId: collection.stop.stopId, ...timing, expectedRunVersion: collection.run.version, expectedTargetRunVersion: run.version, expectedStopVersion: rawStop.version });
+        if (collection.run.runId === targetRunId) void props.act({ action: "schedule-stop", runId: targetRunId, stopId: collection.stop.stopId, ...timing, expectedRunVersion: collection.run.version, expectedStopVersion: rawStop.version });
+        else void props.act({ action: "move-stop", runId: collection.run.runId, targetRunId, stopId: collection.stop.stopId, ...timing, expectedRunVersion: collection.run.version, expectedTargetRunVersion: run.version, expectedStopVersion: rawStop.version });
         return;
       }
       const group = groups.find((item) => item.groupKey === id);
@@ -757,13 +790,13 @@ function RealPlanner(props: RealPlannerProps) {
       const eligible = group.requirementRefs.filter((ref) => !ref.runId && (ref.status === "ready_for_planning" || ref.status === "amended" || (ref.status === "pending" && ref.sourceDomain === "cpu-production")));
       if (!eligible.length) return;
       const safeTime = time ? nextAvailableTime(targetRunId, "delivery", time, group.destinationOplocId) : time;
-      void props.act({ action: "assign-group", by: "Franco", runId: targetRunId, expectedRunVersion: run.version, requirementIds: eligible.map((ref) => ref.requirementId), expectedSourceVersions: Object.fromEntries(eligible.map((ref) => [ref.requirementId, ref.sourceVersion])), ...(group.collectionRequired || collectionRequired ? { collectionRequired: true } : {}), ...(safeTime ? { plannedArrivalTime: safeTime } : {}) });
+      void props.act({ action: "assign-group", runId: targetRunId, expectedRunVersion: run.version, requirementIds: eligible.map((ref) => ref.requirementId), expectedSourceVersions: Object.fromEntries(eligible.map((ref) => [ref.requirementId, ref.sourceVersion])), ...(group.collectionRequired || collectionRequired ? { collectionRequired: true } : {}), ...(safeTime ? { plannedArrivalTime: safeTime } : {}) });
     } else {
       const movement = movements.find((item) => item.movementId === id);
       if (!movement || movement.assignedStops.length) return;
       if (lane && movement.type !== lane && !(movement.type === "transfer" && lane === "collection")) return;
       const safeTime = time ? nextAvailableTime(targetRunId, lane === "collection" ? "collection" : "delivery", time, movement.to?.id || movement.from?.id || "") : time;
-      void props.act({ action: "assign", by: "Franco", runId: targetRunId, expectedRunVersion: run.version, movementId: id, ...(safeTime ? { plannedArrivalTime: safeTime } : {}) });
+      void props.act({ action: "assign", runId: targetRunId, expectedRunVersion: run.version, movementId: id, ...(safeTime ? { plannedArrivalTime: safeTime } : {}) });
     }
   };
   const returnStopToPlanning = async (runId: string, stopId: string) => {
@@ -773,7 +806,7 @@ function RealPlanner(props: RealPlannerProps) {
       const run = current.runs.find((item) => item.canonicalId === runId);
       const stop = current.stops.find((item) => item.canonicalId === stopId);
       if (!run || !stop) return;
-      const succeeded = await props.act({ action: "return-stop-to-planning", by: "Franco", runId, stopId, expectedRunVersion: run.version, expectedStopVersion: stop.version });
+      const succeeded = await props.act({ action: "return-stop-to-planning", runId, stopId, expectedRunVersion: run.version, expectedStopVersion: stop.version });
       if (succeeded) props.setInspector(undefined);
     } catch {
       // The normal planner refresh/error path remains responsible for surfacing read failures.
@@ -788,7 +821,7 @@ function RealPlanner(props: RealPlannerProps) {
     if (data?.projection && stopId.startsWith("projection-stop:")) {
       const rawStop = data.stops.find((item) => item.canonicalId === stopId);
       if (!rawStop) return;
-      void Promise.all(rawStop.requirementRefs.map((ref) => props.act({ action: "remove-job-from-load", jobId: ref.requirementId, by: "Franco" })));
+      void Promise.all(rawStop.requirementRefs.map((ref) => props.act({ action: "remove-job-from-load", jobId: ref.requirementId })));
       return;
     }
     void returnStopToPlanning(runId, stopId);
@@ -824,7 +857,7 @@ function RealPlanner(props: RealPlannerProps) {
       {props.error && <div className="alert" role="alert"><span>{props.error}{props.errorReference && <> <small>Reference: {props.errorReference}</small></>}</span>{props.authRequired && <button className="secondary" onClick={props.onSignInAgain}>Sign in again</button>}</div>}
       {props.showMovement && <MovementForm draft={props.draft} setDraft={props.setDraft} oplocs={data?.oplocs || []} onClose={() => props.setShowMovement(false)} onSave={props.createMovement} busy={props.busy} />}
       <section className="mock-selected-day"><div><span>▣</span><strong>{selectedDateLabel}</strong><small>{summary?.loads || 0} loads · {runs.length} vans &nbsp;·&nbsp; {summary?.scheduledStops || 0} scheduled · {queueGroups.length + queueMovements.length} in queue · {summary?.needsTime || 0} needs time · {summary?.attention || 0} attention</small></div><div className="mock-actions"><button onClick={() => props.setShowMovement(true)} disabled={!data?.planner.upstreamHealth.oplocs.available}>＋ New movement</button><button onClick={() => void props.load(true)} disabled={props.refreshing} aria-busy={props.refreshing}>{props.refreshing ? "Refreshing…" : "↻ Refresh"}</button><a href={runs.length === 1 ? `/mobile?run=${encodeURIComponent(runs[0].runId)}` : "/mobile"}>▦ Driver view</a></div></section>
-      {props.showRunCreate && <RunCreatePopover driver={props.newRunDriver} setDriver={props.setNewRunDriver} returnToCpuRequired={props.newRunReturnToCpu} setReturnToCpuRequired={props.setNewRunReturnToCpu} onCreate={props.createRun} onClose={() => props.setShowRunCreate(false)} />}
+      {props.showRunCreate && <RunCreatePopover driverId={props.newRunDriverId} setDriverId={props.setNewRunDriverId} driverOptions={props.data?.runs || []} returnToCpuRequired={props.newRunReturnToCpu} setReturnToCpuRequired={props.setNewRunReturnToCpu} onCreate={props.createRun} onClose={() => props.setShowRunCreate(false)} />}
       <section className="mock-workspace">
         <aside className="mock-queue" aria-label="Planning queue" onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = "move"; }} onDrop={handlePlanningQueueDrop}>
           <header><div><span>QUEUE</span><h2>Planning queue <em>({queueGroups.length + queueMovements.length})</em></h2><p className="queue-subtitle">Work still needing assignment, timing or review.</p></div><button className="mock-filter-icon">⌯</button></header>
@@ -874,7 +907,7 @@ function RealQueueGroup({ group, runs, queueState, assigning, targetRun, onInspe
   const collectionPending = groupCollectionPending(group, runs);
   const [collectionRequired, setCollectionRequired] = useState(Boolean(group.collectionRequired));
   useEffect(() => setCollectionRequired(Boolean(group.collectionRequired)), [group.collectionRequired]);
-  const saveCollectionRequired = (value: boolean) => { setCollectionRequired(value); void fetch("/api/logistics", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "set-collection-required", by: "Franco", groupKey: group.groupKey, collectionRequired: value }) }).then(() => window.dispatchEvent(new CustomEvent("logistics-collection-preference-updated"))); };
+  const saveCollectionRequired = (value: boolean) => { setCollectionRequired(value); void fetch("/api/logistics", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "set-collection-required", groupKey: group.groupKey, collectionRequired: value }) }).then(() => window.dispatchEvent(new CustomEvent("logistics-collection-preference-updated"))); };
   const onInspect = (event?: MouseEvent) => { if (!event || event.detail === 2) inspect(); };
   const collectionToggle = <label className="collection-toggle" onPointerDown={(event) => event.stopPropagation()}><input type="checkbox" checked={collectionRequired} onChange={(event) => { event.stopPropagation(); saveCollectionRequired(event.target.checked); }} /> Collection required</label>;
   const startDrag = (event: DragEvent) => { onDragStart(event); event.dataTransfer.setData("application/x-logistics-collection-required", String(collectionRequired)); };
@@ -894,7 +927,6 @@ function LegacyStableTimeline({ runs, serviceDate, onStop, onRun, onSchedule, on
   const [live, setLive] = useState<{ runId: string; stopId: string; start: string; end?: string }>();
   const minutes = (value: string) => { const [hour, minute] = value.split(":").map(Number); return hour * 60 + minute; };
   const endFor = (start: string, value: string) => Math.max(minutes(start) + 15, Math.min(17 * 60, minutes(value)));
-  const changeDriver = (run: PlannerDay["runs"][number], driver: string) => { void fetch("/api/logistics", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "set-run-driver", by: "Franco", runId: run.runId, driverLabel: driver, expectedRunVersion: run.version }) }).then(() => window.location.reload()); };
   if (!runs.length) return <div className="mock-timeline"><Empty title="No dispatch runs" body="Create a run to start assigning work to a driver." /></div>;
   return <div className="mock-timeline" style={{ "--timeline-scale": zoom } as CSSProperties}>
     <div className="timeline-tools" aria-label="Timeline zoom"><span>Timeline</span><button aria-label="Zoom out" onClick={() => setZoom((value) => Math.max(1, value - 0.25))}>−</button><span>{Math.round(zoom * 100)}%</span><button aria-label="Zoom in" onClick={() => setZoom((value) => Math.min(2.5, value + 0.25))}>＋</button></div>
@@ -1472,7 +1504,7 @@ function Inspector({
     <header><div><p className="eyebrow">Inspector</p><h2>{group?.destinationLabel || movement?.type || stopTitle || run?.driver || "Details"}</h2></div><button className="close" onClick={onClose} aria-label="Close inspector">×</button></header>
     {group && <>
       <InspectorMeta label="Timing" value={formatWindow(group.deliveryWindow) || group.requiredTimes[0] || "Unscheduled"} />
-      <label className="collection-toggle inspector-collection-toggle"><input type="checkbox" checked={Boolean(group.collectionRequired)} onChange={(event) => onAction({ action: "set-collection-required", by: "Franco", groupKey: group.groupKey, collectionRequired: event.target.checked })} /> Collection required</label>
+      <label className="collection-toggle inspector-collection-toggle"><input type="checkbox" checked={Boolean(group.collectionRequired)} onChange={(event) => onAction({ action: "set-collection-required", groupKey: group.groupKey, collectionRequired: event.target.checked })} /> Collection required</label>
       <InspectorMeta label="Source" value={group.sourceLabels.join(" · ")} />
       <h3>Load</h3><ul className="inspector-list">{group.combinedLines.map((line) => <li key={line.lineKey}>{line.quantity} {line.unit} · {line.displayName}</li>)}</ul>
       {group.productionContext && <p className="context-line"><strong>{group.productionContext.clientName}</strong>{group.productionContext.guestCount !== undefined && ` · ${group.productionContext.guestCount} guests`}</p>}
@@ -1492,15 +1524,15 @@ function Inspector({
       <InspectorMeta label="Status" value={liveStatusLabel(run.operationalStatus)} />
       <InspectorMeta label="Vehicle" value={run.vehicle || "No vehicle label"} />
       <p>{run.completedStops} of {run.stopCount} stops complete · {run.remainingCollections} collection{run.remainingCollections === 1 ? "" : "s"} remaining</p>
-      <label className="collection-toggle inspector-collection-toggle"><input type="checkbox" checked={run.returnToCpuRequired} disabled={run.status === "dispatched" || run.status === "completed"} onChange={(event) => onAction({ action: "set-run-return-required", by: "Franco", runId: run.runId, returnToCpuRequired: event.target.checked, expectedRunVersion: run.version })} /> Return to CPU required</label>
+      <label className="collection-toggle inspector-collection-toggle"><input type="checkbox" checked={run.returnToCpuRequired} disabled={run.status === "dispatched" || run.status === "completed"} onChange={(event) => onAction({ action: "set-run-return-required", runId: run.runId, returnToCpuRequired: event.target.checked, expectedRunVersion: run.version })} /> Return to CPU required</label>
       {run.returnReady && <p className="context-line">All deliveries and collections complete · ready to return to CPU.</p>}
       {run.readiness.blockers.map((item) => <div className="attention-note" key={item}>⚠ {item}</div>)}
       <div className="inspector-actions">
-        {run.status === "planned" && <button disabled={!run.readiness.ready} onClick={() => onAction({ action: "mark-run-ready", by: "Franco", runId: run.runId, expectedRunVersion: run.version })}>Mark ready</button>}
-        {run.status === "ready" && <button className="secondary" onClick={() => onAction({ action: "return-run-to-planning", by: "Franco", runId: run.runId, expectedRunVersion: run.version })}>Return to planning</button>}
+        {run.status === "planned" && <button disabled={!run.readiness.ready} onClick={() => onAction({ action: "mark-run-ready", runId: run.runId, expectedRunVersion: run.version })}>Mark ready</button>}
+        {run.status === "ready" && <button className="secondary" onClick={() => onAction({ action: "return-run-to-planning", runId: run.runId, expectedRunVersion: run.version })}>Return to planning</button>}
       </div>
     </>}
-    {stop && rawStop && <><div className="inspector-actions"><button className="secondary" onClick={() => onAction({ action: "return-stop-to-planning", by: "Franco", runId: rawStop.runId, stopId: stop.stopId, expectedRunVersion: planner.runs.find((item) => item.runId === rawStop.runId)!.version, expectedStopVersion: rawStop.version })}>Return to planning queue</button></div><ScheduleEditor stop={stop} run={planner.runs.find((item) => item.runId === rawStop.runId)!} rawStop={rawStop} onAction={onAction} /><StopPanel stop={stop} index={Math.max(0, stop.sequence - 1)} run={planner.runs.find((item) => item.runId === rawStop.runId)!} runs={runs} rawStop={rawStop} rawRequirements={rawRequirements} projection={projection} expanded onToggle={() => undefined} onAction={onAction} /></>}
+    {stop && rawStop && <><div className="inspector-actions"><button className="secondary" onClick={() => onAction({ action: "return-stop-to-planning", runId: rawStop.runId, stopId: stop.stopId, expectedRunVersion: planner.runs.find((item) => item.runId === rawStop.runId)!.version, expectedStopVersion: rawStop.version })}>Return to planning queue</button></div><ScheduleEditor stop={stop} run={planner.runs.find((item) => item.runId === rawStop.runId)!} rawStop={rawStop} onAction={onAction} /><StopPanel stop={stop} index={Math.max(0, stop.sequence - 1)} run={planner.runs.find((item) => item.runId === rawStop.runId)!} runs={runs} rawStop={rawStop} rawRequirements={rawRequirements} projection={projection} expanded onToggle={() => undefined} onAction={onAction} /></>}
   </aside>;
 }
 
@@ -1514,7 +1546,7 @@ function ScheduleEditor({ stop, run, rawStop, onAction }: { stop: PlannerDay["ru
     setEnd(stop.plannedWindow?.endTime || (nextStart ? addClockMinutes(nextStart, 15) : ""));
   }, [stop.plannedArrivalTime, stop.plannedWindow?.endTime, stop.plannedWindow?.startTime]);
   const invalidWindow = end !== "" && (!start || clockMinutes(end) - clockMinutes(start) < 15);
-  return <div className="schedule-editor"><h3>Planned timing</h3><p className="context-line">Logistics timing only; upstream required timing remains unchanged.</p><label>Start / arrival <input type="time" step={900} value={start} onChange={(event) => setStart(event.target.value)} /></label><label>Window end <input type="time" step={900} min={start ? addClockMinutes(start, 15) : undefined} value={end} onChange={(event) => setEnd(event.target.value)} /></label><div className="inspector-actions"><button disabled={!start || invalidWindow} onClick={() => onAction({ action: "schedule-stop", by: "Franco", runId: run.runId, stopId: stop.stopId, plannedWindow: end ? { startTime: start, endTime: end } : undefined, plannedArrivalTime: end ? undefined : start, expectedRunVersion: run.version, expectedStopVersion: rawStop.version })}>Save time</button>{stop.plannedWindow || stop.plannedArrivalTime ? <button className="secondary" onClick={() => onAction({ action: "clear-stop-schedule", by: "Franco", runId: run.runId, stopId: stop.stopId, expectedRunVersion: run.version, expectedStopVersion: rawStop.version })}>Clear time</button> : null}</div></div>;
+  return <div className="schedule-editor"><h3>Planned timing</h3><p className="context-line">Logistics timing only; upstream required timing remains unchanged.</p><label>Start / arrival <input type="time" step={900} value={start} onChange={(event) => setStart(event.target.value)} /></label><label>Window end <input type="time" step={900} min={start ? addClockMinutes(start, 15) : undefined} value={end} onChange={(event) => setEnd(event.target.value)} /></label><div className="inspector-actions"><button disabled={!start || invalidWindow} onClick={() => onAction({ action: "schedule-stop", runId: run.runId, stopId: stop.stopId, plannedWindow: end ? { startTime: start, endTime: end } : undefined, plannedArrivalTime: end ? undefined : start, expectedRunVersion: run.version, expectedStopVersion: rawStop.version })}>Save time</button>{stop.plannedWindow || stop.plannedArrivalTime ? <button className="secondary" onClick={() => onAction({ action: "clear-stop-schedule", runId: run.runId, stopId: stop.stopId, expectedRunVersion: run.version, expectedStopVersion: rawStop.version })}>Clear time</button> : null}</div></div>;
 }
 
 function InspectorMeta({ label, value }: { label: string; value: string }) {
@@ -1546,15 +1578,17 @@ function ScheduleSummary({ planner }: { planner?: PlannerDay }) {
 }
 
 function RunCreatePopover({
-  driver,
-  setDriver,
+  driverId,
+  setDriverId,
+  driverOptions,
   returnToCpuRequired,
   setReturnToCpuRequired,
   onCreate,
   onClose,
 }: {
-  driver: string;
-  setDriver: (value: string) => void;
+  driverId: string;
+  setDriverId: (value: string) => void;
+  driverOptions: DeliveryRun[];
   returnToCpuRequired: boolean;
   setReturnToCpuRequired: (value: boolean) => void;
   onCreate: () => void;
@@ -1569,11 +1603,11 @@ function RunCreatePopover({
       <label>
         Driver
         <select
-          value={driver}
-          onChange={(event) => setDriver(event.target.value)}
+          value={driverId}
+          onChange={(event) => setDriverId(event.target.value)}
         >
-          <option>Franco</option>
-          <option>Dee</option>
+          <option value="">Unassigned</option>
+          {Array.from(new Map(driverOptions.filter((item) => item.driverId && item.driverLabel && item.driverId.toLowerCase() !== item.driverLabel.toLowerCase()).map((item) => [item.driverId, item.driverLabel])).entries()).map(([id, label]) => <option key={id} value={id}>{label}</option>)}
         </select>
       </label>
       <label className="collection-toggle"><input type="checkbox" checked={returnToCpuRequired} onChange={(event) => setReturnToCpuRequired(event.target.checked)} /> Return to CPU required</label>
@@ -2013,7 +2047,7 @@ function RunPanel({
         <div>
           <p className="run-kicker">Run {index + 1}</p>
           <h3>{run.driver || "Unassigned driver"}</h3>
-          <label className="run-driver-control">Driver <select value={run.driver || ""} aria-label="Driver" onChange={(event) => onAction({ action: "set-run-driver", by: "Franco", runId: run.runId, driverLabel: event.target.value, expectedRunVersion: run.version })}><option value="">Select driver</option><option>Franco</option><option>Dee</option></select></label>
+          <label className="run-driver-control">Driver <select value={run.driverId || ""} aria-label="Driver" onChange={(event) => { const option = (data?.runs || []).find((item) => item.driverId === event.target.value); onAction({ action: "set-run-driver", runId: run.runId, driverId: event.target.value, driverLabel: option?.driverLabel || "", expectedRunVersion: run.version }); }}><option value="">Select driver</option>{Array.from(new Map((data?.runs || []).filter((item) => item.driverId && item.driverLabel && item.driverId.toLowerCase() !== item.driverLabel.toLowerCase()).map((item) => [item.driverId, item.driverLabel])).entries()).map(([id, label]) => <option key={id} value={id}>{label}</option>)}</select></label>
         </div>
         <span className="run-status">{liveStatusLabel(run.operationalStatus)}</span>
       </header>
@@ -2042,7 +2076,7 @@ function RunPanel({
             onClick={() =>
               onAction({
                 action: "mark-run-ready",
-                by: "Franco",
+
                 runId: run.runId,
                 expectedRunVersion: run.version,
               })
@@ -2058,7 +2092,7 @@ function RunPanel({
               onClick={() =>
                 onAction({
                   action: "return-run-to-planning",
-                  by: "Franco",
+
                   runId: run.runId,
                   expectedRunVersion: run.version,
                 })
@@ -2104,7 +2138,7 @@ function swap(values: string[], a: number, b: number) {
 function PostponeCollectionControl({ run, stop, onAction }: { run: PlannerDay["runs"][number]; stop: DeliveryStop; onAction: (payload: object) => void }) {
   const [targetDate, setTargetDate] = useState(addOperationalDays(run.serviceDate, 1));
   const dates = Array.from({ length: 14 }, (_, index) => addOperationalDays(run.serviceDate, index + 1));
-  return <div className="postpone-collection"><label>Postpone collection<select value={targetDate} onChange={(event) => setTargetDate(event.target.value)}>{dates.map((date) => <option key={date} value={date}>{formatOperationalDate(date, { weekday: "short", day: "numeric", month: "short" })}</option>)}</select></label><button onClick={() => onAction({ action: "defer-collection", by: "Franco", runId: run.runId, stopId: stop.canonicalId, targetServiceDate: targetDate, expectedRunVersion: run.version, expectedStopVersion: stop.version })}>Postpone collection</button></div>;
+  return <div className="postpone-collection"><label>Postpone collection<select value={targetDate} onChange={(event) => setTargetDate(event.target.value)}>{dates.map((date) => <option key={date} value={date}>{formatOperationalDate(date, { weekday: "short", day: "numeric", month: "short" })}</option>)}</select></label><button onClick={() => onAction({ action: "defer-collection", runId: run.runId, stopId: stop.canonicalId, targetServiceDate: targetDate, expectedRunVersion: run.version, expectedStopVersion: stop.version })}>Postpone collection</button></div>;
 }
 function StopPanel({
   stop,
@@ -2178,7 +2212,7 @@ function StopPanel({
                 onClick={() =>
                   onAction({
                     action: "resolve-issue",
-                    by: "Franco",
+
                     runId: run.runId,
                     stopId: stop.stopId,
                     issueId: issue.id,
@@ -2194,7 +2228,7 @@ function StopPanel({
       {expanded && rawStop && (
         <div className="stop-detail">
           {selectedJobId && <JobDetailScreen jobId={selectedJobId} sourceType={selectedProjectionJob?.sourceType || selectedRequirement?.sourceDomain} sourceId={selectedProjectionJob?.sourceId || selectedRequirement?.sourceEntityId} contents={selectedProjectionJob?.contents || selectedRequirement?.lines.map((line) => ({ description: line.displayNameSnapshot, quantity: line.quantity, unit: line.unit })) || []} notes={selectedProjectionJob?.notes} onBack={() => setSelectedJobId(undefined)} />}
-          {stop.lane === "delivery" && <button className="load-action" onClick={() => onAction({ action: "mark-stop-loaded", loaded: !rawStop.loaded, by: "Franco", runId: run.runId, stopId: stop.stopId, expectedRunVersion: run.version, expectedStopVersion: rawStop.version })}>{rawStop.loaded ? "✓ Loaded · remove mark" : "Mark delivery as loaded"}</button>}
+          {stop.lane === "delivery" && <button className="load-action" onClick={() => onAction({ action: "mark-stop-loaded", loaded: !rawStop.loaded, runId: run.runId, stopId: stop.stopId, expectedRunVersion: run.version, expectedStopVersion: rawStop.version })}>{rawStop.loaded ? "✓ Loaded · remove mark" : "Mark delivery as loaded"}</button>}
           {stop.lane === "collection" && run.status !== "completed" && <PostponeCollectionControl run={run} stop={rawStop} onAction={onAction} />}
           <p>
             {stop.combinedLines
@@ -2217,8 +2251,8 @@ function StopPanel({
                   setRemovedSubloadIds((current) => [...current, ref.requirementId]);
                   if (selectedJobId === ref.requirementId) setSelectedJobId(undefined);
                   onAction({
-                    action: "unassign-requirement",
-                    by: "Franco",
+                  action: "unassign-requirement",
+
                     runId: run.runId,
                     stopId: stop.stopId,
                     requirementId: ref.requirementId,
@@ -2242,7 +2276,7 @@ function StopPanel({
                 onClick={() =>
                   onAction({
                     action: "unassign-movement",
-                    by: "Franco",
+
                     runId: run.runId,
                     movementId,
                     expectedRunVersion: run.version,
@@ -2260,7 +2294,6 @@ function StopPanel({
                 if (event.target.value)
                   onAction({
                     action: "move-stop",
-                    by: "Franco",
                     runId: run.runId,
                     targetRunId: event.target.value,
                     stopId: stop.stopId,
@@ -2286,7 +2319,7 @@ function StopPanel({
               onClick={() =>
                 onAction({
                   action: "defer-collection",
-                  by: "Franco",
+
                   runId: run.runId,
                   stopId: stop.stopId,
                   targetServiceDate: addOperationalDays(run.serviceDate, 1),

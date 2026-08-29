@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { errorResponse } from "@hub/lib/api";
 import { assertSameOrigin } from "@hub/lib/csrf";
 import { db } from "@/lib/firebase";
-import { requireLogisticsAccess } from "@/lib/auth";
+import { logisticsCacheScope, requireLogisticsAccess } from "@/lib/auth";
 import { hostedRuntime } from "@/lib/runtime";
 import {
   fetchOplocs,
@@ -12,6 +12,10 @@ import {
 import { buildPlannerDay } from "@/lib/planner-read-model";
 import {
   listState,
+  getRun,
+  getLogisticsJob,
+  getDeliveryLoad,
+  reportLogisticsReadPath,
   movements,
   runs,
   stops,
@@ -28,6 +32,8 @@ import {
   saveLogisticsJob,
   appendLogisticsChange,
   getLogisticsProjection,
+  listPlanningAttention,
+  getLogisticsSyncHead,
   listLogisticsChanges,
   saveLogisticsProjection,
   repairLegacyAssignmentServiceDates,
@@ -43,7 +49,7 @@ import {
   linkedCollectionForDelivery,
 } from "@/lib/planning";
 import { operationalDate } from "@/lib/date";
-import { operationalWeek } from "@/lib/week";
+import { addOperationalDays, operationalWeek } from "@/lib/week";
 import { restoredStopStatus } from "@/lib/mobile-driver";
 import type { PlannerWeekSummary } from "@/lib/planner-read-model";
 import type { DeliveryRun, DeliveryStop, MovementRequest } from "@/lib/types";
@@ -225,7 +231,7 @@ async function rebuildLogisticsProjection(serviceDate: string, actorId: string, 
   return saveLogisticsProjection(buildLogisticsDayProjection({ serviceDate, ...state, runs: legacyState.runs, lastChangeSequence, now: new Date().toISOString(), revision: Date.now() }));
 }
 
-async function reconcileLogisticsDay(serviceDate: string, by: string, cookie?: string) {
+async function reconcileLogisticsDay(serviceDate: string, by: string, actorId = "system:read-reconcile", cookie?: string) {
   const requirements = await fetchRequirements(serviceDate, cookie);
   const production = await fetchProductionContexts(serviceDate, cookie);
   const oplocs = await fetchOplocs(cookie);
@@ -264,7 +270,7 @@ async function reconcileLogisticsDay(serviceDate: string, by: string, cookie?: s
       audit: [...(prior?.audit || []), { action: prior ? "reconciled-job-updated" : "reconciled-job-created", at: now, by, version: (prior?.version || 0) + 1 }],
     } as import("@/lib/types").LogisticsJob;
     await saveLogisticsJob(next);
-    const event = await appendLogisticsChange({ serviceDate: next.serviceDate, entityType: "logisticsJob", entityId: next.id, changeType: prior ? "reconciled-job-updated" : "reconciled-job-created", revision: next.version, changedAt: now, actorId: by });
+    const event = await appendLogisticsChange({ serviceDate: next.serviceDate, entityType: "logisticsJob", entityId: next.id, changeType: prior ? "reconciled-job-updated" : "reconciled-job-created", revision: next.version, changedAt: now, actorId });
     lastChangeSequence = Math.max(lastChangeSequence, event.sequence);
     if (prior) updated++; else created++;
   }
@@ -272,7 +278,7 @@ async function reconcileLogisticsDay(serviceDate: string, by: string, cookie?: s
     if (assignedJobIds.has(job.id) || reconciledRequirements.some((requirement) => requirement.sourceDomain === job.sourceType && requirement.sourceEntityId === job.sourceId)) continue;
     if (job.destinationOplocId === CPU_SITE_OPLOC_ID || job.sourceType === "cpu-production" || (job.sourceType === "grab-and-go" && hasNativeGrabAndGo({ sourceDomain: "grab-and-go", sourceEntityId: job.sourceId, serviceDate: job.serviceDate, destinationOplocId: job.destinationOplocId } as FulfilmentRequirement))) {
       await logisticsJobs().doc(job.id).delete();
-      const event = await appendLogisticsChange({ serviceDate: job.serviceDate, entityType: "logisticsJob", entityId: job.id, changeType: "stale-upstream-job-removed", revision: job.version + 1, changedAt: now, actorId: by });
+      const event = await appendLogisticsChange({ serviceDate: job.serviceDate, entityType: "logisticsJob", entityId: job.id, changeType: "stale-upstream-job-removed", revision: job.version + 1, changedAt: now, actorId });
       lastChangeSequence = Math.max(lastChangeSequence, event.sequence);
     }
   }
@@ -295,6 +301,7 @@ async function getLogistics(request: NextRequest) {
     return NextResponse.json({ serviceDate, comparison, status: comparison.jobs === comparison.projection.jobs && comparison.unassignedJobs === comparison.projection.unassignedJobs && comparison.deliveryLoads === comparison.projection.deliveryLoads ? "In sync" : "Projection out of sync" });
   }
   if (request.nextUrl.searchParams.get("projection") === "1") {
+    reportLogisticsReadPath("dashboard:cold-or-projection-load");
     const serviceDate = requestedDate || operationalDate();
     const startedAt = performance.now();
     let projection = await getLogisticsProjection(serviceDate);
@@ -312,19 +319,34 @@ async function getLogistics(request: NextRequest) {
     const projectionNeedsReconcile = !projection || projection.deliveryLoads.some((load) => load.jobs.length === 0) || projectedSourceKeys.size !== expectedSourceKeys.size || [...expectedSourceKeys].some((key) => !projectedSourceKeys.has(key));
     if (projectionNeedsReconcile) {
       if (activeRequirements.length) {
-        projection = (await reconcileLogisticsDay(serviceDate, "read-reconcile", cookie)).projection;
+        projection = (await reconcileLogisticsDay(serviceDate, "read-reconcile", "system:read-reconcile", cookie)).projection;
       } else {
         projection = await rebuildLogisticsProjection(serviceDate, "read-rebuild");
       }
     }
     return NextResponse.json({ projection, metrics: { projectionFetchMs: Math.round(performance.now() - startedAt), dashboardReadyMs: Math.round(performance.now() - startedAt) } });
   }
+  if (request.nextUrl.searchParams.get("syncHead") === "1") {
+    reportLogisticsReadPath("manifest-head-check");
+    return NextResponse.json(await getLogisticsSyncHead());
+  }
+  if (request.nextUrl.searchParams.get("planningAttention") === "1") {
+    const fromDate = requestedDate || operationalDate();
+    const requestedDays = Number(request.nextUrl.searchParams.get("days") || 14);
+    const days = Math.min(14, Math.max(1, Number.isFinite(requestedDays) ? requestedDays : 14));
+    reportLogisticsReadPath("planning-attention-check");
+    const serviceDates = Array.from({ length: days }, (_, index) => addOperationalDays(fromDate, index));
+    const upstream = await Promise.all(serviceDates.map((serviceDate) => fetchRequirements(serviceDate, cookie).catch(() => [])));
+    const expectedSourceKeys = new Map(serviceDates.map((serviceDate, index) => [serviceDate, new Set(upstream[index].filter((item) => item.status !== "withdrawn" && item.destinationOplocId !== CPU_SITE_OPLOC_ID).map((item) => `${item.sourceDomain}:${item.sourceEntityId}`))]));
+    return NextResponse.json({ attention: await listPlanningAttention(serviceDates, expectedSourceKeys), fromDate, days });
+  }
   if (request.nextUrl.searchParams.has("changesSince")) {
+    reportLogisticsReadPath("dashboard:warm-incremental-load");
     const after = Number(request.nextUrl.searchParams.get("changesSince") || 0);
     const startedAt = performance.now();
     const changes = await listLogisticsChanges(Number.isFinite(after) ? after : 0, requestedDate);
     const projection = requestedDate ? await getLogisticsProjection(requestedDate) : undefined;
-    return NextResponse.json({ changes, projection, metrics: { incrementalUpdateMs: Math.round(performance.now() - startedAt) } });
+    return NextResponse.json({ ...changes, projection, metrics: { incrementalUpdateMs: Math.round(performance.now() - startedAt) } });
   }
   if (requestedWeek) {
     const dates = operationalWeek(requestedWeek);
@@ -384,9 +406,9 @@ async function getLogistics(request: NextRequest) {
     });
     return NextResponse.json({ weekCommencing: dates[0], days: summaries });
   }
-  const runState = requestedRunId ? await listState() : undefined;
+  const requestedRun = requestedRunId ? await getRun(requestedRunId) : undefined;
   const runDate = requestedRunId
-    ? runState?.runs.find((run) => run.canonicalId === requestedRunId)?.serviceDate
+    ? requestedRun?.serviceDate
     : undefined;
   const date = requestedDate || runDate || operationalDate();
   const [state, collectionRequiredKeys, requirementsResult, oplocsResult] = await Promise.all([
@@ -477,6 +499,7 @@ export async function POST(request: NextRequest) {
       groupKey?: string;
       collectionRequired?: boolean;
       vehicleSlot?: "van-1" | "van-2";
+      driverId?: string;
       driverLabel?: string;
       serviceDate?: string;
       confirmDirect?: boolean;
@@ -493,6 +516,7 @@ export async function POST(request: NextRequest) {
       lane?: "delivery" | "collection";
       collectionStatus?: "awaiting" | "collected";
     };
+    const actorId = principal.id;
     const by = principal.displayName;
     const now = new Date().toISOString();
     // The mobile view can receive projection-backed stops from the same
@@ -514,7 +538,7 @@ export async function POST(request: NextRequest) {
         transaction.set(loadRef, next);
         return next;
       });
-      const event = await appendLogisticsChange({ serviceDate: result.serviceDate, entityType: "deliveryLoad", entityId: result.id, changeType: body.action, revision: result.version, changedAt: now, actorId: by });
+      const event = await appendLogisticsChange({ serviceDate: result.serviceDate, entityType: "deliveryLoad", entityId: result.id, changeType: body.action, revision: result.version, changedAt: now, actorId });
       await rebuildLogisticsProjection(result.serviceDate, by, event.sequence);
       return NextResponse.json({ load: result });
     }
@@ -527,20 +551,20 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ projection, metrics: { projectionRebuildMs: Math.round(performance.now() - startedAt) } });
     }
     if (body.action === "reconcile-logistics-day" && body.serviceDate) {
-      const result = await reconcileLogisticsDay(body.serviceDate, by, request.headers.get("cookie") || undefined);
+      const result = await reconcileLogisticsDay(body.serviceDate, by, actorId, request.headers.get("cookie") || undefined);
       return NextResponse.json({ ...result, warning: result.requirements.some((item) => !item.productionLocationId) ? "Some jobs have no canonical origin OPLOC and remain safely unassigned." : undefined });
     }
     if (body.action === "save-logistics-job" && body.job) {
       if (!body.job.originOplocId || !body.job.destinationOplocId)
         throw new HttpError(422, "Logistics jobs require canonical origin and destination OPLOC IDs.");
       const saved = await saveLogisticsJob(body.job);
-      const event = await appendLogisticsChange({ serviceDate: saved.serviceDate, entityType: "logisticsJob", entityId: saved.id, changeType: "job-created-or-updated", revision: saved.version, changedAt: now, actorId: by });
+      const event = await appendLogisticsChange({ serviceDate: saved.serviceDate, entityType: "logisticsJob", entityId: saved.id, changeType: "job-created-or-updated", revision: saved.version, changedAt: now, actorId });
       await rebuildLogisticsProjection(saved.serviceDate, by, event.sequence);
       return NextResponse.json(saved);
     }
     if (body.action === "assign-job-to-load" && (body.job || body.jobId)) {
       if (body.lane === "collection") throw new HttpError(422, "Choose the delivery timeline first; collection is scheduled from the linked collection card.");
-      const job = body.job || (await listDeliveryLoadState()).jobs.find((item) => item.id === body.jobId);
+      const job = body.job || (body.jobId ? await getLogisticsJob(body.jobId) : undefined);
       if (!job) throw new HttpError(404, "Logistics job not found.");
       let scheduledTime = body.scheduledTime || job.requestedWindow?.startTime;
       const originOplocId = job.originOplocId || CPU_PRODUCTION_LOCATION_ID;
@@ -582,14 +606,15 @@ export async function POST(request: NextRequest) {
         }
         return nextLoad;
       });
-      const event = await appendLogisticsChange({ serviceDate: job.serviceDate, entityType: "assignment", entityId: job.id, relatedEntityId: result.id, changeType: "job-assigned", revision: result.version, changedAt: now, actorId: by });
+      const event = await appendLogisticsChange({ serviceDate: job.serviceDate, entityType: "assignment", entityId: job.id, relatedEntityId: result.id, changeType: "job-assigned", revision: result.version, changedAt: now, actorId });
       await rebuildLogisticsProjection(job.serviceDate, by, event.sequence);
       return NextResponse.json(result);
     }
     if (body.action === "reschedule-delivery-load" && body.loadId && body.scheduledTime) {
       validatePlannedSchedule(undefined, { startTime: body.scheduledTime, ...(body.scheduledEnd ? { endTime: body.scheduledEnd } : {}) });
-      const currentLoads = (await listDeliveryLoadState()).loads;
-      const currentLoad = currentLoads.find((load) => load.id === body.loadId);
+      const currentLoad = await getDeliveryLoad(body.loadId);
+      if (!currentLoad) throw new HttpError(404, "Delivery load not found.");
+      const currentLoads = (await listDeliveryLoadState(currentLoad.serviceDate)).loads;
       const requestedDuration = body.scheduledEnd ? Math.max(15, Number(body.scheduledEnd.slice(0, 2)) * 60 + Number(body.scheduledEnd.slice(3, 5)) - (Number(body.scheduledTime.slice(0, 2)) * 60 + Number(body.scheduledTime.slice(3, 5)))) : undefined;
       const effectiveScheduledTime = currentLoad ? nextAvailableLoadTime(currentLoads, { loadId: currentLoad.id, runId: body.targetRunId || (body.lane === "collection" ? currentLoad.collectionRunId || currentLoad.runId : currentLoad.runId), lane: body.lane === "collection" ? "collection" : "delivery", destinationOplocId: body.lane === "collection" ? currentLoad.originOplocId : currentLoad.destinationOplocId, start: body.scheduledTime, end: body.scheduledEnd }) : body.scheduledTime;
       const effectiveScheduledEnd = requestedDuration === undefined ? undefined : addMinutesToTime(effectiveScheduledTime, requestedDuration);
@@ -615,7 +640,7 @@ export async function POST(request: NextRequest) {
         changeType: "load-rescheduled",
         revision: result.version,
         changedAt: now,
-        actorId: by,
+        actorId,
       });
       await rebuildLogisticsProjection(result.serviceDate, by, event.sequence);
       return NextResponse.json(body.targetRunId ? { ...result, runId: body.targetRunId } : result);
@@ -636,7 +661,7 @@ export async function POST(request: NextRequest) {
         });
         return { ...load, loaded, updatedAt: now, version: nextVersion };
       });
-      const event = await appendLogisticsChange({ serviceDate: result.serviceDate, entityType: "deliveryLoad", entityId: result.id, changeType: result.loaded ? "load-marked-loaded" : "load-marked-unloaded", revision: result.version, changedAt: now, actorId: by });
+      const event = await appendLogisticsChange({ serviceDate: result.serviceDate, entityType: "deliveryLoad", entityId: result.id, changeType: result.loaded ? "load-marked-loaded" : "load-marked-unloaded", revision: result.version, changedAt: now, actorId });
       await rebuildLogisticsProjection(result.serviceDate, by, event.sequence);
       return NextResponse.json(result);
     }
@@ -656,17 +681,17 @@ export async function POST(request: NextRequest) {
         return removeAssignment([assignment], body.jobId!, by, now).removed;
       });
       if (result) {
-        const event = await appendLogisticsChange({ serviceDate: result.serviceDate, entityType: "assignment", entityId: result.jobId, relatedEntityId: result.loadId, changeType: "job-removed", revision: 1, changedAt: now, actorId: by });
-        const jobState = await listDeliveryLoadState();
-        await rebuildLogisticsProjection(jobState.jobs.find((job) => job.id === result.jobId)?.serviceDate || operationalDate(), by, event.sequence);
+        const event = await appendLogisticsChange({ serviceDate: result.serviceDate, entityType: "assignment", entityId: result.jobId, relatedEntityId: result.loadId, changeType: "job-removed", revision: 1, changedAt: now, actorId });
+        const job = await getLogisticsJob(result.jobId);
+        await rebuildLogisticsProjection(job?.serviceDate || operationalDate(), by, event.sequence);
       }
       return NextResponse.json(result);
     }
     if (body.action === "set-job-collection" && (body.job || body.jobId) && body.collectionStatus) {
-      const job = body.job || (await listDeliveryLoadState()).jobs.find((item) => item.id === body.jobId);
+      const job = body.job || (body.jobId ? await getLogisticsJob(body.jobId) : undefined);
       if (!job) throw new HttpError(404, "Logistics job not found.");
       const nextJob = await saveLogisticsJob(setJobCollectionStatus(job, body.collectionStatus, by, now));
-      const event = await appendLogisticsChange({ serviceDate: nextJob.serviceDate, entityType: "logisticsJob", entityId: nextJob.id, changeType: "collection-status-changed", revision: nextJob.version, changedAt: now, actorId: by });
+      const event = await appendLogisticsChange({ serviceDate: nextJob.serviceDate, entityType: "logisticsJob", entityId: nextJob.id, changeType: "collection-status-changed", revision: nextJob.version, changedAt: now, actorId });
       await rebuildLogisticsProjection(nextJob.serviceDate, by, event.sequence);
       return NextResponse.json(nextJob);
     }
@@ -685,7 +710,7 @@ export async function POST(request: NextRequest) {
         transaction.set(loadRef, next);
         return next;
       });
-      const event = await appendLogisticsChange({ serviceDate: result.serviceDate, entityType: "deliveryLoad", entityId: result.id, changeType: "load-dispatched", revision: result.version, changedAt: now, actorId: by });
+      const event = await appendLogisticsChange({ serviceDate: result.serviceDate, entityType: "deliveryLoad", entityId: result.id, changeType: "load-dispatched", revision: result.version, changedAt: now, actorId });
       await rebuildLogisticsProjection(result.serviceDate, by, event.sequence);
       return NextResponse.json(result);
     }
@@ -695,7 +720,7 @@ export async function POST(request: NextRequest) {
     if (body.action === "ensure-vehicle-day-runs") {
       const serviceDate = body.serviceDate || operationalDate();
       const existing = (await listState(serviceDate)).runs;
-      const slots = [{ slot: "van-1", driver: "Franco" }, { slot: "van-2", driver: "Dee" }] as const;
+      const slots = [{ slot: "van-1" }, { slot: "van-2" }] as const;
       const result: DeliveryRun[] = [];
       for (const [index, item] of slots.entries()) {
         const vehicleLabel = item.slot === "van-1" ? "Van 1" : "Van 2";
@@ -708,12 +733,12 @@ export async function POST(request: NextRequest) {
           } else result.push(current);
           continue;
         }
-        const run: DeliveryRun = {
+      const run: DeliveryRun = {
           canonicalId: `run:${serviceDate}:${item.slot}`,
           serviceDate,
           status: "draft",
-          driverId: item.driver.toLowerCase(),
-          driverLabel: item.driver,
+          driverId: undefined,
+          driverLabel: undefined,
           vehicleLabel: item.slot === "van-1" ? "Van 1" : "Van 2",
           returnToCpuRequired: true,
           orderedStopIds: [], version: 1, createdAt: now, updatedAt: now,
@@ -724,8 +749,8 @@ export async function POST(request: NextRequest) {
       }
       return NextResponse.json({ runs: result });
     }
-    if (body.action === "set-run-driver" && body.runId && body.driverLabel) {
-      const current = (await listState()).runs.find((run) => run.canonicalId === body.runId);
+    if (body.action === "set-run-driver" && body.runId && body.driverId && body.driverLabel) {
+      const current = await getRun(body.runId);
       if (!current) throw new HttpError(404, "Run not found.");
       if (body.expectedRunVersion === undefined) throw new HttpError(422, "A current run version is required.");
       const result = await db.runTransaction(async (transaction) => {
@@ -734,14 +759,17 @@ export async function POST(request: NextRequest) {
         if (!snap.exists) throw new HttpError(404, "Run not found.");
         const run = snap.data() as DeliveryRun;
         if (run.version !== body.expectedRunVersion) throw new HttpError(409, "This run changed elsewhere. Refresh before changing its driver.");
-        const next = { ...run, driverId: body.driverLabel!.toLowerCase(), driverLabel: body.driverLabel, version: run.version + 1, updatedAt: now, audit: [...run.audit, { action: "driver-assigned", at: now, by, version: run.version + 1 }] };
+        const driverId = body.driverId!.trim();
+        const driverLabel = body.driverLabel!.trim();
+        if (!driverId || !driverLabel || driverId.toLowerCase() === driverLabel.toLowerCase()) throw new HttpError(422, "A governed driver ID and display label are required.");
+        const next = { ...run, driverId, driverLabel, version: run.version + 1, updatedAt: now, audit: [...run.audit, { action: "driver-assigned", at: now, by, version: run.version + 1 }] };
         transaction.set(ref, next);
         return next;
       });
       return NextResponse.json(result);
     }
     if (body.action === "set-run-return-required" && body.runId && typeof body.returnToCpuRequired === "boolean") {
-      const current = (await listState()).runs.find((run) => run.canonicalId === body.runId);
+      const current = await getRun(body.runId);
       if (!current) throw new HttpError(404, "Run not found.");
       if (body.expectedRunVersion === undefined) throw new HttpError(422, "A current run version is required.");
       if (current.status === "dispatched" || current.status === "completed") throw new HttpError(422, "Return settings cannot change after dispatch.");
@@ -806,9 +834,7 @@ export async function POST(request: NextRequest) {
       ].includes(body.action) &&
       body.runId
     ) {
-      const current = (await listState()).runs.find(
-        (run) => run.canonicalId === body.runId,
-      );
+      const current = await getRun(body.runId);
       if (!current) throw new HttpError(404, "Run not found.");
       if (body.expectedRunVersion === undefined)
         throw new HttpError(
@@ -952,9 +978,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(await saveMovement(body.movement));
     }
     if (body.action === "update-run" && body.run) {
-      const current = (await listState()).runs.find(
-        (item) => item.canonicalId === body.run!.canonicalId,
-      );
+      const current = await getRun(body.run!.canonicalId);
       if (!current) throw new HttpError(404, "Run not found.");
       if (
         body.expectedRunVersion !== undefined &&
@@ -994,8 +1018,7 @@ export async function POST(request: NextRequest) {
           422,
           "Select at least one requirement with its current source versions.",
         );
-      const state = await listState();
-      const target = state.runs.find((run) => run.canonicalId === body.runId);
+      const target = await getRun(body.runId);
       if (!target) throw new HttpError(404, "Run not found.");
       assertPlanningOpen(target);
       if (body.expectedRunVersion === undefined)
@@ -1537,8 +1560,7 @@ export async function POST(request: NextRequest) {
     if (body.action === "assign" && body.runId) {
       if (body.requirementId && body.movementId)
         throw new HttpError(422, "Choose one item to assign.");
-      const state = await listState();
-      const target = state.runs.find((item) => item.canonicalId === body.runId);
+      const target = await getRun(body.runId);
       if (!target) throw new HttpError(404, "Run not found.");
       assertPlanningOpen(target);
       if (body.expectedRunVersion === undefined)
@@ -1786,7 +1808,9 @@ export async function POST(request: NextRequest) {
             throw new HttpError(422, "Completed collections cannot be postponed.");
           if (!body.targetServiceDate || body.targetServiceDate <= run.serviceDate)
             throw new HttpError(422, "Choose a future collection date.");
-          const allRunsSnap = await transaction.get(runs());
+          const allRunsSnap = await transaction.get(
+            runs().where("serviceDate", "==", body.targetServiceDate),
+          );
           const allRuns = allRunsSnap.docs.map((doc) => doc.data() as DeliveryRun);
           const target = allRuns.find((candidate) =>
             candidate.serviceDate === body.targetServiceDate &&
@@ -1795,7 +1819,7 @@ export async function POST(request: NextRequest) {
               (!run.driverId && run.driverLabel && candidate.driverLabel === run.driverLabel)),
           );
           const targetRun: DeliveryRun = target || {
-            canonicalId: `run:${body.targetServiceDate}:deferred-collections:${run.driverId || run.driverLabel?.toLowerCase() || "unassigned"}`,
+            canonicalId: `run:${body.targetServiceDate}:deferred-collections:${run.driverId || run.canonicalId}`,
             serviceDate: body.targetServiceDate,
             status: "draft",
             returnToCpuRequired: true,
@@ -2226,8 +2250,9 @@ export async function POST(request: NextRequest) {
 
 export async function GET(request: NextRequest) {
   try {
-    await requireLogisticsAccess(request);
+    const principal = await requireLogisticsAccess(request);
     const response = await getLogistics(request);
+    response.headers.set("x-logistics-cache-scope", logisticsCacheScope(principal));
     response.headers.set("Cache-Control", "no-store, max-age=0");
     return response;
   } catch (error) {

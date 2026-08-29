@@ -31,4 +31,4 @@ export async function middleware(request: NextRequest) {
 
 function renderFailure(request: NextRequest, failure: ReturnType<typeof admissionFailure>, requestId: string) { const target = new URL("/admission-error", request.url); target.searchParams.set("code", failure.code); target.searchParams.set("message", failure.message); if (failure.supportingText) target.searchParams.set("supportingText", failure.supportingText); target.searchParams.set("requestId", requestId); return NextResponse.rewrite(target); }
 
-export const config = { matcher: ["/((?!_next/static|_next/image|favicon.ico|.*\\.(?:png|jpg|jpeg|gif|svg|ico|css|js|map)$).*)"] };
+export const config = { matcher: ["/((?!_next/static|_next/image|favicon.ico|.*\\.(?:png|jpg|jpeg|gif|svg|ico|css|js|map|otf|ttf)$).*)"] };
