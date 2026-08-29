@@ -10,7 +10,7 @@ import type {
   ProductionPlan,
 } from "../lib/production-plan";
 import "./liana.css";
-import { allergenMatrixHtml, mayContainNotes } from "./allergen-matrix";
+import { mayContainNotes } from "./allergen-matrix";
 import { CANONICAL_ALLERGEN_COLUMNS, normaliseOperationalAllergens, toggleOperationalAllergen, type CanonicalAllergenKey } from "../../../shared/allergen-contract";
 import { matrixColumns } from "./allergen-matrix";
 import { DELI_STYLE_PARENT_KEY, isDeliStyleParent } from "../../lib/production-item-scope";
@@ -260,6 +260,8 @@ export default function LianaOrderDetail({
   const [busy, setBusy] = useState(false);
   const [rowsToAdd, setRowsToAdd] = useState(1);
   const [signatures, setSignatures] = useState<InternalMatrixSignature[]>([]);
+  const [matrixArtifact, setMatrixArtifact] = useState<ProductionPlan["matrixArtifact"]>();
+  const [matrixStorageStatus, setMatrixStorageStatus] = useState<"not_configured" | "ready">();
   const [planStatus, setPlanStatus] =
     useState<ProductionPlan["status"]>("draft");
   const [signingRole, setSigningRole] =
@@ -285,18 +287,21 @@ export default function LianaOrderDetail({
           setMenuItems(mergeOriginalItems(order, body.plan.menuItems));
           setPlanningNotes(body.plan.planningNotes || "");
           setSignatures(body.plan.signatures || []);
+          setMatrixArtifact(body.plan.matrixArtifact);
+          setMatrixStorageStatus(body.matrixStatus === "not_configured" ? "not_configured" : body.plan.matrixArtifact ? "ready" : undefined);
           setPlanStatus(body.plan.status || "draft");
         }
       })
       .catch(() =>
         setMessage("Could not load the saved draft; a new draft is shown."),
       );
-    void fetch("/api/sandwiches", { cache: "no-store" })
-      .then((response) => response.json())
-      .then((body) => {
-        const items = Array.isArray(body.productionItems) ? body.productionItems : body.sandwiches;
-        if (Array.isArray(items)) setSavedProductionItems(items);
-      })
+    const parentMenuItemKeys = [...new Set(initialMenuItems(order).map((item) => menuItemLibraryKey(item.name)))];
+    void Promise.all(parentMenuItemKeys.map((key) =>
+      fetch(`/api/sandwiches?parentMenuItemKey=${encodeURIComponent(key)}`, { cache: "no-store" })
+        .then((response) => response.json())
+        .then((body) => Array.isArray(body.productionItems) ? body.productionItems : body.sandwiches)
+    ))
+      .then((groups) => setSavedProductionItems(groups.flat().filter(Boolean)))
       .catch(() =>
         setMessage(
           "Saved production items are unavailable; you can still create a new one.",
@@ -472,6 +477,8 @@ export default function LianaOrderDetail({
         body.plan?.status ||
           (action === "mark-planned" ? "planned" : "planning"),
       );
+      setMatrixArtifact(body.plan?.matrixArtifact);
+      setMatrixStorageStatus(body.matrixStatus === "not_configured" ? "not_configured" : body.plan?.matrixArtifact ? "ready" : undefined);
       setMessage(
         action === "mark-planned"
           ? "Plan marked Planned. The menu planning team can now generate the menu."
@@ -523,14 +530,9 @@ export default function LianaOrderDetail({
           },
         ]) as InternalMatrixSignature[];
       setSignatures(nextSignatures);
-      const fullySigned = nextSignatures.some(signature => signature.role === "production_chef") && nextSignatures.some(signature => signature.role === "head_chef_site_manager");
-      setMessage(fullySigned ? "Both signatures recorded. Generating the signed PDF…" : `${role === "production_chef" ? "Production chef" : "Head chef / site manager"} signature recorded.`);
-      if (fullySigned) {
-        void fetch("/api/production-plan", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "save-matrix", orderId: order.canonicalId }) }).then(async artifactResponse => {
-          if (!artifactResponse.ok) { const artifactBody = await artifactResponse.json().catch(() => ({})); throw new Error(artifactBody.error?.message || "The signed PDF could not be generated."); }
-          setMessage("Signed PDF generated and ready to open.");
-        }).catch(error => setMessage(error instanceof Error ? error.message : "The signed PDF could not be generated."));
-      }
+      setMatrixArtifact(body.plan?.matrixArtifact);
+      setMatrixStorageStatus(body.matrixStatus === "not_configured" ? "not_configured" : body.plan?.matrixArtifact ? "ready" : undefined);
+      setMessage(body.matrixStatus === "not_configured" ? "Matrix storage not configured. The signed workflow is complete; Drive persistence can be enabled later." : body.plan?.matrixArtifact ? "Both signatures recorded. The signed matrix is ready to open." : `${role === "production_chef" ? "Production chef" : "Head chef / site manager"} signature recorded.`);
     } catch (error) {
       setMessage((error as Error).message);
     }
@@ -560,14 +562,11 @@ export default function LianaOrderDetail({
   };
 
   const openAllergenMatrix = () => {
-    const popup = window.open("", "_blank", "popup,width=1200,height=850");
-    if (!popup) {
-      setMessage("Allow pop-ups to save the allergen matrix PDF.");
+    if (!matrixArtifact?.driveUrl) {
+      setMessage("The final signed matrix is not yet available in the configured Drive workspace.");
       return;
     }
-    popup.document.open();
-    popup.document.write(allergenMatrixHtml(order, menuItems, signatures));
-    popup.document.close();
+    window.open(matrixArtifact.driveUrl, "_blank", "noopener,noreferrer");
   };
 
   return (
@@ -693,6 +692,7 @@ export default function LianaOrderDetail({
               <button
                 type="button"
                 className="button button-soft"
+                disabled={!matrixArtifact?.driveUrl}
                 onClick={openAllergenMatrix}
               >
                 Open matrix
@@ -896,6 +896,7 @@ export default function LianaOrderDetail({
                 These internal attestations are recorded with the plan audit
                 history. They are not an external e-signature service.
               </p>
+              {matrixStorageStatus === "not_configured" && <p role="status">Matrix storage not configured</p>}
             </div>
             {(
               [

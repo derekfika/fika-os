@@ -366,7 +366,7 @@ export default function CpuProduction() {
         <LianaOrderDetail
           order={selected}
           close={() => selected.origin === "hospitality_booking" ? setShowHospitalityAllergens(false) : setSelected(undefined)}
-          onSaved={async (close = true) => { await load(); if (close) setSelected(undefined); else await openOrder(selected, true); }}
+          onSaved={async (close = true) => { if (close) { await load(); setSelected(undefined); } }}
         />
       )}
     </main>

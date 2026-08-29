@@ -50,6 +50,7 @@ test("Drive API routes do not accept browser-selected owners or folders", async 
   assert.match(quotes, /canonicalId=\$\{encodeURIComponent\(body\.canonicalId\)\}/);
   assert.match(quotes, /booking\.service\.oplocId/);
   assert.doesNotMatch(quotes, /body\.siteKey|body\.oplocId|body\.owner/);
-  assert.match(matrix, /appId: "cpu-production"/);
-  assert.doesNotMatch(matrix, /siteKey|oplocFolder|hubUserFetch/);
+  assert.match(matrix, /hubUserFetch/);
+  assert.match(matrix, /booking\.productionOrderId|body\.productionOrderId/);
+  assert.doesNotMatch(matrix, /siteKey|oplocFolder|body\.owner|body\.oplocId/);
 });
