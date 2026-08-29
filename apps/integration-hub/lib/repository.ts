@@ -8,7 +8,7 @@ import type { Actor } from "./auth";
 import type { Activity, HubState } from "./types";
 import type { StagingRecord, SyncProgress, SyncRun } from "./schemas";
 import { parseCanonical, type CanonicalEntityType } from "./schemas";
-import { schemaDefinition } from "./schema-catalogue";
+import { SchemaCatalogue, schemaDefinition } from "./schema-catalogue";
 import { sha256 } from "./profiler";
 import { formatAddress } from "./address";
 
@@ -184,12 +184,18 @@ export async function queryCanonicalRegistry(query: RegistryQuery) {
 }
 
 export async function getCanonicalRecord(canonicalId: string) {
-  return (await readCanonicalRecords()).find(record => record.canonicalId === canonicalId) || null;
+  const snapshot = await canonicalRef().doc(canonicalDocumentId(canonicalId)).get();
+  if (snapshot.exists) return snapshot.data() as HubState["canonical"][number];
+  // Keep the embedded pre-migration store readable without reintroducing a
+  // collection scan on the known-ID path.
+  const stateSnapshot = await ref().get();
+  return ((stateSnapshot.data()?.canonical || []) as HubState["canonical"]).find(record => record.canonicalId === canonicalId) || null;
 }
 
 export async function canonicalCountsByType() {
-  const records = await readCanonicalRecords();
-  return Object.fromEntries([...new Set(records.map(record => record.entityType))].map(entityType => [entityType, records.filter(record => record.entityType === entityType).length]));
+  const entityTypes = SchemaCatalogue.map(definition => definition.entityType);
+  const counts = await Promise.all(entityTypes.map(async entityType => [entityType, (await canonicalRef().where("entityType", "==", entityType).count().get()).data().count] as const));
+  return Object.fromEntries(counts);
 }
 
 export async function getCanonicalStorageStatus() {

@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import { db } from "./firebase-admin";
 
 export type CanonicalOplocRecord = {
@@ -7,6 +8,10 @@ export type CanonicalOplocRecord = {
   publicationStatus?: string;
   record?: Record<string, unknown>;
 };
+
+export function canonicalDocumentId(canonicalId: string) {
+  return crypto.createHash("sha256").update(canonicalId).digest("hex");
+}
 
 export function isActiveCanonicalOploc(record: CanonicalOplocRecord) {
   return record.entityType === "OPLOC" && Boolean(record.canonicalId) && record.lifecycleStatus !== "archived" && record.publicationStatus !== "withdrawn" && String(record.record?.lifecycleState || "active") === "active";
@@ -19,13 +24,8 @@ export async function listActiveCanonicalOplocs() {
 
 export async function getActiveCanonicalOplocLabels(ids: string[]) {
   const wanted = [...new Set(ids.filter(Boolean))];
-  const records: CanonicalOplocRecord[] = [];
-  for (let index = 0; index < wanted.length; index += 30) {
-    const chunk = wanted.slice(index, index + 30);
-    if (!chunk.length) continue;
-    const snapshot = await db.collection("integrationHubCanonical").where("entityType", "==", "OPLOC").where("canonicalId", "in", chunk).get();
-    records.push(...snapshot.docs.map(document => document.data() as CanonicalOplocRecord));
-  }
+  const snapshots = await Promise.all(wanted.map(id => db.collection("integrationHubCanonical").doc(canonicalDocumentId(id)).get()));
+  const records = snapshots.filter(snapshot => snapshot.exists).map(snapshot => snapshot.data() as CanonicalOplocRecord);
   return new Map(records.filter(isActiveCanonicalOploc).map(record => [record.canonicalId!, String(record.record?.approvedName || record.canonicalId)] as const));
 }
 

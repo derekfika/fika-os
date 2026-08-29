@@ -4,7 +4,7 @@ import type { AccessAuditEvent, AppAssignment, ApplicationRegistryEntry, AuditPa
 import { assertExpectedVersion, AuthModStoreUnavailable, type AuthModRepository, type OplocReference } from "./repository";
 import { isTerminatedLegend } from "../connection-rules";
 import type { CanonicalRecord } from "../types";
-import { listActiveCanonicalOplocs } from "../canonical-oplocs";
+import { canonicalDocumentId, listActiveCanonicalOplocs } from "../canonical-oplocs";
 const collections = { identities: "authmodIdentities", custodians: "authmodCustodianAssignments", applications: "authmodApplications", sites: "authmodSiteAssignments", apps: "authmodAppAssignments", grants: "authmodAuthorityGrants", delegations: "authmodDelegations", services: "authmodServicePrincipals", imports: "authmodImports", resolutions: "authmodImportResolutions", audits: "authmodAccessAudit" } as const;
 const firestoreResource = (collection: string) => `Firestore database (default), collection ${collection}`;
 export function translateAuthmodFirestoreError(error: unknown, operation: string, collection: string) {
@@ -43,7 +43,7 @@ export class FirestoreAuthModRepository implements AuthModRepository {
   async getApplication(appId: string) { const snapshot = await db.collection(collections.applications).doc(appId).get(); return snapshot.exists ? snapshot.data() as ApplicationRegistryEntry : undefined; }
   async saveApplication(value: ApplicationRegistryEntry, expectedVersion?: number) { await save(collections.applications, value.appId, value, expectedVersion); }
   async listActiveOplocs() { const records = await listActiveCanonicalOplocs(); return records.map(record => ({ id: record.canonicalId!, label: String(record.record?.approvedName || record.canonicalId), active: true })); }
-  async getActiveOploc(oplocId: string) { const snapshot = await db.collection("integrationHubCanonical").where("canonicalId", "==", oplocId).where("entityType", "==", "OPLOC").limit(1).get(); const record = snapshot.empty ? undefined : snapshot.docs[0].data() as CanonicalOploc; return record && activeOploc(record, oplocId) ? { id: oplocId, label: String(record.record?.approvedName || oplocId), active: true } : undefined; }
+  async getActiveOploc(oplocId: string) { const snapshot = await db.collection("integrationHubCanonical").doc(canonicalDocumentId(oplocId)).get(); const record = snapshot.exists ? snapshot.data() as CanonicalOploc : undefined; return record && activeOploc(record, oplocId) ? { id: oplocId, label: String(record.record?.approvedName || oplocId), active: true } : undefined; }
   async listSiteAssignments(identityId: string) { const snapshot = await db.collection(collections.sites).where("identityId", "==", identityId).get(); return snapshot.docs.map(document => document.data() as SiteAssignment); }
   async getSiteAssignment(id: string) { const snapshot = await db.collection(collections.sites).doc(id).get(); return snapshot.exists ? snapshot.data() as SiteAssignment : undefined; }
   async saveSiteAssignment(value: SiteAssignment, expectedVersion?: number) { await save(collections.sites, value.id, value, expectedVersion); }

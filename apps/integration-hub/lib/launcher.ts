@@ -24,7 +24,11 @@ async function resolveLauncherAppAccess(repository: AuthModRepository, principal
   if (app.scopeModel === "none") return (await resolveUserAccess(repository, { principal, appId: app.appId }, context)).allowed;
   const identity = await context.identity();
   const sites = await context.siteAssignments();
-  const activeSites = identity?.fullAccess && identity.identityKind === "person" ? await context.activeOplocs() : await Promise.all(sites.filter(value => isEffective(value)).map(value => context.activeOploc(value.oplocId)));
+  // Full Access already authorises the application at organisation scope. The
+  // launcher only needs to decide whether to show the card; it does not need
+  // to materialise every active OPLOC just to prove that access exists.
+  if (identity?.fullAccess && identity.identityKind === "person") return (await resolveUserAccess(repository, { principal, appId: app.appId }, context)).allowed;
+  const activeSites = await Promise.all(sites.filter(value => isEffective(value)).map(value => context.activeOploc(value.oplocId)));
   for (const site of activeSites.filter(Boolean)) if ((await resolveUserAccess(repository, { principal, appId: app.appId, oplocId: site!.id }, context)).allowed) return true;
   return false;
 }

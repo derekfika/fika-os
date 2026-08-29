@@ -2,17 +2,19 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import { createAuthModEvaluationContext, evaluateAuthority, resolveUserAccess } from "../lib/authmod-core/evaluator";
+import { buildLauncher } from "../lib/launcher";
 import { MemoryAuthModRepository } from "../lib/authmod-core";
 import type { AppAssignment, ApplicationRegistryEntry, AuthIdentity, AuthorityGrant, SiteAssignment } from "../lib/authmod-core/model";
 
 class CountingRepository extends MemoryAuthModRepository {
-  counts = { identities: 0, grants: 0, apps: 0, sites: 0, applications: 0, oplocs: 0 };
+  counts = { identities: 0, grants: 0, apps: 0, sites: 0, applications: 0, oplocs: 0, allOplocs: 0 };
   override async getIdentity(id: string) { this.counts.identities += 1; return super.getIdentity(id); }
   override async listAuthorityGrants(id: string, type?: "interactive" | "service") { this.counts.grants += 1; return super.listAuthorityGrants(id, type); }
   override async listAppAssignments(id: string) { this.counts.apps += 1; return super.listAppAssignments(id); }
   override async listSiteAssignments(id: string) { this.counts.sites += 1; return super.listSiteAssignments(id); }
   override async getApplication(id: string) { this.counts.applications += 1; return super.getApplication(id); }
   override async getActiveOploc(id: string) { this.counts.oplocs += 1; return super.getActiveOploc(id); }
+  override async listActiveOplocs() { this.counts.allOplocs += 1; return super.listActiveOplocs(); }
 }
 
 function setup() {
@@ -51,12 +53,26 @@ test("evaluateAuthority reuses the base identity and grants", async () => {
   assert.equal(repo.counts.applications, 1);
 });
 
+test("full-access launcher resolution does not enumerate the canonical OPLOC registry", async () => {
+  const { repo, principal } = setup();
+  const identity = repo.identities.get(principal.id)!;
+  repo.identities.set(identity.id, { ...identity, fullAccess: true });
+  await buildLauncher(repo, principal);
+  assert.equal(repo.counts.allOplocs, 0);
+  assert.equal(repo.counts.oplocs, 0);
+});
+
 test("interactive hot paths do not contain whole canonical collection gets", () => {
   const files = [
     "../app/api/oplocs/route.ts",
     "../app/api/delivered-in/access/route.ts",
     "../../cpu-production/app/api/production/route.ts",
     "../../cpu-production/lib/cpu-projection.ts",
+    "../app/api/launcher/route.ts",
   ];
   for (const file of files) assert.doesNotMatch(readFileSync(new URL(file, import.meta.url), "utf8"), /collection\(["']integrationHubCanonical["']\)\.get\(\)/);
+  assert.doesNotMatch(readFileSync(new URL("../lib/launcher.ts", import.meta.url), "utf8"), /activeOplocs\(\)/);
+  assert.match(readFileSync(new URL("../lib/authmod-core/firestore-repository.ts", import.meta.url), "utf8"), /integrationHubCanonical.*doc\(canonicalDocumentId\(oplocId\)\)\.get/);
+  assert.match(readFileSync(new URL("../lib/repository.ts", import.meta.url), "utf8"), /canonicalRef\(\)\.doc\(canonicalDocumentId\(canonicalId\)\)\.get/);
+  assert.match(readFileSync(new URL("../lib/repository.ts", import.meta.url), "utf8"), /\.count\(\)\.get/);
 });
