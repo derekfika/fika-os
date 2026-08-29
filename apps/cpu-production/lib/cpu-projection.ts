@@ -1,4 +1,4 @@
-import { productionQueue, type ProductionOrder, type ProductionStatus } from "@hub/lib/production-domain";
+import { productionQueue, productionQueueForWeek, type ProductionOrder, type ProductionStatus } from "@hub/lib/production-domain";
 import type { ProductionPlan } from "../app/lib/production-plan";
 import { db } from "@hub/lib/firebase-admin";
 import { getActiveCanonicalOplocLabels } from "@hub/lib/canonical-oplocs";
@@ -13,6 +13,17 @@ export const cpuChanges = () => db.collection("fikaCpuProductionChangesV1");
 export const cpuCursor = () => db.collection("fikaCpuProductionChangeCursorV1");
 export const cpuProjections = () => db.collection("fikaCpuProductionDayProjectionsV1");
 export const cpuChangeReceipts = () => db.collection("fikaCpuProductionChangeReceiptsV1");
+const planDocumentId = (orderId: string) => `production-plan:${orderId}`;
+
+export async function loadPlansForOrders(orderIds: string[]) {
+  const wanted = [...new Set(orderIds)];
+  if (!wanted.length) return [] as ProductionPlan[];
+  const snapshots = await Promise.all(wanted.map(orderId => cpuPlans().doc(planDocumentId(orderId)).get()));
+  const missing = wanted.filter((orderId, index) => !snapshots[index].exists);
+  const legacy = await Promise.all(missing.map(orderId => cpuPlans().where("orderId", "==", orderId).limit(1).get()));
+  return snapshots.flatMap(snapshot => snapshot.exists ? [snapshot.data() as ProductionPlan] : [])
+    .concat(legacy.flatMap(snapshot => snapshot.docs.map(document => document.data() as ProductionPlan)));
+}
 
 export async function appendCpuChange(input: Omit<CpuChangeEvent, "sequence">) { return db.runTransaction(async (transaction) => { const receiptRef = input.idempotencyKey ? cpuChangeReceipts().doc(input.idempotencyKey.replace(/[^A-Za-z0-9:_-]+/g, "_")) : undefined; const receipt = receiptRef ? await transaction.get(receiptRef) : undefined; if (receipt?.exists) return receipt.data()?.event as CpuChangeEvent; const ref = cpuCursor().doc("global"); const current = await transaction.get(ref); const sequence = Number(current.data()?.sequence || 0) + 1; const event = { ...input, sequence }; transaction.set(ref, { sequence }); transaction.create(cpuChanges().doc(String(sequence).padStart(20, "0")), event); if (receiptRef) transaction.create(receiptRef, { idempotencyKey: input.idempotencyKey, event }); return event; }); }
 export async function listCpuChanges(after: number, serviceDate: string) { const snapshot = await cpuChanges().where("serviceDate", "==", serviceDate).where("sequence", ">", after).orderBy("sequence", "asc").get(); return snapshot.docs.map((doc) => doc.data() as CpuChangeEvent); }
@@ -21,6 +32,10 @@ function weekDates(weekCommencing: string) { const start = new Date(`${weekComme
 export async function listCpuWeekChanges(after: number, weekCommencing: string) {
   const changes = await Promise.all(weekDates(weekCommencing).map((serviceDate) => listCpuChanges(after, serviceDate)));
   return changes.flat().sort((a, b) => a.sequence - b.sequence);
+}
+export async function hasCpuChangesSince(after: number, serviceDate?: string, weekCommencing?: string) {
+  if (weekCommencing) return (await listCpuWeekChanges(after, weekCommencing)).length > 0;
+  return serviceDate ? (await listCpuChanges(after, serviceDate)).length > 0 : false;
 }
 export function buildCpuDayProjection(serviceDate: string, orders: ProductionOrder[], plans: ProductionPlan[] = [], lastChangeSequence = 0, revision = 1, now = new Date().toISOString()): CpuDayProjection {
   const planByOrder = new Map(plans.map((plan) => [plan.orderId, plan]));
@@ -43,19 +58,19 @@ async function withReadableDestinations(orders: ProductionOrder[]) {
 }
 
 export async function rebuildCpuDayProjection(serviceDate: string, lastChangeSequence?: number) {
-  const [rawOrders, planSnapshot, previous] = await Promise.all([productionQueue(serviceDate), cpuPlans().get(), cpuProjections().doc(serviceDate).get()]);
+  const [rawOrders, previous] = await Promise.all([productionQueue(serviceDate), cpuProjections().doc(serviceDate).get()]);
   const orders = await withReadableDestinations(rawOrders);
-  const plans = planSnapshot.docs.map((document) => document.data() as ProductionPlan);
+  const plans = await loadPlansForOrders(orders.map(order => order.canonicalId));
   const projection = buildCpuDayProjection(serviceDate, orders, plans, lastChangeSequence ?? Number(previous.data()?.lastChangeSequence || 0), Number(previous.data()?.revision || 0) + 1);
   await cpuProjections().doc(serviceDate).set(projection);
   return projection;
 }
 
 export async function rebuildCpuWeekProjection(weekCommencing: string, lastChangeSequence?: number) {
-  const [rawOrders, planSnapshot, previous] = await Promise.all([productionQueue(), cpuPlans().get(), cpuProjections().doc(`week:${weekCommencing}`).get()]);
+  const [rawOrders, previous] = await Promise.all([productionQueueForWeek(weekCommencing), cpuProjections().doc(`week:${weekCommencing}`).get()]);
   const orders = await withReadableDestinations(rawOrders);
-  const plans = planSnapshot.docs.map((document) => document.data() as ProductionPlan);
-  const projection = buildCpuDayProjection("all", orders.filter((order) => order.serviceDate && weekDates(weekCommencing).includes(order.serviceDate)), plans, lastChangeSequence ?? Number(previous.data()?.lastChangeSequence || 0), Number(previous.data()?.revision || 0) + 1);
+  const plans = await loadPlansForOrders(orders.map(order => order.canonicalId));
+  const projection = buildCpuDayProjection("all", orders, plans, lastChangeSequence ?? Number(previous.data()?.lastChangeSequence || 0), Number(previous.data()?.revision || 0) + 1);
   const week: CpuWeekProjection = { serviceDate: weekCommencing, weekCommencing, revision: projection.revision, lastChangeSequence: projection.lastChangeSequence, orders: projection.orders, summary: projection.summary, rebuiltAt: projection.rebuiltAt };
   await cpuProjections().doc(`week:${weekCommencing}`).set(week);
   return week;

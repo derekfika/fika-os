@@ -35,6 +35,7 @@ const planRoute = readFileSync(
   new URL("../app/api/production-plan/route.ts", import.meta.url),
   "utf8",
 );
+const projection = readFileSync(new URL("../lib/cpu-projection.ts", import.meta.url), "utf8");
 const tia = readFileSync(
   new URL("../app/tia/page.tsx", import.meta.url),
   "utf8",
@@ -110,7 +111,7 @@ test("Head Chef receives immutable Menu Planning publication days as a read-only
   assert.match(publishedMenusView, /Production totals/);
   assert.match(publishedMenusView, /By destination/);
   assert.match(publishedMenusView, /EventSource\("\/api\/menu-publications\/events"\)/);
-  assert.match(publishedMenusView, /setInterval\(.*30000/);
+  assert.doesNotMatch(publishedMenusView, /setInterval\(.*30000/);
   assert.match(publishedMenusView, /visibilitychange/);
   assert.match(publicationEventsRoute, /text\/event-stream/);
   assert.match(publicationInvalidateRoute, /publishPublicationChanged/);
@@ -119,6 +120,19 @@ test("Head Chef receives immutable Menu Planning publication days as a read-only
   assert.match(publishedMenusView, /href=\{`#published-day-\$\{date\}`\}/);
   assert.match(page, /productionScopes/);
   assert.match(page, /scope=\$\{productionScope\}/);
+});
+
+test("CPU read paths use bounded and targeted Firestore shapes", () => {
+  assert.match(projection, /productionQueueForWeek/);
+  assert.match(route, /hasCpuChangesSince/);
+  assert.doesNotMatch(route, /cpuPlans\(\)\.get\(\)/);
+  assert.match(planRoute, /loadPlansForOrders/);
+  assert.match(planRoute, /if \(orderId\) await getPlan\(orderId\)/);
+  const allergenPage = readFileSync(new URL("../app/allergens/page.tsx", import.meta.url), "utf8");
+  assert.match(allergenPage, /serviceDate=.*selectedDate/);
+  assert.doesNotMatch(allergenPage, /\/api\/production\?scope=all/);
+  const oplocRoute = readFileSync(new URL("../app/api/oplocs/route.ts", import.meta.url), "utf8");
+  assert.doesNotMatch(oplocRoute, /connectionsOverview/);
 });
 
 test("published menu selection keeps only the latest version for each service date", () => {

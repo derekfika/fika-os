@@ -16,7 +16,7 @@ import {
 import { hospitalityMenuProductionRouting } from "@hub/lib/connections-service";
 import { localFixtureOrders, updateLocalFixture } from "../local-fixtures";
 import { filterProductionOrdersForScope, normaliseProductionScope, type ProductionScope } from "../../../lib/production-scope";
-import { appendCpuChange, buildCpuDayProjection, cpuPlans, cpuProjections, listCpuChanges, listCpuWeekChanges, rebuildCpuWeekProjection, weekCommencingFor } from "../../../lib/cpu-projection";
+import { appendCpuChange, buildCpuDayProjection, cpuProjections, hasCpuChangesSince, listCpuChanges, listCpuWeekChanges, rebuildCpuWeekProjection, weekCommencingFor, loadPlansForOrders } from "../../../lib/cpu-projection";
 import type { ProductionOrder } from "@hub/lib/production-domain";
 import { titleCaseDish } from "../../../lib/production-presentation";
 import { getActiveCanonicalOplocLabels } from "@hub/lib/canonical-oplocs";
@@ -47,9 +47,9 @@ function internalProjectionRequest(request: NextRequest) {
   return process.env.NODE_ENV !== "production" && !configured || Boolean(configured && request.headers.get("x-fika-internal-token") === configured);
 }
 async function rebuildCpuProjection(serviceDate: string, lastChangeSequence?: number) {
-  const [rawOrders, planSnapshot, previous] = await Promise.all([productionQueue(serviceDate === "all" ? undefined : serviceDate), cpuPlans().get(), cpuProjections().doc(serviceDate).get()]);
+  const [rawOrders, previous] = await Promise.all([productionQueue(serviceDate === "all" ? undefined : serviceDate), cpuProjections().doc(serviceDate).get()]);
   const orders = await withReadableDestinations(rawOrders);
-  const plans = planSnapshot.docs.map((document) => document.data() as import("../../lib/production-plan").ProductionPlan);
+  const plans = await loadPlansForOrders(orders.map(order => order.canonicalId));
   const projection = buildCpuDayProjection(serviceDate, orders, plans, lastChangeSequence ?? Number(previous.data()?.lastChangeSequence || 0), Number(previous.data()?.revision || 0) + 1);
   await cpuProjections().doc(serviceDate).set(projection);
   return projection;
@@ -173,8 +173,8 @@ export async function GET(request: NextRequest) {
       const projectedIds = new Set((projection?.orders || []).map((order) => String(order.id)));
       const missing = [...canonicalById.keys()].filter((id) => !projectedIds.has(id));
       const unexpected = [...projectedIds].filter((id) => !canonicalById.has(id));
-      const planSnapshot = await cpuPlans().get();
-      const expected = buildCpuDayProjection(week ? "all" : projectionDate, [...canonicalById.values()], planSnapshot.docs.map((document) => document.data() as import("../../lib/production-plan").ProductionPlan));
+      const plans = await loadPlansForOrders([...canonicalById.keys()]);
+      const expected = buildCpuDayProjection(week ? "all" : projectionDate, [...canonicalById.values()], plans);
       const projectedById = new Map((projection?.orders || []).map((order) => [String(order.id), order]));
       const fieldMismatches = expected.orders.filter((order) => {
         const actual = projectedById.get(order.id);
@@ -188,14 +188,8 @@ export async function GET(request: NextRequest) {
       const storedData = stored.data() as { orders?: Array<{ id?: string; destinationLabel?: string; destinationOplocId?: string; origin?: string; status?: string; workflowStatus?: string; cancellationNotice?: string }> } | undefined;
       const needsReadableDestinations = storedData?.orders?.some((order) => order.destinationOplocId && order.destinationLabel === order.destinationOplocId);
       const needsCancellationRefresh = storedData?.orders?.some((order) => (order.status === "cancelled" || order.workflowStatus === "cancelled" || (order.origin === "hospitality_booking" && ["draft", "needs_review"].includes(order.status || ""))) && !order.cancellationNotice);
-      const canonical = await productionQueue(week ? undefined : projectionDate);
-      const weekEnd = week ? (() => { const date = new Date(`${week}T00:00:00Z`); date.setUTCDate(date.getUTCDate() + 4); return date.toISOString().slice(0, 10); })() : undefined;
-      const canonicalIds = new Set(canonical
-        .filter((order) => !week || ((order.serviceDate || "") >= week && (order.serviceDate || "") <= weekEnd!))
-        .map((order) => order.canonicalId));
-      const projectedIds = new Set((storedData?.orders || []).map((order) => order.id).filter(Boolean));
-      const needsOrderRefresh = canonicalIds.size !== projectedIds.size || [...canonicalIds].some((id) => !projectedIds.has(id));
-      return NextResponse.json({ projection: stored.exists && !needsReadableDestinations && !needsCancellationRefresh && !needsOrderRefresh ? stored.data() : week ? await rebuildCpuWeekProjection(week) : await rebuildCpuProjection(projectionDate) });
+      const hasChanges = stored.exists && await hasCpuChangesSince(Number((stored.data() as { lastChangeSequence?: number }).lastChangeSequence || 0), week ? undefined : projectionDate, week || undefined);
+      return NextResponse.json({ projection: stored.exists && !needsReadableDestinations && !needsCancellationRefresh && !hasChanges ? stored.data() : week ? await rebuildCpuWeekProjection(week) : await rebuildCpuProjection(projectionDate) });
     }
     if (request.nextUrl.searchParams.has("changesSince")) {
       const after = Number(request.nextUrl.searchParams.get("changesSince") || 0);
@@ -243,7 +237,8 @@ export async function GET(request: NextRequest) {
 
 async function ordersForScope(orders: Awaited<ReturnType<typeof productionQueue>>, scope: ProductionScope) {
   if (scope === "all") return orders;
-  return filterProductionOrdersForScope(orders, scope, await hospitalityMenuProductionRouting());
+  const menuItemIds = orders.flatMap(order => order.lines.flatMap(line => [line.sourceMenuItemId, line.sourceOfferingId].filter((value): value is string => Boolean(value))));
+  return filterProductionOrdersForScope(orders, scope, await hospitalityMenuProductionRouting(menuItemIds));
 }
 
 async function withReadableDestinations(orders: Awaited<ReturnType<typeof productionQueue>>) {

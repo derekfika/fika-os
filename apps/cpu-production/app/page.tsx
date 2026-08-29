@@ -110,7 +110,7 @@ export default function CpuProduction() {
   };
   useEffect(() => {
     void load();
-  }, [productionScope, view, dayDate, weekCommencing]);
+  }, [view, dayDate, weekCommencing]);
   const sites = [
     ...new Set(
       orders.map((order) => order.destinationOplocId).filter(Boolean),

@@ -45,10 +45,14 @@ const LEGACY_HOSPITALITY_MENU_ROUTING: Record<string, ProductionDashboardView[]>
 };
 
 /** Read-only projection consumed by the CPU dashboards. */
-export async function hospitalityMenuProductionRouting(): Promise<Record<string, ProductionDashboardView[]>> {
-  const snapshot = await menuProductionRouting().get();
-  const saved = Object.fromEntries(snapshot.docs.map(document => {
-    const data = document.data();
+export async function hospitalityMenuProductionRouting(menuItemIds?: string[]): Promise<Record<string, ProductionDashboardView[]>> {
+  const wanted = menuItemIds ? [...new Set(menuItemIds.filter(Boolean))] : undefined;
+  const snapshot = wanted
+    ? await Promise.all(wanted.map(id => menuProductionRouting().doc(stableDocumentId(id)).get()))
+    : await menuProductionRouting().get();
+  const documents = Array.isArray(snapshot) ? snapshot.filter(item => item.exists) : snapshot.docs;
+  const saved = Object.fromEntries(documents.map(document => {
+    const data = document.data() || {};
     const views = Array.isArray(data.views)
       ? data.views.filter((view: unknown): view is ProductionDashboardView => view === "liana" || view === "craig" || view === "site_manager")
       : [];

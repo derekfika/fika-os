@@ -17,7 +17,7 @@ import {
   type ProductionStatus,
   type ProductionOrder,
 } from "@hub/lib/production-domain";
-import { appendCpuChange, cpuPlans, rebuildCpuDayProjection, rebuildCpuWeekProjection, weekCommencingFor } from "../../../lib/cpu-projection";
+import { appendCpuChange, cpuPlans, loadPlansForOrders, rebuildCpuDayProjection, rebuildCpuWeekProjection, weekCommencingFor } from "../../../lib/cpu-projection";
 
 function menuContentHash(menuItems: PlannedMenuItem[]) {
   return createHash("sha256").update(JSON.stringify(menuItems)).digest("hex");
@@ -143,6 +143,11 @@ function initialPlan(orderId: string, order?: Awaited<ReturnType<typeof producti
 }
 async function getPlan(orderId: string) {
   if (!plans.has(orderId)) {
+    const targeted = await loadPlansForOrders([orderId]);
+    const persisted = targeted[0];
+    if (persisted) plans.set(orderId, normalisePlanAllergens(persisted));
+  }
+  if (!plans.has(orderId)) {
     // Canonical hand-offs are the source of truth. Local fixtures remain a
     // development fallback, but must never be the only seed for a real order.
     const order = await loadOrder(orderId);
@@ -201,15 +206,21 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     return errorResponse(error);
   }
-  await loadPlans();
-  const visibleStoredPlans = (await Promise.all([...plans.values()].map(async plan => ({ plan, visible: await isVisibleForCpu(plan.orderId) })))).filter(item => item.visible).map(item => item.plan);
-  const entries = visibleStoredPlans.filter(plan => plan.status === "planned");
   const orderId = request.nextUrl.searchParams.get("orderId");
   if (orderId && request.nextUrl.searchParams.get("download") === "pdf") {
     const artifact = (await getPlan(orderId)).matrixArtifact;
     if (!artifact?.pdfPath || !existsSync(artifact.pdfPath)) return NextResponse.json({ error: { message: "A local PDF has not been generated for this matrix." } }, { status: 404 });
     return new NextResponse(await fs.readFile(artifact.pdfPath), { headers: { "content-type": "application/pdf", "content-disposition": `inline; filename="${artifact.fileName}"` } });
   }
+  if (orderId) await getPlan(orderId);
+  else await loadPlans();
+  if (orderId) {
+    const selectedPlan = await isVisibleForCpu(orderId) ? await mergeOriginalItems(await getPlan(orderId), orderId) : undefined;
+    const selectedMatrixStatus = selectedPlan && !selectedPlan.matrixArtifact && selectedPlan.signatures?.some(signature => signature.role === "production_chef") && selectedPlan.signatures?.some(signature => signature.role === "head_chef_site_manager") ? "generating" : selectedPlan?.matrixArtifact ? "ready" : undefined;
+    return NextResponse.json({ plan: selectedPlan, matrixStatus: selectedMatrixStatus });
+  }
+  const visibleStoredPlans = (await Promise.all([...plans.values()].map(async plan => ({ plan, visible: await isVisibleForCpu(plan.orderId) })))).filter(item => item.visible).map(item => item.plan);
+  const entries = visibleStoredPlans.filter(plan => plan.status === "planned");
   const visiblePlans = await Promise.all(visibleStoredPlans.map(plan => mergeOriginalItems(plan, plan.orderId)));
   const selectedPlan = orderId && await isVisibleForCpu(orderId) ? await mergeOriginalItems(await getPlan(orderId), orderId) : undefined;
   const selectedMatrixStatus = selectedPlan && !selectedPlan.matrixArtifact && selectedPlan.signatures?.some(signature => signature.role === "production_chef") && selectedPlan.signatures?.some(signature => signature.role === "head_chef_site_manager") ? "generating" : selectedPlan?.matrixArtifact ? "ready" : undefined;

@@ -204,6 +204,24 @@ export async function productionQueue(serviceDate?: string) {
       .map(order => enrichOrder(withoutAutomaticQuantityBlockers(order))),
   );
 }
+export async function productionQueueForWeek(weekCommencing: string) {
+  const start = new Date(`${weekCommencing}T00:00:00Z`);
+  const end = new Date(start);
+  end.setUTCDate(end.getUTCDate() + 5);
+  const snapshot = await orders()
+    .where("serviceDate", ">=", weekCommencing)
+    .where("serviceDate", "<", end.toISOString().slice(0, 10))
+    .get();
+  return Promise.all(
+    snapshot.docs
+      .map(item => item.data() as ProductionOrder)
+      .filter(order => !order.supersededBy && order.status !== "amended")
+      .filter(order => !(process.env.NODE_ENV !== "production" && order.idempotencyKey.startsWith("cpu-internal-test:")))
+      .filter(order => !(order.origin === "hospitality_booking" && order.requiresDelivery === false))
+      .sort((a, b) => a.requiredBy.localeCompare(b.requiredBy))
+      .map(order => enrichOrder(withoutAutomaticQuantityBlockers(order))),
+  );
+}
 export async function productionOrderDetail(canonicalId: string) { const snapshot = await orders().doc(stableDocumentId(canonicalId)).get(); return snapshot.exists ? enrichOrder(withoutAutomaticQuantityBlockers(snapshot.data() as ProductionOrder)) : undefined; }
 
 export type CpuCreatedProductionInput = { clientName: string; serviceDate: string; deliveryDateTime: string; requiredBy: string; serviceWindow: { startTime: string; endTime?: string }; productionLocationId?: string; productionCategory?: ProductionCategory; destinationOplocId?: string; requiresDelivery?: boolean; deliveryLocation: string; destinationAddress?: ProductionDestinationAddress; floorRoom?: string; contact?: string; serviceType: string; pax: number; lines: Array<{ itemName: string; customerQuantity: number; customerUnit: string; productionQuantity?: number; productionUnit?: string; dietary?: Record<string, unknown>; approvedAllergenSnapshot?: { allergens: Record<string, string>; mayContainNotes?: string }; notes?: string }>; priority?: "normal" | "high" | "urgent"; sourceReference?: string; sourceEntityId?: string; sourceVersion?: number; notes?: string };

@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server";
-import { connectionsOverview } from "@hub/lib/connections-service";
+import { listActiveCanonicalOplocs } from "@hub/lib/canonical-oplocs";
 
 export async function GET() {
   try {
-    const overview = await connectionsOverview();
+    const records = await listActiveCanonicalOplocs();
     return NextResponse.json(
-      { oplocs: overview.oplocs },
+      { oplocs: records.map(record => ({ canonicalId: record.canonicalId, label: String(record.record?.approvedName || record.canonicalId) })) },
       { headers: { "Cache-Control": "no-store" } },
     );
   } catch {
