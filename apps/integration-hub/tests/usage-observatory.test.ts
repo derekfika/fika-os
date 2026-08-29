@@ -20,6 +20,12 @@ test("resolution is centralised by duration", () => {
   assert.equal(resolutionForDuration(8 * 86400000), "1d");
 });
 
+test("short diagnostic windows use fine-grained resolutions", () => {
+  assert.equal(resolutionForDuration(15 * 60000), "1m");
+  assert.equal(resolutionForDuration(30 * 60000), "1m");
+  assert.equal(resolutionForDuration(60 * 60000), "1m");
+});
+
 test("London day start handles BST and GMT deliberately", () => {
   assert.equal(londonDayStart(new Date("2026-08-29T12:00:00Z")).toISOString(), "2026-08-28T23:00:00.000Z");
   assert.equal(londonDayStart(new Date("2026-01-29T12:00:00Z")).toISOString(), "2026-01-29T00:00:00.000Z");
