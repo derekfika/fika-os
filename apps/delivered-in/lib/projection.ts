@@ -8,8 +8,8 @@ export type ProjectedEntry = { sourceEntryId: string; slot: string; canonicalDis
 export type ProjectedDestination = { oplocId: string; label: string; portions: number };
 export type ProjectedDay = { publicationId: string; publicationDayId: string; sourceDayId: string; date: string; dayName: string; version: number; contentHash: string; weekCommencing?: string; entries: ProjectedEntry[]; destinations?: ProjectedDestination[]; allergenSignoff: SourceDay["allergenSignoff"]; cpuReview?: { status: "pending" | "signed"; signatures: Array<{ role: string; printedName: string; signedAt: string }>; drivePdfUrl?: string }; drivePdfUrl?: string; drivePdfFileName?: string; siteMenu?: import("./site-menu").SiteMenuState };
 export type ProjectedWeek = { publicationId: string; weekCommencing: string; weekEnding: string; days: ProjectedDay[] };
-import { GOVERNED_OPLOC_BY_ID } from "../../shared/governed-oplocs";
-import { titleCase } from "../../menu-planning/lib/text";
+import { GOVERNED_OPLOC_BY_ID } from "@fika/server-shared/governed-oplocs";
+import { titleCase } from "./text";
 
 const OPERATIONAL_TIME_ZONE = "Europe/London";
 const OPERATIONAL_WEEK_HORIZON_DAYS = 42;

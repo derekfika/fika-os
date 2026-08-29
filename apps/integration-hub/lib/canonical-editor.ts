@@ -3,6 +3,7 @@ import { parseCanonical, type CanonicalEntityType } from "./schemas";
 import type { Actor } from "./auth";
 import { validateCanonicalId } from "./canonical-identities";
 import { normaliseAddressValues } from "./address";
+export { stableDocumentId } from "@fika/server-shared/stable-document-id";
 
 export type EditableEntityType = "OPLOC" | "Address" | "Legend" | "Employment" | "Operational Assignment" | "Operational Capability" | "Capability Enablement";
 export type InlineAddressInput = { canonicalId: string; expectedVersion?: number; values: Record<string, unknown>; decisionReason: string; allowDistinctDuplicate?: boolean };
@@ -26,7 +27,6 @@ export function buildCanonicalRecord(input: CanonicalEditorInput, actor: Actor, 
 
 export function editorPreview(input: CanonicalEditorInput, actor: Actor, previous?: Record<string, unknown>) { const proposed = buildCanonicalRecord(input, actor, previous); const changes = diff(previous || {}, proposed); const address = input.entityType === "Address"; return { entityType: input.entityType, canonicalId: input.canonicalId, operation: previous ? "update" : "create", lifecycleAfterSave: address ? "published" : "needs-review", publicationAfterSave: address ? "published" : "unpublished", changes, proposed, additionalWrites: input.legacySourceCanonicalId ? ["Create confirmed legacy-source mapping to this OPLOC", "Preserve legacy source record unchanged", "Create audit event and revision"] : [address ? "Record automatic Address approval and publication with the authenticated actor" : "Create audit event and revision"] }; }
 export function diff(before: Record<string, unknown>, after: Record<string, unknown>) { return [...new Set([...Object.keys(before), ...Object.keys(after)])].filter(key => JSON.stringify(before[key]) !== JSON.stringify(after[key])).map(field => ({ field, previousValue: before[field], newValue: after[field] })); }
-export function stableDocumentId(value: string) { return crypto.createHash("sha256").update(value).digest("hex"); }
 export function editableEntityType(value: string): value is EditableEntityType { return ["OPLOC", "Address", "Legend", "Employment", "Operational Assignment", "Operational Capability", "Capability Enablement"].includes(value); }
 
 function buildOploc(input: CanonicalEditorInput, actor: Actor, base: Record<string, unknown>, previous: Record<string, unknown> | undefined, now: string) {

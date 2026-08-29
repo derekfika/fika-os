@@ -2,7 +2,7 @@ import type { NextRequest } from "next/server";
 import { assertAuthorisedOploc, projectPublishedWeeks, type Site, type SiteAccess, type SourcePublication } from "./projection";
 import { siteMenuState } from "./site-menu";
 import { latestSiteMenuArtifactHosted } from "./site-menu-store";
-import type { DeliveredInService } from "../../integration-hub/lib/delivered-in-access";
+import type { DeliveredInService } from "@fika/server-shared/delivered-in-access";
 import { recordDeliveredInAppReadBudget } from "./delivered-in-read-budget";
 
 const hubBase = () => (process.env.INTEGRATION_HUB_BASE_URL || "http://localhost:3200").replace(/\/$/, "");

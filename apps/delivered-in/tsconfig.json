@@ -11,7 +11,6 @@
     "esModuleInterop": true,
     "module": "esnext",
     "moduleResolution": "bundler",
-    "baseUrl": ".",
     "jsx": "react-jsx",
     "resolveJsonModule": true,
     "isolatedModules": true,
@@ -26,23 +25,7 @@
         "name": "next"
       }
     ],
-    "paths": {
-      "@/*": [
-        "./*"
-      ],
-      "firebase-admin": [
-        "./node_modules/firebase-admin"
-      ],
-      "firebase-admin/*": [
-        "./node_modules/firebase-admin/*"
-      ],
-      "zod": [
-        "./node_modules/zod"
-      ],
-      "xlsx": [
-        "./node_modules/xlsx"
-      ]
-    },
+    "paths": { "@/*": ["./*"] },
     "incremental": true,
     "allowJs": true
   },

@@ -6,8 +6,8 @@ import type { GrabAndGoOrder, GrabAndGoProduct } from "./grab-and-go";
 import { claimEvent, createDomainEvent, eventIsDue, markEventDelivered, markEventFailed, type DurableDomainEvent } from "../../shared/domain-events";
 import { appDataPath } from "../../shared/app-data-path";
 import type { FulfilmentRequirement } from "../../shared/fulfilment-requirement";
-import { db } from "../../integration-hub/lib/firebase-admin";
-import { stableDocumentId } from "../../integration-hub/lib/canonical-editor";
+import { db } from "@fika/server-shared/firebase-admin";
+import { stableDocumentId } from "@fika/server-shared/stable-document-id";
 import { recordDeliveredInAppReadBudget } from "./delivered-in-read-budget";
 
 type Stored = { version: 1; orders: GrabAndGoOrder[]; events: DurableDomainEvent[]; /** Legacy migration field; central Integration Hub is authoritative. */ fulfilmentRequirements?: FulfilmentRequirement[] };

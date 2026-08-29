@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { ProjectedDay, ProjectedEntry, ProjectedWeek, Site } from "../lib/projection";
 import { CANONICAL_ALLERGEN_COLUMNS } from "../lib/allergen-columns";
-import { titleCase } from "../../menu-planning/lib/text";
+import { titleCase } from "../lib/text";
 
 type Dashboard = { access: { email: string; oplocIds: string[]; permissions: string[] }; sites: Array<Site & { services?: { deliveredIn: boolean; grabAndGo: boolean } }>; selectedOplocId?: string; weeks: ProjectedWeek[] };
 type View = "today" | "week" | "allergens";

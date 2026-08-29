@@ -2,11 +2,11 @@ import assert from "node:assert/strict";
 import { existsSync, unlinkSync, copyFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
-import { resolveDeliveredInAccess } from "../../integration-hub/lib/delivered-in-access";
+import { resolveDeliveredInAccess } from "@fika/server-shared/delivered-in-access";
 import { assertAuthorisedOploc, assertPublishedAllocationIntegrity, isRelevantPublishedWeek, operationalDateLondon, projectPublishedWeeks, siteDayTotal, type SourcePublication } from "../lib/projection";
 import { groupSiteMenuEntries, siteMenuSectionForSlot, siteMenuState, type SiteMenuArtifact } from "../lib/site-menu";
 import { buildDeliveredInMenuRequests, weekFolderName } from "../lib/google-site-menu";
-import { titleCase } from "../../menu-planning/lib/text";
+import { titleCase } from "../lib/text";
 import { applyOrderAction, deliveryCutoff, isBeforeOrderCutoff, orderIdFor, productsForDeliveryDate, rotationWeekForDate, type GrabAndGoProduct } from "../lib/grab-and-go";
 import { getGrabAndGoOrder, listGrabAndGoOrders, replayGrabAndGoOutbox, saveGrabAndGoOrder } from "../lib/grab-and-go-store";
 

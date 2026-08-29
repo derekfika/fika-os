@@ -37,6 +37,7 @@
     "reset:services": "tsx scripts/reset-services.ts"
   },
   "dependencies": {
+    "@fika/server-shared": "file:../../packages/server-shared",
     "firebase": "^11.10.0",
     "firebase-admin": "^13.4.0",
     "google-auth-library": "^10.9.1",

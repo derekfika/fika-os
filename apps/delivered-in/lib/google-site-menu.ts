@@ -2,7 +2,7 @@ import { promises as fs } from "node:fs";
 import type { ProjectedDay, Site } from "./projection";
 import { groupSiteMenuEntries, siteMenuFileName, type SiteMenuArtifact } from "./site-menu";
 import { CANONICAL_ALLERGEN_COLUMNS } from "./allergen-columns";
-import { driveAccessToken, resolveDriveOwner } from "../../hospitality-booking/lib/drive-owner";
+import { driveAccessToken, resolveDriveOwner } from "@fika/server-shared/drive-owner";
 
 type OAuthClient = { installed?: { client_id: string; client_secret: string; token_uri?: string } };
 type OAuthToken = { access_token?: string; refresh_token?: string; expiry_date?: number; token_type?: string };

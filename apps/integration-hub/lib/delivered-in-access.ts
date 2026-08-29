@@ -1,37 +1,11 @@
-import type { Actor } from "./auth";
-import type { CanonicalRecord } from "./types";
-import { GOVERNED_OPLOC_BY_ID } from "../../shared/governed-oplocs";
-
-export const DELIVERED_IN_PERMISSIONS = ["delivered_in.view", "delivered_in.allergens.view"] as const;
-export type DeliveredInPermission = typeof DELIVERED_IN_PERMISSIONS[number];
-export type DeliveredInAccess = { email: string; oplocIds: string[]; permissions: DeliveredInPermission[] };
-export type DeliveredInSite = { oplocId: string; label: string; services: { deliveredIn: boolean; grabAndGo: boolean } };
-export type DeliveredInService = "delivered-in" | "grab-and-go";
-
-const FIXTURE_SITE_ASSIGNMENTS: Record<string, string[]> = {
-  "admin@local.fika": [],
-  "reviewer@local.fika": ["oploc:46701265-15af-48f4-a230-1d27ca21bc59", "oploc:b835d8ee-b187-49d1-9072-7348b04bfd2d"],
-  "viewer@local.fika": ["oploc:46701265-15af-48f4-a230-1d27ca21bc59"],
-};
-
-// A local service arrangement is the operational opt-in for Delivered-In. Keep
-// withdrawn/archived venues out, but do not hide an active venue merely because
-// its OPLOC publication flag is still catching up with the connection record.
-const activeOplocs = (records: CanonicalRecord[]) => records.filter(record => record.entityType === "OPLOC" && record.lifecycleStatus !== "archived" && record.publicationStatus !== "withdrawn" && String(record.record.lifecycleState || "active") !== "archived");
-const serviceMatches = (name: string, service: DeliveredInService) => { const value = name.toLocaleLowerCase().replaceAll("&", "and"); return service === "grab-and-go" ? value.includes("grab") && value.includes("go") : value.includes("delivered") && value.includes("in"); };
-function serviceEnabledOplocs(records: CanonicalRecord[], service: DeliveredInService) {
-  const today = new Date().toISOString().slice(0, 10);
-  const definitions = new Set(records.filter(record => record.entityType === "Service Definition" && record.lifecycleStatus !== "archived" && record.record.lifecycleState === "active" && serviceMatches(String(record.record.serviceName || ""), service)).map(record => record.canonicalId));
-  return new Set(records.filter(record => record.entityType === "Service Arrangement" && record.lifecycleStatus !== "archived" && record.record.lifecycleState === "active" && definitions.has(String(record.record.serviceDefinitionId || "")) && String(record.record.effectiveFrom || "") <= today && (!record.record.effectiveTo || String(record.record.effectiveTo) >= today)).map(record => String(record.record.oplocId || "")));
-}
-
-export function resolveDeliveredInAccess(actor: Pick<Actor, "email" | "role">, records: CanonicalRecord[] = [], service: DeliveredInService = "delivered-in"): { access: DeliveredInAccess; sites: DeliveredInSite[] } {
-  const all = activeOplocs(records);
-  const enabled = serviceEnabledOplocs(records, service);
-  const deliveredIn = serviceEnabledOplocs(records, "delivered-in");
-  const grabAndGo = serviceEnabledOplocs(records, "grab-and-go");
-  const assigned = actor.role === "integration-admin" ? all.map(record => record.canonicalId) : FIXTURE_SITE_ASSIGNMENTS[actor.email || ""] || [];
-  const oplocIds = Array.from(new Set(assigned.filter(id => all.some(record => record.canonicalId === id) && enabled.has(id))));
-  const labelById = new Map(all.map(record => [record.canonicalId, String(record.record.approvedName || record.canonicalId)]));
-  return { access: { email: actor.email || "", oplocIds, permissions: [...DELIVERED_IN_PERMISSIONS] }, sites: oplocIds.map(oplocId => ({ oplocId, label: labelById.get(oplocId) || GOVERNED_OPLOC_BY_ID.get(oplocId)?.label || oplocId, services: { deliveredIn: deliveredIn.has(oplocId), grabAndGo: grabAndGo.has(oplocId) } })) };
-}
+export {
+  resolveDeliveredInAccess,
+  DELIVERED_IN_PERMISSIONS,
+  type DeliveredInAccess,
+  type DeliveredInPermission,
+  type DeliveredInSite,
+  type DeliveredInService,
+  type DeliveredInActor,
+  type CanonicalRecordLike,
+} from "@fika/server-shared/delivered-in-access";
+export type { DeliveredInActor as Actor, CanonicalRecordLike as CanonicalRecord } from "@fika/server-shared/delivered-in-access";

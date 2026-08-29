@@ -1,5 +1,5 @@
-import { db } from "../../integration-hub/lib/firebase-admin";
-import { stableDocumentId } from "../../integration-hub/lib/canonical-editor";
+import { db } from "@fika/server-shared/firebase-admin";
+import { stableDocumentId } from "@fika/server-shared/stable-document-id";
 import { listGrabAndGoOrders, listSiteMenuArtifacts } from "../lib/migration-compat";
 
 const apply = process.argv.includes("--apply");

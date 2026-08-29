@@ -56,7 +56,7 @@ test("hosted migration is dry-run by default and chunks writes", async () => {
 
 test("Delivered-In Google generation reuses DWD in hosted mode and local OAuth only locally", async () => {
   const google = await readFile(new URL("../lib/google-site-menu.ts", import.meta.url), "utf8");
-  const owner = await readFile(new URL("../../hospitality-booking/lib/drive-owner.ts", import.meta.url), "utf8");
+  const owner = await readFile(new URL("../../../packages/server-shared/src/drive-owner.ts", import.meta.url), "utf8");
   assert.match(google, /resolveDriveOwner\(\{ type: "app-workspace", appId: "delivered-in" \}\)/);
   assert.match(google, /driveAccessToken\(owner\)/);
   assert.match(owner, /appId: "cpu-production" \| "delivered-in"/);
