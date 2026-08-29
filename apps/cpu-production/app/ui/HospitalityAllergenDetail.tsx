@@ -9,7 +9,7 @@ import type {
   PlannedSubItem,
   ProductionPlan,
 } from "../lib/production-plan";
-import "./liana.css";
+import "./hospitality-allergen-detail.css";
 import { mayContainNotes } from "./allergen-matrix";
 import { CANONICAL_ALLERGEN_COLUMNS, normaliseOperationalAllergens, toggleOperationalAllergen, type CanonicalAllergenKey } from "../../../shared/allergen-contract";
 import { matrixColumns } from "./allergen-matrix";
@@ -243,7 +243,7 @@ export function SignatureModal({
   );
 }
 
-export default function LianaOrderDetail({
+export default function HospitalityAllergenDetail({
   order,
   close,
   onSaved,
@@ -286,8 +286,8 @@ export default function LianaOrderDetail({
         if (body.plan?.menuItems) {
           setMenuItems(mergeOriginalItems(order, body.plan.menuItems));
           setPlanningNotes(body.plan.planningNotes || "");
-          setSignatures(body.plan.signatures || []);
-          setMatrixArtifact(body.plan.matrixArtifact);
+          if ("signatures" in body.plan) setSignatures(body.plan.signatures || []);
+          if ("matrixArtifact" in body.plan) setMatrixArtifact(body.plan.matrixArtifact);
           setMatrixStorageStatus(body.matrixStatus === "not_configured" ? "not_configured" : body.plan.matrixArtifact ? "ready" : undefined);
           setPlanStatus(body.plan.status || "draft");
         }
@@ -403,13 +403,17 @@ export default function LianaOrderDetail({
   };
   const applySandwich = (menuId: string, sub: PlannedSubItem, id: string) => {
     const productionItem = savedProductionItems.find((item) => item.id === id);
-    if (productionItem)
-      updateSubItem(menuId, sub.id, {
-        name: productionItem.title,
-        allergens: { ...emptyAllergens(), ...normaliseOperationalAllergens(productionItem.allergens) },
-        mayContainNotes: productionItem.mayContainNotes || "",
-        evidenceStatus: "not_completed",
-      });
+    if (!productionItem) return;
+    const nextItems = menuItems.map((item) => item.id === menuId ? { ...item, subItems: item.subItems.map((candidate) => candidate.id === sub.id ? {
+      ...candidate,
+      productionItemId: productionItem.id,
+      name: productionItem.title,
+      allergens: { ...emptyAllergens(), ...normaliseOperationalAllergens(productionItem.allergens) },
+      mayContainNotes: productionItem.mayContainNotes || "",
+      evidenceStatus: "not_completed" as const,
+    } : candidate) } : item);
+    setMenuItems(nextItems);
+    void planCommand("save-plan", {}, nextItems);
   };
   const saveSandwich = async (menuId: string, sub: PlannedSubItem) => {
     if (!sub.name.trim()) {
@@ -477,7 +481,8 @@ export default function LianaOrderDetail({
         body.plan?.status ||
           (action === "mark-planned" ? "planned" : "planning"),
       );
-      setMatrixArtifact(body.plan?.matrixArtifact);
+      if ("matrixArtifact" in body) setMatrixArtifact(body.matrixArtifact || undefined);
+      if ("signatures" in body) setSignatures(body.signatures || []);
       setMatrixStorageStatus(body.matrixStatus === "not_configured" ? "not_configured" : body.plan?.matrixArtifact ? "ready" : undefined);
       setMessage(
         action === "mark-planned"
@@ -530,7 +535,7 @@ export default function LianaOrderDetail({
           },
         ]) as InternalMatrixSignature[];
       setSignatures(nextSignatures);
-      setMatrixArtifact(body.plan?.matrixArtifact);
+      setMatrixArtifact(body.matrixArtifact || body.plan?.matrixArtifact || undefined);
       setMatrixStorageStatus(body.matrixStatus === "not_configured" ? "not_configured" : body.plan?.matrixArtifact ? "ready" : undefined);
       setMessage(body.matrixStatus === "not_configured" ? "Matrix storage not configured. The signed workflow is complete; Drive persistence can be enabled later." : body.plan?.matrixArtifact ? "Both signatures recorded. The signed matrix is ready to open." : `${role === "production_chef" ? "Production chef" : "Head chef / site manager"} signature recorded.`);
     } catch (error) {
@@ -770,7 +775,7 @@ export default function LianaOrderDetail({
                               <select
                                 className="saved-sandwich-select"
                                 aria-label={`Saved menu item for ${sub.name || "new sub-item"}`}
-                                value=""
+                                value={sub.productionItemId || ""}
                                 onChange={(event) =>
                                   applySandwich(
                                     menuItem.id,
@@ -794,6 +799,7 @@ export default function LianaOrderDetail({
                                 onChange={(event) =>
                                   updateSubItem(menuItem.id, sub.id, {
                                     name: event.target.value,
+                                    productionItemId: undefined,
                                     evidenceStatus: "not_completed",
                                   })
                                 }

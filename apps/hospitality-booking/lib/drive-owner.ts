@@ -3,7 +3,7 @@ import { promises as fs } from "node:fs";
 
 export type DriveOwner =
   | { type: "oploc-workspace"; oplocId: string }
-  | { type: "app-workspace"; appId: "cpu-production" };
+  | { type: "app-workspace"; appId: "cpu-production" | "delivered-in" };
 
 export type ResolvedDriveOwner = DriveOwner & {
   workspaceEmail?: string;

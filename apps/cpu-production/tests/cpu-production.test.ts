@@ -16,7 +16,7 @@ const route = readFileSync(
   "utf8",
 );
 const liana = readFileSync(
-  new URL("../app/ui/LianaOrderDetail.tsx", import.meta.url),
+  new URL("../app/ui/HospitalityAllergenDetail.tsx", import.meta.url),
   "utf8",
 );
 const calendar = readFileSync(
@@ -128,8 +128,9 @@ test("CPU read paths use bounded and targeted Firestore shapes", () => {
   assert.match(route, /changesSince/);
   assert.match(route, /listCpuWeekChanges/);
   assert.doesNotMatch(route, /cpuPlans\(\)\.get\(\)/);
-  assert.match(planRoute, /loadPlansForOrders/);
-  assert.match(planRoute, /loadPlansForOrders\(\[orderId\]\)/);
+  assert.match(planRoute, /loadDeliveredInReviewStatuses/);
+  assert.match(planRoute, /parseDeliveredInReviewOrderIds/);
+  assert.match(planRoute, /if \(orderId\)[\s\S]*?return NextResponse\.json/);
   const allergenPage = readFileSync(new URL("../app/allergens/page.tsx", import.meta.url), "utf8");
   assert.match(allergenPage, /serviceDate=.*selectedDate/);
   assert.doesNotMatch(allergenPage, /\/api\/production\?scope=all/);
@@ -385,7 +386,7 @@ test("CPU planning seeds real canonical hand-offs before local fixture fallback"
 
 test("allergen checker uses the master-style purple header and four-state cells", () => {
   const css = readFileSync(
-    new URL("../app/ui/liana.css", import.meta.url),
+    new URL("../app/ui/hospitality-allergen-detail.css", import.meta.url),
     "utf8",
   );
   assert.match(

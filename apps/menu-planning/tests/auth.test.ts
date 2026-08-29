@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { NextRequest } from "next/server";
 import { resolveMenuActor } from "../lib/auth";
+import { middleware } from "../middleware";
 
 test("hosted mutation auth uses FIKA_HUB_BASE_URL and forwards the session cookie", async () => {
   const originalMode = process.env.FIKA_RUNTIME_MODE;
@@ -25,6 +26,24 @@ test("hosted mutation auth uses FIKA_HUB_BASE_URL and forwards the session cooki
     if (originalMode === undefined) delete process.env.FIKA_RUNTIME_MODE; else process.env.FIKA_RUNTIME_MODE = originalMode;
     if (originalFikaHub === undefined) delete process.env.FIKA_HUB_BASE_URL; else process.env.FIKA_HUB_BASE_URL = originalFikaHub;
     if (originalIntegrationHub === undefined) delete process.env.INTEGRATION_HUB_BASE_URL; else process.env.INTEGRATION_HUB_BASE_URL = originalIntegrationHub;
+  }
+});
+
+test("cross-subdomain staging admission forwards the shared parent-domain session", async () => {
+  const originalMode = process.env.FIKA_RUNTIME_MODE;
+  const originalHub = process.env.FIKA_HUB_BASE_URL;
+  const originalFetch = globalThis.fetch;
+  process.env.FIKA_RUNTIME_MODE = "staging";
+  process.env.FIKA_HUB_BASE_URL = "https://staging-os.fikacatering.com";
+  let forwardedCookie = "";
+  globalThis.fetch = (async (_input, init) => { forwardedCookie = new Headers(init?.headers).get("cookie") || ""; return Response.json({ principal: { identityId: "staff-1", email: "staff@example.com" }, canManage: true, canPublish: false }); }) as typeof fetch;
+  try {
+    await middleware(new NextRequest("https://menu-planning-staging.fikacatering.com/", { headers: { cookie: "fika_os_session=shared-session" } }));
+    assert.equal(forwardedCookie, "fika_os_session=shared-session");
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (originalMode === undefined) delete process.env.FIKA_RUNTIME_MODE; else process.env.FIKA_RUNTIME_MODE = originalMode;
+    if (originalHub === undefined) delete process.env.FIKA_HUB_BASE_URL; else process.env.FIKA_HUB_BASE_URL = originalHub;
   }
 });
 

@@ -27,7 +27,7 @@ test("production type scope filters canonical order lines without inventing reco
     { canonicalId: "line:sandwich", sourceMenuItemId: "menu:sandwich", workstream: "sandwiches" },
     { canonicalId: "line:hospitality", sourceMenuItemId: "menu:hospitality", workstream: "hospitality" },
   ] } as never;
-  const routing: ProductionRouting = { "menu:sandwich": ["liana"], "menu:hospitality": ["craig"] };
+  const routing: ProductionRouting = { "menu:sandwich": ["sandwiches"], "menu:hospitality": ["hospitality"] };
   assert.equal(filterProductionOrdersForScope([base], "all", routing).length, 1);
   assert.deepEqual(filterProductionOrdersForScope([base], "sandwiches", routing)[0].lines.map((line) => line.canonicalId), ["line:sandwich"]);
   assert.deepEqual(filterProductionOrdersForScope([base], "hospitality", routing)[0].lines.map((line) => line.canonicalId), ["line:sandwich", "line:hospitality"]);

@@ -3,6 +3,7 @@ export type PlanStatus = "draft" | "planning" | "planned" | "rejected" | "needs_
 export type AllergenCellState = OperationalAllergenState;
 export type PlannedSubItem = {
   id: string;
+  productionItemId?: string;
   name: string;
   quantity: number | null;
   allergens: Record<string, AllergenCellState>;

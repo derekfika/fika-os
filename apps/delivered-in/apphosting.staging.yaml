@@ -1,0 +1,38 @@
+# Firebase App Hosting staging configuration for Standalone Delivered-In.
+# Configure the backend root directory as apps/delivered-in.
+# The App Hosting backend should be created in europe-west4 for fika-os-dev.
+env:
+  - variable: FIKA_RUNTIME_MODE
+    value: staging
+    availability: [BUILD, RUNTIME]
+  - variable: FIREBASE_PROJECT_ID
+    value: fika-os-dev
+    availability: [BUILD, RUNTIME]
+  - variable: FIKA_ALLOWED_EMAIL_DOMAINS
+    value: fikacatering.com
+    availability: [BUILD, RUNTIME]
+  - variable: FIKA_SESSION_COOKIE_DOMAIN
+    value: .fikacatering.com
+    availability: [BUILD, RUNTIME]
+  - variable: INTEGRATION_HUB_BASE_URL
+    value: https://staging-os.fikacatering.com
+    availability: [RUNTIME]
+  - variable: MENU_PLANNING_BASE_URL
+    value: https://menu-planning-staging.fikacatering.com
+    availability: [RUNTIME]
+  - variable: CPU_PRODUCTION_BASE_URL
+    value: https://cpu-staging.fikacatering.com
+    availability: [RUNTIME]
+  - variable: DELIVERED_IN_INTERNAL_API_TOKEN
+    secret: DELIVERED_IN_INTERNAL_API_TOKEN
+    availability: [RUNTIME]
+  # Provision these before enabling generated site menus. The current
+  # file-based OAuth implementation is local-only; hosted generation requires
+  # the established Workspace DWD integration used by the other apps.
+  - variable: GOOGLE_WORKSPACE_DWD_SERVICE_ACCOUNT_JSON
+    secret: GOOGLE_WORKSPACE_DWD_SERVICE_ACCOUNT_JSON
+    availability: [RUNTIME]
+  # Add these non-secret values after manual provisioning:
+  # GOOGLE_DRIVE_OWNER_EMAIL_APP_DELIVERED_IN
+  # GOOGLE_DELIVERED_IN_TEMPLATE_ID
+  # GOOGLE_DELIVERED_IN_OUTPUT_FOLDER_ID

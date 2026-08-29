@@ -10,13 +10,14 @@ import { titleCase } from "../../menu-planning/lib/text";
 import { applyOrderAction, deliveryCutoff, isBeforeOrderCutoff, orderIdFor, productsForDeliveryDate, rotationWeekForDate, type GrabAndGoProduct } from "../lib/grab-and-go";
 import { getGrabAndGoOrder, listGrabAndGoOrders, replayGrabAndGoOutbox, saveGrabAndGoOrder } from "../lib/grab-and-go-store";
 
-const haleon = "oploc:46701265-15af-48f4-a230-1d27ca21bc59";
+const haleon = "oploc:bb4c7eea-87f5-4e79-8ed6-b973b24ded7b";
+const accessHaleon = "oploc:46701265-15af-48f4-a230-1d27ca21bc59";
 const xchange = "oploc:b835d8ee-b187-49d1-9072-7348b04bfd2d";
 const activeOplocRecords = [
-  { canonicalId: haleon, entityType: "OPLOC", record: { approvedName: "Haleon", lifecycleState: "active" }, dataHash: "a", lifecycleStatus: "published", publicationStatus: "published" },
+  { canonicalId: accessHaleon, entityType: "OPLOC", record: { approvedName: "Haleon", lifecycleState: "active" }, dataHash: "a", lifecycleStatus: "published", publicationStatus: "published" },
   { canonicalId: xchange, entityType: "OPLOC", record: { approvedName: "FIKA Xchange", lifecycleState: "active" }, dataHash: "b", lifecycleStatus: "published", publicationStatus: "published" },
   { canonicalId: "service-definition:delivered-in", entityType: "Service Definition", record: { serviceName: "Delivered-In Lunch", lifecycleState: "active" }, lifecycleStatus: "published", publicationStatus: "published" },
-  { canonicalId: "service-arrangement:delivered-in:haleon", entityType: "Service Arrangement", record: { oplocId: haleon, serviceDefinitionId: "service-definition:delivered-in", lifecycleState: "active", effectiveFrom: "2026-01-01" }, lifecycleStatus: "published", publicationStatus: "published" },
+  { canonicalId: "service-arrangement:delivered-in:haleon", entityType: "Service Arrangement", record: { oplocId: accessHaleon, serviceDefinitionId: "service-definition:delivered-in", lifecycleState: "active", effectiveFrom: "2026-01-01" }, lifecycleStatus: "published", publicationStatus: "published" },
   { canonicalId: "service-arrangement:delivered-in:xchange", entityType: "Service Arrangement", record: { oplocId: xchange, serviceDefinitionId: "service-definition:delivered-in", lifecycleState: "active", effectiveFrom: "2026-01-01" }, lifecycleStatus: "published", publicationStatus: "published" },
 ] as never[];
 const source = (days: SourcePublication["days"]): SourcePublication => ({ publicationId: "publication:week", sourceWeekId: "week:1", weekCommencing: "2026-08-24", weekEnding: "2026-08-30", days });
@@ -24,14 +25,14 @@ const day = (overrides: Partial<SourcePublication["days"][number]> = {}): Source
 
 test("Delivered-In access resolves zero, one and multiple authorised OPLOCs", () => {
   assert.equal(resolveDeliveredInAccess({ email: "unknown@local.fika", role: "viewer" }).access.oplocIds.length, 0);
-  assert.deepEqual(resolveDeliveredInAccess({ email: "viewer@local.fika", role: "viewer" }, activeOplocRecords).access.oplocIds, [haleon]);
-  assert.deepEqual(resolveDeliveredInAccess({ email: "reviewer@local.fika", role: "reviewer" }, activeOplocRecords).access.oplocIds, [haleon, xchange]);
+  assert.deepEqual(resolveDeliveredInAccess({ email: "viewer@local.fika", role: "viewer" }, activeOplocRecords).access.oplocIds, [accessHaleon]);
+  assert.deepEqual(resolveDeliveredInAccess({ email: "reviewer@local.fika", role: "reviewer" }, activeOplocRecords).access.oplocIds, [accessHaleon, xchange]);
 });
 
 test("Delivered-In access is filtered by the requested enabled service", () => {
-  const records = [...activeOplocRecords, { canonicalId: "service-definition:grab-and-go", entityType: "Service Definition", record: { serviceName: "Grab & Go", lifecycleState: "active" }, lifecycleStatus: "published", publicationStatus: "published" }, { canonicalId: "service-arrangement:grab-and-go:haleon", entityType: "Service Arrangement", record: { oplocId: haleon, serviceDefinitionId: "service-definition:grab-and-go", lifecycleState: "active", effectiveFrom: "2026-01-01" }, lifecycleStatus: "published", publicationStatus: "published" }] as never[];
-  assert.deepEqual(resolveDeliveredInAccess({ email: "reviewer@local.fika", role: "reviewer" }, records, "grab-and-go").access.oplocIds, [haleon]);
-  assert.deepEqual(resolveDeliveredInAccess({ email: "reviewer@local.fika", role: "reviewer" }, records, "delivered-in").access.oplocIds, [haleon, xchange]);
+  const records = [...activeOplocRecords, { canonicalId: "service-definition:grab-and-go", entityType: "Service Definition", record: { serviceName: "Grab & Go", lifecycleState: "active" }, lifecycleStatus: "published", publicationStatus: "published" }, { canonicalId: "service-arrangement:grab-and-go:haleon", entityType: "Service Arrangement", record: { oplocId: accessHaleon, serviceDefinitionId: "service-definition:grab-and-go", lifecycleState: "active", effectiveFrom: "2026-01-01" }, lifecycleStatus: "published", publicationStatus: "published" }] as never[];
+  assert.deepEqual(resolveDeliveredInAccess({ email: "reviewer@local.fika", role: "reviewer" }, records, "grab-and-go").access.oplocIds, [accessHaleon]);
+  assert.deepEqual(resolveDeliveredInAccess({ email: "reviewer@local.fika", role: "reviewer" }, records, "delivered-in").access.oplocIds, [accessHaleon, xchange]);
 });
 
 test("Delivered-In projection filters by canonical destination ID and quantity", () => {

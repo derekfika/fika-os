@@ -13,7 +13,7 @@ function stateFor(row: AllergenReviewRow, key: string): OperationalAllergenState
   return state === "contains" || state === "may_contain" ? state : row.snapshot ? "clear" : "none";
 }
 
-export default function AllergenReviewMatrix({ rows, orders, onSaved, onCheckedChange, onReviewChanged, onRegisterSave }: { rows: AllergenReviewRow[]; orders: ProductionOrder[]; onSaved?: () => Promise<void>; onCheckedChange?: (checked: number, total: number, keys: Set<string>) => void; onReviewChanged?: () => void; onRegisterSave?: (save: () => Promise<void>) => void }) {
+export default function AllergenReviewMatrix({ rows, orders, onSaved, onCheckedChange, onReviewChanged, onRegisterSave, onSignatureRolesChange }: { rows: AllergenReviewRow[]; orders: ProductionOrder[]; onSaved?: () => Promise<void>; onCheckedChange?: (checked: number, total: number, keys: Set<string>) => void; onReviewChanged?: () => void; onRegisterSave?: (save: () => Promise<void>) => void; onSignatureRolesChange?: (roles: Array<"production_chef" | "head_chef_site_manager">) => void }) {
   const [states, setStates] = useState<Record<string, Record<string, OperationalAllergenState>>>(() => Object.fromEntries(rows.map(row => [row.key, { ...(row.snapshot?.allergens || {}) }])) as Record<string, Record<string, OperationalAllergenState>>);
   const [checkedRows, setCheckedRows] = useState<Set<string>>(() => new Set());
   const [error, setError] = useState(""); const [busy, setBusy] = useState(false);
@@ -23,21 +23,27 @@ export default function AllergenReviewMatrix({ rows, orders, onSaved, onCheckedC
   useEffect(() => {
     let cancelled = false;
     const hydrate = async () => {
+      const orderIds = [...new Set(orders.map(order => order.canonicalId))];
+      if (!orderIds.length) {
+        onSignatureRolesChange?.([]);
+        return;
+      }
+      const response = await fetch(`/api/production-plan?matrixStatus=1&orderIds=${encodeURIComponent(orderIds.join(","))}`, { cache: "no-store" });
+      if (!response.ok) return;
+      const body = await response.json() as { matrixStatuses?: Array<{ orderId: string; signatureRoles: Array<"production_chef" | "head_chef_site_manager">; matrixItems?: Array<{ sourceLineId: string; allergens: Record<string, OperationalAllergenState>; evidenceStatus: string }> }> };
       const saved = new Map<string, { allergens: Record<string, OperationalAllergenState>; completed: boolean }>();
-      await Promise.all(orders.map(async order => {
-        const response = await fetch(`/api/production-plan?orderId=${encodeURIComponent(order.canonicalId)}`, { cache: "no-store" });
-        if (!response.ok) return;
-        const body = await response.json() as { plan?: { menuItems?: Array<{ sourceLineId?: string; subItems?: Array<{ allergens?: Record<string, OperationalAllergenState>; evidenceStatus?: string }> }> } };
-        for (const item of body.plan?.menuItems || []) {
-          const sub = item.subItems?.[0];
+      const signatureRoles = [...new Set((body.matrixStatuses || []).flatMap(status => status.signatureRoles))];
+      onSignatureRolesChange?.(signatureRoles);
+      for (const status of body.matrixStatuses || []) {
+        const order = orders.find(candidate => candidate.canonicalId === status.orderId);
+        if (!order) continue;
+        for (const item of status.matrixItems || []) {
+          const state = { allergens: item.allergens || {}, completed: item.evidenceStatus === "completed" };
+          saved.set(`${order.origin}:${item.sourceLineId}`, state);
           const line = order.lines.find(candidate => candidate.canonicalId === item.sourceLineId);
-          if (item.sourceLineId && sub) {
-            const state = { allergens: sub.allergens || {}, completed: sub.evidenceStatus === "completed" };
-            saved.set(`${order.origin}:${item.sourceLineId}`, state);
-            if (line) saved.set(`${order.origin}:${line.sourceMenuItemId || line.itemName.trim().toLowerCase()}`, state);
-          }
+          if (line) saved.set(`${order.origin}:${line.sourceMenuItemId || line.itemName.trim().toLowerCase()}`, state);
         }
-      }));
+      }
       if (cancelled) return;
       setStates(Object.fromEntries(rows.map(row => {
         const savedState = saved.get(row.key);
@@ -53,8 +59,10 @@ export default function AllergenReviewMatrix({ rows, orders, onSaved, onCheckedC
   }, [rows, orders]);
   useEffect(() => { onCheckedChange?.(checkedRows.size, rows.length, checkedRows); }, [checkedRows, rows.length, onCheckedChange]);
   const saveReview = async (nextStates: Record<string, Record<string, OperationalAllergenState>>, completedKeys: Set<string>) => {
-    await Promise.all(orders.map(order => fetch("/api/production-plan", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "save-plan", orderId: order.canonicalId, planningNotes: "CPU Delivered-In allergen review", menuItems: order.lines.map((line, index) => { const key = `${order.origin}:${line.sourceMenuItemId || line.itemName.trim().toLowerCase()}`; return { id: `menu-item:${order.canonicalId}:${index + 1}`, sourceLineId: line.canonicalId, name: line.itemName, note: "", subItems: [{ id: `sub-item:${order.canonicalId}:${index + 1}:1`, name: line.itemName, quantity: line.customerQuantity, allergens: nextStates[key] || {}, note: "", evidenceStatus: completedKeys.has(key) ? "completed" : "not_completed" }] }; }) }) })));
-    if (completedKeys.size === rows.length) await Promise.all(orders.map(order => fetch("/api/production-plan", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "mark-planned", orderId: order.canonicalId, planningNotes: "CPU Delivered-In allergen review", menuItems: order.lines.map((line, index) => { const key = `${order.origin}:${line.sourceMenuItemId || line.itemName.trim().toLowerCase()}`; return { id: `menu-item:${order.canonicalId}:${index + 1}`, sourceLineId: line.canonicalId, name: line.itemName, note: "", subItems: [{ id: `sub-item:${order.canonicalId}:${index + 1}:1`, name: line.itemName, quantity: line.customerQuantity, allergens: nextStates[key] || {}, note: "", evidenceStatus: "completed" }] }; }) }) })));
+    const makeOperation = (order: ProductionOrder, action: "save-plan" | "mark-planned") => ({ action, orderId: order.canonicalId, planningNotes: "CPU Delivered-In allergen review", menuItems: order.lines.map((line, index) => { const key = `${order.origin}:${line.sourceMenuItemId || line.itemName.trim().toLowerCase()}`; return { id: `menu-item:${order.canonicalId}:${index + 1}`, sourceLineId: line.canonicalId, name: line.itemName, note: "", subItems: [{ id: `sub-item:${order.canonicalId}:${index + 1}:1`, name: line.itemName, quantity: line.customerQuantity, allergens: nextStates[key] || {}, note: "", evidenceStatus: completedKeys.has(key) && action === "save-plan" ? "completed" as const : action === "mark-planned" ? "completed" as const : "not_completed" as const }] }; }) });
+    const submit = async (action: "save-plan" | "mark-planned") => { const response = await fetch("/api/production-plan", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "batch-plan", operations: orders.map(order => makeOperation(order, action)) }) }); const body = await response.json() as { results?: Array<{ ok: boolean; error?: string }>; partialFailure?: boolean }; if (!response.ok || body.results?.some(result => !result.ok)) throw new Error(body.results?.find(result => !result.ok)?.error || "The Delivered-In allergen review could not be saved."); };
+    await submit("save-plan");
+    if (completedKeys.size === rows.length) await submit("mark-planned");
   };
   latestSave.current = () => saveReview(states, checkedRows);
   useEffect(() => { onRegisterSave?.(() => latestSave.current()); }, [onRegisterSave]);

@@ -1,7 +1,8 @@
 import type { ProductionOrder } from "./production-types";
+import { adaptCpuProductionWorkstreams, type CpuProductionWorkstream } from "../../shared/production-workstreams";
 
 export type ProductionScope = "all" | "sandwiches" | "hospitality" | "delivered_in" | "grab_and_go";
-export type ProductionRouting = Record<string, ("liana" | "craig" | "site_manager")[]>;
+export type ProductionRouting = Record<string, readonly unknown[]>;
 
 export const productionScopes: Array<{ id: ProductionScope; label: string }> = [
   { id: "all", label: "All production" },
@@ -28,10 +29,10 @@ function orderTypes(order: ProductionOrder, routing: ProductionRouting): Set<Exc
   for (const line of order.lines) {
     const ids = [line.sourceMenuItemId, line.sourceOfferingId].filter((value): value is string => Boolean(value));
     if (line.workstream && line.workstream !== "unassigned") types.add(line.workstream);
-    const assignments = ids.flatMap((id) => routing[id] || []);
-    if (assignments.includes("liana")) types.add("sandwiches");
-    if (assignments.includes("craig")) types.add("hospitality");
-    if (assignments.includes("site_manager")) types.add("delivered_in");
+    const assignments = ids.flatMap((id) => adaptCpuProductionWorkstreams(routing[id] || []).workstreams);
+    if (assignments.includes("sandwiches")) types.add("sandwiches");
+    if (assignments.includes("hospitality")) types.add("hospitality");
+    if (assignments.includes("delivered_in")) types.add("delivered_in");
   }
   // A booking without a routing decision is still canonical work, but its
   // production type is not safe to infer from display names.

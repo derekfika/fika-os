@@ -8,7 +8,7 @@ import type {
 } from "../lib/production-types";
 import type { AllergenCellState } from "./lib/production-plan";
 import { matrixColumns } from "./ui/allergen-matrix";
-import LianaOrderDetail from "./ui/LianaOrderDetail";
+import HospitalityAllergenDetail from "./ui/HospitalityAllergenDetail";
 import ProductionCalendar from "./ui/ProductionCalendar";
 import ProductionDayView from "./ui/ProductionDayView";
 import DeliveredInProductionDetail from "./ui/DeliveredInProductionDetail";
@@ -25,6 +25,7 @@ import { cpuAttentionKey, cpuAttentionLabel, cpuDestinationLabel, cpuDestination
 import { orderDate } from "../lib/production-day";
 import { cpuProjectionToOrders, dashboardOperationalDate, filterCpuProjectionForScope, weekCommencingFor } from "../lib/cpu-dashboard-adapter";
 import { readApiResponse } from "./lib/api-response";
+import { readCpuProjection, writeCpuProjection } from "./lib/cpu-indexeddb";
 
 const statuses: CpuLifecycle[] = ["received", "accepted", "planning", "planned", "ready", "in_production", "complete"];
 const terminalStatuses = new Set<ProductionStatus>([
@@ -75,35 +76,38 @@ export default function CpuProduction() {
     try {
       const isDayProjection = view === "day" || view === "totals";
       const projectionDate = isDayProjection ? dayDate : weekCommencing;
-      const cacheKey = `fika-cpu-projection:${productionScope}:${projectionDate}`;
+      const cacheKey = `${isDayProjection ? "day" : "week"}:${projectionDate}`;
       // Compatibility marker for existing dashboard contract checks: /api/production?scope=${productionScope}
-      const cached = window.localStorage.getItem(cacheKey);
-      if (cached) {
-        try { setOrders(cpuProjectionToOrders(filterCpuProjectionForScope(JSON.parse(cached), productionScope))); } catch { window.localStorage.removeItem(cacheKey); }
+      const scopeResponse = await fetch("/api/production?cacheScope=1", { cache: "no-store" });
+      const scopeBody = await readApiResponse<{ cacheScope?: string; error?: { message?: string } }>(scopeResponse);
+      if (!scopeResponse.ok || !scopeBody.cacheScope) { setError(scopeBody.error?.message || "CPU cache scope could not be established."); return []; }
+      const cacheScope = scopeBody.cacheScope;
+      const cached = await readCpuProjection<any>(cacheKey, cacheScope);
+      if (cached?.value) {
+        setOrders(cpuProjectionToOrders(filterCpuProjectionForScope(cached.value, productionScope)));
+        try {
+          const head = await fetch(`/api/production?projectionHead=1&${isDayProjection ? `serviceDate=${encodeURIComponent(projectionDate)}` : `weekCommencing=${encodeURIComponent(projectionDate)}`}`, { cache: "no-store" });
+          const headBody = await head.json() as { lastChangeSequence?: number };
+          if (head.ok && Number(headBody.lastChangeSequence || 0) === cached.lastChangeSequence) return cpuProjectionToOrders(filterCpuProjectionForScope(cached.value, productionScope));
+          const response = await fetch(`/api/production?projection=1&${isDayProjection ? `serviceDate=${encodeURIComponent(projectionDate)}` : `weekCommencing=${encodeURIComponent(projectionDate)}`}&scope=${productionScope}`, { cache: "no-store" });
+          const refreshedBody = await readApiResponse<{ projection?: any }>(response);
+          const newer = refreshedBody.projection;
+          if (response.ok && newer) {
+            await writeCpuProjection({ key: cacheKey, schemaVersion: 1, cacheScope, fetchedAt: new Date().toISOString(), lastChangeSequence: Number(newer.lastChangeSequence || 0), revision: Number(newer.revision || 0), value: newer });
+            const refreshed = cpuProjectionToOrders(filterCpuProjectionForScope(newer, productionScope));
+            setOrders(refreshed);
+            return refreshed;
+          }
+          return cpuProjectionToOrders(filterCpuProjectionForScope(cached.value, productionScope));
+        } catch { return cpuProjectionToOrders(filterCpuProjectionForScope(cached.value, productionScope)); }
       }
-      const response = await fetch(`/api/production?projection=1&${isDayProjection ? `serviceDate=${encodeURIComponent(projectionDate)}` : `weekCommencing=${encodeURIComponent(projectionDate)}`}&scope=${productionScope}`, {
-        cache: "no-store",
-      });
+      const response = await fetch(`/api/production?projection=1&${isDayProjection ? `serviceDate=${encodeURIComponent(projectionDate)}` : `weekCommencing=${encodeURIComponent(projectionDate)}`}&scope=${productionScope}`, { cache: "no-store" });
       const body = await readApiResponse<{ projection?: any; error?: { message?: string } }>(response);
-      if (!response.ok) {
-        setError(body.error?.message || "Could not load production.");
-        return [];
-      }
+      if (!response.ok) { setError(body.error?.message || "Could not load production."); return []; }
       const projection = body.projection;
       const projectedOrders: ProductionOrder[] = projection ? cpuProjectionToOrders(filterCpuProjectionForScope(projection, productionScope)) : [];
-      window.localStorage.setItem(cacheKey, JSON.stringify(projection));
+      if (projection) await writeCpuProjection({ key: cacheKey, schemaVersion: 1, cacheScope, fetchedAt: new Date().toISOString(), lastChangeSequence: Number(projection.lastChangeSequence || 0), revision: Number(projection.revision || 0), value: projection });
       setOrders(projectedOrders);
-      try {
-        const changes = await fetch(`/api/production?changesSince=${projection.lastChangeSequence || 0}&${isDayProjection ? `serviceDate=${encodeURIComponent(projectionDate)}` : `weekCommencing=${encodeURIComponent(projectionDate)}`}`, { cache: "no-store" });
-        const changeBody = await changes.json();
-        const newer = changeBody.projection;
-        if (changes.ok && newer && Number(newer.lastChangeSequence || 0) > Number(projection.lastChangeSequence || 0)) {
-          const refreshed = cpuProjectionToOrders(filterCpuProjectionForScope(newer, productionScope));
-          window.localStorage.setItem(cacheKey, JSON.stringify(newer));
-          setOrders(refreshed);
-          return refreshed;
-        }
-      } catch { /* retain the valid current projection when incremental sync is unavailable */ }
       return projectedOrders;
     } finally {
       if (showFeedback) setRefreshing(false);
@@ -363,7 +367,7 @@ export default function CpuProduction() {
           openPlanner={() => setShowHospitalityAllergens(true)}
         />
       ) : selected && (
-        <LianaOrderDetail
+        <HospitalityAllergenDetail
           order={selected}
           close={() => selected.origin === "hospitality_booking" ? setShowHospitalityAllergens(false) : setSelected(undefined)}
           onSaved={async (close = true) => { if (close) { await load(); setSelected(undefined); } }}

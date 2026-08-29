@@ -1,0 +1,64 @@
+import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+import test from "node:test";
+
+test("CPU review fallback is one bounded matrix request, not one full-plan request per order", async () => {
+  const server = await readFile(new URL("../lib/server.ts", import.meta.url), "utf8");
+  assert.match(server, /matrixStatus=1&orderIds=/);
+  assert.doesNotMatch(server, /orders\.map\(async order =>.*production-plan\?orderId=/s);
+  assert.match(server, /stage: "cpu_review_fallback_batch"/);
+});
+
+test("standalone Delivered-In has no idle polling and selected access remains request-scoped", async () => {
+  const page = await readFile(new URL("../app/page.tsx", import.meta.url), "utf8");
+  const grabAndGo = await readFile(new URL("../app/grab-and-go-view.tsx", import.meta.url), "utf8");
+  const server = await readFile(new URL("../lib/server.ts", import.meta.url), "utf8");
+  assert.doesNotMatch(page, /setInterval|setTimeout/);
+  assert.doesNotMatch(grabAndGo, /setInterval|setTimeout/);
+  assert.match(server, /assertAuthorisedOploc\(access, selectedOplocId\)/);
+  assert.match(server, /stage: "cpu_review_fallback_batch"/);
+});
+
+test("Grab & Go CPU feed requires the service boundary and applies the requested delivery date", async () => {
+  const route = await readFile(new URL("../app/api/delivered-in/grab-and-go/production/route.ts", import.meta.url), "utf8");
+  assert.match(route, /assertCpuBoundary/);
+  assert.match(route, /deliveryDate/);
+  assert.match(route, /order\.status === "submitted"/);
+});
+
+test("hosted Delivered-In persistence uses bounded Firestore keys and range queries", async () => {
+  const orders = await readFile(new URL("../lib/grab-and-go-store.ts", import.meta.url), "utf8");
+  const siteMenus = await readFile(new URL("../lib/site-menu-store.ts", import.meta.url), "utf8");
+  assert.match(orders, /stableDocumentId\(`grab-and-go:\$\{oplocId\}:\$\{deliveryDate\}`\)/);
+  assert.match(orders, /\.where\("oplocId", "==", oplocId\)/);
+  assert.match(orders, /\.where\("deliveryDate", ">=", startDate\)/);
+  assert.match(orders, /\.limit\(100\)/);
+  assert.match(siteMenus, /stableDocumentId\(`\$\{oplocId\}:\$\{sourceDayId\}`\)/);
+  assert.match(siteMenus, /collection\("revisions"\)/);
+  assert.doesNotMatch(orders, /if \(!hosted\(\)\)[\s\S]*hostedOrders\(\)\.get/);
+});
+
+test("Delivered-In publication projection requests an explicit bounded week range", async () => {
+  const server = await readFile(new URL("../lib/server.ts", import.meta.url), "utf8");
+  const route = await readFile(new URL("../../menu-planning/app/api/rolling-menu/publications/route.ts", import.meta.url), "utf8");
+  assert.match(server, /publications\?fromWeek=/);
+  assert.match(server, /toWeek=/);
+  assert.match(route, /listMenuPublicationsForDateRange/);
+  assert.match(route, /fromWeek >= toWeek/);
+});
+
+test("hosted migration is dry-run by default and chunks writes", async () => {
+  const migration = await readFile(new URL("../scripts/migrate-hosted-persistence.ts", import.meta.url), "utf8");
+  assert.match(migration, /if \(!apply\) process\.exit\(0\)/);
+  assert.match(migration, /offset \+= 400/);
+  assert.match(migration, /Invalid migration source/);
+});
+
+test("Delivered-In Google generation reuses DWD in hosted mode and local OAuth only locally", async () => {
+  const google = await readFile(new URL("../lib/google-site-menu.ts", import.meta.url), "utf8");
+  const owner = await readFile(new URL("../../hospitality-booking/lib/drive-owner.ts", import.meta.url), "utf8");
+  assert.match(google, /resolveDriveOwner\(\{ type: "app-workspace", appId: "delivered-in" \}\)/);
+  assert.match(google, /driveAccessToken\(owner\)/);
+  assert.match(owner, /appId: "cpu-production" \| "delivered-in"/);
+  assert.doesNotMatch(google, /process\.env\.GOOGLE_OAUTH_CLIENT_FILE/);
+});

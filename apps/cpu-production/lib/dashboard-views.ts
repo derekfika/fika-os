@@ -1,4 +1,5 @@
 import type { ProductionOrder } from "./production-types";
+import { adaptCpuProductionWorkstreams, canonicalCpuDashboardView, type CpuProductionWorkstream } from "../../shared/production-workstreams";
 
 export type ProductionDashboardView =
   | "production"
@@ -9,25 +10,23 @@ export type ProductionDashboardView =
 export function normaliseProductionDashboardView(
   value: string | null | undefined,
 ): ProductionDashboardView {
-  if (value === "hospitality" || value === "craig") return "hospitality";
-  if (value === "site_manager" || value === "manager") return "site_manager";
-  return "production";
+  return canonicalCpuDashboardView(value);
 }
 
 function routingView(
   view: ProductionDashboardView,
-): "liana" | "craig" | "site_manager" {
+): CpuProductionWorkstream {
   return view === "production"
-    ? "liana"
+    ? "sandwiches"
     : view === "hospitality"
-      ? "craig"
-      : "site_manager";
+      ? "hospitality"
+      : "delivered_in";
 }
 
 export function filterProductionOrdersForDashboard(
   orders: ProductionOrder[],
   view: ProductionDashboardView,
-  routing: Record<string, ("liana" | "craig" | "site_manager")[]>,
+  routing: Record<string, readonly unknown[]>,
 ): ProductionOrder[] {
   if (view === "site_manager") return orders;
   // A restored/local workspace may not have any routing records yet. Keep
@@ -50,8 +49,8 @@ export function filterProductionOrdersForDashboard(
         // offering ID. Accept that stored identity as a compatibility alias;
         // never fall back to display-name matching.
         const assigned = menuItemIds
-          .map((menuItemId) => routing[menuItemId])
-          .find(Boolean);
+          .map((menuItemId) => adaptCpuProductionWorkstreams(routing[menuItemId] || []).workstreams)
+          .find((values) => values.length > 0);
         return assigned ? assigned.includes(legacyView) : false;
       });
       return { ...order, lines };

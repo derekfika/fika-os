@@ -9,7 +9,7 @@ import { renderPdfLocally } from "./local-pdf";
 import { resolveAllergenSnapshot } from "./allergen-resolution";
 import type { MenuItem } from "./domain";
 import { publishedAllergenMatrixHtml, createDomainEvent, markEventDelivered, markEventFailed, type DurableDomainEvent, type FulfilmentRequirement } from "./fika-contracts";
-import { claimNextMenuPlanningEvent, getPublishedSnapshot, readPublicationState, readPublicationStateForWeek, updateMenuPlanningEvent, updatePublicationState, withMenuPlanningTransaction } from "./operational-store";
+import { claimNextMenuPlanningEvent, getPublishedSnapshot, readPublicationState, readPublicationStateForDateRange, readPublicationStateForWeek, updateMenuPlanningEvent, updatePublicationState, withMenuPlanningTransaction } from "./operational-store";
 import { cwd } from "node:process";
 
 export const PUBLICATION_ATTESTATION = "I confirm that I have reviewed the allergen information shown for this day's published menu and that it reflects the approved information available at the time of publication.";
@@ -75,6 +75,10 @@ function appendPublicationEvents(stored: StoredPublications, publication: MenuPu
   }
 }
 export async function listMenuPublications() { return (await read()).publications.map(clone); }
+export async function listMenuPublicationsForDateRange(fromWeek: string, toWeekExclusive: string) {
+  const stored = await readPublicationStateForDateRange<StoredPublications>(fromWeek, toWeekExclusive);
+  return stored.publications.map(clone);
+}
 export async function getMenuPublication(publicationId: string) { const publication = (await read()).publications.find(value => value.publicationId === publicationId); return publication ? clone(publication) : undefined; }
 export async function getCompiledPublicationSnapshot(publicationId: string, version?: number) {
   const stored = await read();

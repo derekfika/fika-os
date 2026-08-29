@@ -12,11 +12,12 @@ import { normaliseOperationalAllergens } from "../../../../shared/allergen-contr
 import { productionOrderDetail, transitionProductionOrder } from "../../../lib/production-http-client";
 import type { ProductionOrder, ProductionStatus } from "../../../lib/production-types";
 import { appendCpuChange, rebuildCpuDayProjection, rebuildCpuWeekProjection, weekCommencingFor } from "../../../lib/cpu-projection";
-import { loadPlansForOrders } from "../../../lib/cpu-projection-repository";
 import { createProductionPlanRepository } from "../../../lib/production-plan-repository";
 import { requireCpuActor } from "../../../lib/cpu-access-client";
 import { hubJson } from "../../../lib/production-http-client";
 import { matrixDriveConfiguration } from "../../lib/matrix-drive-config";
+import { loadDeliveredInReviewStatuses, parseDeliveredInReviewOrderIds } from "../../../lib/delivered-in-review";
+import { recordDeliveredInReadBudget } from "../../../lib/delivered-in-read-budget";
 
 function menuContentHash(menuItems: PlannedMenuItem[]) {
   return createHash("sha256").update(JSON.stringify(menuItems)).digest("hex");
@@ -62,7 +63,7 @@ async function syncCanonicalLifecycle(
   return order;
 }
 
-const SubItem = z.object({ id: z.string().min(1), name: z.string(), quantity: z.number().positive().nullable(), allergens: z.record(z.string(), z.enum(["clear", "contains", "may_contain"])), mayContainNotes: z.string().optional(), note: z.string(), evidenceStatus: z.enum(["not_completed", "completed", "requires_review"]) });
+const SubItem = z.object({ id: z.string().min(1), productionItemId: z.string().min(1).optional(), name: z.string(), quantity: z.number().positive().nullable(), allergens: z.record(z.string(), z.enum(["clear", "contains", "may_contain"])), mayContainNotes: z.string().optional(), note: z.string(), evidenceStatus: z.enum(["not_completed", "completed", "requires_review"]) });
 const MenuItem = z.object({ id: z.string().min(1), sourceLineId: z.string().optional(), name: z.string(), note: z.string(), subItems: z.array(SubItem) });
 const Command = z.discriminatedUnion("action", [
   z.object({ action: z.literal("accept"), orderId: z.string() }),
@@ -73,6 +74,11 @@ const Command = z.discriminatedUnion("action", [
   z.object({ action: z.literal("sign-matrix"), orderId: z.string(), role: z.enum(["production_chef", "head_chef_site_manager"]), printedName: z.string().trim().min(2).max(120), signatureDataUrl: z.string().regex(/^data:image\/png;base64,/).max(500000), attestation: z.string().trim().min(10).max(500) }),
   z.object({ action: z.literal("save-matrix"), orderId: z.string() }),
 ]);
+const MatrixOperation = z.discriminatedUnion("action", [
+  z.object({ action: z.literal("save-plan"), orderId: z.string(), menuItems: z.array(MenuItem).min(1), planningNotes: z.string().default("") }),
+  z.object({ action: z.literal("mark-planned"), orderId: z.string(), menuItems: z.array(MenuItem).min(1), planningNotes: z.string().default("") }),
+]);
+const MatrixBatchCommand = z.object({ action: z.literal("batch-plan"), operations: z.array(MatrixOperation).min(1).max(100) }).strict();
 
 const plans = new Map<string, ProductionPlan>();
 const planRepository = createProductionPlanRepository();
@@ -103,9 +109,10 @@ function initialPlan(orderId: string, order?: Awaited<ReturnType<typeof producti
   const timestamp = now();
   return { id: `production-plan:${orderId}`, orderId, status: "draft", menuItems: (order?.lines || []).map((line, index) => ({ id: `menu-item:${orderId}:${index + 1}`, sourceLineId: line.canonicalId, name: line.itemName, note: "", subItems: [{ id: `sub-item:${orderId}:${index + 1}:1`, name: "", quantity: line.customerQuantity, allergens: {}, note: "", evidenceStatus: "not_completed" }] })), planningNotes: "", updatedAt: timestamp, updatedBy: "local-fixture", audit: [{ action: "plan-created", at: timestamp, by: "local-fixture" }] };
 }
-async function getPlan(request: NextRequest, orderId: string) {
+async function getPlan(request: NextRequest, orderId: string, knownPlan?: ProductionPlan) {
+  if (knownPlan) plans.set(orderId, normalisePlanAllergens(knownPlan));
   if (!plans.has(orderId)) {
-    const persisted = (await loadPlansForOrders([orderId]))[0];
+    const persisted = await planRepository.get(orderId);
     if (persisted) plans.set(orderId, normalisePlanAllergens(persisted));
   }
   if (!plans.has(orderId)) {
@@ -126,6 +133,43 @@ async function getPlan(request: NextRequest, orderId: string) {
   }
   return plans.get(orderId)!;
 }
+
+async function applyMatrixOperation(request: NextRequest, actor: Awaited<ReturnType<typeof actorFor>>, operation: z.infer<typeof MatrixOperation>) {
+  const order = await loadOrder(request, operation.orderId);
+  if (!order || (order.origin === "hospitality_booking" && order.requiresDelivery === false)) throw Object.assign(new Error("CPU delivery is not selected for this booking, so no CPU production work is required."), { status: 422 });
+  const storedPlan = await planRepository.get(operation.orderId);
+  if (!storedPlan && !isLocalRuntime()) plans.delete(operation.orderId);
+  const plan = await getPlan(request, operation.orderId, storedPlan);
+  const auditActor = actor.name || actor.uid;
+  const nextMenuItems = (await mergeOriginalItems(request, { ...plan, menuItems: normalisePlanAllergens({ ...plan, menuItems: operation.menuItems }).menuItems }, operation.orderId, order)).menuItems;
+  const contentChanged = JSON.stringify(plan.menuItems) !== JSON.stringify(nextMenuItems);
+  const matchesSignedCheckpoint = plan.signedMenuContentHash === menuContentHash(nextMenuItems);
+  plan.menuItems = nextMenuItems;
+  plan.planningNotes = operation.planningNotes;
+  if (operation.action === "save-plan") {
+    plan.status = matchesSignedCheckpoint ? "planned" : "planning";
+    if (matchesSignedCheckpoint) { plan.signatures = plan.signedSignatures; plan.matrixArtifact = plan.signedMatrixArtifact; }
+    else { plan.signatures = undefined; plan.matrixArtifact = undefined; }
+    plan.audit.push({ action: "plan-saved", at: now(), by: auditActor });
+    updateLocalFixture(operation.orderId, current => ({ ...current, status: "planning", version: current.version + 1 }));
+  } else {
+    const subItems = plan.menuItems.flatMap(item => item.subItems);
+    if (!plan.menuItems.length || plan.menuItems.some(item => !item.name.trim() || !item.subItems.length) || subItems.some(item => !item.name.trim() || item.evidenceStatus !== "completed")) throw Object.assign(new Error("Complete every menu item, sub-item name and allergen checker before marking the plan Planned."), { status: 422 });
+    if (matchesSignedCheckpoint) { plan.signatures = plan.signedSignatures; plan.matrixArtifact = plan.signedMatrixArtifact; }
+    else if (contentChanged) { plan.signatures = undefined; plan.matrixArtifact = undefined; }
+    plan.status = "planned";
+    plan.audit.push({ action: "plan-marked-planned", at: now(), by: auditActor });
+    updateLocalFixture(operation.orderId, current => ({ ...current, status: "planned", version: current.version + 1 }));
+    await syncCanonicalLifecycle(request, operation.orderId, "planned", "Production plan marked Planned by the production chef.");
+  }
+  const timestamp = now();
+  plan.updatedAt = timestamp; plan.updatedBy = auditActor;
+  await persistPlan(plan, storedPlan?.updatedAt);
+  const changedOrder = await loadOrder(request, operation.orderId);
+  if (!changedOrder?.serviceDate) return { orderId: operation.orderId, plan, serviceDate: undefined, sequence: undefined };
+  const event = await appendCpuChange({ serviceDate: changedOrder.serviceDate, entityType: "productionPlan", entityId: plan.id, revision: plan.audit.length, changeType: operation.action, actorId: actor.uid, changedAt: timestamp });
+  return { orderId: operation.orderId, plan, serviceDate: changedOrder.serviceDate, sequence: event.sequence };
+}
 function hospitalityBase() {
   const configured = process.env.HOSPITALITY_BOOKING_BASE_URL?.trim();
   if (!configured) {
@@ -134,8 +178,8 @@ function hospitalityBase() {
   }
   return configured.replace(/\/$/, "");
 }
-async function mergeOriginalItems(request: NextRequest, plan: ProductionPlan, orderId: string): Promise<ProductionPlan> {
-  const order = await loadOrder(request, orderId);
+async function mergeOriginalItems(request: NextRequest, plan: ProductionPlan, orderId: string, knownOrder?: ProductionOrder): Promise<ProductionPlan> {
+  const order = knownOrder || await loadOrder(request, orderId);
   if (!order) return plan;
   const existing = new Set(plan.menuItems.map(item => item.sourceLineId || item.id));
   const missing = order.lines.filter(line => !existing.has(line.canonicalId)).map((line, index) => ({ id: `menu-item:${orderId}:original:${index}`, sourceLineId: line.canonicalId, name: line.itemName, note: "", subItems: [{ id: `sub-item:${orderId}:original:${index}`, name: "", quantity: line.customerQuantity, allergens: {}, note: "", evidenceStatus: "not_completed" as const }] }));
@@ -172,20 +216,39 @@ async function createMatrixArtifact(plan: ProductionPlan, orderId: string, actor
 }
 
 export async function GET(request: NextRequest) {
+  const orderId = request.nextUrl.searchParams.get("orderId");
   try {
     const actor = await actorFor(request);
+    if (request.nextUrl.searchParams.get("reviewStatus") === "1") {
+      const orderIds = parseDeliveredInReviewOrderIds(request.nextUrl.searchParams.get("orderIds"));
+      const reviewStatuses = await loadDeliveredInReviewStatuses({ orderIds, repository: planRepository, loadOrder: (id) => loadOrder(request, id) });
+      return NextResponse.json({ reviewStatuses });
+    }
+    if (request.nextUrl.searchParams.get("matrixStatus") === "1") {
+      const orderIds = parseDeliveredInReviewOrderIds(request.nextUrl.searchParams.get("orderIds"));
+      const matrixStatuses = await loadDeliveredInReviewStatuses({ orderIds, repository: planRepository, loadOrder: (id) => loadOrder(request, id), includeMatrix: true });
+      recordDeliveredInReadBudget({ stage: "matrix_hydration", selectedIds: orderIds.length });
+      return NextResponse.json({ matrixStatuses });
+    }
+    if (orderId) {
+      const selectedOrder = await loadOrder(request, orderId);
+      const visible = Boolean(selectedOrder && !(selectedOrder.origin === "hospitality_booking" && selectedOrder.requiresDelivery === false));
+      if (request.nextUrl.searchParams.get("download") === "pdf") {
+        const artifact = visible ? (await getPlan(request, orderId)).matrixArtifact : undefined;
+        if (!artifact?.pdfPath || !existsSync(artifact.pdfPath)) return NextResponse.json({ error: { message: "A local PDF has not been generated for this matrix." } }, { status: 404 });
+        return new NextResponse(await fs.readFile(artifact.pdfPath), { headers: { "content-type": "application/pdf", "content-disposition": `inline; filename="${artifact.fileName}"` } });
+      }
+      const selectedPlan = visible ? await mergeOriginalItems(request, await getPlan(request, orderId), orderId, selectedOrder) : undefined;
+      recordDeliveredInReadBudget({ stage: "selected_order_get", canonicalOrderDocs: selectedOrder ? 1 : 0, planDocs: selectedPlan ? 1 : 0, selectedIds: 1 });
+      const selectedMatrixStatus = selectedPlan?.matrixArtifact ? "ready" : selectedPlan?.signatures?.some(signature => signature.role === "production_chef") && selectedPlan.signatures?.some(signature => signature.role === "head_chef_site_manager") ? selectedOrder && !matrixDriveConfiguration(selectedOrder).enabled ? "not_configured" : "generating" : undefined;
+      return NextResponse.json({ plan: selectedPlan, matrixStatus: selectedMatrixStatus, plans: selectedPlan ? [selectedPlan] : [], notifications: selectedPlan?.status === "planned" ? [{ id: `notification:${selectedPlan.id}`, title: "New production plan ready for menu generation.", orderId: selectedPlan.orderId, plannedItemCount: selectedPlan.menuItems.reduce((sum, item) => sum + item.subItems.length, 0), at: selectedPlan.updatedAt }] : [], menus: [] });
+    }
   } catch (error) {
     return errorResponse(error);
   }
   await loadPlans();
   const visibleStoredPlans = (await Promise.all([...plans.values()].map(async plan => ({ plan, visible: await isVisibleForCpu(request, plan.orderId) })))).filter(item => item.visible).map(item => item.plan);
   const entries = visibleStoredPlans.filter(plan => plan.status === "planned");
-  const orderId = request.nextUrl.searchParams.get("orderId");
-  if (orderId && request.nextUrl.searchParams.get("download") === "pdf") {
-    const artifact = (await getPlan(request, orderId)).matrixArtifact;
-    if (!artifact?.pdfPath || !existsSync(artifact.pdfPath)) return NextResponse.json({ error: { message: "A local PDF has not been generated for this matrix." } }, { status: 404 });
-    return new NextResponse(await fs.readFile(artifact.pdfPath), { headers: { "content-type": "application/pdf", "content-disposition": `inline; filename="${artifact.fileName}"` } });
-  }
   const visiblePlans = await Promise.all(visibleStoredPlans.map(plan => mergeOriginalItems(request, plan, plan.orderId)));
   const selectedPlan = orderId && await isVisibleForCpu(request, orderId) ? await mergeOriginalItems(request, await getPlan(request, orderId), orderId) : undefined;
   const selectedOrder = orderId ? await loadOrder(request, orderId) : undefined;
@@ -196,13 +259,41 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const actor = await actorFor(request);
-    await loadPlans();
-    const command = Command.parse(await request.json());
+    const raw = await request.json();
+    if (raw?.action === "batch-plan") {
+      const batch = MatrixBatchCommand.parse(raw);
+      const results: Array<{ orderId: string; ok: boolean; planStatus?: ProductionPlan["status"]; error?: string }> = [];
+      const latestSequenceByDate = new Map<string, number>();
+      for (const operation of batch.operations) {
+        try {
+          const result = await applyMatrixOperation(request, actor, operation);
+          if (result.serviceDate && result.sequence) latestSequenceByDate.set(result.serviceDate, Math.max(latestSequenceByDate.get(result.serviceDate) || 0, result.sequence));
+          results.push({ orderId: operation.orderId, ok: true, planStatus: result.plan.status });
+        } catch (error) {
+          results.push({ orderId: operation.orderId, ok: false, error: error instanceof Error ? error.message : "The matrix operation failed." });
+        }
+      }
+      const affectedDates = [...latestSequenceByDate.keys()];
+      const affectedWeeks = new Map<string, number>();
+      for (const serviceDate of affectedDates) {
+        const sequence = latestSequenceByDate.get(serviceDate);
+        await rebuildCpuDayProjection(request, serviceDate, sequence);
+        const week = weekCommencingFor(serviceDate);
+        affectedWeeks.set(week, Math.max(affectedWeeks.get(week) || 0, sequence || 0));
+      }
+      for (const [week, sequence] of affectedWeeks) {
+        await rebuildCpuWeekProjection(request, week, sequence || undefined);
+      }
+      recordDeliveredInReadBudget({ stage: "matrix_batch_mutation", planDocs: results.filter(result => result.ok).length, selectedIds: batch.operations.length, rebuildScopes: affectedDates.length + affectedWeeks.size });
+      return NextResponse.json({ results, partialFailure: results.some(result => !result.ok) && results.some(result => result.ok) });
+    }
+    const command = Command.parse(raw);
     const auditActor = actor.name || actor.uid;
     if (!(await isVisibleForCpu(request, command.orderId))) throw Object.assign(new Error("CPU delivery is not selected for this booking, so no CPU production work is required."), { status: 422 });
-    const hadStoredPlan = plans.has(command.orderId);
-    const plan = await getPlan(request, command.orderId);
-    const expectedUpdatedAt = hadStoredPlan ? plan.updatedAt : undefined;
+    const storedPlan = await planRepository.get(command.orderId);
+    if (!storedPlan && !isLocalRuntime()) plans.delete(command.orderId);
+    const plan = await getPlan(request, command.orderId, storedPlan);
+    const expectedUpdatedAt = storedPlan?.updatedAt;
     const timestamp = now();
     let notification: { status: string; reason?: string } | undefined;
     if (command.action === "accept") {
@@ -301,12 +392,13 @@ export async function POST(request: NextRequest) {
     plan.updatedAt = timestamp; plan.updatedBy = auditActor;
     await persistPlan(plan, expectedUpdatedAt);
     const changedOrder = await loadOrder(request, command.orderId);
+    recordDeliveredInReadBudget({ stage: "plan_post_mutation", canonicalOrderDocs: changedOrder ? 1 : 0, planDocs: 1, selectedIds: 1 });
     if (changedOrder?.serviceDate) {
       const event = await appendCpuChange({ serviceDate: changedOrder.serviceDate, entityType: "productionPlan", entityId: plan.id, revision: plan.audit.length, changeType: command.action, actorId: actor.uid, changedAt: timestamp });
       await rebuildCpuDayProjection(request, changedOrder.serviceDate, event.sequence);
       await rebuildCpuWeekProjection(request, weekCommencingFor(changedOrder.serviceDate), event.sequence);
     }
     const matrixStatus = plan.matrixArtifact ? "ready" : plan.signatures?.some(signature => signature.role === "production_chef") && plan.signatures?.some(signature => signature.role === "head_chef_site_manager") ? changedOrder && !matrixDriveConfiguration(changedOrder).enabled ? "not_configured" : "generating" : undefined;
-    return NextResponse.json({ plan, matrixArtifact: plan.matrixArtifact, matrixStatus, notification: notification || (plan.status === "planned" ? { title: "New production plan ready for menu generation.", orderId: plan.orderId } : undefined) });
+    return NextResponse.json({ plan, matrixArtifact: plan.matrixArtifact ?? null, signatures: plan.signatures ?? null, matrixStatus, notification: notification || (plan.status === "planned" ? { title: "New production plan ready for menu generation.", orderId: plan.orderId } : undefined) });
   } catch (error) { return errorResponse(error); }
 }

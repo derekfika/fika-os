@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { archivePublishedDayMatrix, getMenuPublication, listMenuPublications, withdrawPublishedMenuDay, withdrawPublishedMenuWeek } from "@/lib/menu-publication";
+import { archivePublishedDayMatrix, getMenuPublication, listMenuPublications, listMenuPublicationsForDateRange, withdrawPublishedMenuDay, withdrawPublishedMenuWeek } from "@/lib/menu-publication";
 import { requirePublicationActor, resolveMenuActor } from "@/lib/auth";
 import { forwardProductionMaterialisationEvent } from "@/lib/production-client";
 import { replayMenuPublicationOutbox } from "@/lib/menu-publication";
@@ -10,6 +10,12 @@ export async function GET(request: NextRequest) {
     const publication = await getMenuPublication(publicationId);
     if (!publication) return NextResponse.json({ error: { message: "Menu publication was not found." } }, { status: 404 });
     return NextResponse.json({ publication });
+  }
+  const fromWeek = request.nextUrl.searchParams.get("fromWeek");
+  const toWeek = request.nextUrl.searchParams.get("toWeek");
+  if (fromWeek || toWeek) {
+    if (!fromWeek || !toWeek || !/^\d{4}-\d{2}-\d{2}$/.test(fromWeek) || !/^\d{4}-\d{2}-\d{2}$/.test(toWeek) || fromWeek >= toWeek) return NextResponse.json({ error: { message: "A valid publication date range is required." } }, { status: 422 });
+    return NextResponse.json({ publications: await listMenuPublicationsForDateRange(fromWeek, toWeek) });
   }
   return NextResponse.json({ publications: await listMenuPublications() });
 }

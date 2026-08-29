@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { projectedAllergenDay, resolveAccess } from "@/lib/server";
-import { createGoogleSiteMenu } from "@/lib/google-site-menu";
-import { latestSiteMenuArtifact, saveSiteMenuArtifact } from "@/lib/site-menu-store";
+import { createGoogleSiteMenu, retireGoogleSiteMenu } from "@/lib/google-site-menu";
+import { latestSiteMenuArtifactHosted, saveSiteMenuArtifactHosted } from "@/lib/site-menu-store";
 import { siteMenuState } from "@/lib/site-menu";
 
 export const dynamic = "force-dynamic";
@@ -26,9 +26,10 @@ export async function POST(request: NextRequest) {
     if (!day.site) return NextResponse.json({ error: { message: "The selected Delivered-In site was not found." } }, { status: 404 });
     if (day.cpuReview?.status !== "signed") return NextResponse.json({ error: { message: "The site menu is locked until CPU has signed the allergen matrix." } }, { status: 409 });
     const access = await resolveAccess(request);
-    const previous = latestSiteMenuArtifact(body.oplocId, day.sourceDayId);
+    const previous = await latestSiteMenuArtifactHosted(body.oplocId, day.sourceDayId);
     const artifact = await createGoogleSiteMenu(day, day.site, access.access.email, previous?.driveFileId);
-    saveSiteMenuArtifact(artifact);
+    await saveSiteMenuArtifactHosted(artifact);
+    if (previous?.driveFileId && previous.driveFileId !== artifact.driveFileId) await retireGoogleSiteMenu(previous.driveFileId);
     return NextResponse.json({ siteMenu: siteMenuState(day, artifact), artifact }, { status: 201 });
   } catch (error) {
     return NextResponse.json({ error: { message: error instanceof Error ? error.message : "The site menu could not be generated." } }, { status: Number((error as { status?: number }).status) || 502 });

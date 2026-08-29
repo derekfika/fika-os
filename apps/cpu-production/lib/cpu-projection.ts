@@ -2,6 +2,7 @@ import type { NextRequest } from "next/server";
 import { productionQueue, productionQueueForWeek } from "./production-http-client";
 import { withReadableDestinations } from "./cpu-oploc-labels";
 import { appendCpuChange as appendProjectionChange, cpuChanges, cpuProjections, loadPlansForOrders } from "./cpu-projection-repository";
+import { recordDeliveredInReadBudget } from "./delivered-in-read-budget";
 export { cpuProjections } from "./cpu-projection-repository";
 import type { ProductionOrder, ProductionStatus } from "./production-types";
 import type { ProductionPlan } from "../app/lib/production-plan";
@@ -31,6 +32,7 @@ export async function rebuildCpuDayProjection(request: NextRequest, serviceDate:
   const plans = await loadPlansForOrders(orders.map(order => order.canonicalId));
   const projection = buildCpuDayProjection(serviceDate, orders, plans, lastChangeSequence ?? Number(previous.data()?.lastChangeSequence || 0), Number(previous.data()?.revision || 0) + 1);
   await cpuProjections().doc(serviceDate).set(projection);
+  recordDeliveredInReadBudget({ stage: "day_projection_rebuild", projectionDocs: 1, selectedIds: orders.length, rebuildScopes: 1 });
   return projection;
 }
 
@@ -41,5 +43,6 @@ export async function rebuildCpuWeekProjection(request: NextRequest, weekCommenc
   const projection = buildCpuDayProjection("all", orders.filter((order) => order.serviceDate && weekDates(weekCommencing).includes(order.serviceDate)), plans, lastChangeSequence ?? Number(previous.data()?.lastChangeSequence || 0), Number(previous.data()?.revision || 0) + 1);
   const week: CpuWeekProjection = { serviceDate: weekCommencing, weekCommencing, revision: projection.revision, lastChangeSequence: projection.lastChangeSequence, orders: projection.orders, summary: projection.summary, rebuiltAt: projection.rebuiltAt };
   await cpuProjections().doc(`week:${weekCommencing}`).set(week);
+  recordDeliveredInReadBudget({ stage: "week_projection_rebuild", projectionDocs: 1, selectedIds: orders.length, rebuildScopes: 1 });
   return week;
 }

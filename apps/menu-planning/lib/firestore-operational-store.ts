@@ -37,6 +37,22 @@ export class MenuPlanningFirestoreRepository {
     for (const doc of snapshot.docs) { const value = doc.data(); const days = await doc.ref.collection("days").get(); publications.push({ ...value, days: days.docs.map(day => day.data()) } as unknown as MenuPublication); }
     return { version: 2, publications, events: [] as DurableDomainEvent[] };
   }
+  async readPublicationStateForDateRange(fromWeek: string, toWeekExclusive: string) {
+    const snapshot = await this.db.collection(MENU_PLANNING_COLLECTIONS.publications)
+      .where("weekCommencing", ">=", fromWeek)
+      .where("weekCommencing", "<", toWeekExclusive)
+      .orderBy("weekCommencing", "asc")
+      .limit(16)
+      .get();
+    const publications: MenuPublication[] = [];
+    for (const doc of snapshot.docs) {
+      const value = doc.data();
+      const days = await doc.ref.collection("days").get();
+      publications.push({ ...value, days: days.docs.map(day => day.data()) } as unknown as MenuPublication);
+    }
+    recordMenuPlanningReadBudget({ operation: "publication_date_range", reads: { publications: snapshot.size, publicationDays: publications.reduce((total, publication) => total + publication.days.length, 0), events: 0, scoped: 1 } });
+    return { version: 2, publications, events: [] as DurableDomainEvent[] };
+  }
   async getPublishedSnapshot(publicationId: string, version?: number) {
     const publication = await this.db.collection(MENU_PLANNING_COLLECTIONS.publications).doc(publicationId).get();
     if (!publication.exists) return undefined;

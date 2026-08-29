@@ -28,6 +28,9 @@ env:
   - variable: MENU_PLANNING_BASE_URL
     value: https://menu-planning-staging.fikacatering.com
     availability: [BUILD, RUNTIME]
+  - variable: DELIVERED_IN_GRAB_AND_GO_API_URL
+    value: https://fika-delivered-in-staging--fika-os-dev.europe-west4.hosted.app/api/delivered-in/grab-and-go/production
+    availability: [RUNTIME]
   - variable: HOSPITALITY_BOOKING_BASE_URL
     value: https://hospitality-staging.fikacatering.com
     availability: [BUILD, RUNTIME]

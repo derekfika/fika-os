@@ -10,6 +10,7 @@ import { localFixtureOrders, updateLocalFixture } from "../local-fixtures";
 import { normaliseProductionScope } from "../../../lib/production-scope";
 import { appendCpuChange, buildCpuDayProjection, cpuProjections, listCpuChanges, listCpuWeekChanges, rebuildCpuDayProjection, rebuildCpuWeekProjection, weekCommencingFor } from "../../../lib/cpu-projection";
 import { loadPlansForOrders } from "../../../lib/cpu-projection-repository";
+import { recordDeliveredInReadBudget } from "../../../lib/delivered-in-read-budget";
 import type { ProductionOrder } from "../../../lib/production-types";
 
 const localActor = {
@@ -143,6 +144,11 @@ const AcknowledgeCancellation = z.object({ action: z.literal("acknowledge-cancel
 export async function GET(request: NextRequest) {
   try {
     const actor = await actorFor(request);
+    if (request.nextUrl.searchParams.get("cacheScope") === "1") {
+      const runtime = process.env.FIKA_RUNTIME_MODE || "unknown";
+      const project = process.env.FIREBASE_PROJECT_ID || process.env.GCLOUD_PROJECT || "unknown";
+      return NextResponse.json({ cacheScope: `${runtime}:${project}:${actor.uid}` });
+    }
     const projectionDate = request.nextUrl.searchParams.get("serviceDate") || new Date().toISOString().slice(0, 10);
     if (request.nextUrl.searchParams.get("diagnostic") === "1") {
       const week = request.nextUrl.searchParams.get("weekCommencing");
@@ -179,8 +185,17 @@ export async function GET(request: NextRequest) {
         .map((order) => order.canonicalId));
       const projectedIds = new Set((storedData?.orders || []).map((order) => order.id).filter(Boolean));
       const needsOrderRefresh = canonicalIds.size !== projectedIds.size || [...canonicalIds].some((id) => !projectedIds.has(id));
-      const response = NextResponse.json({ projection: stored.exists && !needsReadableDestinations && !needsCancellationRefresh && !needsOrderRefresh ? stored.data() : week ? await rebuildCpuWeekProjection(request, week) : await rebuildCpuProjection(request, projectionDate) });
+      const requiresRefresh = !stored.exists || needsReadableDestinations || needsCancellationRefresh || needsOrderRefresh;
+      const response = NextResponse.json({ projection: requiresRefresh ? week ? await rebuildCpuWeekProjection(request, week) : await rebuildCpuProjection(request, projectionDate) : stored.data() });
+      recordDeliveredInReadBudget({ stage: requiresRefresh ? "projection_refresh" : "projection_body_load", projectionDocs: 1, canonicalOrderDocs: canonicalIds.size });
       return withServerTiming(response, { stored: storedDuration, canonical: canonicalDuration, total: performance.now() - startedAt });
+    }
+    if (request.nextUrl.searchParams.get("projectionHead") === "1") {
+      const week = request.nextUrl.searchParams.get("weekCommencing");
+      const head = await cpuProjections().doc(week ? `week:${week}` : projectionDate).get();
+      recordDeliveredInReadBudget({ stage: "warm_projection_head_check", projectionDocs: 1 });
+      const data = head.data() as { lastChangeSequence?: number; revision?: number } | undefined;
+      return NextResponse.json({ lastChangeSequence: Number(data?.lastChangeSequence || 0), revision: Number(data?.revision || 0) });
     }
     if (request.nextUrl.searchParams.has("changesSince")) {
       const startedAt = performance.now();
