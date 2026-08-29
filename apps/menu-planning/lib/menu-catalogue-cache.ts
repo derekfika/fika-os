@@ -6,6 +6,16 @@ export type CachedCatalogue = { namespace: string; schemaVersion: number; cached
 export type CatalogueFetchResult = { entries: CachedCatalogueEntry[]; categories?: string[]; identity?: string; manifest?: CatalogueManifest };
 export const catalogueManifestMatches = (cached?: CatalogueManifest, current?: CatalogueManifest) => Boolean(cached && current && cached.schemaVersion === current.schemaVersion && cached.catalogueVersion === current.catalogueVersion);
 
+export function catalogueErrorMessage(value: unknown, fallback: string) {
+  if (value instanceof Error && value.message) return value.message;
+  if (typeof value === "string" && value.trim()) return value;
+  if (value && typeof value === "object") {
+    const message = (value as { message?: unknown }).message;
+    if (typeof message === "string" && message.trim()) return message;
+  }
+  return fallback;
+}
+
 const databaseName = "fika-menu-planning";
 const databaseVersion = 2;
 const recordStore = "menuCatalogue";
@@ -58,10 +68,30 @@ async function readCache(namespace: string): Promise<CachedCatalogue | undefined
   });
 }
 
+async function findLatestCache(): Promise<CachedCatalogue | undefined> {
+  const db = await openDatabase();
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction([metadataStore], "readonly");
+    const request = transaction.objectStore(metadataStore).getAll();
+    transaction.oncomplete = async () => {
+      const candidates = (request.result as Array<Omit<CachedCatalogue, "entries"> | undefined>)
+        .filter((metadata): metadata is Omit<CachedCatalogue, "entries"> => Boolean(metadata && metadata.schemaVersion === schemaVersion && metadata.namespace))
+        .sort((a, b) => b.cachedAt - a.cachedAt);
+      try {
+        for (const candidate of candidates) {
+          const value = await readCache(candidate.namespace);
+          if (value?.entries.length) return resolve(value);
+        }
+        resolve(undefined);
+      } catch (error) { reject(error); }
+    };
+    transaction.onerror = () => reject(transaction.error || new Error("Catalogue cache metadata read failed."));
+  });
+}
+
 export async function getCachedCatalogue(namespace = catalogueCacheNamespace()) {
-  if (!namespace) return undefined;
   try {
-    const value = await readCache(namespace);
+    const value = namespace ? await readCache(namespace) : await findLatestCache();
     if (!value) { debug("miss", { namespace }); return undefined; }
     const stale = Date.now() - value.cachedAt >= CATALOGUE_CACHE_TTL_MS;
     debug(stale ? "stale" : "hit", { cachedAt: value.cachedAt, recordCount: value.entries.length });
@@ -139,9 +169,10 @@ export async function loadCachedCatalogue(fetcher: () => Promise<CatalogueFetchR
   const namespace = catalogueCacheNamespace();
   const cached = await getCachedCatalogue(namespace);
   if (cached) {
+    const cacheNamespace = cached.namespace || namespace;
     const checkDue = !cached.manifest || !cached.manifestCheckedAt || Date.now() - cached.manifestCheckedAt >= CATALOGUE_CACHE_TTL_MS;
-    if (namespace && manifestFetcher && checkDue) void revalidateCatalogue(cached, namespace, fetcher, manifestFetcher, onUpdate);
-    else if (!manifestFetcher && Date.now() - cached.cachedAt >= CATALOGUE_CACHE_TTL_MS) void refreshCatalogue(fetcher, namespace, onUpdate).catch(error => debug("background-fallback", { reason: error instanceof Error ? error.message : "refresh failed" }));
+    if (cacheNamespace && manifestFetcher && checkDue) void revalidateCatalogue(cached, cacheNamespace, fetcher, manifestFetcher, onUpdate);
+    else if (!manifestFetcher && Date.now() - cached.cachedAt >= CATALOGUE_CACHE_TTL_MS) void refreshCatalogue(fetcher, cacheNamespace, onUpdate).catch(error => debug("background-fallback", { reason: error instanceof Error ? error.message : "refresh failed" }));
     return cached.entries;
   }
   return refreshCatalogue(fetcher, namespace, onUpdate);

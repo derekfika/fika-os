@@ -1,13 +1,13 @@
 "use client";
 import { useEffect, useState } from "react";
 import type { CatalogueEntry } from "@/lib/catalogue";
-import { invalidateCatalogueCache, loadCachedCatalogue, type CachedCatalogueEntry, type CatalogueManifest } from "@/lib/menu-catalogue-cache";
+import { catalogueErrorMessage, invalidateCatalogueCache, loadCachedCatalogue, type CachedCatalogueEntry, type CatalogueManifest } from "@/lib/menu-catalogue-cache";
 import MenuPlanningShell from "./menu-planning-shell";
 type Response = { entries: CatalogueEntry[]; total: number; filteredCount: number; categories: string[] };
 type DuplicateGroup = { category: string; survivor: { id: string; name: string }; candidates: Array<{ id: string; name: string; allergenCount: number; hasRecipe: boolean }> };
 const human = (value: string) => value.replaceAll("_", " ").replace(/\b\w/g, letter => letter.toUpperCase());
-const fetchCatalogue = async () => { const response = await fetch("/api/catalogue", { cache: "no-store" }); const body = await response.json() as Response & { error?: string; manifest?: CatalogueManifest }; if (!response.ok) throw new Error(body.error || "The dish library could not be loaded."); return { entries: body.entries as CachedCatalogueEntry[], categories: body.categories, identity: response.headers.get("x-fika-menu-identity") || undefined, manifest: body.manifest }; };
-const fetchCatalogueManifest = async () => { const response = await fetch("/api/catalogue?manifest=true", { cache: "no-store" }); const body = await response.json() as CatalogueManifest & { error?: string }; if (!response.ok) throw new Error(body.error || "The dish library manifest could not be loaded."); return body; };
+const fetchCatalogue = async () => { const response = await fetch("/api/catalogue", { cache: "no-store" }); const body = await response.json() as Response & { error?: unknown; manifest?: CatalogueManifest }; if (!response.ok) throw new Error(catalogueErrorMessage(body.error, "The dish library could not be loaded.")); return { entries: body.entries as CachedCatalogueEntry[], categories: body.categories, identity: response.headers.get("x-fika-menu-identity") || undefined, manifest: body.manifest }; };
+const fetchCatalogueManifest = async () => { const response = await fetch("/api/catalogue?manifest=true", { cache: "no-store" }); const body = await response.json() as CatalogueManifest & { error?: unknown }; if (!response.ok) throw new Error(catalogueErrorMessage(body.error, "The dish library manifest could not be loaded.")); return body; };
 const filterEntries = (entries: CatalogueEntry[], query: string, category: string, usage: string, status: string) => entries.filter(entry => {
   const haystack = `${entry.name} ${entry.description || ""} ${entry.sourceLabel}`.toLowerCase();
   return (!query || haystack.includes(query.toLowerCase())) && (category === "all" || entry.category === category) && (usage === "all" || (entry.usage as string[]).includes(usage)) && (status === "all" || entry.status === status);

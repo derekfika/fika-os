@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
-import { catalogueManifestMatches } from "../lib/menu-catalogue-cache";
+import { catalogueErrorMessage, catalogueManifestMatches } from "../lib/menu-catalogue-cache";
 
 test("rolling-menu read path resolves catalogue data without reconciliation writes", () => {
   const source = readFileSync(new URL("../app/api/rolling-menu/route.ts", import.meta.url), "utf8");
@@ -115,6 +115,46 @@ test("catalogue manifest comparison is version based", () => {
   assert.equal(catalogueManifestMatches({ schemaVersion: 1, catalogueVersion: 42 }, { schemaVersion: 1, catalogueVersion: 42 }), true);
   assert.equal(catalogueManifestMatches({ schemaVersion: 1, catalogueVersion: 42 }, { schemaVersion: 1, catalogueVersion: 43 }), false);
   assert.equal(catalogueManifestMatches(undefined, { schemaVersion: 1, catalogueVersion: 42 }), false);
+});
+
+test("catalogue cache preserves warm records while manifest revalidates in the background", () => {
+  const cache = readFileSync(new URL("../lib/menu-catalogue-cache.ts", import.meta.url), "utf8");
+  assert.match(cache, /findLatestCache/);
+  assert.match(cache, /return cached\.entries/);
+  assert.match(cache, /void revalidateCatalogue/);
+  assert.match(cache, /if \(!catalogueManifestMatches\(cached\.manifest, manifest\)\) await refreshCatalogue/);
+  assert.doesNotMatch(cache, /return \[\]/);
+});
+
+test("catalogue cache keeps cached records on manifest and refresh failures", () => {
+  const cache = readFileSync(new URL("../lib/menu-catalogue-cache.ts", import.meta.url), "utf8");
+  assert.match(cache, /manifest-fallback/);
+  assert.match(cache, /onUpdate\?\.\(result\.entries\)/);
+  assert.match(cache, /void refreshCatalogue\(fetcher, cacheNamespace, onUpdate\)\.catch/);
+});
+
+test("structured catalogue errors are rendered as useful text", () => {
+  assert.equal(catalogueErrorMessage({ message: "Manifest unavailable." }, "fallback"), "Manifest unavailable.");
+  assert.equal(catalogueErrorMessage({ code: "CATALOGUE_DOWN" }, "fallback"), "fallback");
+  assert.notEqual(catalogueErrorMessage({ message: "Manifest unavailable." }, "fallback"), "[object Object]");
+  const workspace = readFileSync(new URL("../app/catalogue-workspace.tsx", import.meta.url), "utf8");
+  assert.match(workspace, /catalogueErrorMessage\(body\.error/);
+});
+
+test("cold catalogue loads populate IndexedDB without broad warm reads", () => {
+  const cache = readFileSync(new URL("../lib/menu-catalogue-cache.ts", import.meta.url), "utf8");
+  assert.match(cache, /return refreshCatalogue\(fetcher, namespace, onUpdate\)/);
+  assert.match(cache, /await putCachedCatalogue\(result\.entries, namespace/);
+  const workspace = readFileSync(new URL("../app/catalogue-workspace.tsx", import.meta.url), "utf8");
+  assert.match(workspace, /loadCachedCatalogue\(fetchCatalogue/);
+});
+
+test("normal warm Dish Library path does not perform a broad catalogue Firestore read", () => {
+  const workspace = readFileSync(new URL("../app/catalogue-workspace.tsx", import.meta.url), "utf8");
+  const cache = readFileSync(new URL("../lib/menu-catalogue-cache.ts", import.meta.url), "utf8");
+  assert.doesNotMatch(workspace, /firestore|listCatalogueEntries/);
+  assert.match(cache, /getAll\(IDBKeyRange\.bound/);
+  assert.match(cache, /manifestFetcher/);
 });
 
 test("catalogue mutations advance the server manifest in the same hosted transaction", () => {
