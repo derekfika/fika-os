@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import type {
   ProductionOrder,
@@ -65,6 +65,7 @@ export default function CpuProduction() {
   const [selected, setSelected] = useState<ProductionOrder>();
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState("");
+  const detailRequest = useRef(0);
   const [showHospitalityAllergens, setShowHospitalityAllergens] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
   const [error, setError] = useState("");
@@ -129,17 +130,21 @@ export default function CpuProduction() {
   const todayKey = new Date().toLocaleDateString("en-CA");
   const openOrder = async (order: Pick<ProductionOrder, "canonicalId">, preserveOpen = false) => {
     if (!preserveOpen) setShowHospitalityAllergens(false);
-    if (!preserveOpen) setSelected(undefined);
+    const requestId = ++detailRequest.current;
+    const cachedOrder = orders.find((candidate) => candidate.canonicalId === order.canonicalId);
+    setSelected(cachedOrder || (order as ProductionOrder));
     setDetailError("");
     setDetailLoading(true);
     try {
       const response = await fetch(`/api/production?canonicalId=${encodeURIComponent(order.canonicalId)}`, { cache: "no-store" });
       const body = await readApiResponse<{ order?: ProductionOrder; error?: { message?: string } }>(response);
       if (!response.ok || !body.order) throw new Error(body.error?.message || "Could not load the canonical Production Order.");
-      setSelected(body.order as ProductionOrder);
+      if (requestId === detailRequest.current) setSelected(body.order as ProductionOrder);
     } catch (cause) {
-      setDetailError(cause instanceof Error ? cause.message : "Could not load the canonical Production Order.");
-    } finally { setDetailLoading(false); }
+      if (requestId === detailRequest.current) setDetailError(cause instanceof Error ? cause.message : "Could not load the canonical Production Order.");
+    } finally {
+      if (requestId === detailRequest.current) setDetailLoading(false);
+    }
   };
   const acknowledgeCancelledBooking = async (order: ProductionOrder) => {
     setError("");
@@ -331,7 +336,7 @@ export default function CpuProduction() {
         </div>
       </div>
       </div>
-      {detailLoading && <div className="cpu-detail-state" role="status">Loading canonical production order…</div>}
+      {detailLoading && selected && <div className="cpu-detail-state cpu-detail-loading" role="status" aria-live="polite">Loading latest order details…</div>}
       {detailError && <div className="cpu-detail-state" role="alert">{detailError}</div>}
       {selected && selected.origin === "grab_and_go" ? (
         <GrabAndGoOrderDetail
