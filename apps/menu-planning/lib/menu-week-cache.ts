@@ -1,6 +1,7 @@
 import type { RollingSnapshot } from "./rolling-menu-types";
 import type { PublicationDayState } from "./menu-publication";
 import { clearCatalogueCache } from "./menu-catalogue-cache";
+import { recordDataAccess } from "@fika/server-shared/data-source-meter-client";
 
 export type CachedMenuWeek = { weekId: string; weekCommencing: string; version: number; snapshot: RollingSnapshot; publicationState: Record<string, PublicationDayState>; cachedAt: number; identity: string };
 const databaseName = "fika-menu-planning";
@@ -23,7 +24,7 @@ function openDatabase(): Promise<IDBDatabase> {
 }
 
 export async function getCachedWeek(weekId: string, identity: string) {
-  try { const db = await openDatabase(); return await new Promise<CachedMenuWeek | undefined>((resolve, reject) => { const request = db.transaction(storeName, "readonly").objectStore(storeName).get(weekId); request.onsuccess = () => resolve(request.result?.identity === identity ? request.result as CachedMenuWeek : undefined); request.onerror = () => reject(request.error); }); } catch { return undefined; }
+  try { const db = await openDatabase(); return await new Promise<CachedMenuWeek | undefined>((resolve, reject) => { const request = db.transaction(storeName, "readonly").objectStore(storeName).get(weekId); request.onsuccess = () => { const value = request.result?.identity === identity ? request.result as CachedMenuWeek : undefined; recordDataAccess({ app: "menu-planning", operation: "week.cache", source: "CLIENT_CACHE", documents: value ? 1 : 0, cacheHit: Boolean(value) }); resolve(value); }; request.onerror = () => reject(request.error); }); } catch { recordDataAccess({ app: "menu-planning", operation: "week.cache", source: "CLIENT_CACHE", documents: 0, cacheHit: false }); return undefined; }
 }
 
 export async function putCachedWeek(value: CachedMenuWeek) {

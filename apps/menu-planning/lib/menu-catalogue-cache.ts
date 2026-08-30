@@ -1,4 +1,5 @@
 "use client";
+import { recordDataAccess } from "@fika/server-shared/data-source-meter-client";
 
 export type CachedCatalogueEntry = Record<string, unknown> & { id: string };
 export type CatalogueManifest = { schemaVersion: number; catalogueVersion: number; updatedAt?: string; dishCount?: number };
@@ -62,6 +63,7 @@ async function readCache(namespace: string): Promise<CachedCatalogue | undefined
       const metadata = metaRequest.result as Omit<CachedCatalogue, "entries"> | undefined;
       const entries = (recordsRequest.result as Array<CachedCatalogueEntry & { cacheKey: string }>).map(({ cacheKey: _cacheKey, ...entry }) => entry);
       if (!metadata || metadata.schemaVersion !== schemaVersion || !entries.length && metadata.recordCount !== 0) return resolve(undefined);
+      recordDataAccess({ app: "menu-planning", operation: "catalogue.cache", source: "CLIENT_CACHE", documents: entries.length, cacheHit: true });
       resolve({ ...metadata, entries } as CachedCatalogue);
     };
     transaction.onerror = () => reject(transaction.error || new Error("Catalogue cache read failed."));
@@ -92,7 +94,7 @@ async function findLatestCache(): Promise<CachedCatalogue | undefined> {
 export async function getCachedCatalogue(namespace = catalogueCacheNamespace()) {
   try {
     const value = namespace ? await readCache(namespace) : await findLatestCache();
-    if (!value) { debug("miss", { namespace }); return undefined; }
+    if (!value) { recordDataAccess({ app: "menu-planning", operation: "catalogue.cache", source: "CLIENT_CACHE", documents: 0, cacheHit: false }); debug("miss", { namespace }); return undefined; }
     const stale = Date.now() - value.cachedAt >= CATALOGUE_CACHE_TTL_MS;
     debug(stale ? "stale" : "hit", { cachedAt: value.cachedAt, recordCount: value.entries.length });
     return value;

@@ -1,4 +1,5 @@
 import type { LogisticsDayProjection } from "./types";
+import { recordDataAccess } from "@fika/server-shared/data-source-meter-client";
 
 const DATABASE = "fika-logistics-cache";
 const STORE = "day-projections";
@@ -22,7 +23,7 @@ export async function readCachedProjection(scope: string, serviceDate: string): 
     const db = await openCache();
     return await new Promise((resolve, reject) => {
       const request = db.transaction(STORE).objectStore(STORE).get(logisticsCacheKey(scope, serviceDate));
-      request.onsuccess = () => resolve((request.result as CacheRecord | undefined)?.projection);
+      request.onsuccess = () => { const value = (request.result as CacheRecord | undefined)?.projection; recordDataAccess({ app: "logistics", operation: "projection.cache", source: "CLIENT_CACHE", documents: value ? 1 : 0, cacheHit: Boolean(value) }); resolve(value); };
       request.onerror = () => reject(request.error);
     });
   } catch { return undefined; }

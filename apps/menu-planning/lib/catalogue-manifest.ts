@@ -2,6 +2,7 @@ import { readFile } from "node:fs/promises";
 import { Firestore } from "@google-cloud/firestore";
 import { appDataPath } from "./fika-contracts";
 import { assertOperationalStoreAvailable } from "./hosted-runtime";
+import { recordDataAccess } from "@fika/server-shared/data-source-meter-server";
 
 export type CatalogueManifest = { schemaVersion: number; catalogueVersion: number; updatedAt?: string; dishCount?: number };
 export const CATALOGUE_MANIFEST_ID = "__manifest__";
@@ -16,6 +17,7 @@ export async function getCatalogueManifest(): Promise<CatalogueManifest> {
     const projectId = process.env.FIREBASE_PROJECT_ID || process.env.GCLOUD_PROJECT;
     if (!projectId) throw Object.assign(new Error("Hosted Menu Planning catalogue is not configured."), { status: 503 });
     const document = await firestore().collection(collectionName).doc(CATALOGUE_MANIFEST_ID).get();
+    recordDataAccess({ app: "menu-planning", operation: "catalogue.manifest", source: "FIRESTORE", documents: document.exists ? 1 : 0 });
     if (!document.exists) return { schemaVersion: 1, catalogueVersion: 0 };
     const value = document.data() || {};
     return { schemaVersion: Number(value.schemaVersion || 1), catalogueVersion: Number(value.catalogueVersion || 0), updatedAt: typeof value.updatedAt === "string" ? value.updatedAt : undefined, dishCount: typeof value.dishCount === "number" ? value.dishCount : undefined };

@@ -3,8 +3,9 @@ import { filterCatalogueEntries, getCatalogueEntryById, listCatalogueEntries } f
 import { createCanonicalMenuItem, mergeSimilarCanonicalItems, previewSimilarCanonicalItems } from "@/lib/canonical-menu-repository";
 import { repointDishIds } from "@/lib/rolling-menu";
 import { getCatalogueManifest } from "@/lib/catalogue-manifest";
+import { withDataTrace } from "@fika/server-shared/data-source-meter-server";
 
-export async function GET(request: Request) {
+async function handleGet(request: Request) {
   try {
     if (new URL(request.url).searchParams.get("duplicates") === "preview") return NextResponse.json({ groups: await previewSimilarCanonicalItems() });
     const url = new URL(request.url);
@@ -27,6 +28,8 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: { message: error instanceof Error ? error.message : "Catalogue could not be loaded." } }, { status });
   }
 }
+
+export async function GET(request: Request) { return withDataTrace({ app: "menu-planning", action: new URL(request.url).searchParams.get("manifest") === "true" ? "menu-planning.catalogue.manifest" : "menu-planning.catalogue.load", path: new URL(request.url).pathname }, () => handleGet(request)); }
 
 export async function POST(request: Request) {
   const body = await request.json() as { action?: string; displayName?: string; category?: string; description?: string; preparationNotes?: string; canonicalIds?: string[]; allergenEvidence?: Array<{ allergen: string; value: "contains" | "free_from" | "may_contain" | "unknown"; source: string; reviewedBy?: string; reviewedAt?: string; notes?: string }> };

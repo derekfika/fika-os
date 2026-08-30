@@ -51,6 +51,7 @@ import {
 import { operationalDate } from "@/lib/date";
 import { addOperationalDays, operationalWeek } from "@/lib/week";
 import { restoredStopStatus } from "@/lib/mobile-driver";
+import { withDataTrace } from "@fika/server-shared/data-source-meter-server";
 import type { PlannerWeekSummary } from "@/lib/planner-read-model";
 import type { DeliveryRun, DeliveryStop, MovementRequest } from "@/lib/types";
 import type { FulfilmentRequirement } from "../../../../shared/fulfilment-requirement";
@@ -464,7 +465,7 @@ async function getLogistics(request: NextRequest) {
   });
 }
 
-export async function POST(request: NextRequest) {
+async function handlePost(request: NextRequest) {
   try {
     const principal = await requireLogisticsAccess(request);
     if (hostedRuntime()) assertSameOrigin(request);
@@ -2242,7 +2243,7 @@ export async function POST(request: NextRequest) {
   }
 }
 
-export async function GET(request: NextRequest) {
+async function handleGet(request: NextRequest) {
   try {
     const principal = await requireLogisticsAccess(request);
     const response = await getLogistics(request);
@@ -2253,3 +2254,6 @@ export async function GET(request: NextRequest) {
     return errorResponse(error, request.headers.get("x-request-id") || undefined);
   }
 }
+
+export async function POST(request: NextRequest) { return withDataTrace({ app: "logistics", action: "logistics.request", path: request.nextUrl.pathname, requestId: request.headers.get("x-request-id") || undefined }, () => handlePost(request)); }
+export async function GET(request: NextRequest) { return withDataTrace({ app: "logistics", action: request.nextUrl.pathname.startsWith("/mobile") ? "logistics.mobile.day.load" : "logistics.day.load", path: request.nextUrl.pathname, requestId: request.headers.get("x-request-id") || undefined }, () => handleGet(request)); }

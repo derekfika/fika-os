@@ -10,6 +10,7 @@ import { assertOperationalStoreAvailable } from "./hosted-runtime";
 import { Firestore } from "@google-cloud/firestore";
 import { recordMenuPlanningReadBudget } from "./read-budget";
 import { CATALOGUE_MANIFEST_ID, type CatalogueManifest, getCatalogueManifest } from "./catalogue-manifest";
+import { recordDataAccess } from "@fika/server-shared/data-source-meter-server";
 
 const filePath = appDataPath("menu-planning", "menu-planning", "canonical-menu-items.json");
 const HOSTED_CATALOGUE_TTL_MS = 60_000;
@@ -20,10 +21,12 @@ async function readItems(): Promise<MenuItem[]> {
   if (hostedCatalogue()) {
     if (!process.env.FIREBASE_PROJECT_ID && !process.env.GCLOUD_PROJECT) throw Object.assign(new Error("Hosted Menu Planning catalogue is not configured."), { status: 503 });
     if (hostedCatalogueCache && hostedCatalogueCache.expiresAt > Date.now()) {
+      recordDataAccess({ app: "menu-planning", operation: "catalogue.app-cache", source: "APP_CACHE", documents: hostedCatalogueCache.items.length, cacheHit: true });
       recordMenuPlanningReadBudget({ operation: "catalogue", reads: { cacheHit: 1, documents: hostedCatalogueCache.items.length } });
       return structuredClone(hostedCatalogueCache.items);
     }
     const snapshot = await new Firestore({ projectId: process.env.FIREBASE_PROJECT_ID || process.env.GCLOUD_PROJECT }).collection("fikaMenuPlanningCatalogue").where("kind", "==", "dish").get();
+    recordDataAccess({ app: "menu-planning", operation: "catalogue.list", source: "FIRESTORE", documents: snapshot.size });
     const items = snapshot.docs.map(document => (document.data().record || document.data()) as MenuItem);
     hostedCatalogueCache = { expiresAt: Date.now() + HOSTED_CATALOGUE_TTL_MS, items: structuredClone(items) };
     recordMenuPlanningReadBudget({ operation: "catalogue", reads: { cacheHit: 0, documents: items.length, ttlMs: HOSTED_CATALOGUE_TTL_MS } });
@@ -32,7 +35,9 @@ async function readItems(): Promise<MenuItem[]> {
   assertOperationalStoreAvailable();
   try {
     const value = JSON.parse(await readFile(filePath, "utf8")) as { items?: MenuItem[] };
-    return Array.isArray(value.items) ? value.items : [];
+    const items = Array.isArray(value.items) ? value.items : [];
+    recordDataAccess({ app: "menu-planning", operation: "catalogue.static", source: "STATIC", documents: items.length });
+    return items;
   } catch (cause) {
     if ((cause as NodeJS.ErrnoException).code === "ENOENT") return [];
     throw Object.assign(new Error("Canonical menu catalogue is unavailable; no catalogue was loaded.", { cause }), { status: 503 });
@@ -97,6 +102,7 @@ export async function listCanonicalMenuItemsByIds(ids: string[]) {
       { length: Math.ceil(wanted.length / 100) },
       (_, index) => db.getAll(...wanted.slice(index * 100, index * 100 + 100).map(id => db.collection("fikaMenuPlanningCatalogue").doc(id))),
     ));
+    recordDataAccess({ app: "menu-planning", operation: "catalogue.by-id.batch", source: "FIRESTORE", documents: records.flat().filter(document => document.exists && document.data()?.kind === "dish").length });
     return records.flatMap(documents => documents.filter(document => document.exists && document.data()?.kind === "dish").map(document => (document.data()!.record || document.data()) as MenuItem));
   }
   const items = await readItems();
@@ -109,6 +115,7 @@ export async function getCanonicalMenuItemById(id: string) {
   if (hosted()) {
     if (!process.env.FIREBASE_PROJECT_ID && !process.env.GCLOUD_PROJECT) throw Object.assign(new Error("Hosted Menu Planning catalogue is not configured."), { status: 503 });
     const document = await new Firestore({ projectId: process.env.FIREBASE_PROJECT_ID || process.env.GCLOUD_PROJECT }).collection("fikaMenuPlanningCatalogue").doc(cleanId).get();
+    recordDataAccess({ app: "menu-planning", operation: "catalogue.by-id", source: "FIRESTORE", documents: document.exists && document.data()?.kind === "dish" ? 1 : 0 });
     if (!document.exists || document.data()?.kind !== "dish") return undefined;
     return (document.data()!.record || document.data()) as MenuItem;
   }

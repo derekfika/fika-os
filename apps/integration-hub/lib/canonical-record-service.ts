@@ -29,6 +29,7 @@ import {
 } from "./governed-reasons";
 import { validateOperationalAssignmentConnection } from "./connection-rules";
 import { bumpCacheDatasets, cacheDatasetForEntityType } from "./integration-cache-server";
+import { recordDataAccess } from "@fika/server-shared/data-source-meter-server";
 
 const canonical = () => db.collection("integrationHubCanonical");
 const revisions = () => db.collection("integrationHubCanonicalRevisions");
@@ -63,6 +64,8 @@ export async function canonicalEditorContext() {
     canonical().get(),
     mappings().get(),
   ]);
+  recordDataAccess({ app: "integration-hub", operation: "canonical.registry", source: "FIRESTORE", documents: recordsSnapshot.size });
+  recordDataAccess({ app: "integration-hub", operation: "canonical.source-mappings", source: "FIRESTORE", documents: mappingsSnapshot.size });
   const records = recordsSnapshot.docs.map(
     (document) => document.data() as CanonicalRecord,
   );

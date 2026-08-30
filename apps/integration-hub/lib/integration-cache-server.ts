@@ -5,6 +5,7 @@ import type { Actor } from "./auth";
 import { redactCanonical } from "./redaction";
 import { CACHE_DATASETS, INTEGRATION_CACHE_SCHEMA_VERSION, datasetForEntityType, type CacheDataset, type CacheManifest } from "./integration-cache-shared";
 import type { CanonicalRecord } from "./types";
+import { recordDataAccess } from "@fika/server-shared/data-source-meter-server";
 
 const manifestCollection = () => db.collection("integrationHubCacheManifests");
 const canonical = () => db.collection("integrationHubCanonical");
@@ -18,6 +19,7 @@ export function cacheManifestRef(dataset: CacheDataset) { return manifestCollect
 
 export async function readCacheManifests(datasets: CacheDataset[] = [...CACHE_DATASETS]): Promise<CacheManifest[]> {
   const snapshots = await Promise.all(datasets.map(dataset => cacheManifestRef(dataset).get()));
+  snapshots.forEach((snapshot, index) => recordDataAccess({ app: "integration-hub", operation: `cache-manifest.${datasets[index]}`, source: "FIRESTORE", documents: snapshot.exists ? 1 : 0 }));
   return snapshots.map((snapshot, index) => snapshot.exists ? snapshot.data() as CacheManifest : {
     schemaVersion: INTEGRATION_CACHE_SCHEMA_VERSION, dataset: datasets[index], version: 0, updatedAt: "", recordCount: 0,
   });
@@ -28,6 +30,7 @@ export async function listCacheDataset(actor: Actor, dataset: CacheDataset) {
   const types = entityTypes[dataset];
   if (!types.length) return { dataset, records: [] };
   const snapshot = await canonical().where("entityType", "in", types).get();
+  recordDataAccess({ app: "integration-hub", operation: "cache-dataset.list", source: "FIRESTORE", documents: snapshot.size });
   const records = snapshot.docs.map(document => document.data() as CanonicalRecord)
     .filter(record => record.lifecycleStatus !== "archived" && record.publicationStatus !== "withdrawn")
     .map(record => redactCanonical(record, actor.role));

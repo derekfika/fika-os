@@ -3,6 +3,7 @@ import type { DocumentData } from "firebase-admin/firestore";
 import type { DeliveryLoad, DeliveryRun, DeliveryStop, LogisticsAssignment, LogisticsChangeEvent, LogisticsDayProjection, LogisticsJob, MovementRequest } from "./types";
 import { scopeState } from "./planning";
 import { resolveLegacyAssignmentServiceDate } from "./assignment-migration";
+import { recordDataAccess } from "@fika/server-shared/data-source-meter-server";
 export const runs = () => db.collection("fikaLogisticsDeliveryRunsV1");
 export const stops = () => db.collection("fikaLogisticsDeliveryStopsV1");
 export const movements = () => db.collection("fikaLogisticsMovementRequestsV1");
@@ -24,6 +25,7 @@ export function reportLogisticsReadPath(operation: string) {
 const preferenceId = (groupKey: string) => encodeURIComponent(groupKey);
 export async function listCollectionPreferenceKeys() {
   const snapshot = await collectionPreferences().where("collectionRequired", "==", true).get();
+  recordDataAccess({ app: "logistics", operation: "collection-preferences.list", source: "FIRESTORE", documents: snapshot.size });
   return snapshot.docs.map((doc) => String(doc.data().groupKey || decodeURIComponent(doc.id)));
 }
 export async function saveCollectionPreference(groupKey: string, collectionRequired: boolean, by: string, now: string) {
@@ -80,21 +82,27 @@ export async function listState(serviceDate?: string) {
     stops: stopDocs.map((d) => normalizeStop(d.data())),
     movements: movementSnap.docs.map((d) => d.data() as MovementRequest),
   };
+  recordDataAccess({ app: "logistics", operation: "runs.service-date", source: "FIRESTORE", documents: runSnap.size });
+  recordDataAccess({ app: "logistics", operation: "movements.service-date", source: "FIRESTORE", documents: movementSnap.size });
+  recordDataAccess({ app: "logistics", operation: "stops.service-date", source: "FIRESTORE", documents: stopDocs.length });
   reportRead(`state${serviceDate ? `:${serviceDate}` : ":all"}`, runSnap.size + movementSnap.size + stopDocs.length);
   return serviceDate ? scopeState(state, serviceDate) : state;
 }
 export async function getRun(runId: string) {
   const snapshot = await runs().doc(runId).get();
+  recordDataAccess({ app: "logistics", operation: "run.by-id", source: "FIRESTORE", documents: snapshot.exists ? 1 : 0 });
   reportRead("run:direct", snapshot.exists ? 1 : 0);
   return snapshot.exists ? snapshot.data() as DeliveryRun : undefined;
 }
 export async function getLogisticsJob(jobId: string) {
   const snapshot = await logisticsJobs().doc(jobId).get();
+  recordDataAccess({ app: "logistics", operation: "job.by-id", source: "FIRESTORE", documents: snapshot.exists ? 1 : 0 });
   reportRead("job:direct", snapshot.exists ? 1 : 0);
   return snapshot.exists ? snapshot.data() as LogisticsJob : undefined;
 }
 export async function getDeliveryLoad(loadId: string) {
   const snapshot = await deliveryLoads().doc(loadId).get();
+  recordDataAccess({ app: "logistics", operation: "load.by-id", source: "FIRESTORE", documents: snapshot.exists ? 1 : 0 });
   reportRead("load:direct", snapshot.exists ? 1 : 0);
   return snapshot.exists ? snapshot.data() as DeliveryLoad : undefined;
 }
@@ -116,13 +124,16 @@ export async function listDeliveryLoadState(serviceDate?: string) {
     serviceDate ? deliveryLoads().where("serviceDate", "==", serviceDate).get() : deliveryLoads().get(),
     serviceDate ? logisticsAssignments().where("serviceDate", "==", serviceDate).get() : logisticsAssignments().get(),
   ]);
+  recordDataAccess({ app: "logistics", operation: "jobs.service-date", source: "FIRESTORE", documents: jobSnap.size });
+  recordDataAccess({ app: "logistics", operation: "loads.service-date", source: "FIRESTORE", documents: loadSnap.size });
+  recordDataAccess({ app: "logistics", operation: "assignments.service-date", source: "FIRESTORE", documents: assignmentSnap.size });
   reportRead(`delivery-load-state${serviceDate ? `:${serviceDate}` : ":all"}`, jobSnap.size + loadSnap.size + assignmentSnap.size);
   return { jobs: jobSnap.docs.map((d) => d.data() as LogisticsJob), loads: loadSnap.docs.map((d) => d.data() as DeliveryLoad), assignments: assignmentSnap.docs.map((d) => d.data() as LogisticsAssignment) };
 }
 export async function saveLogisticsJob(job: LogisticsJob) { await logisticsJobs().doc(job.id).set(job); return job; }
 export async function saveDeliveryLoad(load: DeliveryLoad) { await deliveryLoads().doc(load.id).set(load); return load; }
 export async function saveLogisticsProjection(projection: LogisticsDayProjection) { await logisticsDayProjections().doc(projection.serviceDate).set(projection); return projection; }
-export async function getLogisticsProjection(serviceDate: string) { const snapshot = await logisticsDayProjections().doc(serviceDate).get(); reportRead(`projection:${serviceDate}`, snapshot.exists ? 1 : 0); return snapshot.exists ? snapshot.data() as LogisticsDayProjection : undefined; }
+export async function getLogisticsProjection(serviceDate: string) { const snapshot = await logisticsDayProjections().doc(serviceDate).get(); recordDataAccess({ app: "logistics", operation: "projection.by-service-date", source: "FIRESTORE", documents: snapshot.exists ? 1 : 0 }); reportRead(`projection:${serviceDate}`, snapshot.exists ? 1 : 0); return snapshot.exists ? snapshot.data() as LogisticsDayProjection : undefined; }
 export async function listPlanningAttention(serviceDates: string[], expectedSourceKeys?: Map<string, Set<string>>) {
   const projections = await Promise.all(serviceDates.map((serviceDate) => getLogisticsProjection(serviceDate)));
   const attention = projections.flatMap((projection, index) => {
@@ -136,12 +147,14 @@ export async function listPlanningAttention(serviceDates: string[], expectedSour
 }
 export async function getLogisticsSyncHead() {
   const snapshot = await logisticsChangeCursor().doc("global").get();
+  recordDataAccess({ app: "logistics", operation: "sync-head.lookup", source: "FIRESTORE", documents: snapshot.exists ? 1 : 0 });
   reportRead("sync-head", snapshot.exists ? 1 : 0);
   return { sequence: Number(snapshot.data()?.sequence || 0), updatedAt: snapshot.data()?.updatedAt as string | undefined };
 }
 export async function listLogisticsChanges(after = 0, serviceDate?: string) {
   const query = serviceDate ? logisticsChanges().where("serviceDate", "==", serviceDate).where("sequence", ">", after).orderBy("sequence", "asc").limit(LOGISTICS_CHANGE_LIMIT + 1) : logisticsChanges().where("sequence", ">", after).orderBy("sequence", "asc").limit(LOGISTICS_CHANGE_LIMIT + 1);
   const snapshot = await query.get();
+  recordDataAccess({ app: "logistics", operation: "changes.incremental-page", source: "FIRESTORE", documents: snapshot.size });
   reportRead(`changes-since:${after}${serviceDate ? `:${serviceDate}` : ""}`, snapshot.size);
   const documents = snapshot.docs.slice(0, LOGISTICS_CHANGE_LIMIT);
   const changes = documents.map((doc) => doc.data() as LogisticsChangeEvent);
@@ -175,6 +188,7 @@ export async function appendLogisticsChange(input: Omit<LogisticsChangeEvent, "s
   return db.runTransaction(async (transaction) => {
     const cursorRef = logisticsChangeCursor().doc("global");
     const cursorSnap = await transaction.get(cursorRef);
+    recordDataAccess({ app: "logistics", operation: "change-cursor.transaction-read", source: "FIRESTORE", documents: cursorSnap.exists ? 1 : 0 });
     const sequence = Number(cursorSnap.data()?.sequence || 0) + 1;
     const event = { ...input, sequence };
     transaction.set(cursorRef, { sequence, updatedAt: input.changedAt });

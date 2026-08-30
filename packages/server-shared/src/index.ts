@@ -4,3 +4,4 @@ export * from "./governed-oplocs";
 export * from "./stable-document-id";
 export * from "./runtime-config";
 export * from "./external-production";
+export * from "./data-source-meter";

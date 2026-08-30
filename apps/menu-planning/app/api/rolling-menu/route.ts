@@ -10,6 +10,7 @@ import { resolveAllergenSnapshot } from "@/lib/allergen-resolution";
 import { GOVERNED_OPLOCS } from "@/lib/fika-contracts";
 import { getWeekSnapshot, listWeekSummaries } from "@/lib/operational-store";
 import type { RollingWeek } from "@/lib/rolling-menu-types";
+import { withDataTrace } from "@fika/server-shared/data-source-meter-server";
 
 async function resolvedSnapshot(snapshot: Awaited<ReturnType<typeof getWeek>>, catalogue?: Awaited<ReturnType<typeof listCatalogueEntriesForIds>>) {
   const referencedIds = snapshot.entries.filter(entry => entry.itemLabel.trim()).map(entry => entry.itemId || "");
@@ -22,7 +23,7 @@ async function resolvedSnapshot(snapshot: Awaited<ReturnType<typeof getWeek>>, c
   return { ...snapshot, entries };
 }
 
-export async function GET(request: NextRequest) {
+async function handleGet(request: NextRequest) {
   try {
     const requestedWeek = request.nextUrl.searchParams.get("weekId") || undefined;
     const totalStarted = performance.now();
@@ -58,7 +59,7 @@ export async function GET(request: NextRequest) {
   }
 }
 
-export async function POST(request: NextRequest) {
+async function handlePost(request: NextRequest) {
   try {
     const body = await request.json() as Record<string, unknown>;
     const action = String(body.action || "");
@@ -120,3 +121,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: { message: "Unknown rolling menu command." } }, { status: 400 });
   } catch (error) { const status = error && typeof error === "object" && "status" in error && typeof (error as { status?: unknown }).status === "number" ? (error as { status: number }).status : 400; return NextResponse.json({ error: { message: error instanceof Error ? error.message : "Rolling menu command failed." } }, { status }); }
 }
+
+export async function GET(request: NextRequest) { /* handleGet performs listWeekSummaries, getWeekSnapshot, and Promise.all([listCatalogueEntriesForIds(...), publicationState(...)]) without reconciliation writes. */ return withDataTrace({ app: "menu-planning", action: request.nextUrl.searchParams.get("summariesOnly") === "true" ? "menu-planning.week.summaries" : "menu-planning.week.open", path: request.nextUrl.pathname, requestId: request.headers.get("x-request-id") || undefined }, () => handleGet(request)); }
+export async function POST(request: NextRequest) { return withDataTrace({ app: "menu-planning", action: "menu-planning.mutation", path: request.nextUrl.pathname, requestId: request.headers.get("x-request-id") || undefined }, () => handlePost(request)); }

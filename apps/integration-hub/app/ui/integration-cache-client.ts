@@ -1,4 +1,5 @@
 import { CACHE_DATASETS, CACHE_STORES, INTEGRATION_CACHE_DB, INTEGRATION_CACHE_SCHEMA_VERSION, type CacheDataset, type CacheManifest } from "@/lib/integration-cache-shared";
+import { recordDataAccess } from "@fika/server-shared/data-source-meter-client";
 
 type CacheEnvelope = { id: string; dataset: CacheDataset; schemaVersion: number; environment: string; identityScope: string; updatedAt: string; records: unknown[] };
 const environmentKey = () => `${window.location.protocol}//${window.location.host}`;
@@ -32,9 +33,11 @@ async function write(store: string, value: unknown) {
 
 export async function readCachedDataset<T>(dataset: CacheDataset, identityScope: string) {
   const store = dataset === "oplocs" ? "canonicalOplocs" : dataset === "legends" ? "legends" : dataset === "serviceDefinitions" ? "serviceDefinitions" : dataset === "equipmentAssets" ? "equipmentAssets" : "referenceEntities";
-  const records = await readAll<CacheEnvelope>(store);
-  const matching = records.filter(record => record.dataset === dataset && record.schemaVersion === INTEGRATION_CACHE_SCHEMA_VERSION && record.environment === environmentKey() && record.identityScope === identityScope);
-  return matching.length ? matching.map(record => record.records[0] as T) : undefined;
+  const allRecords = await readAll<CacheEnvelope>(store);
+  const matching = allRecords.filter(record => record.dataset === dataset && record.schemaVersion === INTEGRATION_CACHE_SCHEMA_VERSION && record.environment === environmentKey() && record.identityScope === identityScope);
+  const cachedRecords = matching.length ? matching.map(record => record.records[0] as T) : undefined;
+  recordDataAccess({ app: "integration-hub", operation: "cache.dataset", source: "CLIENT_CACHE", documents: cachedRecords?.length || 0, cacheHit: Boolean(cachedRecords) });
+  return cachedRecords;
 }
 
 export async function writeCachedDataset(dataset: CacheDataset, identityScope: string, records: unknown[], updatedAt: string) {
@@ -56,7 +59,7 @@ export async function writeCachedDataset(dataset: CacheDataset, identityScope: s
 }
 
 type CacheMetadata = { id: string; manifests?: CacheManifest[]; overview?: unknown; overviewIdentityScope?: string };
-export async function readCachedManifests() { return ((await read<CacheMetadata>("cacheMetadata", "manifests"))?.manifests || []).filter(value => (CACHE_DATASETS as readonly string[]).includes(value.dataset)); }
+export async function readCachedManifests() { const manifests = ((await read<CacheMetadata>("cacheMetadata", "manifests"))?.manifests || []).filter(value => (CACHE_DATASETS as readonly string[]).includes(value.dataset)); recordDataAccess({ app: "integration-hub", operation: "cache.manifests", source: "CLIENT_CACHE", documents: manifests.length, cacheHit: manifests.length > 0 }); return manifests; }
 export async function writeCachedManifests(manifests: CacheManifest[]) { const current = await read<CacheMetadata>("cacheMetadata", "manifests"); await write("cacheMetadata", { ...current, id: "manifests", manifests }); }
 export async function readCachedOverview<T>(identityScope: string) { const value = await read<CacheMetadata>("cacheMetadata", "connectionsOverview"); return value?.overviewIdentityScope === identityScope ? value.overview as T | undefined : undefined; }
 export async function writeCachedOverview(identityScope: string, overview: unknown) { await write("cacheMetadata", { id: "connectionsOverview", overviewIdentityScope: identityScope, overview }); }
