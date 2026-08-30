@@ -20,7 +20,7 @@ export class MenuPlanningFirestoreRepository {
   readonly db: Firestore;
   constructor(db = new Firestore({ projectId: process.env.FIREBASE_PROJECT_ID || process.env.GCLOUD_PROJECT })) { this.db = db; }
   async readRollingState() { return this.db.runTransaction(transaction => this.readRolling(transaction)); }
-  async listWeekSummaries() { const snapshot = await this.db.collection(MENU_PLANNING_COLLECTIONS.weeks).get(); return snapshot.docs.map(doc => doc.data() as RollingWeek); }
+  async listWeekSummaries() { const snapshot = await this.db.collection(MENU_PLANNING_COLLECTIONS.weeks).get(); recordMenuPlanningReadBudget({ operation: "week_summaries", reads: { weeks: snapshot.size, days: 0, entries: 0, scoped: 1 } }); return snapshot.docs.map(doc => doc.data() as RollingWeek); }
   async getWeekSnapshot(weekId: string) {
     const weekRef = this.db.collection(MENU_PLANNING_COLLECTIONS.weeks).doc(weekId);
     const weekDoc = await weekRef.get();
@@ -29,7 +29,26 @@ export class MenuPlanningFirestoreRepository {
     const daySnapshot = await weekRef.collection("days").get();
     const days = daySnapshot.docs.map(doc => doc.data() as RollingDay);
     const entrySnapshots = await Promise.all(days.map(day => weekRef.collection("days").doc(day.id).collection("entries").get()));
-    return { week, days, entries: entrySnapshots.flatMap(snapshot => snapshot.docs.map(doc => doc.data() as RollingEntry)) };
+    const entries = entrySnapshots.flatMap(snapshot => snapshot.docs.map(doc => doc.data() as RollingEntry));
+    recordMenuPlanningReadBudget({ operation: "week_snapshot", reads: { weeks: 1, days: daySnapshot.size, entries: entries.length, scoped: 1 } });
+    return { week, days, entries };
+  }
+  async getPublicationById(publicationId: string) {
+    const publication = await this.db.collection(MENU_PLANNING_COLLECTIONS.publications).doc(publicationId).get();
+    if (!publication.exists) return undefined;
+    const days = await publication.ref.collection("days").get();
+    recordMenuPlanningReadBudget({ operation: "publication_by_id", reads: { publications: 1, publicationDays: days.size, events: 0, scoped: 1 } });
+    return { ...publication.data(), days: days.docs.map(day => day.data()) } as MenuPublication;
+  }
+  async listPublicationState(limit = 16) {
+    const snapshot = await this.db.collection(MENU_PLANNING_COLLECTIONS.publications).orderBy("weekCommencing", "desc").limit(Math.min(Math.max(limit, 1), 100)).get();
+    const publications: MenuPublication[] = [];
+    for (const doc of snapshot.docs) {
+      const days = await doc.ref.collection("days").get();
+      publications.push({ ...doc.data(), days: days.docs.map(day => day.data()) } as MenuPublication);
+    }
+    recordMenuPlanningReadBudget({ operation: "publication_list", reads: { publications: snapshot.size, publicationDays: publications.reduce((total, publication) => total + publication.days.length, 0), events: 0, scoped: 1 } });
+    return { version: 2, publications, events: [] as DurableDomainEvent[] };
   }
   async readPublicationStateForWeek(weekId: string) {
     const snapshot = await this.db.collection(MENU_PLANNING_COLLECTIONS.publications).where("sourceWeekId", "==", weekId).get();

@@ -6,7 +6,7 @@ export * from "./rolling-menu-types";
 import { ROLLING_SLOTS, type RollingAllocation, type RollingDay, type RollingEntry, type RollingSnapshot, type RollingSlot, type RollingWeek, type RollingWeekStatus } from "./rolling-menu-types";
 import { normaliseDishName, titleCase } from "./text";
 import type { MenuItem } from "./domain";
-import { readRollingState, updateRollingState, withMenuPlanningTransaction } from "./operational-store";
+import { getWeekSnapshot, listWeekSummaries, readRollingState, updateRollingState, withMenuPlanningTransaction } from "./operational-store";
 export interface Stored { version: 1; weeks: RollingWeek[]; days: RollingDay[]; entries: RollingEntry[]; }
 const now = () => new Date().toISOString();
 const operationalDate = () => { const parts = Object.fromEntries(new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/London", year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(new Date()).filter(part => part.type !== "literal").map(part => [part.type, part.value])); return `${parts.year}-${parts.month}-${parts.day}`; };
@@ -60,7 +60,8 @@ const weekConflict = (weekCommencing: string) => Object.assign(new Error(`A menu
 export async function assertWeekDateAvailable(weekCommencing: string) {
   if ((await listWeeks()).some(week => week.weekCommencing === weekCommencing)) throw weekConflict(weekCommencing);
 }
-export async function listWeeks(): Promise<RollingWeek[]> { return (await read()).weeks.sort((a, b) => a.weekCommencing.localeCompare(b.weekCommencing)); }
+export async function listWeeks(): Promise<RollingWeek[]> { return (await listWeekSummaries<RollingWeek>()).slice().sort((a, b) => a.weekCommencing.localeCompare(b.weekCommencing)); }
+/** Legacy aggregate read retained for catalogue reconciliation only; normal UI reads use getWeek/listWeeks. */
 export async function listAllEntries(): Promise<RollingEntry[]> { return structuredClone((await read()).entries); }
 export function defaultWeekForDate(weeks: RollingWeek[], date = operationalDate()) {
   const ordered = weeks.slice().sort((a, b) => a.weekCommencing.localeCompare(b.weekCommencing));
@@ -80,7 +81,12 @@ export function replaceSnapshotInStored(db: Stored, snapshot: RollingSnapshot) {
   const wi = db.weeks.findIndex(w => w.id === snapshot.week.id); if (wi >= 0) db.weeks[wi] = structuredClone(snapshot.week); else db.weeks.push(structuredClone(snapshot.week));
   db.days.push(...snapshot.days.map(value => structuredClone(value))); db.entries.push(...snapshot.entries.map(value => structuredClone(value)));
 }
-export async function getWeek(weekId?: string): Promise<RollingSnapshot> { return snapshotFromStored(await read(), weekId); }
+export async function getWeek(weekId?: string): Promise<RollingSnapshot> {
+  const selectedId = weekId || defaultWeekForDate(await listWeeks())?.id;
+  if (!selectedId) return emptyWeek(new Date().toISOString().slice(0, 10));
+  const snapshot = await getWeekSnapshot<RollingSnapshot>(selectedId);
+  return snapshot || emptyWeek(new Date().toISOString().slice(0, 10));
+}
 export async function addOneOffDestination(weekId: string, dayId: string, label: string, address: string, actor = "local-menu-planner") {
   const snapshot = await getWeek(weekId); const day = snapshot.days.find(item => item.id === dayId);
   const cleanLabel = label.trim(); const cleanAddress = address.trim();

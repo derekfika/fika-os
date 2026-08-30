@@ -1,4 +1,4 @@
-import type { AuthModRepository } from "./repository";
+import type { AuthModRepository, OplocReference } from "./repository";
 import { isEffective } from "./model";
 import type { AuthPrincipal, AuthorizationDecision, AuthModAction, Scope } from "./model";
 import { isPersonRequiredAuthority } from "./authority";
@@ -12,18 +12,19 @@ export class AuthModEvaluationContext {
   private oplocPromises = new Map<string, Promise<Awaited<ReturnType<AuthModRepository["getActiveOploc"]>>>>();
   private delegationsPromise?: Promise<Awaited<ReturnType<AuthModRepository["listDelegations"]>>>;
   private activeOplocsPromise?: Promise<Awaited<ReturnType<AuthModRepository["listActiveOplocs"]>>>;
-  constructor(readonly repository: AuthModRepository, readonly principal: AuthPrincipal) {}
+  private readonly seededOplocs: Map<string, OplocReference>;
+  constructor(readonly repository: AuthModRepository, readonly principal: AuthPrincipal, activeOplocs: OplocReference[] = []) { this.seededOplocs = new Map(activeOplocs.map(oploc => [oploc.id, oploc])); }
   identity() { return this.identityPromise ||= this.principal.type === "interactive" ? this.repository.getIdentity(this.principal.id) : Promise.resolve(undefined); }
   grants() { return this.grantsPromise ||= this.principal.type === "interactive" ? this.repository.listAuthorityGrants(this.principal.id, "interactive") : Promise.resolve([]); }
   appAssignments() { return this.appAssignmentsPromise ||= this.identity().then(identity => identity ? this.repository.listAppAssignments(identity.id) : []); }
   siteAssignments() { return this.siteAssignmentsPromise ||= this.identity().then(identity => identity ? this.repository.listSiteAssignments(identity.id) : []); }
   application(appId: string) { let result = this.applicationPromises.get(appId); if (!result) { result = this.repository.getApplication(appId); this.applicationPromises.set(appId, result); } return result; }
-  activeOploc(oplocId: string) { let result = this.oplocPromises.get(oplocId); if (!result) { result = this.repository.getActiveOploc(oplocId); this.oplocPromises.set(oplocId, result); } return result; }
+  activeOploc(oplocId: string) { const seeded = this.seededOplocs.get(oplocId); if (seeded) return Promise.resolve(seeded); let result = this.oplocPromises.get(oplocId); if (!result) { result = this.repository.getActiveOploc(oplocId); this.oplocPromises.set(oplocId, result); } return result; }
   activeOplocs() { return this.activeOplocsPromise ||= this.repository.listActiveOplocs(); }
   delegations() { return this.delegationsPromise ||= this.principal.type === "interactive" ? this.repository.listDelegations(this.principal.id) : Promise.resolve([]); }
 }
 
-export function createAuthModEvaluationContext(repository: AuthModRepository, principal: AuthPrincipal) { return new AuthModEvaluationContext(repository, principal); }
+export function createAuthModEvaluationContext(repository: AuthModRepository, principal: AuthPrincipal, activeOplocs?: OplocReference[]) { return new AuthModEvaluationContext(repository, principal, activeOplocs); }
 
 function deny(principal: AuthPrincipal, reasonCode: AuthorizationDecision["reasonCode"], extra: Partial<AuthorizationDecision> = {}): AuthorizationDecision {
   return { allowed: false, principalId: principal.id, principalType: principal.type, matchedGrantIds: [], reasonCode, ...extra };

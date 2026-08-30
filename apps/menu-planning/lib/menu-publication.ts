@@ -9,7 +9,7 @@ import { renderPdfLocally } from "./local-pdf";
 import { resolveAllergenSnapshot } from "./allergen-resolution";
 import type { MenuItem } from "./domain";
 import { publishedAllergenMatrixHtml, createDomainEvent, markEventDelivered, markEventFailed, type DurableDomainEvent, type FulfilmentRequirement } from "./fika-contracts";
-import { claimNextMenuPlanningEvent, getPublishedSnapshot, readPublicationState, readPublicationStateForDateRange, readPublicationStateForWeek, updateMenuPlanningEvent, updatePublicationState, withMenuPlanningTransaction } from "./operational-store";
+import { claimNextMenuPlanningEvent, getPublicationById, getPublishedSnapshot, listPublicationState, readPublicationState, readPublicationStateForDateRange, readPublicationStateForWeek, updateMenuPlanningEvent, withMenuPlanningTransaction } from "./operational-store";
 import { cwd } from "node:process";
 
 export const PUBLICATION_ATTESTATION = "I confirm that I have reviewed the allergen information shown for this day's published menu and that it reflects the approved information available at the time of publication.";
@@ -25,7 +25,6 @@ const now = () => new Date().toISOString();
 const stable = (value: unknown): string => { if (Array.isArray(value)) return `[${value.map(stable).join(",")}]`; if (value && typeof value === "object") return `{${Object.keys(value as Record<string, unknown>).sort().map(key => `${JSON.stringify(key)}:${stable((value as Record<string, unknown>)[key])}`).join(",")}}`; return JSON.stringify(value); };
 export const contentHash = (value: unknown) => createHash("sha256").update(stable(value)).digest("hex");
 const read = async (): Promise<StoredPublications> => { const value = await readPublicationState<Partial<StoredPublications>>(); if (!Array.isArray(value.publications)) throw Object.assign(new Error("Menu publication data is unavailable; no publication list was loaded."), { status: 503 }); return { version: 2, publications: value.publications, events: Array.isArray(value.events) ? value.events : [], snapshots: value.snapshots || {} }; };
-const write = async (value: StoredPublications) => { await updatePublicationState<StoredPublications>(current => { Object.assign(current, structuredClone(value)); }); };
 const clone = <T>(value: T): T => structuredClone(value);
 /** Normalize only publication/event graphs before hashing or persistence. */
 const normalizePublicationValue = <T>(value: T): T => {
@@ -74,18 +73,17 @@ function appendPublicationEvents(stored: StoredPublications, publication: MenuPu
   addEvent(createDomainEvent({ eventType: "production.materialise", sourceAggregateId: `${publication.publicationId}:${day.sourceDayId}:${destinationOplocId}`, sourceVersion: day.version, occurredAt, payload: normalizePublicationValue({ sourceDomain: "menu-planning", sourceEntityId: day.sourceDayId, sourcePublicationDayId: day.publicationDayId, sourceVersion: day.version, sourceContentHash: day.contentHash, destinationOplocId, destinationLabel: day.entries.flatMap(entry => entry.allocations).find(allocation => allocation.destinationId === destinationOplocId)?.destinationLabel || destinationOplocId, serviceDate: day.date, status: active ? action === "withdrawn" ? "withdrawn" : action === "amended" ? "amended" : "published" : "withdrawn", lines: active ? day.entries.flatMap(entry => entry.allocations.filter(allocation => allocation.destinationId === destinationOplocId).map(allocation => normalizePublicationValue({ sourceLineId: entry.sourceEntryId, ...(entry.canonicalDishId !== undefined ? { canonicalItemId: entry.canonicalDishId } : {}), itemName: entry.dishName, quantity: allocation.quantity, unit: "portion", workstream: "delivered_in" as const, approvedAllergenSnapshot: normalizePublicationValue({ allergens: entry.allergens, ...(entry.mayContainNotes !== undefined ? { mayContainNotes: entry.mayContainNotes } : {}), sourcePublicationDayId: day.publicationDayId, sourceVersion: day.version, sourceContentHash: day.contentHash }) }))) : [{ sourceLineId: `${day.sourceDayId}:withdrawn`, itemName: "Withdrawn Delivered-In menu", quantity: 0, unit: "portion", workstream: "delivered_in" as const }] }), causationId: `${publication.publicationId}:${day.sourceDayId}:v${day.version}` }));
   }
 }
-export async function listMenuPublications() { return (await read()).publications.map(clone); }
+export async function listMenuPublications(limit = 16) { return ((await listPublicationState<StoredPublications>(limit)).publications || []).map(clone); }
 export async function listMenuPublicationsForDateRange(fromWeek: string, toWeekExclusive: string) {
   const stored = await readPublicationStateForDateRange<StoredPublications>(fromWeek, toWeekExclusive);
   return stored.publications.map(clone);
 }
-export async function getMenuPublication(publicationId: string) { const publication = (await read()).publications.find(value => value.publicationId === publicationId); return publication ? clone(publication) : undefined; }
+export async function getMenuPublication(publicationId: string) { const publication = await getPublicationById<MenuPublication>(publicationId); return publication ? clone(publication) : undefined; }
 export async function getCompiledPublicationSnapshot(publicationId: string, version?: number) {
-  const stored = await read();
-  const publication = stored.publications.find(value => value.publicationId === publicationId);
+  const publication = await getMenuPublication(publicationId);
   if (!publication) return undefined;
-  const snapshotId = version ? `${publicationId}:snapshot:v${version}` : publication.compiledSnapshotId;
-  if (snapshotId && stored.snapshots?.[snapshotId]) return clone(stored.snapshots[snapshotId]);
+  const storedSnapshot = await getPublishedSnapshot<CompiledPublishedWeekSnapshot>(publicationId, version);
+  if (storedSnapshot) return clone(storedSnapshot);
   if (version) return undefined;
   return publication.days.some(day => day.status === "published") ? buildCompiledPublicationSnapshot(publication, 0) : undefined;
 }
@@ -140,6 +138,7 @@ export async function createPublishedMenuDay(weekId: string, dayId: string, sign
   }, { weekId, weekVersion: expectedWeekVersion }, { weekId, sourceWeekId: weekId, includeEvents: false });
 }
 export function currentPublishedDays(publication: MenuPublication) { return publication.days.filter(day => day.status === "published"); }
+/** Explicit historical audit/repair read; normal publication lookups never call this path. */
 export async function listMenuPublicationEvents() { return (await read()).events.map(clone); }
 export async function replayMenuPublicationOutbox(consumer: (event: DurableDomainEvent) => Promise<void> | void, at = new Date()) {
   let delivered = 0; let failed = 0;
@@ -193,6 +192,10 @@ export async function archivePublishedDayMatrix(publicationId: string, publicati
     const body = await response.json() as { saved?: { fileId?: string; driveUrl?: string } | null };
     archive = { ...archive, status: response.ok && body.saved ? "saved" : response.status === 503 ? "not_configured" : "failed", pdfStatus: response.ok && body.saved ? "saved" : response.status === 503 ? "not_configured" : "failed", ...(body.saved?.fileId ? { fileId: body.saved.fileId, pdfFileId: body.saved.fileId } : {}), ...(body.saved?.driveUrl ? { driveUrl: body.saved.driveUrl, pdfDriveUrl: body.saved.driveUrl } : {}) };
   } catch { /* Publication remains available; the PDF archive status is retained for retry/attention. */ }
-  const stored = await read(); const target = stored.publications.find(value => value.publicationId === publicationId)?.days.find(value => value.publicationDayId === publicationDayId); if (target) { target.driveArchive = archive; await write(stored); }
+  await withMenuPlanningTransaction(state => {
+    const stored = state.publications as unknown as StoredPublications;
+    const target = stored.publications.find(value => value.publicationId === publicationId)?.days.find(value => value.publicationDayId === publicationDayId);
+    if (target) target.driveArchive = archive;
+  }, undefined, { sourceWeekId: publication.sourceWeekId, includeEvents: false });
   return archive;
 }

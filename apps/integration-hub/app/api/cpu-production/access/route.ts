@@ -9,11 +9,12 @@ export async function GET(request: NextRequest) {
     const session = await requireFikaSession(request);
     const repository = new FirestoreAuthModRepository();
     const principal = { type: "interactive" as const, id: session.authmodIdentityId, displayName: session.displayName, email: session.email, identityKind: session.identityKind };
-    const context = createAuthModEvaluationContext(repository, principal);
+    const activeOplocs = await repository.listActiveOplocs();
+    const context = createAuthModEvaluationContext(repository, principal, activeOplocs);
     const app = await resolveUserAccess(repository, { principal, appId: "cpu-production" }, context);
     if (!app.allowed) throw Object.assign(new Error("Your account does not currently have CPU Production access."), { status: app.reasonCode === "store-unavailable" ? 503 : 403 });
     const oplocs = [];
-    for (const oploc of await repository.listActiveOplocs()) {
+    for (const oploc of activeOplocs) {
       if ((await resolveUserAccess(repository, { principal, appId: "cpu-production", oplocId: oploc.id }, context)).allowed) oplocs.push(oploc);
     }
     return NextResponse.json({ principal, oplocs }, { headers: { "Cache-Control": "no-store" } });

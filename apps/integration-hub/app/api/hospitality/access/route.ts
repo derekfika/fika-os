@@ -9,9 +9,10 @@ export async function GET(request: NextRequest) {
     const session = await requireFikaSession(request);
     const repository = new FirestoreAuthModRepository();
     const principal = { type: "interactive" as const, id: session.authmodIdentityId, displayName: session.displayName, email: session.email, identityKind: session.identityKind };
-    const context = createAuthModEvaluationContext(repository, principal);
+    const activeOplocs = await repository.listActiveOplocs();
+    const context = createAuthModEvaluationContext(repository, principal, activeOplocs);
     const sites = [];
-    for (const oploc of await repository.listActiveOplocs()) {
+    for (const oploc of activeOplocs) {
       if ((await resolveUserAccess(repository, { principal, appId: "hospitality-booking", oplocId: oploc.id }, context)).allowed) sites.push(oploc);
     }
     return NextResponse.json({ sites }, { headers: { "Cache-Control": "no-store" } });

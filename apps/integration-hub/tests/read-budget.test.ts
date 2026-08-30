@@ -41,6 +41,15 @@ test("one evaluation context bounds repeated unscoped and scoped access reads", 
   assert.equal(repo.counts.oplocs, 20);
 });
 
+test("an access route can seed active OPLOCs and avoid redundant canonical reads", async () => {
+  const { repo, principal } = setup();
+  const activeOplocs = await repo.listActiveOplocs();
+  const context = createAuthModEvaluationContext(repo, principal, activeOplocs);
+  await Promise.all(activeOplocs.map(oploc => resolveUserAccess(repo, { principal, appId: "cpu-production", oplocId: oploc.id }, context)));
+  assert.equal(repo.counts.allOplocs, 1);
+  assert.equal(repo.counts.oplocs, 0);
+});
+
 test("evaluateAuthority reuses the base identity and grants", async () => {
   const { repo, principal } = setup();
   const context = createAuthModEvaluationContext(repo, principal);
@@ -73,6 +82,10 @@ test("interactive hot paths do not contain whole canonical collection gets", () 
   for (const file of files) assert.doesNotMatch(readFileSync(new URL(file, import.meta.url), "utf8"), /collection\(["']integrationHubCanonical["']\)\.get\(\)/);
   assert.doesNotMatch(readFileSync(new URL("../lib/launcher.ts", import.meta.url), "utf8"), /activeOplocs\(\)/);
   assert.match(readFileSync(new URL("../lib/authmod-core/firestore-repository.ts", import.meta.url), "utf8"), /integrationHubCanonical.*doc\(canonicalDocumentId\(oplocId\)\)\.get/);
+  const authmodRepository = readFileSync(new URL("../lib/authmod-core/firestore-repository.ts", import.meta.url), "utf8");
+  assert.match(authmodRepository, /where\("entityType", "==", "Legend"\)/);
+  assert.match(authmodRepository, /where\("entityType", "==", "Employment"\)/);
+  assert.doesNotMatch(authmodRepository, /readAll<CanonicalRecord>\("integrationHubCanonical"\)/);
   assert.match(readFileSync(new URL("../lib/repository.ts", import.meta.url), "utf8"), /canonicalRef\(\)\.doc\(canonicalDocumentId\(canonicalId\)\)\.get/);
   assert.match(readFileSync(new URL("../lib/repository.ts", import.meta.url), "utf8"), /\.count\(\)\.get/);
 });

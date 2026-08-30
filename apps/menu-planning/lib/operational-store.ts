@@ -71,6 +71,8 @@ export type MenuPlanningOperationalStore = {
   readPublicationStateForWeek<T>(weekId: string): Promise<T>;
   readPublicationStateForDateRange<T>(fromWeek: string, toWeekExclusive: string): Promise<T>;
   getPublishedSnapshot<T>(publicationId: string, version?: number): Promise<T | undefined>;
+  getPublicationById<T>(publicationId: string): Promise<T | undefined>;
+  listPublicationState<T>(limit?: number): Promise<T>;
   updateEvent(eventId: string, mutator: (event: HostedTransactionState["publications"]["events"][number]) => HostedTransactionState["publications"]["events"][number] | undefined): Promise<HostedTransactionState["publications"]["events"][number] | undefined>;
   claimNextEvent(claimId: string, at?: Date): Promise<HostedTransactionState["publications"]["events"][number] | undefined>;
   runTransaction<T>(mutator: (state: TransactionState) => T | Promise<T>, expected?: { weekId?: string; weekVersion?: number }, scope?: MenuPlanningTransactionScope): Promise<T>;
@@ -101,6 +103,8 @@ class SqliteOperationalStore implements MenuPlanningOperationalStore {
   async readRollingState<T>() { const database = open(); try { return parseDocument(database, "rolling") as T; } finally { database.close(); } }
   async listWeekSummaries<T>() { return (await this.readRollingState<{ weeks: T[] }>()).weeks; }
   async getWeekSnapshot<T>(weekId: string) { const state = await this.readRollingState<{ weeks: Array<{ id: string; dayIds: string[]; entryIds: string[] }>; days: unknown[]; entries: unknown[] }>(); const week = state.weeks.find(candidate => candidate.id === weekId); return week ? { week, days: state.days.filter((day: any) => week.dayIds.includes(day.id)), entries: state.entries.filter((entry: any) => week.entryIds.includes(entry.id)) } as T : undefined; }
+  async getPublicationById<T>(publicationId: string) { const state = await this.readPublicationState<{ publications: Array<Record<string, unknown>> }>(); const publication = state.publications.find(value => value.publicationId === publicationId); return publication as T | undefined; }
+  async listPublicationState<T>(limit = 16) { const state = await this.readPublicationState<T & { publications: Array<{ weekCommencing?: string }> }>(); return { ...state, publications: state.publications.slice().sort((a, b) => String(b.weekCommencing || "").localeCompare(String(a.weekCommencing || ""))).slice(0, Math.min(Math.max(limit, 1), 100)) } as T; }
   async readPublicationState<T>() { const database = open(); try { return parseDocument(database, "publications") as T; } finally { database.close(); } }
   async readPublicationStateForWeek<T>(weekId: string) { const state = await this.readPublicationState<{ version: number; publications: Array<{ sourceWeekId: string }>; events: unknown[] }>(); return { ...state, publications: state.publications.filter(publication => publication.sourceWeekId === weekId), events: [] } as T; }
   async readPublicationStateForDateRange<T>(fromWeek: string, toWeekExclusive: string) { const state = await this.readPublicationState<{ version: number; publications: Array<{ weekCommencing: string }>; events: unknown[] }>(); return { ...state, publications: state.publications.filter(publication => publication.weekCommencing >= fromWeek && publication.weekCommencing < toWeekExclusive), events: [] } as T; }
@@ -124,6 +128,8 @@ class FirestoreOperationalStore implements MenuPlanningOperationalStore {
   readPublicationStateForWeek<T>(weekId: string) { return this.repository.readPublicationStateForWeek(weekId) as Promise<T>; }
   readPublicationStateForDateRange<T>(fromWeek: string, toWeekExclusive: string) { return this.repository.readPublicationStateForDateRange(fromWeek, toWeekExclusive) as Promise<T>; }
   getPublishedSnapshot<T>(publicationId: string, version?: number) { return this.repository.getPublishedSnapshot(publicationId, version) as Promise<T | undefined>; }
+  getPublicationById<T>(publicationId: string) { return this.repository.getPublicationById(publicationId) as Promise<T | undefined>; }
+  listPublicationState<T>(limit?: number) { return this.repository.listPublicationState(limit) as Promise<T>; }
   updateEvent(eventId: string, mutator: (event: HostedTransactionState["publications"]["events"][number]) => HostedTransactionState["publications"]["events"][number] | undefined) { return this.repository.updateEvent(eventId, mutator); }
   claimNextEvent(claimId: string, at?: Date) { return this.repository.claimNextEvent(claimId, at); }
   runTransaction<T>(mutator: (state: HostedTransactionState) => T | Promise<T>, expected?: { weekId?: string; weekVersion?: number }, scope?: MenuPlanningTransactionScope) { return this.repository.runTransaction(mutator, expected, scope); }
@@ -149,6 +155,8 @@ export function readPublicationState<T>() { return getMenuPlanningOperationalSto
 export function readPublicationStateForWeek<T>(weekId: string) { return getMenuPlanningOperationalStore().readPublicationStateForWeek<T>(weekId); }
 export function readPublicationStateForDateRange<T>(fromWeek: string, toWeekExclusive: string) { return getMenuPlanningOperationalStore().readPublicationStateForDateRange<T>(fromWeek, toWeekExclusive); }
 export function getPublishedSnapshot<T>(publicationId: string, version?: number) { return getMenuPlanningOperationalStore().getPublishedSnapshot<T>(publicationId, version); }
+export function getPublicationById<T>(publicationId: string) { return getMenuPlanningOperationalStore().getPublicationById<T>(publicationId); }
+export function listPublicationState<T>(limit?: number) { return getMenuPlanningOperationalStore().listPublicationState<T>(limit); }
 
 export function withMenuPlanningTransaction<T>(mutator: (state: TransactionState) => T | Promise<T>, expected?: { weekId?: string; weekVersion?: number }, scope?: MenuPlanningTransactionScope) { return getMenuPlanningOperationalStore().runTransaction(mutator, expected, scope); }
 

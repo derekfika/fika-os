@@ -111,6 +111,23 @@ test("compiled publication snapshots use a separate targeted read model", () => 
   assert.match(route, /params: Promise/);
 });
 
+test("normal rolling and publication lookups use bounded repository primitives", () => {
+  const rolling = readFileSync(new URL("../lib/rolling-menu.ts", import.meta.url), "utf8");
+  const publication = readFileSync(new URL("../lib/menu-publication.ts", import.meta.url), "utf8");
+  const listWeeksBody = rolling.slice(rolling.indexOf("export async function listWeeks"), rolling.indexOf("export async function listAllEntries"));
+  const getWeekBody = rolling.slice(rolling.indexOf("export async function getWeek"), rolling.indexOf("export async function addOneOffDestination"));
+  assert.match(listWeeksBody, /listWeekSummaries/);
+  assert.doesNotMatch(listWeeksBody, /readRollingState/);
+  assert.match(getWeekBody, /getWeekSnapshot/);
+  assert.match(getWeekBody, /listWeeks/);
+  assert.doesNotMatch(getWeekBody, /readRollingState/);
+  assert.match(publication, /listPublicationState<StoredPublications>\(limit\)/);
+  assert.match(publication, /getPublicationById<MenuPublication>\(publicationId\)/);
+  assert.match(publication, /getPublishedSnapshot<CompiledPublishedWeekSnapshot>\(publicationId, version\)/);
+  assert.match(publication, /sourceWeekId: publication\.sourceWeekId, includeEvents: false/);
+  assert.match(publication, /Explicit historical audit\/repair read/);
+});
+
 test("catalogue manifest comparison is version based", () => {
   assert.equal(catalogueManifestMatches({ schemaVersion: 1, catalogueVersion: 42 }, { schemaVersion: 1, catalogueVersion: 42 }), true);
   assert.equal(catalogueManifestMatches({ schemaVersion: 1, catalogueVersion: 42 }, { schemaVersion: 1, catalogueVersion: 43 }), false);
