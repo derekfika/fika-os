@@ -9,6 +9,7 @@ test("data-source meter supports bounded sources and thresholds", () => {
   assert.deepEqual(classifyDataTraceLevel(251), "WARN");
   assert.deepEqual(classifyDataTraceLevel(1001), "HIGH");
   assert.equal(isDataSourceTraceEnabled({ FIKA_DATA_SOURCE_TRACE: "1" }), true);
+  assert.equal(isDataSourceTraceEnabled({ FIKA_DATA_SOURCE_TRACE: undefined }), false);
   assert.equal(isDataSourceTraceEnabled({ FIKA_DATA_SOURCE_TRACE: "0" }), false);
 });
 
