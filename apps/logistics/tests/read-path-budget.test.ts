@@ -28,6 +28,12 @@ test("dashboard polling has separate bounded cadences", () => {
   assert.match(page, /cached && Number\(head\.sequence\) === cached\.lastChangeSequence/);
 });
 
+test("projection reads do not trigger write-producing reconciliation", () => {
+  const projectionBranch = route.slice(route.indexOf('if (request.nextUrl.searchParams.get("projection") === "1")'), route.indexOf('if (request.nextUrl.searchParams.get("syncHead") === "1")'));
+  assert.doesNotMatch(projectionBranch, /reconcileLogisticsDay|rebuildLogisticsProjection|repairLegacyAssignmentServiceDates/);
+  assert.match(projectionBranch, /side-effect free/);
+});
+
 test("incremental backlog drains more than one 200-event page in order", async () => {
   const cursors: number[] = [];
   const result = await drainIncrementalPages(0, async (cursor) => {

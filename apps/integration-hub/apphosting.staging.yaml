@@ -27,7 +27,7 @@ env:
       - BUILD
       - RUNTIME
   - variable: FIKA_APP_LOGISTICS_URL
-    value: https://fika-logistics-staging--fika-os-dev.europe-west4.hosted.app
+    value: https://logistics-staging.fikacatering.com
     availability:
       - BUILD
       - RUNTIME

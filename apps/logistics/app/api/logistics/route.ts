@@ -288,6 +288,7 @@ async function reconcileLogisticsDay(serviceDate: string, by: string, actorId = 
 
 async function getLogistics(request: NextRequest) {
   const requestedRunId = request.nextUrl.searchParams.get("runId") || undefined;
+  const requestedVehicle = request.nextUrl.searchParams.get("vehicle") === "van1" ? "Van 1" : request.nextUrl.searchParams.get("vehicle") === "van2" ? "Van 2" : undefined;
   const requestedDate =
     request.nextUrl.searchParams.get("serviceDate") || undefined;
   const requestedWeek =
@@ -305,24 +306,14 @@ async function getLogistics(request: NextRequest) {
     const serviceDate = requestedDate || operationalDate();
     const startedAt = performance.now();
     let projection = await getLogisticsProjection(serviceDate);
-    const requirements = await fetchRequirements(serviceDate, cookie).catch(() => []);
-    const production = await fetchProductionContexts(serviceDate, cookie).catch(() => []);
-    const projectedSourceKeys = new Set([
-      ...(projection?.planningQueue || []).map((job) => `${job.sourceType}:${job.sourceId}`),
-      ...(projection?.deliveryLoads || []).flatMap((load) => load.jobs.map((job) => `${job.sourceType}:${job.sourceId}`)),
-    ]);
-    const activeRequirements = activeLogisticsRequirements(requirements, production);
-    const hasNativeGrabAndGo = (requirement: typeof activeRequirements[number]) => activeRequirements.some((item) => item.sourceDomain === "grab-and-go" && item.serviceDate === requirement.serviceDate && item.destinationOplocId === requirement.destinationOplocId);
-    const expectedSourceKeys = new Set(activeRequirements
-      .filter((requirement) => !(requirement.sourceDomain === "cpu-production" && requirement.sourceEntityId.includes("grab-and-go") && hasNativeGrabAndGo(requirement)))
-      .map((requirement) => `${requirement.sourceDomain}:${requirement.sourceEntityId}`));
-    const projectionNeedsReconcile = !projection || projection.deliveryLoads.some((load) => load.jobs.length === 0) || projectedSourceKeys.size !== expectedSourceKeys.size || [...expectedSourceKeys].some((key) => !projectedSourceKeys.has(key));
-    if (projectionNeedsReconcile) {
-      if (activeRequirements.length) {
-        projection = (await reconcileLogisticsDay(serviceDate, "read-reconcile", "system:read-reconcile", cookie)).projection;
-      } else {
-        projection = await rebuildLogisticsProjection(serviceDate, "read-rebuild");
-      }
+    // Projection reads are deliberately side-effect free. Reconciliation and
+    // rebuilding remain explicit POST/admin operations, so idle dashboard and
+    // mobile loads cannot create Firestore writes.
+    if (projection && requestedVehicle) {
+      const runs = projection.runs.filter((run) => run.vehicleLabel === requestedVehicle);
+      const runIds = new Set(runs.map((run) => run.canonicalId));
+      const deliveryLoads = projection.deliveryLoads.filter((load) => runIds.has(load.runId || "") || runIds.has(load.collectionRunId || ""));
+      projection = { ...projection, planningQueue: [], deliveryLoads, runs, summary: { ...projection.summary, loads: deliveryLoads.length, assignedJobs: deliveryLoads.reduce((total, load) => total + load.jobCount, 0), queuedJobs: 0, collectedJobs: deliveryLoads.reduce((total, load) => total + load.collectedCount, 0) } };
     }
     return NextResponse.json({ projection, metrics: { projectionFetchMs: Math.round(performance.now() - startedAt), dashboardReadyMs: Math.round(performance.now() - startedAt) } });
   }
@@ -418,6 +409,9 @@ async function getLogistics(request: NextRequest) {
     fetchOplocs(cookie).then((value) => ({ status: "fulfilled" as const, value })).catch((reason) => ({ status: "rejected" as const, reason })),
   ]);
   const loadState = await listDeliveryLoadState(date);
+  const scopedState = requestedVehicle ? { ...state, runs: state.runs.filter((run) => run.vehicleLabel === requestedVehicle), stops: state.stops.filter((stop) => state.runs.filter((run) => run.vehicleLabel === requestedVehicle).some((run) => run.canonicalId === stop.runId)) } : state;
+  const scopedRunIds = new Set(scopedState.runs.map((run) => run.canonicalId));
+  const scopedLoadState = requestedVehicle ? { ...loadState, loads: loadState.loads.filter((load) => scopedRunIds.has(load.runId || "") || scopedRunIds.has(load.collectionRunId || "")), assignments: loadState.assignments.filter((assignment) => loadState.loads.some((load) => (load.runId === assignment.loadId || load.collectionRunId === assignment.loadId) && scopedRunIds.has(load.runId || load.collectionRunId || ""))) } : loadState;
   // Keep the upstream reads independently tolerant: one unavailable source
   // should not prevent the local Logistics snapshot from rendering.
   const needsProductionEnrichment =
@@ -448,8 +442,8 @@ async function getLogistics(request: NextRequest) {
         : { available: false, error: messageOf(productionResult.reason) },
   } as const;
   return NextResponse.json({
-    ...state,
-    ...loadState,
+    ...scopedState,
+    ...scopedLoadState,
     ...(projection ? { projection } : {}),
     requirements,
     oplocs,
@@ -459,8 +453,8 @@ async function getLogistics(request: NextRequest) {
     planner: buildPlannerDay({
       serviceDate: date,
       requirements,
-      runs: state.runs,
-      stops: state.stops,
+      runs: scopedState.runs,
+      stops: scopedState.stops,
       movements: state.movements,
       oplocs,
       health,

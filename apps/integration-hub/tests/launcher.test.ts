@@ -36,6 +36,18 @@ test("staging launcher targets Hospitality on the cookie-compatible custom hostn
   }
 });
 
+test("staging launcher targets Logistics on the cookie-compatible custom hostname", () => {
+  const priorMode = process.env.FIKA_RUNTIME_MODE;
+  const priorLogisticsUrl = process.env.FIKA_APP_LOGISTICS_URL;
+  process.env.FIKA_RUNTIME_MODE = "staging";
+  process.env.FIKA_APP_LOGISTICS_URL = "https://logistics-staging.fikacatering.com";
+  try { assert.equal(appHref("logistics"), "https://logistics-staging.fikacatering.com/"); }
+  finally {
+    if (priorMode === undefined) delete process.env.FIKA_RUNTIME_MODE; else process.env.FIKA_RUNTIME_MODE = priorMode;
+    if (priorLogisticsUrl === undefined) delete process.env.FIKA_APP_LOGISTICS_URL; else process.env.FIKA_APP_LOGISTICS_URL = priorLogisticsUrl;
+  }
+});
+
 test("empty application registry bootstrap creates exactly the seven V1 apps and preserves governed changes", async () => {
   const repository = new MemoryAuthModRepository();
   const created = await ensureV1ApplicationRegistry(repository, actor);
