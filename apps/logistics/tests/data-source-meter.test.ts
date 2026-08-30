@@ -89,6 +89,26 @@ test("logging failure does not affect traced work", async () => {
   }
 });
 
+test("enabled server traces emit searchable single-line start, operation and total records", async () => {
+  const priorFlag = process.env.FIKA_DATA_SOURCE_TRACE;
+  const priorInfo = console.info;
+  const lines: string[] = [];
+  process.env.FIKA_DATA_SOURCE_TRACE = "1";
+  console.info = ((...args: unknown[]) => lines.push(args.map(String).join(" "))) as typeof console.info;
+  try {
+    await withDataTrace({ app: "logistics", action: "mobile.day.load", path: "/api/logistics" }, async () => {
+      recordServerDataAccess({ operation: "projection.by-service-date", source: "FIRESTORE", documents: 1 });
+    });
+    assert.equal(lines.filter((line) => line.startsWith("[FIKA_DATA_TRACE] ")).length, 2);
+    assert.match(lines[0], /^\[FIKA_DATA_TRACE\] \{"phase":"START"/);
+    assert.match(lines[1], /"operation":"projection\.by-service-date"/);
+    assert.match(lines[2], /^\[FIKA_DATA_TRACE_TOTAL\] \{/);
+  } finally {
+    console.info = priorInfo;
+    if (priorFlag === undefined) delete process.env.FIKA_DATA_SOURCE_TRACE; else process.env.FIKA_DATA_SOURCE_TRACE = priorFlag;
+  }
+});
+
 test("trace adapters do not add Firestore access or listeners", () => {
   const server = readFileSync(new URL("../../../packages/server-shared/src/data-source-meter-server.ts", import.meta.url), "utf8");
   const client = readFileSync(new URL("../../../packages/server-shared/src/data-source-meter-client.ts", import.meta.url), "utf8");

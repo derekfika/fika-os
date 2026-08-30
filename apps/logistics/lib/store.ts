@@ -134,6 +134,22 @@ export async function saveLogisticsJob(job: LogisticsJob) { await logisticsJobs(
 export async function saveDeliveryLoad(load: DeliveryLoad) { await deliveryLoads().doc(load.id).set(load); return load; }
 export async function saveLogisticsProjection(projection: LogisticsDayProjection) { await logisticsDayProjections().doc(projection.serviceDate).set(projection); return projection; }
 export async function getLogisticsProjection(serviceDate: string) { const snapshot = await logisticsDayProjections().doc(serviceDate).get(); recordDataAccess({ app: "logistics", operation: "projection.by-service-date", source: "FIRESTORE", documents: snapshot.exists ? 1 : 0 }); reportRead(`projection:${serviceDate}`, snapshot.exists ? 1 : 0); return snapshot.exists ? snapshot.data() as LogisticsDayProjection : undefined; }
+export function summarizeLogisticsProjection(serviceDate: string, projection?: LogisticsDayProjection) {
+  const loads = projection?.deliveryLoads || [];
+  const scheduled = loads.filter((load) => Boolean(load.scheduledTime)).length;
+  return {
+    serviceDate, loads: loads.length,
+    ready: loads.filter((load) => load.readiness === "ready").length,
+    unplanned: projection?.summary.queuedJobs || 0, queue: projection?.summary.queuedJobs || 0,
+    scheduled, needsTime: loads.length - scheduled, runs: projection?.runs.length || 0,
+    attention: projection?.exceptions.length || 0, completedStops: loads.filter((load) => load.status === "delivered").length,
+    stopCount: loads.length, deliveries: loads.length, collections: 0, transfers: 0,
+  };
+}
+export async function listLogisticsProjectionSummaries(serviceDates: string[]) {
+  const projections = await Promise.all(serviceDates.map((serviceDate) => getLogisticsProjection(serviceDate)));
+  return serviceDates.map((serviceDate, index) => summarizeLogisticsProjection(serviceDate, projections[index]));
+}
 export async function listPlanningAttention(serviceDates: string[], expectedSourceKeys?: Map<string, Set<string>>) {
   const projections = await Promise.all(serviceDates.map((serviceDate) => getLogisticsProjection(serviceDate)));
   const attention = projections.flatMap((projection, index) => {

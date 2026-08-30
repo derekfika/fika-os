@@ -32,6 +32,7 @@ import {
   saveLogisticsJob,
   appendLogisticsChange,
   getLogisticsProjection,
+  listLogisticsProjectionSummaries,
   listPlanningAttention,
   getLogisticsSyncHead,
   listLogisticsChanges,
@@ -317,6 +318,10 @@ async function getLogistics(request: NextRequest) {
       projection = { ...projection, planningQueue: [], deliveryLoads, runs, summary: { ...projection.summary, loads: deliveryLoads.length, assignedJobs: deliveryLoads.reduce((total, load) => total + load.jobCount, 0), queuedJobs: 0, collectedJobs: deliveryLoads.reduce((total, load) => total + load.collectedCount, 0) } };
     }
     return NextResponse.json({ projection, metrics: { projectionFetchMs: Math.round(performance.now() - startedAt), dashboardReadyMs: Math.round(performance.now() - startedAt) } });
+  }
+  if (request.nextUrl.searchParams.get("weekSummary") === "1") {
+    const dates = operationalWeek(requestedWeek || requestedDate || operationalDate());
+    return NextResponse.json({ weekCommencing: dates[0], days: await listLogisticsProjectionSummaries(dates) });
   }
   if (request.nextUrl.searchParams.get("syncHead") === "1") {
     reportLogisticsReadPath("manifest-head-check");

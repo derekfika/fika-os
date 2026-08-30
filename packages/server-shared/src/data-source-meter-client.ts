@@ -2,7 +2,7 @@ import { endDataTrace as finish, recordDataAccess as record, startDataTrace as s
 import type { DataTrace } from "./data-source-meter";
 
 let current: DataTrace | undefined;
-function emit(marker: string, value: unknown) { try { console.info(marker, JSON.stringify(value)); } catch { /* tracing must never affect application behaviour */ } }
+function emit(marker: string, value: unknown) { try { console.info(`${marker} ${JSON.stringify(value)}`); } catch { /* tracing must never affect application behaviour */ } }
 
 export async function withDataTrace<T>(input: DataTraceInput, callback: () => Promise<T> | T): Promise<T> {
   const trace = start(input);

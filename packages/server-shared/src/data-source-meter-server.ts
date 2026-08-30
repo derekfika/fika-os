@@ -3,7 +3,7 @@ import { endDataTrace as finish, isDataSourceTraceEnabled, recordDataAccess as r
 import type { DataTrace } from "./data-source-meter";
 
 const context = new AsyncLocalStorage<DataTrace>();
-function emit(marker: string, value: unknown) { try { console.info(marker, JSON.stringify(value)); } catch { /* tracing must never affect application behaviour */ } }
+function emit(marker: string, value: unknown) { try { console.info(`${marker} ${JSON.stringify(value)}`); } catch { /* tracing must never affect application behaviour */ } }
 
 export async function withDataTrace<T>(input: DataTraceInput, callback: () => Promise<T> | T): Promise<T> {
   const trace = start(input);

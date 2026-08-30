@@ -23,6 +23,7 @@ import { operationalDate } from "../lib/date";
 import { clientErrorDetails, requireSuccessfulResponse } from "../lib/client-errors";
 import { drainIncrementalPages } from "../lib/incremental-sync";
 import { readCachedProjection, writeCachedProjection } from "../lib/logistics-cache";
+import { fetchPlannerGet } from "../lib/planner-fetch";
 import {
   addOperationalDays,
   formatOperationalDate,
@@ -151,7 +152,7 @@ export default function Planner() {
     let cached: LogisticsDayProjection | undefined;
     let cacheScope = "";
     try {
-      const headResponse = await fetch(`/api/logistics?syncHead=1&serviceDate=${date}`, { cache: "no-store" });
+      const headResponse = await fetchPlannerGet(`/api/logistics?syncHead=1&serviceDate=${date}`, { cache: "no-store" });
       const head = await requireSuccessfulResponse(headResponse, "Logistics sync state could not be checked.");
       cacheScope = headResponse.headers.get("x-logistics-cache-scope") || "";
       if (cacheScope) {
@@ -163,7 +164,7 @@ export default function Planner() {
         setError("");
         return;
       }
-      const response = await fetch(`/api/logistics?projection=1&serviceDate=${date}`, {
+      const response = await fetchPlannerGet(`/api/logistics?projection=1&serviceDate=${date}`, {
         cache: "no-store",
       });
       const body = await requireSuccessfulResponse(response, "Logistics could not be loaded.");
@@ -174,7 +175,7 @@ export default function Planner() {
       setLastUpdated(new Date().toISOString());
       setError("");
       const drained = await drainIncrementalPages(cached?.lastChangeSequence ?? projection.lastChangeSequence, async (cursor) => {
-        const changes = await fetch(`/api/logistics?changesSince=${cursor}&serviceDate=${date}`, { cache: "no-store" });
+        const changes = await fetchPlannerGet(`/api/logistics?changesSince=${cursor}&serviceDate=${date}`, { cache: "no-store" });
         const changed = await requireSuccessfulResponse(changes, "Logistics changes could not be loaded.");
         return { hasMore: Boolean(changed.hasMore), nextCursor: Number(changed.nextCursor ?? cursor), projection: changed.projection as LogisticsDayProjection | undefined };
       });
@@ -191,9 +192,8 @@ export default function Planner() {
   const loadWeek = async (week = weekCommencing) => {
     if (requestsBlocked.current) return;
     try {
-      const days = operationalWeek(week);
-      const responses = await Promise.all(days.map((day) => fetch(`/api/logistics?projection=1&serviceDate=${day}`, { cache: "no-store" }).then((response) => requireSuccessfulResponse(response, `Logistics could not load ${day}.`))));
-      setWeekData({ weekCommencing: days[0], days: days.map((day, index) => { const projection = responses[index].projection as LogisticsDayProjection | undefined; const loads = projection?.deliveryLoads || []; const scheduled = loads.filter((load) => Boolean(load.scheduledTime)).length; const needsTime = loads.length - scheduled; return { serviceDate: day, loads: loads.length, ready: loads.filter((load) => load.readiness === "ready").length, unplanned: projection?.summary.queuedJobs || 0, queue: projection?.summary.queuedJobs || 0, scheduled, needsTime, runs: 0, attention: projection?.exceptions.length || 0, completedStops: loads.filter((load) => load.status === "delivered").length, stopCount: loads.length, deliveries: loads.length, collections: 0, transfers: 0 }; }) });
+      const body = await fetchPlannerGet(`/api/logistics?weekSummary=1&weekCommencing=${week}`, { cache: "no-store" }).then((response) => requireSuccessfulResponse(response, "Logistics week summary could not be loaded."));
+      setWeekData({ weekCommencing: body.weekCommencing as string, days: (body.days || []) as PlannerWeekSummary[] });
     } catch (cause) {
       recordError(cause, "Logistics week data could not be loaded.");
       setWeekData(undefined);
@@ -217,7 +217,6 @@ export default function Planner() {
     // the background and must not trigger a second full dashboard load.
     void load();
     if (!requestsBlocked.current) void ensureVehicleDayRuns(requestedDate || date);
-    void loadWeek();
     const liveChannel = typeof BroadcastChannel === "undefined" ? undefined : new BroadcastChannel("fika-logistics-live");
     const onLiveChange = (event: MessageEvent<{ serviceDate?: string }>) => { if (!event.data?.serviceDate || event.data.serviceDate === date) void load(true); };
     liveChannel?.addEventListener("message", onLiveChange);
@@ -237,7 +236,7 @@ export default function Planner() {
   const checkPlanningAttention = async () => {
     if (requestsBlocked.current || document.visibilityState !== "visible") return;
     try {
-      const response = await fetch(`/api/logistics?planningAttention=1&serviceDate=${operationalDate()}&days=14`, { cache: "no-store" });
+      const response = await fetchPlannerGet(`/api/logistics?planningAttention=1&serviceDate=${operationalDate()}&days=14`, { cache: "no-store" });
       const body = await requireSuccessfulResponse(response, "Planning attention could not be checked.");
       setPlanningAttention((body.attention || []) as Array<{ serviceDate: string; count: number }>);
     } catch (cause) { recordError(cause, "Planning attention could not be checked."); }
@@ -801,7 +800,7 @@ function RealPlanner(props: RealPlannerProps) {
   };
   const returnStopToPlanning = async (runId: string, stopId: string) => {
     try {
-      const response = await fetch(`/api/logistics?serviceDate=${date}`, { cache: "no-store" });
+      const response = await fetchPlannerGet(`/api/logistics?serviceDate=${date}`, { cache: "no-store" });
       const current = await response.json() as Data;
       const run = current.runs.find((item) => item.canonicalId === runId);
       const stop = current.stops.find((item) => item.canonicalId === stopId);
