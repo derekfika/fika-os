@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { listGrabAndGoOrdersForProductionHosted, readGrabAndGoCatalogue } from "@/lib/grab-and-go-store";
+import { withDataTrace } from "@fika/server-shared/data-source-meter-server";
 
 export const dynamic = "force-dynamic";
 
@@ -8,7 +9,7 @@ function assertCpuBoundary(request: NextRequest) {
   if (expected && request.headers.get("authorization") !== `Bearer ${expected}`) throw Object.assign(new Error("The CPU production integration is not authorised."), { status: 401 });
 }
 
-export async function GET(request: NextRequest) {
+async function handleGet(request: NextRequest) {
   try {
     assertCpuBoundary(request);
     const deliveryDate = request.nextUrl.searchParams.get("deliveryDate") || new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/London" }).format(new Date());
@@ -19,3 +20,4 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: { message: error instanceof Error ? error.message : "Grab & Go production data is unavailable." } }, { status: Number((error as { status?: number }).status) || 502 });
   }
 }
+export async function GET(request: NextRequest) { return withDataTrace({ app: "delivered-in", action: "delivered-in.grab-and-go.production.load", path: request.nextUrl.pathname, requestId: request.headers.get("x-request-id") || undefined }, () => handleGet(request)); }

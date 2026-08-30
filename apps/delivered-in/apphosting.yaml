@@ -1,0 +1,5 @@
+# Firebase App Hosting configuration for the Delivered-In staging runtime.
+env:
+  - variable: FIKA_DATA_SOURCE_TRACE
+    value: "1"
+    availability: [BUILD, RUNTIME]

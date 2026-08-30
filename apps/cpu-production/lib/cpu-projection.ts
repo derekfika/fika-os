@@ -3,6 +3,7 @@ import { productionQueue, productionQueueForWeek } from "./production-http-clien
 import { withReadableDestinations } from "./cpu-oploc-labels";
 import { appendCpuChange as appendProjectionChange, cpuChanges, cpuProjections, loadPlansForOrders } from "./cpu-projection-repository";
 import { recordDeliveredInReadBudget } from "./delivered-in-read-budget";
+import { recordDataAccess } from "@fika/server-shared/data-source-meter-server";
 export { cpuProjections } from "./cpu-projection-repository";
 import type { ProductionOrder, ProductionStatus } from "./production-types";
 import type { ProductionPlan } from "../app/lib/production-plan";
@@ -13,7 +14,7 @@ export type CpuProjectionOrder = { id: string; serviceDate: string; requiredBy: 
 export type CpuDayProjection = { serviceDate: string; revision: number; lastChangeSequence: number; orders: CpuProjectionOrder[]; summary: { orders: number; ready: number; attention: number; planned: number; totalUnits: number }; rebuiltAt: string };
 export type CpuWeekProjection = { serviceDate: string; weekCommencing: string; revision: number; lastChangeSequence: number; orders: CpuProjectionOrder[]; summary: CpuDayProjection["summary"]; rebuiltAt: string };
 export const appendCpuChange = (input: Omit<CpuChangeEvent, "sequence">) => appendProjectionChange(input);
-export async function listCpuChanges(after: number, serviceDate: string) { const snapshot = await cpuChanges().where("serviceDate", "==", serviceDate).where("sequence", ">", after).orderBy("sequence", "asc").get(); return snapshot.docs.map((doc) => doc.data() as CpuChangeEvent); }
+export async function listCpuChanges(after: number, serviceDate: string) { const snapshot = await cpuChanges().where("serviceDate", "==", serviceDate).where("sequence", ">", after).orderBy("sequence", "asc").get(); recordDataAccess({ app: "cpu-production", operation: "changes.service-date", source: "FIRESTORE", documents: snapshot.size, firestoreReadKind: "query" }); return snapshot.docs.map((doc) => doc.data() as CpuChangeEvent); }
 export function weekCommencingFor(serviceDate: string) { const date = new Date(`${serviceDate}T00:00:00Z`); const day = date.getUTCDay() || 7; date.setUTCDate(date.getUTCDate() - day + 1); return date.toISOString().slice(0, 10); }
 function weekDates(weekCommencing: string) { const start = new Date(`${weekCommencing}T00:00:00Z`); return Array.from({ length: 5 }, (_, index) => { const date = new Date(start); date.setUTCDate(start.getUTCDate() + index); return date.toISOString().slice(0, 10); }); }
 export async function listCpuWeekChanges(after: number, weekCommencing: string) {
@@ -28,6 +29,7 @@ export function buildCpuDayProjection(serviceDate: string, orders: ProductionOrd
 
 export async function rebuildCpuDayProjection(request: NextRequest, serviceDate: string, lastChangeSequence?: number) {
   const [rawOrders, previous] = await Promise.all([productionQueue(request, serviceDate), cpuProjections().doc(serviceDate).get()]);
+  recordDataAccess({ app: "cpu-production", operation: "projection.by-service-date", source: "FIRESTORE", documents: previous.exists ? 1 : 0, firestoreReadKind: "document" });
   const orders = await withReadableDestinations(request, rawOrders);
   const plans = await loadPlansForOrders(orders.map(order => order.canonicalId));
   const projection = buildCpuDayProjection(serviceDate, orders, plans, lastChangeSequence ?? Number(previous.data()?.lastChangeSequence || 0), Number(previous.data()?.revision || 0) + 1);
@@ -38,6 +40,7 @@ export async function rebuildCpuDayProjection(request: NextRequest, serviceDate:
 
 export async function rebuildCpuWeekProjection(request: NextRequest, weekCommencing: string, lastChangeSequence?: number) {
   const [rawOrders, previous] = await Promise.all([productionQueueForWeek(request, weekCommencing), cpuProjections().doc(`week:${weekCommencing}`).get()]);
+  recordDataAccess({ app: "cpu-production", operation: "projection.by-week", source: "FIRESTORE", documents: previous.exists ? 1 : 0, firestoreReadKind: "document" });
   const orders = await withReadableDestinations(request, rawOrders);
   const plans = await loadPlansForOrders(orders.map(order => order.canonicalId));
   const projection = buildCpuDayProjection("all", orders.filter((order) => order.serviceDate && weekDates(weekCommencing).includes(order.serviceDate)), plans, lastChangeSequence ?? Number(previous.data()?.lastChangeSequence || 0), Number(previous.data()?.revision || 0) + 1);

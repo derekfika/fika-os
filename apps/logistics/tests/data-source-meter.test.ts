@@ -22,10 +22,44 @@ test("data-source meter aggregates returned documents by source without duplicat
     recordDataAccess(trace, { operation: "projection.cache", source: "CLIENT_CACHE", documents: 1, cacheHit: true });
     const summary = endDataTrace(trace);
     assert.equal(summary?.firestoreDocuments, 184);
+    assert.equal(summary?.firestoreReturnedDocuments, 184);
+    assert.equal(summary?.estimatedFirestoreBillableReads, 184);
     assert.equal(summary?.clientCacheDocuments, 1);
     assert.equal(summary?.totalDocuments, 185);
     assert.equal(summary?.operations, 2);
     assert.equal(summary?.level, "NORMAL");
+  } finally {
+    if (prior === undefined) delete process.env.FIKA_DATA_SOURCE_TRACE; else process.env.FIKA_DATA_SOURCE_TRACE = prior;
+  }
+});
+
+test("empty Firestore reads retain returned count but estimate the minimum document charge", () => {
+  const prior = process.env.FIKA_DATA_SOURCE_TRACE;
+  process.env.FIKA_DATA_SOURCE_TRACE = "1";
+  try {
+    const trace = startDataTrace({ app: "logistics", action: "empty-load", path: "/api/logistics" });
+    for (let index = 0; index < 8; index += 1) recordDataAccess(trace, { operation: `empty-${index}`, source: "FIRESTORE", documents: 0 });
+    const summary = endDataTrace(trace);
+    assert.equal(summary?.firestoreReturnedDocuments, 0);
+    assert.equal(summary?.estimatedFirestoreBillableReads, 8);
+    assert.equal(summary?.totalReturnedRecords, 0);
+  } finally {
+    if (prior === undefined) delete process.env.FIKA_DATA_SOURCE_TRACE; else process.env.FIKA_DATA_SOURCE_TRACE = prior;
+  }
+});
+
+test("cache records never contribute estimated Firestore reads", () => {
+  const prior = process.env.FIKA_DATA_SOURCE_TRACE;
+  process.env.FIKA_DATA_SOURCE_TRACE = "1";
+  try {
+    const trace = startDataTrace({ app: "logistics", action: "warm-load", path: "/mobile" });
+    recordDataAccess(trace, { operation: "projection.cache", source: "CLIENT_CACHE", documents: 3, cacheHit: true });
+    recordDataAccess(trace, { operation: "memory.summary", source: "MEMORY", documents: 2, cacheHit: true });
+    const summary = endDataTrace(trace);
+    assert.equal(summary?.clientCacheRecords, 3);
+    assert.equal(summary?.memoryRecords, 2);
+    assert.equal(summary?.estimatedFirestoreBillableReads, 0);
+    assert.equal(summary?.records[0].estimatedBillableReads, 0);
   } finally {
     if (prior === undefined) delete process.env.FIKA_DATA_SOURCE_TRACE; else process.env.FIKA_DATA_SOURCE_TRACE = prior;
   }
@@ -104,6 +138,25 @@ test("enabled server traces emit searchable single-line start, operation and tot
     assert.match(lines[0], /^\[FIKA_DATA_TRACE\] \{"phase":"START"/);
     assert.match(lines[1], /"operation":"projection\.by-service-date"/);
     assert.match(lines[2], /^\[FIKA_DATA_TRACE_TOTAL\] \{/);
+  } finally {
+    console.info = priorInfo;
+    if (priorFlag === undefined) delete process.env.FIKA_DATA_SOURCE_TRACE; else process.env.FIKA_DATA_SOURCE_TRACE = priorFlag;
+  }
+});
+
+test("transactional Firestore reads retain returned document counts", async () => {
+  const priorFlag = process.env.FIKA_DATA_SOURCE_TRACE;
+  const priorInfo = console.info;
+  const lines: string[] = [];
+  process.env.FIKA_DATA_SOURCE_TRACE = "1";
+  console.info = ((...args: unknown[]) => lines.push(args.map(String).join(" "))) as typeof console.info;
+  try {
+    await withDataTrace({ app: "logistics", action: "logistics.mutation", path: "/api/logistics" }, async () => {
+      recordServerDataAccess({ app: "logistics", operation: "logistics.transaction.read", source: "FIRESTORE", documents: 2, firestoreReadKind: "transaction" });
+    });
+    const total = lines.find((line) => line.startsWith("[FIKA_DATA_TRACE_TOTAL] "));
+    assert.ok(total);
+    assert.equal(JSON.parse(total.slice("[FIKA_DATA_TRACE_TOTAL] ".length)).estimatedFirestoreBillableReads, 2);
   } finally {
     console.info = priorInfo;
     if (priorFlag === undefined) delete process.env.FIKA_DATA_SOURCE_TRACE; else process.env.FIKA_DATA_SOURCE_TRACE = priorFlag;

@@ -5,6 +5,7 @@ import { appDataPath } from "../../shared/app-data-path";
 import { db } from "./firebase-admin";
 import { stableDocumentId } from "@fika/server-shared/stable-document-id";
 import { recordDeliveredInAppReadBudget } from "./delivered-in-read-budget";
+import { recordDataAccess } from "@fika/server-shared/data-source-meter-server";
 
 type StoredSiteMenus = { version: 1; artifacts: SiteMenuArtifact[] };
 const file = appDataPath("delivered-in", "delivered-in", "site-menus.json");
@@ -19,6 +20,7 @@ export function saveSiteMenuArtifact(artifact: SiteMenuArtifact) { const stored 
 export async function latestSiteMenuArtifactHosted(oplocId: string, sourceDayId: string) {
   if (!hosted()) return latestSiteMenuArtifact(oplocId, sourceDayId);
   const snapshot = await siteMenus().doc(stableDocumentId(`${oplocId}:${sourceDayId}`)).get();
+  recordDataAccess({ app: "delivered-in", operation: "site-menu.by-oploc-day", source: "FIRESTORE", documents: snapshot.exists ? 1 : 0, firestoreReadKind: "document" });
   recordDeliveredInAppReadBudget({ stage: "current_site_menu_lookup", recordsInspected: snapshot.exists ? 1 : 0, oplocId });
   return snapshot.exists ? snapshot.data()?.artifact as SiteMenuArtifact : undefined;
 }

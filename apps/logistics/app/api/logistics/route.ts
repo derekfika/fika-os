@@ -52,7 +52,8 @@ import {
 import { operationalDate } from "@/lib/date";
 import { addOperationalDays, operationalWeek } from "@/lib/week";
 import { restoredStopStatus } from "@/lib/mobile-driver";
-import { withDataTrace } from "@fika/server-shared/data-source-meter-server";
+import { recordDataAccess, withDataTrace } from "@fika/server-shared/data-source-meter-server";
+import type { Transaction } from "firebase-admin/firestore";
 import type { PlannerWeekSummary } from "@/lib/planner-read-model";
 import type { DeliveryRun, DeliveryStop, MovementRequest } from "@/lib/types";
 import type { FulfilmentRequirement } from "../../../../shared/fulfilment-requirement";
@@ -68,6 +69,32 @@ class HttpError extends Error {
 }
 const messageOf = (error: unknown) =>
   error instanceof Error ? error.message : "Unknown upstream error.";
+
+async function runTracedTransaction<T>(
+  callback: (transaction: Transaction) => Promise<T>,
+): Promise<T> {
+  return db.runTransaction(async (transaction) => {
+    const originalGet = transaction.get.bind(transaction) as (reference: any) => Promise<any>;
+    (transaction as any).get = async (reference: any) => {
+      const snapshot = await originalGet(reference);
+      const documents =
+        typeof snapshot?.size === "number"
+          ? snapshot.size
+          : snapshot?.exists
+            ? 1
+            : 0;
+      recordDataAccess({
+        app: "logistics",
+        operation: "logistics.transaction.read",
+        source: "FIRESTORE",
+        documents,
+        firestoreReadKind: "transaction",
+      });
+      return snapshot;
+    };
+    return callback(transaction);
+  });
+}
 function labelFor(oplocs: Awaited<ReturnType<typeof fetchOplocs>>, id: string) {
   const match = oplocs.find((oploc) => oploc.id === id);
   if (!match)
@@ -228,6 +255,24 @@ function activeLogisticsRequirements(
   });
 }
 
+function validOperationalDate(value: string) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const date = new Date(`${value}T00:00:00Z`);
+  return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value;
+}
+
+async function classifyMissingProjection(serviceDate: string, cookie?: string) {
+  const [requirements, production, state, loadState] = await Promise.all([
+    fetchRequirements(serviceDate, cookie),
+    fetchProductionContexts(serviceDate, cookie),
+    listState(serviceDate),
+    listDeliveryLoadState(serviceDate),
+  ]);
+  const activeRequirements = activeLogisticsRequirements(requirements.filter((item) => item.serviceDate === serviceDate), production);
+  const hasLocalState = state.runs.length > 0 || state.stops.length > 0 || state.movements.length > 0 || loadState.jobs.length > 0 || loadState.loads.length > 0 || loadState.assignments.length > 0;
+  return activeRequirements.length || hasLocalState ? "NOT_MATERIALIZED" as const : "EMPTY" as const;
+}
+
 async function rebuildLogisticsProjection(serviceDate: string, actorId: string, lastChangeSequence?: number) {
   const [state, legacyState] = await Promise.all([listDeliveryLoadState(serviceDate), listState(serviceDate)]);
   return saveLogisticsProjection(buildLogisticsDayProjection({ serviceDate, ...state, runs: legacyState.runs, lastChangeSequence, now: new Date().toISOString(), revision: Date.now() }));
@@ -306,6 +351,7 @@ async function getLogistics(request: NextRequest) {
   if (request.nextUrl.searchParams.get("projection") === "1") {
     reportLogisticsReadPath("dashboard:cold-or-projection-load");
     const serviceDate = requestedDate || operationalDate();
+    if (!validOperationalDate(serviceDate)) throw new HttpError(400, "Invalid Logistics service date.");
     const startedAt = performance.now();
     let projection = await getLogisticsProjection(serviceDate);
     // Projection reads are deliberately side-effect free. Reconciliation and
@@ -317,7 +363,17 @@ async function getLogistics(request: NextRequest) {
       const deliveryLoads = projection.deliveryLoads.filter((load) => runIds.has(load.runId || "") || runIds.has(load.collectionRunId || ""));
       projection = { ...projection, planningQueue: [], deliveryLoads, runs, summary: { ...projection.summary, loads: deliveryLoads.length, assignedJobs: deliveryLoads.reduce((total, load) => total + load.jobCount, 0), queuedJobs: 0, collectedJobs: deliveryLoads.reduce((total, load) => total + load.collectedCount, 0) } };
     }
-    return NextResponse.json({ projection, metrics: { projectionFetchMs: Math.round(performance.now() - startedAt), dashboardReadyMs: Math.round(performance.now() - startedAt) } });
+    if (!projection) {
+      let state: "EMPTY" | "NOT_MATERIALIZED";
+      try {
+        state = await classifyMissingProjection(serviceDate, cookie);
+      } catch (cause) {
+        throw Object.assign(new HttpError(503, "Logistics projection state could not be verified."), { code: "LOGISTICS_PROJECTION_STATE_UNAVAILABLE", cause });
+      }
+      if (state === "NOT_MATERIALIZED") throw Object.assign(new HttpError(503, "Logistics projection has not been materialised."), { code: "LOGISTICS_PROJECTION_NOT_MATERIALIZED" });
+      return NextResponse.json({ projection: null, state, serviceDate, metrics: { projectionFetchMs: Math.round(performance.now() - startedAt), dashboardReadyMs: Math.round(performance.now() - startedAt) } });
+    }
+    return NextResponse.json({ projection, state: "READY", metrics: { projectionFetchMs: Math.round(performance.now() - startedAt), dashboardReadyMs: Math.round(performance.now() - startedAt) } });
   }
   if (request.nextUrl.searchParams.get("weekSummary") === "1") {
     const dates = operationalWeek(requestedWeek || requestedDate || operationalDate());
@@ -526,7 +582,7 @@ async function handlePost(request: NextRequest) {
     if (body.stopId?.startsWith("projection-stop:") && ["mark-stop-loaded", "mark-subload-loaded", "mark-subload-delivered", "complete-stop", "undo-completion"].includes(body.action)) {
       const projectionStopParts = body.stopId.split(":");
       const loadId = projectionStopParts.length >= 3 ? projectionStopParts.slice(2).join(":") : body.stopId.slice("projection-stop:".length);
-      const result = await db.runTransaction(async (transaction) => {
+      const result = await runTracedTransaction(async (transaction) => {
         const loadRef = deliveryLoads().doc(loadId);
         const loadSnap = await transaction.get(loadRef);
         if (!loadSnap.exists) throw new HttpError(404, "Delivery load not found.");
@@ -581,7 +637,7 @@ async function handlePost(request: NextRequest) {
       const requestedDuration = requestedEnd ? Math.max(15, Number(requestedEnd.slice(0, 2)) * 60 + Number(requestedEnd.slice(3, 5)) - (Number(scheduledTime.slice(0, 2)) * 60 + Number(scheduledTime.slice(3, 5)))) : undefined;
       scheduledTime = nextAvailableLoadTime(existingLoads, { runId: body.targetRunId, lane: "delivery", destinationOplocId, start: scheduledTime, end: requestedEnd });
       const scheduledEnd = requestedDuration === undefined ? undefined : addMinutesToTime(scheduledTime, requestedDuration);
-      const result = await db.runTransaction(async (transaction) => {
+      const result = await runTracedTransaction(async (transaction) => {
         const loadId = `load:${job.serviceDate}:${originOplocId}:${destinationOplocId}:${scheduledTime}`;
         const loadRef = deliveryLoads().doc(loadId);
         const jobRef = logisticsJobs().doc(job.id);
@@ -618,7 +674,7 @@ async function handlePost(request: NextRequest) {
       const requestedDuration = body.scheduledEnd ? Math.max(15, Number(body.scheduledEnd.slice(0, 2)) * 60 + Number(body.scheduledEnd.slice(3, 5)) - (Number(body.scheduledTime.slice(0, 2)) * 60 + Number(body.scheduledTime.slice(3, 5)))) : undefined;
       const effectiveScheduledTime = currentLoad ? nextAvailableLoadTime(currentLoads, { loadId: currentLoad.id, runId: body.targetRunId || (body.lane === "collection" ? currentLoad.collectionRunId || currentLoad.runId : currentLoad.runId), lane: body.lane === "collection" ? "collection" : "delivery", destinationOplocId: body.lane === "collection" ? currentLoad.originOplocId : currentLoad.destinationOplocId, start: body.scheduledTime, end: body.scheduledEnd }) : body.scheduledTime;
       const effectiveScheduledEnd = requestedDuration === undefined ? undefined : addMinutesToTime(effectiveScheduledTime, requestedDuration);
-      const result = await db.runTransaction(async (transaction) => {
+      const result = await runTracedTransaction(async (transaction) => {
         const loadRef = deliveryLoads().doc(body.loadId!);
         const loadSnap = await transaction.get(loadRef);
         if (!loadSnap.exists) throw new HttpError(404, "Delivery load not found.");
@@ -646,7 +702,7 @@ async function handlePost(request: NextRequest) {
       return NextResponse.json(body.targetRunId ? { ...result, runId: body.targetRunId } : result);
     }
     if (body.action === "mark-delivery-load-loaded" && body.loadId) {
-      const result = await db.runTransaction(async (transaction) => {
+      const result = await runTracedTransaction(async (transaction) => {
         const loadRef = deliveryLoads().doc(body.loadId!);
         const loadSnap = await transaction.get(loadRef);
         if (!loadSnap.exists) throw new HttpError(404, "Delivery load not found.");
@@ -666,7 +722,7 @@ async function handlePost(request: NextRequest) {
       return NextResponse.json(result);
     }
     if (body.action === "remove-job-from-load" && body.jobId) {
-      const result = await db.runTransaction(async (transaction) => {
+      const result = await runTracedTransaction(async (transaction) => {
         const assignmentSnap = await transaction.get(logisticsAssignments().where("jobId", "==", body.jobId));
         if (!assignmentSnap.docs.length) throw new HttpError(404, "Job is not assigned to a delivery load.");
         const assignment = assignmentSnap.docs[0].data() as import("@/lib/types").LogisticsAssignment;
@@ -696,7 +752,7 @@ async function handlePost(request: NextRequest) {
       return NextResponse.json(nextJob);
     }
     if (body.action === "dispatch-delivery-load" && body.loadId) {
-      const result = await db.runTransaction(async (transaction) => {
+      const result = await runTracedTransaction(async (transaction) => {
         const loadRef = deliveryLoads().doc(body.loadId!);
         const loadSnap = await transaction.get(loadRef);
         if (!loadSnap.exists) throw new HttpError(404, "Delivery load not found.");
@@ -753,7 +809,7 @@ async function handlePost(request: NextRequest) {
       const current = await getRun(body.runId);
       if (!current) throw new HttpError(404, "Run not found.");
       if (body.expectedRunVersion === undefined) throw new HttpError(422, "A current run version is required.");
-      const result = await db.runTransaction(async (transaction) => {
+      const result = await runTracedTransaction(async (transaction) => {
         const ref = runs().doc(current.canonicalId);
         const snap = await transaction.get(ref);
         if (!snap.exists) throw new HttpError(404, "Run not found.");
@@ -773,7 +829,7 @@ async function handlePost(request: NextRequest) {
       if (!current) throw new HttpError(404, "Run not found.");
       if (body.expectedRunVersion === undefined) throw new HttpError(422, "A current run version is required.");
       if (current.status === "dispatched" || current.status === "completed") throw new HttpError(422, "Return settings cannot change after dispatch.");
-      const result = await db.runTransaction(async (transaction) => {
+      const result = await runTracedTransaction(async (transaction) => {
         const ref = runs().doc(current.canonicalId);
         const snap = await transaction.get(ref);
         if (!snap.exists) throw new HttpError(404, "Run not found.");
@@ -934,7 +990,7 @@ async function handlePost(request: NextRequest) {
           : body.action === "dispatch-run"
               ? "dispatched"
               : "completed";
-      const result = await db.runTransaction(async (transaction) => {
+      const result = await runTracedTransaction(async (transaction) => {
         const ref = runs().doc(current.canonicalId);
         const snapshot = await transaction.get(ref);
         if (!snapshot.exists) throw new HttpError(404, "Run not found.");
@@ -1092,7 +1148,7 @@ async function handlePost(request: NextRequest) {
       const planned = body.plannedArrivalTime !== undefined || body.plannedWindow !== undefined
         ? validatePlannedSchedule(body.plannedArrivalTime, body.plannedWindow)
         : undefined;
-      const result = await db.runTransaction(async (transaction) => {
+      const result = await runTracedTransaction(async (transaction) => {
         const runRef = runs().doc(body.runId!);
         const runSnap = await transaction.get(runRef);
         if (!runSnap.exists) throw new HttpError(404, "Run not found.");
@@ -1166,7 +1222,7 @@ async function handlePost(request: NextRequest) {
         body.expectedStopVersion === undefined
       )
         throw new HttpError(422, "Current run and stop versions are required.");
-      const result = await db.runTransaction(async (transaction) => {
+      const result = await runTracedTransaction(async (transaction) => {
         const runRef = runs().doc(body.runId!);
         const stopRef = stops().doc(body.stopId!);
         const [runSnap, stopSnap] = await Promise.all([
@@ -1243,7 +1299,7 @@ async function handlePost(request: NextRequest) {
     if (body.action === "unassign-movement" && body.runId && body.movementId) {
       if (body.expectedRunVersion === undefined)
         throw new HttpError(422, "A current run version is required.");
-      const result = await db.runTransaction(async (transaction) => {
+      const result = await runTracedTransaction(async (transaction) => {
         const runRef = runs().doc(body.runId!);
         const movementRef = movements().doc(body.movementId!);
         const [runSnap, movementSnap, stopSnap] = await Promise.all([
@@ -1337,7 +1393,7 @@ async function handlePost(request: NextRequest) {
     if (body.action === "return-stop-to-planning" && body.runId && body.stopId) {
       if (body.expectedRunVersion === undefined || body.expectedStopVersion === undefined)
         throw new HttpError(422, "Current run and stop versions are required.");
-      const result = await db.runTransaction(async (transaction) => {
+      const result = await runTracedTransaction(async (transaction) => {
         const runRef = runs().doc(body.runId!);
         const targetRef = stops().doc(body.stopId!);
         const [runSnap, targetSnap, stopSnap, allRunSnap] = await Promise.all([
@@ -1416,7 +1472,7 @@ async function handlePost(request: NextRequest) {
       const planned = body.plannedArrivalTime !== undefined || body.plannedWindow !== undefined
         ? validatePlannedSchedule(body.plannedArrivalTime, body.plannedWindow)
         : undefined;
-      const result = await db.runTransaction(async (transaction) => {
+      const result = await runTracedTransaction(async (transaction) => {
         const sourceRef = runs().doc(body.runId!);
         const targetRef = runs().doc(body.targetRunId!);
         const stopRef = stops().doc(body.stopId!);
@@ -1520,7 +1576,7 @@ async function handlePost(request: NextRequest) {
     if ((body.action === "schedule-stop" || body.action === "clear-stop-schedule") && body.runId && body.stopId) {
       if (body.expectedRunVersion === undefined || body.expectedStopVersion === undefined)
         throw new HttpError(422, "Current run and stop versions are required to change timing.");
-      const result = await db.runTransaction(async (transaction) => {
+      const result = await runTracedTransaction(async (transaction) => {
         const runRef = runs().doc(body.runId!);
         const stopRef = stops().doc(body.stopId!);
         const [runSnap, stopSnap] = await Promise.all([transaction.get(runRef), transaction.get(stopRef)]);
@@ -1624,7 +1680,7 @@ async function handlePost(request: NextRequest) {
             },
           )
         : [];
-      const result = await db.runTransaction(async (transaction) => {
+      const result = await runTracedTransaction(async (transaction) => {
         const runRef = runs().doc(body.runId!);
         const runSnap = await transaction.get(runRef);
         if (!runSnap.exists) throw new HttpError(404, "Run not found.");
@@ -1760,7 +1816,7 @@ async function handlePost(request: NextRequest) {
         throw new HttpError(400, "Unknown execution action.");
       if (body.action === "report-issue" && !body.issueDescription?.trim())
         throw new HttpError(422, "A short issue description is required.");
-      const result = await db.runTransaction(async (transaction) => {
+      const result = await runTracedTransaction(async (transaction) => {
         const runRef = runs().doc(body.runId!);
         const stopRef = stops().doc(body.stopId!);
         const [runSnap, stopSnap] = await Promise.all([
@@ -2183,7 +2239,7 @@ async function handlePost(request: NextRequest) {
           422,
           "A current run version is required to reorder stops.",
         );
-      const result = await db.runTransaction(async (transaction) => {
+      const result = await runTracedTransaction(async (transaction) => {
         const runRef = runs().doc(body.runId!);
         const runSnap = await transaction.get(runRef);
         if (!runSnap.exists) throw new HttpError(404, "Run not found.");

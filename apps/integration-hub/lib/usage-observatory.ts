@@ -1,6 +1,6 @@
 import { GoogleAuth } from "google-auth-library";
 import { getFikaRuntimeConfig } from "./runtime-config";
-import { aggregateAttribution, createCloudLoggingClient, type CloudLoggingClient, type UsageAttribution } from "./usage-attribution";
+import { aggregateAttribution, createCloudLoggingClient, EXPECTED_STAGING_INSTRUMENTATION, type CloudLoggingClient, type UsageAttribution } from "./usage-attribution";
 
 export type UsageMetric = "reads" | "writes" | "deletes";
 export type UsagePoint = { timestamp: string; value: number };
@@ -189,7 +189,7 @@ export function invalidateUsageCache() { cached = undefined; }
 function unavailableAttribution(message: string, range: UsageRange, resolution: UsageResolution, authoritativeReads: number | null): UsageAttribution {
   const periodMs = Number.parseInt(alignmentPeriod(resolution), 10) * 1000;
   const bucketCount = Math.max(1, Math.ceil((Date.parse(range.end) - Date.parse(range.start)) / periodMs));
-  return { available: false, message, traceCount: 0, estimatedFirestoreBillableReads: 0, firestoreReturnedDocuments: 0, authoritativeReads, unattributedReads: authoritativeReads === null ? null : authoritativeReads, coveragePercent: authoritativeReads === null || authoritativeReads === 0 ? 0 : 0, overAttribution: false, parseFailures: 0, truncated: false, apps: [], actions: [], operations: [], buckets: Array.from({ length: bucketCount }, (_, index) => ({ timestamp: new Date(Date.parse(range.start) + index * periodMs).toISOString(), cloudMonitoringReads: 0, attributedEstimatedReads: 0, unattributedReads: 0, byApp: {} })) };
+  return { available: false, message, traceCount: 0, estimatedFirestoreBillableReads: 0, firestoreReturnedDocuments: 0, authoritativeReads, unattributedReads: authoritativeReads === null ? null : authoritativeReads, coveragePercent: authoritativeReads === null || authoritativeReads === 0 ? 0 : 0, overAttribution: false, parseFailures: 0, truncated: false, instrumentedApps: Object.keys(EXPECTED_STAGING_INSTRUMENTATION), appsSeenInWindow: [], expectedInstrumentation: { ...EXPECTED_STAGING_INSTRUMENTATION }, apps: [], actions: [], operations: [], buckets: Array.from({ length: bucketCount }, (_, index) => ({ timestamp: new Date(Date.parse(range.start) + index * periodMs).toISOString(), cloudMonitoringReads: 0, attributedEstimatedReads: 0, unattributedReads: 0, byApp: {} })) };
 }
 
 export function attachMonitoringReads(attribution: UsageAttribution, monitoringPoints: UsagePoint[]): UsageAttribution {

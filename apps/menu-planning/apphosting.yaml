@@ -1,6 +1,9 @@
 # Menu Planning App Hosting staging runtime. The backend is explicitly bound
 # to the staging environment so hosted requests select Firestore, never SQLite.
 env:
+  - variable: FIKA_DATA_SOURCE_TRACE
+    value: "1"
+    availability: [BUILD, RUNTIME]
   - variable: FIKA_RUNTIME_MODE
     value: staging
     availability: [BUILD, RUNTIME]

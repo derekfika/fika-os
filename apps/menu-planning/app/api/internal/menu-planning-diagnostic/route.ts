@@ -3,9 +3,10 @@ import { timingSafeEqual } from "node:crypto";
 import { Firestore } from "@google-cloud/firestore";
 import { getMenuPlanningOperationalStore, MenuPlanningFirestoreRepository } from "@/lib/operational-store";
 import { listWeeks } from "@/lib/rolling-menu";
+import { withDataTrace } from "@fika/server-shared/data-source-meter-server";
 
 /** Temporary server-only, read-only staging diagnostic. Remove after runtime diagnosis. */
-export async function GET(request: NextRequest) {
+async function handleGet(request: NextRequest) {
   try {
     const expectedToken = process.env["FIKA_INTERNAL_API_TOKEN"];
     const suppliedToken = request.headers.get("x-fika-internal-token");
@@ -46,3 +47,4 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "Diagnostic failed." }, { status, headers: { "cache-control": "no-store" } });
   }
 }
+export async function GET(request: NextRequest) { return withDataTrace({ app: "menu-planning", action: "menu-planning.diagnostic.load", path: request.nextUrl.pathname, requestId: request.headers.get("x-request-id") || undefined }, () => handleGet(request)); }

@@ -289,6 +289,22 @@ test("week summary returns five local Monday-Friday day summaries", async (t) =>
   );
 });
 
+test("projection endpoint distinguishes a valid empty day from a missing materialised projection", async (t) => {
+  const id = prefix();
+  t.after(() => cleanup(id));
+  const response = await GET(new NextRequest(`http://localhost/api/logistics?projection=1&serviceDate=${serviceDate}`));
+  assert.equal(response.status, 200);
+  const body = await response.json() as { projection: unknown; state: string; serviceDate: string };
+  assert.equal(body.projection, null);
+  assert.equal(body.state, "EMPTY");
+  assert.equal(body.serviceDate, serviceDate);
+});
+
+test("projection endpoint rejects an invalid service date", async () => {
+  const response = await GET(new NextRequest("http://localhost/api/logistics?projection=1&serviceDate=not-a-date"));
+  assert.equal(response.status, 400);
+});
+
 test("assign-group combines same-destination requirements and updates run atomically", async (t) => {
   const id = prefix();
   t.after(() => cleanup(id));

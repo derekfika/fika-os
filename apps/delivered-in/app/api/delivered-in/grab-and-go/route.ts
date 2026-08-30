@@ -4,6 +4,7 @@ import { readGrabAndGoCatalogue, getGrabAndGoOrderHosted, listGrabAndGoOrdersHos
 import { assertAuthorisedOploc } from "@/lib/projection";
 import { resolveAccess } from "@/lib/server";
 import { forwardProductionMaterialisation } from "../../../../lib/production-client";
+import { withDataTrace } from "@fika/server-shared/data-source-meter-server";
 
 export const dynamic = "force-dynamic";
 
@@ -14,7 +15,7 @@ async function authorisedSite(request: NextRequest, requested?: string) {
   return { selected, access: resolved.access };
 }
 
-export async function GET(request: NextRequest) {
+async function handleGet(request: NextRequest) {
   try {
     const { selected } = await authorisedSite(request, request.nextUrl.searchParams.get("oplocId") || undefined); const now = new Date();
     const dates = new Map(availableDeliveryDates(now).map(date => [date.date, date]));
@@ -36,7 +37,7 @@ export async function GET(request: NextRequest) {
   } catch (error) { return NextResponse.json({ error: { message: error instanceof Error ? error.message : "Grab & Go could not be loaded." } }, { status: Number((error as { status?: number }).status) || 502 }); }
 }
 
-export async function POST(request: NextRequest) {
+async function handlePost(request: NextRequest) {
   try {
     const body = await request.json() as { oplocId?: string; deliveryDate?: string; action?: "submit" | "amend" | "cancel"; expectedVersion?: number; lines?: Array<{ productId: string; quantity: number }> };
     if (!body.deliveryDate || !body.action || !["submit", "amend", "cancel"].includes(body.action)) return NextResponse.json({ error: { message: "A delivery date and valid order action are required." } }, { status: 422 });
@@ -44,3 +45,5 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ order }, { status: existing ? 200 : 201 });
   } catch (error) { return NextResponse.json({ error: { message: error instanceof Error ? error.message : "The Grab & Go order could not be saved." } }, { status: Number((error as { status?: number }).status) || 502 }); }
 }
+export async function GET(request: NextRequest) { return withDataTrace({ app: "delivered-in", action: "delivered-in.grab-and-go.load", path: request.nextUrl.pathname, requestId: request.headers.get("x-request-id") || undefined }, () => handleGet(request)); }
+export async function POST(request: NextRequest) { return withDataTrace({ app: "delivered-in", action: "delivered-in.grab-and-go.mutation", path: request.nextUrl.pathname, requestId: request.headers.get("x-request-id") || undefined }, () => handlePost(request)); }

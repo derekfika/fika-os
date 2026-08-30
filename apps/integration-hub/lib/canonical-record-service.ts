@@ -29,6 +29,7 @@ import {
 } from "./governed-reasons";
 import { validateOperationalAssignmentConnection } from "./connection-rules";
 import { bumpCacheDatasets, cacheDatasetForEntityType } from "./integration-cache-server";
+import { invalidateAuthmodReferenceCaches } from "./authmod-reference-cache";
 import { recordDataAccess } from "@fika/server-shared/data-source-meter-server";
 
 const canonical = () => db.collection("integrationHubCanonical");
@@ -355,7 +356,7 @@ export async function saveCanonicalChange(
   const documentReference = canonical().doc(
     stableDocumentId(input.canonicalId),
   );
-  return db.runTransaction(async (transaction) => {
+  const result = await db.runTransaction(async (transaction) => {
     const currentSnapshot = await transaction.get(documentReference);
     const current = currentSnapshot.exists
       ? (currentSnapshot.data() as CanonicalRecord)
@@ -620,6 +621,8 @@ export async function saveCanonicalChange(
       publicationOccurred: effectiveInput.entityType === "Address",
     };
   });
+  invalidateAuthmodReferenceCaches();
+  return result;
 }
 
 export async function approveAddress(

@@ -18,6 +18,7 @@ import { hubJson } from "../../../lib/production-http-client";
 import { matrixDriveConfiguration } from "../../lib/matrix-drive-config";
 import { loadDeliveredInReviewStatuses, parseDeliveredInReviewOrderIds } from "../../../lib/delivered-in-review";
 import { recordDeliveredInReadBudget } from "../../../lib/delivered-in-read-budget";
+import { withDataTrace } from "@fika/server-shared/data-source-meter-server";
 
 function menuContentHash(menuItems: PlannedMenuItem[]) {
   return createHash("sha256").update(JSON.stringify(menuItems)).digest("hex");
@@ -215,7 +216,7 @@ async function createMatrixArtifact(plan: ProductionPlan, orderId: string, actor
   return { id: `allergen-matrix:${orderId}:${contentHash.slice(0, 16)}`, bookingId: order.sourceBookingId, fileName, createdAt: timestamp, createdBy: actor, contentHash, html, pdfPath, ...(pdfStatus === "generated" ? { localUrl: `${(process.env.CPU_PUBLIC_BASE_URL || "http://localhost:3400").replace(/\/$/, "")}/api/production-plan?orderId=${encodeURIComponent(orderId)}&download=pdf` } : {}), pdfStatus, ...(driveFileId ? { driveFileId } : {}), ...(driveUrl ? { driveUrl } : {}), driveStatus };
 }
 
-export async function GET(request: NextRequest) {
+async function handleGet(request: NextRequest) {
   const orderId = request.nextUrl.searchParams.get("orderId");
   try {
     const actor = await actorFor(request);
@@ -256,7 +257,7 @@ export async function GET(request: NextRequest) {
   return NextResponse.json({ plan: selectedPlan, matrixStatus: selectedMatrixStatus, plans: visiblePlans, notifications: entries.map(plan => ({ id: `notification:${plan.id}`, title: "New production plan ready for menu generation.", orderId: plan.orderId, plannedItemCount: plan.menuItems.reduce((sum, item) => sum + item.subItems.length, 0), at: plan.updatedAt })), menus: entries.map(plan => ({ planId: plan.id, orderId: plan.orderId, clientSite: localFixtureOrders().find(order => order.canonicalId === plan.orderId)?.destinationLabel || "Site not assigned", items: plan.menuItems.flatMap(item => item.subItems.map(subItem => ({ menuItem: item.name, name: subItem.name, quantity: subItem.quantity, allergens: Object.entries(subItem.allergens).filter(([, state]) => state === "contains").map(([key]) => key), mayContain: Object.entries(subItem.allergens).filter(([, state]) => state === "may_contain").map(([key]) => key) }))) })) });
 }
 
-export async function POST(request: NextRequest) {
+async function handlePost(request: NextRequest) {
   try {
     const actor = await actorFor(request);
     const raw = await request.json();
@@ -402,3 +403,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ plan, matrixArtifact: plan.matrixArtifact ?? null, signatures: plan.signatures ?? null, matrixStatus, notification: notification || (plan.status === "planned" ? { title: "New production plan ready for menu generation.", orderId: plan.orderId } : undefined) });
   } catch (error) { return errorResponse(error); }
 }
+
+export async function GET(request: NextRequest) { return withDataTrace({ app: "cpu-production", action: "cpu-production.plan.load", path: request.nextUrl.pathname, requestId: request.headers.get("x-request-id") || undefined }, () => handleGet(request)); }
+export async function POST(request: NextRequest) { return withDataTrace({ app: "cpu-production", action: "cpu-production.plan.mutation", path: request.nextUrl.pathname, requestId: request.headers.get("x-request-id") || undefined }, () => handlePost(request)); }

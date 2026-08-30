@@ -3,8 +3,9 @@ import { archivePublishedDayMatrix, getMenuPublication, listMenuPublications, li
 import { requirePublicationActor, resolveMenuActor } from "@/lib/auth";
 import { forwardProductionMaterialisationEvent } from "@/lib/production-client";
 import { replayMenuPublicationOutbox } from "@/lib/menu-publication";
+import { withDataTrace } from "@fika/server-shared/data-source-meter-server";
 
-export async function GET(request: NextRequest) {
+async function handleGet(request: NextRequest) {
   const publicationId = request.nextUrl.searchParams.get("publicationId");
   if (publicationId) {
     const publication = await getMenuPublication(publicationId);
@@ -20,7 +21,7 @@ export async function GET(request: NextRequest) {
   return NextResponse.json({ publications: await listMenuPublications() });
 }
 
-export async function POST(request: NextRequest) {
+async function handlePost(request: NextRequest) {
   try {
     const body = await request.json() as { action?: string; publicationId?: string; publicationDayId?: string; reason?: string; actor?: string };
     const actor = requirePublicationActor(await resolveMenuActor(request));
@@ -43,3 +44,5 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: { message: "Unknown publication command." } }, { status: 400 });
   } catch (error) { const status = error && typeof error === "object" && "status" in error ? Number((error as { status?: unknown }).status) || 400 : 400; return NextResponse.json({ error: { message: error instanceof Error ? error.message : "Publication command failed." } }, { status }); }
 }
+export async function GET(request: NextRequest) { return withDataTrace({ app: "menu-planning", action: "menu-planning.publications.load", path: request.nextUrl.pathname, requestId: request.headers.get("x-request-id") || undefined }, () => handleGet(request)); }
+export async function POST(request: NextRequest) { return withDataTrace({ app: "menu-planning", action: "menu-planning.publications.mutation", path: request.nextUrl.pathname, requestId: request.headers.get("x-request-id") || undefined }, () => handlePost(request)); }

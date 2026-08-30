@@ -8,6 +8,7 @@ import {
   saveConnectionCommand,
   type ConnectionCommand,
 } from "@/lib/connections-service";
+import { withDataTrace } from "@fika/server-shared/data-source-meter-server";
 
 const EmploymentCommand = z
   .object({
@@ -125,7 +126,7 @@ const Command = z.discriminatedUnion("action", [
   RemoveAssignmentCommand,
 ]);
 
-export async function GET(req: NextRequest) {
+async function handleGet(req: NextRequest) {
   try {
     const actor = await requireActor(req);
     assertPermission(actor, "canonical.view");
@@ -135,7 +136,7 @@ export async function GET(req: NextRequest) {
   }
 }
 
-export async function POST(req: NextRequest) {
+async function handlePost(req: NextRequest) {
   try {
     const actor = await requireActor(req, ["integration-admin"]);
     const command = Command.parse(await req.json()) as ConnectionCommand;
@@ -147,6 +148,8 @@ export async function POST(req: NextRequest) {
     return errorResponse(error);
   }
 }
+export async function GET(req: NextRequest) { return withDataTrace({ app: "integration-hub", action: "integration-hub.connections.load", path: req.nextUrl.pathname, requestId: req.headers.get("x-request-id") || undefined }, () => handleGet(req)); }
+export async function POST(req: NextRequest) { return withDataTrace({ app: "integration-hub", action: "integration-hub.connections.mutation", path: req.nextUrl.pathname, requestId: req.headers.get("x-request-id") || undefined }, () => handlePost(req)); }
 
 function noStore() {
   return { headers: { "Cache-Control": "no-store, max-age=0" } };

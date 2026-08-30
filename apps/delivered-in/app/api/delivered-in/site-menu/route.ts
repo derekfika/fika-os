@@ -3,10 +3,11 @@ import { projectedAllergenDay, resolveAccess } from "@/lib/server";
 import { createGoogleSiteMenu, retireGoogleSiteMenu } from "@/lib/google-site-menu";
 import { latestSiteMenuArtifactHosted, saveSiteMenuArtifactHosted } from "@/lib/site-menu-store";
 import { siteMenuState } from "@/lib/site-menu";
+import { withDataTrace } from "@fika/server-shared/data-source-meter-server";
 
 export const dynamic = "force-dynamic";
 
-export async function GET(request: NextRequest) {
+async function handleGet(request: NextRequest) {
   try {
     const oplocId = request.nextUrl.searchParams.get("oplocId");
     const publicationDayId = request.nextUrl.searchParams.get("publicationDayId");
@@ -18,7 +19,7 @@ export async function GET(request: NextRequest) {
   }
 }
 
-export async function POST(request: NextRequest) {
+async function handlePost(request: NextRequest) {
   try {
     const body = await request.json() as { oplocId?: string; publicationDayId?: string; action?: "generate" | "regenerate" };
     if (!body.oplocId || !body.publicationDayId) return NextResponse.json({ error: { message: "A site and published day are required." } }, { status: 422 });
@@ -35,3 +36,5 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: { message: error instanceof Error ? error.message : "The site menu could not be generated." } }, { status: Number((error as { status?: number }).status) || 502 });
   }
 }
+export async function GET(request: NextRequest) { return withDataTrace({ app: "delivered-in", action: "delivered-in.site-menu.load", path: request.nextUrl.pathname, requestId: request.headers.get("x-request-id") || undefined }, () => handleGet(request)); }
+export async function POST(request: NextRequest) { return withDataTrace({ app: "delivered-in", action: "delivered-in.site-menu.mutation", path: request.nextUrl.pathname, requestId: request.headers.get("x-request-id") || undefined }, () => handlePost(request)); }

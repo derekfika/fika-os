@@ -12,6 +12,7 @@ import { appendCpuChange, buildCpuDayProjection, cpuProjections, listCpuChanges,
 import { loadPlansForOrders } from "../../../lib/cpu-projection-repository";
 import { recordDeliveredInReadBudget } from "../../../lib/delivered-in-read-budget";
 import type { ProductionOrder } from "../../../lib/production-types";
+import { withDataTrace } from "@fika/server-shared/data-source-meter-server";
 
 const localActor = {
   uid: "local-cpu",
@@ -141,7 +142,7 @@ const UpdateLines = z
   .strict();
 const AllergenDiscrepancy = z.object({ action: z.literal("report-allergen-discrepancy"), canonicalId: z.string().min(8), expectedVersion: z.number().int().positive(), note: z.string().trim().min(3) }).strict();
 const AcknowledgeCancellation = z.object({ action: z.literal("acknowledge-cancellation"), canonicalId: z.string().min(8), expectedVersion: z.number().int().positive() }).strict();
-export async function GET(request: NextRequest) {
+async function handleGet(request: NextRequest) {
   try {
     const actor = await actorFor(request);
     if (request.nextUrl.searchParams.get("cacheScope") === "1") {
@@ -245,7 +246,7 @@ export async function GET(request: NextRequest) {
   }
 }
 
-export async function POST(request: NextRequest) {
+async function handlePost(request: NextRequest) {
   try {
     const raw = await request.json();
     if (raw?.action === "sync-production-event") {
@@ -368,3 +369,6 @@ export async function POST(request: NextRequest) {
     return errorResponse(error);
   }
 }
+
+export async function GET(request: NextRequest) { return withDataTrace({ app: "cpu-production", action: "cpu-production.load", path: request.nextUrl.pathname, requestId: request.headers.get("x-request-id") || undefined }, () => handleGet(request)); }
+export async function POST(request: NextRequest) { return withDataTrace({ app: "cpu-production", action: "cpu-production.mutation", path: request.nextUrl.pathname, requestId: request.headers.get("x-request-id") || undefined }, () => handlePost(request)); }

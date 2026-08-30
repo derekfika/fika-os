@@ -92,6 +92,7 @@ export default function Planner() {
   const [viewPreferencesReady, setViewPreferencesReady] = useState(false);
   const [weekData, setWeekData] = useState<WeekData>();
   const [data, setData] = useState<Data>();
+  const emptyProjection = (serviceDate: string): LogisticsDayProjection => ({ serviceDate, revision: 0, lastChangeSequence: 0, planningQueue: [], deliveryLoads: [], runs: [], exceptions: [], summary: { queuedJobs: 0, loads: 0, assignedJobs: 0, collectedJobs: 0 }, rebuiltAt: new Date().toISOString() });
   const [error, setError] = useState("");
   const [errorReference, setErrorReference] = useState("");
   const [authRequired, setAuthRequired] = useState(false);
@@ -169,6 +170,13 @@ export default function Planner() {
       });
       const body = await requireSuccessfulResponse(response, "Logistics could not be loaded.");
       let projection = body.projection as LogisticsDayProjection | undefined;
+      if (!projection && body.state === "EMPTY") {
+        projection = emptyProjection(date);
+        setData({ ...projectionToDashboardData(projection), projection });
+        setLastUpdated(new Date().toISOString());
+        setError("");
+        return;
+      }
       if (!projection) throw new Error("Logistics projection is unavailable.");
       setData({ ...projectionToDashboardData(projection), projection });
       if (cacheScope) await writeCachedProjection(cacheScope, projection);

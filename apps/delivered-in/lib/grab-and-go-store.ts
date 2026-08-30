@@ -9,6 +9,7 @@ import type { FulfilmentRequirement } from "../../shared/fulfilment-requirement"
 import { db } from "./firebase-admin";
 import { stableDocumentId } from "@fika/server-shared/stable-document-id";
 import { recordDeliveredInAppReadBudget } from "./delivered-in-read-budget";
+import { recordDataAccess } from "@fika/server-shared/data-source-meter-server";
 
 type Stored = { version: 1; orders: GrabAndGoOrder[]; events: DurableDomainEvent[]; /** Legacy migration field; central Integration Hub is authoritative. */ fulfilmentRequirements?: FulfilmentRequirement[] };
 const file = appDataPath("delivered-in", "delivered-in", "grab-and-go-orders.json");
@@ -45,7 +46,7 @@ function open() {
 function parse(database: DatabaseSync): Stored {
   try { const row = database.prepare("SELECT state_json FROM grab_and_go_state WHERE state_id = 1").get() as { state_json?: string } | undefined; if (!row?.state_json) throw new Error("missing state"); const value = JSON.parse(row.state_json) as Stored; if (!Array.isArray(value.orders) || !Array.isArray(value.events)) throw new Error("invalid state"); return { version: 1, orders: value.orders, events: value.events }; } catch (cause) { throw unavailable("Grab & Go order data is unavailable; no order list was loaded.", cause); }
 }
-const read = (): Stored => { const database = open(); try { return parse(database); } finally { database.close(); } };
+const read = (): Stored => { const database = open(); try { const stored = parse(database); recordDataAccess({ app: "delivered-in", operation: "grab-and-go.sqlite.read", source: "STATIC", documents: stored.orders.length }); return stored; } finally { database.close(); } };
 function backfillMissingFulfilmentEvents(_stored: Stored) { /* CPU materialisation owns the only production-bound fulfilment path. */ }
 function withTransaction<T>(mutator: (stored: Stored) => T) {
   const database = open(); database.exec("BEGIN IMMEDIATE");
@@ -54,24 +55,27 @@ function withTransaction<T>(mutator: (stored: Stored) => T) {
 const catalogueFile = appDataPath("delivered-in", "delivered-in", "grab-and-go-catalogue.json");
 const hosted = () => ["staging", "production"].includes(process.env.FIKA_RUNTIME_MODE || "");
 const hostedOrders = () => db.collection("fikaDeliveredInGrabAndGoOrdersV1");
-export function readGrabAndGoCatalogue(): GrabAndGoProduct[] { try { const value = JSON.parse(readFileSync(catalogueFile, "utf8")) as { products?: GrabAndGoProduct[] }; if (!Array.isArray(value.products)) throw new Error("products is not an array"); return value.products; } catch (cause) { throw unavailable("Grab & Go catalogue is unavailable; no product list was loaded.", cause); } }
+export function readGrabAndGoCatalogue(): GrabAndGoProduct[] { try { const value = JSON.parse(readFileSync(catalogueFile, "utf8")) as { products?: GrabAndGoProduct[] }; if (!Array.isArray(value.products)) throw new Error("products is not an array"); recordDataAccess({ app: "delivered-in", operation: "grab-and-go.catalogue.read", source: "STATIC", documents: value.products.length }); return value.products; } catch (cause) { throw unavailable("Grab & Go catalogue is unavailable; no product list was loaded.", cause); } }
 export function listGrabAndGoOrders(oplocId?: string) { return read().orders.filter(order => !oplocId || order.oplocId === oplocId); }
 export function getGrabAndGoOrder(oplocId: string, deliveryDate: string) { return read().orders.find(order => order.oplocId === oplocId && order.deliveryDate === deliveryDate); }
 export async function listGrabAndGoOrdersHosted(oplocId: string, startDate: string, endDateExclusive: string) {
   if (!hosted()) return listGrabAndGoOrders(oplocId).filter(order => order.deliveryDate >= startDate && order.deliveryDate < endDateExclusive);
   const snapshot = await hostedOrders().where("oplocId", "==", oplocId).where("deliveryDate", ">=", startDate).where("deliveryDate", "<", endDateExclusive).orderBy("deliveryDate", "asc").limit(100).get();
+  recordDataAccess({ app: "delivered-in", operation: "grab-and-go.orders.by-oploc-date", source: "FIRESTORE", documents: snapshot.size, firestoreReadKind: "query" });
   recordDeliveredInAppReadBudget({ stage: "grab_and_go_oploc_date_discovery", recordsInspected: snapshot.size, oplocId });
   return snapshot.docs.map(document => document.data() as GrabAndGoOrder);
 }
 export async function listGrabAndGoOrdersForProductionHosted(startDate: string, endDateExclusive: string) {
   if (!hosted()) return listGrabAndGoOrders().filter(order => order.deliveryDate >= startDate && order.deliveryDate < endDateExclusive);
   const snapshot = await hostedOrders().where("deliveryDate", ">=", startDate).where("deliveryDate", "<", endDateExclusive).where("status", "==", "submitted").orderBy("deliveryDate", "asc").limit(500).get();
+  recordDataAccess({ app: "delivered-in", operation: "grab-and-go.orders.for-production", source: "FIRESTORE", documents: snapshot.size, firestoreReadKind: "query" });
   recordDeliveredInAppReadBudget({ stage: "grab_and_go_cpu_fulfilment", recordsInspected: snapshot.size, serviceDate: startDate });
   return snapshot.docs.map(document => document.data() as GrabAndGoOrder);
 }
 export async function getGrabAndGoOrderHosted(oplocId: string, deliveryDate: string) {
   if (!hosted()) return getGrabAndGoOrder(oplocId, deliveryDate);
   const snapshot = await hostedOrders().doc(stableDocumentId(`grab-and-go:${oplocId}:${deliveryDate}`)).get();
+  recordDataAccess({ app: "delivered-in", operation: "grab-and-go.order.by-oploc-date", source: "FIRESTORE", documents: snapshot.exists ? 1 : 0, firestoreReadKind: "document" });
   recordDeliveredInAppReadBudget({ stage: "grab_and_go_direct_order", recordsInspected: snapshot.exists ? 1 : 0, oplocId, knownId: true });
   return snapshot.exists ? snapshot.data() as GrabAndGoOrder : undefined;
 }
@@ -80,6 +84,7 @@ export async function saveGrabAndGoOrderHosted(order: GrabAndGoOrder, expectedVe
   await db.runTransaction(async transaction => {
     const ref = hostedOrders().doc(stableDocumentId(order.orderId));
     const snapshot = await transaction.get(ref);
+    recordDataAccess({ app: "delivered-in", operation: "grab-and-go.order.transaction-read", source: "FIRESTORE", documents: snapshot.exists ? 1 : 0, firestoreReadKind: "transaction" });
     const previous = snapshot.exists ? snapshot.data() as GrabAndGoOrder : undefined;
     if (previous && expectedVersion !== previous.version) throw Object.assign(new Error(`This Grab & Go order changed elsewhere (expected version ${previous.version}). Refresh and try again.`), { status: 409 });
     if (!previous && expectedVersion !== undefined) throw Object.assign(new Error("This Grab & Go order no longer exists. Refresh and try again."), { status: 409 });

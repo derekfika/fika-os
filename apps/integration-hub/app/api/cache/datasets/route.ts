@@ -3,8 +3,9 @@ import { errorResponse } from "@/lib/api";
 import { requireActor } from "@/lib/auth";
 import { listCacheDataset } from "@/lib/integration-cache-server";
 import { CACHE_DATASETS, type CacheDataset } from "@/lib/integration-cache-shared";
+import { withDataTrace } from "@fika/server-shared/data-source-meter-server";
 
-export async function GET(request: NextRequest) {
+async function handleGet(request: NextRequest) {
   try {
     const actor = await requireActor(request);
     const dataset = request.nextUrl.searchParams.get("dataset") as CacheDataset;
@@ -12,3 +13,4 @@ export async function GET(request: NextRequest) {
     return NextResponse.json(await listCacheDataset(actor, dataset), { headers: { "Cache-Control": "no-store, max-age=0" } });
   } catch (error) { return errorResponse(error); }
 }
+export async function GET(request: NextRequest) { return withDataTrace({ app: "integration-hub", action: "integration-hub.cache.dataset.load", path: request.nextUrl.pathname, requestId: request.headers.get("x-request-id") || undefined }, () => handleGet(request)); }

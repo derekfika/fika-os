@@ -20,6 +20,9 @@ export type UsageAttribution = {
   overAttribution: boolean;
   parseFailures: number;
   truncated: boolean;
+  instrumentedApps: string[];
+  appsSeenInWindow: string[];
+  expectedInstrumentation: Record<string, "enabled" | "not-enabled" | "unknown">;
   apps: AttributionApp[];
   actions: AttributionAction[];
   operations: AttributionOperation[];
@@ -27,6 +30,7 @@ export type UsageAttribution = {
 };
 
 export const CLOUD_LOGGING_PAGE_SIZE = 200;
+export const EXPECTED_STAGING_INSTRUMENTATION = { "integration-hub": "enabled", logistics: "enabled", "menu-planning": "enabled", "cpu-production": "enabled", "delivered-in": "enabled", hospitality: "unknown" } as const;
 const KNOWN_APPS = new Set(["integration-hub", "logistics", "menu-planning"]);
 const MARKER = /^\[(FIKA_DATA_TRACE_TOTAL|FIKA_DATA_TRACE)\]\s+(\{.*\})\s*$/;
 
@@ -114,7 +118,8 @@ export function aggregateAttribution(entries: CloudLogEntry[], range: Attributio
   const bucketMs = ({ "1m": 60000, "5m": 300000, "1h": 3600000, "1d": 86400000 }[resolution]); const count = bucketCount(range, resolution); const buckets = Array.from({ length: count }, (_, index) => ({ timestamp: new Date(Date.parse(range.start) + index * bucketMs).toISOString(), cloudMonitoringReads: 0, attributedEstimatedReads: 0, unattributedReads: 0, byApp: {} as Record<string, number> }));
   for (const trace of traces) { const index = Math.min(count - 1, Math.max(0, Math.floor((Date.parse(trace.timestamp) - Date.parse(range.start)) / bucketMs))); const bucket = buckets[index]; bucket.attributedEstimatedReads += trace.estimatedFirestoreBillableReads; bucket.byApp[trace.app] = (bucket.byApp[trace.app] || 0) + trace.estimatedFirestoreBillableReads; }
   const coverage = authoritativeReads === null ? null : authoritativeReads === 0 ? 0 : Math.round(attributed / authoritativeReads * 10000) / 100;
-  return { available: true, traceCount: traces.length, estimatedFirestoreBillableReads: attributed, firestoreReturnedDocuments: traces.reduce((sum, trace) => sum + trace.firestoreReturnedDocuments, 0), authoritativeReads, unattributedReads: authoritativeReads === null ? null : Math.max(0, authoritativeReads - attributed), coveragePercent: coverage, overAttribution, parseFailures, truncated: false, apps: [...apps.values()].sort((a, b) => b.estimatedFirestoreBillableReads - a.estimatedFirestoreBillableReads), actions: [...actions.values()].sort((a, b) => b.estimatedFirestoreBillableReads - a.estimatedFirestoreBillableReads).slice(0, 50), operations: [...operations.values()].sort((a, b) => b.estimatedBillableReads - a.estimatedBillableReads).slice(0, 50), buckets };
+  const appsSeenInWindow = [...apps.keys()].sort();
+  return { available: true, traceCount: traces.length, estimatedFirestoreBillableReads: attributed, firestoreReturnedDocuments: traces.reduce((sum, trace) => sum + trace.firestoreReturnedDocuments, 0), authoritativeReads, unattributedReads: authoritativeReads === null ? null : Math.max(0, authoritativeReads - attributed), coveragePercent: coverage, overAttribution, parseFailures, truncated: false, instrumentedApps: Object.keys(EXPECTED_STAGING_INSTRUMENTATION), appsSeenInWindow, expectedInstrumentation: { ...EXPECTED_STAGING_INSTRUMENTATION }, apps: [...apps.values()].sort((a, b) => b.estimatedFirestoreBillableReads - a.estimatedFirestoreBillableReads), actions: [...actions.values()].sort((a, b) => b.estimatedFirestoreBillableReads - a.estimatedFirestoreBillableReads).slice(0, 50), operations: [...operations.values()].sort((a, b) => b.estimatedBillableReads - a.estimatedBillableReads).slice(0, 50), buckets };
 }
 
 export type CloudLoggingClient = { list: (range: AttributionRange) => Promise<{ entries: CloudLogEntry[]; truncated: boolean }> };

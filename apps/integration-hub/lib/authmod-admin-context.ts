@@ -8,11 +8,12 @@ export function principalFromIdentity(identity: { id: string; displayName: strin
 }
 
 export async function requireAuthmodAdminContext(request: Request) {
-  const repository: AuthModRepository = new FirestoreAuthModRepository();
-  const session = await requireFikaSession(request as unknown as { cookies: { get(name: string): { value?: string } | undefined } }, repository);
-  const identity = await repository.getIdentity(session.authmodIdentityId);
+  const sessionRepository: AuthModRepository = new FirestoreAuthModRepository("session");
+  const session = await requireFikaSession(request as unknown as { cookies: { get(name: string): { value?: string } | undefined } }, sessionRepository);
+  const identity = await sessionRepository.getIdentity(session.authmodIdentityId);
   if (!identity) throw Object.assign(new Error("AUTHMOD identity not found."), { status: 403, code: "AUTHMOD_IDENTITY_NOT_FOUND" });
   const principal = principalFromIdentity(identity, session.primaryCustodianLegendId);
+  const repository: AuthModRepository = new FirestoreAuthModRepository(`admin:${identity.id}`);
   if (identity.identityKind !== "person" || !(await hasAuthmodAdmin(repository, identity.id))) throw Object.assign(new Error("An active person AUTHMOD Administrator account is required."), { status: 403, code: "AUTHMOD_ADMIN_REQUIRED" });
   return { actor: { uid: session.firebaseUid, name: session.displayName, email: session.email, role: "integration-admin" as const, synthetic: false as const }, principal, identity, repository };
 }
