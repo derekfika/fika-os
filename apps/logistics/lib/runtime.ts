@@ -1,4 +1,4 @@
-import { getFikaRuntimeConfig } from "@hub/lib/runtime-config";
+import { getFikaRuntimeConfig } from "@fika/server-shared/runtime-config";
 type RuntimeEnv = Record<string, string | undefined>;
 
 export function logisticsRuntime(env: RuntimeEnv = process.env) {

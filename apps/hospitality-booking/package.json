@@ -8,7 +8,7 @@
   },
   "scripts": {
     "dev": "next dev -p 3300",
-    "build": "node scripts/generate-quote-brand-assets.mjs && next build",
+    "build": "node scripts/generate-quote-brand-assets.mjs && next build --webpack",
     "start": "next start -p 3300",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",

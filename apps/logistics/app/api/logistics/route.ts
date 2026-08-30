@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { errorResponse } from "@hub/lib/api";
-import { assertSameOrigin } from "@hub/lib/csrf";
+import { errorResponse } from "@/lib/api";
+import { assertSameOrigin } from "@/lib/csrf";
 import { db } from "@/lib/firebase";
 import { logisticsCacheScope, requireLogisticsAccess } from "@/lib/auth";
 import { hostedRuntime } from "@/lib/runtime";

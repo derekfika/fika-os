@@ -14,7 +14,10 @@ test("quoteHtml renders a self-contained branded immutable quote snapshot", () =
   const html = quoteHtml(booking);
   assert.match(html, /^<!doctype html>/);
   assert.match(html, /<style>/);
-  assert.match(html, /FIKA/);
+  assert.match(html, /data:image\/png;base64,/);
+  assert.match(html, /font-family:Vim/);
+  assert.match(html, /font-family:Gilroy/);
+  assert.doesNotMatch(html, /FIKA OS|Revision 7|Quote reference|quote-rev-7|booking-1/);
   assert.match(html, /Example Company/);
   assert.match(html, /client_lunch|Client Lunch/);
   assert.match(html, /Summer lunch/);
@@ -24,8 +27,7 @@ test("quoteHtml renders a self-contained branded immutable quote snapshot", () =
   assert.match(html, /£402\.00/);
   assert.match(html, /vegetarian/);
   assert.match(html, /Please label the dietary meals/);
-  assert.match(html, /quote-rev-7/);
-  assert.doesNotMatch(html, /stylesheet|globals\.css|tailwind/i);
+  assert.doesNotMatch(html, /stylesheet|globals\.css|tailwind|font-family:Arial|font-family:sans-serif/i);
 });
 
 test("quoteHtml rejects a missing or stale immutable revision", () => {

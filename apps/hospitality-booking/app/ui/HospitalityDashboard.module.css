@@ -1653,4 +1653,5 @@
     }
   }
 }
-:global(.hospitality-dashboard__brand strong),:global(.hospitality-dashboard__brand span){display:none}:global(.hospitality-dashboard__brand:before){content:"";display:block;width:92px;height:34px;background:url("/fika-logo-white.png") center/contain no-repeat}
+.scope :global(.hospitality-dashboard__brand strong), .scope :global(.hospitality-dashboard__brand span) { display: none; }
+.scope :global(.hospitality-dashboard__brand:before) { content: ""; display: block; width: 92px; height: 34px; background: url("/fika-logo-white.png") center/contain no-repeat; }

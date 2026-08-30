@@ -1,1 +1,1 @@
-export { db } from "@hub/lib/firebase-admin";
+export { db } from "./firebase-admin";
