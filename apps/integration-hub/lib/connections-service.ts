@@ -16,32 +16,33 @@ import {
 } from "./site-staffing-development";
 import { sha256 } from "./profiler";
 import type { CanonicalRecord } from "./types";
+import { adaptCpuProductionWorkstreams, type CpuProductionWorkstream } from "../../shared/production-workstreams";
 
 const canonical = () => db.collection("integrationHubCanonical");
 const revisions = () => db.collection("integrationHubCanonicalRevisions");
 const audit = () => db.collection("integrationHubGovernanceAudit");
 const menuProductionRouting = () => db.collection("integrationHubHospitalityMenuProductionRouting");
 
-export type ProductionDashboardView = "liana" | "craig" | "site_manager";
+export type ProductionDashboardView = CpuProductionWorkstream;
 
 // Transitional provider identities retained by older hospitality hand-offs.
 // These are stable source keys, not display-name matching. They remain only
 // until those historical offerings are reconciled to canonical Menu Items.
 const LEGACY_HOSPITALITY_MENU_ROUTING: Record<string, ProductionDashboardView[]> = {
-  "deli-style-sandwich": ["liana"],
+  "deli-style-sandwich": ["sandwiches"],
   // The canonical MNK migration retained the source key with underscores.
   // Keep both spellings while restored/local workspaces catch up with their
   // explicit Connections routing records.
-  "deli_sandwich_lunch": ["liana"],
-  "exotic-fruit-box": ["craig"],
-  "exotic_fruit_box": ["craig"],
-  "mini-traybake-bites": ["craig"],
-  "mini_pastries": ["craig"],
-  "filled_savoury_croissant": ["craig"],
-  "cookie_box": ["craig"],
-  "large_pastries": ["craig"],
-  "tray_bake_box": ["craig"],
-  "vegan_savoury_croissant": ["craig"],
+  "deli_sandwich_lunch": ["sandwiches"],
+  "exotic-fruit-box": ["hospitality"],
+  "exotic_fruit_box": ["hospitality"],
+  "mini-traybake-bites": ["hospitality"],
+  "mini_pastries": ["hospitality"],
+  "filled_savoury_croissant": ["hospitality"],
+  "cookie_box": ["hospitality"],
+  "large_pastries": ["hospitality"],
+  "tray_bake_box": ["hospitality"],
+  "vegan_savoury_croissant": ["hospitality"],
 };
 
 /** Read-only projection consumed by the CPU dashboards. */
@@ -53,10 +54,9 @@ export async function hospitalityMenuProductionRouting(menuItemIds?: string[]): 
   const documents = Array.isArray(snapshot) ? snapshot.filter(item => item.exists) : snapshot.docs;
   const saved = Object.fromEntries(documents.map(document => {
     const data = document.data() || {};
-    const views = Array.isArray(data.views)
-      ? data.views.filter((view: unknown): view is ProductionDashboardView => view === "liana" || view === "craig" || view === "site_manager")
-      : [];
-    return [String(data.menuItemId || document.id), Array.from(new Set(views))];
+    const adapted = adaptCpuProductionWorkstreams(Array.isArray(data.workstreams) ? data.workstreams : Array.isArray(data.views) ? data.views : []);
+    if (adapted.unknown.length) throw new Error(`Unknown CPU production workstream value in ${document.id}: ${adapted.unknown.join(", ")}.`);
+    return [String(data.menuItemId || document.id), adapted.workstreams];
   }));
   // Keep historical provider lines visible in the intended role view when a
   // restored local workspace has not yet recreated its explicit routing
@@ -86,7 +86,7 @@ export type ConnectionCommand =
   | {
       action: "save-hospitality-menu-production-routing";
       menuItemId: string;
-      views: Array<"liana" | "craig" | "site_manager">;
+      workstreams: CpuProductionWorkstream[];
     }
   | {
       action: "save-employment-connection";
@@ -159,7 +159,12 @@ export async function connectionsOverview() {
       lifecycleState: String(record.record.lifecycleState || "active"),
       publicationStatus: record.publicationStatus,
       scopes: records.filter(candidate => candidate.entityType === "Hospitality Menu Offering" && candidate.record.hospitalityMenuItemId === record.canonicalId).map(offering => ({ oplocId: String(offering.record.oplocId), label: String(records.find(candidate => candidate.canonicalId === offering.record.oplocId)?.record.approvedName || offering.record.oplocId), operationalAreaId: offering.record.operationalAreaId ? String(offering.record.operationalAreaId) : undefined })).filter((scope, index, all) => all.findIndex(candidate => candidate.oplocId === scope.oplocId && candidate.operationalAreaId === scope.operationalAreaId) === index),
-      views: ((routingSnapshot.docs.find(doc => doc.id === stableDocumentId(record.canonicalId))?.data()?.views || []) as string[]).filter((view): view is "liana" | "craig" | "site_manager" => view === "liana" || view === "craig" || view === "site_manager"),
+      workstreams: (() => {
+        const routing = routingSnapshot.docs.find(doc => doc.id === stableDocumentId(record.canonicalId))?.data();
+        const adapted = adaptCpuProductionWorkstreams((routing?.workstreams || routing?.views || []) as unknown[]);
+        if (adapted.unknown.length) throw new Error(`Unknown CPU production workstream value in ${record.canonicalId}: ${adapted.unknown.join(", ")}.`);
+        return adapted.workstreams;
+      })(),
     }))
     .sort((a, b) => a.name.localeCompare(b.name, "en-GB"));
   const employments = records.filter(
@@ -478,10 +483,10 @@ export async function saveConnectionCommand(
     const now = new Date().toISOString();
     const ref = menuProductionRouting().doc(stableDocumentId(command.menuItemId));
     const current = (await ref.get()).data() || {};
-    const views = Array.from(new Set(command.views));
+    const workstreams = Array.from(new Set(command.workstreams));
     await db.runTransaction(async transaction => {
-      transaction.set(ref, { menuItemId: command.menuItemId, views, version: Number(current.version || 0) + 1, createdAt: current.createdAt || now, updatedAt: now, updatedBy: actor.uid }, { merge: true });
-      transaction.create(audit().doc(crypto.randomUUID()), { action: "Hospitality Menu Item production view routing updated", entityReference: command.menuItemId, actorId: actor.uid, actorName: actor.name, timestamp: now, reason: `Assigned to ${views.length ? views.join(" and ") : "no"} production dashboard view${views.length === 1 ? "" : "s"}.` });
+      transaction.set(ref, { menuItemId: command.menuItemId, workstreams, version: Number(current.version || 0) + 1, createdAt: current.createdAt || now, updatedAt: now, updatedBy: actor.uid }, { merge: true });
+      transaction.create(audit().doc(crypto.randomUUID()), { action: "Hospitality Menu Item production workstream routing updated", entityReference: command.menuItemId, actorId: actor.uid, actorName: actor.name, timestamp: now, reason: `Assigned to ${workstreams.length ? workstreams.join(" and ") : "no"} production workstream${workstreams.length === 1 ? "" : "s"}.` });
     });
   } else if (command.action === "save-employment-connection") {
     // Retained for compatibility with the earlier server command. The Site

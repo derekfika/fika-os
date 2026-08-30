@@ -6,6 +6,7 @@ import { stableDocumentId } from "./canonical-editor";
 import { sha256 } from "./profiler";
 import { parseCanonical, type CanonicalEntityType } from "./schemas";
 import type { CanonicalRecord } from "./types";
+import { bumpCacheDatasets, cacheDatasetForEntityType } from "./integration-cache-server";
 
 const canonical = () => db.collection("integrationHubCanonical");
 const revisions = () => db.collection("integrationHubCanonicalRevisions");
@@ -169,6 +170,8 @@ export function activeAllocationIdsForAsset(records: CanonicalRecord[], equipmen
 }
 
 function writeHistory(transaction: FirebaseFirestore.Transaction, actor: Actor, previous: CanonicalRecord | null, next: CanonicalRecord, action: string, now: string) {
+  const dataset = cacheDatasetForEntityType(next.entityType);
+  if (dataset) bumpCacheDatasets(transaction, [dataset], now);
   transaction.set(canonical().doc(stableDocumentId(next.canonicalId)), next);
   transaction.set(revisions().doc(stableDocumentId(`${next.canonicalId}:${next.record.version}`)), { revisionId: `canonical-revision:${stableDocumentId(`${next.canonicalId}:${next.record.version}`)}`, canonicalId: next.canonicalId, entityType: next.entityType, version: next.record.version, previous, current: next, changes: [{ path: action, before: previous?.record || null, after: next.record }], actorId: actor.uid, actorName: actor.name, reason: `${previous ? "Updated" : "Created"} ${next.entityType} through the governed Connections workspace.`, recordedAt: now });
   transaction.set(audit().doc(crypto.randomUUID()), { auditId: crypto.randomUUID(), action: `${next.entityType} ${previous ? "updated" : "created"}`, entityReference: next.canonicalId, actorId: actor.uid, actorName: actor.name, timestamp: now, reason: "Governed manual operational configuration.", oplocId: next.record.oplocId || null });

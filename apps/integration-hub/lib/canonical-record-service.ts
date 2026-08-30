@@ -28,6 +28,7 @@ import {
   sourceMappingReason,
 } from "./governed-reasons";
 import { validateOperationalAssignmentConnection } from "./connection-rules";
+import { bumpCacheDatasets, cacheDatasetForEntityType } from "./integration-cache-server";
 
 const canonical = () => db.collection("integrationHubCanonical");
 const revisions = () => db.collection("integrationHubCanonicalRevisions");
@@ -1321,6 +1322,8 @@ function writeRecordChange(
   current: CanonicalRecord | null,
   result: ReturnType<typeof buildRecordChange>,
 ) {
+  const cacheDataset = cacheDatasetForEntityType(input.entityType);
+  if (cacheDataset) bumpCacheDatasets(transaction, [cacheDataset]);
   const revisionId = `canonical-revision:${stableDocumentId(`${input.canonicalId}:${String(result.record.version)}`)}`;
   transaction.set(
     canonical().doc(stableDocumentId(input.canonicalId)),

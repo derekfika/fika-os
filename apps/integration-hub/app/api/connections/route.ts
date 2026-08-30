@@ -25,7 +25,7 @@ const EmploymentCommand = z
 const HospitalityMenuRoutingCommand = z.object({
   action: z.literal("save-hospitality-menu-production-routing"),
   menuItemId: z.string().min(8).max(160),
-  views: z.array(z.enum(["liana", "craig", "site_manager"])).max(3),
+  workstreams: z.array(z.enum(["sandwiches", "hospitality", "delivered_in"])).max(3),
 }).strict();
 const HospitalityMenuMergeCommand = z.object({
   action: z.literal("merge-hospitality-menu-items"),

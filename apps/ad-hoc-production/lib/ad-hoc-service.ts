@@ -4,13 +4,15 @@ import { createCpuProductionOrder } from "@hub/lib/production-domain";
 import type { Actor } from "@hub/lib/auth";
 import { stableDocumentId } from "@hub/lib/canonical-editor";
 import { menuHtml, quoteFor, reviewBlockers, type AdHocRequest, type AdHocLine } from "./ad-hoc-domain";
+import { recordAdHocReadBudget } from "./ad-hoc-read-budget";
 
 const collection = () => db.collection("fikaAdHocProductionRequestsV1");
 const now = () => new Date().toISOString();
 const actorName = (actor: Actor) => actor.name || actor.uid;
-export async function listRequests(week?: string) { const snap = await collection().orderBy("serviceDate", "asc").limit(200).get(); return snap.docs.map(doc => doc.data() as AdHocRequest).filter(item => !week || item.serviceDate >= week && item.serviceDate <= addDays(week, 6)); }
+export async function listRequests(week = londonBusinessDate()) { const endExclusive = addDays(week, 7); const snap = await collection().where("serviceDate", ">=", week).where("serviceDate", "<", endExclusive).orderBy("serviceDate", "asc").limit(200).get(); recordAdHocReadBudget({ stage: "current_window_discovery", requestDocs: snap.size, serviceDateStart: week, serviceDateEndExclusive: endExclusive, knownId: false }); return snap.docs.map(doc => doc.data() as AdHocRequest); }
 function addDays(date: string, days: number) { const value = new Date(`${date}T00:00:00Z`); value.setUTCDate(value.getUTCDate() + days); return value.toISOString().slice(0,10); }
-export async function getRequest(id: string) { const snap = await collection().doc(stableDocumentId(id)).get(); return snap.exists ? snap.data() as AdHocRequest : undefined; }
+function londonBusinessDate(now = new Date()) { return new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/London", year: "numeric", month: "2-digit", day: "2-digit" }).format(now); }
+export async function getRequest(id: string) { const snap = await collection().doc(stableDocumentId(id)).get(); recordAdHocReadBudget({ stage: "known_request_lookup", requestDocs: snap.exists ? 1 : 0, knownId: true }); return snap.exists ? snap.data() as AdHocRequest : undefined; }
 export async function createRequest(input: Omit<AdHocRequest, "id"|"reference"|"version"|"createdAt"|"createdBy"|"updatedAt"|"updatedBy"|"status"|"quoteRevisions"|"audit">, actor: Actor) {
   const id = `adhoc-request:${crypto.randomUUID()}`; const timestamp = now(); const request: AdHocRequest = { ...input, id, reference: `AH-${timestamp.slice(0,10).replaceAll("-","")}-${id.slice(-6).toUpperCase()}`, version: 1, createdAt: timestamp, createdBy: actor.uid, updatedAt: timestamp, updatedBy: actor.uid, status: "DRAFT", quoteRevisions: [], audit: [{action:"request-created",at:timestamp,by:actorName(actor),version:1}] };
   await collection().doc(stableDocumentId(id)).create(request); return request;

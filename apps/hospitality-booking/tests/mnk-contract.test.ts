@@ -8,8 +8,28 @@ import { localCfcMenuCatalogue } from "../lib/local-cfc-menu";
 import { localMnkMenuCatalogue } from "../lib/local-mnk-menu";
 import { localMunichReMenuCatalogue } from "../lib/local-munich-re-menu";
 import { filterPricedMenu } from "../lib/reference-data-validation";
+import { mapBookingIssues } from "../app/ui/BookingPortal";
 test("MNK journey retains the required contact, service and acknowledgement validation", () => { const value = BookingInput.safeParse({ clientName: "Host", clientEmail: "host@example.com", clientPhone: "1", companyName: "Client", eventDate: "2026-08-01", startTime: "12:00", guestCount: 5, roomOrArea: "Boardroom", eventType: "lunch", acknowledgements: { quoteSubjectToConfirmation: true, noticePolicyAccepted: true, dietaryResponsibilityAccepted: true } }); assert.equal(value.success, true); });
 test("MNK journey rejects a request without service location context", () => { const value = BookingInput.safeParse({ clientName: "Host", clientEmail: "host@example.com", clientPhone: "1", companyName: "Client", eventDate: "2026-08-01", startTime: "12:00", guestCount: 5, eventType: "lunch", acknowledgements: { quoteSubjectToConfirmation: true, noticePolicyAccepted: true, dietaryResponsibilityAccepted: true } }); assert.equal(value.success, false); });
+test("portal validation maps every schema issue to the relevant section", () => {
+  const errors = mapBookingIssues([
+    { path: ["clientEmail"], message: "Invalid email address" },
+    { path: ["eventDate"], message: "Invalid date" },
+    { path: ["acknowledgements", "noticePolicyAccepted"], message: "Invalid input" },
+  ], "mnk");
+  assert.deepEqual(Object.keys(errors), ["requesterEmail", "eventDate", "acknowledgements.noticePolicyAccepted"]);
+  assert.equal(errors.requesterEmail.step, 1);
+  assert.equal(errors["acknowledgements.noticePolicyAccepted"].step, 3);
+  assert.equal(errors.eventDate.message, "Please add a valid service date.");
+});
+test("portal validation keeps valid revalidation results and entered values intact", () => {
+  const portal = fs.readFileSync(new URL("../app/ui/BookingPortal.tsx", import.meta.url), "utf8");
+  assert.match(portal, /setFieldErrors\(\{\}\)/);
+  assert.match(portal, /value=\{contact\.requesterEmail\}/);
+  assert.match(portal, /aria-invalid/);
+  assert.match(portal, /aria-describedby/);
+  assert.match(portal, /role=\"alert\" aria-live=\"polite\"/);
+});
 test("MNK portal has a dedicated route while preserving the legacy root entry point", () => {
   const route = fs.readFileSync(new URL("../app/mnk/page.tsx", import.meta.url), "utf8");
   const root = fs.readFileSync(new URL("../app/page.tsx", import.meta.url), "utf8");

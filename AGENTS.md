@@ -260,9 +260,45 @@ T4 destination UI displays
 
 Separate command latency from downstream visibility latency.
 
+### 6.1 Firestore read-shape discipline
+
+Treat Firestore reads as a bounded operational resource.
+
+Before adding or changing a Firestore-backed read path, ask whether the request can be resolved by:
+
+- deterministic document ID;
+- tightly bounded indexed query;
+- existing projection/read model;
+- manifest/version check;
+- immutable compiled snapshot;
+- IndexedDB or other existing cache;
+- targeted change feed/invalidation.
+
+Do not scan a collection merely because it is convenient to filter in application code.
+
+Known IDs should normally become direct document reads.
+
+Mutation paths should read only the affected aggregate and the minimum related state required for correctness. Do not read unrelated weeks, publications, events, assignments or canonical entities inside a transaction.
+
+Whole-collection reads are acceptable only for deliberate administrative, maintenance, migration or genuinely catalogue-wide workflows. They must not accidentally sit on ordinary interactive paths.
+
+Design both cold-cache and warm-cache behaviour. A path that is cheap for one warm developer session but expensive when 40 users cold-start simultaneously is not considered efficient.
+
+Prefer immutable compiled read models for published/final operational data when repeated consumers would otherwise reconstruct the same result from multiple collections.
+
+Do not use higher polling frequency to compensate for stale projections. Prefer targeted invalidation, manifests, change feeds or post-mutation refresh.
+
+Firestore remains server-side only unless the architecture explicitly approves a different trust boundary.
+
+Do not trade away correctness guarantees such as optimistic concurrency, transaction boundaries, immutable history, outbox/idempotency or AUTHMOD enforcement merely to reduce reads.
+
+For significant Firestore-backed features, report the expected read shape for the primary cold and warm paths. Where practical, add read-budget regression tests to prevent broad-read regressions.
+
 ---
 
 ## 7. Change discipline
+
+Preserve unrelated worktree changes and classify dirty files before staging. Do not deploy, migrate, mutate Firestore or change secrets unless the user explicitly requests it. Use shared packages or app-local HTTP adapters instead of sibling-app production imports. Keep normal Firestore reads bounded by stable IDs, date scopes or explicit limits, and avoid GET endpoints with surprising write side effects. Preserve AUTHMOD fail-closed semantics and configured friendly runtime URLs. Validate changes with relevant tests, typecheck, production build and `git diff --check`.
 
 Before editing:
 

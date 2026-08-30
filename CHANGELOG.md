@@ -2,6 +2,39 @@
 
 This file records user-facing workflow changes delivered in the repository. Detailed architectural authority remains in `fika-platform-specs/`; this is the implementation history and UAT handoff record.
 
+## Unreleased
+
+### Architecture
+
+- Repaired App Hosting build boundaries and replaced production sibling-app imports with explicit shared or HTTP contracts.
+- Added recoverable top-level App Router error boundaries and refreshed staging friendly-domain configuration.
+
+### Performance / Firestore
+
+- Hardened Menu Planning, AUTHMOD and operational read paths with bounded queries, deterministic IDs and read-budget coverage.
+- Added cache-manifest support for stable Integration Hub reference datasets.
+
+### Authentication / Access
+
+- Preserved server-side AUTHMOD admission, fail-closed errors, shared staging session cookies and request correlation across app boundaries.
+- Added accessible confirmation flows for destructive Integration Hub actions.
+
+### Logistics
+
+- Restored dated staging UAT flows, side-effect-free projection reads, and fixed Van 1/Van 2 mobile routes.
+
+### CPU Production
+
+- Kept CPU routing and production workstream contracts behind the Integration Hub boundary.
+
+### Hospitality
+
+- Added inline booking validation and retained the real branded quote/build pipeline.
+
+### Reliability / UX
+
+- Improved error recovery, validation feedback and bounded refresh behaviour across the operational apps.
+
 ## 2026-08-22 — Targeted UAT repair pass
 
 - Manager amendments now submit a strict client/service/order DTO, including edited quantities and items, while preserving rice-paper-roll minimum validation and quote staleness.

@@ -45,6 +45,22 @@ test("session cookies are secure on hosted runtimes and usable on localhost", ()
   }
 });
 
+test("staging session cookie is shared across FIKA custom subdomains", () => {
+  const prior = { mode: process.env.FIKA_RUNTIME_MODE, project: process.env.FIREBASE_PROJECT_ID, domain: process.env.FIKA_SESSION_COOKIE_DOMAIN, firestore: process.env.FIRESTORE_EMULATOR_HOST, auth: process.env.FIREBASE_AUTH_EMULATOR_HOST };
+  try {
+    process.env.FIKA_RUNTIME_MODE = "staging";
+    process.env.FIREBASE_PROJECT_ID = "fika-os-dev";
+    delete process.env.FIRESTORE_EMULATOR_HOST;
+    delete process.env.FIREBASE_AUTH_EMULATOR_HOST;
+    process.env.FIKA_SESSION_COOKIE_DOMAIN = ".fikacatering.com";
+    assert.deepEqual(cookieOptions(), { httpOnly: true, path: "/", sameSite: "lax", secure: true, maxAge: sessionCookieConfig().maxAge, domain: ".fikacatering.com" });
+  } finally {
+    for (const [key, value] of Object.entries({ FIKA_RUNTIME_MODE: prior.mode, FIREBASE_PROJECT_ID: prior.project, FIKA_SESSION_COOKIE_DOMAIN: prior.domain, FIRESTORE_EMULATOR_HOST: prior.firestore, FIREBASE_AUTH_EMULATOR_HOST: prior.auth })) {
+      if (value === undefined) delete process.env[key]; else process.env[key] = value;
+    }
+  }
+});
+
 test("same-origin protection accepts App Hosting forwarded origin and rejects mismatches", () => {
   const priorMode = process.env.FIKA_RUNTIME_MODE;
   try {

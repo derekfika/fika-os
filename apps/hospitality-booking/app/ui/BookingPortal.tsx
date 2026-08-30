@@ -77,6 +77,51 @@ const dietaryNames: Record<string, string> = {
   otherCount: "Other",
 };
 const draftKey = (siteKey: PortalSiteKey) => `fika-hospitality-booking-draft:${siteKey}`;
+export type BookingFieldError = { message: string; field: string; step: number };
+export type BookingFieldErrors = Record<string, BookingFieldError>;
+
+type BookingIssue = { path: PropertyKey[]; message: string };
+const issueField = (path: PropertyKey[], siteKey: PortalSiteKey) => {
+  const value = path.map(String).join(".");
+  if (value === "clientName") return siteKey === "angel-court" ? "clientName" : "requesterName";
+  if (value === "clientEmail" || value === "requesterEmail") return "requesterEmail";
+  if (value === "clientPhone" || value === "requesterPhone") return "requesterPhone";
+  if (value === "companyName" || value === "requesterCompany") return siteKey === "angel-court" ? "clientCompany" : "requesterCompany";
+  if (value.startsWith("acknowledgements.")) return value;
+  if (value === "floorLevel" || value === "roomOrArea" || value === "deliveryPoint") return "location";
+  return value;
+};
+const friendlyIssueMessage = (field: string, message: string) => {
+  if (message === "Invalid input") return `Please review this ${field === "eventDate" ? "date" : "field"}.`;
+  if (field === "eventDate") return "Please add a valid service date.";
+  if (field === "startTime") return "Please add a valid service time.";
+  if (field === "roomOrArea" || field === "floorLevel" || field === "deliveryPoint") return "Please add a floor, room or delivery point.";
+  if (field === "guestCount") return "Please enter a valid number of guests.";
+  return message;
+};
+
+export function mapBookingIssues(issues: readonly BookingIssue[], siteKey: PortalSiteKey): BookingFieldErrors {
+  const result: BookingFieldErrors = {};
+  for (const issue of issues) {
+    const field = issueField(issue.path, siteKey);
+    if (!result[field]) result[field] = { field, message: friendlyIssueMessage(field, issue.message), step: field.startsWith("acknowledgements.") ? 3 : field === "eventType" || field.startsWith("order.") ? 2 : 1 };
+  }
+  return result;
+}
+
+function inlineErrorId(field: string) { return `booking-error-${field.replace(/[^a-z0-9]+/gi, "-").toLowerCase()}`; }
+function fieldA11y(field: string, errors: BookingFieldErrors) {
+  const error = errors[field];
+  return error ? { "aria-invalid": true, "aria-describedby": inlineErrorId(field) } : { "aria-invalid": undefined, "aria-describedby": undefined };
+}
+function ValidationMessage({ field, errors }: { field: string; errors: BookingFieldErrors }) {
+  const error = errors[field];
+  return error ? <p className="inline-validation-error" id={inlineErrorId(field)}>{error.message}</p> : null;
+}
+function validationSummary(errors: BookingFieldErrors) {
+  const count = Object.keys(errors).length;
+  return count ? `Please review ${count === 1 ? "the highlighted field" : "the highlighted fields"} before continuing.` : "";
+}
 function minimumQuantityFor(item: PortalMenuItem, gallagher = false) {
   return capGallagherMinimum(Math.max(
     1,
@@ -144,6 +189,7 @@ export default function BookingPortal({
     dietaryResponsibilityAccepted: false,
   });
   const [error, setError] = useState("");
+  const [fieldErrors, setFieldErrors] = useState<BookingFieldErrors>({});
   const [confirmation, setConfirmation] = useState("");
   const [sending, setSending] = useState(false);
   const sendingRef = useRef(false);
@@ -319,29 +365,58 @@ export default function BookingPortal({
     details.guestCount >= (gallagher ? GALLAGHER_MINIMUM_GUESTS : 1) &&
     (!gallagher || contact.invoiceReference.trim()) &&
     (details.floorLevel || details.roomOrArea || details.deliveryPoint);
+  const showValidation = (errors: BookingFieldErrors, message = validationSummary(errors), targetStep?: number) => {
+    setFieldErrors(errors);
+    setError(message);
+    const first = Object.values(errors).sort((a, b) => a.step - b.step)[0];
+    if (targetStep !== undefined) changeStep(targetStep);
+    else if (first && first.step !== step) changeStep(first.step);
+    if (first) window.setTimeout(() => {
+      const container = document.querySelector<HTMLElement>(`[data-booking-field="${CSS.escape(first.field)}"]`);
+      const control = container?.matches("button,input,select,textarea") ? container : container?.querySelector<HTMLElement>("button,input,select,textarea");
+      (container || control)?.scrollIntoView({ behavior: "smooth", block: "center" });
+      if (typeof control?.focus === "function") control.focus({ preventScroll: true });
+    }, 0);
+  };
+  const clearValidation = (field: string) => setFieldErrors((current) => {
+    if (!current[field]) return current;
+    const next = { ...current };
+    delete next[field];
+    return next;
+  });
   const next = () => {
     setError("");
-    if (step === 0 && !occasion)
-      return setError("Choose what you are arranging to continue.");
-    if (step === 1 && !detailsValid())
-      return setError(
-        "Please add your contact, event date, service time and location.",
-      );
-    if (step === 2 && !selected.length && occasion !== "bespoke")
-      return setError("Choose at least one menu item to continue.");
+    setFieldErrors({});
+    if (step === 0 && !occasion) return showValidation({ occasion: { field: "occasion", message: "Choose an occasion.", step: 0 } }, "Please choose an occasion before continuing.", 0);
+    if (step === 1) {
+      const errors: BookingFieldErrors = {};
+      if (!contact.requesterName) errors.requesterName = { field: "requesterName", message: "Enter your name.", step: 1 };
+      if (!contact.requesterEmail) errors.requesterEmail = { field: "requesterEmail", message: "Enter your work email.", step: 1 };
+      if (!contact.requesterPhone) errors.requesterPhone = { field: "requesterPhone", message: "Enter a contact number.", step: 1 };
+      if (!contact.requesterCompany) errors.requesterCompany = { field: "requesterCompany", message: "Enter your company.", step: 1 };
+      if (site.key === "angel-court" && !contact.clientName) errors.clientName = { field: "clientName", message: "Enter the client name.", step: 1 };
+      if (site.key === "angel-court" && !contact.clientCompany) errors.clientCompany = { field: "clientCompany", message: "Enter the client company.", step: 1 };
+      if (!details.eventDate) errors.eventDate = { field: "eventDate", message: "Choose a service date.", step: 1 };
+      if (!details.startTime) errors.startTime = { field: "startTime", message: "Choose a service time.", step: 1 };
+      if (details.guestCount < (gallagher ? GALLAGHER_MINIMUM_GUESTS : 1)) errors.guestCount = { field: "guestCount", message: `Enter at least ${gallagher ? GALLAGHER_MINIMUM_GUESTS : 1} guest${gallagher ? "s" : ""}.`, step: 1 };
+      if (gallagher && !contact.invoiceReference.trim()) errors.invoiceReference = { field: "invoiceReference", message: "Add an Invoice / PO reference for Gallagher bookings.", step: 1 };
+      if (!details.floorLevel && !details.roomOrArea && !details.deliveryPoint) errors.location = { field: "location", message: "Add a floor, room or delivery point.", step: 1 };
+      if (Object.keys(errors).length) return showValidation(errors, "Please review the highlighted fields before continuing.", 1);
+    }
+    if (step === 2 && !selected.length && occasion !== "bespoke") return showValidation({ menu: { field: "menu", message: "Choose at least one menu item.", step: 2 } }, "Please choose at least one menu item before continuing.", 2);
     if (step === 2) {
       const belowMinimum = selected.find(
         (value) => value.quantity < minimumQuantityFor(value.item, gallagher),
       );
       if (belowMinimum) {
         const minimum = minimumQuantityFor(belowMinimum.item, gallagher);
-        return setError(
-          `${belowMinimum.item.name} requires at least ${minimum} ${minimum === 1 ? "box/item" : "boxes"}.`,
-        );
+        return showValidation({ [`quantity:${belowMinimum.item.id}`]: { field: `quantity:${belowMinimum.item.id}`, message: `${belowMinimum.item.name} requires at least ${minimum} ${minimum === 1 ? "box/item" : "boxes"}.`, step: 2 } }, `${belowMinimum.item.name} needs a larger quantity.`, 2);
       }
     }
-    if (step === 3 && !Object.values(acks).every(Boolean))
-      return setError("Please confirm the three acknowledgements before reviewing your booking.");
+    if (step === 3 && !Object.values(acks).every(Boolean)) {
+      const errors = Object.entries(acks).reduce<BookingFieldErrors>((result, [key, value]) => { if (!value) result[`acknowledgements.${key}`] = { field: `acknowledgements.${key}`, message: "Please confirm this acknowledgement.", step: 3 }; return result; }, {});
+      return showValidation(errors, "Please confirm the highlighted acknowledgements before reviewing your booking.", 3);
+    }
     changeStep((value) => Math.min(4, value + 1));
   };
   const submit = async (event?: React.FormEvent) => {
@@ -350,15 +425,14 @@ export default function BookingPortal({
     if (step === 4 && !explicitSendRef.current && !submitter) return;
     explicitSendRef.current = false;
     if (sendingRef.current) return;
+    setFieldErrors({});
     const belowMinimum = selected.find(
       (value) => value.quantity < minimumQuantityFor(value.item, gallagher),
     );
     if (belowMinimum) {
       const minimum = minimumQuantityFor(belowMinimum.item, gallagher);
       changeStep(2);
-      return setError(
-        `${belowMinimum.item.name} requires at least ${minimum} ${minimum === 1 ? "box/item" : "boxes"}.`,
-      );
+      return showValidation({ [`quantity:${belowMinimum.item.id}`]: { field: `quantity:${belowMinimum.item.id}`, message: `${belowMinimum.item.name} requires at least ${minimum} ${minimum === 1 ? "box/item" : "boxes"}.`, step: 2 } }, `${belowMinimum.item.name} needs a larger quantity.`, 2);
     }
     const dietaryTotal = [
       dietaries.vegetarian,
@@ -370,20 +444,21 @@ export default function BookingPortal({
       dietaries.otherCount,
     ].reduce((sum, value) => sum + value, 0);
     if (dietaryTotal > details.guestCount)
-      return setError("Dietary counts cannot exceed the number of guests.");
+      return showValidation({ dietaryTotal: { field: "dietaryTotal", message: "Dietary counts cannot exceed the number of guests.", step: 3 } }, "Please review the highlighted dietary information.", 3);
     if (dietaries.allergyDetails && !dietaries.severeAllergyAcknowledged)
-      return setError("Please acknowledge the severe allergy notice.");
+      return showValidation({ severeAllergyAcknowledged: { field: "severeAllergyAcknowledged", message: "Please acknowledge the severe allergy notice.", step: 3 } }, "Please review the highlighted dietary information.", 3);
     if (gallagher && details.guestCount < GALLAGHER_MINIMUM_GUESTS) {
       changeStep(1);
-      return setError(`Gallagher bookings require at least ${GALLAGHER_MINIMUM_GUESTS} guests.`);
+      return showValidation({ guestCount: { field: "guestCount", message: `Gallagher bookings require at least ${GALLAGHER_MINIMUM_GUESTS} guests.`, step: 1 } }, "Please review the highlighted booking detail.", 1);
     }
     if (gallagher && !contact.invoiceReference.trim()) {
       changeStep(1);
-      return setError("Gallagher bookings require an Invoice / PO reference.");
+      return showValidation({ invoiceReference: { field: "invoiceReference", message: "Gallagher bookings require an Invoice / PO reference.", step: 1 } }, "Please review the highlighted booking detail.", 1);
     }
     if (!Object.values(acks).every(Boolean)) {
       changeStep(3);
-      return setError("Please confirm the three acknowledgements before sending.");
+      const errors = Object.entries(acks).reduce<BookingFieldErrors>((result, [key, value]) => { if (!value) result[`acknowledgements.${key}`] = { field: `acknowledgements.${key}`, message: "Please confirm this acknowledgement.", step: 3 }; return result; }, {});
+      return showValidation(errors, "Please confirm the highlighted acknowledgements before sending.", 3);
     }
     const clientName = String(site.key === "angel-court" ? contact.clientName : contact.requesterName || contact.clientName || "").trim();
     const clientCompany = String(site.key === "angel-court" ? contact.clientCompany : contact.requesterCompany || contact.clientCompany || "").trim();
@@ -414,17 +489,8 @@ export default function BookingPortal({
       },
     });
     if (!parsed.success) {
-      const issue = parsed.error.issues[0];
-      const path = issue?.path.join(".") || "";
-      const message = issue?.message || "";
-      if (path.startsWith("acknowledgements") || message.toLowerCase().includes("expected true")) {
-        changeStep(3);
-        return setError("Please confirm each acknowledgement before sending.");
-      }
-      if (path === "eventDate") return setError("Please add a valid service date.");
-      if (path === "startTime") return setError("Please add a valid service time.");
-      if (path === "roomOrArea") return setError("Please add a floor, room or delivery point.");
-      return setError(message === "Invalid input" ? `Please review ${path || "the booking details"} before sending.` : message || `Please review ${path || "the booking details"} before sending.`);
+      const mapped = mapBookingIssues(parsed.error.issues, site.key);
+      return showValidation(mapped, validationSummary(mapped));
     }
     const payload = {
       bookingId: portalBookingId(site.key),
@@ -492,6 +558,7 @@ export default function BookingPortal({
       });
       const json = await response.json();
       if (!response.ok) {
+        setFieldErrors({});
         setError(json.error?.message || "We could not send your request.");
         return;
       }
@@ -547,6 +614,7 @@ export default function BookingPortal({
       dietaryResponsibilityAccepted: false,
     });
     setError("");
+    setFieldErrors({});
     setConfirmation("");
     setRestoredDraft(false);
     setResetOpen(false);
@@ -624,12 +692,14 @@ export default function BookingPortal({
             event.preventDefault();
           }
         }}>
-          {error && <p className="error">{error}</p>}
+          {error && <p className="error" role="alert" aria-live="polite">{error}</p>}
           {step === 0 && (
             <Choose
               occasion={occasion}
               setOccasion={setOccasion}
               notice={notice}
+              errors={fieldErrors}
+              clearError={clearValidation}
             />
           )}
           {step === 1 && (
@@ -640,6 +710,7 @@ export default function BookingPortal({
               details={details}
               setDetails={setDetails}
               gallagher={gallagher}
+              errors={fieldErrors}
             />
           )}
           {step === 2 && (
@@ -653,6 +724,7 @@ export default function BookingPortal({
               setChoice={setChoice}
               details={details}
               gallagher={gallagher}
+              errors={fieldErrors}
             />
           )}
           {step === 3 && (
@@ -663,6 +735,8 @@ export default function BookingPortal({
               setDietaries={setDietaries}
               acks={acks}
               setAcks={setAcks}
+              errors={fieldErrors}
+              clearError={clearValidation}
             />
           )}
           {step === 4 && <FinalReview site={site} contact={contact} details={details} selected={selected} total={total} dietaries={dietaries} acks={acks} />}
@@ -763,10 +837,14 @@ function Choose({
   occasion,
   setOccasion,
   notice,
+  errors,
+  clearError,
 }: {
   occasion: string;
   setOccasion: (id: string) => void;
   notice: number;
+  errors: BookingFieldErrors;
+  clearError: (field: string) => void;
 }) {
   return (
     <section>
@@ -775,19 +853,20 @@ function Choose({
       <p className="intro">
         Choose an occasion and we’ll show the relevant menu and notice guidance.
       </p>
-      <div className="occasion-grid">
+      <div className="occasion-grid" data-booking-field="occasion" aria-describedby={errors.occasion ? inlineErrorId("occasion") : undefined} aria-invalid={errors.occasion ? true : undefined}>
         {occasions.map((item) => (
           <button
             type="button"
             key={item.id}
             className={occasion === item.id ? "selected" : ""}
-            onClick={() => setOccasion(item.id)}
+            onClick={() => { setOccasion(item.id); clearError("occasion"); }}
           >
             <b>{item.label}</b>
             <span>{item.copy}</span>
           </button>
         ))}
       </div>
+      <ValidationMessage field="occasion" errors={errors} />
       {occasion && (
         <p className="guidance">
           Please allow at least {notice} working days for this type of order.
@@ -804,6 +883,7 @@ function Details({
   details,
   setDetails,
   gallagher,
+  errors,
 }: {
   siteKey: PortalSiteKey;
   contact: Record<string, string>;
@@ -811,6 +891,7 @@ function Details({
   details: Record<string, string | number>;
   setDetails: (value: any) => void;
   gallagher: boolean;
+  errors: BookingFieldErrors;
 }) {
   return (
     <section>
@@ -818,69 +899,87 @@ function Details({
       <h2>Who should we speak to?</h2>
       <div className="fields">
         <p className="field-group-label wide">Your contact details</p>
-        <label>
-          Your name
-          <input
-            value={contact.requesterName}
+          <label>
+            Your name
+            <input
+              {...fieldA11y("requesterName", errors)}
+              data-booking-field="requesterName"
+              value={contact.requesterName}
             onChange={(e) =>
               setContact({ ...contact, requesterName: e.target.value })
             }
           />
         </label>
-        <label>
-          Work email
-          <input
-            type="email"
+        <ValidationMessage field="requesterName" errors={errors} />
+          <label>
+            Work email
+            <input
+              {...fieldA11y("requesterEmail", errors)}
+              data-booking-field="requesterEmail"
+              type="email"
             value={contact.requesterEmail}
             onChange={(e) =>
               setContact({ ...contact, requesterEmail: e.target.value })
             }
           />
         </label>
-        <label>
-          Contact number
-          <input
-            value={contact.requesterPhone}
+        <ValidationMessage field="requesterEmail" errors={errors} />
+          <label>
+            Contact number
+            <input
+              {...fieldA11y("requesterPhone", errors)}
+              data-booking-field="requesterPhone"
+              value={contact.requesterPhone}
             onChange={(e) =>
               setContact({ ...contact, requesterPhone: e.target.value })
             }
           />
         </label>
-        <label>
-          Your company
-          <input
-            value={contact.requesterCompany}
+        <ValidationMessage field="requesterPhone" errors={errors} />
+          <label>
+            Your company
+            <input
+              {...fieldA11y("requesterCompany", errors)}
+              data-booking-field="requesterCompany"
+              value={contact.requesterCompany}
             onChange={(e) =>
               setContact({ ...contact, requesterCompany: e.target.value })
             }
           />
         </label>
+        <ValidationMessage field="requesterCompany" errors={errors} />
         {siteKey === "angel-court" && <>
           <p className="field-group-label wide">Who is the booking for?</p>
           <label>
             Client name
-            <input required value={contact.clientName} onChange={(e) => setContact({ ...contact, clientName: e.target.value })} />
+            <input required {...fieldA11y("clientName", errors)} data-booking-field="clientName" value={contact.clientName} onChange={(e) => setContact({ ...contact, clientName: e.target.value })} />
           </label>
+          <ValidationMessage field="clientName" errors={errors} />
           <label>
             Client company
-            <input required value={contact.clientCompany} onChange={(e) => setContact({ ...contact, clientCompany: e.target.value })} />
+            <input required {...fieldA11y("clientCompany", errors)} data-booking-field="clientCompany" value={contact.clientCompany} onChange={(e) => setContact({ ...contact, clientCompany: e.target.value })} />
           </label>
+          <ValidationMessage field="clientCompany" errors={errors} />
         </>}
-        <label className="wide">
+        <label className="wide" data-booking-field="invoiceReference">
           Invoice / PO reference <small>{gallagher ? "(required for Gallagher)" : "(optional)"}</small>
           <input
+            {...fieldA11y("invoiceReference", errors)}
             required={gallagher}
             value={contact.invoiceReference || ""}
             onChange={(e) => setContact({ ...contact, invoiceReference: e.target.value })}
             placeholder="Add a client invoice or purchase order reference"
           />
         </label>
+        <ValidationMessage field="invoiceReference" errors={errors} />
       </div>
       <h3 className="section-subheading">When and where?</h3>
       <div className="fields">
         <label>
           Date
           <input
+            {...fieldA11y("eventDate", errors)}
+            data-booking-field="eventDate"
             type="date"
             value={details.eventDate}
             onChange={(e) =>
@@ -891,6 +990,8 @@ function Details({
         <label>
           Guests
           <input
+            {...fieldA11y("guestCount", errors)}
+            data-booking-field="guestCount"
             min="1"
             type="number"
             value={details.guestCount || ""}
@@ -902,6 +1003,8 @@ function Details({
         <label>
           Service time
           <input
+            {...fieldA11y("startTime", errors)}
+            data-booking-field="startTime"
             type="time"
             value={details.startTime}
             onChange={(e) =>
@@ -912,6 +1015,8 @@ function Details({
         <label>
           End time <small>(optional)</small>
           <input
+            {...fieldA11y("endTime", errors)}
+            data-booking-field="endTime"
             type="time"
             value={details.endTime}
             onChange={(e) =>
@@ -922,12 +1027,19 @@ function Details({
         <label className="wide">
           Floor, room or delivery point
           <input
+            {...fieldA11y("location", errors)}
+            data-booking-field="location"
             value={details.roomOrArea}
             onChange={(e) =>
               setDetails({ ...details, roomOrArea: e.target.value })
             }
           />
         </label>
+        <ValidationMessage field="eventDate" errors={errors} />
+        <ValidationMessage field="guestCount" errors={errors} />
+        <ValidationMessage field="startTime" errors={errors} />
+        <ValidationMessage field="endTime" errors={errors} />
+        <ValidationMessage field="location" errors={errors} />
       </div>
     </section>
   );
@@ -941,6 +1053,7 @@ function Plan({
   setQuantity,
   setChoice,
   gallagher,
+  errors,
 }: any) {
   return (
     <section>
@@ -958,7 +1071,7 @@ function Plan({
           </button>
         ))}
       </div>
-      <div className="menu-grid">
+      <div className="menu-grid" data-booking-field="menu" aria-describedby={errors.menu ? inlineErrorId("menu") : undefined} aria-invalid={errors.menu ? true : undefined}>
         {visible.map((item: PortalMenuItem) => {
           const line = lines.find((value: Line) => value.itemId === item.id);
           return (
@@ -1038,6 +1151,8 @@ function Plan({
                   −
                 </button>
                 <input
+                  {...fieldA11y(`quantity:${item.id}`, errors)}
+                  data-booking-field={`quantity:${item.id}`}
                   aria-label={`${item.name} quantity`}
                     min={minimumQuantityFor(item, gallagher)}
                   type="number"
@@ -1063,6 +1178,8 @@ function Plan({
           );
         })}
       </div>
+      <ValidationMessage field="menu" errors={errors} />
+      {Object.keys(errors).filter((field) => field.startsWith("quantity:")).map((field) => <ValidationMessage key={field} field={field} errors={errors} />)}
     </section>
   );
 }
@@ -1073,6 +1190,7 @@ function Submit({
   setDietaries,
   acks,
   setAcks,
+  errors,
 }: any) {
   return (
     <section className="submit">
@@ -1083,7 +1201,7 @@ function Submit({
         Tell us how many guests have each requirement, plus any serious
         allergies.
       </p>
-      <div className="dietary-grid">
+      <div className="dietary-grid" data-booking-field="dietaryTotal" aria-describedby={errors.dietaryTotal ? inlineErrorId("dietaryTotal") : undefined} aria-invalid={errors.dietaryTotal ? true : undefined}>
         {Object.entries(dietaryNames).map(([key, label]) => (
           <label key={key}>
             {label}
@@ -1098,6 +1216,7 @@ function Submit({
           </label>
         ))}
       </div>
+      <ValidationMessage field="dietaryTotal" errors={errors} />
       <label>
         Allergy details
         <textarea
@@ -1119,6 +1238,8 @@ function Submit({
       {dietaries.allergyDetails && (
         <label className="check">
           <input
+            {...fieldA11y("severeAllergyAcknowledged", errors)}
+            data-booking-field="severeAllergyAcknowledged"
             type="checkbox"
             checked={dietaries.severeAllergyAcknowledged}
             onChange={(e) =>
@@ -1132,6 +1253,7 @@ function Submit({
           review them before confirmation.
         </label>
       )}
+      <ValidationMessage field="severeAllergyAcknowledged" errors={errors} />
       <label>
         Anything else?
         <textarea
@@ -1144,6 +1266,8 @@ function Submit({
       {Object.keys(acks).map((key) => (
         <label className="check" key={key}>
           <input
+            {...fieldA11y(`acknowledgements.${key}`, errors)}
+            data-booking-field={`acknowledgements.${key}`}
             required
             type="checkbox"
             checked={acks[key]}
@@ -1156,6 +1280,7 @@ function Submit({
               ? "notice rules apply"
               : "dietary requirements must be complete"}
           .
+          <ValidationMessage field={`acknowledgements.${key}`} errors={errors} />
         </label>
       ))}
     </section>

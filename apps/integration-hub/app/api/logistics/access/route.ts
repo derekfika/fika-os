@@ -8,7 +8,7 @@ import { logAuthDiagnostic } from "../../../../../../shared/auth-diagnostics";
 export async function GET(request: NextRequest) {
   try {
     const session = await requireFikaSession(request);
-    const principal = { type: "interactive" as const, id: session.authmodIdentityId, displayName: session.displayName, email: session.email, identityKind: session.identityKind };
+    const principal = { type: "interactive" as const, id: session.authmodIdentityId, authmodIdentityId: session.authmodIdentityId, displayName: session.displayName, email: session.email, identityKind: session.identityKind, ...(session.representedOplocId ? { representedOplocId: session.representedOplocId } : {}) };
     const access = await resolveUserAccess(new FirestoreAuthModRepository(), { principal, appId: "logistics" });
     if (!access.allowed) throw Object.assign(new Error("Your account does not currently have Logistics access."), { status: access.reasonCode === "store-unavailable" ? 503 : 403 });
     logAuthDiagnostic(request, { authStage: "hub-admission-app-access", status: 200, code: "HUB_LOGISTICS_ACCESS_ALLOWED" });

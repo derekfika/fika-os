@@ -1,4 +1,5 @@
 "use client";
+import ConfirmationModal from "./ConfirmationModal";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle,
@@ -27,6 +28,9 @@ import EventStaffingPanel from "./EventStaffingPanel";
 import EquipmentTypesPanel from "./EquipmentTypesPanel";
 import ServicesWorkspace from "./ServicesWorkspace";
 import "./MenuRoutingPanel.css";
+import { CPU_PRODUCTION_WORKSTREAM_LABELS, type CpuProductionWorkstream } from "../../../shared/production-workstreams";
+import { readCachedManifests, readCachedOverview, revalidateCachedManifests, writeCachedOverview } from "./integration-cache-client";
+import type { CacheDataset } from "@/lib/integration-cache-shared";
 
 type Option = { canonicalId: string; label: string };
 type Oploc = Option & {
@@ -135,7 +139,7 @@ type MenuProductionItem = {
   lifecycleState: string;
   publicationStatus: string;
   scopes: Array<{ oplocId: string; label: string; operationalAreaId?: string }>;
-  views: Array<"liana" | "craig" | "site_manager">;
+  workstreams: CpuProductionWorkstream[];
   sourceIds?: string[];
 };
 
@@ -168,7 +172,7 @@ function groupMenuItems(items: MenuProductionItem[]) {
                 candidate.operationalAreaId === scope.operationalAreaId,
             ) === index,
         ),
-        views: current.views,
+        workstreams: current.workstreams,
       });
   }
   return [...grouped.values()];
@@ -423,6 +427,26 @@ export default function Connections({
   const load = useCallback(async () => {
     setLoading(true);
     try {
+      const sessionResponse = await fetch("/api/auth/session", { cache: "no-store" });
+      if (!sessionResponse.ok) throw new Error("Your FIKA OS session is no longer valid.");
+      const session = await sessionResponse.json() as { principal?: { identityId?: string } };
+      const identityScope = String(session.principal?.identityId || "anonymous");
+      const datasets: CacheDataset[] = ["oplocs", "legends", "serviceDefinitions", "equipmentAssets", "referenceEntities"];
+      const cached = await readCachedOverview<Overview>(identityScope).catch(() => undefined);
+      const previousManifests = await readCachedManifests().catch(() => []);
+      if (cached && previousManifests.length === datasets.length) {
+        setOverview(cached);
+        setError("");
+        setLoading(false);
+        void revalidateCachedManifests(datasets).then(async manifests => {
+          const unchanged = manifests.every(manifest => previousManifests.find(previous => previous.dataset === manifest.dataset)?.version === manifest.version);
+          if (!unchanged) {
+            const refreshed = await fetch("/api/connections", { cache: "no-store" });
+            if (refreshed.ok) { const next = await refreshed.json() as Overview; setOverview(next); await writeCachedOverview(identityScope, next); }
+          }
+        }).catch(() => undefined);
+        return;
+      }
       let response = await fetch("/api/connections", { cache: "no-store" });
       if (response.status === 401 && (await refreshSession()))
         response = await fetch("/api/connections", { cache: "no-store" });
@@ -432,6 +456,8 @@ export default function Connections({
           body.error?.message || "Connections could not be loaded.",
         );
       setOverview(body);
+      await writeCachedOverview(identityScope, body).catch(() => undefined);
+      await revalidateCachedManifests(datasets).catch(() => undefined);
       setError("");
     } catch (cause) {
       setError((cause as Error).message);
@@ -891,18 +917,19 @@ function HospitalityMenuProductionRoutingPanel({
 }) {
   const [query, setQuery] = useState("");
   const [draft, setDraft] = useState<
-    Record<string, ("liana" | "craig" | "site_manager")[]>
+    Record<string, CpuProductionWorkstream[]>
   >(() =>
-    Object.fromEntries(items.map((item) => [item.canonicalId, item.views])),
+    Object.fromEntries(items.map((item) => [item.canonicalId, item.workstreams])),
   );
   const [saving, setSaving] = useState("");
   const [message, setMessage] = useState("");
   const [includeArchived, setIncludeArchived] = useState(false);
   const [editor, setEditor] = useState<MenuProductionItem | "new" | null>(null);
+  const [confirmation, setConfirmation] = useState<MenuProductionItem | null>(null);
   const [form, setForm] = useState({ name: "", category: "", description: "", lifecycleState: "active" as "active" | "archived" });
   useEffect(() => {
     setDraft(
-      Object.fromEntries(items.map((item) => [item.canonicalId, item.views])),
+      Object.fromEntries(items.map((item) => [item.canonicalId, item.workstreams])),
     );
   }, [items]);
   const visible = groupMenuItems(items.filter((item) => includeArchived || item.lifecycleState !== "archived")).filter((item) =>
@@ -944,19 +971,18 @@ function HospitalityMenuProductionRoutingPanel({
   }
   async function setLifecycle(item: MenuProductionItem) {
     const action = item.lifecycleState === "archived" ? "restore" : "archive";
-    if (!window.confirm(`${action === "archive" ? "Archive" : "Restore"} ${item.name}? ${action === "archive" ? "It will disappear from new portal selections, while history and source evidence are retained." : "It will become available for new portal selections again."}`)) return;
     setSaving(item.canonicalId); setMessage("");
     try {
       await postCatalogue({ canonicalId: item.canonicalId, expectedVersion: item.version || 1, name: item.name, category: item.category, description: item.description || undefined, lifecycleState: item.lifecycleState === "archived" ? "active" : "archived", dietaryInformation: item.dietaryInformation || [], allergenInformation: item.allergenInformation || [], providerMappings: item.providerMappings || [] });
-      await refreshSession(); await reloadOverview(); setMessage(`${item.name} ${item.lifecycleState === "archived" ? "restored" : "archived"}.`);
+      await refreshSession(); await reloadOverview(); setConfirmation(null); setMessage(`${item.name} ${item.lifecycleState === "archived" ? "restored" : "archived"}.`);
     } catch (error) { setMessage((error as Error).message); } finally { setSaving(""); }
   }
-  const toggle = (id: string, view: "liana" | "craig" | "site_manager") =>
+  const toggle = (id: string, workstream: CpuProductionWorkstream) =>
     setDraft((current) => {
       const selected = current[id] || [];
-      const next = selected.includes(view)
-        ? selected.filter((value) => value !== view)
-        : [...selected, view];
+      const next = selected.includes(workstream)
+        ? selected.filter((value) => value !== workstream)
+        : [...selected, workstream];
       return { ...current, [id]: next };
     });
   async function save(item: MenuProductionItem) {
@@ -971,7 +997,7 @@ function HospitalityMenuProductionRoutingPanel({
             body: JSON.stringify({
               action: "save-hospitality-menu-production-routing",
               menuItemId,
-              views: draft[menuItemId] || draft[item.canonicalId] || [],
+              workstreams: draft[menuItemId] || draft[item.canonicalId] || [],
             }),
           });
         let response = await send();
@@ -1061,7 +1087,7 @@ function HospitalityMenuProductionRoutingPanel({
                 </div>
                   <div className="menu-routing-actions">
                     <button type="button" className="secondary" disabled={!canManage} onClick={() => openEditor(item)}>Edit</button>
-                    <button type="button" className="danger" disabled={!canManage || saving === item.canonicalId} onClick={() => void setLifecycle(item)}>{item.lifecycleState === "archived" ? "Restore" : "Archive"}</button>
+                    <button type="button" className="danger" disabled={!canManage || saving === item.canonicalId} onClick={() => setConfirmation(item)}>{item.lifecycleState === "archived" ? "Restore" : "Archive"}</button>
                   </div>
                   <fieldset
                   disabled={!canManage || item.lifecycleState === "archived"}
@@ -1070,26 +1096,26 @@ function HospitalityMenuProductionRoutingPanel({
                   <label>
                     <input
                       type="checkbox"
-                      checked={selected.includes("liana")}
-                      onChange={() => toggle(item.canonicalId, "liana")}
+                      checked={selected.includes("sandwiches")}
+                      onChange={() => toggle(item.canonicalId, "sandwiches")}
                     />{" "}
-                    Production chef · sandwiches
+                    {CPU_PRODUCTION_WORKSTREAM_LABELS.sandwiches}
                   </label>
                   <label>
                     <input
                       type="checkbox"
-                      checked={selected.includes("craig")}
-                      onChange={() => toggle(item.canonicalId, "craig")}
+                      checked={selected.includes("hospitality")}
+                      onChange={() => toggle(item.canonicalId, "hospitality")}
                     />{" "}
-                    Hospitality chef
+                    {CPU_PRODUCTION_WORKSTREAM_LABELS.hospitality}
                   </label>
                   <label>
                     <input
                       type="checkbox"
-                      checked={selected.includes("site_manager")}
-                      onChange={() => toggle(item.canonicalId, "site_manager")}
+                      checked={selected.includes("delivered_in")}
+                      onChange={() => toggle(item.canonicalId, "delivered_in")}
                     />{" "}
-                    Site manager only
+                    {CPU_PRODUCTION_WORKSTREAM_LABELS.delivered_in}
                   </label>
                   <button
                     className="primary"
@@ -1112,6 +1138,7 @@ function HospitalityMenuProductionRoutingPanel({
         Matching names are grouped for setup only; their canonical records and
         site offerings are not merged.
       </p>
+      {confirmation && <ConfirmationModal title={`${confirmation.lifecycleState === "archived" ? "Restore" : "Archive"} ${confirmation.name}?`} description={confirmation.lifecycleState === "archived" ? "It will become available for new portal selections again." : "It will disappear from new portal selections, while history and source evidence are retained."} confirmLabel={confirmation.lifecycleState === "archived" ? "Restore menu item" : "Archive menu item"} destructive={confirmation.lifecycleState !== "archived"} busy={saving === confirmation.canonicalId} onCancel={() => setConfirmation(null)} onConfirm={() => setLifecycle(confirmation)} />}
       {editor && <div className="menu-item-editor" role="dialog" aria-modal="true">
         <div className="menu-item-editor__panel">
           <h2>{editor === "new" ? "Add menu item" : "Edit menu item"}</h2>

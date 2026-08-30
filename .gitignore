@@ -179,6 +179,11 @@ apps/beverage-innovation/CLAUDE.md
 !apps/menu-planning/local-data/menu-planning/
 !apps/menu-planning/local-data/menu-planning/canonical-menu-items.json
 
+# Menu Planning local operational state and generated snapshots. Keep the
+# canonical catalogue above as the only checked-in file from this directory.
+apps/menu-planning/local-data/menu-planning/*
+!apps/menu-planning/local-data/menu-planning/canonical-menu-items.json
+
 # Operational menu source files
 Menu Data/
 

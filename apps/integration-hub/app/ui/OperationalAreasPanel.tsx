@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Plus } from "lucide-react";
+import ConfirmationModal from "./ConfirmationModal";
 import OperationalConfigurationPanel from "./OperationalConfigurationPanel";
 
 type AreaType = { canonicalId: string; name: string; active: boolean };
@@ -56,6 +57,7 @@ export default function OperationalAreasPanel({
   const [saving, setSaving] = useState(false);
   const [includeArchived, setIncludeArchived] = useState(false);
   const [addConnectionFor, setAddConnectionFor] = useState<string | null>(null);
+  const [confirmation, setConfirmation] = useState<{ title: string; description: string; onConfirm: () => void } | null>(null);
   async function load() {
     try {
       const request = () =>
@@ -137,8 +139,7 @@ export default function OperationalAreasPanel({
   function transition(area: Area, lifecycleState: "active" | "archived") {
     const verb = lifecycleState === "archived" ? "Archive" : "Restore";
     const outcome = lifecycleState === "archived" ? "It will no longer appear in active local configuration, while its immutable ID and mapping history remain available." : "It will return to active local configuration.";
-    if (!window.confirm(`${verb} Operational Area “${area.name}”? ${outcome}`)) return;
-    setDraft({ canonicalId: area.canonicalId, expectedVersion: area.version, name: area.name, areaTypeId: area.areaTypeId, floorLevel: String(area.floorLevel), description: area.description || "", lifecycleState, localOperationalInstructions: String(area.configuration.localOperationalInstructions || "") });
+    setConfirmation({ title: `${verb} Operational Area “${area.name}”?`, description: outcome, onConfirm: () => { setConfirmation(null); setDraft({ canonicalId: area.canonicalId, expectedVersion: area.version, name: area.name, areaTypeId: area.areaTypeId, floorLevel: String(area.floorLevel), description: area.description || "", lifecycleState, localOperationalInstructions: String(area.configuration.localOperationalInstructions || "") }); } });
   }
   return (
     <section className="connection-panel operational-areas-panel">
@@ -201,6 +202,7 @@ export default function OperationalAreasPanel({
           )}
         </div>
       )}
+      {confirmation && <ConfirmationModal title={confirmation.title} description={confirmation.description} onCancel={() => setConfirmation(null)} onConfirm={confirmation.onConfirm} />}
       {draft && (
         <section className="canonical-editor">
           <h4>{draft.canonicalId ? "Edit Operational Area" : "Add Operational Area"}</h4>
