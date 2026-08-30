@@ -31,6 +31,7 @@ export const CACHE_STORES = [
 
 export function datasetForEntityType(entityType: string): CacheDataset | undefined {
   if (entityType === "OPLOC") return "oplocs";
+  if (entityType === "Address") return "oplocs";
   if (["Legend", "Employment"].includes(entityType)) return "legends";
   if (entityType === "Service Definition") return "serviceDefinitions";
   if (["Equipment Type", "Equipment Asset"].includes(entityType)) return "equipmentAssets";

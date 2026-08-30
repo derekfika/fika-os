@@ -1527,6 +1527,7 @@ function writeAutomaticAddressPublication(
   current: CanonicalRecord,
   publication: ReturnType<typeof buildAutomaticAddressPublication>,
 ) {
+  bumpCacheDatasets(transaction, ["oplocs"]);
   const revisionId = `canonical-revision:${stableDocumentId(`${current.canonicalId}:${String(publication.next.record.version)}`)}`;
   const auditId = crypto.randomUUID();
   transaction.set(
