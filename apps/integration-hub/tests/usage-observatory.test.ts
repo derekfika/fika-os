@@ -2,7 +2,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { chartTickIndexes } from "../lib/usage-chart";
-import { aggregateDaily, calculateBaseline, calculateStatus, loadUsageDashboard, londonDayStart, monitoringQueryParameters, monitoringRequestShape, normalizeMonitoringError, parseUsageRange, resolutionForDuration } from "../lib/usage-observatory";
+import { aggregateAttribution, cloudLoggingRequest, parseTraceLogLine } from "../lib/usage-attribution";
+import { aggregateDaily, calculateBaseline, calculateStatus, loadUsageDashboard, londonDayStart, monitoringQueryParameters, monitoringRequestShape, normalizeMonitoringError, normalizeMonitoringPoints, parseUsageRange, resolutionForDuration } from "../lib/usage-observatory";
 
 const config = { projectId: "fika-os-local", watchPercent: 0.5, highPercent: 0.75, criticalPercent: 0.9, spikeMultiplier: 2, maxWindowDays: 31, cacheTtlMs: 180000 };
 
@@ -25,6 +26,47 @@ test("short diagnostic windows use fine-grained resolutions", () => {
   assert.equal(resolutionForDuration(15 * 60000), "1m");
   assert.equal(resolutionForDuration(30 * 60000), "1m");
   assert.equal(resolutionForDuration(60 * 60000), "1m");
+});
+
+test("normalizes a 15-minute range to fifteen complete one-minute buckets", () => {
+  const range = { start: "2026-08-29T18:41:00.000Z", end: "2026-08-29T18:56:00.000Z", timezone: "Europe/London" as const };
+  const points = normalizeMonitoringPoints([{ timestamp: "2026-08-29T18:42:00.000Z", value: 11 }, { timestamp: "2026-08-29T18:46:00.000Z", value: 4 }], range, "1m");
+  assert.equal(points.length, 15);
+  assert.equal(points[0]?.timestamp, range.start);
+  assert.equal(points.at(-1)?.timestamp, "2026-08-29T18:55:00.000Z");
+  assert.equal(points[0]?.value, 11);
+  assert.equal(points[4]?.value, 4);
+  assert.equal(points.filter(point => point.value === 0).length, 13);
+});
+
+test("an empty range retains its complete domain and all metric rows share timestamps", async () => {
+  const range = { start: "2026-08-29T18:41:00.000Z", end: "2026-08-29T18:56:00.000Z", timezone: "Europe/London" as const };
+  const data = await loadUsageDashboard({ range, config, client: { query: async () => [] } });
+  assert.deepEqual(Object.values(data.timeline).map(points => points.length), [15, 15, 15]);
+  assert.deepEqual(data.timeline.reads.map(point => point.timestamp), data.timeline.writes.map(point => point.timestamp));
+  assert.deepEqual(data.timeline.reads.map(point => point.timestamp), data.timeline.deletes.map(point => point.timestamp));
+  assert.equal(data.timeline.reads.every(point => point.value === 0), true);
+  assert.deepEqual(data.totals, { reads: 0, writes: 0, deletes: 0 });
+});
+
+test("activity in one minute does not shrink the requested chart domain", async () => {
+  const range = { start: "2026-08-29T18:41:00.000Z", end: "2026-08-29T18:56:00.000Z", timezone: "Europe/London" as const };
+  const data = await loadUsageDashboard({ range, config, client: { query: async metricType => metricType.endsWith("read_ops_count") ? [{ timestamp: "2026-08-29T18:45:00.000Z", value: 9 }] : [] } });
+  assert.equal(data.timeline.reads.length, 15);
+  assert.equal(data.timeline.reads[3]?.value, 9);
+  assert.equal(data.timeline.reads.at(-1)?.timestamp, "2026-08-29T18:55:00.000Z");
+  assert.equal(data.totals.reads, 9);
+  assert.equal(data.totals.writes, 0);
+  assert.equal(data.totals.deletes, 0);
+});
+
+test("custom ranges preserve start and end coverage without an off-by-one bucket", async () => {
+  const range = { start: "2026-08-29T13:05:30.000Z", end: "2026-08-29T13:20:30.000Z", timezone: "Europe/London" as const };
+  const data = await loadUsageDashboard({ range, config, client: { query: async () => [{ timestamp: "2026-08-29T13:06:00.000Z", value: 2 }] } });
+  assert.equal(data.timeline.reads.length, 15);
+  assert.equal(data.timeline.reads[0]?.timestamp, range.start);
+  assert.equal(data.timeline.reads.at(-1)?.timestamp, "2026-08-29T13:19:30.000Z");
+  assert.equal(data.totals.reads, 2);
 });
 
 test("chart tick density stays readable for each selected resolution", () => {
@@ -102,4 +144,45 @@ test("metric failures are isolated and successful operation totals remain availa
   assert.equal(data.totals.writes, 3);
   assert.equal(data.totals.deletes, null);
   assert.equal(data.metricErrors.deletes, "delete metric rejected");
+});
+
+test("Cloud Logging request is bounded to the selected project and window", () => {
+  const range = { start: "2026-08-29T12:05:00.000Z", end: "2026-08-29T12:20:00.000Z", timezone: "Europe/London" as const };
+  const request = cloudLoggingRequest(range, "fika-os-dev");
+  assert.deepEqual(request.body.resourceNames, ["projects/fika-os-dev"]);
+  assert.equal(request.body.pageSize, 200);
+  assert.match(request.body.filter, /timestamp >= "2026-08-29T12:05:00.000Z"/);
+  assert.match(request.body.filter, /timestamp <= "2026-08-29T12:20:00.000Z"/);
+  assert.match(request.body.filter, /resource\.type = "cloud_run_revision"/);
+  assert.match(request.body.filter, /firebaseapphosting\.googleapis\.com\/Backend/);
+  assert.match(request.body.filter, /FIKA_DATA_TRACE_TOTAL/);
+});
+
+test("Cloud Logging parser handles valid, malformed, and compatibility records without alias double counting", () => {
+  assert.equal(parseTraceLogLine("[FIKA_DATA_TRACE_TOTAL] {\"app\":\"logistics\"}")?.kind, "total");
+  assert.equal(parseTraceLogLine("[FIKA_DATA_TRACE_TOTAL] not-json"), undefined);
+  const range = { start: "2026-08-29T12:00:00.000Z", end: "2026-08-29T12:15:00.000Z", timezone: "Europe/London" as const };
+  const result = aggregateAttribution([
+    { timestamp: "2026-08-29T12:03:00.000Z", textPayload: "[FIKA_DATA_TRACE_TOTAL] {\"app\":\"logistics\",\"action\":\"day.load\",\"traceId\":\"t1\",\"firestoreReads\":9,\"firestoreDocuments\":4,\"clientCacheDocuments\":2,\"durationMs\":12,\"level\":\"WARN\",\"records\":[{\"operation\":\"runs.service-date\",\"source\":\"FIRESTORE\",\"firestoreReads\":9,\"documents\":4}]}" },
+    { timestamp: "2026-08-29T12:04:00.000Z", textPayload: "[FIKA_DATA_TRACE_TOTAL] malformed" },
+  ], range, "1m", 10);
+  assert.equal(result.traceCount, 1);
+  assert.equal(result.parseFailures, 1);
+  assert.equal(result.estimatedFirestoreBillableReads, 9);
+  assert.equal(result.apps[0]?.app, "logistics");
+  assert.equal(result.apps[0]?.firestoreReturnedDocuments, 4);
+  assert.equal(result.apps[0]?.clientCacheRecords, 2);
+  assert.equal(result.operations[0]?.operation, "runs.service-date");
+  assert.doesNotMatch(JSON.stringify(result), /traceId|requestId|documentId|email/i);
+});
+
+test("attribution coverage floors overage and aligns complete zero-filled buckets", () => {
+  const range = { start: "2026-08-29T12:00:00.000Z", end: "2026-08-29T12:15:00.000Z", timezone: "Europe/London" as const };
+  const result = aggregateAttribution([{ timestamp: "2026-08-29T12:05:00.000Z", textPayload: "[FIKA_DATA_TRACE_TOTAL] {\"app\":\"integration-hub\",\"action\":\"oploc.load\",\"traceId\":\"t2\",\"estimatedFirestoreBillableReads\":11}" }], range, "1m", 10);
+  assert.equal(result.buckets.length, 15);
+  assert.equal(result.buckets[0]?.attributedEstimatedReads, 0);
+  assert.equal(result.buckets[5]?.attributedEstimatedReads, 11);
+  assert.equal(result.unattributedReads, 0);
+  assert.equal(result.coveragePercent, 110);
+  assert.equal(result.overAttribution, true);
 });

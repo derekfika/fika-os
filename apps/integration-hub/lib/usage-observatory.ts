@@ -1,5 +1,6 @@
 import { GoogleAuth } from "google-auth-library";
 import { getFikaRuntimeConfig } from "./runtime-config";
+import { aggregateAttribution, createCloudLoggingClient, type CloudLoggingClient, type UsageAttribution } from "./usage-attribution";
 
 export type UsageMetric = "reads" | "writes" | "deletes";
 export type UsagePoint = { timestamp: string; value: number };
@@ -30,6 +31,7 @@ export type UsageDashboard = {
   queryInsights: { available: false; message: string; url: string };
   deployMarkers: { available: false; message: string };
   metricErrors: Partial<Record<UsageMetric, string>>;
+  attribution: UsageAttribution;
 };
 
 const METRIC_TYPES: Record<UsageMetric, string> = {
@@ -94,6 +96,21 @@ export function resolutionForDuration(durationMs: number): UsageResolution {
 
 export function alignmentPeriod(resolution: UsageResolution): string {
   return { "1m": "60s", "5m": "300s", "1h": "3600s", "1d": "86400s" }[resolution];
+}
+
+export function normalizeMonitoringPoints(points: UsagePoint[], range: UsageRange, resolution: UsageResolution): UsagePoint[] {
+  const startMs = Date.parse(range.start);
+  const endMs = Date.parse(range.end);
+  const periodMs = Number.parseInt(alignmentPeriod(resolution), 10) * 1000;
+  const bucketCount = Math.max(1, Math.ceil((endMs - startMs) / periodMs));
+  const values = Array.from({ length: bucketCount }, () => 0);
+  for (const point of points) {
+    const pointMs = Date.parse(point.timestamp);
+    if (!Number.isFinite(pointMs) || pointMs <= startMs || pointMs > endMs) continue;
+    const bucketIndex = Math.min(bucketCount - 1, Math.ceil((pointMs - startMs) / periodMs) - 1);
+    values[bucketIndex] += point.value;
+  }
+  return values.map((value, index) => ({ timestamp: new Date(startMs + index * periodMs).toISOString(), value }));
 }
 
 export function londonDayStart(now: Date): Date {
@@ -169,7 +186,19 @@ let cached: { key: string; expiresAt: number; data: UsageDashboard } | undefined
 let inFlight: Promise<UsageDashboard> | undefined;
 export function invalidateUsageCache() { cached = undefined; }
 
-export async function loadUsageDashboard(input: { range?: UsageRange; now?: Date; client?: MonitoringClient; config?: UsageConfig } = {}): Promise<UsageDashboard> {
+function unavailableAttribution(message: string, range: UsageRange, resolution: UsageResolution, authoritativeReads: number | null): UsageAttribution {
+  const periodMs = Number.parseInt(alignmentPeriod(resolution), 10) * 1000;
+  const bucketCount = Math.max(1, Math.ceil((Date.parse(range.end) - Date.parse(range.start)) / periodMs));
+  return { available: false, message, traceCount: 0, estimatedFirestoreBillableReads: 0, firestoreReturnedDocuments: 0, authoritativeReads, unattributedReads: authoritativeReads === null ? null : authoritativeReads, coveragePercent: authoritativeReads === null || authoritativeReads === 0 ? 0 : 0, overAttribution: false, parseFailures: 0, truncated: false, apps: [], actions: [], operations: [], buckets: Array.from({ length: bucketCount }, (_, index) => ({ timestamp: new Date(Date.parse(range.start) + index * periodMs).toISOString(), cloudMonitoringReads: 0, attributedEstimatedReads: 0, unattributedReads: 0, byApp: {} })) };
+}
+
+export function attachMonitoringReads(attribution: UsageAttribution, monitoringPoints: UsagePoint[]): UsageAttribution {
+  const values = new Map(monitoringPoints.map(point => [point.timestamp, point.value]));
+  const buckets = attribution.buckets.map(bucket => { const cloudMonitoringReads = values.get(bucket.timestamp) || 0; return { ...bucket, cloudMonitoringReads, unattributedReads: Math.max(0, cloudMonitoringReads - bucket.attributedEstimatedReads) }; });
+  return { ...attribution, buckets };
+}
+
+export async function loadUsageDashboard(input: { range?: UsageRange; now?: Date; client?: MonitoringClient; loggingClient?: CloudLoggingClient; config?: UsageConfig } = {}): Promise<UsageDashboard> {
   const config = input.config || getUsageConfig();
   const now = input.now || new Date();
   const range = input.range || parseUsageRange({ start: new Date(now.getTime() - 7 * 86400000).toISOString(), end: now.toISOString() }, now, config);
@@ -180,17 +209,34 @@ export async function loadUsageDashboard(input: { range?: UsageRange; now?: Date
   if (!input.client && inFlight) return inFlight;
   const client = input.client || createMonitoringClient();
   const promise = (async () => {
-    const results = await Promise.all((Object.keys(METRIC_TYPES) as UsageMetric[]).map(async metric => { try { return { metric, points: await client.query(METRIC_TYPES[metric], range, resolution) }; } catch (error) { const message = error instanceof Error ? error.message : "Monitoring metric failed."; console.error("[usage-observatory] Monitoring query failed", { metric, metricType: METRIC_TYPES[metric], range, resolution, error: message }); return { metric, error: message }; } }));
+    const results = await Promise.all((Object.keys(METRIC_TYPES) as UsageMetric[]).map(async metric => { try { return { metric, points: normalizeMonitoringPoints(await client.query(METRIC_TYPES[metric], range, resolution), range, resolution) }; } catch (error) { const message = error instanceof Error ? error.message : "Monitoring metric failed."; console.error("[usage-observatory] Monitoring query failed", { metric, metricType: METRIC_TYPES[metric], range, resolution, error: message }); return { metric, error: message }; } }));
     const metrics = Object.fromEntries(results.map(result => [result.metric, "points" in result ? result.points : []])) as Record<UsageMetric, UsagePoint[]>;
     const metricErrors = Object.fromEntries(results.filter(result => "error" in result).map(result => [result.metric, result.error])) as Partial<Record<UsageMetric, string>>;
     const totals = Object.fromEntries((Object.keys(METRIC_TYPES) as UsageMetric[]).map(metric => [metric, metricErrors[metric] ? null : Math.round(metrics[metric].reduce((sum, point) => sum + point.value, 0))])) as Record<UsageMetric, number | null>;
     const allowance = config.dailyReadAllowance && totals.reads !== null ? { reads: config.dailyReadAllowance, used: totals.reads, percent: totals.reads / config.dailyReadAllowance, remaining: Math.max(0, config.dailyReadAllowance - totals.reads), status: calculateStatus(totals.reads / config.dailyReadAllowance, config) } : undefined;
+    let attribution: UsageAttribution;
+    if (input.loggingClient || !input.client) {
+      try {
+        const loggingClient = input.loggingClient || createCloudLoggingClient(fetch, config.projectId);
+        const logs = await loggingClient.list(range);
+        attribution = aggregateAttribution(logs.entries, range, resolution, totals.reads);
+        attribution = { ...attribution, truncated: logs.truncated };
+        attribution = attachMonitoringReads(attribution, metrics.reads);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Cloud Logging attribution query failed.";
+        console.error("[usage-observatory] Cloud Logging attribution query failed", { range, resolution, error: message });
+        attribution = unavailableAttribution(message, range, resolution, totals.reads);
+      }
+    } else {
+      attribution = unavailableAttribution("Cloud Logging attribution was not queried for this isolated Monitoring test client.", range, resolution, totals.reads);
+    }
     const data: UsageDashboard = {
       generatedAt: new Date().toISOString(), range, resolution, source: { label: "Google Cloud Monitoring · Firestore document operation metrics", projectId: config.projectId },
       totals, allowance, timeline: metrics, dailyTotals7d: aggregateDaily(metrics.reads, now), baseline: calculateBaseline(metrics.reads, config.spikeMultiplier), metricErrors,
       appUsage: { available: false, message: "Native Firestore operation metrics do not expose trustworthy FIKA app attribution. No app shares are inferred.", rows: [] },
       queryInsights: { available: false, message: "Query Insights is not exposed through a supported server API for this dashboard.", url: "https://console.firebase.google.com/project/" + encodeURIComponent(config.projectId) + "/firestore/usage/query-insights" },
       deployMarkers: { available: false, message: "No authoritative deploy marker source is configured." },
+      attribution,
     };
     if (!input.client) cached = { key, expiresAt: Date.now() + config.cacheTtlMs, data };
     return data;
