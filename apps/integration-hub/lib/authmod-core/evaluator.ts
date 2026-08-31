@@ -24,6 +24,15 @@ export class AuthModEvaluationContext {
   delegations() { return this.delegationsPromise ||= this.principal.type === "interactive" ? this.repository.listDelegations(this.principal.id) : Promise.resolve([]); }
 }
 
+export const LOGISTICS_VEHICLE_IDS = ["van1", "van2"] as const;
+export type LogisticsVehicleId = (typeof LOGISTICS_VEHICLE_IDS)[number];
+
+export async function resolvePermittedVehicleIds(repository: AuthModRepository, input: { principal: AuthPrincipal; vehicleIds?: readonly string[] }, context = createAuthModEvaluationContext(repository, input.principal)) {
+  const vehicleIds = input.vehicleIds || LOGISTICS_VEHICLE_IDS;
+  const decisions = await Promise.all(vehicleIds.map(vehicleId => evaluateAuthority(repository, { principal: input.principal, appId: "logistics", resource: "logistics.vehicle", action: "View", scope: { kind: "resource", ids: [vehicleId] } }, context)));
+  return { permittedVehicleIds: decisions.filter(decision => decision.allowed).map((_, index) => vehicleIds[index]), resolutionFailed: decisions.some(decision => decision.reasonCode === "store-unavailable") };
+}
+
 export function createAuthModEvaluationContext(repository: AuthModRepository, principal: AuthPrincipal, activeOplocs?: OplocReference[]) { return new AuthModEvaluationContext(repository, principal, activeOplocs); }
 
 function earliestExpiry(...values: Array<{ effectiveTo?: string } | undefined>) {

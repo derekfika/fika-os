@@ -9,7 +9,8 @@ export async function middleware(request: NextRequest) {
   logAuthDiagnostic(request, { authStage: "middleware-admission-request", status: 200, code: "AUTH_ADMISSION_REQUESTED", requestId });
   const hub = process.env.FIKA_HUB_BASE_URL?.trim();
   if (!hub) { const failure = admissionFailure("Logistics", 503, { error: { code: "LOGISTICS_HUB_ENDPOINT_NOT_CONFIGURED" } }, requestId); return request.nextUrl.pathname.startsWith("/api/") ? NextResponse.json(admissionJson(failure, requestId), { status: 503, headers: { "x-request-id": requestId } }) : renderFailure(request, failure, requestId); }
-  const response = await fetch(`${hub.replace(/\/$/, "")}/api/logistics/access?mode=admission`, { headers: { cookie: request.headers.get("cookie") || "", "x-request-id": requestId }, cache: "no-store" }).catch(() => undefined);
+  const query = new URLSearchParams({ mode: "admission", ...(request.nextUrl.searchParams.get("vehicle") ? { vehicle: request.nextUrl.searchParams.get("vehicle")! } : {}) });
+  const response = await fetch(`${hub.replace(/\/$/, "")}/api/logistics/access?${query}`, { headers: { cookie: request.headers.get("cookie") || "", "x-request-id": requestId }, cache: "no-store" }).catch(() => undefined);
   if (response?.ok) { logAuthDiagnostic(request, { authStage: "middleware-admission-result", status: response.status, code: "AUTH_ADMISSION_ALLOWED", requestId }); const headers = new Headers(request.headers); headers.set("x-request-id", requestId); return NextResponse.next({ request: { headers } }); }
   const status = response?.status || 503;
   const failure = admissionFailure("Logistics", status, response ? await parseAdmissionBody(response) : undefined, requestId);

@@ -10,6 +10,7 @@ export type LogisticsPrincipal = {
   identityKind?: "person" | "operational";
   representedOplocId?: string;
   primaryCustodianLegendId?: string;
+  permittedVehicleIds?: string[];
 };
 export type FikaSessionPrincipal = Omit<LogisticsPrincipal, "type" | "id"> & { firebaseUid: string; authmodIdentityId: string };
 
@@ -24,7 +25,7 @@ export function logisticsCacheScope(principal: { id: string; identityKind?: stri
   return `logistics:v1:${principal.id}:${principal.identityKind || "unknown"}:${principal.representedOplocId || "organisation"}:${principal.primaryCustodianLegendId || "none"}`;
 }
 
-type LogisticsRequest = { cookies: { get(name: string): { value?: string } | undefined }; headers?: { get(name: string): string | null } };
+type LogisticsRequest = { cookies: { get(name: string): { value?: string } | undefined }; headers?: { get(name: string): string | null }; nextUrl?: { searchParams: { get(name: string): string | null } } };
 type AuthDependencies = {
   sessionReader?: (request: LogisticsRequest) => Promise<FikaSessionPrincipal>;
   accessChecker?: (principal: LogisticsPrincipal) => Promise<unknown>;
@@ -43,8 +44,11 @@ export async function requireLogisticsAccess(request: LogisticsRequest, dependen
       identityKind: session.identityKind,
       ...(session.representedOplocId ? { representedOplocId: session.representedOplocId } : {}),
       ...(session.primaryCustodianLegendId ? { primaryCustodianLegendId: session.primaryCustodianLegendId } : {}),
+      ...(session.permittedVehicleIds ? { permittedVehicleIds: session.permittedVehicleIds } : {}),
     };
     await (dependencies.accessChecker || (async () => undefined))(principal);
+    const requestedVehicle = request.nextUrl?.searchParams.get("vehicle");
+    if (requestedVehicle && !principal.permittedVehicleIds?.includes(requestedVehicle)) throw Object.assign(new Error("This account is not entitled to the requested Logistics vehicle."), { status: 403, code: "AUTHMOD_VEHICLE_DENIED" });
     logAuthDiagnostic(request, { authStage: "logistics-route-app-access", status: 200, code: "LOGISTICS_ACCESS_ALLOWED" });
     return principal;
   } catch (error) {
@@ -58,7 +62,8 @@ export async function requireLogisticsAccess(request: LogisticsRequest, dependen
 
 async function requireHubLogisticsSession(request: LogisticsRequest): Promise<FikaSessionPrincipal> {
   const hub = requiredUpstreamUrl("FIKA_HUB_BASE_URL");
-  const response = await fetch(`${hub}/api/logistics/access?mode=admission`, { headers: { cookie: request.headers?.get("cookie") || "", ...(request.headers?.get("x-request-id") ? { "x-request-id": request.headers.get("x-request-id")! } : {}) }, cache: "no-store" });
+  const query = new URLSearchParams({ mode: "admission", ...(request.nextUrl?.searchParams.get("vehicle") ? { vehicle: request.nextUrl.searchParams.get("vehicle")! } : {}) });
+  const response = await fetch(`${hub}/api/logistics/access?${query}`, { headers: { cookie: request.headers?.get("cookie") || "", ...(request.headers?.get("x-request-id") ? { "x-request-id": request.headers.get("x-request-id")! } : {}) }, cache: "no-store" });
   const body = await response.json().catch(() => null) as { principal?: Omit<FikaSessionPrincipal, "firebaseUid">; error?: { message?: unknown; code?: unknown } } | null;
   if (!response.ok || !body?.principal) {
     const error = body?.error;
