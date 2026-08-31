@@ -8,6 +8,7 @@ import { parseCanonical, type CanonicalEntityType } from "./schemas";
 import type { CanonicalRecord } from "./types";
 import { bumpCacheDatasets, cacheDatasetForEntityType } from "./integration-cache-server";
 import { rebuildServiceArrangementsReadPackage } from "./service-arrangements-read-package";
+import { rebuildServiceDefinitionsReadPackage } from "./service-definitions-read-package";
 
 const canonical = () => db.collection("integrationHubCanonical");
 const revisions = () => db.collection("integrationHubCanonicalRevisions");
@@ -117,7 +118,10 @@ export async function saveOperationalConfiguration(actor: Actor, command: Config
       endPriorAllocations(transaction, actor, records, command, canonicalId, now);
     }
   });
-  if (entityType === "Service Definition" || entityType === "Service Arrangement") await rebuildServiceArrangementsReadPackage();
+  if (entityType === "Service Definition") {
+    await rebuildServiceDefinitionsReadPackage();
+    await rebuildServiceArrangementsReadPackage();
+  } else if (entityType === "Service Arrangement") await rebuildServiceArrangementsReadPackage();
   if (command.action === "save-service-arrangement" || command.action === "save-equipment-allocation") {
     return operationalConfigurationOverview(command.oplocId, command.operationalAreaId);
   }

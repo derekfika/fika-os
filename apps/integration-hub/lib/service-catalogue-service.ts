@@ -4,6 +4,7 @@ import type { Actor } from "./auth";
 import { stableDocumentId } from "./canonical-editor";
 import type { CanonicalRecord } from "./types";
 import { rebuildServiceArrangementsReadPackage } from "./service-arrangements-read-package";
+import { rebuildServiceDefinitionsReadPackage } from "./service-definitions-read-package";
 
 const canonical = () => db.collection("integrationHubCanonical");
 const revisions = () => db.collection("integrationHubCanonicalRevisions");
@@ -42,6 +43,7 @@ export async function deleteUnusedServiceDefinition(actor: Actor, canonicalId: s
     transaction.set(audit().doc(crypto.randomUUID()), { auditId: crypto.randomUUID(), action: "Service Definition permanently deleted", entityReference: canonicalId, actorId: actor.uid, actorName: actor.name, timestamp: now, reason: "Unused controlled catalogue entry; no arrangement history.", oplocId: null });
     return { deletedCanonicalId: canonicalId };
   });
+  await rebuildServiceDefinitionsReadPackage();
   await rebuildServiceArrangementsReadPackage();
   return result;
 }
