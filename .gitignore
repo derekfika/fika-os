@@ -184,6 +184,9 @@ apps/beverage-innovation/CLAUDE.md
 apps/menu-planning/local-data/menu-planning/*
 !apps/menu-planning/local-data/menu-planning/canonical-menu-items.json
 
+# Immutable read-package artefacts are generated locally or stored in hosted Cloud Storage.
+apps/menu-planning/local-data/read-packages/
+
 # Operational menu source files
 Menu Data/
 

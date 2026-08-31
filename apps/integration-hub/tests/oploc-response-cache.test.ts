@@ -5,12 +5,13 @@ import { clearOplocResponseCache, getCachedOplocResponse } from "../lib/oploc-re
 
 test.beforeEach(() => clearOplocResponseCache());
 
-test("the OPLOC route uses the manifest and app cache rather than a per-request cache bypass", () => {
+test("the OPLOC route uses the immutable package after server-side permission evaluation", () => {
   const source = readFileSync(new URL("../app/api/oplocs/route.ts", import.meta.url), "utf8");
-  const cacheSource = readFileSync(new URL("../lib/oploc-response-cache.ts", import.meta.url), "utf8");
-  assert.match(source, /cacheManifestRef\("oplocs"\)/);
-  assert.match(source, /getCachedOplocResponse/);
-  assert.match(cacheSource, /source: "APP_CACHE"/);
+  const packageSource = readFileSync(new URL("../lib/oploc-read-package.ts", import.meta.url), "utf8");
+  assert.match(source, /assertPermission\(actor, "canonical\.view"\)/);
+  assert.match(source, /getOplocReadPackage/);
+  assert.match(packageSource, /decodeReadPackage/);
+  assert.match(packageSource, /OPLOC_DATASET = "integration-hub\/oplocs"/);
 });
 
 test("repeated identity-scoped OPLOC requests reuse the app cache", async () => {
