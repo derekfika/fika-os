@@ -10,8 +10,16 @@ export type CpuProjectionCacheEntry<T = unknown> = {
   fetchedAt: string;
   lastChangeSequence: number;
   revision: number;
+  packageVersion?: number;
+  contentHash?: string;
+  sourceVersion?: string;
   value: T;
 };
+export type CpuProjectionCacheIdentity = { schemaVersion: number; packageVersion?: number; contentHash?: string; sourceVersion?: string };
+
+export function cpuProjectionCacheEntryMatches(entry: CpuProjectionCacheEntry | undefined, cacheScope: string, expected?: CpuProjectionCacheIdentity) {
+  return Boolean(entry && entry.schemaVersion === CPU_CACHE_SCHEMA_VERSION && entry.cacheScope === cacheScope && (!expected || (expected.schemaVersion === entry.schemaVersion && expected.packageVersion === entry.packageVersion && expected.contentHash === entry.contentHash && expected.sourceVersion === entry.sourceVersion)));
+}
 
 function openDatabase(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
@@ -27,14 +35,14 @@ function openDatabase(): Promise<IDBDatabase> {
   });
 }
 
-export async function readCpuProjection<T>(key: string, cacheScope: string) {
+export async function readCpuProjection<T>(key: string, cacheScope: string, expected?: CpuProjectionCacheIdentity) {
   try {
     const database = await openDatabase();
     return await new Promise<CpuProjectionCacheEntry<T> | undefined>((resolve, reject) => {
       const request = database.transaction(PROJECTION_STORE, "readonly").objectStore(PROJECTION_STORE).get(key);
       request.onsuccess = () => {
         const entry = request.result as CpuProjectionCacheEntry<T> | undefined;
-        resolve(entry?.schemaVersion === CPU_CACHE_SCHEMA_VERSION && entry.cacheScope === cacheScope ? entry : undefined);
+        resolve(cpuProjectionCacheEntryMatches(entry, cacheScope, expected) ? entry : undefined);
       };
       request.onerror = () => reject(request.error || new Error("IndexedDB read failed"));
     });

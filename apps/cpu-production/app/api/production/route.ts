@@ -5,6 +5,7 @@ import { requireCpuActor } from "../../../lib/cpu-access-client";
 import { acknowledgeProductionCancellation, createCpuProductionOrder, productionOrderDetail, productionQueue, productionQueueForWeek, reportProductionAllergenDiscrepancy, transitionProductionOrder, updateProductionLines } from "../../../lib/production-http-client";
 import { ordersForScope } from "../../../lib/cpu-routing";
 import { withReadableDestinations } from "../../../lib/cpu-oploc-labels";
+import { filterCpuProjectionForScope } from "../../../lib/cpu-dashboard-adapter";
 // Scope filtering remains backed by the existing hospitalityMenuProductionRouting adapter.
 import { localFixtureOrders, updateLocalFixture } from "../local-fixtures";
 import { normaliseProductionScope } from "../../../lib/production-scope";
@@ -13,6 +14,7 @@ import { loadPlansForOrders } from "../../../lib/cpu-projection-repository";
 import { recordDeliveredInReadBudget } from "../../../lib/delivered-in-read-budget";
 import type { ProductionOrder } from "../../../lib/production-types";
 import { withDataTrace } from "@fika/server-shared/data-source-meter-server";
+import { getCpuProjectionManifest, getCpuProjectionPackage, recordCpuPackageFallback } from "../../../lib/cpu-read-package";
 
 const localActor = {
   uid: "local-cpu",
@@ -171,6 +173,24 @@ async function handleGet(request: NextRequest) {
     if (request.nextUrl.searchParams.get("projection") === "1") {
       const startedAt = performance.now();
       const week = request.nextUrl.searchParams.get("weekCommencing");
+      const reconcile = request.nextUrl.searchParams.get("reconcile") === "1";
+      let packageFallback = reconcile;
+      if (!reconcile) {
+        try {
+          const packaged = await getCpuProjectionPackage(projectionDate, week || undefined);
+          if (packaged) {
+            const projection = packaged.value.projection;
+            const filtered = filterCpuProjectionForScope(projection, normaliseProductionScope(request.nextUrl.searchParams.get("scope")));
+            recordDeliveredInReadBudget({ stage: "package_body_load", projectionDocs: 0, selectedIds: filtered.orders.length });
+            return withServerTiming(NextResponse.json({ projection: filtered, package: packaged.manifest }), { package: performance.now() - startedAt, total: performance.now() - startedAt });
+          }
+          recordCpuPackageFallback("missing");
+          packageFallback = true;
+        } catch {
+          recordCpuPackageFallback("invalid");
+          packageFallback = true;
+        }
+      } else recordCpuPackageFallback("explicit-reconciliation");
       const storedStartedAt = performance.now();
       const stored = await cpuProjections().doc(week ? `week:${week}` : projectionDate).get();
       const storedDuration = performance.now() - storedStartedAt;
@@ -187,16 +207,15 @@ async function handleGet(request: NextRequest) {
       const projectedIds = new Set((storedData?.orders || []).map((order) => order.id).filter(Boolean));
       const needsOrderRefresh = canonicalIds.size !== projectedIds.size || [...canonicalIds].some((id) => !projectedIds.has(id));
       const requiresRefresh = !stored.exists || needsReadableDestinations || needsCancellationRefresh || needsOrderRefresh;
-      const response = NextResponse.json({ projection: requiresRefresh ? week ? await rebuildCpuWeekProjection(request, week) : await rebuildCpuProjection(request, projectionDate) : stored.data() });
+      const response = NextResponse.json({ projection: requiresRefresh || packageFallback ? week ? await rebuildCpuWeekProjection(request, week) : await rebuildCpuProjection(request, projectionDate) : stored.data() });
       recordDeliveredInReadBudget({ stage: requiresRefresh ? "projection_refresh" : "projection_body_load", projectionDocs: 1, canonicalOrderDocs: canonicalIds.size });
       return withServerTiming(response, { stored: storedDuration, canonical: canonicalDuration, total: performance.now() - startedAt });
     }
     if (request.nextUrl.searchParams.get("projectionHead") === "1") {
       const week = request.nextUrl.searchParams.get("weekCommencing");
-      const head = await cpuProjections().doc(week ? `week:${week}` : projectionDate).get();
-      recordDeliveredInReadBudget({ stage: "warm_projection_head_check", projectionDocs: 1 });
-      const data = head.data() as { lastChangeSequence?: number; revision?: number } | undefined;
-      return NextResponse.json({ lastChangeSequence: Number(data?.lastChangeSequence || 0), revision: Number(data?.revision || 0) });
+      const manifest = await getCpuProjectionManifest(projectionDate, week || undefined);
+      recordDeliveredInReadBudget({ stage: "warm_projection_head_check", projectionDocs: 0 });
+      return NextResponse.json({ lastChangeSequence: Number(manifest?.sourceVersion?.replace("cpu-change-", "") || 0), revision: Number(manifest?.packageVersion || 0), packageVersion: manifest?.packageVersion || 0, contentHash: manifest?.contentHash, sourceVersion: manifest?.sourceVersion });
     }
     if (request.nextUrl.searchParams.has("changesSince")) {
       const startedAt = performance.now();
@@ -245,6 +264,7 @@ async function handleGet(request: NextRequest) {
     return errorResponse(error);
   }
 }
+
 
 async function handlePost(request: NextRequest) {
   try {
