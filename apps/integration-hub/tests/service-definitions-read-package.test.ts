@@ -24,6 +24,8 @@ test("Service Definition steady-state GET reads the package; canonical reads rem
   assert.doesNotMatch(getRoute, /serviceDefinitionCatalogueOverview\(\)/);
   assert.match(packageSource, /integrationHubCanonical/);
   assert.match(packageSource, /service-definitions\.package\.rebuild\.source/);
+  const reader = packageSource.slice(packageSource.indexOf("export async function getServiceDefinitionsReadPackage"));
+  assert.doesNotMatch(reader, /rebuildServiceDefinitionsReadPackage/);
 });
 
 test("Service Definition rebuild hooks cover saves and deletes without putting authority in the package", () => {
@@ -33,6 +35,30 @@ test("Service Definition rebuild hooks cover saves and deletes without putting a
   assert.match(configuration, /rebuildServiceDefinitionsReadPackage/);
   assert.match(catalogue, /await rebuildServiceDefinitionsReadPackage\(\)/);
   assert.doesNotMatch(packageSource, /authority|employment|assignment|delegation/i);
+});
+
+test("Hospitality and Events reference reads use the bounded typed reader", () => {
+  const canonical = readFileSync(new URL("../lib/canonical-oplocs.ts", import.meta.url), "utf8");
+  const hospitality = readFileSync(new URL("../lib/hospitality-catalogue-service.ts", import.meta.url), "utf8");
+  const events = readFileSync(new URL("../lib/events-read-contract.ts", import.meta.url), "utf8");
+  assert.match(canonical, /limit\(limit \+ 1\)/);
+  assert.match(canonical, /canonical\.by-type\.bounded/);
+  assert.match(hospitality, /listCanonicalRecordsByTypes/);
+  assert.match(events, /listCanonicalRecordsByTypes/);
+  assert.doesNotMatch(canonical, /where\("entityType", "in", wanted\)\.get\(\)/);
+});
+
+test("package misses require explicit authenticated rebuild instead of synchronous GET reconstruction", () => {
+  const rebuildRoute = readFileSync(new URL("../app/api/read-packages/rebuild/route.ts", import.meta.url), "utf8");
+  const oploc = readFileSync(new URL("../lib/oploc-read-package.ts", import.meta.url), "utf8");
+  const arrangements = readFileSync(new URL("../lib/service-arrangements-read-package.ts", import.meta.url), "utf8");
+  const definitions = readFileSync(new URL("../lib/service-definitions-read-package.ts", import.meta.url), "utf8");
+  assert.match(rebuildRoute, /requireActor\(request, \["integration-admin"\]\)/);
+  assert.match(rebuildRoute, /z\.enum\(\["oplocs", "service-arrangements", "service-definitions"\]\)/);
+  for (const source of [oploc, arrangements, definitions]) {
+    const reader = source.slice(source.indexOf("export async function get"));
+    assert.doesNotMatch(reader, /rebuild[A-Za-z]+ReadPackage/);
+  }
 });
 
 function record(entityType: CanonicalRecord["entityType"], canonicalId: string, values: Record<string, unknown>): CanonicalRecord {
