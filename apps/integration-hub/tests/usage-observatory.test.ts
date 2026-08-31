@@ -2,8 +2,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { chartTickIndexes } from "../lib/usage-chart";
-import { aggregateAttribution, cloudLoggingRequest, createCloudLoggingClient, parseTraceLogLine, CLOUD_LOGGING_MAX_PAGES } from "../lib/usage-attribution";
-import { aggregateDaily, calculateBaseline, calculateStatus, loadUsageDashboard, londonDayStart, monitoringQueryParameters, monitoringRequestShape, normalizeMonitoringError, normalizeMonitoringPoints, parseUsageRange, resolutionForDuration } from "../lib/usage-observatory";
+import { aggregateAttribution, cloudLoggingRequest, createCloudLoggingClient, parseTraceLogLine, CLOUD_LOGGING_MAX_PAGES, reconcileUsage } from "../lib/usage-attribution";
+import { aggregateDaily, calculateBaseline, calculateStatus, compareUsagePeriods, loadUsageDashboard, londonDayStart, monitoringQueryParameters, monitoringRequestShape, normalizeMonitoringError, normalizeMonitoringPoints, parseUsageRange, resolutionForDuration } from "../lib/usage-observatory";
 
 const config = { projectId: "fika-os-local", watchPercent: 0.5, highPercent: 0.75, criticalPercent: 0.9, spikeMultiplier: 2, maxWindowDays: 31, cacheTtlMs: 180000 };
 
@@ -169,9 +169,8 @@ test("Cloud Logging parser handles valid, malformed, and compatibility records w
   assert.equal(result.traceCount, 1);
   assert.equal(result.parseFailures, 1);
   assert.equal(result.estimatedFirestoreBillableReads, 9);
-  assert.equal(result.apps[0]?.app, "logistics");
-  assert.equal(result.apps[0]?.firestoreReturnedDocuments, 4);
-  assert.equal(result.apps[0]?.clientCacheRecords, 2);
+  assert.equal(result.apps.find(app => app.app === "logistics")?.firestoreReturnedDocuments, 4);
+  assert.equal(result.apps.find(app => app.app === "logistics")?.clientCacheRecords, 2);
   assert.equal(result.operations[0]?.operation, "runs.service-date");
   assert.doesNotMatch(JSON.stringify(result), /traceId|requestId|documentId|email/i);
 });
@@ -221,4 +220,38 @@ test("attribution recognises all canonical OS app IDs and aggregates cache outco
   assert.deepEqual(result.appsSeenInWindow, [...apps].sort());
   assert.equal(result.cache.HIT, apps.length);
   assert.equal(result.apps.some(app => app.app === "unknown/other"), false);
+});
+
+test("reconciliation preserves exact, unattributed, over-attributed, unavailable, and incomplete states", () => {
+  const actual = { reads: 100, writes: 10, deletes: 0 } as const;
+  const exact = reconcileUsage(actual, { reads: 100, writes: 10, deletes: 0 }, false);
+  assert.deepEqual(exact.unattributed, { reads: 0, writes: 0, deletes: 0 });
+  assert.deepEqual(exact.status, { reads: "COMPLETE", writes: "COMPLETE", deletes: "COMPLETE" });
+  const partial = reconcileUsage(actual, { reads: 80, writes: 4, deletes: 0 }, true);
+  assert.equal(partial.coveragePercent.reads, 80);
+  assert.equal(partial.status.reads, "INCOMPLETE");
+  const over = reconcileUsage(actual, { reads: 101, writes: 11, deletes: 1 }, false);
+  assert.equal(over.unattributed.reads, -1);
+  assert.equal(over.status.reads, "OVER_ATTRIBUTED");
+  const unavailable = reconcileUsage({ reads: null, writes: null, deletes: null }, { reads: 4, writes: 2, deletes: 1 }, false);
+  assert.deepEqual(unavailable.coveragePercent, { reads: null, writes: null, deletes: null });
+  assert.deepEqual(unavailable.status, { reads: "UNAVAILABLE", writes: "UNAVAILABLE", deletes: "UNAVAILABLE" });
+});
+
+test("dashboard keeps zero-activity canonical apps and reconciles writes/deletes", async () => {
+  const range = { start: "2026-08-29T12:00:00.000Z", end: "2026-08-29T12:15:00.000Z", timezone: "Europe/London" as const };
+  const data = await loadUsageDashboard({ range, config, client: { query: async metric => [{ timestamp: "2026-08-29T12:01:00.000Z", value: metric.includes("read") ? 10 : metric.includes("write") ? 5 : 2 }] }, loggingClient: { list: async () => ({ entries: [{ timestamp: range.start, textPayload: `[FIKA_DATA_TRACE_TOTAL] ${JSON.stringify({ app: "logistics", action: "x", traceId: "x", estimatedFirestoreBillableReads: 7, estimatedFirestoreWrites: 3, estimatedFirestoreDeletes: 1 })}` }], truncated: false }) } });
+  assert.equal(data.appUsage.rows.some(row => row.app === "events-dashboard" && row.traceCount === 0), true);
+  assert.equal(data.attribution.reconciliation.attributed.writes, 3);
+  assert.equal(data.attribution.reconciliation.attributed.deletes, 1);
+  assert.equal(data.attribution.reconciliation.actual.writes, 5);
+});
+
+test("period comparison is bounded and avoids zero-denominator NaN values", () => {
+  const base = { actual: { reads: 100, writes: 5, deletes: 0 }, attributed: { reads: 80, writes: 4, deletes: 0 }, cache: { HIT: 8, MISS: 2 } };
+  const comparison = compareUsagePeriods(base, { actual: { reads: 50, writes: 5, deletes: 0 }, attributed: { reads: 40, writes: 2, deletes: 0 }, cache: { HIT: 0, MISS: 0 } });
+  assert.deepEqual(comparison.actualDelta, { reads: 50, writes: 0, deletes: 0 });
+  assert.deepEqual(comparison.attributedDelta, { reads: 40, writes: 2, deletes: 0 });
+  assert.equal(comparison.cacheHitRateDelta, null);
+  assert.equal(Number.isNaN(comparison.unattributedShareDelta as number), false);
 });

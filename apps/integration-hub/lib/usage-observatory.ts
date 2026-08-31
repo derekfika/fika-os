@@ -1,6 +1,6 @@
 import { GoogleAuth } from "google-auth-library";
 import { getFikaRuntimeConfig } from "./runtime-config";
-import { aggregateAttribution, createCloudLoggingClient, EXPECTED_STAGING_INSTRUMENTATION, type CloudLoggingClient, type UsageAttribution } from "./usage-attribution";
+import { aggregateAttribution, createCloudLoggingClient, EXPECTED_STAGING_INSTRUMENTATION, reconcileUsage, type CloudLoggingClient, type UsageAttribution } from "./usage-attribution";
 
 export type UsageMetric = "reads" | "writes" | "deletes";
 export type UsagePoint = { timestamp: string; value: number };
@@ -27,7 +27,8 @@ export type UsageDashboard = {
   timeline: Record<UsageMetric, UsagePoint[]>;
   dailyTotals7d: UsagePoint[];
   baseline: { available: boolean; multiplier?: number; message: string };
-  appUsage: { available: false; message: string; rows: never[] };
+  appUsage: { available: boolean; message: string; rows: UsageAttribution["apps"] };
+  comparison: { available: boolean; message: string; actualDelta: Record<UsageMetric, number | null>; attributedDelta: Record<UsageMetric, number>; cacheHitRateDelta: number | null; unattributedShareDelta: number | null };
   queryInsights: { available: false; message: string; url: string };
   deployMarkers: { available: false; message: string };
   metricErrors: Partial<Record<UsageMetric, string>>;
@@ -155,6 +156,16 @@ export function aggregateDaily(points: UsagePoint[], now: Date): UsagePoint[] {
   });
 }
 
+export function compareUsagePeriods(current: { actual: Record<UsageMetric, number | null>; attributed: Record<UsageMetric, number>; cache: { HIT: number; MISS: number }; }, previous: { actual: Record<UsageMetric, number | null>; attributed: Record<UsageMetric, number>; cache: { HIT: number; MISS: number }; }): UsageDashboard["comparison"] {
+  const actualDelta = {} as Record<UsageMetric, number | null>; const attributedDelta = {} as Record<UsageMetric, number>;
+  for (const metric of ["reads", "writes", "deletes"] as UsageMetric[]) { actualDelta[metric] = current.actual[metric] === null || previous.actual[metric] === null ? null : current.actual[metric]! - previous.actual[metric]!; attributedDelta[metric] = (current.attributed[metric] || 0) - (previous.attributed[metric] || 0); }
+  const currentCacheTotal = current.cache.HIT + current.cache.MISS; const previousCacheTotal = previous.cache.HIT + previous.cache.MISS;
+  const currentHitRate = currentCacheTotal ? current.cache.HIT / currentCacheTotal : null; const previousHitRate = previousCacheTotal ? previous.cache.HIT / previousCacheTotal : null;
+  const currentUnattributed = current.actual.reads === null ? null : Math.max(0, current.actual.reads - current.attributed.reads); const previousUnattributed = previous.actual.reads === null ? null : Math.max(0, previous.actual.reads - previous.attributed.reads);
+  const currentShare = current.actual.reads ? currentUnattributed! / current.actual.reads : null; const previousShare = previous.actual.reads ? previousUnattributed! / previous.actual.reads : null;
+  return { available: true, message: "Compared with the immediately preceding equivalent period.", actualDelta, attributedDelta, cacheHitRateDelta: currentHitRate === null || previousHitRate === null ? null : currentHitRate - previousHitRate, unattributedShareDelta: currentShare === null || previousShare === null ? null : currentShare - previousShare };
+}
+
 type MonitoringClient = { query: (metricType: string, range: UsageRange, resolution: UsageResolution) => Promise<UsagePoint[]> };
 type MonitoringResponse = { timeSeries?: Array<{ points?: Array<{ interval?: { endTime?: string }; value?: { int64Value?: string; doubleValue?: number } }> }> };
 
@@ -189,7 +200,7 @@ export function invalidateUsageCache() { cached = undefined; }
 function unavailableAttribution(message: string, range: UsageRange, resolution: UsageResolution, authoritativeReads: number | null): UsageAttribution {
   const periodMs = Number.parseInt(alignmentPeriod(resolution), 10) * 1000;
   const bucketCount = Math.max(1, Math.ceil((Date.parse(range.end) - Date.parse(range.start)) / periodMs));
-  return { available: false, message, traceCount: 0, estimatedFirestoreBillableReads: 0, firestoreReturnedDocuments: 0, authoritativeReads, unattributedReads: authoritativeReads === null ? null : authoritativeReads, coveragePercent: authoritativeReads === null || authoritativeReads === 0 ? 0 : 0, overAttribution: false, parseFailures: 0, truncated: false, instrumentedApps: Object.keys(EXPECTED_STAGING_INSTRUMENTATION), appsSeenInWindow: [], expectedInstrumentation: { ...EXPECTED_STAGING_INSTRUMENTATION }, apps: [], actions: [], operations: [], buckets: Array.from({ length: bucketCount }, (_, index) => ({ timestamp: new Date(Date.parse(range.start) + index * periodMs).toISOString(), cloudMonitoringReads: 0, attributedEstimatedReads: 0, unattributedReads: 0, byApp: {} })), cache: { HIT: 0, MISS: 0, IN_FLIGHT_JOIN: 0, FALLBACK: 0, BYPASS: 0, STALE: 0, REVALIDATED: 0 } };
+  return { available: false, message, traceCount: 0, estimatedFirestoreBillableReads: 0, firestoreReturnedDocuments: 0, authoritativeReads, unattributedReads: authoritativeReads === null ? null : authoritativeReads, coveragePercent: authoritativeReads === null || authoritativeReads === 0 ? 0 : 0, overAttribution: false, parseFailures: 0, truncated: false, instrumentedApps: Object.keys(EXPECTED_STAGING_INSTRUMENTATION), appsSeenInWindow: [], expectedInstrumentation: { ...EXPECTED_STAGING_INSTRUMENTATION }, apps: [], actions: [], operations: [], buckets: Array.from({ length: bucketCount }, (_, index) => ({ timestamp: new Date(Date.parse(range.start) + index * periodMs).toISOString(), cloudMonitoringReads: 0, attributedEstimatedReads: 0, unattributedReads: 0, byApp: {} })), cache: { HIT: 0, MISS: 0, IN_FLIGHT_JOIN: 0, FALLBACK: 0, BYPASS: 0, STALE: 0, REVALIDATED: 0 }, reconciliation: reconcileUsage({ reads: authoritativeReads, writes: null, deletes: null }, { reads: 0, writes: 0, deletes: 0 }, true) };
 }
 
 export function attachMonitoringReads(attribution: UsageAttribution, monitoringPoints: UsagePoint[]): UsageAttribution {
@@ -220,7 +231,7 @@ export async function loadUsageDashboard(input: { range?: UsageRange; now?: Date
         const loggingClient = input.loggingClient || createCloudLoggingClient(fetch, config.projectId);
         const logs = await loggingClient.list(range);
         attribution = aggregateAttribution(logs.entries, range, resolution, totals.reads);
-        attribution = { ...attribution, truncated: logs.truncated };
+         attribution = { ...attribution, truncated: logs.truncated, reconciliation: reconcileUsage({ reads: totals.reads, writes: totals.writes, deletes: totals.deletes }, attribution.reconciliation.attributed, logs.truncated) };
         attribution = attachMonitoringReads(attribution, metrics.reads);
       } catch (error) {
         const message = error instanceof Error ? error.message : "Cloud Logging attribution query failed.";
@@ -233,7 +244,8 @@ export async function loadUsageDashboard(input: { range?: UsageRange; now?: Date
     const data: UsageDashboard = {
       generatedAt: new Date().toISOString(), range, resolution, source: { label: "Google Cloud Monitoring · Firestore document operation metrics", projectId: config.projectId },
       totals, allowance, timeline: metrics, dailyTotals7d: aggregateDaily(metrics.reads, now), baseline: calculateBaseline(metrics.reads, config.spikeMultiplier), metricErrors,
-      appUsage: { available: false, message: "Native Firestore operation metrics do not expose trustworthy FIKA app attribution. No app shares are inferred.", rows: [] },
+      appUsage: { available: attribution.available, message: attribution.available ? "Application values are attributed estimates from structured traces, not billing truth." : "Application attribution is unavailable.", rows: attribution.apps },
+      comparison: { available: false, message: "Previous-period comparison requires a separately selected comparison window.", actualDelta: { reads: null, writes: null, deletes: null }, attributedDelta: { reads: 0, writes: 0, deletes: 0 }, cacheHitRateDelta: null, unattributedShareDelta: null },
       queryInsights: { available: false, message: "Query Insights is not exposed through a supported server API for this dashboard.", url: "https://console.firebase.google.com/project/" + encodeURIComponent(config.projectId) + "/firestore/usage/query-insights" },
       deployMarkers: { available: false, message: "No authoritative deploy marker source is configured." },
       attribution,
