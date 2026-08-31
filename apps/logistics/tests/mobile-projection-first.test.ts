@@ -60,6 +60,10 @@ test("external amendment invalidates only its day and newer source revision wins
   assert.equal(older.applied, false);
   const unrelated = applyLogisticsProjectionInvalidation(current, { serviceDate: "2026-09-01", sourceDomain: "cpu-production", sourceEntityId: "order:1", sourceVersion: 6, changedAt: "2026-08-31T09:03:00Z", changeType: "cancelled" });
   assert.equal(unrelated.applied, false);
+  const oploc = applyLogisticsProjectionInvalidation(current, { serviceDate: current.serviceDate, sourceDomain: "oploc", sourceEntityId: "oploc:destination", sourceVersion: 2, sourceContentHash: "oploc-hash-v2", changedAt: "2026-08-31T09:04:00Z", changeType: "status-changed" });
+  assert.equal(oploc.applied, true);
+  assert.equal(oploc.projection.deliveryLoads[0].destinationLabelSnapshot, "One");
+  assert.equal(oploc.projection.sourceLineage?.at(-1)?.sourceContentHash, "oploc-hash-v2");
 });
 
 test("invalidation endpoint and upstream notifier are narrow and internal-only", () => {
