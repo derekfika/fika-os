@@ -30,7 +30,7 @@ export function relevantGrabAndGoDates(orders: GrabAndGoSourceOrder[]) { return 
 export type GrabAndGoSourceResponse = { orders: GrabAndGoSourceOrder[]; catalogue?: GrabAndGoProduct[] };
 export function deliveredInGrabAndGoUrl(deliveryDate?: string) { const base = process.env.DELIVERED_IN_GRAB_AND_GO_API_URL || "http://localhost:3800/api/delivered-in/grab-and-go/production"; return deliveryDate ? `${base}?deliveryDate=${encodeURIComponent(deliveryDate)}` : base; }
 export async function readGrabAndGoSource(deliveryDate?: string, fetcher: typeof fetch = fetch): Promise<GrabAndGoSourceResponse> {
-  const headers = process.env.DELIVERED_IN_INTERNAL_API_TOKEN ? { authorization: `Bearer ${process.env.DELIVERED_IN_INTERNAL_API_TOKEN}` } : undefined;
+  const headers = process.env.FIKA_INTERNAL_API_TOKEN ? { "x-fika-internal-token": process.env.FIKA_INTERNAL_API_TOKEN } : undefined;
   const response = await fetcher(deliveredInGrabAndGoUrl(deliveryDate), { cache: "no-store", headers });
   if (!response.ok) throw new Error(`Delivered-In Grab & Go source is unavailable (${response.status}).`);
   const body = await response.json() as GrabAndGoSourceResponse & { error?: { message?: string } };

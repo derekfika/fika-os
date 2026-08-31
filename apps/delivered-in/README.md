@@ -26,4 +26,4 @@ The `Grab & Go` navigation loads the CPU-owned catalogue seeded from `Master Gra
 
 Catalogue records and auditable order history are stored locally under `local-data/delivered-in/` for this local Phase 1 workflow. Orders retain stable OPLOC/product IDs and snapshot the product name, category, sort order and price at each submission or amendment.
 
-CPU Production reads submitted Grab & Go fulfilment truth through `GET /api/delivered-in/grab-and-go/production`; it does not read this app's files. Set `DELIVERED_IN_GRAB_AND_GO_API_URL` in CPU Production when the apps are deployed separately, and optionally set `DELIVERED_IN_INTERNAL_API_TOKEN` in both apps for the service-to-service request.
+CPU Production reads submitted Grab & Go fulfilment truth through `GET /api/delivered-in/grab-and-go/production`; it does not read this app's files. Set `DELIVERED_IN_GRAB_AND_GO_API_URL` in CPU Production when the apps are deployed separately, and use `FIKA_INTERNAL_API_TOKEN` in both apps for the service-to-service request.

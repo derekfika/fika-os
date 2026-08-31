@@ -2,6 +2,9 @@
 # Configure the backend root directory as apps/delivered-in.
 # The App Hosting backend should be created in europe-west4 for fika-os-dev.
 env:
+  - variable: FIKA_DATA_SOURCE_TRACE
+    value: "1"
+    availability: [BUILD, RUNTIME]
   - variable: FIKA_RUNTIME_MODE
     value: staging
     availability: [BUILD, RUNTIME]
@@ -23,9 +26,13 @@ env:
   - variable: CPU_PRODUCTION_BASE_URL
     value: https://cpu-staging.fikacatering.com
     availability: [RUNTIME]
-  - variable: DELIVERED_IN_INTERNAL_API_TOKEN
-    secret: DELIVERED_IN_INTERNAL_API_TOKEN
+  - variable: FIKA_INTERNAL_API_TOKEN
+    secret: FIKA_INTERNAL_API_TOKEN
     availability: [RUNTIME]
+  # Provision the approved Firebase Storage bucket before hosted package use.
+  # - variable: FIKA_SNAPSHOT_BUCKET
+  #   value: <approved-fika-os-dev-europe-west4-snapshot-bucket>
+  #   availability: [RUNTIME]
   # Provision these before enabling generated site menus. The current
   # file-based OAuth implementation is local-only; hosted generation requires
   # the established Workspace DWD integration used by the other apps.
