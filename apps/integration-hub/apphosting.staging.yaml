@@ -16,6 +16,10 @@ env:
     availability:
       - BUILD
       - RUNTIME
+  - variable: FIKA_SNAPSHOT_BUCKET
+    value: fika-os-dev-staging-read-packages-europe-west4
+    availability:
+      - RUNTIME
   - variable: FIKA_ALLOWED_EMAIL_DOMAINS
     value: fikacatering.com
     availability:

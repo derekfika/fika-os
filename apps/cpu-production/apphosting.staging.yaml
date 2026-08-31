@@ -46,7 +46,6 @@ env:
   - variable: FIKA_INTERNAL_API_TOKEN
     secret: FIKA_INTERNAL_API_TOKEN
     availability: [RUNTIME]
-  # Provision the approved Firebase Storage bucket before hosted package use.
-  # - variable: FIKA_SNAPSHOT_BUCKET
-  #   value: <approved-fika-os-dev-europe-west4-snapshot-bucket>
-  #   availability: [RUNTIME]
+  - variable: FIKA_SNAPSHOT_BUCKET
+    value: fika-os-dev-staging-read-packages-europe-west4
+    availability: [RUNTIME]

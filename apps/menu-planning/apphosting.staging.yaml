@@ -28,7 +28,6 @@ env:
   - variable: FIKA_APP_DELIVERED_IN_URL
     value: https://fika-delivered-in-staging--fika-os-dev.europe-west4.hosted.app
     availability: [RUNTIME]
-  # Required for immutable hosted catalogue/package persistence. Set the
-  # approved existing bucket name here; do not use a generated local bucket.
-  # - variable: FIKA_SNAPSHOT_BUCKET
-  #   value: <approved-existing-bucket-name>
+  - variable: FIKA_SNAPSHOT_BUCKET
+    value: fika-os-dev-staging-read-packages-europe-west4
+    availability: [RUNTIME]

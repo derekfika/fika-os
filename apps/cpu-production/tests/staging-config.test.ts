@@ -12,8 +12,8 @@ test("CPU and Delivered-In staging configs converge on shared runtime contracts"
   assert.match(cpu, /FIKA_LOGISTICS_BASE_URL[\s\S]*https:\/\/logistics-staging\.fikacatering\.com/);
   assert.match(delivered, /FIKA_INTERNAL_API_TOKEN[\s\S]*secret: FIKA_INTERNAL_API_TOKEN/);
   assert.doesNotMatch(delivered, /DELIVERED_IN_INTERNAL_API_TOKEN/);
-  assert.match(cpu, /FIKA_SNAPSHOT_BUCKET[\s\S]*approved-fika-os-dev-europe-west4-snapshot-bucket/);
-  assert.match(delivered, /FIKA_SNAPSHOT_BUCKET[\s\S]*approved-fika-os-dev-europe-west4-snapshot-bucket/);
+  assert.match(cpu, /FIKA_SNAPSHOT_BUCKET[\s\S]*fika-os-dev-staging-read-packages-europe-west4/);
+  assert.match(delivered, /FIKA_SNAPSHOT_BUCKET[\s\S]*fika-os-dev-staging-read-packages-europe-west4/);
 });
 
 test("staging upstreams keep API callback URLs separate from navigation URLs", () => {
