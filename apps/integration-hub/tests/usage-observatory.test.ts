@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { chartTickIndexes } from "../lib/usage-chart";
-import { aggregateAttribution, cloudLoggingRequest, parseTraceLogLine } from "../lib/usage-attribution";
+import { aggregateAttribution, cloudLoggingRequest, createCloudLoggingClient, parseTraceLogLine, CLOUD_LOGGING_MAX_PAGES } from "../lib/usage-attribution";
 import { aggregateDaily, calculateBaseline, calculateStatus, loadUsageDashboard, londonDayStart, monitoringQueryParameters, monitoringRequestShape, normalizeMonitoringError, normalizeMonitoringPoints, parseUsageRange, resolutionForDuration } from "../lib/usage-observatory";
 
 const config = { projectId: "fika-os-local", watchPercent: 0.5, highPercent: 0.75, criticalPercent: 0.9, spikeMultiplier: 2, maxWindowDays: 31, cacheTtlMs: 180000 };
@@ -185,4 +185,40 @@ test("attribution coverage floors overage and aligns complete zero-filled bucket
   assert.equal(result.unattributedReads, 0);
   assert.equal(result.coveragePercent, 110);
   assert.equal(result.overAttribution, true);
+});
+
+test("Cloud Logging client follows multiple pages through the final page", async () => {
+  const range = { start: "2026-08-29T12:00:00.000Z", end: "2026-08-29T12:15:00.000Z", timezone: "Europe/London" as const };
+  const requests: Array<{ pageToken?: string }> = [];
+  const client = createCloudLoggingClient(async (_url, init) => {
+    const request = JSON.parse(String(init?.body)) as { pageToken?: string };
+    requests.push(request);
+    return new Response(JSON.stringify(request.pageToken ? { entries: [{ insertId: "two" }] } : { entries: [{ insertId: "one" }], nextPageToken: "next" }), { status: 200 });
+  }, "fika-os-dev", async () => "test-token");
+  const result = await client.list(range);
+  assert.deepEqual(result.entries.map(entry => entry.insertId), ["one", "two"]);
+  assert.equal(result.truncated, false);
+  assert.equal(requests.length, 2);
+});
+
+test("Cloud Logging pagination deduplicates IDs, enforces a bound, and preserves failures", async () => {
+  const range = { start: "2026-08-29T12:00:00.000Z", end: "2026-08-29T12:15:00.000Z", timezone: "Europe/London" as const };
+  let calls = 0;
+  const bounded = createCloudLoggingClient(async () => { calls += 1; return new Response(JSON.stringify({ entries: [{ insertId: "same" }], nextPageToken: `next-${calls}` }), { status: 200 }); }, "fika-os-dev", async () => "test-token");
+  const result = await bounded.list(range);
+  assert.equal(result.entries.length, 1);
+  assert.equal(result.truncated, true);
+  assert.equal(calls, CLOUD_LOGGING_MAX_PAGES);
+  const failing = createCloudLoggingClient(async () => new Response(JSON.stringify({ error: { message: "denied" } }), { status: 403 }), "fika-os-dev", async () => "test-token");
+  await assert.rejects(failing.list(range), /HTTP 403.*denied/);
+});
+
+test("attribution recognises all canonical OS app IDs and aggregates cache outcomes", () => {
+  const range = { start: "2026-08-29T12:00:00.000Z", end: "2026-08-29T12:15:00.000Z", timezone: "Europe/London" as const };
+  const apps = ["integration-hub", "menu-planning", "logistics", "cpu-production", "delivered-in", "hospitality-booking", "ad-hoc-production", "events-dashboard"];
+  const entries = apps.map((app, index) => ({ timestamp: `2026-08-29T12:0${index}:00.000Z`, textPayload: `[FIKA_DATA_TRACE_TOTAL] ${JSON.stringify({ schemaVersion: 1, app, action: "test", traceId: app, cache: { HIT: 1 } })}` }));
+  const result = aggregateAttribution(entries, range, "1m", 0);
+  assert.deepEqual(result.appsSeenInWindow, [...apps].sort());
+  assert.equal(result.cache.HIT, apps.length);
+  assert.equal(result.apps.some(app => app.app === "unknown/other"), false);
 });

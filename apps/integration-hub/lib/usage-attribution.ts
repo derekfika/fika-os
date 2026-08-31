@@ -1,9 +1,10 @@
 import { GoogleAuth } from "google-auth-library";
+import { CANONICAL_OS_APPS, canonicalOsAppId, type CacheCounters, type CacheResult } from "@fika/server-shared/data-source-meter";
 
 export type AttributionRange = { start: string; end: string; timezone: "Europe/London" };
 export type AttributionResolution = "1m" | "5m" | "1h" | "1d";
 export type AttributionPoint = { timestamp: string; value: number };
-export type CloudLogEntry = { timestamp?: string; receiveTimestamp?: string; textPayload?: string; jsonPayload?: unknown };
+export type CloudLogEntry = { insertId?: string; timestamp?: string; receiveTimestamp?: string; textPayload?: string; jsonPayload?: unknown };
 export type AttributionBucket = { timestamp: string; cloudMonitoringReads: number; attributedEstimatedReads: number; unattributedReads: number; byApp: Record<string, number> };
 export type AttributionApp = { app: string; traceCount: number; estimatedFirestoreBillableReads: number; firestoreReturnedDocuments: number; clientCacheRecords: number; appCacheRecords: number; memoryRecords: number; highCount: number; warnCount: number };
 export type AttributionAction = { action: string; app: string; traceCount: number; estimatedFirestoreBillableReads: number; firestoreReturnedDocuments: number; cacheServedRecords: number; averageDurationMs: number; maxDurationMs: number; highCount: number; warnCount: number };
@@ -27,22 +28,30 @@ export type UsageAttribution = {
   actions: AttributionAction[];
   operations: AttributionOperation[];
   buckets: AttributionBucket[];
+  cache: CacheCounters;
 };
 
 export const CLOUD_LOGGING_PAGE_SIZE = 200;
-export const EXPECTED_STAGING_INSTRUMENTATION = { "integration-hub": "enabled", logistics: "enabled", "menu-planning": "enabled", "cpu-production": "enabled", "delivered-in": "enabled", hospitality: "unknown" } as const;
-const KNOWN_APPS = new Set(["integration-hub", "logistics", "menu-planning"]);
+export const CLOUD_LOGGING_MAX_PAGES = 50;
+export const CLOUD_LOGGING_MAX_ENTRIES = CLOUD_LOGGING_PAGE_SIZE * CLOUD_LOGGING_MAX_PAGES;
+export const EXPECTED_STAGING_INSTRUMENTATION = Object.fromEntries(CANONICAL_OS_APPS.map(app => [app, ["integration-hub", "logistics", "menu-planning"].includes(app) ? "enabled" : "unknown"])) as Record<string, "enabled" | "not-enabled" | "unknown">;
 const MARKER = /^\[(FIKA_DATA_TRACE_TOTAL|FIKA_DATA_TRACE)\]\s+(\{.*\})\s*$/;
 
 type NormalizedRecord = { app: string; action: string; operation: string; source: string; returnedDocuments: number; estimatedBillableReads: number; durationMs: number; level: string };
-type NormalizedTrace = { app: string; action: string; path: string; traceId: string; firestoreReturnedDocuments: number; estimatedFirestoreBillableReads: number; clientCacheRecords: number; appCacheRecords: number; memoryRecords: number; durationMs: number; level: string; records: NormalizedRecord[]; timestamp: string };
+type NormalizedTrace = { app: string; action: string; path: string; traceId: string; firestoreReturnedDocuments: number; estimatedFirestoreBillableReads: number; clientCacheRecords: number; appCacheRecords: number; memoryRecords: number; durationMs: number; level: string; records: NormalizedRecord[]; timestamp: string; cache: CacheCounters };
 
 const numberValue = (value: unknown, fallback = 0) => typeof value === "number" && Number.isFinite(value) ? Math.max(0, Math.floor(value)) : typeof value === "string" && Number.isFinite(Number(value)) ? Math.max(0, Math.floor(Number(value))) : fallback;
 const stringValue = (value: unknown, fallback: string) => typeof value === "string" && value.trim() ? value.trim() : fallback;
 const objectValue = (value: unknown): Record<string, unknown> => value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
 const firstNumber = (object: Record<string, unknown>, names: string[]) => { for (const name of names) if (name in object) return numberValue(object[name]); return 0; };
 const firstString = (object: Record<string, unknown>, names: string[], fallback: string) => { for (const name of names) if (typeof object[name] === "string" && object[name]) return String(object[name]); return fallback; };
-const safeApp = (app: string) => KNOWN_APPS.has(app) ? app : "unknown/other";
+const safeApp = (app: string) => (CANONICAL_OS_APPS as readonly string[]).includes(canonicalOsAppId(app)) ? canonicalOsAppId(app) : "unknown/other";
+const emptyCacheCounters = (): CacheCounters => ({ HIT: 0, MISS: 0, IN_FLIGHT_JOIN: 0, FALLBACK: 0, BYPASS: 0, STALE: 0, REVALIDATED: 0 });
+function normalizeCacheCounters(value: unknown): CacheCounters {
+  const source = objectValue(value); const result = emptyCacheCounters();
+  for (const key of Object.keys(result) as CacheResult[]) result[key] = numberValue(source[key]);
+  return result;
+}
 
 export function cloudLoggingFilter(): string {
   return 'timestamp >= "{start}" AND timestamp <= "{end}" AND (resource.type = "cloud_run_revision" OR resource.type = "firebaseapphosting.googleapis.com/Backend") AND (textPayload:"[FIKA_DATA_TRACE_TOTAL]" OR jsonPayload.message:"[FIKA_DATA_TRACE_TOTAL]" OR jsonPayload.log:"[FIKA_DATA_TRACE_TOTAL]")';
@@ -78,7 +87,7 @@ function normalizeRecord(value: Record<string, unknown>, parent: Pick<Normalized
 function normalizeTrace(value: Record<string, unknown>, timestamp: string): NormalizedTrace {
   const app = safeApp(firstString(value, ["app"], "unknown/other"));
   const action = firstString(value, ["action"], "unknown");
-  const base = { app, action, path: firstString(value, ["path"], "unknown"), traceId: firstString(value, ["traceId"], "unknown"), firestoreReturnedDocuments: firstNumber(value, ["firestoreReturnedDocuments", "firestoreDocuments"]), estimatedFirestoreBillableReads: firstNumber(value, ["estimatedFirestoreBillableReads", "estimatedBillableReads", "firestoreReads"]), clientCacheRecords: firstNumber(value, ["clientCacheRecords", "clientCacheDocuments"]), appCacheRecords: firstNumber(value, ["appCacheRecords", "appCacheDocuments"]), memoryRecords: firstNumber(value, ["memoryRecords", "memoryDocuments"]), durationMs: numberValue(value.durationMs), level: firstString(value, ["level"], "NORMAL"), timestamp };
+  const base = { app, action, path: firstString(value, ["path"], "unknown"), traceId: firstString(value, ["traceId"], "unknown"), firestoreReturnedDocuments: firstNumber(value, ["firestoreReturnedDocuments", "firestoreDocuments"]), estimatedFirestoreBillableReads: firstNumber(value, ["estimatedFirestoreBillableReads", "estimatedBillableReads", "firestoreReads"]), clientCacheRecords: firstNumber(value, ["clientCacheRecords", "clientCacheDocuments"]), appCacheRecords: firstNumber(value, ["appCacheRecords", "appCacheDocuments"]), memoryRecords: firstNumber(value, ["memoryRecords", "memoryDocuments"]), durationMs: numberValue(value.durationMs), level: firstString(value, ["level"], "NORMAL"), timestamp, cache: normalizeCacheCounters(value.cache) };
   const rawRecords = Array.isArray(value.records) ? value.records : [];
   const records = rawRecords.map(item => normalizeRecord(objectValue(item), base));
   if (!base.estimatedFirestoreBillableReads && records.length) base.estimatedFirestoreBillableReads = records.reduce((sum, record) => sum + (record.source === "FIRESTORE" ? record.estimatedBillableReads : 0), 0);
@@ -89,7 +98,7 @@ function normalizeTrace(value: Record<string, unknown>, timestamp: string): Norm
 function bucketCount(range: AttributionRange, resolution: AttributionResolution) { return Math.max(1, Math.ceil((Date.parse(range.end) - Date.parse(range.start)) / ({ "1m": 60000, "5m": 300000, "1h": 3600000, "1d": 86400000 }[resolution]))); }
 
 export function aggregateAttribution(entries: CloudLogEntry[], range: AttributionRange, resolution: AttributionResolution, authoritativeReads: number | null): UsageAttribution {
-  let parseFailures = 0;
+  let parseFailures = 0; const cache = emptyCacheCounters();
   const traces: NormalizedTrace[] = [];
   const seen = new Set<string>();
   for (const entry of entries) {
@@ -105,6 +114,7 @@ export function aggregateAttribution(entries: CloudLogEntry[], range: Attributio
   }
   const apps = new Map<string, AttributionApp>(); const actions = new Map<string, AttributionAction>(); const operations = new Map<string, AttributionOperation>();
   for (const trace of traces) {
+    for (const key of Object.keys(cache) as CacheResult[]) cache[key] += trace.cache[key];
     const app = apps.get(trace.app) || { app: trace.app, traceCount: 0, estimatedFirestoreBillableReads: 0, firestoreReturnedDocuments: 0, clientCacheRecords: 0, appCacheRecords: 0, memoryRecords: 0, highCount: 0, warnCount: 0 };
     app.traceCount++; app.estimatedFirestoreBillableReads += trace.estimatedFirestoreBillableReads; app.firestoreReturnedDocuments += trace.firestoreReturnedDocuments; app.clientCacheRecords += trace.clientCacheRecords; app.appCacheRecords += trace.appCacheRecords; app.memoryRecords += trace.memoryRecords; if (trace.level === "HIGH") app.highCount++; if (trace.level === "WARN") app.warnCount++; apps.set(trace.app, app);
     const actionKey = trace.app + "|" + trace.action; const action = actions.get(actionKey) || { action: trace.action, app: trace.app, traceCount: 0, estimatedFirestoreBillableReads: 0, firestoreReturnedDocuments: 0, cacheServedRecords: 0, averageDurationMs: 0, maxDurationMs: 0, highCount: 0, warnCount: 0 };
@@ -119,10 +129,10 @@ export function aggregateAttribution(entries: CloudLogEntry[], range: Attributio
   for (const trace of traces) { const index = Math.min(count - 1, Math.max(0, Math.floor((Date.parse(trace.timestamp) - Date.parse(range.start)) / bucketMs))); const bucket = buckets[index]; bucket.attributedEstimatedReads += trace.estimatedFirestoreBillableReads; bucket.byApp[trace.app] = (bucket.byApp[trace.app] || 0) + trace.estimatedFirestoreBillableReads; }
   const coverage = authoritativeReads === null ? null : authoritativeReads === 0 ? 0 : Math.round(attributed / authoritativeReads * 10000) / 100;
   const appsSeenInWindow = [...apps.keys()].sort();
-  return { available: true, traceCount: traces.length, estimatedFirestoreBillableReads: attributed, firestoreReturnedDocuments: traces.reduce((sum, trace) => sum + trace.firestoreReturnedDocuments, 0), authoritativeReads, unattributedReads: authoritativeReads === null ? null : Math.max(0, authoritativeReads - attributed), coveragePercent: coverage, overAttribution, parseFailures, truncated: false, instrumentedApps: Object.keys(EXPECTED_STAGING_INSTRUMENTATION), appsSeenInWindow, expectedInstrumentation: { ...EXPECTED_STAGING_INSTRUMENTATION }, apps: [...apps.values()].sort((a, b) => b.estimatedFirestoreBillableReads - a.estimatedFirestoreBillableReads), actions: [...actions.values()].sort((a, b) => b.estimatedFirestoreBillableReads - a.estimatedFirestoreBillableReads).slice(0, 50), operations: [...operations.values()].sort((a, b) => b.estimatedBillableReads - a.estimatedBillableReads).slice(0, 50), buckets };
+  return { available: true, traceCount: traces.length, estimatedFirestoreBillableReads: attributed, firestoreReturnedDocuments: traces.reduce((sum, trace) => sum + trace.firestoreReturnedDocuments, 0), authoritativeReads, unattributedReads: authoritativeReads === null ? null : Math.max(0, authoritativeReads - attributed), coveragePercent: coverage, overAttribution, parseFailures, truncated: false, instrumentedApps: Object.keys(EXPECTED_STAGING_INSTRUMENTATION), appsSeenInWindow, expectedInstrumentation: { ...EXPECTED_STAGING_INSTRUMENTATION }, apps: [...apps.values()].sort((a, b) => b.estimatedFirestoreBillableReads - a.estimatedFirestoreBillableReads), actions: [...actions.values()].sort((a, b) => b.estimatedFirestoreBillableReads - a.estimatedFirestoreBillableReads).slice(0, 50), operations: [...operations.values()].sort((a, b) => b.estimatedBillableReads - a.estimatedBillableReads).slice(0, 50), buckets, cache };
 }
 
 export type CloudLoggingClient = { list: (range: AttributionRange) => Promise<{ entries: CloudLogEntry[]; truncated: boolean }> };
-export function createCloudLoggingClient(fetchImpl: typeof fetch = fetch, configuredProjectId?: string): CloudLoggingClient {
-  return { async list(range) { const projectId = configuredProjectId || process.env.GCLOUD_PROJECT || process.env.GOOGLE_CLOUD_PROJECT || "fika-os-dev"; const auth = new GoogleAuth({ scopes: ["https://www.googleapis.com/auth/logging.read"] }); const client = await auth.getClient(); const token = await client.getAccessToken(); if (!token.token) throw new Error("Google Cloud Logging credentials are not available to the server runtime."); const request = cloudLoggingRequest(range, projectId); const response = await fetchImpl(request.url, { method: "POST", headers: { Authorization: "Bearer " + token.token, "Content-Type": "application/json" }, body: JSON.stringify(request.body), cache: "no-store" }); const body = await response.json().catch(() => undefined) as { entries?: CloudLogEntry[]; nextPageToken?: string; error?: { message?: string } } | undefined; if (!response.ok) throw new Error("Google Cloud Logging returned HTTP " + response.status + (body?.error?.message ? ": " + body.error.message : ".")); return { entries: body?.entries || [], truncated: Boolean(body?.nextPageToken) }; } };
+export function createCloudLoggingClient(fetchImpl: typeof fetch = fetch, configuredProjectId?: string, tokenProvider?: () => Promise<string>): CloudLoggingClient {
+  return { async list(range) { const projectId = configuredProjectId || process.env.GCLOUD_PROJECT || process.env.GOOGLE_CLOUD_PROJECT || "fika-os-dev"; let token: string; if (tokenProvider) token = await tokenProvider(); else { const auth = new GoogleAuth({ scopes: ["https://www.googleapis.com/auth/logging.read"] }); const client = await auth.getClient(); const access = await client.getAccessToken(); if (!access.token) throw new Error("Google Cloud Logging credentials are not available to the server runtime."); token = access.token; } const request = cloudLoggingRequest(range, projectId); const entries: CloudLogEntry[] = []; const seen = new Set<string>(); let pageToken: string | undefined; let truncated = false; for (let page = 0; page < CLOUD_LOGGING_MAX_PAGES; page += 1) { const bodyRequest = { ...request.body, ...(pageToken ? { pageToken } : {}) }; const response = await fetchImpl(request.url, { method: "POST", headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" }, body: JSON.stringify(bodyRequest), cache: "no-store" }); const body = await response.json().catch(() => undefined) as { entries?: CloudLogEntry[]; nextPageToken?: string; error?: { message?: string } } | undefined; if (!response.ok) throw new Error("Google Cloud Logging returned HTTP " + response.status + (body?.error?.message ? ": " + body.error.message : ".")); for (const entry of body?.entries || []) { const key = entry.insertId; if (key && seen.has(key)) continue; if (key) seen.add(key); entries.push(entry); if (entries.length >= CLOUD_LOGGING_MAX_ENTRIES) { truncated = Boolean(body?.nextPageToken); break; } } if (entries.length >= CLOUD_LOGGING_MAX_ENTRIES) break; if (!body?.nextPageToken) { pageToken = undefined; break; } pageToken = body.nextPageToken; if (page === CLOUD_LOGGING_MAX_PAGES - 1) truncated = true; } if (pageToken) truncated = true; return { entries: entries.slice(0, CLOUD_LOGGING_MAX_ENTRIES), truncated }; } };
 }

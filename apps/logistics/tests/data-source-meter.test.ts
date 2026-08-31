@@ -163,6 +163,36 @@ test("transactional Firestore reads retain returned document counts", async () =
   }
 });
 
+test("trace summaries retain aggregate totals after bounded operation details", () => {
+  const priorFlag = process.env.FIKA_DATA_SOURCE_TRACE;
+  process.env.FIKA_DATA_SOURCE_TRACE = "1";
+  try {
+    const trace = startDataTrace({ app: "logistics", action: "large-load", path: "/api/logistics" });
+    for (let index = 0; index < 140; index += 1) recordDataAccess(trace, { operation: `read-${index}`, source: "FIRESTORE", documents: 2 });
+    const summary = endDataTrace(trace);
+    assert.equal(summary?.operations, 140);
+    assert.equal(summary?.records.length, 128);
+    assert.equal(summary?.firestoreReturnedDocuments, 280);
+    assert.equal(summary?.estimatedFirestoreBillableReads, 280);
+  } finally {
+    if (priorFlag === undefined) delete process.env.FIKA_DATA_SOURCE_TRACE; else process.env.FIKA_DATA_SOURCE_TRACE = priorFlag;
+  }
+});
+
+test("explicit cache outcomes are counted independently of returned documents", () => {
+  const priorFlag = process.env.FIKA_DATA_SOURCE_TRACE;
+  process.env.FIKA_DATA_SOURCE_TRACE = "1";
+  try {
+    const trace = startDataTrace({ app: "logistics", action: "cache-load" });
+    recordDataAccess(trace, { operation: "cache.hit", source: "APP_CACHE", documents: 0, cacheResult: "HIT" });
+    recordDataAccess(trace, { operation: "cache.join", source: "APP_CACHE", documents: 0, cacheResult: "IN_FLIGHT_JOIN" });
+    recordDataAccess(trace, { operation: "cache.fallback", source: "FIRESTORE", documents: 1, cacheResult: "FALLBACK" });
+    assert.deepEqual(endDataTrace(trace)?.cache, { HIT: 1, MISS: 0, IN_FLIGHT_JOIN: 1, FALLBACK: 1, BYPASS: 0, STALE: 0, REVALIDATED: 0 });
+  } finally {
+    if (priorFlag === undefined) delete process.env.FIKA_DATA_SOURCE_TRACE; else process.env.FIKA_DATA_SOURCE_TRACE = priorFlag;
+  }
+});
+
 test("trace adapters do not add Firestore access or listeners", () => {
   const server = readFileSync(new URL("../../../packages/server-shared/src/data-source-meter-server.ts", import.meta.url), "utf8");
   const client = readFileSync(new URL("../../../packages/server-shared/src/data-source-meter-client.ts", import.meta.url), "utf8");
