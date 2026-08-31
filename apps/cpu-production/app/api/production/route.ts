@@ -16,6 +16,7 @@ import type { ProductionOrder } from "../../../lib/production-types";
 import { withDataTrace } from "@fika/server-shared/data-source-meter-server";
 import { getCpuProjectionManifest, getCpuProjectionPackage, recordCpuPackageFallback } from "../../../lib/cpu-read-package";
 import { rebuildCpuReviewPackage } from "../../../lib/cpu-review-package";
+import { eventTypeForConsumers, notifyCpuConsumerInvalidations } from "../../../lib/cpu-consumer-invalidation";
 
 const localActor = {
   uid: "local-cpu",
@@ -48,9 +49,11 @@ async function recordCpuChange(request: NextRequest, canonicalId: string, actorI
   const event = await appendCpuChange({ serviceDate, entityType: "productionOrder", entityId: canonicalId, revision: current.version, changeType, actorId, changedAt: new Date().toISOString() });
   await rebuildCpuProjection(request, serviceDate, event.sequence);
   await rebuildCpuWeekProjection(request, weekCommencingFor(serviceDate), event.sequence);
-  if (current?.destinationOplocId) await rebuildCpuReviewPackage(request, serviceDate, current.destinationOplocId, event.sequence);
+  const review = current?.destinationOplocId ? await rebuildCpuReviewPackage(request, serviceDate, current.destinationOplocId, event.sequence) : undefined;
+  await notifyCpuConsumerInvalidations({ eventId: `cpu-change:${event.sequence}`, sourceEntityId: canonicalId, serviceDate, sourceVersion: current.version, changedAt: event.changedAt, changeType: eventTypeForConsumers(changeType), order: current, logistics: true, ...(review ? { reviewManifest: review.manifest } : {}) });
   return current;
 }
+
 
 const Cpu = z
   .object({
@@ -278,7 +281,8 @@ async function handlePost(request: NextRequest) {
       const dayProjection = await rebuildCpuProjection(request, serviceDate, event.sequence);
       const weekProjection = await rebuildCpuWeekProjection(request, weekCommencingFor(serviceDate), event.sequence);
       const changedOrder = await productionOrderDetail(request, z.string().min(1).parse(raw.entityId));
-      if (changedOrder?.destinationOplocId) await rebuildCpuReviewPackage(request, serviceDate, changedOrder.destinationOplocId, event.sequence);
+      const review = changedOrder?.destinationOplocId ? await rebuildCpuReviewPackage(request, serviceDate, changedOrder.destinationOplocId, event.sequence) : undefined;
+      await notifyCpuConsumerInvalidations({ eventId: `cpu-change:${event.sequence}`, sourceEntityId: event.entityId, serviceDate, sourceVersion: event.revision, changedAt: event.changedAt, changeType: eventTypeForConsumers(event.changeType), order: changedOrder || { origin: "menu_planning" }, logistics: true, ...(review ? { reviewManifest: review.manifest } : {}) });
       return NextResponse.json({ applied: true, duplicate: event.sequence < Number(raw.sequence || event.sequence), event, dayProjection, weekProjection });
     }
     const actor = await actorFor(request);

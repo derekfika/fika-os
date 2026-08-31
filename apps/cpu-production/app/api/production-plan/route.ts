@@ -20,6 +20,7 @@ import { loadDeliveredInReviewStatuses, parseDeliveredInReviewOrderIds } from ".
 import { recordDeliveredInReadBudget } from "../../../lib/delivered-in-read-budget";
 import { recordDataAccess, withDataTrace } from "@fika/server-shared/data-source-meter-server";
 import { rebuildCpuReviewPackage } from "../../../lib/cpu-review-package";
+import { eventTypeForConsumers, notifyCpuConsumerInvalidations } from "../../../lib/cpu-consumer-invalidation";
 
 function menuContentHash(menuItems: PlannedMenuItem[]) {
   return createHash("sha256").update(JSON.stringify(menuItems)).digest("hex");
@@ -289,7 +290,11 @@ async function handlePost(request: NextRequest) {
       }
       for (const serviceDate of affectedDates) {
         const affectedOrders = await Promise.all(batch.operations.filter(operation => latestSequenceByDate.has(serviceDate)).map(operation => loadOrder(request, operation.orderId)));
-        for (const oplocId of [...new Set(affectedOrders.map(order => order?.destinationOplocId).filter((id): id is string => Boolean(id)))]) await rebuildCpuReviewPackage(request, serviceDate, oplocId, latestSequenceByDate.get(serviceDate));
+        for (const oplocId of [...new Set(affectedOrders.map(order => order?.destinationOplocId).filter((id): id is string => Boolean(id)))]) {
+          const review = await rebuildCpuReviewPackage(request, serviceDate, oplocId, latestSequenceByDate.get(serviceDate));
+          const sourceVersion = latestSequenceByDate.get(serviceDate) || 0;
+          await notifyCpuConsumerInvalidations({ eventId: `cpu-change:${sourceVersion}:review:${oplocId}`, sourceEntityId: `cpu-review:${oplocId}:${serviceDate}`, serviceDate, sourceVersion, changedAt: new Date().toISOString(), changeType: "amended", order: { origin: "menu_planning", destinationOplocId: oplocId }, logistics: false, reviewManifest: review.manifest });
+        }
       }
       recordDeliveredInReadBudget({ stage: "matrix_batch_mutation", planDocs: results.filter(result => result.ok).length, selectedIds: batch.operations.length, rebuildScopes: affectedDates.length + affectedWeeks.size });
       return NextResponse.json({ results, partialFailure: results.some(result => !result.ok) && results.some(result => result.ok) });
@@ -404,7 +409,8 @@ async function handlePost(request: NextRequest) {
       const event = await appendCpuChange({ serviceDate: changedOrder.serviceDate, entityType: "productionPlan", entityId: plan.id, revision: plan.audit.length, changeType: command.action, actorId: actor.uid, changedAt: timestamp });
       await rebuildCpuDayProjection(request, changedOrder.serviceDate, event.sequence);
       await rebuildCpuWeekProjection(request, weekCommencingFor(changedOrder.serviceDate), event.sequence);
-      if (changedOrder.destinationOplocId) await rebuildCpuReviewPackage(request, changedOrder.serviceDate, changedOrder.destinationOplocId, event.sequence);
+      const review = changedOrder.destinationOplocId ? await rebuildCpuReviewPackage(request, changedOrder.serviceDate, changedOrder.destinationOplocId, event.sequence) : undefined;
+      await notifyCpuConsumerInvalidations({ eventId: `cpu-change:${event.sequence}`, sourceEntityId: plan.id, serviceDate: changedOrder.serviceDate, sourceVersion: event.sequence, changedAt: timestamp, changeType: eventTypeForConsumers(command.action), order: changedOrder, logistics: false, ...(review ? { reviewManifest: review.manifest } : {}) });
     }
     const matrixStatus = plan.matrixArtifact ? "ready" : plan.signatures?.some(signature => signature.role === "production_chef") && plan.signatures?.some(signature => signature.role === "head_chef_site_manager") ? changedOrder && !matrixDriveConfiguration(changedOrder).enabled ? "not_configured" : "generating" : undefined;
     return NextResponse.json({ plan, matrixArtifact: plan.matrixArtifact ?? null, signatures: plan.signatures ?? null, matrixStatus, notification: notification || (plan.status === "planned" ? { title: "New production plan ready for menu generation.", orderId: plan.orderId } : undefined) });
