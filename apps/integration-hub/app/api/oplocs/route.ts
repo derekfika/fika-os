@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireActor } from "@/lib/auth";
+import { actorFromSession } from "@/lib/auth";
 import { assertPermission } from "@/lib/authmod";
+import { FirestoreAuthModRepository } from "@/lib/authmod-core";
+import { requireFikaSession } from "@/lib/fika-session";
+import { filterAuthorizedOplocs, resolvePermittedOplocIds } from "@/lib/oploc-authorization";
 import { getOplocReadPackage, validateOplocReadPackage } from "@/lib/oploc-read-package";
 import { withDataTrace } from "@fika/server-shared/data-source-meter-server";
 
@@ -8,12 +11,17 @@ export const dynamic = "force-dynamic";
 
 async function handleGet(request: NextRequest) {
   try {
-    const actor = await requireActor(request);
+    const session = await requireFikaSession(request);
+    const actor = await actorFromSession(session);
     assertPermission(actor, "canonical.view");
-    // The package is display/reference data only. AUTHMOD is evaluated above;
-    // package possession or contents never grant an OPLOC entitlement.
+    const repository = new FirestoreAuthModRepository();
+    const activeOplocs = await repository.listActiveOplocs();
+    const principal = { type: "interactive" as const, id: session.authmodIdentityId, displayName: session.displayName, email: session.email, identityKind: session.identityKind, ...(session.representedOplocId ? { representedOplocId: session.representedOplocId } : {}), ...(session.primaryCustodianLegendId ? { primaryCustodianLegendId: session.primaryCustodianLegendId } : {}) };
+    const permittedOplocIds = await resolvePermittedOplocIds({ repository, principal, activeOplocs, appId: request.nextUrl.searchParams.get("appId") || undefined });
     const { value } = await getOplocReadPackage();
-    return NextResponse.json(validateOplocReadPackage(value), { headers: { "Cache-Control": "no-store, max-age=0" } });
+    // The package is display/reference data only. AUTHMOD is evaluated first;
+    // package possession or contents never grant an OPLOC entitlement.
+    return NextResponse.json(filterAuthorizedOplocs(validateOplocReadPackage(value), permittedOplocIds), { headers: { "Cache-Control": "no-store, max-age=0" } });
   } catch (error) {
     return NextResponse.json({ error: { message: error instanceof Error ? error.message : "OPLOC authority is unavailable." } }, { status: Number((error as { status?: number }).status) || 503 });
   }
