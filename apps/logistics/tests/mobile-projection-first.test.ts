@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 import { applyLogisticsProjectionInvalidation, filterLogisticsProjectionForVehicle } from "../lib/logistics-projection";
 import type { LogisticsDayProjection } from "../lib/types";
+import { requireLogisticsAccess } from "../lib/auth";
 
 const projection = (overrides: Partial<LogisticsDayProjection> = {}): LogisticsDayProjection => ({
   serviceDate: "2026-08-31", revision: 3, lastChangeSequence: 12, state: "CURRENT",
@@ -68,4 +69,13 @@ test("invalidation endpoint and upstream notifier are narrow and internal-only",
   assert.match(route, /invalidateLogisticsProjection/);
   assert.match(client, /\/api\/logistics\/invalidate/);
   assert.match(client, /sourceVersion/);
+});
+
+test("server-authoritative vehicle entitlements isolate fixed-van access", async () => {
+  const request = (vehicle: string) => ({ cookies: { get: () => undefined }, headers: { get: () => "" }, nextUrl: { searchParams: { get: (key: string) => key === "vehicle" ? vehicle : null } } });
+  const admitted = (permittedVehicleIds: string[]) => requireLogisticsAccess(request("van1"), { sessionReader: async () => ({ firebaseUid: "firebase", authmodIdentityId: "driver", displayName: "Driver", permittedVehicleIds } as never), allowLocalFallback: false });
+  await assert.rejects(() => admitted(["van2"]), /not entitled/);
+  await assert.doesNotReject(() => admitted(["van1"]));
+  await assert.doesNotReject(() => requireLogisticsAccess(request("van2"), { sessionReader: async () => ({ firebaseUid: "firebase", authmodIdentityId: "driver", displayName: "Driver", permittedVehicleIds: ["van1", "van2"] } as never), allowLocalFallback: false }));
+  await assert.rejects(() => requireLogisticsAccess(request("van1"), { sessionReader: async () => ({ firebaseUid: "firebase", authmodIdentityId: "driver", displayName: "Driver" } as never), allowLocalFallback: false }), /not entitled/);
 });

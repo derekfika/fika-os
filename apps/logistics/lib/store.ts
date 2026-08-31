@@ -196,6 +196,7 @@ export async function listLogisticsChanges(after = 0, serviceDate?: string) {
   return { changes, hasMore: snapshot.size > LOGISTICS_CHANGE_LIMIT, nextCursor: changes.at(-1)?.sequence ?? after };
 }
 export async function repairLegacyAssignmentServiceDates() {
+  // Deliberately unbounded: explicit admin-only legacy repair, never a normal read path.
   const [assignmentSnap, jobSnap, loadSnap] = await Promise.all([logisticsAssignments().get(), logisticsJobs().get(), deliveryLoads().get()]);
   const jobs = new Map(jobSnap.docs.map((doc) => [doc.id, doc.data() as LogisticsJob]));
   const loads = new Map(loadSnap.docs.map((doc) => [doc.id, doc.data() as DeliveryLoad]));
