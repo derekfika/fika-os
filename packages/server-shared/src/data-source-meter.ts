@@ -1,4 +1,4 @@
-export const DATA_SOURCES = ["FIRESTORE", "SNAPSHOT", "CLIENT_CACHE", "APP_CACHE", "MEMORY", "STATIC", "UNKNOWN"] as const;
+export const DATA_SOURCES = ["FIRESTORE", "SNAPSHOT", "CLIENT_CACHE", "APP_CACHE", "MEMORY", "STATIC", "NETWORK_UPSTREAM", "UNKNOWN"] as const;
 export type DataSource = (typeof DATA_SOURCES)[number];
 export type DataTraceLevel = "NORMAL" | "WARN" | "HIGH";
 export const CANONICAL_OS_APPS = ["integration-hub", "menu-planning", "logistics", "cpu-production", "delivered-in", "hospitality-booking", "ad-hoc-production", "events-dashboard"] as const;
@@ -36,7 +36,7 @@ export function classifyDataTraceLevel(documents: number): DataTraceLevel {
 
 export function startDataTrace(input: DataTraceInput): DataTrace | undefined {
   if (!isDataSourceTraceEnabled()) return undefined;
-  return { ...input, app: canonicalOsAppId(input.app), action: input.action || "request", path: input.path || "unknown", traceId: input.traceId || randomTraceId(), startedAt: Date.now(), records: [], aggregateKeys: new Set(), totals: { FIRESTORE: 0, SNAPSHOT: 0, CLIENT_CACHE: 0, APP_CACHE: 0, MEMORY: 0, STATIC: 0, UNKNOWN: 0 }, operations: 0, estimatedFirestoreBillableReads: 0, estimatedFirestoreWrites: 0, estimatedFirestoreDeletes: 0, cache: { HIT: 0, MISS: 0, IN_FLIGHT_JOIN: 0, FALLBACK: 0, BYPASS: 0, STALE: 0, REVALIDATED: 0 } };
+  return { ...input, app: canonicalOsAppId(input.app), action: input.action || "request", path: input.path || "unknown", traceId: input.traceId || randomTraceId(), startedAt: Date.now(), records: [], aggregateKeys: new Set(), totals: { FIRESTORE: 0, SNAPSHOT: 0, CLIENT_CACHE: 0, APP_CACHE: 0, MEMORY: 0, STATIC: 0, NETWORK_UPSTREAM: 0, UNKNOWN: 0 }, operations: 0, estimatedFirestoreBillableReads: 0, estimatedFirestoreWrites: 0, estimatedFirestoreDeletes: 0, cache: { HIT: 0, MISS: 0, IN_FLIGHT_JOIN: 0, FALLBACK: 0, BYPASS: 0, STALE: 0, REVALIDATED: 0 } };
 }
 
 export function recordDataAccess(trace: DataTrace | undefined, input: DataAccessInput) {

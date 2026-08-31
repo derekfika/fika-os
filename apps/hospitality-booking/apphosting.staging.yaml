@@ -1,6 +1,9 @@
 # Firebase App Hosting staging configuration for Hospitality Booking.
 # Configure the backend root directory as apps/hospitality-booking.
 env:
+  - variable: FIKA_DATA_SOURCE_TRACE
+    value: "1"
+    availability: [BUILD, RUNTIME]
   - variable: FIKA_RUNTIME_MODE
     value: staging
     availability: [BUILD, RUNTIME]

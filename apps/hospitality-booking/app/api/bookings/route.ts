@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { hubFetch } from "@/lib/hub";
+import { recordDataAccess, setDataTraceOutcome, withDataTrace } from "@fika/server-shared/data-source-meter-server";
 
 export async function POST(request: NextRequest) {
-  try {
+  return withDataTrace({ app: "hospitality-booking", action: "booking.create", path: "/api/bookings", outcome: "SUCCESS" }, async () => { try {
     const payload = await request.json();
     const endpoint = "/api/bookings/mnk";
     const response = await hubFetch(endpoint, {
@@ -10,6 +11,7 @@ export async function POST(request: NextRequest) {
       headers: { "content-type": "application/json" },
       body: JSON.stringify(payload),
     });
+    recordDataAccess({ operation: "booking.create", source: "NETWORK_UPSTREAM", documents: 0, dataset: "hospitality/bookings" });
     const bodyText = await response.text();
     try {
       return NextResponse.json(JSON.parse(bodyText), {
@@ -25,10 +27,10 @@ export async function POST(request: NextRequest) {
         { status: response.ok ? 502 : response.status },
       );
     }
-  } catch (error) {
+  } catch (error) { setDataTraceOutcome("ERROR");
     return NextResponse.json(
       { error: { message: (error as Error).message } },
       { status: 503 },
     );
-  }
+  } });
 }

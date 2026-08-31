@@ -13,5 +13,6 @@ export async function withDataTrace<T>(input: DataTraceInput, callback: () => Pr
 }
 
 export function recordDataAccess(input: DataAccessInput) { const trace = context.getStore(); if (trace) record(trace, input); }
+export function setDataTraceOutcome(outcome: NonNullable<DataTraceInput["outcome"]>) { const trace = context.getStore(); if (trace) trace.outcome = outcome; }
 export function currentDataTrace() { return context.getStore(); }
 export function dataSourceTraceEnabled() { return isDataSourceTraceEnabled(); }
