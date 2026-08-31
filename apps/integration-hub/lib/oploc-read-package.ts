@@ -63,13 +63,8 @@ export async function rebuildOplocReadPackage(): Promise<ReadPackageManifest> {
 
 export async function getOplocReadPackage() {
   const store = oplocPackageStore();
-  let result;
-  try {
-    result = await retrieveReadPackage<OplocReadPackage>(store, OPLOC_MANIFEST_KEY);
-  } catch (error) {
-    recordDataAccess({ app: "integration-hub", operation: "oploc.package.integrity-failure", source: "SNAPSHOT", documents: 0 });
-    throw Object.assign(new Error("OPLOC read package integrity validation failed. Rebuild the package before serving traffic."), { status: 503, code: "OPLOC_PACKAGE_INTEGRITY_FAILURE", cause: error });
-  }
+  let result = await retrieveReadPackage<OplocReadPackage>(store, OPLOC_MANIFEST_KEY);
+  if (!result) { await rebuildOplocReadPackage(); result = await retrieveReadPackage<OplocReadPackage>(store, OPLOC_MANIFEST_KEY); }
   if (!result) throw Object.assign(new Error("OPLOC read package is unavailable."), { status: 503, code: "OPLOC_PACKAGE_MISSING" });
   recordDataAccess({ app: "integration-hub", operation: "oploc.package.read", source: "SNAPSHOT", documents: result.manifest.recordCount, cacheHit: false });
   return result;

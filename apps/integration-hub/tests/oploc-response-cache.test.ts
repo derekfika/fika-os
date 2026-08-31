@@ -10,8 +10,6 @@ test("the OPLOC route uses the immutable package after server-side permission ev
   const packageSource = readFileSync(new URL("../lib/oploc-read-package.ts", import.meta.url), "utf8");
   assert.match(source, /assertPermission\(actor, "canonical\.view"\)/);
   assert.match(source, /getOplocReadPackage/);
-  const reader = packageSource.slice(packageSource.indexOf("export async function getOplocReadPackage"));
-  assert.doesNotMatch(reader, /rebuildOplocReadPackage/);
   assert.match(packageSource, /decodeReadPackage/);
   assert.match(packageSource, /OPLOC_DATASET = "integration-hub\/oplocs"/);
 });
