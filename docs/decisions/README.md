@@ -18,8 +18,9 @@ An ADR must implement approved BDRs and adopted schemas. It must not invent or s
 - [ADR-009 — Booking-to-Production Orchestration](ADR-009-booking-to-production-orchestration.md) — accepted technology-neutral contract for eligibility, creation, amendments, cancellation, partial outcomes, recovery and reconciliation across the Booking and Production boundary.
 - [ADR-010 — Legacy Coexistence and Retirement](ADR-010-legacy-coexistence-and-retirement.md) — accepted technology-neutral contract for bounded coexistence, authority direction, readiness, cutover, fallback, retirement and retained history.
 - [ADR-011 — Notification Generation and Delivery](ADR-011-notification-generation-and-delivery.md) — accepted technology-neutral contract for notification intent, recipient/content resolution, delivery attempts, provider observations, acknowledgement and reconciliation.
+- [ADR-012 — Materialised Read Packages and Local Projection Caching](ADR-012-materialised-read-packages-and-local-projection-caching.md) — proposed Stage 7 implementation architecture for immutable package publication, manifests, local caches, lineage, freshness, security and gradual adoption of ADR-007 projections.
 
-ADR-001 contains the controlled register of required follow-up ADRs. ADR-005 through ADR-011 are complete. No later ADR is currently registered; new work requires a governed register update.
+ADR-001 contains the controlled register of required follow-up ADRs. ADR-005 through ADR-011 are complete. ADR-012 is proposed and requires human governance approval before it is treated as accepted implementation authority.
 
 ## Status convention
 

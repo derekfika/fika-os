@@ -264,6 +264,7 @@ Architecture must not resolve the following:
 | ADR-009 Booking-to-Production orchestration | Trigger, Booking-version contract, retries, compensation and reconciliation | Before implementing canonical Production creation | Accepted 2026-07-27 |
 | ADR-010 Legacy coexistence and retirement | Classification evidence, cutover, reconciliation, rollback and acceptance | Before retiring any current operational path | Accepted 2026-07-27 |
 | ADR-011 Notification generation and delivery | Domain intent, recipient policy, delivery adapters and audit | Before a shared notification capability is implemented | Accepted 2026-07-27 |
+| ADR-012 Materialised read packages and local projection caching | Physical package publication, manifests, local caches, lineage and recovery for ADR-007 projections | Before implementing shared materialised read-package mechanics | Proposed 2026-08-31 |
 
 The numbers are reserved as a planning register only. Each ADR requires its own evidence and review.
 

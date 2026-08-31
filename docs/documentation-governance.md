@@ -69,6 +69,7 @@ Draft, proposed and planned documents are never adopted authority merely because
 | `docs/decisions/ADR-009-booking-to-production-orchestration.md` | Accepted ADR | Technology-neutral contract for Booking-to-Production eligibility, lifecycle coordination, recovery and reconciliation |
 | `docs/decisions/ADR-010-legacy-coexistence-and-retirement.md` | Accepted ADR | Technology-neutral contract for bounded coexistence, authority direction, readiness, cutover, fallback and retirement |
 | `docs/decisions/ADR-011-notification-generation-and-delivery.md` | Accepted ADR | Technology-neutral contract for notification intent, recipient/content resolution, provider delivery, qualified outcomes and reconciliation |
+| `docs/decisions/ADR-012-materialised-read-packages-and-local-projection-caching.md` | Proposed ADR | Stage 7 physical implementation strategy for ADR-007 projections, package publication, manifests and local caches; not accepted authority until reviewed |
 | `docs/decisions/README.md` | Canonical ADR index | Architectural Decision Record guidance, distinct from BDRs |
 | `docs/fika-core/*.md` | Supporting Stage 6 specification | Catalogues constrained by ADR-001, ADR-005 and later accepted ADRs; do not independently create business authority |
 | `docs/engineering/*.md` | Canonical engineering standards | Delivery, testing, review and AI-working standards |

@@ -9,9 +9,9 @@ This repository is the governed business, domain, schema and architecture specif
 - **Stage 5 baseline:** Packs 1–8, 51 schemas, 53 valid fixtures and 51 invalid fixtures
 - **Fresh baseline validation:** Passed on 2026-07-25
 - **Stage 6:** Complete — closed 2026-07-27 ([closure review](docs/stages/stage-6-closure-2026-07-27.md))
-- **Stage 7:** Active — [Increment 1](docs/stages/stage-7-increment-1-shadow-cpu-production-charter.md) is chartered; the [pre-code review](docs/stages/stage-7-increment-1-before-first-code-review-2026-07-27.md) is blocked only by FIKA Xchange's missing canonical Operational Location ID
+- **Stage 7:** Active — [Increment 1](docs/stages/stage-7-increment-1-shadow-cpu-production-charter.md) remains governed, while current UAT implementation work and the [current implementation alignment](docs/stages/stage-7-current-implementation-alignment-2026-08-31.md) are recorded separately. The physical projection/read-package strategy is proposed in [ADR-012](docs/decisions/ADR-012-materialised-read-packages-and-local-projection-caching.md).
 
-The repository contains all 54 durable Business Decision Records and the integrated Stage 5 schema baseline. Stage 6 has accepted its platform-boundary, domain-event, repository-consistency, projection/dashboard, identity/AUTHMOD, Booking-to-Production orchestration, legacy-coexistence and notification contracts through ADR-001 and ADR-005–011. A BDR may retain `Draft` metadata while its supporting explanation awaits review; its exact approved `Decision` section remains authoritative and is not superseded by that metadata.
+The repository contains all 54 durable Business Decision Records and the integrated Stage 5 schema baseline. Stage 6 has accepted its platform-boundary, domain-event, repository-consistency, projection/dashboard, identity/AUTHMOD, Booking-to-Production orchestration, legacy-coexistence and notification contracts through ADR-001 and ADR-005–011. ADR-012 is a Proposed Stage 7 implementation architecture selecting the physical read-package boundary without changing those accepted contracts. A BDR may retain `Draft` metadata while its supporting explanation awaits review; its exact approved `Decision` section remains authoritative and is not superseded by that metadata.
 
 ## Start here
 
@@ -27,6 +27,7 @@ The repository contains all 54 durable Business Decision Records and the integra
 10. Use [ADR-009](docs/decisions/ADR-009-booking-to-production-orchestration.md) for the Booking-to-Production orchestration contract.
 11. Use [ADR-010](docs/decisions/ADR-010-legacy-coexistence-and-retirement.md) for legacy coexistence, readiness, cutover, fallback and retirement boundaries.
 12. Use [ADR-011](docs/decisions/ADR-011-notification-generation-and-delivery.md) for notification intent, recipient/content resolution, delivery attempts and qualified outcome boundaries.
+13. Use [ADR-012](docs/decisions/ADR-012-materialised-read-packages-and-local-projection-caching.md) for the proposed physical materialised read-package and local-cache strategy, and the [Stage 7 alignment register](docs/stages/stage-7-current-implementation-alignment-2026-08-31.md) for current-state evidence.
 
 ## Repository navigation
 

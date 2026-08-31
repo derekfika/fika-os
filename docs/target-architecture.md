@@ -2,7 +2,7 @@
 
 ## Status and authority
 
-This accepted Stage 6 target boundary is governed by [ADR-001](decisions/ADR-001-stage-6-platform-boundaries.md) and [ADR-005](decisions/ADR-005-domain-event-and-integration-contract.md) through [ADR-011](decisions/ADR-011-notification-generation-and-delivery.md). It is technology-neutral and does not decide deployment topology, storage, hosting, provider or programming language.
+This accepted Stage 6 target boundary is governed by [ADR-001](decisions/ADR-001-stage-6-platform-boundaries.md) and [ADR-005](decisions/ADR-005-domain-event-and-integration-contract.md) through [ADR-011](decisions/ADR-011-notification-generation-and-delivery.md). The proposed Stage 7 implementation strategy is recorded in [ADR-012](decisions/ADR-012-materialised-read-packages-and-local-projection-caching.md); it selects no business meaning or canonical authority. This document remains technology-neutral and does not decide deployment topology, storage, hosting, provider or programming language.
 
 Business meaning remains authoritative in the Business Decision Records and completed Packs. This document explains how future software must respect that meaning.
 
@@ -166,3 +166,5 @@ No legacy path is retired by this architecture document. [ADR-010](decisions/ADR
 - provider selection;
 - final boundaries for candidate domains;
 - legacy retirement timing.
+
+ADR-012 may select physical package and cache mechanics for these projections without changing their logical ownership, authority or the storage-independence boundary in this document.
