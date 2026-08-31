@@ -25,3 +25,6 @@ env:
   - variable: FIKA_INTERNAL_API_TOKEN
     secret: FIKA_INTERNAL_API_TOKEN@3
     availability: [RUNTIME]
+  # Required for replayable Menu Planning -> Delivered-In invalidation.
+  # Set this to the approved Delivered-In staging backend URL during release.
+  # variable: FIKA_APP_DELIVERED_IN_URL

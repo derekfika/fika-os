@@ -93,7 +93,7 @@ export async function withdrawDeliveredInProjectionDay(oplocId: string, serviceD
   await updateProjectionIndex(store, oplocId, { oplocId, serviceDate, projectionVersion: existing?.projectionVersion || 0, packageVersion: existing?.packageVersion || 0, contentHash: existing?.contentHash || "", freshness: "current", completeness: "missing", sourceVersion, generatedAt: new Date().toISOString(), state: "withdrawn" });
 }
 
-export type DeliveredInInvalidation = { sourceDomain: "menu-planning" | "cpu-production" | "integration-hub"; sourceEntityId: string; eventId: string; eventType: "changed" | "amended" | "withdrawn" | "superseded"; serviceDate: string; oplocId: string; sourceVersion?: string; contentHash?: string };
+export type DeliveredInInvalidation = { sourceDomain: "menu-planning" | "cpu-production" | "integration-hub"; sourceEntityId: string; publicationId?: string; eventId: string; eventType: "changed" | "amended" | "withdrawn" | "superseded"; serviceDate: string; oplocId: string; sourceVersion?: string; contentHash?: string };
 function versionNumber(value?: string) { const match = value?.match(/(\d+)$/); return match ? Number(match[1]) : undefined; }
 function sourceVersionIsOlder(incoming: string | undefined, existing: string | undefined) {
   if (!incoming || !existing || incoming === existing) return false;

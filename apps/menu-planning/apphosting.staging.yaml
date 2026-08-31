@@ -22,3 +22,5 @@ env:
   - variable: NEXT_PUBLIC_FIKA_HUB_URL
     value: https://staging-os.fikacatering.com
     availability: [BUILD, RUNTIME]
+  # Required for replayable Menu Planning -> Delivered-In invalidation.
+  # variable: FIKA_APP_DELIVERED_IN_URL
