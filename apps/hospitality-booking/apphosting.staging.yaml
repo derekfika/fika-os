@@ -19,6 +19,9 @@ env:
   - variable: FIKA_HUB_BASE_URL
     value: https://fika-os-staging--fika-os-dev.europe-west4.hosted.app
     availability: [BUILD, RUNTIME]
+  - variable: CPU_PRODUCTION_BASE_URL
+    value: https://cpu-staging.fikacatering.com
+    availability: [BUILD, RUNTIME]
   - variable: FIKA_MNK_OPLOC_ID
     value: oploc:66e621fa-6e6f-4f46-9aed-462313abbe8f
     availability: [BUILD, RUNTIME]

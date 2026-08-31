@@ -8,6 +8,14 @@ test("Hospitality staging enables shared tracing", () => {
   assert.match(config, /value:\s*["']?1["']?/);
 });
 
+test("Hospitality staging declares the server-side Hub and CPU clients without exposing secrets", () => {
+  const config = readFileSync(new URL("../apphosting.staging.yaml", import.meta.url), "utf8");
+  assert.match(config, /variable:\s*FIKA_HUB_BASE_URL[\s\S]*?value:\s*https:\/\/fika-os-staging--fika-os-dev\.europe-west4\.hosted\.app/);
+  assert.match(config, /variable:\s*CPU_PRODUCTION_BASE_URL[\s\S]*?value:\s*https:\/\/cpu-staging\.fikacatering\.com/);
+  for (const secret of ["MNK_CANON_BRIDGE_TOKEN", "GOOGLE_WORKSPACE_DWD_SERVICE_ACCOUNT_JSON", "FIKA_PDF_RENDERER_TOKEN"]) assert.match(config, new RegExp(`variable:\\s*${secret}[\\s\\S]*?secret:\\s*${secret}`));
+  assert.doesNotMatch(config, /private_key|client_secret|token:\s*[^\s]/i);
+});
+
 test("Hospitality proxy boundaries classify upstream calls without payload logging", () => {
   const source = readFileSync(new URL("../app/api/dashboard-bookings/route.ts", import.meta.url), "utf8");
   assert.match(source, /withDataTrace/);
