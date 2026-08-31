@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { cachedAuthmodAdmission, clearAuthmodAdmissionCacheForTests, invalidateAuthmodAdmissionCache, withAuthmodRequestContext } from "../lib/authmod-admission-cache";
+import { authmodAdmissionCacheConfigForTests, cachedAuthmodAdmission, clearAuthmodAdmissionCacheForTests, invalidateAuthmodAdmissionCache, withAuthmodRequestContext } from "../lib/authmod-admission-cache";
 import { recordDataAccess, withDataTrace } from "@fika/server-shared/data-source-meter-server";
 
 const totalsFrom = (lines: string[]) => lines
@@ -14,6 +14,7 @@ test.beforeEach(() => {
 
 test.afterEach(() => {
   clearAuthmodAdmissionCacheForTests();
+  delete process.env.AUTHMOD_ADMISSION_TTL_MS;
   delete process.env.FIKA_DATA_SOURCE_TRACE;
 });
 
@@ -85,6 +86,16 @@ test("known authority expiry bounds the short-lived cache", async () => {
   await new Promise(resolve => setTimeout(resolve, 20));
   await cachedAuthmodAdmission({ identityId: "expiring", appId: "logistics", load });
   assert.equal(loads, 2);
+});
+
+test("independent instances use an explicit downward-configurable TTL with a hard maximum", () => {
+  process.env.AUTHMOD_ADMISSION_TTL_MS = "5000";
+  assert.deepEqual(authmodAdmissionCacheConfigForTests(), { ttlMs: 5000, hardMaxTtlMs: 30000, generation: 0 });
+  process.env.AUTHMOD_ADMISSION_TTL_MS = "60000";
+  assert.equal(authmodAdmissionCacheConfigForTests().ttlMs, 30000);
+  // Each App Hosting instance has its own process cache; the shared policy
+  // proves the same deterministic maximum stale-authority window applies to both.
+  assert.equal(authmodAdmissionCacheConfigForTests().hardMaxTtlMs, 30000);
 });
 
 test("request context reuse is generation-aware", async () => {

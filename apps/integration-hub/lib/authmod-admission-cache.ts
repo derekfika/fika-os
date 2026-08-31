@@ -1,7 +1,8 @@
 import { recordDataAccess } from "@fika/server-shared/data-source-meter-server";
 import { AsyncLocalStorage } from "node:async_hooks";
 
-const CACHE_TTL_MS = 30_000;
+const DEFAULT_CACHE_TTL_MS = 30_000;
+const HARD_MAX_CACHE_TTL_MS = 30_000;
 type Entry<T> = { value: T; expiresAt: number };
 const entries = new Map<string, Entry<unknown>>();
 type InFlight = { generation: number; promise: Promise<unknown> };
@@ -13,9 +14,14 @@ function keyFor(input: { identityId: string; appId: string; scope?: string; auth
   return JSON.stringify([input.identityId, input.appId, input.scope || "organisation", input.authorityAction || "app-access", input.representedOplocId || "", input.primaryCustodianLegendId || ""]);
 }
 
+function admissionTtlMs() {
+  const configured = Number(process.env.AUTHMOD_ADMISSION_TTL_MS || DEFAULT_CACHE_TTL_MS);
+  return Number.isSafeInteger(configured) && configured > 0 ? Math.min(configured, HARD_MAX_CACHE_TTL_MS) : DEFAULT_CACHE_TTL_MS;
+}
+
 function expiryFor(value: unknown, now: number) {
   const explicit = typeof value === "object" && value !== null && "validUntil" in value ? Date.parse(String(value.validUntil)) : Number.NaN;
-  return Math.min(now + CACHE_TTL_MS, Number.isFinite(explicit) ? explicit : Number.POSITIVE_INFINITY);
+  return Math.min(now + admissionTtlMs(), Number.isFinite(explicit) ? explicit : Number.POSITIVE_INFINITY);
 }
 
 export function withAuthmodRequestContext<T>(callback: () => Promise<T> | T): Promise<T> | T {
@@ -81,4 +87,4 @@ export function clearAuthmodAdmissionCacheForTests() {
   invalidationGeneration = 0;
 }
 
-export function authmodAdmissionCacheConfigForTests() { return { ttlMs: CACHE_TTL_MS, generation: invalidationGeneration }; }
+export function authmodAdmissionCacheConfigForTests() { return { ttlMs: admissionTtlMs(), hardMaxTtlMs: HARD_MAX_CACHE_TTL_MS, generation: invalidationGeneration }; }
