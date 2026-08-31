@@ -1,9 +1,10 @@
 import type { NextRequest } from "next/server";
-import { assertAuthorisedOploc, projectPublishedWeeks, type Site, type SiteAccess, type SourcePublication } from "./projection";
-import { siteMenuState } from "./site-menu";
-import { latestSiteMenuArtifactHosted } from "./site-menu-store";
+import { assertAuthorisedOploc, projectPublishedWeeks, type ProjectedDay, type Site, type SiteAccess, type SourcePublication } from "./projection";
 import type { DeliveredInService } from "@fika/server-shared/delivered-in-access";
 import { recordDeliveredInAppReadBudget } from "./delivered-in-read-budget";
+import { materialiseDeliveredInDay } from "./delivered-in-projection-materialiser";
+import { readDeliveredInProjection } from "./delivered-in-projection-store";
+import type { DeliveredInDayProjection } from "./delivered-in-day-projection";
 
 const hubBase = () => (process.env.INTEGRATION_HUB_BASE_URL || "http://localhost:3200").replace(/\/$/, "");
 const menuBase = () => (process.env.MENU_PLANNING_BASE_URL || "http://localhost:3500").replace(/\/$/, "");
@@ -13,12 +14,12 @@ const addDays = (date: string, days: number) => { const value = new Date(`${date
 const mondayOf = (date: string) => { const value = new Date(`${date}T00:00:00Z`); const day = value.getUTCDay(); value.setUTCDate(value.getUTCDate() - (day === 0 ? 6 : day - 1)); return value.toISOString().slice(0, 10); };
 async function readJson<T>(response: Response, label: string): Promise<T> { const text = await response.text(); if (!response.headers.get("content-type")?.includes("application/json")) throw failure(`${label} returned a non-JSON response (${response.status}); the source service may be unavailable.`); try { return JSON.parse(text) as T; } catch (cause) { throw Object.assign(failure(`${label} returned invalid JSON; no empty projection was used.`), { cause }); } }
 
-async function cpuReviewForDay(request: NextRequest, date: string, oplocId: string) {
+export async function cpuReviewForDay(request: NextRequest, date: string, oplocId: string) {
   try {
     const summaryResponse = await fetch(`${cpuBase()}/api/delivered-in/review?serviceDate=${encodeURIComponent(date)}&oplocId=${encodeURIComponent(oplocId)}`, { headers: { cookie: request.headers.get("cookie") || "" }, cache: "no-store" });
     if (summaryResponse.ok) {
       const summary = await readJson<{ status: "pending" | "signed"; signatures: Array<{ role: string; printedName: string; signedAt: string }>; drivePdfUrl?: string; entries: Record<string, { allergens: Record<string, "clear" | "contains" | "may_contain">; mayContainNotes?: string }> }>(summaryResponse, "CPU Delivered-In review summary");
-      return { entries: new Map(Object.entries(summary.entries || {})), cpuReview: { status: summary.status, signatures: summary.signatures, ...(summary.drivePdfUrl ? { drivePdfUrl: summary.drivePdfUrl } : {}) } };
+      return { entries: new Map(Object.entries(summary.entries || {})), cpuReview: { status: summary.status, signatures: summary.signatures, ...(summary.drivePdfUrl ? { drivePdfUrl: summary.drivePdfUrl } : {}) }, orderIds: [] };
     }
     const headers = { cookie: request.headers.get("cookie") || "" };
     const ordersResponse = await fetch(`${cpuBase()}/api/production?scope=all&serviceDate=${encodeURIComponent(date)}`, { headers, cache: "no-store" });
@@ -37,7 +38,7 @@ async function cpuReviewForDay(request: NextRequest, date: string, oplocId: stri
     for (const status of plans) { for (const role of status.signatureRoles || []) signatures.set(role, { role, printedName: "", signedAt: "" }); candidatePdfUrl ||= status.matrixArtifact?.driveUrl || status.matrixArtifact?.localUrl; }
     const signatureList = [...signatures.values()]; const signed = signatureList.some(signature => signature.role === "production_chef") && signatureList.some(signature => signature.role === "head_chef_site_manager");
     if (signed) for (const status of plans) { const order = orders.find(candidate => candidate.canonicalId === status.orderId); for (const item of status.matrixItems || []) { const line = order?.lines?.find(candidate => candidate.canonicalId === item.sourceLineId); const projectionLineId = line?.sourceBookingLineId || item.sourceLineId; if (projectionLineId && order?.destinationOplocId === oplocId) entries.set(projectionLineId, { allergens: Object.keys(item.allergens || {}).length ? item.allergens! : line?.approvedAllergenSnapshot?.allergens || {}, mayContainNotes: item.mayContainNotes || line?.approvedAllergenSnapshot?.mayContainNotes }); } }
-    return { entries, cpuReview: { status: signed ? "signed" as const : "pending" as const, signatures: signatureList, ...(signed && candidatePdfUrl ? { drivePdfUrl: candidatePdfUrl } : {}) } };
+    return { entries, cpuReview: { status: signed ? "signed" as const : "pending" as const, signatures: signatureList, ...(signed && candidatePdfUrl ? { drivePdfUrl: candidatePdfUrl } : {}) }, orderIds };
   } catch { return undefined; }
 }
 
@@ -58,12 +59,17 @@ export async function resolveAccess(request: NextRequest, service: DeliveredInSe
   return { access: body.access, sites: body.sites };
 }
 
-export async function projectedWeeks(request: NextRequest, requestedOplocId?: string) {
+export async function projectedWeeks(request: NextRequest, requestedOplocId?: string, options: { usePackages?: boolean } = {}) {
   const resolved = await resolveAccess(request); const access = resolved.access; const sites = resolved.sites;
   if (!access.oplocIds.length) return { access, sites, selectedOplocId: undefined, weeks: [] };
   const selectedOplocId = requestedOplocId || (access.oplocIds.length === 1 ? access.oplocIds[0] : undefined);
   if (!selectedOplocId) return { access, sites, selectedOplocId: undefined, weeks: [] };
   assertAuthorisedOploc(access, selectedOplocId);
+  const site = sites.find(candidate => candidate.oplocId === selectedOplocId) || { oplocId: selectedOplocId, label: selectedOplocId };
+  if (options.usePackages !== false) {
+    const packageDays = await readProjectionWindow(selectedOplocId);
+    if (packageDays.length && packageDays.every(day => day.state.completeness !== "missing")) return { access, sites, selectedOplocId, weeks: weeksFromProjectionDays(packageDays) };
+  }
   const fromWeek = mondayOf(new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/London" }).format(new Date()));
   const response = await fetch(`${menuBase()}/api/rolling-menu/publications?fromWeek=${encodeURIComponent(fromWeek)}&toWeek=${encodeURIComponent(addDays(fromWeek, 49))}`, { cache: "no-store" });
   const body = await readJson<{ publications?: SourcePublication[]; error?: { message?: string } }>(response, "Menu Planning publication service");
@@ -72,22 +78,54 @@ export async function projectedWeeks(request: NextRequest, requestedOplocId?: st
   const projected = projectPublishedWeeks(body.publications || [], selectedOplocId, governedOplocIds);
   const weeks = await Promise.all(projected.map(async week => {
     const days = await Promise.all(week.days.map(async day => {
-      const review = await cpuReviewForDay(request, day.date, selectedOplocId);
-      return {
-        ...day,
-        ...(review?.cpuReview ? { cpuReview: review.cpuReview } : {}),
-        ...(review?.cpuReview?.drivePdfUrl ? { drivePdfUrl: review.cpuReview.drivePdfUrl } : {}),
-        ...(review ? { entries: day.entries.map(entry => ({ ...entry, allergensVisible: review.cpuReview.status === "signed", ...(review.entries.get(entry.sourceEntryId) || {}) })) } : {}),
-        siteMenu: review?.cpuReview?.status === "signed" ? siteMenuState(day, await latestSiteMenuArtifactHosted(selectedOplocId, day.sourceDayId)) : { status: "none" as const },
-      };
+      try {
+        const cached = await readDeliveredInProjection(selectedOplocId, day.date);
+        if (cached) return cached.value;
+      } catch { /* A corrupt/missing package enters the controlled rebuild path. */ }
+      try {
+        return await materialiseDeliveredInDay({ request, site, day, loadReview: cpuReviewForDay, governed: governedOplocIds.has(selectedOplocId) });
+      } catch (error) {
+        recordDeliveredInAppReadBudget({ stage: "day_projection_unavailable", upstreamRequests: 1, serviceDate: day.date, oplocId: selectedOplocId });
+        return unavailableDayProjection(day, site, error);
+      }
     }));
     return { ...week, days };
   }));
   return { access, sites, selectedOplocId, weeks };
 }
 
-export async function projectedAllergenDay(request: NextRequest, requestedOplocId: string, publicationDayId: string) {
-  const result = await projectedWeeks(request, requestedOplocId);
+async function readProjectionWindow(oplocId: string) {
+  const start = mondayOf(new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/London" }).format(new Date()));
+  const dates = Array.from({ length: 43 }, (_, index) => addDays(start, index));
+  const results = await Promise.all(dates.map(async date => { try { return (await readDeliveredInProjection(oplocId, date))?.value; } catch { return undefined; } }));
+  return results.filter((day): day is DeliveredInDayProjection => Boolean(day));
+}
+
+function weeksFromProjectionDays(days: DeliveredInDayProjection[]) {
+  const byWeek = new Map<string, DeliveredInDayProjection[]>();
+  for (const day of days) byWeek.set(day.weekCommencing || mondayOf(day.date), [...(byWeek.get(day.weekCommencing || mondayOf(day.date)) || []), day]);
+  return [...byWeek.entries()].map(([weekCommencing, weekDays]) => ({ publicationId: weekDays[0].publicationId, weekCommencing, weekEnding: addDays(weekCommencing, 6), days: weekDays.sort((a, b) => a.date.localeCompare(b.date)) })).sort((a, b) => b.weekCommencing.localeCompare(a.weekCommencing));
+}
+
+function unavailableDayProjection(day: ProjectedDay, site: Site, error: unknown): DeliveredInDayProjection {
+  return {
+    ...day,
+    projectionId: `delivered-in:${site.oplocId}:${day.date}`,
+    projectionVersion: 0,
+    contractVersion: "delivered-in.day.v1",
+    oplocId: site.oplocId,
+    oplocLabel: site.label,
+    serviceDate: day.date,
+    entries: day.entries.map(entry => ({ ...entry, allergens: Object.fromEntries(Object.keys(entry.allergens).map(key => [key, "unrecorded" as const])), allergensVisible: false })),
+    siteMenu: { status: "unavailable" },
+    sourceLineage: { menu: { publicationId: day.publicationId, publicationDayId: day.publicationDayId, sourceDayId: day.sourceDayId, version: day.version, contentHash: day.contentHash }, cpu: { orderIds: [] }, deliveredIn: { generatedAt: new Date().toISOString() } },
+    generatedAt: new Date().toISOString(),
+    state: { freshness: "stale", completeness: "unavailable", menu: day.entries.length ? "present" : "empty", cpu: "unavailable", exceptions: [{ code: "PROJECTION_UNAVAILABLE", source: "delivered-in", message: error instanceof Error ? error.message : "The day projection could not be loaded." }] },
+  };
+}
+
+export async function projectedAllergenDay(request: NextRequest, requestedOplocId: string, publicationDayId: string, options: { authoritative?: boolean } = {}) {
+  const result = await projectedWeeks(request, requestedOplocId, { usePackages: !options.authoritative });
   for (const week of result.weeks) {
     const day = week.days.find(candidate => candidate.publicationDayId === publicationDayId);
     if (day) return { ...day, site: result.sites.find(site => site.oplocId === requestedOplocId) };

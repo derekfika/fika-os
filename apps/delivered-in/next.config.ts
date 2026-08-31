@@ -6,6 +6,7 @@ const nextConfig: NextConfig = {
   reactStrictMode: true,
   output: "standalone",
   experimental: { externalDir: true },
+  transpilePackages: ["@fika/server-shared"],
   outputFileTracingRoot: appRoot,
 };
 export default nextConfig;

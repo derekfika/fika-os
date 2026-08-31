@@ -15,7 +15,7 @@ export type SiteMenuArtifact = {
   driveUrl: string;
   fileName: string;
 };
-export type SiteMenuState = { status: "none" | "current" | "stale"; artifact?: SiteMenuArtifact };
+export type SiteMenuState = { status: "none" | "current" | "stale" | "unavailable"; artifact?: SiteMenuArtifact };
 
 export const SITE_MENU_SECTIONS: Array<{ key: SiteMenuSectionKey; title: string }> = [
   { key: "salads", title: "Salads" },

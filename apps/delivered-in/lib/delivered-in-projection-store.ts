@@ -1,0 +1,63 @@
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import path from "node:path";
+import { getApps, initializeApp } from "firebase-admin/app";
+import { getStorage } from "firebase-admin/storage";
+import { publishReadPackage, retrieveReadPackage, type ReadPackageManifest, type ReadPackageStore } from "@fika/server-shared/read-package";
+import { recordDataAccess } from "@fika/server-shared/data-source-meter-server";
+import type { DeliveredInDayProjection } from "./delivered-in-day-projection";
+
+export const DELIVERED_IN_DATASET = "delivered-in/day";
+export const projectionManifestKey = (oplocId: string, serviceDate: string) => `${DELIVERED_IN_DATASET}/${encodeURIComponent(oplocId)}/${serviceDate}`;
+const localRoot = () => process.env.FIKA_SNAPSHOT_DIR || path.join(process.cwd(), "local-data", "read-packages");
+const hosted = () => ["staging", "production"].includes(process.env.FIKA_RUNTIME_MODE || "");
+
+function localStore(): ReadPackageStore {
+  const file = (name: string) => path.join(localRoot(), name);
+  return {
+    async putImmutable(name, bytes) { const target = file(name); await mkdir(path.dirname(target), { recursive: true }); try { await readFile(target); } catch { await writeFile(target, bytes); } },
+    async get(name) { try { return await readFile(file(name)); } catch (error) { if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined; throw error; } },
+    async has(name) { return Boolean(await this.get(name)); },
+    async getManifest(key) { try { return JSON.parse(await readFile(file(`manifests/${key.replaceAll("/", "_")}.json`), "utf8")) as ReadPackageManifest; } catch (error) { if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined; throw error; } },
+    async putManifest(key, manifest) { const target = file(`manifests/${key.replaceAll("/", "_")}.json`); await mkdir(path.dirname(target), { recursive: true }); await writeFile(target, JSON.stringify(manifest, null, 2)); },
+  };
+}
+
+function cloudStore(): ReadPackageStore {
+  const projectId = process.env.FIREBASE_PROJECT_ID || process.env.GCLOUD_PROJECT;
+  const bucketName = process.env.FIKA_SNAPSHOT_BUCKET || process.env.FIREBASE_STORAGE_BUCKET;
+  if (!projectId || !bucketName) throw Object.assign(new Error("Delivered-In projection package storage is not configured."), { status: 503, code: "DELIVERED_IN_PACKAGE_STORAGE_NOT_CONFIGURED" });
+  const app = getApps()[0] || initializeApp({ projectId, storageBucket: bucketName });
+  const bucket = getStorage(app).bucket(bucketName);
+  return {
+    async putImmutable(name, bytes, contentHash) { const object = bucket.file(name); const [exists] = await object.exists(); if (!exists) await object.save(Buffer.from(bytes), { resumable: false, metadata: { contentType: "application/json", contentEncoding: "gzip", metadata: { contentHash } } }); },
+    async get(name) { try { const [bytes] = await bucket.file(name).download(); return bytes; } catch (error) { if ((error as { code?: number }).code === 404) return undefined; throw error; } },
+    async has(name) { const [exists] = await bucket.file(name).exists(); return exists; },
+    async getManifest(key) { try { const [bytes] = await bucket.file(`manifests/${key}.json`).download(); return JSON.parse(bytes.toString("utf8")) as ReadPackageManifest; } catch (error) { if ((error as { code?: number }).code === 404) return undefined; throw error; } },
+    async putManifest(key, manifest) { await bucket.file(`manifests/${key}.json`).save(JSON.stringify(manifest), { resumable: false, metadata: { contentType: "application/json" } }); },
+  };
+}
+
+export function deliveredInProjectionStore() { return hosted() ? cloudStore() : localStore(); }
+
+export async function readDeliveredInProjection(oplocId: string, serviceDate: string) {
+  const result = await retrieveReadPackage<DeliveredInDayProjection>(deliveredInProjectionStore(), projectionManifestKey(oplocId, serviceDate));
+  if (result) recordDataAccess({ app: "delivered-in", operation: "day-projection.read", source: "SNAPSHOT", documents: 1, cacheHit: false });
+  return result;
+}
+
+export async function writeDeliveredInProjection(projection: DeliveredInDayProjection) {
+  const store = deliveredInProjectionStore();
+  const key = projectionManifestKey(projection.oplocId, projection.serviceDate);
+  const previous = await store.getManifest(key);
+  const version = (previous?.packageVersion || 0) + 1;
+  const versioned = { ...projection, projectionVersion: version };
+  const { encodeReadPackage } = await import("@fika/server-shared/read-package");
+  const encoded = encodeReadPackage(DELIVERED_IN_DATASET, version, versioned, versioned.entries.length, {
+    contractVersion: versioned.contractVersion,
+    sourceVersion: `${versioned.sourceLineage.menu.publicationDayId}:v${versioned.sourceLineage.menu.version}:${versioned.sourceLineage.menu.contentHash}`,
+    scope: `${versioned.oplocId}:${versioned.serviceDate}`,
+  });
+  const manifest = await publishReadPackage<DeliveredInDayProjection>(store, key, encoded);
+  recordDataAccess({ app: "delivered-in", operation: "day-projection.publish", source: "SNAPSHOT", documents: 1, cacheHit: false });
+  return { manifest, projection: versioned };
+}

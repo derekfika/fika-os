@@ -23,7 +23,7 @@ async function handlePost(request: NextRequest) {
   try {
     const body = await request.json() as { oplocId?: string; publicationDayId?: string; action?: "generate" | "regenerate" };
     if (!body.oplocId || !body.publicationDayId) return NextResponse.json({ error: { message: "A site and published day are required." } }, { status: 422 });
-    const day = await projectedAllergenDay(request, body.oplocId, body.publicationDayId);
+    const day = await projectedAllergenDay(request, body.oplocId, body.publicationDayId, { authoritative: true });
     if (!day.site) return NextResponse.json({ error: { message: "The selected Delivered-In site was not found." } }, { status: 404 });
     if (day.cpuReview?.status !== "signed") return NextResponse.json({ error: { message: "The site menu is locked until CPU has signed the allergen matrix." } }, { status: 409 });
     const access = await resolveAccess(request);
