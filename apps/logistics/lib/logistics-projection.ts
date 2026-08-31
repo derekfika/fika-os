@@ -1,4 +1,4 @@
-import type { DeliveryLoad, DeliveryRun, LogisticsAssignment, LogisticsChangeEvent, LogisticsDayProjection, LogisticsJob, LogisticsProjectionJob, LogisticsProjectionLoad } from "./types";
+import type { DeliveryLoad, DeliveryRun, LogisticsAssignment, LogisticsChangeEvent, LogisticsDayProjection, LogisticsJob, LogisticsProjectionJob, LogisticsProjectionLoad, LogisticsSourceLineage } from "./types";
 
 const totalUnits = (job: LogisticsJob) => job.contents.reduce((sum, item) => sum + item.quantity, 0);
 
@@ -33,7 +33,19 @@ export function buildLogisticsDayProjection(input: { serviceDate: string; jobs: 
   ]);
   const now = input.now || new Date().toISOString();
   const validEmpty = jobs.length === 0 && mergedLoads.length === 0 && (input.runs || []).filter((run) => run.serviceDate === input.serviceDate).length === 0;
-  return { serviceDate: input.serviceDate, revision: input.revision || 1, lastChangeSequence: input.lastChangeSequence || 0, state: validEmpty ? "VALID_EMPTY" as const : "CURRENT" as const, completeness: { fulfilment: "complete" as const, cpu: "not_required" as const, oploc: "complete" as const }, reconciliation: { status: "current" as const, checkedAt: now }, planningQueue: queue, deliveryLoads: mergedLoads, runs: (input.runs || []).filter((run) => run.serviceDate === input.serviceDate).map((run) => ({ canonicalId: run.canonicalId, status: run.status, driverId: run.driverId, driverLabel: run.driverLabel, vehicleLabel: run.vehicleLabel })), exceptions: Array.from(new Set(exceptions)), summary: { queuedJobs: queue.length, loads: mergedLoads.length, assignedJobs: jobs.length - queue.length, collectedJobs: jobs.filter((job) => job.collectionStatus === "collected").length }, rebuiltAt: now };
+  const sourceLineage = [...new Map(jobs.filter((job) => job.sourceVersion !== undefined).map((job) => [`${job.sourceType}:${job.sourceId}`, { sourceDomain: job.sourceType, sourceEntityId: job.sourceId, sourceVersion: job.sourceVersion!, changedAt: job.updatedAt } satisfies LogisticsSourceLineage])).values()].slice(0, 200);
+  return { serviceDate: input.serviceDate, revision: input.revision || 1, lastChangeSequence: input.lastChangeSequence || 0, state: validEmpty ? "VALID_EMPTY" as const : "CURRENT" as const, completeness: { fulfilment: "complete" as const, cpu: "not_required" as const, oploc: "complete" as const }, sourceLineage, reconciliation: { status: "current" as const, checkedAt: now }, planningQueue: queue, deliveryLoads: mergedLoads, runs: (input.runs || []).filter((run) => run.serviceDate === input.serviceDate).map((run) => ({ canonicalId: run.canonicalId, status: run.status, driverId: run.driverId, driverLabel: run.driverLabel, vehicleLabel: run.vehicleLabel })), exceptions: Array.from(new Set(exceptions)), summary: { queuedJobs: queue.length, loads: mergedLoads.length, assignedJobs: jobs.length - queue.length, collectedJobs: jobs.filter((job) => job.collectionStatus === "collected").length }, rebuiltAt: now };
+}
+
+export type LogisticsProjectionInvalidation = { serviceDate: string; sourceDomain: string; sourceEntityId: string; sourceVersion: number; sourceContentHash?: string; changedAt: string; changeType: "amended" | "cancelled" | "withdrawn" | "superseded" | "status-changed" };
+
+export function applyLogisticsProjectionInvalidation(projection: LogisticsDayProjection, change: LogisticsProjectionInvalidation) {
+  if (projection.serviceDate !== change.serviceDate) return { projection, applied: false as const, reason: "unrelated-service-date" as const };
+  const key = `${change.sourceDomain}:${change.sourceEntityId}`;
+  const prior = projection.sourceLineage?.find((item) => `${item.sourceDomain}:${item.sourceEntityId}` === key);
+  if (prior && prior.sourceVersion >= change.sourceVersion) return { projection, applied: false as const, reason: "older-or-duplicate" as const };
+  const sourceLineage = [...(projection.sourceLineage || []).filter((item) => `${item.sourceDomain}:${item.sourceEntityId}` !== key), { sourceDomain: change.sourceDomain, sourceEntityId: change.sourceEntityId, sourceVersion: change.sourceVersion, ...(change.sourceContentHash ? { sourceContentHash: change.sourceContentHash } : {}), changedAt: change.changedAt }].slice(-200);
+  return { applied: true as const, projection: { ...projection, state: "STALE" as const, sourceLineage, reconciliation: { status: "pending" as const, checkedAt: change.changedAt, errorCode: "UPSTREAM_CHANGE_PENDING" } } };
 }
 
 export function filterLogisticsProjectionForVehicle(projection: LogisticsDayProjection, vehicleLabel?: string) {

@@ -4,6 +4,7 @@ import type { DeliveryLoad, DeliveryRun, DeliveryStop, LogisticsAssignment, Logi
 import { scopeState } from "./planning";
 import { resolveLegacyAssignmentServiceDate } from "./assignment-migration";
 import { recordDataAccess } from "@fika/server-shared/data-source-meter-server";
+import { applyLogisticsProjectionInvalidation, type LogisticsProjectionInvalidation } from "./logistics-projection";
 export const runs = () => db.collection("fikaLogisticsDeliveryRunsV1");
 export const stops = () => db.collection("fikaLogisticsDeliveryStopsV1");
 export const movements = () => db.collection("fikaLogisticsMovementRequestsV1");
@@ -133,6 +134,24 @@ export async function listDeliveryLoadState(serviceDate?: string) {
 export async function saveLogisticsJob(job: LogisticsJob) { await logisticsJobs().doc(job.id).set(job); return job; }
 export async function saveDeliveryLoad(load: DeliveryLoad) { await deliveryLoads().doc(load.id).set(load); return load; }
 export async function saveLogisticsProjection(projection: LogisticsDayProjection) { await logisticsDayProjections().doc(projection.serviceDate).set(projection); return projection; }
+export async function invalidateLogisticsProjection(change: LogisticsProjectionInvalidation) {
+  return db.runTransaction(async (transaction) => {
+    const projectionRef = logisticsDayProjections().doc(change.serviceDate);
+    const cursorRef = logisticsChangeCursor().doc("global");
+    const projectionSnap = await transaction.get(projectionRef);
+    if (!projectionSnap.exists) return { applied: false as const, reason: "missing-projection" as const };
+    const current = projectionSnap.data() as LogisticsDayProjection;
+    const result = applyLogisticsProjectionInvalidation(current, change);
+    if (!result.applied) return result;
+    const cursorSnap = await transaction.get(cursorRef);
+    const sequence = Number(cursorSnap.data()?.sequence || 0) + 1;
+    const next = { ...result.projection, lastChangeSequence: sequence, revision: Math.max(current.revision + 1, sequence) };
+    transaction.set(cursorRef, { sequence, updatedAt: change.changedAt });
+    transaction.create(logisticsChanges().doc(String(sequence).padStart(20, "0")), { sequence, serviceDate: change.serviceDate, entityType: "upstream", entityId: change.sourceEntityId, changeType: `upstream-${change.changeType}`, revision: change.sourceVersion, changedAt: change.changedAt, actorId: `source:${change.sourceDomain}` });
+    transaction.set(projectionRef, next);
+    return { applied: true as const, sequence, projection: next };
+  });
+}
 export async function getLogisticsProjection(serviceDate: string) { const snapshot = await logisticsDayProjections().doc(serviceDate).get(); recordDataAccess({ app: "logistics", operation: "projection.by-service-date", source: "FIRESTORE", documents: snapshot.exists ? 1 : 0, firestoreReadKind: "document" }); reportRead(`projection:${serviceDate}`, snapshot.exists ? 1 : 0); return snapshot.exists ? snapshot.data() as LogisticsDayProjection : undefined; }
 export function summarizeLogisticsProjection(serviceDate: string, projection?: LogisticsDayProjection) {
   const loads = projection?.deliveryLoads || [];

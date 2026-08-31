@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
-import { filterLogisticsProjectionForVehicle } from "../lib/logistics-projection";
+import { applyLogisticsProjectionInvalidation, filterLogisticsProjectionForVehicle } from "../lib/logistics-projection";
 import type { LogisticsDayProjection } from "../lib/types";
 
 const projection = (overrides: Partial<LogisticsDayProjection> = {}): LogisticsDayProjection => ({
@@ -45,4 +45,27 @@ test("projection freshness is explicit and stale data is surfaced", () => {
   assert.match(route, /projection\.lastChangeSequence < syncHead\.sequence/);
   assert.match(route, /projectionState/);
   assert.match(route, /state: state === "EMPTY" \? "EMPTY" : "MISSING"/);
+});
+
+test("external amendment invalidates only its day and newer source revision wins", () => {
+  const current = projection({ sourceLineage: [{ sourceDomain: "cpu-production", sourceEntityId: "order:1", sourceVersion: 4 }] });
+  const amended = applyLogisticsProjectionInvalidation(current, { serviceDate: current.serviceDate, sourceDomain: "cpu-production", sourceEntityId: "order:1", sourceVersion: 5, changedAt: "2026-08-31T09:00:00Z", changeType: "amended" });
+  assert.equal(amended.applied, true);
+  assert.equal(amended.projection.state, "STALE");
+  assert.equal(amended.projection.reconciliation?.status, "pending");
+  const duplicate = applyLogisticsProjectionInvalidation(amended.projection, { serviceDate: current.serviceDate, sourceDomain: "cpu-production", sourceEntityId: "order:1", sourceVersion: 5, changedAt: "2026-08-31T09:01:00Z", changeType: "amended" });
+  assert.equal(duplicate.applied, false);
+  const older = applyLogisticsProjectionInvalidation(amended.projection, { serviceDate: current.serviceDate, sourceDomain: "cpu-production", sourceEntityId: "order:1", sourceVersion: 3, changedAt: "2026-08-31T09:02:00Z", changeType: "cancelled" });
+  assert.equal(older.applied, false);
+  const unrelated = applyLogisticsProjectionInvalidation(current, { serviceDate: "2026-09-01", sourceDomain: "cpu-production", sourceEntityId: "order:1", sourceVersion: 6, changedAt: "2026-08-31T09:03:00Z", changeType: "cancelled" });
+  assert.equal(unrelated.applied, false);
+});
+
+test("invalidation endpoint and upstream notifier are narrow and internal-only", () => {
+  const route = readFileSync(new URL("../app/api/logistics/invalidate/route.ts", import.meta.url), "utf8");
+  const client = readFileSync(new URL("../../integration-hub/lib/logistics-projection-client.ts", import.meta.url), "utf8");
+  assert.match(route, /x-fika-internal-token/);
+  assert.match(route, /invalidateLogisticsProjection/);
+  assert.match(client, /\/api\/logistics\/invalidate/);
+  assert.match(client, /sourceVersion/);
 });
