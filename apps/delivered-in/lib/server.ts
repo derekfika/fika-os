@@ -3,7 +3,7 @@ import { assertAuthorisedOploc, projectPublishedWeeks, type ProjectedDay, type S
 import type { DeliveredInService } from "@fika/server-shared/delivered-in-access";
 import { recordDeliveredInAppReadBudget } from "./delivered-in-read-budget";
 import { materialiseDeliveredInDay } from "./delivered-in-projection-materialiser";
-import { readDeliveredInProjection } from "./delivered-in-projection-store";
+import { readDeliveredInProjection, readDeliveredInProjectionIndex } from "./delivered-in-projection-store";
 import type { DeliveredInDayProjection } from "./delivered-in-day-projection";
 
 const hubBase = () => (process.env.INTEGRATION_HUB_BASE_URL || "http://localhost:3200").replace(/\/$/, "");
@@ -67,8 +67,8 @@ export async function projectedWeeks(request: NextRequest, requestedOplocId?: st
   assertAuthorisedOploc(access, selectedOplocId);
   const site = sites.find(candidate => candidate.oplocId === selectedOplocId) || { oplocId: selectedOplocId, label: selectedOplocId };
   if (options.usePackages !== false) {
-    const packageDays = await readProjectionWindow(selectedOplocId);
-    if (packageDays.length && packageDays.every(day => day.state.completeness !== "missing")) return { access, sites, selectedOplocId, weeks: weeksFromProjectionDays(packageDays) };
+    const discovered = await readProjectionWindow(selectedOplocId);
+    if (discovered.days.length && discovered.days.every(day => day.state.completeness !== "missing")) return { access, sites, selectedOplocId, weeks: weeksFromProjectionDays(discovered.days), withdrawnServiceDates: discovered.withdrawnServiceDates };
   }
   const fromWeek = mondayOf(new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/London" }).format(new Date()));
   const response = await fetch(`${menuBase()}/api/rolling-menu/publications?fromWeek=${encodeURIComponent(fromWeek)}&toWeek=${encodeURIComponent(addDays(fromWeek, 49))}`, { cache: "no-store" });
@@ -91,14 +91,15 @@ export async function projectedWeeks(request: NextRequest, requestedOplocId?: st
     }));
     return { ...week, days };
   }));
-  return { access, sites, selectedOplocId, weeks };
+  return { access, sites, selectedOplocId, weeks, withdrawnServiceDates: [] as string[] };
 }
 
 async function readProjectionWindow(oplocId: string) {
-  const start = mondayOf(new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/London" }).format(new Date()));
-  const dates = Array.from({ length: 43 }, (_, index) => addDays(start, index));
-  const results = await Promise.all(dates.map(async date => { try { return (await readDeliveredInProjection(oplocId, date))?.value; } catch { return undefined; } }));
-  return results.filter((day): day is DeliveredInDayProjection => Boolean(day));
+  const index = await readDeliveredInProjectionIndex(oplocId).catch(() => undefined);
+  if (!index) return { days: [] as DeliveredInDayProjection[], withdrawnServiceDates: [] as string[] };
+  const withdrawnServiceDates = index.value.entries.filter(entry => entry.state === "withdrawn").map(entry => entry.serviceDate);
+  const results = await Promise.all(index.value.entries.filter(entry => entry.state !== "withdrawn").map(async entry => { try { return (await readDeliveredInProjection(oplocId, entry.serviceDate))?.value; } catch { return undefined; } }));
+  return { days: results.filter((day): day is DeliveredInDayProjection => Boolean(day)), withdrawnServiceDates };
 }
 
 function weeksFromProjectionDays(days: DeliveredInDayProjection[]) {
