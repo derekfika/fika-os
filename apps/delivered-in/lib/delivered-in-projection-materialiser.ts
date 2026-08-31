@@ -10,7 +10,7 @@ type Review = { entries: Map<string, { allergens: Record<string, "clear" | "cont
 
 export type ReviewLoader = (request: NextRequest, date: string, oplocId: string) => Promise<Review | undefined>;
 
-export async function materialiseDeliveredInDay(input: { request: NextRequest; site: Site; day: ProjectedDay; loadReview: ReviewLoader; governed: boolean }) {
+export async function buildDeliveredInDayProjection(input: { request: NextRequest; site: Site; day: ProjectedDay; loadReview: ReviewLoader; governed: boolean }): Promise<DeliveredInDayProjection> {
   const review = await input.loadReview(input.request, input.day.date, input.site.oplocId);
   if (!review) throw Object.assign(new Error("CPU review data is unavailable; the previous Delivered-In projection must be retained."), { code: "CPU_REVIEW_UNAVAILABLE", status: 503 });
   const sourceEntries = input.day.entries.map(entry => {
@@ -50,6 +50,10 @@ export async function materialiseDeliveredInDay(input: { request: NextRequest; s
       ],
     },
   };
-  const published = await writeDeliveredInProjection(projection);
-  return { ...projection, projectionVersion: published.manifest.packageVersion };
+  return projection;
+}
+
+export async function materialiseDeliveredInDay(input: { request: NextRequest; site: Site; day: ProjectedDay; loadReview: ReviewLoader; governed: boolean }) {
+  const projection = await buildDeliveredInDayProjection(input);
+  return (await writeDeliveredInProjection(projection)).projection;
 }

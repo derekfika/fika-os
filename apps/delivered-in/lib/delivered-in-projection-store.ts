@@ -7,7 +7,14 @@ import { recordDataAccess } from "@fika/server-shared/data-source-meter-server";
 import type { DeliveredInDayProjection } from "./delivered-in-day-projection";
 
 export const DELIVERED_IN_DATASET = "delivered-in/day";
+export const DELIVERED_IN_INDEX_DATASET = "delivered-in/projection-index";
 export const projectionManifestKey = (oplocId: string, serviceDate: string) => `${DELIVERED_IN_DATASET}/${encodeURIComponent(oplocId)}/${serviceDate}`;
+export const projectionIndexManifestKey = (oplocId: string) => `${DELIVERED_IN_INDEX_DATASET}/${encodeURIComponent(oplocId)}`;
+export type DeliveredInProjectionIndexEntry = { oplocId: string; serviceDate: string; projectionVersion: number; packageVersion: number; contentHash: string; freshness: "current" | "stale"; completeness: "complete" | "partial" | "missing" | "unavailable"; sourceVersion: string; generatedAt: string; state?: "available" | "withdrawn" };
+export type DeliveredInProjectionIndex = { oplocId: string; entries: DeliveredInProjectionIndexEntry[] };
+export function mergeProjectionIndex(index: DeliveredInProjectionIndex, entry: DeliveredInProjectionIndexEntry): DeliveredInProjectionIndex {
+  return { oplocId: index.oplocId, entries: [...index.entries.filter(candidate => candidate.serviceDate !== entry.serviceDate), entry].sort((a, b) => a.serviceDate.localeCompare(b.serviceDate)) };
+}
 const localRoot = () => process.env.FIKA_SNAPSHOT_DIR || path.join(process.cwd(), "local-data", "read-packages");
 const hosted = () => ["staging", "production"].includes(process.env.FIKA_RUNTIME_MODE || "");
 
@@ -58,6 +65,30 @@ export async function writeDeliveredInProjection(projection: DeliveredInDayProje
     scope: `${versioned.oplocId}:${versioned.serviceDate}`,
   });
   const manifest = await publishReadPackage<DeliveredInDayProjection>(store, key, encoded);
+  await updateProjectionIndex(store, projection.oplocId, { oplocId: projection.oplocId, serviceDate: projection.serviceDate, projectionVersion: version, packageVersion: manifest.packageVersion, contentHash: manifest.contentHash, freshness: projection.state.freshness, completeness: projection.state.completeness, sourceVersion: encoded.manifest.sourceVersion || "", generatedAt: projection.generatedAt, state: "available" });
   recordDataAccess({ app: "delivered-in", operation: "day-projection.publish", source: "SNAPSHOT", documents: 1, cacheHit: false });
   return { manifest, projection: versioned };
+}
+
+async function updateProjectionIndex(store: ReadPackageStore, oplocId: string, entry: DeliveredInProjectionIndexEntry) {
+  const key = projectionIndexManifestKey(oplocId);
+  const previous = await retrieveReadPackage<DeliveredInProjectionIndex>(store, key).catch(() => undefined);
+  const index = mergeProjectionIndex({ oplocId, entries: previous?.value.entries || [] }, entry);
+  const version = (previous?.manifest.packageVersion || 0) + 1;
+  const { encodeReadPackage } = await import("@fika/server-shared/read-package");
+  await publishReadPackage<DeliveredInProjectionIndex>(store, key, encodeReadPackage(DELIVERED_IN_INDEX_DATASET, version, index, index.entries.length, { contractVersion: "delivered-in.projection-index.v1", scope: oplocId }));
+  recordDataAccess({ app: "delivered-in", operation: "projection-index.publish", source: "SNAPSHOT", documents: 1, cacheHit: false });
+}
+
+export async function readDeliveredInProjectionIndex(oplocId: string) {
+  const result = await retrieveReadPackage<DeliveredInProjectionIndex>(deliveredInProjectionStore(), projectionIndexManifestKey(oplocId));
+  if (result) recordDataAccess({ app: "delivered-in", operation: "projection-index.read", source: "SNAPSHOT", documents: result.value.entries.length, cacheHit: false });
+  return result;
+}
+
+export async function withdrawDeliveredInProjectionDay(oplocId: string, serviceDate: string, sourceVersion = "withdrawn") {
+  const store = deliveredInProjectionStore();
+  const current = await retrieveReadPackage<DeliveredInProjectionIndex>(store, projectionIndexManifestKey(oplocId)).catch(() => undefined);
+  const existing = current?.value.entries.find(entry => entry.serviceDate === serviceDate);
+  await updateProjectionIndex(store, oplocId, { oplocId, serviceDate, projectionVersion: existing?.projectionVersion || 0, packageVersion: existing?.packageVersion || 0, contentHash: existing?.contentHash || "", freshness: "current", completeness: "missing", sourceVersion, generatedAt: new Date().toISOString(), state: "withdrawn" });
 }

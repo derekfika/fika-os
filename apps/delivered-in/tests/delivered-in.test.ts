@@ -22,6 +22,7 @@ const activeOplocRecords = [
 ] as never[];
 const source = (days: SourcePublication["days"]): SourcePublication => ({ publicationId: "publication:week", sourceWeekId: "week:1", weekCommencing: "2026-08-24", weekEnding: "2026-08-30", days });
 const day = (overrides: Partial<SourcePublication["days"][number]> = {}): SourcePublication["days"][number] => ({ publicationDayId: "publication:day:v1", sourceDayId: "day:mon", date: "2026-08-24", dayName: "Monday", version: 1, status: "published", contentHash: "hash-v1", entries: [{ sourceEntryId: "entry:1", slot: "SALAD 1", dishName: "Mixed Baby Leaf", portions: 20, allocations: [{ destinationId: haleon, destinationLabel: "Haleon", quantity: 10 }, { destinationId: xchange, destinationLabel: "FIKA Xchange", quantity: 10 }], allergens: { milk: "clear" } }], allergenSignoff: { productionChef: { printedName: "Production Chef", signedAt: "2026-08-24T08:00:00Z" }, headChefSiteManager: { printedName: "Head Chef", signedAt: "2026-08-24T08:01:00Z" } }, ...overrides });
+const projectAtTestClock = (publications: SourcePublication[], oplocId: string, governed?: Set<string>) => projectPublishedWeeks(publications, oplocId, governed, "2026-08-20");
 
 test("Delivered-In access resolves zero, one and multiple authorised OPLOCs", () => {
   assert.equal(resolveDeliveredInAccess({ email: "unknown@local.fika", role: "viewer" }).access.oplocIds.length, 0);
@@ -36,7 +37,7 @@ test("Delivered-In access is filtered by the requested enabled service", () => {
 });
 
 test("Delivered-In projection filters by canonical destination ID and quantity", () => {
-  const weeks = projectPublishedWeeks([source([day()])], haleon);
+  const weeks = projectAtTestClock([source([day()])], haleon);
   assert.equal(weeks[0].days[0].entries.length, 1);
   assert.equal(weeks[0].days[0].entries[0].quantity, 10);
   assert.equal(weeks[0].days[0].entries[0].dishName, "Mixed Baby Leaf");
@@ -46,7 +47,7 @@ test("Delivered-In projection filters by canonical destination ID and quantity",
 });
 
 test("Delivered-In keeps a valid site visible when another publication allocation is stale", () => {
-  const weeks = projectPublishedWeeks([source([day({ entries: [{ ...day().entries[0], allocations: [{ destinationId: "oploc:stale-haleon", destinationLabel: "Haleon", quantity: 10 }, { destinationId: xchange, destinationLabel: "FIKA Xchange", quantity: 10 }] } as SourcePublication["days"][number]["entries"][number]] })])], xchange, new Set([xchange]));
+  const weeks = projectAtTestClock([source([day({ entries: [{ ...day().entries[0], allocations: [{ destinationId: "oploc:stale-haleon", destinationLabel: "Haleon", quantity: 10 }, { destinationId: xchange, destinationLabel: "FIKA Xchange", quantity: 10 }] } as SourcePublication["days"][number]["entries"][number]] })])], xchange, new Set([xchange]));
   assert.equal(weeks[0].days[0].entries[0].dishName, "Mixed Baby Leaf");
   assert.equal(weeks[0].days[0].entries[0].quantity, 10);
 });
@@ -68,20 +69,20 @@ test("Delivered-In accepts a live governed OPLOC set for restored venues", () =>
 });
 
 test("Delivered-In preserves the exact governed published allocation and rejects corrupt identity", () => {
-  const published = projectPublishedWeeks([source([day()])], haleon)[0].days[0];
+  const published = projectAtTestClock([source([day()])], haleon)[0].days[0];
   assert.equal(published.entries[0].quantity, 10);
   assert.throws(() => assertPublishedAllocationIntegrity("publication:week", day(), { ...day().entries[0], allocations: [{ destinationLabel: "Unknown venue", quantity: 10 }] }), (error: any) => error.status === 502 && error.message.includes("integrity error"));
 });
 
 test("superseded and withdrawn days are excluded while latest current version is used", () => {
-  const weeks = projectPublishedWeeks([source([day(), day({ publicationDayId: "publication:day:v2", version: 2, contentHash: "hash-v2" }), day({ publicationDayId: "publication:day:withdrawn", version: 3, status: "withdrawn" })])], haleon);
+  const weeks = projectAtTestClock([source([day(), day({ publicationDayId: "publication:day:v2", version: 2, contentHash: "hash-v2" }), day({ publicationDayId: "publication:day:withdrawn", version: 3, status: "withdrawn" })])], haleon);
   assert.equal(weeks[0].days.length, 1);
   assert.equal(weeks[0].days[0].version, 2);
   assert.equal(weeks[0].days[0].contentHash, "hash-v2");
 });
 
 test("site allergen projection retains source provenance and original signatories", () => {
-  const projected = projectPublishedWeeks([source([day()])], haleon)[0].days[0];
+  const projected = projectAtTestClock([source([day()])], haleon)[0].days[0];
   assert.equal(projected.publicationDayId, "publication:day:v1");
   assert.equal(projected.version, 1);
   assert.equal(projected.contentHash, "hash-v1");
@@ -90,14 +91,14 @@ test("site allergen projection retains source provenance and original signatorie
 });
 
 test("site allergen projection exposes the archived signed PDF URL for the exact published day", () => {
-  const projected = projectPublishedWeeks([source([day({ driveArchive: { pdfDriveUrl: "https://drive.google.com/file/d/pdf-v1/view", pdfFileName: "Monday-v1.pdf", pdfStatus: "saved" } })])], haleon)[0].days[0];
+  const projected = projectAtTestClock([source([day({ driveArchive: { pdfDriveUrl: "https://drive.google.com/file/d/pdf-v1/view", pdfFileName: "Monday-v1.pdf", pdfStatus: "saved" } })])], haleon)[0].days[0];
   assert.equal(projected.publicationDayId, "publication:day:v1");
   assert.equal(projected.drivePdfUrl, "https://drive.google.com/file/d/pdf-v1/view");
   assert.equal(projected.drivePdfFileName, "Monday-v1.pdf");
 });
 
 test("site menu grouping keeps site dishes in explicit non-empty sections", () => {
-  const entries = projectPublishedWeeks([source([day()])], haleon)[0].days[0].entries;
+  const entries = projectAtTestClock([source([day()])], haleon)[0].days[0].entries;
   const grouped = groupSiteMenuEntries([...entries, { ...entries[0], sourceEntryId: "soup", slot: "Soup", dishName: "Country Vegetable Soup" }, { ...entries[0], sourceEntryId: "hot", slot: "Hot Meat", dishName: "Jerk Chicken" }]);
   assert.deepEqual(grouped.map(section => section.key), ["salads", "hot_mains", "sides_extras"]);
   assert.equal(grouped.find(section => section.key === "salads")?.entries[0].dishName, "Mixed Baby Leaf");
@@ -117,7 +118,7 @@ test("Delivered-In Drive output uses a deterministic week-commencing folder", ()
 
 test("lowercase Menu Planning names render as title case with attached governed allergen styling", () => {
   assert.equal(titleCase("fika house salad leaf"), "Fika House Salad Leaf");
-  const projected = projectPublishedWeeks([source([day()])], haleon)[0].days[0];
+  const projected = projectAtTestClock([source([day()])], haleon)[0].days[0];
   const menuDay = { ...projected, entries: [
     { ...projected.entries[0], slot: "SALAD 1", dishName: "fika house salad leaf", allergens: { gluten: "contains", milk: "contains" } },
     { ...projected.entries[0], sourceEntryId: "entry:2", slot: "Hot Meat", dishName: "mac & cheese", allergens: {} },

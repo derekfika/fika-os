@@ -36,6 +36,19 @@ export async function readCachedDeliveredInDay(accountScope: string, oplocId: st
   } catch { return undefined; }
 }
 
+export async function evictWithdrawnDeliveredInDays(accountScope: string, oplocId: string, serviceDates: string[]) {
+  if (typeof indexedDB === "undefined" || !accountScope || !oplocId || !serviceDates.length) return;
+  try {
+    const database = await openDatabase();
+    await new Promise<void>((resolve, reject) => {
+      const transaction = database.transaction(storeName, "readwrite");
+      for (const serviceDate of serviceDates) transaction.objectStore(storeName).delete([accountScope, oplocId, serviceDate]);
+      transaction.oncomplete = () => resolve(); transaction.onerror = () => reject(transaction.error || new Error("Projection cache eviction failed."));
+    });
+    database.close();
+  } catch { /* Cache failure must never affect the authorized server response. */ }
+}
+
 export async function clearDeliveredInProjectionCache() {
   if (typeof indexedDB === "undefined") return;
   try { const database = await openDatabase(); await new Promise<void>((resolve, reject) => { const request = database.transaction(storeName, "readwrite").objectStore(storeName).clear(); request.onsuccess = () => resolve(); request.onerror = () => reject(request.error); }); database.close(); } catch { /* best effort on sign-out/browser shutdown */ }
