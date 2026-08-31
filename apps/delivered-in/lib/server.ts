@@ -17,28 +17,21 @@ async function readJson<T>(response: Response, label: string): Promise<T> { cons
 export async function cpuReviewForDay(request: NextRequest, date: string, oplocId: string) {
   try {
     const summaryResponse = await fetch(`${cpuBase()}/api/delivered-in/review?serviceDate=${encodeURIComponent(date)}&oplocId=${encodeURIComponent(oplocId)}`, { headers: { cookie: request.headers.get("cookie") || "" }, cache: "no-store" });
-    if (summaryResponse.ok) {
-      const summary = await readJson<{ status: "pending" | "signed"; signatures: Array<{ role: string; printedName: string; signedAt: string }>; drivePdfUrl?: string; entries: Record<string, { allergens: Record<string, "clear" | "contains" | "may_contain">; mayContainNotes?: string }> }>(summaryResponse, "CPU Delivered-In review summary");
-      return { entries: new Map(Object.entries(summary.entries || {})), cpuReview: { status: summary.status, signatures: summary.signatures, ...(summary.drivePdfUrl ? { drivePdfUrl: summary.drivePdfUrl } : {}) }, orderIds: [] };
-    }
-    const headers = { cookie: request.headers.get("cookie") || "" };
-    const ordersResponse = await fetch(`${cpuBase()}/api/production?scope=all&serviceDate=${encodeURIComponent(date)}`, { headers, cache: "no-store" });
-    const ordersBody = await readJson<{ orders?: Array<{ canonicalId: string; origin: string; destinationOplocId?: string; lines?: Array<{ canonicalId: string; sourceBookingLineId?: string; sourceMenuItemId?: string; approvedAllergenSnapshot?: { allergens: Record<string, "clear" | "contains" | "may_contain">; mayContainNotes?: string } }> }> }>(ordersResponse, "CPU production orders");
-    if (!ordersResponse.ok) return undefined;
-    // Signatures belong to one shared Delivered-In matrix for the day. The
-    // selected OPLOC only controls which projected dishes are returned below.
-    const orders = (ordersBody.orders || []).filter(order => order.origin === "menu_planning");
-    const orderIds = [...new Set(orders.map(order => order.canonicalId))];
-    const matrixResponse = await fetch(`${cpuBase()}/api/production-plan?matrixStatus=1&orderIds=${encodeURIComponent(orderIds.join(","))}`, { headers, cache: "no-store" });
-    if (!matrixResponse.ok) return undefined;
-    const matrixBody = await readJson<{ matrixStatuses?: Array<{ orderId: string; signatureRoles?: string[]; matrixArtifact?: { driveUrl?: string; localUrl?: string }; matrixItems?: Array<{ sourceLineId: string; allergens?: Record<string, "clear" | "contains" | "may_contain">; mayContainNotes?: string }> }> }>(matrixResponse, "CPU allergen review");
-    recordDeliveredInAppReadBudget({ stage: "cpu_review_fallback_batch", upstreamRequests: 2, recordsInspected: orderIds.length, serviceDate: date, oplocId });
-    const plans = matrixBody.matrixStatuses || [];
-    const entries = new Map<string, { allergens: Record<string, "clear" | "contains" | "may_contain">; mayContainNotes?: string }>(); const signatures = new Map<string, { role: string; printedName: string; signedAt: string }>(); let candidatePdfUrl: string | undefined;
-    for (const status of plans) { for (const role of status.signatureRoles || []) signatures.set(role, { role, printedName: "", signedAt: "" }); candidatePdfUrl ||= status.matrixArtifact?.driveUrl || status.matrixArtifact?.localUrl; }
-    const signatureList = [...signatures.values()]; const signed = signatureList.some(signature => signature.role === "production_chef") && signatureList.some(signature => signature.role === "head_chef_site_manager");
-    if (signed) for (const status of plans) { const order = orders.find(candidate => candidate.canonicalId === status.orderId); for (const item of status.matrixItems || []) { const line = order?.lines?.find(candidate => candidate.canonicalId === item.sourceLineId); const projectionLineId = line?.sourceBookingLineId || item.sourceLineId; if (projectionLineId && order?.destinationOplocId === oplocId) entries.set(projectionLineId, { allergens: Object.keys(item.allergens || {}).length ? item.allergens! : line?.approvedAllergenSnapshot?.allergens || {}, mayContainNotes: item.mayContainNotes || line?.approvedAllergenSnapshot?.mayContainNotes }); } }
-    return { entries, cpuReview: { status: signed ? "signed" as const : "pending" as const, signatures: signatureList, ...(signed && candidatePdfUrl ? { drivePdfUrl: candidatePdfUrl } : {}) }, orderIds };
+    if (!summaryResponse.ok) return undefined;
+    const summary = await readJson<{
+      status: "pending" | "signed";
+      signatures: Array<{ role: string; printedName: string; signedAt: string }>;
+      drivePdfUrl?: string;
+      entries: Record<string, { allergens: Record<string, "clear" | "contains" | "may_contain" | "unrecorded">; mayContainNotes?: string }>;
+      package?: { packageVersion?: number; contentHash?: string; sourceVersion?: string; contractVersion?: string; recordCount?: number };
+    }>(summaryResponse, "CPU Delivered-In review package");
+    recordDeliveredInAppReadBudget({ stage: "cpu_review_package", upstreamRequests: 1, recordsInspected: summary.package?.recordCount || Object.keys(summary.entries || {}).length, serviceDate: date, oplocId });
+    return {
+      entries: new Map(Object.entries(summary.entries || {})),
+      cpuReview: { status: summary.status, signatures: summary.signatures, ...(summary.drivePdfUrl ? { drivePdfUrl: summary.drivePdfUrl } : {}) },
+      orderIds: [],
+      package: summary.package ? { packageVersion: summary.package.packageVersion, contentHash: summary.package.contentHash, sourceVersion: summary.package.sourceVersion, contractVersion: summary.package.contractVersion } : undefined,
+    };
   } catch { return undefined; }
 }
 

@@ -32,7 +32,8 @@ export async function reconcileDeliveredInDay(request: NextRequest, oplocId: str
   if (!day.day) return { status: "missing", serviceDate, oplocId };
   const candidate = await buildDeliveredInDayProjection({ request, site, day: day.day, loadReview: options.loadReview || cpuReviewForDay, governed: true });
   const comparable = (value: unknown) => JSON.stringify(value, (_key, item) => _key === "generatedAt" || _key === "projectionVersion" ? undefined : item);
-  if (existing && existing.value.state.completeness === "complete" && comparable(existing.value) === comparable(candidate)) return { status: "current", projection: existing.value, sourceCertainty: "CPU review version is not exposed by the current API." };
+  const sourceCertainty = candidate.sourceLineage.cpu.sourceVersion || candidate.sourceLineage.cpu.contentHash ? "CPU review package metadata was read from the authenticated CPU package route." : "CPU review package metadata was not supplied by the current CPU route.";
+  if (existing && existing.value.state.completeness === "complete" && comparable(existing.value) === comparable(candidate)) return { status: "current", projection: existing.value, sourceCertainty };
   const written = await writeDeliveredInProjection(candidate);
-  return { status: existing ? "rebuilt" : "created", projection: written.projection, sourceCertainty: "CPU review version is not exposed by the current API." };
+  return { status: existing ? "rebuilt" : "created", projection: written.projection, sourceCertainty };
 }

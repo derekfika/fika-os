@@ -2,11 +2,12 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-test("CPU review fallback is one bounded matrix request, not one full-plan request per order", async () => {
+test("CPU review consumption is one authenticated package request with no Delivered-In CPU reconstruction", async () => {
   const server = await readFile(new URL("../lib/server.ts", import.meta.url), "utf8");
-  assert.match(server, /matrixStatus=1&orderIds=/);
-  assert.doesNotMatch(server, /orders\.map\(async order =>.*production-plan\?orderId=/s);
-  assert.match(server, /stage: "cpu_review_fallback_batch"/);
+  assert.match(server, /api\/delivered-in\/review\?serviceDate=/);
+  assert.match(server, /stage: "cpu_review_package"/);
+  assert.doesNotMatch(server, /api\/production\?/);
+  assert.doesNotMatch(server, /api\/production-plan\?/);
 });
 
 test("standalone Delivered-In has no idle polling and selected access remains request-scoped", async () => {
@@ -16,7 +17,7 @@ test("standalone Delivered-In has no idle polling and selected access remains re
   assert.doesNotMatch(page, /setInterval|setTimeout/);
   assert.doesNotMatch(grabAndGo, /setInterval|setTimeout/);
   assert.match(server, /assertAuthorisedOploc\(access, selectedOplocId\)/);
-  assert.match(server, /stage: "cpu_review_fallback_batch"/);
+  assert.match(server, /stage: "cpu_review_package"/);
 });
 
 test("Grab & Go CPU feed requires the service boundary and applies the requested delivery date", async () => {

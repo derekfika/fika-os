@@ -21,7 +21,17 @@ export type DeliveredInDayProjection = Omit<ProjectedDay, "entries" | "siteMenu"
   siteMenu: SiteMenuState & { status: "none" | "current" | "stale" | "unavailable" };
   sourceLineage: {
     menu: { publicationId: string; publicationDayId: string; sourceDayId: string; version: number; contentHash: string };
-    cpu: { orderIds: string[]; updatedAt?: string };
+    cpu: {
+      orderIds: string[];
+      updatedAt?: string;
+      packageVersion?: number;
+      contentHash?: string;
+      sourceVersion?: string;
+      contractVersion?: string;
+      sourceCompleteness?: "complete" | "partial";
+      sourceStatus?: "current" | "partial" | "valid_empty";
+      generatedAt?: string;
+    };
     deliveredIn: { siteMenuArtifactId?: string; generatedAt: string };
   };
   generatedAt: string;
