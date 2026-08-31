@@ -35,9 +35,15 @@ export async function forwardDeliveredInInvalidation(event: DurableDomainEvent) 
   const headers: Record<string, string> = { "content-type": "application/json" };
   const token = process.env.DELIVERED_IN_INTERNAL_API_TOKEN || process.env.FIKA_INTERNAL_API_TOKEN;
   if (token) headers["x-fika-internal-token"] = token;
-  const response = await fetch(`${deliveredInBaseUrl()}/api/delivered-in/invalidate`, { method: "POST", headers, body: JSON.stringify(body), signal: AbortSignal.timeout(8000) });
-  recordDataAccess({ app: "menu-planning", operation: "delivered-in.invalidation", source: "NETWORK_UPSTREAM", documents: 1, cacheHit: false });
-  if (!response.ok) throw new Error(`Delivered-In invalidation failed (${response.status}).`);
+  try {
+    const response = await fetch(`${deliveredInBaseUrl()}/api/delivered-in/invalidate`, { method: "POST", headers, body: JSON.stringify(body), signal: AbortSignal.timeout(8000) });
+    recordDataAccess({ app: "menu-planning", operation: response.ok ? "delivered-in.invalidation.success" : "delivered-in.invalidation.failure", source: "NETWORK_UPSTREAM", documents: 1, cacheHit: false });
+    if (!response.ok) throw new Error(`Delivered-In invalidation failed (${response.status}).`);
+  } catch (error) {
+    if (error instanceof Error && /Delivered-In invalidation failed/.test(error.message)) throw error;
+    recordDataAccess({ app: "menu-planning", operation: "delivered-in.invalidation.failure", source: "NETWORK_UPSTREAM", documents: 1, cacheHit: false });
+    throw error;
+  }
 }
 export async function forwardProductionMaterialisationEvent(event: DurableDomainEvent) {
   if (event.eventType !== "production.materialise") return;

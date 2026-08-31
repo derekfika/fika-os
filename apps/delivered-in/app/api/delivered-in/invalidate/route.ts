@@ -6,7 +6,7 @@ import { withDataTrace } from "@fika/server-shared/data-source-meter-server";
 export const dynamic = "force-dynamic";
 
 function internalAllowed(request: NextRequest) {
-  const configured = process.env.FIKA_INTERNAL_API_TOKEN;
+  const configured = process.env.DELIVERED_IN_INTERNAL_API_TOKEN || process.env.FIKA_INTERNAL_API_TOKEN;
   return Boolean(configured && request.headers.get("x-fika-internal-token") === configured);
 }
 function validInput(value: unknown): value is DeliveredInInvalidation {

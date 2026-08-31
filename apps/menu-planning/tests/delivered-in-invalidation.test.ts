@@ -24,3 +24,19 @@ test("non-production events are ignored by the invalidation consumer", async () 
   await forwardDeliveredInInvalidation({ schemaVersion: "0.1.0", delivery: { status: "pending", attempts: 0 }, eventId: "event", eventType: "menu.day.published", sourceAggregateId: "aggregate", sourceVersion: 1, occurredAt: "2026-08-31T10:00:00Z", payload: {} });
   assert.ok(true);
 });
+
+test("Delivered-In unavailability rejects the replay attempt", async () => {
+  const previousFetch = globalThis.fetch;
+  const previousMode = process.env.FIKA_RUNTIME_MODE;
+  const previousUrl = process.env.FIKA_APP_DELIVERED_IN_URL;
+  process.env.FIKA_RUNTIME_MODE = "local";
+  process.env.FIKA_APP_DELIVERED_IN_URL = "http://delivered-in.test";
+  globalThis.fetch = (async () => new Response("unavailable", { status: 503 })) as typeof fetch;
+  try {
+    await assert.rejects(() => forwardDeliveredInInvalidation({ schemaVersion: "0.1.0", delivery: { status: "pending", attempts: 0 }, eventId: "event-unavailable", eventType: "production.materialise", sourceAggregateId: "aggregate", sourceVersion: 1, occurredAt: "2026-08-31T10:00:00Z", payload: { sourceDomain: "menu-planning", sourceEntityId: "day-1", sourceVersion: 1, destinationOplocId: "oploc-1", serviceDate: "2026-08-31", status: "published", lines: [] } }));
+  } finally {
+    globalThis.fetch = previousFetch;
+    if (previousMode === undefined) delete process.env.FIKA_RUNTIME_MODE; else process.env.FIKA_RUNTIME_MODE = previousMode;
+    if (previousUrl === undefined) delete process.env.FIKA_APP_DELIVERED_IN_URL; else process.env.FIKA_APP_DELIVERED_IN_URL = previousUrl;
+  }
+});
