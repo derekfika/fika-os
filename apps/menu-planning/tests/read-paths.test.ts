@@ -23,6 +23,7 @@ test("hosted rolling reads use targeted week and publication paths", () => {
   const repository = readFileSync(new URL("../lib/firestore-operational-store.ts", import.meta.url), "utf8");
   const planner = readFileSync(new URL("../app/planner-data.ts", import.meta.url), "utf8");
   assert.match(repository, /listWeekSummaries\(\)/);
+  assert.match(repository, /collection\(MENU_PLANNING_COLLECTIONS\.weeks\)\.limit\(100\)\.get/);
   assert.match(repository, /getWeekSnapshot\(weekId: string\)/);
   assert.match(repository, /where\("sourceWeekId", "==", weekId\)/);
   assert.match(planner, /weekCache/);
