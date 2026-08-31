@@ -36,6 +36,11 @@ env:
     availability:
       - BUILD
       - RUNTIME
+  - variable: FIKA_LOGISTICS_BASE_URL
+    value: https://logistics-staging.fikacatering.com
+    availability:
+      - BUILD
+      - RUNTIME
   - variable: FIKA_APP_MENU_PLANNING_URL
     value: https://menu-planning-staging.fikacatering.com
     availability:
@@ -70,5 +75,9 @@ env:
       - RUNTIME
   - variable: MNK_CANON_BRIDGE_TOKEN
     secret: MNK_CANON_BRIDGE_TOKEN
+    availability:
+      - RUNTIME
+  - variable: FIKA_INTERNAL_API_TOKEN
+    secret: FIKA_INTERNAL_API_TOKEN@3
     availability:
       - RUNTIME
