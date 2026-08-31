@@ -3,6 +3,7 @@ import { db } from "./firebase-admin";
 import type { Actor } from "./auth";
 import { stableDocumentId } from "./canonical-editor";
 import type { CanonicalRecord } from "./types";
+import { rebuildServiceArrangementsReadPackage } from "./service-arrangements-read-package";
 
 const canonical = () => db.collection("integrationHubCanonical");
 const revisions = () => db.collection("integrationHubCanonicalRevisions");
@@ -27,7 +28,7 @@ export function serviceDefinitionUsage(records: CanonicalRecord[], revisionsData
 }
 
 export async function deleteUnusedServiceDefinition(actor: Actor, canonicalId: string, expectedVersion: number) {
-  return db.runTransaction(async transaction => {
+  const result = await db.runTransaction(async transaction => {
     const [recordsSnapshot, revisionsSnapshot] = await Promise.all([transaction.get(canonical()), transaction.get(revisions())]);
     const records = recordsSnapshot.docs.map(document => document.data() as CanonicalRecord);
     const current = records.find(record => record.canonicalId === canonicalId && record.entityType === "Service Definition");
@@ -41,6 +42,8 @@ export async function deleteUnusedServiceDefinition(actor: Actor, canonicalId: s
     transaction.set(audit().doc(crypto.randomUUID()), { auditId: crypto.randomUUID(), action: "Service Definition permanently deleted", entityReference: canonicalId, actorId: actor.uid, actorName: actor.name, timestamp: now, reason: "Unused controlled catalogue entry; no arrangement history.", oplocId: null });
     return { deletedCanonicalId: canonicalId };
   });
+  await rebuildServiceArrangementsReadPackage();
+  return result;
 }
 
 function historicalArrangementReference(value: unknown, serviceDefinitionId: string) { if (!value || typeof value !== "object") return false; const revision = value as Record<string, unknown>; if (revision.entityType !== "Service Arrangement") return false; return [revision.previous, revision.current].some(candidate => { if (!candidate || typeof candidate !== "object") return false; const record = (candidate as Record<string, unknown>).record as Record<string, unknown> | undefined; return record?.serviceDefinitionId === serviceDefinitionId; }); }
