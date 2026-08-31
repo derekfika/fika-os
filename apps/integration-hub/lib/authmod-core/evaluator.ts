@@ -26,6 +26,11 @@ export class AuthModEvaluationContext {
 
 export function createAuthModEvaluationContext(repository: AuthModRepository, principal: AuthPrincipal, activeOplocs?: OplocReference[]) { return new AuthModEvaluationContext(repository, principal, activeOplocs); }
 
+function earliestExpiry(...values: Array<{ effectiveTo?: string } | undefined>) {
+  const expiries = values.map(value => value?.effectiveTo).filter((value): value is string => Boolean(value));
+  return expiries.sort((a, b) => Date.parse(a) - Date.parse(b))[0];
+}
+
 function deny(principal: AuthPrincipal, reasonCode: AuthorizationDecision["reasonCode"], extra: Partial<AuthorizationDecision> = {}): AuthorizationDecision {
   return { allowed: false, principalId: principal.id, principalType: principal.type, matchedGrantIds: [], reasonCode, ...extra };
 }
@@ -60,7 +65,9 @@ export async function resolveUserAccess(repository: AuthModRepository, input: { 
       if (!siteAllowed) return deny(input.principal, "oploc-not-assigned", { appId: input.appId, scope: { kind: "oploc", ids: requestedOplocIds } });
     }
     const normalGrantIds = grants.filter(value => value.appId === input.appId && value.provenance === "standard-app-access" && isEffective(value)).map(value => value.id);
-    return { allowed: true, principalId: identity.id, principalType: "interactive", appId: input.appId, scope: input.oplocId ? { kind: "oploc", ids: [input.oplocId] } : undefined, matchedGrantIds: normalGrantIds, reasonCode: "allowed" };
+    const selectedSiteAssignments = requestedOplocIds.length ? await context.siteAssignments() : [];
+    const validUntil = earliestExpiry(identity, assignment, ...requestedOplocIds.map(id => selectedSiteAssignments.find(value => value.oplocId === id && isEffective(value))));
+    return { allowed: true, principalId: identity.id, principalType: "interactive", appId: input.appId, scope: input.oplocId ? { kind: "oploc", ids: [input.oplocId] } : undefined, matchedGrantIds: normalGrantIds, reasonCode: "allowed", ...(validUntil ? { validUntil } : {}) };
   } catch { return deny(input.principal, "store-unavailable"); }
 }
 export async function evaluateAuthority(repository: AuthModRepository, input: { principal: AuthPrincipal; appId: string; resource: string; action: AuthModAction; scope?: Scope }, context = createAuthModEvaluationContext(repository, input.principal)): Promise<AuthorizationDecision> {

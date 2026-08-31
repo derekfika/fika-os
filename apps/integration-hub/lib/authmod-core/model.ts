@@ -77,6 +77,7 @@ export type AuthPrincipal = InteractivePrincipal | ServicePrincipalIdentity;
 export type AuthorizationDecision = {
   allowed: boolean; principalId: string; principalType: PrincipalType; appId?: string; action?: AuthModAction;
   scope?: Scope; matchedGrantIds: string[];
+  validUntil?: string;
   reasonCode: "allowed" | "unauthenticated" | "identity-inactive" | "service-inactive" | "app-disabled" |
   "app-not-assigned" | "oploc-not-assigned" | "authority-not-granted" | "scope-not-authorized" | "invalid-request" | "store-unavailable";
 };

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { cachedAuthmodAdmission, clearAuthmodAdmissionCacheForTests, invalidateAuthmodAdmissionCache } from "../lib/authmod-admission-cache";
+import { cachedAuthmodAdmission, clearAuthmodAdmissionCacheForTests, invalidateAuthmodAdmissionCache, withAuthmodRequestContext } from "../lib/authmod-admission-cache";
 import { recordDataAccess, withDataTrace } from "@fika/server-shared/data-source-meter-server";
 
 const totalsFrom = (lines: string[]) => lines
@@ -67,6 +67,51 @@ test("authorization mutations invalidate cached decisions", async () => {
   assert.equal((await cachedAuthmodAdmission({ identityId: "mutable", appId: "logistics", load })).allowed, true);
   invalidateAuthmodAdmissionCache();
   assert.equal((await cachedAuthmodAdmission({ identityId: "mutable", appId: "logistics", load })).allowed, false);
+  assert.equal(loads, 2);
+});
+
+test("dependency failures are retried rather than cached as denials", async () => {
+  let loads = 0;
+  const load = async () => ({ allowed: false, reasonCode: ++loads === 1 ? "store-unavailable" : "app-not-assigned" });
+  assert.equal((await cachedAuthmodAdmission({ identityId: "unavailable", appId: "logistics", load })).reasonCode, "store-unavailable");
+  assert.equal((await cachedAuthmodAdmission({ identityId: "unavailable", appId: "logistics", load })).reasonCode, "app-not-assigned");
+  assert.equal(loads, 2);
+});
+
+test("known authority expiry bounds the short-lived cache", async () => {
+  let loads = 0;
+  const load = async () => ({ allowed: true, validUntil: new Date(Date.now() + 10).toISOString(), load: ++loads });
+  await cachedAuthmodAdmission({ identityId: "expiring", appId: "logistics", load });
+  await new Promise(resolve => setTimeout(resolve, 20));
+  await cachedAuthmodAdmission({ identityId: "expiring", appId: "logistics", load });
+  assert.equal(loads, 2);
+});
+
+test("request context reuse is generation-aware", async () => {
+  let loads = 0;
+  await withAuthmodRequestContext(async () => {
+    const load = async () => ({ allowed: true, load: ++loads });
+    await cachedAuthmodAdmission({ identityId: "request", appId: "logistics", load });
+    await cachedAuthmodAdmission({ identityId: "request", appId: "logistics", load });
+    assert.equal(loads, 1);
+    invalidateAuthmodAdmissionCache();
+    await cachedAuthmodAdmission({ identityId: "request", appId: "logistics", load });
+    assert.equal(loads, 2);
+  });
+});
+
+test("a stale in-flight result cannot delete or repopulate a newer generation", async () => {
+  let loads = 0;
+  let release!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  const first = cachedAuthmodAdmission({ identityId: "stale", appId: "logistics", load: async () => { loads += 1; await gate; return { allowed: true, load: loads }; } });
+  invalidateAuthmodAdmissionCache();
+  const second = cachedAuthmodAdmission({ identityId: "stale", appId: "logistics", load: async () => { loads += 1; return { allowed: true, load: loads }; } });
+  assert.deepEqual(await second, { allowed: true, load: 2 });
+  release();
+  assert.deepEqual(await first, { allowed: true, load: 2 });
+  const third = await cachedAuthmodAdmission({ identityId: "stale", appId: "logistics", load: async () => { loads += 1; return { allowed: true, load: loads }; } });
+  assert.deepEqual(third, { allowed: true, load: 2 });
   assert.equal(loads, 2);
 });
 
