@@ -15,6 +15,7 @@ import { recordDeliveredInReadBudget } from "../../../lib/delivered-in-read-budg
 import type { ProductionOrder } from "../../../lib/production-types";
 import { withDataTrace } from "@fika/server-shared/data-source-meter-server";
 import { getCpuProjectionManifest, getCpuProjectionPackage, recordCpuPackageFallback } from "../../../lib/cpu-read-package";
+import { rebuildCpuReviewPackage } from "../../../lib/cpu-review-package";
 
 const localActor = {
   uid: "local-cpu",
@@ -47,6 +48,7 @@ async function recordCpuChange(request: NextRequest, canonicalId: string, actorI
   const event = await appendCpuChange({ serviceDate, entityType: "productionOrder", entityId: canonicalId, revision: current.version, changeType, actorId, changedAt: new Date().toISOString() });
   await rebuildCpuProjection(request, serviceDate, event.sequence);
   await rebuildCpuWeekProjection(request, weekCommencingFor(serviceDate), event.sequence);
+  if (current?.destinationOplocId) await rebuildCpuReviewPackage(request, serviceDate, current.destinationOplocId, event.sequence);
   return current;
 }
 
@@ -275,6 +277,8 @@ async function handlePost(request: NextRequest) {
       const event = await appendCpuChange({ serviceDate, entityType: "productionOrder", entityId: z.string().min(1).parse(raw.entityId), revision: z.number().int().positive().parse(raw.revision), changeType: z.string().min(1).parse(raw.changeType), actorId: z.string().min(1).parse(raw.actorId || "integration-hub"), changedAt: z.string().min(1).parse(raw.changedAt || new Date().toISOString()), idempotencyKey: z.string().min(1).parse(raw.idempotencyKey) });
       const dayProjection = await rebuildCpuProjection(request, serviceDate, event.sequence);
       const weekProjection = await rebuildCpuWeekProjection(request, weekCommencingFor(serviceDate), event.sequence);
+      const changedOrder = await productionOrderDetail(request, z.string().min(1).parse(raw.entityId));
+      if (changedOrder?.destinationOplocId) await rebuildCpuReviewPackage(request, serviceDate, changedOrder.destinationOplocId, event.sequence);
       return NextResponse.json({ applied: true, duplicate: event.sequence < Number(raw.sequence || event.sequence), event, dayProjection, weekProjection });
     }
     const actor = await actorFor(request);

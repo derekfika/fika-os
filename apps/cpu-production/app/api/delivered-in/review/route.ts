@@ -5,6 +5,9 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import { allergenMatrixHtml } from "../../../ui/allergen-matrix";
 import { renderPdfLocally } from "../../../lib/local-pdf";
+import { getCpuReviewPackage, recordCpuReviewFallback, rebuildCpuReviewPackage } from "../../../../lib/cpu-review-package";
+import { withDataTrace } from "@fika/server-shared/data-source-meter-server";
+import { requireCpuActor } from "../../../../lib/cpu-access-client";
 
 export const dynamic = "force-dynamic";
 
@@ -36,11 +39,34 @@ async function sitePdf(request: NextRequest, serviceDate: string, oplocId: strin
   return new NextResponse(await fs.readFile(pdfPath), { headers: { "content-type": "application/pdf", "content-disposition": `inline; filename="${fileName}"`, "cache-control": "no-store, max-age=0" } });
 }
 
-export async function GET(request: NextRequest) {
+async function handleGet(request: NextRequest) {
   const serviceDate = request.nextUrl.searchParams.get("serviceDate");
   const oplocId = request.nextUrl.searchParams.get("oplocId");
   if (!serviceDate || !oplocId) return NextResponse.json({ error: { message: "A service date and OPLOC are required." } }, { status: 422 });
   try {
+    await requireCpuActor(request);
+    const reconcile = request.nextUrl.searchParams.get("reconcile") === "1";
+    if (!reconcile) {
+      try {
+        const packaged = request.nextUrl.searchParams.get("download") === "pdf" ? undefined : await getCpuReviewPackage(serviceDate, oplocId);
+        if (packaged) {
+          const sourceOrders = packaged.value.projection.sourceOrders;
+          const signatureList = packaged.value.projection.signatures;
+          const signed = signatureList.some(signature => signature.role === "production_chef") && signatureList.some(signature => signature.role === "head_chef_site_manager");
+          const entries: Record<string, { allergens: Record<string, ReviewState>; mayContainNotes?: string }> = {};
+          if (signed) for (const order of sourceOrders) for (const item of order.entries) {
+            const key = item.sourceBookingLineId || item.sourceLineId;
+            entries[key] = { allergens: Object.fromEntries(Object.entries(item.allergens).filter(([, value]) => value !== "unrecorded")) as Record<string, ReviewState>, ...(item.mayContainNotes ? { mayContainNotes: item.mayContainNotes } : {}) };
+          }
+          const artifact = sourceOrders.find(order => order.matrixArtifact)?.matrixArtifact;
+          const sitePdfUrl = signed ? artifact?.driveUrl || artifact?.localUrl : undefined;
+          return NextResponse.json({ status: signed ? "signed" : "pending", signatures: signatureList, ...(sitePdfUrl ? { drivePdfUrl: sitePdfUrl } : {}), entries, package: packaged.manifest }, { headers: { "Cache-Control": "no-store, max-age=0" } });
+        }
+        recordCpuReviewFallback("missing");
+      } catch {
+        recordCpuReviewFallback("invalid");
+      }
+    } else recordCpuReviewFallback("explicit-reconciliation");
     const orders = (await productionQueue(request, serviceDate)).filter(order => order.origin === "menu_planning");
     const planRecords = await loadPlansForOrders(orders.map(order => order.canonicalId));
     const plans = new Map(planRecords.map(plan => [plan.orderId, plan as ReviewPlan]));
@@ -64,8 +90,11 @@ export async function GET(request: NextRequest) {
       return await sitePdf(request, serviceDate, oplocId, orders, plans, signatureList);
     }
     const sitePdfUrl = signed ? `${request.nextUrl.pathname}?serviceDate=${encodeURIComponent(serviceDate)}&oplocId=${encodeURIComponent(oplocId)}&download=pdf` : undefined;
+    await rebuildCpuReviewPackage(request, serviceDate, oplocId);
     return NextResponse.json({ status: signed ? "signed" : "pending", signatures: signatureList, ...(sitePdfUrl ? { drivePdfUrl: sitePdfUrl } : {}), entries }, { headers: { "Cache-Control": "no-store, max-age=0" } });
   } catch (error) {
     return NextResponse.json({ error: { message: error instanceof Error ? error.message : "The CPU Delivered-In review could not be loaded." } }, { status: 502 });
   }
 }
+
+export async function GET(request: NextRequest) { return withDataTrace({ app: "cpu-production", action: "cpu-production.delivered-in-review.load", path: request.nextUrl.pathname, requestId: request.headers.get("x-request-id") || undefined }, () => handleGet(request)); }
