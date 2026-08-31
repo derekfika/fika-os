@@ -63,9 +63,9 @@ test("single-order GET and Delivered In detail use direct/batch review paths", a
   assert.match(route, /get\("reviewStatus"\) === "1"/);
   assert.match(route, /get\("matrixStatus"\) === "1"/);
   assert.match(route, /action.*batch-plan/);
-  assert.doesNotMatch(route.slice(route.indexOf("export async function POST")), /await loadPlans\(\)/);
+  assert.doesNotMatch(route, /planRepository\.list\(\)|await loadPlans\(\)/);
+  assert.match(route, /PLAN_SCOPE_REQUIRED/);
   assert.match(route, /loadDeliveredInReviewStatuses/);
-  assert.ok(route.indexOf("if (orderId)") < route.indexOf("await loadPlans()"));
   assert.doesNotMatch(detail, /orders\.map\(async item =>/);
   assert.match(detail, /reviewStatus=1&orderIds=/);
 });

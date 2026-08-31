@@ -9,7 +9,7 @@ import type { AllergenCellState, InternalMatrixSignature, PlannedMenuItem, Produ
 import { allergenMatrixHtml } from "../../ui/allergen-matrix";
 import { renderPdfLocally } from "../../lib/local-pdf";
 import { normaliseOperationalAllergens } from "../../../../shared/allergen-contract";
-import { productionOrderDetail, transitionProductionOrder } from "../../../lib/production-http-client";
+import { productionOrderDetail, productionQueue, transitionProductionOrder } from "../../../lib/production-http-client";
 import type { ProductionOrder, ProductionStatus } from "../../../lib/production-types";
 import { appendCpuChange, rebuildCpuDayProjection, rebuildCpuWeekProjection, weekCommencingFor } from "../../../lib/cpu-projection";
 import { createProductionPlanRepository } from "../../../lib/production-plan-repository";
@@ -18,7 +18,7 @@ import { hubJson } from "../../../lib/production-http-client";
 import { matrixDriveConfiguration } from "../../lib/matrix-drive-config";
 import { loadDeliveredInReviewStatuses, parseDeliveredInReviewOrderIds } from "../../../lib/delivered-in-review";
 import { recordDeliveredInReadBudget } from "../../../lib/delivered-in-read-budget";
-import { withDataTrace } from "@fika/server-shared/data-source-meter-server";
+import { recordDataAccess, withDataTrace } from "@fika/server-shared/data-source-meter-server";
 import { rebuildCpuReviewPackage } from "../../../lib/cpu-review-package";
 
 function menuContentHash(menuItems: PlannedMenuItem[]) {
@@ -85,10 +85,6 @@ const MatrixBatchCommand = z.object({ action: z.literal("batch-plan"), operation
 const plans = new Map<string, ProductionPlan>();
 const planRepository = createProductionPlanRepository();
 const isLocalRuntime = () => (process.env.FIKA_RUNTIME_MODE || "local") === "local";
-async function loadPlans() {
-  for (const plan of await planRepository.list()) plans.set(plan.orderId, normalisePlanAllergens(plan));
-  return plans;
-}
 function normalisePlanAllergens(plan: ProductionPlan): ProductionPlan {
   return { ...plan, menuItems: plan.menuItems.map(item => ({ ...item, subItems: item.subItems.map(sub => ({ ...sub, allergens: normaliseOperationalAllergens(sub.allergens) })) })) };
 }
@@ -232,6 +228,17 @@ async function handleGet(request: NextRequest) {
       recordDeliveredInReadBudget({ stage: "matrix_hydration", selectedIds: orderIds.length });
       return NextResponse.json({ matrixStatuses });
     }
+    const serviceDate = request.nextUrl.searchParams.get("serviceDate");
+    if (serviceDate) {
+      const sourceOrders = await productionQueue(request, serviceDate);
+      const selectedPlans = await planRepository.getByOrderIds(sourceOrders.map(order => order.canonicalId));
+      const planByOrderId = new Map(selectedPlans.map(plan => [plan.orderId, normalisePlanAllergens(plan)]));
+      const visiblePlans = await Promise.all(sourceOrders
+        .filter(order => !(order.origin === "hospitality_booking" && order.requiresDelivery === false))
+        .map(async order => mergeOriginalItems(request, planByOrderId.get(order.canonicalId) || await getPlan(request, order.canonicalId), order.canonicalId, order)));
+      const entries = visiblePlans.filter(plan => plan.status === "planned");
+      return NextResponse.json({ plans: visiblePlans, notifications: entries.map(plan => ({ id: `notification:${plan.id}`, title: "New production plan ready for menu generation.", orderId: plan.orderId, plannedItemCount: plan.menuItems.reduce((sum, item) => sum + item.subItems.length, 0), at: plan.updatedAt })), menus: entries.map(plan => ({ planId: plan.id, orderId: plan.orderId, clientSite: sourceOrders.find(order => order.canonicalId === plan.orderId)?.destinationLabel || "Site not assigned", items: plan.menuItems.flatMap(item => item.subItems.map(subItem => ({ menuItem: item.name, name: subItem.name, quantity: subItem.quantity, allergens: Object.entries(subItem.allergens).filter(([, state]) => state === "contains").map(([key]) => key), mayContain: Object.entries(subItem.allergens).filter(([, state]) => state === "may_contain").map(([key]) => key) }))) })) });
+    }
     if (orderId) {
       const selectedOrder = await loadOrder(request, orderId);
       const visible = Boolean(selectedOrder && !(selectedOrder.origin === "hospitality_booking" && selectedOrder.requiresDelivery === false));
@@ -248,14 +255,8 @@ async function handleGet(request: NextRequest) {
   } catch (error) {
     return errorResponse(error);
   }
-  await loadPlans();
-  const visibleStoredPlans = (await Promise.all([...plans.values()].map(async plan => ({ plan, visible: await isVisibleForCpu(request, plan.orderId) })))).filter(item => item.visible).map(item => item.plan);
-  const entries = visibleStoredPlans.filter(plan => plan.status === "planned");
-  const visiblePlans = await Promise.all(visibleStoredPlans.map(plan => mergeOriginalItems(request, plan, plan.orderId)));
-  const selectedPlan = orderId && await isVisibleForCpu(request, orderId) ? await mergeOriginalItems(request, await getPlan(request, orderId), orderId) : undefined;
-  const selectedOrder = orderId ? await loadOrder(request, orderId) : undefined;
-  const selectedMatrixStatus = selectedPlan?.matrixArtifact ? "ready" : selectedPlan?.signatures?.some(signature => signature.role === "production_chef") && selectedPlan.signatures?.some(signature => signature.role === "head_chef_site_manager") ? selectedOrder && !matrixDriveConfiguration(selectedOrder).enabled ? "not_configured" : "generating" : undefined;
-  return NextResponse.json({ plan: selectedPlan, matrixStatus: selectedMatrixStatus, plans: visiblePlans, notifications: entries.map(plan => ({ id: `notification:${plan.id}`, title: "New production plan ready for menu generation.", orderId: plan.orderId, plannedItemCount: plan.menuItems.reduce((sum, item) => sum + item.subItems.length, 0), at: plan.updatedAt })), menus: entries.map(plan => ({ planId: plan.id, orderId: plan.orderId, clientSite: localFixtureOrders().find(order => order.canonicalId === plan.orderId)?.destinationLabel || "Site not assigned", items: plan.menuItems.flatMap(item => item.subItems.map(subItem => ({ menuItem: item.name, name: subItem.name, quantity: subItem.quantity, allergens: Object.entries(subItem.allergens).filter(([, state]) => state === "contains").map(([key]) => key), mayContain: Object.entries(subItem.allergens).filter(([, state]) => state === "may_contain").map(([key]) => key) }))) })) });
+  recordDataAccess({ app: "cpu-production", operation: "production-plans.rejected-unsafe-broad-request", source: "UNKNOWN", documents: 0 });
+  throw Object.assign(new Error("A production plan selector is required. Request an orderId or an explicit bounded orderIds list."), { status: 400, code: "PLAN_SCOPE_REQUIRED" });
 }
 
 async function handlePost(request: NextRequest) {

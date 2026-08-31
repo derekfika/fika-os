@@ -21,7 +21,8 @@ export default function TiaMenuView() {
   >([]);
   const [error, setError] = useState("");
   useEffect(() => {
-    void fetch("/api/production-plan", { cache: "no-store" })
+    const serviceDate = new Date().toISOString().slice(0, 10);
+    void fetch(`/api/production-plan?serviceDate=${encodeURIComponent(serviceDate)}`, { cache: "no-store" })
       .then((response) => response.json())
       .then((body) => {
         setMenus(body.menus || []);

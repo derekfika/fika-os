@@ -2,10 +2,11 @@ import type { ProductionPlan } from "../app/lib/production-plan";
 import { recordDataAccess } from "@fika/server-shared/data-source-meter-server";
 
 export const PRODUCTION_PLANS_COLLECTION = "fikaCpuProductionPlansV1";
+export const MAX_PRODUCTION_PLAN_ORDER_IDS = 100;
 
 export type ProductionPlanRepository = {
-  list(): Promise<ProductionPlan[]>;
   get(orderId: string): Promise<ProductionPlan | undefined>;
+  getByOrderIds(orderIds: string[]): Promise<ProductionPlan[]>;
   save(plan: ProductionPlan, expectedUpdatedAt?: string): Promise<void>;
 };
 
@@ -17,8 +18,14 @@ function decode(value: unknown): ProductionPlan {
 
 class FirestoreProductionPlanRepository implements ProductionPlanRepository {
   private async collection() { const { db } = await import("./firebase-admin"); return db.collection(PRODUCTION_PLANS_COLLECTION); }
-  async list() { const snapshot = await (await this.collection()).get(); recordDataAccess({ app: "cpu-production", operation: "production-plans.list", source: "FIRESTORE", documents: snapshot.size, firestoreReadKind: "query" }); return snapshot.docs.map(document => decode(document.data())); }
   async get(orderId: string) { const snapshot = await (await this.collection()).doc(orderId).get(); recordDataAccess({ app: "cpu-production", operation: "production-plan.by-id", source: "FIRESTORE", documents: snapshot.exists ? 1 : 0, firestoreReadKind: "document" }); return snapshot.exists ? decode(snapshot.data()) : undefined; }
+  async getByOrderIds(orderIds: string[]) {
+    const wanted = [...new Set(orderIds)];
+    if (wanted.length > MAX_PRODUCTION_PLAN_ORDER_IDS) throw Object.assign(new Error(`A maximum of ${MAX_PRODUCTION_PLAN_ORDER_IDS} production plans may be requested.`), { status: 400 });
+    const snapshots = await Promise.all(wanted.map(orderId => (async () => (await this.collection()).doc(orderId).get())()));
+    recordDataAccess({ app: "cpu-production", operation: "production-plans.by-order-ids", source: "FIRESTORE", documents: snapshots.filter(snapshot => snapshot.exists).length, firestoreReadKind: "document" });
+    return snapshots.flatMap(snapshot => snapshot.exists ? [decode(snapshot.data())] : []);
+  }
   async save(plan: ProductionPlan, expectedUpdatedAt?: string) {
     const { db } = await import("./firebase-admin");
     const collection = await this.collection();
@@ -36,8 +43,12 @@ class FirestoreProductionPlanRepository implements ProductionPlanRepository {
 
 class MemoryProductionPlanRepository implements ProductionPlanRepository {
   private readonly records = new Map<string, ProductionPlan>();
-  async list() { return [...this.records.values()]; }
   async get(orderId: string) { return this.records.get(orderId); }
+  async getByOrderIds(orderIds: string[]) {
+    const wanted = [...new Set(orderIds)];
+    if (wanted.length > MAX_PRODUCTION_PLAN_ORDER_IDS) throw Object.assign(new Error(`A maximum of ${MAX_PRODUCTION_PLAN_ORDER_IDS} production plans may be requested.`), { status: 400 });
+    return wanted.flatMap(orderId => { const plan = this.records.get(orderId); return plan ? [structuredClone(plan)] : []; });
+  }
   async save(plan: ProductionPlan, expectedUpdatedAt?: string) {
     const current = this.records.get(plan.orderId);
     if (current && expectedUpdatedAt !== undefined && current.updatedAt !== expectedUpdatedAt) throw conflict("Production plan changed elsewhere. Refresh and try again.");
