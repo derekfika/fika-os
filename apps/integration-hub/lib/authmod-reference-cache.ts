@@ -2,8 +2,9 @@ import { recordDataAccess } from "@fika/server-shared/data-source-meter-server";
 
 const CACHE_TTL_MS = 60_000;
 type Entry = { value: unknown; expiresAt: number };
+type InFlight = { generation: number; promise: Promise<unknown> };
 const entries = new Map<string, Entry>();
-const inFlight = new Map<string, Promise<unknown>>();
+const inFlight = new Map<string, InFlight>();
 let invalidationGeneration = 0;
 
 export function cachedAuthmodReference<T>(input: { scope: string; name: string; load: () => Promise<T>; documents: (value: T) => number }): Promise<T> {
@@ -15,17 +16,20 @@ export function cachedAuthmodReference<T>(input: { scope: string; name: string; 
     return Promise.resolve(cached.value as T);
   }
   const pending = inFlight.get(key);
-  if (pending) return pending as Promise<T>;
+  if (pending && pending.generation === invalidationGeneration) {
+    recordDataAccess({ app: "integration-hub", operation: `authmod.${input.name}.pending`, source: "APP_CACHE", documents: 0, cacheHit: true, cacheResult: "IN_FLIGHT_JOIN" });
+    return pending.promise as Promise<T>;
+  }
   const generation = invalidationGeneration;
   const promise = input.load().then(value => {
     if (generation === invalidationGeneration) entries.set(key, { value, expiresAt: Date.now() + CACHE_TTL_MS });
-    inFlight.delete(key);
+    if (inFlight.get(key)?.promise === promise) inFlight.delete(key);
     return value;
   }, error => {
-    inFlight.delete(key);
+    if (inFlight.get(key)?.promise === promise) inFlight.delete(key);
     throw error;
   });
-  inFlight.set(key, promise);
+  inFlight.set(key, { generation, promise });
   return promise;
 }
 

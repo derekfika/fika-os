@@ -72,3 +72,17 @@ test("does not retain a result that completes after invalidation", async () => {
   assert.deepEqual(await cachedAuthmodReference({ scope: "admin:a", name: "listApplications", load: async () => { freshLoads += 1; return ["fresh"]; }, documents: value => value.length }), ["fresh"]);
   assert.equal(freshLoads, 1);
 });
+
+test("invalidation prevents joining or deleting a newer reference load", async () => {
+  let release!: (value: string[]) => void;
+  const stale = new Promise<string[]>(resolve => { release = resolve; });
+  const first = cachedAuthmodReference({ scope: "admin:a", name: "listActiveOplocs", load: () => stale, documents: value => value.length });
+  invalidateAuthmodReferenceCaches();
+  let freshLoads = 0;
+  const second = cachedAuthmodReference({ scope: "admin:a", name: "listActiveOplocs", load: async () => { freshLoads += 1; return ["fresh"]; }, documents: value => value.length });
+  assert.deepEqual(await second, ["fresh"]);
+  release(["stale"]);
+  await first;
+  assert.deepEqual(await cachedAuthmodReference({ scope: "admin:a", name: "listActiveOplocs", load: async () => { freshLoads += 1; return ["unexpected"]; }, documents: value => value.length }), ["fresh"]);
+  assert.equal(freshLoads, 1);
+});
