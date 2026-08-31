@@ -45,7 +45,7 @@ The backend details must supply the exact backend ID, region and runtime service
 ## Staging sequence once cloud facts are confirmed
 
 1. Confirm the backend root is `apps/menu-planning`, project is `fika-os-dev`, and the exact staging backend uses the checked-in staging configuration.
-2. Confirm or provision the approved bucket through the cloud release process, then set `FIKA_SNAPSHOT_BUCKET` on that backend. This change does not provision it.
+2. Confirm the approved existing bucket through the cloud release process, then set `FIKA_SNAPSHOT_BUCKET` in `apps/menu-planning/apphosting.staging.yaml` on the `fika-menu-planning-staging` backend. The bucket name remains intentionally unset until confirmed. This change does not provision it.
 3. Grant only the minimum object read/create permissions above to the actual runtime principal, if missing.
 4. Run the package publication/bootstrap action from an authenticated operator environment. The current implementation bootstraps on the first catalogue read; an explicit operator publication command should be added before production promotion if a no-first-request bootstrap is required.
 5. Verify the manifest object and immutable gzip object exist, then validate the manifest hash and decompressed payload.

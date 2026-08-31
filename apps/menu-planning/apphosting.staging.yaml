@@ -22,5 +22,13 @@ env:
   - variable: NEXT_PUBLIC_FIKA_HUB_URL
     value: https://staging-os.fikacatering.com
     availability: [BUILD, RUNTIME]
-  # Required for replayable Menu Planning -> Delivered-In invalidation.
-  # variable: FIKA_APP_DELIVERED_IN_URL
+  - variable: FIKA_INTERNAL_API_TOKEN
+    secret: FIKA_INTERNAL_API_TOKEN@3
+    availability: [RUNTIME]
+  - variable: FIKA_APP_DELIVERED_IN_URL
+    value: https://fika-delivered-in-staging--fika-os-dev.europe-west4.hosted.app
+    availability: [RUNTIME]
+  # Required for immutable hosted catalogue/package persistence. Set the
+  # approved existing bucket name here; do not use a generated local bucket.
+  # - variable: FIKA_SNAPSHOT_BUCKET
+  #   value: <approved-existing-bucket-name>
