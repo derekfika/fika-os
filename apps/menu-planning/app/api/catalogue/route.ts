@@ -1,9 +1,10 @@
 import { NextResponse } from "next/server";
-import { filterCatalogueEntries, getCatalogueEntryById, listCatalogueEntries } from "@/lib/catalogue";
+import { filterCatalogueEntries, getCatalogueEntryById } from "@/lib/catalogue";
 import { createCanonicalMenuItem, mergeSimilarCanonicalItems, previewSimilarCanonicalItems } from "@/lib/canonical-menu-repository";
 import { repointDishIds } from "@/lib/rolling-menu";
-import { getCatalogueManifest } from "@/lib/catalogue-manifest";
+import { getPublishedCatalogueManifest as getCatalogueManifest } from "@/lib/catalogue-manifest";
 import { withDataTrace } from "@fika/server-shared/data-source-meter-server";
+import { getCatalogueReadPackage } from "@/lib/catalogue-read-package";
 
 async function handleGet(request: Request) {
   try {
@@ -15,14 +16,15 @@ async function handleGet(request: Request) {
       const entry = await getCatalogueEntryById(id);
       return entry ? NextResponse.json({ entry }) : NextResponse.json({ error: { message: "Catalogue item was not found." } }, { status: 404 });
     }
-    const [entries, manifest] = await Promise.all([listCatalogueEntries(), getCatalogueManifest()]);
+    const { value: snapshot, manifest: packageManifest } = await getCatalogueReadPackage();
+    const entries = snapshot.entries;
     const filtered = filterCatalogueEntries(entries, {
       query: url.searchParams.get("q") || undefined,
       category: url.searchParams.get("category") || undefined,
       usage: url.searchParams.get("usage") || undefined,
       status: url.searchParams.get("status") || undefined,
     });
-    return NextResponse.json({ entries: filtered, total: entries.length, filteredCount: filtered.length, categories: [...new Set(entries.map((entry) => entry.category))].sort(), manifest });
+    return NextResponse.json({ entries: filtered, total: entries.length, filteredCount: filtered.length, categories: snapshot.categories, manifest: { schemaVersion: packageManifest.schemaVersion, catalogueVersion: packageManifest.packageVersion, updatedAt: packageManifest.generatedAt, dishCount: packageManifest.recordCount, package: packageManifest } });
   } catch (error) {
     const status = error && typeof error === "object" && "status" in error && typeof (error as { status?: unknown }).status === "number" ? (error as { status: number }).status : 500;
     return NextResponse.json({ error: { message: error instanceof Error ? error.message : "Catalogue could not be loaded." } }, { status });

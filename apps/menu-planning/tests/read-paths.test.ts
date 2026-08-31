@@ -88,8 +88,9 @@ test("manifest and Allergen Checker paths avoid unnecessary full catalogue reads
   const manifest = readFileSync(new URL("../lib/catalogue-manifest.ts", import.meta.url), "utf8");
   const api = readFileSync(new URL("../app/api/catalogue/route.ts", import.meta.url), "utf8");
   const checker = readFileSync(new URL("../app/allergen-checker.tsx", import.meta.url), "utf8");
-  assert.match(manifest, /__manifest__/);
-  assert.match(manifest, /collection\(collectionName\)\.doc\(CATALOGUE_MANIFEST_ID\)\.get/);
+  assert.doesNotMatch(manifest, /__manifest__/);
+  assert.match(manifest, /fikaMenuPlanningCatalogueManifests/);
+  assert.match(manifest, /collection\(collectionName\)\.doc\("catalogue"\)\.get/);
   assert.match(api, /searchParams\.get\("manifest"\)/);
   assert.match(api, /getCatalogueManifest/);
   assert.match(cache, /manifestFetcher/);
@@ -160,7 +161,7 @@ test("structured catalogue errors are rendered as useful text", () => {
 
 test("cold catalogue loads populate IndexedDB without broad warm reads", () => {
   const cache = readFileSync(new URL("../lib/menu-catalogue-cache.ts", import.meta.url), "utf8");
-  assert.match(cache, /return refreshCatalogue\(fetcher, namespace, onUpdate\)/);
+  assert.match(cache, /return refreshCatalogue\(fetcher, namespace, onUpdate, onStateChange\)/);
   assert.match(cache, /await putCachedCatalogue\(result\.entries, namespace/);
   const workspace = readFileSync(new URL("../app/catalogue-workspace.tsx", import.meta.url), "utf8");
   assert.match(workspace, /loadCachedCatalogue\(fetchCatalogue/);
@@ -174,9 +175,9 @@ test("normal warm Dish Library path does not perform a broad catalogue Firestore
   assert.match(cache, /manifestFetcher/);
 });
 
-test("catalogue mutations advance the server manifest in the same hosted transaction", () => {
+test("catalogue mutations publish an immutable package after canonical persistence", () => {
   const repository = readFileSync(new URL("../lib/canonical-menu-repository.ts", import.meta.url), "utf8");
-  assert.match(repository, /manifestRef/);
-  assert.match(repository, /catalogueVersion: Number\(previous\?\.catalogueVersion \|\| 0\) \+ 1/);
-  assert.match(repository, /transaction\.set\(manifestRef/);
+  assert.doesNotMatch(repository, /__manifest__/);
+  assert.match(repository, /publishCataloguePackage/);
+  assert.match(readFileSync(new URL("../../../packages/server-shared/src/read-package.ts", import.meta.url), "utf8"), /putImmutable/);
 });

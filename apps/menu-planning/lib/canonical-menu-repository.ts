@@ -9,7 +9,7 @@ import { appDataPath } from "./fika-contracts";
 import { assertOperationalStoreAvailable } from "./hosted-runtime";
 import { Firestore } from "@google-cloud/firestore";
 import { recordMenuPlanningReadBudget } from "./read-budget";
-import { CATALOGUE_MANIFEST_ID, type CatalogueManifest, getCatalogueManifest } from "./catalogue-manifest";
+import { getCatalogueManifest } from "./catalogue-manifest";
 import { recordDataAccess } from "@fika/server-shared/data-source-meter-server";
 
 const filePath = appDataPath("menu-planning", "menu-planning", "canonical-menu-items.json");
@@ -53,6 +53,20 @@ const hostedDb = () => {
 };
 const hostedDocument = (item: MenuItem) => ({ id: item.canonicalId, kind: "dish", source: "menu-planning-local", record: item, reconciliationStatus: "reconciled", schemaVersion: "1.0.0" });
 const recordsEqual = (left: unknown, right: unknown) => JSON.stringify(left) === JSON.stringify(right);
+async function publishItemsBestEffort(items: MenuItem[]) {
+  try {
+    const { publishCataloguePackage } = await import("./catalogue-read-package");
+    const entries = items.filter(item => item.reviewStatus !== "archived").map(item => ({
+      id: item.canonicalId, kind: "canonical" as const, name: item.displayName, description: item.description || item.preparationDescription,
+      category: normaliseDishCategory(item.category || item.subcategory), subcategory: item.subcategory, usage: ["unknown" as const],
+      status: item.recipeStatus || item.reviewStatus, reviewStatus: item.reviewStatus, sourceLabel: item.sourceName,
+      sourceEvidence: `${item.sourceReference.workbook} · ${item.sourceReference.sheet}`,
+      recipeAvailable: Boolean(item.ingredients?.length || item.methodSteps?.length || item.preparationDescription),
+      allergenCount: item.allergenEvidence.filter(evidence => evidence.value !== "unknown").length, item,
+    }));
+    await publishCataloguePackage(entries);
+  } catch (error) { console.warn("[FIKA_SNAPSHOT_STALE] canonical catalogue mutation succeeded but package publication failed", error); }
+}
 
 async function writeItems(items: MenuItem[]) {
   if (hosted()) {
@@ -64,8 +78,6 @@ async function writeItems(items: MenuItem[]) {
     await db.runTransaction(async transaction => {
       const refs = changed.map(item => db.collection("fikaMenuPlanningCatalogue").doc(item.canonicalId));
       const latest = await transaction.getAll(...refs);
-      const manifestRef = db.collection("fikaMenuPlanningCatalogue").doc(CATALOGUE_MANIFEST_ID);
-      const manifest = await transaction.get(manifestRef);
       latest.forEach((document, index) => {
         const item = changed[index];
         const existing = document.exists ? document.data() : undefined;
@@ -73,11 +85,9 @@ async function writeItems(items: MenuItem[]) {
         if (existingRecord && existingRecord.revision > item.revision && existingRecord.reviewStatus !== "unreviewed") return;
         transaction.set(refs[index], { ...(existing || hostedDocument(item)), id: item.canonicalId, kind: "dish", record: item }, { merge: true });
       });
-      const previous = manifest.exists ? manifest.data() : undefined;
-      const nextManifest: CatalogueManifest = { schemaVersion: 1, catalogueVersion: Number(previous?.catalogueVersion || 0) + 1, updatedAt: new Date().toISOString(), dishCount: items.filter(item => item.reviewStatus !== "archived").length };
-      transaction.set(manifestRef, { kind: "catalogue-manifest", ...nextManifest }, { merge: true });
       });
     invalidateHostedCatalogueCache();
+    await publishItemsBestEffort(items);
     return;
   }
   assertOperationalStoreAvailable();
@@ -86,6 +96,7 @@ async function writeItems(items: MenuItem[]) {
   let version = 0;
   try { version = Number((JSON.parse(await readFile(filePath, "utf8")) as { version?: number }).version || 0); } catch { /* First local catalogue write. */ }
   await writeFile(filePath, JSON.stringify({ version: version + 1, updatedAt: new Date().toISOString(), items: normalised }, null, 2) + "\n", "utf8");
+  await publishItemsBestEffort(normalised);
 }
 
 export { getCatalogueManifest };
