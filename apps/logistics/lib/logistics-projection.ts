@@ -32,7 +32,16 @@ export function buildLogisticsDayProjection(input: { serviceDate: string; jobs: 
     ...(!job.requestedWindow?.startTime ? [`${job.id}: unresolved timing`] : []),
   ]);
   const now = input.now || new Date().toISOString();
-  return { serviceDate: input.serviceDate, revision: input.revision || 1, lastChangeSequence: input.lastChangeSequence || 0, planningQueue: queue, deliveryLoads: mergedLoads, runs: (input.runs || []).filter((run) => run.serviceDate === input.serviceDate).map((run) => ({ canonicalId: run.canonicalId, status: run.status, driverId: run.driverId, driverLabel: run.driverLabel, vehicleLabel: run.vehicleLabel })), exceptions: Array.from(new Set(exceptions)), summary: { queuedJobs: queue.length, loads: mergedLoads.length, assignedJobs: jobs.length - queue.length, collectedJobs: jobs.filter((job) => job.collectionStatus === "collected").length }, rebuiltAt: now };
+  const validEmpty = jobs.length === 0 && mergedLoads.length === 0 && (input.runs || []).filter((run) => run.serviceDate === input.serviceDate).length === 0;
+  return { serviceDate: input.serviceDate, revision: input.revision || 1, lastChangeSequence: input.lastChangeSequence || 0, state: validEmpty ? "VALID_EMPTY" as const : "CURRENT" as const, completeness: { fulfilment: "complete" as const, cpu: "not_required" as const, oploc: "complete" as const }, reconciliation: { status: "current" as const, checkedAt: now }, planningQueue: queue, deliveryLoads: mergedLoads, runs: (input.runs || []).filter((run) => run.serviceDate === input.serviceDate).map((run) => ({ canonicalId: run.canonicalId, status: run.status, driverId: run.driverId, driverLabel: run.driverLabel, vehicleLabel: run.vehicleLabel })), exceptions: Array.from(new Set(exceptions)), summary: { queuedJobs: queue.length, loads: mergedLoads.length, assignedJobs: jobs.length - queue.length, collectedJobs: jobs.filter((job) => job.collectionStatus === "collected").length }, rebuiltAt: now };
+}
+
+export function filterLogisticsProjectionForVehicle(projection: LogisticsDayProjection, vehicleLabel?: string) {
+  if (!vehicleLabel) return projection;
+  const runs = projection.runs.filter((run) => run.vehicleLabel === vehicleLabel);
+  const runIds = new Set(runs.map((run) => run.canonicalId));
+  const deliveryLoads = projection.deliveryLoads.filter((load) => runIds.has(load.runId || "") || runIds.has(load.collectionRunId || ""));
+  return { ...projection, planningQueue: [], deliveryLoads, runs, summary: { ...projection.summary, queuedJobs: 0, loads: deliveryLoads.length, assignedJobs: deliveryLoads.reduce((total, load) => total + load.jobCount, 0), collectedJobs: deliveryLoads.reduce((total, load) => total + load.collectedCount, 0) } };
 }
 
 /** Replays one change without changing the canonical records. Rebuilding the compact day from supplied canonical slices is deterministic and safe for duplicate replay. */

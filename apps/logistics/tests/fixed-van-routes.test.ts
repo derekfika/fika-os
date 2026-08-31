@@ -19,9 +19,8 @@ test("fixed van routes resolve only Van 1 or Van 2 and reuse the mobile workflow
 
 test("fixed van mobile requests and responses stay vehicle-scoped", () => {
   assert.match(mobile, /vehicle=\$\{encodeURIComponent\(fixedVan\.toLowerCase\(\)\.replace\(" ", ""\)\)\}/);
-  assert.match(api, /requestedVehicle = request\.nextUrl\.searchParams\.get\("vehicle"\)/);
-  assert.match(api, /state\.runs\.filter\(\(run\) => run\.vehicleLabel === requestedVehicle\)/);
-  assert.match(api, /deliveryLoads\.filter\(\(load\) => runIds\.has\(load\.runId/);
+  assert.match(api, /filterLogisticsProjectionForVehicle\(projection, requestedVehicle\)/);
+  assert.match(api, /vehicleContext && vehicleContext !== "van1" && vehicleContext !== "van2"/);
 });
 
 test("driver CPU navigation uses the configured browser URL", () => {

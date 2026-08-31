@@ -42,6 +42,8 @@ import {
 import { assignJob, assertDispatchable, createLoad, removeAssignment, setJobCollectionStatus } from "@/lib/delivery-loads";
 import { CPU_PRODUCTION_LOCATION_ID, CPU_SITE_OPLOC_ID } from "../../../../shared/production-location";
 import { buildLogisticsDayProjection } from "@/lib/logistics-projection";
+import { filterLogisticsProjectionForVehicle } from "@/lib/logistics-projection";
+import { projectionToDashboardData } from "@/lib/projection-dashboard-adapter";
 import {
   assignMovementStops,
   combineStop,
@@ -335,7 +337,9 @@ async function reconcileLogisticsDay(serviceDate: string, by: string, actorId = 
 
 async function getLogistics(request: NextRequest) {
   const requestedRunId = request.nextUrl.searchParams.get("runId") || undefined;
-  const requestedVehicle = request.nextUrl.searchParams.get("vehicle") === "van1" ? "Van 1" : request.nextUrl.searchParams.get("vehicle") === "van2" ? "Van 2" : undefined;
+  const vehicleContext = request.nextUrl.searchParams.get("vehicle") || undefined;
+  if (vehicleContext && vehicleContext !== "van1" && vehicleContext !== "van2") throw new HttpError(400, "Invalid Logistics vehicle context.");
+  const requestedVehicle = vehicleContext === "van1" ? "Van 1" : vehicleContext === "van2" ? "Van 2" : undefined;
   const requestedDate =
     request.nextUrl.searchParams.get("serviceDate") || undefined;
   const requestedWeek =
@@ -357,12 +361,9 @@ async function getLogistics(request: NextRequest) {
     // Projection reads are deliberately side-effect free. Reconciliation and
     // rebuilding remain explicit POST/admin operations, so idle dashboard and
     // mobile loads cannot create Firestore writes.
-    if (projection && requestedVehicle) {
-      const runs = projection.runs.filter((run) => run.vehicleLabel === requestedVehicle);
-      const runIds = new Set(runs.map((run) => run.canonicalId));
-      const deliveryLoads = projection.deliveryLoads.filter((load) => runIds.has(load.runId || "") || runIds.has(load.collectionRunId || ""));
-      projection = { ...projection, planningQueue: [], deliveryLoads, runs, summary: { ...projection.summary, loads: deliveryLoads.length, assignedJobs: deliveryLoads.reduce((total, load) => total + load.jobCount, 0), queuedJobs: 0, collectedJobs: deliveryLoads.reduce((total, load) => total + load.collectedCount, 0) } };
-    }
+    const syncHead = await getLogisticsSyncHead();
+    const projectionState = projection && projection.lastChangeSequence < syncHead.sequence ? "STALE" as const : projection?.state || "CURRENT" as const;
+    if (projection) projection = { ...filterLogisticsProjectionForVehicle(projection, requestedVehicle), state: projectionState };
     if (!projection) {
       let state: "EMPTY" | "NOT_MATERIALIZED";
       try {
@@ -371,9 +372,10 @@ async function getLogistics(request: NextRequest) {
         throw Object.assign(new HttpError(503, "Logistics projection state could not be verified."), { code: "LOGISTICS_PROJECTION_STATE_UNAVAILABLE", cause });
       }
       if (state === "NOT_MATERIALIZED") throw Object.assign(new HttpError(503, "Logistics projection has not been materialised."), { code: "LOGISTICS_PROJECTION_NOT_MATERIALIZED" });
-      return NextResponse.json({ projection: null, state, serviceDate, metrics: { projectionFetchMs: Math.round(performance.now() - startedAt), dashboardReadyMs: Math.round(performance.now() - startedAt) } });
+      return NextResponse.json({ projection: null, state: state === "EMPTY" ? "EMPTY" : "MISSING", projectionState: state === "EMPTY" ? "VALID_EMPTY" : "MISSING", serviceDate, metrics: { projectionFetchMs: Math.round(performance.now() - startedAt), dashboardReadyMs: Math.round(performance.now() - startedAt) } });
     }
-    return NextResponse.json({ projection, state: "READY", metrics: { projectionFetchMs: Math.round(performance.now() - startedAt), dashboardReadyMs: Math.round(performance.now() - startedAt) } });
+    const dashboard = projectionToDashboardData(projection);
+    return NextResponse.json({ ...dashboard, projection, state: "READY", projectionState: projection.state || "CURRENT", metrics: { projectionFetchMs: Math.round(performance.now() - startedAt), dashboardReadyMs: Math.round(performance.now() - startedAt) } });
   }
   if (request.nextUrl.searchParams.get("weekSummary") === "1") {
     const dates = operationalWeek(requestedWeek || requestedDate || operationalDate());
