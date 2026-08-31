@@ -10,6 +10,16 @@ test("CPU review consumption is one authenticated package request with no Delive
   assert.doesNotMatch(server, /api\/production-plan\?/);
 });
 
+test("projection invalidation is internal-only and bounded to one OPLOC/day", async () => {
+  const route = await readFile(new URL("../app/api/delivered-in/invalidate/route.ts", import.meta.url), "utf8");
+  const service = await readFile(new URL("../lib/delivered-in-invalidation.ts", import.meta.url), "utf8");
+  assert.match(route, /x-fika-internal-token/);
+  assert.match(route, /serviceDate/);
+  assert.match(route, /oplocId/);
+  assert.doesNotMatch(route, /reconcileDeliveredInDay|projectedWeeks/);
+  assert.match(service, /markDeliveredInProjectionStale/);
+});
+
 test("standalone Delivered-In has no idle polling and selected access remains request-scoped", async () => {
   const page = await readFile(new URL("../app/page.tsx", import.meta.url), "utf8");
   const grabAndGo = await readFile(new URL("../app/grab-and-go-view.tsx", import.meta.url), "utf8");

@@ -10,7 +10,7 @@ export const DELIVERED_IN_DATASET = "delivered-in/day";
 export const DELIVERED_IN_INDEX_DATASET = "delivered-in/projection-index";
 export const projectionManifestKey = (oplocId: string, serviceDate: string) => `${DELIVERED_IN_DATASET}/${encodeURIComponent(oplocId)}/${serviceDate}`;
 export const projectionIndexManifestKey = (oplocId: string) => `${DELIVERED_IN_INDEX_DATASET}/${encodeURIComponent(oplocId)}`;
-export type DeliveredInProjectionIndexEntry = { oplocId: string; serviceDate: string; projectionVersion: number; packageVersion: number; contentHash: string; freshness: "current" | "stale"; completeness: "complete" | "partial" | "missing" | "unavailable"; sourceVersion: string; generatedAt: string; state?: "available" | "withdrawn" };
+export type DeliveredInProjectionIndexEntry = { oplocId: string; serviceDate: string; projectionVersion: number; packageVersion: number; contentHash: string; freshness: "current" | "stale"; completeness: "complete" | "partial" | "missing" | "unavailable"; sourceVersion: string; generatedAt: string; state?: "available" | "withdrawn"; invalidation?: { sourceDomain: "menu-planning" | "cpu-production" | "integration-hub"; sourceEntityId: string; sourceVersion?: string; contentHash?: string; eventId: string; eventType: string; invalidatedAt: string } };
 export type DeliveredInProjectionIndex = { oplocId: string; entries: DeliveredInProjectionIndexEntry[] };
 export function mergeProjectionIndex(index: DeliveredInProjectionIndex, entry: DeliveredInProjectionIndexEntry): DeliveredInProjectionIndex {
   return { oplocId: index.oplocId, entries: [...index.entries.filter(candidate => candidate.serviceDate !== entry.serviceDate), entry].sort((a, b) => a.serviceDate.localeCompare(b.serviceDate)) };
@@ -91,4 +91,29 @@ export async function withdrawDeliveredInProjectionDay(oplocId: string, serviceD
   const current = await retrieveReadPackage<DeliveredInProjectionIndex>(store, projectionIndexManifestKey(oplocId)).catch(() => undefined);
   const existing = current?.value.entries.find(entry => entry.serviceDate === serviceDate);
   await updateProjectionIndex(store, oplocId, { oplocId, serviceDate, projectionVersion: existing?.projectionVersion || 0, packageVersion: existing?.packageVersion || 0, contentHash: existing?.contentHash || "", freshness: "current", completeness: "missing", sourceVersion, generatedAt: new Date().toISOString(), state: "withdrawn" });
+}
+
+export type DeliveredInInvalidation = { sourceDomain: "menu-planning" | "cpu-production" | "integration-hub"; sourceEntityId: string; eventId: string; eventType: "changed" | "amended" | "withdrawn" | "superseded"; serviceDate: string; oplocId: string; sourceVersion?: string; contentHash?: string };
+function versionNumber(value?: string) { const match = value?.match(/(\d+)$/); return match ? Number(match[1]) : undefined; }
+function sourceVersionIsOlder(incoming: string | undefined, existing: string | undefined) {
+  if (!incoming || !existing || incoming === existing) return false;
+  const next = versionNumber(incoming); const prior = versionNumber(existing);
+  return next !== undefined && prior !== undefined && next < prior;
+}
+export async function markDeliveredInProjectionStale(change: DeliveredInInvalidation): Promise<"stale" | "duplicate" | "older" | "missing" | "withdrawn"> {
+  const store = deliveredInProjectionStore();
+  const current = await retrieveReadPackage<DeliveredInProjectionIndex>(store, projectionIndexManifestKey(change.oplocId)).catch(() => undefined);
+  const existing = current?.value.entries.find(entry => entry.serviceDate === change.serviceDate);
+  if (!existing) return "missing";
+  if (existing.state === "withdrawn" && change.eventType === "withdrawn") return "withdrawn";
+  const prior = existing.invalidation;
+  if (prior?.eventId === change.eventId) return "duplicate";
+  if (prior && prior.sourceDomain === change.sourceDomain && prior.sourceEntityId === change.sourceEntityId && sourceVersionIsOlder(change.sourceVersion, prior.sourceVersion)) return "older";
+  const invalidatedAt = new Date().toISOString();
+  if (change.eventType === "withdrawn" || change.eventType === "superseded") {
+    await updateProjectionIndex(store, change.oplocId, { ...existing, freshness: "current", completeness: "missing", state: "withdrawn", sourceVersion: change.sourceVersion || existing.sourceVersion, generatedAt: invalidatedAt, invalidation: { ...change, invalidatedAt } });
+    return "withdrawn";
+  }
+  await updateProjectionIndex(store, change.oplocId, { ...existing, freshness: "stale", state: "available", invalidation: { ...change, invalidatedAt } });
+  return "stale";
 }

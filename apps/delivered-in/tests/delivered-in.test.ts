@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { existsSync, unlinkSync, copyFileSync, writeFileSync } from "node:fs";
+import { existsSync, unlinkSync, copyFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 import { resolveDeliveredInAccess } from "@fika/server-shared/delivered-in-access";
@@ -242,6 +242,7 @@ test("corrupt Grab & Go SQLite recovers from the preserved JSON source without r
   const databaseFile = join(process.cwd(), "local-data", "delivered-in", "grab-and-go.sqlite");
   const backupFile = `${databaseFile}.failure-backup`;
   const hadDatabase = existsSync(databaseFile);
+  mkdirSync(join(process.cwd(), "local-data", "delivered-in"), { recursive: true });
   if (hadDatabase) copyFileSync(databaseFile, backupFile);
   try {
     if (existsSync(databaseFile)) unlinkSync(databaseFile);
