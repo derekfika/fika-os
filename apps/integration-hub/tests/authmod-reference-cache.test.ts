@@ -50,6 +50,15 @@ test("keeps reference data isolated by authorized-admin scope", async () => {
   assert.equal(loads, 2);
 });
 
+test("global immutable references are reused by sequential requests across admin scopes", async () => {
+  let canonicalListings = 0;
+  const load = async () => { canonicalListings += 1; return ["reference-1"]; };
+  const input = { scope: "global", name: "listLegendReferences", load, documents: (value: string[]) => value.length };
+  assert.deepEqual(await cachedAuthmodReference(input), ["reference-1"]);
+  assert.deepEqual(await cachedAuthmodReference({ ...input, scope: "global" }), ["reference-1"]);
+  assert.equal(canonicalListings, 1);
+});
+
 test("invalidates cached references after a mutation", async () => {
   let loads = 0;
   const load = async () => [`version-${++loads}`];
