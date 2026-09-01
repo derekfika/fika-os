@@ -27,14 +27,14 @@ async function grantSites(ids: string[]) {
 }
 
 test("users receive only their AUTHMOD-permitted OPLOCs", async () => {
-  assert.deepEqual([...await resolvePermittedOplocIds({ repository: await grantSites(["oploc:a"]), principal: principal("user"), activeOplocs, appId: app.appId })], ["oploc:a"]);
-  assert.deepEqual([...await resolvePermittedOplocIds({ repository: await grantSites(["oploc:b"]), principal: principal("user"), activeOplocs, appId: app.appId })], ["oploc:b"]);
-  assert.deepEqual([...await resolvePermittedOplocIds({ repository: await grantSites(["oploc:a", "oploc:b"]), principal: principal("user"), activeOplocs, appId: app.appId })].sort(), ["oploc:a", "oploc:b"]);
+  assert.deepEqual([...((await resolvePermittedOplocIds({ repository: await grantSites(["oploc:a"]), principal: principal("user"), appId: app.appId })).ids)], ["oploc:a"]);
+  assert.deepEqual([...((await resolvePermittedOplocIds({ repository: await grantSites(["oploc:b"]), principal: principal("user"), appId: app.appId })).ids)], ["oploc:b"]);
+  assert.deepEqual([...((await resolvePermittedOplocIds({ repository: await grantSites(["oploc:a", "oploc:b"]), principal: principal("user"), appId: app.appId })).ids)].sort(), ["oploc:a", "oploc:b"]);
 });
 
 test("canonical.view without an applicable OPLOC entitlement returns no organisation-wide data", async () => {
   const { repository } = setup();
-  assert.deepEqual([...await resolvePermittedOplocIds({ repository, principal: principal("user"), activeOplocs, appId: app.appId })], []);
+  assert.deepEqual([...((await resolvePermittedOplocIds({ repository, principal: principal("user"), appId: app.appId })).ids)], []);
 });
 
 test("package contents cannot grant access and unauthorized records are removed", () => {
@@ -52,7 +52,25 @@ test("the route has no shared filtered-response cache and keeps no-store semanti
 test("AUTHMOD failure fails closed", async () => {
   const repository = new MemoryAuthModRepository({ applications: [app], oplocs: activeOplocs });
   repository.listApplications = async () => { throw new Error("AUTHMOD unavailable"); };
-  await assert.rejects(() => resolvePermittedOplocIds({ repository, principal: principal("user"), activeOplocs, appId: app.appId }), /AUTHMOD unavailable/);
+  await assert.rejects(() => resolvePermittedOplocIds({ repository, principal: principal("user"), appId: app.appId }), /AUTHMOD unavailable/);
+});
+
+test("scope resolution is bounded by the principal's assigned OPLOCs", async () => {
+  const repository = await grantSites(["oploc:a"]);
+  let listed = false;
+  repository.listActiveOplocs = async () => { listed = true; throw new Error("unbounded OPLOC discovery must not be used"); };
+  const scope = await resolvePermittedOplocIds({ repository, principal: principal("user"), appId: app.appId });
+  assert.equal(listed, false);
+  assert.deepEqual([...scope.ids], ["oploc:a"]);
+});
+
+test("full AUTHMOD access can filter the package without enumerating canonical OPLOCs", async () => {
+  const { repository, identity } = setup();
+  identity.fullAccess = true;
+  await grantStandardApplicationAccess(repository, { identityId: identity.id, appId: app.appId, actor: admin, reason: "test" });
+  repository.listActiveOplocs = async () => { throw new Error("unbounded OPLOC discovery must not be used"); };
+  const scope = await resolvePermittedOplocIds({ repository, principal: principal("user"), appId: app.appId });
+  assert.equal(scope.all, true);
 });
 
 test("package integrity failure cannot bypass authorization", () => {

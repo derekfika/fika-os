@@ -15,9 +15,8 @@ async function handleGet(request: NextRequest) {
     const actor = await actorFromSession(session);
     assertPermission(actor, "canonical.view");
     const repository = new FirestoreAuthModRepository();
-    const activeOplocs = await repository.listActiveOplocs();
     const principal = { type: "interactive" as const, id: session.authmodIdentityId, displayName: session.displayName, email: session.email, identityKind: session.identityKind, ...(session.representedOplocId ? { representedOplocId: session.representedOplocId } : {}), ...(session.primaryCustodianLegendId ? { primaryCustodianLegendId: session.primaryCustodianLegendId } : {}) };
-    const permittedOplocIds = await resolvePermittedOplocIds({ repository, principal, activeOplocs, appId: request.nextUrl.searchParams.get("appId") || undefined });
+    const permittedOplocIds = await resolvePermittedOplocIds({ repository, principal, appId: request.nextUrl.searchParams.get("appId") || undefined });
     const { value } = await getOplocReadPackage();
     // The package is display/reference data only. AUTHMOD is evaluated first;
     // package possession or contents never grant an OPLOC entitlement.

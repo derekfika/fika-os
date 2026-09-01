@@ -17,6 +17,14 @@ const entityTypes: Record<CacheDataset, string[]> = {
 
 export function cacheManifestRef(dataset: CacheDataset) { return manifestCollection().doc(dataset); }
 
+export async function readCacheManifest(dataset: CacheDataset): Promise<CacheManifest> {
+  const snapshot = await cacheManifestRef(dataset).get();
+  recordDataAccess({ app: "integration-hub", operation: `cache-manifest.${dataset}`, source: "FIRESTORE", documents: snapshot.exists ? 1 : 0 });
+  return snapshot.exists ? snapshot.data() as CacheManifest : {
+    schemaVersion: INTEGRATION_CACHE_SCHEMA_VERSION, dataset, version: 0, updatedAt: "", recordCount: 0,
+  };
+}
+
 export async function readCacheManifests(datasets: CacheDataset[] = [...CACHE_DATASETS]): Promise<CacheManifest[]> {
   const snapshots = await Promise.all(datasets.map(dataset => cacheManifestRef(dataset).get()));
   snapshots.forEach((snapshot, index) => recordDataAccess({ app: "integration-hub", operation: `cache-manifest.${datasets[index]}`, source: "FIRESTORE", documents: snapshot.exists ? 1 : 0 }));

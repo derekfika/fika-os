@@ -1,5 +1,6 @@
 import { db } from "./firebase-admin";
 import type { CanonicalRecord } from "./types";
+import { isPermittedOploc, type PermittedOplocScope } from "./oploc-authorization";
 
 const canonical = () => db.collection("integrationHubCanonical");
 export type ServiceArrangementItem = { canonicalId: string; serviceDefinitionId: string; serviceLabel: string; oplocId: string; oplocLabel: string; operationalAreaId?: string; operationalAreaLabel?: string; effectiveFrom: string; effectiveTo?: string; lifecycleState: "active" | "archived"; operationalNotes?: string; version: number };
@@ -15,9 +16,10 @@ export function serviceArrangementsFromRecords(records: CanonicalRecord[], today
   return { today, serviceDefinitions: definitions.sort(byLabel), oplocs: oplocs.sort(byLabel), areas: areas.sort(byLabel), arrangements };
 }
 export function isServiceArrangementEffectiveOn(arrangement: Pick<ServiceArrangementItem, "effectiveFrom" | "effectiveTo" | "lifecycleState">, serviceDate: string) { return arrangement.lifecycleState === "active" && arrangement.effectiveFrom <= serviceDate && (!arrangement.effectiveTo || arrangement.effectiveTo >= serviceDate); }
-export function filterServiceArrangements(overview: ServiceArrangementsOverview, input: { oplocIds?: ReadonlySet<string>; serviceDefinitionId?: string; serviceDate?: string }) {
-  const arrangements = overview.arrangements.filter(item => (!input.oplocIds || input.oplocIds.has(item.oplocId)) && (!input.serviceDefinitionId || item.serviceDefinitionId === input.serviceDefinitionId) && (!input.serviceDate || isServiceArrangementEffectiveOn(item, input.serviceDate)));
-  return { ...overview, oplocs: overview.oplocs.filter(item => !input.oplocIds || input.oplocIds.has(item.canonicalId)), areas: overview.areas.filter(item => !input.oplocIds || input.oplocIds.has(item.oplocId)), arrangements };
+export function filterServiceArrangements(overview: ServiceArrangementsOverview, input: { oplocIds?: ReadonlySet<string> | PermittedOplocScope; serviceDefinitionId?: string; serviceDate?: string }) {
+  const allowed = (id: string) => !input.oplocIds || isPermittedOploc(input.oplocIds, id);
+  const arrangements = overview.arrangements.filter(item => allowed(item.oplocId) && (!input.serviceDefinitionId || item.serviceDefinitionId === input.serviceDefinitionId) && (!input.serviceDate || isServiceArrangementEffectiveOn(item, input.serviceDate)));
+  return { ...overview, oplocs: overview.oplocs.filter(item => allowed(item.canonicalId)), areas: overview.areas.filter(item => allowed(item.oplocId)), arrangements };
 }
 function string(value: unknown) { const output = String(value || "").trim(); return output || undefined; }
 function byLabel(left: { label: string }, right: { label: string }) { return left.label.localeCompare(right.label); }

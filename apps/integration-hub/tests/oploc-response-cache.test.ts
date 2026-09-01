@@ -14,6 +14,26 @@ test("the OPLOC route uses the immutable package after server-side permission ev
   assert.doesNotMatch(reader, /rebuildOplocReadPackage/);
   assert.match(packageSource, /decodeReadPackage/);
   assert.match(packageSource, /OPLOC_DATASET = "integration-hub\/oplocs"/);
+  assert.doesNotMatch(source, /listActiveOplocs/);
+  assert.match(packageSource, /readCacheManifest\("oplocs"\)/);
+});
+
+test("canonical OPLOC and Address mutations invalidate the OPLOC package producer", () => {
+  const mutationSource = readFileSync(new URL("../lib/canonical-record-service.ts", import.meta.url), "utf8");
+  const datasetSource = readFileSync(new URL("../lib/integration-cache-shared.ts", import.meta.url), "utf8");
+  assert.match(mutationSource, /cacheDatasetForEntityType\(input\.entityType\)/);
+  assert.match(mutationSource, /bumpCacheDatasets\(transaction, \[cacheDataset\]\)/);
+  assert.match(datasetSource, /entityType === "OPLOC"\) return "oplocs"/);
+  assert.match(datasetSource, /entityType === "Address"\) return "oplocs"/);
+  assert.match(readFileSync(new URL("../lib/oploc-read-package.ts", import.meta.url), "utf8"), /OPLOC_PACKAGE_STALE/);
+});
+
+test("ordinary OPLOC reads never rebuild the package", () => {
+  const source = readFileSync(new URL("../lib/oploc-read-package.ts", import.meta.url), "utf8");
+  const reader = source.slice(source.indexOf("export async function getOplocReadPackage"));
+  assert.doesNotMatch(reader, /rebuildOplocReadPackage/);
+  assert.match(reader, /OPLOC_PACKAGE_MISSING/);
+  assert.match(reader, /OPLOC_PACKAGE_STALE/);
 });
 
 test("repeated identity-scoped OPLOC requests reuse the app cache", async () => {
