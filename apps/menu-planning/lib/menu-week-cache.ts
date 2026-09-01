@@ -4,9 +4,12 @@ import { clearCatalogueCache } from "./menu-catalogue-cache";
 import { recordDataAccess } from "@fika/server-shared/data-source-meter-client";
 
 export type CachedMenuWeek = { weekId: string; weekCommencing: string; version: number; snapshot: RollingSnapshot; publicationState: Record<string, PublicationDayState>; cachedAt: number; identity: string };
+export type CachedWeekSelection = { weekId: string; weekCommencing: string; identity: string; selectedAt: number };
 const databaseName = "fika-menu-planning";
 const databaseVersion = 2;
 const storeName = "menuWeeks";
+const metadataStore = "cacheMetadata";
+const selectionKey = "selectedWeek";
 
 function openDatabase(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
@@ -25,6 +28,34 @@ function openDatabase(): Promise<IDBDatabase> {
 
 export async function getCachedWeek(weekId: string, identity: string) {
   try { const db = await openDatabase(); return await new Promise<CachedMenuWeek | undefined>((resolve, reject) => { const request = db.transaction(storeName, "readonly").objectStore(storeName).get(weekId); request.onsuccess = () => { const value = request.result?.identity === identity ? request.result as CachedMenuWeek : undefined; recordDataAccess({ app: "menu-planning", operation: "week.cache", source: "CLIENT_CACHE", documents: value ? 1 : 0, cacheHit: Boolean(value) }); resolve(value); }; request.onerror = () => reject(request.error); }); } catch { recordDataAccess({ app: "menu-planning", operation: "week.cache", source: "CLIENT_CACHE", documents: 0, cacheHit: false }); return undefined; }
+}
+
+export async function getCachedWeekSelection(identity: string) {
+  if (!identity) return undefined;
+  try {
+    const db = await openDatabase();
+    return await new Promise<CachedWeekSelection | undefined>((resolve, reject) => {
+      const request = db.transaction(metadataStore, "readonly").objectStore(metadataStore).get(selectionKey);
+      request.onsuccess = () => {
+        const value = request.result as CachedWeekSelection | undefined;
+        resolve(value?.identity === identity ? value : undefined);
+      };
+      request.onerror = () => reject(request.error);
+    });
+  } catch { return undefined; }
+}
+
+export async function putCachedWeekSelection(value: CachedWeekSelection) {
+  if (!value.identity) return;
+  try {
+    const db = await openDatabase();
+    await new Promise<void>((resolve, reject) => {
+      const transaction = db.transaction(metadataStore, "readwrite");
+      transaction.objectStore(metadataStore).put(value, selectionKey);
+      transaction.oncomplete = () => resolve();
+      transaction.onerror = () => reject(transaction.error || new Error("Selected menu week cache write failed."));
+    });
+  } catch { /* Cache failure never changes server behaviour. */ }
 }
 
 export async function putCachedWeek(value: CachedMenuWeek) {

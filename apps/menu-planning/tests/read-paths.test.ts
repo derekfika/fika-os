@@ -30,10 +30,15 @@ test("hosted rolling reads use targeted week and publication paths", () => {
   assert.match(planner, /summariesOnly/);
   assert.match(planner, /neighbor/);
   assert.match(planner, /getCachedWeek|putCachedWeek/);
+  assert.match(planner, /getCachedWeekSelection/);
+  assert.match(planner, /putCachedWeekSelection/);
   assert.match(planner, /history\.pushState/);
   assert.match(planner, /popstate/);
   assert.doesNotMatch(planner, /router\.push/);
-  assert.match(readFileSync(new URL("../lib/menu-week-cache.ts", import.meta.url), "utf8"), /fika-menu-planning/);
+  const weekCache = readFileSync(new URL("../lib/menu-week-cache.ts", import.meta.url), "utf8");
+  assert.match(weekCache, /fika-menu-planning/);
+  assert.match(weekCache, /selectedWeek/);
+  assert.match(weekCache, /identity/);
 });
 
 test("hosted mutation and publication paths expose bounded transaction scopes", () => {
