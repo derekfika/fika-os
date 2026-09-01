@@ -10,6 +10,9 @@ test("Usage Observatory mobile layout prioritises health, supports app filtering
   assert.match(source, /mobileRefresh/);
   assert.match(source, /onSelectApp\("all"\)/);
   assert.match(source, /data-label="Operation"/);
+  assert.match(source, /Read reconciliation by minute/);
+  assert.match(source, /Request traces/);
+  assert.match(source, /Parsed request traces/);
   assert.match(styles, /position:sticky/);
   assert.match(styles, /\.tableScroll thead\{display:none\}/);
   assert.match(styles, /\.healthCards\{grid-template-columns:repeat\(2,1fr\)/);

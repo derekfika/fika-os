@@ -42,6 +42,7 @@ export function startDataTrace(input: DataTraceInput): DataTrace | undefined {
 export function recordDataAccess(trace: DataTrace | undefined, input: DataAccessInput) {
   if (!trace) return;
   const source = DATA_SOURCES.includes(input.source) ? input.source : "UNKNOWN";
+  const dataset = input.dataset ?? trace.dataset;
   const returnedDocuments = Number.isFinite(input.returnedDocuments) && (input.returnedDocuments || 0) >= 0 ? Math.floor(input.returnedDocuments || 0) : Number.isFinite(input.documents) && input.documents >= 0 ? Math.floor(input.documents) : 0;
   const estimatedBillableReads = Number.isFinite(input.estimatedBillableReads) && (input.estimatedBillableReads || 0) >= 0 ? Math.floor(input.estimatedBillableReads || 0) : source === "FIRESTORE" ? Math.max(1, returnedDocuments) : 0;
   const firestoreReads = Number.isFinite(input.firestoreReads) && (input.firestoreReads || 0) >= 0 ? Math.floor(input.firestoreReads || 0) : estimatedBillableReads;
@@ -54,7 +55,7 @@ export function recordDataAccess(trace: DataTrace | undefined, input: DataAccess
   trace.operations += 1;
   if (source === "FIRESTORE") { trace.estimatedFirestoreBillableReads += estimatedBillableReads; trace.estimatedFirestoreWrites += estimatedFirestoreWrites; trace.estimatedFirestoreDeletes += estimatedFirestoreDeletes; }
   if (cacheResult) trace.cache[cacheResult] += 1;
-  if (trace.records.length < MAX_RECORDS) trace.records.push({ ...input, source, app: canonicalOsAppId(input.app || trace.app), action: input.action || trace.action, path: input.path || trace.path, traceId: trace.traceId, ...(trace.requestId ? { requestId: trace.requestId } : {}), ...(cacheResult ? { cacheResult } : {}), documents: returnedDocuments, returnedDocuments, firestoreReads, estimatedBillableReads, estimatedFirestoreWrites, estimatedFirestoreDeletes, level: classifyDataTraceLevel(Math.max(returnedDocuments, estimatedBillableReads)) });
+  if (trace.records.length < MAX_RECORDS) trace.records.push({ ...input, ...(dataset ? { dataset } : {}), source, app: canonicalOsAppId(input.app || trace.app), action: input.action || trace.action, path: input.path || trace.path, traceId: trace.traceId, ...(trace.requestId ? { requestId: trace.requestId } : {}), ...(cacheResult ? { cacheResult } : {}), documents: returnedDocuments, returnedDocuments, firestoreReads, estimatedBillableReads, estimatedFirestoreWrites, estimatedFirestoreDeletes, level: classifyDataTraceLevel(Math.max(returnedDocuments, estimatedBillableReads)) });
 }
 
 export function endDataTrace(trace: DataTrace | undefined, durationMs = trace ? Date.now() - trace.startedAt : 0): DataTraceSummary | undefined {

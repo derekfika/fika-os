@@ -99,6 +99,8 @@ test("daily aggregation is bounded to seven London-labelled buckets", () => {
 test("usage API is administrator guarded and does not scan operational Firestore", () => {
   const route = readFileSync(new URL("../app/api/usage/route.ts", import.meta.url), "utf8");
   assert.match(route, /requireAuthmodAdminContext/);
+  assert.match(route, /withDataTrace/);
+  assert.match(route, /usage-observatory-control-plane/);
   assert.doesNotMatch(route, /collection\(|getDocs\(|onSnapshot\(/);
 });
 
@@ -174,6 +176,17 @@ test("Cloud Logging parser handles valid, malformed, and compatibility records w
   assert.equal(result.operations[0]?.operation, "runs.service-date");
   assert.equal(result.operations[0]?.sourceClass, "FIRESTORE_CANONICAL");
   assert.doesNotMatch(JSON.stringify(result), /traceId|requestId|documentId|email/i);
+});
+
+test("attribution exposes highest-read request details for controlled UAT windows", () => {
+  const range = { start: "2026-08-29T12:00:00.000Z", end: "2026-08-29T12:15:00.000Z", timezone: "Europe/London" as const };
+  const result = aggregateAttribution([
+    { timestamp: "2026-08-29T12:04:00.000Z", textPayload: "[FIKA_DATA_TRACE_TOTAL] {\"app\":\"menu-planning\",\"action\":\"menu-planning.week.open\",\"path\":\"/api/rolling-menu\",\"traceId\":\"trace-1\",\"durationMs\":42,\"estimatedFirestoreBillableReads\":8,\"records\":[{\"operation\":\"week.entries\",\"source\":\"FIRESTORE\",\"documents\":8}]}" },
+  ], range, "1m", 10);
+  assert.equal(result.traceDetailsTotal, 1);
+  assert.equal(result.traceDetails.length, 1);
+  assert.deepEqual(result.traceDetails[0], { timestamp: "2026-08-29T12:04:00.000Z", app: "menu-planning", action: "menu-planning.week.open", route: "/api/rolling-menu", durationMs: 42, level: "NORMAL", estimatedBillableReads: 8, returnedDocuments: 8, estimatedWrites: 0, estimatedDeletes: 0, operationCount: 1, operations: ["week.entries"], cacheHits: 0, cacheMisses: 0 });
+  assert.equal(result.traceDetailsTruncated, false);
 });
 
 test("attribution coverage floors overage and aligns complete zero-filled buckets", () => {

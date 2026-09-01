@@ -8,6 +8,7 @@ export type CloudLogEntry = { insertId?: string; timestamp?: string; receiveTime
 export type AttributionBucket = { timestamp: string; cloudMonitoringReads: number; attributedEstimatedReads: number; unattributedReads: number; byApp: Record<string, number> };
 export type AttributionApp = { app: string; traceCount: number; estimatedFirestoreBillableReads: number; estimatedFirestoreWrites: number; estimatedFirestoreDeletes: number; firestoreReturnedDocuments: number; clientCacheRecords: number; appCacheRecords: number; memoryRecords: number; packageRecords: number; cacheHits: number; cacheMisses: number; cacheHitRate: number | null; highCount: number; warnCount: number };
 export type AttributionAction = { action: string; app: string; traceCount: number; estimatedFirestoreBillableReads: number; firestoreReturnedDocuments: number; cacheServedRecords: number; averageDurationMs: number; maxDurationMs: number; highCount: number; warnCount: number };
+export type AttributionTrace = { timestamp: string; app: string; action: string; route: string; durationMs: number; level: string; estimatedBillableReads: number; returnedDocuments: number; estimatedWrites: number; estimatedDeletes: number; operationCount: number; operations: string[]; cacheHits: number; cacheMisses: number };
 export type AttributionOperation = { operation: string; app: string; route: string; dataset: string; source: string; sourceClass: string; executions: number; returnedDocuments: number; estimatedBillableReads: number; estimatedWrites: number; estimatedDeletes: number; averageReadsPerExecution: number; maxReadsPerExecution: number; cacheHits: number; cacheMisses: number; fallbackCount: number; packageVersions: number[]; projectionVersions: number[] };
 export type UsageMetric = "reads" | "writes" | "deletes";
 export type UsageReconciliation = { actual: Record<UsageMetric, number | null>; attributed: Record<UsageMetric, number>; unattributed: Record<UsageMetric, number | null>; coveragePercent: Record<UsageMetric, number | null>; status: Record<UsageMetric, "COMPLETE" | "INCOMPLETE" | "OVER_ATTRIBUTED" | "UNAVAILABLE"> };
@@ -29,6 +30,9 @@ export type UsageAttribution = {
   apps: AttributionApp[];
   actions: AttributionAction[];
   operations: AttributionOperation[];
+  traceDetails: AttributionTrace[];
+  traceDetailsTotal: number;
+  traceDetailsTruncated: boolean;
   buckets: AttributionBucket[];
   cache: CacheCounters;
   reconciliation: UsageReconciliation;
@@ -37,6 +41,7 @@ export type UsageAttribution = {
 export const CLOUD_LOGGING_PAGE_SIZE = 200;
 export const CLOUD_LOGGING_MAX_PAGES = 50;
 export const CLOUD_LOGGING_MAX_ENTRIES = CLOUD_LOGGING_PAGE_SIZE * CLOUD_LOGGING_MAX_PAGES;
+export const TRACE_DETAIL_LIMIT = 250;
 export const EXPECTED_STAGING_INSTRUMENTATION = Object.fromEntries(CANONICAL_OS_APPS.map(app => [app, ["integration-hub", "logistics", "menu-planning"].includes(app) ? "enabled" : "unknown"])) as Record<string, "enabled" | "not-enabled" | "unknown">;
 const MARKER = /^\[(FIKA_DATA_TRACE_TOTAL|FIKA_DATA_TRACE)\]\s+(\{.*\})\s*$/;
 
@@ -133,6 +138,7 @@ for (const record of trace.records) { const key = `${record.app}|${record.route}
   const attributed = traces.reduce((sum, trace) => sum + trace.estimatedFirestoreBillableReads, 0);
   const attributedWrites = traces.reduce((sum, trace) => sum + trace.estimatedFirestoreWrites, 0);
   const attributedDeletes = traces.reduce((sum, trace) => sum + trace.estimatedFirestoreDeletes, 0);
+  const traceDetails = traces.map(trace => ({ timestamp: trace.timestamp, app: trace.app, action: trace.action, route: trace.path, durationMs: trace.durationMs, level: trace.level, estimatedBillableReads: trace.estimatedFirestoreBillableReads, returnedDocuments: trace.firestoreReturnedDocuments, estimatedWrites: trace.estimatedFirestoreWrites, estimatedDeletes: trace.estimatedFirestoreDeletes, operationCount: trace.records.length, operations: [...new Set(trace.records.map(record => record.operation))].slice(0, 12), cacheHits: trace.cache.HIT, cacheMisses: trace.cache.MISS })).sort((a, b) => b.estimatedBillableReads - a.estimatedBillableReads || b.timestamp.localeCompare(a.timestamp)).slice(0, TRACE_DETAIL_LIMIT);
   const overAttribution = authoritativeReads !== null && attributed > authoritativeReads;
   const bucketMs = ({ "1m": 60000, "5m": 300000, "1h": 3600000, "1d": 86400000 }[resolution]); const count = bucketCount(range, resolution); const buckets = Array.from({ length: count }, (_, index) => ({ timestamp: new Date(Date.parse(range.start) + index * bucketMs).toISOString(), cloudMonitoringReads: 0, attributedEstimatedReads: 0, unattributedReads: 0, byApp: {} as Record<string, number> }));
   for (const trace of traces) { const index = Math.min(count - 1, Math.max(0, Math.floor((Date.parse(trace.timestamp) - Date.parse(range.start)) / bucketMs))); const bucket = buckets[index]; bucket.attributedEstimatedReads += trace.estimatedFirestoreBillableReads; bucket.byApp[trace.app] = (bucket.byApp[trace.app] || 0) + trace.estimatedFirestoreBillableReads; }
@@ -142,7 +148,7 @@ for (const record of trace.records) { const key = `${record.app}|${record.route}
   const actual = { reads: authoritativeReads, writes: null, deletes: null };
   const attributedValues = { reads: attributed, writes: attributedWrites, deletes: attributedDeletes };
   const reconciliation = reconcileUsage(actual, attributedValues, false);
-  return { available: true, traceCount: traces.length, estimatedFirestoreBillableReads: attributed, firestoreReturnedDocuments: traces.reduce((sum, trace) => sum + trace.firestoreReturnedDocuments, 0), authoritativeReads, unattributedReads: authoritativeReads === null ? null : Math.max(0, authoritativeReads - attributed), coveragePercent: coverage, overAttribution, parseFailures, truncated: false, instrumentedApps: Object.keys(EXPECTED_STAGING_INSTRUMENTATION), appsSeenInWindow, expectedInstrumentation: { ...EXPECTED_STAGING_INSTRUMENTATION }, apps: [...apps.values()].sort((a, b) => a.app.localeCompare(b.app)), actions: [...actions.values()].sort((a, b) => b.estimatedFirestoreBillableReads - a.estimatedFirestoreBillableReads).slice(0, 50), operations: [...operations.values()].sort((a, b) => b.estimatedBillableReads - a.estimatedBillableReads).slice(0, 50), buckets, cache, reconciliation };
+  return { available: true, traceCount: traces.length, estimatedFirestoreBillableReads: attributed, firestoreReturnedDocuments: traces.reduce((sum, trace) => sum + trace.firestoreReturnedDocuments, 0), authoritativeReads, unattributedReads: authoritativeReads === null ? null : Math.max(0, authoritativeReads - attributed), coveragePercent: coverage, overAttribution, parseFailures, truncated: false, instrumentedApps: Object.keys(EXPECTED_STAGING_INSTRUMENTATION), appsSeenInWindow, expectedInstrumentation: { ...EXPECTED_STAGING_INSTRUMENTATION }, apps: [...apps.values()].sort((a, b) => a.app.localeCompare(b.app)), actions: [...actions.values()].sort((a, b) => b.estimatedFirestoreBillableReads - a.estimatedFirestoreBillableReads).slice(0, 50), operations: [...operations.values()].sort((a, b) => b.estimatedBillableReads - a.estimatedBillableReads).slice(0, 50), traceDetails, traceDetailsTotal: traces.length, traceDetailsTruncated: traces.length > TRACE_DETAIL_LIMIT, buckets, cache, reconciliation };
 }
 
 export function reconcileUsage(actual: Record<UsageMetric, number | null>, attributed: Record<UsageMetric, number>, incomplete: boolean): UsageReconciliation {
