@@ -84,6 +84,7 @@ test("interactive hot paths do not contain whole canonical collection gets", () 
   assert.match(readFileSync(new URL("../lib/authmod-core/firestore-repository.ts", import.meta.url), "utf8"), /integrationHubCanonical.*doc\(canonicalDocumentId\(oplocId\)\)\.get/);
   const authmodRepository = readFileSync(new URL("../lib/authmod-core/firestore-repository.ts", import.meta.url), "utf8");
   assert.match(authmodRepository, /getAuthmodReferenceReadPackage/);
+  assert.match(authmodRepository, /launcherBootstrapApplications/);
   assert.match(readFileSync(new URL("../lib/authmod-reference-read-package.ts", import.meta.url), "utf8"), /where\("entityType", "==", "Legend"\)/);
   assert.match(readFileSync(new URL("../lib/authmod-reference-read-package.ts", import.meta.url), "utf8"), /where\("entityType", "==", "Employment"\)/);
   assert.doesNotMatch(authmodRepository, /readAll<CanonicalRecord>\("integrationHubCanonical"\)/);

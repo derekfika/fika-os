@@ -55,7 +55,14 @@ export class FirestoreAuthModRepository implements AuthModRepository {
   async saveIdentityWithAudit(value: AuthIdentity, audit: AccessAuditEvent, expectedVersion?: number) { await db.runTransaction(async transaction => { const ref = db.collection(collections.identities).doc(value.id); const snapshot = await transaction.get(ref); assertExpectedVersion(snapshot.exists ? Number(snapshot.data()?.version) : undefined, expectedVersion); transaction.set(ref, value as unknown as DocumentData); transaction.create(db.collection(collections.audits).doc(audit.id), audit as unknown as DocumentData); }); invalidateAuthmodReferenceCaches(); invalidateAuthmodAdmissionCache(); }
   async listCustodianAssignments(operationalIdentityId: string) { const snapshot = await firestoreRead("listCustodianAssignments", collections.custodians, () => db.collection(collections.custodians).where("operationalIdentityId", "==", operationalIdentityId).get()); return snapshot.docs.map(document => document.data() as CustodianAssignment); }
   async saveCustodianHandover(input: { prior?: CustodianAssignment; next: CustodianAssignment; audit: AccessAuditEvent; expectedPriorVersion?: number }) { await db.runTransaction(async transaction => { const priorRef = input.prior ? db.collection(collections.custodians).doc(input.prior.id) : undefined; const priorSnapshot = priorRef ? await transaction.get(priorRef) : undefined; assertExpectedVersion(priorSnapshot?.exists ? Number(priorSnapshot.data()?.version) : undefined, input.expectedPriorVersion); if (priorRef) transaction.set(priorRef, input.prior as unknown as DocumentData); transaction.set(db.collection(collections.custodians).doc(input.next.id), input.next as unknown as DocumentData); transaction.create(db.collection(collections.audits).doc(input.audit.id), input.audit as unknown as DocumentData); }); invalidateAuthmodReferenceCaches(); invalidateAuthmodAdmissionCache(); }
-  async listApplications() { return (await this.referencePackage()).applications; }
+  async listApplications() {
+    try { return (await this.referencePackage()).applications; }
+    catch (error) {
+      if (!["AUTHMOD_REFERENCE_PACKAGE_MISSING", "AUTHMOD_REFERENCE_PACKAGE_STALE"].includes((error as { code?: string }).code || "")) throw error;
+      console.warn("AUTHMOD reference package is not bootstrapped; using launcher-only application fallback.");
+      return cachedAuthmodReference({ scope: REFERENCE_CACHE_SCOPE, name: "launcherBootstrapApplications", documents: value => value.length, load: () => readAll<ApplicationRegistryEntry>(collections.applications) });
+    }
+  }
   async getApplication(appId: string) { const snapshot = await firestoreRead("getApplication", collections.applications, () => db.collection(collections.applications).doc(appId).get()); return snapshot.exists ? snapshot.data() as ApplicationRegistryEntry : undefined; }
   async saveApplication(value: ApplicationRegistryEntry, expectedVersion?: number) { await save(collections.applications, value.appId, value, expectedVersion); }
   async listActiveOplocs() { return (await this.referencePackage()).oplocs; }
