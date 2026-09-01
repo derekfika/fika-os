@@ -3,3 +3,30 @@ env:
   - variable: FIKA_DATA_SOURCE_TRACE
     value: "1"
     availability: [BUILD, RUNTIME]
+  - variable: FIKA_RUNTIME_MODE
+    value: staging
+    availability: [BUILD, RUNTIME]
+  - variable: FIREBASE_PROJECT_ID
+    value: fika-os-dev
+    availability: [BUILD, RUNTIME]
+  - variable: FIKA_ALLOWED_EMAIL_DOMAINS
+    value: fikacatering.com
+    availability: [BUILD, RUNTIME]
+  - variable: FIKA_SESSION_COOKIE_DOMAIN
+    value: .fikacatering.com
+    availability: [BUILD, RUNTIME]
+  - variable: INTEGRATION_HUB_BASE_URL
+    value: https://fika-os-staging--fika-os-dev.europe-west4.hosted.app
+    availability: [RUNTIME]
+  - variable: MENU_PLANNING_BASE_URL
+    value: https://menu-planning-staging.fikacatering.com
+    availability: [RUNTIME]
+  - variable: CPU_PRODUCTION_BASE_URL
+    value: https://cpu-staging.fikacatering.com
+    availability: [RUNTIME]
+  - variable: FIKA_INTERNAL_API_TOKEN
+    secret: FIKA_INTERNAL_API_TOKEN@3
+    availability: [RUNTIME]
+  - variable: FIKA_SNAPSHOT_BUCKET
+    value: fika-os-dev-staging-read-packages-europe-west4
+    availability: [RUNTIME]
