@@ -1,9 +1,11 @@
 import { NextRequest } from "next/server";
 import { publicationEventStream, subscribeToPublicationChanges } from "../../../../lib/publication-events";
+import { requireCpuActor } from "../../../../lib/cpu-access-client";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(request: NextRequest) {
+  await requireCpuActor(request);
   const encoder = new TextEncoder();
   let unsubscribe = () => {};
   let heartbeat: ReturnType<typeof setInterval> | undefined;
