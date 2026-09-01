@@ -32,7 +32,7 @@ test("integrity and package misses remain explicit without index writes", async 
   const server = await readFile(new URL("../lib/server.ts", import.meta.url), "utf8");
   assert.doesNotMatch(server, /writeDeliveredInProjection/);
   assert.doesNotMatch(server, /updateProjectionIndex/);
-  assert.match(server, /catch \{\n      return undefined;/);
+  assert.match(server, /catch \{\s+return undefined;/);
 });
 
 test("standalone Delivered-In has no idle polling and selected access remains request-scoped", async () => {

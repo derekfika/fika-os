@@ -53,7 +53,7 @@ test("successful Service Definition and Arrangement mutations trigger package re
   const configuration = readFileSync(new URL("../lib/operational-configuration-service.ts", import.meta.url), "utf8");
   const catalogue = readFileSync(new URL("../lib/service-catalogue-service.ts", import.meta.url), "utf8");
   assert.match(configuration, /rebuildServiceArrangementsReadPackage/);
-  assert.match(configuration, /entityType === "Service Definition" \|\| entityType === "Service Arrangement"/);
+  assert.match(configuration, /entityType === "Service Definition"[\s\S]*entityType === "Service Arrangement"/);
   assert.match(catalogue, /await rebuildServiceArrangementsReadPackage\(\)/);
 });
 
