@@ -179,7 +179,6 @@ async function handleGet(request: NextRequest) {
       const startedAt = performance.now();
       const week = request.nextUrl.searchParams.get("weekCommencing");
       const reconcile = request.nextUrl.searchParams.get("reconcile") === "1";
-      let packageFallback = reconcile;
       if (!reconcile) {
         try {
           const packaged = await getCpuProjectionPackage(projectionDate, week || undefined);
@@ -190,10 +189,10 @@ async function handleGet(request: NextRequest) {
             return withServerTiming(NextResponse.json({ projection: filtered, package: packaged.manifest }), { package: performance.now() - startedAt, total: performance.now() - startedAt });
           }
           recordCpuPackageFallback("missing");
-          packageFallback = true;
+          return withServerTiming(NextResponse.json({ error: { code: "CPU_PROJECTION_PACKAGE_UNAVAILABLE", message: "The CPU projection package is currently unavailable." }, freshness: "unavailable" }, { status: 503 }), { package: performance.now() - startedAt, total: performance.now() - startedAt });
         } catch {
           recordCpuPackageFallback("invalid");
-          packageFallback = true;
+          return withServerTiming(NextResponse.json({ error: { code: "CPU_PROJECTION_PACKAGE_INTEGRITY_FAILURE", message: "The CPU projection package failed integrity verification." }, freshness: "unavailable" }, { status: 503 }), { package: performance.now() - startedAt, total: performance.now() - startedAt });
         }
       } else recordCpuPackageFallback("explicit-reconciliation");
       const storedStartedAt = performance.now();
@@ -212,7 +211,7 @@ async function handleGet(request: NextRequest) {
       const projectedIds = new Set((storedData?.orders || []).map((order) => order.id).filter(Boolean));
       const needsOrderRefresh = canonicalIds.size !== projectedIds.size || [...canonicalIds].some((id) => !projectedIds.has(id));
       const requiresRefresh = !stored.exists || needsReadableDestinations || needsCancellationRefresh || needsOrderRefresh;
-      const response = NextResponse.json({ projection: requiresRefresh || packageFallback ? week ? await rebuildCpuWeekProjection(request, week) : await rebuildCpuProjection(request, projectionDate) : stored.data() });
+      const response = NextResponse.json({ projection: requiresRefresh ? week ? await rebuildCpuWeekProjection(request, week) : await rebuildCpuProjection(request, projectionDate) : stored.data() });
       recordDeliveredInReadBudget({ stage: requiresRefresh ? "projection_refresh" : "projection_body_load", projectionDocs: 1, canonicalOrderDocs: canonicalIds.size });
       return withServerTiming(response, { stored: storedDuration, canonical: canonicalDuration, total: performance.now() - startedAt });
     }
