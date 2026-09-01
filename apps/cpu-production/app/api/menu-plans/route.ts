@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { existsSync, promises as fs } from "node:fs";
 import path from "node:path";
+import { requireCpuActor } from "../../../lib/cpu-access-client";
 
 export type DeliveredMenuEntry = {
   id: string;
@@ -31,8 +32,9 @@ const filePath = () => path.join(root(), "local-data", "menu-planning", "deliver
 async function readPlans(): Promise<DeliveredMenuPlan[]> {
   try { return JSON.parse(await fs.readFile(filePath(), "utf8")) as DeliveredMenuPlan[]; } catch { return []; }
 }
-export async function GET() { return NextResponse.json({ plans: await readPlans() }, { headers: { "cache-control": "no-store" } }); }
+export async function GET(request: NextRequest) { await requireCpuActor(request); return NextResponse.json({ plans: await readPlans() }, { headers: { "cache-control": "no-store" } }); }
 export async function POST(request: NextRequest) {
+  await requireCpuActor(request);
   const body = await request.json() as Partial<DeliveredMenuPlan>;
   if (!body.name?.trim() || !/^\d{4}-\d{2}-\d{2}$/.test(body.weekStarting || "") || !Array.isArray(body.weeks)) {
     return NextResponse.json({ error: "Name, week starting date and six-week plan are required." }, { status: 422 });

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { existsSync, promises as fs } from "node:fs";
 import path from "node:path";
 import { legacyProductionItemId, productionItemId } from "../../../lib/production-item-id";
+import { requireCpuActor } from "../../../lib/cpu-access-client";
 
 const libraryUrl = () => process.env.MENU_PLANNING_URL || "http://localhost:3500";
 function repositoryRoot() {
@@ -90,6 +91,7 @@ async function localFallback(request: NextRequest, method: "GET" | "POST") {
 }
 
 async function forward(request: NextRequest, method: "GET" | "POST") {
+  await requireCpuActor(request);
   try {
     const response = await fetch(`${libraryUrl()}/api/sandwiches${method === "GET" ? request.nextUrl.search : ""}`, { method, headers: method === "POST" ? { "content-type": "application/json" } : undefined, body: method === "POST" ? await request.clone().text() : undefined, cache: "no-store" });
     const body = await response.text();
