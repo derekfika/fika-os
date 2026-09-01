@@ -78,3 +78,8 @@ test("package integrity failure cannot bypass authorization", () => {
   const corrupt = Uint8Array.from(encoded.bytes, (byte, index) => index === 0 ? byte ^ 1 : byte);
   assert.throws(() => decodeReadPackage(encoded.manifest, corrupt), /integrity check failed/);
 });
+
+test("hosted package retrieval hashes the stored gzip bytes", () => {
+  const source = readFileSync(new URL("../lib/oploc-read-package.ts", import.meta.url), "utf8");
+  assert.match(source, /download\(\{ decompress: false \}\)/);
+});

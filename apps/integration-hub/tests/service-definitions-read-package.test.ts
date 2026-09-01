@@ -54,7 +54,7 @@ test("package misses require explicit authenticated rebuild instead of synchrono
   const arrangements = readFileSync(new URL("../lib/service-arrangements-read-package.ts", import.meta.url), "utf8");
   const definitions = readFileSync(new URL("../lib/service-definitions-read-package.ts", import.meta.url), "utf8");
   assert.match(rebuildRoute, /requireActor\(request, \["integration-admin"\]\)/);
-  assert.match(rebuildRoute, /z\.enum\(\["oplocs", "service-arrangements", "service-definitions"\]\)/);
+  assert.match(rebuildRoute, /z\.enum\(\["oplocs", "service-arrangements", "service-definitions", "authmod-references"\]\)/);
   for (const source of [oploc, arrangements, definitions]) {
     const reader = source.slice(source.indexOf("export async function get"));
     assert.doesNotMatch(reader, /rebuild[A-Za-z]+ReadPackage/);
