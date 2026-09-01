@@ -4,17 +4,36 @@ import { useSearchParams } from "next/navigation";
 import MenuPlanningShell from "./menu-planning-shell";
 import PlanningContextNav from "./planning-context-nav";
 import { useRollingData } from "./planner-data";
+import { loadPublicationReadiness } from "@/lib/publication-readiness-cache";
 import type { RollingAllocation } from "@/lib/rolling-menu-types";
 
 type Oploc = { canonicalId: string; label: string; address?: string };
 type Destination = { id: string; label: string; address?: string; oneOff?: boolean };
 
 export default function PortionPlanner() {
-  const { snapshot, weeks, publicationState, message, error, setError, command } = useRollingData(); const params = useSearchParams();
+  const { snapshot, weeks, publicationState, message, error, setError, command } = useRollingData({ loadCatalogue: false }); const params = useSearchParams();
   const [oplocs, setOplocs] = useState<Oploc[]>([]); const [oneOffOpen, setOneOffOpen] = useState(false); const [oneOffName, setOneOffName] = useState(""); const [oneOffAddress, setOneOffAddress] = useState(""); const [showAll, setShowAll] = useState(false); const [draftValues, setDraftValues] = useState<Record<string, string>>({}); const [blockers, setBlockers] = useState<string[]>([]); const [readinessRefresh, setReadinessRefresh] = useState(0); const [withdrawOpen, setWithdrawOpen] = useState(false); const [withdrawReason, setWithdrawReason] = useState(""); const [withdrawError, setWithdrawError] = useState(""); const [publishing, setPublishing] = useState(false);
   useEffect(() => { void fetch("/api/oplocs", { cache: "no-store" }).then(response => response.json()).then(body => setOplocs(body.oplocs || [])).catch(() => setOplocs([])); }, []);
   const selectedDayId = snapshot?.days.find(item => item.date === params.get("day") || item.id === params.get("day"))?.id || snapshot?.days[0]?.id;
-  useEffect(() => { if (!snapshot || !selectedDayId) return; setBlockers([]); void fetch(`/api/rolling-menu?weekId=${encodeURIComponent(snapshot.week.id)}&dayId=${encodeURIComponent(selectedDayId)}&publicationPreview=true`, { cache: "no-store" }).then(async response => { const body = await response.json().catch(() => ({})); if (!response.ok) throw new Error(body.error?.message || "Publication readiness is unavailable."); return body; }).then(body => { setBlockers(body.dayBlockers || []); setError(""); }).catch(cause => setBlockers([cause instanceof Error ? cause.message : "Readiness could not be checked."])); }, [snapshot?.week.id, selectedDayId, snapshot?.week.version, readinessRefresh, setError]);
+  useEffect(() => {
+    if (!snapshot || !selectedDayId) return;
+    let active = true;
+    setBlockers([]);
+    const key = `${snapshot.week.id}:${snapshot.week.version}:${selectedDayId}`;
+    void loadPublicationReadiness(key, async () => {
+      const response = await fetch(`/api/rolling-menu?weekId=${encodeURIComponent(snapshot.week.id)}&dayId=${encodeURIComponent(selectedDayId)}&publicationPreview=true`, { cache: "no-store" });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(body.error?.message || "Publication readiness is unavailable.");
+      return Array.isArray(body.dayBlockers) ? body.dayBlockers : [];
+    }).then(nextBlockers => {
+      if (!active) return;
+      setBlockers(nextBlockers);
+      setError("");
+    }).catch(cause => {
+      if (active) setBlockers([cause instanceof Error ? cause.message : "Readiness could not be checked."]);
+    });
+    return () => { active = false; };
+  }, [snapshot?.week.id, selectedDayId, snapshot?.week.version, readinessRefresh, setError]);
   if (!snapshot) return <MenuPlanningShell section="Portion Planner"><div className="menu-loading">Loading Portion Planner…</div></MenuPlanningShell>;
   const day = snapshot.days.find(item => item.id === selectedDayId) || snapshot.days[0]; const entries = snapshot.entries.filter(entry => entry.dayId === day.id && entry.itemLabel.trim());
   const allDestinations: Destination[] = [...oplocs.map(item => ({ id: item.canonicalId, label: item.label, address: item.address })), ...(day.oneOffDestinations || []).map(item => ({ id: `oneoff:${item.id}`, label: item.label, address: item.address, oneOff: true })), ...entries.flatMap(entry => entry.allocations.filter(allocation => allocation.destinationId && !oplocs.some(item => item.canonicalId === allocation.destinationId || item.label.trim().toLocaleLowerCase() === allocation.destinationLabel.trim().toLocaleLowerCase())).map(allocation => ({ id: allocation.destinationId as string, label: allocation.destinationLabel, address: allocation.destinationAddress })))].filter((item, index, values) => values.findIndex(candidate => candidate.id === item.id) === index).sort((a, b) => a.label.localeCompare(b.label));

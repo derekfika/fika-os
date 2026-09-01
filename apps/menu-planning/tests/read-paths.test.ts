@@ -12,6 +12,22 @@ test("rolling-menu read path resolves catalogue data without reconciliation writ
   assert.match(getBody, /Promise\.all\(\[listCatalogueEntriesForIds\(.*publicationState/);
 });
 
+test("Delivered-In OPLOC lookups reuse the authorized service-arrangements response", () => {
+  const source = readFileSync(new URL("../lib/oploc-authority.ts", import.meta.url), "utf8");
+  const deliveredInReader = source.slice(source.indexOf("export async function readDeliveredInOplocs"));
+  assert.match(deliveredInReader, /\/api\/service-arrangements/);
+  assert.doesNotMatch(deliveredInReader, /\/api\/oplocs/);
+  assert.match(deliveredInReader, /arrangementData\.oplocs/);
+});
+
+test("portion readiness reuses successful checks for the same week version and day", () => {
+  const source = readFileSync(new URL("../app/portion-planner.tsx", import.meta.url), "utf8");
+  assert.match(source, /loadPublicationReadiness/);
+  assert.match(source, /snapshot\.week\.version/);
+  assert.match(source, /selectedDayId/);
+  assert.match(source, /loadCatalogue: false/);
+});
+
 test("catalogue and rolling-menu GET handlers return structured JSON errors", () => {
   const catalogue = readFileSync(new URL("../app/api/catalogue/route.ts", import.meta.url), "utf8");
   const rolling = readFileSync(new URL("../app/api/rolling-menu/route.ts", import.meta.url), "utf8");

@@ -10,18 +10,18 @@ export async function readGovernedOplocs(request: NextRequest): Promise<Governed
 
 export async function readDeliveredInOplocs(request: NextRequest): Promise<GovernedOploc[]> {
   const headers = { cookie: request.headers.get("cookie") || "" };
-  const [oplocResponse, arrangementResponse] = await Promise.all([
-    fetch(`${menuPlanningHubBaseUrl()}/api/oplocs`, { headers, cache: "no-store" }),
-    fetch(`${menuPlanningHubBaseUrl()}/api/service-arrangements`, { headers, cache: "no-store" }),
-  ]);
-  const oplocBody = await oplocResponse.json() as { oplocs?: GovernedOploc[]; error?: { message?: string } };
+  // The authorized service-arrangements package already contains the
+  // authorized OPLOC reference list. Reusing that response avoids a second
+  // AUTHMOD evaluation and a second package read for every preview/check.
+  const arrangementResponse = await fetch(`${menuPlanningHubBaseUrl()}/api/service-arrangements`, { headers, cache: "no-store" });
   const arrangementBody = await arrangementResponse.json() as { arrangements?: Array<{ oplocId: string; oplocLabel?: string; serviceLabel?: string; lifecycleState?: string; effectiveFrom?: string; effectiveTo?: string }>; error?: { message?: string } };
-  if (!oplocResponse.ok || !Array.isArray(oplocBody.oplocs) || !arrangementResponse.ok || !Array.isArray(arrangementBody.arrangements)) {
-    throw Object.assign(new Error(oplocBody.error?.message || arrangementBody.error?.message || "Delivered-In OPLOC authority is unavailable."), { status: 503 });
+  const arrangementData = arrangementBody as typeof arrangementBody & { oplocs?: GovernedOploc[] };
+  if (!arrangementResponse.ok || !Array.isArray(arrangementBody.arrangements) || !Array.isArray(arrangementData.oplocs)) {
+    throw Object.assign(new Error(arrangementBody.error?.message || "Delivered-In OPLOC authority is unavailable."), { status: 503 });
   }
   const today = new Date().toISOString().slice(0, 10);
   const eligible = new Set(arrangementBody.arrangements.filter(item => item.lifecycleState === "active" && /delivered[ -]?in/i.test(item.serviceLabel || "") && (!item.effectiveFrom || item.effectiveFrom <= today) && (!item.effectiveTo || item.effectiveTo >= today)).map(item => item.oplocId));
-  const listed = new Map(oplocBody.oplocs.map(item => [item.canonicalId, item]));
+  const listed = new Map(arrangementData.oplocs.map(item => [item.canonicalId, item]));
   const governed = new Map<string, GovernedOploc>();
   for (const arrangement of arrangementBody.arrangements) {
     if (!eligible.has(arrangement.oplocId)) continue;

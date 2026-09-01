@@ -6,6 +6,7 @@ import { requireFikaSession } from "@/lib/fika-session";
 import { filterAuthorizedOplocs, resolvePermittedOplocIds } from "@/lib/oploc-authorization";
 import { getOplocReadPackage, validateOplocReadPackage } from "@/lib/oploc-read-package";
 import { withDataTrace } from "@fika/server-shared/data-source-meter-server";
+import { cachedAuthmodAdmission, withAuthmodRequestContext } from "@/lib/authmod-admission-cache";
 
 export const dynamic = "force-dynamic";
 
@@ -16,7 +17,8 @@ async function handleGet(request: NextRequest) {
     assertPermission(actor, "canonical.view");
     const repository = new FirestoreAuthModRepository();
     const principal = { type: "interactive" as const, id: session.authmodIdentityId, displayName: session.displayName, email: session.email, identityKind: session.identityKind, ...(session.representedOplocId ? { representedOplocId: session.representedOplocId } : {}), ...(session.primaryCustodianLegendId ? { primaryCustodianLegendId: session.primaryCustodianLegendId } : {}) };
-    const permittedOplocIds = await resolvePermittedOplocIds({ repository, principal, appId: request.nextUrl.searchParams.get("appId") || undefined });
+    const requestedAppId = request.nextUrl.searchParams.get("appId") || undefined;
+    const permittedOplocIds = await cachedAuthmodAdmission({ identityId: principal.id, appId: "oplocs", scope: requestedAppId || "organisation", authorityAction: "canonical.view", representedOplocId: principal.representedOplocId, primaryCustodianLegendId: session.primaryCustodianLegendId, load: () => resolvePermittedOplocIds({ repository, principal, appId: requestedAppId }) });
     const { value } = await getOplocReadPackage();
     // The package is display/reference data only. AUTHMOD is evaluated first;
     // package possession or contents never grant an OPLOC entitlement.
@@ -27,5 +29,5 @@ async function handleGet(request: NextRequest) {
 }
 
 export async function GET(request: NextRequest) {
-  return withDataTrace({ app: "integration-hub", action: "integration-hub.oploc.load", path: request.nextUrl.pathname, requestId: request.headers.get("x-request-id") || undefined }, () => handleGet(request));
+  return withDataTrace({ app: "integration-hub", action: "integration-hub.oploc.load", path: request.nextUrl.pathname, requestId: request.headers.get("x-request-id") || undefined }, () => withAuthmodRequestContext(() => handleGet(request)));
 }

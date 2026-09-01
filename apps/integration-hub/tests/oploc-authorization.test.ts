@@ -42,10 +42,11 @@ test("package contents cannot grant access and unauthorized records are removed"
   assert.deepEqual(filterAuthorizedOplocs(packageValue, new Set(["oploc:a"])), { oplocs: [{ canonicalId: "oploc:a", label: "A" }] });
 });
 
-test("the route has no shared filtered-response cache and keeps no-store semantics", () => {
+test("the route caches short-lived AUTHMOD admission decisions and keeps no-store semantics", () => {
   const source = readFileSync(new URL("../app/api/oplocs/route.ts", import.meta.url), "utf8");
   assert.match(source, /resolvePermittedOplocIds/);
-  assert.doesNotMatch(source, /getCachedOplocResponse/);
+  assert.match(source, /cachedAuthmodAdmission/);
+  assert.match(source, /withAuthmodRequestContext/);
   assert.match(source, /Cache-Control.*no-store/);
 });
 
