@@ -56,3 +56,31 @@ test("a failed transaction applies no queued week/day/entry writes", async () =>
   try { throw new Error("abort transaction"); } catch { /* the transaction boundary discards pending writes */ }
   assert.equal(committed.length, 0);
 });
+
+test("Firestore publication diff persists lifecycle and archive metadata without changing immutable content", async () => {
+  const h = harness();
+  const publicationId = "menu-publication:week-1";
+  const dayId = `${publicationId}:day:0:v1`;
+  const oldDay = { publicationDayId: dayId, sourceDayId: "week-1:day:0", date: "2026-08-24", dayName: "Monday", version: 1, status: "published", contentHash: "content-hash", publishedAt: "2026-08-24T10:00:00.000Z", publishedBy: "test", entries: [], publicationId };
+  const publication = { publicationId, sourceWeekId: "week-1", weekCommencing: "2026-08-24", weekEnding: "2026-08-30", days: [oldDay], audit: [] };
+  const nextDay = { ...oldDay, status: "withdrawn", withdrawal: { actor: "test", at: "2026-08-24T11:00:00.000Z", reason: "Correction required" }, driveArchive: { status: "saved", account: "test", fileName: "menu.pdf", archivedAt: "2026-08-24T11:00:00.000Z", pdfStatus: "saved", pdfFileName: "menu.pdf" } };
+  await (h.repository as any).writePublicationDiff(h.transaction, { version: 2, publications: [publication], events: [] }, { version: 2, publications: [{ ...publication, days: [nextDay] }], events: [] });
+  assert.equal(h.writes.length, 1);
+  assert.match(h.writes[0].path, /fikaMenuPlanningPublications\/menu-publication:week-1\/days\/menu-publication:week-1:day:0:v1$/);
+  assert.equal((h.writes[0].value as any).publicationId, publicationId);
+  assert.equal((h.writes[0].value as any).contentHash, oldDay.contentHash);
+  assert.equal((h.writes[0].value as any).status, "withdrawn");
+});
+
+test("Firestore publication diff still rejects changed immutable publication content", async () => {
+  const h = harness();
+  const publicationId = "menu-publication:week-2";
+  const dayId = `${publicationId}:day:0:v1`;
+  const oldDay = { publicationDayId: dayId, sourceDayId: "week-2:day:0", date: "2026-08-31", dayName: "Monday", version: 1, status: "published", contentHash: "content-hash", publishedAt: "2026-08-31T10:00:00.000Z", publishedBy: "test", entries: [], publicationId };
+  const publication = { publicationId, sourceWeekId: "week-2", weekCommencing: "2026-08-31", weekEnding: "2026-09-06", days: [oldDay], audit: [] };
+  await assert.rejects(
+    () => (h.repository as any).writePublicationDiff(h.transaction, { version: 2, publications: [publication], events: [] }, { version: 2, publications: [{ ...publication, days: [{ ...oldDay, contentHash: "changed-content" }] }], events: [] }),
+    /Immutable publication day .* differs from stored state\./,
+  );
+  assert.equal(h.writes.length, 0);
+});

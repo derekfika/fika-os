@@ -16,6 +16,8 @@ export type MenuPlanningTransactionScope = { weekId?: string; sourceWeekId?: str
 export class ExpectedVersionConflict extends Error { status = 409 as const; }
 const digest = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
 const omit = (value: Record<string, unknown>, key: string) => Object.fromEntries(Object.entries(value).filter(([name]) => name !== key));
+const omitPublicationDayMetadata = (value: Record<string, unknown>) => Object.fromEntries(Object.entries(value).filter(([name]) => !["publicationId", "status", "withdrawal", "driveArchive"].includes(name)));
+const storedPublicationDay = (day: Record<string, unknown>, publicationId: string) => ({ ...day, publicationId });
 export function assertExpectedVersion(actual: number | undefined, expected: number, aggregateId: string) { if (actual !== expected) throw new ExpectedVersionConflict(`${aggregateId} changed from version ${expected} to ${String(actual)}; refresh before saving.`); }
 
 /** Async server-only adapter. It never exposes a Firestore client to browser code. */
@@ -173,7 +175,12 @@ export class MenuPlanningFirestoreRepository {
       const root = this.db.collection(MENU_PLANNING_COLLECTIONS.publications).doc(publication.publicationId);
       if (!previous || digest(omit(previous as unknown as Record<string, unknown>, "days")) !== digest(omit(publication as unknown as Record<string, unknown>, "days"))) transaction.set(root, omit(publication as unknown as Record<string, unknown>, "days"));
       if (previous) for (const oldDay of previous.days) if (!publication.days.some(day => day.publicationDayId === oldDay.publicationDayId)) throw new ExpectedVersionConflict(`Publication day ${oldDay.publicationDayId} cannot be deleted.`);
-      for (const day of publication.days) { const old = previous?.days.find(value => value.publicationDayId === day.publicationDayId); if (old && digest(old) !== digest(day)) throw new ExpectedVersionConflict(`Immutable publication day ${day.publicationDayId} differs from stored state.`); if (!old) transaction.set(root.collection("days").doc(day.publicationDayId), { ...day, publicationId: publication.publicationId }); }
+      for (const day of publication.days) {
+        const old = previous?.days.find(value => value.publicationDayId === day.publicationDayId);
+        if (old && digest(omitPublicationDayMetadata(old as unknown as Record<string, unknown>)) !== digest(omitPublicationDayMetadata(day as unknown as Record<string, unknown>))) throw new ExpectedVersionConflict(`Immutable publication day ${day.publicationDayId} differs from stored state.`);
+        const next = storedPublicationDay(day as unknown as Record<string, unknown>, publication.publicationId);
+        if (!old || digest(storedPublicationDay(old as unknown as Record<string, unknown>, publication.publicationId)) !== digest(next)) transaction.set(root.collection("days").doc(day.publicationDayId), next);
+      }
     }
     const snapshots = (after as unknown as { snapshots?: Record<string, CompiledPublishedWeekSnapshot> }).snapshots || {};
     for (const [snapshotId, snapshot] of Object.entries(snapshots)) transaction.set(this.db.collection(MENU_PLANNING_COLLECTIONS.publishedSnapshots).doc(snapshotId), snapshot);
