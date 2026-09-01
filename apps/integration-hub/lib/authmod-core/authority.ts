@@ -5,9 +5,9 @@ import type { AuthModRepository } from "./repository";
 
 export const PERSON_REQUIRED_AUTHORITIES = ["authmod", "authmod.admin", "menu.publish"] as const;
 export function isPersonRequiredAuthority(resource: string) { return (PERSON_REQUIRED_AUTHORITIES as readonly string[]).includes(resource); }
-export const ORGANISATION_AUTHORITIES = ["authmod"] as const;
+export const ORGANISATION_AUTHORITIES = ["authmod", "menu.publish"] as const;
 export function isOrganisationAuthority(resource: string) { return (ORGANISATION_AUTHORITIES as readonly string[]).includes(resource); }
-export const OPLOC_SCOPED_AUTHORITIES = ["menu.publish", "production.allergen-sign", "production.allergen-final-approve"] as const;
+export const OPLOC_SCOPED_AUTHORITIES = ["production.allergen-sign", "production.allergen-final-approve"] as const;
 export function isOplocScopedAuthority(resource: string) { return (OPLOC_SCOPED_AUTHORITIES as readonly string[]).includes(resource); }
 
 export async function grantAuthority(repository: AuthModRepository, input: { subjectId: string; subjectType: "interactive" | "service"; actor: AuthPrincipal; appId: string; resource: string; action: AuthorityGrant["action"]; scope: AuthorityGrant["scope"]; provenance?: AuthorityGrant["provenance"]; effectivePeriod?: EffectivePeriod; reason: string }) {

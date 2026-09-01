@@ -26,10 +26,11 @@ export async function GET(request: NextRequest) {
       let canPublish = false;
       const oplocAccessStarted = performance.now();
       const publishAuthorityStarted = performance.now();
-      // Full Access authorises the normal application scope, but does not
-      // imply Menu Publish. Explicit publish checks stay bounded to the
-      // finite AUTHMOD site scope rather than enumerating the estate.
-      for (const oploc of scope.all ? [] : oplocs) {
+      // Menu Publish is an explicit organisation-wide authority. Keep the
+      // OPLOC checks as a bounded compatibility fallback for grants created
+      // before the authority became organisation-wide.
+      canPublish = (await evaluateAuthority(repository, { principal, appId: "menu-planning", resource: "menu.publish", action: "Publish", scope: { kind: "organisation", ids: [] } }, context)).allowed;
+      for (const oploc of canPublish ? [] : oplocs) {
         canPublish ||= (await evaluateAuthority(repository, { principal, appId: "menu-planning", resource: "menu.publish", action: "Publish", scope: { kind: "oploc", ids: [oploc.id] } }, context)).allowed;
       }
       const perOplocAccessMs = performance.now() - oplocAccessStarted;

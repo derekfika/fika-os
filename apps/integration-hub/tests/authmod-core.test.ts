@@ -122,9 +122,11 @@ test("special authority is explicit and action separation is preserved", async (
   await assignSite(repository, { identityId: person.id, oplocId: "oploc:mnk", actor: admin, reason: "Approved Menu Planning site access." });
   await grantStandardApplicationAccess(repository, { identityId: person.id, appId: "menu-planning", actor: admin });
   assert.equal((await evaluateAuthority(repository, { principal, appId: "menu-planning", resource: "menu.publish", action: "Publish", scope: { kind: "oploc", ids: ["oploc:mnk"] } })).allowed, false);
-  await assert.rejects(() => grantAuthority(repository, { subjectId: person.id, subjectType: "interactive", actor: admin, appId: "menu-planning", resource: "menu.publish", action: "Publish", scope: { kind: "organisation", ids: [] }, reason: "Invalid organisation-scoped publisher." }), /explicit OPLOC/);
-  await grantAuthority(repository, { subjectId: person.id, subjectType: "interactive", actor: admin, appId: "menu-planning", resource: "menu.publish", action: "Publish", scope: { kind: "oploc", ids: ["oploc:mnk"] }, reason: "Approved publisher." });
+  const grant = await grantAuthority(repository, { subjectId: person.id, subjectType: "interactive", actor: admin, appId: "menu-planning", resource: "menu.publish", action: "Publish", scope: { kind: "organisation", ids: [] }, reason: "Approved organisation publisher." });
+  assert.deepEqual(grant.scope, { kind: "organisation", ids: [] });
+  assert.equal((await evaluateAuthority(repository, { principal, appId: "menu-planning", resource: "menu.publish", action: "Publish", scope: { kind: "organisation", ids: [] } })).allowed, true);
   assert.equal((await evaluateAuthority(repository, { principal, appId: "menu-planning", resource: "menu.publish", action: "Publish", scope: { kind: "oploc", ids: ["oploc:mnk"] } })).allowed, true);
+  await assert.rejects(() => grantAuthority(repository, { subjectId: person.id, subjectType: "interactive", actor: admin, appId: "menu-planning", resource: "menu.publish", action: "Publish", scope: { kind: "oploc", ids: ["oploc:mnk"] }, reason: "Invalid scoped publisher." }), /organisation-wide/);
 });
 
 test("service principals are separate and revocation denies access", async () => {
@@ -220,7 +222,7 @@ test("operational authority fails closed when OPLOC scope is omitted", async () 
   await grantStandardApplicationAccess(repository, { identityId: person.id, appId: "hospitality-booking", actor: admin });
   assert.equal((await evaluateAuthority(repository, { principal, appId: "hospitality-booking", resource: "hospitality-booking.normal", action: "Manage" })).reasonCode, "invalid-request");
   assert.equal((await evaluateAuthority(repository, { principal, appId: "hospitality-booking", resource: "hospitality-booking.normal", action: "Manage", scope: { kind: "oploc", ids: ["oploc:mnk"] } })).allowed, true);
-  await grantAuthority(repository, { subjectId: person.id, subjectType: "interactive", actor: admin, appId: "menu-planning", resource: "menu.publish", action: "Publish", scope: { kind: "oploc", ids: ["oploc:mnk"] }, reason: "Scoped publisher." });
+  await assert.rejects(() => grantAuthority(repository, { subjectId: person.id, subjectType: "interactive", actor: admin, appId: "menu-planning", resource: "menu.publish", action: "Publish", scope: { kind: "oploc", ids: ["oploc:mnk"] }, reason: "Scoped publisher." }), /organisation-wide/);
   assert.equal((await evaluateAuthority(repository, { principal, appId: "menu-planning", resource: "menu.publish", action: "Publish" })).reasonCode, "invalid-request");
   assert.equal((await evaluateAuthority(repository, { principal, appId: "menu-planning", resource: "menu.publish", action: "Publish", scope: { kind: "oploc", ids: ["oploc:mnk"] } })).allowed, false);
   assert.equal((await resolveUserAccess(repository, { principal, appId: "hospitality-booking" })).allowed, true);
@@ -290,7 +292,7 @@ test("operational identities receive normal scoped access but not person-require
   assert.equal((await resolveUserAccess(repository, { principal, appId: "logistics" })).reasonCode, "app-not-assigned");
   const personRequired = [["integration-hub", "authmod", "Administer"], ["menu-planning", "menu.publish", "Publish"]] as const;
   for (const [appId, resource, action] of personRequired) {
-    await assert.rejects(() => grantAuthority(repository, { subjectId: operational.id, subjectType: "interactive", actor: admin, appId, resource, action, scope: { kind: "oploc", ids: ["oploc:mnk"] }, reason: "Invalid operational authority." }), /person identity/);
+    await assert.rejects(() => grantAuthority(repository, { subjectId: operational.id, subjectType: "interactive", actor: admin, appId, resource, action, scope: resource === "menu.publish" ? { kind: "organisation", ids: [] } : { kind: "oploc", ids: ["oploc:mnk"] }, reason: "Invalid operational authority." }), /person identity/);
   }
   await grantStandardApplicationAccess(repository, { identityId: operational.id, appId: "cpu-production", actor: admin });
   assert.equal((await evaluateAuthority(repository, { principal, appId: "cpu-production", resource: "production.allergen-sign", action: "Approve", scope: { kind: "oploc", ids: ["oploc:mnk"] } })).allowed, false);
@@ -305,7 +307,8 @@ test("person-required policy denies erroneous operational grants and allows pers
   const personPrincipal: AuthPrincipal = { type: "interactive", id: person.id, displayName: person.displayName, identityKind: "person" }; const operationalPrincipal: AuthPrincipal = { type: "interactive", id: operational.id, displayName: operational.displayName, identityKind: "operational" };
   await assignSite(repository, { identityId: person.id, oplocId: "oploc:mnk", actor: admin, reason: "Person site." }); await grantStandardApplicationAccess(repository, { identityId: person.id, appId: "menu-planning", actor: admin });
   await assignSite(repository, { identityId: operational.id, oplocId: "oploc:mnk", actor: admin, reason: "Operational site." }); await grantStandardApplicationAccess(repository, { identityId: operational.id, appId: "menu-planning", actor: admin });
-  const personGrant = await grantAuthority(repository, { subjectId: person.id, subjectType: "interactive", actor: admin, appId: "menu-planning", resource: "menu.publish", action: "Publish", scope: { kind: "oploc", ids: ["oploc:mnk"] }, reason: "Person publisher." });
+  const personGrant = await grantAuthority(repository, { subjectId: person.id, subjectType: "interactive", actor: admin, appId: "menu-planning", resource: "menu.publish", action: "Publish", scope: { kind: "organisation", ids: [] }, reason: "Person publisher." });
+  assert.equal((await evaluateAuthority(repository, { principal: personPrincipal, appId: "menu-planning", resource: "menu.publish", action: "Publish", scope: { kind: "organisation", ids: [] } })).allowed, true);
   assert.equal((await evaluateAuthority(repository, { principal: personPrincipal, appId: "menu-planning", resource: "menu.publish", action: "Publish", scope: { kind: "oploc", ids: ["oploc:mnk"] } })).allowed, true);
   await grantStandardApplicationAccess(repository, { identityId: person.id, appId: "cpu-production", actor: admin });
   const signGrant = await grantAuthority(repository, { subjectId: person.id, subjectType: "interactive", actor: admin, appId: "cpu-production", resource: "production.allergen-sign", action: "Approve", scope: { kind: "oploc", ids: ["oploc:mnk"] }, reason: "Person allergen signer." });
