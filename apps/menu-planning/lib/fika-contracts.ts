@@ -1,5 +1,5 @@
-import crypto from "node:crypto";
-import path from "node:path";
+import crypto from "crypto";
+import path from "path";
 
 export const CANONICAL_ALLERGEN_KEYS = ["no_key_allergens", "peanuts", "tree_nuts", "gluten", "sesame", "molluscs", "fish", "soya", "celery", "shellfish", "eggs", "milk", "mustard", "lupin", "sulphites"] as const;
 export type CanonicalAllergenKey = (typeof CANONICAL_ALLERGEN_KEYS)[number];

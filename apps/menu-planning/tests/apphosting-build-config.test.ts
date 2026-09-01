@@ -6,5 +6,6 @@ test("App Hosting receives app-root standalone output", () => {
   const config = readFileSync(new URL("../next.config.ts", import.meta.url), "utf8");
   assert.match(config, /output:\s*["']standalone["']/);
   assert.match(config, /externalDir:\s*true/);
-  assert.match(config, /turbopack:\s*\{\s*root:\s*path\.resolve\(__dirname, ["']\.\.\/\.\.["']\)/);
+  assert.match(config, /outputFileTracingRoot:\s*appRoot/);
+  assert.match(config, /webpack:\s*\(/);
 });
