@@ -20,6 +20,21 @@ test("projection invalidation is internal-only and bounded to one OPLOC/day", as
   assert.match(service, /markDeliveredInProjectionStale/);
 });
 
+test("ordinary projection reads are consumer-only and cannot materialise or repair packages", async () => {
+  const server = await readFile(new URL("../lib/server.ts", import.meta.url), "utf8");
+  assert.doesNotMatch(server, /materialiseDeliveredInDay/);
+  assert.match(server, /readDeliveredInProjection\(oplocId, entry\.serviceDate\)/);
+  assert.match(server, /unavailableServiceDates/);
+  assert.match(server, /projectionState: discovered\.state/);
+});
+
+test("integrity and package misses remain explicit without index writes", async () => {
+  const server = await readFile(new URL("../lib/server.ts", import.meta.url), "utf8");
+  assert.doesNotMatch(server, /writeDeliveredInProjection/);
+  assert.doesNotMatch(server, /updateProjectionIndex/);
+  assert.match(server, /catch \{\n      return undefined;/);
+});
+
 test("standalone Delivered-In has no idle polling and selected access remains request-scoped", async () => {
   const page = await readFile(new URL("../app/page.tsx", import.meta.url), "utf8");
   const grabAndGo = await readFile(new URL("../app/grab-and-go-view.tsx", import.meta.url), "utf8");

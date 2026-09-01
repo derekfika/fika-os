@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
-import { mergeProjectionIndex, projectionIndexManifestKey, DELIVERED_IN_INDEX_DATASET, type DeliveredInProjectionIndex } from "../lib/delivered-in-projection-store";
+import { mergeProjectionIndex, projectionIndexManifestKey, DELIVERED_IN_INDEX_DATASET, type DeliveredInProjectionIndex, type DeliveredInProjectionIndexEntry } from "../lib/delivered-in-projection-store";
+import { boundedProjectionIndexEntries, DELIVERED_IN_MAX_DAY_PACKAGES, DELIVERED_IN_PROJECTION_HORIZON_DAYS, projectionWindowBounds } from "../lib/server";
 
 test("projection indexes are OPLOC-scoped and contain metadata, not projection bodies", () => {
   const haleon = projectionIndexManifestKey("oploc:haleon");
@@ -14,10 +15,24 @@ test("projection indexes are OPLOC-scoped and contain metadata, not projection b
   assert.equal(DELIVERED_IN_INDEX_DATASET, "delivered-in/projection-index");
 });
 
-test("normal discovery reads the OPLOC index instead of probing a fixed 43-day horizon", async () => {
+test("normal discovery reads the OPLOC index with the shared six-week operational horizon", async () => {
   const server = await readFile(new URL("../lib/server.ts", import.meta.url), "utf8");
   assert.match(server, /readDeliveredInProjectionIndex\(oplocId\)/);
-  assert.doesNotMatch(server, /Array\.from\(\{ length: 43/);
+  assert.match(server, /boundedProjectionIndexEntries/);
+  assert.equal(DELIVERED_IN_PROJECTION_HORIZON_DAYS, 42);
+  assert.deepEqual(projectionWindowBounds("2026-09-01"), { from: "2026-08-31", to: "2026-10-12" });
+});
+
+function indexEntry(serviceDate: string, state: "available" | "withdrawn" = "available"): DeliveredInProjectionIndexEntry {
+  return { oplocId: "oploc:haleon", serviceDate, projectionVersion: 1, packageVersion: 1, contentHash: serviceDate, freshness: "current", completeness: "complete", sourceVersion: "v1", generatedAt: `${serviceDate}T08:00:00Z`, state };
+}
+
+test("historical index growth is date bounded and package fanout has a hard ceiling", () => {
+  const entries = Array.from({ length: 200 }, (_, index) => indexEntry(`2026-${String(1 + Math.floor(index / 31)).padStart(2, "0")}-${String(1 + (index % 28)).padStart(2, "0")}`));
+  const bounded = boundedProjectionIndexEntries([...entries, indexEntry("2026-09-05", "withdrawn")], "2026-09-01");
+  assert.ok(bounded.every(entry => entry.serviceDate >= "2026-08-31" && entry.serviceDate <= "2026-10-12"));
+  assert.ok(bounded.length <= DELIVERED_IN_MAX_DAY_PACKAGES);
+  assert.ok(bounded.some(entry => entry.state === "withdrawn" && entry.serviceDate === "2026-09-05"));
 });
 
 test("withdrawn index metadata is excluded from package retrieval", async () => {
