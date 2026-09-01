@@ -13,9 +13,8 @@ export async function GET(request: NextRequest) {
     const actor = await actorFromSession(session);
     assertPermission(actor, "canonical.view");
     const repository = new FirestoreAuthModRepository();
-    const activeOplocs = await repository.listActiveOplocs();
     const principal = { type: "interactive" as const, id: session.authmodIdentityId, displayName: session.displayName, email: session.email, identityKind: session.identityKind, ...(session.representedOplocId ? { representedOplocId: session.representedOplocId } : {}), ...(session.primaryCustodianLegendId ? { primaryCustodianLegendId: session.primaryCustodianLegendId } : {}) };
-    const permittedOplocIds = await resolvePermittedOplocIds({ repository, principal, activeOplocs, appId: request.nextUrl.searchParams.get("appId") || undefined });
+    const permittedOplocIds = await resolvePermittedOplocIds({ repository, principal, appId: request.nextUrl.searchParams.get("appId") || undefined });
     const { value } = await getServiceArrangementsReadPackage();
     const packageOverview = validateServiceArrangementsReadPackage(value);
     const filtered = filterServiceArrangements({ ...packageOverview, today: new Date().toISOString().slice(0, 10) }, { oplocIds: permittedOplocIds, serviceDefinitionId: request.nextUrl.searchParams.get("serviceDefinitionId") || undefined, serviceDate: request.nextUrl.searchParams.get("serviceDate") || undefined });

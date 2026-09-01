@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { errorResponse } from "@/lib/api";
 import { FirestoreAuthModRepository } from "@/lib/authmod-core";
 import { createAuthModEvaluationContext, evaluateAuthority, resolveUserAccess } from "@/lib/authmod-core/evaluator";
+import { resolvePermittedOplocIds } from "@/lib/oploc-authorization";
+import { getOplocReadPackage, validateOplocReadPackage } from "@/lib/oploc-read-package";
 import { requireFikaSession } from "@/lib/fika-session";
 
 export async function GET(request: NextRequest) {
@@ -13,27 +15,26 @@ export async function GET(request: NextRequest) {
     const repository = new FirestoreAuthModRepository();
     const principal = { type: "interactive" as const, id: session.authmodIdentityId, displayName: session.displayName, email: session.email, identityKind: session.identityKind };
     if (request.nextUrl.searchParams.get("mode") !== "admission") {
-      const oplocListStarted = performance.now();
-      const activeOplocs = await repository.listActiveOplocs();
-      const listActiveOplocsMs = performance.now() - oplocListStarted;
-      const context = createAuthModEvaluationContext(repository, principal, activeOplocs);
+      const context = createAuthModEvaluationContext(repository, principal);
       const appAccessStarted = performance.now();
       const app = await resolveUserAccess(repository, { principal, appId: "menu-planning" }, context);
       const appAccessMs = performance.now() - appAccessStarted;
       if (!app.allowed) throw Object.assign(new Error("Your account does not currently have Menu Planning access."), { status: app.reasonCode === "store-unavailable" ? 503 : 403 });
-      const oplocs = [];
+      const scope = await resolvePermittedOplocIds({ repository, principal, appId: "menu-planning" });
+      const packageValue = validateOplocReadPackage((await getOplocReadPackage()).value);
+      const oplocs = packageValue.oplocs.filter(oploc => scope.all || scope.ids.has(oploc.canonicalId)).map(oploc => ({ id: oploc.canonicalId, label: oploc.label, active: true }));
       let canPublish = false;
       const oplocAccessStarted = performance.now();
       const publishAuthorityStarted = performance.now();
-      for (const oploc of activeOplocs) {
-        if ((await resolveUserAccess(repository, { principal, appId: "menu-planning", oplocId: oploc.id }, context)).allowed) {
-          oplocs.push(oploc);
-          canPublish ||= (await evaluateAuthority(repository, { principal, appId: "menu-planning", resource: "menu.publish", action: "Publish", scope: { kind: "oploc", ids: [oploc.id] } }, context)).allowed;
-        }
+      // Full Access authorises the normal application scope, but does not
+      // imply Menu Publish. Explicit publish checks stay bounded to the
+      // finite AUTHMOD site scope rather than enumerating the estate.
+      for (const oploc of scope.all ? [] : oplocs) {
+        canPublish ||= (await evaluateAuthority(repository, { principal, appId: "menu-planning", resource: "menu.publish", action: "Publish", scope: { kind: "oploc", ids: [oploc.id] } }, context)).allowed;
       }
       const perOplocAccessMs = performance.now() - oplocAccessStarted;
       const publishAuthorityMs = performance.now() - publishAuthorityStarted;
-      console.info("Integration Hub Menu Planning access timing", { sessionMs, appAccessMs, listActiveOplocsMs, perOplocAccessMs, publishAuthorityMs, totalMs: performance.now() - totalStarted });
+      console.info("Integration Hub Menu Planning access timing", { sessionMs, appAccessMs, perOplocAccessMs, publishAuthorityMs, totalMs: performance.now() - totalStarted });
       return NextResponse.json({ principal, oplocs, canManage: true, canPublish }, { headers: { "Cache-Control": "no-store" } });
     }
     const context = createAuthModEvaluationContext(repository, principal);
