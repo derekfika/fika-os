@@ -10,6 +10,7 @@ import { join } from "node:path";
 import { test } from "node:test";
 import * as XLSX from "xlsx";
 import { addMenuSlot, applyEntryPatch, assertWeekDateAvailable, attachCanonicalDishIds, createEntry, defaultWeekForDate, duplicateWeek, emptyWeek, getWeek, importWorkbook, publishWeek, removeMenuSlot, saveSnapshot, updateEntry, validateWeek, ROLLING_SLOTS } from "../lib/rolling-menu";
+import { hasPlannedDishes } from "../lib/rolling-menu-types";
 import { createCanonicalMenuItem, listCanonicalMenuItems } from "../lib/canonical-menu-repository";
 import { buildCompiledPublicationSnapshot, buildPublishedDay, createPublishedMenuDay, currentPublishedDays, getCompiledPublicationSnapshot, getMenuPublication, listMenuPublicationEvents, listMenuPublications, publicationPreview, publicationState, publishedDayMatrixHtml, replayMenuPublicationOutbox, withdrawPublishedMenuDay, withdrawPublishedMenuWeek, type MenuPublicationSignoff } from "../lib/menu-publication";
 import { resolveAllergenSnapshot } from "../lib/allergen-resolution";
@@ -68,6 +69,14 @@ test("blank rolling week has seven days and the governed slot catalogue", () => 
   assert.equal(week.days.length, 7);
   assert.ok(ROLLING_SLOTS.includes("SALAD 6"));
   assert.equal(validateWeek(week).length, 1);
+});
+
+test("only weeks with planned dishes are selectable", () => {
+  const blank = emptyWeek("2026-08-17").week;
+  const planned = emptyWeek("2026-08-24").week;
+  planned.entryIds = ["rolling-week:2026-08-24:entry:1"];
+  assert.equal(hasPlannedDishes(blank), false);
+  assert.equal(hasPlannedDishes(planned), true);
 });
 
 test("publication readiness enforces governed destinations and allocation invariants", () => {
