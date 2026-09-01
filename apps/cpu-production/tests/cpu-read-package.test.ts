@@ -29,6 +29,16 @@ test("CPU package retrieval rejects tampered bytes through shared SHA validation
   assert.throws(() => decodeReadPackage(encoded.manifest, new Uint8Array([1, 2, 3])), /integrity check failed/);
 });
 
+test("normal CPU package miss and corruption do not write or reconstruct", async () => {
+  let writes = 0;
+  const missingStore = { async getManifest() { return undefined; }, async get() { return undefined; }, async has() { return false; }, async putImmutable() { writes += 1; }, async putManifest() { writes += 1; } };
+  assert.equal(await getCpuProjectionPackage("2026-08-31", undefined, missingStore), undefined);
+  const encoded = encodeReadPackage("snapshots/cpu-production/projection-day", 1, { projection: day("2026-08-31") }, 0);
+  const corruptStore = { async getManifest() { return encoded.manifest; }, async get() { return new Uint8Array([1, 2, 3]); }, async has() { return true; }, async putImmutable() { writes += 1; }, async putManifest() { writes += 1; } };
+  await assert.rejects(() => getCpuProjectionPackage("2026-08-31", undefined, corruptStore), /integrity check failed/);
+  assert.equal(writes, 0);
+});
+
 test("CPU package publication advances the manifest without changing projection contents", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "fika-cpu-package-"));
   const previous = process.env.FIKA_SNAPSHOT_DIR;
@@ -63,4 +73,13 @@ test("CPU dashboard stores package metadata and package delivery precedes source
   assert.match(indexedDb, /schemaVersion === CPU_CACHE_SCHEMA_VERSION/);
   const entry = { key: "day:2026-08-31", schemaVersion: 1, cacheScope: "local:project:actor", fetchedAt: "now", lastChangeSequence: 12, revision: 1, packageVersion: 2, contentHash: "hash", sourceVersion: "cpu-change-12", value: {} };
   assert.equal(cpuProjectionCacheEntryMatches(entry, entry.cacheScope, { schemaVersion: 1, packageVersion: 2, contentHash: "wrong", sourceVersion: "cpu-change-12" }), false);
+});
+
+test("normal CPU projection GET returns before canonical reads, rebuilds, or writes on package failure", async () => {
+  const route = await readFile(new URL("../app/api/production/route.ts", import.meta.url), "utf8");
+  const branch = route.slice(route.indexOf('if (request.nextUrl.searchParams.get("projection") === "1")'));
+  const normalBranch = branch.slice(0, branch.indexOf('} else recordCpuPackageFallback("explicit-reconciliation")'));
+  assert.doesNotMatch(normalBranch, /productionQueue\(|productionQueueForWeek\(|rebuildCpuProjection\(|rebuildCpuWeekProjection\(|\.set\(/);
+  assert.match(normalBranch, /CPU_PROJECTION_PACKAGE_UNAVAILABLE/);
+  assert.match(normalBranch, /CPU_PROJECTION_PACKAGE_INTEGRITY_FAILURE/);
 });

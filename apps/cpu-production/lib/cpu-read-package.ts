@@ -1,4 +1,4 @@
-import { encodeReadPackage, publishReadPackage, retrieveReadPackage, type ReadPackageManifest } from "@fika/server-shared/read-package";
+import { encodeReadPackage, publishReadPackage, retrieveReadPackage, type ReadPackageManifest, type ReadPackageStore } from "@fika/server-shared/read-package";
 import { recordDataAccess } from "@fika/server-shared/data-source-meter-server";
 import type { CpuDayProjection, CpuWeekProjection } from "./cpu-projection";
 import { cpuPackageStore } from "./cpu-package-store";
@@ -33,9 +33,9 @@ export async function publishCpuProjectionPackage(projection: CpuProjectionPacka
   return publication;
 }
 
-export async function getCpuProjectionPackage(serviceDate: string, weekCommencing?: string) {
+export async function getCpuProjectionPackage(serviceDate: string, weekCommencing?: string, store: ReadPackageStore = cpuPackageStore()) {
   const scopeKey = weekCommencing ? `week:${weekCommencing}` : serviceDate;
-  const retrieved = await retrieveReadPackage<{ projection: CpuProjectionPackage }>(cpuPackageStore(), keyForScope(serviceDate, weekCommencing));
+  const retrieved = await retrieveReadPackage<{ projection: CpuProjectionPackage }>(store, keyForScope(serviceDate, weekCommencing));
   if (!retrieved) return undefined;
   recordDataAccess({ app: "cpu-production", operation: "cpu-projection.package", source: "SNAPSHOT", documents: retrieved.manifest.recordCount, cacheHit: false });
   return retrieved;
