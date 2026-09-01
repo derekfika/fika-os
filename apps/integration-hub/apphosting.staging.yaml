@@ -35,6 +35,10 @@ env:
     availability:
       - BUILD
       - RUNTIME
+  - variable: CPU_PRODUCTION_BASE_URL
+    value: https://cpu-staging.fikacatering.com
+    availability:
+      - RUNTIME
   - variable: FIKA_APP_LOGISTICS_URL
     value: https://logistics-staging.fikacatering.com
     availability:
