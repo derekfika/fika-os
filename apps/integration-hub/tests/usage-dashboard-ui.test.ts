@@ -13,11 +13,13 @@ test("Usage Observatory mobile layout prioritises health, supports app filtering
   assert.match(source, /Read reconciliation by minute/);
   assert.match(source, /Request traces/);
   assert.match(source, /Parsed request traces/);
+  assert.match(source, /Math\.min\(100/);
   assert.match(styles, /position:sticky/);
   assert.match(styles, /\.tableScroll thead\{display:none\}/);
   assert.match(styles, /\.healthCards\{grid-template-columns:repeat\(2,1fr\)/);
   assert.match(styles, /\.header\{[^}]*position:relative;overflow:hidden/);
   assert.match(styles, /\.attributionTables>div:last-child \.attributionSummary\{grid-template-columns:repeat\(2,minmax\(0,1fr\)\)/);
+  assert.match(styles, /\.attributionTimeline\{[^}]*overflow:hidden/);
 });
 
 test("Usage Observatory retains accessible chart focus and mobile tap sizing", () => {
