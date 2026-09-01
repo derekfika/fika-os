@@ -29,7 +29,13 @@ export async function rebuildAuthmodReferenceReadPackage(): Promise<ReadPackageM
   recordDataAccess({ app: "integration-hub", operation: "authmod.references.package.rebuild", source: "FIRESTORE", documents: legendSnapshot.size + employmentSnapshot.size + oplocSnapshot.size + applicationSnapshot.size });
   const store = oplocPackageStore();
   const previous = await store.getManifest(AUTHMOD_REFERENCE_MANIFEST_KEY);
-  const encoded = encodeReadPackage(AUTHMOD_REFERENCE_DATASET, (previous?.packageVersion || 0) + 1, payload, payload.applications.length + payload.legends.length + payload.oplocs.length, { contractVersion: "integration-hub.authmod-references.v1", sourceVersion: `authmod-references:${sourceVersion}` });
+  let version = (previous?.packageVersion || 0) + 1;
+  let encoded: ReturnType<typeof encodeReadPackage<AuthmodReferenceReadPackage>> | undefined;
+  for (let attempt = 0; attempt < 100; attempt += 1, version += 1) {
+    const candidate = encodeReadPackage(AUTHMOD_REFERENCE_DATASET, version, payload, payload.applications.length + payload.legends.length + payload.oplocs.length, { contractVersion: "integration-hub.authmod-references.v1", sourceVersion: `authmod-references:${sourceVersion}` });
+    if (!(await store.has(candidate.manifest.objectName))) { encoded = candidate; break; }
+  }
+  if (!encoded) throw Object.assign(new Error("Could not allocate an unused AUTHMOD reference package version."), { status: 503, code: "AUTHMOD_REFERENCE_PACKAGE_VERSION_UNAVAILABLE" });
   return publishReadPackage(store, AUTHMOD_REFERENCE_MANIFEST_KEY, encoded);
 }
 
