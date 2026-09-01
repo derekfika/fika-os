@@ -55,14 +55,14 @@ env:
       - BUILD
       - RUNTIME
   - variable: FIKA_APP_DELIVERED_IN_URL
-    value: https://fika-delivered-in-staging--fika-os-dev.europe-west4.hosted.app
+    value: https://delivered-in-staging.fikacatering.com
     availability:
       - BUILD
       - RUNTIME
   # The generated hosted.app origin remains available for backend smoke tests;
   # customer/staff returnTo values use the cookie-compatible custom hostname.
   - variable: FIKA_ALLOWED_APP_ORIGINS
-    value: https://cpu-staging.fikacatering.com,https://menu-planning-staging.fikacatering.com,https://hospitality-staging.fikacatering.com,https://fika-hospitality-staging--fika-os-dev.europe-west4.hosted.app,https://fika-cpu-production-staging--fika-os-dev.europe-west4.hosted.app,https://fika-delivered-in-staging--fika-os-dev.europe-west4.hosted.app
+    value: https://cpu-staging.fikacatering.com,https://logistics-staging.fikacatering.com,https://menu-planning-staging.fikacatering.com,https://hospitality-staging.fikacatering.com,https://delivered-in-staging.fikacatering.com,https://fika-hospitality-staging--fika-os-dev.europe-west4.hosted.app,https://fika-cpu-production-staging--fika-os-dev.europe-west4.hosted.app,https://fika-delivered-in-staging--fika-os-dev.europe-west4.hosted.app
     availability:
       - BUILD
       - RUNTIME

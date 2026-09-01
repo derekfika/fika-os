@@ -10,7 +10,7 @@ test("CPU and Delivered-In staging configs converge on shared runtime contracts"
   assert.match(delivered, /FIKA_DATA_SOURCE_TRACE[\s\S]*value: "1"/);
   assert.match(cpu, /FIKA_APP_DELIVERED_IN_URL[\s\S]*https:\/\/fika-delivered-in-staging--fika-os-dev\.europe-west4\.hosted\.app/);
   assert.match(cpu, /FIKA_LOGISTICS_BASE_URL[\s\S]*https:\/\/logistics-staging\.fikacatering\.com/);
-  assert.match(delivered, /FIKA_INTERNAL_API_TOKEN[\s\S]*secret: FIKA_INTERNAL_API_TOKEN/);
+  assert.match(delivered, /FIKA_INTERNAL_API_TOKEN[\s\S]*secret: FIKA_INTERNAL_API_TOKEN@3/);
   assert.doesNotMatch(delivered, /DELIVERED_IN_INTERNAL_API_TOKEN/);
   assert.match(cpu, /FIKA_SNAPSHOT_BUCKET[\s\S]*fika-os-dev-staging-read-packages-europe-west4/);
   assert.match(delivered, /FIKA_SNAPSHOT_BUCKET[\s\S]*fika-os-dev-staging-read-packages-europe-west4/);

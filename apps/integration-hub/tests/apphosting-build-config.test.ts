@@ -20,7 +20,10 @@ test("effective App Hosting config enables staging data-source tracing", () => {
 
 test("staging config uses the Logistics API base and shared internal token secret", () => {
   const config = readFileSync(new URL("../apphosting.staging.yaml", import.meta.url), "utf8");
+  assert.match(config, /variable:\s*CPU_PRODUCTION_BASE_URL[\s\S]*?value:\s*https:\/\/cpu-staging\.fikacatering\.com/);
   assert.match(config, /variable:\s*FIKA_LOGISTICS_BASE_URL[\s\S]*?value:\s*https:\/\/logistics-staging\.fikacatering\.com/);
+  assert.match(config, /variable:\s*FIKA_APP_DELIVERED_IN_URL[\s\S]*?value:\s*https:\/\/delivered-in-staging\.fikacatering\.com/);
+  assert.match(config, /FIKA_ALLOWED_APP_ORIGINS[\s\S]*https:\/\/logistics-staging\.fikacatering\.com[\s\S]*https:\/\/delivered-in-staging\.fikacatering\.com/);
   assert.match(config, /variable:\s*FIKA_INTERNAL_API_TOKEN[\s\S]*?secret:\s*FIKA_INTERNAL_API_TOKEN@3/);
 });
 

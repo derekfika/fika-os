@@ -27,7 +27,7 @@ env:
     value: https://cpu-staging.fikacatering.com
     availability: [RUNTIME]
   - variable: FIKA_INTERNAL_API_TOKEN
-    secret: FIKA_INTERNAL_API_TOKEN
+    secret: FIKA_INTERNAL_API_TOKEN@3
     availability: [RUNTIME]
   - variable: FIKA_SNAPSHOT_BUCKET
     value: fika-os-dev-staging-read-packages-europe-west4

@@ -48,6 +48,18 @@ test("staging launcher targets Logistics on the cookie-compatible custom hostnam
   }
 });
 
+test("staging launcher targets Delivered-In on the cookie-compatible custom hostname", () => {
+  const priorMode = process.env.FIKA_RUNTIME_MODE;
+  const priorDeliveredInUrl = process.env.FIKA_APP_DELIVERED_IN_URL;
+  process.env.FIKA_RUNTIME_MODE = "staging";
+  process.env.FIKA_APP_DELIVERED_IN_URL = "https://delivered-in-staging.fikacatering.com";
+  try { assert.equal(appHref("delivered-in"), "https://delivered-in-staging.fikacatering.com/"); }
+  finally {
+    if (priorMode === undefined) delete process.env.FIKA_RUNTIME_MODE; else process.env.FIKA_RUNTIME_MODE = priorMode;
+    if (priorDeliveredInUrl === undefined) delete process.env.FIKA_APP_DELIVERED_IN_URL; else process.env.FIKA_APP_DELIVERED_IN_URL = priorDeliveredInUrl;
+  }
+});
+
 test("empty application registry bootstrap creates exactly the seven V1 apps and preserves governed changes", async () => {
   const repository = new MemoryAuthModRepository();
   const created = await ensureV1ApplicationRegistry(repository, actor);
