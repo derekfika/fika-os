@@ -1,5 +1,5 @@
 .page{min-height:100vh;background:#f6f4fa;color:#24163b;padding-bottom:60px}
-.header{display:flex;justify-content:space-between;gap:28px;padding:54px 7vw 70px;background:linear-gradient(110deg,#24115c 0 58%,#4f34c7 58%);color:#fff}
+.header{display:flex;justify-content:space-between;gap:28px;padding:54px 7vw 70px;background:linear-gradient(110deg,#24115c 0 58%,#4f34c7 58%);color:#fff;position:relative;overflow:hidden}.header>div{position:relative;z-index:1}
 .eyebrow{margin:0;color:#4f34c7;font-size:.7rem;font-weight:900;letter-spacing:.13em;text-transform:uppercase}
 .header .eyebrow{color:#4df7c2}.header h1{margin:10px 0 13px;font-size:clamp(3rem,6vw,5.5rem);letter-spacing:-.08em;line-height:.86}.header h1 em{color:#4df7c2;font-style:normal}.header p:not(.eyebrow){max-width:600px;margin:0;color:#fffc;line-height:1.45}
 .actions,.controls{display:flex;align-items:flex-start;gap:10px}.actions button,.actions a,.controls button{border:1px solid #fff6;border-radius:9px;padding:10px 14px;background:#fff1;color:#fff;text-decoration:none;font-weight:800;min-height:44px}.actions button:focus-visible,.actions a:focus-visible,.controls button:focus-visible,.controls select:focus-visible,.controls input:focus-visible,.attributionRows button:focus-visible,.resetFilter:focus-visible{outline:3px solid #f09b5b;outline-offset:2px}

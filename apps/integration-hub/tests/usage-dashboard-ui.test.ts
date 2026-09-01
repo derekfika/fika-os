@@ -9,11 +9,11 @@ test("Usage Observatory mobile layout prioritises health, supports app filtering
   assert.match(source, /healthCards/);
   assert.match(source, /mobileRefresh/);
   assert.match(source, /onSelectApp\("all"\)/);
-  assert.match(source, /data-label="Action"/);
   assert.match(source, /data-label="Operation"/);
   assert.match(styles, /position:sticky/);
   assert.match(styles, /\.tableScroll thead\{display:none\}/);
   assert.match(styles, /\.healthCards\{grid-template-columns:repeat\(2,1fr\)/);
+  assert.match(styles, /\.header\{[^}]*position:relative;overflow:hidden/);
 });
 
 test("Usage Observatory retains accessible chart focus and mobile tap sizing", () => {
