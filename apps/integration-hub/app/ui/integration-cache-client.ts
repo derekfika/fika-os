@@ -64,6 +64,10 @@ export async function writeCachedManifests(manifests: CacheManifest[]) { const c
 export async function readCachedOverview<T>(identityScope: string) { const value = await read<CacheMetadata>("cacheMetadata", "connectionsOverview"); return value?.overviewIdentityScope === identityScope ? value.overview as T | undefined : undefined; }
 export async function writeCachedOverview(identityScope: string, overview: unknown) { await write("cacheMetadata", { id: "connectionsOverview", overviewIdentityScope: identityScope, overview }); }
 
+export type CachedAuthmodOptions = { applications: { appId: string; displayName: string; standardActions: string[] }[]; oplocs: { id: string; label: string }[]; legends: { id: string; label: string; email?: string }[]; packageVersion: number };
+export async function readCachedAuthmodOptions() { return read<CachedAuthmodOptions & { id: string }>("cacheMetadata", "authmodOptions"); }
+export async function writeCachedAuthmodOptions(value: CachedAuthmodOptions) { await write("cacheMetadata", { id: "authmodOptions", ...value }); }
+
 export async function clearIdentityScopedCache(identityScope: string) {
   const database = await openCache();
   await new Promise<void>((resolve, reject) => {

@@ -6,8 +6,9 @@ import { assertPermission } from "@/lib/authmod";
 import { rebuildOplocReadPackage } from "@/lib/oploc-read-package";
 import { rebuildServiceArrangementsReadPackage } from "@/lib/service-arrangements-read-package";
 import { rebuildServiceDefinitionsReadPackage } from "@/lib/service-definitions-read-package";
+import { rebuildAuthmodReferenceReadPackage } from "@/lib/authmod-reference-read-package";
 
-const Query = z.object({ dataset: z.enum(["oplocs", "service-arrangements", "service-definitions"]) }).strict();
+const Query = z.object({ dataset: z.enum(["oplocs", "service-arrangements", "service-definitions", "authmod-references"]) }).strict();
 
 export async function POST(request: NextRequest) {
   try {
@@ -18,7 +19,9 @@ export async function POST(request: NextRequest) {
       ? await rebuildOplocReadPackage()
       : dataset === "service-arrangements"
         ? await rebuildServiceArrangementsReadPackage()
-        : await rebuildServiceDefinitionsReadPackage();
+        : dataset === "service-definitions"
+          ? await rebuildServiceDefinitionsReadPackage()
+          : await rebuildAuthmodReferenceReadPackage();
     return NextResponse.json({ dataset, manifest }, { headers: { "Cache-Control": "no-store, max-age=0" } });
   } catch (error) { return errorResponse(error); }
 }

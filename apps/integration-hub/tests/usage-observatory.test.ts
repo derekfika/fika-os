@@ -172,6 +172,7 @@ test("Cloud Logging parser handles valid, malformed, and compatibility records w
   assert.equal(result.apps.find(app => app.app === "logistics")?.firestoreReturnedDocuments, 4);
   assert.equal(result.apps.find(app => app.app === "logistics")?.clientCacheRecords, 2);
   assert.equal(result.operations[0]?.operation, "runs.service-date");
+  assert.equal(result.operations[0]?.sourceClass, "FIRESTORE_CANONICAL");
   assert.doesNotMatch(JSON.stringify(result), /traceId|requestId|documentId|email/i);
 });
 
