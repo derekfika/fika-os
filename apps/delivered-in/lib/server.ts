@@ -1,10 +1,14 @@
 import type { NextRequest } from "next/server";
-import { assertAuthorisedOploc, projectPublishedWeeks, type ProjectedDay, type Site, type SiteAccess, type SourcePublication } from "./projection";
+import { assertAuthorisedOploc, operationalDateLondon, projectPublishedWeeks, type ProjectedDay, type Site, type SiteAccess, type SourcePublication } from "./projection";
 import type { DeliveredInService } from "@fika/server-shared/delivered-in-access";
 import { recordDeliveredInAppReadBudget } from "./delivered-in-read-budget";
-import { materialiseDeliveredInDay } from "./delivered-in-projection-materialiser";
+import { buildDeliveredInDayProjection } from "./delivered-in-projection-materialiser";
 import { readDeliveredInProjection, readDeliveredInProjectionIndex } from "./delivered-in-projection-store";
 import type { DeliveredInDayProjection } from "./delivered-in-day-projection";
+import type { DeliveredInProjectionIndexEntry } from "./delivered-in-projection-store";
+
+export const DELIVERED_IN_PROJECTION_HORIZON_DAYS = 42;
+export const DELIVERED_IN_MAX_DAY_PACKAGES = 50;
 
 const hubBase = () => (process.env.INTEGRATION_HUB_BASE_URL || "http://localhost:3200").replace(/\/$/, "");
 const menuBase = () => (process.env.MENU_PLANNING_BASE_URL || "http://localhost:3500").replace(/\/$/, "");
@@ -61,7 +65,15 @@ export async function projectedWeeks(request: NextRequest, requestedOplocId?: st
   const site = sites.find(candidate => candidate.oplocId === selectedOplocId) || { oplocId: selectedOplocId, label: selectedOplocId };
   if (options.usePackages !== false) {
     const discovered = await readProjectionWindow(selectedOplocId);
-    if (discovered.days.length && discovered.days.every(day => day.state.completeness !== "missing")) return { access, sites, selectedOplocId, weeks: weeksFromProjectionDays(discovered.days), withdrawnServiceDates: discovered.withdrawnServiceDates };
+    return {
+      access,
+      sites,
+      selectedOplocId,
+      weeks: weeksFromProjectionDays(discovered.days),
+      withdrawnServiceDates: discovered.withdrawnServiceDates,
+      projectionState: discovered.state,
+      unavailableServiceDates: discovered.unavailableServiceDates,
+    };
   }
   const fromWeek = mondayOf(new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/London" }).format(new Date()));
   const response = await fetch(`${menuBase()}/api/rolling-menu/publications?fromWeek=${encodeURIComponent(fromWeek)}&toWeek=${encodeURIComponent(addDays(fromWeek, 49))}`, { cache: "no-store" });
@@ -74,9 +86,9 @@ export async function projectedWeeks(request: NextRequest, requestedOplocId?: st
       try {
         const cached = await readDeliveredInProjection(selectedOplocId, day.date);
         if (cached) return cached.value;
-      } catch { /* A corrupt/missing package enters the controlled rebuild path. */ }
+      } catch { /* Explicit authoritative rebuild mode may continue to canonical sources. */ }
       try {
-        return await materialiseDeliveredInDay({ request, site, day, loadReview: cpuReviewForDay, governed: governedOplocIds.has(selectedOplocId) });
+        return await buildDeliveredInDayProjection({ request, site, day, loadReview: cpuReviewForDay, governed: governedOplocIds.has(selectedOplocId) });
       } catch (error) {
         recordDeliveredInAppReadBudget({ stage: "day_projection_unavailable", upstreamRequests: 1, serviceDate: day.date, oplocId: selectedOplocId });
         return unavailableDayProjection(day, site, error);
@@ -87,12 +99,37 @@ export async function projectedWeeks(request: NextRequest, requestedOplocId?: st
   return { access, sites, selectedOplocId, weeks, withdrawnServiceDates: [] as string[] };
 }
 
-async function readProjectionWindow(oplocId: string) {
+export function projectionWindowBounds(asOf = operationalDateLondon()) {
+  const from = mondayOf(asOf);
+  return { from, to: addDays(from, DELIVERED_IN_PROJECTION_HORIZON_DAYS) };
+}
+
+export function boundedProjectionIndexEntries(entries: DeliveredInProjectionIndexEntry[], asOf = operationalDateLondon()) {
+  const { from, to } = projectionWindowBounds(asOf);
+  return entries
+    .filter(entry => entry.serviceDate >= from && entry.serviceDate <= to)
+    .sort((a, b) => a.serviceDate.localeCompare(b.serviceDate))
+    .slice(0, DELIVERED_IN_MAX_DAY_PACKAGES);
+}
+
+async function readProjectionWindow(oplocId: string, asOf = operationalDateLondon()) {
   const index = await readDeliveredInProjectionIndex(oplocId).catch(() => undefined);
-  if (!index) return { days: [] as DeliveredInDayProjection[], withdrawnServiceDates: [] as string[] };
-  const withdrawnServiceDates = index.value.entries.filter(entry => entry.state === "withdrawn").map(entry => entry.serviceDate);
-  const results = await Promise.all(index.value.entries.filter(entry => entry.state !== "withdrawn").map(async entry => { try { return (await readDeliveredInProjection(oplocId, entry.serviceDate))?.value; } catch { return undefined; } }));
-  return { days: results.filter((day): day is DeliveredInDayProjection => Boolean(day)), withdrawnServiceDates };
+  if (!index) return { days: [] as DeliveredInDayProjection[], withdrawnServiceDates: [] as string[], unavailableServiceDates: [] as string[], state: "unavailable" as const };
+  const inWindow = boundedProjectionIndexEntries(index.value.entries, asOf);
+  const withdrawnServiceDates = inWindow.filter(entry => entry.state === "withdrawn").map(entry => entry.serviceDate);
+  const entries = inWindow.filter(entry => entry.state !== "withdrawn").slice(0, DELIVERED_IN_MAX_DAY_PACKAGES);
+  const results = await Promise.all(entries.map(async entry => {
+    try {
+      const packageValue = await readDeliveredInProjection(oplocId, entry.serviceDate);
+      return packageValue?.value;
+    } catch {
+      return undefined;
+    }
+  }));
+  const unavailableServiceDates = entries.filter((_, index) => !results[index]).map(entry => entry.serviceDate);
+  const days = results.filter((day): day is DeliveredInDayProjection => Boolean(day));
+  const state: "current" | "partial" | "unavailable" = unavailableServiceDates.length ? (days.length ? "partial" : "unavailable") : "current";
+  return { days, withdrawnServiceDates, unavailableServiceDates, state };
 }
 
 function weeksFromProjectionDays(days: DeliveredInDayProjection[]) {
