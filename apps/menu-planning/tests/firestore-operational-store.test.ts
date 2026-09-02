@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { MenuPlanningFirestoreRepository, type HostedTransactionState } from "../lib/firestore-operational-store";
 import type { RollingDay, RollingEntry, RollingWeek } from "../lib/rolling-menu-types";
+import { encodeWeeklyPublicationPacket } from "@fika/server-shared/weekly-publication-packet";
 
 const week = (id: string): RollingWeek => ({ id, weekCommencing: "2026-08-24", weekEnding: "2026-08-30", status: "draft", version: 1, dayIds: [], entryIds: [], sourceFiles: [], audit: [] });
 const day = (id: string, weekId: string): RollingDay => ({ id, date: "2026-08-24", dayName: "Monday", entryIds: [] });
@@ -83,4 +84,23 @@ test("Firestore publication diff still rejects changed immutable publication con
     /Immutable publication day .* differs from stored state\./,
   );
   assert.equal(h.writes.length, 0);
+});
+
+test("Firestore publication diff writes the complete weekly packet on the publication root", async () => {
+  const h = harness();
+  const publicationId = "menu-publication:week-packet";
+  const packet = encodeWeeklyPublicationPacket({
+    publicationId,
+    sourceWeekId: "week-packet",
+    sourceWeekVersion: 7,
+    publicationVersion: 1,
+    days: [{ sourceDayId: "week-packet:day:0", entries: [{ sourceEntryId: "entry:1", canonicalDishId: "dish:1", portions: 12, allocations: [{ destinationId: "oploc:1", destinationLabel: "Haleon", quantity: 12 }] }] }],
+  });
+  const publication = { publicationId, sourceWeekId: "week-packet", weekCommencing: "2026-09-07", weekEnding: "2026-09-13", publicationVersion: 1, weekPacket: packet, days: [], audit: [] };
+  await (h.repository as any).writePublicationDiff(h.transaction, { version: 2, publications: [], events: [] }, { version: 2, publications: [publication], events: [] });
+  const rootWrite = h.writes.find(write => write.path === `fikaMenuPlanningPublications/${publicationId}`);
+  assert.ok(rootWrite);
+  assert.equal((rootWrite.value as any).weekPacket.manifest.contentHash, packet.manifest.contentHash);
+  assert.equal((rootWrite.value as any).weekPacket.manifest.recordCount, 1);
+  assert.equal(h.writes.some(write => write.path.includes("/days/")), false);
 });

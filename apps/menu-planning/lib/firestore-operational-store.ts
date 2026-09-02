@@ -5,6 +5,7 @@ import type { CompiledPublishedWeekSnapshot, MenuPublication } from "./menu-publ
 import type { RollingDay, RollingEntry, RollingSnapshot, RollingWeek } from "./rolling-menu-types";
 import { recordMenuPlanningReadBudget } from "./read-budget";
 import { recordDataAccess } from "@fika/server-shared/data-source-meter-server";
+import { decodeWeeklyPublicationPacket } from "@fika/server-shared/weekly-publication-packet";
 
 function recordFirestore(operation: string, documents: number) { recordDataAccess({ app: "menu-planning", operation, source: "FIRESTORE", documents }); }
 
@@ -95,7 +96,9 @@ export class MenuPlanningFirestoreRepository {
   async getPublishedSnapshot(publicationId: string, version?: number) {
     const publication = await this.db.collection(MENU_PLANNING_COLLECTIONS.publications).doc(publicationId).get();
     if (!publication.exists) return undefined;
-    const id = version ? `${publicationId}:snapshot:v${version}` : publication.data()?.compiledSnapshotId as string | undefined;
+    const data = publication.data() as (MenuPublication & { weekPacket?: Parameters<typeof decodeWeeklyPublicationPacket>[0] }) | undefined;
+    if (!version && data?.weekPacket) return decodeWeeklyPublicationPacket(data.weekPacket);
+    const id = version ? `${publicationId}:snapshot:v${version}` : data?.compiledSnapshotId as string | undefined;
     if (!id) return undefined;
     const snapshot = await this.db.collection(MENU_PLANNING_COLLECTIONS.publishedSnapshots).doc(id).get();
     return snapshot.exists ? snapshot.data() as CompiledPublishedWeekSnapshot : undefined;

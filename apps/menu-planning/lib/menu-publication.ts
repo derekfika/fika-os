@@ -11,17 +11,17 @@ import type { MenuItem } from "./domain";
 import { publishedAllergenMatrixHtml, createDomainEvent, markEventDelivered, markEventFailed, type DurableDomainEvent, type FulfilmentRequirement } from "./fika-contracts";
 import { claimNextMenuPlanningEvent, getPublicationById, getPublishedSnapshot, listPublicationState, readPublicationState, readPublicationStateForDateRange, readPublicationStateForWeek, updateMenuPlanningEvent, withMenuPlanningTransaction } from "./operational-store";
 import { cwd } from "node:process";
+import { decodeWeeklyPublicationPacket, encodeWeeklyPublicationPacket, type WeeklyPublicationPacket } from "@fika/server-shared/weekly-publication-packet";
 
 export const PUBLICATION_ATTESTATION = "I confirm that I have reviewed the allergen information shown for this day's published menu and that it reflects the approved information available at the time of publication.";
 export type MenuPublicationSignature = { printedName: string; signatureDataUrl?: string; signedAt: string; actor: string; attestation: string };
 export type MenuPublicationSignoff = { date?: string; productionChef?: MenuPublicationSignature; headChefSiteManager?: MenuPublicationSignature; dayContentHash?: string };
-/** Sign-off captured for an atomic week publication. Day keys are stable rolling-day IDs. */
-export type MenuPublicationWeekSignoff = { days?: Record<string, MenuPublicationSignoff>; weekContentHash?: string };
-export type PublishedMenuEntry = { sourceEntryId: string; slot: string; canonicalDishId?: string; dishName: string; portions: number; allocations: Array<{ destinationId?: string; destinationLabel: string; quantity: number }>; allergens: CanonicalAllergenMap; mayContainNotes?: string };
-export type CompiledPublishedWeekSnapshot = { schemaVersion: 1; snapshotId: string; publicationId: string; sourceWeekId: string; sourceWeekVersion: number; publicationVersion: number; publishedAt: string; publishedBy: string; contentHash: string; week: { weekCommencing: string; weekEnding: string }; days: Array<{ publicationDayId: string; sourceDayId: string; date: string; dayName: string; version: number; entries: PublishedMenuEntry[] }> };
+export type MenuPublicationWeekPublishInput = { weekContentHash?: string };
+export type PublishedMenuEntry = { sourceEntryId: string; slot: string; canonicalDishId?: string; dishName: string; portions: number; allocations: Array<{ destinationId?: string; destinationLabel: string; destinationAddress?: string; quantity: number }>; allergens: CanonicalAllergenMap; mayContainNotes?: string };
+export type CompiledPublishedWeekSnapshot = { schemaVersion: 1; snapshotId: string; publicationId: string; sourceWeekId: string; sourceWeekVersion: number; publicationVersion: number; publishedAt: string; publishedBy: string; contentHash: string; sourceLineage: { sourceDomain: "menu-planning"; sourceEntityId: string; publicationId: string; sourceWeekVersion: number; publicationVersion: number; sourceContentHash: string }; week: { weekCommencing: string; weekEnding: string }; days: Array<{ publicationDayId: string; sourceDayId: string; date: string; dayName: string; version: number; entries: PublishedMenuEntry[] }> };
 export type DriveArchive = { status: "saved" | "not_configured" | "failed"; fileId?: string; driveUrl?: string; account: string; fileName: string; archivedAt: string; pdfStatus: "saved" | "not_configured" | "failed" | "unavailable"; pdfFileId?: string; pdfDriveUrl?: string; pdfFileName: string };
 export type PublishedMenuDay = { publicationDayId: string; sourceDayId: string; date: string; dayName: string; version: number; status: "published" | "superseded" | "withdrawn"; contentHash: string; publishedAt: string; publishedBy: string; entries: PublishedMenuEntry[]; allergenSignoff?: MenuPublicationSignoff; driveArchive?: DriveArchive; withdrawal?: { actor: string; at: string; reason: string } };
-export type MenuPublication = { publicationId: string; sourceWeekId: string; weekCommencing: string; weekEnding: string; publicationVersion?: number; compiledSnapshotId?: string; days: PublishedMenuDay[]; audit: Array<{ action: string; at: string; by: string; publicationDayId?: string }> };
+export type MenuPublication = { publicationId: string; sourceWeekId: string; weekCommencing: string; weekEnding: string; publicationVersion?: number; publicationStatus?: "published" | "withdrawn"; compiledSnapshotId?: string; /** Current one-document downstream handoff. */ weekPacket?: WeeklyPublicationPacket<CompiledPublishedWeekSnapshot>; days: PublishedMenuDay[]; audit: Array<{ action: string; at: string; by: string; publicationDayId?: string }> };
 type StoredPublications = { version: 2; publications: MenuPublication[]; events: DurableDomainEvent[]; snapshots?: Record<string, CompiledPublishedWeekSnapshot>; /** Legacy migration field; central Integration Hub is authoritative. */ fulfilmentRequirements?: FulfilmentRequirement[] };
 const now = () => new Date().toISOString();
 const stable = (value: unknown): string => { if (Array.isArray(value)) return `[${value.map(stable).join(",")}]`; if (value && typeof value === "object") return `{${Object.keys(value as Record<string, unknown>).sort().map(key => `${JSON.stringify(key)}:${stable((value as Record<string, unknown>)[key])}`).join(",")}}`; return JSON.stringify(value); };
@@ -43,13 +43,16 @@ const populatedWeekdays = (snapshot: RollingSnapshot) => snapshot.days.slice(0, 
 // Publication previews are pure transformations. The local catalogue read is
 // explicitly scoped to this app so NFT never treats it as a monorepo root.
 const canonicalItems = (): MenuItem[] => { try { return (JSON.parse(readFileSync(join(/*turbopackIgnore: true*/ cwd(), "local-data", "menu-planning", "canonical-menu-items.json"), "utf8")) as { items?: MenuItem[] }).items || []; } catch { return []; } };
-const publishedEntry = (entry: RollingEntry, canonicalDish?: MenuItem): PublishedMenuEntry => { const resolved = resolveAllergenSnapshot(entry, canonicalDish); const mayContainNotes = entry.mayContainNotes ?? resolved.mayContainNotes; return normalizePublicationValue({ sourceEntryId: entry.id, slot: entry.slot, ...(canonicalDish?.canonicalId ? { canonicalDishId: canonicalDish.canonicalId } : {}), dishName: entry.itemLabel, portions: entry.portions, allocations: entry.allocations.map(allocation => ({ ...(allocation.destinationId !== undefined ? { destinationId: allocation.destinationId } : {}), destinationLabel: allocation.destinationLabel, quantity: allocation.quantity })), allergens: clone(resolved.allergens), ...(mayContainNotes !== undefined ? { mayContainNotes } : {}) }); };
-export function buildPublishedDay(snapshot: RollingSnapshot, day: RollingDay) { const items = canonicalItems(); const entries = snapshot.entries.filter(entry => entry.dayId === day.id && entry.itemLabel.trim()).map(entry => { const label = entry.itemLabel.trim().toLocaleLowerCase(); const canonicalDish = items.find(item => item.displayName.trim().toLocaleLowerCase() === label) || items.find(item => item.canonicalId === entry.itemId && item.displayName.trim().toLocaleLowerCase() === label); return publishedEntry(entry, canonicalDish); }); const stableDay = normalizePublicationValue({ sourceDayId: day.id, date: day.date, dayName: day.dayName, entries }); return { ...stableDay, contentHash: contentHash(stableDay) }; }
+const publishedEntry = (entry: RollingEntry, canonicalDish?: MenuItem): PublishedMenuEntry => { const resolved = resolveAllergenSnapshot(entry, canonicalDish); const mayContainNotes = entry.mayContainNotes ?? resolved.mayContainNotes; return normalizePublicationValue({ sourceEntryId: entry.id, slot: entry.slot, ...(canonicalDish?.canonicalId ? { canonicalDishId: canonicalDish.canonicalId } : {}), dishName: entry.itemLabel, portions: entry.portions, allocations: entry.allocations.map(allocation => ({ ...(allocation.destinationId !== undefined ? { destinationId: allocation.destinationId } : {}), destinationLabel: allocation.destinationLabel, ...(allocation.destinationAddress !== undefined ? { destinationAddress: allocation.destinationAddress } : {}), quantity: allocation.quantity })), allergens: clone(resolved.allergens), ...(mayContainNotes !== undefined ? { mayContainNotes } : {}) }); };
+export function buildPublishedDay(snapshot: RollingSnapshot, day: RollingDay) { const items = canonicalItems(); const entries = snapshot.entries.filter(entry => entry.dayId === day.id && entry.itemLabel.trim()).map(entry => { const canonicalDish = entry.itemId ? items.find(item => item.canonicalId === entry.itemId) : undefined; return publishedEntry(entry, canonicalDish); }); const stableDay = normalizePublicationValue({ sourceDayId: day.id, date: day.date, dayName: day.dayName, entries }); return { ...stableDay, contentHash: contentHash(stableDay) }; }
 const snapshotBytes = (value: unknown) => { const serialized = JSON.stringify(value); return typeof Buffer !== "undefined" ? Buffer.byteLength(serialized, "utf8") : new TextEncoder().encode(serialized).length; };
 export const MAX_COMPILED_SNAPSHOT_BYTES = 900 * 1024;
 export function buildCompiledPublicationSnapshot(publication: MenuPublication, sourceWeekVersion: number): CompiledPublishedWeekSnapshot {
   const publicationVersion = publication.publicationVersion || 1;
-  const base = normalizePublicationValue({ schemaVersion: 1 as const, snapshotId: `${publication.publicationId}:snapshot:v${publicationVersion}`, publicationId: publication.publicationId, sourceWeekId: publication.sourceWeekId, sourceWeekVersion, publicationVersion, publishedAt: publication.days.filter(day => day.status === "published").map(day => day.publishedAt).sort().at(-1) || now(), publishedBy: publication.days.filter(day => day.status === "published").map(day => day.publishedBy).at(-1) || "", week: { weekCommencing: publication.weekCommencing, weekEnding: publication.weekEnding }, days: publication.days.filter(day => day.status === "published").sort((a, b) => a.date.localeCompare(b.date)).map(day => ({ publicationDayId: day.publicationDayId, sourceDayId: day.sourceDayId, date: day.date, dayName: day.dayName, version: day.version, entries: clone(day.entries) })) });
+  const publishedAt = publication.days.filter(day => day.status === "published").map(day => day.publishedAt).sort().at(-1) || now();
+  const publishedBy = publication.days.filter(day => day.status === "published").map(day => day.publishedBy).at(-1) || "";
+  const base = normalizePublicationValue({ schemaVersion: 1 as const, snapshotId: `${publication.publicationId}:snapshot:v${publicationVersion}`, publicationId: publication.publicationId, sourceWeekId: publication.sourceWeekId, sourceWeekVersion, publicationVersion, publishedAt, publishedBy, sourceLineage: { sourceDomain: "menu-planning" as const, sourceEntityId: publication.sourceWeekId, publicationId: publication.publicationId, sourceWeekVersion, publicationVersion, sourceContentHash: "pending" }, week: { weekCommencing: publication.weekCommencing, weekEnding: publication.weekEnding }, days: publication.days.filter(day => day.status === "published").sort((a, b) => a.date.localeCompare(b.date)).map(day => ({ publicationDayId: day.publicationDayId, sourceDayId: day.sourceDayId, date: day.date, dayName: day.dayName, version: day.version, entries: clone(day.entries) })) });
+  base.sourceLineage.sourceContentHash = contentHash({ ...base, sourceLineage: { ...base.sourceLineage, sourceContentHash: "pending" } });
   const snapshot = { ...base, contentHash: contentHash(base) } as CompiledPublishedWeekSnapshot;
   if (snapshotBytes(snapshot) > MAX_COMPILED_SNAPSHOT_BYTES) throw Object.assign(new Error(`The compiled publication snapshot exceeds the ${MAX_COMPILED_SNAPSHOT_BYTES} byte safety limit.`), { status: 413 });
   return snapshot;
@@ -91,6 +94,7 @@ export async function getMenuPublication(publicationId: string) { const publicat
 export async function getCompiledPublicationSnapshot(publicationId: string, version?: number) {
   const publication = await getMenuPublication(publicationId);
   if (!publication) return undefined;
+  if (!version && publication.weekPacket && publication.publicationStatus !== "withdrawn" && publication.days.some(day => day.status === "published")) return clone(decodeWeeklyPublicationPacket<CompiledPublishedWeekSnapshot>(publication.weekPacket));
   const storedSnapshot = await getPublishedSnapshot<CompiledPublishedWeekSnapshot>(publicationId, version);
   if (storedSnapshot) return clone(storedSnapshot);
   if (version) return undefined;
@@ -147,7 +151,7 @@ export async function createPublishedMenuDay(weekId: string, dayId: string, sign
   }, { weekId, weekVersion: expectedWeekVersion }, { weekId, sourceWeekId: weekId, includeEvents: false });
 }
 /** Publish the complete current week in one transaction. Legacy day publications remain readable. */
-export async function createPublishedMenuWeek(weekId: string, signoff: MenuPublicationWeekSignoff = {}, actor = "local-menu-planner", governedOplocIds?: Set<string>) {
+export async function createPublishedMenuWeek(weekId: string, input: MenuPublicationWeekPublishInput = {}, actor = "local-menu-planner", governedOplocIds?: Set<string>) {
   const expectedWeekVersion = (await getWeek(weekId)).week.version;
   return withMenuPlanningTransaction(state => {
     const rolling = state.rolling as unknown as RollingMenuStored;
@@ -156,26 +160,25 @@ export async function createPublishedMenuWeek(weekId: string, signoff: MenuPubli
     const blockers = publicationWeekBlockers(snapshot, governedOplocIds);
     if (blockers.length) throw Object.assign(new Error(blockers.join(" ")), { status: 422 });
     const previews = snapshot.days.slice(0, 5).map(day => buildPublishedDay(snapshot, day));
-    if (signoff.weekContentHash && signoff.weekContentHash !== contentHash(previews)) throw conflict("The current week content changed after sign-off. Review and sign again before publishing.");
-    for (const preview of previews) {
-      const daySignoff = signoff.days?.[preview.sourceDayId];
-      if (daySignoff?.dayContentHash && daySignoff.dayContentHash !== preview.contentHash) throw conflict(`The current ${preview.dayName} content changed after sign-off. Review and sign again before publishing.`);
-    }
+    if (input.weekContentHash && input.weekContentHash !== contentHash(previews)) throw conflict("The current week content changed after the publication review. Refresh before publishing.");
     const stored = state.publications as unknown as StoredPublications;
     let publication = stored.publications.find(value => value.sourceWeekId === snapshot.week.id);
     if (!publication) { publication = { publicationId: `menu-publication:${snapshot.week.id}`, sourceWeekId: snapshot.week.id, weekCommencing: snapshot.week.weekCommencing, weekEnding: snapshot.week.weekEnding, days: [], audit: [] }; stored.publications.push(publication); }
     const publishedAt = now();
     const nextVersion = (publication.publicationVersion || 0) + 1;
+    const currentDays = new Map(publication.days.filter(day => day.status === "published").map(day => [day.sourceDayId, day]));
+    if (nextVersion > 1 && previews.every(preview => currentDays.get(preview.sourceDayId)?.contentHash === preview.contentHash)) throw conflict(`This menu week is already published at version ${publication.publicationVersion}.`);
     const nextDays: PublishedMenuDay[] = previews.map((preview, index) => {
-      const current = publication!.days.find(day => day.sourceDayId === preview.sourceDayId && day.status === "published");
-      const version = publication!.days.filter(day => day.sourceDayId === preview.sourceDayId).reduce((highest, day) => Math.max(highest, day.version), 0) + 1;
-      if (current?.contentHash === preview.contentHash) throw conflict(`This menu week is already published at version ${publication!.publicationVersion || 1}.`);
-      return normalizePublicationValue({ publicationDayId: `${publication!.publicationId}:v${nextVersion}:day:${index}`, sourceDayId: preview.sourceDayId, date: preview.date, dayName: preview.dayName, version, status: "published" as const, contentHash: preview.contentHash, publishedAt, publishedBy: actor, entries: preview.entries, ...(signoff.days?.[preview.sourceDayId] ? { allergenSignoff: signoff.days[preview.sourceDayId] } : {}) });
+      const current = currentDays.get(preview.sourceDayId);
+      const version = current?.contentHash === preview.contentHash ? current.version : publication!.days.filter(day => day.sourceDayId === preview.sourceDayId).reduce((highest, day) => Math.max(highest, day.version), 0) + 1;
+      return normalizePublicationValue({ publicationDayId: `${publication!.publicationId}:v${nextVersion}:day:${index}`, sourceDayId: preview.sourceDayId, date: preview.date, dayName: preview.dayName, version, status: "published" as const, contentHash: preview.contentHash, publishedAt, publishedBy: actor, entries: preview.entries });
     });
     publication.days = publication.days.map(day => day.status === "published" ? { ...day, status: "superseded" as const } : day).concat(nextDays);
     publication.publicationVersion = nextVersion;
+    publication.publicationStatus = "published";
     const compiledSnapshot = buildCompiledPublicationSnapshot(publication, expectedWeekVersion);
     publication.compiledSnapshotId = compiledSnapshot.snapshotId;
+    publication.weekPacket = encodeWeeklyPublicationPacket(compiledSnapshot, publishedAt);
     stored.snapshots ||= {};
     stored.snapshots[compiledSnapshot.snapshotId] = compiledSnapshot;
     publication.audit.push({ action: nextVersion === 1 ? "menu-week-published" : "menu-week-amended", at: publishedAt, by: actor });
@@ -240,6 +243,8 @@ export async function withdrawPublishedMenuWeek(publicationId: string, reason: s
     snapshot.week.audit.push({ action: "menu-week-withdrawn", at, by: actor });
     replaceSnapshotInStored(rolling, snapshot);
     publication.audit.push({ action: "menu-week-withdrawn", at, by: actor });
+    publication.publicationStatus = "withdrawn";
+    delete publication.weekPacket;
     return clone(publication);
   }, undefined, { weekId: publicationId.replace(/^menu-publication:/, ""), sourceWeekId: publicationId.replace(/^menu-publication:/, ""), includeEvents: false });
 }

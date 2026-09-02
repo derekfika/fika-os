@@ -15,6 +15,7 @@ import { createCanonicalMenuItem, listCanonicalMenuItems } from "../lib/canonica
 import { buildCompiledPublicationSnapshot, buildPublishedDay, createPublishedMenuDay, createPublishedMenuWeek, currentPublishedDays, getCompiledPublicationSnapshot, getMenuPublication, listMenuPublicationEvents, listMenuPublications, publicationPreview, publicationState, publishedDayMatrixHtml, replayMenuPublicationOutbox, withdrawPublishedMenuDay, withdrawPublishedMenuWeek, type MenuPublicationSignoff } from "../lib/menu-publication";
 import { resolveAllergenSnapshot } from "../lib/allergen-resolution";
 import type { RollingEntry } from "../lib/rolling-menu-types";
+import { decodeWeeklyPublicationPacket } from "@fika/server-shared/weekly-publication-packet";
 
 const isolatedDatabaseDirectory = mkdtempSync(join(tmpdir(), "fika-menu-planning-test-"));
 process.env.MENU_PLANNING_DB_PATH = join(isolatedDatabaseDirectory, "operational.sqlite");
@@ -206,12 +207,29 @@ test("week publication is atomic and creates one immutable five-day publication"
   const week = emptyWeek(`2030-01-${String((Date.now() % 20) + 1).padStart(2, "0")}`);
   try {
     await saveSnapshot(week);
-    for (const [index, day] of week.days.slice(0, 5).entries()) { const created = await createEntry(week.week.id, day.id, "SOUP", `Atomic week dish ${index}`, "test", `dish:atomic-${index}`); await updateEntryForTest(week.week.id, created.entries.find(value => value.dayId === day.id)!.id); }
+    let firstEntryId = "";
+    for (const [index, day] of week.days.slice(0, 5).entries()) { const created = await createEntry(week.week.id, day.id, "SOUP", `Atomic week dish ${index}`, "test", `dish:atomic-${index}`); const entryId = created.entries.find(value => value.dayId === day.id)!.id; if (index === 0) firstEntryId = entryId; await updateEntryForTest(week.week.id, entryId); }
     const publication = await createPublishedMenuWeek(week.week.id, {}, "test");
     assert.equal(currentPublishedDays(publication).length, 5);
     assert.equal((await getWeek(week.week.id)).week.status, "published");
     assert.ok(publication.days.every(day => day.status === "published"));
+    assert.ok(publication.weekPacket);
+    assert.equal(publication.weekPacket.manifest.recordCount, 5);
+    assert.equal(publication.weekPacket.manifest.packageVersion, 1);
+    assert.ok(publication.weekPacket.payloadBase64.length > 0);
+    const packet = decodeWeeklyPublicationPacket(publication.weekPacket);
+    assert.equal(packet.publicationId, publication.publicationId);
+    assert.equal(packet.days.length, 5);
+    assert.ok(packet.days.every(day => day.entries.every(entry => entry.sourceEntryId && entry.allocations.every(allocation => allocation.quantity === 10))));
+    assert.ok(publication.days.every(day => !day.allergenSignoff));
+    const firstPacketByte = publication.weekPacket.payloadBase64[0] === "A" ? "B" : "A";
+    assert.throws(() => decodeWeeklyPublicationPacket({ ...publication.weekPacket, payloadBase64: `${firstPacketByte}${publication.weekPacket.payloadBase64.slice(1)}` } as never), /integrity/i);
     await assert.rejects(() => createPublishedMenuWeek(week.week.id, {}, "test"), (error: any) => error.status === 409);
+    await updateEntryForTest(week.week.id, firstEntryId, "Atomic week dish amended");
+    const amendment = await createPublishedMenuWeek(week.week.id, {}, "test");
+    assert.equal(amendment.publicationVersion, 2);
+    assert.notEqual(amendment.weekPacket?.manifest.contentHash, publication.weekPacket.manifest.contentHash);
+    assert.equal(decodeWeeklyPublicationPacket(amendment.weekPacket!).publicationVersion, 2);
   } finally {
     if (rollingBefore) await writeFile(rollingFile, rollingBefore); else await rm(rollingFile, { force: true });
     if (publicationBefore) await writeFile(publicationFile, publicationBefore); else await rm(publicationFile, { force: true });
