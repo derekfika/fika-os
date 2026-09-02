@@ -66,6 +66,7 @@ export type MenuPlanningOperationalStore = {
   readonly kind: "sqlite" | "firestore";
   readRollingState<T>(): Promise<T>;
   listWeekSummaries<T>(): Promise<T[]>;
+  getWeekHead<T>(weekId: string): Promise<T | undefined>;
   getWeekSnapshot<T>(weekId: string): Promise<T | undefined>;
   readPublicationState<T>(): Promise<T>;
   readPublicationStateForWeek<T>(weekId: string): Promise<T>;
@@ -102,6 +103,7 @@ class SqliteOperationalStore implements MenuPlanningOperationalStore {
   readonly kind = "sqlite" as const;
   async readRollingState<T>() { const database = open(); try { return parseDocument(database, "rolling") as T; } finally { database.close(); } }
   async listWeekSummaries<T>() { return (await this.readRollingState<{ weeks: T[] }>()).weeks; }
+  async getWeekHead<T>(weekId: string) { const state = await this.readRollingState<{ weeks: T[] }>(); return state.weeks.find((candidate: any) => candidate.id === weekId); }
   async getWeekSnapshot<T>(weekId: string) { const state = await this.readRollingState<{ weeks: Array<{ id: string; dayIds: string[]; entryIds: string[] }>; days: unknown[]; entries: unknown[] }>(); const week = state.weeks.find(candidate => candidate.id === weekId); return week ? { week, days: state.days.filter((day: any) => week.dayIds.includes(day.id)), entries: state.entries.filter((entry: any) => week.entryIds.includes(entry.id)) } as T : undefined; }
   async getPublicationById<T>(publicationId: string) { const state = await this.readPublicationState<{ publications: Array<Record<string, unknown>> }>(); const publication = state.publications.find(value => value.publicationId === publicationId); return publication as T | undefined; }
   async listPublicationState<T>(limit = 16) { const state = await this.readPublicationState<T & { publications: Array<{ weekCommencing?: string }> }>(); return { ...state, publications: state.publications.slice().sort((a, b) => String(b.weekCommencing || "").localeCompare(String(a.weekCommencing || ""))).slice(0, Math.min(Math.max(limit, 1), 100)) } as T; }
@@ -123,6 +125,7 @@ class FirestoreOperationalStore implements MenuPlanningOperationalStore {
   constructor(private readonly repository = new MenuPlanningFirestoreRepository()) {}
   readRollingState<T>() { return this.repository.readRollingState() as Promise<T>; }
   listWeekSummaries<T>() { return this.repository.listWeekSummaries() as Promise<T[]>; }
+  getWeekHead<T>(weekId: string) { return this.repository.getWeekHead(weekId) as Promise<T | undefined>; }
   getWeekSnapshot<T>(weekId: string) { return this.repository.getWeekSnapshot(weekId) as Promise<T | undefined>; }
   readPublicationState<T>() { return this.repository.readPublicationState() as Promise<T>; }
   readPublicationStateForWeek<T>(weekId: string) { return this.repository.readPublicationStateForWeek(weekId) as Promise<T>; }
@@ -150,6 +153,7 @@ export function getMenuPlanningOperationalStore(): MenuPlanningOperationalStore 
 
 export function readRollingState<T>() { return getMenuPlanningOperationalStore().readRollingState<T>(); }
 export function listWeekSummaries<T>() { return getMenuPlanningOperationalStore().listWeekSummaries<T>(); }
+export function getWeekHead<T>(weekId: string) { return getMenuPlanningOperationalStore().getWeekHead<T>(weekId); }
 export function getWeekSnapshot<T>(weekId: string) { return getMenuPlanningOperationalStore().getWeekSnapshot<T>(weekId); }
 export function readPublicationState<T>() { return getMenuPlanningOperationalStore().readPublicationState<T>(); }
 export function readPublicationStateForWeek<T>(weekId: string) { return getMenuPlanningOperationalStore().readPublicationStateForWeek<T>(weekId); }
