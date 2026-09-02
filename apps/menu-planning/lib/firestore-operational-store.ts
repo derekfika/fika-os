@@ -26,6 +26,13 @@ export class MenuPlanningFirestoreRepository {
   constructor(db = new Firestore({ projectId: process.env.FIREBASE_PROJECT_ID || process.env.GCLOUD_PROJECT })) { this.db = db; }
   async readRollingState() { return this.db.runTransaction(transaction => this.readRolling(transaction)); }
   async listWeekSummaries() { const snapshot = await this.db.collection(MENU_PLANNING_COLLECTIONS.weeks).limit(100).get(); recordFirestore("week.summaries", snapshot.size); recordMenuPlanningReadBudget({ operation: "week_summaries", reads: { weeks: snapshot.size, days: 0, entries: 0, scoped: 1 } }); return snapshot.docs.map(doc => doc.data() as RollingWeek); }
+  async getWeekHead(weekId: string) {
+    const weekDoc = await this.db.collection(MENU_PLANNING_COLLECTIONS.weeks).doc(weekId).get();
+    recordFirestore("week.head", weekDoc.exists ? 1 : 0);
+    recordMenuPlanningReadBudget({ operation: "week_head", reads: { weeks: weekDoc.exists ? 1 : 0, days: 0, entries: 0, scoped: 1 } });
+    if (!weekDoc.exists) return undefined;
+    return weekDoc.data() as RollingWeek;
+  }
   async getWeekSnapshot(weekId: string) {
     const weekRef = this.db.collection(MENU_PLANNING_COLLECTIONS.weeks).doc(weekId);
     const weekDoc = await weekRef.get();

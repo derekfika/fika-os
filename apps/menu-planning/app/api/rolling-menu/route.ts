@@ -5,22 +5,25 @@ import { requireMutationActor, requirePublicationActor, resolveMenuActor } from 
 import { readDeliveredInOplocs } from "@/lib/oploc-authority";
 import { forwardProductionMaterialisationEvent } from "@/lib/production-client";
 import { replayMenuPublicationOutbox } from "@/lib/menu-publication";
-import { listCatalogueEntries, listCatalogueEntriesForIds, reconcileCatalogueFromRollingEntries } from "@/lib/catalogue";
+import { listCatalogueEntriesForIds, reconcileCatalogueFromRollingEntries } from "@/lib/catalogue";
 import { resolveAllergenSnapshot } from "@/lib/allergen-resolution";
 import { GOVERNED_OPLOCS } from "@/lib/fika-contracts";
-import { getWeekSnapshot, listWeekSummaries } from "@/lib/operational-store";
+import { getWeekHead, getWeekSnapshot, listWeekSummaries } from "@/lib/operational-store";
 import type { RollingWeek } from "@/lib/rolling-menu-types";
 import { withDataTrace } from "@fika/server-shared/data-source-meter-server";
 
 async function resolvedSnapshot(snapshot: Awaited<ReturnType<typeof getWeek>>, catalogue?: Awaited<ReturnType<typeof listCatalogueEntriesForIds>>) {
   const referencedIds = snapshot.entries.filter(entry => entry.itemLabel.trim()).map(entry => entry.itemId || "");
-  const resolvedCatalogue = catalogue || (referencedIds.every(Boolean) ? await listCatalogueEntriesForIds(referencedIds) : await listCatalogueEntries());
+  const resolvedCatalogue = catalogue || await listCatalogueEntriesForIds(referencedIds);
+  const catalogueIssues = snapshot.entries.filter(entry => entry.itemLabel.trim() && (!entry.itemId || !resolvedCatalogue.some(item => item.id === entry.itemId))).map(entry => ({ entryId: entry.id, itemLabel: entry.itemLabel, reason: entry.itemId ? "catalogue-item-not-found" : "missing-stable-catalogue-id" }));
   const entries = snapshot.entries.map(entry => {
-    const dish = resolvedCatalogue.find(item => item.id === entry.itemId || item.name.trim().toLocaleLowerCase() === entry.itemLabel.trim().toLocaleLowerCase())?.item;
+    // A display label is not a stable identity. Missing IDs remain unresolved
+    // until the explicit catalogue reconciliation/migration path repairs them.
+    const dish = entry.itemId ? resolvedCatalogue.find(item => item.id === entry.itemId)?.item : undefined;
     const resolved = resolveAllergenSnapshot(entry, dish ? { canonicalId: dish.canonicalId, displayName: dish.displayName, allergenEvidence: dish.allergenEvidence, mayContainReviewed: dish.mayContainReviewed, mayContainNotes: dish.mayContainNotes } : undefined);
     return { ...entry, allergens: resolved.allergens, mayContainNotes: entry.mayContainNotes || resolved.mayContainNotes };
   });
-  return { ...snapshot, entries };
+  return { ...snapshot, entries, ...(catalogueIssues.length ? { catalogueIssues } : {}) };
 }
 
 async function handleGet(request: NextRequest) {
@@ -28,9 +31,15 @@ async function handleGet(request: NextRequest) {
     const requestedWeek = request.nextUrl.searchParams.get("weekId") || undefined;
     const totalStarted = performance.now();
     const summaryStarted = performance.now();
+    const summariesOnly = request.nextUrl.searchParams.get("summariesOnly") === "true";
+    if (summariesOnly && requestedWeek) {
+      const week = await getWeekHead<RollingWeek>(requestedWeek);
+      console.info("Menu Planning rolling-menu week head timing", { rollingStateMs: performance.now() - summaryStarted, totalMs: performance.now() - totalStarted, weekId: requestedWeek, found: Boolean(week) });
+      return NextResponse.json({ week: week ? { id: week.id, weekCommencing: week.weekCommencing, version: week.version } : null });
+    }
     const weeks = (await listWeekSummaries<RollingWeek>()).slice().sort((a, b) => a.weekCommencing.localeCompare(b.weekCommencing));
     const rollingStateMs = performance.now() - summaryStarted;
-    if (request.nextUrl.searchParams.get("summariesOnly") === "true") {
+    if (summariesOnly) {
       console.info("Menu Planning rolling-menu summaries timings", { rollingStateMs, totalMs: performance.now() - totalStarted });
       return NextResponse.json({ weeks });
     }
@@ -122,5 +131,5 @@ async function handlePost(request: NextRequest) {
   } catch (error) { const status = error && typeof error === "object" && "status" in error && typeof (error as { status?: unknown }).status === "number" ? (error as { status: number }).status : 400; return NextResponse.json({ error: { message: error instanceof Error ? error.message : "Rolling menu command failed." } }, { status }); }
 }
 
-export async function GET(request: NextRequest) { /* handleGet performs listWeekSummaries, getWeekSnapshot, and Promise.all([listCatalogueEntriesForIds(...), publicationState(...)]) without reconciliation writes. */ return withDataTrace({ app: "menu-planning", action: request.nextUrl.searchParams.get("summariesOnly") === "true" ? "menu-planning.week.summaries" : "menu-planning.week.open", path: request.nextUrl.pathname, requestId: request.headers.get("x-request-id") || undefined }, () => handleGet(request)); }
+export async function GET(request: NextRequest) { /* handleGet performs getWeekHead for targeted revalidation; normal reads use listWeekSummaries, getWeekSnapshot, and Promise.all([listCatalogueEntriesForIds(...), publicationState(...)]) without reconciliation writes. */ return withDataTrace({ app: "menu-planning", action: request.nextUrl.searchParams.get("summariesOnly") === "true" ? "menu-planning.week.summaries" : "menu-planning.week.open", path: request.nextUrl.pathname, requestId: request.headers.get("x-request-id") || undefined }, () => handleGet(request)); }
 export async function POST(request: NextRequest) { return withDataTrace({ app: "menu-planning", action: "menu-planning.mutation", path: request.nextUrl.pathname, requestId: request.headers.get("x-request-id") || undefined }, () => handlePost(request)); }
