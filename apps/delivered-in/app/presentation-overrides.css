@@ -60,11 +60,12 @@ h1,h2,h3,h4,.brand-lockup strong,.brand-lockup b,.eyebrow,.ops-eyebrow,.period-c
 
 /* Desktop operations dashboard refinement */
 .compact-header { height:58px; padding-inline:32px; border-radius:0; box-shadow:0 1px 0 rgba(35,19,93,.03); }
-.top-nav { display:none; }
+.top-nav { display:flex; }
 .top-nav { position:sticky; top:0; z-index:10; gap:4px; padding:8px 32px; box-shadow:0 1px 0 rgba(35,19,93,.03); }
 .top-nav button,.top-nav .nav-link { min-height:34px; padding:7px 14px; border-radius:8px; font-size:.72rem; }
 .top-nav button.active { box-shadow:none; }
-.period-controls { position:sticky; top:0; z-index:9; gap:14px; padding:12px 32px; background:rgba(251,250,255,.96); backdrop-filter:blur(8px); }
+.period-controls { position:sticky; top:50px; z-index:9; gap:14px; padding:12px 32px; background:rgba(251,250,255,.96); backdrop-filter:blur(8px); }
+.period-controls-empty { color:var(--muted); font-size:.72rem; font-weight:800; }
 .period-controls .grab-and-go-link { margin-left:auto; align-self:center; min-height:40px; display:inline-flex; align-items:center; justify-content:center; padding:0 17px; border:2px solid var(--mint); border-radius:10px; background:linear-gradient(135deg,var(--purple),#5b35d5); color:#fff; box-shadow:0 0 0 3px #4df7c233,0 7px 16px #21117520; text-decoration:none; white-space:nowrap; }
 .period-controls .grab-and-go-link:hover { background:var(--mint); color:var(--deep); box-shadow:0 0 0 3px #4df7c255,0 7px 16px #21117520; }
 .period-controls label { min-width:260px; }
