@@ -570,7 +570,7 @@ export async function ingestMnkBooking(
     const portalSourceIdentifiers = [...new Set([portalSiteId, payload.site].map(value => String(value || "").trim().toLowerCase()).filter(Boolean))];
     const mappingIdentifiers = portalSourceIdentifiers.length ? portalSourceIdentifiers : ["__missing__"];
     const [menusSnapshot, mappingsSnapshot] = await Promise.all([
-      transaction.get(canonical().where("entityType", "==", "Hospitality Menu Item").where("lifecycleStatus", "in", ["draft", "published"]).where("record.lifecycleState", "==", "active")),
+      transaction.get(canonical().where("entityType", "==", "Hospitality Menu Item").where("lifecycleStatus", "in", ["draft", "published"])),
       transaction.get(sourceMappings().where("sourceIdentifier", "in", mappingIdentifiers)),
     ]);
     const canonicalRecords = menusSnapshot.docs.map((document) => document.data() as CanonicalRecord);

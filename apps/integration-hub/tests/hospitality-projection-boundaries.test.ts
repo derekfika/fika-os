@@ -33,8 +33,12 @@ test("Hospitality booking ingest does not enumerate canonical or source-mapping 
   assert.doesNotMatch(ingest, /transaction\.get\(canonical\(\)\)/);
   assert.doesNotMatch(ingest, /transaction\.get\(sourceMappings\(\)\)/);
   assert.match(ingest, /where\("entityType", "==", "Hospitality Menu Item"\)/);
+  assert.match(ingest, /where\("lifecycleStatus", "in", \["draft", "published"\]\)/);
+  assert.doesNotMatch(ingest, /where\("record\.lifecycleState"/);
   assert.match(ingest, /where\("sourceIdentifier", "in", mappingIdentifiers\)/);
   assert.match(ingest, /canonical\(\)\.doc\(stableDocumentId\(destinationId\)\)/);
+  assert.match(service, /const activeMenuItems = menuRecords\.filter/);
+  assert.match(service, /record\.record\.lifecycleState === "active"/);
 });
 
 test("Hospitality workspace uses bounded batch production reads instead of an N+1 loop", () => {
