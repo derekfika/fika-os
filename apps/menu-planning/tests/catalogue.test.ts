@@ -34,7 +34,7 @@ test("hosted catalogue writes are targeted and transaction guarded", () => {
 test("publication reconciliation is scoped to the selected day", () => {
   const catalogue = readFileSync(new URL("../lib/catalogue.ts", import.meta.url), "utf8");
   const rolling = readFileSync(new URL("../lib/rolling-menu.ts", import.meta.url), "utf8");
-  assert.match(catalogue, /scope\?: \{ weekId: string; dayId: string \}/);
+  assert.match(catalogue, /scope\?: \{ weekId: string; dayId\?: string \}/);
   assert.match(catalogue, /entry\.dayId === scope\.dayId/);
   assert.match(rolling, /scope\?\.dayId/);
 });

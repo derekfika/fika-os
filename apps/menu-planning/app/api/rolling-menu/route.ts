@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { addMenuSlot, addOneOffDestination, assertWeekDateAvailable, cleanDuplicateEntries, copyWeekIntoWeek, createEntry, defaultWeekForDate, duplicateWeek, emptyWeek, getWeek, listWeeks, removeMenuSlot, resetWeek, saveSnapshot, updateEntry, validateWeek } from "@/lib/rolling-menu";
-import { archivePublishedDayMatrix, createPublishedMenuDay, getMenuPublication, publicationDayBlockers, publicationPreview, publicationState, type MenuPublicationSignoff } from "@/lib/menu-publication";
+import { archivePublishedDayMatrix, createPublishedMenuWeek, getMenuPublication, publicationDayBlockers, publicationPreview, publicationState, publicationWeekBlockers, type MenuPublicationWeekSignoff } from "@/lib/menu-publication";
 import { requireMutationActor, requirePublicationActor, resolveMenuActor } from "@/lib/auth";
 import { readDeliveredInOplocs } from "@/lib/oploc-authority";
 import { forwardProductionMaterialisationEvent } from "@/lib/production-client";
@@ -62,7 +62,7 @@ async function handleGet(request: NextRequest) {
     const publicationStateMs = performance.now() - publicationStarted;
     const resolved = await resolvedSnapshot(snapshot, catalogue);
     console.info("Menu Planning rolling-menu GET timings", { rollingStateMs, selectedWeekMs, catalogueMs, publicationStateMs, totalMs: performance.now() - totalStarted });
-    return NextResponse.json({ snapshot: resolved, weeks, blockers: validateWeek(snapshot), publicationState: currentPublicationState, ...(publicationPreviewRequested ? { publicationPreview: publicationPreview(snapshot, previewDayId), dayBlockers: previewDayId ? publicationDayBlockers(snapshot, previewDayId, governedOplocIds) : [] } : {}) });
+    return NextResponse.json({ snapshot: resolved, weeks, blockers: validateWeek(snapshot), publicationState: currentPublicationState, ...(publicationPreviewRequested ? { publicationPreview: publicationPreview(snapshot, previewDayId), dayBlockers: previewDayId ? publicationDayBlockers(snapshot, previewDayId, governedOplocIds) : [], weekBlockers: publicationWeekBlockers(snapshot, governedOplocIds) } : {}) });
   } catch (error) {
     const status = error && typeof error === "object" && "status" in error && typeof (error as { status?: unknown }).status === "number" ? (error as { status: number }).status : 500;
     return NextResponse.json({ error: { message: error instanceof Error ? error.message : "Rolling menu could not be loaded." } }, { status });
@@ -116,16 +116,14 @@ async function handlePost(request: NextRequest) {
       return NextResponse.json({ snapshot: await resolvedSnapshot(result.snapshot), removed: result.removed, weeks: await listWeeks(), blockers: validateWeek(result.snapshot), publicationState: await publicationState(result.snapshot) });
     }
     if (action === "publish") {
-      const dayId = String(body.dayId || "");
       requirePublicationActor(actor);
       // Reconcile exact imported dish names before the publication gate runs.
       // This persists the canonical identity; it does not bypass allergen review.
-      await reconcileCatalogueFromRollingEntries({ weekId: String(body.weekId), dayId });
+      await reconcileCatalogueFromRollingEntries({ weekId: String(body.weekId) });
       const oplocs = await readDeliveredInOplocs(request);
-      const publication = await createPublishedMenuDay(String(body.weekId), dayId, (body.signoff || {}) as MenuPublicationSignoff, actor.uid, new Set(oplocs.map(oploc => oploc.canonicalId)));
+      const publication = await createPublishedMenuWeek(String(body.weekId), (body.signoff || {}) as MenuPublicationWeekSignoff, actor.uid, new Set(oplocs.map(oploc => oploc.canonicalId)));
       const handoff = await replayMenuPublicationOutbox(forwardProductionMaterialisationEvent);
-      const publishedDay = publication.days.find(day => day.sourceDayId === dayId && day.status === "published");
-      if (publishedDay) await archivePublishedDayMatrix(publication.publicationId, publishedDay.publicationDayId);
+      for (const publishedDay of publication.days.filter(day => day.status === "published")) await archivePublishedDayMatrix(publication.publicationId, publishedDay.publicationDayId);
       const saved = await getWeek(String(body.weekId)); return NextResponse.json({ snapshot: await resolvedSnapshot(saved), publication: await getMenuPublication(publication.publicationId), handoff: { status: handoff.failed ? "pending" : "delivered", delivered: handoff.delivered, failed: handoff.failed }, weeks: await listWeeks(), blockers: validateWeek(saved), publicationState: await publicationState(saved) });
     }
     return NextResponse.json({ error: { message: "Unknown rolling menu command." } }, { status: 400 });

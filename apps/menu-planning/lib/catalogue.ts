@@ -77,8 +77,8 @@ export async function getCatalogueEntryById(id: string): Promise<CatalogueEntry 
 }
 
 /** Explicit maintenance reconciliation for imports and publication preparation. */
-export async function reconcileCatalogueFromRollingEntries(scope?: { weekId: string; dayId: string }) {
-  const entries = scope ? getWeek(scope.weekId).then(snapshot => snapshot.entries.filter(entry => entry.dayId === scope.dayId)) : listAllEntries();
+export async function reconcileCatalogueFromRollingEntries(scope?: { weekId: string; dayId?: string }) {
+  const entries = scope ? getWeek(scope.weekId).then(snapshot => snapshot.entries.filter(entry => !scope.dayId || entry.dayId === scope.dayId)) : listAllEntries();
   const items = await syncRollingEntries(await entries);
   await attachCanonicalDishIds(items, "rolling-menu-migration", scope);
 }

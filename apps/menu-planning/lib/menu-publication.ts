@@ -15,6 +15,8 @@ import { cwd } from "node:process";
 export const PUBLICATION_ATTESTATION = "I confirm that I have reviewed the allergen information shown for this day's published menu and that it reflects the approved information available at the time of publication.";
 export type MenuPublicationSignature = { printedName: string; signatureDataUrl?: string; signedAt: string; actor: string; attestation: string };
 export type MenuPublicationSignoff = { date?: string; productionChef?: MenuPublicationSignature; headChefSiteManager?: MenuPublicationSignature; dayContentHash?: string };
+/** Sign-off captured for an atomic week publication. Day keys are stable rolling-day IDs. */
+export type MenuPublicationWeekSignoff = { days?: Record<string, MenuPublicationSignoff>; weekContentHash?: string };
 export type PublishedMenuEntry = { sourceEntryId: string; slot: string; canonicalDishId?: string; dishName: string; portions: number; allocations: Array<{ destinationId?: string; destinationLabel: string; quantity: number }>; allergens: CanonicalAllergenMap; mayContainNotes?: string };
 export type CompiledPublishedWeekSnapshot = { schemaVersion: 1; snapshotId: string; publicationId: string; sourceWeekId: string; sourceWeekVersion: number; publicationVersion: number; publishedAt: string; publishedBy: string; contentHash: string; week: { weekCommencing: string; weekEnding: string }; days: Array<{ publicationDayId: string; sourceDayId: string; date: string; dayName: string; version: number; entries: PublishedMenuEntry[] }> };
 export type DriveArchive = { status: "saved" | "not_configured" | "failed"; fileId?: string; driveUrl?: string; account: string; fileName: string; archivedAt: string; pdfStatus: "saved" | "not_configured" | "failed" | "unavailable"; pdfFileId?: string; pdfDriveUrl?: string; pdfFileName: string };
@@ -56,6 +58,13 @@ export function publicationPreview(snapshot: RollingSnapshot, dayId?: string) { 
 function conflict(message: string) { return Object.assign(new Error(message), { status: 409 }); }
 function validateDay(snapshot: RollingSnapshot, dayId: string, governedOplocIds?: Set<string>) { const entries = snapshot.entries.filter(entry => entry.dayId === dayId && entry.itemLabel.trim()); if (!entries.length) throw Object.assign(new Error("This menu day has no populated entries."), { status: 422 }); const errors = validateWeek({ ...snapshot, entries }, { governedOplocIds, requireCanonicalDishId: Boolean(governedOplocIds) }); if (errors.length) throw Object.assign(new Error(errors.join(" ")), { status: 422 }); return entries; }
 export function publicationDayBlockers(snapshot: RollingSnapshot, dayId: string, governedOplocIds?: Set<string>) { try { validateDay(snapshot, dayId, governedOplocIds); return []; } catch (error) { return [error instanceof Error ? error.message : "This menu day is not ready for publication."]; } }
+export function publicationWeekBlockers(snapshot: RollingSnapshot, governedOplocIds?: Set<string>) {
+  const blockers: string[] = [];
+  const weekdays = snapshot.days.slice(0, 5);
+  if (weekdays.length < 5) blockers.push("The menu week must contain five service days.");
+  for (const day of weekdays) for (const blocker of publicationDayBlockers(snapshot, day.id, governedOplocIds)) blockers.push(`${day.dayName}: ${blocker}`);
+  return [...new Set(blockers)];
+}
 export function validatePublicationSignoff(snapshot: RollingSnapshot, dayId: string, signoff: MenuPublicationSignoff = {}, governedOplocIds?: Set<string>) { validateDay(snapshot, dayId, governedOplocIds); const day = publicationPreview(snapshot, dayId)[0]; if (!day) throw Object.assign(new Error("Menu day was not found."), { status: 404 }); return day; }
 function appendPublicationEvents(stored: StoredPublications, publication: MenuPublication, day: PublishedMenuDay, action: "published" | "amended" | "withdrawn", actor: string) {
   stored.events ||= [];
@@ -137,6 +146,48 @@ export async function createPublishedMenuDay(weekId: string, dayId: string, sign
     return clone(publication);
   }, { weekId, weekVersion: expectedWeekVersion }, { weekId, sourceWeekId: weekId, includeEvents: false });
 }
+/** Publish the complete current week in one transaction. Legacy day publications remain readable. */
+export async function createPublishedMenuWeek(weekId: string, signoff: MenuPublicationWeekSignoff = {}, actor = "local-menu-planner", governedOplocIds?: Set<string>) {
+  const expectedWeekVersion = (await getWeek(weekId)).week.version;
+  return withMenuPlanningTransaction(state => {
+    const rolling = state.rolling as unknown as RollingMenuStored;
+    const snapshot = snapshotFromStored(rolling, weekId);
+    if (snapshot.week.version !== expectedWeekVersion) throw conflict("The working menu changed while publication was being prepared. Refresh and try again.");
+    const blockers = publicationWeekBlockers(snapshot, governedOplocIds);
+    if (blockers.length) throw Object.assign(new Error(blockers.join(" ")), { status: 422 });
+    const previews = snapshot.days.slice(0, 5).map(day => buildPublishedDay(snapshot, day));
+    if (signoff.weekContentHash && signoff.weekContentHash !== contentHash(previews)) throw conflict("The current week content changed after sign-off. Review and sign again before publishing.");
+    for (const preview of previews) {
+      const daySignoff = signoff.days?.[preview.sourceDayId];
+      if (daySignoff?.dayContentHash && daySignoff.dayContentHash !== preview.contentHash) throw conflict(`The current ${preview.dayName} content changed after sign-off. Review and sign again before publishing.`);
+    }
+    const stored = state.publications as unknown as StoredPublications;
+    let publication = stored.publications.find(value => value.sourceWeekId === snapshot.week.id);
+    if (!publication) { publication = { publicationId: `menu-publication:${snapshot.week.id}`, sourceWeekId: snapshot.week.id, weekCommencing: snapshot.week.weekCommencing, weekEnding: snapshot.week.weekEnding, days: [], audit: [] }; stored.publications.push(publication); }
+    const publishedAt = now();
+    const nextVersion = (publication.publicationVersion || 0) + 1;
+    const nextDays: PublishedMenuDay[] = previews.map((preview, index) => {
+      const current = publication!.days.find(day => day.sourceDayId === preview.sourceDayId && day.status === "published");
+      const version = publication!.days.filter(day => day.sourceDayId === preview.sourceDayId).reduce((highest, day) => Math.max(highest, day.version), 0) + 1;
+      if (current?.contentHash === preview.contentHash) throw conflict(`This menu week is already published at version ${publication!.publicationVersion || 1}.`);
+      return normalizePublicationValue({ publicationDayId: `${publication!.publicationId}:v${nextVersion}:day:${index}`, sourceDayId: preview.sourceDayId, date: preview.date, dayName: preview.dayName, version, status: "published" as const, contentHash: preview.contentHash, publishedAt, publishedBy: actor, entries: preview.entries, ...(signoff.days?.[preview.sourceDayId] ? { allergenSignoff: signoff.days[preview.sourceDayId] } : {}) });
+    });
+    publication.days = publication.days.map(day => day.status === "published" ? { ...day, status: "superseded" as const } : day).concat(nextDays);
+    publication.publicationVersion = nextVersion;
+    const compiledSnapshot = buildCompiledPublicationSnapshot(publication, expectedWeekVersion);
+    publication.compiledSnapshotId = compiledSnapshot.snapshotId;
+    stored.snapshots ||= {};
+    stored.snapshots[compiledSnapshot.snapshotId] = compiledSnapshot;
+    publication.audit.push({ action: nextVersion === 1 ? "menu-week-published" : "menu-week-amended", at: publishedAt, by: actor });
+    for (const day of nextDays) appendPublicationEvents(stored, publication!, day, nextVersion === 1 ? "published" : "amended", actor);
+    snapshot.week.dayStatuses = Object.fromEntries(nextDays.map(day => [day.sourceDayId, "published"]));
+    snapshot.week.status = "published";
+    snapshot.week.version += 1;
+    snapshot.week.audit.push({ action: nextVersion === 1 ? "menu-week-published" : "menu-week-amended", at: publishedAt, by: actor });
+    replaceSnapshotInStored(rolling, snapshot);
+    return clone(publication!);
+  }, { weekId, weekVersion: expectedWeekVersion }, { weekId, sourceWeekId: weekId, includeEvents: false });
+}
 export function currentPublishedDays(publication: MenuPublication) { return publication.days.filter(day => day.status === "published"); }
 /** Explicit historical audit/repair read; normal publication lookups never call this path. */
 export async function listMenuPublicationEvents() { return (await read()).events.map(clone); }
@@ -173,13 +224,24 @@ export async function withdrawPublishedMenuDay(publicationId: string, publicatio
 }
 export async function withdrawPublishedMenuWeek(publicationId: string, reason: string, actor = "local-menu-planner") {
   if (!reason.trim()) throw Object.assign(new Error("A withdrawal reason is required."), { status: 422 });
-  const publication = await getMenuPublication(publicationId);
-  if (!publication) throw Object.assign(new Error("Menu publication was not found."), { status: 404 });
-  const publishedDays = publication.days.filter(day => day.status === "published");
-  if (!publishedDays.length) throw conflict("This menu week has no current published days to withdraw.");
-  let updated = publication;
-  for (const day of publishedDays) updated = await withdrawPublishedMenuDay(publicationId, day.publicationDayId, reason, actor);
-  return updated;
+  return withMenuPlanningTransaction(state => {
+    const stored = state.publications as unknown as StoredPublications;
+    const publication = stored.publications.find(value => value.publicationId === publicationId);
+    if (!publication) throw Object.assign(new Error("Menu publication was not found."), { status: 404 });
+    const publishedDays = publication.days.filter(day => day.status === "published");
+    if (!publishedDays.length) throw conflict("This menu week has no current published days to withdraw.");
+    const at = now();
+    for (const day of publishedDays) { day.status = "withdrawn"; day.withdrawal = { actor, at, reason: reason.trim() }; appendPublicationEvents(stored, publication, day, "withdrawn", actor); }
+    const rolling = state.rolling as unknown as RollingMenuStored;
+    const snapshot = snapshotFromStored(rolling, publication.sourceWeekId);
+    snapshot.week.dayStatuses = Object.fromEntries(snapshot.days.slice(0, 5).map(day => [day.id, "draft"]));
+    snapshot.week.status = "draft";
+    snapshot.week.version += 1;
+    snapshot.week.audit.push({ action: "menu-week-withdrawn", at, by: actor });
+    replaceSnapshotInStored(rolling, snapshot);
+    publication.audit.push({ action: "menu-week-withdrawn", at, by: actor });
+    return clone(publication);
+  }, undefined, { weekId: publicationId.replace(/^menu-publication:/, ""), sourceWeekId: publicationId.replace(/^menu-publication:/, ""), includeEvents: false });
 }
 export async function archivePublishedDayMatrix(publicationId: string, publicationDayId: string) {
   const publication = await getMenuPublication(publicationId); const day = publication?.days.find(value => value.publicationDayId === publicationDayId); if (!publication || !day) throw new Error("Published menu day was not found.");

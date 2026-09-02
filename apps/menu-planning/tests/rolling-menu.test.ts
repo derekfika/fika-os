@@ -12,7 +12,7 @@ import * as XLSX from "xlsx";
 import { addMenuSlot, applyEntryPatch, assertWeekDateAvailable, attachCanonicalDishIds, createEntry, defaultWeekForDate, duplicateWeek, emptyWeek, getWeek, importWorkbook, publishWeek, removeMenuSlot, saveSnapshot, updateEntry, validateWeek, ROLLING_SLOTS } from "../lib/rolling-menu";
 import { hasPlannedDishes } from "../lib/rolling-menu-types";
 import { createCanonicalMenuItem, listCanonicalMenuItems } from "../lib/canonical-menu-repository";
-import { buildCompiledPublicationSnapshot, buildPublishedDay, createPublishedMenuDay, currentPublishedDays, getCompiledPublicationSnapshot, getMenuPublication, listMenuPublicationEvents, listMenuPublications, publicationPreview, publicationState, publishedDayMatrixHtml, replayMenuPublicationOutbox, withdrawPublishedMenuDay, withdrawPublishedMenuWeek, type MenuPublicationSignoff } from "../lib/menu-publication";
+import { buildCompiledPublicationSnapshot, buildPublishedDay, createPublishedMenuDay, createPublishedMenuWeek, currentPublishedDays, getCompiledPublicationSnapshot, getMenuPublication, listMenuPublicationEvents, listMenuPublications, publicationPreview, publicationState, publishedDayMatrixHtml, replayMenuPublicationOutbox, withdrawPublishedMenuDay, withdrawPublishedMenuWeek, type MenuPublicationSignoff } from "../lib/menu-publication";
 import { resolveAllergenSnapshot } from "../lib/allergen-resolution";
 import type { RollingEntry } from "../lib/rolling-menu-types";
 
@@ -196,6 +196,26 @@ test("menu days publish independently and revisions supersede only that day", as
 test("compiled publication snapshots reject oversized payloads before persistence", () => {
   const huge = "x".repeat(950 * 1024);
   assert.throws(() => buildCompiledPublicationSnapshot({ publicationId: "publication:large", sourceWeekId: "week:large", weekCommencing: "2026-05-04", weekEnding: "2026-05-08", publicationVersion: 1, days: [{ publicationDayId: "day:large", sourceDayId: "day:large", date: "2026-05-04", dayName: "Monday", version: 1, status: "published", publishedAt: "2026-05-04T10:00:00.000Z", publishedBy: "test", contentHash: "hash", entries: [{ sourceEntryId: "entry:large", slot: "SOUP", dishName: huge, portions: 1, allocations: [], allergens: {} }] }], audit: [] }, 1), (error: any) => error.status === 413);
+});
+
+test("week publication is atomic and creates one immutable five-day publication", async () => {
+  const rollingFile = join(process.cwd(), "local-data", "menu-planning", "rolling-menu-weeks.json");
+  const publicationFile = join(process.cwd(), "local-data", "menu-planning", "menu-publications.json");
+  const rollingBefore = existsSync(rollingFile) ? await readFile(rollingFile) : undefined;
+  const publicationBefore = existsSync(publicationFile) ? await readFile(publicationFile) : undefined;
+  const week = emptyWeek(`2030-01-${String((Date.now() % 20) + 1).padStart(2, "0")}`);
+  try {
+    await saveSnapshot(week);
+    for (const [index, day] of week.days.slice(0, 5).entries()) { const created = await createEntry(week.week.id, day.id, "SOUP", `Atomic week dish ${index}`, "test", `dish:atomic-${index}`); await updateEntryForTest(week.week.id, created.entries.find(value => value.dayId === day.id)!.id); }
+    const publication = await createPublishedMenuWeek(week.week.id, {}, "test");
+    assert.equal(currentPublishedDays(publication).length, 5);
+    assert.equal((await getWeek(week.week.id)).week.status, "published");
+    assert.ok(publication.days.every(day => day.status === "published"));
+    await assert.rejects(() => createPublishedMenuWeek(week.week.id, {}, "test"), (error: any) => error.status === 409);
+  } finally {
+    if (rollingBefore) await writeFile(rollingFile, rollingBefore); else await rm(rollingFile, { force: true });
+    if (publicationBefore) await writeFile(publicationFile, publicationBefore); else await rm(publicationFile, { force: true });
+  }
 });
 
 test("published day matrix keeps all canonical allergen columns", async () => {
