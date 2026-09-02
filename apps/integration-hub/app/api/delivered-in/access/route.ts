@@ -2,10 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { actorFromSession } from "@/lib/auth";
 import { assertPermission } from "@/lib/authmod";
 import { FirestoreAuthModRepository } from "@/lib/authmod-core";
-import { db } from "@/lib/firebase-admin";
 import { requireFikaSession } from "@/lib/fika-session";
 import { resolvePermittedOplocIds } from "@/lib/oploc-authorization";
 import { getOplocReadPackage, validateOplocReadPackage } from "@/lib/oploc-read-package";
+import { getServiceArrangementsReadPackage, validateServiceArrangementsReadPackage } from "@/lib/service-arrangements-read-package";
 import { DELIVERED_IN_PERMISSIONS } from "@fika/server-shared/delivered-in-access";
 
 export const dynamic = "force-dynamic";
@@ -18,21 +18,21 @@ export async function GET(request: NextRequest) {
     const service = request.nextUrl.searchParams.get("service") === "grab-and-go" ? "grab-and-go" : "delivered-in";
     const repository = new FirestoreAuthModRepository();
     const principal = { type: "interactive" as const, id: session.authmodIdentityId, displayName: session.displayName, email: session.email, identityKind: session.identityKind };
-    const [scope, packageResult, serviceRecords] = await Promise.all([
+    const [scope, packageResult, servicePackageResult] = await Promise.all([
       resolvePermittedOplocIds({ repository, principal, appId: "delivered-in" }),
       getOplocReadPackage(),
-      db.collection("integrationHubCanonical").where("entityType", "in", ["Service Definition", "Service Arrangement"]).get(),
+      getServiceArrangementsReadPackage(),
     ]);
     const packageValue = validateOplocReadPackage(packageResult.value);
-    const records = serviceRecords.docs.map(document => document.data());
-    const today = new Date().toISOString().slice(0, 10);
+    const servicePackage = validateServiceArrangementsReadPackage(servicePackageResult.value);
+    const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/London", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
     const enabledFor = (requestedService: "delivered-in" | "grab-and-go") => {
-      const definitions = new Set(records.filter(record => {
-        const name = String(record.record?.serviceName || "").toLowerCase().replaceAll("&", "and");
+      const definitions = new Set(servicePackage.serviceDefinitions.filter(definition => {
+        const name = definition.label.toLowerCase().replaceAll("&", "and");
         const matches = requestedService === "grab-and-go" ? name.includes("grab") && name.includes("go") : name.includes("delivered") && name.includes("in");
-        return record.entityType === "Service Definition" && record.lifecycleStatus !== "archived" && record.record?.lifecycleState === "active" && matches;
-      }).map(record => String(record.canonicalId)));
-      return new Set(records.filter(record => record.entityType === "Service Arrangement" && record.lifecycleStatus !== "archived" && record.record?.lifecycleState === "active" && definitions.has(String(record.record?.serviceDefinitionId || "")) && String(record.record?.effectiveFrom || "") <= today && (!record.record?.effectiveTo || String(record.record.effectiveTo) >= today)).map(record => String(record.record?.oplocId || "")));
+        return matches;
+      }).map(definition => definition.canonicalId));
+      return new Set(servicePackage.arrangements.filter(arrangement => definitions.has(arrangement.serviceDefinitionId) && arrangement.lifecycleState === "active" && arrangement.effectiveFrom <= today && (!arrangement.effectiveTo || arrangement.effectiveTo >= today)).map(arrangement => arrangement.oplocId));
     };
     const enabled = enabledFor(service);
     const deliveredIn = enabledFor("delivered-in");

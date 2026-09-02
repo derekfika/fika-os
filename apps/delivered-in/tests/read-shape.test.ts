@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
+import { readFileSync } from "node:fs";
 
 test("CPU review consumption is one authenticated package request with no Delivered-In CPU reconstruction", async () => {
   const server = await readFile(new URL("../lib/server.ts", import.meta.url), "utf8");
@@ -104,4 +105,9 @@ test("Delivered-In production dependency graph has no sibling application source
   const route = await readFile(new URL("../app/api/delivered-in/grab-and-go/route.ts", import.meta.url), "utf8");
   assert.doesNotMatch(productionClient, /integration-hub|hospitality-booking|menu-planning|ad-hoc-production/);
   assert.doesNotMatch(route, /\.\.\/\.\.\/\.\.\/\.\.\/\.\.\/shared/);
+});
+test("Delivered-In access attribution uses the Delivered-In dataset", () => {
+  const source = readFileSync(new URL("../lib/server.ts", import.meta.url), "utf8");
+  assert.match(source, /dataset: "integration-hub\/delivered-in-access"/);
+  assert.doesNotMatch(source, /dataset: "integration-hub\/logistics-access"/);
 });

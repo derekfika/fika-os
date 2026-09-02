@@ -49,6 +49,14 @@ test("steady-state route reads the package, while rebuild is the only canonical 
   assert.match(packageSource, /service-arrangements\.package\.rebuild\.source/);
 });
 
+test("Delivered-In access resolves service enablement from the immutable package", () => {
+  const route = readFileSync(new URL("../app/api/delivered-in/access/route.ts", import.meta.url), "utf8");
+  assert.match(route, /getServiceArrangementsReadPackage/);
+  assert.match(route, /validateServiceArrangementsReadPackage/);
+  assert.doesNotMatch(route, /integrationHubCanonical/);
+  assert.match(route, /Europe\/London/);
+});
+
 test("successful Service Definition and Arrangement mutations trigger package rebuild", () => {
   const configuration = readFileSync(new URL("../lib/operational-configuration-service.ts", import.meta.url), "utf8");
   const catalogue = readFileSync(new URL("../lib/service-catalogue-service.ts", import.meta.url), "utf8");

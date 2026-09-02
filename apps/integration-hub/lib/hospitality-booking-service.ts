@@ -379,17 +379,15 @@ export function resolveHospitalityDestinationOploc(
   mappings: Array<Record<string, unknown>>,
   canonicalRecords: CanonicalRecord[],
 ) {
-  const portalSiteId = portalSiteKeyForPayload(payload);
-  const sourceIdentifiers = [portalSiteId, payload.site].map(value => String(value || "").trim().toLowerCase()).filter(Boolean);
-  if (!sourceIdentifiers.length) return undefined;
-  const mapping = mappings.find(candidate =>
-    sourceIdentifiers.includes(String(candidate.sourceIdentifier || "").trim().toLowerCase()) &&
-    String(candidate.mappingStatus || "") === "confirmed" &&
-    Boolean(String(candidate.sourceEntityType || "")),
-  );
-  const destination = String(mapping?.oplocId || mapping?.targetCanonicalId || "").trim();
+  const destination = resolveHospitalityDestinationId(payload, mappings);
   const target = canonicalRecords.find(record => record.entityType === "OPLOC" && record.canonicalId === destination && record.lifecycleStatus !== "archived" && record.publicationStatus !== "withdrawn" && record.record.lifecycleState === "active");
   return target?.canonicalId;
+}
+export function resolveHospitalityDestinationId(payload: Pick<MnkBookingPayload, "siteId" | "site">, mappings: Array<Record<string, unknown>>) {
+  const portalSiteId = portalSiteKeyForPayload(payload);
+  const sourceIdentifiers = [portalSiteId, payload.site].map(value => String(value || "").trim().toLowerCase()).filter(Boolean);
+  const mapping = mappings.find(candidate => sourceIdentifiers.includes(String(candidate.sourceIdentifier || "").trim().toLowerCase()) && String(candidate.mappingStatus || "") === "confirmed" && Boolean(String(candidate.sourceEntityType || "")));
+  return String(mapping?.oplocId || mapping?.targetCanonicalId || "").trim() || undefined;
 }
 export function productionOrderId(bookingId: string) {
   return `production-order:${bookingId}`;
@@ -563,21 +561,24 @@ export async function ingestMnkBooking(
   payload: MnkBookingPayload,
 ): Promise<IngestionResult> {
   const result = await db.runTransaction(async (transaction) => {
-    const [existingSnapshot, menusSnapshot, mappingsSnapshot] = await Promise.all([
-      transaction.get(bookings().doc(canonicalBookingId(payload.bookingId))),
-      transaction.get(canonical()),
-      transaction.get(sourceMappings()),
-    ]);
-    recordDataAccess({ app: "integration-hub", operation: "hospitality.ingest.transaction-reads", source: "FIRESTORE", dataset: "hospitality-ingest", documents: (existingSnapshot.exists ? 1 : 0) + menusSnapshot.size + mappingsSnapshot.size, estimatedBillableReads: 1 + menusSnapshot.size + mappingsSnapshot.size, firestoreReadKind: "transaction" });
-    const canonicalRecords = menusSnapshot.docs.map((document) => document.data() as CanonicalRecord);
+    const existingSnapshot = await transaction.get(bookings().doc(canonicalBookingId(payload.bookingId)));
     if (existingSnapshot.exists) {
-      return ingestMnkBookingFromExisting(existingSnapshot.data() as CanonicalBooking, payload, canonicalRecords);
+      recordDataAccess({ app: "integration-hub", operation: "hospitality.ingest.transaction-reads", source: "FIRESTORE", dataset: "hospitality-ingest", documents: 1, estimatedBillableReads: 1, firestoreReadKind: "transaction" });
+      return ingestMnkBookingFromExisting(existingSnapshot.data() as CanonicalBooking, payload, []);
     }
-    const destinationOplocId = resolveHospitalityDestinationOploc(
-      payload,
-      mappingsSnapshot.docs.map(document => document.data() as Record<string, unknown>),
-      canonicalRecords,
-    );
+    const portalSiteId = portalSiteKeyForPayload(payload);
+    const portalSourceIdentifiers = [...new Set([portalSiteId, payload.site].map(value => String(value || "").trim().toLowerCase()).filter(Boolean))];
+    const mappingIdentifiers = portalSourceIdentifiers.length ? portalSourceIdentifiers : ["__missing__"];
+    const [menusSnapshot, mappingsSnapshot] = await Promise.all([
+      transaction.get(canonical().where("entityType", "==", "Hospitality Menu Item").where("lifecycleStatus", "in", ["draft", "published"]).where("record.lifecycleState", "==", "active")),
+      transaction.get(sourceMappings().where("sourceIdentifier", "in", mappingIdentifiers)),
+    ]);
+    const canonicalRecords = menusSnapshot.docs.map((document) => document.data() as CanonicalRecord);
+    const mappings = mappingsSnapshot.docs.map(document => document.data() as Record<string, unknown>);
+    const destinationId = resolveHospitalityDestinationId(payload, mappings);
+    const destinationSnapshot = destinationId ? await transaction.get(canonical().doc(stableDocumentId(destinationId))) : undefined;
+    const destinationOplocId = destinationSnapshot?.exists ? resolveHospitalityDestinationOploc(payload, mappings, [...canonicalRecords, destinationSnapshot.data() as CanonicalRecord]) : undefined;
+    recordDataAccess({ app: "integration-hub", operation: "hospitality.ingest.transaction-reads", source: "FIRESTORE", dataset: "hospitality-ingest", documents: menusSnapshot.size + mappingsSnapshot.size + (destinationSnapshot?.exists ? 1 : 0), estimatedBillableReads: menusSnapshot.size + mappingsSnapshot.size + (destinationSnapshot?.exists ? 1 : 0), firestoreReadKind: "transaction" });
     if (!destinationOplocId) throw conflict("This delivery-requiring Hospitality Booking has no confirmed canonical destination OPLOC; resolve the governed site mapping before submission.");
     const result = ingestMnkBookingFromExisting(
       existingSnapshot.exists

@@ -32,19 +32,20 @@ async function handleGet(request: NextRequest) {
     const totalStarted = performance.now();
     const summaryStarted = performance.now();
     const summariesOnly = request.nextUrl.searchParams.get("summariesOnly") === "true";
+    const snapshotOnly = request.nextUrl.searchParams.get("snapshotOnly") === "true";
     if (summariesOnly && requestedWeek) {
       const week = await getWeekHead<RollingWeek>(requestedWeek);
       console.info("Menu Planning rolling-menu week head timing", { rollingStateMs: performance.now() - summaryStarted, totalMs: performance.now() - totalStarted, weekId: requestedWeek, found: Boolean(week) });
       return NextResponse.json({ week: week ? { id: week.id, weekCommencing: week.weekCommencing, version: week.version } : null });
     }
-    const weeks = (await listWeekSummaries<RollingWeek>()).slice().sort((a, b) => a.weekCommencing.localeCompare(b.weekCommencing));
+    const weeks = snapshotOnly && requestedWeek ? [] : (await listWeekSummaries<RollingWeek>()).slice().sort((a, b) => a.weekCommencing.localeCompare(b.weekCommencing));
     const rollingStateMs = performance.now() - summaryStarted;
     if (summariesOnly) {
       console.info("Menu Planning rolling-menu summaries timings", { rollingStateMs, totalMs: performance.now() - totalStarted });
       return NextResponse.json({ weeks });
     }
     const matchingWeek = requestedWeek ? weeks.find(week => week.id === requestedWeek || week.weekCommencing === requestedWeek) : undefined;
-    const selectedWeek = matchingWeek || defaultWeekForDate(weeks);
+    const selectedWeek = snapshotOnly && requestedWeek ? await getWeekHead<RollingWeek>(requestedWeek) : matchingWeek || defaultWeekForDate(weeks);
     const selectedReadStarted = performance.now();
     const storedSnapshot = selectedWeek ? await getWeekSnapshot<Awaited<ReturnType<typeof getWeek>>>(selectedWeek.id) : undefined;
     const selectedWeekMs = performance.now() - selectedReadStarted;

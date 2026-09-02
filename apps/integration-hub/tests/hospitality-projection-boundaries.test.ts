@@ -28,6 +28,15 @@ test("Hospitality portal mapping authorization uses an exact bounded lookup", ()
   assert.doesNotMatch(service, /const mappingSnapshot = await sourceMappings\(\)\.get\(\)/);
 });
 
+test("Hospitality booking ingest does not enumerate canonical or source-mapping collections", () => {
+  const ingest = service.slice(service.indexOf("export async function ingestMnkBooking"));
+  assert.doesNotMatch(ingest, /transaction\.get\(canonical\(\)\)/);
+  assert.doesNotMatch(ingest, /transaction\.get\(sourceMappings\(\)\)/);
+  assert.match(ingest, /where\("entityType", "==", "Hospitality Menu Item"\)/);
+  assert.match(ingest, /where\("sourceIdentifier", "in", mappingIdentifiers\)/);
+  assert.match(ingest, /canonical\(\)\.doc\(stableDocumentId\(destinationId\)\)/);
+});
+
 test("Hospitality workspace uses bounded batch production reads instead of an N+1 loop", () => {
   assert.match(service, /productionOrdersForBookings\(/);
   assert.match(service, /where\("sourceBookingId", "in", chunk\)/);

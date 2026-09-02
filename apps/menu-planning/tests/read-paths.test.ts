@@ -50,6 +50,8 @@ test("hosted rolling reads use targeted week and publication paths", () => {
   assert.match(planner, /summariesOnly=true&weekId=/);
   assert.doesNotMatch(planner, /fetch\("\/api\/rolling-menu\?summariesOnly=true"/);
   assert.match(planner, /neighbor/);
+  assert.match(planner, /fetchWeek\(neighbor\.id, true\)/);
+  assert.match(planner, /snapshotOnly=true/);
   assert.match(planner, /getCachedWeek|putCachedWeek/);
   assert.match(planner, /getCachedWeekSelection/);
   assert.match(planner, /putCachedWeekSelection/);
@@ -60,6 +62,13 @@ test("hosted rolling reads use targeted week and publication paths", () => {
   assert.match(weekCache, /fika-menu-planning/);
   assert.match(weekCache, /selectedWeek/);
   assert.match(weekCache, /identity/);
+});
+
+test("known-neighbour prefetch requests a targeted snapshot without week summaries", () => {
+  const route = readFileSync(new URL("../app/api/rolling-menu/route.ts", import.meta.url), "utf8");
+  assert.match(route, /snapshotOnly/);
+  assert.match(route, /snapshotOnly && requestedWeek \? \[\] :/);
+  assert.match(route, /snapshotOnly && requestedWeek \? await getWeekHead/);
 });
 
 test("rolling resolution never guesses catalogue identity from a label", () => {

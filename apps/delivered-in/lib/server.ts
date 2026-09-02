@@ -54,7 +54,7 @@ export async function resolveAccess(request: NextRequest, service: DeliveredInSe
   // only Grab & Go needs the explicit service selector.
   const accessUrl = service === "grab-and-go" ? `${hubBase()}/api/delivered-in/access?service=grab-and-go` : `${hubBase()}/api/delivered-in/access`;
   const response = await fetch(accessUrl, { headers: { cookie: request.headers.get("cookie") || "" }, cache: "no-store" });
-  recordDataAccess({ app: "delivered-in", operation: "hub.authmod.access", source: "NETWORK_UPSTREAM", dataset: "integration-hub/logistics-access", documents: 0, cacheResult: "BYPASS" });
+  recordDataAccess({ app: "delivered-in", operation: "hub.authmod.access", source: "NETWORK_UPSTREAM", dataset: "integration-hub/delivered-in-access", documents: 0, cacheResult: "BYPASS" });
   const body = await readJson<{ access?: SiteAccess; sites?: Site[]; error?: { message?: string } }>(response, "Integration Hub access service");
   if (!response.ok || !body.access || !body.sites) throw failure(body.error?.message || "Delivered-In access could not be resolved.", response.status || 502);
   return { access: body.access, sites: body.sites };
