@@ -36,6 +36,8 @@ const planRoute = readFileSync(
   "utf8",
 );
 const projection = readFileSync(new URL("../lib/cpu-projection.ts", import.meta.url), "utf8");
+const allergenPage = readFileSync(new URL("../app/allergens/page.tsx", import.meta.url), "utf8");
+const allergenProjectionLoader = readFileSync(new URL("../app/lib/cpu-allergen-projection-loader.ts", import.meta.url), "utf8");
 const tia = readFileSync(
   new URL("../app/tia/page.tsx", import.meta.url),
   "utf8",
@@ -131,9 +133,15 @@ test("CPU read paths use bounded and targeted Firestore shapes", () => {
   assert.match(planRoute, /loadDeliveredInReviewStatuses/);
   assert.match(planRoute, /parseDeliveredInReviewOrderIds/);
   assert.match(planRoute, /if \(orderId\)[\s\S]*?return NextResponse\.json/);
-  const allergenPage = readFileSync(new URL("../app/allergens/page.tsx", import.meta.url), "utf8");
-  assert.match(allergenPage, /serviceDate=.*selectedDate/);
-  assert.doesNotMatch(allergenPage, /\/api\/production\?scope=all/);
+  assert.doesNotMatch(allergenPage, /\/api\/production\?serviceDate=/);
+  assert.match(allergenPage, /loadCpuAllergenProjection\(selectedDate, "delivered_in"\)/);
+  assert.match(allergenProjectionLoader, /cacheScope=1/);
+  assert.match(allergenProjectionLoader, /readCpuProjection/);
+  assert.match(allergenProjectionLoader, /projectionHead=1/);
+  assert.match(allergenProjectionLoader, /projection=1/);
+  assert.match(allergenProjectionLoader, /writeCpuProjection/);
+  assert.doesNotMatch(allergenProjectionLoader, /productionQueue/);
+  assert.match(allergenPage, /\/api\/production-plan/);
   const oplocRoute = readFileSync(new URL("../app/api/oplocs/route.ts", import.meta.url), "utf8");
   assert.doesNotMatch(oplocRoute, /connectionsOverview/);
 });
