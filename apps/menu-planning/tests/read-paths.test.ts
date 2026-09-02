@@ -142,6 +142,9 @@ test("manifest and Allergen Checker paths avoid unnecessary full catalogue reads
   assert.match(cache, /catalogueManifestMatches/);
   assert.match(checker, /useRollingData\(\{ loadCatalogue: false \}\)/);
   assert.match(checker, /entry\.allergens/);
+  assert.match(checker, /Mark and sign off the planned allergen information here/);
+  assert.match(checker, /CPU performs the final independent safety check/);
+  assert.match(checker, /command\("update-entry"/);
 });
 
 test("compiled publication snapshots use a separate targeted read model", () => {
