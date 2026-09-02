@@ -24,11 +24,9 @@ import {
 } from "./booking-notifications";
 import {
   createProductionFromApprovedBooking,
-  productionOrderDetail,
-  latestProductionOrderForBooking,
-  productionOrderV1Id,
   type ProductionOrder as ProductionOrderV1,
 } from "./production-domain";
+import { notifyCpuProjection } from "./cpu-projection-client";
 import { localBookingFixtures } from "./local-booking-fixtures";
 import { capGallagherMinimum, GALLAGHER_MINIMUM_GUESTS, isGallagherBooking } from "./gallagher-rules";
 import { recordDataAccess } from "@fika/server-shared/data-source-meter-server";
@@ -182,6 +180,7 @@ const bookings = () => db.collection("fikaBookings");
 
 export async function getBookingByCanonicalId(canonicalId: string) {
   const snapshot = await bookings().doc(canonicalId).get();
+  recordDataAccess({ app: "integration-hub", operation: "hospitality.booking.by-id", source: "FIRESTORE", dataset: "fikaBookings", documents: snapshot.exists ? 1 : 0, firestoreReadKind: "document" });
   if (!snapshot.exists) throw conflict("Booking was not found.");
   return snapshot.data() as CanonicalBooking;
 }
@@ -242,7 +241,7 @@ export async function mnkMenuReadContract() {
     .where("entityType", "==", "Hospitality Menu Item")
     .where("lifecycleStatus", "in", ["draft", "published"])
     .get();
-  recordDataAccess({ app: "integration-hub", operation: "hospitality-menu.read", source: "FIRESTORE", documents: snapshot.size });
+  recordDataAccess({ app: "integration-hub", operation: "hospitality-menu.read", source: "FIRESTORE", dataset: "integrationHubCanonical", documents: snapshot.size, firestoreReadKind: "query" });
   return menuForMnkPortal(
     snapshot.docs.map((document) => document.data() as CanonicalRecord),
   );
@@ -569,6 +568,7 @@ export async function ingestMnkBooking(
       transaction.get(canonical()),
       transaction.get(sourceMappings()),
     ]);
+    recordDataAccess({ app: "integration-hub", operation: "hospitality.ingest.transaction-reads", source: "FIRESTORE", dataset: "hospitality-ingest", documents: (existingSnapshot.exists ? 1 : 0) + menusSnapshot.size + mappingsSnapshot.size, estimatedBillableReads: 1 + menusSnapshot.size + mappingsSnapshot.size, firestoreReadKind: "transaction" });
     const canonicalRecords = menusSnapshot.docs.map((document) => document.data() as CanonicalRecord);
     if (existingSnapshot.exists) {
       return ingestMnkBookingFromExisting(existingSnapshot.data() as CanonicalBooking, payload, canonicalRecords);
@@ -648,6 +648,7 @@ export async function notifyBookingConfirmedForProductionOrder(
       reason: "The order has no canonical Booking source.",
     };
   const snapshot = await bookings().doc(sourceBookingId).get();
+  recordDataAccess({ app: "integration-hub", operation: "hospitality.booking.confirmation-source", source: "FIRESTORE", dataset: "fikaBookings", documents: snapshot.exists ? 1 : 0, firestoreReadKind: "document" });
   if (!snapshot.exists)
     return {
       status: "skipped" as const,
@@ -666,6 +667,7 @@ export async function getDashboardQuoteSettings(
   const snapshot = await dashboardQuoteSettings()
     .doc(stableDocumentId(dashboardId))
     .get();
+  recordDataAccess({ app: "integration-hub", operation: "hospitality.quote-settings.by-dashboard", source: "FIRESTORE", dataset: "fikaDashboardQuoteSettings", documents: snapshot.exists ? 1 : 0, firestoreReadKind: "document" });
   return snapshot.exists
     ? (snapshot.data() as DashboardQuoteSettings)
     : defaultDashboardQuoteSettings(dashboardId);
@@ -686,6 +688,7 @@ async function getQuoteSettingsInTransaction(
   const snapshot = await transaction.get(
     dashboardQuoteSettings().doc(stableDocumentId(dashboardId)),
   );
+  recordDataAccess({ app: "integration-hub", operation: "hospitality.quote-settings.transaction-read", source: "FIRESTORE", dataset: "fikaDashboardQuoteSettings", documents: snapshot.exists ? 1 : 0, firestoreReadKind: "transaction" });
   return snapshot.exists
     ? (snapshot.data() as DashboardQuoteSettings)
     : defaultDashboardQuoteSettings(dashboardId);
@@ -700,6 +703,7 @@ export async function saveDashboardQuoteSettings(
       stableDocumentId(input.dashboardId),
     );
     const current = await transaction.get(ref);
+    recordDataAccess({ app: "integration-hub", operation: "hospitality.quote-settings.transaction-read", source: "FIRESTORE", dataset: "fikaDashboardQuoteSettings", documents: current.exists ? 1 : 0, firestoreReadKind: "transaction" });
     const existing = current.exists
       ? (current.data() as DashboardQuoteSettings)
       : defaultDashboardQuoteSettings(input.dashboardId);
@@ -723,12 +727,64 @@ export async function saveDashboardQuoteSettings(
   });
 }
 
+const WORKSPACE_BOOKING_LIMIT = 200;
+const WORKSPACE_FUTURE_DAYS = 366;
+const WORKSPACE_ARCHIVE_LOOKBACK_DAYS = 365;
+const FIRESTORE_IN_LIMIT = 30;
+type ProductionProjectionChange = { order: ProductionOrderV1; changeType: "created" | "amended" | "withdrawn"; idempotencyKey: string };
+
+function addCalendarDays(date: string, days: number) {
+  const value = new Date(`${date}T00:00:00Z`);
+  value.setUTCDate(value.getUTCDate() + days);
+  return value.toISOString().slice(0, 10);
+}
+
+async function propagateProductionChanges(changes: ProductionProjectionChange[]) {
+  const results = [];
+  for (const change of changes) {
+    try {
+      results.push({ canonicalId: change.order.canonicalId, ...(await notifyCpuProjection(change.order, change.changeType, change.idempotencyKey)), status: "delivered" as const });
+    } catch (error) {
+      results.push({ canonicalId: change.order.canonicalId, status: "pending" as const, reason: error instanceof Error ? error.message : "CPU projection handoff failed." });
+    }
+  }
+  return { status: results.some((result) => result.status === "pending") ? "pending" as const : "delivered" as const, results };
+}
+
+async function productionOrdersForBookings(bookingIds: string[]) {
+  const ids = [...new Set(bookingIds)];
+  const modern = new Map<string, ProductionOrderV1[]>();
+  for (let offset = 0; offset < ids.length; offset += FIRESTORE_IN_LIMIT) {
+    const chunk = ids.slice(offset, offset + FIRESTORE_IN_LIMIT);
+    const snapshot = await productionOrderV1s().where("sourceBookingId", "in", chunk).limit(WORKSPACE_BOOKING_LIMIT + 1).get();
+    recordDataAccess({ app: "integration-hub", operation: "hospitality.production-orders.by-bookings", source: "FIRESTORE", dataset: "fikaProductionOrdersV1", documents: snapshot.size, estimatedBillableReads: snapshot.size, firestoreReadKind: "query" });
+    for (const document of snapshot.docs) {
+      const order = document.data() as ProductionOrderV1;
+      const existing = modern.get(order.sourceBookingId) || [];
+      existing.push(order);
+      modern.set(order.sourceBookingId, existing);
+    }
+  }
+  const legacySnapshots = ids.length ? await db.getAll(...ids.map((id) => productionOrders().doc(stableDocumentId(`production-order:${id}`)))) : [];
+  if (ids.length) recordDataAccess({ app: "integration-hub", operation: "hospitality.production-orders.legacy-by-bookings", source: "FIRESTORE", dataset: "fikaProductionOrders", documents: legacySnapshots.filter(snapshot => snapshot.exists).length, estimatedBillableReads: legacySnapshots.length, firestoreReadKind: "document" });
+  const latest = new Map<string, ProductionOrderV1>();
+  for (const [bookingId, candidates] of modern) {
+    const order = candidates.filter((candidate) => !candidate.supersededBy && candidate.status !== "amended").sort((a, b) => (b.version - a.version) || b.createdAt.localeCompare(a.createdAt))[0];
+    if (order) latest.set(bookingId, order);
+  }
+  legacySnapshots.forEach((snapshot, index) => {
+    const bookingId = ids[index];
+    if (snapshot.exists && bookingId && !latest.has(bookingId)) latest.set(bookingId, snapshot.data() as ProductionOrderV1);
+  });
+  return latest;
+}
+
 export async function bookingWorkspace(siteId?: string, authorisedOplocId?: string, includeArchive = false) {
   const today = londonBusinessDate();
   if (siteId && authorisedOplocId) {
     const portalSourceIdentifiers = new Set([siteId.trim().toLowerCase(), siteId.trim().toLowerCase().replace(/-/g, " ")]);
     const mappingSnapshot = await sourceMappings().where("sourceIdentifier", "in", [...portalSourceIdentifiers]).get();
-    recordDataAccess({ app: "integration-hub", operation: "hospitality-booking.authorisation-mapping", source: "FIRESTORE", documents: mappingSnapshot.size });
+    recordDataAccess({ app: "integration-hub", operation: "hospitality-booking.authorisation-mapping", source: "FIRESTORE", dataset: "integrationHubSourceMappings", documents: mappingSnapshot.size, estimatedBillableReads: mappingSnapshot.size, firestoreReadKind: "query" });
     const mapped = mappingSnapshot.docs.some(document => {
       const mapping = document.data() as Record<string, unknown>;
       return portalSourceIdentifiers.has(String(mapping.sourceIdentifier || "").trim().toLowerCase()) &&
@@ -738,10 +794,18 @@ export async function bookingWorkspace(siteId?: string, authorisedOplocId?: stri
     });
     if (!mapped) throw Object.assign(new Error("The requested Hospitality portal is not governed by the authorised OPLOC."), { status: 403 });
   }
-  const snapshot = includeArchive
-    ? await bookings().orderBy("service.eventDate", "asc").get()
-    : await bookings().where("service.eventDate", ">=", today).orderBy("service.eventDate", "asc").get();
+  const fromDate = includeArchive ? addCalendarDays(today, -WORKSPACE_ARCHIVE_LOOKBACK_DAYS) : today;
+  const toDate = addCalendarDays(today, WORKSPACE_FUTURE_DAYS);
+  const snapshot = await bookings()
+    .where("service.eventDate", ">=", fromDate)
+    .where("service.eventDate", "<", toDate)
+    .orderBy("service.eventDate", "asc")
+    .limit(WORKSPACE_BOOKING_LIMIT + 1)
+    .get();
+  recordDataAccess({ app: "integration-hub", operation: "hospitality.workspace.bookings", source: "FIRESTORE", dataset: "fikaBookings", documents: snapshot.size, estimatedBillableReads: snapshot.size, firestoreReadKind: "query" });
+  const truncated = snapshot.size > WORKSPACE_BOOKING_LIMIT;
   const storedRows = snapshot.docs
+    .slice(0, WORKSPACE_BOOKING_LIMIT)
     .map((document) => document.data() as CanonicalBooking)
     .map((booking) => {
       // Preserve stored legacy Approved values as-is. Do not promote active
@@ -763,12 +827,11 @@ export async function bookingWorkspace(siteId?: string, authorisedOplocId?: stri
           !storedRows.some((stored) => stored.canonicalId === fixture.canonicalId),
         )].sort((a, b) => a.service.eventDate.localeCompare(b.service.eventDate))
       : storedRows;
-  const orders = await Promise.all(
-    rows.map(async (booking) => {
+  const ordersByBooking = await productionOrdersForBookings(rows.filter((booking) => booking.deliveryChargeRequired !== false).map((booking) => booking.canonicalId));
+  const orders = rows.map((booking) => {
       const modern = booking.deliveryChargeRequired === false
         ? undefined
-        : await latestProductionOrderForBooking(booking.canonicalId)
-          || await productionOrderDetail(productionOrderV1Id(booking.canonicalId));
+        : ordersByBooking.get(booking.canonicalId);
       if (modern) {
         const state: ProductionOrder["state"] =
           modern.status === "cancelled"
@@ -809,18 +872,13 @@ export async function bookingWorkspace(siteId?: string, authorisedOplocId?: stri
           } satisfies ProductionOrder,
         ] as const;
       }
-      const legacy = await productionOrders()
-        .doc(stableDocumentId(`production-order:${booking.canonicalId}`))
-        .get();
-      if (legacy.exists)
-        return [booking.canonicalId, legacy.data() as ProductionOrder] as const;
       return [booking.canonicalId, undefined] as const;
-    }),
-  );
+    });
   return {
     bookings: rows,
     productionOrders: Object.fromEntries(orders),
     quoteSettings: await getDashboardQuoteSettings(dashboardIdForSite(siteId)),
+    ...(truncated ? { truncated: true } : {}),
   };
 }
 
@@ -849,6 +907,7 @@ export async function executeBookingWorkflow(
       quoteState: current.quoteState || { revisions: [] },
       dashboardWorkflow: current.dashboardWorkflow || {},
     };
+    const projectionChanges: ProductionProjectionChange[] = [];
     if (command.action === "review") {
       next.lifecycleStatus = "Reviewed";
       next.dashboardWorkflow = {
@@ -924,6 +983,7 @@ export async function executeBookingWorkflow(
       for (const prior of priorOrders.docs) {
         const order = prior.data() as ProductionOrderV1;
         if (order.status === "cancelled" || order.status === "amended") continue;
+        projectionChanges.push({ order: { ...order, status: "amended", workflowStatus: "amended", version: Number(order.version || 1) + 1 }, changeType: "amended", idempotencyKey: `hospitality-projection:${canonicalId}:amended:v${next.version}` });
         transaction.set(
           prior.ref,
           {
@@ -1067,6 +1127,7 @@ export async function executeBookingWorkflow(
       });
       for (const prior of activeOrders) {
         const order = prior.data() as ProductionOrderV1;
+        projectionChanges.push({ order: { ...order, status: "cancelled", workflowStatus: "cancelled", version: Number(order.version || 1) + 1 }, changeType: "withdrawn", idempotencyKey: `hospitality-projection:${canonicalId}:cancelled:v${next.version}` });
         transaction.set(
           prior.ref,
           {
@@ -1181,7 +1242,7 @@ export async function executeBookingWorkflow(
         notification,
       );
     }
-    return { booking: next, notificationKind };
+    return { booking: next, notificationKind, projectionChanges };
   });
   const notification = result.notificationKind
     ? await dispatchBookingNotification(
@@ -1190,7 +1251,8 @@ export async function executeBookingWorkflow(
         result.booking.version,
       )
     : undefined;
-  return { booking: result.booking, ...(notification ? { notification } : {}) };
+  const projectionPropagation = await propagateProductionChanges(result.projectionChanges);
+  return { booking: result.booking, ...(notification ? { notification } : {}), projectionPropagation };
 }
 
 export async function dispatchBookingNotification(
@@ -1276,6 +1338,7 @@ export async function createProductionOrder(
     `hospitality:${canonicalId}:v${expectedVersion}`,
   );
   const order = result.order;
+  const projectionPropagation = await propagateProductionChanges([{ order, changeType: "created", idempotencyKey: `cpu-projection:${order.canonicalId}:v${order.version}` }]);
   const state: ProductionOrder["state"] =
     order.status === "cancelled"
       ? "Cancelled"
@@ -1291,6 +1354,7 @@ export async function createProductionOrder(
         : "Requested";
   return {
     created: result.created,
+    projectionPropagation,
     productionOrder: {
       canonicalId: order.canonicalId,
       bookingId: order.sourceBookingId,

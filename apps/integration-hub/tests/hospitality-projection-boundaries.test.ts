@@ -49,3 +49,10 @@ test("CPU is the single downstream fanout owner for Hub production mutations", (
   assert.doesNotMatch(route, /notifyLogisticsProjection/);
   assert.match(bookingRoute, /createProductionOrder/);
 });
+
+test("Hospitality API and direct reads are included in the shared attribution trace", () => {
+  assert.match(bookingRoute, /withDataTrace\(\{ app: "integration-hub", action: "integration-hub\.hospitality-bookings\.read"/);
+  assert.match(service, /hospitality\.workspace\.bookings/);
+  assert.match(service, /hospitality\.production-orders\.by-bookings/);
+  assert.match(service, /hospitality\.quote-settings\.by-dashboard/);
+});

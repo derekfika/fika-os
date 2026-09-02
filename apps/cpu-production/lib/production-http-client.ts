@@ -2,12 +2,14 @@ import type { NextRequest } from "next/server";
 import { randomUUID } from "node:crypto";
 import type { ProductionOrder } from "./production-types";
 import { getHubBaseUrl } from "./hub-url";
+import { recordDataAccess } from "@fika/server-shared/data-source-meter-server";
 function base() { return getHubBaseUrl(); }
 export function forwardedHeaders(request: NextRequest, headers: HeadersInit = {}) { return { ...headers, ...(request.headers.get("cookie") ? { cookie: request.headers.get("cookie")! } : {}), "x-request-id": request.headers.get("x-request-id") || randomUUID() }; }
 async function call<T>(request: NextRequest, path: string, init: RequestInit, valid: (value: unknown) => value is T): Promise<T> {
   let response: Response;
   try { response = await fetch(`${base()}${path}`, { ...init, cache: "no-store", signal: AbortSignal.timeout(8_000), headers: forwardedHeaders(request, init.headers) }); }
   catch (cause) { throw Object.assign(new Error("Integration Hub is unavailable."), { status: 503, cause }); }
+  recordDataAccess({ app: "cpu-production", operation: `hub.${path.split("?")[0].replace(/^\//, "").replaceAll("/", ".")}`, source: "NETWORK_UPSTREAM", dataset: "integration-hub", documents: 0, cacheResult: "BYPASS" });
   const text = await response.text(); let body: unknown;
   try { body = text ? JSON.parse(text) : undefined; } catch { throw Object.assign(new Error("Integration Hub returned invalid JSON."), { status: 502 }); }
   if (!response.ok) throw Object.assign(new Error((body as { error?: { message?: string } })?.error?.message || `Integration Hub request failed (${response.status}).`), { status: response.status });

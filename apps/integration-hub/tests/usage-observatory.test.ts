@@ -222,6 +222,15 @@ test("attribution recognises all canonical OS app IDs and aggregates cache outco
   assert.equal(result.apps.some(app => app.app === "unknown/other"), false);
 });
 
+test("staging coverage distinguishes instrumented core apps from parked or pending apps", () => {
+  const range = { start: "2026-08-29T12:00:00.000Z", end: "2026-08-29T12:15:00.000Z", timezone: "Europe/London" as const };
+  const result = aggregateAttribution([], range, "1m", null);
+  assert.equal(result.expectedInstrumentation["cpu-production"], "enabled");
+  assert.equal(result.expectedInstrumentation["delivered-in"], "enabled");
+  assert.equal(result.expectedInstrumentation["hospitality-booking"], "enabled");
+  assert.equal(result.expectedInstrumentation["ad-hoc-production"], "unknown");
+});
+
 test("reconciliation preserves exact, unattributed, over-attributed, unavailable, and incomplete states", () => {
   const actual = { reads: 100, writes: 10, deletes: 0 } as const;
   const exact = reconcileUsage(actual, { reads: 100, writes: 10, deletes: 0 }, false);

@@ -23,7 +23,7 @@ class FirestoreProductionPlanRepository implements ProductionPlanRepository {
     const wanted = [...new Set(orderIds)];
     if (wanted.length > MAX_PRODUCTION_PLAN_ORDER_IDS) throw Object.assign(new Error(`A maximum of ${MAX_PRODUCTION_PLAN_ORDER_IDS} production plans may be requested.`), { status: 400 });
     const snapshots = await Promise.all(wanted.map(orderId => (async () => (await this.collection()).doc(orderId).get())()));
-    recordDataAccess({ app: "cpu-production", operation: "production-plans.by-order-ids", source: "FIRESTORE", documents: snapshots.filter(snapshot => snapshot.exists).length, firestoreReadKind: "document" });
+    recordDataAccess({ app: "cpu-production", operation: "production-plans.by-order-ids", source: "FIRESTORE", dataset: PRODUCTION_PLANS_COLLECTION, documents: snapshots.filter(snapshot => snapshot.exists).length, estimatedBillableReads: snapshots.length, firestoreReadKind: "document" });
     return snapshots.flatMap(snapshot => snapshot.exists ? [decode(snapshot.data())] : []);
   }
   async save(plan: ProductionPlan, expectedUpdatedAt?: string) {
