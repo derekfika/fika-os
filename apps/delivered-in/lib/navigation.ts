@@ -1,4 +1,4 @@
-export type DeliveredInView = "today" | "week" | "allergens";
+export type DeliveredInView = "today" | "week";
 
 export type DeliveredInLocation = {
   view: DeliveredInView;
@@ -11,7 +11,7 @@ export function readDeliveredInLocation(search: string): DeliveredInLocation {
   const params = new URLSearchParams(search);
   const requestedView = params.get("view");
   return {
-    view: requestedView === "week" || requestedView === "allergens" ? requestedView : "today",
+    view: requestedView === "week" ? requestedView : "today",
     oplocId: params.get("oplocId") || undefined,
     week: params.get("week") || undefined,
     day: params.get("day") || undefined,
