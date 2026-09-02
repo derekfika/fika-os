@@ -15,6 +15,19 @@ test("Hospitality workspace reads use explicit date and row bounds", () => {
   assert.match(service, /limit\(WORKSPACE_BOOKING_LIMIT \+ 1\)/);
 });
 
+test("Hospitality menu reads target menu-item lifecycle states", () => {
+  assert.match(service, /where\("entityType", "==", "Hospitality Menu Item"\)/);
+  assert.match(service, /where\("lifecycleStatus", "in", \["draft", "published"\]\)/);
+  assert.match(service, /operation: "hospitality-menu\.read"/);
+  assert.doesNotMatch(service, /export async function mnkMenuReadContract\(\) \{\s*const snapshot = await canonical\(\)\.get\(\)/);
+});
+
+test("Hospitality portal mapping authorization uses an exact bounded lookup", () => {
+  assert.match(service, /where\("sourceIdentifier", "in", \[\.\.\.portalSourceIdentifiers\]\)/);
+  assert.match(service, /operation: "hospitality-booking\.authorisation-mapping"/);
+  assert.doesNotMatch(service, /const mappingSnapshot = await sourceMappings\(\)\.get\(\)/);
+});
+
 test("Hospitality workspace uses bounded batch production reads instead of an N+1 loop", () => {
   assert.match(service, /productionOrdersForBookings\(/);
   assert.match(service, /where\("sourceBookingId", "in", chunk\)/);
