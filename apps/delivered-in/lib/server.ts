@@ -99,6 +99,18 @@ export async function projectedWeeks(request: NextRequest, requestedOplocId?: st
   return { access, sites, selectedOplocId, weeks, withdrawnServiceDates: [] as string[] };
 }
 
+export async function projectionHead(request: NextRequest, requestedOplocId?: string) {
+  const resolved = await resolveAccess(request);
+  const access = resolved.access;
+  const sites = resolved.sites;
+  if (!access.oplocIds.length) return { access, sites, selectedOplocId: undefined, projectionState: "unavailable" as const, entries: [], withdrawnServiceDates: [], unavailableServiceDates: [] };
+  const selectedOplocId = requestedOplocId || (access.oplocIds.length === 1 ? access.oplocIds[0] : undefined);
+  if (!selectedOplocId) return { access, sites, selectedOplocId: undefined, projectionState: "unavailable" as const, entries: [], withdrawnServiceDates: [], unavailableServiceDates: [] };
+  assertAuthorisedOploc(access, selectedOplocId);
+  const window = await readProjectionIndexWindow(selectedOplocId);
+  return { access, sites, selectedOplocId, projectionState: window.state, entries: window.entries, withdrawnServiceDates: window.withdrawnServiceDates, unavailableServiceDates: window.unavailableServiceDates };
+}
+
 export function projectionWindowBounds(asOf = operationalDateLondon()) {
   const from = mondayOf(asOf);
   return { from, to: addDays(from, DELIVERED_IN_PROJECTION_HORIZON_DAYS) };
@@ -113,11 +125,9 @@ export function boundedProjectionIndexEntries(entries: DeliveredInProjectionInde
 }
 
 async function readProjectionWindow(oplocId: string, asOf = operationalDateLondon()) {
-  const index = await readDeliveredInProjectionIndex(oplocId).catch(() => undefined);
-  if (!index) return { days: [] as DeliveredInDayProjection[], withdrawnServiceDates: [] as string[], unavailableServiceDates: [] as string[], state: "unavailable" as const };
-  const inWindow = boundedProjectionIndexEntries(index.value.entries, asOf);
-  const withdrawnServiceDates = inWindow.filter(entry => entry.state === "withdrawn").map(entry => entry.serviceDate);
-  const entries = inWindow.filter(entry => entry.state !== "withdrawn").slice(0, DELIVERED_IN_MAX_DAY_PACKAGES);
+  const indexWindow = await readProjectionIndexWindow(oplocId, asOf);
+  if (indexWindow.state === "unavailable" && !indexWindow.entries.length && !indexWindow.withdrawnServiceDates.length) return { days: [] as DeliveredInDayProjection[], withdrawnServiceDates: [], unavailableServiceDates: [], state: "unavailable" as const };
+  const { entries, withdrawnServiceDates } = indexWindow;
   const results = await Promise.all(entries.map(async entry => {
     try {
       const packageValue = await readDeliveredInProjection(oplocId, entry.serviceDate);
@@ -129,7 +139,16 @@ async function readProjectionWindow(oplocId: string, asOf = operationalDateLondo
   const unavailableServiceDates = entries.filter((_, index) => !results[index]).map(entry => entry.serviceDate);
   const days = results.filter((day): day is DeliveredInDayProjection => Boolean(day));
   const state: "current" | "partial" | "unavailable" = unavailableServiceDates.length ? (days.length ? "partial" : "unavailable") : "current";
-  return { days, withdrawnServiceDates, unavailableServiceDates, state };
+  return { days, withdrawnServiceDates, unavailableServiceDates, state: unavailableServiceDates.length ? (days.length ? "partial" : "unavailable") : indexWindow.state };
+}
+
+async function readProjectionIndexWindow(oplocId: string, asOf = operationalDateLondon()) {
+  const index = await readDeliveredInProjectionIndex(oplocId).catch(() => undefined);
+  if (!index) return { entries: [], withdrawnServiceDates: [], unavailableServiceDates: [], state: "unavailable" as const };
+  const inWindow = boundedProjectionIndexEntries(index.value.entries, asOf);
+  const withdrawnServiceDates = inWindow.filter(entry => entry.state === "withdrawn").map(entry => entry.serviceDate);
+  const entries = inWindow.filter(entry => entry.state !== "withdrawn").slice(0, DELIVERED_IN_MAX_DAY_PACKAGES);
+  return { entries, withdrawnServiceDates, unavailableServiceDates: [], state: "current" as const };
 }
 
 function weeksFromProjectionDays(days: DeliveredInDayProjection[]) {

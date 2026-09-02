@@ -45,6 +45,16 @@ test("standalone Delivered-In has no idle polling and selected access remains re
   assert.match(server, /stage: "cpu_review_package"/);
 });
 
+test("main dashboard reads namespaced IndexedDB before fetching changed package bodies", async () => {
+  const page = await readFile(new URL("../app/page.tsx", import.meta.url), "utf8");
+  const cache = await readFile(new URL("../app/lib/delivered-in-indexeddb.ts", import.meta.url), "utf8");
+  assert.match(page, /readCachedDeliveredInDays/);
+  assert.match(page, /head=1/);
+  assert.match(page, /cached\.projectionVersion === entry\.projectionVersion/);
+  assert.match(page, /if \(!matches\)/);
+  assert.match(cache, /accountScope === accountScope && value\.oplocId === oplocId/);
+});
+
 test("Grab & Go CPU feed requires the service boundary and applies the requested delivery date", async () => {
   const route = await readFile(new URL("../app/api/delivered-in/grab-and-go/production/route.ts", import.meta.url), "utf8");
   assert.match(route, /assertCpuBoundary/);
