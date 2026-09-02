@@ -180,6 +180,7 @@ const bookings = () => db.collection("fikaBookings");
 
 export async function getBookingByCanonicalId(canonicalId: string) {
   const snapshot = await bookings().doc(canonicalId).get();
+  recordDataAccess({ app: "integration-hub", operation: "hospitality.booking.by-id", source: "FIRESTORE", dataset: "fikaBookings", documents: snapshot.exists ? 1 : 0, firestoreReadKind: "document" });
   if (!snapshot.exists) throw conflict("Booking was not found.");
   return snapshot.data() as CanonicalBooking;
 }
@@ -240,7 +241,7 @@ export async function mnkMenuReadContract() {
     .where("entityType", "==", "Hospitality Menu Item")
     .where("lifecycleStatus", "in", ["draft", "published"])
     .get();
-  recordDataAccess({ app: "integration-hub", operation: "hospitality-menu.read", source: "FIRESTORE", documents: snapshot.size });
+  recordDataAccess({ app: "integration-hub", operation: "hospitality.menu-contract", source: "FIRESTORE", dataset: "integrationHubCanonical", documents: snapshot.size, firestoreReadKind: "query" });
   return menuForMnkPortal(
     snapshot.docs.map((document) => document.data() as CanonicalRecord),
   );
@@ -567,6 +568,7 @@ export async function ingestMnkBooking(
       transaction.get(canonical()),
       transaction.get(sourceMappings()),
     ]);
+    recordDataAccess({ app: "integration-hub", operation: "hospitality.ingest.transaction-reads", source: "FIRESTORE", dataset: "hospitality-ingest", documents: (existingSnapshot.exists ? 1 : 0) + menusSnapshot.size + mappingsSnapshot.size, estimatedBillableReads: 1 + menusSnapshot.size + mappingsSnapshot.size, firestoreReadKind: "transaction" });
     const canonicalRecords = menusSnapshot.docs.map((document) => document.data() as CanonicalRecord);
     if (existingSnapshot.exists) {
       return ingestMnkBookingFromExisting(existingSnapshot.data() as CanonicalBooking, payload, canonicalRecords);
@@ -646,6 +648,7 @@ export async function notifyBookingConfirmedForProductionOrder(
       reason: "The order has no canonical Booking source.",
     };
   const snapshot = await bookings().doc(sourceBookingId).get();
+  recordDataAccess({ app: "integration-hub", operation: "hospitality.booking.confirmation-source", source: "FIRESTORE", dataset: "fikaBookings", documents: snapshot.exists ? 1 : 0, firestoreReadKind: "document" });
   if (!snapshot.exists)
     return {
       status: "skipped" as const,
@@ -664,6 +667,7 @@ export async function getDashboardQuoteSettings(
   const snapshot = await dashboardQuoteSettings()
     .doc(stableDocumentId(dashboardId))
     .get();
+  recordDataAccess({ app: "integration-hub", operation: "hospitality.quote-settings.by-dashboard", source: "FIRESTORE", dataset: "fikaDashboardQuoteSettings", documents: snapshot.exists ? 1 : 0, firestoreReadKind: "document" });
   return snapshot.exists
     ? (snapshot.data() as DashboardQuoteSettings)
     : defaultDashboardQuoteSettings(dashboardId);
@@ -684,6 +688,7 @@ async function getQuoteSettingsInTransaction(
   const snapshot = await transaction.get(
     dashboardQuoteSettings().doc(stableDocumentId(dashboardId)),
   );
+  recordDataAccess({ app: "integration-hub", operation: "hospitality.quote-settings.transaction-read", source: "FIRESTORE", dataset: "fikaDashboardQuoteSettings", documents: snapshot.exists ? 1 : 0, firestoreReadKind: "transaction" });
   return snapshot.exists
     ? (snapshot.data() as DashboardQuoteSettings)
     : defaultDashboardQuoteSettings(dashboardId);
@@ -698,6 +703,7 @@ export async function saveDashboardQuoteSettings(
       stableDocumentId(input.dashboardId),
     );
     const current = await transaction.get(ref);
+    recordDataAccess({ app: "integration-hub", operation: "hospitality.quote-settings.transaction-read", source: "FIRESTORE", dataset: "fikaDashboardQuoteSettings", documents: current.exists ? 1 : 0, firestoreReadKind: "transaction" });
     const existing = current.exists
       ? (current.data() as DashboardQuoteSettings)
       : defaultDashboardQuoteSettings(input.dashboardId);
@@ -751,6 +757,7 @@ async function productionOrdersForBookings(bookingIds: string[]) {
   for (let offset = 0; offset < ids.length; offset += FIRESTORE_IN_LIMIT) {
     const chunk = ids.slice(offset, offset + FIRESTORE_IN_LIMIT);
     const snapshot = await productionOrderV1s().where("sourceBookingId", "in", chunk).limit(WORKSPACE_BOOKING_LIMIT + 1).get();
+    recordDataAccess({ app: "integration-hub", operation: "hospitality.production-orders.by-bookings", source: "FIRESTORE", dataset: "fikaProductionOrdersV1", documents: snapshot.size, estimatedBillableReads: snapshot.size, firestoreReadKind: "query" });
     for (const document of snapshot.docs) {
       const order = document.data() as ProductionOrderV1;
       const existing = modern.get(order.sourceBookingId) || [];
@@ -759,6 +766,7 @@ async function productionOrdersForBookings(bookingIds: string[]) {
     }
   }
   const legacySnapshots = ids.length ? await db.getAll(...ids.map((id) => productionOrders().doc(stableDocumentId(`production-order:${id}`)))) : [];
+  if (ids.length) recordDataAccess({ app: "integration-hub", operation: "hospitality.production-orders.legacy-by-bookings", source: "FIRESTORE", dataset: "fikaProductionOrders", documents: legacySnapshots.filter(snapshot => snapshot.exists).length, estimatedBillableReads: legacySnapshots.length, firestoreReadKind: "document" });
   const latest = new Map<string, ProductionOrderV1>();
   for (const [bookingId, candidates] of modern) {
     const order = candidates.filter((candidate) => !candidate.supersededBy && candidate.status !== "amended").sort((a, b) => (b.version - a.version) || b.createdAt.localeCompare(a.createdAt))[0];
@@ -776,7 +784,7 @@ export async function bookingWorkspace(siteId?: string, authorisedOplocId?: stri
   if (siteId && authorisedOplocId) {
     const portalSourceIdentifiers = new Set([siteId.trim().toLowerCase(), siteId.trim().toLowerCase().replace(/-/g, " ")]);
     const mappingSnapshot = await sourceMappings().where("sourceIdentifier", "in", [...portalSourceIdentifiers]).get();
-    recordDataAccess({ app: "integration-hub", operation: "hospitality-booking.authorisation-mapping", source: "FIRESTORE", documents: mappingSnapshot.size });
+    recordDataAccess({ app: "integration-hub", operation: "hospitality-booking.authorisation-mapping", source: "FIRESTORE", dataset: "integrationHubSourceMappings", documents: mappingSnapshot.size, firestoreReadKind: "query" });
     const mapped = mappingSnapshot.docs.some(document => {
       const mapping = document.data() as Record<string, unknown>;
       return portalSourceIdentifiers.has(String(mapping.sourceIdentifier || "").trim().toLowerCase()) &&
@@ -794,6 +802,7 @@ export async function bookingWorkspace(siteId?: string, authorisedOplocId?: stri
     .orderBy("service.eventDate", "asc")
     .limit(WORKSPACE_BOOKING_LIMIT + 1)
     .get();
+  recordDataAccess({ app: "integration-hub", operation: "hospitality.workspace.bookings", source: "FIRESTORE", dataset: "fikaBookings", documents: snapshot.size, estimatedBillableReads: snapshot.size, firestoreReadKind: "query" });
   const truncated = snapshot.size > WORKSPACE_BOOKING_LIMIT;
   const storedRows = snapshot.docs
     .slice(0, WORKSPACE_BOOKING_LIMIT)

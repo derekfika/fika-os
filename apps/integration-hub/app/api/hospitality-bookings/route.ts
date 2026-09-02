@@ -8,6 +8,7 @@ import { requireFikaSession } from "@/lib/fika-session";
 import { assertPermission } from "@/lib/authmod";
 import { assertHospitalityBookingMutationAccess } from "@/lib/hospitality-booking-authorization";
 import { bookingWorkspace, createProductionOrder, executeBookingWorkflow, getBookingByCanonicalId, getDashboardQuoteSettingsForBooking, saveDashboardQuoteSettings } from "@/lib/hospitality-booking-service";
+import { withDataTrace } from "@fika/server-shared/data-source-meter-server";
 
 const Base = { canonicalId: z.string().min(8), expectedVersion: z.number().int().positive() };
 const Change = z.discriminatedUnion("action", [
@@ -21,7 +22,7 @@ const Change = z.discriminatedUnion("action", [
   z.object({ ...Base, action: z.literal("cancel"), reason: z.string().trim().min(3).max(1000), removeCalendar: z.boolean().optional(), cancelProduction: z.boolean().optional(), notify: z.boolean().optional() }).strict(),
 ]);
 const Settings = z.object({ action: z.literal("save-quote-settings"), dashboardId: z.string().min(3), managementFee: z.object({ mode: z.enum(["fixed", "percentage"]), value: z.number().min(0), label: z.string().trim().min(1).max(100) }).strict(), deliveryCharge: z.object({ enabled: z.boolean(), amount: z.number().min(0), label: z.string().trim().min(1).max(100) }).strict(), buildingCharges: z.object({ enabled: z.boolean(), housekeeping: z.object({ hourly: z.number().min(0), label: z.string().trim().min(1).max(100) }).strict(), security: z.object({ hourly: z.number().min(0), minimumHours: z.number().min(0), label: z.string().trim().min(1).max(100) }).strict(), aircon: z.object({ hourly: z.number().min(0), afterHour: z.number().min(0).max(23), label: z.string().trim().min(1).max(100) }).strict(), venueHire: z.object({ enabled: z.boolean(), amount: z.number().min(0), label: z.string().trim().min(1).max(100) }).strict() }).strict().optional(), vatRate: z.number().min(0).max(1), googleDriveFolderId: z.string().trim().max(200).optional(), googleMenuTemplateId: z.string().trim().max(200).optional(), googleMenuFolderId: z.string().trim().max(200).optional(), googleQuoteFolderId: z.string().trim().max(200).optional(), googleMatrixFolderId: z.string().trim().max(200).optional() }).strict();
-export async function GET(request: NextRequest) { try {
+export async function GET(request: NextRequest) { return withDataTrace({ app: "integration-hub", action: "integration-hub.hospitality-bookings.read", path: "/api/hospitality-bookings", requestId: request.headers.get("x-request-id") || undefined }, async () => { try {
   const actor = await requireActor(request);
   assertPermission(actor, "canonical.view");
   const canonicalId = request.nextUrl.searchParams.get("canonicalId") || undefined;
@@ -46,8 +47,8 @@ export async function GET(request: NextRequest) { try {
     if (!decision.allowed) throw Object.assign(new Error("That Hospitality location is not authorised for your account."), { status: 403 });
   }
   return NextResponse.json(await bookingWorkspace(site, oploc, includeArchive), { headers: { "Cache-Control": "no-store, max-age=0" } });
-} catch (error) { return errorResponse(error); } }
-export async function POST(request: NextRequest) { try {
+} catch (error) { return errorResponse(error); } }); }
+export async function POST(request: NextRequest) { return withDataTrace({ app: "integration-hub", action: "integration-hub.hospitality-bookings.mutate", path: "/api/hospitality-bookings", requestId: request.headers.get("x-request-id") || undefined }, async () => { try {
   const actor = await requireActor(request);
   const raw = await request.json();
   if (raw?.action === "save-quote-settings") {
@@ -62,4 +63,4 @@ export async function POST(request: NextRequest) { try {
   await assertHospitalityBookingMutationAccess(repository, principal, booking, actor.role === "integration-admin" || actor.role === "reviewer");
   if (change.action === "production-handoff") return NextResponse.json(await createProductionOrder(actor, change.canonicalId, change.expectedVersion));
   return NextResponse.json(await executeBookingWorkflow(actor, change.canonicalId, change.expectedVersion, change));
-} catch (error) { return errorResponse(error); } }
+} catch (error) { return errorResponse(error); } }); }
