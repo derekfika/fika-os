@@ -15,5 +15,6 @@
     ,"./data-source-meter-server": "./src/data-source-meter-server.ts"
     ,"./data-source-meter-client": "./src/data-source-meter-client.ts"
     ,"./read-package": "./src/read-package.ts"
+    ,"./weekly-publication-packet": "./src/weekly-publication-packet.ts"
   }
 }

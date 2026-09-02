@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { addMenuSlot, addOneOffDestination, assertWeekDateAvailable, cleanDuplicateEntries, copyWeekIntoWeek, createEntry, defaultWeekForDate, duplicateWeek, emptyWeek, getWeek, listWeeks, removeMenuSlot, resetWeek, saveSnapshot, updateEntry, validateWeek } from "@/lib/rolling-menu";
-import { archivePublishedDayMatrix, createPublishedMenuWeek, getMenuPublication, publicationDayBlockers, publicationPreview, publicationState, publicationWeekBlockers, type MenuPublicationWeekSignoff } from "@/lib/menu-publication";
+import { createPublishedMenuWeek, getMenuPublication, publicationDayBlockers, publicationPreview, publicationState, publicationWeekBlockers } from "@/lib/menu-publication";
 import { requireMutationActor, requirePublicationActor, resolveMenuActor } from "@/lib/auth";
 import { readDeliveredInOplocs } from "@/lib/oploc-authority";
 import { forwardProductionMaterialisationEvent } from "@/lib/production-client";
@@ -121,9 +121,8 @@ async function handlePost(request: NextRequest) {
       // This persists the canonical identity; it does not bypass allergen review.
       await reconcileCatalogueFromRollingEntries({ weekId: String(body.weekId) });
       const oplocs = await readDeliveredInOplocs(request);
-      const publication = await createPublishedMenuWeek(String(body.weekId), (body.signoff || {}) as MenuPublicationWeekSignoff, actor.uid, new Set(oplocs.map(oploc => oploc.canonicalId)));
+      const publication = await createPublishedMenuWeek(String(body.weekId), { weekContentHash: typeof body.weekContentHash === "string" ? body.weekContentHash : undefined }, actor.uid, new Set(oplocs.map(oploc => oploc.canonicalId)));
       const handoff = await replayMenuPublicationOutbox(forwardProductionMaterialisationEvent);
-      for (const publishedDay of publication.days.filter(day => day.status === "published")) await archivePublishedDayMatrix(publication.publicationId, publishedDay.publicationDayId);
       const saved = await getWeek(String(body.weekId)); return NextResponse.json({ snapshot: await resolvedSnapshot(saved), publication: await getMenuPublication(publication.publicationId), handoff: { status: handoff.failed ? "pending" : "delivered", delivered: handoff.delivered, failed: handoff.failed }, weeks: await listWeeks(), blockers: validateWeek(saved), publicationState: await publicationState(saved) });
     }
     return NextResponse.json({ error: { message: "Unknown rolling menu command." } }, { status: 400 });
