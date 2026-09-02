@@ -4,7 +4,7 @@ import { useSearchParams } from "next/navigation";
 import type { RollingSnapshot, RollingEntry, RollingWeek } from "@/lib/rolling-menu-types";
 import { hasPlannedDishes, ROLLING_SLOTS } from "@/lib/rolling-menu-types";
 import { clearMenuPlanningCache, getCachedWeek, getCachedWeekSelection, putCachedWeek, putCachedWeekSelection, type CachedMenuWeek } from "@/lib/menu-week-cache";
-import { loadCachedCatalogue, type CachedCatalogueEntry, type CatalogueManifest } from "@/lib/menu-catalogue-cache";
+import { catalogueManifestFromResponse, loadCachedCatalogue, type CachedCatalogueEntry, type CatalogueManifest } from "@/lib/menu-catalogue-cache";
 import { recordDataAccess } from "@fika/server-shared/data-source-meter-client";
 export type Dish = { id: string; name: string; category?: string; description?: string; usage?: string[]; allergenEvidence?: Array<{ allergen: string; value: "contains" | "free_from" | "may_contain" | "unknown" }>; mayContainReviewed?: boolean };
 export type WeekSummary = Pick<RollingWeek, "id" | "weekCommencing" | "entryIds" | "version">;
@@ -15,7 +15,7 @@ let cacheIdentity = typeof window !== "undefined" ? window.sessionStorage.getIte
 let catalogueCache: Promise<Dish[]> | undefined;
 const readJson = async (response: Response) => { const body = await response.json().catch(() => ({})); if (!response.ok) throw new Error(body.error?.message || `Menu could not be loaded (HTTP ${response.status}).`); return body; };
 const toDish = (entry: CachedCatalogueEntry): Dish => { const item = entry.item as Record<string, unknown> | undefined; return { id: String(entry.id), name: titleCase(String(entry.displayName ?? entry.name ?? "")), category: entry.category ? String(entry.category) : undefined, description: item?.description ? String(item.description) : undefined, allergenEvidence: Array.isArray(item?.allergenEvidence) ? item.allergenEvidence as Dish["allergenEvidence"] : [], mayContainReviewed: item?.mayContainReviewed === true }; };
-const fetchCatalogue = async () => { const response = await fetch("/api/catalogue", { cache: "no-store" }); const body = await readJson(response); return { entries: (body.entries || []) as CachedCatalogueEntry[], categories: body.categories || [], identity: response.headers.get("x-fika-menu-identity") || undefined, manifest: body.manifest as CatalogueManifest | undefined }; };
+const fetchCatalogue = async () => { const response = await fetch("/api/catalogue", { cache: "no-store" }); const body = await readJson(response); return { entries: (body.entries || []) as CachedCatalogueEntry[], categories: body.categories || [], identity: response.headers.get("x-fika-menu-identity") || undefined, manifest: body.manifest ? catalogueManifestFromResponse(body.manifest as CatalogueManifest & { package?: { contentHash?: string } }) : undefined }; };
 const fetchCatalogueManifest = async () => { const response = await fetch("/api/catalogue?manifest=true", { cache: "no-store" }); return await readJson(response) as CatalogueManifest; };
 const loadCatalogue = (onUpdate?: (dishes: Dish[]) => void) => { if (catalogueCache) { void catalogueCache.then(entries => recordDataAccess({ app: "menu-planning", operation: "catalogue.memory", source: "MEMORY", documents: entries.length, cacheHit: true })); } return catalogueCache ||= loadCachedCatalogue(fetchCatalogue, entries => onUpdate?.(entries.map(toDish)), fetchCatalogueManifest).then(entries => entries.map(toDish)); };
 export function useRollingData(options: { loadCatalogue?: boolean } = {}) {
