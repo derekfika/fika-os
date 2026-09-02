@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
-import { catalogueErrorMessage, catalogueManifestMatches, resolveCachedCatalogueEntry } from "../lib/menu-catalogue-cache";
+import { catalogueErrorMessage, catalogueManifestFromResponse, catalogueManifestMatches, resolveCachedCatalogueEntry } from "../lib/menu-catalogue-cache";
 
 test("rolling-menu read path resolves catalogue data without reconciliation writes", () => {
   const source = readFileSync(new URL("../app/api/rolling-menu/route.ts", import.meta.url), "utf8");
@@ -184,6 +184,8 @@ test("catalogue manifest comparison is version based", () => {
   assert.equal(catalogueManifestMatches({ schemaVersion: 1, catalogueVersion: 42 }, { schemaVersion: 1, catalogueVersion: 42 }), true);
   assert.equal(catalogueManifestMatches({ schemaVersion: 1, catalogueVersion: 42 }, { schemaVersion: 1, catalogueVersion: 43 }), false);
   assert.equal(catalogueManifestMatches(undefined, { schemaVersion: 1, catalogueVersion: 42 }), false);
+  assert.equal(catalogueManifestMatches({ schemaVersion: 1, catalogueVersion: 42, dishCount: 2 }, { schemaVersion: 1, catalogueVersion: 42, dishCount: 3 }), false);
+  assert.equal(catalogueManifestMatches({ schemaVersion: 1, catalogueVersion: 42, contentHash: "a" }, { schemaVersion: 1, catalogueVersion: 42, contentHash: "b" }), false);
 });
 
 test("catalogue cache preserves warm records while manifest revalidates in the background", () => {
@@ -209,6 +211,25 @@ test("stable catalogue resolution never falls back to display names", () => {
   assert.equal(resolveCachedCatalogueEntry(entries, "dish:two")?.id, "dish:two");
   assert.equal(resolveCachedCatalogueEntry(entries, "Same name"), undefined);
   assert.equal(resolveCachedCatalogueEntry(entries), undefined);
+});
+
+test("rolling-menu enrichment remains a bounded server-side stable-ID read", () => {
+  const route = readFileSync(new URL("../app/api/rolling-menu/route.ts", import.meta.url), "utf8");
+  assert.match(route, /listCatalogueEntriesForIds\(snapshot\.entries\.map\(entry => entry\.itemId \|\| ""\)\)/);
+  assert.match(route, /item\.id === entry\.itemId/);
+  assert.match(route, /resolveAllergenSnapshot/);
+  assert.doesNotMatch(route, /indexedDB|CLIENT_CACHE/);
+});
+
+test("catalogue package publication reuses live usage classification", () => {
+  const repository = readFileSync(new URL("../lib/canonical-menu-repository.ts", import.meta.url), "utf8");
+  const catalogue = readFileSync(new URL("../lib/catalogue.ts", import.meta.url), "utf8");
+  assert.match(repository, /catalogueUsagesFor\(item\)/);
+  assert.match(catalogue, /catalogueUsagesFor\(item\)/);
+});
+
+test("catalogue responses retain package content hash for cache validation", () => {
+  assert.equal(catalogueManifestFromResponse({ schemaVersion: 1, catalogueVersion: 3, package: { contentHash: "hash-v3" } }).contentHash, "hash-v3");
 });
 
 test("catalogue cache keeps cached records on manifest and refresh failures", () => {
