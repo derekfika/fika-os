@@ -5,7 +5,7 @@ import { existsSync, promises as fs } from "node:fs";
 import path from "node:path";
 import { createHash } from "node:crypto";
 import { localFixtureOrders, updateLocalFixture } from "../local-fixtures";
-import type { AllergenCellState, InternalMatrixSignature, PlannedMenuItem, ProductionPlan } from "../../lib/production-plan";
+import type { AllergenCellState, InternalMatrixSignature, MatrixArtifact, PlannedMenuItem, ProductionPlan } from "../../lib/production-plan";
 import { allergenMatrixHtml } from "../../ui/allergen-matrix";
 import { renderPdfLocally } from "../../lib/local-pdf";
 import { normaliseOperationalAllergens } from "../../../../shared/allergen-contract";
@@ -125,7 +125,7 @@ async function getPlan(request: NextRequest, orderId: string, knownPlan?: Produc
         const line = order.lines[index];
         return line ? { ...item, sourceLineId: line.canonicalId, subItems: item.subItems.map(sub => ({ ...sub, quantity: line.customerQuantity })) } : item;
       });
-      plans.set(orderId, { ...prior, id: `production-plan:${orderId}`, orderId, status: "draft", menuItems, signatures: undefined, matrixArtifact: undefined, updatedAt: now(), updatedBy: "system", audit: [...prior.audit, { action: "plan-carried-to-amended-order", at: now(), by: "system", reason: "The Booking was amended; prior allergen work was retained as a draft for the replacement CPU order." }] });
+      plans.set(orderId, { ...prior, id: `production-plan:${orderId}`, orderId, status: "draft", menuItems, signatures: undefined, matrixArtifact: undefined, masterMatrixArtifact: undefined, siteMatrixArtifacts: undefined, updatedAt: now(), updatedBy: "system", audit: [...prior.audit, { action: "plan-carried-to-amended-order", at: now(), by: "system", reason: "The Booking was amended; prior allergen work was retained as a draft for the replacement CPU order." }] });
     } else {
       plans.set(orderId, initialPlan(orderId, order));
     }
@@ -148,14 +148,14 @@ async function applyMatrixOperation(request: NextRequest, actor: Awaited<ReturnT
   if (operation.action === "save-plan") {
     plan.status = matchesSignedCheckpoint ? "planned" : "planning";
     if (matchesSignedCheckpoint) { plan.signatures = plan.signedSignatures; plan.matrixArtifact = plan.signedMatrixArtifact; }
-    else { plan.signatures = undefined; plan.matrixArtifact = undefined; }
+    else { plan.signatures = undefined; plan.matrixArtifact = undefined; plan.masterMatrixArtifact = undefined; plan.siteMatrixArtifacts = undefined; }
     plan.audit.push({ action: "plan-saved", at: now(), by: auditActor });
     updateLocalFixture(operation.orderId, current => ({ ...current, status: "planning", version: current.version + 1 }));
   } else {
     const subItems = plan.menuItems.flatMap(item => item.subItems);
     if (!plan.menuItems.length || plan.menuItems.some(item => !item.name.trim() || !item.subItems.length) || subItems.some(item => !item.name.trim() || item.evidenceStatus !== "completed")) throw Object.assign(new Error("Complete every menu item, sub-item name and allergen checker before marking the plan Planned."), { status: 422 });
     if (matchesSignedCheckpoint) { plan.signatures = plan.signedSignatures; plan.matrixArtifact = plan.signedMatrixArtifact; }
-    else if (contentChanged) { plan.signatures = undefined; plan.matrixArtifact = undefined; }
+    else if (contentChanged) { plan.signatures = undefined; plan.matrixArtifact = undefined; plan.masterMatrixArtifact = undefined; plan.siteMatrixArtifacts = undefined; }
     plan.status = "planned";
     plan.audit.push({ action: "plan-marked-planned", at: now(), by: auditActor });
     updateLocalFixture(operation.orderId, current => ({ ...current, status: "planned", version: current.version + 1 }));
@@ -192,26 +192,50 @@ async function createMatrixArtifact(plan: ProductionPlan, orderId: string, actor
   const order = await loadOrder(request, orderId);
   if (!order) throw Object.assign(new Error("The production order could not be loaded."), { status: 404 });
   if (!matrixDriveConfiguration(order).enabled) return undefined;
-  const html = allergenMatrixHtml({ clientName: order.clientName, destinationLabel: order.destinationLabel, serviceType: order.serviceType, serviceDate: order.serviceDate, serviceWindow: order.serviceWindow, requiredBy: order.requiredBy }, plan.menuItems, plan.signatures || []);
-  const contentHash = createHash("sha256").update(html).digest("hex");
-  if (plan.matrixArtifact?.contentHash === contentHash) return plan.matrixArtifact;
-  const fileName = `${(order.serviceDate || order.requiredBy.slice(0, 10))}_${(order.clientName || "booking")}_${(order.destinationLabel || "site")}_Allergen-Matrix.pdf`.replace(/[^A-Za-z0-9._-]+/g, "_");
-  const pdfPath = path.join(process.cwd(), "data", "cpu-production", "matrices", fileName);
-  let pdfBase64: string | undefined;
-  let pdfStatus: "generated" | "unavailable" = "unavailable";
-  try { await renderPdfLocally(html, pdfPath); pdfBase64 = (await fs.readFile(pdfPath)).toString("base64"); pdfStatus = "generated"; } catch { /* print-ready HTML remains available */ }
-  let driveStatus: "saved" = "saved";
-  let driveFileId: string | undefined; let driveUrl: string | undefined;
-  try {
-    const response = await fetch(`${hospitalityBase()}/api/allergen-matrix/drive`, { method: "POST", headers: { "content-type": "application/json", ...(request.headers.get("cookie") ? { cookie: request.headers.get("cookie")! } : {}), ...(request.headers.get("x-request-id") ? { "x-request-id": request.headers.get("x-request-id")! } : {}) }, body: JSON.stringify({ name: fileName, html, pdfBase64, productionOrderId: orderId, weekCommencing: weekCommencingFor(order.serviceDate || order.requiredBy.slice(0, 10)) }) });
-    const body = await response.json() as { saved?: { fileId?: string; driveUrl?: string } | null; error?: { message?: string } };
-    if (!response.ok || !body.saved) throw Object.assign(new Error(body.error?.message || "The final allergen matrix could not be persisted to the configured Drive workspace."), { status: response.status || 503 });
-    driveStatus = "saved"; driveFileId = body.saved.fileId; driveUrl = body.saved.driveUrl;
-  } catch (error) {
-    if (error && typeof error === "object" && "status" in error) throw error;
-    throw Object.assign(new Error("The final allergen matrix could not be persisted to the configured Drive workspace."), { status: 503 });
+  const serviceDate = order.serviceDate || order.requiredBy.slice(0, 10);
+  const weekCommencing = weekCommencingFor(serviceDate);
+  const dates = Array.from({ length: 5 }, (_, index) => { const date = new Date(`${weekCommencing}T12:00:00Z`); date.setUTCDate(date.getUTCDate() + index); return date.toISOString().slice(0, 10); });
+  const weekOrders = (await Promise.all(dates.map(date => productionQueue(request, date)))).flat().filter(candidate => candidate.origin === "menu_planning" && dates.includes(candidate.serviceDate || candidate.requiredBy.slice(0, 10)));
+  const storedPlans = await planRepository.getByOrderIds(weekOrders.map(candidate => candidate.canonicalId));
+  const planByOrderId = new Map(storedPlans.map(candidate => [candidate.orderId, normalisePlanAllergens(candidate)]));
+  planByOrderId.set(orderId, normalisePlanAllergens(plan));
+  const fullySigned = (candidate: ProductionPlan) => candidate.status === "planned" && candidate.menuItems.length > 0 && candidate.menuItems.every(item => item.subItems.length > 0 && item.subItems.every(sub => sub.name.trim() && sub.evidenceStatus === "completed")) && candidate.signatures?.some(signature => signature.role === "production_chef") && candidate.signatures?.some(signature => signature.role === "head_chef_site_manager");
+  const signedPairs = weekOrders.flatMap(candidate => { const candidatePlan = planByOrderId.get(candidate.canonicalId); return candidatePlan && fullySigned(candidatePlan) ? [{ order: candidate, plan: candidatePlan }] : []; });
+  if (!signedPairs.some(pair => pair.order.canonicalId === orderId)) signedPairs.push({ order, plan });
+  const stableFileToken = (value: string) => value.replace(/^oploc:/, "").replace(/[^A-Za-z0-9_-]+/g, "-").replace(/^-+|-+$/g, "") || "unassigned";
+  const allSignatures = signedPairs.flatMap(pair => pair.plan.signatures || []);
+  const withSource = (pair: { order: ProductionOrder; plan: ProductionPlan }, prefix: string) => pair.plan.menuItems.map(item => ({ ...item, id: `${prefix}:${item.id}`, name: pair.order.destinationOplocId ? `${pair.order.destinationOplocId} · ${item.name}` : item.name }));
+  const masterItems = signedPairs.flatMap(pair => withSource(pair, pair.order.canonicalId));
+  const sitePairs = new Map<string, Array<{ order: ProductionOrder; plan: ProductionPlan }>>();
+  for (const pair of signedPairs) if (pair.order.destinationOplocId) sitePairs.set(pair.order.destinationOplocId, [...(sitePairs.get(pair.order.destinationOplocId) || []), pair]);
+  const artifacts: Array<{ kind: "master" | "site"; oplocId?: string; artifact: MatrixArtifact }> = [];
+  const persistPdf = async (kind: "master" | "site", fileName: string, html: string, sourceOrder: ProductionOrder, sourceOrderId: string) => {
+    const contentHash = createHash("sha256").update(html).digest("hex");
+    const pdfPath = path.join(process.cwd(), "data", "cpu-production", "matrices", fileName);
+    let pdfBase64: string | undefined; let pdfStatus: "generated" | "unavailable" = "unavailable";
+    try { await renderPdfLocally(html, pdfPath); pdfBase64 = (await fs.readFile(pdfPath)).toString("base64"); pdfStatus = "generated"; } catch { /* Drive upload remains correctly blocked without a PDF. */ }
+    if (!pdfBase64) throw Object.assign(new Error("The final allergen checker PDF could not be generated."), { status: 503 });
+    try {
+      const drivePayload = { name: fileName, html, pdfBase64, productionOrderId: orderId, weekCommencing };
+      const response = await fetch(`${hospitalityBase()}/api/allergen-matrix/drive`, { method: "POST", headers: { "content-type": "application/json", ...(request.headers.get("cookie") ? { cookie: request.headers.get("cookie")! } : {}), ...(request.headers.get("x-request-id") ? { "x-request-id": request.headers.get("x-request-id")! } : {}) }, body: JSON.stringify(drivePayload) });
+      const body = await response.json() as { saved?: { fileId?: string; driveUrl?: string } | null; error?: { message?: string } };
+      if (!response.ok || !body.saved) throw Object.assign(new Error(body.error?.message || "The final allergen checker could not be persisted to the configured Drive workspace."), { status: response.status || 503 });
+      return { kind, ...(kind === "site" ? { oplocId: sourceOrder.destinationOplocId } : {}), artifact: { id: `allergen-${kind}:${weekCommencing}:${contentHash.slice(0, 16)}`, bookingId: sourceOrder.sourceBookingId, fileName, createdAt: timestamp, createdBy: actor, contentHash, html, pdfPath, localUrl: `${(process.env.CPU_PUBLIC_BASE_URL || "http://localhost:3400").replace(/\/$/, "")}/api/production-plan?orderId=${encodeURIComponent(sourceOrderId)}&download=pdf`, pdfStatus, driveFileId: body.saved.fileId, driveUrl: body.saved.driveUrl, driveStatus: "saved" as const } };
+    } catch (error) { if (error && typeof error === "object" && "status" in error) throw error; throw Object.assign(new Error("The final allergen checker could not be persisted to the configured Drive workspace."), { status: 503 }); }
+  };
+  const masterHtml = allergenMatrixHtml({ clientName: "FIKA OS", destinationLabel: "CPU master allergen checker", serviceType: "Delivered-In menu", serviceDate: weekCommencing, serviceWindow: order.serviceWindow, requiredBy: order.requiredBy }, masterItems, allSignatures);
+  artifacts.push(await persistPdf("master", `master-${weekCommencing}.pdf`, masterHtml, order, orderId));
+  for (const [oplocId, pairs] of sitePairs) {
+    const source = pairs[0].order;
+    const siteHtml = allergenMatrixHtml({ clientName: source.clientName, destinationLabel: oplocId, serviceType: source.serviceType, serviceDate: weekCommencing, serviceWindow: source.serviceWindow, requiredBy: source.requiredBy }, pairs.flatMap(pair => withSource(pair, pair.order.canonicalId)), allSignatures);
+    artifacts.push(await persistPdf("site", `oploc-${stableFileToken(oplocId)}-${weekCommencing}.pdf`, siteHtml, source, source.canonicalId));
   }
-  return { id: `allergen-matrix:${orderId}:${contentHash.slice(0, 16)}`, bookingId: order.sourceBookingId, fileName, createdAt: timestamp, createdBy: actor, contentHash, html, pdfPath, ...(pdfStatus === "generated" ? { localUrl: `${(process.env.CPU_PUBLIC_BASE_URL || "http://localhost:3400").replace(/\/$/, "")}/api/production-plan?orderId=${encodeURIComponent(orderId)}&download=pdf` } : {}), pdfStatus, ...(driveFileId ? { driveFileId } : {}), ...(driveUrl ? { driveUrl } : {}), driveStatus };
+  const currentSite = artifacts.find(item => item.kind === "site" && item.oplocId === order.destinationOplocId)?.artifact;
+  const master = artifacts.find(item => item.kind === "master")!.artifact;
+  if (!currentSite) throw Object.assign(new Error("The signed CPU allergen checker has no canonical OPLOC output."), { status: 422 });
+  plan.masterMatrixArtifact = master;
+  plan.siteMatrixArtifacts = Object.fromEntries(artifacts.filter(item => item.kind === "site" && item.oplocId).map(item => [item.oplocId!, item.artifact]));
+  return currentSite;
 }
 
 async function handleGet(request: NextRequest) {
@@ -340,7 +364,7 @@ async function handlePost(request: NextRequest) {
         // Keep the last signed checkpoint so an accidental allergen touch can
         // be reverted without forcing both chefs to sign the same matrix again.
         plan.signatures = undefined;
-        plan.matrixArtifact = undefined;
+        plan.matrixArtifact = undefined; plan.masterMatrixArtifact = undefined; plan.siteMatrixArtifacts = undefined;
       }
       plan.audit.push({ action: "plan-saved", at: timestamp, by: auditActor });
       updateLocalFixture(command.orderId, order => ({ ...order, status: "planning", version: order.version + 1 }));
@@ -358,7 +382,7 @@ async function handlePost(request: NextRequest) {
         plan.matrixArtifact = plan.signedMatrixArtifact;
       } else if (contentChanged) {
         plan.signatures = undefined;
-        plan.matrixArtifact = undefined;
+        plan.matrixArtifact = undefined; plan.masterMatrixArtifact = undefined; plan.siteMatrixArtifacts = undefined;
       }
       plan.status = "planned"; plan.audit.push({ action: "plan-marked-planned", at: timestamp, by: auditActor }); updateLocalFixture(command.orderId, order => ({ ...order, status: "planned", version: order.version + 1 }));
       await syncCanonicalLifecycle(request, command.orderId, "planned", "Production plan marked Planned by the production chef.");
