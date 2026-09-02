@@ -8,8 +8,10 @@ test("rolling-menu read path resolves catalogue data without reconciliation writ
   const getBody = source.slice(source.indexOf("export async function GET"), source.indexOf("export async function POST"));
   assert.doesNotMatch(getBody, /syncRollingEntries|attachCanonicalDishIds|saveSnapshot|updateRollingState/);
   assert.match(getBody, /listWeekSummaries/);
+  assert.match(getBody, /getWeekHead/);
   assert.match(getBody, /getWeekSnapshot/);
   assert.match(getBody, /Promise\.all\(\[listCatalogueEntriesForIds\(.*publicationState/);
+  assert.doesNotMatch(getBody, /listCatalogueEntries\(\)/);
 });
 
 test("Delivered-In OPLOC lookups reuse the authorized service-arrangements response", () => {
@@ -40,10 +42,13 @@ test("hosted rolling reads use targeted week and publication paths", () => {
   const planner = readFileSync(new URL("../app/planner-data.ts", import.meta.url), "utf8");
   assert.match(repository, /listWeekSummaries\(\)/);
   assert.match(repository, /collection\(MENU_PLANNING_COLLECTIONS\.weeks\)\.limit\(100\)\.get/);
+  assert.match(repository, /getWeekHead\(weekId: string\)/);
+  assert.match(repository, /collection\(MENU_PLANNING_COLLECTIONS\.weeks\)\.doc\(weekId\)\.get/);
   assert.match(repository, /getWeekSnapshot\(weekId: string\)/);
   assert.match(repository, /where\("sourceWeekId", "==", weekId\)/);
   assert.match(planner, /weekCache/);
-  assert.match(planner, /summariesOnly/);
+  assert.match(planner, /summariesOnly=true&weekId=/);
+  assert.doesNotMatch(planner, /fetch\("\/api\/rolling-menu\?summariesOnly=true"/);
   assert.match(planner, /neighbor/);
   assert.match(planner, /getCachedWeek|putCachedWeek/);
   assert.match(planner, /getCachedWeekSelection/);
@@ -55,6 +60,15 @@ test("hosted rolling reads use targeted week and publication paths", () => {
   assert.match(weekCache, /fika-menu-planning/);
   assert.match(weekCache, /selectedWeek/);
   assert.match(weekCache, /identity/);
+});
+
+test("rolling resolution never guesses catalogue identity from a label", () => {
+  const route = readFileSync(new URL("../app/api/rolling-menu/route.ts", import.meta.url), "utf8");
+  assert.match(route, /entry\.itemId \? resolvedCatalogue\.find\(item => item\.id === entry\.itemId\)/);
+  assert.doesNotMatch(route, /item\.name\.trim\(\)\.toLocaleLowerCase\(\) === entry\.itemLabel/);
+  assert.match(route, /missing-stable-catalogue-id/);
+  assert.match(route, /catalogue-item-not-found/);
+  assert.doesNotMatch(route, /await listCatalogueEntries\(\)/);
 });
 
 test("hosted mutation and publication paths expose bounded transaction scopes", () => {
