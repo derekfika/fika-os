@@ -3,9 +3,9 @@ import type { MenuItem } from "./domain";
 import { normaliseDishCategory } from "./dish-categories";
 import { attachCanonicalDishIds, getWeek, listAllEntries } from "./rolling-menu";
 import { syncRollingEntries } from "./canonical-menu-repository";
+import { catalogueUsagesFor, type CatalogueUsage } from "./catalogue-usage";
 
 export type CatalogueKind = "canonical";
-export type CatalogueUsage = "hospitality" | "delivered-in" | "production" | "unknown";
 
 export type CatalogueEntry = {
   id: string;
@@ -31,15 +31,6 @@ function categoryFor(item: Pick<MenuItem, "category" | "subcategory">) {
   return normaliseDishCategory(item.category || item.subcategory);
 }
 
-function usagesFor(item: Pick<MenuItem, "category" | "subcategory">): CatalogueUsage[] {
-  const value = `${item.category} ${item.subcategory || ""}`.toLowerCase();
-  const usages: CatalogueUsage[] = [];
-  if (value.includes("hospitality") || value.includes("sandwich") || value.includes("drink")) usages.push("hospitality");
-  if (value.includes("delivered") || value.includes("lunch") || value.includes("salad") || value.includes("soup")) usages.push("delivered-in");
-  if (value.includes("production") || value.includes("recipe")) usages.push("production");
-  return usages.length ? usages : ["unknown"];
-}
-
 function canonicalEntry(item: MenuItem): CatalogueEntry {
   return {
     id: item.canonicalId,
@@ -48,7 +39,7 @@ function canonicalEntry(item: MenuItem): CatalogueEntry {
     description: item.description || item.preparationDescription,
     category: categoryFor(item),
     subcategory: item.subcategory,
-    usage: usagesFor(item),
+    usage: catalogueUsagesFor(item),
     status: item.recipeStatus || item.reviewStatus,
     reviewStatus: item.reviewStatus,
     sourceLabel: item.sourceName,

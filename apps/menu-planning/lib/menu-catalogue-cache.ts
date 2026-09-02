@@ -2,11 +2,15 @@
 import { recordDataAccess } from "@fika/server-shared/data-source-meter-client";
 
 export type CachedCatalogueEntry = Record<string, unknown> & { id: string };
-export type CatalogueManifest = { schemaVersion: number; catalogueVersion: number; updatedAt?: string; dishCount?: number };
+export type CatalogueManifest = { schemaVersion: number; catalogueVersion: number; updatedAt?: string; dishCount?: number; contentHash?: string };
 export type CachedCatalogue = { namespace: string; schemaVersion: number; packageVersion?: number; cachedAt: number; manifestCheckedAt?: number; recordCount: number; entries: CachedCatalogueEntry[]; categories: string[]; manifest?: CatalogueManifest };
 export type CatalogueFetchResult = { entries: CachedCatalogueEntry[]; categories?: string[]; identity?: string; manifest?: CatalogueManifest };
 export type CatalogueLoadState = "CHECKING_LOCAL_CACHE" | "CHECKING_VERSION" | "DOWNLOADING" | "VERIFYING" | "DECOMPRESSING" | "INSTALLING" | "READY" | "ERROR" | "USING_PREVIOUS_VERSION";
-export const catalogueManifestMatches = (cached?: CatalogueManifest, current?: CatalogueManifest) => Boolean(cached && current && cached.schemaVersion === current.schemaVersion && cached.catalogueVersion === current.catalogueVersion);
+export const catalogueManifestMatches = (cached?: CatalogueManifest, current?: CatalogueManifest) => Boolean(cached && current && cached.schemaVersion === current.schemaVersion && cached.catalogueVersion === current.catalogueVersion && (cached.dishCount === undefined || current.dishCount === undefined || cached.dishCount === current.dishCount) && (!cached.contentHash || !current.contentHash || cached.contentHash === current.contentHash));
+
+export function catalogueManifestFromResponse(value: CatalogueManifest & { package?: { contentHash?: string } }) {
+  return value.package ? { ...value, contentHash: value.package.contentHash } : value;
+}
 
 /** Resolve catalogue records only by their canonical stable ID. */
 export function resolveCachedCatalogueEntry(entries: CachedCatalogueEntry[], id?: string) {

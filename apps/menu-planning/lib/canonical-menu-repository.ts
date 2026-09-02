@@ -11,6 +11,7 @@ import { Firestore } from "@google-cloud/firestore";
 import { recordMenuPlanningReadBudget } from "./read-budget";
 import { getCatalogueManifest } from "./catalogue-manifest";
 import { recordDataAccess } from "@fika/server-shared/data-source-meter-server";
+import { catalogueUsagesFor } from "./catalogue-usage";
 
 const filePath = appDataPath("menu-planning", "menu-planning", "canonical-menu-items.json");
 const HOSTED_CATALOGUE_TTL_MS = 60_000;
@@ -58,7 +59,7 @@ async function publishItemsBestEffort(items: MenuItem[]) {
     const { publishCataloguePackage } = await import("./catalogue-read-package");
     const entries = items.filter(item => item.reviewStatus !== "archived").map(item => ({
       id: item.canonicalId, kind: "canonical" as const, name: item.displayName, description: item.description || item.preparationDescription,
-      category: normaliseDishCategory(item.category || item.subcategory), subcategory: item.subcategory, usage: ["unknown" as const],
+      category: normaliseDishCategory(item.category || item.subcategory), subcategory: item.subcategory, usage: catalogueUsagesFor(item),
       status: item.recipeStatus || item.reviewStatus, reviewStatus: item.reviewStatus, sourceLabel: item.sourceName,
       sourceEvidence: `${item.sourceReference.workbook} · ${item.sourceReference.sheet}`,
       recipeAvailable: Boolean(item.ingredients?.length || item.methodSteps?.length || item.preparationDescription),
