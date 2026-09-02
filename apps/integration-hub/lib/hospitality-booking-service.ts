@@ -31,6 +31,7 @@ import {
 } from "./production-domain";
 import { localBookingFixtures } from "./local-booking-fixtures";
 import { capGallagherMinimum, GALLAGHER_MINIMUM_GUESTS, isGallagherBooking } from "./gallagher-rules";
+import { recordDataAccess } from "@fika/server-shared/data-source-meter-server";
 
 export const MNK_BOOKING_INGESTION_CONTRACT_VERSION =
   "fika.booking-ingestion.mnk.v1";
@@ -235,7 +236,13 @@ export function menuForMnkPortal(records: CanonicalRecord[]) {
 }
 
 export async function mnkMenuReadContract() {
-  const snapshot = await canonical().get();
+  // Keep the MNK contract bounded to menu-item lifecycle states. The ordinary
+  // GET must not reconstruct it by scanning unrelated canonical entities.
+  const snapshot = await canonical()
+    .where("entityType", "==", "Hospitality Menu Item")
+    .where("lifecycleStatus", "in", ["draft", "published"])
+    .get();
+  recordDataAccess({ app: "integration-hub", operation: "hospitality-menu.read", source: "FIRESTORE", documents: snapshot.size });
   return menuForMnkPortal(
     snapshot.docs.map((document) => document.data() as CanonicalRecord),
   );
@@ -719,8 +726,9 @@ export async function saveDashboardQuoteSettings(
 export async function bookingWorkspace(siteId?: string, authorisedOplocId?: string, includeArchive = false) {
   const today = londonBusinessDate();
   if (siteId && authorisedOplocId) {
-    const mappingSnapshot = await sourceMappings().get();
     const portalSourceIdentifiers = new Set([siteId.trim().toLowerCase(), siteId.trim().toLowerCase().replace(/-/g, " ")]);
+    const mappingSnapshot = await sourceMappings().where("sourceIdentifier", "in", [...portalSourceIdentifiers]).get();
+    recordDataAccess({ app: "integration-hub", operation: "hospitality-booking.authorisation-mapping", source: "FIRESTORE", documents: mappingSnapshot.size });
     const mapped = mappingSnapshot.docs.some(document => {
       const mapping = document.data() as Record<string, unknown>;
       return portalSourceIdentifiers.has(String(mapping.sourceIdentifier || "").trim().toLowerCase()) &&
