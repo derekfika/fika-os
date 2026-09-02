@@ -9,7 +9,8 @@ test("Delivered-In location parsing has safe defaults and stable site/period sta
 });
 
 test("navigation hrefs preserve authorised site and selected week/day", () => {
-  assert.equal(deliveredInHref({ view: "allergens", oplocId: "site:one", week: "2026-08-24", day: "2026-08-25" }), "/?view=allergens&oplocId=site%3Aone&week=2026-08-24&day=2026-08-25");
+  assert.deepEqual(readDeliveredInLocation("?view=allergens&oplocId=site%3Aone&week=2026-08-24&day=2026-08-25"), { view: "today", oplocId: "site:one", week: "2026-08-24", day: "2026-08-25" });
+  assert.equal(deliveredInHref({ view: "today", oplocId: "site:one", week: "2026-08-24", day: "2026-08-25" }), "/?oplocId=site%3Aone&week=2026-08-24&day=2026-08-25");
   assert.equal(deliveredInHref({ view: "today", oplocId: "site:one" }, "/grab-and-go"), "/grab-and-go?oplocId=site%3Aone");
 });
 
@@ -19,6 +20,9 @@ test("Delivered-In UI exposes navigation, browser history and conditional Grab &
   assert.match(page, /aria-label=\"Delivered-In navigation\"/);
   assert.match(page, /addEventListener\(\"popstate\"/);
   assert.match(page, /selectedSite\?\.services\?\.grabAndGo/);
+  assert.doesNotMatch(page, /AllergenView|Allergens<|view === "allergens"/);
+  assert.match(page, /View signed CPU checker PDF/);
   assert.match(grab, /requested\.oplocId/);
   assert.match(grab, /oplocId: siteId/);
+  assert.doesNotMatch(grab, /view=allergens|Allergens/);
 });
