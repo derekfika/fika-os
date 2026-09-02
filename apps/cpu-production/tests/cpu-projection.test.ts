@@ -53,3 +53,41 @@ test("CPU projection preserves booking dietary and note context", () => {
   assert.deepEqual(hydrated.lines[0].dietaries, { vegetarian: 3 });
   assert.equal(hydrated.lines[0].productionInstructions, "Label each portion.");
 });
+
+test("CPU projection preserves allergen review source identity and evidence", () => {
+  const source = {
+    ...order("order:allergen-context"),
+    sourceEntityId: "menu-publication:1",
+    sourcePublicationDayId: "menu-publication-day:1",
+    sourceVersion: 4,
+    sourceContentHash: "sha256:menu",
+    lines: [{
+      ...order("order:allergen-context").lines[0],
+      canonicalId: "production-line:1",
+      sourceBookingLineId: "booking-line:1",
+      sourceMenuItemId: "menu-item:1",
+      allergenEvidenceStatus: "confirmed" as const,
+      approvedAllergenSnapshot: {
+        allergens: { milk: "contains" },
+        mayContainNotes: "Prepared in a shared kitchen.",
+        sourcePublicationDayId: "menu-publication-day:1",
+        sourceVersion: 4,
+        sourceContentHash: "sha256:menu",
+      },
+    }],
+  };
+  const projection = buildCpuDayProjection("2026-08-24", [source]);
+  const projected = projection.orders[0];
+  const hydrated = cpuProjectionToOrders(projection)[0];
+  assert.equal(projected.sourceEntityId, "menu-publication:1");
+  assert.equal(projected.sourcePublicationDayId, "menu-publication-day:1");
+  assert.equal(projected.sourceVersion, 4);
+  assert.equal(projected.quantities[0].sourceLineId, "production-line:1");
+  assert.equal(projected.quantities[0].sourceMenuItemId, "menu-item:1");
+  assert.equal(projected.quantities[0].allergenEvidenceStatus, "confirmed");
+  assert.deepEqual(projected.quantities[0].approvedAllergenSnapshot, source.lines[0].approvedAllergenSnapshot);
+  assert.equal(hydrated.sourcePublicationDayId, "menu-publication-day:1");
+  assert.equal(hydrated.lines[0].canonicalId, "production-line:1");
+  assert.equal(hydrated.lines[0].sourceMenuItemId, "menu-item:1");
+  assert.deepEqual(hydrated.lines[0].approvedAllergenSnapshot, source.lines[0].approvedAllergenSnapshot);
+});

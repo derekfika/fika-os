@@ -3,6 +3,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ProductionOrder } from "../../lib/production-types";
 import type { InternalMatrixSignature } from "../lib/production-plan";
+import { cpuProjectionToOrders } from "../../lib/cpu-dashboard-adapter";
+import { loadCpuAllergenProjection } from "../lib/cpu-allergen-projection-loader";
 import AllergenReviewMatrix from "../ui/AllergenReviewMatrix";
 import { SignatureModal } from "../ui/HospitalityAllergenDetail";
 import { buildAllergenReviewRows, destination, orderDate } from "../../lib/production-day";
@@ -12,7 +14,7 @@ function formatDate(date: string) { return new Date(`${date}T12:00:00`).toLocale
 
 export default function CpuAllergenReviewPage() {
   const [orders, setOrders] = useState<ProductionOrder[]>([]); const [date, setDate] = useState(""); const [site, setSite] = useState(""); const [review, setReview] = useState("all"); const [error, setError] = useState(""); const [signing, setSigning] = useState<{ orderId: string; role: "production_chef" | "head_chef_site_manager" }>(); const [checkedCount, setCheckedCount] = useState(0); const [signatures, setSignatures] = useState<InternalMatrixSignature[]>([]); const [signatureRoles, setSignatureRoles] = useState<Array<"production_chef" | "head_chef_site_manager">>([]); const [signatureMessage, setSignatureMessage] = useState(""); const [signatureBusy, setSignatureBusy] = useState(false); const saveReviewRef = useRef<() => Promise<void>>(() => Promise.resolve());
-  const load = async (selectedDate: string) => { const response = await fetch(`/api/production?serviceDate=${encodeURIComponent(selectedDate)}&scope=delivered_in`, { cache: "no-store" }); const body = await response.json(); if (!response.ok) { setError(body.error?.message || "Could not load allergen review."); return; } setOrders((body.orders || []).filter((order: ProductionOrder) => order.origin === "menu_planning")); };
+  const load = async (selectedDate: string) => { setError(""); setOrders([]); setCheckedCount(0); setSignatures([]); setSignatureRoles([]); try { const loaded = await loadCpuAllergenProjection(selectedDate, "delivered_in"); setOrders(cpuProjectionToOrders(loaded.projection).filter(order => order.origin === "menu_planning")); } catch (cause) { setError(cause instanceof Error ? cause.message : "Could not load allergen review."); } };
   useEffect(() => { const params = new URLSearchParams(window.location.search); setDate(params.get("date") || new Date().toISOString().slice(0, 10)); }, []);
   useEffect(() => { if (date) void load(date); }, [date]);
   const dateOrders = useMemo(() => orders.filter(order => !date || orderDate(order) === date), [orders, date]); const dayOrders = dateOrders; const rows = useMemo(() => buildAllergenReviewRows(dayOrders), [dayOrders]); const sites = [...new Map(dateOrders.map(order => [order.destinationOplocId || destination(order), destination(order)])).entries()]; const approved = rows.filter(row => row.snapshot).length; const attention = rows.filter(row => row.attention).length; const allChecked = rows.length > 0 && checkedCount === rows.length; const signatureOrderId = rows.length > 0 ? dayOrders[0]?.canonicalId : undefined; const productionSigned = signatureRoles.includes("production_chef"); const headChefSigned = signatureRoles.includes("head_chef_site_manager"); const fullySigned = productionSigned && headChefSigned;
