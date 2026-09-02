@@ -36,6 +36,16 @@ export async function readCachedDeliveredInDay(accountScope: string, oplocId: st
   } catch { return undefined; }
 }
 
+export async function readCachedDeliveredInDays(accountScope: string, oplocId: string) {
+  if (typeof indexedDB === "undefined" || !accountScope || !oplocId) return [] as ProjectedDay[];
+  try {
+    const database = await openDatabase();
+    const values = await new Promise<CachedProjection[]>((resolve, reject) => { const request = database.transaction(storeName, "readonly").objectStore(storeName).getAll(); request.onsuccess = () => resolve((request.result as CachedProjection[]).filter(value => value.accountScope === accountScope && value.oplocId === oplocId)); request.onerror = () => reject(request.error); });
+    database.close();
+    return values.map(value => value.projection);
+  } catch { return [] as ProjectedDay[]; }
+}
+
 export async function evictWithdrawnDeliveredInDays(accountScope: string, oplocId: string, serviceDates: string[]) {
   if (typeof indexedDB === "undefined" || !accountScope || !oplocId || !serviceDates.length) return;
   try {
