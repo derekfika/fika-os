@@ -3,12 +3,14 @@ import { createHash } from "node:crypto";
 import { gzipSync } from "node:zlib";
 import test from "node:test";
 import { decodeMenuPlanningWeekPacket, packetPublicationsForRange } from "../lib/menu-planning-week-packet";
+import { encodeWeeklyPublicationPacket } from "@fika/server-shared/weekly-publication-packet";
 import { projectPublishedWeeks } from "../lib/projection";
 
 const snapshot = {
   schemaVersion: 1,
   publicationId: "menu-publication:2026-09-07",
   sourceWeekId: "rolling-week:2026-09-07",
+  sourceWeekVersion: 12,
   publicationVersion: 3,
   week: { weekCommencing: "2026-09-07", weekEnding: "2026-09-13" },
   days: [{
@@ -59,4 +61,11 @@ test("Delivered-In rejects a weekly packet whose compressed bytes were changed",
   const value = encoded();
   value.payloadBase64 = value.payloadBase64.slice(0, -8) + "AAAAAAAA";
   assert.throws(() => decodeMenuPlanningWeekPacket({ packet: value }), /integrity|base64|gzip/i);
+});
+
+test("Delivered-In consumes the shared Menu Planning packet envelope", () => {
+  const packet = decodeMenuPlanningWeekPacket(encodeWeeklyPublicationPacket(snapshot));
+  const [publication] = packetPublicationsForRange([packet], "2026-09-01", "2026-09-30");
+  const [week] = projectPublishedWeeks([publication], "oploc:haleon", new Set(["oploc:haleon"]));
+  assert.equal(week.days[0].entries[0].quantity, 10);
 });

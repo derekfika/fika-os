@@ -83,34 +83,39 @@ function validatePacket(value: unknown, expectedPublicationId?: string): MenuPla
 
 function decodeEncodedPacket(document: PacketDocument, expectedPublicationId?: string) {
   const envelope = isRecord(document.packet) ? document.packet : document;
+  const manifest = isRecord(envelope.manifest) ? envelope.manifest : envelope;
   const payload = envelope.payloadBase64 ?? envelope.payload;
-  if (envelope.encoding !== "gzip+base64" || typeof payload !== "string" || typeof envelope.contentHash !== "string") throw packetFailure("The Menu Planning weekly packet is missing its gzip/base64 integrity metadata.");
+  const contentHash = typeof envelope.contentHash === "string" ? envelope.contentHash : manifest.contentHash;
+  const compressedSize = envelope.compressedSize ?? manifest.compressedSize;
+  const uncompressedSize = envelope.uncompressedSize ?? manifest.uncompressedSize;
+  const compressedEncoding = envelope.encoding === "gzip+base64" || manifest.compression === "gzip";
+  if (!compressedEncoding || typeof payload !== "string" || typeof contentHash !== "string") throw packetFailure("The Menu Planning weekly packet is missing its gzip/base64 integrity metadata.");
   let compressed: Buffer;
   try {
     compressed = Buffer.from(payload, "base64");
     if (!compressed.length || compressed.toString("base64").replace(/=+$/, "") !== payload.replace(/=+$/, "")) throw new Error("invalid base64");
   } catch { throw packetFailure("The Menu Planning weekly packet contains invalid base64 data."); }
-  if (sha256(compressed) !== envelope.contentHash) throw packetFailure("The Menu Planning weekly packet failed its SHA-256 integrity check.");
-  const cached = decodedPacketCache.get(envelope.contentHash);
+  if (sha256(compressed) !== contentHash) throw packetFailure("The Menu Planning weekly packet failed its SHA-256 integrity check.");
+  const cached = decodedPacketCache.get(contentHash);
   if (cached) {
     if (expectedPublicationId && cached.publicationId !== expectedPublicationId) throw packetFailure("The Menu Planning weekly packet publication identity does not match the requested publication.");
     return cached;
   }
-  if (Number.isInteger(envelope.compressedSize) && envelope.compressedSize !== compressed.byteLength) throw packetFailure("The Menu Planning weekly packet compressed size is incorrect.");
+  if (Number.isInteger(compressedSize) && compressedSize !== compressed.byteLength) throw packetFailure("The Menu Planning weekly packet compressed size is incorrect.");
   let plain: Buffer;
   try { plain = gunzipSync(compressed); } catch { throw packetFailure("The Menu Planning weekly packet is not valid gzip data."); }
-  if (Number.isInteger(envelope.uncompressedSize) && envelope.uncompressedSize !== plain.byteLength) throw packetFailure("The Menu Planning weekly packet uncompressed size is incorrect.");
+  if (Number.isInteger(uncompressedSize) && uncompressedSize !== plain.byteLength) throw packetFailure("The Menu Planning weekly packet uncompressed size is incorrect.");
   let decoded: unknown;
   try { decoded = JSON.parse(plain.toString("utf8")); } catch { throw packetFailure("The Menu Planning weekly packet contains invalid JSON."); }
   const packet = validatePacket(isRecord(decoded) && "snapshot" in decoded ? decoded.snapshot : decoded, expectedPublicationId);
   if (decodedPacketCache.size >= 32) decodedPacketCache.delete(decodedPacketCache.keys().next().value as string);
-  decodedPacketCache.set(envelope.contentHash, packet);
+  decodedPacketCache.set(contentHash, packet);
   return packet;
 }
 
 export function decodeMenuPlanningWeekPacket(value: unknown, expectedPublicationId?: string): MenuPlanningWeekPacket {
   if (!isRecord(value)) throw packetFailure("The Menu Planning weekly packet is not an object.");
-  if (value.encoding === "gzip+base64" || isRecord(value.packet) && (value.packet.encoding === "gzip+base64" || value.packet.payloadBase64 !== undefined || value.packet.payload !== undefined)) return decodeEncodedPacket(value, expectedPublicationId);
+  if (value.encoding === "gzip+base64" || value.payloadBase64 !== undefined || isRecord(value.manifest) || isRecord(value.packet) && (value.packet.encoding === "gzip+base64" || value.packet.payloadBase64 !== undefined || value.packet.payload !== undefined)) return decodeEncodedPacket(value, expectedPublicationId);
   return validatePacket(isRecord(value.snapshot) ? value.snapshot : value, expectedPublicationId);
 }
 
@@ -128,12 +133,11 @@ export type MenuPlanningPacketPublication = ReturnType<typeof toPublication>;
 export const packetPublication = toPublication;
 
 async function readDocument(documentId: string) {
-  const packet = await db.collection(MENU_PLANNING_WEEK_PACKET_COLLECTION).doc(documentId).get();
-  recordDataAccess({ app: "cpu-production", operation: "menu-planning.week-packet.by-id", source: "FIRESTORE", dataset: MENU_PLANNING_WEEK_PACKET_COLLECTION, documents: 1, firestoreReadKind: "document" });
-  if (packet.exists) return decodeMenuPlanningWeekPacket(packet.data(), documentId);
   const publication = await db.collection(MENU_PLANNING_PUBLICATIONS_COLLECTION).doc(documentId).get();
   recordDataAccess({ app: "cpu-production", operation: "menu-planning.publication-head.by-id", source: "FIRESTORE", dataset: MENU_PLANNING_PUBLICATIONS_COLLECTION, documents: 1, firestoreReadKind: "document" });
   if (!publication.exists) return undefined;
+  const publicationData = publication.data() || {};
+  if (publicationData.weekPacket) return decodeMenuPlanningWeekPacket(publicationData.weekPacket, documentId);
   const snapshotId = publication.data()?.compiledSnapshotId;
   if (typeof snapshotId !== "string") return undefined;
   const compiled = await db.collection(MENU_PLANNING_SNAPSHOTS_COLLECTION).doc(snapshotId).get();
@@ -145,9 +149,10 @@ export async function readMenuPlanningWeekPacket(publicationId: string) { return
 
 export async function readMenuPlanningWeekPackets(fromWeek: string, toWeek: string) {
   try {
-    const packets = await db.collection(MENU_PLANNING_WEEK_PACKET_COLLECTION).where("weekCommencing", ">=", fromWeek).where("weekCommencing", "<=", toWeek).limit(16).get();
-    recordDataAccess({ app: "cpu-production", operation: "menu-planning.week-packets.by-window", source: "FIRESTORE", dataset: MENU_PLANNING_WEEK_PACKET_COLLECTION, documents: packets.size, firestoreReadKind: "query" });
-    if (packets.size) return packets.docs.map(document => decodeMenuPlanningWeekPacket(document.data()));
+    const publications = await db.collection(MENU_PLANNING_PUBLICATIONS_COLLECTION).where("weekCommencing", ">=", fromWeek).where("weekCommencing", "<=", toWeek).limit(16).get();
+    recordDataAccess({ app: "cpu-production", operation: "menu-planning.week-packets.by-window", source: "FIRESTORE", dataset: MENU_PLANNING_PUBLICATIONS_COLLECTION, documents: publications.size, firestoreReadKind: "query" });
+    const packets = publications.docs.map(document => document.data()?.weekPacket).filter(Boolean);
+    if (packets.length) return packets.map(packet => decodeMenuPlanningWeekPacket(packet));
   } catch { /* An absent packet collection/index retains legacy compatibility. */ }
   try {
     const snapshots = await db.collection(MENU_PLANNING_SNAPSHOTS_COLLECTION).where("week.weekCommencing", ">=", fromWeek).where("week.weekCommencing", "<=", toWeek).limit(16).get();

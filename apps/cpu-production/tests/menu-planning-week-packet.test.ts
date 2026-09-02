@@ -3,11 +3,13 @@ import { createHash } from "node:crypto";
 import { gzipSync } from "node:zlib";
 import test from "node:test";
 import { decodeMenuPlanningWeekPacket, packetPublication } from "../lib/menu-planning-week-packet";
+import { encodeWeeklyPublicationPacket } from "@fika/server-shared/weekly-publication-packet";
 
 const snapshot = {
   schemaVersion: 1,
   publicationId: "menu-publication:2026-09-07",
   sourceWeekId: "rolling-week:2026-09-07",
+  sourceWeekVersion: 12,
   publicationVersion: 3,
   week: { weekCommencing: "2026-09-07", weekEnding: "2026-09-13" },
   days: [{
@@ -59,4 +61,11 @@ test("CPU weekly packet consumer rejects corrupt gzip/base64 content and wrong p
 test("CPU weekly packet consumer remains compatible with the plain compiled snapshot", () => {
   const packet = decodeMenuPlanningWeekPacket(snapshot, snapshot.publicationId);
   assert.equal(packet.days[0].entries[0].allocations[0].quantity, 10);
+});
+
+test("CPU consumes the shared Menu Planning packet envelope stored on the publication document", () => {
+  const encoded = encodeWeeklyPublicationPacket(snapshot);
+  const packet = decodeMenuPlanningWeekPacket(encoded, snapshot.publicationId);
+  assert.equal(packet.publicationId, snapshot.publicationId);
+  assert.equal(packet.days[0].entries[0].portions, 25);
 });
