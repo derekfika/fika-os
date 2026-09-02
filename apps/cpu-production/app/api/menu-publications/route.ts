@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireCpuActor } from "../../../lib/cpu-access-client";
 import { menuPlanningJson } from "../../../lib/menu-planning-http-client";
 import { publishedAllergenMatrixHtml } from "../../../lib/published-allergen-matrix";
+import { packetPublication, packetPublicationsForRange, readMenuPlanningWeekPacket, readMenuPlanningWeekPackets } from "../../../lib/menu-planning-week-packet";
 
 export const dynamic = "force-dynamic";
 type Publication = { publicationId: string; sourceWeekId: string; weekCommencing: string; weekEnding: string; days: Array<{ publicationDayId: string; status: "published" | "superseded" | "withdrawn"; date: string; dayName: string; version: number; contentHash: string; entries: Array<{ dishName: string; sourceEntryId: string; slot: string; portions: number; allocations: Array<{ destinationLabel: string; quantity: number }>; allergens: Record<string, "clear" | "contains" | "may_contain">; mayContainNotes?: string }>; allergenSignoff: { productionChef?: { printedName: string; signedAt: string; signatureDataUrl?: string; actor?: string; attestation?: string }; headChefSiteManager?: { printedName: string; signedAt: string; signatureDataUrl?: string; actor?: string; attestation?: string }; printedName?: string; signedAt?: string; signatureDataUrl?: string; dayContentHash: string } }> };
@@ -12,6 +13,24 @@ function errorResponse(error: unknown) { const status = typeof (error as { statu
 export async function GET(request: NextRequest) {
   try {
     await requireCpuActor(request);
+    if (request.nextUrl.searchParams.get("format") !== "matrix") {
+      const requestedPublicationId = request.nextUrl.searchParams.get("publicationId");
+      if (requestedPublicationId) {
+        try {
+          const packet = await readMenuPlanningWeekPacket(requestedPublicationId);
+          if (packet) return NextResponse.json({ publication: packetPublication(packet) }, { headers: { "Cache-Control": "no-store" } });
+        } catch (error) {
+          if ((error as { code?: string }).code === "MENU_PLANNING_WEEK_PACKET_INVALID") throw error;
+        }
+      } else {
+        const fromWeek = request.nextUrl.searchParams.get("fromWeek");
+        const toWeek = request.nextUrl.searchParams.get("toWeek");
+        if (fromWeek && toWeek) {
+          const packets = await readMenuPlanningWeekPackets(fromWeek, toWeek);
+          if (packets.length) return NextResponse.json({ publications: packetPublicationsForRange(packets, fromWeek, toWeek) }, { headers: { "Cache-Control": "no-store" } });
+        }
+      }
+    }
     const response = await menuPlanningJson(request, `/api/rolling-menu/publications${request.nextUrl.search}`, isPublicationResponse);
     if (request.nextUrl.searchParams.get("format") !== "matrix") return NextResponse.json(response, { headers: { "Cache-Control": "no-store" } });
     const publication = response.publication;
