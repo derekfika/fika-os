@@ -42,7 +42,7 @@ export const CLOUD_LOGGING_PAGE_SIZE = 200;
 export const CLOUD_LOGGING_MAX_PAGES = 50;
 export const CLOUD_LOGGING_MAX_ENTRIES = CLOUD_LOGGING_PAGE_SIZE * CLOUD_LOGGING_MAX_PAGES;
 export const TRACE_DETAIL_LIMIT = 250;
-export const EXPECTED_STAGING_INSTRUMENTATION = Object.fromEntries(CANONICAL_OS_APPS.map(app => [app, ["integration-hub", "logistics", "menu-planning"].includes(app) ? "enabled" : "unknown"])) as Record<string, "enabled" | "not-enabled" | "unknown">;
+export const EXPECTED_STAGING_INSTRUMENTATION = Object.fromEntries(CANONICAL_OS_APPS.map(app => [app, ["integration-hub", "logistics", "menu-planning", "cpu-production", "delivered-in", "hospitality-booking"].includes(app) ? "enabled" : "unknown"])) as Record<string, "enabled" | "not-enabled" | "unknown">;
 const MARKER = /^\[(FIKA_DATA_TRACE_TOTAL|FIKA_DATA_TRACE)\]\s+(\{.*\})\s*$/;
 
 type NormalizedRecord = { app: string; action: string; operation: string; route: string; dataset: string; source: string; returnedDocuments: number; estimatedBillableReads: number; estimatedWrites: number; estimatedDeletes: number; durationMs: number; level: string; cacheResult?: CacheResult; packageVersion?: number; projectionVersion?: number };

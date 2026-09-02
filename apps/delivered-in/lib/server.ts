@@ -2,6 +2,7 @@ import type { NextRequest } from "next/server";
 import { assertAuthorisedOploc, operationalDateLondon, projectPublishedWeeks, type ProjectedDay, type Site, type SiteAccess, type SourcePublication } from "./projection";
 import type { DeliveredInService } from "@fika/server-shared/delivered-in-access";
 import { recordDeliveredInAppReadBudget } from "./delivered-in-read-budget";
+import { recordDataAccess } from "@fika/server-shared/data-source-meter-server";
 import { buildDeliveredInDayProjection } from "./delivered-in-projection-materialiser";
 import { readDeliveredInProjection, readDeliveredInProjectionIndex } from "./delivered-in-projection-store";
 import type { DeliveredInDayProjection } from "./delivered-in-day-projection";
@@ -21,6 +22,7 @@ async function readJson<T>(response: Response, label: string): Promise<T> { cons
 export async function cpuReviewForDay(request: NextRequest, date: string, oplocId: string) {
   try {
     const summaryResponse = await fetch(`${cpuBase()}/api/delivered-in/review?serviceDate=${encodeURIComponent(date)}&oplocId=${encodeURIComponent(oplocId)}`, { headers: { cookie: request.headers.get("cookie") || "" }, cache: "no-store" });
+    recordDataAccess({ app: "delivered-in", operation: "cpu-review-package.by-day", source: "NETWORK_UPSTREAM", dataset: "cpu-production/review", documents: 0, cacheResult: "BYPASS" });
     if (!summaryResponse.ok) return undefined;
     const summary = await readJson<{
       status: "pending" | "signed";
@@ -41,6 +43,7 @@ export async function cpuReviewForDay(request: NextRequest, date: string, oplocI
 
 async function resolveGovernedOplocIds(request: NextRequest) {
   const response = await fetch(`${hubBase()}/api/oplocs`, { headers: { cookie: request.headers.get("cookie") || "" }, cache: "no-store" });
+  recordDataAccess({ app: "delivered-in", operation: "hub.oplocs", source: "NETWORK_UPSTREAM", dataset: "integration-hub/oplocs", documents: 0, cacheResult: "BYPASS" });
   const body = await readJson<{ oplocs?: Array<{ canonicalId?: string }>; error?: { message?: string } }>(response, "Integration Hub OPLOC authority");
   if (!response.ok || !body.oplocs) throw failure(body.error?.message || "Integration Hub OPLOC authority could not be loaded.", response.status || 502);
   return new Set(body.oplocs.map(oploc => oploc.canonicalId).filter((id): id is string => Boolean(id)));
@@ -51,6 +54,7 @@ export async function resolveAccess(request: NextRequest, service: DeliveredInSe
   // only Grab & Go needs the explicit service selector.
   const accessUrl = service === "grab-and-go" ? `${hubBase()}/api/delivered-in/access?service=grab-and-go` : `${hubBase()}/api/delivered-in/access`;
   const response = await fetch(accessUrl, { headers: { cookie: request.headers.get("cookie") || "" }, cache: "no-store" });
+  recordDataAccess({ app: "delivered-in", operation: "hub.authmod.access", source: "NETWORK_UPSTREAM", dataset: "integration-hub/logistics-access", documents: 0, cacheResult: "BYPASS" });
   const body = await readJson<{ access?: SiteAccess; sites?: Site[]; error?: { message?: string } }>(response, "Integration Hub access service");
   if (!response.ok || !body.access || !body.sites) throw failure(body.error?.message || "Delivered-In access could not be resolved.", response.status || 502);
   return { access: body.access, sites: body.sites };
@@ -77,6 +81,7 @@ export async function projectedWeeks(request: NextRequest, requestedOplocId?: st
   }
   const fromWeek = mondayOf(new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/London" }).format(new Date()));
   const response = await fetch(`${menuBase()}/api/rolling-menu/publications?fromWeek=${encodeURIComponent(fromWeek)}&toWeek=${encodeURIComponent(addDays(fromWeek, 49))}`, { cache: "no-store" });
+  recordDataAccess({ app: "delivered-in", operation: "menu.publications.by-window", source: "NETWORK_UPSTREAM", dataset: "menu-planning/publications", documents: 0, cacheResult: "BYPASS" });
   const body = await readJson<{ publications?: SourcePublication[]; error?: { message?: string } }>(response, "Menu Planning publication service");
   if (!response.ok) throw failure(body.error?.message || "Published Delivered-In menus could not be loaded.");
   const governedOplocIds = await resolveGovernedOplocIds(request);
