@@ -9,6 +9,10 @@ test("CPU production matrices use governed Drive ownership for each canonical so
   assert.match(source, /productionOrderId: orderId/);
   assert.match(source, /matrixDriveConfiguration\(order\)\.enabled/);
   assert.match(source, /if \(!matrixDriveConfiguration\(order\)\.enabled\) return undefined;[\s\S]*fetch\(/);
+  assert.match(source, /master-\$\{weekCommencing\}\.pdf/);
+  assert.match(source, /oploc-\$\{stableFileToken\(oplocId\)\}-\$\{weekCommencing\}\.pdf/);
+  assert.match(source, /plan\.masterMatrixArtifact/);
+  assert.match(source, /plan\.siteMatrixArtifacts/);
   const detail = await readFile(new URL("../app/ui/HospitalityAllergenDetail.tsx", import.meta.url), "utf8");
   assert.doesNotMatch(detail, /fetch\("\/api\/production-plan"[\s\S]*save-matrix/);
   assert.doesNotMatch(source, /siteKey:|oplocFolder:|destinationOwner|siteOwner|ownerCredentials/);
