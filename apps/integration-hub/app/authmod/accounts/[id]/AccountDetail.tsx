@@ -5,6 +5,7 @@ import { ArrowLeft, Check, ChevronRight, History, LockKeyhole, ServerCog, Shield
 import { useEffect, useState, type ReactNode } from "react";
 import styles from "./account-detail.module.css";
 import { ROUTINE_ACCESS_REASONS } from "@/lib/authmod-reasons";
+import { loadAuthmodOptions } from "../../../ui/authmod-options-cache";
 
 type Account = { identity: { id: string; displayName: string; email?: string; identityKind: "person" | "operational"; status: string; identityLinkStatus: string; legendId?: string; legendLabel?: string; representedOplocId?: string; representedOplocLabel?: string; operationalPurpose?: string; provenance: string; version: number }; custodian?: { id: string; legendId: string; label: string; version: number }; sites: { id: string; label: string }[]; apps: { id: string; label: string }[]; specialAuthority: { id: string; resource: string; action: string; scope: { kind: string; ids: string[] }; reason?: string; provenance: string }[]; temporaryAccess?: { id: string; capability: string; label: string; type: string; scope: { kind: string; ids: string[] }; effectiveFrom?: string; effectiveTo?: string; status: string; source?: string }[]; delegatedBy?: { id: string; delegatorName: string; capability: string; scope: { kind: string; ids: string[] }; effectiveFrom?: string; effectiveTo?: string; status: string }[]; fullAccess: boolean; authmodAdmin: boolean };
 type Options = { applications: { appId: string; displayName: string; standardActions: string[] }[]; oplocs: { id: string; label: string }[]; legends: { id: string; label: string }[] };
@@ -33,7 +34,7 @@ export default function AccountDetail({ id }: { id: string }) {
   async function load() {
     setLoading(true);
     try {
-      const [a, o, h] = await Promise.all([fetch(`/api/authmod/accounts/${id}`, { cache: "no-store" }), fetch("/api/authmod/options", { cache: "no-store" }), fetch(`/api/authmod/audit?targetId=${encodeURIComponent(id)}&limit=5`, { cache: "no-store" })]);
+      const [a, o, h] = await Promise.all([fetch(`/api/authmod/accounts/${id}`, { cache: "no-store" }), loadAuthmodOptions(), fetch(`/api/authmod/audit?targetId=${encodeURIComponent(id)}&limit=5`, { cache: "no-store" })]);
       setAccount((await read<{ account: Account }>(a)).account);
       setOptions(await read<Options>(o));
       setAudit((await read<{ events: AuditEvent[] }>(h)).events);
