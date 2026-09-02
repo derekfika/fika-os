@@ -241,7 +241,7 @@ export async function mnkMenuReadContract() {
     .where("entityType", "==", "Hospitality Menu Item")
     .where("lifecycleStatus", "in", ["draft", "published"])
     .get();
-  recordDataAccess({ app: "integration-hub", operation: "hospitality.menu-contract", source: "FIRESTORE", dataset: "integrationHubCanonical", documents: snapshot.size, firestoreReadKind: "query" });
+  recordDataAccess({ app: "integration-hub", operation: "hospitality-menu.read", source: "FIRESTORE", dataset: "integrationHubCanonical", documents: snapshot.size, firestoreReadKind: "query" });
   return menuForMnkPortal(
     snapshot.docs.map((document) => document.data() as CanonicalRecord),
   );
