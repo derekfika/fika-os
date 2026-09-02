@@ -7,6 +7,7 @@ import { buildDeliveredInDayProjection } from "./delivered-in-projection-materia
 import { readDeliveredInProjection, readDeliveredInProjectionIndex } from "./delivered-in-projection-store";
 import type { DeliveredInDayProjection } from "./delivered-in-day-projection";
 import type { DeliveredInProjectionIndexEntry } from "./delivered-in-projection-store";
+import { packetPublicationsForRange, readMenuPlanningWeekPackets } from "./menu-planning-week-packet";
 
 export const DELIVERED_IN_PROJECTION_HORIZON_DAYS = 42;
 export const DELIVERED_IN_MAX_DAY_PACKAGES = 50;
@@ -80,12 +81,20 @@ export async function projectedWeeks(request: NextRequest, requestedOplocId?: st
     };
   }
   const fromWeek = mondayOf(new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/London" }).format(new Date()));
-  const response = await fetch(`${menuBase()}/api/rolling-menu/publications?fromWeek=${encodeURIComponent(fromWeek)}&toWeek=${encodeURIComponent(addDays(fromWeek, 49))}`, { cache: "no-store" });
-  recordDataAccess({ app: "delivered-in", operation: "menu.publications.by-window", source: "NETWORK_UPSTREAM", dataset: "menu-planning/publications", documents: 0, cacheResult: "BYPASS" });
-  const body = await readJson<{ publications?: SourcePublication[]; error?: { message?: string } }>(response, "Menu Planning publication service");
-  if (!response.ok) throw failure(body.error?.message || "Published Delivered-In menus could not be loaded.");
+  let publications: SourcePublication[] = [];
+  const toWeek = addDays(fromWeek, 49);
+  const packets = await readMenuPlanningWeekPackets(fromWeek, toWeek).catch(() => []);
+  if (packets.length) {
+    publications = packetPublicationsForRange(packets, fromWeek, toWeek) as SourcePublication[];
+  } else {
+    const response = await fetch(`${menuBase()}/api/rolling-menu/publications?fromWeek=${encodeURIComponent(fromWeek)}&toWeek=${encodeURIComponent(toWeek)}`, { cache: "no-store" });
+    recordDataAccess({ app: "delivered-in", operation: "menu.publications.by-window", source: "NETWORK_UPSTREAM", dataset: "menu-planning/publications", documents: 0, cacheResult: "BYPASS" });
+    const body = await readJson<{ publications?: SourcePublication[]; error?: { message?: string } }>(response, "Menu Planning publication service");
+    if (!response.ok) throw failure(body.error?.message || "Published Delivered-In menus could not be loaded.");
+    publications = body.publications || [];
+  }
   const governedOplocIds = await resolveGovernedOplocIds(request);
-  const projected = projectPublishedWeeks(body.publications || [], selectedOplocId, governedOplocIds);
+  const projected = projectPublishedWeeks(publications, selectedOplocId, governedOplocIds);
   const weeks = await Promise.all(projected.map(async week => {
     const days = await Promise.all(week.days.map(async day => {
       try {
