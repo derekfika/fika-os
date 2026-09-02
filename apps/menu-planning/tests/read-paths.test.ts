@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
-import { catalogueErrorMessage, catalogueManifestMatches } from "../lib/menu-catalogue-cache";
+import { catalogueErrorMessage, catalogueManifestMatches, resolveCachedCatalogueEntry } from "../lib/menu-catalogue-cache";
 
 test("rolling-menu read path resolves catalogue data without reconciliation writes", () => {
   const source = readFileSync(new URL("../app/api/rolling-menu/route.ts", import.meta.url), "utf8");
@@ -185,8 +185,24 @@ test("catalogue cache preserves warm records while manifest revalidates in the b
   assert.match(cache, /findLatestCache/);
   assert.match(cache, /return cached\.entries/);
   assert.match(cache, /void revalidateCatalogue/);
-  assert.match(cache, /if \(!catalogueManifestMatches\(cached\.manifest, manifest\)\) await refreshCatalogue/);
+  assert.match(cache, /if \(catalogueManifestMatches\(cached\.manifest, manifest\)\)/);
+  assert.match(cache, /await refreshCatalogue\(fetcher, namespace, onUpdate\)/);
+  assert.match(cache, /Do not replace the last-known-good manifest/);
   assert.doesNotMatch(cache, /return \[\]/);
+});
+
+test("catalogue cache keeps package version distinct from IndexedDB schema version", () => {
+  const cache = readFileSync(new URL("../lib/menu-catalogue-cache.ts", import.meta.url), "utf8");
+  assert.match(cache, /packageVersion\?: number/);
+  assert.match(cache, /indexedDbVersion = 2/);
+  assert.match(cache, /packageVersion: manifest\?\.catalogueVersion/);
+});
+
+test("stable catalogue resolution never falls back to display names", () => {
+  const entries = [{ id: "dish:one", name: "Same name" }, { id: "dish:two", name: "Same name" }];
+  assert.equal(resolveCachedCatalogueEntry(entries, "dish:two")?.id, "dish:two");
+  assert.equal(resolveCachedCatalogueEntry(entries, "Same name"), undefined);
+  assert.equal(resolveCachedCatalogueEntry(entries), undefined);
 });
 
 test("catalogue cache keeps cached records on manifest and refresh failures", () => {

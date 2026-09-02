@@ -3,10 +3,16 @@ import { recordDataAccess } from "@fika/server-shared/data-source-meter-client";
 
 export type CachedCatalogueEntry = Record<string, unknown> & { id: string };
 export type CatalogueManifest = { schemaVersion: number; catalogueVersion: number; updatedAt?: string; dishCount?: number };
-export type CachedCatalogue = { namespace: string; schemaVersion: number; cachedAt: number; manifestCheckedAt?: number; recordCount: number; entries: CachedCatalogueEntry[]; categories: string[]; manifest?: CatalogueManifest };
+export type CachedCatalogue = { namespace: string; schemaVersion: number; packageVersion?: number; cachedAt: number; manifestCheckedAt?: number; recordCount: number; entries: CachedCatalogueEntry[]; categories: string[]; manifest?: CatalogueManifest };
 export type CatalogueFetchResult = { entries: CachedCatalogueEntry[]; categories?: string[]; identity?: string; manifest?: CatalogueManifest };
 export type CatalogueLoadState = "CHECKING_LOCAL_CACHE" | "CHECKING_VERSION" | "DOWNLOADING" | "VERIFYING" | "DECOMPRESSING" | "INSTALLING" | "READY" | "ERROR" | "USING_PREVIOUS_VERSION";
 export const catalogueManifestMatches = (cached?: CatalogueManifest, current?: CatalogueManifest) => Boolean(cached && current && cached.schemaVersion === current.schemaVersion && cached.catalogueVersion === current.catalogueVersion);
+
+/** Resolve catalogue records only by their canonical stable ID. */
+export function resolveCachedCatalogueEntry(entries: CachedCatalogueEntry[], id?: string) {
+  if (!id?.trim()) return undefined;
+  return entries.find(entry => entry.id === id);
+}
 
 export function catalogueErrorMessage(value: unknown, fallback: string) {
   if (value instanceof Error && value.message) return value.message;
@@ -19,7 +25,9 @@ export function catalogueErrorMessage(value: unknown, fallback: string) {
 }
 
 const databaseName = "fika-menu-planning";
-const databaseVersion = 2;
+// This is the IndexedDB schema version. It is deliberately separate from the
+// immutable catalogue read-package version stored in packageVersion/manifest.
+const indexedDbVersion = 2;
 const recordStore = "menuCatalogue";
 const metadataStore = "cacheMetadata";
 const metadataKey = (namespace: string) => `catalogue:${namespace}`;
@@ -35,7 +43,7 @@ function sessionValue(key: string) { try { return typeof window === "undefined" 
 function openDatabase(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
     if (typeof indexedDB === "undefined") return reject(new Error("IndexedDB is unavailable."));
-    const request = indexedDB.open(databaseName, databaseVersion);
+    const request = indexedDB.open(databaseName, indexedDbVersion);
     request.onupgradeneeded = () => {
       const db = request.result;
       if (!db.objectStoreNames.contains("menuWeeks")) db.createObjectStore("menuWeeks", { keyPath: "weekId" });
@@ -63,9 +71,12 @@ async function readCache(namespace: string): Promise<CachedCatalogue | undefined
     transaction.oncomplete = () => {
       const metadata = metaRequest.result as Omit<CachedCatalogue, "entries"> | undefined;
       const entries = (recordsRequest.result as Array<CachedCatalogueEntry & { cacheKey: string }>).map(({ cacheKey: _cacheKey, ...entry }) => entry);
-      if (!metadata || metadata.schemaVersion !== schemaVersion || !entries.length && metadata.recordCount !== 0) return resolve(undefined);
+      const ids = new Set<string>();
+      const validEntries = entries.every(entry => Boolean(entry.id?.trim()) && !ids.has(entry.id) && (ids.add(entry.id), true));
+      if (!metadata || metadata.schemaVersion !== schemaVersion || !validEntries || entries.length !== metadata.recordCount) return resolve(undefined);
       recordDataAccess({ app: "menu-planning", operation: "catalogue.cache", source: "CLIENT_CACHE", documents: entries.length, cacheHit: true });
-      resolve({ ...metadata, entries } as CachedCatalogue);
+      const manifest = metadata.manifest || (typeof metadata.packageVersion === "number" ? { schemaVersion, catalogueVersion: metadata.packageVersion } : undefined);
+      resolve({ ...metadata, ...(manifest ? { manifest } : {}), entries } as CachedCatalogue);
     };
     transaction.onerror = () => reject(transaction.error || new Error("Catalogue cache read failed."));
   });
@@ -105,7 +116,7 @@ export async function getCachedCatalogue(namespace = catalogueCacheNamespace()) 
   }
 }
 
-export async function putCachedCatalogue(entries: CachedCatalogueEntry[], namespace = catalogueCacheNamespace(), categories: string[] = []) {
+export async function putCachedCatalogue(entries: CachedCatalogueEntry[], namespace = catalogueCacheNamespace(), categories: string[] = [], manifest?: CatalogueManifest) {
   if (!namespace) return;
   try {
     const db = await openDatabase();
@@ -115,7 +126,7 @@ export async function putCachedCatalogue(entries: CachedCatalogueEntry[], namesp
       const prefix = `${namespace}|`;
       records.delete(IDBKeyRange.bound(prefix, `${prefix}\uffff`));
       entries.forEach(entry => records.put({ ...entry, cacheKey: `${namespace}|${entry.id}` }));
-      transaction.objectStore(metadataStore).put({ namespace, schemaVersion, cachedAt: Date.now(), manifestCheckedAt: Date.now(), recordCount: entries.length, categories }, metadataKey(namespace));
+      transaction.objectStore(metadataStore).put({ namespace, schemaVersion, packageVersion: manifest?.catalogueVersion, cachedAt: Date.now(), manifestCheckedAt: manifest ? Date.now() : undefined, recordCount: entries.length, categories, ...(manifest ? { manifest } : {}) }, metadataKey(namespace));
       transaction.oncomplete = () => resolve();
       transaction.onerror = () => reject(transaction.error || new Error("Catalogue cache write failed."));
     });
@@ -140,12 +151,12 @@ async function putCatalogueMetadata(namespace: string, patch: Partial<CachedCata
 export async function putCachedCatalogueItem(entry: CachedCatalogueEntry, namespace = catalogueCacheNamespace()) {
   const current = await getCachedCatalogue(namespace);
   if (!current) return;
-  await putCachedCatalogue([...current.entries.filter(item => item.id !== entry.id), entry], namespace, current.categories);
+  await putCachedCatalogue([...current.entries.filter(item => item.id !== entry.id), entry], namespace, current.categories, current.manifest);
 }
 
 export async function removeCachedCatalogueItem(id: string, namespace = catalogueCacheNamespace()) {
   const current = await getCachedCatalogue(namespace);
-  if (current) await putCachedCatalogue(current.entries.filter(entry => entry.id !== id), namespace, current.categories);
+  if (current) await putCachedCatalogue(current.entries.filter(entry => entry.id !== id), namespace, current.categories, current.manifest);
 }
 
 export async function invalidateCatalogueCache(namespace = catalogueCacheNamespace()) {
@@ -191,8 +202,14 @@ async function revalidateCatalogue(cached: CachedCatalogue, namespace: string, f
   const existing = manifestInFlight.get(namespace);
   if (existing) return existing;
   const check = manifestFetcher().then(async manifest => {
-    await putCatalogueMetadata(namespace, { manifest, manifestCheckedAt: Date.now() });
-    if (!catalogueManifestMatches(cached.manifest, manifest)) await refreshCatalogue(fetcher, namespace, onUpdate);
+    if (catalogueManifestMatches(cached.manifest, manifest)) {
+      await putCatalogueMetadata(namespace, { manifest, packageVersion: manifest.catalogueVersion, manifestCheckedAt: Date.now() });
+    } else {
+      // Do not replace the last-known-good manifest until the full package has
+      // downloaded, verified and been installed. A failed refresh must leave
+      // the previous package usable and retryable on a later load.
+      await refreshCatalogue(fetcher, namespace, onUpdate);
+    }
   }).catch(error => { debug("manifest-fallback", { reason: error instanceof Error ? error.message : "manifest unavailable" }); return putCatalogueMetadata(namespace, { manifestCheckedAt: Date.now() }); }).finally(() => { manifestInFlight.delete(namespace); });
   manifestInFlight.set(namespace, check);
   return check;
@@ -208,8 +225,7 @@ async function refreshCatalogue(fetcher: () => Promise<CatalogueFetchResult>, pr
     const namespace = catalogueCacheNamespace(result.identity) || previousNamespace;
     onStateChange?.("DECOMPRESSING");
     onStateChange?.("INSTALLING");
-    await putCachedCatalogue(result.entries, namespace, result.categories || []);
-    if (namespace && result.manifest) await putCatalogueMetadata(namespace, { manifest: result.manifest, manifestCheckedAt: Date.now() });
+    await putCachedCatalogue(result.entries, namespace, result.categories || [], result.manifest);
     onUpdate?.(result.entries);
     onStateChange?.("READY");
     return result.entries;
