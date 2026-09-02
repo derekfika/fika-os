@@ -25,6 +25,10 @@ export async function readCacheManifests(datasets: CacheDataset[] = [...CACHE_DA
   });
 }
 
+export async function readCacheManifest(dataset: CacheDataset): Promise<CacheManifest> {
+  return (await readCacheManifests([dataset]))[0];
+}
+
 export async function listCacheDataset(actor: Actor, dataset: CacheDataset) {
   assertPermission(actor, "canonical.view");
   const types = entityTypes[dataset];
