@@ -115,6 +115,13 @@ test("a stale explicit destination ID follows the live Hub OPLOC only on an exac
   assert.equal(normalised.entries[0].allocations[0].destinationId, "oploc:new-haleon");
 });
 
+test("an unidentified allocation follows the live Hub OPLOC before the static compatibility table", () => {
+  const snapshot = emptyWeek("2026-09-07");
+  snapshot.entries.push({ id: "entry:live-oploc-label", dayId: snapshot.days[2].id, date: snapshot.days[2].date, slot: "SALAD 1", itemLabel: "Test salad", portions: 5, allocations: [{ destinationLabel: "Haleon", quantity: 5 }], allergens: {}, audit: [] });
+  const normalised = normaliseRollingSnapshotDestinations(snapshot, [{ canonicalId: "oploc:new-haleon", label: "Haleon" }]);
+  assert.equal(normalised.entries[0].allocations[0].destinationId, "oploc:new-haleon");
+});
+
 test("week lifecycle prevents collisions, publishes once, and duplicates published weeks as drafts", async () => {
   const rollingFile = join(process.cwd(), "local-data", "menu-planning", "rolling-menu-weeks.json");
   const before = existsSync(rollingFile) ? await readFile(rollingFile) : undefined;

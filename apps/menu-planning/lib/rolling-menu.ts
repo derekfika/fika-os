@@ -24,7 +24,7 @@ const normaliseDestination = (allocation: RollingAllocation, liveOplocs: readonl
   const live = allocation.destinationId ? liveById.get(allocation.destinationId) : undefined;
   if (live) return { ...allocation, destinationId: live.canonicalId, destinationLabel: live.label };
   const liveLabel = liveByLabel.get(allocation.destinationLabel.trim().toLocaleLowerCase());
-  if (liveLabel && allocation.destinationId) return { ...allocation, destinationId: liveLabel.canonicalId, destinationLabel: liveLabel.label };
+  if (liveLabel) return { ...allocation, destinationId: liveLabel.canonicalId, destinationLabel: liveLabel.label };
   const governed = allocation.destinationId
     ? resolveGovernedOploc(allocation.destinationId)
     : resolveGovernedOploc(undefined, allocation.destinationLabel);
