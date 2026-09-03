@@ -1,13 +1,13 @@
 # FIKA OS refactor wave status
 
-Updated: `2026-09-03T04:15:40Z`
+Updated: `2026-09-03T04:59:28Z`
 
 ## Baseline
 
 - Remote baseline: `origin/codex/uat-allergen-delivered-integration`
 - Baseline SHA: `5d68d5d86ff09b2da966d49bae059ba8b9b30862`
 - Coordinator branch: `codex/refactor-wave-1-2026-09-03`
-- Current coordinator HEAD: `17230c8`
+- Current coordinator HEAD: `3bd0015`
 - No deployment performed.
 
 ## Wave 1 — complete and integrated
@@ -32,16 +32,16 @@ Coordinator compile repair: `17230c8` wires `cpuPackageStore` into the CPU daily
 
 ## Verification evidence
 
-- CPU and Delivered-In coordinator typechecks pass.
-- Isolated CPU bundle tests: 5/5; CPU route transpilation passed.
-- Isolated Delivered-In typecheck/build/targeted tests passed; three pre-existing Grab & Go failures remain.
-- Isolated Logistics read-path tests: 10/10.
-- Menu Planner tests: 99/99; UX builds passed.
-- Full combined verification still pending because the checkout has inconsistent local tool availability/`tsx` IPC restrictions and no Firestore emulator.
+- CPU, Delivered-In, and Menu Planning coordinator typechecks pass.
+- CPU daily bundle tests: 5/5; Delivered-In bundle/invalidation tests: 9/9.
+- Delivered-In boundary/projection review tests: 22/22.
+- Logistics focused tests: 29/29 reviewer suite and 10/10 specialist suite.
+- Serial CPU, Delivered-In, Logistics, Hub, and Menu Planning builds passed.
+- No deployment has been performed; staging UAT and Firestore-read measurement remain required.
 
-## Remaining integration blocker
+## Integration blocker status
 
-The CPU route currently persists a daily bundle packet/manifest through a cast to the generic `ReadPackageManifest`, while the Delivered-In reader expects the CPU review package envelope. Wave 3 must make the object encoding, manifest dataset/contract, PDF URL, source hash, and packet payload one explicit shared format before deployment. This is an autonomous engineering fix, not a request to weaken the safety boundary.
+The former CPU → Delivered-In envelope mismatch is resolved. CPU and Delivered-In now use the shared gzip packet envelope, daily signed OPLOC bundle dataset, contract identifier, source revision, distinct compressed/raw hashes, and strict validation. Staging UAT must still verify real Drive/PDF identities and end-to-end handoff behaviour.
 
 ## Scope decision
 

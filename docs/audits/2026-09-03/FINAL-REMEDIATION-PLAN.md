@@ -4,11 +4,11 @@
 
 - Forensic audit start: `2026-09-02T22:41:46Z`
 - Wave-status update: `2026-09-03T04:15:40Z`
-- Current audit/refactor state: Wave 3 integration review in progress
+- Current audit/refactor state: Wave 3 integration complete; staging UAT pending
 
 ## Current disposition
 
-**Not deployable yet.** The principal audit findings have been assigned and substantial fixes are integrated on `codex/refactor-wave-1-2026-09-03` at `17230c8`, but the CPU daily packet and Delivered-In consumer still require one combined-format verification pass before staging.
+**Staging/UAT required before deployment.** The principal audit findings and the CPU daily packet/Delivered-In integration fixes are integrated on `codex/refactor-wave-1-2026-09-03` at `3bd0015`. No deployment has been performed.
 
 ## Highest-risk completed fixes
 
@@ -21,13 +21,13 @@
 7. CPU now has a daily signed OPLOC bundle contract with master sheet, filtered PDF, minimised packet, source hash, signatures, and publish-last/tombstone semantics.
 8. Delivered-In no longer offers a manager-facing allergen checker route and ordinary reads are packet-only with stale/withdrawn blocking.
 
-## Wave 3 gates
+## Wave 3 gates — complete
 
-- Replace the CPU daily route’s generic-manifest cast with a typed shared producer/consumer envelope. The stored bytes must use the same compression/hash semantics the consumer verifies.
-- Verify PDF URL/file identity, packet source hash, bundle ID, service date, and OPLOC scope end-to-end.
-- Keep canonical reconstruction only behind explicitly authenticated maintenance/reconciliation.
-- Run all core typechecks, tests, and serial builds with a working `tsx` toolchain and Firestore emulator.
-- Deploy only after staging URLs/cookies are consistent and real-device UAT confirms no cross-site access or stale safety data.
+- CPU daily route now emits a typed shared producer/consumer envelope with matching compression/hash semantics.
+- PDF URL/file identity, packet source hash, bundle ID, service date, and OPLOC scope are bound and validated in code/tests.
+- Canonical reconstruction remains behind explicitly authenticated maintenance/reconciliation.
+- Core typechecks, focused tests, and serial builds pass; no Firestore emulator was required for these deterministic checks.
+- Deployment remains gated on staging URLs/cookies and real-device UAT.
 
 ## Required UAT acceptance tests
 
