@@ -1,5 +1,7 @@
+import type { GrabAndGoProductContract } from "@fika/server-shared/grab-and-go-catalogue";
+
 export type GrabAndGoCategory = "grab_250ml" | "stacking_salad_750ml";
-export type GrabAndGoProduct = { productId: string; name: string; category: GrabAndGoCategory; rotationWeeks: number[]; allowedDeliveryWeekdays: string[]; price?: number; active: boolean; sortOrder: number };
+export type GrabAndGoProduct = GrabAndGoProductContract;
 export type GrabAndGoLine = { productId: string; quantity: number; productName: string; category: GrabAndGoCategory; sortOrder: number; price?: number };
 export type GrabAndGoHistoryEntry = { version: number; action: "submitted" | "amended" | "cancelled"; status: "submitted" | "cancelled"; at: string; actor: string; lines: GrabAndGoLine[] };
 export type GrabAndGoOrder = { orderId: string; oplocId: string; deliveryDate: string; rotationWeek: number; status: "submitted" | "cancelled"; submittedAt: string; updatedAt: string; updatedBy: string; lines: GrabAndGoLine[]; version: number; history: GrabAndGoHistoryEntry[] };

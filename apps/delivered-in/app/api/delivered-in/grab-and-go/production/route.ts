@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { listGrabAndGoOrdersForProductionHosted, readGrabAndGoCatalogue } from "@/lib/grab-and-go-store";
+import { listGrabAndGoOrdersForProductionHosted } from "@/lib/grab-and-go-store";
+import { getGrabAndGoCataloguePackage } from "@/lib/grab-and-go-catalogue-client";
 import { withDataTrace } from "@fika/server-shared/data-source-meter-server";
 
 export const dynamic = "force-dynamic";
@@ -16,8 +17,9 @@ async function handleGet(request: NextRequest) {
     assertCpuBoundary(request);
     const deliveryDate = request.nextUrl.searchParams.get("deliveryDate") || new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/London" }).format(new Date());
     const end = new Date(`${deliveryDate}T00:00:00Z`); end.setUTCDate(end.getUTCDate() + (request.nextUrl.searchParams.has("deliveryDate") ? 1 : 43));
+    const catalogue = (await getGrabAndGoCataloguePackage()).catalogue.products;
     const orders = (await listGrabAndGoOrdersForProductionHosted(deliveryDate, end.toISOString().slice(0, 10))).filter(order => order.status === "submitted");
-    return NextResponse.json({ orders, catalogue: readGrabAndGoCatalogue() }, { headers: { "Cache-Control": "no-store, max-age=0" } });
+    return NextResponse.json({ orders, catalogue }, { headers: { "Cache-Control": "no-store, max-age=0" } });
   } catch (error) {
     return NextResponse.json({ error: { message: error instanceof Error ? error.message : "Grab & Go production data is unavailable." } }, { status: Number((error as { status?: number }).status) || 502 });
   }

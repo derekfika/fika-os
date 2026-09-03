@@ -2,7 +2,7 @@ import { DatabaseSync } from "node:sqlite";
 import crypto from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, renameSync } from "node:fs";
 import { dirname, join } from "node:path";
-import type { GrabAndGoOrder, GrabAndGoProduct } from "./grab-and-go";
+import type { GrabAndGoOrder } from "./grab-and-go";
 import { claimEvent, createDomainEvent, eventIsDue, markEventDelivered, markEventFailed, type DurableDomainEvent } from "../../shared/domain-events";
 import { appDataPath } from "../../shared/app-data-path";
 import type { FulfilmentRequirement } from "../../shared/fulfilment-requirement";
@@ -52,10 +52,8 @@ function withTransaction<T>(mutator: (stored: Stored) => T) {
   const database = open(); database.exec("BEGIN IMMEDIATE");
   try { const stored = parse(database); const result = mutator(stored); database.prepare("UPDATE grab_and_go_state SET state_json = ?, updated_at = ? WHERE state_id = 1").run(JSON.stringify(stored), new Date().toISOString()); database.exec("COMMIT"); return result; } catch (cause) { try { database.exec("ROLLBACK"); } catch { /* preserve original failure */ } throw cause; } finally { database.close(); }
 }
-const catalogueFile = appDataPath("delivered-in", "delivered-in", "grab-and-go-catalogue.json");
 const hosted = () => ["staging", "production"].includes(process.env.FIKA_RUNTIME_MODE || "");
 const hostedOrders = () => db.collection("fikaDeliveredInGrabAndGoOrdersV1");
-export function readGrabAndGoCatalogue(): GrabAndGoProduct[] { try { const value = JSON.parse(readFileSync(catalogueFile, "utf8")) as { products?: GrabAndGoProduct[] }; if (!Array.isArray(value.products)) throw new Error("products is not an array"); recordDataAccess({ app: "delivered-in", operation: "grab-and-go.catalogue.read", source: "STATIC", documents: value.products.length }); return value.products; } catch (cause) { throw unavailable("Grab & Go catalogue is unavailable; no product list was loaded.", cause); } }
 export function listGrabAndGoOrders(oplocId?: string) { return read().orders.filter(order => !oplocId || order.oplocId === oplocId); }
 export function getGrabAndGoOrder(oplocId: string, deliveryDate: string) { return read().orders.find(order => order.oplocId === oplocId && order.deliveryDate === deliveryDate); }
 export async function listGrabAndGoOrdersHosted(oplocId: string, startDate: string, endDateExclusive: string) {

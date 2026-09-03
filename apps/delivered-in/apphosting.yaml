@@ -16,7 +16,7 @@ env:
     value: .fikacatering.com
     availability: [BUILD, RUNTIME]
   - variable: INTEGRATION_HUB_BASE_URL
-    value: https://fika-os-staging--fika-os-dev.europe-west4.hosted.app
+    value: https://staging-os.fikacatering.com
     availability: [RUNTIME]
   - variable: MENU_PLANNING_BASE_URL
     value: https://menu-planning-staging.fikacatering.com

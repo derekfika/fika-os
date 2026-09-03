@@ -4,6 +4,7 @@ import { Firestore } from "@google-cloud/firestore";
 import { getMenuPlanningOperationalStore, MenuPlanningFirestoreRepository } from "@/lib/operational-store";
 import { listWeeks } from "@/lib/rolling-menu";
 import { withDataTrace } from "@fika/server-shared/data-source-meter-server";
+import { fikaBuildIdentity } from "@fika/server-shared/build-identity";
 
 /** Temporary server-only, read-only staging diagnostic. Remove after runtime diagnosis. */
 async function handleGet(request: NextRequest) {
@@ -31,6 +32,8 @@ async function handleGet(request: NextRequest) {
     const applicationWeeks = await listWeeks();
     const settings = (database as unknown as { _settings?: { databaseId?: string } })._settings;
     return NextResponse.json({
+      appId: "menu-planning",
+      ...fikaBuildIdentity(),
       FIKA_RUNTIME_MODE: process.env.FIKA_RUNTIME_MODE || null,
       FIREBASE_PROJECT_ID: process.env.FIREBASE_PROJECT_ID || null,
       GCLOUD_PROJECT: process.env.GCLOUD_PROJECT || null,

@@ -139,6 +139,8 @@ export async function createPublishedMenuDay(weekId: string, dayId: string, sign
     publication.publicationVersion = (publication.publicationVersion || 0) + 1;
     const compiledSnapshot = buildCompiledPublicationSnapshot(publication, expectedWeekVersion);
     publication.compiledSnapshotId = compiledSnapshot.snapshotId;
+    publication.publicationStatus = "published";
+    publication.weekPacket = encodeWeeklyPublicationPacket(compiledSnapshot, publishedAt);
     stored.snapshots ||= {};
     stored.snapshots[compiledSnapshot.snapshotId] = compiledSnapshot;
     publication.audit.push({ action: "menu-day-published", at: publishedAt, by: actor, publicationDayId: publishedDay.publicationDayId });
@@ -215,6 +217,8 @@ export async function replayMenuPublicationOutbox(consumer: (event: DurableDomai
 export async function publicationSourceWeeks() { return (await listWeeks()).filter(week => week.status === "published" || week.status === "partially_published"); }
 export async function withdrawPublishedMenuDay(publicationId: string, publicationDayId: string, reason: string, actor = "local-menu-planner") {
   if (!reason.trim()) throw Object.assign(new Error("A withdrawal reason is required."), { status: 422 });
+  const weekId = publicationId.replace(/^menu-publication:/, "");
+  const expectedWeekVersion = (await getWeek(weekId)).week.version;
   return withMenuPlanningTransaction(state => {
     const stored = state.publications as unknown as StoredPublications;
     const publication = stored.publications.find(value => value.publicationId === publicationId);
@@ -222,9 +226,25 @@ export async function withdrawPublishedMenuDay(publicationId: string, publicatio
     if (!publication || !day) throw Object.assign(new Error("Published menu day was not found."), { status: 404 });
     if (day.status !== "published") throw conflict("Only the current published day can be withdrawn.");
     const at = now(); day.status = "withdrawn"; day.withdrawal = { actor, at, reason: reason.trim() }; publication.audit.push({ action: "menu-day-withdrawn", at, by: actor, publicationDayId }); appendPublicationEvents(stored, publication, day, "withdrawn", actor);
-    const rolling = state.rolling as unknown as RollingMenuStored; const snapshot = snapshotFromStored(rolling, publication.sourceWeekId); snapshot.week.dayStatuses = { ...(snapshot.week.dayStatuses || {}), [day.sourceDayId]: "draft" }; snapshot.week.status = "partially_published"; snapshot.week.version += 1; snapshot.week.audit.push({ action: "menu-day-withdrawn", at, by: actor }); replaceSnapshotInStored(rolling, snapshot);
+    const currentDays = publication.days.filter(candidate => candidate.status === "published");
+    if (currentDays.length) {
+      publication.publicationVersion = (publication.publicationVersion || 0) + 1;
+      const compiledSnapshot = buildCompiledPublicationSnapshot(publication, expectedWeekVersion);
+      publication.compiledSnapshotId = compiledSnapshot.snapshotId;
+      publication.weekPacket = encodeWeeklyPublicationPacket(compiledSnapshot, at);
+      publication.publicationStatus = "published";
+      stored.snapshots ||= {};
+      stored.snapshots[compiledSnapshot.snapshotId] = compiledSnapshot;
+    } else {
+      // Historical snapshots remain immutable, but no current pointer may
+      // continue exposing a fully withdrawn publication to CPU consumers.
+      delete publication.compiledSnapshotId;
+      delete publication.weekPacket;
+      publication.publicationStatus = "withdrawn";
+    }
+    const rolling = state.rolling as unknown as RollingMenuStored; const snapshot = snapshotFromStored(rolling, publication.sourceWeekId); snapshot.week.dayStatuses = { ...(snapshot.week.dayStatuses || {}), [day.sourceDayId]: "draft" }; snapshot.week.status = currentDays.length ? "partially_published" : "draft"; snapshot.week.version += 1; snapshot.week.audit.push({ action: "menu-day-withdrawn", at, by: actor }); replaceSnapshotInStored(rolling, snapshot);
     return clone(publication);
-  }, undefined, { weekId: publicationId.replace(/^menu-publication:/, ""), sourceWeekId: publicationId.replace(/^menu-publication:/, ""), includeEvents: false });
+  }, { weekId, weekVersion: expectedWeekVersion }, { weekId, sourceWeekId: weekId, includeEvents: false });
 }
 export async function withdrawPublishedMenuWeek(publicationId: string, reason: string, actor = "local-menu-planner") {
   if (!reason.trim()) throw Object.assign(new Error("A withdrawal reason is required."), { status: 422 });
@@ -245,6 +265,9 @@ export async function withdrawPublishedMenuWeek(publicationId: string, reason: s
     replaceSnapshotInStored(rolling, snapshot);
     publication.audit.push({ action: "menu-week-withdrawn", at, by: actor });
     publication.publicationStatus = "withdrawn";
+    // Keep immutable historical snapshots for audit, but clear the live
+    // pointers so CPU cannot retrieve withdrawn bytes as current evidence.
+    delete publication.compiledSnapshotId;
     delete publication.weekPacket;
     return clone(publication);
   }, undefined, { weekId: publicationId.replace(/^menu-publication:/, ""), sourceWeekId: publicationId.replace(/^menu-publication:/, ""), includeEvents: false });

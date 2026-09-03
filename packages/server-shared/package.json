@@ -17,5 +17,7 @@
     ,"./read-package": "./src/read-package.ts"
     ,"./weekly-publication-packet": "./src/weekly-publication-packet.ts"
     ,"./daily-signed-oploc-bundle": "./src/daily-signed-oploc-bundle.ts"
+    ,"./grab-and-go-catalogue": "./src/grab-and-go-catalogue.ts"
+    ,"./build-identity": "./src/build-identity.ts"
   }
 }

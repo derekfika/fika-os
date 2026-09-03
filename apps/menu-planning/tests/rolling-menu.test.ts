@@ -254,6 +254,11 @@ test("week publication is atomic and creates one immutable five-day publication"
     assert.equal(amendment.publicationVersion, 2);
     assert.notEqual(amendment.weekPacket?.manifest.contentHash, publication.weekPacket.manifest.contentHash);
     assert.equal(decodeWeeklyPublicationPacket(amendment.weekPacket!).publicationVersion, 2);
+    const withdrawnDayId = amendment.days.find(day => day.sourceDayId === week.days[0].id && day.status === "published")!.publicationDayId;
+    const afterDayWithdrawal = await withdrawPublishedMenuDay(amendment.publicationId, withdrawnDayId, "Withdraw first day", "test");
+    assert.ok(afterDayWithdrawal.weekPacket);
+    assert.equal(decodeWeeklyPublicationPacket(afterDayWithdrawal.weekPacket!).days.some(day => day.publicationDayId === withdrawnDayId), false);
+    assert.notEqual(afterDayWithdrawal.compiledSnapshotId, amendment.compiledSnapshotId);
   } finally {
     if (rollingBefore) await writeFile(rollingFile, rollingBefore); else await rm(rollingFile, { force: true });
     if (publicationBefore) await writeFile(publicationFile, publicationBefore); else await rm(publicationFile, { force: true });
@@ -320,6 +325,8 @@ test("week withdrawal withdraws every currently published day and preserves a re
     publication = await createPublishedMenuDay(week.week.id, week.days[entries[1]].id, { date: preview.date, productionChef: signature, headChefSiteManager: { ...signature, printedName: "Head Chef" }, dayContentHash: preview.contentHash }, "test");
     const withdrawn = await withdrawPublishedMenuWeek(publication.publicationId, "Week cancelled by operations", "test");
     assert.equal(currentPublishedDays(withdrawn).length, 0);
+    assert.equal(withdrawn.weekPacket, undefined);
+    assert.equal(withdrawn.compiledSnapshotId, undefined);
     const withdrawnCount = withdrawn.days.filter(day => day.status === "withdrawn").length;
     assert.ok(withdrawnCount >= 2);
     assert.ok(withdrawn.days.filter(day => day.status === "withdrawn").every(day => day.withdrawal?.reason === "Week cancelled by operations"));

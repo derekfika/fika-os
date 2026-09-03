@@ -9,8 +9,12 @@ test("Delivered-In effective App Hosting config enables tracing", () => {
   assert.match(config, /value:\s*["']?1["']?/);
 });
 
-test("Delivered-In classifies local catalogue reads as STATIC and hosted reads as FIRESTORE", () => {
-  const source = readFileSync(new URL("../lib/grab-and-go-store.ts", import.meta.url), "utf8");
-  assert.match(source, /grab-and-go\.catalogue\.read[\s\S]*source:\s*"STATIC"/);
-  assert.match(source, /grab-and-go\.orders\.by-oploc-date[\s\S]*source:\s*"FIRESTORE"/);
+test("Delivered-In reads the CPU-owned Grab & Go package through a bounded network boundary", () => {
+  const source = readFileSync(new URL("../lib/grab-and-go-catalogue-client.ts", import.meta.url), "utf8");
+  assert.match(source, /CPU_PRODUCTION_BASE_URL/);
+  assert.match(source, /grab-and-go\.catalogue/);
+  assert.match(source, /cache:\s*"no-store"/);
+  const orders = readFileSync(new URL("../lib/grab-and-go-store.ts", import.meta.url), "utf8");
+  assert.match(orders, /grab-and-go\.orders\.by-oploc-date[\s\S]*source:\s*"FIRESTORE"/);
+  assert.doesNotMatch(orders, /grab-and-go-catalogue\.json/);
 });
