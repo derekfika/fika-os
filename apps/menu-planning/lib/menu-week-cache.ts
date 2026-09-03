@@ -4,7 +4,7 @@ import { clearCatalogueCache } from "./menu-catalogue-cache";
 import { recordDataAccess } from "@fika/server-shared/data-source-meter-client";
 import { canonicalOplocId } from "@fika/server-shared/governed-oplocs";
 
-export type CachedMenuWeek = { weekId: string; weekCommencing: string; version: number; snapshot: RollingSnapshot; publicationState: Record<string, PublicationDayState>; cachedAt: number; identity: string };
+export type CachedMenuWeek = { weekId: string; weekCommencing: string; version: number; snapshot: RollingSnapshot; publicationState: Record<string, PublicationDayState>; weeks?: Array<{ id: string; weekCommencing: string; entryIds: string[]; version: number }>; cachedAt: number; identity: string };
 export type CachedWeekSelection = { weekId: string; weekCommencing: string; identity: string; selectedAt: number };
 const databaseName = "fika-menu-planning";
 const databaseVersion = 2;
