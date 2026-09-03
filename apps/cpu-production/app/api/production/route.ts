@@ -14,7 +14,7 @@ import { loadPlansForOrders } from "../../../lib/cpu-projection-repository";
 import { recordDeliveredInReadBudget } from "../../../lib/delivered-in-read-budget";
 import type { ProductionOrder } from "../../../lib/production-types";
 import { withDataTrace } from "@fika/server-shared/data-source-meter-server";
-import { getCpuProjectionManifest, getCpuProjectionPackage, recordCpuPackageFallback } from "../../../lib/cpu-read-package";
+import { cpuProjectionPackageIsCurrent, getCpuProjectionManifest, getCpuProjectionPackage, recordCpuPackageFallback, type CpuProjectionPackage } from "../../../lib/cpu-read-package";
 import { rebuildCpuReviewPackage } from "../../../lib/cpu-review-package";
 import { eventTypeForConsumers, notifyCpuConsumerInvalidations } from "../../../lib/cpu-consumer-invalidation";
 import { internalTokenAllowed } from "../../../../shared/internal-auth";
@@ -198,9 +198,13 @@ async function handleGet(request: NextRequest) {
       const storedStartedAt = performance.now();
       const stored = await cpuProjections().doc(week ? `week:${week}` : projectionDate).get();
       const storedDuration = performance.now() - storedStartedAt;
-      const storedData = stored.data() as { orders?: Array<{ id?: string; destinationLabel?: string; destinationOplocId?: string; origin?: string; status?: string; workflowStatus?: string; cancellationNotice?: string }> } | undefined;
+      const storedProjection = stored.data() as CpuProjectionPackage | undefined;
+      const storedData = storedProjection as { orders?: Array<{ id?: string; destinationLabel?: string; destinationOplocId?: string; origin?: string; status?: string; workflowStatus?: string; cancellationNotice?: string }> } | undefined;
       const needsReadableDestinations = storedData?.orders?.some((order) => order.destinationOplocId && order.destinationLabel === order.destinationOplocId);
       const needsCancellationRefresh = storedData?.orders?.some((order) => (order.status === "cancelled" || order.workflowStatus === "cancelled" || (order.origin === "hospitality_booking" && ["draft", "needs_review"].includes(order.status || ""))) && !order.cancellationNotice);
+      const packageStartedAt = performance.now();
+      const packageCurrent = storedProjection ? await cpuProjectionPackageIsCurrent(storedProjection) : false;
+      const packageDuration = performance.now() - packageStartedAt;
       const canonicalStartedAt = performance.now();
       const canonical = week ? await productionQueueForWeek(request, week) : await productionQueue(request, projectionDate);
       const canonicalDuration = performance.now() - canonicalStartedAt;
@@ -210,10 +214,10 @@ async function handleGet(request: NextRequest) {
         .map((order) => order.canonicalId));
       const projectedIds = new Set((storedData?.orders || []).map((order) => order.id).filter(Boolean));
       const needsOrderRefresh = canonicalIds.size !== projectedIds.size || [...canonicalIds].some((id) => !projectedIds.has(id));
-      const requiresRefresh = !stored.exists || needsReadableDestinations || needsCancellationRefresh || needsOrderRefresh;
-      const response = NextResponse.json({ projection: requiresRefresh ? week ? await rebuildCpuWeekProjection(request, week) : await rebuildCpuProjection(request, projectionDate) : stored.data() });
+      const requiresRefresh = !stored.exists || !packageCurrent || needsReadableDestinations || needsCancellationRefresh || needsOrderRefresh;
+      const response = NextResponse.json({ projection: requiresRefresh ? week ? await rebuildCpuWeekProjection(request, week) : await rebuildCpuDayProjection(request, projectionDate) : stored.data() });
       recordDeliveredInReadBudget({ stage: requiresRefresh ? "projection_refresh" : "projection_body_load", projectionDocs: 1, canonicalOrderDocs: canonicalIds.size });
-      return withServerTiming(response, { stored: storedDuration, canonical: canonicalDuration, total: performance.now() - startedAt });
+      return withServerTiming(response, { stored: storedDuration, package: packageDuration, canonical: canonicalDuration, total: performance.now() - startedAt });
     }
     if (request.nextUrl.searchParams.get("projectionHead") === "1") {
       const week = request.nextUrl.searchParams.get("weekCommencing");

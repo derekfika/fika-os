@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { decodeReadPackage, encodeReadPackage } from "@fika/server-shared/read-package";
-import { publishCpuProjectionPackage, getCpuProjectionPackage } from "../lib/cpu-read-package";
+import { cpuProjectionPackageIsCurrent, publishCpuProjectionPackage, getCpuProjectionPackage } from "../lib/cpu-read-package";
 import { downloadCpuPackageBytes } from "../lib/cpu-package-store";
 import { cpuProjectionCacheEntryMatches } from "../app/lib/cpu-indexeddb";
 import type { CpuDayProjection, CpuWeekProjection } from "../lib/cpu-projection";
@@ -69,6 +69,23 @@ test("CPU package publication advances the manifest without changing projection 
   }
 });
 
+test("current stored projection with a missing manifest is republished during reconciliation", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "fika-cpu-reconcile-package-"));
+  const previous = process.env.FIKA_SNAPSHOT_DIR;
+  process.env.FIKA_SNAPSHOT_DIR = root;
+  try {
+    const current = week();
+    assert.equal(await cpuProjectionPackageIsCurrent(current), false);
+    const published = await publishCpuProjectionPackage(current);
+    assert.equal(published.packageVersion, 1);
+    assert.equal(await cpuProjectionPackageIsCurrent(current), true);
+  } finally {
+    if (previous === undefined) delete process.env.FIKA_SNAPSHOT_DIR;
+    else process.env.FIKA_SNAPSHOT_DIR = previous;
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("CPU dashboard stores package metadata and package delivery precedes source reconciliation", async () => {
   const page = await readFile(new URL("../app/page.tsx", import.meta.url), "utf8");
   const route = await readFile(new URL("../app/api/production/route.ts", import.meta.url), "utf8");
@@ -91,4 +108,12 @@ test("normal CPU projection GET returns before canonical reads, rebuilds, or wri
   assert.doesNotMatch(normalBranch, /productionQueue\(|productionQueueForWeek\(|rebuildCpuProjection\(|rebuildCpuWeekProjection\(|\.set\(/);
   assert.match(normalBranch, /CPU_PROJECTION_PACKAGE_UNAVAILABLE/);
   assert.match(normalBranch, /CPU_PROJECTION_PACKAGE_INTEGRITY_FAILURE/);
+});
+
+test("explicit CPU reconciliation treats package absence as a refresh reason", async () => {
+  const route = await readFile(new URL("../app/api/production/route.ts", import.meta.url), "utf8");
+  const reconciliation = route.slice(route.indexOf("const storedStartedAt"));
+  assert.match(reconciliation, /cpuProjectionPackageIsCurrent/);
+  assert.match(reconciliation, /!packageCurrent/);
+  assert.match(reconciliation, /rebuildCpuDayProjection\(request, projectionDate\)/);
 });
