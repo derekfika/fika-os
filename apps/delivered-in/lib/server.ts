@@ -112,7 +112,7 @@ export async function projectionHead(request: NextRequest, requestedOplocId?: st
   if (!selectedOplocId) return { access, sites, selectedOplocId: undefined, projectionState: "unavailable" as const, entries: [], withdrawnServiceDates: [], unavailableServiceDates: [] };
   assertAuthorisedOploc(access, selectedOplocId);
   const window = await readProjectionIndexWindow(selectedOplocId);
-  return { access, sites, selectedOplocId, projectionState: window.state, entries: window.entries, withdrawnServiceDates: window.withdrawnServiceDates, unavailableServiceDates: window.unavailableServiceDates };
+  return { access, sites, selectedOplocId, projectionState: window.state, weeks: window.weeks, entries: window.entries, withdrawnServiceDates: window.withdrawnServiceDates, unavailableServiceDates: window.unavailableServiceDates };
 }
 
 export function projectionWindowBounds(asOf = operationalDateLondon()) {
@@ -126,6 +126,13 @@ export function boundedProjectionIndexEntries(entries: DeliveredInProjectionInde
     .filter(entry => entry.serviceDate >= from && entry.serviceDate <= to)
     .sort((a, b) => a.serviceDate.localeCompare(b.serviceDate))
     .slice(0, DELIVERED_IN_MAX_DAY_PACKAGES);
+}
+
+export function publishedWeeksFromProjectionIndex(entries: DeliveredInProjectionIndexEntry[]) {
+  return [...new Map(entries
+    .filter(entry => entry.state !== "withdrawn" && entry.freshness === "current" && entry.completeness === "complete" && entry.weekCommencing)
+    .map(entry => [entry.weekCommencing, { publicationId: entry.publicationId || "", weekCommencing: entry.weekCommencing!, weekEnding: entry.weekEnding || addDays(entry.weekCommencing!, 6) }]))
+    .values()].sort((a, b) => b.weekCommencing.localeCompare(a.weekCommencing));
 }
 
 async function readProjectionWindow(oplocId: string, asOf = operationalDateLondon()) {
@@ -156,7 +163,13 @@ async function readProjectionIndexWindow(oplocId: string, asOf = operationalDate
   // display them while their pointer says stale/partial/missing.
   const unavailableServiceDates = inWindow.filter(entry => entry.state !== "withdrawn" && (entry.freshness !== "current" || entry.completeness !== "complete")).map(entry => entry.serviceDate);
   const entries = inWindow.filter(entry => entry.state !== "withdrawn" && entry.freshness === "current" && entry.completeness === "complete").slice(0, DELIVERED_IN_MAX_DAY_PACKAGES);
-  return { entries, withdrawnServiceDates, unavailableServiceDates, state: unavailableServiceDates.length ? (entries.length ? "partial" as const : "unavailable" as const) : "current" as const };
+  const enrichedEntries = await Promise.all(entries.map(async entry => {
+    if (entry.weekCommencing) return entry;
+    const packageValue = await readDeliveredInProjection(oplocId, entry.serviceDate).catch(() => undefined);
+    const day = packageValue?.value;
+    return day ? { ...entry, weekCommencing: day.weekCommencing || mondayOf(day.serviceDate), weekEnding: addDays(day.weekCommencing || mondayOf(day.serviceDate), 6), publicationId: day.publicationId } : entry;
+  }));
+  return { entries: enrichedEntries, weeks: publishedWeeksFromProjectionIndex(enrichedEntries), withdrawnServiceDates, unavailableServiceDates, state: unavailableServiceDates.length ? (enrichedEntries.length ? "partial" as const : "unavailable" as const) : "current" as const };
 }
 
 function weeksFromProjectionDays(days: DeliveredInDayProjection[]) {
