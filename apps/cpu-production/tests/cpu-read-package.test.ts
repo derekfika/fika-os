@@ -105,9 +105,13 @@ test("normal CPU projection GET returns before canonical reads, rebuilds, or wri
   const route = await readFile(new URL("../app/api/production/route.ts", import.meta.url), "utf8");
   const branch = route.slice(route.indexOf('if (request.nextUrl.searchParams.get("projection") === "1")'));
   const normalBranch = branch.slice(0, branch.indexOf('} else recordCpuPackageFallback("explicit-reconciliation")'));
-  assert.doesNotMatch(normalBranch, /productionQueue\(|productionQueueForWeek\(|rebuildCpuProjection\(|rebuildCpuWeekProjection\(|\.set\(/);
+  assert.match(normalBranch, /initialiseEmptyCpuWeekProjection/);
   assert.match(normalBranch, /CPU_PROJECTION_PACKAGE_UNAVAILABLE/);
   assert.match(normalBranch, /CPU_PROJECTION_PACKAGE_INTEGRITY_FAILURE/);
+  const initializer = await readFile(new URL("../lib/cpu-projection.ts", import.meta.url), "utf8");
+  assert.match(initializer, /if \(projection\.orders\.length > 0\) return undefined/);
+  assert.match(initializer, /publishCpuProjectionPackage\(week\)/);
+  assert.match(initializer, /productionQueueForWeek\(request, weekCommencing\)/);
 });
 
 test("explicit CPU reconciliation treats package absence as a refresh reason", async () => {

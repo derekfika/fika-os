@@ -40,6 +40,6 @@ test("CPU allergen review is a full-screen editable signed workflow", () => {
   assert.doesNotMatch(reviewMatrix, />Source<|>Published menu</);
   assert.match(reviewMatrix, /function displayState\(/);
   assert.match(reviewMatrix, /key === "no_key_allergens"\) return namedAllergenPresent \? "clear" : "contains"/);
-  assert.match(reviewMatrix, /disabled=\{busy \|\| key === "no_key_allergens"\}/);
+  assert.match(reviewMatrix, /disabled=\{busy \|\| locked \|\| key === "no_key_allergens"\}/);
   assert.doesNotMatch(reviewMatrix, /states\[row\.key\]\?\.\[key\] \|\| "clear"/);
 });

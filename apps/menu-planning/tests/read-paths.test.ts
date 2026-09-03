@@ -31,6 +31,12 @@ test("portion readiness reuses successful checks for the same week version and d
   assert.match(source, /loadCatalogue: false/);
 });
 
+test("portion readiness consumes the selected day blockers, not unrelated week blockers", () => {
+  const source = readFileSync(new URL("../app/portion-planner.tsx", import.meta.url), "utf8");
+  assert.match(source, /dayBlockers/);
+  assert.doesNotMatch(source, /Array\.isArray\(body\.weekBlockers\) \? body\.weekBlockers/);
+});
+
 test("catalogue and rolling-menu GET handlers return structured JSON errors", () => {
   const catalogue = readFileSync(new URL("../app/api/catalogue/route.ts", import.meta.url), "utf8");
   const rolling = readFileSync(new URL("../app/api/rolling-menu/route.ts", import.meta.url), "utf8");

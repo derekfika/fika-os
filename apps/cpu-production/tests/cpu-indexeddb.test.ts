@@ -151,3 +151,15 @@ test("allergen freshness hardening preserves the dual-sign and invalidation work
   assert.match(planRoute, /signatures/);
   assert.match(planRoute, /matrixArtifact/);
 });
+
+test("allergen signing freezes once, preserves the first signature, and locks edits", async () => {
+  const page = await readFile(new URL("../app/allergens/page.tsx", import.meta.url), "utf8");
+  const matrix = await readFile(new URL("../app/ui/AllergenReviewMatrix.tsx", import.meta.url), "utf8");
+  const planRoute = await readFile(new URL("../app/api/production-plan/route.ts", import.meta.url), "utf8");
+  assert.match(page, /if \(!reviewFrozen\) \{ await saveReviewRef\.current\(\); setReviewFrozen\(true\); \}/);
+  assert.doesNotMatch(page, /beginSigning[\s\S]*await saveReviewRef\.current\(\);[\s\S]*await saveReviewRef\.current\(\);/);
+  assert.match(page, /locked=\{signatureRoles\.length > 0 \|\| Boolean\(signing\)\}/);
+  assert.match(matrix, /locked = false/);
+  assert.match(matrix, /busy \|\| locked/);
+  assert.match(planRoute, /signatures\.length > 0 && plan\.signedMenuContentHash && plan\.signedMenuContentHash !== currentMenuContentHash/);
+});

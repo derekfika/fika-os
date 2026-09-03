@@ -23,6 +23,10 @@ const calendar = readFileSync(
   new URL("../app/ui/ProductionCalendar.tsx", import.meta.url),
   "utf8",
 );
+const cardCss = readFileSync(
+  new URL("../app/ui/production-card-overrides.css", import.meta.url),
+  "utf8",
+);
 const scope = readFileSync(
   new URL("../lib/production-scope.ts", import.meta.url),
   "utf8",
@@ -441,8 +445,12 @@ test("CPU dashboard opens with a Monday-to-Friday production heads-up", () => {
   assert.match(page, /view === "calendar"[\s\S]*<ProductionCalendar/);
   assert.match(calendar, /Monday.*Tuesday.*Wednesday.*Thursday.*Friday/);
   assert.doesNotMatch(calendar, /<small>OPLOC/);
+  assert.doesNotMatch(calendar, /<small>Destination/);
   assert.doesNotMatch(page, /Choose an OPLOC/);
   assert.match(calendar, /line\.itemName/);
+  assert.match(calendar, /x\{line\.customerQuantity\.toLocaleString\(\)\}/);
+  assert.match(cardCss, /font-family:inherit/);
+  assert.match(cardCss, /white-space:nowrap/);
   assert.doesNotMatch(calendar, /cpuRequiredTime\(order\)/);
   assert.match(calendar, /pieces\/quantities/);
 });

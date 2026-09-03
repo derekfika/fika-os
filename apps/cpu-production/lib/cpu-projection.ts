@@ -52,3 +52,21 @@ export async function rebuildCpuWeekProjection(request: NextRequest, weekCommenc
   recordDeliveredInReadBudget({ stage: "week_projection_rebuild", projectionDocs: 1, selectedIds: orders.length, rebuildScopes: 1 });
   return week;
 }
+
+/**
+ * Initialise only a genuinely empty week after a normal package miss. A
+ * missing package for a non-empty week remains fail-closed so normal reads do
+ * not become an unbounded reconciliation path.
+ */
+export async function initialiseEmptyCpuWeekProjection(request: NextRequest, weekCommencing: string) {
+  const [rawOrders, previous] = await Promise.all([productionQueueForWeek(request, weekCommencing), cpuProjections().doc(`week:${weekCommencing}`).get()]);
+  const orders = await withReadableDestinations(request, rawOrders);
+  const plans = await loadPlansForOrders(orders.map(order => order.canonicalId));
+  const projection = buildCpuDayProjection("all", orders.filter((order) => order.serviceDate && weekDates(weekCommencing).includes(order.serviceDate)), plans, Number(previous.data()?.lastChangeSequence || 0), Number(previous.data()?.revision || 0) + 1);
+  if (projection.orders.length > 0) return undefined;
+  const week: CpuWeekProjection = { serviceDate: weekCommencing, weekCommencing, revision: projection.revision, lastChangeSequence: projection.lastChangeSequence, orders: projection.orders, summary: projection.summary, rebuiltAt: projection.rebuiltAt };
+  await cpuProjections().doc(`week:${weekCommencing}`).set(week);
+  await publishCpuProjectionPackage(week);
+  recordDeliveredInReadBudget({ stage: "empty_week_projection_initialise", projectionDocs: 1, selectedIds: 0, rebuildScopes: 1 });
+  return week;
+}

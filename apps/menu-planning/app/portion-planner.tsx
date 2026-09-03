@@ -24,7 +24,10 @@ export default function PortionPlanner() {
       const response = await fetch(`/api/rolling-menu?weekId=${encodeURIComponent(snapshot.week.id)}&dayId=${encodeURIComponent(selectedDayId)}&publicationPreview=true`, { cache: "no-store" });
       const body = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(body.error?.message || "Publication readiness is unavailable.");
-      return Array.isArray(body.weekBlockers) ? body.weekBlockers : [];
+      // This screen is scoped to the selected day. Week-level blockers can
+      // describe another service day and falsely block an otherwise valid
+      // day preview (for example an intentionally blank bank holiday).
+      return Array.isArray(body.dayBlockers) ? body.dayBlockers : [];
     }).then(nextBlockers => {
       if (!active) return;
       setBlockers(nextBlockers);

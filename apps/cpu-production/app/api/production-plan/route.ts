@@ -465,8 +465,11 @@ async function handlePost(request: NextRequest) {
       const signatures = plan.signatures || [];
       if (signatures.some(signature => signature.role === "production_chef") && signatures.some(signature => signature.role === "head_chef_site_manager")) throw Object.assign(new Error("This allergen matrix is already fully signed and locked."), { status: 409 });
       if (signatures.some(signature => signature.role === command.role)) throw Object.assign(new Error("This signatory role has already signed this matrix."), { status: 409 });
+      const currentMenuContentHash = menuContentHash(plan.menuItems);
+      if (signatures.length > 0 && plan.signedMenuContentHash && plan.signedMenuContentHash !== currentMenuContentHash) throw Object.assign(new Error("The allergen matrix changed after the first signature. Re-review the matrix before signing again."), { status: 409 });
       const signature: InternalMatrixSignature = { role: command.role, printedName: command.printedName, signedAt: timestamp, actor: auditActor, attestation: command.attestation, signatureDataUrl: command.signatureDataUrl };
       plan.signatures = [...signatures, signature];
+      if (signatures.length === 0) plan.signedMenuContentHash = currentMenuContentHash;
       plan.audit.push({ action: "allergen-matrix-signed", at: timestamp, by: auditActor, reason: `${command.role}: ${command.attestation}` });
       const fullySigned = plan.signatures.some(item => item.role === "production_chef") && plan.signatures.some(item => item.role === "head_chef_site_manager");
       if (fullySigned) {

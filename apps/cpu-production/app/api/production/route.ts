@@ -9,7 +9,7 @@ import { filterCpuProjectionForScope } from "../../../lib/cpu-dashboard-adapter"
 // Scope filtering remains backed by the existing hospitalityMenuProductionRouting adapter.
 import { localFixtureOrders, updateLocalFixture } from "../local-fixtures";
 import { normaliseProductionScope } from "../../../lib/production-scope";
-import { appendCpuChange, buildCpuDayProjection, cpuProjections, listCpuChanges, listCpuWeekChanges, rebuildCpuDayProjection, rebuildCpuWeekProjection, weekCommencingFor } from "../../../lib/cpu-projection";
+import { appendCpuChange, buildCpuDayProjection, cpuProjections, initialiseEmptyCpuWeekProjection, listCpuChanges, listCpuWeekChanges, rebuildCpuDayProjection, rebuildCpuWeekProjection, weekCommencingFor } from "../../../lib/cpu-projection";
 import { loadPlansForOrders } from "../../../lib/cpu-projection-repository";
 import { recordDeliveredInReadBudget } from "../../../lib/delivered-in-read-budget";
 import type { ProductionOrder } from "../../../lib/production-types";
@@ -189,6 +189,14 @@ async function handleGet(request: NextRequest) {
             return withServerTiming(NextResponse.json({ projection: filtered, package: packaged.manifest }), { package: performance.now() - startedAt, total: performance.now() - startedAt });
           }
           recordCpuPackageFallback("missing");
+          if (week) {
+            const emptyWeek = await initialiseEmptyCpuWeekProjection(request, week);
+            if (emptyWeek) {
+              const packageManifest = await getCpuProjectionManifest(projectionDate, week);
+              const filtered = filterCpuProjectionForScope(emptyWeek, normaliseProductionScope(request.nextUrl.searchParams.get("scope")));
+              return withServerTiming(NextResponse.json({ projection: filtered, package: packageManifest }), { package: performance.now() - startedAt, total: performance.now() - startedAt });
+            }
+          }
           return withServerTiming(NextResponse.json({ error: { code: "CPU_PROJECTION_PACKAGE_UNAVAILABLE", message: "The CPU projection package is currently unavailable." }, freshness: "unavailable" }, { status: 503 }), { package: performance.now() - startedAt, total: performance.now() - startedAt });
         } catch {
           recordCpuPackageFallback("invalid");

@@ -42,6 +42,12 @@ test("CPU all-day projection keeps the service date on each order", () => {
   assert.deepEqual(projection.orders.map((item) => item.serviceDate), ["2026-08-24", "2026-08-25"]);
 });
 
+test("empty week projection is a valid zero-order package payload", () => {
+  const projection = buildCpuDayProjection("all", [], [], 0, 1, "2026-08-31T10:00:00.000Z");
+  assert.deepEqual(projection.orders, []);
+  assert.deepEqual(projection.summary, { orders: 0, ready: 0, attention: 0, planned: 0, totalUnits: 0 });
+});
+
 test("CPU projection preserves booking dietary and note context", () => {
   const source = { ...order("order:context"), bookingDietaries: { vegetarian: 3, gluten_free: 1 }, bookingNotes: "Use the side entrance.", lines: [{ ...order("order:context").lines[0], productionQuantity: 24, productionUnit: "piece", dietaries: { vegetarian: 3 }, productionInstructions: "Label each portion." }] };
   const projection = buildCpuDayProjection("2026-08-24", [source]);
