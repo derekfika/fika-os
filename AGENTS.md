@@ -236,6 +236,8 @@ If SQLite or file-backed operational data is used, inspect concurrency, locking,
 
 If Firestore is used, inspect query bounds, indexes, read/write amplification, emulator-vs-production differences and direct-client access rules.
 
+Deployment handoff: When a deployment has been successfully submitted/queued and the deployment command has returned enough information to identify the rollout, do not sit idle waiting for Firebase App Hosting to finish compiling or propagating unless the user explicitly asks for live verification. Report the submitted deployment, target app(s), commit SHA and any rollout/build identifier, then stop. Derek can verify when staging becomes live.
+
 5.1 GCS compressed-package invariant
 
 Google Cloud Storage may transparently decompress objects stored with
