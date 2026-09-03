@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { canonicalOplocId } from "@fika/server-shared/governed-oplocs";
 import { gunzipSync } from "node:zlib";
 import { recordDataAccess } from "@fika/server-shared/data-source-meter-server";
 import { db } from "./firebase-admin";
@@ -46,7 +47,7 @@ function validate(value: unknown, expectedPublicationId?: string): MenuPlanningW
       const allocations = entry.allocations.map(allocation => {
         const allocationQuantity = allocation && typeof allocation === "object" && "quantity" in allocation ? allocation.quantity : undefined;
         if (!isRecord(allocation) || (allocation.destinationId !== undefined && typeof allocation.destinationId !== "string") || typeof allocation.destinationLabel !== "string" || typeof allocationQuantity !== "number" || !Number.isFinite(allocationQuantity) || allocationQuantity < 0) throw invalid("The Menu Planning weekly packet contains an invalid portion allocation.");
-        return { ...(allocation.destinationId !== undefined ? { destinationId: allocation.destinationId } : {}), destinationLabel: allocation.destinationLabel, quantity: allocationQuantity };
+        return { ...(allocation.destinationId !== undefined ? { destinationId: canonicalOplocId(allocation.destinationId) } : {}), destinationLabel: allocation.destinationLabel, quantity: allocationQuantity };
       });
       return { sourceEntryId: entry.sourceEntryId, slot: entry.slot, ...(typeof entry.canonicalDishId === "string" ? { canonicalDishId: entry.canonicalDishId } : {}), dishName: entry.dishName, portions: entryPortions, allocations, ...(isRecord(entry.allergens) ? { allergens: Object.fromEntries(Object.entries(entry.allergens).filter(([, state]) => typeof state === "string").map(([key, state]) => [key, state as string])) } : {}), ...(typeof entry.mayContainNotes === "string" ? { mayContainNotes: entry.mayContainNotes } : {}) };
     });

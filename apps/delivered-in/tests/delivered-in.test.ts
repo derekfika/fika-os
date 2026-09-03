@@ -65,7 +65,8 @@ test("Delivered-In excludes synthetic test weeks outside the operational horizon
 
 test("Delivered-In accepts a live governed OPLOC set for restored venues", () => {
   const restoredHaleon = "oploc:bb4c7eea-87f5-4e79-8ed6-b973b24ded7b";
-  assert.equal(projectPublishedWeeks([source([day({ entries: [{ ...day().entries[0], allocations: [{ destinationId: restoredHaleon, destinationLabel: "Haleon", quantity: 10 }] } as SourcePublication["days"][number]["entries"][number]] })])], restoredHaleon, new Set([restoredHaleon]), "2026-08-20")[0].days[0].entries[0].quantity, 10);
+  const historicalHaleon = "oploc:46701265-15af-48f4-a230-1d27ca21bc59";
+  assert.equal(projectPublishedWeeks([source([day({ entries: [{ ...day().entries[0], allocations: [{ destinationId: historicalHaleon, destinationLabel: "Haleon", quantity: 10 }] } as SourcePublication["days"][number]["entries"][number]] })])], restoredHaleon, new Set([restoredHaleon]), "2026-08-20")[0].days[0].entries[0].quantity, 10);
 });
 
 test("Delivered-In preserves the exact governed published allocation and rejects corrupt identity", () => {

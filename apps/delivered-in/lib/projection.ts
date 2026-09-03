@@ -8,7 +8,7 @@ export type ProjectedEntry = { sourceEntryId: string; slot: string; canonicalDis
 export type ProjectedDestination = { oplocId: string; label: string; portions: number };
 export type ProjectedDay = { projectionVersion?: number; publicationId: string; publicationDayId: string; sourceDayId: string; date: string; dayName: string; version: number; contentHash: string; weekCommencing?: string; entries: ProjectedEntry[]; destinations?: ProjectedDestination[]; allergenSignoff: SourceDay["allergenSignoff"]; cpuReview?: { status: "pending" | "signed"; signatures: Array<{ role: string; printedName: string; signedAt: string }>; drivePdfUrl?: string }; drivePdfUrl?: string; drivePdfFileName?: string; siteMenu?: import("./site-menu").SiteMenuState };
 export type ProjectedWeek = { publicationId: string; weekCommencing: string; weekEnding: string; days: ProjectedDay[] };
-import { GOVERNED_OPLOC_BY_ID } from "@fika/server-shared/governed-oplocs";
+import { canonicalOplocId, GOVERNED_OPLOC_BY_ID, oplocIdsMatch } from "@fika/server-shared/governed-oplocs";
 import { titleCase } from "./text";
 
 const OPERATIONAL_TIME_ZONE = "Europe/London";
@@ -32,11 +32,12 @@ export function isRelevantPublishedWeek(publication: SourcePublication, asOf = o
   return publication.weekEnding >= currentWeekCommencing && publication.weekCommencing <= horizon;
 }
 
-export function assertAuthorisedOploc(access: SiteAccess, requestedOplocId: string) { if (!access.oplocIds.includes(requestedOplocId)) throw Object.assign(new Error("You are not authorised to view this Delivered-In site."), { status: 403 }); }
+export function assertAuthorisedOploc(access: SiteAccess, requestedOplocId: string) { if (!access.oplocIds.some(allowed => oplocIdsMatch(allowed, requestedOplocId))) throw Object.assign(new Error("You are not authorised to view this Delivered-In site."), { status: 403 }); }
 
 export function assertPublishedAllocationIntegrity(publicationId: string, day: SourceDay, entry: SourceEntry, governedOplocIds = new Set(GOVERNED_OPLOC_BY_ID.keys()), selectedOplocId?: string) {
-  for (const allocation of entry.allocations.filter(candidate => !selectedOplocId || candidate.destinationId === selectedOplocId)) {
-    if (!allocation.destinationId || !governedOplocIds.has(allocation.destinationId)) {
+  const governed = new Set([...governedOplocIds].map(canonicalOplocId));
+  for (const allocation of entry.allocations.filter(candidate => !selectedOplocId || oplocIdsMatch(candidate.destinationId, selectedOplocId))) {
+    if (!allocation.destinationId || !governed.has(canonicalOplocId(allocation.destinationId))) {
       throw Object.assign(
         new Error(`Published Delivered-In integrity error: ${publicationId} ${day.dayName} contains an unresolved destination for ${entry.dishName}.`),
         { status: 502 },
@@ -52,6 +53,7 @@ export function assertPublishedAllocationIntegrity(publicationId: string, day: S
 }
 
 export function projectPublishedWeeks(publications: SourcePublication[], selectedOplocId: string, governedOplocIds?: Set<string>, asOf = operationalDateLondon()): ProjectedWeek[] {
+  const selectedCanonicalOplocId = canonicalOplocId(selectedOplocId);
   return publications.filter(publication => isRelevantPublishedWeek(publication, asOf)).map(publication => {
     const latestByDate = new Map<string, SourceDay>();
     for (const day of publication.days) {
@@ -70,8 +72,9 @@ export function projectPublishedWeeks(publications: SourcePublication[], selecte
           const destinations = new Map<string, ProjectedDestination>();
           for (const entry of day.entries) for (const allocation of entry.allocations) {
             if (!allocation.destinationId) continue;
-            const current = destinations.get(allocation.destinationId);
-            destinations.set(allocation.destinationId, { oplocId: allocation.destinationId, label: allocation.destinationLabel, portions: (current?.portions || 0) + allocation.quantity });
+            const canonicalId = canonicalOplocId(allocation.destinationId)!;
+            const current = destinations.get(canonicalId);
+            destinations.set(canonicalId, { oplocId: canonicalId, label: allocation.destinationLabel, portions: (current?.portions || 0) + allocation.quantity });
           }
           return {
           publicationId: publication.publicationId,
@@ -91,7 +94,7 @@ export function projectPublishedWeeks(publications: SourcePublication[], selecte
             // a valid site's published menu.
             assertPublishedAllocationIntegrity(publication.publicationId, day, entry, governedOplocIds, selectedOplocId);
             return entry.allocations
-              .filter(allocation => allocation.destinationId === selectedOplocId)
+              .filter(allocation => oplocIdsMatch(allocation.destinationId, selectedCanonicalOplocId))
               .map(allocation => ({
                 sourceEntryId: entry.sourceEntryId,
                 slot: entry.slot,

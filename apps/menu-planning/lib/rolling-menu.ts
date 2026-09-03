@@ -18,13 +18,16 @@ const addDays = (iso: string, days: number) => { const d = new Date(`${iso}T00:0
 const dayName = (date: string) => new Date(`${date}T00:00:00Z`).toLocaleDateString("en-GB", { weekday: "long", timeZone: "UTC" });
 const slotOf = (value: unknown): RollingSlot | undefined => { const text = String(value ?? "").trim().toUpperCase(); if (ROLLING_SLOTS.includes(text as RollingSlot)) return text as RollingSlot; if (/^EXTRAS/.test(text)) return "EXTRAS 1"; return undefined; };
 const normaliseDestination = (allocation: RollingAllocation): RollingAllocation => {
-  const governed = resolveGovernedOploc(allocation.destinationId, allocation.destinationLabel);
+  const governed = allocation.destinationId
+    ? resolveGovernedOploc(allocation.destinationId)
+    : resolveGovernedOploc(undefined, allocation.destinationLabel);
   if (governed) return { ...allocation, destinationId: governed.id, destinationLabel: governed.label };
   // Hub is the authority for current OPLOC IDs. Preserve an explicit Hub ID even
   // when this local compatibility map has not seen it yet; publication validates
   // it against the live Hub list before allowing the menu through.
-  return { ...allocation, destinationId: undefined };
+  return allocation.destinationId ? allocation : { ...allocation, destinationId: undefined };
 };
+export const normaliseRollingSnapshotDestinations = (snapshot: RollingSnapshot): RollingSnapshot => ({ ...snapshot, entries: snapshot.entries.map(entry => ({ ...entry, allocations: entry.allocations.map(normaliseDestination) })) });
 export async function attachCanonicalDishIds(items: Array<{ canonicalId: string; displayName: string; reviewStatus?: string }>, actor = "rolling-menu-migration", scope?: { weekId: string; dayId?: string }) { let updated = 0; const active = items.filter(item => item.reviewStatus !== "archived"); const weeks = scope ? [{ id: scope.weekId }] : await listWeeks(); for (const week of weeks) { const snapshot = await getWeek(week.id); let changed = false; for (const entry of snapshot.entries) { if (scope?.dayId && entry.dayId !== scope.dayId) continue; if (entry.itemId) continue; const match = active.find(item => item.displayName.trim().toLocaleLowerCase() === entry.itemLabel.trim().toLocaleLowerCase()); if (!match) continue; entry.itemId = match.canonicalId; entry.audit.push({ action: "canonical-dish-identity-attached", at: now(), by: actor }); updated += 1; changed = true; } if (changed) { snapshot.week.version += 1; await saveSnapshot(snapshot); } } return updated; }
 export async function repointDestinationId(oldId: string, newId: string, newLabel: string, actor = "oploc-identity-recovery") {
   let updated = 0;
@@ -85,7 +88,7 @@ export async function getWeek(weekId?: string): Promise<RollingSnapshot> {
   const selectedId = weekId || defaultWeekForDate(await listWeeks())?.id;
   if (!selectedId) return emptyWeek(new Date().toISOString().slice(0, 10));
   const snapshot = await getWeekSnapshot<RollingSnapshot>(selectedId);
-  return snapshot || emptyWeek(new Date().toISOString().slice(0, 10));
+  return snapshot ? normaliseRollingSnapshotDestinations(snapshot) : emptyWeek(new Date().toISOString().slice(0, 10));
 }
 export async function addOneOffDestination(weekId: string, dayId: string, label: string, address: string, actor = "local-menu-planner") {
   const snapshot = await getWeek(weekId); const day = snapshot.days.find(item => item.id === dayId);

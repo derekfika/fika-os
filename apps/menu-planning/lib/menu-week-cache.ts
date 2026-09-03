@@ -2,6 +2,7 @@ import type { RollingSnapshot } from "./rolling-menu-types";
 import type { PublicationDayState } from "./menu-publication";
 import { clearCatalogueCache } from "./menu-catalogue-cache";
 import { recordDataAccess } from "@fika/server-shared/data-source-meter-client";
+import { canonicalOplocId } from "@fika/server-shared/governed-oplocs";
 
 export type CachedMenuWeek = { weekId: string; weekCommencing: string; version: number; snapshot: RollingSnapshot; publicationState: Record<string, PublicationDayState>; cachedAt: number; identity: string };
 export type CachedWeekSelection = { weekId: string; weekCommencing: string; identity: string; selectedAt: number };
@@ -10,6 +11,10 @@ const databaseVersion = 2;
 const storeName = "menuWeeks";
 const metadataStore = "cacheMetadata";
 const selectionKey = "selectedWeek";
+
+function normaliseCachedWeek(value: CachedMenuWeek): CachedMenuWeek {
+  return { ...value, snapshot: { ...value.snapshot, entries: value.snapshot.entries.map(entry => ({ ...entry, allocations: entry.allocations.map(allocation => ({ ...allocation, ...(allocation.destinationId ? { destinationId: canonicalOplocId(allocation.destinationId) } : {}) })) })) } };
+}
 
 function openDatabase(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
@@ -27,7 +32,7 @@ function openDatabase(): Promise<IDBDatabase> {
 }
 
 export async function getCachedWeek(weekId: string, identity: string) {
-  try { const db = await openDatabase(); return await new Promise<CachedMenuWeek | undefined>((resolve, reject) => { const request = db.transaction(storeName, "readonly").objectStore(storeName).get(weekId); request.onsuccess = () => { const value = request.result?.identity === identity ? request.result as CachedMenuWeek : undefined; recordDataAccess({ app: "menu-planning", operation: "week.cache", source: "CLIENT_CACHE", documents: value ? 1 : 0, cacheHit: Boolean(value) }); resolve(value); }; request.onerror = () => reject(request.error); }); } catch { recordDataAccess({ app: "menu-planning", operation: "week.cache", source: "CLIENT_CACHE", documents: 0, cacheHit: false }); return undefined; }
+  try { const db = await openDatabase(); return await new Promise<CachedMenuWeek | undefined>((resolve, reject) => { const request = db.transaction(storeName, "readonly").objectStore(storeName).get(weekId); request.onsuccess = () => { const value = request.result?.identity === identity ? normaliseCachedWeek(request.result as CachedMenuWeek) : undefined; recordDataAccess({ app: "menu-planning", operation: "week.cache", source: "CLIENT_CACHE", documents: value ? 1 : 0, cacheHit: Boolean(value) }); resolve(value); }; request.onerror = () => reject(request.error); }); } catch { recordDataAccess({ app: "menu-planning", operation: "week.cache", source: "CLIENT_CACHE", documents: 0, cacheHit: false }); return undefined; }
 }
 
 export async function getCachedWeekSelection(identity: string) {
@@ -59,7 +64,7 @@ export async function putCachedWeekSelection(value: CachedWeekSelection) {
 }
 
 export async function putCachedWeek(value: CachedMenuWeek) {
-  try { const db = await openDatabase(); await new Promise<void>((resolve, reject) => { const request = db.transaction(storeName, "readwrite").objectStore(storeName).put(value); request.onsuccess = () => resolve(); request.onerror = () => reject(request.error); }); } catch { /* Cache failure never changes server behaviour. */ }
+  try { const db = await openDatabase(); await new Promise<void>((resolve, reject) => { const request = db.transaction(storeName, "readwrite").objectStore(storeName).put(normaliseCachedWeek(value)); request.onsuccess = () => resolve(); request.onerror = () => reject(request.error); }); } catch { /* Cache failure never changes server behaviour. */ }
 }
 
 export async function clearMenuPlanningCache() {

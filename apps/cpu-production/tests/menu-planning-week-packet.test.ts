@@ -63,6 +63,12 @@ test("CPU weekly packet consumer remains compatible with the plain compiled snap
   assert.equal(packet.days[0].entries[0].allocations[0].quantity, 10);
 });
 
+test("CPU canonicalizes historical OPLOC IDs after packet integrity verification", () => {
+  const legacy = { ...snapshot, days: [{ ...snapshot.days[0], entries: [{ ...snapshot.days[0].entries[0], allocations: [{ destinationId: "oploc:46701265-15af-48f4-a230-1d27ca21bc59", destinationLabel: "Haleon", quantity: 10 }] }] }] };
+  const packet = decodeMenuPlanningWeekPacket(legacy, snapshot.publicationId);
+  assert.equal(packet.days[0].entries[0].allocations[0].destinationId, "oploc:bb4c7eea-87f5-4e79-8ed6-b973b24ded7b");
+});
+
 test("CPU consumes the shared Menu Planning packet envelope stored on the publication document", () => {
   const encoded = encodeWeeklyPublicationPacket(snapshot);
   const packet = decodeMenuPlanningWeekPacket(encoded, snapshot.publicationId);

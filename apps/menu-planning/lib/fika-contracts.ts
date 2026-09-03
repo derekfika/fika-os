@@ -25,6 +25,15 @@ const aliases: Record<string, GovernedOploc> = Object.fromEntries([
 ]);
 export function resolveGovernedOploc(destinationId?: string, destinationLabel?: string) { return (destinationId && aliases[destinationId]) || aliases[String(destinationLabel || "").trim().toLowerCase()]; }
 
+export function canonicalOplocId(oplocId?: string) {
+  if (!oplocId) return oplocId;
+  return resolveGovernedOploc(oplocId)?.id || oplocId;
+}
+
+export function oplocIdsMatch(left?: string, right?: string) {
+  return Boolean(left && right && canonicalOplocId(left) === canonicalOplocId(right));
+}
+
 export function appDataPath(_appName: string, ...parts: string[]) { return path.join(/*turbopackIgnore: true*/ process.cwd(), "local-data", ...parts); }
 export type DurableDomainEvent<T = unknown> = { eventId: string; eventType: string; sourceAggregateId: string; sourceVersion: number; occurredAt: string; correlationId?: string; causationId?: string; schemaVersion: string; payload: T; delivery: { status: "pending" | "delivered" | "failed"; attempts: number; nextAttemptAt?: string; lastAttemptAt?: string; deliveredAt?: string; lastError?: string; claimId?: string; claimedAt?: string } };
 export function createDomainEvent<T>(input: { eventType: string; sourceAggregateId: string; sourceVersion: number; occurredAt: string; correlationId?: string; causationId?: string; payload: T }): DurableDomainEvent<T> { return { ...input, eventId: `${input.eventType}:${input.sourceAggregateId}:v${input.sourceVersion}`, schemaVersion: "0.1.0", delivery: { status: "pending", attempts: 0 } }; }

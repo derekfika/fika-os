@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { addMenuSlot, addOneOffDestination, assertWeekDateAvailable, cleanDuplicateEntries, copyWeekIntoWeek, createEntry, defaultWeekForDate, duplicateWeek, emptyWeek, getWeek, listWeeks, removeMenuSlot, resetWeek, saveSnapshot, updateEntry, validateWeek } from "@/lib/rolling-menu";
+import { addMenuSlot, addOneOffDestination, assertWeekDateAvailable, cleanDuplicateEntries, copyWeekIntoWeek, createEntry, defaultWeekForDate, duplicateWeek, emptyWeek, getWeek, listWeeks, normaliseRollingSnapshotDestinations, removeMenuSlot, resetWeek, saveSnapshot, updateEntry, validateWeek } from "@/lib/rolling-menu";
 import { createPublishedMenuWeek, getMenuPublication, publicationDayBlockers, publicationPreview, publicationState, publicationWeekBlockers } from "@/lib/menu-publication";
 import { actorCanAccessOploc, assertActorCanAccessOploc, requireMutationActor, requirePublicationActor, resolveMenuActor, scopeMenuPublication, type MenuActor } from "@/lib/auth";
 import { readDeliveredInOplocs } from "@/lib/oploc-authority";
@@ -68,7 +68,7 @@ async function handleGet(request: NextRequest) {
     const selectedReadStarted = performance.now();
     const storedSnapshot = selectedWeek ? await getWeekSnapshot<Awaited<ReturnType<typeof getWeek>>>(selectedWeek.id) : undefined;
     const selectedWeekMs = performance.now() - selectedReadStarted;
-    const snapshot = scopedSnapshot(storedSnapshot || emptyWeek(requestedWeek || new Date().toISOString().slice(0, 10)), actor);
+    const snapshot = scopedSnapshot(normaliseRollingSnapshotDestinations(storedSnapshot || emptyWeek(requestedWeek || new Date().toISOString().slice(0, 10))), actor);
     const previewDayId = request.nextUrl.searchParams.get("dayId") || undefined;
     const publicationPreviewRequested = request.nextUrl.searchParams.get("publicationPreview") === "true";
     const governedOplocs = publicationPreviewRequested ? (await readDeliveredInOplocs(request)).filter(oploc => actorCanAccessOploc(actor, oploc.canonicalId)) : undefined;

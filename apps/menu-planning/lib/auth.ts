@@ -1,6 +1,7 @@
 import type { NextRequest } from "next/server";
 import { menuPlanningHubBaseUrl } from "./hub-url";
 import type { MenuPublication } from "./menu-publication";
+import { oplocIdsMatch } from "./fika-contracts";
 
 export type MenuActor = {
   uid: string;
@@ -31,7 +32,7 @@ export function requireMutationActor(actor: MenuActor) { if (actor.role === "vie
 export function requirePublicationActor(actor: MenuActor) { if (actor.role !== "integration-admin") throw failure("Only an Integration Administrator may publish or withdraw a menu.", 403); return actor; }
 
 export function actorCanAccessOploc(actor: MenuActor, oplocId?: string) {
-  return actor.allOplocs || Boolean(oplocId && actor.oplocIds.includes(oplocId));
+  return actor.allOplocs || Boolean(oplocId && actor.oplocIds.some(allowed => oplocIdsMatch(allowed, oplocId)));
 }
 
 export function assertActorCanAccessOploc(actor: MenuActor, oplocId?: string) {

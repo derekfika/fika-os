@@ -99,6 +99,15 @@ test("historical unresolved destination data remains readable but cannot publish
   assert.ok(validateWeek(snapshot).some(error => error.includes("unresolved destination")));
 });
 
+test("historical Haleon destination IDs are normalized when a week is read", async () => {
+  const week = emptyWeek(`2031-01-${String((Date.now() % 20) + 1).padStart(2, "0")}`);
+  await saveSnapshot(week);
+  const created = await createEntry(week.week.id, week.days[0].id, "SALAD 1", "Legacy Haleon dish", "test", "dish:legacy-haleon");
+  await updateEntry(week.week.id, created.entries[0].id, { portions: 10, allocations: [{ destinationId: "oploc:46701265-15af-48f4-a230-1d27ca21bc59", destinationLabel: "Haleon", quantity: 10 }] });
+  const readBack = await getWeek(week.week.id);
+  assert.equal(readBack.entries[0].allocations[0].destinationId, "oploc:bb4c7eea-87f5-4e79-8ed6-b973b24ded7b");
+});
+
 test("week lifecycle prevents collisions, publishes once, and duplicates published weeks as drafts", async () => {
   const rollingFile = join(process.cwd(), "local-data", "menu-planning", "rolling-menu-weeks.json");
   const before = existsSync(rollingFile) ? await readFile(rollingFile) : undefined;

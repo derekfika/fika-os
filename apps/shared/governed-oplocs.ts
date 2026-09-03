@@ -15,7 +15,8 @@ export const GOVERNED_OPLOCS: readonly GovernedOploc[] = [
 
 export const GOVERNED_OPLOC_BY_ID = new Map(GOVERNED_OPLOCS.map(value => [value.id, value]));
 export const GOVERNED_OPLOC_BY_LABEL = new Map(GOVERNED_OPLOCS.map(value => [value.label.toLocaleLowerCase(), value]));
-const HISTORICAL_OPLOC_ID_ALIASES: Record<string, GovernedOploc> = {
+/** Historical IDs are read-compatibility aliases only; Hub remains authoritative. */
+export const HISTORICAL_OPLOC_ID_ALIASES: Record<string, GovernedOploc> = {
   "oploc:46701265-15af-48f4-a230-1d27ca21bc59": GOVERNED_OPLOCS[0],
 };
 
@@ -31,4 +32,13 @@ export function resolveGovernedOploc(destinationId?: string, destinationLabel?: 
   if (destinationId && GOVERNED_OPLOC_BY_ID.has(destinationId)) return GOVERNED_OPLOC_BY_ID.get(destinationId);
   if (destinationId && HISTORICAL_OPLOC_ID_ALIASES[destinationId]) return HISTORICAL_OPLOC_ID_ALIASES[destinationId];
   return HISTORICAL_DESTINATION_ALIASES[String(destinationLabel || "").trim().toLocaleLowerCase()];
+}
+
+export function canonicalOplocId(oplocId?: string) {
+  if (!oplocId) return oplocId;
+  return HISTORICAL_OPLOC_ID_ALIASES[oplocId]?.id || oplocId;
+}
+
+export function oplocIdsMatch(left?: string, right?: string) {
+  return Boolean(left && right && canonicalOplocId(left) === canonicalOplocId(right));
 }
