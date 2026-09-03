@@ -23,8 +23,17 @@ export async function GET(request: NextRequest) {
       const scope = await resolvePermittedOplocIds({ repository, principal, appId: "menu-planning" });
       const packageValue = validateOplocReadPackage((await getOplocReadPackage()).value);
       const oplocs = packageValue.oplocs.filter(oploc => scope.all || scope.ids.has(oploc.canonicalId)).map(oploc => ({ id: oploc.canonicalId, label: oploc.label, active: true }));
+      let canManage = false;
       let canPublish = false;
       const oplocAccessStarted = performance.now();
+      const manageAuthorityStarted = performance.now();
+      // Manage is a normal Menu Planning authority and must be evaluated
+      // against each OPLOC the identity is actually permitted to use. The
+      // prior unconditional response made every admitted identity a writer.
+      for (const oploc of oplocs) {
+        canManage ||= (await evaluateAuthority(repository, { principal, appId: "menu-planning", resource: "menu-planning.normal", action: "Manage", scope: { kind: "oploc", ids: [oploc.id] } }, context)).allowed;
+      }
+      const manageAuthorityMs = performance.now() - manageAuthorityStarted;
       const publishAuthorityStarted = performance.now();
       // Menu Publish is an explicit organisation-wide authority. Keep the
       // OPLOC checks as a bounded compatibility fallback for grants created
@@ -35,8 +44,8 @@ export async function GET(request: NextRequest) {
       }
       const perOplocAccessMs = performance.now() - oplocAccessStarted;
       const publishAuthorityMs = performance.now() - publishAuthorityStarted;
-      console.info("Integration Hub Menu Planning access timing", { sessionMs, appAccessMs, perOplocAccessMs, publishAuthorityMs, totalMs: performance.now() - totalStarted });
-      return NextResponse.json({ principal, oplocs, canManage: true, canPublish }, { headers: { "Cache-Control": "no-store" } });
+      console.info("Integration Hub Menu Planning access timing", { sessionMs, appAccessMs, perOplocAccessMs, manageAuthorityMs, publishAuthorityMs, totalMs: performance.now() - totalStarted });
+      return NextResponse.json({ principal, oplocs, scope: { all: scope.all, ids: [...scope.ids] }, canManage, canPublish }, { headers: { "Cache-Control": "no-store" } });
     }
     const context = createAuthModEvaluationContext(repository, principal);
     const appAccessStarted = performance.now();

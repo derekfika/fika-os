@@ -4,6 +4,7 @@ import { createGoogleSiteMenu, retireGoogleSiteMenu } from "@/lib/google-site-me
 import { latestSiteMenuArtifactHosted, saveSiteMenuArtifactHosted } from "@/lib/site-menu-store";
 import { siteMenuState } from "@/lib/site-menu";
 import { withDataTrace } from "@fika/server-shared/data-source-meter-server";
+import { requireDeliveredInMaintenance } from "@/lib/maintenance-auth";
 
 export const dynamic = "force-dynamic";
 
@@ -21,6 +22,7 @@ async function handleGet(request: NextRequest) {
 
 async function handlePost(request: NextRequest) {
   try {
+    requireDeliveredInMaintenance(request);
     const body = await request.json() as { oplocId?: string; publicationDayId?: string; action?: "generate" | "regenerate" };
     if (!body.oplocId || !body.publicationDayId) return NextResponse.json({ error: { message: "A site and published day are required." } }, { status: 422 });
     const day = await projectedAllergenDay(request, body.oplocId, body.publicationDayId, { authoritative: true });

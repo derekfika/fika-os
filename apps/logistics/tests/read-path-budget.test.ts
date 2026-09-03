@@ -34,6 +34,15 @@ test("projection reads do not trigger write-producing reconciliation", () => {
   assert.match(projectionBranch, /side-effect free/);
 });
 
+test("week summaries request Hub fulfilment by service date", () => {
+  const weekBranch = route.slice(route.indexOf("if (requestedWeek)"), route.indexOf("const requestedRun = requestedRunId"));
+  assert.doesNotMatch(weekBranch, /fetchRequirements\(undefined/);
+  assert.match(weekBranch, /fetchRequirementsForDateRange\(dates\[0\], addOperationalDays\(dates\[4\], 1\), cookie\)/);
+  const attentionBranch = route.slice(route.indexOf('if (request.nextUrl.searchParams.get("planningAttention")'), route.indexOf('if (request.nextUrl.searchParams.has("changesSince")'));
+  assert.doesNotMatch(attentionBranch, /Promise\.all\(serviceDates\.map\(\(serviceDate\) => fetchRequirements/);
+  assert.match(attentionBranch, /fetchRequirementsForDateRange\(serviceDates\[0\], addOperationalDays\(serviceDates\[days - 1\], 1\), cookie\)/);
+});
+
 test("incremental backlog drains more than one 200-event page in order", async () => {
   const cursors: number[] = [];
   const result = await drainIncrementalPages(0, async (cursor) => {

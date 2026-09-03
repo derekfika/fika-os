@@ -8,37 +8,27 @@ import { readDeliveredInProjection, readDeliveredInProjectionIndex } from "./del
 import type { DeliveredInDayProjection } from "./delivered-in-day-projection";
 import type { DeliveredInProjectionIndexEntry } from "./delivered-in-projection-store";
 import { packetPublicationsForRange, readMenuPlanningWeekPackets } from "./menu-planning-week-packet";
+import { cpuDailyPacketReview, readCpuDailySignedPacket } from "./cpu-daily-signed-packet";
 
 export const DELIVERED_IN_PROJECTION_HORIZON_DAYS = 42;
 export const DELIVERED_IN_MAX_DAY_PACKAGES = 50;
 
 const hubBase = () => (process.env.INTEGRATION_HUB_BASE_URL || "http://localhost:3200").replace(/\/$/, "");
 const menuBase = () => (process.env.MENU_PLANNING_BASE_URL || "http://localhost:3500").replace(/\/$/, "");
-const cpuBase = () => (process.env.CPU_PRODUCTION_BASE_URL || "http://localhost:3400").replace(/\/$/, "");
 const failure = (message: string, status = 502) => Object.assign(new Error(message), { status });
 const addDays = (date: string, days: number) => { const value = new Date(`${date}T00:00:00Z`); value.setUTCDate(value.getUTCDate() + days); return value.toISOString().slice(0, 10); };
 const mondayOf = (date: string) => { const value = new Date(`${date}T00:00:00Z`); const day = value.getUTCDay(); value.setUTCDate(value.getUTCDate() - (day === 0 ? 6 : day - 1)); return value.toISOString().slice(0, 10); };
 async function readJson<T>(response: Response, label: string): Promise<T> { const text = await response.text(); if (!response.headers.get("content-type")?.includes("application/json")) throw failure(`${label} returned a non-JSON response (${response.status}); the source service may be unavailable.`); try { return JSON.parse(text) as T; } catch (cause) { throw Object.assign(failure(`${label} returned invalid JSON; no empty projection was used.`), { cause }); } }
 
-export async function cpuReviewForDay(request: NextRequest, date: string, oplocId: string) {
+/** Ordinary Delivered-In reads consume the immutable, signed CPU packet only. */
+export async function cpuReviewForDay(_request: NextRequest, date: string, oplocId: string, sourceBundleHash?: string) {
+  if (!sourceBundleHash) return undefined;
   try {
-    const summaryResponse = await fetch(`${cpuBase()}/api/delivered-in/review?serviceDate=${encodeURIComponent(date)}&oplocId=${encodeURIComponent(oplocId)}`, { headers: { cookie: request.headers.get("cookie") || "" }, cache: "no-store" });
-    recordDataAccess({ app: "delivered-in", operation: "cpu-review-package.by-day", source: "NETWORK_UPSTREAM", dataset: "cpu-production/review", documents: 0, cacheResult: "BYPASS" });
-    if (!summaryResponse.ok) return undefined;
-    const summary = await readJson<{
-      status: "pending" | "signed";
-      signatures: Array<{ role: string; printedName: string; signedAt: string }>;
-      drivePdfUrl?: string;
-      entries: Record<string, { allergens: Record<string, "clear" | "contains" | "may_contain" | "unrecorded">; mayContainNotes?: string }>;
-      package?: { packageVersion?: number; contentHash?: string; sourceVersion?: string; contractVersion?: string; recordCount?: number };
-    }>(summaryResponse, "CPU Delivered-In review package");
-    recordDeliveredInAppReadBudget({ stage: "cpu_review_package", upstreamRequests: 1, recordsInspected: summary.package?.recordCount || Object.keys(summary.entries || {}).length, serviceDate: date, oplocId });
-    return {
-      entries: new Map(Object.entries(summary.entries || {})),
-      cpuReview: { status: summary.status, signatures: summary.signatures, ...(summary.drivePdfUrl ? { drivePdfUrl: summary.drivePdfUrl } : {}) },
-      orderIds: [],
-      package: summary.package ? { packageVersion: summary.package.packageVersion, contentHash: summary.package.contentHash, sourceVersion: summary.package.sourceVersion, contractVersion: summary.package.contractVersion } : undefined,
-    };
+    const packet = await readCpuDailySignedPacket(date, oplocId, sourceBundleHash);
+    if (!packet) return undefined;
+    recordDataAccess({ app: "delivered-in", operation: "cpu-review-package.by-day", source: "SNAPSHOT", dataset: "cpu-production/review", documents: packet.manifest.recordCount, cacheResult: "HIT" });
+    recordDeliveredInAppReadBudget({ stage: "cpu_review_package", upstreamRequests: 0, recordsInspected: packet.manifest.recordCount, serviceDate: date, oplocId });
+    return cpuDailyPacketReview(packet);
   } catch { return undefined; }
 }
 
@@ -152,8 +142,9 @@ async function readProjectionWindow(oplocId: string, asOf = operationalDateLondo
   }));
   const unavailableServiceDates = entries.filter((_, index) => !results[index]).map(entry => entry.serviceDate);
   const days = results.filter((day): day is DeliveredInDayProjection => Boolean(day));
-  const state: "current" | "partial" | "unavailable" = unavailableServiceDates.length ? (days.length ? "partial" : "unavailable") : "current";
-  return { days, withdrawnServiceDates, unavailableServiceDates, state: unavailableServiceDates.length ? (days.length ? "partial" : "unavailable") : indexWindow.state };
+  const allUnavailable = [...new Set([...indexWindow.unavailableServiceDates, ...unavailableServiceDates])];
+  const state: "current" | "partial" | "unavailable" = allUnavailable.length ? (days.length ? "partial" : "unavailable") : "current";
+  return { days, withdrawnServiceDates, unavailableServiceDates: allUnavailable, state };
 }
 
 async function readProjectionIndexWindow(oplocId: string, asOf = operationalDateLondon()) {
@@ -161,8 +152,11 @@ async function readProjectionIndexWindow(oplocId: string, asOf = operationalDate
   if (!index) return { entries: [], withdrawnServiceDates: [], unavailableServiceDates: [], state: "unavailable" as const };
   const inWindow = boundedProjectionIndexEntries(index.value.entries, asOf);
   const withdrawnServiceDates = inWindow.filter(entry => entry.state === "withdrawn").map(entry => entry.serviceDate);
-  const entries = inWindow.filter(entry => entry.state !== "withdrawn").slice(0, DELIVERED_IN_MAX_DAY_PACKAGES);
-  return { entries, withdrawnServiceDates, unavailableServiceDates: [], state: "current" as const };
+  // Keep old immutable bodies in storage for audit, but never retrieve or
+  // display them while their pointer says stale/partial/missing.
+  const unavailableServiceDates = inWindow.filter(entry => entry.state !== "withdrawn" && (entry.freshness !== "current" || entry.completeness !== "complete")).map(entry => entry.serviceDate);
+  const entries = inWindow.filter(entry => entry.state !== "withdrawn" && entry.freshness === "current" && entry.completeness === "complete").slice(0, DELIVERED_IN_MAX_DAY_PACKAGES);
+  return { entries, withdrawnServiceDates, unavailableServiceDates, state: unavailableServiceDates.length ? (entries.length ? "partial" as const : "unavailable" as const) : "current" as const };
 }
 
 function weeksFromProjectionDays(days: DeliveredInDayProjection[]) {

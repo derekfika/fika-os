@@ -94,21 +94,39 @@ export async function withdrawDeliveredInProjectionDay(oplocId: string, serviceD
 }
 
 export type DeliveredInInvalidation = { sourceDomain: "menu-planning" | "cpu-production" | "integration-hub"; sourceEntityId: string; publicationId?: string; eventId: string; eventType: "changed" | "amended" | "withdrawn" | "superseded"; serviceDate: string; oplocId: string; sourceVersion?: string; contentHash?: string };
-function versionNumber(value?: string) { const match = value?.match(/(\d+)$/); return match ? Number(match[1]) : undefined; }
+function versionNumber(value?: string) {
+  // Source versions commonly carry a content hash after the revision (for
+  // example `publication-day:v2:<hash>`), so reading only trailing digits
+  // loses amendment ordering. Prefer an explicit vN/change-N marker.
+  const match = value?.match(/(?:^|[:_-])v(\d+)(?:[:_-]|$)/i) || value?.match(/(?:^|[:_-])change-(\d+)(?:[:_-]|$)/i) || value?.match(/(\d+)$/);
+  return match ? Number(match[1]) : undefined;
+}
 function sourceVersionIsOlder(incoming: string | undefined, existing: string | undefined) {
   if (!incoming || !existing || incoming === existing) return false;
   const next = versionNumber(incoming); const prior = versionNumber(existing);
   return next !== undefined && prior !== undefined && next < prior;
+}
+function sourceVersionIsNewer(incoming: string | undefined, existing: string | undefined) {
+  if (!incoming || !existing || incoming === existing) return false;
+  const next = versionNumber(incoming); const prior = versionNumber(existing);
+  return next !== undefined && prior !== undefined && next > prior;
 }
 export async function markDeliveredInProjectionStale(change: DeliveredInInvalidation): Promise<"stale" | "duplicate" | "older" | "missing" | "withdrawn"> {
   const store = deliveredInProjectionStore();
   const current = await retrieveReadPackage<DeliveredInProjectionIndex>(store, projectionIndexManifestKey(change.oplocId)).catch(() => undefined);
   const existing = current?.value.entries.find(entry => entry.serviceDate === change.serviceDate);
   if (!existing) return "missing";
-  if (existing.state === "withdrawn" && change.eventType === "withdrawn") return "withdrawn";
   const prior = existing.invalidation;
+  if (existing.state === "withdrawn" && prior?.eventType === "withdrawn" && change.eventType === "withdrawn") return "withdrawn";
   if (prior?.eventId === change.eventId) return "duplicate";
   if (prior && prior.sourceDomain === change.sourceDomain && prior.sourceEntityId === change.sourceEntityId && sourceVersionIsOlder(change.sourceVersion, prior.sourceVersion)) return "older";
+  // A first late-arriving amendment must also be compared with the version
+  // that produced the currently indexed package; otherwise an old amendment
+  // can incorrectly make a newer package look authoritative.
+  if (!prior && change.sourceDomain === "menu-planning" && sourceVersionIsOlder(change.sourceVersion, existing.sourceVersion)) return "older";
+  if (existing.state === "withdrawn" && (prior?.eventType === "withdrawn" || prior?.eventType === "superseded")) {
+    if (!sourceVersionIsNewer(change.sourceVersion, prior.sourceVersion)) return "withdrawn";
+  }
   const invalidatedAt = new Date().toISOString();
   if (change.eventType === "withdrawn" || change.eventType === "superseded") {
     await updateProjectionIndex(store, change.oplocId, { ...existing, freshness: "current", completeness: "missing", state: "withdrawn", sourceVersion: change.sourceVersion || existing.sourceVersion, generatedAt: invalidatedAt, invalidation: { ...change, invalidatedAt } });

@@ -7,30 +7,37 @@ import { projectionId } from "./delivered-in-day-projection";
 import { writeDeliveredInProjection } from "./delivered-in-projection-store";
 
 type Review = {
-  entries: Map<string, { allergens: Record<string, "clear" | "contains" | "may_contain" | "unrecorded">; mayContainNotes?: string }>;
+  entries: Map<string, { allergens: Record<string, "clear" | "contains" | "may_contain" | "unrecorded">; allergenState?: "clear" | "contains" | "may_contain" | "unrecorded"; mayContainNotes?: string }>;
   cpuReview: { status: "pending" | "signed"; signatures: Array<{ role: string; printedName: string; signedAt: string }>; drivePdfUrl?: string };
   orderIds: string[];
   updatedAt?: string;
-  package?: { packageVersion?: number; contentHash?: string; sourceVersion?: string; contractVersion?: string; sourceCompleteness?: "complete" | "partial"; sourceStatus?: "current" | "partial" | "valid_empty"; generatedAt?: string };
+  package?: { packageVersion?: number; contentHash?: string; sourceBundleHash?: string; sourceVersion?: string; contractVersion?: string; sourceCompleteness?: "complete" | "partial"; sourceStatus?: "current" | "partial" | "valid_empty"; generatedAt?: string };
 };
 
-export type ReviewLoader = (request: NextRequest, date: string, oplocId: string) => Promise<Review | undefined>;
+export type ReviewLoader = (request: NextRequest, date: string, oplocId: string, sourceBundleHash?: string) => Promise<Review | undefined>;
 
 export async function buildDeliveredInDayProjection(input: { request: NextRequest; site: Site; day: ProjectedDay; loadReview: ReviewLoader; governed: boolean }): Promise<DeliveredInDayProjection> {
-  const review = await input.loadReview(input.request, input.day.date, input.site.oplocId);
+  const review = await input.loadReview(input.request, input.day.date, input.site.oplocId, input.day.contentHash);
   if (!review) throw Object.assign(new Error("CPU review data is unavailable; the previous Delivered-In projection must be retained."), { code: "CPU_REVIEW_UNAVAILABLE", status: 503 });
   const sourceEntries = input.day.entries.map(entry => {
     const reviewed = review?.entries.get(entry.sourceEntryId);
     return {
       ...entry,
-      allergensVisible: review?.cpuReview.status === "signed",
-      allergens: review?.cpuReview.status === "signed" && reviewed ? reviewed.allergens : Object.fromEntries(Object.keys(entry.allergens).map(key => [key, "unrecorded" as const])),
+      allergensVisible: review?.cpuReview.status === "signed" && reviewed?.allergenState !== "unrecorded",
+      allergens: review?.cpuReview.status === "signed" && reviewed
+        ? reviewed.allergenState === "unrecorded"
+          ? Object.fromEntries(Object.keys(entry.allergens).map(key => [key, "unrecorded" as const]))
+          : Object.fromEntries(Object.keys(entry.allergens).map(key => [key, reviewed.allergens[key] || "clear"]))
+        : Object.fromEntries(Object.keys(entry.allergens).map(key => [key, "unrecorded" as const])),
       ...(reviewed?.mayContainNotes ? { mayContainNotes: reviewed.mayContainNotes } : {}),
     };
   });
   const artifact = review?.cpuReview.status === "signed" ? await latestSiteMenuArtifactHosted(input.site.oplocId, input.day.sourceDayId) : undefined;
   const projection: DeliveredInDayProjection = {
     ...input.day,
+    // The CPU packet's signed PDF is the safety reference for Delivered-In;
+    // do not let an older Menu Planning archive link masquerade as it.
+    ...(review?.cpuReview.drivePdfUrl ? { drivePdfUrl: review.cpuReview.drivePdfUrl } : {}),
     projectionId: projectionId(input.site.oplocId, input.day.date),
     projectionVersion: 0,
     contractVersion: "delivered-in.day.v1",

@@ -8,6 +8,7 @@ import {
   fetchOplocs,
   fetchProductionContexts,
   fetchRequirements,
+  fetchRequirementsForDateRange,
 } from "@/lib/upstream";
 import { buildPlannerDay } from "@/lib/planner-read-model";
 import {
@@ -391,8 +392,8 @@ async function getLogistics(request: NextRequest) {
     const days = Math.min(14, Math.max(1, Number.isFinite(requestedDays) ? requestedDays : 14));
     reportLogisticsReadPath("planning-attention-check");
     const serviceDates = Array.from({ length: days }, (_, index) => addOperationalDays(fromDate, index));
-    const upstream = await Promise.all(serviceDates.map((serviceDate) => fetchRequirements(serviceDate, cookie).catch(() => [])));
-    const expectedSourceKeys = new Map(serviceDates.map((serviceDate, index) => [serviceDate, new Set(upstream[index].filter((item) => item.status !== "withdrawn" && item.destinationOplocId !== CPU_SITE_OPLOC_ID).map((item) => `${item.sourceDomain}:${item.sourceEntityId}`))]));
+    const upstream = await fetchRequirementsForDateRange(serviceDates[0], addOperationalDays(serviceDates[days - 1], 1), cookie).catch(() => []);
+    const expectedSourceKeys = new Map(serviceDates.map((serviceDate) => [serviceDate, new Set(upstream.filter((item) => item.serviceDate === serviceDate && item.status !== "withdrawn" && item.destinationOplocId !== CPU_SITE_OPLOC_ID).map((item) => `${item.sourceDomain}:${item.sourceEntityId}`))]));
     return NextResponse.json({ attention: await listPlanningAttention(serviceDates, expectedSourceKeys), fromDate, days });
   }
   if (request.nextUrl.searchParams.has("changesSince")) {
@@ -405,18 +406,16 @@ async function getLogistics(request: NextRequest) {
   }
   if (requestedWeek) {
     const dates = operationalWeek(requestedWeek);
-    const requirementsResult = await fetchRequirements(undefined, cookie).catch(
-      () => [],
-    );
+    // One bounded five-day range read keeps the week view from asking Hub for
+    // the complete fulfilment projection and avoids a five-request fan-out.
+    const requirementsResult = await fetchRequirementsForDateRange(dates[0], addOperationalDays(dates[4], 1), cookie).catch(() => []);
     const productionByDate = await Promise.all(
       dates.map((serviceDate) => fetchProductionContexts(serviceDate, cookie).catch(() => [])),
     );
     const dayStates = await Promise.all(dates.map((serviceDate) => listState(serviceDate)));
     const summaries: PlannerWeekSummary[] = dates.map((serviceDate, index) => {
       const state = dayStates[index];
-      const requirements = activeLogisticsRequirements(requirementsResult.filter(
-        (requirement) => requirement.serviceDate === serviceDate,
-      ), productionByDate[index]);
+      const requirements = activeLogisticsRequirements(requirementsResult.filter((requirement) => requirement.serviceDate === serviceDate), productionByDate[index]);
       const planner = buildPlannerDay({
         serviceDate,
         requirements,

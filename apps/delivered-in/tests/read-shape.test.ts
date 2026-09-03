@@ -5,7 +5,8 @@ import { readFileSync } from "node:fs";
 
 test("CPU review consumption is one authenticated package request with no Delivered-In CPU reconstruction", async () => {
   const server = await readFile(new URL("../lib/server.ts", import.meta.url), "utf8");
-  assert.match(server, /api\/delivered-in\/review\?serviceDate=/);
+  assert.match(server, /readCpuDailySignedPacket/);
+  assert.doesNotMatch(server, /api\/delivered-in\/review\?serviceDate=/);
   assert.match(server, /stage: "cpu_review_package"/);
   assert.doesNotMatch(server, /api\/production\?/);
   assert.doesNotMatch(server, /api\/production-plan\?/);

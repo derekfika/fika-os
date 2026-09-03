@@ -2,10 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { invalidateLogisticsProjection } from "@/lib/store";
 import type { LogisticsProjectionInvalidation } from "@/lib/logistics-projection";
 import { withDataTrace } from "@fika/server-shared/data-source-meter-server";
+import { internalTokenAllowed } from "../../../../../shared/internal-auth";
 
 function internalAllowed(request: NextRequest) {
-  const configured = process.env.FIKA_INTERNAL_API_TOKEN;
-  return process.env.NODE_ENV !== "production" && !configured || Boolean(configured && request.headers.get("x-fika-internal-token") === configured);
+  return internalTokenAllowed(request);
 }
 
 async function handlePost(request: NextRequest) {

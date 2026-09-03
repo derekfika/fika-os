@@ -46,3 +46,32 @@ test("withdrawal tombstones one scope without deleting its last-known-good packa
     await rm(root, { recursive: true, force: true });
   }
 });
+
+test("late stale amendment cannot invalidate a newer menu package", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "fika-delivered-in-amendment-order-"));
+  const prior = process.env.FIKA_SNAPSHOT_DIR;
+  process.env.FIKA_SNAPSHOT_DIR = root;
+  try {
+    await writeDeliveredInProjection(projection("oploc:a", "2026-08-31"));
+    assert.equal(await markDeliveredInProjectionStale({ sourceDomain: "menu-planning", sourceEntityId: "source-day:1", eventId: "event:old-amendment", eventType: "amended", serviceDate: "2026-08-31", oplocId: "oploc:a", sourceVersion: "source-day:v0" }), "older");
+    assert.ok((await readDeliveredInProjection("oploc:a", "2026-08-31"))?.value.state.completeness === "complete");
+  } finally {
+    if (prior === undefined) delete process.env.FIKA_SNAPSHOT_DIR; else process.env.FIKA_SNAPSHOT_DIR = prior;
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("a withdrawal blocks an out-of-order amendment while retaining audit bytes", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "fika-delivered-in-withdrawal-order-"));
+  const prior = process.env.FIKA_SNAPSHOT_DIR;
+  process.env.FIKA_SNAPSHOT_DIR = root;
+  try {
+    await writeDeliveredInProjection(projection("oploc:a", "2026-08-31"));
+    assert.equal(await markDeliveredInProjectionStale({ sourceDomain: "menu-planning", sourceEntityId: "source-day:1", eventId: "event:withdraw-v2", eventType: "withdrawn", serviceDate: "2026-08-31", oplocId: "oploc:a", sourceVersion: "source-day:v2" }), "withdrawn");
+    assert.equal(await markDeliveredInProjectionStale({ sourceDomain: "menu-planning", sourceEntityId: "source-day:1", eventId: "event:amend-v1", eventType: "amended", serviceDate: "2026-08-31", oplocId: "oploc:a", sourceVersion: "source-day:v1" }), "older");
+    assert.ok(await readDeliveredInProjection("oploc:a", "2026-08-31"));
+  } finally {
+    if (prior === undefined) delete process.env.FIKA_SNAPSHOT_DIR; else process.env.FIKA_SNAPSHOT_DIR = prior;
+    await rm(root, { recursive: true, force: true });
+  }
+});

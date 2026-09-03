@@ -11,6 +11,8 @@ import type { NextRequest } from "next/server";
 export type CpuReviewAllergenState = "clear" | "contains" | "may_contain" | "unrecorded";
 export type CpuReviewEntry = {
   sourceLineId: string;
+  /** Stable sub-item identity; older records may omit it. */
+  sourceSubItemId?: string;
   sourceBookingLineId?: string;
   sourceMenuItemId?: string;
   dishName?: string;
@@ -54,11 +56,11 @@ const packageKey = (serviceDate: string, oplocId: string) => `cpu-production/rev
 const dataset = "snapshots/cpu-production/delivered-in-review";
 const requiredRoles: CpuReviewOrder["requiredSignatureRoles"] = ["production_chef", "head_chef_site_manager"];
 
-function entryFor(order: ProductionOrder, plan: ProductionPlan | undefined, sourceLineId: string, dishName?: string, allergens: Record<string, string> = {}, evidenceStatus = "not_completed", mayContainNotes?: string): CpuReviewEntry {
+function entryFor(order: ProductionOrder, plan: ProductionPlan | undefined, sourceLineId: string, dishName?: string, allergens: Record<string, string> = {}, evidenceStatus = "not_completed", mayContainNotes?: string, sourceSubItemId?: string): CpuReviewEntry {
   const sourceLine = order.lines.find(line => line.canonicalId === sourceLineId || line.sourceBookingLineId === sourceLineId);
   const known = Object.values(allergens).filter(value => ["clear", "contains", "may_contain"].includes(value));
   const allergenState: CpuReviewEntry["allergenState"] = evidenceStatus !== "completed" || !known.length ? "UNRECORDED" : known.some(value => value === "contains") ? "CONTAINS" : known.some(value => value === "may_contain") ? "MAY_CONTAIN" : "CLEAR";
-  return { sourceLineId, ...(sourceLine?.sourceBookingLineId ? { sourceBookingLineId: sourceLine.sourceBookingLineId } : {}), ...(sourceLine?.sourceMenuItemId ? { sourceMenuItemId: sourceLine.sourceMenuItemId } : {}), ...(dishName ? { dishName } : {}), allergens: allergens as Record<string, CpuReviewAllergenState>, allergenState, ...(mayContainNotes ? { mayContainNotes } : {}), evidenceStatus };
+  return { sourceLineId, ...(sourceSubItemId ? { sourceSubItemId } : {}), ...(sourceLine?.sourceBookingLineId ? { sourceBookingLineId: sourceLine.sourceBookingLineId } : {}), ...(sourceLine?.sourceMenuItemId ? { sourceMenuItemId: sourceLine.sourceMenuItemId } : {}), ...(dishName ? { dishName } : {}), allergens: allergens as Record<string, CpuReviewAllergenState>, allergenState, ...(mayContainNotes ? { mayContainNotes } : {}), evidenceStatus };
 }
 
 export function buildCpuReviewProjection(serviceDate: string, oplocId: string, orders: ProductionOrder[], plans: ProductionPlan[], revision = 1, lastChangeSequence = 0, generatedAt = new Date().toISOString()): CpuReviewProjection {
@@ -68,10 +70,9 @@ export function buildCpuReviewProjection(serviceDate: string, oplocId: string, o
   const sourceOrders: CpuReviewOrder[] = orders.filter(order => order.origin === "menu_planning" && order.destinationOplocId === oplocId && !order.supersededBy).map(order => {
     const plan = planByOrder.get(order.canonicalId);
     const status = reviewStatusForPlan(order.canonicalId, plan);
-    const entries = plan?.menuItems?.flatMap(item => {
-      const sub = item.subItems[0];
-      return item.sourceLineId && sub ? [entryFor(order, plan, item.sourceLineId, item.name, sub.allergens, sub.evidenceStatus, sub.mayContainNotes)] : [];
-    }) || order.lines.map(line => entryFor(order, plan, line.canonicalId, line.itemName, line.approvedAllergenSnapshot?.allergens || {}, line.allergenEvidenceStatus === "confirmed" ? "completed" : "not_completed", line.approvedAllergenSnapshot?.mayContainNotes));
+    const entries = plan?.menuItems?.flatMap(item => item.sourceLineId
+      ? item.subItems.map(sub => entryFor(order, plan, item.sourceLineId!, sub.name || item.name, sub.allergens, sub.evidenceStatus, sub.mayContainNotes, sub.id))
+      : []) || order.lines.map(line => entryFor(order, plan, line.canonicalId, line.itemName, line.approvedAllergenSnapshot?.allergens || {}, line.allergenEvidenceStatus === "confirmed" ? "completed" : "not_completed", line.approvedAllergenSnapshot?.mayContainNotes));
     const signatures = (plan?.signatures || []).map(signature => ({ role: signature.role, printedName: signature.printedName, signedAt: signature.signedAt, actor: signature.actor, attestation: signature.attestation }));
     const completedSignatureRoles = [...new Set(signatures.map(signature => signature.role))];
     const reviewStatus: CpuReviewOrder["reviewStatus"] = plan ? completedSignatureRoles.length === requiredRoles.length ? "signed" : "pending" : "missing";

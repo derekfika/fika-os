@@ -74,11 +74,9 @@ test("Delivered-In preserves the exact governed published allocation and rejects
   assert.throws(() => assertPublishedAllocationIntegrity("publication:week", day(), { ...day().entries[0], allocations: [{ destinationLabel: "Unknown venue", quantity: 10 }] }), (error: any) => error.status === 502 && error.message.includes("integrity error"));
 });
 
-test("superseded and withdrawn days are excluded while latest current version is used", () => {
+test("superseded and withdrawn days are excluded, including older immutable versions", () => {
   const weeks = projectAtTestClock([source([day(), day({ publicationDayId: "publication:day:v2", version: 2, contentHash: "hash-v2" }), day({ publicationDayId: "publication:day:withdrawn", version: 3, status: "withdrawn" })])], haleon);
-  assert.equal(weeks[0].days.length, 1);
-  assert.equal(weeks[0].days[0].version, 2);
-  assert.equal(weeks[0].days[0].contentHash, "hash-v2");
+  assert.equal(weeks[0].days.length, 0);
 });
 
 test("site allergen projection retains source provenance and original signatories", () => {

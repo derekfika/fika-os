@@ -574,6 +574,102 @@ button:disabled {
   line-height: 1.4;
 }
 
+/* Allergen states are readable without relying on colour alone. */
+.allergen-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 12px;
+}
+
+.allergen-panel-header small {
+  color: var(--mp-purple);
+  font-size: .68rem;
+  font-weight: 900;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+}
+
+.allergen-panel-header h3 {
+  margin: 5px 0 0;
+  color: var(--mp-navy);
+  font-size: 1.2rem;
+}
+
+.allergen-save-state {
+  padding: 7px 10px;
+  border-radius: 999px;
+  background: #e2fbf2;
+  color: #11604c;
+  font-size: .75rem;
+  font-weight: 850;
+}
+
+.allergen-state-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px 12px;
+  margin-bottom: 8px;
+  color: var(--mp-ink);
+  font-size: .74rem;
+  font-weight: 750;
+}
+
+.allergen-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.allergen-legend-item b {
+  display: inline-grid;
+  place-items: center;
+  width: 23px;
+  height: 23px;
+  border: 1px solid var(--mp-border);
+  border-radius: 5px;
+  font-size: .7rem;
+}
+
+.allergen-legend-item--unrecorded b { background: #f0f0f3; color: #645a70; }
+.allergen-legend-item--clear b { background: #fff; color: #11604c; }
+.allergen-legend-item--contains b { background: #000; color: #fff; }
+.allergen-legend-item--may-contain b { background: #fff; border: 2px solid #000; color: #24115c; }
+
+.allergen-matrix-hint {
+  margin: 0 0 12px;
+  color: var(--mp-muted);
+  font-size: .74rem;
+}
+
+.allergen-cell {
+  font-size: .74rem;
+}
+
+.allergen-cell--clear {
+  color: #11604c;
+}
+
+.allergen-cell--unrecorded {
+  color: #645a70;
+}
+
+@media (max-width: 700px) {
+  .allergen-panel-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .allergen-save-state {
+    align-self: flex-start;
+  }
+
+  .allergen-state-legend {
+    gap: 7px 10px;
+  }
+}
+
 .duplicate-week-confirm input {
   flex: 0 0 auto;
   width: 18px !important;

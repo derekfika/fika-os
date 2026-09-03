@@ -29,6 +29,23 @@ test("hosted mutation auth uses FIKA_HUB_BASE_URL and forwards the session cooki
   }
 });
 
+test("staging auth outage never falls back to a synthetic administrator", async () => {
+  const originalMode = process.env.FIKA_RUNTIME_MODE;
+  const env = process.env as Record<string, string | undefined>;
+  const originalNodeEnv = env.NODE_ENV;
+  const originalFetch = globalThis.fetch;
+  process.env.FIKA_RUNTIME_MODE = "staging";
+  env.NODE_ENV = "development";
+  globalThis.fetch = (async () => { throw new Error("Hub unavailable"); }) as typeof fetch;
+  try {
+    await assert.rejects(() => resolveMenuActor(new NextRequest("https://menu.example/api/rolling-menu")), error => (error as { status?: number }).status === 503);
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (originalMode === undefined) delete process.env.FIKA_RUNTIME_MODE; else process.env.FIKA_RUNTIME_MODE = originalMode;
+    if (originalNodeEnv === undefined) delete env.NODE_ENV; else env.NODE_ENV = originalNodeEnv;
+  }
+});
+
 test("cross-subdomain staging admission forwards the shared parent-domain session", async () => {
   const originalMode = process.env.FIKA_RUNTIME_MODE;
   const originalHub = process.env.FIKA_HUB_BASE_URL;

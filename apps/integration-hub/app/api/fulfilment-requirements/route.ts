@@ -3,17 +3,17 @@ import { errorResponse } from "@/lib/api";
 import { requireActor } from "@/lib/auth";
 import { assertPermission } from "@/lib/authmod";
 import { applyFulfilmentEvent, listFulfilmentRequirements, listFulfilmentReceipts } from "@/lib/fulfilment-projection";
+import { internalTokenAllowed } from "../../../../shared/internal-auth";
 
 function internalAllowed(request: NextRequest) {
-  const configured = process.env.FIKA_INTERNAL_API_TOKEN;
-  return process.env.NODE_ENV !== "production" && !configured || Boolean(configured && request.headers.get("x-fika-internal-token") === configured);
+  return internalTokenAllowed(request);
 }
 
 export async function GET(request: NextRequest) {
   try {
     if (!internalAllowed(request)) { const actor = await requireActor(request); assertPermission(actor, "canonical.view"); }
     const query = request.nextUrl.searchParams;
-    const requirements = await listFulfilmentRequirements({ serviceDate: query.get("serviceDate") || undefined, status: (query.get("status") as never) || undefined, destinationOplocId: query.get("destinationOplocId") || undefined, productionLocationId: query.get("productionLocationId") || undefined });
+    const requirements = await listFulfilmentRequirements({ serviceDate: query.get("serviceDate") || undefined, serviceDateFrom: query.get("serviceDateFrom") || undefined, serviceDateToExclusive: query.get("serviceDateToExclusive") || undefined, status: (query.get("status") as never) || undefined, destinationOplocId: query.get("destinationOplocId") || undefined, productionLocationId: query.get("productionLocationId") || undefined });
     return NextResponse.json({ requirements }, { headers: { "Cache-Control": "no-store, max-age=0" } });
   } catch (error) { return errorResponse(error); }
 }

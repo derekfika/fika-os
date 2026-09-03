@@ -28,17 +28,17 @@ export function parseDeliveredInReviewOrderIds(value: string | null) {
 export function reviewStatusForPlan(orderId: string, plan: ProductionPlan | undefined): DeliveredInReviewStatus {
   if (!plan) return { orderId, planStatus: "draft", reviewed: false, completedSourceLineIds: [], signatureRoles: [], matrixItems: [] };
   const completedSourceLineIds = plan.menuItems
-    .filter((item) => item.sourceLineId && item.subItems.length > 0 && item.subItems[0].evidenceStatus === "completed")
+    .filter((item) => item.sourceLineId && item.subItems.length > 0 && item.subItems.every(subItem => subItem.evidenceStatus === "completed"))
     .map((item) => item.sourceLineId!);
   const signatureRoles = [...new Set((plan.signatures || []).map((signature) => signature.role))];
   return {
     orderId,
     planStatus: plan.status,
-    reviewed: plan.menuItems.length > 0 && plan.menuItems.every((item) => item.sourceLineId && item.subItems.length > 0 && item.subItems[0].evidenceStatus === "completed"),
+    reviewed: plan.menuItems.length > 0 && plan.menuItems.every((item) => item.sourceLineId && item.subItems.length > 0 && item.subItems.every(subItem => subItem.evidenceStatus === "completed")),
     completedSourceLineIds,
     signatureRoles,
     updatedAt: plan.updatedAt,
-    matrixItems: plan.menuItems.flatMap((item) => item.sourceLineId ? [{ sourceLineId: item.sourceLineId, allergens: item.subItems[0]?.allergens || {}, mayContainNotes: item.subItems[0]?.mayContainNotes, evidenceStatus: item.subItems[0]?.evidenceStatus || "not_completed" }] : []),
+    matrixItems: plan.menuItems.flatMap((item) => item.sourceLineId ? item.subItems.map(subItem => ({ sourceLineId: item.sourceLineId!, sourceSubItemId: subItem.id, allergens: subItem.allergens, mayContainNotes: subItem.mayContainNotes, evidenceStatus: subItem.evidenceStatus })) : []),
     ...(plan.matrixArtifact ? { matrixStatus: "ready" as const } : signatureRoles.includes("production_chef") && signatureRoles.includes("head_chef_site_manager") ? { matrixStatus: "generating" as const } : {}),
     ...(plan.matrixArtifact ? { matrixArtifact: { driveUrl: plan.matrixArtifact.driveUrl, localUrl: plan.matrixArtifact.localUrl } } : {}),
   };

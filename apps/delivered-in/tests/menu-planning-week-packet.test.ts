@@ -69,3 +69,11 @@ test("Delivered-In consumes the shared Menu Planning packet envelope", () => {
   const [week] = projectPublishedWeeks([publication], "oploc:haleon", new Set(["oploc:haleon"]));
   assert.equal(week.days[0].entries[0].quantity, 10);
 });
+
+test("a newer withdrawn day in the weekly packet hides older published bytes", () => {
+  const withdrawn = { ...snapshot, days: [...snapshot.days, { ...snapshot.days[0], publicationDayId: "publication-day:mon:v4-withdrawn", version: 4, status: "withdrawn" as const, entries: [] }] };
+  const packet = decodeMenuPlanningWeekPacket(encodeWeeklyPublicationPacket(withdrawn));
+  const [publication] = packetPublicationsForRange([packet], "2026-09-01", "2026-09-30");
+  const [week] = projectPublishedWeeks([publication], "oploc:haleon", new Set(["oploc:haleon"]));
+  assert.equal(week.days.length, 0);
+});

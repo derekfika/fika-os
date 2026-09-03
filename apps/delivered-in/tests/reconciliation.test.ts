@@ -15,20 +15,21 @@ function fetchSequence(cpuAvailable = true) {
     const url = String(input);
     if (url.includes("/api/delivered-in/access")) return new Response(JSON.stringify({ access: { email: "admin@local.fika", oplocIds: [oplocId], permissions: ["delivered_in.view"] }, sites: [{ oplocId, label: "Reconcile site" }] }), { status: 200, headers: { "content-type": "application/json" } });
     if (url.includes("/api/rolling-menu/publications")) return new Response(JSON.stringify({ publications: [sourcePublication] }), { status: 200, headers: { "content-type": "application/json" } });
-    if (url.includes("/api/delivered-in/review") && cpuAvailable) return new Response(JSON.stringify({ status: "pending", signatures: [], entries: {} }), { status: 200, headers: { "content-type": "application/json" } });
     return new Response("unavailable", { status: 503 });
   };
 }
+
+const maintenanceReview = async () => ({ entries: new Map(), cpuReview: { status: "pending" as const, signatures: [] }, orderIds: [], package: undefined });
 
 test("reconciliation creates, then no-ops a current projection and preserves it on upstream failure", async () => {
   const root = await mkdtemp(`${tmpdir()}\\fika-delivered-in-reconcile-`);
   const previousRoot = process.env.FIKA_SNAPSHOT_DIR; const previousFetch = globalThis.fetch;
   process.env.FIKA_SNAPSHOT_DIR = root; globalThis.fetch = fetchSequence(true) as typeof fetch;
   try {
-    const created = await reconcileDeliveredInDay(request, oplocId, serviceDate); assert.equal(created.status, "created");
-    const current = await reconcileDeliveredInDay(request, oplocId, serviceDate); assert.equal(current.status, "current");
+    const created = await reconcileDeliveredInDay(request, oplocId, serviceDate, { loadReview: maintenanceReview }); assert.equal(created.status, "created");
+    const current = await reconcileDeliveredInDay(request, oplocId, serviceDate, { loadReview: maintenanceReview }); assert.equal(current.status, "current");
     globalThis.fetch = fetchSequence(false) as typeof fetch;
-    await assert.rejects(() => reconcileDeliveredInDay(request, oplocId, serviceDate));
+    await assert.rejects(() => reconcileDeliveredInDay(request, oplocId, serviceDate, { loadReview: async () => { throw new Error("CPU packet unavailable"); } }));
     assert.equal((await readDeliveredInProjection(oplocId, serviceDate))?.value.projectionVersion, 1);
   } finally { globalThis.fetch = previousFetch; if (previousRoot === undefined) delete process.env.FIKA_SNAPSHOT_DIR; else process.env.FIKA_SNAPSHOT_DIR = previousRoot; await rm(root, { recursive: true, force: true }); }
 });

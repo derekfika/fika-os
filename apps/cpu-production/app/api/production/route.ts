@@ -17,6 +17,7 @@ import { withDataTrace } from "@fika/server-shared/data-source-meter-server";
 import { getCpuProjectionManifest, getCpuProjectionPackage, recordCpuPackageFallback } from "../../../lib/cpu-read-package";
 import { rebuildCpuReviewPackage } from "../../../lib/cpu-review-package";
 import { eventTypeForConsumers, notifyCpuConsumerInvalidations } from "../../../lib/cpu-consumer-invalidation";
+import { internalTokenAllowed } from "../../../../shared/internal-auth";
 
 const localActor = {
   uid: "local-cpu",
@@ -26,8 +27,7 @@ const localActor = {
 };
 const actorFor = (request: NextRequest) => requireCpuActor(request);
 function internalProjectionRequest(request: NextRequest) {
-  const configured = process.env.FIKA_INTERNAL_API_TOKEN;
-  return process.env.NODE_ENV !== "production" && !configured || Boolean(configured && request.headers.get("x-fika-internal-token") === configured);
+  return internalTokenAllowed(request);
 }
 function withServerTiming(response: NextResponse, timings: Record<string, number>) {
   response.headers.set("Server-Timing", Object.entries(timings).map(([name, duration]) => `${name};dur=${Math.max(0, duration).toFixed(1)}`).join(", "));

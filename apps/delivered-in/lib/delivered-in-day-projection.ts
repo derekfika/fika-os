@@ -26,6 +26,7 @@ export type DeliveredInDayProjection = Omit<ProjectedDay, "entries" | "siteMenu"
       updatedAt?: string;
       packageVersion?: number;
       contentHash?: string;
+      sourceBundleHash?: string;
       sourceVersion?: string;
       contractVersion?: string;
       sourceCompleteness?: "complete" | "partial";

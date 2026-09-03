@@ -1,4 +1,4 @@
-import type { Transaction } from "firebase-admin/firestore";
+import type { Query, Transaction } from "firebase-admin/firestore";
 import type { DurableDomainEvent } from "../../shared/domain-events";
 import {
   fulfilmentFromGrabAndGoOrder,
@@ -12,13 +12,15 @@ import {
 import { db } from "./firebase-admin";
 import { stableDocumentId } from "./canonical-editor";
 import { reconcileFulfilmentRequirements, type ExpectedFulfilmentSource, type FulfilmentReconciliationIssue } from "../../shared/fulfilment-reconciliation";
+import { recordDataAccess } from "@fika/server-shared/data-source-meter-server";
 
 export const FULFILMENT_CONSUMER = "integration-hub.fulfilment-requirements";
 const requirements = () => db.collection("fikaFulfilmentRequirementsV1");
 const inbox = () => db.collection("fikaDomainEventInboxV1");
 
-export type FulfilmentQuery = { serviceDate?: string; status?: FulfilmentRequirement["status"]; destinationOplocId?: string; productionLocationId?: string };
+export type FulfilmentQuery = { serviceDate?: string; serviceDateFrom?: string; serviceDateToExclusive?: string; status?: FulfilmentRequirement["status"]; destinationOplocId?: string; productionLocationId?: string };
 export type FulfilmentProjectionResult = { applied: boolean; duplicate: boolean; requirement?: FulfilmentRequirement; error?: string };
+const FULFILMENT_READ_LIMIT = 500;
 
 function asRequirement(value: unknown): FulfilmentRequirement | undefined {
   if (!value || typeof value !== "object") return undefined;
@@ -103,10 +105,30 @@ export async function applyFulfilmentEvent(event: DurableDomainEvent): Promise<F
   });
 }
 
-export async function listFulfilmentRequirements(query: FulfilmentQuery = {}) {
-  const snapshot = await requirements().get();
+/**
+ * Normal consumers must provide at least one indexed scope. The only caller
+ * allowed to inspect the complete projection is the explicit admin
+ * reconciliation path below; keeping that escape hatch named makes accidental
+ * full-collection reads on Logistics/dashboard paths hard to introduce.
+ */
+export async function listFulfilmentRequirements(query: FulfilmentQuery = {}, options: { allowUnbounded?: boolean } = {}) {
+  const bounded = Boolean(query.serviceDate || query.serviceDateFrom || query.serviceDateToExclusive || query.status || query.destinationOplocId || query.productionLocationId);
+  if (!bounded && !options.allowUnbounded) throw Object.assign(new Error("A service date, status or OPLOC scope is required for a Fulfilment Requirement read."), { status: 400, code: "FULFILMENT_QUERY_SCOPE_REQUIRED" });
+  let scoped: Query = requirements();
+  if (query.serviceDate) scoped = scoped.where("serviceDate", "==", query.serviceDate);
+  if (query.serviceDateFrom) scoped = scoped.where("serviceDate", ">=", query.serviceDateFrom);
+  if (query.serviceDateToExclusive) scoped = scoped.where("serviceDate", "<", query.serviceDateToExclusive);
+  if (query.status) scoped = scoped.where("status", "==", query.status);
+  if (query.destinationOplocId) scoped = scoped.where("destinationOplocId", "==", query.destinationOplocId);
+  if (query.productionLocationId) scoped = scoped.where("productionLocationId", "==", query.productionLocationId);
+  if (bounded) scoped = scoped.limit(FULFILMENT_READ_LIMIT + 1);
+  const snapshot = await scoped.get();
+  if (bounded && snapshot.size > FULFILMENT_READ_LIMIT) throw Object.assign(new Error("Fulfilment Requirement scope exceeds the bounded read limit; narrow the service date or OPLOC."), { status: 503, code: "FULFILMENT_READ_LIMIT" });
+  recordDataAccess({ app: "integration-hub", operation: bounded ? "fulfilment.requirements.bounded" : "fulfilment.requirements.reconciliation", source: "FIRESTORE", dataset: "fikaFulfilmentRequirementsV1", documents: snapshot.size, estimatedBillableReads: snapshot.size, firestoreReadKind: "query" });
   return snapshot.docs.map(item => item.data() as FulfilmentRequirement).filter(item =>
     (!query.serviceDate || item.serviceDate === query.serviceDate) &&
+    (!query.serviceDateFrom || item.serviceDate >= query.serviceDateFrom) &&
+    (!query.serviceDateToExclusive || item.serviceDate < query.serviceDateToExclusive) &&
     (!query.status || item.status === query.status) &&
     (!query.destinationOplocId || item.destinationOplocId === query.destinationOplocId) &&
     (!query.productionLocationId || item.productionLocationId === query.productionLocationId),
@@ -119,7 +141,7 @@ export async function listFulfilmentReceipts(limit = 500) {
 }
 
 export async function reconcileCentralFulfilment(expected: ExpectedFulfilmentSource[]): Promise<FulfilmentReconciliationIssue[]> {
-  const [actual, receipts] = await Promise.all([listFulfilmentRequirements(), listFulfilmentReceipts()]);
+  const [actual, receipts] = await Promise.all([listFulfilmentRequirements({}, { allowUnbounded: true }), listFulfilmentReceipts()]);
   const issues = reconcileFulfilmentRequirements(expected, actual, []);
   for (const requirement of actual) {
     if (!requirement.destinationOplocId?.trim()) issues.push({ kind: "unresolved_destination", requirementId: requirement.canonicalId, sourceEntityId: requirement.sourceEntityId, detail: `Requirement ${requirement.canonicalId} has no canonical destination OPLOC.` });

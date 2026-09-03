@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { addMenuSlot, addOneOffDestination, assertWeekDateAvailable, cleanDuplicateEntries, copyWeekIntoWeek, createEntry, defaultWeekForDate, duplicateWeek, emptyWeek, getWeek, listWeeks, removeMenuSlot, resetWeek, saveSnapshot, updateEntry, validateWeek } from "@/lib/rolling-menu";
 import { createPublishedMenuWeek, getMenuPublication, publicationDayBlockers, publicationPreview, publicationState, publicationWeekBlockers } from "@/lib/menu-publication";
-import { requireMutationActor, requirePublicationActor, resolveMenuActor } from "@/lib/auth";
+import { actorCanAccessOploc, assertActorCanAccessOploc, requireMutationActor, requirePublicationActor, resolveMenuActor, scopeMenuPublication, type MenuActor } from "@/lib/auth";
 import { readDeliveredInOplocs } from "@/lib/oploc-authority";
 import { forwardProductionMaterialisationEvent } from "@/lib/production-client";
 import { replayMenuPublicationOutbox } from "@/lib/menu-publication";
@@ -12,7 +12,25 @@ import { getWeekHead, getWeekSnapshot, listWeekSummaries } from "@/lib/operation
 import type { RollingWeek } from "@/lib/rolling-menu-types";
 import { withDataTrace } from "@fika/server-shared/data-source-meter-server";
 
-async function resolvedSnapshot(snapshot: Awaited<ReturnType<typeof getWeek>>, catalogue?: Awaited<ReturnType<typeof listCatalogueEntriesForIds>>) {
+function scopedSnapshot(snapshot: Awaited<ReturnType<typeof getWeek>>, actor?: MenuActor) {
+  if (!actor || actor.allOplocs) return snapshot;
+  const entries = snapshot.entries
+    .map(entry => ({ ...entry, allocations: entry.allocations.filter(allocation => actorCanAccessOploc(actor, allocation.destinationId)) }))
+    // A destination-bearing entry with no visible allocation belongs to
+    // another OPLOC and must not leak through a week snapshot.
+    .filter(entry => entry.allocations.length > 0 || entry.allocations.length === snapshot.entries.find(candidate => candidate.id === entry.id)?.allocations.length);
+  return { ...snapshot, entries };
+}
+
+function assertSnapshotScope(snapshot: Awaited<ReturnType<typeof getWeek>>, actor: MenuActor) {
+  if (actor.allOplocs) return;
+  for (const entry of snapshot.entries) for (const allocation of entry.allocations) {
+    if (allocation.destinationId && !actorCanAccessOploc(actor, allocation.destinationId)) assertActorCanAccessOploc(actor, allocation.destinationId);
+  }
+}
+
+async function resolvedSnapshot(snapshot: Awaited<ReturnType<typeof getWeek>>, catalogue?: Awaited<ReturnType<typeof listCatalogueEntriesForIds>>, actor?: MenuActor) {
+  snapshot = scopedSnapshot(snapshot, actor);
   const referencedIds = snapshot.entries.filter(entry => entry.itemLabel.trim()).map(entry => entry.itemId || "");
   const resolvedCatalogue = catalogue || await listCatalogueEntriesForIds(referencedIds);
   const catalogueIssues = snapshot.entries.filter(entry => entry.itemLabel.trim() && (!entry.itemId || !resolvedCatalogue.some(item => item.id === entry.itemId))).map(entry => ({ entryId: entry.id, itemLabel: entry.itemLabel, reason: entry.itemId ? "catalogue-item-not-found" : "missing-stable-catalogue-id" }));
@@ -28,6 +46,7 @@ async function resolvedSnapshot(snapshot: Awaited<ReturnType<typeof getWeek>>, c
 
 async function handleGet(request: NextRequest) {
   try {
+    const actor = await resolveMenuActor(request);
     const requestedWeek = request.nextUrl.searchParams.get("weekId") || undefined;
     const totalStarted = performance.now();
     const summaryStarted = performance.now();
@@ -49,10 +68,10 @@ async function handleGet(request: NextRequest) {
     const selectedReadStarted = performance.now();
     const storedSnapshot = selectedWeek ? await getWeekSnapshot<Awaited<ReturnType<typeof getWeek>>>(selectedWeek.id) : undefined;
     const selectedWeekMs = performance.now() - selectedReadStarted;
-    const snapshot = storedSnapshot || emptyWeek(requestedWeek || new Date().toISOString().slice(0, 10));
+    const snapshot = scopedSnapshot(storedSnapshot || emptyWeek(requestedWeek || new Date().toISOString().slice(0, 10)), actor);
     const previewDayId = request.nextUrl.searchParams.get("dayId") || undefined;
     const publicationPreviewRequested = request.nextUrl.searchParams.get("publicationPreview") === "true";
-    const governedOplocs = publicationPreviewRequested ? await readDeliveredInOplocs(request) : undefined;
+    const governedOplocs = publicationPreviewRequested ? (await readDeliveredInOplocs(request)).filter(oploc => actorCanAccessOploc(actor, oploc.canonicalId)) : undefined;
     const governedLabels = new Set(governedOplocs?.map(oploc => oploc.label.toLocaleLowerCase()));
     const governedOplocIds = governedOplocs ? new Set([...governedOplocs.map(oploc => oploc.canonicalId), ...GOVERNED_OPLOCS.filter(oploc => governedLabels.has(oploc.label.toLocaleLowerCase())).map(oploc => oploc.id)]) : undefined;
     const catalogueStarted = performance.now();
@@ -60,7 +79,7 @@ async function handleGet(request: NextRequest) {
     const [catalogue, currentPublicationState] = await Promise.all([listCatalogueEntriesForIds(snapshot.entries.map(entry => entry.itemId || "")), publicationState(snapshot)]);
     const catalogueMs = performance.now() - catalogueStarted;
     const publicationStateMs = performance.now() - publicationStarted;
-    const resolved = await resolvedSnapshot(snapshot, catalogue);
+    const resolved = await resolvedSnapshot(snapshot, catalogue, actor);
     console.info("Menu Planning rolling-menu GET timings", { rollingStateMs, selectedWeekMs, catalogueMs, publicationStateMs, totalMs: performance.now() - totalStarted });
     return NextResponse.json({ snapshot: resolved, weeks, blockers: validateWeek(snapshot), publicationState: currentPublicationState, ...(publicationPreviewRequested ? { publicationPreview: publicationPreview(snapshot, previewDayId), dayBlockers: previewDayId ? publicationDayBlockers(snapshot, previewDayId, governedOplocIds) : [], weekBlockers: publicationWeekBlockers(snapshot, governedOplocIds) } : {}) });
   } catch (error) {
@@ -77,53 +96,56 @@ async function handlePost(request: NextRequest) {
     if (action === "create-week") {
       await assertWeekDateAvailable(String(body.weekCommencing));
       const snapshot = await saveSnapshot(emptyWeek(String(body.weekCommencing), actor.uid));
-      return NextResponse.json({ snapshot: await resolvedSnapshot(snapshot), weeks: await listWeeks(), blockers: validateWeek(snapshot), publicationState: await publicationState(snapshot) });
+      return NextResponse.json({ snapshot: await resolvedSnapshot(snapshot, undefined, actor), weeks: await listWeeks(), blockers: validateWeek(scopedSnapshot(snapshot, actor)), publicationState: await publicationState(snapshot) });
     }
     if (action === "duplicate-week") {
       const snapshot = await duplicateWeek(String(body.weekId), String(body.weekCommencing), actor.uid);
-      return NextResponse.json({ snapshot: await resolvedSnapshot(snapshot), weeks: await listWeeks(), blockers: validateWeek(snapshot), publicationState: await publicationState(snapshot) });
+      return NextResponse.json({ snapshot: await resolvedSnapshot(snapshot, undefined, actor), weeks: await listWeeks(), blockers: validateWeek(scopedSnapshot(snapshot, actor)), publicationState: await publicationState(snapshot) });
     }
     if (action === "copy-week-into-current") {
       const snapshot = await copyWeekIntoWeek(String(body.sourceWeekId), String(body.targetWeekId), actor.uid);
-      return NextResponse.json({ snapshot: await resolvedSnapshot(snapshot), weeks: await listWeeks(), blockers: validateWeek(snapshot), publicationState: await publicationState(snapshot) });
+      return NextResponse.json({ snapshot: await resolvedSnapshot(snapshot, undefined, actor), weeks: await listWeeks(), blockers: validateWeek(scopedSnapshot(snapshot, actor)), publicationState: await publicationState(snapshot) });
     }
     if (action === "reset-week") {
       const snapshot = await resetWeek(String(body.weekId), actor.uid);
-      return NextResponse.json({ snapshot: await resolvedSnapshot(snapshot), weeks: await listWeeks(), blockers: validateWeek(snapshot), publicationState: await publicationState(snapshot) });
+      return NextResponse.json({ snapshot: await resolvedSnapshot(snapshot, undefined, actor), weeks: await listWeeks(), blockers: validateWeek(scopedSnapshot(snapshot, actor)), publicationState: await publicationState(snapshot) });
     }
     if (action === "update-entry") {
       const snapshot = await updateEntry(String(body.weekId), String(body.entryId), (body.patch || {}) as never, actor.uid);
-      return NextResponse.json({ snapshot: await resolvedSnapshot(snapshot), weeks: await listWeeks(), blockers: validateWeek(snapshot), publicationState: await publicationState(snapshot) });
+      return NextResponse.json({ snapshot: await resolvedSnapshot(snapshot, undefined, actor), weeks: await listWeeks(), blockers: validateWeek(scopedSnapshot(snapshot, actor)), publicationState: await publicationState(snapshot) });
     }
     if (action === "create-entry") {
       const snapshot = await createEntry(String(body.weekId), String(body.dayId), String(body.slot) as never, String(body.itemLabel || ""), actor.uid, body.itemId ? String(body.itemId) : undefined);
-      return NextResponse.json({ snapshot: await resolvedSnapshot(snapshot), weeks: await listWeeks(), blockers: validateWeek(snapshot), publicationState: await publicationState(snapshot) });
+      return NextResponse.json({ snapshot: await resolvedSnapshot(snapshot, undefined, actor), weeks: await listWeeks(), blockers: validateWeek(scopedSnapshot(snapshot, actor)), publicationState: await publicationState(snapshot) });
     }
     if (action === "add-one-off-destination") {
       const snapshot = await addOneOffDestination(String(body.weekId), String(body.dayId), String(body.label || ""), String(body.address || ""), actor.uid);
-      return NextResponse.json({ snapshot: await resolvedSnapshot(snapshot), weeks: await listWeeks(), blockers: validateWeek(snapshot), publicationState: await publicationState(snapshot) });
+      return NextResponse.json({ snapshot: await resolvedSnapshot(snapshot, undefined, actor), weeks: await listWeeks(), blockers: validateWeek(scopedSnapshot(snapshot, actor)), publicationState: await publicationState(snapshot) });
     }
     if (action === "add-menu-slot") {
       const snapshot = await addMenuSlot(String(body.weekId), String(body.slot || ""), actor.uid);
-      return NextResponse.json({ snapshot: await resolvedSnapshot(snapshot), weeks: await listWeeks(), blockers: validateWeek(snapshot), publicationState: await publicationState(snapshot) });
+      return NextResponse.json({ snapshot: await resolvedSnapshot(snapshot, undefined, actor), weeks: await listWeeks(), blockers: validateWeek(scopedSnapshot(snapshot, actor)), publicationState: await publicationState(snapshot) });
     }
     if (action === "remove-menu-slot") {
       const snapshot = await removeMenuSlot(String(body.weekId), String(body.slot || ""), actor.uid);
-      return NextResponse.json({ snapshot: await resolvedSnapshot(snapshot), weeks: await listWeeks(), blockers: validateWeek(snapshot), publicationState: await publicationState(snapshot) });
+      return NextResponse.json({ snapshot: await resolvedSnapshot(snapshot, undefined, actor), weeks: await listWeeks(), blockers: validateWeek(scopedSnapshot(snapshot, actor)), publicationState: await publicationState(snapshot) });
     }
     if (action === "clean-duplicate-entries") {
       const result = await cleanDuplicateEntries(String(body.weekId), actor.uid);
-      return NextResponse.json({ snapshot: await resolvedSnapshot(result.snapshot), removed: result.removed, weeks: await listWeeks(), blockers: validateWeek(result.snapshot), publicationState: await publicationState(result.snapshot) });
+      return NextResponse.json({ snapshot: await resolvedSnapshot(result.snapshot, undefined, actor), removed: result.removed, weeks: await listWeeks(), blockers: validateWeek(scopedSnapshot(result.snapshot, actor)), publicationState: await publicationState(result.snapshot) });
     }
     if (action === "publish") {
       requirePublicationActor(actor);
+      const requestedWeekId = String(body.weekId);
+      const sourceSnapshot = await getWeek(requestedWeekId);
+      assertSnapshotScope(sourceSnapshot, actor);
       // Reconcile exact imported dish names before the publication gate runs.
       // This persists the canonical identity; it does not bypass allergen review.
-      await reconcileCatalogueFromRollingEntries({ weekId: String(body.weekId) });
-      const oplocs = await readDeliveredInOplocs(request);
-      const publication = await createPublishedMenuWeek(String(body.weekId), { weekContentHash: typeof body.weekContentHash === "string" ? body.weekContentHash : undefined }, actor.uid, new Set(oplocs.map(oploc => oploc.canonicalId)));
+      await reconcileCatalogueFromRollingEntries({ weekId: requestedWeekId });
+      const oplocs = (await readDeliveredInOplocs(request)).filter(oploc => actorCanAccessOploc(actor, oploc.canonicalId));
+      const publication = await createPublishedMenuWeek(requestedWeekId, { weekContentHash: typeof body.weekContentHash === "string" ? body.weekContentHash : undefined }, actor.uid, new Set(oplocs.map(oploc => oploc.canonicalId)));
       const handoff = await replayMenuPublicationOutbox(forwardProductionMaterialisationEvent);
-      const saved = await getWeek(String(body.weekId)); return NextResponse.json({ snapshot: await resolvedSnapshot(saved), publication: await getMenuPublication(publication.publicationId), handoff: { status: handoff.failed ? "pending" : "delivered", delivered: handoff.delivered, failed: handoff.failed }, weeks: await listWeeks(), blockers: validateWeek(saved), publicationState: await publicationState(saved) });
+      const saved = await getWeek(requestedWeekId); const published = await getMenuPublication(publication.publicationId); return NextResponse.json({ snapshot: await resolvedSnapshot(saved, undefined, actor), publication: published ? scopeMenuPublication(published, actor) : undefined, handoff: { status: handoff.failed ? "pending" : "delivered", delivered: handoff.delivered, failed: handoff.failed }, weeks: await listWeeks(), blockers: validateWeek(scopedSnapshot(saved, actor)), publicationState: await publicationState(saved) });
     }
     return NextResponse.json({ error: { message: "Unknown rolling menu command." } }, { status: 400 });
   } catch (error) { const status = error && typeof error === "object" && "status" in error && typeof (error as { status?: unknown }).status === "number" ? (error as { status: number }).status : 400; return NextResponse.json({ error: { message: error instanceof Error ? error.message : "Rolling menu command failed." } }, { status }); }

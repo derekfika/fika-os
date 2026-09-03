@@ -55,7 +55,6 @@ export function projectPublishedWeeks(publications: SourcePublication[], selecte
   return publications.filter(publication => isRelevantPublishedWeek(publication, asOf)).map(publication => {
     const latestByDate = new Map<string, SourceDay>();
     for (const day of publication.days) {
-      if (day.status !== "published") continue;
       const existing = latestByDate.get(day.date);
       if (!existing || day.version > existing.version) latestByDate.set(day.date, day);
     }
@@ -63,7 +62,9 @@ export function projectPublishedWeeks(publications: SourcePublication[], selecte
       publicationId: publication.publicationId,
       weekCommencing: publication.weekCommencing,
       weekEnding: publication.weekEnding,
-      days: Array.from(latestByDate.values())
+      // A newer withdrawn amendment is authoritative for the date. Never
+      // re-expose the older immutable published bytes in a weekly view.
+      days: Array.from(latestByDate.values()).filter(day => day.status === "published")
         .sort((a, b) => a.date.localeCompare(b.date))
         .map(day => {
           const destinations = new Map<string, ProjectedDestination>();

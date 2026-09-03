@@ -7,3 +7,4 @@ export * from "./external-production";
 export * from "./data-source-meter";
 export * from "./read-package";
 export * from "./weekly-publication-packet";
+export * from "./daily-signed-oploc-bundle";

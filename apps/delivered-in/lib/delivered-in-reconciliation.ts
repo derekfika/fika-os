@@ -16,7 +16,7 @@ async function menuForDate(request: NextRequest, oplocId: string, serviceDate: s
   if (packets.length) {
     const publications = packetPublicationsForRange(packets, fromWeek, toWeek) as SourcePublication[];
     for (const publication of publications) {
-      const sourceDay = publication.days.find(candidate => candidate.date === serviceDate);
+      const sourceDay = publication.days.filter(candidate => candidate.date === serviceDate).sort((a, b) => b.version - a.version)[0];
       if (!sourceDay) continue;
       if (sourceDay.status === "withdrawn") return { withdrawn: true as const };
       const projected = projectPublishedWeeks([publication], oplocId, new Set([oplocId]), serviceDate).find(week => week.days.some(candidate => candidate.date === serviceDate));
@@ -28,7 +28,7 @@ async function menuForDate(request: NextRequest, oplocId: string, serviceDate: s
   if (!response.ok) throw Object.assign(new Error(`Menu Planning publication service is unavailable (${response.status}).`), { status: 503, code: "MENU_SOURCE_UNAVAILABLE" });
   const body = await response.json() as { publications?: SourcePublication[] };
   for (const publication of body.publications || []) {
-    const sourceDay = publication.days.find(candidate => candidate.date === serviceDate);
+    const sourceDay = publication.days.filter(candidate => candidate.date === serviceDate).sort((a, b) => b.version - a.version)[0];
     if (!sourceDay) continue;
     if (sourceDay.status === "withdrawn") return { withdrawn: true as const };
     const projected = projectPublishedWeeks([publication], oplocId, new Set([oplocId]), serviceDate).find(week => week.days.some(candidate => candidate.date === serviceDate));
@@ -46,7 +46,7 @@ export async function reconcileDeliveredInDay(request: NextRequest, oplocId: str
   if (!day.day) return { status: "missing", serviceDate, oplocId };
   const candidate = await buildDeliveredInDayProjection({ request, site, day: day.day, loadReview: options.loadReview || cpuReviewForDay, governed: true });
   const comparable = (value: unknown) => JSON.stringify(value, (_key, item) => _key === "generatedAt" || _key === "projectionVersion" ? undefined : item);
-  const sourceCertainty = candidate.sourceLineage.cpu.sourceVersion || candidate.sourceLineage.cpu.contentHash ? "CPU review package metadata was read from the authenticated CPU package route." : "CPU review package metadata was not supplied by the current CPU route.";
+  const sourceCertainty = candidate.sourceLineage.cpu.sourceBundleHash ? "CPU daily signed packet matched the Menu Planning source bundle hash." : "CPU daily signed packet metadata was not supplied.";
   if (existing && existing.value.state.completeness === "complete" && comparable(existing.value) === comparable(candidate)) return { status: "current", projection: existing.value, sourceCertainty };
   const written = await writeDeliveredInProjection(candidate);
   return { status: existing ? "rebuilt" : "created", projection: written.projection, sourceCertainty };

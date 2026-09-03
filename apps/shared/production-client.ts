@@ -1,4 +1,4 @@
-import type { ExternalProductionMaterialisation } from "../integration-hub/lib/production-domain";
+import type { ExternalProductionMaterialisation } from "@fika/server-shared/external-production";
 import type { DurableDomainEvent } from "./domain-events";
 
 export async function forwardProductionMaterialisation(input: ExternalProductionMaterialisation) {

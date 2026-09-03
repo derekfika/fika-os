@@ -1,5 +1,6 @@
 import crypto from "crypto";
 import path from "path";
+import type { ExternalProductionMaterialisation as SharedExternalProductionMaterialisation } from "@fika/server-shared/external-production";
 
 export const CANONICAL_ALLERGEN_KEYS = ["no_key_allergens", "peanuts", "tree_nuts", "gluten", "sesame", "molluscs", "fish", "soya", "celery", "shellfish", "eggs", "milk", "mustard", "lupin", "sulphites"] as const;
 export type CanonicalAllergenKey = (typeof CANONICAL_ALLERGEN_KEYS)[number];
@@ -33,7 +34,7 @@ export function markEventDelivered<T>(event: DurableDomainEvent<T>, at: string) 
 export function markEventFailed<T>(event: DurableDomainEvent<T>, error: unknown, at: string) { return { ...event, delivery: { ...event.delivery, status: "failed" as const, attempts: event.delivery.attempts + 1, lastAttemptAt: at, nextAttemptAt: new Date(Date.parse(at) + 30000).toISOString(), lastError: error instanceof Error ? error.message : String(error), claimId: undefined, claimedAt: undefined } }; }
 
 export type FulfilmentRequirement = { [key: string]: unknown };
-export type ExternalProductionMaterialisation = { sourceDomain: "grab-and-go" | "menu-planning"; sourceEntityId: string; publicationId?: string; sourceVersion: number; sourceContentHash?: string; sourcePublicationDayId?: string; destinationOplocId: string; destinationLabel?: string; serviceDate: string; requiredBy?: string; serviceWindow?: { startTime: string; endTime?: string }; status: "submitted" | "published" | "amended" | "cancelled" | "withdrawn"; lines: Array<{ sourceLineId: string; canonicalItemId?: string; itemName: string; quantity: number; unit: string; workstream?: "delivered_in"; approvedAllergenSnapshot?: { allergens: Record<string, string>; mayContainNotes?: string; sourcePublicationDayId?: string; sourceVersion?: number; sourceContentHash?: string } }> };
+export type ExternalProductionMaterialisation = SharedExternalProductionMaterialisation;
 export function productionItemId(title: string, parent = "global") { const slug = (v: string) => v.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 80) || "untitled"; return `sandwich:${slug(parent)}:${slug(title)}`; }
 export function legacyProductionItemId(title: string) { return `sandwich:${title.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 80) || "untitled"}`; }
 export function stableHash(value: unknown) { return crypto.createHash("sha256").update(JSON.stringify(value)).digest("hex"); }

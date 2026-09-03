@@ -1,6 +1,8 @@
 export type ExternalProductionMaterialisation = {
   sourceDomain: "grab-and-go" | "menu-planning";
   sourceEntityId: string;
+  /** Menu Planning publication identity; retained across the CPU hand-off. */
+  publicationId?: string;
   sourceVersion: number;
   sourceContentHash?: string;
   sourcePublicationDayId?: string;

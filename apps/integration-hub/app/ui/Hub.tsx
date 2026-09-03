@@ -12,6 +12,7 @@ import {
   LayoutDashboard,
   Link2,
   LogOut,
+  Menu as MenuIcon,
   RefreshCw,
   ShieldCheck,
   Upload,
@@ -95,7 +96,8 @@ export default function Hub() {
     [progress, setProgress] = useState<string | SyncProgress>(""),
     [error, setError] = useState(""),
     [runtimeBadge, setRuntimeBadge] = useState("ENVIRONMENT · Unknown"),
-    [runtimeConfig, setRuntimeConfig] = useState<RuntimePayload>();
+    [runtimeConfig, setRuntimeConfig] = useState<RuntimePayload>(),
+    [mobileNavOpen, setMobileNavOpen] = useState(false);
   async function load(): Promise<boolean> {
     setLoading(true);
     try {
@@ -262,12 +264,22 @@ export default function Hub() {
           />
           <span>OS</span>
         </div>
+        <button
+          className="mobile-nav-toggle"
+          type="button"
+          aria-label={mobileNavOpen ? "Close Integration Hub navigation" : "Open Integration Hub navigation"}
+          aria-controls="hub-navigation"
+          aria-expanded={mobileNavOpen}
+          onClick={() => setMobileNavOpen((open) => !open)}
+        >
+          <MenuIcon aria-hidden="true" />
+        </button>
         <div className="app-title">
           <small>Controlled data gateway</small>
           <h1>Integration Hub</h1>
         </div>
-        <div className="local-banner">
-          <ShieldCheck /> {runtimeBadge}
+        <div className="local-banner" title={runtimeBadge} aria-label={`Environment: ${runtimeBadge}`}>
+          <ShieldCheck aria-hidden="true" /> <span>{runtimeBadge}</span>
         </div>
         <div className="identity">
           <b>{payload.actor.role.replaceAll("-", " ")}</b>
@@ -284,21 +296,26 @@ export default function Hub() {
           <LogOut />
         </button>
       </header>
-      <aside>
+      {mobileNavOpen && <button className="mobile-nav-backdrop" type="button" aria-label="Close Integration Hub navigation" onClick={() => setMobileNavOpen(false)} />}
+      <aside id="hub-navigation" className={mobileNavOpen ? "mobile-nav-open" : ""}>
         <nav aria-label="Integration Hub sections">
           {views.map((item) => (
             <button
               key={item}
               className={view === item ? "active" : ""}
-              onClick={() => setView(item)}
+              type="button"
+              aria-label={item}
+              title={item}
+              aria-current={view === item ? "page" : undefined}
+              onClick={() => { setView(item); setMobileNavOpen(false); }}
             >
-              {navIcon(item)}
+              <span aria-hidden="true">{navIcon(item)}</span>
               <span>{item}</span>
             </button>
           ))}
           {payload.actor.role === "integration-admin" && (
-            <button onClick={() => { window.location.href = "/authmod"; }}>
-              <ShieldCheck />
+            <button type="button" aria-label="AUTHMOD" title="AUTHMOD" onClick={() => { window.location.href = "/authmod"; }}>
+              <span aria-hidden="true"><ShieldCheck /></span>
               <span>AUTHMOD</span>
             </button>
           )}

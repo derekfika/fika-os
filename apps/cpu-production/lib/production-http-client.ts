@@ -4,7 +4,7 @@ import type { ProductionOrder } from "./production-types";
 import { getHubBaseUrl } from "./hub-url";
 import { recordDataAccess } from "@fika/server-shared/data-source-meter-server";
 function base() { return getHubBaseUrl(); }
-export function forwardedHeaders(request: NextRequest, headers: HeadersInit = {}) { return { ...headers, ...(request.headers.get("cookie") ? { cookie: request.headers.get("cookie")! } : {}), "x-request-id": request.headers.get("x-request-id") || randomUUID() }; }
+export function forwardedHeaders(request: NextRequest, headers: HeadersInit = {}) { return { ...headers, ...(request.headers.get("cookie") ? { cookie: request.headers.get("cookie")! } : {}), ...(request.headers.get("x-fika-internal-token") ? { "x-fika-internal-token": request.headers.get("x-fika-internal-token")! } : {}), "x-request-id": request.headers.get("x-request-id") || randomUUID() }; }
 async function call<T>(request: NextRequest, path: string, init: RequestInit, valid: (value: unknown) => value is T): Promise<T> {
   let response: Response;
   try { response = await fetch(`${base()}${path}`, { ...init, cache: "no-store", signal: AbortSignal.timeout(8_000), headers: forwardedHeaders(request, init.headers) }); }

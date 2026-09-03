@@ -88,7 +88,7 @@ test("the central store receives all three sources and applies amendments, withd
     const withdrawn = fulfilmentFromGrabAndGoOrder({ ...grab, version: 5, status: "cancelled", lines: [{ ...grab.lines[0], quantity: 9 }] }, "site", "2026-08-22T10:00:00Z", amended);
     const withdrawnEvent = createDomainEvent({ eventType: "fulfilment.requirement.withdrawn", sourceAggregateId: withdrawn.canonicalId, sourceVersion: withdrawn.sourceVersion, occurredAt: "2026-08-22T10:00:00Z", payload: withdrawn });
     assert.equal((await applyFulfilmentEvent(withdrawnEvent)).requirement?.status, "withdrawn");
-    const listed = await listFulfilmentRequirements();
+    const listed = await listFulfilmentRequirements({}, { allowUnbounded: true });
     assert.equal(listed.filter(item => item.sourceEntityId.endsWith(suffix)).length, 3);
     assert.equal(listed.find(item => item.sourceEntityId === grab.orderId)?.lines[0].quantity, 9);
     assert.equal(listed.find(item => item.sourceEntityId === grab.orderId)?.status, "withdrawn");
@@ -102,5 +102,35 @@ test("the central store receives all three sources and applies amendments, withd
     for (const doc of requirementsSnapshot.docs) if ((doc.data() as { sourceEntityId?: string }).sourceEntityId?.endsWith(suffix)) batch.delete(doc.ref);
     for (const doc of receiptsSnapshot.docs) if (String(doc.data().eventId || "").includes(suffix)) batch.delete(doc.ref);
     await batch.commit();
+  }
+});
+
+test("normal Fulfilment reads require an indexed scope and retain all predicates", async () => {
+  await assert.rejects(() => listFulfilmentRequirements(), /service date, status or OPLOC scope is required/i);
+  const matching = fulfilmentFromPublishedMenuDay({ ...menuDay, publicationDayId: `publication:day:bounded:${Date.now()}` }, "oploc:bounded");
+  const outsideDate = { ...matching, canonicalId: `${matching.canonicalId}:outside-date`, serviceDate: "2099-01-02" };
+  try {
+    await db.collection("fikaFulfilmentRequirementsV1").doc(stableDocumentId(matching.canonicalId)).set(matching);
+    await db.collection("fikaFulfilmentRequirementsV1").doc(stableDocumentId(outsideDate.canonicalId)).set(outsideDate);
+    const listed = await listFulfilmentRequirements({ serviceDate: matching.serviceDate, status: matching.status, destinationOplocId: matching.destinationOplocId });
+    assert.deepEqual(listed.map(item => item.canonicalId), [matching.canonicalId]);
+  } finally {
+    await db.collection("fikaFulfilmentRequirementsV1").doc(stableDocumentId(matching.canonicalId)).delete();
+    await db.collection("fikaFulfilmentRequirementsV1").doc(stableDocumentId(outsideDate.canonicalId)).delete();
+  }
+});
+
+test("Fulfilment week reads use a bounded service-date range", async () => {
+  const matching = fulfilmentFromPublishedMenuDay({ ...menuDay, publicationDayId: `publication:day:range:${Date.now()}` }, "oploc:range");
+  const outsideRange = { ...matching, canonicalId: `${matching.canonicalId}:outside`, serviceDate: "2099-01-08" };
+  try {
+    await db.collection("fikaFulfilmentRequirementsV1").doc(stableDocumentId(matching.canonicalId)).set(matching);
+    await db.collection("fikaFulfilmentRequirementsV1").doc(stableDocumentId(outsideRange.canonicalId)).set(outsideRange);
+    const listed = await listFulfilmentRequirements({ serviceDateFrom: "2026-08-24", serviceDateToExclusive: "2026-08-29" });
+    assert.ok(listed.some(item => item.canonicalId === matching.canonicalId));
+    assert.ok(!listed.some(item => item.canonicalId === outsideRange.canonicalId));
+  } finally {
+    await db.collection("fikaFulfilmentRequirementsV1").doc(stableDocumentId(matching.canonicalId)).delete();
+    await db.collection("fikaFulfilmentRequirementsV1").doc(stableDocumentId(outsideRange.canonicalId)).delete();
   }
 });

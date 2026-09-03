@@ -1,11 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { reconcileDeliveredInDay } from "@/lib/delivered-in-reconciliation";
 import { withDataTrace } from "@fika/server-shared/data-source-meter-server";
+import { requireDeliveredInMaintenance } from "@/lib/maintenance-auth";
 
 export const dynamic = "force-dynamic";
 
 async function handlePost(request: NextRequest) {
   try {
+    requireDeliveredInMaintenance(request);
     const body = await request.json() as { oplocId?: string; serviceDate?: string };
     if (!body.oplocId || !body.serviceDate || !/^\d{4}-\d{2}-\d{2}$/.test(body.serviceDate)) return NextResponse.json({ error: { message: "An OPLOC and valid service date are required." } }, { status: 422 });
     return NextResponse.json(await reconcileDeliveredInDay(request, body.oplocId, body.serviceDate));

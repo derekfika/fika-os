@@ -28,6 +28,15 @@ test("missing plans and evidence remain explicit unknown, never clear", () => {
   assert.deepEqual(projection.sourceOrders[0].entries[0].allergens, {});
 });
 
+test("CPU review projection keeps every separately checked sub-item", () => {
+  const plan = makePlan("order:multi");
+  plan.menuItems[0].subItems.push({ id: "sub:2", name: "Sauce", quantity: 10, allergens: { sesame: "may_contain" }, note: "", evidenceStatus: "completed" });
+  const projection = buildCpuReviewProjection("2026-08-31", "oploc:angel", [makeOrder("order:multi")], [plan]);
+  assert.equal(projection.sourceOrders[0].entries.length, 2);
+  assert.deepEqual(projection.sourceOrders[0].entries.map(entry => entry.sourceSubItemId), ["sub:1", "sub:2"]);
+  assert.equal(projection.sourceOrders[0].entries[1].allergenState, "MAY_CONTAIN");
+});
+
 test("cancellation and supersession update the bounded review projection", () => {
   const cancelled = makeOrder("order:cancelled", { status: "cancelled" });
   const superseded = makeOrder("order:old", { supersededBy: "order:new" });

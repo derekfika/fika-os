@@ -5,8 +5,10 @@ import { withDataTrace } from "@fika/server-shared/data-source-meter-server";
 export const dynamic = "force-dynamic";
 
 function assertCpuBoundary(request: NextRequest) {
-  const expected = process.env.FIKA_INTERNAL_API_TOKEN;
-  if (expected && request.headers.get("authorization") !== `Bearer ${expected}` && request.headers.get("x-fika-internal-token") !== expected) throw Object.assign(new Error("The CPU production integration is not authorised."), { status: 401 });
+  const expected = process.env.FIKA_INTERNAL_API_TOKEN?.trim();
+  if (!expected) throw Object.assign(new Error("The CPU production integration secret is not configured."), { status: 503, code: "CPU_INTEGRATION_SECRET_NOT_CONFIGURED" });
+  const supplied = request.headers.get("x-fika-internal-token") || request.headers.get("authorization")?.replace(/^Bearer\s+/i, "");
+  if (supplied !== expected) throw Object.assign(new Error("The CPU production integration is not authorised."), { status: 401 });
 }
 
 async function handleGet(request: NextRequest) {

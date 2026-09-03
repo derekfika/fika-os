@@ -1,6 +1,8 @@
 import { GOVERNED_OPLOC_BY_ID } from "./governed-oplocs";
 
-export const DELIVERED_IN_PERMISSIONS = ["delivered_in.view", "delivered_in.allergens.view"] as const;
+// Delivered-In receives a signed, CPU-owned daily packet.  Allergen review is
+// not a manager-facing permission or API capability in this consumer.
+export const DELIVERED_IN_PERMISSIONS = ["delivered_in.view"] as const;
 export type DeliveredInPermission = typeof DELIVERED_IN_PERMISSIONS[number];
 export type DeliveredInAccess = { email: string; oplocIds: string[]; permissions: DeliveredInPermission[] };
 export type DeliveredInSite = { oplocId: string; label: string; services: { deliveredIn: boolean; grabAndGo: boolean } };

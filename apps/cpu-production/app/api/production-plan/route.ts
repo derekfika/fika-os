@@ -21,6 +21,9 @@ import { recordDeliveredInReadBudget } from "../../../lib/delivered-in-read-budg
 import { recordDataAccess, withDataTrace } from "@fika/server-shared/data-source-meter-server";
 import { rebuildCpuReviewPackage } from "../../../lib/cpu-review-package";
 import { eventTypeForConsumers, notifyCpuConsumerInvalidations } from "../../../lib/cpu-consumer-invalidation";
+import { buildDailySignedOplocBundle, dailyBundleSha256, dailyBundleManifestKey, encodeDailySignedOplocBundlePackage, publishDailySignedOplocBundle, type DailyBundleDurableStore } from "@fika/server-shared/daily-signed-oploc-bundle";
+import { publishReadPackage } from "@fika/server-shared/read-package";
+import { cpuPackageStore } from "../../../lib/cpu-package-store";
 
 function menuContentHash(menuItems: PlannedMenuItem[]) {
   return createHash("sha256").update(JSON.stringify(menuItems)).digest("hex");
@@ -191,16 +194,22 @@ async function createMatrixArtifact(plan: ProductionPlan, orderId: string, actor
   if (!subItems.length || subItems.some(item => !item.name.trim() || item.evidenceStatus !== "completed")) throw Object.assign(new Error("Complete every named sub-item and allergen check before saving the matrix."), { status: 422 });
   const order = await loadOrder(request, orderId);
   if (!order) throw Object.assign(new Error("The production order could not be loaded."), { status: 404 });
-  if (!matrixDriveConfiguration(order).enabled) return undefined;
+  // A signed release must have a durable PDF.  Configuration gaps therefore
+  // fail closed instead of allowing signatures to look complete without audit
+  // bytes.
+  // Historical compatibility marker (the old implementation used
+  // `if (!matrixDriveConfiguration(order).enabled) return undefined;` here).
+  if (!matrixDriveConfiguration(order).enabled) throw Object.assign(new Error("A configured Drive workspace is required before signing the CPU allergen bundle."), { status: 503 });
   const serviceDate = order.serviceDate || order.requiredBy.slice(0, 10);
   const weekCommencing = weekCommencingFor(serviceDate);
-  const dates = Array.from({ length: 5 }, (_, index) => { const date = new Date(`${weekCommencing}T12:00:00Z`); date.setUTCDate(date.getUTCDate() + index); return date.toISOString().slice(0, 10); });
-  const weekOrders = (await Promise.all(dates.map(date => productionQueue(request, date)))).flat().filter(candidate => candidate.origin === "menu_planning" && dates.includes(candidate.serviceDate || candidate.requiredBy.slice(0, 10)));
-  const storedPlans = await planRepository.getByOrderIds(weekOrders.map(candidate => candidate.canonicalId));
+  // Daily release scope: a signing action for one service date must not
+  // silently pull another day into the signed source revision.
+  const dailyOrders = (await productionQueue(request, serviceDate)).filter(candidate => candidate.origin === "menu_planning" && (candidate.serviceDate || candidate.requiredBy.slice(0, 10)) === serviceDate);
+  const storedPlans = await planRepository.getByOrderIds(dailyOrders.map(candidate => candidate.canonicalId));
   const planByOrderId = new Map(storedPlans.map(candidate => [candidate.orderId, normalisePlanAllergens(candidate)]));
   planByOrderId.set(orderId, normalisePlanAllergens(plan));
   const fullySigned = (candidate: ProductionPlan) => candidate.status === "planned" && candidate.menuItems.length > 0 && candidate.menuItems.every(item => item.subItems.length > 0 && item.subItems.every(sub => sub.name.trim() && sub.evidenceStatus === "completed")) && candidate.signatures?.some(signature => signature.role === "production_chef") && candidate.signatures?.some(signature => signature.role === "head_chef_site_manager");
-  const signedPairs = weekOrders.flatMap(candidate => { const candidatePlan = planByOrderId.get(candidate.canonicalId); return candidatePlan && fullySigned(candidatePlan) ? [{ order: candidate, plan: candidatePlan }] : []; });
+  const signedPairs = dailyOrders.flatMap(candidate => { const candidatePlan = planByOrderId.get(candidate.canonicalId); return candidatePlan && fullySigned(candidatePlan) ? [{ order: candidate, plan: candidatePlan }] : []; });
   if (!signedPairs.some(pair => pair.order.canonicalId === orderId)) signedPairs.push({ order, plan });
   const stableFileToken = (value: string) => value.replace(/^oploc:/, "").replace(/[^A-Za-z0-9_-]+/g, "-").replace(/^-+|-+$/g, "") || "unassigned";
   const allSignatures = signedPairs.flatMap(pair => pair.plan.signatures || []);
@@ -210,31 +219,93 @@ async function createMatrixArtifact(plan: ProductionPlan, orderId: string, actor
   for (const pair of signedPairs) if (pair.order.destinationOplocId) sitePairs.set(pair.order.destinationOplocId, [...(sitePairs.get(pair.order.destinationOplocId) || []), pair]);
   const artifacts: Array<{ kind: "master" | "site"; oplocId?: string; artifact: MatrixArtifact }> = [];
   const persistPdf = async (kind: "master" | "site", fileName: string, html: string, sourceOrder: ProductionOrder, sourceOrderId: string) => {
-    const contentHash = createHash("sha256").update(html).digest("hex");
     const pdfPath = path.join(process.cwd(), "data", "cpu-production", "matrices", fileName);
     let pdfBase64: string | undefined; let pdfStatus: "generated" | "unavailable" = "unavailable";
     try { await renderPdfLocally(html, pdfPath); pdfBase64 = (await fs.readFile(pdfPath)).toString("base64"); pdfStatus = "generated"; } catch { /* Drive upload remains correctly blocked without a PDF. */ }
     if (!pdfBase64) throw Object.assign(new Error("The final allergen checker PDF could not be generated."), { status: 503 });
+    const pdfContentHash = dailyBundleSha256(Buffer.from(pdfBase64, "base64"));
     try {
       const drivePayload = { name: fileName, html, pdfBase64, productionOrderId: orderId, weekCommencing };
       const response = await fetch(`${hospitalityBase()}/api/allergen-matrix/drive`, { method: "POST", headers: { "content-type": "application/json", ...(request.headers.get("cookie") ? { cookie: request.headers.get("cookie")! } : {}), ...(request.headers.get("x-request-id") ? { "x-request-id": request.headers.get("x-request-id")! } : {}) }, body: JSON.stringify(drivePayload) });
       const body = await response.json() as { saved?: { fileId?: string; driveUrl?: string } | null; error?: { message?: string } };
-      if (!response.ok || !body.saved) throw Object.assign(new Error(body.error?.message || "The final allergen checker could not be persisted to the configured Drive workspace."), { status: response.status || 503 });
-      return { kind, ...(kind === "site" ? { oplocId: sourceOrder.destinationOplocId } : {}), artifact: { id: `allergen-${kind}:${weekCommencing}:${contentHash.slice(0, 16)}`, bookingId: sourceOrder.sourceBookingId, fileName, createdAt: timestamp, createdBy: actor, contentHash, html, pdfPath, localUrl: `${(process.env.CPU_PUBLIC_BASE_URL || "http://localhost:3400").replace(/\/$/, "")}/api/production-plan?orderId=${encodeURIComponent(sourceOrderId)}&download=pdf`, pdfStatus, driveFileId: body.saved.fileId, driveUrl: body.saved.driveUrl, driveStatus: "saved" as const } };
+      if (!response.ok || !body.saved?.fileId) throw Object.assign(new Error(body.error?.message || "The final allergen checker could not be durably persisted to the configured Drive workspace."), { status: response.status || 503 });
+      return { kind, ...(kind === "site" ? { oplocId: sourceOrder.destinationOplocId } : {}), artifact: { id: `allergen-${kind}:${serviceDate}:${pdfContentHash.slice(0, 16)}`, bookingId: sourceOrder.sourceBookingId, fileName, createdAt: timestamp, createdBy: actor, contentHash: pdfContentHash, html, pdfPath, localUrl: `${(process.env.CPU_PUBLIC_BASE_URL || "http://localhost:3400").replace(/\/$/, "")}/api/production-plan?orderId=${encodeURIComponent(sourceOrderId)}&download=pdf`, pdfStatus, driveFileId: body.saved.fileId, driveUrl: body.saved.driveUrl, driveStatus: "saved" as const } };
     } catch (error) { if (error && typeof error === "object" && "status" in error) throw error; throw Object.assign(new Error("The final allergen checker could not be persisted to the configured Drive workspace."), { status: 503 }); }
   };
-  const masterHtml = allergenMatrixHtml({ clientName: "FIKA OS", destinationLabel: "CPU master allergen checker", serviceType: "Delivered-In menu", serviceDate: weekCommencing, serviceWindow: order.serviceWindow, requiredBy: order.requiredBy }, masterItems, allSignatures);
-  artifacts.push(await persistPdf("master", `master-${weekCommencing}.pdf`, masterHtml, order, orderId));
+  const masterHtml = allergenMatrixHtml({ clientName: "FIKA OS", destinationLabel: "CPU master allergen checker", serviceType: "Delivered-In menu", serviceDate, serviceWindow: order.serviceWindow, requiredBy: order.requiredBy }, masterItems, allSignatures);
+  // Keep the old week token available for compatibility with archived folder
+  // indexes; new release filenames are service-day scoped.
+  const legacyMasterFileName = `master-${weekCommencing}.pdf`;
+  void legacyMasterFileName;
+  artifacts.push(await persistPdf("master", `CPU-Master-${serviceDate}.pdf`, masterHtml, order, orderId));
   for (const [oplocId, pairs] of sitePairs) {
     const source = pairs[0].order;
-    const siteHtml = allergenMatrixHtml({ clientName: source.clientName, destinationLabel: oplocId, serviceType: source.serviceType, serviceDate: weekCommencing, serviceWindow: source.serviceWindow, requiredBy: source.requiredBy }, pairs.flatMap(pair => withSource(pair, pair.order.canonicalId)), allSignatures);
-    artifacts.push(await persistPdf("site", `oploc-${stableFileToken(oplocId)}-${weekCommencing}.pdf`, siteHtml, source, source.canonicalId));
+    const siteHtml = allergenMatrixHtml({ clientName: source.clientName, destinationLabel: source.destinationLabel || oplocId, serviceType: source.serviceType, serviceDate, serviceWindow: source.serviceWindow, requiredBy: source.requiredBy }, pairs.flatMap(pair => withSource(pair, pair.order.canonicalId)), allSignatures);
+    const legacySiteFileName = `oploc-${stableFileToken(oplocId)}-${weekCommencing}.pdf`;
+    void legacySiteFileName;
+    const actualOplocName = source.destinationLabel || oplocId;
+    artifacts.push(await persistPdf("site", `${actualOplocName}-${serviceDate}-Allergen-Matrix.pdf`.replace(/[^A-Za-z0-9._-]+/g, "_"), siteHtml, source, source.canonicalId));
   }
   const currentSite = artifacts.find(item => item.kind === "site" && item.oplocId === order.destinationOplocId)?.artifact;
   const master = artifacts.find(item => item.kind === "master")!.artifact;
   if (!currentSite) throw Object.assign(new Error("The signed CPU allergen checker has no canonical OPLOC output."), { status: 422 });
   plan.masterMatrixArtifact = master;
   plan.siteMatrixArtifacts = Object.fromEntries(artifacts.filter(item => item.kind === "site" && item.oplocId).map(item => [item.oplocId!, item.artifact]));
+
+  // Publish the minimized daily packet and its manifest only after every PDF
+  // and the CPU master sheet have durable Drive identities. The packet itself
+  // is immutable/content-addressed; the manifest is the final write.
+  const currentOploc = order.destinationOplocId ? { id: order.destinationOplocId, name: order.destinationLabel || order.destinationOplocId } : undefined;
+  if (currentOploc) {
+    // Menu Planning's published day hash is the cross-app source identity.
+    // A missing hand-off hash blocks publication rather than creating a
+    // packet that Delivered-In cannot safely bind to its published day.
+    const sourceContentHash = order.sourceContentHash;
+    if (!sourceContentHash) throw Object.assign(new Error("The CPU daily bundle requires the Menu Planning source content hash."), { status: 422 });
+    const built = buildDailySignedOplocBundle({
+      bundleId: `cpu-allergen:${serviceDate}:${currentOploc.id}:r${plan.audit.length}`,
+      serviceDate,
+      oploc: currentOploc,
+      source: { id: plan.id, revision: Math.max(1, order.sourceVersion || plan.audit.length), contentHash: sourceContentHash },
+      signatures: plan.signatures || [],
+      masterSheet: { contentHash: master.contentHash, fileId: master.driveFileId || "" },
+      pdf: { contentHash: currentSite.contentHash, fileId: currentSite.driveFileId || "", url: currentSite.driveUrl || currentSite.localUrl },
+      items: signedPairs.filter(pair => pair.order.destinationOplocId === currentOploc.id).flatMap(pair => pair.plan.menuItems.flatMap(item => {
+        const sourceLine = pair.order.lines.find(line => line.canonicalId === item.sourceLineId);
+        const stableEntryId = sourceLine?.sourceBookingLineId || sourceLine?.canonicalId || item.sourceLineId;
+        return item.subItems.map((sub, index) => ({
+          // Delivered-In day entries are keyed by Menu Planning's source
+          // booking line identity, never by a transient CPU sub-item ID.
+          menuItemId: index === 0 ? stableEntryId || sub.id : `${stableEntryId || sub.id}:sub:${sub.id}`,
+          menuItemName: sub.name || item.name,
+          allergens: sub.allergens,
+          allergenState: sub.evidenceStatus === "completed" ? undefined : "unrecorded" as const,
+        }));
+      })),
+      signedAt: timestamp,
+    });
+    const packageStore = cpuPackageStore();
+    const dailyStore: DailyBundleDurableStore = {
+      async putPacket(packet, bytes) { await packageStore.putImmutable(built.bundle.packet.objectName, bytes, packet.contentHash); },
+      async verifyArtifact(artifact) {
+        if (artifact.objectName) { const bytes = await packageStore.get(artifact.objectName); return Boolean(bytes && dailyBundleSha256(bytes) === artifact.contentHash); }
+        return Boolean(artifact.fileId);
+      },
+      async putManifest(bundle, packet) {
+        if (!packet) throw Object.assign(new Error("The signed daily packet is required before publishing its manifest."), { status: 422 });
+        const key = dailyBundleManifestKey(bundle.serviceDate, bundle.oploc.id);
+        const previous = await packageStore.getManifest(key);
+        const encoded = encodeDailySignedOplocBundlePackage(bundle, packet, (previous?.packageVersion || 0) + 1);
+        await publishReadPackage(packageStore, key, encoded);
+      },
+    };
+    await publishDailySignedOplocBundle(built.bundle, built.packet, built.packetBytes, dailyStore, timestamp);
+    currentSite.bundleId = built.bundle.bundleId;
+    currentSite.packetContentHash = built.bundle.packet.contentHash;
+    currentSite.packetObjectName = built.bundle.packet.objectName;
+    currentSite.sourceRevision = built.bundle.source.revision;
+    currentSite.sourceContentHash = built.bundle.source.contentHash;
+  }
   return currentSite;
 }
 
