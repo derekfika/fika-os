@@ -30,9 +30,9 @@ test("CPU Production Item broad reads are absent from ordinary runtime code", as
   }
 });
 
-test("booking cards keep item descriptions out of the concise card presentation", async () => {
+test("booking cards show item names and quantities in the concise presentation", async () => {
   const card = await readFile(new URL("../app/ui/ProductionCalendar.tsx", import.meta.url), "utf8");
-  assert.doesNotMatch(card, /<em>\{line\.itemName\}<\/em>/);
+  assert.match(card, /<b>\{line\.itemName\}<\/b>/);
   assert.match(card, /production-card-quantities/);
 });
 

@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import type { ProductionOrder } from "../../lib/production-types";
-import { cpuAttentionLabel, cpuDestinationLabel, cpuLifecycle, cpuLifecycleLabels, cpuRequiredTime, cpuSourceLabel } from "../../lib/production-presentation";
+import { cpuAttentionLabel, cpuDestinationLabel, cpuLifecycle, cpuLifecycleLabels, cpuSourceLabel } from "../../lib/production-presentation";
 import { orderSummary, productionJobCount, sourceHeading } from "../../lib/production-day";
 import "./production-calendar.css";
 import "./production-card-overrides.css";
@@ -73,9 +73,9 @@ export default function ProductionCalendar({ orders, open, onCancelBooking, week
               return (
                 <div className={`production-card-wrap${order.cancellationNotice ? " production-card-wrap--cancelled" : ""}`} key={order.canonicalId}>
                 <button className={`production-card production-card--${status}${order.cancellationNotice ? " production-card--cancelled-booking" : ""}`} type="button" aria-label={order.cancellationNotice ? `Dismiss cancelled booking for ${order.clientName || cpuDestinationLabel(order)}` : `Open production booking for ${order.clientName || cpuDestinationLabel(order)}`} onClick={() => order.cancellationNotice && onCancelBooking ? onCancelBooking(order) : open(order)}>
-                  <div className="production-card-top"><strong>{cpuRequiredTime(order)}</strong><span className={`calendar-status calendar-status--${order.cancellationNotice ? "cancelled" : status}`}>{statusLabel}</span></div>
-                  <div className="production-card-destination"><small>OPLOC · {sourceHeading(order)}</small><h3>{cardOploc(order)}</h3></div>
-                  <div className="production-card-quantities" aria-label="Order quantities">{order.lines.map((line) => <span key={line.canonicalId}><b>{line.customerQuantity.toLocaleString()}</b></span>)}</div>
+                  <div className="production-card-top"><strong>{sourceHeading(order)}</strong><span className={`calendar-status calendar-status--${order.cancellationNotice ? "cancelled" : status}`}>{statusLabel}</span></div>
+                  <div className="production-card-destination"><small>Destination</small><h3>{cardOploc(order)}</h3></div>
+                  <div className="production-card-quantities" aria-label="Order dishes and quantities">{order.lines.map((line) => <span key={line.canonicalId}><b>{line.itemName}</b><em>{line.customerQuantity.toLocaleString()} {line.customerUnit}</em></span>)}</div>
                   <p className="production-card-client"><b>{cpuSourceLabel(order)}:</b> {orderSummary(order)}</p>
                   {dietaries && <p className="production-card-dietaries"><b>Dietary:</b> {dietaries}</p>}
                   <div className="production-card-meta"><span>{customerPax} pax</span><span>{cardQuantityTotal(order).toLocaleString()} pieces/quantities</span></div>

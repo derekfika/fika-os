@@ -440,7 +440,10 @@ test("allergen checker uses the master-style purple header and four-state cells"
 test("CPU dashboard opens with a Monday-to-Friday production heads-up", () => {
   assert.match(page, /view === "calendar"[\s\S]*<ProductionCalendar/);
   assert.match(calendar, /Monday.*Tuesday.*Wednesday.*Thursday.*Friday/);
-  assert.match(calendar, /OPLOC/);
+  assert.doesNotMatch(calendar, /<small>OPLOC/);
+  assert.doesNotMatch(page, /Choose an OPLOC/);
+  assert.match(calendar, /line\.itemName/);
+  assert.doesNotMatch(calendar, /cpuRequiredTime\(order\)/);
   assert.match(calendar, /pieces\/quantities/);
 });
 

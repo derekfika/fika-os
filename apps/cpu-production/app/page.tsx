@@ -76,7 +76,7 @@ export default function CpuProduction() {
     try {
       const isDayProjection = view === "day" || view === "totals";
       const projectionDate = isDayProjection ? dayDate : weekCommencing;
-      const cacheKey = `${isDayProjection ? "day" : "week"}:${projectionDate}`;
+      const cacheKey = `${isDayProjection ? "day" : "week"}:${projectionDate}:${productionScope}`;
       // Compatibility marker for existing dashboard contract checks: /api/production?scope=${productionScope}
       const scopeResponse = await fetch("/api/production?cacheScope=1", { cache: "no-store" });
       const scopeBody = await readApiResponse<{ cacheScope?: string; error?: { message?: string } }>(scopeResponse);
@@ -85,6 +85,7 @@ export default function CpuProduction() {
       const cached = await readCpuProjection<any>(cacheKey, cacheScope);
       if (cached?.value) {
         setOrders(cpuProjectionToOrders(filterCpuProjectionForScope(cached.value, productionScope)));
+        setError("");
         try {
           const head = await fetch(`/api/production?projectionHead=1&${isDayProjection ? `serviceDate=${encodeURIComponent(projectionDate)}` : `weekCommencing=${encodeURIComponent(projectionDate)}`}`, { cache: "no-store" });
           const headBody = await head.json() as { lastChangeSequence?: number; packageVersion?: number; contentHash?: string; sourceVersion?: string };
@@ -96,6 +97,7 @@ export default function CpuProduction() {
             await writeCpuProjection({ key: cacheKey, schemaVersion: 1, cacheScope, fetchedAt: new Date().toISOString(), lastChangeSequence: Number(newer.lastChangeSequence || 0), revision: Number(newer.revision || 0), packageVersion: Number(refreshedBody.package?.packageVersion || 0), contentHash: refreshedBody.package?.contentHash, sourceVersion: refreshedBody.package?.sourceVersion, value: newer });
             const refreshed = cpuProjectionToOrders(filterCpuProjectionForScope(newer, productionScope));
             setOrders(refreshed);
+            setError("");
             return refreshed;
           }
           return cpuProjectionToOrders(filterCpuProjectionForScope(cached.value, productionScope));
@@ -108,6 +110,7 @@ export default function CpuProduction() {
       const projectedOrders: ProductionOrder[] = projection ? cpuProjectionToOrders(filterCpuProjectionForScope(projection, productionScope)) : [];
       if (projection) await writeCpuProjection({ key: cacheKey, schemaVersion: 1, cacheScope, fetchedAt: new Date().toISOString(), lastChangeSequence: Number(projection.lastChangeSequence || 0), revision: Number(projection.revision || 0), packageVersion: Number(body.package?.packageVersion || 0), contentHash: body.package?.contentHash, sourceVersion: body.package?.sourceVersion, value: projection });
       setOrders(projectedOrders);
+      setError("");
       return projectedOrders;
     } finally {
       if (showFeedback) setRefreshing(false);
@@ -115,7 +118,7 @@ export default function CpuProduction() {
   };
   useEffect(() => {
     void load();
-  }, [view, dayDate, weekCommencing]);
+  }, [view, dayDate, weekCommencing, productionScope]);
   const sites = [
     ...new Set(
       orders.map((order) => order.destinationOplocId).filter(Boolean),
@@ -858,7 +861,7 @@ function CpuCreate({ onSaved }: { onSaved: () => Promise<void> }) {
         <label>
           Operational Location
           <select required value={oplocId} onChange={(event) => { setOplocId(event.target.value); if (event.target.value !== OTHER_OPLOC) setOtherSite(""); }}>
-            <option value="">Choose an OPLOC…</option>
+            <option value="">Choose a site…</option>
             {oplocs.map((oploc) => <option key={oploc.canonicalId} value={oploc.canonicalId}>{oploc.label}</option>)}
             <option value={OTHER_OPLOC}>Other — one-off delivery</option>
           </select>

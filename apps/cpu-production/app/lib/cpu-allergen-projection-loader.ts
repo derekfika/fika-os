@@ -7,6 +7,7 @@ import { readCpuProjection, writeCpuProjection, type CpuProjectionCacheEntry } f
 
 type PackageIdentity = { packageVersion?: number; contentHash?: string; sourceVersion?: string };
 type ProjectionResponse = { projection?: CpuDayProjection; package?: PackageIdentity; error?: { message?: string } };
+type LoadedProjectionResponse = ProjectionResponse & { projection: CpuDayProjection };
 type ProjectionHead = { lastChangeSequence?: number; packageVersion?: number; contentHash?: string; sourceVersion?: string };
 type ProjectionCacheEntry = CpuProjectionCacheEntry<CpuDayProjection>;
 type LoaderDependencies = {
@@ -44,6 +45,22 @@ async function json<T>(response: Response) {
   return await response.json().catch(() => ({})) as T;
 }
 
+async function loadPublishedDay(serviceDate: string, scope: ProductionScope, dependencies: LoaderDependencies): Promise<LoadedProjectionResponse> {
+  const query = `serviceDate=${encodeURIComponent(serviceDate)}&scope=${scope}`;
+  const response = await dependencies.fetch(`/api/production?projection=1&${query}`, { cache: "no-store" });
+  const body = await json<ProjectionResponse>(response);
+  if (response.ok && body.projection) return body as LoadedProjectionResponse;
+  if (response.status !== 503) throw new Error(body.error?.message || "Could not load the CPU production projection.");
+
+  // A missing or corrupt day package can be repaired only through the
+  // explicit bounded CPU reconciliation path. Normal projection reads remain
+  // package-first and fail closed.
+  const reconciliation = await dependencies.fetch(`/api/production?projection=1&reconcile=1&${query}`, { cache: "no-store" });
+  const reconciled = await json<ProjectionResponse>(reconciliation);
+  if (!reconciliation.ok || !reconciled.projection) throw new Error(reconciled.error?.message || body.error?.message || "Could not load the CPU production projection.");
+  return reconciled as LoadedProjectionResponse;
+}
+
 /** Loads the same bounded day projection used by the main CPU dashboard. */
 export async function loadCpuAllergenProjection(serviceDate: string, scope: ProductionScope = "delivered_in", dependencies: LoaderDependencies = defaultDependencies()) {
   const scopeResponse = await dependencies.fetch("/api/production?cacheScope=1", { cache: "no-store" });
@@ -65,9 +82,7 @@ export async function loadCpuAllergenProjection(serviceDate: string, scope: Prod
         && head.sourceVersion === cached.sourceVersion;
       if (unchanged) return { projection: filterCpuProjectionForScope(cached.value, scope), cacheHit: true, package: { packageVersion: cached.packageVersion, contentHash: cached.contentHash, sourceVersion: cached.sourceVersion } };
 
-      const refreshedResponse = await dependencies.fetch(`/api/production?projection=1&serviceDate=${encodeURIComponent(serviceDate)}&scope=${scope}`, { cache: "no-store" });
-      const refreshedBody = await json<ProjectionResponse>(refreshedResponse);
-      if (!refreshedResponse.ok || !refreshedBody.projection) throw new Error(refreshedBody.error?.message || "The current CPU projection could not be loaded.");
+      const refreshedBody = await loadPublishedDay(serviceDate, scope, dependencies);
       await dependencies.write({ key: cacheKey, schemaVersion: 1, cacheScope, fetchedAt: new Date().toISOString(), lastChangeSequence: refreshedBody.projection.lastChangeSequence, revision: refreshedBody.projection.revision, packageVersion: refreshedBody.package?.packageVersion, contentHash: refreshedBody.package?.contentHash, sourceVersion: refreshedBody.package?.sourceVersion, value: refreshedBody.projection });
       return { projection: filterCpuProjectionForScope(refreshedBody.projection, scope), cacheHit: false, package: refreshedBody.package };
     } catch (cause) {
@@ -77,9 +92,7 @@ export async function loadCpuAllergenProjection(serviceDate: string, scope: Prod
     }
   }
 
-  const response = await dependencies.fetch(`/api/production?projection=1&serviceDate=${encodeURIComponent(serviceDate)}&scope=${scope}`, { cache: "no-store" });
-  const body = await json<ProjectionResponse>(response);
-  if (!response.ok || !body.projection) throw new Error(body.error?.message || "Could not load the CPU production projection.");
+  const body = await loadPublishedDay(serviceDate, scope, dependencies);
   await dependencies.write({ key: cacheKey, schemaVersion: 1, cacheScope, fetchedAt: new Date().toISOString(), lastChangeSequence: body.projection.lastChangeSequence, revision: body.projection.revision, packageVersion: body.package?.packageVersion, contentHash: body.package?.contentHash, sourceVersion: body.package?.sourceVersion, value: body.projection });
   return { projection: filterCpuProjectionForScope(body.projection, scope), cacheHit: false, package: body.package };
 }

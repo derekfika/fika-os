@@ -75,6 +75,7 @@ test("CPU allergen review reuses the day projection and avoids a warm package re
   assert.match(loader, /cacheKey = `day:\$\{serviceDate\}`/);
   assert.match(loader, /cached\?\.value/);
   assert.match(loader, /projectionHead=1/);
+  assert.match(loader, /reconcile=1/);
   assert.match(loader, /if \(unchanged\) return/);
   assert.match(loader, /filterCpuProjectionForScope\(cached\.value, scope\)/);
   assert.match(loader, /cache: "no-store"/);
@@ -107,6 +108,29 @@ test("changed authoritative projection head refreshes the allergen package", asy
   assert.equal(result.projection.revision, 3);
   assert.ok(setup.written);
   assert.equal(setup.calls.filter((url) => url.includes("projection=1")).length, 1);
+});
+
+test("missing day package repairs through bounded reconciliation before loading published dishes", async () => {
+  const calls: string[] = [];
+  const recovered = { ...projection, revision: 3, lastChangeSequence: 8, orders: [{ id: "menu-order:1", serviceDate: "2026-08-31", requiredBy: "2026-08-31T12:00", serviceWindow: { startTime: "12:00" }, origin: "menu_planning", priority: "normal", status: "planned", quantities: [{ sourceLineId: "line:1", sourceMenuItemId: "dish:1", name: "Published Dish", quantity: 10, unit: "portion", dietaries: {} }], allergenReadiness: "ready", planningReadiness: "planned", attention: [], version: 1 }], summary: { orders: 1, ready: 0, attention: 0, planned: 1, totalUnits: 10 } } as CpuDayProjection;
+  let written: unknown;
+  const result = await loadCpuAllergenProjection("2026-08-31", "delivered_in", {
+    fetch: async (input: RequestInfo | URL) => {
+      const url = String(input);
+      calls.push(url);
+      if (url.includes("cacheScope")) return new Response(JSON.stringify({ cacheScope: "staging:fika-os-dev:actor-1" }), { status: 200 });
+      if (url.includes("projection=1") && !url.includes("reconcile=1")) return new Response(JSON.stringify({ error: { message: "The CPU projection package is currently unavailable." } }), { status: 503 });
+      if (url.includes("reconcile=1")) return new Response(JSON.stringify({ projection: recovered, package: { packageVersion: 1, contentHash: "hash-day-v1", sourceVersion: "cpu-change-8" } }), { status: 200 });
+      return new Response(JSON.stringify({}), { status: 500 });
+    },
+    read: async () => undefined,
+    write: async (entry: unknown) => { written = entry; },
+  });
+  assert.equal(result.cacheHit, false);
+  assert.equal(result.projection.orders.length, 1);
+  assert.equal(result.projection.orders[0]?.quantities[0]?.name, "Published Dish");
+  assert.ok(calls.some((url) => url.includes("reconcile=1")));
+  assert.ok(written);
 });
 
 test("failed projection head fails closed and never uses stale allergen cache", async () => {

@@ -3,9 +3,10 @@
 .production-card-destination h3{margin:0;color:#24115c;font-size:1.02rem;overflow-wrap:anywhere}
 .production-card-client{font-size:.7rem!important}
 .production-card-quantities{display:grid;gap:3px;padding:6px 7px;border-left:3px solid #4f34c7;background:#f8f6ff;color:#665d73;font-size:.68rem;line-height:1.25}
-.production-card-quantities span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.production-card-quantities b{color:#4f34c7;font-size:.78rem}
+.production-card-quantities span{display:flex;justify-content:space-between;gap:8px;overflow:hidden;line-height:1.25}
+.production-card-quantities b{overflow:hidden;color:#4f34c7;font-size:.72rem;text-overflow:ellipsis;white-space:nowrap}
 .production-card-quantities em{color:#24115c;font-style:normal;font-weight:800}
+.production-card-top strong{color:#24115c;font-size:.8rem;letter-spacing:.02em;text-transform:uppercase}
 .production-card-meta span:last-child{text-align:right}
 .calendar-exceptions{display:grid;gap:2px}
 .calendar-exception-detail{color:#8b3f50;font-size:.63rem;line-height:1.25}

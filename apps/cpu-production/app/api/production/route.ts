@@ -215,7 +215,9 @@ async function handleGet(request: NextRequest) {
       const projectedIds = new Set((storedData?.orders || []).map((order) => order.id).filter(Boolean));
       const needsOrderRefresh = canonicalIds.size !== projectedIds.size || [...canonicalIds].some((id) => !projectedIds.has(id));
       const requiresRefresh = !stored.exists || !packageCurrent || needsReadableDestinations || needsCancellationRefresh || needsOrderRefresh;
-      const response = NextResponse.json({ projection: requiresRefresh ? week ? await rebuildCpuWeekProjection(request, week) : await rebuildCpuDayProjection(request, projectionDate) : stored.data() });
+      const refreshedProjection = requiresRefresh ? week ? await rebuildCpuWeekProjection(request, week) : await rebuildCpuDayProjection(request, projectionDate) : stored.data();
+      const packageManifest = await getCpuProjectionManifest(projectionDate, week || undefined);
+      const response = NextResponse.json({ projection: refreshedProjection, package: packageManifest });
       recordDeliveredInReadBudget({ stage: requiresRefresh ? "projection_refresh" : "projection_body_load", projectionDocs: 1, canonicalOrderDocs: canonicalIds.size });
       return withServerTiming(response, { stored: storedDuration, package: packageDuration, canonical: canonicalDuration, total: performance.now() - startedAt });
     }
