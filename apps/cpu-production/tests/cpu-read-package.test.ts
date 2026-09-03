@@ -5,6 +5,7 @@ import path from "node:path";
 import test from "node:test";
 import { decodeReadPackage, encodeReadPackage } from "@fika/server-shared/read-package";
 import { publishCpuProjectionPackage, getCpuProjectionPackage } from "../lib/cpu-read-package";
+import { downloadCpuPackageBytes } from "../lib/cpu-package-store";
 import { cpuProjectionCacheEntryMatches } from "../app/lib/cpu-indexeddb";
 import type { CpuDayProjection, CpuWeekProjection } from "../lib/cpu-projection";
 
@@ -15,6 +16,14 @@ test("CPU day package round-trips with gzip/SHA integrity", () => {
   const encoded = encodeReadPackage("snapshots/cpu-production/projection-day", 3, { projection: day("2026-08-31") }, 0, { sourceVersion: "cpu-change-12" });
   assert.deepEqual(decodeReadPackage(encoded.manifest, encoded.bytes), { projection: day("2026-08-31") });
   assert.match(encoded.manifest.objectName, /v3-[a-f0-9]{64}\.json\.gz$/);
+});
+
+test("hosted CPU package reads preserve compressed bytes for SHA verification", async () => {
+  let options: { decompress?: boolean } | undefined;
+  const stored = Buffer.from([31, 139, 8, 0]);
+  const bytes = await downloadCpuPackageBytes({ download: async (next) => { options = next; return [stored]; } });
+  assert.deepEqual(bytes, stored);
+  assert.deepEqual(options, { decompress: false });
 });
 
 test("CPU week package round-trips and immutable object names change by version", () => {

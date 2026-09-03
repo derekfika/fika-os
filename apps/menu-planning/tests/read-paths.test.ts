@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { catalogueErrorMessage, catalogueManifestFromResponse, catalogueManifestMatches, resolveCachedCatalogueEntry } from "../lib/menu-catalogue-cache";
+import { createVersionedCacheWriter } from "../lib/menu-week-cache";
 
 test("rolling-menu read path resolves catalogue data without reconciliation writes", () => {
   const source = readFileSync(new URL("../app/api/rolling-menu/route.ts", import.meta.url), "utf8");
@@ -55,6 +56,9 @@ test("hosted rolling reads use targeted week and publication paths", () => {
   assert.match(planner, /getCachedWeek|putCachedWeek/);
   assert.match(planner, /getCachedWeekSelection/);
   assert.match(planner, /putCachedWeekSelection/);
+  assert.match(planner, /operationRef/);
+  assert.match(planner, /summary && Number\(summary\.version\) <= cached\.version/);
+  assert.match(planner, /persistCachedWeek/);
   assert.match(planner, /history\.pushState/);
   assert.match(planner, /popstate/);
   assert.doesNotMatch(planner, /router\.push/);
@@ -65,6 +69,30 @@ test("hosted rolling reads use targeted week and publication paths", () => {
   assert.match(weekCache, /const databaseVersion = 3/);
   assert.match(weekCache, /oldVersion < databaseVersion/);
   assert.match(weekCache, /objectStore\(storeName\)\.clear/);
+});
+
+test("versioned cache writes cannot resurrect data across logout and relogin", async () => {
+  const writes: string[] = [];
+  let release!: () => void;
+  let started!: () => void;
+  const firstWrite = new Promise<void>(resolve => { release = resolve; });
+  const firstStarted = new Promise<void>(resolve => { started = resolve; });
+  const writer = createVersionedCacheWriter(async (value: string) => { writes.push(value); if (value === "old") { started(); await firstWrite; } });
+  const oldGeneration = writer.currentGeneration();
+  const old = writer.enqueue("week-1", 1, "old", oldGeneration);
+  await firstStarted;
+  writer.invalidate();
+  const fresh = writer.enqueue("week-1", 2, "fresh");
+  release();
+  await Promise.all([old, fresh]);
+  assert.deepEqual(writes, ["old", "fresh"]);
+
+  const skippedWrites: string[] = [];
+  const skippedWriter = createVersionedCacheWriter(async (value: string) => { skippedWrites.push(value); });
+  const staleGeneration = skippedWriter.currentGeneration();
+  skippedWriter.invalidate();
+  await skippedWriter.enqueue("week-2", 1, "stale", staleGeneration);
+  assert.deepEqual(skippedWrites, []);
 });
 
 test("known-neighbour prefetch requests a targeted snapshot without week summaries", () => {

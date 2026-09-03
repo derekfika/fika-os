@@ -6,6 +6,25 @@ import { canonicalOplocId } from "@fika/server-shared/governed-oplocs";
 
 export type CachedMenuWeek = { weekId: string; weekCommencing: string; version: number; snapshot: RollingSnapshot; publicationState: Record<string, PublicationDayState>; weeks?: Array<{ id: string; weekCommencing: string; entryIds: string[]; version: number }>; cachedAt: number; identity: string };
 export type CachedWeekSelection = { weekId: string; weekCommencing: string; identity: string; selectedAt: number };
+export function createVersionedCacheWriter<T>(write: (value: T) => Promise<void>) {
+  const queues = new Map<string, Promise<void>>();
+  const versions = new Map<string, number>();
+  let generation = 0;
+  const invalidate = () => { generation += 1; versions.clear(); };
+  const enqueue = (key: string, version: number, value: T, expectedGeneration = generation) => {
+    const previous = queues.get(key) || Promise.resolve();
+    const next = previous.catch(() => undefined).then(async () => {
+      if (expectedGeneration !== generation) return;
+      const latest = versions.get(key);
+      if (latest !== undefined && latest > version) return;
+      versions.set(key, version);
+      await write(value);
+    });
+    queues.set(key, next);
+    return next;
+  };
+  return { enqueue, invalidate, currentGeneration: () => generation };
+}
 const databaseName = "fika-menu-planning";
 const databaseVersion = 3;
 const storeName = "menuWeeks";

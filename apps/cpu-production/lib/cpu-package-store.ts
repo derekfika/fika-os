@@ -7,6 +7,11 @@ import type { ReadPackageManifest, ReadPackageStore } from "@fika/server-shared/
 const localRoot = () => process.env.FIKA_SNAPSHOT_DIR || path.join(process.cwd(), "local-data", "read-packages");
 const hosted = () => ["staging", "production"].includes(process.env.FIKA_RUNTIME_MODE || "");
 
+export async function downloadCpuPackageBytes(file: { download(options?: { decompress?: boolean }): Promise<[Buffer]> }) {
+  const [bytes] = await file.download({ decompress: false });
+  return bytes;
+}
+
 function localStore(): ReadPackageStore {
   const file = (name: string) => path.join(localRoot(), name);
   return {
@@ -26,7 +31,11 @@ function cloudStore(): ReadPackageStore {
   const bucket = getStorage(app).bucket(bucketName);
   return {
     async putImmutable(name, bytes, contentHash) { const object = bucket.file(name); const [exists] = await object.exists(); if (exists) return; await object.save(Buffer.from(bytes), { resumable: false, metadata: { contentType: "application/json", contentEncoding: "gzip", metadata: { contentHash } } }); },
-    async get(name) { try { const [bytes] = await bucket.file(name).download(); return bytes; } catch (error) { if ((error as { code?: number }).code === 404) return undefined; throw error; } },
+    // Read-package hashes cover the stored compressed bytes.  GCS otherwise
+    // transparently decodes objects carrying contentEncoding=gzip, which
+    // makes the integrity check fail after a successful upload and prevents
+    // the manifest from being published.
+    async get(name) { try { return await downloadCpuPackageBytes(bucket.file(name)); } catch (error) { if ((error as { code?: number }).code === 404) return undefined; throw error; } },
     async has(name) { const [exists] = await bucket.file(name).exists(); return exists; },
     async getManifest(key) { const [bytes] = await bucket.file(`manifests/${key}.json`).download().catch(() => [undefined] as const); return bytes ? JSON.parse(bytes.toString("utf8")) as ReadPackageManifest : undefined; },
     async putManifest(key, manifest) { await bucket.file(`manifests/${key}.json`).save(JSON.stringify(manifest), { resumable: false, metadata: { contentType: "application/json" } }); },
