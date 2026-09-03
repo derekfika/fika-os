@@ -9,7 +9,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import * as XLSX from "xlsx";
-import { addMenuSlot, applyEntryPatch, assertWeekDateAvailable, attachCanonicalDishIds, createEntry, defaultWeekForDate, duplicateWeek, emptyWeek, getWeek, importWorkbook, publishWeek, removeMenuSlot, saveSnapshot, updateEntry, validateWeek, ROLLING_SLOTS } from "../lib/rolling-menu";
+import { addMenuSlot, applyEntryPatch, assertWeekDateAvailable, attachCanonicalDishIds, createEntry, defaultWeekForDate, duplicateWeek, emptyWeek, getWeek, importWorkbook, normaliseRollingSnapshotDestinations, publishWeek, removeMenuSlot, saveSnapshot, updateEntry, validateWeek, ROLLING_SLOTS } from "../lib/rolling-menu";
 import { hasPlannedDishes } from "../lib/rolling-menu-types";
 import { createCanonicalMenuItem, listCanonicalMenuItems } from "../lib/canonical-menu-repository";
 import { buildCompiledPublicationSnapshot, buildPublishedDay, createPublishedMenuDay, createPublishedMenuWeek, currentPublishedDays, getCompiledPublicationSnapshot, getMenuPublication, listMenuPublicationEvents, listMenuPublications, publicationPreview, publicationState, publishedDayMatrixHtml, replayMenuPublicationOutbox, withdrawPublishedMenuDay, withdrawPublishedMenuWeek, type MenuPublicationSignoff } from "../lib/menu-publication";
@@ -106,6 +106,13 @@ test("historical Haleon destination IDs are normalized when a week is read", asy
   await updateEntry(week.week.id, created.entries[0].id, { portions: 10, allocations: [{ destinationId: "oploc:46701265-15af-48f4-a230-1d27ca21bc59", destinationLabel: "Haleon", quantity: 10 }] });
   const readBack = await getWeek(week.week.id);
   assert.equal(readBack.entries[0].allocations[0].destinationId, "oploc:bb4c7eea-87f5-4e79-8ed6-b973b24ded7b");
+});
+
+test("a stale explicit destination ID follows the live Hub OPLOC only on an exact label match", () => {
+  const snapshot = emptyWeek("2026-09-07");
+  snapshot.entries.push({ id: "entry:live-oploc", dayId: snapshot.days[2].id, date: snapshot.days[2].date, slot: "SALAD 1", itemLabel: "Test salad", portions: 5, allocations: [{ destinationId: "oploc:stale-haleon", destinationLabel: "Haleon", quantity: 5 }], allergens: {}, audit: [] });
+  const normalised = normaliseRollingSnapshotDestinations(snapshot, [{ canonicalId: "oploc:new-haleon", label: "Haleon" }]);
+  assert.equal(normalised.entries[0].allocations[0].destinationId, "oploc:new-haleon");
 });
 
 test("week lifecycle prevents collisions, publishes once, and duplicates published weeks as drafts", async () => {

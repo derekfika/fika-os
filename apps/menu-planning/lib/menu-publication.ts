@@ -4,7 +4,8 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { CanonicalAllergenMap } from "./fika-contracts";
 import type { RollingDay, RollingEntry, RollingSnapshot } from "./rolling-menu-types";
-import { getWeek, listWeeks, replaceSnapshotInStored, saveSnapshot, snapshotFromStored, validateWeek, type Stored as RollingMenuStored } from "./rolling-menu";
+import { getWeek, listWeeks, normaliseRollingSnapshotDestinations, replaceSnapshotInStored, saveSnapshot, snapshotFromStored, validateWeek, type Stored as RollingMenuStored } from "./rolling-menu";
+import type { GovernedOploc } from "./oploc-authority";
 import { renderPdfLocally } from "./local-pdf";
 import { resolveAllergenSnapshot } from "./allergen-resolution";
 import type { MenuItem } from "./domain";
@@ -151,11 +152,11 @@ export async function createPublishedMenuDay(weekId: string, dayId: string, sign
   }, { weekId, weekVersion: expectedWeekVersion }, { weekId, sourceWeekId: weekId, includeEvents: false });
 }
 /** Publish the complete current week in one transaction. Legacy day publications remain readable. */
-export async function createPublishedMenuWeek(weekId: string, input: MenuPublicationWeekPublishInput = {}, actor = "local-menu-planner", governedOplocIds?: Set<string>) {
+export async function createPublishedMenuWeek(weekId: string, input: MenuPublicationWeekPublishInput = {}, actor = "local-menu-planner", governedOplocIds?: Set<string>, governedOplocs?: readonly GovernedOploc[]) {
   const expectedWeekVersion = (await getWeek(weekId)).week.version;
   return withMenuPlanningTransaction(state => {
     const rolling = state.rolling as unknown as RollingMenuStored;
-    const snapshot = snapshotFromStored(rolling, weekId);
+    const snapshot = normaliseRollingSnapshotDestinations(snapshotFromStored(rolling, weekId), governedOplocs);
     if (snapshot.week.version !== expectedWeekVersion) throw conflict("The working menu changed while publication was being prepared. Refresh and try again.");
     const blockers = publicationWeekBlockers(snapshot, governedOplocIds);
     if (blockers.length) throw Object.assign(new Error(blockers.join(" ")), { status: 422 });

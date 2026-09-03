@@ -68,10 +68,10 @@ async function handleGet(request: NextRequest) {
     const selectedReadStarted = performance.now();
     const storedSnapshot = selectedWeek ? await getWeekSnapshot<Awaited<ReturnType<typeof getWeek>>>(selectedWeek.id) : undefined;
     const selectedWeekMs = performance.now() - selectedReadStarted;
-    const snapshot = scopedSnapshot(normaliseRollingSnapshotDestinations(storedSnapshot || emptyWeek(requestedWeek || new Date().toISOString().slice(0, 10))), actor);
     const previewDayId = request.nextUrl.searchParams.get("dayId") || undefined;
     const publicationPreviewRequested = request.nextUrl.searchParams.get("publicationPreview") === "true";
     const governedOplocs = publicationPreviewRequested ? (await readDeliveredInOplocs(request)).filter(oploc => actorCanAccessOploc(actor, oploc.canonicalId)) : undefined;
+    const snapshot = scopedSnapshot(normaliseRollingSnapshotDestinations(storedSnapshot || emptyWeek(requestedWeek || new Date().toISOString().slice(0, 10)), governedOplocs), actor);
     const governedLabels = new Set(governedOplocs?.map(oploc => oploc.label.toLocaleLowerCase()));
     const governedOplocIds = governedOplocs ? new Set([...governedOplocs.map(oploc => oploc.canonicalId), ...GOVERNED_OPLOCS.filter(oploc => governedLabels.has(oploc.label.toLocaleLowerCase())).map(oploc => oploc.id)]) : undefined;
     const catalogueStarted = performance.now();
@@ -137,13 +137,13 @@ async function handlePost(request: NextRequest) {
     if (action === "publish") {
       requirePublicationActor(actor);
       const requestedWeekId = String(body.weekId);
-      const sourceSnapshot = await getWeek(requestedWeekId);
+      const oplocs = (await readDeliveredInOplocs(request)).filter(oploc => actorCanAccessOploc(actor, oploc.canonicalId));
+      const sourceSnapshot = normaliseRollingSnapshotDestinations(await getWeek(requestedWeekId), oplocs);
       assertSnapshotScope(sourceSnapshot, actor);
       // Reconcile exact imported dish names before the publication gate runs.
       // This persists the canonical identity; it does not bypass allergen review.
       await reconcileCatalogueFromRollingEntries({ weekId: requestedWeekId });
-      const oplocs = (await readDeliveredInOplocs(request)).filter(oploc => actorCanAccessOploc(actor, oploc.canonicalId));
-      const publication = await createPublishedMenuWeek(requestedWeekId, { weekContentHash: typeof body.weekContentHash === "string" ? body.weekContentHash : undefined }, actor.uid, new Set(oplocs.map(oploc => oploc.canonicalId)));
+      const publication = await createPublishedMenuWeek(requestedWeekId, { weekContentHash: typeof body.weekContentHash === "string" ? body.weekContentHash : undefined }, actor.uid, new Set(oplocs.map(oploc => oploc.canonicalId)), oplocs);
       const handoff = await replayMenuPublicationOutbox(forwardProductionMaterialisationEvent);
       const saved = await getWeek(requestedWeekId); const published = await getMenuPublication(publication.publicationId); return NextResponse.json({ snapshot: await resolvedSnapshot(saved, undefined, actor), publication: published ? scopeMenuPublication(published, actor) : undefined, handoff: { status: handoff.failed ? "pending" : "delivered", delivered: handoff.delivered, failed: handoff.failed }, weeks: await listWeeks(), blockers: validateWeek(scopedSnapshot(saved, actor)), publicationState: await publicationState(saved) });
     }
