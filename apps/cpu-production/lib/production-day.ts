@@ -28,6 +28,12 @@ export function relatedDeliveredInOrders(orders: ProductionOrder[], selected: Pr
   const key = productionJobKey(selected);
   return orders.filter(order => order.origin === "menu_planning" && productionJobKey(order) === key);
 }
+/** The Delivered-In allergen checker is a service-date master across sites. */
+export function deliveredInMenuOrdersForServiceDate(orders: ProductionOrder[], serviceDate?: string) {
+  const menuOrders = orders.filter(order => order.origin === "menu_planning");
+  const date = serviceDate || (menuOrders[0] ? orderDate(menuOrders[0]) : undefined);
+  return date ? menuOrders.filter(order => orderDate(order) === date) : [];
+}
 export function deliveredInTotals(orders: ProductionOrder[]) {
   const related = orders.filter(order => order.origin === "menu_planning");
   return { portions: related.reduce((sum, order) => sum + orderQuantity(order), 0), dishes: aggregateDeliveredIn(related).length, destinations: new Set(related.map(destination)).size };
@@ -71,12 +77,11 @@ export function buildAllergenReviewRows(orders: ProductionOrder[]): AllergenRevi
   return [...grouped.values()].map(row => ({ ...row, destinations: [...row.destinationMap.entries()].map(([label, quantity]) => ({ label, quantity })).sort((a, b) => a.label.localeCompare(b.label)), snapshot: row.snapshot ? { ...row.snapshot, allergens: row.allergens } : undefined })).sort((a, b) => a.name.localeCompare(b.name));
 }
 export function buildDeliveredInAllergenReview(orders: ProductionOrder[]): DeliveredInAllergenReview | undefined {
-  const menuOrders = orders.filter(order => order.origin === "menu_planning" && order.sourcePublicationDayId);
+  const menuOrders = deliveredInMenuOrdersForServiceDate(orders);
   const publicationDayId = menuOrders[0]?.sourcePublicationDayId;
   if (!publicationDayId) return undefined;
-  const scoped = menuOrders.filter(order => order.sourcePublicationDayId === publicationDayId);
-  const first = scoped[0];
-  return { publicationDayId, serviceDate: orderDate(first), sourceVersion: first.sourceVersion, sourceContentHash: first.sourceContentHash, orders: scoped.map(order => order.canonicalId), destinations: [...new Set(scoped.map(destination))], rows: buildAllergenReviewRows(scoped) };
+  const first = menuOrders[0];
+  return { publicationDayId, serviceDate: orderDate(first), sourceVersion: first.sourceVersion, sourceContentHash: first.sourceContentHash, orders: menuOrders.map(order => order.canonicalId), destinations: [...new Set(menuOrders.map(destination))], rows: buildAllergenReviewRows(menuOrders) };
 }
 export function categorySummary(orders: ProductionOrder[]) {
   const jobs = productionJobCount(orders);

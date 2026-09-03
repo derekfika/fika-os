@@ -7,7 +7,7 @@ import { decodeReadPackage, encodeReadPackage } from "@fika/server-shared/read-p
 import { cpuProjectionPackageIsCurrent, publishCpuProjectionPackage, getCpuProjectionPackage } from "../lib/cpu-read-package";
 import { downloadCpuPackageBytes } from "../lib/cpu-package-store";
 import { cpuProjectionCacheEntryMatches } from "../app/lib/cpu-indexeddb";
-import type { CpuDayProjection, CpuWeekProjection } from "../lib/cpu-projection";
+import { initialiseEmptyCpuWeekProjection, type CpuDayProjection, type CpuWeekProjection, type EmptyWeekInitialisationDependencies } from "../lib/cpu-projection";
 
 const day = (date: string): CpuDayProjection => ({ serviceDate: date, revision: 4, lastChangeSequence: 12, orders: [], summary: { orders: 0, ready: 0, attention: 0, planned: 0, totalUnits: 0 }, rebuiltAt: "2026-08-31T10:00:00.000Z" });
 const week = (): CpuWeekProjection => ({ ...day("all"), serviceDate: "2026-08-31", weekCommencing: "2026-08-31" });
@@ -86,6 +86,44 @@ test("current stored projection with a missing manifest is republished during re
   }
 });
 
+test("unseen empty week normal-read initialisation publishes one valid zero-order package", async () => {
+  const weekCommencing = "2030-01-07";
+  let stored: CpuWeekProjection | undefined;
+  let writes = 0;
+  let publications = 0;
+  const dependencies: EmptyWeekInitialisationDependencies = {
+    loadOrders: async () => [],
+    readProjection: async () => ({ exists: Boolean(stored), data: () => stored }),
+    writeProjection: async (_week, projection) => { writes += 1; stored = projection; },
+    publishPackage: async (projection) => { publications += 1; return encodeReadPackage("snapshots/cpu-production/projection-week", 1, { projection }, 0).manifest; },
+  };
+  const result = await initialiseEmptyCpuWeekProjection(undefined as never, weekCommencing, dependencies);
+  assert.equal(result?.projection.weekCommencing, weekCommencing);
+  assert.deepEqual(result?.projection.orders, []);
+  assert.deepEqual(result?.projection.summary, { orders: 0, ready: 0, attention: 0, planned: 0, totalUnits: 0 });
+  assert.equal(writes, 1);
+  assert.equal(publications, 1);
+  const second = await initialiseEmptyCpuWeekProjection(undefined as never, weekCommencing, dependencies);
+  assert.deepEqual(second?.projection, result?.projection);
+  assert.equal(writes, 1);
+  assert.equal(publications, 2);
+});
+
+test("non-empty missing week package refuses empty-week masquerading", async () => {
+  const weekCommencing = "2030-01-07";
+  let writes = 0;
+  let publications = 0;
+  const dependencies: EmptyWeekInitialisationDependencies = {
+    loadOrders: async () => [{ requiredBy: `${weekCommencing}T12:00:00` } as never],
+    readProjection: async () => ({ exists: false, data: () => undefined }),
+    writeProjection: async () => { writes += 1; },
+    publishPackage: async () => { publications += 1; return encodeReadPackage("snapshots/cpu-production/projection-week", 1, { projection: week() }, 0).manifest; },
+  };
+  assert.equal(await initialiseEmptyCpuWeekProjection(undefined as never, weekCommencing, dependencies), undefined);
+  assert.equal(writes, 0);
+  assert.equal(publications, 0);
+});
+
 test("CPU dashboard stores package metadata and package delivery precedes source reconciliation", async () => {
   const page = await readFile(new URL("../app/page.tsx", import.meta.url), "utf8");
   const route = await readFile(new URL("../app/api/production/route.ts", import.meta.url), "utf8");
@@ -109,9 +147,9 @@ test("normal CPU projection GET returns before canonical reads, rebuilds, or wri
   assert.match(normalBranch, /CPU_PROJECTION_PACKAGE_UNAVAILABLE/);
   assert.match(normalBranch, /CPU_PROJECTION_PACKAGE_INTEGRITY_FAILURE/);
   const initializer = await readFile(new URL("../lib/cpu-projection.ts", import.meta.url), "utf8");
-  assert.match(initializer, /if \(projection\.orders\.length > 0\) return undefined/);
-  assert.match(initializer, /publishCpuProjectionPackage\(week\)/);
-  assert.match(initializer, /productionQueueForWeek\(request, weekCommencing\)/);
+  assert.match(initializer, /sourceOrders\.length > 0\) return undefined/);
+  assert.match(initializer, /dependencies\.publishPackage\(week\)/);
+  assert.match(initializer, /dependencies\.loadOrders\(request, weekCommencing\)/);
 });
 
 test("explicit CPU reconciliation treats package absence as a refresh reason", async () => {

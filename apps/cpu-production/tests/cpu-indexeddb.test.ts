@@ -158,7 +158,7 @@ test("allergen signing freezes once, preserves the first signature, and locks ed
   const planRoute = await readFile(new URL("../app/api/production-plan/route.ts", import.meta.url), "utf8");
   assert.match(page, /if \(!reviewFrozen\) \{ await saveReviewRef\.current\(\); setReviewFrozen\(true\); \}/);
   assert.doesNotMatch(page, /beginSigning[\s\S]*await saveReviewRef\.current\(\);[\s\S]*await saveReviewRef\.current\(\);/);
-  assert.match(page, /locked=\{signatureRoles\.length > 0 \|\| Boolean\(signing\)\}/);
+  assert.match(page, /locked=\{signatureRoles\.length > 0 \|\| Boolean\(signing\) \|\| Boolean\(site\)\}/);
   assert.match(matrix, /locked = false/);
   assert.match(matrix, /busy \|\| locked/);
   assert.match(planRoute, /signatures\.length > 0 && plan\.signedMenuContentHash && plan\.signedMenuContentHash !== currentMenuContentHash/);

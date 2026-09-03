@@ -23,6 +23,8 @@ test("Delivered-In CPU detail routes allergen review to the full-screen checker"
   assert.match(detail, /full Delivered-In checker/);
   assert.doesNotMatch(detail, /<td[^>]*onClick/);
   assert.match(detail, /Details \/ technical traceability/);
+  assert.match(detail, /allergenHref/);
+  assert.doesNotMatch(detail, /allergenHref[^\n]*oploc/);
 });
 
 test("CPU allergen review is a full-screen editable signed workflow", () => {
@@ -42,4 +44,7 @@ test("CPU allergen review is a full-screen editable signed workflow", () => {
   assert.match(reviewMatrix, /key === "no_key_allergens"\) return namedAllergenPresent \? "clear" : "contains"/);
   assert.match(reviewMatrix, /disabled=\{busy \|\| locked \|\| key === "no_key_allergens"\}/);
   assert.doesNotMatch(reviewMatrix, /states\[row\.key\]\?\.\[key\] \|\| "clear"/);
+  assert.match(reviewPage, /deliveredInMenuOrdersForServiceDate/);
+  assert.match(reviewPage, /Return to All sites to review and sign the complete Delivered-In master matrix/);
+  assert.match(reviewPage, /disabled=\{Boolean\(site\) \|\| signatureBusy/);
 });

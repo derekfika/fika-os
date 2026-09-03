@@ -17,9 +17,15 @@ test("missing Drive configuration deliberately disables persistence", () => {
 
 test("CPU Drive configuration enables the later finalisation path", () => {
   process.env.GOOGLE_WORKSPACE_DWD_SERVICE_ACCOUNT_JSON = "configured-later";
-  process.env.GOOGLE_DRIVE_OWNER_EMAIL_APP_CPU_PRODUCTION = "cpux@fikacatering.com";
-  process.env.GOOGLE_DRIVE_CPU_PRODUCTION_FOLDER_ID = "configured-folder-later";
+  process.env.GOOGLE_DRIVE_OWNER_EMAIL_APP_CPU_PRODUCTION = "derek@fikacatering.com";
   assert.deepEqual(matrixDriveConfiguration(order("menu_planning")), { enabled: true, ownerKey: "APP_CPU_PRODUCTION" });
+});
+
+test("CPU Drive configuration does not require an explicit folder override", () => {
+  process.env.GOOGLE_WORKSPACE_DWD_SERVICE_ACCOUNT_JSON = "configured-later";
+  process.env.GOOGLE_DRIVE_OWNER_EMAIL_APP_CPU_PRODUCTION = "derek@fikacatering.com";
+  delete process.env.GOOGLE_DRIVE_CPU_PRODUCTION_FOLDER_ID;
+  assert.equal(matrixDriveConfiguration(order("menu_planning")).enabled, true);
 });
 
 test("Hospitality Drive configuration remains canonical-OPLOC scoped", () => {

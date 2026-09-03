@@ -1,9 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import type { ProductionOrder } from "../lib/production-types";
-import { aggregateDeliveredIn, categorySummary, deliveredInTotals, firstDeliveredInOrder, groupByRequiredTime, orderSummary } from "../lib/production-day";
+import { aggregateDeliveredIn, buildAllergenReviewRows, buildDeliveredInAllergenReview, buildDeliveredInDishRows, categorySummary, deliveredInMenuOrdersForServiceDate, deliveredInTotals, firstDeliveredInOrder, groupByRequiredTime, orderSummary } from "../lib/production-day";
 import { readFileSync } from "node:fs";
-import { buildAllergenReviewRows, buildDeliveredInAllergenReview, buildDeliveredInDishRows } from "../lib/production-day";
 
 function order(destinationLabel: string, quantity: number, sourceMenuItemId = "dish:leaf"): ProductionOrder {
   return { canonicalId: `production-order:${destinationLabel}`, entityType: "Production Order", schemaVersion: "0.1.0", version: 1, requirementIds: [], sourceBookingId: "production-order:test", sourceQuoteRevisionId: "", sourceEntityId: "rolling-week:day:1", sourceVersion: 1, destinationOplocId: `oploc:${destinationLabel.toLowerCase()}`, destinationLabel, serviceDate: "2026-08-24", requiredBy: "2026-08-24T00:00", serviceWindow: { startTime: "00:00" }, status: "menu_available", priority: "normal", lines: [{ canonicalId: `${destinationLabel}:line`, sourceBookingLineId: `${destinationLabel}:source`, sourceMenuItemId, itemName: "Mixed Baby Leaf", customerQuantity: quantity, customerUnit: "portion", productionQuantity: quantity, productionUnit: "portion", dietaries: {}, status: "ready", sortOrder: 0, workstream: "delivered_in" }], exceptions: [], origin: "menu_planning", currentRevision: 1, createdAt: "2026-08-21T00:00:00Z", createdBy: "test", idempotencyKey: `test:${destinationLabel}`, externalReferences: [], audit: [] };
@@ -32,6 +31,7 @@ test("Day Delivered-In action opens the canonical Production Order used by the d
   assert.match(page, /<DeliveredInProductionDetail/);
   assert.match(page, /<Queue orders=\{visible\} open=\{openOrder\}/);
   assert.match(page, /<ProductionCalendar orders=\{baseVisible\}/);
+  assert.match(readFileSync(new URL("../app/ui/ProductionCalendar.tsx", import.meta.url), "utf8"), /reviewAllergens\(orderDate\(order\)\)/);
 });
 
 test("Golden Week Monday Delivered-In detail totals aggregate to 315 portions, 15 dishes, and 2 destinations", () => {
@@ -58,6 +58,33 @@ test("published day fixture consolidates three dishes across two destination ord
   assert.equal(review?.rows.length, 3);
   assert.equal(review?.rows.reduce((sum, row) => sum + row.quantity, 0), 45);
   assert.equal(buildAllergenReviewRows(orders).length, 3);
+});
+
+test("master Delivered-In allergen review unions overlapping dishes across the service date", () => {
+  const make = (destinationLabel: string, entries: Array<[number, number]>) => ({
+    ...order(destinationLabel, 0),
+    sourcePublicationDayId: "menu-publication: monday:v1",
+    lines: entries.map(([index, quantity]) => ({
+      ...order(destinationLabel, 0, `dish:${index}`).lines[0],
+      canonicalId: `${destinationLabel}:line:${index}`,
+      sourceMenuItemId: `dish:${index}`,
+      itemName: `Dish ${index}`,
+      customerQuantity: quantity,
+      approvedAllergenSnapshot: { allergens: { milk: "contains" } },
+      allergenEvidenceStatus: "confirmed" as const,
+    })),
+  });
+  const orders = [make("Destination A", [[1, 10], [2, 12], [3, 8]]), make("Destination B", [[2, 5], [3, 6], [4, 4]])];
+  const masterOrders = deliveredInMenuOrdersForServiceDate(orders, "2026-08-24");
+  const review = buildDeliveredInAllergenReview(masterOrders);
+  assert.deepEqual(review?.rows.map(row => row.key), ["menu_planning:dish:1", "menu_planning:dish:2", "menu_planning:dish:3", "menu_planning:dish:4"]);
+  assert.deepEqual(review?.rows.map(row => [row.name, row.quantity, row.destinations]), [
+    ["Dish 1", 10, [{ label: "Destination A", quantity: 10 }]],
+    ["Dish 2", 17, [{ label: "Destination A", quantity: 12 }, { label: "Destination B", quantity: 5 }]],
+    ["Dish 3", 14, [{ label: "Destination A", quantity: 8 }, { label: "Destination B", quantity: 6 }]],
+    ["Dish 4", 4, [{ label: "Destination B", quantity: 4 }]],
+  ]);
+  assert.deepEqual(review?.destinations, ["Destination A", "Destination B"]);
 });
 
 test("conflicting published snapshots block the consolidated review instead of being merged", () => {

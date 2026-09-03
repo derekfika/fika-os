@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import type { ProductionOrder } from "../../lib/production-types";
 import { cpuAttentionLabel, cpuDestinationLabel, cpuLifecycle, cpuLifecycleLabels, cpuSourceLabel } from "../../lib/production-presentation";
-import { orderSummary, productionJobCount, sourceHeading } from "../../lib/production-day";
+import { orderDate, orderSummary, productionJobCount, sourceHeading } from "../../lib/production-day";
 import "./production-calendar.css";
 import "./production-card-overrides.css";
 
@@ -82,6 +82,7 @@ export default function ProductionCalendar({ orders, open, onCancelBooking, week
                   {order.exceptions.length > 0 && <div className="calendar-exceptions"><small className="calendar-exception">{order.exceptions.length} exception{order.exceptions.length === 1 ? "" : "s"} needs attention</small><small className="calendar-exception-detail">{order.exceptions[0].description}</small></div>}
                   {order.cancellationNotice && <span className="production-card-cancel-overlay" aria-hidden="true"><span>×</span></span>}
                 </button>
+                {reviewAllergens && order.origin === "menu_planning" && !order.cancellationNotice && <button type="button" className="production-card-allergens" onClick={(event) => { event.stopPropagation(); reviewAllergens(orderDate(order)); }}>Delivered-In allergens</button>}
                 </div>
               );
             })}</> : <div className="calendar-empty">No bookings</div>}

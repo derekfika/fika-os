@@ -188,20 +188,19 @@ async function handleGet(request: NextRequest) {
             recordDeliveredInReadBudget({ stage: "package_body_load", projectionDocs: 0, selectedIds: filtered.orders.length });
             return withServerTiming(NextResponse.json({ projection: filtered, package: packaged.manifest }), { package: performance.now() - startedAt, total: performance.now() - startedAt });
           }
-          recordCpuPackageFallback("missing");
-          if (week) {
-            const emptyWeek = await initialiseEmptyCpuWeekProjection(request, week);
-            if (emptyWeek) {
-              const packageManifest = await getCpuProjectionManifest(projectionDate, week);
-              const filtered = filterCpuProjectionForScope(emptyWeek, normaliseProductionScope(request.nextUrl.searchParams.get("scope")));
-              return withServerTiming(NextResponse.json({ projection: filtered, package: packageManifest }), { package: performance.now() - startedAt, total: performance.now() - startedAt });
-            }
-          }
-          return withServerTiming(NextResponse.json({ error: { code: "CPU_PROJECTION_PACKAGE_UNAVAILABLE", message: "The CPU projection package is currently unavailable." }, freshness: "unavailable" }, { status: 503 }), { package: performance.now() - startedAt, total: performance.now() - startedAt });
         } catch {
           recordCpuPackageFallback("invalid");
           return withServerTiming(NextResponse.json({ error: { code: "CPU_PROJECTION_PACKAGE_INTEGRITY_FAILURE", message: "The CPU projection package failed integrity verification." }, freshness: "unavailable" }, { status: 503 }), { package: performance.now() - startedAt, total: performance.now() - startedAt });
         }
+        recordCpuPackageFallback("missing");
+        if (week) {
+          const emptyWeek = await initialiseEmptyCpuWeekProjection(request, week);
+          if (emptyWeek) {
+            const filtered = filterCpuProjectionForScope(emptyWeek.projection, normaliseProductionScope(request.nextUrl.searchParams.get("scope")));
+            return withServerTiming(NextResponse.json({ projection: filtered, package: emptyWeek.manifest }), { package: performance.now() - startedAt, total: performance.now() - startedAt });
+          }
+        }
+        return withServerTiming(NextResponse.json({ error: { code: "CPU_PROJECTION_PACKAGE_UNAVAILABLE", message: "The CPU projection package is currently unavailable." }, freshness: "unavailable" }, { status: 503 }), { package: performance.now() - startedAt, total: performance.now() - startedAt });
       } else recordCpuPackageFallback("explicit-reconciliation");
       const storedStartedAt = performance.now();
       const stored = await cpuProjections().doc(week ? `week:${week}` : projectionDate).get();

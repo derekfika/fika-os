@@ -4,6 +4,7 @@ import { withReadableDestinations } from "./cpu-oploc-labels";
 import { appendCpuChange as appendProjectionChange, cpuChanges, cpuProjections, loadPlansForOrders } from "./cpu-projection-repository";
 import { recordDeliveredInReadBudget } from "./delivered-in-read-budget";
 import { recordDataAccess } from "@fika/server-shared/data-source-meter-server";
+import type { ReadPackageManifest } from "@fika/server-shared/read-package";
 export { cpuProjections } from "./cpu-projection-repository";
 import type { ProductionLine, ProductionOrder, ProductionStatus } from "./production-types";
 import type { ProductionPlan } from "../app/lib/production-plan";
@@ -53,20 +54,70 @@ export async function rebuildCpuWeekProjection(request: NextRequest, weekCommenc
   return week;
 }
 
+type EmptyWeekProjectionResult = { projection: CpuWeekProjection; manifest: ReadPackageManifest };
+const emptyWeekInitialisationInFlight = new Map<string, Promise<EmptyWeekProjectionResult | undefined>>();
+type ProjectionSnapshot = { exists: boolean; data(): unknown };
+export type EmptyWeekInitialisationDependencies = {
+  loadOrders: (request: NextRequest, weekCommencing: string) => Promise<ProductionOrder[]>;
+  readProjection: (weekCommencing: string) => Promise<ProjectionSnapshot>;
+  writeProjection: (weekCommencing: string, projection: CpuWeekProjection) => Promise<void>;
+  publishPackage: (projection: CpuWeekProjection) => Promise<ReadPackageManifest>;
+};
+
+const defaultEmptyWeekDependencies: EmptyWeekInitialisationDependencies = {
+  loadOrders: productionQueueForWeek,
+  readProjection: async (weekCommencing) => cpuProjections().doc(`week:${weekCommencing}`).get(),
+  writeProjection: async (weekCommencing, projection) => { await cpuProjections().doc(`week:${weekCommencing}`).set(projection); },
+  publishPackage: publishCpuProjectionPackage,
+};
+
+function isStoredEmptyWeekProjection(value: unknown, weekCommencing: string): value is CpuWeekProjection {
+  if (!value || typeof value !== "object") return false;
+  const projection = value as Partial<CpuWeekProjection>;
+  return projection.serviceDate === weekCommencing
+    && projection.weekCommencing === weekCommencing
+    && projection.revision !== undefined
+    && projection.lastChangeSequence !== undefined
+    && Array.isArray(projection.orders)
+    && projection.orders.length === 0
+    && projection.summary?.orders === 0
+    && projection.summary.ready === 0
+    && projection.summary.attention === 0
+    && projection.summary.planned === 0
+    && projection.summary.totalUnits === 0
+    && typeof projection.rebuiltAt === "string";
+}
+
 /**
- * Initialise only a genuinely empty week after a normal package miss. A
- * missing package for a non-empty week remains fail-closed so normal reads do
- * not become an unbounded reconciliation path.
+ * Initialise only a genuinely empty week after a normal package miss. The
+ * canonical source count is checked before projection filtering so cancelled,
+ * superseded or otherwise hidden source orders cannot be mistaken for an empty
+ * week. A missing package for a non-empty week remains fail-closed.
  */
-export async function initialiseEmptyCpuWeekProjection(request: NextRequest, weekCommencing: string) {
-  const [rawOrders, previous] = await Promise.all([productionQueueForWeek(request, weekCommencing), cpuProjections().doc(`week:${weekCommencing}`).get()]);
-  const orders = await withReadableDestinations(request, rawOrders);
-  const plans = await loadPlansForOrders(orders.map(order => order.canonicalId));
-  const projection = buildCpuDayProjection("all", orders.filter((order) => order.serviceDate && weekDates(weekCommencing).includes(order.serviceDate)), plans, Number(previous.data()?.lastChangeSequence || 0), Number(previous.data()?.revision || 0) + 1);
-  if (projection.orders.length > 0) return undefined;
-  const week: CpuWeekProjection = { serviceDate: weekCommencing, weekCommencing, revision: projection.revision, lastChangeSequence: projection.lastChangeSequence, orders: projection.orders, summary: projection.summary, rebuiltAt: projection.rebuiltAt };
-  await cpuProjections().doc(`week:${weekCommencing}`).set(week);
-  await publishCpuProjectionPackage(week);
-  recordDeliveredInReadBudget({ stage: "empty_week_projection_initialise", projectionDocs: 1, selectedIds: 0, rebuildScopes: 1 });
-  return week;
+export async function initialiseEmptyCpuWeekProjection(request: NextRequest, weekCommencing: string, dependencies: EmptyWeekInitialisationDependencies = defaultEmptyWeekDependencies) {
+  const existing = emptyWeekInitialisationInFlight.get(weekCommencing);
+  if (existing) return existing;
+  const initialisation = (async (): Promise<EmptyWeekProjectionResult | undefined> => {
+    const rawOrders = await dependencies.loadOrders(request, weekCommencing);
+    const sourceOrders = rawOrders.filter((order) => {
+      const serviceDate = order.serviceDate || order.requiredBy.slice(0, 10);
+      return weekDates(weekCommencing).includes(serviceDate);
+    });
+    if (sourceOrders.length > 0) return undefined;
+
+    const previous = await dependencies.readProjection(weekCommencing);
+    const stored = previous.data();
+    const week = isStoredEmptyWeekProjection(stored, weekCommencing)
+      ? stored
+      : (() => {
+        const projection = buildCpuDayProjection("all", [], [], Number((stored as Partial<CpuWeekProjection> | undefined)?.lastChangeSequence || 0), Number((stored as Partial<CpuWeekProjection> | undefined)?.revision || 0) + 1);
+        return { serviceDate: weekCommencing, weekCommencing, revision: projection.revision, lastChangeSequence: projection.lastChangeSequence, orders: [], summary: projection.summary, rebuiltAt: projection.rebuiltAt } satisfies CpuWeekProjection;
+      })();
+    if (!isStoredEmptyWeekProjection(stored, weekCommencing)) await dependencies.writeProjection(weekCommencing, week);
+    const manifest = await dependencies.publishPackage(week);
+    recordDeliveredInReadBudget({ stage: "empty_week_projection_initialise", projectionDocs: previous.exists ? 1 : 0, selectedIds: 0, rebuildScopes: 1 });
+    return { projection: week, manifest };
+  })().finally(() => emptyWeekInitialisationInFlight.delete(weekCommencing));
+  emptyWeekInitialisationInFlight.set(weekCommencing, initialisation);
+  return initialisation;
 }
