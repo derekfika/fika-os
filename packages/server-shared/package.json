@@ -19,5 +19,6 @@
     ,"./daily-signed-oploc-bundle": "./src/daily-signed-oploc-bundle.ts"
     ,"./grab-and-go-catalogue": "./src/grab-and-go-catalogue.ts"
     ,"./build-identity": "./src/build-identity.ts"
+    ,"./build-identity-resolver": "./src/build-identity-resolver.ts"
   }
 }
