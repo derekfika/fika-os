@@ -26,10 +26,26 @@ export async function listActiveCanonicalOplocs() {
 
 export async function getActiveCanonicalOplocLabels(ids: string[]) {
   const wanted = [...new Set(ids.filter(Boolean))];
-  const snapshots = await Promise.all(wanted.map(id => db.collection("integrationHubCanonical").doc(canonicalDocumentId(id)).get()));
-  recordDataAccess({ app: "integration-hub", operation: "oploc.by-id.batch", source: "FIRESTORE", documents: snapshots.filter(snapshot => snapshot.exists).length });
-  const records = snapshots.filter(snapshot => snapshot.exists).map(snapshot => snapshot.data() as CanonicalOplocRecord);
-  return new Map(records.filter(isActiveCanonicalOploc).map(record => [record.canonicalId!, String(record.record?.approvedName || record.canonicalId)] as const));
+  const labels = new Map<string, string>();
+  let reads = 0;
+  for (const id of wanted) {
+    let current = id;
+    const visited = new Set<string>();
+    for (let depth = 0; depth < 10; depth += 1) {
+      if (visited.has(current)) throw new Error(`The OPLOC redirect chain contains a cycle at ${current}.`);
+      visited.add(current);
+      const snapshot = await db.collection("integrationHubCanonical").doc(canonicalDocumentId(current)).get();
+      reads += 1;
+      if (!snapshot.exists) break;
+      const record = snapshot.data() as CanonicalOplocRecord;
+      if (isActiveCanonicalOploc(record)) { labels.set(id, String(record.record?.approvedName || record.canonicalId)); break; }
+      if (record.entityType !== "OPLOC" || record.record?.lifecycleState !== "merged") break;
+      current = String(record.record.mergedIntoOplocId || "");
+      if (!current) break;
+    }
+  }
+  recordDataAccess({ app: "integration-hub", operation: "oploc.by-id.batch", source: "FIRESTORE", documents: reads });
+  return labels;
 }
 
 export async function listCanonicalRecordsByTypes(types: string[], perTypeLimit = 500) {

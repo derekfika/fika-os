@@ -22,6 +22,23 @@ test("diagnostic middleware bypass is exact and does not call the access service
   }
 });
 
+test("public build-info middleware bypass does not call the access service", async () => {
+  const originalMode = process.env.FIKA_RUNTIME_MODE;
+  const originalFetch = globalThis.fetch;
+  process.env.FIKA_RUNTIME_MODE = "staging";
+  let calls = 0;
+  globalThis.fetch = (async () => { calls += 1; return new Response(null, { status: 401 }); }) as typeof fetch;
+  try {
+    const response = await middleware(requestFor("/api/build-info"));
+    assert.equal(response.status, 200);
+    assert.equal(calls, 0);
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (originalMode === undefined) delete process.env.FIKA_RUNTIME_MODE;
+    else process.env.FIKA_RUNTIME_MODE = originalMode;
+  }
+});
+
 test("ordinary rolling-menu APIs still require normal Menu Planning access", async () => {
   const originalMode = process.env.FIKA_RUNTIME_MODE;
   const originalHub = process.env.FIKA_HUB_BASE_URL;

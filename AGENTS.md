@@ -298,6 +298,16 @@ For significant Firestore-backed features, report the expected read shape for th
 
 ## 7. Change discipline
 
+For non-trivial work, subagents are the default investigation and verification
+pattern. Parallelise independent investigation, testing and review where their
+write scopes are disjoint. The coordinator owns implementation, integration,
+commit, push and deployment; do not create a branch per agent or ask agents to
+edit the same files concurrently. Normal UAT fixes stay on the canonical UAT
+branch unless a genuinely risky or parallel experiment requires isolation.
+Significant fixes require independent verification before integration. Simple,
+low-risk fixes may remain single-agent when parallel work would add no useful
+coverage.
+
 Preserve unrelated worktree changes and classify dirty files before staging. Do not deploy, migrate, mutate Firestore or change secrets unless the user explicitly requests it. Use shared packages or app-local HTTP adapters instead of sibling-app production imports. Keep normal Firestore reads bounded by stable IDs, date scopes or explicit limits, and avoid GET endpoints with surprising write side effects. Preserve AUTHMOD fail-closed semantics and configured friendly runtime URLs. Validate changes with relevant tests, typecheck, production build and `git diff --check`.
 
 Before editing:

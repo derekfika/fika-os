@@ -8,6 +8,7 @@ import { cachedAuthmodReference, invalidateAuthmodReferenceCaches } from "../aut
 import { invalidateAuthmodAdmissionCache } from "../authmod-admission-cache";
 import { getAuthmodReferenceReadPackage, type AuthmodReferenceReadPackage } from "../authmod-reference-read-package";
 import { bumpCacheDatasets } from "../integration-cache-server";
+import { getOplocReadPackage } from "../oploc-read-package";
 const collections = { identities: "authmodIdentities", custodians: "authmodCustodianAssignments", applications: "authmodApplications", sites: "authmodSiteAssignments", apps: "authmodAppAssignments", grants: "authmodAuthorityGrants", delegations: "authmodDelegations", services: "authmodServicePrincipals", imports: "authmodImports", resolutions: "authmodImportResolutions", audits: "authmodAccessAudit" } as const;
 const REFERENCE_CACHE_SCOPE = "global";
 const firestoreResource = (collection: string) => `Firestore database (default), collection ${collection}`;
@@ -66,6 +67,7 @@ export class FirestoreAuthModRepository implements AuthModRepository {
   async getApplication(appId: string) { const snapshot = await firestoreRead("getApplication", collections.applications, () => db.collection(collections.applications).doc(appId).get()); return snapshot.exists ? snapshot.data() as ApplicationRegistryEntry : undefined; }
   async saveApplication(value: ApplicationRegistryEntry, expectedVersion?: number) { await save(collections.applications, value.appId, value, expectedVersion); }
   async listActiveOplocs() { return (await this.referencePackage()).oplocs; }
+  async listOplocRedirects() { return (await getOplocReadPackage()).value.redirects || {}; }
   private referencePackage(): Promise<AuthmodReferenceReadPackage> { return cachedAuthmodReference({ scope: REFERENCE_CACHE_SCOPE, name: "authmodReferenceReadPackage", documents: value => value.applications.length + value.legends.length + value.oplocs.length, load: getAuthmodReferenceReadPackage }); }
   async getActiveOploc(oplocId: string) { const snapshot = await firestoreRead("getActiveOploc", "integrationHubCanonical", () => db.collection("integrationHubCanonical").doc(canonicalDocumentId(oplocId)).get()); const record = snapshot.exists ? snapshot.data() as CanonicalOploc : undefined; return record && activeOploc(record, oplocId) ? { id: oplocId, label: String(record.record?.approvedName || oplocId), active: true } : undefined; }
   async listSiteAssignments(identityId: string) { const snapshot = await firestoreRead("listSiteAssignments", collections.sites, () => db.collection(collections.sites).where("identityId", "==", identityId).get()); return snapshot.docs.map(document => document.data() as SiteAssignment); }

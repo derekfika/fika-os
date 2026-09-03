@@ -22,6 +22,7 @@ export class MemoryAuthModRepository implements AuthModRepository {
   async listApplications() { return [...this.applications.values()]; } async getApplication(appId: string) { return this.applications.get(appId); }
   async saveApplication(value: ApplicationRegistryEntry, expectedVersion?: number) { assertExpectedVersion(this.applications.get(value.appId)?.version, expectedVersion); this.applications.set(value.appId, value); }
   async listActiveOplocs() { return [...this.oplocs.values()].filter(value => value.active); }
+  async listOplocRedirects() { return {}; }
   async getActiveOploc(oplocId: string) { const value = this.oplocs.get(oplocId); return value?.active ? value : undefined; }
   async listSiteAssignments(identityId: string) { return [...this.siteAssignments.values()].filter(value => value.identityId === identityId); }
   async getSiteAssignment(id: string) { return this.siteAssignments.get(id); }

@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
   [Parameter(Mandatory = $true)]
-  [ValidateSet("menu-planning", "cpu-production", "delivered-in")]
+  [ValidateSet("integration-hub", "menu-planning", "cpu-production", "delivered-in")]
   [string]$App
 )
 
@@ -19,6 +19,7 @@ $sha = (git rev-parse HEAD).Trim()
 if ($sha -notmatch '^[0-9a-fA-F]{40}$') { throw "Refusing staging rollout because HEAD is not a full commit SHA: '$sha'." }
 
 $backends = @{
+  "integration-hub" = "fika-os-staging"
   "menu-planning" = "fika-menu-planning-staging"
   "cpu-production" = "fika-cpu-production-staging"
   "delivered-in" = "fika-delivered-in-staging"

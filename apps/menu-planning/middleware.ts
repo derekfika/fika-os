@@ -5,7 +5,7 @@ const isHosted = () => ["staging", "production"].includes(process.env.FIKA_RUNTI
 const hubUrl = () => (process.env.FIKA_HUB_BASE_URL || "").replace(/\/$/, "");
 
 export async function middleware(request: NextRequest) {
-  if (request.nextUrl.pathname === "/api/internal/menu-planning-diagnostic") return NextResponse.next();
+  if (request.nextUrl.pathname === "/api/internal/menu-planning-diagnostic" || request.nextUrl.pathname === "/api/build-info") return NextResponse.next();
   if (!isHosted()) return NextResponse.next();
   const totalStarted = performance.now();
   const accessStarted = performance.now();

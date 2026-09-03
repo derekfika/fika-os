@@ -25,3 +25,9 @@ test("hosted Grab & Go routes use the CPU package boundary and never the old loc
   assert.doesNotMatch(route, /readGrabAndGoCatalogue/);
   assert.doesNotMatch(production, /readGrabAndGoCatalogue/);
 });
+
+test("G&G save returns the durable order even when downstream projection is pending", async () => {
+  const route = await readFile(new URL("../app/api/delivered-in/grab-and-go/route.ts", import.meta.url), "utf8");
+  assert.match(route, /allowPending: true/);
+  assert.match(route, /handoff/);
+});

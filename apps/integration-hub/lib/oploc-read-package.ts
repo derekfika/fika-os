@@ -8,11 +8,12 @@ import { db } from "./firebase-admin";
 import { formatAddress } from "./address";
 import { isActiveCanonicalOploc } from "./canonical-oplocs";
 import { readCacheManifest } from "./integration-cache-server";
+import { buildOplocRedirects, legacyOplocIds } from "./oploc-redirects";
 
 export const OPLOC_DATASET = "integration-hub/oplocs";
 export const OPLOC_MANIFEST_KEY = "integration-hub/oplocs";
-export type OplocReadRecord = { canonicalId: string; label: string; lifecycleStatus?: string; publicationStatus?: string; locationType?: string; address?: string };
-export type OplocReadPackage = { oplocs: OplocReadRecord[] };
+export type OplocReadRecord = { canonicalId: string; label: string; lifecycleStatus?: string; publicationStatus?: string; locationType?: string; address?: string; legacyIds?: string[] };
+export type OplocReadPackage = { oplocs: OplocReadRecord[]; redirects?: Record<string, string> };
 
 const hosted = () => ["staging", "production"].includes(process.env.FIKA_RUNTIME_MODE || "");
 const localRoot = () => process.env.FIKA_SNAPSHOT_DIR || path.join(process.cwd(), "local-data", "read-packages");
@@ -50,7 +51,9 @@ export function oplocPackageStore() { return hosted() ? cloudStore() : localStor
 export async function rebuildOplocReadPackage(): Promise<ReadPackageManifest> {
   const cacheManifest = await readCacheManifest("oplocs");
   const records = await db.collection("integrationHubCanonical").where("entityType", "==", "OPLOC").get();
-  const active = records.docs.map(document => document.data() as { canonicalId?: string; entityType?: string; lifecycleStatus?: string; publicationStatus?: string; record?: Record<string, unknown> }).filter(isActiveCanonicalOploc);
+  const all = records.docs.map(document => document.data() as { canonicalId?: string; entityType?: string; lifecycleStatus?: string; publicationStatus?: string; record?: Record<string, unknown> });
+  const redirects = buildOplocRedirects(all as unknown as Parameters<typeof buildOplocRedirects>[0]);
+  const active = all.filter(isActiveCanonicalOploc);
   const addressIds = [...new Set(active.map(value => String(value.record?.addressReference || "")).filter(Boolean))];
   const addresses = new Map<string, Record<string, unknown>>();
   for (let index = 0; index < addressIds.length; index += 30) {
@@ -58,10 +61,10 @@ export async function rebuildOplocReadPackage(): Promise<ReadPackageManifest> {
     for (const document of snapshot.docs) { const value = document.data() as { canonicalId?: string; record?: Record<string, unknown> }; if (value.canonicalId) addresses.set(value.canonicalId, value.record || {}); }
   }
   recordDataAccess({ app: "integration-hub", operation: "oploc.package.rebuild", source: "FIRESTORE", documents: records.size + addresses.size });
-  const oplocs = active.map(value => { const record = value.record || {}; const address = record.addressReference ? formatAddress(addresses.get(String(record.addressReference)) || {}) : ""; return { canonicalId: value.canonicalId!, label: String(record.approvedName || value.canonicalId!).trim(), ...(value.lifecycleStatus ? { lifecycleStatus: value.lifecycleStatus } : {}), ...(value.publicationStatus ? { publicationStatus: value.publicationStatus } : {}), ...(record.locationType ? { locationType: String(record.locationType) } : {}), ...(address ? { address } : {}) }; }).sort((a, b) => a.canonicalId.localeCompare(b.canonicalId));
+  const oplocs = active.map(value => { const record = value.record || {}; const address = record.addressReference ? formatAddress(addresses.get(String(record.addressReference)) || {}) : ""; const legacyIds = legacyOplocIds(redirects, value.canonicalId!); return { canonicalId: value.canonicalId!, label: String(record.approvedName || value.canonicalId!).trim(), ...(value.lifecycleStatus ? { lifecycleStatus: value.lifecycleStatus } : {}), ...(value.publicationStatus ? { publicationStatus: value.publicationStatus } : {}), ...(record.locationType ? { locationType: String(record.locationType) } : {}), ...(address ? { address } : {}), ...(legacyIds.length ? { legacyIds } : {}) }; }).sort((a, b) => a.canonicalId.localeCompare(b.canonicalId));
   const store = oplocPackageStore();
   const previous = await store.getManifest(OPLOC_MANIFEST_KEY);
-  const encoded = encodeReadPackage(OPLOC_DATASET, (previous?.packageVersion || 0) + 1, { oplocs }, oplocs.length, { contractVersion: "integration-hub.oplocs.v1", sourceVersion: `canonical-oplocs:${cacheManifest.version}` });
+  const encoded = encodeReadPackage(OPLOC_DATASET, (previous?.packageVersion || 0) + 1, { oplocs, redirects }, oplocs.length + Object.keys(redirects).length, { contractVersion: "integration-hub.oplocs.v2", sourceVersion: `canonical-oplocs:${cacheManifest.version}` });
   return publishReadPackage<OplocReadPackage>(store, OPLOC_MANIFEST_KEY, encoded);
 }
 
@@ -83,4 +86,4 @@ export async function getOplocReadPackage() {
   return result;
 }
 
-export function validateOplocReadPackage(value: OplocReadPackage) { if (!value || !Array.isArray(value.oplocs)) throw new Error("Invalid OPLOC read package payload."); return value; }
+export function validateOplocReadPackage(value: OplocReadPackage) { if (!value || !Array.isArray(value.oplocs)) throw new Error("Invalid OPLOC read package payload."); return { ...value, redirects: value.redirects || {} }; }

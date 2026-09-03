@@ -7,7 +7,7 @@ export type AuthModRepository = {
   saveIdentity(identity: AuthIdentity, expectedVersion?: number): Promise<void>; saveIdentityWithAudit(identity: AuthIdentity, audit: AccessAuditEvent, expectedVersion?: number): Promise<void>;
   listCustodianAssignments(operationalIdentityId: string): Promise<CustodianAssignment[]>; saveCustodianHandover(input: { prior?: CustodianAssignment; next: CustodianAssignment; audit: AccessAuditEvent; expectedPriorVersion?: number }): Promise<void>;
   listApplications(): Promise<ApplicationRegistryEntry[]>; getApplication(appId: string): Promise<ApplicationRegistryEntry | undefined>;
-  saveApplication(application: ApplicationRegistryEntry, expectedVersion?: number): Promise<void>; listActiveOplocs(): Promise<OplocReference[]>; getActiveOploc(oplocId: string): Promise<OplocReference | undefined>;
+  saveApplication(application: ApplicationRegistryEntry, expectedVersion?: number): Promise<void>; listActiveOplocs(): Promise<OplocReference[]>; listOplocRedirects(): Promise<Record<string, string>>; getActiveOploc(oplocId: string): Promise<OplocReference | undefined>;
   listSiteAssignments(identityId: string): Promise<SiteAssignment[]>; getSiteAssignment(id: string): Promise<SiteAssignment | undefined>;
   saveSiteAssignment(assignment: SiteAssignment, expectedVersion?: number): Promise<void>; saveSiteAssignmentWithAudit(assignment: SiteAssignment, audit: AccessAuditEvent, expectedVersion?: number): Promise<void>;
   listAppAssignments(identityId: string): Promise<AppAssignment[]>; getAppAssignment(id: string): Promise<AppAssignment | undefined>;

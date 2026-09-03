@@ -41,6 +41,13 @@ test("rolling menu importer preserves slots, destination quantities and source e
   assert.equal(result.snapshot.entries[0].slot, "SALAD 1");
 });
 
+test("Hub-provided historical OPLOC IDs are canonicalised before Menu Planning persistence", () => {
+  const week = emptyWeek("2026-08-17");
+  week.entries = [{ id: "entry:alias", dayId: week.days[0].id, date: week.days[0].date, slot: "SALAD 1", itemLabel: "Alias Dish", portions: 10, allocations: [{ destinationId: "oploc:old", destinationLabel: "Old label", quantity: 10 }], allergens: {}, audit: [] }];
+  const normalised = normaliseRollingSnapshotDestinations(week, [{ canonicalId: "oploc:current", label: "Current label", legacyIds: ["oploc:old"] }]);
+  assert.deepEqual(normalised.entries[0].allocations[0], { destinationId: "oploc:current", destinationLabel: "Current label", quantity: 10 });
+});
+
 test("planner default week prefers the current service week over distant future test data", () => {
   const current = emptyWeek("2026-08-17").week;
   const future = emptyWeek("2029-01-12").week;
@@ -108,11 +115,11 @@ test("historical Haleon destination IDs are normalized when a week is read", asy
   assert.equal(readBack.entries[0].allocations[0].destinationId, "oploc:bb4c7eea-87f5-4e79-8ed6-b973b24ded7b");
 });
 
-test("a stale explicit destination ID follows the live Hub OPLOC only on an exact label match", () => {
+test("an explicit destination ID is not replaced by display-label matching", () => {
   const snapshot = emptyWeek("2026-09-07");
   snapshot.entries.push({ id: "entry:live-oploc", dayId: snapshot.days[2].id, date: snapshot.days[2].date, slot: "SALAD 1", itemLabel: "Test salad", portions: 5, allocations: [{ destinationId: "oploc:stale-haleon", destinationLabel: "Haleon", quantity: 5 }], allergens: {}, audit: [] });
   const normalised = normaliseRollingSnapshotDestinations(snapshot, [{ canonicalId: "oploc:new-haleon", label: "Haleon" }]);
-  assert.equal(normalised.entries[0].allocations[0].destinationId, "oploc:new-haleon");
+  assert.equal(normalised.entries[0].allocations[0].destinationId, "oploc:stale-haleon");
 });
 
 test("an unidentified allocation follows the live Hub OPLOC before the static compatibility table", () => {

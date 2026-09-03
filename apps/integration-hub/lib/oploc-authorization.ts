@@ -23,7 +23,8 @@ export async function resolvePermittedOplocIds(input: PermittedOplocInput): Prom
   const identity = await context.identity();
   if (!identity) throw Object.assign(new Error("AUTHMOD identity could not be resolved."), { status: 401, code: "AUTHMOD_IDENTITY_UNRESOLVED" });
   if (identity.status !== "active") throw Object.assign(new Error("AUTHMOD identity is not active."), { status: 403, code: "AUTHMOD_IDENTITY_INACTIVE" });
-  const assignedOplocIds = [...new Set((await context.siteAssignments()).filter(value => isEffective(value)).map(value => value.oplocId).filter(Boolean))];
+  const redirects = await input.repository.listOplocRedirects();
+  const assignedOplocIds = [...new Set((await context.siteAssignments()).filter(value => isEffective(value)).map(value => redirects[value.oplocId] || value.oplocId).filter(Boolean))];
 
   for (const application of candidates) {
     const appAccess = await resolveUserAccess(input.repository, { principal: input.principal, appId: application.appId }, context);
@@ -44,7 +45,7 @@ export function isPermittedOploc(scope: PermittedOplocScope | ReadonlySet<string
 }
 
 export function filterAuthorizedOplocs(value: OplocReadPackage, scope: PermittedOplocScope | ReadonlySet<string>): OplocReadPackage {
-  return { oplocs: value.oplocs.filter((oploc) => isPermittedOploc(scope, oploc.canonicalId)) };
+  return { oplocs: value.oplocs.filter((oploc) => isPermittedOploc(scope, oploc.canonicalId)), ...(value.redirects && Object.keys(value.redirects).length ? { redirects: value.redirects } : {}) };
 }
 
 function authmodUnavailable() {

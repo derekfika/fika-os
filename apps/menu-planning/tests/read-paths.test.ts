@@ -62,6 +62,9 @@ test("hosted rolling reads use targeted week and publication paths", () => {
   assert.match(weekCache, /fika-menu-planning/);
   assert.match(weekCache, /selectedWeek/);
   assert.match(weekCache, /identity/);
+  assert.match(weekCache, /const databaseVersion = 3/);
+  assert.match(weekCache, /oldVersion < databaseVersion/);
+  assert.match(weekCache, /objectStore\(storeName\)\.clear/);
 });
 
 test("known-neighbour prefetch requests a targeted snapshot without week summaries", () => {

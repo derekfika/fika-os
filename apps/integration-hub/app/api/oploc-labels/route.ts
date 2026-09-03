@@ -3,7 +3,8 @@ import { z } from "zod";
 import { errorResponse } from "@/lib/api";
 import { assertPermission } from "@/lib/authmod";
 import { requireActor } from "@/lib/auth";
-import { getActiveCanonicalOplocLabels } from "@/lib/canonical-oplocs";
+import { getOplocReadPackage, validateOplocReadPackage } from "@/lib/oploc-read-package";
+import { internalProductionRequestAllowed } from "@/lib/production-internal-auth";
 
 const Body = z.object({
   oplocIds: z.array(z.string().trim().min(1).max(240)).min(1).max(100),
@@ -11,11 +12,20 @@ const Body = z.object({
 
 export async function POST(request: NextRequest) {
   try {
-    const actor = await requireActor(request);
-    assertPermission(actor, "canonical.view");
+    if (!internalProductionRequestAllowed(request)) {
+      const actor = await requireActor(request);
+      assertPermission(actor, "canonical.view");
+    }
     const { oplocIds } = Body.parse(await request.json());
-    const labels = await getActiveCanonicalOplocLabels([...new Set(oplocIds)]);
-    return NextResponse.json({ oplocs: [...labels].map(([canonicalId, label]) => ({ canonicalId, label })) }, { headers: { "Cache-Control": "no-store" } });
+    const { value } = await getOplocReadPackage();
+    const packageValue = validateOplocReadPackage(value);
+    const labels = new Map(packageValue.oplocs.map(oploc => [oploc.canonicalId, oploc.label] as const));
+    const oplocs = [...new Set(oplocIds)].flatMap(requestedId => {
+      const canonicalId = packageValue.redirects?.[requestedId] || requestedId;
+      const label = labels.get(canonicalId);
+      return label ? [{ canonicalId, ...(canonicalId !== requestedId ? { requestedId } : {}), label }] : [];
+    });
+    return NextResponse.json({ oplocs }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     return errorResponse(error);
   }

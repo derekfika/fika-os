@@ -7,7 +7,7 @@ import { canonicalOplocId } from "@fika/server-shared/governed-oplocs";
 export type CachedMenuWeek = { weekId: string; weekCommencing: string; version: number; snapshot: RollingSnapshot; publicationState: Record<string, PublicationDayState>; weeks?: Array<{ id: string; weekCommencing: string; entryIds: string[]; version: number }>; cachedAt: number; identity: string };
 export type CachedWeekSelection = { weekId: string; weekCommencing: string; identity: string; selectedAt: number };
 const databaseName = "fika-menu-planning";
-const databaseVersion = 2;
+const databaseVersion = 3;
 const storeName = "menuWeeks";
 const metadataStore = "cacheMetadata";
 const selectionKey = "selectedWeek";
@@ -20,8 +20,13 @@ function openDatabase(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
     if (typeof indexedDB === "undefined") return reject(new Error("IndexedDB is unavailable."));
     const request = indexedDB.open(databaseName, databaseVersion);
-    request.onupgradeneeded = () => {
+    request.onupgradeneeded = (event) => {
       const db = request.result;
+      if (request.transaction && event.oldVersion < databaseVersion) {
+        if (db.objectStoreNames.contains(storeName)) request.transaction.objectStore(storeName).clear();
+        if (db.objectStoreNames.contains(metadataStore)) request.transaction.objectStore(metadataStore).clear();
+        if (db.objectStoreNames.contains("menuCatalogue")) request.transaction.objectStore("menuCatalogue").clear();
+      }
       if (!db.objectStoreNames.contains(storeName)) db.createObjectStore(storeName, { keyPath: "weekId" });
       if (!db.objectStoreNames.contains("menuCatalogue")) db.createObjectStore("menuCatalogue", { keyPath: "cacheKey" });
       if (!db.objectStoreNames.contains("cacheMetadata")) db.createObjectStore("cacheMetadata");

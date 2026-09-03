@@ -7,7 +7,6 @@ import { forwardProductionMaterialisationEvent } from "@/lib/production-client";
 import { replayMenuPublicationOutbox } from "@/lib/menu-publication";
 import { listCatalogueEntriesForIds, reconcileCatalogueFromRollingEntries } from "@/lib/catalogue";
 import { resolveAllergenSnapshot } from "@/lib/allergen-resolution";
-import { GOVERNED_OPLOCS } from "@/lib/fika-contracts";
 import { getWeekHead, getWeekSnapshot, listWeekSummaries } from "@/lib/operational-store";
 import type { RollingWeek } from "@/lib/rolling-menu-types";
 import { withDataTrace } from "@fika/server-shared/data-source-meter-server";
@@ -70,10 +69,11 @@ async function handleGet(request: NextRequest) {
     const selectedWeekMs = performance.now() - selectedReadStarted;
     const previewDayId = request.nextUrl.searchParams.get("dayId") || undefined;
     const publicationPreviewRequested = request.nextUrl.searchParams.get("publicationPreview") === "true";
-    const governedOplocs = publicationPreviewRequested ? (await readDeliveredInOplocs(request)).filter(oploc => actorCanAccessOploc(actor, oploc.canonicalId)) : undefined;
+    // All rolling reads use the live Hub redirect projection so an old explicit
+    // destination ID is canonicalised before it reaches the UI or cache.
+    const governedOplocs = (await readDeliveredInOplocs(request)).filter(oploc => actorCanAccessOploc(actor, oploc.canonicalId));
     const snapshot = scopedSnapshot(normaliseRollingSnapshotDestinations(storedSnapshot || emptyWeek(requestedWeek || new Date().toISOString().slice(0, 10)), governedOplocs), actor);
-    const governedLabels = new Set(governedOplocs?.map(oploc => oploc.label.toLocaleLowerCase()));
-    const governedOplocIds = governedOplocs ? new Set([...governedOplocs.map(oploc => oploc.canonicalId), ...GOVERNED_OPLOCS.filter(oploc => governedLabels.has(oploc.label.toLocaleLowerCase())).map(oploc => oploc.id)]) : undefined;
+    const governedOplocIds = governedOplocs ? new Set(governedOplocs.map(oploc => oploc.canonicalId)) : undefined;
     const catalogueStarted = performance.now();
     const publicationStarted = performance.now();
     const [catalogue, currentPublicationState] = await Promise.all([listCatalogueEntriesForIds(snapshot.entries.map(entry => entry.itemId || "")), publicationState(snapshot)]);
