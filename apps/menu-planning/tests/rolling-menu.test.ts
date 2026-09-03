@@ -224,7 +224,7 @@ test("week publication is atomic and creates one immutable five-day publication"
   try {
     await saveSnapshot(week);
     let firstEntryId = "";
-    for (const [index, day] of week.days.slice(0, 5).entries()) { const created = await createEntry(week.week.id, day.id, "SOUP", `Atomic week dish ${index}`, "test", `dish:atomic-${index}`); const entryId = created.entries.find(value => value.dayId === day.id)!.id; if (index === 0) firstEntryId = entryId; await updateEntryForTest(week.week.id, entryId); }
+    for (const [index, day] of week.days.slice(0, 4).entries()) { const created = await createEntry(week.week.id, day.id, "SOUP", `Atomic week dish ${index}`, "test", `dish:atomic-${index}`,); const entryId = created.entries.find(value => value.dayId === day.id)!.id; if (index === 0) firstEntryId = entryId; await updateEntryForTest(week.week.id, entryId); }
     const publication = await createPublishedMenuWeek(week.week.id, {}, "test");
     assert.equal(currentPublishedDays(publication).length, 5);
     assert.equal((await getWeek(week.week.id)).week.status, "published");
@@ -236,7 +236,8 @@ test("week publication is atomic and creates one immutable five-day publication"
     const packet = decodeWeeklyPublicationPacket(publication.weekPacket);
     assert.equal(packet.publicationId, publication.publicationId);
     assert.equal(packet.days.length, 5);
-    assert.ok(packet.days.every(day => day.entries.every(entry => entry.sourceEntryId && entry.allocations.every(allocation => allocation.quantity === 10))));
+    assert.ok(packet.days.slice(0, 4).every(day => day.entries.every(entry => entry.sourceEntryId && entry.allocations.every(allocation => allocation.quantity === 10))));
+    assert.equal(packet.days[4].entries.length, 0);
     assert.ok(publication.days.every(day => !day.allergenSignoff));
     const firstPacketByte = publication.weekPacket.payloadBase64[0] === "A" ? "B" : "A";
     assert.throws(() => decodeWeeklyPublicationPacket({ ...publication.weekPacket, payloadBase64: `${firstPacketByte}${publication.weekPacket.payloadBase64.slice(1)}` } as never), /integrity/i);

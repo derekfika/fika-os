@@ -60,12 +60,13 @@ export function buildCompiledPublicationSnapshot(publication: MenuPublication, s
 }
 export function publicationPreview(snapshot: RollingSnapshot, dayId?: string) { return (dayId ? snapshot.days.filter(day => day.id === dayId) : populatedWeekdays(snapshot)).map(day => buildPublishedDay(snapshot, day)); }
 function conflict(message: string) { return Object.assign(new Error(message), { status: 409 }); }
-function validateDay(snapshot: RollingSnapshot, dayId: string, governedOplocIds?: Set<string>) { const entries = snapshot.entries.filter(entry => entry.dayId === dayId && entry.itemLabel.trim()); if (!entries.length) throw Object.assign(new Error("This menu day has no populated entries."), { status: 422 }); const errors = validateWeek({ ...snapshot, entries }, { governedOplocIds, requireCanonicalDishId: Boolean(governedOplocIds) }); if (errors.length) throw Object.assign(new Error(errors.join(" ")), { status: 422 }); return entries; }
+function validateDay(snapshot: RollingSnapshot, dayId: string, governedOplocIds?: Set<string>) { const entries = snapshot.entries.filter(entry => entry.dayId === dayId && entry.itemLabel.trim()); if (!entries.length) return entries; const errors = validateWeek({ ...snapshot, entries }, { governedOplocIds, requireCanonicalDishId: Boolean(governedOplocIds) }); if (errors.length) throw Object.assign(new Error(errors.join(" ")), { status: 422 }); return entries; }
 export function publicationDayBlockers(snapshot: RollingSnapshot, dayId: string, governedOplocIds?: Set<string>) { try { validateDay(snapshot, dayId, governedOplocIds); return []; } catch (error) { return [error instanceof Error ? error.message : "This menu day is not ready for publication."]; } }
 export function publicationWeekBlockers(snapshot: RollingSnapshot, governedOplocIds?: Set<string>) {
   const blockers: string[] = [];
   const weekdays = snapshot.days.slice(0, 5);
   if (weekdays.length < 5) blockers.push("The menu week must contain five service days.");
+  if (!weekdays.some(day => snapshot.entries.some(entry => entry.dayId === day.id && entry.itemLabel.trim()))) blockers.push("The menu week must contain at least one populated service day.");
   for (const day of weekdays) for (const blocker of publicationDayBlockers(snapshot, day.id, governedOplocIds)) blockers.push(`${day.dayName}: ${blocker}`);
   return [...new Set(blockers)];
 }
@@ -121,7 +122,6 @@ export async function createPublishedMenuDay(weekId: string, dayId: string, sign
     const entries = snapshot.entries.filter(entry => entry.dayId === dayId && entry.itemLabel.trim());
     const day = snapshot.days.find(value => value.id === dayId);
     if (!day) throw Object.assign(new Error("Menu day was not found."), { status: 404 });
-    if (!entries.length) throw Object.assign(new Error("This menu day has no populated entries."), { status: 422 });
     const errors = validateWeek({ ...snapshot, entries }, { governedOplocIds, requireCanonicalDishId: Boolean(governedOplocIds) });
     if (errors.length) throw Object.assign(new Error(errors.join(" ")), { status: 422 });
     const preview = buildPublishedDay(snapshot, day);
