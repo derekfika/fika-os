@@ -32,3 +32,8 @@ test("normal catalogue GET cannot reconstruct or publish on package failure", as
   assert.doesNotMatch(helper, /listCatalogueEntries\(/);
   assert.doesNotMatch(helper, /publishCataloguePackage\(entries\)/);
 });
+
+test("hosted catalogue package downloads preserve compressed bytes", async () => {
+  const source = await (await import("node:fs/promises")).readFile(new URL("../lib/catalogue-package-store.ts", import.meta.url), "utf8");
+  assert.match(source, /download\(\{ decompress: false \}\)/);
+});

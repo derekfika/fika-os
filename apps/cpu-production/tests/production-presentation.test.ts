@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import type { ProductionOrder } from "../lib/production-types";
-import { cpuAttentionLabel, cpuLifecycle, cpuLifecycleLabels, cpuRequiredTime, cpuSourceLabel } from "../lib/production-presentation";
+import { cpuAttentionLabel, cpuLifecycle, cpuLifecycleLabels, cpuRequiredTime, cpuServiceWindow, cpuSourceLabel } from "../lib/production-presentation";
 
 function order(overrides: Partial<ProductionOrder> = {}): ProductionOrder {
   return {
@@ -48,4 +48,8 @@ test("CPU presentation names source, destination timing, and exceptions explicit
   assert.equal(cpuRequiredTime(order({ requiredBy: "" })), "Time TBC");
   assert.equal(cpuRequiredTime(order({ requiredBy: "2026-08-24T00:00" })), "Time TBC");
   assert.equal(cpuAttentionLabel(order({ status: "blocked" })), "Blocked");
+});
+
+test("CPU presentation tolerates legacy orders without a service window", () => {
+  assert.equal(cpuServiceWindow(order({ serviceWindow: undefined as never })), "Time TBC");
 });

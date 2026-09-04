@@ -30,7 +30,7 @@ function cloudStore(): ReadPackageStore {
   const bucket = getStorage(app).bucket(bucketName);
   return {
     async putImmutable(name, bytes, contentHash) { const object = bucket.file(name); const [exists] = await object.exists(); if (exists) return; await object.save(Buffer.from(bytes), { resumable: false, metadata: { contentType: "application/json", contentEncoding: "gzip", metadata: { contentHash } } }); },
-    async get(name) { try { const [bytes] = await bucket.file(name).download(); return bytes; } catch (error) { if ((error as { code?: number }).code === 404) return undefined; throw error; } },
+    async get(name) { try { const [bytes] = await bucket.file(name).download({ decompress: false }); return bytes; } catch (error) { if ((error as { code?: number }).code === 404) return undefined; throw error; } },
     async has(name) { const [exists] = await bucket.file(name).exists(); return exists; },
     async getManifest(key) { const [bytes] = await bucket.file(`manifests/${key}.json`).download().catch(() => [undefined] as const); return bytes ? JSON.parse(bytes.toString("utf8")) as ReadPackageManifest : undefined; },
     async putManifest(key, manifest) { await bucket.file(`manifests/${key}.json`).save(JSON.stringify(manifest), { resumable: false, metadata: { contentType: "application/json" } }); },

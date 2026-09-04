@@ -21,7 +21,7 @@ import HospitalityProductionDetail from "./ui/HospitalityProductionDetail";
 import ProductionOrderDetail from "./ui/ProductionOrderDetail";
 import { CANONICAL_ALLERGEN_COLUMNS, normaliseOperationalAllergens, toggleOperationalAllergen, type CanonicalAllergenKey } from "../../shared/allergen-contract";
 import { productionScopes, type ProductionScope } from "../lib/production-scope";
-import { cpuAttentionKey, cpuAttentionLabel, cpuDestinationLabel, cpuDestinationOptionLabel, cpuLifecycle, cpuLifecycleLabels, cpuRequiredTime, cpuSourceLabel, type CpuLifecycle } from "../lib/production-presentation";
+import { cpuAttentionKey, cpuAttentionLabel, cpuDestinationLabel, cpuDestinationOptionLabel, cpuLifecycle, cpuLifecycleLabels, cpuRequiredTime, cpuServiceWindow, cpuSourceLabel, type CpuLifecycle } from "../lib/production-presentation";
 import { orderDate } from "../lib/production-day";
 import { cpuProjectionToOrders, dashboardOperationalDate, filterCpuProjectionForScope, weekCommencingFor } from "../lib/cpu-dashboard-adapter";
 import { readApiResponse } from "./lib/api-response";
@@ -656,8 +656,7 @@ function Detail({
         <dd>{order.productionLocationId || "Not assigned"}</dd>
         <dt>Service window</dt>
         <dd>
-          {order.serviceWindow.startTime}
-          {order.serviceWindow.endTime ? `–${order.serviceWindow.endTime}` : ""}
+          {cpuServiceWindow(order)}
         </dd>
         <dt>Status</dt>
         <dd>{order.status.replaceAll("_", " ")}</dd>

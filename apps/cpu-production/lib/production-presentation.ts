@@ -61,6 +61,12 @@ export function cpuRequiredTime(order: ProductionOrder) {
   return time === "00:00" ? "Time TBC" : time;
 }
 
+export function cpuServiceWindow(order: Pick<ProductionOrder, "serviceWindow">) {
+  const window = order.serviceWindow;
+  if (!window?.startTime) return "Time TBC";
+  return `${window.startTime}${window.endTime ? `–${window.endTime}` : ""}`;
+}
+
 export function cpuReference(order: ProductionOrder) {
   return order.sourceEntityId || order.sourceBookingId || order.canonicalId;
 }

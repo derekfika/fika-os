@@ -102,14 +102,14 @@ export async function getCompiledPublicationSnapshot(publicationId: string, vers
   if (version) return undefined;
   return publication.days.some(day => day.status === "published") ? buildCompiledPublicationSnapshot(publication, 0) : undefined;
 }
-export type PublicationDayState = { currentPublicationDayId?: string; currentVersion?: number; currentContentHash?: string; hasCurrentPublication: boolean; hasUnpublishedChanges: boolean; legacy: boolean; status: "published" | "draft" | "legacy" };
+export type PublicationDayState = { currentPublicationId?: string; currentPublicationDayId?: string; currentVersion?: number; currentContentHash?: string; hasCurrentPublication: boolean; hasUnpublishedChanges: boolean; legacy: boolean; status: "published" | "draft" | "legacy" };
 export async function publicationState(snapshot: RollingSnapshot): Promise<Record<string, PublicationDayState>> {
   const publication = (await readPublicationStateForWeek<StoredPublications>(snapshot.week.id)).publications.find(value => value.sourceWeekId === snapshot.week.id);
   return Object.fromEntries(snapshot.days.slice(0, 5).map(day => {
     const current = publication?.days.filter(value => value.sourceDayId === day.id && value.status === "published").sort((a, b) => b.version - a.version)[0];
     const legacy = !current && !publication && snapshot.week.status === "published" && !snapshot.week.dayStatuses;
     const working = buildPublishedDay(snapshot, day);
-    const state: PublicationDayState = current ? { currentPublicationDayId: current.publicationDayId, currentVersion: current.version, currentContentHash: current.contentHash, hasCurrentPublication: true, hasUnpublishedChanges: current.contentHash !== working.contentHash, legacy: false, status: "published" } : { hasCurrentPublication: false, hasUnpublishedChanges: false, legacy, status: legacy ? "legacy" : "draft" };
+    const state: PublicationDayState = current ? { currentPublicationId: publication?.publicationId, currentPublicationDayId: current.publicationDayId, currentVersion: current.version, currentContentHash: current.contentHash, hasCurrentPublication: true, hasUnpublishedChanges: current.contentHash !== working.contentHash, legacy: false, status: "published" } : { hasCurrentPublication: false, hasUnpublishedChanges: false, legacy, status: legacy ? "legacy" : "draft" };
     return [day.id, state];
   }));
 }

@@ -52,7 +52,22 @@ export default function RollingMenuWorkspace() {
     const body = await response.json().catch(() => ({}));
     if (!response.ok) { setError(body.error?.message || "Menu could not be loaded."); return; }
     setSnapshot(body.snapshot); setWeeks(body.weeks || []); setPublicationState(body.publicationState || {}); setDayId(current => body.snapshot.days.some((day: { id: string }) => day.id === current) ? current : body.snapshot.days[0]?.id || "");
-    try { const publicationResponse = await fetch("/api/rolling-menu/publications", { cache: "no-store" }); const publicationBody = await publicationResponse.json(); if (publicationResponse.ok) setPublications(publicationBody.publications || []); } catch { /* Publication controls remain unavailable if the list cannot be read. */ }
+    try {
+      const publicationResponse = await fetch("/api/rolling-menu/publications", { cache: "no-store" });
+      const publicationBody = await publicationResponse.json();
+      if (publicationResponse.ok) {
+        const listed = publicationBody.publications || [];
+        const currentIds = [...new Set(Object.values((body.publicationState || {}) as Record<string, { currentPublicationId?: string }>).map(state => state.currentPublicationId).filter((id): id is string => Boolean(id)))];
+        const listedIds = new Set(listed.map((publication: { publicationId: string }) => publication.publicationId));
+        const missing = await Promise.all(currentIds.filter(id => !listedIds.has(id)).map(async id => {
+          const response = await fetch(`/api/rolling-menu/publications?publicationId=${encodeURIComponent(id)}`, { cache: "no-store" });
+          if (!response.ok) return undefined;
+          const value = await response.json() as { publication?: PublicationSummary };
+          return value.publication;
+        }));
+        setPublications([...listed, ...missing.filter((publication): publication is PublicationSummary => Boolean(publication))]);
+      }
+    } catch { /* Publication controls remain unavailable if the list cannot be read. */ }
   };
   useEffect(() => { void load(); }, []);
   useEffect(() => { void fetch("/api/catalogue", { cache: "no-store" }).then(async response => { const body = await response.json().catch(() => ({})); if (!response.ok) throw new Error(body.error?.message || `Catalogue could not be loaded (HTTP ${response.status}).`); return body; }).then(body => setCatalogue((body.entries || []).map((entry: Record<string, unknown>) => { const item = entry.item as Record<string, unknown> | undefined; return { id: String(entry.id), name: titleCase(String(entry.displayName ?? entry.name ?? "")), category: entry.category ? String(entry.category) : undefined, subcategory: entry.subcategory ? String(entry.subcategory) : undefined, description: item?.description ? String(item.description) : undefined, allergenEvidence: Array.isArray(item?.allergenEvidence) ? item.allergenEvidence as DishPickerItem["allergenEvidence"] : [], mayContainReviewed: item?.mayContainReviewed === true }; }))).catch((cause: Error) => setError(cause.message)); }, []);

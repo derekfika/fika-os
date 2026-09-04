@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ProductionOrder } from "../../lib/production-types";
+import { cpuServiceWindow } from "../../lib/production-presentation";
 import type {
   AllergenCellState,
   InternalMatrixSignature,
@@ -619,10 +620,7 @@ export default function HospitalityAllergenDetail({
           <div>
             <span>Service time</span>
             <strong>
-              {order.serviceWindow.startTime}
-              {order.serviceWindow.endTime
-                ? `–${order.serviceWindow.endTime}`
-                : ""}
+              {cpuServiceWindow(order)}
             </strong>
           </div>
           <div>
