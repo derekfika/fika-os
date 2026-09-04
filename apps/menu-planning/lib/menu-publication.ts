@@ -195,6 +195,29 @@ export async function createPublishedMenuWeek(weekId: string, input: MenuPublica
   }, { weekId, weekVersion: expectedWeekVersion }, { weekId, sourceWeekId: weekId, includeEvents: false });
 }
 export function currentPublishedDays(publication: MenuPublication) { return publication.days.filter(day => day.status === "published"); }
+/** Re-queue the current immutable publication handoff without creating a new version. */
+export async function repairPublishedMenuPublication(publicationId: string) {
+  const publication = await getMenuPublication(publicationId);
+  if (!publication) throw Object.assign(new Error("Menu publication was not found."), { status: 404 });
+  const currentDays = currentPublishedDays(publication);
+  if (!currentDays.length) throw Object.assign(new Error("Only a current published publication can be repaired."), { status: 409 });
+  const repairKey = `menu-publication-handoff-repaired:v${publication.publicationVersion || 1}`;
+  return withMenuPlanningTransaction(state => {
+    const stored = state.publications as unknown as StoredPublications;
+    const target = stored.publications.find(value => value.publicationId === publicationId);
+    if (!target) throw Object.assign(new Error("Menu publication was not found."), { status: 404 });
+    if (!target.audit.some(item => item.action === repairKey)) {
+      for (const day of currentPublishedDays(target)) appendPublicationEvents(stored, target, day, day.version > 1 ? "amended" : "published", target.audit.at(-1)?.by || "publication-repair");
+      const currentEventIds = new Set(currentPublishedDays(target).flatMap(day => [
+        `production.materialise:${target.publicationId}:${day.sourceDayId}`,
+        ...day.entries.flatMap(entry => entry.allocations.map(allocation => `production.materialise:${target.publicationId}:${day.sourceDayId}:${allocation.destinationId}`)),
+      ]));
+      for (const event of stored.events || []) if (currentEventIds.has(event.eventId) && event.delivery.status === "delivered") event.delivery = { status: "pending", attempts: event.delivery.attempts };
+      target.audit.push({ action: repairKey, at: now(), by: "publication-repair" });
+    }
+    return clone(target);
+  }, undefined, { weekId: publication.sourceWeekId, sourceWeekId: publication.sourceWeekId, includeEvents: false });
+}
 /** Explicit historical audit/repair read; normal publication lookups never call this path. */
 export async function listMenuPublicationEvents() { return (await read()).events.map(clone); }
 export async function replayMenuPublicationOutbox(consumer: (event: DurableDomainEvent) => Promise<void> | void, at = new Date()) {

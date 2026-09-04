@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { archivePublishedDayMatrix, getMenuPublication, listMenuPublications, listMenuPublicationsForDateRange, withdrawPublishedMenuDay, withdrawPublishedMenuWeek } from "@/lib/menu-publication";
+import { archivePublishedDayMatrix, getMenuPublication, listMenuPublications, listMenuPublicationsForDateRange, repairPublishedMenuPublication, withdrawPublishedMenuDay, withdrawPublishedMenuWeek } from "@/lib/menu-publication";
 import { requirePublicationActor, resolveMenuActor, scopeMenuPublication } from "@/lib/auth";
 import { forwardProductionMaterialisationEvent } from "@/lib/production-client";
 import { replayMenuPublicationOutbox } from "@/lib/menu-publication";
@@ -31,6 +31,11 @@ async function handlePost(request: NextRequest) {
       return NextResponse.json({ handoff: { status: handoff.failed ? "pending" : "delivered", delivered: handoff.delivered, failed: handoff.failed } });
     }
     if (!body.publicationId) return NextResponse.json({ error: { message: "Publication is required." } }, { status: 422 });
+    if (body.action === "repair-handoff") {
+      const publication = await repairPublishedMenuPublication(body.publicationId);
+      const handoff = await replayMenuPublicationOutbox(forwardProductionMaterialisationEvent);
+      return NextResponse.json({ publication: scopeMenuPublication(publication, actor), handoff: { status: handoff.failed ? "pending" : "delivered", delivered: handoff.delivered, failed: handoff.failed } });
+    }
     if (body.action === "withdraw-week") {
       const publication = await withdrawPublishedMenuWeek(body.publicationId, body.reason || "", actor.uid);
       void replayMenuPublicationOutbox(forwardProductionMaterialisationEvent).catch(() => undefined);

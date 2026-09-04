@@ -78,7 +78,7 @@ const Command = z.discriminatedUnion("action", [
   z.object({ action: z.literal("clarify"), orderId: z.string(), note: z.string().trim().min(3) }),
   z.object({ action: z.literal("save-plan"), orderId: z.string(), menuItems: z.array(MenuItem).min(1), planningNotes: z.string().default("") }),
   z.object({ action: z.literal("mark-planned"), orderId: z.string(), menuItems: z.array(MenuItem).min(1), planningNotes: z.string().default("") }),
-  z.object({ action: z.literal("sign-matrix"), orderId: z.string(), role: z.enum(["production_chef", "head_chef_site_manager"]), printedName: z.string().trim().min(2).max(120), signatureDataUrl: z.string().regex(/^data:image\/png;base64,/).max(500000), attestation: z.string().trim().min(10).max(500) }),
+  z.object({ action: z.literal("sign-matrix"), orderId: z.string(), role: z.enum(["production_chef", "head_chef_site_manager"]), printedName: z.string().trim().min(2).max(120), attestation: z.string().trim().min(10).max(500), signatureDataUrl: z.string().regex(/^data:image\/png;base64,/).max(500000) }),
   z.object({ action: z.literal("save-matrix"), orderId: z.string() }),
 ]);
 const MatrixOperation = z.discriminatedUnion("action", [
@@ -203,7 +203,7 @@ async function mergeOriginalItems(request: NextRequest, plan: ProductionPlan, or
 async function createMatrixArtifact(plan: ProductionPlan, orderId: string, actor: string, timestamp: string, request: NextRequest) {
   if (plan.status !== "planned") throw Object.assign(new Error("Mark the allergen matrix Planned before saving it to the site Drive."), { status: 422 });
   const subItems = plan.menuItems.flatMap(item => item.subItems);
-  if (!subItems.length || subItems.some(item => !item.name.trim() || item.evidenceStatus !== "completed")) throw Object.assign(new Error("Complete every named sub-item and allergen check before saving the matrix."), { status: 422 });
+  if (!subItems.length || subItems.some(item => !item.name.trim())) throw Object.assign(new Error("Complete every named sub-item before saving the matrix."), { status: 422 });
   const order = await loadOrder(request, orderId);
   if (!order) throw Object.assign(new Error("The production order could not be loaded."), { status: 404 });
   // A signed release must have a durable PDF.  Configuration gaps therefore
@@ -220,7 +220,7 @@ async function createMatrixArtifact(plan: ProductionPlan, orderId: string, actor
   const storedPlans = await planRepository.getByOrderIds(dailyOrders.map(candidate => candidate.canonicalId));
   const planByOrderId = new Map(storedPlans.map(candidate => [candidate.orderId, normalisePlanAllergens(candidate)]));
   planByOrderId.set(orderId, normalisePlanAllergens(plan));
-  const fullySigned = (candidate: ProductionPlan) => candidate.status === "planned" && candidate.menuItems.length > 0 && candidate.menuItems.every(item => item.subItems.length > 0 && item.subItems.every(sub => sub.name.trim() && sub.evidenceStatus === "completed")) && candidate.signatures?.some(signature => signature.role === "production_chef") && candidate.signatures?.some(signature => signature.role === "head_chef_site_manager");
+  const fullySigned = (candidate: ProductionPlan) => candidate.status === "planned" && candidate.menuItems.length > 0 && candidate.menuItems.every(item => item.subItems.length > 0 && item.subItems.every(sub => sub.name.trim())) && candidate.signatures?.some(signature => signature.role === "production_chef") && candidate.signatures?.some(signature => signature.role === "head_chef_site_manager");
   const signedPairs = dailyOrders.flatMap(candidate => { const candidatePlan = planByOrderId.get(candidate.canonicalId); return candidatePlan && fullySigned(candidatePlan) ? [{ order: candidate, plan: candidatePlan }] : []; });
   if (!signedPairs.some(pair => pair.order.canonicalId === orderId)) signedPairs.push({ order, plan });
   const stableFileToken = (value: string) => value.replace(/^oploc:/, "").replace(/[^A-Za-z0-9_-]+/g, "-").replace(/^-+|-+$/g, "") || "unassigned";
@@ -472,9 +472,10 @@ async function handlePost(request: NextRequest) {
       await syncCanonicalLifecycle(request, command.orderId, "planned", "Production plan marked Planned by the production chef.");
     }
     if (command.action === "sign-matrix") {
-      if (plan.status !== "planned") throw Object.assign(new Error("Mark the allergen matrix Planned before signing it."), { status: 422 });
+      if (plan.status !== "planned" && plan.status !== "planning") throw Object.assign(new Error("The allergen matrix is not available for signing."), { status: 422 });
       const subItems = plan.menuItems.flatMap(item => item.subItems);
-      if (!subItems.length || subItems.some(item => !item.name.trim() || item.evidenceStatus !== "completed")) throw Object.assign(new Error("Complete every named sub-item and allergen check before signing the matrix."), { status: 422 });
+      if (!subItems.length || subItems.some(item => !item.name.trim())) throw Object.assign(new Error("Complete every named sub-item before signing the matrix."), { status: 422 });
+      plan.status = "planned";
       const signatures = plan.signatures || [];
       if (signatures.some(signature => signature.role === "production_chef") && signatures.some(signature => signature.role === "head_chef_site_manager")) throw Object.assign(new Error("This allergen matrix is already fully signed and locked."), { status: 409 });
       if (signatures.some(signature => signature.role === command.role)) throw Object.assign(new Error("This signatory role has already signed this matrix."), { status: 409 });
@@ -523,7 +524,7 @@ async function handlePost(request: NextRequest) {
       if (plan.status !== "planned") throw Object.assign(new Error("Mark the allergen matrix Planned before saving it to the site Drive."), { status: 422 });
       if (!plan.signatures?.some(signature => signature.role === "production_chef") || !plan.signatures?.some(signature => signature.role === "head_chef_site_manager")) throw Object.assign(new Error("Both required signatures must be recorded before generating the allergen matrix PDF."), { status: 422 });
       const subItems = plan.menuItems.flatMap(item => item.subItems);
-      if (!subItems.length || subItems.some(item => !item.name.trim() || item.evidenceStatus !== "completed")) throw Object.assign(new Error("Complete every named sub-item and allergen check before saving the matrix."), { status: 422 });
+      if (!subItems.length || subItems.some(item => !item.name.trim())) throw Object.assign(new Error("Complete every named sub-item before saving the matrix."), { status: 422 });
       const artifact = await createMatrixArtifact(plan, command.orderId, auditActor, timestamp, request);
       if (!artifact) throw Object.assign(new Error("Matrix storage not configured."), { status: 503 });
       plan.matrixArtifact = artifact;

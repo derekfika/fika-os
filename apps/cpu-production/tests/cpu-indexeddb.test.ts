@@ -156,10 +156,14 @@ test("allergen signing freezes once, preserves the first signature, and locks ed
   const page = await readFile(new URL("../app/allergens/page.tsx", import.meta.url), "utf8");
   const matrix = await readFile(new URL("../app/ui/AllergenReviewMatrix.tsx", import.meta.url), "utf8");
   const planRoute = await readFile(new URL("../app/api/production-plan/route.ts", import.meta.url), "utf8");
-  assert.match(page, /if \(!reviewFrozen\) \{ await saveReviewRef\.current\(\); setReviewFrozen\(true\); \}/);
+  assert.match(page, /if \(!reviewFrozen\) \{ setSignatureMessage\("Syncing allergen edits before signature…"\); await saveReviewRef\.current\(\); setReviewFrozen\(true\); \}/);
   assert.doesNotMatch(page, /beginSigning[\s\S]*await saveReviewRef\.current\(\);[\s\S]*await saveReviewRef\.current\(\);/);
-  assert.match(page, /locked=\{signatureRoles\.length > 0 \|\| Boolean\(signing\) \|\| Boolean\(site\)\}/);
+  assert.match(page, /locked=\{fullySigned \|\| Boolean\(signing\) \|\| Boolean\(site\)\}/);
   assert.match(matrix, /locked = false/);
-  assert.match(matrix, /busy \|\| locked/);
+  assert.match(matrix, /disabled=\{locked \|\| key === "no_key_allergens"\}/);
+  assert.match(matrix, /loadLocalChecked/);
+  assert.match(matrix, /saveLocalChecked/);
+  assert.doesNotMatch(matrix, /confirm-review/);
+  assert.doesNotMatch(matrix, /completedKeys/);
   assert.match(planRoute, /signatures\.length > 0 && plan\.signedMenuContentHash && plan\.signedMenuContentHash !== currentMenuContentHash/);
 });
