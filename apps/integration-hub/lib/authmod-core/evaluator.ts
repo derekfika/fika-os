@@ -4,6 +4,7 @@ import type { AuthPrincipal, AuthorizationDecision, AuthModAction, Scope } from 
 import { isPersonRequiredAuthority } from "./authority";
 
 export class AuthModEvaluationContext {
+  private runtimePackagePromise?: Promise<Awaited<ReturnType<NonNullable<AuthModRepository["getRuntimeAccessPackage"]>>>>;
   private identityPromise?: Promise<Awaited<ReturnType<AuthModRepository["getIdentity"]>>>;
   private grantsPromise?: Promise<Awaited<ReturnType<AuthModRepository["listAuthorityGrants"]>>>;
   private appAssignmentsPromise?: Promise<Awaited<ReturnType<AuthModRepository["listAppAssignments"]>>>;
@@ -14,10 +15,11 @@ export class AuthModEvaluationContext {
   private activeOplocsPromise?: Promise<Awaited<ReturnType<AuthModRepository["listActiveOplocs"]>>>;
   private readonly seededOplocs: Map<string, OplocReference>;
   constructor(readonly repository: AuthModRepository, readonly principal: AuthPrincipal, activeOplocs: OplocReference[] = []) { this.seededOplocs = new Map(activeOplocs.map(oploc => [oploc.id, oploc])); }
-  identity() { return this.identityPromise ||= this.principal.type === "interactive" ? this.repository.getIdentity(this.principal.id) : Promise.resolve(undefined); }
-  grants() { return this.grantsPromise ||= this.principal.type === "interactive" ? this.repository.listAuthorityGrants(this.principal.id, "interactive") : Promise.resolve([]); }
-  appAssignments() { return this.appAssignmentsPromise ||= this.identity().then(identity => identity ? this.repository.listAppAssignments(identity.id) : []); }
-  siteAssignments() { return this.siteAssignmentsPromise ||= this.identity().then(identity => identity ? this.repository.listSiteAssignments(identity.id) : []); }
+  identity() { return this.identityPromise ||= this.principal.type === "interactive" && this.repository.getRuntimeAccessPackage ? this.runtimePackage().then(value => value?.identity) : this.principal.type === "interactive" ? this.repository.getIdentity(this.principal.id) : Promise.resolve(undefined); }
+  runtimePackage() { return this.runtimePackagePromise ||= this.principal.type === "interactive" && this.repository.getRuntimeAccessPackage ? this.repository.getRuntimeAccessPackage(this.principal.id) : Promise.resolve(undefined as never); }
+  grants() { return this.grantsPromise ||= this.repository.getRuntimeAccessPackage ? this.runtimePackage().then(value => value?.authorityGrants || []) : this.principal.type === "interactive" ? this.repository.listAuthorityGrants(this.principal.id, "interactive") : Promise.resolve([]); }
+  appAssignments() { return this.appAssignmentsPromise ||= this.repository.getRuntimeAccessPackage ? this.runtimePackage().then(value => value?.appAssignments || []) : this.identity().then(identity => identity ? this.repository.listAppAssignments(identity.id) : []); }
+  siteAssignments() { return this.siteAssignmentsPromise ||= this.repository.getRuntimeAccessPackage ? this.runtimePackage().then(value => value?.siteAssignments || []) : this.identity().then(identity => identity ? this.repository.listSiteAssignments(identity.id) : []); }
   application(appId: string) { let result = this.applicationPromises.get(appId); if (!result) { result = this.repository.getApplication(appId); this.applicationPromises.set(appId, result); } return result; }
   activeOploc(oplocId: string) { const seeded = this.seededOplocs.get(oplocId); if (seeded) return Promise.resolve(seeded); let result = this.oplocPromises.get(oplocId); if (!result) { result = this.repository.getActiveOploc(oplocId); this.oplocPromises.set(oplocId, result); } return result; }
   activeOplocs() { return this.activeOplocsPromise ||= this.repository.listActiveOplocs(); }

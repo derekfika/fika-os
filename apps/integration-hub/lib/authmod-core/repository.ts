@@ -1,6 +1,8 @@
 import type { AccessAuditEvent, AppAssignment, ApplicationRegistryEntry, AuditPage, AuthIdentity, AuthorityGrant, CustodianAssignment, DelegationRecord, ImportRecord, ImportRowResolution, LegendReference, ServicePrincipal, SiteAssignment } from "./model";
 export type OplocReference = { id: string; label: string; active: boolean };
+export type AuthmodRuntimeAccessPackage = import("../authmod-access-read-package").AuthmodAccessReadPackage;
 export type AuthModRepository = {
+  getRuntimeAccessPackage?(identityId: string): Promise<AuthmodRuntimeAccessPackage>;
   getIdentity(id: string): Promise<AuthIdentity | undefined>; listIdentities(): Promise<AuthIdentity[]>;
   listLegendReferences(search?: string, limit?: number): Promise<LegendReference[]>;
   findIdentityByExternal(provider: string, uid: string): Promise<AuthIdentity | undefined>; findIdentitiesByExternal(provider: string, uid: string, limit?: number): Promise<AuthIdentity[]>; findIdentityByEmail(email: string): Promise<AuthIdentity | undefined>; findIdentitiesByEmail(email: string, limit?: number): Promise<AuthIdentity[]>; findIdentityByLegend(legendId: string): Promise<AuthIdentity | undefined>;
