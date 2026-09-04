@@ -6,6 +6,7 @@ This file records user-facing workflow changes delivered in the repository. Deta
 
 ### Canonical source control
 
+- **2026-09-04 — staging provenance audit:** compared canonical `main` (`2391bbc98b8feaa0dbc8befd8e581a3892e67f40`) with the six Firebase App Hosting staging backends. CPU and Menu Planning reported `7670408c2f228e60f6ac88bbe8571b35d4ee1434`; Delivered-In reported `37df1be5f620f723ea86a46abfbad92e5cba50ed`; the remaining backends did not expose a verifiable public build SHA. Exact-SHA staging rollouts are being submitted for the canonical commit. Deployment status: submitted, rollout completion not awaited.
 - **2026-09-04 15:17 +01:00 — THREAD 0 — FIKA OS canonical workspace reset:** promoted the validated canonical history to `main`, rewrote the canonical platform README, and formalised the single-checkout/main-branch and mandatory changelog policies in `AGENTS.md`. Affected areas: repository documentation and source-control workflow. Validation: remote fast-forward verification, documentation review and `git diff --check`. Deployment status: no deployment performed.
 
 ### Architecture
