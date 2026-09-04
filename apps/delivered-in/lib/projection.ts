@@ -6,7 +6,17 @@ export type SourceDay = { publicationDayId: string; sourceDayId: string; date: s
 export type SourcePublication = { publicationId: string; sourceWeekId: string; weekCommencing: string; weekEnding: string; days: SourceDay[] };
 export type ProjectedEntry = { sourceEntryId: string; slot: string; canonicalDishId?: string; dishName: string; quantity: number; allergens: Record<string, "clear" | "contains" | "may_contain" | "unrecorded">; mayContainNotes?: string; allergensVisible?: boolean };
 export type ProjectedDestination = { oplocId: string; label: string; portions: number };
-export type ProjectedDay = { projectionVersion?: number; publicationId: string; publicationDayId: string; sourceDayId: string; date: string; dayName: string; version: number; contentHash: string; weekCommencing?: string; entries: ProjectedEntry[]; destinations?: ProjectedDestination[]; allergenSignoff: SourceDay["allergenSignoff"]; cpuReview?: { status: "pending" | "signed"; signatures: Array<{ role: string; printedName: string; signedAt: string }>; drivePdfUrl?: string }; drivePdfUrl?: string; drivePdfFileName?: string; siteMenu?: import("./site-menu").SiteMenuState };
+export type AllergenReleaseDelta = { dishName: string; allergen: string; previous: "clear" | "contains" | "may_contain" | "unrecorded"; current: "clear" | "contains" | "may_contain" | "unrecorded" };
+export type AllergenSafetyState = {
+  status: "current" | "revoked_pending" | "reprint_required";
+  releaseVersion: string;
+  signedAt?: string;
+  previousReleaseVersion?: string;
+  regeneratedAt?: string;
+  delta?: AllergenReleaseDelta[];
+  acknowledgement?: { siteId: string; serviceDate: string; releaseVersion: string; actor: string; acknowledgedAt: string };
+};
+export type ProjectedDay = { projectionVersion?: number; publicationId: string; publicationDayId: string; sourceDayId: string; date: string; dayName: string; version: number; contentHash: string; weekCommencing?: string; entries: ProjectedEntry[]; destinations?: ProjectedDestination[]; allergenSignoff: SourceDay["allergenSignoff"]; cpuReview?: { status: "pending" | "signed"; signatures: Array<{ role: string; printedName: string; signedAt: string }>; drivePdfUrl?: string }; allergenSafety?: AllergenSafetyState; drivePdfUrl?: string; drivePdfFileName?: string; siteMenu?: import("./site-menu").SiteMenuState };
 export type ProjectedWeek = { publicationId: string; weekCommencing: string; weekEnding: string; days: ProjectedDay[] };
 import { canonicalOplocId, GOVERNED_OPLOC_BY_ID, oplocIdsMatch } from "@fika/server-shared/governed-oplocs";
 import { titleCase } from "./text";

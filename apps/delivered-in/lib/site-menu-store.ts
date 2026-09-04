@@ -34,3 +34,27 @@ export async function saveSiteMenuArtifactHosted(artifact: SiteMenuArtifact) {
   recordDeliveredInAppReadBudget({ stage: "site_menu_metadata_write", recordsInspected: 1, oplocId: artifact.oplocId });
   return artifact;
 }
+
+/** Mark one known site/date artifact non-current while retaining its audit revision. */
+export async function revokeSiteMenuArtifactHosted(oplocId: string, sourceDayId: string, releaseId: string, revokedAt = new Date().toISOString()) {
+  if (!hosted()) {
+    const stored = read();
+    const index = stored.artifacts.findIndex(value => value.oplocId === oplocId && value.sourceDayId === sourceDayId);
+    if (index < 0) return false;
+    stored.artifacts[index] = { ...stored.artifacts[index], revokedAt, reprintRequired: true, sourceReleaseId: releaseId };
+    write(stored);
+    return true;
+  }
+  const current = siteMenus().doc(stableDocumentId(`${oplocId}:${sourceDayId}`));
+  const snapshot = await current.get();
+  recordDataAccess({ app: "delivered-in", operation: "site-menu.revoke.by-oploc-day", source: "FIRESTORE", documents: snapshot.exists ? 1 : 0, firestoreReadKind: "document" });
+  if (!snapshot.exists) return false;
+  const artifact = snapshot.data()?.artifact as SiteMenuArtifact | undefined;
+  if (!artifact) return false;
+  const revoked = { ...artifact, revokedAt, reprintRequired: true, sourceReleaseId: releaseId };
+  await db.runTransaction(async transaction => {
+    transaction.set(current, { artifact: revoked, updatedAt: revokedAt });
+    transaction.set(current.collection("revisions").doc(stableDocumentId(`${artifact.artifactId}:revoked:${releaseId}`)), { artifact: revoked, recordedAt: revokedAt });
+  });
+  return true;
+}

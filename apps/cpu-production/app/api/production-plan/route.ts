@@ -20,13 +20,14 @@ import { loadDeliveredInReviewStatuses, parseDeliveredInReviewOrderIds } from ".
 import { recordDeliveredInReadBudget } from "../../../lib/delivered-in-read-budget";
 import { recordDataAccess, withDataTrace } from "@fika/server-shared/data-source-meter-server";
 import { rebuildCpuReviewPackage } from "../../../lib/cpu-review-package";
-import { eventTypeForConsumers, notifyCpuConsumerInvalidations } from "../../../lib/cpu-consumer-invalidation";
+import { eventTypeForConsumers, notifyCpuConsumerInvalidations, notifyDeliveredInAllergenRelease } from "../../../lib/cpu-consumer-invalidation";
 import { buildDailySignedOplocBundle, dailyBundleSha256, dailyBundleManifestKey, encodeDailySignedOplocBundlePackage, publishDailySignedOplocBundle, type DailyBundleDurableStore } from "@fika/server-shared/daily-signed-oploc-bundle";
 import { publishReadPackage } from "@fika/server-shared/read-package";
 import { cpuPackageStore } from "../../../lib/cpu-package-store";
+import { allergenMatrixContentHash, buildCpuAllergenRelease, publishCpuAllergenRelease, revokeCpuAllergenRelease } from "../../../lib/cpu-allergen-release";
 
 function menuContentHash(menuItems: PlannedMenuItem[]) {
-  return createHash("sha256").update(JSON.stringify(menuItems)).digest("hex");
+  return allergenMatrixContentHash(menuItems);
 }
 
 export const dynamic = "force-dynamic";
@@ -94,6 +95,17 @@ function normalisePlanAllergens(plan: ProductionPlan): ProductionPlan {
 }
 async function persistPlan(plan: ProductionPlan, expectedUpdatedAt?: string) { await planRepository.save(plan, expectedUpdatedAt); }
 function now() { return new Date().toISOString(); }
+function revokeCurrentAllergenRelease(plan: ProductionPlan, actor: string, at: string) {
+  const current = plan.currentAllergenRelease;
+  if (!current || current.status !== "current") return false;
+  plan.allergenReleaseHistory = [...(plan.allergenReleaseHistory || []), revokeCpuAllergenRelease(current, { at, by: actor, reason: "Allergen matrix changed after signed release." })];
+  plan.currentAllergenRelease = undefined;
+  plan.signedMenuContentHash = undefined;
+  plan.signedSignatures = undefined;
+  plan.signedMatrixArtifact = undefined;
+  plan.audit.push({ action: "allergen-release-revoked", at, by: actor, reason: "Allergen matrix changed after signed release." });
+  return true;
+}
 async function loadOrder(request: NextRequest, orderId: string) {
   try {
     const order = await productionOrderDetail(request, orderId);
@@ -150,15 +162,15 @@ async function applyMatrixOperation(request: NextRequest, actor: Awaited<ReturnT
   plan.planningNotes = operation.planningNotes;
   if (operation.action === "save-plan") {
     plan.status = matchesSignedCheckpoint ? "planned" : "planning";
-    if (matchesSignedCheckpoint) { plan.signatures = plan.signedSignatures; plan.matrixArtifact = plan.signedMatrixArtifact; }
-    else { plan.signatures = undefined; plan.matrixArtifact = undefined; plan.masterMatrixArtifact = undefined; plan.siteMatrixArtifacts = undefined; }
+    if (matchesSignedCheckpoint && plan.currentAllergenRelease?.status === "current") { plan.signatures = plan.signedSignatures; plan.matrixArtifact = plan.signedMatrixArtifact; }
+    else { if (contentChanged) revokeCurrentAllergenRelease(plan, auditActor, now()); plan.signatures = undefined; plan.matrixArtifact = undefined; plan.masterMatrixArtifact = undefined; plan.siteMatrixArtifacts = undefined; }
     plan.audit.push({ action: "plan-saved", at: now(), by: auditActor });
     updateLocalFixture(operation.orderId, current => ({ ...current, status: "planning", version: current.version + 1 }));
   } else {
     const subItems = plan.menuItems.flatMap(item => item.subItems);
     if (!plan.menuItems.length || plan.menuItems.some(item => !item.name.trim() || !item.subItems.length) || subItems.some(item => !item.name.trim() || item.evidenceStatus !== "completed")) throw Object.assign(new Error("Complete every menu item, sub-item name and allergen checker before marking the plan Planned."), { status: 422 });
-    if (matchesSignedCheckpoint) { plan.signatures = plan.signedSignatures; plan.matrixArtifact = plan.signedMatrixArtifact; }
-    else if (contentChanged) { plan.signatures = undefined; plan.matrixArtifact = undefined; plan.masterMatrixArtifact = undefined; plan.siteMatrixArtifacts = undefined; }
+    if (matchesSignedCheckpoint && plan.currentAllergenRelease?.status === "current") { plan.signatures = plan.signedSignatures; plan.matrixArtifact = plan.signedMatrixArtifact; }
+    else if (contentChanged) { revokeCurrentAllergenRelease(plan, auditActor, now()); plan.signatures = undefined; plan.matrixArtifact = undefined; plan.masterMatrixArtifact = undefined; plan.siteMatrixArtifacts = undefined; }
     plan.status = "planned";
     plan.audit.push({ action: "plan-marked-planned", at: now(), by: auditActor });
     updateLocalFixture(operation.orderId, current => ({ ...current, status: "planned", version: current.version + 1 }));
@@ -424,16 +436,16 @@ async function handlePost(request: NextRequest) {
     if (command.action === "clarify") await syncCanonicalLifecycle(request, command.orderId, "needs_clarification", command.note);
     if (command.action === "save-plan") {
       const nextMenuItems = (await mergeOriginalItems(request, { ...plan, menuItems: normalisePlanAllergens({ ...plan, menuItems: command.menuItems }).menuItems }, command.orderId)).menuItems;
+      const contentChanged = JSON.stringify(plan.menuItems) !== JSON.stringify(nextMenuItems);
       const matchesSignedCheckpoint = plan.signedMenuContentHash === menuContentHash(nextMenuItems);
       plan.status = matchesSignedCheckpoint ? "planned" : "planning";
       plan.menuItems = nextMenuItems;
       plan.planningNotes = command.planningNotes;
-      if (matchesSignedCheckpoint) {
+      if (matchesSignedCheckpoint && plan.currentAllergenRelease?.status === "current") {
         plan.signatures = plan.signedSignatures;
         plan.matrixArtifact = plan.signedMatrixArtifact;
       } else {
-        // Keep the last signed checkpoint so an accidental allergen touch can
-        // be reverted without forcing both chefs to sign the same matrix again.
+        if (contentChanged) revokeCurrentAllergenRelease(plan, auditActor, timestamp);
         plan.signatures = undefined;
         plan.matrixArtifact = undefined; plan.masterMatrixArtifact = undefined; plan.siteMatrixArtifacts = undefined;
       }
@@ -448,10 +460,11 @@ async function handlePost(request: NextRequest) {
       plan.planningNotes = command.planningNotes;
       const subItems = plan.menuItems.flatMap(item => item.subItems);
       if (!plan.menuItems.length || plan.menuItems.some(item => !item.name.trim() || !item.subItems.length) || subItems.some(item => !item.name.trim() || item.evidenceStatus !== "completed")) throw Object.assign(new Error("Complete every menu item, sub-item name and allergen checker before marking the plan Planned."), { status: 422 });
-      if (matchesSignedCheckpoint) {
+      if (matchesSignedCheckpoint && plan.currentAllergenRelease?.status === "current") {
         plan.signatures = plan.signedSignatures;
         plan.matrixArtifact = plan.signedMatrixArtifact;
       } else if (contentChanged) {
+        revokeCurrentAllergenRelease(plan, auditActor, timestamp);
         plan.signatures = undefined;
         plan.matrixArtifact = undefined; plan.masterMatrixArtifact = undefined; plan.siteMatrixArtifacts = undefined;
       }
@@ -476,10 +489,30 @@ async function handlePost(request: NextRequest) {
         plan.audit.push({ action: "allergen-matrix-signature-complete", at: timestamp, by: auditActor, reason: "Both required signatures recorded; final matrix persistence started." });
         const artifact = await createMatrixArtifact(plan, command.orderId, auditActor, timestamp, request);
         if (artifact) {
+          const signedOrder = await loadOrder(request, command.orderId);
+          const serviceDate = signedOrder?.serviceDate || signedOrder?.requiredBy.slice(0, 10);
+          if (!serviceDate) throw Object.assign(new Error("The signed allergen release requires a service date."), { status: 422 });
           plan.matrixArtifact = artifact;
           plan.signedMenuContentHash = menuContentHash(plan.menuItems);
           plan.signedSignatures = plan.signatures;
           plan.signedMatrixArtifact = artifact;
+          const previousRelease = [...(plan.allergenReleaseHistory || [])].at(-1);
+          const release = buildCpuAllergenRelease({
+            serviceDate,
+            sourceDayId: signedOrder?.sourceEntityId || "",
+            sourcePublicationDayId: signedOrder?.sourcePublicationDayId || "",
+            sourceVersion: signedOrder?.sourceVersion || 0,
+            sourceContentHash: signedOrder?.sourceContentHash || "",
+            version: Math.max(1, ...((plan.allergenReleaseHistory || []).map(item => item.version + 1))),
+            signedAt: timestamp,
+            signatures: plan.signatures,
+            items: plan.menuItems,
+            masterArtifact: plan.masterMatrixArtifact || artifact,
+            derivedArtifacts: Object.values(plan.siteMatrixArtifacts || {}),
+            packetArtifacts: Object.values(plan.siteMatrixArtifacts || {}).filter(item => item.packetContentHash && item.packetObjectName).map(item => ({ ...item, contentHash: item.packetContentHash! })),
+            previous: previousRelease,
+          });
+          plan.currentAllergenRelease = publishCpuAllergenRelease(undefined, release).current;
           plan.audit.push({ action: "allergen-matrix-saved", at: timestamp, by: auditActor, reason: "Final signed matrix persisted to the configured Drive workspace." });
         } else {
           plan.audit.push({ action: "allergen-matrix-storage-not-configured", at: timestamp, by: auditActor, reason: "Drive persistence is intentionally deferred; the signed workflow remains complete without a persisted artifact." });
@@ -502,6 +535,8 @@ async function handlePost(request: NextRequest) {
     plan.updatedAt = timestamp; plan.updatedBy = auditActor;
     await persistPlan(plan, expectedUpdatedAt);
     const changedOrder = await loadOrder(request, command.orderId);
+    const releaseForEvent = plan.currentAllergenRelease || (command.action === "save-plan" || command.action === "mark-planned" ? plan.allergenReleaseHistory?.at(-1) : undefined);
+    if (releaseForEvent && changedOrder?.destinationOplocId) await notifyDeliveredInAllergenRelease({ eventType: plan.currentAllergenRelease?.status === "current" ? "published" : "revoked", release: releaseForEvent, oplocId: changedOrder.destinationOplocId });
     recordDeliveredInReadBudget({ stage: "plan_post_mutation", canonicalOrderDocs: changedOrder ? 1 : 0, planDocs: 1, selectedIds: 1 });
     if (changedOrder?.serviceDate) {
       const event = await appendCpuChange({ serviceDate: changedOrder.serviceDate, entityType: "productionPlan", entityId: plan.id, revision: plan.audit.length, changeType: command.action, actorId: actor.uid, changedAt: timestamp });

@@ -14,6 +14,12 @@ export type SiteMenuArtifact = {
   driveFileId: string;
   driveUrl: string;
   fileName: string;
+  /** Release provenance is optional for legacy artifacts but mandatory for new packet-backed flows. */
+  sourceReleaseId?: string;
+  sourceReleaseVersion?: string;
+  sourcePacketHash?: string;
+  revokedAt?: string;
+  reprintRequired?: boolean;
 };
 export type SiteMenuState = { status: "none" | "current" | "stale" | "unavailable"; artifact?: SiteMenuArtifact };
 
@@ -41,6 +47,7 @@ export function groupSiteMenuEntries(entries: ProjectedEntry[]): SiteMenuSection
 
 export function siteMenuState(day: Pick<ProjectedDay, "sourceDayId" | "contentHash">, artifact?: SiteMenuArtifact): SiteMenuState {
   if (!artifact) return { status: "none" };
+  if (artifact.revokedAt) return { status: "stale", artifact };
   return { status: artifact.sourceDayId === day.sourceDayId && artifact.sourceContentHash === day.contentHash ? "current" : "stale", artifact };
 }
 

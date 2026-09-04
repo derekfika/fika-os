@@ -172,6 +172,13 @@ MAY_CONTAIN
 
 Never treat missing/unknown/unrecorded data as clear.
 
+For signed allergen releases, CPU owns an immutable release bound to the frozen
+matrix hash. Any post-signing allergen change must revoke the current release,
+invalidate its signatures and packet/artifacts, withdraw downstream current
+pointers, and require a new review and dual signature. Delivered-In may consume
+only the current verified compressed CPU packet; historical revoked artifacts
+remain audit evidence but are never operationally current.
+
 Do not infer vegetarian/vegan or allergen status from unrelated display labels unless the domain explicitly defines that mapping.
 
 When current allergen truth and historical published evidence differ, preserve both: current operational truth can change, historical evidence remains immutable.

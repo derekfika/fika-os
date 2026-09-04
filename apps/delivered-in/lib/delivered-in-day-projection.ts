@@ -31,6 +31,9 @@ export type DeliveredInDayProjection = Omit<ProjectedDay, "entries" | "siteMenu"
       contractVersion?: string;
       sourceCompleteness?: "complete" | "partial";
       sourceStatus?: "current" | "partial" | "valid_empty";
+      releaseId?: string;
+      releaseVersion?: string;
+      signedAt?: string;
       generatedAt?: string;
     };
     deliveredIn: { siteMenuArtifactId?: string; generatedAt: string };
