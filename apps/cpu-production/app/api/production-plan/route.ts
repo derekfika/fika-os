@@ -543,6 +543,28 @@ async function handlePost(request: NextRequest) {
       plan.signedMenuContentHash = menuContentHash(plan.menuItems);
       plan.signedSignatures = plan.signatures;
       plan.signedMatrixArtifact = plan.matrixArtifact;
+      if (!plan.currentAllergenRelease) {
+        const signedOrder = await loadOrder(request, command.orderId);
+        const serviceDate = signedOrder?.serviceDate || signedOrder?.requiredBy.slice(0, 10);
+        if (!serviceDate) throw Object.assign(new Error("The signed allergen release requires a service date."), { status: 422 });
+        const previousRelease = [...(plan.allergenReleaseHistory || [])].at(-1);
+        const release = buildCpuAllergenRelease({
+          serviceDate,
+          sourceDayId: signedOrder?.sourceEntityId || "",
+          sourcePublicationDayId: signedOrder?.sourcePublicationDayId || "",
+          sourceVersion: signedOrder?.sourceVersion || 0,
+          sourceContentHash: signedOrder?.sourceContentHash || "",
+          version: Math.max(1, ...((plan.allergenReleaseHistory || []).map(item => item.version + 1))),
+          signedAt: timestamp,
+          signatures: plan.signatures,
+          items: plan.menuItems,
+          masterArtifact: plan.masterMatrixArtifact || artifact,
+          derivedArtifacts: Object.values(plan.siteMatrixArtifacts || {}),
+          packetArtifacts: Object.values(plan.siteMatrixArtifacts || {}).filter(item => item.packetContentHash && item.packetObjectName).map(item => ({ ...item, contentHash: item.packetContentHash! })),
+          previous: previousRelease,
+        });
+        plan.currentAllergenRelease = publishCpuAllergenRelease(undefined, release).current;
+      }
       plan.audit.push({ action: "allergen-matrix-saved", at: timestamp, by: auditActor, reason: "Final signed matrix persisted to the configured Drive workspace." });
     }
     plan.updatedAt = timestamp; plan.updatedBy = auditActor;

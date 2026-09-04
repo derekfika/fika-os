@@ -191,7 +191,7 @@ export async function loadCachedCatalogue(fetcher: () => Promise<CatalogueFetchR
     onStateChange?.("CHECKING_VERSION");
     const cacheNamespace = cached.namespace || namespace;
     const checkDue = !cached.manifest || !cached.manifestCheckedAt || Date.now() - cached.manifestCheckedAt >= CATALOGUE_CACHE_TTL_MS;
-    if (cacheNamespace && manifestFetcher && checkDue) void revalidateCatalogue(cached, cacheNamespace, fetcher, manifestFetcher, onUpdate);
+    if (cacheNamespace && manifestFetcher && checkDue) void revalidateCatalogue(cached, cacheNamespace, fetcher, manifestFetcher, onUpdate, onStateChange);
     else if (!manifestFetcher && Date.now() - cached.cachedAt >= CATALOGUE_CACHE_TTL_MS) void refreshCatalogue(fetcher, cacheNamespace, onUpdate).catch(error => debug("background-fallback", { reason: error instanceof Error ? error.message : "refresh failed" }));
     onStateChange?.("READY");
     return cached.entries;
@@ -202,7 +202,7 @@ export async function loadCachedCatalogue(fetcher: () => Promise<CatalogueFetchR
 
 const refreshInFlight = new Map<string, Promise<CachedCatalogueEntry[]>>();
 const manifestInFlight = new Map<string, Promise<void>>();
-async function revalidateCatalogue(cached: CachedCatalogue, namespace: string, fetcher: () => Promise<CatalogueFetchResult>, manifestFetcher: () => Promise<CatalogueManifest>, onUpdate?: (entries: CachedCatalogueEntry[]) => void) {
+async function revalidateCatalogue(cached: CachedCatalogue, namespace: string, fetcher: () => Promise<CatalogueFetchResult>, manifestFetcher: () => Promise<CatalogueManifest>, onUpdate?: (entries: CachedCatalogueEntry[]) => void, onStateChange?: (state: CatalogueLoadState) => void) {
   const existing = manifestInFlight.get(namespace);
   if (existing) return existing;
   const check = manifestFetcher().then(async manifest => {
@@ -212,9 +212,10 @@ async function revalidateCatalogue(cached: CachedCatalogue, namespace: string, f
       // Do not replace the last-known-good manifest until the full package has
       // downloaded, verified and been installed. A failed refresh must leave
       // the previous package usable and retryable on a later load.
-      await refreshCatalogue(fetcher, namespace, onUpdate);
+      try { await refreshCatalogue(fetcher, namespace, onUpdate, onStateChange); }
+      catch (error) { onStateChange?.("USING_PREVIOUS_VERSION"); throw error; }
     }
-  }).catch(error => { debug("manifest-fallback", { reason: error instanceof Error ? error.message : "manifest unavailable" }); return putCatalogueMetadata(namespace, { manifestCheckedAt: Date.now() }); }).finally(() => { manifestInFlight.delete(namespace); });
+  }).catch(error => { debug("manifest-fallback", { reason: error instanceof Error ? error.message : "manifest unavailable" }); onStateChange?.("USING_PREVIOUS_VERSION"); return putCatalogueMetadata(namespace, { manifestCheckedAt: Date.now() }); }).finally(() => { manifestInFlight.delete(namespace); });
   manifestInFlight.set(namespace, check);
   return check;
 }

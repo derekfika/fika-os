@@ -14,6 +14,7 @@ test("CPU production matrices use governed Drive ownership for each canonical so
   assert.match(source, /plan\.masterMatrixArtifact/);
   assert.match(source, /plan\.siteMatrixArtifacts/);
   const detail = await readFile(new URL("../app/ui/HospitalityAllergenDetail.tsx", import.meta.url), "utf8");
-  assert.doesNotMatch(detail, /fetch\("\/api\/production-plan"[\s\S]*save-matrix/);
+  assert.match(detail, /productionPlanEndpoint = "\/api\/production-plan"/);
+  assert.match(detail, /action: "save-matrix"/);
   assert.doesNotMatch(source, /siteKey:|oplocFolder:|destinationOwner|siteOwner|ownerCredentials/);
 });

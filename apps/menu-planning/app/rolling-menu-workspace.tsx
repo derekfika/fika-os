@@ -143,7 +143,13 @@ export default function RollingMenuWorkspace() {
   const hasCurrentPublication = Boolean(dayPublication?.hasCurrentPublication);
   const hasUnpublishedChanges = Boolean(dayPublication?.hasUnpublishedChanges);
   const legacyPublication = Boolean(dayPublication?.legacy);
-  const currentPublication = publications.find(publication => publication.sourceWeekId === snapshot.week.id);
+  // Resolve the current publication by the authoritative publication ID. A
+  // source week may have older withdrawn/amended publications alongside the
+  // current one; joining by sourceWeekId can resurrect historical state.
+  const currentPublicationId = dayPublication?.currentPublicationId;
+  const currentPublication = currentPublicationId
+    ? publications.find(publication => publication.publicationId === currentPublicationId)
+    : undefined;
   const hasPublishedWeek = Boolean(currentPublication?.days.some(publicationDay => publicationDay.status === "published"));
    const publishLabel = hasCurrentPublication ? (hasUnpublishedChanges ? "Publish week amendment" : `Published v${dayPublication?.currentVersion}`) : "Publish week";
 

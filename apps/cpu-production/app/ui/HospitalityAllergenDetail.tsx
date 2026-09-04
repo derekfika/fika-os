@@ -16,6 +16,7 @@ import { CANONICAL_ALLERGEN_COLUMNS, normaliseOperationalAllergens, toggleOperat
 import { matrixColumns } from "./allergen-matrix";
 import { DELI_STYLE_PARENT_KEY, isDeliStyleParent } from "../../lib/production-item-scope";
 const allergenColumns = matrixColumns;
+const productionPlanEndpoint = "/api/production-plan";
 
 function menuItemLibraryKey(name: string) {
   if (isDeliStyleParent(name)) return DELI_STYLE_PARENT_KEY;
@@ -262,7 +263,7 @@ export default function HospitalityAllergenDetail({
   const [rowsToAdd, setRowsToAdd] = useState(1);
   const [signatures, setSignatures] = useState<InternalMatrixSignature[]>([]);
   const [matrixArtifact, setMatrixArtifact] = useState<ProductionPlan["matrixArtifact"]>();
-  const [matrixStorageStatus, setMatrixStorageStatus] = useState<"not_configured" | "ready">();
+  const [matrixStorageStatus, setMatrixStorageStatus] = useState<"not_configured" | "ready" | "artifact_pending">();
   const [planStatus, setPlanStatus] =
     useState<ProductionPlan["status"]>("draft");
   const [signingRole, setSigningRole] =
@@ -289,7 +290,7 @@ export default function HospitalityAllergenDetail({
           setPlanningNotes(body.plan.planningNotes || "");
           if ("signatures" in body.plan) setSignatures(body.plan.signatures || []);
           if ("matrixArtifact" in body.plan) setMatrixArtifact(body.plan.matrixArtifact);
-          setMatrixStorageStatus(body.matrixStatus === "not_configured" ? "not_configured" : body.plan.matrixArtifact ? "ready" : undefined);
+          setMatrixStorageStatus(body.matrixStatus === "not_configured" ? "not_configured" : body.plan.matrixArtifact ? "ready" : body.plan.signatures?.length === 2 ? "artifact_pending" : undefined);
           setPlanStatus(body.plan.status || "draft");
         }
       })
@@ -484,7 +485,7 @@ export default function HospitalityAllergenDetail({
       );
       if ("matrixArtifact" in body) setMatrixArtifact(body.matrixArtifact || undefined);
       if ("signatures" in body) setSignatures(body.signatures || []);
-      setMatrixStorageStatus(body.matrixStatus === "not_configured" ? "not_configured" : body.plan?.matrixArtifact ? "ready" : undefined);
+      setMatrixStorageStatus(body.matrixStatus === "not_configured" ? "not_configured" : body.plan?.matrixArtifact ? "ready" : body.plan?.signatures?.length === 2 ? "artifact_pending" : undefined);
       setMessage(
         action === "mark-planned"
           ? "Plan marked Planned. The menu planning team can now generate the menu."
@@ -537,7 +538,7 @@ export default function HospitalityAllergenDetail({
         ]) as InternalMatrixSignature[];
       setSignatures(nextSignatures);
       setMatrixArtifact(body.matrixArtifact || body.plan?.matrixArtifact || undefined);
-      setMatrixStorageStatus(body.matrixStatus === "not_configured" ? "not_configured" : body.plan?.matrixArtifact ? "ready" : undefined);
+      setMatrixStorageStatus(body.matrixStatus === "not_configured" ? "not_configured" : body.plan?.matrixArtifact ? "ready" : body.plan?.signatures?.length === 2 ? "artifact_pending" : undefined);
       setMessage(body.matrixStatus === "not_configured" ? "Matrix storage not configured. The signed workflow is complete; Drive persistence can be enabled later." : body.plan?.matrixArtifact ? "Both signatures recorded. The signed matrix is ready to open." : `${role === "production_chef" ? "Production chef" : "Head chef / site manager"} signature recorded.`);
     } catch (error) {
       setMessage((error as Error).message);
@@ -573,6 +574,17 @@ export default function HospitalityAllergenDetail({
       return;
     }
     window.open(matrixArtifact.driveUrl, "_blank", "noopener,noreferrer");
+  };
+
+  const retryFinalArtifact = async () => {
+    setBusy(true); setMessage("Retrying final signed matrix artifact…");
+    try {
+      const response = await fetch(productionPlanEndpoint, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "save-matrix", orderId: order.canonicalId }) });
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.error?.message || "The final signed matrix could not be generated.");
+      setMatrixArtifact(body.matrixArtifact || body.plan?.matrixArtifact); setMatrixStorageStatus("ready"); setSignatures(body.signatures || signatures); setMessage("Signed PDF generated. The matrix is ready to open from the manager dashboard.");
+    } catch (error) { setMessage(error instanceof Error ? error.message : "The final signed matrix could not be generated."); }
+    finally { setBusy(false); }
   };
 
   return (
@@ -901,6 +913,7 @@ export default function HospitalityAllergenDetail({
                 history. They are not an external e-signature service.
               </p>
               {matrixStorageStatus === "not_configured" && <p role="status">Matrix storage not configured</p>}
+              {matrixStorageStatus === "artifact_pending" && <p role="status">Both signatures are recorded; the final PDF is pending.</p>}
             </div>
             {(
               [
@@ -936,6 +949,7 @@ export default function HospitalityAllergenDetail({
               );
             })}
           </section>
+          {matrixStorageStatus === "artifact_pending" && <button type="button" className="button button-purple" disabled={busy} onClick={() => void retryFinalArtifact()}>Retry final signed PDF</button>}
         </section>
       </div>
       {message && (

@@ -231,7 +231,7 @@ test("catalogue cache preserves warm records while manifest revalidates in the b
   assert.match(cache, /return cached\.entries/);
   assert.match(cache, /void revalidateCatalogue/);
   assert.match(cache, /if \(catalogueManifestMatches\(cached\.manifest, manifest\)\)/);
-  assert.match(cache, /await refreshCatalogue\(fetcher, namespace, onUpdate\)/);
+  assert.match(cache, /await refreshCatalogue\(fetcher, namespace, onUpdate(?:, onStateChange)?\)/);
   assert.match(cache, /Do not replace the last-known-good manifest/);
   assert.doesNotMatch(cache, /return \[\]/);
 });

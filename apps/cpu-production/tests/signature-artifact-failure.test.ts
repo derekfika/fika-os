@@ -6,4 +6,7 @@ test("second signature is persisted before a final artifact failure is returned"
   const source = await readFile(new URL("../app/api/production-plan/route.ts", import.meta.url), "utf8");
   assert.match(source, /allergen-matrix-artifact-failed/);
   assert.match(source, /await persistPlan\(plan, expectedUpdatedAt\);\s*throw error;/);
+  assert.match(source, /if \(!plan\.currentAllergenRelease\)/);
+  assert.match(source, /z\.literal\("save-matrix"\)/);
+  assert.match(await readFile(new URL("../app/ui/HospitalityAllergenDetail.tsx", import.meta.url), "utf8"), /Retry final signed PDF/);
 });

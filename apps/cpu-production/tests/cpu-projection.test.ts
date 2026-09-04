@@ -97,3 +97,21 @@ test("CPU projection preserves allergen review source identity and evidence", ()
   assert.equal(hydrated.lines[0].sourceMenuItemId, "menu-item:1");
   assert.deepEqual(hydrated.lines[0].approvedAllergenSnapshot, source.lines[0].approvedAllergenSnapshot);
 });
+
+test("all Delivered-In orders for one published source day become Planned together", () => {
+  const sourcePublicationDayId = "menu-publication-day:shared:v1";
+  const orders = ["angel", "haleon", "bridgepoint", "commerzbank"].map((site) => ({
+    ...order(`order:${site}`), origin: "menu_planning" as const, destinationLabel: site,
+    sourcePublicationDayId, sourceEntityId: "menu-publication:shared", sourceVersion: 1, sourceContentHash: "a".repeat(64),
+  }));
+  const sharedPlan = {
+    ...plan("order:angel"),
+    signatures: [
+      { role: "production_chef" as const, printedName: "Chef A", signedAt: "now", actor: "a", attestation: "checked" },
+      { role: "head_chef_site_manager" as const, printedName: "Chef B", signedAt: "now", actor: "b", attestation: "checked" },
+    ],
+    currentAllergenRelease: { status: "current" },
+  } as ProductionPlan;
+  const projection = buildCpuDayProjection("2026-08-24", orders, [sharedPlan]);
+  assert.deepEqual(projection.orders.map(item => item.workflowStatus), ["planned", "planned", "planned", "planned"]);
+});

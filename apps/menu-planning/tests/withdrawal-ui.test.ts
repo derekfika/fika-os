@@ -6,5 +6,6 @@ test("Week Planner recovers an older current publication before rendering withdr
   const source = await readFile(new URL("../app/rolling-menu-workspace.tsx", import.meta.url), "utf8");
   assert.match(source, /currentPublicationId/);
   assert.match(source, /publications\?publicationId=/);
+  assert.match(source, /publication\.publicationId === currentPublicationId/);
   assert.match(source, /hasPublishedWeek && currentPublication/);
 });
