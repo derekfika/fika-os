@@ -4,6 +4,10 @@ This file records user-facing workflow changes delivered in the repository. Deta
 
 ## Unreleased
 
+### Canonical source control
+
+- **2026-09-04 15:17 +01:00 — THREAD 0 — FIKA OS canonical workspace reset:** promoted the validated canonical history to `main`, rewrote the canonical platform README, and formalised the single-checkout/main-branch and mandatory changelog policies in `AGENTS.md`. Affected areas: repository documentation and source-control workflow. Validation: remote fast-forward verification, documentation review and `git diff --check`. Deployment status: no deployment performed.
+
 ### Architecture
 
 - Repaired App Hosting build boundaries and replaced production sibling-app imports with explicit shared or HTTP contracts.

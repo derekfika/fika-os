@@ -6,6 +6,49 @@ It is intentionally a map and a set of invariants, not a complete description of
 
 Important: apps/delivered-in/AGENTS.md contains Next.js-generated agent guidance. Preserve it and obey it when working in that app.
 
+==================================================
+CANONICAL SOURCE CONTROL — NON-NEGOTIABLE
+==================================================
+
+Canonical local repository:
+C:\FIKA
+
+Canonical branch:
+main
+
+1. NEVER create a development branch.
+2. NEVER switch development work away from main.
+3. NEVER create a Git worktree for FIKA OS development.
+4. NEVER create another local clone such as C:\FIKA-UAT, C:\FIKA-feature-*, C:\FIKA-thread-* or similar.
+5. All code changes are made directly on main.
+6. Before modifying code, confirm the directory is under C:\FIKA, confirm branch main, understand git status, fetch origin and pull --ff-only origin main.
+7. Do not rebase published main, force-push main or cherry-pick normal development work between branches.
+8. Parallel analysis is allowed, but there is one Git history and one working tree. Validated changes are committed sequentially to main.
+9. Push main after successful validated work unless the user explicitly says not to push.
+
+==================================================
+MANDATORY CHANGELOG RULE
+==================================================
+
+EVERY Codex task operating on this repository must update the root CHANGELOG.md before returning. This includes code, configuration, documentation, architecture, bug-fix, refactor, migration and forensic tasks. The only exception is an explicitly read-only task. Each entry records date, task title, concise summary, affected app/domain, validation/tests and deployment status. Never fabricate a deployment.
+
+==================================================
+MANDATORY CODEX RETURN FORMAT
+==================================================
+
+Every Codex task return must end with:
+
+- Branch: main
+- Starting SHA
+- Final SHA
+- Push status
+- CHANGELOG updated: yes/no + entry title
+- Tests/typechecks/builds performed
+- Deployment status
+- TL;DR
+
+If no implementation change was needed, say so explicitly.
+
 1. What FIKA OS is
 
 FIKA OS is one operational platform made up of several applications and entry routes.

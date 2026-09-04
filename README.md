@@ -1,54 +1,60 @@
 # FIKA OS
 
-FIKA OS is FIKA’s internal operations platform: a set of Next.js applications and shared server/domain packages covering bookings, menus, production, fulfilment, logistics and governance.
+FIKA OS is FIKA Catering's internal operational software platform. It brings planning, production, site operations and internal services into one governed system, reducing spreadsheet and manual handoffs while retaining clear ownership and auditability.
 
 ## Applications
 
-- **Integration Hub** — launcher, governed integrations and AUTHMOD/session admission.
-- **CPU Production** — production planning and operational CPU work.
-- **Menu Planning** — menu intent, portions, destinations and publication.
-- **Hospitality Booking** — booking, quoting and hospitality menu workflows.
-- **Delivered-In** — site-facing delivered-in operational projection.
-- **Logistics** — delivery planning, van assignment, dispatch and collection.
-- **Ad-Hoc Production** — ad-hoc request and CPU hand-off workflow.
-- **Beverage Innovation** — beverage development workflows.
-- **Events Dashboard** — event operations and staffing views.
+- **Integration Hub / launcher** — authenticated entry point, integrations and AUTHMOD access control.
+- **Menu Planning** — menu intent, dish catalogue, portions, destinations, publication and immutable published snapshots.
+- **CPU Production** — canonical production work, planning, allergen review, dual sign-off and signed operational releases.
+- **Delivered-In** — site-facing projection consuming governed CPU packets, with menu generation and Grab & Go ordering.
+- **Hospitality Booking** — booking, quoting, menu selection and governed production handoff.
+- **Logistics** — delivery planning, assignment, dispatch and collection workflows.
+- **Ad-Hoc Production** and **Beverage Innovation** — repository applications whose workflows remain limited or evolving; do not treat unfinished areas as production-ready.
+- **Events Dashboard** and legacy `sites/` applications — retained operational or compatibility surfaces where present.
+
+## Workflow boundaries
+
+Menu Planning owns menu intent and portions, then publishes an immutable day/week snapshot. CPU Production consumes that publication, owns production planning and the authoritative allergen matrix, and releases signed PDFs and compressed machine packets only after the required review and signatures. Delivered-In consumes the verified CPU packet and filters it by each site's actual allocated dishes.
+
+Hospitality owns booking and commercial workflow. A governed handoff creates or updates canonical production work in CPU; downstream production and fulfilment state is not silently authored by the booking UI.
+
+## Architecture principles
+
+FIKA OS uses canonical domain ownership, stable IDs, immutable publication and release lineage, auditable state changes, idempotent handoffs and replay, bounded read paths, and fail-closed behaviour for sensitive access and read failures. Published projections and compressed immutable read packages are performance/read models, never silent replacements for canonical business state. Server/process caches and IndexedDB client caches improve performance but are validated, scoped and disposable. AUTHMOD governs access server-side.
+
+Applications are Next.js packages deployed through Firebase App Hosting staging. Firestore and other authoritative services remain behind server/API boundaries. Gzip-backed packages preserve and verify their compressed-byte hashes before decompression.
 
 ## Repository structure
 
-`apps/` contains the active application packages. `packages/server-shared/` contains reusable server-side contracts and adapters. `docs/` contains architecture, audit and operational guidance. `sites/` contains legacy Apps Script-era applications retained for compatibility and recovery. App-local `local-data/` directories are runtime or fixture areas; mutable local state is not source control.
+`apps/` contains application packages; `packages/server-shared/` contains shared server contracts and adapters; `docs/` contains architecture, deployment and audit guidance; `services/` contains supporting services; `sites/` contains legacy or compatibility applications. Mutable runtime data, caches and local databases are not source control.
 
-## Runtime architecture
+## Canonical Development Source
 
-Applications use the Next.js App Router and deploy through Firebase App Hosting. Firestore is accessed server-side through Admin SDK-backed services. Integration Hub is the canonical integration and governance boundary, including AUTHMOD admission. App-to-app communication uses explicit HTTP/API contracts; production code must not import sibling application server source, and browser paths do not access Firestore directly where the current trust boundary forbids it.
+Local repository:
+C:\FIKA
 
-## Local development
+Canonical branch:
+main
 
-The repository uses independent app packages rather than npm workspaces. Install dependencies in the app you are working on, then use its package scripts. For example:
+main is the only development branch.
 
-```text
-npm --prefix apps/integration-hub run dev
-npm --prefix apps/logistics run test
-npm --prefix apps/logistics run typecheck
-npm --prefix apps/logistics run build
-```
+All Codex work is performed directly in C:\FIKA on main.
 
-The root supervisor also provides `npm run dev` and app-specific `dev:*` shortcuts. Check each app’s `package.json` for its current scripts.
+No development branches, alternate worktrees, parallel clones or cherry-pick-based integration are used in the normal workflow.
 
-## Staging
+## Local development and testing
 
-The staging Firebase project is `fika-os-dev`. App Hosting configurations use friendly `*.fikacatering.com` domains, with `staging-os.fikacatering.com` for the Integration Hub and app-specific staging hosts where configured. Deployments are managed by Firebase App Hosting. Secrets are referenced by configuration names and must never be committed with values.
+Install dependencies in the app being changed and use its `package.json` scripts. The root supervisor provides local orchestration. Run focused tests first, then affected app tests, typechecks and production builds; finish with `git diff --check`. Use isolated fixtures and emulators for test data.
 
-## Safety and data rules
+## Staging and deployment
 
-- Do not run production/staging migrations casually; Firestore migrations require explicit approval.
-- Do not commit local SQLite databases, WAL/SHM files, runtime caches or backups.
-- Preserve read-budget instrumentation and use bounded, stable-ID/date-scoped reads.
-- Avoid sibling-app source imports in production; use shared packages or app-local HTTP adapters.
-- Avoid GET endpoints with surprising write side effects.
-- Preserve AUTHMOD fail-closed behaviour and use configured friendly/runtime URLs rather than hardcoded localhost or generated hosts.
-- Never expose secrets in source, logs or documentation.
+Staging uses Firebase project `fika-os-dev` and Firebase App Hosting backends configured under each app. Friendly staging domains are configured where available. Never commit secret values. Production deployment, migrations and operational data changes require explicit authorisation.
 
-## Testing
+## Architecture and documentation
 
-For a change, run the narrow focused tests first, then the affected app’s full tests, typecheck and production build as appropriate. Finish with `git diff --check` and review staged file scope. Do not deploy, migrate or push until those results and the intended diff have been reviewed.
+Read the relevant root and nested `AGENTS.md`, architecture documents, specifications, `COST-EFFICIENCY.md`, `LOCAL-WORKSPACE.md` and audit guidance before changing a boundary. Preserve stable identity, history, ownership, bounded reads, audit evidence and fail-closed semantics.
+
+## Source-control policy
+
+Keep one clean checkout on `main`. Understand the worktree before editing, pull with fast-forward-only, commit validated changes sequentially, and push `main` after successful work unless explicitly told not to.
