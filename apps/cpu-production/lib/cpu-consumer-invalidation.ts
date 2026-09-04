@@ -1,6 +1,7 @@
 import type { ReadPackageManifest } from "@fika/server-shared/read-package";
 import { recordDataAccess } from "@fika/server-shared/data-source-meter-server";
 import type { ProductionOrder } from "./production-types";
+import type { CpuAllergenRelease } from "./cpu-allergen-release";
 
 type ConsumerChangeType = "changed" | "amended" | "withdrawn" | "superseded";
 
@@ -22,6 +23,53 @@ export type CpuConsumerInvalidation = {
   logistics?: boolean;
   reviewManifest?: Pick<ReadPackageManifest, "contentHash" | "sourceVersion">;
 };
+
+export type CpuAllergenReleaseEvent = {
+  eventId: string;
+  eventType: "published" | "revoked";
+  serviceDate: string;
+  oplocId: string;
+  sourceDayId: string;
+  sourcePublicationDayId: string;
+  sourceVersion: number;
+  sourceContentHash: string;
+  releaseId: string;
+  releaseVersion: string;
+  packetContentHash: string;
+  changedDishIds: string[];
+  invalidatedAt?: string;
+  delta: CpuAllergenRelease["deltaFromPrevious"];
+};
+
+/** Build the bounded CPU -> Delivered-In safety event from one immutable release. */
+export function buildCpuAllergenReleaseEvent(input: {
+  release: CpuAllergenRelease;
+  oplocId: string;
+  eventType: "published" | "revoked";
+}): CpuAllergenReleaseEvent {
+  const packetContentHash = input.release.packetArtifacts[0]?.contentHash;
+  if (!packetContentHash) throw new Error("A CPU allergen release event requires a packet artifact hash.");
+  return {
+    eventId: `cpu-allergen-release:${input.release.releaseId}:${input.eventType}`,
+    eventType: input.eventType,
+    serviceDate: input.release.serviceDate,
+    oplocId: input.oplocId,
+    sourceDayId: input.release.sourceDayId,
+    sourcePublicationDayId: input.release.sourcePublicationDayId,
+    sourceVersion: input.release.sourceVersion,
+    sourceContentHash: input.release.sourceContentHash,
+    releaseId: input.release.releaseId,
+    releaseVersion: `v${input.release.version}`,
+    packetContentHash,
+    changedDishIds: input.release.deltaFromPrevious.map(change => change.menuItemId),
+    ...(input.eventType === "revoked" && input.release.revokedAt ? { invalidatedAt: input.release.revokedAt } : {}),
+    delta: input.release.deltaFromPrevious,
+  };
+}
+
+export async function notifyDeliveredInAllergenRelease(input: { release: CpuAllergenRelease; oplocId: string; eventType: "published" | "revoked" }) {
+  return postWithRetry(`${deliveredInBaseUrl()}/api/internal/cpu-release-event`, buildCpuAllergenReleaseEvent(input), "delivered-in");
+}
 
 function deliveredInBaseUrl() {
   return (process.env.FIKA_APP_DELIVERED_IN_URL || process.env.DELIVERED_IN_BASE_URL || "http://localhost:3800").replace(/\/$/, "");
