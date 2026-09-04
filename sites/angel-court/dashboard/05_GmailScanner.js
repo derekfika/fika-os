@@ -1,69 +1,37 @@
 function scanInboxForDashboardBookings() {
-  const query = buildInboxScanQuery_();
-  console.log("Inbox scan query: " + query);
-
-  const threads = GmailApp.search(query, 0, 50);
-
-  let scanned = 0;
-  let logged = 0;
-  let skipped = 0;
-  let errors = 0;
-
-  for (const thread of threads) {
-    const messages = thread.getMessages();
-
-    for (const msg of messages) {
-      const atts = msg.getAttachments({ includeInlineImages: false });
-
-      for (const att of atts) {
-        if (!isXlsx_(att)) continue;
-
-        scanned++;
-
-        const key = makeDashboardKey_(msg.getId(), att.getName());
-
-        if (isDashboardKeyLogged_(key)) {
-          console.log("Skipped duplicate key: " + key);
-          skipped++;
-          continue;
-        }
-
-        try {
-          const booking = buildBookingFromMessageIdAndAttachment_(msg.getId(), att.getName());
-          if (shouldArchiveBooking_(booking)) {
-            booking.status = CONFIG.STATUS.ARCHIVED || "ARCHIVED";
-          }
-
-          writeBookingToSheet_(booking);
-          logged++;
-          runPostImportAutomation_(booking);
-        } catch (e) {
-          errors++;
-          Logger.log("Booking scan error: " + e);
-        }
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(1000)) return { busy: true, scanned: 0, logged: 0, skipped: 0, errors: 0, archived: 0 };
+  try {
+    const offset = getConfiguredNumber_("INBOX_SCAN_OFFSET", 0);
+    const result = scanInboxCore_(offset, 50);
+    if (result.errors === 0) {
+      if (result.done) {
+        setSetting_("INBOX_SCAN_OFFSET", 0);
+        setSetting_("LAST_INBOX_SCAN_AT", new Date().toISOString());
+      } else {
+        setSetting_("INBOX_SCAN_OFFSET", result.nextOffset);
       }
     }
+    return result;
+  } finally { lock.releaseLock(); }
+}
+
+function scanInboxCore_(offset, limit) {
+  const query = buildInboxScanQuery_();
+  const threads = GmailApp.search(query, offset, limit);
+  const existingKeys = loadDashboardKeys_();
+  const result = { scanned: 0, logged: 0, skipped: 0, errors: 0, nextOffset: offset + threads.length, done: threads.length < limit, archived: 0 };
+  threads.forEach(function(thread) {
+    const threadResult = processInboxThread_(thread, existingKeys);
+    result.scanned += threadResult.scanned;
+    result.logged += threadResult.logged;
+    result.skipped += threadResult.skipped;
+    result.errors += threadResult.errors;
+  });
+  if (result.done && getConfiguredValue_("AUTO_ARCHIVE_ENABLED", true)) {
+    result.archived = archiveOldDashboardBookings().archived;
   }
-
-  if (logged > 0 || skipped > 0) {
-  }
-
-  setSetting_("LAST_INBOX_SCAN_AT", new Date().toISOString());
-  Logger.log(
-    `Dashboard scan complete. Scanned=${scanned}, Logged=${logged}, Skipped=${skipped}, Errors=${errors}`
-  );
-
-  archiveOldBookings_();
-  const archiveResult = archiveOldDashboardBookings();
-
-  return {
-    scanned,
-    logged,
-    skipped,
-    errors,
-    archived: archiveResult.archived
-  };
-
+  return result;
 }
 
 function runPostImportAutomation_(booking) {
@@ -92,8 +60,9 @@ function buildInboxScanQuery_() {
   const scanAfter = getLaterDate_(earliest, lastScan);
 
   if (scanAfter) {
+    const overlap = new Date(scanAfter.getTime() - 24 * 60 * 60 * 1000);
     query += " after:" + Utilities.formatDate(
-      scanAfter,
+      overlap,
       Session.getScriptTimeZone(),
       "yyyy/MM/dd"
     );
@@ -179,8 +148,23 @@ function makeDashboardKey_(messageId, attachmentName) {
   return `${String(messageId || "").trim()}|${String(attachmentName || "").trim()}`;
 }
 
-function isDashboardKeyLogged_(key) {
+function loadDashboardKeys_() {
+  const keys = new Set();
+  const sh = getDashboardSheet_();
+  const map = getHeaderMap_();
+  if (!map.MessageId || !map.AttachmentName || sh.getLastRow() < 2) return keys;
+  const values = sh.getRange(2, 1, sh.getLastRow() - 1, sh.getLastColumn()).getValues();
+  values.forEach(function(row) {
+    const messageId = String(row[map.MessageId - 1] || "").trim();
+    const attachmentName = String(row[map.AttachmentName - 1] || "").trim();
+    if (messageId && attachmentName) keys.add(makeDashboardKey_(messageId, attachmentName));
+  });
+  return keys;
+}
+
+function isDashboardKeyLogged_(key, existingKeys) {
   if (!key) return false;
+  if (existingKeys) return existingKeys.has(key);
 
   const sh = getDashboardSheet_();
   const map = getHeaderMap_();
@@ -308,8 +292,13 @@ function scanInboxChunk(offset, limit) {
   offset = Number(offset || 0);
   limit = Number(limit || 5);
 
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(1000)) return { busy: true, logged: 0, skipped: 0, errors: 0, nextOffset: offset, done: false, archived: 0 };
+  try {
+
   const query = buildInboxScanQuery_();
   const threads = GmailApp.search(query, offset, limit);
+  const existingKeys = loadDashboardKeys_();
 
   let logged = 0;
   let skipped = 0;
@@ -317,7 +306,7 @@ function scanInboxChunk(offset, limit) {
 
   threads.forEach(thread => {
     try {
-      const result = processInboxThread_(thread);
+      const result = processInboxThread_(thread, existingKeys);
 
       logged += result.logged || 0;
       skipped += result.skipped || 0;
@@ -335,7 +324,7 @@ function scanInboxChunk(offset, limit) {
   let archiveResult = { checked: 0, archived: 0 };
 
   if (done) {
-    setSetting_("LAST_INBOX_SCAN_AT", new Date().toISOString());
+    if (errors === 0) setSetting_("LAST_INBOX_SCAN_AT", new Date().toISOString());
     if (getConfiguredValue_("AUTO_ARCHIVE_ENABLED", true)) {
       archiveResult = archiveOldDashboardBookings();
     }
@@ -350,17 +339,27 @@ return {
   done,
   archived: archiveResult.archived
 };
+  } finally { lock.releaseLock(); }
 }
 
-function processInboxThread_(thread) {
+function isEligibleHospitalitySender_(from) {
+  const email = extractEmailAddress_(from).toLowerCase();
+  const parts = email.split("@");
+  if (parts.length !== 2) return false;
+  const configuredLocalPart = String(CONFIG.HOSPITALITY_FRONT_OF_HOUSE_LOCAL_PART || "frontofhouse").trim().toLowerCase();
+  return parts[1] === "redington.co.uk" || parts[0] === configuredLocalPart;
+}
+
+function processInboxThread_(thread, existingKeys) {
   let logged = 0;
   let skipped = 0;
   let errors = 0;
   let scanned = 0;
 
-  const messages = thread.getMessages();
+    const messages = thread.getMessages();
 
-  for (const msg of messages) {
+    for (const msg of messages) {
+    if (!isEligibleHospitalitySender_(msg.getFrom())) continue;
     const atts = msg.getAttachments({ includeInlineImages: false });
 
     for (const att of atts) {
@@ -370,7 +369,7 @@ function processInboxThread_(thread) {
 
       const key = makeDashboardKey_(msg.getId(), att.getName());
 
-      if (isDashboardKeyLogged_(key)) {
+      if (isDashboardKeyLogged_(key, existingKeys)) {
         skipped++;
         continue;
       }
@@ -386,6 +385,7 @@ function processInboxThread_(thread) {
         }
 
         writeBookingToSheet_(booking);
+        existingKeys.add(key);
         logged++;
 
       } catch (e) {

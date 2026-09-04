@@ -898,6 +898,7 @@
           ${editField("clientCompany", "Company", b.clientCompany)}
           ${editField("hostName", "Host name", b.hostName)}
           ${editField("hostEmail", "Host email", b.hostEmail)}
+          ${editField("invoiceReference", "Invoice / purchase order reference", b.invoiceReference)}
           ${editField("pax", "Pax", b.pax)}
           ${editField("eventDate", "Event date", b.eventDate, "date")}
           ${editField("serviceTimes", "Service time", (b.serviceTimes || []).join(" / "))}
@@ -1032,6 +1033,7 @@
       clientCompany: document.getElementById("edit-clientCompany").value.trim(),
       hostName: document.getElementById("edit-hostName").value.trim(),
       hostEmail: document.getElementById("edit-hostEmail").value.trim(),
+      invoiceReference: document.getElementById("edit-invoiceReference").value.trim(),
       pax: document.getElementById("edit-pax").value.trim(),
       eventDate: document.getElementById("edit-eventDate").value.trim(),
       serviceTimes: mergedServiceTimes,

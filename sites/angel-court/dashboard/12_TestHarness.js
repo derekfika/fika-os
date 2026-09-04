@@ -19,6 +19,7 @@ function runDashboardPureTests() {
   record("Status validation", testStatusValidation_);
   record("Settings draft column aliases", testSettingsDraftColumnAliases_);
   record("Locked status validation", testLockedStatusValidation_);
+  record("Legacy hotfix regression helpers", testLegacyHotfixRegression_);
 
   const failures = results.filter(result => !result.ok);
   return {
@@ -27,6 +28,17 @@ function runDashboardPureTests() {
     failed: failures.length,
     results
   };
+}
+
+function testLegacyHotfixRegression_() {
+  assertDashboardTest_(isEligibleHospitalitySender_("person@redington.co.uk"), "Redington sender was rejected.");
+  assertDashboardTest_(isEligibleHospitalitySender_("PERSON@REDINGTON.CO.UK"), "Case-insensitive Redington sender was rejected.");
+  assertDashboardTest_(isEligibleHospitalitySender_("Victoria <person@redington.co.uk>"), "Display-name sender parsing failed.");
+  assertDashboardTest_(isEligibleHospitalitySender_("frontofhouse@example.com"), "Front-of-house sender was rejected.");
+  assertDashboardTest_(!isEligibleHospitalitySender_("supplier@example.com"), "Unrelated sender was accepted.");
+  assertDashboardTest_(!isEligibleHospitalitySender_("Redington <supplier@example.com>"), "Misleading display name was accepted.");
+  assertDashboardTest_(makeDashboardKey_("m1", "booking.xlsx") === makeDashboardKey_("m1", "booking.xlsx"), "Dashboard dedupe key is not stable.");
+  assertDashboardTest_(loadDashboardKeys_ instanceof Function, "Preloaded dashboard key helper is missing.");
 }
 
 function getDashboardLiveTestChecklist() {

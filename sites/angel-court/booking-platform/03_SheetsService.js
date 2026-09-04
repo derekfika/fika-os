@@ -325,7 +325,19 @@ function getDashboardDataSheet_(spreadsheet) {
       ". Run testBookingPlatformConnection() for connection details."
     );
   }
+  ensureDashboardInvoiceReferenceColumn_(sheet);
   return sheet;
+}
+
+function ensureDashboardInvoiceReferenceColumn_(sheet) {
+  const lastColumn = sheet.getLastColumn();
+  if (!lastColumn) throw new Error("Dashboard Data has no header row.");
+  const headers = sheet.getRange(1, 1, 1, lastColumn).getValues()[0]
+    .map(function(value) { return String(value || "").trim(); });
+  if (headers.indexOf("InvoiceReference") !== -1) return false;
+  sheet.getRange(1, lastColumn + 1).setValue("InvoiceReference")
+    .setFontWeight("bold").setBackground("#176f8e").setFontColor("#ffffff");
+  return true;
 }
 
 function extractSpreadsheetId_(value) {

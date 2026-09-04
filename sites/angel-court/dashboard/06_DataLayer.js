@@ -27,6 +27,7 @@ function getHeaderMap_() {
 
   const sh = getDashboardSheet_();
 
+  ensureDashboardColumn_(sh, "InvoiceReference");
   const headers = sh
     .getRange(1, 1, 1, sh.getLastColumn())
     .getValues()[0];
@@ -101,6 +102,8 @@ function writeBookingToSheet_(booking) {
 
   values.HostEmail =
     booking.hostEmail;
+
+  values.InvoiceReference = String(booking.invoiceReference || "").trim();
 
   values.Pax =
     booking.pax;
@@ -194,6 +197,17 @@ function writeBookingToSheet_(booking) {
   sh.getRange(row, 1, 1, lastCol).setValues([rowValues]);
 
   return row;
+}
+
+function ensureDashboardColumn_(sh, header) {
+  const lastColumn = sh.getLastColumn();
+  if (!lastColumn) throw new Error("Dashboard Data has no header row.");
+  const headers = sh.getRange(1, 1, 1, lastColumn).getValues()[0]
+    .map(function(value) { return String(value || "").trim(); });
+  if (headers.indexOf(header) !== -1) return false;
+  sh.getRange(1, lastColumn + 1).setValue(header)
+    .setFontWeight("bold").setBackground("#176f8e").setFontColor("#ffffff");
+  return true;
 }
 
 function assertRequiredHeaders_(map, required) {

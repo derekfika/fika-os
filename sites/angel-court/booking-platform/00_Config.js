@@ -29,7 +29,8 @@ const SITE_CONFIG = Object.freeze({
     standardNoticeHours: 72,
     largeEventNoticeWorkingDays: 10,
     dietaryNoticeWorkingDays: 3,
-    blockMinimumOrderIssues: true
+    blockMinimumOrderIssues: true,
+    minimumOrderClientAliases: ["gallagher"]
   },
   copy: {
     vatNote: "Estimated total, subject to final confirmation, VAT, labour and equipment hire where applicable.",

@@ -156,3 +156,9 @@ The project follows a simple versioning approach:
 
 * First production-ready release of the Hospitality Dashboard platform.
 * Built to automate hospitality booking processing and CPU workflow management.
+## v0.9.13 — Legacy production hotfix
+
+- Preserved invoice / purchase-order references through dashboard migration and edits.
+- Scoped minimum-order enforcement to Gallagher client bookings.
+- Hardened calendar diagnostics and stale-event regeneration ordering.
+- Unified bounded, sender-filtered inbox scanning with duplicate preloading and locking.

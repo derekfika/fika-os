@@ -260,3 +260,16 @@ Recommended before each deployment:
 ---
 
 Built for FIKA Hospitality Operations.
+# Legacy production hotfix notes
+
+After updating the Apps Script projects, run `initialiseDashboardSettings()` once from the dashboard spreadsheet. This adds the internal scanner continuation setting and preserves existing Dashboard Data column order; the first read/write also appends `InvoiceReference` if that column is absent.
+
+Live calendar verification (required because permissions are account/deployment dependent):
+
+1. In the dashboard deployment, open the web app once as Derek and once as the site user/Tia session.
+2. For each session, create or use a safe test booking with a generated quote, click Create Calendar, and capture the returned diagnostic on failure.
+3. In Apps Script Executions, record the `Effective user`, `Active user`, target calendar `seven@fikacatering.com`, and reported access role.
+4. In Google Calendar settings for `seven@fikacatering.com`, grant the effective execution identity permission to create/edit events (Make changes to events), and ensure the Apps Script project owner has Calendar API enabled in Services and the linked Google Cloud project.
+5. Re-authorise the dashboard deployment as its owner if the Calendar advanced service has not been authorised, then repeat the safe test. Do not use a production booking for the first test.
+
+If Calendar rejects attachment fields, the hotfix retries without API attachments and keeps Drive links to the quote, booking JSON, and original XLSX in the event description. This preserves traceability while avoiding a Drive-sharing-dependent insert failure.

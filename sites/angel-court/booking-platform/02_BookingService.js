@@ -37,9 +37,9 @@ function buildServerBooking_(payload) {
   const dietaries = payload.dietaries || {};
   const order = payload.order || {};
 
-  const items = recalculateOrderItems_(order.items || [], Number(event.guestCount || 0));
+  const items = recalculateOrderItems_(order.items || [], Number(event.guestCount || 0), client.clientCompanyName);
   const eventType = findEventType_(order.eventType);
-  const warnings = buildWarnings_(event, eventType, items, dietaries, now);
+  const warnings = buildWarnings_(event, eventType, items, dietaries, now, client.clientCompanyName);
 
   return {
     bookingId: generateBookingId_(now),
@@ -104,7 +104,7 @@ function buildServerBooking_(payload) {
   };
 }
 
-function recalculateOrderItems_(requestedItems, guestCount) {
+function recalculateOrderItems_(requestedItems, guestCount, clientCompanyName) {
   const menuById = {};
   MENU_SCHEMA.forEach(function(item) { menuById[item.id] = item; });
 
@@ -130,8 +130,8 @@ function recalculateOrderItems_(requestedItems, guestCount) {
       minimumOrder: schemaItem.minimumQuantity,
       minimumGuests: schemaItem.minimumGuests,
       noticeRequiredDays: schemaItem.noticeRequiredDays,
-      minimumOrderMet: quantity >= schemaItem.minimumQuantity,
-      minimumGuestsMet: !schemaItem.minimumGuests || guestCount >= schemaItem.minimumGuests
+      minimumOrderMet: !minimumOrderRulesApply_({ clientCompanyName: clientCompanyName }) || quantity >= schemaItem.minimumQuantity,
+      minimumGuestsMet: !minimumOrderRulesApply_({ clientCompanyName: clientCompanyName }) || !schemaItem.minimumGuests || guestCount >= schemaItem.minimumGuests
     };
   }).filter(Boolean);
 }
@@ -192,8 +192,8 @@ function validateBookingRequest_(booking) {
     if (eventType && eventType.categories.length && eventType.categories.indexOf(item.category) === -1) {
       errors.push(item.itemName + " is not available for the selected event type.");
     }
-    if (!item.minimumOrderMet) errors.push(item.itemName + " requires a minimum quantity of " + item.minimumOrder + ".");
-    if (!item.minimumGuestsMet) errors.push(item.itemName + " requires at least " + item.minimumGuests + " guests.");
+    if (minimumOrderRulesApply_(c) && !item.minimumOrderMet) errors.push(item.itemName + " requires a minimum quantity of " + item.minimumOrder + ".");
+    if (minimumOrderRulesApply_(c) && !item.minimumGuestsMet) errors.push(item.itemName + " requires at least " + item.minimumGuests + " guests.");
     const schemaItem = MENU_SCHEMA.find(function(candidate) { return candidate.id === item.itemId; });
     (schemaItem.choices || []).forEach(function(group) {
       const selected = item.choices.find(function(choice) { return choice.id === group.id; });
@@ -212,18 +212,29 @@ function validateBookingRequest_(booking) {
   return { ok: errors.length === 0, errors: errors };
 }
 
+function minimumOrderRulesApply_(bookingOrClient) {
+  const client = bookingOrClient && bookingOrClient.client ? bookingOrClient.client : (bookingOrClient || {});
+  const company = String(client.clientCompanyName || "").trim().toLowerCase();
+  const aliases = (SITE_CONFIG.rules.minimumOrderClientAliases || ["gallagher"])
+    .map(function(alias) { return String(alias || "").trim().toLowerCase(); })
+    .filter(Boolean);
+  return aliases.indexOf(company) !== -1;
+}
+
 function hasSelectedChoiceValue_(value) {
   return Array.isArray(value) ? value.length > 0 : Boolean(value);
 }
 
-function buildWarnings_(event, eventType, items, dietaries, now) {
+function buildWarnings_(event, eventType, items, dietaries, now, clientCompanyName) {
   const eventDate = parseEventDate_(event.eventDate, event.startTime);
   const hoursUntil = eventDate ? (eventDate.getTime() - now.getTime()) / 3600000 : 0;
   const workingDaysUntil = eventDate ? workingDaysBetween_(now, eventDate) : 0;
   const dietaryTotal = ["vegetarian", "vegan", "glutenFree", "coeliac", "dairyFree", "halal", "otherCount"]
     .reduce(function(total, key) { return total + positiveInt_(dietaries[key]); }, 0);
-  const minimumOrderIssues = items.filter(function(item) { return !item.minimumOrderMet || !item.minimumGuestsMet; })
-    .map(function(item) { return item.itemName; });
+  const minimumOrderIssues = minimumOrderRulesApply_({ clientCompanyName: clientCompanyName })
+    ? items.filter(function(item) { return !item.minimumOrderMet || !item.minimumGuestsMet; })
+    .map(function(item) { return item.itemName; })
+    : [];
 
   return {
     inside72Hours: Boolean(eventDate && hoursUntil < SITE_CONFIG.rules.standardNoticeHours),

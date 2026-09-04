@@ -68,21 +68,7 @@ function createCalendarEventForRow(rowNumber, options) {
     );
   }
 
-  if (isStaleRegeneration && booking.calendarEventId) {
-    try {
-      Calendar.Events.remove(calendarId, booking.calendarEventId, { sendUpdates: "all" });
-    } catch (error) {
-      console.warn(
-        "Could not remove stale calendar event " +
-        booking.calendarEventId +
-        ": " +
-        (error && error.message ? error.message : String(error))
-      );
-    }
-    booking.calendarEventId = "";
-    booking.calendarEventUrl = "";
-    booking.calendarCreatedAt = "";
-  }
+  const obsoleteCalendarEventId = isStaleRegeneration ? booking.calendarEventId : "";
 
   const siteName = getConfiguredValue_("LOCATION_NAME", CONFIG.LOCATION_NAME || "FIKA Hospitality");
 
@@ -149,12 +135,24 @@ function createCalendarEventForRow(rowNumber, options) {
       error: error && error.message ? error.message : String(error),
       diagnostic: diagnostic
     }));
-    throw new Error(
-      "Calendar rejected the event. " +
-      diagnostic +
-      " Original error: " +
-      (error && error.message ? error.message : String(error))
-    );
+    if (attachments.length && /invalid argument|attachment|drive/i.test(String(error && error.message || error))) {
+      console.warn("Calendar attachment insert failed; retrying without API attachments.");
+      try {
+        const fallbackResource = Object.assign({}, eventResource);
+        delete fallbackResource.attachments;
+        fallbackResource.description = [
+          fallbackResource.description,
+          "Quote: " + quoteFile.getUrl(),
+          "Booking JSON: " + bookingJsonFile.getUrl(),
+          sourceBookingFile ? "Original XLSX: " + sourceBookingFile.getUrl() : ""
+        ].filter(Boolean).join("\n\n");
+        created = Calendar.Events.insert(fallbackResource, calendarId, { supportsAttachments: false, sendUpdates: "all" });
+      } catch (fallbackError) {
+        throw new Error("Calendar rejected the event. Stage=Calendar.Events.insert. " + diagnostic + " Fallback error: " + (fallbackError.message || fallbackError));
+      }
+    } else {
+      throw new Error("Calendar rejected the event. Stage=Calendar.Events.insert. " + diagnostic + " Original error: " + (error && error.message ? error.message : String(error)));
+    }
   }
 
   if (sourceBookingFile) {
@@ -170,6 +168,14 @@ function createCalendarEventForRow(rowNumber, options) {
 
   writeBookingObjectToExistingRow_(rowNumber, booking);
   updateBookingJsonFile_(bookingJsonFile, booking);
+
+  if (obsoleteCalendarEventId && obsoleteCalendarEventId !== booking.calendarEventId) {
+    try {
+      Calendar.Events.remove(calendarId, obsoleteCalendarEventId, { sendUpdates: "all" });
+    } catch (error) {
+      console.warn("Replacement event created but obsolete calendar event could not be removed: " + (error.message || error));
+    }
+  }
 
   return { ok: true, eventUrl: created.htmlLink || "" };
 }
@@ -375,12 +381,20 @@ function buildCalendarDiagnostic_(resource, calendarId) {
     ? resource.attachments.length
     : 0;
 
+  const attachmentSummary = (resource.attachments || []).map(function(attachment) {
+    return (extractDriveIdFromUrl_(attachment.fileUrl) || "unknown") + "/" + (attachment.mimeType || "unknown");
+  }).join(", ");
+  let accessRole = "unknown";
+  try { accessRole = Calendar.Acl.get(calendarId, Session.getEffectiveUser().getEmail()).role || accessRole; } catch (e) { }
   return [
-    "Calendar: " + calendarId + ".",
+    "Stage=Calendar.Events.insert.",
+    "Effective user: " + Session.getEffectiveUser().getEmail() + ".",
+    "Active user: " + Session.getActiveUser().getEmail() + ".",
+    "Calendar: " + calendarId + ". Access role: " + accessRole + ".",
     "Start: " + start + ".",
     "End: " + end + ".",
     "Attendees: " + attendeeCount + ".",
-    "Attachments: " + attachmentCount + ".",
+    "Attachments: " + attachmentCount + " [" + attachmentSummary + "].",
     "Colour: " + (resource.colorId || "default") + "."
   ].join(" ");
 }

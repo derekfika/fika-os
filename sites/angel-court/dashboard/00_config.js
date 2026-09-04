@@ -1,6 +1,6 @@
 const CONFIG = {
-  APP_VERSION: "v0.9.12",
-  APP_RELEASE_NAME: "Parser Hotfix & Settings Prep",
+  APP_VERSION: "v0.9.13",
+  APP_RELEASE_NAME: "Legacy Production Hotfix",
   APP_DEVELOPER: "Derek Buckley",
   APP_DEVELOPER_EMAIL: "derekbuc@gmail.com",
   APP_ENVIRONMENT: "Production",
@@ -32,6 +32,8 @@ const CONFIG = {
   },
 
   CALENDAR_ID: "seven@fikacatering.com",
+
+  HOSPITALITY_FRONT_OF_HOUSE_LOCAL_PART: "frontofhouse",
 
   CALENDAR_ATTENDEES: [
     "cpux@fikacatering.com",
@@ -289,7 +291,8 @@ function getSettingSchema_() {
       fields: [
         { key: "PROCESSED_LABEL_NAME", label: "Processed Gmail label", type: "text", fallback: "AC_HOSPITALITY_PROCESSED", notes: "Legacy setting. Duplicate checking now uses Message ID + Attachment Name." },
         { key: "EARLIEST_SCAN_DATE", label: "Earliest scan date", type: "date", fallback: "", notes: "Optional. Use YYYY-MM-DD to stop scans going further back." },
-        { key: "LAST_INBOX_SCAN_AT", label: "Last scan timestamp", type: "text", fallback: "", readonly: true, notes: "Updated automatically after a completed inbox scan." }
+        { key: "LAST_INBOX_SCAN_AT", label: "Last scan timestamp", type: "text", fallback: "", readonly: true, notes: "Updated automatically after a completed inbox scan." },
+        { key: "INBOX_SCAN_OFFSET", label: "Scanner continuation offset", type: "number", fallback: 0, readonly: true, notes: "Internal bounded-scan continuation state." }
       ]
     },
     {

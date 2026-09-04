@@ -41,6 +41,11 @@ function runBookingPlatformTests() {
   missingClientNamePayload.client.clientName = "";
   const missingClientCompanyPayload = JSON.parse(JSON.stringify(payload));
   missingClientCompanyPayload.client.clientCompanyName = "";
+  const gallagherPayload = JSON.parse(JSON.stringify(payload));
+  gallagherPayload.client.clientCompanyName = "Gallagher";
+  gallagherPayload.order.items[0].quantity = 1;
+  const nonGallagherPayload = JSON.parse(JSON.stringify(gallagherPayload));
+  nonGallagherPayload.client.clientCompanyName = "Redington";
 
   const tests = [
     { name: "valid payload passes", ok: validation.ok },
@@ -56,6 +61,7 @@ function runBookingPlatformTests() {
     { name: "dashboard adapter adds 8% management fee", ok: dashboardBooking.mgmtFee === 3.16 && dashboardBooking.netPrice === 42.66 },
     { name: "invoice reference reaches dashboard JSON", ok: dashboardBooking.invoiceReference === "PO-12345" && dashboardBooking.notes.indexOf("PO-12345") !== -1 },
     { name: "invoice reference is mandatory", ok: !validateBookingRequest_(buildServerBooking_(missingReferencePayload)).ok },
+    { name: "invoice reference remains an arbitrary string", ok: buildServerBooking_(Object.assign({}, payload, { client: Object.assign({}, payload.client, { invoiceReference: " BU-12345 / Victoria Tissington " }) })).client.invoiceReference === "BU-12345 / Victoria Tissington" },
     { name: "client name is mandatory", ok: !validateBookingRequest_(buildServerBooking_(missingClientNamePayload)).ok },
     { name: "client company is mandatory", ok: !validateBookingRequest_(buildServerBooking_(missingClientCompanyPayload)).ok },
     { name: "serving suggestion schema is public", ok: getPublicPlatformConfig().menu.find(function(item) { return item.id === "mini_pastries"; }).serves === 12 },
@@ -65,6 +71,9 @@ function runBookingPlatformTests() {
     { name: "sheet gid is rejected", ok: extractSpreadsheetId_("123456789") === "" },
     { name: "notification recipients parse", ok: parseNotificationRecipients_("one@example.com; two@example.com\none@example.com").valid.length === 2 },
     { name: "invalid notification recipient is reported", ok: parseNotificationRecipients_("valid@example.com, not-an-email").invalid[0] === "not-an-email" }
+    ,{ name: "Gallagher below minimum is rejected", ok: !validateBookingRequest_(buildServerBooking_(gallagherPayload)).ok }
+    ,{ name: "non-Gallagher below Gallagher minimum is accepted", ok: validateBookingRequest_(buildServerBooking_(nonGallagherPayload)).ok }
+    ,{ name: "minimum rules use end-client company", ok: minimumOrderRulesApply_(gallagherPayload) && !minimumOrderRulesApply_(nonGallagherPayload) }
   ];
   return { ok: tests.every(function(test) { return test.ok; }), tests: tests };
 }

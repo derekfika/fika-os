@@ -22,6 +22,7 @@ function createEmptyBooking_() {
     clientCompany: "",
     hostName: "",
     hostEmail: "",
+    invoiceReference: "",
 
     pax: "",
 
