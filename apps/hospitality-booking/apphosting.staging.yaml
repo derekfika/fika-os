@@ -34,6 +34,12 @@ env:
   - variable: GOOGLE_WORKSPACE_DWD_SERVICE_ACCOUNT_JSON
     secret: GOOGLE_WORKSPACE_DWD_SERVICE_ACCOUNT_JSON
     availability: [RUNTIME]
+  # CPU allergen releases use the shared Drive adapter through this service.
+  # The owner is a governed Workspace identity; the DWD credential remains in
+  # Secret Manager and is never exposed in repository configuration.
+  - variable: GOOGLE_DRIVE_OWNER_EMAIL_APP_CPU_PRODUCTION
+    value: derek@fikacatering.com
+    availability: [RUNTIME]
   - variable: FIKA_PDF_RENDERER_URL
     value: https://fika-pdf-renderer-staging-6tc4airnza-ez.a.run.app
     availability: [RUNTIME]

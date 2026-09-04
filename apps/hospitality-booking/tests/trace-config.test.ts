@@ -13,6 +13,7 @@ test("Hospitality staging declares the server-side Hub and CPU clients without e
   assert.match(config, /variable:\s*FIKA_HUB_BASE_URL[\s\S]*?value:\s*https:\/\/staging-os\.fikacatering\.com/);
   assert.match(config, /variable:\s*CPU_PRODUCTION_BASE_URL[\s\S]*?value:\s*https:\/\/cpu-staging\.fikacatering\.com/);
   for (const secret of ["MNK_CANON_BRIDGE_TOKEN", "GOOGLE_WORKSPACE_DWD_SERVICE_ACCOUNT_JSON", "FIKA_PDF_RENDERER_TOKEN"]) assert.match(config, new RegExp(`variable:\\s*${secret}[\\s\\S]*?secret:\\s*${secret}`));
+  assert.match(config, /variable:\s*GOOGLE_DRIVE_OWNER_EMAIL_APP_CPU_PRODUCTION[\s\S]*?value:\s*derek@fikacatering\.com/);
   assert.doesNotMatch(config, /private_key|client_secret|token:\s*[^\s]/i);
 });
 
