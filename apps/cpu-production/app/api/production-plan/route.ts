@@ -488,7 +488,19 @@ async function handlePost(request: NextRequest) {
       const fullySigned = plan.signatures.some(item => item.role === "production_chef") && plan.signatures.some(item => item.role === "head_chef_site_manager");
       if (fullySigned) {
         plan.audit.push({ action: "allergen-matrix-signature-complete", at: timestamp, by: auditActor, reason: "Both required signatures recorded; final matrix persistence started." });
-        const artifact = await createMatrixArtifact(plan, command.orderId, auditActor, timestamp, request);
+        let artifact: Awaited<ReturnType<typeof createMatrixArtifact>>;
+        try {
+          artifact = await createMatrixArtifact(plan, command.orderId, auditActor, timestamp, request);
+        } catch (error) {
+          // The second signature is authoritative even when a downstream PDF or
+          // Drive dependency is unavailable. Persist it before returning the
+          // failure so the signer is not asked to sign again; the normal retry
+          // path can finish artifact publication with both signatures present.
+          plan.audit.push({ action: "allergen-matrix-artifact-failed", at: timestamp, by: auditActor, reason: error instanceof Error ? error.message : "Final allergen artifact generation failed." });
+          plan.updatedAt = timestamp; plan.updatedBy = auditActor;
+          await persistPlan(plan, expectedUpdatedAt);
+          throw error;
+        }
         if (artifact) {
           const signedOrder = await loadOrder(request, command.orderId);
           const serviceDate = signedOrder?.serviceDate || signedOrder?.requiredBy.slice(0, 10);

@@ -438,7 +438,7 @@ test("allergen checker uses the master-style purple header and four-state cells"
   assert.match(planRoute, /plan\.signatures = undefined/);
   assert.match(planRoute, /plan\.matrixArtifact = undefined/);
   assert.match(planRoute, /signatureDataUrl/);
-  assert.match(planRoute, /Mark the allergen matrix Planned before signing it/);
+  assert.match(planRoute, /The allergen matrix is not available for signing/);
 });
 
 test("CPU dashboard opens with a Monday-to-Friday production heads-up", () => {
