@@ -45,7 +45,8 @@ export async function rebuildAuthmodAccessReadPackage(identityId: string): Promi
     db.collection("authmodDelegations").where("delegateId", "==", identityId).get(),
     db.collection("authmodCustodianAssignments").where("operationalIdentityId", "==", identityId).get(),
   ]);
-  if (!identity.exists) throw Object.assign(new Error("AUTHMOD identity is unavailable."), { status: 503, code: "AUTHMOD_IDENTITY_PACKAGE_MISSING" });
+  if (!identity.exists) throw Object.assign(new Error("AUTHMOD identity is unavailable."), { status: 403, code: "AUTHMOD_IDENTITY_NOT_FOUND" });
+  if ((identity.data() as AuthIdentity).status !== "active") throw Object.assign(new Error("Inactive AUTHMOD identities cannot bootstrap an access package."), { status: 403, code: "AUTHMOD_IDENTITY_INACTIVE" });
   const securityVersion = await readAuthmodAccessHead(identityId);
   const value: AuthmodAccessReadPackage = {
     identity: identity.data() as AuthIdentity,
@@ -65,6 +66,21 @@ export async function rebuildAuthmodAccessReadPackage(identityId: string): Promi
   return manifest;
 }
 
+export async function bootstrapAuthmodAccessPackage(identityId: string) {
+  return rebuildAuthmodAccessReadPackage(identityId);
+}
+
+export async function bootstrapActiveAuthmodAccessPackages() {
+  const snapshot = await db.collection("authmodIdentities").where("status", "==", "active").get();
+  const identities = snapshot.docs.map(document => String(document.id));
+  const results: Array<{ identityId: string; status: "published" | "failed"; error?: string }> = [];
+  for (const identityId of identities) {
+    try { await bootstrapAuthmodAccessPackage(identityId); results.push({ identityId, status: "published" }); }
+    catch (error) { results.push({ identityId, status: "failed", error: error instanceof Error ? error.message : "Bootstrap failed." }); }
+  }
+  return { attempted: identities.length, published: results.filter(value => value.status === "published").length, failed: results.filter(value => value.status === "failed").length, results };
+}
+
 export async function getAuthmodAccessReadPackage(identityId: string) {
   const head = await readAuthmodAccessHead(identityId);
   const cached = entries.get(identityId);
@@ -80,7 +96,16 @@ export async function getAuthmodAccessReadPackage(identityId: string) {
   const promise = (async () => {
     const result = await retrieveReadPackage<AuthmodAccessReadPackage>(oplocPackageStore(), authmodAccessManifestKey(identityId));
     if (!result || result.manifest.sourceVersion !== `authmod-security:${head}`) {
-      throw Object.assign(new Error("AUTHMOD access package is missing or stale; rebuild it through the governed package operation."), { status: 503, code: !result ? "AUTHMOD_ACCESS_PACKAGE_MISSING" : "AUTHMOD_ACCESS_PACKAGE_STALE" });
+      if (!result) {
+        await bootstrapAuthmodAccessPackage(identityId);
+        const bootstrapped = await retrieveReadPackage<AuthmodAccessReadPackage>(oplocPackageStore(), authmodAccessManifestKey(identityId));
+        if (!bootstrapped) throw Object.assign(new Error("AUTHMOD access package bootstrap did not publish a package."), { status: 503, code: "AUTHMOD_ACCESS_PACKAGE_MISSING" });
+        const value = validateAuthmodAccessReadPackage(bootstrapped.value);
+        entries.set(identityId, { version: head, value });
+        recordDataAccess({ app: "integration-hub", operation: "authmod.package.bootstrap", source: "FIRESTORE", documents: bootstrapped.manifest.recordCount, cacheHit: false, cacheResult: "MISS" });
+        return value;
+      }
+      throw Object.assign(new Error("AUTHMOD access package is stale; rebuild it through the governed package operation."), { status: 503, code: "AUTHMOD_ACCESS_PACKAGE_STALE" });
     }
     entries.set(identityId, { version: head, value: validateAuthmodAccessReadPackage(result.value) });
     recordDataAccess({ app: "integration-hub", operation: "authmod.package.read", source: "SNAPSHOT", documents: result.manifest.recordCount, cacheHit: false, dataset: AUTHMOD_ACCESS_DATASET, packageVersion: result.manifest.packageVersion });

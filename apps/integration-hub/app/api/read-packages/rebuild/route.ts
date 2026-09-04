@@ -7,9 +7,9 @@ import { rebuildOplocReadPackage } from "@/lib/oploc-read-package";
 import { rebuildServiceArrangementsReadPackage } from "@/lib/service-arrangements-read-package";
 import { rebuildServiceDefinitionsReadPackage } from "@/lib/service-definitions-read-package";
 import { rebuildAuthmodReferenceReadPackage } from "@/lib/authmod-reference-read-package";
-import { rebuildAuthmodAccessReadPackage } from "@/lib/authmod-access-read-package";
+import { bootstrapActiveAuthmodAccessPackages, rebuildAuthmodAccessReadPackage } from "@/lib/authmod-access-read-package";
 
-const Query = z.object({ dataset: z.enum(["oplocs", "service-arrangements", "service-definitions", "authmod-references", "authmod-access"]), identityId: z.string().min(1).optional() }).strict();
+const Query = z.object({ dataset: z.enum(["oplocs", "service-arrangements", "service-definitions", "authmod-references", "authmod-access", "authmod-access-active"]), identityId: z.string().min(1).optional() }).strict();
 
 export async function POST(request: NextRequest) {
   try {
@@ -17,8 +17,10 @@ export async function POST(request: NextRequest) {
     assertPermission(actor, "canonical.edit");
     const { dataset, identityId } = Query.parse(Object.fromEntries(request.nextUrl.searchParams));
     if (dataset === "authmod-access" && !identityId) throw Object.assign(new Error("identityId is required to rebuild an AUTHMOD access package."), { status: 422, code: "AUTHMOD_ACCESS_IDENTITY_REQUIRED" });
-    const manifest = dataset === "authmod-access"
-      ? await rebuildAuthmodAccessReadPackage(identityId!)
+    const manifest = dataset === "authmod-access-active"
+      ? await bootstrapActiveAuthmodAccessPackages()
+      : dataset === "authmod-access"
+        ? await rebuildAuthmodAccessReadPackage(identityId!)
       : dataset === "oplocs"
       ? await rebuildOplocReadPackage()
       : dataset === "service-arrangements"

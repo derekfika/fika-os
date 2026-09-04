@@ -19,4 +19,22 @@ test("security head invalidation is explicit in the Firestore repository", async
   const source = await (await import("node:fs/promises")).readFile(new URL("../lib/authmod-core/firestore-repository.ts", import.meta.url), "utf8");
   assert.match(source, /bumpAuthmodAccessHead/);
   assert.match(source, /invalidateAuthmodAdmissionCache/);
+  assert.match(source, /await bootstrapAuthmodAccessPackage/);
+});
+
+test("missing packages bootstrap once, while stale packages fail closed", async () => {
+  const source = await (await import("node:fs/promises")).readFile(new URL("../lib/authmod-access-read-package.ts", import.meta.url), "utf8");
+  assert.match(source, /if \(!result\)/);
+  assert.match(source, /bootstrapAuthmodAccessPackage\(identityId\)/);
+  assert.match(source, /AUTHMOD_ACCESS_PACKAGE_STALE/);
+  assert.doesNotMatch(source, /listAuthorityGrants|listAppAssignments|listSiteAssignments|listDelegations/);
+  assert.match(source, /inFlight/);
+});
+
+test("bulk bootstrap is governed and active-identity scoped", async () => {
+  const route = await (await import("node:fs/promises")).readFile(new URL("../app/api/read-packages/rebuild/route.ts", import.meta.url), "utf8");
+  const source = await (await import("node:fs/promises")).readFile(new URL("../lib/authmod-access-read-package.ts", import.meta.url), "utf8");
+  assert.match(route, /authmod-access-active/);
+  assert.match(route, /integration-admin/);
+  assert.match(source, /where\("status", "==", "active"\)/);
 });
