@@ -156,20 +156,24 @@ async function readProjectionWindow(oplocId: string, asOf = operationalDateLondo
 
 async function readProjectionIndexWindow(oplocId: string, asOf = operationalDateLondon()) {
   const index = await readDeliveredInProjectionIndex(oplocId).catch(() => undefined);
-  if (!index) return { entries: [], withdrawnServiceDates: [], unavailableServiceDates: [], state: "unavailable" as const };
+  if (!index) return { entries: [], weeks: [], withdrawnServiceDates: [], unavailableServiceDates: [], state: "unavailable" as const };
   const inWindow = boundedProjectionIndexEntries(index.value.entries, asOf);
   const withdrawnServiceDates = inWindow.filter(entry => entry.state === "withdrawn").map(entry => entry.serviceDate);
   // Keep old immutable bodies in storage for audit, but never retrieve or
   // display them while their pointer says stale/partial/missing.
   const unavailableServiceDates = inWindow.filter(entry => entry.state !== "withdrawn" && (entry.freshness !== "current" || entry.completeness !== "complete")).map(entry => entry.serviceDate);
   const entries = inWindow.filter(entry => entry.state !== "withdrawn" && entry.freshness === "current" && entry.completeness === "complete").slice(0, DELIVERED_IN_MAX_DAY_PACKAGES);
+  // Older projection indexes predate week metadata. Recover only that bounded
+  // legacy metadata from the already-authoritative day packages so a valid
+  // future week cannot disappear on a cold browser cache.
   const enrichedEntries = await Promise.all(entries.map(async entry => {
     if (entry.weekCommencing) return entry;
     const packageValue = await readDeliveredInProjection(oplocId, entry.serviceDate).catch(() => undefined);
     const day = packageValue?.value;
     return day ? { ...entry, weekCommencing: day.weekCommencing || mondayOf(day.serviceDate), weekEnding: addDays(day.weekCommencing || mondayOf(day.serviceDate), 6), publicationId: day.publicationId } : entry;
   }));
-  return { entries: enrichedEntries, weeks: publishedWeeksFromProjectionIndex(enrichedEntries), withdrawnServiceDates, unavailableServiceDates, state: unavailableServiceDates.length ? (enrichedEntries.length ? "partial" as const : "unavailable" as const) : "current" as const };
+  const weeks = publishedWeeksFromProjectionIndex(enrichedEntries);
+  return { entries: enrichedEntries, weeks, withdrawnServiceDates, unavailableServiceDates, state: unavailableServiceDates.length ? (enrichedEntries.length ? "partial" as const : "unavailable" as const) : "current" as const };
 }
 
 function weeksFromProjectionDays(days: DeliveredInDayProjection[]) {
