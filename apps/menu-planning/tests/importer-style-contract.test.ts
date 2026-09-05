@@ -1,0 +1,36 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+
+const root = new URL("../../../", import.meta.url);
+
+async function source(path: string) {
+  return readFile(new URL(path, root), "utf8");
+}
+
+test("shared FIKA tokens expose the semantic UI foundation", async () => {
+  const tokens = await source("shared/fika/tokens.css");
+  for (const token of ["--fika-surface-page", "--fika-text-primary", "--fika-action-primary", "--fika-status-success", "--fika-focus-ring", "--fika-font-body"]) {
+    assert.match(tokens, new RegExp(token.replaceAll("-", "\\-")));
+  }
+});
+
+test("importer reference screen stays light, semantic and keyboard-visible", async () => {
+  const css = await source("apps/menu-planning/app/import-menu-week.css");
+  const page = await source("apps/menu-planning/app/import-menu-week/page.tsx");
+  assert.match(css, /--fika-surface-page/);
+  assert.match(css, /--fika-action-primary/);
+  assert.match(css, /:focus-visible/);
+  assert.doesNotMatch(`${css}\n${page}`, /#102019|#182923|#22372f|#0b1511|#4df7c2/i);
+  assert.doesNotMatch(`${css}\n${page}`, /color:\s*["']?#(?:8ee8c5|b7f5de)/i);
+  assert.match(page, /multiple|drop|Choose Excel files|drag/i);
+});
+
+test("UI governance points user-facing work to the style guide", async () => {
+  const agents = await source("AGENTS.md");
+  const guide = await source("docs/STYLE-GUIDE.md");
+  assert.match(agents, /docs\/STYLE-GUIDE\.md/);
+  assert.match(guide, /Typography/);
+  assert.match(guide, /File upload and review/);
+  assert.match(guide, /Do and don't/);
+});

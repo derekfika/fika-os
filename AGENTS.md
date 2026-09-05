@@ -513,6 +513,17 @@ Avoid GET endpoints with surprising write side effects.
 
 Preserve AUTHMOD fail-closed semantics and configured friendly runtime URLs.
 
+7.3a UI governance — mandatory
+
+For every user-facing UI task, read `docs/STYLE-GUIDE.md` before editing. That guide is the authoritative visual and accessibility standard for FIKA OS.
+
+- Reuse shared semantic tokens and existing app components before introducing new visual primitives.
+- Keep user-facing surfaces light, operational and accessible; do not introduce dark-theme islands into an existing light app.
+- Use semantic status tokens and text labels; raw turquoise, green, orange or yellow are accents, not default body text.
+- Document any deliberate visual deviation in the task/change and keep it limited to a domain or brand requirement.
+- Missing keyboard focus, insufficient contrast, unclear status semantics or inaccessible controls are defects, not polish items.
+- Backend-only, data-only and documentation-only tasks are exempt unless they change a user-facing surface.
+
 7.4 After editing
 
 Run the narrowest relevant tests first.

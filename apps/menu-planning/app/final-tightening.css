@@ -162,6 +162,8 @@
   }
 }
 
+@import "../../../shared/fika/tokens.css";
+
 /* Final shared visual system: one calm, consistent treatment across the module. */
 :root {
   --mp-purple: #5135c9;
@@ -176,6 +178,19 @@
   --mp-danger-bg: #fff1f4;
   --mp-radius: 10px;
   --mp-control-height: 40px;
+  --fika-surface-page: var(--color-background);
+  --fika-surface-card: var(--color-surface);
+  --fika-surface-subtle: var(--color-surface-muted);
+  --fika-text-primary: var(--mp-ink);
+  --fika-text-secondary: var(--color-text-secondary);
+  --fika-text-muted: var(--mp-muted);
+  --fika-border-default: var(--mp-border);
+  --fika-action-primary: var(--mp-purple);
+  --fika-action-primary-hover: #4325b4;
+  --fika-focus-ring: var(--mp-focus);
+  --fika-status-success: var(--color-status-success);
+  --fika-status-warning: var(--color-status-warning);
+  --fika-status-danger: var(--mp-danger);
 }
 
 button,

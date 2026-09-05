@@ -43,4 +43,26 @@
   --layout-wide: 94rem;
   --layout-reading: 72rem;
   --control-height: 2.75rem;
+  --fika-surface-page: var(--color-background);
+  --fika-surface-card: var(--color-surface);
+  --fika-surface-subtle: var(--color-surface-muted);
+  --fika-text-primary: var(--color-text-primary);
+  --fika-text-secondary: var(--color-text-secondary);
+  --fika-text-muted: #756b84;
+  --fika-border-default: var(--color-border);
+  --fika-action-primary: var(--color-brand-primary);
+  --fika-action-primary-hover: #3f27a8;
+  --fika-action-secondary: var(--color-brand-dark);
+  --fika-focus-ring: var(--color-focus);
+  --fika-status-success: var(--color-status-success);
+  --fika-status-success-surface: var(--color-status-success-bg);
+  --fika-status-warning: var(--color-status-warning);
+  --fika-status-warning-surface: var(--color-status-warning-bg);
+  --fika-status-danger: var(--color-status-danger);
+  --fika-status-danger-surface: var(--color-status-danger-bg);
+  --fika-status-info: var(--color-status-info);
+  --fika-status-info-surface: var(--color-status-info-bg);
+  --fika-font-display: var(--font-display);
+  --fika-font-body: var(--font-body);
+  --fika-control-height: var(--control-height);
 }

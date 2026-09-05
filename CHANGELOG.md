@@ -4,6 +4,10 @@ This file records user-facing workflow changes delivered in the repository. Deta
 
 ## Unreleased
 
+### UI governance
+
+- **2026-09-05 — THREAD 9 — FIKA OS style guide and importer reference correction:** promoted the existing shared FIKA token foundation with semantic aliases, added the authoritative `docs/STYLE-GUIDE.md`, and made the root agent guidance require it for user-facing UI work. Updated the Menu Planning importer reference surface to use light semantic surfaces, purple actions and visible focus states, with focused style-contract coverage. No cross-app restyle or deployment performed.
+
 ### Canonical source control
 
 - **2026-09-05 — staging deployment submitted:** submitted Menu Planning App Hosting staging rollout for exact validated SHA `cde626fd23c9a8eea4b927667bacd376cbcf9011` to backend `fika-menu-planning-staging` in project `fika-os-dev`. Rollout completion/live verification not awaited.

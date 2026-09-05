@@ -1,28 +1,50 @@
 /* Import Menu Week uses the same light/purple operational language as Menu Planning. */
+.import-menu-week {
+  background: var(--fika-surface-page) !important;
+  color: var(--fika-text-primary) !important;
+  font-family: var(--fika-font-body) !important;
+}
+
+.import-menu-week > p:first-child {
+  color: var(--fika-status-success) !important;
+}
+
+.import-menu-week > p:nth-of-type(1) {
+  color: var(--fika-text-secondary) !important;
+}
+
 .import-menu-week button {
-  border: 1px solid var(--mp-purple) !important;
-  background: var(--mp-purple) !important;
+  border: 1px solid var(--fika-action-primary) !important;
+  background: var(--fika-action-primary) !important;
   color: #fff !important;
   font: inherit;
   cursor: pointer;
 }
 
 .import-menu-week button:hover:not(:disabled) {
-  background: #4325b4 !important;
-  border-color: #4325b4 !important;
+  background: var(--fika-action-primary-hover) !important;
+  border-color: var(--fika-action-primary-hover) !important;
 }
 
 .import-menu-week button:disabled {
   background: #eeeaf7 !important;
-  border-color: var(--mp-border) !important;
-  color: var(--mp-muted) !important;
+  border-color: var(--fika-border-default) !important;
+  color: var(--fika-text-muted) !important;
   cursor: not-allowed;
+}
+
+.import-menu-week button:focus-visible,
+.import-menu-week input:focus-visible,
+.import-menu-week select:focus-visible,
+.import-menu-week [role="button"]:focus-visible {
+  outline: 3px solid var(--fika-focus-ring) !important;
+  outline-offset: 2px;
 }
 
 .import-menu-week input,
 .import-menu-week select {
-  color: var(--mp-ink);
-  background: #fff;
-  border: 1px solid var(--mp-border);
+  color: var(--fika-text-primary);
+  background: var(--fika-surface-card);
+  border: 1px solid var(--fika-border-default);
   border-radius: 7px;
 }
