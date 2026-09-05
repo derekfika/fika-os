@@ -19,7 +19,7 @@ export async function readDeliveredInOplocs(request: NextRequest): Promise<Gover
   if (!arrangementResponse.ok || !Array.isArray(arrangementBody.arrangements) || !Array.isArray(arrangementData.oplocs)) {
     throw Object.assign(new Error(arrangementBody.error?.message || "Delivered-In OPLOC authority is unavailable."), { status: 503 });
   }
-  const today = new Date().toISOString().slice(0, 10);
+  const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/London", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
   const eligible = new Set(arrangementBody.arrangements.filter(item => item.lifecycleState === "active" && /delivered[ -]?in/i.test(item.serviceLabel || "") && (!item.effectiveFrom || item.effectiveFrom <= today) && (!item.effectiveTo || item.effectiveTo >= today)).map(item => item.oplocId));
   const listed = new Map(arrangementData.oplocs.map(item => [item.canonicalId, item]));
   const governed = new Map<string, GovernedOploc>();

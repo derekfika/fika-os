@@ -46,6 +46,14 @@ test("Delivered-In projection filters by canonical destination ID and quantity",
   assert.throws(() => assertAuthorisedOploc({ email: "viewer@local.fika", oplocIds: [haleon], permissions: [] }, xchange), (error: any) => error.status === 403);
 });
 
+test("Delivered-In preserves intentionally published blank weekdays as navigable days", () => {
+  const blankFriday = day({ publicationDayId: "publication:day:fri", sourceDayId: "day:fri", date: "2026-08-28", dayName: "Friday", entries: [] });
+  const projected = projectAtTestClock([source([day(), blankFriday])], haleon)[0];
+  assert.equal(projected.days.length, 2);
+  assert.equal(projected.days[1].entries.length, 0);
+  assert.equal(projected.days[1].date, "2026-08-28");
+});
+
 test("Delivered-In keeps a valid site visible when another publication allocation is stale", () => {
   const weeks = projectAtTestClock([source([day({ entries: [{ ...day().entries[0], allocations: [{ destinationId: "oploc:stale-haleon", destinationLabel: "Haleon", quantity: 10 }, { destinationId: xchange, destinationLabel: "FIKA Xchange", quantity: 10 }] } as SourcePublication["days"][number]["entries"][number]] })])], xchange, new Set([xchange]));
   assert.equal(weeks[0].days[0].entries[0].dishName, "Mixed Baby Leaf");

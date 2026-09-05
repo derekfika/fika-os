@@ -54,6 +54,9 @@ test("main dashboard reads namespaced IndexedDB before fetching changed package 
   assert.match(page, /head=1/);
   assert.match(page, /cached\.projectionVersion === entry\.projectionVersion/);
   assert.match(page, /if \(!matches\)/);
+  assert.match(page, /Published — No service \/ no menu items/);
+  assert.doesNotMatch(page, /Boolean\(day && day\.entries\.length\)/);
+  assert.match(page, /operationalDateLondon/);
   assert.match(cache, /accountScope === accountScope && value\.oplocId === oplocId/);
 });
 

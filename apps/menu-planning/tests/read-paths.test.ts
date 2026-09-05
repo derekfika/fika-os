@@ -131,6 +131,12 @@ test("hosted mutation and publication paths expose bounded transaction scopes", 
   assert.match(repository, /where\("delivery\.status", "in", \["pending", "failed"\]\)/);
 });
 
+test("withdrawal responses expose downstream handoff state", () => {
+  const route = readFileSync(new URL("../app/api/rolling-menu/publications/route.ts", import.meta.url), "utf8");
+  assert.match(route, /handoff: \{ status: handoff\.failed \? "pending" : "delivered"/);
+  assert.match(route, /replayMenuPublicationOutbox\(forwardProductionMaterialisationEvent\)/);
+});
+
 test("catalogue read budget has explicit bounded cache invalidation", () => {
   const repository = readFileSync(new URL("../lib/canonical-menu-repository.ts", import.meta.url), "utf8");
   assert.match(repository, /HOSTED_CATALOGUE_TTL_MS/);
