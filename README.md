@@ -51,6 +51,12 @@ Install dependencies in the app being changed and use its `package.json` scripts
 
 Staging uses Firebase project `fika-os-dev` and Firebase App Hosting backends configured under each app. Friendly staging domains are configured where available. Never commit secret values. Production deployment, migrations and operational data changes require explicit authorisation.
 
+The normal staging reset preserves reusable `fikaMenuPlanningWeeks` history. If complete planning-history deletion is explicitly required, use the separate hard-reset flag and the approved rebuild command:
+
+```powershell
+npm run staging:reset -- --confirm-staging-reset --hard-reset-planning-history --rebuild-command "npm run staging:rebuild"
+```
+
 ## Architecture and documentation
 
 Read the relevant root and nested `AGENTS.md`, architecture documents, specifications, `COST-EFFICIENCY.md`, `LOCAL-WORKSPACE.md` and audit guidance before changing a boundary. Preserve stable identity, history, ownership, bounded reads, audit evidence and fail-closed semantics.
