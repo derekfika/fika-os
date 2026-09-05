@@ -6,6 +6,7 @@ This file records user-facing workflow changes delivered in the repository. Deta
 
 ### Canonical source control
 
+- **2026-09-05 — agent operating-guide hardening:** updated root `AGENTS.md` with staging SHA provenance checks, exact-SHA deployment rules, package-state taxonomy (`hit`, `missing but rebuildable`, `stale`, `integrity failed`), historical package compatibility requirements, no-silent-stale fallback, cross-app contract ownership, minimum Menu Planning → CPU → Delivered-In UAT scenarios, treat-`main`-as-protected guidance, and usage-aware two-thread parallel limits. Affected areas: repository-wide agent workflow and FIKA OS readiness discipline. Validation: documentation review against current `main` workflow and existing nested `apps/delivered-in/AGENTS.md`. Deployment status: no deployment performed.
 - **2026-09-04 — staging provenance audit:** compared canonical `main` (`2391bbc98b8feaa0dbc8befd8e581a3892e67f40`) with the six Firebase App Hosting staging backends. CPU and Menu Planning reported `7670408c2f228e60f6ac88bbe8571b35d4ee1434`; Delivered-In reported `37df1be5f620f723ea86a46abfbad92e5cba50ed`; the remaining backends did not expose a verifiable public build SHA. Exact-SHA staging rollouts are being submitted for the canonical commit. Deployment status: submitted, rollout completion not awaited.
 - **2026-09-04 15:17 +01:00 — THREAD 0 — FIKA OS canonical workspace reset:** promoted the validated canonical history to `main`, rewrote the canonical platform README, and formalised the single-checkout/main-branch and mandatory changelog policies in `AGENTS.md`. Affected areas: repository documentation and source-control workflow. Validation: remote fast-forward verification, documentation review and `git diff --check`. Deployment status: no deployment performed.
 
@@ -77,9 +78,3 @@ This file records user-facing workflow changes delivered in the repository. Deta
 - Added collection pairing six hours after a delivery when collection is required.
 - Restored the logistics timeline’s horizontal/vertical zoom controls, aligned ruler indicators, simplified van rows and required a clear double click for inspection.
 - Added drag-and-drop assignment between van timelines, including drops onto occupied cards; cards now move freely and snap only on release.
-
-### Verification
-
-- Logistics typecheck passes; all 27 logistics tests pass.
-- Hospitality typecheck and test suite pass (30 tests).
-- CPU typecheck passes; the suite has one known legacy saved-allergen fixture failure requiring fixture reconciliation.
