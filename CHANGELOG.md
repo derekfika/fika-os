@@ -4,6 +4,8 @@ This file records user-facing workflow changes delivered in the repository. Deta
 
 ## Unreleased
 
+- **2026-09-05 — Import Menu Week long-running progress modal:** added plain-language checking/import progress, workbook/week metrics, explicit zero-new-Dish-Library messaging, double-submit protection, non-dismissible write states, clear success continuation and friendly workbook/week failure context. No deployment performed.
+
 ### UI governance
 
 - **2026-09-05 — THREAD 9 — FIKA OS style guide and importer reference correction:** promoted the existing shared FIKA token foundation with semantic aliases, added the authoritative `docs/STYLE-GUIDE.md`, and made the root agent guidance require it for user-facing UI work. Updated the Menu Planning importer reference surface to use light semantic surfaces, purple actions and visible focus states, with focused style-contract coverage. No cross-app restyle or deployment performed.

@@ -24,6 +24,14 @@ test("importer reference screen stays light, semantic and keyboard-visible", asy
   assert.doesNotMatch(`${css}\n${page}`, /#102019|#182923|#22372f|#0b1511|#4df7c2/i);
   assert.doesNotMatch(`${css}\n${page}`, /color:\s*["']?#(?:8ee8c5|b7f5de)/i);
   assert.match(page, /multiple|drop|Choose Excel files|drag/i);
+  assert.match(page, /role="dialog"/);
+  assert.match(page, /role="progressbar"/);
+  assert.match(page, /Files checked/);
+  assert.match(page, /Menu days parsed/);
+  assert.match(page, /Matched automatically/);
+  assert.match(page, /0 new Dish Library items were created/);
+  assert.match(page, /Affected workbook or week/);
+  assert.match(css, /import-progress-backdrop/);
 });
 
 test("UI governance points user-facing work to the style guide", async () => {
