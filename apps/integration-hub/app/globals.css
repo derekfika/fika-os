@@ -151,3 +151,5 @@ aside button > span:first-child {
     z-index: 1;
   }
 }
+/* Operational primary actions use the shared FIKA purple hierarchy. */
+body .primary{background:var(--color-brand-primary)!important;color:#fff!important}

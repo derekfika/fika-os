@@ -31,3 +31,22 @@ test("confirmation modal provides accessible copy, cancellation, loading protect
   assert.match(source("ServiceCataloguePanel.tsx"), /This permanently deletes an unused service type and cannot be undone/);
   assert.match(source("EquipmentTypesPanel.tsx"), /This permanently deletes an unused Equipment Type and cannot be undone/);
 });
+
+test("hospitality Booking status changes use an in-app reason modal", () => {
+  const bookings = source("HospitalityBookings.tsx");
+  assert.doesNotMatch(bookings, /window\.(prompt|confirm|alert)\s*\(/);
+  assert.match(bookings, /BookingReasonModal/);
+  assert.match(bookings, /Reason <span>\(required\)/);
+  assert.match(bookings, /Current status:/);
+  assert.match(bookings, /New status:/);
+  assert.match(bookings, /disabled=\{busy \|\| !reason\.trim\(\)\}/);
+  assert.match(bookings, /event\.key === "Escape"/);
+  assert.match(bookings, /opener\.current\?\.focus\(\)/);
+  assert.match(bookings, /setSaving\(true\)/);
+  assert.match(bookings, /expectedVersion: selected\.version/);
+});
+
+test("Integration Hub primary actions use the semantic purple token", () => {
+  const styles = readFileSync(`${root}/app/globals.css`, "utf8");
+  assert.match(styles, /body \.primary\{background:var\(--color-brand-primary\)!important;color:#fff!important\}/);
+});

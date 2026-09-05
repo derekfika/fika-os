@@ -102,3 +102,4 @@ This file records user-facing workflow changes delivered in the repository. Deta
 - Added collection pairing six hours after a delivery when collection is required.
 - Restored the logistics timeline’s horizontal/vertical zoom controls, aligned ruler indicators, simplified van rows and required a clear double click for inspection.
 - Added drag-and-drop assignment between van timelines, including drops onto occupied cards; cards now move freely and snap only on release.
+- **2026-09-05 — THREAD 10A — low-risk UI compliance fixes:** replaced the Integration Hub Booking native reason prompt with a focused in-app modal, added shared-token focus-visible styling to Delivered-In, aligned Integration Hub primary actions to semantic purple/white, and switched CPU operational body typography to the existing Gilroy token. Validation: focused Integration Hub, Delivered-In and CPU tests; typechecks/builds run; no deployment.

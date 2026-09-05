@@ -455,6 +455,11 @@ test("CPU dashboard opens with a Monday-to-Friday production heads-up", () => {
   assert.match(calendar, /pieces\/quantities/);
 });
 
+test("CPU operational UI inherits the existing Gilroy body token", () => {
+  const styles = readFileSync(new URL("../app/styles.css", import.meta.url), "utf8");
+  assert.match(styles, /body\{font-family:var\(--body,Arial,sans-serif\)\}/);
+});
+
 test("production views use Connections routing without duplicating bookings", () => {
   assert.match(page, /productionScope/);
   assert.doesNotMatch(page, /dashboardView/);
