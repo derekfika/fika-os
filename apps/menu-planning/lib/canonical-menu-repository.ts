@@ -134,6 +134,19 @@ export async function getCanonicalMenuItemById(id: string) {
   return (await readItems()).find(item => item.canonicalId === cleanId);
 }
 
+export async function recordDishSourceAliases(aliasesById: Record<string, string[]>, actor = "menu-planning-importer") {
+  const items = await readItems(); const at = new Date().toISOString(); let changed = 0;
+  for (const item of items) {
+    const aliases = [...new Set((aliasesById[item.canonicalId] || []).map(value => value.trim()).filter(value => value && value.toLocaleLowerCase() !== item.displayName.toLocaleLowerCase()))];
+    if (!aliases.length) continue;
+    const next = [...new Set([...(item.sourceAliases || []), ...aliases])];
+    if (next.length === (item.sourceAliases || []).length) continue;
+    item.sourceAliases = next; item.revision += 1; item.audit.push({ action: "legacy-workbook-dish-alias-confirmed", at, by: actor }); changed += 1;
+  }
+  if (changed) await writeItems(items);
+  return changed;
+}
+
 export async function createCanonicalMenuItem(input: { displayName: string; category?: string; description?: string; preparationNotes?: string; allergenEvidence?: MenuItem["allergenEvidence"] }, actor = "local-menu-planner") {
   const items = await readItems();
   const displayName = normaliseDishName(input.displayName);

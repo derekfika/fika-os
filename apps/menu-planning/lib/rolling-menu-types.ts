@@ -1,6 +1,6 @@
 export const ROLLING_SLOTS = ["SALAD 1", "SALAD 2", "SALAD 3", "SALAD 4", "SALAD 5", "SALAD 6", "COLD PROTEIN", "SOUP", "HOT MEAT", "HOT VEG VEGAN", "EXTRAS 1", "EXTRAS 2", "EXTRAS 3", "EXTRAS 4", "EXTRAS 5", "EXTRAS 6"] as const;
 export type RollingSlot = typeof ROLLING_SLOTS[number];
-export type RollingWeekStatus = "draft" | "needs_review" | "ready" | "partially_published" | "published" | "archived";
+export type RollingWeekStatus = "draft" | "imported" | "needs_review" | "ready" | "partially_published" | "published" | "archived";
 export type RollingDayPublicationStatus = "draft" | "ready" | "published" | "superseded";
 import type { CanonicalAllergenMap, OperationalAllergenState } from "./fika-contracts";
 export type AllergenState = OperationalAllergenState;

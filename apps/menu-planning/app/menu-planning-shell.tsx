@@ -11,6 +11,7 @@ const primary = [
   { href: "/allergens", label: "Allergen Checker", icon: "◇" },
   { href: "/catalogue", label: "Dish Library", icon: "▧" },
   { href: "/history", label: "History & Imports", icon: "◌" },
+  { href: "/import-menu-week", label: "Import Menu Week", icon: "↑" },
 ];
 
 export default function MenuPlanningShell({ children, section, actions }: { children: ReactNode; section?: string; actions?: ReactNode }) {
