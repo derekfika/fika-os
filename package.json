@@ -23,6 +23,7 @@
     ,"golden-week:cleanup": "node tools/uat/week.mjs cleanup"
     ,"golden-week:e2e": "npm --prefix apps/logistics run test:e2e -- --project=golden-week"
     ,"staging:reset": "node tools/uat/reset-staging.mjs"
+    ,"staging:rebuild": "npm --prefix apps/menu-planning exec -- tsx tools/uat/rebuild-staging.ts"
   },
   "dependencies": {
     "firebase-admin": "^13.4.0",
