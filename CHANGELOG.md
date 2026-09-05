@@ -6,6 +6,7 @@ This file records user-facing workflow changes delivered in the repository. Deta
 
 ### Canonical source control
 
+- **2026-09-05 — THREAD 8A — multi-file Legacy Week Importer UX:** added native multi-select, keyboard-accessible `Choose Excel files`, drag-and-drop with browser-navigation protection, combined batch parsing/review, duplicate-week and existing-week conflict reporting, filename date selection for attention cases, and controlled bulk import of unpublished planning weeks. No catalogue creation, downstream data, reset or deployment performed.
 - **2026-09-05 — THREAD 8 — Legacy Week Importer and safe dish matching:** added a user-facing Excel week import review flow that reuses the existing workbook parser, resolves only to existing canonical dishes, learns auditable source-name aliases, preserves provenance, blocks unresolved decisions and never creates catalogue dishes or downstream operational records. Added focused resolver, date, duplicate and canonical-count invariant tests. No deployment or bulk import performed.
 - **2026-09-05 — README TL;DR:** added a concise repository and staging-policy summary to the root README. No reset or deployment performed.
 - **2026-09-05 — README staging reset command:** documented the explicit hard-reset command, including its required planning-history flag and rebuild command. No reset or deployment performed.
