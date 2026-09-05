@@ -1,0 +1,28 @@
+/* Import Menu Week uses the same light/purple operational language as Menu Planning. */
+.import-menu-week button {
+  border: 1px solid var(--mp-purple) !important;
+  background: var(--mp-purple) !important;
+  color: #fff !important;
+  font: inherit;
+  cursor: pointer;
+}
+
+.import-menu-week button:hover:not(:disabled) {
+  background: #4325b4 !important;
+  border-color: #4325b4 !important;
+}
+
+.import-menu-week button:disabled {
+  background: #eeeaf7 !important;
+  border-color: var(--mp-border) !important;
+  color: var(--mp-muted) !important;
+  cursor: not-allowed;
+}
+
+.import-menu-week input,
+.import-menu-week select {
+  color: var(--mp-ink);
+  background: #fff;
+  border: 1px solid var(--mp-border);
+  border-radius: 7px;
+}
