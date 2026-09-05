@@ -12,13 +12,16 @@ test("week planner navigation is independent of persisted week summaries", async
   assert.match(workspace, /params\.set\("weekId", body\.snapshot\.week\.id\)/);
 });
 
-test("staging reset keeps reusable planning-source history by targeted status", async () => {
+test("staging reset preserves reusable planning-source history unless hard reset is explicit", async () => {
   const reset = await readFile(new URL("../../../tools/uat/reset-staging.mjs", import.meta.url), "utf8");
   assert.match(reset, /fikaMenuPlanningWeeks/);
-  assert.match(reset, /PLANNING_HISTORY_PRESERVE_STATUSES/);
-  assert.match(reset, /PLANNING_HISTORY_DELETE_STATUSES/);
-  assert.match(reset, /recursiveDelete\(doc\.ref\)/);
-  assert.match(reset, /MIXED \/ TARGETED/);
-  const deleteBlock = reset.slice(reset.indexOf("const DELETE_COLLECTIONS"), reset.indexOf("const PLANNING_HISTORY"));
+  assert.match(reset, /const hardResetPlanningHistory = args\.has\("--hard-reset-planning-history"\)/);
+  assert.match(reset, /HARD RESET ONLY/);
+  assert.match(reset, /hardResetPlanningHistory && !confirmReset/);
+  assert.match(reset, /if \(hardResetPlanningHistory\) await db\.recursiveDelete\(db\.collection\("fikaMenuPlanningWeeks"\)\)/);
+  const deleteBlock = reset.slice(reset.indexOf("const DELETE_COLLECTIONS"), reset.indexOf("const CLEAR_DERIVED_STORAGE"));
   assert.doesNotMatch(deleteBlock, /fikaMenuPlanningWeeks/);
+  const preserveBlock = reset.slice(reset.indexOf("const PRESERVE_COLLECTIONS"), reset.indexOf("const DELETE_COLLECTIONS"));
+  assert.match(preserveBlock, /fikaMenuPlanningWeeks/);
+  assert.doesNotMatch(reset, /recursiveDelete\(doc\.ref\)/);
 });

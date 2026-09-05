@@ -11,6 +11,8 @@ const PRESERVE_COLLECTIONS = [
   "authmodIdentities", "authmodAppAssignments", "authmodSiteAssignments", "authmodAuthorityGrants", "authmodAuthorityEvents",
   "integrationHubCanonical", "integrationHubCanonicalRevisions", "integrationHubSourceMappings", "integrationHubGovernanceAudit",
   "fikaAddresses", "fikaServiceArrangementsV1", "fikaServiceDefinitionsV1", "fikaMenuPlanningCatalogue", "fikaMenuPlanningCatalogueManifests",
+  // Reusable planning source/history is preserved for Duplicate Week and historic UAT reference.
+  "fikaMenuPlanningWeeks",
   // Audit/evidence is deliberately preserved.
   "fikaBookingAudit",
 ];
@@ -21,9 +23,6 @@ const DELETE_COLLECTIONS = [
   "fikaLogisticsDeliveryRunsV1", "fikaLogisticsMovementRequestsV1", "fikaLogisticsDeliveryStopsV1", "fikaLogisticsCollectionPreferencesV1",
   "fikaDomainEventInboxV1", "fikaDomainEventsV1",
 ];
-
-const PLANNING_HISTORY_PRESERVE_STATUSES = ["draft", "imported", "needs_review", "in_review", "approved", "archived"];
-const PLANNING_HISTORY_DELETE_STATUSES = ["published", "superseded"];
 
 const CLEAR_DERIVED_STORAGE = [
   "snapshots/cpu-production/projection-week/", "snapshots/cpu-production/projection-day/", "snapshots/cpu-production/delivered-in-review/",
@@ -46,6 +45,7 @@ const PRESERVE_STORAGE = [
 
 const args = new Set(process.argv.slice(2));
 const confirmReset = args.has("--confirm-staging-reset");
+const hardResetPlanningHistory = args.has("--hard-reset-planning-history");
 const rebuildCommandIndex = process.argv.indexOf("--rebuild-command");
 const rebuildCommand = rebuildCommandIndex >= 0 ? process.argv[rebuildCommandIndex + 1] : undefined;
 const runtimeMode = process.env.FIKA_RUNTIME_MODE;
@@ -55,12 +55,13 @@ if (runtimeMode !== "staging") throw new Error("Refusing staging reset: set FIKA
 if (projectId !== "fika-os-dev") throw new Error("Refusing staging reset: FIREBASE_PROJECT_ID must be exactly fika-os-dev.");
 if (process.env.FIRESTORE_EMULATOR_HOST) throw new Error("Refusing staging reset while FIRESTORE_EMULATOR_HOST is set.");
 if (confirmReset && !rebuildCommand) throw new Error("Refusing destructive reset without --rebuild-command <approved rebuild command>.");
+if (hardResetPlanningHistory && !confirmReset) throw new Error("Refusing hard planning-history reset without --confirm-staging-reset.");
 
 console.log(JSON.stringify({
   projectId, mode: confirmReset ? "DESTRUCTIVE" : "DRY_RUN",
   PRESERVE: { collections: PRESERVE_COLLECTIONS, storage: PRESERVE_STORAGE },
-  DELETE: { collections: DELETE_COLLECTIONS, decision: "fikaMenuPlanningPublications, fikaMenuPlanningEvents and fikaDomainEventsV1 are deliberately treated as synthetic operational staging-UAT history and reset; fikaBookingAudit remains preserved audit evidence." },
-  "MIXED / TARGETED": { collection: "fikaMenuPlanningWeeks", preserveStatuses: PLANNING_HISTORY_PRESERVE_STATUSES, deleteStatuses: PLANNING_HISTORY_DELETE_STATUSES, decision: "Reusable draft/imported planning-source history is preserved; published/superseded planning records are selectively removed." },
+  DELETE: { collections: DELETE_COLLECTIONS, decision: "Operational bookings, publications, events and downstream state are reset; fikaBookingAudit and all fikaMenuPlanningWeeks remain preserved by default." },
+  "HARD RESET ONLY": { collection: "fikaMenuPlanningWeeks", flag: "--hard-reset-planning-history", decision: "Only this separate mode may delete reusable planning-source/history data, and it requires both --confirm-staging-reset and --hard-reset-planning-history." },
   "CLEAR DERIVED STORAGE": CLEAR_DERIVED_STORAGE,
   "REBUILD AFTER RESET": REBUILD_AFTER_RESET,
   "UNKNOWN / NOT TOUCHED": "Every collection, document, storage object and prefix not explicitly listed above.",
@@ -73,12 +74,10 @@ const bucketName = process.env.FIKA_SNAPSHOT_BUCKET || process.env.FIREBASE_STOR
 async function countCollection(name) { return (await db.collection(name).get()).size; }
 async function countStoragePrefix(bucket, prefix) { return (await bucket.getFiles({ prefix }))[0].length; }
 
-const counts = { DELETE: {}, PRESERVE: {}, "MIXED / TARGETED": {}, "CLEAR DERIVED STORAGE": {} };
+const counts = { DELETE: {}, PRESERVE: {}, "CLEAR DERIVED STORAGE": {} };
 try {
   for (const name of DELETE_COLLECTIONS) counts.DELETE[name] = await countCollection(name);
   for (const name of PRESERVE_COLLECTIONS) counts.PRESERVE[name] = await countCollection(name);
-  const planningWeeks = await db.collection("fikaMenuPlanningWeeks").get();
-  counts["MIXED / TARGETED"] = Object.fromEntries([...PLANNING_HISTORY_PRESERVE_STATUSES, ...PLANNING_HISTORY_DELETE_STATUSES].map(status => [status, planningWeeks.docs.filter(doc => doc.data().status === status).length]));
   if (!bucketName) throw new Error("FIKA_SNAPSHOT_BUCKET/FIREBASE_STORAGE_BUCKET is not configured.");
   const bucket = getStorage().bucket(bucketName);
   for (const prefix of CLEAR_DERIVED_STORAGE) counts["CLEAR DERIVED STORAGE"][prefix] = await countStoragePrefix(bucket, prefix);
@@ -91,8 +90,7 @@ try {
 
 if (!confirmReset) process.exit(0);
 for (const name of DELETE_COLLECTIONS) await db.recursiveDelete(db.collection(name));
-const planningWeeks = await db.collection("fikaMenuPlanningWeeks").get();
-for (const doc of planningWeeks.docs) if (PLANNING_HISTORY_DELETE_STATUSES.includes(String(doc.data().status))) await db.recursiveDelete(doc.ref);
+if (hardResetPlanningHistory) await db.recursiveDelete(db.collection("fikaMenuPlanningWeeks"));
 const bucket = getStorage().bucket(bucketName);
 for (const prefix of CLEAR_DERIVED_STORAGE) {
   const [files] = await bucket.getFiles({ prefix });
