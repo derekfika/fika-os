@@ -51,7 +51,35 @@ export async function resolveAccess(request: NextRequest, service: DeliveredInSe
   return { access: body.access, sites: body.sites };
 }
 
-export async function projectedWeeks(request: NextRequest, requestedOplocId?: string, options: { usePackages?: boolean } = {}) {
+const weekRecovery = new Map<string, Promise<void>>();
+
+async function recoverRequestedWeek(request: NextRequest, oplocId: string, weekCommencing: string) {
+  const key = `${oplocId}:${weekCommencing}`;
+  const existing = weekRecovery.get(key);
+  if (existing) return existing;
+  const work = (async () => {
+    const toWeek = addDays(weekCommencing, 7);
+    let publications: SourcePublication[] = [];
+    const packets = await readMenuPlanningWeekPackets(weekCommencing, toWeek).catch(() => []);
+    if (packets.length) publications = packetPublicationsForRange(packets, weekCommencing, toWeek) as SourcePublication[];
+    else {
+      const response = await fetch(`${menuBase()}/api/rolling-menu/publications?fromWeek=${encodeURIComponent(weekCommencing)}&toWeek=${encodeURIComponent(toWeek)}`, { cache: "no-store" });
+      const body = await readJson<{ publications?: SourcePublication[]; error?: { message?: string } }>(response, "Menu Planning publication service");
+      if (!response.ok) throw failure(body.error?.message || "Published Delivered-In menus could not be loaded.");
+      publications = body.publications || [];
+    }
+    if (!publications.length) return;
+    const { reconcileDeliveredInDay } = await import("./delivered-in-reconciliation");
+    const dates = [...new Set(publications.flatMap(publication => publication.days.filter(day => day.status !== "withdrawn" && day.date >= weekCommencing && day.date < toWeek).map(day => day.date)))].sort();
+    await Promise.all(dates.map(date => reconcileDeliveredInDay(request, oplocId, date)));
+  })();
+  weekRecovery.set(key, work);
+  try { await work; } finally { weekRecovery.delete(key); }
+}
+
+function emptyWeek(weekCommencing: string) { return { publicationId: "", weekCommencing, weekEnding: addDays(weekCommencing, 6), days: [] as DeliveredInDayProjection[] }; }
+
+export async function projectedWeeks(request: NextRequest, requestedOplocId?: string, options: { usePackages?: boolean; requestedWeek?: string } = {}) {
   const resolved = await resolveAccess(request); const access = resolved.access; const sites = resolved.sites;
   if (!access.oplocIds.length) return { access, sites, selectedOplocId: undefined, weeks: [] };
   const selectedOplocId = requestedOplocId || (access.oplocIds.length === 1 ? access.oplocIds[0] : undefined);
@@ -59,12 +87,18 @@ export async function projectedWeeks(request: NextRequest, requestedOplocId?: st
   assertAuthorisedOploc(access, selectedOplocId);
   const site = sites.find(candidate => candidate.oplocId === selectedOplocId) || { oplocId: selectedOplocId, label: selectedOplocId };
   if (options.usePackages !== false) {
-    const discovered = await readProjectionWindow(selectedOplocId);
+    let discovered = await readProjectionWindow(selectedOplocId);
+    if (options.requestedWeek && !weeksFromProjectionDays(discovered.days).some(week => week.weekCommencing === options.requestedWeek)) {
+      await recoverRequestedWeek(request, selectedOplocId, options.requestedWeek);
+      discovered = await readProjectionWindow(selectedOplocId);
+    }
+    const weeks = weeksFromProjectionDays(discovered.days);
+    const requested = options.requestedWeek && !weeks.some(week => week.weekCommencing === options.requestedWeek) ? emptyWeek(options.requestedWeek) : undefined;
     return {
       access,
       sites,
       selectedOplocId,
-      weeks: weeksFromProjectionDays(discovered.days),
+      weeks: requested ? [...weeks, requested] : weeks,
       withdrawnServiceDates: discovered.withdrawnServiceDates,
       projectionState: discovered.state,
       unavailableServiceDates: discovered.unavailableServiceDates,
@@ -103,7 +137,7 @@ export async function projectedWeeks(request: NextRequest, requestedOplocId?: st
   return { access, sites, selectedOplocId, weeks, withdrawnServiceDates: [] as string[] };
 }
 
-export async function projectionHead(request: NextRequest, requestedOplocId?: string) {
+export async function projectionHead(request: NextRequest, requestedOplocId?: string, requestedWeek?: string) {
   const resolved = await resolveAccess(request);
   const access = resolved.access;
   const sites = resolved.sites;
@@ -111,8 +145,13 @@ export async function projectionHead(request: NextRequest, requestedOplocId?: st
   const selectedOplocId = requestedOplocId || (access.oplocIds.length === 1 ? access.oplocIds[0] : undefined);
   if (!selectedOplocId) return { access, sites, selectedOplocId: undefined, projectionState: "unavailable" as const, entries: [], withdrawnServiceDates: [], unavailableServiceDates: [] };
   assertAuthorisedOploc(access, selectedOplocId);
-  const window = await readProjectionIndexWindow(selectedOplocId);
-  return { access, sites, selectedOplocId, projectionState: window.state, weeks: window.weeks, entries: window.entries, withdrawnServiceDates: window.withdrawnServiceDates, unavailableServiceDates: window.unavailableServiceDates };
+  let window = await readProjectionIndexWindow(selectedOplocId);
+  if (requestedWeek && !window.weeks.some(week => week.weekCommencing === requestedWeek)) {
+    await recoverRequestedWeek(request, selectedOplocId, requestedWeek);
+    window = await readProjectionIndexWindow(selectedOplocId);
+  }
+  const weeks = requestedWeek && !window.weeks.some(week => week.weekCommencing === requestedWeek) ? [...window.weeks, emptyWeek(requestedWeek)] : window.weeks;
+  return { access, sites, selectedOplocId, projectionState: window.state, weeks, entries: window.entries, withdrawnServiceDates: window.withdrawnServiceDates, unavailableServiceDates: window.unavailableServiceDates };
 }
 
 export function projectionWindowBounds(asOf = operationalDateLondon()) {

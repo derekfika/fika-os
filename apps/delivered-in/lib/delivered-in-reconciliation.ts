@@ -1,6 +1,6 @@
 import type { NextRequest } from "next/server";
 import { buildDeliveredInDayProjection, type ReviewLoader } from "./delivered-in-projection-materialiser";
-import { readDeliveredInProjection, writeDeliveredInProjection, withdrawDeliveredInProjectionDay } from "./delivered-in-projection-store";
+import { readDeliveredInProjection, writeDeliveredInProjection, withdrawDeliveredInProjectionDay, type DeliveredInInvalidation } from "./delivered-in-projection-store";
 import { assertAuthorisedOploc, projectPublishedWeeks, type Site, type SourcePublication } from "./projection";
 import { resolveAccess, cpuReviewForDay } from "./server";
 import { packetPublicationsForRange, readMenuPlanningWeekPackets } from "./menu-planning-week-packet";
@@ -37,7 +37,7 @@ async function menuForDate(request: NextRequest, oplocId: string, serviceDate: s
   return undefined;
 }
 
-export async function reconcileDeliveredInDay(request: NextRequest, oplocId: string, serviceDate: string, options: { loadReview?: ReviewLoader } = {}) {
+export async function reconcileDeliveredInDay(request: NextRequest, oplocId: string, serviceDate: string, options: { loadReview?: ReviewLoader; invalidation?: DeliveredInInvalidation } = {}) {
   const resolved = await resolveAccess(request); assertAuthorisedOploc(resolved.access, oplocId);
   const site: Site = resolved.sites.find(candidate => candidate.oplocId === oplocId) || { oplocId, label: oplocId };
   const existing = await readDeliveredInProjection(oplocId, serviceDate).catch(() => undefined);
@@ -48,6 +48,6 @@ export async function reconcileDeliveredInDay(request: NextRequest, oplocId: str
   const comparable = (value: unknown) => JSON.stringify(value, (_key, item) => _key === "generatedAt" || _key === "projectionVersion" ? undefined : item);
   const sourceCertainty = candidate.sourceLineage.cpu.sourceBundleHash ? "CPU daily signed packet matched the Menu Planning source bundle hash." : "CPU daily signed packet metadata was not supplied.";
   if (existing && existing.value.state.completeness === "complete" && comparable(existing.value) === comparable(candidate)) return { status: "current", projection: existing.value, sourceCertainty };
-  const written = await writeDeliveredInProjection(candidate);
+  const written = await writeDeliveredInProjection(candidate, { invalidation: options.invalidation });
   return { status: existing ? "rebuilt" : "created", projection: written.projection, sourceCertainty };
 }

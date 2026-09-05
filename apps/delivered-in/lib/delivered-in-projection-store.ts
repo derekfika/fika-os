@@ -53,7 +53,7 @@ export async function readDeliveredInProjection(oplocId: string, serviceDate: st
   return result;
 }
 
-export async function writeDeliveredInProjection(projection: DeliveredInDayProjection) {
+export async function writeDeliveredInProjection(projection: DeliveredInDayProjection, options: { invalidation?: DeliveredInInvalidation } = {}) {
   const store = deliveredInProjectionStore();
   const key = projectionManifestKey(projection.oplocId, projection.serviceDate);
   const previous = await store.getManifest(key);
@@ -66,7 +66,7 @@ export async function writeDeliveredInProjection(projection: DeliveredInDayProje
     scope: `${versioned.oplocId}:${versioned.serviceDate}`,
   });
   const manifest = await publishReadPackage<DeliveredInDayProjection>(store, key, encoded);
-  await updateProjectionIndex(store, projection.oplocId, { oplocId: projection.oplocId, serviceDate: projection.serviceDate, weekCommencing: projection.weekCommencing, weekEnding: addDays(projection.weekCommencing || projection.serviceDate, 6), publicationId: projection.publicationId, projectionVersion: version, packageVersion: manifest.packageVersion, contentHash: manifest.contentHash, freshness: projection.state.freshness, completeness: projection.state.completeness, sourceVersion: encoded.manifest.sourceVersion || "", generatedAt: projection.generatedAt, state: "available" });
+  await updateProjectionIndex(store, projection.oplocId, { oplocId: projection.oplocId, serviceDate: projection.serviceDate, weekCommencing: projection.weekCommencing, weekEnding: addDays(projection.weekCommencing || projection.serviceDate, 6), publicationId: projection.publicationId, projectionVersion: version, packageVersion: manifest.packageVersion, contentHash: manifest.contentHash, freshness: projection.state.freshness, completeness: projection.state.completeness, sourceVersion: encoded.manifest.sourceVersion || "", generatedAt: projection.generatedAt, state: "available", ...(options.invalidation ? { invalidation: { ...options.invalidation, invalidatedAt: projection.generatedAt } } : {}) });
   recordDataAccess({ app: "delivered-in", operation: "day-projection.publish", source: "SNAPSHOT", documents: 1, cacheHit: false });
   return { manifest, projection: versioned };
 }

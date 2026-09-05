@@ -7,10 +7,10 @@ export const dynamic = "force-dynamic";
 async function handleGet(request: NextRequest) {
   try {
     if (request.nextUrl.searchParams.get("head") === "1") {
-      const result = await projectionHead(request, request.nextUrl.searchParams.get("oplocId") || undefined);
+      const result = await projectionHead(request, request.nextUrl.searchParams.get("oplocId") || undefined, request.nextUrl.searchParams.get("week") || undefined);
       return NextResponse.json(result, { headers: { "Cache-Control": "no-store, max-age=0" } });
     }
-    const result = await projectedWeeks(request, request.nextUrl.searchParams.get("oplocId") || undefined);
+    const result = await projectedWeeks(request, request.nextUrl.searchParams.get("oplocId") || undefined, { requestedWeek: request.nextUrl.searchParams.get("week") || undefined });
     return NextResponse.json(result, { headers: { "Cache-Control": "no-store, max-age=0" } });
   } catch (error) { return NextResponse.json({ error: { message: error instanceof Error ? error.message : "Delivered-In could not be loaded." } }, { status: Number((error as { status?: number }).status) || 502 }); }
 }
