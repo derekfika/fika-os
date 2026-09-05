@@ -12,6 +12,7 @@ test("safe dish matching resolves exact, aliases and normalised names without cr
   assert.equal(resolutions.find(item => item.sourceName.includes("ROASTED"))?.canonicalId, "dish:carrot");
   assert.equal(resolutions.find(item => item.sourceName === "Unknown dish")?.occurrences, 2);
   assert.equal(catalogue.length, 2);
+  assert.equal(safeDishKey("Roast Carrot, Edamame & Sesame"), safeDishKey("roast carrot edamame and sesame"));
 });
 
 test("fuzzy suggestions are never automatic and unresolved names block commit", () => {

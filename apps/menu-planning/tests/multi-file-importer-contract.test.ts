@@ -12,6 +12,11 @@ test("multi-file importer exposes native picker and drag/drop safety", async () 
   assert.match(page, /onDrop/);
   assert.match(page, /Add more files/);
   assert.match(page, /Import \$\{snapshots\.length\} menu weeks/);
+  assert.match(page, /Accept all suggested matches/);
+  assert.match(page, /Ignore all shown/);
+  assert.match(page, /Undo bulk action/);
+  assert.match(page, /window\.confirm/);
+  assert.match(page, /Choose another/);
 });
 
 test("batch import uses one preview and commit endpoint without catalogue creation", async () => {

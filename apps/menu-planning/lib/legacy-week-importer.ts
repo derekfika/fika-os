@@ -5,7 +5,7 @@ export type DishResolutionKind = "matched" | "suggested" | "unresolved";
 export type DishResolution = { sourceName: string; occurrences: number; kind: DishResolutionKind; canonicalId?: string; canonicalName?: string; suggestions: Array<{ id: string; name: string }> };
 
 export function safeDishKey(value: string) {
-  return value.trim().toLocaleLowerCase("en-GB").replace(/[’']/g, "").replace(/[^a-z0-9]+/g, " ").replace(/\s+/g, " ").trim();
+  return value.trim().toLocaleLowerCase("en-GB").replace(/[’']/g, "").replace(/&/g, " and ").replace(/[^a-z0-9]+/g, " ").replace(/\s+/g, " ").trim();
 }
 
 function tokens(value: string) { return new Set(safeDishKey(value).split(" ").filter(Boolean)); }
