@@ -47,12 +47,23 @@ async function readItems(): Promise<MenuItem[]> {
 
 const hosted = hostedCatalogue;
 export function invalidateHostedCatalogueCache() { hostedCatalogueCache = undefined; }
+/** Remove undefined object properties before crossing the Firestore boundary.
+ * Plain records are copied recursively; Firestore-native values (Timestamp,
+ * GeoPoint, DocumentReference, Date, Buffer, etc.) are passed through intact.
+ */
+export function sanitiseFirestoreValue<T>(value: T): T {
+  if (value === undefined || value === null || typeof value !== "object") return value;
+  if (Array.isArray(value)) return value.filter(item => item !== undefined).map(item => sanitiseFirestoreValue(item)) as T;
+  const prototype = Object.getPrototypeOf(value);
+  if (prototype !== Object.prototype && prototype !== null) return value;
+  return Object.fromEntries(Object.entries(value as Record<string, unknown>).filter(([, item]) => item !== undefined).map(([key, item]) => [key, sanitiseFirestoreValue(item)])) as T;
+}
 const hostedDb = () => {
   const projectId = process.env.FIREBASE_PROJECT_ID || process.env.GCLOUD_PROJECT;
   if (!projectId) throw Object.assign(new Error("Hosted Menu Planning catalogue is not configured."), { status: 503 });
   return new Firestore({ projectId });
 };
-const hostedDocument = (item: MenuItem) => ({ id: item.canonicalId, kind: "dish", source: "menu-planning-local", record: item, reconciliationStatus: "reconciled", schemaVersion: "1.0.0" });
+export const hostedDocument = (item: MenuItem) => sanitiseFirestoreValue({ id: item.canonicalId, kind: "dish", source: "menu-planning-local", record: item, reconciliationStatus: "reconciled", schemaVersion: "1.0.0" });
 const recordsEqual = (left: unknown, right: unknown) => JSON.stringify(left) === JSON.stringify(right);
 async function publishItemsBestEffort(items: MenuItem[]) {
   try {
@@ -71,10 +82,11 @@ async function publishItemsBestEffort(items: MenuItem[]) {
 
 async function writeItems(items: MenuItem[]) {
   if (hosted()) {
+    const persistedItems = items.map(item => sanitiseFirestoreValue(item));
     const db = hostedDb();
     const current = await db.collection("fikaMenuPlanningCatalogue").where("kind", "==", "dish").get();
     const currentById = new Map(current.docs.map(document => [document.id, document.data()]));
-    const changed = items.filter(item => !recordsEqual(currentById.get(item.canonicalId)?.record, item));
+    const changed = persistedItems.filter(item => !recordsEqual(currentById.get(item.canonicalId)?.record, item));
     if (!changed.length) return;
     await db.runTransaction(async transaction => {
       const refs = changed.map(item => db.collection("fikaMenuPlanningCatalogue").doc(item.canonicalId));
@@ -84,11 +96,11 @@ async function writeItems(items: MenuItem[]) {
         const existing = document.exists ? document.data() : undefined;
         const existingRecord = existing?.record as MenuItem | undefined;
         if (existingRecord && existingRecord.revision > item.revision && existingRecord.reviewStatus !== "unreviewed") return;
-        transaction.set(refs[index], { ...(existing || hostedDocument(item)), id: item.canonicalId, kind: "dish", record: item }, { merge: true });
+        transaction.set(refs[index], sanitiseFirestoreValue({ ...(existing || hostedDocument(item)), id: item.canonicalId, kind: "dish", record: item }), { merge: true });
       });
       });
     invalidateHostedCatalogueCache();
-    await publishItemsBestEffort(items);
+    await publishItemsBestEffort(persistedItems);
     return;
   }
   assertOperationalStoreAvailable();
@@ -205,7 +217,7 @@ export async function syncRollingEntries(entries: RollingEntry[], actor = "rolli
       category: normaliseDishCategory(entry.slot),
       weekId: "menu-week:rolling-import",
       dayId: "",
-      sourceReference: { workbook: entry.source?.workbook || "rolling menu", sheet: entry.source?.sheet || entry.slot, range: entry.source?.range },
+      sourceReference: { workbook: entry.source?.workbook || "rolling menu", sheet: entry.source?.sheet || entry.slot, ...(entry.source?.range !== undefined ? { range: entry.source.range } : {}) },
       revision: 1,
       reviewStatus: "unreviewed",
       allergenEvidence,

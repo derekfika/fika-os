@@ -4,6 +4,8 @@ This file records user-facing workflow changes delivered in the repository. Deta
 
 ## Unreleased
 
+- **2026-09-05 — THREAD 11A — Firestore undefined catalogue write fix:** sanitised canonical Menu Planning catalogue records at the hosted Firestore boundary so optional undefined fields such as `sourceReference.range` are omitted while meaningful falsy values and Firestore-native values are preserved. Confirmed ordinary Portion Planner batch saves do not invoke catalogue reconciliation and added focused persistence regression coverage. No publication-semantics change; no deployment performed.
+
 - **2026-09-05 — THREAD 11 — Menu Planning UAT blocker remediation:** made catalogue mutations return structured JSON errors even when request parsing or persistence fails; added local-first Portion Planner drafts with one optimistic-version-checked batch save, discard and draft persistence; treated rows without positive allocations as valid unused planning rows and excluded them from publication/downstream materialisation; blocked synthetic catalogue writes in hosted runtime and added a dry-run-only, explicitly confirmed staging cleanup command with audit records. Added focused UAT contract and publication-semantics tests. No deployment performed.
 
 - **2026-09-05 — THREAD 10D — Logistics UI safety and polish:** protected mobile detail/exception sheets from accidental dismissal during committed writes, added Escape and focus-return behaviour, named icon controls, semantic action hierarchy, 44px touch targets, duplicate-submit locks and restrained mutation progress messaging. Added focused Logistics UI contract coverage and migrated the active driver surface toward shared semantic tokens. No business-logic or API-contract changes; no deployment performed.
