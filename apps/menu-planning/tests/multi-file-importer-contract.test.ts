@@ -12,11 +12,20 @@ test("multi-file importer exposes native picker and drag/drop safety", async () 
   assert.match(page, /onDrop/);
   assert.match(page, /Add more files/);
   assert.match(page, /Import \$\{snapshots\.length\} menu weeks/);
-  assert.match(page, /Accept all suggested matches/);
-  assert.match(page, /Ignore all shown/);
-  assert.match(page, /Undo bulk action/);
-  assert.match(page, /window\.confirm/);
+  assert.match(page, /Accept \{visible\.filter/);
+  assert.match(page, /Ignore \{visible\.filter/);
+  assert.match(page, /Undo last bulk action/);
+  assert.match(page, /bulk-confirm-title/);
   assert.match(page, /Choose another/);
+  assert.match(page, /still need a decision/);
+  assert.match(page, /Show unresolved dishes/);
+  assert.match(page, /Needs review/);
+  assert.match(page, /role="dialog"/);
+  assert.match(page, /Importing week/);
+  assert.match(page, /View Week Planner/);
+  assert.match(page, /loadImportSession/);
+  assert.match(page, /Discard saved import/);
+  assert.match(page, /clearImportSession/);
 });
 
 test("batch import uses one preview and commit endpoint without catalogue creation", async () => {
@@ -26,5 +35,13 @@ test("batch import uses one preview and commit endpoint without catalogue creati
   assert.match(route, /duplicateWeeks/);
   assert.match(route, /recordDishSourceAliases/);
   assert.doesNotMatch(route, /createCanonicalMenuItem/);
-  assert.match(route, /saveSnapshot\(snapshot\)/);
+  assert.match(route, /saveSnapshotsCreateOnly\(prepared\)/);
+  assert.match(route, /already exist/);
+});
+
+test("historic import is create-only at the authoritative batch write", async () => {
+  const source = await readFile(new URL("../lib/rolling-menu.ts", import.meta.url), "utf8");
+  assert.match(source, /saveSnapshotsCreateOnly/);
+  assert.match(source, /existing\.has\(snapshot\.week\.weekCommencing\)/);
+  assert.match(source, /status: 409/);
 });

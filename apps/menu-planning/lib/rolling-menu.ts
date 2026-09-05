@@ -119,6 +119,22 @@ export async function saveSnapshot(snapshot: RollingSnapshot) {
   }, undefined, { weekId: snapshot.week.id, sourceWeekId: "__none__", includeEvents: false });
   return snapshot;
 }
+export async function saveSnapshotsCreateOnly(snapshots: RollingSnapshot[]) {
+  if (!snapshots.length) return [];
+  const seen = new Set<string>();
+  for (const snapshot of snapshots) {
+    const week = snapshot.week.weekCommencing;
+    if (seen.has(week)) throw Object.assign(new Error(`Week ${week} appears more than once in this import.`), { status: 409 });
+    seen.add(week);
+  }
+  await withMenuPlanningTransaction(state => {
+    const existing = new Set((state.rolling as unknown as Stored).weeks.map(week => week.weekCommencing));
+    const conflict = snapshots.find(snapshot => existing.has(snapshot.week.weekCommencing));
+    if (conflict) throw Object.assign(new Error(`Week ${conflict.week.weekCommencing} already exists in Menu Planning. Remove it before importing.`), { status: 409 });
+    for (const snapshot of snapshots) replaceSnapshotInStored(state.rolling as unknown as Stored, snapshot);
+  }, undefined, { includeEvents: false });
+  return snapshots;
+}
 export async function createEntry(weekId: string, dayId: string, slot: string, itemLabel: string, actor = "local-menu-planner", itemId?: string) { const snapshot = await getWeek(weekId); const day = snapshot.days.find(d => d.id === dayId); if (!day) throw Object.assign(new Error("Menu day was not found."), { status: 404 }); if (snapshot.entries.some(e => e.dayId === dayId && e.slot === slot)) throw Object.assign(new Error("That menu slot already has a dish."), { status: 409 }); markDayDraft(snapshot, dayId); const id = `${snapshot.week.id}:entry:${dayId}:${slot.toLowerCase().replace(/[^a-z0-9]+/g, "-")}:${Date.now()}`; const entry: RollingEntry = { id, dayId, date: day.date, slot, itemId, itemLabel: normaliseDishName(itemLabel), portions: 0, allocations: [], allergens: {}, audit: [{ action: "entry-created", at: now(), by: actor }] }; snapshot.entries.push(entry); day.entryIds.push(id); snapshot.week.entryIds.push(id); snapshot.week.version += 1; return saveSnapshot(snapshot); }
 export async function addMenuSlot(weekId: string, slot: string, actor = "local-menu-planner") { const snapshot = await getWeek(weekId); const clean = slot.trim().toUpperCase().replace(/\s+/g, " "); if (!clean) throw Object.assign(new Error("A menu slot name is required."), { status: 422 }); if (!/^(SALAD|EXTRAS) \d+$/.test(clean) && !/^[A-Z][A-Z0-9 /&-]{1,39}$/.test(clean)) throw Object.assign(new Error("Use a governed slot such as Salad, Side, or a named category."), { status: 422 }); if (ROLLING_SLOTS.includes(clean as RollingSlot) || snapshot.week.customSlots?.includes(clean)) throw Object.assign(new Error("That menu slot already exists."), { status: 409 }); snapshot.week.customSlots = [...(snapshot.week.customSlots || []), clean]; snapshot.week.version += 1; return saveSnapshot(snapshot); }
 export async function removeMenuSlot(weekId: string, slot: string, actor = "local-menu-planner") { const snapshot = await getWeek(weekId); const clean = slot.trim().toUpperCase().replace(/\s+/g, " "); if (snapshot.entries.some(entry => entry.slot === clean && entry.itemLabel.trim())) throw Object.assign(new Error("A menu slot with a dish on any day cannot be removed."), { status: 409 }); if (!ROLLING_SLOTS.includes(clean as RollingSlot) && !snapshot.week.customSlots?.includes(clean)) throw Object.assign(new Error("That menu slot does not exist."), { status: 404 }); snapshot.week.customSlots = (snapshot.week.customSlots || []).filter(value => value !== clean); snapshot.week.removedSlots = Array.from(new Set([...(snapshot.week.removedSlots || []), clean])); snapshot.week.version += 1; snapshot.week.audit.push({ action: "menu-slot-removed", at: now(), by: actor }); return saveSnapshot(snapshot); }

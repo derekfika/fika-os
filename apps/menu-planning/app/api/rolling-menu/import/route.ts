@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { importWorkbook, saveSnapshot, listWeeks, validateWeek, planningWeekCommencing } from "@/lib/rolling-menu";
+import { importWorkbook, saveSnapshotsCreateOnly, listWeeks, validateWeek, planningWeekCommencing } from "@/lib/rolling-menu";
 import { readDeliveredInOplocs } from "@/lib/oploc-authority";
 import { listCanonicalMenuItems, recordDishSourceAliases } from "@/lib/canonical-menu-repository";
 import { applyDishResolutions, parseWorkbookWeekCommencing, resolveDishNames, safeDishKey } from "@/lib/legacy-week-importer";
@@ -47,14 +47,16 @@ export async function POST(request: NextRequest) {
       if (duplicateWeeks.length) return NextResponse.json({ error: { message: "Two selected workbooks use the same week. Remove one before importing." } }, { status: 409 });
       const catalogue = await listCanonicalMenuItems();
       const aliasesById: Record<string, string[]> = {};
-      const saved: RollingSnapshot[] = [];
+      const prepared: RollingSnapshot[] = [];
       for (const source of snapshots) {
         try {
           const snapshot = applyDishResolutions(source, body.resolutions, catalogue);
           for (const resolution of body.resolutions) if (resolution.remember && resolution.canonicalId && !resolution.ignored) aliasesById[resolution.canonicalId] = [...(aliasesById[resolution.canonicalId] || []), resolution.sourceName];
-          saved.push(await saveSnapshot(snapshot));
+          prepared.push(snapshot);
         } catch (error) { return NextResponse.json({ error: { message: `Week ${source.week.weekCommencing} could not be imported: ${error instanceof Error ? error.message : "Please review this week."}` } }, { status: 422 }); }
       }
+      let saved: RollingSnapshot[];
+      try { saved = await saveSnapshotsCreateOnly(prepared); } catch (error) { const status = (error as { status?: number }).status === 409 ? 409 : 422; return NextResponse.json({ error: { message: error instanceof Error ? error.message : "The menu weeks could not be imported." } }, { status }); }
       await recordDishSourceAliases(aliasesById);
       return NextResponse.json({ snapshots: saved, weeks: await listWeeks(), blockers: saved.flatMap(snapshot => validateWeek(snapshot)) });
     }

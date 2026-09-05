@@ -9,7 +9,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import * as XLSX from "xlsx";
-import { addMenuSlot, applyEntryPatch, assertWeekDateAvailable, attachCanonicalDishIds, createEntry, defaultWeekForDate, duplicateWeek, emptyWeek, getWeek, importWorkbook, normaliseRollingSnapshotDestinations, operationalDateLondon, planningWeekCommencing, planningWeekFromQuery, publishWeek, removeMenuSlot, saveSnapshot, updateEntry, validateWeek, ROLLING_SLOTS } from "../lib/rolling-menu";
+import { addMenuSlot, applyEntryPatch, assertWeekDateAvailable, attachCanonicalDishIds, createEntry, defaultWeekForDate, duplicateWeek, emptyWeek, getWeek, importWorkbook, normaliseRollingSnapshotDestinations, operationalDateLondon, planningWeekCommencing, planningWeekFromQuery, publishWeek, removeMenuSlot, saveSnapshot, saveSnapshotsCreateOnly, updateEntry, validateWeek, ROLLING_SLOTS } from "../lib/rolling-menu";
 import { hasPlannedDishes } from "../lib/rolling-menu-types";
 import { createCanonicalMenuItem, listCanonicalMenuItems } from "../lib/canonical-menu-repository";
 import { buildCompiledPublicationSnapshot, buildPublishedDay, createPublishedMenuDay, createPublishedMenuWeek, currentPublishedDays, getCompiledPublicationSnapshot, getMenuPublication, listMenuPublicationEvents, listMenuPublications, publicationPreview, publicationState, publishedDayMatrixHtml, replayMenuPublicationOutbox, withdrawPublishedMenuDay, withdrawPublishedMenuWeek, type MenuPublicationSignoff } from "../lib/menu-publication";
@@ -52,6 +52,16 @@ test("planner default week prefers the current service week over distant future 
   const current = emptyWeek("2026-08-17").week;
   const future = emptyWeek("2029-01-12").week;
   assert.equal(defaultWeekForDate([future, current], "2026-08-19")?.weekCommencing, "2026-08-17");
+});
+
+test("concurrent historic imports cannot overwrite the same week", async () => {
+  const source = emptyWeek("2099-01-05", "test-import");
+  const results = await Promise.allSettled([saveSnapshotsCreateOnly([source]), saveSnapshotsCreateOnly([{ ...structuredClone(source), week: { ...source.week, audit: [{ action: "different", at: "", by: "other" }] } }])]);
+  assert.equal(results.filter(result => result.status === "fulfilled").length, 1);
+  assert.equal(results.filter(result => result.status === "rejected").length, 1);
+  const rejected = results.find(result => result.status === "rejected");
+  assert.match(String(rejected && rejected.status === "rejected" ? rejected.reason.message : ""), /already exists|changed/i);
+  assert.equal((await getWeek("rolling-week:2099-01-05")).week.audit[0].by, "test-import");
 });
 
 test("planning weeks anchor to Monday using Europe/London operational dates", () => {
