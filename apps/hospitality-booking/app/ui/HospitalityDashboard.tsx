@@ -783,7 +783,7 @@ export default function HospitalityDashboard({
 
   return (
     <div className={styles.scope}>
-      <main className={`hospitality-dashboard ${site.cssClass}`}>
+      <main className={`hospitality-dashboard ${site.cssClass}`} data-surface="fika-internal-operational" data-client-brand={site.key}>
         <header className="hospitality-dashboard__topbar">
           <a
             className="hospitality-dashboard__brand"

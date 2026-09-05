@@ -4,6 +4,10 @@ This file records user-facing workflow changes delivered in the repository. Deta
 
 ## Unreleased
 
+- **2026-09-05 — THREAD 10B — Menu Planning modal safety and consistency:** added a shared Menu Planning dialog primitive with labelled dialog semantics, initial focus, keyboard focus containment and focus return; protected dirty inputs and destructive/withdrawal operations from backdrop/Escape dismissal; strengthened destructive action hierarchy and duplicate-submit/loading messaging. No business-logic or importer changes; no deployment performed.
+
+- **2026-09-05 — THREAD 10C — Hospitality operational UI / client brand boundary:** classified internal manager and client portal surfaces, added explicit `data-surface`/client markers, imported the shared FIKA token foundation, and scoped internal dashboard aliases so client branding cannot replace FIKA operational semantics. Documented approved client-brand exceptions and accessibility/long-running-operation requirements. Focused Hospitality tests added; no functional logic or deployment changes.
+
 - **2026-09-05 — THREAD 9B — Menu importer UX and durable safe commit:** redesigned the importer review into compact matching rows with scoped filters/actions, explicit blocker explanations, grouped existing-week conflicts, foreground progress/success/failure states, IndexedDB resume/discard support and direct Week Planner navigation. Enforced create-only all-or-nothing batch writes at the authoritative transaction boundary and added concurrent-race coverage. No deployment performed.
 
 - **2026-09-05 — THREAD 9A — FIKA OS style guide hardening:** made WCAG contrast, keyboard, labels, semantic-token, shell, modal, long-running-operation, bulk-action, density, button, card/shadow and target-versus-legacy rules explicit and audit-ready. Strengthened `AGENTS.md` UI-task and return-compliance governance. Documentation/tests only; no application restyle, business-logic change or deployment performed.

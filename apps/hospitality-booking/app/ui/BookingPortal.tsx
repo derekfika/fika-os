@@ -630,7 +630,7 @@ export default function BookingPortal({
   }, [resetOpen]);
   if (confirmation)
     return (
-      <main className={`mnk ${site.cssClass}`}>
+      <main className={`mnk ${site.cssClass}`} data-surface="client-branded-portal" data-client-brand={site.key}>
         <Top site={site} siteLabel={siteLabel} availableSites={availableSites} activeOplocId={oplocId} onSiteChange={onSiteChange} dashboardMode={dashboardMode} onStartAgain={() => setResetOpen(true)} />
         <section className="success-screen">
           <p className="eyebrow">Request received</p>
@@ -644,7 +644,7 @@ export default function BookingPortal({
       </main>
     );
   return (
-    <main className={`mnk ${site.cssClass}`}>
+    <main className={`mnk ${site.cssClass}`} data-surface="client-branded-portal" data-client-brand={site.key}>
       <Top site={site} siteLabel={siteLabel} availableSites={availableSites} activeOplocId={oplocId} onSiteChange={onSiteChange} dashboardMode={dashboardMode} onStartAgain={() => setResetOpen(true)} />
       {restoredDraft && <p className="draft-restored" role="status">Your unfinished booking has been restored.</p>}
       {resetOpen && <ResetModal onCancel={() => setResetOpen(false)} onConfirm={resetBooking} />}

@@ -1655,3 +1655,41 @@
 }
 .scope :global(.hospitality-dashboard__brand strong), .scope :global(.hospitality-dashboard__brand span) { display: none; }
 .scope :global(.hospitality-dashboard__brand:before) { content: ""; display: block; width: 92px; height: 34px; background: url("/fika-logo-white.png") center/contain no-repeat; }
+
+/*
+ * Surface boundary: the dashboard may carry a selected portal class for
+ * routing/context, but its operational chrome is always owned by FIKA OS.
+ * This scoped layer deliberately outranks the client portal overrides in
+ * globals.css without changing the customer-facing portal treatment.
+ */
+.scope :global(.hospitality-dashboard[data-surface="fika-internal-operational"]) {
+  --deep: var(--fika-text-primary);
+  --purple: var(--fika-action-primary);
+  --mint: var(--fika-status-success-surface);
+  --cyan: var(--fika-focus-ring);
+  --paper: var(--fika-surface-page);
+  --ink: var(--fika-text-primary);
+  --muted: var(--fika-text-secondary);
+  --line: var(--fika-border-default);
+  background: var(--fika-surface-page);
+  color: var(--fika-text-primary);
+}
+.scope :global(.hospitality-dashboard[data-surface="fika-internal-operational"] .hospitality-dashboard__topbar) {
+  background: var(--fika-action-secondary);
+}
+.scope :global(.hospitality-dashboard[data-surface="fika-internal-operational"] .hospitality-dashboard__hero) {
+  background: linear-gradient(108deg, var(--fika-action-secondary) 0 59%, var(--fika-action-primary) 59%);
+}
+.scope :global(.hospitality-dashboard[data-surface="fika-internal-operational"] .manager-cpu-action),
+.scope :global(.hospitality-dashboard[data-surface="fika-internal-operational"] .hospitality-dashboard__run-sheet-trigger) {
+  background: var(--fika-action-primary);
+  border-color: var(--fika-action-primary);
+}
+.scope :global(.hospitality-dashboard[data-surface="fika-internal-operational"] button:focus-visible),
+.scope :global(.hospitality-dashboard[data-surface="fika-internal-operational"] a:focus-visible),
+.scope :global(.hospitality-dashboard[data-surface="fika-internal-operational"] select:focus-visible),
+.scope :global(.hospitality-dashboard[data-surface="fika-internal-operational"] input:focus-visible),
+.scope :global(.hospitality-dashboard[data-surface="fika-internal-operational"] textarea:focus-visible) {
+  outline: 3px solid var(--fika-focus-ring);
+  outline-offset: 3px;
+}
