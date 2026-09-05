@@ -21,3 +21,11 @@ test("Hub publishes source-reference aliases attached to the surviving OPLOC", (
 test("Hub rejects cyclic OPLOC redirects", () => {
   assert.throws(() => buildOplocRedirects([oploc("oploc:a", "merged", "oploc:b"), oploc("oploc:b", "merged", "oploc:a")]), /cycle/i);
 });
+
+test("Haleon historical assignment resolves to one current OPLOC", () => {
+  const historical = "oploc:46701265-15af-48f4-a230-1d27ca21bc59";
+  const current = "oploc:bb4c7eea-87f5-4e79-8ed6-b973b24ded7b";
+  const redirects = buildOplocRedirects([oploc(current, "active"), oploc(historical, "merged", current)]);
+  const resolved = [...new Set([historical, current].map(id => redirects[id] || id))];
+  assert.deepEqual(resolved, [current]);
+});

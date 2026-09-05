@@ -14,6 +14,7 @@ export const OPLOC_DATASET = "integration-hub/oplocs";
 export const OPLOC_MANIFEST_KEY = "integration-hub/oplocs";
 export type OplocReadRecord = { canonicalId: string; label: string; lifecycleStatus?: string; publicationStatus?: string; locationType?: string; address?: string; legacyIds?: string[] };
 export type OplocReadPackage = { oplocs: OplocReadRecord[]; redirects?: Record<string, string> };
+const recoveryInFlight = new Map<string, Promise<ReadPackageManifest>>();
 
 const hosted = () => ["staging", "production"].includes(process.env.FIKA_RUNTIME_MODE || "");
 const localRoot = () => process.env.FIKA_SNAPSHOT_DIR || path.join(process.cwd(), "local-data", "read-packages");
@@ -77,10 +78,20 @@ export async function getOplocReadPackage() {
     recordDataAccess({ app: "integration-hub", operation: "oploc.package.integrity-failure", source: "SNAPSHOT", documents: 0 });
     throw Object.assign(new Error("OPLOC read package integrity validation failed. Rebuild the package before serving traffic."), { status: 503, code: "OPLOC_PACKAGE_INTEGRITY_FAILURE", cause: error });
   }
-  if (!result) throw Object.assign(new Error("OPLOC read package is unavailable."), { status: 503, code: "OPLOC_PACKAGE_MISSING" });
+  if (!result) {
+    const existing = recoveryInFlight.get(OPLOC_MANIFEST_KEY);
+    const recovery = existing || rebuildOplocReadPackage();
+    if (!existing) recoveryInFlight.set(OPLOC_MANIFEST_KEY, recovery.finally(() => recoveryInFlight.delete(OPLOC_MANIFEST_KEY)));
+    await recovery;
+    return getOplocReadPackage();
+  }
   const cacheManifest = await readCacheManifest("oplocs");
   if (result.manifest.sourceVersion !== `canonical-oplocs:${cacheManifest.version}`) {
-    throw Object.assign(new Error("OPLOC read package is stale. Rebuild the package before serving traffic."), { status: 503, code: "OPLOC_PACKAGE_STALE" });
+    const existing = recoveryInFlight.get(OPLOC_MANIFEST_KEY);
+    const recovery = existing || rebuildOplocReadPackage();
+    if (!existing) recoveryInFlight.set(OPLOC_MANIFEST_KEY, recovery.finally(() => recoveryInFlight.delete(OPLOC_MANIFEST_KEY)));
+    await recovery;
+    return getOplocReadPackage();
   }
   recordDataAccess({ app: "integration-hub", operation: "oploc.package.read", source: "SNAPSHOT", documents: result.manifest.recordCount, cacheHit: false });
   return result;

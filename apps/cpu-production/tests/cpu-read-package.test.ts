@@ -8,9 +8,15 @@ import { cpuProjectionPackageIsCurrent, publishCpuProjectionPackage, getCpuProje
 import { downloadCpuPackageBytes } from "../lib/cpu-package-store";
 import { cpuProjectionCacheEntryMatches } from "../app/lib/cpu-indexeddb";
 import { initialiseEmptyCpuWeekProjection, type CpuDayProjection, type CpuWeekProjection, type EmptyWeekInitialisationDependencies } from "../lib/cpu-projection";
+import { europeLondonDate } from "../lib/operational-date";
 
 const day = (date: string): CpuDayProjection => ({ serviceDate: date, revision: 4, lastChangeSequence: 12, orders: [], summary: { orders: 0, ready: 0, attention: 0, planned: 0, totalUnits: 0 }, rebuiltAt: "2026-08-31T10:00:00.000Z" });
 const week = (): CpuWeekProjection => ({ ...day("all"), serviceDate: "2026-08-31", weekCommencing: "2026-08-31" });
+
+test("CPU operational today uses the Europe/London business date at the UTC boundary", () => {
+  assert.equal(europeLondonDate(new Date("2026-08-31T23:30:00.000Z")), "2026-09-01");
+  assert.equal(europeLondonDate(new Date("2026-09-01T00:30:00.000Z")), "2026-09-01");
+});
 
 test("CPU day package round-trips with gzip/SHA integrity", () => {
   const encoded = encodeReadPackage("snapshots/cpu-production/projection-day", 3, { projection: day("2026-08-31") }, 0, { sourceVersion: "cpu-change-12" });
@@ -143,7 +149,7 @@ test("normal CPU projection GET returns before canonical reads, rebuilds, or wri
   const route = await readFile(new URL("../app/api/production/route.ts", import.meta.url), "utf8");
   const branch = route.slice(route.indexOf('if (request.nextUrl.searchParams.get("projection") === "1")'));
   const normalBranch = branch.slice(0, branch.indexOf('} else recordCpuPackageFallback("explicit-reconciliation")'));
-  assert.match(normalBranch, /initialiseEmptyCpuWeekProjection/);
+  assert.match(normalBranch, /recoverMissingCpuWeekProjection/);
   assert.match(normalBranch, /CPU_PROJECTION_PACKAGE_UNAVAILABLE/);
   assert.match(normalBranch, /CPU_PROJECTION_PACKAGE_INTEGRITY_FAILURE/);
   const initializer = await readFile(new URL("../lib/cpu-projection.ts", import.meta.url), "utf8");

@@ -9,7 +9,8 @@ import { filterCpuProjectionForScope } from "../../../lib/cpu-dashboard-adapter"
 // Scope filtering remains backed by the existing hospitalityMenuProductionRouting adapter.
 import { localFixtureOrders, updateLocalFixture } from "../local-fixtures";
 import { normaliseProductionScope } from "../../../lib/production-scope";
-import { appendCpuChange, buildCpuDayProjection, cpuProjections, initialiseEmptyCpuWeekProjection, listCpuChanges, listCpuWeekChanges, rebuildCpuDayProjection, rebuildCpuWeekProjection, weekCommencingFor } from "../../../lib/cpu-projection";
+import { appendCpuChange, buildCpuDayProjection, cpuProjections, recoverMissingCpuWeekProjection, listCpuChanges, listCpuWeekChanges, rebuildCpuDayProjection, rebuildCpuWeekProjection, weekCommencingFor } from "../../../lib/cpu-projection";
+import { europeLondonDate } from "../../../lib/operational-date";
 import { loadPlansForOrders } from "../../../lib/cpu-projection-repository";
 import { recordDeliveredInReadBudget } from "../../../lib/delivered-in-read-budget";
 import type { ProductionOrder } from "../../../lib/production-types";
@@ -157,7 +158,7 @@ async function handleGet(request: NextRequest) {
       const project = process.env.FIREBASE_PROJECT_ID || process.env.GCLOUD_PROJECT || "unknown";
       return NextResponse.json({ cacheScope: `${runtime}:${project}:${actor.uid}` });
     }
-    const projectionDate = request.nextUrl.searchParams.get("serviceDate") || new Date().toISOString().slice(0, 10);
+    const projectionDate = request.nextUrl.searchParams.get("serviceDate") || europeLondonDate();
     if (request.nextUrl.searchParams.get("diagnostic") === "1") {
       const week = request.nextUrl.searchParams.get("weekCommencing");
       const projection = (await cpuProjections().doc(week ? `week:${week}` : projectionDate).get()).data() as { orders?: Array<Record<string, unknown>> } | undefined;
@@ -194,11 +195,9 @@ async function handleGet(request: NextRequest) {
         }
         recordCpuPackageFallback("missing");
         if (week) {
-          const emptyWeek = await initialiseEmptyCpuWeekProjection(request, week);
-          if (emptyWeek) {
-            const filtered = filterCpuProjectionForScope(emptyWeek.projection, normaliseProductionScope(request.nextUrl.searchParams.get("scope")));
-            return withServerTiming(NextResponse.json({ projection: filtered, package: emptyWeek.manifest }), { package: performance.now() - startedAt, total: performance.now() - startedAt });
-          }
+          const recoveredWeek = await recoverMissingCpuWeekProjection(request, week);
+          const filtered = filterCpuProjectionForScope(recoveredWeek.projection, normaliseProductionScope(request.nextUrl.searchParams.get("scope")));
+          return withServerTiming(NextResponse.json({ projection: filtered, package: recoveredWeek.manifest }), { package: performance.now() - startedAt, total: performance.now() - startedAt });
         }
         return withServerTiming(NextResponse.json({ error: { code: "CPU_PROJECTION_PACKAGE_UNAVAILABLE", message: "The CPU projection package is currently unavailable." }, freshness: "unavailable" }, { status: 503 }), { package: performance.now() - startedAt, total: performance.now() - startedAt });
       } else recordCpuPackageFallback("explicit-reconciliation");

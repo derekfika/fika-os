@@ -21,7 +21,7 @@ export default function TiaMenuView() {
   >([]);
   const [error, setError] = useState("");
   useEffect(() => {
-    const serviceDate = new Date().toISOString().slice(0, 10);
+      const serviceDate = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/London", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
     void fetch(`/api/production-plan?serviceDate=${encodeURIComponent(serviceDate)}`, { cache: "no-store" })
       .then((response) => response.json())
       .then((body) => {

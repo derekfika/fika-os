@@ -8,6 +8,7 @@ import type { CanonicalRecord } from "./types";
 export const SERVICE_DEFINITIONS_DATASET = "integration-hub/service-definitions";
 export const SERVICE_DEFINITIONS_MANIFEST_KEY = SERVICE_DEFINITIONS_DATASET;
 export type ServiceDefinitionsReadPackage = { serviceDefinitions: ServiceDefinitionCatalogueItem[] };
+const recoveryInFlight = new Map<string, Promise<ReadPackageManifest>>();
 
 export async function rebuildServiceDefinitionsReadPackage(): Promise<ReadPackageManifest> {
   const [recordsSnapshot, revisionsSnapshot] = await Promise.all([
@@ -55,7 +56,13 @@ export async function getServiceDefinitionsReadPackage() {
     recordDataAccess({ app: "integration-hub", operation: "service-definitions.package.integrity-failure", source: "SNAPSHOT", documents: 0 });
     throw Object.assign(new Error("Service Definition read package integrity validation failed. Rebuild the package before serving traffic."), { status: 503, code: "SERVICE_DEFINITIONS_PACKAGE_INTEGRITY_FAILURE", cause: error });
   }
-  if (!retrieved) throw Object.assign(new Error("Service Definition read package is unavailable."), { status: 503, code: "SERVICE_DEFINITIONS_PACKAGE_MISSING" });
+  if (!retrieved) {
+    const existing = recoveryInFlight.get(SERVICE_DEFINITIONS_MANIFEST_KEY);
+    const recovery = existing || rebuildServiceDefinitionsReadPackage();
+    if (!existing) recoveryInFlight.set(SERVICE_DEFINITIONS_MANIFEST_KEY, recovery.finally(() => recoveryInFlight.delete(SERVICE_DEFINITIONS_MANIFEST_KEY)));
+    await recovery;
+    return getServiceDefinitionsReadPackage();
+  }
   recordDataAccess({ app: "integration-hub", operation: "service-definitions.package.read", source: "SNAPSHOT", documents: retrieved.manifest.recordCount });
   return retrieved;
 }

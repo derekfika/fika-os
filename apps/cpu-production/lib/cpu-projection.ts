@@ -57,6 +57,7 @@ export async function rebuildCpuWeekProjection(request: NextRequest, weekCommenc
 
 type EmptyWeekProjectionResult = { projection: CpuWeekProjection; manifest: ReadPackageManifest };
 const emptyWeekInitialisationInFlight = new Map<string, Promise<EmptyWeekProjectionResult | undefined>>();
+const missingWeekRecoveryInFlight = new Map<string, Promise<EmptyWeekProjectionResult>>();
 type ProjectionSnapshot = { exists: boolean; data(): unknown };
 export type EmptyWeekInitialisationDependencies = {
   loadOrders: (request: NextRequest, weekCommencing: string) => Promise<ProductionOrder[]>;
@@ -121,4 +122,33 @@ export async function initialiseEmptyCpuWeekProjection(request: NextRequest, wee
   })().finally(() => emptyWeekInitialisationInFlight.delete(weekCommencing));
   emptyWeekInitialisationInFlight.set(weekCommencing, initialisation);
   return initialisation;
+}
+
+/** Recover a missing weekly package only after reading the authoritative week. */
+export async function recoverMissingCpuWeekProjection(request: NextRequest, weekCommencing: string) {
+  const existing = missingWeekRecoveryInFlight.get(weekCommencing);
+  if (existing) return existing;
+  const recovery = (async (): Promise<EmptyWeekProjectionResult> => {
+    const rawOrders = await productionQueueForWeek(request, weekCommencing);
+    const sourceOrders = rawOrders.filter((order) => {
+      const serviceDate = order.serviceDate || order.requiredBy.slice(0, 10);
+      return weekDates(weekCommencing).includes(serviceDate);
+    });
+    if (sourceOrders.length === 0) {
+      const empty = await initialiseEmptyCpuWeekProjection(request, weekCommencing);
+      if (!empty) throw new Error("CPU empty-week recovery changed while initialising.");
+      return empty;
+    }
+    const previous = await cpuProjections().doc(`week:${weekCommencing}`).get();
+    const orders = await withReadableDestinations(request, sourceOrders);
+    const plans = await loadPlansForOrders(orders.map(order => order.canonicalId));
+    const built = buildCpuDayProjection("all", orders.filter((order) => order.serviceDate && weekDates(weekCommencing).includes(order.serviceDate)), plans, Number(previous.data()?.lastChangeSequence || 0), Number(previous.data()?.revision || 0) + 1);
+    const projection: CpuWeekProjection = { serviceDate: weekCommencing, weekCommencing, revision: built.revision, lastChangeSequence: built.lastChangeSequence, orders: built.orders, summary: built.summary, rebuiltAt: built.rebuiltAt };
+    await cpuProjections().doc(`week:${weekCommencing}`).set(projection);
+    const manifest = await publishCpuProjectionPackage(projection);
+    recordDeliveredInReadBudget({ stage: "week_projection_recovery", projectionDocs: previous.exists ? 1 : 0, selectedIds: orders.length, rebuildScopes: 1 });
+    return { projection, manifest };
+  })().finally(() => missingWeekRecoveryInFlight.delete(weekCommencing));
+  missingWeekRecoveryInFlight.set(weekCommencing, recovery);
+  return recovery;
 }

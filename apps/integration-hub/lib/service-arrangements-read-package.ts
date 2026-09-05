@@ -8,6 +8,7 @@ import type { CanonicalRecord } from "./types";
 export const SERVICE_ARRANGEMENTS_DATASET = "integration-hub/service-arrangements";
 export const SERVICE_ARRANGEMENTS_MANIFEST_KEY = SERVICE_ARRANGEMENTS_DATASET;
 export type ServiceArrangementsReadPackage = Omit<ServiceArrangementsOverview, "today">;
+const recoveryInFlight = new Map<string, Promise<ReadPackageManifest>>();
 
 export async function rebuildServiceArrangementsReadPackage(): Promise<ReadPackageManifest> {
   const snapshot = await db.collection("integrationHubCanonical").get();
@@ -25,7 +26,13 @@ export async function getServiceArrangementsReadPackage() {
   let retrieved;
   try { retrieved = await retrieveReadPackage<ServiceArrangementsReadPackage>(store, SERVICE_ARRANGEMENTS_MANIFEST_KEY); }
   catch (error) { recordDataAccess({ app: "integration-hub", operation: "service-arrangements.package.integrity-failure", source: "SNAPSHOT", documents: 0 }); throw Object.assign(new Error("Service Arrangement read package integrity validation failed. Rebuild the package before serving traffic."), { status: 503, code: "SERVICE_ARRANGEMENTS_PACKAGE_INTEGRITY_FAILURE", cause: error }); }
-  if (!retrieved) throw Object.assign(new Error("Service Arrangement read package is unavailable."), { status: 503, code: "SERVICE_ARRANGEMENTS_PACKAGE_MISSING" });
+  if (!retrieved) {
+    const existing = recoveryInFlight.get(SERVICE_ARRANGEMENTS_MANIFEST_KEY);
+    const recovery = existing || rebuildServiceArrangementsReadPackage();
+    if (!existing) recoveryInFlight.set(SERVICE_ARRANGEMENTS_MANIFEST_KEY, recovery.finally(() => recoveryInFlight.delete(SERVICE_ARRANGEMENTS_MANIFEST_KEY)));
+    await recovery;
+    return getServiceArrangementsReadPackage();
+  }
   recordDataAccess({ app: "integration-hub", operation: "service-arrangements.package.read", source: "SNAPSHOT", documents: retrieved.manifest.recordCount });
   return retrieved;
 }
