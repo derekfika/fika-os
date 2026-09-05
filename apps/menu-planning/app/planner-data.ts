@@ -8,7 +8,7 @@ import { catalogueManifestFromResponse, loadCachedCatalogue, type CachedCatalogu
 import { recordDataAccess } from "@fika/server-shared/data-source-meter-client";
 export type Dish = { id: string; name: string; category?: string; description?: string; usage?: string[]; allergenEvidence?: Array<{ allergen: string; value: "contains" | "free_from" | "may_contain" | "unknown" }>; mayContainReviewed?: boolean };
 export type WeekSummary = Pick<RollingWeek, "id" | "weekCommencing" | "entryIds" | "version">;
-export type PublicationDayState = { currentPublicationDayId?: string; currentVersion?: number; currentContentHash?: string; hasCurrentPublication: boolean; hasUnpublishedChanges: boolean; legacy: boolean; status: "published" | "draft" | "legacy" };
+export type PublicationDayState = { currentPublicationId?: string; currentPublicationDayId?: string; currentVersion?: number; currentContentHash?: string; hasCurrentPublication: boolean; hasUnpublishedChanges: boolean; legacy: boolean; status: "published" | "draft" | "legacy" };
 const titleCase = (value: string) => value.trim().toLocaleLowerCase().replace(/(^|[\s\-/&])([a-z])/g, (_, prefix: string, letter: string) => `${prefix}${letter.toUpperCase()}`);
 const weekCache = new Map<string, CachedMenuWeek>();
 let cacheIdentity = typeof window !== "undefined" ? window.sessionStorage.getItem("fika-menu-identity") || "" : "";

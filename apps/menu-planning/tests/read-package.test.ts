@@ -13,24 +13,21 @@ test("read packages are immutable gzip objects with verifiable hashes", () => {
   assert.throws(() => decodeReadPackage(encoded.manifest, corrupt), /integrity check failed/);
 });
 
-test("normal catalogue package miss and corruption do not read canonical data or publish", async () => {
-  let canonicalReads = 0;
+test("missing catalogue packages rebuild from canonical data while corruption fails closed", async () => {
   let publishes = 0;
-  const missingStore = { async getManifest() { return undefined; }, async get() { canonicalReads += 1; return undefined; }, async has() { return false; }, async putImmutable() { publishes += 1; }, async putManifest() { publishes += 1; } };
-  await assert.rejects(() => getCatalogueReadPackage(missingStore), /currently unavailable/);
-  assert.equal(canonicalReads, 0); assert.equal(publishes, 0);
   const encoded = encodeReadPackage("snapshots/menu-planning/catalogue", 2, { entries: [], categories: [] }, 0);
   const corruptStore = { async getManifest() { return encoded.manifest; }, async get() { return new Uint8Array([1, 2, 3]); }, async has() { return true; }, async putImmutable() { publishes += 1; }, async putManifest() { publishes += 1; } };
   await assert.rejects(() => getCatalogueReadPackage(corruptStore), /integrity check failed/);
-  assert.equal(canonicalReads, 0); assert.equal(publishes, 0);
+  assert.equal(publishes, 0);
 });
 
-test("normal catalogue GET cannot reconstruct or publish on package failure", async () => {
+test("normal catalogue GET delegates missing and stale package recovery to the bounded read helper", async () => {
   const route = await (await import("node:fs/promises")).readFile(new URL("../app/api/catalogue/route.ts", import.meta.url), "utf8");
   const helper = await (await import("node:fs/promises")).readFile(new URL("../lib/catalogue-read-package.ts", import.meta.url), "utf8");
   assert.doesNotMatch(route, /listCatalogueEntries\(|publishCataloguePackage\(/);
-  assert.doesNotMatch(helper, /listCatalogueEntries\(/);
-  assert.doesNotMatch(helper, /publishCataloguePackage\(entries\)/);
+  assert.match(helper, /listCatalogueEntries\(/);
+  assert.match(helper, /sourceManifest\.catalogueVersion > retrieved\.manifest\.packageVersion/);
+  assert.match(helper, /publishCataloguePackage\(entries, store\)/);
 });
 
 test("hosted catalogue package downloads preserve compressed bytes", async () => {

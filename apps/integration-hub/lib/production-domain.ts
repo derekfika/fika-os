@@ -211,13 +211,24 @@ export async function productionQueueForWeek(weekCommencing: string) {
   const start = new Date(`${weekCommencing}T00:00:00Z`);
   const end = new Date(start);
   end.setUTCDate(end.getUTCDate() + 5);
-  const snapshot = await orders()
-    .where("serviceDate", ">=", weekCommencing)
-    .where("serviceDate", "<", end.toISOString().slice(0, 10))
-    .get();
+  const endDate = end.toISOString().slice(0, 10);
+  const endTimestamp = end.toISOString();
+  // A bounded compatibility read keeps restored pre-serviceDate Production
+  // Orders recoverable. New records use serviceDate; older records can carry
+  // only requiredBy. Both queries are merged by canonical identity so a
+  // current record is never materialised twice.
+  const [serviceDateSnapshot, requiredBySnapshot] = await Promise.all([
+    orders().where("serviceDate", ">=", weekCommencing).where("serviceDate", "<", endDate).get(),
+    orders().where("requiredBy", ">=", `${weekCommencing}T00:00:00Z`).where("requiredBy", "<", endTimestamp).get(),
+  ]);
+  const unique = new Map<string, ProductionOrder>();
+  for (const document of [...serviceDateSnapshot.docs, ...requiredBySnapshot.docs]) {
+    const order = document.data() as ProductionOrder;
+    unique.set(order.canonicalId || document.id, order);
+  }
+  recordDeliveredInReadBudget({ stage: "discovery", canonicalOrderDocs: unique.size, serviceDate: weekCommencing, knownId: false });
   return Promise.all(
-    snapshot.docs
-      .map(item => item.data() as ProductionOrder)
+    [...unique.values()]
       .filter(order => !order.supersededBy && order.status !== "amended")
       .filter(order => !(process.env.NODE_ENV !== "production" && order.idempotencyKey.startsWith("cpu-internal-test:")))
       .filter(order => !(order.origin === "hospitality_booking" && order.requiresDelivery === false))

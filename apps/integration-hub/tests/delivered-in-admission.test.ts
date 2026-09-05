@@ -10,10 +10,11 @@ test("known Delivered-In canonical resolution is a direct document lookup", asyn
   assert.match(route, /canonicalId/);
 });
 
-test("Delivered-In discovery is explicitly service-date bounded and cannot fall back to a collection scan", async () => {
+test("Delivered-In discovery is explicitly bounded and recovers legacy requiredBy records without a collection scan", async () => {
   const domain = await readFile(new URL("../lib/production-domain.ts", import.meta.url), "utf8");
   const route = await readFile(new URL("../app/api/production/route.ts", import.meta.url), "utf8");
-  assert.match(domain, /orders\(\)\.where\("serviceDate", "==", serviceDate\)\.get\(\)/);
+  assert.match(domain, /orders\(\)\.where\("serviceDate", ">=", weekCommencing\)/);
+  assert.match(domain, /orders\(\)\.where\("requiredBy", ">=", `\$\{weekCommencing\}T00:00:00Z`\)/);
   assert.doesNotMatch(domain, /orders\(\)\.orderBy\("requiredBy", "asc"\)\.get\(\)/);
   assert.match(route, /serviceDate.*londonBusinessDate/);
   assert.match(domain, /origin === "hospitality_booking" && order\.requiresDelivery === false/);

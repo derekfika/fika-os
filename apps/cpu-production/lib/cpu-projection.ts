@@ -141,8 +141,9 @@ export async function recoverMissingCpuWeekProjection(request: NextRequest, week
     }
     const previous = await cpuProjections().doc(`week:${weekCommencing}`).get();
     const orders = await withReadableDestinations(request, sourceOrders);
-    const plans = await loadPlansForOrders(orders.map(order => order.canonicalId));
-    const built = buildCpuDayProjection("all", orders.filter((order) => order.serviceDate && weekDates(weekCommencing).includes(order.serviceDate)), plans, Number(previous.data()?.lastChangeSequence || 0), Number(previous.data()?.revision || 0) + 1);
+    const normalisedOrders = orders.map(order => order.serviceDate ? order : { ...order, serviceDate: order.requiredBy.slice(0, 10) });
+    const plans = await loadPlansForOrders(normalisedOrders.map(order => order.canonicalId));
+    const built = buildCpuDayProjection("all", normalisedOrders.filter((order) => weekDates(weekCommencing).includes(order.serviceDate || order.requiredBy.slice(0, 10))), plans, Number(previous.data()?.lastChangeSequence || 0), Number(previous.data()?.revision || 0) + 1);
     const projection: CpuWeekProjection = { serviceDate: weekCommencing, weekCommencing, revision: built.revision, lastChangeSequence: built.lastChangeSequence, orders: built.orders, summary: built.summary, rebuiltAt: built.rebuiltAt };
     await cpuProjections().doc(`week:${weekCommencing}`).set(projection);
     const manifest = await publishCpuProjectionPackage(projection);
