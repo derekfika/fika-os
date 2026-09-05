@@ -2,6 +2,10 @@
 
 FIKA OS is FIKA Catering's internal operational software platform. It brings planning, production, site operations and internal services into one governed system, reducing spreadsheet and manual handoffs while retaining clear ownership and auditability.
 
+## TL;DR
+
+FIKA OS is a governed operational platform connecting Menu Planning, CPU Production, Delivered-In, Hospitality Booking and Logistics. Work from `C:\FIKA` on `main`; run focused validation before pushing. Normal staging reset preserves reusable `fikaMenuPlanningWeeks` history. A complete planning-history reset requires the explicit hard-reset command documented below.
+
 ## Applications
 
 - **Integration Hub / launcher** — authenticated entry point, integrations and AUTHMOD access control.
