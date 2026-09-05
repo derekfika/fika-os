@@ -4,6 +4,8 @@ This file records user-facing workflow changes delivered in the repository. Deta
 
 ## Unreleased
 
+- **2026-09-05 — THREAD 10D — Logistics UI safety and polish:** protected mobile detail/exception sheets from accidental dismissal during committed writes, added Escape and focus-return behaviour, named icon controls, semantic action hierarchy, 44px touch targets, duplicate-submit locks and restrained mutation progress messaging. Added focused Logistics UI contract coverage and migrated the active driver surface toward shared semantic tokens. No business-logic or API-contract changes; no deployment performed.
+
 - **2026-09-05 — THREAD 10B — Menu Planning modal safety and consistency:** added a shared Menu Planning dialog primitive with labelled dialog semantics, initial focus, keyboard focus containment and focus return; protected dirty inputs and destructive/withdrawal operations from backdrop/Escape dismissal; strengthened destructive action hierarchy and duplicate-submit/loading messaging. No business-logic or importer changes; no deployment performed.
 
 - **2026-09-05 — THREAD 10C — Hospitality operational UI / client brand boundary:** classified internal manager and client portal surfaces, added explicit `data-surface`/client markers, imported the shared FIKA token foundation, and scoped internal dashboard aliases so client branding cannot replace FIKA operational semantics. Documented approved client-brand exceptions and accessibility/long-running-operation requirements. Focused Hospitality tests added; no functional logic or deployment changes.
