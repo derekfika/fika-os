@@ -9,7 +9,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import * as XLSX from "xlsx";
-import { addMenuSlot, applyEntryPatch, assertWeekDateAvailable, attachCanonicalDishIds, createEntry, defaultWeekForDate, duplicateWeek, emptyWeek, getWeek, importWorkbook, normaliseRollingSnapshotDestinations, publishWeek, removeMenuSlot, saveSnapshot, updateEntry, validateWeek, ROLLING_SLOTS } from "../lib/rolling-menu";
+import { addMenuSlot, applyEntryPatch, assertWeekDateAvailable, attachCanonicalDishIds, createEntry, defaultWeekForDate, duplicateWeek, emptyWeek, getWeek, importWorkbook, normaliseRollingSnapshotDestinations, operationalDateLondon, planningWeekCommencing, planningWeekFromQuery, publishWeek, removeMenuSlot, saveSnapshot, updateEntry, validateWeek, ROLLING_SLOTS } from "../lib/rolling-menu";
 import { hasPlannedDishes } from "../lib/rolling-menu-types";
 import { createCanonicalMenuItem, listCanonicalMenuItems } from "../lib/canonical-menu-repository";
 import { buildCompiledPublicationSnapshot, buildPublishedDay, createPublishedMenuDay, createPublishedMenuWeek, currentPublishedDays, getCompiledPublicationSnapshot, getMenuPublication, listMenuPublicationEvents, listMenuPublications, publicationPreview, publicationState, publishedDayMatrixHtml, replayMenuPublicationOutbox, withdrawPublishedMenuDay, withdrawPublishedMenuWeek, type MenuPublicationSignoff } from "../lib/menu-publication";
@@ -52,6 +52,15 @@ test("planner default week prefers the current service week over distant future 
   const current = emptyWeek("2026-08-17").week;
   const future = emptyWeek("2029-01-12").week;
   assert.equal(defaultWeekForDate([future, current], "2026-08-19")?.weekCommencing, "2026-08-17");
+});
+
+test("planning weeks anchor to Monday using Europe/London operational dates", () => {
+  assert.equal(operationalDateLondon(new Date("2026-09-05T10:00:00.000Z")), "2026-09-05");
+  assert.equal(operationalDateLondon(new Date("2026-09-06T23:30:00.000Z")), "2026-09-07");
+  assert.equal(planningWeekCommencing("2026-09-05"), "2026-08-31");
+  assert.equal(planningWeekCommencing("2026-09-07"), "2026-09-07");
+  assert.equal(planningWeekFromQuery("not-a-date", "2026-09-05"), "2026-08-31");
+  assert.equal(planningWeekFromQuery("rolling-week:2026-09-05"), "2026-08-31");
 });
 
 test("Menu Planning persistence failure is not presented as an empty publication list", async () => {
@@ -157,6 +166,27 @@ test("week lifecycle prevents collisions, publishes once, and duplicates publish
     assert.equal(copied.week.status, "draft");
     assert.equal(copied.week.version, 1);
     assert.deepEqual(copied.week.audit.map(event => event.action), ["week-created"]);
+  } finally {
+    if (before) await writeFile(rollingFile, before); else await rm(rollingFile, { force: true });
+  }
+});
+
+test("duplicate week copies populated source while retaining intentional blank days and no publication state", async () => {
+  const rollingFile = join(process.cwd(), "local-data", "menu-planning", "rolling-menu-weeks.json");
+  const before = existsSync(rollingFile) ? await readFile(rollingFile) : undefined;
+  try {
+    const source = emptyWeek("2027-03-01");
+    await saveSnapshot(source);
+    const created = await createEntry(source.week.id, source.days[0].id, "SALAD 1", "Historic dish", "test", "dish:historic");
+    const copied = await duplicateWeek(source.week.id, "2027-03-08");
+    assert.equal(copied.week.weekCommencing, "2027-03-08");
+    assert.equal(copied.week.status, "draft");
+    assert.equal(copied.entries.length, 1);
+    assert.equal(copied.entries[0].dayId, copied.days[0].id);
+    assert.equal(copied.days[1].entryIds.length, 0);
+    assert.notEqual(copied.entries[0].id, created.entries[0].id);
+    assert.equal((copied.week as any).publishedAt, undefined);
+    assert.equal((copied.week as any).publicationId, undefined);
   } finally {
     if (before) await writeFile(rollingFile, before); else await rm(rollingFile, { force: true });
   }

@@ -9,12 +9,15 @@ import type { MenuItem } from "./domain";
 import { getWeekSnapshot, listWeekSummaries, readRollingState, updateRollingState, withMenuPlanningTransaction } from "./operational-store";
 export interface Stored { version: 1; weeks: RollingWeek[]; days: RollingDay[]; entries: RollingEntry[]; }
 const now = () => new Date().toISOString();
-const operationalDate = () => { const parts = Object.fromEntries(new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/London", year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(new Date()).filter(part => part.type !== "literal").map(part => [part.type, part.value])); return `${parts.year}-${parts.month}-${parts.day}`; };
+export const operationalDateLondon = (at = new Date()) => { const parts = Object.fromEntries(new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/London", year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(at).filter(part => part.type !== "literal").map(part => [part.type, part.value])); return `${parts.year}-${parts.month}-${parts.day}`; };
+const operationalDate = () => operationalDateLondon();
 const slug = (value: string) => value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
 const read = async (): Promise<Stored> => readRollingState<Stored>();
 const write = async (value: Stored) => { await updateRollingState<Stored>(current => { Object.assign(current, structuredClone(value)); }); };
 const dateFromName = (name: string) => { const m = name.match(/(\d{2})[._-](\d{2})[._-](\d{2,4})/); if (!m) return undefined; const y = m[3].length === 2 ? `20${m[3]}` : m[3]; return `${y}-${m[2]}-${m[1]}`; };
 const addDays = (iso: string, days: number) => { const d = new Date(`${iso}T00:00:00Z`); d.setUTCDate(d.getUTCDate() + days); return d.toISOString().slice(0, 10); };
+export function planningWeekCommencing(date: string) { const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date); if (!match) return planningWeekCommencing(operationalDate()); const value = new Date(`${date}T00:00:00Z`); if (Number.isNaN(value.getTime()) || value.toISOString().slice(0, 10) !== date) return planningWeekCommencing(operationalDate()); const day = value.getUTCDay(); value.setUTCDate(value.getUTCDate() - (day === 0 ? 6 : day - 1)); return value.toISOString().slice(0, 10); }
+export function planningWeekFromQuery(value: string | undefined, fallback = operationalDate()) { return planningWeekCommencing(value?.replace(/^rolling-week:/, "") || fallback); }
 const dayName = (date: string) => new Date(`${date}T00:00:00Z`).toLocaleDateString("en-GB", { weekday: "long", timeZone: "UTC" });
 const slotOf = (value: unknown): RollingSlot | undefined => { const text = String(value ?? "").trim().toUpperCase(); if (ROLLING_SLOTS.includes(text as RollingSlot)) return text as RollingSlot; if (/^EXTRAS/.test(text)) return "EXTRAS 1"; return undefined; };
 type LiveGovernedOploc = { canonicalId: string; label: string; legacyIds?: string[] };
@@ -82,7 +85,7 @@ export function snapshotFromStored(db: Stored, weekId?: string): RollingSnapshot
   const ordered = db.weeks.slice().sort((a, b) => a.weekCommencing.localeCompare(b.weekCommencing));
   const today = operationalDate();
   const week = weekId ? db.weeks.find(w => w.id === weekId) : defaultWeekForDate(ordered, today);
-  if (!week) return emptyWeek(new Date().toISOString().slice(0, 10));
+  if (!week) return emptyWeek(planningWeekFromQuery(weekId));
   return { week: structuredClone(week), days: structuredClone(db.days.filter(d => week.dayIds.includes(d.id))), entries: structuredClone(db.entries.filter(e => week.entryIds.includes(e.id))) };
 }
 export function replaceSnapshotInStored(db: Stored, snapshot: RollingSnapshot) {
@@ -93,9 +96,9 @@ export function replaceSnapshotInStored(db: Stored, snapshot: RollingSnapshot) {
 }
 export async function getWeek(weekId?: string): Promise<RollingSnapshot> {
   const selectedId = weekId || defaultWeekForDate(await listWeeks())?.id;
-  if (!selectedId) return emptyWeek(new Date().toISOString().slice(0, 10));
+  if (!selectedId) return emptyWeek(planningWeekFromQuery(undefined));
   const snapshot = await getWeekSnapshot<RollingSnapshot>(selectedId);
-  return snapshot ? normaliseRollingSnapshotDestinations(snapshot) : emptyWeek(new Date().toISOString().slice(0, 10));
+  return snapshot ? normaliseRollingSnapshotDestinations(snapshot) : emptyWeek(planningWeekFromQuery(selectedId));
 }
 export async function addOneOffDestination(weekId: string, dayId: string, label: string, address: string, actor = "local-menu-planner") {
   const snapshot = await getWeek(weekId); const day = snapshot.days.find(item => item.id === dayId);
@@ -166,7 +169,7 @@ function entryIntegrityErrors(entry: RollingEntry, governedIds?: Set<string>) { 
 export function validateWeek(snapshot: RollingSnapshot, options: { governedOplocIds?: Set<string>; requireCanonicalDishId?: boolean } = {}): string[] { const errors: string[] = []; const entries = snapshot.entries.filter(entry => entry.itemLabel.trim()); if (!entries.length) errors.push("Add at least one menu entry."); let catalogue: MenuItem[] = []; let catalogueError = false; try { const cataloguePath = appDataPath("menu-planning", "menu-planning", "canonical-menu-items.json"); const parsed = JSON.parse(readFileSync(cataloguePath, "utf8")) as { items?: MenuItem[] }; if (!Array.isArray(parsed.items)) throw new Error("items is not an array"); catalogue = parsed.items; } catch { catalogueError = true; if (options.requireCanonicalDishId) errors.push("The canonical dish catalogue is unavailable; publication cannot continue."); } for (const entry of entries) { errors.push(...entryIntegrityErrors(entry, options.governedOplocIds)); if (options.requireCanonicalDishId && !catalogueError && (!entry.itemId || !catalogue.some(item => item.canonicalId === entry.itemId && item.reviewStatus !== "archived"))) errors.push(`${entry.itemLabel || entry.slot} references a canonical dish that does not exist or is archived.`); } return [...new Set(errors)]; }
 
 export function importWorkbook(buffer: ArrayBuffer | Buffer, workbookName: string, actor = "historical-importer", liveOplocs: readonly LiveGovernedOploc[] = []): { snapshot: RollingSnapshot; warnings: string[]; recognisedEntries: number } {
-  const date = dateFromName(workbookName) || "2026-08-17"; const snapshot = emptyWeek(date, actor); const wb = XLSX.read(buffer, { type: "buffer" }); const warnings: string[] = [];
+  const date = planningWeekCommencing(dateFromName(workbookName) || "2026-08-17"); const snapshot = emptyWeek(date, actor); const wb = XLSX.read(buffer, { type: "buffer" }); const warnings: string[] = [];
   const sheets = wb.SheetNames.filter(n => /^(mon|tue|wed|thurs|thu|fri)$/i.test(n));
   for (const sheetName of sheets) { const dayIndex = ["mon", "tue", "wed", "thurs", "thu", "fri"].findIndex(v => v === sheetName.toLowerCase()); if (dayIndex < 0) continue; const day = snapshot.days[dayIndex]; const rows = XLSX.utils.sheet_to_json<unknown[]>(wb.Sheets[sheetName], { header: 1, defval: "" }); const headerIndex = rows.findIndex(r => String(r[0]).toUpperCase() === "PRODUCT"); if (headerIndex < 0) { warnings.push(`${sheetName}: product header not found`); continue; } const header = rows[headerIndex] as unknown[]; for (let i = headerIndex + 1; i < rows.length; i++) { const row = rows[i] as unknown[]; const slot = slotOf(row[0]); const label = String(row[1] ?? "").trim(); if (!slot || !label || /^total/i.test(label)) continue; const allocations: RollingAllocation[] = []; for (let c = 2; c < header.length; c++) { const quantity = Number(row[c]); if (!Number.isFinite(quantity) || quantity <= 0) continue; const destinationLabel = String(header[c] ?? "").trim(); if (!destinationLabel || /^total$/i.test(destinationLabel) || /^function$/i.test(destinationLabel)) continue; allocations.push(normaliseDestination({ ...(destinationLabel.startsWith("oploc:") ? { destinationId: destinationLabel } : {}), destinationLabel, quantity, sourceLabel: destinationLabel }, liveOplocs)); } const portions = allocations.reduce((sum, a) => sum + a.quantity, 0); const id = `${snapshot.week.id}:entry:${sheetName}:${i + 1}:${slug(label)}`; const entry: RollingEntry = { id, dayId: day.id, date: day.date, slot, itemLabel: titleCase(label.replace(/\s+/g, " ")), portions, allocations, allergens: {}, source: { workbook: workbookName, sheet: sheetName, range: `A${i + 1}`, rawText: JSON.stringify(row) }, audit: [{ action: "historical-source-imported", at: now(), by: actor }] }; snapshot.entries.push(entry); day.entryIds.push(id); } }
   snapshot.week.entryIds = snapshot.entries.map(e => e.id); snapshot.week.sourceFiles = [workbookName]; return { snapshot, warnings, recognisedEntries: snapshot.entries.length };

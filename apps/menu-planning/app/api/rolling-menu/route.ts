@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { addMenuSlot, addOneOffDestination, assertWeekDateAvailable, cleanDuplicateEntries, copyWeekIntoWeek, createEntry, defaultWeekForDate, duplicateWeek, emptyWeek, getWeek, listWeeks, normaliseRollingSnapshotDestinations, removeMenuSlot, resetWeek, saveSnapshot, updateEntry, validateWeek } from "@/lib/rolling-menu";
+import { addMenuSlot, addOneOffDestination, assertWeekDateAvailable, cleanDuplicateEntries, copyWeekIntoWeek, createEntry, defaultWeekForDate, duplicateWeek, emptyWeek, getWeek, listWeeks, normaliseRollingSnapshotDestinations, planningWeekCommencing, planningWeekFromQuery, removeMenuSlot, resetWeek, saveSnapshot, updateEntry, validateWeek } from "@/lib/rolling-menu";
 import { createPublishedMenuWeek, getMenuPublication, publicationDayBlockers, publicationPreview, publicationState, publicationWeekBlockers } from "@/lib/menu-publication";
 import { actorCanAccessOploc, assertActorCanAccessOploc, requireMutationActor, requirePublicationActor, resolveMenuActor, scopeMenuPublication, type MenuActor } from "@/lib/auth";
 import { readDeliveredInOplocs } from "@/lib/oploc-authority";
@@ -62,8 +62,9 @@ async function handleGet(request: NextRequest) {
       console.info("Menu Planning rolling-menu summaries timings", { rollingStateMs, totalMs: performance.now() - totalStarted });
       return NextResponse.json({ weeks });
     }
-    const matchingWeek = requestedWeek ? weeks.find(week => week.id === requestedWeek || week.weekCommencing === requestedWeek) : undefined;
-    const selectedWeek = snapshotOnly && requestedWeek ? await getWeekHead<RollingWeek>(requestedWeek) : matchingWeek || defaultWeekForDate(weeks);
+    const requestedWeekCommencing = requestedWeek ? planningWeekFromQuery(requestedWeek) : undefined;
+    const matchingWeek = requestedWeek ? weeks.find(week => week.id === requestedWeek || week.weekCommencing === requestedWeek || week.weekCommencing === requestedWeekCommencing) : undefined;
+    const selectedWeek = snapshotOnly && requestedWeek ? await getWeekHead<RollingWeek>(requestedWeek) : matchingWeek || defaultWeekForDate(weeks, requestedWeekCommencing);
     const selectedReadStarted = performance.now();
     const storedSnapshot = selectedWeek ? await getWeekSnapshot<Awaited<ReturnType<typeof getWeek>>>(selectedWeek.id) : undefined;
     const selectedWeekMs = performance.now() - selectedReadStarted;
@@ -72,7 +73,7 @@ async function handleGet(request: NextRequest) {
     // All rolling reads use the live Hub redirect projection so an old explicit
     // destination ID is canonicalised before it reaches the UI or cache.
     const governedOplocs = (await readDeliveredInOplocs(request)).filter(oploc => actorCanAccessOploc(actor, oploc.canonicalId));
-    const snapshot = scopedSnapshot(normaliseRollingSnapshotDestinations(storedSnapshot || emptyWeek(requestedWeek || new Date().toISOString().slice(0, 10)), governedOplocs), actor);
+    const snapshot = scopedSnapshot(normaliseRollingSnapshotDestinations(storedSnapshot || emptyWeek(requestedWeekCommencing || planningWeekFromQuery(undefined)), governedOplocs), actor);
     const governedOplocIds = governedOplocs ? new Set(governedOplocs.map(oploc => oploc.canonicalId)) : undefined;
     const catalogueStarted = performance.now();
     const publicationStarted = performance.now();
@@ -94,12 +95,13 @@ async function handlePost(request: NextRequest) {
     const action = String(body.action || "");
     const actor = requireMutationActor(await resolveMenuActor(request));
     if (action === "create-week") {
-      await assertWeekDateAvailable(String(body.weekCommencing));
-      const snapshot = await saveSnapshot(emptyWeek(String(body.weekCommencing), actor.uid));
+      const weekCommencing = planningWeekCommencing(String(body.weekCommencing));
+      await assertWeekDateAvailable(weekCommencing);
+      const snapshot = await saveSnapshot(emptyWeek(weekCommencing, actor.uid));
       return NextResponse.json({ snapshot: await resolvedSnapshot(snapshot, undefined, actor), weeks: await listWeeks(), blockers: validateWeek(scopedSnapshot(snapshot, actor)), publicationState: await publicationState(snapshot) });
     }
     if (action === "duplicate-week") {
-      const snapshot = await duplicateWeek(String(body.weekId), String(body.weekCommencing), actor.uid);
+      const snapshot = await duplicateWeek(String(body.weekId), planningWeekCommencing(String(body.weekCommencing)), actor.uid);
       return NextResponse.json({ snapshot: await resolvedSnapshot(snapshot, undefined, actor), weeks: await listWeeks(), blockers: validateWeek(scopedSnapshot(snapshot, actor)), publicationState: await publicationState(snapshot) });
     }
     if (action === "copy-week-into-current") {
