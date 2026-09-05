@@ -4,6 +4,8 @@ This file records user-facing workflow changes delivered in the repository. Deta
 
 ## Unreleased
 
+- **2026-09-05 — THREAD 9A — FIKA OS style guide hardening:** made WCAG contrast, keyboard, labels, semantic-token, shell, modal, long-running-operation, bulk-action, density, button, card/shadow and target-versus-legacy rules explicit and audit-ready. Strengthened `AGENTS.md` UI-task and return-compliance governance. Documentation/tests only; no application restyle, business-logic change or deployment performed.
+
 - **2026-09-05 — Import Menu Week long-running progress modal:** added plain-language checking/import progress, workbook/week metrics, explicit zero-new-Dish-Library messaging, double-submit protection, non-dismissible write states, clear success continuation and friendly workbook/week failure context. No deployment performed.
 
 ### UI governance

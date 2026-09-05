@@ -41,6 +41,42 @@ The default canvas is light: a pale page background, white/pale cards, soft neut
 
 Every interactive control needs visible `:focus-visible` styling. Aim for a minimum 44px touch target for primary controls, with a documented compact exception for dense desktop tables. Disabled controls must remain legible. Respect `prefers-reduced-motion`.
 
+### Accessibility rules
+
+- Normal text must meet a WCAG contrast ratio of at least **4.5:1**.
+- Large text must meet at least **3:1**, using the WCAG definition of large text.
+- Controls, focus indicators and meaningful graphical/UI boundaries must have appropriate visible contrast.
+- Keyboard focus must be visible and every interactive workflow must be fully keyboard navigable.
+- Inputs need proper visible labels and programmatic names. Placeholder text is not a label.
+- Status and meaning must never rely on colour alone.
+- Disabled text must remain readable.
+- Primary touch targets should normally be approximately 44px or larger.
+- Icon-only controls need screen-reader-accessible names.
+- Respect the user’s reduced-motion preference.
+
+Accessibility regressions are defects, not cosmetic differences.
+
+## Hard-coded colour governance
+
+New or materially changed user-facing components **must** use shared semantic FIKA OS tokens where an appropriate token exists. Do not introduce raw hexadecimal, RGB or HSL values in touched UI when an equivalent shared token exists.
+
+Exceptions are limited to approved brand artwork/assets, controlled additional palette values required for data visualisation, third-party integration constraints, or a documented technical exception. The task return must explain any exception and identify the affected surface. `#4DF7C2` turquoise is a brand accent, **not** a default text colour.
+
+## Canonical shell dimensions (target)
+
+These are target standards for new and touched UI, not a migration mandate:
+
+| Element | Target |
+| --- | --- |
+| Desktop sidebar | 190px |
+| Collapsed/icon-only sidebar | 76px, where supported |
+| Application header | 84px target; 82–86px acceptable |
+| Desktop page gutters | 32px default; 24–56px responsive range |
+| Mobile page gutters | 16px |
+| Content width | `min(1200px, available width)` for operational work; up to 1500px only for genuinely wide dashboards/tables |
+
+The Menu Planning shell is the current reference. Existing shells with other dimensions are technical debt for a future audit unless they cause unreadability, accessibility failure or broken interaction. Do not opportunistically migrate them.
+
 ## Layout foundations
 
 Use the existing application shell, sidebar and header patterns. Keep stable reading widths with page gutters of 16px on small screens, 24px on tablet and 32–40px on desktop where the shell permits. Use the spacing rhythm 4, 8, 12, 16, 24, 32, 40, 48 and 64px. Use 8px controls, 12–14px cards, 16–20px modals and pill radius only for tags/chips.
@@ -93,3 +129,62 @@ Design for keyboard, mouse, touch and narrow screens. At smaller widths, stack t
 ## Component-level adoption standard
 
 For new or touched components, consume shared semantic tokens, use existing shell and control patterns, and add focused contract tests where a visual regression would affect usability or brand/accessibility. A task-specific deviation must state its reason and affected surface. UI changes are complete only when the relevant tests, typecheck and build have run and accessibility regressions are not introduced.
+
+## Modal sizing and behaviour
+
+Use these standard content widths; do not invent arbitrary modal widths:
+
+- **Small:** around 420px.
+- **Standard:** around 560px.
+- **Large:** around 760px.
+- **Wide/workspace:** only when the workflow genuinely requires it; bound it to the viewport with safe gutters.
+
+Every modal must fit within the viewport, retain safe mobile margins, manage focus on open, return focus on close, support Escape when safe, provide a visible close/cancel action where appropriate, and use consistent footer alignment. Prevent accidental dismissal during unsafe committed writes. A modal that cannot be safely cancelled must say so plainly.
+
+## Long-running operations
+
+Any operation that takes longer than approximately an instant—such as workbook import, menu publication, packet generation, report export or bulk processing—must provide meaningful progress. Where data exists, show the current stage, completed count/total, current item and a progress bar or equivalent, using concise plain language.
+
+Preferred stages include “Reading files”, “Checking dishes”, “Preparing menu weeks”, “Importing menu weeks” and “Done”. Do not expose implementation jargon such as “Firestore write”, “canonical-ID reconciliation”, “packet serialization” or “transaction replay”. During committed writes, prevent duplicate submission, disable the initiating action, do not allow unsafe cancellation, and tell the user to keep the page open when required. Success states show meaningful outcomes; failure states identify the affected item and offer a safe next action.
+
+### Menu Planning importer reference
+
+The Menu Planning importer is the reference long-running-operation pattern. Its checking state should show files checked/total, menu weeks found, menu days parsed, unique dish names, automatically matched names, names needing review and the current workbook. Its final import state should show weeks imported/total, current week, remaining weeks and **“0 new Dish Library items created”**. Completion should show menu weeks imported, dish names processed, automatic matches, reviewed mappings, ignored mappings where relevant and zero new dishes.
+
+## Bulk actions
+
+Bulk actions must state their scope, show the number of records affected, respect the active filter/selection, confirm destructive or irreversible actions, support undo where safe and practical, and surface important consequences. “Ignore all 255 shown” is preferable to “Ignore all”. For large lists, bulk-action and filter bars may remain sticky while scrolling.
+
+## Operational density
+
+- Normal list/table rows target roughly **44–52px**.
+- Compact desktop rows target roughly **36–44px**.
+- Allow more height when content genuinely requires it, but document the reason.
+
+Discourage one huge card per record, excessive vertical whitespace, repeated search controls permanently expanded for every row, and multiple full-screen-height cards for simple review decisions. Prefer progressive disclosure: a compact default row with detail opened only when needed.
+
+## Button precision
+
+Use shared button variants rather than application-local equivalents:
+
+| Variant | Standard |
+| --- | --- |
+| Primary | Semantic purple background, white text, Gilroy Semibold, 40–44px height, 14–18px horizontal padding, 8px radius, hover token, visible focus ring, loading state and readable disabled state; no arbitrary drop shadow |
+| Secondary | White/pale surface, neutral border, dark or purple text, same height/radius/focus/loading/disabled rules |
+| Tertiary/text | Transparent surface, strong text/icon affordance, clear hover and focus, reserved for low-emphasis actions |
+| Destructive | Danger semantic, explicit consequence, confirmation where irreversible, never used for ordinary warnings |
+| Compact | 32–36px height only for dense desktop contexts; preserve readable text, focus and target spacing |
+
+Loading buttons must not accept a second submission. Disabled styling must retain readable text and an understandable state.
+
+## Card and shadow precision
+
+Default cards use a light surface, neutral border, standard radius and no shadow or a minimal shadow. Raised cards are reserved for genuine hierarchy. Modal and popover surfaces may use stronger elevation. Decorative heavy shadows are prohibited in routine operational UI.
+
+## Target versus legacy rule
+
+`docs/STYLE-GUIDE.md` defines the **target FIKA OS design system**. Existing non-compliant UI is technical debt unless it causes unreadability, accessibility failure, broken interaction, misleading state or severe inconsistency in an actively touched workflow. Touched UI must move toward compliance, never away from it. This guide does not authorize opportunistic mass restyling.
+
+## Audit-ready compliance categories
+
+Future read-only UI audits should classify findings under: Typography; Colour/contrast; Hard-coded colours; Buttons; Inputs; Cards; Tables/lists; Modals; Sidebar/shell; Page headers; Status/alerts; Empty/loading/error states; Accessibility; Responsive behaviour; Density; Long-running operations; and Bulk actions.

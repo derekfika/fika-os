@@ -38,6 +38,15 @@ test("UI governance points user-facing work to the style guide", async () => {
   const agents = await source("AGENTS.md");
   const guide = await source("docs/STYLE-GUIDE.md");
   assert.match(agents, /docs\/STYLE-GUIDE\.md/);
+  assert.match(agents, /Style Guide compliance: PASS/);
+  assert.match(guide, /4\.5:1/);
+  assert.match(guide, /3:1/);
+  assert.match(guide, /190px/);
+  assert.match(guide, /around 560px/);
+  assert.match(guide, /0 new Dish Library items created/);
+  assert.match(guide, /Ignore all 255 shown/);
+  assert.match(guide, /44–52px/);
+  assert.match(guide, /shared semantic FIKA OS tokens/);
   assert.match(guide, /Typography/);
   assert.match(guide, /File upload and review/);
   assert.match(guide, /Do and don't/);

@@ -523,6 +523,8 @@ For every user-facing UI task, read `docs/STYLE-GUIDE.md` before editing. That g
 - Document any deliberate visual deviation in the task/change and keep it limited to a domain or brand requirement.
 - Missing keyboard focus, insufficient contrast, unclear status semantics or inaccessible controls are defects, not polish items.
 - Backend-only, data-only and documentation-only tasks are exempt unless they change a user-facing surface.
+- Any task that creates, modifies, reviews or refactors user-facing UI must read `docs/STYLE-GUIDE.md` before making changes.
+- Every UI-task return must state `Style Guide compliance: PASS` or `Style Guide compliance: DEVIATION`. A deviation must describe and justify it and identify the affected surface.
 
 7.4 After editing
 
