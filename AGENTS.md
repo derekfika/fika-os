@@ -4,7 +4,7 @@ This file is the repository-wide operating guide for AI coding and review agents
 
 It is intentionally a map and a set of invariants, not a complete description of every implementation detail. Inspect the current code before making claims or changes. More-specific AGENTS.md files lower in the tree are additive and take precedence for their directory scope.
 
-Important: apps/delivered-in/AGENTS.md contains Next.js-generated agent guidance. Preserve it and obey it when working in that app.
+Important: `apps/delivered-in/AGENTS.md` contains Next.js-generated agent guidance. Preserve it and obey it when working in that app. Do not replace or remove the generated block.
 
 ==================================================
 CANONICAL SOURCE CONTROL — NON-NEGOTIABLE
@@ -16,21 +16,44 @@ C:\FIKA
 Canonical branch:
 main
 
-1. NEVER create a development branch.
-2. NEVER switch development work away from main.
-3. NEVER create a Git worktree for FIKA OS development.
-4. NEVER create another local clone such as C:\FIKA-UAT, C:\FIKA-feature-*, C:\FIKA-thread-* or similar.
-5. All code changes are made directly on main.
-6. Before modifying code, confirm the directory is under C:\FIKA, confirm branch main, understand git status, fetch origin and pull --ff-only origin main.
-7. Do not rebase published main, force-push main or cherry-pick normal development work between branches.
-8. Parallel analysis is allowed, but there is one Git history and one working tree. Validated changes are committed sequentially to main.
-9. Push main after successful validated work unless the user explicitly says not to push.
+Canonical remote source for new work:
+origin/main
+
+1. `main` is the only canonical branch.
+2. Before any read/write task, fetch origin and record the current `origin/main` SHA.
+3. Normal single-thread work is performed directly on `main` after `git pull --ff-only origin main`.
+4. NEVER create another local clone such as `C:\FIKA-UAT`, `C:\FIKA-feature-*`, `C:\FIKA-thread-*` or similar.
+5. NEVER create Git worktrees for FIKA OS development.
+6. Never rebase published `main`, force-push `main`, or rewrite canonical history.
+7. Never treat an old UAT/refactor branch as authoritative merely because it contains newer-looking code.
+8. Push `main` after successful validated work unless the user explicitly says not to push.
+
+Temporary task branches are allowed ONLY when the user or coordinator explicitly requests a parallel implementation wave. In that case:
+
+- each task branch must be created fresh from the same recorded `origin/main` baseline;
+- do not branch one task from another task branch;
+- keep scopes/file ownership disjoint;
+- do not deploy from a temporary task branch;
+- return the branch name, starting SHA and final SHA;
+- integrate completed work sequentially back into `main` after review;
+- delete/retire temporary branches after integration when appropriate.
 
 ==================================================
 MANDATORY CHANGELOG RULE
 ==================================================
 
-EVERY Codex task operating on this repository must update the root CHANGELOG.md before returning. This includes code, configuration, documentation, architecture, bug-fix, refactor, migration and forensic tasks. The only exception is an explicitly read-only task. Each entry records date, task title, concise summary, affected app/domain, validation/tests and deployment status. Never fabricate a deployment.
+EVERY Codex task operating on this repository must update the root `CHANGELOG.md` before returning. This includes code, configuration, documentation, architecture, bug-fix, refactor, migration and forensic tasks. The only exception is an explicitly read-only task.
+
+Each entry records:
+
+- date;
+- task/thread title;
+- concise summary;
+- affected app/domain;
+- validation/tests;
+- deployment status.
+
+Never fabricate a deployment.
 
 ==================================================
 MANDATORY CODEX RETURN FORMAT
@@ -38,8 +61,9 @@ MANDATORY CODEX RETURN FORMAT
 
 Every Codex task return must end with:
 
-- Branch: main
-- Starting SHA
+- Thread/task name
+- Branch
+- Starting `origin/main` SHA
 - Final SHA
 - Push status
 - CHANGELOG updated: yes/no + entry title
@@ -49,597 +73,476 @@ Every Codex task return must end with:
 
 If no implementation change was needed, say so explicitly.
 
-1. What FIKA OS is
+==================================================
+1. WHAT FIKA OS IS
+==================================================
 
 FIKA OS is one operational platform made up of several applications and entry routes.
 
-The core principle is:
+Core principle:
 
 Different entry routes. One downstream operational truth.
 
 Hospitality, Menu Planning, Grab & Go, Ad-Hoc Production and other workflows may begin differently, but once work reaches Production and Fulfilment it must use shared canonical contracts rather than inventing parallel operational domains.
 
-The platform has evolved quickly. Do not assume an old README or legacy folder describes the current architecture. Inspect current code, current schemas and current runtime paths.
+The platform evolves quickly. Do not assume an old README, audit or legacy folder describes the current architecture. Inspect current code, current schemas and current runtime paths.
 
 Useful repository context:
 
-FIKA-OS-DEVELOPMENT-HISTORY.md — project evolution and architectural intent.
+- `FIKA-OS-DEVELOPMENT-HISTORY.md` — project evolution and architectural intent.
+- `COST-EFFICIENCY.md` — standing performance and metered-service guardrails.
+- `LOCAL-WORKSPACE.md` — local supervisor, ports and emulator workflow.
+- `CHANGELOG.md` — recent notable changes and UAT handoff.
+- `docs/ai/LOGGING-AUDIT-STRATEGY.md` — business audit evidence, diagnostics and archival.
+- `docs/ai/CODEBASE-AUDIT-PROTOCOL.md` — formal whole-codebase audit process.
 
-COST-EFFICIENCY.md — standing performance and metered-service guardrails.
+Platform areas include:
 
-LOCAL-WORKSPACE.md — local supervisor, ports and emulator workflow.
+- Integration Hub / AUTHMOD
+- Hospitality Booking / Hospitality Manager
+- CPU Production
+- Menu Planning
+- Delivered-In
+- Grab & Go
+- Logistics
+- Events Dashboard
+- Beverage Innovation
+- Ad-Hoc Production
+- FIKA OS launcher / supervisor tooling
+- shared domain and fulfilment contracts
 
-CHANGELOG.md — recent notable changes where maintained.
+Legacy code may remain for compatibility, migration or recovery. Establish whether it is still operational before removing it.
 
-docs/ai/LOGGING-AUDIT-STRATEGY.md — mandatory platform rules for business audit evidence, technical diagnostics and archival.
+==================================================
+2. ARCHITECTURE INVARIANTS
+==================================================
 
-docs/ai/CODEBASE-AUDIT-PROTOCOL.md — mandatory process for a formal whole-codebase audit.
-
-2. Current platform areas
-
-Treat these as parts of one platform, not independent greenfield apps:
-
-Integration Hub
-
-Hospitality Booking / Hospitality Manager
-
-CPU Production
-
-Menu Planning
-
-Delivered-In
-
-Grab & Go
-
-Logistics
-
-Events Dashboard
-
-Beverage Innovation
-
-Ad-Hoc Production
-
-FIKA OS launcher / local supervisor tooling
-
-shared domain and fulfilment contracts
-
-Legacy sites/ content and older scripts may remain for compatibility, migration or recovery. Do not remove or rewrite legacy paths merely because a newer app exists. Establish whether they are still operational first.
-
-3. Architecture invariants
-
-3.1 Canonical downstream flow
+2.1 Canonical downstream flow
 
 Prefer this model unless current code proves a deliberate exception:
 
-
 entry workflow
-
-    ↓
-
-owned domain object / request
-
-    ↓
-
-explicit handoff
-
-    ↓
-
-canonical Production Order
-
-    ↓
-
-Fulfilment Requirement
-
-    ↓
-
-Logistics / downstream operational projections
-
+→ owned domain object/request
+→ explicit handoff
+→ canonical Production Order
+→ Fulfilment Requirement
+→ Logistics/downstream operational projections
 
 Do not create a second Production, Fulfilment or Logistics truth for a new upstream workflow.
 
-3.2 Domain ownership
+2.2 Domain ownership
 
-Each application should own the information it is responsible for and hand off explicitly at domain boundaries.
-
-Examples:
-
-Hospitality owns booking authoring/commercial workflow before CPU handoff.
-
-Menu Planning owns menu intent, portions/destinations and publication before production materialisation.
-
-Ad-Hoc Production owns request/quote/menu/allergen authoring before Send to CPU.
-
-CPU owns operational production state after accepted handoff.
-
-Logistics owns planning, assignment, movement and dispatch state.
-
-Delivered-In is primarily a site-facing projection/consumer, not a second logistics or production authority.
+- Hospitality owns booking/commercial workflow before CPU handoff.
+- Menu Planning owns menu intent, portions/destinations and publication before production materialisation.
+- Ad-Hoc Production owns request/quote/menu/allergen authoring before Send to CPU.
+- CPU owns operational production state after accepted handoff.
+- Logistics owns planning, assignment, movement and dispatch state.
+- Delivered-In is primarily a site-facing projection/consumer, not a second production or logistics authority.
 
 Do not silently mutate another domain's authoritative record from a UI convenience path.
 
-3.3 Stable identity
+2.3 Stable identity
 
 Stable IDs are identity.
 
 Never use display text, customer name, dish title, address label or other human-readable text as record identity when a stable ID exists or can be created.
 
-Avoid name-based joins between applications.
+Avoid name-based joins between applications. Preserve IDs across projections, amendments and handoffs so the same occurrence can be traced end to end.
 
-Preserve IDs across projections, amendments and handoffs so the same occurrence can be traced end to end.
-
-3.4 Versioning and history
+2.4 Versioning/history
 
 Historical business evidence must not be rewritten in place.
 
-Where the domain already uses snapshots/revisions/publications/events:
+Where the domain uses snapshots/revisions/publications/events:
 
-preserve immutable historical snapshots;
+- preserve immutable historical snapshots;
+- create a new revision/version for changed commercial or safety evidence;
+- preserve who/when/source metadata;
+- make supersession or withdrawal explicit;
+- keep current operational state separate from historical evidence.
 
-create a new revision/version for changed commercial or safety evidence;
+Do not retroactively edit old published menus, quotes, allergen archives or equivalent evidence merely to match current data.
 
-preserve who/when/source metadata;
-
-make supersession or withdrawal explicit;
-
-keep current operational state separate from historical evidence.
-
-Do not retroactively edit an old published menu, quote, allergen archive or equivalent evidence merely to make it match today's data.
-
-3.5 Amendments and cancellations
+2.5 Amendments/cancellations/withdrawals
 
 After downstream handoff, a change is normally an amendment, not an invisible edit.
 
-Amendments should be explicit, version-aware, idempotent where externally retried, and propagated to affected downstream systems.
+Amendments must be explicit, version-aware and replay-safe where externally retried.
 
-Cancellations/withdrawals must have explicit semantics and must remove or update stale downstream operational work. Do not rely on disappearance from a source query as the cancellation mechanism.
+Cancellations and withdrawals must propagate explicit downstream invalidation/removal. Do not rely on disappearance from a source query as the cancellation mechanism.
 
-3.6 Idempotency
+2.6 Idempotency
 
-Any command that can be retried across an app or network boundary must be designed for replay safety.
+Any command that can be retried across an app/network boundary must be replay-safe. Use existing idempotency/version mechanisms. Never create duplicate Production Orders, fulfilment requirements, publications, movements or documents because of retries or double-clicks.
 
-Use existing idempotency/version mechanisms where available. Do not create duplicate Production Orders, fulfilment requirements, publications, movements or documents because a user double-clicked or a request was retried.
-
-3.7 Allergens and safety data
+2.7 Allergens/safety
 
 Allergen state is safety-critical operational data.
 
 Preserve explicit states such as:
 
-UNRECORDED
-
-CLEAR
-
-CONTAINS
-
-MAY_CONTAIN
+- UNRECORDED
+- CLEAR
+- CONTAINS
+- MAY_CONTAIN
 
 Never treat missing/unknown/unrecorded data as clear.
 
-For signed allergen releases, CPU owns an immutable release bound to the frozen
-matrix hash. Any post-signing allergen change must revoke the current release,
-invalidate its signatures and packet/artifacts, withdraw downstream current
-pointers, and require a new review and dual signature. Delivered-In may consume
-only the current verified compressed CPU packet; historical revoked artifacts
-remain audit evidence but are never operationally current.
+For signed allergen releases, CPU owns an immutable release bound to the frozen matrix hash. Any post-signing allergen change must revoke the current release, invalidate signatures and packet/artifacts, withdraw downstream current pointers, and require a new review and dual signature.
 
-Do not infer vegetarian/vegan or allergen status from unrelated display labels unless the domain explicitly defines that mapping.
+Delivered-In may consume only the current verified CPU package. Historical revoked artifacts remain audit evidence but are never operationally current.
 
-When current allergen truth and historical published evidence differ, preserve both: current operational truth can change, historical evidence remains immutable.
-
-3.8 OPLOC and destinations
+2.8 OPLOC/destinations
 
 OPLOC is a governed operational-location identity.
 
-Do not create fake permanent OPLOC records merely to represent a one-off delivery address.
+- The Integration Hub canonical OPLOC model and redirect data are authority for operational identity.
+- Historical OPLOC IDs may exist only as explicit compatibility aliases/redirects.
+- Do not expose historical and current IDs as two separate operational sites.
+- Resolve legacy IDs to current IDs before site-scoped authorization or consumer joins where the contract requires it.
+- Do not create fake permanent OPLOCs for one-off addresses.
+- Do not join destinations by display name.
 
-A one-off destination should be represented as an explicit request/order-scoped destination identity/address snapshot, while governed sites continue to use canonical OPLOC IDs.
+2.9 Dates/timezone
 
-Do not join destinations by display name.
+Operational dates/times are UK business dates unless a domain explicitly says otherwise.
 
-3.9 Dates and timezone
+Be deliberate about `Europe/London`, BST/GMT transitions, date-only values and UTC timestamps.
 
-Operational dates/times are UK business dates unless a domain explicitly states otherwise.
+Do not derive a UK operational date by blindly using `new Date().toISOString().slice(0, 10)`.
 
-Be deliberate about Europe/London, BST/GMT transitions, date-only values and UTC timestamps.
+UTC arithmetic on an already-explicit ISO service date is fine; determining business “today” from UTC is not.
 
-Do not derive a UK operational date by blindly slicing an ISO UTC timestamp.
+==================================================
+3. AUTHENTICATION / AUTHORIZATION
+==================================================
 
-Audit date boundaries, midnight behaviour and DST whenever changing calendar, delivery, publication, booking or production logic.
+Use the existing actor/session/AUTHMOD mechanism for the application being changed.
 
-4. Authentication, authorisation and actors
+- Do not hardcode real staff identities into production write paths.
+- Synthetic identities are acceptable only through explicit dev/test mechanisms.
+- Keep server-side trust boundaries server-side.
+- Authentication is not authorization.
+- Preserve AUTHMOD fail-closed behaviour when authorization authority is unavailable.
+- OPLOC access decisions must respect canonical redirects rather than bypassing them with display-name matching.
 
-Use the existing actor/session/authentication mechanism for the application being changed.
+==================================================
+4. PERSISTENCE / DATA SAFETY
+==================================================
 
-Do not hardcode real staff names or identities into production write paths.
+Classify data before changing persistence:
 
-Synthetic identities are acceptable only through an explicit local/dev/test mechanism and must not leak into production behaviour.
+- stable reference/seed data;
+- authoritative operational data;
+- immutable audit/history;
+- generated document/artifact metadata;
+- cache/projection/read package;
+- local development/test fixture;
+- recovery/backup.
 
-Server-side trust boundaries must remain server-side. Do not weaken existing Firestore/Admin SDK or API boundaries for convenience.
+Do not blanket-commit `local-data/` or mutable runtime state.
 
-When auditing, distinguish authentication from authorisation: a logged-in user is not automatically entitled to every domain action or site.
+For Firestore, inspect query bounds, indexes, read/write amplification, emulator-vs-production differences and direct-client trust boundaries.
 
-5. Persistence and data safety
+For SQLite/file-backed data, inspect concurrency, locking, backup/recovery and deployment persistence assumptions.
 
-Before changing persistence, classify the data:
+Deployment handoff: once a deployment command has successfully submitted/queued a rollout and returned enough information to identify it, do not sit idle waiting for App Hosting propagation unless the user explicitly asks for live verification. Report target app(s), SHA and rollout/build identifier, then stop.
 
-stable reference/seed data;
+==================================================
+5. COMPRESSED READ-PACKAGE INVARIANT
+==================================================
 
-authoritative operational data;
+Google Cloud Storage may transparently decompress `Content-Encoding: gzip` objects on download.
 
-immutable audit/history;
+When FIKA OS hashes/signs compressed bytes, preserve those exact compressed bytes on read. With the GCS Node client use `download({ decompress: false })` or equivalent.
 
-generated document/artifact metadata;
-
-cache/projection;
-
-local development/test fixture;
-
-recovery/backup.
-
-Do not commit mutable runtime data simply to make local behaviour convenient.
-
-Do not blanket-commit local-data/.
-
-Prefer deterministic seed/migration/recovery paths for reference data and test fixtures.
-
-If SQLite or file-backed operational data is used, inspect concurrency, locking, backup/recovery and deployment persistence assumptions.
-
-If Firestore is used, inspect query bounds, indexes, read/write amplification, emulator-vs-production differences and direct-client access rules.
-
-Deployment handoff: When a deployment has been successfully submitted/queued and the deployment command has returned enough information to identify the rollout, do not sit idle waiting for Firebase App Hosting to finish compiling or propagating unless the user explicitly asks for live verification. Report the submitted deployment, target app(s), commit SHA and any rollout/build identifier, then stop. Derek can verify when staging becomes live.
-
-5.1 GCS compressed-package invariant
-
-Google Cloud Storage may transparently decompress objects stored with
-Content-Encoding: gzip when they are downloaded.
-
-When a FIKA OS package hash, checksum, signature or integrity check is defined
-over the compressed bytes, the storage read must preserve those exact
-compressed bytes. With the Google Cloud Storage Node client this means using
-download({ decompress: false }) (or the equivalent explicit raw-byte option)
-rather than relying on the default download behaviour.
-
-The required package roundtrip is:
+Required roundtrip:
 
 serialize
 → gzip
 → hash/sign compressed bytes
-→ upload with Content-Encoding: gzip
-→ download with transparent decompression disabled
-→ verify the same compressed-byte hash/signature
+→ upload with Content-Encoding:gzip
+→ download raw compressed bytes
+→ verify hash/signature
 → explicitly decompress
 → parse
 
-Do not verify a compressed-byte hash after an implicitly decompressed download.
+Any changed gzip-backed package store must include a regression test proving uploaded bytes, downloaded bytes and integrity hash are identical.
 
-Any new or changed gzip-backed package store must include a regression test that
-roundtrips through the storage adapter and proves that the uploaded compressed
-bytes, downloaded compressed bytes and integrity hash are identical.
+Package failure semantics:
 
-5.2 Logging, audit and operational evidence
+1. integrity/hash/signature failure → fail closed;
+2. missing derived package + authoritative source available → rebuild/self-heal where the domain can prove correctness;
+3. authoritative source unavailable → fail closed;
+4. stale client cache → revalidate/refetch/invalidate; never silently treat stale as current.
 
-docs/ai/LOGGING-AUDIT-STRATEGY.md is a standing platform requirement.
+Do not convert corruption into automatic reconstruction merely to avoid a 503.
 
-FIKA OS must be able to reconstruct important business mutations without turning routine telemetry into a high-volume Firestore workload.
+==================================================
+6. LOGGING / AUDIT / OBSERVABILITY
+==================================================
 
-Keep these concerns separate:
+`docs/ai/LOGGING-AUDIT-STRATEGY.md` is mandatory.
 
-business audit/domain events — durable append-only evidence of meaningful state changes;
+Separate:
 
-technical/application logs — structured diagnostics for failures, latency, retries and runtime behaviour;
+- durable business audit/domain events;
+- structured technical diagnostics;
+- optional batched Drive archival.
 
-Google Drive archive — optional batched long-term exported copies, not the live audit database.
+Prefer existing durable domain/change events as audit evidence when they already contain actor/entity/version/source/lineage. Do not add duplicate audit writes without a reason.
 
-Prefer an existing durable domain/change event to also serve as audit evidence when it already contains the required actor/entity/version/source/lineage information. Do not automatically add a third duplicate audit write beside every state write and domain event.
+Important state changes must leave evidence at the authoritative server/domain boundary. Use transactions or durable outbox/change-stack mechanisms where practical.
 
-Meaningful business mutations should leave durable evidence at the authoritative server/domain boundary. Important state changes must not depend on a best-effort client-side logging request after the real mutation succeeds.
+Do not create Firestore audit documents for routine page views, renders, polling cycles or cache refreshes.
 
-Where practical, record authoritative state plus its audit/domain event atomically. Where stores/services differ, use an existing durable outbox/change-stack/retry-safe mechanism rather than silently accepting an audit gap.
+Never log credentials/tokens/secrets or unnecessary sensitive payloads.
 
-Do not create Firestore audit documents for page views, renders, polling cycles, cache refreshes or successful reads that cause no business change.
+Cross-app evidence should preserve stable IDs, correlation and causation references.
 
-Business audit/history queries must be bounded and paginated/cursor-based as volume grows. Do not subscribe every dashboard to a complete audit stream.
+==================================================
+7. PERFORMANCE / FIRESTORE DISCIPLINE
+==================================================
 
-Technical logs should not default to one Firestore write per log line. Never log credentials, tokens, secrets or unnecessary sensitive payloads.
+`COST-EFFICIENCY.md` is mandatory.
 
-If Google Drive archival is introduced, export events/logs in deliberate batches at an agreed cadence. Do not update a Drive file once per individual event and do not make Drive the authority for current operational state.
+Prefer:
 
-Cross-app evidence should preserve stable IDs/correlation/causation references so a booking/request can be traced through Production, Fulfilment and Logistics without name matching.
+- deterministic document IDs;
+- tightly bounded indexed queries;
+- existing projections/read models;
+- manifest/version checks;
+- immutable compiled snapshots;
+- IndexedDB/existing caches;
+- targeted invalidation/change feeds.
 
-6. Performance and cost invariants
-
-COST-EFFICIENCY.md is a standing requirement.
-
-In particular:
-
-query the smallest useful scope;
-
-cache stable reference data;
-
-do not add broad realtime listeners by default;
-
-do not solve perceived latency by globally changing polling to one second;
-
-refresh immediately after the user's own mutation where practical;
-
-use projections/change feeds/invalidation where the architecture already supports them;
-
-avoid unbounded collection reads in user-facing paths;
-
-write only on meaningful state changes;
-
-document recurring read/write behaviour for new periodic work.
-
-When investigating slowness, measure the stages rather than guessing:
-
-
-T0 user action
-
-T1 source API confirms
-
-T2 durable event/store accepts
-
-T3 projection/materialisation updates
-
-T4 destination UI displays
-
-
-Separate command latency from downstream visibility latency.
-
-6.1 Firestore read-shape discipline
-
-Treat Firestore reads as a bounded operational resource.
-
-Before adding or changing a Firestore-backed read path, ask whether the request can be resolved by:
-
-deterministic document ID;
-
-tightly bounded indexed query;
-
-existing projection/read model;
-
-manifest/version check;
-
-immutable compiled snapshot;
-
-IndexedDB or other existing cache;
-
-targeted change feed/invalidation.
-
-Do not scan a collection merely because it is convenient to filter in application code.
+Do not scan collections merely because filtering in application code is convenient.
 
 Known IDs should normally become direct document reads.
 
-Mutation paths should read only the affected aggregate and the minimum related state required for correctness. Do not read unrelated weeks, publications, events, assignments or canonical entities inside a transaction.
+Mutation paths should read only the affected aggregate and minimum related state required for correctness.
 
-Whole-collection reads are acceptable only for deliberate administrative, maintenance, migration or genuinely catalogue-wide workflows. They must not accidentally sit on ordinary interactive paths.
+Design both cold-cache and warm-cache behaviour. A path cheap for one warm developer session but expensive across many simultaneous cold starts is not efficient.
 
-Design both cold-cache and warm-cache behaviour. A path that is cheap for one warm developer session but expensive when 40 users cold-start simultaneously is not considered efficient.
+Do not increase polling frequency to compensate for stale projections.
 
-Prefer immutable compiled read models for published/final operational data when repeated consumers would otherwise reconstruct the same result from multiple collections.
+Do not trade correctness guarantees — optimistic concurrency, transactions, immutable history, outbox/idempotency, AUTHMOD — merely to reduce reads.
 
-Do not use higher polling frequency to compensate for stale projections. Prefer targeted invalidation, manifests, change feeds or post-mutation refresh.
+For significant Firestore-backed features, report expected cold/warm read shape and add read-budget regression coverage where practical.
 
-Firestore remains server-side only unless the architecture explicitly approves a different trust boundary.
+==================================================
+8. CHANGE DISCIPLINE
+==================================================
 
-Do not trade away correctness guarantees such as optimistic concurrency, transaction boundaries, immutable history, outbox/idempotency or AUTHMOD enforcement merely to reduce reads.
+8.1 Usage-aware parallel implementation policy
 
-For significant Firestore-backed features, report the expected read shape for the primary cold and warm paths. Where practical, add read-budget regression tests to prevent broad-read regressions.
+Parallel implementation is an optimization, not a requirement.
 
-7. Change discipline
+Do NOT spawn subagents simply because a task is non-trivial. Agent/subagent capacity can be exhausted independently of other visible usage windows, so FIKA OS work must be designed to degrade cleanly to serial execution.
 
-7.1 Parallel implementation policy
+Default behaviour:
 
-For non-trivial work, subagents are write-capable by default, not audit-only.
+- one coordinator / one implementation thread;
+- parallel analysis or verification is fine when useful;
+- keep implementation serial when scopes overlap, shared contracts are unstable, or parallelism would consume disproportionate agent capacity.
 
-Parallelise implementation whenever exclusive file, app or package ownership can
-be cleanly separated. Investigation, implementation, testing and verification
-should run concurrently where their scopes are independent.
+When parallel implementation has a clear benefit:
 
-Assign every write-capable subagent an explicit exclusive scope. Do not allow
-multiple agents to edit the same files concurrently.
+- maximum default concurrency: TWO implementation threads;
+- use explicit numbered threads (`THREAD 1`, `THREAD 2`, etc.);
+- each thread gets exclusive file/app/package ownership;
+- each thread starts from the same recorded `origin/main` baseline;
+- do not allow concurrent edits to the same file or shared contract;
+- do not let one task branch become another task's dependency branch;
+- integrate completed work sequentially through `main`;
+- perform a final integration/regression pass after all wave changes are on `main`.
 
-Prefer parallel write waves over serial coordinator implementation:
+Prefer two-thread waves over broad fan-out:
 
-Wave 1: independent providers, apps or packages can be implemented in parallel.
+Wave 1: up to two independent high-priority fixes.
+Wave 2: next independent pair after Wave 1 completes/integrates.
+Final: one integration/regression thread.
 
-Wave 2: dependent consumers start once the provider contract they depend on is
-established.
+Subagents vs separate Codex threads:
 
-Independent verification can run against completed scopes while other disjoint
-implementation continues.
+- use subagents only when the coordinator can maintain clear ownership and the work genuinely benefits from shared context;
+- prefer separate numbered Codex threads for independently reviewable fixes when branch/SHA provenance matters;
+- if subagent allowance/capacity is constrained, run the exact same plan sequentially rather than redesigning the technical approach;
+- never reduce testing or correctness to save agent usage.
 
-Where one task depends on another:
-
-define the provider contract and ownership boundary;
-
-complete or stabilise that provider contract;
-
-start the dependent write agent;
-
-integrate only after both sides are ready.
+Parallel analysis does not authorize parallel writes to the same canonical checkout. If isolated task branches/workspaces are not explicitly being used, implement sequentially on `main`.
 
 The coordinator owns:
 
-task decomposition and ownership boundaries;
+- decomposition and thread numbering;
+- ownership boundaries;
+- shared contract decisions;
+- review/integration order;
+- conflict resolution;
+- final validation;
+- final push/deployment when authorized.
 
-shared contract decisions;
+Significant fixes require independent verification before final integration. A genuinely small/tightly coupled fix should remain single-threaded when splitting it adds overhead without useful parallelism.
 
-integration of completed agent work;
+8.2 Before editing
 
-conflict resolution;
+- inspect relevant UI, API route, domain/service layer, persistence, shared contracts and tests;
+- identify domain ownership;
+- trace upstream/downstream callers before changing shared types/contracts;
+- search for nested `AGENTS.md`, local README/docs and package scripts;
+- prefer the smallest coherent change preserving platform invariants.
 
-final validation;
+8.3 While editing
 
-commit, push and deployment when authorised.
+- do not redesign accepted workflows without a product requirement;
+- do not perform broad aesthetic/system refactors during a correctness fix;
+- do not replace a proven shared contract with a parallel structure;
+- do not hide domain problems with UI-only fallback data;
+- do not silently swallow failures that can leave downstream state stale;
+- preserve backwards compatibility where live/migration code still requires an older contract;
+- do not deploy, migrate, mutate production Firestore or change secrets unless explicitly requested.
 
-The coordinator should not reimplement work already assigned to a subagent
-unless integration genuinely requires it. Do not use subagents only to produce
-read-only reports and then serially repeat their implementation work in the
-coordinator.
+8.4 After editing
 
-Do not create a persistent branch per agent merely to enable parallel work.
-Use isolated agent workspaces/worktrees provided by the tooling where available,
-and keep normal UAT fixes on the canonical UAT branch unless a genuinely risky
-or unavoidable parallel experiment requires separate branch isolation.
+- run narrow relevant tests first;
+- run affected typecheck/build scripts where they exist;
+- run integration/E2E tests for cross-app boundaries;
+- run `git diff --check`;
+- report commands actually run and their results;
+- report anything not run and why;
+- never claim a suite is green if it was not executed successfully;
+- do not invent validation commands: read package scripts first.
 
-Significant fixes require independent verification before final integration.
-Simple, genuinely single-file or tightly coupled low-risk fixes may remain
-coordinator-only when splitting them would add overhead without useful
-parallelism.
+==================================================
+9. APP-SPECIFIC OPERATING RULES
+==================================================
 
-Preserve unrelated worktree changes and classify dirty files before staging. Do not deploy, migrate, mutate Firestore or change secrets unless the user explicitly requests it. Use shared packages or app-local HTTP adapters instead of sibling-app production imports. Keep normal Firestore reads bounded by stable IDs, date scopes or explicit limits, and avoid GET endpoints with surprising write side effects. Preserve AUTHMOD fail-closed semantics and configured friendly runtime URLs. Validate changes with relevant tests, typecheck, production build and git diff --check.
+These rules live here deliberately rather than creating many nested `AGENTS.md` files. Add a nested file only when an app has durable local constraints that would otherwise make the root guide noisy or unsafe.
 
-Before editing:
+9.1 Integration Hub / AUTHMOD
 
-Inspect the relevant UI, API route, domain/service layer, persistence layer, shared contracts and tests.
+- Hub canonical records and explicit redirects own governed OPLOC identity.
+- AUTHMOD remains authority for app/site access.
+- Resolve historical OPLOC redirects before scoped permission decisions where required.
+- OPLOC/read-package data may aid presentation and canonicalization but must not become a second authorization source.
+- Package integrity failures fail closed.
 
-Identify which domain owns the state.
+9.2 Menu Planning
 
-Trace downstream and upstream callers before changing a shared type or contract.
+- Menu Planning owns planning intent and publication, not CPU operational state.
+- A published week may intentionally contain blank service days; blank is distinct from missing/unpublished.
+- Week withdrawal is explicit, reasoned, auditable and must produce downstream invalidation events.
+- Historical publications/snapshots remain immutable.
+- Re-publication after withdrawal creates a clean new current version/publication state; never reactivate stale packets.
+- Preserve bounded catalogue/snapshot reads and optimistic version protections.
 
-Search for nested AGENTS.md, local README/docs and package scripts in the affected tree.
+9.3 CPU Production
 
-Prefer the smallest coherent change that preserves platform invariants.
+- CPU owns canonical operational production state and signed allergen releases.
+- Missing derived projection/read packages may self-heal from authoritative canonical production state when correctness is provable.
+- Corrupt/invalid packages never self-heal silently; they fail closed.
+- Historical weeks must remain readable through deterministic package rebuild/migration-safe paths where authoritative data exists.
+- Coalesce simultaneous rebuilds for the same package/scope.
+- Never invent production work for an intentionally blank published Menu Planning day.
 
-While editing:
+9.4 Delivered-In
 
-do not redesign accepted workflows without an explicit product requirement;
+- Delivered-In is a consumer/projection, not authority for publication, production or allergens.
+- Preserve the generated `apps/delivered-in/AGENTS.md` Next.js guidance.
+- Week and day navigation must distinguish populated, intentionally blank, missing/unavailable and withdrawn service dates.
+- Do not filter a valid published day merely because it has zero menu entries.
+- IndexedDB/cache state must be invalidated on withdrawal/supersession/version change.
+- Only current verified CPU-owned packet data may be treated as operational allergen truth.
 
-do not perform broad aesthetic/system refactors during a correctness fix;
+9.5 Logistics
 
-do not replace a proven shared contract with a parallel structure;
+- Logistics consumes fulfilment requirements and owns movement/dispatch planning.
+- Upstream withdrawal/cancellation must invalidate stale movement requirements rather than relying on missing source reads.
+- Preserve stable occurrence IDs and cross-app lineage.
 
-do not hide a domain problem with UI-only fallback data;
+==================================================
+10. TESTING EXPECTATIONS
+==================================================
 
-do not silently swallow failures that can leave downstream state stale;
-
-do not use window.alert/window.prompt as a shortcut in polished operational workflows unless already explicitly accepted;
-
-preserve backwards compatibility when live or migration code still depends on an older contract.
-
-After editing:
-
-run the narrowest relevant tests first;
-
-run typecheck/build for affected apps where scripts exist;
-
-run integration/E2E tests when crossing app boundaries;
-
-report commands actually run and their results;
-
-report anything not run and why;
-
-never claim a suite is green if it was not executed successfully.
-
-Do not invent validation commands. Read the affected app's package.json and existing scripts.
-
-8. Testing expectations
-
-Tests should cover business invariants, not just rendering.
+Tests should cover business invariants, not only rendering.
 
 For changed operational flows consider:
 
-happy path;
+- happy path;
+- invalid input;
+- duplicate/retry/idempotency;
+- amendment;
+- cancellation/withdrawal;
+- stale version/concurrency;
+- cross-app materialisation;
+- projection refresh/removal;
+- empty/unknown data;
+- intentionally blank published service day;
+- Europe/London date boundary;
+- allergen UNRECORDED vs CLEAR;
+- governed current OPLOC vs historical alias;
+- persistence/restart behaviour;
+- durable audit/domain evidence.
 
-invalid input;
+Use isolated test data. A green test that depends on state left by another test is unreliable.
 
-duplicate/retry/idempotency;
+The Golden Week UAT tooling is an end-to-end contract for representative operational data. Preserve and extend it rather than creating unrelated whole-system fixtures when possible.
 
-amendment;
+==================================================
+11. FORMAL AUDIT MODE
+==================================================
 
-cancellation/withdrawal;
+When instructed to perform a codebase audit, read and obey:
 
-stale version/concurrency;
+- `docs/ai/CODEBASE-AUDIT-PROTOCOL.md`
+- `docs/ai/LOGGING-AUDIT-STRATEGY.md`
 
-cross-app materialisation;
+Audit mode is read-only by default unless the user explicitly changes the mission.
 
-projection refresh/removal;
+Findings must be evidence-based and distinguish:
 
-empty/unknown data;
+- confirmed defect;
+- high-confidence risk;
+- design debt;
+- test/documentation gap;
+- intentionally accepted behaviour;
+- area inspected with no finding.
 
-Europe/London date boundary;
+Every core-app audit must assess auditability/observability without introducing excessive recurring reads/writes.
 
-allergen UNRECORDED vs CLEAR where relevant;
-
-governed OPLOC vs one-off destination where relevant;
-
-persistence/restart behaviour where relevant;
-
-durable audit/domain evidence for critical state changes where relevant.
-
-Use isolated test databases/data stores. A green test that depends on state left by another test is not a reliable test.
-
-The Golden Week UAT tooling is intended as an end-to-end contract for representative operational data. Preserve and extend it rather than creating unrelated whole-system fixtures when possible.
-
-9. Formal audit mode
-
-When instructed to perform a codebase audit, read and obey both:
-
-docs/ai/CODEBASE-AUDIT-PROTOCOL.md
-
-docs/ai/LOGGING-AUDIT-STRATEGY.md
-
-Audit mode is read-only by default.
-
-Do not fix production code while conducting the baseline audit unless the user explicitly changes the mission.
-
-A finding must be evidence-based and traceable to concrete code, configuration, tests or runtime behaviour. Do not pad an audit with generic best-practice commentary.
-
-The audit must distinguish:
-
-confirmed defect;
-
-high-confidence risk;
-
-design debt;
-
-test/documentation gap;
-
-intentionally accepted behaviour;
-
-area inspected with no finding.
-
-Every core-app audit must explicitly assess auditability/observability: whether important mutations can be reconstructed with stable actor, action, entity, version, source and cross-app lineage evidence, without excessive recurring read/write behaviour.
-
-10. Documentation authority
+==================================================
+12. DOCUMENTATION AUTHORITY
+==================================================
 
 Documentation can be stale. Code can also encode accidental behaviour.
 
 When they disagree:
 
-identify the disagreement;
+- identify the disagreement;
+- inspect current tests and live call paths;
+- consult project history/invariants;
+- report the conflict rather than silently choosing the easier source.
 
-inspect current domain tests and live call paths;
+The root README is not automatically a complete current platform map.
 
-consult project history/invariants;
-
-report the conflict rather than silently choosing whichever source is easier.
-
-The root README.md may describe older repository structure and must not be treated as a complete current platform map without verification.
-
-11. Agent completion standard
+==================================================
+13. COMPLETION STANDARD
+==================================================
 
 A coding task is not complete merely because the page renders or TypeScript compiles.
 
 A strong completion report states:
 
-what changed;
+- what changed;
+- why the domain boundary is correct;
+- files/areas touched;
+- migrations/data implications;
+- upstream/downstream implications;
+- tests/typecheck/build/E2E actually run;
+- known limitations/deferred work;
+- new operational/cost behaviour;
+- changed audit/logging behaviour;
+- branch, starting SHA and final SHA;
+- deployment status.
 
-why that is the correct domain boundary;
-
-files/areas touched;
-
-migrations/data implications;
-
-downstream/upstream implications;
-
-tests/typecheck/build/E2E actually run;
-
-known limitations or intentionally deferred work;
-
-any new operational or cost behaviour;
-
-any new or changed audit/logging behaviour for meaningful mutations.
-
-A formal audit completion report must instead follow the output requirements in docs/ai/CODEBASE-AUDIT-PROTOCOL.md and the auditability requirements in docs/ai/LOGGING-AUDIT-STRATEGY.md.
+A formal audit completion report follows `docs/ai/CODEBASE-AUDIT-PROTOCOL.md` instead.
