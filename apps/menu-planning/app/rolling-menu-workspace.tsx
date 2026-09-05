@@ -120,9 +120,16 @@ export default function RollingMenuWorkspace() {
     const currentSnapshot = snapshot;
     const currentNewDish = newDish;
     if (!currentSnapshot || !currentNewDish) return;
-    const response = await fetch("/api/catalogue", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "create-dish", displayName: titleCase(payload.name), category: payload.category, description: payload.description, preparationNotes: payload.notes, allergenEvidence: payload.allergenEvidence }) });
-    const body = await response.json();
-    if (!response.ok) { setError(body.error || "Dish could not be created."); return; }
+    let response: Response;
+    let body: { item?: Record<string, unknown>; error?: { message?: string } | string } = {};
+    try {
+      response = await fetch("/api/catalogue", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "create-dish", displayName: titleCase(payload.name), category: payload.category, description: payload.description, preparationNotes: payload.notes, allergenEvidence: payload.allergenEvidence }) });
+      body = await response.json().catch(() => ({}));
+    } catch {
+      setError("Dish could not be created. Please try again.");
+      return;
+    }
+    if (!response.ok) { setError(typeof body.error === "string" ? body.error : body.error?.message || "Dish could not be created. Please try again."); return; }
     const created = body.item as Record<string, unknown> | undefined;
     if (!created?.canonicalId) { setError("Dish was created but did not receive a canonical ID."); return; }
     const item = { id: String(created.canonicalId), name: titleCase(String(created.displayName || payload.name)), category: String(created.category || payload.category), description: payload.description, allergenEvidence: payload.allergenEvidence, mayContainReviewed: Boolean(created.mayContainReviewed) };

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { addMenuSlot, addOneOffDestination, assertWeekDateAvailable, cleanDuplicateEntries, copyWeekIntoWeek, createEntry, defaultWeekForDate, duplicateWeek, emptyWeek, getWeek, listWeeks, normaliseRollingSnapshotDestinations, planningWeekCommencing, planningWeekFromQuery, removeMenuSlot, resetWeek, saveSnapshot, updateEntry, validateWeek } from "@/lib/rolling-menu";
+import { addMenuSlot, addOneOffDestination, assertWeekDateAvailable, batchUpdateEntries, cleanDuplicateEntries, copyWeekIntoWeek, createEntry, defaultWeekForDate, duplicateWeek, emptyWeek, getWeek, listWeeks, normaliseRollingSnapshotDestinations, planningWeekCommencing, planningWeekFromQuery, removeMenuSlot, resetWeek, saveSnapshot, updateEntry, validateWeek } from "@/lib/rolling-menu";
 import { createPublishedMenuWeek, getMenuPublication, publicationDayBlockers, publicationPreview, publicationState, publicationWeekBlockers } from "@/lib/menu-publication";
 import { actorCanAccessOploc, assertActorCanAccessOploc, requireMutationActor, requirePublicationActor, resolveMenuActor, scopeMenuPublication, type MenuActor } from "@/lib/auth";
 import { readDeliveredInOplocs } from "@/lib/oploc-authority";
@@ -8,7 +8,7 @@ import { replayMenuPublicationOutbox } from "@/lib/menu-publication";
 import { listCatalogueEntriesForIds, reconcileCatalogueFromRollingEntries } from "@/lib/catalogue";
 import { resolveAllergenSnapshot } from "@/lib/allergen-resolution";
 import { getWeekHead, getWeekSnapshot, listWeekSummaries } from "@/lib/operational-store";
-import type { RollingWeek } from "@/lib/rolling-menu-types";
+import type { RollingEntry, RollingWeek } from "@/lib/rolling-menu-types";
 import { withDataTrace } from "@fika/server-shared/data-source-meter-server";
 
 function scopedSnapshot(snapshot: Awaited<ReturnType<typeof getWeek>>, actor?: MenuActor) {
@@ -114,6 +114,11 @@ async function handlePost(request: NextRequest) {
     }
     if (action === "update-entry") {
       const snapshot = await updateEntry(String(body.weekId), String(body.entryId), (body.patch || {}) as never, actor.uid);
+      return NextResponse.json({ snapshot: await resolvedSnapshot(snapshot, undefined, actor), weeks: await listWeeks(), blockers: validateWeek(scopedSnapshot(snapshot, actor)), publicationState: await publicationState(snapshot) });
+    }
+    if (action === "batch-update-entries") {
+      const updates = Array.isArray(body.updates) ? body.updates as Array<{ entryId: string; allocations: RollingEntry["allocations"] }> : [];
+      const snapshot = await batchUpdateEntries(String(body.weekId), Number(body.expectedWeekVersion), updates, actor.uid);
       return NextResponse.json({ snapshot: await resolvedSnapshot(snapshot, undefined, actor), weeks: await listWeeks(), blockers: validateWeek(scopedSnapshot(snapshot, actor)), publicationState: await publicationState(snapshot) });
     }
     if (action === "create-entry") {

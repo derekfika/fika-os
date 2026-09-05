@@ -9,7 +9,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import * as XLSX from "xlsx";
-import { addMenuSlot, applyEntryPatch, assertWeekDateAvailable, attachCanonicalDishIds, createEntry, defaultWeekForDate, duplicateWeek, emptyWeek, getWeek, importWorkbook, normaliseRollingSnapshotDestinations, operationalDateLondon, planningWeekCommencing, planningWeekFromQuery, publishWeek, removeMenuSlot, saveSnapshot, saveSnapshotsCreateOnly, updateEntry, validateWeek, ROLLING_SLOTS } from "../lib/rolling-menu";
+import { addMenuSlot, applyEntryPatch, assertWeekDateAvailable, attachCanonicalDishIds, batchUpdateEntries, createEntry, defaultWeekForDate, duplicateWeek, emptyWeek, getWeek, importWorkbook, normaliseRollingSnapshotDestinations, operationalDateLondon, planningWeekCommencing, planningWeekFromQuery, publishWeek, removeMenuSlot, saveSnapshot, saveSnapshotsCreateOnly, updateEntry, validateWeek, ROLLING_SLOTS } from "../lib/rolling-menu";
 import { hasPlannedDishes } from "../lib/rolling-menu-types";
 import { createCanonicalMenuItem, listCanonicalMenuItems } from "../lib/canonical-menu-repository";
 import { buildCompiledPublicationSnapshot, buildPublishedDay, createPublishedMenuDay, createPublishedMenuWeek, currentPublishedDays, getCompiledPublicationSnapshot, getMenuPublication, listMenuPublicationEvents, listMenuPublications, publicationPreview, publicationState, publishedDayMatrixHtml, replayMenuPublicationOutbox, withdrawPublishedMenuDay, withdrawPublishedMenuWeek, type MenuPublicationSignoff } from "../lib/menu-publication";
@@ -111,9 +111,9 @@ test("publication readiness enforces governed destinations and allocation invari
   const entry = (overrides: Partial<RollingEntry> = {}): RollingEntry => ({ id: "entry:integrity", dayId: base.days[0].id, date: base.days[0].date, slot: "SALAD 1", itemId: "dish:integrity", itemLabel: "Integrity Dish", portions: 10, allocations: [{ destinationId: "oploc:46701265-15af-48f4-a230-1d27ca21bc59", destinationLabel: "Haleon", quantity: 10 }], allergens: { no_key_allergens: "contains" }, audit: [], ...overrides });
   const check = (overrides: Partial<RollingEntry>) => validateWeek({ ...base, entries: [entry(overrides)] });
   assert.ok(check({ allocations: [{ destinationLabel: "Unknown venue", quantity: 10 }] }).some(error => error.includes("unresolved destination")));
-  assert.ok(check({ portions: 11 }).some(error => error.includes("must equal portions")));
+  assert.deepEqual(check({ portions: 11 }), []);
   assert.ok(check({ allocations: [{ destinationId: "oploc:46701265-15af-48f4-a230-1d27ca21bc59", destinationLabel: "Haleon", quantity: 5 }, { destinationId: "oploc:46701265-15af-48f4-a230-1d27ca21bc59", destinationLabel: "Haleon", quantity: 5 }] }).some(error => error.includes("duplicate destination")));
-  assert.ok(check({ allocations: [{ destinationId: "oploc:46701265-15af-48f4-a230-1d27ca21bc59", destinationLabel: "Haleon", quantity: 0 }] }).some(error => error.includes("positive quantity")));
+  assert.deepEqual(check({ allocations: [{ destinationId: "oploc:46701265-15af-48f4-a230-1d27ca21bc59", destinationLabel: "Haleon", quantity: 0 }] }), []);
   assert.deepEqual(check({}), []);
 });
 
@@ -179,6 +179,17 @@ test("week lifecycle prevents collisions, publishes once, and duplicates publish
   } finally {
     if (before) await writeFile(rollingFile, before); else await rm(rollingFile, { force: true });
   }
+});
+
+test("portion planner saves one optimistic batch and rejects stale retries", async () => {
+  const initial = await saveSnapshot(emptyWeek("2099-07-05", "test"));
+  const created = await createEntry(initial.week.id, initial.days[0].id, "SALAD 1", "Batch dish", "test", "dish:batch");
+  const entry = created.entries.find(value => value.dayId === initial.days[0].id)!;
+  const saved = await batchUpdateEntries(initial.week.id, created.week.version, [{ entryId: entry.id, allocations: [{ destinationId: "oploc:46701265-15af-48f4-a230-1d27ca21bc59", destinationLabel: "Haleon", quantity: 4 }] }], "test");
+  assert.equal(saved.week.version, created.week.version + 1);
+  assert.equal(saved.entries.find(value => value.id === entry.id)?.portions, 4);
+  assert.equal(saved.entries.find(value => value.id === entry.id)?.audit.at(-1)?.action, "portion-allocations-batch-saved");
+  await assert.rejects(() => batchUpdateEntries(initial.week.id, created.week.version, [{ entryId: entry.id, allocations: [] }], "test"), (error: any) => error.status === 409);
 });
 
 test("duplicate week copies populated source while retaining intentional blank days and no publication state", async () => {

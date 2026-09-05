@@ -148,6 +148,7 @@ export async function recordDishSourceAliases(aliasesById: Record<string, string
 }
 
 export async function createCanonicalMenuItem(input: { displayName: string; category?: string; description?: string; preparationNotes?: string; allergenEvidence?: MenuItem["allergenEvidence"] }, actor = "local-menu-planner") {
+  if (hosted() && /(?:^|[-_:])(?:test|fixture|synthetic|e2e)(?:$|[-_:])/i.test(actor)) throw Object.assign(new Error("Synthetic catalogue writes are not allowed in hosted Menu Planning."), { status: 403 });
   const items = await readItems();
   const displayName = normaliseDishName(input.displayName);
   const existing = items.find(item => item.displayName.trim().toLocaleLowerCase() === displayName.toLocaleLowerCase());

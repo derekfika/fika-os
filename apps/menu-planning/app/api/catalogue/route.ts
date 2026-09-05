@@ -34,14 +34,22 @@ async function handleGet(request: Request) {
 export async function GET(request: Request) { return withDataTrace({ app: "menu-planning", action: new URL(request.url).searchParams.get("manifest") === "true" ? "menu-planning.catalogue.manifest" : "menu-planning.catalogue.load", path: new URL(request.url).pathname }, () => handleGet(request)); }
 
 export async function POST(request: Request) {
-  const body = await request.json() as { action?: string; displayName?: string; category?: string; description?: string; preparationNotes?: string; canonicalIds?: string[]; allergenEvidence?: Array<{ allergen: string; value: "contains" | "free_from" | "may_contain" | "unknown"; source: string; reviewedBy?: string; reviewedAt?: string; notes?: string }> };
-  if (body.action === "create-dish") {
-    if (!body.displayName?.trim()) return NextResponse.json({ error: "A dish name is required." }, { status: 422 });
-    const item = await createCanonicalMenuItem({ ...body, displayName: body.displayName! });
-    return NextResponse.json({ item }, { status: 201 });
+  let action = "";
+  try {
+    const body = await request.json() as { action?: string; displayName?: string; category?: string; description?: string; preparationNotes?: string; canonicalIds?: string[]; allergenEvidence?: Array<{ allergen: string; value: "contains" | "free_from" | "may_contain" | "unknown"; source: string; reviewedBy?: string; reviewedAt?: string; notes?: string }> };
+    action = String(body.action || "");
+    if (action === "create-dish") {
+      if (!body.displayName?.trim()) return NextResponse.json({ error: { message: "A dish name is required." } }, { status: 422 });
+      const item = await createCanonicalMenuItem({ ...body, displayName: body.displayName! });
+      return NextResponse.json({ item }, { status: 201 });
+    }
+    if (action !== "merge-similar-dishes" && action !== "merge-reviewed-dishes") return NextResponse.json({ error: { message: "Unknown catalogue command." } }, { status: 400 });
+    const result = await mergeSimilarCanonicalItems(action === "merge-reviewed-dishes" ? "reviewed-dish-merge" : "automatic-dish-normaliser", action === "merge-reviewed-dishes" ? new Set(body.canonicalIds || []) : undefined);
+    const updatedEntries = await repointDishIds(result.mapping, result.aliases);
+    return NextResponse.json({ merged: result.merged, updatedEntries });
+  } catch (error) {
+    const status = error && typeof error === "object" && "status" in error && typeof (error as { status?: unknown }).status === "number" ? (error as { status: number }).status : 500;
+    console.error("Menu Planning catalogue mutation failed", error);
+    return NextResponse.json({ error: { message: status >= 500 ? action === "create-dish" ? "Dish could not be created. Please try again." : "Catalogue command could not be completed. Please try again." : error instanceof Error ? error.message : "Catalogue command failed." } }, { status });
   }
-  if (body.action !== "merge-similar-dishes" && body.action !== "merge-reviewed-dishes") return NextResponse.json({ error: "Unknown catalogue command." }, { status: 400 });
-  const result = await mergeSimilarCanonicalItems(body.action === "merge-reviewed-dishes" ? "reviewed-dish-merge" : "automatic-dish-normaliser", body.action === "merge-reviewed-dishes" ? new Set(body.canonicalIds || []) : undefined);
-  const updatedEntries = repointDishIds(result.mapping, result.aliases);
-  return NextResponse.json({ merged: result.merged, updatedEntries });
 }
