@@ -236,4 +236,18 @@
 .import-confirm-modal { width: min(420px, 100%); padding: 28px; border: 1px solid var(--fika-border-default); border-radius: 16px; background: var(--fika-surface-card); color: var(--fika-text-primary); box-shadow: 0 18px 48px rgba(40, 15, 140, .18); }
 .import-confirm-modal h2 { margin: 0 0 10px; color: var(--fika-text-primary); font-size: 21px; }
 .import-confirm-modal p { color: var(--fika-text-secondary); line-height: 1.5; }
+.import-form-modal { width: min(560px, calc(100vw - 32px)); overflow: auto; padding: 28px; border: 1px solid var(--fika-border-default); border-radius: 16px; background: var(--fika-surface-card); color: var(--fika-text-primary); box-shadow: 0 18px 48px rgba(40, 15, 140, .18); }
+.import-form-modal-header { margin-bottom: 24px; }
+.import-form-modal-header h2 { margin: 4px 0 10px; color: var(--fika-text-primary); font-size: 24px; }
+.import-form-modal-header p { margin: 0; color: var(--fika-text-secondary); line-height: 1.5; }
+.import-form-eyebrow { color: var(--fika-action-primary) !important; font-size: 12px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+.import-form-fields { display: grid; gap: 16px; }
+.import-form-fields label { display: grid; gap: 7px; color: var(--fika-text-primary); font-size: 14px; font-weight: 700; }
+.import-form-fields input { width: 100%; min-height: 44px; padding: 0 12px; border: 1px solid var(--fika-border-default); border-radius: 8px; background: var(--fika-surface-card); color: var(--fika-text-primary); }
+.import-form-fields input:focus-visible { outline: 3px solid var(--fika-action-secondary); outline-offset: 2px; }
+.import-form-provenance { display: grid; gap: 4px; margin: 20px 0 0; padding: 12px; border-radius: 8px; background: var(--fika-surface-subtle); color: var(--fika-text-secondary); font-size: 13px; line-height: 1.45; overflow-wrap: anywhere; }
+.import-form-provenance strong { color: var(--fika-text-primary); font-size: 12px; }
+.import-form-modal-footer { display: flex; justify-content: flex-end; gap: 10px; margin-top: 24px; padding-top: 20px; border-top: 1px solid var(--fika-border-default); }
+.import-form-modal-footer button { min-height: 44px; }
+@media (max-width: 560px) { .import-form-modal { width: min(100%, calc(100vw - 24px)); padding: 20px; } .import-form-modal-footer { flex-wrap: wrap; } .import-form-modal-footer button { flex: 1 1 160px; } }
 @media (max-width: 760px) { .import-menu-week { padding: 28px 16px; } .import-summary { grid-template-columns: repeat(2, 1fr); } .import-review-header { display: none; } .import-review-row { grid-template-columns: 1fr 1fr; min-height: 76px; } .import-review-actions, .import-dish-search { grid-column: 1 / -1; } .import-visible-count { width: 100%; margin-left: 0; } .import-resume { align-items: stretch; flex-direction: column; } }

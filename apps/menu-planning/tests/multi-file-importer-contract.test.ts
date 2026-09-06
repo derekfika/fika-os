@@ -63,3 +63,17 @@ test("import review offers explicit governed dish creation with provenance", asy
   assert.match(page, /created and matched/i);
   assert.match(catalogueRoute, /createCanonicalMenuItem/);
 });
+
+test("create-dish importer modal uses a labelled standard form modal", async () => {
+  const page = await readFile(new URL("../app/import-menu-week/page.tsx", import.meta.url), "utf8");
+  const styles = await readFile(new URL("../app/import-menu-week.css", import.meta.url), "utf8");
+  assert.match(page, /className="import-form-modal"/);
+  assert.match(page, /htmlFor="create-dish-name"/);
+  assert.match(page, /id="create-dish-name"/);
+  assert.match(page, /htmlFor="create-dish-category"/);
+  assert.match(page, /id="create-dish-category"/);
+  assert.match(page, /data-modal-autofocus/);
+  assert.match(page, /dismissible=\{!saving\}/);
+  assert.match(styles, /width: min\(560px/);
+  assert.match(styles, /\.import-form-fields \{ display: grid; gap: 16px; \}/);
+});

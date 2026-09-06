@@ -229,3 +229,9 @@ Use an application modal, inline error state or toast appropriate to the severit
 
 EXCEPTION:
 Native dialogs may be used only in non-user-facing developer/debug tooling, never in normal FIKA OS production workflows.
+
+## Form modals
+
+Use a single-column form layout for compact and standard modals. Labels sit above their controls, and inputs/selects are normally full-width within their field container. Do not place two labelled editable controls side-by-side unless the modal is at least approximately 560px wide, both controls retain comfortable minimum widths, and labels cannot collide or wrap awkwardly. When a modal has more than one editable field, use the standard form-modal width of approximately 560px unless a smaller width is justified; approximately 420px is for confirmations or small single-purpose dialogs, and approximately 760px is for complex multi-section forms. Increase modal width before reducing type size when content does not fit.
+
+Allow 6–8px from label to control, approximately 16px between fields and 20–24px before footer actions. Group footer actions consistently; the primary CTA must not visually overpower the form. Place provenance/help text beneath the relevant field or form block using muted semantic text. Reuse shared FIKA form controls, buttons and semantic tokens where available, keep primary touch targets near 44px, and preserve safe padding without horizontal clipping on narrow viewports. A bad pattern is an inline label/input layout where adjacent labels or controls can touch, collide, overlap or become ambiguous; the good pattern is a padded, single-column form with distinct labelled controls and a balanced footer.
