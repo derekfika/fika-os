@@ -10,7 +10,7 @@ import { allergenMatrixHtml } from "../../ui/allergen-matrix";
 import { isHostedPdfRuntime, renderPdfToBuffer } from "../../lib/local-pdf";
 import os from "node:os";
 import { normaliseOperationalAllergens } from "../../../../shared/allergen-contract";
-import { productionOrderDetail, productionQueue, transitionProductionOrder } from "../../../lib/production-http-client";
+import { canonicalProductionFailureKind, productionOrderDetail, productionQueue, transitionProductionOrder, type CanonicalProductionFailure } from "../../../lib/production-http-client";
 import type { ProductionOrder, ProductionStatus } from "../../../lib/production-types";
 import { appendCpuChange, rebuildCpuDayProjection, rebuildCpuWeekProjection, weekCommencingFor } from "../../../lib/cpu-projection";
 import { createProductionPlanRepository } from "../../../lib/production-plan-repository";
@@ -111,9 +111,14 @@ async function loadOrder(request: NextRequest, orderId: string) {
   try {
     const order = await productionOrderDetail(request, orderId);
     return order || (isLocalRuntime() ? localFixtureOrders().find(item => item.canonicalId === orderId) : undefined);
-  } catch {
+  } catch (cause) {
     if (isLocalRuntime()) return localFixtureOrders().find(item => item.canonicalId === orderId);
-    throw Object.assign(new Error("Canonical Production data is unavailable."), { status: 503 });
+    const failure = cause as CanonicalProductionFailure;
+    const kind = canonicalProductionFailureKind(failure);
+    if (kind === "not_found") throw Object.assign(new Error("The canonical Production Order is no longer current."), { status: 409, code: "CPU_CANONICAL_ORDER_NOT_FOUND", cause });
+    if (kind === "authority_failure") throw Object.assign(new Error("Canonical Production authorisation failed."), { status: 503, code: "CPU_CANONICAL_AUTHORITY_FAILURE", cause });
+    if (kind === "malformed_response" || kind === "invalid_response") throw Object.assign(new Error("Canonical Production returned an invalid response."), { status: 502, code: "CPU_CANONICAL_RESPONSE_INVALID", cause });
+    throw Object.assign(new Error("Canonical Production data is unavailable."), { status: 503, code: "CPU_CANONICAL_UPSTREAM_UNAVAILABLE", cause });
   }
 }
 async function isVisibleForCpu(request: NextRequest, orderId: string) {

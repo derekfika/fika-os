@@ -4,6 +4,8 @@ This file records user-facing workflow changes delivered in the repository. Deta
 
 ## Unreleased
 
+- **2026-09-06 — THREAD 19 — hosted canonical Production resolution P0:** preserved the CPU-to-Hub canonical detail boundary with safe structured diagnostics and distinct failure classification for outage, timeout, authority denial, not-found/stale identity, malformed response and invalid response. Hosted sign-off remains fail-closed with no fixture or synthetic-order fallback. Validation: focused CPU canonical-resolution/sign-off tests, CPU typecheck, production build and `git diff --check`. Deployment status: not performed.
+
 - **2026-09-06 — THREAD 18 — Delivered-In allergen/signature state hardening:** bound CPU allergen signatures and review-package status to the exact production order, published Menu Planning day/publication/version, source hash and matrix hash; legacy unscoped signatures remain historical only. Added review-package regression coverage, current-day lineage rejection in Delivered-In, and reset protection for current CPU/Delivered-In operational state while preserving immutable history. Validation: focused CPU/Delivered-In tests, CPU and Delivered-In typechecks, reset syntax check and `git diff --check`. Deployment status: not performed.
 
 - **2026-09-06 — THREAD 17 — Delivered-In requested-week 503 recovery:** isolated per-day requested-week reconciliation failures so an unavailable or unsigned CPU day remains fail-closed without aborting the entire valid week into an opaque 503; added structured dashboard/recovery diagnostics with week, date, OPLOC, error and build context. Legitimately corrupt/unauthorised/source failures remain explicit errors. Deployment status: not performed.
