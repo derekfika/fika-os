@@ -9,6 +9,7 @@ export type CpuAllergenRelease = {
   releaseId: string;
   serviceDate: string;
   sourceDayId: string;
+  sourcePublicationId?: string;
   sourcePublicationDayId: string;
   sourceVersion: number;
   sourceContentHash: string;
@@ -58,7 +59,7 @@ function requireHash(value: string, field: string) { if (!HASH.test(value)) thro
 function requireArtifact(artifact: MatrixArtifact, field: string) { requireHash(artifact.contentHash, `${field}.contentHash`); if (!artifact.driveFileId && !artifact.localUrl) throw new Error(`${field} must have a durable identity.`); }
 
 export function buildCpuAllergenRelease(input: {
-  serviceDate: string; sourceDayId: string; sourcePublicationDayId: string; sourceVersion: number; sourceContentHash: string; version: number; signedAt: string; signatures: InternalMatrixSignature[]; items: PlannedMenuItem[]; masterArtifact: MatrixArtifact; derivedArtifacts: MatrixArtifact[]; packetArtifacts: MatrixArtifact[]; previous?: CpuAllergenRelease;
+  serviceDate: string; sourceDayId: string; sourcePublicationId?: string; sourcePublicationDayId: string; sourceVersion: number; sourceContentHash: string; version: number; signedAt: string; signatures: InternalMatrixSignature[]; items: PlannedMenuItem[]; masterArtifact: MatrixArtifact; derivedArtifacts: MatrixArtifact[]; packetArtifacts: MatrixArtifact[]; previous?: CpuAllergenRelease;
 }): CpuAllergenRelease {
   if (!Number.isInteger(input.version) || input.version < 1) throw new Error("A release version is required.");
   const roles = new Set(input.signatures.map(signature => signature.role));
@@ -70,8 +71,10 @@ export function buildCpuAllergenRelease(input: {
   input.packetArtifacts.forEach((artifact, index) => requireArtifact(artifact, `packetArtifacts[${index}]`));
   const matrix = releaseMatrix(input.items);
   const matrixContentHash = jsonHash(matrix);
+  const expectedPlanHash = allergenMatrixContentHash(input.items);
+  if (input.signatures.some(signature => !signature.scope || signature.scope.matrixContentHash !== expectedPlanHash)) throw new Error("Every release signature must be bound to the exact current publication-day matrix.");
   return {
-    contractVersion: "cpu-production.signed-allergen-release.v1", releaseId: `cpu-allergen-release:${input.serviceDate}:v${input.version}`, serviceDate: input.serviceDate, sourceDayId: input.sourceDayId, sourcePublicationDayId: input.sourcePublicationDayId, sourceVersion: input.sourceVersion, sourceContentHash: input.sourceContentHash, version: input.version, matrixContentHash, signedAt: input.signedAt,
+    contractVersion: "cpu-production.signed-allergen-release.v1", releaseId: `cpu-allergen-release:${input.serviceDate}:v${input.version}`, serviceDate: input.serviceDate, sourceDayId: input.sourceDayId, ...(input.sourcePublicationId ? { sourcePublicationId: input.sourcePublicationId } : {}), sourcePublicationDayId: input.sourcePublicationDayId, sourceVersion: input.sourceVersion, sourceContentHash: input.sourceContentHash, version: input.version, matrixContentHash, signedAt: input.signedAt,
     signatures: input.signatures.map(signature => ({ ...signature, valid: true })), ...(input.previous ? { previousReleaseId: input.previous.releaseId } : {}), status: "current", masterArtifact: input.masterArtifact, derivedArtifacts: [...input.derivedArtifacts], packetArtifacts: [...input.packetArtifacts], matrix, deltaFromPrevious: allergenReleaseDelta(input.previous, input.items),
   };
 }

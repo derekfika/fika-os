@@ -5,7 +5,7 @@ import { existsSync, promises as fs } from "node:fs";
 import path from "node:path";
 import { createHash } from "node:crypto";
 import { localFixtureOrders, updateLocalFixture } from "../local-fixtures";
-import type { AllergenCellState, InternalMatrixSignature, MatrixArtifact, PlannedMenuItem, ProductionPlan } from "../../lib/production-plan";
+import { matrixSignatureScope, signatureMatchesScope, type AllergenCellState, type InternalMatrixSignature, type MatrixArtifact, type PlannedMenuItem, type ProductionPlan } from "../../lib/production-plan";
 import { allergenMatrixHtml } from "../../ui/allergen-matrix";
 import { isHostedPdfRuntime, renderPdfToBuffer } from "../../lib/local-pdf";
 import os from "node:os";
@@ -221,11 +221,15 @@ async function createMatrixArtifact(plan: ProductionPlan, orderId: string, actor
   const storedPlans = await planRepository.getByOrderIds(dailyOrders.map(candidate => candidate.canonicalId));
   const planByOrderId = new Map(storedPlans.map(candidate => [candidate.orderId, normalisePlanAllergens(candidate)]));
   planByOrderId.set(orderId, normalisePlanAllergens(plan));
-  const fullySigned = (candidate: ProductionPlan) => candidate.status === "planned" && candidate.menuItems.length > 0 && candidate.menuItems.every(item => item.subItems.length > 0 && item.subItems.every(sub => sub.name.trim())) && candidate.signatures?.some(signature => signature.role === "production_chef") && candidate.signatures?.some(signature => signature.role === "head_chef_site_manager");
-  const signedPairs = dailyOrders.flatMap(candidate => { const candidatePlan = planByOrderId.get(candidate.canonicalId); return candidatePlan && fullySigned(candidatePlan) ? [{ order: candidate, plan: candidatePlan }] : []; });
+  const fullySigned = (pair: { order: ProductionOrder; plan: ProductionPlan }) => {
+    const scope = matrixSignatureScope(pair.order, menuContentHash(pair.plan.menuItems));
+    const signatures = pair.plan.signatures || [];
+    return pair.plan.status === "planned" && pair.plan.menuItems.length > 0 && pair.plan.menuItems.every(item => item.subItems.length > 0 && item.subItems.every(sub => sub.name.trim())) && signatures.some(signature => signature.role === "production_chef" && signatureMatchesScope(signature, scope)) && signatures.some(signature => signature.role === "head_chef_site_manager" && signatureMatchesScope(signature, scope));
+  };
+  const signedPairs = dailyOrders.flatMap(candidate => { const candidatePlan = planByOrderId.get(candidate.canonicalId); const pair = candidatePlan ? { order: candidate, plan: candidatePlan } : undefined; return pair && fullySigned(pair) ? [pair] : []; });
   if (!signedPairs.some(pair => pair.order.canonicalId === orderId)) signedPairs.push({ order, plan });
   const stableFileToken = (value: string) => value.replace(/^oploc:/, "").replace(/[^A-Za-z0-9_-]+/g, "-").replace(/^-+|-+$/g, "") || "unassigned";
-  const allSignatures = signedPairs.flatMap(pair => pair.plan.signatures || []);
+  const allSignatures = signedPairs.flatMap(pair => (pair.plan.signatures || []).filter(signature => signatureMatchesScope(signature, matrixSignatureScope(pair.order, menuContentHash(pair.plan.menuItems)))));
   const withSource = (pair: { order: ProductionOrder; plan: ProductionPlan }, prefix: string) => pair.plan.menuItems.map(item => ({ ...item, id: `${prefix}:${item.id}`, name: pair.order.destinationOplocId ? `${pair.order.destinationOplocId} · ${item.name}` : item.name }));
   const masterItems = signedPairs.flatMap(pair => withSource(pair, pair.order.canonicalId));
   const sitePairs = new Map<string, Array<{ order: ProductionOrder; plan: ProductionPlan }>>();
@@ -415,6 +419,8 @@ async function handlePost(request: NextRequest) {
     const storedPlan = await planRepository.get(command.orderId);
     if (!storedPlan && !isLocalRuntime()) plans.delete(command.orderId);
     const plan = await getPlan(request, command.orderId, storedPlan);
+    const currentOrder = await loadOrder(request, command.orderId);
+    if (!currentOrder) throw Object.assign(new Error("The canonical Production Order could not be loaded."), { status: 503 });
     const expectedUpdatedAt = storedPlan?.updatedAt;
     const timestamp = now();
     let notification: { status: string; reason?: string } | undefined;
@@ -479,12 +485,18 @@ async function handlePost(request: NextRequest) {
       const subItems = plan.menuItems.flatMap(item => item.subItems);
       if (!subItems.length || subItems.some(item => !item.name.trim())) throw Object.assign(new Error("Complete every named sub-item before signing the matrix."), { status: 422 });
       plan.status = "planned";
-      const signatures = plan.signatures || [];
+      const currentMenuContentHash = menuContentHash(plan.menuItems);
+      const currentSignatureScope = matrixSignatureScope(currentOrder, currentMenuContentHash);
+      if (!currentSignatureScope) throw Object.assign(new Error("The current published Menu Planning source identity is unavailable; the matrix cannot be signed."), { status: 503 });
+      // Legacy signatures without exact publication/day/content lineage are
+      // historical evidence only and must never make the current matrix look
+      // signed. They remain in the audit trail and are not deleted here.
+      const signatures = (plan.signatures || []).filter(signature => signatureMatchesScope(signature, currentSignatureScope));
+      plan.signatures = signatures;
       if (signatures.some(signature => signature.role === "production_chef") && signatures.some(signature => signature.role === "head_chef_site_manager")) throw Object.assign(new Error("This allergen matrix is already fully signed and locked."), { status: 409 });
       if (signatures.some(signature => signature.role === command.role)) throw Object.assign(new Error("This signatory role has already signed this matrix."), { status: 409 });
-      const currentMenuContentHash = menuContentHash(plan.menuItems);
       if (signatures.length > 0 && plan.signedMenuContentHash && plan.signedMenuContentHash !== currentMenuContentHash) throw Object.assign(new Error("The allergen matrix changed after the first signature. Re-review the matrix before signing again."), { status: 409 });
-      const signature: InternalMatrixSignature = { role: command.role, printedName: command.printedName, signedAt: timestamp, actor: auditActor, attestation: command.attestation, signatureDataUrl: command.signatureDataUrl };
+      const signature: InternalMatrixSignature = { role: command.role, printedName: command.printedName, signedAt: timestamp, actor: auditActor, attestation: command.attestation, signatureDataUrl: command.signatureDataUrl, scope: currentSignatureScope };
       plan.signatures = [...signatures, signature];
       if (signatures.length === 0) plan.signedMenuContentHash = currentMenuContentHash;
       plan.audit.push({ action: "allergen-matrix-signed", at: timestamp, by: auditActor, reason: `${command.role}: ${command.attestation}` });
@@ -516,6 +528,7 @@ async function handlePost(request: NextRequest) {
           const release = buildCpuAllergenRelease({
             serviceDate,
             sourceDayId: signedOrder?.sourceEntityId || "",
+            sourcePublicationId: (signedOrder as (typeof signedOrder & { sourcePublicationId?: string }) | undefined)?.sourcePublicationId,
             sourcePublicationDayId: signedOrder?.sourcePublicationDayId || "",
             sourceVersion: signedOrder?.sourceVersion || 0,
             sourceContentHash: signedOrder?.sourceContentHash || "",
@@ -554,6 +567,7 @@ async function handlePost(request: NextRequest) {
         const release = buildCpuAllergenRelease({
           serviceDate,
           sourceDayId: signedOrder?.sourceEntityId || "",
+          sourcePublicationId: (signedOrder as (typeof signedOrder & { sourcePublicationId?: string }) | undefined)?.sourcePublicationId,
           sourcePublicationDayId: signedOrder?.sourcePublicationDayId || "",
           sourceVersion: signedOrder?.sourceVersion || 0,
           sourceContentHash: signedOrder?.sourceContentHash || "",

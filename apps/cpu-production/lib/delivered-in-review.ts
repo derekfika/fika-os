@@ -1,4 +1,6 @@
 import type { ProductionPlan } from "../app/lib/production-plan";
+import { matrixSignatureScope, signatureMatchesScope } from "../app/lib/production-plan";
+import { allergenMatrixContentHash } from "./cpu-allergen-release";
 import type { ProductionOrder } from "./production-types";
 import type { ProductionPlanRepository } from "./production-plan-repository";
 import { recordDeliveredInReadBudget } from "./delivered-in-read-budget";
@@ -25,12 +27,14 @@ export function parseDeliveredInReviewOrderIds(value: string | null) {
   return ids;
 }
 
-export function reviewStatusForPlan(orderId: string, plan: ProductionPlan | undefined): DeliveredInReviewStatus {
+export function reviewStatusForPlan(orderId: string, plan: ProductionPlan | undefined, order?: ProductionOrder): DeliveredInReviewStatus {
   if (!plan) return { orderId, planStatus: "draft", reviewed: false, completedSourceLineIds: [], signatureRoles: [], matrixItems: [] };
   const completedSourceLineIds = plan.menuItems
     .filter((item) => item.sourceLineId && item.subItems.length > 0 && item.subItems.every(subItem => subItem.evidenceStatus === "completed"))
     .map((item) => item.sourceLineId!);
-  const signatureRoles = [...new Set((plan.signatures || []).map((signature) => signature.role))];
+  const scope = order ? matrixSignatureScope(order, allergenMatrixContentHash(plan.menuItems)) : undefined;
+  const validSignatures = (plan.signatures || []).filter(signature => order ? signatureMatchesScope(signature, scope) : Boolean(signature.scope));
+  const signatureRoles = [...new Set(validSignatures.map((signature) => signature.role))];
   return {
     orderId,
     planStatus: plan.status,
@@ -59,7 +63,7 @@ export async function loadDeliveredInReviewStatuses(input: {
   const planByOrderId = new Map(plans);
   recordDeliveredInReadBudget({ stage: "review_status_batch", canonicalOrderDocs: visibleOrders.length, planDocs: plans.length, selectedIds: input.orderIds.length });
   return visibleOrders.map((order) => {
-    const status = reviewStatusForPlan(order.canonicalId, planByOrderId.get(order.canonicalId));
+    const status = reviewStatusForPlan(order.canonicalId, planByOrderId.get(order.canonicalId), order);
     return input.includeMatrix ? status : Object.fromEntries(Object.entries(status).filter(([key]) => key !== "matrixItems"));
   });
 }

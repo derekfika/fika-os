@@ -19,7 +19,7 @@ const PRESERVE_COLLECTIONS = [
 
 const DELETE_COLLECTIONS = [
   "fikaBookings", "fikaBookingNotifications", "fikaProductionOrders", "fikaProductionOrdersV1", "fikaProductionRequirements",
-  "fikaFulfilmentRequirementsV1", "fikaMenuPlanningPublications", "fikaMenuPlanningEvents", "fikaMenuPlanningOutbox", "fikaMenuPlanningPublishedSnapshots",
+  "fikaFulfilmentRequirementsV1", "fikaCpuProductionPlansV1", "fikaCpuProductionChangesV1", "fikaCpuProductionChangeCursorV1", "fikaCpuProductionChangeReceiptsV1", "fikaCpuProductionDayProjectionsV1", "fikaDeliveredInAllergenSafetyV1", "fikaDeliveredInSiteMenusV1", "fikaMenuPlanningPublications", "fikaMenuPlanningEvents", "fikaMenuPlanningOutbox", "fikaMenuPlanningPublishedSnapshots",
   "fikaLogisticsDeliveryRunsV1", "fikaLogisticsMovementRequestsV1", "fikaLogisticsDeliveryStopsV1", "fikaLogisticsCollectionPreferencesV1",
   "fikaDomainEventInboxV1", "fikaDomainEventsV1",
 ];

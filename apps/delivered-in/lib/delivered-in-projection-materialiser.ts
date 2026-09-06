@@ -20,6 +20,7 @@ export async function buildDeliveredInDayProjection(input: { request: NextReques
   const review = await input.loadReview(input.request, input.day.date, input.site.oplocId, input.day.contentHash);
   if (!review) throw Object.assign(new Error("CPU review data is unavailable; the previous Delivered-In projection must be retained."), { code: "CPU_REVIEW_UNAVAILABLE", status: 503 });
   if (review.cpuReview.status !== "signed") throw Object.assign(new Error("CPU allergen data is not signed; no current Delivered-In menu may be generated."), { code: "CPU_REVIEW_UNSIGNED", status: 503 });
+  if (review.package?.sourceBundleHash && review.package.sourceBundleHash !== input.day.contentHash) throw Object.assign(new Error("The signed CPU allergen package does not match the current published Menu Planning day."), { code: "CPU_REVIEW_LINEAGE_MISMATCH", status: 503 });
   const packetEntries = review.entries;
   const sourceEntries = input.day.entries.filter(entry => {
     const stableDishId = entry.canonicalDishId || entry.sourceEntryId;

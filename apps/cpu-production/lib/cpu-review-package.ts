@@ -1,6 +1,7 @@
 import { encodeReadPackage, publishReadPackage, retrieveReadPackage, type ReadPackageManifest } from "@fika/server-shared/read-package";
 import { recordDataAccess } from "@fika/server-shared/data-source-meter-server";
-import type { ProductionPlan } from "../app/lib/production-plan";
+import { matrixSignatureScope, signatureMatchesScope, type ProductionPlan } from "../app/lib/production-plan";
+import { allergenMatrixContentHash } from "./cpu-allergen-release";
 import type { ProductionOrder } from "./production-types";
 import { cpuPackageStore } from "./cpu-package-store";
 import { reviewStatusForPlan } from "./delivered-in-review";
@@ -21,7 +22,7 @@ export type CpuReviewEntry = {
   mayContainNotes?: string;
   evidenceStatus: string;
 };
-export type CpuReviewSignature = { role: "production_chef" | "head_chef_site_manager"; printedName: string; signedAt: string; actor?: string; attestation?: string };
+export type CpuReviewSignature = { role: "production_chef" | "head_chef_site_manager"; printedName: string; signedAt: string; actor?: string; attestation?: string; scope?: { productionOrderId: string; serviceDate: string; sourceDayId: string; sourcePublicationId?: string; sourcePublicationDayId: string; sourceVersion: number; sourceContentHash: string; matrixContentHash: string } };
 export type CpuReviewOrder = {
   productionOrderId: string;
   orderVersion: number;
@@ -34,6 +35,7 @@ export type CpuReviewOrder = {
   signatures: CpuReviewSignature[];
   entries: CpuReviewEntry[];
   matrixArtifact?: { id: string; driveUrl?: string; localUrl?: string; contentHash?: string };
+  sourceIdentity?: { sourceDayId: string; sourcePublicationId?: string; sourcePublicationDayId: string; sourceVersion: number; sourceContentHash: string; matrixContentHash: string };
 };
 export type CpuReviewProjection = {
   contractVersion: "cpu-production.delivered-in-review.v1";
@@ -49,7 +51,7 @@ export type CpuReviewProjection = {
   signatures: CpuReviewSignature[];
   sourceOrders: CpuReviewOrder[];
   generatedAt: string;
-  sourceLineage: Array<{ productionOrderId: string; orderVersion: number; cpuPlanId: string; planRevision?: number }>;
+  sourceLineage: Array<{ productionOrderId: string; orderVersion: number; cpuPlanId: string; planRevision?: number; sourceDayId?: string; sourcePublicationId?: string; sourcePublicationDayId?: string; sourceVersion?: number; sourceContentHash?: string; matrixContentHash?: string }>;
 };
 
 const packageKey = (serviceDate: string, oplocId: string) => `cpu-production/review/${encodeURIComponent(oplocId)}/${serviceDate}`;
@@ -65,21 +67,22 @@ function entryFor(order: ProductionOrder, plan: ProductionPlan | undefined, sour
 
 export function buildCpuReviewProjection(serviceDate: string, oplocId: string, orders: ProductionOrder[], plans: ProductionPlan[], revision = 1, lastChangeSequence = 0, generatedAt = new Date().toISOString()): CpuReviewProjection {
   const planByOrder = new Map(plans.map(plan => [plan.orderId, plan]));
-  const signatures = [...new Map(plans.flatMap(plan => (plan.signatures || []).map(signature => [signature.role, { role: signature.role, printedName: signature.printedName, signedAt: signature.signedAt, actor: signature.actor, attestation: signature.attestation } as CpuReviewSignature]))).values()];
-  const completedSignatureRoles = [...new Set(signatures.map(signature => signature.role))];
   const sourceOrders: CpuReviewOrder[] = orders.filter(order => order.origin === "menu_planning" && order.destinationOplocId === oplocId && !order.supersededBy).map(order => {
     const plan = planByOrder.get(order.canonicalId);
-    const status = reviewStatusForPlan(order.canonicalId, plan);
     const entries = plan?.menuItems?.flatMap(item => item.sourceLineId
       ? item.subItems.map(sub => entryFor(order, plan, item.sourceLineId!, sub.name || item.name, sub.allergens, sub.evidenceStatus, sub.mayContainNotes, sub.id))
       : []) || order.lines.map(line => entryFor(order, plan, line.canonicalId, line.itemName, line.approvedAllergenSnapshot?.allergens || {}, line.allergenEvidenceStatus === "confirmed" ? "completed" : "not_completed", line.approvedAllergenSnapshot?.mayContainNotes));
-    const signatures = (plan?.signatures || []).map(signature => ({ role: signature.role, printedName: signature.printedName, signedAt: signature.signedAt, actor: signature.actor, attestation: signature.attestation }));
+    const scope = plan ? matrixSignatureScope(order, allergenMatrixContentHash(plan.menuItems)) : undefined;
+    const signatures = (plan?.signatures || []).filter(signature => signatureMatchesScope(signature, scope)).map(signature => ({ role: signature.role, printedName: signature.printedName, signedAt: signature.signedAt, actor: signature.actor, attestation: signature.attestation, scope: signature.scope }));
     const completedSignatureRoles = [...new Set(signatures.map(signature => signature.role))];
     const reviewStatus: CpuReviewOrder["reviewStatus"] = plan ? completedSignatureRoles.length === requiredRoles.length ? "signed" : "pending" : "missing";
-    return { productionOrderId: order.canonicalId, orderVersion: order.version, orderRevision: order.currentRevision, cpuPlanId: plan?.id || `production-plan:${order.canonicalId}`, ...(plan ? { cpuPlanRevision: plan.audit.length } : {}), reviewStatus, requiredSignatureRoles: requiredRoles, completedSignatureRoles, signatures, entries, ...(plan?.matrixArtifact ? { matrixArtifact: { id: plan.matrixArtifact.id, driveUrl: plan.matrixArtifact.driveUrl, localUrl: plan.matrixArtifact.localUrl, contentHash: plan.matrixArtifact.contentHash } } : {}) };
+    const sourceIdentity = scope ? { sourceDayId: scope.sourceDayId, ...(scope.sourcePublicationId ? { sourcePublicationId: scope.sourcePublicationId } : {}), sourcePublicationDayId: scope.sourcePublicationDayId, sourceVersion: scope.sourceVersion, sourceContentHash: scope.sourceContentHash, matrixContentHash: scope.matrixContentHash } : undefined;
+    return { productionOrderId: order.canonicalId, orderVersion: order.version, orderRevision: order.currentRevision, cpuPlanId: plan?.id || `production-plan:${order.canonicalId}`, ...(plan ? { cpuPlanRevision: plan.audit.length } : {}), reviewStatus, requiredSignatureRoles: requiredRoles, completedSignatureRoles, signatures, entries, ...(sourceIdentity ? { sourceIdentity } : {}), ...(plan?.matrixArtifact ? { matrixArtifact: { id: plan.matrixArtifact.id, driveUrl: plan.matrixArtifact.driveUrl, localUrl: plan.matrixArtifact.localUrl, contentHash: plan.matrixArtifact.contentHash } } : {}) };
   });
+  const signatures = [...new Map(sourceOrders.flatMap(order => order.signatures.map(signature => [signature.role, signature]))).values()];
+  const completedSignatureRoles = [...new Set(signatures.map(signature => signature.role))];
   const complete = sourceOrders.every(order => order.reviewStatus !== "missing" && order.entries.every(entry => entry.evidenceStatus === "completed"));
-  return { contractVersion: "cpu-production.delivered-in-review.v1", schemaVersion: 1, serviceDate, oplocId, revision, lastChangeSequence, status: sourceOrders.length === 0 ? "valid_empty" : complete ? "current" : "partial", completeness: complete ? "complete" : "partial", requiredSignatureRoles: requiredRoles, completedSignatureRoles, signatures, sourceOrders, generatedAt, sourceLineage: sourceOrders.map(order => ({ productionOrderId: order.productionOrderId, orderVersion: order.orderVersion, orderRevision: order.orderRevision, cpuPlanId: order.cpuPlanId, ...(order.cpuPlanRevision !== undefined ? { planRevision: order.cpuPlanRevision } : {}) })) };
+  return { contractVersion: "cpu-production.delivered-in-review.v1", schemaVersion: 1, serviceDate, oplocId, revision, lastChangeSequence, status: sourceOrders.length === 0 ? "valid_empty" : complete ? "current" : "partial", completeness: complete ? "complete" : "partial", requiredSignatureRoles: requiredRoles, completedSignatureRoles, signatures, sourceOrders, generatedAt, sourceLineage: sourceOrders.map(order => ({ productionOrderId: order.productionOrderId, orderVersion: order.orderVersion, orderRevision: order.orderRevision, cpuPlanId: order.cpuPlanId, ...(order.cpuPlanRevision !== undefined ? { planRevision: order.cpuPlanRevision } : {}), ...(order.sourceIdentity || {}) })) };
 }
 
 export async function publishCpuReviewPackage(projection: CpuReviewProjection): Promise<ReadPackageManifest> {
