@@ -90,6 +90,15 @@ export function isCompletePlanningWeek(snapshot: Pick<RollingSnapshot, "week" | 
     && (week.entryIds || []).every(entryId => entryIds.has(entryId))
     && days.every(day => day.entryIds.every(entryId => entryIds.has(entryId)));
 }
+/** Import overwrite protection is intentionally stricter than structural completeness. */
+export function planningWeekImportConflictReason(snapshot: Pick<RollingSnapshot, "week" | "days" | "entries">): string | undefined {
+  if (!isCompletePlanningWeek(snapshot)) return undefined;
+  if (snapshot.week.status === "published" || snapshot.week.status === "partially_published") return "Week has already been published";
+  if (snapshot.week.status === "imported" || snapshot.week.sourceFiles.length > 0 || snapshot.week.audit.some(event => event.action.includes("import"))) return "Already imported";
+  if (snapshot.entries.length > 0 || snapshot.week.audit.some(event => event.action !== "week-created")) return "Week already contains planning work";
+  return undefined;
+}
+export function isProtectedExistingPlanningWeek(snapshot: Pick<RollingSnapshot, "week" | "days" | "entries">) { return Boolean(planningWeekImportConflictReason(snapshot)); }
 /** Legacy aggregate read retained for catalogue reconciliation only; normal UI reads use getWeek/listWeeks. */
 export async function listAllEntries(): Promise<RollingEntry[]> { return structuredClone((await read()).entries); }
 export function defaultWeekForDate(weeks: RollingWeek[], date = operationalDate()) {
@@ -103,6 +112,15 @@ export function snapshotFromStored(db: Stored, weekId?: string): RollingSnapshot
   const week = weekId ? db.weeks.find(w => w.id === weekId) : defaultWeekForDate(ordered, today);
   if (!week) return emptyWeek(planningWeekFromQuery(weekId));
   return { week: structuredClone(week), days: structuredClone(db.days.filter(d => week.dayIds.includes(d.id))), entries: structuredClone(db.entries.filter(e => week.entryIds.includes(e.id))) };
+}
+function removeStoredWeek(db: Stored, weekId: string) {
+  const existing = db.weeks.find(week => week.id === weekId);
+  if (!existing) return;
+  const dayIds = new Set(existing.dayIds || []);
+  const entryIds = new Set(existing.entryIds || []);
+  db.days = db.days.filter(day => { if (dayIds.has(day.id)) { day.entryIds.forEach(id => entryIds.add(id)); return false; } return true; });
+  db.entries = db.entries.filter(entry => !entryIds.has(entry.id));
+  db.weeks = db.weeks.filter(week => week.id !== weekId);
 }
 export function replaceSnapshotInStored(db: Stored, snapshot: RollingSnapshot) {
   const existing = db.weeks.find(w => w.id === snapshot.week.id);
@@ -145,11 +163,19 @@ export async function saveSnapshotsCreateOnly(snapshots: RollingSnapshot[]) {
   }
   await withMenuPlanningTransaction(state => {
     const current = state.rolling as unknown as Stored;
-    const completeWeeks = current.weeks.filter(week => isCompletePlanningWeek({ week, days: current.days.filter(day => week.dayIds.includes(day.id)), entries: current.entries.filter(entry => week.entryIds.includes(entry.id)) }));
-    const existing = new Set(completeWeeks.map(week => week.weekCommencing));
-    const conflict = snapshots.find(snapshot => existing.has(snapshot.week.weekCommencing));
-    if (conflict) throw Object.assign(new Error(`Week ${conflict.week.weekCommencing} already exists in Menu Planning. Remove it before importing.`), { status: 409 });
-    for (const snapshot of snapshots) replaceSnapshotInStored(state.rolling as unknown as Stored, snapshot);
+    const existingSnapshots = current.weeks.map(week => ({ week, snapshot: { week, days: current.days.filter(day => week.dayIds.includes(day.id)), entries: current.entries.filter(entry => week.entryIds.includes(entry.id)) } }));
+    const conflict = snapshots.map(snapshot => ({ snapshot, existing: existingSnapshots.filter(candidate => candidate.week.weekCommencing === snapshot.week.weekCommencing) })).find(candidate => candidate.existing.some(value => isProtectedExistingPlanningWeek(value.snapshot)));
+    if (conflict) {
+      const reason = planningWeekImportConflictReason(conflict.existing.find(value => isProtectedExistingPlanningWeek(value.snapshot))!.snapshot) || "Week already exists";
+      throw Object.assign(new Error(`Week already exists (${reason}): ${conflict.snapshot.week.weekCommencing}. Remove it before importing.`), { status: 409 });
+    }
+    for (const snapshot of snapshots) {
+      for (const candidate of current.weeks.filter(week => week.weekCommencing === snapshot.week.weekCommencing)) {
+        const candidateSnapshot = { week: candidate, days: current.days.filter(day => candidate.dayIds.includes(day.id)), entries: current.entries.filter(entry => candidate.entryIds.includes(entry.id)) };
+        if (!isProtectedExistingPlanningWeek(candidateSnapshot)) removeStoredWeek(current, candidate.id);
+      }
+      replaceSnapshotInStored(current, snapshot);
+    }
   }, undefined, { includeEvents: false });
   return snapshots;
 }

@@ -11,7 +11,7 @@ import PlannerModal from "../planner-modal";
 type Report = { fileName: string; weekCommencing?: string; status: "valid" | "needs_attention"; error?: string; recognisedEntries?: number };
 type Option = { id: string; name: string };
 type Decision = DishResolution & { workbookCount?: number; canonicalId?: string; remember?: boolean; ignored?: boolean; created?: boolean };
-type Conflict = { weekCommencing: string; status: string };
+type Conflict = { weekCommencing: string; reason?: string; status?: string };
 type ProgressState = { phase: "checking" | "importing" | "checked" | "success" | "error"; total: number; completed: number; current: string; weeks: number; days: number; dishes: number; matched: number; review: number; error?: string };
 
 function ProgressModal({ progress, onClose }: { progress: ProgressState; onClose: () => void }) {

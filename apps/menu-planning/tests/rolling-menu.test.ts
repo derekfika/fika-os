@@ -9,7 +9,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import * as XLSX from "xlsx";
-import { addMenuSlot, applyEntryPatch, assertWeekDateAvailable, attachCanonicalDishIds, batchUpdateEntries, createEntry, defaultWeekForDate, duplicateWeek, emptyWeek, getWeek, importWorkbook, normaliseRollingSnapshotDestinations, operationalDateLondon, planningWeekCommencing, planningWeekFromQuery, publishWeek, removeMenuSlot, saveSnapshot, saveSnapshotsCreateOnly, updateEntry, validateWeek, ROLLING_SLOTS } from "../lib/rolling-menu";
+import { addMenuSlot, applyEntryPatch, assertWeekDateAvailable, attachCanonicalDishIds, batchUpdateEntries, createEntry, defaultWeekForDate, duplicateWeek, emptyWeek, getWeek, importWorkbook, isProtectedExistingPlanningWeek, normaliseRollingSnapshotDestinations, operationalDateLondon, planningWeekCommencing, planningWeekFromQuery, planningWeekImportConflictReason, publishWeek, removeMenuSlot, saveSnapshot, saveSnapshotsCreateOnly, updateEntry, validateWeek, ROLLING_SLOTS } from "../lib/rolling-menu";
 import { hasPlannedDishes } from "../lib/rolling-menu-types";
 import { createCanonicalMenuItem, listCanonicalMenuItems } from "../lib/canonical-menu-repository";
 import { buildCompiledPublicationSnapshot, buildPublishedDay, createPublishedMenuDay, createPublishedMenuWeek, currentPublishedDays, getCompiledPublicationSnapshot, getMenuPublication, listMenuPublicationEvents, listMenuPublications, publicationPreview, publicationState, publishedDayMatrixHtml, replayMenuPublicationOutbox, withdrawPublishedMenuDay, withdrawPublishedMenuWeek, type MenuPublicationSignoff } from "../lib/menu-publication";
@@ -56,12 +56,37 @@ test("planner default week prefers the current service week over distant future 
 
 test("concurrent historic imports cannot overwrite the same week", async () => {
   const source = emptyWeek("2099-01-05", "test-import");
+  source.week.status = "imported"; source.week.sourceFiles = ["WC 05_01_2099.xlsx"];
   const results = await Promise.allSettled([saveSnapshotsCreateOnly([source]), saveSnapshotsCreateOnly([{ ...structuredClone(source), week: { ...source.week, audit: [{ action: "different", at: "", by: "other" }] } }])]);
   assert.equal(results.filter(result => result.status === "fulfilled").length, 1);
   assert.equal(results.filter(result => result.status === "rejected").length, 1);
   const rejected = results.find(result => result.status === "rejected");
   assert.match(String(rejected && rejected.status === "rejected" ? rejected.reason.message : ""), /already exists|changed/i);
   assert.equal((await getWeek("rolling-week:2099-01-05")).week.audit[0].by, "test-import");
+});
+
+test("an untouched complete empty shell is replaceable by an import", async () => {
+  const weekCommencing = "2099-02-02";
+  const shell = emptyWeek(weekCommencing, "shell-navigation");
+  await saveSnapshot(shell);
+  assert.equal(isProtectedExistingPlanningWeek(shell), false);
+  assert.equal(planningWeekImportConflictReason(shell), undefined);
+  const imported = emptyWeek(weekCommencing, "historical-importer");
+  const entry = { id: `${imported.week.id}:entry:imported`, dayId: imported.days[0].id, date: imported.days[0].date, slot: "SALAD 1", itemLabel: "Imported salad", portions: 1, allocations: [], allergens: {}, audit: [{ action: "historical-source-imported", at: new Date().toISOString(), by: "historical-importer" }] };
+  imported.entries = [entry]; imported.days[0].entryIds = [entry.id]; imported.week.entryIds = [entry.id]; imported.week.sourceFiles = ["WC 02_02_2099.xlsx"]; imported.week.status = "imported";
+  await saveSnapshotsCreateOnly([imported]);
+  const saved = await getWeek(imported.week.id);
+  assert.equal(saved.entries.length, 1);
+  assert.equal(saved.week.sourceFiles[0], "WC 02_02_2099.xlsx");
+});
+
+test("meaningful empty edits and published/imported weeks remain protected", () => {
+  const manual = emptyWeek("2099-02-09"); manual.week.audit.push({ action: "menu-slot-removed", at: "", by: "manager" });
+  const imported = emptyWeek("2099-02-16"); imported.week.status = "imported"; imported.week.sourceFiles = ["WC 16_02_2099.xlsx"];
+  const published = emptyWeek("2099-02-23"); published.week.status = "published";
+  assert.equal(planningWeekImportConflictReason(manual), "Week already contains planning work");
+  assert.equal(planningWeekImportConflictReason(imported), "Already imported");
+  assert.equal(planningWeekImportConflictReason(published), "Week has already been published");
 });
 
 test("planning weeks anchor to Monday using Europe/London operational dates", () => {

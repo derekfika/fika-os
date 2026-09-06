@@ -4,6 +4,8 @@ This file records user-facing workflow changes delivered in the repository. Deta
 
 ## Unreleased
 
+- **2026-09-06 — THREAD 12C — importer empty-week shell semantics:** separated importer conflict protection from structural week completeness. An untouched complete draft shell with seven days, no entries, no source files and only its creation audit can now be replaced atomically by a historical import; imported, published and meaningfully edited weeks remain protected. Preview and commit use the same semantic rule, with focused race/replaceability coverage. Deployment status: not performed.
+
 - **2026-09-06 — THREAD 12A — importer authoritative-week gating and explicit dish creation:** changed Menu Planning legacy-week import preview and commit gating to recognise only complete authoritative planning-week snapshots, ignoring orphan/partial heads and stale metadata while retaining transactional create-only protection. Added user-confirmed canonical Dish Library creation from unresolved workbook rows with source provenance, immediate row resolution and alias learning. Validation: focused/full Menu Planning tests, typecheck, production build and `git diff --check`. Deployment status: not performed.
 
 - **2026-09-05 — THREAD 12 — Delivered-In publication materialisation and week navigation:** changed/amended publication invalidations now reconcile and persist missing or stale exact-site day projections; requested weeks use bounded, coalesced recovery and explicitly show empty unpublished weeks. Replaced the stored-week dropdown with URL-backed Monday-based ±7-day navigation. No deployment performed.

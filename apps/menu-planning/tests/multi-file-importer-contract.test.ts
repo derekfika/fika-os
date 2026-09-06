@@ -42,7 +42,7 @@ test("batch import uses one preview and commit endpoint without catalogue creati
 test("historic import is create-only at the authoritative batch write", async () => {
   const source = await readFile(new URL("../lib/rolling-menu.ts", import.meta.url), "utf8");
   assert.match(source, /saveSnapshotsCreateOnly/);
-  assert.match(source, /existing\.has\(snapshot\.week\.weekCommencing\)/);
+  assert.match(source, /planningWeekImportConflictReason/);
   assert.match(source, /status: 409/);
 });
 
@@ -52,7 +52,7 @@ test("import gating ignores orphan week heads but blocks complete planning snaps
   assert.match(source, /isCompletePlanningWeek/);
   assert.match(source, /week\.dayIds\.includes\(day\.id\)/);
   assert.match(route, /getWeekSnapshot/);
-  assert.match(route, /candidate\.snapshot && isCompletePlanningWeek/);
+  assert.match(route, /candidate\.snapshot && planningWeekImportConflictReason/);
 });
 
 test("import review offers explicit governed dish creation with provenance", async () => {
