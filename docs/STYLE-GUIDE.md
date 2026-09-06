@@ -188,3 +188,44 @@ Default cards use a light surface, neutral border, standard radius and no shadow
 ## Audit-ready compliance categories
 
 Future read-only UI audits should classify findings under: Typography; Colour/contrast; Hard-coded colours; Buttons; Inputs; Cards; Tables/lists; Modals; Sidebar/shell; Page headers; Status/alerts; Empty/loading/error states; Accessibility; Responsive behaviour; Density; Long-running operations; and Bulk actions.
+
+## Native browser dialogs
+
+Do not use native browser dialogs in FIKA OS user-facing workflows:
+
+- `window.alert()`
+- `window.confirm()`
+- `window.prompt()`
+
+These are prohibited for normal application UX.
+
+Use the FIKA OS modal/dialog standard instead.
+
+Confirmation dialogs must:
+- use shared semantic tokens/components
+- clearly state the action and consequence
+- show affected item/count where relevant
+- use primary/secondary/destructive button hierarchy
+- support keyboard focus management
+- return focus to the invoking control
+- be dismissible with Escape only when safe
+- never rely on browser-native styling
+
+Examples:
+
+Instead of:
+`confirm("Ignore all 137 shown names?")`
+
+Use:
+Title: `Ignore 137 dish names?`
+Body: `These dishes will not be added to the imported menu weeks.`
+Actions:
+[Cancel] [Ignore 137 dishes]
+
+Instead of:
+`alert("Import failed")`
+
+Use an application modal, inline error state or toast appropriate to the severity, with a clear recovery action.
+
+EXCEPTION:
+Native dialogs may be used only in non-user-facing developer/debug tooling, never in normal FIKA OS production workflows.

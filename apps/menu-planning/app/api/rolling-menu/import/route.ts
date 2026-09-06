@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { importWorkbook, saveSnapshotsCreateOnly, listWeeks, validateWeek, planningWeekCommencing } from "@/lib/rolling-menu";
+import { importWorkbook, saveSnapshotsCreateOnly, listWeeks, getWeekSnapshot, validateWeek, planningWeekCommencing, isCompletePlanningWeek } from "@/lib/rolling-menu";
 import { readDeliveredInOplocs } from "@/lib/oploc-authority";
 import { listCanonicalMenuItems, recordDishSourceAliases } from "@/lib/canonical-menu-repository";
 import { applyDishResolutions, parseWorkbookWeekCommencing, resolveDishNames, safeDishKey } from "@/lib/legacy-week-importer";
@@ -28,7 +28,8 @@ async function previewFiles(files: File[], request: NextRequest, weekDates: Reco
   const names = snapshots.flatMap(snapshot => snapshot.entries.map(entry => entry.itemLabel));
   const resolutions = resolveDishNames(names, catalogue).map(resolution => ({ ...resolution, workbookCount: snapshots.filter(snapshot => snapshot.entries.some(entry => safeDishKey(entry.itemLabel) === safeDishKey(resolution.sourceName))).length }));
   const existingWeeks = await listWeeks();
-  const conflicts = snapshots.filter(snapshot => existingWeeks.some(week => week.weekCommencing === snapshot.week.weekCommencing)).map(snapshot => ({ weekCommencing: snapshot.week.weekCommencing, status: existingWeeks.find(week => week.weekCommencing === snapshot.week.weekCommencing)?.status || "existing" }));
+  const existingSnapshots = await Promise.all(existingWeeks.map(async week => ({ week, snapshot: await getWeekSnapshot<RollingSnapshot>(week.id) })));
+  const conflicts = snapshots.filter(snapshot => existingSnapshots.some(candidate => candidate.week.weekCommencing === snapshot.week.weekCommencing && candidate.snapshot && isCompletePlanningWeek(candidate.snapshot))).map(snapshot => ({ weekCommencing: snapshot.week.weekCommencing, status: existingWeeks.find(week => week.weekCommencing === snapshot.week.weekCommencing)?.status || "existing" }));
   for (const report of reports) { const conflict = conflicts.find(value => value.weekCommencing === report.weekCommencing); if (conflict) { report.status = "needs_attention"; report.error = `This week already exists (${conflict.status}). Remove this workbook before importing.`; } }
   return { files: reports, snapshots, resolutions, conflicts, catalogue: catalogue.filter(item => item.reviewStatus !== "archived").map(item => ({ id: item.canonicalId, name: item.displayName })) };
 }
@@ -41,7 +42,8 @@ export async function POST(request: NextRequest) {
       if (body.action !== "commit" || (!body.snapshot && !body.snapshots) || !body.resolutions) return NextResponse.json({ error: { message: "Please complete the dish review before importing." } }, { status: 422 });
       const snapshots = body.snapshots || [body.snapshot!];
       const existingWeeks = await listWeeks();
-      const conflicts = snapshots.filter(snapshot => existingWeeks.some(week => week.weekCommencing === snapshot.week.weekCommencing));
+      const existingSnapshots = await Promise.all(existingWeeks.map(async week => ({ week, snapshot: await getWeekSnapshot<RollingSnapshot>(week.id) })));
+      const conflicts = snapshots.filter(snapshot => existingSnapshots.some(candidate => candidate.week.weekCommencing === snapshot.week.weekCommencing && candidate.snapshot && isCompletePlanningWeek(candidate.snapshot)));
       if (conflicts.length) return NextResponse.json({ error: { message: `These menu weeks already exist: ${conflicts.map(snapshot => snapshot.week.weekCommencing).join(", ")}. Remove them from the import before retrying.` } }, { status: 409 });
       const duplicateWeeks = snapshots.filter((snapshot, index) => snapshots.findIndex(candidate => candidate.week.weekCommencing === snapshot.week.weekCommencing) !== index);
       if (duplicateWeeks.length) return NextResponse.json({ error: { message: "Two selected workbooks use the same week. Remove one before importing." } }, { status: 409 });

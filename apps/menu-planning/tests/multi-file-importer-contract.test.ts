@@ -45,3 +45,21 @@ test("historic import is create-only at the authoritative batch write", async ()
   assert.match(source, /existing\.has\(snapshot\.week\.weekCommencing\)/);
   assert.match(source, /status: 409/);
 });
+
+test("import gating ignores orphan week heads but blocks complete planning snapshots", async () => {
+  const source = await readFile(new URL("../lib/rolling-menu.ts", import.meta.url), "utf8");
+  const route = await readFile(new URL("../app/api/rolling-menu/import/route.ts", import.meta.url), "utf8");
+  assert.match(source, /isCompletePlanningWeek/);
+  assert.match(source, /week\.dayIds\.includes\(day\.id\)/);
+  assert.match(route, /getWeekSnapshot/);
+  assert.match(route, /candidate\.snapshot && isCompletePlanningWeek/);
+});
+
+test("import review offers explicit governed dish creation with provenance", async () => {
+  const page = await readFile(new URL("../app/import-menu-week/page.tsx", import.meta.url), "utf8");
+  const catalogueRoute = await readFile(new URL("../app/api/catalogue/route.ts", import.meta.url), "utf8");
+  assert.match(page, /Create new dish/);
+  assert.match(page, /sourceReference/);
+  assert.match(page, /created and matched/i);
+  assert.match(catalogueRoute, /createCanonicalMenuItem/);
+});

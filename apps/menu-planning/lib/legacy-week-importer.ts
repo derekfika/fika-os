@@ -38,7 +38,7 @@ export function parseWorkbookWeekCommencing(workbookName: string): string | unde
   return value.toISOString().slice(0, 10);
 }
 
-export function applyDishResolutions(snapshot: RollingSnapshot, resolutions: Array<{ sourceName: string; canonicalId?: string; ignored?: boolean }>, catalogue: MenuItem[]) {
+export function applyDishResolutions(snapshot: RollingSnapshot, resolutions: Array<{ sourceName: string; canonicalId?: string; ignored?: boolean; remember?: boolean }>, catalogue: MenuItem[]) {
   const decisions = new Map(resolutions.map(value => [safeDishKey(value.sourceName), value]));
   const byId = new Map(catalogue.map(item => [item.canonicalId, item]));
   const missing = [...new Set(snapshot.entries.map(entry => safeDishKey(entry.itemLabel)))].filter(key => !decisions.has(key));

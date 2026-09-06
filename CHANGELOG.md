@@ -4,6 +4,8 @@ This file records user-facing workflow changes delivered in the repository. Deta
 
 ## Unreleased
 
+- **2026-09-06 — THREAD 12A — importer authoritative-week gating and explicit dish creation:** changed Menu Planning legacy-week import preview and commit gating to recognise only complete authoritative planning-week snapshots, ignoring orphan/partial heads and stale metadata while retaining transactional create-only protection. Added user-confirmed canonical Dish Library creation from unresolved workbook rows with source provenance, immediate row resolution and alias learning. Validation: focused/full Menu Planning tests, typecheck, production build and `git diff --check`. Deployment status: not performed.
+
 - **2026-09-05 — THREAD 12 — Delivered-In publication materialisation and week navigation:** changed/amended publication invalidations now reconcile and persist missing or stale exact-site day projections; requested weeks use bounded, coalesced recovery and explicitly show empty unpublished weeks. Replaced the stored-week dropdown with URL-backed Monday-based ±7-day navigation. No deployment performed.
 
 - **2026-09-05 — THREAD 11A — Firestore undefined catalogue write fix:** sanitised canonical Menu Planning catalogue records at the hosted Firestore boundary so optional undefined fields such as `sourceReference.range` are omitted while meaningful falsy values and Firestore-native values are preserved. Confirmed ordinary Portion Planner batch saves do not invoke catalogue reconciliation and added focused persistence regression coverage. No publication-semantics change; no deployment performed.

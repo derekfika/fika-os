@@ -38,3 +38,12 @@ test("manual resolution applies stable canonical identity and cannot increase ca
   assert.equal(catalogue.length, before);
   assert.equal(safeDishKey(result.entries[0].itemLabel), safeDishKey(catalogue[0].displayName));
 });
+
+test("explicitly created canonical dishes resolve immediately and remain aliasable", () => {
+  const catalogue = [dish("dish:new", "New Source Dish")];
+  const snapshot = { week: { id: "rolling-week:2026-08-31", weekCommencing: "2026-08-31", weekEnding: "2026-09-06", status: "draft" as const, version: 1, dayIds: ["day:1"], entryIds: ["entry:1"], sourceFiles: ["WC 31_08_2026.xlsx"], audit: [] }, days: [{ id: "day:1", date: "2026-08-31", dayName: "Monday", entryIds: ["entry:1"] }], entries: [{ id: "entry:1", dayId: "day:1", date: "2026-08-31", slot: "SALAD 1", itemLabel: "New Source Dish", portions: 0, allocations: [], allergens: {}, source: { workbook: "WC 31_08_2026.xlsx", sheet: "Monday", range: "A4" }, audit: [] }] };
+  const result = applyDishResolutions(snapshot, [{ sourceName: "New Source Dish", canonicalId: "dish:new", remember: true }], catalogue);
+  assert.equal(result.entries[0].itemId, "dish:new");
+  assert.equal(result.entries[0].itemLabel, "New Source Dish");
+  assert.equal(catalogue.length, 1);
+});

@@ -36,7 +36,7 @@ export async function GET(request: Request) { return withDataTrace({ app: "menu-
 export async function POST(request: Request) {
   let action = "";
   try {
-    const body = await request.json() as { action?: string; displayName?: string; category?: string; description?: string; preparationNotes?: string; canonicalIds?: string[]; allergenEvidence?: Array<{ allergen: string; value: "contains" | "free_from" | "may_contain" | "unknown"; source: string; reviewedBy?: string; reviewedAt?: string; notes?: string }> };
+    const body = await request.json() as { action?: string; displayName?: string; category?: string; description?: string; preparationNotes?: string; canonicalIds?: string[]; sourceReference?: { workbook: string; sheet: string; range?: string; rawValue?: unknown }; sourceEvidence?: { document: string; excerpt?: string; importedAt: string }; allergenEvidence?: Array<{ allergen: string; value: "contains" | "free_from" | "may_contain" | "unknown"; source: string; reviewedBy?: string; reviewedAt?: string; notes?: string }> };
     action = String(body.action || "");
     if (action === "create-dish") {
       if (!body.displayName?.trim()) return NextResponse.json({ error: { message: "A dish name is required." } }, { status: 422 });

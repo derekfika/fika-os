@@ -71,9 +71,25 @@ export function emptyWeek(weekCommencing: string, actor = "local-menu-planner"):
 }
 const weekConflict = (weekCommencing: string) => Object.assign(new Error(`A menu already exists for WC ${new Date(`${weekCommencing}T00:00:00Z`).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" })}.`), { status: 409 });
 export async function assertWeekDateAvailable(weekCommencing: string) {
-  if ((await listWeeks()).some(week => week.weekCommencing === weekCommencing)) throw weekConflict(weekCommencing);
+  const candidates = (await listWeeks()).filter(week => week.weekCommencing === weekCommencing);
+  for (const candidate of candidates) {
+    const snapshot = await getWeekSnapshot<RollingSnapshot>(candidate.id);
+    if (snapshot && isCompletePlanningWeek(snapshot)) throw weekConflict(weekCommencing);
+  }
 }
 export async function listWeeks(): Promise<RollingWeek[]> { return (await listWeekSummaries<RollingWeek>()).slice().sort((a, b) => a.weekCommencing.localeCompare(b.weekCommencing)); }
+export { getWeekSnapshot };
+/** A week head is not an authoritative planning week until all declared child records exist. */
+export function isCompletePlanningWeek(snapshot: Pick<RollingSnapshot, "week" | "days" | "entries">) {
+  const { week, days, entries } = snapshot;
+  if (!week.id || !week.weekCommencing || !week.weekEnding) return false;
+  const dayIds = new Set(days.map(day => day.id));
+  const entryIds = new Set(entries.map(entry => entry.id));
+  return (week.dayIds || []).length > 0
+    && (week.dayIds || []).every(dayId => dayIds.has(dayId))
+    && (week.entryIds || []).every(entryId => entryIds.has(entryId))
+    && days.every(day => day.entryIds.every(entryId => entryIds.has(entryId)));
+}
 /** Legacy aggregate read retained for catalogue reconciliation only; normal UI reads use getWeek/listWeeks. */
 export async function listAllEntries(): Promise<RollingEntry[]> { return structuredClone((await read()).entries); }
 export function defaultWeekForDate(weeks: RollingWeek[], date = operationalDate()) {
@@ -128,7 +144,9 @@ export async function saveSnapshotsCreateOnly(snapshots: RollingSnapshot[]) {
     seen.add(week);
   }
   await withMenuPlanningTransaction(state => {
-    const existing = new Set((state.rolling as unknown as Stored).weeks.map(week => week.weekCommencing));
+    const current = state.rolling as unknown as Stored;
+    const completeWeeks = current.weeks.filter(week => isCompletePlanningWeek({ week, days: current.days.filter(day => week.dayIds.includes(day.id)), entries: current.entries.filter(entry => week.entryIds.includes(entry.id)) }));
+    const existing = new Set(completeWeeks.map(week => week.weekCommencing));
     const conflict = snapshots.find(snapshot => existing.has(snapshot.week.weekCommencing));
     if (conflict) throw Object.assign(new Error(`Week ${conflict.week.weekCommencing} already exists in Menu Planning. Remove it before importing.`), { status: 409 });
     for (const snapshot of snapshots) replaceSnapshotInStored(state.rolling as unknown as Stored, snapshot);

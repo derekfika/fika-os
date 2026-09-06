@@ -159,7 +159,7 @@ export async function recordDishSourceAliases(aliasesById: Record<string, string
   return changed;
 }
 
-export async function createCanonicalMenuItem(input: { displayName: string; category?: string; description?: string; preparationNotes?: string; allergenEvidence?: MenuItem["allergenEvidence"] }, actor = "local-menu-planner") {
+export async function createCanonicalMenuItem(input: { displayName: string; category?: string; description?: string; preparationNotes?: string; allergenEvidence?: MenuItem["allergenEvidence"]; sourceReference?: MenuItem["sourceReference"]; sourceEvidence?: MenuItem["sourceEvidence"] }, actor = "local-menu-planner") {
   if (hosted() && /(?:^|[-_:])(?:test|fixture|synthetic|e2e)(?:$|[-_:])/i.test(actor)) throw Object.assign(new Error("Synthetic catalogue writes are not allowed in hosted Menu Planning."), { status: 403 });
   const items = await readItems();
   const displayName = normaliseDishName(input.displayName);
@@ -175,7 +175,8 @@ export async function createCanonicalMenuItem(input: { displayName: string; cate
     category: normaliseDishCategory(input.category),
     weekId: "menu-week:menu-planning",
     dayId: "",
-    sourceReference: { workbook: "Menu Planning", sheet: "Local dish creation" },
+    sourceReference: input.sourceReference || { workbook: "Menu Planning", sheet: "Local dish creation" },
+    sourceEvidence: input.sourceEvidence,
     revision: 1,
     reviewStatus: "unreviewed",
     allergenEvidence: input.allergenEvidence || [],
