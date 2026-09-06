@@ -1,3 +1,4 @@
+import "./fonts.css";
 import "./styles.css";
 import "../../../shared/fika/tokens.css";
 import "./shell.css";

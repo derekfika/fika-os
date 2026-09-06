@@ -269,7 +269,7 @@ function AllergenDrawer({ entry, onClose, onSave }: { entry: RollingEntry; onClo
 
  
 const styles: Record<string, CSSProperties> = {
-  shell: { minHeight: "100vh", background: "#f7f6fb", color: "#261345", padding: "20px clamp(18px,4vw,64px)", fontFamily: "Gilroy, Arial, sans-serif" },
+  shell: { minHeight: "100vh", background: "#f7f6fb", color: "#261345", padding: "20px clamp(18px,4vw,64px)" },
   loading: { maxWidth: 900, margin: "20vh auto", background: "white", padding: 32, borderRadius: 12 },
   header: { display: "flex", justifyContent: "space-between", alignItems: "center", gap: 24, marginBottom: 16 },
   brand: { fontSize: 13, fontWeight: 800, letterSpacing: ".08em", color: "#5336cb" }, title: { margin: "5px 0 0", fontSize: 30, letterSpacing: "-.03em" }, headerRight: { display: "flex", gap: 12, alignItems: "center" }, user: { color: "#746887", fontSize: 13 },
@@ -346,7 +346,7 @@ Object.assign(styles, {
 } as Record<string, CSSProperties>);
 
 Object.assign(styles, {
-  shell: { minHeight: "100vh", background: "#f8f7fb", color: "#24134f", padding: 0, fontFamily: "Gilroy, Arial, sans-serif" },
+  shell: { minHeight: "100vh", background: "#f8f7fb", color: "#24134f", padding: 0 },
   appFrame: { minHeight: "100vh", display: "grid", gridTemplateColumns: "174px minmax(0, 1fr)" },
   sidebar: { background: "#fff", borderRight: "1px solid #ece8f4", padding: "27px 10px 16px", display: "flex", flexDirection: "column", minHeight: "100vh", position: "sticky", top: 0, height: "100vh" },
   sidebarBrand: { color: "#211454", fontSize: 20, fontWeight: 900, letterSpacing: "-.06em", padding: "0 7px 34px" },

@@ -4,6 +4,8 @@ This file records user-facing workflow changes delivered in the repository. Deta
 
 ## Unreleased
 
+- **2026-09-06 — THREAD 14 — Menu Planning typography/UAT course correction:** traced the staging font fallback to missing `@font-face` declarations and page-level inline family overrides. Added a first-class governed FIKA font source, removed inline Arial-family overrides and added a contract test. Confirmed `reportAllChanges` is absent from Menu Planning source and belongs to external web-vitals/devtools tooling; no application suppression was added. Validation: full Menu Planning tests, typecheck, production build and `git diff --check`. Deployment status: not performed.
+
 - **2026-09-06 — THREAD 14 — Menu Planning visual-system consolidation:** aligned Menu Planning with the shared FIKA typography, semantic tokens, shell/layout spacing, operational grid density, controls, importer workflow, Portion Planner/readiness treatment, modal/form rules and responsive/accessibility behaviour. Existing Menu Planning business logic, local-first editing, publication safeguards and API contracts are unchanged. Validation: full Menu Planning tests, typecheck, production build and `git diff --check`. Deployment status: not performed.
 
 - **2026-09-06 — THREAD 12C — importer empty-week shell semantics:** separated importer conflict protection from structural week completeness. An untouched complete draft shell with seven days, no entries, no source files and only its creation audit can now be replaced atomically by a historical import; imported, published and meaningfully edited weeks remain protected. Preview and commit use the same semantic rule, with focused race/replaceability coverage. Deployment status: not performed.

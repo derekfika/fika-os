@@ -15,6 +15,20 @@ test("shared FIKA tokens expose the semantic UI foundation", async () => {
   }
 });
 
+test("Menu Planning loads governed fonts before app styles and keeps telemetry ownership clear", async () => {
+  const layout = await source("apps/menu-planning/app/layout.tsx");
+  const fonts = await source("apps/menu-planning/app/fonts.css");
+  const workspace = await source("apps/menu-planning/app/rolling-menu-workspace.tsx");
+  const admission = await source("apps/menu-planning/components/admission-error.module.css");
+  assert.match(layout, /import "\.\/fonts\.css";/);
+  assert.match(fonts, /font-family:\s*"FIKA Vim"/);
+  assert.match(fonts, /font-family:\s*"FIKA Gilroy"/);
+  assert.match(fonts, /font-display:\s*swap/);
+  assert.doesNotMatch(workspace, /fontFamily:\s*["']Gilroy/);
+  assert.doesNotMatch(admission, /font-family:\s*Arial/i);
+  assert.doesNotMatch(workspace, /reportAllChanges/);
+});
+
 test("importer reference screen stays light, semantic and keyboard-visible", async () => {
   const css = await source("apps/menu-planning/app/import-menu-week.css");
   const page = await source("apps/menu-planning/app/import-menu-week/page.tsx");

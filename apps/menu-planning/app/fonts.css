@@ -1,0 +1,24 @@
+/* The Menu Planning app consumes the existing governed FIKA web fonts.
+   Fonts remain hosted by the established FIKA asset origin; this app does not
+   add or duplicate font files. */
+@font-face {
+  font-family: "FIKA Vim";
+  src: url("https://bloom-coffee.org/bloom-quiz/assets/fonts/VimSM.otf") format("opentype");
+  font-weight: 900;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "FIKA Gilroy";
+  src: url("https://bloom-coffee.org/bloom-quiz/assets/fonts/GILROY-REGULAR.TTF") format("truetype");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "FIKA Gilroy";
+  src: url("https://bloom-coffee.org/bloom-quiz/assets/fonts/GILROY-BOLD.TTF") format("truetype");
+  font-weight: 600 900;
+  font-style: normal;
+  font-display: swap;
+}
