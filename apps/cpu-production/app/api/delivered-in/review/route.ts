@@ -1,10 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { productionQueue } from "../../../../lib/production-http-client";
 import { loadPlansForOrders } from "../../../../lib/cpu-projection-repository";
-import { promises as fs } from "node:fs";
-import path from "node:path";
 import { allergenMatrixHtml } from "../../../ui/allergen-matrix";
-import { renderPdfLocally } from "../../../lib/local-pdf";
+import { renderPdfToBuffer } from "../../../lib/local-pdf";
 import { getCpuReviewPackage, recordCpuReviewFallback, rebuildCpuReviewPackage } from "../../../../lib/cpu-review-package";
 import { withDataTrace } from "@fika/server-shared/data-source-meter-server";
 import { requireCpuActor } from "../../../../lib/cpu-access-client";
@@ -32,11 +30,8 @@ async function sitePdf(request: NextRequest, serviceDate: string, oplocId: strin
     serviceWindow: sourceOrder.serviceWindow,
     requiredBy: sourceOrder.requiredBy,
   }, menuItems, signatures as never);
-  const base = path.join(process.cwd(), "local-data", "cpu-production", "matrices", "delivered-in");
   const fileName = `${serviceDate}_${(sourceOrder.destinationLabel || oplocId).replace(/[^A-Za-z0-9._-]+/g, "_")}_Delivered-In_Allergen-Matrix.pdf`;
-  const pdfPath = path.join(base, fileName);
-  await renderPdfLocally(html, pdfPath);
-  return new NextResponse(await fs.readFile(pdfPath), { headers: { "content-type": "application/pdf", "content-disposition": `inline; filename="${fileName}"`, "cache-control": "no-store, max-age=0" } });
+  return new NextResponse(await renderPdfToBuffer(html), { headers: { "content-type": "application/pdf", "content-disposition": `inline; filename="${fileName}"`, "cache-control": "no-store, max-age=0" } });
 }
 
 async function handleGet(request: NextRequest) {

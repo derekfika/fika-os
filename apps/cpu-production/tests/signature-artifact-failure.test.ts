@@ -9,4 +9,7 @@ test("second signature is persisted before a final artifact failure is returned"
   assert.match(source, /if \(!plan\.currentAllergenRelease\)/);
   assert.match(source, /z\.literal\("save-matrix"\)/);
   assert.match(await readFile(new URL("../app/ui/HospitalityAllergenDetail.tsx", import.meta.url), "utf8"), /Retry final signed PDF/);
+  assert.match(source, /FIKA PDF renderer failure/);
+  assert.match(source, /renderPdfToBuffer/);
+  assert.match(source, /pdfBase64/);
 });

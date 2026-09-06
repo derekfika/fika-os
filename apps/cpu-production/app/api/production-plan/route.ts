@@ -7,7 +7,8 @@ import { createHash } from "node:crypto";
 import { localFixtureOrders, updateLocalFixture } from "../local-fixtures";
 import type { AllergenCellState, InternalMatrixSignature, MatrixArtifact, PlannedMenuItem, ProductionPlan } from "../../lib/production-plan";
 import { allergenMatrixHtml } from "../../ui/allergen-matrix";
-import { renderPdfLocally } from "../../lib/local-pdf";
+import { isHostedPdfRuntime, renderPdfToBuffer } from "../../lib/local-pdf";
+import os from "node:os";
 import { normaliseOperationalAllergens } from "../../../../shared/allergen-contract";
 import { productionOrderDetail, productionQueue, transitionProductionOrder } from "../../../lib/production-http-client";
 import type { ProductionOrder, ProductionStatus } from "../../../lib/production-types";
@@ -231,9 +232,11 @@ async function createMatrixArtifact(plan: ProductionPlan, orderId: string, actor
   for (const pair of signedPairs) if (pair.order.destinationOplocId) sitePairs.set(pair.order.destinationOplocId, [...(sitePairs.get(pair.order.destinationOplocId) || []), pair]);
   const artifacts: Array<{ kind: "master" | "site"; oplocId?: string; artifact: MatrixArtifact }> = [];
   const persistPdf = async (kind: "master" | "site", fileName: string, html: string, sourceOrder: ProductionOrder, sourceOrderId: string) => {
-    const pdfPath = path.join(process.cwd(), "data", "cpu-production", "matrices", fileName);
+    const pdfPath = isHostedPdfRuntime() ? undefined : path.join(os.tmpdir(), `fika-cpu-matrix-${Date.now()}-${Math.random().toString(36).slice(2)}-${fileName}`);
     let pdfBase64: string | undefined; let pdfStatus: "generated" | "unavailable" = "unavailable";
-    try { await renderPdfLocally(html, pdfPath); pdfBase64 = (await fs.readFile(pdfPath)).toString("base64"); pdfStatus = "generated"; } catch { /* Drive upload remains correctly blocked without a PDF. */ }
+    try { const pdf = await renderPdfToBuffer(html); if (pdfPath) await fs.writeFile(pdfPath, pdf); pdfBase64 = pdf.toString("base64"); pdfStatus = "generated"; } catch (error) {
+      console.error("FIKA PDF renderer failure", { app: "cpu-production", operation: "allergen-pdf-generation", runtime: process.env.FIKA_RUNTIME_MODE || process.env.NODE_ENV || "unknown", errorName: error instanceof Error ? error.name : "UnknownError", errorMessage: error instanceof Error ? error.message : String(error), stack: error instanceof Error ? error.stack : undefined, productionOrderId: orderId, serviceDate, weekCommencing, requestId: request.headers.get("x-request-id") || undefined, buildSha: process.env.FIKA_BUILD_SHA || undefined });
+    }
     if (!pdfBase64) throw Object.assign(new Error("The final allergen checker PDF could not be generated."), { status: 503 });
     const pdfContentHash = dailyBundleSha256(Buffer.from(pdfBase64, "base64"));
     try {
@@ -241,7 +244,7 @@ async function createMatrixArtifact(plan: ProductionPlan, orderId: string, actor
       const response = await fetch(`${hospitalityBase()}/api/allergen-matrix/drive`, { method: "POST", headers: { "content-type": "application/json", ...(request.headers.get("cookie") ? { cookie: request.headers.get("cookie")! } : {}), ...(request.headers.get("x-request-id") ? { "x-request-id": request.headers.get("x-request-id")! } : {}) }, body: JSON.stringify(drivePayload) });
       const body = await response.json() as { saved?: { fileId?: string; driveUrl?: string } | null; error?: { message?: string } };
       if (!response.ok || !body.saved?.fileId) throw Object.assign(new Error(body.error?.message || "The final allergen checker could not be durably persisted to the configured Drive workspace."), { status: response.status || 503 });
-      return { kind, ...(kind === "site" ? { oplocId: sourceOrder.destinationOplocId } : {}), artifact: { id: `allergen-${kind}:${serviceDate}:${pdfContentHash.slice(0, 16)}`, bookingId: sourceOrder.sourceBookingId, fileName, createdAt: timestamp, createdBy: actor, contentHash: pdfContentHash, html, pdfPath, localUrl: `${(process.env.CPU_PUBLIC_BASE_URL || "http://localhost:3400").replace(/\/$/, "")}/api/production-plan?orderId=${encodeURIComponent(sourceOrderId)}&download=pdf`, pdfStatus, driveFileId: body.saved.fileId, driveUrl: body.saved.driveUrl, driveStatus: "saved" as const } };
+      return { kind, ...(kind === "site" ? { oplocId: sourceOrder.destinationOplocId } : {}), artifact: { id: `allergen-${kind}:${serviceDate}:${pdfContentHash.slice(0, 16)}`, bookingId: sourceOrder.sourceBookingId, fileName, createdAt: timestamp, createdBy: actor, contentHash: pdfContentHash, html, ...(pdfPath ? { pdfPath, localUrl: `${(process.env.CPU_PUBLIC_BASE_URL || "http://localhost:3400").replace(/\/$/, "")}/api/production-plan?orderId=${encodeURIComponent(sourceOrderId)}&download=pdf` } : {}), pdfStatus, driveFileId: body.saved.fileId, driveUrl: body.saved.driveUrl, driveStatus: "saved" as const } };
     } catch (error) { if (error && typeof error === "object" && "status" in error) throw error; throw Object.assign(new Error("The final allergen checker could not be persisted to the configured Drive workspace."), { status: 503 }); }
   };
   const masterHtml = allergenMatrixHtml({ clientName: "FIKA OS", destinationLabel: "CPU master allergen checker", serviceType: "Delivered-In menu", serviceDate, serviceWindow: order.serviceWindow, requiredBy: order.requiredBy }, masterItems, allSignatures);
