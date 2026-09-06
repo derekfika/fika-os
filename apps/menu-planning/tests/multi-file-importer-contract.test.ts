@@ -36,7 +36,9 @@ test("batch import uses one preview and commit endpoint without catalogue creati
   assert.match(route, /recordDishSourceAliases/);
   assert.doesNotMatch(route, /createCanonicalMenuItem/);
   assert.match(route, /saveSnapshotsCreateOnly\(prepared\)/);
-  assert.match(route, /already exist/);
+  assert.match(route, /replaceWeeks/);
+  assert.match(route, /Explicit replacement confirmation is required/);
+  assert.match(route, /replaceSnapshotsExplicit/);
 });
 
 test("historic import is create-only at the authoritative batch write", async () => {
@@ -52,7 +54,8 @@ test("import gating ignores orphan week heads but blocks complete planning snaps
   assert.match(source, /isCompletePlanningWeek/);
   assert.match(source, /week\.dayIds\.includes\(day\.id\)/);
   assert.match(route, /getWeekSnapshot/);
-  assert.match(route, /candidate\.snapshot && planningWeekImportConflictReason/);
+  assert.match(route, /planningWeekReplacementDetails/);
+  assert.match(route, /readPublicationStateForWeek/);
 });
 
 test("import review offers explicit governed dish creation with provenance", async () => {

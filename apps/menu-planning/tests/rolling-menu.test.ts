@@ -9,7 +9,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import * as XLSX from "xlsx";
-import { addMenuSlot, applyEntryPatch, assertWeekDateAvailable, attachCanonicalDishIds, batchUpdateEntries, createEntry, defaultWeekForDate, duplicateWeek, emptyWeek, getWeek, importWorkbook, isProtectedExistingPlanningWeek, normaliseRollingSnapshotDestinations, operationalDateLondon, planningWeekCommencing, planningWeekFromQuery, planningWeekImportConflictReason, publishWeek, removeMenuSlot, saveSnapshot, saveSnapshotsCreateOnly, updateEntry, validateWeek, ROLLING_SLOTS } from "../lib/rolling-menu";
+import { addMenuSlot, applyEntryPatch, assertWeekDateAvailable, attachCanonicalDishIds, batchUpdateEntries, createEntry, defaultWeekForDate, duplicateWeek, emptyWeek, getWeek, importWorkbook, isProtectedExistingPlanningWeek, normaliseRollingSnapshotDestinations, operationalDateLondon, planningWeekCommencing, planningWeekFromQuery, planningWeekImportConflictReason, planningWeekReplacementDetails, publishWeek, removeMenuSlot, replaceSnapshotsExplicit, saveSnapshot, saveSnapshotsCreateOnly, updateEntry, validateWeek, ROLLING_SLOTS } from "../lib/rolling-menu";
 import { hasPlannedDishes } from "../lib/rolling-menu-types";
 import { createCanonicalMenuItem, listCanonicalMenuItems } from "../lib/canonical-menu-repository";
 import { buildCompiledPublicationSnapshot, buildPublishedDay, createPublishedMenuDay, createPublishedMenuWeek, currentPublishedDays, getCompiledPublicationSnapshot, getMenuPublication, listMenuPublicationEvents, listMenuPublications, publicationPreview, publicationState, publishedDayMatrixHtml, replayMenuPublicationOutbox, withdrawPublishedMenuDay, withdrawPublishedMenuWeek, type MenuPublicationSignoff } from "../lib/menu-publication";
@@ -87,6 +87,36 @@ test("meaningful empty edits and published/imported weeks remain protected", () 
   assert.equal(planningWeekImportConflictReason(manual), "Week already contains planning work");
   assert.equal(planningWeekImportConflictReason(imported), "Already imported");
   assert.equal(planningWeekImportConflictReason(published), "Week has already been published");
+});
+
+test("explicit week replacement removes working children, preserves identity, and advances version", async () => {
+  const weekCommencing = "2099-03-01";
+  const current = emptyWeek(weekCommencing, "existing-planner");
+  const oldEntry = { id: `${current.week.id}:entry:old`, dayId: current.days[0].id, date: current.days[0].date, slot: "SALAD 1", itemLabel: "Old dish", portions: 10, allocations: [{ destinationId: "oploc:old", destinationLabel: "Old site", quantity: 10 }], allergens: {}, audit: [] };
+  current.entries = [oldEntry]; current.days[0].entryIds = [oldEntry.id]; current.week.entryIds = [oldEntry.id]; current.week.status = "imported"; current.week.sourceFiles = ["old.xlsx"];
+  await saveSnapshotsCreateOnly([current]);
+  const replacement = emptyWeek(weekCommencing, "new-import");
+  const newEntry = { id: `${replacement.week.id}:entry:new`, dayId: replacement.days[0].id, date: replacement.days[0].date, slot: "SALAD 1", itemLabel: "New dish", portions: 8, allocations: [], allergens: {}, audit: [] };
+  replacement.entries = [newEntry]; replacement.days[0].entryIds = [newEntry.id]; replacement.week.entryIds = [newEntry.id]; replacement.week.status = "imported"; replacement.week.sourceFiles = ["new.xlsx"];
+  assert.equal(planningWeekReplacementDetails(current).replaceable, true);
+  const [saved] = await replaceSnapshotsExplicit([replacement], { [weekCommencing]: current.week.version });
+  assert.equal(saved.week.id, current.week.id);
+  assert.equal(saved.week.version, current.week.version + 1);
+  const loaded = await getWeek(current.week.id);
+  assert.equal(loaded.entries.length, 1);
+  assert.equal(loaded.entries[0].itemLabel, "New dish");
+  assert.equal(loaded.entries[0].id, newEntry.id);
+});
+
+test("explicit replacement rejects a stale working-week version without changing it", async () => {
+  const weekCommencing = "2099-03-08";
+  const current = emptyWeek(weekCommencing, "existing-planner");
+  const entry = { id: `${current.week.id}:entry:current`, dayId: current.days[0].id, date: current.days[0].date, slot: "SALAD 1", itemLabel: "Current dish", portions: 1, allocations: [], allergens: {}, audit: [] };
+  current.entries = [entry]; current.days[0].entryIds = [entry.id]; current.week.entryIds = [entry.id];
+  await saveSnapshot(current);
+  const replacement = emptyWeek(weekCommencing, "new-import");
+  await assert.rejects(() => replaceSnapshotsExplicit([replacement], { [weekCommencing]: current.week.version - 1 }), /changed before replacement/i);
+  assert.equal((await getWeek(current.week.id)).entries[0].itemLabel, "Current dish");
 });
 
 test("planning weeks anchor to Monday using Europe/London operational dates", () => {

@@ -99,6 +99,32 @@ export function planningWeekImportConflictReason(snapshot: Pick<RollingSnapshot,
   return undefined;
 }
 export function isProtectedExistingPlanningWeek(snapshot: Pick<RollingSnapshot, "week" | "days" | "entries">) { return Boolean(planningWeekImportConflictReason(snapshot)); }
+export type PlanningWeekReplacementDetails = {
+  weekCommencing: string;
+  weekId: string;
+  currentVersion: number;
+  hasDishes: boolean;
+  hasPortionAllocations: boolean;
+  hasImportProvenance: boolean;
+  hasPublicationHistory: boolean;
+  replaceable: boolean;
+  integrityError?: string;
+};
+export function planningWeekReplacementDetails(snapshot: Pick<RollingSnapshot, "week" | "days" | "entries"> & { hasPublicationHistory?: boolean }): PlanningWeekReplacementDetails {
+  const complete = isCompletePlanningWeek(snapshot);
+  const hasDishes = snapshot.entries.some(entry => entry.itemLabel.trim().length > 0);
+  return {
+    weekCommencing: snapshot.week.weekCommencing,
+    weekId: snapshot.week.id,
+    currentVersion: snapshot.week.version,
+    hasDishes,
+    hasPortionAllocations: snapshot.entries.some(entry => entry.allocations.some(allocation => allocation.quantity > 0)),
+    hasImportProvenance: snapshot.week.sourceFiles.length > 0 || snapshot.entries.some(entry => Boolean(entry.source)),
+    hasPublicationHistory: Boolean(snapshot.hasPublicationHistory),
+    replaceable: complete,
+    ...(complete ? {} : { integrityError: "The existing planning week is incomplete and cannot be safely replaced." }),
+  };
+}
 /** Legacy aggregate read retained for catalogue reconciliation only; normal UI reads use getWeek/listWeeks. */
 export async function listAllEntries(): Promise<RollingEntry[]> { return structuredClone((await read()).entries); }
 export function defaultWeekForDate(weeks: RollingWeek[], date = operationalDate()) {
@@ -174,6 +200,38 @@ export async function saveSnapshotsCreateOnly(snapshots: RollingSnapshot[]) {
         const candidateSnapshot = { week: candidate, days: current.days.filter(day => candidate.dayIds.includes(day.id)), entries: current.entries.filter(entry => candidate.entryIds.includes(entry.id)) };
         if (!isProtectedExistingPlanningWeek(candidateSnapshot)) removeStoredWeek(current, candidate.id);
       }
+      replaceSnapshotInStored(current, snapshot);
+    }
+  }, undefined, { includeEvents: false });
+  return snapshots;
+}
+export async function replaceSnapshotsExplicit(snapshots: RollingSnapshot[], expectedVersions: Record<string, number>) {
+  if (!snapshots.length) return [];
+  const seen = new Set<string>();
+  for (const snapshot of snapshots) {
+    const week = snapshot.week.weekCommencing;
+    if (seen.has(week)) throw Object.assign(new Error(`Week ${week} appears more than once in this replacement.`), { status: 409 });
+    seen.add(week);
+  }
+  await withMenuPlanningTransaction(state => {
+    const current = state.rolling as unknown as Stored;
+    for (const snapshot of snapshots) {
+      const candidates = current.weeks.filter(week => week.weekCommencing === snapshot.week.weekCommencing);
+      const expectedVersion = expectedVersions[snapshot.week.weekCommencing];
+      const existing = candidates.find(week => week.id === snapshot.week.id) || candidates[0];
+      if (!existing) {
+        if (expectedVersion !== undefined) throw Object.assign(new Error(`The planning week for ${snapshot.week.weekCommencing} changed before replacement. Refresh and review it again.`), { status: 409 });
+        replaceSnapshotInStored(current, snapshot);
+        continue;
+      }
+      if (expectedVersion === undefined || existing.version !== expectedVersion) {
+        throw Object.assign(new Error(`The planning week for ${snapshot.week.weekCommencing} changed before replacement. Refresh and review it again.`), { status: 409 });
+      }
+      const existingSnapshot = { week: existing, days: current.days.filter(day => existing.dayIds.includes(day.id)), entries: current.entries.filter(entry => existing.entryIds.includes(entry.id)) };
+      if (!isCompletePlanningWeek(existingSnapshot)) throw Object.assign(new Error(`The planning week for ${snapshot.week.weekCommencing} is incomplete and cannot be safely replaced.`), { status: 409 });
+      for (const candidate of candidates) removeStoredWeek(current, candidate.id);
+      snapshot.week.id = existing.id;
+      snapshot.week.version = existing.version + 1;
       replaceSnapshotInStored(current, snapshot);
     }
   }, undefined, { includeEvents: false });
