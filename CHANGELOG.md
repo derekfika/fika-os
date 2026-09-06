@@ -4,6 +4,8 @@ This file records user-facing workflow changes delivered in the repository. Deta
 
 ## Unreleased
 
+- **2026-09-06 — THREAD 17 — Delivered-In requested-week 503 recovery:** isolated per-day requested-week reconciliation failures so an unavailable or unsigned CPU day remains fail-closed without aborting the entire valid week into an opaque 503; added structured dashboard/recovery diagnostics with week, date, OPLOC, error and build context. Legitimately corrupt/unauthorised/source failures remain explicit errors. Deployment status: not performed.
+
 - **2026-09-06 — THREAD 16 — hosted allergen PDF generation hardening:** CPU now selects the existing packaged-Chromium PDF renderer in hosted staging/production instead of depending on system Chrome/Edge, uses ephemeral temporary files with cleanup, preserves the real signed-PDF-before-Drive invariant, and emits structured renderer diagnostics while keeping Drive failure handling distinct. Deployment status: not performed.
 
 - **2026-09-06 — THREAD 15 — controlled Menu Planning week replacement:** added an explicit, user-confirmed replacement operation for existing complete planning weeks with optimistic version protection, removal of current working day/entry/allocation records, preserved week identity and immutable publication history, and a clear replacement warning/modal. Mixed imports continue to support new weeks in the same transaction; incomplete/orphan state fails closed. Validation: focused replacement/importer tests, full Menu Planning tests, typecheck, production build and `git diff --check`. Deployment status: not performed.

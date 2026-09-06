@@ -71,7 +71,26 @@ async function recoverRequestedWeek(request: NextRequest, oplocId: string, weekC
     if (!publications.length) return;
     const { reconcileDeliveredInDay } = await import("./delivered-in-reconciliation");
     const dates = [...new Set(publications.flatMap(publication => publication.days.filter(day => day.status !== "withdrawn" && day.date >= weekCommencing && day.date < toWeek).map(day => day.date)))].sort();
-    await Promise.all(dates.map(date => reconcileDeliveredInDay(request, oplocId, date)));
+    await Promise.all(dates.map(async date => {
+      try {
+        await reconcileDeliveredInDay(request, oplocId, date);
+      } catch (error) {
+        // A single day may be unavailable while its CPU safety packet is
+        // pending or invalid. Keep recovery bounded to that day so a valid
+        // requested week does not become an opaque whole-dashboard 503.
+        console.error("Delivered-In requested-week day recovery failed", {
+          app: "delivered-in",
+          operation: "delivered-in.requested-week.recovery",
+          requestedWeek: weekCommencing,
+          serviceDate: date,
+          oplocId,
+          errorName: error instanceof Error ? error.name : "UnknownError",
+          errorMessage: error instanceof Error ? error.message : String(error),
+          stack: error instanceof Error ? error.stack : undefined,
+          buildSha: process.env.FIKA_BUILD_SHA || undefined,
+        });
+      }
+    }));
   })();
   weekRecovery.set(key, work);
   try { await work; } finally { weekRecovery.delete(key); }

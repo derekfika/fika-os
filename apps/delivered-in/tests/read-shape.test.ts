@@ -30,6 +30,16 @@ test("ordinary projection reads are consumer-only and cannot materialise or repa
   assert.match(server, /projectionState: discovered\.state/);
 });
 
+test("requested-week recovery isolates unavailable CPU days instead of failing the whole dashboard", async () => {
+  const server = await readFile(new URL("../lib/server.ts", import.meta.url), "utf8");
+  const route = await readFile(new URL("../app/api/delivered-in/route.ts", import.meta.url), "utf8");
+  assert.match(server, /requested-week day recovery failed/);
+  assert.match(server, /Promise\.all\(dates\.map\(async date/);
+  assert.match(route, /Delivered-In dashboard load failed/);
+  assert.match(route, /requestedWeek/);
+  assert.match(route, /recoveryAttempted/);
+});
+
 test("integrity and package misses remain explicit without index writes", async () => {
   const server = await readFile(new URL("../lib/server.ts", import.meta.url), "utf8");
   assert.doesNotMatch(server, /writeDeliveredInProjection/);
