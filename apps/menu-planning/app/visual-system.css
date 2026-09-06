@@ -1,0 +1,216 @@
+/* THREAD 14: final Menu Planning visual-system consolidation.
+   This layer intentionally sits last so the existing domain-specific layout
+   remains stable while shared FIKA semantics remove visual drift. */
+:root {
+  --purple: var(--fika-action-primary);
+  --deep: var(--fika-action-secondary);
+  --paper: var(--fika-surface-page);
+  --surface: var(--fika-surface-card);
+  --muted: var(--fika-text-secondary);
+  --line: var(--fika-border-default);
+  --info-bg: var(--fika-status-info-surface);
+  --warning: var(--fika-status-warning);
+  --warning-bg: var(--fika-status-warning-surface);
+  --success: var(--fika-status-success);
+  --success-bg: var(--fika-status-success-surface);
+  --danger: var(--fika-status-danger);
+  --danger-bg: var(--fika-status-danger-surface);
+  --radius: var(--radius-md);
+  --shadow: var(--shadow-sm);
+}
+
+* { box-sizing: border-box; }
+html { background: var(--fika-surface-page); }
+body {
+  margin: 0;
+  background: var(--fika-surface-page);
+  color: var(--fika-text-primary);
+  font-family: var(--fika-font-body);
+  font-size: 14px;
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+}
+button, input, select, textarea { font: inherit; }
+button { cursor: pointer; }
+button:disabled { cursor: not-allowed; }
+:focus-visible { outline: 3px solid var(--fika-focus-ring); outline-offset: 2px; }
+
+h1, h2, h3, h4 { color: var(--fika-action-secondary); font-family: var(--fika-font-display); font-weight: 400; }
+h1, h2, h3, h4, p { text-wrap: pretty; }
+
+.menu-shell {
+  min-height: 100vh;
+  display: grid;
+  grid-template-columns: 190px minmax(0, 1fr);
+  background: var(--fika-surface-page);
+}
+.menu-sidebar {
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  min-height: 100vh;
+  z-index: 10;
+  padding: 24px 12px 16px;
+  background: var(--fika-surface-card);
+  border-right: 1px solid var(--fika-border-default);
+  box-shadow: 4px 0 18px rgba(40, 15, 140, .04);
+}
+.menu-sidebar-brand { margin: 0 0 26px; padding: 0 8px; }
+.menu-sidebar-kicker, .menu-page-heading small, .panel-header small,
+.workspace-intro small, .planner-intro small {
+  color: var(--fika-action-primary);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+.menu-sidebar-link {
+  min-height: 42px;
+  padding: 0 10px;
+  border-radius: var(--radius-sm);
+  color: var(--fika-text-secondary);
+  font-size: 13px;
+  font-weight: 600;
+  transition: background .15s ease, color .15s ease;
+}
+.menu-sidebar-link:hover { background: var(--fika-surface-subtle); color: var(--fika-action-primary); }
+.menu-sidebar-link--active {
+  background: var(--fika-status-info-surface);
+  color: var(--fika-action-primary);
+  box-shadow: inset 3px 0 var(--fika-action-primary);
+}
+.menu-sidebar-link span { color: currentColor; }
+.menu-shell-content { min-width: 0; }
+.menu-shell-header {
+  min-height: 84px;
+  padding: 18px 32px;
+  background: var(--fika-surface-card);
+  border-bottom: 1px solid var(--fika-border-default);
+  box-shadow: var(--shadow-sm);
+}
+.menu-shell-breadcrumb { color: var(--fika-text-muted); font-size: 12px; letter-spacing: .05em; text-transform: uppercase; }
+.menu-shell-breadcrumb b { color: var(--fika-action-primary); }
+.menu-shell-header h1 { margin: 4px 0 0; font-size: 24px; line-height: 1.1; }
+
+.workspace-intro, .planner-intro, .menu-page-heading { max-width: var(--layout-wide); margin-inline: auto; padding-inline: 32px; }
+.workspace-intro { padding-top: 34px; padding-bottom: 18px; }
+.planner-intro { padding-top: 30px; padding-bottom: 12px; }
+.planner-intro h2, .workspace-intro h2 { margin: 7px 0 8px; font-size: clamp(32px, 4vw, 48px); line-height: 1; letter-spacing: -.04em; }
+.planner-intro p, .workspace-intro p { max-width: 720px; margin: 0; color: var(--fika-text-secondary); }
+.planner-toolbar, .planning-context { max-width: var(--layout-wide); margin-inline: auto; padding-inline: 32px; }
+.planner-toolbar { padding-top: 10px; padding-bottom: 12px; }
+.planning-context { gap: 16px; padding-top: 10px; padding-bottom: 18px; }
+.planning-week-nav { gap: 8px; }
+.planning-week-nav strong { min-width: 154px; color: var(--fika-action-secondary); font-size: 15px; text-align: center; }
+.context-arrow { width: 40px; height: 40px; border: 1px solid var(--fika-border-default); border-radius: var(--radius-sm); background: var(--fika-surface-card); color: var(--fika-action-primary); }
+.context-arrow:hover:not(:disabled) { border-color: var(--fika-action-primary); background: var(--fika-status-info-surface); }
+.planning-days { gap: 8px; }
+.planning-days button { min-height: 40px; padding: 0 13px; border: 1px solid var(--fika-border-default); border-radius: var(--radius-sm); background: var(--fika-surface-card); color: var(--fika-text-secondary); font-size: 13px; font-weight: 600; }
+.planning-days button:hover { border-color: var(--fika-action-primary); color: var(--fika-action-primary); }
+.planning-days button.active { border-color: var(--fika-action-primary); background: var(--fika-action-primary); color: #fff; box-shadow: var(--shadow-sm); }
+
+.button { min-height: 42px; border-radius: var(--radius-sm); padding: 0 16px; font-size: 14px; font-weight: 700; box-shadow: none; transition: background .15s ease, border-color .15s ease, transform .15s ease; }
+.button:hover:not(:disabled) { transform: translateY(-1px); }
+.button-purple, .button-mint { border: 1px solid var(--fika-action-primary); background: var(--fika-action-primary); color: #fff; }
+.button-purple:hover:not(:disabled), .button-mint:hover:not(:disabled) { background: var(--fika-action-primary-hover); }
+.button-soft { border: 1px solid var(--fika-border-default); background: var(--fika-surface-card); color: var(--fika-action-secondary); }
+.button-soft:hover:not(:disabled) { border-color: var(--fika-action-primary); background: var(--fika-status-info-surface); color: var(--fika-action-primary); }
+.button:disabled { opacity: .55; transform: none; }
+
+.publication-readiness, .publication-panel, .workspace-panel, .week-planner-panel, .portion-panel, .allergen-panel, .published-history-panel {
+  border: 1px solid var(--fika-border-default);
+  border-radius: var(--radius-md);
+  background: var(--fika-surface-card);
+  box-shadow: var(--shadow-sm);
+}
+.publication-readiness, .publication-panel { margin-bottom: 16px; }
+.publication-readiness { padding: 16px 18px; }
+.publication-readiness strong, .publication-panel h3, .panel-header h3 { color: var(--fika-action-secondary); }
+.publication-readiness ul { color: var(--fika-status-danger); }
+.publication-readiness--ready, .publication-readiness--published { border-color: #a9dfbd; background: var(--fika-status-success-surface); }
+.publication-readiness--changed { border-color: #e7cf80; background: var(--fika-status-warning-surface); }
+.menu-error { border-left-width: 4px; border-radius: var(--radius-sm); background: var(--fika-status-danger-surface); color: var(--fika-status-danger); }
+
+.week-planner-panel, .portion-panel, .allergen-panel { margin-left: 32px; margin-right: 32px; padding: 16px; overflow: hidden; }
+.week-planner-panel { padding: 12px; }
+.week-matrix { border: 1px solid var(--fika-border-default); background: var(--fika-border-default); }
+.week-matrix-corner, .week-matrix-day, .week-matrix-group, .portion-matrix thead th, .operational-allergen-matrix thead th { background: var(--fika-action-secondary); }
+.week-matrix-corner, .week-matrix-day { padding: 12px; }
+.week-matrix-group { padding: 8px 12px; }
+.week-matrix-row>strong { padding: 12px; color: var(--fika-text-secondary); }
+.week-menu-cell { min-height: 54px; padding: 7px; }
+.week-menu-cell-button { min-height: 40px; color: var(--fika-action-secondary); }
+.week-menu-cell-button:hover, .week-menu-cell-button:focus-visible { border-color: var(--fika-action-primary); background: var(--fika-status-info-surface); box-shadow: none; }
+
+.table-wrap { border: 1px solid var(--fika-border-default); border-radius: var(--radius-sm); }
+.portion-matrix th, .portion-matrix td, .operational-allergen-matrix th, .operational-allergen-matrix td { border-color: var(--fika-border-default); padding: 10px 9px; }
+.portion-matrix thead th, .operational-allergen-matrix thead th { letter-spacing: .03em; }
+.portion-matrix tbody th, .operational-allergen-matrix tbody th { color: var(--fika-action-secondary); }
+.portion-matrix input, .operational-allergen-matrix input, .destination-add select, .dish-picker>input { min-height: 40px; border: 1px solid var(--fika-border-default); border-radius: var(--radius-sm); background: var(--fika-surface-card); color: var(--fika-text-primary); }
+.portion-matrix input:focus, .operational-allergen-matrix input:focus, .destination-add select:focus, .dish-picker>input:focus { border-color: var(--fika-action-primary); box-shadow: 0 0 0 3px color-mix(in srgb, var(--fika-focus-ring) 22%, transparent); outline: none; }
+.portion-total-row, .portion-matrix thead th:last-child, .portion-matrix tbody td:last-child { background: var(--fika-status-info-surface); }
+.allergen-cell--unrecorded { background: var(--fika-surface-subtle); color: var(--fika-text-muted); }
+.allergen-row--needs-review { background: var(--fika-status-warning-surface); }
+
+.library-row, .exception-list article, .catalogue-list article { border-color: var(--fika-border-default); border-radius: var(--radius-sm); background: var(--fika-surface-card); }
+.library-row:hover, .catalogue-list article:hover { border-color: var(--fika-action-primary); background: var(--fika-status-info-surface); }
+.empty-state, .menu-loading, .dish-picker-empty { min-height: 180px; border-color: var(--fika-border-default); background: var(--fika-surface-subtle); color: var(--fika-text-secondary); }
+.empty-state h3 { color: var(--fika-action-secondary); }
+.metric-card { border: 1px solid var(--fika-border-default); border-top: 3px solid var(--fika-action-primary); border-radius: var(--radius-md); background: var(--fika-surface-card); box-shadow: var(--shadow-sm); }
+.metric-card.warning { border-top-color: var(--fika-status-warning); }
+.metric-card strong { color: var(--fika-action-secondary); }
+
+.modal-backdrop, .import-confirm-backdrop, .import-progress-backdrop { background: rgba(40, 15, 140, .42); backdrop-filter: blur(6px); }
+.item-detail, .catalogue-detail, .dish-picker, .import-confirm-modal, .import-progress-modal, .import-form-modal { border: 1px solid var(--fika-border-default); border-radius: var(--radius-md); background: var(--fika-surface-card); box-shadow: var(--shadow-md); color: var(--fika-text-primary); }
+.item-detail>header, .catalogue-detail>header { background: var(--fika-surface-card); color: var(--fika-action-secondary); border-bottom-color: var(--fika-border-default); }
+.item-detail>header h3, .catalogue-detail header h3, .import-confirm-modal h2, .import-progress-modal h2, .import-form-modal-header h2 { color: var(--fika-action-secondary); }
+.modal-close, .catalogue-detail .icon-button { min-width: 40px; min-height: 40px; border: 1px solid var(--fika-border-default); border-radius: var(--radius-sm); background: var(--fika-status-info-surface); color: var(--fika-action-secondary); }
+.modal-close:hover, .modal-close:focus-visible, .catalogue-detail .icon-button:hover { border-color: var(--fika-action-primary); background: var(--fika-action-primary); color: #fff; }
+
+.import-menu-week { max-width: 1200px; padding: 32px; }
+.import-menu-week h1 { font-family: var(--fika-font-display); font-size: clamp(32px, 4vw, 48px); line-height: 1; }
+.import-dropzone, .import-workbooks, .import-ready { border-color: var(--fika-border-default); border-radius: var(--radius-md); background: var(--fika-surface-card); box-shadow: var(--shadow-sm); }
+.import-dropzone { padding: 36px; background: var(--fika-surface-subtle); }
+.import-review-table { border-color: var(--fika-border-default); border-radius: var(--radius-md); box-shadow: var(--shadow-sm); }
+.import-review-header { background: var(--fika-surface-subtle); color: var(--fika-text-secondary); }
+.import-review-row { min-height: 52px; border-top-color: var(--fika-border-default); }
+.import-filter-row button.is-active, .import-action-primary, .import-bulk-primary { background: var(--fika-action-primary) !important; border-color: var(--fika-action-primary) !important; }
+.import-conflict-group { border-color: var(--fika-status-warning); background: var(--fika-status-warning-surface); }
+
+@media (max-width: 900px) {
+  .menu-shell { grid-template-columns: 76px minmax(0, 1fr); }
+  .menu-sidebar { padding-inline: 10px; }
+  .menu-sidebar-brand { width: 56px; overflow: hidden; padding-inline: 0; }
+  .menu-sidebar-kicker, .menu-sidebar-link:not(.menu-sidebar-link--active) { font-size: 0; }
+  .menu-sidebar-link { justify-content: center; padding-inline: 0; }
+  .menu-sidebar-link span { width: auto; font-size: 16px; }
+  .menu-sidebar-link--active { font-size: 0; }
+  .menu-sidebar-link--active span { font-size: 16px; }
+  .menu-shell-header, .workspace-intro, .planner-intro, .menu-page-heading, .planner-toolbar, .planning-context { padding-inline: 24px; }
+  .week-planner-panel, .portion-panel, .allergen-panel { margin-inline: 24px; }
+}
+@media (max-width: 700px) {
+  .menu-shell { display: block; }
+  .menu-sidebar { position: static; height: auto; min-height: auto; padding: 12px 16px; }
+  .menu-sidebar-brand { width: 112px; margin-bottom: 10px; }
+  .menu-sidebar-kicker { display: none; }
+  .menu-sidebar-nav { display: flex; overflow-x: auto; gap: 4px; }
+  .menu-sidebar-link, .menu-sidebar-link--active, .menu-sidebar-link:not(.menu-sidebar-link--active) { justify-content: flex-start; min-height: 42px; padding-inline: 10px; font-size: 13px; }
+  .menu-sidebar-link span, .menu-sidebar-link--active span { width: 18px; font-size: 16px; }
+  .menu-shell-header { min-height: 72px; padding: 14px 16px; }
+  .menu-shell-header h1 { font-size: 20px; }
+  .menu-shell-actions { gap: 5px; }
+  .workspace-intro, .planner-intro, .menu-page-heading { padding-inline: 16px; }
+  .planner-intro h2, .workspace-intro h2, .import-menu-week h1 { font-size: 34px; }
+  .planner-toolbar, .planning-context { padding-inline: 16px; }
+  .planning-context { align-items: stretch; flex-direction: column; }
+  .planning-week-nav { justify-content: space-between; }
+  .planning-week-nav strong { flex: 1; }
+  .planning-days { max-width: 100%; }
+  .week-planner-panel, .portion-panel, .allergen-panel { margin-inline: 16px; padding: 10px; }
+  .publication-panel, .publication-readiness, .workspace-panel, .published-history-panel { margin-inline: 16px; }
+  .import-menu-week { padding: 24px 16px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; animation-duration: .01ms !important; }
+}
