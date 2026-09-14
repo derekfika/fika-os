@@ -24,6 +24,9 @@ const isRecord = (value: unknown): value is Record<string, unknown> => Boolean(v
 const isDate = (value: unknown): value is string => typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value);
 const sha256 = (bytes: Uint8Array) => createHash("sha256").update(bytes).digest("hex");
 const invalid = (message: string) => Object.assign(new Error(message), { code: "MENU_PLANNING_WEEK_PACKET_INVALID", status: 502 });
+export function isMenuPlanningWeekPacketIntegrityError(error: unknown): error is Error & { code: "MENU_PLANNING_WEEK_PACKET_INVALID" } {
+  return isRecord(error) && error.code === "MENU_PLANNING_WEEK_PACKET_INVALID";
+}
 const decodedPacketCache = new Map<string, MenuPlanningWeekPacket>();
 type PublishedAllergenState = "clear" | "contains" | "may_contain";
 function safeAllergens(value: Record<string, string> | undefined): Record<string, PublishedAllergenState> {
@@ -111,23 +114,31 @@ async function readDirect(documentId: string) {
 }
 
 export async function readMenuPlanningWeekPackets(fromWeek: string, toWeek: string) {
+  let publications: FirebaseFirestore.QuerySnapshot;
   try {
-    const publications = await db.collection(MENU_PLANNING_PUBLICATIONS_COLLECTION).where("weekCommencing", ">=", fromWeek).where("weekCommencing", "<=", toWeek).limit(16).get();
+    publications = await db.collection(MENU_PLANNING_PUBLICATIONS_COLLECTION).where("weekCommencing", ">=", fromWeek).where("weekCommencing", "<=", toWeek).limit(16).get();
+  } catch { /* Absent packet collection/index retains legacy compatibility. */ }
+  if (publications!) {
     recordDataAccess({ app: "delivered-in", operation: "menu-planning.week-packets.by-window", source: "FIRESTORE", dataset: MENU_PLANNING_PUBLICATIONS_COLLECTION, documents: publications.size, firestoreReadKind: "query" });
     const packets = publications.docs.map(document => document.data()?.weekPacket).filter(Boolean);
+    // Decode outside the query compatibility catch: an existing packet that
+    // fails integrity/schema/identity validation must fail closed.
     if (packets.length) return packets.map(packet => decodeMenuPlanningWeekPacket(packet));
-  } catch { /* Absent packet collection/index retains legacy compatibility. */ }
+  }
+  let snapshots: FirebaseFirestore.QuerySnapshot | undefined;
   try {
-    const snapshots = await db.collection(MENU_PLANNING_SNAPSHOTS_COLLECTION).where("week.weekCommencing", ">=", fromWeek).where("week.weekCommencing", "<=", toWeek).limit(16).get();
-    recordDataAccess({ app: "delivered-in", operation: "menu-planning.week-snapshots.by-window", source: "FIRESTORE", dataset: MENU_PLANNING_SNAPSHOTS_COLLECTION, documents: snapshots.size, firestoreReadKind: "query" });
-    const latest = new Map<string, MenuPlanningWeekPacket>();
-    for (const document of snapshots.docs) {
-      const value = decodeMenuPlanningWeekPacket(document.data());
-      const current = latest.get(value.publicationId);
-      if (!current || (value.publicationVersion || 0) > (current.publicationVersion || 0)) latest.set(value.publicationId, value);
-    }
-    return [...latest.values()];
-  } catch { return []; }
+    snapshots = await db.collection(MENU_PLANNING_SNAPSHOTS_COLLECTION).where("week.weekCommencing", ">=", fromWeek).where("week.weekCommencing", "<=", toWeek).limit(16).get();
+  } catch { return []; /* Both packet sources are absent/unavailable: legacy fallback may decide what to do. */ }
+  recordDataAccess({ app: "delivered-in", operation: "menu-planning.week-snapshots.by-window", source: "FIRESTORE", dataset: MENU_PLANNING_SNAPSHOTS_COLLECTION, documents: snapshots.size, firestoreReadKind: "query" });
+  const latest = new Map<string, MenuPlanningWeekPacket>();
+  // Decode outside the query compatibility catch for the same fail-closed
+  // integrity boundary as publication packets.
+  for (const document of snapshots.docs) {
+    const value = decodeMenuPlanningWeekPacket(document.data());
+    const current = latest.get(value.publicationId);
+    if (!current || (value.publicationVersion || 0) > (current.publicationVersion || 0)) latest.set(value.publicationId, value);
+  }
+  return [...latest.values()];
 }
 
 export function packetPublicationsForRange(packets: MenuPlanningWeekPacket[], fromWeek: string, toWeek: string) {

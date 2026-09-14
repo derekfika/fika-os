@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { gzipSync } from "node:zlib";
 import test from "node:test";
-import { decodeMenuPlanningWeekPacket, packetPublicationsForRange } from "../lib/menu-planning-week-packet";
+import { decodeMenuPlanningWeekPacket, isMenuPlanningWeekPacketIntegrityError, packetPublicationsForRange } from "../lib/menu-planning-week-packet";
 import { encodeWeeklyPublicationPacket } from "@fika/server-shared/weekly-publication-packet";
 import { projectPublishedWeeks } from "../lib/projection";
 
@@ -60,7 +60,7 @@ test("Delivered-In filters by stable OPLOC ID and never by destination label", (
 test("Delivered-In rejects a weekly packet whose compressed bytes were changed", () => {
   const value = encoded();
   value.payloadBase64 = value.payloadBase64.slice(0, -8) + "AAAAAAAA";
-  assert.throws(() => decodeMenuPlanningWeekPacket({ packet: value }), /integrity|base64|gzip/i);
+  assert.throws(() => decodeMenuPlanningWeekPacket({ packet: value }), error => isMenuPlanningWeekPacketIntegrityError(error));
 });
 
 test("Delivered-In consumes the shared Menu Planning packet envelope", () => {

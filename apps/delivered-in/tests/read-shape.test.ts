@@ -45,6 +45,15 @@ test("integrity and package misses remain explicit without index writes", async 
   assert.doesNotMatch(server, /writeDeliveredInProjection/);
   assert.doesNotMatch(server, /updateProjectionIndex/);
   assert.match(server, /catch \{\s+return undefined;/);
+  assert.doesNotMatch(server, /readMenuPlanningWeekPackets\([^;]+\)\.catch\(\(\) => \[\]\)/);
+});
+
+test("Menu Planning packet integrity errors are not folded into legacy fallback", async () => {
+  const packet = await readFile(new URL("../lib/menu-planning-week-packet.ts", import.meta.url), "utf8");
+  assert.match(packet, /Decode outside the query compatibility catch/);
+  assert.match(packet, /MENU_PLANNING_WEEK_PACKET_INVALID/);
+  assert.match(packet, /if \(packets\.length\) return packets\.map\(packet => decodeMenuPlanningWeekPacket\(packet\)\)/);
+  assert.match(packet, /Decode outside the query compatibility catch for the same fail-closed/);
 });
 
 test("standalone Delivered-In has no idle polling and selected access remains request-scoped", async () => {

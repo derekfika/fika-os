@@ -119,7 +119,7 @@ test("missing day package repairs through bounded reconciliation before loading 
       const url = String(input);
       calls.push(url);
       if (url.includes("cacheScope")) return new Response(JSON.stringify({ cacheScope: "staging:fika-os-dev:actor-1" }), { status: 200 });
-      if (url.includes("projection=1") && !url.includes("reconcile=1")) return new Response(JSON.stringify({ error: { message: "The CPU projection package is currently unavailable." } }), { status: 503 });
+      if (url.includes("projection=1") && !url.includes("reconcile=1")) return new Response(JSON.stringify({ error: { code: "CPU_PROJECTION_PACKAGE_UNAVAILABLE", message: "The CPU projection package is currently unavailable." } }), { status: 503 });
       if (url.includes("reconcile=1")) return new Response(JSON.stringify({ projection: recovered, package: { packageVersion: 1, contentHash: "hash-day-v1", sourceVersion: "cpu-change-8" } }), { status: 200 });
       return new Response(JSON.stringify({}), { status: 500 });
     },
@@ -131,6 +131,34 @@ test("missing day package repairs through bounded reconciliation before loading 
   assert.equal(result.projection.orders[0]?.quantities[0]?.name, "Published Dish");
   assert.ok(calls.some((url) => url.includes("reconcile=1")));
   assert.ok(written);
+});
+
+test("integrity-corrupt CPU package fails closed without reconciliation or stale cache", async () => {
+  const calls: string[] = [];
+  await assert.rejects(() => loadCpuAllergenProjection("2026-08-31", "delivered_in", {
+    fetch: async (input: RequestInfo | URL) => {
+      const url = String(input); calls.push(url);
+      if (url.includes("cacheScope")) return new Response(JSON.stringify({ cacheScope: "staging:fika-os-dev:actor-1" }), { status: 200 });
+      if (url.includes("projectionHead")) return new Response(JSON.stringify({ lastChangeSequence: 8, packageVersion: 4, contentHash: "hash-v4", sourceVersion: "cpu-change-8" }), { status: 200 });
+      return new Response(JSON.stringify({ error: { code: "CPU_PROJECTION_PACKAGE_INTEGRITY_FAILURE", message: "The CPU projection package failed integrity verification." } }), { status: 503 });
+    },
+    read: async () => ({ key: "day:2026-08-31", schemaVersion: 1, cacheScope: "staging:fika-os-dev:actor-1", fetchedAt: "2026-08-31T10:00:00.000Z", lastChangeSequence: 7, revision: 2, packageVersion: 3, contentHash: "hash-v3", sourceVersion: "cpu-change-7", value: projection }),
+    write: async () => undefined,
+  }), new RegExp(CPU_ALLERGEN_FRESHNESS_ERROR));
+  assert.equal(calls.some(url => url.includes("reconcile=1")), false);
+});
+
+test("unknown CPU projection 503 fails closed without reconciliation", async () => {
+  const setup = dependencies({ head: { lastChangeSequence: 8, packageVersion: 4, contentHash: "hash-v4", sourceVersion: "cpu-change-8" } });
+  const originalFetch = setup.deps.fetch;
+  setup.deps.fetch = async (input: RequestInfo | URL) => {
+    const url = String(input);
+    setup.calls.push(url);
+    if (url.includes("projection=1")) return new Response(JSON.stringify({ error: { message: "Unknown temporary failure" } }), { status: 503 });
+    return originalFetch(input);
+  };
+  await assert.rejects(() => loadCpuAllergenProjection("2026-08-31", "delivered_in", setup.deps));
+  assert.equal(setup.calls.some(url => url.includes("reconcile=1")), false);
 });
 
 test("failed projection head fails closed and never uses stale allergen cache", async () => {

@@ -6,7 +6,7 @@ import type { ProductionScope } from "../../lib/production-scope";
 import { readCpuProjection, writeCpuProjection, type CpuProjectionCacheEntry } from "./cpu-indexeddb";
 
 type PackageIdentity = { packageVersion?: number; contentHash?: string; sourceVersion?: string };
-type ProjectionResponse = { projection?: CpuDayProjection; package?: PackageIdentity; error?: { message?: string } };
+type ProjectionResponse = { projection?: CpuDayProjection; package?: PackageIdentity; error?: { code?: string; message?: string } };
 type LoadedProjectionResponse = ProjectionResponse & { projection: CpuDayProjection };
 type ProjectionHead = { lastChangeSequence?: number; packageVersion?: number; contentHash?: string; sourceVersion?: string };
 type ProjectionCacheEntry = CpuProjectionCacheEntry<CpuDayProjection>;
@@ -50,7 +50,12 @@ async function loadPublishedDay(serviceDate: string, scope: ProductionScope, dep
   const response = await dependencies.fetch(`/api/production?projection=1&${query}`, { cache: "no-store" });
   const body = await json<ProjectionResponse>(response);
   if (response.ok && body.projection) return body as LoadedProjectionResponse;
-  if (response.status !== 503) throw new Error(body.error?.message || "Could not load the CPU production projection.");
+  // HTTP status alone is not a recovery classification. The API uses 503 for
+  // both a rebuildable missing package and an integrity failure, so only the
+  // explicit unavailable code may enter bounded reconciliation.
+  if (body.error?.code !== "CPU_PROJECTION_PACKAGE_UNAVAILABLE") {
+    throw new Error(body.error?.message || "Could not load the CPU production projection.");
+  }
 
   // A missing or corrupt day package can be repaired only through the
   // explicit bounded CPU reconciliation path. Normal projection reads remain

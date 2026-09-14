@@ -143,3 +143,10 @@ This file records user-facing workflow changes delivered in the repository. Deta
 - Added exact-SHA Logistics wrapper coverage from its checked-in `fika-logistics-staging` backend configuration; documented Hospitality Booking as an unverified external/manual staging gap.
 - Validation: focused Hub/Menu Planning contract tests, affected typechecks/builds, deployment wrapper static validation, and `git diff --check`.
 - Deployment: not performed.
+# 2026-09-14 — PRE-UAT integrity recovery remediation
+
+- Task: PRE-UAT integrity recovery remediation.
+- Affected domains: CPU Production projection loading and Delivered-In Menu Planning packet recovery.
+- CPU now reconciles only explicitly unavailable projection packages; corrupt and unknown failures remain fail-closed without stale verified fallback. Delivered-In preserves explicit packet integrity failures instead of falling through to compatibility/API recovery.
+- Validation: focused safety regression coverage, affected app tests/typechecks/builds, and `git diff --check`.
+- Deployment: not performed.

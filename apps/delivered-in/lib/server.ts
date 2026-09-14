@@ -60,7 +60,7 @@ async function recoverRequestedWeek(request: NextRequest, oplocId: string, weekC
   const work = (async () => {
     const toWeek = addDays(weekCommencing, 7);
     let publications: SourcePublication[] = [];
-    const packets = await readMenuPlanningWeekPackets(weekCommencing, toWeek).catch(() => []);
+    const packets = await readMenuPlanningWeekPackets(weekCommencing, toWeek);
     if (packets.length) publications = packetPublicationsForRange(packets, weekCommencing, toWeek) as SourcePublication[];
     else {
       const response = await fetch(`${menuBase()}/api/rolling-menu/publications?fromWeek=${encodeURIComponent(weekCommencing)}&toWeek=${encodeURIComponent(toWeek)}`, { cache: "no-store" });
@@ -126,7 +126,7 @@ export async function projectedWeeks(request: NextRequest, requestedOplocId?: st
   const fromWeek = mondayOf(new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/London" }).format(new Date()));
   let publications: SourcePublication[] = [];
   const toWeek = addDays(fromWeek, 49);
-  const packets = await readMenuPlanningWeekPackets(fromWeek, toWeek).catch(() => []);
+  const packets = await readMenuPlanningWeekPackets(fromWeek, toWeek);
   if (packets.length) {
     publications = packetPublicationsForRange(packets, fromWeek, toWeek) as SourcePublication[];
   } else {
