@@ -43,7 +43,7 @@ export function reviewStatusForPlan(orderId: string, plan: ProductionPlan | unde
     signatureRoles,
     updatedAt: plan.updatedAt,
     matrixItems: plan.menuItems.flatMap((item) => item.sourceLineId ? item.subItems.map(subItem => ({ sourceLineId: item.sourceLineId!, sourceSubItemId: subItem.id, allergens: subItem.allergens, mayContainNotes: subItem.mayContainNotes, evidenceStatus: subItem.evidenceStatus })) : []),
-    ...(plan.matrixArtifact ? { matrixStatus: "ready" as const } : signatureRoles.includes("production_chef") && signatureRoles.includes("head_chef_site_manager") ? { matrixStatus: "generating" as const } : {}),
+    ...(plan.matrixArtifact && plan.currentAllergenRelease?.status === "current" ? { matrixStatus: "ready" as const } : signatureRoles.includes("production_chef") && signatureRoles.includes("head_chef_site_manager") ? { matrixStatus: "generating" as const } : {}),
     ...(plan.matrixArtifact ? { matrixArtifact: { driveUrl: plan.matrixArtifact.driveUrl, localUrl: plan.matrixArtifact.localUrl } } : {}),
   };
 }

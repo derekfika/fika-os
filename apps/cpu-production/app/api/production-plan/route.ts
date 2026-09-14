@@ -369,7 +369,7 @@ async function handleGet(request: NextRequest) {
       }
       const selectedPlan = visible ? await mergeOriginalItems(request, await getPlan(request, orderId), orderId, selectedOrder) : undefined;
       recordDeliveredInReadBudget({ stage: "selected_order_get", canonicalOrderDocs: selectedOrder ? 1 : 0, planDocs: selectedPlan ? 1 : 0, selectedIds: 1 });
-      const selectedMatrixStatus = selectedPlan?.matrixArtifact ? "ready" : selectedPlan?.signatures?.some(signature => signature.role === "production_chef") && selectedPlan.signatures?.some(signature => signature.role === "head_chef_site_manager") ? selectedOrder && !matrixDriveConfiguration(selectedOrder).enabled ? "not_configured" : "generating" : undefined;
+      const selectedMatrixStatus = selectedPlan?.matrixArtifact && selectedPlan.currentAllergenRelease?.status === "current" ? "ready" : selectedPlan?.signatures?.some(signature => signature.role === "production_chef") && selectedPlan.signatures?.some(signature => signature.role === "head_chef_site_manager") ? selectedOrder && !matrixDriveConfiguration(selectedOrder).enabled ? "not_configured" : "generating" : undefined;
       return NextResponse.json({ plan: selectedPlan, matrixStatus: selectedMatrixStatus, plans: selectedPlan ? [selectedPlan] : [], notifications: selectedPlan?.status === "planned" ? [{ id: `notification:${selectedPlan.id}`, title: "New production plan ready for menu generation.", orderId: selectedPlan.orderId, plannedItemCount: selectedPlan.menuItems.reduce((sum, item) => sum + item.subItems.length, 0), at: selectedPlan.updatedAt }] : [], menus: [] });
     }
   } catch (error) {
@@ -489,47 +489,45 @@ async function handlePost(request: NextRequest) {
       if (plan.status !== "planned" && plan.status !== "planning") throw Object.assign(new Error("The allergen matrix is not available for signing."), { status: 422 });
       const subItems = plan.menuItems.flatMap(item => item.subItems);
       if (!subItems.length || subItems.some(item => !item.name.trim())) throw Object.assign(new Error("Complete every named sub-item before signing the matrix."), { status: 422 });
-      plan.status = "planned";
+      const candidate = structuredClone(plan);
+      candidate.status = "planned";
       const currentMenuContentHash = menuContentHash(plan.menuItems);
       const currentSignatureScope = matrixSignatureScope(currentOrder, currentMenuContentHash);
       if (!currentSignatureScope) throw Object.assign(new Error("The current published Menu Planning source identity is unavailable; the matrix cannot be signed."), { status: 503 });
       // Legacy signatures without exact publication/day/content lineage are
       // historical evidence only and must never make the current matrix look
       // signed. They remain in the audit trail and are not deleted here.
-      const signatures = (plan.signatures || []).filter(signature => signatureMatchesScope(signature, currentSignatureScope));
-      plan.signatures = signatures;
+      const signatures = (candidate.signatures || []).filter(signature => signatureMatchesScope(signature, currentSignatureScope));
+      candidate.signatures = signatures;
       if (signatures.some(signature => signature.role === "production_chef") && signatures.some(signature => signature.role === "head_chef_site_manager")) throw Object.assign(new Error("This allergen matrix is already fully signed and locked."), { status: 409 });
       if (signatures.some(signature => signature.role === command.role)) throw Object.assign(new Error("This signatory role has already signed this matrix."), { status: 409 });
       if (signatures.length > 0 && plan.signedMenuContentHash && plan.signedMenuContentHash !== currentMenuContentHash) throw Object.assign(new Error("The allergen matrix changed after the first signature. Re-review the matrix before signing again."), { status: 409 });
       const signature: InternalMatrixSignature = { role: command.role, printedName: command.printedName, signedAt: timestamp, actor: auditActor, attestation: command.attestation, signatureDataUrl: command.signatureDataUrl, scope: currentSignatureScope };
-      plan.signatures = [...signatures, signature];
-      if (signatures.length === 0) plan.signedMenuContentHash = currentMenuContentHash;
-      plan.audit.push({ action: "allergen-matrix-signed", at: timestamp, by: auditActor, reason: `${command.role}: ${command.attestation}` });
-      const fullySigned = plan.signatures.some(item => item.role === "production_chef") && plan.signatures.some(item => item.role === "head_chef_site_manager");
+      candidate.signatures = [...signatures, signature];
+      if (signatures.length === 0) candidate.signedMenuContentHash = currentMenuContentHash;
+      candidate.audit.push({ action: "allergen-matrix-signed", at: timestamp, by: auditActor, reason: `${command.role}: ${command.attestation}` });
+      const fullySigned = candidate.signatures.some(item => item.role === "production_chef") && candidate.signatures.some(item => item.role === "head_chef_site_manager");
       if (fullySigned) {
-        plan.audit.push({ action: "allergen-matrix-signature-complete", at: timestamp, by: auditActor, reason: "Both required signatures recorded; final matrix persistence started." });
+        candidate.audit.push({ action: "allergen-matrix-signature-complete", at: timestamp, by: auditActor, reason: "Both required signatures recorded; final matrix persistence started." });
         let artifact: Awaited<ReturnType<typeof createMatrixArtifact>>;
         try {
-          artifact = await createMatrixArtifact(plan, command.orderId, auditActor, timestamp, request);
+          artifact = await createMatrixArtifact(candidate, command.orderId, auditActor, timestamp, request);
         } catch (error) {
-          // The second signature is authoritative even when a downstream PDF or
-          // Drive dependency is unavailable. Persist it before returning the
-          // failure so the signer is not asked to sign again; the normal retry
-          // path can finish artifact publication with both signatures present.
-          plan.audit.push({ action: "allergen-matrix-artifact-failed", at: timestamp, by: auditActor, reason: error instanceof Error ? error.message : "Final allergen artifact generation failed." });
-          plan.updatedAt = timestamp; plan.updatedBy = auditActor;
-          await persistPlan(plan, expectedUpdatedAt);
+          // Finalisation is atomic from the signatory's perspective. External
+          // idempotent artifacts may remain, but the candidate signature and
+          // release state must not become durable until every required output
+          // has succeeded.
           throw error;
         }
         if (artifact) {
           const signedOrder = await loadOrder(request, command.orderId);
           const serviceDate = signedOrder?.serviceDate || signedOrder?.requiredBy.slice(0, 10);
           if (!serviceDate) throw Object.assign(new Error("The signed allergen release requires a service date."), { status: 422 });
-          plan.matrixArtifact = artifact;
-          plan.signedMenuContentHash = menuContentHash(plan.menuItems);
-          plan.signedSignatures = plan.signatures;
-          plan.signedMatrixArtifact = artifact;
-          const previousRelease = [...(plan.allergenReleaseHistory || [])].at(-1);
+          candidate.matrixArtifact = artifact;
+          candidate.signedMenuContentHash = menuContentHash(candidate.menuItems);
+          candidate.signedSignatures = candidate.signatures;
+          candidate.signedMatrixArtifact = artifact;
+          const previousRelease = [...(candidate.allergenReleaseHistory || [])].at(-1);
           const release = buildCpuAllergenRelease({
             serviceDate,
             sourceDayId: signedOrder?.sourceEntityId || "",
@@ -537,21 +535,22 @@ async function handlePost(request: NextRequest) {
             sourcePublicationDayId: signedOrder?.sourcePublicationDayId || "",
             sourceVersion: signedOrder?.sourceVersion || 0,
             sourceContentHash: signedOrder?.sourceContentHash || "",
-            version: Math.max(1, ...((plan.allergenReleaseHistory || []).map(item => item.version + 1))),
+            version: Math.max(1, ...((candidate.allergenReleaseHistory || []).map(item => item.version + 1))),
             signedAt: timestamp,
-            signatures: plan.signatures,
-            items: plan.menuItems,
-            masterArtifact: plan.masterMatrixArtifact || artifact,
-            derivedArtifacts: Object.values(plan.siteMatrixArtifacts || {}),
-            packetArtifacts: Object.values(plan.siteMatrixArtifacts || {}).filter(item => item.packetContentHash && item.packetObjectName).map(item => ({ ...item, contentHash: item.packetContentHash! })),
+            signatures: candidate.signatures,
+            items: candidate.menuItems,
+            masterArtifact: candidate.masterMatrixArtifact || artifact,
+            derivedArtifacts: Object.values(candidate.siteMatrixArtifacts || {}),
+            packetArtifacts: Object.values(candidate.siteMatrixArtifacts || {}).filter(item => item.packetContentHash && item.packetObjectName).map(item => ({ ...item, contentHash: item.packetContentHash! })),
             previous: previousRelease,
           });
-          plan.currentAllergenRelease = publishCpuAllergenRelease(undefined, release).current;
-          plan.audit.push({ action: "allergen-matrix-saved", at: timestamp, by: auditActor, reason: "Final signed matrix persisted to the configured Drive workspace." });
+          candidate.currentAllergenRelease = publishCpuAllergenRelease(undefined, release).current;
+          candidate.audit.push({ action: "allergen-matrix-saved", at: timestamp, by: auditActor, reason: "Final signed matrix persisted to the configured Drive workspace." });
         } else {
-          plan.audit.push({ action: "allergen-matrix-storage-not-configured", at: timestamp, by: auditActor, reason: "Drive persistence is intentionally deferred; the signed workflow remains complete without a persisted artifact." });
+          throw Object.assign(new Error("A durable signed allergen artifact is required before the matrix can be finalised."), { status: 503 });
         }
       }
+      Object.assign(plan, candidate);
     }
     if (command.action === "save-matrix") {
       if (plan.status !== "planned") throw Object.assign(new Error("Mark the allergen matrix Planned before saving it to the site Drive."), { status: 422 });
@@ -602,7 +601,7 @@ async function handlePost(request: NextRequest) {
       const review = changedOrder.destinationOplocId ? await rebuildCpuReviewPackage(request, changedOrder.serviceDate, changedOrder.destinationOplocId, event.sequence) : undefined;
       await notifyCpuConsumerInvalidations({ eventId: `cpu-change:${event.sequence}`, sourceEntityId: plan.id, serviceDate: changedOrder.serviceDate, sourceVersion: event.sequence, changedAt: timestamp, changeType: eventTypeForConsumers(command.action), order: changedOrder, logistics: false, ...(review ? { reviewManifest: review.manifest } : {}) });
     }
-    const matrixStatus = plan.matrixArtifact ? "ready" : plan.signatures?.some(signature => signature.role === "production_chef") && plan.signatures?.some(signature => signature.role === "head_chef_site_manager") ? changedOrder && !matrixDriveConfiguration(changedOrder).enabled ? "not_configured" : "generating" : undefined;
+    const matrixStatus = plan.matrixArtifact && plan.currentAllergenRelease?.status === "current" ? "ready" : plan.signatures?.some(signature => signature.role === "production_chef") && plan.signatures?.some(signature => signature.role === "head_chef_site_manager") ? changedOrder && !matrixDriveConfiguration(changedOrder).enabled ? "not_configured" : "generating" : undefined;
     return NextResponse.json({ plan, matrixArtifact: plan.matrixArtifact ?? null, signatures: plan.signatures ?? null, matrixStatus, notification: notification || (plan.status === "planned" ? { title: "New production plan ready for menu generation.", orderId: plan.orderId } : undefined) });
   } catch (error) { return errorResponse(error); }
 }

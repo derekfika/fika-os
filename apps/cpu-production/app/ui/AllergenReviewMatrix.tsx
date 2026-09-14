@@ -22,7 +22,7 @@ function displayState(states: Record<string, OperationalAllergenState> | undefin
   return "none";
 }
 
-export default function AllergenReviewMatrix({ rows, orders, scopeKey, locked = false, onCheckedChange, onReviewChanged, onRegisterSave, onSignatureRolesChange }: { rows: AllergenReviewRow[]; orders: ProductionOrder[]; scopeKey: string; locked?: boolean; onCheckedChange?: (checked: number, total: number, keys: Set<string>) => void; onReviewChanged?: () => void; onRegisterSave?: (save: () => Promise<void>) => void; onSignatureRolesChange?: (roles: Array<"production_chef" | "head_chef_site_manager">) => void }) {
+export default function AllergenReviewMatrix({ rows, orders, scopeKey, locked = false, onCheckedChange, onReviewChanged, onRegisterSave, onSignatureRolesChange, onFinalizationChange }: { rows: AllergenReviewRow[]; orders: ProductionOrder[]; scopeKey: string; locked?: boolean; onCheckedChange?: (checked: number, total: number, keys: Set<string>) => void; onReviewChanged?: () => void; onRegisterSave?: (save: () => Promise<void>) => void; onSignatureRolesChange?: (roles: Array<"production_chef" | "head_chef_site_manager">) => void; onFinalizationChange?: (finalized: boolean) => void }) {
   const [states, setStates] = useState<Record<string, Record<string, OperationalAllergenState>>>(() => Object.fromEntries(rows.map(row => [row.key, { ...(row.snapshot?.allergens || {}) }])) as Record<string, Record<string, OperationalAllergenState>>);
   const [checkedRows, setCheckedRows] = useState<Set<string>>(() => new Set());
   const [error, setError] = useState("");
@@ -39,11 +39,12 @@ export default function AllergenReviewMatrix({ rows, orders, scopeKey, locked = 
         return;
       }
       const response = await fetch(`/api/production-plan?matrixStatus=1&orderIds=${encodeURIComponent(orderIds.join(","))}`, { cache: "no-store" });
-      const responseBody = response.ok ? await response.json() as { matrixStatuses?: Array<{ orderId: string; signatureRoles: Array<"production_chef" | "head_chef_site_manager">; matrixItems?: Array<{ sourceLineId: string; allergens: Record<string, OperationalAllergenState>; evidenceStatus: string }> }> } : { matrixStatuses: [] };
+      const responseBody = response.ok ? await response.json() as { matrixStatuses?: Array<{ orderId: string; signatureRoles: Array<"production_chef" | "head_chef_site_manager">; matrixStatus?: string; matrixItems?: Array<{ sourceLineId: string; allergens: Record<string, OperationalAllergenState>; evidenceStatus: string }> }> } : { matrixStatuses: [] };
       const body = responseBody;
       const saved = new Map<string, { allergens: Record<string, OperationalAllergenState>; completed: boolean }>();
       const signatureRoles = [...new Set((body.matrixStatuses || []).flatMap(status => status.signatureRoles))];
       onSignatureRolesChange?.(signatureRoles);
+      onFinalizationChange?.((body.matrixStatuses || []).some(status => status.matrixStatus === "ready"));
       for (const status of body.matrixStatuses || []) {
         const order = orders.find(candidate => candidate.canonicalId === status.orderId);
         if (!order) continue;

@@ -88,7 +88,7 @@ test("CPU allergen review keeps authoritative review and mutation paths separate
   const loader = await readFile(new URL("../app/lib/cpu-allergen-projection-loader.ts", import.meta.url), "utf8");
   assert.match(matrix, /matrixStatus=1&orderIds=/);
   assert.match(page, /action: "sign-matrix"/);
-  assert.match(page, /action: "save-matrix"/);
+  assert.match(page, /matrixStatus === "ready"/);
   assert.match(matrix, /action: "batch-plan"/);
   assert.doesNotMatch(loader, /production-plan/);
 });
@@ -171,7 +171,7 @@ test("allergen freshness hardening preserves the dual-sign and invalidation work
   const page = await readFile(new URL("../app/allergens/page.tsx", import.meta.url), "utf8");
   const planRoute = await readFile(new URL("../app/api/production-plan/route.ts", import.meta.url), "utf8");
   assert.match(page, /action: "sign-matrix"/);
-  assert.match(page, /action: "save-matrix"/);
+  assert.doesNotMatch(page, /if \(fullySigned\) void fetch[\s\S]*save-matrix/);
   assert.match(page, /production_chef/);
   assert.match(page, /head_chef_site_manager/);
   assert.match(page, /setOrders\(\[\]\)/);
