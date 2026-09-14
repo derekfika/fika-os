@@ -4,6 +4,8 @@ This file records user-facing workflow changes delivered in the repository. Deta
 
 ## Unreleased
 
+- **2026-09-14 — UAT-DI-001/002 staging deployment submitted:** submitted exact-SHA staging rollouts for validated commit `fbbf6cf32e6415ad338643561e624015609fdef0` to CPU Production backend `fika-cpu-production-staging` and Delivered-In backend `fika-delivered-in-staging` in project `fika-os-dev`. Firebase compilation/propagation was not awaited.
+
 - **2026-09-14 — UAT-DI-001/002 multi-destination signed bundle remediation:** CPU now preflights and publishes one independently scoped daily signed OPLOC bundle per governed destination, with destination-specific source identity, site PDF, rows, packet hash and manifest; no manifest activates until every destination passes durable artifact verification. Delivered-In now distinguishes absent daily packages from explicit `CPU_DAILY_PACKET_INVALID` integrity/scope/source failures and no longer folds Menu Planning packet integrity errors into empty fallback. Affected apps: CPU Production, Delivered-In and server-shared daily bundle contract. Validation: focused CPU 7/7, Delivered-In 18/18, server-shared 6/6, CPU full 162 passed/3 pre-existing failures, Delivered-In full with known environmental/fixture failures, typechecks, builds and `git diff --check`. Deployment status: not performed.
 
 - **2026-09-14 — Menu Planning visual UAT rollout submitted:** submitted the validated allergen-checker UI commit `647b851c1dd387786c99ba0310f8f87b68a74293` to Firebase App Hosting backend `fika-menu-planning-staging` in project `fika-os-dev`. Rollout compilation/propagation was not awaited.
