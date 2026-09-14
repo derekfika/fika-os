@@ -7,7 +7,7 @@ import { ROLLING_SLOTS, type RollingAllocation, type RollingDay, type RollingEnt
 import { normaliseDishName, titleCase } from "./text";
 import type { MenuItem } from "./domain";
 import { listCanonicalMenuItemsByIds } from "./canonical-menu-repository";
-import { getWeekSnapshot, listWeekSummaries, readRollingState, updateRollingState, withMenuPlanningTransaction } from "./operational-store";
+import { getWeekSnapshot, listWeekSummaries, listWeekSummariesByCommencing, readRollingState, updateRollingState, withMenuPlanningTransaction } from "./operational-store";
 export interface Stored { version: 1; weeks: RollingWeek[]; days: RollingDay[]; entries: RollingEntry[]; }
 const now = () => new Date().toISOString();
 export const operationalDateLondon = (at = new Date()) => { const parts = Object.fromEntries(new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/London", year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(at).filter(part => part.type !== "literal").map(part => [part.type, part.value])); return `${parts.year}-${parts.month}-${parts.day}`; };
@@ -79,6 +79,7 @@ export async function assertWeekDateAvailable(weekCommencing: string) {
   }
 }
 export async function listWeeks(): Promise<RollingWeek[]> { return (await listWeekSummaries<RollingWeek>()).slice().sort((a, b) => a.weekCommencing.localeCompare(b.weekCommencing)); }
+export async function listWeeksByCommencing(weekCommencings: string[]): Promise<RollingWeek[]> { return (await listWeekSummariesByCommencing<RollingWeek>(weekCommencings)).slice().sort((a, b) => a.weekCommencing.localeCompare(b.weekCommencing)); }
 export { getWeekSnapshot };
 /** A week head is not an authoritative planning week until all declared child records exist. */
 export function isCompletePlanningWeek(snapshot: Pick<RollingSnapshot, "week" | "days" | "entries">) {

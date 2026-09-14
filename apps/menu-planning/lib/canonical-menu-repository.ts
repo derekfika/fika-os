@@ -80,17 +80,24 @@ async function publishItemsBestEffort(items: MenuItem[]) {
   } catch (error) { console.warn("[FIKA_SNAPSHOT_STALE] canonical catalogue mutation succeeded but package publication failed", error); }
 }
 
-async function writeItems(items: MenuItem[]) {
+async function writeItems(items: MenuItem[], options: { currentItems?: MenuItem[] } = {}) {
   if (hosted()) {
     const persistedItems = items.map(item => sanitiseFirestoreValue(item));
     const db = hostedDb();
-    const current = await db.collection("fikaMenuPlanningCatalogue").where("kind", "==", "dish").get();
-    const currentById = new Map(current.docs.map(document => [document.id, document.data()]));
+    const currentById = new Map<string, { record?: MenuItem }>();
+    if (options.currentItems) {
+      options.currentItems.forEach(item => currentById.set(item.canonicalId, { record: item }));
+    } else {
+      const current = await db.collection("fikaMenuPlanningCatalogue").where("kind", "==", "dish").get();
+      recordDataAccess({ app: "menu-planning", operation: "catalogue.mutation-preflight", source: "FIRESTORE", documents: current.size, firestoreReadKind: "query" });
+      current.docs.forEach(document => currentById.set(document.id, document.data() as { record?: MenuItem }));
+    }
     const changed = persistedItems.filter(item => !recordsEqual(currentById.get(item.canonicalId)?.record, item));
     if (!changed.length) return;
     await db.runTransaction(async transaction => {
       const refs = changed.map(item => db.collection("fikaMenuPlanningCatalogue").doc(item.canonicalId));
       const latest = await transaction.getAll(...refs);
+      recordDataAccess({ app: "menu-planning", operation: "catalogue.mutation-transaction-read", source: "FIRESTORE", documents: latest.length, firestoreReadKind: "transaction" });
       latest.forEach((document, index) => {
         const item = changed[index];
         const existing = document.exists ? document.data() : undefined;
@@ -99,6 +106,7 @@ async function writeItems(items: MenuItem[]) {
         transaction.set(refs[index], sanitiseFirestoreValue({ ...(existing || hostedDocument(item)), id: item.canonicalId, kind: "dish", record: item }), { merge: true });
       });
       });
+    recordDataAccess({ app: "menu-planning", operation: "catalogue.mutation-write", source: "FIRESTORE", documents: changed.length, estimatedFirestoreWrites: changed.length });
     invalidateHostedCatalogueCache();
     await publishItemsBestEffort(persistedItems);
     return;
@@ -161,6 +169,7 @@ export async function recordDishSourceAliases(aliasesById: Record<string, string
 
 export type CanonicalMenuItemCreateOutcome = "created_new" | "matched_active" | "matched_merged_alias";
 export type CanonicalMenuItemCreateResult = MenuItem & { outcome: CanonicalMenuItemCreateOutcome };
+export type CanonicalMenuItemCreateInput = { displayName: string; category?: string; description?: string; preparationNotes?: string; allergenEvidence?: MenuItem["allergenEvidence"]; sourceReference?: MenuItem["sourceReference"]; sourceEvidence?: MenuItem["sourceEvidence"] };
 
 export async function createCanonicalMenuItem(input: { displayName: string; category?: string; description?: string; preparationNotes?: string; allergenEvidence?: MenuItem["allergenEvidence"]; sourceReference?: MenuItem["sourceReference"]; sourceEvidence?: MenuItem["sourceEvidence"] }, actor = "local-menu-planner"): Promise<CanonicalMenuItemCreateResult> {
   if (hosted() && /(?:^|[-_:])(?:test|fixture|synthetic|e2e)(?:$|[-_:])/i.test(actor)) throw Object.assign(new Error("Synthetic catalogue writes are not allowed in hosted Menu Planning."), { status: 403 });
@@ -193,6 +202,34 @@ export async function createCanonicalMenuItem(input: { displayName: string; cate
   items.push(item);
   await writeItems(items);
   return { ...item, outcome: "created_new" };
+}
+
+export async function createCanonicalMenuItems(inputs: CanonicalMenuItemCreateInput[], actor = "local-menu-planner"): Promise<CanonicalMenuItemCreateResult[]> {
+  if (hosted() && /(?:^|[-_:])(?:test|fixture|synthetic|e2e)(?:$|[-_:])/i.test(actor)) throw Object.assign(new Error("Synthetic catalogue writes are not allowed in hosted Menu Planning."), { status: 403 });
+  const currentItems = await readItems();
+  const baseline = structuredClone(currentItems);
+  const results: CanonicalMenuItemCreateResult[] = [];
+  for (const input of inputs) {
+    const displayName = normaliseDishName(input.displayName);
+    const key = displayName.toLocaleLowerCase("en-GB");
+    const active = currentItems.filter(item => item.reviewStatus !== "archived");
+    const existing = active.find(item => item.displayName.trim().toLocaleLowerCase("en-GB") === key);
+    if (existing) { results.push({ ...existing, outcome: "matched_active" }); continue; }
+    const mergedAlias = active.find(item => (item.sourceAliases || []).some(alias => alias.trim().toLocaleLowerCase("en-GB") === key));
+    if (mergedAlias) { results.push({ ...mergedAlias, outcome: "matched_merged_alias" }); continue; }
+    const item: MenuItem = {
+      canonicalId: deterministicId("menu-item", "local", displayName), sourceName: displayName, displayName,
+      description: input.description?.trim() || undefined, preparationNotes: input.preparationNotes?.trim() || undefined,
+      category: normaliseDishCategory(input.category), weekId: "menu-week:menu-planning", dayId: "",
+      sourceReference: input.sourceReference || { workbook: "Menu Planning", sheet: "Local dish creation" }, sourceEvidence: input.sourceEvidence,
+      revision: 1, reviewStatus: "unreviewed", allergenEvidence: input.allergenEvidence || [], mayContainReviewed: Boolean(input.allergenEvidence?.length),
+      audit: [{ action: "locally-created-in-menu-planning", at: new Date().toISOString(), by: actor }],
+    };
+    currentItems.push(item);
+    results.push({ ...item, outcome: "created_new" });
+  }
+  if (results.some(result => result.outcome === "created_new")) await writeItems(currentItems, { currentItems: baseline });
+  return results;
 }
 
 /** Promote imported rolling-menu labels into reusable records once, without replacing reviewed records. */

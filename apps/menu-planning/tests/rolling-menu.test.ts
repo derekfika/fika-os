@@ -11,7 +11,7 @@ import { test } from "node:test";
 import * as XLSX from "xlsx";
 import { addMenuSlot, applyEntryPatch, assertWeekDateAvailable, attachCanonicalDishIds, batchUpdateEntries, createEntry, defaultWeekForDate, duplicateWeek, emptyWeek, getWeek, importWorkbook, isProtectedExistingPlanningWeek, normaliseRollingSnapshotDestinations, operationalDateLondon, planningWeekCommencing, planningWeekFromQuery, planningWeekImportConflictReason, planningWeekReplacementDetails, publishWeek, removeMenuSlot, replaceSnapshotsExplicit, saveSnapshot, saveSnapshotsCreateOnly, updateEntry, validateWeek, ROLLING_SLOTS } from "../lib/rolling-menu";
 import { hasPlannedDishes } from "../lib/rolling-menu-types";
-import { createCanonicalMenuItem, listCanonicalMenuItems } from "../lib/canonical-menu-repository";
+import { createCanonicalMenuItem, createCanonicalMenuItems, listCanonicalMenuItems } from "../lib/canonical-menu-repository";
 import { buildCompiledPublicationSnapshot, buildPublishedDay, createPublishedMenuDay, createPublishedMenuWeek, currentPublishedDays, getCompiledPublicationSnapshot, getMenuPublication, listMenuPublicationEvents, listMenuPublications, publicationPreview, publicationState, publishedDayMatrixHtml, replayMenuPublicationOutbox, withdrawPublishedMenuDay, withdrawPublishedMenuWeek, type MenuPublicationSignoff } from "../lib/menu-publication";
 import { resolveAllergenSnapshot } from "../lib/allergen-resolution";
 import type { RollingEntry } from "../lib/rolling-menu-types";
@@ -537,6 +537,21 @@ test("locally created dishes persist once and rolling entries keep the same cano
   } finally {
     if (canonicalBefore) await writeFile(canonicalFile, canonicalBefore); else await rm(canonicalFile, { force: true });
     if (rollingBefore) await writeFile(rollingFile, rollingBefore); else await rm(rollingFile, { force: true });
+  }
+});
+
+test("batch dish creation loads the catalogue once and remains idempotent", async () => {
+  const canonicalFile = join(process.cwd(), "local-data", "menu-planning", "canonical-menu-items.json");
+  const before = existsSync(canonicalFile) ? await readFile(canonicalFile) : undefined;
+  const stamp = Date.now();
+  const inputs = Array.from({ length: 7 }, (_, index) => ({ displayName: `Batch Budget Dish ${stamp}-${index}`, category: "Salad" }));
+  try {
+    const first = await createCanonicalMenuItems(inputs);
+    assert.equal(first.filter(result => result.outcome === "created_new").length, 7);
+    assert.equal((await createCanonicalMenuItems(inputs)).filter(result => result.outcome === "created_new").length, 0);
+    assert.equal((await createCanonicalMenuItems([{ displayName: inputs[0].displayName.toUpperCase(), category: "Salad" }]))[0].outcome, "matched_active");
+  } finally {
+    if (before) await writeFile(canonicalFile, before); else await rm(canonicalFile, { force: true });
   }
 });
 

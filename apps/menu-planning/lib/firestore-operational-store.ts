@@ -27,6 +27,14 @@ export class MenuPlanningFirestoreRepository {
   constructor(db = new Firestore({ projectId: process.env.FIREBASE_PROJECT_ID || process.env.GCLOUD_PROJECT })) { this.db = db; }
   async readRollingState() { return this.db.runTransaction(transaction => this.readRolling(transaction)); }
   async listWeekSummaries() { const snapshot = await this.db.collection(MENU_PLANNING_COLLECTIONS.weeks).limit(100).get(); recordFirestore("week.summaries", snapshot.size); recordMenuPlanningReadBudget({ operation: "week_summaries", reads: { weeks: snapshot.size, days: 0, entries: 0, scoped: 1 } }); return snapshot.docs.map(doc => doc.data() as RollingWeek); }
+  async listWeekSummariesByCommencing(weekCommencings: string[]) {
+    const wanted = [...new Set(weekCommencings.filter(Boolean))];
+    const chunks = Array.from({ length: Math.ceil(wanted.length / 30) }, (_, index) => wanted.slice(index * 30, index * 30 + 30));
+    const snapshots = await Promise.all(chunks.map(chunk => chunk.length ? this.db.collection(MENU_PLANNING_COLLECTIONS.weeks).where("weekCommencing", "in", chunk).get() : Promise.resolve({ docs: [], size: 0 })));
+    const documents = snapshots.flatMap(snapshot => snapshot.docs);
+    recordFirestore("week.summaries-by-commencing", documents.length);
+    return documents.map(doc => doc.data() as RollingWeek);
+  }
   async getWeekHead(weekId: string) {
     const weekDoc = await this.db.collection(MENU_PLANNING_COLLECTIONS.weeks).doc(weekId).get();
     recordFirestore("week.head", weekDoc.exists ? 1 : 0);
@@ -95,12 +103,14 @@ export class MenuPlanningFirestoreRepository {
   }
   async getPublishedSnapshot(publicationId: string, version?: number) {
     const publication = await this.db.collection(MENU_PLANNING_COLLECTIONS.publications).doc(publicationId).get();
+    recordFirestore("published-snapshot.publication", publication.exists ? 1 : 0);
     if (!publication.exists) return undefined;
     const data = publication.data() as (MenuPublication & { weekPacket?: Parameters<typeof decodeWeeklyPublicationPacket>[0] }) | undefined;
     if (!version && data?.weekPacket) return decodeWeeklyPublicationPacket(data.weekPacket);
     const id = version ? `${publicationId}:snapshot:v${version}` : data?.compiledSnapshotId as string | undefined;
     if (!id) return undefined;
     const snapshot = await this.db.collection(MENU_PLANNING_COLLECTIONS.publishedSnapshots).doc(id).get();
+    recordFirestore("published-snapshot.by-id", snapshot.exists ? 1 : 0);
     return snapshot.exists ? snapshot.data() as CompiledPublishedWeekSnapshot : undefined;
   }
   async readPublicationState() { return this.db.runTransaction(transaction => this.readPublications(transaction)); }
@@ -163,7 +173,7 @@ export class MenuPlanningFirestoreRepository {
     recordFirestore("publication.transaction-read", root.size);
     const publications: MenuPublication[] = [];
     const days: DocumentData[] = [];
-    for (const doc of root.docs) { const value = doc.data(); publications.push({ ...value, days: [] } as unknown as MenuPublication); const daySnap = await transaction.get(doc.ref.collection("days")); days.push(...daySnap.docs.map(day => day.data())); }
+    for (const doc of root.docs) { const value = doc.data(); publications.push({ ...value, days: [] } as unknown as MenuPublication); const daySnap = await transaction.get(doc.ref.collection("days")); recordFirestore("publication.transaction-days-read", daySnap.size); days.push(...daySnap.docs.map(day => day.data())); }
     for (const publication of publications) publication.days = days.filter(day => day.publicationId === publication.publicationId) as MenuPublication["days"];
     const eventSnap = includeEvents ? await transaction.get(this.db.collection(MENU_PLANNING_COLLECTIONS.events)) : { docs: [] as Array<{ data(): DocumentData }>, size: 0 };
     recordFirestore("events.transaction-read", eventSnap.size || eventSnap.docs.length);
@@ -176,7 +186,13 @@ export class MenuPlanningFirestoreRepository {
     for (const [id, value] of afterWeeks) if (!beforeWeeks.has(id) || digest(beforeWeeks.get(id)!) !== digest(value)) transaction.set(this.db.collection(MENU_PLANNING_COLLECTIONS.weeks).doc(id), value);
     for (const [id, value] of afterDays) { const weekId = id.split(":day:")[0]; if (!beforeDays.has(id) || digest(beforeDays.get(id)!) !== digest(value)) transaction.set(this.db.collection(MENU_PLANNING_COLLECTIONS.weeks).doc(weekId).collection("days").doc(id), value); }
     for (const [id, value] of afterEntries) { const day = after.days.find(candidate => candidate.entryIds?.includes(id)); if (!day) throw new Error(`Entry ${id} is not attached to a day.`); const weekId = day.id.split(":day:")[0]; if (!beforeEntries.has(id) || digest(beforeEntries.get(id)!) !== digest(value)) transaction.set(this.db.collection(MENU_PLANNING_COLLECTIONS.weeks).doc(weekId).collection("days").doc(day.id).collection("entries").doc(id), value); }
-    for (const id of [...beforeEntries.keys()].filter(id => !afterEntries.has(id))) { const day = before.days.find(candidate => candidate.entryIds?.includes(id)); if (day) transaction.delete(this.db.collection(MENU_PLANNING_COLLECTIONS.weeks).doc(day.id.split(":day:")[0]).collection("days").doc(day.id).collection("entries").doc(id)); }
+    let writes = 0; let deletes = 0;
+    for (const [id, value] of afterWeeks) if (!beforeWeeks.has(id) || digest(beforeWeeks.get(id)!) !== digest(value)) writes += 1;
+    for (const [id, value] of afterDays) if (!beforeDays.has(id) || digest(beforeDays.get(id)!) !== digest(value)) writes += 1;
+    for (const [id, value] of afterEntries) if (!beforeEntries.has(id) || digest(beforeEntries.get(id)!) !== digest(value)) writes += 1;
+    for (const id of [...beforeEntries.keys()].filter(id => !afterEntries.has(id))) { const day = before.days.find(candidate => candidate.entryIds?.includes(id)); if (day) { transaction.delete(this.db.collection(MENU_PLANNING_COLLECTIONS.weeks).doc(day.id.split(":day:")[0]).collection("days").doc(day.id).collection("entries").doc(id)); deletes += 1; } }
+    if (writes) recordDataAccess({ app: "menu-planning", operation: "rolling.transaction-write", source: "FIRESTORE", documents: writes, estimatedFirestoreWrites: writes });
+    if (deletes) recordDataAccess({ app: "menu-planning", operation: "rolling.transaction-delete", source: "FIRESTORE", documents: deletes, estimatedFirestoreDeletes: deletes });
   }
   private async writePublicationDiff(transaction: Transaction, before: HostedTransactionState["publications"], after: HostedTransactionState["publications"]) {
     const beforePubs = new Map(before.publications.map(value => [value.publicationId, value]));

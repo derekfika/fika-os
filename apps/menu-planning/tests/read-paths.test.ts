@@ -131,6 +131,17 @@ test("hosted mutation and publication paths expose bounded transaction scopes", 
   assert.match(repository, /where\("delivery\.status", "in", \["pending", "failed"\]\)/);
 });
 
+test("mutation and import routes remain inside data-source traces", () => {
+  const catalogue = readFileSync(new URL("../app/api/catalogue/route.ts", import.meta.url), "utf8");
+  const importer = readFileSync(new URL("../app/api/rolling-menu/import/route.ts", import.meta.url), "utf8");
+  assert.match(catalogue, /withDataTrace\(\{ app: "menu-planning", action: "menu-planning\.catalogue\.mutate"/);
+  assert.match(importer, /withDataTrace\(\{ app: "menu-planning", action: "menu-planning\.import"/);
+  assert.match(importer, /validateWeekAuthoritative/);
+  const batchBlock = catalogue.slice(catalogue.indexOf('action === "create-dishes"'), catalogue.indexOf('action !== "merge-similar-dishes"'));
+  assert.match(batchBlock, /createCanonicalMenuItems/);
+  assert.doesNotMatch(batchBlock, /createCanonicalMenuItem\(/);
+});
+
 test("withdrawal responses expose downstream handoff state", () => {
   const route = readFileSync(new URL("../app/api/rolling-menu/publications/route.ts", import.meta.url), "utf8");
   assert.match(route, /handoff: \{ status: handoff\.failed \? "pending" : "delivered"/);

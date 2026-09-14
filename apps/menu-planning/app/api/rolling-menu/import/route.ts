@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { importWorkbook, saveSnapshotsCreateOnly, replaceSnapshotsExplicit, listWeeks, getWeekSnapshot, validateWeekAuthoritative, planningWeekCommencing, planningWeekReplacementDetails } from "@/lib/rolling-menu";
+import { importWorkbook, saveSnapshotsCreateOnly, replaceSnapshotsExplicit, listWeeksByCommencing, getWeekSnapshot, validateWeekAuthoritative, planningWeekCommencing, planningWeekReplacementDetails } from "@/lib/rolling-menu";
 import { readPublicationStateForWeek } from "@/lib/operational-store";
 import { readDeliveredInOplocs } from "@/lib/oploc-authority";
 import { listCanonicalMenuItems, recordDishSourceAliases } from "@/lib/canonical-menu-repository";
 import { applyDishResolutions, parseWorkbookWeekCommencing, repairArchivedWeekDishIdentities, resolveDishNames, safeDishKey } from "@/lib/legacy-week-importer";
+import { withDataTrace } from "@fika/server-shared/data-source-meter-server";
 import type { RollingSnapshot } from "@/lib/rolling-menu-types";
 
 type ResolutionInput = { sourceName: string; canonicalId?: string; ignored?: boolean; remember?: boolean };
@@ -28,13 +29,13 @@ async function previewFiles(files: File[], request: NextRequest, weekDates: Reco
   for (const report of reports) if (report.weekCommencing && (weekCounts.get(report.weekCommencing) || 0) > 1) { report.status = "needs_attention"; report.error = "Another selected workbook uses this same week. Remove one before importing."; }
   const names = snapshots.flatMap(snapshot => snapshot.entries.map(entry => entry.itemLabel));
   const resolutions = resolveDishNames(names, catalogue).map(resolution => ({ ...resolution, workbookCount: snapshots.filter(snapshot => snapshot.entries.some(entry => safeDishKey(entry.itemLabel) === safeDishKey(resolution.sourceName))).length }));
-  const existingWeeks = await listWeeks();
+  const existingWeeks = await listWeeksByCommencing([...new Set(snapshots.map(snapshot => snapshot.week.weekCommencing))]);
   const existingSnapshots = await Promise.all(existingWeeks.map(async week => ({ week, snapshot: await getWeekSnapshot<RollingSnapshot>(week.id), publications: await readPublicationStateForWeek<{ publications: Array<{ sourceWeekId: string }> }>(week.id) })));
   const conflicts = snapshots.flatMap(snapshot => { const existing = existingSnapshots.find(candidate => candidate.week.weekCommencing === snapshot.week.weekCommencing && candidate.snapshot); if (!existing?.snapshot) return []; return [{ ...planningWeekReplacementDetails({ ...existing.snapshot, hasPublicationHistory: existing.publications.publications.length > 0 }), status: "Existing planning week detected" }]; });
   return { files: reports, snapshots, resolutions, conflicts, catalogue: catalogue.filter(item => item.reviewStatus !== "archived").map(item => ({ id: item.canonicalId, name: item.displayName })) };
 }
 
-export async function POST(request: NextRequest) {
+async function handlePost(request: NextRequest) {
   try {
     const contentType = request.headers.get("content-type") || "";
     if (contentType.includes("application/json")) {
@@ -42,7 +43,8 @@ export async function POST(request: NextRequest) {
       if (body.action === "repair-archived-identities") {
         const repair = body as typeof body & { weekCommencing?: string; expectedVersion?: number; confirm?: boolean };
         if (!repair.weekCommencing) return NextResponse.json({ error: { message: "Exactly one planning week is required for an identity repair." } }, { status: 422 });
-        const week = (await listWeeks()).find(candidate => candidate.weekCommencing === repair.weekCommencing);
+        const repairWeekCommencing = planningWeekCommencing(repair.weekCommencing);
+        const week = (await listWeeksByCommencing([repairWeekCommencing])).find(candidate => candidate.weekCommencing === repairWeekCommencing);
         const snapshot = week ? await getWeekSnapshot<RollingSnapshot>(week.id) : undefined;
         if (!week || !snapshot) return NextResponse.json({ error: { message: "The requested planning week was not found." } }, { status: 404 });
         const report = repairArchivedWeekDishIdentities(snapshot, await listCanonicalMenuItems());
@@ -57,7 +59,7 @@ export async function POST(request: NextRequest) {
       if (body.action !== "commit" || (!body.snapshot && !body.snapshots) || !body.resolutions) return NextResponse.json({ error: { message: "Please complete the dish review before importing." } }, { status: 422 });
       const snapshots = body.snapshots || [body.snapshot!];
       const replaceWeeks = new Map((body.replaceWeeks || []).map(value => [value.weekCommencing, value.expectedVersion]));
-      const existingWeeks = await listWeeks();
+      const existingWeeks = await listWeeksByCommencing([...new Set(snapshots.map(snapshot => snapshot.week.weekCommencing))]);
       const existingSnapshots = await Promise.all(existingWeeks.map(async week => ({ week, snapshot: await getWeekSnapshot<RollingSnapshot>(week.id) })));
       const existingByDate = new Map(existingSnapshots.filter(candidate => candidate.snapshot).map(candidate => [candidate.week.weekCommencing, candidate]));
       const existingDates = snapshots.filter(snapshot => existingByDate.has(snapshot.week.weekCommencing));
@@ -84,7 +86,7 @@ export async function POST(request: NextRequest) {
       try { saved = replaceWeeks.size ? await replaceSnapshotsExplicit(prepared, Object.fromEntries(replaceWeeks)) : await saveSnapshotsCreateOnly(prepared); } catch (error) { const status = (error as { status?: number }).status === 409 ? 409 : 422; return NextResponse.json({ error: { message: error instanceof Error ? error.message : "The menu weeks could not be imported." } }, { status }); }
       await recordDishSourceAliases(aliasesById);
       const blockers = (await Promise.all(saved.map(snapshot => validateWeekAuthoritative(snapshot)))).flat();
-      return NextResponse.json({ snapshots: saved, weeks: await listWeeks(), blockers });
+      return NextResponse.json({ snapshots: saved, weeks: await listWeeksByCommencing(saved.map(snapshot => snapshot.week.weekCommencing)), blockers });
     }
     const form = await request.formData();
     const files = form.getAll("files").filter((value): value is File => value instanceof File);
@@ -93,4 +95,8 @@ export async function POST(request: NextRequest) {
     try { weekDates = JSON.parse(String(form.get("weekDates") || "{}")) as Record<string, string>; } catch { /* Invalid overrides are treated as absent. */ }
     return NextResponse.json(await previewFiles(files, request, weekDates));
   } catch (error) { return NextResponse.json({ error: { message: error instanceof Error ? error.message : "Workbook import failed." } }, { status: 400 }); }
+}
+
+export async function POST(request: NextRequest) {
+  return withDataTrace({ app: "menu-planning", action: "menu-planning.import", path: new URL(request.url).pathname }, () => handlePost(request));
 }

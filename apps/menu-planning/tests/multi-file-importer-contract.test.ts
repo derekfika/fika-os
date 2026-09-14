@@ -39,6 +39,8 @@ test("batch import uses one preview and commit endpoint without catalogue creati
   assert.match(route, /form\.getAll\("files"\)/);
   assert.match(route, /snapshots/);
   assert.match(route, /duplicateWeeks/);
+  assert.match(route, /listWeeksByCommencing/);
+  assert.doesNotMatch(route, /const existingWeeks = await listWeeks\(\)/);
   assert.match(route, /recordDishSourceAliases/);
   assert.doesNotMatch(route, /createCanonicalMenuItem/);
   assert.match(route, /saveSnapshotsCreateOnly\(prepared\)/);
