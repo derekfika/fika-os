@@ -4,6 +4,8 @@ This file records user-facing workflow changes delivered in the repository. Deta
 
 ## Unreleased
 
+- **2026-09-14 — UAT-MP-001D staging deployment submitted:** submitted exact-SHA rollout `ab23bec2c33c4fd07cf50c71bb18072020cc8113` for Menu Planning to Firebase App Hosting backend `fika-menu-planning-staging` in project `fika-os-dev`. Firebase compilation/propagation was not awaited. Deployment status: submitted; live verification pending.
+
 - **2026-09-14 — UAT-MP-001D hosted canonical validation authority:** Menu Planning rolling-menu import, readiness and publication validation now resolves active canonical dish identity from the authoritative hosted Dish Library using bounded stable-ID reads; stale local catalogue data cannot create false missing/archived blockers, and authority outages fail closed with an explicit unavailable response. Affected app: Menu Planning. Validation: focused contract/blocker tests 36/36, full suite 158 passed with one pre-existing date-anchor failure, typecheck, production build and `git diff --check`. Deployment status: not deployed.
 
 - **2026-09-14 — UAT-MP-001C staging deployment submitted:** submitted the validated exact-SHA rollout `d03741ce1d53a7a22a8bd3d4201e55c91917b9a8` for Menu Planning only to Firebase App Hosting backend `fika-menu-planning-staging` in project `fika-os-dev`. Rollout compilation/propagation was not awaited.
