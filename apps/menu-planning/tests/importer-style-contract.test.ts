@@ -43,7 +43,7 @@ test("importer reference screen stays light, semantic and keyboard-visible", asy
   assert.match(page, /Files checked/);
   assert.match(page, /Menu days parsed/);
   assert.match(page, /Matched automatically/);
-  assert.match(page, /0 new Dish Library items were created/);
+  assert.match(page, /progress\.created/);
   assert.match(page, /Affected workbook or week/);
   assert.match(css, /import-progress-backdrop/);
 });

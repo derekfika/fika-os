@@ -36,12 +36,22 @@ export async function GET(request: Request) { return withDataTrace({ app: "menu-
 export async function POST(request: Request) {
   let action = "";
   try {
-    const body = await request.json() as { action?: string; displayName?: string; category?: string; description?: string; preparationNotes?: string; canonicalIds?: string[]; sourceReference?: { workbook: string; sheet: string; range?: string; rawValue?: unknown }; sourceEvidence?: { document: string; excerpt?: string; importedAt: string }; allergenEvidence?: Array<{ allergen: string; value: "contains" | "free_from" | "may_contain" | "unknown"; source: string; reviewedBy?: string; reviewedAt?: string; notes?: string }> };
+    const body = await request.json() as { action?: string; displayName?: string; category?: string; description?: string; preparationNotes?: string; canonicalIds?: string[]; items?: Array<{ displayName: string; category?: string; sourceReference?: { workbook: string; sheet: string; range?: string; rawValue?: unknown }; sourceEvidence?: { document: string; excerpt?: string; importedAt: string } }>; sourceReference?: { workbook: string; sheet: string; range?: string; rawValue?: unknown }; sourceEvidence?: { document: string; excerpt?: string; importedAt: string }; allergenEvidence?: Array<{ allergen: string; value: "contains" | "free_from" | "may_contain" | "unknown"; source: string; reviewedBy?: string; reviewedAt?: string; notes?: string }> };
     action = String(body.action || "");
     if (action === "create-dish") {
       if (!body.displayName?.trim()) return NextResponse.json({ error: { message: "A dish name is required." } }, { status: 422 });
-      const item = await createCanonicalMenuItem({ ...body, displayName: body.displayName! });
-      return NextResponse.json({ item }, { status: 201 });
+      const result = await createCanonicalMenuItem({ ...body, displayName: body.displayName! });
+      return NextResponse.json({ item: result, outcome: result.outcome }, { status: result.outcome === "created_new" ? 201 : 200 });
+    }
+    if (action === "create-dishes") {
+      const items = body.items || [];
+      if (!items.length || items.length > 100) return NextResponse.json({ error: { message: "Provide between 1 and 100 dishes per batch." } }, { status: 422 });
+      const results = [];
+      for (const input of items) {
+        if (!input.displayName?.trim()) return NextResponse.json({ error: { message: "Every dish in the batch needs a name." } }, { status: 422 });
+        results.push(await createCanonicalMenuItem(input));
+      }
+      return NextResponse.json({ results, createdCount: results.filter(result => result.outcome === "created_new").length, matchedCount: results.filter(result => result.outcome !== "created_new").length });
     }
     if (action !== "merge-similar-dishes" && action !== "merge-reviewed-dishes") return NextResponse.json({ error: { message: "Unknown catalogue command." } }, { status: 400 });
     const result = await mergeSimilarCanonicalItems(action === "merge-reviewed-dishes" ? "reviewed-dish-merge" : "automatic-dish-normaliser", action === "merge-reviewed-dishes" ? new Set(body.canonicalIds || []) : undefined);

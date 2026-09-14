@@ -43,9 +43,30 @@ export function applyDishResolutions(snapshot: RollingSnapshot, resolutions: Arr
   const byId = new Map(catalogue.map(item => [item.canonicalId, item]));
   const missing = [...new Set(snapshot.entries.map(entry => safeDishKey(entry.itemLabel)))].filter(key => !decisions.has(key));
   if (missing.length) throw new Error("Please review every dish name before importing this week.");
-  for (const resolution of resolutions) if (!resolution.ignored && (!resolution.canonicalId || !byId.has(resolution.canonicalId))) throw new Error("Every dish must be matched to an existing Dish Library item or ignored.");
+  for (const resolution of resolutions) {
+    const item = resolution.canonicalId ? byId.get(resolution.canonicalId) : undefined;
+    if (!resolution.ignored && (!item || item.reviewStatus === "archived")) throw new Error("Every dish must be matched to an active Dish Library item or ignored.");
+  }
   const kept = snapshot.entries.filter(entry => { const decision = decisions.get(safeDishKey(entry.itemLabel)); return decision && !decision.ignored; });
   for (const entry of kept) { const decision = decisions.get(safeDishKey(entry.itemLabel))!; const item = byId.get(decision.canonicalId!); entry.itemId = item!.canonicalId; entry.itemLabel = item!.displayName; }
   snapshot.entries = kept; snapshot.days.forEach(day => { day.entryIds = snapshot.entries.filter(entry => entry.dayId === day.id).map(entry => entry.id); }); snapshot.week.entryIds = snapshot.entries.map(entry => entry.id); snapshot.week.status = "imported"; snapshot.week.audit.push({ action: "legacy-week-imported-after-dish-review", at: new Date().toISOString(), by: "menu-planning-importer" });
   return snapshot;
+}
+
+/** Explicit, bounded repair report for one planning week; callers must opt into mutation. */
+export function repairArchivedWeekDishIdentities(snapshot: RollingSnapshot, catalogue: MenuItem[]) {
+  const repairedSnapshot = structuredClone(snapshot);
+  const active = catalogue.filter(item => item.reviewStatus !== "archived");
+  const byId = new Map(catalogue.map(item => [item.canonicalId, item]));
+  const repaired: Array<{ entryId: string; fromId: string; toId: string }> = [];
+  const blocked: Array<{ entryId: string; itemLabel: string; reason: string }> = [];
+  for (const entry of repairedSnapshot.entries) {
+    const current = entry.itemId ? byId.get(entry.itemId) : undefined;
+    if (!current || current.reviewStatus !== "archived") continue;
+    const key = safeDishKey(entry.itemLabel || current.displayName);
+    const survivor = active.find(item => safeDishKey(item.displayName) === key || (item.sourceAliases || []).some(alias => safeDishKey(alias) === key));
+    if (!survivor) blocked.push({ entryId: entry.id, itemLabel: entry.itemLabel, reason: "No active survivor or merged alias was found." });
+    else { repaired.push({ entryId: entry.id, fromId: current.canonicalId, toId: survivor.canonicalId }); entry.itemId = survivor.canonicalId; entry.itemLabel = survivor.displayName; }
+  }
+  return { snapshot: repairedSnapshot, weekCommencing: snapshot.week.weekCommencing, repaired, blocked, changed: repaired.length > 0 };
 }

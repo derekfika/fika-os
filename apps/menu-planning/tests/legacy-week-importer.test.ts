@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { applyDishResolutions, parseWorkbookWeekCommencing, resolveDishNames, safeDishKey } from "../lib/legacy-week-importer";
+import { applyDishResolutions, parseWorkbookWeekCommencing, repairArchivedWeekDishIdentities, resolveDishNames, safeDishKey } from "../lib/legacy-week-importer";
 import type { MenuItem } from "../lib/domain";
 
 const dish = (id: string, name: string, sourceAliases?: string[]): MenuItem => ({ canonicalId: id, sourceName: name, displayName: name, sourceAliases, category: "salad", weekId: "catalogue", dayId: "", sourceReference: { workbook: "catalogue", sheet: "dishes" }, revision: 1, reviewStatus: "approved", allergenEvidence: [], mayContainReviewed: true, audit: [] });
@@ -46,4 +46,16 @@ test("explicitly created canonical dishes resolve immediately and remain aliasab
   assert.equal(result.entries[0].itemId, "dish:new");
   assert.equal(result.entries[0].itemLabel, "New Source Dish");
   assert.equal(catalogue.length, 1);
+});
+
+test("archived catalogue records cannot be resolved or committed for new imports", () => {
+  const archived = dish("dish:old", "Old Potato Salad"); archived.reviewStatus = "archived";
+  const active = dish("dish:new", "New Potato Salad", ["Old Potato Salad"]);
+  assert.equal(resolveDishNames(["Old Potato Salad"], [archived, active])[0].canonicalId, "dish:new");
+  const snapshot = { week: { id: "rolling-week:2026-08-31", weekCommencing: "2026-08-31", weekEnding: "2026-09-06", status: "draft" as const, version: 1, dayIds: ["day:1"], entryIds: ["entry:1"], sourceFiles: [], audit: [] }, days: [{ id: "day:1", date: "2026-08-31", dayName: "Monday", entryIds: ["entry:1"] }], entries: [{ id: "entry:1", dayId: "day:1", date: "2026-08-31", slot: "SALAD 1", itemLabel: "Old Potato Salad", itemId: "dish:old", portions: 1, allocations: [], allergens: {}, audit: [] }] };
+  assert.throws(() => applyDishResolutions(snapshot, [{ sourceName: "Old Potato Salad", canonicalId: "dish:old" }], [archived, active]), /active Dish Library/);
+  const report = repairArchivedWeekDishIdentities(snapshot, [archived, active]);
+  assert.equal(report.repaired.length, 1);
+  assert.equal(snapshot.entries[0].itemId, "dish:old", "dry-run report must not mutate the source snapshot");
+  assert.equal(report.snapshot.entries[0].itemId, "dish:new");
 });

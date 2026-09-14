@@ -3,7 +3,7 @@ import { importWorkbook, saveSnapshotsCreateOnly, replaceSnapshotsExplicit, list
 import { readPublicationStateForWeek } from "@/lib/operational-store";
 import { readDeliveredInOplocs } from "@/lib/oploc-authority";
 import { listCanonicalMenuItems, recordDishSourceAliases } from "@/lib/canonical-menu-repository";
-import { applyDishResolutions, parseWorkbookWeekCommencing, resolveDishNames, safeDishKey } from "@/lib/legacy-week-importer";
+import { applyDishResolutions, parseWorkbookWeekCommencing, repairArchivedWeekDishIdentities, resolveDishNames, safeDishKey } from "@/lib/legacy-week-importer";
 import type { RollingSnapshot } from "@/lib/rolling-menu-types";
 
 type ResolutionInput = { sourceName: string; canonicalId?: string; ignored?: boolean; remember?: boolean };
@@ -39,6 +39,21 @@ export async function POST(request: NextRequest) {
     const contentType = request.headers.get("content-type") || "";
     if (contentType.includes("application/json")) {
       const body = await request.json() as { action?: string; snapshot?: RollingSnapshot; snapshots?: RollingSnapshot[]; resolutions?: ResolutionInput[]; replaceWeeks?: Array<{ weekCommencing: string; expectedVersion: number }> };
+      if (body.action === "repair-archived-identities") {
+        const repair = body as typeof body & { weekCommencing?: string; expectedVersion?: number; confirm?: boolean };
+        if (!repair.weekCommencing) return NextResponse.json({ error: { message: "Exactly one planning week is required for an identity repair." } }, { status: 422 });
+        const week = (await listWeeks()).find(candidate => candidate.weekCommencing === repair.weekCommencing);
+        const snapshot = week ? await getWeekSnapshot<RollingSnapshot>(week.id) : undefined;
+        if (!week || !snapshot) return NextResponse.json({ error: { message: "The requested planning week was not found." } }, { status: 404 });
+        const report = repairArchivedWeekDishIdentities(snapshot, await listCanonicalMenuItems());
+        if (!repair.confirm) return NextResponse.json({ dryRun: true, report });
+        if (repair.expectedVersion !== snapshot.week.version) return NextResponse.json({ error: { message: "The planning week changed; rerun the dry-run report before applying repair." } }, { status: 409 });
+        if (report.blocked.length) return NextResponse.json({ error: { message: "Repair is blocked because one or more archived dish identities have no active survivor.", report } }, { status: 422 });
+        report.snapshot.week.version += 1;
+        report.snapshot.week.audit.push({ action: "archived-dish-identity-repair", at: new Date().toISOString(), by: "menu-planning-repair" });
+        const saved = await replaceSnapshotsExplicit([report.snapshot], { [repair.weekCommencing]: snapshot.week.version });
+        return NextResponse.json({ dryRun: false, report: { ...report, snapshot: saved[0] } });
+      }
       if (body.action !== "commit" || (!body.snapshot && !body.snapshots) || !body.resolutions) return NextResponse.json({ error: { message: "Please complete the dish review before importing." } }, { status: 422 });
       const snapshots = body.snapshots || [body.snapshot!];
       const replaceWeeks = new Map((body.replaceWeeks || []).map(value => [value.weekCommencing, value.expectedVersion]));

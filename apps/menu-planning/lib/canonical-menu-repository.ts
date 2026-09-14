@@ -159,12 +159,19 @@ export async function recordDishSourceAliases(aliasesById: Record<string, string
   return changed;
 }
 
-export async function createCanonicalMenuItem(input: { displayName: string; category?: string; description?: string; preparationNotes?: string; allergenEvidence?: MenuItem["allergenEvidence"]; sourceReference?: MenuItem["sourceReference"]; sourceEvidence?: MenuItem["sourceEvidence"] }, actor = "local-menu-planner") {
+export type CanonicalMenuItemCreateOutcome = "created_new" | "matched_active" | "matched_merged_alias";
+export type CanonicalMenuItemCreateResult = MenuItem & { outcome: CanonicalMenuItemCreateOutcome };
+
+export async function createCanonicalMenuItem(input: { displayName: string; category?: string; description?: string; preparationNotes?: string; allergenEvidence?: MenuItem["allergenEvidence"]; sourceReference?: MenuItem["sourceReference"]; sourceEvidence?: MenuItem["sourceEvidence"] }, actor = "local-menu-planner"): Promise<CanonicalMenuItemCreateResult> {
   if (hosted() && /(?:^|[-_:])(?:test|fixture|synthetic|e2e)(?:$|[-_:])/i.test(actor)) throw Object.assign(new Error("Synthetic catalogue writes are not allowed in hosted Menu Planning."), { status: 403 });
   const items = await readItems();
   const displayName = normaliseDishName(input.displayName);
-  const existing = items.find(item => item.displayName.trim().toLocaleLowerCase() === displayName.toLocaleLowerCase());
-  if (existing) { if (existing.displayName !== displayName) { existing.displayName = displayName; await writeItems(items); } return existing; }
+  const key = displayName.toLocaleLowerCase("en-GB");
+  const active = items.filter(item => item.reviewStatus !== "archived");
+  const existing = active.find(item => item.displayName.trim().toLocaleLowerCase("en-GB") === key);
+  if (existing) { if (existing.displayName !== displayName) { existing.displayName = displayName; await writeItems(items); } return { ...existing, outcome: "matched_active" }; }
+  const mergedAlias = active.find(item => (item.sourceAliases || []).some(alias => alias.trim().toLocaleLowerCase("en-GB") === key));
+  if (mergedAlias) return { ...mergedAlias, outcome: "matched_merged_alias" };
   const at = new Date().toISOString();
   const item: MenuItem = {
     canonicalId: deterministicId("menu-item", "local", displayName),
@@ -185,7 +192,7 @@ export async function createCanonicalMenuItem(input: { displayName: string; cate
   };
   items.push(item);
   await writeItems(items);
-  return item;
+  return { ...item, outcome: "created_new" };
 }
 
 /** Promote imported rolling-menu labels into reusable records once, without replacing reviewed records. */
@@ -322,6 +329,8 @@ export async function mergeSimilarCanonicalItems(actor = "automatic-dish-normali
     const at = new Date().toISOString();
     winner.allergenEvidence = mergeAllergenEvidence(candidates);
     winner.mayContainReviewed = candidates.some(item => item.mayContainReviewed);
+    const inheritedAliases = candidates.flatMap(item => [item.displayName, ...(item.sourceAliases || [])]);
+    winner.sourceAliases = [...new Set([...(winner.sourceAliases || []), ...inheritedAliases].filter(alias => alias.trim().toLocaleLowerCase("en-GB") !== winner.displayName.trim().toLocaleLowerCase("en-GB")))];
     for (const loser of candidates) { if (loser.canonicalId === winner.canonicalId) continue; mapping[loser.canonicalId] = winner.canonicalId; loser.reviewStatus = "archived"; loser.recipeStatus = "archived"; loser.audit.push({ action: "automatically-merged-into-canonical-dish", at, by: actor }); merged += 1; }
     winner.audit.push({ action: "automatic-dish-merge-survivor", at: new Date().toISOString(), by: actor });
   }

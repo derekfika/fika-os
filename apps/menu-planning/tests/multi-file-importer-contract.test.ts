@@ -65,6 +65,16 @@ test("import review offers explicit governed dish creation with provenance", asy
   assert.match(page, /sourceReference/);
   assert.match(page, /created and matched/i);
   assert.match(catalogueRoute, /createCanonicalMenuItem/);
+  assert.match(catalogueRoute, /create-dishes/);
+  assert.match(catalogueRoute, /createdCount/);
+});
+
+test("archived identity repair is an explicit one-week dry-run before mutation", async () => {
+  const route = await readFile(new URL("../app/api/rolling-menu/import/route.ts", import.meta.url), "utf8");
+  assert.match(route, /repair-archived-identities/);
+  assert.match(route, /dryRun: true/);
+  assert.match(route, /expectedVersion/);
+  assert.match(route, /Exactly one planning week/);
 });
 
 test("create-dish importer modal uses a labelled standard form modal", async () => {
