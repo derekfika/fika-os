@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { importWorkbook, saveSnapshotsCreateOnly, replaceSnapshotsExplicit, listWeeks, getWeekSnapshot, validateWeek, planningWeekCommencing, planningWeekReplacementDetails } from "@/lib/rolling-menu";
+import { importWorkbook, saveSnapshotsCreateOnly, replaceSnapshotsExplicit, listWeeks, getWeekSnapshot, validateWeekAuthoritative, planningWeekCommencing, planningWeekReplacementDetails } from "@/lib/rolling-menu";
 import { readPublicationStateForWeek } from "@/lib/operational-store";
 import { readDeliveredInOplocs } from "@/lib/oploc-authority";
 import { listCanonicalMenuItems, recordDishSourceAliases } from "@/lib/canonical-menu-repository";
@@ -83,7 +83,8 @@ export async function POST(request: NextRequest) {
       let saved: RollingSnapshot[];
       try { saved = replaceWeeks.size ? await replaceSnapshotsExplicit(prepared, Object.fromEntries(replaceWeeks)) : await saveSnapshotsCreateOnly(prepared); } catch (error) { const status = (error as { status?: number }).status === 409 ? 409 : 422; return NextResponse.json({ error: { message: error instanceof Error ? error.message : "The menu weeks could not be imported." } }, { status }); }
       await recordDishSourceAliases(aliasesById);
-      return NextResponse.json({ snapshots: saved, weeks: await listWeeks(), blockers: saved.flatMap(snapshot => validateWeek(snapshot)) });
+      const blockers = (await Promise.all(saved.map(snapshot => validateWeekAuthoritative(snapshot)))).flat();
+      return NextResponse.json({ snapshots: saved, weeks: await listWeeks(), blockers });
     }
     const form = await request.formData();
     const files = form.getAll("files").filter((value): value is File => value instanceof File);

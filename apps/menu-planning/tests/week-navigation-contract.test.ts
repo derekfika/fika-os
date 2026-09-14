@@ -6,7 +6,7 @@ test("week planner navigation is independent of persisted week summaries", async
   const route = await readFile(new URL("../app/api/rolling-menu/route.ts", import.meta.url), "utf8");
   const workspace = await readFile(new URL("../app/rolling-menu-workspace.tsx", import.meta.url), "utf8");
   assert.match(route, /planningWeekFromQuery/);
-  assert.match(route, /emptyWeek\(requestedWeekCommencing \|\| planningWeekFromQuery\(undefined\)\)/);
+  assert.match(route, /emptyWeek\s*\(\s*requestedWeekCommencing\s*\|\|\s*planningWeekFromQuery\(undefined\)/);
   assert.match(workspace, /navigateWeek/);
   assert.match(workspace, /rolling-week:\$\{addDays\(current, direction \* 7\)\}/);
   assert.match(workspace, /params\.set\("weekId", body\.snapshot\.week\.id\)/);

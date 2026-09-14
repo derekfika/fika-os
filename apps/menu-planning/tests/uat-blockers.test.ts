@@ -15,6 +15,14 @@ test("unused menu rows are valid and excluded from publication", () => {
   assert.deepEqual(buildPublishedDay(snapshot, day).entries, []);
 });
 
+test("explicit authoritative canonical identity context overrides stale local catalogue", () => {
+  const snapshot = emptyWeek("2098-01-05");
+  const day = snapshot.days[0];
+  snapshot.entries = [{ id: "entry:hosted", dayId: day.id, date: day.date, slot: "SALAD 1", itemLabel: "Hosted dish", itemId: "dish:hosted", portions: 1, allocations: [], allergens: {}, audit: [] }];
+  assert.deepEqual(validateWeek(snapshot, { requireCanonicalDishId: true, activeCanonicalDishIds: new Set(["dish:hosted"]) }), []);
+  assert.match(validateWeek(snapshot, { requireCanonicalDishId: true, activeCanonicalDishIds: new Set() })[0], /does not exist or is archived/);
+});
+
 test("publication derives portions from positive allocations and omits zero lines", () => {
   const snapshot = emptyWeek("2098-01-12");
   const day = snapshot.days[0];

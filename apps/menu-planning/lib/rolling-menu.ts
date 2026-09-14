@@ -6,6 +6,7 @@ export * from "./rolling-menu-types";
 import { ROLLING_SLOTS, type RollingAllocation, type RollingDay, type RollingEntry, type RollingSnapshot, type RollingSlot, type RollingWeek, type RollingWeekStatus } from "./rolling-menu-types";
 import { normaliseDishName, titleCase } from "./text";
 import type { MenuItem } from "./domain";
+import { listCanonicalMenuItemsByIds } from "./canonical-menu-repository";
 import { getWeekSnapshot, listWeekSummaries, readRollingState, updateRollingState, withMenuPlanningTransaction } from "./operational-store";
 export interface Stored { version: 1; weeks: RollingWeek[]; days: RollingDay[]; entries: RollingEntry[]; }
 const now = () => new Date().toISOString();
@@ -311,7 +312,28 @@ export async function resetWeek(weekId: string, actor = "local-menu-planner") {
   return saveSnapshot(target);
 }
 function entryIntegrityErrors(entry: RollingEntry, governedIds?: Set<string>) { const errors: string[] = []; const label = entry.itemLabel.trim() || entry.slot; const invalidQuantities = entry.allocations.filter(allocation => !Number.isFinite(allocation.quantity) || allocation.quantity < 0); const activeAllocations = entry.allocations.filter(allocation => Number.isFinite(allocation.quantity) && allocation.quantity > 0); if (invalidQuantities.length) errors.push(`${label} contains an invalid allocation quantity.`); if (!activeAllocations.length) return errors; if (!entry.itemId?.trim()) errors.push(`${label} needs a canonical dish identity before publication.`); const unknown = activeAllocations.filter(allocation => !allocation.destinationId || (governedIds ? !governedIds.has(allocation.destinationId) : !resolveGovernedOploc(allocation.destinationId))); if (unknown.length) errors.push(`${label} has an unresolved destination; select a governed OPLOC.`); const destinationKeys = activeAllocations.map(allocation => allocation.destinationId || `unresolved:${allocation.destinationLabel.trim().toLocaleLowerCase()}`); if (new Set(destinationKeys).size !== destinationKeys.length) errors.push(`${label} has duplicate destination allocations.`); return errors; }
-export function validateWeek(snapshot: RollingSnapshot, options: { governedOplocIds?: Set<string>; requireCanonicalDishId?: boolean } = {}): string[] { const errors: string[] = []; const entries = snapshot.entries.filter(entry => entry.itemLabel.trim()); if (!entries.length) errors.push("Add at least one menu entry."); let catalogue: MenuItem[] = []; let catalogueError = false; try { const cataloguePath = appDataPath("menu-planning", "menu-planning", "canonical-menu-items.json"); const parsed = JSON.parse(readFileSync(cataloguePath, "utf8")) as { items?: MenuItem[] }; if (!Array.isArray(parsed.items)) throw new Error("items is not an array"); catalogue = parsed.items; } catch { catalogueError = true; if (options.requireCanonicalDishId) errors.push("The canonical dish catalogue is unavailable; publication cannot continue."); } for (const entry of entries) { errors.push(...entryIntegrityErrors(entry, options.governedOplocIds)); if (options.requireCanonicalDishId && !catalogueError && (!entry.itemId || !catalogue.some(item => item.canonicalId === entry.itemId && item.reviewStatus !== "archived"))) errors.push(`${entry.itemLabel || entry.slot} references a canonical dish that does not exist or is archived.`); } return [...new Set(errors)]; }
+export function validateWeek(snapshot: RollingSnapshot, options: { governedOplocIds?: Set<string>; requireCanonicalDishId?: boolean; activeCanonicalDishIds?: Set<string>; canonicalCatalogueUnavailable?: boolean } = {}): string[] { const errors: string[] = []; const entries = snapshot.entries.filter(entry => entry.itemLabel.trim()); if (!entries.length) errors.push("Add at least one menu entry."); let catalogue: MenuItem[] = []; let catalogueError = Boolean(options.canonicalCatalogueUnavailable); if (!options.activeCanonicalDishIds && !catalogueError) { try { const cataloguePath = appDataPath("menu-planning", "menu-planning", "canonical-menu-items.json"); const parsed = JSON.parse(readFileSync(cataloguePath, "utf8")) as { items?: MenuItem[] }; if (!Array.isArray(parsed.items)) throw new Error("items is not an array"); catalogue = parsed.items; } catch { catalogueError = true; } } if (catalogueError && options.requireCanonicalDishId) errors.push("The authoritative canonical Dish Library is unavailable; publication cannot continue."); for (const entry of entries) { errors.push(...entryIntegrityErrors(entry, options.governedOplocIds)); if (options.requireCanonicalDishId && !catalogueError && (options.activeCanonicalDishIds ? !entry.itemId || !options.activeCanonicalDishIds.has(entry.itemId) : !entry.itemId || !catalogue.some(item => item.canonicalId === entry.itemId && item.reviewStatus !== "archived"))) errors.push(`${entry.itemLabel || entry.slot} references a canonical dish that does not exist or is archived.`); } return [...new Set(errors)]; }
+
+export async function validateWeekAuthoritative(snapshot: RollingSnapshot, options: { governedOplocIds?: Set<string>; requireCanonicalDishId?: boolean } = {}) {
+  const requireCanonicalDishId = options.requireCanonicalDishId !== false;
+  const ids = [...new Set(snapshot.entries.map(entry => entry.itemId?.trim()).filter((id): id is string => Boolean(id)))];
+  try {
+    const activeCanonicalDishIds = new Set((await listCanonicalMenuItemsByIds(ids)).filter(item => item.reviewStatus !== "archived").map(item => item.canonicalId));
+    return validateWeek(snapshot, { ...options, requireCanonicalDishId, activeCanonicalDishIds });
+  } catch {
+    return validateWeek(snapshot, { ...options, requireCanonicalDishId, canonicalCatalogueUnavailable: true });
+  }
+}
+export async function activeCanonicalDishIdsFor(snapshot: RollingSnapshot) {
+  const ids = [...new Set(snapshot.entries.map(entry => entry.itemId?.trim()).filter((id): id is string => Boolean(id)))];
+  try {
+    const items = await listCanonicalMenuItemsByIds(ids);
+    return new Set(items.filter(item => item.reviewStatus !== "archived").map(item => item.canonicalId));
+  } catch (cause) {
+    const error = Object.assign(new Error("The authoritative canonical Dish Library is unavailable; publication cannot continue."), { status: 503, cause });
+    throw error;
+  }
+}
 
 const dayIndexForWorkbookSheet = (sheetName: string) => {
   const name = sheetName.trim().toLocaleLowerCase();

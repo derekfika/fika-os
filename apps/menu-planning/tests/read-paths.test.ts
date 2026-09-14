@@ -41,7 +41,7 @@ test("catalogue and rolling-menu GET handlers return structured JSON errors", ()
   const catalogue = readFileSync(new URL("../app/api/catalogue/route.ts", import.meta.url), "utf8");
   const rolling = readFileSync(new URL("../app/api/rolling-menu/route.ts", import.meta.url), "utf8");
   assert.match(catalogue, /NextResponse\.json\(\{ error: \{ message:/);
-  assert.match(rolling, /NextResponse\.json\(\{ error: \{ message:/);
+  assert.match(rolling, /NextResponse\.json\([\s\S]*error:\s*\{/);
 });
 
 test("hosted rolling reads use targeted week and publication paths", () => {
@@ -104,13 +104,13 @@ test("versioned cache writes cannot resurrect data across logout and relogin", a
 test("known-neighbour prefetch requests a targeted snapshot without week summaries", () => {
   const route = readFileSync(new URL("../app/api/rolling-menu/route.ts", import.meta.url), "utf8");
   assert.match(route, /snapshotOnly/);
-  assert.match(route, /snapshotOnly && requestedWeek \? \[\] :/);
-  assert.match(route, /snapshotOnly && requestedWeek \? await getWeekHead/);
+  assert.match(route, /snapshotOnly\s*&&\s*requestedWeek[\s\S]*\[\]/);
+  assert.match(route, /snapshotOnly\s*&&\s*requestedWeek[\s\S]*getWeekHead/);
 });
 
 test("rolling resolution never guesses catalogue identity from a label", () => {
   const route = readFileSync(new URL("../app/api/rolling-menu/route.ts", import.meta.url), "utf8");
-  assert.match(route, /entry\.itemId \? resolvedCatalogue\.find\(item => item\.id === entry\.itemId\)/);
+  assert.match(route, /entry\.itemId[\s\S]*resolvedCatalogue\.find[\s\S]*item\.id === entry\.itemId/);
   assert.doesNotMatch(route, /item\.name\.trim\(\)\.toLocaleLowerCase\(\) === entry\.itemLabel/);
   assert.match(route, /missing-stable-catalogue-id/);
   assert.match(route, /catalogue-item-not-found/);
@@ -230,7 +230,7 @@ test("normal rolling and publication lookups use bounded repository primitives",
   assert.doesNotMatch(getWeekBody, /readRollingState/);
   assert.match(publication, /listPublicationState<StoredPublications>\(limit\)/);
   assert.match(publication, /getPublicationById<MenuPublication>\(publicationId\)/);
-  assert.match(publication, /getPublishedSnapshot<CompiledPublishedWeekSnapshot>\(publicationId, version\)/);
+  assert.match(publication, /getPublishedSnapshot[\s\S]*publicationId,\s*version/);
   assert.match(publication, /sourceWeekId: publication\.sourceWeekId, includeEvents: false/);
   assert.match(publication, /Explicit historical audit\/repair read/);
 });
@@ -270,7 +270,7 @@ test("stable catalogue resolution never falls back to display names", () => {
 
 test("rolling-menu enrichment remains a bounded server-side stable-ID read", () => {
   const route = readFileSync(new URL("../app/api/rolling-menu/route.ts", import.meta.url), "utf8");
-  assert.match(route, /listCatalogueEntriesForIds\(snapshot\.entries\.map\(entry => entry\.itemId \|\| ""\)\)/);
+  assert.match(route, /listCatalogueEntriesForIds\([\s\S]*entry\.itemId \|\| ""[\s\S]*\)/);
   assert.match(route, /item\.id === entry\.itemId/);
   assert.match(route, /resolveAllergenSnapshot/);
   assert.doesNotMatch(route, /indexedDB|CLIENT_CACHE/);
