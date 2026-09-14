@@ -193,6 +193,18 @@ test("manifest and Allergen Checker paths avoid unnecessary full catalogue reads
   assert.match(checker, /command\("update-entry"/);
 });
 
+test("allergen checker uses quiet state cells without changing semantic state labels", () => {
+  const checker = readFileSync(new URL("../app/allergen-checker.tsx", import.meta.url), "utf8");
+  assert.match(checker, /const stateMark: Record<string, string> = \{\s*may_contain: "MC"/);
+  assert.doesNotMatch(checker, /stateMark[\s\S]*unrecorded: "\?"/);
+  assert.doesNotMatch(checker, /stateMark[\s\S]*clear: "✓"/);
+  assert.doesNotMatch(checker, /stateMark[\s\S]*contains: "C"/);
+  assert.match(checker, /aria-label=\{`\$\{entry\.itemLabel\}, \$\{label\}: \$\{stateLabel\[displayState\]\}`\}/);
+  assert.match(checker, /disabled=\{key === "no_key_allergens"\}/);
+  assert.match(checker, /May contain notes for \$\{entry\.itemLabel\}/);
+  assert.match(checker, /Not recorded is never treated as clear/);
+});
+
 test("compiled publication snapshots use a separate targeted read model", () => {
   const publication = readFileSync(new URL("../lib/menu-publication.ts", import.meta.url), "utf8");
   const repository = readFileSync(new URL("../lib/firestore-operational-store.ts", import.meta.url), "utf8");

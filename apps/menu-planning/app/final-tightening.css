@@ -74,13 +74,11 @@
 .operational-allergen-matrix thead th:not(:first-child):not(:nth-last-child(-n + 2)) {
   width: 42px;
   min-width: 42px;
-  height: 126px;
+  height: auto;
   padding: 10px 7px;
-  writing-mode: vertical-rl;
-  transform: rotate(180deg);
-  white-space: nowrap;
+  white-space: normal;
   overflow-wrap: normal;
-  text-align: left;
+  text-align: center;
 }
 
 .operational-allergen-matrix thead th:first-child {
@@ -853,3 +851,27 @@ button:disabled {
     width: calc(100% - 40px);
   }
 }
+
+/* Final allergen matrix presentation overrides keep headings horizontal and cells quiet. */
+.allergen-panel .table-wrap { max-height: calc(100vh - 280px); overflow: auto; }
+.operational-allergen-matrix { min-width: 1120px; border-collapse: separate; border-spacing: 0; color: var(--fika-text-primary); }
+.operational-allergen-matrix th,
+.operational-allergen-matrix td { padding: 9px 7px; border-right: 1px solid var(--fika-border-default); border-bottom: 1px solid var(--fika-border-default); text-align: center; white-space: nowrap; }
+.operational-allergen-matrix thead th { position: sticky; top: 0; z-index: 2; width: 58px; min-width: 58px; height: auto; padding: 10px 7px; background: var(--fika-action-secondary); color: #fff; line-height: 1.05; white-space: normal; writing-mode: horizontal-tb; transform: none; }
+.operational-allergen-matrix thead th:first-child,
+.operational-allergen-matrix tbody th { width: 220px; min-width: 220px; text-align: left; }
+.operational-allergen-matrix thead th:first-child { z-index: 3; }
+.operational-allergen-matrix tbody th { position: sticky; left: 0; z-index: 1; background: var(--fika-surface-card); color: var(--fika-action-secondary); font-size: .82rem; white-space: normal; }
+.operational-allergen-matrix tbody th small { display: block; margin-top: 4px; color: var(--fika-text-muted); font-size: .68rem; font-weight: 500; }
+.operational-allergen-matrix .allergen-cell { display: inline-grid; place-items: center; width: 42px; min-width: 42px; height: 42px; padding: 0; border: 1px solid var(--fika-action-primary); border-radius: 0; font-weight: 900; }
+.operational-allergen-matrix .allergen-cell--contains { background: #000; color: #fff; }
+.operational-allergen-matrix .allergen-cell--clear,
+.operational-allergen-matrix .allergen-cell--unrecorded { background: var(--fika-surface-card); color: transparent; }
+.operational-allergen-matrix .allergen-cell--may_contain { background: var(--fika-surface-card); color: var(--fika-action-secondary); }
+.allergen-state-legend { gap: 18px; }
+.allergen-legend-item b { width: 18px; min-width: 18px; height: 18px; border: 1px solid var(--fika-action-primary); border-radius: 0; font-size: .58rem; }
+.allergen-legend-item--contains b { background: #000; }
+.allergen-legend-item--may-contain b,
+.allergen-legend-item--clear b,
+.allergen-legend-item--unrecorded b { background: var(--fika-surface-card); color: transparent; }
+.allergen-legend-item--may-contain b { color: var(--fika-action-secondary); }
