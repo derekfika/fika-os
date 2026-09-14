@@ -4,6 +4,8 @@ This file records user-facing workflow changes delivered in the repository. Deta
 
 ## Unreleased
 
+- **2026-09-14 — UAT-MP-001C canonical identity repair hardening:** one-week dry-run repair now surfaces and deterministically repairs dangling or empty canonical IDs by exact active display-name/alias, while blocking ambiguous and unresolvable identities; validation and repair semantics now cover every invalid identity without fuzzy matching. Affected app: Menu Planning. Validation: focused repair tests 14/14, full suite 157 passed with one pre-existing date-anchor failure, typecheck, production build and `git diff --check`. Deployment status: not deployed.
+
 - **2026-09-14 — UAT-MP-001B staging deployment submitted:** submitted the validated exact-SHA rollout `d6fe84d1a098028aba297ef18568b14438d8aef4` for Menu Planning only to Firebase App Hosting backend `fika-menu-planning-staging` in project `fika-os-dev`. Rollout compilation/propagation was not awaited.
 
 - **2026-09-14 — UAT-MP-001B bulk-create UI completion:** wired the existing Menu Planning Excel importer to its bounded `create-dishes` API, adding filter-scoped confirmation, workbook/category provenance, mixed created/matched result handling, real progress counts and retry-safe unresolved-row behaviour. Affected app: Menu Planning. Validation: focused importer tests 17/17, full suite 156 passed with one pre-existing date-anchor failure, typecheck, production build and `git diff --check`. Deployment status: not deployed.

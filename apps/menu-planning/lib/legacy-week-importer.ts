@@ -3,6 +3,15 @@ import type { RollingSnapshot } from "./rolling-menu-types";
 
 export type DishResolutionKind = "matched" | "suggested" | "unresolved";
 export type DishResolution = { sourceName: string; occurrences: number; kind: DishResolutionKind; canonicalId?: string; canonicalName?: string; suggestions: Array<{ id: string; name: string }> };
+export type CanonicalIdentityClassification = "active" | "archived" | "missing" | "no-id";
+
+export function classifyCanonicalIdentity(itemId: string | undefined, itemLabel: string, catalogue: MenuItem[]) {
+  const current = itemId ? catalogue.find(item => item.canonicalId === itemId) : undefined;
+  const classification: CanonicalIdentityClassification = !itemId ? "no-id" : !current ? "missing" : current.reviewStatus === "archived" ? "archived" : "active";
+  const keys = new Set([safeDishKey(itemLabel), ...(current && classification === "archived" ? [safeDishKey(current.displayName), ...(current.sourceAliases || []).map(safeDishKey)] : [])].filter(Boolean));
+  const matches = catalogue.filter(item => item.reviewStatus !== "archived" && (keys.has(safeDishKey(item.displayName)) || (item.sourceAliases || []).some(alias => keys.has(safeDishKey(alias)))));
+  return { classification, current, matches };
+}
 
 export function safeDishKey(value: string) {
   return value.trim().toLocaleLowerCase("en-GB").replace(/[’']/g, "").replace(/&/g, " and ").replace(/[^a-z0-9]+/g, " ").replace(/\s+/g, " ").trim();
@@ -58,15 +67,25 @@ export function repairArchivedWeekDishIdentities(snapshot: RollingSnapshot, cata
   const repairedSnapshot = structuredClone(snapshot);
   const active = catalogue.filter(item => item.reviewStatus !== "archived");
   const byId = new Map(catalogue.map(item => [item.canonicalId, item]));
-  const repaired: Array<{ entryId: string; fromId: string; toId: string }> = [];
-  const blocked: Array<{ entryId: string; itemLabel: string; reason: string }> = [];
+  const activeUnchanged: string[] = [];
+  const archivedFound: string[] = [];
+  const missingFound: string[] = [];
+  const repaired: Array<{ entryId: string; itemLabel: string; fromId?: string; toId: string; reason: "archived-to-active" | "missing-to-active" | "no-id-to-active" }> = [];
+  const blocked: Array<{ entryId: string; itemLabel: string; existingItemId?: string; classification: "archived-unresolved" | "missing-unresolved" | "ambiguous" | "no-id-unresolved"; reason: string }> = [];
   for (const entry of repairedSnapshot.entries) {
-    const current = entry.itemId ? byId.get(entry.itemId) : undefined;
-    if (!current || current.reviewStatus !== "archived") continue;
-    const key = safeDishKey(entry.itemLabel || current.displayName);
-    const survivor = active.find(item => safeDishKey(item.displayName) === key || (item.sourceAliases || []).some(alias => safeDishKey(alias) === key));
-    if (!survivor) blocked.push({ entryId: entry.id, itemLabel: entry.itemLabel, reason: "No active survivor or merged alias was found." });
-    else { repaired.push({ entryId: entry.id, fromId: current.canonicalId, toId: survivor.canonicalId }); entry.itemId = survivor.canonicalId; entry.itemLabel = survivor.displayName; }
+    const result = classifyCanonicalIdentity(entry.itemId, entry.itemLabel, catalogue);
+    if (result.classification === "active") { activeUnchanged.push(entry.id); continue; }
+    if (result.classification === "archived") archivedFound.push(entry.id);
+    if (result.classification === "missing" || result.classification === "no-id") missingFound.push(entry.id);
+    if (result.matches.length !== 1) {
+      const classification = result.matches.length > 1 ? "ambiguous" : result.classification === "archived" ? "archived-unresolved" : result.classification === "missing" ? "missing-unresolved" : "no-id-unresolved";
+      blocked.push({ entryId: entry.id, itemLabel: entry.itemLabel, ...(entry.itemId ? { existingItemId: entry.itemId } : {}), classification, reason: result.matches.length > 1 ? "More than one active exact display-name or alias replacement was found." : result.classification === "missing" ? "Canonical dish identity is missing and no active exact/alias replacement was found." : result.classification === "no-id" ? "Canonical dish identity is empty and no active exact/alias replacement was found." : "The archived canonical dish has no active exact/alias replacement." });
+      continue;
+    }
+    const survivor = result.matches[0];
+    const reason = result.classification === "archived" ? "archived-to-active" : result.classification === "missing" ? "missing-to-active" : "no-id-to-active";
+    repaired.push({ entryId: entry.id, itemLabel: entry.itemLabel, ...(entry.itemId ? { fromId: entry.itemId } : {}), toId: survivor.canonicalId, reason });
+    entry.itemId = survivor.canonicalId; entry.itemLabel = survivor.displayName; entry.audit.push({ action: "canonical-dish-identity-repaired", at: new Date().toISOString(), by: "menu-planning-repair" });
   }
-  return { snapshot: repairedSnapshot, weekCommencing: snapshot.week.weekCommencing, repaired, blocked, changed: repaired.length > 0 };
+  return { snapshot: repairedSnapshot, weekCommencing: snapshot.week.weekCommencing, activeUnchanged, archivedFound, missingFound, repaired, blocked, changed: repaired.length > 0 };
 }
