@@ -68,6 +68,18 @@ test("publication verifies all durable bytes before writing the manifest last", 
   assert.deepEqual(events.slice(2, 4), ["verify:drive:master:2026-09-03", "verify:drive:pdf:2026-09-03:oploc:haleon"]);
 });
 
+test("failed durable verification never writes a daily manifest", async () => {
+  const built = build({ id: "oploc:haleon", name: "Haleon" });
+  let manifests = 0;
+  const store: DailyBundleDurableStore = {
+    async putPacket() {},
+    async verifyArtifact(artifactToVerify) { return artifactToVerify.fileId !== "drive:pdf:2026-09-03:oploc:haleon"; },
+    async putManifest() { manifests += 1; },
+  };
+  await assert.rejects(() => publishDailySignedOplocBundle(built.bundle, built.packet, built.packetBytes, store), /durably verified/i);
+  assert.equal(manifests, 0);
+});
+
 test("missing PDF blocks signed status before any durable write", async () => {
   assert.throws(() => buildDailySignedOplocBundle({
     bundleId: "cpu:2026-09-03:oploc:haleon",

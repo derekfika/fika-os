@@ -42,10 +42,13 @@ test("requested-week recovery isolates unavailable CPU days instead of failing t
 
 test("integrity and package misses remain explicit without index writes", async () => {
   const server = await readFile(new URL("../lib/server.ts", import.meta.url), "utf8");
+  const reconciliation = await readFile(new URL("../lib/delivered-in-reconciliation.ts", import.meta.url), "utf8");
   assert.doesNotMatch(server, /writeDeliveredInProjection/);
   assert.doesNotMatch(server, /updateProjectionIndex/);
-  assert.match(server, /catch \{\s+return undefined;/);
+  assert.match(server, /error\.message\.includes\("is unavailable\."\)/);
+  assert.match(server, /CPU_DAILY_PACKET_INVALID/);
   assert.doesNotMatch(server, /readMenuPlanningWeekPackets\([^;]+\)\.catch\(\(\) => \[\]\)/);
+  assert.doesNotMatch(reconciliation, /readMenuPlanningWeekPackets\([^;]+\)\.catch\(\(\) => \[\]\)/);
 });
 
 test("Menu Planning packet integrity errors are not folded into legacy fallback", async () => {

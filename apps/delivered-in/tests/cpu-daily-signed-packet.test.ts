@@ -78,3 +78,16 @@ test("Delivered-In rejects a shared daily package bound to another Menu Planning
     await rm(root, { recursive: true, force: true });
   }
 });
+
+test("Delivered-In distinguishes a missing daily package from an invalid one", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "fika-cpu-daily-missing-"));
+  const previous = process.env.FIKA_SNAPSHOT_DIR;
+  process.env.FIKA_SNAPSHOT_DIR = root;
+  try {
+    assert.equal(await readCpuDailySignedPacket("2026-09-03", "oploc:haleon", sourceHash), undefined);
+  } finally {
+    if (previous === undefined) delete process.env.FIKA_SNAPSHOT_DIR;
+    else process.env.FIKA_SNAPSHOT_DIR = previous;
+    await rm(root, { recursive: true, force: true });
+  }
+});

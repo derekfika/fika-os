@@ -29,7 +29,11 @@ export async function cpuReviewForDay(_request: NextRequest, date: string, oploc
     recordDataAccess({ app: "delivered-in", operation: "cpu-review-package.by-day", source: "SNAPSHOT", dataset: "cpu-production/review", documents: packet.manifest.recordCount, cacheResult: "HIT" });
     recordDeliveredInAppReadBudget({ stage: "cpu_review_package", upstreamRequests: 0, recordsInspected: packet.manifest.recordCount, serviceDate: date, oplocId });
     return cpuDailyPacketReview(packet);
-  } catch { return undefined; }
+  } catch (error) {
+    if (error instanceof Error && error.message.includes("is unavailable.")) return undefined;
+    if (error && typeof error === "object" && "code" in error && (error as { code?: unknown }).code === "CPU_DAILY_PACKET_INVALID") throw error;
+    throw Object.assign(new Error(`CPU daily signed packet could not be verified for ${oplocId} on ${date}.`), { code: "CPU_DAILY_PACKET_INVALID", status: 503, cause: error });
+  }
 }
 
 async function resolveGovernedOplocIds(request: NextRequest) {

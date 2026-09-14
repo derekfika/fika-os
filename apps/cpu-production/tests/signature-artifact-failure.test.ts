@@ -16,4 +16,12 @@ test("second-signature finalisation uses an atomic candidate and never triggers 
   assert.match(source, /FIKA PDF renderer failure/);
   assert.match(source, /renderPdfToBuffer/);
   assert.match(source, /pdfBase64/);
+  assert.match(source, /const destinationBundles = \[\.\.\.sitePairs\.entries\(\)\]/);
+  assert.match(source, /for \(const \{ site, built \} of destinationBundles\)/);
+  assert.match(source, /bundleId: `cpu-allergen:\$\{serviceDate\}:\$\{oplocId\}/);
+  assert.match(source, /source: \{ id: source\.canonicalId/);
+  assert.match(source, /items: pairs\.flatMap/);
+  assert.match(source, /verifyDailySignedOplocBundleArtifacts\(built\.bundle, built\.packet, built\.packetBytes/);
+  assert.match(source, /Preflight every destination before activating any manifest/);
+  assert.doesNotMatch(source, /const currentOploc =/);
 });

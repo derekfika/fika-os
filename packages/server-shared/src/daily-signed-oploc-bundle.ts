@@ -290,6 +290,19 @@ export function assertDailySignedOplocBundle(bundle: DailySignedOplocBundle) {
  * fails, so ordinary reads cannot observe a falsely signed release.
  */
 export async function publishDailySignedOplocBundle(bundle: DailySignedOplocBundle, packet: DailyAllergenPacket, packetBytes: Uint8Array, store: DailyBundleDurableStore, publishedAt = new Date().toISOString()) {
+  await verifyDailySignedOplocBundleArtifacts(bundle, packet, packetBytes, store);
+  const published: DailySignedOplocBundle = { ...bundle, status: "published", publishedAt };
+  await store.putManifest(published, packet);
+  return published;
+}
+
+/**
+ * Persist and verify every immutable artifact without activating the manifest.
+ * Producers can preflight a set of destination bundles before publishing any
+ * manifest, preventing a verification failure on one OPLOC from activating a
+ * partial multi-destination release.
+ */
+export async function verifyDailySignedOplocBundleArtifacts(bundle: DailySignedOplocBundle, packet: DailyAllergenPacket, packetBytes: Uint8Array, store: DailyBundleDurableStore) {
   assertDailySignedOplocBundle(bundle);
   if (bundle.status !== "signed") failure("Only a signed bundle can be published.");
   if (packet.bundleId !== bundle.bundleId || packet.serviceDate !== bundle.serviceDate || packet.oploc.id !== bundle.oploc.id || packet.source.revision !== bundle.source.revision || packet.source.contentHash !== bundle.source.contentHash || packet.contentHash !== bundle.packet.contentHash) failure("The packet is not bound to this bundle.");
@@ -299,9 +312,6 @@ export async function publishDailySignedOplocBundle(bundle: DailySignedOplocBund
   const masterVerified = await store.verifyArtifact(bundle.masterSheet);
   const pdfVerified = await store.verifyArtifact(bundle.pdf);
   if (!packetVerified || !masterVerified || !pdfVerified) failure("Daily bundle publication is blocked until packet, master sheet and PDF are durably verified.");
-  const published: DailySignedOplocBundle = { ...bundle, status: "published", publishedAt };
-  await store.putManifest(published, packet);
-  return published;
 }
 
 /** Create an append-only tombstone while retaining all prior signed hashes. */

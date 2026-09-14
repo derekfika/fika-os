@@ -12,7 +12,7 @@ const mondayOf = (date: string) => { const value = new Date(`${date}T00:00:00Z`)
 async function menuForDate(request: NextRequest, oplocId: string, serviceDate: string) {
   const fromWeek = mondayOf(serviceDate);
   const toWeek = addDays(fromWeek, 7);
-  const packets = await readMenuPlanningWeekPackets(fromWeek, toWeek).catch(() => []);
+  const packets = await readMenuPlanningWeekPackets(fromWeek, toWeek);
   if (packets.length) {
     const publications = packetPublicationsForRange(packets, fromWeek, toWeek) as SourcePublication[];
     for (const publication of publications) {
