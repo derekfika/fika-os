@@ -4,6 +4,8 @@ This file records user-facing workflow changes delivered in the repository. Deta
 
 ## Unreleased
 
+- **2026-09-14 — UAT-MP-001B bulk-create UI completion:** wired the existing Menu Planning Excel importer to its bounded `create-dishes` API, adding filter-scoped confirmation, workbook/category provenance, mixed created/matched result handling, real progress counts and retry-safe unresolved-row behaviour. Affected app: Menu Planning. Validation: focused importer tests 17/17, full suite 156 passed with one pre-existing date-anchor failure, typecheck, production build and `git diff --check`. Deployment status: not deployed.
+
 - **2026-09-14 — UAT-MP-001 staging deployment submitted:** submitted the validated exact-SHA rollout `733ce7ea9af54a002a457468abc3c4463a96f091` for Menu Planning only to Firebase App Hosting backend `fika-menu-planning-staging` in project `fika-os-dev`. Rollout compilation/propagation was not awaited.
 
 - **2026-09-14 — UAT-MP-001 Excel importer/canonical identity hygiene:** Menu Planning workbook review now resolves only active Dish Library identities, returns explicit create/match outcomes, preserves loser names and aliases on merge survivors, supports bounded idempotent batch dish creation with real counts, and exposes a one-week archived-identity repair endpoint that is dry-run by default and version guarded before mutation. Affected app: Menu Planning. Validation: focused importer/style/contract tests (48 passed, one pre-existing date-anchor failure), full suite (154 passed, one pre-existing date-anchor failure), typecheck. Deployment status: not deployed.

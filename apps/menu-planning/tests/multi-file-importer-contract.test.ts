@@ -12,8 +12,14 @@ test("multi-file importer exposes native picker and drag/drop safety", async () 
   assert.match(page, /onDrop/);
   assert.match(page, /Add more files/);
   assert.match(page, /Import \$\{snapshots\.length\} menu weeks/);
-  assert.match(page, /Accept \{visible\.filter/);
-  assert.match(page, /Ignore \{visible\.filter/);
+  assert.match(page, /Accept/);
+  assert.match(page, /Ignore/);
+  assert.match(page, /Create \{bulkCreateCandidates\.length\} new dishes/);
+  assert.match(page, /createBulkDishes/);
+  assert.match(page, /This will create new unreviewed Dish Library items/);
+  assert.match(page, /action: "create-dishes"/);
+  assert.doesNotMatch(page, /0 new Dish Library items were created/);
+  assert.doesNotMatch(page, /<dd>0 created<\/dd>/);
   assert.match(page, /Undo last bulk action/);
   assert.match(page, /bulk-confirm-title/);
   assert.match(page, /Choose another/);

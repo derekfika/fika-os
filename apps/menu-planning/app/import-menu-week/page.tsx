@@ -4,79 +4,1418 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import MenuPlanningShell from "../menu-planning-shell";
 import type { RollingSnapshot } from "@/lib/rolling-menu-types";
 import type { DishResolution } from "@/lib/legacy-week-importer";
-import { clearImportSession, loadImportSession, saveImportSession, type ImportSession } from "@/lib/import-session";
+import {
+  clearImportSession,
+  loadImportSession,
+  saveImportSession,
+  type ImportSession,
+} from "@/lib/import-session";
 import { safeDishKey } from "@/lib/legacy-week-importer";
 import PlannerModal from "../planner-modal";
 
-type Report = { fileName: string; weekCommencing?: string; status: "valid" | "needs_attention"; error?: string; recognisedEntries?: number };
+type Report = {
+  fileName: string;
+  weekCommencing?: string;
+  status: "valid" | "needs_attention";
+  error?: string;
+  recognisedEntries?: number;
+};
 type Option = { id: string; name: string };
-type Decision = DishResolution & { workbookCount?: number; canonicalId?: string; remember?: boolean; ignored?: boolean; created?: boolean };
-type Conflict = { weekCommencing: string; weekId: string; currentVersion: number; hasDishes: boolean; hasPortionAllocations: boolean; hasImportProvenance: boolean; hasPublicationHistory: boolean; replaceable: boolean; integrityError?: string; status?: string };
-type ProgressState = { phase: "checking" | "importing" | "checked" | "success" | "error"; total: number; completed: number; current: string; weeks: number; days: number; dishes: number; matched: number; created?: number; review: number; error?: string };
+type Decision = DishResolution & {
+  workbookCount?: number;
+  canonicalId?: string;
+  remember?: boolean;
+  ignored?: boolean;
+  created?: boolean;
+};
+type Conflict = {
+  weekCommencing: string;
+  weekId: string;
+  currentVersion: number;
+  hasDishes: boolean;
+  hasPortionAllocations: boolean;
+  hasImportProvenance: boolean;
+  hasPublicationHistory: boolean;
+  replaceable: boolean;
+  integrityError?: string;
+  status?: string;
+};
+type ProgressState = {
+  phase: "checking" | "importing" | "checked" | "success" | "error";
+  total: number;
+  completed: number;
+  current: string;
+  weeks: number;
+  days: number;
+  dishes: number;
+  matched: number;
+  created?: number;
+  review: number;
+  error?: string;
+};
 
-function ProgressModal({ progress, onClose }: { progress: ProgressState; onClose: () => void }) {
+function ProgressModal({
+  progress,
+  onClose,
+}: {
+  progress: ProgressState;
+  onClose: () => void;
+}) {
   const checking = progress.phase === "checking";
   const importing = progress.phase === "importing";
   const checked = progress.phase === "checked";
   const finished = progress.phase === "success";
-  const percentage = finished || checked ? 100 : progress.total ? Math.round((progress.completed / progress.total) * 100) : 8;
-  const title = checking ? "Checking your workbooks" : importing ? "Importing menu weeks" : checked ? "Workbooks checked" : finished ? "Import complete" : "Import could not be completed";
+  const percentage =
+    finished || checked
+      ? 100
+      : progress.total
+        ? Math.round((progress.completed / progress.total) * 100)
+        : 8;
+  const title = checking
+    ? "Checking your workbooks"
+    : importing
+      ? "Importing menu weeks"
+      : checked
+        ? "Workbooks checked"
+        : finished
+          ? "Import complete"
+          : "Import could not be completed";
   const created = progress.created || 0;
-  return <div className="import-progress-backdrop" role="presentation"><section className="import-progress-modal" role="dialog" aria-modal="true" aria-labelledby="import-progress-title" aria-describedby="import-progress-status">
-    <div className={`import-progress-icon import-progress-icon-${progress.phase}`} aria-hidden="true">{finished ? "✓" : progress.phase === "error" ? "!" : "…"}</div>
-    <h2 id="import-progress-title">{title}</h2><p className="import-progress-created">New dishes created in this operation: {created}</p>
-    {progress.phase === "error" ? <p id="import-progress-status" role="alert">{progress.error || "We could not finish this import."}{progress.current ? ` Affected workbook or week: ${progress.current}.` : ""}</p> : finished ? <><p id="import-progress-status" role="status">{progress.completed} menu week{progress.completed === 1 ? "" : "s"} imported as planning source. 0 new Dish Library items were created.</p><dl className="import-progress-stats"><div><dt>Menu weeks imported</dt><dd>{progress.completed}</dd></div><div><dt>Menu days imported</dt><dd>{progress.days}</dd></div><div><dt>Dish mappings used</dt><dd>{progress.matched}</dd></div><div><dt>New dishes</dt><dd>0 created</dd></div></dl></> : checked ? <><p id="import-progress-status" role="status">Ready for your review: {progress.weeks} menu week{progress.weeks === 1 ? "" : "s"}, {progress.days} menu days and {progress.dishes} unique dish names found.</p><dl className="import-progress-stats"><div><dt>Matched automatically</dt><dd>{progress.matched}</dd></div><div><dt>Need review</dt><dd>{progress.review}</dd></div></dl></> : <>
-      <p id="import-progress-status" className="import-progress-status">{checking ? `Checking workbook ${Math.min(progress.completed + 1, progress.total)} of ${progress.total}` : `Importing week ${Math.min(progress.completed + 1, progress.total)} of ${progress.total}`}</p>
-      <div className="import-progress-track" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={percentage} aria-label={`${percentage}% complete`}><span style={{ width: `${percentage}%` }} /></div>
-      <dl className="import-progress-stats">{checking ? <><div><dt>Files checked</dt><dd>{progress.completed} / {progress.total}</dd></div><div><dt>Menu weeks found</dt><dd>{progress.weeks}</dd></div><div><dt>Menu days parsed</dt><dd>{progress.days}</dd></div><div><dt>Unique dish names</dt><dd>{progress.dishes}</dd></div><div><dt>Matched automatically</dt><dd>{progress.matched}</dd></div><div><dt>Need review</dt><dd>{progress.review}</dd></div></> : <><div><dt>Weeks imported</dt><dd>{progress.completed} / {progress.total}</dd></div><div><dt>Remaining weeks</dt><dd>{Math.max(progress.total - progress.completed, 0)}</dd></div><div><dt>New Dish Library items</dt><dd>0 created</dd></div></>}</dl>
-      <p className="import-progress-current">Current workbook/week: <strong>{progress.current || "Preparing…"}</strong></p>
-    </>}
-    {(finished || checked || progress.phase === "error") && <div className="import-progress-footer">{finished && <button type="button" className="import-progress-close import-progress-secondary" onClick={() => { window.location.href = progress.current ? `/?week=${progress.current}` : "/"; }}>View Week Planner</button>}<button type="button" className="import-progress-close" onClick={onClose}>{finished || checked ? "Close" : "Close and review"}</button></div>}
-    {(checking || importing) && <p className="import-progress-lock">Please keep this window open while we {checking ? "check the workbooks" : "save the planning weeks"}.</p>}
-  </section></div>;
+  return (
+    <div className="import-progress-backdrop" role="presentation">
+      <section
+        className="import-progress-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="import-progress-title"
+        aria-describedby="import-progress-status"
+      >
+        <div
+          className={`import-progress-icon import-progress-icon-${progress.phase}`}
+          aria-hidden="true"
+        >
+          {finished ? "✓" : progress.phase === "error" ? "!" : "…"}
+        </div>
+        <h2 id="import-progress-title">{title}</h2>
+        <p className="import-progress-created">
+          New dishes created in this operation: {created}
+        </p>
+        {progress.phase === "error" ? (
+          <p id="import-progress-status" role="alert">
+            {progress.error || "We could not finish this import."}
+            {progress.current
+              ? ` Affected workbook or week: ${progress.current}.`
+              : ""}
+          </p>
+        ) : finished ? (
+          <>
+            <p id="import-progress-status" role="status">
+              {progress.completed} menu week
+              {progress.completed === 1 ? "" : "s"} imported as planning source.
+              {created} new Dish Library item{created === 1 ? " was" : "s were"} created.
+            </p>
+            <dl className="import-progress-stats">
+              <div>
+                <dt>Menu weeks imported</dt>
+                <dd>{progress.completed}</dd>
+              </div>
+              <div>
+                <dt>Menu days imported</dt>
+                <dd>{progress.days}</dd>
+              </div>
+              <div>
+                <dt>Dish mappings used</dt>
+                <dd>{progress.matched}</dd>
+              </div>
+              <div>
+                <dt>New dishes</dt>
+                <dd>{created} created</dd>
+              </div>
+            </dl>
+          </>
+        ) : checked ? (
+          <>
+            <p id="import-progress-status" role="status">
+              Ready for your review: {progress.weeks} menu week
+              {progress.weeks === 1 ? "" : "s"}, {progress.days} menu days and{" "}
+              {progress.dishes} unique dish names found.
+            </p>
+            <dl className="import-progress-stats">
+              <div>
+                <dt>Matched automatically</dt>
+                <dd>{progress.matched}</dd>
+              </div>
+              <div>
+                <dt>Need review</dt>
+                <dd>{progress.review}</dd>
+              </div>
+            </dl>
+          </>
+        ) : (
+          <>
+            <p id="import-progress-status" className="import-progress-status">
+              {checking
+                ? `Checking workbook ${Math.min(progress.completed + 1, progress.total)} of ${progress.total}`
+                : `Importing week ${Math.min(progress.completed + 1, progress.total)} of ${progress.total}`}
+            </p>
+            <div
+              className="import-progress-track"
+              role="progressbar"
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-valuenow={percentage}
+              aria-label={`${percentage}% complete`}
+            >
+              <span style={{ width: `${percentage}%` }} />
+            </div>
+            <dl className="import-progress-stats">
+              {checking ? (
+                <>
+                  <div>
+                    <dt>Files checked</dt>
+                    <dd>
+                      {progress.completed} / {progress.total}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>Menu weeks found</dt>
+                    <dd>{progress.weeks}</dd>
+                  </div>
+                  <div>
+                    <dt>Menu days parsed</dt>
+                    <dd>{progress.days}</dd>
+                  </div>
+                  <div>
+                    <dt>Unique dish names</dt>
+                    <dd>{progress.dishes}</dd>
+                  </div>
+                  <div>
+                    <dt>Matched automatically</dt>
+                    <dd>{progress.matched}</dd>
+                  </div>
+                  <div>
+                    <dt>Need review</dt>
+                    <dd>{progress.review}</dd>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div>
+                    <dt>Weeks imported</dt>
+                    <dd>
+                      {progress.completed} / {progress.total}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>Remaining weeks</dt>
+                    <dd>{Math.max(progress.total - progress.completed, 0)}</dd>
+                  </div>
+                  <div>
+                    <dt>New Dish Library items</dt>
+                    <dd>{created} created</dd>
+                  </div>
+                </>
+              )}
+            </dl>
+            <p className="import-progress-current">
+              Current workbook/week:{" "}
+              <strong>{progress.current || "Preparing…"}</strong>
+            </p>
+          </>
+        )}
+        {(finished || checked || progress.phase === "error") && (
+          <div className="import-progress-footer">
+            {finished && (
+              <button
+                type="button"
+                className="import-progress-close import-progress-secondary"
+                onClick={() => {
+                  window.location.href = progress.current
+                    ? `/?week=${progress.current}`
+                    : "/";
+                }}
+              >
+                View Week Planner
+              </button>
+            )}
+            <button
+              type="button"
+              className="import-progress-close"
+              onClick={onClose}
+            >
+              {finished || checked ? "Close" : "Close and review"}
+            </button>
+          </div>
+        )}
+        {(checking || importing) && (
+          <p className="import-progress-lock">
+            Please keep this window open while we{" "}
+            {checking ? "check the workbooks" : "save the planning weeks"}.
+          </p>
+        )}
+      </section>
+    </div>
+  );
 }
 
-function CreateDishDialog({ sourceName, category, sourceReference, saving, error, onSave, onClose }: { sourceName: string; category: string; sourceReference?: { workbook: string; sheet: string; range?: string; rawValue?: unknown }; saving: boolean; error: string; onSave: (name: string, category: string) => void; onClose: () => void }) {
+function CreateDishDialog({
+  sourceName,
+  category,
+  sourceReference,
+  saving,
+  error,
+  onSave,
+  onClose,
+}: {
+  sourceName: string;
+  category: string;
+  sourceReference?: {
+    workbook: string;
+    sheet: string;
+    range?: string;
+    rawValue?: unknown;
+  };
+  saving: boolean;
+  error: string;
+  onSave: (name: string, category: string) => void;
+  onClose: () => void;
+}) {
   const [name, setName] = useState(sourceName);
   const [selectedCategory, setSelectedCategory] = useState(category);
-  return <PlannerModal title="Create a new Dish Library item" onClose={onClose} dismissible={!saving} busy={saving} className="import-form-modal"><header className="import-form-modal-header"><p className="import-form-eyebrow">New canonical dish</p><h2 id="create-dish-title">Create a new Dish Library item</h2><p>Review the source dish before creating a new canonical dish. This will not happen automatically.</p></header><div className="import-form-fields"><label htmlFor="create-dish-name">Dish name<input id="create-dish-name" data-modal-autofocus value={name} onChange={event => setName(event.target.value)} /></label><label htmlFor="create-dish-category">Category<input id="create-dish-category" value={selectedCategory} onChange={event => setSelectedCategory(event.target.value)} /></label></div><p className="import-form-provenance"><strong>Source</strong><span>{sourceReference ? `${sourceReference.workbook} · ${sourceReference.sheet}${sourceReference.range ? ` · ${sourceReference.range}` : ""}` : "workbook evidence"}</span></p>{error && <p role="alert" className="import-error">{error}</p>}<footer className="import-form-modal-footer"><button type="button" className="import-secondary-action" onClick={onClose} disabled={saving}>Cancel</button><button type="button" className="import-submit" disabled={saving || !name.trim()} onClick={() => onSave(name.trim(), selectedCategory.trim())}>{saving ? "Creating…" : "Create Dish Library item"}</button></footer></PlannerModal>;
+  return (
+    <PlannerModal
+      title="Create a new Dish Library item"
+      onClose={onClose}
+      dismissible={!saving}
+      busy={saving}
+      className="import-form-modal"
+    >
+      <header className="import-form-modal-header">
+        <p className="import-form-eyebrow">New canonical dish</p>
+        <h2 id="create-dish-title">Create a new Dish Library item</h2>
+        <p>
+          Review the source dish before creating a new canonical dish. This will
+          not happen automatically.
+        </p>
+      </header>
+      <div className="import-form-fields">
+        <label htmlFor="create-dish-name">
+          Dish name
+          <input
+            id="create-dish-name"
+            data-modal-autofocus
+            value={name}
+            onChange={(event) => setName(event.target.value)}
+          />
+        </label>
+        <label htmlFor="create-dish-category">
+          Category
+          <input
+            id="create-dish-category"
+            value={selectedCategory}
+            onChange={(event) => setSelectedCategory(event.target.value)}
+          />
+        </label>
+      </div>
+      <p className="import-form-provenance">
+        <strong>Source</strong>
+        <span>
+          {sourceReference
+            ? `${sourceReference.workbook} · ${sourceReference.sheet}${sourceReference.range ? ` · ${sourceReference.range}` : ""}`
+            : "workbook evidence"}
+        </span>
+      </p>
+      {error && (
+        <p role="alert" className="import-error">
+          {error}
+        </p>
+      )}
+      <footer className="import-form-modal-footer">
+        <button
+          type="button"
+          className="import-secondary-action"
+          onClick={onClose}
+          disabled={saving}
+        >
+          Cancel
+        </button>
+        <button
+          type="button"
+          className="import-submit"
+          disabled={saving || !name.trim()}
+          onClick={() => onSave(name.trim(), selectedCategory.trim())}
+        >
+          {saving ? "Creating…" : "Create Dish Library item"}
+        </button>
+      </footer>
+    </PlannerModal>
+  );
 }
 
-function ReplaceWeekDialog({ conflicts, onClose, onConfirm }: { conflicts: Conflict[]; onClose: () => void; onConfirm: () => void }) {
-  const dates = conflicts.map(conflict => new Date(`${conflict.weekCommencing}T12:00:00Z`).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })).join(", ");
-  const hasHistory = conflicts.some(conflict => conflict.hasPublicationHistory);
-  return <PlannerModal title={`Replace ${dates}?`} onClose={onClose} className="import-confirm-modal"><h2>Replace {dates}?</h2><p>This will replace the current planning version of this week with the workbook you are importing.</p><ul><li>Dishes, portions and unpublished planning changes may be replaced.</li><li>Previous publication snapshots and immutable publication history will be preserved.</li><li>Your Dish Library and signed historical artefacts will not be changed.</li></ul>{hasHistory && <p className="import-status-warning"><strong>This week has publication history.</strong> Historical published versions will be preserved.</p>}<div className="import-progress-footer"><button type="button" className="import-secondary-action" onClick={onClose}>Cancel</button><button type="button" className="import-submit" onClick={onConfirm}>Replace planning week</button></div></PlannerModal>;
+function ReplaceWeekDialog({
+  conflicts,
+  onClose,
+  onConfirm,
+}: {
+  conflicts: Conflict[];
+  onClose: () => void;
+  onConfirm: () => void;
+}) {
+  const dates = conflicts
+    .map((conflict) =>
+      new Date(`${conflict.weekCommencing}T12:00:00Z`).toLocaleDateString(
+        "en-GB",
+        { day: "numeric", month: "short", year: "numeric" },
+      ),
+    )
+    .join(", ");
+  const hasHistory = conflicts.some(
+    (conflict) => conflict.hasPublicationHistory,
+  );
+  return (
+    <PlannerModal
+      title={`Replace ${dates}?`}
+      onClose={onClose}
+      className="import-confirm-modal"
+    >
+      <h2>Replace {dates}?</h2>
+      <p>
+        This will replace the current planning version of this week with the
+        workbook you are importing.
+      </p>
+      <ul>
+        <li>
+          Dishes, portions and unpublished planning changes may be replaced.
+        </li>
+        <li>
+          Previous publication snapshots and immutable publication history will
+          be preserved.
+        </li>
+        <li>
+          Your Dish Library and signed historical artefacts will not be changed.
+        </li>
+      </ul>
+      {hasHistory && (
+        <p className="import-status-warning">
+          <strong>This week has publication history.</strong> Historical
+          published versions will be preserved.
+        </p>
+      )}
+      <div className="import-progress-footer">
+        <button
+          type="button"
+          className="import-secondary-action"
+          onClick={onClose}
+        >
+          Cancel
+        </button>
+        <button type="button" className="import-submit" onClick={onConfirm}>
+          Replace planning week
+        </button>
+      </div>
+    </PlannerModal>
+  );
 }
 
 export default function ImportMenuWeekPage() {
-  const [files, setFiles] = useState<File[]>([]); const [reports, setReports] = useState<Report[]>([]); const [snapshots, setSnapshots] = useState<RollingSnapshot[]>([]); const [resolutions, setResolutions] = useState<Decision[]>([]); const [catalogue, setCatalogue] = useState<Option[]>([]); const [overrides, setOverrides] = useState<Record<string, string>>({}); const [conflicts, setConflicts] = useState<Conflict[]>([]); const [resume, setResume] = useState<ImportSession>(); const [filter, setFilter] = useState("all"); const [search, setSearch] = useState(""); const [openSource, setOpenSource] = useState<string>(); const [createSource, setCreateSource] = useState<Decision>(); const [createError, setCreateError] = useState(""); const [creating, setCreating] = useState(false); const [undo, setUndo] = useState<Decision[]>(); const [bulkConfirmation, setBulkConfirmation] = useState<{ action: "accept" | "ignore" | "create"; count: number }>(); const [replacementConfirmation, setReplacementConfirmation] = useState(false); const [dragging, setDragging] = useState(false); const [busy, setBusy] = useState(false); const [error, setError] = useState(""); const [message, setMessage] = useState(""); const [progress, setProgress] = useState<ProgressState>(); const inputRef = useRef<HTMLInputElement>(null);
-  useEffect(() => { const preventNavigation = (event: DragEvent) => event.preventDefault(); window.addEventListener("dragover", preventNavigation); window.addEventListener("drop", preventNavigation); return () => { window.removeEventListener("dragover", preventNavigation); window.removeEventListener("drop", preventNavigation); }; }, []);
-  useEffect(() => { void loadImportSession().then(setResume).catch(() => undefined); }, []);
-  const reviewCount = resolutions.filter(item => !item.canonicalId && !item.ignored).length; const resolvedCount = resolutions.filter(item => item.canonicalId || item.ignored).length; const createdCount = resolutions.filter(item => item.created).length; const workbookIssueCount = reports.filter(report => report.status !== "valid").length; const attention = workbookIssueCount > 0 || reports.length !== files.length;
-  const visible = useMemo(() => resolutions.filter(item => filter === "all" || (filter === "matched" ? Boolean(item.canonicalId) : filter === "review" ? !item.canonicalId && !item.ignored : filter === "needs-dish" ? !item.canonicalId && !item.suggestions.length && !item.ignored : Boolean(item.ignored))), [filter, resolutions]);
-  const filteredCatalogue = useMemo(() => catalogue.filter(item => item.name.toLocaleLowerCase().includes(search.toLocaleLowerCase())).slice(0, 80), [catalogue, search]); const filterCounts = { all: resolutions.length, review: reviewCount, "needs-dish": resolutions.filter(item => !item.canonicalId && !item.suggestions.length && !item.ignored).length, matched: resolutions.filter(item => Boolean(item.canonicalId)).length, ignored: resolutions.filter(item => Boolean(item.ignored)).length };
-  useEffect(() => { if (!snapshots.length || busy) return; void saveImportSession({ savedAt: Date.now(), files: files.map(file => ({ name: file.name, size: file.size, lastModified: file.lastModified, type: file.type })), reports: reports as unknown as Array<Record<string, unknown>>, snapshots, resolutions: resolutions as unknown as Array<Record<string, unknown>>, overrides, conflicts: conflicts as unknown as Array<Record<string, unknown>> }).catch(() => undefined); }, [busy, conflicts, files, overrides, reports, resolutions, snapshots]);
-  const preview = async (nextFiles: File[], nextOverrides = overrides) => { setBusy(true); setResume(undefined); setError(""); setProgress({ phase: "checking", total: nextFiles.length, completed: 0, current: nextFiles[0]?.name || "", weeks: 0, days: 0, dishes: 0, matched: 0, review: 0 }); try { const form = new FormData(); nextFiles.forEach(file => form.append("files", file)); form.append("weekDates", JSON.stringify(nextOverrides)); const response = await fetch("/api/rolling-menu/import", { method: "POST", body: form }); const body = await response.json(); if (!response.ok) throw new Error(body.error?.message || "The workbooks could not be checked."); const nextReports = body.files || []; const nextSnapshots = body.snapshots || []; const nextResolutions = body.resolutions || []; setFiles(nextFiles); setReports(nextReports); setSnapshots(nextSnapshots); setResolutions(nextResolutions); setConflicts(body.conflicts || []); setCatalogue(body.catalogue || []); setProgress({ phase: "checked", total: nextFiles.length, completed: nextFiles.length, current: nextReports[nextReports.length - 1]?.fileName || nextFiles[nextFiles.length - 1]?.name || "", weeks: nextSnapshots.length, days: nextSnapshots.reduce((count: number, snapshot: RollingSnapshot) => count + snapshot.days.length, 0), dishes: nextResolutions.length, matched: nextResolutions.filter((item: Decision) => Boolean(item.canonicalId)).length, review: nextResolutions.filter((item: Decision) => !item.canonicalId && !item.ignored).length }); } catch (cause) { const reason = cause instanceof Error ? cause.message : "The workbooks could not be checked."; setError(reason); setProgress(current => current ? { ...current, phase: "error", error: reason } : undefined); } finally { setBusy(false); } };
-  const addFiles = (incoming: File[]) => { const accepted = incoming.filter(file => /\.xlsx?$/i.test(file.name)); const next = [...files, ...accepted.filter(file => !files.some(existing => existing.name === file.name && existing.size === file.size))]; if (next.length) void preview(next); else setError("Choose one or more Excel files (.xlsx or .xls)."); };
-  const removeFile = (name: string) => { const next = files.filter(file => file.name !== name); setFiles(next); if (next.length) void preview(next); else { setReports([]); setSnapshots([]); setResolutions([]); setConflicts([]); void clearImportSession(); } };
-  const chooseDate = (name: string, date: string) => { const next = { ...overrides, [name]: date }; setOverrides(next); void preview(files, next); }; const choose = (sourceName: string, canonicalId: string) => setResolutions(current => current.map(item => item.sourceName === sourceName ? { ...item, canonicalId, canonicalName: catalogue.find(option => option.id === canonicalId)?.name, ignored: false, created: false, remember: true } : item)); const ignore = (sourceName: string) => setResolutions(current => current.map(item => item.sourceName === sourceName ? { ...item, ignored: true, canonicalId: undefined, created: false } : item));
-  const sourceFor = (sourceName: string) => snapshots.flatMap(snapshot => snapshot.entries).find(entry => safeDishKey(entry.itemLabel) === safeDishKey(sourceName));
-  const createDish = async (name: string, category: string) => { if (!createSource || creating) return; setCreating(true); setCreateError(""); const source = sourceFor(createSource.sourceName); try { const response = await fetch("/api/catalogue", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "create-dish", displayName: name, category, sourceReference: source?.source || { workbook: files[0]?.name || "Imported workbook", sheet: "Unknown", range: undefined }, sourceEvidence: { document: source?.source?.workbook || files[0]?.name || "Imported workbook", excerpt: source?.source?.rawText, importedAt: new Date().toISOString() } }) }); const body = await response.json(); if (!response.ok) throw new Error(body.error?.message || "The dish could not be created."); const item = body.item as { canonicalId: string; displayName: string; category: string }; setCatalogue(current => current.some(option => option.id === item.canonicalId) ? current : [...current, { id: item.canonicalId, name: item.displayName }]); setResolutions(current => current.map(value => value.sourceName === createSource.sourceName ? { ...value, kind: "matched", canonicalId: item.canonicalId, canonicalName: item.displayName, ignored: false, created: true, remember: true } : value)); setCreateSource(undefined); } catch (cause) { setCreateError(cause instanceof Error ? cause.message : "The dish could not be created."); } finally { setCreating(false); } };
-  const applyBulk = (action: "accept" | "ignore") => { const target = visible.filter(item => action === "accept" ? !item.canonicalId && item.suggestions.length > 0 : !item.canonicalId && !item.ignored); if (target.length) setBulkConfirmation({ action, count: target.length }); };
-  const confirmBulk = () => { if (!bulkConfirmation) return; const { action } = bulkConfirmation; const target = visible.filter(item => action === "accept" ? !item.canonicalId && item.suggestions.length > 0 : !item.canonicalId && !item.ignored); setUndo(resolutions); setResolutions(current => current.map(item => target.some(value => value.sourceName === item.sourceName) ? action === "accept" ? { ...item, canonicalId: item.suggestions[0].id, canonicalName: item.suggestions[0].name, remember: true } : { ...item, ignored: true } : item)); setBulkConfirmation(undefined); };
-  const commit = async (confirmedReplacement = false) => { if (busy) return; if (!snapshots.length || reviewCount || attention) { setError(reviewCount ? `${reviewCount} dish names still need a decision. Review or ignore these dishes before importing.` : `${workbookIssueCount || 1} workbooks need attention. Resolve the workbook issues before importing.`); return; } const blockedConflict = conflicts.find(conflict => !conflict.replaceable); if (blockedConflict) { setError(blockedConflict.integrityError || `The planning week for ${blockedConflict.weekCommencing} cannot be safely replaced.`); return; } if (conflicts.length && !confirmedReplacement) { setReplacementConfirmation(true); return; } const total = snapshots.length; const days = snapshots.reduce((count, snapshot) => count + snapshot.days.length, 0); setBusy(true); setError(""); setReplacementConfirmation(false); setProgress({ phase: "importing", total, completed: 0, current: snapshots[0]?.week.weekCommencing || "the first selected week", weeks: total, days, dishes: resolutions.length, matched: resolutions.filter(item => Boolean(item.canonicalId)).length, review: 0 }); try { const response = await fetch("/api/rolling-menu/import", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "commit", snapshots, resolutions, replaceWeeks: confirmedReplacement ? conflicts.filter(conflict => conflict.replaceable).map(conflict => ({ weekCommencing: conflict.weekCommencing, expectedVersion: conflict.currentVersion })) : [] }) }); const body = await response.json(); if (!response.ok) throw new Error(body.error?.message || "The menu weeks could not be imported."); await clearImportSession().catch(() => undefined); setMessage(`${confirmedReplacement ? "Replaced" : "Imported"} ${total} menu week${total === 1 ? "" : "s"} as planning source. Your Dish Library was not changed.`); setFiles([]); setReports([]); setSnapshots([]); setResolutions([]); setConflicts([]); setProgress(current => current ? { ...current, phase: "success", completed: total, days, current: snapshots[total - 1]?.week.weekCommencing || current.current } : current); } catch (cause) { const reason = cause instanceof Error ? cause.message : "The menu weeks could not be imported."; setError(reason); setProgress(current => current ? { ...current, phase: "error", error: reason } : undefined); } finally { setBusy(false); } };
-  const restoreSession = () => { if (!resume) return; setFiles(resume.files.map(file => new File([], file.name, { type: file.type, lastModified: file.lastModified }))); setReports(resume.reports as Report[]); setSnapshots(resume.snapshots); setResolutions(resume.resolutions as Decision[]); setOverrides(resume.overrides); setConflicts(resume.conflicts as Conflict[]); setResume(undefined); }; const discardSession = () => { void clearImportSession(); setResume(undefined); };
-  const filters: Array<[string, string]> = [["all", "All"], ["review", "Needs review"], ["needs-dish", "Needs a dish"], ["matched", "Matched"], ["ignored", "Ignored"]];
+  const [files, setFiles] = useState<File[]>([]);
+  const [reports, setReports] = useState<Report[]>([]);
+  const [snapshots, setSnapshots] = useState<RollingSnapshot[]>([]);
+  const [resolutions, setResolutions] = useState<Decision[]>([]);
+  const [catalogue, setCatalogue] = useState<Option[]>([]);
+  const [overrides, setOverrides] = useState<Record<string, string>>({});
+  const [conflicts, setConflicts] = useState<Conflict[]>([]);
+  const [resume, setResume] = useState<ImportSession>();
+  const [filter, setFilter] = useState("all");
+  const [search, setSearch] = useState("");
+  const [openSource, setOpenSource] = useState<string>();
+  const [createSource, setCreateSource] = useState<Decision>();
+  const [createError, setCreateError] = useState("");
+  const [creating, setCreating] = useState(false);
+  const [undo, setUndo] = useState<Decision[]>();
+  const [bulkConfirmation, setBulkConfirmation] = useState<{
+    action: "accept" | "ignore" | "create";
+    count: number;
+  }>();
+  const [replacementConfirmation, setReplacementConfirmation] = useState(false);
+  const [dragging, setDragging] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [message, setMessage] = useState("");
+  const [progress, setProgress] = useState<ProgressState>();
+  const inputRef = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    const preventNavigation = (event: DragEvent) => event.preventDefault();
+    window.addEventListener("dragover", preventNavigation);
+    window.addEventListener("drop", preventNavigation);
+    return () => {
+      window.removeEventListener("dragover", preventNavigation);
+      window.removeEventListener("drop", preventNavigation);
+    };
+  }, []);
+  useEffect(() => {
+    void loadImportSession()
+      .then(setResume)
+      .catch(() => undefined);
+  }, []);
+  const reviewCount = resolutions.filter(
+    (item) => !item.canonicalId && !item.ignored,
+  ).length;
+  const resolvedCount = resolutions.filter(
+    (item) => item.canonicalId || item.ignored,
+  ).length;
+  const createdCount = resolutions.filter((item) => item.created).length;
+  const workbookIssueCount = reports.filter(
+    (report) => report.status !== "valid",
+  ).length;
+  const attention = workbookIssueCount > 0 || reports.length !== files.length;
+  const visible = useMemo(
+    () =>
+      resolutions.filter(
+        (item) =>
+          filter === "all" ||
+          (filter === "matched"
+            ? Boolean(item.canonicalId)
+            : filter === "review"
+              ? !item.canonicalId && !item.ignored
+              : filter === "needs-dish"
+                ? !item.canonicalId && !item.suggestions.length && !item.ignored
+                : Boolean(item.ignored)),
+      ),
+    [filter, resolutions],
+  );
+  const filteredCatalogue = useMemo(
+    () =>
+      catalogue
+        .filter((item) =>
+          item.name.toLocaleLowerCase().includes(search.toLocaleLowerCase()),
+        )
+        .slice(0, 80),
+    [catalogue, search],
+  );
+  const bulkCreateCandidates = visible.filter(
+    (item) => !item.canonicalId && !item.ignored && !item.suggestions.length,
+  );
+  const filterCounts = {
+    all: resolutions.length,
+    review: reviewCount,
+    "needs-dish": resolutions.filter(
+      (item) => !item.canonicalId && !item.suggestions.length && !item.ignored,
+    ).length,
+    matched: resolutions.filter((item) => Boolean(item.canonicalId)).length,
+    ignored: resolutions.filter((item) => Boolean(item.ignored)).length,
+  };
+  useEffect(() => {
+    if (!snapshots.length || busy) return;
+    void saveImportSession({
+      savedAt: Date.now(),
+      files: files.map((file) => ({
+        name: file.name,
+        size: file.size,
+        lastModified: file.lastModified,
+        type: file.type,
+      })),
+      reports: reports as unknown as Array<Record<string, unknown>>,
+      snapshots,
+      resolutions: resolutions as unknown as Array<Record<string, unknown>>,
+      overrides,
+      conflicts: conflicts as unknown as Array<Record<string, unknown>>,
+    }).catch(() => undefined);
+  }, [busy, conflicts, files, overrides, reports, resolutions, snapshots]);
+  const preview = async (nextFiles: File[], nextOverrides = overrides) => {
+    setBusy(true);
+    setResume(undefined);
+    setError("");
+    setProgress({
+      phase: "checking",
+      total: nextFiles.length,
+      completed: 0,
+      current: nextFiles[0]?.name || "",
+      weeks: 0,
+      days: 0,
+      dishes: 0,
+      matched: 0,
+      review: 0,
+    });
+    try {
+      const form = new FormData();
+      nextFiles.forEach((file) => form.append("files", file));
+      form.append("weekDates", JSON.stringify(nextOverrides));
+      const response = await fetch("/api/rolling-menu/import", {
+        method: "POST",
+        body: form,
+      });
+      const body = await response.json();
+      if (!response.ok)
+        throw new Error(
+          body.error?.message || "The workbooks could not be checked.",
+        );
+      const nextReports = body.files || [];
+      const nextSnapshots = body.snapshots || [];
+      const nextResolutions = body.resolutions || [];
+      setFiles(nextFiles);
+      setReports(nextReports);
+      setSnapshots(nextSnapshots);
+      setResolutions(nextResolutions);
+      setConflicts(body.conflicts || []);
+      setCatalogue(body.catalogue || []);
+      setProgress({
+        phase: "checked",
+        total: nextFiles.length,
+        completed: nextFiles.length,
+        current:
+          nextReports[nextReports.length - 1]?.fileName ||
+          nextFiles[nextFiles.length - 1]?.name ||
+          "",
+        weeks: nextSnapshots.length,
+        days: nextSnapshots.reduce(
+          (count: number, snapshot: RollingSnapshot) =>
+            count + snapshot.days.length,
+          0,
+        ),
+        dishes: nextResolutions.length,
+        matched: nextResolutions.filter((item: Decision) =>
+          Boolean(item.canonicalId),
+        ).length,
+        review: nextResolutions.filter(
+          (item: Decision) => !item.canonicalId && !item.ignored,
+        ).length,
+      });
+    } catch (cause) {
+      const reason =
+        cause instanceof Error
+          ? cause.message
+          : "The workbooks could not be checked.";
+      setError(reason);
+      setProgress((current) =>
+        current ? { ...current, phase: "error", error: reason } : undefined,
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
+  const addFiles = (incoming: File[]) => {
+    const accepted = incoming.filter((file) => /\.xlsx?$/i.test(file.name));
+    const next = [
+      ...files,
+      ...accepted.filter(
+        (file) =>
+          !files.some(
+            (existing) =>
+              existing.name === file.name && existing.size === file.size,
+          ),
+      ),
+    ];
+    if (next.length) void preview(next);
+    else setError("Choose one or more Excel files (.xlsx or .xls).");
+  };
+  const removeFile = (name: string) => {
+    const next = files.filter((file) => file.name !== name);
+    setFiles(next);
+    if (next.length) void preview(next);
+    else {
+      setReports([]);
+      setSnapshots([]);
+      setResolutions([]);
+      setConflicts([]);
+      void clearImportSession();
+    }
+  };
+  const chooseDate = (name: string, date: string) => {
+    const next = { ...overrides, [name]: date };
+    setOverrides(next);
+    void preview(files, next);
+  };
+  const choose = (sourceName: string, canonicalId: string) =>
+    setResolutions((current) =>
+      current.map((item) =>
+        item.sourceName === sourceName
+          ? {
+              ...item,
+              canonicalId,
+              canonicalName: catalogue.find(
+                (option) => option.id === canonicalId,
+              )?.name,
+              ignored: false,
+              created: false,
+              remember: true,
+            }
+          : item,
+      ),
+    );
+  const ignore = (sourceName: string) =>
+    setResolutions((current) =>
+      current.map((item) =>
+        item.sourceName === sourceName
+          ? { ...item, ignored: true, canonicalId: undefined, created: false }
+          : item,
+      ),
+    );
+  const sourceFor = (sourceName: string) =>
+    snapshots
+      .flatMap((snapshot) => snapshot.entries)
+      .find(
+        (entry) => safeDishKey(entry.itemLabel) === safeDishKey(sourceName),
+      );
+  const createDish = async (name: string, category: string) => {
+    if (!createSource || creating) return;
+    setCreating(true);
+    setCreateError("");
+    const source = sourceFor(createSource.sourceName);
+    try {
+      const response = await fetch("/api/catalogue", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          action: "create-dish",
+          displayName: name,
+          category,
+          sourceReference: source?.source || {
+            workbook: files[0]?.name || "Imported workbook",
+            sheet: "Unknown",
+            range: undefined,
+          },
+          sourceEvidence: {
+            document:
+              source?.source?.workbook || files[0]?.name || "Imported workbook",
+            excerpt: source?.source?.rawText,
+            importedAt: new Date().toISOString(),
+          },
+        }),
+      });
+      const body = await response.json();
+      if (!response.ok)
+        throw new Error(
+          body.error?.message || "The dish could not be created.",
+        );
+      const item = body.item as {
+        canonicalId: string;
+        displayName: string;
+        category: string;
+      };
+      setCatalogue((current) =>
+        current.some((option) => option.id === item.canonicalId)
+          ? current
+          : [...current, { id: item.canonicalId, name: item.displayName }],
+      );
+      setResolutions((current) =>
+        current.map((value) =>
+          value.sourceName === createSource.sourceName
+            ? {
+                ...value,
+                kind: "matched",
+                canonicalId: item.canonicalId,
+                canonicalName: item.displayName,
+                ignored: false,
+                created: true,
+                remember: true,
+              }
+            : value,
+        ),
+      );
+      setCreateSource(undefined);
+    } catch (cause) {
+      setCreateError(
+        cause instanceof Error
+          ? cause.message
+          : "The dish could not be created.",
+      );
+    } finally {
+      setCreating(false);
+    }
+  };
+  const createBulkDishes = async () => {
+    if (!bulkConfirmation || bulkConfirmation.action !== "create" || busy) return;
+    const candidates = visible.filter((item) => !item.canonicalId && !item.ignored && !item.suggestions.length);
+    if (!candidates.length) { setBulkConfirmation(undefined); return; }
+    setBusy(true); setError("");
+    try {
+      const response = await fetch("/api/catalogue", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({
+        action: "create-dishes",
+        items: candidates.map((item) => { const source = sourceFor(item.sourceName); return { displayName: item.sourceName, category: source?.slot || "", sourceReference: source?.source || { workbook: files[0]?.name || "Imported workbook", sheet: "Unknown" }, sourceEvidence: { document: source?.source?.workbook || files[0]?.name || "Imported workbook", excerpt: source?.source?.rawText, importedAt: new Date().toISOString() } }; }),
+      }) });
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.error?.message || "The dishes could not be created.");
+      const results = body.results || [];
+      setCatalogue((current) => [...current, ...results.filter((result: { item?: { canonicalId: string; displayName: string } }) => result.item).map((result: { item: { canonicalId: string; displayName: string } }) => ({ id: result.item.canonicalId, name: result.item.displayName })).filter((option: Option, index: number, all: Option[]) => all.findIndex((candidate) => candidate.id === option.id) === index && !current.some((candidate) => candidate.id === option.id))]);
+      setResolutions((current) => current.map((item) => { const result = results.find((candidate: { item?: { canonicalId: string; displayName: string }; outcome?: string }) => candidate.item && safeDishKey(candidate.item.displayName) === safeDishKey(item.sourceName)); if (!result?.item) return item; return { ...item, kind: "matched", canonicalId: result.item.canonicalId, canonicalName: result.item.displayName, created: result.outcome === "created_new", remember: true, ignored: false }; }));
+      setBulkConfirmation(undefined);
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "The dishes could not be created."); }
+    finally { setBusy(false); }
+  };
+  const applyBulk = (action: "accept" | "ignore" | "create") => {
+    const target = visible.filter((item) =>
+      action === "accept"
+        ? !item.canonicalId && item.suggestions.length > 0
+        : action === "create" ? !item.canonicalId && !item.ignored && !item.suggestions.length : !item.canonicalId && !item.ignored,
+    );
+    if (target.length) setBulkConfirmation({ action, count: target.length });
+  };
+  const confirmBulk = () => {
+    if (!bulkConfirmation) return;
+    const { action } = bulkConfirmation;
+    if (action === "create") { void createBulkDishes(); return; }
+    const target = visible.filter((item) =>
+      action === "accept"
+        ? !item.canonicalId && item.suggestions.length > 0
+        : !item.canonicalId && !item.ignored,
+    );
+    setUndo(resolutions);
+    setResolutions((current) =>
+      current.map((item) =>
+        target.some((value) => value.sourceName === item.sourceName)
+          ? action === "accept"
+            ? {
+                ...item,
+                canonicalId: item.suggestions[0].id,
+                canonicalName: item.suggestions[0].name,
+                remember: true,
+              }
+            : { ...item, ignored: true }
+          : item,
+      ),
+    );
+    setBulkConfirmation(undefined);
+  };
+  const commit = async (confirmedReplacement = false) => {
+    if (busy) return;
+    if (!snapshots.length || reviewCount || attention) {
+      setError(
+        reviewCount
+          ? `${reviewCount} dish names still need a decision. Review or ignore these dishes before importing.`
+          : `${workbookIssueCount || 1} workbooks need attention. Resolve the workbook issues before importing.`,
+      );
+      return;
+    }
+    const blockedConflict = conflicts.find((conflict) => !conflict.replaceable);
+    if (blockedConflict) {
+      setError(
+        blockedConflict.integrityError ||
+          `The planning week for ${blockedConflict.weekCommencing} cannot be safely replaced.`,
+      );
+      return;
+    }
+    if (conflicts.length && !confirmedReplacement) {
+      setReplacementConfirmation(true);
+      return;
+    }
+    const total = snapshots.length;
+    const days = snapshots.reduce(
+      (count, snapshot) => count + snapshot.days.length,
+      0,
+    );
+    setBusy(true);
+    setError("");
+    setReplacementConfirmation(false);
+    setProgress({
+      phase: "importing",
+      total,
+      completed: 0,
+      current: snapshots[0]?.week.weekCommencing || "the first selected week",
+      weeks: total,
+      days,
+      dishes: resolutions.length,
+      matched: resolutions.filter((item) => Boolean(item.canonicalId)).length,
+      created: createdCount,
+      review: 0,
+    });
+    try {
+      const response = await fetch("/api/rolling-menu/import", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          action: "commit",
+          snapshots,
+          resolutions,
+          replaceWeeks: confirmedReplacement
+            ? conflicts
+                .filter((conflict) => conflict.replaceable)
+                .map((conflict) => ({
+                  weekCommencing: conflict.weekCommencing,
+                  expectedVersion: conflict.currentVersion,
+                }))
+            : [],
+        }),
+      });
+      const body = await response.json();
+      if (!response.ok)
+        throw new Error(
+          body.error?.message || "The menu weeks could not be imported.",
+        );
+      await clearImportSession().catch(() => undefined);
+      setMessage(
+        `${confirmedReplacement ? "Replaced" : "Imported"} ${total} menu week${total === 1 ? "" : "s"} as planning source. ${createdCount} new Dish Library item${createdCount === 1 ? " was" : "s were"} created.`,
+      );
+      setFiles([]);
+      setReports([]);
+      setSnapshots([]);
+      setResolutions([]);
+      setConflicts([]);
+      setProgress((current) =>
+        current
+          ? {
+              ...current,
+              phase: "success",
+              completed: total,
+              days,
+              current:
+                snapshots[total - 1]?.week.weekCommencing || current.current,
+            }
+          : current,
+      );
+    } catch (cause) {
+      const reason =
+        cause instanceof Error
+          ? cause.message
+          : "The menu weeks could not be imported.";
+      setError(reason);
+      setProgress((current) =>
+        current ? { ...current, phase: "error", error: reason } : undefined,
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
+  const restoreSession = () => {
+    if (!resume) return;
+    setFiles(
+      resume.files.map(
+        (file) =>
+          new File([], file.name, {
+            type: file.type,
+            lastModified: file.lastModified,
+          }),
+      ),
+    );
+    setReports(resume.reports as Report[]);
+    setSnapshots(resume.snapshots);
+    setResolutions(resume.resolutions as Decision[]);
+    setOverrides(resume.overrides);
+    setConflicts(resume.conflicts as Conflict[]);
+    setResume(undefined);
+  };
+  const discardSession = () => {
+    void clearImportSession();
+    setResume(undefined);
+  };
+  const filters: Array<[string, string]> = [
+    ["all", "All"],
+    ["review", "Needs review"],
+    ["needs-dish", "Needs a dish"],
+    ["matched", "Matched"],
+    ["ignored", "Ignored"],
+  ];
 
-  return <MenuPlanningShell section="Planner">{progress && <ProgressModal progress={progress} onClose={() => setProgress(undefined)} />}{createSource && <CreateDishDialog sourceName={createSource.sourceName} category={sourceFor(createSource.sourceName)?.slot || ""} sourceReference={sourceFor(createSource.sourceName)?.source} saving={creating} error={createError} onSave={(name, category) => void createDish(name, category)} onClose={() => { if (!creating) { setCreateSource(undefined); setCreateError(""); } }} />}{replacementConfirmation && <ReplaceWeekDialog conflicts={conflicts.filter(conflict => conflict.replaceable)} onClose={() => setReplacementConfirmation(false)} onConfirm={() => void commit(true)} />}{bulkConfirmation && <div className="import-confirm-backdrop" role="presentation"><section className="import-confirm-modal" role="dialog" aria-modal="true" aria-labelledby="bulk-confirm-title"><h2 id="bulk-confirm-title">{bulkConfirmation.action === "ignore" ? `Ignore ${bulkConfirmation.count} dish names?` : `Accept ${bulkConfirmation.count} suggested matches?`}</h2><p>{bulkConfirmation.action === "ignore" ? "These dishes will not be added to the imported menu weeks." : "Use the suggested existing Dish Library match for these names."}</p><div className="import-progress-footer"><button type="button" className="import-secondary-action" onClick={() => setBulkConfirmation(undefined)}>Cancel</button><button type="button" className="import-submit" onClick={confirmBulk}>{bulkConfirmation.action === "ignore" ? `Ignore ${bulkConfirmation.count} dishes` : `Accept ${bulkConfirmation.count} matches`}</button></div></section></div>}<main className="import-menu-week"><p className="import-eyebrow">MENU PLANNING</p><h1>Import menu weeks</h1><p className="import-lede">Upload Brian&apos;s weekly menu spreadsheets. We&apos;ll match dishes to your existing Dish Library before anything is added.</p>
-    {resume && <section className="import-resume" role="status"><div><strong>Resume import review</strong><span>{resume.snapshots.length} menu weeks · {resume.resolutions.filter(item => !item.canonicalId && !item.ignored).length} dishes still need review</span></div><div><button type="button" onClick={restoreSession}>Resume</button><button type="button" className="import-secondary-action" onClick={discardSession}>Discard saved import</button></div></section>}
-    {!files.length && <section className={`import-dropzone${dragging ? " is-dragging" : ""}`} onDragEnter={event => { event.preventDefault(); setDragging(true); }} onDragOver={event => event.preventDefault()} onDragLeave={() => setDragging(false)} onDrop={event => { event.preventDefault(); setDragging(false); addFiles([...event.dataTransfer.files]); }}><button type="button" onClick={() => inputRef.current?.click()}>Choose Excel files</button><input ref={inputRef} type="file" accept=".xlsx,.xls" multiple hidden onChange={event => addFiles([...(event.target.files || [])])} /><p>or drag and drop files here</p><small>Select one or many .xlsx or .xls workbooks.</small></section>}
-    {files.length > 0 && <><section className="import-workbooks"><div className="import-section-heading"><h2>Selected workbooks</h2><button type="button" className="import-secondary-action" onClick={() => inputRef.current?.click()}>Add more files</button></div><input ref={inputRef} type="file" accept=".xlsx,.xls" multiple hidden onChange={event => addFiles([...(event.target.files || [])])} /><div>{reports.map(report => <div className="import-workbook-row" key={report.fileName}><strong>{report.fileName}</strong><span>{report.weekCommencing || "Week date needed"}</span><span className={report.status === "valid" ? "import-status-success" : "import-status-warning"}>{report.status === "valid" ? "Valid" : "Needs attention"}</span>{report.error && <small>{report.error}</small>}{!report.weekCommencing && <input type="date" aria-label={`Choose week date for ${report.fileName}`} onChange={event => chooseDate(report.fileName, event.target.value)} />}<button type="button" className="import-tertiary-action" onClick={() => removeFile(report.fileName)}>Remove</button></div>)}</div></section>
-      {snapshots.length > 0 && <><section className="import-summary"><div><strong>{snapshots.length}</strong><span>menu weeks</span></div><div><strong>{resolutions.length}</strong><span>dish names</span></div><div><strong>{resolvedCount}</strong><span>resolved</span></div><div><strong>{reviewCount}</strong><span>need review</span></div><div className="import-summary-progress"><span style={{ width: `${resolutions.length ? Math.round((resolvedCount / resolutions.length) * 100) : 0}%` }} /></div></section>
-        <div className="import-review-toolbar"><div className="import-filter-row">{filters.map(([value, label]) => <button className={filter === value ? "is-active" : ""} key={value} onClick={() => setFilter(value)}>{label} <span>{filterCounts[value as keyof typeof filterCounts]}</span></button>)}<span className="import-visible-count">{visible.length} shown</span></div><div className="import-bulk-row"><button className="import-bulk-primary" onClick={() => applyBulk("accept")} disabled={!visible.some(item => !item.canonicalId && item.suggestions.length)}>Accept {visible.filter(item => !item.canonicalId && item.suggestions.length).length} suggested matches</button><button className="import-bulk-subtle" onClick={() => applyBulk("ignore")} disabled={!visible.some(item => !item.canonicalId && !item.ignored)}>Ignore {visible.filter(item => !item.canonicalId && !item.ignored).length} shown</button>{undo && <button className="import-tertiary-action" onClick={() => { setResolutions(undo); setUndo(undefined); }}>Undo last bulk action</button>}</div></div>
-        <div className="import-review-table"><div className="import-review-header"><span>Source dish</span><span>Match</span><span>Used</span><span>Status / action</span></div>{visible.map(item => <div className="import-review-row" key={item.sourceName}><strong>{item.sourceName}</strong><span>{item.canonicalId ? <span className="import-status-success">{item.canonicalName}</span> : item.ignored ? <span className="import-status-warning">Ignored</span> : item.suggestions[0]?.name || "No match found"}</span><span>{item.occurrences}×<small>{item.workbookCount || 1} week{(item.workbookCount || 1) === 1 ? "" : "s"}</small></span><span className="import-review-actions">{item.canonicalId ? <span className="import-status-success">{item.created ? "Created and matched" : "Matched"}</span> : item.ignored ? <span className="import-status-warning">Ignored</span> : <>{item.suggestions[0] && <button className="import-action-primary" onClick={() => choose(item.sourceName, item.suggestions[0].id)}>Use match</button>}<button className="import-action-secondary" onClick={() => setOpenSource(openSource === item.sourceName ? undefined : item.sourceName)}>{item.suggestions[0] ? "Choose another" : "Choose existing"}</button><button className="import-action-primary" onClick={() => { setCreateError(""); setCreateSource(item); }}>Create new dish</button><button className="import-action-tertiary" onClick={() => ignore(item.sourceName)}>Ignore</button></>}</span>{openSource === item.sourceName && !item.canonicalId && !item.ignored && <span className="import-dish-search"><input aria-label={`Search Dish Library for ${item.sourceName}`} placeholder="Search Dish Library" value={search} onChange={event => setSearch(event.target.value)} /><select aria-label={`Choose existing dish for ${item.sourceName}`} defaultValue="" onChange={event => event.target.value && choose(item.sourceName, event.target.value)}><option value="">Choose an existing dish</option>{filteredCatalogue.map(option => <option key={option.id} value={option.id}>{option.name}</option>)}</select></span>}</div>)}</div>
-        <section className="import-ready"><h2>{reviewCount ? `${reviewCount} dish names still need a decision` : workbookIssueCount ? `${workbookIssueCount} workbooks need attention` : "Ready to import"}</h2><p>{reviewCount ? "Review, create or ignore these dishes before importing." : workbookIssueCount ? "Resolve the workbook issues before importing." : `${snapshots.length} weeks · ${resolvedCount} dish names resolved · ${createdCount} new Dish Library item${createdCount === 1 ? "" : "s"} created`}</p><p><strong>{createdCount ? "Created dishes were explicitly reviewed and will be added to your Dish Library." : "Your Dish Library will not be changed."}</strong></p>{reviewCount && <button type="button" className="import-secondary-action" onClick={() => setFilter("review")}>Show unresolved dishes</button>}{workbookIssueCount > 0 && <div className="import-conflict-group"><strong>Workbook issues</strong>{reports.filter(report => report.status !== "valid").map(report => <div key={report.fileName}><span>{report.fileName}</span><small>{report.error || "Review this workbook before importing."}</small></div>)}</div>}{conflicts.length > 0 && <div className="import-conflict-group"><strong>Existing planning week detected</strong>{conflicts.map(conflict => <div key={conflict.weekCommencing}><span>WC {conflict.weekCommencing} — {conflict.replaceable ? "This workbook can replace the current planning version" : conflict.integrityError}</span><small>{conflict.hasDishes ? "Current dishes and portions may be replaced." : "The current planning version is empty."}{conflict.hasPublicationHistory ? " Historical published versions will be preserved." : ""}</small></div>)}</div>}<button className="import-submit" disabled={Boolean(reviewCount) || attention || busy} onClick={() => void commit()}>{busy ? "Preparing import…" : conflicts.length ? "Replace existing week" : `Import ${snapshots.length} menu weeks`}</button></section></>}
-    </>}
-    {error && <p role="alert" className="import-error">{error}</p>}{message && <p role="status" className="import-message">{message}</p>}
-  </main></MenuPlanningShell>;
+  return (
+    <MenuPlanningShell section="Planner">
+      {progress && (
+        <ProgressModal
+          progress={progress}
+          onClose={() => setProgress(undefined)}
+        />
+      )}
+      {createSource && (
+        <CreateDishDialog
+          sourceName={createSource.sourceName}
+          category={sourceFor(createSource.sourceName)?.slot || ""}
+          sourceReference={sourceFor(createSource.sourceName)?.source}
+          saving={creating}
+          error={createError}
+          onSave={(name, category) => void createDish(name, category)}
+          onClose={() => {
+            if (!creating) {
+              setCreateSource(undefined);
+              setCreateError("");
+            }
+          }}
+        />
+      )}
+      {replacementConfirmation && (
+        <ReplaceWeekDialog
+          conflicts={conflicts.filter((conflict) => conflict.replaceable)}
+          onClose={() => setReplacementConfirmation(false)}
+          onConfirm={() => void commit(true)}
+        />
+      )}
+      {bulkConfirmation && (
+        <div className="import-confirm-backdrop" role="presentation">
+          <section
+            className="import-confirm-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="bulk-confirm-title"
+          >
+            <h2 id="bulk-confirm-title">
+              {bulkConfirmation.action === "create"
+                ? `Create ${bulkConfirmation.count} new dishes?`
+                : bulkConfirmation.action === "ignore"
+                ? `Ignore ${bulkConfirmation.count} dish names?`
+                : `Accept ${bulkConfirmation.count} suggested matches?`}
+            </h2>
+            <p>
+              {bulkConfirmation.action === "create"
+                ? "These dishes have no current Dish Library match. This will create new unreviewed Dish Library items from the workbook names and detected categories."
+                : bulkConfirmation.action === "ignore"
+                ? "These dishes will not be added to the imported menu weeks."
+                : "Use the suggested existing Dish Library match for these names."}
+            </p>
+            <div className="import-progress-footer">
+              <button
+                type="button"
+                className="import-secondary-action"
+                onClick={() => setBulkConfirmation(undefined)}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="import-submit"
+                onClick={confirmBulk}
+              >
+                {bulkConfirmation.action === "create"
+                  ? `Create ${bulkConfirmation.count} dishes`
+                  : bulkConfirmation.action === "ignore"
+                  ? `Ignore ${bulkConfirmation.count} dishes`
+                  : `Accept ${bulkConfirmation.count} matches`}
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
+      <main className="import-menu-week">
+        <p className="import-eyebrow">MENU PLANNING</p>
+        <h1>Import menu weeks</h1>
+        <p className="import-lede">
+          Upload Brian&apos;s weekly menu spreadsheets. We&apos;ll match dishes
+          to your existing Dish Library before anything is added.
+        </p>
+        {resume && (
+          <section className="import-resume" role="status">
+            <div>
+              <strong>Resume import review</strong>
+              <span>
+                {resume.snapshots.length} menu weeks ·{" "}
+                {
+                  resume.resolutions.filter(
+                    (item) => !item.canonicalId && !item.ignored,
+                  ).length
+                }{" "}
+                dishes still need review
+              </span>
+            </div>
+            <div>
+              <button type="button" onClick={restoreSession}>
+                Resume
+              </button>
+              <button
+                type="button"
+                className="import-secondary-action"
+                onClick={discardSession}
+              >
+                Discard saved import
+              </button>
+            </div>
+          </section>
+        )}
+        {!files.length && (
+          <section
+            className={`import-dropzone${dragging ? " is-dragging" : ""}`}
+            onDragEnter={(event) => {
+              event.preventDefault();
+              setDragging(true);
+            }}
+            onDragOver={(event) => event.preventDefault()}
+            onDragLeave={() => setDragging(false)}
+            onDrop={(event) => {
+              event.preventDefault();
+              setDragging(false);
+              addFiles([...event.dataTransfer.files]);
+            }}
+          >
+            <button type="button" onClick={() => inputRef.current?.click()}>
+              Choose Excel files
+            </button>
+            <input
+              ref={inputRef}
+              type="file"
+              accept=".xlsx,.xls"
+              multiple
+              hidden
+              onChange={(event) => addFiles([...(event.target.files || [])])}
+            />
+            <p>or drag and drop files here</p>
+            <small>Select one or many .xlsx or .xls workbooks.</small>
+          </section>
+        )}
+        {files.length > 0 && (
+          <>
+            <section className="import-workbooks">
+              <div className="import-section-heading">
+                <h2>Selected workbooks</h2>
+                <button
+                  type="button"
+                  className="import-secondary-action"
+                  onClick={() => inputRef.current?.click()}
+                >
+                  Add more files
+                </button>
+              </div>
+              <input
+                ref={inputRef}
+                type="file"
+                accept=".xlsx,.xls"
+                multiple
+                hidden
+                onChange={(event) => addFiles([...(event.target.files || [])])}
+              />
+              <div>
+                {reports.map((report) => (
+                  <div className="import-workbook-row" key={report.fileName}>
+                    <strong>{report.fileName}</strong>
+                    <span>{report.weekCommencing || "Week date needed"}</span>
+                    <span
+                      className={
+                        report.status === "valid"
+                          ? "import-status-success"
+                          : "import-status-warning"
+                      }
+                    >
+                      {report.status === "valid" ? "Valid" : "Needs attention"}
+                    </span>
+                    {report.error && <small>{report.error}</small>}
+                    {!report.weekCommencing && (
+                      <input
+                        type="date"
+                        aria-label={`Choose week date for ${report.fileName}`}
+                        onChange={(event) =>
+                          chooseDate(report.fileName, event.target.value)
+                        }
+                      />
+                    )}
+                    <button
+                      type="button"
+                      className="import-tertiary-action"
+                      onClick={() => removeFile(report.fileName)}
+                    >
+                      Remove
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </section>
+            {snapshots.length > 0 && (
+              <>
+                <section className="import-summary">
+                  <div>
+                    <strong>{snapshots.length}</strong>
+                    <span>menu weeks</span>
+                  </div>
+                  <div>
+                    <strong>{resolutions.length}</strong>
+                    <span>dish names</span>
+                  </div>
+                  <div>
+                    <strong>{resolvedCount}</strong>
+                    <span>resolved</span>
+                  </div>
+                  <div>
+                    <strong>{reviewCount}</strong>
+                    <span>need review</span>
+                  </div>
+                  <div className="import-summary-progress">
+                    <span
+                      style={{
+                        width: `${resolutions.length ? Math.round((resolvedCount / resolutions.length) * 100) : 0}%`,
+                      }}
+                    />
+                  </div>
+                </section>
+                <div className="import-review-toolbar">
+                  <div className="import-filter-row">
+                    {filters.map(([value, label]) => (
+                      <button
+                        className={filter === value ? "is-active" : ""}
+                        key={value}
+                        onClick={() => setFilter(value)}
+                      >
+                        {label}{" "}
+                        <span>
+                          {filterCounts[value as keyof typeof filterCounts]}
+                        </span>
+                      </button>
+                    ))}
+                    <span className="import-visible-count">
+                      {visible.length} shown
+                    </span>
+                  </div>
+                  <div className="import-bulk-row">
+                    <button
+                      className="import-bulk-primary"
+                      onClick={() => applyBulk("accept")}
+                      disabled={
+                        !visible.some(
+                          (item) =>
+                            !item.canonicalId && item.suggestions.length,
+                        )
+                      }
+                    >
+                      Accept{" "}
+                      {
+                        visible.filter(
+                          (item) =>
+                            !item.canonicalId && item.suggestions.length,
+                        ).length
+                      }{" "}
+                      suggested matches
+                    </button>
+                    <button
+                      className="import-bulk-subtle"
+                      onClick={() => applyBulk("ignore")}
+                      disabled={
+                        !visible.some(
+                          (item) => !item.canonicalId && !item.ignored,
+                        )
+                      }
+                    >
+                      Ignore{" "}
+                      {
+                        visible.filter(
+                          (item) => !item.canonicalId && !item.ignored,
+                        ).length
+                      }{" "}
+                      shown
+                    </button>
+                    <button
+                      className="import-bulk-primary"
+                      onClick={() => applyBulk("create")}
+                      disabled={!bulkCreateCandidates.length || busy}
+                    >
+                      Create {bulkCreateCandidates.length} new dishes
+                    </button>
+                    {undo && (
+                      <button
+                        className="import-tertiary-action"
+                        onClick={() => {
+                          setResolutions(undo);
+                          setUndo(undefined);
+                        }}
+                      >
+                        Undo last bulk action
+                      </button>
+                    )}
+                  </div>
+                </div>
+                <div className="import-review-table">
+                  <div className="import-review-header">
+                    <span>Source dish</span>
+                    <span>Match</span>
+                    <span>Used</span>
+                    <span>Status / action</span>
+                  </div>
+                  {visible.map((item) => (
+                    <div className="import-review-row" key={item.sourceName}>
+                      <strong>{item.sourceName}</strong>
+                      <span>
+                        {item.canonicalId ? (
+                          <span className="import-status-success">
+                            {item.canonicalName}
+                          </span>
+                        ) : item.ignored ? (
+                          <span className="import-status-warning">Ignored</span>
+                        ) : (
+                          item.suggestions[0]?.name || "No match found"
+                        )}
+                      </span>
+                      <span>
+                        {item.occurrences}×
+                        <small>
+                          {item.workbookCount || 1} week
+                          {(item.workbookCount || 1) === 1 ? "" : "s"}
+                        </small>
+                      </span>
+                      <span className="import-review-actions">
+                        {item.canonicalId ? (
+                          <span className="import-status-success">
+                            {item.created ? "Created and matched" : "Matched"}
+                          </span>
+                        ) : item.ignored ? (
+                          <span className="import-status-warning">Ignored</span>
+                        ) : (
+                          <>
+                            {item.suggestions[0] && (
+                              <button
+                                className="import-action-primary"
+                                onClick={() =>
+                                  choose(
+                                    item.sourceName,
+                                    item.suggestions[0].id,
+                                  )
+                                }
+                              >
+                                Use match
+                              </button>
+                            )}
+                            <button
+                              className="import-action-secondary"
+                              onClick={() =>
+                                setOpenSource(
+                                  openSource === item.sourceName
+                                    ? undefined
+                                    : item.sourceName,
+                                )
+                              }
+                            >
+                              {item.suggestions[0]
+                                ? "Choose another"
+                                : "Choose existing"}
+                            </button>
+                            <button
+                              className="import-action-primary"
+                              onClick={() => {
+                                setCreateError("");
+                                setCreateSource(item);
+                              }}
+                            >
+                              Create new dish
+                            </button>
+                            <button
+                              className="import-action-tertiary"
+                              onClick={() => ignore(item.sourceName)}
+                            >
+                              Ignore
+                            </button>
+                          </>
+                        )}
+                      </span>
+                      {openSource === item.sourceName &&
+                        !item.canonicalId &&
+                        !item.ignored && (
+                          <span className="import-dish-search">
+                            <input
+                              aria-label={`Search Dish Library for ${item.sourceName}`}
+                              placeholder="Search Dish Library"
+                              value={search}
+                              onChange={(event) =>
+                                setSearch(event.target.value)
+                              }
+                            />
+                            <select
+                              aria-label={`Choose existing dish for ${item.sourceName}`}
+                              defaultValue=""
+                              onChange={(event) =>
+                                event.target.value &&
+                                choose(item.sourceName, event.target.value)
+                              }
+                            >
+                              <option value="">Choose an existing dish</option>
+                              {filteredCatalogue.map((option) => (
+                                <option key={option.id} value={option.id}>
+                                  {option.name}
+                                </option>
+                              ))}
+                            </select>
+                          </span>
+                        )}
+                    </div>
+                  ))}
+                </div>
+                <section className="import-ready">
+                  <h2>
+                    {reviewCount
+                      ? `${reviewCount} dish names still need a decision`
+                      : workbookIssueCount
+                        ? `${workbookIssueCount} workbooks need attention`
+                        : "Ready to import"}
+                  </h2>
+                  <p>
+                    {reviewCount
+                      ? "Review, create or ignore these dishes before importing."
+                      : workbookIssueCount
+                        ? "Resolve the workbook issues before importing."
+                        : `${snapshots.length} weeks · ${resolvedCount} dish names resolved · ${createdCount} new Dish Library item${createdCount === 1 ? "" : "s"} created`}
+                  </p>
+                  <p>
+                    <strong>
+                      {createdCount
+                        ? "Created dishes were explicitly reviewed and will be added to your Dish Library."
+                        : "Your Dish Library will not be changed."}
+                    </strong>
+                  </p>
+                  {reviewCount && (
+                    <button
+                      type="button"
+                      className="import-secondary-action"
+                      onClick={() => setFilter("review")}
+                    >
+                      Show unresolved dishes
+                    </button>
+                  )}
+                  {workbookIssueCount > 0 && (
+                    <div className="import-conflict-group">
+                      <strong>Workbook issues</strong>
+                      {reports
+                        .filter((report) => report.status !== "valid")
+                        .map((report) => (
+                          <div key={report.fileName}>
+                            <span>{report.fileName}</span>
+                            <small>
+                              {report.error ||
+                                "Review this workbook before importing."}
+                            </small>
+                          </div>
+                        ))}
+                    </div>
+                  )}
+                  {conflicts.length > 0 && (
+                    <div className="import-conflict-group">
+                      <strong>Existing planning week detected</strong>
+                      {conflicts.map((conflict) => (
+                        <div key={conflict.weekCommencing}>
+                          <span>
+                            WC {conflict.weekCommencing} —{" "}
+                            {conflict.replaceable
+                              ? "This workbook can replace the current planning version"
+                              : conflict.integrityError}
+                          </span>
+                          <small>
+                            {conflict.hasDishes
+                              ? "Current dishes and portions may be replaced."
+                              : "The current planning version is empty."}
+                            {conflict.hasPublicationHistory
+                              ? " Historical published versions will be preserved."
+                              : ""}
+                          </small>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <button
+                    className="import-submit"
+                    disabled={Boolean(reviewCount) || attention || busy}
+                    onClick={() => void commit()}
+                  >
+                    {busy
+                      ? "Preparing import…"
+                      : conflicts.length
+                        ? "Replace existing week"
+                        : `Import ${snapshots.length} menu weeks`}
+                  </button>
+                </section>
+              </>
+            )}
+          </>
+        )}
+        {error && (
+          <p role="alert" className="import-error">
+            {error}
+          </p>
+        )}
+        {message && (
+          <p role="status" className="import-message">
+            {message}
+          </p>
+        )}
+      </main>
+    </MenuPlanningShell>
+  );
 }

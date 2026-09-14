@@ -51,7 +51,7 @@ export async function POST(request: Request) {
         if (!input.displayName?.trim()) return NextResponse.json({ error: { message: "Every dish in the batch needs a name." } }, { status: 422 });
         results.push(await createCanonicalMenuItem(input));
       }
-      return NextResponse.json({ results, createdCount: results.filter(result => result.outcome === "created_new").length, matchedCount: results.filter(result => result.outcome !== "created_new").length });
+      return NextResponse.json({ results: results.map(result => ({ item: result, outcome: result.outcome })), createdCount: results.filter(result => result.outcome === "created_new").length, matchedCount: results.filter(result => result.outcome !== "created_new").length });
     }
     if (action !== "merge-similar-dishes" && action !== "merge-reviewed-dishes") return NextResponse.json({ error: { message: "Unknown catalogue command." } }, { status: 400 });
     const result = await mergeSimilarCanonicalItems(action === "merge-reviewed-dishes" ? "reviewed-dish-merge" : "automatic-dish-normaliser", action === "merge-reviewed-dishes" ? new Set(body.canonicalIds || []) : undefined);
