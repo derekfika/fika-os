@@ -4,7 +4,7 @@ import type { DeliveredInService } from "@fika/server-shared/delivered-in-access
 import { recordDeliveredInAppReadBudget } from "./delivered-in-read-budget";
 import { recordDataAccess } from "@fika/server-shared/data-source-meter-server";
 import { buildDeliveredInDayProjection } from "./delivered-in-projection-materialiser";
-import { readDeliveredInProjection, readDeliveredInProjectionIndex } from "./delivered-in-projection-store";
+import { markDeliveredInProjectionDayUnavailable, readDeliveredInProjection, readDeliveredInProjectionIndex } from "./delivered-in-projection-store";
 import type { DeliveredInDayProjection } from "./delivered-in-day-projection";
 import type { DeliveredInProjectionIndexEntry } from "./delivered-in-projection-store";
 import { packetPublicationsForRange, readMenuPlanningWeekPackets } from "./menu-planning-week-packet";
@@ -116,6 +116,11 @@ async function recoverRequestedWeek(request: NextRequest, oplocId: string, weekC
         // pending or invalid. Keep recovery bounded to that day so a valid
         // requested week does not become an opaque whole-dashboard 503.
         logRequestedWeekRecoveryFailure(request, weekCommencing, date, oplocId, error);
+        try {
+          await markDeliveredInProjectionDayUnavailable({ oplocId, serviceDate: date, weekCommencing, sourceVersion: "requested-week-recovery-unavailable" });
+        } catch (markerError) {
+          logRequestedWeekRecoveryFailure(request, weekCommencing, date, oplocId, Object.assign(new Error("The unavailable-day marker could not be written."), { code: "UNKNOWN_INTERNAL", status: 503, cause: markerError }));
+        }
       }
     }));
   })();

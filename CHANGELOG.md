@@ -4,6 +4,8 @@ This file records user-facing workflow changes delivered in the repository. Deta
 
 ## Unreleased
 
+- **2026-09-14 — UAT-DI-004 partial-week Delivered-In recovery:** serialized per-OPLOC projection-index updates so concurrent day recovery cannot lose valid sibling days, recorded failed service dates as explicit unavailable entries, and made Menu Planning week packet selection use the required `[fromWeek, toWeek)` boundary. Affected app: Delivered-In. Validation: partial-week/read-shape/packet tests 21/21, typecheck, production build and `git diff --check`. Deployment status: not deployed.
+
 - **2026-09-14 — UAT-DI-003 requested-week recovery observability:** Delivered-In now emits one structured JSON Cloud Logging event per requested-week day recovery failure, with stable error/cause classification, bounded diagnostics, request/build correlation and no cookies, tokens, packet payloads or PII. Existing fail-closed recovery behavior is unchanged. Affected app: Delivered-In. Validation: focused read-shape/diagnostic tests 19/19, typecheck, production build and `git diff --check`; the Firebase-backed reconciliation test was environment-blocked in this shell after the normal-path fixture was corrected to a signed review. Deployment status: not deployed.
 
 - **2026-09-14 — UAT-AUTH-001 staging deployment submitted:** submitted exact-SHA rollouts `4f7a99713875e1359c9337859d0a7d2d23153d6b` for Integration Hub (`fika-os-staging`) and Delivered-In (`fika-delivered-in-staging`) in project `fika-os-dev`. Firebase compilation/propagation was not awaited. Deployment status: submitted; live verification pending.

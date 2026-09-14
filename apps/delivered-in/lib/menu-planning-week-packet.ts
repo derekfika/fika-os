@@ -116,7 +116,7 @@ async function readDirect(documentId: string) {
 export async function readMenuPlanningWeekPackets(fromWeek: string, toWeek: string) {
   let publications: FirebaseFirestore.QuerySnapshot;
   try {
-    publications = await db.collection(MENU_PLANNING_PUBLICATIONS_COLLECTION).where("weekCommencing", ">=", fromWeek).where("weekCommencing", "<=", toWeek).limit(16).get();
+    publications = await db.collection(MENU_PLANNING_PUBLICATIONS_COLLECTION).where("weekCommencing", ">=", fromWeek).where("weekCommencing", "<", toWeek).limit(16).get();
   } catch { /* Absent packet collection/index retains legacy compatibility. */ }
   if (publications!) {
     recordDataAccess({ app: "delivered-in", operation: "menu-planning.week-packets.by-window", source: "FIRESTORE", dataset: MENU_PLANNING_PUBLICATIONS_COLLECTION, documents: publications.size, firestoreReadKind: "query" });
@@ -127,7 +127,7 @@ export async function readMenuPlanningWeekPackets(fromWeek: string, toWeek: stri
   }
   let snapshots: FirebaseFirestore.QuerySnapshot | undefined;
   try {
-    snapshots = await db.collection(MENU_PLANNING_SNAPSHOTS_COLLECTION).where("week.weekCommencing", ">=", fromWeek).where("week.weekCommencing", "<=", toWeek).limit(16).get();
+    snapshots = await db.collection(MENU_PLANNING_SNAPSHOTS_COLLECTION).where("week.weekCommencing", ">=", fromWeek).where("week.weekCommencing", "<", toWeek).limit(16).get();
   } catch { return []; /* Both packet sources are absent/unavailable: legacy fallback may decide what to do. */ }
   recordDataAccess({ app: "delivered-in", operation: "menu-planning.week-snapshots.by-window", source: "FIRESTORE", dataset: MENU_PLANNING_SNAPSHOTS_COLLECTION, documents: snapshots.size, firestoreReadKind: "query" });
   const latest = new Map<string, MenuPlanningWeekPacket>();
@@ -142,5 +142,5 @@ export async function readMenuPlanningWeekPackets(fromWeek: string, toWeek: stri
 }
 
 export function packetPublicationsForRange(packets: MenuPlanningWeekPacket[], fromWeek: string, toWeek: string) {
-  return packets.filter(packet => packet.week.weekCommencing >= fromWeek && packet.week.weekCommencing <= toWeek).map(toSourcePublication);
+  return packets.filter(packet => packet.week.weekCommencing >= fromWeek && packet.week.weekCommencing < toWeek).map(toSourcePublication);
 }

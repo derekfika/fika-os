@@ -42,7 +42,7 @@ function encoded(value = snapshot) {
 
 test("Delivered-In consumes one gzip/base64 week packet and retains allocation portions", () => {
   const packet = decodeMenuPlanningWeekPacket({ packet: encoded() });
-  const [publication] = packetPublicationsForRange([packet], "2026-09-01", "2026-09-30");
+  const [publication] = packetPublicationsForRange([packet], "2026-09-01", "2026-10-01");
   const [week] = projectPublishedWeeks([publication], "oploc:haleon", new Set(["oploc:haleon"]));
   assert.equal(week.days[0].entries.length, 1);
   assert.equal(week.days[0].entries[0].quantity, 10);
@@ -52,7 +52,7 @@ test("Delivered-In consumes one gzip/base64 week packet and retains allocation p
 
 test("Delivered-In filters by stable OPLOC ID and never by destination label", () => {
   const packet = decodeMenuPlanningWeekPacket(snapshot);
-  const [publication] = packetPublicationsForRange([packet], "2026-09-01", "2026-09-30");
+  const [publication] = packetPublicationsForRange([packet], "2026-09-01", "2026-10-01");
   const [week] = projectPublishedWeeks([publication], "oploc:missing", new Set(["oploc:missing"]));
   assert.equal(week.days[0].entries.length, 0);
 });
@@ -65,7 +65,7 @@ test("Delivered-In rejects a weekly packet whose compressed bytes were changed",
 
 test("Delivered-In consumes the shared Menu Planning packet envelope", () => {
   const packet = decodeMenuPlanningWeekPacket(encodeWeeklyPublicationPacket(snapshot));
-  const [publication] = packetPublicationsForRange([packet], "2026-09-01", "2026-09-30");
+  const [publication] = packetPublicationsForRange([packet], "2026-09-01", "2026-10-01");
   const [week] = projectPublishedWeeks([publication], "oploc:haleon", new Set(["oploc:haleon"]));
   assert.equal(week.days[0].entries[0].quantity, 10);
 });
@@ -73,7 +73,7 @@ test("Delivered-In consumes the shared Menu Planning packet envelope", () => {
 test("a newer withdrawn day in the weekly packet hides older published bytes", () => {
   const withdrawn = { ...snapshot, days: [...snapshot.days, { ...snapshot.days[0], publicationDayId: "publication-day:mon:v4-withdrawn", version: 4, status: "withdrawn" as const, entries: [] }] };
   const packet = decodeMenuPlanningWeekPacket(encodeWeeklyPublicationPacket(withdrawn));
-  const [publication] = packetPublicationsForRange([packet], "2026-09-01", "2026-09-30");
+  const [publication] = packetPublicationsForRange([packet], "2026-09-01", "2026-10-01");
   const [week] = projectPublishedWeeks([publication], "oploc:haleon", new Set(["oploc:haleon"]));
   assert.equal(week.days.length, 0);
 });

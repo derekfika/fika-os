@@ -18,6 +18,7 @@ export function mergeProjectionIndex(index: DeliveredInProjectionIndex, entry: D
 }
 const localRoot = () => process.env.FIKA_SNAPSHOT_DIR || path.join(process.cwd(), "local-data", "read-packages");
 const hosted = () => ["staging", "production"].includes(process.env.FIKA_RUNTIME_MODE || "");
+const indexUpdateQueues = new Map<string, Promise<void>>();
 
 function localStore(): ReadPackageStore {
   const file = (name: string) => path.join(localRoot(), name);
@@ -73,12 +74,17 @@ export async function writeDeliveredInProjection(projection: DeliveredInDayProje
 
 async function updateProjectionIndex(store: ReadPackageStore, oplocId: string, entry: DeliveredInProjectionIndexEntry) {
   const key = projectionIndexManifestKey(oplocId);
-  const previous = await retrieveReadPackage<DeliveredInProjectionIndex>(store, key).catch(() => undefined);
-  const index = mergeProjectionIndex({ oplocId, entries: previous?.value.entries || [] }, entry);
-  const version = (previous?.manifest.packageVersion || 0) + 1;
-  const { encodeReadPackage } = await import("@fika/server-shared/read-package");
-  await publishReadPackage<DeliveredInProjectionIndex>(store, key, encodeReadPackage(DELIVERED_IN_INDEX_DATASET, version, index, index.entries.length, { contractVersion: "delivered-in.projection-index.v1", scope: oplocId }));
-  recordDataAccess({ app: "delivered-in", operation: "projection-index.publish", source: "SNAPSHOT", documents: 1, cacheHit: false });
+  const prior = indexUpdateQueues.get(key) || Promise.resolve();
+  const update = prior.catch(() => undefined).then(async () => {
+    const previous = await retrieveReadPackage<DeliveredInProjectionIndex>(store, key).catch(() => undefined);
+    const index = mergeProjectionIndex({ oplocId, entries: previous?.value.entries || [] }, entry);
+    const version = (previous?.manifest.packageVersion || 0) + 1;
+    const { encodeReadPackage } = await import("@fika/server-shared/read-package");
+    await publishReadPackage<DeliveredInProjectionIndex>(store, key, encodeReadPackage(DELIVERED_IN_INDEX_DATASET, version, index, index.entries.length, { contractVersion: "delivered-in.projection-index.v1", scope: oplocId }));
+    recordDataAccess({ app: "delivered-in", operation: "projection-index.publish", source: "SNAPSHOT", documents: 1, cacheHit: false });
+  });
+  indexUpdateQueues.set(key, update);
+  try { await update; } finally { if (indexUpdateQueues.get(key) === update) indexUpdateQueues.delete(key); }
 }
 
 export async function readDeliveredInProjectionIndex(oplocId: string) {
@@ -92,6 +98,27 @@ export async function withdrawDeliveredInProjectionDay(oplocId: string, serviceD
   const current = await retrieveReadPackage<DeliveredInProjectionIndex>(store, projectionIndexManifestKey(oplocId)).catch(() => undefined);
   const existing = current?.value.entries.find(entry => entry.serviceDate === serviceDate);
   await updateProjectionIndex(store, oplocId, { oplocId, serviceDate, projectionVersion: existing?.projectionVersion || 0, packageVersion: existing?.packageVersion || 0, contentHash: existing?.contentHash || "", freshness: "current", completeness: "missing", sourceVersion, generatedAt: new Date().toISOString(), state: "withdrawn" });
+}
+
+export async function markDeliveredInProjectionDayUnavailable(input: { oplocId: string; serviceDate: string; weekCommencing: string; publicationId?: string; sourceVersion?: string }) {
+  const store = deliveredInProjectionStore();
+  const current = await retrieveReadPackage<DeliveredInProjectionIndex>(store, projectionIndexManifestKey(input.oplocId)).catch(() => undefined);
+  const existing = current?.value.entries.find(entry => entry.serviceDate === input.serviceDate);
+  await updateProjectionIndex(store, input.oplocId, {
+    oplocId: input.oplocId,
+    serviceDate: input.serviceDate,
+    weekCommencing: input.weekCommencing,
+    weekEnding: addDays(input.weekCommencing, 6),
+    publicationId: input.publicationId || existing?.publicationId,
+    projectionVersion: existing?.projectionVersion || 0,
+    packageVersion: existing?.packageVersion || 0,
+    contentHash: existing?.contentHash || "",
+    freshness: "stale",
+    completeness: "unavailable",
+    sourceVersion: input.sourceVersion || existing?.sourceVersion || "recovery-unavailable",
+    generatedAt: new Date().toISOString(),
+    state: "available",
+  });
 }
 
 export type DeliveredInInvalidation = { sourceDomain: "menu-planning" | "cpu-production" | "integration-hub"; sourceEntityId: string; publicationId?: string; eventId: string; eventType: "changed" | "amended" | "withdrawn" | "superseded"; serviceDate: string; oplocId: string; sourceVersion?: string; contentHash?: string };
