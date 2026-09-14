@@ -81,7 +81,7 @@ export class MenuPlanningFirestoreRepository {
     const snapshot = await this.db.collection(MENU_PLANNING_COLLECTIONS.publications).where("sourceWeekId", "==", weekId).get();
     recordFirestore("publication.for-week", snapshot.size);
     const publications: MenuPublication[] = [];
-    for (const doc of snapshot.docs) { const value = doc.data(); const days = await doc.ref.collection("days").get(); publications.push({ ...value, days: days.docs.map(day => day.data()) } as unknown as MenuPublication); }
+    for (const doc of snapshot.docs) { const value = doc.data(); const days = await doc.ref.collection("days").get(); recordFirestore("publication.for-week.days", days.size); publications.push({ ...value, days: days.docs.map(day => day.data()) } as unknown as MenuPublication); }
     return { version: 2, publications, events: [] as DurableDomainEvent[] };
   }
   async readPublicationStateForDateRange(fromWeek: string, toWeekExclusive: string) {
