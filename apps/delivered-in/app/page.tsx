@@ -74,6 +74,16 @@ const operationalWeek = () => ({
   weekEnding: addDays(weekFor(todayKey()), 6),
   days: [] as ProjectedDay[],
 });
+async function redirectForSessionFailure(response: Response) {
+  if (response.status !== 401) return false;
+  const body = (await response.clone().json().catch(() => undefined)) as { error?: { code?: string } } | undefined;
+  const code = body?.error?.code;
+  if (code !== "FIKA_SESSION_MISSING" && code !== "FIKA_SESSION_INVALID") return false;
+  const hub = (process.env.NEXT_PUBLIC_INTEGRATION_HUB_BASE_URL || "http://localhost:3200").replace(/\/$/, "");
+  const returnTo = typeof window === "undefined" ? "/" : window.location.href;
+  window.location.assign(`${hub}/?returnTo=${encodeURIComponent(returnTo)}&appId=delivered-in&launchError=${encodeURIComponent(code)}`);
+  return true;
+}
 function weeksFromCachedDays(days: ProjectedDay[]) {
   const groups = new Map<string, ProjectedDay[]>();
   for (const day of days) {
@@ -522,7 +532,10 @@ export default function Page() {
         cache: "no-store",
       });
       const head = (await headResponse.json()) as ProjectionHead;
-      if (!headResponse.ok) throw new Error("Unavailable");
+      if (!headResponse.ok) {
+        if (await redirectForSessionFailure(headResponse)) return;
+        throw new Error("Unavailable");
+      }
       const nextSite =
         head.selectedOplocId || oplocId || head.sites[0]?.oplocId || "";
       setSelectedSiteId(nextSite);
@@ -565,7 +578,10 @@ export default function Page() {
           { cache: "no-store" },
         );
         const body = (await response.json()) as Dashboard;
-        if (!response.ok) throw new Error("Unavailable");
+        if (!response.ok) {
+          if (await redirectForSessionFailure(response)) return;
+          throw new Error("Unavailable");
+        }
         setDashboard(body);
         void cacheDeliveredInDays(
           accountScope,

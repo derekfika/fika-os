@@ -7,6 +7,7 @@ import { resolvePermittedOplocIds } from "@/lib/oploc-authorization";
 import { getOplocReadPackage, validateOplocReadPackage } from "@/lib/oploc-read-package";
 import { getServiceArrangementsReadPackage, validateServiceArrangementsReadPackage } from "@/lib/service-arrangements-read-package";
 import { DELIVERED_IN_PERMISSIONS } from "@fika/server-shared/delivered-in-access";
+import { admissionFailure, admissionJson } from "../../../../../../shared/admission";
 
 export const dynamic = "force-dynamic";
 
@@ -40,6 +41,11 @@ export async function GET(request: NextRequest) {
     const authorized = packageValue.oplocs.filter(oploc => (scope.all || scope.ids.has(oploc.canonicalId)) && enabled.has(oploc.canonicalId));
     return NextResponse.json({ access: { email: session.email || "", oplocIds: authorized.map(oploc => oploc.canonicalId), permissions: [...DELIVERED_IN_PERMISSIONS] }, sites: authorized.map(oploc => ({ oplocId: oploc.canonicalId, label: oploc.label, services: { deliveredIn: deliveredIn.has(oploc.canonicalId), grabAndGo: grabAndGo.has(oploc.canonicalId) } })) }, { headers: { "Cache-Control": "no-store, max-age=0" } });
   } catch (error) {
-    return NextResponse.json({ error: { message: error instanceof Error ? error.message : "Delivered-In access could not be resolved." } }, { status: Number((error as { status?: number }).status) || 403 });
+    const requestId = request.headers.get("x-request-id") || undefined;
+    const status = Number((error as { status?: number }).status) || 403;
+    const body = error instanceof Error ? { error: { code: (error as { code?: string }).code, message: error.message } } : undefined;
+    if (![401, 403, 500, 503].includes(status)) return NextResponse.json(body || { error: { message: "Delivered-In access could not be resolved." } }, { status });
+    const failure = admissionFailure("Delivered-In", status as 401 | 403 | 500 | 503, body, requestId);
+    return NextResponse.json(admissionJson(failure, requestId), { status: failure.status, headers: requestId ? { "x-request-id": requestId } : undefined });
   }
 }

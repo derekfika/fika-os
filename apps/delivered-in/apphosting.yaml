@@ -18,6 +18,9 @@ env:
   - variable: INTEGRATION_HUB_BASE_URL
     value: https://staging-os.fikacatering.com
     availability: [RUNTIME]
+  - variable: NEXT_PUBLIC_INTEGRATION_HUB_BASE_URL
+    value: https://staging-os.fikacatering.com
+    availability: [BUILD, RUNTIME]
   - variable: MENU_PLANNING_BASE_URL
     value: https://menu-planning-staging.fikacatering.com
     availability: [RUNTIME]

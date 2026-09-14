@@ -3,7 +3,7 @@ import { applyOrderAction, availableDeliveryDates, deliveryCutoff, isBeforeOrder
 import { getGrabAndGoOrderHosted, listGrabAndGoOrdersHosted, saveGrabAndGoOrderHosted } from "@/lib/grab-and-go-store";
 import { getGrabAndGoCataloguePackage } from "@/lib/grab-and-go-catalogue-client";
 import { assertAuthorisedOploc } from "@/lib/projection";
-import { resolveAccess } from "@/lib/server";
+import { deliveredInErrorBody, resolveAccess } from "@/lib/server";
 import { forwardProductionMaterialisation } from "../../../../lib/production-client";
 import { withDataTrace } from "@fika/server-shared/data-source-meter-server";
 
@@ -35,7 +35,7 @@ async function handleGet(request: NextRequest) {
       if (previousOrder?.status === "submitted") suggestedLinesByDate[date.date] = previousOrder.lines.map(line => ({ productId: line.productId, quantity: line.quantity }));
     }
     return NextResponse.json({ oplocId: selected, deliveryDates, orders: orders.map(order => ({ ...order, editable: order.status !== "cancelled" && isBeforeOrderCutoff(order.deliveryDate, now) })), suggestedLinesByDate, cutoffHour: 12 }, { headers: { "Cache-Control": "no-store, max-age=0" } });
-  } catch (error) { return NextResponse.json({ error: { message: error instanceof Error ? error.message : "Grab & Go could not be loaded." } }, { status: Number((error as { status?: number }).status) || 502 }); }
+  } catch (error) { return NextResponse.json(deliveredInErrorBody(error, "Grab & Go could not be loaded."), { status: Number((error as { status?: number }).status) || 502 }); }
 }
 
 async function handlePost(request: NextRequest) {
@@ -44,7 +44,7 @@ async function handlePost(request: NextRequest) {
     if (!body.deliveryDate || !body.action || !["submit", "amend", "cancel"].includes(body.action)) return NextResponse.json({ error: { message: "A delivery date and valid order action are required." } }, { status: 422 });
     const { selected, access } = await authorisedSite(request, body.oplocId); const catalogue = (await getGrabAndGoCataloguePackage()).catalogue.products; const existing = await getGrabAndGoOrderHosted(selected, body.deliveryDate); const order = applyOrderAction(existing, { action: body.action, oplocId: selected, deliveryDate: body.deliveryDate, rotationWeek: rotationWeekForDate(body.deliveryDate), lines: body.lines, expectedVersion: body.expectedVersion, actor: access.email }, catalogue); await saveGrabAndGoOrderHosted(order, body.action === "submit" ? undefined : body.expectedVersion); const handoff = await forwardProductionMaterialisation({ sourceDomain: "grab-and-go", sourceEntityId: order.orderId, sourceVersion: order.version, destinationOplocId: order.oplocId, destinationLabel: order.oplocId, serviceDate: order.deliveryDate, requiredBy: `${order.deliveryDate}T08:00`, status: order.status, lines: order.lines.map(line => ({ sourceLineId: `${order.orderId}:line:${line.productId}`, canonicalItemId: line.productId, itemName: line.productName, quantity: line.quantity, unit: "item", workstream: "grab_and_go", })) }, { allowPending: true });
     return NextResponse.json({ order, handoff }, { status: existing ? 200 : 201 });
-  } catch (error) { return NextResponse.json({ error: { message: error instanceof Error ? error.message : "The Grab & Go order could not be saved." } }, { status: Number((error as { status?: number }).status) || 502 }); }
+  } catch (error) { return NextResponse.json(deliveredInErrorBody(error, "The Grab & Go order could not be saved."), { status: Number((error as { status?: number }).status) || 502 }); }
 }
 export async function GET(request: NextRequest) { return withDataTrace({ app: "delivered-in", action: "delivered-in.grab-and-go.load", path: request.nextUrl.pathname, requestId: request.headers.get("x-request-id") || undefined }, () => handleGet(request)); }
 export async function POST(request: NextRequest) { return withDataTrace({ app: "delivered-in", action: "delivered-in.grab-and-go.mutation", path: request.nextUrl.pathname, requestId: request.headers.get("x-request-id") || undefined }, () => handlePost(request)); }

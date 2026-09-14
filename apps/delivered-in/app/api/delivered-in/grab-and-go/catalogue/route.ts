@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { resolveAccess } from "../../../../../lib/server";
+import { deliveredInErrorBody, resolveAccess } from "../../../../../lib/server";
 import { getGrabAndGoCatalogueManifest, getGrabAndGoCataloguePackage } from "../../../../../lib/grab-and-go-catalogue-client";
 import { assertAuthorisedOploc } from "../../../../../lib/projection";
 
@@ -14,5 +14,5 @@ export async function GET(request: NextRequest) {
     if (request.nextUrl.searchParams.get("manifest") === "1") return NextResponse.json({ manifest: await getGrabAndGoCatalogueManifest() }, { headers: { "Cache-Control": "no-store, max-age=0" } });
     const packageValue = await getGrabAndGoCataloguePackage();
     return NextResponse.json({ catalogue: packageValue.catalogue, manifest: packageValue.manifest }, { headers: { "Cache-Control": "no-store, max-age=0" } });
-  } catch (error) { return NextResponse.json({ error: { message: error instanceof Error ? error.message : "Grab & Go catalogue could not be loaded." } }, { status: Number((error as { status?: number }).status) || 502, headers: { "Cache-Control": "no-store, max-age=0" } }); }
+  } catch (error) { return NextResponse.json(deliveredInErrorBody(error, "Grab & Go catalogue could not be loaded."), { status: Number((error as { status?: number }).status) || 502, headers: { "Cache-Control": "no-store, max-age=0" } }); }
 }

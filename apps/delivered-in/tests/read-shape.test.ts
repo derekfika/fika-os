@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 import { readFileSync } from "node:fs";
+import { resolveAccess } from "../lib/server";
 
 test("CPU review consumption is one authenticated package request with no Delivered-In CPU reconstruction", async () => {
   const server = await readFile(new URL("../lib/server.ts", import.meta.url), "utf8");
@@ -67,6 +68,31 @@ test("standalone Delivered-In has no idle polling and selected access remains re
   assert.doesNotMatch(grabAndGo, /setInterval|setTimeout/);
   assert.match(server, /assertAuthorisedOploc\(access, selectedOplocId\)/);
   assert.match(server, /stage: "cpu_review_package"/);
+});
+
+test("Hub session admission survives the Delivered-In access boundary", async () => {
+  const previousFetch = globalThis.fetch;
+  globalThis.fetch = (async () => new Response(JSON.stringify({ error: { code: "FIKA_SESSION_MISSING", message: "Your FIKA OS session is missing or has expired.", requestId: "req-auth-1" } }), { status: 401, headers: { "content-type": "application/json" } })) as typeof fetch;
+  try {
+    await assert.rejects(() => resolveAccess({ headers: new Headers() } as never), (error: unknown) => {
+      const value = error as { status?: number; code?: string; requestId?: string };
+      return value.status === 401 && value.code === "FIKA_SESSION_MISSING" && value.requestId === "req-auth-1";
+    });
+  } finally {
+    globalThis.fetch = previousFetch;
+  }
+});
+
+test("session failures are redirected to the standard Hub sign-in flow without retries", async () => {
+  const page = await readFile(new URL("../app/page.tsx", import.meta.url), "utf8");
+  const dashboardRoute = await readFile(new URL("../app/api/delivered-in/route.ts", import.meta.url), "utf8");
+  const hubRoute = await readFile(new URL("../../integration-hub/app/api/delivered-in/access/route.ts", import.meta.url), "utf8");
+  assert.match(page, /FIKA_SESSION_MISSING/);
+  assert.match(page, /FIKA_SESSION_INVALID/);
+  assert.match(page, /launchError/);
+  assert.doesNotMatch(page, /setInterval|setTimeout/);
+  assert.match(dashboardRoute, /deliveredInErrorBody/);
+  assert.match(hubRoute, /admissionJson/);
 });
 
 test("main dashboard reads namespaced IndexedDB before fetching changed package bodies", async () => {

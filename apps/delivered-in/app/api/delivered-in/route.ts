@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { projectionHead, projectedWeeks } from "@/lib/server";
+import { deliveredInErrorBody, projectionHead, projectedWeeks } from "@/lib/server";
 import { withDataTrace } from "@fika/server-shared/data-source-meter-server";
 
 export const dynamic = "force-dynamic";
@@ -26,7 +26,7 @@ async function handleGet(request: NextRequest) {
       requestId: request.headers.get("x-request-id") || undefined,
       buildSha: process.env.FIKA_BUILD_SHA || undefined,
     });
-    return NextResponse.json({ error: { message: error instanceof Error ? error.message : "Delivered-In could not be loaded." } }, { status: Number((error as { status?: number }).status) || 502 });
+    return NextResponse.json(deliveredInErrorBody(error, "Delivered-In could not be loaded."), { status: Number((error as { status?: number }).status) || 502 });
   }
 }
 export async function GET(request: NextRequest) { return withDataTrace({ app: "delivered-in", action: "delivered-in.load", path: request.nextUrl.pathname, requestId: request.headers.get("x-request-id") || undefined }, () => handleGet(request)); }

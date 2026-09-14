@@ -15,7 +15,11 @@ export const DELIVERED_IN_MAX_DAY_PACKAGES = 50;
 
 const hubBase = () => (process.env.INTEGRATION_HUB_BASE_URL || "http://localhost:3200").replace(/\/$/, "");
 const menuBase = () => (process.env.MENU_PLANNING_BASE_URL || "http://localhost:3500").replace(/\/$/, "");
-const failure = (message: string, status = 502) => Object.assign(new Error(message), { status });
+const failure = (message: string, status = 502, code?: string, requestId?: string) => Object.assign(new Error(message), { status, ...(code ? { code } : {}), ...(requestId ? { requestId } : {}) });
+export function deliveredInErrorBody(error: unknown, fallback: string) {
+  const detail = error && typeof error === "object" ? error as { code?: unknown; requestId?: unknown } : {};
+  return { error: { ...(typeof detail.code === "string" ? { code: detail.code } : {}), message: error instanceof Error ? error.message : fallback, ...(typeof detail.requestId === "string" ? { requestId: detail.requestId } : {}) } };
+}
 const addDays = (date: string, days: number) => { const value = new Date(`${date}T00:00:00Z`); value.setUTCDate(value.getUTCDate() + days); return value.toISOString().slice(0, 10); };
 const mondayOf = (date: string) => { const value = new Date(`${date}T00:00:00Z`); const day = value.getUTCDay(); value.setUTCDate(value.getUTCDate() - (day === 0 ? 6 : day - 1)); return value.toISOString().slice(0, 10); };
 async function readJson<T>(response: Response, label: string): Promise<T> { const text = await response.text(); if (!response.headers.get("content-type")?.includes("application/json")) throw failure(`${label} returned a non-JSON response (${response.status}); the source service may be unavailable.`); try { return JSON.parse(text) as T; } catch (cause) { throw Object.assign(failure(`${label} returned invalid JSON; no empty projection was used.`), { cause }); } }
@@ -39,8 +43,8 @@ export async function cpuReviewForDay(_request: NextRequest, date: string, oploc
 async function resolveGovernedOplocIds(request: NextRequest) {
   const response = await fetch(`${hubBase()}/api/oplocs`, { headers: { cookie: request.headers.get("cookie") || "" }, cache: "no-store" });
   recordDataAccess({ app: "delivered-in", operation: "hub.oplocs", source: "NETWORK_UPSTREAM", dataset: "integration-hub/oplocs", documents: 0, cacheResult: "BYPASS" });
-  const body = await readJson<{ oplocs?: Array<{ canonicalId?: string }>; error?: { message?: string } }>(response, "Integration Hub OPLOC authority");
-  if (!response.ok || !body.oplocs) throw failure(body.error?.message || "Integration Hub OPLOC authority could not be loaded.", response.status || 502);
+  const body = await readJson<{ oplocs?: Array<{ canonicalId?: string }>; error?: { code?: string; message?: string; requestId?: string }; requestId?: string }>(response, "Integration Hub OPLOC authority");
+  if (!response.ok || !body.oplocs) throw failure(body.error?.message || "Integration Hub OPLOC authority could not be loaded.", response.status || 502, body.error?.code, body.error?.requestId || body.requestId);
   return new Set(body.oplocs.map(oploc => oploc.canonicalId).filter((id): id is string => Boolean(id)));
 }
 
@@ -50,8 +54,8 @@ export async function resolveAccess(request: NextRequest, service: DeliveredInSe
   const accessUrl = service === "grab-and-go" ? `${hubBase()}/api/delivered-in/access?service=grab-and-go` : `${hubBase()}/api/delivered-in/access`;
   const response = await fetch(accessUrl, { headers: { cookie: request.headers.get("cookie") || "" }, cache: "no-store" });
   recordDataAccess({ app: "delivered-in", operation: "hub.authmod.access", source: "NETWORK_UPSTREAM", dataset: "integration-hub/delivered-in-access", documents: 0, cacheResult: "BYPASS" });
-  const body = await readJson<{ access?: SiteAccess; sites?: Site[]; error?: { message?: string } }>(response, "Integration Hub access service");
-  if (!response.ok || !body.access || !body.sites) throw failure(body.error?.message || "Delivered-In access could not be resolved.", response.status || 502);
+  const body = await readJson<{ access?: SiteAccess; sites?: Site[]; error?: { code?: string; message?: string; requestId?: string }; requestId?: string }>(response, "Integration Hub access service");
+  if (!response.ok || !body.access || !body.sites) throw failure(body.error?.message || "Delivered-In access could not be resolved.", response.status || 502, body.error?.code, body.error?.requestId || body.requestId);
   return { access: body.access, sites: body.sites };
 }
 
