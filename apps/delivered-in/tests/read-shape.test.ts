@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 import { readFileSync } from "node:fs";
-import { resolveAccess } from "../lib/server";
+import { classifyRequestedWeekRecoveryFailure, logRequestedWeekRecoveryFailure, resolveAccess } from "../lib/server";
 
 test("CPU review consumption is one authenticated package request with no Delivered-In CPU reconstruction", async () => {
   const server = await readFile(new URL("../lib/server.ts", import.meta.url), "utf8");
@@ -93,6 +93,43 @@ test("session failures are redirected to the standard Hub sign-in flow without r
   assert.doesNotMatch(page, /setInterval|setTimeout/);
   assert.match(dashboardRoute, /deliveredInErrorBody/);
   assert.match(hubRoute, /admissionJson/);
+});
+
+test("requested-week recovery classifies safe stable failure codes and causes", async () => {
+  assert.equal(classifyRequestedWeekRecoveryFailure(Object.assign(new Error("packet missing"), { code: "CPU_DAILY_PACKET_INVALID", status: 503 })).code, "CPU_DAILY_PACKET_INVALID");
+  assert.equal(classifyRequestedWeekRecoveryFailure(Object.assign(new Error("review unavailable"), { code: "CPU_REVIEW_UNAVAILABLE", status: 503 })).code, "CPU_REVIEW_UNAVAILABLE");
+  assert.equal(classifyRequestedWeekRecoveryFailure(Object.assign(new Error("review unsigned"), { code: "CPU_REVIEW_UNSIGNED", status: 503 })).code, "CPU_REVIEW_UNSIGNED");
+  assert.equal(classifyRequestedWeekRecoveryFailure(Object.assign(new Error("lineage"), { code: "CPU_REVIEW_LINEAGE_MISMATCH", status: 503 })).code, "CPU_REVIEW_LINEAGE_MISMATCH");
+  assert.equal(classifyRequestedWeekRecoveryFailure(Object.assign(new Error("wrapped"), { cause: Object.assign(new Error("missing dish"), { code: "CPU_PACKET_MISSING_DISH", status: 503 }) })).causeCode, "CPU_PACKET_MISSING_DISH");
+  assert.equal(classifyRequestedWeekRecoveryFailure(Object.assign(new Error("invalid packet"), { code: "MENU_PLANNING_WEEK_PACKET_INVALID", status: 502 })).code, "MENU_PLANNING_WEEK_PACKET_INVALID");
+  assert.equal(classifyRequestedWeekRecoveryFailure(Object.assign(new Error("auth"), { code: "FIKA_SESSION_INVALID", status: 401 })).code, "FIKA_SESSION_INVALID");
+});
+
+test("requested-week recovery emits one structured, non-sensitive event", async () => {
+  const server = await readFile(new URL("../lib/server.ts", import.meta.url), "utf8");
+  const log = server.slice(server.indexOf("function logRequestedWeekRecoveryFailure"), server.indexOf("export function deliveredInErrorBody"));
+  assert.match(server, /console\.error\(JSON\.stringify\(/);
+  assert.match(server, /event: "delivered_in\.requested_week_recovery_failed"/);
+  assert.match(server, /errorStatus/);
+  assert.match(server, /causeCode/);
+  assert.match(server, /redacted-email/);
+  assert.doesNotMatch(log, /cookie|token|payload|email/i);
+  const messages: string[] = [];
+  const previousError = console.error;
+  console.error = ((message?: unknown) => messages.push(String(message))) as typeof console.error;
+  try {
+    logRequestedWeekRecoveryFailure({ headers: new Headers({ "x-request-id": "req-di-003" }) } as never, "2026-09-14", "2026-09-14", "oploc:commerzbank", Object.assign(new Error("signed package unavailable"), { code: "CPU_REVIEW_UNAVAILABLE", status: 503, cause: Object.assign(new Error("staff@example.com"), { code: "INTERNAL_DETAIL" }) }));
+  } finally {
+    console.error = previousError;
+  }
+  assert.equal(messages.length, 1);
+  const event = JSON.parse(messages[0]);
+  assert.equal(event.event, "delivered_in.requested_week_recovery_failed");
+  assert.equal(event.errorCode, "CPU_REVIEW_UNAVAILABLE");
+  assert.equal(event.errorStatus, 503);
+  assert.equal(event.requestId, "req-di-003");
+  assert.equal(event.causeMessage, "[redacted-email]");
+  assert.doesNotMatch(messages[0], /staff@example\.com/);
 });
 
 test("main dashboard reads namespaced IndexedDB before fetching changed package bodies", async () => {

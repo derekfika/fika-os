@@ -19,7 +19,7 @@ function fetchSequence(cpuAvailable = true) {
   };
 }
 
-const maintenanceReview = async () => ({ entries: new Map(), cpuReview: { status: "pending" as const, signatures: [] }, orderIds: [], package: undefined });
+const maintenanceReview = async () => ({ entries: new Map(), cpuReview: { status: "signed" as const, signatures: [] }, orderIds: [], package: undefined });
 
 test("reconciliation creates, then no-ops a current projection and preserves it on upstream failure", async () => {
   const root = await mkdtemp(`${tmpdir()}\\fika-delivered-in-reconcile-`);

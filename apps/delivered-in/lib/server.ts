@@ -16,6 +16,35 @@ export const DELIVERED_IN_MAX_DAY_PACKAGES = 50;
 const hubBase = () => (process.env.INTEGRATION_HUB_BASE_URL || "http://localhost:3200").replace(/\/$/, "");
 const menuBase = () => (process.env.MENU_PLANNING_BASE_URL || "http://localhost:3500").replace(/\/$/, "");
 const failure = (message: string, status = 502, code?: string, requestId?: string) => Object.assign(new Error(message), { status, ...(code ? { code } : {}), ...(requestId ? { requestId } : {}) });
+export type RequestedWeekRecoveryCode = "CPU_REVIEW_UNAVAILABLE" | "CPU_REVIEW_UNSIGNED" | "CPU_REVIEW_LINEAGE_MISMATCH" | "CPU_PACKET_MISSING_DISH" | "CPU_DAILY_PACKET_INVALID" | "MENU_PLANNING_WEEK_PACKET_INVALID" | "FIKA_SESSION_MISSING" | "FIKA_SESSION_INVALID" | "UNKNOWN_INTERNAL";
+type DiagnosticError = { name: string; message: string; code?: string; status?: number; cause?: unknown };
+const diagnosticText = (value: unknown) => String(value || "").replace(/[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}/g, "[redacted-email]").slice(0, 500);
+const diagnosticError = (error: unknown): DiagnosticError => {
+  const value = error && typeof error === "object" ? error as { name?: unknown; message?: unknown; code?: unknown; status?: unknown; cause?: unknown } : {};
+  return { name: typeof value.name === "string" ? value.name : "UnknownError", message: diagnosticText(error instanceof Error ? error.message : error), ...(typeof value.code === "string" ? { code: value.code } : {}), ...(typeof value.status === "number" ? { status: value.status } : {}), ...(value.cause ? { cause: value.cause } : {}) };
+};
+export function classifyRequestedWeekRecoveryFailure(error: unknown) {
+  const current = diagnosticError(error);
+  const cause = current.cause ? diagnosticError(current.cause) : undefined;
+  const known = new Set<RequestedWeekRecoveryCode>(["CPU_REVIEW_UNAVAILABLE", "CPU_REVIEW_UNSIGNED", "CPU_REVIEW_LINEAGE_MISMATCH", "CPU_PACKET_MISSING_DISH", "CPU_DAILY_PACKET_INVALID", "MENU_PLANNING_WEEK_PACKET_INVALID", "FIKA_SESSION_MISSING", "FIKA_SESSION_INVALID"]);
+  const code = (current.code && known.has(current.code as RequestedWeekRecoveryCode) ? current.code : cause?.code && known.has(cause.code as RequestedWeekRecoveryCode) ? cause.code : "UNKNOWN_INTERNAL") as RequestedWeekRecoveryCode;
+  return { code, errorCode: code, errorName: current.name, errorStatus: current.status ?? null, errorMessage: current.message, causeCode: cause?.code ?? null, causeMessage: cause?.message ?? null };
+}
+export function logRequestedWeekRecoveryFailure(request: NextRequest, requestedWeek: string, serviceDate: string, oplocId: string, error: unknown) {
+  const classified = classifyRequestedWeekRecoveryFailure(error);
+  console.error(JSON.stringify({
+    event: "delivered_in.requested_week_recovery_failed",
+    message: "Delivered-In requested-week day recovery failed",
+    app: "delivered-in",
+    operation: "delivered-in.requested-week.recovery",
+    requestedWeek,
+    serviceDate,
+    oplocId,
+    ...classified,
+    buildSha: process.env.FIKA_BUILD_SHA || null,
+    requestId: request.headers.get("x-request-id") || null,
+  }));
+}
 export function deliveredInErrorBody(error: unknown, fallback: string) {
   const detail = error && typeof error === "object" ? error as { code?: unknown; requestId?: unknown } : {};
   return { error: { ...(typeof detail.code === "string" ? { code: detail.code } : {}), message: error instanceof Error ? error.message : fallback, ...(typeof detail.requestId === "string" ? { requestId: detail.requestId } : {}) } };
@@ -86,17 +115,7 @@ async function recoverRequestedWeek(request: NextRequest, oplocId: string, weekC
         // A single day may be unavailable while its CPU safety packet is
         // pending or invalid. Keep recovery bounded to that day so a valid
         // requested week does not become an opaque whole-dashboard 503.
-        console.error("Delivered-In requested-week day recovery failed", {
-          app: "delivered-in",
-          operation: "delivered-in.requested-week.recovery",
-          requestedWeek: weekCommencing,
-          serviceDate: date,
-          oplocId,
-          errorName: error instanceof Error ? error.name : "UnknownError",
-          errorMessage: error instanceof Error ? error.message : String(error),
-          stack: error instanceof Error ? error.stack : undefined,
-          buildSha: process.env.FIKA_BUILD_SHA || undefined,
-        });
+        logRequestedWeekRecoveryFailure(request, weekCommencing, date, oplocId, error);
       }
     }));
   })();
