@@ -19,3 +19,12 @@ test("review package does not treat signatures from another matrix hash as curre
   assert.deepEqual(valid.completedSignatureRoles, ["production_chef", "head_chef_site_manager"]);
   assert.equal(valid.sourceLineage[0].sourcePublicationDayId, order.sourcePublicationDayId);
 });
+
+test("review package does not report a release signed after source lineage changes", () => {
+  const currentHash = allergenMatrixContentHash(items as never);
+  const stale = plan(currentHash);
+  stale.currentAllergenRelease = { status: "current", serviceDate: order.serviceDate!, sourceDayId: order.sourceEntityId!, sourcePublicationId, sourcePublicationDayId: order.sourcePublicationDayId!, sourceVersion: order.sourceVersion!, sourceContentHash: "b".repeat(64), matrixContentHash: currentHash } as never;
+  const projection = buildCpuReviewProjection(order.serviceDate!, order.destinationOplocId!, [order], [stale]);
+  assert.equal(projection.sourceOrders[0].reviewStatus, "pending");
+  assert.deepEqual(projection.sourceOrders[0].completedSignatureRoles, []);
+});

@@ -4,6 +4,8 @@ This file records user-facing workflow changes delivered in the repository. Deta
 
 ## Unreleased
 
+- **2026-09-14 — UAT-ALG-002 CPU allergen lineage invalidation:** added one shared current-release lineage check across CPU plan hydration, matrix/review status and Delivered-In review-package generation. Source publication/day/version/hash changes now revoke the current release, clear current signing/artifact pointers while retaining historical evidence, and require new signatures; Delivered-In packet validation remains fail-closed. Affected app: CPU Production, with Delivered-In compatibility coverage. Validation: focused CPU allergen/review tests 10/10, Delivered-In compatibility/read-shape tests 21/21, CPU typecheck/build and `git diff --check`. Deployment status: not deployed.
+
 - **2026-09-14 — UAT-DI-004 Delivered-In staging deployment submitted:** submitted exact-SHA rollout `128b5274bada9577809d9fa16fd0f37c9975b047` for Delivered-In (`fika-delivered-in-staging`) in project `fika-os-dev`. Firebase compilation/propagation was not awaited. Deployment status: submitted; live verification pending.
 
 - **2026-09-14 — UAT-DI-004 partial-week Delivered-In recovery:** serialized per-OPLOC projection-index updates so concurrent day recovery cannot lose valid sibling days, recorded failed service dates as explicit unavailable entries, and made Menu Planning week packet selection use the required `[fromWeek, toWeek)` boundary. Affected app: Delivered-In. Validation: partial-week/read-shape/packet tests 21/21, typecheck, production build and `git diff --check`. Deployment status: not deployed.

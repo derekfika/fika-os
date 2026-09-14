@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { allergenMatrixContentHash, buildCpuAllergenRelease, revokeCpuAllergenRelease } from "../lib/cpu-allergen-release";
-import type { PlannedMenuItem } from "../app/lib/production-plan";
+import { currentAllergenReleaseMatchesOrder, type PlannedMenuItem } from "../app/lib/production-plan";
 
 const source = { sourceDayId: "rolling-week:day:0", sourcePublicationDayId: "publication:day:v1", sourceVersion: 1, sourceContentHash: "a".repeat(64) };
 const items: PlannedMenuItem[] = [{ id: "dish:1", name: "Salad A", note: "", subItems: [{ id: "sub:1", name: "Salad A", quantity: 1, allergens: { sulphites: "clear" }, note: "", evidenceStatus: "completed" as const }] }];
@@ -11,3 +11,13 @@ const build = () => buildCpuAllergenRelease({ serviceDate: "2026-09-03", ...sour
 
 test("release carries exact published source-day lineage", () => { const release = build(); assert.equal(release.sourceDayId, source.sourceDayId); assert.equal(release.sourcePublicationDayId, source.sourcePublicationDayId); assert.equal(release.sourceContentHash, source.sourceContentHash); });
 test("revocation invalidates signatures and every artifact", () => { const release = revokeCpuAllergenRelease(build(), { at: "2026-09-03T10:00:00Z", by: "chef:1", reason: "Correction" }); assert.equal(release.status, "revoked"); assert.ok(release.signatures.every(signature => !signature.valid)); assert.equal(release.masterArtifact.driveStatus, "failed"); assert.ok(release.derivedArtifacts.every(item => item.driveStatus === "failed")); assert.ok(release.packetArtifacts.every(item => item.driveStatus === "failed")); });
+test("current release validity requires every current production-order lineage field", () => {
+  const release = build();
+  const order = { canonicalId: "production:1", serviceDate: "2026-09-03", requiredBy: "2026-09-03T12:00:00Z", sourceEntityId: source.sourceDayId, sourcePublicationDayId: source.sourcePublicationDayId, sourceVersion: source.sourceVersion, sourceContentHash: source.sourceContentHash };
+  assert.equal(currentAllergenReleaseMatchesOrder(release, order, items), true);
+  assert.equal(currentAllergenReleaseMatchesOrder(release, { ...order, sourceContentHash: "b".repeat(64) }, items), false);
+  assert.equal(currentAllergenReleaseMatchesOrder(release, { ...order, sourceVersion: 2 }, items), false);
+  assert.equal(currentAllergenReleaseMatchesOrder(release, { ...order, sourcePublicationDayId: "publication:day:v2" }, items), false);
+  const revoked = revokeCpuAllergenRelease(release, { at: "2026-09-03T10:00:00Z", by: "chef:1", reason: "Changed source" });
+  assert.equal(currentAllergenReleaseMatchesOrder(revoked, order, items), false);
+});

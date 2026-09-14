@@ -1,5 +1,5 @@
 import type { ProductionPlan } from "../app/lib/production-plan";
-import { matrixSignatureScope, signatureMatchesScope } from "../app/lib/production-plan";
+import { currentAllergenReleaseMatchesOrder, matrixSignatureScope, signatureMatchesScope } from "../app/lib/production-plan";
 import { allergenMatrixContentHash } from "./cpu-allergen-release";
 import type { ProductionOrder } from "./production-types";
 import type { ProductionPlanRepository } from "./production-plan-repository";
@@ -33,7 +33,8 @@ export function reviewStatusForPlan(orderId: string, plan: ProductionPlan | unde
     .filter((item) => item.sourceLineId && item.subItems.length > 0 && item.subItems.every(subItem => subItem.evidenceStatus === "completed"))
     .map((item) => item.sourceLineId!);
   const scope = order ? matrixSignatureScope(order, allergenMatrixContentHash(plan.menuItems)) : undefined;
-  const validSignatures = (plan.signatures || []).filter(signature => order ? signatureMatchesScope(signature, scope) : Boolean(signature.scope));
+  const releaseCurrent = !plan.currentAllergenRelease || Boolean(order && currentAllergenReleaseMatchesOrder(plan.currentAllergenRelease, order, plan.menuItems));
+  const validSignatures = releaseCurrent ? (plan.signatures || []).filter(signature => order ? signatureMatchesScope(signature, scope) : Boolean(signature.scope)) : [];
   const signatureRoles = [...new Set(validSignatures.map((signature) => signature.role))];
   return {
     orderId,
@@ -43,8 +44,8 @@ export function reviewStatusForPlan(orderId: string, plan: ProductionPlan | unde
     signatureRoles,
     updatedAt: plan.updatedAt,
     matrixItems: plan.menuItems.flatMap((item) => item.sourceLineId ? item.subItems.map(subItem => ({ sourceLineId: item.sourceLineId!, sourceSubItemId: subItem.id, allergens: subItem.allergens, mayContainNotes: subItem.mayContainNotes, evidenceStatus: subItem.evidenceStatus })) : []),
-    ...(plan.matrixArtifact && plan.currentAllergenRelease?.status === "current" ? { matrixStatus: "ready" as const } : signatureRoles.includes("production_chef") && signatureRoles.includes("head_chef_site_manager") ? { matrixStatus: "generating" as const } : {}),
-    ...(plan.matrixArtifact ? { matrixArtifact: { driveUrl: plan.matrixArtifact.driveUrl, localUrl: plan.matrixArtifact.localUrl } } : {}),
+    ...(plan.matrixArtifact && order && currentAllergenReleaseMatchesOrder(plan.currentAllergenRelease, order, plan.menuItems) ? { matrixStatus: "ready" as const } : signatureRoles.includes("production_chef") && signatureRoles.includes("head_chef_site_manager") ? { matrixStatus: "generating" as const } : {}),
+    ...(plan.matrixArtifact && (!order || currentAllergenReleaseMatchesOrder(plan.currentAllergenRelease, order, plan.menuItems)) ? { matrixArtifact: { driveUrl: plan.matrixArtifact.driveUrl, localUrl: plan.matrixArtifact.localUrl } } : {}),
   };
 }
 

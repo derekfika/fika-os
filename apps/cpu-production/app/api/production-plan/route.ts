@@ -5,7 +5,7 @@ import { existsSync, promises as fs } from "node:fs";
 import path from "node:path";
 import { createHash } from "node:crypto";
 import { localFixtureOrders, updateLocalFixture } from "../local-fixtures";
-import { matrixSignatureScope, signatureMatchesScope, type AllergenCellState, type InternalMatrixSignature, type MatrixArtifact, type PlannedMenuItem, type ProductionPlan } from "../../lib/production-plan";
+import { currentAllergenReleaseMatchesOrder, matrixSignatureScope, signatureMatchesScope, type AllergenCellState, type InternalMatrixSignature, type MatrixArtifact, type PlannedMenuItem, type ProductionPlan } from "../../lib/production-plan";
 import { allergenMatrixHtml } from "../../ui/allergen-matrix";
 import { isHostedPdfRuntime, renderPdfToBuffer } from "../../lib/local-pdf";
 import os from "node:os";
@@ -203,7 +203,15 @@ async function mergeOriginalItems(request: NextRequest, plan: ProductionPlan, or
   if (!order) return plan;
   const existing = new Set(plan.menuItems.map(item => item.sourceLineId || item.id));
   const missing = order.lines.filter(line => !existing.has(line.canonicalId)).map((line, index) => ({ id: `menu-item:${orderId}:original:${index}`, sourceLineId: line.canonicalId, name: line.itemName, note: "", subItems: [{ id: `sub-item:${orderId}:original:${index}`, name: "", quantity: line.customerQuantity, allergens: {}, note: "", evidenceStatus: "not_completed" as const }] }));
-  return missing.length ? { ...plan, menuItems: [...plan.menuItems, ...missing] } : plan;
+  const next = missing.length ? { ...plan, menuItems: [...plan.menuItems, ...missing] } : plan;
+  if (next.currentAllergenRelease && !currentAllergenReleaseMatchesOrder(next.currentAllergenRelease, order, next.menuItems)) {
+    revokeCurrentAllergenRelease(next, "system", now());
+    next.signatures = undefined;
+    next.matrixArtifact = undefined;
+    next.masterMatrixArtifact = undefined;
+    next.siteMatrixArtifacts = undefined;
+  }
+  return next;
 }
 
 async function createMatrixArtifact(plan: ProductionPlan, orderId: string, actor: string, timestamp: string, request: NextRequest) {
@@ -377,7 +385,7 @@ async function handleGet(request: NextRequest) {
       }
       const selectedPlan = visible ? await mergeOriginalItems(request, await getPlan(request, orderId), orderId, selectedOrder) : undefined;
       recordDeliveredInReadBudget({ stage: "selected_order_get", canonicalOrderDocs: selectedOrder ? 1 : 0, planDocs: selectedPlan ? 1 : 0, selectedIds: 1 });
-      const selectedMatrixStatus = selectedPlan?.matrixArtifact && selectedPlan.currentAllergenRelease?.status === "current" ? "ready" : selectedPlan?.signatures?.some(signature => signature.role === "production_chef") && selectedPlan.signatures?.some(signature => signature.role === "head_chef_site_manager") ? selectedOrder && !matrixDriveConfiguration(selectedOrder).enabled ? "not_configured" : "generating" : undefined;
+      const selectedMatrixStatus = selectedPlan?.matrixArtifact && selectedOrder && currentAllergenReleaseMatchesOrder(selectedPlan.currentAllergenRelease, selectedOrder, selectedPlan.menuItems) ? "ready" : selectedPlan?.signatures?.some(signature => signature.role === "production_chef") && selectedPlan.signatures?.some(signature => signature.role === "head_chef_site_manager") ? selectedOrder && !matrixDriveConfiguration(selectedOrder).enabled ? "not_configured" : "generating" : undefined;
       return NextResponse.json({ plan: selectedPlan, matrixStatus: selectedMatrixStatus, plans: selectedPlan ? [selectedPlan] : [], notifications: selectedPlan?.status === "planned" ? [{ id: `notification:${selectedPlan.id}`, title: "New production plan ready for menu generation.", orderId: selectedPlan.orderId, plannedItemCount: selectedPlan.menuItems.reduce((sum, item) => sum + item.subItems.length, 0), at: selectedPlan.updatedAt }] : [], menus: [] });
     }
   } catch (error) {
@@ -610,7 +618,7 @@ async function handlePost(request: NextRequest) {
       const review = changedOrder.destinationOplocId ? await rebuildCpuReviewPackage(request, changedOrder.serviceDate, changedOrder.destinationOplocId, event.sequence) : undefined;
       await notifyCpuConsumerInvalidations({ eventId: `cpu-change:${event.sequence}`, sourceEntityId: plan.id, serviceDate: changedOrder.serviceDate, sourceVersion: event.sequence, changedAt: timestamp, changeType: eventTypeForConsumers(command.action), order: changedOrder, logistics: false, ...(review ? { reviewManifest: review.manifest } : {}) });
     }
-    const matrixStatus = plan.matrixArtifact && plan.currentAllergenRelease?.status === "current" ? "ready" : plan.signatures?.some(signature => signature.role === "production_chef") && plan.signatures?.some(signature => signature.role === "head_chef_site_manager") ? changedOrder && !matrixDriveConfiguration(changedOrder).enabled ? "not_configured" : "generating" : undefined;
+    const matrixStatus = plan.matrixArtifact && changedOrder && currentAllergenReleaseMatchesOrder(plan.currentAllergenRelease, changedOrder, plan.menuItems) ? "ready" : plan.signatures?.some(signature => signature.role === "production_chef") && plan.signatures?.some(signature => signature.role === "head_chef_site_manager") ? changedOrder && !matrixDriveConfiguration(changedOrder).enabled ? "not_configured" : "generating" : undefined;
     return NextResponse.json({ plan, matrixArtifact: plan.matrixArtifact ?? null, signatures: plan.signatures ?? null, matrixStatus, notification: notification || (plan.status === "planned" ? { title: "New production plan ready for menu generation.", orderId: plan.orderId } : undefined) });
   } catch (error) { return errorResponse(error); }
 }

@@ -1,4 +1,5 @@
 import type { OperationalAllergenState } from "../../../shared/allergen-contract";
+import { allergenMatrixContentHash } from "../../lib/cpu-allergen-release";
 export type PlanStatus = "draft" | "planning" | "planned" | "rejected" | "needs_clarification";
 export type AllergenCellState = OperationalAllergenState;
 export type PlannedSubItem = {
@@ -39,4 +40,11 @@ export function signatureMatchesScope(signature: InternalMatrixSignature, scope:
   if (!scope || !signature.scope) return false;
   const candidate = signature.scope;
   return candidate.productionOrderId === scope.productionOrderId && candidate.serviceDate === scope.serviceDate && candidate.sourceDayId === scope.sourceDayId && candidate.sourcePublicationId === scope.sourcePublicationId && candidate.sourcePublicationDayId === scope.sourcePublicationDayId && candidate.sourceVersion === scope.sourceVersion && candidate.sourceContentHash === scope.sourceContentHash && candidate.matrixContentHash === scope.matrixContentHash;
+}
+
+export function currentAllergenReleaseMatchesOrder(release: CpuAllergenRelease | undefined, order: { canonicalId: string; serviceDate?: string; requiredBy: string; sourceEntityId?: string; sourcePublicationId?: string; sourcePublicationDayId?: string; sourceVersion?: number; sourceContentHash?: string }, menuItems: PlannedMenuItem[]) {
+  const scope = matrixSignatureScope(order, allergenMatrixContentHash(menuItems));
+  if (!release || release.status !== "current" || !scope) return false;
+  const lineageMatches = release.serviceDate === scope.serviceDate && release.sourceDayId === scope.sourceDayId && release.sourcePublicationId === scope.sourcePublicationId && release.sourcePublicationDayId === scope.sourcePublicationDayId && release.sourceVersion === scope.sourceVersion && release.sourceContentHash === scope.sourceContentHash;
+  return lineageMatches && release.signatures.every(signature => signature.valid && signatureMatchesScope(signature, scope));
 }

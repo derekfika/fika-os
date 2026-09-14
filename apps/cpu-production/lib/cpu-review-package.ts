@@ -1,6 +1,6 @@
 import { encodeReadPackage, publishReadPackage, retrieveReadPackage, type ReadPackageManifest } from "@fika/server-shared/read-package";
 import { recordDataAccess } from "@fika/server-shared/data-source-meter-server";
-import { matrixSignatureScope, signatureMatchesScope, type ProductionPlan } from "../app/lib/production-plan";
+import { currentAllergenReleaseMatchesOrder, matrixSignatureScope, signatureMatchesScope, type ProductionPlan } from "../app/lib/production-plan";
 import { allergenMatrixContentHash } from "./cpu-allergen-release";
 import type { ProductionOrder } from "./production-types";
 import { cpuPackageStore } from "./cpu-package-store";
@@ -73,11 +73,12 @@ export function buildCpuReviewProjection(serviceDate: string, oplocId: string, o
       ? item.subItems.map(sub => entryFor(order, plan, item.sourceLineId!, sub.name || item.name, sub.allergens, sub.evidenceStatus, sub.mayContainNotes, sub.id))
       : []) || order.lines.map(line => entryFor(order, plan, line.canonicalId, line.itemName, line.approvedAllergenSnapshot?.allergens || {}, line.allergenEvidenceStatus === "confirmed" ? "completed" : "not_completed", line.approvedAllergenSnapshot?.mayContainNotes));
     const scope = plan ? matrixSignatureScope(order, allergenMatrixContentHash(plan.menuItems)) : undefined;
-    const signatures = (plan?.signatures || []).filter(signature => signatureMatchesScope(signature, scope)).map(signature => ({ role: signature.role, printedName: signature.printedName, signedAt: signature.signedAt, actor: signature.actor, attestation: signature.attestation, scope: signature.scope }));
+    const releaseCurrent = !plan?.currentAllergenRelease || currentAllergenReleaseMatchesOrder(plan.currentAllergenRelease, order, plan.menuItems);
+    const signatures = releaseCurrent ? (plan?.signatures || []).filter(signature => signatureMatchesScope(signature, scope)).map(signature => ({ role: signature.role, printedName: signature.printedName, signedAt: signature.signedAt, actor: signature.actor, attestation: signature.attestation, scope: signature.scope })) : [];
     const completedSignatureRoles = [...new Set(signatures.map(signature => signature.role))];
     const reviewStatus: CpuReviewOrder["reviewStatus"] = plan ? completedSignatureRoles.length === requiredRoles.length ? "signed" : "pending" : "missing";
     const sourceIdentity = scope ? { sourceDayId: scope.sourceDayId, ...(scope.sourcePublicationId ? { sourcePublicationId: scope.sourcePublicationId } : {}), sourcePublicationDayId: scope.sourcePublicationDayId, sourceVersion: scope.sourceVersion, sourceContentHash: scope.sourceContentHash, matrixContentHash: scope.matrixContentHash } : undefined;
-    return { productionOrderId: order.canonicalId, orderVersion: order.version, orderRevision: order.currentRevision, cpuPlanId: plan?.id || `production-plan:${order.canonicalId}`, ...(plan ? { cpuPlanRevision: plan.audit.length } : {}), reviewStatus, requiredSignatureRoles: requiredRoles, completedSignatureRoles, signatures, entries, ...(sourceIdentity ? { sourceIdentity } : {}), ...(plan?.matrixArtifact ? { matrixArtifact: { id: plan.matrixArtifact.id, driveUrl: plan.matrixArtifact.driveUrl, localUrl: plan.matrixArtifact.localUrl, contentHash: plan.matrixArtifact.contentHash } } : {}) };
+    return { productionOrderId: order.canonicalId, orderVersion: order.version, orderRevision: order.currentRevision, cpuPlanId: plan?.id || `production-plan:${order.canonicalId}`, ...(plan ? { cpuPlanRevision: plan.audit.length } : {}), reviewStatus, requiredSignatureRoles: requiredRoles, completedSignatureRoles, signatures, entries, ...(sourceIdentity ? { sourceIdentity } : {}), ...(plan?.matrixArtifact && currentAllergenReleaseMatchesOrder(plan.currentAllergenRelease, order, plan.menuItems) ? { matrixArtifact: { id: plan.matrixArtifact.id, driveUrl: plan.matrixArtifact.driveUrl, localUrl: plan.matrixArtifact.localUrl, contentHash: plan.matrixArtifact.contentHash } } : {}) };
   });
   const signatures = [...new Map(sourceOrders.flatMap(order => order.signatures.map(signature => [signature.role, signature]))).values()];
   const completedSignatureRoles = [...new Set(signatures.map(signature => signature.role))];
