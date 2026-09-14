@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
   [Parameter(Mandatory = $true)]
-  [ValidateSet("integration-hub", "menu-planning", "cpu-production", "delivered-in")]
+  [ValidateSet("integration-hub", "menu-planning", "cpu-production", "delivered-in", "logistics")]
   [string]$App
 )
 
@@ -23,6 +23,7 @@ $backends = @{
   "menu-planning" = "fika-menu-planning-staging"
   "cpu-production" = "fika-cpu-production-staging"
   "delivered-in" = "fika-delivered-in-staging"
+  "logistics" = "fika-logistics-staging"
 }
 $backend = $backends[$App]
 Write-Host "Creating App Hosting staging rollout for $App ($backend) at git SHA $sha"

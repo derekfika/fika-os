@@ -7,6 +7,7 @@ The staging App Hosting backends are connected to the repository `derekfika/fika
 | Menu Planning | `fika-menu-planning-staging` |
 | CPU Production | `fika-cpu-production-staging` |
 | Delivered-In | `fika-delivered-in-staging` |
+| Logistics | `fika-logistics-staging` |
 
 For an explicit staging rollout of the current clean checkout, run from the repository root:
 
@@ -19,8 +20,12 @@ The wrapper derives `git rev-parse HEAD`, refuses a dirty worktree or non-full S
 The human-approved Grab & Go source is migration input only. Validate it without publishing:
 
 ```powershell
-Set-Location C:\FIKA-UAT\apps\cpu-production
-npx tsx scripts/publish-grab-and-go-catalogue.ts C:\FIKA-UAT\apps\delivered-in\app\grab-and-go\grab-and-go-catalogue.json --validate-only
+Set-Location C:\FIKA\apps\cpu-production
+npx tsx scripts/publish-grab-and-go-catalogue.ts C:\FIKA\apps\delivered-in\app\grab-and-go\grab-and-go-catalogue.json --validate-only
 ```
 
 Publishing the validated products remains an explicit CPU-side operation and is not part of an application deployment.
+
+Hospitality Booking has a checked-in staging environment file, but no checked-in
+App Hosting backend identity or Firebase backend configuration. It is therefore
+not included in the exact-SHA wrapper until its staging backend is verified.

@@ -5,7 +5,7 @@ CPU Production owns the Grab & Go catalogue. The catalogue is published as an im
 Publish a governed source file only after the Operations/CPU catalogue owner has approved it:
 
 ```powershell
-cd C:\FIKA-UAT\apps\cpu-production
+cd C:\FIKA\apps\cpu-production
 npx tsx scripts/publish-grab-and-go-catalogue.ts C:\path\to\approved-grab-and-go-catalogue.json
 ```
 

@@ -8,6 +8,7 @@ export const GOVERNED_OPLOCS: readonly GovernedOploc[] = [
   { id: "oploc:83c79eb4-4033-408c-96d7-6c496ed6f6c9", label: "Nesta" },
   { id: "oploc:a358ef5f-297b-4816-bbf5-7fef470e81d7", label: "Bridgepoint" },
   { id: "oploc:66e621fa-6e6f-4f46-9aed-462313abbe8f", label: "MNK" },
+  { id: "oploc:4e7b2838-95de-49c8-bf04-55200841d4cb", label: "Wise" },
 ];
 
 export const GOVERNED_OPLOC_BY_ID = new Map(GOVERNED_OPLOCS.map(value => [value.id, value]));
@@ -21,6 +22,7 @@ export const HISTORICAL_DESTINATION_ALIASES: Record<string, GovernedOploc> = {
   nesta: GOVERNED_OPLOCS[4], comm: GOVERNED_OPLOCS[3], commerce: GOVERNED_OPLOCS[3], commerzbank: GOVERNED_OPLOCS[3],
   angel: GOVERNED_OPLOCS[2], angeel: GOVERNED_OPLOCS[2], "one angel court": GOVERNED_OPLOCS[2],
   bp: GOVERNED_OPLOCS[5], bridgepoint: GOVERNED_OPLOCS[5], mk: GOVERNED_OPLOCS[6], mnk: GOVERNED_OPLOCS[6],
+  wise: GOVERNED_OPLOCS[7],
 };
 export function resolveGovernedOploc(destinationId?: string, destinationLabel?: string) {
   if (destinationId && GOVERNED_OPLOC_BY_ID.has(destinationId)) return GOVERNED_OPLOC_BY_ID.get(destinationId);

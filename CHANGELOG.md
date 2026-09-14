@@ -4,6 +4,8 @@ This file records user-facing workflow changes delivered in the repository. Deta
 
 ## Unreleased
 
+- **2026-09-14 — PRE-UAT integrity recovery remediation:** CPU allergen projection reconciliation now requires the explicit `CPU_PROJECTION_PACKAGE_UNAVAILABLE` classification and fails closed for corrupt, unknown or unauthorised responses without serving stale IndexedDB data. Delivered-In Menu Planning week packet decoding now keeps integrity/schema/identity failures outside legacy query fallback, preserving packet-only safety semantics. Affected apps: CPU Production and Delivered-In. Validation: focused and full app tests, typechecks, builds and `git diff --check` (environmental/pre-existing failures reported in task handoff). Deployment status: not performed.
+
 - **2026-09-06 — THREAD 19 — hosted canonical Production resolution P0:** preserved the CPU-to-Hub canonical detail boundary with safe structured diagnostics and distinct failure classification for outage, timeout, authority denial, not-found/stale identity, malformed response and invalid response. Hosted sign-off remains fail-closed with no fixture or synthetic-order fallback. Validation: focused CPU canonical-resolution/sign-off tests, CPU typecheck, production build and `git diff --check`. Deployment status: not performed.
 
 - **2026-09-06 — THREAD 18 — Delivered-In allergen/signature state hardening:** bound CPU allergen signatures and review-package status to the exact production order, published Menu Planning day/publication/version, source hash and matrix hash; legacy unscoped signatures remain historical only. Added review-package regression coverage, current-day lineage rejection in Delivered-In, and reset protection for current CPU/Delivered-In operational state while preserving immutable history. Validation: focused CPU/Delivered-In tests, CPU and Delivered-In typechecks, reset syntax check and `git diff --check`. Deployment status: not performed.
@@ -133,3 +135,11 @@ This file records user-facing workflow changes delivered in the repository. Deta
 - Restored the logistics timeline’s horizontal/vertical zoom controls, aligned ruler indicators, simplified van rows and required a clear double click for inspection.
 - Added drag-and-drop assignment between van timelines, including drops onto occupied cards; cards now move freely and snap only on release.
 - **2026-09-05 — THREAD 10A — low-risk UI compliance fixes:** replaced the Integration Hub Booking native reason prompt with a focused in-app modal, added shared-token focus-visible styling to Delivered-In, aligned Integration Hub primary actions to semantic purple/white, and switched CPU operational body typography to the existing Gilroy token. Validation: focused Integration Hub, Delivered-In and CPU tests; typechecks/builds run; no deployment.
+# 2026-09-14 — PRE-UAT contract and staging wrapper hygiene
+
+- Task: pre-UAT contract/release-hygiene remediation wave.
+- Affected domains: shared governed OPLOC authority, Menu Planning, staging deployment documentation/tooling.
+- Added Wise to the shared governed OPLOC compatibility contract and removed Menu Planning’s private duplicate list while preserving Haleon historical resolution.
+- Added exact-SHA Logistics wrapper coverage from its checked-in `fika-logistics-staging` backend configuration; documented Hospitality Booking as an unverified external/manual staging gap.
+- Validation: focused Hub/Menu Planning contract tests, affected typechecks/builds, deployment wrapper static validation, and `git diff --check`.
+- Deployment: not performed.

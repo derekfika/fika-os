@@ -1,6 +1,9 @@
 import crypto from "crypto";
 import path from "path";
 import type { ExternalProductionMaterialisation as SharedExternalProductionMaterialisation } from "@fika/server-shared/external-production";
+import { canonicalOplocId, GOVERNED_OPLOCS, oplocIdsMatch, resolveGovernedOploc } from "@fika/server-shared/governed-oplocs";
+export { GOVERNED_OPLOCS, canonicalOplocId, oplocIdsMatch, resolveGovernedOploc } from "@fika/server-shared/governed-oplocs";
+export type { GovernedOploc } from "@fika/server-shared/governed-oplocs";
 
 export const CANONICAL_ALLERGEN_KEYS = ["no_key_allergens", "peanuts", "tree_nuts", "gluten", "sesame", "molluscs", "fish", "soya", "celery", "shellfish", "eggs", "milk", "mustard", "lupin", "sulphites"] as const;
 export type CanonicalAllergenKey = (typeof CANONICAL_ALLERGEN_KEYS)[number];
@@ -11,28 +14,6 @@ const legacy: Record<string, CanonicalAllergenKey> = { noKeyAllergens: "no_key_a
 export function toCanonicalAllergenKey(key: string) { return (CANONICAL_ALLERGEN_KEYS as readonly string[]).includes(key) ? key as CanonicalAllergenKey : legacy[key]; }
 export function enforceNoKeyExclusivity(input: CanonicalAllergenMap): CanonicalAllergenMap { const result = { ...input }; if (result.no_key_allergens && result.no_key_allergens !== "clear") for (const key of CANONICAL_ALLERGEN_KEYS) if (key !== "no_key_allergens") result[key] = "clear"; else if (CANONICAL_ALLERGEN_KEYS.some(key => key !== "no_key_allergens" && result[key] && result[key] !== "clear")) result.no_key_allergens = "clear"; return result; }
 export function toggleOperationalAllergen(current: CanonicalAllergenMap, key: CanonicalAllergenKey): CanonicalAllergenMap { const state = current[key] || "clear"; return enforceNoKeyExclusivity({ ...current, [key]: state === "clear" ? "contains" : state === "contains" ? "may_contain" : "clear" }); }
-
-export type GovernedOploc = { id: string; label: string };
-export const GOVERNED_OPLOCS: readonly GovernedOploc[] = [
-  ["oploc:bb4c7eea-87f5-4e79-8ed6-b973b24ded7b", "Haleon"], ["oploc:b835d8ee-b187-49d1-9072-7348b04bfd2d", "FIKA Xchange"], ["oploc:24a93500-d75d-4fe0-8beb-672d36f9da10", "One Angel Court"], ["oploc:8449a63b-4df8-42f7-8b73-1d2c8669f58c", "Commerzbank"], ["oploc:83c79eb4-4033-408c-96d7-6c496ed6f6c9", "Nesta"], ["oploc:a358ef5f-297b-4816-bbf5-7fef470e81d7", "Bridgepoint"], ["oploc:66e621fa-6e6f-4f46-9aed-462313abbe8f", "MNK"], ["oploc:4e7b2838-95de-49c8-bf04-55200841d4cb", "Wise"],
-].map(([id, label]) => ({ id, label }));
-const aliases: Record<string, GovernedOploc> = Object.fromEntries([
-  ...GOVERNED_OPLOCS.flatMap(item => [[item.label.toLowerCase(), item], [item.id, item]]),
-  ["haleon", GOVERNED_OPLOCS[0]], ["haelon", GOVERNED_OPLOCS[0]], ["x", GOVERNED_OPLOCS[1]], ["fika xchange", GOVERNED_OPLOCS[1]],
-  ["nesta", GOVERNED_OPLOCS[4]], ["comm", GOVERNED_OPLOCS[3]], ["commerce", GOVERNED_OPLOCS[3]], ["commerzbank", GOVERNED_OPLOCS[3]],
-  ["angel", GOVERNED_OPLOCS[2]], ["angeel", GOVERNED_OPLOCS[2]], ["one angel court", GOVERNED_OPLOCS[2]], ["bp", GOVERNED_OPLOCS[5]], ["bridgepoint", GOVERNED_OPLOCS[5]], ["mk", GOVERNED_OPLOCS[6]], ["mnk", GOVERNED_OPLOCS[6]],
-  ["oploc:46701265-15af-48f4-a230-1d27ca21bc59", GOVERNED_OPLOCS[0]],
-]);
-export function resolveGovernedOploc(destinationId?: string, destinationLabel?: string) { return (destinationId && aliases[destinationId]) || aliases[String(destinationLabel || "").trim().toLowerCase()]; }
-
-export function canonicalOplocId(oplocId?: string) {
-  if (!oplocId) return oplocId;
-  return resolveGovernedOploc(oplocId)?.id || oplocId;
-}
-
-export function oplocIdsMatch(left?: string, right?: string) {
-  return Boolean(left && right && canonicalOplocId(left) === canonicalOplocId(right));
-}
 
 export function appDataPath(_appName: string, ...parts: string[]) { return path.join(/*turbopackIgnore: true*/ process.cwd(), "local-data", ...parts); }
 export type DurableDomainEvent<T = unknown> = { eventId: string; eventType: string; sourceAggregateId: string; sourceVersion: number; occurredAt: string; correlationId?: string; causationId?: string; schemaVersion: string; payload: T; delivery: { status: "pending" | "delivered" | "failed"; attempts: number; nextAttemptAt?: string; lastAttemptAt?: string; deliveredAt?: string; lastError?: string; claimId?: string; claimedAt?: string } };
