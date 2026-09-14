@@ -4,6 +4,8 @@ This file records user-facing workflow changes delivered in the repository. Deta
 
 ## Unreleased
 
+- **2026-09-14 — UAT-MP-001 staging deployment submitted:** submitted the validated exact-SHA rollout `733ce7ea9af54a002a457468abc3c4463a96f091` for Menu Planning only to Firebase App Hosting backend `fika-menu-planning-staging` in project `fika-os-dev`. Rollout compilation/propagation was not awaited.
+
 - **2026-09-14 — UAT-MP-001 Excel importer/canonical identity hygiene:** Menu Planning workbook review now resolves only active Dish Library identities, returns explicit create/match outcomes, preserves loser names and aliases on merge survivors, supports bounded idempotent batch dish creation with real counts, and exposes a one-week archived-identity repair endpoint that is dry-run by default and version guarded before mutation. Affected app: Menu Planning. Validation: focused importer/style/contract tests (48 passed, one pre-existing date-anchor failure), full suite (154 passed, one pre-existing date-anchor failure), typecheck. Deployment status: not deployed.
 
 - **2026-09-14 — UAT-DI-001/002 staging deployment submitted:** submitted exact-SHA staging rollouts for validated commit `fbbf6cf32e6415ad338643561e624015609fdef0` to CPU Production backend `fika-cpu-production-staging` and Delivered-In backend `fika-delivered-in-staging` in project `fika-os-dev`. Firebase compilation/propagation was not awaited.
