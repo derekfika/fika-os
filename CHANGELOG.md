@@ -4,6 +4,8 @@ This file records user-facing workflow changes delivered in the repository. Deta
 
 ## Unreleased
 
+- **2026-09-14 — Menu Planning visual UAT rollout submitted:** submitted the validated allergen-checker UI commit `647b851c1dd387786c99ba0310f8f87b68a74293` to Firebase App Hosting backend `fika-menu-planning-staging` in project `fika-os-dev`. Rollout compilation/propagation was not awaited.
+
 - **2026-09-14 — Menu Planning allergen checker visual parity:** aligned the Menu Planning allergen matrix with the CPU review presentation using horizontal sticky headings, a sticky Dish column, bounded scrolling, compact square state controls and a quiet clear/unrecorded visual treatment. Preserved accessibility labels, May contain notes, governed `no_key_allergens` behaviour, state semantics and publication payloads. Affected app: Menu Planning. Validation: focused allergen/read-path tests, full suite (154 passed, one pre-existing date-anchor failure), typecheck, production build and `git diff --check`. Deployment status: not performed.
 
 - **2026-09-14 — staging deployment submitted for UAT-ALG-001:** submitted CPU Production App Hosting staging rollout for exact validated SHA `655a06720c03474c88d514b6fe8e0759a6ee1611` to backend `fika-cpu-production-staging` in project `fika-os-dev`. Firebase rollout compilation/propagation was not awaited. Hospitality Booking remains undeployed because no verified staging backend is configured for the exact-SHA wrapper.
