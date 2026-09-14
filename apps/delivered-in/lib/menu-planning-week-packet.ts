@@ -43,7 +43,7 @@ function validate(value: unknown, expectedPublicationId?: string): MenuPlanningW
   if (expectedPublicationId && value.publicationId !== expectedPublicationId) throw invalid("The Menu Planning weekly packet publication identity does not match the requested publication.");
   const days = value.days.map((day): MenuPlanningWeekPacketDay => {
     const dayVersion = day && typeof day === "object" && "version" in day ? day.version : undefined;
-    if (!isRecord(day) || typeof day.publicationDayId !== "string" || typeof day.sourceDayId !== "string" || !isDate(day.date) || typeof day.dayName !== "string" || typeof dayVersion !== "number" || !Number.isInteger(dayVersion) || dayVersion < 1 || !Array.isArray(day.entries)) throw invalid("The Menu Planning weekly packet contains an invalid service day.");
+    if (!isRecord(day) || typeof day.publicationDayId !== "string" || typeof day.sourceDayId !== "string" || !isDate(day.date) || typeof day.dayName !== "string" || typeof dayVersion !== "number" || !Number.isInteger(dayVersion) || dayVersion < 1 || typeof day.contentHash !== "string" || day.contentHash.length === 0 || !Array.isArray(day.entries)) throw invalid("The Menu Planning weekly packet contains a service day without its immutable content hash.");
     const entries = day.entries.map((entry): MenuPlanningWeekPacketEntry => {
       const entryPortions = entry && typeof entry === "object" && "portions" in entry ? entry.portions : undefined;
       if (!isRecord(entry) || typeof entry.sourceEntryId !== "string" || typeof entry.slot !== "string" || typeof entry.dishName !== "string" || typeof entryPortions !== "number" || !Number.isFinite(entryPortions) || entryPortions < 0 || !Array.isArray(entry.allocations)) throw invalid("The Menu Planning weekly packet contains an invalid menu entry.");
@@ -54,7 +54,7 @@ function validate(value: unknown, expectedPublicationId?: string): MenuPlanningW
       });
       return { sourceEntryId: entry.sourceEntryId, slot: entry.slot, ...(typeof entry.canonicalDishId === "string" ? { canonicalDishId: entry.canonicalDishId } : {}), dishName: entry.dishName, portions: entryPortions, allocations, ...(isRecord(entry.allergens) ? { allergens: Object.fromEntries(Object.entries(entry.allergens).filter(([, state]) => typeof state === "string").map(([key, state]) => [key, state as string])) } : {}), ...(typeof entry.mayContainNotes === "string" ? { mayContainNotes: entry.mayContainNotes } : {}) };
     });
-    return { publicationDayId: day.publicationDayId, sourceDayId: day.sourceDayId, date: day.date, dayName: day.dayName, version: dayVersion, ...(day.status === "published" || day.status === "superseded" || day.status === "withdrawn" ? { status: day.status } : {}), ...(typeof day.contentHash === "string" ? { contentHash: day.contentHash } : {}), entries, ...(isRecord(day.allergenSignoff) ? { allergenSignoff: day.allergenSignoff } : {}) };
+    return { publicationDayId: day.publicationDayId, sourceDayId: day.sourceDayId, date: day.date, dayName: day.dayName, version: dayVersion, ...(day.status === "published" || day.status === "superseded" || day.status === "withdrawn" ? { status: day.status } : {}), contentHash: day.contentHash, entries, ...(isRecord(day.allergenSignoff) ? { allergenSignoff: day.allergenSignoff } : {}) };
   });
   return { schemaVersion: Number(value.schemaVersion || 1), publicationId: value.publicationId, sourceWeekId: value.sourceWeekId, ...(typeof value.publicationVersion === "number" && Number.isInteger(value.publicationVersion) ? { publicationVersion: value.publicationVersion } : {}), ...(typeof value.contentHash === "string" ? { contentHash: value.contentHash } : {}), week: { weekCommencing: value.week.weekCommencing, weekEnding: value.week.weekEnding }, days };
 }
@@ -95,7 +95,7 @@ export function decodeMenuPlanningWeekPacket(value: unknown, expectedPublication
 }
 
 function toSourcePublication(packet: MenuPlanningWeekPacket): SourcePublication {
-  return { publicationId: packet.publicationId, sourceWeekId: packet.sourceWeekId, weekCommencing: packet.week.weekCommencing, weekEnding: packet.week.weekEnding, days: packet.days.map(day => ({ publicationDayId: day.publicationDayId, sourceDayId: day.sourceDayId, date: day.date, dayName: day.dayName, version: day.version, status: day.status || "published", contentHash: day.contentHash || packet.contentHash || "", entries: day.entries.map(entry => ({ ...entry, allergens: safeAllergens(entry.allergens) })), allergenSignoff: {} })) };
+  return { publicationId: packet.publicationId, sourceWeekId: packet.sourceWeekId, weekCommencing: packet.week.weekCommencing, weekEnding: packet.week.weekEnding, days: packet.days.map(day => ({ publicationDayId: day.publicationDayId, sourceDayId: day.sourceDayId, date: day.date, dayName: day.dayName, version: day.version, status: day.status || "published", contentHash: day.contentHash!, entries: day.entries.map(entry => ({ ...entry, allergens: safeAllergens(entry.allergens) })), allergenSignoff: {} })) };
 }
 export type MenuPlanningPacketPublication = ReturnType<typeof toSourcePublication>;
 export const packetPublication = toSourcePublication;

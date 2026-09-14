@@ -344,12 +344,13 @@ export function buildCompiledPublicationSnapshot(
     days: publication.days
       .filter((day) => day.status === "published")
       .sort((a, b) => a.date.localeCompare(b.date))
-      .map((day) => ({
+    .map((day) => ({
         publicationDayId: day.publicationDayId,
         sourceDayId: day.sourceDayId,
         date: day.date,
         dayName: day.dayName,
         version: day.version,
+        contentHash: day.contentHash,
         entries: clone(day.entries),
       })),
   });

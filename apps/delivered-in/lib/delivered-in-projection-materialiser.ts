@@ -17,31 +17,38 @@ type Review = {
 export type ReviewLoader = (request: NextRequest, date: string, oplocId: string, sourceBundleHash?: string) => Promise<Review | undefined>;
 
 export async function buildDeliveredInDayProjection(input: { request: NextRequest; site: Site; day: ProjectedDay; loadReview: ReviewLoader; governed: boolean }): Promise<DeliveredInDayProjection> {
-  const review = await input.loadReview(input.request, input.day.date, input.site.oplocId, input.day.contentHash);
-  if (!review) throw Object.assign(new Error("CPU review data is unavailable; the previous Delivered-In projection must be retained."), { code: "CPU_REVIEW_UNAVAILABLE", status: 503 });
-  if (review.cpuReview.status !== "signed") throw Object.assign(new Error("CPU allergen data is not signed; no current Delivered-In menu may be generated."), { code: "CPU_REVIEW_UNSIGNED", status: 503 });
-  if (review.package?.sourceBundleHash && review.package.sourceBundleHash !== input.day.contentHash) throw Object.assign(new Error("The signed CPU allergen package does not match the current published Menu Planning day."), { code: "CPU_REVIEW_LINEAGE_MISMATCH", status: 503 });
-  const packetEntries = review.entries;
-  const sourceEntries = input.day.entries.filter(entry => {
-    const stableDishId = entry.canonicalDishId || entry.sourceEntryId;
-    if (!packetEntries.has(stableDishId)) throw Object.assign(new Error(`The signed CPU packet does not contain allocated dish ${stableDishId}.`), { code: "CPU_PACKET_MISSING_DISH", status: 503 });
-    return true;
-  }).map(entry => {
-    const reviewed = review?.entries.get(entry.sourceEntryId);
+  let review: Review | undefined;
+  let cpuFailure: { code: string; message: string } | undefined;
+  try {
+    review = await input.loadReview(input.request, input.day.date, input.site.oplocId, input.day.contentHash);
+  } catch (error) {
+    const detail = error && typeof error === "object" ? error as { code?: unknown; message?: unknown } : {};
+    const code = typeof detail.code === "string" ? detail.code : "CPU_DAILY_PACKET_INVALID";
+    cpuFailure = { code, message: typeof detail.message === "string" ? detail.message : "CPU allergen data could not be verified." };
+  }
+  const packetEntries = review?.entries;
+  const missingDish = review?.cpuReview.status === "signed"
+    ? input.day.entries.find(entry => !packetEntries?.has(entry.canonicalDishId || entry.sourceEntryId))
+    : undefined;
+  if (missingDish) cpuFailure = { code: "CPU_PACKET_MISSING_DISH", message: `The signed CPU packet does not contain allocated dish ${missingDish.canonicalDishId || missingDish.sourceEntryId}.` };
+  const sourceEntries = input.day.entries.map(entry => {
     const packetId = entry.canonicalDishId || entry.sourceEntryId;
-    const packetReviewed = reviewed || packetEntries.get(packetId);
+    const packetReviewed = review?.cpuReview.status === "signed" && !cpuFailure ? packetEntries?.get(packetId) : undefined;
+    const allergenKeys = Object.keys(entry.allergens);
+    const allergens = packetReviewed && packetReviewed.allergenState !== "unrecorded"
+      ? Object.fromEntries(allergenKeys.map(key => [key, packetReviewed.allergens[key] || "unrecorded" as const]))
+      : Object.fromEntries(allergenKeys.map(key => [key, "unrecorded" as const]));
+    const allergensVisible = review?.cpuReview.status === "signed" && !cpuFailure && packetReviewed?.allergenState !== "unrecorded" && Object.values(allergens).every(state => state !== "unrecorded");
     return {
       ...entry,
-      allergensVisible: packetReviewed?.allergenState !== "unrecorded",
-      allergens: packetReviewed
-        ? packetReviewed.allergenState === "unrecorded"
-          ? Object.fromEntries(Object.keys(entry.allergens).map(key => [key, "unrecorded" as const]))
-          : Object.fromEntries(Object.keys(entry.allergens).map(key => [key, packetReviewed.allergens[key] || "clear"]))
-        : Object.fromEntries(Object.keys(entry.allergens).map(key => [key, "unrecorded" as const])),
+      allergensVisible,
+      allergens,
       ...(packetReviewed?.mayContainNotes ? { mayContainNotes: packetReviewed.mayContainNotes } : {}),
     };
   });
-  const artifact = review?.cpuReview.status === "signed" ? await latestSiteMenuArtifactHosted(input.site.oplocId, input.day.sourceDayId) : undefined;
+  const artifact = review?.cpuReview.status === "signed" && !cpuFailure ? await latestSiteMenuArtifactHosted(input.site.oplocId, input.day.sourceDayId) : undefined;
+  const cpuException = cpuFailure
+    || (!review ? { code: "CPU_REVIEW_UNAVAILABLE", message: "CPU allergen data was unavailable while building this projection." } : review.cpuReview.status !== "signed" ? { code: "CPU_REVIEW_UNSIGNED", message: "CPU allergen data is pending review/signoff." } : undefined);
   const projection: DeliveredInDayProjection = {
     ...input.day,
     // The CPU packet's signed PDF is the safety reference for Delivered-In;
@@ -58,22 +65,22 @@ export async function buildDeliveredInDayProjection(input: { request: NextReques
     sourceLineage: {
       menu: { publicationId: input.day.publicationId, publicationDayId: input.day.publicationDayId, sourceDayId: input.day.sourceDayId, version: input.day.version, contentHash: input.day.contentHash },
       cpu: {
-        orderIds: review.orderIds,
-        ...(review.updatedAt ? { updatedAt: review.updatedAt } : {}),
-        ...(review.package || {}),
-        ...(review.package?.releaseId ? { releaseId: review.package.releaseId } : {}),
+        orderIds: review?.orderIds || [],
+        ...(review?.updatedAt ? { updatedAt: review.updatedAt } : {}),
+        ...(review?.package || {}),
+        ...(review?.package?.releaseId ? { releaseId: review.package.releaseId } : {}),
       },
       deliveredIn: { ...(artifact?.artifactId ? { siteMenuArtifactId: artifact.artifactId } : {}), generatedAt: new Date().toISOString() },
     },
     generatedAt: new Date().toISOString(),
     state: {
       freshness: "current",
-      completeness: review.package?.sourceCompleteness === "partial" ? "partial" : "complete",
+      completeness: review?.package?.sourceCompleteness === "partial" ? "partial" : "complete",
       menu: input.day.entries.length ? "present" : "empty",
-      cpu: review.package?.sourceStatus === "valid_empty" ? "present" : review.cpuReview.status === "signed" ? "present" : "pending",
+      cpu: cpuException ? "unavailable" : review?.package?.sourceStatus === "valid_empty" ? "present" : review?.cpuReview.status === "signed" ? "present" : "pending",
       exceptions: [
         ...(!input.governed ? [{ code: "OPLOC_NOT_GOVERNED", source: "integration-hub" as const, message: "The destination is not present in the current OPLOC authority." }] : []),
-        ...(!review ? [{ code: "CPU_REVIEW_UNAVAILABLE", source: "cpu-production" as const, message: "CPU review data was unavailable while building this projection." }] : []),
+        ...(cpuException ? [{ ...cpuException, source: "cpu-production" as const }] : []),
       ],
     },
   };

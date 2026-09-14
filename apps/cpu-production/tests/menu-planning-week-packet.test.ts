@@ -18,6 +18,7 @@ const snapshot = {
     date: "2026-09-07",
     dayName: "Monday",
     version: 3,
+    contentHash: "day-hash-v3",
     entries: [{
       sourceEntryId: "entry:1",
       slot: "SALAD 1",

@@ -32,6 +32,7 @@ export type CpuDailySignedPacket = {
 const localRoot = () => process.env.FIKA_SNAPSHOT_DIR || path.join(process.cwd(), "local-data", "read-packages");
 const hosted = () => ["staging", "production"].includes(process.env.FIKA_RUNTIME_MODE || "");
 const invalid = (message: string) => Object.assign(new Error(message), { code: "CPU_DAILY_PACKET_INVALID", status: 503 });
+const lineageMismatch = (message: string) => Object.assign(new Error(message), { code: "CPU_REVIEW_LINEAGE_MISMATCH", status: 503 });
 
 function localStore(): ReadPackageStore {
   const file = (name: string) => path.join(localRoot(), name);
@@ -78,7 +79,8 @@ export async function readCpuDailySignedPacket(serviceDate: string, oplocId: str
   if (!value?.bundle || !value.packet) throw invalid("CPU daily packet envelope is incomplete.");
   const bundle = assertDailySignedOplocBundle(value.bundle);
   const packet = assertDailyAllergenPacket(value.packet);
-  if (bundle.status !== "published" || packet.bundleId !== bundle.bundleId || packet.serviceDate !== serviceDate || packet.oploc.id !== oplocId || packet.source.revision !== bundle.source.revision || packet.source.contentHash !== expectedSourceBundleHash || bundle.source.contentHash !== expectedSourceBundleHash || packet.contentHash !== bundle.packet.contentHash) throw invalid("CPU daily packet scope, source hash, or bundle binding does not match the published Menu Planning day.");
+  if (packet.source.contentHash !== expectedSourceBundleHash || bundle.source.contentHash !== expectedSourceBundleHash) throw lineageMismatch("The signed CPU allergen package source hash does not match the current published Menu Planning day.");
+  if (bundle.status !== "published" || packet.bundleId !== bundle.bundleId || packet.serviceDate !== serviceDate || packet.oploc.id !== oplocId || packet.source.revision !== bundle.source.revision || packet.contentHash !== bundle.packet.contentHash) throw invalid("CPU daily packet scope or bundle binding is invalid.");
   if (bundle.pdf.contentHash.length !== 64 || !bundle.pdf.fileId || !bundle.pdf.url) throw invalid("CPU daily packet has no durable signed PDF identity and URL.");
   return { bundle, packet, manifest: retrieved.manifest, sourceBundleHash: bundle.source.contentHash, signedPdfUrl: bundle.pdf.url, signedPdfContentHash: bundle.pdf.contentHash };
 }

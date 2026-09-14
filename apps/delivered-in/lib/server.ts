@@ -64,7 +64,7 @@ export async function cpuReviewForDay(_request: NextRequest, date: string, oploc
     return cpuDailyPacketReview(packet);
   } catch (error) {
     if (error instanceof Error && error.message.includes("is unavailable.")) return undefined;
-    if (error && typeof error === "object" && "code" in error && (error as { code?: unknown }).code === "CPU_DAILY_PACKET_INVALID") throw error;
+    if (error && typeof error === "object" && "code" in error && ["CPU_DAILY_PACKET_INVALID", "CPU_REVIEW_LINEAGE_MISMATCH"].includes(String((error as { code?: unknown }).code))) throw error;
     throw Object.assign(new Error(`CPU daily signed packet could not be verified for ${oplocId} on ${date}.`), { code: "CPU_DAILY_PACKET_INVALID", status: 503, cause: error });
   }
 }

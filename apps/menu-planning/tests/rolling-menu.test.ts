@@ -286,6 +286,7 @@ test("menu days publish independently and revisions supersede only that day", as
     assert.equal(mondayCompiledSnapshot?.publicationVersion, 1);
     assert.equal(mondayCompiledSnapshot?.sourceWeekVersion, sourceWeekVersion);
     assert.equal(mondayCompiledSnapshot?.days.length, 1);
+    assert.equal(mondayCompiledSnapshot?.days[0].contentHash, mondayPublication.days[0].contentHash);
     assert.match(mondayCompiledSnapshot?.contentHash || "", /^[a-f0-9]{64}$/);
     assert.equal((await getWeek(week.week.id)).week.dayStatuses?.[week.days[0].id], "published");
     const publicationEvents = await listMenuPublicationEvents();
