@@ -4,6 +4,8 @@ This file records user-facing workflow changes delivered in the repository. Deta
 
 ## Unreleased
 
+- **2026-09-14 — UAT-AUTH-001 staging deployment submitted:** submitted exact-SHA rollouts `4f7a99713875e1359c9337859d0a7d2d23153d6b` for Integration Hub (`fika-os-staging`) and Delivered-In (`fika-delivered-in-staging`) in project `fika-os-dev`. Firebase compilation/propagation was not awaited. Deployment status: submitted; live verification pending.
+
 - **2026-09-14 — UAT-AUTH-001 Delivered-In session admission propagation:** Integration Hub Delivered-In access now emits canonical missing/invalid-session admission codes and request IDs, while Delivered-In preserves upstream 401/403/503 semantics through dashboard and related access-backed routes. The client transitions canonical session failures to the standard Hub sign-in flow without retry loops; hosted Hub URL configuration is available to the client at build time. Affected apps: Integration Hub and Delivered-In. Validation: focused auth propagation tests passed, Delivered-In and Integration Hub typechecks/builds passed, `git diff --check`; broader suites retain unrelated pre-existing/environmental failures. Deployment status: not deployed.
 
 - **2026-09-14 — UAT-PERF-002 staging deployment submitted:** submitted exact-SHA rollouts `0c0e1126462c3b04df059f956838beb1fbd5034e` for Integration Hub (`fika-os-staging`) and Menu Planning (`fika-menu-planning-staging`) in project `fika-os-dev`. Firebase compilation/propagation was not awaited. Deployment status: submitted; live verification pending.
