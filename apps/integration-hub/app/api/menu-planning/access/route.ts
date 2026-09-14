@@ -5,8 +5,9 @@ import { createAuthModEvaluationContext, evaluateAuthority, resolveUserAccess } 
 import { resolvePermittedOplocIds } from "@/lib/oploc-authorization";
 import { getOplocReadPackage, validateOplocReadPackage } from "@/lib/oploc-read-package";
 import { requireFikaSession } from "@/lib/fika-session";
+import { withDataTrace } from "@fika/server-shared/data-source-meter-server";
 
-export async function GET(request: NextRequest) {
+async function handleGet(request: NextRequest) {
   try {
     const totalStarted = performance.now();
     const sessionStarted = performance.now();
@@ -56,3 +57,5 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ principal, allowed: true }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) { return errorResponse(error, request.headers.get("x-request-id") || undefined); }
 }
+
+export async function GET(request: NextRequest) { return withDataTrace({ app: "integration-hub", action: "integration-hub.authmod.menu-planning-admission", path: request.nextUrl.pathname, requestId: request.headers.get("x-request-id") || undefined }, () => handleGet(request)); }

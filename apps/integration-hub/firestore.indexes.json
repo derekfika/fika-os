@@ -3,6 +3,7 @@
     { "collectionGroup": "integrationHubCanonical", "queryScope": "COLLECTION", "fields": [{ "fieldPath": "entityType", "order": "ASCENDING" }, { "fieldPath": "lifecycleStatus", "order": "ASCENDING" }] },
     { "collectionGroup": "authmodIdentities", "queryScope": "COLLECTION", "fields": [{ "fieldPath": "externalProvider", "order": "ASCENDING" }, { "fieldPath": "externalUid", "order": "ASCENDING" }] },
     { "collectionGroup": "authmodAuthorityGrants", "queryScope": "COLLECTION", "fields": [{ "fieldPath": "subjectId", "order": "ASCENDING" }, { "fieldPath": "subjectType", "order": "ASCENDING" }] },
+    { "collectionGroup": "authmodAuthorityGrants", "queryScope": "COLLECTION", "fields": [{ "fieldPath": "subjectId", "order": "ASCENDING" }, { "fieldPath": "subjectType", "order": "ASCENDING" }, { "fieldPath": "appId", "order": "ASCENDING" }, { "fieldPath": "resource", "order": "ASCENDING" }, { "fieldPath": "action", "order": "ASCENDING" }] },
     { "collectionGroup": "integrationHubCanonical", "queryScope": "COLLECTION", "fields": [{ "fieldPath": "canonicalId", "order": "ASCENDING" }, { "fieldPath": "entityType", "order": "ASCENDING" }] },
     { "collectionGroup": "authmodAccessAudit", "queryScope": "COLLECTION", "fields": [{ "fieldPath": "actorPrincipalId", "order": "ASCENDING" }, { "fieldPath": "timestamp", "order": "DESCENDING" }] },
     { "collectionGroup": "authmodAccessAudit", "queryScope": "COLLECTION", "fields": [{ "fieldPath": "targetId", "order": "ASCENDING" }, { "fieldPath": "timestamp", "order": "DESCENDING" }] },

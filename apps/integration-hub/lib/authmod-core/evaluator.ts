@@ -90,7 +90,7 @@ export async function evaluateAuthority(repository: AuthModRepository, input: { 
     if (input.principal.type === "service") {
       const service = await repository.getServicePrincipal(input.principal.id);
       if (!service || service.status !== "active" || !isEffective(service)) return deny(input.principal, "service-inactive", { appId: input.appId, action: input.action });
-      const grants = await repository.listAuthorityGrants(input.principal.id, "service");
+      const grants = await repository.listAuthorityGrantsForDecision({ subjectId: input.principal.id, subjectType: "service", appId: input.appId, resource: input.resource, action: input.action });
       const matched = grants.filter(value => value.appId === input.appId && value.resource === input.resource && value.action === input.action && isEffective(value) && scopeAllows(value.scope, input.scope));
       return matched.length ? { allowed: true, principalId: input.principal.id, principalType: "service", appId: input.appId, action: input.action, scope: input.scope, matchedGrantIds: matched.map(value => value.id), reasonCode: "allowed" } : deny(input.principal, "authority-not-granted", { appId: input.appId, action: input.action, scope: input.scope });
     }
@@ -98,7 +98,7 @@ export async function evaluateAuthority(repository: AuthModRepository, input: { 
     if (!base.allowed) return { ...base, action: input.action };
     const identity = await context.identity();
     if (!identity || identity.status !== "active") return deny(input.principal, "identity-inactive", { appId: input.appId, action: input.action });
-    const grants = await context.grants(); const delegations = await context.delegations(); const delegatedSourceIds = new Set((await Promise.all(delegations.filter(value => isEffective(value)).map(async value => (await repository.listAuthorityGrants(value.delegatorId, "interactive")).some(grant => grant.id === value.sourceAuthorityGrantId && isEffective(grant)) ? value.delegatedAuthorityGrantId : undefined))).filter(Boolean));
+    const grants = await context.grants(); const delegations = await context.delegations(); const delegatedSourceIds = new Set((await Promise.all(delegations.filter(value => isEffective(value)).map(async value => { const grant = await repository.getAuthorityGrant(value.sourceAuthorityGrantId); return grant && grant.id === value.sourceAuthorityGrantId && grant.subjectId === value.delegatorId && grant.subjectType === "interactive" && isEffective(grant) ? value.delegatedAuthorityGrantId : undefined; }))).filter(Boolean));
     if (isPersonRequiredAuthority(input.resource) && identity.identityKind !== "person") return deny(input.principal, "authority-not-granted", { appId: input.appId, action: input.action, scope: input.scope });
     if (identity.identityKind === "person" && identity.fullAccess && app.standardResource === input.resource && app.standardActions.includes(input.action) && await fullAccessScopeAllowed(context, input.scope)) return { ...base, allowed: true, action: input.action, scope: input.scope, matchedGrantIds: [], reasonCode: "allowed" };
     const requestedScope = input.scope;

@@ -32,6 +32,8 @@ export class MemoryAuthModRepository implements AuthModRepository {
   async getAppAssignment(id: string) { return this.appAssignments.get(id); }
   async saveAppAssignment(value: AppAssignment, expectedVersion?: number) { assertExpectedVersion(this.appAssignments.get(value.id)?.version, expectedVersion); this.appAssignments.set(value.id, value); }
   async listAuthorityGrants(subjectId: string, subjectType?: "interactive" | "service") { return [...this.grants.values()].filter(value => value.subjectId === subjectId && (!subjectType || value.subjectType === subjectType)); }
+  async getAuthorityGrant(id: string) { return this.grants.get(id); }
+  async listAuthorityGrantsForDecision(input: { subjectId: string; subjectType: "interactive" | "service"; appId: string; resource: any; action: any }) { return [...this.grants.values()].filter(value => value.subjectId === input.subjectId && value.subjectType === input.subjectType && value.appId === input.appId && value.resource === input.resource && value.action === input.action); }
   async saveAuthorityGrant(value: AuthorityGrant, expectedVersion?: number) { assertExpectedVersion(this.grants.get(value.id)?.version, expectedVersion); this.grants.set(value.id, value); }
   async saveAuthorityGrantWithAudit(value: AuthorityGrant, audit: AccessAuditEvent, expectedVersion?: number) { assertExpectedVersion(this.grants.get(value.id)?.version, expectedVersion); this.grants.set(value.id, value); this.audits.push(audit); }
   async getDelegation(id: string) { return this.delegations.get(id); } async listDelegations(delegateId?: string) { return [...this.delegations.values()].filter(value => !delegateId || value.delegateId === delegateId); }

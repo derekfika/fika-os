@@ -5,8 +5,9 @@ import { createAuthModEvaluationContext, resolveUserAccess } from "@/lib/authmod
 import { resolvePermittedOplocIds } from "@/lib/oploc-authorization";
 import { getOplocReadPackage, validateOplocReadPackage } from "@/lib/oploc-read-package";
 import { requireFikaSession } from "@/lib/fika-session";
+import { withDataTrace } from "@fika/server-shared/data-source-meter-server";
 
-export async function GET(request: NextRequest) {
+async function handleGet(request: NextRequest) {
   try {
     const session = await requireFikaSession(request);
     const repository = new FirestoreAuthModRepository();
@@ -20,3 +21,5 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ principal, oplocs }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) { return errorResponse(error, request.headers.get("x-request-id") || undefined); }
 }
+
+export async function GET(request: NextRequest) { return withDataTrace({ app: "integration-hub", action: "integration-hub.authmod.cpu-production-admission", path: request.nextUrl.pathname, requestId: request.headers.get("x-request-id") || undefined }, () => handleGet(request)); }
