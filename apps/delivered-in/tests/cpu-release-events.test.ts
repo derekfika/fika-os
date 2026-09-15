@@ -11,5 +11,5 @@ test("CPU release event contract is bounded and packet-driven", async () => {
   assert.match(event, /reconcileDeliveredInDay/);
   assert.match(materialiser, /CPU_PACKET_MISSING_DISH/);
   assert.match(materialiser, /CPU_REVIEW_UNSIGNED/);
-  assert.match(materialiser, /review\.entries/);
+  assert.match(materialiser, /review\??\.entries/);
 });

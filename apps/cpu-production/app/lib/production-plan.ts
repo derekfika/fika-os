@@ -44,7 +44,9 @@ export function signatureMatchesScope(signature: InternalMatrixSignature, scope:
 
 export function currentAllergenReleaseMatchesOrder(release: CpuAllergenRelease | undefined, order: { canonicalId: string; serviceDate?: string; requiredBy: string; sourceEntityId?: string; sourcePublicationId?: string; sourcePublicationDayId?: string; sourceVersion?: number; sourceContentHash?: string }, menuItems: PlannedMenuItem[]) {
   const scope = matrixSignatureScope(order, allergenMatrixContentHash(menuItems));
-  if (!release || release.status !== "current" || !scope) return false;
+  if (!release || release.status !== "current" || release.materializationStatus !== "ready" || !scope) return false;
+  const roles = new Set(release.signatures.map(signature => signature.role));
+  if (!roles.has("production_chef") || !roles.has("head_chef_site_manager")) return false;
   const lineageMatches = release.serviceDate === scope.serviceDate && release.sourceDayId === scope.sourceDayId && release.sourcePublicationId === scope.sourcePublicationId && release.sourcePublicationDayId === scope.sourcePublicationDayId && release.sourceVersion === scope.sourceVersion && release.sourceContentHash === scope.sourceContentHash;
   return lineageMatches && release.signatures.every(signature => signature.valid && signatureMatchesScope(signature, scope));
 }

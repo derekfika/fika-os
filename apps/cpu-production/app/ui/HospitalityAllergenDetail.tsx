@@ -18,6 +18,19 @@ import { DELI_STYLE_PARENT_KEY, isDeliStyleParent } from "../../lib/production-i
 const allergenColumns = matrixColumns;
 const productionPlanEndpoint = "/api/production-plan";
 
+type ReviewedLineage = { productionOrderId: string; serviceDate: string; sourceDayId: string; sourcePublicationId?: string; sourcePublicationDayId: string; sourceVersion: number; sourceContentHash: string; matrixContentHash: string };
+
+async function sha256Json(value: unknown) {
+  const bytes = await globalThis.crypto.subtle.digest("SHA-256", new TextEncoder().encode(JSON.stringify(value)));
+  return [...new Uint8Array(bytes)].map(byte => byte.toString(16).padStart(2, "0")).join("");
+}
+
+async function reviewedLineage(order: ProductionOrder, items: PlannedMenuItem[]): Promise<ReviewedLineage | undefined> {
+  const serviceDate = order.serviceDate || order.requiredBy?.slice(0, 10);
+  if (!serviceDate || !order.sourceEntityId || !order.sourcePublicationDayId || !order.sourceVersion || !order.sourceContentHash) return undefined;
+  return { productionOrderId: order.canonicalId, serviceDate, sourceDayId: order.sourceEntityId, sourcePublicationDayId: order.sourcePublicationDayId, sourceVersion: order.sourceVersion, sourceContentHash: order.sourceContentHash, matrixContentHash: await sha256Json(items) };
+}
+
 function menuItemLibraryKey(name: string) {
   if (isDeliStyleParent(name)) return DELI_STYLE_PARENT_KEY;
   const slug = name.trim().toLocaleLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 80);
@@ -506,6 +519,8 @@ export default function HospitalityAllergenDetail({
     setBusy(true);
     setMessage("");
     try {
+      const expectedLineage = await reviewedLineage(order, menuItems);
+      if (!expectedLineage) throw new Error("The current Menu publication lineage is unavailable. Reload the review before signing.");
       const response = await fetch("/api/production-plan", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -515,6 +530,7 @@ export default function HospitalityAllergenDetail({
           role,
           printedName,
           signatureDataUrl,
+          expectedLineage,
           attestation:
             "I confirm that I reviewed the allergen matrix and the recorded evidence is accurate to the best of my knowledge.",
           actor: "production-chef",
@@ -579,10 +595,13 @@ export default function HospitalityAllergenDetail({
   const retryFinalArtifact = async () => {
     setBusy(true); setMessage("Retrying final signed matrix artifact…");
     try {
-      const response = await fetch(productionPlanEndpoint, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "save-matrix", orderId: order.canonicalId }) });
+      const expectedLineage = await reviewedLineage(order, menuItems);
+      if (!expectedLineage) throw new Error("The current Menu publication lineage is unavailable. Reload the review before retrying materialization.");
+      const response = await fetch(productionPlanEndpoint, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "save-matrix", orderId: order.canonicalId, expectedLineage }) });
       const body = await response.json();
       if (!response.ok) throw new Error(body.error?.message || "The final signed matrix could not be generated.");
-      setMatrixArtifact(body.matrixArtifact || body.plan?.matrixArtifact); setMatrixStorageStatus("ready"); setSignatures(body.signatures || signatures); setMessage("Signed PDF generated. The matrix is ready to open from the manager dashboard.");
+      const materialized = body.matrixStatus === "ready" && Boolean(body.matrixArtifact || body.plan?.matrixArtifact);
+      setMatrixArtifact(body.matrixArtifact || body.plan?.matrixArtifact); setMatrixStorageStatus(body.matrixStatus === "not_configured" ? "not_configured" : materialized ? "ready" : "artifact_pending"); setSignatures(body.signatures || signatures); setMessage(materialized ? "Signed PDF generated. The matrix is ready to open from the manager dashboard." : "Materialization is queued. The signed matrix will become available after the durable retry succeeds.");
     } catch (error) { setMessage(error instanceof Error ? error.message : "The final signed matrix could not be generated."); }
     finally { setBusy(false); }
   };

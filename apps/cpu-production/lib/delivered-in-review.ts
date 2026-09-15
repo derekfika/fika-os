@@ -1,5 +1,5 @@
 import type { ProductionPlan } from "../app/lib/production-plan";
-import { currentAllergenReleaseMatchesOrder, matrixSignatureScope, signatureMatchesScope } from "../app/lib/production-plan";
+import { currentAllergenReleaseMatchesOrder, matrixSignatureScope, signatureMatchesScope, type MatrixSignatureScope } from "../app/lib/production-plan";
 import { allergenMatrixContentHash } from "./cpu-allergen-release";
 import type { ProductionOrder } from "./production-types";
 import type { ProductionPlanRepository } from "./production-plan-repository";
@@ -17,6 +17,7 @@ export type DeliveredInReviewStatus = {
   matrixArtifact?: { driveUrl?: string; localUrl?: string };
   updatedAt?: string;
   matrixItems?: Array<{ sourceLineId: string; allergens: Record<string, string>; mayContainNotes?: string; evidenceStatus: string }>;
+  sourceLineage?: MatrixSignatureScope;
 };
 
 export function parseDeliveredInReviewOrderIds(value: string | null) {
@@ -44,6 +45,7 @@ export function reviewStatusForPlan(orderId: string, plan: ProductionPlan | unde
     signatureRoles,
     updatedAt: plan.updatedAt,
     matrixItems: plan.menuItems.flatMap((item) => item.sourceLineId ? item.subItems.map(subItem => ({ sourceLineId: item.sourceLineId!, sourceSubItemId: subItem.id, allergens: subItem.allergens, mayContainNotes: subItem.mayContainNotes, evidenceStatus: subItem.evidenceStatus })) : []),
+    ...(scope ? { sourceLineage: scope } : {}),
     ...(plan.matrixArtifact && order && currentAllergenReleaseMatchesOrder(plan.currentAllergenRelease, order, plan.menuItems) ? { matrixStatus: "ready" as const } : signatureRoles.includes("production_chef") && signatureRoles.includes("head_chef_site_manager") ? { matrixStatus: "generating" as const } : {}),
     ...(plan.matrixArtifact && (!order || currentAllergenReleaseMatchesOrder(plan.currentAllergenRelease, order, plan.menuItems)) ? { matrixArtifact: { driveUrl: plan.matrixArtifact.driveUrl, localUrl: plan.matrixArtifact.localUrl } } : {}),
   };

@@ -186,9 +186,10 @@ test("allergen signing freezes once, preserves the first signature, and locks ed
   const planRoute = await readFile(new URL("../app/api/production-plan/route.ts", import.meta.url), "utf8");
   assert.match(page, /if \(!reviewFrozen\) \{ setSignatureMessage\("Syncing allergen edits before signature…"\); await saveReviewRef\.current\(\); setReviewFrozen\(true\); \}/);
   assert.doesNotMatch(page, /beginSigning[\s\S]*await saveReviewRef\.current\(\);[\s\S]*await saveReviewRef\.current\(\);/);
-  assert.match(page, /locked=\{fullySigned \|\| Boolean\(signing\) \|\| Boolean\(site\)\}/);
+  assert.match(page, /busy=\{signatureBusy\}/);
+  assert.match(page, /locked=\{fullySigned \|\| Boolean\(signing\)\}/);
   assert.match(matrix, /locked = false/);
-  assert.match(matrix, /disabled=\{locked \|\| key === "no_key_allergens"\}/);
+  assert.match(matrix, /disabled=\{busy \|\| locked \|\| key === "no_key_allergens"\}/);
   assert.match(matrix, /loadLocalChecked/);
   assert.match(matrix, /saveLocalChecked/);
   assert.doesNotMatch(matrix, /confirm-review/);

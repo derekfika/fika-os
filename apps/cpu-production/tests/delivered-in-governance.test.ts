@@ -12,7 +12,7 @@ const reviewMatrix = readFileSync(new URL("../app/ui/AllergenReviewMatrix.tsx", 
 test("published Menu Planning allergen evidence is carried into canonical CPU lines", () => {
   assert.match(publication, /approvedAllergenSnapshot/);
   assert.match(productionDomain, /approvedAllergenSnapshot/);
-  assert.match(materialiseRoute, /approvedAllergenSnapshot/);
+  assert.match(materialiseRoute, /materialiseExternalProductionOrder/);
   assert.match(productionDomain, /allergenEvidenceStatus: "confirmed"/);
 });
 

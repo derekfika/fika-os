@@ -288,7 +288,7 @@ export async function saveGoogleDriveHtml(input: { name: string; html: string; o
   return { fileId: uploaded.id, driveUrl: uploaded.webViewLink || `https://drive.google.com/open?id=${uploaded.id}`, reused: false };
 }
 
-export async function saveGoogleDrivePdf(input: { name: string; pdfBase64: string; owner: DriveOwner; folderId?: string; weekCommencing?: string; folderLabel?: string }) {
+export async function saveGoogleDrivePdf(input: { name: string; pdfBase64: string; owner: DriveOwner; folderId?: string; weekCommencing?: string; folderLabel?: string; releaseId?: string }) {
   const { owner, headers } = await driveHeaders(input.owner);
   const rootFolderId = await resolveArtifactFolder(owner, input.folderId, "production", headers, input.folderLabel || "Allergen matrix");
   const weekFolderId = await resolveWeekFolder(rootFolderId, input.weekCommencing, headers, input.folderLabel || "Allergen matrix");
@@ -302,12 +302,12 @@ export async function saveGoogleDrivePdf(input: { name: string; pdfBase64: strin
     // The lookup proves the existing file is already in the target folder.
     // Drive rejects `parents` in update metadata; moving would require the
     // separate addParents/removeParents query parameters and is unnecessary.
-    const metadata = JSON.stringify({ name: input.name, mimeType: "application/pdf" });
+    const metadata = JSON.stringify({ name: input.name, mimeType: "application/pdf", ...(input.releaseId ? { appProperties: { fikaReleaseId: input.releaseId } } : {}) });
     const body = new Blob([`--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${metadata}\r\n`, `--${boundary}\r\nContent-Type: application/pdf\r\nContent-Transfer-Encoding: base64\r\n\r\n${input.pdfBase64}\r\n--${boundary}--\r\n`]);
     await json(await googleFetch(`https://www.googleapis.com/upload/drive/v3/files/${encodeURIComponent(found.id)}?uploadType=multipart&supportsAllDrives=true&fields=id,webViewLink`, { method: "PATCH", headers: { ...headers, "content-type": `multipart/related; boundary=${boundary}` }, body }, "Google Drive matrix update"));
     return { fileId: found.id, driveUrl: found.webViewLink || `https://drive.google.com/open?id=${found.id}`, reused: true };
   }
-  const metadata = JSON.stringify({ name: input.name, parents: [folderId], mimeType: "application/pdf" });
+  const metadata = JSON.stringify({ name: input.name, parents: [folderId], mimeType: "application/pdf", ...(input.releaseId ? { appProperties: { fikaReleaseId: input.releaseId } } : {}) });
   const body = new Blob([`--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${metadata}\r\n`, `--${boundary}\r\nContent-Type: application/pdf\r\nContent-Transfer-Encoding: base64\r\n\r\n${input.pdfBase64}\r\n--${boundary}--\r\n`]);
   const uploaded = await json<{ id: string; webViewLink?: string }>(await googleFetch("https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&supportsAllDrives=true&fields=id,webViewLink", { method: "POST", headers: { ...headers, "content-type": `multipart/related; boundary=${boundary}` }, body }, "Google Drive matrix upload"));
   return { fileId: uploaded.id, driveUrl: uploaded.webViewLink || `https://drive.google.com/open?id=${uploaded.id}`, reused: false };

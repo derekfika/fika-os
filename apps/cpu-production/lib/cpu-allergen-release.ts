@@ -1,7 +1,8 @@
 import { createHash } from "node:crypto";
 import type { InternalMatrixSignature, MatrixArtifact, PlannedMenuItem } from "../app/lib/production-plan";
 
-export type CpuReleaseStatus = "current" | "revoked" | "superseded";
+export type CpuReleaseStatus = "pending" | "current" | "revoked" | "superseded";
+export type CpuReleaseMaterializationStatus = "pending" | "ready" | "failed";
 export type CpuReleaseSignature = InternalMatrixSignature & { valid: boolean };
 export type CpuReleaseDelta = { menuItemId: string; dishName: string; allergen: string; previously: string; now: string };
 export type CpuAllergenRelease = {
@@ -19,6 +20,8 @@ export type CpuAllergenRelease = {
   signatures: CpuReleaseSignature[];
   previousReleaseId?: string;
   status: CpuReleaseStatus;
+  materializationStatus: CpuReleaseMaterializationStatus;
+  materializationError?: string;
   revokedAt?: string;
   revokedBy?: string;
   revokeReason?: string;
@@ -59,24 +62,41 @@ function requireHash(value: string, field: string) { if (!HASH.test(value)) thro
 function requireArtifact(artifact: MatrixArtifact, field: string) { requireHash(artifact.contentHash, `${field}.contentHash`); if (!artifact.driveFileId && !artifact.localUrl) throw new Error(`${field} must have a durable identity.`); }
 
 export function buildCpuAllergenRelease(input: {
-  serviceDate: string; sourceDayId: string; sourcePublicationId?: string; sourcePublicationDayId: string; sourceVersion: number; sourceContentHash: string; version: number; signedAt: string; signatures: InternalMatrixSignature[]; items: PlannedMenuItem[]; masterArtifact: MatrixArtifact; derivedArtifacts: MatrixArtifact[]; packetArtifacts: MatrixArtifact[]; previous?: CpuAllergenRelease;
+  serviceDate: string; sourceDayId: string; sourcePublicationId?: string; sourcePublicationDayId: string; sourceVersion: number; sourceContentHash: string; version: number; signedAt: string; signatures: InternalMatrixSignature[]; items: PlannedMenuItem[]; masterArtifact: MatrixArtifact; derivedArtifacts: MatrixArtifact[]; packetArtifacts: MatrixArtifact[]; previous?: CpuAllergenRelease; status?: "pending" | "current";
 }): CpuAllergenRelease {
   if (!Number.isInteger(input.version) || input.version < 1) throw new Error("A release version is required.");
   const roles = new Set(input.signatures.map(signature => signature.role));
   if (!roles.has("production_chef") || !roles.has("head_chef_site_manager")) throw new Error("Both required signatures are required for a release.");
-  requireArtifact(input.masterArtifact, "masterArtifact");
+  if ((input.status || "current") === "current") requireArtifact(input.masterArtifact, "masterArtifact");
   if (!input.sourceDayId || !input.sourcePublicationDayId || !Number.isInteger(input.sourceVersion) || input.sourceVersion < 1) throw new Error("A published Menu Planning source-day identity is required for a release.");
   requireHash(input.sourceContentHash, "sourceContentHash");
-  input.derivedArtifacts.forEach((artifact, index) => requireArtifact(artifact, `derivedArtifacts[${index}]`));
-  input.packetArtifacts.forEach((artifact, index) => requireArtifact(artifact, `packetArtifacts[${index}]`));
+  if ((input.status || "current") === "current") {
+    input.derivedArtifacts.forEach((artifact, index) => requireArtifact(artifact, `derivedArtifacts[${index}]`));
+    input.packetArtifacts.forEach((artifact, index) => requireArtifact(artifact, `packetArtifacts[${index}]`));
+  }
   const matrix = releaseMatrix(input.items);
   const matrixContentHash = jsonHash(matrix);
   const expectedPlanHash = allergenMatrixContentHash(input.items);
   if (input.signatures.some(signature => !signature.scope || signature.scope.matrixContentHash !== expectedPlanHash)) throw new Error("Every release signature must be bound to the exact current publication-day matrix.");
   return {
-    contractVersion: "cpu-production.signed-allergen-release.v1", releaseId: `cpu-allergen-release:${input.serviceDate}:v${input.version}`, serviceDate: input.serviceDate, sourceDayId: input.sourceDayId, ...(input.sourcePublicationId ? { sourcePublicationId: input.sourcePublicationId } : {}), sourcePublicationDayId: input.sourcePublicationDayId, sourceVersion: input.sourceVersion, sourceContentHash: input.sourceContentHash, version: input.version, matrixContentHash, signedAt: input.signedAt,
-    signatures: input.signatures.map(signature => ({ ...signature, valid: true })), ...(input.previous ? { previousReleaseId: input.previous.releaseId } : {}), status: "current", masterArtifact: input.masterArtifact, derivedArtifacts: [...input.derivedArtifacts], packetArtifacts: [...input.packetArtifacts], matrix, deltaFromPrevious: allergenReleaseDelta(input.previous, input.items),
+    contractVersion: "cpu-production.signed-allergen-release.v1", releaseId: `cpu-allergen-release:${input.serviceDate}:${input.sourcePublicationDayId}:v${input.version}`, serviceDate: input.serviceDate, sourceDayId: input.sourceDayId, ...(input.sourcePublicationId ? { sourcePublicationId: input.sourcePublicationId } : {}), sourcePublicationDayId: input.sourcePublicationDayId, sourceVersion: input.sourceVersion, sourceContentHash: input.sourceContentHash, version: input.version, matrixContentHash, signedAt: input.signedAt,
+    signatures: input.signatures.map(signature => ({ ...signature, valid: true })), ...(input.previous ? { previousReleaseId: input.previous.releaseId } : {}), status: input.status || "current", materializationStatus: input.status === "pending" ? "pending" : "ready", masterArtifact: input.masterArtifact, derivedArtifacts: [...input.derivedArtifacts], packetArtifacts: [...input.packetArtifacts], matrix, deltaFromPrevious: allergenReleaseDelta(input.previous, input.items),
   };
+}
+
+export function materializeCpuAllergenRelease(pending: CpuAllergenRelease, artifacts: { masterArtifact: MatrixArtifact; derivedArtifacts: MatrixArtifact[]; packetArtifacts: MatrixArtifact[] }) {
+  if (pending.status !== "pending" && pending.status !== "current") throw new Error("Only a pending or failed CPU allergen release may be materialized.");
+  return { ...pending, status: "current" as const, materializationStatus: "ready" as const, materializationError: undefined, masterArtifact: artifacts.masterArtifact, derivedArtifacts: [...artifacts.derivedArtifacts], packetArtifacts: [...artifacts.packetArtifacts] };
+}
+
+export function stageCpuAllergenReleaseMaterialization(pending: CpuAllergenRelease, artifacts: { masterArtifact: MatrixArtifact; derivedArtifacts: MatrixArtifact[]; packetArtifacts: MatrixArtifact[] }) {
+  if (pending.status !== "pending" && pending.status !== "current") throw new Error("Only a pending CPU allergen release may be staged.");
+  return { ...pending, status: "current" as const, materializationStatus: "pending" as const, materializationError: undefined, masterArtifact: artifacts.masterArtifact, derivedArtifacts: [...artifacts.derivedArtifacts], packetArtifacts: [...artifacts.packetArtifacts] };
+}
+
+export function failCpuAllergenReleaseMaterialization(pending: CpuAllergenRelease, error: unknown) {
+  if (pending.status !== "pending" && !(pending.status === "current" && pending.materializationStatus !== "ready")) return pending;
+  return { ...pending, materializationStatus: "failed" as const, materializationError: error instanceof Error ? error.message : String(error) };
 }
 
 export function revokeCpuAllergenRelease(release: CpuAllergenRelease, input: { at: string; by: string; reason: string; supersededByReleaseId?: string }): CpuAllergenRelease {
@@ -87,6 +107,7 @@ export function revokeCpuAllergenRelease(release: CpuAllergenRelease, input: { a
 
 export function publishCpuAllergenRelease(current: CpuAllergenRelease | undefined, candidate: CpuAllergenRelease) {
   if (candidate.status !== "current") throw new Error("Only a current release may become current.");
+  if (candidate.materializationStatus !== "ready") throw new Error("Only a materialized release may become current.");
   if (current && current.serviceDate !== candidate.serviceDate) throw new Error("Release service dates cannot change.");
   if (current && candidate.version <= current.version) throw new Error("Release versions must increase.");
   if (candidate.matrixContentHash !== jsonHash(candidate.matrix)) throw new Error("Release matrix hash mismatch.");

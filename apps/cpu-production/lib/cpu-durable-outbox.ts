@@ -10,7 +10,7 @@ import {
   type DurableDomainEvent,
 } from "@fika/server-shared/durable-outbox";
 
-export type CpuPropagationConsumer = "delivered-in" | "logistics";
+export type CpuPropagationConsumer = "delivered-in" | "logistics" | "cpu-production";
 
 export type CpuConsumerInvalidationInput = {
   eventId?: string;
@@ -185,9 +185,9 @@ export function seedCpuOutboxForTests(events: CpuPropagationOutboxEvent[]) {
 export function listCpuOutboxForTests() { return [...memoryOutbox.values()].map(event => structuredClone(event)); }
 
 function routeBase(consumer: CpuPropagationConsumer) {
-  const configured = consumer === "delivered-in" ? (process.env.FIKA_APP_DELIVERED_IN_URL || process.env.DELIVERED_IN_BASE_URL) : (process.env.FIKA_LOGISTICS_BASE_URL || process.env.LOGISTICS_BASE_URL);
+  const configured = consumer === "delivered-in" ? (process.env.FIKA_APP_DELIVERED_IN_URL || process.env.DELIVERED_IN_BASE_URL) : consumer === "logistics" ? (process.env.FIKA_LOGISTICS_BASE_URL || process.env.LOGISTICS_BASE_URL) : (process.env.CPU_PUBLIC_BASE_URL || "http://localhost:3400");
   if (configured) return configured.replace(/\/$/, "");
-  return consumer === "delivered-in" ? "http://localhost:3800" : "http://localhost:3900";
+  return consumer === "delivered-in" ? "http://localhost:3800" : consumer === "logistics" ? "http://localhost:3900" : "http://localhost:3400";
 }
 
 async function readOutbox(eventId: string) {

@@ -95,8 +95,10 @@ class MemoryProductionPlanRepository implements ProductionPlanRepository {
   }
 }
 
+const memoryRepository = new MemoryProductionPlanRepository();
+
 export function createProductionPlanRepository(): ProductionPlanRepository {
   // Tests and explicitly requested local memory mode never touch Firestore.
-  if (process.env.NODE_ENV === "test" || process.env.FIKA_CPU_PLAN_STORE === "memory") return new MemoryProductionPlanRepository();
+  if (process.env.NODE_ENV === "test" || process.env.FIKA_CPU_PLAN_STORE === "memory") return memoryRepository;
   return new FirestoreProductionPlanRepository();
 }

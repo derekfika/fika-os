@@ -2,13 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { errorResponse } from "../../../lib/api";
 import { z } from "zod";
 import { existsSync, promises as fs } from "node:fs";
-import path from "node:path";
-import { createHash } from "node:crypto";
 import { localFixtureOrders, updateLocalFixture } from "../local-fixtures";
 import { currentAllergenReleaseMatchesOrder, matrixSignatureScope, signatureMatchesScope, signedAllergenCheckpointMatchesOrder, type AllergenCellState, type InternalMatrixSignature, type MatrixArtifact, type PlannedMenuItem, type ProductionPlan } from "../../lib/production-plan";
-import { allergenMatrixHtml } from "../../ui/allergen-matrix";
-import { isHostedPdfRuntime, renderPdfToBuffer } from "../../lib/local-pdf";
-import os from "node:os";
 import { normaliseOperationalAllergens } from "../../../../shared/allergen-contract";
 import { canonicalProductionFailureKind, productionOrderDetail, productionQueue, transitionProductionOrder, type CanonicalProductionFailure } from "../../../lib/production-http-client";
 import type { ProductionOrder, ProductionStatus } from "../../../lib/production-types";
@@ -22,10 +17,8 @@ import { recordDeliveredInReadBudget } from "../../../lib/delivered-in-read-budg
 import { recordDataAccess, withDataTrace } from "@fika/server-shared/data-source-meter-server";
 import { rebuildCpuReviewPackage } from "../../../lib/cpu-review-package";
 import { buildCpuAllergenReleaseEvent, eventTypeForConsumers, notifyCpuConsumerInvalidations, notifyDeliveredInAllergenRelease } from "../../../lib/cpu-consumer-invalidation";
-import { buildDailySignedOplocBundle, dailyBundleSha256, dailyBundleManifestKey, encodeDailySignedOplocBundlePackage, publishDailySignedOplocBundle, verifyDailySignedOplocBundleArtifacts, type DailyBundleDurableStore } from "@fika/server-shared/daily-signed-oploc-bundle";
-import { publishReadPackage } from "@fika/server-shared/read-package";
-import { cpuPackageStore } from "../../../lib/cpu-package-store";
-import { allergenMatrixContentHash, buildCpuAllergenRelease, publishCpuAllergenRelease, revokeCpuAllergenRelease } from "../../../lib/cpu-allergen-release";
+import { deliverCpuPropagation } from "../../../lib/cpu-durable-outbox";
+import { allergenMatrixContentHash, buildCpuAllergenRelease, revokeCpuAllergenRelease } from "../../../lib/cpu-allergen-release";
 
 function menuContentHash(menuItems: PlannedMenuItem[]) {
   return allergenMatrixContentHash(menuItems);
@@ -73,14 +66,15 @@ async function syncCanonicalLifecycle(
 
 const SubItem = z.object({ id: z.string().min(1), productionItemId: z.string().min(1).optional(), name: z.string(), quantity: z.number().positive().nullable(), allergens: z.record(z.string(), z.enum(["clear", "contains", "may_contain"])), mayContainNotes: z.string().optional(), note: z.string(), evidenceStatus: z.enum(["not_completed", "completed", "requires_review"]) });
 const MenuItem = z.object({ id: z.string().min(1), sourceLineId: z.string().optional(), name: z.string(), note: z.string(), subItems: z.array(SubItem) });
+const ExpectedLineage = z.object({ productionOrderId: z.string(), serviceDate: z.string(), sourceDayId: z.string(), sourcePublicationId: z.string().optional(), sourcePublicationDayId: z.string(), sourceVersion: z.number().int().positive(), sourceContentHash: z.string().length(64), matrixContentHash: z.string().length(64) });
 const Command = z.discriminatedUnion("action", [
   z.object({ action: z.literal("accept"), orderId: z.string(), commandId: z.string().trim().min(8).optional() }),
   z.object({ action: z.literal("reject"), orderId: z.string(), reason: z.string().trim().min(3), commandId: z.string().trim().min(8).optional() }),
   z.object({ action: z.literal("clarify"), orderId: z.string(), note: z.string().trim().min(3), commandId: z.string().trim().min(8).optional() }),
   z.object({ action: z.literal("save-plan"), orderId: z.string(), menuItems: z.array(MenuItem).min(1), planningNotes: z.string().default(""), commandId: z.string().trim().min(8).optional() }),
   z.object({ action: z.literal("mark-planned"), orderId: z.string(), menuItems: z.array(MenuItem).min(1), planningNotes: z.string().default(""), commandId: z.string().trim().min(8).optional() }),
-  z.object({ action: z.literal("sign-matrix"), orderId: z.string(), role: z.enum(["production_chef", "head_chef_site_manager"]), printedName: z.string().trim().min(2).max(120), attestation: z.string().trim().min(10).max(500), signatureDataUrl: z.string().regex(/^data:image\/png;base64,/).max(500000), commandId: z.string().trim().min(8).optional() }),
-  z.object({ action: z.literal("save-matrix"), orderId: z.string(), commandId: z.string().trim().min(8).optional() }),
+  z.object({ action: z.literal("sign-matrix"), orderId: z.string(), role: z.enum(["production_chef", "head_chef_site_manager"]), printedName: z.string().trim().min(2).max(120), attestation: z.string().trim().min(10).max(500), signatureDataUrl: z.string().regex(/^data:image\/png;base64,/).max(500000), expectedLineage: ExpectedLineage, commandId: z.string().trim().min(8).optional() }),
+  z.object({ action: z.literal("save-matrix"), orderId: z.string(), expectedLineage: ExpectedLineage.optional(), commandId: z.string().trim().min(8).optional() }),
 ]);
 const MatrixOperation = z.discriminatedUnion("action", [
   z.object({ action: z.literal("save-plan"), orderId: z.string(), menuItems: z.array(MenuItem).min(1), planningNotes: z.string().default(""), commandId: z.string().trim().min(8).optional() }),
@@ -96,6 +90,25 @@ function normalisePlanAllergens(plan: ProductionPlan): ProductionPlan {
 }
 async function persistPlan(plan: ProductionPlan, expectedUpdatedAt?: string) { await planRepository.save(plan, expectedUpdatedAt); }
 function now() { return new Date().toISOString(); }
+function sameLineage(left: ReturnType<typeof matrixSignatureScope>, right: ReturnType<typeof matrixSignatureScope>) {
+  return Boolean(left && right && left.productionOrderId === right.productionOrderId && left.serviceDate === right.serviceDate && left.sourceDayId === right.sourceDayId && left.sourcePublicationId === right.sourcePublicationId && left.sourcePublicationDayId === right.sourcePublicationDayId && left.sourceVersion === right.sourceVersion && left.sourceContentHash === right.sourceContentHash && left.matrixContentHash === right.matrixContentHash);
+}
+function pendingReleaseArtifact(plan: ProductionPlan, order: ProductionOrder, timestamp: string): MatrixArtifact {
+  const contentHash = menuContentHash(plan.menuItems);
+  return { id: `pending-cpu-allergen:${order.canonicalId}:${contentHash.slice(0, 16)}`, bookingId: order.sourceBookingId, fileName: `PREPARED-${order.canonicalId}.pdf`, createdAt: timestamp, createdBy: plan.updatedBy, contentHash, pdfStatus: "unavailable", driveStatus: "not_configured" };
+}
+function pendingReleaseFor(plan: ProductionPlan, order: ProductionOrder, timestamp: string) {
+  const source = matrixSignatureScope(order, menuContentHash(plan.menuItems));
+  if (!source) throw Object.assign(new Error("The current published Menu Planning source identity is unavailable; the matrix cannot be signed."), { status: 503 });
+  const previous = [...(plan.allergenReleaseHistory || [])].at(-1);
+  return buildCpuAllergenRelease({ serviceDate: source.serviceDate, sourceDayId: source.sourceDayId, sourcePublicationId: source.sourcePublicationId, sourcePublicationDayId: source.sourcePublicationDayId, sourceVersion: source.sourceVersion, sourceContentHash: source.sourceContentHash, version: Math.max(1, ...((plan.allergenReleaseHistory || []).map(item => item.version + 1))), signedAt: timestamp, signatures: plan.signatures || [], items: plan.menuItems, masterArtifact: pendingReleaseArtifact(plan, order, timestamp), derivedArtifacts: [], packetArtifacts: [], previous, status: "pending" });
+}
+// Artifact creation is intentionally no longer part of the sign command:
+// release materialization runs from the committed outbox obligation after
+// authoritative CPU state has accepted the signature.
+function releaseMaterializationDelivery(plan: ProductionPlan, release: NonNullable<ProductionPlan["currentAllergenRelease"]>, order: ProductionOrder, timestamp: string) {
+  return { eventId: `cpu-allergen-materialize:${release.releaseId}`, sourceAggregateId: plan.id, sourceVersion: release.version, occurredAt: timestamp, consumer: "cpu-production" as const, route: "/api/internal/cpu-release-materialize", body: { orderId: order.canonicalId, releaseId: release.releaseId } };
+}
 function invalidateSignedAllergenAuthorityForNewSourceLineage(plan: ProductionPlan, actor: string, at: string, reason: string) {
   const current = plan.currentAllergenRelease;
   const hasAuthority = Boolean(current || plan.signatures?.length || plan.signedSignatures?.length || plan.signedMenuContentHash || plan.matrixArtifact || plan.signedMatrixArtifact || plan.masterMatrixArtifact || plan.siteMatrixArtifacts);
@@ -203,14 +216,6 @@ async function applyMatrixOperation(request: NextRequest, actor: Awaited<ReturnT
   if (event.duplicate && event.plan) Object.assign(plan, event.plan);
   return { orderId: operation.orderId, plan, serviceDate: changedOrder.serviceDate, sequence: event.sequence };
 }
-function hospitalityBase() {
-  const configured = process.env.HOSPITALITY_BOOKING_BASE_URL?.trim();
-  if (!configured) {
-    if (!isLocalRuntime()) throw Object.assign(new Error("Hospitality Booking base URL is not configured for hosted CPU matrix persistence."), { status: 503 });
-    return "http://localhost:3300";
-  }
-  return configured.replace(/\/$/, "");
-}
 async function mergeOriginalItems(request: NextRequest, plan: ProductionPlan, orderId: string, knownOrder?: ProductionOrder): Promise<ProductionPlan> {
   const order = knownOrder || await loadOrder(request, orderId);
   if (!order) return plan;
@@ -221,141 +226,6 @@ async function mergeOriginalItems(request: NextRequest, plan: ProductionPlan, or
     invalidateSignedAllergenAuthorityForNewSourceLineage(next, "system", now(), "The canonical source lineage changed after signed release.");
   }
   return next;
-}
-
-async function createMatrixArtifact(plan: ProductionPlan, orderId: string, actor: string, timestamp: string, request: NextRequest) {
-  if (plan.status !== "planned") throw Object.assign(new Error("Mark the allergen matrix Planned before saving it to the site Drive."), { status: 422 });
-  const subItems = plan.menuItems.flatMap(item => item.subItems);
-  if (!subItems.length || subItems.some(item => !item.name.trim())) throw Object.assign(new Error("Complete every named sub-item before saving the matrix."), { status: 422 });
-  const order = await loadOrder(request, orderId);
-  if (!order) throw Object.assign(new Error("The production order could not be loaded."), { status: 404 });
-  // A signed release must have a durable PDF.  Configuration gaps therefore
-  // fail closed instead of allowing signatures to look complete without audit
-  // bytes.
-  // Historical compatibility marker (the old implementation used
-  // `if (!matrixDriveConfiguration(order).enabled) return undefined;` here).
-  if (!matrixDriveConfiguration(order).enabled) throw Object.assign(new Error("A configured Drive workspace is required before signing the CPU allergen bundle."), { status: 503 });
-  const serviceDate = order.serviceDate || order.requiredBy.slice(0, 10);
-  const weekCommencing = weekCommencingFor(serviceDate);
-  // Daily release scope: a signing action for one service date must not
-  // silently pull another day into the signed source revision.
-  const dailyOrders = (await productionQueue(request, serviceDate)).filter(candidate => candidate.origin === "menu_planning" && (candidate.serviceDate || candidate.requiredBy.slice(0, 10)) === serviceDate);
-  const storedPlans = await planRepository.getByOrderIds(dailyOrders.map(candidate => candidate.canonicalId));
-  const planByOrderId = new Map(storedPlans.map(candidate => [candidate.orderId, normalisePlanAllergens(candidate)]));
-  planByOrderId.set(orderId, normalisePlanAllergens(plan));
-  const fullySigned = (pair: { order: ProductionOrder; plan: ProductionPlan }) => {
-    const scope = matrixSignatureScope(pair.order, menuContentHash(pair.plan.menuItems));
-    const signatures = pair.plan.signatures || [];
-    return pair.plan.status === "planned" && pair.plan.menuItems.length > 0 && pair.plan.menuItems.every(item => item.subItems.length > 0 && item.subItems.every(sub => sub.name.trim())) && signatures.some(signature => signature.role === "production_chef" && signatureMatchesScope(signature, scope)) && signatures.some(signature => signature.role === "head_chef_site_manager" && signatureMatchesScope(signature, scope));
-  };
-  const signedPairs = dailyOrders.flatMap(candidate => { const candidatePlan = planByOrderId.get(candidate.canonicalId); const pair = candidatePlan ? { order: candidate, plan: candidatePlan } : undefined; return pair && fullySigned(pair) ? [pair] : []; });
-  if (!signedPairs.some(pair => pair.order.canonicalId === orderId)) signedPairs.push({ order, plan });
-  const stableFileToken = (value: string) => value.replace(/^oploc:/, "").replace(/[^A-Za-z0-9_-]+/g, "-").replace(/^-+|-+$/g, "") || "unassigned";
-  const allSignatures = signedPairs.flatMap(pair => (pair.plan.signatures || []).filter(signature => signatureMatchesScope(signature, matrixSignatureScope(pair.order, menuContentHash(pair.plan.menuItems)))));
-  const withSource = (pair: { order: ProductionOrder; plan: ProductionPlan }, prefix: string) => pair.plan.menuItems.map(item => ({ ...item, id: `${prefix}:${item.id}`, name: pair.order.destinationOplocId ? `${pair.order.destinationOplocId} · ${item.name}` : item.name }));
-  const masterItems = signedPairs.flatMap(pair => withSource(pair, pair.order.canonicalId));
-  const sitePairs = new Map<string, Array<{ order: ProductionOrder; plan: ProductionPlan }>>();
-  for (const pair of signedPairs) if (pair.order.destinationOplocId) sitePairs.set(pair.order.destinationOplocId, [...(sitePairs.get(pair.order.destinationOplocId) || []), pair]);
-  const artifacts: Array<{ kind: "master" | "site"; oplocId?: string; artifact: MatrixArtifact }> = [];
-  const persistPdf = async (kind: "master" | "site", fileName: string, html: string, sourceOrder: ProductionOrder, sourceOrderId: string) => {
-    const pdfPath = isHostedPdfRuntime() ? undefined : path.join(os.tmpdir(), `fika-cpu-matrix-${Date.now()}-${Math.random().toString(36).slice(2)}-${fileName}`);
-    let pdfBase64: string | undefined; let pdfStatus: "generated" | "unavailable" = "unavailable";
-    try { const pdf = await renderPdfToBuffer(html); if (pdfPath) await fs.writeFile(pdfPath, pdf); pdfBase64 = pdf.toString("base64"); pdfStatus = "generated"; } catch (error) {
-      console.error("FIKA PDF renderer failure", { app: "cpu-production", operation: "allergen-pdf-generation", runtime: process.env.FIKA_RUNTIME_MODE || process.env.NODE_ENV || "unknown", errorName: error instanceof Error ? error.name : "UnknownError", errorMessage: error instanceof Error ? error.message : String(error), stack: error instanceof Error ? error.stack : undefined, productionOrderId: orderId, serviceDate, weekCommencing, requestId: request.headers.get("x-request-id") || undefined, buildSha: process.env.FIKA_BUILD_SHA || undefined });
-    }
-    if (!pdfBase64) throw Object.assign(new Error("The final allergen checker PDF could not be generated."), { status: 503 });
-    const pdfContentHash = dailyBundleSha256(Buffer.from(pdfBase64, "base64"));
-    try {
-      const drivePayload = { name: fileName, html, pdfBase64, productionOrderId: orderId, weekCommencing };
-      const response = await fetch(`${hospitalityBase()}/api/allergen-matrix/drive`, { method: "POST", headers: { "content-type": "application/json", ...(request.headers.get("cookie") ? { cookie: request.headers.get("cookie")! } : {}), ...(request.headers.get("x-request-id") ? { "x-request-id": request.headers.get("x-request-id")! } : {}) }, body: JSON.stringify(drivePayload) });
-      const body = await response.json() as { saved?: { fileId?: string; driveUrl?: string } | null; error?: { message?: string } };
-      if (!response.ok || !body.saved?.fileId) throw Object.assign(new Error(body.error?.message || "The final allergen checker could not be durably persisted to the configured Drive workspace."), { status: response.status || 503 });
-      return { kind, ...(kind === "site" ? { oplocId: sourceOrder.destinationOplocId } : {}), artifact: { id: `allergen-${kind}:${serviceDate}:${pdfContentHash.slice(0, 16)}`, bookingId: sourceOrder.sourceBookingId, fileName, createdAt: timestamp, createdBy: actor, contentHash: pdfContentHash, html, ...(pdfPath ? { pdfPath, localUrl: `${(process.env.CPU_PUBLIC_BASE_URL || "http://localhost:3400").replace(/\/$/, "")}/api/production-plan?orderId=${encodeURIComponent(sourceOrderId)}&download=pdf` } : {}), pdfStatus, driveFileId: body.saved.fileId, driveUrl: body.saved.driveUrl, driveStatus: "saved" as const } };
-    } catch (error) { if (error && typeof error === "object" && "status" in error) throw error; throw Object.assign(new Error("The final allergen checker could not be persisted to the configured Drive workspace."), { status: 503 }); }
-  };
-  const masterHtml = allergenMatrixHtml({ clientName: "FIKA OS", destinationLabel: "CPU master allergen checker", serviceType: "Delivered-In menu", serviceDate, serviceWindow: order.serviceWindow, requiredBy: order.requiredBy }, masterItems, allSignatures);
-  // Keep the old week token available for compatibility with archived folder
-  // indexes; new release filenames are service-day scoped.
-  const legacyMasterFileName = `master-${weekCommencing}.pdf`;
-  void legacyMasterFileName;
-  artifacts.push(await persistPdf("master", `CPU-Master-${serviceDate}.pdf`, masterHtml, order, orderId));
-  for (const [oplocId, pairs] of sitePairs) {
-    const source = pairs[0].order;
-    const siteHtml = allergenMatrixHtml({ clientName: source.clientName, destinationLabel: source.destinationLabel || oplocId, serviceType: source.serviceType, serviceDate, serviceWindow: source.serviceWindow, requiredBy: source.requiredBy }, pairs.flatMap(pair => withSource(pair, pair.order.canonicalId)), allSignatures);
-    const legacySiteFileName = `oploc-${stableFileToken(oplocId)}-${weekCommencing}.pdf`;
-    void legacySiteFileName;
-    const actualOplocName = source.destinationLabel || oplocId;
-    artifacts.push(await persistPdf("site", `${actualOplocName}-${serviceDate}-Allergen-Matrix.pdf`.replace(/[^A-Za-z0-9._-]+/g, "_"), siteHtml, source, source.canonicalId));
-  }
-  const master = artifacts.find(item => item.kind === "master")!.artifact;
-  if (!sitePairs.size) throw Object.assign(new Error("The signed CPU allergen checker has no canonical OPLOC output."), { status: 422 });
-  plan.masterMatrixArtifact = master;
-  plan.siteMatrixArtifacts = Object.fromEntries(artifacts.filter(item => item.kind === "site" && item.oplocId).map(item => [item.oplocId!, item.artifact]));
-
-  // Publish the minimized daily packet and its manifest only after every PDF
-  // and the CPU master sheet have durable Drive identities. The packet itself
-  // is immutable/content-addressed; the manifest is the final write.
-  const packageStore = cpuPackageStore();
-  const allSignaturesByRole = new Map<string, InternalMatrixSignature>();
-  for (const signature of allSignatures) if (!allSignaturesByRole.has(signature.role)) allSignaturesByRole.set(signature.role, signature);
-  const destinationBundles = [...sitePairs.entries()].map(([oplocId, pairs]) => {
-    const source = pairs[0].order;
-    const site = plan.siteMatrixArtifacts?.[oplocId];
-    if (!site) throw Object.assign(new Error(`The signed CPU allergen checker has no site PDF for ${oplocId}.`), { status: 422 });
-    const sourceContentHash = source.sourceContentHash;
-    if (!sourceContentHash) throw Object.assign(new Error(`The CPU daily bundle for ${oplocId} requires the Menu Planning source content hash.`), { status: 422 });
-    const oploc = { id: oplocId, name: source.destinationLabel || oplocId };
-    const built = buildDailySignedOplocBundle({
-      bundleId: `cpu-allergen:${serviceDate}:${oplocId}:r${plan.audit.length}`,
-      serviceDate,
-      oploc,
-      source: { id: source.canonicalId, revision: Math.max(1, source.sourceVersion || plan.audit.length), contentHash: sourceContentHash },
-      signatures: [...allSignaturesByRole.values()],
-      masterSheet: { contentHash: master.contentHash, fileId: master.driveFileId || "" },
-      pdf: { contentHash: site.contentHash, fileId: site.driveFileId || "", url: site.driveUrl || site.localUrl },
-      items: pairs.flatMap(pair => pair.plan.menuItems.flatMap(item => {
-        const sourceLine = pair.order.lines.find(line => line.canonicalId === item.sourceLineId);
-        const stableEntryId = sourceLine?.sourceBookingLineId || sourceLine?.canonicalId || item.sourceLineId;
-        return item.subItems.map((sub, index) => ({
-          // Delivered-In day entries are keyed by Menu Planning's source
-          // booking line identity, never by a transient CPU sub-item ID.
-          menuItemId: index === 0 ? stableEntryId || sub.id : `${stableEntryId || sub.id}:sub:${sub.id}`,
-          menuItemName: sub.name || item.name,
-          allergens: sub.allergens,
-          allergenState: sub.evidenceStatus === "completed" ? undefined : "unrecorded" as const,
-        }));
-      })),
-      signedAt: timestamp,
-    });
-    return { oplocId, site, built };
-  });
-  const dailyStoreFor = (built: (typeof destinationBundles)[number]["built"]): DailyBundleDurableStore => ({
-      async putPacket(packet, bytes) { await packageStore.putImmutable(built.bundle.packet.objectName, bytes, packet.contentHash); },
-      async verifyArtifact(artifact) {
-        if (artifact.objectName) { const bytes = await packageStore.get(artifact.objectName); return Boolean(bytes && dailyBundleSha256(bytes) === artifact.contentHash); }
-        return Boolean(artifact.fileId);
-      },
-      async putManifest(bundle, packet) {
-        if (!packet) throw Object.assign(new Error("The signed daily packet is required before publishing its manifest."), { status: 422 });
-        const key = dailyBundleManifestKey(bundle.serviceDate, bundle.oploc.id);
-        const previous = await packageStore.getManifest(key);
-        const encoded = encodeDailySignedOplocBundlePackage(bundle, packet, (previous?.packageVersion || 0) + 1);
-        await publishReadPackage(packageStore, key, encoded);
-      },
-    });
-  // Preflight every destination before activating any manifest. This keeps a
-  // failed PDF/packet/master verification from exposing a partial signed day.
-  for (const { built } of destinationBundles) await verifyDailySignedOplocBundleArtifacts(built.bundle, built.packet, built.packetBytes, dailyStoreFor(built));
-  for (const { site, built } of destinationBundles) {
-    const dailyStore = dailyStoreFor(built);
-    await publishDailySignedOplocBundle(built.bundle, built.packet, built.packetBytes, dailyStore, timestamp);
-    site.bundleId = built.bundle.bundleId;
-    site.packetContentHash = built.bundle.packet.contentHash;
-    site.packetObjectName = built.bundle.packet.objectName;
-    site.sourceRevision = built.bundle.source.revision;
-    site.sourceContentHash = built.bundle.source.contentHash;
-  }
-  return plan.siteMatrixArtifacts?.[order.destinationOplocId || ""];
 }
 
 async function handleGet(request: NextRequest) {
@@ -515,60 +385,29 @@ async function handlePost(request: NextRequest) {
       const currentMenuContentHash = menuContentHash(plan.menuItems);
       const currentSignatureScope = matrixSignatureScope(currentOrder, currentMenuContentHash);
       if (!currentSignatureScope) throw Object.assign(new Error("The current published Menu Planning source identity is unavailable; the matrix cannot be signed."), { status: 503 });
+      if (!sameLineage(currentSignatureScope, command.expectedLineage)) throw Object.assign(new Error("The reviewed Menu publication has changed. Reload and review the current matrix before signing."), { status: 409, code: "CPU_SIGN_LINEAGE_CONFLICT" });
+      const latestOrderForSign = await loadOrder(request, command.orderId);
+      const latestScopeForSign = latestOrderForSign && matrixSignatureScope(latestOrderForSign, currentMenuContentHash);
+      if (!latestScopeForSign || !sameLineage(latestScopeForSign, command.expectedLineage)) throw Object.assign(new Error("The reviewed Menu publication advanced while this signature was being prepared. Reload and review the current matrix before signing."), { status: 409, code: "CPU_SIGN_LINEAGE_CONFLICT" });
+      if (candidate.currentAllergenRelease?.status === "pending" && !command.commandId) throw Object.assign(new Error("A signed release is already awaiting materialization. Retry the release instead of signing again."), { status: 409 });
       // Legacy signatures without exact publication/day/content lineage are
       // historical evidence only and must never make the current matrix look
       // signed. They remain in the audit trail and are not deleted here.
       const signatures = (candidate.signatures || []).filter(signature => signatureMatchesScope(signature, currentSignatureScope));
       candidate.signatures = signatures;
-      if (signatures.some(signature => signature.role === "production_chef") && signatures.some(signature => signature.role === "head_chef_site_manager")) throw Object.assign(new Error("This allergen matrix is already fully signed and locked."), { status: 409 });
-      if (signatures.some(signature => signature.role === command.role)) throw Object.assign(new Error("This signatory role has already signed this matrix."), { status: 409 });
-      if (signatures.length > 0 && plan.signedMenuContentHash && plan.signedMenuContentHash !== currentMenuContentHash) throw Object.assign(new Error("The allergen matrix changed after the first signature. Re-review the matrix before signing again."), { status: 409 });
-      const signature: InternalMatrixSignature = { role: command.role, printedName: command.printedName, signedAt: timestamp, actor: auditActor, attestation: command.attestation, signatureDataUrl: command.signatureDataUrl, scope: currentSignatureScope };
-      candidate.signatures = [...signatures, signature];
-      if (signatures.length === 0) candidate.signedMenuContentHash = currentMenuContentHash;
-      candidate.audit.push({ action: "allergen-matrix-signed", at: timestamp, by: auditActor, reason: `${command.role}: ${command.attestation}` });
-      const fullySigned = candidate.signatures.some(item => item.role === "production_chef") && candidate.signatures.some(item => item.role === "head_chef_site_manager");
-      if (fullySigned) {
-        candidate.audit.push({ action: "allergen-matrix-signature-complete", at: timestamp, by: auditActor, reason: "Both required signatures recorded; final matrix persistence started." });
-        let artifact: Awaited<ReturnType<typeof createMatrixArtifact>>;
-        try {
-          artifact = await createMatrixArtifact(candidate, command.orderId, auditActor, timestamp, request);
-        } catch (error) {
-          // Finalisation is atomic from the signatory's perspective. External
-          // idempotent artifacts may remain, but the candidate signature and
-          // release state must not become durable until every required output
-          // has succeeded.
-          throw error;
-        }
-        if (artifact) {
-          const signedOrder = await loadOrder(request, command.orderId);
-          const serviceDate = signedOrder?.serviceDate || signedOrder?.requiredBy.slice(0, 10);
-          if (!serviceDate) throw Object.assign(new Error("The signed allergen release requires a service date."), { status: 422 });
-          candidate.matrixArtifact = artifact;
-          candidate.signedMenuContentHash = menuContentHash(candidate.menuItems);
+      if (signatures.some(signature => signature.role === command.role) && !command.commandId) throw Object.assign(new Error("This signatory role has already signed this matrix."), { status: 409 });
+      if (!signatures.some(signature => signature.role === command.role)) {
+        if (signatures.length > 0 && plan.signedMenuContentHash && plan.signedMenuContentHash !== currentMenuContentHash) throw Object.assign(new Error("The allergen matrix changed after the first signature. Re-review the matrix before signing again."), { status: 409 });
+        const signature: InternalMatrixSignature = { role: command.role, printedName: command.printedName, signedAt: timestamp, actor: auditActor, attestation: command.attestation, signatureDataUrl: command.signatureDataUrl, scope: currentSignatureScope };
+        candidate.signatures = [...signatures, signature];
+        if (signatures.length === 0) candidate.signedMenuContentHash = currentMenuContentHash;
+        candidate.audit.push({ action: "allergen-matrix-signed", at: timestamp, by: auditActor, reason: `${command.role}: ${command.attestation}` });
+        const fullySigned = candidate.signatures.some(item => item.role === "production_chef") && candidate.signatures.some(item => item.role === "head_chef_site_manager");
+        if (fullySigned) {
+          candidate.audit.push({ action: "allergen-matrix-signature-complete", at: timestamp, by: auditActor, reason: "Both signatures recorded; authoritative CPU release commit will precede materialization." });
+          candidate.signedMenuContentHash = currentMenuContentHash;
           candidate.signedSignatures = candidate.signatures;
-          candidate.signedMatrixArtifact = artifact;
-          const previousRelease = [...(candidate.allergenReleaseHistory || [])].at(-1);
-          const release = buildCpuAllergenRelease({
-            serviceDate,
-            sourceDayId: signedOrder?.sourceEntityId || "",
-            sourcePublicationId: (signedOrder as (typeof signedOrder & { sourcePublicationId?: string }) | undefined)?.sourcePublicationId,
-            sourcePublicationDayId: signedOrder?.sourcePublicationDayId || "",
-            sourceVersion: signedOrder?.sourceVersion || 0,
-            sourceContentHash: signedOrder?.sourceContentHash || "",
-            version: Math.max(1, ...((candidate.allergenReleaseHistory || []).map(item => item.version + 1))),
-            signedAt: timestamp,
-            signatures: candidate.signatures,
-            items: candidate.menuItems,
-            masterArtifact: candidate.masterMatrixArtifact || artifact,
-            derivedArtifacts: Object.values(candidate.siteMatrixArtifacts || {}),
-            packetArtifacts: Object.values(candidate.siteMatrixArtifacts || {}).filter(item => item.packetContentHash && item.packetObjectName).map(item => ({ ...item, contentHash: item.packetContentHash! })),
-            previous: previousRelease,
-          });
-          candidate.currentAllergenRelease = publishCpuAllergenRelease(undefined, release).current;
-          candidate.audit.push({ action: "allergen-matrix-saved", at: timestamp, by: auditActor, reason: "Final signed matrix persisted to the configured Drive workspace." });
-        } else {
-          throw Object.assign(new Error("A durable signed allergen artifact is required before the matrix can be finalised."), { status: 503 });
+          candidate.currentAllergenRelease = pendingReleaseFor(candidate, currentOrder, timestamp);
         }
       }
       Object.assign(plan, candidate);
@@ -578,48 +417,27 @@ async function handlePost(request: NextRequest) {
       if (!plan.signatures?.some(signature => signature.role === "production_chef") || !plan.signatures?.some(signature => signature.role === "head_chef_site_manager")) throw Object.assign(new Error("Both required signatures must be recorded before generating the allergen matrix PDF."), { status: 422 });
       const subItems = plan.menuItems.flatMap(item => item.subItems);
       if (!subItems.length || subItems.some(item => !item.name.trim())) throw Object.assign(new Error("Complete every named sub-item before saving the matrix."), { status: 422 });
-      const artifact = await createMatrixArtifact(plan, command.orderId, auditActor, timestamp, request);
-      if (!artifact) throw Object.assign(new Error("Matrix storage not configured."), { status: 503 });
-      plan.matrixArtifact = artifact;
+      const currentSignatureScope = matrixSignatureScope(currentOrder, menuContentHash(plan.menuItems));
+      if (command.expectedLineage && !sameLineage(currentSignatureScope, command.expectedLineage)) throw Object.assign(new Error("The reviewed Menu publication has changed. Reload and review the current matrix before retrying materialization."), { status: 409, code: "CPU_RELEASE_LINEAGE_CONFLICT" });
+      if (!plan.currentAllergenRelease) plan.currentAllergenRelease = pendingReleaseFor(plan, currentOrder, timestamp);
+      if (plan.currentAllergenRelease.status === "current" && plan.currentAllergenRelease.materializationStatus === "ready") throw Object.assign(new Error("This CPU allergen release is already current."), { status: 409 });
       plan.signedMenuContentHash = menuContentHash(plan.menuItems);
       plan.signedSignatures = plan.signatures;
-      plan.signedMatrixArtifact = plan.matrixArtifact;
-      if (!plan.currentAllergenRelease) {
-        const signedOrder = await loadOrder(request, command.orderId);
-        const serviceDate = signedOrder?.serviceDate || signedOrder?.requiredBy.slice(0, 10);
-        if (!serviceDate) throw Object.assign(new Error("The signed allergen release requires a service date."), { status: 422 });
-        const previousRelease = [...(plan.allergenReleaseHistory || [])].at(-1);
-        const release = buildCpuAllergenRelease({
-          serviceDate,
-          sourceDayId: signedOrder?.sourceEntityId || "",
-          sourcePublicationId: (signedOrder as (typeof signedOrder & { sourcePublicationId?: string }) | undefined)?.sourcePublicationId,
-          sourcePublicationDayId: signedOrder?.sourcePublicationDayId || "",
-          sourceVersion: signedOrder?.sourceVersion || 0,
-          sourceContentHash: signedOrder?.sourceContentHash || "",
-          version: Math.max(1, ...((plan.allergenReleaseHistory || []).map(item => item.version + 1))),
-          signedAt: timestamp,
-          signatures: plan.signatures,
-          items: plan.menuItems,
-          masterArtifact: plan.masterMatrixArtifact || artifact,
-          derivedArtifacts: Object.values(plan.siteMatrixArtifacts || {}),
-          packetArtifacts: Object.values(plan.siteMatrixArtifacts || {}).filter(item => item.packetContentHash && item.packetObjectName).map(item => ({ ...item, contentHash: item.packetContentHash! })),
-          previous: previousRelease,
-        });
-        plan.currentAllergenRelease = publishCpuAllergenRelease(undefined, release).current;
-      }
-      plan.audit.push({ action: "allergen-matrix-saved", at: timestamp, by: auditActor, reason: "Final signed matrix persisted to the configured Drive workspace." });
+      plan.audit.push({ action: "allergen-matrix-materialization-requested", at: timestamp, by: auditActor, reason: "Release materialization requested after authoritative signature state." });
     }
     plan.updatedAt = timestamp; plan.updatedBy = auditActor;
     const changedOrder = await loadOrder(request, command.orderId);
-    const releaseForEvent = plan.currentAllergenRelease || (command.action === "save-plan" || command.action === "mark-planned" ? plan.allergenReleaseHistory?.at(-1) : undefined);
-    const releaseOplocIds = plan.currentAllergenRelease?.status === "current" ? Object.keys(plan.siteMatrixArtifacts || {}) : changedOrder?.destinationOplocId ? [changedOrder.destinationOplocId] : [];
-    const releaseEventType = plan.currentAllergenRelease?.status === "current" ? "published" as const : "revoked" as const;
+    const releaseForEvent = plan.currentAllergenRelease?.status === "current" && plan.currentAllergenRelease.materializationStatus === "ready" ? plan.currentAllergenRelease : (command.action === "save-plan" || command.action === "mark-planned" ? plan.allergenReleaseHistory?.at(-1) : undefined);
+    const releaseOplocIds = plan.currentAllergenRelease?.status === "current" && plan.currentAllergenRelease.materializationStatus === "ready" && changedOrder?.destinationOplocId ? [changedOrder.destinationOplocId] : changedOrder?.destinationOplocId ? [changedOrder.destinationOplocId] : [];
+    const releaseEventType = releaseForEvent?.status === "current" ? "published" as const : "revoked" as const;
     const releaseDeliveries = releaseForEvent ? releaseOplocIds.map(oplocId => {
       const releaseEvent = buildCpuAllergenReleaseEvent({ eventType: releaseEventType, release: releaseForEvent, oplocId });
       return { eventId: `${releaseEvent.eventId}:delivered-in:${oplocId}`, sourceAggregateId: releaseEvent.releaseId, sourceVersion: releaseEvent.sourceVersion, occurredAt: releaseForEvent.signedAt, consumer: "delivered-in" as const, route: "/api/internal/cpu-release-event", body: releaseEvent as unknown as Record<string, unknown> };
     }) : [];
-    const event = changedOrder?.serviceDate ? await planRepository.saveAndAppendCpuChange(plan, expectedUpdatedAt, { serviceDate: changedOrder.serviceDate, entityType: "productionPlan", entityId: plan.id, revision: plan.audit.length, changeType: command.action, actorId: actor.uid, changedAt: timestamp, ...(command.commandId ? { idempotencyKey: command.commandId } : {}), propagation: { sourceEntityId: plan.id, serviceDate: changedOrder.serviceDate, sourceVersion: plan.audit.length, changedAt: timestamp, changeType: eventTypeForConsumers(command.action), order: changedOrder, logistics: false }, deliveries: releaseDeliveries }) : (await persistPlan(plan, expectedUpdatedAt), undefined);
+    const materializationDelivery = plan.currentAllergenRelease?.status === "pending" && changedOrder ? releaseMaterializationDelivery(plan, plan.currentAllergenRelease, changedOrder, timestamp) : undefined;
+    const event = changedOrder?.serviceDate ? await planRepository.saveAndAppendCpuChange(plan, expectedUpdatedAt, { serviceDate: changedOrder.serviceDate, entityType: "productionPlan", entityId: plan.id, revision: plan.audit.length, changeType: command.action, actorId: actor.uid, changedAt: timestamp, ...(command.commandId ? { idempotencyKey: command.commandId } : {}), propagation: { sourceEntityId: plan.id, serviceDate: changedOrder.serviceDate, sourceVersion: plan.audit.length, changedAt: timestamp, changeType: eventTypeForConsumers(command.action), order: changedOrder, logistics: false }, deliveries: [...releaseDeliveries, ...(materializationDelivery ? [materializationDelivery] : [])] }) : (await persistPlan(plan, expectedUpdatedAt), undefined);
     if (event?.duplicate && event.plan) Object.assign(plan, event.plan);
+    if (materializationDelivery && event) await deliverCpuPropagation(materializationDelivery.eventId);
     if (releaseForEvent) for (const oplocId of releaseOplocIds) await notifyDeliveredInAllergenRelease({ eventType: releaseEventType, release: releaseForEvent, oplocId });
     recordDeliveredInReadBudget({ stage: "plan_post_mutation", canonicalOrderDocs: changedOrder ? 1 : 0, planDocs: 1, selectedIds: 1 });
     if (changedOrder?.serviceDate) {

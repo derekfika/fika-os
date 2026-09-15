@@ -4,6 +4,7 @@ import { buildCpuDayProjection } from "../lib/cpu-projection";
 import { cpuProjectionToOrders } from "../lib/cpu-dashboard-adapter";
 import type { ProductionOrder } from "../lib/production-types";
 import type { ProductionPlan } from "../app/lib/production-plan";
+import { allergenMatrixContentHash } from "../lib/cpu-allergen-release";
 
 const order = (id: string, date = "2026-08-24"): ProductionOrder => ({
   canonicalId: id, entityType: "Production Order", schemaVersion: "0.1.0", version: 3,
@@ -98,20 +99,21 @@ test("CPU projection preserves allergen review source identity and evidence", ()
   assert.deepEqual(hydrated.lines[0].approvedAllergenSnapshot, source.lines[0].approvedAllergenSnapshot);
 });
 
-test("all Delivered-In orders for one published source day become Planned together", () => {
+test("a signed OPLOC release does not make another OPLOC appear Planned", () => {
   const sourcePublicationDayId = "menu-publication-day:shared:v1";
   const orders = ["angel", "haleon", "bridgepoint", "commerzbank"].map((site) => ({
     ...order(`order:${site}`), origin: "menu_planning" as const, destinationLabel: site,
     sourcePublicationDayId, sourceEntityId: "menu-publication:shared", sourceVersion: 1, sourceContentHash: "a".repeat(64),
   }));
+  const scope = { productionOrderId: "order:angel", serviceDate: "2026-08-24", sourceDayId: "menu-publication:shared", sourcePublicationDayId, sourceVersion: 1, sourceContentHash: "a".repeat(64), matrixContentHash: allergenMatrixContentHash([]) };
   const sharedPlan = {
     ...plan("order:angel"),
     signatures: [
       { role: "production_chef" as const, printedName: "Chef A", signedAt: "now", actor: "a", attestation: "checked" },
       { role: "head_chef_site_manager" as const, printedName: "Chef B", signedAt: "now", actor: "b", attestation: "checked" },
     ],
-    currentAllergenRelease: { status: "current" },
+    currentAllergenRelease: { status: "current", materializationStatus: "ready", serviceDate: "2026-08-24", sourceDayId: "menu-publication:shared", sourcePublicationDayId, sourceVersion: 1, sourceContentHash: "a".repeat(64), signatures: [{ role: "production_chef" as const, valid: true, scope }, { role: "head_chef_site_manager" as const, valid: true, scope }] },
   } as ProductionPlan;
   const projection = buildCpuDayProjection("2026-08-24", orders, [sharedPlan]);
-  assert.deepEqual(projection.orders.map(item => item.workflowStatus), ["planned", "planned", "planned", "planned"]);
+  assert.deepEqual(projection.orders.map(item => item.workflowStatus), ["planned", undefined, undefined, undefined]);
 });
