@@ -12,7 +12,7 @@ import * as XLSX from "xlsx";
 import { addMenuSlot, applyEntryPatch, assertWeekDateAvailable, attachCanonicalDishIds, batchUpdateEntries, createEntry, defaultWeekForDate, duplicateWeek, emptyWeek, getWeek, importWorkbook, isProtectedExistingPlanningWeek, normaliseRollingSnapshotDestinations, operationalDateLondon, planningWeekCommencing, planningWeekFromQuery, planningWeekImportConflictReason, planningWeekReplacementDetails, publishWeek, removeMenuSlot, replaceSnapshotsExplicit, saveSnapshot, saveSnapshotsCreateOnly, updateEntry, validateWeek, ROLLING_SLOTS } from "../lib/rolling-menu";
 import { hasPlannedDishes } from "../lib/rolling-menu-types";
 import { createCanonicalMenuItem, createCanonicalMenuItems, listCanonicalMenuItems } from "../lib/canonical-menu-repository";
-import { buildCompiledPublicationSnapshot, buildPublishedDay, createPublishedMenuDay, createPublishedMenuWeek, currentPublishedDays, getCompiledPublicationSnapshot, getMenuPublication, listMenuPublicationEvents, listMenuPublications, publicationPreview, publicationState, publishedDayMatrixHtml, replayMenuPublicationOutbox, withdrawPublishedMenuDay, withdrawPublishedMenuWeek, type MenuPublicationSignoff } from "../lib/menu-publication";
+import { buildCompiledPublicationSnapshot, buildPublishedDay, compareWorkingWeekToPublication, createPublishedMenuDay, createPublishedMenuWeek, currentPublishedDays, getCompiledPublicationSnapshot, getMenuPublication, listMenuPublicationEvents, listMenuPublications, publicationPreview, publicationState, publishedDayMatrixHtml, replayMenuPublicationOutbox, withdrawPublishedMenuDay, withdrawPublishedMenuWeek, type MenuPublicationSignoff } from "../lib/menu-publication";
 import { resolveAllergenSnapshot } from "../lib/allergen-resolution";
 import type { RollingEntry } from "../lib/rolling-menu-types";
 import { decodeWeeklyPublicationPacket } from "@fika/server-shared/weekly-publication-packet";
@@ -424,6 +424,17 @@ test("week publication is atomic and creates one immutable five-day publication"
     if (rollingBefore) await writeFile(rollingFile, rollingBefore); else await rm(rollingFile, { force: true });
     if (publicationBefore) await writeFile(publicationFile, publicationBefore); else await rm(publicationFile, { force: true });
   }
+});
+
+test("publication state and the publish gate share normalized day-hash comparison", () => {
+  const snapshot = emptyWeek("2031-01-06");
+  snapshot.entries.push({ id: "entry:hash", dayId: snapshot.days[0].id, date: snapshot.days[0].date, slot: "SOUP", itemLabel: "Hash dish", itemId: "dish:hash", portions: 2, allocations: [{ destinationId: "legacy-site", destinationLabel: "Old Site", quantity: 2 }], allergens: {}, audit: [] });
+  const liveOplocs = [{ canonicalId: "site-current", label: "Current Site", legacyIds: ["legacy-site"] }];
+  const normalizedPreview = buildPublishedDay(normaliseRollingSnapshotDestinations(snapshot, liveOplocs), snapshot.days[0]);
+  const publication = { publicationId: "menu-publication:2031-01-06", sourceWeekId: snapshot.week.id, weekCommencing: snapshot.week.weekCommencing, weekEnding: snapshot.week.weekEnding, publicationVersion: 1, publicationStatus: "published" as const, days: [{ publicationDayId: "day:v1", sourceDayId: snapshot.days[0].id, date: snapshot.days[0].date, dayName: snapshot.days[0].dayName, version: 1, status: "published" as const, contentHash: normalizedPreview.contentHash, publishedAt: "2031-01-01T00:00:00.000Z", publishedBy: "test", entries: normalizedPreview.entries }], audit: [] };
+  const comparison = compareWorkingWeekToPublication(snapshot, publication, liveOplocs);
+  assert.equal(comparison.hasUnpublishedChanges, false);
+  assert.equal(comparison.dayHasUnpublishedChanges[snapshot.days[0].id], false);
 });
 
 test("published day matrix keeps all canonical allergen columns", async () => {

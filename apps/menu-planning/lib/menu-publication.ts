@@ -640,14 +640,51 @@ export type PublicationDayState = {
   legacy: boolean;
   status: "published" | "draft" | "legacy";
 };
+export type WorkingPublicationComparison = {
+  hasUnpublishedChanges: boolean;
+  dayHasUnpublishedChanges: Record<string, boolean>;
+};
+/** Compare the exact normalized publication preview used by both reads and writes. */
+export function compareWorkingWeekToPublication(
+  snapshot: RollingSnapshot,
+  publication: MenuPublication | undefined,
+  governedOplocs: readonly GovernedOploc[] = [],
+): WorkingPublicationComparison {
+  const normalized = normaliseRollingSnapshotDestinations(snapshot, governedOplocs);
+  const currentDays = new Map(
+    publication?.days
+      .filter((day) => day.status === "published")
+      .map((day) => [day.sourceDayId, day]) || [],
+  );
+  const dayHasUnpublishedChanges = Object.fromEntries(
+    normalized.days.slice(0, 5).map((day) => {
+      const current = currentDays.get(day.id);
+      const working = buildPublishedDay(normalized, day);
+      // An intentionally blank day is equivalent to no published day. A
+      // populated working day, or a published day with a different hash, is
+      // a persisted amendment.
+      const changed = current
+        ? current.contentHash !== working.contentHash
+        : working.entries.length > 0;
+      return [day.id, changed];
+    }),
+  );
+  return {
+    hasUnpublishedChanges: Object.values(dayHasUnpublishedChanges).some(Boolean),
+    dayHasUnpublishedChanges,
+  };
+}
 export async function publicationState(
   snapshot: RollingSnapshot,
+  governedOplocs: readonly GovernedOploc[] = [],
 ): Promise<Record<string, PublicationDayState>> {
+  const normalized = normaliseRollingSnapshotDestinations(snapshot, governedOplocs);
   const publication = (
-    await readPublicationStateForWeek<StoredPublications>(snapshot.week.id)
+    await readPublicationStateForWeek<StoredPublications>(normalized.week.id)
   ).publications.find((value) => value.sourceWeekId === snapshot.week.id);
+  const comparison = compareWorkingWeekToPublication(normalized, publication);
   return Object.fromEntries(
-    snapshot.days.slice(0, 5).map((day) => {
+    normalized.days.slice(0, 5).map((day) => {
       const current = publication?.days
         .filter(
           (value) =>
@@ -657,9 +694,8 @@ export async function publicationState(
       const legacy =
         !current &&
         !publication &&
-        snapshot.week.status === "published" &&
-        !snapshot.week.dayStatuses;
-      const working = buildPublishedDay(snapshot, day);
+        normalized.week.status === "published" &&
+        !normalized.week.dayStatuses;
       const state: PublicationDayState = current
         ? {
             currentPublicationId: publication?.publicationId,
@@ -667,7 +703,7 @@ export async function publicationState(
             currentVersion: current.version,
             currentContentHash: current.contentHash,
             hasCurrentPublication: true,
-            hasUnpublishedChanges: current.contentHash !== working.contentHash,
+            hasUnpublishedChanges: comparison.dayHasUnpublishedChanges[day.id] === true,
             legacy: false,
             status: "published",
           }
@@ -878,14 +914,8 @@ export async function createPublishedMenuWeek(
           .filter((day) => day.status === "published")
           .map((day) => [day.sourceDayId, day]),
       );
-      if (
-        nextVersion > 1 &&
-        previews.every(
-          (preview) =>
-            currentDays.get(preview.sourceDayId)?.contentHash ===
-            preview.contentHash,
-        )
-      )
+      const comparison = compareWorkingWeekToPublication(snapshot, publication);
+      if (nextVersion > 1 && !comparison.hasUnpublishedChanges)
         throw conflict(
           `This menu week is already published at version ${publication.publicationVersion}.`,
         );
