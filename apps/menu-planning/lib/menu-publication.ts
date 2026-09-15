@@ -35,11 +35,14 @@ import {
   claimNextMenuPlanningEvent,
   getPublicationById,
   getPublishedSnapshot,
+  claimMenuPlanningEventById,
+  getMenuPlanningEvent,
   listPublicationState,
   readPublicationState,
   readPublicationStateForDateRange,
   readPublicationStateForWeek,
   updateMenuPlanningEvent,
+  resetMenuPlanningEvent,
   withMenuPlanningTransaction,
 } from "./operational-store";
 import {
@@ -151,6 +154,7 @@ export type MenuPublication = {
     publicationDayId?: string;
   }>;
 };
+export type MenuPublicationCommandResult = MenuPublication & { readonly handoffEventIds?: readonly string[] };
 type StoredPublications = {
   version: 2;
   publications: MenuPublication[];
@@ -456,11 +460,13 @@ function appendPublicationEvents(
   actor: string,
 ) {
   stored.events ||= [];
+  const eventIds: string[] = [];
   const occurredAt =
     action === "withdrawn" ? day.withdrawal?.at || now() : day.publishedAt;
   const addEvent = (event: DurableDomainEvent) => {
     if (!stored.events.some((existing) => existing.eventId === event.eventId))
       stored.events.push(event);
+    eventIds.push(event.eventId);
   };
   addEvent(
     createDomainEvent({
@@ -575,6 +581,12 @@ function appendPublicationEvents(
       }),
     );
   }
+  return eventIds;
+}
+function commandResult(publication: MenuPublication, eventIds: readonly string[]): MenuPublicationCommandResult {
+  const result = clone(publication) as MenuPublicationCommandResult;
+  Object.defineProperty(result, "handoffEventIds", { value: [...new Set(eventIds)], enumerable: false });
+  return result;
 }
 export async function listMenuPublications(limit = 16) {
   return (
@@ -822,9 +834,9 @@ export async function createPublishedMenuDay(
         by: actor,
         publicationDayId: publishedDay.publicationDayId,
       });
-      appendPublicationEvents(
-        stored,
-        publication,
+       const handoffEventIds = appendPublicationEvents(
+         stored,
+         publication,
         publishedDay,
         version === 1 ? "published" : "amended",
         actor,
@@ -848,7 +860,7 @@ export async function createPublishedMenuDay(
         by: actor,
       });
       replaceSnapshotInStored(rolling, snapshot);
-      return clone(publication);
+       return commandResult(publication, handoffEventIds);
     },
     { weekId, weekVersion: expectedWeekVersion },
     { weekId, sourceWeekId: weekId, includeEvents: false },
@@ -964,14 +976,17 @@ export async function createPublishedMenuWeek(
         at: publishedAt,
         by: actor,
       });
-      for (const day of nextDays)
-        appendPublicationEvents(
-          stored,
-          publication!,
-          day,
-          nextVersion === 1 ? "published" : "amended",
-          actor,
-        );
+       const handoffEventIds: string[] = [];
+       for (const day of nextDays)
+         handoffEventIds.push(
+           ...appendPublicationEvents(
+           stored,
+           publication!,
+           day,
+           nextVersion === 1 ? "published" : "amended",
+           actor,
+           ),
+         );
       snapshot.week.dayStatuses = Object.fromEntries(
         nextDays.map((day) => [day.sourceDayId, "published"]),
       );
@@ -983,7 +998,7 @@ export async function createPublishedMenuWeek(
         by: actor,
       });
       replaceSnapshotInStored(rolling, snapshot);
-      return clone(publication!);
+       return commandResult(publication!, handoffEventIds);
     },
     { weekId, weekVersion: expectedWeekVersion },
     { weekId, sourceWeekId: weekId, includeEvents: false },
@@ -1016,15 +1031,18 @@ export async function repairPublishedMenuPublication(publicationId: string) {
         throw Object.assign(new Error("Menu publication was not found."), {
           status: 404,
         });
-      if (!target.audit.some((item) => item.action === repairKey)) {
-        for (const day of currentPublishedDays(target))
-          appendPublicationEvents(
-            stored,
-            target,
-            day,
-            day.version > 1 ? "amended" : "published",
-            target.audit.at(-1)?.by || "publication-repair",
-          );
+       if (!target.audit.some((item) => item.action === repairKey)) {
+         const handoffEventIds: string[] = [];
+         for (const day of currentPublishedDays(target))
+           handoffEventIds.push(
+             ...appendPublicationEvents(
+             stored,
+             target,
+             day,
+             day.version > 1 ? "amended" : "published",
+             target.audit.at(-1)?.by || "publication-repair",
+             ),
+           );
         for (const event of stored.events || [])
           if (
             event.eventType === "production.materialise" &&
@@ -1038,13 +1056,14 @@ export async function repairPublishedMenuPublication(publicationId: string) {
               status: "pending",
               attempts: event.delivery.attempts,
             };
-        target.audit.push({
-          action: repairKey,
-          at: now(),
-          by: "publication-repair",
-        });
-      }
-      return clone(target);
+         target.audit.push({
+           action: repairKey,
+           at: now(),
+           by: "publication-repair",
+         });
+          return commandResult(target, handoffEventIds);
+       }
+       return commandResult(target, []);
     },
     undefined,
     {
@@ -1058,16 +1077,35 @@ export async function repairPublishedMenuPublication(publicationId: string) {
 export async function listMenuPublicationEvents() {
   return (await read()).events.map(clone);
 }
+export type MenuOutboxReplayOptions = { eventIds?: readonly string[]; resetDeadLetter?: boolean; maxEvents?: number };
 export async function replayMenuPublicationOutbox(
   consumer: (event: DurableDomainEvent) => Promise<void> | void,
   at = new Date(),
+  options: MenuOutboxReplayOptions = {},
 ) {
   let delivered = 0;
   let failed = 0;
-  while (true) {
+  let deadLettered = 0;
+  let pending = 0;
+  const targetIds = options.eventIds ? [...new Set(options.eventIds)] : undefined;
+  const ids = targetIds || [];
+  const processOne = async (eventId?: string) => {
     const claimId = `menu-replay:${randomUUID()}`;
-    const claimed = await claimNextMenuPlanningEvent(claimId, at);
-    if (!claimed) break;
+    if (eventId && options.resetDeadLetter) {
+      const existing = await getMenuPlanningEvent(eventId);
+      if (existing?.delivery.status === "dead-letter") await resetMenuPlanningEvent(eventId, at, "manual publication handoff replay");
+    }
+    const claimed = eventId
+      ? (await claimMenuPlanningEventById(eventId, claimId, at)).event
+      : await claimNextMenuPlanningEvent(claimId, at);
+    if (!claimed) {
+      if (eventId) {
+        const current = await getMenuPlanningEvent(eventId);
+        if (current?.delivery.status === "dead-letter") deadLettered += 1;
+        else pending += 1;
+      }
+      return Boolean(eventId);
+    }
     try {
       await consumer(claimed);
       await updateMenuPlanningEvent(claimed.eventId, (event) =>
@@ -1079,7 +1117,7 @@ export async function replayMenuPublicationOutbox(
       );
       delivered += 1;
     } catch (error) {
-      await updateMenuPlanningEvent(claimed.eventId, (event) =>
+      const updated = await updateMenuPlanningEvent(claimed.eventId, (event) =>
         event.delivery.claimId === claimId
           ? normalizePublicationValue(
               markEventFailed(event, error, new Date().toISOString()),
@@ -1087,9 +1125,17 @@ export async function replayMenuPublicationOutbox(
           : undefined,
       );
       failed += 1;
+      if (updated?.delivery.status === "dead-letter") deadLettered += 1;
     }
+    return true;
+  };
+  if (targetIds) for (const eventId of ids.slice(0, options.maxEvents ?? ids.length)) await processOne(eventId);
+  else {
+    const maxEvents = Math.min(Math.max(options.maxEvents ?? 25, 1), 25);
+    let processed = 0;
+    while (processed < maxEvents && await processOne()) processed += 1;
   }
-  return { delivered, failed };
+  return { delivered, failed, deadLettered, pending };
 }
 export async function publicationSourceWeeks() {
   return (await listWeeks()).filter(
@@ -1133,7 +1179,7 @@ export async function withdrawPublishedMenuDay(
         by: actor,
         publicationDayId,
       });
-      appendPublicationEvents(stored, publication, day, "withdrawn", actor);
+       const handoffEventIds = appendPublicationEvents(stored, publication, day, "withdrawn", actor);
       const currentDays = publication.days.filter(
         (candidate) => candidate.status === "published",
       );
@@ -1171,7 +1217,7 @@ export async function withdrawPublishedMenuDay(
       snapshot.week.version += 1;
       snapshot.week.audit.push({ action: "menu-day-withdrawn", at, by: actor });
       replaceSnapshotInStored(rolling, snapshot);
-      return clone(publication);
+       return commandResult(publication, handoffEventIds);
     },
     { weekId, weekVersion: expectedWeekVersion },
     { weekId, sourceWeekId: weekId, includeEvents: false },
@@ -1204,10 +1250,11 @@ export async function withdrawPublishedMenuWeek(
           "This menu week has no current published days to withdraw.",
         );
       const at = now();
-      for (const day of publishedDays) {
-        day.status = "withdrawn";
-        day.withdrawal = { actor, at, reason: reason.trim() };
-        appendPublicationEvents(stored, publication, day, "withdrawn", actor);
+       const handoffEventIds: string[] = [];
+       for (const day of publishedDays) {
+         day.status = "withdrawn";
+         day.withdrawal = { actor, at, reason: reason.trim() };
+         handoffEventIds.push(...appendPublicationEvents(stored, publication, day, "withdrawn", actor));
       }
       const rolling = state.rolling as unknown as RollingMenuStored;
       const snapshot = snapshotFromStored(rolling, publication.sourceWeekId);
@@ -1228,7 +1275,7 @@ export async function withdrawPublishedMenuWeek(
       // pointers so CPU cannot retrieve withdrawn bytes as current evidence.
       delete publication.compiledSnapshotId;
       delete publication.weekPacket;
-      return clone(publication);
+       return commandResult(publication, handoffEventIds);
     },
     undefined,
     {

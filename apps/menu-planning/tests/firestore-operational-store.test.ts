@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { MenuPlanningFirestoreRepository, type HostedTransactionState } from "../lib/firestore-operational-store";
-import { markEventDeadLetter, markEventDelivered, outboxRecord, type DurableDomainEvent } from "../lib/fika-contracts";
+import { markEventDeadLetter, markEventDelivered, markEventFailed, outboxRecord, resetEventForReplay, type DurableDomainEvent } from "../lib/fika-contracts";
 import type { RollingDay, RollingEntry, RollingWeek } from "../lib/rolling-menu-types";
 import { encodeWeeklyPublicationPacket } from "@fika/server-shared/weekly-publication-packet";
 
@@ -69,18 +69,19 @@ function boundedQueueHarness(events: DurableDomainEvent[]) {
   const eventDocs = new Map(events.map(value => [value.eventId, structuredClone(value)]));
   const outboxDocs = new Map(events.map(value => [value.eventId, outboxRecord(value)]));
   let attemptedReads = 0;
-  const query = (collection: string, filters: Array<[string, string, unknown]> = [], ordering?: [string, "asc" | "desc"], limitCount?: number): any => ({
-    kind: "query", collection, filters, ordering, limitCount,
-    where(field: string, operator: string, value: unknown) { return query(collection, [...filters, [field, operator, value]], ordering, limitCount); },
-    orderBy(field: string, direction: "asc" | "desc" = "asc") { return query(collection, filters, [field, direction], limitCount); },
-    limit(value: number) { return query(collection, filters, ordering, value); },
+  const query = (collection: string, filters: Array<[string, string, unknown]> = [], ordering: Array<[string, "asc" | "desc"]> = [], limitCount?: number, cursor?: unknown[]): any => ({
+    kind: "query", collection, filters, ordering, limitCount, cursor,
+    where(field: string, operator: string, value: unknown) { return query(collection, [...filters, [field, operator, value]], ordering, limitCount, cursor); },
+    orderBy(field: string, direction: "asc" | "desc" = "asc") { return query(collection, filters, [...ordering, [field, direction]], limitCount, cursor); },
+    limit(value: number) { return query(collection, filters, ordering, value, cursor); },
+    startAfter(...values: unknown[]) { return query(collection, filters, ordering, limitCount, values); },
   });
   const document = (collection: string, id: string) => ({ kind: "document", collection, id, path: `${collection}/${id}` });
   const valueAt = (value: Record<string, unknown>, path: string) => path.split(".").reduce<unknown>((current, key) => current && typeof current === "object" ? (current as Record<string, unknown>)[key] : undefined, value);
   const db = {
     collection: (name: string) => ({
       where: (field: string, operator: string, value: unknown) => query(name, [[field, operator, value]]),
-      orderBy: (field: string, direction: "asc" | "desc" = "asc") => query(name, [], [field, direction]),
+      orderBy: (field: string, direction: "asc" | "desc" = "asc") => query(name, [], [[field, direction]]),
       doc: (id: string) => document(name, id),
     }),
     runTransaction: async (callback: (transaction: any) => Promise<unknown>) => {
@@ -97,7 +98,8 @@ function boundedQueueHarness(events: DurableDomainEvent[]) {
             const actual = valueAt(value as Record<string, unknown>, field);
             return operator === "in" ? (expected as unknown[]).includes(actual) : operator === "==" ? actual === expected : operator === "<=" ? String(actual || "") <= String(expected) : true;
           }));
-          if (target.ordering) values.sort((left, right) => { const a = String(valueAt(left as Record<string, unknown>, target.ordering[0]) || ""); const b = String(valueAt(right as Record<string, unknown>, target.ordering[0]) || ""); return (a.localeCompare(b) || String((left as any).eventId).localeCompare(String((right as any).eventId))) * (target.ordering[1] === "desc" ? -1 : 1); });
+          if (target.ordering.length) values.sort((left, right) => { for (const [field, direction] of target.ordering) { const a = field === "__name__" ? String((left as any).eventId) : String(valueAt(left as Record<string, unknown>, field) || ""); const b = field === "__name__" ? String((right as any).eventId) : String(valueAt(right as Record<string, unknown>, field) || ""); const comparison = a.localeCompare(b); if (comparison) return comparison * (direction === "desc" ? -1 : 1); } return 0; });
+          if (target.cursor?.length) values = values.filter(value => { const fields = target.ordering.map(([field]: [string, string]) => field === "__name__" ? String((value as any).eventId) : String(valueAt(value as Record<string, unknown>, field) || "")); for (let index = 0; index < fields.length; index += 1) { const comparison = fields[index].localeCompare(String(target.cursor[index] || "")); if (comparison) return comparison > 0; } return false; });
           if (target.limitCount !== undefined) values = values.slice(0, target.limitCount);
           attemptedReads += values.length;
           return { size: values.length, docs: values.map(value => ({ id: (value as any).eventId, exists: true, data: () => structuredClone(value) })) };
@@ -129,7 +131,7 @@ test("indexed outbox claims are bounded, non-starving, and independent of delive
   const h = boundedQueueHarness([...history, pending, failed, future]);
   const claimed = await h.repository.claimNextEvent("worker-a", at);
   assert.equal(claimed?.eventId, pending.eventId);
-  assert.equal(h.attemptedReads, 6, "2 indexed candidates + 3 bounded legacy compatibility candidates + 1 authoritative event read");
+  assert.equal(h.attemptedReads, 5, "cursor marker + 2 indexed candidates + 2 bounded authoritative event reads");
   assert.equal(claimed?.delivery.leaseOwner, "worker-a");
   assert.ok(claimed?.delivery.leaseExpiresAt);
 
@@ -139,11 +141,11 @@ test("indexed outbox claims are bounded, non-starving, and independent of delive
   const starvation = boundedQueueHarness([...manyFuture, dueOutsideWindow]);
   const recovered = await starvation.repository.claimNextEvent("worker-b", at);
   assert.equal(recovered?.eventId, dueOutsideWindow.eventId, "an indexed due query reaches work outside the legacy candidate window");
-  assert.ok(starvation.attemptedReads <= 26, "one page claim remains bounded");
+  assert.ok(starvation.attemptedReads <= 60, `one page claim remains bounded: ${starvation.attemptedReads} reads`);
 
   const page = boundedQueueHarness(Array.from({ length: 25 }, (_, index) => queued(`page-${index}`, "pending", index + 1, at.toISOString())));
   assert.ok((await page.repository.claimNextEvent("worker-page", at))?.eventId);
-  assert.equal(page.attemptedReads, 26, "25 eligible events are one indexed page plus one authoritative event read, not 25 x 100 scans");
+  assert.equal(page.attemptedReads, 51, "25 eligible events are one indexed page plus 25 bounded authoritative event reads, not 25 x 100 scans");
 });
 
 test("outbox leases expire, retries remain durable, and aggregate predecessors are bounded", async () => {
@@ -189,6 +191,59 @@ test("dead-letter state is explicit and never eligible for a claim", async () =>
   const h = boundedQueueHarness([dead]);
   assert.equal(dead.delivery.status, "dead-letter");
   assert.equal(await h.repository.claimNextEvent("worker", new Date("2026-08-24T10:01:00.000Z")), undefined);
+});
+
+test("compatibility claims advance across bounded pages and dead predecessors are explicit", async () => {
+  const at = new Date("2026-08-24T10:00:00.000Z");
+  const futureLegacy = Array.from({ length: 60 }, (_, index) => queued(`legacy-future-${index}`, "pending", index + 1, "2026-08-25T10:00:00.000Z"));
+  const due = queued("legacy-z-due-behind-pages", "pending", 61, at.toISOString());
+  const h = boundedQueueHarness([...futureLegacy, due]);
+  for (const value of [...futureLegacy, due]) h.outboxDocs.set(value.eventId, structuredClone(value) as any);
+  const claimed = await h.repository.claimNextEvent("worker-pages", at);
+  assert.equal(claimed?.eventId, due.eventId, "bounded compatibility pages reach due legacy work behind future rows");
+  assert.ok(h.attemptedReads <= 105, "compatibility scanning remains capped at four 25-record pages plus bounded authority reads");
+
+  const predecessor = queued("dead-predecessor", "pending", 1, at.toISOString());
+  const successor = queued("dead-successor", "pending", 2, at.toISOString(), predecessor.eventId);
+  const independent = queued("independent-after-dead", "pending", 1, at.toISOString(), undefined, "aggregate:independent");
+  const deadHarness = boundedQueueHarness([predecessor, successor, independent]);
+  deadHarness.eventDocs.set(predecessor.eventId, markEventDeadLetter(predecessor, "permanent downstream failure", at.toISOString()));
+  deadHarness.outboxDocs.set(predecessor.eventId, outboxRecord(markEventDeadLetter(predecessor, "permanent downstream failure", at.toISOString())) as any);
+  const independentClaim = await deadHarness.repository.claimNextEvent("worker-independent", at);
+  assert.equal(independentClaim?.eventId, independent.eventId);
+  assert.equal((deadHarness.eventDocs.get(successor.eventId) as DurableDomainEvent).delivery.status, "dead-letter", "a successor records predecessor terminal cause instead of remaining blocked forever");
+});
+
+test("a full page of blocked successors advances to eligible work behind it", async () => {
+  const at = new Date("2026-08-24T10:00:00.000Z");
+  const predecessors = Array.from({ length: 25 }, (_, index) => queued(`predecessor-page-${index}`, "pending", index + 1, "2026-08-25T10:00:00.000Z"));
+  const blocked = predecessors.map((predecessor, index) => queued(`blocked-page-${String(index).padStart(2, "0")}`, "pending", index + 1, at.toISOString(), predecessor.eventId));
+  const eligible = queued("z-eligible-behind-blocked-page", "pending", 99, at.toISOString(), undefined, "aggregate:eligible");
+  const h = boundedQueueHarness([...predecessors, ...blocked, eligible]);
+  assert.equal(await h.repository.claimNextEvent("worker-blocked", at), undefined);
+  assert.equal((await h.repository.claimNextEvent("worker-behind", at))?.eventId, eligible.eventId);
+  assert.ok(h.attemptedReads <= 110, "two fixed pages remain bounded while the cursor advances");
+});
+
+test("automatic retry exhaustion dead-letters and deliberate replay preserves identity", async () => {
+  const at = new Date("2026-08-24T10:00:00.000Z");
+  const value = queued("retry-exhaustion", "pending", 1, at.toISOString());
+  const h = boundedQueueHarness([value]);
+  let current: DurableDomainEvent = value;
+  for (let attempt = 1; attempt <= 10; attempt += 1) {
+    current = markEventFailed(current, `failure-${attempt}`, at.toISOString());
+    h.eventDocs.set(value.eventId, current);
+    h.outboxDocs.set(value.eventId, outboxRecord(current));
+    if (attempt < 10) assert.equal(current.delivery.status, "failed");
+  }
+  assert.equal(current.delivery.status, "dead-letter");
+  assert.equal(await h.repository.claimNextEvent("worker", new Date("2026-08-24T12:00:00.000Z")), undefined);
+  const replayed = resetEventForReplay(current, at.toISOString(), "operator replay");
+  assert.equal(replayed.eventId, value.eventId);
+  assert.equal(replayed.sourceAggregateId, value.sourceAggregateId);
+  assert.equal(replayed.delivery.status, "pending");
+  h.eventDocs.set(value.eventId, replayed); h.outboxDocs.set(value.eventId, outboxRecord(replayed));
+  assert.equal((await h.repository.claimEventById(value.eventId, "worker-replay", at)).event?.eventId, value.eventId);
 });
 
 test("baseline: the old outbox claim scans the candidate window and aggregate history", () => {

@@ -155,8 +155,10 @@ test("mutation and import routes remain inside data-source traces", () => {
 
 test("withdrawal responses expose downstream handoff state", () => {
   const route = readFileSync(new URL("../app/api/rolling-menu/publications/route.ts", import.meta.url), "utf8");
-  assert.match(route, /handoff: \{ status: handoff\.failed \? "pending" : "delivered"/);
-  assert.match(route, /replayMenuPublicationOutbox\(forwardProductionMaterialisationEvent\)/);
+  assert.match(route, /handoff: \{ status: handoff\.deadLettered \?/);
+  assert.match(route, /replayMenuPublicationOutbox\(forwardProductionMaterialisationEvent,/);
+  assert.match(route, /listMenuPlanningEventIdsForPublication/);
+  assert.match(route, /targeted handoff retry/);
 });
 
 test("catalogue read budget has explicit bounded cache invalidation", () => {

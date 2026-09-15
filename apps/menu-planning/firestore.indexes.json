@@ -5,7 +5,8 @@
       "queryScope": "COLLECTION",
       "fields": [
         { "fieldPath": "outboxStatus", "order": "ASCENDING" },
-        { "fieldPath": "nextEligibleAt", "order": "ASCENDING" }
+        { "fieldPath": "nextEligibleAt", "order": "ASCENDING" },
+        { "fieldPath": "__name__", "order": "ASCENDING" }
       ]
     },
     {
@@ -13,7 +14,8 @@
       "queryScope": "COLLECTION",
       "fields": [
         { "fieldPath": "delivery.status", "order": "ASCENDING" },
-        { "fieldPath": "occurredAt", "order": "ASCENDING" }
+        { "fieldPath": "occurredAt", "order": "ASCENDING" },
+        { "fieldPath": "__name__", "order": "ASCENDING" }
       ]
     }
   ],

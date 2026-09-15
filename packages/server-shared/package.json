@@ -20,5 +20,6 @@
     ,"./grab-and-go-catalogue": "./src/grab-and-go-catalogue.ts"
     ,"./build-identity": "./src/build-identity.ts"
     ,"./build-identity-resolver": "./src/build-identity-resolver.ts"
+    ,"./durable-outbox": "./src/durable-outbox.ts"
   }
 }

@@ -476,6 +476,8 @@ async function handlePost(request: NextRequest) {
       );
       const handoff = await replayMenuPublicationOutbox(
         forwardProductionMaterialisationEvent,
+        new Date(),
+        { eventIds: publication.handoffEventIds, resetDeadLetter: true },
       );
       const saved = await getWeek(requestedWeekId);
       const published = await getMenuPublication(publication.publicationId);

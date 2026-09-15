@@ -1,6 +1,6 @@
 import { Firestore, type DocumentData, type DocumentSnapshot, type QuerySnapshot, type Transaction } from "@google-cloud/firestore";
 import { createHash } from "node:crypto";
-import { claimEvent, eventIsDue, outboxRecord, type DurableDomainEvent } from "./fika-contracts";
+import { claimEvent, eventIsDue, markEventDeadLetter, outboxRecord, resetEventForReplay, type DurableDomainEvent } from "./fika-contracts";
 import type { CompiledPublishedWeekSnapshot, MenuPublication } from "./menu-publication";
 import type { RollingDay, RollingEntry, RollingSnapshot, RollingWeek } from "./rolling-menu-types";
 import { recordMenuPlanningReadBudget } from "./read-budget";
@@ -14,6 +14,11 @@ export const MENU_PLANNING_COLLECTIONS = {
   weeks: "fikaMenuPlanningWeeks", publications: "fikaMenuPlanningPublications", events: "fikaMenuPlanningEvents", outbox: "fikaMenuPlanningOutbox", archive: "fikaMenuPlanningArchiveMetadata", catalogue: "fikaMenuPlanningCatalogue", publishedSnapshots: "fikaMenuPlanningPublishedSnapshots",
 } as const;
 export const MENU_PLANNING_OUTBOX_CLAIM_PAGE_SIZE = 25;
+const MENU_PLANNING_OUTBOX_COMPATIBILITY_PAGES = 4;
+const MENU_PLANNING_OUTBOX_CURSOR = "menu-planning";
+type QueueCursor = { nextEligibleAt?: string; occurredAt?: string; eventId?: string };
+type QueueCursorState = { modern?: QueueCursor; legacy?: QueueCursor };
+export type EventReplayState = "claimed" | "blocked" | "dead-lettered" | "missing";
 export type HostedTransactionState = { rolling: { version?: number; weeks: RollingWeek[]; days: RollingDay[]; entries: RollingEntry[] }; publications: { version: number; publications: MenuPublication[]; events: DurableDomainEvent[] } };
 export type MenuPlanningTransactionScope = { weekId?: string; sourceWeekId?: string; includeEvents?: boolean };
 export class ExpectedVersionConflict extends Error { status = 409 as const; }
@@ -182,35 +187,116 @@ export class MenuPlanningFirestoreRepository {
       return next;
     });
   }
+  async getEvent(eventId: string) {
+    const document = await this.db.collection(MENU_PLANNING_COLLECTIONS.events).doc(eventId).get();
+    recordFirestore("events.by-id", document.exists ? 1 : 0);
+    return document.exists ? document.data() as DurableDomainEvent : undefined;
+  }
+  async listEventIdsForPublication(publicationId: string) {
+    const snapshot = await this.db.collection(MENU_PLANNING_COLLECTIONS.events).where("payload.publicationId", "==", publicationId).get();
+    recordFirestore("events.by-publication", snapshot.size);
+    return snapshot.docs.map(document => { const value = document.data() as DurableDomainEvent; return value.eventId || document.id; });
+  }
+  async resetEvent(eventId: string, at = new Date(), reason = "manual replay") {
+    return this.updateEvent(eventId, event => resetEventForReplay(event, at.toISOString(), reason));
+  }
+  private async claimEventInTransaction(transaction: Transaction, eventId: string, claimId: string, at: Date): Promise<{ event?: DurableDomainEvent; deadLetter?: DurableDomainEvent; state: EventReplayState }> {
+    const document = await transaction.get(this.db.collection(MENU_PLANNING_COLLECTIONS.events).doc(eventId));
+    if (!document.exists) return { state: "missing" };
+    const current = document.data() as DurableDomainEvent;
+    if (!eventIsDue(current, at)) return { state: "blocked" };
+    if (current.predecessorEventId) {
+      const predecessorRef = this.db.collection(MENU_PLANNING_COLLECTIONS.events).doc(current.predecessorEventId);
+      const predecessor = await transaction.get(predecessorRef);
+      if (!predecessor.exists) {
+        const dead = markEventDeadLetter(current, `Predecessor ${current.predecessorEventId} is missing; operator repair is required.`, at.toISOString());
+        return { deadLetter: dead, state: "dead-lettered" };
+      }
+      const predecessorValue = predecessor.data() as Partial<DurableDomainEvent>;
+      const predecessorStatus = predecessorValue.delivery?.status;
+      if (predecessorStatus === "dead-letter") {
+        const dead = markEventDeadLetter(current, `Predecessor ${current.predecessorEventId} is dead-lettered; operator repair is required.`, at.toISOString());
+        return { deadLetter: dead, state: "dead-lettered" };
+      }
+      if (predecessorStatus !== "delivered") {
+        if (!["pending", "failed"].includes(String(predecessorStatus))) {
+          const dead = markEventDeadLetter(current, `Predecessor ${current.predecessorEventId} is corrupt; operator repair is required.`, at.toISOString());
+          return { deadLetter: dead, state: "dead-lettered" };
+        }
+        return { state: "blocked" };
+      }
+    }
+    const next = claimEvent(current, claimId, at.toISOString());
+    return { event: next, state: "claimed" };
+  }
+  async claimEventById(eventId: string, claimId: string, at = new Date()) {
+    return this.db.runTransaction(async transaction => {
+      const result = await this.claimEventInTransaction(transaction, eventId, claimId, at);
+      const value = result.deadLetter || result.event;
+      if (value) {
+        transaction.set(this.db.collection(MENU_PLANNING_COLLECTIONS.events).doc(eventId), value);
+        transaction.set(this.db.collection(MENU_PLANNING_COLLECTIONS.outbox).doc(eventId), outboxRecord(value));
+      }
+      return result;
+    });
+  }
   async claimNextEvent(claimId: string, at = new Date()) {
     return this.db.runTransaction(async transaction => {
       const pageSize = MENU_PLANNING_OUTBOX_CLAIM_PAGE_SIZE;
       const queue = this.db.collection(MENU_PLANNING_COLLECTIONS.outbox);
-      const due = await transaction.get(queue.where("outboxStatus", "in", ["pending", "failed"]).where("nextEligibleAt", "<=", at.toISOString()).orderBy("nextEligibleAt", "asc").limit(pageSize));
+      const cursorRef = this.db.collection(MENU_PLANNING_COLLECTIONS.outbox).doc(MENU_PLANNING_OUTBOX_CURSOR);
+      // A cursor is durable so an ineligible bounded page cannot be returned
+      // forever. Modern and legacy rows advance independently; modern claims
+      // never pay for delivered history or compatibility scans.
+      const cursorDocument = await transaction.get(cursorRef);
+      const cursorState = (cursorDocument.exists ? cursorDocument.data() : {}) as QueueCursorState;
+      const modernQuery = queue.where("outboxStatus", "in", ["pending", "failed"]).where("nextEligibleAt", "<=", at.toISOString()).orderBy("nextEligibleAt", "asc").orderBy("__name__", "asc").limit(pageSize);
+      const due = cursorState.modern?.nextEligibleAt && cursorState.modern.eventId
+        ? await transaction.get(modernQuery.startAfter(cursorState.modern.nextEligibleAt, cursorState.modern.eventId))
+        : await transaction.get(modernQuery);
       recordFirestore("events.queue-page", due.size);
       const documents = [...due.docs];
-      if (documents.length < pageSize) {
-        const legacy = await transaction.get(queue.where("delivery.status", "in", ["pending", "failed"]).orderBy("occurredAt", "asc").limit(pageSize - documents.length));
-        recordFirestore("events.queue-legacy-page", legacy.size);
-        const seen = new Set(documents.map(document => document.id));
-        for (const document of legacy.docs) if (!seen.has(document.id)) { documents.push(document); seen.add(document.id); }
-      }
-      const candidates = documents.map(document => { const value = document.data() as DurableDomainEvent; return { ...value, eventId: value.eventId || document.id }; }).filter(event => eventIsDue(event, at)).sort((a, b) => (a.delivery.nextEligibleAt || a.delivery.nextAttemptAt || a.occurredAt).localeCompare(b.delivery.nextEligibleAt || b.delivery.nextAttemptAt || b.occurredAt) || a.sourceAggregateId.localeCompare(b.sourceAggregateId) || a.sourceVersion - b.sourceVersion || a.eventId.localeCompare(b.eventId));
-      for (const candidate of candidates) {
-        const ref = this.db.collection(MENU_PLANNING_COLLECTIONS.events).doc(candidate.eventId);
-        const currentDocument = await transaction.get(ref);
-        if (!currentDocument.exists) continue;
-        const current = currentDocument.data() as DurableDomainEvent;
-        if (!eventIsDue(current, at)) continue;
-        if (current.predecessorEventId) {
-          const predecessor = await transaction.get(this.db.collection(MENU_PLANNING_COLLECTIONS.events).doc(current.predecessorEventId));
-          if (!predecessor.exists || (predecessor.data() as DurableDomainEvent).delivery.status !== "delivered") continue;
+      let nextModernCursor: QueueCursor | undefined = documents.length === pageSize ? { nextEligibleAt: String(documents.at(-1)?.data().nextEligibleAt || ""), eventId: documents.at(-1)?.id } : undefined;
+      const deadLetters: DurableDomainEvent[] = [];
+      let claimed: DurableDomainEvent | undefined;
+      const inspect = async (values: typeof documents) => {
+        const candidates = values.map(document => { const value = document.data() as DurableDomainEvent; return { ...value, eventId: value.eventId || document.id }; }).filter(event => eventIsDue(event, at)).sort((a, b) => (a.delivery.nextEligibleAt || a.delivery.nextAttemptAt || a.occurredAt).localeCompare(b.delivery.nextEligibleAt || b.delivery.nextAttemptAt || b.occurredAt) || a.sourceAggregateId.localeCompare(b.sourceAggregateId) || a.sourceVersion - b.sourceVersion || a.eventId.localeCompare(b.eventId));
+        for (const candidate of candidates) {
+          const result = await this.claimEventInTransaction(transaction, candidate.eventId, claimId, at);
+          if (result.deadLetter) deadLetters.push(result.deadLetter);
+          if (result.state === "claimed" && !claimed) claimed = result.event;
         }
-        const next = claimEvent(current, claimId, at.toISOString());
-        transaction.set(ref, next);
-        transaction.set(this.db.collection(MENU_PLANNING_COLLECTIONS.outbox).doc(candidate.eventId), outboxRecord(next));
-        return next;
+      };
+      await inspect(documents);
+      let compatibilityScanned = false;
+      if (!claimed && documents.length < pageSize) {
+        compatibilityScanned = true;
+        const legacyQuery = queue.where("delivery.status", "in", ["pending", "failed"]).orderBy("occurredAt", "asc").orderBy("__name__", "asc").limit(pageSize);
+        const seen = new Set(documents.map(document => document.id));
+        let legacyCursor = cursorState.legacy;
+        for (let page = 0; page < MENU_PLANNING_OUTBOX_COMPATIBILITY_PAGES; page += 1) {
+          const legacy = legacyCursor?.occurredAt && legacyCursor.eventId
+            ? await transaction.get(legacyQuery.startAfter(legacyCursor.occurredAt, legacyCursor.eventId))
+            : await transaction.get(legacyQuery);
+          recordFirestore("events.queue-legacy-page", legacy.size);
+          for (const document of legacy.docs) if (!seen.has(document.id)) { documents.push(document); seen.add(document.id); }
+          if (legacy.size < pageSize) { cursorState.legacy = undefined; break; }
+          legacyCursor = { occurredAt: String(legacy.docs.at(-1)?.data().occurredAt || ""), eventId: legacy.docs.at(-1)?.id };
+          cursorState.legacy = legacyCursor;
+        }
+        await inspect(documents.slice(due.size));
       }
+      for (const dead of deadLetters) {
+        transaction.set(this.db.collection(MENU_PLANNING_COLLECTIONS.events).doc(dead.eventId), dead);
+        transaction.set(this.db.collection(MENU_PLANNING_COLLECTIONS.outbox).doc(dead.eventId), outboxRecord(dead));
+      }
+      if (claimed) {
+        transaction.set(this.db.collection(MENU_PLANNING_COLLECTIONS.events).doc(claimed.eventId), claimed);
+        transaction.set(this.db.collection(MENU_PLANNING_COLLECTIONS.outbox).doc(claimed.eventId), outboxRecord(claimed));
+        if (nextModernCursor || cursorState.modern || compatibilityScanned) transaction.set(cursorRef, { ...cursorState, modern: nextModernCursor });
+        return claimed;
+      }
+      if (nextModernCursor || cursorState.modern || compatibilityScanned) transaction.set(cursorRef, { ...cursorState, modern: nextModernCursor });
       return undefined;
     });
   }

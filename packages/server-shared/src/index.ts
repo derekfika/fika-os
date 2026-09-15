@@ -10,3 +10,4 @@ export * from "./weekly-publication-packet";
 export * from "./daily-signed-oploc-bundle";
 export * from "./grab-and-go-catalogue";
 export * from "./build-identity";
+export * from "./durable-outbox";
