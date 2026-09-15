@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import {
   addMenuSlot,
   addOneOffDestination,
-  assertWeekDateAvailable,
   batchUpdateEntries,
   cleanDuplicateEntries,
   copyWeekIntoWeek,
@@ -299,7 +298,6 @@ async function handlePost(request: NextRequest) {
       const weekCommencing = planningWeekCommencing(
         String(body.weekCommencing),
       );
-      await assertWeekDateAvailable(weekCommencing);
       const snapshot = await saveSnapshot(emptyWeek(weekCommencing, actor.uid));
       return NextResponse.json({
         snapshot: await resolvedSnapshot(snapshot, undefined, actor),

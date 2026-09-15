@@ -7,7 +7,7 @@ import { ROLLING_SLOTS, type RollingAllocation, type RollingDay, type RollingEnt
 import { normaliseDishName, titleCase } from "./text";
 import type { MenuItem } from "./domain";
 import { listCanonicalMenuItemsByIds } from "./canonical-menu-repository";
-import { getMenuPlanningOperationalStore, getWeekSnapshot, listWeekSummaries, listWeekSummariesByCommencing, mutateRollingCommand, readRollingState, updateRollingState, withMenuPlanningTransaction } from "./operational-store";
+import { createRollingSnapshot, getMenuPlanningOperationalStore, getWeekSnapshot, listWeekSummaries, listWeekSummariesByCommencing, mutateRollingCommand, readRollingState, updateRollingState, withMenuPlanningTransaction } from "./operational-store";
 import { applyRollingEntryPatch, type RollingEntryPatch, type RollingMutationDelta } from "./rolling-command";
 export interface Stored { version: 1; weeks: RollingWeek[]; days: RollingDay[]; entries: RollingEntry[]; }
 const now = () => new Date().toISOString();
@@ -177,9 +177,13 @@ export async function addOneOffDestination(weekId: string, dayId: string, label:
 // Working edits must not downgrade or mutate immutable publication state.
 const markDayDraft = (_snapshot: RollingSnapshot, _dayId: string) => {};
 export async function saveSnapshot(snapshot: RollingSnapshot, expectedWeekVersion?: number) {
+  if (expectedWeekVersion === undefined) {
+    await createRollingSnapshot(snapshot);
+    return snapshot;
+  }
   await withMenuPlanningTransaction(state => {
     replaceSnapshotInStored(state.rolling as unknown as Stored, snapshot);
-  }, expectedWeekVersion === undefined ? undefined : { weekId: snapshot.week.id, weekVersion: expectedWeekVersion }, { weekId: snapshot.week.id, sourceWeekId: "__none__", includeEvents: false });
+  }, { weekId: snapshot.week.id, weekVersion: expectedWeekVersion }, { weekId: snapshot.week.id, sourceWeekId: "__none__", includeEvents: false });
   return snapshot;
 }
 export async function saveSnapshotsCreateOnly(snapshots: RollingSnapshot[], liveOplocs: readonly LiveGovernedOploc[] = []) {
@@ -290,11 +294,15 @@ export async function batchUpdateEntries(weekId: string, expectedWeekVersion: nu
   return mutateRollingCommand({ weekId, expectedWeekVersion, touchedEntryIds: updates.map(update => update.entryId), touchedDayIds, entryDayIds, patch: { entries: patchEntries }, audit: { action: "portion-allocations-batch-saved", at: now(), by: actor } });
 }
 export async function publishWeek(weekId: string, actor = "local-menu-planner", liveOplocs: readonly LiveGovernedOploc[] = []) { const snapshot = normaliseRollingSnapshotDestinations(await getWeek(weekId), liveOplocs); if (snapshot.week.status === "published") throw Object.assign(new Error("This menu week is already published."), { status: 409 }); snapshot.week.status = "published"; snapshot.week.dayStatuses = undefined; snapshot.week.version += 1; snapshot.week.audit.push({ action: "week-published", at: now(), by: actor }); return saveSnapshot(snapshot, snapshot.week.version - 1); }
-export async function duplicateWeek(weekId: string, weekCommencing: string, actor = "local-menu-planner", liveOplocs: readonly LiveGovernedOploc[] = []) { await assertWeekDateAvailable(weekCommencing); const source = normaliseRollingSnapshotDestinations(await getWeek(weekId), liveOplocs); const next = emptyWeek(weekCommencing, actor); const dayMap = new Map(source.days.map((d, i) => [d.id, next.days[i]?.id])); next.entries = source.entries.map(e => ({ ...structuredClone(e), id: `${next.week.id}:entry:${e.id.split(":entry:").pop()}`, dayId: dayMap.get(e.dayId) || next.days[0].id, date: addDays(weekCommencing, source.days.findIndex(d => d.id === e.dayId)), audit: [{ action: "entry-copied", at: now(), by: actor }] })); next.days.forEach(d => d.entryIds = next.entries.filter(e => e.dayId === d.id).map(e => e.id)); next.week.entryIds = next.entries.map(e => e.id); next.week.sourceFiles = source.week.sourceFiles.slice(); next.week.customSlots = source.week.customSlots?.slice() || []; next.week.removedSlots = source.week.removedSlots?.slice() || []; return saveSnapshot(next); }
+export async function duplicateWeek(weekId: string, weekCommencing: string, actor = "local-menu-planner", liveOplocs: readonly LiveGovernedOploc[] = []) { const source = normaliseRollingSnapshotDestinations(await getWeek(weekId), liveOplocs); const next = emptyWeek(weekCommencing, actor); const dayMap = new Map(source.days.map((d, i) => [d.id, next.days[i]?.id])); next.entries = source.entries.map(e => ({ ...structuredClone(e), id: `${next.week.id}:entry:${e.id.split(":entry:").pop()}`, dayId: dayMap.get(e.dayId) || next.days[0].id, date: addDays(weekCommencing, source.days.findIndex(d => d.id === e.dayId)), audit: [{ action: "entry-copied", at: now(), by: actor }] })); next.days.forEach(d => d.entryIds = next.entries.filter(e => e.dayId === d.id).map(e => e.id)); next.week.entryIds = next.entries.map(e => e.id); next.week.sourceFiles = source.week.sourceFiles.slice(); next.week.customSlots = source.week.customSlots?.slice() || []; next.week.removedSlots = source.week.removedSlots?.slice() || []; return saveSnapshot(next); }
 export async function copyWeekIntoWeek(sourceWeekId: string, targetWeekId: string, actor = "local-menu-planner", liveOplocs: readonly LiveGovernedOploc[] = []) {
   if (sourceWeekId === targetWeekId) throw Object.assign(new Error("Choose a different week to copy from."), { status: 422 });
   const source = normaliseRollingSnapshotDestinations(await getWeek(sourceWeekId), liveOplocs);
-  const target = normaliseRollingSnapshotDestinations(await getWeek(targetWeekId), liveOplocs);
+  const storedTarget = await getWeekSnapshot<RollingSnapshot>(targetWeekId);
+  const target = storedTarget
+    ? normaliseRollingSnapshotDestinations(storedTarget, liveOplocs)
+    : emptyWeek(planningWeekFromQuery(targetWeekId), actor);
+  if (!storedTarget && target.week.id !== targetWeekId) throw Object.assign(new Error("The target planning week identity is invalid."), { status: 422 });
   const sourceDayIndex = new Map(source.days.map((day, index) => [day.id, index]));
   const copyStamp = Date.now();
   target.days = target.days.map((day, index) => ({ ...day, entryIds: [], oneOffDestinations: structuredClone(source.days[index]?.oneOffDestinations || []) }));
@@ -310,9 +318,9 @@ export async function copyWeekIntoWeek(sourceWeekId: string, targetWeekId: strin
   target.week.removedSlots = source.week.removedSlots?.slice() || [];
   target.week.status = "draft";
   target.week.dayStatuses = Object.fromEntries(target.days.map(day => [day.id, "draft"]));
-  target.week.version += 1;
+  if (storedTarget) target.week.version += 1;
   target.week.audit.push({ action: `week-plan-copied-from:${source.week.id}`, at: now(), by: actor });
-  return saveSnapshot(target, target.week.version - 1);
+  return storedTarget ? saveSnapshot(target, target.week.version - 1) : saveSnapshot(target);
 }
 export async function resetWeek(weekId: string, actor = "local-menu-planner") {
   const target = await getWeek(weekId);

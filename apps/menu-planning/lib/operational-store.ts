@@ -5,7 +5,7 @@ import { assertOperationalStoreAvailable } from "./hosted-runtime";
 import { assertExpectedVersion, MenuPlanningFirestoreRepository, type EventReplayState, type HostedTransactionState, type MenuPlanningTransactionScope } from "./firestore-operational-store";
 import { applyRollingEntryPatch, commandDayIds, commandEntryIds, type RollingMutationCommand, type RollingMutationDelta } from "./rolling-command";
 import type { CompiledPublishedWeekSnapshot } from "./menu-publication";
-import type { RollingDay, RollingEntry, RollingWeek } from "./rolling-menu-types";
+import type { RollingDay, RollingEntry, RollingSnapshot, RollingWeek } from "./rolling-menu-types";
 import { claimEvent, eventIsDue, markEventDeadLetter, resetEventForReplay } from "./fika-contracts";
 
 type DocumentMap = Record<string, unknown>;
@@ -84,6 +84,7 @@ export type MenuPlanningOperationalStore = {
   claimNextEvent(claimId: string, at?: Date): Promise<HostedTransactionState["publications"]["events"][number] | undefined>;
   claimEventById(eventId: string, claimId: string, at?: Date): Promise<{ event?: HostedTransactionState["publications"]["events"][number]; state: EventReplayState }>;
   mutateRollingCommand(command: RollingMutationCommand): Promise<RollingMutationDelta>;
+  createRollingSnapshot(snapshot: RollingSnapshot): Promise<void>;
   runTransaction<T>(mutator: (state: TransactionState) => T | Promise<T>, expected?: { weekId?: string; weekVersion?: number }, scope?: MenuPlanningTransactionScope): Promise<T>;
   updateRollingState<T>(mutator: (rolling: T) => void | Promise<void>): Promise<T>;
   updatePublicationState<T>(mutator: (publications: T) => void | Promise<void>): Promise<T>;
@@ -155,6 +156,17 @@ class SqliteOperationalStore implements MenuPlanningOperationalStore {
       return { week: nextWeek, days: changedDays, entries: changedEntries };
     });
   }
+  async createRollingSnapshot(snapshot: RollingSnapshot) {
+    return this.runTransaction(state => {
+      const rolling = state.rolling as unknown as { weeks: RollingWeek[]; days: RollingDay[]; entries: RollingEntry[] };
+      if (rolling.weeks.some(candidate => candidate.id === snapshot.week.id)) {
+        throw Object.assign(new Error("A planning week with this identity already exists; choose another week."), { status: 409, code: "WEEK_ALREADY_EXISTS" });
+      }
+      rolling.weeks.push(structuredClone(snapshot.week));
+      rolling.days.push(...snapshot.days.map(day => structuredClone(day)));
+      rolling.entries.push(...snapshot.entries.map(entry => structuredClone(entry)));
+    });
+  }
   async runTransaction<T>(mutator: (state: TransactionState) => T | Promise<T>) {
     return withMenuPlanningTransactionSync(state => { const result = mutator(state); if (result instanceof Promise) throw new Error("SQLite operational mutators must remain synchronous internally."); return result; });
   }
@@ -183,6 +195,7 @@ class FirestoreOperationalStore implements MenuPlanningOperationalStore {
   claimNextEvent(claimId: string, at?: Date) { return this.repository.claimNextEvent(claimId, at); }
   claimEventById(eventId: string, claimId: string, at?: Date) { return this.repository.claimEventById(eventId, claimId, at); }
   mutateRollingCommand(command: RollingMutationCommand) { return this.repository.mutateRollingCommand(command); }
+  createRollingSnapshot(snapshot: RollingSnapshot) { return this.repository.createRollingSnapshot(snapshot); }
   runTransaction<T>(mutator: (state: HostedTransactionState) => T | Promise<T>, expected?: { weekId?: string; weekVersion?: number }, scope?: MenuPlanningTransactionScope) { return this.repository.runTransaction(mutator, expected, scope); }
   updateRollingState<T>(mutator: (rolling: T) => void | Promise<void>) { return this.runTransaction(async state => { await mutator(state.rolling as T); return state.rolling as T; }); }
   updatePublicationState<T>(mutator: (publications: T) => void | Promise<void>) { return this.runTransaction(async state => { await mutator(state.publications as T); return state.publications as T; }); }
@@ -213,6 +226,7 @@ export function listPublicationState<T>(limit?: number) { return getMenuPlanning
 
 export function withMenuPlanningTransaction<T>(mutator: (state: TransactionState) => T | Promise<T>, expected?: { weekId?: string; weekVersion?: number }, scope?: MenuPlanningTransactionScope) { return getMenuPlanningOperationalStore().runTransaction(mutator, expected, scope); }
 export function mutateRollingCommand(command: RollingMutationCommand) { return getMenuPlanningOperationalStore().mutateRollingCommand(command); }
+export function createRollingSnapshot(snapshot: RollingSnapshot) { return getMenuPlanningOperationalStore().createRollingSnapshot(snapshot); }
 
 export function updateRollingState<T>(mutator: (rolling: T) => void | Promise<void>) { return getMenuPlanningOperationalStore().updateRollingState(mutator); }
 

@@ -50,6 +50,28 @@ function commandHarness() {
   return { repository: new MenuPlanningFirestoreRepository(db), docs, reads, writes, seed };
 }
 
+function createOnlyHarness() {
+  const docs = new Map<string, unknown>();
+  const reads: string[] = [];
+  const writes: string[] = [];
+  const ref = (path: string): any => ({ path, doc: (id: string) => ref(`${path}/${id}`), collection: (name: string) => ref(`${path}/${name}`) });
+  const db = {
+    collection: (name: string) => ref(name),
+    runTransaction: async (callback: (transaction: any) => Promise<unknown>) => {
+      const pending: Array<{ path: string; value: unknown }> = [];
+      const transaction = {
+        get: async (target: any) => { reads.push(target.path); const value = docs.get(target.path); return { exists: value !== undefined, data: () => structuredClone(value) }; },
+        create: (target: any, value: unknown) => { if (docs.has(target.path) || pending.some(write => write.path === target.path)) throw Object.assign(new Error("already exists"), { code: 6 }); pending.push({ path: target.path, value }); },
+      };
+      const result = await callback(transaction);
+      if (pending.some(write => docs.has(write.path))) throw Object.assign(new Error("already exists"), { code: 6 });
+      for (const write of pending) { docs.set(write.path, structuredClone(write.value)); writes.push(write.path); }
+      return result;
+    },
+  } as any;
+  return { repository: new MenuPlanningFirestoreRepository(db), docs, reads, writes };
+}
+
 const commandFor = (weekId: string, expectedWeekVersion: number, entryValue: RollingEntry, label: string) => ({
   weekId,
   expectedWeekVersion,
@@ -317,6 +339,16 @@ test("command mutations use bounded reads, deterministic CAS, and atomic writes"
   await assert.rejects(() => h.repository.mutateRollingCommand({ ...batchCommand, expectedWeekVersion: 4, touchedEntryIds: [batchEntries[0].id, missing.id], entryDayIds: { [batchEntries[0].id]: dayValue.id, [missing.id]: dayValue.id }, patch: { entries: { [batchEntries[0].id]: { itemLabel: "must not commit" }, [missing.id]: { itemLabel: "missing" } } } }), /not attached|not found/);
   assert.equal(h.writes.length, 0, "a failed multi-entry command commits no partial entry writes");
   assert.equal((h.docs.get(`fikaMenuPlanningWeeks/${weekValue.id}/days/${dayValue.id}/entries/${batchEntries[0].id}`) as RollingEntry).itemLabel, "Batch 0 saved");
+});
+
+test("Firestore create-only transaction reads one target and writes a complete bounded snapshot", async () => {
+  const h = createOnlyHarness();
+  const snapshot = { week: { ...week("rolling-week:create-only"), dayIds: ["rolling-week:create-only:day:0"], entryIds: ["entry:create-only"] }, days: [day("rolling-week:create-only:day:0", "rolling-week:create-only")], entries: [entry("entry:create-only", "rolling-week:create-only:day:0")] };
+  await h.repository.createRollingSnapshot(snapshot);
+  assert.deepEqual(h.reads, ["fikaMenuPlanningWeeks/rolling-week:create-only"]);
+  assert.equal(h.writes.length, 3, "one week, one day, and one entry are atomically created");
+  await assert.rejects(() => h.repository.createRollingSnapshot(snapshot), (error: any) => error.status === 409);
+  assert.equal(h.writes.length, 3, "an existing target receives no replacement writes");
 });
 
 function docsSet(h: ReturnType<typeof commandHarness>, value: RollingEntry, weekId: string, dayId: string) {

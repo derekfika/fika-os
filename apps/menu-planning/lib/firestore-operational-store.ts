@@ -117,6 +117,23 @@ export class MenuPlanningFirestoreRepository {
       return { week: nextWeek, days: changedDays, entries: changedEntries };
     });
   }
+  async createRollingSnapshot(snapshot: RollingSnapshot) {
+    const weekRef = this.db.collection(MENU_PLANNING_COLLECTIONS.weeks).doc(snapshot.week.id);
+    return this.db.runTransaction(async transaction => {
+      const weekDocument = await transaction.get(weekRef);
+      recordFirestore("rolling.create-week-read", weekDocument.exists ? 1 : 0);
+      recordMenuPlanningReadBudget({ operation: "rolling_create_week", reads: { weeks: 1, days: 0, entries: 0, scoped: 1 } });
+      if (weekDocument.exists) throw Object.assign(new Error("A planning week with this identity already exists; choose another week."), { status: 409, code: "WEEK_ALREADY_EXISTS" });
+      transaction.create(weekRef, snapshot.week);
+      for (const day of snapshot.days) transaction.create(weekRef.collection("days").doc(day.id), day);
+      const dayIds = new Set(snapshot.days.map(day => day.id));
+      for (const entry of snapshot.entries) {
+        if (!dayIds.has(entry.dayId)) throw Object.assign(new Error(`Entry ${entry.id} is not attached to a created planning day.`), { status: 422 });
+        transaction.create(weekRef.collection("days").doc(entry.dayId).collection("entries").doc(entry.id), entry);
+      }
+      recordFirestore("rolling.create-week-write", 1 + snapshot.days.length + snapshot.entries.length);
+    });
+  }
   async getPublicationById(publicationId: string) {
     const publication = await this.db.collection(MENU_PLANNING_COLLECTIONS.publications).doc(publicationId).get();
     recordFirestore("publication.by-id", publication.exists ? 1 : 0);

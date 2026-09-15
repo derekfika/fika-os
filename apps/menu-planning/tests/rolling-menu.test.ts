@@ -9,7 +9,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import * as XLSX from "xlsx";
-import { addMenuSlot, applyEntryPatch, assertWeekDateAvailable, attachCanonicalDishIds, batchUpdateEntries, createEntry, defaultWeekForDate, duplicateWeek, emptyWeek, getWeek, importWorkbook, isProtectedExistingPlanningWeek, normaliseRollingSnapshotDestinations, operationalDateLondon, planningWeekCommencing, planningWeekFromQuery, planningWeekImportConflictReason, planningWeekReplacementDetails, publishWeek, removeMenuSlot, replaceSnapshotsExplicit, saveSnapshot, saveSnapshotsCreateOnly, updateEntry, validateWeek, ROLLING_SLOTS } from "../lib/rolling-menu";
+import { addMenuSlot, applyEntryPatch, assertWeekDateAvailable, attachCanonicalDishIds, batchUpdateEntries, copyWeekIntoWeek, createEntry, defaultWeekForDate, duplicateWeek, emptyWeek, getWeek, importWorkbook, isProtectedExistingPlanningWeek, normaliseRollingSnapshotDestinations, operationalDateLondon, planningWeekCommencing, planningWeekFromQuery, planningWeekImportConflictReason, planningWeekReplacementDetails, publishWeek, removeMenuSlot, replaceSnapshotsExplicit, saveSnapshot, saveSnapshotsCreateOnly, updateEntry, validateWeek, ROLLING_SLOTS } from "../lib/rolling-menu";
 import { hasPlannedDishes } from "../lib/rolling-menu-types";
 import { createCanonicalMenuItem, createCanonicalMenuItems, listCanonicalMenuItems } from "../lib/canonical-menu-repository";
 import { buildCompiledPublicationSnapshot, buildPublishedDay, compareWorkingWeekToPublication, createPublishedMenuDay, createPublishedMenuWeek, currentPublishedDays, getCompiledPublicationSnapshot, getMenuPublication, listMenuPublicationEvents, listMenuPublications, publicationPreview, publicationState, publishedDayMatrixHtml, replayMenuPublicationOutbox, withdrawPublishedMenuDay, withdrawPublishedMenuWeek, type MenuPublicationSignoff } from "../lib/menu-publication";
@@ -65,6 +65,95 @@ test("concurrent historic imports cannot overwrite the same week", async () => {
   const rejected = results.find(result => result.status === "rejected");
   assert.match(String(rejected && rejected.status === "rejected" ? rejected.reason.message : ""), /already exists|changed/i);
   assert.equal((await getWeek("rolling-week:2099-01-05")).week.audit[0].by, "test-import");
+});
+
+test("concurrent create-week requests have one atomic create-only winner", async () => {
+  const first = emptyWeek("2098-01-19", "create-a");
+  const second = emptyWeek("2098-01-19", "create-b");
+  const firstEntry = { id: `${first.week.id}:entry:first`, dayId: first.days[0].id, date: first.days[0].date, slot: "SOUP", itemLabel: "First complete week", portions: 1, allocations: [], allergens: {}, audit: [] };
+  const secondEntry = { id: `${second.week.id}:entry:second`, dayId: second.days[1].id, date: second.days[1].date, slot: "SOUP", itemLabel: "Second complete week", portions: 2, allocations: [], allergens: {}, audit: [] };
+  first.entries = [firstEntry]; first.days[0].entryIds = [firstEntry.id]; first.week.entryIds = [firstEntry.id];
+  second.entries = [secondEntry]; second.days[1].entryIds = [secondEntry.id]; second.week.entryIds = [secondEntry.id];
+  const results = await Promise.allSettled([saveSnapshot(first), saveSnapshot(second)]);
+  assert.equal(results.filter(result => result.status === "fulfilled").length, 1);
+  assert.equal(results.filter(result => result.status === "rejected").length, 1);
+  assert.equal((results.find(result => result.status === "rejected") as PromiseRejectedResult).reason.status, 409);
+  const saved = await getWeek(first.week.id);
+  const winner = (results[0].status === "fulfilled" ? first : second);
+  assert.equal(saved.week.audit[0].by, winner.week.audit[0].by);
+  assert.deepEqual(saved.entries.map(entry => entry.itemLabel), winner.entries.map(entry => entry.itemLabel));
+  assert.equal(saved.week.version, 1);
+});
+
+test("concurrent duplicate-week requests never mix the target snapshot", async () => {
+  const source = emptyWeek("2098-01-26", "source");
+  const sourceEntry = { id: `${source.week.id}:entry:source`, dayId: source.days[0].id, date: source.days[0].date, slot: "SOUP", itemLabel: "Copied dish", portions: 3, allocations: [], allergens: {}, audit: [] };
+  source.entries = [sourceEntry]; source.days[0].entryIds = [sourceEntry.id]; source.week.entryIds = [sourceEntry.id];
+  await saveSnapshot(source);
+  const results = await Promise.allSettled([duplicateWeek(source.week.id, "2098-02-02", "duplicate-a"), duplicateWeek(source.week.id, "2098-02-02", "duplicate-b")]);
+  assert.equal(results.filter(result => result.status === "fulfilled").length, 1);
+  assert.equal(results.filter(result => result.status === "rejected").length, 1);
+  const saved = await getWeek("rolling-week:2098-02-02");
+  assert.equal(saved.entries.length, 1);
+  assert.equal(saved.entries[0].itemLabel, "Copied dish");
+  assert.match(saved.entries[0].audit[0].action, /entry-copied/);
+  assert.equal(saved.week.audit[0].action, "week-created");
+});
+
+test("different sources competing for one target produce one complete copy", async () => {
+  const sourceA = emptyWeek("2098-02-09", "source-a");
+  const entryA = { id: `${sourceA.week.id}:entry:a`, dayId: sourceA.days[0].id, date: sourceA.days[0].date, slot: "SOUP", itemLabel: "Source A", portions: 1, allocations: [], allergens: {}, audit: [] };
+  sourceA.entries = [entryA]; sourceA.days[0].entryIds = [entryA.id]; sourceA.week.entryIds = [entryA.id];
+  const sourceB = emptyWeek("2098-02-16", "source-b");
+  const entryB = { id: `${sourceB.week.id}:entry:b`, dayId: sourceB.days[0].id, date: sourceB.days[0].date, slot: "SOUP", itemLabel: "Source B", portions: 2, allocations: [], allergens: {}, audit: [] };
+  sourceB.entries = [entryB]; sourceB.days[0].entryIds = [entryB.id]; sourceB.week.entryIds = [entryB.id];
+  await Promise.all([saveSnapshot(sourceA), saveSnapshot(sourceB)]);
+  const results = await Promise.allSettled([duplicateWeek(sourceA.week.id, "2098-02-23", "copy-a"), duplicateWeek(sourceB.week.id, "2098-02-23", "copy-b")]);
+  assert.equal(results.filter(result => result.status === "fulfilled").length, 1);
+  assert.equal(results.filter(result => result.status === "rejected").length, 1);
+  const saved = await getWeek("rolling-week:2098-02-23");
+  assert.equal(saved.entries.length, 1);
+  assert.ok(["Source A", "Source B"].includes(saved.entries[0].itemLabel));
+  assert.equal(saved.entries[0].id.startsWith(saved.week.id), true);
+});
+
+test("create and duplicate competing for one target are atomic, and conflict retry can use a new target", async () => {
+  const source = emptyWeek("2098-03-02", "duplicate-source");
+  const entry = { id: `${source.week.id}:entry:source`, dayId: source.days[0].id, date: source.days[0].date, slot: "SOUP", itemLabel: "Retryable copy", portions: 4, allocations: [], allergens: {}, audit: [] };
+  source.entries = [entry]; source.days[0].entryIds = [entry.id]; source.week.entryIds = [entry.id];
+  await saveSnapshot(source);
+  const blank = emptyWeek("2098-03-09", "blank-winner");
+  const results = await Promise.allSettled([saveSnapshot(blank), duplicateWeek(source.week.id, "2098-03-09", "duplicate-loser")]);
+  assert.equal(results.filter(result => result.status === "fulfilled").length, 1);
+  assert.equal(results.filter(result => result.status === "rejected").length, 1);
+  const saved = await getWeek("rolling-week:2098-03-09");
+  assert.ok(saved.entries.length === 0 || saved.entries.every(value => value.itemLabel === "Retryable copy"));
+  const retried = await duplicateWeek(source.week.id, "2098-03-16", "duplicate-retry");
+  assert.equal(retried.entries[0].itemLabel, "Retryable copy");
+});
+
+test("an existing target is never modified by a duplicate create-only attempt", async () => {
+  const source = emptyWeek("2098-03-23", "source-existing-target");
+  await saveSnapshot(source);
+  const target = emptyWeek("2098-03-30", "existing-target");
+  const existingEntry = { id: `${target.week.id}:entry:existing`, dayId: target.days[0].id, date: target.days[0].date, slot: "SOUP", itemLabel: "Existing target", portions: 7, allocations: [], allergens: {}, audit: [] };
+  target.entries = [existingEntry]; target.days[0].entryIds = [existingEntry.id]; target.week.entryIds = [existingEntry.id];
+  await saveSnapshot(target);
+  await assert.rejects(() => duplicateWeek(source.week.id, "2098-03-30", "should-conflict"), (error: any) => error.status === 409);
+  const saved = await getWeek(target.week.id);
+  assert.equal(saved.entries[0].itemLabel, "Existing target");
+  assert.equal(saved.week.audit[0].by, "existing-target");
+});
+
+test("copying into a missing deterministic target uses create-only initial version", async () => {
+  const source = emptyWeek("2098-04-06", "copy-source");
+  const sourceEntry = { id: `${source.week.id}:entry:source`, dayId: source.days[0].id, date: source.days[0].date, slot: "SOUP", itemLabel: "Copied into new target", portions: 5, allocations: [], allergens: {}, audit: [] };
+  source.entries = [sourceEntry]; source.days[0].entryIds = [sourceEntry.id]; source.week.entryIds = [sourceEntry.id];
+  await saveSnapshot(source);
+  const copied = await copyWeekIntoWeek(source.week.id, "rolling-week:2098-04-14", "copy-actor");
+  assert.equal(copied.week.version, 1);
+  assert.equal(copied.entries[0].itemLabel, "Copied into new target");
+  assert.equal((await getWeek(source.week.id)).week.version, 1);
 });
 
 test("concurrent ordinary entry commands are protected by week-version CAS", async () => {
