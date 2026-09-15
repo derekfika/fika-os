@@ -4,6 +4,8 @@ This file records user-facing workflow changes delivered in the repository. Deta
 
 ## Unreleased
 
+- **2026-09-15 — Delivered-In CPU PDF safety gate staging deployment submitted:** submitted exact-SHA rollout `c8ddd4a2211d9639737b9e3fea3d71610d3d69a7` for Delivered-In (`fika-delivered-in-staging`) in project `fika-os-dev`. Firebase compilation/propagation was not awaited. Deployment status: submitted; live verification pending.
+
 - **2026-09-15 — Delivered-In CPU PDF safety gate:** CPU signed PDF references now follow the same signed-and-no-failure gate as allergen enrichment and site-menu artifacts; unsafe or incomplete CPU enrichment cannot expose a PDF for the current Menu Planning day. Affected app: Delivered-In. Validation: focused materialiser tests 5/5, relevant Delivered-In tests 27/27, typecheck, production build and `git diff --check`. Deployment status: not deployed.
 
 - **2026-09-14 — UAT-DI-005 Menu Planning-to-Delivered-In handoff:** Delivered-In now materialises every valid published Menu Planning day independently of CPU allergen review; pending, unsigned, missing, mismatched or corrupt CPU evidence retains menu quantities while forcing allergen values to `unrecorded` and marking enrichment unavailable. Signed CPU packets overlay allergen state/PDF only after exact day-hash lineage validation. Weekly packets now preserve immutable per-day content hashes and reject packets without sufficient lineage. Affected apps: Delivered-In, Menu Planning and CPU Production. Validation: new materialiser regressions 4/4, CPU packet tests 5/5, typechecks/builds for all three apps passed, `git diff --check`; full suites retain pre-existing date-anchor and unrelated contract/environment failures. Deployment status: not deployed.
