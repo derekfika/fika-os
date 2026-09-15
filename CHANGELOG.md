@@ -4,6 +4,8 @@ This file records user-facing workflow changes delivered in the repository. Deta
 
 ## Unreleased
 
+- **2026-09-15 — CPU signed allergen lineage staging deployment submitted:** submitted exact-SHA rollout for `36873b0b62f3dc662009d6ac0b5902a706f76dfb` to Firebase App Hosting backend `fika-cpu-production-staging` in project `fika-os-dev`. Firebase compilation/propagation was not awaited. Deployment status: submitted; live verification pending.
+
 - **2026-09-15 — CPU signed allergen authority lineage hardening:** amended-order carry-forward now retains only editable review values; prior signatures, signed checkpoints, matrix artifacts, site artifacts and current releases are revoked from current use and preserved in release history. Signature restoration now requires exact production-order/source publication lineage plus matrix content, so identical menu content cannot resurrect a withdrawn publication’s signoff. Affected apps: CPU Production, with Delivered-In lineage compatibility coverage. Validation: focused CPU lineage tests 59/59; relevant Delivered-In tests 35/37 with two pre-existing unrelated failures; CPU typecheck/build passed; `git diff --check` passed. Deployment status: not deployed.
 
 - **2026-09-15 — Menu Planning OPLOC redirect authority staging deployment submitted:** submitted exact-SHA rollout for `ae58635f41cf49490e125e39119c8386b010418d` to Firebase App Hosting backend `fika-menu-planning-staging` in project `fika-os-dev`. Firebase compilation/propagation was not awaited. Deployment status: submitted; live verification pending.
