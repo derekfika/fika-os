@@ -4,6 +4,8 @@ This file records user-facing workflow changes delivered in the repository. Deta
 
 ## Unreleased
 
+- **2026-09-15 — Menu Planning staging deployment submitted:** submitted the validated Menu Planning commit `7bd90146d5d45ec4f4440e5da96302ba8f1b0be4` to Firebase App Hosting backend `fika-menu-planning-staging` in project `fika-os-dev`. Rollout compilation and propagation were not awaited. Deployment status: submitted; live verification pending.
+
 - **2026-09-15 — Firestore publication-day hierarchy recovery:** transactional and non-transactional Menu Planning publication readers now hydrate each day directly from its parent publication path and tolerate historical day documents without embedded `publicationId`, preserving immutable history while making stranded current weeks operable. Affected app: Menu Planning. Validation: Firestore reader, publication/withdrawal and handoff regressions, typecheck, production build and `git diff --check`. Deployment status: not deployed.
 
 - **2026-09-15 — Menu Planning publication-occurrence handoff staging deployment submitted:** submitted exact-SHA rollout for `921cab98a5169ff72560deb806c9294221b96d19` to Firebase App Hosting backend `fika-menu-planning-staging` in project `fika-os-dev`. Firebase compilation/propagation was not awaited. Deployment status: submitted; live verification pending.
