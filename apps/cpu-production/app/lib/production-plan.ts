@@ -48,3 +48,9 @@ export function currentAllergenReleaseMatchesOrder(release: CpuAllergenRelease |
   const lineageMatches = release.serviceDate === scope.serviceDate && release.sourceDayId === scope.sourceDayId && release.sourcePublicationId === scope.sourcePublicationId && release.sourcePublicationDayId === scope.sourcePublicationDayId && release.sourceVersion === scope.sourceVersion && release.sourceContentHash === scope.sourceContentHash;
   return lineageMatches && release.signatures.every(signature => signature.valid && signatureMatchesScope(signature, scope));
 }
+
+export function signedAllergenCheckpointMatchesOrder(plan: Pick<ProductionPlan, "signedMenuContentHash" | "signedSignatures" | "currentAllergenRelease">, order: { canonicalId: string; serviceDate?: string; requiredBy: string; sourceEntityId?: string; sourcePublicationId?: string; sourcePublicationDayId?: string; sourceVersion?: number; sourceContentHash?: string }, menuItems: PlannedMenuItem[]) {
+  const hash = allergenMatrixContentHash(menuItems);
+  const scope = matrixSignatureScope(order, hash);
+  return plan.signedMenuContentHash === hash && Boolean(scope && plan.signedSignatures?.length && plan.signedSignatures.every(signature => signatureMatchesScope(signature, scope)) && currentAllergenReleaseMatchesOrder(plan.currentAllergenRelease, order, menuItems));
+}

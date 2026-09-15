@@ -5,7 +5,7 @@ import { existsSync, promises as fs } from "node:fs";
 import path from "node:path";
 import { createHash } from "node:crypto";
 import { localFixtureOrders, updateLocalFixture } from "../local-fixtures";
-import { currentAllergenReleaseMatchesOrder, matrixSignatureScope, signatureMatchesScope, type AllergenCellState, type InternalMatrixSignature, type MatrixArtifact, type PlannedMenuItem, type ProductionPlan } from "../../lib/production-plan";
+import { currentAllergenReleaseMatchesOrder, matrixSignatureScope, signatureMatchesScope, signedAllergenCheckpointMatchesOrder, type AllergenCellState, type InternalMatrixSignature, type MatrixArtifact, type PlannedMenuItem, type ProductionPlan } from "../../lib/production-plan";
 import { allergenMatrixHtml } from "../../ui/allergen-matrix";
 import { isHostedPdfRuntime, renderPdfToBuffer } from "../../lib/local-pdf";
 import os from "node:os";
@@ -96,16 +96,23 @@ function normalisePlanAllergens(plan: ProductionPlan): ProductionPlan {
 }
 async function persistPlan(plan: ProductionPlan, expectedUpdatedAt?: string) { await planRepository.save(plan, expectedUpdatedAt); }
 function now() { return new Date().toISOString(); }
-function revokeCurrentAllergenRelease(plan: ProductionPlan, actor: string, at: string) {
+function invalidateSignedAllergenAuthorityForNewSourceLineage(plan: ProductionPlan, actor: string, at: string, reason: string) {
   const current = plan.currentAllergenRelease;
-  if (!current || current.status !== "current") return false;
-  plan.allergenReleaseHistory = [...(plan.allergenReleaseHistory || []), revokeCpuAllergenRelease(current, { at, by: actor, reason: "Allergen matrix changed after signed release." })];
+  const hasAuthority = Boolean(current || plan.signatures?.length || plan.signedSignatures?.length || plan.signedMenuContentHash || plan.matrixArtifact || plan.signedMatrixArtifact || plan.masterMatrixArtifact || plan.siteMatrixArtifacts);
+  if (current) {
+    const historical = current.status === "current" ? revokeCpuAllergenRelease(current, { at, by: actor, reason }) : current;
+    if (!(plan.allergenReleaseHistory || []).some(release => release.releaseId === historical.releaseId)) plan.allergenReleaseHistory = [...(plan.allergenReleaseHistory || []), historical];
+  }
   plan.currentAllergenRelease = undefined;
+  plan.signatures = undefined;
   plan.signedMenuContentHash = undefined;
   plan.signedSignatures = undefined;
   plan.signedMatrixArtifact = undefined;
-  plan.audit.push({ action: "allergen-release-revoked", at, by: actor, reason: "Allergen matrix changed after signed release." });
-  return true;
+  plan.matrixArtifact = undefined;
+  plan.masterMatrixArtifact = undefined;
+  plan.siteMatrixArtifacts = undefined;
+  if (hasAuthority) plan.audit.push({ action: "allergen-release-revoked", at, by: actor, reason });
+  return hasAuthority;
 }
 async function loadOrder(request: NextRequest, orderId: string) {
   try {
@@ -146,7 +153,10 @@ async function getPlan(request: NextRequest, orderId: string, knownPlan?: Produc
         const line = order.lines[index];
         return line ? { ...item, sourceLineId: line.canonicalId, subItems: item.subItems.map(sub => ({ ...sub, quantity: line.customerQuantity })) } : item;
       });
-      plans.set(orderId, { ...prior, id: `production-plan:${orderId}`, orderId, status: "draft", menuItems, signatures: undefined, matrixArtifact: undefined, masterMatrixArtifact: undefined, siteMatrixArtifacts: undefined, updatedAt: now(), updatedBy: "system", audit: [...prior.audit, { action: "plan-carried-to-amended-order", at: now(), by: "system", reason: "The Booking was amended; prior allergen work was retained as a draft for the replacement CPU order." }] });
+      const carried: ProductionPlan = { ...prior, id: `production-plan:${orderId}`, orderId, status: "draft", menuItems, updatedAt: now(), updatedBy: "system", audit: [...prior.audit] };
+      invalidateSignedAllergenAuthorityForNewSourceLineage(carried, "system", now(), "The Booking was amended; prior signed allergen authority cannot transfer to the replacement source lineage.");
+      carried.audit.push({ action: "plan-carried-to-amended-order", at: now(), by: "system", reason: "The Booking was amended; prior allergen work was retained as a draft for the replacement CPU order." });
+      plans.set(orderId, carried);
     } else {
       plans.set(orderId, initialPlan(orderId, order));
     }
@@ -163,20 +173,20 @@ async function applyMatrixOperation(request: NextRequest, actor: Awaited<ReturnT
   const auditActor = actor.name || actor.uid;
   const nextMenuItems = (await mergeOriginalItems(request, { ...plan, menuItems: normalisePlanAllergens({ ...plan, menuItems: operation.menuItems }).menuItems }, operation.orderId, order)).menuItems;
   const contentChanged = JSON.stringify(plan.menuItems) !== JSON.stringify(nextMenuItems);
-  const matchesSignedCheckpoint = plan.signedMenuContentHash === menuContentHash(nextMenuItems);
+  const matchesSignedCheckpoint = signedAllergenCheckpointMatchesOrder(plan, order, nextMenuItems);
   plan.menuItems = nextMenuItems;
   plan.planningNotes = operation.planningNotes;
   if (operation.action === "save-plan") {
     plan.status = matchesSignedCheckpoint ? "planned" : "planning";
     if (matchesSignedCheckpoint && plan.currentAllergenRelease?.status === "current") { plan.signatures = plan.signedSignatures; plan.matrixArtifact = plan.signedMatrixArtifact; }
-    else { if (contentChanged) revokeCurrentAllergenRelease(plan, auditActor, now()); plan.signatures = undefined; plan.matrixArtifact = undefined; plan.masterMatrixArtifact = undefined; plan.siteMatrixArtifacts = undefined; }
+    else { if (contentChanged || plan.currentAllergenRelease) invalidateSignedAllergenAuthorityForNewSourceLineage(plan, auditActor, now(), "The allergen matrix or source lineage changed after signed release."); }
     plan.audit.push({ action: "plan-saved", at: now(), by: auditActor });
     updateLocalFixture(operation.orderId, current => ({ ...current, status: "planning", version: current.version + 1 }));
   } else {
     const subItems = plan.menuItems.flatMap(item => item.subItems);
     if (!plan.menuItems.length || plan.menuItems.some(item => !item.name.trim() || !item.subItems.length) || subItems.some(item => !item.name.trim() || item.evidenceStatus !== "completed")) throw Object.assign(new Error("Complete every menu item, sub-item name and allergen checker before marking the plan Planned."), { status: 422 });
-    if (matchesSignedCheckpoint && plan.currentAllergenRelease?.status === "current") { plan.signatures = plan.signedSignatures; plan.matrixArtifact = plan.signedMatrixArtifact; }
-    else if (contentChanged) { revokeCurrentAllergenRelease(plan, auditActor, now()); plan.signatures = undefined; plan.matrixArtifact = undefined; plan.masterMatrixArtifact = undefined; plan.siteMatrixArtifacts = undefined; }
+    if (matchesSignedCheckpoint) { plan.signatures = plan.signedSignatures; plan.matrixArtifact = plan.signedMatrixArtifact; }
+    else if (contentChanged || plan.currentAllergenRelease) invalidateSignedAllergenAuthorityForNewSourceLineage(plan, auditActor, now(), "The allergen matrix or source lineage changed after signed release.");
     plan.status = "planned";
     plan.audit.push({ action: "plan-marked-planned", at: now(), by: auditActor });
     updateLocalFixture(operation.orderId, current => ({ ...current, status: "planned", version: current.version + 1 }));
@@ -205,11 +215,7 @@ async function mergeOriginalItems(request: NextRequest, plan: ProductionPlan, or
   const missing = order.lines.filter(line => !existing.has(line.canonicalId)).map((line, index) => ({ id: `menu-item:${orderId}:original:${index}`, sourceLineId: line.canonicalId, name: line.itemName, note: "", subItems: [{ id: `sub-item:${orderId}:original:${index}`, name: "", quantity: line.customerQuantity, allergens: {}, note: "", evidenceStatus: "not_completed" as const }] }));
   const next = missing.length ? { ...plan, menuItems: [...plan.menuItems, ...missing] } : plan;
   if (next.currentAllergenRelease && !currentAllergenReleaseMatchesOrder(next.currentAllergenRelease, order, next.menuItems)) {
-    revokeCurrentAllergenRelease(next, "system", now());
-    next.signatures = undefined;
-    next.matrixArtifact = undefined;
-    next.masterMatrixArtifact = undefined;
-    next.siteMatrixArtifacts = undefined;
+    invalidateSignedAllergenAuthorityForNewSourceLineage(next, "system", now(), "The canonical source lineage changed after signed release.");
   }
   return next;
 }
@@ -467,7 +473,7 @@ async function handlePost(request: NextRequest) {
     if (command.action === "save-plan") {
       const nextMenuItems = (await mergeOriginalItems(request, { ...plan, menuItems: normalisePlanAllergens({ ...plan, menuItems: command.menuItems }).menuItems }, command.orderId)).menuItems;
       const contentChanged = JSON.stringify(plan.menuItems) !== JSON.stringify(nextMenuItems);
-      const matchesSignedCheckpoint = plan.signedMenuContentHash === menuContentHash(nextMenuItems);
+      const matchesSignedCheckpoint = signedAllergenCheckpointMatchesOrder(plan, currentOrder, nextMenuItems);
       plan.status = matchesSignedCheckpoint ? "planned" : "planning";
       plan.menuItems = nextMenuItems;
       plan.planningNotes = command.planningNotes;
@@ -475,9 +481,7 @@ async function handlePost(request: NextRequest) {
         plan.signatures = plan.signedSignatures;
         plan.matrixArtifact = plan.signedMatrixArtifact;
       } else {
-        if (contentChanged) revokeCurrentAllergenRelease(plan, auditActor, timestamp);
-        plan.signatures = undefined;
-        plan.matrixArtifact = undefined; plan.masterMatrixArtifact = undefined; plan.siteMatrixArtifacts = undefined;
+        if (contentChanged || plan.currentAllergenRelease) invalidateSignedAllergenAuthorityForNewSourceLineage(plan, auditActor, timestamp, "The allergen matrix or source lineage changed after signed release.");
       }
       plan.audit.push({ action: "plan-saved", at: timestamp, by: auditActor });
       updateLocalFixture(command.orderId, order => ({ ...order, status: "planning", version: order.version + 1 }));
@@ -485,7 +489,7 @@ async function handlePost(request: NextRequest) {
     if (command.action === "mark-planned") {
       const nextMenuItems = (await mergeOriginalItems(request, { ...plan, menuItems: normalisePlanAllergens({ ...plan, menuItems: command.menuItems }).menuItems }, command.orderId)).menuItems;
       const contentChanged = JSON.stringify(plan.menuItems) !== JSON.stringify(nextMenuItems);
-      const matchesSignedCheckpoint = plan.signedMenuContentHash === menuContentHash(nextMenuItems);
+      const matchesSignedCheckpoint = signedAllergenCheckpointMatchesOrder(plan, currentOrder, nextMenuItems);
       plan.menuItems = nextMenuItems;
       plan.planningNotes = command.planningNotes;
       const subItems = plan.menuItems.flatMap(item => item.subItems);
@@ -493,10 +497,8 @@ async function handlePost(request: NextRequest) {
       if (matchesSignedCheckpoint && plan.currentAllergenRelease?.status === "current") {
         plan.signatures = plan.signedSignatures;
         plan.matrixArtifact = plan.signedMatrixArtifact;
-      } else if (contentChanged) {
-        revokeCurrentAllergenRelease(plan, auditActor, timestamp);
-        plan.signatures = undefined;
-        plan.matrixArtifact = undefined; plan.masterMatrixArtifact = undefined; plan.siteMatrixArtifacts = undefined;
+      } else if (contentChanged || plan.currentAllergenRelease) {
+        invalidateSignedAllergenAuthorityForNewSourceLineage(plan, auditActor, timestamp, "The allergen matrix or source lineage changed after signed release.");
       }
       plan.status = "planned"; plan.audit.push({ action: "plan-marked-planned", at: timestamp, by: auditActor }); updateLocalFixture(command.orderId, order => ({ ...order, status: "planned", version: order.version + 1 }));
       await syncCanonicalLifecycle(request, command.orderId, "planned", "Production plan marked Planned by the production chef.");

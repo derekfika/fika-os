@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { allergenMatrixContentHash, buildCpuAllergenRelease, revokeCpuAllergenRelease } from "../lib/cpu-allergen-release";
-import { currentAllergenReleaseMatchesOrder, type PlannedMenuItem } from "../app/lib/production-plan";
+import { currentAllergenReleaseMatchesOrder, signedAllergenCheckpointMatchesOrder, type PlannedMenuItem } from "../app/lib/production-plan";
 
 const source = { sourceDayId: "rolling-week:day:0", sourcePublicationDayId: "publication:day:v1", sourceVersion: 1, sourceContentHash: "a".repeat(64) };
 const items: PlannedMenuItem[] = [{ id: "dish:1", name: "Salad A", note: "", subItems: [{ id: "sub:1", name: "Salad A", quantity: 1, allergens: { sulphites: "clear" }, note: "", evidenceStatus: "completed" as const }] }];
@@ -20,4 +20,11 @@ test("current release validity requires every current production-order lineage f
   assert.equal(currentAllergenReleaseMatchesOrder(release, { ...order, sourcePublicationDayId: "publication:day:v2" }, items), false);
   const revoked = revokeCpuAllergenRelease(release, { at: "2026-09-03T10:00:00Z", by: "chef:1", reason: "Changed source" });
   assert.equal(currentAllergenReleaseMatchesOrder(revoked, order, items), false);
+});
+test("identical menu content cannot restore a release from another publication lineage", () => {
+  const release = build();
+  const plan = { signedMenuContentHash: allergenMatrixContentHash(items), signedSignatures: signatures, currentAllergenRelease: release };
+  const order = { canonicalId: "production:1", serviceDate: "2026-09-03", requiredBy: "2026-09-03T12:00:00Z", sourceEntityId: source.sourceDayId, sourcePublicationDayId: source.sourcePublicationDayId, sourceVersion: source.sourceVersion, sourceContentHash: source.sourceContentHash };
+  assert.equal(signedAllergenCheckpointMatchesOrder(plan, order, items), true);
+  assert.equal(signedAllergenCheckpointMatchesOrder(plan, { ...order, sourcePublicationDayId: "publication:day:v2" }, items), false);
 });
