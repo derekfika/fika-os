@@ -2,9 +2,10 @@ import { NextResponse } from "next/server";
 import { filterCatalogueEntries, getCatalogueEntryById } from "@/lib/catalogue";
 import { createCanonicalMenuItem, createCanonicalMenuItems, mergeSimilarCanonicalItems, previewSimilarCanonicalItems } from "@/lib/canonical-menu-repository";
 import { repointDishIds } from "@/lib/rolling-menu";
-import { getPublishedCatalogueManifest as getCatalogueManifest } from "@/lib/catalogue-manifest";
+import { getCatalogueManifest } from "@/lib/catalogue-manifest";
 import { withDataTrace } from "@fika/server-shared/data-source-meter-server";
 import { getCatalogueReadPackage } from "@/lib/catalogue-read-package";
+import { requireCatalogueMutationActor, resolveMenuActor } from "@/lib/auth";
 
 async function handleGet(request: Request) {
   try {
@@ -33,15 +34,16 @@ async function handleGet(request: Request) {
 
 export async function GET(request: Request) { return withDataTrace({ app: "menu-planning", action: new URL(request.url).searchParams.get("manifest") === "true" ? "menu-planning.catalogue.manifest" : "menu-planning.catalogue.load", path: new URL(request.url).pathname }, () => handleGet(request)); }
 
-async function handlePost(request: Request) {
+async function handlePost(request: import("next/server").NextRequest) {
   let action = "";
   try {
     const body = await request.json() as { action?: string; displayName?: string; category?: string; description?: string; preparationNotes?: string; canonicalIds?: string[]; items?: Array<{ displayName: string; category?: string; sourceReference?: { workbook: string; sheet: string; range?: string; rawValue?: unknown }; sourceEvidence?: { document: string; excerpt?: string; importedAt: string } }>; sourceReference?: { workbook: string; sheet: string; range?: string; rawValue?: unknown }; sourceEvidence?: { document: string; excerpt?: string; importedAt: string }; allergenEvidence?: Array<{ allergen: string; value: "contains" | "free_from" | "may_contain" | "unknown"; source: string; reviewedBy?: string; reviewedAt?: string; notes?: string }> };
     action = String(body.action || "");
+    const actor = requireCatalogueMutationActor(await resolveMenuActor(request));
     if (action === "create-dish") {
       if (!body.displayName?.trim()) return NextResponse.json({ error: { message: "A dish name is required." } }, { status: 422 });
-      const result = await createCanonicalMenuItem({ ...body, displayName: body.displayName! });
-      return NextResponse.json({ item: result, outcome: result.outcome }, { status: result.outcome === "created_new" ? 201 : 200 });
+      const result = await createCanonicalMenuItem({ ...body, displayName: body.displayName! }, actor.uid);
+      return NextResponse.json({ item: result, outcome: result.outcome, catalogue: await getCatalogueManifest() }, { status: result.outcome === "created_new" ? 201 : 200 });
     }
     if (action === "create-dishes") {
       const items = body.items || [];
@@ -49,13 +51,13 @@ async function handlePost(request: Request) {
       for (const input of items) {
         if (!input.displayName?.trim()) return NextResponse.json({ error: { message: "Every dish in the batch needs a name." } }, { status: 422 });
       }
-      const results = await createCanonicalMenuItems(items);
-      return NextResponse.json({ results: results.map(result => ({ item: result, outcome: result.outcome })), createdCount: results.filter(result => result.outcome === "created_new").length, matchedCount: results.filter(result => result.outcome !== "created_new").length });
+      const results = await createCanonicalMenuItems(items, actor.uid);
+      return NextResponse.json({ results: results.map(result => ({ item: result, outcome: result.outcome })), createdCount: results.filter(result => result.outcome === "created_new").length, matchedCount: results.filter(result => result.outcome !== "created_new").length, catalogue: await getCatalogueManifest() });
     }
     if (action !== "merge-similar-dishes" && action !== "merge-reviewed-dishes") return NextResponse.json({ error: { message: "Unknown catalogue command." } }, { status: 400 });
-    const result = await mergeSimilarCanonicalItems(action === "merge-reviewed-dishes" ? "reviewed-dish-merge" : "automatic-dish-normaliser", action === "merge-reviewed-dishes" ? new Set(body.canonicalIds || []) : undefined);
+    const result = await mergeSimilarCanonicalItems(actor.uid, action === "merge-reviewed-dishes" ? new Set(body.canonicalIds || []) : undefined);
     const updatedEntries = await repointDishIds(result.mapping, result.aliases);
-    return NextResponse.json({ merged: result.merged, updatedEntries });
+    return NextResponse.json({ merged: result.merged, updatedEntries, catalogue: await getCatalogueManifest() });
   } catch (error) {
     const status = error && typeof error === "object" && "status" in error && typeof (error as { status?: unknown }).status === "number" ? (error as { status: number }).status : 500;
     console.error("Menu Planning catalogue mutation failed", error);
@@ -63,6 +65,6 @@ async function handlePost(request: Request) {
   }
 }
 
-export async function POST(request: Request) {
+export async function POST(request: import("next/server").NextRequest) {
   return withDataTrace({ app: "menu-planning", action: "menu-planning.catalogue.mutate", path: new URL(request.url).pathname }, () => handlePost(request));
 }

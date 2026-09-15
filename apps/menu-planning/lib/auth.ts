@@ -29,6 +29,8 @@ export async function resolveMenuActor(request: NextRequest): Promise<MenuActor>
 }
 
 export function requireMutationActor(actor: MenuActor) { if (actor.role === "viewer") throw failure("This identity is read-only for Menu Planning.", 403); return actor; }
+/** Catalogue writes require a real Hub-authenticated identity; local synthetic admission is read/test-only here. */
+export function requireCatalogueMutationActor(actor: MenuActor) { if (actor.synthetic) throw failure("An authenticated Menu Planning identity is required for catalogue changes.", 401); return requireMutationActor(actor); }
 export function requirePublicationActor(actor: MenuActor) { if (actor.role !== "integration-admin") throw failure("Only an Integration Administrator may publish or withdraw a menu.", 403); return actor; }
 
 export function actorCanAccessOploc(actor: MenuActor, oplocId?: string) {

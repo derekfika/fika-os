@@ -15,6 +15,7 @@ export type ReadPackageManifest = {
   recordCount: number;
   generatedAt: string;
   sourceVersion?: string;
+  sourceHash?: string;
   scope?: string;
 };
 
@@ -30,7 +31,7 @@ export function canonicalJson(value: unknown) { return JSON.stringify(value); }
 export function sha256(bytes: Uint8Array | string) { return createHash("sha256").update(bytes).digest("hex"); }
 export function immutableObjectName(dataset: string, version: number, contentHash: string) { return `${dataset}/v${version}-${contentHash}.json.gz`; }
 
-export function encodeReadPackage<T>(dataset: string, version: number, value: T, recordCount: number, options: { schemaVersion?: number; contractVersion?: string; sourceVersion?: string; scope?: string } = {}) {
+export function encodeReadPackage<T>(dataset: string, version: number, value: T, recordCount: number, options: { schemaVersion?: number; contractVersion?: string; sourceVersion?: string; sourceHash?: string; scope?: string } = {}) {
   const plain = Buffer.from(canonicalJson(value), "utf8");
   const compressed = gzipSync(plain, { level: 9 });
   const contentHash = sha256(compressed);
@@ -38,7 +39,7 @@ export function encodeReadPackage<T>(dataset: string, version: number, value: T,
     dataset, packageVersion: version, schemaVersion: options.schemaVersion || 1, contractVersion: options.contractVersion || "1.0.0",
     objectName: immutableObjectName(dataset, version, contentHash), compression: "gzip", contentHash,
     compressedSize: compressed.byteLength, uncompressedSize: plain.byteLength, recordCount, generatedAt: new Date().toISOString(),
-    ...(options.sourceVersion ? { sourceVersion: options.sourceVersion } : {}), ...(options.scope ? { scope: options.scope } : {}),
+    ...(options.sourceVersion ? { sourceVersion: options.sourceVersion } : {}), ...(options.sourceHash ? { sourceHash: options.sourceHash } : {}), ...(options.scope ? { scope: options.scope } : {}),
   };
   return { manifest, bytes: compressed };
 }

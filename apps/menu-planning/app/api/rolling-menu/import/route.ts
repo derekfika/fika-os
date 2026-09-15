@@ -6,6 +6,7 @@ import { listCanonicalMenuItems, recordDishSourceAliases } from "@/lib/canonical
 import { applyDishResolutions, parseWorkbookWeekCommencing, repairArchivedWeekDishIdentities, resolveDishNames, safeDishKey } from "@/lib/legacy-week-importer";
 import { withDataTrace } from "@fika/server-shared/data-source-meter-server";
 import type { RollingSnapshot } from "@/lib/rolling-menu-types";
+import { requireCatalogueMutationActor, resolveMenuActor } from "@/lib/auth";
 
 type ResolutionInput = { sourceName: string; canonicalId?: string; ignored?: boolean; remember?: boolean };
 
@@ -40,6 +41,9 @@ async function handlePost(request: NextRequest) {
     const contentType = request.headers.get("content-type") || "";
     if (contentType.includes("application/json")) {
       const body = await request.json() as { action?: string; snapshot?: RollingSnapshot; snapshots?: RollingSnapshot[]; resolutions?: ResolutionInput[]; replaceWeeks?: Array<{ weekCommencing: string; expectedVersion: number }> };
+      const actor = body.action === "commit" || body.action === "repair-archived-identities" && Boolean((body as typeof body & { confirm?: boolean }).confirm)
+        ? requireCatalogueMutationActor(await resolveMenuActor(request))
+        : undefined;
       if (body.action === "repair-archived-identities") {
         const repair = body as typeof body & { weekCommencing?: string; expectedVersion?: number; confirm?: boolean };
         if (!repair.weekCommencing) return NextResponse.json({ error: { message: "Exactly one planning week is required for an identity repair." } }, { status: 422 });
@@ -52,7 +56,7 @@ async function handlePost(request: NextRequest) {
         if (repair.expectedVersion !== snapshot.week.version) return NextResponse.json({ error: { message: "The planning week changed; rerun the dry-run report before applying repair." } }, { status: 409 });
         if (report.blocked.length) return NextResponse.json({ error: { message: "Repair is blocked because one or more archived dish identities have no active survivor.", report } }, { status: 422 });
         report.snapshot.week.version += 1;
-        report.snapshot.week.audit.push({ action: "archived-dish-identity-repair", at: new Date().toISOString(), by: "menu-planning-repair" });
+        report.snapshot.week.audit.push({ action: "archived-dish-identity-repair", at: new Date().toISOString(), by: actor?.uid || "menu-planning-repair" });
         const saved = await replaceSnapshotsExplicit([report.snapshot], { [repair.weekCommencing]: snapshot.week.version });
         return NextResponse.json({ dryRun: false, report: { ...report, snapshot: saved[0] } });
       }
@@ -85,7 +89,7 @@ async function handlePost(request: NextRequest) {
       }
       let saved: RollingSnapshot[];
       try { saved = replaceWeeks.size ? await replaceSnapshotsExplicit(prepared, Object.fromEntries(replaceWeeks), oplocs) : await saveSnapshotsCreateOnly(prepared, oplocs); } catch (error) { const status = (error as { status?: number }).status === 409 ? 409 : 422; return NextResponse.json({ error: { message: error instanceof Error ? error.message : "The menu weeks could not be imported." } }, { status }); }
-      await recordDishSourceAliases(aliasesById);
+      await recordDishSourceAliases(aliasesById, actor!.uid);
       const blockers = (await Promise.all(saved.map(snapshot => validateWeekAuthoritative(snapshot, { governedOplocIds: new Set(oplocs.map(oploc => oploc.canonicalId)) })))).flat();
       return NextResponse.json({ snapshots: saved, weeks: await listWeeksByCommencing(saved.map(snapshot => snapshot.week.weekCommencing)), blockers });
     }

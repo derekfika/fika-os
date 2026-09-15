@@ -12,6 +12,8 @@ import { recordMenuPlanningReadBudget } from "./read-budget";
 import { getCatalogueManifest } from "./catalogue-manifest";
 import { recordDataAccess } from "@fika/server-shared/data-source-meter-server";
 import { catalogueUsagesFor } from "./catalogue-usage";
+import { catalogueSourceHash } from "./catalogue-source";
+import { markCataloguePackageFailed, type CataloguePackageState } from "./catalogue-manifest";
 
 const filePath = appDataPath("menu-planning", "menu-planning", "canonical-menu-items.json");
 const HOSTED_CATALOGUE_TTL_MS = 60_000;
@@ -65,9 +67,9 @@ const hostedDb = () => {
 };
 export const hostedDocument = (item: MenuItem) => sanitiseFirestoreValue({ id: item.canonicalId, kind: "dish", source: "menu-planning-local", record: item, reconciliationStatus: "reconciled", schemaVersion: "1.0.0" });
 const recordsEqual = (left: unknown, right: unknown) => JSON.stringify(left) === JSON.stringify(right);
-async function publishItemsBestEffort(items: MenuItem[]) {
+async function publishItemsBestEffort(items: MenuItem[], source: { sourceRevision: number; sourceHash: string }) {
   try {
-    const { publishCataloguePackage } = await import("./catalogue-read-package");
+    const { materialiseCataloguePackage } = await import("./catalogue-read-package");
     const entries = items.filter(item => item.reviewStatus !== "archived").map(item => ({
       id: item.canonicalId, kind: "canonical" as const, name: item.displayName, description: item.description || item.preparationDescription,
       category: normaliseDishCategory(item.category || item.subcategory), subcategory: item.subcategory, usage: catalogueUsagesFor(item),
@@ -76,11 +78,17 @@ async function publishItemsBestEffort(items: MenuItem[]) {
       recipeAvailable: Boolean(item.ingredients?.length || item.methodSteps?.length || item.preparationDescription),
       allergenCount: item.allergenEvidence.filter(evidence => evidence.value !== "unknown").length, item,
     }));
-    await publishCataloguePackage(entries);
-  } catch (error) { console.warn("[FIKA_SNAPSHOT_STALE] canonical catalogue mutation succeeded but package publication failed", error); }
+    const result = await materialiseCataloguePackage(entries, source);
+    if (result.status !== "current") console.warn("[FIKA_SNAPSHOT_STALE] canonical catalogue mutation succeeded but package publication is not current", result.error || result.status);
+    return result;
+  } catch (error) {
+    await markCataloguePackageFailed(source, error);
+    console.warn("[FIKA_SNAPSHOT_STALE] canonical catalogue mutation succeeded but package publication failed", error);
+    return { status: "failed" as const, error };
+  }
 }
 
-async function writeItems(items: MenuItem[], options: { currentItems?: MenuItem[] } = {}) {
+async function writeItems(items: MenuItem[], options: { currentItems?: MenuItem[]; actor?: string } = {}) {
   if (hosted()) {
     const persistedItems = items.map(item => sanitiseFirestoreValue(item));
     const db = hostedDb();
@@ -94,7 +102,14 @@ async function writeItems(items: MenuItem[], options: { currentItems?: MenuItem[
     }
     const changed = persistedItems.filter(item => !recordsEqual(currentById.get(item.canonicalId)?.record, item));
     if (!changed.length) return;
+    let source: { sourceRevision: number; sourceHash: string } | undefined;
     await db.runTransaction(async transaction => {
+      const manifestRef = db.collection("fikaMenuPlanningCatalogueManifests").doc("catalogue");
+      const manifest = await transaction.get(manifestRef);
+      const manifestValue = manifest.exists ? manifest.data() || {} : {};
+      const sourceRevision = Number(manifestValue.sourceRevision ?? manifestValue.catalogueVersion ?? 0) + 1;
+      const sourceHash = catalogueSourceHash(persistedItems);
+      source = { sourceRevision, sourceHash };
       const refs = changed.map(item => db.collection("fikaMenuPlanningCatalogue").doc(item.canonicalId));
       const latest = await transaction.getAll(...refs);
       recordDataAccess({ app: "menu-planning", operation: "catalogue.mutation-transaction-read", source: "FIRESTORE", documents: latest.length, firestoreReadKind: "transaction" });
@@ -105,19 +120,23 @@ async function writeItems(items: MenuItem[], options: { currentItems?: MenuItem[
         if (existingRecord && existingRecord.revision > item.revision && existingRecord.reviewStatus !== "unreviewed") return;
         transaction.set(refs[index], sanitiseFirestoreValue({ ...(existing || hostedDocument(item)), id: item.canonicalId, kind: "dish", record: item }), { merge: true });
       });
-      });
+      const at = new Date().toISOString();
+      transaction.set(manifestRef, sanitiseFirestoreValue({ schemaVersion: 1, catalogueVersion: sourceRevision, sourceRevision, sourceHash, updatedAt: at, dishCount: persistedItems.length, packageState: { status: "pending", sourceRevision, sourceHash, requestedAt: at, updatedAt: at, attempts: 0 } satisfies CataloguePackageState, ...(options.actor ? { lastMutationBy: options.actor } : {}) }), { merge: true });
+    });
     recordDataAccess({ app: "menu-planning", operation: "catalogue.mutation-write", source: "FIRESTORE", documents: changed.length, estimatedFirestoreWrites: changed.length });
     invalidateHostedCatalogueCache();
-    await publishItemsBestEffort(persistedItems);
-    return;
+    return source ? await publishItemsBestEffort(persistedItems, source) : undefined;
   }
   assertOperationalStoreAvailable();
   await mkdir(path.dirname(filePath), { recursive: true });
   const normalised = items.map(item => ({ ...item, displayName: normaliseDishName(item.displayName) }));
   let version = 0;
   try { version = Number((JSON.parse(await readFile(filePath, "utf8")) as { version?: number }).version || 0); } catch { /* First local catalogue write. */ }
-  await writeFile(filePath, JSON.stringify({ version: version + 1, updatedAt: new Date().toISOString(), items: normalised }, null, 2) + "\n", "utf8");
-  await publishItemsBestEffort(normalised);
+  const sourceRevision = version + 1;
+  const sourceHash = catalogueSourceHash(normalised);
+  const at = new Date().toISOString();
+  await writeFile(filePath, JSON.stringify({ version: sourceRevision, sourceRevision, sourceHash, updatedAt: at, ...(options.actor ? { lastMutationBy: options.actor } : {}), packageState: { status: "pending", sourceRevision, sourceHash, requestedAt: at, updatedAt: at, attempts: 0 } satisfies CataloguePackageState, items: normalised }, null, 2) + "\n", "utf8");
+  return await publishItemsBestEffort(normalised, { sourceRevision, sourceHash });
 }
 
 export { getCatalogueManifest };
@@ -163,7 +182,7 @@ export async function recordDishSourceAliases(aliasesById: Record<string, string
     if (next.length === (item.sourceAliases || []).length) continue;
     item.sourceAliases = next; item.revision += 1; item.audit.push({ action: "legacy-workbook-dish-alias-confirmed", at, by: actor }); changed += 1;
   }
-  if (changed) await writeItems(items);
+  if (changed) await writeItems(items, { actor });
   return changed;
 }
 
@@ -178,7 +197,7 @@ export async function createCanonicalMenuItem(input: { displayName: string; cate
   const key = displayName.toLocaleLowerCase("en-GB");
   const active = items.filter(item => item.reviewStatus !== "archived");
   const existing = active.find(item => item.displayName.trim().toLocaleLowerCase("en-GB") === key);
-  if (existing) { if (existing.displayName !== displayName) { existing.displayName = displayName; await writeItems(items); } return { ...existing, outcome: "matched_active" }; }
+  if (existing) { if (existing.displayName !== displayName) { existing.displayName = displayName; existing.audit.push({ action: "canonical-dish-name-normalised", at: new Date().toISOString(), by: actor }); await writeItems(items, { actor }); } return { ...existing, outcome: "matched_active" }; }
   const mergedAlias = active.find(item => (item.sourceAliases || []).some(alias => alias.trim().toLocaleLowerCase("en-GB") === key));
   if (mergedAlias) return { ...mergedAlias, outcome: "matched_merged_alias" };
   const at = new Date().toISOString();
@@ -200,7 +219,7 @@ export async function createCanonicalMenuItem(input: { displayName: string; cate
     audit: [{ action: "locally-created-in-menu-planning", at, by: actor }],
   };
   items.push(item);
-  await writeItems(items);
+  await writeItems(items, { actor });
   return { ...item, outcome: "created_new" };
 }
 
@@ -228,7 +247,7 @@ export async function createCanonicalMenuItems(inputs: CanonicalMenuItemCreateIn
     currentItems.push(item);
     results.push({ ...item, outcome: "created_new" });
   }
-  if (results.some(result => result.outcome === "created_new")) await writeItems(currentItems, { currentItems: baseline });
+  if (results.some(result => result.outcome === "created_new")) await writeItems(currentItems, { currentItems: baseline, actor });
   return results;
 }
 
@@ -271,7 +290,7 @@ export async function syncRollingEntries(entries: RollingEntry[], actor = "rolli
     });
     changed = true;
   }
-  if (changed) await writeItems(items);
+  if (changed) await writeItems(items, { actor });
   return items;
 }
 
@@ -291,10 +310,10 @@ export function canonicalFromSourceCandidate(candidate: MenuItem, actor = "local
 export async function promoteSourceCandidate(candidate: MenuItem, actor = "local-menu-reviewer") {
   const items = await readItems();
   const existing = items.find((item) => item.canonicalId === candidate.canonicalId);
-  if (existing) { const displayName = normaliseDishName(existing.displayName); if (existing.displayName !== displayName) { existing.displayName = displayName; await writeItems(items); } return existing; }
+  if (existing) { const displayName = normaliseDishName(existing.displayName); if (existing.displayName !== displayName) { existing.displayName = displayName; existing.audit.push({ action: "canonical-dish-name-normalised", at: new Date().toISOString(), by: actor }); await writeItems(items, { actor }); } return existing; }
   const item = canonicalFromSourceCandidate(candidate, actor);
   items.push(item);
-  await writeItems(items);
+  await writeItems(items, { actor });
   return item;
 }
 
@@ -375,6 +394,6 @@ export async function mergeSimilarCanonicalItems(actor = "automatic-dish-normali
   for (const item of items.filter(item => item.reviewStatus !== "archived" && inScope(item))) { const key = `${normaliseDishCategory(item.category)}|${mergeKey(item.displayName)}`; if (key.endsWith("|")) continue; winners.set(key, item); }
   const aliases: Record<string, string> = {};
   for (const item of items.filter(inScope)) { const winner = winners.get(`${normaliseDishCategory(item.category)}|${mergeKey(item.displayName)}`); if (winner && winner.canonicalId !== item.canonicalId) { mapping[item.canonicalId] = winner.canonicalId; aliases[item.displayName.toLocaleLowerCase()] = winner.displayName; } }
-  if (merged) await writeItems(items);
+  if (merged) await writeItems(items, { actor });
   return { mapping, aliases, merged };
 }

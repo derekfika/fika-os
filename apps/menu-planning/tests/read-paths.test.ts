@@ -334,6 +334,6 @@ test("normal warm Dish Library path does not perform a broad catalogue Firestore
 test("catalogue mutations publish an immutable package after canonical persistence", () => {
   const repository = readFileSync(new URL("../lib/canonical-menu-repository.ts", import.meta.url), "utf8");
   assert.doesNotMatch(repository, /__manifest__/);
-  assert.match(repository, /publishCataloguePackage/);
+  assert.match(repository, /materialiseCataloguePackage/);
   assert.match(readFileSync(new URL("../../../packages/server-shared/src/read-package.ts", import.meta.url), "utf8"), /putImmutable/);
 });
