@@ -4,6 +4,7 @@ import { MenuPlanningFirestoreRepository, type HostedTransactionState } from "..
 import { markEventDeadLetter, markEventDelivered, markEventFailed, outboxRecord, resetEventForReplay, type DurableDomainEvent } from "../lib/fika-contracts";
 import type { RollingDay, RollingEntry, RollingWeek } from "../lib/rolling-menu-types";
 import { encodeWeeklyPublicationPacket } from "@fika/server-shared/weekly-publication-packet";
+import { OperationBudget } from "../../../test-support/operation-budget";
 
 const week = (id: string): RollingWeek => ({ id, weekCommencing: "2026-08-24", weekEnding: "2026-08-30", status: "draft", version: 1, dayIds: [], entryIds: [], sourceFiles: [], audit: [] });
 const day = (id: string, weekId: string): RollingDay => ({ id, date: "2026-08-24", dayName: "Monday", entryIds: [] });
@@ -90,7 +91,7 @@ const event = (id: string, status: "pending" | "delivered" | "failed", sourceVer
 function boundedQueueHarness(events: DurableDomainEvent[]) {
   const eventDocs = new Map(events.map(value => [value.eventId, structuredClone(value)]));
   const outboxDocs = new Map(events.map(value => [value.eventId, outboxRecord(value)]));
-  let attemptedReads = 0;
+  const budget = new OperationBudget();
   const query = (collection: string, filters: Array<[string, string, unknown]> = [], ordering: Array<[string, "asc" | "desc"]> = [], limitCount?: number, cursor?: unknown[]): any => ({
     kind: "query", collection, filters, ordering, limitCount, cursor,
     where(field: string, operator: string, value: unknown) { return query(collection, [...filters, [field, operator, value]], ordering, limitCount, cursor); },
@@ -111,7 +112,7 @@ function boundedQueueHarness(events: DurableDomainEvent[]) {
       const transaction = {
         get: async (target: any) => {
           if (target.kind === "document") {
-            attemptedReads += 1;
+            budget.read();
             const value = target.collection === "fikaMenuPlanningEvents" ? eventDocs.get(target.id) : outboxDocs.get(target.id);
             return { id: target.id, exists: value !== undefined, data: () => structuredClone(value) };
           }
@@ -123,7 +124,7 @@ function boundedQueueHarness(events: DurableDomainEvent[]) {
           if (target.ordering.length) values.sort((left, right) => { for (const [field, direction] of target.ordering) { const a = field === "__name__" ? String((left as any).eventId) : String(valueAt(left as Record<string, unknown>, field) || ""); const b = field === "__name__" ? String((right as any).eventId) : String(valueAt(right as Record<string, unknown>, field) || ""); const comparison = a.localeCompare(b); if (comparison) return comparison * (direction === "desc" ? -1 : 1); } return 0; });
           if (target.cursor?.length) values = values.filter(value => { const fields = target.ordering.map(([field]: [string, string]) => field === "__name__" ? String((value as any).eventId) : String(valueAt(value as Record<string, unknown>, field) || "")); for (let index = 0; index < fields.length; index += 1) { const comparison = fields[index].localeCompare(String(target.cursor[index] || "")); if (comparison) return comparison > 0; } return false; });
           if (target.limitCount !== undefined) values = values.slice(0, target.limitCount);
-          attemptedReads += values.length;
+          budget.queryReturned(values.length);
           return { size: values.length, docs: values.map(value => ({ id: (value as any).eventId, exists: true, data: () => structuredClone(value) })) };
         },
         set: (target: any, value: unknown) => pending.push({ target, value }),
@@ -136,7 +137,7 @@ function boundedQueueHarness(events: DurableDomainEvent[]) {
       return result;
     },
   } as any;
-  return { repository: new MenuPlanningFirestoreRepository(db), eventDocs, outboxDocs, get attemptedReads() { return attemptedReads; }, resetReads() { attemptedReads = 0; } };
+  return { repository: new MenuPlanningFirestoreRepository(db), eventDocs, outboxDocs, budget, get attemptedReads() { return budget.counts.attemptedReads; }, resetReads() { budget.counts.attemptedReads = 0; budget.counts.returnedDocuments = 0; budget.counts.queueCandidates = 0; } };
 }
 
 const queued = (id: string, status: "pending" | "delivered" | "failed", sourceVersion: number, dueAt: string, predecessorEventId?: string, sourceAggregateId = "aggregate:one") => {
@@ -168,6 +169,7 @@ test("indexed outbox claims are bounded, non-starving, and independent of delive
   const page = boundedQueueHarness(Array.from({ length: 25 }, (_, index) => queued(`page-${index}`, "pending", index + 1, at.toISOString())));
   assert.ok((await page.repository.claimNextEvent("worker-page", at))?.eventId);
   assert.equal(page.attemptedReads, 51, "25 eligible events are one indexed page plus 25 bounded authoritative event reads, not 25 x 100 scans");
+  assert.equal(page.budget.counts.queueCandidates, 25);
 });
 
 test("outbox leases expire, retries remain durable, and aggregate predecessors are bounded", async () => {

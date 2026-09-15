@@ -136,18 +136,31 @@ export { getCatalogueManifest };
 
 export async function listCanonicalMenuItems(options: { fresh?: boolean } = {}) { return readItems(options); }
 
+export type CatalogueDocumentLike = { exists: boolean; data(): unknown };
+
+/** Read known catalogue IDs in Firestore getAll batches without enumerating the catalogue. */
+export async function readCatalogueDocumentsByIds(
+  ids: string[],
+  readBatch: (batch: string[]) => Promise<Array<CatalogueDocumentLike | undefined>>,
+) {
+  const wanted = [...new Set(ids.filter(Boolean))];
+  if (!wanted.length) return [] as CatalogueDocumentLike[];
+  const batches = await Promise.all(Array.from(
+    { length: Math.ceil(wanted.length / 100) },
+    (_, index) => readBatch(wanted.slice(index * 100, index * 100 + 100)),
+  ));
+  return batches.flat().filter((document): document is CatalogueDocumentLike => Boolean(document));
+}
+
 export async function listCanonicalMenuItemsByIds(ids: string[]) {
   const wanted = [...new Set(ids.filter(Boolean))];
   if (!wanted.length) return [];
   if (["staging", "production"].includes(process.env.FIKA_RUNTIME_MODE || "")) {
     if (!process.env.FIREBASE_PROJECT_ID && !process.env.GCLOUD_PROJECT) throw Object.assign(new Error("Hosted Menu Planning catalogue is not configured."), { status: 503 });
     const db = new Firestore({ projectId: process.env.FIREBASE_PROJECT_ID || process.env.GCLOUD_PROJECT });
-    const records = await Promise.all(Array.from(
-      { length: Math.ceil(wanted.length / 100) },
-      (_, index) => db.getAll(...wanted.slice(index * 100, index * 100 + 100).map(id => db.collection("fikaMenuPlanningCatalogue").doc(id))),
-    ));
-    recordDataAccess({ app: "menu-planning", operation: "catalogue.by-id.batch", source: "FIRESTORE", documents: records.flat().filter(document => document.exists && document.data()?.kind === "dish").length });
-    return records.flatMap(documents => documents.filter(document => document.exists && document.data()?.kind === "dish").map(document => (document.data()!.record || document.data()) as MenuItem));
+    const records = await readCatalogueDocumentsByIds(wanted, batch => db.getAll(...batch.map(id => db.collection("fikaMenuPlanningCatalogue").doc(id))));
+    recordDataAccess({ app: "menu-planning", operation: "catalogue.by-id.batch", source: "FIRESTORE", documents: records.filter(document => document.exists && (document.data() as any)?.kind === "dish").length });
+    return records.filter(document => document.exists && (document.data() as any)?.kind === "dish").map(document => { const value = document.data() as any; return (value.record || value) as MenuItem; });
   }
   const items = await readItems();
   return items.filter(item => wanted.includes(item.canonicalId));

@@ -33,6 +33,7 @@ type CpuDeliveryPayload = {
 };
 
 type CpuOutboxEvent = DurableDomainEvent<CpuDeliveryPayload>;
+export type CpuPropagationOutboxEvent = CpuOutboxEvent;
 
 export type CpuDurableDeliveryInput = {
   eventId: string;
@@ -48,7 +49,15 @@ export const CPU_PROPAGATION_OUTBOX_COLLECTION = "fikaCpuPropagationOutboxV1";
 export const CPU_PROPAGATION_OUTBOX_PAGE_SIZE = 25;
 
 const memoryOutbox = new Map<string, CpuOutboxEvent>();
+const memoryEligible = new Map<string, string>();
 const useMemoryOutbox = () => process.env.NODE_ENV === "test" || process.argv.includes("--test") || process.env.FIKA_CPU_PLAN_STORE === "memory";
+
+function trackMemoryEligibility(event: CpuOutboxEvent) {
+  memoryEligible.delete(event.eventId);
+  if (event.delivery.status === "pending" || event.delivery.status === "failed") {
+    memoryEligible.set(event.eventId, event.delivery.nextEligibleAt || event.delivery.nextAttemptAt || event.occurredAt);
+  }
+}
 
 function deliveryId(eventId: string, consumer: CpuPropagationConsumer, scope: string) {
   return `${eventId}:${consumer}:${scope}`.replace(/[^A-Za-z0-9:_-]+/g, "_");
@@ -118,7 +127,7 @@ function refs(events: CpuOutboxEvent[]) { return events.map(event => db.collecti
 
 async function persistCpuEvents(events: CpuOutboxEvent[]) {
   if (useMemoryOutbox()) {
-    for (const event of events) if (!memoryOutbox.has(event.eventId)) memoryOutbox.set(event.eventId, event);
+    for (const event of events) if (!memoryOutbox.has(event.eventId)) { memoryOutbox.set(event.eventId, event); trackMemoryEligibility(event); }
     return;
   }
   await db.runTransaction(async transaction => {
@@ -168,7 +177,11 @@ export async function enqueueCpuDelivery(input: CpuDurableDeliveryInput) {
   return event;
 }
 
-export function resetCpuOutboxForTests() { memoryOutbox.clear(); }
+export function resetCpuOutboxForTests() { memoryOutbox.clear(); memoryEligible.clear(); }
+export function seedCpuOutboxForTests(events: CpuPropagationOutboxEvent[]) {
+  resetCpuOutboxForTests();
+  for (const event of events) { const copy = structuredClone(event); memoryOutbox.set(copy.eventId, copy); trackMemoryEligibility(copy); }
+}
 export function listCpuOutboxForTests() { return [...memoryOutbox.values()].map(event => structuredClone(event)); }
 
 function routeBase(consumer: CpuPropagationConsumer) {
@@ -186,7 +199,7 @@ async function readOutbox(eventId: string) {
 async function writeOutbox(event: CpuOutboxEvent, expectedClaimId?: string) {
   if (useMemoryOutbox()) {
     const current = memoryOutbox.get(event.eventId);
-    if (!current || !expectedClaimId || current.delivery.claimId === expectedClaimId) memoryOutbox.set(event.eventId, event);
+    if (!current || !expectedClaimId || current.delivery.claimId === expectedClaimId) { memoryOutbox.set(event.eventId, event); trackMemoryEligibility(event); }
     return;
   }
   await db.runTransaction(async transaction => {
@@ -205,6 +218,7 @@ export async function claimCpuPropagation(eventId: string, claimId: string, at =
     if (!current || !eventIsDue(current, at)) return undefined;
     const claimed = claimEvent(current, claimId, at.toISOString());
     memoryOutbox.set(eventId, claimed);
+    trackMemoryEligibility(claimed);
     return claimed;
   }
   return db.runTransaction(async transaction => {
@@ -249,7 +263,12 @@ export async function deliverCpuPropagations(events: CpuOutboxEvent[]) {
 export async function recoverCpuPropagation(limit = CPU_PROPAGATION_OUTBOX_PAGE_SIZE, at = new Date()) {
   const boundedLimit = Math.min(Math.max(1, limit), CPU_PROPAGATION_OUTBOX_PAGE_SIZE);
   if (useMemoryOutbox()) {
-    const due = [...memoryOutbox.values()].filter(event => eventIsDue(event, at)).sort((a, b) => a.eventId.localeCompare(b.eventId)).slice(0, boundedLimit);
+    const due = [...memoryEligible.entries()]
+      .sort(([leftId, leftAt], [rightId, rightAt]) => leftAt.localeCompare(rightAt) || leftId.localeCompare(rightId))
+      .filter(([, eligibleAt]) => new Date(eligibleAt) <= at)
+      .slice(0, boundedLimit)
+      .map(([eventId]) => memoryOutbox.get(eventId))
+      .filter((event): event is CpuOutboxEvent => event !== undefined && eventIsDue(event, at));
     return deliverCpuPropagations(due);
   }
   const snapshot = await db.collection(CPU_PROPAGATION_OUTBOX_COLLECTION)
