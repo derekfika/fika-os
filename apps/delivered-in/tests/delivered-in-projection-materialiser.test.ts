@@ -49,5 +49,16 @@ test("a missing CPU dish fails allergen enrichment closed but preserves the publ
   assert.equal(projection.entries[0].quantity, 10);
   assert.equal(projection.entries[0].allergens.milk, "unrecorded");
   assert.equal(projection.entries[0].allergensVisible, false);
+  assert.equal(projection.drivePdfUrl, undefined);
   assert.equal(projection.state.exceptions[0].code, "CPU_PACKET_MISSING_DISH");
+});
+
+test("a CPU lineage failure does not expose its signed PDF reference", async () => {
+  const projection = await buildDeliveredInDayProjection({ request, site, day, governed: true, loadReview: async () => {
+    throw Object.assign(new Error("The signed CPU allergen package source hash does not match the current published Menu Planning day."), { code: "CPU_REVIEW_LINEAGE_MISMATCH", status: 503 });
+  } });
+  assert.equal(projection.entries[0].quantity, 10);
+  assert.equal(projection.entries[0].allergensVisible, false);
+  assert.equal(projection.drivePdfUrl, undefined);
+  assert.equal(projection.state.exceptions[0].code, "CPU_REVIEW_LINEAGE_MISMATCH");
 });

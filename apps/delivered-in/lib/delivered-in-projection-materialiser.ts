@@ -53,7 +53,7 @@ export async function buildDeliveredInDayProjection(input: { request: NextReques
     ...input.day,
     // The CPU packet's signed PDF is the safety reference for Delivered-In;
     // do not let an older Menu Planning archive link masquerade as it.
-    ...(review?.cpuReview.drivePdfUrl ? { drivePdfUrl: review.cpuReview.drivePdfUrl } : {}),
+    ...(review?.cpuReview.status === "signed" && !cpuFailure && review.cpuReview.drivePdfUrl ? { drivePdfUrl: review.cpuReview.drivePdfUrl } : {}),
     projectionId: projectionId(input.site.oplocId, input.day.date),
     projectionVersion: 0,
     contractVersion: "delivered-in.day.v1",
