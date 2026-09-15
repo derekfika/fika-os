@@ -17,6 +17,7 @@ import { resolveAllergenSnapshot } from "../lib/allergen-resolution";
 import type { RollingEntry } from "../lib/rolling-menu-types";
 import { decodeWeeklyPublicationPacket } from "@fika/server-shared/weekly-publication-packet";
 import { getWeekSnapshot } from "../lib/operational-store";
+import { readDeliveredInOplocs } from "../lib/oploc-authority";
 
 const isolatedDatabaseDirectory = mkdtempSync(join(tmpdir(), "fika-menu-planning-test-"));
 process.env.MENU_PLANNING_DB_PATH = join(isolatedDatabaseDirectory, "operational.sqlite");
@@ -217,6 +218,36 @@ test("an unidentified allocation follows the live Hub OPLOC before the static co
   snapshot.entries.push({ id: "entry:live-oploc-label", dayId: snapshot.days[2].id, date: snapshot.days[2].date, slot: "SALAD 1", itemLabel: "Test salad", portions: 5, allocations: [{ destinationLabel: "Haleon", quantity: 5 }], allergens: {}, audit: [] });
   const normalised = normaliseRollingSnapshotDestinations(snapshot, [{ canonicalId: "oploc:new-haleon", label: "Haleon" }]);
   assert.equal(normalised.entries[0].allocations[0].destinationId, "oploc:new-haleon");
+});
+
+test("legacy service-arrangement OPLOCs no longer block publication", async () => {
+  const previousFetch = globalThis.fetch;
+  const previousBaseUrl = process.env.FIKA_HUB_BASE_URL;
+  process.env.FIKA_HUB_BASE_URL = "http://hub.test";
+  globalThis.fetch = (async () => Response.json({
+    arrangements: [{ oplocId: "oploc:old", serviceLabel: "Delivered-In", lifecycleState: "active" }],
+    oplocs: [{ canonicalId: "oploc:current", label: "Current Site" }],
+    oplocRedirects: { "oploc:old": "oploc:current" },
+  })) as typeof fetch;
+  const source = emptyWeek("2099-12-01", "test");
+  try {
+    const dish = (await listCanonicalMenuItems()).find((item) => item.reviewStatus !== "archived");
+    assert.ok(dish);
+    source.entries.push({ id: `${source.week.id}:entry:legacy`, dayId: source.days[0].id, date: source.days[0].date, slot: "SALAD 1", itemId: dish.canonicalId, itemLabel: dish.displayName, portions: 4, allocations: [{ destinationId: "oploc:old", destinationLabel: "Old label", quantity: 4 }], allergens: {}, audit: [] });
+    source.days[0].entryIds.push(source.entries[0].id);
+    source.week.entryIds = [source.entries[0].id];
+    await saveSnapshot(source);
+    const live = await readDeliveredInOplocs(new Request("http://planner.test") as any);
+    const normalized = normaliseRollingSnapshotDestinations(await getWeek(source.week.id), live);
+    assert.equal(normalized.entries[0].allocations[0].destinationId, "oploc:current");
+    assert.deepEqual(validateWeek(normalized, { governedOplocIds: new Set(["oploc:current"]), activeCanonicalDishIds: new Set([dish.canonicalId]) }), []);
+    const publication = await createPublishedMenuWeek(source.week.id, {}, "test", new Set(["oploc:current"]), live);
+    assert.equal(publication.days.find(day => day.status === "published")?.entries[0].allocations[0].destinationId, "oploc:current");
+  } finally {
+    globalThis.fetch = previousFetch;
+    if (previousBaseUrl === undefined) delete process.env.FIKA_HUB_BASE_URL;
+    else process.env.FIKA_HUB_BASE_URL = previousBaseUrl;
+  }
 });
 
 test("week lifecycle prevents collisions, publishes once, and duplicates published weeks as drafts", async () => {

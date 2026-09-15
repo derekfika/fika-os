@@ -1,6 +1,20 @@
 import type { NextRequest } from "next/server";
 import { menuPlanningHubBaseUrl } from "./hub-url";
 export type GovernedOploc = { canonicalId: string; label: string; address?: string; legacyIds?: string[] };
+
+function resolveOplocRedirect(id: string, redirects: Record<string, string>) {
+  let current = id;
+  const visited = new Set<string>();
+  while (redirects[current] !== undefined) {
+    if (visited.has(current)) return undefined;
+    visited.add(current);
+    const target = redirects[current]?.trim();
+    if (!target || target === current || visited.has(target)) return undefined;
+    current = target;
+  }
+  return current;
+}
+
 export async function readGovernedOplocs(request: NextRequest): Promise<GovernedOploc[]> {
   const response = await fetch(`${menuPlanningHubBaseUrl()}/api/oplocs`, { headers: { cookie: request.headers.get("cookie") || "" }, cache: "no-store" });
   const body = await response.json() as { oplocs?: GovernedOploc[]; error?: { message?: string } };
@@ -20,14 +34,27 @@ export async function readDeliveredInOplocs(request: NextRequest): Promise<Gover
     throw Object.assign(new Error(arrangementBody.error?.message || "Delivered-In OPLOC authority is unavailable."), { status: 503 });
   }
   const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/London", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
-  const eligible = new Set(arrangementBody.arrangements.filter(item => item.lifecycleState === "active" && /delivered[ -]?in/i.test(item.serviceLabel || "") && (!item.effectiveFrom || item.effectiveFrom <= today) && (!item.effectiveTo || item.effectiveTo >= today)).map(item => item.oplocId));
+  const redirects = arrangementData.oplocRedirects || {};
   const listed = new Map(arrangementData.oplocs.map(item => [item.canonicalId, item]));
   const governed = new Map<string, GovernedOploc>();
   for (const arrangement of arrangementBody.arrangements) {
-    if (!eligible.has(arrangement.oplocId)) continue;
-    governed.set(arrangement.oplocId, listed.get(arrangement.oplocId) || { canonicalId: arrangement.oplocId, label: arrangement.oplocLabel || arrangement.oplocId });
+    if (!(arrangement.lifecycleState === "active" && /delivered[ -]?in/i.test(arrangement.serviceLabel || "") && (!arrangement.effectiveFrom || arrangement.effectiveFrom <= today) && (!arrangement.effectiveTo || arrangement.effectiveTo >= today))) continue;
+    const canonicalId = resolveOplocRedirect(arrangement.oplocId, redirects);
+    const metadata = canonicalId ? listed.get(canonicalId) : undefined;
+    if (!canonicalId || !metadata) continue;
+    const existing = governed.get(canonicalId);
+    governed.set(canonicalId, {
+      ...(existing || metadata),
+      canonicalId,
+      label: metadata.label || arrangement.oplocLabel || canonicalId,
+      ...(metadata.address ? { address: metadata.address } : {}),
+      legacyIds: [...new Set([...(existing?.legacyIds || []), ...(metadata.legacyIds || []), ...(arrangement.oplocId !== canonicalId ? [arrangement.oplocId] : [])])].sort(),
+    });
   }
   const result = [...governed.values()] as GovernedOploc[];
-  for (const item of result) if (!item.legacyIds?.length) { const legacyIds = Object.entries(arrangementData.oplocRedirects || {}).filter(([, target]) => target === item.canonicalId).map(([legacyId]) => legacyId).sort(); if (legacyIds.length) item.legacyIds = legacyIds; }
+  for (const item of result) {
+    const legacyIds = Object.keys(redirects).filter((legacyId) => resolveOplocRedirect(legacyId, redirects) === item.canonicalId && legacyId !== item.canonicalId);
+    item.legacyIds = [...new Set([...(item.legacyIds || []), ...legacyIds])].sort();
+  }
   return result;
 }

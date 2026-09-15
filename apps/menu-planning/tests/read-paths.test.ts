@@ -21,6 +21,8 @@ test("Delivered-In OPLOC lookups reuse the authorized service-arrangements respo
   assert.match(deliveredInReader, /\/api\/service-arrangements/);
   assert.doesNotMatch(deliveredInReader, /\/api\/oplocs/);
   assert.match(deliveredInReader, /arrangementData\.oplocs/);
+  assert.match(deliveredInReader, /oplocRedirects/);
+  assert.match(deliveredInReader, /resolveOplocRedirect/);
 });
 
 test("portion readiness reuses successful checks for the same week version and day", () => {
