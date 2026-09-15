@@ -4,6 +4,8 @@ This file records user-facing workflow changes delivered in the repository. Deta
 
 ## Unreleased
 
+- **2026-09-15 — Menu Planning canonical OPLOC persistence staging deployment submitted:** submitted exact-SHA rollout for `be1cd151d25c40b2a835dc138bedab1f7821e2a3` to Firebase App Hosting backend `fika-menu-planning-staging` in project `fika-os-dev`. Firebase compilation/propagation was not awaited. Deployment status: submitted; live verification pending.
+
 - **2026-09-15 — Menu Planning canonical OPLOC persistence:** rolling-menu edits, batch updates, duplicate/copy flows, publication preparation and historical imports now resolve Hub-provided legacy IDs and exact labels to the actor-authorized canonical OPLOC before persistence and validation. Unknown destinations remain fail-closed, while quantities and governed access semantics are preserved. Affected app: Menu Planning. Validation: OPLOC/rolling and importer focused tests passed; full suite 161/162 with one pre-existing date-anchor failure; typecheck and production build passed; `git diff --check` passed. Deployment status: not deployed.
 
 - **2026-09-15 — Delivered-In CPU PDF safety gate staging deployment submitted:** submitted exact-SHA rollout `c8ddd4a2211d9639737b9e3fea3d71610d3d69a7` for Delivered-In (`fika-delivered-in-staging`) in project `fika-os-dev`. Firebase compilation/propagation was not awaited. Deployment status: submitted; live verification pending.
