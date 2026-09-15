@@ -73,6 +73,7 @@ async function handlePost(request: NextRequest) {
       const duplicateWeeks = snapshots.filter((snapshot, index) => snapshots.findIndex(candidate => candidate.week.weekCommencing === snapshot.week.weekCommencing) !== index);
       if (duplicateWeeks.length) return NextResponse.json({ error: { message: "Two selected workbooks use the same week. Remove one before importing." } }, { status: 409 });
       const catalogue = await listCanonicalMenuItems();
+      const oplocs = await readDeliveredInOplocs(request);
       const aliasesById: Record<string, string[]> = {};
       const prepared: RollingSnapshot[] = [];
       for (const source of snapshots) {
@@ -83,9 +84,9 @@ async function handlePost(request: NextRequest) {
         } catch (error) { return NextResponse.json({ error: { message: `Week ${source.week.weekCommencing} could not be imported: ${error instanceof Error ? error.message : "Please review this week."}` } }, { status: 422 }); }
       }
       let saved: RollingSnapshot[];
-      try { saved = replaceWeeks.size ? await replaceSnapshotsExplicit(prepared, Object.fromEntries(replaceWeeks)) : await saveSnapshotsCreateOnly(prepared); } catch (error) { const status = (error as { status?: number }).status === 409 ? 409 : 422; return NextResponse.json({ error: { message: error instanceof Error ? error.message : "The menu weeks could not be imported." } }, { status }); }
+      try { saved = replaceWeeks.size ? await replaceSnapshotsExplicit(prepared, Object.fromEntries(replaceWeeks), oplocs) : await saveSnapshotsCreateOnly(prepared, oplocs); } catch (error) { const status = (error as { status?: number }).status === 409 ? 409 : 422; return NextResponse.json({ error: { message: error instanceof Error ? error.message : "The menu weeks could not be imported." } }, { status }); }
       await recordDishSourceAliases(aliasesById);
-      const blockers = (await Promise.all(saved.map(snapshot => validateWeekAuthoritative(snapshot)))).flat();
+      const blockers = (await Promise.all(saved.map(snapshot => validateWeekAuthoritative(snapshot, { governedOplocIds: new Set(oplocs.map(oploc => oploc.canonicalId)) })))).flat();
       return NextResponse.json({ snapshots: saved, weeks: await listWeeksByCommencing(saved.map(snapshot => snapshot.week.weekCommencing)), blockers });
     }
     const form = await request.formData();

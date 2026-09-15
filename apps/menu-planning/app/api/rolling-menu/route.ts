@@ -311,28 +311,40 @@ async function handlePost(request: NextRequest) {
       });
     }
     if (action === "duplicate-week") {
+      const liveOplocs = (await readDeliveredInOplocs(request)).filter((oploc) =>
+        actorCanAccessOploc(actor, oploc.canonicalId),
+      );
       const snapshot = await duplicateWeek(
         String(body.weekId),
         planningWeekCommencing(String(body.weekCommencing)),
         actor.uid,
+        liveOplocs,
       );
       return NextResponse.json({
         snapshot: await resolvedSnapshot(snapshot, undefined, actor),
         weeks: await listWeeks(),
-        blockers: await validateWeekAuthoritative(scopedSnapshot(snapshot, actor)),
+        blockers: await validateWeekAuthoritative(scopedSnapshot(snapshot, actor), {
+          governedOplocIds: new Set(liveOplocs.map((oploc) => oploc.canonicalId)),
+        }),
         publicationState: await publicationState(snapshot),
       });
     }
     if (action === "copy-week-into-current") {
+      const liveOplocs = (await readDeliveredInOplocs(request)).filter((oploc) =>
+        actorCanAccessOploc(actor, oploc.canonicalId),
+      );
       const snapshot = await copyWeekIntoWeek(
         String(body.sourceWeekId),
         String(body.targetWeekId),
         actor.uid,
+        liveOplocs,
       );
       return NextResponse.json({
         snapshot: await resolvedSnapshot(snapshot, undefined, actor),
         weeks: await listWeeks(),
-        blockers: await validateWeekAuthoritative(scopedSnapshot(snapshot, actor)),
+        blockers: await validateWeekAuthoritative(scopedSnapshot(snapshot, actor), {
+          governedOplocIds: new Set(liveOplocs.map((oploc) => oploc.canonicalId)),
+        }),
         publicationState: await publicationState(snapshot),
       });
     }
@@ -346,20 +358,29 @@ async function handlePost(request: NextRequest) {
       });
     }
     if (action === "update-entry") {
+      const liveOplocs = (await readDeliveredInOplocs(request)).filter((oploc) =>
+        actorCanAccessOploc(actor, oploc.canonicalId),
+      );
       const snapshot = await updateEntry(
         String(body.weekId),
         String(body.entryId),
         (body.patch || {}) as never,
         actor.uid,
+        liveOplocs,
       );
       return NextResponse.json({
         snapshot: await resolvedSnapshot(snapshot, undefined, actor),
         weeks: await listWeeks(),
-        blockers: await validateWeekAuthoritative(scopedSnapshot(snapshot, actor)),
+        blockers: await validateWeekAuthoritative(scopedSnapshot(snapshot, actor), {
+          governedOplocIds: new Set(liveOplocs.map((oploc) => oploc.canonicalId)),
+        }),
         publicationState: await publicationState(snapshot),
       });
     }
     if (action === "batch-update-entries") {
+      const liveOplocs = (await readDeliveredInOplocs(request)).filter((oploc) =>
+        actorCanAccessOploc(actor, oploc.canonicalId),
+      );
       const updates = Array.isArray(body.updates)
         ? (body.updates as Array<{
             entryId: string;
@@ -371,11 +392,14 @@ async function handlePost(request: NextRequest) {
         Number(body.expectedWeekVersion),
         updates,
         actor.uid,
+        liveOplocs,
       );
       return NextResponse.json({
         snapshot: await resolvedSnapshot(snapshot, undefined, actor),
         weeks: await listWeeks(),
-        blockers: await validateWeekAuthoritative(scopedSnapshot(snapshot, actor)),
+        blockers: await validateWeekAuthoritative(scopedSnapshot(snapshot, actor), {
+          governedOplocIds: new Set(liveOplocs.map((oploc) => oploc.canonicalId)),
+        }),
         publicationState: await publicationState(snapshot),
       });
     }
@@ -437,15 +461,21 @@ async function handlePost(request: NextRequest) {
       });
     }
     if (action === "clean-duplicate-entries") {
+      const liveOplocs = (await readDeliveredInOplocs(request)).filter((oploc) =>
+        actorCanAccessOploc(actor, oploc.canonicalId),
+      );
       const result = await cleanDuplicateEntries(
         String(body.weekId),
         actor.uid,
+        liveOplocs,
       );
       return NextResponse.json({
         snapshot: await resolvedSnapshot(result.snapshot, undefined, actor),
         removed: result.removed,
         weeks: await listWeeks(),
-        blockers: await validateWeekAuthoritative(scopedSnapshot(result.snapshot, actor)),
+        blockers: await validateWeekAuthoritative(scopedSnapshot(result.snapshot, actor), {
+          governedOplocIds: new Set(liveOplocs.map((oploc) => oploc.canonicalId)),
+        }),
         publicationState: await publicationState(result.snapshot),
       });
     }

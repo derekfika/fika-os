@@ -21,7 +21,7 @@ export function planningWeekCommencing(date: string) { const match = /^(\d{4})-(
 export function planningWeekFromQuery(value: string | undefined, fallback = operationalDate()) { return planningWeekCommencing(value?.replace(/^rolling-week:/, "") || fallback); }
 const dayName = (date: string) => new Date(`${date}T00:00:00Z`).toLocaleDateString("en-GB", { weekday: "long", timeZone: "UTC" });
 const slotOf = (value: unknown): RollingSlot | undefined => { const text = String(value ?? "").trim().toUpperCase(); if (ROLLING_SLOTS.includes(text as RollingSlot)) return text as RollingSlot; if (/^EXTRAS/.test(text)) return "EXTRAS 1"; return undefined; };
-type LiveGovernedOploc = { canonicalId: string; label: string; legacyIds?: string[] };
+export type LiveGovernedOploc = { canonicalId: string; label: string; legacyIds?: string[] };
 const normaliseDestination = (allocation: RollingAllocation, liveOplocs: readonly LiveGovernedOploc[] = []): RollingAllocation => {
   const liveById = new Map(liveOplocs.flatMap(oploc => [[oploc.canonicalId, oploc] as const, ...(oploc.legacyIds || []).map(id => [id, oploc] as const)]));
   const liveByLabel = new Map(liveOplocs.map(oploc => [oploc.label.trim().toLocaleLowerCase(), oploc]));
@@ -181,10 +181,13 @@ export async function saveSnapshot(snapshot: RollingSnapshot) {
   }, undefined, { weekId: snapshot.week.id, sourceWeekId: "__none__", includeEvents: false });
   return snapshot;
 }
-export async function saveSnapshotsCreateOnly(snapshots: RollingSnapshot[]) {
+export async function saveSnapshotsCreateOnly(snapshots: RollingSnapshot[], liveOplocs: readonly LiveGovernedOploc[] = []) {
   if (!snapshots.length) return [];
+  const normalisedSnapshots = snapshots.map((snapshot) =>
+    normaliseRollingSnapshotDestinations(snapshot, liveOplocs),
+  );
   const seen = new Set<string>();
-  for (const snapshot of snapshots) {
+  for (const snapshot of normalisedSnapshots) {
     const week = snapshot.week.weekCommencing;
     if (seen.has(week)) throw Object.assign(new Error(`Week ${week} appears more than once in this import.`), { status: 409 });
     seen.add(week);
@@ -192,12 +195,12 @@ export async function saveSnapshotsCreateOnly(snapshots: RollingSnapshot[]) {
   await withMenuPlanningTransaction(state => {
     const current = state.rolling as unknown as Stored;
     const existingSnapshots = current.weeks.map(week => ({ week, snapshot: { week, days: current.days.filter(day => week.dayIds.includes(day.id)), entries: current.entries.filter(entry => week.entryIds.includes(entry.id)) } }));
-    const conflict = snapshots.map(snapshot => ({ snapshot, existing: existingSnapshots.filter(candidate => candidate.week.weekCommencing === snapshot.week.weekCommencing) })).find(candidate => candidate.existing.some(value => isProtectedExistingPlanningWeek(value.snapshot)));
+    const conflict = normalisedSnapshots.map(snapshot => ({ snapshot, existing: existingSnapshots.filter(candidate => candidate.week.weekCommencing === snapshot.week.weekCommencing) })).find(candidate => candidate.existing.some(value => isProtectedExistingPlanningWeek(value.snapshot)));
     if (conflict) {
       const reason = planningWeekImportConflictReason(conflict.existing.find(value => isProtectedExistingPlanningWeek(value.snapshot))!.snapshot) || "Week already exists";
       throw Object.assign(new Error(`Week already exists (${reason}): ${conflict.snapshot.week.weekCommencing}. Remove it before importing.`), { status: 409 });
     }
-    for (const snapshot of snapshots) {
+    for (const snapshot of normalisedSnapshots) {
       for (const candidate of current.weeks.filter(week => week.weekCommencing === snapshot.week.weekCommencing)) {
         const candidateSnapshot = { week: candidate, days: current.days.filter(day => candidate.dayIds.includes(day.id)), entries: current.entries.filter(entry => candidate.entryIds.includes(entry.id)) };
         if (!isProtectedExistingPlanningWeek(candidateSnapshot)) removeStoredWeek(current, candidate.id);
@@ -205,19 +208,22 @@ export async function saveSnapshotsCreateOnly(snapshots: RollingSnapshot[]) {
       replaceSnapshotInStored(current, snapshot);
     }
   }, undefined, { includeEvents: false });
-  return snapshots;
+  return normalisedSnapshots;
 }
-export async function replaceSnapshotsExplicit(snapshots: RollingSnapshot[], expectedVersions: Record<string, number>) {
+export async function replaceSnapshotsExplicit(snapshots: RollingSnapshot[], expectedVersions: Record<string, number>, liveOplocs: readonly LiveGovernedOploc[] = []) {
   if (!snapshots.length) return [];
+  const normalisedSnapshots = snapshots.map((snapshot) =>
+    normaliseRollingSnapshotDestinations(snapshot, liveOplocs),
+  );
   const seen = new Set<string>();
-  for (const snapshot of snapshots) {
+  for (const snapshot of normalisedSnapshots) {
     const week = snapshot.week.weekCommencing;
     if (seen.has(week)) throw Object.assign(new Error(`Week ${week} appears more than once in this replacement.`), { status: 409 });
     seen.add(week);
   }
   await withMenuPlanningTransaction(state => {
     const current = state.rolling as unknown as Stored;
-    for (const snapshot of snapshots) {
+    for (const snapshot of normalisedSnapshots) {
       const candidates = current.weeks.filter(week => week.weekCommencing === snapshot.week.weekCommencing);
       const expectedVersion = expectedVersions[snapshot.week.weekCommencing];
       const existing = candidates.find(week => week.id === snapshot.week.id) || candidates[0];
@@ -237,20 +243,20 @@ export async function replaceSnapshotsExplicit(snapshots: RollingSnapshot[], exp
       replaceSnapshotInStored(current, snapshot);
     }
   }, undefined, { includeEvents: false });
-  return snapshots;
+  return normalisedSnapshots;
 }
 export async function createEntry(weekId: string, dayId: string, slot: string, itemLabel: string, actor = "local-menu-planner", itemId?: string) { const snapshot = await getWeek(weekId); const day = snapshot.days.find(d => d.id === dayId); if (!day) throw Object.assign(new Error("Menu day was not found."), { status: 404 }); if (snapshot.entries.some(e => e.dayId === dayId && e.slot === slot)) throw Object.assign(new Error("That menu slot already has a dish."), { status: 409 }); markDayDraft(snapshot, dayId); const id = `${snapshot.week.id}:entry:${dayId}:${slot.toLowerCase().replace(/[^a-z0-9]+/g, "-")}:${Date.now()}`; const entry: RollingEntry = { id, dayId, date: day.date, slot, itemId, itemLabel: normaliseDishName(itemLabel), portions: 0, allocations: [], allergens: {}, audit: [{ action: "entry-created", at: now(), by: actor }] }; snapshot.entries.push(entry); day.entryIds.push(id); snapshot.week.entryIds.push(id); snapshot.week.version += 1; return saveSnapshot(snapshot); }
 export async function addMenuSlot(weekId: string, slot: string, actor = "local-menu-planner") { const snapshot = await getWeek(weekId); const clean = slot.trim().toUpperCase().replace(/\s+/g, " "); if (!clean) throw Object.assign(new Error("A menu slot name is required."), { status: 422 }); if (!/^(SALAD|EXTRAS) \d+$/.test(clean) && !/^[A-Z][A-Z0-9 /&-]{1,39}$/.test(clean)) throw Object.assign(new Error("Use a governed slot such as Salad, Side, or a named category."), { status: 422 }); if (ROLLING_SLOTS.includes(clean as RollingSlot) || snapshot.week.customSlots?.includes(clean)) throw Object.assign(new Error("That menu slot already exists."), { status: 409 }); snapshot.week.customSlots = [...(snapshot.week.customSlots || []), clean]; snapshot.week.version += 1; return saveSnapshot(snapshot); }
 export async function removeMenuSlot(weekId: string, slot: string, actor = "local-menu-planner") { const snapshot = await getWeek(weekId); const clean = slot.trim().toUpperCase().replace(/\s+/g, " "); if (snapshot.entries.some(entry => entry.slot === clean && entry.itemLabel.trim())) throw Object.assign(new Error("A menu slot with a dish on any day cannot be removed."), { status: 409 }); if (!ROLLING_SLOTS.includes(clean as RollingSlot) && !snapshot.week.customSlots?.includes(clean)) throw Object.assign(new Error("That menu slot does not exist."), { status: 404 }); snapshot.week.customSlots = (snapshot.week.customSlots || []).filter(value => value !== clean); snapshot.week.removedSlots = Array.from(new Set([...(snapshot.week.removedSlots || []), clean])); snapshot.week.version += 1; snapshot.week.audit.push({ action: "menu-slot-removed", at: now(), by: actor }); return saveSnapshot(snapshot); }
-export async function cleanDuplicateEntries(weekId: string, actor = "local-menu-planner") { const snapshot = await getWeek(weekId); const groups = new Map<string, RollingEntry[]>(); for (const entry of snapshot.entries) { const key = `${entry.dayId}|${entry.slot}|${entry.itemLabel.trim().toLocaleLowerCase()}`; groups.set(key, [...(groups.get(key) || []), entry]); } const remove = new Set<string>(); for (const entries of groups.values()) { if (entries.length < 2) continue; const ranked = entries.slice().sort((a, b) => (Number(b.portions > 0) * 4 + b.allocations.length * 2 + Object.values(b.allergens).filter(value => value !== "clear").length) - (Number(a.portions > 0) * 4 + a.allocations.length * 2 + Object.values(a.allergens).filter(value => value !== "clear").length)); for (const duplicate of ranked.slice(1)) remove.add(duplicate.id); } if (!remove.size) return { snapshot, removed: 0 }; snapshot.entries = snapshot.entries.filter(entry => !remove.has(entry.id)); snapshot.days.forEach(day => { day.entryIds = snapshot.entries.filter(entry => entry.dayId === day.id).map(entry => entry.id); }); snapshot.week.entryIds = snapshot.entries.map(entry => entry.id); snapshot.week.version += 1; snapshot.week.audit.push({ action: "duplicate-menu-entries-cleaned", at: now(), by: actor }); return { snapshot: await saveSnapshot(snapshot), removed: remove.size }; }
+export async function cleanDuplicateEntries(weekId: string, actor = "local-menu-planner", liveOplocs: readonly LiveGovernedOploc[] = []) { const snapshot = normaliseRollingSnapshotDestinations(await getWeek(weekId), liveOplocs); const groups = new Map<string, RollingEntry[]>(); for (const entry of snapshot.entries) { const key = `${entry.dayId}|${entry.slot}|${entry.itemLabel.trim().toLocaleLowerCase()}`; groups.set(key, [...(groups.get(key) || []), entry]); } const remove = new Set<string>(); for (const entries of groups.values()) { if (entries.length < 2) continue; const ranked = entries.slice().sort((a, b) => (Number(b.portions > 0) * 4 + b.allocations.length * 2 + Object.values(b.allergens).filter(value => value !== "clear").length) - (Number(a.portions > 0) * 4 + a.allocations.length * 2 + Object.values(a.allergens).filter(value => value !== "clear").length)); for (const duplicate of ranked.slice(1)) remove.add(duplicate.id); } if (!remove.size) return { snapshot, removed: 0 }; snapshot.entries = snapshot.entries.filter(entry => !remove.has(entry.id)); snapshot.days.forEach(day => { day.entryIds = snapshot.entries.filter(entry => entry.dayId === day.id).map(entry => entry.id); }); snapshot.week.entryIds = snapshot.entries.map(entry => entry.id); snapshot.week.version += 1; snapshot.week.audit.push({ action: "duplicate-menu-entries-cleaned", at: now(), by: actor }); return { snapshot: await saveSnapshot(snapshot), removed: remove.size }; }
 export async function repointDishIds(mapping: Record<string, string>, aliases: Record<string, string> = {}, actor = "automatic-dish-normaliser") { let updated = 0; for (const week of await listWeeks()) { const snapshot = await getWeek(week.id); let changed = false; for (const entry of snapshot.entries) { const next = (entry.itemId && mapping[entry.itemId]) || aliases[entry.itemLabel.toLocaleLowerCase()]; if (next) { if (entry.itemId && mapping[entry.itemId]) entry.itemId = next; if (aliases[entry.itemLabel.toLocaleLowerCase()]) entry.itemLabel = next; entry.audit.push({ action: "dish-reference-repointed", at: now(), by: actor }); updated += 1; changed = true; } } if (changed) { snapshot.week.version += 1; await saveSnapshot(snapshot); } } return updated; }
 export function applyEntryPatch(entry: RollingEntry, patch: Partial<Pick<RollingEntry, "itemId" | "itemLabel" | "portions" | "slot" | "allocations" | "allergens" | "mayContainNotes" | "allergenReviewInvalidated">>) { const nextItemId = patch.itemId !== undefined ? patch.itemId || "" : entry.itemId || ""; const nextLabel = patch.itemLabel !== undefined ? normaliseDishName(patch.itemLabel).toLocaleLowerCase() : entry.itemLabel.trim().toLocaleLowerCase(); const dishChanged = nextItemId !== (entry.itemId || "") || nextLabel !== entry.itemLabel.trim().toLocaleLowerCase(); const restoringReview = patch.allergenReviewInvalidated === false && patch.allergens !== undefined; Object.assign(entry, { ...patch, ...(patch.itemLabel !== undefined ? { itemLabel: normaliseDishName(patch.itemLabel) } : {}), ...(dishChanged && !restoringReview ? { allergens: {}, mayContainNotes: "", allergenReviewInvalidated: true } : {}) }); return dishChanged; }
-export async function updateEntry(weekId: string, entryId: string, patch: Partial<Pick<RollingEntry, "itemId" | "itemLabel" | "portions" | "slot" | "allocations" | "allergens" | "mayContainNotes" | "allergenReviewInvalidated">>, actor = "local-menu-planner") { const snapshot = await getWeek(weekId); const entry = snapshot.entries.find(e => e.id === entryId); if (!entry) throw Object.assign(new Error("Menu entry was not found."), { status: 404 }); markDayDraft(snapshot, entry.dayId); applyEntryPatch(entry, patch); if (patch.allocations !== undefined) entry.allocations = patch.allocations.map(allocation => normaliseDestination(allocation)); if (patch.allergens !== undefined) entry.allergenReviewInvalidated = false; entry.audit.push({ action: "entry-amended", at: now(), by: actor }); snapshot.week.version += 1; return saveSnapshot(snapshot); }
-export async function batchUpdateEntries(weekId: string, expectedWeekVersion: number, updates: Array<{ entryId: string; allocations: RollingAllocation[] }>, actor = "local-menu-planner") {
+export async function updateEntry(weekId: string, entryId: string, patch: Partial<Pick<RollingEntry, "itemId" | "itemLabel" | "portions" | "slot" | "allocations" | "allergens" | "mayContainNotes" | "allergenReviewInvalidated">>, actor = "local-menu-planner", liveOplocs: readonly LiveGovernedOploc[] = []) { const snapshot = normaliseRollingSnapshotDestinations(await getWeek(weekId), liveOplocs); const entry = snapshot.entries.find(e => e.id === entryId); if (!entry) throw Object.assign(new Error("Menu entry was not found."), { status: 404 }); markDayDraft(snapshot, entry.dayId); applyEntryPatch(entry, patch); if (patch.allocations !== undefined) entry.allocations = patch.allocations.map(allocation => normaliseDestination(allocation, liveOplocs)); if (patch.allergens !== undefined) entry.allergenReviewInvalidated = false; entry.audit.push({ action: "entry-amended", at: now(), by: actor }); snapshot.week.version += 1; return saveSnapshot(snapshot); }
+export async function batchUpdateEntries(weekId: string, expectedWeekVersion: number, updates: Array<{ entryId: string; allocations: RollingAllocation[] }>, actor = "local-menu-planner", liveOplocs: readonly LiveGovernedOploc[] = []) {
   if (!Number.isInteger(expectedWeekVersion) || expectedWeekVersion < 1) throw Object.assign(new Error("A current week version is required before saving portions."), { status: 422 });
   if (!Array.isArray(updates) || !updates.length) return getWeek(weekId);
   return withMenuPlanningTransaction(state => {
-    const snapshot = snapshotFromStored(state.rolling as unknown as Stored, weekId);
+    const snapshot = normaliseRollingSnapshotDestinations(snapshotFromStored(state.rolling as unknown as Stored, weekId), liveOplocs);
     if (snapshot.week.version !== expectedWeekVersion) throw Object.assign(new Error("The working menu changed while you were editing portions. Refresh before saving."), { status: 409 });
     const seen = new Set<string>();
     for (const update of updates) {
@@ -262,7 +268,7 @@ export async function batchUpdateEntries(weekId: string, expectedWeekVersion: nu
         const quantity = Number(allocation.quantity);
         if (Number.isNaN(quantity) || quantity === 0) return undefined;
         if (!Number.isFinite(quantity) || quantity < 0) throw Object.assign(new Error(`${entry.itemLabel || entry.slot} contains an invalid portion quantity.`), { status: 422 });
-        return normaliseDestination({ ...allocation, quantity });
+        return normaliseDestination({ ...allocation, quantity }, liveOplocs);
       }).filter((allocation): allocation is RollingAllocation => Boolean(allocation));
       entry.allocations = allocations;
       entry.portions = allocations.reduce((sum, allocation) => sum + allocation.quantity, 0);
@@ -273,12 +279,12 @@ export async function batchUpdateEntries(weekId: string, expectedWeekVersion: nu
     return snapshot;
   }, { weekId, weekVersion: expectedWeekVersion }, { weekId, sourceWeekId: "__none__", includeEvents: false });
 }
-export async function publishWeek(weekId: string, actor = "local-menu-planner") { const snapshot = await getWeek(weekId); if (snapshot.week.status === "published") throw Object.assign(new Error("This menu week is already published."), { status: 409 }); snapshot.week.status = "published"; snapshot.week.dayStatuses = undefined; snapshot.week.version += 1; snapshot.week.audit.push({ action: "week-published", at: now(), by: actor }); return saveSnapshot(snapshot); }
-export async function duplicateWeek(weekId: string, weekCommencing: string, actor = "local-menu-planner") { await assertWeekDateAvailable(weekCommencing); const source = await getWeek(weekId); const next = emptyWeek(weekCommencing, actor); const dayMap = new Map(source.days.map((d, i) => [d.id, next.days[i]?.id])); next.entries = source.entries.map(e => ({ ...structuredClone(e), id: `${next.week.id}:entry:${e.id.split(":entry:").pop()}`, dayId: dayMap.get(e.dayId) || next.days[0].id, date: addDays(weekCommencing, source.days.findIndex(d => d.id === e.dayId)), audit: [{ action: "entry-copied", at: now(), by: actor }] })); next.days.forEach(d => d.entryIds = next.entries.filter(e => e.dayId === d.id).map(e => e.id)); next.week.entryIds = next.entries.map(e => e.id); next.week.sourceFiles = source.week.sourceFiles.slice(); next.week.customSlots = source.week.customSlots?.slice() || []; next.week.removedSlots = source.week.removedSlots?.slice() || []; return saveSnapshot(next); }
-export async function copyWeekIntoWeek(sourceWeekId: string, targetWeekId: string, actor = "local-menu-planner") {
+export async function publishWeek(weekId: string, actor = "local-menu-planner", liveOplocs: readonly LiveGovernedOploc[] = []) { const snapshot = normaliseRollingSnapshotDestinations(await getWeek(weekId), liveOplocs); if (snapshot.week.status === "published") throw Object.assign(new Error("This menu week is already published."), { status: 409 }); snapshot.week.status = "published"; snapshot.week.dayStatuses = undefined; snapshot.week.version += 1; snapshot.week.audit.push({ action: "week-published", at: now(), by: actor }); return saveSnapshot(snapshot); }
+export async function duplicateWeek(weekId: string, weekCommencing: string, actor = "local-menu-planner", liveOplocs: readonly LiveGovernedOploc[] = []) { await assertWeekDateAvailable(weekCommencing); const source = normaliseRollingSnapshotDestinations(await getWeek(weekId), liveOplocs); const next = emptyWeek(weekCommencing, actor); const dayMap = new Map(source.days.map((d, i) => [d.id, next.days[i]?.id])); next.entries = source.entries.map(e => ({ ...structuredClone(e), id: `${next.week.id}:entry:${e.id.split(":entry:").pop()}`, dayId: dayMap.get(e.dayId) || next.days[0].id, date: addDays(weekCommencing, source.days.findIndex(d => d.id === e.dayId)), audit: [{ action: "entry-copied", at: now(), by: actor }] })); next.days.forEach(d => d.entryIds = next.entries.filter(e => e.dayId === d.id).map(e => e.id)); next.week.entryIds = next.entries.map(e => e.id); next.week.sourceFiles = source.week.sourceFiles.slice(); next.week.customSlots = source.week.customSlots?.slice() || []; next.week.removedSlots = source.week.removedSlots?.slice() || []; return saveSnapshot(next); }
+export async function copyWeekIntoWeek(sourceWeekId: string, targetWeekId: string, actor = "local-menu-planner", liveOplocs: readonly LiveGovernedOploc[] = []) {
   if (sourceWeekId === targetWeekId) throw Object.assign(new Error("Choose a different week to copy from."), { status: 422 });
-  const source = await getWeek(sourceWeekId);
-  const target = await getWeek(targetWeekId);
+  const source = normaliseRollingSnapshotDestinations(await getWeek(sourceWeekId), liveOplocs);
+  const target = normaliseRollingSnapshotDestinations(await getWeek(targetWeekId), liveOplocs);
   const sourceDayIndex = new Map(source.days.map((day, index) => [day.id, index]));
   const copyStamp = Date.now();
   target.days = target.days.map((day, index) => ({ ...day, entryIds: [], oneOffDestinations: structuredClone(source.days[index]?.oneOffDestinations || []) }));

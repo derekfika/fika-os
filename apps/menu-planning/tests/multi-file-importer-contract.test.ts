@@ -43,7 +43,7 @@ test("batch import uses one preview and commit endpoint without catalogue creati
   assert.doesNotMatch(route, /const existingWeeks = await listWeeks\(\)/);
   assert.match(route, /recordDishSourceAliases/);
   assert.doesNotMatch(route, /createCanonicalMenuItem/);
-  assert.match(route, /saveSnapshotsCreateOnly\(prepared\)/);
+  assert.match(route, /saveSnapshotsCreateOnly\(prepared, oplocs\)/);
   assert.match(route, /replaceWeeks/);
   assert.match(route, /Explicit replacement confirmation is required/);
   assert.match(route, /replaceSnapshotsExplicit/);

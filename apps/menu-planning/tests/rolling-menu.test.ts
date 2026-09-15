@@ -16,6 +16,7 @@ import { buildCompiledPublicationSnapshot, buildPublishedDay, createPublishedMen
 import { resolveAllergenSnapshot } from "../lib/allergen-resolution";
 import type { RollingEntry } from "../lib/rolling-menu-types";
 import { decodeWeeklyPublicationPacket } from "@fika/server-shared/weekly-publication-packet";
+import { getWeekSnapshot } from "../lib/operational-store";
 
 const isolatedDatabaseDirectory = mkdtempSync(join(tmpdir(), "fika-menu-planning-test-"));
 process.env.MENU_PLANNING_DB_PATH = join(isolatedDatabaseDirectory, "operational.sqlite");
@@ -187,6 +188,21 @@ test("historical Haleon destination IDs are normalized when a week is read", asy
   await updateEntry(week.week.id, created.entries[0].id, { portions: 10, allocations: [{ destinationId: "oploc:46701265-15af-48f4-a230-1d27ca21bc59", destinationLabel: "Haleon", quantity: 10 }] });
   const readBack = await getWeek(week.week.id);
   assert.equal(readBack.entries[0].allocations[0].destinationId, "oploc:bb4c7eea-87f5-4e79-8ed6-b973b24ded7b");
+});
+
+test("live Hub OPLOC aliases are persisted canonically through edits and duplication", async () => {
+  const liveOplocs = [{ canonicalId: "oploc:current-site", label: "Current Site", legacyIds: ["oploc:historical-site"] }];
+  const source = emptyWeek("2099-11-01", "test");
+  await saveSnapshot(source);
+  const created = await createEntry(source.week.id, source.days[0].id, "SALAD 1", "Canonicalisation dish", "test", "dish:canonicalisation");
+  await updateEntry(source.week.id, created.entries[0].id, { allocations: [{ destinationId: "oploc:historical-site", destinationLabel: "Historical Site", quantity: 7 }] }, "test", liveOplocs);
+  const persisted = await getWeekSnapshot<typeof source>(source.week.id);
+  assert.equal(persisted.entries[0].allocations[0].destinationId, "oploc:current-site");
+  assert.equal(persisted.entries[0].allocations[0].destinationLabel, "Current Site");
+  const duplicate = await duplicateWeek(source.week.id, "2099-11-08", "test", liveOplocs);
+  const duplicated = await getWeekSnapshot<typeof source>(duplicate.week.id);
+  assert.equal(duplicated.entries[0].allocations[0].destinationId, "oploc:current-site");
+  assert.equal(duplicated.entries[0].allocations[0].destinationLabel, "Current Site");
 });
 
 test("an explicit destination ID is not replaced by display-label matching", () => {
