@@ -6,6 +6,7 @@ import type { RollingDay, RollingEntry, RollingSnapshot, RollingWeek } from "./r
 import { recordMenuPlanningReadBudget } from "./read-budget";
 import { recordDataAccess } from "@fika/server-shared/data-source-meter-server";
 import { decodeWeeklyPublicationPacket } from "@fika/server-shared/weekly-publication-packet";
+import { applyRollingEntryPatch, commandDayIds, commandEntryIds, type RollingMutationCommand, type RollingMutationDelta } from "./rolling-command";
 
 function recordFirestore(operation: string, documents: number) { recordDataAccess({ app: "menu-planning", operation, source: "FIRESTORE", documents }); }
 
@@ -57,6 +58,58 @@ export class MenuPlanningFirestoreRepository {
     recordFirestore("week.entries", entries.length);
     recordMenuPlanningReadBudget({ operation: "week_snapshot", reads: { weeks: 1, days: daySnapshot.size, entries: entries.length, scoped: 1 } });
     return { week, days, entries };
+  }
+  async mutateRollingCommand(command: RollingMutationCommand): Promise<RollingMutationDelta> {
+    if (!command.weekId || !Number.isInteger(command.expectedWeekVersion) || command.expectedWeekVersion < 1) throw Object.assign(new Error("A current working-week version is required before saving."), { status: 422 });
+    const entryIds = commandEntryIds(command);
+    const dayIds = commandDayIds(command);
+    if (new Set(command.touchedEntryIds).size !== command.touchedEntryIds.length || new Set(command.touchedDayIds).size !== command.touchedDayIds.length) throw Object.assign(new Error("A working-week mutation contains duplicate touched IDs."), { status: 422 });
+    if (entryIds.some(id => !command.entryDayIds?.[id]) || Object.values(command.entryDayIds || {}).some(id => !dayIds.includes(id))) throw Object.assign(new Error("Every touched entry must include its authoritative day ID."), { status: 422 });
+    return this.db.runTransaction(async transaction => {
+      const weekRef = this.db.collection(MENU_PLANNING_COLLECTIONS.weeks).doc(command.weekId);
+      const weekDocument = await transaction.get(weekRef);
+      recordFirestore("rolling.command-week-read", weekDocument.exists ? 1 : 0);
+      if (!weekDocument.exists) throw Object.assign(new Error("The planning week was not found."), { status: 404 });
+      const week = weekDocument.data() as RollingWeek;
+      assertExpectedVersion(week.version, command.expectedWeekVersion, command.weekId);
+      if (entryIds.some(id => !(week.entryIds || []).includes(id))) throw Object.assign(new Error("A touched entry is not attached to this planning week."), { status: 422 });
+      const entryRefs = entryIds.map(id => {
+        const dayId = command.entryDayIds![id];
+        if (!(week.dayIds || []).includes(dayId)) throw Object.assign(new Error(`Day ${dayId} is not attached to this planning week.`), { status: 422 });
+        if (!dayId.startsWith(`${command.weekId}:day:`)) throw Object.assign(new Error(`Entry ${id} is not attached to this planning week.`), { status: 422 });
+        return this.db.collection(MENU_PLANNING_COLLECTIONS.weeks).doc(command.weekId).collection("days").doc(dayId).collection("entries").doc(id);
+      });
+      const entryDocuments = entryRefs.length ? await transaction.getAll(...entryRefs) : [];
+      recordFirestore("rolling.command-entry-read", entryDocuments.length);
+      const changedEntries: RollingEntry[] = [];
+      for (const [index, document] of entryDocuments.entries()) {
+        if (!document.exists) throw Object.assign(new Error(`A touched menu entry was not found. Refresh before saving.`), { status: 404 });
+        const existing = document.data() as RollingEntry;
+        if (existing.dayId !== command.entryDayIds![entryIds[index]]) throw Object.assign(new Error(`A touched menu entry is attached to a different day. Refresh before saving.`), { status: 409 });
+        const next = structuredClone(existing);
+        applyRollingEntryPatch(next, command.patch.entries?.[entryIds[index]] || {});
+        next.audit = [...(existing.audit || []), command.audit];
+        transaction.set(entryRefs[index], next);
+        changedEntries.push(next);
+      }
+      const changedDays: RollingDay[] = [];
+      if (Object.keys(command.patch.days || {}).length) {
+        const dayRefs = dayIds.map(id => this.db.collection(MENU_PLANNING_COLLECTIONS.weeks).doc(command.weekId).collection("days").doc(id));
+        const dayDocuments = dayRefs.length ? await transaction.getAll(...dayRefs) : [];
+        recordFirestore("rolling.command-day-read", dayDocuments.length);
+        for (const [index, document] of dayDocuments.entries()) {
+          if (!document.exists) throw Object.assign(new Error("A touched menu day was not found. Refresh before saving."), { status: 404 });
+          const next = { ...(document.data() as RollingDay), ...(command.patch.days?.[dayIds[index]] || {}) };
+          transaction.set(dayRefs[index], next);
+          changedDays.push(next);
+        }
+      }
+      const nextWeek = { ...week, ...(command.patch.week || {}), version: week.version + 1, audit: [...(week.audit || []), command.audit] };
+      transaction.set(weekRef, nextWeek);
+      recordMenuPlanningReadBudget({ operation: "rolling_command", reads: { weeks: 1, days: changedDays.length, entries: changedEntries.length, scoped: 1 } });
+      recordFirestore("rolling.command-write", changedEntries.length + changedDays.length + 1);
+      return { week: nextWeek, days: changedDays, entries: changedEntries };
+    });
   }
   async getPublicationById(publicationId: string) {
     const publication = await this.db.collection(MENU_PLANNING_COLLECTIONS.publications).doc(publicationId).get();

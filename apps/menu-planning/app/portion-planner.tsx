@@ -84,7 +84,7 @@ export default function PortionPlanner() {
           allocations = allocations.filter(allocation => destination.oneOff ? allocation.destinationLabel !== destination.label || Boolean(allocation.destinationId) : allocation.destinationId !== destination.id && allocation.destinationLabel.trim().toLocaleLowerCase() !== destination.label.trim().toLocaleLowerCase());
           if (value > 0 && Number.isFinite(value)) allocations.push({ ...(destination.oneOff ? {} : { destinationId: destination.id }), destinationLabel: destination.label, ...(destination.address ? { destinationAddress: destination.address } : {}), quantity: value, sourceLabel: destination.label });
         }
-        return { entryId: entry.id, allocations };
+        return { entryId: entry.id, dayId: entry.dayId, allocations };
       });
       const saved = await command("batch-update-entries", { weekId: snapshot.week.id, expectedWeekVersion: snapshot.week.version, updates });
       if (saved) { setDraftValues({}); setReadinessRefresh(value => value + 1); }

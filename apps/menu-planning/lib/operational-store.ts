@@ -2,8 +2,10 @@ import { DatabaseSync } from "node:sqlite";
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { assertOperationalStoreAvailable } from "./hosted-runtime";
-import { MenuPlanningFirestoreRepository, type HostedTransactionState, type MenuPlanningTransactionScope } from "./firestore-operational-store";
+import { assertExpectedVersion, MenuPlanningFirestoreRepository, type HostedTransactionState, type MenuPlanningTransactionScope } from "./firestore-operational-store";
+import { applyRollingEntryPatch, commandDayIds, commandEntryIds, type RollingMutationCommand, type RollingMutationDelta } from "./rolling-command";
 import type { CompiledPublishedWeekSnapshot } from "./menu-publication";
+import type { RollingDay, RollingEntry, RollingWeek } from "./rolling-menu-types";
 import { claimEvent, eventIsDue } from "./fika-contracts";
 
 type DocumentMap = Record<string, unknown>;
@@ -77,6 +79,7 @@ export type MenuPlanningOperationalStore = {
   listPublicationState<T>(limit?: number): Promise<T>;
   updateEvent(eventId: string, mutator: (event: HostedTransactionState["publications"]["events"][number]) => HostedTransactionState["publications"]["events"][number] | undefined): Promise<HostedTransactionState["publications"]["events"][number] | undefined>;
   claimNextEvent(claimId: string, at?: Date): Promise<HostedTransactionState["publications"]["events"][number] | undefined>;
+  mutateRollingCommand(command: RollingMutationCommand): Promise<RollingMutationDelta>;
   runTransaction<T>(mutator: (state: TransactionState) => T | Promise<T>, expected?: { weekId?: string; weekVersion?: number }, scope?: MenuPlanningTransactionScope): Promise<T>;
   updateRollingState<T>(mutator: (rolling: T) => void | Promise<void>): Promise<T>;
   updatePublicationState<T>(mutator: (publications: T) => void | Promise<void>): Promise<T>;
@@ -115,6 +118,35 @@ class SqliteOperationalStore implements MenuPlanningOperationalStore {
   async getPublishedSnapshot<T>(publicationId: string, version?: number) { const state = await this.readPublicationState<{ publications: Array<{ publicationId: string; compiledSnapshotId?: string; days?: unknown[] }>; snapshots?: Record<string, CompiledPublishedWeekSnapshot> }>(); const publication = state.publications.find(value => value.publicationId === publicationId); if (!publication) return undefined; const id = version ? `${publicationId}:snapshot:v${version}` : publication.compiledSnapshotId; return (id && state.snapshots?.[id]) as T | undefined; }
   async updateEvent(eventId: string, mutator: (event: HostedTransactionState["publications"]["events"][number]) => HostedTransactionState["publications"]["events"][number] | undefined) { return this.runTransaction(state => { const publications = state.publications as unknown as HostedTransactionState["publications"]; const event = publications.events.find(candidate => candidate.eventId === eventId); if (!event) return undefined; const next = mutator(event); if (next) publications.events[publications.events.findIndex(candidate => candidate.eventId === eventId)] = next; return next; }); }
   async claimNextEvent(claimId: string, at = new Date()) { return this.runTransaction(state => { const publications = state.publications as unknown as HostedTransactionState["publications"]; const candidates = publications.events.slice().sort((a, b) => a.sourceAggregateId.localeCompare(b.sourceAggregateId) || a.sourceVersion - b.sourceVersion || a.eventId.localeCompare(b.eventId)); const event = candidates.find(candidate => eventIsDue(candidate, at) && !candidates.some(previous => previous.sourceAggregateId === candidate.sourceAggregateId && previous.sourceVersion < candidate.sourceVersion && previous.delivery.status !== "delivered")); if (!event) return undefined; const next = claimEvent(event, claimId, at.toISOString()); publications.events[publications.events.findIndex(candidate => candidate.eventId === event.eventId)] = next; return next; }); }
+  async mutateRollingCommand(command: RollingMutationCommand) {
+    if (!command.weekId || !Number.isInteger(command.expectedWeekVersion) || command.expectedWeekVersion < 1) throw Object.assign(new Error("A current working-week version is required before saving."), { status: 422 });
+    if (new Set(command.touchedEntryIds).size !== command.touchedEntryIds.length || new Set(command.touchedDayIds).size !== command.touchedDayIds.length) throw Object.assign(new Error("A working-week mutation contains duplicate touched IDs."), { status: 422 });
+    const entryIds = commandEntryIds(command); const dayIds = commandDayIds(command);
+    if (entryIds.some(id => !command.entryDayIds?.[id]) || Object.values(command.entryDayIds || {}).some(id => !dayIds.includes(id))) throw Object.assign(new Error("Every touched entry must include its authoritative day ID."), { status: 422 });
+    return this.runTransaction(state => {
+      const rolling = state.rolling as unknown as { weeks: RollingWeek[]; days: RollingDay[]; entries: RollingEntry[] };
+      const week = rolling.weeks.find(candidate => candidate.id === command.weekId);
+      if (!week) throw Object.assign(new Error("The planning week was not found."), { status: 404 });
+      assertExpectedVersion(week.version, command.expectedWeekVersion, command.weekId);
+      if (entryIds.some(id => !week.entryIds.includes(id)) || dayIds.some(id => !week.dayIds.includes(id))) throw Object.assign(new Error("A touched record is not attached to this planning week."), { status: 422 });
+      const changedEntries = entryIds.map(id => {
+        const entry = rolling.entries.find(candidate => candidate.id === id && candidate.dayId === command.entryDayIds![id]);
+        if (!entry) throw Object.assign(new Error("A touched menu entry was not found. Refresh before saving."), { status: 404 });
+        const next = structuredClone(entry); applyRollingEntryPatch(next, command.patch.entries?.[id] || {}); next.audit = [...(entry.audit || []), command.audit];
+        rolling.entries[rolling.entries.findIndex(candidate => candidate.id === id)] = next; return next;
+      });
+      const changedDays = dayIds.map(id => {
+        const day = rolling.days.find(candidate => candidate.id === id);
+        const patch = command.patch.days?.[id];
+        if (!patch) return undefined;
+        if (!day) throw Object.assign(new Error("A touched menu day was not found. Refresh before saving."), { status: 404 });
+        const next = { ...day, ...patch }; rolling.days[rolling.days.findIndex(candidate => candidate.id === id)] = next; return next;
+      }).filter((day): day is RollingDay => Boolean(day));
+      const nextWeek = { ...week, ...(command.patch.week || {}), version: week.version + 1, audit: [...(week.audit || []), command.audit] };
+      rolling.weeks[rolling.weeks.findIndex(candidate => candidate.id === week.id)] = nextWeek;
+      return { week: nextWeek, days: changedDays, entries: changedEntries };
+    });
+  }
   async runTransaction<T>(mutator: (state: TransactionState) => T | Promise<T>) {
     return withMenuPlanningTransactionSync(state => { const result = mutator(state); if (result instanceof Promise) throw new Error("SQLite operational mutators must remain synchronous internally."); return result; });
   }
@@ -138,6 +170,7 @@ class FirestoreOperationalStore implements MenuPlanningOperationalStore {
   listPublicationState<T>(limit?: number) { return this.repository.listPublicationState(limit) as Promise<T>; }
   updateEvent(eventId: string, mutator: (event: HostedTransactionState["publications"]["events"][number]) => HostedTransactionState["publications"]["events"][number] | undefined) { return this.repository.updateEvent(eventId, mutator); }
   claimNextEvent(claimId: string, at?: Date) { return this.repository.claimNextEvent(claimId, at); }
+  mutateRollingCommand(command: RollingMutationCommand) { return this.repository.mutateRollingCommand(command); }
   runTransaction<T>(mutator: (state: HostedTransactionState) => T | Promise<T>, expected?: { weekId?: string; weekVersion?: number }, scope?: MenuPlanningTransactionScope) { return this.repository.runTransaction(mutator, expected, scope); }
   updateRollingState<T>(mutator: (rolling: T) => void | Promise<void>) { return this.runTransaction(async state => { await mutator(state.rolling as T); return state.rolling as T; }); }
   updatePublicationState<T>(mutator: (publications: T) => void | Promise<void>) { return this.runTransaction(async state => { await mutator(state.publications as T); return state.publications as T; }); }
@@ -167,6 +200,7 @@ export function getPublicationById<T>(publicationId: string) { return getMenuPla
 export function listPublicationState<T>(limit?: number) { return getMenuPlanningOperationalStore().listPublicationState<T>(limit); }
 
 export function withMenuPlanningTransaction<T>(mutator: (state: TransactionState) => T | Promise<T>, expected?: { weekId?: string; weekVersion?: number }, scope?: MenuPlanningTransactionScope) { return getMenuPlanningOperationalStore().runTransaction(mutator, expected, scope); }
+export function mutateRollingCommand(command: RollingMutationCommand) { return getMenuPlanningOperationalStore().mutateRollingCommand(command); }
 
 export function updateRollingState<T>(mutator: (rolling: T) => void | Promise<void>) { return getMenuPlanningOperationalStore().updateRollingState(mutator); }
 
@@ -178,3 +212,4 @@ export function claimNextMenuPlanningEvent(claimId: string, at?: Date) { return 
 // exported from the operational-store boundary so Phase 2B can switch the
 // application call sites without exposing Firestore to route/browser code.
 export { MenuPlanningFirestoreRepository, MENU_PLANNING_COLLECTIONS, ExpectedVersionConflict, assertExpectedVersion, type HostedTransactionState, type MenuPlanningTransactionScope } from "./firestore-operational-store";
+export type { RollingMutationCommand, RollingMutationDelta } from "./rolling-command";

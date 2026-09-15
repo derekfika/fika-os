@@ -67,6 +67,25 @@ test("concurrent historic imports cannot overwrite the same week", async () => {
   assert.equal((await getWeek("rolling-week:2099-01-05")).week.audit[0].by, "test-import");
 });
 
+test("concurrent ordinary entry commands are protected by week-version CAS", async () => {
+  const week = emptyWeek("2099-01-12", "concurrency-test");
+  const first = { id: `${week.week.id}:entry:first`, dayId: week.days[0].id, date: week.days[0].date, slot: "SALAD 1", itemLabel: "First", portions: 0, allocations: [], allergens: {}, audit: [] };
+  const second = { id: `${week.week.id}:entry:second`, dayId: week.days[0].id, date: week.days[0].date, slot: "SALAD 2", itemLabel: "Second", portions: 0, allocations: [], allergens: {}, audit: [] };
+  week.entries = [first, second]; week.days[0].entryIds = [first.id, second.id]; week.week.entryIds = [first.id, second.id];
+  await saveSnapshot(week);
+  const [clientA, clientB] = await Promise.all([getWeek(week.week.id), getWeek(week.week.id)]);
+  const expectedWeekVersion = clientA.week.version;
+  const results = await Promise.allSettled([
+    updateEntry(week.week.id, first.id, { itemLabel: "First from A" }, "client-a", [], expectedWeekVersion, first.dayId),
+    updateEntry(week.week.id, second.id, { itemLabel: "Second from B" }, "client-b", [], clientB.week.version, second.dayId),
+  ]);
+  assert.equal(results.filter(result => result.status === "fulfilled").length, 1);
+  assert.equal(results.filter(result => result.status === "rejected").length, 1);
+  assert.equal((results.find(result => result.status === "rejected") as PromiseRejectedResult).reason.status, 409);
+  const saved = await getWeek(week.week.id);
+  assert.equal([saved.entries.find(entry => entry.id === first.id)?.itemLabel, saved.entries.find(entry => entry.id === second.id)?.itemLabel].filter(label => label?.includes("from")).length, 1);
+});
+
 test("an untouched complete empty shell is replaceable by an import", async () => {
   const weekCommencing = "2099-02-02";
   const shell = emptyWeek(weekCommencing, "shell-navigation");

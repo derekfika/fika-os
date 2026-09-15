@@ -17,6 +17,103 @@ function harness() {
   return { repository: new MenuPlanningFirestoreRepository(db), transaction, writes };
 }
 
+function commandHarness() {
+  const docs = new Map<string, unknown>();
+  const reads: string[] = [];
+  const writes: string[] = [];
+  const ref = (path: string): any => ({ path, doc: (id: string) => ref(`${path}/${id}`), collection: (name: string) => ref(`${path}/${name}`) });
+  const snapshotFor = (target: any) => {
+    const value = docs.get(target.path);
+    return { exists: value !== undefined, data: () => structuredClone(value) };
+  };
+  const db = {
+    collection: (name: string) => ref(name),
+    runTransaction: async (callback: (transaction: any) => Promise<unknown>) => {
+      const pending: Array<{ path: string; value: unknown }> = [];
+      const transaction = {
+        get: async (target: any) => { reads.push(target.path); return snapshotFor(target); },
+        getAll: async (...targets: any[]) => { targets.forEach(target => reads.push(target.path)); return targets.map(snapshotFor); },
+        set: (target: any, value: unknown) => { pending.push({ path: target.path, value }); },
+      };
+      const result = await callback(transaction);
+      for (const write of pending) { docs.set(write.path, structuredClone(write.value)); writes.push(write.path); }
+      return result;
+    },
+  } as any;
+  const seed = (weekValue: RollingWeek, dayValue: RollingDay, entries: RollingEntry[]) => {
+    const weekPath = `fikaMenuPlanningWeeks/${weekValue.id}`;
+    docs.set(weekPath, structuredClone(weekValue));
+    docs.set(`${weekPath}/days/${dayValue.id}`, structuredClone(dayValue));
+    for (const value of entries) docs.set(`${weekPath}/days/${dayValue.id}/entries/${value.id}`, structuredClone(value));
+  };
+  return { repository: new MenuPlanningFirestoreRepository(db), docs, reads, writes, seed };
+}
+
+const commandFor = (weekId: string, expectedWeekVersion: number, entryValue: RollingEntry, label: string) => ({
+  weekId,
+  expectedWeekVersion,
+  touchedEntryIds: [entryValue.id],
+  touchedDayIds: [entryValue.dayId],
+  entryDayIds: { [entryValue.id]: entryValue.dayId },
+  patch: { entries: { [entryValue.id]: { itemLabel: label } } },
+  audit: { action: "entry-amended", at: "2026-08-24T10:00:00.000Z", by: label },
+});
+
+test("command mutations use bounded reads, deterministic CAS, and atomic writes", async () => {
+  const h = commandHarness();
+  const weekValue = week("week-command");
+  const dayValue = day("week-command:day:0", weekValue.id);
+  const first = entry("entry-first", dayValue.id);
+  const second = entry("entry-second", dayValue.id);
+  const unrelated = entry("entry-unrelated", dayValue.id);
+  weekValue.dayIds = [dayValue.id]; weekValue.entryIds = [first.id, second.id, unrelated.id]; dayValue.entryIds = weekValue.entryIds;
+  h.seed(weekValue, dayValue, [first, second, unrelated]);
+
+  const firstResult = await h.repository.mutateRollingCommand(commandFor(weekValue.id, 1, first, "First from A"));
+  assert.equal(firstResult.week.version, 2);
+  assert.equal(h.reads.length, 2, "one-entry command reads only week metadata and the touched entry");
+  assert.equal(h.writes.length, 2, "one-entry command writes only the touched entry and week version");
+  assert.equal((h.docs.get(`fikaMenuPlanningWeeks/${weekValue.id}/days/${dayValue.id}/entries/${first.id}`) as RollingEntry).itemLabel, "First from A");
+  assert.equal((h.docs.get(`fikaMenuPlanningWeeks/${weekValue.id}/days/${dayValue.id}/entries/${first.id}`) as RollingEntry).audit.at(-1)?.by, "First from A");
+  assert.equal((h.docs.get(`fikaMenuPlanningWeeks/${weekValue.id}/days/${dayValue.id}/entries/${unrelated.id}`) as RollingEntry).itemLabel, "Test soup");
+
+  h.reads.length = 0; h.writes.length = 0;
+  await assert.rejects(() => h.repository.mutateRollingCommand(commandFor(weekValue.id, 1, second, "Second from stale B")), (error: any) => error.status === 409);
+  assert.equal(h.reads.length, 1, "a stale command stops after the authoritative week read");
+  assert.equal(h.writes.length, 0, "a stale command commits no writes");
+
+  h.reads.length = 0; h.writes.length = 0;
+  const retry = await h.repository.mutateRollingCommand(commandFor(weekValue.id, 2, second, "Second after refresh"));
+  assert.equal(retry.week.version, 3);
+  assert.equal(h.reads.length, 2);
+  assert.equal(h.writes.length, 2);
+
+  const batchEntries = [first, second].map((value, index) => ({ ...value, id: `${value.id}-batch`, itemLabel: `Batch ${index}`, dayId: dayValue.id }));
+  for (const value of batchEntries) docsSet(h, value, weekValue.id, dayValue.id);
+  h.docs.set(`fikaMenuPlanningWeeks/${weekValue.id}`, { ...(h.docs.get(`fikaMenuPlanningWeeks/${weekValue.id}`) as RollingWeek), entryIds: [...weekValue.entryIds, ...batchEntries.map(value => value.id)] });
+  const batchCommand = {
+    weekId: weekValue.id, expectedWeekVersion: 3, touchedEntryIds: batchEntries.map(value => value.id), touchedDayIds: [dayValue.id], entryDayIds: Object.fromEntries(batchEntries.map(value => [value.id, value.dayId])),
+    patch: { entries: Object.fromEntries(batchEntries.map(value => [value.id, { itemLabel: `${value.itemLabel} saved` }])) },
+    audit: { action: "portion-allocations-batch-saved", at: "2026-08-24T10:01:00.000Z", by: "portion-planner" },
+  };
+  h.reads.length = 0; h.writes.length = 0;
+  const batch = await h.repository.mutateRollingCommand(batchCommand);
+  assert.equal(batch.week.version, 4);
+  assert.equal(h.reads.length, 3, "T=2 batch reads one week plus two touched entries");
+  assert.equal(h.writes.length, 3, "T=2 batch writes two entries plus the week version");
+
+  h.reads.length = 0; h.writes.length = 0;
+  const missing = { ...batchEntries[1], id: "entry-does-not-exist" };
+  h.docs.set(`fikaMenuPlanningWeeks/${weekValue.id}`, { ...(h.docs.get(`fikaMenuPlanningWeeks/${weekValue.id}`) as RollingWeek), entryIds: [...((h.docs.get(`fikaMenuPlanningWeeks/${weekValue.id}`) as RollingWeek).entryIds), missing.id] });
+  await assert.rejects(() => h.repository.mutateRollingCommand({ ...batchCommand, expectedWeekVersion: 4, touchedEntryIds: [batchEntries[0].id, missing.id], entryDayIds: { [batchEntries[0].id]: dayValue.id, [missing.id]: dayValue.id }, patch: { entries: { [batchEntries[0].id]: { itemLabel: "must not commit" }, [missing.id]: { itemLabel: "missing" } } } }), /not attached|not found/);
+  assert.equal(h.writes.length, 0, "a failed multi-entry command commits no partial entry writes");
+  assert.equal((h.docs.get(`fikaMenuPlanningWeeks/${weekValue.id}/days/${dayValue.id}/entries/${batchEntries[0].id}`) as RollingEntry).itemLabel, "Batch 0 saved");
+});
+
+function docsSet(h: ReturnType<typeof commandHarness>, value: RollingEntry, weekId: string, dayId: string) {
+  h.docs.set(`fikaMenuPlanningWeeks/${weekId}/days/${dayId}/entries/${value.id}`, structuredClone(value));
+}
+
 function publicationReadHarness() {
   const publicationId = "menu-publication:rolling-week:2026-09-14";
   const otherPublicationId = "menu-publication:rolling-week:2026-09-21";

@@ -355,44 +355,33 @@ async function handlePost(request: NextRequest) {
       });
     }
     if (action === "update-entry") {
-      const snapshot = await updateEntry(
+      const mutation = await updateEntry(
         String(body.weekId),
         String(body.entryId),
         (body.patch || {}) as never,
         actor.uid,
         liveOplocs,
+        Number(body.expectedWeekVersion),
+        body.dayId ? String(body.dayId) : undefined,
       );
-      return NextResponse.json({
-        snapshot: await resolvedSnapshot(snapshot, undefined, actor),
-        weeks: await listWeeks(),
-        blockers: await validateWeekAuthoritative(scopedSnapshot(snapshot, actor), {
-          governedOplocIds: new Set(liveOplocs.map((oploc) => oploc.canonicalId)),
-        }),
-        publicationState: await publicationState(snapshot, liveOplocs),
-      });
+      return NextResponse.json({ mutation });
     }
     if (action === "batch-update-entries") {
       const updates = Array.isArray(body.updates)
         ? (body.updates as Array<{
             entryId: string;
+            dayId: string;
             allocations: RollingEntry["allocations"];
           }>)
         : [];
-      const snapshot = await batchUpdateEntries(
+      const mutation = await batchUpdateEntries(
         String(body.weekId),
         Number(body.expectedWeekVersion),
         updates,
         actor.uid,
         liveOplocs,
       );
-      return NextResponse.json({
-        snapshot: await resolvedSnapshot(snapshot, undefined, actor),
-        weeks: await listWeeks(),
-        blockers: await validateWeekAuthoritative(scopedSnapshot(snapshot, actor), {
-          governedOplocIds: new Set(liveOplocs.map((oploc) => oploc.canonicalId)),
-        }),
-        publicationState: await publicationState(snapshot, liveOplocs),
-      });
+      return NextResponse.json({ mutation });
     }
     if (action === "create-entry") {
       const snapshot = await createEntry(

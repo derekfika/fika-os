@@ -11,6 +11,7 @@ import type { PublicationDayState } from "@/lib/menu-publication";
 import { CANONICAL_ALLERGEN_KEYS } from "@/lib/fika-contracts";
 import MenuPlanningShell from "./menu-planning-shell";
 import PlannerModal from "./planner-modal";
+import { applyRollingMutationDelta, type RollingMutationDelta } from "./planner-data";
 
 const ALLERGENS = CANONICAL_ALLERGEN_KEYS;
 const display = (value: string) => value.replaceAll("_", " ").replace(/\b\w/g, c => c.toUpperCase());
@@ -76,12 +77,19 @@ export default function RollingMenuWorkspace() {
   useEffect(() => { latestCatalogue = catalogue; }, [catalogue]);
 
   const command = async (action: string, extra: Record<string, unknown> = {}) => {
+    const payload = { ...extra } as Record<string, any>;
+    if ((action === "update-entry" || action === "batch-update-entries") && snapshot && payload.weekId === snapshot.week.id) {
+      payload.expectedWeekVersion ??= snapshot.week.version;
+      if (action === "update-entry") payload.dayId ??= snapshot.entries.find(entry => entry.id === payload.entryId)?.dayId;
+      if (action === "batch-update-entries" && Array.isArray(payload.updates)) payload.updates = payload.updates.map((update: Record<string, unknown>) => ({ ...update, dayId: update.dayId || snapshot.entries.find(entry => entry.id === update.entryId)?.dayId }));
+    }
     setMessage("Saving...");
     try {
-      const response = await fetch("/api/rolling-menu", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action, ...extra }) });
+      const response = await fetch("/api/rolling-menu", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action, ...payload }) });
       const body = await response.json();
       if (!response.ok) { setError(body.error?.message || "Command failed."); setMessage(""); return false; }
-      setError(""); setSnapshot(body.snapshot); setWeeks(body.weeks || []); setPublicationState(body.publicationState || {}); const handoff = body.handoff?.status === "delivered" ? " · CPU handoff delivered" : body.handoff?.status === "pending" ? " · CPU handoff pending — retry available" : ""; setMessage(action === "publish" ? `Published${handoff}` : "Saved"); window.setTimeout(() => setMessage(""), 5000); return true;
+      const nextSnapshot = body.mutation && snapshot ? applyRollingMutationDelta(snapshot, body.mutation as RollingMutationDelta) : body.snapshot;
+      setError(""); if (nextSnapshot) setSnapshot(nextSnapshot); setWeeks(body.weeks || weeks); setPublicationState(body.publicationState || publicationState); const handoff = body.handoff?.status === "delivered" ? " · CPU handoff delivered" : body.handoff?.status === "pending" ? " · CPU handoff pending — retry available" : ""; setMessage(action === "publish" ? `Published${handoff}` : "Saved"); window.setTimeout(() => setMessage(""), 5000); return true;
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Command failed. Please try again."); setMessage(""); return false;
     }
