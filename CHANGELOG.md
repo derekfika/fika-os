@@ -4,6 +4,8 @@ This file records user-facing workflow changes delivered in the repository. Deta
 
 ## Unreleased
 
+- **2026-09-15 — Menu Planning publication occurrence handoff:** authoritative hosted publication-state responses now use the same live authorised OPLOC set as publication, and downstream materialisation event identity includes the exact publication-day occurrence/action so unchanged day content is rematerialised for each new publication lineage. Affected apps: Menu Planning and Delivered-In handoff. Validation: publication/event regression tests, Menu Planning typecheck/build and `git diff --check`. Deployment status: not deployed.
+
 - **2026-09-15 — Portion Planner stale draft reconciliation:** local per-day portion drafts now reconcile against persisted allocations on hydration and edit-back, clear semantically unchanged cells, remain day-isolated, and block publication only while genuinely dirty. Affected app: Menu Planning. Validation: focused draft/publication tests, typecheck, production build and `git diff --check`. Deployment status: not deployed.
 
 - **2026-09-15 — Menu Planning publication-state consistency staging deployment submitted:** submitted exact-SHA rollout for `23cbf07b84e8aa428461c300a94df462b794038f` to Firebase App Hosting backend `fika-menu-planning-staging` in project `fika-os-dev`. Firebase compilation/propagation was not awaited. Deployment status: submitted; live verification pending.

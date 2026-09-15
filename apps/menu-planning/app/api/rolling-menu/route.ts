@@ -242,7 +242,7 @@ async function handleGet(request: NextRequest) {
       listCatalogueEntriesForIds(
         snapshot.entries.map((entry) => entry.itemId || ""),
       ),
-      publicationState(snapshot),
+      publicationState(snapshot, governedOplocs),
     ]);
     const catalogueMs = performance.now() - catalogueStarted;
     const publicationStateMs = performance.now() - publicationStarted;
@@ -297,6 +297,9 @@ async function handlePost(request: NextRequest) {
     const body = (await request.json()) as Record<string, unknown>;
     const action = String(body.action || "");
     const actor = requireMutationActor(await resolveMenuActor(request));
+    const liveOplocs = (await readDeliveredInOplocs(request)).filter((oploc) =>
+      actorCanAccessOploc(actor, oploc.canonicalId),
+    );
     if (action === "create-week") {
       const weekCommencing = planningWeekCommencing(
         String(body.weekCommencing),
@@ -307,13 +310,10 @@ async function handlePost(request: NextRequest) {
         snapshot: await resolvedSnapshot(snapshot, undefined, actor),
         weeks: await listWeeks(),
         blockers: await validateWeekAuthoritative(scopedSnapshot(snapshot, actor)),
-        publicationState: await publicationState(snapshot),
+        publicationState: await publicationState(snapshot, liveOplocs),
       });
     }
     if (action === "duplicate-week") {
-      const liveOplocs = (await readDeliveredInOplocs(request)).filter((oploc) =>
-        actorCanAccessOploc(actor, oploc.canonicalId),
-      );
       const snapshot = await duplicateWeek(
         String(body.weekId),
         planningWeekCommencing(String(body.weekCommencing)),
@@ -326,13 +326,10 @@ async function handlePost(request: NextRequest) {
         blockers: await validateWeekAuthoritative(scopedSnapshot(snapshot, actor), {
           governedOplocIds: new Set(liveOplocs.map((oploc) => oploc.canonicalId)),
         }),
-        publicationState: await publicationState(snapshot),
+        publicationState: await publicationState(snapshot, liveOplocs),
       });
     }
     if (action === "copy-week-into-current") {
-      const liveOplocs = (await readDeliveredInOplocs(request)).filter((oploc) =>
-        actorCanAccessOploc(actor, oploc.canonicalId),
-      );
       const snapshot = await copyWeekIntoWeek(
         String(body.sourceWeekId),
         String(body.targetWeekId),
@@ -345,7 +342,7 @@ async function handlePost(request: NextRequest) {
         blockers: await validateWeekAuthoritative(scopedSnapshot(snapshot, actor), {
           governedOplocIds: new Set(liveOplocs.map((oploc) => oploc.canonicalId)),
         }),
-        publicationState: await publicationState(snapshot),
+        publicationState: await publicationState(snapshot, liveOplocs),
       });
     }
     if (action === "reset-week") {
@@ -354,13 +351,10 @@ async function handlePost(request: NextRequest) {
         snapshot: await resolvedSnapshot(snapshot, undefined, actor),
         weeks: await listWeeks(),
         blockers: await validateWeekAuthoritative(scopedSnapshot(snapshot, actor)),
-        publicationState: await publicationState(snapshot),
+        publicationState: await publicationState(snapshot, liveOplocs),
       });
     }
     if (action === "update-entry") {
-      const liveOplocs = (await readDeliveredInOplocs(request)).filter((oploc) =>
-        actorCanAccessOploc(actor, oploc.canonicalId),
-      );
       const snapshot = await updateEntry(
         String(body.weekId),
         String(body.entryId),
@@ -374,13 +368,10 @@ async function handlePost(request: NextRequest) {
         blockers: await validateWeekAuthoritative(scopedSnapshot(snapshot, actor), {
           governedOplocIds: new Set(liveOplocs.map((oploc) => oploc.canonicalId)),
         }),
-        publicationState: await publicationState(snapshot),
+        publicationState: await publicationState(snapshot, liveOplocs),
       });
     }
     if (action === "batch-update-entries") {
-      const liveOplocs = (await readDeliveredInOplocs(request)).filter((oploc) =>
-        actorCanAccessOploc(actor, oploc.canonicalId),
-      );
       const updates = Array.isArray(body.updates)
         ? (body.updates as Array<{
             entryId: string;
@@ -400,7 +391,7 @@ async function handlePost(request: NextRequest) {
         blockers: await validateWeekAuthoritative(scopedSnapshot(snapshot, actor), {
           governedOplocIds: new Set(liveOplocs.map((oploc) => oploc.canonicalId)),
         }),
-        publicationState: await publicationState(snapshot),
+        publicationState: await publicationState(snapshot, liveOplocs),
       });
     }
     if (action === "create-entry") {
@@ -416,7 +407,7 @@ async function handlePost(request: NextRequest) {
         snapshot: await resolvedSnapshot(snapshot, undefined, actor),
         weeks: await listWeeks(),
         blockers: await validateWeekAuthoritative(scopedSnapshot(snapshot, actor)),
-        publicationState: await publicationState(snapshot),
+        publicationState: await publicationState(snapshot, liveOplocs),
       });
     }
     if (action === "add-one-off-destination") {
@@ -431,7 +422,7 @@ async function handlePost(request: NextRequest) {
         snapshot: await resolvedSnapshot(snapshot, undefined, actor),
         weeks: await listWeeks(),
         blockers: await validateWeekAuthoritative(scopedSnapshot(snapshot, actor)),
-        publicationState: await publicationState(snapshot),
+        publicationState: await publicationState(snapshot, liveOplocs),
       });
     }
     if (action === "add-menu-slot") {
@@ -444,7 +435,7 @@ async function handlePost(request: NextRequest) {
         snapshot: await resolvedSnapshot(snapshot, undefined, actor),
         weeks: await listWeeks(),
         blockers: await validateWeekAuthoritative(scopedSnapshot(snapshot, actor)),
-        publicationState: await publicationState(snapshot),
+        publicationState: await publicationState(snapshot, liveOplocs),
       });
     }
     if (action === "remove-menu-slot") {
@@ -457,13 +448,10 @@ async function handlePost(request: NextRequest) {
         snapshot: await resolvedSnapshot(snapshot, undefined, actor),
         weeks: await listWeeks(),
         blockers: await validateWeekAuthoritative(scopedSnapshot(snapshot, actor)),
-        publicationState: await publicationState(snapshot),
+        publicationState: await publicationState(snapshot, liveOplocs),
       });
     }
     if (action === "clean-duplicate-entries") {
-      const liveOplocs = (await readDeliveredInOplocs(request)).filter((oploc) =>
-        actorCanAccessOploc(actor, oploc.canonicalId),
-      );
       const result = await cleanDuplicateEntries(
         String(body.weekId),
         actor.uid,
@@ -476,7 +464,7 @@ async function handlePost(request: NextRequest) {
         blockers: await validateWeekAuthoritative(scopedSnapshot(result.snapshot, actor), {
           governedOplocIds: new Set(liveOplocs.map((oploc) => oploc.canonicalId)),
         }),
-        publicationState: await publicationState(result.snapshot),
+        publicationState: await publicationState(result.snapshot, liveOplocs),
       });
     }
     if (action === "publish") {
@@ -522,7 +510,7 @@ async function handlePost(request: NextRequest) {
         },
         weeks: await listWeeks(),
         blockers: await validateWeekAuthoritative(scopedSnapshot(saved, actor)),
-        publicationState: await publicationState(saved),
+        publicationState: await publicationState(saved, liveOplocs),
       });
     }
     return NextResponse.json(

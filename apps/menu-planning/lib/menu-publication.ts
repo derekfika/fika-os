@@ -474,7 +474,7 @@ function appendPublicationEvents(
   addEvent(
     createDomainEvent({
       eventType: `menu.day.${action}`,
-      sourceAggregateId: `${publication.publicationId}:${day.sourceDayId}`,
+      sourceAggregateId: `${publication.publicationId}:${day.publicationDayId}:${action}`,
       sourceVersion: day.version,
       occurredAt,
       payload: {
@@ -514,7 +514,9 @@ function appendPublicationEvents(
     addEvent(
       createDomainEvent({
         eventType: "production.materialise",
-        sourceAggregateId: `${publication.publicationId}:${day.sourceDayId}:${destinationOplocId}`,
+        // Publication occurrence is downstream identity. Content version is
+        // retained in the payload and may remain unchanged across releases.
+        sourceAggregateId: `${publication.publicationId}:${day.publicationDayId}:${action}:${destinationOplocId}`,
         sourceVersion: day.version,
         occurredAt,
         payload: normalizePublicationValue({
@@ -1027,20 +1029,13 @@ export async function repairPublishedMenuPublication(publicationId: string) {
             day.version > 1 ? "amended" : "published",
             target.audit.at(-1)?.by || "publication-repair",
           );
-        const currentEventIds = new Set(
-          currentPublishedDays(target).flatMap((day) => [
-            `production.materialise:${target.publicationId}:${day.sourceDayId}`,
-            ...day.entries.flatMap((entry) =>
-              entry.allocations.map(
-                (allocation) =>
-                  `production.materialise:${target.publicationId}:${day.sourceDayId}:${allocation.destinationId}`,
-              ),
-            ),
-          ]),
-        );
         for (const event of stored.events || [])
           if (
-            currentEventIds.has(event.eventId) &&
+            event.eventType === "production.materialise" &&
+            currentPublishedDays(target).some((day) => {
+              const payload = event.payload as { publicationId?: string; sourcePublicationDayId?: string };
+              return payload.publicationId === target.publicationId && payload.sourcePublicationDayId === day.publicationDayId;
+            }) &&
             event.delivery.status === "delivered"
           )
             event.delivery = {

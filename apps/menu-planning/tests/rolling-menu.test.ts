@@ -415,6 +415,15 @@ test("week publication is atomic and creates one immutable five-day publication"
     assert.equal(amendment.publicationVersion, 2);
     assert.notEqual(amendment.weekPacket?.manifest.contentHash, publication.weekPacket.manifest.contentHash);
     assert.equal(decodeWeeklyPublicationPacket(amendment.weekPacket!).publicationVersion, 2);
+    const mondayV1 = publication.days.find(day => day.sourceDayId === week.days[0].id);
+    const mondayV2 = amendment.days.find(day => day.sourceDayId === week.days[0].id && day.status === "published");
+    const materialisations = (await listMenuPublicationEvents()).filter(event => event.eventType === "production.materialise" && (event.payload as any).publicationId === publication.publicationId && (event.payload as any).sourceEntityId === week.days[0].id);
+    const v1Event = materialisations.find(event => (event.payload as any).sourcePublicationDayId === mondayV1?.publicationDayId);
+    const v2Events = materialisations.filter(event => (event.payload as any).sourcePublicationDayId === mondayV2?.publicationDayId);
+    assert.ok(v1Event);
+    assert.ok(v2Events.length > 0);
+    assert.ok(v2Events.every(event => event.eventId !== v1Event!.eventId));
+    assert.ok(v2Events.every(event => (event.payload as any).sourceVersion === mondayV2?.version));
     const withdrawnDayId = amendment.days.find(day => day.sourceDayId === week.days[0].id && day.status === "published")!.publicationDayId;
     const afterDayWithdrawal = await withdrawPublishedMenuDay(amendment.publicationId, withdrawnDayId, "Withdraw first day", "test");
     assert.ok(afterDayWithdrawal.weekPacket);
