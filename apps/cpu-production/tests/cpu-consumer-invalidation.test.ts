@@ -56,8 +56,8 @@ test("CPU notification retry is bounded and change classification is determinist
   globalThis.fetch = (async () => { attempts += 1; return new Response("{}", { status: attempts === 2 ? 200 : 503 }); }) as typeof fetch;
   try {
     const result = await notifyCpuConsumerInvalidations({ eventId: "cpu-change:15", sourceEntityId: "order:4", serviceDate: "2026-09-02", sourceVersion: 10, changedAt: "2026-09-02T10:00:00Z", changeType: "withdrawn", order: { origin: "cpu_created" }, logistics: true });
-    assert.equal(attempts, 2);
-    assert.deepEqual(result.results, [{ delivered: true, attempts: 2 }]);
+    assert.equal(attempts, 1);
+    assert.deepEqual(result.results, [{ delivered: false, attempts: 1, error: "logistics returned HTTP 503." }]);
     assert.equal(eventTypeForConsumers("cancelled-order-dismissed"), "withdrawn");
     assert.equal(eventTypeForConsumers("sign-matrix"), "changed");
     assert.equal(eventTypeForConsumers("lines-updated"), "amended");

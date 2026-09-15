@@ -43,15 +43,16 @@ async function rebuildCpuProjection(request: NextRequest, serviceDate: string, l
   return projection;
 }
 
-async function recordCpuChange(request: NextRequest, canonicalId: string, actorId: string, changeType: string, order?: ProductionOrder) {
+async function recordCpuChange(request: NextRequest, canonicalId: string, actorId: string, changeType: string, order?: ProductionOrder, idempotencyKey?: string) {
   const current = order || await productionOrderDetail(request, canonicalId);
   const serviceDate = current?.serviceDate;
   if (!serviceDate) return current;
-  const event = await appendCpuChange({ serviceDate, entityType: "productionOrder", entityId: canonicalId, revision: current.version, changeType, actorId, changedAt: new Date().toISOString() });
+  const changedAt = new Date().toISOString();
+  const event = await appendCpuChange({ serviceDate, entityType: "productionOrder", entityId: canonicalId, revision: current.version, changeType, actorId, changedAt, ...(idempotencyKey ? { idempotencyKey } : {}), propagation: { sourceEntityId: canonicalId, serviceDate, sourceVersion: current.version, changedAt, changeType: eventTypeForConsumers(changeType), order: current, logistics: true } });
   await rebuildCpuProjection(request, serviceDate, event.sequence);
   await rebuildCpuWeekProjection(request, weekCommencingFor(serviceDate), event.sequence);
   const review = current?.destinationOplocId ? await rebuildCpuReviewPackage(request, serviceDate, current.destinationOplocId, event.sequence) : undefined;
-  await notifyCpuConsumerInvalidations({ eventId: `cpu-change:${event.sequence}`, sourceEntityId: canonicalId, serviceDate, sourceVersion: current.version, changedAt: event.changedAt, changeType: eventTypeForConsumers(changeType), order: current, logistics: true, ...(review ? { reviewManifest: review.manifest } : {}) });
+  await notifyCpuConsumerInvalidations({ eventId: `cpu-change:${canonicalId}:v${event.sequence}`, sourceEntityId: canonicalId, serviceDate, sourceVersion: event.sequence, changedAt: event.changedAt, changeType: eventTypeForConsumers(changeType), order: current, logistics: true, ...(review ? { reviewManifest: review.manifest } : {}) });
   return current;
 }
 
@@ -121,6 +122,7 @@ const Transition = z
       "reconciliation_required",
     ]),
     reason: z.string().trim().min(3),
+    idempotencyKey: z.string().trim().min(8).optional(),
   })
   .strict();
 const UpdateLines = z
@@ -146,10 +148,11 @@ const UpdateLines = z
         }),
       )
       .min(1),
+    idempotencyKey: z.string().trim().min(8).optional(),
   })
   .strict();
-const AllergenDiscrepancy = z.object({ action: z.literal("report-allergen-discrepancy"), canonicalId: z.string().min(8), expectedVersion: z.number().int().positive(), note: z.string().trim().min(3) }).strict();
-const AcknowledgeCancellation = z.object({ action: z.literal("acknowledge-cancellation"), canonicalId: z.string().min(8), expectedVersion: z.number().int().positive() }).strict();
+const AllergenDiscrepancy = z.object({ action: z.literal("report-allergen-discrepancy"), canonicalId: z.string().min(8), expectedVersion: z.number().int().positive(), note: z.string().trim().min(3), idempotencyKey: z.string().trim().min(8).optional() }).strict();
+const AcknowledgeCancellation = z.object({ action: z.literal("acknowledge-cancellation"), canonicalId: z.string().min(8), expectedVersion: z.number().int().positive(), idempotencyKey: z.string().trim().min(8).optional() }).strict();
 async function handleGet(request: NextRequest) {
   try {
     const actor = await actorFor(request);
@@ -288,12 +291,16 @@ async function handlePost(request: NextRequest) {
     if (raw?.action === "sync-production-event") {
       if (!internalProjectionRequest(request)) return NextResponse.json({ error: { message: "Internal CPU projection access is not authorised." } }, { status: 401 });
       const serviceDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).parse(raw.serviceDate);
-      const event = await appendCpuChange({ serviceDate, entityType: "productionOrder", entityId: z.string().min(1).parse(raw.entityId), revision: z.number().int().positive().parse(raw.revision), changeType: z.string().min(1).parse(raw.changeType), actorId: z.string().min(1).parse(raw.actorId || "integration-hub"), changedAt: z.string().min(1).parse(raw.changedAt || new Date().toISOString()), idempotencyKey: z.string().min(1).parse(raw.idempotencyKey) });
+      const entityId = z.string().min(1).parse(raw.entityId);
+      const revision = z.number().int().positive().parse(raw.revision);
+      const changeType = z.string().min(1).parse(raw.changeType);
+      const changedAt = z.string().min(1).parse(raw.changedAt || new Date().toISOString());
+      const event = await appendCpuChange({ serviceDate, entityType: "productionOrder", entityId, revision, changeType, actorId: z.string().min(1).parse(raw.actorId || "integration-hub"), changedAt, idempotencyKey: z.string().min(1).parse(raw.idempotencyKey), propagation: { sourceEntityId: entityId, serviceDate, sourceVersion: revision, changedAt, changeType: eventTypeForConsumers(changeType), order: { origin: "menu_planning" }, logistics: true } });
       const dayProjection = await rebuildCpuProjection(request, serviceDate, event.sequence);
       const weekProjection = await rebuildCpuWeekProjection(request, weekCommencingFor(serviceDate), event.sequence);
       const changedOrder = await productionOrderDetail(request, z.string().min(1).parse(raw.entityId));
       const review = changedOrder?.destinationOplocId ? await rebuildCpuReviewPackage(request, serviceDate, changedOrder.destinationOplocId, event.sequence) : undefined;
-      await notifyCpuConsumerInvalidations({ eventId: `cpu-change:${event.sequence}`, sourceEntityId: event.entityId, serviceDate, sourceVersion: event.revision, changedAt: event.changedAt, changeType: eventTypeForConsumers(event.changeType), order: changedOrder || { origin: "menu_planning" }, logistics: true, ...(review ? { reviewManifest: review.manifest } : {}) });
+      await notifyCpuConsumerInvalidations({ eventId: `cpu-change:${event.entityId}:v${event.sequence}`, sourceEntityId: event.entityId, serviceDate, sourceVersion: event.sequence, changedAt: event.changedAt, changeType: eventTypeForConsumers(event.changeType), order: changedOrder || { origin: "menu_planning" }, logistics: true, ...(review ? { reviewManifest: review.manifest } : {}) });
       return NextResponse.json({ applied: true, duplicate: event.sequence < Number(raw.sequence || event.sequence), event, dayProjection, weekProjection });
     }
     const actor = await actorFor(request);
@@ -305,7 +312,7 @@ async function handlePost(request: NextRequest) {
     if (raw?.action === "cpu-create") {
       const command = Cpu.parse(raw);
       const result = await createCpuProductionOrder(request, command, command.idempotencyKey);
-      if (result.order) await recordCpuChange(request, result.order.canonicalId, actor.uid, result.created ? "created" : "replayed", result.order);
+      if (result.order) await recordCpuChange(request, result.order.canonicalId, actor.uid, result.created ? "created" : "replayed", result.order, command.idempotencyKey);
       return NextResponse.json(result);
     }
     if (raw?.action === "update-lines") {
@@ -366,19 +373,19 @@ async function handlePost(request: NextRequest) {
         return NextResponse.json({ order: updated, localFixture: true });
       }
       const order = (await updateProductionLines(request, command)).order;
-      await recordCpuChange(request, command.canonicalId, actor.uid, "lines-updated", order);
+      await recordCpuChange(request, command.canonicalId, actor.uid, "lines-updated", order, command.idempotencyKey || `update-lines:${command.canonicalId}:v${command.expectedVersion}`);
       return NextResponse.json({ order });
     }
     if (raw?.action === "report-allergen-discrepancy") {
       const command = AllergenDiscrepancy.parse(raw);
       const result = await reportProductionAllergenDiscrepancy(request, command);
-      await recordCpuChange(request, command.canonicalId, actor.uid, "allergen-discrepancy", result.order);
+      await recordCpuChange(request, command.canonicalId, actor.uid, "allergen-discrepancy", result.order, command.idempotencyKey || `allergen-discrepancy:${command.canonicalId}:v${command.expectedVersion}`);
       return NextResponse.json(result);
     }
     if (raw?.action === "acknowledge-cancellation") {
       const command = AcknowledgeCancellation.parse(raw);
       const order = (await acknowledgeProductionCancellation(request, command)).order;
-      await recordCpuChange(request, command.canonicalId, actor.uid, "cancelled-order-dismissed", order);
+      await recordCpuChange(request, command.canonicalId, actor.uid, "cancelled-order-dismissed", order, command.idempotencyKey || `ack-cancellation:${command.canonicalId}:v${command.expectedVersion}`);
       return NextResponse.json({ order });
     }
     const command = Transition.parse(raw);
@@ -402,7 +409,7 @@ async function handlePost(request: NextRequest) {
       return NextResponse.json({ order: updated, localFixture: true });
     }
     const order = (await transitionProductionOrder(request, command)).order;
-    await recordCpuChange(request, command.canonicalId, actor.uid, "status-changed", order);
+    await recordCpuChange(request, command.canonicalId, actor.uid, "status-changed", order, command.idempotencyKey || `transition:${command.canonicalId}:v${command.expectedVersion}:${command.status}`);
     return NextResponse.json({ order });
   } catch (error) {
     return errorResponse(error);

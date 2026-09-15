@@ -1,7 +1,7 @@
 import type { NextRequest } from "next/server";
 import { productionQueue, productionQueueForWeek } from "./production-http-client";
 import { withReadableDestinations } from "./cpu-oploc-labels";
-import { appendCpuChange as appendProjectionChange, cpuChanges, cpuProjections, loadPlansForOrders } from "./cpu-projection-repository";
+import { appendCpuChange as appendProjectionChange, cpuChanges, cpuProjections, loadPlansForOrders, type CpuChangeWithPropagation } from "./cpu-projection-repository";
 import { recordDeliveredInReadBudget } from "./delivered-in-read-budget";
 import { recordDataAccess } from "@fika/server-shared/data-source-meter-server";
 import type { ReadPackageManifest } from "@fika/server-shared/read-package";
@@ -15,7 +15,7 @@ export type CpuProjectionLine = { sourceLineId: string; sourceBookingLineId?: st
 export type CpuProjectionOrder = { id: string; serviceDate: string; requiredBy: string; serviceWindow: ProductionOrder["serviceWindow"]; origin?: string; sourceReference?: string; sourceEntityId?: string; sourcePublicationDayId?: string; sourceVersion?: number; sourceContentHash?: string; destinationOplocId?: string; destinationLabel?: string; clientName?: string; serviceType?: string; productionCategory?: ProductionOrder["productionCategory"]; requiresDelivery?: boolean; pax?: number; priority: ProductionOrder["priority"]; status: ProductionStatus; workflowStatus?: ProductionStatus; cancellationNotice?: string; productionScope?: string; quantities: CpuProjectionLine[]; bookingDietaries?: Record<string, unknown>; bookingNotes?: string; allergenReadiness: string; planningReadiness: string; attention: string[]; version: number };
 export type CpuDayProjection = { serviceDate: string; revision: number; lastChangeSequence: number; orders: CpuProjectionOrder[]; summary: { orders: number; ready: number; attention: number; planned: number; totalUnits: number }; rebuiltAt: string };
 export type CpuWeekProjection = { serviceDate: string; weekCommencing: string; revision: number; lastChangeSequence: number; orders: CpuProjectionOrder[]; summary: CpuDayProjection["summary"]; rebuiltAt: string };
-export const appendCpuChange = (input: Omit<CpuChangeEvent, "sequence">) => appendProjectionChange(input);
+export const appendCpuChange = (input: Omit<CpuChangeEvent, "sequence"> & CpuChangeWithPropagation) => appendProjectionChange(input);
 export async function listCpuChanges(after: number, serviceDate: string) { const snapshot = await cpuChanges().where("serviceDate", "==", serviceDate).where("sequence", ">", after).orderBy("sequence", "asc").get(); recordDataAccess({ app: "cpu-production", operation: "changes.service-date", source: "FIRESTORE", documents: snapshot.size, firestoreReadKind: "query" }); return snapshot.docs.map((doc) => doc.data() as CpuChangeEvent); }
 export function weekCommencingFor(serviceDate: string) { const date = new Date(`${serviceDate}T00:00:00Z`); const day = date.getUTCDay() || 7; date.setUTCDate(date.getUTCDate() - day + 1); return date.toISOString().slice(0, 10); }
 function weekDates(weekCommencing: string) { const start = new Date(`${weekCommencing}T00:00:00Z`); return Array.from({ length: 5 }, (_, index) => { const date = new Date(start); date.setUTCDate(start.getUTCDate() + index); return date.toISOString().slice(0, 10); }); }

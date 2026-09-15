@@ -1,6 +1,8 @@
 import { db } from "./firebase-admin";
+import type { Transaction } from "firebase-admin/firestore";
 import type { ProductionPlan } from "../app/lib/production-plan";
 import { recordDataAccess } from "@fika/server-shared/data-source-meter-server";
+import { stageCpuPropagation, type CpuConsumerInvalidationInput, type CpuDurableDeliveryInput } from "./cpu-durable-outbox";
 export const cpuPlans = () => db.collection("fikaCpuProductionPlansV1");
 export const cpuChanges = () => db.collection("fikaCpuProductionChangesV1");
 export const cpuCursor = () => db.collection("fikaCpuProductionChangeCursorV1");
@@ -13,4 +15,35 @@ export async function loadPlansForOrders(orderIds: string[]) {
   recordDataAccess({ app: "cpu-production", operation: "production-plans.by-order-ids", source: "FIRESTORE", dataset: "fikaProductionPlans", documents: snapshots.filter(snapshot => snapshot.exists).length, estimatedBillableReads: snapshots.length, firestoreReadKind: "document" });
   return snapshots.flatMap(snapshot => snapshot.exists ? [snapshot.data() as ProductionPlan] : []);
 }
-export async function appendCpuChange<T extends Record<string, unknown>>(input: T) { return db.runTransaction(async transaction => { const idempotencyKey = typeof input.idempotencyKey === "string" ? input.idempotencyKey : undefined; const receiptRef = idempotencyKey ? cpuChangeReceipts().doc(idempotencyKey.replace(/[^A-Za-z0-9:_-]+/g, "_")) : undefined; const receipt = receiptRef ? await transaction.get(receiptRef) : undefined; if (receiptRef) recordDataAccess({ app: "cpu-production", operation: "change-receipt.transaction-read", source: "FIRESTORE", documents: receipt?.exists ? 1 : 0, firestoreReadKind: "transaction" }); if (receipt?.exists) return receipt.data()?.event as T & { sequence: number }; const cursorRef = cpuCursor().doc("global"); const current = await transaction.get(cursorRef); recordDataAccess({ app: "cpu-production", operation: "change-cursor.transaction-read", source: "FIRESTORE", documents: current.exists ? 1 : 0, firestoreReadKind: "transaction" }); const sequence = Number(current.data()?.sequence || 0) + 1; const event = { ...input, sequence } as T & { sequence: number }; transaction.set(cursorRef, { sequence }); transaction.create(cpuChanges().doc(String(sequence).padStart(20, "0")), event); if (receiptRef) transaction.create(receiptRef, { idempotencyKey, event }); return event; }); }
+export type CpuChangeWithPropagation = {
+  propagation?: CpuConsumerInvalidationInput;
+  deliveries?: CpuDurableDeliveryInput[];
+  idempotencyKey?: string;
+};
+
+export async function appendCpuChangeInTransaction<T extends CpuChangeWithPropagation & Record<string, unknown>>(transaction: Transaction, input: T) {
+  const { propagation, deliveries, ...eventInput } = input;
+  const idempotencyKey = typeof eventInput.idempotencyKey === "string" ? eventInput.idempotencyKey : undefined;
+  const receiptRef = idempotencyKey ? cpuChangeReceipts().doc(idempotencyKey.replace(/[^A-Za-z0-9:_-]+/g, "_")) : undefined;
+  const receipt = receiptRef ? await transaction.get(receiptRef) : undefined;
+  if (receiptRef) recordDataAccess({ app: "cpu-production", operation: "change-receipt.transaction-read", source: "FIRESTORE", documents: receipt?.exists ? 1 : 0, firestoreReadKind: "transaction" });
+  if (receipt?.exists) {
+    const existing = receipt.data()?.event as Omit<T, "propagation"> & { sequence: number };
+    if (propagation) await stageCpuPropagation(transaction, { ...propagation, eventId: propagation.eventId || `cpu-change:${propagation.sourceEntityId}:v${existing.sequence}`, sourceVersion: existing.sequence }, deliveries);
+    return existing;
+  }
+  const cursorRef = cpuCursor().doc("global");
+  const current = await transaction.get(cursorRef);
+  recordDataAccess({ app: "cpu-production", operation: "change-cursor.transaction-read", source: "FIRESTORE", documents: current.exists ? 1 : 0, firestoreReadKind: "transaction" });
+  const sequence = Number(current.data()?.sequence || 0) + 1;
+  const event = { ...eventInput, sequence } as Omit<T, "propagation"> & { sequence: number };
+  if (propagation) await stageCpuPropagation(transaction, { ...propagation, eventId: propagation.eventId || `cpu-change:${propagation.sourceEntityId}:v${sequence}`, sourceVersion: sequence }, deliveries);
+  transaction.set(cursorRef, { sequence });
+  transaction.create(cpuChanges().doc(String(sequence).padStart(20, "0")), event);
+  if (receiptRef) transaction.create(receiptRef, { idempotencyKey, event });
+  return event;
+}
+
+export async function appendCpuChange<T extends CpuChangeWithPropagation & Record<string, unknown>>(input: T) {
+  return db.runTransaction(async transaction => appendCpuChangeInTransaction(transaction, input));
+}

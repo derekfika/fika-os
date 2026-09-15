@@ -1,7 +1,7 @@
 import type { ReadPackageManifest } from "@fika/server-shared/read-package";
-import { recordDataAccess } from "@fika/server-shared/data-source-meter-server";
 import type { ProductionOrder } from "./production-types";
 import type { CpuAllergenRelease } from "./cpu-allergen-release";
+import { deliverCpuPropagations, enqueueCpuDelivery, enqueueCpuPropagation, type CpuConsumerInvalidationInput } from "./cpu-durable-outbox";
 
 type ConsumerChangeType = "changed" | "amended" | "withdrawn" | "superseded";
 
@@ -12,15 +12,9 @@ export function eventTypeForConsumers(changeType: string): ConsumerChangeType {
   return "changed";
 }
 
-export type CpuConsumerInvalidation = {
-  eventId: string;
-  sourceEntityId: string;
-  serviceDate: string;
-  sourceVersion: number;
-  changedAt: string;
+export type CpuConsumerInvalidation = Omit<CpuConsumerInvalidationInput, "changeType" | "order"> & {
   changeType: ConsumerChangeType;
   order?: Pick<ProductionOrder, "origin" | "destinationOplocId">;
-  logistics?: boolean;
   reviewManifest?: Pick<ReadPackageManifest, "contentHash" | "sourceVersion">;
 };
 
@@ -68,70 +62,15 @@ export function buildCpuAllergenReleaseEvent(input: {
 }
 
 export async function notifyDeliveredInAllergenRelease(input: { release: CpuAllergenRelease; oplocId: string; eventType: "published" | "revoked" }) {
-  return postWithRetry(`${deliveredInBaseUrl()}/api/internal/cpu-release-event`, buildCpuAllergenReleaseEvent(input), "delivered-in");
-}
-
-function deliveredInBaseUrl() {
-  return (process.env.FIKA_APP_DELIVERED_IN_URL || process.env.DELIVERED_IN_BASE_URL || "http://localhost:3800").replace(/\/$/, "");
-}
-
-function logisticsBaseUrl() {
-  return (process.env.FIKA_LOGISTICS_BASE_URL || "http://localhost:3900").replace(/\/$/, "");
-}
-
-function headers() {
-  const result: Record<string, string> = { "content-type": "application/json" };
-  if (process.env.FIKA_INTERNAL_API_TOKEN) result["x-fika-internal-token"] = process.env.FIKA_INTERNAL_API_TOKEN;
-  return result;
-}
-
-function logisticsChangeType(changeType: ConsumerChangeType): "amended" | "cancelled" | "withdrawn" | "superseded" | "status-changed" {
-  if (changeType === "withdrawn") return "withdrawn";
-  if (changeType === "superseded") return "superseded";
-  return changeType === "changed" ? "status-changed" : "amended";
-}
-
-async function postWithRetry(url: string, body: unknown, consumer: "delivered-in" | "logistics") {
-  let lastError: unknown;
-  for (let attempt = 1; attempt <= 2; attempt += 1) {
-    try {
-      const response = await fetch(url, { method: "POST", headers: headers(), body: JSON.stringify(body), signal: AbortSignal.timeout(8000) });
-      recordDataAccess({ app: "cpu-production", operation: `consumer-invalidation.${consumer}`, source: "NETWORK_UPSTREAM", documents: 1, cacheHit: false });
-      if (!response.ok) throw new Error(`${consumer} invalidation failed (${response.status}).`);
-      return { delivered: true, attempts: attempt };
-    } catch (error) {
-      lastError = error;
-    }
-  }
-  recordDataAccess({ app: "cpu-production", operation: `consumer-invalidation.${consumer}.failed`, source: "NETWORK_UPSTREAM", documents: 0, cacheHit: false });
-  return { delivered: false, attempts: 2, error: lastError instanceof Error ? lastError.message : "Consumer invalidation failed." };
+  const event = buildCpuAllergenReleaseEvent(input);
+  const queued = await enqueueCpuDelivery({ eventId: `${event.eventId}:delivered-in:${input.oplocId}`, sourceAggregateId: event.releaseId, sourceVersion: event.sourceVersion, occurredAt: input.release.signedAt, consumer: "delivered-in", route: "/api/internal/cpu-release-event", body: event as unknown as Record<string, unknown> });
+  const [result] = await deliverCpuPropagations([queued]);
+  return { delivered: result.status === "delivered", attempts: result.attempts || 0, ...(result.error ? { error: result.error } : {}), deliveryId: queued.eventId };
 }
 
 export async function notifyCpuConsumerInvalidations(input: CpuConsumerInvalidation) {
-  const tasks: Array<Promise<unknown>> = [];
-  if (input.order?.origin === "menu_planning" && input.order.destinationOplocId) {
-    tasks.push(postWithRetry(`${deliveredInBaseUrl()}/api/delivered-in/invalidate`, {
-      sourceDomain: "cpu-production",
-      sourceEntityId: input.sourceEntityId,
-      eventId: input.eventId,
-      eventType: input.changeType,
-      serviceDate: input.serviceDate,
-      oplocId: input.order.destinationOplocId,
-      sourceVersion: input.reviewManifest?.sourceVersion || `cpu-change-${input.sourceVersion}`,
-      ...(input.reviewManifest?.contentHash ? { contentHash: input.reviewManifest.contentHash } : {}),
-    }, "delivered-in"));
-  }
-  if (input.logistics && input.order) {
-    tasks.push(postWithRetry(`${logisticsBaseUrl()}/api/logistics/invalidate`, {
-      serviceDate: input.serviceDate,
-      sourceDomain: "cpu-production",
-      sourceEntityId: input.sourceEntityId,
-      sourceVersion: input.sourceVersion,
-      changedAt: input.changedAt,
-      changeType: logisticsChangeType(input.changeType),
-      ...(input.reviewManifest?.contentHash ? { sourceContentHash: input.reviewManifest.contentHash } : {}),
-    }, "logistics"));
-  }
-  const results = await Promise.all(tasks);
-  return { attempted: results.length, results };
+  const queued = await enqueueCpuPropagation({ ...input, changeType: input.changeType, ...(input.order ? { order: input.order } : {}) });
+  const deliveries = await deliverCpuPropagations(queued);
+  const results = deliveries.map(result => ({ delivered: result.status === "delivered", attempts: result.attempts || (result.status === "blocked" ? 0 : 1), ...(result.error ? { error: result.error } : {}) }));
+  return { attempted: queued.length, results, pending: results.filter(result => !result.delivered).length };
 }

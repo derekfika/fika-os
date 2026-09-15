@@ -12,7 +12,7 @@ import os from "node:os";
 import { normaliseOperationalAllergens } from "../../../../shared/allergen-contract";
 import { canonicalProductionFailureKind, productionOrderDetail, productionQueue, transitionProductionOrder, type CanonicalProductionFailure } from "../../../lib/production-http-client";
 import type { ProductionOrder, ProductionStatus } from "../../../lib/production-types";
-import { appendCpuChange, rebuildCpuDayProjection, rebuildCpuWeekProjection, weekCommencingFor } from "../../../lib/cpu-projection";
+import { rebuildCpuDayProjection, rebuildCpuWeekProjection, weekCommencingFor } from "../../../lib/cpu-projection";
 import { createProductionPlanRepository } from "../../../lib/production-plan-repository";
 import { requireCpuActor } from "../../../lib/cpu-access-client";
 import { hubJson } from "../../../lib/production-http-client";
@@ -21,7 +21,7 @@ import { loadDeliveredInReviewStatuses, parseDeliveredInReviewOrderIds } from ".
 import { recordDeliveredInReadBudget } from "../../../lib/delivered-in-read-budget";
 import { recordDataAccess, withDataTrace } from "@fika/server-shared/data-source-meter-server";
 import { rebuildCpuReviewPackage } from "../../../lib/cpu-review-package";
-import { eventTypeForConsumers, notifyCpuConsumerInvalidations, notifyDeliveredInAllergenRelease } from "../../../lib/cpu-consumer-invalidation";
+import { buildCpuAllergenReleaseEvent, eventTypeForConsumers, notifyCpuConsumerInvalidations, notifyDeliveredInAllergenRelease } from "../../../lib/cpu-consumer-invalidation";
 import { buildDailySignedOplocBundle, dailyBundleSha256, dailyBundleManifestKey, encodeDailySignedOplocBundlePackage, publishDailySignedOplocBundle, verifyDailySignedOplocBundleArtifacts, type DailyBundleDurableStore } from "@fika/server-shared/daily-signed-oploc-bundle";
 import { publishReadPackage } from "@fika/server-shared/read-package";
 import { cpuPackageStore } from "../../../lib/cpu-package-store";
@@ -74,17 +74,17 @@ async function syncCanonicalLifecycle(
 const SubItem = z.object({ id: z.string().min(1), productionItemId: z.string().min(1).optional(), name: z.string(), quantity: z.number().positive().nullable(), allergens: z.record(z.string(), z.enum(["clear", "contains", "may_contain"])), mayContainNotes: z.string().optional(), note: z.string(), evidenceStatus: z.enum(["not_completed", "completed", "requires_review"]) });
 const MenuItem = z.object({ id: z.string().min(1), sourceLineId: z.string().optional(), name: z.string(), note: z.string(), subItems: z.array(SubItem) });
 const Command = z.discriminatedUnion("action", [
-  z.object({ action: z.literal("accept"), orderId: z.string() }),
-  z.object({ action: z.literal("reject"), orderId: z.string(), reason: z.string().trim().min(3) }),
-  z.object({ action: z.literal("clarify"), orderId: z.string(), note: z.string().trim().min(3) }),
-  z.object({ action: z.literal("save-plan"), orderId: z.string(), menuItems: z.array(MenuItem).min(1), planningNotes: z.string().default("") }),
-  z.object({ action: z.literal("mark-planned"), orderId: z.string(), menuItems: z.array(MenuItem).min(1), planningNotes: z.string().default("") }),
-  z.object({ action: z.literal("sign-matrix"), orderId: z.string(), role: z.enum(["production_chef", "head_chef_site_manager"]), printedName: z.string().trim().min(2).max(120), attestation: z.string().trim().min(10).max(500), signatureDataUrl: z.string().regex(/^data:image\/png;base64,/).max(500000) }),
-  z.object({ action: z.literal("save-matrix"), orderId: z.string() }),
+  z.object({ action: z.literal("accept"), orderId: z.string(), commandId: z.string().trim().min(8).optional() }),
+  z.object({ action: z.literal("reject"), orderId: z.string(), reason: z.string().trim().min(3), commandId: z.string().trim().min(8).optional() }),
+  z.object({ action: z.literal("clarify"), orderId: z.string(), note: z.string().trim().min(3), commandId: z.string().trim().min(8).optional() }),
+  z.object({ action: z.literal("save-plan"), orderId: z.string(), menuItems: z.array(MenuItem).min(1), planningNotes: z.string().default(""), commandId: z.string().trim().min(8).optional() }),
+  z.object({ action: z.literal("mark-planned"), orderId: z.string(), menuItems: z.array(MenuItem).min(1), planningNotes: z.string().default(""), commandId: z.string().trim().min(8).optional() }),
+  z.object({ action: z.literal("sign-matrix"), orderId: z.string(), role: z.enum(["production_chef", "head_chef_site_manager"]), printedName: z.string().trim().min(2).max(120), attestation: z.string().trim().min(10).max(500), signatureDataUrl: z.string().regex(/^data:image\/png;base64,/).max(500000), commandId: z.string().trim().min(8).optional() }),
+  z.object({ action: z.literal("save-matrix"), orderId: z.string(), commandId: z.string().trim().min(8).optional() }),
 ]);
 const MatrixOperation = z.discriminatedUnion("action", [
-  z.object({ action: z.literal("save-plan"), orderId: z.string(), menuItems: z.array(MenuItem).min(1), planningNotes: z.string().default("") }),
-  z.object({ action: z.literal("mark-planned"), orderId: z.string(), menuItems: z.array(MenuItem).min(1), planningNotes: z.string().default("") }),
+  z.object({ action: z.literal("save-plan"), orderId: z.string(), menuItems: z.array(MenuItem).min(1), planningNotes: z.string().default(""), commandId: z.string().trim().min(8).optional() }),
+  z.object({ action: z.literal("mark-planned"), orderId: z.string(), menuItems: z.array(MenuItem).min(1), planningNotes: z.string().default(""), commandId: z.string().trim().min(8).optional() }),
 ]);
 const MatrixBatchCommand = z.object({ action: z.literal("batch-plan"), operations: z.array(MatrixOperation).min(1).max(100) }).strict();
 
@@ -194,10 +194,13 @@ async function applyMatrixOperation(request: NextRequest, actor: Awaited<ReturnT
   }
   const timestamp = now();
   plan.updatedAt = timestamp; plan.updatedBy = auditActor;
-  await persistPlan(plan, storedPlan?.updatedAt);
   const changedOrder = await loadOrder(request, operation.orderId);
-  if (!changedOrder?.serviceDate) return { orderId: operation.orderId, plan, serviceDate: undefined, sequence: undefined };
-  const event = await appendCpuChange({ serviceDate: changedOrder.serviceDate, entityType: "productionPlan", entityId: plan.id, revision: plan.audit.length, changeType: operation.action, actorId: actor.uid, changedAt: timestamp });
+  if (!changedOrder?.serviceDate) {
+    await persistPlan(plan, storedPlan?.updatedAt);
+    return { orderId: operation.orderId, plan, serviceDate: undefined, sequence: undefined };
+  }
+  const event = await planRepository.saveAndAppendCpuChange(plan, storedPlan?.updatedAt, { serviceDate: changedOrder.serviceDate, entityType: "productionPlan", entityId: plan.id, revision: plan.audit.length, changeType: operation.action, actorId: actor.uid, changedAt: timestamp, ...(operation.commandId ? { idempotencyKey: operation.commandId } : {}), propagation: { sourceEntityId: plan.id, serviceDate: changedOrder.serviceDate, sourceVersion: plan.audit.length, changedAt: timestamp, changeType: eventTypeForConsumers(operation.action), order: changedOrder, logistics: false } });
+  if (event.duplicate && event.plan) Object.assign(plan, event.plan);
   return { orderId: operation.orderId, plan, serviceDate: changedOrder.serviceDate, sequence: event.sequence };
 }
 function hospitalityBase() {
@@ -607,18 +610,23 @@ async function handlePost(request: NextRequest) {
       plan.audit.push({ action: "allergen-matrix-saved", at: timestamp, by: auditActor, reason: "Final signed matrix persisted to the configured Drive workspace." });
     }
     plan.updatedAt = timestamp; plan.updatedBy = auditActor;
-    await persistPlan(plan, expectedUpdatedAt);
     const changedOrder = await loadOrder(request, command.orderId);
     const releaseForEvent = plan.currentAllergenRelease || (command.action === "save-plan" || command.action === "mark-planned" ? plan.allergenReleaseHistory?.at(-1) : undefined);
     const releaseOplocIds = plan.currentAllergenRelease?.status === "current" ? Object.keys(plan.siteMatrixArtifacts || {}) : changedOrder?.destinationOplocId ? [changedOrder.destinationOplocId] : [];
-    if (releaseForEvent) for (const oplocId of releaseOplocIds) await notifyDeliveredInAllergenRelease({ eventType: plan.currentAllergenRelease?.status === "current" ? "published" : "revoked", release: releaseForEvent, oplocId });
+    const releaseEventType = plan.currentAllergenRelease?.status === "current" ? "published" as const : "revoked" as const;
+    const releaseDeliveries = releaseForEvent ? releaseOplocIds.map(oplocId => {
+      const releaseEvent = buildCpuAllergenReleaseEvent({ eventType: releaseEventType, release: releaseForEvent, oplocId });
+      return { eventId: `${releaseEvent.eventId}:delivered-in:${oplocId}`, sourceAggregateId: releaseEvent.releaseId, sourceVersion: releaseEvent.sourceVersion, occurredAt: releaseForEvent.signedAt, consumer: "delivered-in" as const, route: "/api/internal/cpu-release-event", body: releaseEvent as unknown as Record<string, unknown> };
+    }) : [];
+    const event = changedOrder?.serviceDate ? await planRepository.saveAndAppendCpuChange(plan, expectedUpdatedAt, { serviceDate: changedOrder.serviceDate, entityType: "productionPlan", entityId: plan.id, revision: plan.audit.length, changeType: command.action, actorId: actor.uid, changedAt: timestamp, ...(command.commandId ? { idempotencyKey: command.commandId } : {}), propagation: { sourceEntityId: plan.id, serviceDate: changedOrder.serviceDate, sourceVersion: plan.audit.length, changedAt: timestamp, changeType: eventTypeForConsumers(command.action), order: changedOrder, logistics: false }, deliveries: releaseDeliveries }) : (await persistPlan(plan, expectedUpdatedAt), undefined);
+    if (event?.duplicate && event.plan) Object.assign(plan, event.plan);
+    if (releaseForEvent) for (const oplocId of releaseOplocIds) await notifyDeliveredInAllergenRelease({ eventType: releaseEventType, release: releaseForEvent, oplocId });
     recordDeliveredInReadBudget({ stage: "plan_post_mutation", canonicalOrderDocs: changedOrder ? 1 : 0, planDocs: 1, selectedIds: 1 });
     if (changedOrder?.serviceDate) {
-      const event = await appendCpuChange({ serviceDate: changedOrder.serviceDate, entityType: "productionPlan", entityId: plan.id, revision: plan.audit.length, changeType: command.action, actorId: actor.uid, changedAt: timestamp });
-      await rebuildCpuDayProjection(request, changedOrder.serviceDate, event.sequence);
-      await rebuildCpuWeekProjection(request, weekCommencingFor(changedOrder.serviceDate), event.sequence);
-      const review = changedOrder.destinationOplocId ? await rebuildCpuReviewPackage(request, changedOrder.serviceDate, changedOrder.destinationOplocId, event.sequence) : undefined;
-      await notifyCpuConsumerInvalidations({ eventId: `cpu-change:${event.sequence}`, sourceEntityId: plan.id, serviceDate: changedOrder.serviceDate, sourceVersion: event.sequence, changedAt: timestamp, changeType: eventTypeForConsumers(command.action), order: changedOrder, logistics: false, ...(review ? { reviewManifest: review.manifest } : {}) });
+      await rebuildCpuDayProjection(request, changedOrder.serviceDate, event!.sequence);
+      await rebuildCpuWeekProjection(request, weekCommencingFor(changedOrder.serviceDate), event!.sequence);
+      const review = changedOrder.destinationOplocId ? await rebuildCpuReviewPackage(request, changedOrder.serviceDate, changedOrder.destinationOplocId, event!.sequence) : undefined;
+      await notifyCpuConsumerInvalidations({ eventId: `cpu-change:${plan.id}:v${event!.sequence}`, sourceEntityId: plan.id, serviceDate: changedOrder.serviceDate, sourceVersion: event!.sequence, changedAt: timestamp, changeType: eventTypeForConsumers(command.action), order: changedOrder, logistics: false, ...(review ? { reviewManifest: review.manifest } : {}) });
     }
     const matrixStatus = plan.matrixArtifact && changedOrder && currentAllergenReleaseMatchesOrder(plan.currentAllergenRelease, changedOrder, plan.menuItems) ? "ready" : plan.signatures?.some(signature => signature.role === "production_chef") && plan.signatures?.some(signature => signature.role === "head_chef_site_manager") ? changedOrder && !matrixDriveConfiguration(changedOrder).enabled ? "not_configured" : "generating" : undefined;
     return NextResponse.json({ plan, matrixArtifact: plan.matrixArtifact ?? null, signatures: plan.signatures ?? null, matrixStatus, notification: notification || (plan.status === "planned" ? { title: "New production plan ready for menu generation.", orderId: plan.orderId } : undefined) });
