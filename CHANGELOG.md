@@ -4,6 +4,8 @@ This file records user-facing workflow changes delivered in the repository. Deta
 
 ## Unreleased
 
+- **2026-09-15 — Menu Planning OPLOC redirect authority staging deployment submitted:** submitted exact-SHA rollout for `ae58635f41cf49490e125e39119c8386b010418d` to Firebase App Hosting backend `fika-menu-planning-staging` in project `fika-os-dev`. Firebase compilation/propagation was not awaited. Deployment status: submitted; live verification pending.
+
 - **2026-09-15 — Delivered-In OPLOC redirect authority:** Menu Planning now resolves eligible service-arrangement OPLOC IDs transitively through Hub redirects before building its governed authority, deduplicating legacy/current arrangements and failing closed on cycles or unlisted targets. Affected app: Menu Planning. Validation: OPLOC authority, rolling-menu and publication regressions passed; full suite 165/166 with one pre-existing date-anchor failure; typecheck, production build and `git diff --check` passed. Deployment status: not deployed.
 
 - **2026-09-15 — Menu Planning canonical OPLOC persistence staging deployment submitted:** submitted exact-SHA rollout for `be1cd151d25c40b2a835dc138bedab1f7821e2a3` to Firebase App Hosting backend `fika-menu-planning-staging` in project `fika-os-dev`. Firebase compilation/propagation was not awaited. Deployment status: submitted; live verification pending.
