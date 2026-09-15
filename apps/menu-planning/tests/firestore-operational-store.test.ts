@@ -17,6 +17,31 @@ function harness() {
   return { repository: new MenuPlanningFirestoreRepository(db), transaction, writes };
 }
 
+function publicationReadHarness() {
+  const publicationId = "menu-publication:rolling-week:2026-09-14";
+  const otherPublicationId = "menu-publication:rolling-week:2026-09-21";
+  const daysByPublication = new Map([
+    [publicationId, [{ publicationDayId: `${publicationId}:day:0:v5`, sourceDayId: "rolling-week:2026-09-14:day:1", date: "2026-09-14", dayName: "Monday", version: 5, status: "published", contentHash: "hash-v5", publishedAt: "2026-09-14T10:00:00.000Z", publishedBy: "test", entries: [] }]],
+    [otherPublicationId, [{ publicationDayId: `${otherPublicationId}:day:0:v1`, sourceDayId: "rolling-week:2026-09-21:day:1", date: "2026-09-21", dayName: "Monday", version: 1, status: "published", contentHash: "other-hash", publishedAt: "2026-09-21T10:00:00.000Z", publishedBy: "test", entries: [] }]],
+  ]);
+  const roots = [
+    { id: publicationId, value: { publicationId, sourceWeekId: "rolling-week:2026-09-14", weekCommencing: "2026-09-14", weekEnding: "2026-09-20", publicationVersion: 5, publicationStatus: "published" } },
+    { id: otherPublicationId, value: { publicationId: otherPublicationId, sourceWeekId: "rolling-week:2026-09-21", weekCommencing: "2026-09-21", weekEnding: "2026-09-27", publicationVersion: 1, publicationStatus: "published" } },
+  ];
+  const dayDocumentsFor = (id: string) => daysByPublication.get(id)!.map(value => ({ data: () => value }));
+  const documentFor = (root: typeof roots[number]) => ({ id: root.id, exists: true, data: () => root.value, ref: { collection: () => ({ kind: "days", publicationId: root.id, get: async () => ({ size: dayDocumentsFor(root.id).length, docs: dayDocumentsFor(root.id) }) }) } });
+  const query = (filters: Array<[string, string, string]> = []) => ({ kind: "publications", filters, where(field: string, operator: string, value: string) { return query([...filters, [field, operator, value]]); }, orderBy() { return this; }, limit() { return this; }, get: async () => { const matching = roots.filter(root => filters.every(([field, operator, value]) => operator === "==" ? String(root.value[field as keyof typeof root.value]) === value : operator === ">=" ? root.value[field as keyof typeof root.value] >= value : root.value[field as keyof typeof root.value] < value)); return { size: matching.length, docs: matching.map(documentFor) }; } });
+  const publicationCollection = { doc: (id: string) => ({ get: async () => documentFor(roots.find(root => root.id === id) || roots[0]) }), where: (field: string, operator: string, value: string) => query([[field, operator, value]]), orderBy: () => query() };
+  const db = { collection: (name: string) => name === "fikaMenuPlanningPublications" ? publicationCollection : {} } as any;
+  const transaction = { get: async (target: any) => {
+    if (target?.kind === "days") return { size: dayDocumentsFor(target.publicationId).length, docs: dayDocumentsFor(target.publicationId) };
+    const filters = target?.filters || [];
+    const matching = roots.filter(root => filters.every(([field, operator, value]: [string, string, string]) => operator === "==" ? String(root.value[field as keyof typeof root.value]) === value : operator === ">=" ? root.value[field as keyof typeof root.value] >= value : root.value[field as keyof typeof root.value] < value));
+    return { size: matching.length, docs: matching.map(documentFor) };
+  } } as any;
+  return { repository: new MenuPlanningFirestoreRepository(db), transaction, publicationId };
+}
+
 test("Firestore diff creates a blank week, its seven days, and a first entry", async () => {
   const h = harness();
   const createdWeek = { ...week("rolling-week:2026-08-24"), dayIds: Array.from({ length: 7 }, (_, i) => `rolling-week:2026-08-24:day:${i}`) };
@@ -26,6 +51,25 @@ test("Firestore diff creates a blank week, its seven days, and a first entry", a
   assert.equal(h.writes.filter(write => write.path.startsWith("fikaMenuPlanningWeeks/") && !write.path.includes("/days/")).length, 1);
   assert.equal(h.writes.filter(write => write.path.includes("/days/") && !write.path.includes("/entries/")).length, 7);
   assert.equal(h.writes.filter(write => write.path.includes("/entries/")).length, 1);
+});
+
+test("publication day ownership comes from the parent Firestore path", async () => {
+  const h = publicationReadHarness();
+  const byId = await h.repository.getPublicationById(h.publicationId);
+  const byWeek = await h.repository.readPublicationStateForWeek("rolling-week:2026-09-14");
+  const byRange = await h.repository.readPublicationStateForDateRange("2026-09-14", "2026-09-21");
+  const listed = await h.repository.listPublicationState();
+  const transactional = await (h.repository as any).readPublications(h.transaction, "rolling-week:2026-09-14", false);
+  assert.equal(byId?.days.length, 1);
+  assert.equal(byWeek.publications[0].days.length, 1);
+  assert.equal(byRange.publications[0].days.length, 1);
+  assert.equal(listed.publications[0].days.length, 1);
+  assert.equal(listed.publications.length, 2);
+  assert.equal(listed.publications[1].days.length, 1);
+  assert.equal(transactional.publications[0].days.length, 1);
+  assert.equal(transactional.publications[0].days[0].publicationId, h.publicationId);
+  assert.equal(transactional.publications[0].days[0].publicationDayId, byId?.days[0].publicationDayId);
+  assert.equal(transactional.publications.find((publication: any) => publication.publicationId !== h.publicationId)?.days.length, undefined);
 });
 
 test("Firestore diff compares existing documents and does not rewrite identical state", async () => {

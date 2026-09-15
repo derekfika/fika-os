@@ -19,6 +19,7 @@ const digest = (value: unknown) => createHash("sha256").update(JSON.stringify(va
 const omit = (value: Record<string, unknown>, key: string) => Object.fromEntries(Object.entries(value).filter(([name]) => name !== key));
 const omitPublicationDayMetadata = (value: Record<string, unknown>) => Object.fromEntries(Object.entries(value).filter(([name]) => !["publicationId", "status", "withdrawal", "driveArchive"].includes(name)));
 const storedPublicationDay = (day: Record<string, unknown>, publicationId: string) => ({ ...day, publicationId });
+const hydratePublicationDays = (publicationId: string, documents: Array<{ data(): DocumentData }>) => documents.map(document => storedPublicationDay(document.data(), publicationId));
 export function assertExpectedVersion(actual: number | undefined, expected: number, aggregateId: string) { if (actual !== expected) throw new ExpectedVersionConflict(`${aggregateId} changed from version ${expected} to ${String(actual)}; refresh before saving.`); }
 
 /** Async server-only adapter. It never exposes a Firestore client to browser code. */
@@ -64,7 +65,7 @@ export class MenuPlanningFirestoreRepository {
     const days = await publication.ref.collection("days").get();
     recordFirestore("publication.days", days.size);
     recordMenuPlanningReadBudget({ operation: "publication_by_id", reads: { publications: 1, publicationDays: days.size, events: 0, scoped: 1 } });
-    return { ...publication.data(), days: days.docs.map(day => day.data()) } as MenuPublication;
+    return { ...publication.data(), publicationId, days: hydratePublicationDays(publicationId, days.docs) } as unknown as MenuPublication;
   }
   async listPublicationState(limit = 16) {
     const snapshot = await this.db.collection(MENU_PLANNING_COLLECTIONS.publications).orderBy("weekCommencing", "desc").limit(Math.min(Math.max(limit, 1), 100)).get();
@@ -72,7 +73,7 @@ export class MenuPlanningFirestoreRepository {
     const publications: MenuPublication[] = [];
     for (const doc of snapshot.docs) {
       const days = await doc.ref.collection("days").get();
-      publications.push({ ...doc.data(), days: days.docs.map(day => day.data()) } as MenuPublication);
+      publications.push({ ...doc.data(), publicationId: doc.id, days: hydratePublicationDays(doc.id, days.docs) } as unknown as MenuPublication);
     }
     recordMenuPlanningReadBudget({ operation: "publication_list", reads: { publications: snapshot.size, publicationDays: publications.reduce((total, publication) => total + publication.days.length, 0), events: 0, scoped: 1 } });
     return { version: 2, publications, events: [] as DurableDomainEvent[] };
@@ -81,7 +82,7 @@ export class MenuPlanningFirestoreRepository {
     const snapshot = await this.db.collection(MENU_PLANNING_COLLECTIONS.publications).where("sourceWeekId", "==", weekId).get();
     recordFirestore("publication.for-week", snapshot.size);
     const publications: MenuPublication[] = [];
-    for (const doc of snapshot.docs) { const value = doc.data(); const days = await doc.ref.collection("days").get(); recordFirestore("publication.for-week.days", days.size); publications.push({ ...value, days: days.docs.map(day => day.data()) } as unknown as MenuPublication); }
+    for (const doc of snapshot.docs) { const value = doc.data(); const days = await doc.ref.collection("days").get(); recordFirestore("publication.for-week.days", days.size); publications.push({ ...value, publicationId: doc.id, days: hydratePublicationDays(doc.id, days.docs) } as unknown as MenuPublication); }
     return { version: 2, publications, events: [] as DurableDomainEvent[] };
   }
   async readPublicationStateForDateRange(fromWeek: string, toWeekExclusive: string) {
@@ -96,7 +97,7 @@ export class MenuPlanningFirestoreRepository {
     for (const doc of snapshot.docs) {
       const value = doc.data();
       const days = await doc.ref.collection("days").get();
-      publications.push({ ...value, days: days.docs.map(day => day.data()) } as unknown as MenuPublication);
+      publications.push({ ...value, publicationId: doc.id, days: hydratePublicationDays(doc.id, days.docs) } as unknown as MenuPublication);
     }
     recordMenuPlanningReadBudget({ operation: "publication_date_range", reads: { publications: snapshot.size, publicationDays: publications.reduce((total, publication) => total + publication.days.length, 0), events: 0, scoped: 1 } });
     return { version: 2, publications, events: [] as DurableDomainEvent[] };
@@ -172,9 +173,7 @@ export class MenuPlanningFirestoreRepository {
     const root = sourceWeekId ? await transaction.get(this.db.collection(MENU_PLANNING_COLLECTIONS.publications).where("sourceWeekId", "==", sourceWeekId)) : await transaction.get(this.db.collection(MENU_PLANNING_COLLECTIONS.publications));
     recordFirestore("publication.transaction-read", root.size);
     const publications: MenuPublication[] = [];
-    const days: DocumentData[] = [];
-    for (const doc of root.docs) { const value = doc.data(); publications.push({ ...value, days: [] } as unknown as MenuPublication); const daySnap = await transaction.get(doc.ref.collection("days")); recordFirestore("publication.transaction-days-read", daySnap.size); days.push(...daySnap.docs.map(day => day.data())); }
-    for (const publication of publications) publication.days = days.filter(day => day.publicationId === publication.publicationId) as MenuPublication["days"];
+    for (const doc of root.docs) { const value = doc.data(); const publicationId = String(value.publicationId || doc.id); const daySnap = await transaction.get(doc.ref.collection("days")); recordFirestore("publication.transaction-days-read", daySnap.size); publications.push({ ...value, publicationId, days: hydratePublicationDays(publicationId, daySnap.docs) } as unknown as MenuPublication); }
     const eventSnap = includeEvents ? await transaction.get(this.db.collection(MENU_PLANNING_COLLECTIONS.events)) : { docs: [] as Array<{ data(): DocumentData }>, size: 0 };
     recordFirestore("events.transaction-read", eventSnap.size || eventSnap.docs.length);
     return { version: 2, publications, events: eventSnap.docs.map(doc => doc.data() as DurableDomainEvent) };
