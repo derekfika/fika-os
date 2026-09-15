@@ -4,6 +4,8 @@ This file records user-facing workflow changes delivered in the repository. Deta
 
 ## Unreleased
 
+- **2026-09-15 — Portion Planner stale draft reconciliation:** local per-day portion drafts now reconcile against persisted allocations on hydration and edit-back, clear semantically unchanged cells, remain day-isolated, and block publication only while genuinely dirty. Affected app: Menu Planning. Validation: focused draft/publication tests, typecheck, production build and `git diff --check`. Deployment status: not deployed.
+
 - **2026-09-15 — Menu Planning publication-state consistency staging deployment submitted:** submitted exact-SHA rollout for `23cbf07b84e8aa428461c300a94df462b794038f` to Firebase App Hosting backend `fika-menu-planning-staging` in project `fika-os-dev`. Firebase compilation/propagation was not awaited. Deployment status: submitted; live verification pending.
 
 - **2026-09-15 — Menu Planning publication-state consistency:** centralized normalized working-week versus current-publication day-hash comparison for publication reads and the publish gate, kept week withdrawal available alongside amendments, and made Portion Planner unsaved drafts explicit and non-publishable until saved. Affected app: Menu Planning. Validation: focused publication tests, typecheck, production build and `git diff --check`. Deployment status: not deployed.
