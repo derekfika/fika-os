@@ -1,0 +1,21 @@
+{
+  "indexes": [
+    {
+      "collectionGroup": "fikaMenuPlanningOutbox",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "outboxStatus", "order": "ASCENDING" },
+        { "fieldPath": "nextEligibleAt", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "fikaMenuPlanningOutbox",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "delivery.status", "order": "ASCENDING" },
+        { "fieldPath": "occurredAt", "order": "ASCENDING" }
+      ]
+    }
+  ],
+  "fieldOverrides": []
+}

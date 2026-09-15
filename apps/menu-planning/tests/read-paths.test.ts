@@ -121,6 +121,8 @@ test("rolling resolution never guesses catalogue identity from a label", () => {
 
 test("hosted mutation and publication paths expose bounded transaction scopes", () => {
   const repository = readFileSync(new URL("../lib/firestore-operational-store.ts", import.meta.url), "utf8");
+  const indexes = readFileSync(new URL("../firestore.indexes.json", import.meta.url), "utf8");
+  const firebase = readFileSync(new URL("../firebase.json", import.meta.url), "utf8");
   const rolling = readFileSync(new URL("../lib/rolling-menu.ts", import.meta.url), "utf8");
   const publication = readFileSync(new URL("../lib/menu-publication.ts", import.meta.url), "utf8");
   assert.match(repository, /scope\.weekId/);
@@ -130,7 +132,14 @@ test("hosted mutation and publication paths expose bounded transaction scopes", 
   assert.match(publication, /sourceWeekId: weekId, includeEvents: false/);
   assert.match(publication, /updateMenuPlanningEvent\(claimed\.eventId/);
   assert.match(publication, /claimNextMenuPlanningEvent\(claimId, at\)/);
-  assert.match(repository, /where\("delivery\.status", "in", \["pending", "failed"\]\)/);
+  assert.match(repository, /collection\(MENU_PLANNING_COLLECTIONS\.outbox\)/);
+  assert.match(repository, /where\("outboxStatus", "in", \["pending", "failed"\]\)/);
+  assert.match(repository, /where\("nextEligibleAt", "<=", at\.toISOString\(\)\)/);
+  assert.match(repository, /MENU_PLANNING_OUTBOX_CLAIM_PAGE_SIZE/);
+  assert.doesNotMatch(repository, /collection\(MENU_PLANNING_COLLECTIONS\.events\)\.where\("delivery\.status", "in", \["pending", "failed"\]\)\.limit\(100\)/);
+  assert.match(indexes, /"collectionGroup": "fikaMenuPlanningOutbox"/);
+  assert.match(indexes, /"fieldPath": "nextEligibleAt"/);
+  assert.match(firebase, /"indexes": "firestore\.indexes\.json"/);
 });
 
 test("mutation and import routes remain inside data-source traces", () => {

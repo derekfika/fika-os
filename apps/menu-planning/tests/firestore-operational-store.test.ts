@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { MenuPlanningFirestoreRepository, type HostedTransactionState } from "../lib/firestore-operational-store";
+import { markEventDeadLetter, markEventDelivered, outboxRecord, type DurableDomainEvent } from "../lib/fika-contracts";
 import type { RollingDay, RollingEntry, RollingWeek } from "../lib/rolling-menu-types";
 import { encodeWeeklyPublicationPacket } from "@fika/server-shared/weekly-publication-packet";
 
@@ -57,6 +58,159 @@ const commandFor = (weekId: string, expectedWeekVersion: number, entryValue: Rol
   entryDayIds: { [entryValue.id]: entryValue.dayId },
   patch: { entries: { [entryValue.id]: { itemLabel: label } } },
   audit: { action: "entry-amended", at: "2026-08-24T10:00:00.000Z", by: label },
+});
+
+const event = (id: string, status: "pending" | "delivered" | "failed", sourceVersion: number, nextAttemptAt?: string): DurableDomainEvent => ({
+  eventId: id, eventType: "production.materialise", sourceAggregateId: "aggregate:one", sourceVersion, occurredAt: "2026-08-24T10:00:00.000Z", schemaVersion: "0.1.0", payload: {},
+  delivery: { status, attempts: status === "failed" ? 1 : 0, ...(nextAttemptAt ? { nextAttemptAt } : {}), ...(status === "delivered" ? { deliveredAt: "2026-08-24T10:00:00.000Z" } : {}) },
+});
+
+function boundedQueueHarness(events: DurableDomainEvent[]) {
+  const eventDocs = new Map(events.map(value => [value.eventId, structuredClone(value)]));
+  const outboxDocs = new Map(events.map(value => [value.eventId, outboxRecord(value)]));
+  let attemptedReads = 0;
+  const query = (collection: string, filters: Array<[string, string, unknown]> = [], ordering?: [string, "asc" | "desc"], limitCount?: number): any => ({
+    kind: "query", collection, filters, ordering, limitCount,
+    where(field: string, operator: string, value: unknown) { return query(collection, [...filters, [field, operator, value]], ordering, limitCount); },
+    orderBy(field: string, direction: "asc" | "desc" = "asc") { return query(collection, filters, [field, direction], limitCount); },
+    limit(value: number) { return query(collection, filters, ordering, value); },
+  });
+  const document = (collection: string, id: string) => ({ kind: "document", collection, id, path: `${collection}/${id}` });
+  const valueAt = (value: Record<string, unknown>, path: string) => path.split(".").reduce<unknown>((current, key) => current && typeof current === "object" ? (current as Record<string, unknown>)[key] : undefined, value);
+  const db = {
+    collection: (name: string) => ({
+      where: (field: string, operator: string, value: unknown) => query(name, [[field, operator, value]]),
+      orderBy: (field: string, direction: "asc" | "desc" = "asc") => query(name, [], [field, direction]),
+      doc: (id: string) => document(name, id),
+    }),
+    runTransaction: async (callback: (transaction: any) => Promise<unknown>) => {
+      const pending: Array<{ target: any; value: any }> = [];
+      const transaction = {
+        get: async (target: any) => {
+          if (target.kind === "document") {
+            attemptedReads += 1;
+            const value = target.collection === "fikaMenuPlanningEvents" ? eventDocs.get(target.id) : outboxDocs.get(target.id);
+            return { id: target.id, exists: value !== undefined, data: () => structuredClone(value) };
+          }
+          let values = [...(target.collection === "fikaMenuPlanningEvents" ? eventDocs.values() : outboxDocs.values())];
+          values = values.filter(value => target.filters.every(([field, operator, expected]: [string, string, unknown]) => {
+            const actual = valueAt(value as Record<string, unknown>, field);
+            return operator === "in" ? (expected as unknown[]).includes(actual) : operator === "==" ? actual === expected : operator === "<=" ? String(actual || "") <= String(expected) : true;
+          }));
+          if (target.ordering) values.sort((left, right) => { const a = String(valueAt(left as Record<string, unknown>, target.ordering[0]) || ""); const b = String(valueAt(right as Record<string, unknown>, target.ordering[0]) || ""); return (a.localeCompare(b) || String((left as any).eventId).localeCompare(String((right as any).eventId))) * (target.ordering[1] === "desc" ? -1 : 1); });
+          if (target.limitCount !== undefined) values = values.slice(0, target.limitCount);
+          attemptedReads += values.length;
+          return { size: values.length, docs: values.map(value => ({ id: (value as any).eventId, exists: true, data: () => structuredClone(value) })) };
+        },
+        set: (target: any, value: unknown) => pending.push({ target, value }),
+      };
+      const result = await callback(transaction);
+      for (const write of pending) {
+        if (write.target.collection === "fikaMenuPlanningEvents") eventDocs.set(write.target.id, structuredClone(write.value));
+        else outboxDocs.set(write.target.id, structuredClone(write.value));
+      }
+      return result;
+    },
+  } as any;
+  return { repository: new MenuPlanningFirestoreRepository(db), eventDocs, outboxDocs, get attemptedReads() { return attemptedReads; }, resetReads() { attemptedReads = 0; } };
+}
+
+const queued = (id: string, status: "pending" | "delivered" | "failed", sourceVersion: number, dueAt: string, predecessorEventId?: string, sourceAggregateId = "aggregate:one") => {
+  const value = event(id, status, sourceVersion, dueAt);
+  return { ...value, sourceAggregateId, ...(predecessorEventId ? { predecessorEventId } : {}), delivery: { ...value.delivery, nextAttemptAt: dueAt, nextEligibleAt: dueAt } };
+};
+
+test("indexed outbox claims are bounded, non-starving, and independent of delivered history", async () => {
+  const at = new Date("2026-08-24T10:00:00.000Z");
+  const history = Array.from({ length: 1000 }, (_, index) => event(`historic-${index}`, "delivered", index + 1));
+  const pending = queued("pending-now", "pending", 1001, at.toISOString());
+  const failed = queued("failed-retry", "failed", 1002, at.toISOString());
+  const future = queued("future", "pending", 1003, "2026-08-25T10:00:00.000Z");
+  const h = boundedQueueHarness([...history, pending, failed, future]);
+  const claimed = await h.repository.claimNextEvent("worker-a", at);
+  assert.equal(claimed?.eventId, pending.eventId);
+  assert.equal(h.attemptedReads, 6, "2 indexed candidates + 3 bounded legacy compatibility candidates + 1 authoritative event read");
+  assert.equal(claimed?.delivery.leaseOwner, "worker-a");
+  assert.ok(claimed?.delivery.leaseExpiresAt);
+
+  h.resetReads();
+  const manyFuture = Array.from({ length: 100 }, (_, index) => queued(`future-window-${index}`, "pending", index + 1, "2026-08-25T10:00:00.000Z"));
+  const dueOutsideWindow = queued("due-outside-window", "pending", 101, at.toISOString());
+  const starvation = boundedQueueHarness([...manyFuture, dueOutsideWindow]);
+  const recovered = await starvation.repository.claimNextEvent("worker-b", at);
+  assert.equal(recovered?.eventId, dueOutsideWindow.eventId, "an indexed due query reaches work outside the legacy candidate window");
+  assert.ok(starvation.attemptedReads <= 26, "one page claim remains bounded");
+
+  const page = boundedQueueHarness(Array.from({ length: 25 }, (_, index) => queued(`page-${index}`, "pending", index + 1, at.toISOString())));
+  assert.ok((await page.repository.claimNextEvent("worker-page", at))?.eventId);
+  assert.equal(page.attemptedReads, 26, "25 eligible events are one indexed page plus one authoritative event read, not 25 x 100 scans");
+});
+
+test("outbox leases expire, retries remain durable, and aggregate predecessors are bounded", async () => {
+  const at = new Date("2026-08-24T10:00:00.000Z");
+  const predecessor = queued("predecessor", "pending", 1, "2026-08-25T10:00:00.000Z");
+  const successor = queued("successor", "pending", 2, at.toISOString(), predecessor.eventId);
+  const independent = queued("independent", "pending", 1, at.toISOString(), undefined, "aggregate:two");
+  const h = boundedQueueHarness([predecessor, successor, independent]);
+  const first = await h.repository.claimNextEvent("worker-a", at);
+  assert.equal(first?.eventId, independent.eventId, "an independent aggregate is not blocked by a predecessor");
+  await h.repository.updateEvent(first!.eventId, current => markEventDelivered(current, at.toISOString()));
+  const blocked = await h.repository.claimNextEvent("worker-b", at);
+  assert.equal(blocked, undefined, "a successor cannot overtake an undelivered predecessor");
+  h.eventDocs.set(predecessor.eventId, markEventDelivered(predecessor, at.toISOString()));
+  h.outboxDocs.set(predecessor.eventId, outboxRecord(markEventDelivered(predecessor, at.toISOString())));
+  const next = await h.repository.claimNextEvent("worker-b", at);
+  assert.equal(next?.eventId, successor.eventId);
+
+  const leaseEvent = queued("lease-event", "pending", 1, at.toISOString());
+  const leaseHarness = boundedQueueHarness([leaseEvent]);
+  assert.equal((await leaseHarness.repository.claimNextEvent("worker-a", at))?.eventId, leaseEvent.eventId);
+  assert.equal(await leaseHarness.repository.claimNextEvent("worker-b", at), undefined, "a live lease is exclusive");
+  assert.equal((await leaseHarness.repository.claimNextEvent("worker-b", new Date("2026-08-24T10:01:01.000Z")))?.eventId, leaseEvent.eventId, "an expired lease is recoverable");
+
+  const retry = queued("retry-event", "failed", 1, at.toISOString());
+  const retryHarness = boundedQueueHarness([retry]);
+  const retryClaim = await retryHarness.repository.claimNextEvent("worker-retry", at);
+  const failedAgain = await retryHarness.repository.updateEvent(retryClaim!.eventId, current => ({ ...current, delivery: { ...current.delivery, status: "failed", attempts: current.delivery.attempts + 1, nextAttemptAt: "2026-08-24T10:00:30.000Z", nextEligibleAt: "2026-08-24T10:00:30.000Z", claimId: undefined, leaseOwner: undefined, claimedAt: undefined, leaseExpiresAt: undefined } }));
+  assert.equal(failedAgain?.delivery.status, "failed");
+  assert.equal((await retryHarness.repository.claimNextEvent("worker-retry", new Date("2026-08-24T10:00:29.000Z"))), undefined);
+  assert.equal((await retryHarness.repository.claimNextEvent("worker-retry", new Date("2026-08-24T10:00:30.000Z")))?.eventId, retry.eventId);
+
+  const redelivery = queued("stable-event", "pending", 1, at.toISOString());
+  const redeliveryHarness = boundedQueueHarness([redelivery]);
+  const firstDelivery = await redeliveryHarness.repository.claimNextEvent("worker-stable", at);
+  await redeliveryHarness.repository.updateEvent(firstDelivery!.eventId, current => markEventDelivered(current, at.toISOString()));
+  assert.equal(await redeliveryHarness.repository.claimNextEvent("worker-stable-retry", new Date("2026-08-24T10:02:00.000Z")), undefined, "the stable event identity is harmless after delivery is durably recorded");
+});
+
+test("dead-letter state is explicit and never eligible for a claim", async () => {
+  const value = queued("dead-letter", "pending", 1, "2026-08-24T10:00:00.000Z");
+  const dead = markEventDeadLetter(value, "manual repair required", "2026-08-24T10:00:00.000Z");
+  const h = boundedQueueHarness([dead]);
+  assert.equal(dead.delivery.status, "dead-letter");
+  assert.equal(await h.repository.claimNextEvent("worker", new Date("2026-08-24T10:01:00.000Z")), undefined);
+});
+
+test("baseline: the old outbox claim scans the candidate window and aggregate history", () => {
+  const historical = Array.from({ length: 150 }, (_, index) => event(`delivered-${index}`, "delivered", index + 1));
+  const pending = event("pending-151", "pending", 151);
+  const failed = event("failed-152", "failed", 152, "2026-08-24T09:59:00.000Z");
+  const oldClaim = (values: DurableDomainEvent[], at: Date) => {
+    let reads = 0;
+    const candidates = values.filter(value => value.delivery.status === "pending" || value.delivery.status === "failed").slice(0, 100);
+    reads += candidates.length;
+    const candidate = candidates.filter(value => !value.delivery.nextAttemptAt || new Date(value.delivery.nextAttemptAt) <= at).sort((a, b) => a.sourceVersion - b.sourceVersion).find(value => {
+      const history = values.filter(previous => previous.sourceAggregateId === value.sourceAggregateId);
+      reads += history.length;
+      return !history.some(previous => previous.sourceVersion < value.sourceVersion && previous.delivery.status !== "delivered");
+    });
+    return { eventId: candidate?.eventId, reads };
+  };
+  assert.deepEqual(oldClaim([...historical, pending, failed], new Date("2026-08-24T10:00:00.000Z")), { eventId: pending.eventId, reads: 154 });
+
+  const future = Array.from({ length: 100 }, (_, index) => event(`future-${index}`, "pending", index + 1, "2026-08-25T10:00:00.000Z"));
+  const dueOutsideWindow = event("due-outside-window", "pending", 101);
+  assert.deepEqual(oldClaim([...future, dueOutsideWindow], new Date("2026-08-24T10:00:00.000Z")), { eventId: undefined, reads: 100 });
 });
 
 test("command mutations use bounded reads, deterministic CAS, and atomic writes", async () => {

@@ -1,6 +1,6 @@
 import { Firestore, type DocumentData, type DocumentSnapshot, type QuerySnapshot, type Transaction } from "@google-cloud/firestore";
 import { createHash } from "node:crypto";
-import { claimEvent, eventIsDue, type DurableDomainEvent } from "./fika-contracts";
+import { claimEvent, eventIsDue, outboxRecord, type DurableDomainEvent } from "./fika-contracts";
 import type { CompiledPublishedWeekSnapshot, MenuPublication } from "./menu-publication";
 import type { RollingDay, RollingEntry, RollingSnapshot, RollingWeek } from "./rolling-menu-types";
 import { recordMenuPlanningReadBudget } from "./read-budget";
@@ -13,6 +13,7 @@ function recordFirestore(operation: string, documents: number) { recordDataAcces
 export const MENU_PLANNING_COLLECTIONS = {
   weeks: "fikaMenuPlanningWeeks", publications: "fikaMenuPlanningPublications", events: "fikaMenuPlanningEvents", outbox: "fikaMenuPlanningOutbox", archive: "fikaMenuPlanningArchiveMetadata", catalogue: "fikaMenuPlanningCatalogue", publishedSnapshots: "fikaMenuPlanningPublishedSnapshots",
 } as const;
+export const MENU_PLANNING_OUTBOX_CLAIM_PAGE_SIZE = 25;
 export type HostedTransactionState = { rolling: { version?: number; weeks: RollingWeek[]; days: RollingDay[]; entries: RollingEntry[] }; publications: { version: number; publications: MenuPublication[]; events: DurableDomainEvent[] } };
 export type MenuPlanningTransactionScope = { weekId?: string; sourceWeekId?: string; includeEvents?: boolean };
 export class ExpectedVersionConflict extends Error { status = 409 as const; }
@@ -176,24 +177,38 @@ export class MenuPlanningFirestoreRepository {
       const next = mutator(document.data() as DurableDomainEvent);
       if (next) {
         transaction.set(ref, next);
-        transaction.set(this.db.collection(MENU_PLANNING_COLLECTIONS.outbox).doc(eventId), next);
+        transaction.set(this.db.collection(MENU_PLANNING_COLLECTIONS.outbox).doc(eventId), outboxRecord(next));
       }
       return next;
     });
   }
   async claimNextEvent(claimId: string, at = new Date()) {
     return this.db.runTransaction(async transaction => {
-      const events = await transaction.get(this.db.collection(MENU_PLANNING_COLLECTIONS.events).where("delivery.status", "in", ["pending", "failed"]).limit(100));
-      recordFirestore("events.pending", events.size);
-      const candidates = events.docs.map(document => document.data() as DurableDomainEvent).filter(event => eventIsDue(event, at)).sort((a, b) => a.sourceAggregateId.localeCompare(b.sourceAggregateId) || a.sourceVersion - b.sourceVersion || a.eventId.localeCompare(b.eventId));
+      const pageSize = MENU_PLANNING_OUTBOX_CLAIM_PAGE_SIZE;
+      const queue = this.db.collection(MENU_PLANNING_COLLECTIONS.outbox);
+      const due = await transaction.get(queue.where("outboxStatus", "in", ["pending", "failed"]).where("nextEligibleAt", "<=", at.toISOString()).orderBy("nextEligibleAt", "asc").limit(pageSize));
+      recordFirestore("events.queue-page", due.size);
+      const documents = [...due.docs];
+      if (documents.length < pageSize) {
+        const legacy = await transaction.get(queue.where("delivery.status", "in", ["pending", "failed"]).orderBy("occurredAt", "asc").limit(pageSize - documents.length));
+        recordFirestore("events.queue-legacy-page", legacy.size);
+        const seen = new Set(documents.map(document => document.id));
+        for (const document of legacy.docs) if (!seen.has(document.id)) { documents.push(document); seen.add(document.id); }
+      }
+      const candidates = documents.map(document => { const value = document.data() as DurableDomainEvent; return { ...value, eventId: value.eventId || document.id }; }).filter(event => eventIsDue(event, at)).sort((a, b) => (a.delivery.nextEligibleAt || a.delivery.nextAttemptAt || a.occurredAt).localeCompare(b.delivery.nextEligibleAt || b.delivery.nextAttemptAt || b.occurredAt) || a.sourceAggregateId.localeCompare(b.sourceAggregateId) || a.sourceVersion - b.sourceVersion || a.eventId.localeCompare(b.eventId));
       for (const candidate of candidates) {
-        const aggregate = await transaction.get(this.db.collection(MENU_PLANNING_COLLECTIONS.events).where("sourceAggregateId", "==", candidate.sourceAggregateId));
-        const blocked = aggregate.docs.some(document => { const previous = document.data() as DurableDomainEvent; return previous.sourceVersion < candidate.sourceVersion && previous.delivery.status !== "delivered"; });
-        if (blocked) continue;
-        const next = claimEvent(candidate, claimId, at.toISOString());
         const ref = this.db.collection(MENU_PLANNING_COLLECTIONS.events).doc(candidate.eventId);
+        const currentDocument = await transaction.get(ref);
+        if (!currentDocument.exists) continue;
+        const current = currentDocument.data() as DurableDomainEvent;
+        if (!eventIsDue(current, at)) continue;
+        if (current.predecessorEventId) {
+          const predecessor = await transaction.get(this.db.collection(MENU_PLANNING_COLLECTIONS.events).doc(current.predecessorEventId));
+          if (!predecessor.exists || (predecessor.data() as DurableDomainEvent).delivery.status !== "delivered") continue;
+        }
+        const next = claimEvent(current, claimId, at.toISOString());
         transaction.set(ref, next);
-        transaction.set(this.db.collection(MENU_PLANNING_COLLECTIONS.outbox).doc(candidate.eventId), next);
+        transaction.set(this.db.collection(MENU_PLANNING_COLLECTIONS.outbox).doc(candidate.eventId), outboxRecord(next));
         return next;
       }
       return undefined;
@@ -263,6 +278,6 @@ export class MenuPlanningFirestoreRepository {
     const snapshots = (after as unknown as { snapshots?: Record<string, CompiledPublishedWeekSnapshot> }).snapshots || {};
     for (const [snapshotId, snapshot] of Object.entries(snapshots)) transaction.set(this.db.collection(MENU_PLANNING_COLLECTIONS.publishedSnapshots).doc(snapshotId), snapshot);
     const beforeEvents = new Map(before.events.map(value => [value.eventId, value]));
-    for (const event of after.events) { const old = beforeEvents.get(event.eventId); if (old && digest(old) !== digest(event) && old.delivery.status === "delivered" && event.delivery.status !== "delivered") throw new ExpectedVersionConflict(`Delivered event ${event.eventId} cannot be rewound.`); if (!old || digest(old) !== digest(event)) { transaction.set(this.db.collection(MENU_PLANNING_COLLECTIONS.events).doc(event.eventId), event); transaction.set(this.db.collection(MENU_PLANNING_COLLECTIONS.outbox).doc(event.eventId), event); } }
+    for (const event of after.events) { const old = beforeEvents.get(event.eventId); if (old && digest(old) !== digest(event) && old.delivery.status === "delivered" && event.delivery.status !== "delivered") throw new ExpectedVersionConflict(`Delivered event ${event.eventId} cannot be rewound.`); if (!old || digest(old) !== digest(event)) { transaction.set(this.db.collection(MENU_PLANNING_COLLECTIONS.events).doc(event.eventId), event); transaction.set(this.db.collection(MENU_PLANNING_COLLECTIONS.outbox).doc(event.eventId), outboxRecord(event)); } }
   }
 }
