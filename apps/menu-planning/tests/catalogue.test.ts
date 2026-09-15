@@ -28,7 +28,9 @@ test("hosted catalogue writes are targeted and transaction guarded", () => {
   const source = readFileSync(new URL("../lib/canonical-menu-repository.ts", import.meta.url), "utf8");
   assert.match(source, /fikaMenuPlanningCatalogue/);
   assert.match(source, /runTransaction/);
-  assert.match(source, /changed = persistedItems\.filter/);
+  assert.match(source, /requested = options\.currentItems/);
+  assert.match(source, /transaction\.get\(db\.collection\("fikaMenuPlanningCatalogue"\)/);
+  assert.match(source, /authoritativeItems/);
   assert.doesNotMatch(source, /read-only until its mutation API is enabled/);
 });
 
@@ -44,7 +46,7 @@ test("hosted reconciliation preserves reviewed catalogue records", () => {
   const source = readFileSync(new URL("../lib/canonical-menu-repository.ts", import.meta.url), "utf8");
   assert.match(source, /const reviewed = existing\.reviewStatus !== "unreviewed" \|\| existing\.mayContainReviewed/);
   assert.match(source, /existing\.displayName !== name && !reviewed/);
-  assert.match(source, /existingRecord\.revision > item\.revision/);
+  assert.match(source, /existing\.revision > item\.revision/);
 });
 
 test("Firestore catalogue sanitisation omits undefined fields and preserves meaningful falsy values", () => {

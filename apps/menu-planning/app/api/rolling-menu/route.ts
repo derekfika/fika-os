@@ -44,7 +44,6 @@ import { forwardProductionMaterialisationEvent } from "@/lib/production-client";
 import { replayMenuPublicationOutbox } from "@/lib/menu-publication";
 import {
   listCatalogueEntriesForIds,
-  reconcileCatalogueFromRollingEntries,
 } from "@/lib/catalogue";
 import { resolveAllergenSnapshot } from "@/lib/allergen-resolution";
 import {
@@ -238,12 +237,8 @@ async function handleGet(request: NextRequest) {
       : undefined;
     const catalogueStarted = performance.now();
     const publicationStarted = performance.now();
-    const [catalogue, currentPublicationState] = await Promise.all([
-      listCatalogueEntriesForIds(
-        snapshot.entries.map((entry) => entry.itemId || ""),
-      ),
-      publicationState(snapshot, governedOplocs),
-    ]);
+    const catalogue = await listCatalogueEntriesForIds(snapshot.entries.map((entry) => entry.itemId || ""));
+    const currentPublicationState = await publicationState(snapshot, governedOplocs, catalogue.map(entry => entry.item).filter((item): item is NonNullable<typeof item> => Boolean(item)));
     const catalogueMs = performance.now() - catalogueStarted;
     const publicationStateMs = performance.now() - publicationStarted;
     const resolved = await resolvedSnapshot(snapshot, catalogue, actor);
@@ -262,7 +257,7 @@ async function handleGet(request: NextRequest) {
       publicationState: currentPublicationState,
       ...(publicationPreviewRequested
         ? {
-            publicationPreview: publicationPreview(snapshot, previewDayId),
+            publicationPreview: publicationPreview(snapshot, previewDayId, catalogue.map(entry => entry.item).filter((item): item is NonNullable<typeof item> => Boolean(item)), { requireAuthoritativeCatalogue: ["staging", "production"].includes(process.env.FIKA_RUNTIME_MODE || "") }),
             dayBlockers: previewDayId
               ? publicationDayBlockers(snapshot, previewDayId, governedOplocIds, activeCanonicalDishIds)
               : [],
@@ -467,9 +462,6 @@ async function handlePost(request: NextRequest) {
         oplocs,
       );
       assertSnapshotScope(sourceSnapshot, actor);
-      // Reconcile exact imported dish names before the publication gate runs.
-      // This persists the canonical identity; it does not bypass allergen review.
-      await reconcileCatalogueFromRollingEntries({ weekId: requestedWeekId });
       const publication = await createPublishedMenuWeek(
         requestedWeekId,
         {

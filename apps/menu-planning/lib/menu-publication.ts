@@ -1,5 +1,4 @@
 import { createHash, randomUUID } from "node:crypto";
-import { readFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { CanonicalAllergenMap } from "./fika-contracts";
@@ -23,6 +22,7 @@ import type { GovernedOploc } from "./oploc-authority";
 import { renderPdfLocally } from "./local-pdf";
 import { resolveAllergenSnapshot } from "./allergen-resolution";
 import type { MenuItem } from "./domain";
+import { listCanonicalMenuItemsByIds } from "./canonical-menu-repository";
 import {
   publishedAllergenMatrixHtml,
   createDomainEvent,
@@ -42,7 +42,6 @@ import {
   updateMenuPlanningEvent,
   withMenuPlanningTransaction,
 } from "./operational-store";
-import { cwd } from "node:process";
 import {
   decodeWeeklyPublicationPacket,
   encodeWeeklyPublicationPacket,
@@ -213,38 +212,33 @@ const populatedWeekdays = (snapshot: RollingSnapshot) =>
         (entry) => entry.dayId === day.id && entry.itemLabel.trim(),
       ),
     );
-// Publication previews are pure transformations. The local catalogue read is
-// explicitly scoped to this app so NFT never treats it as a monorepo root.
-const canonicalItems = (): MenuItem[] => {
-  try {
-    return (
-      (
-        JSON.parse(
-          readFileSync(
-            join(
-              /*turbopackIgnore: true*/ cwd(),
-              "local-data",
-              "menu-planning",
-              "canonical-menu-items.json",
-            ),
-            "utf8",
-          ),
-        ) as { items?: MenuItem[] }
-      ).items || []
-    );
-  } catch {
-    return [];
-  }
-};
+export type PublicationBuildOptions = { requireAuthoritativeCatalogue?: boolean; allowExplicitReviewWithoutCatalogue?: boolean };
+const hostedPublication = () => ["staging", "production"].includes(process.env.FIKA_RUNTIME_MODE || "");
+const canonicalDishFor = (canonicalDishes: readonly MenuItem[], itemId?: string) => itemId ? canonicalDishes.find(item => item.canonicalId === itemId) : undefined;
+const referencedCanonicalDishIds = (snapshot: RollingSnapshot, dayId?: string) => [...new Set(snapshot.entries.filter(entry => (!dayId || entry.dayId === dayId) && entry.itemLabel.trim() && entry.allocations.some(allocation => Number.isFinite(allocation.quantity) && allocation.quantity > 0)).map(entry => entry.itemId?.trim()).filter((id): id is string => Boolean(id)))];
+async function authoritativeDishesFor(snapshot: RollingSnapshot, dayId?: string) {
+  // Local/test mode has an explicit entry-review fixture path. Hosted
+  // publication is always bound to the Firestore targeted lookup below.
+  return hostedPublication() ? listCanonicalMenuItemsByIds(referencedCanonicalDishIds(snapshot, dayId)) : [];
+}
 const publishedEntry = (
   entry: RollingEntry,
   canonicalDish?: MenuItem,
+  options: PublicationBuildOptions = {},
+  day?: RollingDay,
 ): PublishedMenuEntry => {
   const activeAllocations = entry.allocations.filter(
     (allocation) =>
       Number.isFinite(allocation.quantity) && allocation.quantity > 0,
   );
-  const resolved = resolveAllergenSnapshot(entry, canonicalDish);
+  const allowExplicitFixture = options.allowExplicitReviewWithoutCatalogue ?? !options.requireAuthoritativeCatalogue;
+  const hasExplicitReview = entry.allergenReviewInvalidated === false || Object.entries(entry.allergens || {}).some(([key, value]) => key && value !== "clear");
+  const resolved = allowExplicitFixture && hasExplicitReview && !canonicalDish
+    ? resolveAllergenSnapshot({ ...entry, itemId: undefined }, undefined)
+    : resolveAllergenSnapshot(entry, canonicalDish);
+  if (options.requireAuthoritativeCatalogue && resolved.unresolved.length) {
+    throw Object.assign(new Error(`${day?.dayName || "Menu day"}: ${entry.itemLabel || entry.slot} cannot be published because governed allergen evidence is unresolved (${resolved.unresolved.join(", ")}).`), { status: 422, code: "PUBLICATION_ALLERGEN_UNRESOLVED" });
+  }
   const mayContainNotes = entry.mayContainNotes ?? resolved.mayContainNotes;
   return normalizePublicationValue({
     sourceEntryId: entry.id,
@@ -271,8 +265,7 @@ const publishedEntry = (
     ...(mayContainNotes !== undefined ? { mayContainNotes } : {}),
   });
 };
-export function buildPublishedDay(snapshot: RollingSnapshot, day: RollingDay) {
-  const items = canonicalItems();
+export function buildPublishedDay(snapshot: RollingSnapshot, day: RollingDay, canonicalDishes: readonly MenuItem[] = [], options: PublicationBuildOptions = {}) {
   const entries = snapshot.entries
     .filter(
       (entry) =>
@@ -284,10 +277,7 @@ export function buildPublishedDay(snapshot: RollingSnapshot, day: RollingDay) {
         ),
     )
     .map((entry) => {
-      const canonicalDish = entry.itemId
-        ? items.find((item) => item.canonicalId === entry.itemId)
-        : undefined;
-      return publishedEntry(entry, canonicalDish);
+      return publishedEntry(entry, canonicalDishFor(canonicalDishes, entry.itemId), options, day);
     });
   const stableDay = normalizePublicationValue({
     sourceDayId: day.id,
@@ -371,12 +361,12 @@ export function buildCompiledPublicationSnapshot(
     );
   return snapshot;
 }
-export function publicationPreview(snapshot: RollingSnapshot, dayId?: string) {
+export function publicationPreview(snapshot: RollingSnapshot, dayId?: string, canonicalDishes: readonly MenuItem[] = [], options: PublicationBuildOptions = {}) {
   return (
     dayId
       ? snapshot.days.filter((day) => day.id === dayId)
       : populatedWeekdays(snapshot)
-  ).map((day) => buildPublishedDay(snapshot, day));
+  ).map((day) => buildPublishedDay(snapshot, day, canonicalDishes, options));
 }
 function conflict(message: string) {
   return Object.assign(new Error(message), { status: 409 });
@@ -450,9 +440,10 @@ export function validatePublicationSignoff(
   dayId: string,
   signoff: MenuPublicationSignoff = {},
   governedOplocIds?: Set<string>,
+  canonicalDishes: readonly MenuItem[] = [],
 ) {
   validateDay(snapshot, dayId, governedOplocIds);
-  const day = publicationPreview(snapshot, dayId)[0];
+  const day = publicationPreview(snapshot, dayId, canonicalDishes, { requireAuthoritativeCatalogue: true })[0];
   if (!day)
     throw Object.assign(new Error("Menu day was not found."), { status: 404 });
   return day;
@@ -651,6 +642,7 @@ export function compareWorkingWeekToPublication(
   snapshot: RollingSnapshot,
   publication: MenuPublication | undefined,
   governedOplocs: readonly GovernedOploc[] = [],
+  canonicalDishes: readonly MenuItem[] = [],
 ): WorkingPublicationComparison {
   const normalized = normaliseRollingSnapshotDestinations(snapshot, governedOplocs);
   const currentDays = new Map(
@@ -661,7 +653,7 @@ export function compareWorkingWeekToPublication(
   const dayHasUnpublishedChanges = Object.fromEntries(
     normalized.days.slice(0, 5).map((day) => {
       const current = currentDays.get(day.id);
-      const working = buildPublishedDay(normalized, day);
+      const working = buildPublishedDay(normalized, day, canonicalDishes);
       // An intentionally blank day is equivalent to no published day. A
       // populated working day, or a published day with a different hash, is
       // a persisted amendment.
@@ -679,12 +671,14 @@ export function compareWorkingWeekToPublication(
 export async function publicationState(
   snapshot: RollingSnapshot,
   governedOplocs: readonly GovernedOploc[] = [],
+  canonicalDishes: readonly MenuItem[] = [],
 ): Promise<Record<string, PublicationDayState>> {
   const normalized = normaliseRollingSnapshotDestinations(snapshot, governedOplocs);
+  const resolvedCanonicalDishes = canonicalDishes.length ? canonicalDishes : await authoritativeDishesFor(normalized);
   const publication = (
     await readPublicationStateForWeek<StoredPublications>(normalized.week.id)
   ).publications.find((value) => value.sourceWeekId === snapshot.week.id);
-  const comparison = compareWorkingWeekToPublication(normalized, publication);
+  const comparison = compareWorkingWeekToPublication(normalized, publication, governedOplocs, resolvedCanonicalDishes);
   return Object.fromEntries(
     normalized.days.slice(0, 5).map((day) => {
       const current = publication?.days
@@ -728,7 +722,8 @@ export async function createPublishedMenuDay(
 ) {
   const expectedSnapshot = await getWeek(weekId);
   const expectedWeekVersion = expectedSnapshot.week.version;
-  const activeCanonicalDishIds = await activeCanonicalDishIdsFor(expectedSnapshot);
+  const canonicalDishes = await authoritativeDishesFor(expectedSnapshot, dayId);
+  const activeCanonicalDishIds = hostedPublication() ? new Set(canonicalDishes.filter(item => item.reviewStatus !== "archived").map(item => item.canonicalId)) : await activeCanonicalDishIdsFor(expectedSnapshot);
   return withMenuPlanningTransaction(
     (state) => {
       const rolling = state.rolling as unknown as RollingMenuStored;
@@ -751,7 +746,7 @@ export async function createPublishedMenuDay(
       );
       if (errors.length)
         throw Object.assign(new Error(errors.join(" ")), { status: 422 });
-      const preview = buildPublishedDay(snapshot, day);
+      const preview = buildPublishedDay(snapshot, day, canonicalDishes, { requireAuthoritativeCatalogue: hostedPublication(), allowExplicitReviewWithoutCatalogue: !hostedPublication() });
       if (
         signoff.dayContentHash &&
         signoff.dayContentHash !== preview.contentHash
@@ -869,7 +864,8 @@ export async function createPublishedMenuWeek(
 ) {
   const expectedSnapshot = await getWeek(weekId);
   const expectedWeekVersion = expectedSnapshot.week.version;
-  const activeCanonicalDishIds = await activeCanonicalDishIdsFor(expectedSnapshot);
+  const canonicalDishes = await authoritativeDishesFor(expectedSnapshot);
+  const activeCanonicalDishIds = hostedPublication() ? new Set(canonicalDishes.filter(item => item.reviewStatus !== "archived").map(item => item.canonicalId)) : await activeCanonicalDishIdsFor(expectedSnapshot);
   return withMenuPlanningTransaction(
     (state) => {
       const rolling = state.rolling as unknown as RollingMenuStored;
@@ -886,7 +882,7 @@ export async function createPublishedMenuWeek(
         throw Object.assign(new Error(blockers.join(" ")), { status: 422 });
       const previews = snapshot.days
         .slice(0, 5)
-        .map((day) => buildPublishedDay(snapshot, day));
+        .map((day) => buildPublishedDay(snapshot, day, canonicalDishes, { requireAuthoritativeCatalogue: hostedPublication(), allowExplicitReviewWithoutCatalogue: !hostedPublication() }));
       if (
         input.weekContentHash &&
         input.weekContentHash !== contentHash(previews)
@@ -916,7 +912,7 @@ export async function createPublishedMenuWeek(
           .filter((day) => day.status === "published")
           .map((day) => [day.sourceDayId, day]),
       );
-      const comparison = compareWorkingWeekToPublication(snapshot, publication);
+      const comparison = compareWorkingWeekToPublication(snapshot, publication, governedOplocs || [], canonicalDishes);
       if (nextVersion > 1 && !comparison.hasUnpublishedChanges)
         throw conflict(
           `This menu week is already published at version ${publication.publicationVersion}.`,

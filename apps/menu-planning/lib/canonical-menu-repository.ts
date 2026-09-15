@@ -11,7 +11,6 @@ import { Firestore } from "@google-cloud/firestore";
 import { recordMenuPlanningReadBudget } from "./read-budget";
 import { getCatalogueManifest } from "./catalogue-manifest";
 import { recordDataAccess } from "@fika/server-shared/data-source-meter-server";
-import { catalogueUsagesFor } from "./catalogue-usage";
 import { catalogueSourceHash } from "./catalogue-source";
 import { markCataloguePackageFailed, type CataloguePackageState } from "./catalogue-manifest";
 
@@ -20,10 +19,10 @@ const HOSTED_CATALOGUE_TTL_MS = 60_000;
 let hostedCatalogueCache: { expiresAt: number; items: MenuItem[] } | undefined;
 const hostedCatalogue = () => ["staging", "production"].includes(process.env.FIKA_RUNTIME_MODE || "");
 
-async function readItems(): Promise<MenuItem[]> {
+async function readItems(options: { fresh?: boolean } = {}): Promise<MenuItem[]> {
   if (hostedCatalogue()) {
     if (!process.env.FIREBASE_PROJECT_ID && !process.env.GCLOUD_PROJECT) throw Object.assign(new Error("Hosted Menu Planning catalogue is not configured."), { status: 503 });
-    if (hostedCatalogueCache && hostedCatalogueCache.expiresAt > Date.now()) {
+    if (!options.fresh && hostedCatalogueCache && hostedCatalogueCache.expiresAt > Date.now()) {
       recordDataAccess({ app: "menu-planning", operation: "catalogue.app-cache", source: "APP_CACHE", documents: hostedCatalogueCache.items.length, cacheHit: true });
       recordMenuPlanningReadBudget({ operation: "catalogue", reads: { cacheHit: 1, documents: hostedCatalogueCache.items.length } });
       return structuredClone(hostedCatalogueCache.items);
@@ -67,18 +66,10 @@ const hostedDb = () => {
 };
 export const hostedDocument = (item: MenuItem) => sanitiseFirestoreValue({ id: item.canonicalId, kind: "dish", source: "menu-planning-local", record: item, reconciliationStatus: "reconciled", schemaVersion: "1.0.0" });
 const recordsEqual = (left: unknown, right: unknown) => JSON.stringify(left) === JSON.stringify(right);
-async function publishItemsBestEffort(items: MenuItem[], source: { sourceRevision: number; sourceHash: string }) {
+async function publishItemsBestEffort(source: { sourceRevision: number; sourceHash: string }) {
   try {
     const { materialiseCataloguePackage } = await import("./catalogue-read-package");
-    const entries = items.filter(item => item.reviewStatus !== "archived").map(item => ({
-      id: item.canonicalId, kind: "canonical" as const, name: item.displayName, description: item.description || item.preparationDescription,
-      category: normaliseDishCategory(item.category || item.subcategory), subcategory: item.subcategory, usage: catalogueUsagesFor(item),
-      status: item.recipeStatus || item.reviewStatus, reviewStatus: item.reviewStatus, sourceLabel: item.sourceName,
-      sourceEvidence: `${item.sourceReference.workbook} · ${item.sourceReference.sheet}`,
-      recipeAvailable: Boolean(item.ingredients?.length || item.methodSteps?.length || item.preparationDescription),
-      allergenCount: item.allergenEvidence.filter(evidence => evidence.value !== "unknown").length, item,
-    }));
-    const result = await materialiseCataloguePackage(entries, source);
+    const result = await materialiseCataloguePackage(undefined, source);
     if (result.status !== "current") console.warn("[FIKA_SNAPSHOT_STALE] canonical catalogue mutation succeeded but package publication is not current", result.error || result.status);
     return result;
   } catch (error) {
@@ -92,40 +83,42 @@ async function writeItems(items: MenuItem[], options: { currentItems?: MenuItem[
   if (hosted()) {
     const persistedItems = items.map(item => sanitiseFirestoreValue(item));
     const db = hostedDb();
-    const currentById = new Map<string, { record?: MenuItem }>();
-    if (options.currentItems) {
-      options.currentItems.forEach(item => currentById.set(item.canonicalId, { record: item }));
-    } else {
-      const current = await db.collection("fikaMenuPlanningCatalogue").where("kind", "==", "dish").get();
-      recordDataAccess({ app: "menu-planning", operation: "catalogue.mutation-preflight", source: "FIRESTORE", documents: current.size, firestoreReadKind: "query" });
-      current.docs.forEach(document => currentById.set(document.id, document.data() as { record?: MenuItem }));
-    }
-    const changed = persistedItems.filter(item => !recordsEqual(currentById.get(item.canonicalId)?.record, item));
-    if (!changed.length) return;
+    const baselineById = new Map((options.currentItems || []).map(item => [item.canonicalId, item]));
+    const requested = options.currentItems
+      ? persistedItems.filter(item => !recordsEqual(baselineById.get(item.canonicalId), item))
+      : persistedItems;
+    if (!requested.length) return;
     let source: { sourceRevision: number; sourceHash: string } | undefined;
     await db.runTransaction(async transaction => {
       const manifestRef = db.collection("fikaMenuPlanningCatalogueManifests").doc("catalogue");
       const manifest = await transaction.get(manifestRef);
       const manifestValue = manifest.exists ? manifest.data() || {} : {};
-      const sourceRevision = Number(manifestValue.sourceRevision ?? manifestValue.catalogueVersion ?? 0) + 1;
-      const sourceHash = catalogueSourceHash(persistedItems);
-      source = { sourceRevision, sourceHash };
-      const refs = changed.map(item => db.collection("fikaMenuPlanningCatalogue").doc(item.canonicalId));
-      const latest = await transaction.getAll(...refs);
-      recordDataAccess({ app: "menu-planning", operation: "catalogue.mutation-transaction-read", source: "FIRESTORE", documents: latest.length, firestoreReadKind: "transaction" });
-      latest.forEach((document, index) => {
-        const item = changed[index];
-        const existing = document.exists ? document.data() : undefined;
-        const existingRecord = existing?.record as MenuItem | undefined;
-        if (existingRecord && existingRecord.revision > item.revision && existingRecord.reviewStatus !== "unreviewed") return;
-        transaction.set(refs[index], sanitiseFirestoreValue({ ...(existing || hostedDocument(item)), id: item.canonicalId, kind: "dish", record: item }), { merge: true });
+      const current = await transaction.get(db.collection("fikaMenuPlanningCatalogue").where("kind", "==", "dish"));
+      recordDataAccess({ app: "menu-planning", operation: "catalogue.mutation-transaction-read", source: "FIRESTORE", documents: current.size, firestoreReadKind: "transaction" });
+      const currentById = new Map(current.docs.map(document => [document.id, (document.data().record || document.data()) as MenuItem]));
+      const nextById = new Map(currentById);
+      const changed = requested.filter(item => {
+        const existing = currentById.get(item.canonicalId);
+        if (existing && existing.revision > item.revision && existing.reviewStatus !== "unreviewed") return false;
+        nextById.set(item.canonicalId, item);
+        return !recordsEqual(existing, item);
       });
+      if (!changed.length) return;
+      const authoritativeItems = [...nextById.values()];
+      const sourceRevision = Number(manifestValue.sourceRevision ?? manifestValue.catalogueVersion ?? 0) + 1;
+      const sourceHash = catalogueSourceHash(authoritativeItems);
+      source = { sourceRevision, sourceHash };
+      for (const item of changed) {
+        const existing = currentById.get(item.canonicalId);
+        const ref = db.collection("fikaMenuPlanningCatalogue").doc(item.canonicalId);
+        transaction.set(ref, sanitiseFirestoreValue({ ...(existing ? { id: item.canonicalId, kind: "dish", record: existing } : hostedDocument(item)), id: item.canonicalId, kind: "dish", record: item }), { merge: true });
+      }
       const at = new Date().toISOString();
-      transaction.set(manifestRef, sanitiseFirestoreValue({ schemaVersion: 1, catalogueVersion: sourceRevision, sourceRevision, sourceHash, updatedAt: at, dishCount: persistedItems.length, packageState: { status: "pending", sourceRevision, sourceHash, requestedAt: at, updatedAt: at, attempts: 0 } satisfies CataloguePackageState, ...(options.actor ? { lastMutationBy: options.actor } : {}) }), { merge: true });
+      transaction.set(manifestRef, sanitiseFirestoreValue({ schemaVersion: 1, catalogueVersion: sourceRevision, sourceRevision, sourceHash, updatedAt: at, dishCount: authoritativeItems.length, packageState: { status: "pending", sourceRevision, sourceHash, requestedAt: at, updatedAt: at, attempts: 0 } satisfies CataloguePackageState, ...(options.actor ? { lastMutationBy: options.actor } : {}) }), { merge: true });
     });
-    recordDataAccess({ app: "menu-planning", operation: "catalogue.mutation-write", source: "FIRESTORE", documents: changed.length, estimatedFirestoreWrites: changed.length });
+    recordDataAccess({ app: "menu-planning", operation: "catalogue.mutation-write", source: "FIRESTORE", documents: requested.length, estimatedFirestoreWrites: requested.length });
     invalidateHostedCatalogueCache();
-    return source ? await publishItemsBestEffort(persistedItems, source) : undefined;
+    return source ? await publishItemsBestEffort(source) : undefined;
   }
   assertOperationalStoreAvailable();
   await mkdir(path.dirname(filePath), { recursive: true });
@@ -136,12 +129,12 @@ async function writeItems(items: MenuItem[], options: { currentItems?: MenuItem[
   const sourceHash = catalogueSourceHash(normalised);
   const at = new Date().toISOString();
   await writeFile(filePath, JSON.stringify({ version: sourceRevision, sourceRevision, sourceHash, updatedAt: at, ...(options.actor ? { lastMutationBy: options.actor } : {}), packageState: { status: "pending", sourceRevision, sourceHash, requestedAt: at, updatedAt: at, attempts: 0 } satisfies CataloguePackageState, items: normalised }, null, 2) + "\n", "utf8");
-  return await publishItemsBestEffort(normalised, { sourceRevision, sourceHash });
+  return await publishItemsBestEffort({ sourceRevision, sourceHash });
 }
 
 export { getCatalogueManifest };
 
-export async function listCanonicalMenuItems() { return readItems(); }
+export async function listCanonicalMenuItems(options: { fresh?: boolean } = {}) { return readItems(options); }
 
 export async function listCanonicalMenuItemsByIds(ids: string[]) {
   const wanted = [...new Set(ids.filter(Boolean))];
@@ -174,7 +167,7 @@ export async function getCanonicalMenuItemById(id: string) {
 }
 
 export async function recordDishSourceAliases(aliasesById: Record<string, string[]>, actor = "menu-planning-importer") {
-  const items = await readItems(); const at = new Date().toISOString(); let changed = 0;
+  const items = await readItems(); const baseline = structuredClone(items); const at = new Date().toISOString(); let changed = 0;
   for (const item of items) {
     const aliases = [...new Set((aliasesById[item.canonicalId] || []).map(value => value.trim()).filter(value => value && value.toLocaleLowerCase() !== item.displayName.toLocaleLowerCase()))];
     if (!aliases.length) continue;
@@ -182,7 +175,7 @@ export async function recordDishSourceAliases(aliasesById: Record<string, string
     if (next.length === (item.sourceAliases || []).length) continue;
     item.sourceAliases = next; item.revision += 1; item.audit.push({ action: "legacy-workbook-dish-alias-confirmed", at, by: actor }); changed += 1;
   }
-  if (changed) await writeItems(items, { actor });
+  if (changed) await writeItems(items, { currentItems: baseline, actor });
   return changed;
 }
 
@@ -193,11 +186,12 @@ export type CanonicalMenuItemCreateInput = { displayName: string; category?: str
 export async function createCanonicalMenuItem(input: { displayName: string; category?: string; description?: string; preparationNotes?: string; allergenEvidence?: MenuItem["allergenEvidence"]; sourceReference?: MenuItem["sourceReference"]; sourceEvidence?: MenuItem["sourceEvidence"] }, actor = "local-menu-planner"): Promise<CanonicalMenuItemCreateResult> {
   if (hosted() && /(?:^|[-_:])(?:test|fixture|synthetic|e2e)(?:$|[-_:])/i.test(actor)) throw Object.assign(new Error("Synthetic catalogue writes are not allowed in hosted Menu Planning."), { status: 403 });
   const items = await readItems();
+  const baseline = structuredClone(items);
   const displayName = normaliseDishName(input.displayName);
   const key = displayName.toLocaleLowerCase("en-GB");
   const active = items.filter(item => item.reviewStatus !== "archived");
   const existing = active.find(item => item.displayName.trim().toLocaleLowerCase("en-GB") === key);
-  if (existing) { if (existing.displayName !== displayName) { existing.displayName = displayName; existing.audit.push({ action: "canonical-dish-name-normalised", at: new Date().toISOString(), by: actor }); await writeItems(items, { actor }); } return { ...existing, outcome: "matched_active" }; }
+  if (existing) { if (existing.displayName !== displayName) { existing.displayName = displayName; existing.audit.push({ action: "canonical-dish-name-normalised", at: new Date().toISOString(), by: actor }); await writeItems(items, { currentItems: baseline, actor }); } return { ...existing, outcome: "matched_active" }; }
   const mergedAlias = active.find(item => (item.sourceAliases || []).some(alias => alias.trim().toLocaleLowerCase("en-GB") === key));
   if (mergedAlias) return { ...mergedAlias, outcome: "matched_merged_alias" };
   const at = new Date().toISOString();
@@ -219,7 +213,7 @@ export async function createCanonicalMenuItem(input: { displayName: string; cate
     audit: [{ action: "locally-created-in-menu-planning", at, by: actor }],
   };
   items.push(item);
-  await writeItems(items, { actor });
+  await writeItems(items, { currentItems: baseline, actor });
   return { ...item, outcome: "created_new" };
 }
 
@@ -254,6 +248,7 @@ export async function createCanonicalMenuItems(inputs: CanonicalMenuItemCreateIn
 /** Promote imported rolling-menu labels into reusable records once, without replacing reviewed records. */
 export async function syncRollingEntries(entries: RollingEntry[], actor = "rolling-menu-migration") {
   const items = await readItems();
+  const baseline = structuredClone(items);
   let changed = false;
   for (const entry of entries) {
     const name = normaliseDishName(entry.itemLabel);
@@ -290,7 +285,7 @@ export async function syncRollingEntries(entries: RollingEntry[], actor = "rolli
     });
     changed = true;
   }
-  if (changed) await writeItems(items, { actor });
+  if (changed) await writeItems(items, { currentItems: baseline, actor });
   return items;
 }
 
@@ -309,11 +304,12 @@ export function canonicalFromSourceCandidate(candidate: MenuItem, actor = "local
 
 export async function promoteSourceCandidate(candidate: MenuItem, actor = "local-menu-reviewer") {
   const items = await readItems();
+  const baseline = structuredClone(items);
   const existing = items.find((item) => item.canonicalId === candidate.canonicalId);
-  if (existing) { const displayName = normaliseDishName(existing.displayName); if (existing.displayName !== displayName) { existing.displayName = displayName; existing.audit.push({ action: "canonical-dish-name-normalised", at: new Date().toISOString(), by: actor }); await writeItems(items, { actor }); } return existing; }
+  if (existing) { const displayName = normaliseDishName(existing.displayName); if (existing.displayName !== displayName) { existing.displayName = displayName; existing.audit.push({ action: "canonical-dish-name-normalised", at: new Date().toISOString(), by: actor }); await writeItems(items, { currentItems: baseline, actor }); } return existing; }
   const item = canonicalFromSourceCandidate(candidate, actor);
   items.push(item);
-  await writeItems(items, { actor });
+  await writeItems(items, { currentItems: baseline, actor });
   return item;
 }
 
@@ -368,6 +364,7 @@ export async function previewSimilarCanonicalItems() {
 
 export async function mergeSimilarCanonicalItems(actor = "automatic-dish-normaliser", selectedIds?: Set<string>) {
   const items = await readItems();
+  const baseline = structuredClone(items);
   const inScope = (item: MenuItem) => !selectedIds || selectedIds.has(item.canonicalId);
   const active = items.filter(item => item.reviewStatus !== "archived" && inScope(item));
   const groups: MenuItem[][] = [];
@@ -394,6 +391,6 @@ export async function mergeSimilarCanonicalItems(actor = "automatic-dish-normali
   for (const item of items.filter(item => item.reviewStatus !== "archived" && inScope(item))) { const key = `${normaliseDishCategory(item.category)}|${mergeKey(item.displayName)}`; if (key.endsWith("|")) continue; winners.set(key, item); }
   const aliases: Record<string, string> = {};
   for (const item of items.filter(inScope)) { const winner = winners.get(`${normaliseDishCategory(item.category)}|${mergeKey(item.displayName)}`); if (winner && winner.canonicalId !== item.canonicalId) { mapping[item.canonicalId] = winner.canonicalId; aliases[item.displayName.toLocaleLowerCase()] = winner.displayName; } }
-  if (merged) await writeItems(items, { actor });
+  if (merged) await writeItems(items, { currentItems: baseline, actor });
   return { mapping, aliases, merged };
 }

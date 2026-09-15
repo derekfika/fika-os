@@ -9,10 +9,11 @@ const validEvidence = (value: string) => value === "contains" || value === "free
 /** Resolves the exact operational allergen snapshot used by readiness, preview, hashing and publication. */
 export function resolveAllergenSnapshot(entry: Pick<RollingEntry, "allergens" | "allergenReviewInvalidated" | "itemId" | "itemLabel">, canonicalDish?: CanonicalDishAllergenSource) {
   const explicit = entry.allergens || {};
+  if (entry.itemId && (!canonicalDish || canonicalDish.canonicalId !== entry.itemId)) return { allergens: emptyMap(), mayContainNotes: undefined, unresolved: ["The referenced canonical dish is not available from the authoritative catalogue."] };
   const hasExplicitReview = entry.allergenReviewInvalidated === false || Object.entries(explicit).some(([key, value]) => CANONICAL_ALLERGEN_KEYS.includes(key as typeof CANONICAL_ALLERGEN_KEYS[number]) && value !== "clear");
   if (hasExplicitReview) return { allergens: { ...emptyMap(), ...explicit }, mayContainNotes: undefined as string | undefined, unresolved: [] as string[] };
   if (entry.allergenReviewInvalidated === true) return { allergens: emptyMap(), mayContainNotes: undefined, unresolved: ["The menu-entry allergen review was invalidated after the dish changed."] };
-  if (!canonicalDish || (entry.itemId && canonicalDish.canonicalId !== entry.itemId)) return { allergens: emptyMap(), mayContainNotes: undefined, unresolved: ["No governed allergen evidence is available for this dish."] };
+  if (!canonicalDish) return { allergens: emptyMap(), mayContainNotes: undefined, unresolved: ["No governed allergen evidence is available for this dish."] };
   const unresolved = canonicalDish.allergenEvidence.filter(evidence => evidence.value === "unknown" || !validEvidence(evidence.value)).map(evidence => evidence.allergen);
   if (!canonicalDish.mayContainReviewed) unresolved.push("review");
   if (unresolved.length) return { allergens: emptyMap(), mayContainNotes: canonicalDish.mayContainNotes, unresolved };

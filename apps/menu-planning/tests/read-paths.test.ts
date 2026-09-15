@@ -301,7 +301,7 @@ test("rolling-menu enrichment remains a bounded server-side stable-ID read", () 
 test("catalogue package publication reuses live usage classification", () => {
   const repository = readFileSync(new URL("../lib/canonical-menu-repository.ts", import.meta.url), "utf8");
   const catalogue = readFileSync(new URL("../lib/catalogue.ts", import.meta.url), "utf8");
-  assert.match(repository, /catalogueUsagesFor\(item\)/);
+  assert.match(repository, /materialiseCataloguePackage\(undefined, source\)/);
   assert.match(catalogue, /catalogueUsagesFor\(item\)/);
 });
 

@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { decodeReadPackage, encodeReadPackage, immutableObjectName } from "@fika/server-shared/read-package";
 import { cataloguePackageMatchesSource, getCatalogueReadPackage, publishCataloguePackage } from "../lib/catalogue-read-package";
@@ -52,14 +53,30 @@ test("successful catalogue package publication records the exact source identity
   assert.equal((publishedManifest as any).sourceHash, source.sourceHash);
 });
 
+test("older materialisers cannot certify a newer source and current state never regresses", () => {
+  const older = { packageVersion: 4, sourceHash: "old-hash", sourceVersion: catalogueSourceVersion(4, "old-hash"), contentHash: "old-body" } as any;
+  const newer = { packageVersion: 5, sourceHash: "new-hash", sourceVersion: catalogueSourceVersion(5, "new-hash"), contentHash: "new-body" } as any;
+  const current = { status: "current", sourceRevision: 5, sourceHash: "new-hash" } as any;
+  assert.equal(cataloguePackageMatchesSource(older, { sourceRevision: 5, sourceHash: "new-hash", packageState: current }), false);
+  assert.equal(cataloguePackageMatchesSource(newer, { sourceRevision: 5, sourceHash: "new-hash", packageState: current }), true);
+  assert.equal(cataloguePackageMatchesSource(newer, { sourceRevision: 6, sourceHash: "future-hash", packageState: { status: "pending", sourceRevision: 6, sourceHash: "future-hash", requestedAt: "now", updatedAt: "now" } }), false);
+  const helper = readFileSync(new URL("../lib/catalogue-read-package.ts", import.meta.url), "utf8");
+  assert.match(helper, /status: "stale"/);
+  assert.match(helper, /markCataloguePackageCurrent\(exact\.sourceIdentity, manifest\)/);
+});
+
 test("normal catalogue GET delegates missing and stale package recovery to the bounded read helper", async () => {
   const route = await (await import("node:fs/promises")).readFile(new URL("../app/api/catalogue/route.ts", import.meta.url), "utf8");
   const helper = await (await import("node:fs/promises")).readFile(new URL("../lib/catalogue-read-package.ts", import.meta.url), "utf8");
   assert.doesNotMatch(route, /listCatalogueEntries\(|publishCataloguePackage\(/);
-  assert.match(helper, /listCatalogueEntries\(/);
+  assert.match(helper, /listCanonicalMenuItems\(\{ fresh: true \}\)/);
+  assert.match(helper, /catalogueEntriesForItems\(items\)/);
   assert.match(helper, /sourceManifest\.catalogueVersion > retrieved\.manifest\.packageVersion/);
-  assert.match(helper, /publishCataloguePackage\(entries, store, sourceIdentity\)/);
+  assert.match(helper, /publishCataloguePackage\(exact\.entries, targetStore, exact\.sourceIdentity\)/);
   assert.match(helper, /cataloguePackageMatchesSource/);
+  assert.match(helper, /listCanonicalMenuItems\(\{ fresh: true \}\)/);
+  assert.match(helper, /actualSourceHash !== sourceHash/);
+  assert.match(helper, /markCataloguePackageCurrent\(exact\.sourceIdentity, manifest\)/);
 });
 
 test("hosted catalogue package downloads preserve compressed bytes", async () => {

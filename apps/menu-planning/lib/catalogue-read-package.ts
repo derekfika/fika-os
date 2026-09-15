@@ -1,49 +1,48 @@
 import { encodeReadPackage, publishReadPackage, retrieveReadPackage, type ReadPackageManifest } from "@fika/server-shared/read-package";
 import { recordDataAccess } from "@fika/server-shared/data-source-meter-server";
-import type { CatalogueEntry } from "./catalogue";
+import { catalogueEntriesForItems, type CatalogueEntry } from "./catalogue";
 import { cataloguePackageStore, dataset, manifestKey, recordSnapshotAccess } from "./catalogue-package-store";
 import type { ReadPackageStore } from "@fika/server-shared/read-package";
 import { ensureCatalogueSourceIdentity, getCatalogueManifest, markCataloguePackageCurrent, markCataloguePackageFailed, type CatalogueManifest } from "./catalogue-manifest";
 import { catalogueSourceHash, catalogueSourceVersion } from "./catalogue-source";
+import { listCanonicalMenuItems } from "./canonical-menu-repository";
 
 export type CatalogueReadPackage = { entries: CatalogueEntry[]; categories: string[] };
-let publicationInFlight: Promise<ReadPackageManifest> | undefined;
+const publicationInFlight = new Map<string, Promise<ReadPackageManifest>>();
+const storeIds = new WeakMap<object, number>();
+let nextStoreId = 1;
+const packageStoreId = (store: ReadPackageStore) => {
+  const object = store as object;
+  const existing = storeIds.get(object);
+  if (existing) return existing;
+  const id = nextStoreId++;
+  storeIds.set(object, id);
+  return id;
+};
 
 async function rebuildCataloguePackage(store: ReadPackageStore) {
-  const { listCatalogueEntries } = await import("./catalogue");
-  const entries = await listCatalogueEntries();
   const source = await getCatalogueManifest();
-  let sourceRevision = source.sourceRevision || source.catalogueVersion || 1;
-  let sourceHash = source.sourceHash;
-  if (!sourceHash) {
-    const { listCanonicalMenuItems } = await import("./canonical-menu-repository");
-    sourceHash = catalogueSourceHash(await listCanonicalMenuItems());
-    await ensureCatalogueSourceIdentity({ sourceRevision, sourceHash }, entries.length);
-  }
-  const sourceIdentity = { sourceRevision, sourceHash };
-  try {
-    const manifest = await publishCataloguePackage(entries, store, sourceIdentity);
-    if (!packageManifestHasSourceIdentity(manifest, sourceIdentity)) throw Object.assign(new Error("The materialised Menu Planning catalogue package does not match its source revision."), { status: 503, code: "CATALOGUE_PACKAGE_STALE" });
-    const current = await markCataloguePackageCurrent(sourceIdentity, manifest);
-    if (!current) throw Object.assign(new Error("The Menu Planning catalogue changed while its package was being materialised."), { status: 503, code: "CATALOGUE_PACKAGE_STALE" });
-    return manifest;
-  } catch (error) {
-    await markCataloguePackageFailed(sourceIdentity, error);
-    throw error;
-  }
+  const result = await materialiseCataloguePackage(undefined, source, store);
+  if (result.status !== "current" || !result.manifest) throw result.error || Object.assign(new Error("The Menu Planning catalogue package could not be rebuilt for the authoritative source."), { status: 503, code: "CATALOGUE_PACKAGE_STALE" });
+  return result.manifest;
 }
 
 export async function publishCataloguePackage(entries: CatalogueEntry[], targetStore: ReadPackageStore = cataloguePackageStore(), expectedSource?: Pick<CatalogueManifest, "sourceRevision" | "sourceHash">): Promise<ReadPackageManifest> {
-  if (publicationInFlight) return publicationInFlight;
-  publicationInFlight = (async () => {
-    const source = expectedSource || await getCatalogueManifest();
-    if (source.sourceRevision === undefined || !source.sourceHash) throw Object.assign(new Error("The Menu Planning catalogue source revision is unavailable."), { status: 503, code: "CATALOGUE_SOURCE_UNAVAILABLE" });
-    const version = source.sourceRevision;
+  const source = expectedSource || await getCatalogueManifest();
+  if (source.sourceRevision === undefined || !source.sourceHash) throw Object.assign(new Error("The Menu Planning catalogue source revision is unavailable."), { status: 503, code: "CATALOGUE_SOURCE_UNAVAILABLE" });
+  const sourceRevision = source.sourceRevision;
+  const sourceHash = source.sourceHash;
+  const key = `${packageStoreId(targetStore)}:${sourceRevision}:${sourceHash}`;
+  const existing = publicationInFlight.get(key);
+  if (existing) return existing;
+  const publication = (async () => {
+    const version = sourceRevision;
     const value: CatalogueReadPackage = { entries, categories: [...new Set(entries.map(entry => entry.category))].sort() };
-    const encoded = encodeReadPackage(dataset, version, value, entries.length, { contractVersion: "menu-planning.catalogue.v1", sourceVersion: catalogueSourceVersion(source.sourceRevision, source.sourceHash), sourceHash: source.sourceHash });
+    const encoded = encodeReadPackage(dataset, version, value, entries.length, { contractVersion: "menu-planning.catalogue.v1", sourceVersion: catalogueSourceVersion(sourceRevision, sourceHash), sourceHash });
     return publishReadPackage<CatalogueReadPackage>(targetStore, manifestKey, encoded);
-  })().finally(() => { publicationInFlight = undefined; });
-  return publicationInFlight;
+  })();
+  publicationInFlight.set(key, publication);
+  try { return await publication; } finally { publicationInFlight.delete(key); }
 }
 
 export type CataloguePackageMaterialisation = { status: "current" | "failed" | "stale"; manifest?: ReadPackageManifest; error?: unknown };
@@ -62,19 +61,31 @@ export function cataloguePackageMatchesSource(packageManifest: ReadPackageManife
   return sourceManifest.packageState?.status === "current" && sourceManifest.packageState.sourceRevision === sourceRevision && sourceManifest.packageState.sourceHash === sourceHash && sourceRevision !== undefined && Boolean(sourceHash) && packageManifest.packageVersion === sourceRevision && packageManifest.sourceHash === sourceHash && packageManifest.sourceVersion === expectedSourceVersion;
 }
 
-/** Publish a package for a known source state and leave failures observable in the source manifest. */
-export async function materialiseCataloguePackage(entries: CatalogueEntry[], source: Pick<CatalogueManifest, "sourceRevision" | "sourceHash">, targetStore: ReadPackageStore = cataloguePackageStore()): Promise<CataloguePackageMaterialisation> {
-  const sourceRevision = source.sourceRevision;
-  const sourceHash = source.sourceHash;
-  if (sourceRevision === undefined || !sourceHash) throw Object.assign(new Error("The Menu Planning catalogue source revision is unavailable."), { status: 503, code: "CATALOGUE_SOURCE_UNAVAILABLE" });
+async function exactMaterialisationInput(sourceInput?: Pick<CatalogueManifest, "sourceRevision" | "sourceHash">) {
+  const items = await listCanonicalMenuItems({ fresh: true });
+  const actualSourceHash = catalogueSourceHash(items);
+  const current = await getCatalogueManifest();
+  const sourceRevision = current.sourceRevision || current.catalogueVersion || sourceInput?.sourceRevision || 1;
+  const sourceHash = current.sourceHash || actualSourceHash;
   const sourceIdentity = { sourceRevision, sourceHash };
+  if (!current.sourceHash) await ensureCatalogueSourceIdentity(sourceIdentity, items.length);
+  if (sourceInput && (sourceInput.sourceRevision !== sourceRevision || sourceInput.sourceHash !== sourceHash)) throw Object.assign(new Error("The Menu Planning catalogue changed while its package was being materialised."), { status: 503, code: "CATALOGUE_PACKAGE_STALE" });
+  if (actualSourceHash !== sourceHash) throw Object.assign(new Error("The Menu Planning catalogue changed while its package was being materialised."), { status: 503, code: "CATALOGUE_PACKAGE_STALE" });
+  return { entries: catalogueEntriesForItems(items), sourceIdentity };
+}
+
+/** Publish a package only from fresh authoritative records bound to the target source identity. */
+export async function materialiseCataloguePackage(_entries: CatalogueEntry[] | undefined, source: Pick<CatalogueManifest, "sourceRevision" | "sourceHash">, targetStore: ReadPackageStore = cataloguePackageStore()): Promise<CataloguePackageMaterialisation> {
+  const sourceIdentity = source.sourceRevision !== undefined && source.sourceHash ? { sourceRevision: source.sourceRevision, sourceHash: source.sourceHash } : undefined;
   try {
-    const manifest = await publishCataloguePackage(entries, targetStore, sourceIdentity);
-    if (!packageManifestHasSourceIdentity(manifest, sourceIdentity)) throw Object.assign(new Error("The materialised Menu Planning catalogue package does not match its source revision."), { status: 503, code: "CATALOGUE_PACKAGE_STALE" });
-    const current = await markCataloguePackageCurrent(sourceIdentity, manifest);
+    const exact = await exactMaterialisationInput(sourceIdentity);
+    const manifest = await publishCataloguePackage(exact.entries, targetStore, exact.sourceIdentity);
+    if (!packageManifestHasSourceIdentity(manifest, exact.sourceIdentity)) throw Object.assign(new Error("The materialised Menu Planning catalogue package does not match its source revision."), { status: 503, code: "CATALOGUE_PACKAGE_STALE" });
+    const current = await markCataloguePackageCurrent(exact.sourceIdentity, manifest);
     return current ? { status: "current", manifest } : { status: "stale", manifest };
   } catch (error) {
-    await markCataloguePackageFailed(sourceIdentity, error);
+    if ((error as { code?: string }).code === "CATALOGUE_PACKAGE_STALE") return { status: "stale", error };
+    if (sourceIdentity) await markCataloguePackageFailed(sourceIdentity, error);
     return { status: "failed", error };
   }
 }

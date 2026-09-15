@@ -31,7 +31,7 @@ function categoryFor(item: Pick<MenuItem, "category" | "subcategory">) {
   return normaliseDishCategory(item.category || item.subcategory);
 }
 
-function canonicalEntry(item: MenuItem): CatalogueEntry {
+export function canonicalEntry(item: MenuItem): CatalogueEntry {
   return {
     id: item.canonicalId,
     kind: "canonical",
@@ -50,12 +50,16 @@ function canonicalEntry(item: MenuItem): CatalogueEntry {
   };
 }
 
+export function catalogueEntriesForItems(items: readonly MenuItem[], includeArchived = false): CatalogueEntry[] {
+  return items.filter(item => includeArchived || item.reviewStatus !== "archived").map(canonicalEntry).sort((a, b) => a.name.localeCompare(b.name));
+}
+
 /** The catalogue is deliberately backed only by explicitly promoted canonical records. */
 export async function listCatalogueEntries(): Promise<CatalogueEntry[]> {
   const items = await listCanonicalMenuItems();
   // Archived records are retained for history and audit, but must not leak into
   // operational dish pickers or normal planner catalogue results.
-  return items.filter(item => item.reviewStatus !== "archived").map(canonicalEntry).sort((a, b) => a.name.localeCompare(b.name));
+  return catalogueEntriesForItems(items);
 }
 
 export async function listCatalogueEntriesForIds(ids: string[]): Promise<CatalogueEntry[]> {
