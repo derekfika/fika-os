@@ -1,8 +1,9 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
-import { loadDeliveredInReviewStatuses, MAX_DELIVERED_IN_REVIEW_ORDER_IDS, parseDeliveredInReviewOrderIds } from "../lib/delivered-in-review";
-import type { ProductionPlan } from "../app/lib/production-plan";
+import { loadDeliveredInReviewStatuses, MAX_DELIVERED_IN_REVIEW_ORDER_IDS, parseDeliveredInReviewOrderIds, reviewStatusForPlan } from "../lib/delivered-in-review";
+import { allergenMatrixContentHash, buildCpuAllergenRelease } from "../lib/cpu-allergen-release";
+import { currentAllergenReleaseMatchesOrder, matrixSignatureScope, type ProductionPlan } from "../app/lib/production-plan";
 import type { ProductionOrder } from "../lib/production-types";
 
 function order(canonicalId: string, requiresDelivery = true) {
@@ -12,6 +13,12 @@ function order(canonicalId: string, requiresDelivery = true) {
 function plan(orderId: string, status: ProductionPlan["status"] = "planning") {
   return { id: `production-plan:${orderId}`, orderId, status, menuItems: [{ id: `${orderId}:menu`, sourceLineId: `${orderId}:line:1`, name: "Dish", note: "", subItems: [{ id: `${orderId}:sub`, name: "Dish", quantity: 1, allergens: {}, note: "", evidenceStatus: "completed" }] }], updatedAt: "2026-08-29T10:00:00.000Z", updatedBy: "test", audit: [] } as unknown as ProductionPlan;
 }
+
+const signedOrder = { canonicalId: "signed-order", origin: "menu_planning", destinationOplocId: "oploc:site", serviceDate: "2026-09-03", requiredBy: "2026-09-03T12:00:00Z", sourceEntityId: "menu-day:1", sourcePublicationId: "publication:1", sourcePublicationDayId: "publication-day:1", sourceVersion: 1, sourceContentHash: "a".repeat(64), lines: [{ canonicalId: "line:1" }] } as unknown as ProductionOrder;
+const signedOrderPublicationId = "publication:1";
+const signedItems = [{ id: "dish:1", sourceLineId: "line:1", name: "Dish", note: "", subItems: [{ id: "sub:1", name: "Dish", quantity: 1, allergens: { milk: "clear" }, note: "", evidenceStatus: "completed" as const }] }];
+const signature = (role: "production_chef" | "head_chef_site_manager") => ({ role, printedName: role, signedAt: "2026-09-03T09:00:00Z", actor: role, attestation: "reviewed", scope: matrixSignatureScope(signedOrder, allergenMatrixContentHash(signedItems as never))! });
+const pendingRelease = buildCpuAllergenRelease({ serviceDate: signedOrder.serviceDate!, sourceDayId: signedOrder.sourceEntityId!, sourcePublicationId: signedOrderPublicationId, sourcePublicationDayId: signedOrder.sourcePublicationDayId!, sourceVersion: signedOrder.sourceVersion!, sourceContentHash: signedOrder.sourceContentHash!, version: 1, signedAt: "2026-09-03T09:00:00Z", signatures: [signature("production_chef"), signature("head_chef_site_manager")], items: signedItems as never, masterArtifact: { id: "pending", bookingId: "booking", fileName: "pending", createdAt: "2026-09-03T09:00:00Z", createdBy: "test", contentHash: "b".repeat(64), pdfStatus: "unavailable", driveStatus: "not_configured" }, derivedArtifacts: [], packetArtifacts: [], status: "pending" });
 
 test("review order IDs are required, deduplicated, and bounded", () => {
   assert.deepEqual(parseDeliveredInReviewOrderIds(" known-a,known-a, known-b "), ["known-a", "known-b"]);
@@ -78,4 +85,21 @@ test("matrix hydration uses one bounded request and carries saved cells and sign
   assert.match(matrix, /onSignatureRolesChange/);
   assert.doesNotMatch(matrix, /orders\.map\(async order =>/);
   assert.doesNotMatch(page, /loadSignatures/);
+});
+
+test("review status keeps exact-lineage signatures visible while release materializes", () => {
+  const one = reviewStatusForPlan(signedOrder.canonicalId, { ...plan(signedOrder.canonicalId, "planned"), menuItems: signedItems, signatures: [signature("production_chef")] } as unknown as ProductionPlan, signedOrder);
+  assert.deepEqual(one.signatureRoles, ["production_chef"]);
+  assert.equal(one.matrixStatus, undefined);
+  const both = reviewStatusForPlan(signedOrder.canonicalId, { ...plan(signedOrder.canonicalId, "planned"), menuItems: signedItems, signatures: [signature("production_chef"), signature("head_chef_site_manager")], currentAllergenRelease: pendingRelease } as unknown as ProductionPlan, signedOrder);
+  assert.deepEqual(both.signatureRoles, ["production_chef", "head_chef_site_manager"]);
+  assert.equal(both.matrixStatus, "generating");
+  assert.equal(currentAllergenReleaseMatchesOrder(pendingRelease, signedOrder, signedItems as never), false);
+  const ready = reviewStatusForPlan(signedOrder.canonicalId, { ...plan(signedOrder.canonicalId, "planned"), menuItems: signedItems, signatures: [signature("production_chef"), signature("head_chef_site_manager")], matrixArtifact: { driveUrl: "https://drive.test/release", localUrl: "/release.pdf" }, currentAllergenRelease: { ...pendingRelease, status: "current", materializationStatus: "ready", packetArtifacts: [pendingRelease.masterArtifact] } } as unknown as ProductionPlan, signedOrder);
+  assert.deepEqual(ready.signatureRoles, ["production_chef", "head_chef_site_manager"]);
+  assert.equal(ready.matrixStatus, "ready");
+  const changed = reviewStatusForPlan(signedOrder.canonicalId, { ...plan(signedOrder.canonicalId, "planned"), menuItems: signedItems, signatures: [signature("production_chef")], signedMenuContentHash: "c".repeat(64) } as unknown as ProductionPlan, { ...signedOrder, sourceContentHash: "d".repeat(64) });
+  assert.deepEqual(changed.signatureRoles, []);
+  const superseded = reviewStatusForPlan(signedOrder.canonicalId, { ...plan(signedOrder.canonicalId, "planned"), menuItems: signedItems, signatures: [signature("production_chef")], currentAllergenRelease: { ...pendingRelease, status: "superseded" } } as unknown as ProductionPlan, signedOrder);
+  assert.deepEqual(superseded.signatureRoles, []);
 });

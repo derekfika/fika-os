@@ -42,6 +42,15 @@ export function signatureMatchesScope(signature: InternalMatrixSignature, scope:
   return candidate.productionOrderId === scope.productionOrderId && candidate.serviceDate === scope.serviceDate && candidate.sourceDayId === scope.sourceDayId && candidate.sourcePublicationId === scope.sourcePublicationId && candidate.sourcePublicationDayId === scope.sourcePublicationDayId && candidate.sourceVersion === scope.sourceVersion && candidate.sourceContentHash === scope.sourceContentHash && candidate.matrixContentHash === scope.matrixContentHash;
 }
 
+/** Human signatures remain authoritative while their exact release is pending materialisation. */
+export function signatureAuthorityForOrder(plan: Pick<ProductionPlan, "signatures" | "signedSignatures" | "currentAllergenRelease">, order: { canonicalId: string; serviceDate?: string; requiredBy: string; sourceEntityId?: string; sourcePublicationId?: string; sourcePublicationDayId?: string; sourceVersion?: number; sourceContentHash?: string }, menuItems: PlannedMenuItem[]) {
+  const scope = matrixSignatureScope(order, allergenMatrixContentHash(menuItems));
+  if (!scope) return [] as InternalMatrixSignature[];
+  if (plan.currentAllergenRelease && !["pending", "current"].includes(plan.currentAllergenRelease.status)) return [];
+  const candidates = plan.signatures?.length ? plan.signatures : plan.signedSignatures?.length ? plan.signedSignatures : plan.currentAllergenRelease?.signatures || [];
+  return candidates.filter(signature => signatureMatchesScope(signature, scope) && ("valid" in signature ? signature.valid !== false : true));
+}
+
 export function currentAllergenReleaseMatchesOrder(release: CpuAllergenRelease | undefined, order: { canonicalId: string; serviceDate?: string; requiredBy: string; sourceEntityId?: string; sourcePublicationId?: string; sourcePublicationDayId?: string; sourceVersion?: number; sourceContentHash?: string }, menuItems: PlannedMenuItem[]) {
   const scope = matrixSignatureScope(order, allergenMatrixContentHash(menuItems));
   if (!release || release.status !== "current" || release.materializationStatus !== "ready" || !scope) return false;

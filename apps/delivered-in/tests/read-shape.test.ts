@@ -35,6 +35,7 @@ test("requested-week recovery isolates unavailable CPU days instead of failing t
   const server = await readFile(new URL("../lib/server.ts", import.meta.url), "utf8");
   const route = await readFile(new URL("../app/api/delivered-in/route.ts", import.meta.url), "utf8");
   assert.match(server, /requested-week day recovery failed/);
+  assert.match(server, /recoverableRequestedWeekDates/);
   assert.match(server, /Promise\.all\(dates\.map\(async date/);
   assert.match(route, /Delivered-In dashboard load failed/);
   assert.match(route, /requestedWeek/);

@@ -1,5 +1,5 @@
 import type { ProductionPlan } from "../app/lib/production-plan";
-import { currentAllergenReleaseMatchesOrder, matrixSignatureScope, signatureMatchesScope, type MatrixSignatureScope } from "../app/lib/production-plan";
+import { currentAllergenReleaseMatchesOrder, matrixSignatureScope, signatureAuthorityForOrder, signatureMatchesScope, type MatrixSignatureScope } from "../app/lib/production-plan";
 import { allergenMatrixContentHash } from "./cpu-allergen-release";
 import type { ProductionOrder } from "./production-types";
 import type { ProductionPlanRepository } from "./production-plan-repository";
@@ -34,8 +34,7 @@ export function reviewStatusForPlan(orderId: string, plan: ProductionPlan | unde
     .filter((item) => item.sourceLineId && item.subItems.length > 0 && item.subItems.every(subItem => subItem.evidenceStatus === "completed"))
     .map((item) => item.sourceLineId!);
   const scope = order ? matrixSignatureScope(order, allergenMatrixContentHash(plan.menuItems)) : undefined;
-  const releaseCurrent = !plan.currentAllergenRelease || Boolean(order && currentAllergenReleaseMatchesOrder(plan.currentAllergenRelease, order, plan.menuItems));
-  const validSignatures = releaseCurrent ? (plan.signatures || []).filter(signature => order ? signatureMatchesScope(signature, scope) : Boolean(signature.scope)) : [];
+  const validSignatures = order ? signatureAuthorityForOrder(plan, order, plan.menuItems) : (plan.signatures || []).filter(signature => Boolean(signature.scope));
   const signatureRoles = [...new Set(validSignatures.map((signature) => signature.role))];
   return {
     orderId,

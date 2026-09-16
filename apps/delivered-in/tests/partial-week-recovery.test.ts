@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import test from "node:test";
 import { markDeliveredInProjectionDayUnavailable, readDeliveredInProjectionIndex, writeDeliveredInProjection } from "../lib/delivered-in-projection-store";
 import { packetPublicationsForRange, type MenuPlanningWeekPacket } from "../lib/menu-planning-week-packet";
+import { recoverableRequestedWeekDates } from "../lib/server";
 
 const week = "2026-09-14";
 const dates = ["2026-09-14", "2026-09-15", "2026-09-16", "2026-09-17", "2026-09-18"];
@@ -56,4 +57,11 @@ test("week packet selection uses an exclusive upper boundary and retains remaini
   const publications = packetPublicationsForRange([packet(week, "publication:wc14", dates), packet("2026-09-21", "publication:wc15", ["2026-09-21"])], week, "2026-09-21");
   assert.deepEqual(publications.map(value => value.publicationId), ["publication:wc14"]);
   assert.deepEqual(publications[0].days.map(value => value.date), dates);
+});
+
+test("requested-week recovery selects only missing or unavailable published days", () => {
+  const entries = dates.slice(1).map(serviceDate => ({ serviceDate, state: "available" as const, freshness: "current" as const, completeness: "complete" as const }));
+  assert.deepEqual(recoverableRequestedWeekDates(dates, [{ serviceDate: dates[0], state: "available", freshness: "stale", completeness: "unavailable" }, ...entries], [dates[0]], week), [dates[0]]);
+  assert.deepEqual(recoverableRequestedWeekDates(dates, entries, [], week), [dates[0]]);
+  assert.deepEqual(recoverableRequestedWeekDates(dates, dates.map(serviceDate => ({ serviceDate, state: "available" as const, freshness: "current" as const, completeness: "complete" as const })), [], week), []);
 });

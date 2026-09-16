@@ -90,7 +90,16 @@ export async function resolveAccess(request: NextRequest, service: DeliveredInSe
 
 const weekRecovery = new Map<string, Promise<void>>();
 
-async function recoverRequestedWeek(request: NextRequest, oplocId: string, weekCommencing: string) {
+export function recoverableRequestedWeekDates(publishedDates: string[], entries: Pick<DeliveredInProjectionIndexEntry, "serviceDate" | "state" | "freshness" | "completeness">[], knownUnavailableDates: string[] = [], weekCommencing?: string) {
+  const unavailable = new Set(knownUnavailableDates);
+  const indexed = new Map(entries.map(entry => [entry.serviceDate, entry]));
+  return [...new Set(publishedDates)].filter(date => !weekCommencing || (date >= weekCommencing && date < addDays(weekCommencing, 7))).filter(date => {
+    const entry = indexed.get(date);
+    return unavailable.has(date) || !entry || entry.state === "withdrawn" || entry.freshness !== "current" || entry.completeness !== "complete";
+  }).sort();
+}
+
+async function recoverRequestedWeek(request: NextRequest, oplocId: string, weekCommencing: string, knownUnavailableDates: string[] = []) {
   const key = `${oplocId}:${weekCommencing}`;
   const existing = weekRecovery.get(key);
   if (existing) return existing;
@@ -107,7 +116,9 @@ async function recoverRequestedWeek(request: NextRequest, oplocId: string, weekC
     }
     if (!publications.length) return;
     const { reconcileDeliveredInDay } = await import("./delivered-in-reconciliation");
-    const dates = [...new Set(publications.flatMap(publication => publication.days.filter(day => day.status !== "withdrawn" && day.date >= weekCommencing && day.date < toWeek).map(day => day.date)))].sort();
+    const publishedDays = publications.flatMap(publication => projectPublishedWeeks([publication], oplocId, new Set([oplocId])).flatMap(week => week.days));
+    const indexWindow = await readProjectionIndexWindow(oplocId, operationalDateLondon(), weekCommencing);
+    const dates = recoverableRequestedWeekDates(publishedDays.map(day => day.date), indexWindow.entries, knownUnavailableDates, weekCommencing);
     await Promise.all(dates.map(async date => {
       try {
         await reconcileDeliveredInDay(request, oplocId, date);
@@ -139,8 +150,8 @@ export async function projectedWeeks(request: NextRequest, requestedOplocId?: st
   const site = sites.find(candidate => candidate.oplocId === selectedOplocId) || { oplocId: selectedOplocId, label: selectedOplocId };
   if (options.usePackages !== false) {
     let discovered = await readProjectionWindow(selectedOplocId);
-    if (options.requestedWeek && !weeksFromProjectionDays(discovered.days).some(week => week.weekCommencing === options.requestedWeek)) {
-      await recoverRequestedWeek(request, selectedOplocId, options.requestedWeek);
+    if (options.requestedWeek) {
+      await recoverRequestedWeek(request, selectedOplocId, options.requestedWeek, discovered.unavailableServiceDates);
       discovered = await readProjectionWindow(selectedOplocId);
     }
     const weeks = weeksFromProjectionDays(discovered.days);
@@ -197,8 +208,8 @@ export async function projectionHead(request: NextRequest, requestedOplocId?: st
   if (!selectedOplocId) return { access, sites, selectedOplocId: undefined, projectionState: "unavailable" as const, entries: [], withdrawnServiceDates: [], unavailableServiceDates: [] };
   assertAuthorisedOploc(access, selectedOplocId);
   let window = await readProjectionIndexWindow(selectedOplocId, operationalDateLondon(), requestedWeek);
-  if (requestedWeek && !window.weeks.some(week => week.weekCommencing === requestedWeek)) {
-    await recoverRequestedWeek(request, selectedOplocId, requestedWeek);
+  if (requestedWeek && (!window.weeks.some(week => week.weekCommencing === requestedWeek) || window.unavailableServiceDates.some(date => date >= requestedWeek && date < addDays(requestedWeek, 7)))) {
+    await recoverRequestedWeek(request, selectedOplocId, requestedWeek, window.unavailableServiceDates);
     window = await readProjectionIndexWindow(selectedOplocId, operationalDateLondon(), requestedWeek);
   }
   const weeks = requestedWeek && !window.weeks.some(week => week.weekCommencing === requestedWeek) ? [...window.weeks, emptyWeek(requestedWeek)] : window.weeks;
