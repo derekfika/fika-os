@@ -1,4 +1,5 @@
-import type { ProductionPlan } from "../app/lib/production-plan";
+import type { CpuAllergenRelease } from "./cpu-allergen-release";
+import type { MatrixArtifact, ProductionPlan } from "../app/lib/production-plan";
 import { recordDataAccess } from "@fika/server-shared/data-source-meter-server";
 import { appendCpuChangeInTransaction, cpuChangeReceipts, type CpuChangeWithPropagation } from "./cpu-projection-repository";
 import { enqueueCpuPropagation } from "./cpu-durable-outbox";
@@ -13,23 +14,53 @@ export type ProductionPlanRepository = {
   saveAndAppendCpuChange(plan: ProductionPlan, expectedUpdatedAt: string | undefined, change: CpuChangeWithPropagation & Record<string, unknown>): Promise<{ sequence: number; duplicate?: boolean; plan?: ProductionPlan }>;
 };
 
+type PersistedMatrixArtifact = Omit<MatrixArtifact, "html">;
+
+function compactMatrixArtifact(artifact: MatrixArtifact): PersistedMatrixArtifact {
+  const { html: _html, ...metadata } = artifact;
+  return metadata;
+}
+
+function compactAllergenRelease(release: CpuAllergenRelease): CpuAllergenRelease {
+  return {
+    ...release,
+    masterArtifact: compactMatrixArtifact(release.masterArtifact),
+    derivedArtifacts: release.derivedArtifacts.map(compactMatrixArtifact),
+    packetArtifacts: release.packetArtifacts.map(compactMatrixArtifact),
+  };
+}
+
+/** Remove generated MatrixArtifact HTML while retaining the authoritative plan and release metadata. */
+export function compactProductionPlanForPersistence(plan: ProductionPlan): ProductionPlan {
+  return {
+    ...plan,
+    ...(plan.matrixArtifact ? { matrixArtifact: compactMatrixArtifact(plan.matrixArtifact) } : {}),
+    ...(plan.masterMatrixArtifact ? { masterMatrixArtifact: compactMatrixArtifact(plan.masterMatrixArtifact) } : {}),
+    ...(plan.signedMatrixArtifact ? { signedMatrixArtifact: compactMatrixArtifact(plan.signedMatrixArtifact) } : {}),
+    ...(plan.siteMatrixArtifacts ? { siteMatrixArtifacts: Object.fromEntries(Object.entries(plan.siteMatrixArtifacts).map(([siteId, artifact]) => [siteId, compactMatrixArtifact(artifact)])) } : {}),
+    ...(plan.currentAllergenRelease ? { currentAllergenRelease: compactAllergenRelease(plan.currentAllergenRelease) } : {}),
+    ...(plan.allergenReleaseHistory ? { allergenReleaseHistory: plan.allergenReleaseHistory.map(compactAllergenRelease) } : {}),
+  };
+}
+
 function conflict(message: string) { return Object.assign(new Error(message), { status: 409 }); }
-function decode(value: unknown): ProductionPlan {
+export function decodeProductionPlan(value: unknown): ProductionPlan {
   if (!value || typeof value !== "object" || typeof (value as { id?: unknown }).id !== "string" || typeof (value as { orderId?: unknown }).orderId !== "string" || typeof (value as { status?: unknown }).status !== "string" || !Array.isArray((value as { menuItems?: unknown }).menuItems) || typeof (value as { updatedAt?: unknown }).updatedAt !== "string") throw Object.assign(new Error("Stored production plan has an invalid schema."), { status: 502 });
   return value as ProductionPlan;
 }
 
 class FirestoreProductionPlanRepository implements ProductionPlanRepository {
   private async collection() { const { db } = await import("./firebase-admin"); return db.collection(PRODUCTION_PLANS_COLLECTION); }
-  async get(orderId: string) { const snapshot = await (await this.collection()).doc(orderId).get(); recordDataAccess({ app: "cpu-production", operation: "production-plan.by-id", source: "FIRESTORE", documents: snapshot.exists ? 1 : 0, firestoreReadKind: "document" }); return snapshot.exists ? decode(snapshot.data()) : undefined; }
+  async get(orderId: string) { const snapshot = await (await this.collection()).doc(orderId).get(); recordDataAccess({ app: "cpu-production", operation: "production-plan.by-id", source: "FIRESTORE", documents: snapshot.exists ? 1 : 0, firestoreReadKind: "document" }); return snapshot.exists ? decodeProductionPlan(snapshot.data()) : undefined; }
   async getByOrderIds(orderIds: string[]) {
     const wanted = [...new Set(orderIds)];
     if (wanted.length > MAX_PRODUCTION_PLAN_ORDER_IDS) throw Object.assign(new Error(`A maximum of ${MAX_PRODUCTION_PLAN_ORDER_IDS} production plans may be requested.`), { status: 400 });
     const snapshots = await Promise.all(wanted.map(orderId => (async () => (await this.collection()).doc(orderId).get())()));
     recordDataAccess({ app: "cpu-production", operation: "production-plans.by-order-ids", source: "FIRESTORE", dataset: PRODUCTION_PLANS_COLLECTION, documents: snapshots.filter(snapshot => snapshot.exists).length, estimatedBillableReads: snapshots.length, firestoreReadKind: "document" });
-    return snapshots.flatMap(snapshot => snapshot.exists ? [decode(snapshot.data())] : []);
+    return snapshots.flatMap(snapshot => snapshot.exists ? [decodeProductionPlan(snapshot.data())] : []);
   }
   async save(plan: ProductionPlan, expectedUpdatedAt?: string) {
+    const persistedPlan = compactProductionPlanForPersistence(plan);
     const { db } = await import("./firebase-admin");
     const collection = await this.collection();
     await db.runTransaction(async transaction => {
@@ -39,10 +70,11 @@ class FirestoreProductionPlanRepository implements ProductionPlanRepository {
       const current = snapshot.exists ? snapshot.data() as ProductionPlan : undefined;
       if (current && expectedUpdatedAt !== undefined && current.updatedAt !== expectedUpdatedAt) throw conflict("Production plan changed elsewhere. Refresh and try again.");
       if (!current && expectedUpdatedAt !== undefined) throw conflict("Production plan was removed elsewhere. Refresh and try again.");
-      transaction.set(ref, plan);
+      transaction.set(ref, persistedPlan);
     });
   }
   async saveAndAppendCpuChange(plan: ProductionPlan, expectedUpdatedAt: string | undefined, change: CpuChangeWithPropagation & Record<string, unknown>) {
+    const persistedPlan = compactProductionPlanForPersistence(plan);
     const { db } = await import("./firebase-admin");
     const collection = await this.collection();
     return db.runTransaction(async transaction => {
@@ -58,7 +90,7 @@ class FirestoreProductionPlanRepository implements ProductionPlanRepository {
         if (receipt.exists) return { sequence: Number((receipt.data()?.event as { sequence?: unknown })?.sequence || 0), duplicate: true, plan: current };
       }
       const event = await appendCpuChangeInTransaction(transaction, change);
-      transaction.set(ref, plan);
+      transaction.set(ref, persistedPlan);
       return { sequence: event.sequence };
     });
   }
@@ -78,7 +110,7 @@ class MemoryProductionPlanRepository implements ProductionPlanRepository {
     const current = this.records.get(plan.orderId);
     if (current && expectedUpdatedAt !== undefined && current.updatedAt !== expectedUpdatedAt) throw conflict("Production plan changed elsewhere. Refresh and try again.");
     if (!current && expectedUpdatedAt !== undefined) throw conflict("Production plan was removed elsewhere. Refresh and try again.");
-    this.records.set(plan.orderId, structuredClone(plan));
+    this.records.set(plan.orderId, structuredClone(compactProductionPlanForPersistence(plan)));
   }
   async saveAndAppendCpuChange(plan: ProductionPlan, expectedUpdatedAt: string | undefined, change: CpuChangeWithPropagation & Record<string, unknown>) {
     const idempotencyKey = typeof change.idempotencyKey === "string" ? change.idempotencyKey : undefined;
