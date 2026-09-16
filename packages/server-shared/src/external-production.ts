@@ -21,6 +21,7 @@ export type ExternalProductionMaterialisation = {
     workstream?: "sandwiches" | "hospitality" | "delivered_in" | "grab_and_go" | "unassigned";
     approvedAllergenSnapshot?: {
       allergens: Record<string, string>;
+      allergenEvidenceStatus?: "confirmed" | "unreviewed" | "missing" | "conflicting";
       mayContainNotes?: string;
       sourcePublicationDayId?: string;
       sourceVersion?: number;

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
-import { buildPublishedDay } from "../lib/menu-publication";
+import { buildPublishedDay, publishedDayMatrixHtml } from "../lib/menu-publication";
 import type { MenuItem } from "../lib/domain";
 import type { RollingDay, RollingSnapshot } from "../lib/rolling-menu-types";
 
@@ -29,10 +29,24 @@ test("missing authoritative dish fails publication closed without all-clear outp
   assert.throws(() => buildPublishedDay(baseSnapshot(), day, [], strict), (error: any) => error.status === 422 && error.code === "PUBLICATION_ALLERGEN_UNRESOLVED" && /authoritative catalogue/.test(error.message));
 });
 
-test("unknown evidence, incomplete may-contain review, and invalidated entry review fail publication", () => {
-  assert.throws(() => buildPublishedDay(baseSnapshot(), day, [dish({ allergenEvidence: [{ allergen: "sesame", value: "unknown", source: "unreviewed" }] })], strict), /unresolved/);
-  assert.throws(() => buildPublishedDay(baseSnapshot(), day, [dish({ mayContainReviewed: false })], strict), /unresolved/);
-  assert.throws(() => buildPublishedDay(baseSnapshot({ allergenReviewInvalidated: true }), day, [dish()], strict), /invalidated/);
+test("unknown evidence, incomplete may-contain review, and invalidated entry review remain visible but do not block publication", () => {
+  const unknown = buildPublishedDay(baseSnapshot(), day, [dish({ allergenEvidence: [{ allergen: "sesame", value: "unknown", source: "unreviewed" }] })], strict);
+  assert.equal(unknown.entries[0].allergenEvidenceStatus, "conflicting");
+  assert.equal(unknown.entries[0].allergens.no_key_allergens, "unrecorded");
+  const incomplete = buildPublishedDay(baseSnapshot(), day, [dish({ mayContainReviewed: false })], strict);
+  assert.equal(incomplete.entries[0].allergenEvidenceStatus, "unreviewed");
+  const invalidated = buildPublishedDay(baseSnapshot({ allergenReviewInvalidated: true }), day, [dish()], strict);
+  assert.equal(invalidated.entries[0].allergenEvidenceStatus, "unreviewed");
+});
+
+test("missing allergen evidence never serializes as an all-clear matrix", () => {
+  const published = buildPublishedDay(baseSnapshot(), day, [dish({ allergenEvidence: [], mayContainReviewed: false })], strict);
+  assert.equal(published.entries[0].allergenEvidenceStatus, "unreviewed");
+  assert.equal(Object.keys(published.entries[0].allergens).length, 1);
+  assert.equal(published.entries[0].allergens.no_key_allergens, "unrecorded");
+  const html = publishedDayMatrixHtml({ ...published, version: 1 });
+  assert.match(html, /class="unrecorded"/);
+  assert.match(html, />UR<\/td>/);
 });
 
 test("valid governed evidence publishes the exact expected allergen snapshot", () => {

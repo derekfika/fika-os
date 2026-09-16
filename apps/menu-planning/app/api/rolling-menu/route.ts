@@ -364,7 +364,8 @@ async function handlePost(request: NextRequest) {
         ? (body.updates as Array<{
             entryId: string;
             dayId: string;
-            allocations: RollingEntry["allocations"];
+            allocations?: RollingEntry["allocations"];
+            patch?: Record<string, unknown>;
           }>)
         : [];
       const mutation = await batchUpdateEntries(

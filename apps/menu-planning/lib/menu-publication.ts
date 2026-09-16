@@ -80,6 +80,9 @@ export type PublishedMenuEntry = {
     quantity: number;
   }>;
   allergens: CanonicalAllergenMap;
+  /** Legacy snapshots may omit this; all newly published entries write it. */
+  allergenEvidenceStatus?: "confirmed" | "unreviewed" | "missing" | "conflicting";
+  allergenEvidenceReason?: string;
   mayContainNotes?: string;
 };
 export type CompiledPublishedWeekSnapshot = {
@@ -236,11 +239,11 @@ const publishedEntry = (
       Number.isFinite(allocation.quantity) && allocation.quantity > 0,
   );
   const allowExplicitFixture = options.allowExplicitReviewWithoutCatalogue ?? !options.requireAuthoritativeCatalogue;
-  const hasExplicitReview = entry.allergenReviewInvalidated === false || Object.entries(entry.allergens || {}).some(([key, value]) => key && value !== "clear");
+  const hasExplicitReview = entry.allergenReviewInvalidated === false || Object.values(entry.allergens || {}).some(value => value === "contains" || value === "may_contain");
   const resolved = allowExplicitFixture && hasExplicitReview && !canonicalDish
     ? resolveAllergenSnapshot({ ...entry, itemId: undefined }, undefined)
     : resolveAllergenSnapshot(entry, canonicalDish);
-  if (options.requireAuthoritativeCatalogue && resolved.unresolved.length) {
+  if (options.requireAuthoritativeCatalogue && resolved.structuralIssue) {
     throw Object.assign(new Error(`${day?.dayName || "Menu day"}: ${entry.itemLabel || entry.slot} cannot be published because governed allergen evidence is unresolved (${resolved.unresolved.join(", ")}).`), { status: 422, code: "PUBLICATION_ALLERGEN_UNRESOLVED" });
   }
   const mayContainNotes = entry.mayContainNotes ?? resolved.mayContainNotes;
@@ -266,6 +269,8 @@ const publishedEntry = (
       quantity: allocation.quantity,
     })),
     allergens: clone(resolved.allergens),
+    allergenEvidenceStatus: resolved.evidenceStatus,
+    ...(resolved.evidenceReason ? { allergenEvidenceReason: resolved.evidenceReason } : {}),
     ...(mayContainNotes !== undefined ? { mayContainNotes } : {}),
   });
 };
@@ -557,6 +562,7 @@ function appendPublicationEvents(
                       workstream: "delivered_in" as const,
                       approvedAllergenSnapshot: normalizePublicationValue({
                         allergens: entry.allergens,
+                        allergenEvidenceStatus: entry.allergenEvidenceStatus,
                         ...(entry.mayContainNotes !== undefined
                           ? { mayContainNotes: entry.mayContainNotes }
                           : {}),

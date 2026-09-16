@@ -855,7 +855,7 @@ export default function HospitalityAllergenDetail({
                               </div>
                             </th>
                             {allergenColumns.map(([key, label]) => {
-                              const state = sub.allergens[key] || "clear";
+                              const state = sub.allergens[key] || "unrecorded";
                               return (
                                 <td key={key}>
                                   <button
@@ -868,7 +868,9 @@ export default function HospitalityAllergenDetail({
                                   >
                                     {state === "may_contain"
                                       ? "MC"
-                                      : ""}
+                                      : state === "unrecorded"
+                                        ? "UR"
+                                        : ""}
                                   </button>
                                 </td>
                               );

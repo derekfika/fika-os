@@ -11,15 +11,18 @@ import "./allergen-review.css";
 
 function stateFor(row: AllergenReviewRow, key: string): OperationalAllergenState | "none" {
   const state = row.snapshot?.allergens[key];
-  return state === "contains" || state === "may_contain" ? state : row.snapshot ? "clear" : "none";
+  return state === "contains" || state === "may_contain" ? state : row.snapshot ? "unrecorded" : "none";
 }
 
 function displayState(states: Record<string, OperationalAllergenState> | undefined, key: string): OperationalAllergenState | "none" {
+  if (key === "no_key_allergens") {
+    const namedKeys = CANONICAL_ALLERGEN_COLUMNS.map(([candidate]) => candidate).filter(candidate => candidate !== "no_key_allergens");
+    const namedAllergenPresent = namedKeys.some(name => states?.[name] === "contains" || states?.[name] === "may_contain");
+    return namedAllergenPresent ? "clear" : namedKeys.every(name => states?.[name] === "clear") ? "contains" : "unrecorded";
+  }
   const state = states?.[key];
   if (state) return state;
-  const namedAllergenPresent = Object.entries(states || {}).some(([name, value]) => name !== "no_key_allergens" && value !== "clear");
-  if (key === "no_key_allergens") return namedAllergenPresent ? "clear" : "contains";
-  return "none";
+  return "unrecorded";
 }
 
 export default function AllergenReviewMatrix({ rows, orders, scopeKey, busy = false, locked = false, onCheckedChange, onReviewChanged, onRegisterSave, onSignatureRolesChange, onFinalizationChange, onLineageChange }: { rows: AllergenReviewRow[]; orders: ProductionOrder[]; scopeKey: string; busy?: boolean; locked?: boolean; onCheckedChange?: (checked: number, total: number, keys: Set<string>) => void; onReviewChanged?: () => void; onRegisterSave?: (save: () => Promise<void>) => void; onSignatureRolesChange?: (roles: Array<"production_chef" | "head_chef_site_manager">) => void; onFinalizationChange?: (finalized: boolean) => void; onLineageChange?: (lineageByOrderId: Record<string, { productionOrderId: string; serviceDate: string; sourceDayId: string; sourcePublicationId?: string; sourcePublicationDayId: string; sourceVersion: number; sourceContentHash: string; matrixContentHash: string }>) => void }) {

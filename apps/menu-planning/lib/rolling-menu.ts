@@ -269,7 +269,7 @@ export async function updateEntry(weekId: string, entryId: string, patch: Rollin
   const nextPatch = patch.allocations === undefined ? patch : { ...patch, allocations: patch.allocations.map(allocation => normaliseDestination(allocation, liveOplocs)) };
   return mutateRollingCommand({ weekId, expectedWeekVersion: expected, touchedEntryIds: [entryId], touchedDayIds: [touchedDayId], entryDayIds: { [entryId]: touchedDayId }, patch: { entries: { [entryId]: nextPatch } }, audit: { action: "entry-amended", at: now(), by: actor } });
 }
-export async function batchUpdateEntries(weekId: string, expectedWeekVersion: number, updates: Array<{ entryId: string; dayId?: string; allocations: RollingAllocation[] }>, actor = "local-menu-planner", liveOplocs: readonly LiveGovernedOploc[] = []): Promise<RollingMutationDelta> {
+export async function batchUpdateEntries(weekId: string, expectedWeekVersion: number, updates: Array<{ entryId: string; dayId?: string; allocations?: RollingAllocation[]; patch?: RollingEntryPatch }>, actor = "local-menu-planner", liveOplocs: readonly LiveGovernedOploc[] = []): Promise<RollingMutationDelta> {
   if (!Number.isInteger(expectedWeekVersion) || expectedWeekVersion < 1) throw Object.assign(new Error("A current week version is required before saving portions."), { status: 422 });
   if (!Array.isArray(updates) || !updates.length) {
     const snapshot = await getWeek(weekId);
@@ -282,7 +282,8 @@ export async function batchUpdateEntries(weekId: string, expectedWeekVersion: nu
   const entryDayIds = Object.fromEntries(updates.map(update => [update.entryId, update.dayId || current!.entries.find(entry => entry.id === update.entryId)?.dayId || ""]));
   const patchEntries: Record<string, RollingEntryPatch> = {};
   for (const update of updates) {
-    const allocations = update.allocations.map(allocation => {
+    if (update.patch) { patchEntries[update.entryId] = update.patch; continue; }
+    const allocations = (update.allocations || []).map(allocation => {
       const quantity = Number(allocation.quantity);
       if (Number.isNaN(quantity) || quantity === 0) return undefined;
       if (!Number.isFinite(quantity) || quantity < 0) throw Object.assign(new Error("A portion row contains an invalid portion quantity."), { status: 422 });

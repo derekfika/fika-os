@@ -3,6 +3,7 @@ import type { ExternalProductionMaterialisation } from "@fika/server-shared/exte
 
 const allergenSnapshot = z.object({
   allergens: z.record(z.string(), z.string()),
+  allergenEvidenceStatus: z.enum(["confirmed", "unreviewed", "missing", "conflicting"]).optional(),
   mayContainNotes: z.string().optional(),
   sourcePublicationDayId: z.string().optional(),
   sourceVersion: z.number().int().positive().optional(),

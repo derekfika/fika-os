@@ -22,6 +22,7 @@ export type MenuPlanningWeekPacketEntry = {
   portions: number;
   allocations: Array<{ destinationId?: string; destinationLabel: string; quantity: number }>;
   allergens?: Record<string, string>;
+  allergenEvidenceStatus?: "confirmed" | "unreviewed" | "missing" | "conflicting";
   mayContainNotes?: string;
 };
 export type MenuPlanningWeekPacketDay = {
@@ -75,7 +76,7 @@ function validatePacket(value: unknown, expectedPublicationId?: string): MenuPla
         if (!isRecord(allocation) || (allocation.destinationId !== undefined && typeof allocation.destinationId !== "string") || typeof allocation.destinationLabel !== "string" || typeof allocationQuantity !== "number" || !Number.isFinite(allocationQuantity) || allocationQuantity < 0) throw packetFailure("The Menu Planning weekly packet contains an invalid portion allocation.");
         return { ...(allocation.destinationId !== undefined ? { destinationId: canonicalOplocId(allocation.destinationId) } : {}), destinationLabel: allocation.destinationLabel, quantity: allocationQuantity };
       });
-      return { sourceEntryId: entry.sourceEntryId, slot: entry.slot, ...(typeof entry.canonicalDishId === "string" ? { canonicalDishId: entry.canonicalDishId } : {}), dishName: entry.dishName, portions: entryPortions, allocations, ...(isRecord(entry.allergens) ? { allergens: Object.fromEntries(Object.entries(entry.allergens).filter(([, state]) => typeof state === "string").map(([key, state]) => [key, state as string])) } : {}), ...(typeof entry.mayContainNotes === "string" ? { mayContainNotes: entry.mayContainNotes } : {}) };
+      return { sourceEntryId: entry.sourceEntryId, slot: entry.slot, ...(typeof entry.canonicalDishId === "string" ? { canonicalDishId: entry.canonicalDishId } : {}), dishName: entry.dishName, portions: entryPortions, allocations, ...(isRecord(entry.allergens) ? { allergens: Object.fromEntries(Object.entries(entry.allergens).filter(([, state]) => typeof state === "string").map(([key, state]) => [key, state as string])) } : {}), ...(entry.allergenEvidenceStatus === "confirmed" || entry.allergenEvidenceStatus === "unreviewed" || entry.allergenEvidenceStatus === "missing" || entry.allergenEvidenceStatus === "conflicting" ? { allergenEvidenceStatus: entry.allergenEvidenceStatus } : {}), ...(typeof entry.mayContainNotes === "string" ? { mayContainNotes: entry.mayContainNotes } : {}) };
     });
     return { publicationDayId: day.publicationDayId, sourceDayId: day.sourceDayId, date: day.date, dayName: day.dayName, version: dayVersion, ...(day.status === "published" || day.status === "superseded" || day.status === "withdrawn" ? { status: day.status } : {}), contentHash: day.contentHash, entries, ...(isRecord(day.allergenSignoff) ? { allergenSignoff: day.allergenSignoff } : {}) };
   });

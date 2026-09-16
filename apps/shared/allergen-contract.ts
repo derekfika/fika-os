@@ -3,7 +3,7 @@ export const CANONICAL_ALLERGEN_KEYS = [
   "celery", "shellfish", "eggs", "milk", "mustard", "lupin", "sulphites",
 ] as const;
 export type CanonicalAllergenKey = (typeof CANONICAL_ALLERGEN_KEYS)[number];
-export type OperationalAllergenState = "clear" | "contains" | "may_contain";
+export type OperationalAllergenState = "clear" | "contains" | "may_contain" | "unrecorded";
 export type CanonicalAllergenMap = Record<string, OperationalAllergenState>;
 export const CANONICAL_ALLERGEN_COLUMNS = [
   ["no_key_allergens", "No key allergens"], ["peanuts", "Peanuts"], ["tree_nuts", "Tree nuts"],
@@ -17,24 +17,30 @@ export function toCanonicalAllergenKey(key: string): CanonicalAllergenKey | unde
 }
 export function enforceNoKeyExclusivity(input: CanonicalAllergenMap): CanonicalAllergenMap {
   const result = { ...input };
-  if (result.no_key_allergens && result.no_key_allergens !== "clear") {
-    for (const key of CANONICAL_ALLERGEN_KEYS) if (key !== "no_key_allergens") result[key] = "clear";
-  } else if (CANONICAL_ALLERGEN_KEYS.some((key) => key !== "no_key_allergens" && result[key] && result[key] !== "clear")) {
-    result.no_key_allergens = "clear";
-  }
+  const namedKeys = CANONICAL_ALLERGEN_KEYS.filter((key) => key !== "no_key_allergens");
+  const hasPositiveNamed = namedKeys.some((key) => result[key] === "contains" || result[key] === "may_contain");
+  result.no_key_allergens = hasPositiveNamed ? "clear" : namedKeys.every((key) => result[key] === "clear") ? "contains" : result.no_key_allergens === "contains" || result.no_key_allergens === "may_contain" ? result.no_key_allergens : "unrecorded";
+  return result;
+}
+export function deriveNoKeyAllergens(input: CanonicalAllergenMap): CanonicalAllergenMap {
+  const result = { ...input };
+  const namedKeys = CANONICAL_ALLERGEN_KEYS.filter((key) => key !== "no_key_allergens");
+  const hasPositiveNamed = namedKeys.some((key) => result[key] === "contains" || result[key] === "may_contain");
+  result.no_key_allergens = hasPositiveNamed ? "clear" : namedKeys.every((key) => result[key] === "clear") ? "contains" : "unrecorded";
   return result;
 }
 export function normaliseOperationalAllergens(input: Record<string, unknown> | undefined): CanonicalAllergenMap {
   const result: CanonicalAllergenMap = {};
   for (const [rawKey, rawValue] of Object.entries(input || {})) {
     const key = toCanonicalAllergenKey(rawKey);
-    if (key && (rawValue === "clear" || rawValue === "contains" || rawValue === "may_contain")) result[key] = rawValue;
+    if (key && (rawValue === "clear" || rawValue === "contains" || rawValue === "may_contain" || rawValue === "unrecorded")) result[key] = rawValue;
   }
   return enforceNoKeyExclusivity(result);
 }
 export function toggleOperationalAllergen(current: CanonicalAllergenMap, key: CanonicalAllergenKey): CanonicalAllergenMap {
   const state = current[key] || "clear";
   const next = state === "clear" ? "contains" : state === "contains" ? "may_contain" : "clear";
+  if (key === "no_key_allergens") return enforceNoKeyExclusivity({ ...current, ...Object.fromEntries(CANONICAL_ALLERGEN_KEYS.filter(candidate => candidate !== key).map(candidate => [candidate, "clear"])), [key]: next });
   return enforceNoKeyExclusivity({ ...current, [key]: next });
 }
 export function toLegacyAllergens(input: CanonicalAllergenMap): Record<string, OperationalAllergenState> {

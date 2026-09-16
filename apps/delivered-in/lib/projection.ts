@@ -1,10 +1,10 @@
 export type SiteAccess = { email: string; oplocIds: string[]; permissions: string[] };
 export type Site = { oplocId: string; label: string };
 export type SourceAllocation = { destinationId?: string; destinationLabel: string; quantity: number };
-export type SourceEntry = { sourceEntryId: string; slot: string; canonicalDishId?: string; dishName: string; portions: number; allocations: SourceAllocation[]; allergens: Record<string, "clear" | "contains" | "may_contain">; mayContainNotes?: string };
+export type SourceEntry = { sourceEntryId: string; slot: string; canonicalDishId?: string; dishName: string; portions: number; allocations: SourceAllocation[]; allergens: Record<string, "clear" | "contains" | "may_contain" | "unrecorded">; allergenEvidenceStatus?: "confirmed" | "unreviewed" | "missing" | "conflicting"; mayContainNotes?: string };
 export type SourceDay = { publicationDayId: string; sourceDayId: string; date: string; dayName: string; version: number; status: "published" | "superseded" | "withdrawn"; contentHash: string; entries: SourceEntry[]; allergenSignoff: { productionChef?: { printedName: string; signedAt: string }; headChefSiteManager?: { printedName: string; signedAt: string }; printedName?: string; signedAt?: string }; driveArchive?: { pdfDriveUrl?: string; pdfStatus?: string; pdfFileName?: string } };
 export type SourcePublication = { publicationId: string; sourceWeekId: string; weekCommencing: string; weekEnding: string; days: SourceDay[] };
-export type ProjectedEntry = { sourceEntryId: string; slot: string; canonicalDishId?: string; dishName: string; quantity: number; allergens: Record<string, "clear" | "contains" | "may_contain" | "unrecorded">; mayContainNotes?: string; allergensVisible?: boolean };
+export type ProjectedEntry = { sourceEntryId: string; slot: string; canonicalDishId?: string; dishName: string; quantity: number; allergens: Record<string, "clear" | "contains" | "may_contain" | "unrecorded">; allergenEvidenceStatus?: "confirmed" | "unreviewed" | "missing" | "conflicting"; mayContainNotes?: string; allergensVisible?: boolean };
 export type ProjectedDestination = { oplocId: string; label: string; portions: number };
 export type AllergenReleaseDelta = { dishName: string; allergen: string; previous: "clear" | "contains" | "may_contain" | "unrecorded"; current: "clear" | "contains" | "may_contain" | "unrecorded" };
 export type AllergenSafetyState = {
@@ -112,6 +112,7 @@ export function projectPublishedWeeks(publications: SourcePublication[], selecte
                 dishName: titleCase(entry.dishName),
                 quantity: allocation.quantity,
                 allergens: entry.allergens,
+                ...(entry.allergenEvidenceStatus ? { allergenEvidenceStatus: entry.allergenEvidenceStatus } : {}),
                 mayContainNotes: entry.mayContainNotes,
               }));
           }),
