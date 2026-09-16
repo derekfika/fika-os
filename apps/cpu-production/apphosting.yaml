@@ -1,5 +1,66 @@
 # Firebase App Hosting configuration for the CPU Production staging runtime.
+# This active file is the authoritative staging runtime contract.
 env:
   - variable: FIKA_DATA_SOURCE_TRACE
     value: "1"
     availability: [BUILD, RUNTIME]
+  - variable: FIKA_RUNTIME_MODE
+    value: staging
+    availability: [BUILD, RUNTIME]
+  - variable: FIREBASE_PROJECT_ID
+    value: fika-os-dev
+    availability: [BUILD, RUNTIME]
+  - variable: FIKA_ALLOWED_EMAIL_DOMAINS
+    value: fikacatering.com
+    availability: [BUILD, RUNTIME]
+  - variable: FIKA_SESSION_COOKIE_DOMAIN
+    value: .fikacatering.com
+    availability: [BUILD, RUNTIME]
+  - variable: FIKA_HUB_BASE_URL
+    value: https://staging-os.fikacatering.com
+    availability: [BUILD, RUNTIME]
+  - variable: NEXT_PUBLIC_FIKA_HUB_URL
+    value: https://staging-os.fikacatering.com
+    availability: [BUILD, RUNTIME]
+  - variable: CPU_PRODUCTION_BASE_URL
+    value: https://cpu-staging.fikacatering.com
+    availability: [BUILD, RUNTIME]
+  - variable: CPU_PUBLIC_BASE_URL
+    value: https://cpu-staging.fikacatering.com
+    availability: [BUILD, RUNTIME]
+  - variable: MENU_PLANNING_BASE_URL
+    value: https://menu-planning-staging.fikacatering.com
+    availability: [BUILD, RUNTIME]
+  - variable: DELIVERED_IN_GRAB_AND_GO_API_URL
+    value: https://fika-delivered-in-staging--fika-os-dev.europe-west4.hosted.app/api/delivered-in/grab-and-go/production
+    availability: [RUNTIME]
+  - variable: HOSPITALITY_BOOKING_BASE_URL
+    value: https://hospitality-staging.fikacatering.com
+    availability: [BUILD, RUNTIME]
+  # CPU matrix PDFs use the shared hosted Drive adapter. The adapter
+  # impersonates this governed staging Workspace identity; the folder root is
+  # optional because the adapter resolves the default CPU Production path.
+  - variable: GOOGLE_DRIVE_OWNER_EMAIL_APP_CPU_PRODUCTION
+    value: derek@fikacatering.com
+    availability: [RUNTIME]
+  - variable: GOOGLE_WORKSPACE_DWD_SERVICE_ACCOUNT_JSON
+    secret: GOOGLE_WORKSPACE_DWD_SERVICE_ACCOUNT_JSON
+    availability: [RUNTIME]
+  - variable: FIKA_PDF_RENDERER_URL
+    value: https://fika-pdf-renderer-staging-6tc4airnza-ez.a.run.app
+    availability: [RUNTIME]
+  - variable: FIKA_PDF_RENDERER_TOKEN
+    secret: FIKA_PDF_RENDERER_TOKEN
+    availability: [RUNTIME]
+  - variable: FIKA_APP_DELIVERED_IN_URL
+    value: https://fika-delivered-in-staging--fika-os-dev.europe-west4.hosted.app
+    availability: [BUILD, RUNTIME]
+  - variable: FIKA_LOGISTICS_BASE_URL
+    value: https://logistics-staging.fikacatering.com
+    availability: [BUILD, RUNTIME]
+  - variable: FIKA_INTERNAL_API_TOKEN
+    secret: FIKA_INTERNAL_API_TOKEN@3
+    availability: [RUNTIME]
+  - variable: FIKA_SNAPSHOT_BUCKET
+    value: fika-os-dev-staging-read-packages-europe-west4
+    availability: [RUNTIME]
