@@ -67,3 +67,15 @@ test("debounced review writes are cancelled/flushed and serialized before signin
   assert.match(matrix, /if \(pending\) \{[\s\S]*await startSave\(pending\.states\)/);
   assert.match(matrix, /if \(inFlightSave\.current\) \{[\s\S]*await inFlightSave\.current/);
 });
+
+test("post-sign hydration keeps the committed role locked and semantic no-op saves cannot revoke authority", async () => {
+  const page = await readFile(new URL("../app/allergens/page.tsx", import.meta.url), "utf8");
+  const matrix = await readFile(new URL("../app/ui/AllergenReviewMatrix.tsx", import.meta.url), "utf8");
+  const route = await readFile(new URL("../app/api/production-plan/route.ts", import.meta.url), "utf8");
+  assert.match(page, /const \[hydrating, setHydrating\] = useState\(false\)/);
+  assert.match(page, /locked=\{hydrating \|\| bothSigned \|\| Boolean\(signing\)\}/);
+  assert.match(matrix, /onHydrationChange\?\.\(true\)/);
+  assert.match(matrix, /onHydrationChange\?\.\(false\)/);
+  assert.match(route, /const noOpSave = Boolean\(storedPlan && operation\.action === "save-plan" && !contentChanged && plan\.planningNotes === operation\.planningNotes && authorityMatches\)/);
+  assert.doesNotMatch(route, /if \(contentChanged \|\| plan\.currentAllergenRelease\) invalidateSignedAllergenAuthority/);
+});

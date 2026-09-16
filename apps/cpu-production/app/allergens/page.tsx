@@ -35,11 +35,13 @@ export default function CpuAllergenReviewPage() {
   const [reviewFrozen, setReviewFrozen] = useState(false);
   const [signatureMessage, setSignatureMessage] = useState("");
   const [signatureBusy, setSignatureBusy] = useState(false);
+  const [hydrating, setHydrating] = useState(false);
   const saveReviewRef = useRef<() => Promise<void>>(() => Promise.resolve());
   const signingSnapshotRef = useRef<Record<string, MatrixLineage> | undefined>(undefined);
 
   const load = async (selectedDate: string) => {
     setError("");
+    setHydrating(true);
     setOrders([]);
     setCheckedCount(0);
     setSignatureRoles([]);
@@ -53,6 +55,7 @@ export default function CpuAllergenReviewPage() {
       setOrders(cpuProjectionToOrders(loaded.projection).filter(order => order.origin === "menu_planning"));
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not load allergen review.");
+      setHydrating(false);
     }
   };
 
@@ -171,7 +174,7 @@ export default function CpuAllergenReviewPage() {
   };
 
   const beginSigning = async (role: SignatureRole) => {
-    if (site) {
+    if (site || hydrating) {
       setSignatureMessage("Return to All sites to sign the complete Delivered-In service-date master matrix.");
       return;
     }
@@ -187,7 +190,7 @@ export default function CpuAllergenReviewPage() {
       setSignatureMessage("The current Menu publication lineage is unavailable for one or more OPLOCs. Reload the review before signing.");
       return;
     }
-    if ((role === "production_chef" && productionSigned) || (role === "head_chef_site_manager" && headChefSigned) || bothSigned || signatureBusy) return;
+    if ((role === "production_chef" && productionSigned) || (role === "head_chef_site_manager" && headChefSigned) || bothSigned || signatureBusy || hydrating) return;
 
     setSignatureMessage("");
     setSignatureBusy(true);
@@ -243,18 +246,18 @@ export default function CpuAllergenReviewPage() {
         <div className="cpu-allergen-filters" aria-label="Allergen review filters">
           <label>
             Date
-            <input type="date" value={date} disabled={signatureBusy || Boolean(signing)} onChange={event => setDate(event.target.value)} />
+            <input type="date" value={date} disabled={signatureBusy || hydrating || Boolean(signing)} onChange={event => setDate(event.target.value)} />
           </label>
           <label>
             Site
-            <select value={site} disabled={signatureBusy || Boolean(signing)} onChange={event => setSite(event.target.value)}>
+            <select value={site} disabled={signatureBusy || hydrating || Boolean(signing)} onChange={event => setSite(event.target.value)}>
               <option value="">All sites</option>
               {sites.map(([id, label]) => <option key={id} value={id}>{label}</option>)}
             </select>
           </label>
           <label>
             Review status
-            <select value={review} disabled={signatureBusy || Boolean(signing)} onChange={event => setReview(event.target.value)}>
+            <select value={review} disabled={signatureBusy || hydrating || Boolean(signing)} onChange={event => setReview(event.target.value)}>
               <option value="all">All statuses</option>
               <option value="attention">Needs attention</option>
               <option value="reviewed">Checked</option>
@@ -287,14 +290,15 @@ export default function CpuAllergenReviewPage() {
           rows={rows}
           orders={visibleOrders}
           scopeKey={`${date || "unknown"}:${site || "all"}`}
-          busy={signatureBusy}
-          locked={bothSigned || Boolean(signing)}
+          busy={signatureBusy || hydrating}
+          locked={hydrating || bothSigned || Boolean(signing)}
           onCheckedChange={setCheckedCount}
           onReviewChanged={() => undefined}
           onSignatureRolesChange={roles => setSignatureRoles(roles)}
           onOrderSignatureRolesChange={setSignatureRolesByOrderId}
           onFinalizationChange={setFinalizationComplete}
           onLineageChange={setLineageByOrderId}
+          onHydrationChange={setHydrating}
           onRegisterSave={save => { saveReviewRef.current = save; }}
         />
 

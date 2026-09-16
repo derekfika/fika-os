@@ -56,3 +56,23 @@ export function signedAllergenCheckpointMatchesOrder(plan: Pick<ProductionPlan, 
   const scope = matrixSignatureScope(order, hash);
   return plan.signedMenuContentHash === hash && Boolean(scope && plan.signedSignatures?.length && plan.signedSignatures.every(signature => signatureMatchesScope(signature, scope)) && currentAllergenReleaseMatchesOrder(plan.currentAllergenRelease, order, menuItems));
 }
+
+/** True when any in-progress or committed allergen authority still belongs to this exact source/matrix. */
+export function allergenAuthorityMatchesOrder(plan: Pick<ProductionPlan, "signatures" | "signedSignatures" | "signedMenuContentHash" | "currentAllergenRelease" | "matrixArtifact" | "signedMatrixArtifact" | "masterMatrixArtifact" | "siteMatrixArtifacts">, order: { canonicalId: string; serviceDate?: string; requiredBy: string; sourceEntityId?: string; sourcePublicationId?: string; sourcePublicationDayId?: string; sourceVersion?: number; sourceContentHash?: string }, menuItems: PlannedMenuItem[]) {
+  const hash = allergenMatrixContentHash(menuItems);
+  const scope = matrixSignatureScope(order, hash);
+  const signatures = plan.signatures?.length ? plan.signatures : plan.signedSignatures || [];
+  const hasAuthority = Boolean(plan.currentAllergenRelease || signatures.length || plan.signedMenuContentHash || plan.matrixArtifact || plan.signedMatrixArtifact || plan.masterMatrixArtifact || plan.siteMatrixArtifacts);
+  if (!hasAuthority) return true;
+  if (!scope || plan.signedMenuContentHash !== hash || !signatures.length || !signatures.every(signature => signatureMatchesScope(signature, scope))) return false;
+  const release = plan.currentAllergenRelease;
+  if (!release) return true;
+  return (release.status === "pending" || release.status === "current")
+    && release.serviceDate === scope.serviceDate
+    && release.sourceDayId === scope.sourceDayId
+    && release.sourcePublicationId === scope.sourcePublicationId
+    && release.sourcePublicationDayId === scope.sourcePublicationDayId
+    && release.sourceVersion === scope.sourceVersion
+    && release.sourceContentHash === scope.sourceContentHash
+    && release.signatures.every(signature => signature.valid && signatureMatchesScope(signature, scope));
+}

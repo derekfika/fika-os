@@ -50,6 +50,7 @@ export default function AllergenReviewMatrix({
   onOrderSignatureRolesChange,
   onFinalizationChange,
   onLineageChange,
+  onHydrationChange,
 }: {
   rows: AllergenReviewRow[];
   orders: ProductionOrder[];
@@ -63,6 +64,7 @@ export default function AllergenReviewMatrix({
   onOrderSignatureRolesChange?: (rolesByOrderId: Record<string, SignatureRole[]>) => void;
   onFinalizationChange?: (finalized: boolean) => void;
   onLineageChange?: (lineageByOrderId: Record<string, MatrixLineage>) => void;
+  onHydrationChange?: (hydrating: boolean) => void;
 }) {
   const [states, setStates] = useState<Record<string, Record<string, OperationalAllergenState>>>(
     () => Object.fromEntries(rows.map(row => [row.key, { ...(row.snapshot?.allergens || {}) }])) as Record<string, Record<string, OperationalAllergenState>>,
@@ -78,6 +80,7 @@ export default function AllergenReviewMatrix({
 
   useEffect(() => {
     let cancelled = false;
+    onHydrationChange?.(true);
 
     const hydrate = async () => {
       const orderIds = [...new Set(orders.map(order => order.canonicalId))];
@@ -128,6 +131,7 @@ export default function AllergenReviewMatrix({
       const commonRoles = (["production_chef", "head_chef_site_manager"] as SignatureRole[])
         .filter(role => allStatusesPresent && statuses.every(status => status.signatureRoles.includes(role)));
 
+      if (cancelled) return;
       onLineageChange?.(lineage);
       onOrderSignatureRolesChange?.(rolesByOrderId);
       onSignatureRolesChange?.(commonRoles);
@@ -144,7 +148,6 @@ export default function AllergenReviewMatrix({
         }
       }
 
-      if (cancelled) return;
       setStates(Object.fromEntries(rows.map(row => {
         const savedState = saved.get(row.key);
         // Newly-created CPU plans intentionally start with an empty allergen
@@ -157,7 +160,11 @@ export default function AllergenReviewMatrix({
       if (!cancelled) setCheckedRows(new Set(rows.map(row => row.key).filter(key => localChecked.has(key))));
     };
 
-    void hydrate();
+    void hydrate().catch(cause => {
+      if (!cancelled) setError(cause instanceof Error ? cause.message : "The allergen review could not be hydrated.");
+    }).finally(() => {
+      if (!cancelled) onHydrationChange?.(false);
+    });
     return () => { cancelled = true; };
   }, [rows, orders, scopeKey]);
 
