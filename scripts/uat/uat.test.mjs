@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { parseArgs } from "./cli.mjs";
 import { discoverBuilds } from "./builds.mjs";
-import { buildLoggingFilter, normalizeLogRecord, readCloudLogs } from "./logs.mjs";
+import { buildGcloudInvocation, buildLoggingFilter, escapeWindowsCmdArgument, normalizeLogRecord, readCloudLogs, runGcloud } from "./logs.mjs";
 import { captureState, normalizeCpuState, normalizeDeliveredState, normalizeMenuState } from "./state.mjs";
 import { evaluateInvariants } from "./invariants.mjs";
 import { renderMarkdown } from "./bundle.mjs";
@@ -30,6 +30,34 @@ test("logging filters are bounded and target known services", () => {
   assert.match(buildLoggingFilter({ app: "all", minutes: 15 }), /fika-os-staging/);
 });
 
+test("gcloud invocation stays native on non-Windows and uses ComSpec on Windows", async () => {
+  const logicalArgs = ["logging", "read", 'resource.type="cloud_run_revision" AND (resource.labels.service_name="fika-delivered-in-staging") AND jsonPayload.oplocId="oploc:bb4c7eea-87f5-4e79-8ed6-b973b24ded7b"', "--limit=2"];
+  const nonWindows = buildGcloudInvocation(logicalArgs, "linux", {});
+  assert.equal(nonWindows.executable, "gcloud"); assert.deepEqual(nonWindows.args, logicalArgs);
+  const windows = buildGcloudInvocation(logicalArgs, "win32", { ComSpec: "C:\\Windows\\System32\\cmd.exe" });
+  assert.equal(windows.executable, "C:\\Windows\\System32\\cmd.exe"); assert.deepEqual(windows.args.slice(0, 3), ["/d", "/s", "/c"]);
+  assert.match(windows.args[3], /^gcloud\.cmd /); assert.match(windows.args[3], /\^\(/); assert.match(escapeWindowsCmdArgument("percent%PATH%"), /\^%/);
+  assert.match(windows.args[3], /oploc:bb4c7eea-87f5-4e79-8ed6-b973b24ded7b/);
+  const calls = [];
+  await runGcloud(logicalArgs, { platform: "linux", exec: async (executable, args, options) => { calls.push({ executable, args, options }); return { stdout: "ok" }; } });
+  assert.equal(calls[0].executable, "gcloud"); assert.deepEqual(calls[0].args, logicalArgs);
+  await runGcloud(["--version"], { platform: "win32", env: { ComSpec: "cmd.exe" }, exec: async (executable, args, options) => { calls.push({ executable, args, options }); return { stdout: "ok" }; } });
+  assert.equal(calls[1].executable, "cmd.exe"); assert.equal(calls[1].args[0], "/d");
+  assert.equal(calls[1].options.windowsVerbatimArguments, true);
+});
+
+test("Windows CMD escaping preserves spaces and quotes and blocks metacharacter commands", { skip: process.platform !== "win32" }, async () => {
+  const { execFile } = await import("node:child_process");
+  const values = ["a value", 'say "hello"', "safe&echo injected", "pipe|echo injected", "less<echo injected", "greater>echo injected", "caret^value", "percent%PATH%", "bang!value", "paren(value)"];
+  // Keep the test harness command fixed; exercise the escaping on every
+  // logical user argument, including values that contain shell metacharacters.
+  const command = ["node", "-e", '"console.log(JSON.stringify(process.argv.slice(1)))"', ...values.map(escapeWindowsCmdArgument)].join(" ");
+  const result = await new Promise((resolve, reject) => execFile(process.env.ComSpec || "cmd.exe", ["/d", "/s", "/c", command], { windowsHide: true, windowsVerbatimArguments: true }, (error, stdout, stderr) => error ? reject(new Error(`${error.message}: ${stderr}`)) : resolve({ stdout, stderr })));
+  const output = String(result.stdout).trim();
+  if (!output) assert.fail(`Windows CMD round-trip returned no stdout; command: ${command}; raw result: ${JSON.stringify(result)}`);
+  assert.deepEqual(JSON.parse(output), values);
+});
+
 test("log normalization retains structured FIKA errors, generic errors and malformed records", () => {
   const record = normalizeLogRecord({ timestamp: "2026-09-16T10:41:06.401Z", severity: "ERROR", resource: { labels: { service_name: "fika-delivered-in-staging", revision_name: "rev-1" } }, jsonPayload: { app: "delivered-in", event: "delivered_in.requested_week_recovery_failed", operation: "delivered-in.requested-week.recovery", serviceDate: "2026-09-14", oplocId: "oploc:x", errorStatus: 409, errorMessage: "conflicting package content", code: "UNKNOWN_INTERNAL" } });
   assert.equal(record.highlighted, true); assert.equal(record.status, 409); assert.equal(record.event, "delivered_in.requested_week_recovery_failed");
@@ -43,6 +71,11 @@ test("cloud logging adapter uses authenticated bounded reads", async () => {
   const result = await readCloudLogs({ app: "delivered-in", minutes: 1, limit: 2, now: new Date("2026-09-16T10:00:00Z") }, { run });
   assert.equal(result.available, true); assert.equal(result.records.length, 1);
   assert.equal(calls[2][0], "logging"); assert.ok(calls[2].includes("--limit=2")); assert.ok(calls[2].some((arg) => arg.includes('resource.type="cloud_run_revision"')));
+});
+
+test("missing gcloud keeps the clear unavailable guidance", async () => {
+  const result = await readCloudLogs({ app: "delivered-in", minutes: 1 }, { run: async () => { throw new Error("spawn gcloud ENOENT"); } });
+  assert.equal(result.available, false); assert.match(result.warning, /Install the Google Cloud CLI|Google Cloud Shell/); assert.match(result.warning, /gcloud/);
 });
 
 test("build discovery handles match, mismatch and unavailable apps", async () => {

@@ -4,6 +4,51 @@ const FAILURE_CODES = new Set(["DELIVERED_IN_PROJECTION_LINEAGE_CONFLICT", "CPU_
 const HIGHLIGHT_TERMS = /projection|reconcile|recovery|invalidation|materiali[sz]e|handoff|outbox|sign(?:ature)?|review|publish|withdraw|amend|packet|lineage|release/i;
 const SEVERITIES = new Set(["DEFAULT", "DEBUG", "INFO", "NOTICE", "WARNING", "ERROR", "CRITICAL", "ALERT", "EMERGENCY"]);
 
+/**
+ * Escape one logical argument for the command string consumed by CMD /c.
+ * Metacharacters are placed outside a quoted segment and caret-escaped;
+ * embedded quotes are doubled inside a quoted segment for the target argv
+ * parser. Percent and delayed-expansion characters are escaped explicitly.
+ */
+export function escapeWindowsCmdArgument(value) {
+  const input = String(value);
+  if (/[\u0000\r\n]/.test(input)) throw new Error("gcloud arguments cannot contain NUL or newline characters.");
+  if (!input) return '""';
+  const metacharacters = new Set(["&", "|", "<", ">", "^", "%", "!"]);
+  let command = "";
+  let inQuotes = false;
+  const openQuotes = () => { if (!inQuotes) { command += '"'; inQuotes = true; } };
+  const closeQuotes = () => { if (inQuotes) { command += '"'; inQuotes = false; } };
+  for (const character of input) {
+    if (metacharacters.has(character)) {
+      closeQuotes();
+      command += `^${character}`;
+    } else if (character === "(") {
+      closeQuotes();
+      command += "^(";
+    } else if (character === ")") {
+      closeQuotes();
+      command += "^)";
+    } else if (character === '"') {
+      openQuotes();
+      command += '""';
+    } else {
+      openQuotes();
+      command += character;
+    }
+  }
+  closeQuotes();
+  return command;
+}
+
+export function buildGcloudInvocation(args, platform = process.platform, env = process.env) {
+  if (platform !== "win32") return { executable: "gcloud", args };
+  // Keep the fixed command token unquoted so cmd.exe /s /c does not apply its
+  // special leading-quote rule. All variable arguments remain escaped below.
+  const command = ["gcloud.cmd", ...args.map(escapeWindowsCmdArgument)].join(" ");
+  return { executable: env.ComSpec || env.COMSPEC || "cmd.exe", args: ["/d", "/s", "/c", command] };
+}
+
 export function buildLoggingFilter({ app = "all", minutes = DEFAULT_LOG_MINUTES, since, serviceDate, oploc, buildSha, requestId, event, severity, now = new Date() } = {}) {
   const ids = selectedApps(app).map((id) => `resource.labels.service_name=${loggingLiteral(STAGING_APPS[id].service)}`);
   const clauses = [`resource.type="cloud_run_revision"`, `(${ids.join(" OR ")})`];
@@ -33,8 +78,9 @@ export async function verifyGcloud({ project = DEFAULT_PROJECT, run = runGcloud 
   }
 }
 
-export async function runGcloud(args, { exec = execFile, cwd = process.cwd() } = {}) {
-  try { return await exec("gcloud", args, { cwd, windowsHide: true, maxBuffer: 20 * 1024 * 1024 }); }
+export async function runGcloud(args, { exec = execFile, cwd = process.cwd(), platform = process.platform, env = process.env } = {}) {
+  const invocation = buildGcloudInvocation(args, platform, env);
+  try { return await exec(invocation.executable, invocation.args, { cwd, windowsHide: true, windowsVerbatimArguments: platform === "win32", maxBuffer: 20 * 1024 * 1024 }); }
   catch (error) { throw Object.assign(new Error(redact(error?.message || "gcloud command failed")), { stderr: redact(error?.stderr || "") }); }
 }
 
