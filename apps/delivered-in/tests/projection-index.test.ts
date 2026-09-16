@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
-import { compareDeliveredInProjectionIndexEntry, deliveredInProjectionSemanticHash, mergeProjectionIndex, projectionIndexManifestKey, DELIVERED_IN_INDEX_DATASET, type DeliveredInProjectionIndex, type DeliveredInProjectionIndexEntry } from "../lib/delivered-in-projection-store";
+import { compareDeliveredInProjectionIndexEntry, deliveredInProjectionLineageKey, deliveredInProjectionSemanticHash, mergeProjectionIndex, projectionIndexManifestKey, DELIVERED_IN_INDEX_DATASET, type DeliveredInProjectionIndex, type DeliveredInProjectionIndexEntry } from "../lib/delivered-in-projection-store";
 import type { DeliveredInDayProjection } from "../lib/delivered-in-day-projection";
 import { boundedProjectionIndexEntries, DELIVERED_IN_MAX_DAY_PACKAGES, DELIVERED_IN_PROJECTION_HORIZON_DAYS, projectionWindowBounds } from "../lib/server";
 
@@ -86,6 +86,56 @@ test("semantic projection identity ignores volatile rebuild metadata but detects
   const rebuilt = { ...projection, projectionVersion: 2, generatedAt: "2026-08-24T09:00:00Z", sourceLineage: { ...projection.sourceLineage, cpu: { ...projection.sourceLineage.cpu, packageVersion: 2, updatedAt: "2026-08-24T09:00:00Z" }, deliveredIn: { ...projection.sourceLineage.deliveredIn, generatedAt: "2026-08-24T09:00:00Z" } } };
   assert.equal(deliveredInProjectionSemanticHash(projection), deliveredInProjectionSemanticHash(rebuilt));
   assert.notEqual(deliveredInProjectionSemanticHash(projection), deliveredInProjectionSemanticHash({ ...rebuilt, entries: [{ ...rebuilt.entries[0], quantity: 4 }] }));
+});
+
+test("site-menu artifact transitions are lineage identity, not semantic conflicts", () => {
+  const projection = {
+    projectionId: "delivered-in:oploc:haleon:2026-08-24",
+    projectionVersion: 1,
+    contractVersion: "delivered-in.day.v1",
+    oplocId: "oploc:haleon",
+    oplocLabel: "Haleon",
+    serviceDate: "2026-08-24",
+    publicationId: "publication:1",
+    publicationDayId: "publication-day:1",
+    sourceDayId: "source-day:1",
+    date: "2026-08-24",
+    dayName: "Monday",
+    version: 8,
+    contentHash: "menu-hash",
+    weekCommencing: "2026-08-24",
+    weekEnding: "2026-08-30",
+    entries: [],
+    allergenSignoff: {},
+    siteMenu: { status: "none" },
+    sourceLineage: { menu: { publicationId: "publication:1", publicationDayId: "publication-day:1", sourceDayId: "source-day:1", version: 8, contentHash: "menu-hash" }, cpu: { orderIds: [] }, deliveredIn: { generatedAt: "2026-08-24T08:00:00Z" } },
+    generatedAt: "2026-08-24T08:00:00Z",
+    state: { freshness: "current", completeness: "complete", menu: "empty", cpu: "present", exceptions: [] },
+  } as unknown as DeliveredInDayProjection;
+  const artifact = {
+    artifactId: "delivered-in-menu:oploc:haleon:source-day:1:delivery-1",
+    oplocId: "oploc:haleon",
+    sourceDayId: "source-day:1",
+    sourcePublicationDayId: "publication-day:1",
+    sourceVersion: 8,
+    sourceContentHash: "menu-hash",
+    generatedAt: "2026-08-24T09:00:00Z",
+    generatedBy: "system:cpu-release",
+    driveFileId: "drive-file-1",
+    driveUrl: "https://drive.example/1",
+    fileName: "Haleon-menu",
+    sourceReleaseId: "release-1",
+    sourceReleaseVersion: "r1",
+    sourcePacketHash: "packet-hash-1",
+    deliveryId: "delivery-1",
+  };
+  const withArtifact = { ...projection, siteMenu: { status: "current", artifact }, sourceLineage: { ...projection.sourceLineage, deliveredIn: { siteMenuArtifactId: artifact.artifactId, generatedAt: "2026-08-24T09:00:00Z" } } } as unknown as DeliveredInDayProjection;
+  const replay = { ...withArtifact, siteMenu: { status: "current", artifact: { ...artifact, generatedAt: "2026-08-24T10:00:00Z" } } } as unknown as DeliveredInDayProjection;
+  const replacement = { ...withArtifact, siteMenu: { status: "current", artifact: { ...artifact, artifactId: "delivered-in-menu:oploc:haleon:source-day:1:delivery-2" } } } as unknown as DeliveredInDayProjection;
+  assert.notEqual(deliveredInProjectionLineageKey(projection), deliveredInProjectionLineageKey(withArtifact));
+  assert.equal(deliveredInProjectionLineageKey(withArtifact), deliveredInProjectionLineageKey(replay));
+  assert.notEqual(deliveredInProjectionLineageKey(withArtifact), deliveredInProjectionLineageKey(replacement));
+  assert.notEqual(deliveredInProjectionSemanticHash(withArtifact), deliveredInProjectionSemanticHash(replacement));
 });
 
 test("hosted projection promotion is a transaction over the day head and OPLOC index", async () => {

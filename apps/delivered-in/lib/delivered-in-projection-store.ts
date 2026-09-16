@@ -34,11 +34,30 @@ function currentIndexWeeks() {
   return Array.from({ length: 7 }, (_, index) => addDays(first, index * 7));
 }
 
-function sourceLineageKey(projection: DeliveredInDayProjection) {
+function legacySourceLineageKey(projection: DeliveredInDayProjection) {
   const menu = projection.sourceLineage.menu;
   const cpu = projection.sourceLineage.cpu;
   return [menu.publicationId, menu.publicationDayId, menu.version, menu.contentHash, cpu.releaseId || cpu.sourceVersion || cpu.sourceBundleHash || "none"].join("|");
 }
+function siteMenuLineageKey(projection: DeliveredInDayProjection) {
+  const artifact = projection.siteMenu.artifact;
+  return [
+    projection.siteMenu.status,
+    artifact?.artifactId || "none",
+    artifact?.sourceDayId || "none",
+    artifact?.sourcePublicationDayId || "none",
+    artifact?.sourceVersion ?? "none",
+    artifact?.sourceContentHash || "none",
+    artifact?.sourceReleaseId || "none",
+    artifact?.sourceReleaseVersion || "none",
+    artifact?.sourcePacketHash || "none",
+    artifact ? (artifact.revokedAt ? "revoked" : "active") : "none",
+  ].join(":");
+}
+export function deliveredInProjectionLineageKey(projection: DeliveredInDayProjection) {
+  return `${legacySourceLineageKey(projection)}|site-menu:${siteMenuLineageKey(projection)}`;
+}
+const sourceLineageKey = deliveredInProjectionLineageKey;
 function projectionSemanticValue(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(projectionSemanticValue);
   if (!value || typeof value !== "object") return value;
@@ -52,6 +71,10 @@ function sourceSequenceForProjection(projection: DeliveredInDayProjection) {
   return cpuSequence ? Number(cpuSequence) : projection.sourceLineage.menu.version;
 }
 function entryLineageKey(entry: DeliveredInProjectionIndexEntry) { return entry.sourceLineageKey || `${entry.publicationId || ""}|${entry.sourceVersion}`; }
+function projectionLineageMatches(entry: DeliveredInProjectionIndexEntry, projection: DeliveredInDayProjection) {
+  const key = entryLineageKey(entry);
+  return key === sourceLineageKey(projection) || key === legacySourceLineageKey(projection);
+}
 function compareIndexEntry(current: DeliveredInProjectionIndexEntry | undefined, incoming: DeliveredInProjectionIndexEntry) {
   if (!current) return "advance" as const;
   if (current.sourceSequence !== undefined && incoming.sourceSequence !== undefined && incoming.sourceSequence !== current.sourceSequence) return incoming.sourceSequence < current.sourceSequence ? "superseded" as const : "advance" as const;
@@ -128,7 +151,7 @@ export async function readDeliveredInProjectionForReconciliation(oplocId: string
   if (projection.oplocId !== oplocId || projection.serviceDate !== serviceDate) throw new Error("Delivered-In projection package identity does not match its requested scope.");
   if (head.entry.packageObjectName && head.entry.packageObjectName !== head.manifest.objectName) throw new Error("Delivered-In projection day head does not match its package object.");
   if (head.entry.contentHash && head.entry.contentHash !== head.manifest.contentHash) throw new Error("Delivered-In projection day head does not match its package hash.");
-  if (entryLineageKey(head.entry) !== sourceLineageKey(projection)) throw new Error("Delivered-In projection day head does not match its package lineage.");
+  if (!projectionLineageMatches(head.entry, projection)) throw new Error("Delivered-In projection day head does not match its package lineage.");
   return { manifest: head.manifest, value: projection, semanticHash: deliveredInProjectionSemanticHash(projection), entry: head.entry };
 }
 
@@ -177,7 +200,7 @@ export async function writeDeliveredInProjection(projection: DeliveredInDayProje
 async function writeHostedProjection(store: ReadPackageStore, projection: DeliveredInDayProjection, versioned: DeliveredInDayProjection, encoded: { manifest: ReadPackageManifest; bytes: Uint8Array }, invalidation?: DeliveredInInvalidation) {
   const semanticHash = deliveredInProjectionSemanticHash(projection);
   const existing = await readDeliveredInProjectionForReconciliation(projection.oplocId, projection.serviceDate);
-  const reusable = existing && entryLineageKey(existing.entry) === sourceLineageKey(projection) && existing.semanticHash === semanticHash ? existing : undefined;
+  const reusable = existing && projectionLineageMatches(existing.entry, projection) && existing.semanticHash === semanticHash ? existing : undefined;
   const promotedManifest = reusable?.manifest || encoded.manifest;
   const promotedProjection = reusable?.value || versioned;
   if (!reusable) await persistVerifiedObject<DeliveredInDayProjection>(store, encoded);
