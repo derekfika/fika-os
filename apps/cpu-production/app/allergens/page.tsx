@@ -178,8 +178,9 @@ export default function CpuAllergenReviewPage() {
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ action: "save-matrix", orderId: order.canonicalId, expectedLineage }),
         });
-        const body = await response.json().catch(() => undefined) as { error?: { message?: string } } | undefined;
-        if (!response.ok) failures.push(`${destination(order)}: ${body?.error?.message || "The OPLOC release retry failed."}`);
+        const body = await response.json().catch(() => undefined) as { error?: { message?: string }; materializationDelivery?: { status?: string } | null } | undefined;
+        const deliveryStatus = body?.materializationDelivery?.status;
+        if (!response.ok || (deliveryStatus && deliveryStatus !== "delivered")) failures.push(`${destination(order)}: ${body?.error?.message || (deliveryStatus ? `Materialisation delivery ${deliveryStatus}.` : "The OPLOC release retry failed.")}`);
       }
       const final = await refreshReviewStatus();
       const currentCount = final.statuses.filter(status => status.matrixStatus === "ready").length;

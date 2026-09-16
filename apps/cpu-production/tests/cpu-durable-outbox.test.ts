@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildCpuPropagationEvents, deliverCpuPropagation, enqueueCpuDelivery, enqueueCpuPropagation, listCpuOutboxForTests, resetCpuOutboxForTests, recoverCpuPropagation } from "../lib/cpu-durable-outbox";
+import { buildCpuPropagationEvents, deliverCpuPropagation, enqueueCpuDelivery, enqueueCpuPropagation, listCpuOutboxForTests, replayCpuPropagation, resetCpuOutboxForTests, recoverCpuPropagation, seedCpuOutboxForTests } from "../lib/cpu-durable-outbox";
 import { cpuReleaseMaterializationEventId } from "../lib/cpu-release-fanout";
 
 const input = {
@@ -42,6 +42,48 @@ test("failed CPU delivery remains observable and bounded recovery retries it", a
   } finally {
     globalThis.fetch = previousFetch;
   }
+});
+
+test("explicit materialization replay resets a failed event and invokes its endpoint immediately", async () => {
+  resetCpuOutboxForTests();
+  const previousFetch = globalThis.fetch;
+  const previousBase = process.env.CPU_PUBLIC_BASE_URL;
+  let calls = 0;
+  let requestedUrl = "";
+  process.env.CPU_PUBLIC_BASE_URL = "http://cpu.test";
+  globalThis.fetch = (async (input) => {
+    calls += 1;
+    requestedUrl = String(input);
+    return new Response(calls === 1 ? "failed" : JSON.stringify({ status: "materialized" }), { status: calls === 1 ? 503 : 200 });
+  }) as typeof fetch;
+  try {
+    const event = await enqueueCpuDelivery({ eventId: "cpu-allergen-materialize:release:oploc:haleon:order:haleon", sourceAggregateId: "release", sourceVersion: 1, occurredAt: "2026-09-14T09:00:00.000Z", consumer: "cpu-production", route: "/api/internal/cpu-release-materialize", body: { orderId: "order:haleon", releaseId: "release" } });
+    const failed = await deliverCpuPropagation(event.eventId, new Date("2026-09-14T09:00:00.000Z"));
+    assert.equal(failed.status, "failed");
+    const replayed = await replayCpuPropagation(event.eventId, new Date("2026-09-14T09:00:01.000Z"));
+    assert.equal(replayed?.eventId, event.eventId);
+    assert.equal(replayed?.delivery.status, "pending");
+    assert.equal(replayed?.delivery.nextEligibleAt, "2026-09-14T09:00:01.000Z");
+    const delivered = await deliverCpuPropagation(event.eventId, new Date("2026-09-14T09:00:01.000Z"));
+    assert.equal(delivered.status, "delivered");
+    assert.equal(calls, 2);
+    assert.equal(requestedUrl, "http://cpu.test/api/internal/cpu-release-materialize");
+    assert.equal(listCpuOutboxForTests().length, 1);
+  } finally {
+    globalThis.fetch = previousFetch;
+    if (previousBase === undefined) delete process.env.CPU_PUBLIC_BASE_URL; else process.env.CPU_PUBLIC_BASE_URL = previousBase;
+  }
+});
+
+test("explicit replay also reopens a dead-lettered materialization without creating an event", async () => {
+  resetCpuOutboxForTests();
+  const event = await enqueueCpuDelivery({ eventId: "cpu-allergen-materialize:release:oploc:xchange:order:xchange", sourceAggregateId: "release", sourceVersion: 1, occurredAt: "2026-09-14T09:00:00.000Z", consumer: "cpu-production", route: "/api/internal/cpu-release-materialize", body: { orderId: "order:xchange", releaseId: "release" } });
+  seedCpuOutboxForTests([{ ...event, delivery: { ...event.delivery, status: "dead-letter", attempts: 10, deadLetteredAt: "2026-09-14T09:01:00.000Z" } }]);
+  const replayed = await replayCpuPropagation(event.eventId, new Date("2026-09-14T09:02:00.000Z"));
+  assert.equal(replayed?.eventId, event.eventId);
+  assert.equal(replayed?.delivery.status, "pending");
+  assert.equal(replayed?.delivery.attempts, 0);
+  assert.equal(listCpuOutboxForTests().length, 1);
 });
 
 test("release delivery identity includes the independent OPLOC scope", async () => {

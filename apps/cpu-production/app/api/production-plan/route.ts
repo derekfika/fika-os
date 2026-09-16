@@ -17,7 +17,7 @@ import { recordDeliveredInReadBudget } from "../../../lib/delivered-in-read-budg
 import { recordDataAccess, withDataTrace } from "@fika/server-shared/data-source-meter-server";
 import { rebuildCpuReviewPackage } from "../../../lib/cpu-review-package";
 import { buildCpuAllergenReleaseEvent, eventTypeForConsumers, notifyCpuConsumerInvalidations, notifyDeliveredInAllergenRelease } from "../../../lib/cpu-consumer-invalidation";
-import { deliverCpuPropagation } from "../../../lib/cpu-durable-outbox";
+import { deliverCpuPropagation, replayCpuPropagation } from "../../../lib/cpu-durable-outbox";
 import { allergenMatrixContentHash, buildCpuAllergenRelease, revokeCpuAllergenRelease } from "../../../lib/cpu-allergen-release";
 import { cpuReleaseMaterializationEventId } from "../../../lib/cpu-release-fanout";
 
@@ -501,7 +501,11 @@ async function handlePost(request: NextRequest) {
     }
     // A duplicate command has already staged its durable work. Replaying the
     // HTTP request must not synchronously repeat delivery or consumer effects.
-    if (materializationDelivery && event && !event.duplicate) await deliverCpuPropagation(materializationDelivery.eventId);
+    let materializationResult: { eventId: string; status: string } | undefined;
+    if (materializationDelivery && event) {
+      if (command.action === "save-matrix") await replayCpuPropagation(materializationDelivery.eventId);
+      materializationResult = await deliverCpuPropagation(materializationDelivery.eventId);
+    }
     if (releaseForEvent && !event?.duplicate) for (const oplocId of releaseOplocIds) await notifyDeliveredInAllergenRelease({ eventType: releaseEventType, release: releaseForEvent, oplocId });
     recordDeliveredInReadBudget({ stage: "plan_post_mutation", canonicalOrderDocs: changedOrder ? 1 : 0, planDocs: 1, selectedIds: 1 });
     if (changedOrder?.serviceDate && !event?.duplicate) {
@@ -511,7 +515,7 @@ async function handlePost(request: NextRequest) {
       await notifyCpuConsumerInvalidations({ eventId: `cpu-change:${plan.id}:v${event!.sequence}`, sourceEntityId: plan.id, serviceDate: changedOrder.serviceDate, sourceVersion: event!.sequence, changedAt: timestamp, changeType: eventTypeForConsumers(command.action), order: changedOrder, logistics: false, ...(review ? { reviewManifest: review.manifest } : {}) });
     }
     const matrixStatus = plan.matrixArtifact && changedOrder && currentAllergenReleaseMatchesOrder(plan.currentAllergenRelease, changedOrder, plan.menuItems) ? "ready" : plan.signatures?.some(signature => signature.role === "production_chef") && plan.signatures?.some(signature => signature.role === "head_chef_site_manager") ? changedOrder && !matrixDriveConfiguration(changedOrder).enabled ? "not_configured" : "generating" : undefined;
-    return NextResponse.json({ plan, matrixArtifact: plan.matrixArtifact ?? null, signatures: plan.signatures ?? null, matrixStatus, notification: notification || (plan.status === "planned" ? { title: "New production plan ready for menu generation.", orderId: plan.orderId } : undefined) });
+    return NextResponse.json({ plan, matrixArtifact: plan.matrixArtifact ?? null, signatures: plan.signatures ?? null, matrixStatus, materializationDelivery: materializationResult || null, notification: notification || (plan.status === "planned" ? { title: "New production plan ready for menu generation.", orderId: plan.orderId } : undefined) });
   } catch (error) { return errorResponse(error); }
 }
 
