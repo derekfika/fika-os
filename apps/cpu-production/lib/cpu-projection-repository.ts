@@ -3,7 +3,7 @@ import type { DocumentReference, Transaction } from "firebase-admin/firestore";
 import type { ProductionPlan } from "../app/lib/production-plan";
 import { recordDataAccess } from "@fika/server-shared/data-source-meter-server";
 import { canonicalJson, sha256 } from "@fika/server-shared/read-package";
-import { stageCpuPropagation, type CpuConsumerInvalidationInput, type CpuDurableDeliveryInput } from "./cpu-durable-outbox";
+import { stageCpuDeliveries, stageCpuPropagation, type CpuConsumerInvalidationInput, type CpuDurableDeliveryInput } from "./cpu-durable-outbox";
 export const cpuPlans = () => db.collection("fikaCpuProductionPlansV1");
 export const cpuChanges = () => db.collection("fikaCpuProductionChangesV1");
 export const cpuCursor = () => db.collection("fikaCpuProductionChangeCursorV1");
@@ -32,6 +32,7 @@ export async function appendCpuChangeInTransaction<T extends CpuChangeWithPropag
   if (receipt?.exists) {
     const existing = receipt.data()?.event as Omit<T, "propagation"> & { sequence: number };
     if (propagation) await stageCpuPropagation(transaction, { ...propagation, eventId: propagation.eventId || `cpu-change:${propagation.sourceEntityId}:v${existing.sequence}`, sourceVersion: existing.sequence }, deliveries);
+    else if (deliveries?.length) await stageCpuDeliveries(transaction, deliveries);
     return existing;
   }
   const cursorRef = cpuCursor().doc("global");
@@ -40,6 +41,7 @@ export async function appendCpuChangeInTransaction<T extends CpuChangeWithPropag
   const sequence = Number(current.data()?.sequence || 0) + 1;
   const event = { ...eventInput, sequence } as Omit<T, "propagation"> & { sequence: number };
   if (propagation) await stageCpuPropagation(transaction, { ...propagation, eventId: propagation.eventId || `cpu-change:${propagation.sourceEntityId}:v${sequence}`, sourceVersion: sequence }, deliveries);
+  else if (deliveries?.length) await stageCpuDeliveries(transaction, deliveries);
   transaction.set(cursorRef, { sequence });
   transaction.create(cpuChanges().doc(String(sequence).padStart(20, "0")), event);
   if (receiptRef) transaction.create(receiptRef, { idempotencyKey, event });

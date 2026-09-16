@@ -125,6 +125,16 @@ export function buildCpuPropagationEvents(input: CpuConsumerInvalidationInput): 
 
 function refs(events: CpuOutboxEvent[]) { return events.map(event => db.collection(CPU_PROPAGATION_OUTBOX_COLLECTION).doc(event.eventId)); }
 
+async function stageCpuEvents(transaction: Transaction, events: CpuOutboxEvent[]) {
+  if (!events.length) return events;
+  const allRefs = refs(events);
+  const documents = await Promise.all(allRefs.map(ref => transaction.get(ref)));
+  for (let index = 0; index < events.length; index += 1) {
+    if (!documents[index].exists) transaction.create(allRefs[index], outboxRecord(events[index]));
+  }
+  return events;
+}
+
 async function persistCpuEvents(events: CpuOutboxEvent[]) {
   if (useMemoryOutbox()) {
     for (const event of events) if (!memoryOutbox.has(event.eventId)) { memoryOutbox.set(event.eventId, event); trackMemoryEligibility(event); }
@@ -142,13 +152,12 @@ async function persistCpuEvents(events: CpuOutboxEvent[]) {
 export async function stageCpuPropagation(transaction: Transaction, input: CpuConsumerInvalidationInput, extraDeliveries: CpuDurableDeliveryInput[] = []) {
   const events = buildCpuPropagationEvents(input);
   const extraEvents = extraDeliveries.map(cpuDeliveryEvent);
-  const allEvents = [...events, ...extraEvents];
-  const allRefs = refs(allEvents);
-  const documents = await Promise.all(allRefs.map(ref => transaction.get(ref)));
-  for (let index = 0; index < allEvents.length; index += 1) {
-    if (!documents[index].exists) transaction.create(allRefs[index], outboxRecord(allEvents[index]));
-  }
-  return allEvents;
+  return stageCpuEvents(transaction, [...events, ...extraEvents]);
+}
+
+/** Stage standalone delivery obligations without fabricating a propagation event. */
+export async function stageCpuDeliveries(transaction: Transaction, deliveries: CpuDurableDeliveryInput[]) {
+  return stageCpuEvents(transaction, deliveries.map(cpuDeliveryEvent));
 }
 
 function cpuDeliveryEvent(input: CpuDurableDeliveryInput): CpuOutboxEvent {
