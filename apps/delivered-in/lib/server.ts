@@ -196,10 +196,10 @@ export async function projectionHead(request: NextRequest, requestedOplocId?: st
   const selectedOplocId = requestedOplocId || (access.oplocIds.length === 1 ? access.oplocIds[0] : undefined);
   if (!selectedOplocId) return { access, sites, selectedOplocId: undefined, projectionState: "unavailable" as const, entries: [], withdrawnServiceDates: [], unavailableServiceDates: [] };
   assertAuthorisedOploc(access, selectedOplocId);
-  let window = await readProjectionIndexWindow(selectedOplocId);
+  let window = await readProjectionIndexWindow(selectedOplocId, operationalDateLondon(), requestedWeek);
   if (requestedWeek && !window.weeks.some(week => week.weekCommencing === requestedWeek)) {
     await recoverRequestedWeek(request, selectedOplocId, requestedWeek);
-    window = await readProjectionIndexWindow(selectedOplocId);
+    window = await readProjectionIndexWindow(selectedOplocId, operationalDateLondon(), requestedWeek);
   }
   const weeks = requestedWeek && !window.weeks.some(week => week.weekCommencing === requestedWeek) ? [...window.weeks, emptyWeek(requestedWeek)] : window.weeks;
   return { access, sites, selectedOplocId, projectionState: window.state, weeks, entries: window.entries, withdrawnServiceDates: window.withdrawnServiceDates, unavailableServiceDates: window.unavailableServiceDates };
@@ -244,8 +244,8 @@ async function readProjectionWindow(oplocId: string, asOf = operationalDateLondo
   return { days, withdrawnServiceDates, unavailableServiceDates: allUnavailable, state };
 }
 
-async function readProjectionIndexWindow(oplocId: string, asOf = operationalDateLondon()) {
-  const index = await readDeliveredInProjectionIndex(oplocId).catch(() => undefined);
+async function readProjectionIndexWindow(oplocId: string, asOf = operationalDateLondon(), requestedWeek?: string) {
+  const index = await readDeliveredInProjectionIndex(oplocId, requestedWeek).catch(() => undefined);
   if (!index) return { entries: [], weeks: [], withdrawnServiceDates: [], unavailableServiceDates: [], state: "unavailable" as const };
   const inWindow = boundedProjectionIndexEntries(index.value.entries, asOf);
   const withdrawnServiceDates = inWindow.filter(entry => entry.state === "withdrawn").map(entry => entry.serviceDate);

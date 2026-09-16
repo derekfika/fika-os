@@ -18,6 +18,7 @@ export type SiteMenuArtifact = {
   sourceReleaseId?: string;
   sourceReleaseVersion?: string;
   sourcePacketHash?: string;
+  deliveryId?: string;
   revokedAt?: string;
   reprintRequired?: boolean;
 };

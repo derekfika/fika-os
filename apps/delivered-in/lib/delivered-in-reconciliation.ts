@@ -18,7 +18,7 @@ async function menuForDate(request: NextRequest, oplocId: string, serviceDate: s
     for (const publication of publications) {
       const sourceDay = publication.days.filter(candidate => candidate.date === serviceDate).sort((a, b) => b.version - a.version)[0];
       if (!sourceDay) continue;
-      if (sourceDay.status === "withdrawn") return { withdrawn: true as const };
+      if (sourceDay.status === "withdrawn") return { withdrawn: true as const, sourceVersion: `${sourceDay.publicationDayId}:v${sourceDay.version}:${sourceDay.contentHash}`, sourceSequence: sourceDay.version, sourceLineageKey: [publication.publicationId, sourceDay.publicationDayId, sourceDay.version, sourceDay.contentHash, "none"].join("|") };
       const projected = projectPublishedWeeks([publication], oplocId, new Set([oplocId]), serviceDate).find(week => week.days.some(candidate => candidate.date === serviceDate));
       if (projected) return { day: projected.days.find(candidate => candidate.date === serviceDate), withdrawn: false as const };
     }
@@ -30,7 +30,7 @@ async function menuForDate(request: NextRequest, oplocId: string, serviceDate: s
   for (const publication of body.publications || []) {
     const sourceDay = publication.days.filter(candidate => candidate.date === serviceDate).sort((a, b) => b.version - a.version)[0];
     if (!sourceDay) continue;
-    if (sourceDay.status === "withdrawn") return { withdrawn: true as const };
+    if (sourceDay.status === "withdrawn") return { withdrawn: true as const, sourceVersion: `${sourceDay.publicationDayId}:v${sourceDay.version}:${sourceDay.contentHash}`, sourceSequence: sourceDay.version, sourceLineageKey: [publication.publicationId, sourceDay.publicationDayId, sourceDay.version, sourceDay.contentHash, "none"].join("|") };
     const projected = projectPublishedWeeks([publication], oplocId, new Set([oplocId]), serviceDate).find(week => week.days.some(candidate => candidate.date === serviceDate));
     if (projected) return { day: projected.days.find(candidate => candidate.date === serviceDate), withdrawn: false as const };
   }
@@ -42,7 +42,10 @@ export async function reconcileDeliveredInDay(request: NextRequest, oplocId: str
   const site: Site = resolved.sites.find(candidate => candidate.oplocId === oplocId) || { oplocId, label: oplocId };
   const existing = await readDeliveredInProjection(oplocId, serviceDate).catch(() => undefined);
   const day = await menuForDate(request, oplocId, serviceDate);
-  if (!day || day.withdrawn) { await withdrawDeliveredInProjectionDay(oplocId, serviceDate, day ? "menu:withdrawn" : "menu:withdrawn-or-missing"); return { status: "withdrawn", serviceDate, oplocId }; }
+  if (!day || day.withdrawn) {
+    await withdrawDeliveredInProjectionDay(oplocId, serviceDate, day?.sourceVersion || "menu:withdrawn-or-missing", { sourceSequence: day?.sourceSequence, sourceLineageKey: day?.sourceLineageKey });
+    return { status: "withdrawn", serviceDate, oplocId };
+  }
   if (!day.day) return { status: "missing", serviceDate, oplocId };
   const candidate = await buildDeliveredInDayProjection({ request, site, day: day.day, loadReview: options.loadReview || cpuReviewForDay, governed: true });
   const comparable = (value: unknown) => JSON.stringify(value, (_key, item) => _key === "generatedAt" || _key === "projectionVersion" ? undefined : item);

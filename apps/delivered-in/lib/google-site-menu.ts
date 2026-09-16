@@ -3,6 +3,7 @@ import type { ProjectedDay, Site } from "./projection";
 import { groupSiteMenuEntries, siteMenuFileName, type SiteMenuArtifact } from "./site-menu";
 import { CANONICAL_ALLERGEN_COLUMNS } from "./allergen-columns";
 import { driveAccessToken, resolveDriveOwner } from "@fika/server-shared/drive-owner";
+import { stableDocumentId } from "@fika/server-shared/stable-document-id";
 
 type OAuthClient = { installed?: { client_id: string; client_secret: string; token_uri?: string } };
 type OAuthToken = { access_token?: string; refresh_token?: string; expiry_date?: number; token_type?: string };
@@ -57,14 +58,23 @@ export function buildDeliveredInMenuRequests(day: ProjectedDay, site: Site, pres
   return requests;
 }
 
-export async function createGoogleSiteMenu(day: ProjectedDay, site: Site, generatedBy: string, existingFileId?: string): Promise<SiteMenuArtifact> {
+export async function createGoogleSiteMenu(day: ProjectedDay, site: Site, generatedBy: string, existingFileId?: string, deliveryId?: string): Promise<SiteMenuArtifact> {
   const templateId = resourceId(process.env.GOOGLE_DELIVERED_IN_TEMPLATE_ID); const folderId = resourceId(process.env.GOOGLE_DELIVERED_IN_OUTPUT_FOLDER_ID || process.env.GOOGLE_DRIVE_ROOT_FOLDER_ID_APP_DELIVERED_IN);
   if (!templateId || !folderId) throw new Error("Delivered-In Google Slides template and output folder are not configured.");
   const token = await accessToken(); const headers = { Authorization: `Bearer ${token}`, "content-type": "application/json" }; const outputFolderId = await weekFolderId(folderId, day.weekCommencing || "", headers);
-  const fileName = siteMenuFileName(site.label, day); const copy = await json<{ id: string; webViewLink?: string }>(await googleFetch(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(templateId)}/copy?supportsAllDrives=true&fields=id,webViewLink`, { method: "POST", headers, body: JSON.stringify({ name: fileName, parents: [outputFolderId] }) }, "Delivered-In Slides template copy"));
+  const fileName = siteMenuFileName(site.label, day); const stableDeliveryId = deliveryId ? stableDocumentId(`${site.oplocId}:${deliveryId}`) : undefined;
+  let copy: { id: string; webViewLink?: string; appProperties?: Record<string, string> } | undefined;
+  if (stableDeliveryId) {
+    const query = `appProperties has { key='fikaDeliveryId' and value='${stableDeliveryId}' } and trashed = false`;
+    const existing = await json<{ files?: Array<{ id: string; webViewLink?: string; appProperties?: Record<string, string> }> }>(await googleFetch(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(query)}&spaces=drive&fields=files(id,webViewLink,appProperties)&pageSize=1`, { headers }, "Delivered-In delivery artifact lookup"));
+    copy = existing.files?.[0];
+  }
+  if (!copy) copy = await json<{ id: string; webViewLink?: string }>(await googleFetch(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(templateId)}/copy?supportsAllDrives=true&fields=id,webViewLink`, { method: "POST", headers, body: JSON.stringify({ name: fileName, parents: [outputFolderId], ...(stableDeliveryId ? { appProperties: { fikaDeliveryId: stableDeliveryId, fikaMaterializationStatus: "pending" } } : {}) }) }, "Delivered-In Slides template copy"));
+  const release = (day as ProjectedDay & { sourceLineage?: { cpu?: { releaseId?: string; releaseVersion?: string; contentHash?: string } } }).sourceLineage?.cpu;
+  if (copy.appProperties?.fikaMaterializationStatus === "ready") return { artifactId: `delivered-in-menu:${site.oplocId}:${day.sourceDayId}:${stableDeliveryId || day.contentHash}`, oplocId: site.oplocId, sourceDayId: day.sourceDayId, sourcePublicationDayId: day.publicationDayId, sourceVersion: day.version, sourceContentHash: day.contentHash, generatedAt: new Date().toISOString(), generatedBy, driveFileId: copy.id, driveUrl: copy.webViewLink || `https://docs.google.com/presentation/d/${copy.id}/edit`, fileName, ...(deliveryId ? { deliveryId } : {}), ...(release?.releaseId ? { sourceReleaseId: release.releaseId } : {}), ...(release?.releaseVersion ? { sourceReleaseVersion: release.releaseVersion } : {}), ...(release?.contentHash ? { sourcePacketHash: release.contentHash } : {}) };
   const presentation = await json<Presentation>(await googleFetch(`https://slides.googleapis.com/v1/presentations/${encodeURIComponent(copy.id)}`, { headers }, "Delivered-In Slides template read"));
   await json(await googleFetch(`https://slides.googleapis.com/v1/presentations/${encodeURIComponent(copy.id)}:batchUpdate`, { method: "POST", headers, body: JSON.stringify({ requests: buildDeliveredInMenuRequests(day, site, presentation) }) }, "Delivered-In Slides generation"));
+  if (stableDeliveryId) await googleFetch(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(copy.id)}?supportsAllDrives=true`, { method: "PATCH", headers, body: JSON.stringify({ appProperties: { fikaDeliveryId: stableDeliveryId, fikaMaterializationStatus: "ready" } }) }, "Delivered-In delivery artifact certification");
   const driveUrl = copy.webViewLink || `https://docs.google.com/presentation/d/${copy.id}/edit`;
-  const release = (day as ProjectedDay & { sourceLineage?: { cpu?: { releaseId?: string; releaseVersion?: string; contentHash?: string } } }).sourceLineage?.cpu;
-  return { artifactId: `delivered-in-menu:${site.oplocId}:${day.sourceDayId}:${Date.now()}`, oplocId: site.oplocId, sourceDayId: day.sourceDayId, sourcePublicationDayId: day.publicationDayId, sourceVersion: day.version, sourceContentHash: day.contentHash, generatedAt: new Date().toISOString(), generatedBy, driveFileId: copy.id, driveUrl, fileName, ...(release?.releaseId ? { sourceReleaseId: release.releaseId } : {}), ...(release?.releaseVersion ? { sourceReleaseVersion: release.releaseVersion } : {}), ...(release?.contentHash ? { sourcePacketHash: release.contentHash } : {}) };
+  return { artifactId: `delivered-in-menu:${site.oplocId}:${day.sourceDayId}:${stableDeliveryId || day.contentHash}`, oplocId: site.oplocId, sourceDayId: day.sourceDayId, sourcePublicationDayId: day.publicationDayId, sourceVersion: day.version, sourceContentHash: day.contentHash, generatedAt: new Date().toISOString(), generatedBy, driveFileId: copy.id, driveUrl, fileName, ...(deliveryId ? { deliveryId } : {}), ...(release?.releaseId ? { sourceReleaseId: release.releaseId } : {}), ...(release?.releaseVersion ? { sourceReleaseVersion: release.releaseVersion } : {}), ...(release?.contentHash ? { sourcePacketHash: release.contentHash } : {}) };
 }

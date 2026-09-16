@@ -187,6 +187,17 @@ test("Delivered-In Google generation reuses DWD in hosted mode and local OAuth o
   assert.match(google, /driveAccessToken\(owner\)/);
   assert.match(owner, /appId: "cpu-production" \| "delivered-in"/);
   assert.doesNotMatch(google, /process\.env\.GOOGLE_OAUTH_CLIENT_FILE/);
+  assert.match(google, /fikaDeliveryId/);
+  assert.match(google, /fikaMaterializationStatus/);
+});
+
+test("Delivered-In CPU release application has a durable replay receipt and stable delivery identity", async () => {
+  const event = await readFile(new URL("../lib/cpu-release-events.ts", import.meta.url), "utf8");
+  const receipt = await readFile(new URL("../lib/cpu-release-receipts.ts", import.meta.url), "utf8");
+  assert.match(event, /beginCpuReleaseReceipt/);
+  assert.match(event, /completeCpuReleaseReceipt/);
+  assert.match(receipt, /fikaDeliveredInCpuReleaseReceiptsV1/);
+  assert.match(receipt, /fikaDeliveredInCpuReleaseHeadsV1/);
 });
 
 test("Delivered-In production dependency graph has no sibling application source imports", async () => {

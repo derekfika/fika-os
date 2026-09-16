@@ -13,6 +13,6 @@ async function post(request: NextRequest) {
   if (!allowed(request)) return NextResponse.json({ error: { message: "Internal authentication is required." } }, { status: 401 });
   const body = await request.json().catch(() => undefined);
   if (!valid(body)) return NextResponse.json({ error: { message: "A bounded CPU release event is required." } }, { status: 422 });
-  try { return NextResponse.json(await applyCpuReleaseEvent(request, body)); } catch (error) { return NextResponse.json({ error: { message: error instanceof Error ? error.message : "CPU release event could not be applied." } }, { status: Number((error as { status?: number }).status) || 502 }); }
+  try { return NextResponse.json(await applyCpuReleaseEvent(request, { ...body, deliveryId: request.headers.get("x-fika-delivery-id") || body.eventId })); } catch (error) { return NextResponse.json({ error: { message: error instanceof Error ? error.message : "CPU release event could not be applied." } }, { status: Number((error as { status?: number }).status) || 502 }); }
 }
 export async function POST(request: NextRequest) { return withDataTrace({ app: "delivered-in", action: "delivered-in.cpu-release-event", path: request.nextUrl.pathname, requestId: request.headers.get("x-request-id") || undefined }, () => post(request)); }

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
-import { mergeProjectionIndex, projectionIndexManifestKey, DELIVERED_IN_INDEX_DATASET, type DeliveredInProjectionIndex, type DeliveredInProjectionIndexEntry } from "../lib/delivered-in-projection-store";
+import { compareDeliveredInProjectionIndexEntry, mergeProjectionIndex, projectionIndexManifestKey, DELIVERED_IN_INDEX_DATASET, type DeliveredInProjectionIndex, type DeliveredInProjectionIndexEntry } from "../lib/delivered-in-projection-store";
 import { boundedProjectionIndexEntries, DELIVERED_IN_MAX_DAY_PACKAGES, DELIVERED_IN_PROJECTION_HORIZON_DAYS, projectionWindowBounds } from "../lib/server";
 
 test("projection indexes are OPLOC-scoped and contain metadata, not projection bodies", () => {
@@ -17,7 +17,7 @@ test("projection indexes are OPLOC-scoped and contain metadata, not projection b
 
 test("normal discovery reads the OPLOC index with the shared six-week operational horizon", async () => {
   const server = await readFile(new URL("../lib/server.ts", import.meta.url), "utf8");
-  assert.match(server, /readDeliveredInProjectionIndex\(oplocId\)/);
+  assert.match(server, /readDeliveredInProjectionIndex\(oplocId(?:, requestedWeek)?\)/);
   assert.match(server, /boundedProjectionIndexEntries/);
   assert.equal(DELIVERED_IN_PROJECTION_HORIZON_DAYS, 42);
   assert.deepEqual(projectionWindowBounds("2026-09-01"), { from: "2026-08-31", to: "2026-10-12" });
@@ -45,4 +45,30 @@ test("index merge replaces one day without changing other OPLOC/day metadata", (
   const second = { ...first, serviceDate: "2026-08-25", contentHash: "b" };
   const replaced = mergeProjectionIndex({ oplocId: first.oplocId, entries: [first, second] }, { ...first, serviceDate: first.serviceDate, projectionVersion: 2, packageVersion: 2, contentHash: "c" });
   assert.deepEqual(replaced.entries.map(entry => [entry.serviceDate, entry.contentHash]), [["2026-08-24", "c"], ["2026-08-25", "b"]]);
+});
+
+test("index lineage compare is idempotent, fail-closed, and withdrawal-safe", () => {
+  const current = { ...indexEntry("2026-08-24"), sourceSequence: 8, sourceLineageKey: "publication-day:8|cpu:8" };
+  assert.equal(compareDeliveredInProjectionIndexEntry(current, { ...current }).toString(), "idempotent");
+  assert.throws(() => compareDeliveredInProjectionIndexEntry(current, { ...current, contentHash: "different" }), /conflicting package content/);
+  const withdrawn = { ...current, state: "withdrawn" as const, freshness: "current" as const, completeness: "missing" as const };
+  assert.equal(compareDeliveredInProjectionIndexEntry(withdrawn, current), "superseded");
+  assert.equal(compareDeliveredInProjectionIndexEntry(withdrawn, { ...current, sourceSequence: 9, sourceLineageKey: "publication-day:9|cpu:9" }), "advance");
+});
+
+test("hosted projection promotion is a transaction over the day head and OPLOC index", async () => {
+  const store = await readFile(new URL("../lib/delivered-in-projection-store.ts", import.meta.url), "utf8");
+  assert.match(store, /writeHostedProjection/);
+  assert.match(store, /transaction\.get\(dayRef\)/);
+  assert.match(store, /transaction\.get\(indexRef\)/);
+  assert.match(store, /persistVerifiedObject/);
+  assert.match(store, /projectionHeads\(\)/);
+});
+
+test("hosted index heads are bounded to one OPLOC/week rather than all historical days", async () => {
+  const store = await readFile(new URL("../lib/delivered-in-projection-store.ts", import.meta.url), "utf8");
+  assert.match(store, /indexHeadRef = \(oplocId: string, weekCommencing: string\)/);
+  assert.match(store, /stableDocumentId\(`\$\{oplocId\}:\$\{mondayOf\(weekCommencing\)\}`\)/);
+  assert.match(store, /Array\.from\(\{ length: 7 \}/);
+  assert.doesNotMatch(store, /projectionIndexHeads\(\)\.doc\(stableDocumentId\(oplocId\)\)/);
 });
