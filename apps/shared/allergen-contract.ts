@@ -3,7 +3,8 @@ export const CANONICAL_ALLERGEN_KEYS = [
   "celery", "shellfish", "eggs", "milk", "mustard", "lupin", "sulphites",
 ] as const;
 export type CanonicalAllergenKey = (typeof CANONICAL_ALLERGEN_KEYS)[number];
-export type OperationalAllergenState = "clear" | "contains" | "may_contain" | "unrecorded";
+export const OPERATIONAL_ALLERGEN_STATES = ["clear", "contains", "may_contain", "unrecorded"] as const;
+export type OperationalAllergenState = (typeof OPERATIONAL_ALLERGEN_STATES)[number];
 export type CanonicalAllergenMap = Record<string, OperationalAllergenState>;
 export const CANONICAL_ALLERGEN_COLUMNS = [
   ["no_key_allergens", "No key allergens"], ["peanuts", "Peanuts"], ["tree_nuts", "Tree nuts"],

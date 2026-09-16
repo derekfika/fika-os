@@ -39,7 +39,7 @@ export function deliveredInTotals(orders: ProductionOrder[]) {
   return { portions: related.reduce((sum, order) => sum + orderQuantity(order), 0), dishes: aggregateDeliveredIn(related).length, destinations: new Set(related.map(destination)).size };
 }
 
-function mergeAllergenState(current: OperationalAllergenState | undefined, next: string | undefined): OperationalAllergenState { if (current === "contains" || next === "contains") return "contains"; if (current === "may_contain" || next === "may_contain") return "may_contain"; return "clear"; }
+function mergeAllergenState(current: OperationalAllergenState | undefined, next: string | undefined): OperationalAllergenState { if (current === "contains" || next === "contains") return "contains"; if (current === "may_contain" || next === "may_contain") return "may_contain"; if (current === "unrecorded" || next === "unrecorded") return "unrecorded"; return "clear"; }
 function snapshotSignature(snapshot?: NonNullable<ProductionLine["approvedAllergenSnapshot"]>) { return snapshot ? JSON.stringify({ allergens: snapshot.allergens, mayContainNotes: snapshot.mayContainNotes || "", sourcePublicationDayId: snapshot.sourcePublicationDayId || "", sourceVersion: snapshot.sourceVersion || 0, sourceContentHash: snapshot.sourceContentHash || "" }) : ""; }
 function snapshotMismatch(current: NonNullable<ProductionLine["approvedAllergenSnapshot"]> | undefined, next: NonNullable<ProductionLine["approvedAllergenSnapshot"]> | undefined) { return Boolean(current && next && snapshotSignature(current) !== snapshotSignature(next)); }
 export function buildDeliveredInDishRows(orders: ProductionOrder[]): DeliveredInDishRow[] {

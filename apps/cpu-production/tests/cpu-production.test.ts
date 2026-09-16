@@ -39,6 +39,10 @@ const planRoute = readFileSync(
   new URL("../app/api/production-plan/route.ts", import.meta.url),
   "utf8",
 );
+const planCommandSchema = readFileSync(
+  new URL("../lib/production-plan-command-schema.ts", import.meta.url),
+  "utf8",
+);
 const projection = readFileSync(new URL("../lib/cpu-projection.ts", import.meta.url), "utf8");
 const allergenPage = readFileSync(new URL("../app/allergens/page.tsx", import.meta.url), "utf8");
 const allergenProjectionLoader = readFileSync(new URL("../app/lib/cpu-allergen-projection-loader.ts", import.meta.url), "utf8");
@@ -430,7 +434,7 @@ test("allergen checker uses the master-style purple header and four-state cells"
   assert.match(liana, /onPointerDown/);
   assert.match(liana, /Use your finger, stylus or mouse/);
   assert.match(liana, /planStatus !== "planned"/);
-  assert.match(planRoute, /mayContainNotes/);
+  assert.match(planCommandSchema, /mayContainNotes/);
   assert.match(planRoute, /allergen-matrix-signed/);
   assert.match(planRoute, /save-matrix/);
   assert.match(planRoute, /allergen-matrix-signature-complete/);

@@ -49,6 +49,13 @@ test("Delivered-In matrix keeps one row per dish and preserves contains/may-cont
   assert.equal(rows[0].snapshot?.allergens.mustard, "contains");
 });
 
+test("Delivered-In matrix preserves unrecorded instead of defaulting it to clear", () => {
+  const candidate = order("Haleon", 10);
+  candidate.lines[0].approvedAllergenSnapshot = { allergens: { milk: "unrecorded" } };
+  const rows = buildDeliveredInDishRows([candidate]);
+  assert.equal(rows[0].snapshot?.allergens.milk, "unrecorded");
+});
+
 test("published day fixture consolidates three dishes across two destination orders", () => {
   const make = (destinationLabel: string, destinationQuantity: number, index: number, allergens: Record<string, string>) => ({ ...order(destinationLabel, 0, `dish:${index}`), sourcePublicationDayId: "menu-publication: monday:v1", sourceContentHash: "hash:monday:v1", lines: [{ ...order(destinationLabel, 0, `dish:${index}`).lines[0], canonicalId: `${destinationLabel}:line:${index}`, sourceBookingLineId: `menu-entry:${index}`, sourceMenuItemId: `dish:${index}`, itemName: `Dish ${index}`, customerQuantity: destinationQuantity, approvedAllergenSnapshot: { allergens, sourcePublicationDayId: "menu-publication: monday:v1", sourceVersion: 1, sourceContentHash: "hash:monday:v1" }, allergenEvidenceStatus: "confirmed" as const }] });
   const orders = [make("Destination A", 10, 1, { milk: "contains" }), make("Destination A", 12, 2, { gluten: "contains", sesame: "may_contain" }), make("Destination A", 8, 3, { no_key_allergens: "contains" }), make("Destination B", 5, 1, { milk: "contains" }), make("Destination B", 6, 2, { gluten: "contains", sesame: "may_contain" }), make("Destination B", 4, 3, { no_key_allergens: "contains" })];
