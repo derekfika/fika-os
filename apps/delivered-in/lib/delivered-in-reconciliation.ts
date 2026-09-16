@@ -4,6 +4,7 @@ import { readDeliveredInProjection, readDeliveredInProjectionForReconciliation, 
 import { assertAuthorisedOploc, projectPublishedWeeks, type Site, type SourcePublication } from "./projection";
 import { readAuthoritativeMenuPublications, resolveAccess, cpuReviewForDay } from "./server";
 import { packetPublicationsForRange, readMenuPlanningWeekPackets, type MenuPlanningWeekPacket } from "./menu-planning-week-packet";
+import { GOVERNED_OPLOC_BY_ID } from "@fika/server-shared/governed-oplocs";
 
 const addDays = (date: string, days: number) => { const value = new Date(`${date}T00:00:00Z`); value.setUTCDate(value.getUTCDate() + days); return value.toISOString().slice(0, 10); };
 const mondayOf = (date: string) => { const value = new Date(`${date}T00:00:00Z`); const day = value.getUTCDay(); value.setUTCDate(value.getUTCDate() - (day === 0 ? 6 : day - 1)); return value.toISOString().slice(0, 10); };
@@ -12,7 +13,13 @@ type MenuResolutionOptions = {
   authoritativePublications?: SourcePublication[];
   readMenuPackets?: (fromWeek: string, toWeek: string) => Promise<MenuPlanningWeekPacket[]>;
   readAuthoritativePublications?: (request: NextRequest, fromWeek: string, toWeek: string) => Promise<SourcePublication[]>;
+  reconciliationContext?: DeliveredInReconciliationContext;
 };
+
+export type DeliveredInReconciliationContext =
+  | { mode: "interactive" }
+  | { mode: "internal"; oplocId: string; serviceDate: string };
+export type DeliveredInSystemReconciliationContext = Extract<DeliveredInReconciliationContext, { mode: "internal" }>;
 
 function menuResultForPublications(publications: SourcePublication[], oplocId: string, serviceDate: string) {
   for (const publication of publications) {
@@ -36,21 +43,32 @@ async function menuForDate(request: NextRequest, oplocId: string, serviceDate: s
     // requested date is omitted, resolve the bounded authoritative week.
     if (!packetResult.missing) return packetResult;
   }
+  if (options.reconciliationContext?.mode === "internal" && !options.readAuthoritativePublications) {
+    throw Object.assign(new Error(`The immutable Menu Planning week package is unavailable for bounded internal reconciliation of ${oplocId} on ${serviceDate}.`), { status: 503, code: "MENU_SOURCE_UNAVAILABLE" });
+  }
   return menuResultForPublications(await (options.readAuthoritativePublications || readAuthoritativeMenuPublications)(request, fromWeek, toWeek), oplocId, serviceDate);
 }
 
-export async function reconcileDeliveredInDay(request: NextRequest, oplocId: string, serviceDate: string, options: MenuResolutionOptions & { loadReview?: ReviewLoader; invalidation?: DeliveredInInvalidation } = {}) {
-  const resolved = await resolveAccess(request); assertAuthorisedOploc(resolved.access, oplocId);
-  const site: Site = resolved.sites.find(candidate => candidate.oplocId === oplocId) || { oplocId, label: oplocId };
+export async function reconcileDeliveredInDay(request: NextRequest, oplocId: string, serviceDate: string, options: MenuResolutionOptions & { loadReview?: ReviewLoader; invalidation?: DeliveredInInvalidation; reconciliationContext?: DeliveredInReconciliationContext } = {}) {
+  const context = options.reconciliationContext || { mode: "interactive" as const };
+  if (context.mode === "internal" && (context.oplocId !== oplocId || context.serviceDate !== serviceDate)) throw Object.assign(new Error("Bounded internal reconciliation scope does not match the requested OPLOC and service date."), { status: 409, code: "DELIVERED_IN_RECONCILIATION_SCOPE_MISMATCH" });
+  let selectedSite: Site;
+  if (context.mode === "interactive") {
+    const resolved = await resolveAccess(request);
+    assertAuthorisedOploc(resolved.access, oplocId);
+    selectedSite = resolved.sites.find(candidate => candidate.oplocId === oplocId) || { oplocId, label: oplocId };
+  } else {
+    selectedSite = { oplocId, label: GOVERNED_OPLOC_BY_ID.get(oplocId)?.label || oplocId };
+  }
   const existing = await readDeliveredInProjection(oplocId, serviceDate).catch(() => undefined);
   const existingForReconciliation = await readDeliveredInProjectionForReconciliation(oplocId, serviceDate);
-  const day = await menuForDate(request, oplocId, serviceDate, options);
+  const day = await menuForDate(request, oplocId, serviceDate, { ...options, reconciliationContext: context });
   if (day.withdrawn) {
     await withdrawDeliveredInProjectionDay(oplocId, serviceDate, day?.sourceVersion || "menu:withdrawn-or-missing", { sourceSequence: day?.sourceSequence, sourceLineageKey: day?.sourceLineageKey });
     return { status: "withdrawn", serviceDate, oplocId };
   }
   if (!day.day) return { status: "missing", serviceDate, oplocId };
-  const candidate = await buildDeliveredInDayProjection({ request, site, day: day.day, loadReview: options.loadReview || cpuReviewForDay, governed: true });
+  const candidate = await buildDeliveredInDayProjection({ request, site: selectedSite, day: day.day, loadReview: options.loadReview || cpuReviewForDay, governed: true });
   const comparable = (value: unknown) => JSON.stringify(value, (_key, item) => _key === "generatedAt" || _key === "projectionVersion" ? undefined : item);
   const sourceCertainty = candidate.sourceLineage.cpu.sourceBundleHash ? "CPU daily signed packet matched the Menu Planning source bundle hash." : "CPU daily signed packet metadata was not supplied.";
   if (existing && existing.value.state.completeness === "complete" && comparable(existing.value) === comparable(candidate)) return { status: "current", projection: existing.value, sourceCertainty };

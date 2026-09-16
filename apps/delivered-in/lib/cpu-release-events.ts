@@ -1,6 +1,6 @@
 import type { NextRequest } from "next/server";
 import { createGoogleSiteMenu, retireGoogleSiteMenu } from "./google-site-menu";
-import { reconcileDeliveredInDay } from "./delivered-in-reconciliation";
+import { reconcileDeliveredInDay, type DeliveredInSystemReconciliationContext } from "./delivered-in-reconciliation";
 import { invalidateDeliveredInProjection } from "./delivered-in-invalidation";
 import { latestSiteMenuArtifactHosted, revokeSiteMenuArtifactHosted, saveSiteMenuArtifactHosted } from "./site-menu-store";
 import { acknowledgeSafetyState, publishSafetyState, readAllergenSafetyState, revokeSafetyState, saveAllergenSafetyState } from "./allergen-safety-state";
@@ -40,7 +40,8 @@ function logCpuRelease(event: CpuReleaseEvent, phase: string, details: Record<st
 }
 
 /** Apply one replay-safe CPU release event for one bounded site/date scope. */
-export async function applyCpuReleaseEvent(request: NextRequest, event: CpuReleaseEvent) {
+export async function applyCpuReleaseEvent(request: NextRequest, event: CpuReleaseEvent, reconciliationContext: DeliveredInSystemReconciliationContext) {
+  if (reconciliationContext.oplocId !== event.oplocId || reconciliationContext.serviceDate !== event.serviceDate) throw Object.assign(new Error("Bounded CPU release reconciliation scope does not match the release event."), { status: 409, code: "DELIVERED_IN_RECONCILIATION_SCOPE_MISMATCH" });
   const identity: CpuReleaseEventIdentity = { deliveryId: event.deliveryId || event.eventId, eventId: event.eventId, eventType: event.eventType, releaseId: event.releaseId, releaseVersion: event.releaseVersion, oplocId: event.oplocId, serviceDate: event.serviceDate, sourceDayId: event.sourceDayId, sourcePublicationDayId: event.sourcePublicationDayId, sourceVersion: event.sourceVersion, sourceContentHash: event.sourceContentHash, packetContentHash: event.packetContentHash };
   logCpuRelease(event, "received", { deliveryId: identity.deliveryId, eventType: event.eventType });
   const gate = await beginCpuReleaseReceipt(identity);
@@ -55,7 +56,7 @@ export async function applyCpuReleaseEvent(request: NextRequest, event: CpuRelea
     const result = await invalidateDeliveredInProjection(request, {
       sourceDomain: "cpu-production", sourceEntityId: event.releaseId, eventId: event.eventId, eventType: "withdrawn",
       serviceDate: event.serviceDate, oplocId: event.oplocId, sourceVersion: event.releaseVersion, contentHash: event.packetContentHash,
-    });
+    }, { reconciliationContext });
     logCpuRelease(event, "final-projection-reconciliation", { projectionStatus: result.result });
     const safety = await readAllergenSafetyState(event.oplocId, event.serviceDate, event.releaseVersion);
     if (safety) await saveAllergenSafetyState(revokeSafetyState(safety, event.invalidatedAt || new Date().toISOString()));
@@ -65,7 +66,7 @@ export async function applyCpuReleaseEvent(request: NextRequest, event: CpuRelea
   }
 
   const existing = await latestSiteMenuArtifactHosted(event.oplocId, event.sourceDayId);
-  const reconciled = await reconcileDeliveredInDay(request, event.oplocId, event.serviceDate);
+  const reconciled = await reconcileDeliveredInDay(request, event.oplocId, event.serviceDate, { reconciliationContext });
   logCpuRelease(event, "pre-artifact-reconciliation", { projectionStatus: reconciled.status, artifactId: existing?.artifactId });
   const projection = "projection" in reconciled ? reconciled.projection : undefined;
   if (!existing || !projection) {
@@ -85,7 +86,7 @@ export async function applyCpuReleaseEvent(request: NextRequest, event: CpuRelea
   const artifact = await createGoogleSiteMenu(projection, { oplocId: event.oplocId, label: projection.oplocLabel }, accessEmail, existing.driveFileId, event.deliveryId || event.eventId);
   await saveSiteMenuArtifactHosted(artifact);
   logCpuRelease(event, "site-menu-artifact-saved", { artifactId: artifact.artifactId, driveFileId: artifact.driveFileId });
-  const finalReconciled = await reconcileDeliveredInDay(request, event.oplocId, event.serviceDate);
+  const finalReconciled = await reconcileDeliveredInDay(request, event.oplocId, event.serviceDate, { reconciliationContext });
   logCpuRelease(event, "final-projection-reconciliation", { projectionStatus: finalReconciled.status, artifactId: artifact.artifactId });
   const finalProjection = "projection" in finalReconciled ? finalReconciled.projection : undefined;
   if (!finalProjection || finalReconciled.status === "superseded" || finalProjection.siteMenu.status !== "current" || finalProjection.sourceLineage.deliveredIn.siteMenuArtifactId !== artifact.artifactId) {

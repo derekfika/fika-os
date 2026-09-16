@@ -32,6 +32,64 @@ function authoritativeSource() {
 
 const maintenanceReview = async () => ({ entries: new Map(), cpuReview: { status: "signed" as const, signatures: [] }, orderIds: [], package: undefined });
 
+const menuPacket: MenuPlanningWeekPacket = {
+  schemaVersion: 1,
+  publicationId: sourcePublication.publicationId,
+  sourceWeekId: sourcePublication.sourceWeekId,
+  week: { weekCommencing: serviceDate, weekEnding: sourcePublication.weekEnding },
+  days: sourcePublication.days.map(day => ({ ...day, entries: day.entries.map(entry => ({ ...entry, portions: entry.allocations.reduce((total, allocation) => total + allocation.quantity, 0) })) })),
+};
+
+test("bounded internal reconciliation uses the immutable Menu packet without a browser cookie", async () => {
+  const root = await mkdtemp(`${tmpdir()}\\fika-delivered-in-internal-reconcile-`);
+  const previousRoot = process.env.FIKA_SNAPSHOT_DIR; const previousFetch = globalThis.fetch;
+  process.env.FIKA_SNAPSHOT_DIR = root;
+  globalThis.fetch = (async () => { throw new Error("interactive access must not be called"); }) as typeof fetch;
+  try {
+    const result = await reconcileDeliveredInDay(request, oplocId, serviceDate, {
+      readMenuPackets: async () => [menuPacket],
+      loadReview: maintenanceReview,
+      reconciliationContext: { mode: "internal", oplocId, serviceDate },
+    });
+    assert.equal(result.status, "created");
+    assert.equal(result.projection?.oplocLabel, "oploc:reconcile-test");
+  } finally {
+    globalThis.fetch = previousFetch; if (previousRoot === undefined) delete process.env.FIKA_SNAPSHOT_DIR; else process.env.FIKA_SNAPSHOT_DIR = previousRoot;
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("bounded internal reconciliation fails closed instead of using interactive Menu fallback", async () => {
+  const previousFetch = globalThis.fetch;
+  globalThis.fetch = (async () => { throw new Error("interactive access must not be called"); }) as typeof fetch;
+  try {
+    await assert.rejects(() => reconcileDeliveredInDay(request, oplocId, serviceDate, {
+      readMenuPackets: async () => [],
+      reconciliationContext: { mode: "internal", oplocId, serviceDate },
+    }), (error: unknown) => {
+      const value = error as { status?: number; code?: string };
+      return value.status === 503 && value.code === "MENU_SOURCE_UNAVAILABLE";
+    });
+  } finally { globalThis.fetch = previousFetch; }
+});
+
+test("bounded internal reconciliation cannot broaden beyond its supplied OPLOC and service date", async () => {
+  await assert.rejects(() => reconcileDeliveredInDay(request, oplocId, serviceDate, {
+    reconciliationContext: { mode: "internal", oplocId: "oploc:other", serviceDate },
+  }), (error: unknown) => {
+    const value = error as { status?: number; code?: string };
+    return value.status === 409 && value.code === "DELIVERED_IN_RECONCILIATION_SCOPE_MISMATCH";
+  });
+});
+
+test("interactive reconciliation still resolves normal session access", async () => {
+  const previousFetch = globalThis.fetch;
+  globalThis.fetch = (async () => new Response(JSON.stringify({ error: { code: "FIKA_SESSION_MISSING", message: "Your FIKA OS session is missing or has expired." } }), { status: 401, headers: { "content-type": "application/json" } })) as typeof fetch;
+  try {
+    await assert.rejects(() => reconcileDeliveredInDay(request, oplocId, serviceDate, { readMenuPackets: async () => [menuPacket] }), (error: unknown) => (error as { status?: number; code?: string }).status === 401 && (error as { code?: string }).code === "FIKA_SESSION_MISSING");
+  } finally { globalThis.fetch = previousFetch; }
+});
+
 test("reconciliation creates, then no-ops a current projection and preserves it on upstream failure", async () => {
   const root = await mkdtemp(`${tmpdir()}\\fika-delivered-in-reconcile-`);
   const previousRoot = process.env.FIKA_SNAPSHOT_DIR; const previousFetch = globalThis.fetch;

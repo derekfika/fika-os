@@ -10,7 +10,7 @@ async function handlePost(request: NextRequest) {
     requireDeliveredInMaintenance(request);
     const body = await request.json() as { oplocId?: string; serviceDate?: string };
     if (!body.oplocId || !body.serviceDate || !/^\d{4}-\d{2}-\d{2}$/.test(body.serviceDate)) return NextResponse.json({ error: { message: "An OPLOC and valid service date are required." } }, { status: 422 });
-    return NextResponse.json(await reconcileDeliveredInDay(request, body.oplocId, body.serviceDate));
+    return NextResponse.json(await reconcileDeliveredInDay(request, body.oplocId, body.serviceDate, { reconciliationContext: { mode: "internal", oplocId: body.oplocId, serviceDate: body.serviceDate } }));
   } catch (error) { return NextResponse.json({ error: { message: error instanceof Error ? error.message : "Delivered-In reconciliation failed." } }, { status: Number((error as { status?: number }).status) || 502 }); }
 }
 

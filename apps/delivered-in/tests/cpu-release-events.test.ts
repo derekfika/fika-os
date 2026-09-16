@@ -7,6 +7,8 @@ test("CPU release event contract is bounded and packet-driven", async () => {
   const event = await readFile(new URL("../lib/cpu-release-events.ts", import.meta.url), "utf8");
   const materialiser = await readFile(new URL("../lib/delivered-in-projection-materialiser.ts", import.meta.url), "utf8");
   assert.match(route, /x-fika-internal-token/);
+  assert.match(route, /mode: "internal"/);
+  assert.match(event, /reconciliationContext/);
   assert.match(event, /changedDishIds/);
   assert.match(event, /reconcileDeliveredInDay/);
   assert.match(materialiser, /CPU_PACKET_MISSING_DISH/);
@@ -28,4 +30,12 @@ test("CPU release reconciliation certifies the saved site-menu artifact before c
   assert.match(event, /site-menu-artifact-saved/);
   assert.match(event, /final-projection-reconciliation/);
   assert.match(event, /receipt-completed/);
+});
+
+test("CPU release event reconciliation is explicitly scoped to its event OPLOC and service date", async () => {
+  const event = await readFile(new URL("../lib/cpu-release-events.ts", import.meta.url), "utf8");
+  assert.match(event, /reconciliationContext\.oplocId !== event\.oplocId/);
+  assert.match(event, /reconciliationContext\.serviceDate !== event\.serviceDate/);
+  assert.match(event, /reconcileDeliveredInDay\(request, event\.oplocId, event\.serviceDate, \{ reconciliationContext \}\)/);
+  assert.match(event, /invalidateDeliveredInProjection\(request,[\s\S]*\{ reconciliationContext \}\)/);
 });

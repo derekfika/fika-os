@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { invalidateDeliveredInProjection } from "@/lib/delivered-in-invalidation";
 import type { DeliveredInInvalidation } from "@/lib/delivered-in-projection-store";
 import { withDataTrace } from "@fika/server-shared/data-source-meter-server";
+import { deliveredInErrorBody } from "@/lib/server";
 
 export const dynamic = "force-dynamic";
 
@@ -15,9 +16,13 @@ function validInput(value: unknown): value is DeliveredInInvalidation {
   return ["menu-planning", "cpu-production", "integration-hub"].includes(String(input.sourceDomain)) && typeof input.sourceEntityId === "string" && input.sourceEntityId.length > 0 && input.sourceEntityId.length <= 200 && (input.publicationId === undefined || typeof input.publicationId === "string" && input.publicationId.length <= 200) && typeof input.eventId === "string" && input.eventId.length > 0 && input.eventId.length <= 200 && ["changed", "amended", "withdrawn", "superseded"].includes(String(input.eventType)) && typeof input.serviceDate === "string" && /^\d{4}-\d{2}-\d{2}$/.test(input.serviceDate) && typeof input.oplocId === "string" && input.oplocId.length > 0 && input.oplocId.length <= 200 && (input.sourceVersion === undefined || typeof input.sourceVersion === "string") && (input.contentHash === undefined || typeof input.contentHash === "string");
 }
 async function handlePost(request: NextRequest) {
-  if (!internalAllowed(request)) return NextResponse.json({ error: { message: "Internal authentication is required." } }, { status: 401 });
-  const body = await request.json().catch(() => undefined);
-  if (!validInput(body)) return NextResponse.json({ error: { message: "A bounded invalidation scope and source identity are required." } }, { status: 422 });
-  return NextResponse.json(await invalidateDeliveredInProjection(request, body));
+  try {
+    if (!internalAllowed(request)) return NextResponse.json({ error: { message: "Internal authentication is required." } }, { status: 401 });
+    const body = await request.json().catch(() => undefined);
+    if (!validInput(body)) return NextResponse.json({ error: { message: "A bounded invalidation scope and source identity are required." } }, { status: 422 });
+    return NextResponse.json(await invalidateDeliveredInProjection(request, body, { reconciliationContext: { mode: "internal", oplocId: body.oplocId, serviceDate: body.serviceDate } }));
+  } catch (error) {
+    return NextResponse.json(deliveredInErrorBody(error, "Delivered-In invalidation failed."), { status: Number((error as { status?: number }).status) || 502 });
+  }
 }
 export async function POST(request: NextRequest) { return withDataTrace({ app: "delivered-in", action: "delivered-in.projection.invalidate", path: request.nextUrl.pathname, requestId: request.headers.get("x-request-id") || undefined }, () => handlePost(request)); }

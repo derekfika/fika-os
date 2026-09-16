@@ -19,8 +19,18 @@ test("projection invalidation is internal-only and bounded to one OPLOC/day", as
   assert.match(route, /x-fika-internal-token/);
   assert.match(route, /serviceDate/);
   assert.match(route, /oplocId/);
+  assert.match(route, /mode: "internal"/);
+  assert.match(service, /reconciliationContext: options\.reconciliationContext/);
   assert.doesNotMatch(route, /reconcileDeliveredInDay|projectedWeeks/);
   assert.match(service, /markDeliveredInProjectionStale/);
+});
+
+test("bounded reconciliation prefers Menu read packages and has no interactive authoritative fallback", async () => {
+  const reconciliation = await readFile(new URL("../lib/delivered-in-reconciliation.ts", import.meta.url), "utf8");
+  assert.match(reconciliation, /readMenuPlanningWeekPackets/);
+  assert.match(reconciliation, /mode === "internal"/);
+  assert.match(reconciliation, /MENU_SOURCE_UNAVAILABLE/);
+  assert.match(reconciliation, /GOVERNED_OPLOC_BY_ID/);
 });
 
 test("ordinary projection reads are consumer-only and cannot materialise or repair packages", async () => {

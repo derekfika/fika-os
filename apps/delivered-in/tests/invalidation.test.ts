@@ -23,10 +23,11 @@ test("CPU enrichment invalidation keeps a published Menu day current and visible
   process.env.FIKA_SNAPSHOT_DIR = root;
   try {
     await writeDeliveredInProjection(projection("oploc:a", "2026-08-31"));
-    let reconciled = false;
-    const result = await invalidateDeliveredInProjection(request, { sourceDomain: "cpu-production", sourceEntityId: "cpu-review:oploc:a:2026-08-31", eventId: "cpu-event:1", eventType: "changed", serviceDate: "2026-08-31", oplocId: "oploc:a", sourceVersion: "cpu-change-1" }, { reconcile: async () => { reconciled = true; return { status: "rebuilt" as const, serviceDate: "2026-08-31", oplocId: "oploc:a" }; } });
+    let reconciled = false; let context: unknown;
+    const result = await invalidateDeliveredInProjection(request, { sourceDomain: "cpu-production", sourceEntityId: "cpu-review:oploc:a:2026-08-31", eventId: "cpu-event:1", eventType: "changed", serviceDate: "2026-08-31", oplocId: "oploc:a", sourceVersion: "cpu-change-1" }, { reconcile: async (_request, _oplocId, _serviceDate, options) => { reconciled = true; context = options?.reconciliationContext; return { status: "rebuilt" as const, serviceDate: "2026-08-31", oplocId: "oploc:a" }; } });
     assert.equal(result.result, "rebuilt");
     assert.equal(reconciled, true);
+    assert.deepEqual(context, { mode: "internal", oplocId: "oploc:a", serviceDate: "2026-08-31" });
     const current = await readDeliveredInProjection("oploc:a", "2026-08-31");
     assert.equal(current?.value.state.freshness, "current");
     assert.equal(current?.value.state.completeness, "complete");
