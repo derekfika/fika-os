@@ -1,7 +1,7 @@
 import type { NextRequest } from "next/server";
 import { productionQueue, productionQueueForWeek } from "./production-http-client";
 import { withReadableDestinations } from "./cpu-oploc-labels";
-import { appendCpuChange as appendProjectionChange, cpuChanges, cpuProjections, loadPlansForOrders, type CpuChangeWithPropagation } from "./cpu-projection-repository";
+import { appendCpuChange as appendProjectionChange, cpuChanges, cpuProjections, loadPlansForOrders, type CpuChangeWithPropagation, writeCpuProjectionMonotonically } from "./cpu-projection-repository";
 import { recordDeliveredInReadBudget } from "./delivered-in-read-budget";
 import { recordDataAccess } from "@fika/server-shared/data-source-meter-server";
 import type { ReadPackageManifest } from "@fika/server-shared/read-package";
@@ -13,8 +13,8 @@ import { publishCpuProjectionPackage } from "./cpu-read-package";
 export type CpuChangeEvent = { sequence: number; serviceDate: string; entityType: "productionOrder" | "productionPlan"; entityId: string; revision: number; changeType: string; actorId: string; changedAt: string; idempotencyKey?: string };
 export type CpuProjectionLine = { sourceLineId: string; sourceBookingLineId?: string; sourceMenuItemId?: string; name: string; quantity: number; unit: string; productionQuantity?: number; productionUnit?: string; dietaries: Record<string, unknown>; allergenEvidenceStatus?: ProductionLine["allergenEvidenceStatus"]; approvedAllergenSnapshot?: ProductionLine["approvedAllergenSnapshot"]; notes?: string };
 export type CpuProjectionOrder = { id: string; serviceDate: string; requiredBy: string; serviceWindow: ProductionOrder["serviceWindow"]; origin?: string; sourceReference?: string; sourceEntityId?: string; sourcePublicationDayId?: string; sourceVersion?: number; sourceContentHash?: string; destinationOplocId?: string; destinationLabel?: string; clientName?: string; serviceType?: string; productionCategory?: ProductionOrder["productionCategory"]; requiresDelivery?: boolean; pax?: number; priority: ProductionOrder["priority"]; status: ProductionStatus; workflowStatus?: ProductionStatus; cancellationNotice?: string; productionScope?: string; quantities: CpuProjectionLine[]; bookingDietaries?: Record<string, unknown>; bookingNotes?: string; allergenReadiness: string; planningReadiness: string; attention: string[]; version: number };
-export type CpuDayProjection = { serviceDate: string; revision: number; lastChangeSequence: number; orders: CpuProjectionOrder[]; summary: { orders: number; ready: number; attention: number; planned: number; totalUnits: number }; rebuiltAt: string };
-export type CpuWeekProjection = { serviceDate: string; weekCommencing: string; revision: number; lastChangeSequence: number; orders: CpuProjectionOrder[]; summary: CpuDayProjection["summary"]; rebuiltAt: string };
+export type CpuDayProjection = { serviceDate: string; revision: number; lastChangeSequence: number; projectionContentHash?: string; orders: CpuProjectionOrder[]; summary: { orders: number; ready: number; attention: number; planned: number; totalUnits: number }; rebuiltAt: string };
+export type CpuWeekProjection = { serviceDate: string; weekCommencing: string; revision: number; lastChangeSequence: number; projectionContentHash?: string; orders: CpuProjectionOrder[]; summary: CpuDayProjection["summary"]; rebuiltAt: string };
 export const appendCpuChange = (input: Omit<CpuChangeEvent, "sequence"> & CpuChangeWithPropagation) => appendProjectionChange(input);
 export async function listCpuChanges(after: number, serviceDate: string) { const snapshot = await cpuChanges().where("serviceDate", "==", serviceDate).where("sequence", ">", after).orderBy("sequence", "asc").get(); recordDataAccess({ app: "cpu-production", operation: "changes.service-date", source: "FIRESTORE", documents: snapshot.size, firestoreReadKind: "query" }); return snapshot.docs.map((doc) => doc.data() as CpuChangeEvent); }
 export function weekCommencingFor(serviceDate: string) { const date = new Date(`${serviceDate}T00:00:00Z`); const day = date.getUTCDay() || 7; date.setUTCDate(date.getUTCDate() - day + 1); return date.toISOString().slice(0, 10); }
@@ -35,10 +35,11 @@ export async function rebuildCpuDayProjection(request: NextRequest, serviceDate:
   const orders = await withReadableDestinations(request, rawOrders);
   const plans = await loadPlansForOrders(orders.map(order => order.canonicalId));
   const projection = buildCpuDayProjection(serviceDate, orders, plans, lastChangeSequence ?? Number(previous.data()?.lastChangeSequence || 0), Number(previous.data()?.revision || 0) + 1);
-  await cpuProjections().doc(serviceDate).set(projection);
-  await publishCpuProjectionPackage(projection);
+  const written = await writeCpuProjectionMonotonically(cpuProjections().doc(serviceDate), projection);
+  if (written.status === "superseded") return written.projection as CpuDayProjection;
+  await publishCpuProjectionPackage(written.projection as CpuDayProjection);
   recordDeliveredInReadBudget({ stage: "day_projection_rebuild", projectionDocs: 1, selectedIds: orders.length, rebuildScopes: 1 });
-  return projection;
+  return written.projection as CpuDayProjection;
 }
 
 export async function rebuildCpuWeekProjection(request: NextRequest, weekCommencing: string, lastChangeSequence?: number) {
@@ -48,10 +49,11 @@ export async function rebuildCpuWeekProjection(request: NextRequest, weekCommenc
   const plans = await loadPlansForOrders(orders.map(order => order.canonicalId));
   const projection = buildCpuDayProjection("all", orders.filter((order) => order.serviceDate && weekDates(weekCommencing).includes(order.serviceDate)), plans, lastChangeSequence ?? Number(previous.data()?.lastChangeSequence || 0), Number(previous.data()?.revision || 0) + 1);
   const week: CpuWeekProjection = { serviceDate: weekCommencing, weekCommencing, revision: projection.revision, lastChangeSequence: projection.lastChangeSequence, orders: projection.orders, summary: projection.summary, rebuiltAt: projection.rebuiltAt };
-  await cpuProjections().doc(`week:${weekCommencing}`).set(week);
-  await publishCpuProjectionPackage(week);
+  const written = await writeCpuProjectionMonotonically(cpuProjections().doc(`week:${weekCommencing}`), week);
+  if (written.status === "superseded") return written.projection as CpuWeekProjection;
+  await publishCpuProjectionPackage(written.projection as CpuWeekProjection);
   recordDeliveredInReadBudget({ stage: "week_projection_rebuild", projectionDocs: 1, selectedIds: orders.length, rebuildScopes: 1 });
-  return week;
+  return written.projection as CpuWeekProjection;
 }
 
 type EmptyWeekProjectionResult = { projection: CpuWeekProjection; manifest: ReadPackageManifest };
@@ -68,7 +70,7 @@ export type EmptyWeekInitialisationDependencies = {
 const defaultEmptyWeekDependencies: EmptyWeekInitialisationDependencies = {
   loadOrders: productionQueueForWeek,
   readProjection: async (weekCommencing) => cpuProjections().doc(`week:${weekCommencing}`).get(),
-  writeProjection: async (weekCommencing, projection) => { await cpuProjections().doc(`week:${weekCommencing}`).set(projection); },
+  writeProjection: async (weekCommencing, projection) => { await writeCpuProjectionMonotonically(cpuProjections().doc(`week:${weekCommencing}`), projection); },
   publishPackage: publishCpuProjectionPackage,
 };
 
@@ -144,10 +146,11 @@ export async function recoverMissingCpuWeekProjection(request: NextRequest, week
     const plans = await loadPlansForOrders(normalisedOrders.map(order => order.canonicalId));
     const built = buildCpuDayProjection("all", normalisedOrders.filter((order) => weekDates(weekCommencing).includes(order.serviceDate || order.requiredBy.slice(0, 10))), plans, Number(previous.data()?.lastChangeSequence || 0), Number(previous.data()?.revision || 0) + 1);
     const projection: CpuWeekProjection = { serviceDate: weekCommencing, weekCommencing, revision: built.revision, lastChangeSequence: built.lastChangeSequence, orders: built.orders, summary: built.summary, rebuiltAt: built.rebuiltAt };
-    await cpuProjections().doc(`week:${weekCommencing}`).set(projection);
-    const manifest = await publishCpuProjectionPackage(projection);
+    const written = await writeCpuProjectionMonotonically(cpuProjections().doc(`week:${weekCommencing}`), projection);
+    const current = written.projection as CpuWeekProjection;
+    const manifest = await publishCpuProjectionPackage(current);
     recordDeliveredInReadBudget({ stage: "week_projection_recovery", projectionDocs: previous.exists ? 1 : 0, selectedIds: orders.length, rebuildScopes: 1 });
-    return { projection, manifest };
+    return { projection: current, manifest };
   })().finally(() => missingWeekRecoveryInFlight.delete(weekCommencing));
   missingWeekRecoveryInFlight.set(weekCommencing, recovery);
   return recovery;

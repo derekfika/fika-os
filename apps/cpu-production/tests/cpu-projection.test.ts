@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { buildCpuDayProjection } from "../lib/cpu-projection";
+import { compareMonotonicProjectionWrite, cpuProjectionContentHash } from "../lib/cpu-projection-repository";
 import { cpuProjectionToOrders } from "../lib/cpu-dashboard-adapter";
 import type { ProductionOrder } from "../lib/production-types";
 import type { ProductionPlan } from "../app/lib/production-plan";
@@ -116,4 +117,14 @@ test("a signed OPLOC release does not make another OPLOC appear Planned", () => 
   } as ProductionPlan;
   const projection = buildCpuDayProjection("2026-08-24", orders, [sharedPlan]);
   assert.deepEqual(projection.orders.map(item => item.workflowStatus), ["planned", undefined, undefined, undefined]);
+});
+
+test("CPU projection compare-and-write is monotonic across independent workers", () => {
+  const older = buildCpuDayProjection("2026-08-24", [order("order:older")], [], 10, 1, "2026-08-24T10:00:00.000Z");
+  const newer = buildCpuDayProjection("2026-08-24", [order("order:newer")], [], 11, 1, "2026-08-24T10:01:00.000Z");
+  const current = { ...newer, projectionContentHash: cpuProjectionContentHash(newer) };
+  assert.equal(compareMonotonicProjectionWrite(current, older).status, "superseded");
+  assert.equal(compareMonotonicProjectionWrite(undefined, newer).status, "created");
+  assert.equal(compareMonotonicProjectionWrite(current, { ...newer, revision: 99, rebuiltAt: "later" }).status, "idempotent");
+  assert.throws(() => compareMonotonicProjectionWrite(current, { ...newer, orders: [order("order:conflict")] }), /conflicting content/);
 });

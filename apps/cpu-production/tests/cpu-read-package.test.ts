@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { decodeReadPackage, encodeReadPackage } from "@fika/server-shared/read-package";
-import { cpuProjectionPackageIsCurrent, publishCpuProjectionPackage, getCpuProjectionPackage } from "../lib/cpu-read-package";
+import { cpuProjectionPackageIsCurrent, publishCpuProjectionPackage, getCpuProjectionPackage, publishMonotonicCpuPackage } from "../lib/cpu-read-package";
 import { downloadCpuPackageBytes } from "../lib/cpu-package-store";
 import { cpuProjectionCacheEntryMatches } from "../app/lib/cpu-indexeddb";
 import { initialiseEmptyCpuWeekProjection, type CpuDayProjection, type CpuWeekProjection, type EmptyWeekInitialisationDependencies } from "../lib/cpu-projection";
@@ -73,6 +73,39 @@ test("CPU package publication advances the manifest without changing projection 
     else process.env.FIKA_SNAPSHOT_DIR = previous;
     await rm(root, { recursive: true, force: true });
   }
+});
+
+test("a stale local package materialiser cannot replace a newer source sequence", async () => {
+  const manifests = new Map<string, ReturnType<typeof encodeReadPackage>["manifest"]>();
+  const objects = new Map<string, Uint8Array>();
+  const store = {
+    async putImmutable(name: string, bytes: Uint8Array) { objects.set(name, bytes); },
+    async get(name: string) { return objects.get(name); },
+    async has(name: string) { return objects.has(name); },
+    async getManifest(key: string) { return manifests.get(key); },
+    async putManifest(key: string, manifest: ReturnType<typeof encodeReadPackage>["manifest"]) { manifests.set(key, manifest); },
+  };
+  const old = encodeReadPackage("snapshots/cpu-production/projection-day", 1, { projection: { ...day("2026-08-31"), lastChangeSequence: 7 } }, 0, { sourceVersion: "cpu-change-7", sourceHash: "old" });
+  const newer = encodeReadPackage("snapshots/cpu-production/projection-day", 2, { projection: { ...day("2026-08-31"), lastChangeSequence: 8 } }, 0, { sourceVersion: "cpu-change-8", sourceHash: "new" });
+  await publishMonotonicCpuPackage(store, "cpu-production/projection/day/2026-08-31", newer, "new");
+  await publishMonotonicCpuPackage(store, "cpu-production/projection/day/2026-08-31", old, "old");
+  assert.equal(manifests.get("cpu-production/projection/day/2026-08-31")?.sourceVersion, "cpu-change-8");
+});
+
+test("same CPU package sequence with different content fails closed", async () => {
+  const manifests = new Map<string, ReturnType<typeof encodeReadPackage>["manifest"]>();
+  const objects = new Map<string, Uint8Array>();
+  const store = {
+    async putImmutable(name: string, bytes: Uint8Array) { objects.set(name, bytes); },
+    async get(name: string) { return objects.get(name); },
+    async has(name: string) { return objects.has(name); },
+    async getManifest(key: string) { return manifests.get(key); },
+    async putManifest(key: string, manifest: ReturnType<typeof encodeReadPackage>["manifest"]) { manifests.set(key, manifest); },
+  };
+  const first = encodeReadPackage("snapshots/cpu-production/projection-day", 1, { projection: day("2026-08-31") }, 0, { sourceVersion: "cpu-change-12", sourceHash: "first" });
+  const conflict = encodeReadPackage("snapshots/cpu-production/projection-day", 2, { projection: { ...day("2026-08-31"), rebuiltAt: "different" } }, 0, { sourceVersion: "cpu-change-12", sourceHash: "second" });
+  await publishMonotonicCpuPackage(store, "cpu-production/projection/day/2026-08-31", first, "first");
+  await assert.rejects(() => publishMonotonicCpuPackage(store, "cpu-production/projection/day/2026-08-31", conflict, "second"), /conflicting content/);
 });
 
 test("current stored projection with a missing manifest is republished during reconciliation", async () => {

@@ -1,9 +1,11 @@
-import { encodeReadPackage, publishReadPackage, retrieveReadPackage, type ReadPackageManifest } from "@fika/server-shared/read-package";
+import { encodeReadPackage, retrieveReadPackage, type ReadPackageManifest } from "@fika/server-shared/read-package";
 import { recordDataAccess } from "@fika/server-shared/data-source-meter-server";
 import { currentAllergenReleaseMatchesOrder, matrixSignatureScope, signatureMatchesScope, type ProductionPlan } from "../app/lib/production-plan";
 import { allergenMatrixContentHash } from "./cpu-allergen-release";
 import type { ProductionOrder } from "./production-types";
 import { cpuPackageStore } from "./cpu-package-store";
+import { cpuProjectionContentHash } from "./cpu-projection-repository";
+import { getCurrentHostedCpuPackage, publishMonotonicCpuPackage } from "./cpu-read-package";
 import { reviewStatusForPlan } from "./delivered-in-review";
 import { productionQueue } from "./production-http-client";
 import { loadPlansForOrders } from "./cpu-projection-repository";
@@ -44,6 +46,7 @@ export type CpuReviewProjection = {
   oplocId: string;
   revision: number;
   lastChangeSequence: number;
+  projectionContentHash?: string;
   status: "current" | "partial" | "valid_empty";
   completeness: "complete" | "partial";
   requiredSignatureRoles: CpuReviewOrder["requiredSignatureRoles"];
@@ -90,10 +93,9 @@ export async function publishCpuReviewPackage(projection: CpuReviewProjection): 
   const key = packageKey(projection.serviceDate, projection.oplocId);
   const store = cpuPackageStore();
   const previous = await store.getManifest(key);
-  const previousSequence = Number(previous?.sourceVersion?.replace("cpu-change-", "") || 0);
-  if (projection.lastChangeSequence > 0 && projection.lastChangeSequence < previousSequence && previous) return previous;
-  const encoded = encodeReadPackage(dataset, (previous?.packageVersion || 0) + 1, { projection }, projection.sourceOrders.length, { contractVersion: projection.contractVersion, sourceVersion: `cpu-change-${projection.lastChangeSequence}`, scope: `${projection.oplocId}:${projection.serviceDate}` });
-  return publishReadPackage<{ projection: CpuReviewProjection }>(store, key, encoded);
+  const sourceHash = cpuProjectionContentHash(projection);
+  const encoded = encodeReadPackage(dataset, (previous?.packageVersion || 0) + 1, { projection: { ...projection, projectionContentHash: sourceHash } }, projection.sourceOrders.length, { contractVersion: projection.contractVersion, sourceVersion: `cpu-change-${projection.lastChangeSequence}`, sourceHash, scope: `${projection.oplocId}:${projection.serviceDate}` });
+  return publishMonotonicCpuPackage(store, key, encoded, sourceHash);
 }
 
 export async function rebuildCpuReviewPackage(request: NextRequest, serviceDate: string, oplocId: string, lastChangeSequence = 0) {
@@ -101,15 +103,23 @@ export async function rebuildCpuReviewPackage(request: NextRequest, serviceDate:
   const plans = await loadPlansForOrders(orders.map(order => order.canonicalId));
   const previous = await cpuPackageStore().getManifest(packageKey(serviceDate, oplocId));
   const sourceSequence = lastChangeSequence || Number(previous?.sourceVersion?.replace("cpu-change-", "") || 0);
-  const projection = buildCpuReviewProjection(serviceDate, oplocId, orders, plans, (previous?.packageVersion || 0) + 1, sourceSequence);
+  const built = buildCpuReviewProjection(serviceDate, oplocId, orders, plans, (previous?.packageVersion || 0) + 1, sourceSequence);
+  const projection = { ...built, projectionContentHash: cpuProjectionContentHash(built) };
   const manifest = await publishCpuReviewPackage(projection);
   recordDataAccess({ app: "cpu-production", operation: "cpu-review.source-rebuild", source: "FIRESTORE", documents: orders.length + plans.length });
   return { projection, manifest };
 }
 
 export async function getCpuReviewPackage(serviceDate: string, oplocId: string) {
-  const retrieved = await retrieveReadPackage<{ projection: CpuReviewProjection }>(cpuPackageStore(), packageKey(serviceDate, oplocId));
+  const store = cpuPackageStore();
+  const key = packageKey(serviceDate, oplocId);
+  const retrieved = ["staging", "production"].includes(process.env.FIKA_RUNTIME_MODE || "")
+    ? await getCurrentHostedCpuPackage<{ projection: CpuReviewProjection }>(store, key)
+    : await retrieveReadPackage<{ projection: CpuReviewProjection }>(store, key);
   if (!retrieved) return undefined;
+  if (retrieved.manifest.sourceVersion !== `cpu-change-${retrieved.value.projection.lastChangeSequence}` || retrieved.manifest.sourceHash !== cpuProjectionContentHash(retrieved.value.projection)) {
+    throw Object.assign(new Error("CPU review package lineage or content hash is invalid."), { code: "CPU_REVIEW_PACKAGE_LINEAGE_INVALID", status: 503 });
+  }
   recordDataAccess({ app: "cpu-production", operation: "cpu-review.package", source: "SNAPSHOT", documents: retrieved.manifest.recordCount, cacheHit: false });
   return retrieved;
 }
