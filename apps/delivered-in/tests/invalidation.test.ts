@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { invalidateDeliveredInProjection } from "../lib/delivered-in-invalidation";
-import { markDeliveredInProjectionStale, readDeliveredInProjection, writeDeliveredInProjection } from "../lib/delivered-in-projection-store";
+import { markDeliveredInProjectionStale, readDeliveredInProjection, readDeliveredInProjectionIndex, writeDeliveredInProjection, DELIVERED_IN_PROJECTION_SEMANTICS_VERSION } from "../lib/delivered-in-projection-store";
 import type { DeliveredInDayProjection } from "../lib/delivered-in-day-projection";
 
 function projection(oplocId: string, serviceDate: string): DeliveredInDayProjection {
@@ -23,6 +23,7 @@ test("CPU enrichment invalidation keeps a published Menu day current and visible
   process.env.FIKA_SNAPSHOT_DIR = root;
   try {
     await writeDeliveredInProjection(projection("oploc:a", "2026-08-31"));
+    assert.equal((await readDeliveredInProjectionIndex("oploc:a"))?.value.entries[0]?.projectionSemanticsVersion, DELIVERED_IN_PROJECTION_SEMANTICS_VERSION);
     let reconciled = false; let context: unknown;
     const result = await invalidateDeliveredInProjection(request, { sourceDomain: "cpu-production", sourceEntityId: "cpu-review:oploc:a:2026-08-31", eventId: "cpu-event:1", eventType: "changed", serviceDate: "2026-08-31", oplocId: "oploc:a", sourceVersion: "cpu-change-1" }, { reconcile: async (_request, _oplocId, _serviceDate, options) => { reconciled = true; context = options?.reconciliationContext; return { status: "rebuilt" as const, serviceDate: "2026-08-31", oplocId: "oploc:a" }; } });
     assert.equal(result.result, "rebuilt");

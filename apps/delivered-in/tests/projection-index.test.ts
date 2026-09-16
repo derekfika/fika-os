@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
-import { compareDeliveredInProjectionIndexEntry, deliveredInProjectionLineageKey, deliveredInProjectionSemanticHash, mergeProjectionIndex, projectionIndexManifestKey, DELIVERED_IN_INDEX_DATASET, type DeliveredInProjectionIndex, type DeliveredInProjectionIndexEntry } from "../lib/delivered-in-projection-store";
+import { compareDeliveredInProjectionIndexEntry, deliveredInProjectionLineageKey, deliveredInProjectionSemanticHash, mergeProjectionIndex, projectionIndexManifestKey, DELIVERED_IN_INDEX_DATASET, DELIVERED_IN_PROJECTION_SEMANTICS_VERSION, type DeliveredInProjectionIndex, type DeliveredInProjectionIndexEntry } from "../lib/delivered-in-projection-store";
 import type { DeliveredInDayProjection } from "../lib/delivered-in-day-projection";
 import { boundedProjectionIndexEntries, DELIVERED_IN_MAX_DAY_PACKAGES, DELIVERED_IN_PROJECTION_HORIZON_DAYS, projectionWindowBounds } from "../lib/server";
 
@@ -57,6 +57,59 @@ test("index lineage compare is idempotent, fail-closed, and withdrawal-safe", ()
   const withdrawn = { ...current, state: "withdrawn" as const, freshness: "current" as const, completeness: "missing" as const };
   assert.equal(compareDeliveredInProjectionIndexEntry(withdrawn, current), "superseded");
   assert.equal(compareDeliveredInProjectionIndexEntry(withdrawn, { ...current, sourceSequence: 9, sourceLineageKey: "publication-day:9|cpu:9" }), "advance");
+});
+
+test("projection semantic generations allow one intentional v1-to-v2 migration", () => {
+  const legacy = { ...indexEntry("2026-08-24"), sourceSequence: 8, sourceLineageKey: "publication-day:8|cpu:8", semanticHash: "semantic-v1" };
+  const upgraded = { ...legacy, projectionSemanticsVersion: DELIVERED_IN_PROJECTION_SEMANTICS_VERSION, semanticHash: "semantic-v2" };
+  assert.equal(legacy.projectionSemanticsVersion, undefined);
+  assert.equal(compareDeliveredInProjectionIndexEntry(legacy, upgraded), "advance");
+  assert.equal(compareDeliveredInProjectionIndexEntry(upgraded, { ...upgraded }), "idempotent");
+  assert.throws(() => compareDeliveredInProjectionIndexEntry(upgraded, { ...upgraded, semanticHash: "different-v2" }), /conflicting semantic content/);
+  assert.equal(compareDeliveredInProjectionIndexEntry(upgraded, legacy), "superseded");
+});
+
+test("newer and older upstream sources retain their existing ordering within one semantic generation", () => {
+  const current = { ...indexEntry("2026-08-24"), projectionSemanticsVersion: DELIVERED_IN_PROJECTION_SEMANTICS_VERSION, sourceSequence: 8, sourceLineageKey: "publication-day:8|cpu:8", semanticHash: "semantic-v2" };
+  assert.equal(compareDeliveredInProjectionIndexEntry(current, { ...current, sourceSequence: 9, sourceLineageKey: "publication-day:9|cpu:9" }), "advance");
+  assert.equal(compareDeliveredInProjectionIndexEntry(current, { ...current, sourceSequence: 7, sourceLineageKey: "publication-day:7|cpu:7" }), "superseded");
+});
+
+test("historical projection packages remain readable without semantic-generation metadata", () => {
+  const legacy = { ...indexEntry("2026-08-24") };
+  assert.equal(legacy.projectionSemanticsVersion, undefined);
+  assert.equal(compareDeliveredInProjectionIndexEntry(undefined, legacy), "advance");
+});
+
+test("signed CPU review can migrate a same-lineage v1 projection to v2", () => {
+  const base = {
+    projectionId: "delivered-in:oploc:haleon:2026-08-24",
+    projectionVersion: 1,
+    contractVersion: "delivered-in.day.v1" as const,
+    oplocId: "oploc:haleon",
+    oplocLabel: "Haleon",
+    serviceDate: "2026-08-24",
+    publicationId: "publication:1",
+    publicationDayId: "publication-day:1",
+    sourceDayId: "source-day:1",
+    date: "2026-08-24",
+    dayName: "Monday",
+    version: 8,
+    contentHash: "menu-hash",
+    weekCommencing: "2026-08-24",
+    entries: [],
+    allergenSignoff: {},
+    siteMenu: { status: "none" as const },
+    sourceLineage: { menu: { publicationId: "publication:1", publicationDayId: "publication-day:1", sourceDayId: "source-day:1", version: 8, contentHash: "menu-hash" }, cpu: { orderIds: [], releaseId: "release:1" }, deliveredIn: { generatedAt: "2026-08-24T08:00:00Z" } },
+    generatedAt: "2026-08-24T08:00:00Z",
+    state: { freshness: "current" as const, completeness: "complete" as const, menu: "present" as const, cpu: "present" as const, exceptions: [] },
+  } as unknown as DeliveredInDayProjection;
+  const signed = { ...base, cpuReview: { status: "signed" as const, signatures: [{ role: "cpu-chef", printedName: "Chef", signedAt: "2026-08-24T09:00:00Z" }], drivePdfUrl: "https://drive.example/signed.pdf" } };
+  const legacy = { ...indexEntry("2026-08-24"), sourceSequence: 8, sourceLineageKey: deliveredInProjectionLineageKey(base), semanticHash: deliveredInProjectionSemanticHash(base) };
+  const incoming = { ...legacy, projectionSemanticsVersion: DELIVERED_IN_PROJECTION_SEMANTICS_VERSION, semanticHash: deliveredInProjectionSemanticHash(signed) };
+  assert.equal(incoming.sourceLineageKey, legacy.sourceLineageKey);
+  assert.notEqual(incoming.semanticHash, legacy.semanticHash);
+  assert.equal(compareDeliveredInProjectionIndexEntry(legacy, incoming), "advance");
 });
 
 test("semantic projection identity ignores volatile rebuild metadata but detects governed content changes", () => {
@@ -147,6 +200,9 @@ test("hosted projection promotion is a transaction over the day head and OPLOC i
   assert.match(store, /projectionHeads\(\)/);
   assert.match(store, /readDeliveredInProjectionForReconciliation/);
   assert.match(store, /semanticHash/);
+  assert.match(store, /projectionSemanticsVersion: DELIVERED_IN_PROJECTION_SEMANTICS_VERSION/);
+  assert.match(store, /transaction\.set\(dayRef/);
+  assert.match(store, /transaction\.set\(indexRef/);
 });
 
 test("hosted index heads are bounded to one OPLOC/week rather than all historical days", async () => {

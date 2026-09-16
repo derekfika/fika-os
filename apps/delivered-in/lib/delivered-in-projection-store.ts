@@ -10,10 +10,11 @@ import { stableDocumentId } from "@fika/server-shared/stable-document-id";
 
 export const DELIVERED_IN_DATASET = "delivered-in/day";
 export const DELIVERED_IN_INDEX_DATASET = "delivered-in/projection-index";
+export const DELIVERED_IN_PROJECTION_SEMANTICS_VERSION = 2;
 export const projectionManifestKey = (oplocId: string, serviceDate: string) => `${DELIVERED_IN_DATASET}/${encodeURIComponent(oplocId)}/${serviceDate}`;
 export const projectionIndexManifestKey = (oplocId: string) => `${DELIVERED_IN_INDEX_DATASET}/${encodeURIComponent(oplocId)}`;
 const addDays = (date: string, days: number) => { const value = new Date(`${date}T12:00:00Z`); value.setUTCDate(value.getUTCDate() + days); return value.toISOString().slice(0, 10); };
-export type DeliveredInProjectionIndexEntry = { oplocId: string; serviceDate: string; weekCommencing?: string; weekEnding?: string; publicationId?: string; projectionVersion: number; packageVersion: number; contentHash: string; semanticHash?: string; freshness: "current" | "stale"; completeness: "complete" | "partial" | "missing" | "unavailable"; sourceVersion: string; sourceSequence?: number; sourceLineageKey?: string; packageObjectName?: string; generatedAt: string; state?: "available" | "withdrawn"; withdrawnFromSourceVersion?: string; invalidation?: { sourceDomain: "menu-planning" | "cpu-production" | "integration-hub"; sourceEntityId: string; sourceVersion?: string; contentHash?: string; eventId: string; eventType: string; invalidatedAt: string } };
+export type DeliveredInProjectionIndexEntry = { oplocId: string; serviceDate: string; weekCommencing?: string; weekEnding?: string; publicationId?: string; projectionVersion: number; packageVersion: number; projectionSemanticsVersion?: number; contentHash: string; semanticHash?: string; freshness: "current" | "stale"; completeness: "complete" | "partial" | "missing" | "unavailable"; sourceVersion: string; sourceSequence?: number; sourceLineageKey?: string; packageObjectName?: string; generatedAt: string; state?: "available" | "withdrawn"; withdrawnFromSourceVersion?: string; invalidation?: { sourceDomain: "menu-planning" | "cpu-production" | "integration-hub"; sourceEntityId: string; sourceVersion?: string; contentHash?: string; eventId: string; eventType: string; invalidatedAt: string } };
 export type DeliveredInProjectionIndex = { oplocId: string; entries: DeliveredInProjectionIndexEntry[] };
 export function mergeProjectionIndex(index: DeliveredInProjectionIndex, entry: DeliveredInProjectionIndexEntry): DeliveredInProjectionIndex {
   return { oplocId: index.oplocId, entries: [...index.entries.filter(candidate => candidate.serviceDate !== entry.serviceDate), entry].sort((a, b) => a.serviceDate.localeCompare(b.serviceDate)) };
@@ -75,8 +76,15 @@ function projectionLineageMatches(entry: DeliveredInProjectionIndexEntry, projec
   const key = entryLineageKey(entry);
   return key === sourceLineageKey(projection) || key === legacySourceLineageKey(projection);
 }
+function projectionSemanticsVersion(entry: DeliveredInProjectionIndexEntry) {
+  return entry.projectionSemanticsVersion ?? 1;
+}
 function compareIndexEntry(current: DeliveredInProjectionIndexEntry | undefined, incoming: DeliveredInProjectionIndexEntry) {
   if (!current) return "advance" as const;
+  const currentSemanticsVersion = projectionSemanticsVersion(current);
+  const incomingSemanticsVersion = projectionSemanticsVersion(incoming);
+  if (incomingSemanticsVersion > currentSemanticsVersion) return "advance" as const;
+  if (incomingSemanticsVersion < currentSemanticsVersion) return "superseded" as const;
   if (current.sourceSequence !== undefined && incoming.sourceSequence !== undefined && incoming.sourceSequence !== current.sourceSequence) return incoming.sourceSequence < current.sourceSequence ? "superseded" as const : "advance" as const;
   if (entryLineageKey(current) === entryLineageKey(incoming)) {
     if (incoming.state === "withdrawn") return current.state === "withdrawn" ? "idempotent" as const : "advance" as const;
@@ -130,16 +138,18 @@ export async function readDeliveredInProjection(oplocId: string, serviceDate: st
 }
 
 export async function readDeliveredInProjectionForReconciliation(oplocId: string, serviceDate: string) {
+  const store = deliveredInProjectionStore();
   if (!hosted()) {
     const result = await readDeliveredInProjection(oplocId, serviceDate);
     if (!result) return undefined;
+    const index = await retrieveReadPackage<DeliveredInProjectionIndex>(store, projectionIndexManifestKey(oplocId)).catch(() => undefined);
+    const indexedEntry = index?.value.entries.find(entry => entry.serviceDate === serviceDate);
     return {
       ...result,
       semanticHash: deliveredInProjectionSemanticHash(result.value),
-      entry: { oplocId, serviceDate, weekCommencing: result.value.weekCommencing, weekEnding: addDays(result.value.weekCommencing || serviceDate, 6), publicationId: result.value.publicationId, projectionVersion: result.value.projectionVersion, packageVersion: result.manifest.packageVersion, contentHash: result.manifest.contentHash, semanticHash: deliveredInProjectionSemanticHash(result.value), freshness: result.value.state.freshness, completeness: result.value.state.completeness, sourceVersion: result.manifest.sourceVersion || "", sourceSequence: sourceSequenceForProjection(result.value), sourceLineageKey: sourceLineageKey(result.value), packageObjectName: result.manifest.objectName, generatedAt: result.value.generatedAt, state: "available" as const },
+      entry: { oplocId, serviceDate, weekCommencing: result.value.weekCommencing, weekEnding: addDays(result.value.weekCommencing || serviceDate, 6), publicationId: result.value.publicationId, projectionVersion: result.value.projectionVersion, packageVersion: result.manifest.packageVersion, ...(indexedEntry?.projectionSemanticsVersion !== undefined ? { projectionSemanticsVersion: indexedEntry.projectionSemanticsVersion } : {}), contentHash: result.manifest.contentHash, semanticHash: deliveredInProjectionSemanticHash(result.value), freshness: result.value.state.freshness, completeness: result.value.state.completeness, sourceVersion: result.manifest.sourceVersion || "", sourceSequence: sourceSequenceForProjection(result.value), sourceLineageKey: sourceLineageKey(result.value), packageObjectName: result.manifest.objectName, generatedAt: result.value.generatedAt, state: "available" as const },
     };
   }
-  const store = deliveredInProjectionStore();
   const headSnapshot = await projectionHeads().doc(stableDocumentId(`${oplocId}:${serviceDate}`)).get();
   if (!headSnapshot.exists) return undefined;
   const head = headSnapshot.data() as HostedProjectionHead;
@@ -192,7 +202,7 @@ export async function writeDeliveredInProjection(projection: DeliveredInDayProje
   });
   if (hosted()) return writeHostedProjection(store, projection, versioned, encoded, options.invalidation);
   const manifest = await publishReadPackage<DeliveredInDayProjection>(store, key, encoded);
-  await updateProjectionIndex(store, projection.oplocId, { oplocId: projection.oplocId, serviceDate: projection.serviceDate, weekCommencing: projection.weekCommencing, weekEnding: addDays(projection.weekCommencing || projection.serviceDate, 6), publicationId: projection.publicationId, projectionVersion: version, packageVersion: manifest.packageVersion, contentHash: manifest.contentHash, freshness: projection.state.freshness, completeness: projection.state.completeness, sourceVersion: encoded.manifest.sourceVersion || "", sourceLineageKey: sourceLineageKey(projection), packageObjectName: manifest.objectName, generatedAt: projection.generatedAt, state: "available", ...(options.invalidation ? { invalidation: { ...options.invalidation, invalidatedAt: projection.generatedAt } } : {}) });
+  await updateProjectionIndex(store, projection.oplocId, { oplocId: projection.oplocId, serviceDate: projection.serviceDate, weekCommencing: projection.weekCommencing, weekEnding: addDays(projection.weekCommencing || projection.serviceDate, 6), publicationId: projection.publicationId, projectionVersion: version, packageVersion: manifest.packageVersion, projectionSemanticsVersion: DELIVERED_IN_PROJECTION_SEMANTICS_VERSION, contentHash: manifest.contentHash, freshness: projection.state.freshness, completeness: projection.state.completeness, sourceVersion: encoded.manifest.sourceVersion || "", sourceLineageKey: sourceLineageKey(projection), packageObjectName: manifest.objectName, generatedAt: projection.generatedAt, state: "available", ...(options.invalidation ? { invalidation: { ...options.invalidation, invalidatedAt: projection.generatedAt } } : {}) });
   recordDataAccess({ app: "delivered-in", operation: "day-projection.publish", source: "SNAPSHOT", documents: 1, cacheHit: false });
   return { status: "advanced" as const, manifest, projection: versioned };
 }
@@ -205,7 +215,7 @@ async function writeHostedProjection(store: ReadPackageStore, projection: Delive
   const promotedProjection = reusable?.value || versioned;
   if (!reusable) await persistVerifiedObject<DeliveredInDayProjection>(store, encoded);
   const dayRef = projectionHeads().doc(stableDocumentId(`${projection.oplocId}:${projection.serviceDate}`));
-  const incoming: DeliveredInProjectionIndexEntry = { oplocId: promotedProjection.oplocId, serviceDate: promotedProjection.serviceDate, weekCommencing: promotedProjection.weekCommencing, weekEnding: addDays(promotedProjection.weekCommencing || promotedProjection.serviceDate, 6), publicationId: promotedProjection.publicationId, projectionVersion: promotedProjection.projectionVersion, packageVersion: promotedManifest.packageVersion, contentHash: promotedManifest.contentHash, semanticHash, freshness: projection.state.freshness, completeness: projection.state.completeness, sourceVersion: promotedManifest.sourceVersion || "", sourceSequence: sourceSequenceForProjection(projection), sourceLineageKey: sourceLineageKey(projection), packageObjectName: promotedManifest.objectName, generatedAt: projection.generatedAt, state: "available", ...(invalidation ? { invalidation: { ...invalidation, invalidatedAt: projection.generatedAt } } : {}) };
+  const incoming: DeliveredInProjectionIndexEntry = { oplocId: promotedProjection.oplocId, serviceDate: promotedProjection.serviceDate, weekCommencing: promotedProjection.weekCommencing, weekEnding: addDays(promotedProjection.weekCommencing || promotedProjection.serviceDate, 6), publicationId: promotedProjection.publicationId, projectionVersion: promotedProjection.projectionVersion, packageVersion: promotedManifest.packageVersion, projectionSemanticsVersion: DELIVERED_IN_PROJECTION_SEMANTICS_VERSION, contentHash: promotedManifest.contentHash, semanticHash, freshness: projection.state.freshness, completeness: projection.state.completeness, sourceVersion: promotedManifest.sourceVersion || "", sourceSequence: sourceSequenceForProjection(projection), sourceLineageKey: sourceLineageKey(projection), packageObjectName: promotedManifest.objectName, generatedAt: projection.generatedAt, state: "available", ...(invalidation ? { invalidation: { ...invalidation, invalidatedAt: projection.generatedAt } } : {}) };
   const indexRef = indexHeadRef(projection.oplocId, indexWeekForEntry(incoming));
   const result = await db.runTransaction(async transaction => {
     const daySnapshot = await transaction.get(dayRef);
@@ -273,7 +283,7 @@ export async function withdrawDeliveredInProjectionDay(oplocId: string, serviceD
   const store = deliveredInProjectionStore();
   const current = await readDeliveredInProjectionIndex(oplocId).catch(() => undefined);
   const existing = current?.value.entries.find(entry => entry.serviceDate === serviceDate);
-  await updateProjectionIndex(store, oplocId, { oplocId, serviceDate, weekCommencing: existing?.weekCommencing || mondayOf(serviceDate), weekEnding: addDays(existing?.weekCommencing || mondayOf(serviceDate), 6), publicationId: existing?.publicationId, projectionVersion: existing?.projectionVersion || 0, packageVersion: existing?.packageVersion || 0, contentHash: existing?.contentHash || "", freshness: "current", completeness: "missing", sourceVersion, ...(existing?.sourceSequence !== undefined ? { sourceSequence: existing.sourceSequence } : lineage.sourceSequence !== undefined ? { sourceSequence: lineage.sourceSequence } : {}), ...(existing?.sourceLineageKey ? { sourceLineageKey: existing.sourceLineageKey } : lineage.sourceLineageKey ? { sourceLineageKey: lineage.sourceLineageKey } : {}), ...(existing?.sourceVersion ? { withdrawnFromSourceVersion: existing.sourceVersion } : {}), generatedAt: new Date().toISOString(), state: "withdrawn" });
+  await updateProjectionIndex(store, oplocId, { oplocId, serviceDate, weekCommencing: existing?.weekCommencing || mondayOf(serviceDate), weekEnding: addDays(existing?.weekCommencing || mondayOf(serviceDate), 6), publicationId: existing?.publicationId, projectionVersion: existing?.projectionVersion || 0, packageVersion: existing?.packageVersion || 0, projectionSemanticsVersion: DELIVERED_IN_PROJECTION_SEMANTICS_VERSION, contentHash: existing?.contentHash || "", freshness: "current", completeness: "missing", sourceVersion, ...(existing?.sourceSequence !== undefined ? { sourceSequence: existing.sourceSequence } : lineage.sourceSequence !== undefined ? { sourceSequence: lineage.sourceSequence } : {}), ...(existing?.sourceLineageKey ? { sourceLineageKey: existing.sourceLineageKey } : lineage.sourceLineageKey ? { sourceLineageKey: lineage.sourceLineageKey } : {}), ...(existing?.sourceVersion ? { withdrawnFromSourceVersion: existing.sourceVersion } : {}), generatedAt: new Date().toISOString(), state: "withdrawn" });
 }
 
 async function readHostedProjectionIndex(oplocId: string, requestedWeek?: string) {
@@ -302,6 +312,7 @@ export async function markDeliveredInProjectionDayUnavailable(input: { oplocId: 
     publicationId: input.publicationId || existing?.publicationId,
     projectionVersion: existing?.projectionVersion || 0,
     packageVersion: existing?.packageVersion || 0,
+    projectionSemanticsVersion: DELIVERED_IN_PROJECTION_SEMANTICS_VERSION,
     contentHash: existing?.contentHash || "",
     freshness: "stale",
     completeness: "unavailable",
@@ -347,9 +358,9 @@ export async function markDeliveredInProjectionStale(change: DeliveredInInvalida
   }
   const invalidatedAt = new Date().toISOString();
   if (change.eventType === "withdrawn" || change.eventType === "superseded") {
-    await updateProjectionIndex(store, change.oplocId, { ...existing, freshness: "current", completeness: "missing", state: "withdrawn", sourceVersion: change.sourceVersion || existing.sourceVersion, generatedAt: invalidatedAt, invalidation: { ...change, invalidatedAt } });
+    await updateProjectionIndex(store, change.oplocId, { ...existing, projectionSemanticsVersion: DELIVERED_IN_PROJECTION_SEMANTICS_VERSION, freshness: "current", completeness: "missing", state: "withdrawn", sourceVersion: change.sourceVersion || existing.sourceVersion, generatedAt: invalidatedAt, invalidation: { ...change, invalidatedAt } });
     return "withdrawn";
   }
-  await updateProjectionIndex(store, change.oplocId, { ...existing, freshness: "stale", state: "available", invalidation: { ...change, invalidatedAt } });
+  await updateProjectionIndex(store, change.oplocId, { ...existing, projectionSemanticsVersion: DELIVERED_IN_PROJECTION_SEMANTICS_VERSION, freshness: "stale", state: "available", invalidation: { ...change, invalidatedAt } });
   return "stale";
 }
