@@ -22,3 +22,16 @@ export function cpuReleaseMaterializationEventId(releaseId: string, order: Pick<
   const scope = order.destinationOplocId ? `oploc:${order.destinationOplocId}` : "oploc:unassigned";
   return `cpu-allergen-materialize:${releaseId}:${scope}:order:${order.canonicalId}`.replace(/[^A-Za-z0-9:_-]+/g, "_");
 }
+
+/**
+ * Every inner materialisation receipt must share the durable obligation's
+ * release + OPLOC + canonical-order scope.  The master releaseId is
+ * intentionally shared across OPLOCs and is not sufficient by itself.
+ */
+export function cpuReleaseMaterializationReceiptId(
+  releaseId: string,
+  order: Pick<ProductionOrder, "canonicalId" | "destinationOplocId">,
+  phase: "started" | "prepared" | "final",
+) {
+  return `${cpuReleaseMaterializationEventId(releaseId, order)}:${phase}`;
+}

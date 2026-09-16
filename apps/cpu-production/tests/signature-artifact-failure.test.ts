@@ -20,6 +20,8 @@ test("second-signature finalisation commits first and materializes through the d
   assert.match(materializer, /await prepared\.publish\(\)/);
   assert.match(materializer, /saveAndAppendCpuChange\(ready, artifactCandidate\.updatedAt/);
   assert.match(materializer, /releaseToken/);
+  assert.match(materializer, /cpuReleaseMaterializationReceiptId/);
+  assert.doesNotMatch(materializer, /idempotencyKey: `cpu-release-materialize:\$\{releaseId\}:(started|prepared|final)`/);
 });
 
 test("save-matrix retry restages pending or failed OPLOC materialization without changing signatures", async () => {

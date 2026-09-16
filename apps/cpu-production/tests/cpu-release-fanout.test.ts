@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { cpuReleaseMaterializationEventId, currentMenuReleaseOrders, groupCurrentMenuReleaseOrders } from "../lib/cpu-release-fanout";
+import { cpuReleaseMaterializationEventId, cpuReleaseMaterializationReceiptId, currentMenuReleaseOrders, groupCurrentMenuReleaseOrders } from "../lib/cpu-release-fanout";
 import type { ProductionOrder } from "../lib/production-types";
 import { allergenReleaseLineageMatchesOrder } from "../app/lib/production-plan";
 
@@ -32,6 +32,20 @@ test("materialization identity remains independent for equal release IDs", () =>
   assert.notEqual(haleon, xchange);
   assert.match(haleon, /oploc:oploc:haleon/);
   assert.match(xchange, /oploc:oploc:xchange/);
+});
+
+test("inner materialization receipts reuse the exact OPLOC and order scope", () => {
+  const releaseId = "cpu-allergen-release:2026-09-14:publication-day:8:v1";
+  const xchange = { canonicalId: "order:xchange", destinationOplocId: "oploc:xchange" } as const;
+  const haleon = { canonicalId: "order:haleon", destinationOplocId: "oploc:haleon" } as const;
+  const legacyStarted = `cpu-release-materialize:${releaseId}:started`;
+  const xchangeReceipts = ["started", "prepared", "final"].map(phase => cpuReleaseMaterializationReceiptId(releaseId, xchange, phase as "started" | "prepared" | "final"));
+  const haleonReceipts = ["started", "prepared", "final"].map(phase => cpuReleaseMaterializationReceiptId(releaseId, haleon, phase as "started" | "prepared" | "final"));
+  assert.equal(new Set([...xchangeReceipts, ...haleonReceipts]).size, 6);
+  assert.ok(xchangeReceipts.every(receipt => !receipt.includes(legacyStarted)));
+  assert.ok(haleonReceipts.every(receipt => !receipt.includes(legacyStarted)));
+  assert.match(xchangeReceipts[0], /oploc:oploc:xchange/);
+  assert.match(haleonReceipts[0], /oploc:oploc:haleon/);
 });
 
 test("materialization lineage is fail-closed when the canonical order advances", () => {
