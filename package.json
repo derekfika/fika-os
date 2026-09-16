@@ -13,6 +13,8 @@
     "dev:delivered": "npm --prefix apps/delivered-in run dev",
     "dev:logistics": "npm --prefix apps/logistics run dev",
     "dev:launcher": "node tools/launcher/server.mjs",
+    "uat": "node scripts/uat/cli.mjs",
+    "test:uat": "node --test scripts/uat/*.test.mjs",
 
     "dev:browser": "wait-on http://localhost:3100 && start chrome http://localhost:3100"
     ,"uat:seed-week": "node tools/uat/week.mjs seed"
