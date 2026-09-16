@@ -1,5 +1,7 @@
 # Changelog
 
+- **2026-09-16 — CPU Production staging rollout:** submitted exact application SHA `de4e2a0cd0ec726a78056c4c56054c3932078af1` to the existing Firebase App Hosting backend `fika-cpu-production-staging` in project `fika-os-dev`. Firebase accepted and started the rollout; App Hosting build/live propagation was not awaited. No application code, staging data, migrations or production targets were changed. Deployment status: CPU staging rollout submitted; live verification pending.
+
 This file records user-facing workflow changes delivered in the repository. Detailed architectural authority remains in `fika-platform-specs/`; this is the implementation history and UAT handoff record.
 
 ## Unreleased
