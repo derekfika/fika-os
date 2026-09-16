@@ -9,6 +9,18 @@ import { titleCaseDish } from "../../lib/production-presentation";
 import { loadLocalChecked, saveLocalChecked } from "../lib/allergen-review-local";
 import "./allergen-review.css";
 
+type SignatureRole = "production_chef" | "head_chef_site_manager";
+type MatrixLineage = {
+  productionOrderId: string;
+  serviceDate: string;
+  sourceDayId: string;
+  sourcePublicationId?: string;
+  sourcePublicationDayId: string;
+  sourceVersion: number;
+  sourceContentHash: string;
+  matrixContentHash: string;
+};
+
 function stateFor(row: AllergenReviewRow, key: string): OperationalAllergenState | "none" {
   const state = row.snapshot?.allergens[key];
   return state === "contains" || state === "may_contain" ? state : row.snapshot ? "unrecorded" : "none";
@@ -25,31 +37,101 @@ function displayState(states: Record<string, OperationalAllergenState> | undefin
   return "unrecorded";
 }
 
-export default function AllergenReviewMatrix({ rows, orders, scopeKey, busy = false, locked = false, onCheckedChange, onReviewChanged, onRegisterSave, onSignatureRolesChange, onFinalizationChange, onLineageChange }: { rows: AllergenReviewRow[]; orders: ProductionOrder[]; scopeKey: string; busy?: boolean; locked?: boolean; onCheckedChange?: (checked: number, total: number, keys: Set<string>) => void; onReviewChanged?: () => void; onRegisterSave?: (save: () => Promise<void>) => void; onSignatureRolesChange?: (roles: Array<"production_chef" | "head_chef_site_manager">) => void; onFinalizationChange?: (finalized: boolean) => void; onLineageChange?: (lineageByOrderId: Record<string, { productionOrderId: string; serviceDate: string; sourceDayId: string; sourcePublicationId?: string; sourcePublicationDayId: string; sourceVersion: number; sourceContentHash: string; matrixContentHash: string }>) => void }) {
-  const [states, setStates] = useState<Record<string, Record<string, OperationalAllergenState>>>(() => Object.fromEntries(rows.map(row => [row.key, { ...(row.snapshot?.allergens || {}) }])) as Record<string, Record<string, OperationalAllergenState>>);
+export default function AllergenReviewMatrix({
+  rows,
+  orders,
+  scopeKey,
+  busy = false,
+  locked = false,
+  onCheckedChange,
+  onReviewChanged,
+  onRegisterSave,
+  onSignatureRolesChange,
+  onOrderSignatureRolesChange,
+  onFinalizationChange,
+  onLineageChange,
+}: {
+  rows: AllergenReviewRow[];
+  orders: ProductionOrder[];
+  scopeKey: string;
+  busy?: boolean;
+  locked?: boolean;
+  onCheckedChange?: (checked: number, total: number, keys: Set<string>) => void;
+  onReviewChanged?: () => void;
+  onRegisterSave?: (save: () => Promise<void>) => void;
+  onSignatureRolesChange?: (roles: SignatureRole[]) => void;
+  onOrderSignatureRolesChange?: (rolesByOrderId: Record<string, SignatureRole[]>) => void;
+  onFinalizationChange?: (finalized: boolean) => void;
+  onLineageChange?: (lineageByOrderId: Record<string, MatrixLineage>) => void;
+}) {
+  const [states, setStates] = useState<Record<string, Record<string, OperationalAllergenState>>>(
+    () => Object.fromEntries(rows.map(row => [row.key, { ...(row.snapshot?.allergens || {}) }])) as Record<string, Record<string, OperationalAllergenState>>,
+  );
   const [checkedRows, setCheckedRows] = useState<Set<string>>(() => new Set());
   const [error, setError] = useState("");
   const latestSave = useRef<() => Promise<void>>(() => Promise.resolve());
   const syncTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const bookingDietaries = [...new Set(orders.flatMap(order => bookingContextEntries(order.bookingDietaries)))];
   const bookingNotes = [...new Set(orders.map(order => order.bookingNotes).filter((note): note is string => Boolean(note?.trim())))];
+
   useEffect(() => {
     let cancelled = false;
+
     const hydrate = async () => {
       const orderIds = [...new Set(orders.map(order => order.canonicalId))];
       if (!orderIds.length) {
         onSignatureRolesChange?.([]);
+        onOrderSignatureRolesChange?.({});
+        onFinalizationChange?.(false);
+        onLineageChange?.({});
         return;
       }
+
       const response = await fetch(`/api/production-plan?matrixStatus=1&orderIds=${encodeURIComponent(orderIds.join(","))}`, { cache: "no-store" });
-      const responseBody = response.ok ? await response.json() as { matrixStatuses?: Array<{ orderId: string; signatureRoles: Array<"production_chef" | "head_chef_site_manager">; matrixStatus?: string; sourceLineage?: { productionOrderId: string; serviceDate: string; sourceDayId: string; sourcePublicationId?: string; sourcePublicationDayId: string; sourceVersion: number; sourceContentHash: string; matrixContentHash: string }; matrixItems?: Array<{ sourceLineId: string; allergens: Record<string, OperationalAllergenState>; evidenceStatus: string }> }> } : { matrixStatuses: [] };
-      const body = responseBody;
+      const responseBody = response.ok
+        ? await response.json() as {
+            matrixStatuses?: Array<{
+              orderId: string;
+              signatureRoles: SignatureRole[];
+              matrixStatus?: string;
+              sourceLineage?: MatrixLineage;
+              matrixItems?: Array<{
+                sourceLineId: string;
+                allergens: Record<string, OperationalAllergenState>;
+                evidenceStatus: string;
+              }>;
+            }>;
+          }
+        : { matrixStatuses: [] as Array<{
+            orderId: string;
+            signatureRoles: SignatureRole[];
+            matrixStatus?: string;
+            sourceLineage?: MatrixLineage;
+            matrixItems?: Array<{
+              sourceLineId: string;
+              allergens: Record<string, OperationalAllergenState>;
+              evidenceStatus: string;
+            }>;
+          }> };
+
+      const statuses = responseBody.matrixStatuses || [];
       const saved = new Map<string, { allergens: Record<string, OperationalAllergenState>; completed: boolean }>();
-      onLineageChange?.(Object.fromEntries((body.matrixStatuses || []).flatMap(status => status.sourceLineage ? [[status.orderId, status.sourceLineage] as const] : [])));
-      const signatureRoles = [...new Set((body.matrixStatuses || []).flatMap(status => status.signatureRoles))];
-      onSignatureRolesChange?.(signatureRoles);
-      onFinalizationChange?.((body.matrixStatuses || []).some(status => status.matrixStatus === "ready"));
-      for (const status of body.matrixStatuses || []) {
+      const lineage = Object.fromEntries(
+        statuses.flatMap(status => status.sourceLineage ? [[status.orderId, status.sourceLineage] as const] : []),
+      );
+      const rolesByOrderId = Object.fromEntries(
+        orderIds.map(orderId => [orderId, statuses.find(status => status.orderId === orderId)?.signatureRoles || []]),
+      ) as Record<string, SignatureRole[]>;
+      const allStatusesPresent = statuses.length === orderIds.length;
+      const commonRoles = (["production_chef", "head_chef_site_manager"] as SignatureRole[])
+        .filter(role => allStatusesPresent && statuses.every(status => status.signatureRoles.includes(role)));
+
+      onLineageChange?.(lineage);
+      onOrderSignatureRolesChange?.(rolesByOrderId);
+      onSignatureRolesChange?.(commonRoles);
+      onFinalizationChange?.(allStatusesPresent && statuses.every(status => status.matrixStatus === "ready"));
+
+      for (const status of statuses) {
         const order = orders.find(candidate => candidate.canonicalId === status.orderId);
         if (!order) continue;
         for (const item of status.matrixItems || []) {
@@ -59,6 +141,7 @@ export default function AllergenReviewMatrix({ rows, orders, scopeKey, busy = fa
           if (line) saved.set(`${order.origin}:${line.sourceMenuItemId || line.itemName.trim().toLowerCase()}`, state);
         }
       }
+
       if (cancelled) return;
       setStates(Object.fromEntries(rows.map(row => {
         const savedState = saved.get(row.key);
@@ -67,42 +150,174 @@ export default function AllergenReviewMatrix({ rows, orders, scopeKey, busy = fa
         const hasSavedEvidence = Boolean(savedState && (savedState.completed || Object.keys(savedState.allergens).length > 0));
         return [row.key, hasSavedEvidence ? savedState!.allergens : { ...(row.snapshot?.allergens || {}) }];
       })) as Record<string, Record<string, OperationalAllergenState>>);
+
       const localChecked = await loadLocalChecked(scopeKey);
       if (!cancelled) setCheckedRows(new Set(rows.map(row => row.key).filter(key => localChecked.has(key))));
     };
+
     void hydrate();
     return () => { cancelled = true; };
   }, [rows, orders, scopeKey]);
-  useEffect(() => { onCheckedChange?.(checkedRows.size, rows.length, checkedRows); }, [checkedRows, rows.length, onCheckedChange]);
+
+  useEffect(() => {
+    onCheckedChange?.(checkedRows.size, rows.length, checkedRows);
+  }, [checkedRows, rows.length, onCheckedChange]);
+
   const saveReview = async (nextStates: Record<string, Record<string, OperationalAllergenState>>) => {
-    const makeOperation = (order: ProductionOrder, action: "save-plan" | "mark-planned") => ({ action, orderId: order.canonicalId, planningNotes: "CPU Delivered-In allergen review", menuItems: order.lines.map((line, index) => { const key = `${order.origin}:${line.sourceMenuItemId || line.itemName.trim().toLowerCase()}`; return { id: `menu-item:${order.canonicalId}:${index + 1}`, sourceLineId: line.canonicalId, name: line.itemName, note: "", subItems: [{ id: `sub-item:${order.canonicalId}:${index + 1}:1`, name: line.itemName, quantity: line.customerQuantity, allergens: nextStates[key] || {}, note: "", evidenceStatus: action === "mark-planned" ? "completed" as const : "not_completed" as const }] }; }) });
-    const submit = async (action: "save-plan" | "mark-planned") => { const response = await fetch("/api/production-plan", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "batch-plan", operations: orders.map(order => makeOperation(order, action)) }) }); const body = await response.json() as { results?: Array<{ ok: boolean; error?: string }>; partialFailure?: boolean }; if (!response.ok || body.results?.some(result => !result.ok)) throw new Error(body.results?.find(result => !result.ok)?.error || "The Delivered-In allergen review could not be saved."); };
+    const makeOperation = (order: ProductionOrder, action: "save-plan" | "mark-planned") => ({
+      action,
+      orderId: order.canonicalId,
+      planningNotes: "CPU Delivered-In allergen review",
+      menuItems: order.lines.map((line, index) => {
+        const key = `${order.origin}:${line.sourceMenuItemId || line.itemName.trim().toLowerCase()}`;
+        return {
+          id: `menu-item:${order.canonicalId}:${index + 1}`,
+          sourceLineId: line.canonicalId,
+          name: line.itemName,
+          note: "",
+          subItems: [{
+            id: `sub-item:${order.canonicalId}:${index + 1}:1`,
+            name: line.itemName,
+            quantity: line.customerQuantity,
+            allergens: nextStates[key] || {},
+            note: "",
+            evidenceStatus: action === "mark-planned" ? "completed" as const : "not_completed" as const,
+          }],
+        };
+      }),
+    });
+
+    const submit = async (action: "save-plan" | "mark-planned") => {
+      const response = await fetch("/api/production-plan", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "batch-plan", operations: orders.map(order => makeOperation(order, action)) }),
+      });
+      const body = await response.json() as {
+        results?: Array<{ ok: boolean; error?: string }>;
+        partialFailure?: boolean;
+      };
+      if (!response.ok || body.results?.some(result => !result.ok)) {
+        throw new Error(body.results?.find(result => !result.ok)?.error || "The Delivered-In allergen review could not be saved.");
+      }
+    };
+
     await submit("save-plan");
   };
+
   const scheduleSync = (nextStates: Record<string, Record<string, OperationalAllergenState>>) => {
     if (syncTimer.current) clearTimeout(syncTimer.current);
-    syncTimer.current = setTimeout(() => { void saveReview(nextStates).catch(cause => setError(cause instanceof Error ? cause.message : "The allergen edit could not be synchronised.")); }, 300);
+    syncTimer.current = setTimeout(() => {
+      void saveReview(nextStates).catch(cause => setError(cause instanceof Error ? cause.message : "The allergen edit could not be synchronised."));
+    }, 300);
   };
-  useEffect(() => () => { if (syncTimer.current) clearTimeout(syncTimer.current); }, []);
+
+  useEffect(() => () => {
+    if (syncTimer.current) clearTimeout(syncTimer.current);
+  }, []);
+
   latestSave.current = () => saveReview(states);
-  useEffect(() => { onRegisterSave?.(() => latestSave.current()); }, [onRegisterSave]);
+
+  useEffect(() => {
+    onRegisterSave?.(() => latestSave.current());
+  }, [onRegisterSave]);
+
   const markChecked = async (rowKey: string) => {
     if (busy || locked) return;
     const nextCheckedRows = new Set(checkedRows);
-    if (nextCheckedRows.has(rowKey)) nextCheckedRows.delete(rowKey); else nextCheckedRows.add(rowKey);
+    if (nextCheckedRows.has(rowKey)) nextCheckedRows.delete(rowKey);
+    else nextCheckedRows.add(rowKey);
     setCheckedRows(nextCheckedRows);
     void saveLocalChecked(scopeKey, nextCheckedRows);
   };
+
   const toggle = async (rowKey: string, key: string) => {
     if (busy || locked) return;
-    const nextStates = { ...states, [rowKey]: toggleOperationalAllergen(states[rowKey] || {}, key as CanonicalAllergenKey) };
-    const nextCheckedRows = new Set(checkedRows); nextCheckedRows.delete(rowKey);
-    setStates(nextStates); setCheckedRows(nextCheckedRows); void saveLocalChecked(scopeKey, nextCheckedRows); scheduleSync(nextStates); onReviewChanged?.(); setError("");
+    const nextStates = {
+      ...states,
+      [rowKey]: toggleOperationalAllergen(states[rowKey] || {}, key as CanonicalAllergenKey),
+    };
+    const nextCheckedRows = new Set(checkedRows);
+    nextCheckedRows.delete(rowKey);
+    setStates(nextStates);
+    setCheckedRows(nextCheckedRows);
+    void saveLocalChecked(scopeKey, nextCheckedRows);
+    scheduleSync(nextStates);
+    onReviewChanged?.();
+    setError("");
   };
-  return <section className="cpu-allergen-matrix-panel" aria-label="CPU allergen matrix">
-    {(bookingDietaries.length > 0 || bookingNotes.length > 0) && <section style={{ display: "grid", gap: 5, padding: "13px 15px", border: "1px solid #d8d0f2", borderRadius: 10, background: "#fbfaff", color: "#51486a" }}><h3 style={{ margin: 0, color: "#24115c", fontSize: ".9rem" }}>Booking dietary & notes</h3>{bookingDietaries.length > 0 && <p style={{ margin: 0, fontSize: ".78rem" }}><strong>Dietary / allergen requests:</strong> {bookingDietaries.join(" · ")}</p>}{bookingNotes.length > 0 && <p style={{ margin: 0, fontSize: ".78rem" }}><strong>Booking notes:</strong> {bookingNotes.join(" · ")}</p>}</section>}
-    <div className="cpu-allergen-legend" aria-label="Allergen matrix legend"><span><i className="cpu-allergen-state cpu-allergen-state--contains" />Contains</span><span><i className="cpu-allergen-state cpu-allergen-state--may_contain" />May contain</span><span><i className="cpu-allergen-state cpu-allergen-state--clear" />No declaration</span><span><i className="cpu-allergen-state cpu-allergen-state--none" />Not recorded</span><em>Click a cell to cycle its CPU review value.</em></div>
-    <div className="cpu-allergen-table-wrap"><table className="cpu-allergen-table"><thead><tr><th>Dish / product</th>{CANONICAL_ALLERGEN_COLUMNS.map(([key, label]) => <th key={key}>{label}</th>)}<th>Approval</th><th>CPU review</th></tr></thead><tbody>{rows.map(row => <tr key={row.key}><th>{titleCaseDish(row.name)}<small>{row.quantity.toLocaleString()} required · {row.destinations.map(item => item.label).join(" · ")}</small>{bookingContextEntries(row.dietaries).length > 0 && <small>Dietary: {bookingContextEntries(row.dietaries).join(" · ")}</small>}{row.notes.map(note => <small key={note}>Note: {note}</small>)}</th>{CANONICAL_ALLERGEN_COLUMNS.map(([key]) => { const state = displayState(states[row.key], key); return <td key={key}><button type="button" disabled={busy || locked || key === "no_key_allergens"} className={`cpu-allergen-state cpu-allergen-state--${state}`} aria-label={`${titleCaseDish(row.name)}, ${key}: ${state}`} onClick={() => void toggle(row.key, key)}>{state === "may_contain" ? "MC" : ""}</button></td>; })}<td><span className={row.snapshot ? "cpu-allergen-approved" : "cpu-allergen-missing"}>{row.snapshot ? "Published" : "Not recorded"}</span></td><td><button type="button" className={`cpu-allergen-check ${checkedRows.has(row.key) ? "cpu-allergen-check--done" : ""}`} onClick={() => void markChecked(row.key)} disabled={busy || locked}>{checkedRows.has(row.key) ? "Checked" : "Mark checked"}</button></td></tr>)}</tbody></table></div>
-    <footer className="cpu-allergen-matrix-footer"><span>Review each dish, amend the black/white/MC cells if needed, then mark the dish checked. CPU production chefs and the signing owners are the final allergen authority.</span>{error && <strong role="alert">{error}</strong>}</footer>
-  </section>;
+
+  return (
+    <section className="cpu-allergen-matrix-panel" aria-label="CPU allergen matrix">
+      {(bookingDietaries.length > 0 || bookingNotes.length > 0) && (
+        <section style={{ display: "grid", gap: 5, padding: "13px 15px", border: "1px solid #d8d0f2", borderRadius: 10, background: "#fbfaff", color: "#51486a" }}>
+          <h3 style={{ margin: 0, color: "#24115c", fontSize: ".9rem" }}>Booking dietary & notes</h3>
+          {bookingDietaries.length > 0 && <p style={{ margin: 0, fontSize: ".78rem" }}><strong>Dietary / allergen requests:</strong> {bookingDietaries.join(" · ")}</p>}
+          {bookingNotes.length > 0 && <p style={{ margin: 0, fontSize: ".78rem" }}><strong>Booking notes:</strong> {bookingNotes.join(" · ")}</p>}
+        </section>
+      )}
+      <div className="cpu-allergen-legend" aria-label="Allergen matrix legend">
+        <span><i className="cpu-allergen-state cpu-allergen-state--contains" />Contains</span>
+        <span><i className="cpu-allergen-state cpu-allergen-state--may_contain" />May contain</span>
+        <span><i className="cpu-allergen-state cpu-allergen-state--clear" />No declaration</span>
+        <span><i className="cpu-allergen-state cpu-allergen-state--none" />Not recorded</span>
+        <em>Click a cell to cycle its CPU review value.</em>
+      </div>
+      <div className="cpu-allergen-table-wrap">
+        <table className="cpu-allergen-table">
+          <thead>
+            <tr>
+              <th>Dish / product</th>
+              {CANONICAL_ALLERGEN_COLUMNS.map(([key, label]) => <th key={key}>{label}</th>)}
+              <th>Approval</th>
+              <th>CPU review</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map(row => (
+              <tr key={row.key}>
+                <th>
+                  {titleCaseDish(row.name)}
+                  <small>{row.quantity.toLocaleString()} required · {row.destinations.map(item => item.label).join(" · ")}</small>
+                  {bookingContextEntries(row.dietaries).length > 0 && <small>Dietary: {bookingContextEntries(row.dietaries).join(" · ")}</small>}
+                  {row.notes.map(note => <small key={note}>Note: {note}</small>)}
+                </th>
+                {CANONICAL_ALLERGEN_COLUMNS.map(([key]) => {
+                  const state = displayState(states[row.key], key);
+                  return (
+                    <td key={key}>
+                      <button
+                        type="button"
+                        disabled={busy || locked || key === "no_key_allergens"}
+                        className={`cpu-allergen-state cpu-allergen-state--${state}`}
+                        aria-label={`${titleCaseDish(row.name)}, ${key}: ${state}`}
+                        onClick={() => void toggle(row.key, key)}
+                      >
+                        {state === "may_contain" ? "MC" : ""}
+                      </button>
+                    </td>
+                  );
+                })}
+                <td><span className={row.snapshot ? "cpu-allergen-approved" : "cpu-allergen-missing"}>{row.snapshot ? "Published" : "Not recorded"}</span></td>
+                <td>
+                  <button
+                    type="button"
+                    className={`cpu-allergen-check ${checkedRows.has(row.key) ? "cpu-allergen-check--done" : ""}`}
+                    onClick={() => void markChecked(row.key)}
+                    disabled={busy || locked}
+                  >
+                    {checkedRows.has(row.key) ? "Checked" : "Mark checked"}
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <footer className="cpu-allergen-matrix-footer">
+        <span>Review each dish, amend the black/white/MC cells if needed, then mark the dish checked. CPU production chefs and the signing owners are the final allergen authority.</span>
+        {error && <strong role="alert">{error}</strong>}
+      </footer>
+    </section>
+  );
 }
