@@ -17,9 +17,10 @@ test("second-signature finalisation commits first and materializes through the d
   assert.doesNotMatch(source, /createMatrixArtifact\(|publishDailySignedOplocBundle\(|allergen-matrix\/drive/);
   assert.match(page, /setFinalizationComplete\(statuses\.length === orderIds\.length && statuses\.every\(status => status\.matrixStatus === "ready"\)\)/);
   assert.doesNotMatch(page, /if \(fullySigned\) void fetch[\s\S]*save-matrix/);
-  assert.match(materializer, /saveAndAppendCpuChange\(preparedCandidate, stored\.updatedAt/);
+  assert.match(materializer, /const startedResult = await repository\.saveAndAppendCpuChange\(preparedCandidate, stored\.updatedAt/);
+  assert.match(materializer, /createCpuReleaseArtifacts\(startedPlan/);
   assert.match(materializer, /await prepared\.publish\(\)/);
-  assert.match(materializer, /saveAndAppendCpuChange\(ready, artifactCandidate\.updatedAt/);
+  assert.match(materializer, /const finalResult = await repository\.saveAndAppendCpuChange\(ready, preparedPlan\.updatedAt/);
   assert.match(materializer, /releaseToken/);
   assert.match(materializer, /cpuReleaseMaterializationReceiptId/);
   assert.doesNotMatch(materializer, /idempotencyKey: `cpu-release-materialize:\$\{releaseId\}:(started|prepared|final)`/);
