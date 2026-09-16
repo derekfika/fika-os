@@ -14,7 +14,7 @@ test("second-signature finalisation commits first and materializes through the d
   assert.match(source, /saveAndAppendCpuChange\(plan, expectedUpdatedAt/);
   assert.match(source, /cpu-release-materialize/);
   assert.doesNotMatch(source, /createMatrixArtifact\(|publishDailySignedOplocBundle\(|allergen-matrix\/drive/);
-  assert.match(page, /body\.matrixStatus === "ready"/);
+  assert.match(page, /setFinalizationComplete\(statuses\.length === orderIds\.length && statuses\.every\(status => status\.matrixStatus === "ready"\)\)/);
   assert.doesNotMatch(page, /if \(fullySigned\) void fetch[\s\S]*save-matrix/);
   assert.match(materializer, /saveAndAppendCpuChange\(preparedCandidate, stored\.updatedAt/);
   assert.match(materializer, /await prepared\.publish\(\)/);

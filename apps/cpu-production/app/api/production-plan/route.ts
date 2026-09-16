@@ -94,6 +94,9 @@ function now() { return new Date().toISOString(); }
 function sameLineage(left: ReturnType<typeof matrixSignatureScope>, right: ReturnType<typeof matrixSignatureScope>) {
   return Boolean(left && right && left.productionOrderId === right.productionOrderId && left.serviceDate === right.serviceDate && left.sourceDayId === right.sourceDayId && left.sourcePublicationId === right.sourcePublicationId && left.sourcePublicationDayId === right.sourcePublicationDayId && left.sourceVersion === right.sourceVersion && left.sourceContentHash === right.sourceContentHash && left.matrixContentHash === right.matrixContentHash);
 }
+function hasExactSignature(plan: ProductionPlan, role: InternalMatrixSignature["role"], scope: ReturnType<typeof matrixSignatureScope>) {
+  return Boolean(scope && plan.signatures?.some(signature => signature.role === role && signatureMatchesScope(signature, scope)));
+}
 function pendingReleaseArtifact(plan: ProductionPlan, order: ProductionOrder, timestamp: string): MatrixArtifact {
   const contentHash = menuContentHash(plan.menuItems);
   return { id: `pending-cpu-allergen:${order.canonicalId}:${contentHash.slice(0, 16)}`, bookingId: order.sourceBookingId, fileName: `PREPARED-${order.canonicalId}.pdf`, createdAt: timestamp, createdBy: plan.updatedBy, contentHash, pdfStatus: "unavailable", driveStatus: "not_configured" };
@@ -484,11 +487,22 @@ async function handlePost(request: NextRequest) {
     }) : [];
     const materializationDelivery = plan.currentAllergenRelease?.status === "pending" && changedOrder ? releaseMaterializationDelivery(plan, plan.currentAllergenRelease, changedOrder, timestamp) : undefined;
     const event = changedOrder?.serviceDate ? await planRepository.saveAndAppendCpuChange(plan, expectedUpdatedAt, { serviceDate: changedOrder.serviceDate, entityType: "productionPlan", entityId: plan.id, revision: plan.audit.length, changeType: command.action, actorId: actor.uid, changedAt: timestamp, ...(command.commandId ? { idempotencyKey: command.commandId } : {}), propagation: { sourceEntityId: plan.id, serviceDate: changedOrder.serviceDate, sourceVersion: plan.audit.length, changedAt: timestamp, changeType: eventTypeForConsumers(command.action), order: changedOrder, logistics: false }, deliveries: [...releaseDeliveries, ...(materializationDelivery ? [materializationDelivery] : [])] }) : (await persistPlan(plan, expectedUpdatedAt), undefined);
-    if (event?.duplicate && event.plan) Object.assign(plan, event.plan);
-    if (materializationDelivery && event) await deliverCpuPropagation(materializationDelivery.eventId);
-    if (releaseForEvent) for (const oplocId of releaseOplocIds) await notifyDeliveredInAllergenRelease({ eventType: releaseEventType, release: releaseForEvent, oplocId });
+    if (event?.duplicate) {
+      if (!event.plan) throw Object.assign(new Error("This signing attempt has an incomplete idempotency receipt. Start a new signing attempt after reviewing the current matrix."), { status: 409, code: "CPU_SIGN_IDEMPOTENCY_CONFLICT" });
+      Object.assign(plan, event.plan);
+      if (command.action === "sign-matrix") {
+        const currentScope = matrixSignatureScope(changedOrder || currentOrder, menuContentHash(plan.menuItems));
+        if (!hasExactSignature(plan, command.role, currentScope)) {
+          throw Object.assign(new Error("This signing attempt was already used, but the requested exact-lineage signature is not authoritative. Start a new signing attempt after reviewing the current matrix."), { status: 409, code: "CPU_SIGN_IDEMPOTENCY_CONFLICT" });
+        }
+      }
+    }
+    // A duplicate command has already staged its durable work. Replaying the
+    // HTTP request must not synchronously repeat delivery or consumer effects.
+    if (materializationDelivery && event && !event.duplicate) await deliverCpuPropagation(materializationDelivery.eventId);
+    if (releaseForEvent && !event?.duplicate) for (const oplocId of releaseOplocIds) await notifyDeliveredInAllergenRelease({ eventType: releaseEventType, release: releaseForEvent, oplocId });
     recordDeliveredInReadBudget({ stage: "plan_post_mutation", canonicalOrderDocs: changedOrder ? 1 : 0, planDocs: 1, selectedIds: 1 });
-    if (changedOrder?.serviceDate) {
+    if (changedOrder?.serviceDate && !event?.duplicate) {
       await rebuildCpuDayProjection(request, changedOrder.serviceDate, event!.sequence);
       await rebuildCpuWeekProjection(request, weekCommencingFor(changedOrder.serviceDate), event!.sequence);
       const review = changedOrder.destinationOplocId ? await rebuildCpuReviewPackage(request, changedOrder.serviceDate, changedOrder.destinationOplocId, event!.sequence) : undefined;

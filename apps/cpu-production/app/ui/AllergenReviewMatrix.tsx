@@ -77,6 +77,7 @@ export default function AllergenReviewMatrix({
   const latestSave = useRef<() => Promise<void>>(() => Promise.resolve());
   const inFlightSave = useRef<Promise<void> | undefined>(undefined);
   const dirtyRef = useRef(false);
+  const authoritativeReviewedRef = useRef(false);
   const bookingDietaries = [...new Set(orders.flatMap(order => bookingContextEntries(order.bookingDietaries)))];
   const bookingNotes = [...new Set(orders.map(order => order.bookingNotes).filter((note): note is string => Boolean(note?.trim())))];
 
@@ -88,6 +89,7 @@ export default function AllergenReviewMatrix({
       const orderIds = [...new Set(orders.map(order => order.canonicalId))];
       if (!orderIds.length) {
         dirtyRef.current = false;
+        authoritativeReviewedRef.current = false;
         setDirty(false);
         onDirtyChange?.(false);
         onSignatureRolesChange?.([]);
@@ -103,6 +105,7 @@ export default function AllergenReviewMatrix({
             matrixStatuses?: Array<{
               orderId: string;
               signatureRoles: SignatureRole[];
+              reviewed: boolean;
               matrixStatus?: string;
               sourceLineage?: MatrixLineage;
               matrixItems?: Array<{
@@ -115,6 +118,7 @@ export default function AllergenReviewMatrix({
         : { matrixStatuses: [] as Array<{
             orderId: string;
             signatureRoles: SignatureRole[];
+            reviewed: boolean;
             matrixStatus?: string;
             sourceLineage?: MatrixLineage;
             matrixItems?: Array<{
@@ -135,9 +139,11 @@ export default function AllergenReviewMatrix({
       const allStatusesPresent = statuses.length === orderIds.length;
       const commonRoles = (["production_chef", "head_chef_site_manager"] as SignatureRole[])
         .filter(role => allStatusesPresent && statuses.every(status => status.signatureRoles.includes(role)));
+      const authoritativeReviewed = allStatusesPresent && statuses.every(status => status.reviewed);
 
       if (cancelled) return;
       dirtyRef.current = false;
+      authoritativeReviewedRef.current = authoritativeReviewed;
       setDirty(false);
       onDirtyChange?.(false);
       onLineageChange?.(lineage);
@@ -180,7 +186,7 @@ export default function AllergenReviewMatrix({
     onCheckedChange?.(checkedRows.size, rows.length, checkedRows);
   }, [checkedRows, rows.length, onCheckedChange]);
 
-  const saveReview = async (nextStates: Record<string, Record<string, OperationalAllergenState>>) => {
+  const saveReview = async (nextStates: Record<string, Record<string, OperationalAllergenState>>, action: "save-plan" | "mark-planned") => {
     const makeOperation = (order: ProductionOrder, action: "save-plan" | "mark-planned") => ({
       action,
       orderId: order.canonicalId,
@@ -219,12 +225,12 @@ export default function AllergenReviewMatrix({
       }
     };
 
-    await submit("save-plan");
+    await submit(action);
   };
 
-  const startSave = (nextStates: Record<string, Record<string, OperationalAllergenState>>) => {
+  const startSave = (nextStates: Record<string, Record<string, OperationalAllergenState>>, action: "save-plan" | "mark-planned") => {
     const prior = inFlightSave.current;
-    const operation = (prior ? prior.catch(() => undefined) : Promise.resolve()).then(() => saveReview(nextStates));
+    const operation = (prior ? prior.catch(() => undefined) : Promise.resolve()).then(() => saveReview(nextStates, action));
     inFlightSave.current = operation;
     void operation.catch(cause => setError(cause instanceof Error ? cause.message : "The allergen edit could not be synchronised.")).finally(() => {
       if (inFlightSave.current === operation) inFlightSave.current = undefined;
@@ -237,9 +243,12 @@ export default function AllergenReviewMatrix({
       await inFlightSave.current;
       return;
     }
-    if (!dirtyRef.current) return;
-    await startSave(states);
+    // A locally clean matrix still needs one authoritative completion commit
+    // when the server has not recorded this review yet.
+    if (!dirtyRef.current && authoritativeReviewedRef.current) return;
+    await startSave(states, "mark-planned");
     dirtyRef.current = false;
+    authoritativeReviewedRef.current = true;
     setDirty(false);
     onDirtyChange?.(false);
   };
@@ -267,6 +276,7 @@ export default function AllergenReviewMatrix({
     nextCheckedRows.delete(rowKey);
     setStates(nextStates);
     dirtyRef.current = true;
+    authoritativeReviewedRef.current = false;
     setDirty(true);
     onDirtyChange?.(true);
     setCheckedRows(nextCheckedRows);

@@ -63,7 +63,8 @@ test("review edits remain local and explicit save is serialized before first sig
   const matrix = await readFile(new URL("../app/ui/AllergenReviewMatrix.tsx", import.meta.url), "utf8");
   assert.match(matrix, /dirtyRef/);
   assert.match(matrix, /onDirtyChange/);
-  assert.match(matrix, /if \(!dirtyRef\.current\) return/);
+  assert.match(matrix, /authoritativeReviewedRef/);
+  assert.match(matrix, /if \(!dirtyRef\.current && authoritativeReviewedRef\.current\) return/);
   assert.match(matrix, /startSave/);
   assert.doesNotMatch(matrix, /pendingSave|scheduleSync|setTimeout\(/);
   assert.match(matrix, /if \(inFlightSave\.current\) \{[\s\S]*await inFlightSave\.current/);
@@ -90,8 +91,9 @@ test("review session saves only once when dirty, never resaves between signature
   assert.equal(toggle.includes("startSave"), false);
   assert.match(matrix, /dirtyRef\.current = true/);
   assert.equal((matrix.match(/action: \"batch-plan\"/g) || []).length, 1);
-  assert.equal((matrix.match(/await submit\(\"save-plan\"\)/g) || []).length, 1);
-  assert.match(page, /if \(reviewDirty\) \{[\s\S]*await saveReviewRef\.current\(\);[\s\S]*\}/);
+  assert.equal((matrix.match(/await submit\(action\)/g) || []).length, 1);
+  assert.match(matrix, /await startSave\(states, \"mark-planned\"\)/);
+  assert.match(page, /await saveReviewRef\.current\(\);/);
   assert.match(page, /if \(!reviewFrozen\) \{/);
   assert.match(page, /const refreshReviewStatus = async/);
   assert.match(page, /await refreshReviewStatus\(\)/);
@@ -103,4 +105,26 @@ test("review session saves only once when dirty, never resaves between signature
   assert.match(route, /action: z\.literal\("reopen-review"\)/);
   assert.match(route, /allergen-review-reopened/);
   assert.match(route, /invalidateSignedAllergenAuthorityForNewSourceLineage\(plan, auditActor, timestamp, "The allergen review was explicitly reopened for amendment\."\)/);
+});
+
+test("live clean-but-unreviewed state requires one authoritative completion, while exact reviewed state is a no-op", async () => {
+  const matrix = await readFile(new URL("../app/ui/AllergenReviewMatrix.tsx", import.meta.url), "utf8");
+  assert.match(matrix, /reviewed: boolean/);
+  assert.match(matrix, /const authoritativeReviewed = allStatusesPresent && statuses\.every\(status => status\.reviewed\)/);
+  assert.match(matrix, /authoritativeReviewedRef\.current = authoritativeReviewed/);
+  assert.match(matrix, /evidenceStatus: action === "mark-planned" \? "completed"/);
+  assert.match(matrix, /body: JSON\.stringify\(\{ action: "batch-plan", operations: orders\.map/);
+});
+
+test("signing uses an attempt-scoped idempotency key and confirms authority after fan-out", async () => {
+  const page = await readFile(new URL("../app/allergens/page.tsx", import.meta.url), "utf8");
+  const route = await readFile(new URL("../app/api/production-plan/route.ts", import.meta.url), "utf8");
+  assert.match(page, /signingAttemptRef/);
+  assert.match(page, /crypto\.randomUUID\(\)/);
+  assert.match(page, /const commandId = \["cpu-master-sign", signingAttempt\.id, role, order\.canonicalId\]/);
+  assert.match(page, /roleAuthoritativelyPresent/);
+  assert.match(page, /authoritative matrix status did not confirm/);
+  assert.match(route, /CPU_SIGN_IDEMPOTENCY_CONFLICT/);
+  assert.match(route, /hasExactSignature\(plan, command\.role, currentScope\)/);
+  assert.match(route, /!event\.duplicate/);
 });
