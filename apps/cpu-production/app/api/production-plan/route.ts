@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { after, NextRequest, NextResponse } from "next/server";
 import { errorResponse } from "../../../lib/api";
 import { z } from "zod";
 import { existsSync, promises as fs } from "node:fs";
@@ -17,7 +17,7 @@ import { recordDeliveredInReadBudget } from "../../../lib/delivered-in-read-budg
 import { recordDataAccess, withDataTrace } from "@fika/server-shared/data-source-meter-server";
 import { rebuildCpuReviewPackage } from "../../../lib/cpu-review-package";
 import { buildCpuAllergenReleaseEvent, eventTypeForConsumers, notifyCpuConsumerInvalidations, notifyDeliveredInAllergenRelease } from "../../../lib/cpu-consumer-invalidation";
-import { buildCpuPropagationEvents, deliverCpuPropagation, replayCpuPropagation } from "../../../lib/cpu-durable-outbox";
+import { deliverCpuPropagation, replayCpuPropagation } from "../../../lib/cpu-durable-outbox";
 import { allergenMatrixContentHash, buildCpuAllergenRelease, revokeCpuAllergenRelease } from "../../../lib/cpu-allergen-release";
 import { releaseMaterializationDelivery, retryCommittedCpuMaterialization } from "../../../lib/cpu-retry-materialization";
 
@@ -84,6 +84,7 @@ const MatrixOperation = z.discriminatedUnion("action", [
   z.object({ action: z.literal("reopen-review"), orderId: z.string(), commandId: z.string().trim().min(8).optional() }),
 ]);
 const MatrixBatchCommand = z.object({ action: z.literal("batch-plan"), operations: z.array(MatrixOperation).min(1).max(100) }).strict();
+const MasterReviewOperation = z.object({ action: z.literal("mark-planned"), orderId: z.string(), menuItems: z.array(MenuItem).min(1), planningNotes: z.string().default("") }).strict();
 const MasterSignCommand = z.object({
   action: z.literal("sign-master-matrix"),
   serviceDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
@@ -93,6 +94,7 @@ const MasterSignCommand = z.object({
   signatureDataUrl: z.string().regex(/^data:image\/png;base64,/).max(500000),
   orderIds: z.array(z.string().min(1)).min(1).max(100),
   expectedLineages: z.array(ExpectedLineage).min(1).max(100),
+  reviewOperations: z.array(MasterReviewOperation).min(1).max(100),
   commandId: z.string().trim().min(8),
 }).strict();
 
@@ -106,6 +108,9 @@ async function persistPlan(plan: ProductionPlan, expectedUpdatedAt?: string) { a
 function now() { return new Date().toISOString(); }
 function sameLineage(left: ReturnType<typeof matrixSignatureScope>, right: ReturnType<typeof matrixSignatureScope>) {
   return Boolean(left && right && left.productionOrderId === right.productionOrderId && left.serviceDate === right.serviceDate && left.sourceDayId === right.sourceDayId && left.sourcePublicationId === right.sourcePublicationId && left.sourcePublicationDayId === right.sourcePublicationDayId && left.sourceVersion === right.sourceVersion && left.sourceContentHash === right.sourceContentHash && left.matrixContentHash === right.matrixContentHash);
+}
+function samePublishedLineage(left: ReturnType<typeof matrixSignatureScope>, right: ReturnType<typeof matrixSignatureScope>) {
+  return Boolean(left && right && left.productionOrderId === right.productionOrderId && left.serviceDate === right.serviceDate && left.sourceDayId === right.sourceDayId && left.sourcePublicationId === right.sourcePublicationId && left.sourcePublicationDayId === right.sourcePublicationDayId && left.sourceVersion === right.sourceVersion && left.sourceContentHash === right.sourceContentHash);
 }
 function hasExactSignature(plan: ProductionPlan, role: InternalMatrixSignature["role"], scope: ReturnType<typeof matrixSignatureScope>) {
   return Boolean(scope && plan.signatures?.some(signature => signature.role === role && signatureMatchesScope(signature, scope)));
@@ -200,7 +205,8 @@ async function applyMasterSignatureBatch(request: NextRequest, actor: Awaited<Re
   const sourceOrders = (await productionQueue(request, command.serviceDate)).filter(order => order.origin === "menu_planning" && !order.supersededBy && (order.serviceDate || order.requiredBy.slice(0, 10)) === command.serviceDate);
   const orderIds = [...new Set(command.orderIds)];
   const expectedByOrderId = new Map(command.expectedLineages.map(lineage => [lineage.productionOrderId, lineage]));
-  if (orderIds.length !== command.orderIds.length || expectedByOrderId.size !== command.expectedLineages.length || orderIds.length !== sourceOrders.length || sourceOrders.some(order => !orderIds.includes(order.canonicalId)) || orderIds.some(orderId => !sourceOrders.some(order => order.canonicalId === orderId)) || orderIds.some(orderId => !expectedByOrderId.has(orderId))) {
+  const reviewByOrderId = new Map(command.reviewOperations.map(operation => [operation.orderId, operation]));
+  if (orderIds.length !== command.orderIds.length || expectedByOrderId.size !== command.expectedLineages.length || reviewByOrderId.size !== command.reviewOperations.length || orderIds.length !== sourceOrders.length || sourceOrders.some(order => !orderIds.includes(order.canonicalId)) || orderIds.some(orderId => !sourceOrders.some(order => order.canonicalId === orderId)) || orderIds.some(orderId => !expectedByOrderId.has(orderId) || !reviewByOrderId.has(orderId))) {
     throw Object.assign(new Error("The master matrix membership or expected lineage is no longer current. Reload the complete service-date matrix before signing."), { status: 409, code: "CPU_MASTER_SIGN_MEMBERSHIP_CONFLICT" });
   }
   const timestamp = now();
@@ -209,27 +215,34 @@ async function applyMasterSignatureBatch(request: NextRequest, actor: Awaited<Re
     const storedPlan = await planRepository.get(order.canonicalId);
     if (!storedPlan && !isLocalRuntime()) plans.delete(order.canonicalId);
     const plan = await getPlan(request, order.canonicalId, storedPlan);
+    const reviewOperation = reviewByOrderId.get(order.canonicalId)!;
+    const expectedLineage = expectedByOrderId.get(order.canonicalId)!;
     if (plan.status !== "planned" && plan.status !== "planning") throw Object.assign(new Error(`The allergen matrix for ${order.destinationLabel || order.canonicalId} is not available for signing.`), { status: 422 });
-    const subItems = plan.menuItems.flatMap(item => item.subItems);
-    if (!subItems.length || subItems.some(item => !item.name.trim())) throw Object.assign(new Error(`Complete every named sub-item before signing ${order.destinationLabel || order.canonicalId}.`), { status: 422 });
+    const reviewedPlan = await mergeOriginalItems(request, { ...plan, menuItems: normalisePlanAllergens({ ...plan, menuItems: reviewOperation.menuItems }).menuItems }, order.canonicalId, order, true);
     const currentMenuContentHash = menuContentHash(plan.menuItems);
-    const currentScope = matrixSignatureScope(order, currentMenuContentHash);
-    if (!currentScope || !sameLineage(currentScope, expectedByOrderId.get(order.canonicalId))) throw Object.assign(new Error("The reviewed Menu publication has changed. Reload and review the current matrix before signing."), { status: 409, code: "CPU_SIGN_LINEAGE_CONFLICT" });
-    const signatures = (plan.signatures || []).filter(signature => signatureMatchesScope(signature, currentScope));
+    const reviewedMenuContentHash = menuContentHash(reviewedPlan.menuItems);
+    const currentScope = matrixSignatureScope(order, reviewedMenuContentHash);
+    const persistedScope = matrixSignatureScope(order, currentMenuContentHash);
+    if (!currentScope || !samePublishedLineage(currentScope, expectedLineage) || (plan.menuItems.length > 0 && currentMenuContentHash !== expectedLineage.matrixContentHash && currentMenuContentHash !== reviewedMenuContentHash)) throw Object.assign(new Error("The reviewed Menu publication or matrix content has changed. Reload and review the current matrix before signing."), { status: 409, code: "CPU_SIGN_LINEAGE_CONFLICT" });
+    const subItems = reviewedPlan.menuItems.flatMap(item => item.subItems);
+    if (!subItems.length || reviewedPlan.menuItems.some(item => !item.name.trim() || !item.subItems.length) || subItems.some(item => !item.name.trim() || item.evidenceStatus !== "completed")) throw Object.assign(new Error(`Complete every named sub-item and allergen checker before signing ${order.destinationLabel || order.canonicalId}.`), { status: 422 });
+    const signatures = (plan.signatures || []).filter(signature => signatureMatchesScope(signature, persistedScope) || signatureMatchesScope(signature, currentScope));
     const alreadyApplied = signatures.some(signature => signature.role === command.role);
-    if (!alreadyApplied && signatures.length > 0 && plan.signedMenuContentHash && plan.signedMenuContentHash !== currentMenuContentHash) throw Object.assign(new Error("The allergen matrix changed after the first signature. Re-review the matrix before signing again."), { status: 409, code: "CPU_SIGN_LINEAGE_CONFLICT" });
-    const candidate = structuredClone(plan);
+    if (!alreadyApplied && signatures.length > 0 && plan.signedMenuContentHash && plan.signedMenuContentHash !== reviewedMenuContentHash) throw Object.assign(new Error("The allergen matrix changed after the first signature. Re-review the matrix before signing again."), { status: 409, code: "CPU_SIGN_LINEAGE_CONFLICT" });
+    const candidate = structuredClone(reviewedPlan);
     candidate.status = "planned";
+    candidate.planningNotes = reviewOperation.planningNotes;
+    candidate.audit.push({ action: "plan-marked-planned", at: timestamp, by: auditActor, reason: "The complete reviewed matrix was committed with the master signature." });
     candidate.signatures = signatures;
     if (!alreadyApplied) {
       const signature: InternalMatrixSignature = { role: command.role, printedName: command.printedName, signedAt: timestamp, actor: auditActor, attestation: command.attestation, signatureDataUrl: command.signatureDataUrl, scope: currentScope };
       candidate.signatures = [...signatures, signature];
-      if (!signatures.length) candidate.signedMenuContentHash = currentMenuContentHash;
+      if (!signatures.length) candidate.signedMenuContentHash = reviewedMenuContentHash;
       candidate.audit.push({ action: "allergen-matrix-signed", at: timestamp, by: auditActor, reason: `${command.role}: ${command.attestation}` });
       const fullySigned = candidate.signatures.some(item => item.role === "production_chef") && candidate.signatures.some(item => item.role === "head_chef_site_manager");
       if (fullySigned) {
         candidate.audit.push({ action: "allergen-matrix-signature-complete", at: timestamp, by: auditActor, reason: "Both signatures recorded; authoritative CPU release commit will precede materialization." });
-        candidate.signedMenuContentHash = currentMenuContentHash;
+        candidate.signedMenuContentHash = reviewedMenuContentHash;
         candidate.signedSignatures = candidate.signatures;
         candidate.currentAllergenRelease = pendingReleaseFor(candidate, order, timestamp);
       }
@@ -240,7 +253,7 @@ async function applyMasterSignatureBatch(request: NextRequest, actor: Awaited<Re
   }
 
   const results: Array<{ orderId: string; ok: boolean; alreadyApplied?: boolean; planStatus?: ProductionPlan["status"]; error?: string }> = [];
-  const committed: Array<{ order: ProductionOrder; plan: ProductionPlan; sequence: number; eventId: string; materializationEventId?: string }> = [];
+  const committed: Array<{ sequence: number }> = [];
   for (const item of prepared) {
     if (item.alreadyApplied) {
       results.push({ orderId: item.order.canonicalId, ok: true, alreadyApplied: true, planStatus: item.plan.status });
@@ -249,6 +262,7 @@ async function applyMasterSignatureBatch(request: NextRequest, actor: Awaited<Re
     try {
       const release = item.plan.currentAllergenRelease;
       const materializationDelivery = release && ["pending", "current"].includes(release.status) && release.materializationStatus !== "ready" ? releaseMaterializationDelivery(item.plan, release, item.order, timestamp) : undefined;
+      const postCommitDelivery = { eventId: `cpu-post-commit:${command.commandId}`, sourceAggregateId: `cpu-master-sign:${command.commandId}`, sourceVersion: item.plan.audit.length, occurredAt: timestamp, consumer: "cpu-production" as const, route: "/api/internal/cpu-post-commit", body: { action: "master-sign", commandId: command.commandId, serviceDate: command.serviceDate, orderIds } };
       const event = await planRepository.saveAndAppendCpuChange(item.plan, item.expectedUpdatedAt, {
         serviceDate: command.serviceDate,
         entityType: "productionPlan",
@@ -258,16 +272,15 @@ async function applyMasterSignatureBatch(request: NextRequest, actor: Awaited<Re
         actorId: actor.uid,
         changedAt: timestamp,
         idempotencyKey: `${command.commandId}:${item.order.canonicalId}`,
-        propagation: { sourceEntityId: item.plan.id, serviceDate: command.serviceDate, sourceVersion: item.plan.audit.length, changedAt: timestamp, changeType: "amended", order: item.order, logistics: false },
-        deliveries: materializationDelivery ? [materializationDelivery] : [],
+        propagation: { eventId: `cpu-master-sign:${command.commandId}:${item.order.canonicalId}`, sourceEntityId: item.plan.id, serviceDate: command.serviceDate, sourceVersion: item.plan.audit.length, changedAt: timestamp, changeType: "amended", order: item.order, logistics: false },
+        deliveries: [postCommitDelivery, ...(materializationDelivery ? [materializationDelivery] : [])],
       });
       const committedPlan = event.plan || item.plan;
       if (event.duplicate) {
         const currentScope = matrixSignatureScope(item.order, menuContentHash(committedPlan.menuItems));
         if (!hasExactSignature(committedPlan, command.role, currentScope)) throw Object.assign(new Error("This signing attempt was already used, but the requested exact-lineage signature is not authoritative."), { status: 409, code: "CPU_SIGN_IDEMPOTENCY_CONFLICT" });
       } else {
-        const sourceEventId = `cpu-change:${item.plan.id}:v${event.sequence}`;
-        committed.push({ order: item.order, plan: committedPlan, sequence: event.sequence, eventId: sourceEventId, ...(materializationDelivery ? { materializationEventId: materializationDelivery.eventId } : {}) });
+        committed.push({ sequence: event.sequence });
       }
       results.push({ orderId: item.order.canonicalId, ok: true, planStatus: committedPlan.status });
     } catch (error) {
@@ -275,18 +288,20 @@ async function applyMasterSignatureBatch(request: NextRequest, actor: Awaited<Re
     }
   }
 
-  const affectedDates = [...new Set(committed.map(item => item.order.serviceDate || command.serviceDate))];
-  const affectedWeeks = [...new Set(affectedDates.map(weekCommencingFor))];
-  for (const serviceDate of affectedDates) await rebuildCpuDayProjection(request, serviceDate, Math.max(...committed.filter(item => (item.order.serviceDate || command.serviceDate) === serviceDate).map(item => item.sequence)));
-  for (const week of affectedWeeks) await rebuildCpuWeekProjection(request, week, Math.max(...committed.map(item => item.sequence)));
-  const reviewScopes = [...new Map(committed.flatMap(item => item.order.destinationOplocId ? [[`${item.order.serviceDate || command.serviceDate}|${item.order.destinationOplocId}`, { serviceDate: item.order.serviceDate || command.serviceDate, oplocId: item.order.destinationOplocId }] as const] : [])).values()];
-  for (const scope of reviewScopes) await rebuildCpuReviewPackage(request, scope.serviceDate, scope.oplocId, Math.max(...committed.map(item => item.sequence)));
-  const propagationEvents = committed.flatMap(item => buildCpuPropagationEvents({ eventId: item.eventId, sourceEntityId: item.plan.id, serviceDate: command.serviceDate, sourceVersion: item.sequence, changedAt: timestamp, changeType: "amended", order: item.order, logistics: false }));
-  const deliveryIds = [...propagationEvents.map(event => event.eventId), ...committed.flatMap(item => item.materializationEventId ? [item.materializationEventId] : [])];
-  const deliveryResults = await Promise.all(deliveryIds.map(eventId => deliverCpuPropagation(eventId)));
-  const metrics = { signingRequests: 1, planWrites: committed.length, dayRebuilds: affectedDates.length, weekRebuilds: affectedWeeks.length, reviewPackageRebuilds: reviewScopes.length, consumerInvalidations: propagationEvents.length, materializationDispatches: committed.filter(item => item.materializationEventId).length, materializationOnCriticalPath: true, elapsedMs: Date.now() - startedAt };
-  recordDeliveredInReadBudget({ stage: "master_matrix_signature", canonicalOrderDocs: sourceOrders.length, planDocs: prepared.length, selectedIds: orderIds.length, rebuildScopes: affectedDates.length + affectedWeeks.length + reviewScopes.length });
-  return { results, partialFailure: results.some(result => !result.ok) && results.some(result => result.ok), deliveryResults, metrics };
+  const successfulOrderIds = new Set(results.filter(result => result.ok).map(result => result.orderId));
+  const fullySigned = prepared.length > 0 && prepared.every(item => successfulOrderIds.has(item.order.canonicalId) && item.plan.signatures?.some(signature => signature.role === "production_chef") && item.plan.signatures?.some(signature => signature.role === "head_chef_site_manager"));
+  const postCommitEventId = `cpu-post-commit:${command.commandId}`;
+  after(async () => {
+    try {
+      const result = await deliverCpuPropagation(postCommitEventId);
+      console.info("FIKA CPU master-sign post-commit dispatch", { commandId: command.commandId, serviceDate: command.serviceDate, status: result.status, attempts: result.attempts || 0, fullySigned });
+    } catch (error) {
+      console.error("FIKA CPU master-sign post-commit dispatch failed", { commandId: command.commandId, serviceDate: command.serviceDate, error: error instanceof Error ? error.message : String(error) });
+    }
+  });
+  const metrics = { signingRequests: 1, planWrites: committed.length, projectionRebuilds: 0, reviewPackageRebuilds: 0, consumerInvalidations: 0, materializationDispatches: 0, materializationOnCriticalPath: false, postCommitJobStaged: true, elapsedMs: Date.now() - startedAt };
+  recordDeliveredInReadBudget({ stage: "master_matrix_signature", canonicalOrderDocs: sourceOrders.length, planDocs: prepared.length, selectedIds: orderIds.length });
+  return { signingStatus: "committed" as const, role: command.role, fullySigned, postCommitStatus: "queued" as const, results, partialFailure: results.some(result => !result.ok) && results.some(result => result.ok), metrics };
 }
 
 async function applyMatrixOperation(request: NextRequest, actor: Awaited<ReturnType<typeof actorFor>>, operation: z.infer<typeof MatrixOperation>) {
@@ -339,6 +354,8 @@ async function applyMatrixOperation(request: NextRequest, actor: Awaited<ReturnT
   const contentChanged = JSON.stringify(plan.menuItems) !== JSON.stringify(nextMenuItems);
   const matchesSignedCheckpoint = signedAllergenCheckpointMatchesOrder(plan, order, nextMenuItems);
   const authorityMatches = allergenAuthorityMatchesOrder(plan, order, nextMenuItems);
+  const hasAllergenAuthority = Boolean(plan.currentAllergenRelease || plan.signatures?.length || plan.signedSignatures?.length || plan.signedMenuContentHash || plan.matrixArtifact || plan.signedMatrixArtifact || plan.masterMatrixArtifact || plan.siteMatrixArtifacts);
+  if (contentChanged && hasAllergenAuthority) throw Object.assign(new Error("Reopen the allergen review before changing a signed matrix."), { status: 409, code: "CPU_REVIEW_REOPEN_REQUIRED" });
   const noOpSave = Boolean(storedPlan && operation.action === "save-plan" && !contentChanged && plan.planningNotes === operation.planningNotes && authorityMatches);
   if (noOpSave) return { orderId: operation.orderId, plan, serviceDate: order.serviceDate, sequence: undefined, changed: false };
   plan.menuItems = nextMenuItems;
@@ -370,13 +387,13 @@ async function applyMatrixOperation(request: NextRequest, actor: Awaited<ReturnT
   if (event.duplicate && event.plan) Object.assign(plan, event.plan);
   return { orderId: operation.orderId, plan, serviceDate: changedOrder.serviceDate, sequence: event.sequence };
 }
-async function mergeOriginalItems(request: NextRequest, plan: ProductionPlan, orderId: string, knownOrder?: ProductionOrder): Promise<ProductionPlan> {
+async function mergeOriginalItems(request: NextRequest, plan: ProductionPlan, orderId: string, knownOrder?: ProductionOrder, preserveAuthority = false): Promise<ProductionPlan> {
   const order = knownOrder || await loadOrder(request, orderId);
   if (!order) return plan;
   const existing = new Set(plan.menuItems.map(item => item.sourceLineId || item.id));
   const missing = order.lines.filter(line => !existing.has(line.canonicalId)).map((line, index) => ({ id: `menu-item:${orderId}:original:${index}`, sourceLineId: line.canonicalId, name: line.itemName, note: "", subItems: [{ id: `sub-item:${orderId}:original:${index}`, name: "", quantity: line.customerQuantity, allergens: {}, note: "", evidenceStatus: "not_completed" as const }] }));
   const next = missing.length ? { ...plan, menuItems: [...plan.menuItems, ...missing] } : plan;
-  if (next.currentAllergenRelease && !currentAllergenReleaseMatchesOrder(next.currentAllergenRelease, order, next.menuItems)) {
+  if (!preserveAuthority && next.currentAllergenRelease && !currentAllergenReleaseMatchesOrder(next.currentAllergenRelease, order, next.menuItems)) {
     invalidateSignedAllergenAuthorityForNewSourceLineage(next, "system", now(), "The canonical source lineage changed after signed release.");
   }
   return next;

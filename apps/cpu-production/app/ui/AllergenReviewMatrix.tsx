@@ -46,6 +46,7 @@ export default function AllergenReviewMatrix({
   onCheckedChange,
   onReviewChanged,
   onRegisterSave,
+  onRegisterReviewState,
   onSignatureRolesChange,
   onOrderSignatureRolesChange,
   onMatrixStatusChange,
@@ -62,6 +63,7 @@ export default function AllergenReviewMatrix({
   onCheckedChange?: (checked: number, total: number, keys: Set<string>) => void;
   onReviewChanged?: () => void;
   onRegisterSave?: (save: () => Promise<void>) => void;
+  onRegisterReviewState?: (get: () => unknown[]) => void;
   onSignatureRolesChange?: (roles: SignatureRole[]) => void;
   onOrderSignatureRolesChange?: (rolesByOrderId: Record<string, SignatureRole[]>) => void;
   onMatrixStatusChange?: (matrixStatusByOrderId: Record<string, string | undefined>) => void;
@@ -199,6 +201,15 @@ export default function AllergenReviewMatrix({
   }, []);
 
   useEffect(() => {
+    if (!locked) return;
+    if (saveTimer.current) {
+      clearTimeout(saveTimer.current);
+      saveTimer.current = undefined;
+    }
+    editVersionRef.current += 1;
+  }, [locked]);
+
+  useEffect(() => {
     onCheckedChange?.(checkedRows.size, rows.length, checkedRows);
   }, [checkedRows, rows.length, onCheckedChange]);
 
@@ -244,6 +255,29 @@ export default function AllergenReviewMatrix({
     await submit(action);
   };
 
+  const latestReviewState = () => orders.map(order => ({
+    action: "mark-planned" as const,
+    orderId: order.canonicalId,
+    planningNotes: "CPU Delivered-In allergen review",
+    menuItems: order.lines.map((line, index) => {
+      const key = `${order.origin}:${line.sourceMenuItemId || line.itemName.trim().toLowerCase()}`;
+      return {
+        id: `menu-item:${order.canonicalId}:${index + 1}`,
+        sourceLineId: line.canonicalId,
+        name: line.itemName,
+        note: "",
+        subItems: [{
+          id: `sub-item:${order.canonicalId}:${index + 1}:1`,
+          name: line.itemName,
+          quantity: line.customerQuantity,
+          allergens: latestStatesRef.current[key] || {},
+          note: "",
+          evidenceStatus: "completed" as const,
+        }],
+      };
+    }),
+  }));
+
   const startSave = (nextStates: Record<string, Record<string, OperationalAllergenState>>, action: "save-plan" | "mark-planned") => {
     const prior = inFlightSave.current;
     const operation = (prior ? prior.catch(() => undefined) : Promise.resolve()).then(() => saveReview(nextStates, action));
@@ -275,6 +309,10 @@ export default function AllergenReviewMatrix({
   useEffect(() => {
     onRegisterSave?.(() => latestSave.current());
   }, [onRegisterSave]);
+
+  useEffect(() => {
+    onRegisterReviewState?.(latestReviewState);
+  }, [onRegisterReviewState, orders]);
 
   const markChecked = async (rowKey: string) => {
     if (busy || locked) return;
@@ -328,7 +366,7 @@ export default function AllergenReviewMatrix({
           {bookingNotes.length > 0 && <p style={{ margin: 0, fontSize: ".78rem" }}><strong>Booking notes:</strong> {bookingNotes.join(" · ")}</p>}
         </section>
       )}
-      {dirty && <p role="status">Unsaved allergen edits — changes save automatically after a short pause and are committed before the first signature.</p>}
+      {dirty && <p role="status">Unsaved allergen edits — changes save automatically after a short pause and are sent atomically with the first signature.</p>}
       <div className="cpu-allergen-legend" aria-label="Allergen matrix legend">
         <span><i className="cpu-allergen-state cpu-allergen-state--contains" />Contains</span>
         <span><i className="cpu-allergen-state cpu-allergen-state--may_contain" />May contain</span>

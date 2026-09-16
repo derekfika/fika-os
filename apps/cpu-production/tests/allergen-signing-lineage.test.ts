@@ -42,15 +42,18 @@ test("signing snapshot fails closed when a master OPLOC lineage is missing or mo
   );
 });
 
-test("the master sign command refreshes lineage after the authoritative save and signs from the snapshot", async () => {
+test("opening the signature modal does not wait for review persistence", async () => {
   const page = await readFile(new URL("../app/allergens/page.tsx", import.meta.url), "utf8");
-  const save = page.indexOf("await saveReviewRef.current()");
-  const refresh = page.indexOf("const freshLineage = captureSigningLineage", save);
-  const openModal = page.indexOf("setSigning({ role })", refresh);
+  const begin = page.indexOf("const beginSigning = (");
+  const openModal = page.indexOf("setSigning({ role })", begin);
   const batchSign = page.indexOf('action: "sign-master-matrix"');
-  assert.ok(save >= 0 && refresh > save && openModal > refresh && batchSign >= 0);
+  const beginBlock = page.slice(begin, openModal);
+  assert.ok(begin >= 0 && openModal > begin && batchSign >= 0);
+  assert.doesNotMatch(beginBlock, /await saveReviewRef|batch-plan|matrixStatus=1/);
+  assert.doesNotMatch(beginBlock, /async/);
+  assert.match(page, /onRegisterReviewState/);
   assert.match(page, /signingSnapshotRef/);
-  assert.match(page, /matrixStatus=1&orderIds=/);
+  assert.match(page, /reviewOperations/);
 });
 
 test("the backend still rejects a genuine lineage advance after the client refresh", async () => {
@@ -69,6 +72,8 @@ test("review edits remain local and explicit save is serialized before first sig
   assert.match(matrix, /saveTimer/);
   assert.match(matrix, /setTimeout\(/);
   assert.match(matrix, /if \(inFlightSave\.current\) \{[\s\S]*await inFlightSave\.current/);
+  assert.match(matrix, /if \(!locked\) return/);
+  assert.match(matrix, /editVersionRef\.current \+= 1/);
 });
 
 test("post-sign hydration keeps the committed role locked and semantic no-op saves cannot revoke authority", async () => {
@@ -94,18 +99,17 @@ test("review session saves only once when dirty, never resaves between signature
   assert.equal((matrix.match(/action: \"batch-plan\"/g) || []).length, 1);
   assert.equal((matrix.match(/await submit\(action\)/g) || []).length, 1);
   assert.match(matrix, /await startSave\(latestStatesRef\.current, \"mark-planned\"\)/);
-  assert.match(page, /await saveReviewRef\.current\(\);/);
-  assert.match(page, /if \(!reviewFrozen\) \{/);
+  assert.match(page, /setReviewFrozen\(true\)/);
   assert.match(page, /const refreshReviewStatus = async/);
   assert.match(page, /await refreshReviewStatus\(\)/);
   assert.doesNotMatch(page, /load\(date, \{ resetSession: false \}\)/);
-  assert.match(page, /const frozenLineage = signingSnapshotRef\.current/);
-  assert.match(page, /sameLineage\(frozenLineage\[orderId\], freshLineage\[orderId\]\)/);
+  assert.match(page, /const signingSnapshot = signingSnapshotRef\.current/);
   assert.match(page, /const reopenForAmendment = async/);
   assert.match(page, /action: "reopen-review"/);
   assert.match(route, /action: z\.literal\("reopen-review"\)/);
   assert.match(route, /allergen-review-reopened/);
   assert.match(route, /invalidateSignedAllergenAuthorityForNewSourceLineage\(plan, auditActor, timestamp, "The allergen review was explicitly reopened for amendment\."\)/);
+  assert.match(route, /CPU_REVIEW_REOPEN_REQUIRED/);
 });
 
 test("live clean-but-unreviewed state requires one authoritative completion, while exact reviewed state is a no-op", async () => {
@@ -137,15 +141,42 @@ test("signing uses one attempt-scoped master command and confirms every member",
   assert.match(route, /!event\.duplicate/);
 });
 
-test("master signing coalesces projection rebuilds and dispatches staged work after commit", async () => {
+test("master signing commits the latest reviewed matrix with its signature", async () => {
+  const page = await readFile(new URL("../app/allergens/page.tsx", import.meta.url), "utf8");
+  const route = await readFile(new URL("../app/api/production-plan/route.ts", import.meta.url), "utf8");
+  assert.match(page, /const reviewOperations = signingReviewRef\.current\?\.\(\)/);
+  assert.match(page, /reviewOperations,/);
+  assert.match(route, /reviewedPlan = await mergeOriginalItems/);
+  assert.match(route, /candidate\.planningNotes = reviewOperation\.planningNotes/);
+  assert.match(route, /plan-marked-planned/);
+  assert.match(route, /signingStatus: "committed"/);
+  assert.match(route, /role: command\.role/);
+  assert.match(route, /fullySigned/);
+  assert.match(route, /postCommitStatus: "queued"/);
+});
+
+test("master signing queues durable post-commit work after the authoritative commit", async () => {
   const route = await readFile(new URL("../app/api/production-plan/route.ts", import.meta.url), "utf8");
   const master = route.slice(route.indexOf("async function applyMasterSignatureBatch"), route.indexOf("async function applyMatrixOperation"));
-  assert.match(master, /const affectedDates = \[\.\.\.new Set\(committed\.map/);
-  assert.match(master, /for \(const serviceDate of affectedDates\) await rebuildCpuDayProjection/);
-  assert.match(master, /for \(const week of affectedWeeks\) await rebuildCpuWeekProjection/);
-  assert.match(master, /rebuildCpuReviewPackage/);
-  assert.match(master, /Promise\.all\(deliveryIds\.map/);
-  assert.match(master, /materializationOnCriticalPath: true/);
+  assert.match(master, /route: "\/api\/internal\/cpu-post-commit"/);
+  assert.match(master, /deliveries: \[postCommitDelivery/);
+  assert.match(master, /after\(async \(\) =>/);
+  assert.doesNotMatch(master, /await rebuildCpuDayProjection|await rebuildCpuWeekProjection|await rebuildCpuReviewPackage|await deliverCpuPropagation\(materialization/);
+  assert.match(master, /postCommitStatus: "queued"/);
+  assert.match(master, /materializationOnCriticalPath: false/);
+});
+
+test("post-commit worker is bounded, retryable, and reports safe timing metrics", async () => {
+  const worker = await readFile(new URL("../lib/cpu-post-commit-worker.ts", import.meta.url), "utf8");
+  const route = await readFile(new URL("../app/api/internal/cpu-post-commit/route.ts", import.meta.url), "utf8");
+  assert.match(worker, /job\.orderIds\.includes/);
+  assert.match(worker, /latestCpuChangeSequence/);
+  assert.match(worker, /buildCpuPropagationEvents/);
+  assert.match(worker, /Promise\.all\(deliveryIds\.map\(eventId => deliverCpuPropagation/);
+  assert.match(worker, /projectionRebuildMs/);
+  assert.match(worker, /console\.info\("FIKA CPU post-commit worker completed"/);
+  assert.match(route, /internalTokenAllowed/);
+  assert.match(route, /processCpuPostCommitJob/);
 });
 
 test("master page retries only non-ready OPLOC releases with fresh lineage", async () => {
@@ -173,4 +204,13 @@ test("master retry reports partial OPLOC completion and hides after all are read
   assert.match(page, /stillPending\.length/);
   assert.match(page, /retry still pending/);
   assert.match(page, /setFinalizationComplete\(statuses\.length === orderIds\.length && statuses\.every\(status => status\.matrixStatus === "ready"\)\)/);
+});
+
+test("release polling stops at terminal statuses and cleans up on date changes", async () => {
+  const page = await readFile(new URL("../app/allergens/page.tsx", import.meta.url), "utf8");
+  const poll = page.slice(page.indexOf("const pollReleaseStatus"), page.indexOf("const pendingReleaseOrders"));
+  assert.match(poll, /setTimeout\(\(\) => void refresh\(\)\.catch\(\(\) => undefined\), 2500\)/);
+  assert.match(poll, /\["ready", "failed", "not_configured"\]/);
+  assert.match(page, /releasePollTimerRef\.current\) clearTimeout/);
+  assert.match(page, /releasePollRunRef\.current \+= 1/);
 });
