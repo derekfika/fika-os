@@ -215,6 +215,13 @@ function routeBase(consumer: CpuPropagationConsumer) {
   return consumer === "delivered-in" ? "http://localhost:3800" : "http://localhost:3900";
 }
 
+function cpuInternalToken() {
+  const token = process.env.FIKA_INTERNAL_API_TOKEN?.trim() || "";
+  const runtimeMode = process.env.FIKA_RUNTIME_MODE || "local";
+  if (!token && (runtimeMode !== "local" || process.env.NODE_ENV === "production")) throw Object.assign(new Error("CPU durable outbox internal authentication is not configured."), { status: 503, code: "CPU_OUTBOX_INTERNAL_TOKEN_MISSING" });
+  return token;
+}
+
 async function readOutbox(eventId: string) {
   if (useMemoryOutbox()) return memoryOutbox.get(eventId);
   const snapshot = await db.collection(CPU_PROPAGATION_OUTBOX_COLLECTION).doc(eventId).get();
@@ -266,9 +273,10 @@ export async function deliverCpuPropagation(eventId: string, at = new Date()) {
   let targetUrl: string | undefined;
   try {
     targetUrl = new URL(payload.route, `${routeBase(payload.consumer)}/`).toString();
+    const internalToken = payload.consumer === "cpu-production" ? cpuInternalToken() : process.env.FIKA_INTERNAL_API_TOKEN?.trim() || "";
     const response = await fetch(targetUrl, {
       method: "POST",
-      headers: { "content-type": "application/json", accept: "application/json", "x-fika-internal-token": process.env.FIKA_INTERNAL_API_TOKEN || "" , "x-fika-delivery-id": payload.deliveryId, "x-fika-source-event-id": payload.sourceEventId },
+      headers: { "content-type": "application/json", accept: "application/json", "x-fika-internal-token": internalToken, "x-fika-delivery-id": payload.deliveryId, "x-fika-source-event-id": payload.sourceEventId },
       body: JSON.stringify(payload.body),
       signal: AbortSignal.timeout(8_000),
     });

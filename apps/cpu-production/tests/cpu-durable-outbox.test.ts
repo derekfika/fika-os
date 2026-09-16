@@ -34,9 +34,11 @@ test("CPU self-delivery prefers the public base and builds the materialization e
   const previousFetch = globalThis.fetch;
   const previousPublic = process.env.CPU_PUBLIC_BASE_URL;
   const previousProduction = process.env.CPU_PRODUCTION_BASE_URL;
+  const previousRuntime = process.env.FIKA_RUNTIME_MODE;
   let requestedUrl = "";
   delete process.env.CPU_PUBLIC_BASE_URL;
   process.env.CPU_PRODUCTION_BASE_URL = "cpu-staging.fikacatering.com/";
+  process.env.FIKA_RUNTIME_MODE = "local";
   globalThis.fetch = (async (input) => { requestedUrl = String(input); return new Response("{}", { status: 200 }); }) as typeof fetch;
   try {
     const event = await enqueueCpuDelivery({ eventId: "cpu-allergen-materialize:release:oploc:haleon:order:haleon", sourceAggregateId: "release", sourceVersion: 1, occurredAt: "2026-09-14T09:00:00.000Z", consumer: "cpu-production", route: "/api/internal/cpu-release-materialize", body: { orderId: "order:haleon", releaseId: "release" } });
@@ -46,6 +48,56 @@ test("CPU self-delivery prefers the public base and builds the materialization e
     globalThis.fetch = previousFetch;
     if (previousPublic === undefined) delete process.env.CPU_PUBLIC_BASE_URL; else process.env.CPU_PUBLIC_BASE_URL = previousPublic;
     if (previousProduction === undefined) delete process.env.CPU_PRODUCTION_BASE_URL; else process.env.CPU_PRODUCTION_BASE_URL = previousProduction;
+    if (previousRuntime === undefined) delete process.env.FIKA_RUNTIME_MODE; else process.env.FIKA_RUNTIME_MODE = previousRuntime;
+  }
+});
+
+test("CPU durable outbox trims the internal token before self-delivery", async () => {
+  const previousFetch = globalThis.fetch;
+  const previousToken = process.env.FIKA_INTERNAL_API_TOKEN;
+  const previousRuntime = process.env.FIKA_RUNTIME_MODE;
+  const previousPublic = process.env.CPU_PUBLIC_BASE_URL;
+  const sent: string[] = [];
+  process.env.FIKA_RUNTIME_MODE = "staging";
+  process.env.CPU_PUBLIC_BASE_URL = "http://cpu.test";
+  globalThis.fetch = (async (_input, init) => { sent.push(new Headers(init?.headers).get("x-fika-internal-token") || ""); return new Response("{}", { status: 200 }); }) as typeof fetch;
+  try {
+    for (const token of ["secret-token", "  secret-token  ", "secret-token\n"]) {
+      resetCpuOutboxForTests();
+      process.env.FIKA_INTERNAL_API_TOKEN = token;
+      const event = await enqueueCpuDelivery({ eventId: `cpu-token-test:${sent.length}`, sourceAggregateId: "release", sourceVersion: 1, occurredAt: "2026-09-14T09:00:00.000Z", consumer: "cpu-production", route: "/api/internal/cpu-release-materialize", body: { orderId: "order:haleon", releaseId: "release" } });
+      assert.equal((await deliverCpuPropagation(event.eventId, new Date("2026-09-14T09:00:00.000Z"))).status, "delivered");
+    }
+    assert.deepEqual(sent, ["secret-token", "secret-token", "secret-token"]);
+  } finally {
+    globalThis.fetch = previousFetch;
+    if (previousToken === undefined) delete process.env.FIKA_INTERNAL_API_TOKEN; else process.env.FIKA_INTERNAL_API_TOKEN = previousToken;
+    if (previousRuntime === undefined) delete process.env.FIKA_RUNTIME_MODE; else process.env.FIKA_RUNTIME_MODE = previousRuntime;
+    if (previousPublic === undefined) delete process.env.CPU_PUBLIC_BASE_URL; else process.env.CPU_PUBLIC_BASE_URL = previousPublic;
+  }
+});
+
+test("CPU self-delivery fails safely before fetch when the non-local token is missing", async () => {
+  resetCpuOutboxForTests();
+  const previousFetch = globalThis.fetch;
+  const previousToken = process.env.FIKA_INTERNAL_API_TOKEN;
+  const previousRuntime = process.env.FIKA_RUNTIME_MODE;
+  let calls = 0;
+  delete process.env.FIKA_INTERNAL_API_TOKEN;
+  process.env.FIKA_RUNTIME_MODE = "staging";
+  globalThis.fetch = (async () => { calls += 1; throw new Error("fetch must not be called"); }) as typeof fetch;
+  try {
+    const event = await enqueueCpuDelivery({ eventId: "cpu-token-missing", sourceAggregateId: "release", sourceVersion: 1, occurredAt: "2026-09-14T09:00:00.000Z", consumer: "cpu-production", route: "/api/internal/cpu-release-materialize", body: { orderId: "order:haleon", releaseId: "release" } });
+    const result = await deliverCpuPropagation(event.eventId, new Date("2026-09-14T09:00:00.000Z"));
+    assert.equal(result.status, "failed");
+    assert.equal(calls, 0);
+    assert.match(result.error || "", /internal authentication is not configured/);
+    assert.doesNotMatch(result.error || "", /secret-token/);
+    assert.equal(listCpuOutboxForTests()[0].delivery.status, "failed");
+  } finally {
+    globalThis.fetch = previousFetch;
+    if (previousToken === undefined) delete process.env.FIKA_INTERNAL_API_TOKEN; else process.env.FIKA_INTERNAL_API_TOKEN = previousToken;
+    if (previousRuntime === undefined) delete process.env.FIKA_RUNTIME_MODE; else process.env.FIKA_RUNTIME_MODE = previousRuntime;
   }
 });
 
