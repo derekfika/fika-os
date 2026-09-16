@@ -79,6 +79,7 @@ const Command = z.discriminatedUnion("action", [
 const MatrixOperation = z.discriminatedUnion("action", [
   z.object({ action: z.literal("save-plan"), orderId: z.string(), menuItems: z.array(MenuItem).min(1), planningNotes: z.string().default(""), commandId: z.string().trim().min(8).optional() }),
   z.object({ action: z.literal("mark-planned"), orderId: z.string(), menuItems: z.array(MenuItem).min(1), planningNotes: z.string().default(""), commandId: z.string().trim().min(8).optional() }),
+  z.object({ action: z.literal("reopen-review"), orderId: z.string(), commandId: z.string().trim().min(8).optional() }),
 ]);
 const MatrixBatchCommand = z.object({ action: z.literal("batch-plan"), operations: z.array(MatrixOperation).min(1).max(100) }).strict();
 
@@ -184,6 +185,45 @@ async function applyMatrixOperation(request: NextRequest, actor: Awaited<ReturnT
   if (!storedPlan && !isLocalRuntime()) plans.delete(operation.orderId);
   const plan = await getPlan(request, operation.orderId, storedPlan);
   const auditActor = actor.name || actor.uid;
+  if (operation.action === "reopen-review") {
+    const hasAuthority = Boolean(plan.currentAllergenRelease || plan.signatures?.length || plan.signedSignatures?.length || plan.signedMenuContentHash || plan.matrixArtifact || plan.signedMatrixArtifact || plan.masterMatrixArtifact || plan.siteMatrixArtifacts);
+    if (!hasAuthority) return { orderId: operation.orderId, plan, serviceDate: order.serviceDate, sequence: undefined, changed: false };
+    const timestamp = now();
+    const releaseBeforeReopen = plan.currentAllergenRelease;
+    invalidateSignedAllergenAuthorityForNewSourceLineage(plan, auditActor, timestamp, "The allergen review was explicitly reopened for amendment.");
+    const revokedRelease = plan.allergenReleaseHistory?.at(-1) || releaseBeforeReopen;
+    plan.status = "planning";
+    plan.audit.push({ action: "allergen-review-reopened", at: timestamp, by: auditActor, reason: "Prior signature authority was revoked before amendment." });
+    updateLocalFixture(operation.orderId, current => ({ ...current, status: "planning", version: current.version + 1 }));
+    plan.updatedAt = timestamp;
+    plan.updatedBy = auditActor;
+    const changedOrder = await loadOrder(request, operation.orderId);
+    if (!changedOrder?.serviceDate) {
+      await persistPlan(plan, storedPlan?.updatedAt);
+      return { orderId: operation.orderId, plan, serviceDate: undefined, sequence: undefined, changed: true };
+    }
+    const releaseDeliveries = (releaseBeforeReopen?.packetArtifacts || [])[0]?.contentHash && changedOrder.destinationOplocId
+      ? (() => {
+          const releaseEvent = buildCpuAllergenReleaseEvent({ eventType: "revoked", release: revokedRelease!, oplocId: changedOrder.destinationOplocId! });
+          return [{ eventId: `${releaseEvent.eventId}:delivered-in:${changedOrder.destinationOplocId}`, sourceAggregateId: releaseEvent.releaseId, sourceVersion: releaseEvent.sourceVersion, occurredAt: revokedRelease!.signedAt, consumer: "delivered-in" as const, route: "/api/internal/cpu-release-event", body: releaseEvent as unknown as Record<string, unknown> }];
+        })()
+      : [];
+    const event = await planRepository.saveAndAppendCpuChange(plan, storedPlan?.updatedAt, {
+      serviceDate: changedOrder.serviceDate,
+      entityType: "productionPlan",
+      entityId: plan.id,
+      revision: plan.audit.length,
+      changeType: "reopen-review",
+      actorId: actor.uid,
+      changedAt: timestamp,
+      ...(operation.commandId ? { idempotencyKey: operation.commandId } : {}),
+      propagation: { sourceEntityId: plan.id, serviceDate: changedOrder.serviceDate, sourceVersion: plan.audit.length, changedAt: timestamp, changeType: "amended", order: changedOrder, logistics: false },
+      deliveries: releaseDeliveries,
+    });
+    if (event.duplicate && event.plan) Object.assign(plan, event.plan);
+    if (!event.duplicate && releaseDeliveries[0]) await deliverCpuPropagation(releaseDeliveries[0].eventId);
+    return { orderId: operation.orderId, plan, serviceDate: changedOrder.serviceDate, sequence: event.sequence, changed: true };
+  }
   const nextMenuItems = (await mergeOriginalItems(request, { ...plan, menuItems: normalisePlanAllergens({ ...plan, menuItems: operation.menuItems }).menuItems }, operation.orderId, order)).menuItems;
   const contentChanged = JSON.stringify(plan.menuItems) !== JSON.stringify(nextMenuItems);
   const matchesSignedCheckpoint = signedAllergenCheckpointMatchesOrder(plan, order, nextMenuItems);

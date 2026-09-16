@@ -59,12 +59,13 @@ test("the backend still rejects a genuine lineage advance after the client refre
   assert.match(route, /latestScopeForSign[\s\S]*sameLineage\(latestScopeForSign, command\.expectedLineage\)/);
 });
 
-test("debounced review writes are cancelled/flushed and serialized before signing", async () => {
+test("review edits remain local and explicit save is serialized before first signing", async () => {
   const matrix = await readFile(new URL("../app/ui/AllergenReviewMatrix.tsx", import.meta.url), "utf8");
-  assert.match(matrix, /pendingSave/);
+  assert.match(matrix, /dirtyRef/);
+  assert.match(matrix, /onDirtyChange/);
+  assert.match(matrix, /if \(!dirtyRef\.current\) return/);
   assert.match(matrix, /startSave/);
-  assert.match(matrix, /clearTimeout\(syncTimer\.current\)/);
-  assert.match(matrix, /if \(pending\) \{[\s\S]*await startSave\(pending\.states\)/);
+  assert.doesNotMatch(matrix, /pendingSave|scheduleSync|setTimeout\(/);
   assert.match(matrix, /if \(inFlightSave\.current\) \{[\s\S]*await inFlightSave\.current/);
 });
 
@@ -73,9 +74,33 @@ test("post-sign hydration keeps the committed role locked and semantic no-op sav
   const matrix = await readFile(new URL("../app/ui/AllergenReviewMatrix.tsx", import.meta.url), "utf8");
   const route = await readFile(new URL("../app/api/production-plan/route.ts", import.meta.url), "utf8");
   assert.match(page, /const \[hydrating, setHydrating\] = useState\(false\)/);
-  assert.match(page, /locked=\{hydrating \|\| bothSigned \|\| Boolean\(signing\)\}/);
+  assert.match(page, /locked=\{hydrating \|\| reviewFrozen \|\| bothSigned \|\| Boolean\(signing\)\}/);
   assert.match(matrix, /onHydrationChange\?\.\(true\)/);
   assert.match(matrix, /onHydrationChange\?\.\(false\)/);
   assert.match(route, /const noOpSave = Boolean\(storedPlan && operation\.action === "save-plan" && !contentChanged && plan\.planningNotes === operation\.planningNotes && authorityMatches\)/);
   assert.doesNotMatch(route, /if \(contentChanged \|\| plan\.currentAllergenRelease\) invalidateSignedAllergenAuthority/);
+});
+
+test("review session saves only once when dirty, never resaves between signatures, and supports explicit amendment", async () => {
+  const page = await readFile(new URL("../app/allergens/page.tsx", import.meta.url), "utf8");
+  const matrix = await readFile(new URL("../app/ui/AllergenReviewMatrix.tsx", import.meta.url), "utf8");
+  const route = await readFile(new URL("../app/api/production-plan/route.ts", import.meta.url), "utf8");
+  const toggle = matrix.slice(matrix.indexOf("  const toggle ="), matrix.indexOf("\n\n  return (", matrix.indexOf("  const toggle =")));
+  assert.equal(toggle.includes("fetch("), false);
+  assert.equal(toggle.includes("startSave"), false);
+  assert.match(matrix, /dirtyRef\.current = true/);
+  assert.equal((matrix.match(/action: \"batch-plan\"/g) || []).length, 1);
+  assert.equal((matrix.match(/await submit\(\"save-plan\"\)/g) || []).length, 1);
+  assert.match(page, /if \(reviewDirty\) \{[\s\S]*await saveReviewRef\.current\(\);[\s\S]*\}/);
+  assert.match(page, /if \(!reviewFrozen\) \{/);
+  assert.match(page, /const refreshReviewStatus = async/);
+  assert.match(page, /await refreshReviewStatus\(\)/);
+  assert.doesNotMatch(page, /load\(date, \{ resetSession: false \}\)/);
+  assert.match(page, /const frozenLineage = signingSnapshotRef\.current/);
+  assert.match(page, /sameLineage\(frozenLineage\[orderId\], freshLineage\[orderId\]\)/);
+  assert.match(page, /const reopenForAmendment = async/);
+  assert.match(page, /action: "reopen-review"/);
+  assert.match(route, /action: z\.literal\("reopen-review"\)/);
+  assert.match(route, /allergen-review-reopened/);
+  assert.match(route, /invalidateSignedAllergenAuthorityForNewSourceLineage\(plan, auditActor, timestamp, "The allergen review was explicitly reopened for amendment\."\)/);
 });

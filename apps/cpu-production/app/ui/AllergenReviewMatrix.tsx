@@ -51,6 +51,7 @@ export default function AllergenReviewMatrix({
   onFinalizationChange,
   onLineageChange,
   onHydrationChange,
+  onDirtyChange,
 }: {
   rows: AllergenReviewRow[];
   orders: ProductionOrder[];
@@ -65,16 +66,17 @@ export default function AllergenReviewMatrix({
   onFinalizationChange?: (finalized: boolean) => void;
   onLineageChange?: (lineageByOrderId: Record<string, MatrixLineage>) => void;
   onHydrationChange?: (hydrating: boolean) => void;
+  onDirtyChange?: (dirty: boolean) => void;
 }) {
   const [states, setStates] = useState<Record<string, Record<string, OperationalAllergenState>>>(
     () => Object.fromEntries(rows.map(row => [row.key, { ...(row.snapshot?.allergens || {}) }])) as Record<string, Record<string, OperationalAllergenState>>,
   );
   const [checkedRows, setCheckedRows] = useState<Set<string>>(() => new Set());
+  const [dirty, setDirty] = useState(false);
   const [error, setError] = useState("");
   const latestSave = useRef<() => Promise<void>>(() => Promise.resolve());
-  const syncTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  const pendingSave = useRef<{ states: Record<string, Record<string, OperationalAllergenState>> } | undefined>(undefined);
   const inFlightSave = useRef<Promise<void> | undefined>(undefined);
+  const dirtyRef = useRef(false);
   const bookingDietaries = [...new Set(orders.flatMap(order => bookingContextEntries(order.bookingDietaries)))];
   const bookingNotes = [...new Set(orders.map(order => order.bookingNotes).filter((note): note is string => Boolean(note?.trim())))];
 
@@ -85,6 +87,9 @@ export default function AllergenReviewMatrix({
     const hydrate = async () => {
       const orderIds = [...new Set(orders.map(order => order.canonicalId))];
       if (!orderIds.length) {
+        dirtyRef.current = false;
+        setDirty(false);
+        onDirtyChange?.(false);
         onSignatureRolesChange?.([]);
         onOrderSignatureRolesChange?.({});
         onFinalizationChange?.(false);
@@ -132,6 +137,9 @@ export default function AllergenReviewMatrix({
         .filter(role => allStatusesPresent && statuses.every(status => status.signatureRoles.includes(role)));
 
       if (cancelled) return;
+      dirtyRef.current = false;
+      setDirty(false);
+      onDirtyChange?.(false);
       onLineageChange?.(lineage);
       onOrderSignatureRolesChange?.(rolesByOrderId);
       onSignatureRolesChange?.(commonRoles);
@@ -224,39 +232,16 @@ export default function AllergenReviewMatrix({
     return operation;
   };
 
-  const scheduleSync = (nextStates: Record<string, Record<string, OperationalAllergenState>>) => {
-    if (syncTimer.current) clearTimeout(syncTimer.current);
-    pendingSave.current = { states: nextStates };
-    syncTimer.current = setTimeout(() => {
-      syncTimer.current = undefined;
-      const pending = pendingSave.current;
-      pendingSave.current = undefined;
-      if (!pending) return;
-      void startSave(pending.states);
-    }, 300);
-  };
-
-  useEffect(() => () => {
-    if (syncTimer.current) clearTimeout(syncTimer.current);
-    pendingSave.current = undefined;
-  }, []);
-
   latestSave.current = async () => {
-    if (syncTimer.current) {
-      clearTimeout(syncTimer.current);
-      syncTimer.current = undefined;
-    }
-    const pending = pendingSave.current;
-    pendingSave.current = undefined;
-    if (pending) {
-      await startSave(pending.states);
-      return;
-    }
     if (inFlightSave.current) {
       await inFlightSave.current;
       return;
     }
+    if (!dirtyRef.current) return;
     await startSave(states);
+    dirtyRef.current = false;
+    setDirty(false);
+    onDirtyChange?.(false);
   };
 
   useEffect(() => {
@@ -281,9 +266,11 @@ export default function AllergenReviewMatrix({
     const nextCheckedRows = new Set(checkedRows);
     nextCheckedRows.delete(rowKey);
     setStates(nextStates);
+    dirtyRef.current = true;
+    setDirty(true);
+    onDirtyChange?.(true);
     setCheckedRows(nextCheckedRows);
     void saveLocalChecked(scopeKey, nextCheckedRows);
-    scheduleSync(nextStates);
     onReviewChanged?.();
     setError("");
   };
@@ -297,6 +284,7 @@ export default function AllergenReviewMatrix({
           {bookingNotes.length > 0 && <p style={{ margin: 0, fontSize: ".78rem" }}><strong>Booking notes:</strong> {bookingNotes.join(" · ")}</p>}
         </section>
       )}
+      {dirty && <p role="status">Unsaved allergen edits — changes will be saved once before the first signature.</p>}
       <div className="cpu-allergen-legend" aria-label="Allergen matrix legend">
         <span><i className="cpu-allergen-state cpu-allergen-state--contains" />Contains</span>
         <span><i className="cpu-allergen-state cpu-allergen-state--may_contain" />May contain</span>

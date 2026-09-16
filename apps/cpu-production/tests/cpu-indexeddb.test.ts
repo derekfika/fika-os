@@ -184,10 +184,10 @@ test("allergen signing freezes once, preserves the first signature, and locks ed
   const page = await readFile(new URL("../app/allergens/page.tsx", import.meta.url), "utf8");
   const matrix = await readFile(new URL("../app/ui/AllergenReviewMatrix.tsx", import.meta.url), "utf8");
   const planRoute = await readFile(new URL("../app/api/production-plan/route.ts", import.meta.url), "utf8");
-  assert.match(page, /if \(!reviewFrozen\) \{[\s\S]*setSignatureMessage\("Syncing allergen edits before signature…"\);[\s\S]*await saveReviewRef\.current\(\);[\s\S]*setReviewFrozen\(true\);[\s\S]*\}/);
+  assert.match(page, /if \(!reviewFrozen\) \{[\s\S]*if \(reviewDirty\) \{[\s\S]*setSignatureMessage\("Syncing allergen edits before signature…"\);[\s\S]*await saveReviewRef\.current\(\);[\s\S]*\}[\s\S]*setReviewFrozen\(true\);[\s\S]*\}/);
   assert.doesNotMatch(page, /beginSigning[\s\S]*await saveReviewRef\.current\(\);[\s\S]*await saveReviewRef\.current\(\);/);
   assert.match(page, /busy=\{signatureBusy\}/);
-  assert.match(page, /locked=\{bothSigned \|\| Boolean\(signing\)\}/);
+  assert.match(page, /locked=\{hydrating \|\| reviewFrozen \|\| bothSigned \|\| Boolean\(signing\)\}/);
   assert.match(matrix, /locked = false/);
   assert.match(matrix, /disabled=\{busy \|\| locked \|\| key === "no_key_allergens"\}/);
   assert.match(matrix, /loadLocalChecked/);

@@ -8,10 +8,26 @@ import { loadCpuAllergenProjection } from "../lib/cpu-allergen-projection-loader
 import AllergenReviewMatrix from "../ui/AllergenReviewMatrix";
 import { SignatureModal } from "../ui/HospitalityAllergenDetail";
 import { buildAllergenReviewRows, deliveredInMenuOrdersForServiceDate, destination, orderDate } from "../../lib/production-day";
-import { captureSigningLineage, type MatrixLineage } from "./signing-lineage";
+import { captureSigningLineage } from "./signing-lineage";
 import "./page.css";
 
 type SignatureRole = "production_chef" | "head_chef_site_manager";
+type MatrixLineage = {
+  productionOrderId: string;
+  serviceDate: string;
+  sourceDayId: string;
+  sourcePublicationId?: string;
+  sourcePublicationDayId: string;
+  sourceVersion: number;
+  sourceContentHash: string;
+  matrixContentHash: string;
+};
+type MatrixStatus = { orderId: string; signatureRoles: SignatureRole[]; matrixStatus?: string; sourceLineage?: MatrixLineage };
+
+function sameLineage(left: MatrixLineage | undefined, right: MatrixLineage | undefined) {
+  return Boolean(left && right && left.productionOrderId === right.productionOrderId && left.serviceDate === right.serviceDate && left.sourceDayId === right.sourceDayId && left.sourcePublicationId === right.sourcePublicationId && left.sourcePublicationDayId === right.sourcePublicationDayId && left.sourceVersion === right.sourceVersion && left.sourceContentHash === right.sourceContentHash && left.matrixContentHash === right.matrixContentHash);
+}
+
 function formatDate(date: string) {
   return new Date(`${date}T12:00:00`).toLocaleDateString("en-GB", {
     weekday: "long",
@@ -36,6 +52,7 @@ export default function CpuAllergenReviewPage() {
   const [signatureMessage, setSignatureMessage] = useState("");
   const [signatureBusy, setSignatureBusy] = useState(false);
   const [hydrating, setHydrating] = useState(false);
+  const [reviewDirty, setReviewDirty] = useState(false);
   const saveReviewRef = useRef<() => Promise<void>>(() => Promise.resolve());
   const signingSnapshotRef = useRef<Record<string, MatrixLineage> | undefined>(undefined);
 
@@ -50,6 +67,7 @@ export default function CpuAllergenReviewPage() {
     signingSnapshotRef.current = undefined;
     setFinalizationComplete(false);
     setReviewFrozen(false);
+    setReviewDirty(false);
     try {
       const loaded = await loadCpuAllergenProjection(selectedDate, "delivered_in");
       setOrders(cpuProjectionToOrders(loaded.projection).filter(order => order.origin === "menu_planning"));
@@ -67,6 +85,16 @@ export default function CpuAllergenReviewPage() {
   useEffect(() => {
     if (date) void load(date);
   }, [date]);
+
+  useEffect(() => {
+    if (!reviewDirty) return;
+    const warnBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", warnBeforeUnload);
+    return () => window.removeEventListener("beforeunload", warnBeforeUnload);
+  }, [reviewDirty]);
 
   const dateOrders = useMemo(
     () => orders.filter(order => !date || orderDate(order) === date),
@@ -90,6 +118,25 @@ export default function CpuAllergenReviewPage() {
   const bothSigned = productionSigned && headChefSigned;
   const fullySigned = finalizationComplete && bothSigned;
 
+  const refreshReviewStatus = async () => {
+    const orderIds = masterOrders.map(order => order.canonicalId);
+    const response = await fetch(`/api/production-plan?matrixStatus=1&orderIds=${encodeURIComponent(orderIds.join(","))}`, { cache: "no-store" });
+    if (!response.ok) throw new Error("Signature status could not be refreshed. Reload the review before continuing.");
+    const body = await response.json() as { matrixStatuses?: MatrixStatus[] };
+    const statuses = body.matrixStatuses || [];
+    const rolesByOrderId = Object.fromEntries(orderIds.map(orderId => [orderId, statuses.find(status => status.orderId === orderId)?.signatureRoles || []])) as Record<string, SignatureRole[]>;
+    const commonRoles = (["production_chef", "head_chef_site_manager"] as SignatureRole[]).filter(role => statuses.length === orderIds.length && statuses.every(status => status.signatureRoles.includes(role)));
+    const freshLineage = captureSigningLineage(orderIds, date, statuses);
+    const frozenLineage = signingSnapshotRef.current;
+    if (frozenLineage && orderIds.some(orderId => !sameLineage(frozenLineage[orderId], freshLineage[orderId]))) {
+      setSignatureMessage("The reviewed Menu publication changed after this review was frozen. Reopen the review and review the current matrix before signing.");
+    }
+    setSignatureRolesByOrderId(rolesByOrderId);
+    setSignatureRoles(commonRoles);
+    setFinalizationComplete(statuses.length === orderIds.length && statuses.every(status => status.matrixStatus === "ready"));
+    setLineageByOrderId(frozenLineage || freshLineage);
+  };
+
   const sign = async (printedName: string, signatureDataUrl: string) => {
     if (!signing || signatureBusy || site) return;
     const role = signing.role;
@@ -105,7 +152,6 @@ export default function CpuAllergenReviewPage() {
     }
     if (!targets.length) {
       setSigning(undefined);
-      signingSnapshotRef.current = undefined;
       setSignatureMessage("This signature is already recorded across every OPLOC in the service-date master matrix.");
       return;
     }
@@ -150,8 +196,8 @@ export default function CpuAllergenReviewPage() {
       }
 
       setSigning(undefined);
-      signingSnapshotRef.current = undefined;
       if (failures.length) {
+        signingSnapshotRef.current = undefined;
         setSignatureMessage(
           `The master signature was not applied to every OPLOC. ${failures.join(" · ")} Reload and retry; already-committed OPLOC signatures are idempotent.`,
         );
@@ -163,11 +209,37 @@ export default function CpuAllergenReviewPage() {
             : "Head chef / site manager signature recorded once across the complete service-date master matrix. OPLOC-scoped releases are refreshing.",
         );
       }
-      await load(date);
+      await refreshReviewStatus();
     } catch (cause) {
       setSigning(undefined);
       signingSnapshotRef.current = undefined;
       setSignatureMessage(cause instanceof Error ? cause.message : "The master matrix could not be signed.");
+    } finally {
+      setSignatureBusy(false);
+    }
+  };
+
+  const reopenForAmendment = async () => {
+    if (!reviewFrozen || signatureBusy || hydrating || !masterOrders.length) return;
+    setSignatureBusy(true);
+    setSignatureMessage("Revoking prior signature authority and reopening the review…");
+    try {
+      const response = await fetch("/api/production-plan", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          action: "batch-plan",
+          operations: masterOrders.map(order => ({ action: "reopen-review", orderId: order.canonicalId })),
+        }),
+      });
+      const body = await response.json() as { results?: Array<{ ok: boolean; error?: string }> };
+      if (!response.ok || body.results?.some(result => !result.ok)) {
+        throw new Error(body.results?.find(result => !result.ok)?.error || "The allergen review could not be reopened.");
+      }
+      await load(date);
+      setSignatureMessage("Review reopened for amendment. Save the amended matrix once before signing again.");
+    } catch (cause) {
+      setSignatureMessage(cause instanceof Error ? cause.message : "The allergen review could not be reopened.");
     } finally {
       setSignatureBusy(false);
     }
@@ -196,8 +268,10 @@ export default function CpuAllergenReviewPage() {
     setSignatureBusy(true);
     try {
       if (!reviewFrozen) {
-        setSignatureMessage("Syncing allergen edits before signature…");
-        await saveReviewRef.current();
+        if (reviewDirty) {
+          setSignatureMessage("Syncing allergen edits before signature…");
+          await saveReviewRef.current();
+        }
         setReviewFrozen(true);
       }
       setSignatureMessage("Refreshing current Menu publication lineage before signature…");
@@ -206,8 +280,13 @@ export default function CpuAllergenReviewPage() {
       if (!response.ok) throw new Error("The current Menu publication lineage could not be refreshed. Reload the review before signing.");
       const body = await response.json() as { matrixStatuses?: Array<{ orderId: string; sourceLineage?: MatrixLineage }> };
       const freshLineage = captureSigningLineage(orderIds, date, body.matrixStatuses || []);
-      signingSnapshotRef.current = freshLineage;
-      setLineageByOrderId(freshLineage);
+      const frozenLineage = signingSnapshotRef.current;
+      if (frozenLineage && orderIds.some(orderId => !sameLineage(frozenLineage[orderId], freshLineage[orderId]))) {
+        throw new Error("The reviewed Menu publication changed after this review was frozen. Reload, reopen the review, and review the current matrix before signing.");
+      }
+      const signingLineage = frozenLineage || freshLineage;
+      signingSnapshotRef.current = signingLineage;
+      setLineageByOrderId(signingLineage);
       setSigning({ role });
     } catch (cause) {
       signingSnapshotRef.current = undefined;
@@ -246,18 +325,18 @@ export default function CpuAllergenReviewPage() {
         <div className="cpu-allergen-filters" aria-label="Allergen review filters">
           <label>
             Date
-            <input type="date" value={date} disabled={signatureBusy || hydrating || Boolean(signing)} onChange={event => setDate(event.target.value)} />
+            <input type="date" value={date} disabled={signatureBusy || hydrating || reviewDirty || Boolean(signing)} onChange={event => setDate(event.target.value)} />
           </label>
           <label>
             Site
-            <select value={site} disabled={signatureBusy || hydrating || Boolean(signing)} onChange={event => setSite(event.target.value)}>
+            <select value={site} disabled={signatureBusy || hydrating || reviewDirty || Boolean(signing)} onChange={event => setSite(event.target.value)}>
               <option value="">All sites</option>
               {sites.map(([id, label]) => <option key={id} value={id}>{label}</option>)}
             </select>
           </label>
           <label>
             Review status
-            <select value={review} disabled={signatureBusy || hydrating || Boolean(signing)} onChange={event => setReview(event.target.value)}>
+            <select value={review} disabled={signatureBusy || hydrating || reviewDirty || Boolean(signing)} onChange={event => setReview(event.target.value)}>
               <option value="all">All statuses</option>
               <option value="attention">Needs attention</option>
               <option value="reviewed">Checked</option>
@@ -291,7 +370,7 @@ export default function CpuAllergenReviewPage() {
           orders={visibleOrders}
           scopeKey={`${date || "unknown"}:${site || "all"}`}
           busy={signatureBusy || hydrating}
-          locked={hydrating || bothSigned || Boolean(signing)}
+          locked={hydrating || reviewFrozen || bothSigned || Boolean(signing)}
           onCheckedChange={setCheckedCount}
           onReviewChanged={() => undefined}
           onSignatureRolesChange={roles => setSignatureRoles(roles)}
@@ -299,6 +378,7 @@ export default function CpuAllergenReviewPage() {
           onFinalizationChange={setFinalizationComplete}
           onLineageChange={setLineageByOrderId}
           onHydrationChange={setHydrating}
+          onDirtyChange={setReviewDirty}
           onRegisterSave={save => { saveReviewRef.current = save; }}
         />
 
@@ -317,14 +397,15 @@ export default function CpuAllergenReviewPage() {
                 <strong>Fully signed · scoped releases current</strong>
               ) : (
                 <>
-                  <button type="button" disabled={signatureBusy || productionSigned} onClick={() => void beginSigning("production_chef")}>
+                  <button type="button" disabled={signatureBusy || hydrating || productionSigned} onClick={() => void beginSigning("production_chef")}>
                     {productionSigned ? "Production chef signed" : "Sign as production chef"}
                   </button>
-                  <button type="button" disabled={signatureBusy || headChefSigned} onClick={() => void beginSigning("head_chef_site_manager")}>
+                  <button type="button" disabled={signatureBusy || hydrating || headChefSigned} onClick={() => void beginSigning("head_chef_site_manager")}>
                     {headChefSigned ? "Head chef signed" : "Sign as head chef / site manager"}
                   </button>
                 </>
               )}
+              {reviewFrozen && <button type="button" disabled={signatureBusy || hydrating} onClick={() => void reopenForAmendment()}>Reopen for amendment</button>}
             </div>
           )}
           {signatureBusy && <p role="status">Syncing allergen edits before signature…</p>}
