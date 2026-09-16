@@ -49,8 +49,13 @@ export async function buildDeliveredInDayProjection(input: { request: NextReques
   const artifact = review?.cpuReview.status === "signed" && !cpuFailure ? await latestSiteMenuArtifactHosted(input.site.oplocId, input.day.sourceDayId) : undefined;
   const cpuException = cpuFailure
     || (!review ? { code: "CPU_REVIEW_UNAVAILABLE", message: "CPU allergen data was unavailable while building this projection." } : review.cpuReview.status !== "signed" ? { code: "CPU_REVIEW_UNSIGNED", message: "CPU allergen data is pending review/signoff." } : undefined);
+  const projectedCpuReview = review && !cpuFailure ? review.cpuReview : undefined;
+  const { cpuReview: _sourceCpuReview, ...dayWithoutCpuReview } = input.day;
   const projection: DeliveredInDayProjection = {
-    ...input.day,
+    ...dayWithoutCpuReview,
+    // Menu allergenSignoff remains source publication provenance. CPU signing
+    // authority is projected separately from the verified signed packet.
+    ...(projectedCpuReview ? { cpuReview: projectedCpuReview } : {}),
     // The CPU packet's signed PDF is the safety reference for Delivered-In;
     // do not let an older Menu Planning archive link masquerade as it.
     ...(review?.cpuReview.status === "signed" && !cpuFailure && review.cpuReview.drivePdfUrl ? { drivePdfUrl: review.cpuReview.drivePdfUrl } : {}),

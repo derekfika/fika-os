@@ -14,6 +14,7 @@ import {
 } from "./lib/delivered-in-indexeddb";
 import { deliveredInHref, readDeliveredInLocation } from "../lib/navigation";
 import AllergenSafetyNotice from "./allergen-safety-notice";
+import { cpuReviewStatusLabel } from "./lib/cpu-review-status";
 type ProjectionHeadEntry = {
   serviceDate: string;
   projectionVersion: number;
@@ -216,12 +217,7 @@ function SiteMenuControls({
 }
 function Header({ site, day }: { site: Site; day?: ProjectedDay }) {
   const portions = day ? dayTotal(day) : 0;
-  const cpuStatus =
-    day?.cpuReview?.status === "signed"
-      ? "Signed by CPU"
-      : day?.cpuReview
-        ? "Awaiting CPU sign-off"
-        : "Pending CPU handoff";
+  const cpuStatus = cpuReviewStatusLabel(day);
   return (
     <section className="ops-header-card">
       <div>
