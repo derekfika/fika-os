@@ -18,6 +18,13 @@ import { cpuReleaseMaterializationReceiptId } from "./cpu-release-fanout";
 const menuContentHash = (items: PlannedMenuItem[]) => allergenMatrixContentHash(items);
 const hospitalityBase = () => (process.env.HOSPITALITY_BOOKING_BASE_URL?.trim() || "http://localhost:3300").replace(/\/$/, "");
 
+/** A duplicate phase receipt returns the authoritative plan that subsequent phases must use. */
+export function resumeCpuMaterializationPhase(result: { duplicate?: boolean; plan?: ProductionPlan }, localCandidate: ProductionPlan, phase: "started" | "prepared" | "final") {
+  if (!result.duplicate) return localCandidate;
+  if (!result.plan) throw Object.assign(new Error(`The ${phase} materialization receipt has no persisted ProductionPlan.`), { status: 409, code: "CPU_MATERIALIZATION_PHASE_CONFLICT" });
+  return result.plan;
+}
+
 /** Build and publish artifacts for exactly one governed CPU order/OPLOC. */
 export async function createCpuReleaseArtifacts(plan: ProductionPlan, order: ProductionOrder, actor: string, timestamp: string, request: NextRequest, options: { publishPackage?: boolean } = {}) {
   if (plan.status !== "planned") throw Object.assign(new Error("Mark the allergen matrix Planned before saving it to the site Drive."), { status: 422 });
@@ -77,27 +84,30 @@ export async function materializeCommittedCpuRelease(request: NextRequest, order
     preparedCandidate.currentAllergenRelease = stageCpuAllergenReleaseMaterialization(pending, { masterArtifact: pending.masterArtifact, derivedArtifacts: pending.derivedArtifacts, packetArtifacts: pending.packetArtifacts });
     preparedCandidate.updatedAt = preparedAt;
     preparedCandidate.audit.push({ action: "allergen-matrix-materialization-started", at: preparedAt, by: preparedCandidate.updatedBy, reason: `Authoritative CPU release ${releaseId} is committed before external materialization.` });
-    await repository.saveAndAppendCpuChange(preparedCandidate, stored.updatedAt, { serviceDate: order.serviceDate || order.requiredBy.slice(0, 10), entityType: "productionPlan", entityId: preparedCandidate.id, revision: preparedCandidate.audit.length, changeType: "allergen-release-materialization-started", actorId: preparedCandidate.updatedBy, changedAt: preparedAt, idempotencyKey: materializationReceiptId("started") });
-    const prepared = await createCpuReleaseArtifacts(preparedCandidate, order, preparedCandidate.updatedBy, new Date().toISOString(), request, { publishPackage: false });
-    const artifactCandidate = structuredClone(preparedCandidate);
-    artifactCandidate.currentAllergenRelease = stageCpuAllergenReleaseMaterialization(preparedCandidate.currentAllergenRelease!, { masterArtifact: prepared.masterArtifact, derivedArtifacts: [prepared.siteArtifact], packetArtifacts: prepared.packetArtifacts });
+    const startedResult = await repository.saveAndAppendCpuChange(preparedCandidate, stored.updatedAt, { serviceDate: order.serviceDate || order.requiredBy.slice(0, 10), entityType: "productionPlan", entityId: preparedCandidate.id, revision: preparedCandidate.audit.length, changeType: "allergen-release-materialization-started", actorId: preparedCandidate.updatedBy, changedAt: preparedAt, idempotencyKey: materializationReceiptId("started") });
+    const startedPlan = resumeCpuMaterializationPhase(startedResult, preparedCandidate, "started");
+    const prepared = await createCpuReleaseArtifacts(startedPlan, order, startedPlan.updatedBy, new Date().toISOString(), request, { publishPackage: false });
+    const artifactCandidate = structuredClone(startedPlan);
+    artifactCandidate.currentAllergenRelease = stageCpuAllergenReleaseMaterialization(startedPlan.currentAllergenRelease!, { masterArtifact: prepared.masterArtifact, derivedArtifacts: [prepared.siteArtifact], packetArtifacts: prepared.packetArtifacts });
     artifactCandidate.matrixArtifact = prepared.siteArtifact;
     artifactCandidate.signedMatrixArtifact = prepared.siteArtifact;
     artifactCandidate.signedSignatures = artifactCandidate.signatures;
     artifactCandidate.updatedAt = new Date().toISOString();
     artifactCandidate.audit.push({ action: "allergen-matrix-materialized", at: artifactCandidate.updatedAt, by: artifactCandidate.updatedBy, reason: `Prepared artifacts for committed CPU release ${releaseId}.` });
-    await repository.saveAndAppendCpuChange(artifactCandidate, preparedCandidate.updatedAt, { serviceDate: order.serviceDate || order.requiredBy.slice(0, 10), entityType: "productionPlan", entityId: artifactCandidate.id, revision: artifactCandidate.audit.length, changeType: "allergen-release-artifacts-prepared", actorId: artifactCandidate.updatedBy, changedAt: artifactCandidate.updatedAt, idempotencyKey: materializationReceiptId("prepared") });
+    const preparedResult = await repository.saveAndAppendCpuChange(artifactCandidate, startedPlan.updatedAt, { serviceDate: order.serviceDate || order.requiredBy.slice(0, 10), entityType: "productionPlan", entityId: artifactCandidate.id, revision: artifactCandidate.audit.length, changeType: "allergen-release-artifacts-prepared", actorId: artifactCandidate.updatedBy, changedAt: artifactCandidate.updatedAt, idempotencyKey: materializationReceiptId("prepared") });
+    const preparedPlan = resumeCpuMaterializationPhase(preparedResult, artifactCandidate, "prepared");
     await prepared.publish();
-    const ready = structuredClone(artifactCandidate);
-    ready.currentAllergenRelease = materializeCpuAllergenRelease(artifactCandidate.currentAllergenRelease!, { masterArtifact: prepared.masterArtifact, derivedArtifacts: [prepared.siteArtifact], packetArtifacts: prepared.packetArtifacts });
+    const ready = structuredClone(preparedPlan);
+    ready.currentAllergenRelease = materializeCpuAllergenRelease(preparedPlan.currentAllergenRelease!, { masterArtifact: prepared.masterArtifact, derivedArtifacts: [prepared.siteArtifact], packetArtifacts: prepared.packetArtifacts });
     ready.updatedAt = new Date().toISOString();
     ready.audit.push({ action: "allergen-matrix-materialized", at: ready.updatedAt, by: ready.updatedBy, reason: `Committed CPU release ${releaseId} materialized.` });
     const release = ready.currentAllergenRelease;
     const oplocId = order.destinationOplocId;
     const deliveries = oplocId ? [{ eventId: `cpu-allergen-release:${release.releaseId}:published:delivered-in:${oplocId}`, sourceAggregateId: release.releaseId, sourceVersion: release.sourceVersion, occurredAt: release.signedAt, consumer: "delivered-in" as const, route: "/api/internal/cpu-release-event", body: { eventId: `cpu-allergen-release:${release.releaseId}:published`, eventType: "published", serviceDate: release.serviceDate, oplocId, sourceDayId: release.sourceDayId, sourcePublicationDayId: release.sourcePublicationDayId, sourceVersion: release.sourceVersion, sourceContentHash: release.sourceContentHash, releaseId: release.releaseId, releaseVersion: `v${release.version}`, packetContentHash: release.packetArtifacts[0]?.contentHash || "", changedDishIds: release.deltaFromPrevious.map(change => change.menuItemId), delta: release.deltaFromPrevious } as Record<string, unknown> }] : [];
-    await repository.saveAndAppendCpuChange(ready, artifactCandidate.updatedAt, { serviceDate: order.serviceDate || order.requiredBy.slice(0, 10), entityType: "productionPlan", entityId: ready.id, revision: ready.audit.length, changeType: "allergen-release-materialized", actorId: ready.updatedBy, changedAt: ready.updatedAt, idempotencyKey: materializationReceiptId("final"), deliveries });
+    const finalResult = await repository.saveAndAppendCpuChange(ready, preparedPlan.updatedAt, { serviceDate: order.serviceDate || order.requiredBy.slice(0, 10), entityType: "productionPlan", entityId: ready.id, revision: ready.audit.length, changeType: "allergen-release-materialized", actorId: ready.updatedBy, changedAt: ready.updatedAt, idempotencyKey: materializationReceiptId("final"), deliveries });
+    const finalPlan = resumeCpuMaterializationPhase(finalResult, ready, "final");
     console.info("FIKA CPU allergen release materialization", { app: "cpu-production", serviceDate: release.serviceDate, releaseId: release.releaseId, destinationOplocId: order.destinationOplocId, expectedOplocCount: 1, materializedOplocCount: 1, failedOplocCount: 0, pendingOplocCount: 0, packetManifestKey: dailyBundleManifestKey(release.serviceDate, order.destinationOplocId || ""), handoffStatus: deliveries.length ? "staged" : "not_applicable" });
-    return { plan: ready, alreadyMaterialized: false };
+    return { plan: finalPlan, alreadyMaterialized: false };
   } catch (error) {
     const failed = structuredClone(await repository.get(orderId) || stored);
     failed.currentAllergenRelease = { ...(failed.currentAllergenRelease || pending), materializationStatus: "failed", materializationError: error instanceof Error ? error.message : String(error) };

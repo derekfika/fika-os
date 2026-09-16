@@ -3,7 +3,8 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 import { allergenMatrixContentHash, buildCpuAllergenRelease, failCpuAllergenReleaseMaterialization, materializeCpuAllergenRelease, revokeCpuAllergenRelease, stageCpuAllergenReleaseMaterialization } from "../lib/cpu-allergen-release";
 import { buildCpuAllergenReleaseEvent } from "../lib/cpu-consumer-invalidation";
-import type { PlannedMenuItem } from "../app/lib/production-plan";
+import { resumeCpuMaterializationPhase } from "../lib/cpu-release-materialization";
+import type { PlannedMenuItem, ProductionPlan } from "../app/lib/production-plan";
 
 const items: PlannedMenuItem[] = [{ id: "item:1", name: "Soup", note: "", subItems: [{ id: "sub:1", name: "Soup", quantity: 1, allergens: { sulphites: "clear" }, note: "", evidenceStatus: "completed" }] }];
 const source = { serviceDate: "2026-09-15", sourceDayId: "menu-day:1", sourcePublicationId: "publication:1", sourcePublicationDayId: "publication-day:1", sourceVersion: 4, sourceContentHash: "a".repeat(64) };
@@ -62,12 +63,25 @@ test("signing source has no external artifact call before the authoritative save
 
 test("the worker commits pending materialization before external publication and keeps final certification explicit", async () => {
   const sourceText = await readFile(new URL("../lib/cpu-release-materialization.ts", import.meta.url), "utf8");
-  const started = sourceText.indexOf("saveAndAppendCpuChange(preparedCandidate, stored.updatedAt");
-  const artifactBuild = sourceText.indexOf("createCpuReleaseArtifacts(preparedCandidate");
+  const started = sourceText.indexOf("const startedResult = await repository.saveAndAppendCpuChange(preparedCandidate, stored.updatedAt");
+  const artifactBuild = sourceText.indexOf("createCpuReleaseArtifacts(startedPlan");
+  const preparedPhase = sourceText.indexOf("const preparedResult = await repository.saveAndAppendCpuChange(artifactCandidate, startedPlan.updatedAt");
   const publish = sourceText.indexOf("await prepared.publish()");
-  const final = sourceText.indexOf("saveAndAppendCpuChange(ready, artifactCandidate.updatedAt");
-  assert.ok(started >= 0 && artifactBuild > started && publish > artifactBuild && final > publish);
+  const final = sourceText.indexOf("const finalResult = await repository.saveAndAppendCpuChange(ready, preparedPlan.updatedAt");
+  assert.ok(started >= 0 && artifactBuild > started && preparedPhase > artifactBuild && publish > preparedPhase && final > publish);
+  assert.match(sourceText, /resumeCpuMaterializationPhase\(startedResult, preparedCandidate, "started"\)/);
+  assert.match(sourceText, /resumeCpuMaterializationPhase\(preparedResult, artifactCandidate, "prepared"\)/);
+  assert.match(sourceText, /resumeCpuMaterializationPhase\(finalResult, ready, "final"\)/);
   assert.match(sourceText, /materializationStatus: "failed"/);
+});
+
+test("duplicate materialization phases resume from the persisted plan timestamp", () => {
+  const localCandidate = { id: "plan:1", orderId: "order:1", updatedAt: "local-only", menuItems: [], status: "planned", planningNotes: "", audit: [], updatedBy: "chef" } as unknown as ProductionPlan;
+  const persisted = { ...localCandidate, updatedAt: "persisted-authoritative" };
+  assert.equal(resumeCpuMaterializationPhase({ duplicate: true, plan: persisted }, localCandidate, "started"), persisted);
+  assert.equal(resumeCpuMaterializationPhase({ duplicate: true, plan: persisted }, localCandidate, "prepared"), persisted);
+  assert.equal(resumeCpuMaterializationPhase({}, localCandidate, "final"), localCandidate);
+  assert.throws(() => resumeCpuMaterializationPhase({ duplicate: true }, localCandidate, "prepared"), /receipt has no persisted ProductionPlan/);
 });
 
 test("the UI captures one master human signature and fans it out to exact OPLOC releases", async () => {
