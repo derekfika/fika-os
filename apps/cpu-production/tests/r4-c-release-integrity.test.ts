@@ -70,11 +70,16 @@ test("the worker commits pending materialization before external publication and
   assert.match(sourceText, /materializationStatus: "failed"/);
 });
 
-test("the UI blocks edits while signing and never treats multiple OPLOCs as one release", async () => {
+test("the UI captures one master human signature and fans it out to exact OPLOC releases", async () => {
   const page = await readFile(new URL("../app/allergens/page.tsx", import.meta.url), "utf8");
   const matrix = await readFile(new URL("../app/ui/AllergenReviewMatrix.tsx", import.meta.url), "utf8");
-  assert.match(page, /visibleOrders\.length === 1 \? visibleOrders\[0\]\.canonicalId : undefined/);
-  assert.match(page, /Each OPLOC has an independent governed release/);
-  assert.match(matrix, /disabled=\{busy \|\| locked/);
+  assert.doesNotMatch(page, /visibleOrders\.length === 1 \? visibleOrders\[0\]\.canonicalId : undefined/);
+  assert.match(page, /Review the complete service-date matrix once/);
+  assert.match(page, /masterOrders\.filter\(order => !\(signatureRolesByOrderId\[order\.canonicalId\]/);
+  assert.match(page, /action: "sign-matrix"/);
+  assert.match(page, /cpu-master-sign/);
   assert.match(page, /expectedLineage/);
+  assert.match(matrix, /statuses\.length === orderIds\.length/);
+  assert.match(matrix, /statuses\.every\(status => status\.signatureRoles\.includes\(role\)\)/);
+  assert.match(matrix, /disabled=\{busy \|\| locked/);
 });
