@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildCpuPropagationEvents, deliverCpuPropagation, enqueueCpuDelivery, enqueueCpuPropagation, listCpuOutboxForTests, replayCpuPropagation, resetCpuOutboxForTests, recoverCpuPropagation, seedCpuOutboxForTests } from "../lib/cpu-durable-outbox";
+import { buildCpuPropagationEvents, deliverCpuPropagation, enqueueCpuDelivery, enqueueCpuPropagation, listCpuOutboxForTests, normaliseCpuBaseUrl, replayCpuPropagation, resetCpuOutboxForTests, recoverCpuPropagation, seedCpuOutboxForTests } from "../lib/cpu-durable-outbox";
 import { cpuReleaseMaterializationEventId } from "../lib/cpu-release-fanout";
 
 const input = {
@@ -13,6 +13,41 @@ const input = {
   order: { origin: "menu_planning", destinationOplocId: "oploc-1" },
   logistics: true,
 };
+
+test("CPU self-delivery normalizes configured bases into absolute safe URLs", () => {
+  const cases = [
+    ["https://cpu-staging.fikacatering.com", "https://cpu-staging.fikacatering.com"],
+    ["cpu-staging.fikacatering.com", "https://cpu-staging.fikacatering.com"],
+    ["http://localhost:3400", "http://localhost:3400"],
+    ["localhost:3400", "http://localhost:3400"],
+    ["  localhost:3400/// ", "http://localhost:3400"],
+    ["127.0.0.1:3400/", "http://127.0.0.1:3400"],
+    ["::1", "http://[::1]"],
+  ] as const;
+  for (const [configured, expected] of cases) assert.equal(normaliseCpuBaseUrl(configured), expected);
+  assert.throws(() => normaliseCpuBaseUrl("ftp://cpu-staging.fikacatering.com"), /base URL configuration is invalid/);
+  assert.throws(() => normaliseCpuBaseUrl("https://[invalid"), /base URL configuration is invalid/);
+});
+
+test("CPU self-delivery prefers the public base and builds the materialization endpoint URL safely", async () => {
+  resetCpuOutboxForTests();
+  const previousFetch = globalThis.fetch;
+  const previousPublic = process.env.CPU_PUBLIC_BASE_URL;
+  const previousProduction = process.env.CPU_PRODUCTION_BASE_URL;
+  let requestedUrl = "";
+  delete process.env.CPU_PUBLIC_BASE_URL;
+  process.env.CPU_PRODUCTION_BASE_URL = "cpu-staging.fikacatering.com/";
+  globalThis.fetch = (async (input) => { requestedUrl = String(input); return new Response("{}", { status: 200 }); }) as typeof fetch;
+  try {
+    const event = await enqueueCpuDelivery({ eventId: "cpu-allergen-materialize:release:oploc:haleon:order:haleon", sourceAggregateId: "release", sourceVersion: 1, occurredAt: "2026-09-14T09:00:00.000Z", consumer: "cpu-production", route: "/api/internal/cpu-release-materialize", body: { orderId: "order:haleon", releaseId: "release" } });
+    assert.equal((await deliverCpuPropagation(event.eventId, new Date("2026-09-14T09:00:00.000Z"))).status, "delivered");
+    assert.equal(requestedUrl, "https://cpu-staging.fikacatering.com/api/internal/cpu-release-materialize");
+  } finally {
+    globalThis.fetch = previousFetch;
+    if (previousPublic === undefined) delete process.env.CPU_PUBLIC_BASE_URL; else process.env.CPU_PUBLIC_BASE_URL = previousPublic;
+    if (previousProduction === undefined) delete process.env.CPU_PRODUCTION_BASE_URL; else process.env.CPU_PRODUCTION_BASE_URL = previousProduction;
+  }
+});
 
 test("CPU creates one durable obligation per independent consumer and stable scope", async () => {
   resetCpuOutboxForTests();

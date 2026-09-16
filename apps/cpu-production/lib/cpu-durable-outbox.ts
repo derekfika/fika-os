@@ -184,10 +184,35 @@ export function seedCpuOutboxForTests(events: CpuPropagationOutboxEvent[]) {
 }
 export function listCpuOutboxForTests() { return [...memoryOutbox.values()].map(event => structuredClone(event)); }
 
+function invalidCpuBaseUrl() {
+  return Object.assign(new Error("CPU durable outbox base URL configuration is invalid."), { status: 503, code: "CPU_OUTBOX_BASE_URL_INVALID" });
+}
+
+/** Normalize the CPU self-delivery base without ever passing a relative URL to fetch. */
+export function normaliseCpuBaseUrl(configured?: string) {
+  const trimmed = configured?.trim();
+  const raw = trimmed || "http://localhost:3400";
+  if (/^[a-z][a-z\d+.-]*:\/\//i.test(raw) && !/^https?:\/\//i.test(raw)) throw invalidCpuBaseUrl();
+  let candidate = raw;
+  if (!/^https?:\/\//i.test(raw)) {
+    if (/^(localhost|127\.0\.0\.1)(?::\d+)?(?:\/.*)?$/i.test(raw)) candidate = `http://${raw}`;
+    else if (/^\[::1\](?::\d+)?(?:\/.*)?$/i.test(raw)) candidate = `http://${raw}`;
+    else if (/^::1(?::\d+)?(?:\/.*)?$/i.test(raw)) {
+      const match = raw.match(/^::1(?::(\d+))?(\/.*)?$/);
+      candidate = `http://[::1]${match?.[1] ? `:${match[1]}` : ""}${match?.[2] || ""}`;
+    } else candidate = `https://${raw}`;
+  }
+  let parsed: URL;
+  try { parsed = new URL(candidate); } catch { throw invalidCpuBaseUrl(); }
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:" || !parsed.hostname || parsed.search || parsed.hash) throw invalidCpuBaseUrl();
+  return parsed.toString().replace(/\/+$/, "");
+}
+
 function routeBase(consumer: CpuPropagationConsumer) {
-  const configured = consumer === "delivered-in" ? (process.env.FIKA_APP_DELIVERED_IN_URL || process.env.DELIVERED_IN_BASE_URL) : consumer === "logistics" ? (process.env.FIKA_LOGISTICS_BASE_URL || process.env.LOGISTICS_BASE_URL) : (process.env.CPU_PUBLIC_BASE_URL || "http://localhost:3400");
-  if (configured) return configured.replace(/\/$/, "");
-  return consumer === "delivered-in" ? "http://localhost:3800" : consumer === "logistics" ? "http://localhost:3900" : "http://localhost:3400";
+  if (consumer === "cpu-production") return normaliseCpuBaseUrl(process.env.CPU_PUBLIC_BASE_URL || process.env.CPU_PRODUCTION_BASE_URL);
+  const configured = consumer === "delivered-in" ? (process.env.FIKA_APP_DELIVERED_IN_URL || process.env.DELIVERED_IN_BASE_URL) : (process.env.FIKA_LOGISTICS_BASE_URL || process.env.LOGISTICS_BASE_URL);
+  if (configured) return configured.trim().replace(/\/+$/, "");
+  return consumer === "delivered-in" ? "http://localhost:3800" : "http://localhost:3900";
 }
 
 async function readOutbox(eventId: string) {
@@ -238,8 +263,10 @@ export async function deliverCpuPropagation(eventId: string, at = new Date()) {
   const claimed = await claimCpuPropagation(eventId, claimId, at);
   if (!claimed) return { eventId, status: "blocked" as const };
   const payload = claimed.payload;
+  let targetUrl: string | undefined;
   try {
-    const response = await fetch(`${routeBase(payload.consumer)}${payload.route}`, {
+    targetUrl = new URL(payload.route, `${routeBase(payload.consumer)}/`).toString();
+    const response = await fetch(targetUrl, {
       method: "POST",
       headers: { "content-type": "application/json", accept: "application/json", "x-fika-internal-token": process.env.FIKA_INTERNAL_API_TOKEN || "" , "x-fika-delivery-id": payload.deliveryId, "x-fika-source-event-id": payload.sourceEventId },
       body: JSON.stringify(payload.body),
@@ -250,7 +277,9 @@ export async function deliverCpuPropagation(eventId: string, at = new Date()) {
     await writeOutbox(delivered, claimId);
     return { eventId, status: "delivered" as const, attempts: delivered.delivery.attempts + 1 };
   } catch (error) {
-    const failed = markEventFailed(claimed, error, new Date().toISOString());
+    const safeTarget = targetUrl ? (() => { try { const parsed = new URL(targetUrl); return `${parsed.origin}${parsed.pathname}`; } catch { return "configured target"; } })() : "configured target";
+    const failure = payload.consumer === "cpu-production" ? new Error(`${payload.consumer} delivery to ${safeTarget} failed: ${error instanceof Error ? error.message : String(error)}`) : error;
+    const failed = markEventFailed(claimed, failure, new Date().toISOString());
     await writeOutbox(failed, claimId);
     return { eventId, status: failed.delivery.status, attempts: failed.delivery.attempts, error: failed.delivery.lastError };
   }
