@@ -71,6 +71,8 @@ export default function AllergenReviewMatrix({
   const [error, setError] = useState("");
   const latestSave = useRef<() => Promise<void>>(() => Promise.resolve());
   const syncTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const pendingSave = useRef<{ states: Record<string, Record<string, OperationalAllergenState>> } | undefined>(undefined);
+  const inFlightSave = useRef<Promise<void> | undefined>(undefined);
   const bookingDietaries = [...new Set(orders.flatMap(order => bookingContextEntries(order.bookingDietaries)))];
   const bookingNotes = [...new Set(orders.map(order => order.bookingNotes).filter((note): note is string => Boolean(note?.trim())))];
 
@@ -205,18 +207,50 @@ export default function AllergenReviewMatrix({
     await submit("save-plan");
   };
 
+  const startSave = (nextStates: Record<string, Record<string, OperationalAllergenState>>) => {
+    const prior = inFlightSave.current;
+    const operation = (prior ? prior.catch(() => undefined) : Promise.resolve()).then(() => saveReview(nextStates));
+    inFlightSave.current = operation;
+    void operation.catch(cause => setError(cause instanceof Error ? cause.message : "The allergen edit could not be synchronised.")).finally(() => {
+      if (inFlightSave.current === operation) inFlightSave.current = undefined;
+    });
+    return operation;
+  };
+
   const scheduleSync = (nextStates: Record<string, Record<string, OperationalAllergenState>>) => {
     if (syncTimer.current) clearTimeout(syncTimer.current);
+    pendingSave.current = { states: nextStates };
     syncTimer.current = setTimeout(() => {
-      void saveReview(nextStates).catch(cause => setError(cause instanceof Error ? cause.message : "The allergen edit could not be synchronised."));
+      syncTimer.current = undefined;
+      const pending = pendingSave.current;
+      pendingSave.current = undefined;
+      if (!pending) return;
+      void startSave(pending.states);
     }, 300);
   };
 
   useEffect(() => () => {
     if (syncTimer.current) clearTimeout(syncTimer.current);
+    pendingSave.current = undefined;
   }, []);
 
-  latestSave.current = () => saveReview(states);
+  latestSave.current = async () => {
+    if (syncTimer.current) {
+      clearTimeout(syncTimer.current);
+      syncTimer.current = undefined;
+    }
+    const pending = pendingSave.current;
+    pendingSave.current = undefined;
+    if (pending) {
+      await startSave(pending.states);
+      return;
+    }
+    if (inFlightSave.current) {
+      await inFlightSave.current;
+      return;
+    }
+    await startSave(states);
+  };
 
   useEffect(() => {
     onRegisterSave?.(() => latestSave.current());
