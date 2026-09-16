@@ -19,7 +19,7 @@ import { rebuildCpuReviewPackage } from "../../../lib/cpu-review-package";
 import { buildCpuAllergenReleaseEvent, eventTypeForConsumers, notifyCpuConsumerInvalidations, notifyDeliveredInAllergenRelease } from "../../../lib/cpu-consumer-invalidation";
 import { deliverCpuPropagation, replayCpuPropagation } from "../../../lib/cpu-durable-outbox";
 import { allergenMatrixContentHash, buildCpuAllergenRelease, revokeCpuAllergenRelease } from "../../../lib/cpu-allergen-release";
-import { cpuReleaseMaterializationEventId } from "../../../lib/cpu-release-fanout";
+import { releaseMaterializationDelivery, retryCommittedCpuMaterialization } from "../../../lib/cpu-retry-materialization";
 
 function menuContentHash(menuItems: PlannedMenuItem[]) {
   return allergenMatrixContentHash(menuItems);
@@ -76,6 +76,7 @@ const Command = z.discriminatedUnion("action", [
   z.object({ action: z.literal("mark-planned"), orderId: z.string(), menuItems: z.array(MenuItem).min(1), planningNotes: z.string().default(""), commandId: z.string().trim().min(8).optional() }),
   z.object({ action: z.literal("sign-matrix"), orderId: z.string(), role: z.enum(["production_chef", "head_chef_site_manager"]), printedName: z.string().trim().min(2).max(120), attestation: z.string().trim().min(10).max(500), signatureDataUrl: z.string().regex(/^data:image\/png;base64,/).max(500000), expectedLineage: ExpectedLineage, commandId: z.string().trim().min(8).optional() }),
   z.object({ action: z.literal("save-matrix"), orderId: z.string(), expectedLineage: ExpectedLineage.optional(), commandId: z.string().trim().min(8).optional() }),
+  z.object({ action: z.literal("retry-materialization"), orderId: z.string(), expectedLineage: ExpectedLineage }),
 ]);
 const MatrixOperation = z.discriminatedUnion("action", [
   z.object({ action: z.literal("save-plan"), orderId: z.string(), menuItems: z.array(MenuItem).min(1), planningNotes: z.string().default(""), commandId: z.string().trim().min(8).optional() }),
@@ -111,9 +112,6 @@ function pendingReleaseFor(plan: ProductionPlan, order: ProductionOrder, timesta
 // Artifact creation is intentionally no longer part of the sign command:
 // release materialization runs from the committed outbox obligation after
 // authoritative CPU state has accepted the signature.
-function releaseMaterializationDelivery(plan: ProductionPlan, release: NonNullable<ProductionPlan["currentAllergenRelease"]>, order: ProductionOrder, timestamp: string) {
-  return { eventId: cpuReleaseMaterializationEventId(release.releaseId, order), sourceAggregateId: plan.id, sourceVersion: release.version, occurredAt: timestamp, consumer: "cpu-production" as const, route: "/api/internal/cpu-release-materialize", body: { orderId: order.canonicalId, releaseId: release.releaseId, serviceDate: order.serviceDate || order.requiredBy.slice(0, 10), destinationOplocId: order.destinationOplocId || "" } };
-}
 function invalidateSignedAllergenAuthorityForNewSourceLineage(plan: ProductionPlan, actor: string, at: string, reason: string) {
   const current = plan.currentAllergenRelease;
   const hasAuthority = Boolean(current || plan.signatures?.length || plan.signedSignatures?.length || plan.signedMenuContentHash || plan.matrixArtifact || plan.signedMatrixArtifact || plan.masterMatrixArtifact || plan.siteMatrixArtifacts);
@@ -365,9 +363,13 @@ async function handlePost(request: NextRequest) {
     if (!(await isVisibleForCpu(request, command.orderId))) throw Object.assign(new Error("CPU delivery is not selected for this booking, so no CPU production work is required."), { status: 422 });
     const storedPlan = await planRepository.get(command.orderId);
     if (!storedPlan && !isLocalRuntime()) plans.delete(command.orderId);
-    const plan = await getPlan(request, command.orderId, storedPlan);
     const currentOrder = await loadOrder(request, command.orderId);
     if (!currentOrder) throw Object.assign(new Error("The canonical Production Order could not be loaded."), { status: 503 });
+    if (command.action === "retry-materialization") {
+      if (!storedPlan) throw Object.assign(new Error("The persisted CPU production plan could not be loaded for materialization retry."), { status: 409, code: "CPU_PLAN_NOT_FOUND" });
+      return NextResponse.json(await retryCommittedCpuMaterialization({ plan: normalisePlanAllergens(storedPlan), order: currentOrder, expectedLineage: command.expectedLineage, timestamp: now() }));
+    }
+    const plan = await getPlan(request, command.orderId, storedPlan);
     const expectedUpdatedAt = storedPlan?.updatedAt;
     const timestamp = now();
     let notification: { status: string; reason?: string } | undefined;

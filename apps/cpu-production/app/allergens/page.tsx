@@ -176,7 +176,7 @@ export default function CpuAllergenReviewPage() {
         const response = await fetch("/api/production-plan", {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ action: "save-matrix", orderId: order.canonicalId, expectedLineage }),
+          body: JSON.stringify({ action: "retry-materialization", orderId: order.canonicalId, expectedLineage }),
         });
         const body = await response.json().catch(() => undefined) as { error?: { message?: string }; materializationDelivery?: { status?: string } | null } | undefined;
         const deliveryStatus = body?.materializationDelivery?.status;

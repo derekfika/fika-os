@@ -140,7 +140,7 @@ test("master page retries only non-ready OPLOC releases with fresh lineage", asy
   assert.match(page, /matrixStatusByOrderId\[order\.canonicalId\] !== "ready"/);
   assert.match(retryBlock, /await refreshReviewStatus\(\)/);
   assert.match(retryBlock, /matrixStatus !== "ready"/);
-  assert.match(retryBlock, /action: "save-matrix"/);
+  assert.match(retryBlock, /action: "retry-materialization"/);
   assert.match(retryBlock, /expectedLineage/);
   assert.match(retryBlock, /const final = await refreshReviewStatus\(\)/);
   assert.doesNotMatch(retryBlock, /action: "sign-matrix"|action: "reopen-review"|menuItems/);
