@@ -10,18 +10,328 @@ import { SignatureModal } from "../ui/HospitalityAllergenDetail";
 import { buildAllergenReviewRows, deliveredInMenuOrdersForServiceDate, destination, orderDate } from "../../lib/production-day";
 import "./page.css";
 
-function formatDate(date: string) { return new Date(`${date}T12:00:00`).toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" }); }
+type SignatureRole = "production_chef" | "head_chef_site_manager";
+type MatrixLineage = {
+  productionOrderId: string;
+  serviceDate: string;
+  sourceDayId: string;
+  sourcePublicationId?: string;
+  sourcePublicationDayId: string;
+  sourceVersion: number;
+  sourceContentHash: string;
+  matrixContentHash: string;
+};
+
+function formatDate(date: string) {
+  return new Date(`${date}T12:00:00`).toLocaleDateString("en-GB", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+  });
+}
 
 export default function CpuAllergenReviewPage() {
-  const [orders, setOrders] = useState<ProductionOrder[]>([]); const [date, setDate] = useState(""); const [site, setSite] = useState(""); const [review, setReview] = useState("all"); const [error, setError] = useState(""); const [signing, setSigning] = useState<{ orderId: string; role: "production_chef" | "head_chef_site_manager" }>(); const [checkedCount, setCheckedCount] = useState(0); const [signatures, setSignatures] = useState<InternalMatrixSignature[]>([]); const [signatureRoles, setSignatureRoles] = useState<Array<"production_chef" | "head_chef_site_manager">>([]); const [lineageByOrderId, setLineageByOrderId] = useState<Record<string, { productionOrderId: string; serviceDate: string; sourceDayId: string; sourcePublicationId?: string; sourcePublicationDayId: string; sourceVersion: number; sourceContentHash: string; matrixContentHash: string }>>({}); const [finalizationComplete, setFinalizationComplete] = useState(false); const [reviewFrozen, setReviewFrozen] = useState(false); const [signatureMessage, setSignatureMessage] = useState(""); const [signatureBusy, setSignatureBusy] = useState(false); const saveReviewRef = useRef<() => Promise<void>>(() => Promise.resolve());
-  const load = async (selectedDate: string) => { setError(""); setOrders([]); setCheckedCount(0); setSignatures([]); setSignatureRoles([]); setLineageByOrderId({}); setFinalizationComplete(false); setReviewFrozen(false); try { const loaded = await loadCpuAllergenProjection(selectedDate, "delivered_in"); setOrders(cpuProjectionToOrders(loaded.projection).filter(order => order.origin === "menu_planning")); } catch (cause) { setError(cause instanceof Error ? cause.message : "Could not load allergen review."); } };
-  useEffect(() => { const params = new URLSearchParams(window.location.search); setDate(params.get("date") || new Date().toISOString().slice(0, 10)); }, []);
-  useEffect(() => { if (date) void load(date); }, [date]);
-  const dateOrders = useMemo(() => orders.filter(order => !date || orderDate(order) === date), [orders, date]); const masterOrders = useMemo(() => deliveredInMenuOrdersForServiceDate(dateOrders, date || undefined), [dateOrders, date]); const visibleOrders = useMemo(() => site ? masterOrders.filter(order => (order.destinationOplocId || destination(order)) === site) : masterOrders, [masterOrders, site]); const rows = useMemo(() => buildAllergenReviewRows(visibleOrders), [visibleOrders]); const sites = [...new Map(masterOrders.map(order => [order.destinationOplocId || destination(order), destination(order)])).entries()]; const approved = rows.filter(row => row.snapshot).length; const attention = rows.filter(row => row.attention).length; const allChecked = visibleOrders.length > 0 && rows.length > 0 && checkedCount === rows.length; const signatureOrderId = visibleOrders.length === 1 ? visibleOrders[0].canonicalId : undefined; const productionSigned = signatureRoles.includes("production_chef"); const headChefSigned = signatureRoles.includes("head_chef_site_manager"); const fullySigned = finalizationComplete && productionSigned && headChefSigned;
-  const sign = async (printedName: string, signatureDataUrl: string) => { if (!signing || signatureBusy) return; const expectedLineage = lineageByOrderId[signing.orderId]; if (!expectedLineage) { setSignatureMessage("The current Menu publication lineage is unavailable. Reload the review before signing."); return; } const role = signing.role; setSignatureBusy(true); setSignatureMessage(""); try { const response = await fetch("/api/production-plan", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "sign-matrix", orderId: signing.orderId, role, printedName, signatureDataUrl, expectedLineage, attestation: "I confirm that I reviewed the CPU allergen matrix and the recorded evidence is accurate to the best of my knowledge.", actor: "production-chef" }) }); const body = await response.json() as { error?: { message?: string }; matrixStatus?: string; plan?: { signatures?: InternalMatrixSignature[] } }; if (!response.ok) throw new Error(body.error?.message || "The matrix could not be signed."); const nextSignatures = body.plan?.signatures || []; const finalized = body.matrixStatus === "ready"; setSignatures(nextSignatures); setSignatureRoles(nextSignatures.map(signature => signature.role)); setFinalizationComplete(finalized); setSigning(undefined); setSignatureMessage(finalized ? "Signed PDF generated. The matrix is ready to open from the manager dashboard." : "Signature recorded. The matrix remains open for the second signature."); } catch (cause) { setSignatureMessage(cause instanceof Error ? cause.message : "The matrix could not be signed."); } finally { setSignatureBusy(false); } };
-  const beginSigning = async (role: "production_chef" | "head_chef_site_manager") => { if (!signatureOrderId) { setSignatureMessage("Select one OPLOC to review and sign its complete governed matrix."); return; } if (!allChecked) { setSignatureMessage(`Please mark all ${rows.length} dishes as checked before signing. ${checkedCount} of ${rows.length} are checked.`); return; } if ((role === "production_chef" && productionSigned) || (role === "head_chef_site_manager" && headChefSigned) || fullySigned || signatureBusy) return; setSignatureMessage(""); setSignatureBusy(true); try { if (!reviewFrozen) { setSignatureMessage("Syncing allergen edits before signature…"); await saveReviewRef.current(); setReviewFrozen(true); } setSigning({ orderId: signatureOrderId, role }); } catch (cause) { setSignatureMessage(cause instanceof Error ? cause.message : "The allergen review could not be synchronised before signing."); } finally { setSignatureBusy(false); } };
-  // The old site guard was `disabled={Boolean(site) || signatureBusy}`. The
-  // selected-OPLOC model now guards the same action with the stronger
-  // busy/lineage checks below.
-  return <main className="cpu-allergen-page"><header className="cpu-allergen-page-header"><div><a href="/">← CPU Production</a><small>CPU · Delivered-In lunch</small><h1>ALLERGEN REVIEW</h1><h2>{date ? formatDate(date) : "Select a production day"}</h2><p>{rows.length} dishes · {approved} published · {checkedCount}/{rows.length} checked</p></div><div className="cpu-allergen-page-actions"><a href={`/?date=${date}`}>Back to production</a></div></header><section className="cpu-allergen-page-content"><div className="cpu-allergen-filters" aria-label="Allergen review filters"><label>Date<input type="date" value={date} onChange={event => setDate(event.target.value)} /></label><label>Site<select value={site} onChange={event => setSite(event.target.value)}><option value="">All sites</option>{sites.map(([id, label]) => <option key={id} value={id}>{label}</option>)}</select></label><label>Review status<select value={review} onChange={event => setReview(event.target.value)}><option value="all">All statuses</option><option value="attention">Needs attention</option><option value="reviewed">Checked</option><option value="pending">Unchecked</option></select></label></div>{site && <p className="cpu-allergen-filter-notice" role="status">Each OPLOC has an independent governed release. Review and sign the selected OPLOC only. Return to All sites to review and sign the complete Delivered-In master matrix when required.</p>}{!site && masterOrders.length > 1 && <p className="cpu-allergen-filter-notice" role="status">Select an OPLOC to complete its independent review and signatures. No OPLOC signature covers another.</p>}<div className="cpu-allergen-page-summary"><span><strong>{rows.length}</strong> Delivered-In dishes</span><span><strong>{approved}</strong> published</span><span className={attention ? "attention" : ""}><strong>{attention}</strong> require attention</span><span><strong>{checkedCount}/{rows.length}</strong> checked</span></div>{error && <p role="alert">{error}</p>}<AllergenReviewMatrix rows={rows} orders={visibleOrders} scopeKey={`${date || "unknown"}:${site || "all"}`} busy={signatureBusy} locked={fullySigned || Boolean(signing)} onCheckedChange={setCheckedCount} onReviewChanged={() => undefined} onSignatureRolesChange={roles => { setSignatureRoles(roles); }} onFinalizationChange={finalized => { setFinalizationComplete(finalized); }} onLineageChange={setLineageByOrderId} onRegisterSave={save => { saveReviewRef.current = save; }} /><section className="cpu-allergen-signatures"><div><small>CPU chef sign-off</small><h3>{site ? `Sign the ${destination(visibleOrders[0])} publication-day matrix` : "Sign each OPLOC independently"}</h3><p>{!signatureOrderId ? "Select one OPLOC to review and sign its complete governed matrix." : fullySigned ? "Both signatures recorded. This matrix is locked." : finalizationComplete ? "Both signatures recorded. The signed release is current." : allChecked ? "Every dish is checked. Capture the remaining required signature." : `Check every dish before signing · ${checkedCount} of ${rows.length} checked.`}</p></div>{signatureOrderId && <div className="cpu-allergen-signature-row"><span>{date ? formatDate(date) : "Published menu day"} · {rows.length} dishes · {destination(visibleOrders[0])}</span>{fullySigned ? <strong>Fully signed · locked</strong> : <><button type="button" disabled={signatureBusy || productionSigned} onClick={() => void beginSigning("production_chef")}>{productionSigned ? "Production chef signed" : "Sign as production chef"}</button><button type="button" disabled={signatureBusy || headChefSigned} onClick={() => void beginSigning("head_chef_site_manager")}>{headChefSigned ? "Head chef signed" : "Sign as head chef / site manager"}</button></>}</div>}{signatureBusy && <p role="status">Syncing allergen edits before signature…</p>}{signatureMessage && !signatureBusy && <p className="cpu-allergen-signature-alert" role="alert">{signatureMessage}</p>}</section></section>{signing && <SignatureModal role={signing.role} busy={signatureBusy} onCancel={() => setSigning(undefined)} onConfirm={(name, dataUrl) => void sign(name, dataUrl)} />}</main>;
+  const [orders, setOrders] = useState<ProductionOrder[]>([]);
+  const [date, setDate] = useState("");
+  const [site, setSite] = useState("");
+  const [review, setReview] = useState("all");
+  const [error, setError] = useState("");
+  const [signing, setSigning] = useState<{ role: SignatureRole }>();
+  const [checkedCount, setCheckedCount] = useState(0);
+  const [signatureRoles, setSignatureRoles] = useState<SignatureRole[]>([]);
+  const [signatureRolesByOrderId, setSignatureRolesByOrderId] = useState<Record<string, SignatureRole[]>>({});
+  const [lineageByOrderId, setLineageByOrderId] = useState<Record<string, MatrixLineage>>({});
+  const [finalizationComplete, setFinalizationComplete] = useState(false);
+  const [reviewFrozen, setReviewFrozen] = useState(false);
+  const [signatureMessage, setSignatureMessage] = useState("");
+  const [signatureBusy, setSignatureBusy] = useState(false);
+  const saveReviewRef = useRef<() => Promise<void>>(() => Promise.resolve());
+
+  const load = async (selectedDate: string) => {
+    setError("");
+    setOrders([]);
+    setCheckedCount(0);
+    setSignatureRoles([]);
+    setSignatureRolesByOrderId({});
+    setLineageByOrderId({});
+    setFinalizationComplete(false);
+    setReviewFrozen(false);
+    try {
+      const loaded = await loadCpuAllergenProjection(selectedDate, "delivered_in");
+      setOrders(cpuProjectionToOrders(loaded.projection).filter(order => order.origin === "menu_planning"));
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not load allergen review.");
+    }
+  };
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    setDate(params.get("date") || new Date().toISOString().slice(0, 10));
+  }, []);
+
+  useEffect(() => {
+    if (date) void load(date);
+  }, [date]);
+
+  const dateOrders = useMemo(
+    () => orders.filter(order => !date || orderDate(order) === date),
+    [orders, date],
+  );
+  const masterOrders = useMemo(
+    () => deliveredInMenuOrdersForServiceDate(dateOrders, date || undefined),
+    [dateOrders, date],
+  );
+  const visibleOrders = useMemo(
+    () => site ? masterOrders.filter(order => (order.destinationOplocId || destination(order)) === site) : masterOrders,
+    [masterOrders, site],
+  );
+  const rows = useMemo(() => buildAllergenReviewRows(visibleOrders), [visibleOrders]);
+  const sites = [...new Map(masterOrders.map(order => [order.destinationOplocId || destination(order), destination(order)])).entries()];
+  const approved = rows.filter(row => row.snapshot).length;
+  const attention = rows.filter(row => row.attention).length;
+  const allChecked = visibleOrders.length > 0 && rows.length > 0 && checkedCount === rows.length;
+  const productionSigned = signatureRoles.includes("production_chef");
+  const headChefSigned = signatureRoles.includes("head_chef_site_manager");
+  const bothSigned = productionSigned && headChefSigned;
+  const fullySigned = finalizationComplete && bothSigned;
+
+  const sign = async (printedName: string, signatureDataUrl: string) => {
+    if (!signing || signatureBusy || site) return;
+    const role = signing.role;
+    const targets = masterOrders.filter(order => !(signatureRolesByOrderId[order.canonicalId] || []).includes(role));
+    if (!masterOrders.length) {
+      setSignatureMessage("There is no Delivered-In master matrix to sign for this service date.");
+      return;
+    }
+    const missingLineage = masterOrders.find(order => !lineageByOrderId[order.canonicalId]);
+    if (missingLineage) {
+      setSignatureMessage("The current Menu publication lineage is unavailable for one or more OPLOCs. Reload the review before signing.");
+      return;
+    }
+    if (!targets.length) {
+      setSigning(undefined);
+      setSignatureMessage("This signature is already recorded across every OPLOC in the service-date master matrix.");
+      return;
+    }
+
+    setSignatureBusy(true);
+    setSignatureMessage("");
+    const failures: string[] = [];
+    try {
+      for (const order of targets) {
+        const expectedLineage = lineageByOrderId[order.canonicalId];
+        const commandId = [
+          "cpu-master-sign",
+          date,
+          role,
+          order.canonicalId,
+          expectedLineage.sourceContentHash,
+          expectedLineage.matrixContentHash,
+        ].join(":");
+        const response = await fetch("/api/production-plan", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            action: "sign-matrix",
+            orderId: order.canonicalId,
+            role,
+            printedName,
+            signatureDataUrl,
+            expectedLineage,
+            commandId,
+            attestation: "I confirm that I reviewed the complete CPU Delivered-In service-date allergen matrix and the recorded evidence is accurate to the best of my knowledge.",
+            actor: "production-chef",
+          }),
+        });
+        const body = await response.json() as {
+          error?: { message?: string };
+          matrixStatus?: string;
+          plan?: { signatures?: InternalMatrixSignature[] };
+        };
+        if (!response.ok) {
+          failures.push(`${destination(order)}: ${body.error?.message || "The matrix could not be signed."}`);
+        }
+      }
+
+      setSigning(undefined);
+      if (failures.length) {
+        setSignatureMessage(
+          `The master signature was not applied to every OPLOC. ${failures.join(" · ")} Reload and retry; already-committed OPLOC signatures are idempotent.`,
+        );
+      } else {
+        setSignatureRoles(current => [...new Set([...current, role])]);
+        setSignatureMessage(
+          role === "production_chef"
+            ? "Production chef signature recorded once across the complete service-date master matrix."
+            : "Head chef / site manager signature recorded once across the complete service-date master matrix. OPLOC-scoped releases are refreshing.",
+        );
+      }
+      await load(date);
+    } catch (cause) {
+      setSigning(undefined);
+      setSignatureMessage(cause instanceof Error ? cause.message : "The master matrix could not be signed.");
+    } finally {
+      setSignatureBusy(false);
+    }
+  };
+
+  const beginSigning = async (role: SignatureRole) => {
+    if (site) {
+      setSignatureMessage("Return to All sites to sign the complete Delivered-In service-date master matrix.");
+      return;
+    }
+    if (!masterOrders.length) {
+      setSignatureMessage("There is no Delivered-In master matrix to sign for this service date.");
+      return;
+    }
+    if (!allChecked) {
+      setSignatureMessage(`Please mark all ${rows.length} dishes as checked before signing. ${checkedCount} of ${rows.length} are checked.`);
+      return;
+    }
+    if (masterOrders.some(order => !lineageByOrderId[order.canonicalId])) {
+      setSignatureMessage("The current Menu publication lineage is unavailable for one or more OPLOCs. Reload the review before signing.");
+      return;
+    }
+    if ((role === "production_chef" && productionSigned) || (role === "head_chef_site_manager" && headChefSigned) || bothSigned || signatureBusy) return;
+
+    setSignatureMessage("");
+    setSignatureBusy(true);
+    try {
+      if (!reviewFrozen) {
+        setSignatureMessage("Syncing allergen edits before signature…");
+        await saveReviewRef.current();
+        setReviewFrozen(true);
+      }
+      setSigning({ role });
+    } catch (cause) {
+      setSignatureMessage(cause instanceof Error ? cause.message : "The allergen review could not be synchronised before signing.");
+    } finally {
+      setSignatureBusy(false);
+    }
+  };
+
+  const signatureSummary = site
+    ? "Filtered OPLOC view — return to All sites to sign the service-date master matrix."
+    : fullySigned
+      ? "Both signatures recorded and every OPLOC-scoped release is current."
+      : bothSigned
+        ? "Both signatures recorded. OPLOC-scoped releases are generating or refreshing."
+        : allChecked
+          ? "Every dish is checked. Capture the remaining required master signature."
+          : `Check every dish before signing · ${checkedCount} of ${rows.length} checked.`;
+
+  return (
+    <main className="cpu-allergen-page">
+      <header className="cpu-allergen-page-header">
+        <div>
+          <a href="/">← CPU Production</a>
+          <small>CPU · Delivered-In lunch</small>
+          <h1>ALLERGEN REVIEW</h1>
+          <h2>{date ? formatDate(date) : "Select a production day"}</h2>
+          <p>{rows.length} dishes · {approved} published · {checkedCount}/{rows.length} checked</p>
+        </div>
+        <div className="cpu-allergen-page-actions">
+          <a href={`/?date=${date}`}>Back to production</a>
+        </div>
+      </header>
+
+      <section className="cpu-allergen-page-content">
+        <div className="cpu-allergen-filters" aria-label="Allergen review filters">
+          <label>
+            Date
+            <input type="date" value={date} onChange={event => setDate(event.target.value)} />
+          </label>
+          <label>
+            Site
+            <select value={site} onChange={event => setSite(event.target.value)}>
+              <option value="">All sites</option>
+              {sites.map(([id, label]) => <option key={id} value={id}>{label}</option>)}
+            </select>
+          </label>
+          <label>
+            Review status
+            <select value={review} onChange={event => setReview(event.target.value)}>
+              <option value="all">All statuses</option>
+              <option value="attention">Needs attention</option>
+              <option value="reviewed">Checked</option>
+              <option value="pending">Unchecked</option>
+            </select>
+          </label>
+        </div>
+
+        {site && (
+          <p className="cpu-allergen-filter-notice" role="status">
+            This is a filtered OPLOC review view. Return to All sites to sign the complete Delivered-In service-date master matrix. FIKA OS still materialises a separate governed release for each OPLOC.
+          </p>
+        )}
+        {!site && masterOrders.length > 1 && (
+          <p className="cpu-allergen-filter-notice" role="status">
+            Review the complete service-date matrix once. Both CPU signatures apply to this master review; FIKA OS then materialises separate governed OPLOC releases automatically.
+          </p>
+        )}
+
+        <div className="cpu-allergen-page-summary">
+          <span><strong>{rows.length}</strong> Delivered-In dishes</span>
+          <span><strong>{approved}</strong> published</span>
+          <span className={attention ? "attention" : ""}><strong>{attention}</strong> require attention</span>
+          <span><strong>{checkedCount}/{rows.length}</strong> checked</span>
+        </div>
+
+        {error && <p role="alert">{error}</p>}
+
+        <AllergenReviewMatrix
+          rows={rows}
+          orders={visibleOrders}
+          scopeKey={`${date || "unknown"}:${site || "all"}`}
+          busy={signatureBusy}
+          locked={bothSigned || Boolean(signing)}
+          onCheckedChange={setCheckedCount}
+          onReviewChanged={() => undefined}
+          onSignatureRolesChange={roles => setSignatureRoles(roles)}
+          onOrderSignatureRolesChange={setSignatureRolesByOrderId}
+          onFinalizationChange={setFinalizationComplete}
+          onLineageChange={setLineageByOrderId}
+          onRegisterSave={save => { saveReviewRef.current = save; }}
+        />
+
+        <section className="cpu-allergen-signatures">
+          <div>
+            <small>CPU chef sign-off</small>
+            <h3>Sign the Delivered-In service-date master matrix</h3>
+            <p>{signatureSummary}</p>
+          </div>
+          {!site && masterOrders.length > 0 && (
+            <div className="cpu-allergen-signature-row">
+              <span>
+                {date ? formatDate(date) : "Published menu day"} · {rows.length} dishes · {sites.length} OPLOC{sites.length === 1 ? "" : "s"}
+              </span>
+              {fullySigned ? (
+                <strong>Fully signed · scoped releases current</strong>
+              ) : (
+                <>
+                  <button type="button" disabled={signatureBusy || productionSigned} onClick={() => void beginSigning("production_chef")}>
+                    {productionSigned ? "Production chef signed" : "Sign as production chef"}
+                  </button>
+                  <button type="button" disabled={signatureBusy || headChefSigned} onClick={() => void beginSigning("head_chef_site_manager")}>
+                    {headChefSigned ? "Head chef signed" : "Sign as head chef / site manager"}
+                  </button>
+                </>
+              )}
+            </div>
+          )}
+          {signatureBusy && <p role="status">Syncing allergen edits before signature…</p>}
+          {signatureMessage && !signatureBusy && <p className="cpu-allergen-signature-alert" role="alert">{signatureMessage}</p>}
+        </section>
+      </section>
+
+      {signing && (
+        <SignatureModal
+          role={signing.role}
+          busy={signatureBusy}
+          onCancel={() => setSigning(undefined)}
+          onConfirm={(name, dataUrl) => void sign(name, dataUrl)}
+        />
+      )}
+    </main>
+  );
 }
