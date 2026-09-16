@@ -2,9 +2,9 @@ import assert from "node:assert/strict";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import test from "node:test";
-import { markDeliveredInProjectionDayUnavailable, readDeliveredInProjectionIndex, writeDeliveredInProjection } from "../lib/delivered-in-projection-store";
+import { markDeliveredInProjectionDayUnavailable, readDeliveredInProjection, readDeliveredInProjectionIndex, writeDeliveredInProjection } from "../lib/delivered-in-projection-store";
 import { packetPublicationsForRange, type MenuPlanningWeekPacket } from "../lib/menu-planning-week-packet";
-import { recoverableRequestedWeekDates } from "../lib/server";
+import { recoverableRequestedWeekDates, recoverRequestedWeek } from "../lib/server";
 
 const week = "2026-09-14";
 const dates = ["2026-09-14", "2026-09-15", "2026-09-16", "2026-09-17", "2026-09-18"];
@@ -64,4 +64,68 @@ test("requested-week recovery selects only missing or unavailable published days
   assert.deepEqual(recoverableRequestedWeekDates(dates, [{ serviceDate: dates[0], state: "available", freshness: "stale", completeness: "unavailable" }, ...entries], [dates[0]], week), [dates[0]]);
   assert.deepEqual(recoverableRequestedWeekDates(dates, entries, [], week), [dates[0]]);
   assert.deepEqual(recoverableRequestedWeekDates(dates, dates.map(serviceDate => ({ serviceDate, state: "available" as const, freshness: "current" as const, completeness: "complete" as const })), [], week), []);
+});
+
+test("requested-week recovery repairs a published day omitted from the packet without touching healthy days", async () => {
+  const root = await mkdtemp(`${tmpdir()}\\fika-delivered-in-requested-recovery-`);
+  const previousRoot = process.env.FIKA_SNAPSHOT_DIR;
+  const previousFetch = globalThis.fetch;
+  process.env.FIKA_SNAPSHOT_DIR = root;
+  const oplocId = "oploc:recovery-test";
+  const sourcePublication = {
+    publicationId: "publication:recovery",
+    sourceWeekId: "week:recovery",
+    weekCommencing: week,
+    weekEnding: "2026-09-20",
+    days: dates.map(date => ({ publicationDayId: `day:${date}`, sourceDayId: `source:${date}`, date, dayName: "Day", version: 1, status: "published" as const, contentHash: `hash:${date}`, entries: [{ sourceEntryId: `entry:${date}`, slot: "SALAD 1", dishName: "Recovery salad", portions: 1, allocations: [{ destinationId: oplocId, destinationLabel: "Recovery site", quantity: 1 }], allergens: { milk: "clear" as const } }], allergenSignoff: {} })),
+  };
+  const packet: MenuPlanningWeekPacket = { schemaVersion: 1, publicationId: sourcePublication.publicationId, sourceWeekId: sourcePublication.sourceWeekId, week: { weekCommencing: week, weekEnding: sourcePublication.weekEnding }, days: sourcePublication.days.slice(1) };
+  let authoritativeCalls = 0;
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    if (String(input).includes("/api/delivered-in/access")) return new Response(JSON.stringify({ access: { email: "recovery@example.com", oplocIds: [oplocId], permissions: ["delivered_in.view"] }, sites: [{ oplocId, label: "Recovery site" }] }), { status: 200, headers: { "content-type": "application/json" } });
+    return new Response("unexpected upstream", { status: 500 });
+  }) as typeof fetch;
+  try {
+    await Promise.all(dates.slice(1).map(date => writeDeliveredInProjection({ ...projection(date), oplocId, oplocLabel: "Recovery site", projectionId: `delivered-in:${oplocId}:${date}` })));
+    await markDeliveredInProjectionDayUnavailable({ oplocId, serviceDate: dates[0], weekCommencing: week });
+    await recoverRequestedWeek({ headers: new Headers() } as never, oplocId, week, [dates[0]], {
+      readMenuPackets: async () => [packet],
+      readAuthoritativePublications: async () => { authoritativeCalls += 1; return [sourcePublication]; },
+      loadReview: async () => ({ entries: new Map(), cpuReview: { status: "pending" as const, signatures: [] }, orderIds: [] }),
+    });
+    assert.equal(authoritativeCalls, 1);
+    assert.equal((await readDeliveredInProjection(oplocId, dates[0]))?.value.state.freshness, "current");
+    assert.equal((await readDeliveredInProjection(oplocId, dates[0]))?.value.state.menu, "present");
+    const index = await readDeliveredInProjectionIndex(oplocId);
+    assert.equal(index?.value.entries.find(entry => entry.serviceDate === dates[0])?.completeness, "complete");
+    assert.deepEqual(index?.value.entries.filter(entry => entry.serviceDate !== dates[0] && entry.completeness === "complete").map(entry => entry.serviceDate).sort(), dates.slice(1));
+  } finally {
+    globalThis.fetch = previousFetch;
+    if (previousRoot === undefined) delete process.env.FIKA_SNAPSHOT_DIR; else process.env.FIKA_SNAPSHOT_DIR = previousRoot;
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("requested-week recovery keeps a known-unavailable omitted day unavailable when Menu is unreachable", async () => {
+  const root = await mkdtemp(`${tmpdir()}\\fika-delivered-in-requested-recovery-failure-`);
+  const previousRoot = process.env.FIKA_SNAPSHOT_DIR;
+  const previousFetch = globalThis.fetch;
+  process.env.FIKA_SNAPSHOT_DIR = root;
+  const oplocId = "oploc:recovery-failure";
+  const packet: MenuPlanningWeekPacket = { schemaVersion: 1, publicationId: "publication:recovery-failure", sourceWeekId: "week:recovery-failure", week: { weekCommencing: week, weekEnding: "2026-09-20" }, days: [] };
+  try {
+    globalThis.fetch = (async () => new Response(JSON.stringify({ access: { email: "recovery@example.com", oplocIds: [oplocId], permissions: ["delivered_in.view"] }, sites: [{ oplocId, label: "Recovery failure site" }] }), { status: 200, headers: { "content-type": "application/json" } })) as typeof fetch;
+    await markDeliveredInProjectionDayUnavailable({ oplocId, serviceDate: dates[0], weekCommencing: week });
+    await recoverRequestedWeek({ headers: new Headers() } as never, oplocId, week, [dates[0]], {
+      readMenuPackets: async () => [packet],
+      readAuthoritativePublications: async () => { throw Object.assign(new Error("Menu Planning unavailable"), { code: "MENU_SOURCE_UNAVAILABLE", status: 503 }); },
+    });
+    const entry = (await readDeliveredInProjectionIndex(oplocId))?.value.entries.find(candidate => candidate.serviceDate === dates[0]);
+    assert.equal(entry?.completeness, "unavailable");
+    assert.notEqual(entry?.state, "withdrawn");
+  } finally {
+    globalThis.fetch = previousFetch;
+    if (previousRoot === undefined) delete process.env.FIKA_SNAPSHOT_DIR; else process.env.FIKA_SNAPSHOT_DIR = previousRoot;
+    await rm(root, { recursive: true, force: true });
+  }
 });

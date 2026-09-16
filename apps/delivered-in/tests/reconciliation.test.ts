@@ -3,7 +3,8 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import test from "node:test";
 import { reconcileDeliveredInDay } from "../lib/delivered-in-reconciliation";
-import { readDeliveredInProjection } from "../lib/delivered-in-projection-store";
+import { markDeliveredInProjectionDayUnavailable, readDeliveredInProjection, readDeliveredInProjectionIndex } from "../lib/delivered-in-projection-store";
+import type { MenuPlanningWeekPacket } from "../lib/menu-planning-week-packet";
 
 const oplocId = "oploc:reconcile-test";
 const serviceDate = "2026-08-24";
@@ -14,8 +15,18 @@ function fetchSequence(cpuAvailable = true) {
   return async (input: RequestInfo | URL) => {
     const url = String(input);
     if (url.includes("/api/delivered-in/access")) return new Response(JSON.stringify({ access: { email: "admin@local.fika", oplocIds: [oplocId], permissions: ["delivered_in.view"] }, sites: [{ oplocId, label: "Reconcile site" }] }), { status: 200, headers: { "content-type": "application/json" } });
-    if (url.includes("/api/rolling-menu/publications")) return new Response(JSON.stringify({ publications: [sourcePublication] }), { status: 200, headers: { "content-type": "application/json" } });
+    if (url.includes("/api/rolling-menu/publications")) return cpuAvailable
+      ? new Response(JSON.stringify({ publications: [sourcePublication] }), { status: 200, headers: { "content-type": "application/json" } })
+      : new Response("unavailable", { status: 503 });
     return new Response("unavailable", { status: 503 });
+  };
+}
+
+function authoritativeSource() {
+  return async () => {
+    const response = await fetch("/api/rolling-menu/publications");
+    if (!response.ok) throw Object.assign(new Error("Menu Planning publication service is unavailable."), { status: response.status, code: "MENU_SOURCE_UNAVAILABLE" });
+    return [sourcePublication];
   };
 }
 
@@ -26,10 +37,96 @@ test("reconciliation creates, then no-ops a current projection and preserves it 
   const previousRoot = process.env.FIKA_SNAPSHOT_DIR; const previousFetch = globalThis.fetch;
   process.env.FIKA_SNAPSHOT_DIR = root; globalThis.fetch = fetchSequence(true) as typeof fetch;
   try {
-    const created = await reconcileDeliveredInDay(request, oplocId, serviceDate, { loadReview: maintenanceReview }); assert.equal(created.status, "created");
-    const current = await reconcileDeliveredInDay(request, oplocId, serviceDate, { loadReview: maintenanceReview }); assert.equal(current.status, "current");
+    const sources = { readMenuPackets: async () => [], readAuthoritativePublications: authoritativeSource(), loadReview: maintenanceReview };
+    const created = await reconcileDeliveredInDay(request, oplocId, serviceDate, sources); assert.equal(created.status, "created");
+    const current = await reconcileDeliveredInDay(request, oplocId, serviceDate, sources); assert.equal(current.status, "current");
     globalThis.fetch = fetchSequence(false) as typeof fetch;
-    await assert.rejects(() => reconcileDeliveredInDay(request, oplocId, serviceDate, { loadReview: async () => { throw new Error("CPU packet unavailable"); } }));
+    await assert.rejects(() => reconcileDeliveredInDay(request, oplocId, serviceDate, { ...sources, loadReview: async () => { throw new Error("CPU packet unavailable"); } }));
     assert.equal((await readDeliveredInProjection(oplocId, serviceDate))?.value.projectionVersion, 1);
   } finally { globalThis.fetch = previousFetch; if (previousRoot === undefined) delete process.env.FIKA_SNAPSHOT_DIR; else process.env.FIKA_SNAPSHOT_DIR = previousRoot; await rm(root, { recursive: true, force: true }); }
+});
+
+test("an omitted packet day falls back to authoritative Menu, restores availability, and keeps CPU failure degraded", async () => {
+  const root = await mkdtemp(`${tmpdir()}\\fika-delivered-in-omitted-day-`);
+  const previousRoot = process.env.FIKA_SNAPSHOT_DIR; const previousFetch = globalThis.fetch;
+  process.env.FIKA_SNAPSHOT_DIR = root; globalThis.fetch = fetchSequence(true) as typeof fetch;
+  let authoritativeCalls = 0;
+  const packet: MenuPlanningWeekPacket = { schemaVersion: 1, publicationId: sourcePublication.publicationId, sourceWeekId: sourcePublication.sourceWeekId, week: { weekCommencing: serviceDate, weekEnding: sourcePublication.weekEnding }, days: [] };
+  try {
+    await markDeliveredInProjectionDayUnavailable({ oplocId, serviceDate, weekCommencing: serviceDate });
+    const result = await reconcileDeliveredInDay(request, oplocId, serviceDate, {
+      readMenuPackets: async () => [packet],
+      readAuthoritativePublications: async () => { authoritativeCalls += 1; return [sourcePublication]; },
+      loadReview: async () => { throw Object.assign(new Error("CPU review lineage mismatch"), { code: "CPU_REVIEW_LINEAGE_MISMATCH" }); },
+    });
+    assert.equal(authoritativeCalls, 1);
+    assert.equal(result.status, "created");
+    assert.equal(result.projection?.state.freshness, "current");
+    assert.equal(result.projection?.state.completeness, "complete");
+    assert.equal(result.projection?.state.menu, "present");
+    assert.equal(result.projection?.state.cpu, "unavailable");
+    assert.equal(result.projection?.state.exceptions.some(exception => exception.code === "CPU_REVIEW_LINEAGE_MISMATCH"), true);
+    const index = await readDeliveredInProjectionIndex(oplocId);
+    assert.equal(index?.value.entries.find(entry => entry.serviceDate === serviceDate)?.completeness, "complete");
+  } finally {
+    globalThis.fetch = previousFetch; if (previousRoot === undefined) delete process.env.FIKA_SNAPSHOT_DIR; else process.env.FIKA_SNAPSHOT_DIR = previousRoot;
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("authoritative withdrawal is distinct from packet omission", async () => {
+  const root = await mkdtemp(`${tmpdir()}\\fika-delivered-in-withdrawn-day-`);
+  const previousRoot = process.env.FIKA_SNAPSHOT_DIR; const previousFetch = globalThis.fetch;
+  process.env.FIKA_SNAPSHOT_DIR = root; globalThis.fetch = fetchSequence(true) as typeof fetch;
+  const withdrawn = { ...sourcePublication, days: [{ ...sourcePublication.days[0], version: 2, status: "withdrawn" as const }] };
+  try {
+    const result = await reconcileDeliveredInDay(request, oplocId, serviceDate, {
+      readMenuPackets: async () => [({ schemaVersion: 1, publicationId: sourcePublication.publicationId, sourceWeekId: sourcePublication.sourceWeekId, week: { weekCommencing: serviceDate, weekEnding: sourcePublication.weekEnding }, days: [] } as MenuPlanningWeekPacket)],
+      readAuthoritativePublications: async () => [withdrawn],
+    });
+    assert.equal(result.status, "withdrawn");
+    assert.equal((await readDeliveredInProjectionIndex(oplocId))?.value.entries.find(entry => entry.serviceDate === serviceDate)?.state, "withdrawn");
+  } finally {
+    globalThis.fetch = previousFetch; if (previousRoot === undefined) delete process.env.FIKA_SNAPSHOT_DIR; else process.env.FIKA_SNAPSHOT_DIR = previousRoot;
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("authoritative Menu failure leaves an unavailable day unavailable and never withdraws it", async () => {
+  const root = await mkdtemp(`${tmpdir()}\\fika-delivered-in-unavailable-day-`);
+  const previousRoot = process.env.FIKA_SNAPSHOT_DIR; const previousFetch = globalThis.fetch;
+  process.env.FIKA_SNAPSHOT_DIR = root; globalThis.fetch = fetchSequence(true) as typeof fetch;
+  try {
+    await markDeliveredInProjectionDayUnavailable({ oplocId, serviceDate, weekCommencing: serviceDate });
+    await assert.rejects(() => reconcileDeliveredInDay(request, oplocId, serviceDate, {
+      readMenuPackets: async () => [({ schemaVersion: 1, publicationId: sourcePublication.publicationId, sourceWeekId: sourcePublication.sourceWeekId, week: { weekCommencing: serviceDate, weekEnding: sourcePublication.weekEnding }, days: [] } as MenuPlanningWeekPacket)],
+      readAuthoritativePublications: async () => { throw Object.assign(new Error("Menu Planning unavailable"), { code: "MENU_SOURCE_UNAVAILABLE", status: 503 }); },
+    }));
+    const entry = (await readDeliveredInProjectionIndex(oplocId))?.value.entries.find(candidate => candidate.serviceDate === serviceDate);
+    assert.equal(entry?.completeness, "unavailable");
+    assert.notEqual(entry?.state, "withdrawn");
+  } finally {
+    globalThis.fetch = previousFetch; if (previousRoot === undefined) delete process.env.FIKA_SNAPSHOT_DIR; else process.env.FIKA_SNAPSHOT_DIR = previousRoot;
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("a healthy packet day does not perform authoritative fallback", async () => {
+  const root = await mkdtemp(`${tmpdir()}\\fika-delivered-in-healthy-packet-`);
+  const previousRoot = process.env.FIKA_SNAPSHOT_DIR; const previousFetch = globalThis.fetch;
+  process.env.FIKA_SNAPSHOT_DIR = root; globalThis.fetch = fetchSequence(true) as typeof fetch;
+  let authoritativeCalls = 0;
+  const packet: MenuPlanningWeekPacket = { schemaVersion: 1, publicationId: sourcePublication.publicationId, sourceWeekId: sourcePublication.sourceWeekId, week: { weekCommencing: serviceDate, weekEnding: sourcePublication.weekEnding }, days: sourcePublication.days.map(day => ({ ...day, entries: day.entries.map(entry => ({ ...entry, portions: entry.portions })) })) };
+  try {
+    const result = await reconcileDeliveredInDay(request, oplocId, serviceDate, {
+      readMenuPackets: async () => [packet],
+      readAuthoritativePublications: async () => { authoritativeCalls += 1; return []; },
+      loadReview: maintenanceReview,
+    });
+    assert.equal(result.status, "created");
+    assert.equal(authoritativeCalls, 0);
+  } finally {
+    globalThis.fetch = previousFetch; if (previousRoot === undefined) delete process.env.FIKA_SNAPSHOT_DIR; else process.env.FIKA_SNAPSHOT_DIR = previousRoot;
+    await rm(root, { recursive: true, force: true });
+  }
 });

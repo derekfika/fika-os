@@ -7,7 +7,7 @@ import { buildDeliveredInDayProjection } from "./delivered-in-projection-materia
 import { markDeliveredInProjectionDayUnavailable, readDeliveredInProjection, readDeliveredInProjectionIndex } from "./delivered-in-projection-store";
 import type { DeliveredInDayProjection } from "./delivered-in-day-projection";
 import type { DeliveredInProjectionIndexEntry } from "./delivered-in-projection-store";
-import { packetPublicationsForRange, readMenuPlanningWeekPackets } from "./menu-planning-week-packet";
+import { packetPublicationsForRange, readMenuPlanningWeekPackets, type MenuPlanningWeekPacket } from "./menu-planning-week-packet";
 import { cpuDailyPacketReview, readCpuDailySignedPacket } from "./cpu-daily-signed-packet";
 
 export const DELIVERED_IN_PROJECTION_HORIZON_DAYS = 42;
@@ -16,7 +16,7 @@ export const DELIVERED_IN_MAX_DAY_PACKAGES = 50;
 const hubBase = () => (process.env.INTEGRATION_HUB_BASE_URL || "http://localhost:3200").replace(/\/$/, "");
 const menuBase = () => (process.env.MENU_PLANNING_BASE_URL || "http://localhost:3500").replace(/\/$/, "");
 const failure = (message: string, status = 502, code?: string, requestId?: string) => Object.assign(new Error(message), { status, ...(code ? { code } : {}), ...(requestId ? { requestId } : {}) });
-export type RequestedWeekRecoveryCode = "CPU_REVIEW_UNAVAILABLE" | "CPU_REVIEW_UNSIGNED" | "CPU_REVIEW_LINEAGE_MISMATCH" | "CPU_PACKET_MISSING_DISH" | "CPU_DAILY_PACKET_INVALID" | "MENU_PLANNING_WEEK_PACKET_INVALID" | "FIKA_SESSION_MISSING" | "FIKA_SESSION_INVALID" | "UNKNOWN_INTERNAL";
+export type RequestedWeekRecoveryCode = "CPU_REVIEW_UNAVAILABLE" | "CPU_REVIEW_UNSIGNED" | "CPU_REVIEW_LINEAGE_MISMATCH" | "CPU_PACKET_MISSING_DISH" | "CPU_DAILY_PACKET_INVALID" | "MENU_PLANNING_WEEK_PACKET_INVALID" | "MENU_SOURCE_UNAVAILABLE" | "FIKA_SESSION_MISSING" | "FIKA_SESSION_INVALID" | "UNKNOWN_INTERNAL";
 type DiagnosticError = { name: string; message: string; code?: string; status?: number; cause?: unknown };
 const diagnosticText = (value: unknown) => String(value || "").replace(/[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}/g, "[redacted-email]").slice(0, 500);
 const diagnosticError = (error: unknown): DiagnosticError => {
@@ -26,7 +26,7 @@ const diagnosticError = (error: unknown): DiagnosticError => {
 export function classifyRequestedWeekRecoveryFailure(error: unknown) {
   const current = diagnosticError(error);
   const cause = current.cause ? diagnosticError(current.cause) : undefined;
-  const known = new Set<RequestedWeekRecoveryCode>(["CPU_REVIEW_UNAVAILABLE", "CPU_REVIEW_UNSIGNED", "CPU_REVIEW_LINEAGE_MISMATCH", "CPU_PACKET_MISSING_DISH", "CPU_DAILY_PACKET_INVALID", "MENU_PLANNING_WEEK_PACKET_INVALID", "FIKA_SESSION_MISSING", "FIKA_SESSION_INVALID"]);
+  const known = new Set<RequestedWeekRecoveryCode>(["CPU_REVIEW_UNAVAILABLE", "CPU_REVIEW_UNSIGNED", "CPU_REVIEW_LINEAGE_MISMATCH", "CPU_PACKET_MISSING_DISH", "CPU_DAILY_PACKET_INVALID", "MENU_PLANNING_WEEK_PACKET_INVALID", "MENU_SOURCE_UNAVAILABLE", "FIKA_SESSION_MISSING", "FIKA_SESSION_INVALID"]);
   const code = (current.code && known.has(current.code as RequestedWeekRecoveryCode) ? current.code : cause?.code && known.has(cause.code as RequestedWeekRecoveryCode) ? cause.code : "UNKNOWN_INTERNAL") as RequestedWeekRecoveryCode;
   return { code, errorCode: code, errorName: current.name, errorStatus: current.status ?? null, errorMessage: current.message, causeCode: cause?.code ?? null, causeMessage: cause?.message ?? null };
 }
@@ -52,6 +52,14 @@ export function deliveredInErrorBody(error: unknown, fallback: string) {
 const addDays = (date: string, days: number) => { const value = new Date(`${date}T00:00:00Z`); value.setUTCDate(value.getUTCDate() + days); return value.toISOString().slice(0, 10); };
 const mondayOf = (date: string) => { const value = new Date(`${date}T00:00:00Z`); const day = value.getUTCDay(); value.setUTCDate(value.getUTCDate() - (day === 0 ? 6 : day - 1)); return value.toISOString().slice(0, 10); };
 async function readJson<T>(response: Response, label: string): Promise<T> { const text = await response.text(); if (!response.headers.get("content-type")?.includes("application/json")) throw failure(`${label} returned a non-JSON response (${response.status}); the source service may be unavailable.`); try { return JSON.parse(text) as T; } catch (cause) { throw Object.assign(failure(`${label} returned invalid JSON; no empty projection was used.`), { cause }); } }
+
+export async function readAuthoritativeMenuPublications(request: NextRequest, fromWeek: string, toWeek: string) {
+  const response = await fetch(`${menuBase()}/api/rolling-menu/publications?fromWeek=${encodeURIComponent(fromWeek)}&toWeek=${encodeURIComponent(toWeek)}`, { headers: { cookie: request.headers.get("cookie") || "" }, cache: "no-store" });
+  recordDataAccess({ app: "delivered-in", operation: "menu.publications.authoritative-by-week", source: "NETWORK_UPSTREAM", dataset: "menu-planning/publications", documents: 0, cacheResult: "BYPASS" });
+  const body = await readJson<{ publications?: SourcePublication[]; error?: { message?: string; code?: string } }>(response, "Menu Planning publication service");
+  if (!response.ok) throw failure(body.error?.message || "Published Delivered-In menus could not be loaded.", response.status || 502, body.error?.code || "MENU_SOURCE_UNAVAILABLE");
+  return body.publications || [];
+}
 
 /** Ordinary Delivered-In reads consume the immutable, signed CPU packet only. */
 export async function cpuReviewForDay(_request: NextRequest, date: string, oplocId: string, sourceBundleHash?: string) {
@@ -99,29 +107,49 @@ export function recoverableRequestedWeekDates(publishedDates: string[], entries:
   }).sort();
 }
 
-async function recoverRequestedWeek(request: NextRequest, oplocId: string, weekCommencing: string, knownUnavailableDates: string[] = []) {
+export type RequestedWeekRecoverySources = {
+  readMenuPackets?: (fromWeek: string, toWeek: string) => Promise<MenuPlanningWeekPacket[]>;
+  readAuthoritativePublications?: (request: NextRequest, fromWeek: string, toWeek: string) => Promise<SourcePublication[]>;
+  loadReview?: import("./delivered-in-projection-materialiser").ReviewLoader;
+};
+
+export async function recoverRequestedWeek(request: NextRequest, oplocId: string, weekCommencing: string, knownUnavailableDates: string[] = [], sources: RequestedWeekRecoverySources = {}) {
   const key = `${oplocId}:${weekCommencing}`;
   const existing = weekRecovery.get(key);
   if (existing) return existing;
   const work = (async () => {
     const toWeek = addDays(weekCommencing, 7);
+    const readAuthoritativePublications = sources.readAuthoritativePublications || readAuthoritativeMenuPublications;
     let publications: SourcePublication[] = [];
-    const packets = await readMenuPlanningWeekPackets(weekCommencing, toWeek);
+    const packets = await (sources.readMenuPackets || readMenuPlanningWeekPackets)(weekCommencing, toWeek);
     if (packets.length) publications = packetPublicationsForRange(packets, weekCommencing, toWeek) as SourcePublication[];
-    else {
-      const response = await fetch(`${menuBase()}/api/rolling-menu/publications?fromWeek=${encodeURIComponent(weekCommencing)}&toWeek=${encodeURIComponent(toWeek)}`, { cache: "no-store" });
-      const body = await readJson<{ publications?: SourcePublication[]; error?: { message?: string } }>(response, "Menu Planning publication service");
-      if (!response.ok) throw failure(body.error?.message || "Published Delivered-In menus could not be loaded.");
-      publications = body.publications || [];
+    let authoritativeError: unknown;
+    if (!packets.length) try {
+      publications = await readAuthoritativePublications(request, weekCommencing, toWeek);
+    } catch (error) {
+      authoritativeError = error;
     }
-    if (!publications.length) return;
     const { reconcileDeliveredInDay } = await import("./delivered-in-reconciliation");
     const publishedDays = publications.flatMap(publication => projectPublishedWeeks([publication], oplocId, new Set([oplocId])).flatMap(week => week.days));
     const indexWindow = await readProjectionIndexWindow(oplocId, operationalDateLondon(), weekCommencing);
-    const dates = recoverableRequestedWeekDates(publishedDays.map(day => day.date), indexWindow.entries, knownUnavailableDates, weekCommencing);
+    const unavailableInWeek = [...new Set(knownUnavailableDates)].filter(date => date >= weekCommencing && date < toWeek);
+    const packetDates = new Set(publishedDays.map(day => day.date));
+    const omittedUnavailableDates = unavailableInWeek.filter(date => !packetDates.has(date));
+    let authoritativePublications: SourcePublication[] | undefined;
+    if (!packets.length || omittedUnavailableDates.length || unavailableInWeek.length) {
+      try {
+        if (authoritativeError) throw authoritativeError;
+        authoritativePublications = packets.length ? await readAuthoritativePublications(request, weekCommencing, toWeek) : publications;
+      } catch (error) {
+        authoritativeError = error;
+      }
+    }
+    const authoritativeDates = (authoritativePublications || []).flatMap(publication => publication.days.filter(day => day.date >= weekCommencing && day.date < toWeek).map(day => day.date));
+    const dates = recoverableRequestedWeekDates([...new Set([...publishedDays.map(day => day.date), ...authoritativeDates, ...unavailableInWeek])], indexWindow.entries, knownUnavailableDates, weekCommencing);
     await Promise.all(dates.map(async date => {
       try {
-        await reconcileDeliveredInDay(request, oplocId, date);
+        if (authoritativeError && !packetDates.has(date)) throw authoritativeError;
+        await reconcileDeliveredInDay(request, oplocId, date, { ...(sources.loadReview ? { loadReview: sources.loadReview } : {}), ...(authoritativePublications ? { authoritativePublications } : {}) });
       } catch (error) {
         // A single day may be unavailable while its CPU safety packet is
         // pending or invalid. Keep recovery bounded to that day so a valid

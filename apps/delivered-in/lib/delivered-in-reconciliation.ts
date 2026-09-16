@@ -2,47 +2,49 @@ import type { NextRequest } from "next/server";
 import { buildDeliveredInDayProjection, type ReviewLoader } from "./delivered-in-projection-materialiser";
 import { readDeliveredInProjection, writeDeliveredInProjection, withdrawDeliveredInProjectionDay, type DeliveredInInvalidation } from "./delivered-in-projection-store";
 import { assertAuthorisedOploc, projectPublishedWeeks, type Site, type SourcePublication } from "./projection";
-import { resolveAccess, cpuReviewForDay } from "./server";
-import { packetPublicationsForRange, readMenuPlanningWeekPackets } from "./menu-planning-week-packet";
+import { readAuthoritativeMenuPublications, resolveAccess, cpuReviewForDay } from "./server";
+import { packetPublicationsForRange, readMenuPlanningWeekPackets, type MenuPlanningWeekPacket } from "./menu-planning-week-packet";
 
-const menuBase = () => (process.env.MENU_PLANNING_BASE_URL || "http://localhost:3500").replace(/\/$/, "");
 const addDays = (date: string, days: number) => { const value = new Date(`${date}T00:00:00Z`); value.setUTCDate(value.getUTCDate() + days); return value.toISOString().slice(0, 10); };
 const mondayOf = (date: string) => { const value = new Date(`${date}T00:00:00Z`); const day = value.getUTCDay(); value.setUTCDate(value.getUTCDate() - (day === 0 ? 6 : day - 1)); return value.toISOString().slice(0, 10); };
 
-async function menuForDate(request: NextRequest, oplocId: string, serviceDate: string) {
-  const fromWeek = mondayOf(serviceDate);
-  const toWeek = addDays(fromWeek, 7);
-  const packets = await readMenuPlanningWeekPackets(fromWeek, toWeek);
-  if (packets.length) {
-    const publications = packetPublicationsForRange(packets, fromWeek, toWeek) as SourcePublication[];
-    for (const publication of publications) {
-      const sourceDay = publication.days.filter(candidate => candidate.date === serviceDate).sort((a, b) => b.version - a.version)[0];
-      if (!sourceDay) continue;
-      if (sourceDay.status === "withdrawn") return { withdrawn: true as const, sourceVersion: `${sourceDay.publicationDayId}:v${sourceDay.version}:${sourceDay.contentHash}`, sourceSequence: sourceDay.version, sourceLineageKey: [publication.publicationId, sourceDay.publicationDayId, sourceDay.version, sourceDay.contentHash, "none"].join("|") };
-      const projected = projectPublishedWeeks([publication], oplocId, new Set([oplocId]), serviceDate).find(week => week.days.some(candidate => candidate.date === serviceDate));
-      if (projected) return { day: projected.days.find(candidate => candidate.date === serviceDate), withdrawn: false as const };
-    }
-    return undefined;
-  }
-  const response = await fetch(`${menuBase()}/api/rolling-menu/publications?fromWeek=${encodeURIComponent(fromWeek)}&toWeek=${encodeURIComponent(addDays(fromWeek, 7))}`, { cache: "no-store" });
-  if (!response.ok) throw Object.assign(new Error(`Menu Planning publication service is unavailable (${response.status}).`), { status: 503, code: "MENU_SOURCE_UNAVAILABLE" });
-  const body = await response.json() as { publications?: SourcePublication[] };
-  for (const publication of body.publications || []) {
+type MenuResolutionOptions = {
+  authoritativePublications?: SourcePublication[];
+  readMenuPackets?: (fromWeek: string, toWeek: string) => Promise<MenuPlanningWeekPacket[]>;
+  readAuthoritativePublications?: (request: NextRequest, fromWeek: string, toWeek: string) => Promise<SourcePublication[]>;
+};
+
+function menuResultForPublications(publications: SourcePublication[], oplocId: string, serviceDate: string) {
+  for (const publication of publications) {
     const sourceDay = publication.days.filter(candidate => candidate.date === serviceDate).sort((a, b) => b.version - a.version)[0];
     if (!sourceDay) continue;
-    if (sourceDay.status === "withdrawn") return { withdrawn: true as const, sourceVersion: `${sourceDay.publicationDayId}:v${sourceDay.version}:${sourceDay.contentHash}`, sourceSequence: sourceDay.version, sourceLineageKey: [publication.publicationId, sourceDay.publicationDayId, sourceDay.version, sourceDay.contentHash, "none"].join("|") };
+    if (sourceDay.status === "withdrawn" || sourceDay.status === "superseded") return { withdrawn: true as const, sourceVersion: `${sourceDay.publicationDayId}:v${sourceDay.version}:${sourceDay.contentHash}`, sourceSequence: sourceDay.version, sourceLineageKey: [publication.publicationId, sourceDay.publicationDayId, sourceDay.version, sourceDay.contentHash, "none"].join("|") };
     const projected = projectPublishedWeeks([publication], oplocId, new Set([oplocId]), serviceDate).find(week => week.days.some(candidate => candidate.date === serviceDate));
-    if (projected) return { day: projected.days.find(candidate => candidate.date === serviceDate), withdrawn: false as const };
+    return { day: projected?.days.find(candidate => candidate.date === serviceDate), withdrawn: false as const, missing: !projected };
   }
-  return undefined;
+  return { withdrawn: false as const, missing: true as const };
 }
 
-export async function reconcileDeliveredInDay(request: NextRequest, oplocId: string, serviceDate: string, options: { loadReview?: ReviewLoader; invalidation?: DeliveredInInvalidation } = {}) {
+async function menuForDate(request: NextRequest, oplocId: string, serviceDate: string, options: MenuResolutionOptions = {}) {
+  const fromWeek = mondayOf(serviceDate);
+  const toWeek = addDays(fromWeek, 7);
+  if (options.authoritativePublications) return menuResultForPublications(options.authoritativePublications, oplocId, serviceDate);
+  const packets = await (options.readMenuPackets || readMenuPlanningWeekPackets)(fromWeek, toWeek);
+  if (packets.length) {
+    const packetResult = menuResultForPublications(packetPublicationsForRange(packets, fromWeek, toWeek) as SourcePublication[], oplocId, serviceDate);
+    // A packet is a read optimisation, not withdrawal authority. If the
+    // requested date is omitted, resolve the bounded authoritative week.
+    if (!packetResult.missing) return packetResult;
+  }
+  return menuResultForPublications(await (options.readAuthoritativePublications || readAuthoritativeMenuPublications)(request, fromWeek, toWeek), oplocId, serviceDate);
+}
+
+export async function reconcileDeliveredInDay(request: NextRequest, oplocId: string, serviceDate: string, options: MenuResolutionOptions & { loadReview?: ReviewLoader; invalidation?: DeliveredInInvalidation } = {}) {
   const resolved = await resolveAccess(request); assertAuthorisedOploc(resolved.access, oplocId);
   const site: Site = resolved.sites.find(candidate => candidate.oplocId === oplocId) || { oplocId, label: oplocId };
   const existing = await readDeliveredInProjection(oplocId, serviceDate).catch(() => undefined);
-  const day = await menuForDate(request, oplocId, serviceDate);
-  if (!day || day.withdrawn) {
+  const day = await menuForDate(request, oplocId, serviceDate, options);
+  if (day.withdrawn) {
     await withdrawDeliveredInProjectionDay(oplocId, serviceDate, day?.sourceVersion || "menu:withdrawn-or-missing", { sourceSequence: day?.sourceSequence, sourceLineageKey: day?.sourceLineageKey });
     return { status: "withdrawn", serviceDate, oplocId };
   }
