@@ -77,7 +77,10 @@ export default function AllergenReviewMatrix({
   const [dirty, setDirty] = useState(false);
   const [error, setError] = useState("");
   const latestSave = useRef<() => Promise<void>>(() => Promise.resolve());
+  const latestStatesRef = useRef(states);
   const inFlightSave = useRef<Promise<void> | undefined>(undefined);
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const editVersionRef = useRef(0);
   const dirtyRef = useRef(false);
   const authoritativeReviewedRef = useRef(false);
   const bookingDietaries = [...new Set(orders.flatMap(order => bookingContextEntries(order.bookingDietaries)))];
@@ -169,13 +172,15 @@ export default function AllergenReviewMatrix({
         }
       }
 
-      setStates(Object.fromEntries(rows.map(row => {
+      const hydratedStates = Object.fromEntries(rows.map(row => {
         const savedState = saved.get(row.key);
         // Newly-created CPU plans intentionally start with an empty allergen
         // object. They must not erase the approved Menu Planning snapshot.
         const hasSavedEvidence = Boolean(savedState && (savedState.completed || Object.keys(savedState.allergens).length > 0));
         return [row.key, hasSavedEvidence ? savedState!.allergens : { ...(row.snapshot?.allergens || {}) }];
-      })) as Record<string, Record<string, OperationalAllergenState>>);
+      })) as Record<string, Record<string, OperationalAllergenState>>;
+      latestStatesRef.current = hydratedStates;
+      setStates(hydratedStates);
 
       const localChecked = await loadLocalChecked(scopeKey);
       if (!cancelled) setCheckedRows(new Set(rows.map(row => row.key).filter(key => localChecked.has(key))));
@@ -188,6 +193,10 @@ export default function AllergenReviewMatrix({
     });
     return () => { cancelled = true; };
   }, [rows, orders, scopeKey]);
+
+  useEffect(() => () => {
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+  }, []);
 
   useEffect(() => {
     onCheckedChange?.(checkedRows.size, rows.length, checkedRows);
@@ -246,14 +255,17 @@ export default function AllergenReviewMatrix({
   };
 
   latestSave.current = async () => {
+    if (saveTimer.current) {
+      clearTimeout(saveTimer.current);
+      saveTimer.current = undefined;
+    }
     if (inFlightSave.current) {
       await inFlightSave.current;
-      return;
     }
     // A locally clean matrix still needs one authoritative completion commit
     // when the server has not recorded this review yet.
     if (!dirtyRef.current && authoritativeReviewedRef.current) return;
-    await startSave(states, "mark-planned");
+    await startSave(latestStatesRef.current, "mark-planned");
     dirtyRef.current = false;
     authoritativeReviewedRef.current = true;
     setDirty(false);
@@ -276,9 +288,10 @@ export default function AllergenReviewMatrix({
   const toggle = async (rowKey: string, key: string) => {
     if (busy || locked) return;
     const nextStates = {
-      ...states,
-      [rowKey]: toggleOperationalAllergen(states[rowKey] || {}, key as CanonicalAllergenKey),
+      ...latestStatesRef.current,
+      [rowKey]: toggleOperationalAllergen(latestStatesRef.current[rowKey] || {}, key as CanonicalAllergenKey),
     };
+    latestStatesRef.current = nextStates;
     const nextCheckedRows = new Set(checkedRows);
     nextCheckedRows.delete(rowKey);
     setStates(nextStates);
@@ -290,6 +303,20 @@ export default function AllergenReviewMatrix({
     void saveLocalChecked(scopeKey, nextCheckedRows);
     onReviewChanged?.();
     setError("");
+    editVersionRef.current += 1;
+    const editVersion = editVersionRef.current;
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    saveTimer.current = setTimeout(() => {
+      saveTimer.current = undefined;
+      const operation = startSave(latestStatesRef.current, "save-plan");
+      void operation.then(() => {
+        if (editVersion === editVersionRef.current) {
+          dirtyRef.current = false;
+          setDirty(false);
+          onDirtyChange?.(false);
+        }
+      }).catch(() => undefined);
+    }, 600);
   };
 
   return (
@@ -301,7 +328,7 @@ export default function AllergenReviewMatrix({
           {bookingNotes.length > 0 && <p style={{ margin: 0, fontSize: ".78rem" }}><strong>Booking notes:</strong> {bookingNotes.join(" · ")}</p>}
         </section>
       )}
-      {dirty && <p role="status">Unsaved allergen edits — changes will be saved once before the first signature.</p>}
+      {dirty && <p role="status">Unsaved allergen edits — changes save automatically after a short pause and are committed before the first signature.</p>}
       <div className="cpu-allergen-legend" aria-label="Allergen matrix legend">
         <span><i className="cpu-allergen-state cpu-allergen-state--contains" />Contains</span>
         <span><i className="cpu-allergen-state cpu-allergen-state--may_contain" />May contain</span>

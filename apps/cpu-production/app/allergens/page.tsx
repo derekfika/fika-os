@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ProductionOrder } from "../../lib/production-types";
-import type { InternalMatrixSignature } from "../lib/production-plan";
 import { cpuProjectionToOrders } from "../../lib/cpu-dashboard-adapter";
 import { loadCpuAllergenProjection } from "../lib/cpu-allergen-projection-loader";
 import AllergenReviewMatrix from "../ui/AllergenReviewMatrix";
@@ -203,7 +202,6 @@ export default function CpuAllergenReviewPage() {
   const sign = async (printedName: string, signatureDataUrl: string) => {
     if (!signing || signatureBusy || site) return;
     const role = signing.role;
-    const targets = masterOrders.filter(order => !(signatureRolesByOrderId[order.canonicalId] || []).includes(role));
     if (!masterOrders.length) {
       setSignatureMessage("There is no Delivered-In master matrix to sign for this service date.");
       return;
@@ -213,7 +211,7 @@ export default function CpuAllergenReviewPage() {
       setSignatureMessage("The current Menu publication lineage is unavailable for one or more OPLOCs. Reload the review before signing.");
       return;
     }
-    if (!targets.length) {
+    if (masterOrders.every(order => (signatureRolesByOrderId[order.canonicalId] || []).includes(role))) {
       setSigning(undefined);
       setSignatureMessage("This signature is already recorded across every OPLOC in the service-date master matrix.");
       return;
@@ -229,31 +227,30 @@ export default function CpuAllergenReviewPage() {
       return;
     }
     try {
-      for (const order of targets) {
-        const expectedLineage = signingSnapshot[order.canonicalId];
-        const commandId = ["cpu-master-sign", signingAttempt.id, role, order.canonicalId].join(":");
-        const response = await fetch("/api/production-plan", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({
-            action: "sign-matrix",
-            orderId: order.canonicalId,
-            role,
-            printedName,
-            signatureDataUrl,
-            expectedLineage,
-            commandId,
-            attestation: "I confirm that I reviewed the complete CPU Delivered-In service-date allergen matrix and the recorded evidence is accurate to the best of my knowledge.",
-            actor: "production-chef",
-          }),
-        });
-        const body = await response.json() as {
-          error?: { message?: string };
-          matrixStatus?: string;
-          plan?: { signatures?: InternalMatrixSignature[] };
-        };
-        if (!response.ok) {
-          failures.push(`${destination(order)}: ${body.error?.message || "The matrix could not be signed."}`);
+      const response = await fetch("/api/production-plan", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          action: "sign-master-matrix",
+          serviceDate: date,
+          role,
+          printedName,
+          signatureDataUrl,
+          orderIds: masterOrders.map(order => order.canonicalId),
+          expectedLineages: masterOrders.map(order => signingSnapshot[order.canonicalId]),
+          commandId: ["cpu-master-sign", signingAttempt.id, role].join(":"),
+          attestation: "I confirm that I reviewed the complete CPU Delivered-In service-date allergen matrix and the recorded evidence is accurate to the best of my knowledge.",
+        }),
+      });
+      const body = await response.json() as {
+        error?: { message?: string };
+        results?: Array<{ orderId: string; ok: boolean; error?: string }>;
+      };
+      if (!response.ok) {
+        failures.push(body.error?.message || "The master matrix could not be signed.");
+      } else {
+        for (const result of body.results || []) {
+          if (!result.ok) failures.push(`${destination(masterOrders.find(order => order.canonicalId === result.orderId) || masterOrders[0])}: ${result.error || "The matrix could not be signed."}`);
         }
       }
 

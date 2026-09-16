@@ -100,23 +100,39 @@ test("CPU projection preserves allergen review source identity and evidence", ()
   assert.deepEqual(hydrated.lines[0].approvedAllergenSnapshot, source.lines[0].approvedAllergenSnapshot);
 });
 
-test("a signed OPLOC release does not make another OPLOC appear Planned", () => {
+test("the exact signed master review makes every participating Menu OPLOC Planned before materialization", () => {
   const sourcePublicationDayId = "menu-publication-day:shared:v1";
   const orders = ["angel", "haleon", "bridgepoint", "commerzbank"].map((site) => ({
-    ...order(`order:${site}`), origin: "menu_planning" as const, destinationLabel: site,
+    ...order(`order:${site}`), origin: "menu_planning" as const, destinationLabel: site, workflowStatus: "planning" as const,
     sourcePublicationDayId, sourceEntityId: "menu-publication:shared", sourceVersion: 1, sourceContentHash: "a".repeat(64),
   }));
-  const scope = { productionOrderId: "order:angel", serviceDate: "2026-08-24", sourceDayId: "menu-publication:shared", sourcePublicationDayId, sourceVersion: 1, sourceContentHash: "a".repeat(64), matrixContentHash: allergenMatrixContentHash([]) };
-  const sharedPlan = {
-    ...plan("order:angel"),
-    signatures: [
-      { role: "production_chef" as const, printedName: "Chef A", signedAt: "now", actor: "a", attestation: "checked" },
-      { role: "head_chef_site_manager" as const, printedName: "Chef B", signedAt: "now", actor: "b", attestation: "checked" },
-    ],
-    currentAllergenRelease: { status: "current", materializationStatus: "ready", serviceDate: "2026-08-24", sourceDayId: "menu-publication:shared", sourcePublicationDayId, sourceVersion: 1, sourceContentHash: "a".repeat(64), signatures: [{ role: "production_chef" as const, valid: true, scope }, { role: "head_chef_site_manager" as const, valid: true, scope }] },
-  } as ProductionPlan;
-  const projection = buildCpuDayProjection("2026-08-24", orders, [sharedPlan]);
-  assert.deepEqual(projection.orders.map(item => item.workflowStatus), ["planned", undefined, undefined, undefined]);
+  const signedPlanFor = (orderValue: ProductionOrder, materializationStatus: "pending" | "ready" | "failed"): ProductionPlan => {
+    const scope = { productionOrderId: orderValue.canonicalId, serviceDate: "2026-08-24", sourceDayId: "menu-publication:shared", sourcePublicationDayId, sourceVersion: 1, sourceContentHash: "a".repeat(64), matrixContentHash: allergenMatrixContentHash([]) };
+    const signatures = [
+      { role: "production_chef" as const, printedName: "Chef A", signedAt: "now", actor: "a", attestation: "checked", scope },
+      { role: "head_chef_site_manager" as const, printedName: "Chef B", signedAt: "now", actor: "b", attestation: "checked", scope },
+    ];
+    return { ...plan(orderValue.canonicalId), status: "planned", signedMenuContentHash: scope.matrixContentHash, signatures, signedSignatures: signatures, currentAllergenRelease: { status: "current", materializationStatus, serviceDate: "2026-08-24", sourceDayId: scope.sourceDayId, sourcePublicationDayId, sourceVersion: 1, sourceContentHash: scope.sourceContentHash, signatures: signatures.map(signature => ({ ...signature, valid: true })), masterArtifact: {} as never, derivedArtifacts: [], packetArtifacts: [] } as never };
+  };
+  const projection = buildCpuDayProjection("2026-08-24", orders, orders.map((item, index) => signedPlanFor(item, index === 0 ? "ready" : index === 1 ? "pending" : "failed")));
+  assert.deepEqual(projection.orders.map(item => item.workflowStatus), ["planned", "planned", "planned", "planned"]);
+});
+
+test("CPU projection keeps unsigned, stale, changed-hash and revoked Menu reviews out of Planned", () => {
+  const sourcePublicationDayId = "menu-publication-day:shared:v1";
+  const menuOrder = { ...order("order:menu"), origin: "menu_planning" as const, workflowStatus: "planning" as const, sourcePublicationDayId, sourceEntityId: "menu-publication:shared", sourceVersion: 1, sourceContentHash: "a".repeat(64) };
+  const scope = { productionOrderId: menuOrder.canonicalId, serviceDate: "2026-08-24", sourceDayId: "menu-publication:shared", sourcePublicationDayId, sourceVersion: 1, sourceContentHash: "a".repeat(64), matrixContentHash: allergenMatrixContentHash([]) };
+  const signatures = [
+    { role: "production_chef" as const, printedName: "Chef A", signedAt: "now", actor: "a", attestation: "checked", scope },
+    { role: "head_chef_site_manager" as const, printedName: "Chef B", signedAt: "now", actor: "b", attestation: "checked", scope },
+  ];
+  const signed = (overrides: Partial<ProductionPlan> = {}) => ({ ...plan(menuOrder.canonicalId), status: "planned" as const, workflowStatus: undefined, signedMenuContentHash: scope.matrixContentHash, signatures, signedSignatures: signatures, currentAllergenRelease: { status: "current", materializationStatus: "failed", serviceDate: scope.serviceDate, sourceDayId: scope.sourceDayId, sourcePublicationDayId: scope.sourcePublicationDayId, sourceVersion: scope.sourceVersion, sourceContentHash: scope.sourceContentHash, signatures: signatures.map(signature => ({ ...signature, valid: true })), masterArtifact: {} as never, derivedArtifacts: [], packetArtifacts: [] } as never, ...overrides } as ProductionPlan);
+  const projection = buildCpuDayProjection("2026-08-24", [menuOrder], [
+    { ...signed(), signedMenuContentHash: "b".repeat(64) },
+  ]);
+  assert.equal(projection.orders[0].workflowStatus, "planning");
+  assert.equal(buildCpuDayProjection("2026-08-24", [menuOrder], [{ ...signed(), currentAllergenRelease: { ...signed().currentAllergenRelease!, status: "revoked" } } as ProductionPlan]).orders[0].workflowStatus, "planning");
+  assert.equal(buildCpuDayProjection("2026-08-24", [menuOrder], [{ ...plan(menuOrder.canonicalId), status: "planning" }]).orders[0].workflowStatus, "planning");
 });
 
 test("CPU projection compare-and-write is monotonic across independent workers", () => {

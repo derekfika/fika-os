@@ -72,6 +72,16 @@ export function signedAllergenCheckpointMatchesOrder(plan: Pick<ProductionPlan, 
   return plan.signedMenuContentHash === hash && Boolean(scope && plan.signedSignatures?.length && plan.signedSignatures.every(signature => signatureMatchesScope(signature, scope)) && currentAllergenReleaseMatchesOrder(plan.currentAllergenRelease, order, menuItems));
 }
 
+/** True when the current exact Menu matrix has both CPU signatures, regardless of release materialisation state. */
+export function signedAllergenReviewMatchesOrder(plan: Pick<ProductionPlan, "signatures" | "signedSignatures" | "signedMenuContentHash" | "currentAllergenRelease">, order: { canonicalId: string; serviceDate?: string; requiredBy: string; sourceEntityId?: string; sourcePublicationId?: string; sourcePublicationDayId?: string; sourceVersion?: number; sourceContentHash?: string }, menuItems: PlannedMenuItem[]) {
+  const hash = allergenMatrixContentHash(menuItems);
+  const scope = matrixSignatureScope(order, hash);
+  if (!scope || plan.signedMenuContentHash !== hash || (plan.currentAllergenRelease && !["pending", "current"].includes(plan.currentAllergenRelease.status))) return false;
+  const signatures = plan.signedSignatures?.length ? plan.signedSignatures : plan.signatures || [];
+  const roles = new Set(signatures.map(signature => signature.role));
+  return roles.has("production_chef") && roles.has("head_chef_site_manager") && signatures.every(signature => ("valid" in signature ? signature.valid !== false : true) && signatureMatchesScope(signature, scope));
+}
+
 /** True when any in-progress or committed allergen authority still belongs to this exact source/matrix. */
 export function allergenAuthorityMatchesOrder(plan: Pick<ProductionPlan, "signatures" | "signedSignatures" | "signedMenuContentHash" | "currentAllergenRelease" | "matrixArtifact" | "signedMatrixArtifact" | "masterMatrixArtifact" | "siteMatrixArtifacts">, order: { canonicalId: string; serviceDate?: string; requiredBy: string; sourceEntityId?: string; sourcePublicationId?: string; sourcePublicationDayId?: string; sourceVersion?: number; sourceContentHash?: string }, menuItems: PlannedMenuItem[]) {
   const hash = allergenMatrixContentHash(menuItems);

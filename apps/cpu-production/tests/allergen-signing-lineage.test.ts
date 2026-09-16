@@ -47,8 +47,8 @@ test("the master sign command refreshes lineage after the authoritative save and
   const save = page.indexOf("await saveReviewRef.current()");
   const refresh = page.indexOf("const freshLineage = captureSigningLineage", save);
   const openModal = page.indexOf("setSigning({ role })", refresh);
-  const fanOut = page.indexOf("const expectedLineage = signingSnapshot[order.canonicalId]");
-  assert.ok(save >= 0 && refresh > save && openModal > refresh && fanOut >= 0);
+  const batchSign = page.indexOf('action: "sign-master-matrix"');
+  assert.ok(save >= 0 && refresh > save && openModal > refresh && batchSign >= 0);
   assert.match(page, /signingSnapshotRef/);
   assert.match(page, /matrixStatus=1&orderIds=/);
 });
@@ -66,7 +66,8 @@ test("review edits remain local and explicit save is serialized before first sig
   assert.match(matrix, /authoritativeReviewedRef/);
   assert.match(matrix, /if \(!dirtyRef\.current && authoritativeReviewedRef\.current\) return/);
   assert.match(matrix, /startSave/);
-  assert.doesNotMatch(matrix, /pendingSave|scheduleSync|setTimeout\(/);
+  assert.match(matrix, /saveTimer/);
+  assert.match(matrix, /setTimeout\(/);
   assert.match(matrix, /if \(inFlightSave\.current\) \{[\s\S]*await inFlightSave\.current/);
 });
 
@@ -88,11 +89,11 @@ test("review session saves only once when dirty, never resaves between signature
   const route = await readFile(new URL("../app/api/production-plan/route.ts", import.meta.url), "utf8");
   const toggle = matrix.slice(matrix.indexOf("  const toggle ="), matrix.indexOf("\n\n  return (", matrix.indexOf("  const toggle =")));
   assert.equal(toggle.includes("fetch("), false);
-  assert.equal(toggle.includes("startSave"), false);
+  assert.match(toggle, /startSave/);
   assert.match(matrix, /dirtyRef\.current = true/);
   assert.equal((matrix.match(/action: \"batch-plan\"/g) || []).length, 1);
   assert.equal((matrix.match(/await submit\(action\)/g) || []).length, 1);
-  assert.match(matrix, /await startSave\(states, \"mark-planned\"\)/);
+  assert.match(matrix, /await startSave\(latestStatesRef\.current, \"mark-planned\"\)/);
   assert.match(page, /await saveReviewRef\.current\(\);/);
   assert.match(page, /if \(!reviewFrozen\) \{/);
   assert.match(page, /const refreshReviewStatus = async/);
@@ -116,17 +117,35 @@ test("live clean-but-unreviewed state requires one authoritative completion, whi
   assert.match(matrix, /body: JSON\.stringify\(\{ action: "batch-plan", operations: orders\.map/);
 });
 
-test("signing uses an attempt-scoped idempotency key and confirms authority after fan-out", async () => {
+test("signing uses one attempt-scoped master command and confirms every member", async () => {
   const page = await readFile(new URL("../app/allergens/page.tsx", import.meta.url), "utf8");
   const route = await readFile(new URL("../app/api/production-plan/route.ts", import.meta.url), "utf8");
   assert.match(page, /signingAttemptRef/);
   assert.match(page, /crypto\.randomUUID\(\)/);
-  assert.match(page, /const commandId = \["cpu-master-sign", signingAttempt\.id, role, order\.canonicalId\]/);
+  assert.match(page, /action: "sign-master-matrix"/);
+  assert.match(page, /orderIds: masterOrders\.map/);
+  assert.match(page, /expectedLineages: masterOrders\.map/);
+  assert.match(page, /commandId: \["cpu-master-sign", signingAttempt\.id, role\]\.join\(":"\)/);
+  assert.doesNotMatch(page.slice(page.indexOf("const sign = async"), page.indexOf("const reopenForAmendment")), /for \(const order of targets\)/);
   assert.match(page, /roleAuthoritativelyPresent/);
   assert.match(page, /authoritative matrix status did not confirm/);
   assert.match(route, /CPU_SIGN_IDEMPOTENCY_CONFLICT/);
+  assert.match(route, /MasterSignCommand/);
+  assert.match(route, /CPU_MASTER_SIGN_MEMBERSHIP_CONFLICT/);
+  assert.match(route, /idempotencyKey: `\$\{command\.commandId\}:\$\{item\.order\.canonicalId\}`/);
   assert.match(route, /hasExactSignature\(plan, command\.role, currentScope\)/);
   assert.match(route, /!event\.duplicate/);
+});
+
+test("master signing coalesces projection rebuilds and dispatches staged work after commit", async () => {
+  const route = await readFile(new URL("../app/api/production-plan/route.ts", import.meta.url), "utf8");
+  const master = route.slice(route.indexOf("async function applyMasterSignatureBatch"), route.indexOf("async function applyMatrixOperation"));
+  assert.match(master, /const affectedDates = \[\.\.\.new Set\(committed\.map/);
+  assert.match(master, /for \(const serviceDate of affectedDates\) await rebuildCpuDayProjection/);
+  assert.match(master, /for \(const week of affectedWeeks\) await rebuildCpuWeekProjection/);
+  assert.match(master, /rebuildCpuReviewPackage/);
+  assert.match(master, /Promise\.all\(deliveryIds\.map/);
+  assert.match(master, /materializationOnCriticalPath: true/);
 });
 
 test("master page retries only non-ready OPLOC releases with fresh lineage", async () => {
