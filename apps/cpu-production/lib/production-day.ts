@@ -30,7 +30,7 @@ export function relatedDeliveredInOrders(orders: ProductionOrder[], selected: Pr
 }
 /** The Delivered-In allergen checker is a service-date master across sites. */
 export function deliveredInMenuOrdersForServiceDate(orders: ProductionOrder[], serviceDate?: string) {
-  const menuOrders = orders.filter(order => order.origin === "menu_planning");
+  const menuOrders = orders.filter(order => order.origin === "menu_planning" && !order.supersededBy);
   const date = serviceDate || (menuOrders[0] ? orderDate(menuOrders[0]) : undefined);
   return date ? menuOrders.filter(order => orderDate(order) === date) : [];
 }

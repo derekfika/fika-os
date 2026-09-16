@@ -60,6 +60,12 @@ export function currentAllergenReleaseMatchesOrder(release: CpuAllergenRelease |
   return lineageMatches && release.signatures.every(signature => signature.valid && signatureMatchesScope(signature, scope));
 }
 
+/** Validate release source identity before a pending release is materialized. */
+export function allergenReleaseLineageMatchesOrder(release: CpuAllergenRelease | undefined, order: { canonicalId: string; serviceDate?: string; requiredBy: string; sourceEntityId?: string; sourcePublicationId?: string; sourcePublicationDayId?: string; sourceVersion?: number; sourceContentHash?: string }, menuItems: PlannedMenuItem[]) {
+  const scope = matrixSignatureScope(order, allergenMatrixContentHash(menuItems));
+  return Boolean(release && scope && release.serviceDate === scope.serviceDate && release.sourceDayId === scope.sourceDayId && release.sourcePublicationId === scope.sourcePublicationId && release.sourcePublicationDayId === scope.sourcePublicationDayId && release.sourceVersion === scope.sourceVersion && release.sourceContentHash === scope.sourceContentHash);
+}
+
 export function signedAllergenCheckpointMatchesOrder(plan: Pick<ProductionPlan, "signedMenuContentHash" | "signedSignatures" | "currentAllergenRelease">, order: { canonicalId: string; serviceDate?: string; requiredBy: string; sourceEntityId?: string; sourcePublicationId?: string; sourcePublicationDayId?: string; sourceVersion?: number; sourceContentHash?: string }, menuItems: PlannedMenuItem[]) {
   const hash = allergenMatrixContentHash(menuItems);
   const scope = matrixSignatureScope(order, hash);

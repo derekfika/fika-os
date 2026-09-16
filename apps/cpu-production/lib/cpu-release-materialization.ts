@@ -5,7 +5,7 @@ import type { NextRequest } from "next/server";
 import { allergenMatrixHtml } from "../app/ui/allergen-matrix";
 import { isHostedPdfRuntime, renderPdfToBuffer } from "../app/lib/local-pdf";
 import { matrixDriveConfiguration } from "../app/lib/matrix-drive-config";
-import type { MatrixArtifact, PlannedMenuItem, ProductionPlan } from "../app/lib/production-plan";
+import { allergenReleaseLineageMatchesOrder, type MatrixArtifact, type PlannedMenuItem, type ProductionPlan } from "../app/lib/production-plan";
 import type { ProductionOrder } from "./production-types";
 import { dailyBundleManifestKey, dailyBundleSha256, encodeDailySignedOplocBundlePackage, buildDailySignedOplocBundle, publishDailySignedOplocBundle, verifyDailySignedOplocBundleArtifacts, type DailyBundleDurableStore } from "@fika/server-shared/daily-signed-oploc-bundle";
 import { publishReadPackage } from "@fika/server-shared/read-package";
@@ -27,7 +27,9 @@ export async function createCpuReleaseArtifacts(plan: ProductionPlan, order: Pro
   const signatures = plan.signatures || [];
   if (!signatures.some(signature => signature.role === "production_chef") || !signatures.some(signature => signature.role === "head_chef_site_manager")) throw Object.assign(new Error("Both required signatures are required for release materialization."), { status: 422 });
   if (!order.destinationOplocId) throw Object.assign(new Error("The signed CPU allergen checker requires a canonical OPLOC output."), { status: 422 });
-  const persistPdf = async (kind: "master" | "site", fileName: string, html: string) => {
+  const reusableArtifact = (artifact: MatrixArtifact | undefined): artifact is MatrixArtifact => Boolean(artifact?.pdfStatus === "generated" && artifact.driveStatus === "saved" && artifact.driveFileId && artifact.contentHash);
+  const persistPdf = async (kind: "master" | "site", fileName: string, html: string, existing?: MatrixArtifact): Promise<{ kind: "master" | "site"; artifact: MatrixArtifact }> => {
+    if (reusableArtifact(existing)) return { kind, artifact: existing };
     const pdfPath = isHostedPdfRuntime() ? undefined : path.join(os.tmpdir(), `fika-cpu-matrix-${Date.now()}-${Math.random().toString(36).slice(2)}-${fileName}`);
     let pdfBase64: string | undefined;
     try { const pdf = await renderPdfToBuffer(html); if (pdfPath) await fs.writeFile(pdfPath, pdf); pdfBase64 = pdf.toString("base64"); } catch (error) { console.error("FIKA PDF renderer failure", { app: "cpu-production", operation: "allergen-pdf-generation", errorName: error instanceof Error ? error.name : "UnknownError", errorMessage: error instanceof Error ? error.message : String(error), productionOrderId: order.canonicalId, serviceDate, requestId: request.headers.get("x-request-id") || undefined, buildSha: process.env.FIKA_BUILD_SHA || undefined }); }
@@ -41,9 +43,9 @@ export async function createCpuReleaseArtifacts(plan: ProductionPlan, order: Pro
   const withSource = (item: PlannedMenuItem) => ({ ...item, id: `${order.canonicalId}:${item.id}`, name: order.destinationOplocId ? `${order.destinationOplocId} · ${item.name}` : item.name });
   const masterHtml = allergenMatrixHtml({ clientName: "FIKA OS", destinationLabel: "CPU master allergen checker", serviceType: "Delivered-In menu", serviceDate, serviceWindow: order.serviceWindow, requiredBy: order.requiredBy }, plan.menuItems.map(withSource), signatures);
   const releaseToken = (plan.currentAllergenRelease?.releaseId || "uncommitted").replace(/[^A-Za-z0-9_-]+/g, "-");
-  const master = (await persistPdf("master", `CPU-Master-${serviceDate}-${releaseToken}.pdf`, masterHtml)).artifact;
+  const master = (await persistPdf("master", `CPU-Master-${serviceDate}-${releaseToken}.pdf`, masterHtml, plan.masterMatrixArtifact)).artifact;
   const siteHtml = allergenMatrixHtml({ clientName: order.clientName, destinationLabel: order.destinationLabel || order.destinationOplocId || "Unassigned destination", serviceType: order.serviceType, serviceDate, serviceWindow: order.serviceWindow, requiredBy: order.requiredBy }, plan.menuItems.map(withSource), signatures);
-  const site = (await persistPdf("site", `${order.destinationLabel || order.destinationOplocId || "Unassigned"}-${serviceDate}-${releaseToken}-Allergen-Matrix.pdf`.replace(/[^A-Za-z0-9._-]+/g, "_"), siteHtml)).artifact;
+  const site = (await persistPdf("site", `${order.destinationLabel || order.destinationOplocId || "Unassigned"}-${serviceDate}-${releaseToken}-Allergen-Matrix.pdf`.replace(/[^A-Za-z0-9._-]+/g, "_"), siteHtml, plan.siteMatrixArtifacts?.[order.destinationOplocId])).artifact;
   const packageStore = cpuPackageStore();
   const built = buildDailySignedOplocBundle({ bundleId: `cpu-allergen:${serviceDate}:${order.destinationOplocId}:${plan.currentAllergenRelease?.releaseId || menuContentHash(plan.menuItems)}`, serviceDate, oploc: { id: order.destinationOplocId, name: order.destinationLabel || order.destinationOplocId }, source: { id: order.canonicalId, revision: Math.max(1, order.sourceVersion || plan.currentAllergenRelease?.sourceVersion || 1), contentHash: order.sourceContentHash || "" }, signatures, masterSheet: { contentHash: master.contentHash, fileId: master.driveFileId || "" }, pdf: { contentHash: site.contentHash, fileId: site.driveFileId || "", url: site.driveUrl || site.localUrl }, items: plan.menuItems.flatMap(item => item.subItems.map((sub, index) => ({ menuItemId: index === 0 ? item.sourceLineId || item.id : `${item.sourceLineId || item.id}:sub:${sub.id}`, menuItemName: sub.name || item.name, allergens: sub.allergens, allergenState: sub.evidenceStatus === "completed" ? undefined : "unrecorded" as const }))), signedAt: timestamp });
   const store: DailyBundleDurableStore = { async putPacket(packet, bytes) { await packageStore.putImmutable(built.bundle.packet.objectName, bytes, packet.contentHash); }, async verifyArtifact(artifact) { const bytes = artifact.objectName ? await packageStore.get(artifact.objectName) : undefined; return Boolean(bytes ? dailyBundleSha256(bytes) === artifact.contentHash : artifact.fileId); }, async putManifest(bundle, packet) { if (!packet) throw Object.assign(new Error("The signed daily packet is required before publishing its manifest."), { status: 422 }); const key = dailyBundleManifestKey(bundle.serviceDate, bundle.oploc.id); const previous = await packageStore.getManifest(key); await publishReadPackage(packageStore, key, encodeDailySignedOplocBundlePackage(bundle, packet, (previous?.packageVersion || 0) + 1)); } };
@@ -61,10 +63,12 @@ export async function materializeCommittedCpuRelease(request: NextRequest, order
   const stored = await repository.get(orderId);
   const pending = stored?.currentAllergenRelease;
   if (!stored || !pending || pending.releaseId !== releaseId) throw Object.assign(new Error("The pending CPU allergen release could not be found."), { status: 409 });
-  if (pending.status === "current" && pending.materializationStatus === "ready") return { plan: stored, alreadyMaterialized: true };
-  if (pending.status !== "pending" && !(pending.status === "current" && pending.materializationStatus !== "ready")) throw Object.assign(new Error("The CPU allergen release is no longer materializable."), { status: 409 });
   const order = await productionOrderDetail(request, orderId);
   if (!order) throw Object.assign(new Error("The production order could not be loaded for release materialization."), { status: 503 });
+  if (order.origin === "menu_planning" && order.supersededBy) throw Object.assign(new Error("The Menu Planning production order has been superseded; its CPU release cannot be materialized."), { status: 409, code: "CPU_RELEASE_SUPERSEDED_ORDER" });
+  if (!allergenReleaseLineageMatchesOrder(pending, order, stored.menuItems)) throw Object.assign(new Error("The committed CPU release no longer matches the canonical Menu Planning source lineage."), { status: 409, code: "CPU_RELEASE_LINEAGE_CONFLICT" });
+  if (pending.status === "current" && pending.materializationStatus === "ready") return { plan: stored, alreadyMaterialized: true };
+  if (pending.status !== "pending" && !(pending.status === "current" && pending.materializationStatus !== "ready")) throw Object.assign(new Error("The CPU allergen release is no longer materializable."), { status: 409 });
   const preparedCandidate = structuredClone(stored);
   try {
     const preparedAt = new Date().toISOString();
@@ -90,11 +94,13 @@ export async function materializeCommittedCpuRelease(request: NextRequest, order
     const oplocId = order.destinationOplocId;
     const deliveries = oplocId ? [{ eventId: `cpu-allergen-release:${release.releaseId}:published:delivered-in:${oplocId}`, sourceAggregateId: release.releaseId, sourceVersion: release.sourceVersion, occurredAt: release.signedAt, consumer: "delivered-in" as const, route: "/api/internal/cpu-release-event", body: { eventId: `cpu-allergen-release:${release.releaseId}:published`, eventType: "published", serviceDate: release.serviceDate, oplocId, sourceDayId: release.sourceDayId, sourcePublicationDayId: release.sourcePublicationDayId, sourceVersion: release.sourceVersion, sourceContentHash: release.sourceContentHash, releaseId: release.releaseId, releaseVersion: `v${release.version}`, packetContentHash: release.packetArtifacts[0]?.contentHash || "", changedDishIds: release.deltaFromPrevious.map(change => change.menuItemId), delta: release.deltaFromPrevious } as Record<string, unknown> }] : [];
     await repository.saveAndAppendCpuChange(ready, artifactCandidate.updatedAt, { serviceDate: order.serviceDate || order.requiredBy.slice(0, 10), entityType: "productionPlan", entityId: ready.id, revision: ready.audit.length, changeType: "allergen-release-materialized", actorId: ready.updatedBy, changedAt: ready.updatedAt, idempotencyKey: `cpu-release-materialize:${releaseId}:final`, deliveries });
+    console.info("FIKA CPU allergen release materialization", { app: "cpu-production", serviceDate: release.serviceDate, releaseId: release.releaseId, destinationOplocId: order.destinationOplocId, expectedOplocCount: 1, materializedOplocCount: 1, failedOplocCount: 0, pendingOplocCount: 0, packetManifestKey: dailyBundleManifestKey(release.serviceDate, order.destinationOplocId || ""), handoffStatus: deliveries.length ? "staged" : "not_applicable" });
     return { plan: ready, alreadyMaterialized: false };
   } catch (error) {
     const failed = structuredClone(await repository.get(orderId) || stored);
     failed.currentAllergenRelease = { ...(failed.currentAllergenRelease || pending), materializationStatus: "failed", materializationError: error instanceof Error ? error.message : String(error) };
     failed.updatedAt = new Date().toISOString();
+    console.error("FIKA CPU allergen release materialization failed", { app: "cpu-production", serviceDate: order.serviceDate || order.requiredBy.slice(0, 10), releaseId, destinationOplocId: order.destinationOplocId, expectedOplocCount: 1, materializedOplocCount: 0, failedOplocCount: 1, pendingOplocCount: 1, handoffStatus: "retryable", errorName: error instanceof Error ? error.name : "UnknownError", errorMessage: error instanceof Error ? error.message : String(error) });
     try { await repository.save(failed, (await repository.get(orderId) || stored).updatedAt); } catch { /* the retry re-reads authoritative state */ }
     throw error;
   }

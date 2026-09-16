@@ -19,6 +19,7 @@ import { rebuildCpuReviewPackage } from "../../../lib/cpu-review-package";
 import { buildCpuAllergenReleaseEvent, eventTypeForConsumers, notifyCpuConsumerInvalidations, notifyDeliveredInAllergenRelease } from "../../../lib/cpu-consumer-invalidation";
 import { deliverCpuPropagation } from "../../../lib/cpu-durable-outbox";
 import { allergenMatrixContentHash, buildCpuAllergenRelease, revokeCpuAllergenRelease } from "../../../lib/cpu-allergen-release";
+import { cpuReleaseMaterializationEventId } from "../../../lib/cpu-release-fanout";
 
 function menuContentHash(menuItems: PlannedMenuItem[]) {
   return allergenMatrixContentHash(menuItems);
@@ -111,7 +112,7 @@ function pendingReleaseFor(plan: ProductionPlan, order: ProductionOrder, timesta
 // release materialization runs from the committed outbox obligation after
 // authoritative CPU state has accepted the signature.
 function releaseMaterializationDelivery(plan: ProductionPlan, release: NonNullable<ProductionPlan["currentAllergenRelease"]>, order: ProductionOrder, timestamp: string) {
-  return { eventId: `cpu-allergen-materialize:${release.releaseId}`, sourceAggregateId: plan.id, sourceVersion: release.version, occurredAt: timestamp, consumer: "cpu-production" as const, route: "/api/internal/cpu-release-materialize", body: { orderId: order.canonicalId, releaseId: release.releaseId } };
+  return { eventId: cpuReleaseMaterializationEventId(release.releaseId, order), sourceAggregateId: plan.id, sourceVersion: release.version, occurredAt: timestamp, consumer: "cpu-production" as const, route: "/api/internal/cpu-release-materialize", body: { orderId: order.canonicalId, releaseId: release.releaseId, serviceDate: order.serviceDate || order.requiredBy.slice(0, 10), destinationOplocId: order.destinationOplocId || "" } };
 }
 function invalidateSignedAllergenAuthorityForNewSourceLineage(plan: ProductionPlan, actor: string, at: string, reason: string) {
   const current = plan.currentAllergenRelease;

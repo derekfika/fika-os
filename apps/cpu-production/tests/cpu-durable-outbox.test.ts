@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildCpuPropagationEvents, deliverCpuPropagation, enqueueCpuPropagation, listCpuOutboxForTests, resetCpuOutboxForTests, recoverCpuPropagation } from "../lib/cpu-durable-outbox";
+import { buildCpuPropagationEvents, deliverCpuPropagation, enqueueCpuDelivery, enqueueCpuPropagation, listCpuOutboxForTests, resetCpuOutboxForTests, recoverCpuPropagation } from "../lib/cpu-durable-outbox";
+import { cpuReleaseMaterializationEventId } from "../lib/cpu-release-fanout";
 
 const input = {
   eventId: "cpu-change:plan-1:v7",
@@ -51,4 +52,21 @@ test("release delivery identity includes the independent OPLOC scope", async () 
   ]);
   assert.notEqual(first[0].eventId, second[0].eventId);
   assert.equal(listCpuOutboxForTests().length, 2);
+});
+
+test("each signed destination gets an independent materialization obligation", async () => {
+  resetCpuOutboxForTests();
+  const releaseId = "cpu-allergen-release:2026-09-15:publication-day:1:v1";
+  const first = { canonicalId: "production-order:haleon", destinationOplocId: "oploc:haleon" } as const;
+  const second = { canonicalId: "production-order:xchange", destinationOplocId: "oploc:xchange" } as const;
+  const firstId = cpuReleaseMaterializationEventId(releaseId, first);
+  const secondId = cpuReleaseMaterializationEventId(releaseId, second);
+  assert.notEqual(firstId, secondId);
+  await Promise.all([
+    enqueueCpuDelivery({ eventId: firstId, sourceAggregateId: releaseId, sourceVersion: 1, occurredAt: "2026-09-15T10:00:00.000Z", consumer: "cpu-production", route: "/api/internal/cpu-release-materialize", body: { orderId: first.canonicalId, releaseId } }),
+    enqueueCpuDelivery({ eventId: secondId, sourceAggregateId: releaseId, sourceVersion: 1, occurredAt: "2026-09-15T10:00:00.000Z", consumer: "cpu-production", route: "/api/internal/cpu-release-materialize", body: { orderId: second.canonicalId, releaseId } }),
+  ]);
+  assert.equal(listCpuOutboxForTests().length, 2);
+  assert.match(firstId, /oploc:oploc:haleon/);
+  assert.match(secondId, /oploc:oploc:xchange/);
 });

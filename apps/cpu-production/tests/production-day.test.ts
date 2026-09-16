@@ -87,6 +87,12 @@ test("master Delivered-In allergen review unions overlapping dishes across the s
   assert.deepEqual(review?.destinations, ["Destination A", "Destination B"]);
 });
 
+test("superseded Menu Planning orders are excluded from the release review scope", () => {
+  const current = order("Haleon", 10);
+  const superseded = { ...order("Xchange", 10), supersededBy: "production-order:xchange:v2" };
+  assert.deepEqual(deliveredInMenuOrdersForServiceDate([superseded, current], "2026-08-24").map(item => item.canonicalId), [current.canonicalId]);
+});
+
 test("conflicting published snapshots block the consolidated review instead of being merged", () => {
   const make = (state: string) => ({ ...order("Haleon", 10), sourcePublicationDayId: "menu-publication: monday:v1", lines: [{ ...order("Haleon", 10).lines[0], sourceMenuItemId: "dish:shared", approvedAllergenSnapshot: { allergens: { mustard: state }, sourcePublicationDayId: "menu-publication: monday:v1", sourceVersion: 1, sourceContentHash: "hash:monday:v1" }, allergenEvidenceStatus: "confirmed" as const }] });
   const rows = buildAllergenReviewRows([make("contains"), { ...make("may_contain"), canonicalId: "production-order:xchange", destinationLabel: "FIKA Xchange" }]);
