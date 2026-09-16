@@ -21,3 +21,10 @@ test("second-signature finalisation commits first and materializes through the d
   assert.match(materializer, /saveAndAppendCpuChange\(ready, artifactCandidate\.updatedAt/);
   assert.match(materializer, /releaseToken/);
 });
+
+test("save-matrix retry restages pending or failed OPLOC materialization without changing signatures", async () => {
+  const source = await readFile(new URL("../app/api/production-plan/route.ts", import.meta.url), "utf8");
+  assert.match(source, /const releaseNeedsMaterialization = Boolean\(plan\.currentAllergenRelease && \["pending", "current"\]\.includes\(plan\.currentAllergenRelease\.status\) && plan\.currentAllergenRelease\.materializationStatus !== "ready"\)/);
+  assert.match(source, /const materializationDelivery = releaseNeedsMaterialization && changedOrder/);
+  assert.match(source, /action: z\.literal\("save-matrix"\)/);
+});

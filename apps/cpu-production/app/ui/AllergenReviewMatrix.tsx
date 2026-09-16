@@ -48,6 +48,7 @@ export default function AllergenReviewMatrix({
   onRegisterSave,
   onSignatureRolesChange,
   onOrderSignatureRolesChange,
+  onMatrixStatusChange,
   onFinalizationChange,
   onLineageChange,
   onHydrationChange,
@@ -63,6 +64,7 @@ export default function AllergenReviewMatrix({
   onRegisterSave?: (save: () => Promise<void>) => void;
   onSignatureRolesChange?: (roles: SignatureRole[]) => void;
   onOrderSignatureRolesChange?: (rolesByOrderId: Record<string, SignatureRole[]>) => void;
+  onMatrixStatusChange?: (matrixStatusByOrderId: Record<string, string | undefined>) => void;
   onFinalizationChange?: (finalized: boolean) => void;
   onLineageChange?: (lineageByOrderId: Record<string, MatrixLineage>) => void;
   onHydrationChange?: (hydrating: boolean) => void;
@@ -94,6 +96,7 @@ export default function AllergenReviewMatrix({
         onDirtyChange?.(false);
         onSignatureRolesChange?.([]);
         onOrderSignatureRolesChange?.({});
+        onMatrixStatusChange?.({});
         onFinalizationChange?.(false);
         onLineageChange?.({});
         return;
@@ -136,6 +139,9 @@ export default function AllergenReviewMatrix({
       const rolesByOrderId = Object.fromEntries(
         orderIds.map(orderId => [orderId, statuses.find(status => status.orderId === orderId)?.signatureRoles || []]),
       ) as Record<string, SignatureRole[]>;
+      const matrixStatusByOrderId = Object.fromEntries(
+        orderIds.map(orderId => [orderId, statuses.find(status => status.orderId === orderId)?.matrixStatus]),
+      ) as Record<string, string | undefined>;
       const allStatusesPresent = statuses.length === orderIds.length;
       const commonRoles = (["production_chef", "head_chef_site_manager"] as SignatureRole[])
         .filter(role => allStatusesPresent && statuses.every(status => status.signatureRoles.includes(role)));
@@ -148,6 +154,7 @@ export default function AllergenReviewMatrix({
       onDirtyChange?.(false);
       onLineageChange?.(lineage);
       onOrderSignatureRolesChange?.(rolesByOrderId);
+      onMatrixStatusChange?.(matrixStatusByOrderId);
       onSignatureRolesChange?.(commonRoles);
       onFinalizationChange?.(allStatusesPresent && statuses.every(status => status.matrixStatus === "ready"));
 

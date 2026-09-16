@@ -128,3 +128,30 @@ test("signing uses an attempt-scoped idempotency key and confirms authority afte
   assert.match(route, /hasExactSignature\(plan, command\.role, currentScope\)/);
   assert.match(route, /!event\.duplicate/);
 });
+
+test("master page retries only non-ready OPLOC releases with fresh lineage", async () => {
+  const page = await readFile(new URL("../app/allergens/page.tsx", import.meta.url), "utf8");
+  const retryStart = page.indexOf("const retryPendingOplocReleases = async () =>");
+  const retryEnd = page.indexOf("const sign = async", retryStart);
+  const retryBlock = page.slice(retryStart, retryEnd);
+  assert.ok(retryStart >= 0 && retryEnd > retryStart);
+  assert.match(page, /Retry pending OPLOC releases/);
+  assert.match(page, /const pendingReleaseOrders = useMemo/);
+  assert.match(page, /matrixStatusByOrderId\[order\.canonicalId\] !== "ready"/);
+  assert.match(retryBlock, /await refreshReviewStatus\(\)/);
+  assert.match(retryBlock, /matrixStatus !== "ready"/);
+  assert.match(retryBlock, /action: "save-matrix"/);
+  assert.match(retryBlock, /expectedLineage/);
+  assert.match(retryBlock, /const final = await refreshReviewStatus\(\)/);
+  assert.doesNotMatch(retryBlock, /action: "sign-matrix"|action: "reopen-review"|menuItems/);
+  assert.match(page, /bothSigned && pendingReleaseOrders\.length > 0/);
+  assert.match(page, /!site/);
+});
+
+test("master retry reports partial OPLOC completion and hides after all are ready", async () => {
+  const page = await readFile(new URL("../app/allergens/page.tsx", import.meta.url), "utf8");
+  assert.match(page, /const currentCount = final\.statuses\.filter\(status => status\.matrixStatus === "ready"\)\.length/);
+  assert.match(page, /stillPending\.length/);
+  assert.match(page, /retry still pending/);
+  assert.match(page, /setFinalizationComplete\(statuses\.length === orderIds\.length && statuses\.every\(status => status\.matrixStatus === "ready"\)\)/);
+});

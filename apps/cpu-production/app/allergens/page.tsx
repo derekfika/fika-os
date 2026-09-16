@@ -46,6 +46,7 @@ export default function CpuAllergenReviewPage() {
   const [checkedCount, setCheckedCount] = useState(0);
   const [signatureRoles, setSignatureRoles] = useState<SignatureRole[]>([]);
   const [signatureRolesByOrderId, setSignatureRolesByOrderId] = useState<Record<string, SignatureRole[]>>({});
+  const [matrixStatusByOrderId, setMatrixStatusByOrderId] = useState<Record<string, string | undefined>>({});
   const [lineageByOrderId, setLineageByOrderId] = useState<Record<string, MatrixLineage>>({});
   const [finalizationComplete, setFinalizationComplete] = useState(false);
   const [reviewFrozen, setReviewFrozen] = useState(false);
@@ -69,6 +70,7 @@ export default function CpuAllergenReviewPage() {
     setCheckedCount(0);
     setSignatureRoles([]);
     setSignatureRolesByOrderId({});
+    setMatrixStatusByOrderId({});
     setLineageByOrderId({});
     signingSnapshotRef.current = undefined;
     setFinalizationComplete(false);
@@ -132,6 +134,7 @@ export default function CpuAllergenReviewPage() {
     const body = await response.json() as { matrixStatuses?: MatrixStatus[] };
     const statuses = body.matrixStatuses || [];
     const rolesByOrderId = Object.fromEntries(orderIds.map(orderId => [orderId, statuses.find(status => status.orderId === orderId)?.signatureRoles || []])) as Record<string, SignatureRole[]>;
+    const nextMatrixStatusByOrderId = Object.fromEntries(orderIds.map(orderId => [orderId, statuses.find(status => status.orderId === orderId)?.matrixStatus])) as Record<string, string | undefined>;
     const commonRoles = (["production_chef", "head_chef_site_manager"] as SignatureRole[]).filter(role => statuses.length === orderIds.length && statuses.every(status => status.signatureRoles.includes(role)));
     const freshLineage = captureSigningLineage(orderIds, date, statuses);
     const frozenLineage = signingSnapshotRef.current;
@@ -140,10 +143,60 @@ export default function CpuAllergenReviewPage() {
     }
     const lineageMatchesFrozen = !frozenLineage || orderIds.every(orderId => sameLineage(frozenLineage[orderId], freshLineage[orderId]));
     setSignatureRolesByOrderId(rolesByOrderId);
+    setMatrixStatusByOrderId(nextMatrixStatusByOrderId);
     setSignatureRoles(commonRoles);
     setFinalizationComplete(statuses.length === orderIds.length && statuses.every(status => status.matrixStatus === "ready"));
     setLineageByOrderId(lineageMatchesFrozen ? frozenLineage || freshLineage : freshLineage);
     return { statuses, rolesByOrderId, commonRoles, freshLineage, lineageMatchesFrozen };
+  };
+
+  const pendingReleaseOrders = useMemo(
+    () => masterOrders.filter(order => matrixStatusByOrderId[order.canonicalId] !== "ready"),
+    [masterOrders, matrixStatusByOrderId],
+  );
+
+  const retryPendingOplocReleases = async () => {
+    if (site || signatureBusy || hydrating || !bothSigned || !masterOrders.length) return;
+    setSignatureBusy(true);
+    setSignatureMessage("Refreshing current Menu publication lineage before retrying pending OPLOC releases…");
+    const failures: string[] = [];
+    try {
+      const refreshed = await refreshReviewStatus();
+      if (signingSnapshotRef.current && !refreshed.lineageMatchesFrozen) {
+        throw new Error("The reviewed Menu publication changed. Reload, reopen the review, and review the current matrix before retrying.");
+      }
+      const statusByOrderId = new Map(refreshed.statuses.map(status => [status.orderId, status]));
+      const retryOrders = masterOrders.filter(order => statusByOrderId.get(order.canonicalId)?.matrixStatus !== "ready");
+      for (const order of retryOrders) {
+        const expectedLineage = refreshed.freshLineage[order.canonicalId];
+        if (!expectedLineage) {
+          failures.push(`${destination(order)}: The current Menu publication lineage is unavailable. Reload the review.`);
+          continue;
+        }
+        const response = await fetch("/api/production-plan", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ action: "save-matrix", orderId: order.canonicalId, expectedLineage }),
+        });
+        const body = await response.json().catch(() => undefined) as { error?: { message?: string } } | undefined;
+        if (!response.ok) failures.push(`${destination(order)}: ${body?.error?.message || "The OPLOC release retry failed."}`);
+      }
+      const final = await refreshReviewStatus();
+      const currentCount = final.statuses.filter(status => status.matrixStatus === "ready").length;
+      const stillPending = masterOrders.filter(order => final.statuses.find(status => status.orderId === order.canonicalId)?.matrixStatus !== "ready");
+      const currentMessage = `${currentCount} OPLOC release${currentCount === 1 ? "" : "s"} current.`;
+      if (failures.length) {
+        setSignatureMessage(`${currentMessage} ${failures.join(" · ")}`);
+      } else if (stillPending.length) {
+        setSignatureMessage(`${currentMessage} ${stillPending.map(order => destination(order)).join(", ")} retry still pending.`);
+      } else {
+        setSignatureMessage(currentMessage);
+      }
+    } catch (cause) {
+      setSignatureMessage(cause instanceof Error ? cause.message : "Pending OPLOC releases could not be retried.");
+    } finally {
+      setSignatureBusy(false);
+    }
   };
 
   const sign = async (printedName: string, signatureDataUrl: string) => {
@@ -397,6 +450,7 @@ export default function CpuAllergenReviewPage() {
           onReviewChanged={() => undefined}
           onSignatureRolesChange={roles => setSignatureRoles(roles)}
           onOrderSignatureRolesChange={setSignatureRolesByOrderId}
+          onMatrixStatusChange={setMatrixStatusByOrderId}
           onFinalizationChange={setFinalizationComplete}
           onLineageChange={setLineageByOrderId}
           onHydrationChange={setHydrating}
@@ -425,6 +479,7 @@ export default function CpuAllergenReviewPage() {
                   <button type="button" disabled={signatureBusy || hydrating || headChefSigned} onClick={() => void beginSigning("head_chef_site_manager")}>
                     {headChefSigned ? "Head chef signed" : "Sign as head chef / site manager"}
                   </button>
+                  {bothSigned && pendingReleaseOrders.length > 0 && <button type="button" className="cpu-allergen-retry" disabled={signatureBusy || hydrating} onClick={() => void retryPendingOplocReleases()}>Retry pending OPLOC releases</button>}
                 </>
               )}
               {reviewFrozen && <button type="button" disabled={signatureBusy || hydrating} onClick={() => void reopenForAmendment()}>Reopen for amendment</button>}
