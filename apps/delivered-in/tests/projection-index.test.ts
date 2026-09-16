@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
-import { compareDeliveredInProjectionIndexEntry, mergeProjectionIndex, projectionIndexManifestKey, DELIVERED_IN_INDEX_DATASET, type DeliveredInProjectionIndex, type DeliveredInProjectionIndexEntry } from "../lib/delivered-in-projection-store";
+import { compareDeliveredInProjectionIndexEntry, deliveredInProjectionSemanticHash, mergeProjectionIndex, projectionIndexManifestKey, DELIVERED_IN_INDEX_DATASET, type DeliveredInProjectionIndex, type DeliveredInProjectionIndexEntry } from "../lib/delivered-in-projection-store";
+import type { DeliveredInDayProjection } from "../lib/delivered-in-day-projection";
 import { boundedProjectionIndexEntries, DELIVERED_IN_MAX_DAY_PACKAGES, DELIVERED_IN_PROJECTION_HORIZON_DAYS, projectionWindowBounds } from "../lib/server";
 
 test("projection indexes are OPLOC-scoped and contain metadata, not projection bodies", () => {
@@ -51,9 +52,40 @@ test("index lineage compare is idempotent, fail-closed, and withdrawal-safe", ()
   const current = { ...indexEntry("2026-08-24"), sourceSequence: 8, sourceLineageKey: "publication-day:8|cpu:8" };
   assert.equal(compareDeliveredInProjectionIndexEntry(current, { ...current }).toString(), "idempotent");
   assert.throws(() => compareDeliveredInProjectionIndexEntry(current, { ...current, contentHash: "different" }), /conflicting package content/);
+  assert.equal(compareDeliveredInProjectionIndexEntry({ ...current, semanticHash: "semantic-a", contentHash: "old-package" }, { ...current, semanticHash: "semantic-a", contentHash: "new-package" }), "idempotent");
+  assert.throws(() => compareDeliveredInProjectionIndexEntry({ ...current, semanticHash: "semantic-a" }, { ...current, semanticHash: "semantic-b" }), /conflicting semantic content/);
   const withdrawn = { ...current, state: "withdrawn" as const, freshness: "current" as const, completeness: "missing" as const };
   assert.equal(compareDeliveredInProjectionIndexEntry(withdrawn, current), "superseded");
   assert.equal(compareDeliveredInProjectionIndexEntry(withdrawn, { ...current, sourceSequence: 9, sourceLineageKey: "publication-day:9|cpu:9" }), "advance");
+});
+
+test("semantic projection identity ignores volatile rebuild metadata but detects governed content changes", () => {
+  const projection = {
+    projectionId: "delivered-in:oploc:haleon:2026-08-24",
+    projectionVersion: 1,
+    contractVersion: "delivered-in.day.v1",
+    oplocId: "oploc:haleon",
+    oplocLabel: "Haleon",
+    serviceDate: "2026-08-24",
+    publicationId: "publication:1",
+    publicationDayId: "publication-day:1",
+    sourceDayId: "source-day:1",
+    date: "2026-08-24",
+    dayName: "Monday",
+    version: 8,
+    contentHash: "menu-hash",
+    weekCommencing: "2026-08-24",
+    weekEnding: "2026-08-30",
+    entries: [{ sourceEntryId: "entry:1", slot: "SALAD 1", dishName: "House salad", quantity: 3, allergens: { milk: "unrecorded" }, allergensVisible: false }],
+    allergenSignoff: {},
+    siteMenu: { status: "none" },
+    sourceLineage: { menu: { publicationId: "publication:1", publicationDayId: "publication-day:1", sourceDayId: "source-day:1", version: 8, contentHash: "menu-hash" }, cpu: { orderIds: [], packageVersion: 1, updatedAt: "2026-08-24T08:00:00Z" }, deliveredIn: { generatedAt: "2026-08-24T08:00:00Z" } },
+    generatedAt: "2026-08-24T08:00:00Z",
+    state: { freshness: "current", completeness: "complete", menu: "present", cpu: "pending", exceptions: [] },
+  } as unknown as DeliveredInDayProjection;
+  const rebuilt = { ...projection, projectionVersion: 2, generatedAt: "2026-08-24T09:00:00Z", sourceLineage: { ...projection.sourceLineage, cpu: { ...projection.sourceLineage.cpu, packageVersion: 2, updatedAt: "2026-08-24T09:00:00Z" }, deliveredIn: { ...projection.sourceLineage.deliveredIn, generatedAt: "2026-08-24T09:00:00Z" } } };
+  assert.equal(deliveredInProjectionSemanticHash(projection), deliveredInProjectionSemanticHash(rebuilt));
+  assert.notEqual(deliveredInProjectionSemanticHash(projection), deliveredInProjectionSemanticHash({ ...rebuilt, entries: [{ ...rebuilt.entries[0], quantity: 4 }] }));
 });
 
 test("hosted projection promotion is a transaction over the day head and OPLOC index", async () => {
@@ -63,6 +95,8 @@ test("hosted projection promotion is a transaction over the day head and OPLOC i
   assert.match(store, /transaction\.get\(indexRef\)/);
   assert.match(store, /persistVerifiedObject/);
   assert.match(store, /projectionHeads\(\)/);
+  assert.match(store, /readDeliveredInProjectionForReconciliation/);
+  assert.match(store, /semanticHash/);
 });
 
 test("hosted index heads are bounded to one OPLOC/week rather than all historical days", async () => {

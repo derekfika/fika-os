@@ -1,6 +1,6 @@
 import type { NextRequest } from "next/server";
 import { buildDeliveredInDayProjection, type ReviewLoader } from "./delivered-in-projection-materialiser";
-import { readDeliveredInProjection, writeDeliveredInProjection, withdrawDeliveredInProjectionDay, type DeliveredInInvalidation } from "./delivered-in-projection-store";
+import { readDeliveredInProjection, readDeliveredInProjectionForReconciliation, writeDeliveredInProjection, withdrawDeliveredInProjectionDay, type DeliveredInInvalidation } from "./delivered-in-projection-store";
 import { assertAuthorisedOploc, projectPublishedWeeks, type Site, type SourcePublication } from "./projection";
 import { readAuthoritativeMenuPublications, resolveAccess, cpuReviewForDay } from "./server";
 import { packetPublicationsForRange, readMenuPlanningWeekPackets, type MenuPlanningWeekPacket } from "./menu-planning-week-packet";
@@ -43,6 +43,7 @@ export async function reconcileDeliveredInDay(request: NextRequest, oplocId: str
   const resolved = await resolveAccess(request); assertAuthorisedOploc(resolved.access, oplocId);
   const site: Site = resolved.sites.find(candidate => candidate.oplocId === oplocId) || { oplocId, label: oplocId };
   const existing = await readDeliveredInProjection(oplocId, serviceDate).catch(() => undefined);
+  const existingForReconciliation = await readDeliveredInProjectionForReconciliation(oplocId, serviceDate);
   const day = await menuForDate(request, oplocId, serviceDate, options);
   if (day.withdrawn) {
     await withdrawDeliveredInProjectionDay(oplocId, serviceDate, day?.sourceVersion || "menu:withdrawn-or-missing", { sourceSequence: day?.sourceSequence, sourceLineageKey: day?.sourceLineageKey });
@@ -54,5 +55,6 @@ export async function reconcileDeliveredInDay(request: NextRequest, oplocId: str
   const sourceCertainty = candidate.sourceLineage.cpu.sourceBundleHash ? "CPU daily signed packet matched the Menu Planning source bundle hash." : "CPU daily signed packet metadata was not supplied.";
   if (existing && existing.value.state.completeness === "complete" && comparable(existing.value) === comparable(candidate)) return { status: "current", projection: existing.value, sourceCertainty };
   const written = await writeDeliveredInProjection(candidate, { invalidation: options.invalidation });
-  return { status: existing ? "rebuilt" : "created", projection: written.projection, sourceCertainty };
+  if (written.status === "superseded") return { status: "superseded", serviceDate, oplocId, sourceCertainty };
+  return { status: existing || existingForReconciliation ? "rebuilt" : "created", projection: written.projection, sourceCertainty };
 }
