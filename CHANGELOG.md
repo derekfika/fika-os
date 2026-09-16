@@ -4,6 +4,8 @@ This file records user-facing workflow changes delivered in the repository. Deta
 
 ## Unreleased
 
+- **2026-09-16 — CPU active staging configuration rollout:** submitted exact application SHA `d75c33877ef1bc6dce3b577dbb0ee605e7d0065e` to the existing Firebase App Hosting backend `fika-cpu-production-staging` in project `fika-os-dev`. Firebase accepted and started the rollout; live propagation/build-info verification was not awaited. No application code, staging data, migrations or production targets were changed. Deployment status: CPU staging rollout submitted; live verification pending.
+
 - **2026-09-16 — CPU active App Hosting staging configuration:** promoted the complete CPU staging runtime contract into the active `apps/cpu-production/apphosting.yaml`, including governed staging bases, Drive/PDF integrations, snapshot bucket, runtime mode and secret references. Added regression coverage against the active file so internal authentication and runtime configuration cannot silently regress to trace-only configuration. Affected app/domain: CPU Production deployment configuration. Validation: focused CPU staging/config and contract tests 31/31; CPU typecheck passed; `git diff --check` passed. Deployment status: not deployed.
 
 - **2026-09-16 — CPU durable outbox base URL normalisation staging rollout:** submitted exact application SHA `88f15f5ebde7f1c1e130b8fa6b84f0813db4ddaa` to the existing Firebase App Hosting backend `fika-cpu-production-staging` in project `fika-os-dev`. Firebase accepted and started the rollout; live propagation/build-info verification was not awaited. No application code, staging data, migrations or production targets were changed. Deployment status: CPU staging rollout submitted; live verification pending.
