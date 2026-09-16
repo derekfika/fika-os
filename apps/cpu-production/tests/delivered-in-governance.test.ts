@@ -27,15 +27,15 @@ test("Delivered-In CPU detail routes allergen review to the full-screen checker"
   assert.doesNotMatch(detail, /allergenHref[^\n]*oploc/);
 });
 
-test("CPU allergen review is a full-screen editable signed workflow", () => {
+test("CPU allergen review is a full-screen editable master-sign workflow", () => {
   assert.match(reviewPage, /ALLERGEN REVIEW/);
   assert.match(reviewPage, /URLSearchParams/);
   assert.match(reviewPage, /SignatureModal/);
   assert.match(reviewMatrix, /toggleOperationalAllergen/);
-  assert.match(reviewMatrix, /action: \"save-plan\"/);
+  assert.match(reviewMatrix, /action: "save-plan"/);
   assert.match(reviewMatrix, /Mark checked/);
   assert.doesNotMatch(reviewMatrix, /Acknowledge approved data|Save CPU review|Mark ready for signature/);
-  assert.match(reviewPage, /action: \"sign-matrix\"/);
+  assert.match(reviewPage, /action: "sign-matrix"/);
   assert.match(reviewMatrix, /row\.snapshot/);
   assert.match(reviewPage, /order\.origin === "menu_planning"/);
   assert.doesNotMatch(reviewPage, /Production source/);
@@ -45,6 +45,9 @@ test("CPU allergen review is a full-screen editable signed workflow", () => {
   assert.match(reviewMatrix, /disabled=\{busy \|\| locked \|\| key === "no_key_allergens"\}/);
   assert.doesNotMatch(reviewMatrix, /states\[row\.key\]\?\.\[key\] \|\| "clear"/);
   assert.match(reviewPage, /deliveredInMenuOrdersForServiceDate/);
-  assert.match(reviewPage, /Return to All sites to review and sign the complete Delivered-In master matrix/);
-  assert.match(reviewPage, /disabled=\{Boolean\(site\) \|\| signatureBusy/);
+  assert.match(reviewPage, /Return to All sites to sign the complete Delivered-In service-date master matrix/);
+  assert.match(reviewPage, /materialises separate governed OPLOC releases automatically/);
+  assert.match(reviewPage, /onOrderSignatureRolesChange/);
+  assert.match(reviewMatrix, /onOrderSignatureRolesChange/);
+  assert.match(reviewMatrix, /allStatusesPresent && statuses\.every/);
 });
