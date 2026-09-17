@@ -32,11 +32,23 @@ test("server-side vehicle filtering never exposes another van or organisation qu
 
 test("mobile uses the authenticated head/projection path and vehicle-scoped cache", () => {
   const mobile = readFileSync(new URL("../app/mobile/MobileWorkflow.tsx", import.meta.url), "utf8");
+  const recovery = readFileSync(new URL("../lib/projection-fetch.ts", import.meta.url), "utf8");
   assert.match(mobile, /syncHead=1&serviceDate=/);
-  assert.match(mobile, /projection=1&serviceDate=/);
+  assert.match(mobile, /fetchProjectionWithRecovery/);
+  assert.match(recovery, /projection=1&serviceDate=/);
   assert.match(mobile, /readCachedProjection\(cacheScope, date, vehicle\)/);
   assert.match(mobile, /writeCachedProjection\(cacheScope, projection, vehicle\)/);
   assert.doesNotMatch(mobile, /fetch\(`\/api\/logistics\?serviceDate=/);
+});
+
+test("driver freshness converges without fabricated live state or messages", () => {
+  const mobile = readFileSync(new URL("../app/mobile/MobileWorkflow.tsx", import.meta.url), "utf8");
+  assert.match(mobile, /window\.setInterval[\s\S]*30_000/);
+  assert.match(mobile, /visibilitychange/);
+  assert.match(mobile, /BroadcastChannel\("fika-logistics-live"\)/);
+  assert.match(mobile, /syncUnavailable \|\| data\.projection\?\.state === "STALE"[\s\S]*\? "STALE"[\s\S]*: "CURRENT"/);
+  assert.match(mobile, /useState<DriverMessage\[]>\(\[\]\)/);
+  assert.doesNotMatch(mobile, /New stop assigned|Roadworks reported/);
 });
 
 test("projection freshness is explicit and stale data is surfaced", () => {

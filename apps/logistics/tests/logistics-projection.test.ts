@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { applyLogisticsChange, buildLogisticsDayProjection } from "../lib/logistics-projection";
-import type { DeliveryLoad, LogisticsAssignment, LogisticsChangeEvent, LogisticsJob } from "../lib/types";
+import type { DeliveryLoad, DeliveryRun, DeliveryStop, LogisticsAssignment, LogisticsChangeEvent, LogisticsJob, MovementRequest } from "../lib/types";
 
 const job = (id: string, time = "11:30"): LogisticsJob => ({ id, sourceType: "cpu-production", sourceId: id, serviceDate: "2026-08-24", originOplocId: "oploc:cpu", destinationOplocId: "oploc:mnk", requestedWindow: { startTime: time }, productionReadiness: "ready", collectionStatus: "awaiting", contents: [{ description: "Lunch", quantity: 10, unit: "portion" }], createdAt: "now", updatedAt: "now", version: 1, audit: [] });
 const load = (id: string, time: string): DeliveryLoad => ({ id, serviceDate: "2026-08-24", originOplocId: "oploc:cpu", destinationOplocId: "oploc:mnk", scheduledTime: time, status: "planned", createdAt: "now", updatedAt: "now", version: 1, audit: [] });
@@ -14,3 +14,16 @@ test("replay is idempotent and cursor is monotonic", () => { const base = buildL
 test("moving a job changes only the projected load membership", () => { const a = job("a"); const first = load("load:1", "11:30"); const second = load("load:2", "14:00"); const before = buildLogisticsDayProjection({ serviceDate: a.serviceDate, jobs: [a], loads: [first, second], assignments: [assignment("a", first.id)] }); const after = applyLogisticsChange(before, event(3), { serviceDate: a.serviceDate, jobs: [a], loads: [first, second], assignments: [assignment("a", second.id)] }); assert.equal(after.deliveryLoads.find((item) => item.id === first.id), undefined); assert.equal(after.deliveryLoads.find((item) => item.id === second.id)?.jobCount, 1); });
 test("orphaned empty loads are not shown as operational work", () => { const projection = buildLogisticsDayProjection({ serviceDate: "2026-08-24", jobs: [], loads: [load("load:orphan", "07:00")], assignments: [] }); assert.equal(projection.deliveryLoads.length, 0); assert.equal(projection.summary.loads, 0); });
 test("an empty valid day is represented as a zero projection without returned records", () => { const projection = buildLogisticsDayProjection({ serviceDate: "2026-08-24", jobs: [], loads: [], assignments: [] }); assert.deepEqual(projection.planningQueue, []); assert.deepEqual(projection.deliveryLoads, []); assert.deepEqual(projection.summary, { queuedJobs: 0, loads: 0, assignedJobs: 0, collectedJobs: 0 }); });
+test("empty provisioned vehicle lanes remain a valid empty operational day", () => { const run: DeliveryRun = { canonicalId: "run:empty", serviceDate: "2026-08-24", status: "draft", vehicleLabel: "Van 1", orderedStopIds: [], version: 1, createdAt: "now", updatedAt: "now", audit: [] }; const projection = buildLogisticsDayProjection({ serviceDate: "2026-08-24", jobs: [], loads: [], assignments: [], runs: [run] }); assert.equal(projection.state, "VALID_EMPTY"); assert.deepEqual(projection.runs, [run]); });
+
+test("canonical runs, stops, movements, and collection choices survive projection rebuild", () => {
+  const run: DeliveryRun = { canonicalId: "run:one", serviceDate: "2026-08-24", status: "dispatched", returnToCpuRequired: true, driverId: "driver:one", vehicleLabel: "Van 1", orderedStopIds: ["stop:one"], version: 4, createdAt: "now", updatedAt: "now", audit: [] };
+  const stop: DeliveryStop = { canonicalId: "stop:one", runId: run.canonicalId, sequence: 1, locationOplocId: "oploc:mnk", locationLabelSnapshot: "MNK", requirementRefs: [], movementRequestIds: ["movement:one"], status: "arrived", createdAt: "now", updatedAt: "now", version: 2, audit: [] };
+  const movement: MovementRequest = { canonicalId: "movement:one", entityType: "Movement Request", type: "transfer", serviceDate: "2026-08-24", fromOplocId: "oploc:cpu", toOplocId: "oploc:mnk", items: [{ description: "Crates", quantity: 2 }], createdBy: "planner", status: "planned", version: 2, createdAt: "now", updatedAt: "now", audit: [] };
+  const result = buildLogisticsDayProjection({ serviceDate: "2026-08-24", jobs: [], loads: [], assignments: [], runs: [run], stops: [stop], movements: [movement], collectionRequiredKeys: ["load:one"] });
+  assert.deepEqual(result.runs, [run]);
+  assert.deepEqual(result.stops, [stop]);
+  assert.deepEqual(result.movements, [movement]);
+  assert.deepEqual(result.collectionRequiredKeys, ["load:one"]);
+  assert.equal(result.state, "CURRENT");
+});

@@ -10,27 +10,17 @@ import { announceDriverChange, driverIssueTypes, showDispatchChecklist, stopCoun
 import { responseErrorDetails, LogisticsResponseError } from "../../lib/client-errors";
 import { withDataTrace } from "@fika/server-shared/data-source-meter-client";
 import { readCachedProjection, writeCachedProjection } from "../../lib/logistics-cache";
+import { fetchProjectionWithRecovery } from "../../lib/projection-fetch";
 
 type Data = { requirements: FulfilmentRequirement[]; runs: DeliveryRun[]; stops: DeliveryStop[]; movements: MovementRequest[]; oplocs: { id: string; label: string; address?: string }[]; serviceDate: string; projection?: Parameters<typeof projectionToDashboardData>[0] };
 type View = "deliveries" | "collections" | "messages" | "more";
 type DriverMessage = { id: string; title: string; body: string; meta: string };
 type UndoAction = { run: DeliveryRun; stop: DeliveryStop; label: string };
 
-async function loadMobileProjection(date: string, vehicleQuery: string, materialiseMissing: boolean) {
-  let response = await fetch(`/api/logistics?projection=1&serviceDate=${date}${vehicleQuery}`, { cache: "no-store" });
-  let body = await response.json().catch(() => null) as Record<string, unknown> | null;
-  const details = responseErrorDetails(body, response.status, "Logistics is temporarily unavailable.");
-  if (!response.ok && materialiseMissing && details.code === "LOGISTICS_PROJECTION_NOT_MATERIALIZED") {
-    const reconcileResponse = await fetch("/api/logistics", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ action: "reconcile-logistics-day", serviceDate: date }),
-    });
-    const reconcileBody = await reconcileResponse.json().catch(() => null);
-    if (!reconcileResponse.ok) throw new LogisticsResponseError(responseErrorDetails(reconcileBody, reconcileResponse.status, "Logistics projection materialisation could not be completed."));
-    response = await fetch(`/api/logistics?projection=1&serviceDate=${date}${vehicleQuery}`, { cache: "no-store" });
-    body = await response.json().catch(() => null) as Record<string, unknown> | null;
-  }
+async function loadMobileProjection(date: string, vehicleQuery: string, _materialiseMissing: boolean) {
+  const recovered = await fetchProjectionWithRecovery({ serviceDate: date, vehicleQuery });
+  const { response } = recovered;
+  const body = recovered.body as Record<string, unknown> | null;
   if (!response.ok) throw new LogisticsResponseError(responseErrorDetails(body, response.status, "Logistics is temporarily unavailable."));
   return body;
 }
@@ -44,25 +34,108 @@ export default function MobileWorkflow({ fixedVan }: { fixedVan?: "Van 1" | "Van
   const [issueText, setIssueText] = useState("");
   const [issueType, setIssueType] = useState("Cannot access building");
   const [error, setError] = useState("");
+  const [syncUnavailable, setSyncUnavailable] = useState(false);
   const [projectionNeedsMaterialisation, setProjectionNeedsMaterialisation] = useState(false);
   const [undoAction, setUndoAction] = useState<UndoAction>();
   const [retryDispatchRun, setRetryDispatchRun] = useState<DeliveryRun>();
   const [pendingAction, setPendingAction] = useState<string>();
   const stopTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const projectionSequence = useRef<number | undefined>(undefined);
+  const syncCheckInFlight = useRef<Promise<void> | undefined>(undefined);
   // Resolve the UK operational date after hydration so SSR and the browser
   // cannot disagree around midnight or on a DST boundary.
   const [selectedDate, setSelectedDate] = useState("");
   const [hydrated, setHydrated] = useState(false);
-  const [messages, setMessages] = useState<DriverMessage[]>([
-    { id: "planner-update", title: "Planner update", body: "Your route is ready for today. Drive safe.", meta: "08:32 · Dispatch" },
-    { id: "site-notice", title: "Site notice", body: "Bridgepoint reception is using the side entrance today.", meta: "Yesterday · Operations" },
-  ]);
+  const [messages, setMessages] = useState<DriverMessage[]>([]);
   const date = selectedDate;
   const availableDates = useMemo(() => selectedDate ? dateOptions(selectedDate) : [], [selectedDate]);
 
-  const load = async (materialiseMissing = false) => { if (!date) return; return withDataTrace({ app: "logistics", action: fixedVan ? "logistics.mobile.van.load" : "logistics.mobile.day.load", path: typeof window === "undefined" ? "/mobile" : window.location.pathname }, async () => { const vehicle = fixedVan || "organisation"; try { const vehicleQuery = fixedVan ? `&vehicle=${encodeURIComponent(fixedVan.toLowerCase().replace(" ", ""))}` : ""; const headResponse = await fetch(`/api/logistics?syncHead=1&serviceDate=${date}${vehicleQuery}`, { cache: "no-store" }); const head = await headResponse.json().catch(() => null); if (!headResponse.ok) throw new LogisticsResponseError(responseErrorDetails(head, headResponse.status, "Logistics sync state could not be checked.")); const cacheScope = headResponse.headers.get("x-logistics-cache-scope") || ""; const cached = cacheScope ? await readCachedProjection(cacheScope, date, vehicle) : undefined; if (cached && cached.lastChangeSequence === Number(head.sequence) && cached.state !== "STALE" && cached.state !== "PARTIAL") { setData({ ...projectionToDashboardData(cached), projection: cached }); setError(""); setProjectionNeedsMaterialisation(false); return; } const body = await loadMobileProjection(date, vehicleQuery, materialiseMissing); if (!body?.projection) { if (body?.projectionState === "VALID_EMPTY" || body?.state === "EMPTY") { const empty = { serviceDate: date, revision: 0, lastChangeSequence: Number(head.sequence || 0), state: "VALID_EMPTY" as const, planningQueue: [], deliveryLoads: [], runs: [], exceptions: [], summary: { queuedJobs: 0, loads: 0, assignedJobs: 0, collectedJobs: 0 }, rebuiltAt: new Date().toISOString() }; setData({ ...projectionToDashboardData(empty), projection: empty }); setError(""); setProjectionNeedsMaterialisation(false); return; } throw new Error("Logistics projection is unavailable."); } const projection = body.projection as Parameters<typeof projectionToDashboardData>[0]; if (cacheScope) await writeCachedProjection(cacheScope, projection, vehicle); setData({ ...projectionToDashboardData(projection), projection }); setError(body.projectionState === "STALE" ? "Showing a stale Logistics projection; reconciliation is required." : ""); setProjectionNeedsMaterialisation(false); } catch (cause) { const details = cause instanceof LogisticsResponseError ? cause.details : undefined; setProjectionNeedsMaterialisation(details?.code === "LOGISTICS_PROJECTION_NOT_MATERIALIZED"); setError(cause instanceof LogisticsResponseError ? `${cause.message}${cause.details.requestId ? ` Reference: ${cause.details.requestId}` : ""}` : cause instanceof Error ? cause.message : "Logistics is temporarily unavailable."); } }); };
+  const load = async (materialiseMissing = true) => {
+    if (!date) return;
+    return withDataTrace({ app: "logistics", action: fixedVan ? "logistics.mobile.van.load" : "logistics.mobile.day.load", path: typeof window === "undefined" ? "/mobile" : window.location.pathname }, async () => {
+      const vehicle = fixedVan || "organisation";
+      const vehicleQuery = fixedVan ? `&vehicle=${encodeURIComponent(fixedVan.toLowerCase().replace(" ", ""))}` : "";
+      try {
+        const headResponse = await fetch(`/api/logistics?syncHead=1&serviceDate=${date}${vehicleQuery}`, { cache: "no-store" });
+        const head = await headResponse.json().catch(() => null);
+        const cacheScope = headResponse.headers.get("x-logistics-cache-scope") || "";
+        const cached = cacheScope ? await readCachedProjection(cacheScope, date, vehicle) : undefined;
+        if (!headResponse.ok) {
+          if (cached) {
+            projectionSequence.current = cached.lastChangeSequence;
+            setData({ ...projectionToDashboardData(cached), projection: { ...cached, state: "STALE" } });
+          }
+          setSyncUnavailable(true);
+          throw new LogisticsResponseError(responseErrorDetails(head, headResponse.status, "Logistics sync state could not be checked."));
+        }
+        if (cached && cached.lastChangeSequence === Number(head.sequence) && cached.state !== "STALE" && cached.state !== "PARTIAL") {
+          projectionSequence.current = cached.lastChangeSequence;
+          setData({ ...projectionToDashboardData(cached), projection: cached });
+          setError("");
+          setSyncUnavailable(false);
+          setProjectionNeedsMaterialisation(false);
+          return;
+        }
+        const body = await loadMobileProjection(date, vehicleQuery, materialiseMissing);
+        if (!body?.projection) {
+          if (body?.projectionState === "VALID_EMPTY" || body?.state === "EMPTY") {
+            const empty = { serviceDate: date, revision: 0, lastChangeSequence: Number(head.sequence || 0), state: "VALID_EMPTY" as const, planningQueue: [], deliveryLoads: [], runs: [], exceptions: [], summary: { queuedJobs: 0, loads: 0, assignedJobs: 0, collectedJobs: 0 }, rebuiltAt: new Date().toISOString() };
+            projectionSequence.current = empty.lastChangeSequence;
+            setData({ ...projectionToDashboardData(empty), projection: empty });
+            setError("");
+            setSyncUnavailable(false);
+            setProjectionNeedsMaterialisation(false);
+            return;
+          }
+          throw new Error("Logistics projection is unavailable.");
+        }
+        const projection = body.projection as Parameters<typeof projectionToDashboardData>[0];
+        projectionSequence.current = projection.lastChangeSequence;
+        if (cacheScope) await writeCachedProjection(cacheScope, projection, vehicle);
+        setData({ ...projectionToDashboardData(projection), projection });
+        setError(body.projectionState === "STALE" ? "Showing a stale Logistics projection; reconciliation is required." : "");
+        setSyncUnavailable(body.projectionState === "STALE");
+        setProjectionNeedsMaterialisation(false);
+      } catch (cause) {
+        const details = cause instanceof LogisticsResponseError ? cause.details : undefined;
+        setProjectionNeedsMaterialisation(details?.code === "LOGISTICS_PROJECTION_NOT_MATERIALIZED");
+        setSyncUnavailable(true);
+        setError(cause instanceof LogisticsResponseError ? `${cause.message}${cause.details.requestId ? ` Reference: ${cause.details.requestId}` : ""}` : cause instanceof Error ? cause.message : "Logistics is temporarily unavailable.");
+      }
+    });
+  };
+  const checkForUpdates = async () => {
+    if (!date || document.visibilityState !== "visible") return;
+    if (syncCheckInFlight.current) return syncCheckInFlight.current;
+    const pending = (async () => {
+      const vehicleQuery = fixedVan ? `&vehicle=${encodeURIComponent(fixedVan.toLowerCase().replace(" ", ""))}` : "";
+      try {
+        const response = await fetch(`/api/logistics?syncHead=1&serviceDate=${date}${vehicleQuery}`, { cache: "no-store" });
+        const body = await response.json().catch(() => null);
+        if (!response.ok) throw new LogisticsResponseError(responseErrorDetails(body, response.status, "Logistics sync state could not be checked."));
+        if (projectionSequence.current === undefined || projectionSequence.current !== Number(body?.sequence || 0)) await load();
+        else setSyncUnavailable(false);
+      } catch (cause) {
+        const details = cause instanceof LogisticsResponseError ? cause.details : undefined;
+        setSyncUnavailable(true);
+        setError(cause instanceof LogisticsResponseError ? `${cause.message}${details?.requestId ? ` Reference: ${details.requestId}` : ""}` : "Logistics sync state could not be checked.");
+      }
+    })().finally(() => { syncCheckInFlight.current = undefined; });
+    syncCheckInFlight.current = pending;
+    return pending;
+  };
   useEffect(() => { const nextDate = operationalDate(); setSelectedDate(nextDate); setHydrated(true); }, []);
   useEffect(() => { if (selectedDate) void load(); }, [selectedDate]);
+  useEffect(() => {
+    if (!selectedDate) return;
+    const liveChannel = typeof BroadcastChannel === "undefined" ? undefined : new BroadcastChannel("fika-logistics-live");
+    const onLiveChange = (event: MessageEvent<{ serviceDate?: string }>) => { if (!event.data?.serviceDate || event.data.serviceDate === selectedDate) void checkForUpdates(); };
+    const onVisibilityChange = () => { if (document.visibilityState === "visible") void checkForUpdates(); };
+    liveChannel?.addEventListener("message", onLiveChange);
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    const timer = window.setInterval(() => { if (document.visibilityState === "visible") void checkForUpdates(); }, 30_000);
+    return () => { window.clearInterval(timer); document.removeEventListener("visibilitychange", onVisibilityChange); liveChannel?.removeEventListener("message", onLiveChange); liveChannel?.close(); };
+  }, [selectedDate, fixedVan]);
   useEffect(() => { if (!driverId) setDriverId(data?.runs.find((run) => run.driverId)?.driverId || ""); }, [data?.runs, driverId]);
 
   const driverOptions = useMemo(() => Array.from(new Map((data?.runs || []).filter((run) => run.driverId && run.driverLabel && run.driverId.toLowerCase() !== run.driverLabel.toLowerCase()).map((run) => [run.driverId, run.driverLabel])).entries()), [data?.runs]);
@@ -82,6 +155,7 @@ export default function MobileWorkflow({ fixedVan }: { fixedVan?: "Van 1" | "Van
   const visibleRemaining = visibleStops.filter((stop) => stop.status !== "completed");
   const visibleCompleted = visibleStops.filter((stop) => stop.status === "completed");
   const nextStop = visibleRemaining[0];
+  const freshness = !data ? "UNAVAILABLE" : syncUnavailable || data.projection?.state === "STALE" || data.projection?.state === "PARTIAL" ? "STALE" : data.projection?.state === "VALID_EMPTY" ? "NO WORK" : "CURRENT";
 
   const returnFocusToStop = () => window.requestAnimationFrame(() => stopTriggerRef.current?.focus());
   const closeStopSheet = () => { setSelectedStop(undefined); returnFocusToStop(); };
@@ -100,6 +174,8 @@ export default function MobileWorkflow({ fixedVan }: { fixedVan?: "Van 1" | "Van
         setUndoAction({ run: body.run, stop: body.stop, label });
         window.setTimeout(() => setUndoAction((current) => current?.stop.canonicalId === body.stop.canonicalId ? undefined : current), 5000);
       }
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "The operation could not be completed. Check the connection and retry.");
     } finally {
       setPendingAction(undefined);
     }
@@ -113,6 +189,9 @@ export default function MobileWorkflow({ fixedVan }: { fixedVan?: "Van 1" | "Van
       if (!response.ok) { setRetryDispatchRun(run); const details = responseErrorDetails(body, response.status, "The vehicle could not be dispatched."); setError(`${details.message}${details.requestId ? ` Reference: ${details.requestId}` : ""}`); return; }
       setRetryDispatchRun(undefined); setError("");
       announceDriverChange(date); await load();
+    } catch (cause) {
+      setRetryDispatchRun(run);
+      setError(cause instanceof Error ? cause.message : "The vehicle could not be dispatched. Check the connection and retry.");
     } finally {
       setPendingAction(undefined);
     }
@@ -127,6 +206,8 @@ export default function MobileWorkflow({ fixedVan }: { fixedVan?: "Van 1" | "Van
       const body = await response.json().catch(() => null);
       if (!response.ok) { const details = responseErrorDetails(body, response.status, "The completion could not be undone. Refresh and try again."); setError(`${details.message}${details.requestId ? ` Reference: ${details.requestId}` : ""}`); return; }
       setUndoAction(undefined); setError(""); announceDriverChange(date); await load();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "The completion could not be undone. Check the connection and retry.");
     } finally {
       setPendingAction(undefined);
     }
@@ -139,6 +220,8 @@ export default function MobileWorkflow({ fixedVan }: { fixedVan?: "Van 1" | "Van
       const body = await response.json().catch(() => null);
       if (!response.ok) { const details = responseErrorDetails(body, response.status, "The return could not be confirmed. Refresh and try again."); setError(`${details.message}${details.requestId ? ` Reference: ${details.requestId}` : ""}`); return; }
       setError(""); announceDriverChange(date); await load();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "The return could not be confirmed. Check the connection and retry.");
     } finally {
       setPendingAction(undefined);
     }
@@ -148,7 +231,7 @@ export default function MobileWorkflow({ fixedVan }: { fixedVan?: "Van 1" | "Van
   if (!hydrated || !selectedDate) return <main className="driver-app"><section className="driver-empty" aria-busy="true">Loading your day…</section></main>;
 
   return <main className="driver-app">
-    <header className="driver-hero"><div className="driver-topline"><a href="/" aria-label="Back to planner">← Planner</a><span className="driver-bell" aria-label="Notifications">♧<i /></span></div><p className="driver-eyebrow">FIKA OS · DRIVER</p><div className="driver-title-row"><h1>{view === "collections" ? "Collections" : view === "deliveries" ? "Deliveries" : view === "messages" ? "Messages" : "More"}</h1><span className="driver-live">● LIVE</span></div><div className="driver-filters"><label><span>▣</span><select aria-label="Service date" value={selectedDate} onChange={(event) => setSelectedDate(event.target.value)}>{availableDates.map((option) => <option key={option} value={option}>{formatDate(option)}</option>)}</select></label>{!fixedVan && <label><span>♙</span><select aria-label="Driver" value={driverId} onChange={(event) => setDriverId(event.target.value)}><option value="">Unassigned driver</option>{driverOptions.map(([id, label]) => <option key={id} value={id}>{label}</option>)}</select></label>}</div></header>
+    <header className="driver-hero"><div className="driver-topline"><a href="/" aria-label="Back to planner">← Planner</a><span className="driver-bell" aria-label={`${messages.length} notifications`}>♧{messages.length > 0 && <i />}</span></div><p className="driver-eyebrow">FIKA OS · DRIVER</p><div className="driver-title-row"><h1>{view === "collections" ? "Collections" : view === "deliveries" ? "Deliveries" : view === "messages" ? "Messages" : "More"}</h1><span className="driver-live">● {freshness}</span></div><div className="driver-filters"><label><span>▣</span><select aria-label="Service date" value={selectedDate} onChange={(event) => setSelectedDate(event.target.value)}>{availableDates.map((option) => <option key={option} value={option}>{formatDate(option)}</option>)}</select></label>{!fixedVan && <label><span>♙</span><select aria-label="Driver" value={driverId} onChange={(event) => setDriverId(event.target.value)}><option value="">Unassigned driver</option>{driverOptions.map(([id, label]) => <option key={id} value={id}>{label}</option>)}</select></label>}</div></header>
     {pendingAction && <div className="driver-operation" role="status" aria-live="polite">{operationLabel(pendingAction)} Keep this page open.</div>}{error && <div className="driver-alert" role="alert">{error}<button disabled={Boolean(pendingAction)} onClick={() => retryDispatchRun ? void dispatchRun(retryDispatchRun) : void load(projectionNeedsMaterialisation)}>{retryDispatchRun ? "Retry dispatch" : projectionNeedsMaterialisation ? "Materialise and retry" : "Retry"}</button></div>}
     {!data ? <section className="driver-empty">Loading your day…</section> : view === "messages" ? <Messages messages={messages} onDismiss={(id) => setMessages((current) => current.filter((message) => message.id !== id))} onClear={() => setMessages([])} /> : view === "more" ? <More driver={driver} runs={runs} /> : <>
       {runs.filter((run) => showDispatchChecklist(run.status)).map((run) => { const runStops = stops.filter((stop) => stop.runId === run.canonicalId && !stopIsCollection(stop)); const loaded = runStops.filter((stop) => stop.loaded).length; return <section className="driver-departure" key={run.canonicalId}><div><p className="driver-section-kicker">LOAD CHECK</p><strong>{run.vehicleLabel || "Your vehicle"} · {loaded} of {runStops.length} deliveries loaded</strong><span>Tap each delivery below to confirm it is on the vehicle before leaving.</span></div><button className="primary-action" disabled={Boolean(pendingAction) || !runStops.length || loaded !== runStops.length} onClick={() => void dispatchRun(run)}>{pendingAction === "dispatch-run" ? "Dispatching…" : loaded === runStops.length ? "Dispatch vehicle" : "Load all deliveries"}</button></section>; })}

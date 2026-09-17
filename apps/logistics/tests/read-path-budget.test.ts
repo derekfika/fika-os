@@ -20,12 +20,25 @@ test("incremental changes are ordered, cursor-based, and capped", () => {
 });
 
 test("dashboard polling has separate bounded cadences", () => {
-  assert.match(page, /}, 15 \* 60_000\)/);
+  assert.match(page, /}, 30_000\)/);
   assert.match(page, /}, 5 \* 60_000\)/);
   assert.match(page, /planningAttention=1/);
   assert.match(page, /visibilitychange/);
   assert.match(page, /syncHead=1/);
   assert.match(page, /cached && Number\(head\.sequence\) === cached\.lastChangeSequence/);
+  assert.match(page, /ensure-vehicle-day-runs/);
+  assert.match(page, /if \(result\.changed\) await Promise\.all\(\[load\(true\), loadWeek\(\)\]\)/);
+});
+
+test("day freshness uses a date-scoped cursor and bounded return-to-planning reads", () => {
+  assert.match(store, /export const logisticsDayCursorId = \(serviceDate: string\)/);
+  assert.match(store, /export async function getLogisticsSyncHead\(serviceDate\?: string\)/);
+  assert.match(store, /sync-head\.legacy-projection-fallback/);
+  assert.match(route, /getLogisticsSyncHead\(serviceDate\)/);
+  const returnBranch = route.slice(route.indexOf('body.action === "return-stop-to-planning"'), route.indexOf('body.action === "move-stop"'));
+  assert.match(returnBranch, /runs\(\)\.where\("serviceDate", "==", run\.serviceDate\)/);
+  assert.match(returnBranch, /where\("runId", "in", runIds\.slice\(index \* 30, index \* 30 \+ 30\)\)/);
+  assert.doesNotMatch(returnBranch, /stops\(\)\.get\(\)|runs\(\)\.get\(\)/);
 });
 
 test("projection reads do not trigger write-producing reconciliation", () => {
@@ -62,6 +75,20 @@ test("incremental backlog stops on a repeated cursor", async () => {
   });
   assert.equal(calls, 2);
   assert.equal(result.cursor, 20);
+});
+
+test("incremental drain includes a sequence that advances while earlier pages are processed", async () => {
+  const cursors: number[] = [];
+  let concurrentSequence = 400;
+  const result = await drainIncrementalPages(0, async (cursor) => {
+    cursors.push(cursor);
+    if (cursor === 0) return { nextCursor: 200, hasMore: true, projection: 200 };
+    if (cursor === 200) { concurrentSequence = 450; return { nextCursor: 400, hasMore: true, projection: 400 }; }
+    return { nextCursor: concurrentSequence, hasMore: false, projection: concurrentSequence };
+  });
+  assert.deepEqual(cursors, [0, 200, 400]);
+  assert.equal(result.cursor, 450);
+  assert.equal(result.latestProjection, 450);
 });
 
 test("single-record mutation lookups use deterministic document IDs", () => {

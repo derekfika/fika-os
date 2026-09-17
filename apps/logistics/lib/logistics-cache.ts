@@ -5,6 +5,22 @@ const DATABASE = "fika-logistics-cache";
 const STORE = "day-projections";
 export const LOGISTICS_CACHE_VERSION = 2;
 type CacheRecord = { scope: string; vehicle?: string; serviceDate: string; projection: LogisticsDayProjection; savedAt: string };
+const PROJECTION_STATES = new Set(["CURRENT", "STALE", "PARTIAL", "UNAVAILABLE", "MISSING", "VALID_EMPTY"]);
+
+export function isUsableCachedProjection(value: unknown, serviceDate: string): value is LogisticsDayProjection {
+  if (!value || typeof value !== "object") return false;
+  const projection = value as Partial<LogisticsDayProjection>;
+  return projection.serviceDate === serviceDate
+    && typeof projection.revision === "number" && Number.isFinite(projection.revision)
+    && typeof projection.lastChangeSequence === "number" && Number.isSafeInteger(projection.lastChangeSequence)
+    && projection.lastChangeSequence >= 0
+    && Array.isArray(projection.planningQueue)
+    && Array.isArray(projection.deliveryLoads)
+    && Array.isArray(projection.runs)
+    && Array.isArray(projection.exceptions)
+    && Boolean(projection.summary && typeof projection.summary === "object")
+    && (!projection.state || PROJECTION_STATES.has(projection.state));
+}
 
 export function upgradeLogisticsCacheSchema(database: Pick<IDBDatabase, "objectStoreNames" | "createObjectStore">) {
   if (!database.objectStoreNames.contains(STORE)) database.createObjectStore(STORE, { keyPath: ["scope", "serviceDate"] });
@@ -26,8 +42,17 @@ export async function readCachedProjection(scope: string, serviceDate: string, v
   try {
     const db = await openCache();
     return await new Promise((resolve, reject) => {
-      const request = db.transaction(STORE).objectStore(STORE).get(logisticsCacheKey(scope, serviceDate, vehicle));
-      request.onsuccess = () => { const value = (request.result as CacheRecord | undefined)?.projection; recordDataAccess({ app: "logistics", operation: "projection.cache", source: "CLIENT_CACHE", documents: value ? 1 : 0, cacheHit: Boolean(value) }); resolve(value); };
+      const key = logisticsCacheKey(scope, serviceDate, vehicle);
+      const request = db.transaction(STORE).objectStore(STORE).get(key);
+      request.onsuccess = () => {
+        const value = (request.result as CacheRecord | undefined)?.projection;
+        const usable = isUsableCachedProjection(value, serviceDate);
+        recordDataAccess({ app: "logistics", operation: "projection.cache", source: "CLIENT_CACHE", documents: usable ? 1 : 0, cacheHit: usable });
+        if (!usable && value) {
+          try { db.transaction(STORE, "readwrite").objectStore(STORE).delete(key); } catch { /* A corrupt cache is ignored even if eviction fails. */ }
+        }
+        resolve(usable ? value : undefined);
+      };
       request.onerror = () => reject(request.error);
     });
   } catch { return undefined; }

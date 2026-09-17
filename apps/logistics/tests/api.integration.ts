@@ -1,12 +1,25 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
-import { test } from "node:test";
+import { createConnection } from "node:net";
+import { before, test } from "node:test";
 import { NextRequest } from "next/server";
 import type { FulfilmentRequirement } from "../../shared/fulfilment-requirement";
 import type { DeliveryRun, DeliveryStop, MovementRequest } from "../lib/types";
 import { GET, POST } from "../app/api/logistics/route";
 import { db } from "../lib/firebase";
 import { collectionPreferences, movements, runs, stops } from "../lib/store";
+
+before(async () => {
+  const [host, rawPort] = (process.env.FIRESTORE_EMULATOR_HOST || "127.0.0.1:8085").split(":");
+  const port = Number(rawPort);
+  await new Promise<void>((resolve, reject) => {
+    const socket = createConnection({ host, port });
+    const fail = () => { socket.destroy(); reject(new Error(`Firestore emulator is unavailable at ${host}:${port}; start the FIKA local supervisor before running Logistics integration tests.`)); };
+    socket.setTimeout(1500, fail);
+    socket.once("error", fail);
+    socket.once("connect", () => { socket.end(); resolve(); });
+  });
+});
 
 const serviceDate = "2099-01-01";
 const oplocs = [
@@ -161,6 +174,22 @@ test("create-run persists a versioned audited run in the emulator", async (t) =>
   assert.equal(saved.canonicalId, runId);
   assert.equal(saved.version, 1);
   assert.equal(saved.audit[0].action, "run-created");
+  const duplicate = await responseBody({ action: "create-run", run: run(runId) });
+  assert.equal(duplicate.response.status, 409);
+  assert.equal(((await runs().doc(runId).get()).data() as DeliveryRun).audit.length, 1);
+});
+
+test("movement creation is create-only and binds the authenticated server actor", async (t) => {
+  const id = prefix();
+  t.after(() => cleanup(id));
+  const requested = movement(`${id}:movement`);
+  const created = await responseBody({ action: "save-movement", movement: { ...requested, createdBy: "spoofed-browser-actor" } });
+  assert.equal(created.response.status, 200);
+  const saved = (await movements().doc(requested.canonicalId).get()).data() as MovementRequest;
+  assert.notEqual(saved.createdBy, "spoofed-browser-actor");
+  assert.equal(saved.version, 1);
+  const duplicate = await responseBody({ action: "save-movement", movement: requested });
+  assert.equal(duplicate.response.status, 409);
 });
 
 test("collection-required assignment schedules one linked collection after the delivery", async (t) => {
@@ -171,7 +200,7 @@ test("collection-required assignment schedules one linked collection after the d
   const runId = `${id}:run`;
   await seed(runs(), run(runId));
   const groupKey = `${serviceDate}:${req.destinationOplocId}:10:15-10:45`;
-  assert.equal((await responseBody({ action: "set-collection-required", by: "integration-test", groupKey, collectionRequired: true })).response.status, 200);
+  assert.equal((await responseBody({ action: "set-collection-required", by: "integration-test", groupKey, serviceDate, collectionRequired: true })).response.status, 200);
   const assigned = await responseBody({ action: "assign-group", by: "integration-test", runId, expectedRunVersion: 1, requirementIds: [req.canonicalId], expectedSourceVersions: { [req.canonicalId]: req.sourceVersion }, collectionRequired: true, plannedArrivalTime: "10:15" });
   assert.equal(assigned.response.status, 200);
   let savedRun = (await runs().doc(runId).get()).data() as DeliveryRun;

@@ -5,6 +5,7 @@ import { scopeState } from "./planning";
 import { resolveLegacyAssignmentServiceDate } from "./assignment-migration";
 import { recordDataAccess } from "@fika/server-shared/data-source-meter-server";
 import { applyLogisticsProjectionInvalidation, type LogisticsProjectionInvalidation } from "./logistics-projection";
+import { projectionToDashboardData } from "./projection-dashboard-adapter";
 export const runs = () => db.collection("fikaLogisticsDeliveryRunsV1");
 export const stops = () => db.collection("fikaLogisticsDeliveryStopsV1");
 export const movements = () => db.collection("fikaLogisticsMovementRequestsV1");
@@ -24,16 +25,16 @@ export function reportLogisticsReadPath(operation: string) {
   if (readBudgetEnabled()) console.info(`[logistics-read-budget] ${operation}`);
 }
 const preferenceId = (groupKey: string) => encodeURIComponent(groupKey);
-export async function listCollectionPreferenceKeys() {
-  const snapshot = await collectionPreferences().where("collectionRequired", "==", true).get();
+export async function listCollectionPreferenceKeys(serviceDate: string) {
+  const snapshot = await collectionPreferences().where("serviceDate", "==", serviceDate).where("collectionRequired", "==", true).get();
   recordDataAccess({ app: "logistics", operation: "collection-preferences.list", source: "FIRESTORE", documents: snapshot.size, firestoreReadKind: "query" });
   return snapshot.docs.map((doc) => String(doc.data().groupKey || decodeURIComponent(doc.id)));
 }
-export async function saveCollectionPreference(groupKey: string, collectionRequired: boolean, by: string, now: string) {
+export async function saveCollectionPreference(groupKey: string, serviceDate: string, collectionRequired: boolean, by: string, now: string) {
   const ref = collectionPreferences().doc(preferenceId(groupKey));
-  if (collectionRequired) await ref.set({ groupKey, collectionRequired: true, updatedAt: now, updatedBy: by });
+  if (collectionRequired) await ref.set({ groupKey, serviceDate, collectionRequired: true, updatedAt: now, updatedBy: by });
   else await ref.delete();
-  return { groupKey, collectionRequired };
+  return { groupKey, serviceDate, collectionRequired };
 }
 export function normalizeStop(value: DocumentData): DeliveryStop {
   const legacy =
@@ -133,7 +134,20 @@ export async function listDeliveryLoadState(serviceDate?: string) {
 }
 export async function saveLogisticsJob(job: LogisticsJob) { await logisticsJobs().doc(job.id).set(job); return job; }
 export async function saveDeliveryLoad(load: DeliveryLoad) { await deliveryLoads().doc(load.id).set(load); return load; }
-export async function saveLogisticsProjection(projection: LogisticsDayProjection) { await logisticsDayProjections().doc(projection.serviceDate).set(projection); return projection; }
+export const logisticsDayCursorId = (serviceDate: string) => `day:${serviceDate}`;
+export async function saveLogisticsProjection(projection: LogisticsDayProjection) {
+  return db.runTransaction(async (transaction) => {
+    const projectionRef = logisticsDayProjections().doc(projection.serviceDate);
+    const cursorRef = logisticsChangeCursor().doc(logisticsDayCursorId(projection.serviceDate));
+    const [currentProjectionSnap, currentCursorSnap] = await Promise.all([transaction.get(projectionRef), transaction.get(cursorRef)]);
+    const currentProjection = currentProjectionSnap.exists ? currentProjectionSnap.data() as LogisticsDayProjection : undefined;
+    const currentSequence = Math.max(currentProjection?.lastChangeSequence || 0, Number(currentCursorSnap.data()?.sequence || 0));
+    if (currentSequence > projection.lastChangeSequence && currentProjection) return currentProjection;
+    transaction.set(projectionRef, projection);
+    transaction.set(cursorRef, { sequence: Math.max(currentSequence, projection.lastChangeSequence), updatedAt: projection.rebuiltAt }, { merge: true });
+    return projection;
+  });
+}
 export async function invalidateLogisticsProjection(change: LogisticsProjectionInvalidation) {
   return db.runTransaction(async (transaction) => {
     const projectionRef = logisticsDayProjections().doc(change.serviceDate);
@@ -147,6 +161,7 @@ export async function invalidateLogisticsProjection(change: LogisticsProjectionI
     const sequence = Number(cursorSnap.data()?.sequence || 0) + 1;
     const next = { ...result.projection, lastChangeSequence: sequence, revision: Math.max(current.revision + 1, sequence) };
     transaction.set(cursorRef, { sequence, updatedAt: change.changedAt });
+    transaction.set(logisticsChangeCursor().doc(logisticsDayCursorId(change.serviceDate)), { sequence, updatedAt: change.changedAt });
     transaction.create(logisticsChanges().doc(String(sequence).padStart(20, "0")), { sequence, serviceDate: change.serviceDate, entityType: "upstream", entityId: change.sourceEntityId, changeType: `upstream-${change.changeType}`, revision: change.sourceVersion, changedAt: change.changedAt, actorId: `source:${change.sourceDomain}` });
     transaction.set(projectionRef, next);
     return { applied: true as const, sequence, projection: next };
@@ -155,21 +170,30 @@ export async function invalidateLogisticsProjection(change: LogisticsProjectionI
 export async function getLogisticsProjection(serviceDate: string) { const snapshot = await logisticsDayProjections().doc(serviceDate).get(); recordDataAccess({ app: "logistics", operation: "projection.by-service-date", source: "FIRESTORE", documents: snapshot.exists ? 1 : 0, firestoreReadKind: "document" }); reportRead(`projection:${serviceDate}`, snapshot.exists ? 1 : 0); return snapshot.exists ? snapshot.data() as LogisticsDayProjection : undefined; }
 export function summarizeLogisticsProjection(serviceDate: string, projection?: LogisticsDayProjection) {
   if (!projection) return { serviceDate, projectionState: "MISSING" as const };
-  const loads = projection?.deliveryLoads || [];
-  const scheduled = loads.filter((load) => Boolean(load.scheduledTime)).length;
+  const planner = projectionToDashboardData(projection).planner;
   return {
-    serviceDate, loads: loads.length,
-    ready: loads.filter((load) => load.readiness === "ready").length,
-    unplanned: projection?.summary.queuedJobs || 0, queue: projection?.summary.queuedJobs || 0,
-    scheduled, needsTime: loads.length - scheduled, runs: projection?.runs.length || 0,
-    attention: projection?.exceptions.length || 0, completedStops: loads.filter((load) => load.status === "delivered").length,
-    stopCount: loads.length, deliveries: loads.length, collections: 0, transfers: 0,
+    serviceDate, loads: planner.summary.loads,
+    ready: planner.workGroups.filter((group) => group.readiness === "READY" && group.planningState !== "planned").length,
+    unplanned: planner.summary.unplanned + planner.movements.filter((movement) => movement.planningState === "unplanned").length,
+    queue: planner.workGroups.filter((group) => group.planningState !== "planned").length + planner.movements.filter((movement) => movement.planningState !== "planned").length,
+    scheduled: planner.summary.scheduledStops, needsTime: planner.summary.needsTime, runs: planner.runs.length,
+    attention: planner.summary.attention + planner.runs.reduce((count, run) => count + run.openIssueCount, 0),
+    completedStops: planner.runs.reduce((count, run) => count + run.completedStops, 0),
+    stopCount: planner.runs.reduce((count, run) => count + run.stopCount, 0),
+    deliveries: planner.summary.deliveries, collections: planner.summary.collections, transfers: planner.summary.transfers,
     projectionState: projection.state || "CURRENT",
   };
 }
 export async function listLogisticsProjectionSummaries(serviceDates: string[]) {
-  const projections = await Promise.all(serviceDates.map((serviceDate) => getLogisticsProjection(serviceDate)));
-  return serviceDates.map((serviceDate, index) => summarizeLogisticsProjection(serviceDate, projections[index]));
+  const [projections, heads] = await Promise.all([
+    Promise.all(serviceDates.map((serviceDate) => getLogisticsProjection(serviceDate))),
+    Promise.all(serviceDates.map((serviceDate) => getLogisticsSyncHead(serviceDate))),
+  ]);
+  return serviceDates.map((serviceDate, index) => {
+    const projection = projections[index];
+    const current = projection && projection.lastChangeSequence < heads[index].sequence ? { ...projection, state: "STALE" as const } : projection;
+    return summarizeLogisticsProjection(serviceDate, current);
+  });
 }
 export async function listPlanningAttention(serviceDates: string[], expectedSourceKeys?: Map<string, Set<string>>) {
   const projections = await Promise.all(serviceDates.map((serviceDate) => getLogisticsProjection(serviceDate)));
@@ -182,11 +206,18 @@ export async function listPlanningAttention(serviceDates: string[], expectedSour
   reportRead(`planning-attention:${serviceDates.length}`, attention.length);
   return attention;
 }
-export async function getLogisticsSyncHead() {
-  const snapshot = await logisticsChangeCursor().doc("global").get();
+export async function getLogisticsSyncHead(serviceDate?: string) {
+  const snapshot = await logisticsChangeCursor().doc(serviceDate ? logisticsDayCursorId(serviceDate) : "global").get();
   recordDataAccess({ app: "logistics", operation: "sync-head.lookup", source: "FIRESTORE", documents: snapshot.exists ? 1 : 0, firestoreReadKind: "document" });
   reportRead("sync-head", snapshot.exists ? 1 : 0);
-  return { sequence: Number(snapshot.data()?.sequence || 0), updatedAt: snapshot.data()?.updatedAt as string | undefined };
+  if (snapshot.exists || !serviceDate) return { sequence: Number(snapshot.data()?.sequence || 0), updatedAt: snapshot.data()?.updatedAt as string | undefined };
+  // Projections written before per-day cursors were introduced already carry
+  // their durable sequence. Use it as a read-only compatibility head until the
+  // next rebuild/event materialises the dedicated cursor.
+  const projection = await logisticsDayProjections().doc(serviceDate).get();
+  recordDataAccess({ app: "logistics", operation: "sync-head.legacy-projection-fallback", source: "FIRESTORE", documents: projection.exists ? 1 : 0, firestoreReadKind: "document" });
+  const value = projection.data() as LogisticsDayProjection | undefined;
+  return { sequence: Number(value?.lastChangeSequence || 0), updatedAt: value?.rebuiltAt };
 }
 export async function listLogisticsChanges(after = 0, serviceDate?: string) {
   const query = serviceDate ? logisticsChanges().where("serviceDate", "==", serviceDate).where("sequence", ">", after).orderBy("sequence", "asc").limit(LOGISTICS_CHANGE_LIMIT + 1) : logisticsChanges().where("sequence", ">", after).orderBy("sequence", "asc").limit(LOGISTICS_CHANGE_LIMIT + 1);
@@ -230,6 +261,7 @@ export async function appendLogisticsChange(input: Omit<LogisticsChangeEvent, "s
     const sequence = Number(cursorSnap.data()?.sequence || 0) + 1;
     const event = { ...input, sequence };
     transaction.set(cursorRef, { sequence, updatedAt: input.changedAt });
+    if (input.serviceDate) transaction.set(logisticsChangeCursor().doc(logisticsDayCursorId(input.serviceDate)), { sequence, updatedAt: input.changedAt });
     transaction.create(logisticsChanges().doc(String(sequence).padStart(20, "0")), event);
     return event;
   });

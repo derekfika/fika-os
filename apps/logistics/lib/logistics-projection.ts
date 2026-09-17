@@ -1,8 +1,8 @@
-import type { DeliveryLoad, DeliveryRun, LogisticsAssignment, LogisticsChangeEvent, LogisticsDayProjection, LogisticsJob, LogisticsProjectionJob, LogisticsProjectionLoad, LogisticsSourceLineage } from "./types";
+import type { DeliveryLoad, DeliveryRun, DeliveryStop, LogisticsAssignment, LogisticsChangeEvent, LogisticsDayProjection, LogisticsJob, LogisticsProjectionJob, LogisticsProjectionLoad, LogisticsSourceLineage, MovementRequest } from "./types";
 
 const totalUnits = (job: LogisticsJob) => job.contents.reduce((sum, item) => sum + item.quantity, 0);
 
-export function buildLogisticsDayProjection(input: { serviceDate: string; jobs: LogisticsJob[]; loads: DeliveryLoad[]; assignments: LogisticsAssignment[]; runs?: DeliveryRun[]; lastChangeSequence?: number; revision?: number; now?: string }): LogisticsDayProjection {
+export function buildLogisticsDayProjection(input: { serviceDate: string; jobs: LogisticsJob[]; loads: DeliveryLoad[]; assignments: LogisticsAssignment[]; runs?: DeliveryRun[]; stops?: DeliveryStop[]; movements?: MovementRequest[]; collectionRequiredKeys?: string[]; lastChangeSequence?: number; revision?: number; now?: string }): LogisticsDayProjection {
   const jobs = input.jobs.filter((job) => job.serviceDate === input.serviceDate);
   const loads = input.loads.filter((load) => load.serviceDate === input.serviceDate && load.status !== "cancelled");
   const assignments = input.assignments;
@@ -32,9 +32,13 @@ export function buildLogisticsDayProjection(input: { serviceDate: string; jobs: 
     ...(!job.requestedWindow?.startTime ? [`${job.id}: unresolved timing`] : []),
   ]);
   const now = input.now || new Date().toISOString();
-  const validEmpty = jobs.length === 0 && mergedLoads.length === 0 && (input.runs || []).filter((run) => run.serviceDate === input.serviceDate).length === 0;
+  const projectedRuns = (input.runs || []).filter((run) => run.serviceDate === input.serviceDate);
+  const projectedRunIds = new Set(projectedRuns.map((run) => run.canonicalId));
+  const projectedStops = (input.stops || []).filter((stop) => projectedRunIds.has(stop.runId));
+  const projectedMovements = (input.movements || []).filter((movement) => movement.serviceDate === input.serviceDate);
+  const validEmpty = jobs.length === 0 && mergedLoads.length === 0 && projectedStops.length === 0 && projectedMovements.length === 0;
   const sourceLineage = [...new Map(jobs.filter((job) => job.sourceVersion !== undefined).map((job) => [`${job.sourceType}:${job.sourceId}`, { sourceDomain: job.sourceType, sourceEntityId: job.sourceId, sourceVersion: job.sourceVersion!, ...(job.sourceContentHash ? { sourceContentHash: job.sourceContentHash } : {}), changedAt: job.updatedAt } satisfies LogisticsSourceLineage])).values()].slice(0, 200);
-  return { serviceDate: input.serviceDate, revision: input.revision || 1, lastChangeSequence: input.lastChangeSequence || 0, state: validEmpty ? "VALID_EMPTY" as const : "CURRENT" as const, completeness: { fulfilment: "complete" as const, cpu: "not_required" as const, oploc: "complete" as const }, sourceLineage, reconciliation: { status: "current" as const, checkedAt: now }, planningQueue: queue, deliveryLoads: mergedLoads, runs: (input.runs || []).filter((run) => run.serviceDate === input.serviceDate).map((run) => ({ canonicalId: run.canonicalId, status: run.status, driverId: run.driverId, driverLabel: run.driverLabel, vehicleLabel: run.vehicleLabel })), exceptions: Array.from(new Set(exceptions)), summary: { queuedJobs: queue.length, loads: mergedLoads.length, assignedJobs: jobs.length - queue.length, collectedJobs: jobs.filter((job) => job.collectionStatus === "collected").length }, rebuiltAt: now };
+  return { serviceDate: input.serviceDate, revision: input.revision || 1, lastChangeSequence: input.lastChangeSequence || 0, state: validEmpty ? "VALID_EMPTY" as const : "CURRENT" as const, completeness: { fulfilment: "complete" as const, cpu: "not_required" as const, oploc: "complete" as const }, sourceLineage, reconciliation: { status: "current" as const, checkedAt: now }, planningQueue: queue, deliveryLoads: mergedLoads, runs: projectedRuns, stops: projectedStops, movements: projectedMovements, collectionRequiredKeys: input.collectionRequiredKeys || [], exceptions: Array.from(new Set(exceptions)), summary: { queuedJobs: queue.length, loads: mergedLoads.length, assignedJobs: jobs.length - queue.length, collectedJobs: jobs.filter((job) => job.collectionStatus === "collected").length }, rebuiltAt: now };
 }
 
 export type LogisticsProjectionInvalidation = { serviceDate: string; sourceDomain: string; sourceEntityId: string; sourceVersion: number; sourceContentHash?: string; changedAt: string; changeType: "amended" | "cancelled" | "withdrawn" | "superseded" | "status-changed" };
@@ -53,7 +57,10 @@ export function filterLogisticsProjectionForVehicle(projection: LogisticsDayProj
   const runs = projection.runs.filter((run) => run.vehicleLabel === vehicleLabel);
   const runIds = new Set(runs.map((run) => run.canonicalId));
   const deliveryLoads = projection.deliveryLoads.filter((load) => runIds.has(load.runId || "") || runIds.has(load.collectionRunId || ""));
-  return { ...projection, planningQueue: [], deliveryLoads, runs, summary: { ...projection.summary, queuedJobs: 0, loads: deliveryLoads.length, assignedJobs: deliveryLoads.reduce((total, load) => total + load.jobCount, 0), collectedJobs: deliveryLoads.reduce((total, load) => total + load.collectedCount, 0) } };
+  const stops = (projection.stops || []).filter((stop) => runIds.has(stop.runId));
+  const movementIds = new Set(stops.flatMap((stop) => stop.movementRequestIds || []));
+  const movements = (projection.movements || []).filter((movement) => movementIds.has(movement.canonicalId));
+  return { ...projection, planningQueue: [], deliveryLoads, runs, stops, movements, summary: { ...projection.summary, queuedJobs: 0, loads: deliveryLoads.length, assignedJobs: deliveryLoads.reduce((total, load) => total + load.jobCount, 0), collectedJobs: deliveryLoads.reduce((total, load) => total + load.collectedCount, 0) } };
 }
 
 /** Replays one change without changing the canonical records. Rebuilding the compact day from supplied canonical slices is deterministic and safe for duplicate replay. */

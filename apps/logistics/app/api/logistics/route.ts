@@ -21,8 +21,6 @@ import {
   runs,
   stops,
   normalizeStop,
-  saveMovement,
-  saveRun,
   collectionPreferences,
   listCollectionPreferenceKeys,
   saveCollectionPreference,
@@ -36,6 +34,9 @@ import {
   listLogisticsProjectionSummaries,
   listPlanningAttention,
   getLogisticsSyncHead,
+  logisticsChangeCursor,
+  logisticsDayCursorId,
+  logisticsDayProjections,
   listLogisticsChanges,
   repairLegacyAssignmentServiceDates,
 } from "@/lib/store";
@@ -279,6 +280,41 @@ async function rebuildLogisticsProjection(serviceDate: string, actorId: string, 
   return materialiseRebuildLogisticsProjection(serviceDate, actorId, lastChangeSequence);
 }
 
+async function recordCanonicalLogisticsChange(input: {
+  serviceDate: string;
+  entityType: "run" | "stop" | "movement";
+  entityId: string;
+  changeType: string;
+  revision: number;
+  actorId: string;
+  by: string;
+  changedAt: string;
+}) {
+  const event = await appendLogisticsChange({
+    serviceDate: input.serviceDate,
+    entityType: input.entityType,
+    entityId: input.entityId,
+    changeType: input.changeType,
+    revision: input.revision,
+    changedAt: input.changedAt,
+    actorId: input.actorId,
+  });
+  await rebuildLogisticsProjection(input.serviceDate, input.by, event.sequence);
+  return event;
+}
+
+async function assertProjectionCurrent(serviceDate: string, transaction?: Transaction) {
+  const [projection, headSequence] = transaction
+    ? await Promise.all([
+        transaction.get(logisticsDayProjections().doc(serviceDate)).then((snapshot) => snapshot.exists ? snapshot.data() as import("@/lib/types").LogisticsDayProjection : undefined),
+        transaction.get(logisticsChangeCursor().doc(logisticsDayCursorId(serviceDate))).then((snapshot) => Number(snapshot.data()?.sequence || 0)),
+      ])
+    : await Promise.all([getLogisticsProjection(serviceDate), getLogisticsSyncHead(serviceDate).then((head) => head.sequence)]);
+  if (!projection || projection.state === "STALE" || projection.state === "PARTIAL" || projection.state === "UNAVAILABLE" || projection.lastChangeSequence < headSequence)
+    throw new HttpError(409, "Logistics changed upstream. Wait for reconciliation, then refresh before continuing.");
+  return projection;
+}
+
 async function reconcileLogisticsDay(serviceDate: string, by: string, actorId = "system:read-reconcile", cookie?: string) {
   const requirements = await fetchRequirements(serviceDate, cookie);
   const production = await fetchProductionContexts(serviceDate, cookie);
@@ -360,7 +396,7 @@ async function getLogistics(request: NextRequest) {
     // Projection reads are deliberately side-effect free. Reconciliation and
     // rebuilding remain explicit POST/admin operations, so idle dashboard and
     // mobile loads cannot create Firestore writes.
-    const syncHead = await getLogisticsSyncHead();
+    const syncHead = await getLogisticsSyncHead(serviceDate);
     const projectionState = projection && projection.lastChangeSequence < syncHead.sequence ? "STALE" as const : projection?.state || "CURRENT" as const;
     if (projection) projection = { ...filterLogisticsProjectionForVehicle(projection, requestedVehicle), state: projectionState };
     if (!projection) {
@@ -382,7 +418,9 @@ async function getLogistics(request: NextRequest) {
   }
   if (request.nextUrl.searchParams.get("syncHead") === "1") {
     reportLogisticsReadPath("manifest-head-check");
-    return NextResponse.json(await getLogisticsSyncHead());
+    const serviceDate = requestedDate || operationalDate();
+    if (!validOperationalDate(serviceDate)) throw new HttpError(400, "Invalid Logistics service date.");
+    return NextResponse.json(await getLogisticsSyncHead(serviceDate));
   }
   if (request.nextUrl.searchParams.get("planningAttention") === "1") {
     const fromDate = requestedDate || operationalDate();
@@ -466,7 +504,7 @@ async function getLogistics(request: NextRequest) {
   const date = requestedDate || runDate || operationalDate();
   const [state, collectionRequiredKeys, requirementsResult, oplocsResult] = await Promise.all([
     listState(date),
-    listCollectionPreferenceKeys(),
+    listCollectionPreferenceKeys(date),
     fetchRequirements(date, cookie).then((value) => ({ status: "fulfilled" as const, value })).catch((reason) => ({ status: "rejected" as const, reason })),
     fetchOplocs(cookie).then((value) => ({ status: "fulfilled" as const, value })).catch((reason) => ({ status: "rejected" as const, reason })),
   ]);
@@ -527,6 +565,7 @@ async function getLogistics(request: NextRequest) {
 }
 
 async function handlePost(request: NextRequest) {
+  let diagnostic: { operation?: string; serviceDate?: string; projectionSequence?: number; entityId?: string } = {};
   try {
     const principal = await requireLogisticsAccess(request);
     if (hostedRuntime()) assertSameOrigin(request);
@@ -572,6 +611,12 @@ async function handlePost(request: NextRequest) {
       lane?: "delivery" | "collection";
       collectionStatus?: "awaiting" | "collected";
     };
+    diagnostic = {
+      operation: body.action,
+      serviceDate: body.serviceDate || body.run?.serviceDate || body.movement?.serviceDate || body.job?.serviceDate,
+      projectionSequence: body.expectedRunVersion ?? body.expectedStopVersion ?? body.expectedSourceVersion,
+      entityId: body.runId || body.stopId || body.movementId || body.jobId || body.loadId || body.run?.canonicalId || body.movement?.canonicalId,
+    };
     const actorId = principal.id;
     const by = principal.displayName;
     const now = new Date().toISOString();
@@ -587,6 +632,7 @@ async function handlePost(request: NextRequest) {
         const loadSnap = await transaction.get(loadRef);
         if (!loadSnap.exists) throw new HttpError(404, "Delivery load not found.");
         const load = loadSnap.data() as import("@/lib/types").DeliveryLoad;
+        await assertProjectionCurrent(load.serviceDate, transaction);
         const loaded = body.action === "mark-stop-loaded" || body.action === "mark-subload-loaded" ? body.loaded !== false : load.loaded;
         const status = body.action === "complete-stop" || body.action === "mark-subload-delivered" ? "delivered" as const : body.action === "undo-completion" ? "planned" as const : load.status;
         const nextVersion = load.version + 1;
@@ -622,6 +668,7 @@ async function handlePost(request: NextRequest) {
       if (body.lane === "collection") throw new HttpError(422, "Choose the delivery timeline first; collection is scheduled from the linked collection card.");
       const job = body.job || (body.jobId ? await getLogisticsJob(body.jobId) : undefined);
       if (!job) throw new HttpError(404, "Logistics job not found.");
+      await assertProjectionCurrent(job.serviceDate);
       let scheduledTime = body.scheduledTime || job.requestedWindow?.startTime;
       const originOplocId = job.originOplocId || CPU_PRODUCTION_LOCATION_ID;
       if (!originOplocId || !job.destinationOplocId || !scheduledTime)
@@ -638,6 +685,7 @@ async function handlePost(request: NextRequest) {
       scheduledTime = nextAvailableLoadTime(existingLoads, { runId: body.targetRunId, lane: "delivery", destinationOplocId, start: scheduledTime, end: requestedEnd });
       const scheduledEnd = requestedDuration === undefined ? undefined : addMinutesToTime(scheduledTime, requestedDuration);
       const result = await runTracedTransaction(async (transaction) => {
+        await assertProjectionCurrent(job.serviceDate, transaction);
         const loadId = `load:${job.serviceDate}:${originOplocId}:${destinationOplocId}:${scheduledTime}`;
         const loadRef = deliveryLoads().doc(loadId);
         const jobRef = logisticsJobs().doc(job.id);
@@ -670,6 +718,7 @@ async function handlePost(request: NextRequest) {
       validatePlannedSchedule(undefined, { startTime: body.scheduledTime, ...(body.scheduledEnd ? { endTime: body.scheduledEnd } : {}) });
       const currentLoad = await getDeliveryLoad(body.loadId);
       if (!currentLoad) throw new HttpError(404, "Delivery load not found.");
+      await assertProjectionCurrent(currentLoad.serviceDate);
       const currentLoads = (await listDeliveryLoadState(currentLoad.serviceDate)).loads;
       const requestedDuration = body.scheduledEnd ? Math.max(15, Number(body.scheduledEnd.slice(0, 2)) * 60 + Number(body.scheduledEnd.slice(3, 5)) - (Number(body.scheduledTime.slice(0, 2)) * 60 + Number(body.scheduledTime.slice(3, 5)))) : undefined;
       const effectiveScheduledTime = currentLoad ? nextAvailableLoadTime(currentLoads, { loadId: currentLoad.id, runId: body.targetRunId || (body.lane === "collection" ? currentLoad.collectionRunId || currentLoad.runId : currentLoad.runId), lane: body.lane === "collection" ? "collection" : "delivery", destinationOplocId: body.lane === "collection" ? currentLoad.originOplocId : currentLoad.destinationOplocId, start: body.scheduledTime, end: body.scheduledEnd }) : body.scheduledTime;
@@ -679,6 +728,7 @@ async function handlePost(request: NextRequest) {
         const loadSnap = await transaction.get(loadRef);
         if (!loadSnap.exists) throw new HttpError(404, "Delivery load not found.");
         const load = loadSnap.data() as import("@/lib/types").DeliveryLoad;
+        await assertProjectionCurrent(load.serviceDate, transaction);
         const nextVersion = load.version + 1;
         const collection = body.lane === "collection";
         transaction.update(loadRef, {
@@ -707,6 +757,7 @@ async function handlePost(request: NextRequest) {
         const loadSnap = await transaction.get(loadRef);
         if (!loadSnap.exists) throw new HttpError(404, "Delivery load not found.");
         const load = loadSnap.data() as import("@/lib/types").DeliveryLoad;
+        await assertProjectionCurrent(load.serviceDate, transaction);
         const nextVersion = load.version + 1;
         const loaded = body.loaded !== false;
         transaction.update(loadRef, {
@@ -726,6 +777,8 @@ async function handlePost(request: NextRequest) {
         const assignmentSnap = await transaction.get(logisticsAssignments().where("jobId", "==", body.jobId));
         if (!assignmentSnap.docs.length) throw new HttpError(404, "Job is not assigned to a delivery load.");
         const assignment = assignmentSnap.docs[0].data() as import("@/lib/types").LogisticsAssignment;
+        if (!assignment.serviceDate) throw new HttpError(409, "This legacy assignment must be repaired before it can be changed.");
+        await assertProjectionCurrent(assignment.serviceDate, transaction);
         const loadRef = deliveryLoads().doc(assignment.loadId);
         const [loadSnap, loadAssignments] = await Promise.all([transaction.get(loadRef), transaction.get(logisticsAssignments().where("loadId", "==", assignment.loadId))]);
         transaction.delete(logisticsAssignments().doc(`${assignment.jobId}:${assignment.loadId}`));
@@ -746,6 +799,7 @@ async function handlePost(request: NextRequest) {
     if (body.action === "set-job-collection" && (body.job || body.jobId) && body.collectionStatus) {
       const job = body.job || (body.jobId ? await getLogisticsJob(body.jobId) : undefined);
       if (!job) throw new HttpError(404, "Logistics job not found.");
+      await assertProjectionCurrent(job.serviceDate);
       const nextJob = await saveLogisticsJob(setJobCollectionStatus(job, body.collectionStatus, by, now));
       const event = await appendLogisticsChange({ serviceDate: nextJob.serviceDate, entityType: "logisticsJob", entityId: nextJob.id, changeType: "collection-status-changed", revision: nextJob.version, changedAt: now, actorId });
       await rebuildLogisticsProjection(nextJob.serviceDate, by, event.sequence);
@@ -757,6 +811,7 @@ async function handlePost(request: NextRequest) {
         const loadSnap = await transaction.get(loadRef);
         if (!loadSnap.exists) throw new HttpError(404, "Delivery load not found.");
         const load = loadSnap.data() as import("@/lib/types").DeliveryLoad;
+        await assertProjectionCurrent(load.serviceDate, transaction);
         const [jobsSnap, assignmentsSnap] = await Promise.all([transaction.get(logisticsJobs().where("serviceDate", "==", load.serviceDate)), transaction.get(logisticsAssignments().where("loadId", "==", load.id))]);
         const jobs = jobsSnap.docs.map((doc) => doc.data() as import("@/lib/types").LogisticsJob);
         const assignments = assignmentsSnap.docs.map((doc) => doc.data() as import("@/lib/types").LogisticsAssignment);
@@ -771,39 +826,45 @@ async function handlePost(request: NextRequest) {
       return NextResponse.json(result);
     }
     if (body.action === "set-collection-required" && body.groupKey && typeof body.collectionRequired === "boolean") {
-      return NextResponse.json(await saveCollectionPreference(body.groupKey, body.collectionRequired, by, now));
+      if (!body.serviceDate || !validOperationalDate(body.serviceDate)) throw new HttpError(422, "A valid service date is required for collection planning.");
+      const preference = await saveCollectionPreference(body.groupKey, body.serviceDate, body.collectionRequired, by, now);
+      if (body.serviceDate) await recordCanonicalLogisticsChange({ serviceDate: body.serviceDate, entityType: "movement", entityId: body.groupKey, changeType: "collection-preference-changed", revision: 1, actorId, by, changedAt: now });
+      return NextResponse.json(preference);
     }
     if (body.action === "ensure-vehicle-day-runs") {
       const serviceDate = body.serviceDate || operationalDate();
+      if (!validOperationalDate(serviceDate)) throw new HttpError(422, "A valid service date is required.");
       const existing = (await listState(serviceDate)).runs;
       const slots = [{ slot: "van-1" }, { slot: "van-2" }] as const;
       const result: DeliveryRun[] = [];
-      for (const [index, item] of slots.entries()) {
+      const missing: Array<{ slot: "van-1" | "van-2"; vehicleLabel: string }> = [];
+      for (const item of slots) {
         const vehicleLabel = item.slot === "van-1" ? "Van 1" : "Van 2";
-        const current = existing.find((run) => run.vehicleLabel === vehicleLabel) || existing[index];
+        const current = existing.find((run) => run.vehicleLabel === vehicleLabel);
         if (current) {
-          if (current.vehicleLabel !== vehicleLabel) {
-            const normalized = { ...current, vehicleLabel, updatedAt: now, audit: [...current.audit, { action: "vehicle-day-labeled", at: now, by, version: current.version }] };
-            await saveRun(normalized);
-            result.push(normalized);
-          } else result.push(current);
+          result.push(current);
           continue;
         }
-      const run: DeliveryRun = {
-          canonicalId: `run:${serviceDate}:${item.slot}`,
-          serviceDate,
-          status: "draft",
-          driverId: undefined,
-          driverLabel: undefined,
-          vehicleLabel: item.slot === "van-1" ? "Van 1" : "Van 2",
-          returnToCpuRequired: true,
-          orderedStopIds: [], version: 1, createdAt: now, updatedAt: now,
-          audit: [{ action: "vehicle-day-run-created", at: now, by, version: 1 }],
-        };
-        await saveRun(run);
-        result.push(run);
+        missing.push({ slot: item.slot, vehicleLabel });
       }
-      return NextResponse.json({ runs: result });
+      const created = missing.length ? await runTracedTransaction(async (transaction) => {
+        const refs = missing.map((item) => runs().doc(`run:${serviceDate}:${item.slot}`));
+        const snapshots = await Promise.all(refs.map((ref) => transaction.get(ref)));
+        return missing.map((item, index) => {
+          if (snapshots[index].exists) return snapshots[index].data() as DeliveryRun;
+          const run: DeliveryRun = {
+            canonicalId: refs[index].id, serviceDate, status: "draft", vehicleLabel: item.vehicleLabel,
+            returnToCpuRequired: true, orderedStopIds: [], version: 1, createdAt: now, updatedAt: now,
+            audit: [{ action: "vehicle-day-run-created", at: now, by, version: 1 }],
+          };
+          transaction.create(refs[index], run);
+          return run;
+        });
+      }) : [];
+      result.push(...created);
+      const changed = created.some((run) => run.createdAt === now);
+      if (changed) await recordCanonicalLogisticsChange({ serviceDate, entityType: "run", entityId: `vehicle-day:${serviceDate}`, changeType: "vehicle-day-runs-ensured", revision: Math.max(...result.map((run) => run.version)), actorId, by, changedAt: now });
+      return NextResponse.json({ runs: result, changed });
     }
     if (body.action === "set-run-driver" && body.runId && body.driverId && body.driverLabel) {
       const current = await getRun(body.runId);
@@ -822,6 +883,7 @@ async function handlePost(request: NextRequest) {
         transaction.set(ref, next);
         return next;
       });
+      await recordCanonicalLogisticsChange({ serviceDate: result.serviceDate, entityType: "run", entityId: result.canonicalId, changeType: "driver-assigned", revision: result.version, actorId, by, changedAt: now });
       return NextResponse.json(result);
     }
     if (body.action === "set-run-return-required" && body.runId && typeof body.returnToCpuRequired === "boolean") {
@@ -839,6 +901,7 @@ async function handlePost(request: NextRequest) {
         transaction.set(ref, next);
         return next;
       });
+      await recordCanonicalLogisticsChange({ serviceDate: result.serviceDate, entityType: "run", entityId: result.canonicalId, changeType: "run-return-setting-changed", revision: result.version, actorId, by, changedAt: now });
       return NextResponse.json(result);
     }
     if (body.action === "reset-planning-day" && body.serviceDate) {
@@ -853,10 +916,11 @@ async function handlePost(request: NextRequest) {
         audit: [...movement.audit, { action: "planning-day-reset", at: now, by, version: movement.version + 1 }],
       }));
       await batch.commit();
+      await recordCanonicalLogisticsChange({ serviceDate: body.serviceDate, entityType: "run", entityId: `planning-day:${body.serviceDate}`, changeType: "planning-day-reset", revision: 1, actorId, by, changedAt: now });
       return NextResponse.json({ serviceDate: body.serviceDate, resetRuns: state.runs.length, resetStops: state.stops.length, resetMovements: state.movements.length });
     }
     if (body.action === "create-run") {
-      const run: DeliveryRun = body.run || {
+      const requested: DeliveryRun = body.run || {
         canonicalId: `run:${operationalDate()}:${Date.now()}`,
         serviceDate: operationalDate(),
         status: "draft",
@@ -867,18 +931,30 @@ async function handlePost(request: NextRequest) {
         returnToCpuRequired: true,
         audit: [],
       };
-      return NextResponse.json(
-        await saveRun({
-          ...run,
-          returnToCpuRequired: run.returnToCpuRequired !== false,
-          createdAt: run.createdAt || now,
+      if (!requested.canonicalId || !validOperationalDate(requested.serviceDate)) throw new HttpError(422, "A stable run ID and valid service date are required.");
+      const saved = await runTracedTransaction(async (transaction) => {
+        const ref = runs().doc(requested.canonicalId);
+        const snapshot = await transaction.get(ref);
+        if (snapshot.exists) throw new HttpError(409, "This run already exists. Refresh before creating another run.");
+        const run: DeliveryRun = {
+          canonicalId: requested.canonicalId,
+          serviceDate: requested.serviceDate,
+          status: "draft",
+          driverId: requested.driverId,
+          driverLabel: requested.driverLabel,
+          vehicleLabel: requested.vehicleLabel,
+          returnToCpuRequired: requested.returnToCpuRequired !== false,
+          orderedStopIds: [],
+          version: 1,
+          createdAt: now,
           updatedAt: now,
-          audit: [
-            ...(run.audit || []),
-            { action: "run-created", at: now, by, version: run.version || 1 },
-          ],
-        }),
-      );
+          audit: [{ action: "run-created", at: now, by, version: 1 }],
+        };
+        transaction.create(ref, run);
+        return run;
+      });
+      await recordCanonicalLogisticsChange({ serviceDate: saved.serviceDate, entityType: "run", entityId: saved.canonicalId, changeType: "run-created", revision: saved.version, actorId, by, changedAt: now });
+      return NextResponse.json(saved);
     }
     if (
       [
@@ -1020,36 +1096,60 @@ async function handlePost(request: NextRequest) {
         transaction.set(ref, next);
         return next;
       });
+      await recordCanonicalLogisticsChange({ serviceDate: result.serviceDate, entityType: "run", entityId: result.canonicalId, changeType: body.action, revision: result.version, actorId, by, changedAt: now });
       return NextResponse.json(result);
     }
     if (body.action === "save-movement" && body.movement) {
+      const requested = body.movement;
+      if (!requested.canonicalId || !validOperationalDate(requested.serviceDate) || !requested.items?.length || requested.items.some((item) => !item.description?.trim() || !Number.isFinite(item.quantity) || item.quantity <= 0))
+        throw new HttpError(422, "A stable movement ID, valid service date, and positive item quantities are required.");
+      if ((requested.type !== "collection" && !requested.toOplocId && !requested.toAddress?.trim()) || (requested.type !== "delivery" && !requested.fromOplocId && !requested.fromAddress?.trim()))
+        throw new HttpError(422, "Each required movement endpoint needs a governed OPLOC or one-off address.");
       const oplocs = await fetchOplocs(
         request.headers.get("cookie") || undefined,
       );
       for (const id of [
-        body.movement.fromOplocId,
-        body.movement.toOplocId,
+        requested.fromOplocId,
+        requested.toOplocId,
       ].filter(Boolean) as string[])
         labelFor(oplocs, id);
-      return NextResponse.json(await saveMovement(body.movement));
+      const saved = await runTracedTransaction(async (transaction) => {
+        const ref = movements().doc(requested.canonicalId);
+        const snapshot = await transaction.get(ref);
+        if (snapshot.exists) throw new HttpError(409, "This movement already exists. Refresh before creating another movement.");
+        const movement: MovementRequest = {
+          canonicalId: requested.canonicalId, entityType: "Movement Request", type: requested.type, serviceDate: requested.serviceDate,
+          ...(requested.fromOplocId ? { fromOplocId: requested.fromOplocId } : {}),
+          ...(requested.fromAddress?.trim() ? { fromAddress: requested.fromAddress.trim() } : {}),
+          ...(requested.toOplocId ? { toOplocId: requested.toOplocId } : {}),
+          ...(requested.toAddress?.trim() ? { toAddress: requested.toAddress.trim() } : {}),
+          ...(requested.requiredTime ? { requiredTime: requested.requiredTime } : {}),
+          ...(requested.window ? { window: requested.window } : {}),
+          items: requested.items.map((item) => ({ ...item, description: item.description.trim() })),
+          ...(requested.notes?.trim() ? { notes: requested.notes.trim() } : {}),
+          createdBy: actorId, status: "open", version: 1, createdAt: now, updatedAt: now,
+          audit: [{ action: "movement-created", at: now, by, version: 1 }],
+        };
+        transaction.create(ref, movement);
+        return movement;
+      });
+      await recordCanonicalLogisticsChange({ serviceDate: saved.serviceDate, entityType: "movement", entityId: saved.canonicalId, changeType: "movement-created", revision: saved.version, actorId, by, changedAt: now });
+      return NextResponse.json(saved);
     }
     if (body.action === "update-run" && body.run) {
-      const current = await getRun(body.run!.canonicalId);
-      if (!current) throw new HttpError(404, "Run not found.");
-      if (
-        body.expectedRunVersion !== undefined &&
-        current.version !== body.expectedRunVersion
-      )
-        throw new HttpError(
-          409,
-          "This run changed elsewhere. Refresh before updating it.",
-        );
-      return NextResponse.json(
-        await saveRun({
+      if (body.expectedRunVersion === undefined) throw new HttpError(422, "A current run version is required.");
+      const requestedRun = body.run;
+      const saved = await runTracedTransaction(async (transaction) => {
+        const ref = runs().doc(requestedRun.canonicalId);
+        const snapshot = await transaction.get(ref);
+        if (!snapshot.exists) throw new HttpError(404, "Run not found.");
+        const current = snapshot.data() as DeliveryRun;
+        if (current.version !== body.expectedRunVersion) throw new HttpError(409, "This run changed elsewhere. Refresh before updating it.");
+        const next: DeliveryRun = {
           ...current,
-          driverId: body.run.driverId,
-          driverLabel: body.run.driverLabel,
-          vehicleLabel: body.run.vehicleLabel,
+          driverId: requestedRun.driverId,
+          driverLabel: requestedRun.driverLabel,
+          vehicleLabel: requestedRun.vehicleLabel,
           version: current.version + 1,
           updatedAt: now,
           audit: [
@@ -1061,8 +1161,12 @@ async function handlePost(request: NextRequest) {
               version: current.version + 1,
             },
           ],
-        }),
-      );
+        };
+        transaction.set(ref, next);
+        return next;
+      });
+      await recordCanonicalLogisticsChange({ serviceDate: saved.serviceDate, entityType: "run", entityId: saved.canonicalId, changeType: "run-updated", revision: saved.version, actorId, by, changedAt: now });
+      return NextResponse.json(saved);
     }
     if (
       body.action === "assign-group" &&
@@ -1209,6 +1313,7 @@ async function handlePost(request: NextRequest) {
           skipped,
         };
       });
+      await recordCanonicalLogisticsChange({ serviceDate: result.run.serviceDate, entityType: "run", entityId: result.run.canonicalId, changeType: "requirements-assigned", revision: result.run.version, actorId, by, changedAt: now });
       return NextResponse.json(result);
     }
     if (
@@ -1294,6 +1399,7 @@ async function handlePost(request: NextRequest) {
         transaction.set(runRef, nextRun);
         return nextRun;
       });
+      await recordCanonicalLogisticsChange({ serviceDate: result.serviceDate, entityType: "run", entityId: result.canonicalId, changeType: "requirement-unassigned", revision: result.version, actorId, by, changedAt: now });
       return NextResponse.json(result);
     }
     if (body.action === "unassign-movement" && body.runId && body.movementId) {
@@ -1388,6 +1494,7 @@ async function handlePost(request: NextRequest) {
         });
         return nextRun;
       });
+      await recordCanonicalLogisticsChange({ serviceDate: result.serviceDate, entityType: "movement", entityId: body.movementId, changeType: "movement-unassigned", revision: result.version, actorId, by, changedAt: now });
       return NextResponse.json(result);
     }
     if (body.action === "return-stop-to-planning" && body.runId && body.stopId) {
@@ -1396,11 +1503,9 @@ async function handlePost(request: NextRequest) {
       const result = await runTracedTransaction(async (transaction) => {
         const runRef = runs().doc(body.runId!);
         const targetRef = stops().doc(body.stopId!);
-        const [runSnap, targetSnap, stopSnap, allRunSnap] = await Promise.all([
+        const [runSnap, targetSnap] = await Promise.all([
           transaction.get(runRef),
           transaction.get(targetRef),
-          transaction.get(stops()),
-          transaction.get(runs()),
         ]);
         if (!runSnap.exists || !targetSnap.exists)
           throw new HttpError(404, "Run or stop not found.");
@@ -1412,8 +1517,11 @@ async function handlePost(request: NextRequest) {
         if (target.runId !== run.canonicalId)
           throw new HttpError(422, "The selected stop does not belong to this run.");
 
-        const scoped = stopSnap.docs.map((doc) => normalizeStop(doc.data()));
+        const allRunSnap = await transaction.get(runs().where("serviceDate", "==", run.serviceDate));
         const allRuns = allRunSnap.docs.map((doc) => doc.data() as DeliveryRun);
+        const runIds = allRuns.map((item) => item.canonicalId);
+        const stopSnapshots = await Promise.all(Array.from({ length: Math.ceil(runIds.length / 30) }, (_, index) => transaction.get(stops().where("runId", "in", runIds.slice(index * 30, index * 30 + 30)))));
+        const scoped = stopSnapshots.flatMap((snapshot) => snapshot.docs).map((doc) => normalizeStop(doc.data()));
         const movementIds = new Set(target.movementRequestIds || []);
         const affected = new Map<string, DeliveryStop>();
         const addAffected = (stop: DeliveryStop) => {
@@ -1452,6 +1560,7 @@ async function handlePost(request: NextRequest) {
         });
         return updatedRuns.get(run.canonicalId) || run;
       });
+      await recordCanonicalLogisticsChange({ serviceDate: result.serviceDate, entityType: "stop", entityId: body.stopId, changeType: "returned-to-planning", revision: result.version, actorId, by, changedAt: now });
       return NextResponse.json(result);
     }
     if (
@@ -1569,9 +1678,10 @@ async function handlePost(request: NextRequest) {
             },
           ],
         });
-        return moved;
+        return { stop: moved, serviceDate: target.serviceDate, revision: Math.max(source.version + 1, target.version + 1) };
       });
-      return NextResponse.json(result);
+      await recordCanonicalLogisticsChange({ serviceDate: result.serviceDate, entityType: "stop", entityId: result.stop.canonicalId, changeType: "stop-moved", revision: result.revision, actorId, by, changedAt: now });
+      return NextResponse.json(result.stop);
     }
     if ((body.action === "schedule-stop" || body.action === "clear-stop-schedule") && body.runId && body.stopId) {
       if (body.expectedRunVersion === undefined || body.expectedStopVersion === undefined)
@@ -1611,6 +1721,7 @@ async function handlePost(request: NextRequest) {
         transaction.set(runRef, nextRun);
         return { run: nextRun, stop: nextStop };
       });
+      await recordCanonicalLogisticsChange({ serviceDate: result.run.serviceDate, entityType: "stop", entityId: result.stop.canonicalId, changeType: body.action, revision: result.stop.version, actorId, by, changedAt: now });
       return NextResponse.json(result);
     }
     if (body.action === "assign" && body.runId) {
@@ -1778,6 +1889,7 @@ async function handlePost(request: NextRequest) {
         transaction.set(runRef, nextRun);
         return nextRun;
       });
+      await recordCanonicalLogisticsChange({ serviceDate: result.serviceDate, entityType: body.movementId ? "movement" : "stop", entityId: body.movementId || body.requirementId || result.canonicalId, changeType: "work-assigned", revision: result.version, actorId, by, changedAt: now });
       return NextResponse.json(result);
     }
     if (
@@ -2221,6 +2333,7 @@ async function handlePost(request: NextRequest) {
         transaction.set(runRef, nextRun);
         return { run: nextRun, stop: nextStop };
       });
+      await recordCanonicalLogisticsChange({ serviceDate: result.run.serviceDate, entityType: "stop", entityId: result.stop.canonicalId, changeType: body.action, revision: result.stop.version, actorId, by, changedAt: now });
       return NextResponse.json(result);
     }
     if (body.action === "update-stop" && body.stop) {
@@ -2295,12 +2408,13 @@ async function handlePost(request: NextRequest) {
         transaction.set(runRef, next);
         return next;
       });
+      await recordCanonicalLogisticsChange({ serviceDate: result.serviceDate, entityType: "run", entityId: result.canonicalId, changeType: "stops-reordered", revision: result.version, actorId, by, changedAt: now });
       return NextResponse.json(result);
     }
     throw new HttpError(400, "Unknown Logistics action.");
   } catch (error) {
     const status = error instanceof HttpError ? error.status : 400;
-    return errorResponse(Object.assign(error instanceof Error ? error : new Error(messageOf(error)), { status }), request.headers.get("x-request-id") || undefined);
+    return errorResponse(Object.assign(error instanceof Error ? error : new Error(messageOf(error)), { status }), request.headers.get("x-request-id") || undefined, diagnostic);
   }
 }
 
@@ -2312,7 +2426,11 @@ async function handleGet(request: NextRequest) {
     response.headers.set("Cache-Control", "no-store, max-age=0");
     return response;
   } catch (error) {
-    return errorResponse(error, request.headers.get("x-request-id") || undefined);
+    return errorResponse(error, request.headers.get("x-request-id") || undefined, {
+      operation: request.nextUrl.searchParams.get("projection") === "1" ? "projection.read" : request.nextUrl.searchParams.get("syncHead") === "1" ? "sync-head.read" : "logistics.read",
+      serviceDate: request.nextUrl.searchParams.get("serviceDate") || undefined,
+      projectionSequence: Number(request.nextUrl.searchParams.get("changesSince")) || undefined,
+    });
   }
 }
 

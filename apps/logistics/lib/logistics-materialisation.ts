@@ -5,6 +5,7 @@ import {
   appendLogisticsChange,
   getLogisticsProjection,
   listDeliveryLoadState,
+  listCollectionPreferenceKeys,
   listState,
   logisticsJobs,
   saveLogisticsJob,
@@ -54,16 +55,20 @@ export function logisticsJobMaterialisationEqual(left: LogisticsJob, right: Logi
 
 /** Rebuild from Logistics-owned records without reading upstream systems. */
 export async function rebuildLogisticsProjection(serviceDate: string, _actorId: string, lastChangeSequence?: number) {
-  const [state, legacyState, previous] = await Promise.all([
+  const [state, legacyState, previous, collectionRequiredKeys] = await Promise.all([
     listDeliveryLoadState(serviceDate),
     listState(serviceDate),
     getLogisticsProjection(serviceDate),
+    listCollectionPreferenceKeys(serviceDate),
   ]);
   const effectiveSequence = Math.max(lastChangeSequence || 0, previous?.lastChangeSequence || 0);
   return saveLogisticsProjection(buildLogisticsDayProjection({
     serviceDate,
     ...state,
     runs: legacyState.runs,
+    stops: legacyState.stops,
+    movements: legacyState.movements,
+    collectionRequiredKeys,
     lastChangeSequence: effectiveSequence,
     now: new Date().toISOString(),
     revision: Math.max(previous?.revision || 0, effectiveSequence) + 1,

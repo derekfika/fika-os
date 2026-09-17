@@ -7,6 +7,14 @@
         { "fieldPath": "serviceDate", "order": "ASCENDING" },
         { "fieldPath": "sequence", "order": "ASCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "fikaLogisticsCollectionPreferencesV1",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "serviceDate", "order": "ASCENDING" },
+        { "fieldPath": "collectionRequired", "order": "ASCENDING" }
+      ]
     }
   ],
   "fieldOverrides": []
