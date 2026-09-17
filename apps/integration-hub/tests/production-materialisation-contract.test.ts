@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { parseExternalProductionMaterialisation } from "../lib/production-materialisation-contract";
+import { parseExternalProductionMaterialisation } from "@fika/server-shared/external-production";
 
 test("the Menu Planning publisher payload, including publicationId, is accepted by the Hub contract", () => {
   const payload = {

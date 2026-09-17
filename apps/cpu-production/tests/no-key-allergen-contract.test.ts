@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 import { CANONICAL_ALLERGEN_KEYS, deriveNoKeyAllergens, type CanonicalAllergenMap } from "../../shared/allergen-contract";
 import { buildPublishedDay, buildCompiledPublicationSnapshot, type MenuPublication } from "../../menu-planning/lib/menu-publication";
-import { parseExternalProductionMaterialisation } from "../../integration-hub/lib/production-materialisation-contract";
+import { parseExternalProductionMaterialisation } from "@fika/server-shared/external-production";
 import { allergenMatrixContentHash } from "../lib/cpu-allergen-release";
 import { buildCpuPacketItems } from "../lib/cpu-packet-identity";
 import { buildCpuReviewProjection } from "../lib/cpu-review-package";
