@@ -199,19 +199,20 @@ export function movementQueueState(movement: PlannerMovementView, runs: PlannerR
 
 export type PlannerWeekSummary = {
   serviceDate: string;
-  loads: number;
-  ready: number;
-  unplanned: number;
-  runs: number;
+  loads?: number;
+  ready?: number;
+  unplanned?: number;
+  runs?: number;
   scheduled?: number;
   needsTime?: number;
   queue?: number;
-  attention: number;
-  completedStops: number;
-  stopCount: number;
+  attention?: number;
+  completedStops?: number;
+  stopCount?: number;
   deliveries?: number;
   collections?: number;
   transfers?: number;
+  projectionState: "CURRENT" | "STALE" | "PARTIAL" | "UNAVAILABLE" | "MISSING" | "VALID_EMPTY";
 };
 
 const sourceLabels: Record<FulfilmentRequirement["sourceDomain"], string> = {

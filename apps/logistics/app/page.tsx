@@ -17,7 +17,7 @@ import type {
   PlannerWorkGroup,
   PlannerWeekSummary,
 } from "../lib/planner-read-model";
-import type { LogisticsDayProjection } from "../lib/types";
+import type { LogisticsDayProjection, LogisticsProjectionState } from "../lib/types";
 import { projectionToDashboardData } from "../lib/projection-dashboard-adapter";
 import { operationalDate } from "../lib/date";
 import { clientErrorDetails, requireSuccessfulResponse } from "../lib/client-errors";
@@ -87,8 +87,10 @@ const blank: Draft = {
 };
 
 export default function Planner() {
-  const [date, setDate] = useState(operationalDate());
-  const [weekCommencing, setWeekCommencing] = useState(mondayOf(operationalDate()));
+  // Keep the server render deterministic. The operational date and saved view
+  // are browser state and are resolved only after hydration.
+  const [date, setDate] = useState("");
+  const [weekCommencing, setWeekCommencing] = useState("");
   const [viewPreferencesReady, setViewPreferencesReady] = useState(false);
   const [weekData, setWeekData] = useState<WeekData>();
   const [data, setData] = useState<Data>();
@@ -118,10 +120,11 @@ export default function Planner() {
   const [showRunCreate, setShowRunCreate] = useState(false);
   const [queueFilter, setQueueFilter] = useState<"all" | "unassigned" | "needs_time" | "attention">("all");
   const [queueTypeFilter, setQueueTypeFilter] = useState<"all" | "delivery" | "collection" | "transfer">("all");
+  const [projectionState, setProjectionState] = useState<LogisticsProjectionState | "LOADING">("LOADING");
 
   const recordError = (cause: unknown, fallback: string) => {
     const details = clientErrorDetails(cause, fallback);
-    if ([401, 403, 503].includes(details.status)) requestsBlocked.current = true;
+    if ([401, 403].includes(details.status)) requestsBlocked.current = true;
     if ([401, 403].includes(details.status)) setAuthRequired(true);
     setError(details.message);
     setErrorReference(details.requestId || "");
@@ -149,6 +152,7 @@ export default function Planner() {
 
   const load = async (silent = false) => {
     if (requestsBlocked.current) return;
+    if (!date) return;
     if (silent) setRefreshing(true);
     let cached: LogisticsDayProjection | undefined;
     let cacheScope = "";
@@ -158,9 +162,12 @@ export default function Planner() {
       cacheScope = headResponse.headers.get("x-logistics-cache-scope") || "";
       if (cacheScope) {
         cached = await readCachedProjection(cacheScope, date);
-        if (cached) { setData({ ...projectionToDashboardData(cached), projection: cached }); }
+        if (cached) {
+          setData({ ...projectionToDashboardData(cached), projection: cached });
+          setProjectionState(cached.state || "CURRENT");
+        }
       }
-      if (cached && Number(head.sequence) === cached.lastChangeSequence) {
+      if (cached && Number(head.sequence) === cached.lastChangeSequence && cached.state !== "STALE") {
         setLastUpdated(new Date().toISOString());
         setError("");
         return;
@@ -173,12 +180,14 @@ export default function Planner() {
       if (!projection && body.state === "EMPTY") {
         projection = emptyProjection(date);
         setData({ ...projectionToDashboardData(projection), projection });
+        setProjectionState("VALID_EMPTY");
         setLastUpdated(new Date().toISOString());
         setError("");
         return;
       }
       if (!projection) throw new Error("Logistics projection is unavailable.");
       setData({ ...projectionToDashboardData(projection), projection });
+      setProjectionState((body.projectionState || projection.state || "CURRENT") as LogisticsProjectionState);
       if (cacheScope) await writeCachedProjection(cacheScope, projection);
       setLastUpdated(new Date().toISOString());
       setError("");
@@ -192,6 +201,11 @@ export default function Planner() {
         if (cacheScope) await writeCachedProjection(cacheScope, drained.latestProjection);
       }
     } catch (cause) {
+      if (cached) setProjectionState("STALE");
+      else {
+        setData(undefined);
+        setProjectionState("UNAVAILABLE");
+      }
       recordError(cause, cached ? "Sync failed; showing the last valid Logistics projection." : "Logistics projection could not be loaded.");
     } finally {
       if (silent) setRefreshing(false);
@@ -223,6 +237,8 @@ export default function Planner() {
     }
     // Render the selected day immediately. Vehicle-day provisioning runs in
     // the background and must not trigger a second full dashboard load.
+    setData(undefined);
+    setProjectionState("LOADING");
     void load();
     if (!requestsBlocked.current) void ensureVehicleDayRuns(requestedDate || date);
     const liveChannel = typeof BroadcastChannel === "undefined" ? undefined : new BroadcastChannel("fika-logistics-live");
@@ -398,6 +414,10 @@ export default function Planner() {
     });
   };
 
+  if (!viewPreferencesReady || !date || !weekCommencing) {
+    return <main className="mock-tower real-planner"><div className="mock-canvas"><section className="mock-heading" aria-busy="true"><h1>Logistics</h1><p>Loading operational workspace…</p></section></div></main>;
+  }
+
   return <RealPlanner
     date={date}
     weekCommencing={weekCommencing}
@@ -420,6 +440,7 @@ export default function Planner() {
     runs={runs}
     groups={groups}
     movements={movements}
+    projectionState={projectionState}
     inspector={inspector}
     assigning={assigning}
     targetRun={targetRun}
@@ -601,6 +622,7 @@ type RealPlannerProps = {
   weekCommencing: string;
   weekData?: WeekData;
   data?: Data;
+  projectionState: LogisticsProjectionState | "LOADING";
   error: string;
   errorReference: string;
   authRequired: boolean;
@@ -740,8 +762,11 @@ function RealPlanner(props: RealPlannerProps) {
   const filteredGroups = groups.filter((group) => queueStateForGroup(group) !== "scheduled" && includeState(queueStateForGroup(group)) && includeType("delivery"));
   const filteredMovements = movements.filter((movement) => queueStateForMovement(movement) !== "scheduled" && includeState(queueStateForMovement(movement)) && includeType(movement.type));
   const summary = data?.planner.summary;
+  const metricsReady = props.projectionState === "CURRENT" || props.projectionState === "VALID_EMPTY";
+  const metric = (value: number | undefined) => metricsReady && value !== undefined ? value : "—";
   const queueGroups = groups.filter((group) => queueStateForGroup(group) !== "scheduled");
   const queueMovements = movements.filter((movement) => queueStateForMovement(movement) !== "scheduled");
+  const queueCount = metricsReady ? queueGroups.length + queueMovements.length : "—";
   const countFor = (filter: RealPlannerProps["queueFilter"]) => filter === "all" ? queueGroups.length + queueMovements.length : groups.filter((group) => queueStateForGroup(group) === filter).length + movements.filter((movement) => queueStateForMovement(movement) === filter).length;
   const selectedDateLabel = formatOperationalDate(date, { weekday: "long", day: "numeric", month: "long" }).toUpperCase();
   const scheduleStop = (sourceRunId: string, stopId: string, targetRunId: string, time: string, end?: string, lane?: "delivery" | "collection") => {
@@ -859,15 +884,15 @@ function RealPlanner(props: RealPlannerProps) {
     <div className="mock-canvas">
       <section className="mock-heading"><h1>Logistics</h1><p>Plan and dispatch daily deliveries.</p></section>
       <section className="mock-week-nav" aria-label="Operational week navigation"><button aria-label="Previous week" onClick={() => { const next = addOperationalDays(weekCommencing, -7); props.setWeekCommencing(next); props.setDate(next); }}>‹</button><strong>WC {formatWeekRange(weekCommencing)}</strong><button className="mock-this-week" onClick={() => { const next = mondayOf(operationalDate()); props.setWeekCommencing(next); props.setDate(next); }}>This week</button><button aria-label="Next week" onClick={() => { const next = addOperationalDays(weekCommencing, 7); props.setWeekCommencing(next); props.setDate(next); }}>›</button></section>
-      <section className="mock-day-cards" aria-label="Operational week">{operationalWeek(weekCommencing).map((day) => { const item = weekData?.days.find((summaryItem) => summaryItem.serviceDate === day); return <button key={day} className={day === date ? "selected" : ""} aria-pressed={day === date} onClick={() => props.setDate(day)}><div className="mock-day-title"><strong>{formatOperationalDate(day, { weekday: "short", day: "numeric", month: "short" })}</strong>{day === date && <b>✓</b>}</div><div className="mock-day-metrics"><span><i className="purple-dot" />{item?.loads || 0} loads</span><span><i className="purple-dot" />{item?.scheduled || 0} scheduled</span><span><i className="green-dot" />{item?.queue || 0} in queue</span><span><i className="blue-dot" />{item?.needsTime || 0} needs time</span><span><i className="red-dot" />{item?.attention || 0} attention</span></div></button>; })}</section>
+      <section className="mock-day-cards" aria-label="Operational week">{operationalWeek(weekCommencing).map((day) => { const item = weekData?.days.find((summaryItem) => summaryItem.serviceDate === day); const weekMetricsReady = item?.projectionState === "CURRENT" || item?.projectionState === "VALID_EMPTY"; const weekMetric = (value: number | undefined) => weekMetricsReady && value !== undefined ? value : "—"; return <button key={day} className={day === date ? "selected" : ""} aria-pressed={day === date} onClick={() => props.setDate(day)}><div className="mock-day-title"><strong>{formatOperationalDate(day, { weekday: "short", day: "numeric", month: "short" })}</strong>{day === date && <b>✓</b>}</div><div className="mock-day-metrics"><span><i className="purple-dot" />{weekMetric(item?.loads)} loads</span><span><i className="purple-dot" />{weekMetric(item?.scheduled)} scheduled</span><span><i className="green-dot" />{weekMetric(item?.queue)} in queue</span><span><i className="blue-dot" />{weekMetric(item?.needsTime)} needs time</span><span><i className="red-dot" />{weekMetric(item?.attention)} attention</span></div></button>; })}</section>
       <div className="mock-updated">{props.refreshing ? "Refreshing…" : props.data?.fetchedAt ? `Last updated ${new Date(props.data.fetchedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}` : "Waiting for data"}<Health health={data?.planner.upstreamHealth} /></div>
-      {props.error && <div className="alert" role="alert"><span>{props.error}{props.errorReference && <> <small>Reference: {props.errorReference}</small></>}</span>{props.authRequired && <button className="secondary" onClick={props.onSignInAgain}>Sign in again</button>}</div>}
+      {props.error && <div className="alert" role="alert"><span>{props.error}{props.errorReference && <> <small>Reference: {props.errorReference}</small></>}</span><button className="secondary" onClick={() => void props.load(true)} disabled={props.refreshing}>Try again</button>{props.authRequired && <button className="secondary" onClick={props.onSignInAgain}>Sign in again</button>}</div>}
       {props.showMovement && <MovementForm draft={props.draft} setDraft={props.setDraft} oplocs={data?.oplocs || []} onClose={() => props.setShowMovement(false)} onSave={props.createMovement} busy={props.busy} />}
-      <section className="mock-selected-day"><div><span>▣</span><strong>{selectedDateLabel}</strong><small>{summary?.loads || 0} loads · {runs.length} vans &nbsp;·&nbsp; {summary?.scheduledStops || 0} scheduled · {queueGroups.length + queueMovements.length} in queue · {summary?.needsTime || 0} needs time · {summary?.attention || 0} attention</small></div><div className="mock-actions"><button onClick={() => props.setShowMovement(true)} disabled={!data?.planner.upstreamHealth.oplocs.available}>＋ New movement</button><button onClick={() => void props.load(true)} disabled={props.refreshing} aria-busy={props.refreshing}>{props.refreshing ? "Refreshing…" : "↻ Refresh"}</button><a href={runs.length === 1 ? `/mobile?run=${encodeURIComponent(runs[0].runId)}` : "/mobile"}>▦ Driver view</a></div></section>
+      <section className="mock-selected-day"><div><span>▣</span><strong>{selectedDateLabel}</strong><small>{metric(summary?.loads)} loads · {metricsReady ? runs.length : "—"} vans &nbsp;·&nbsp; {metric(summary?.scheduledStops)} scheduled · {queueCount} in queue · {metric(summary?.needsTime)} needs time · {metric(summary?.attention)} attention</small></div><div className="mock-actions"><button onClick={() => props.setShowMovement(true)} disabled={!data?.planner.upstreamHealth.oplocs.available}>＋ New movement</button><button onClick={() => void props.load(true)} disabled={props.refreshing} aria-busy={props.refreshing}>{props.refreshing ? "Refreshing…" : "↻ Refresh"}</button><a href={runs.length === 1 ? `/mobile?run=${encodeURIComponent(runs[0].runId)}` : "/mobile"}>▦ Driver view</a></div></section>
       {props.showRunCreate && <RunCreatePopover driverId={props.newRunDriverId} setDriverId={props.setNewRunDriverId} driverOptions={props.data?.runs || []} returnToCpuRequired={props.newRunReturnToCpu} setReturnToCpuRequired={props.setNewRunReturnToCpu} onCreate={props.createRun} onClose={() => props.setShowRunCreate(false)} />}
       <section className="mock-workspace">
         <aside className="mock-queue" aria-label="Planning queue" onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = "move"; }} onDrop={handlePlanningQueueDrop}>
-          <header><div><span>QUEUE</span><h2>Planning queue <em>({queueGroups.length + queueMovements.length})</em></h2><p className="queue-subtitle">Work still needing assignment, timing or review.</p></div><button className="mock-filter-icon">⌯</button></header>
+          <header><div><span>QUEUE</span><h2>Planning queue <em>({queueCount})</em></h2><p className="queue-subtitle">Work still needing assignment, timing or review.</p></div><button className="mock-filter-icon">⌯</button></header>
           <div className="mock-filter-pills" role="tablist" aria-label="Planning queue state">
             <button className={props.queueFilter === "all" ? "active" : ""} onClick={() => props.setQueueFilter("all")}>All <b>{countFor("all")}</b></button>
             <button className={props.queueFilter === "unassigned" ? "active" : ""} onClick={() => props.setQueueFilter("unassigned")}>Unassigned <b>{countFor("unassigned")}</b></button>
@@ -876,14 +901,15 @@ function RealPlanner(props: RealPlannerProps) {
           </div>
           <div className="mock-secondary-filter"><label>Type <select value={props.queueTypeFilter} onChange={(event) => props.setQueueTypeFilter(event.target.value as RealPlannerProps["queueTypeFilter"])}><option value="all">All work</option><option value="delivery">Delivery</option><option value="collection">Collection</option><option value="transfer">Transfer</option></select></label></div>
           <div className="mock-queue-list">
-            {!data && <Empty title="Loading operational work" body="Connecting to upstream work and vehicles." />}
+            {!data && <Empty title={props.projectionState === "LOADING" ? "Loading operational work" : "Operational work unavailable"} body={props.projectionState === "LOADING" ? "Waiting for the materialised Logistics projection." : "The authoritative projection could not be loaded. Use Try again to retry."} />}
             {data && !data.planner.upstreamHealth.fulfilment.available && <div className="degraded-note">Incoming work is unavailable; existing vehicle schedules remain visible.</div>}
+            {data && props.projectionState !== "CURRENT" && props.projectionState !== "VALID_EMPTY" && <div className="degraded-note">This queue is from a non-current materialised view. Refresh before dispatching.</div>}
             {data && !filteredGroups.length && !filteredMovements.length && <Empty title="No work in this queue" body="Fully scheduled work stays on the dispatch timeline." />}
             {filteredGroups.map((group) => <RealQueueGroup key={group.groupKey} group={group} runs={runs} queueState={queueStateForGroup(group)} assigning={props.assigning === group.groupKey} targetRun={props.targetRun} onInspect={() => props.setInspector({ kind: "group", id: group.groupKey })} onAssign={() => { props.setAssigning(group.groupKey); props.setTargetRun(runs.length === 1 ? runs[0].runId : ""); props.setInspector({ kind: "group", id: group.groupKey }); }} setTargetRun={props.setTargetRun} onConfirm={() => props.assignGroup(group)} onDragStart={(event) => queueDragStart(event, { kind: "group", id: group.groupKey, label: group.destinationLabel, type: "Delivery", load: group.unitBreakdown.map((item) => `${item.quantity} ${item.unit}`).join(" · ") })} />)}
             {filteredMovements.map((movement) => <RealQueueMovement key={movement.movementId} movement={movement} runs={runs} queueState={queueStateForMovement(movement)} assigning={props.assigning === movement.movementId} targetRun={props.targetRun} onInspect={() => props.setInspector({ kind: "movement", id: movement.movementId })} onAssign={() => { props.setAssigning(movement.movementId); props.setTargetRun(runs.length === 1 ? runs[0].runId : ""); props.setInspector({ kind: "movement", id: movement.movementId }); }} setTargetRun={props.setTargetRun} onConfirm={() => props.assignMovement(movement)} onDragStart={(event) => queueDragStart(event, { kind: "movement", id: movement.movementId, label: movement.to?.label || movement.from?.label || "Movement", type: typeText(movement.type), load: movement.items.map((item) => `${item.quantity} × ${item.description}`).join(" · ") })} />)}
           </div>
         </aside>
-        <section className="mock-schedule" aria-label="Dispatch schedule"><header className="mock-schedule-head"><div><span>PLANNING SURFACE · {selectedDateLabel}</span><h2>Dispatch schedule</h2></div><strong>{runs.length} vehicles · {summary?.scheduledStops || 0} scheduled · {summary?.needsTime || 0} needs time</strong></header><div className="mock-legend"><span><i className="green-dot" /> Delivery</span><span><i className="blue-dot" /> Collection</span><span><i className="amber-dot" /> Transfer</span><span><i className="red-dot" /> Attention</span></div><DayPilotTimeline runs={runs} serviceDate={date} onStop={(runId, stopId) => props.setInspector({ kind: "stop", id: stopId, runId })} onSchedule={scheduleStop} onQueueDrop={(kind, id, runId, time, lane, collectionRequired) => assignQueueItem(kind, id, runId, time, lane, collectionRequired)} /><RealScheduleSummary planner={data?.planner} /></section>
+        <section className="mock-schedule" aria-label="Dispatch schedule"><header className="mock-schedule-head"><div><span>PLANNING SURFACE · {selectedDateLabel}</span><h2>Dispatch schedule</h2></div><strong>{metricsReady ? runs.length : "—"} vehicles · {metric(summary?.scheduledStops)} scheduled · {metric(summary?.needsTime)} needs time</strong></header><div className="mock-legend"><span><i className="green-dot" /> Delivery</span><span><i className="blue-dot" /> Collection</span><span><i className="amber-dot" /> Transfer</span><span><i className="red-dot" /> Attention</span></div>{!data && <Empty title={props.projectionState === "LOADING" ? "Loading dispatch schedule" : "Dispatch schedule unavailable"} body={props.projectionState === "LOADING" ? "Waiting for the materialised Logistics projection." : "The authoritative projection could not be loaded."} />}{data && props.projectionState !== "CURRENT" && props.projectionState !== "VALID_EMPTY" && <div className="degraded-note">This materialised view is not current. Refresh before dispatching.</div>}{data && <DayPilotTimeline runs={runs} serviceDate={date} onStop={(runId, stopId) => props.setInspector({ kind: "stop", id: stopId, runId })} onSchedule={scheduleStop} onQueueDrop={(kind, id, runId, time, lane, collectionRequired) => assignQueueItem(kind, id, runId, time, lane, collectionRequired)} />}<RealScheduleSummary planner={data?.planner} /></section>
       </section>
     </div>
     {props.inspector && data && <Inspector selection={props.inspector} planner={data.planner} projection={data.projection} rawRequirements={data.requirements} rawStops={data.stops} onClose={() => props.setInspector(undefined)} onAction={handleInspectorAction} runs={runs} targetRun={props.targetRun} setTargetRun={props.setTargetRun} assigning={props.assigning} setAssigning={props.setAssigning} onAssignGroup={props.assignGroup} onAssignMovement={props.assignMovement} />}
@@ -1637,6 +1663,11 @@ function WeekStrip({
   summaries: PlannerWeekSummary[];
   onSelect: (date: string) => void;
 }) {
+  const weekMetric = (summary: PlannerWeekSummary | undefined, key: "loads" | "runs" | "deliveries" | "collections" | "transfers" | "attention") => {
+    const ready = summary?.projectionState === "CURRENT" || summary?.projectionState === "VALID_EMPTY";
+    const value = summary?.[key];
+    return ready && value !== undefined ? value : "—";
+  };
   return (
     <section className="week-strip" aria-label="Operational week">
       {operationalWeek(weekCommencing).map((date) => {
@@ -1658,9 +1689,9 @@ function WeekStrip({
                 month: "short",
               }).toUpperCase()}
             </strong>
-            <span className="week-card-primary">{summary?.loads || 0} loads <b>·</b> {summary?.runs || 0} runs</span>
-            <span>{summary?.deliveries || 0} deliveries · {summary?.collections || 0} collections</span>
-            <span className={summary?.attention ? "week-attention" : ""}>{summary?.transfers || 0} transfers · {summary?.attention || 0} attention</span>
+            <span className="week-card-primary">{weekMetric(summary, "loads")} loads <b>·</b> {weekMetric(summary, "runs")} runs</span>
+            <span>{weekMetric(summary, "deliveries")} deliveries · {weekMetric(summary, "collections")} collections</span>
+            <span className={summary?.projectionState === "CURRENT" && (summary.attention || 0) > 0 ? "week-attention" : ""}>{weekMetric(summary, "transfers")} transfers · {weekMetric(summary, "attention")} attention</span>
           </button>
         );
       })}
@@ -1690,8 +1721,8 @@ function SelectedDayHeading({
         </h2>
       </div>
       <span className="day-summary-line">
-        {planner?.summary.requirements ?? 0} loads · {planner?.runs.length ?? 0} runs<br />
-        {planner?.summary.deliveries ?? 0} deliveries · {planner?.summary.collections ?? 0} collections · {planner?.summary.transfers ?? 0} transfers · {planner?.summary.unplanned ?? 0} unassigned · {planner?.summary.attention ?? 0} attention
+        {planner ? planner.summary.requirements : "—"} loads · {planner ? planner.runs.length : "—"} runs<br />
+        {planner ? planner.summary.deliveries : "—"} deliveries · {planner ? planner.summary.collections : "—"} collections · {planner ? planner.summary.transfers : "—"} transfers · {planner ? planner.summary.unplanned : "—"} unassigned · {planner ? planner.summary.attention : "—"} attention
       </span>
       {children}
     </div>

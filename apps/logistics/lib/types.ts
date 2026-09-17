@@ -101,6 +101,7 @@ export type LogisticsJob = {
   sourceType: string;
   sourceId: string;
   sourceVersion?: number;
+  sourceContentHash?: string;
   serviceDate: string;
   originOplocId?: string;
   destinationOplocId?: string;

@@ -3,14 +3,18 @@ import { recordDataAccess } from "@fika/server-shared/data-source-meter-client";
 
 const DATABASE = "fika-logistics-cache";
 const STORE = "day-projections";
-const VERSION = 2;
+export const LOGISTICS_CACHE_VERSION = 2;
 type CacheRecord = { scope: string; vehicle?: string; serviceDate: string; projection: LogisticsDayProjection; savedAt: string };
+
+export function upgradeLogisticsCacheSchema(database: Pick<IDBDatabase, "objectStoreNames" | "createObjectStore">) {
+  if (!database.objectStoreNames.contains(STORE)) database.createObjectStore(STORE, { keyPath: ["scope", "serviceDate"] });
+}
 
 function openCache(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
     if (typeof indexedDB === "undefined") return reject(new Error("IndexedDB unavailable"));
-    const request = indexedDB.open(DATABASE, VERSION);
-    request.onupgradeneeded = () => request.result.createObjectStore(STORE, { keyPath: ["scope", "serviceDate"] });
+    const request = indexedDB.open(DATABASE, LOGISTICS_CACHE_VERSION);
+    request.onupgradeneeded = () => upgradeLogisticsCacheSchema(request.result);
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => reject(request.error || new Error("IndexedDB open failed"));
   });

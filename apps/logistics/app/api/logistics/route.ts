@@ -37,13 +37,12 @@ import {
   listPlanningAttention,
   getLogisticsSyncHead,
   listLogisticsChanges,
-  saveLogisticsProjection,
   repairLegacyAssignmentServiceDates,
 } from "@/lib/store";
 import { assignJob, assertDispatchable, createLoad, removeAssignment, setJobCollectionStatus } from "@/lib/delivery-loads";
 import { CPU_PRODUCTION_LOCATION_ID, CPU_SITE_OPLOC_ID } from "../../../../shared/production-location";
-import { buildLogisticsDayProjection } from "@/lib/logistics-projection";
 import { filterLogisticsProjectionForVehicle } from "@/lib/logistics-projection";
+import { rebuildLogisticsProjection as materialiseRebuildLogisticsProjection, reconcileLogisticsDay as materialiseLogisticsDay } from "@/lib/logistics-materialisation";
 import { projectionToDashboardData } from "@/lib/projection-dashboard-adapter";
 import {
   assignMovementStops,
@@ -277,8 +276,7 @@ async function classifyMissingProjection(serviceDate: string, cookie?: string) {
 }
 
 async function rebuildLogisticsProjection(serviceDate: string, actorId: string, lastChangeSequence?: number) {
-  const [state, legacyState] = await Promise.all([listDeliveryLoadState(serviceDate), listState(serviceDate)]);
-  return saveLogisticsProjection(buildLogisticsDayProjection({ serviceDate, ...state, runs: legacyState.runs, lastChangeSequence, now: new Date().toISOString(), revision: Date.now() }));
+  return materialiseRebuildLogisticsProjection(serviceDate, actorId, lastChangeSequence);
 }
 
 async function reconcileLogisticsDay(serviceDate: string, by: string, actorId = "system:read-reconcile", cookie?: string) {
@@ -456,6 +454,7 @@ async function getLogistics(request: NextRequest) {
         deliveries: planner.summary.deliveries,
         collections: planner.summary.collections,
         transfers: planner.summary.transfers,
+        projectionState: "CURRENT" as const,
       };
     });
     return NextResponse.json({ weekCommencing: dates[0], days: summaries });
@@ -608,7 +607,7 @@ async function handlePost(request: NextRequest) {
       return NextResponse.json({ projection, metrics: { projectionRebuildMs: Math.round(performance.now() - startedAt) } });
     }
     if (body.action === "reconcile-logistics-day" && body.serviceDate) {
-      const result = await reconcileLogisticsDay(body.serviceDate, by, actorId, request.headers.get("cookie") || undefined);
+      const result = await materialiseLogisticsDay(body.serviceDate, by, actorId, request.headers.get("cookie") || undefined);
       return NextResponse.json({ ...result, warning: result.requirements.some((item) => !item.productionLocationId) ? "Some jobs have no canonical origin OPLOC and remain safely unassigned." : undefined });
     }
     if (body.action === "save-logistics-job" && body.job) {

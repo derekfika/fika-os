@@ -154,6 +154,7 @@ export async function invalidateLogisticsProjection(change: LogisticsProjectionI
 }
 export async function getLogisticsProjection(serviceDate: string) { const snapshot = await logisticsDayProjections().doc(serviceDate).get(); recordDataAccess({ app: "logistics", operation: "projection.by-service-date", source: "FIRESTORE", documents: snapshot.exists ? 1 : 0, firestoreReadKind: "document" }); reportRead(`projection:${serviceDate}`, snapshot.exists ? 1 : 0); return snapshot.exists ? snapshot.data() as LogisticsDayProjection : undefined; }
 export function summarizeLogisticsProjection(serviceDate: string, projection?: LogisticsDayProjection) {
+  if (!projection) return { serviceDate, projectionState: "MISSING" as const };
   const loads = projection?.deliveryLoads || [];
   const scheduled = loads.filter((load) => Boolean(load.scheduledTime)).length;
   return {
@@ -163,6 +164,7 @@ export function summarizeLogisticsProjection(serviceDate: string, projection?: L
     scheduled, needsTime: loads.length - scheduled, runs: projection?.runs.length || 0,
     attention: projection?.exceptions.length || 0, completedStops: loads.filter((load) => load.status === "delivered").length,
     stopCount: loads.length, deliveries: loads.length, collections: 0, transfers: 0,
+    projectionState: projection.state || "CURRENT",
   };
 }
 export async function listLogisticsProjectionSummaries(serviceDates: string[]) {

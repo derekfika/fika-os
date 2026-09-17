@@ -1,0 +1,146 @@
+import type { FulfilmentRequirement } from "../../shared/fulfilment-requirement";
+import { CPU_PRODUCTION_LOCATION_ID, CPU_SITE_OPLOC_ID } from "../../shared/production-location";
+import { buildLogisticsDayProjection, type LogisticsProjectionInvalidation } from "./logistics-projection";
+import {
+  appendLogisticsChange,
+  getLogisticsProjection,
+  listDeliveryLoadState,
+  listState,
+  logisticsJobs,
+  saveLogisticsJob,
+  saveLogisticsProjection,
+} from "./store";
+import { fetchOplocs, fetchProductionContexts, fetchRequirements, type ProductionContext } from "./upstream";
+import type { LogisticsJob } from "./types";
+
+function productionIsCancelled(production: ProductionContext) {
+  return production.status === "cancelled" || production.workflowStatus === "cancelled";
+}
+
+export function activeLogisticsRequirements(requirements: FulfilmentRequirement[], production: ProductionContext[]) {
+  const currentProductionIds = new Set(production.map((item) => item.canonicalId));
+  return requirements.filter((requirement) => {
+    if (requirement.status === "withdrawn") return false;
+    // The CPU site fulfils its own demand locally. Movement Requests remain a
+    // separate Logistics-owned collection and are not filtered here.
+    if (requirement.destinationOplocId === CPU_SITE_OPLOC_ID) return false;
+    if (requirement.sourceDomain !== "cpu-production") return true;
+    if (!currentProductionIds.has(requirement.sourceEntityId)) return false;
+    const current = production.find((item) => item.canonicalId === requirement.sourceEntityId);
+    return Boolean(current && !productionIsCancelled(current));
+  });
+}
+
+function jobMaterialisationContent(job: LogisticsJob) {
+  return JSON.stringify({
+    sourceType: job.sourceType,
+    sourceId: job.sourceId,
+    sourceVersion: job.sourceVersion,
+    sourceContentHash: job.sourceContentHash,
+    serviceDate: job.serviceDate,
+    originOplocId: job.originOplocId,
+    destinationOplocId: job.destinationOplocId,
+    destinationLabelSnapshot: job.destinationLabelSnapshot,
+    requestedWindow: job.requestedWindow,
+    productionReadiness: job.productionReadiness,
+    contents: job.contents,
+    notes: job.notes,
+  });
+}
+
+export function logisticsJobMaterialisationEqual(left: LogisticsJob, right: LogisticsJob) {
+  return jobMaterialisationContent(left) === jobMaterialisationContent(right);
+}
+
+/** Rebuild from Logistics-owned records without reading upstream systems. */
+export async function rebuildLogisticsProjection(serviceDate: string, _actorId: string, lastChangeSequence?: number) {
+  const [state, legacyState, previous] = await Promise.all([
+    listDeliveryLoadState(serviceDate),
+    listState(serviceDate),
+    getLogisticsProjection(serviceDate),
+  ]);
+  const effectiveSequence = Math.max(lastChangeSequence || 0, previous?.lastChangeSequence || 0);
+  return saveLogisticsProjection(buildLogisticsDayProjection({
+    serviceDate,
+    ...state,
+    runs: legacyState.runs,
+    lastChangeSequence: effectiveSequence,
+    now: new Date().toISOString(),
+    revision: Math.max(previous?.revision || 0, effectiveSequence) + 1,
+  }));
+}
+
+/** Materialise one bounded service day from Hub fulfilment, CPU context and governed OPLOCs. */
+export async function reconcileLogisticsDay(serviceDate: string, by: string, actorId = "system:reconcile", cookie?: string, sourceChange?: LogisticsProjectionInvalidation) {
+  const [requirements, production, oplocs, existingState] = await Promise.all([
+    fetchRequirements(serviceDate, cookie),
+    fetchProductionContexts(serviceDate, cookie),
+    fetchOplocs(cookie),
+    listDeliveryLoadState(serviceDate),
+  ]);
+  const existing = existingState.jobs;
+  const assignedJobIds = new Set(existingState.assignments.map((assignment) => assignment.jobId));
+  const activeRequirements = activeLogisticsRequirements(requirements.filter((item) => item.serviceDate === serviceDate), production);
+  const hasNativeGrabAndGo = (requirement: FulfilmentRequirement) => activeRequirements.some((item) => item.sourceDomain === "grab-and-go" && item.serviceDate === requirement.serviceDate && item.destinationOplocId === requirement.destinationOplocId);
+  const reconciledRequirements = activeRequirements.filter((requirement) => !(requirement.sourceDomain === "cpu-production" && requirement.sourceEntityId.includes("grab-and-go") && hasNativeGrabAndGo(requirement)));
+  const existingBySource = new Map(existing.map((job) => [`${job.sourceType}:${job.sourceId}`, job]));
+  let created = 0;
+  let updated = 0;
+  let lastChangeSequence = 0;
+  const now = new Date().toISOString();
+
+  for (const requirement of reconciledRequirements) {
+    const key = `${requirement.sourceDomain}:${requirement.sourceEntityId}`;
+    const prior = existingBySource.get(key);
+    const readiness = requirement.status === "pending" ? "pending" as const : requirement.status === "amended" ? "attention" as const : "ready" as const;
+    const originOplocId = requirement.productionLocationId || CPU_PRODUCTION_LOCATION_ID;
+    const next = {
+      id: prior?.id || `logistics-job:${requirement.canonicalId}`,
+      sourceType: requirement.sourceDomain,
+      sourceId: requirement.sourceEntityId,
+      sourceVersion: requirement.sourceVersion,
+      ...(requirement.sourceContentHash ? { sourceContentHash: requirement.sourceContentHash } : {}),
+      serviceDate: requirement.serviceDate,
+      ...(originOplocId ? { originOplocId } : {}),
+      destinationOplocId: requirement.destinationOplocId,
+      destinationLabelSnapshot: oplocs.find((oploc) => oploc.id === requirement.destinationOplocId)?.label || requirement.destinationLabelSnapshot,
+      ...(requirement.requiredDeliveryWindow ? { requestedWindow: requirement.requiredDeliveryWindow } : requirement.readyAt ? { requestedWindow: { startTime: requirement.readyAt.slice(11, 16) } } : {}),
+      productionReadiness: readiness,
+      collectionStatus: prior?.collectionStatus || "awaiting" as const,
+      contents: requirement.lines.map((line) => ({ description: line.displayNameSnapshot, quantity: line.quantity, unit: line.unit })),
+      createdAt: prior?.createdAt || now,
+      updatedAt: now,
+      version: (prior?.version || 0) + 1,
+      audit: [...(prior?.audit || []), { action: prior ? "reconciled-job-updated" : "reconciled-job-created", at: now, by, version: (prior?.version || 0) + 1 }],
+    } as LogisticsJob;
+    if (prior && logisticsJobMaterialisationEqual(prior, next)) continue;
+    await saveLogisticsJob(next);
+    const event = await appendLogisticsChange({ serviceDate: next.serviceDate, entityType: "logisticsJob", entityId: next.id, changeType: prior ? "reconciled-job-updated" : "reconciled-job-created", revision: next.version, changedAt: now, actorId });
+    lastChangeSequence = Math.max(lastChangeSequence, event.sequence);
+    if (prior) updated++;
+    else created++;
+  }
+
+  for (const job of existing) {
+    if (assignedJobIds.has(job.id) || reconciledRequirements.some((requirement) => requirement.sourceDomain === job.sourceType && requirement.sourceEntityId === job.sourceId)) continue;
+    if (job.destinationOplocId === CPU_SITE_OPLOC_ID || job.sourceType === "cpu-production" || (job.sourceType === "grab-and-go" && hasNativeGrabAndGo({ sourceDomain: "grab-and-go", sourceEntityId: job.sourceId, serviceDate: job.serviceDate, destinationOplocId: job.destinationOplocId } as FulfilmentRequirement))) {
+      await logisticsJobs().doc(job.id).delete();
+      const event = await appendLogisticsChange({ serviceDate: job.serviceDate, entityType: "logisticsJob", entityId: job.id, changeType: "stale-upstream-job-removed", revision: job.version + 1, changedAt: now, actorId });
+      lastChangeSequence = Math.max(lastChangeSequence, event.sequence);
+    }
+  }
+  let projection = await rebuildLogisticsProjection(serviceDate, by, lastChangeSequence);
+  if (sourceChange) {
+    const prior = projection.sourceLineage?.find((item) => item.sourceDomain === sourceChange.sourceDomain && item.sourceEntityId === sourceChange.sourceEntityId);
+    if (!prior || prior.sourceVersion < sourceChange.sourceVersion) {
+      projection = await saveLogisticsProjection({
+        ...projection,
+        sourceLineage: [
+          ...(projection.sourceLineage || []).filter((item) => !(item.sourceDomain === sourceChange.sourceDomain && item.sourceEntityId === sourceChange.sourceEntityId)),
+          { sourceDomain: sourceChange.sourceDomain, sourceEntityId: sourceChange.sourceEntityId, sourceVersion: sourceChange.sourceVersion, ...(sourceChange.sourceContentHash ? { sourceContentHash: sourceChange.sourceContentHash } : {}), changedAt: sourceChange.changedAt },
+        ].slice(-200),
+      });
+    }
+  }
+  return { created, updated, projection, requirements };
+}
