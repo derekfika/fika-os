@@ -89,8 +89,8 @@ test("the UI captures one master human signature and fans it out to exact OPLOC 
   const matrix = await readFile(new URL("../app/ui/AllergenReviewMatrix.tsx", import.meta.url), "utf8");
   assert.doesNotMatch(page, /visibleOrders\.length === 1 \? visibleOrders\[0\]\.canonicalId : undefined/);
   assert.match(page, /Review the complete service-date matrix once/);
-  assert.match(page, /masterOrders\.filter\(order => !\(signatureRolesByOrderId\[order\.canonicalId\]/);
-  assert.match(page, /action: "sign-matrix"/);
+  assert.match(page, /const pendingReleaseOrders = useMemo/);
+  assert.match(page, /action: "sign-master-matrix"/);
   assert.match(page, /cpu-master-sign/);
   assert.match(page, /expectedLineage/);
   assert.match(matrix, /statuses\.length === orderIds\.length/);

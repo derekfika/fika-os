@@ -217,7 +217,6 @@ async function applyMasterSignatureBatch(request: NextRequest, actor: Awaited<Re
     if (!alreadyApplied && signatures.length > 0 && plan.signedMenuContentHash && plan.signedMenuContentHash !== reviewedMenuContentHash) throw Object.assign(new Error("The allergen matrix changed after the first signature. Re-review the matrix before signing again."), { status: 409, code: "CPU_SIGN_LINEAGE_CONFLICT" });
     const candidate = structuredClone(reviewedPlan);
     candidate.status = "planned";
-    candidate.masterReviewId = cpuMasterReviewId(command.commandId);
     candidate.planningNotes = reviewOperation.planningNotes;
     candidate.audit.push({ action: "plan-marked-planned", at: timestamp, by: auditActor, reason: "The complete reviewed matrix was committed with the master signature." });
     candidate.signatures = signatures;
@@ -238,6 +237,20 @@ async function applyMasterSignatureBatch(request: NextRequest, actor: Awaited<Re
     }
     prepared.push({ order, storedPlan, plan: candidate, expectedUpdatedAt: storedPlan?.updatedAt, alreadyApplied, scope: currentScope });
   }
+
+  const masterReviewId = cpuMasterReviewId({
+    serviceDate: command.serviceDate,
+    members: prepared.map(item => ({
+      orderId: item.order.canonicalId,
+      sourceDayId: item.scope?.sourceDayId,
+      sourcePublicationId: item.scope?.sourcePublicationId,
+      sourcePublicationDayId: item.scope?.sourcePublicationDayId,
+      sourceVersion: item.scope?.sourceVersion,
+      sourceContentHash: item.scope?.sourceContentHash,
+      matrixContentHash: item.scope?.matrixContentHash,
+    })),
+  });
+  for (const item of prepared) item.plan.masterReviewId = masterReviewId;
 
   const results: Array<{ orderId: string; ok: boolean; alreadyApplied?: boolean; planStatus?: ProductionPlan["status"]; error?: string }> = [];
   const committed: Array<{ sequence: number }> = [];

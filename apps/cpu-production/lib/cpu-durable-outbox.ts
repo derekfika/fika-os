@@ -50,6 +50,7 @@ export const CPU_PROPAGATION_OUTBOX_PAGE_SIZE = 25;
 export const CPU_DELIVERY_TIMEOUT_MS = {
   default: 8_000,
   materialization: 60_000,
+  postCommit: 120_000,
 } as const;
 
 const memoryOutbox = new Map<string, CpuOutboxEvent>();
@@ -230,9 +231,10 @@ function routeBase(consumer: CpuPropagationConsumer) {
 
 /** Keep ordinary invalidations short while allowing bounded CPU materialisation to finish. */
 export function cpuDeliveryTimeoutMs(consumer: CpuPropagationConsumer, route: string) {
-  return consumer === "cpu-production" && route === "/api/internal/cpu-release-materialize"
-    ? CPU_DELIVERY_TIMEOUT_MS.materialization
-    : CPU_DELIVERY_TIMEOUT_MS.default;
+  if (consumer !== "cpu-production") return CPU_DELIVERY_TIMEOUT_MS.default;
+  if (route === "/api/internal/cpu-release-materialize") return CPU_DELIVERY_TIMEOUT_MS.materialization;
+  if (route === "/api/internal/cpu-post-commit") return CPU_DELIVERY_TIMEOUT_MS.postCommit;
+  return CPU_DELIVERY_TIMEOUT_MS.default;
 }
 
 function cpuInternalToken() {

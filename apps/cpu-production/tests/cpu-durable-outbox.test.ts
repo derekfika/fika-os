@@ -16,10 +16,32 @@ const input = {
 
 test("CPU outbox uses a longer bounded timeout only for self materialisation", () => {
   assert.equal(CPU_DELIVERY_TIMEOUT_MS.materialization, 60_000);
+  assert.equal(CPU_DELIVERY_TIMEOUT_MS.postCommit, 120_000);
   assert.equal(cpuDeliveryTimeoutMs("cpu-production", "/api/internal/cpu-release-materialize"), 60_000);
   assert.equal(cpuDeliveryTimeoutMs("delivered-in", "/api/delivered-in/invalidate"), 8_000);
   assert.equal(cpuDeliveryTimeoutMs("logistics", "/api/logistics/invalidate"), 8_000);
-  assert.equal(cpuDeliveryTimeoutMs("cpu-production", "/api/internal/cpu-post-commit"), 8_000);
+  assert.equal(cpuDeliveryTimeoutMs("cpu-production", "/api/internal/cpu-post-commit"), 120_000);
+  assert.ok(CPU_DELIVERY_TIMEOUT_MS.postCommit < 5 * 60_000);
+});
+
+test("durable recovery processes a T+60 reconciliation without browser involvement", async () => {
+  const previousFetch = globalThis.fetch;
+  const previousDelivered = process.env.FIKA_APP_DELIVERED_IN_URL;
+  process.env.FIKA_APP_DELIVERED_IN_URL = "http://delivered-in.test";
+  const calls: string[] = [];
+  globalThis.fetch = (async input => { calls.push(String(input)); return new Response("{}", { status: 200 }); }) as typeof fetch;
+  resetCpuOutboxForTests();
+  const dueAt = new Date("2026-09-14T10:01:00.000Z");
+  try {
+    await enqueueCpuDelivery({ eventId: "cpu-reconcile:t60:oploc:xchange", sourceAggregateId: "release:xchange", sourceVersion: 3, occurredAt: dueAt.toISOString(), consumer: "delivered-in", route: "/api/delivered-in/reconcile", body: { oplocId: "oploc:xchange", serviceDate: "2026-09-14" } });
+    assert.equal((await recoverCpuPropagation(25, new Date("2026-09-14T10:00:59.000Z"))).length, 0);
+    assert.equal((await recoverCpuPropagation(25, dueAt)).length, 1);
+    assert.deepEqual(calls, ["http://delivered-in.test/api/delivered-in/reconcile"]);
+  } finally {
+    globalThis.fetch = previousFetch;
+    if (previousDelivered === undefined) delete process.env.FIKA_APP_DELIVERED_IN_URL; else process.env.FIKA_APP_DELIVERED_IN_URL = previousDelivered;
+    resetCpuOutboxForTests();
+  }
 });
 
 test("CPU self-delivery normalizes configured bases into absolute safe URLs", () => {

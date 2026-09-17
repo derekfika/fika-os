@@ -172,8 +172,10 @@ test("post-commit worker is bounded, retryable, and reports safe timing metrics"
   assert.match(worker, /job\.orderIds\.includes/);
   assert.match(worker, /latestCpuChangeSequence/);
   assert.match(worker, /buildCpuPropagationEvents/);
-  assert.match(worker, /Promise\.all\(deliveryIds\.map\(eventId => deliverCpuPropagation/);
-  assert.match(worker, /projectionRebuildMs/);
+  assert.match(worker, /CPU_POST_COMMIT_CONCURRENCY = 4/);
+  assert.match(worker, /mapWithConcurrency\(oplocIds, CPU_POST_COMMIT_CONCURRENCY/);
+  assert.match(worker, /materializationStartMs/);
+  assert.match(worker, /housekeepingMs/);
   assert.match(worker, /console\.info\("FIKA CPU post-commit worker completed"/);
   assert.match(route, /internalTokenAllowed/);
   assert.match(route, /processCpuPostCommitJob/);
@@ -246,4 +248,13 @@ test("signing awaits the serialized matrix save barrier and finalization uses on
   assert.match(materializer, /CPU_RELEASE_RECONCILIATION_DELAY_MS = 60_000/);
   assert.match(materializer, /route: "\/api\/delivered-in\/reconcile"/);
   assert.match(outboxWorker, /recoverCpuPropagation/);
+});
+
+test("post-commit starts release materialisation before derived housekeeping", async () => {
+  const worker = await readFile(new URL("../lib/cpu-post-commit-worker.ts", import.meta.url), "utf8");
+  const materialization = worker.indexOf("const materializationWork =");
+  const housekeeping = worker.indexOf("const projectionWork =");
+  assert.ok(materialization >= 0 && housekeeping > materialization);
+  assert.match(worker, /const materializationResults = await materializationWork/);
+  assert.match(worker, /mapWithConcurrency\(materializationIds, CPU_POST_COMMIT_CONCURRENCY/);
 });
