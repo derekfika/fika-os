@@ -3,8 +3,8 @@ import { errorResponse } from "../../../lib/api";
 import { z } from "zod";
 import { existsSync, promises as fs } from "node:fs";
 import { localFixtureOrders, updateLocalFixture } from "../local-fixtures";
-import { allergenAuthorityMatchesOrder, currentAllergenReleaseMatchesOrder, matrixSignatureScope, signatureMatchesScope, signedAllergenCheckpointMatchesOrder, type AllergenCellState, type InternalMatrixSignature, type MatrixArtifact, type PlannedMenuItem, type ProductionPlan } from "../../lib/production-plan";
-import { isCompleteOperationalAllergenMap, normaliseOperationalAllergens } from "../../../../shared/allergen-contract";
+import { allergenAuthorityMatchesOrder, currentAllergenReleaseMatchesOrder, effectiveProductionPlanStatus, hasAllergenAuthority, isProductionPlanMatrixComplete, matrixSignatureScope, mergeMissingProductionOrderLines, signatureMatchesScope, signedAllergenCheckpointMatchesOrder, type AllergenCellState, type InternalMatrixSignature, type MatrixArtifact, type PlannedMenuItem, type ProductionPlan } from "../../lib/production-plan";
+import { normaliseOperationalAllergens } from "../../../../shared/allergen-contract";
 import { canonicalProductionFailureKind, productionOrderDetail, productionQueue, transitionProductionOrder, type CanonicalProductionFailure } from "../../../lib/production-http-client";
 import type { ProductionOrder, ProductionStatus } from "../../../lib/production-types";
 import { rebuildCpuDayProjection, rebuildCpuWeekProjection, weekCommencingFor } from "../../../lib/cpu-projection";
@@ -91,8 +91,7 @@ function normalisePlanAllergens(plan: ProductionPlan): ProductionPlan {
   return { ...plan, menuItems: plan.menuItems.map(item => ({ ...item, subItems: item.subItems.map(sub => ({ ...sub, allergens: normaliseOperationalAllergens(sub.allergens) })) })) };
 }
 function assertAllergenMatrixComplete(menuItems: PlannedMenuItem[], context: string) {
-  const incomplete = menuItems.find(item => item.subItems.some(subItem => !isCompleteOperationalAllergenMap(subItem.allergens)));
-  if (incomplete) throw Object.assign(new Error(`Record every allergen state, including No key allergens, before ${context}.`), { status: 422, code: "CPU_ALLERGEN_REVIEW_INCOMPLETE" });
+  if (!isProductionPlanMatrixComplete(menuItems)) throw Object.assign(new Error(`Record every allergen state, including No key allergens, before ${context}.`), { status: 422, code: "CPU_ALLERGEN_REVIEW_INCOMPLETE" });
 }
 async function persistPlan(plan: ProductionPlan, expectedUpdatedAt?: string) { await planRepository.save(plan, expectedUpdatedAt); }
 function now() { return new Date().toISOString(); }
@@ -159,10 +158,10 @@ function initialPlan(orderId: string, order?: Awaited<ReturnType<typeof producti
   return { id: `production-plan:${orderId}`, orderId, status: "draft", menuItems: (order?.lines || []).map((line, index) => ({ id: `menu-item:${orderId}:${index + 1}`, sourceLineId: line.canonicalId, name: line.itemName, note: "", subItems: [{ id: `sub-item:${orderId}:${index + 1}:1`, name: "", quantity: line.customerQuantity, allergens: {}, note: "", evidenceStatus: "not_completed" }] })), planningNotes: "", updatedAt: timestamp, updatedBy: "local-fixture", audit: [{ action: "plan-created", at: timestamp, by: "local-fixture" }] };
 }
 async function getPlan(request: NextRequest, orderId: string, knownPlan?: ProductionPlan) {
-  if (knownPlan) plans.set(orderId, normalisePlanAllergens(knownPlan));
+  if (knownPlan) { const normalized = normalisePlanAllergens(knownPlan); plans.set(orderId, { ...normalized, status: effectiveProductionPlanStatus(normalized) }); }
   if (!plans.has(orderId)) {
     const persisted = await planRepository.get(orderId);
-    if (persisted) plans.set(orderId, normalisePlanAllergens(persisted));
+    if (persisted) { const normalized = normalisePlanAllergens(persisted); plans.set(orderId, { ...normalized, status: effectiveProductionPlanStatus(normalized) }); }
   }
   if (!plans.has(orderId)) {
     // Canonical hand-offs are the source of truth. Local fixtures remain a
@@ -208,7 +207,8 @@ async function applyMasterSignatureBatch(request: NextRequest, actor: Awaited<Re
     const reviewOperation = reviewByOrderId.get(order.canonicalId)!;
     const expectedLineage = expectedByOrderId.get(order.canonicalId)!;
     if (plan.status !== "planned" && plan.status !== "planning") throw Object.assign(new Error(`The allergen matrix for ${order.destinationLabel || order.canonicalId} is not available for signing.`), { status: 422 });
-    const reviewedPlan = await mergeOriginalItems(request, { ...plan, menuItems: normalisePlanAllergens({ ...plan, menuItems: reviewOperation.menuItems }).menuItems }, order.canonicalId, order, true);
+    const reviewedPlan = await mergeOriginalItems(request, { ...plan, menuItems: normalisePlanAllergens({ ...plan, menuItems: reviewOperation.menuItems }).menuItems }, order.canonicalId, order);
+    if (hasAllergenAuthority(plan) && !allergenAuthorityMatchesOrder(plan, order, reviewedPlan.menuItems)) throw Object.assign(new Error("Reopen the allergen review before changing a signed matrix."), { status: 409, code: "CPU_REVIEW_REOPEN_REQUIRED" });
     const currentMenuContentHash = menuContentHash(plan.menuItems);
     const reviewedMenuContentHash = menuContentHash(reviewedPlan.menuItems);
     const currentScope = matrixSignatureScope(order, reviewedMenuContentHash);
@@ -359,22 +359,24 @@ async function applyMatrixOperation(request: NextRequest, actor: Awaited<ReturnT
   const contentChanged = JSON.stringify(plan.menuItems) !== JSON.stringify(nextMenuItems);
   const matchesSignedCheckpoint = signedAllergenCheckpointMatchesOrder(plan, order, nextMenuItems);
   const authorityMatches = allergenAuthorityMatchesOrder(plan, order, nextMenuItems);
-  const hasAllergenAuthority = Boolean(plan.currentAllergenRelease || plan.signatures?.length || plan.signedSignatures?.length || plan.signedMenuContentHash || plan.matrixArtifact || plan.signedMatrixArtifact || plan.masterMatrixArtifact || plan.siteMatrixArtifacts);
-  if (contentChanged && hasAllergenAuthority) throw Object.assign(new Error("Reopen the allergen review before changing a signed matrix."), { status: 409, code: "CPU_REVIEW_REOPEN_REQUIRED" });
-  const noOpSave = Boolean(storedPlan && operation.action === "save-plan" && !contentChanged && plan.planningNotes === operation.planningNotes && authorityMatches);
+  const planHasAllergenAuthority = hasAllergenAuthority(plan);
+  if (planHasAllergenAuthority && !authorityMatches) throw Object.assign(new Error("Reopen the allergen review before changing a signed matrix."), { status: 409, code: "CPU_REVIEW_REOPEN_REQUIRED" });
+  const effectiveNextStatus = effectiveProductionPlanStatus({ ...plan, menuItems: nextMenuItems });
+  const noOpSave = Boolean(storedPlan && operation.action === "save-plan" && !contentChanged && plan.planningNotes === operation.planningNotes && authorityMatches && plan.status === effectiveNextStatus);
   if (noOpSave) return { orderId: operation.orderId, plan, serviceDate: order.serviceDate, sequence: undefined, changed: false };
   plan.menuItems = nextMenuItems;
   plan.planningNotes = operation.planningNotes;
   if (operation.action === "save-plan") {
     plan.status = matchesSignedCheckpoint || authorityMatches ? "planned" : "planning";
+    plan.status = effectiveProductionPlanStatus(plan);
     if (matchesSignedCheckpoint && plan.currentAllergenRelease?.status === "current") { plan.signatures = plan.signedSignatures; plan.matrixArtifact = plan.signedMatrixArtifact; }
     else if (contentChanged || ((plan.currentAllergenRelease || plan.signatures?.length) && !authorityMatches)) invalidateSignedAllergenAuthorityForNewSourceLineage(plan, auditActor, now(), "The allergen matrix or source lineage changed after signed release.");
     plan.audit.push({ action: "plan-saved", at: now(), by: auditActor });
     updateLocalFixture(operation.orderId, current => ({ ...current, status: "planning", version: current.version + 1 }));
   } else {
-     const subItems = plan.menuItems.flatMap(item => item.subItems);
-     if (!plan.menuItems.length || plan.menuItems.some(item => !item.name.trim() || !item.subItems.length) || subItems.some(item => !item.name.trim() || item.evidenceStatus !== "completed")) throw Object.assign(new Error("Complete every menu item, sub-item name and allergen checker before marking the plan Planned."), { status: 422 });
-     assertAllergenMatrixComplete(plan.menuItems, "marking the plan Planned");
+    const subItems = plan.menuItems.flatMap(item => item.subItems);
+    if (!plan.menuItems.length || plan.menuItems.some(item => !item.name.trim() || !item.subItems.length) || subItems.some(item => !item.name.trim() || item.evidenceStatus !== "completed")) throw Object.assign(new Error("Complete every menu item, sub-item name and allergen checker before marking the plan Planned."), { status: 422 });
+    assertAllergenMatrixComplete(plan.menuItems, "marking the plan Planned");
     if (matchesSignedCheckpoint) { plan.signatures = plan.signedSignatures; plan.matrixArtifact = plan.signedMatrixArtifact; }
     else if (contentChanged || ((plan.currentAllergenRelease || plan.signatures?.length) && !authorityMatches)) invalidateSignedAllergenAuthorityForNewSourceLineage(plan, auditActor, now(), "The allergen matrix or source lineage changed after signed release.");
     plan.status = "planned";
@@ -393,16 +395,10 @@ async function applyMatrixOperation(request: NextRequest, actor: Awaited<ReturnT
   if (event.duplicate && event.plan) Object.assign(plan, event.plan);
   return { orderId: operation.orderId, plan, serviceDate: changedOrder.serviceDate, sequence: event.sequence };
 }
-async function mergeOriginalItems(request: NextRequest, plan: ProductionPlan, orderId: string, knownOrder?: ProductionOrder, preserveAuthority = false): Promise<ProductionPlan> {
+async function mergeOriginalItems(request: NextRequest, plan: ProductionPlan, orderId: string, knownOrder?: ProductionOrder): Promise<ProductionPlan> {
   const order = knownOrder || await loadOrder(request, orderId);
   if (!order) return plan;
-  const existing = new Set(plan.menuItems.map(item => item.sourceLineId || item.id));
-  const missing = order.lines.filter(line => !existing.has(line.canonicalId)).map((line, index) => ({ id: `menu-item:${orderId}:original:${index}`, sourceLineId: line.canonicalId, name: line.itemName, note: "", subItems: [{ id: `sub-item:${orderId}:original:${index}`, name: "", quantity: line.customerQuantity, allergens: {}, note: "", evidenceStatus: "not_completed" as const }] }));
-  const next = missing.length ? { ...plan, menuItems: [...plan.menuItems, ...missing] } : plan;
-  if (!preserveAuthority && next.currentAllergenRelease && !currentAllergenReleaseMatchesOrder(next.currentAllergenRelease, order, next.menuItems)) {
-    invalidateSignedAllergenAuthorityForNewSourceLineage(next, "system", now(), "The canonical source lineage changed after signed release.");
-  }
-  return next;
+  return mergeMissingProductionOrderLines(plan, orderId, order.lines);
 }
 
 async function handleGet(request: NextRequest) {
@@ -532,14 +528,17 @@ async function handlePost(request: NextRequest) {
       const contentChanged = JSON.stringify(plan.menuItems) !== JSON.stringify(nextMenuItems);
       const matchesSignedCheckpoint = signedAllergenCheckpointMatchesOrder(plan, currentOrder, nextMenuItems);
       const authorityMatches = allergenAuthorityMatchesOrder(plan, currentOrder, nextMenuItems);
-      const noOpSave = Boolean(storedPlan && !contentChanged && plan.planningNotes === command.planningNotes && authorityMatches);
+      if (hasAllergenAuthority(plan) && !authorityMatches) throw Object.assign(new Error("Reopen the allergen review before changing a signed matrix."), { status: 409, code: "CPU_REVIEW_REOPEN_REQUIRED" });
+      const effectiveNextStatus = effectiveProductionPlanStatus({ ...plan, menuItems: nextMenuItems });
+      const noOpSave = Boolean(storedPlan && !contentChanged && plan.planningNotes === command.planningNotes && authorityMatches && plan.status === effectiveNextStatus);
       if (noOpSave) {
         const matrixStatus = plan.matrixArtifact && currentAllergenReleaseMatchesOrder(plan.currentAllergenRelease, currentOrder, plan.menuItems) ? "ready" : plan.signatures?.some(signature => signature.role === "production_chef") && plan.signatures?.some(signature => signature.role === "head_chef_site_manager") ? !matrixDriveConfiguration(currentOrder).enabled ? "not_configured" : "generating" : undefined;
         return NextResponse.json({ plan, matrixArtifact: plan.matrixArtifact ?? null, signatures: plan.signatures ?? null, matrixStatus });
       }
-      plan.status = matchesSignedCheckpoint || authorityMatches ? "planned" : "planning";
       plan.menuItems = nextMenuItems;
       plan.planningNotes = command.planningNotes;
+      plan.status = matchesSignedCheckpoint || authorityMatches ? "planned" : "planning";
+      plan.status = effectiveProductionPlanStatus(plan);
       if (matchesSignedCheckpoint && plan.currentAllergenRelease?.status === "current") {
         plan.signatures = plan.signedSignatures;
         plan.matrixArtifact = plan.signedMatrixArtifact;
@@ -552,10 +551,12 @@ async function handlePost(request: NextRequest) {
       const contentChanged = JSON.stringify(plan.menuItems) !== JSON.stringify(nextMenuItems);
       const matchesSignedCheckpoint = signedAllergenCheckpointMatchesOrder(plan, currentOrder, nextMenuItems);
       const authorityMatches = allergenAuthorityMatchesOrder(plan, currentOrder, nextMenuItems);
+      if (hasAllergenAuthority(plan) && !authorityMatches) throw Object.assign(new Error("Reopen the allergen review before changing a signed matrix."), { status: 409, code: "CPU_REVIEW_REOPEN_REQUIRED" });
       plan.menuItems = nextMenuItems;
       plan.planningNotes = command.planningNotes;
       const subItems = plan.menuItems.flatMap(item => item.subItems);
       if (!plan.menuItems.length || plan.menuItems.some(item => !item.name.trim() || !item.subItems.length) || subItems.some(item => !item.name.trim() || item.evidenceStatus !== "completed")) throw Object.assign(new Error("Complete every menu item, sub-item name and allergen checker before marking the plan Planned."), { status: 422 });
+      assertAllergenMatrixComplete(plan.menuItems, "marking the plan Planned");
       if (matchesSignedCheckpoint && plan.currentAllergenRelease?.status === "current") {
         plan.signatures = plan.signedSignatures;
         plan.matrixArtifact = plan.signedMatrixArtifact;
@@ -573,6 +574,7 @@ async function handlePost(request: NextRequest) {
       const candidate = structuredClone(plan);
       candidate.status = "planned";
       const currentMenuContentHash = menuContentHash(plan.menuItems);
+      if (hasAllergenAuthority(plan) && !allergenAuthorityMatchesOrder(plan, currentOrder, plan.menuItems)) throw Object.assign(new Error("Reopen the allergen review before changing a signed matrix."), { status: 409, code: "CPU_REVIEW_REOPEN_REQUIRED" });
       const currentSignatureScope = matrixSignatureScope(currentOrder, currentMenuContentHash);
       if (!currentSignatureScope) throw Object.assign(new Error("The current published Menu Planning source identity is unavailable; the matrix cannot be signed."), { status: 503 });
       if (!sameLineage(currentSignatureScope, command.expectedLineage)) throw Object.assign(new Error("The reviewed Menu publication has changed. Reload and review the current matrix before signing."), { status: 409, code: "CPU_SIGN_LINEAGE_CONFLICT" });
@@ -607,6 +609,7 @@ async function handlePost(request: NextRequest) {
       if (!plan.signatures?.some(signature => signature.role === "production_chef") || !plan.signatures?.some(signature => signature.role === "head_chef_site_manager")) throw Object.assign(new Error("Both required signatures must be recorded before generating the allergen matrix PDF."), { status: 422 });
       const subItems = plan.menuItems.flatMap(item => item.subItems);
       if (!subItems.length || subItems.some(item => !item.name.trim())) throw Object.assign(new Error("Complete every named sub-item before saving the matrix."), { status: 422 });
+      if (hasAllergenAuthority(plan) && !allergenAuthorityMatchesOrder(plan, currentOrder, plan.menuItems)) throw Object.assign(new Error("Reopen the allergen review before changing a signed matrix."), { status: 409, code: "CPU_REVIEW_REOPEN_REQUIRED" });
       const currentSignatureScope = matrixSignatureScope(currentOrder, menuContentHash(plan.menuItems));
       if (command.expectedLineage && !sameLineage(currentSignatureScope, command.expectedLineage)) throw Object.assign(new Error("The reviewed Menu publication has changed. Reload and review the current matrix before retrying materialization."), { status: 409, code: "CPU_RELEASE_LINEAGE_CONFLICT" });
       if (!plan.currentAllergenRelease) plan.currentAllergenRelease = pendingReleaseFor(plan, currentOrder, timestamp);

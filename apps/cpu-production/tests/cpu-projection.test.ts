@@ -6,6 +6,7 @@ import { cpuProjectionToOrders } from "../lib/cpu-dashboard-adapter";
 import type { ProductionOrder } from "../lib/production-types";
 import type { ProductionPlan } from "../app/lib/production-plan";
 import { allergenMatrixContentHash } from "../lib/cpu-allergen-release";
+import { CANONICAL_ALLERGEN_KEYS } from "../../shared/allergen-contract";
 
 const order = (id: string, date = "2026-08-24"): ProductionOrder => ({
   canonicalId: id, entityType: "Production Order", schemaVersion: "0.1.0", version: 3,
@@ -17,10 +18,11 @@ const order = (id: string, date = "2026-08-24"): ProductionOrder => ({
   exceptions: [], currentRevision: 3, createdAt: "now", createdBy: "test", idempotencyKey: id, externalReferences: [], audit: [],
 });
 
-const plan = (orderId: string): ProductionPlan => ({ id: `plan:${orderId}`, orderId, status: "planned", menuItems: [], planningNotes: "", updatedAt: "now", updatedBy: "chef", audit: [] });
+const plan = (orderId: string): ProductionPlan => ({ id: `plan:${orderId}`, orderId, status: "planned", menuItems: [{ id: `${orderId}:menu`, sourceLineId: `${orderId}:line:1`, name: "Lunch", note: "", subItems: [{ id: `${orderId}:sub:1`, name: "Lunch", quantity: 10, allergens: Object.fromEntries(CANONICAL_ALLERGEN_KEYS.map((key) => [key, "clear"])), note: "", evidenceStatus: "completed" }] }] } as unknown as ProductionPlan);
+const completePlan = (orderId: string): ProductionPlan => plan(orderId);
 
 test("CPU projection merges canonical orders with plan workflow state", () => {
-  const projection = buildCpuDayProjection("2026-08-24", [order("order:1"), order("order:2", "2026-08-25")], [plan("order:1")], 17);
+  const projection = buildCpuDayProjection("2026-08-24", [order("order:1"), order("order:2", "2026-08-25")], [completePlan("order:1")], 17);
   assert.equal(projection.orders.length, 1);
   assert.equal(projection.orders[0].workflowStatus, "planned");
   assert.equal(projection.orders[0].destinationLabel, "Angel Court");
@@ -110,21 +112,31 @@ test("the exact signed master review makes every participating Menu OPLOC Planne
     sourcePublicationDayId, sourceEntityId: "menu-publication:shared", sourceVersion: 1, sourceContentHash: "a".repeat(64),
   }));
   const signedPlanFor = (orderValue: ProductionOrder, materializationStatus: "pending" | "ready" | "failed"): ProductionPlan => {
-    const scope = { productionOrderId: orderValue.canonicalId, serviceDate: "2026-08-24", sourceDayId: "menu-publication:shared", sourcePublicationDayId, sourceVersion: 1, sourceContentHash: "a".repeat(64), matrixContentHash: allergenMatrixContentHash([]) };
+    const reviewedItems = completePlan(orderValue.canonicalId).menuItems;
+    const scope = { productionOrderId: orderValue.canonicalId, serviceDate: "2026-08-24", sourceDayId: "menu-publication:shared", sourcePublicationDayId, sourceVersion: 1, sourceContentHash: "a".repeat(64), matrixContentHash: allergenMatrixContentHash(reviewedItems) };
     const signatures = [
       { role: "production_chef" as const, printedName: "Chef A", signedAt: "now", actor: "a", attestation: "checked", scope },
       { role: "head_chef_site_manager" as const, printedName: "Chef B", signedAt: "now", actor: "b", attestation: "checked", scope },
     ];
-    return { ...plan(orderValue.canonicalId), status: "planned", signedMenuContentHash: scope.matrixContentHash, signatures, signedSignatures: signatures, currentAllergenRelease: { status: "current", materializationStatus, serviceDate: "2026-08-24", sourceDayId: scope.sourceDayId, sourcePublicationDayId, sourceVersion: 1, sourceContentHash: scope.sourceContentHash, signatures: signatures.map(signature => ({ ...signature, valid: true })), masterArtifact: {} as never, derivedArtifacts: [], packetArtifacts: [] } as never };
+    return { ...completePlan(orderValue.canonicalId), status: "planned", signedMenuContentHash: scope.matrixContentHash, signatures, signedSignatures: signatures, currentAllergenRelease: { status: "current", materializationStatus, serviceDate: "2026-08-24", sourceDayId: scope.sourceDayId, sourcePublicationDayId, sourceVersion: 1, sourceContentHash: scope.sourceContentHash, signatures: signatures.map(signature => ({ ...signature, valid: true })), masterArtifact: {} as never, derivedArtifacts: [], packetArtifacts: [] } as never };
   };
   const projection = buildCpuDayProjection("2026-08-24", orders, orders.map((item, index) => signedPlanFor(item, index === 0 ? "ready" : index === 1 ? "pending" : "failed")));
   assert.deepEqual(projection.orders.map(item => item.workflowStatus), ["planned", "planned", "planned", "planned"]);
 });
 
+test("CPU projection keeps an incomplete signed matrix out of Planned", () => {
+  const source = { ...order("order:incomplete-signed"), origin: "menu_planning" as const, workflowStatus: "planning" as const, sourceEntityId: "menu-publication:shared", sourcePublicationDayId: "menu-publication-day:shared:v1", sourceVersion: 1, sourceContentHash: "a".repeat(64) };
+  const incomplete = structuredClone(completePlan(source.canonicalId));
+  incomplete.menuItems[0].subItems[0].evidenceStatus = "not_completed";
+  const projection = buildCpuDayProjection("2026-08-24", [source], [{ ...incomplete, status: "planned", signatures: [{ role: "production_chef", printedName: "Chef", signedAt: "now", actor: "chef", attestation: "reviewed" }] } as unknown as ProductionPlan]);
+  assert.equal(projection.orders[0].workflowStatus, "planning");
+});
+
 test("CPU projection keeps unsigned, stale, changed-hash and revoked Menu reviews out of Planned", () => {
   const sourcePublicationDayId = "menu-publication-day:shared:v1";
   const menuOrder = { ...order("order:menu"), origin: "menu_planning" as const, workflowStatus: "planning" as const, sourcePublicationDayId, sourceEntityId: "menu-publication:shared", sourceVersion: 1, sourceContentHash: "a".repeat(64) };
-  const scope = { productionOrderId: menuOrder.canonicalId, serviceDate: "2026-08-24", sourceDayId: "menu-publication:shared", sourcePublicationDayId, sourceVersion: 1, sourceContentHash: "a".repeat(64), matrixContentHash: allergenMatrixContentHash([]) };
+  const reviewedItems = completePlan(menuOrder.canonicalId).menuItems;
+  const scope = { productionOrderId: menuOrder.canonicalId, serviceDate: "2026-08-24", sourceDayId: "menu-publication:shared", sourcePublicationDayId, sourceVersion: 1, sourceContentHash: "a".repeat(64), matrixContentHash: allergenMatrixContentHash(reviewedItems) };
   const signatures = [
     { role: "production_chef" as const, printedName: "Chef A", signedAt: "now", actor: "a", attestation: "checked", scope },
     { role: "head_chef_site_manager" as const, printedName: "Chef B", signedAt: "now", actor: "b", attestation: "checked", scope },

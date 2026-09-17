@@ -95,7 +95,7 @@ test("post-sign hydration keeps the committed role locked and semantic no-op sav
   assert.match(page, /locked=\{hydrating \|\| reviewFrozen \|\| bothSigned \|\| Boolean\(signing\)\}/);
   assert.match(matrix, /onHydrationChange\?\.\(true\)/);
   assert.match(matrix, /onHydrationChange\?\.\(false\)/);
-  assert.match(route, /const noOpSave = Boolean\(storedPlan && operation\.action === "save-plan" && !contentChanged && plan\.planningNotes === operation\.planningNotes && authorityMatches\)/);
+  assert.match(route, /const noOpSave = Boolean\(storedPlan && operation\.action === "save-plan" && !contentChanged && plan\.planningNotes === operation\.planningNotes && authorityMatches && plan\.status === effectiveNextStatus\)/);
   assert.doesNotMatch(route, /if \(contentChanged \|\| plan\.currentAllergenRelease\) invalidateSignedAllergenAuthority/);
 });
 

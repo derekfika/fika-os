@@ -6,6 +6,7 @@ import { allergenMatrixHtml } from "../app/ui/allergen-matrix";
 import { isHostedPdfRuntime, renderPdfToBuffer } from "../app/lib/local-pdf";
 import { matrixDriveConfiguration } from "../app/lib/matrix-drive-config";
 import { allergenReleaseLineageMatchesOrder, type MatrixArtifact, type PlannedMenuItem, type ProductionPlan } from "../app/lib/production-plan";
+import { effectiveProductionPlanStatus } from "../app/lib/production-plan-state";
 import type { ProductionOrder } from "./production-types";
 import { dailyBundleManifestKey, dailyBundleSha256, encodeDailySignedOplocBundlePackage, buildDailySignedOplocBundle, publishDailySignedOplocBundle, verifyDailySignedOplocBundleArtifacts, type DailyBundleDurableStore } from "@fika/server-shared/daily-signed-oploc-bundle";
 import { publishReadPackage } from "@fika/server-shared/read-package";
@@ -25,7 +26,7 @@ const durableArtifact = (artifact: MatrixArtifact | undefined): artifact is Matr
 
 /** Render the one service-date master checker. OPLOC materialisation reuses this identity. */
 export async function createCpuMasterArtifact(plan: ProductionPlan, order: ProductionOrder, actor: string, timestamp: string, request: NextRequest, items: PlannedMenuItem[] = plan.menuItems) {
-  if (plan.status !== "planned") throw Object.assign(new Error("Mark the allergen matrix Planned before saving it to the site Drive."), { status: 422 });
+  if (effectiveProductionPlanStatus(plan) !== "planned") throw Object.assign(new Error("Mark the allergen matrix Planned before saving it to the site Drive."), { status: 422 });
   if (!matrixDriveConfiguration(order).enabled) throw Object.assign(new Error("A configured Drive workspace is required before signing the CPU allergen bundle."), { status: 503 });
   const signatures = plan.signatures || [];
   if (!signatures.some(signature => signature.role === "production_chef") || !signatures.some(signature => signature.role === "head_chef_site_manager")) throw Object.assign(new Error("Both required signatures are required for release materialization."), { status: 422 });
@@ -53,7 +54,7 @@ export function resumeCpuMaterializationPhase(result: { duplicate?: boolean; pla
 
 /** Build and publish artifacts for exactly one governed CPU order/OPLOC. */
 export async function createCpuReleaseArtifacts(plan: ProductionPlan, order: ProductionOrder, actor: string, timestamp: string, request: NextRequest, options: { publishPackage?: boolean; masterArtifact?: MatrixArtifact } = {}) {
-  if (plan.status !== "planned") throw Object.assign(new Error("Mark the allergen matrix Planned before saving it to the site Drive."), { status: 422 });
+  if (effectiveProductionPlanStatus(plan) !== "planned") throw Object.assign(new Error("Mark the allergen matrix Planned before saving it to the site Drive."), { status: 422 });
   const subItems = plan.menuItems.flatMap(item => item.subItems);
   if (!subItems.length || subItems.some(item => !item.name.trim())) throw Object.assign(new Error("Complete every named sub-item before saving the matrix."), { status: 422 });
   if (!matrixDriveConfiguration(order).enabled) throw Object.assign(new Error("A configured Drive workspace is required before signing the CPU allergen bundle."), { status: 503 });

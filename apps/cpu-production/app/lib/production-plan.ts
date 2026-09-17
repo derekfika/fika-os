@@ -1,5 +1,6 @@
 import type { OperationalAllergenState } from "../../../shared/allergen-contract";
 import { allergenMatrixContentHash } from "../../lib/cpu-allergen-release";
+import { isProductionPlanMatrixComplete } from "./production-plan-state";
 export type PlanStatus = "draft" | "planning" | "planned" | "rejected" | "needs_clarification";
 export type AllergenCellState = OperationalAllergenState;
 export type PlannedSubItem = {
@@ -28,6 +29,8 @@ export type MatrixArtifact = { id: string; bookingId: string; fileName: string; 
 export type CpuAllergenRelease = import("../../lib/cpu-allergen-release").CpuAllergenRelease;
 /** A production menu item may contain several separately checked sub-items. */
 export type ProductionPlan = { id: string; orderId: string; status: PlanStatus; acceptedBy?: string; acceptedAt?: string; rejectionReason?: string; clarificationNote?: string; menuItems: PlannedMenuItem[]; planningNotes: string; masterReviewId?: string; signatures?: InternalMatrixSignature[]; matrixArtifact?: MatrixArtifact; masterMatrixArtifact?: MatrixArtifact; siteMatrixArtifacts?: Record<string, MatrixArtifact>; signedMenuContentHash?: string; signedSignatures?: InternalMatrixSignature[]; signedMatrixArtifact?: MatrixArtifact; currentAllergenRelease?: CpuAllergenRelease; allergenReleaseHistory?: CpuAllergenRelease[]; updatedAt: string; updatedBy: string; audit: Array<{ action: string; at: string; by: string; reason?: string }> };
+
+export { effectiveProductionPlanStatus, hasAllergenAuthority, isProductionPlanMatrixComplete, mergeMissingProductionOrderLines } from "./production-plan-state";
 
 export function matrixSignatureScope(order: { canonicalId: string; serviceDate?: string; requiredBy: string; sourceEntityId?: string; sourcePublicationId?: string; sourcePublicationDayId?: string; sourceVersion?: number; sourceContentHash?: string }, matrixContentHash: string): MatrixSignatureScope | undefined {
   const serviceDate = order.serviceDate || order.requiredBy?.slice(0, 10);
@@ -74,6 +77,7 @@ export function signedAllergenCheckpointMatchesOrder(plan: Pick<ProductionPlan, 
 
 /** True when the current exact Menu matrix has both CPU signatures, regardless of release materialisation state. */
 export function signedAllergenReviewMatchesOrder(plan: Pick<ProductionPlan, "signatures" | "signedSignatures" | "signedMenuContentHash" | "currentAllergenRelease">, order: { canonicalId: string; serviceDate?: string; requiredBy: string; sourceEntityId?: string; sourcePublicationId?: string; sourcePublicationDayId?: string; sourceVersion?: number; sourceContentHash?: string }, menuItems: PlannedMenuItem[]) {
+  if (!isProductionPlanMatrixComplete(menuItems)) return false;
   const hash = allergenMatrixContentHash(menuItems);
   const scope = matrixSignatureScope(order, hash);
   if (!scope || plan.signedMenuContentHash !== hash || (plan.currentAllergenRelease && !["pending", "current"].includes(plan.currentAllergenRelease.status))) return false;

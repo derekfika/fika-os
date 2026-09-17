@@ -10,9 +10,10 @@ import type {
   PlannedSubItem,
   ProductionPlan,
 } from "../lib/production-plan";
+import { effectiveProductionPlanStatus, hasAllergenAuthority } from "../lib/production-plan-state";
 import "./hospitality-allergen-detail.css";
 import { mayContainNotes } from "./allergen-matrix";
-import { CANONICAL_ALLERGEN_COLUMNS, normaliseOperationalAllergens, toggleOperationalAllergen, type CanonicalAllergenKey } from "../../../shared/allergen-contract";
+import { CANONICAL_ALLERGEN_COLUMNS, isCompleteOperationalAllergenMap, normaliseOperationalAllergens, toggleOperationalAllergen, type CanonicalAllergenKey } from "../../../shared/allergen-contract";
 import { matrixColumns } from "./allergen-matrix";
 import { DELI_STYLE_PARENT_KEY, isDeliStyleParent } from "../../lib/production-item-scope";
 import { canonicalAllergenMatrixForHash } from "../../../shared/allergen-matrix-hash";
@@ -277,6 +278,7 @@ export default function HospitalityAllergenDetail({
   const [rowsToAdd, setRowsToAdd] = useState(1);
   const [signatures, setSignatures] = useState<InternalMatrixSignature[]>([]);
   const [matrixArtifact, setMatrixArtifact] = useState<ProductionPlan["matrixArtifact"]>();
+  const [currentAllergenRelease, setCurrentAllergenRelease] = useState<ProductionPlan["currentAllergenRelease"]>();
   const [matrixStorageStatus, setMatrixStorageStatus] = useState<"not_configured" | "ready" | "artifact_pending">();
   const [planStatus, setPlanStatus] =
     useState<ProductionPlan["status"]>("draft");
@@ -291,6 +293,8 @@ export default function HospitalityAllergenDetail({
       parentMenuItemKey?: string;
     }>
   >([]);
+  const effectiveStatus = effectiveProductionPlanStatus({ status: planStatus, menuItems });
+  const reviewLockedByAuthority = hasAllergenAuthority({ signatures, matrixArtifact, currentAllergenRelease });
 
   useEffect(() => {
     void fetch(
@@ -300,12 +304,14 @@ export default function HospitalityAllergenDetail({
       .then((response) => response.json())
       .then((body) => {
         if (body.plan?.menuItems) {
-          setMenuItems(mergeOriginalItems(order, body.plan.menuItems));
+          const hydratedItems = mergeOriginalItems(order, body.plan.menuItems);
+          setMenuItems(hydratedItems);
           setPlanningNotes(body.plan.planningNotes || "");
           if ("signatures" in body.plan) setSignatures(body.plan.signatures || []);
           if ("matrixArtifact" in body.plan) setMatrixArtifact(body.plan.matrixArtifact);
+          if ("currentAllergenRelease" in body.plan) setCurrentAllergenRelease(body.plan.currentAllergenRelease);
           setMatrixStorageStatus(body.matrixStatus === "not_configured" ? "not_configured" : body.plan.matrixArtifact ? "ready" : body.plan.signatures?.length === 2 ? "artifact_pending" : undefined);
-          setPlanStatus(body.plan.status || "draft");
+          setPlanStatus(effectiveProductionPlanStatus({ ...body.plan, menuItems: hydratedItems }));
         }
       })
       .catch(() =>
@@ -407,14 +413,14 @@ export default function HospitalityAllergenDetail({
     });
   };
   const completeSubItem = (menuId: string, sub: PlannedSubItem) => {
-    if (planStatus === "planned") return;
+    if (reviewLockedByAuthority || sub.evidenceStatus === "completed") return;
     const nextItems = menuItems.map((item) =>
       item.id === menuId
         ? { ...item, subItems: item.subItems.map((candidate) => candidate.id === sub.id ? { ...candidate, evidenceStatus: "completed" as const } : candidate) }
         : item,
     );
     setMenuItems(nextItems);
-    const allComplete = nextItems.length > 0 && nextItems.every((item) => item.name.trim() && item.subItems.length > 0 && item.subItems.every((candidate) => candidate.name.trim() && candidate.evidenceStatus === "completed"));
+    const allComplete = nextItems.length > 0 && nextItems.every((item) => item.name.trim() && item.subItems.length > 0 && item.subItems.every((candidate) => candidate.name.trim() && candidate.evidenceStatus === "completed" && isCompleteOperationalAllergenMap(candidate.allergens)));
     if (allComplete) void planCommand("mark-planned", {}, nextItems);
   };
   const applySandwich = (menuId: string, sub: PlannedSubItem, id: string) => {
@@ -499,6 +505,7 @@ export default function HospitalityAllergenDetail({
       );
       if ("matrixArtifact" in body) setMatrixArtifact(body.matrixArtifact || undefined);
       if ("signatures" in body) setSignatures(body.signatures || []);
+      if (body.plan && "currentAllergenRelease" in body.plan) setCurrentAllergenRelease(body.plan.currentAllergenRelease);
       setMatrixStorageStatus(body.matrixStatus === "not_configured" ? "not_configured" : body.plan?.matrixArtifact ? "ready" : body.plan?.signatures?.length === 2 ? "artifact_pending" : undefined);
       setMessage(
         action === "mark-planned"
@@ -555,6 +562,7 @@ export default function HospitalityAllergenDetail({
         ]) as InternalMatrixSignature[];
       setSignatures(nextSignatures);
       setMatrixArtifact(body.matrixArtifact || body.plan?.matrixArtifact || undefined);
+      if ("currentAllergenRelease" in (body.plan || {})) setCurrentAllergenRelease(body.plan.currentAllergenRelease);
       setMatrixStorageStatus(body.matrixStatus === "not_configured" ? "not_configured" : body.plan?.matrixArtifact ? "ready" : body.plan?.signatures?.length === 2 ? "artifact_pending" : undefined);
       setMessage(body.matrixStatus === "not_configured" ? "Matrix storage not configured. The signed workflow is complete; Drive persistence can be enabled later." : body.plan?.matrixArtifact ? "Both signatures recorded. The signed matrix is ready to open." : `${role === "production_chef" ? "Production chef" : "Head chef / site manager"} signature recorded.`);
     } catch (error) {
@@ -602,7 +610,7 @@ export default function HospitalityAllergenDetail({
       const body = await response.json();
       if (!response.ok) throw new Error(body.error?.message || "The final signed matrix could not be generated.");
       const materialized = body.matrixStatus === "ready" && Boolean(body.matrixArtifact || body.plan?.matrixArtifact);
-      setMatrixArtifact(body.matrixArtifact || body.plan?.matrixArtifact); setMatrixStorageStatus(body.matrixStatus === "not_configured" ? "not_configured" : materialized ? "ready" : "artifact_pending"); setSignatures(body.signatures || signatures); setMessage(materialized ? "Signed PDF generated. The matrix is ready to open from the manager dashboard." : "Materialization is queued. The signed matrix will become available after the durable retry succeeds.");
+      setMatrixArtifact(body.matrixArtifact || body.plan?.matrixArtifact); setMatrixStorageStatus(body.matrixStatus === "not_configured" ? "not_configured" : materialized ? "ready" : "artifact_pending"); setSignatures(body.signatures || signatures); if ("currentAllergenRelease" in (body.plan || {})) setCurrentAllergenRelease(body.plan.currentAllergenRelease); setMessage(materialized ? "Signed PDF generated. The matrix is ready to open from the manager dashboard." : "Materialization is queued. The signed matrix will become available after the durable retry succeeds.");
     } catch (error) { setMessage(error instanceof Error ? error.message : "The final signed matrix could not be generated."); }
     finally { setBusy(false); }
   };
@@ -892,13 +900,18 @@ export default function HospitalityAllergenDetail({
                               <button
                                 type="button"
                                 className={`check-button ${sub.evidenceStatus === "completed" ? "check-button--done" : ""}`}
+                                disabled={busy || reviewLockedByAuthority || sub.evidenceStatus === "completed"}
+                                aria-label={sub.evidenceStatus === "completed" ? `${sub.name || "Sub-item"}: checked` : reviewLockedByAuthority ? `${sub.name || "Sub-item"}: reopen review to amend` : `${sub.name || "Sub-item"}: mark checked`}
+                                title={reviewLockedByAuthority ? "Reopen the allergen review before amending signed authority" : sub.evidenceStatus === "completed" ? "This row is already checked" : undefined}
                                 onClick={() =>
                                   completeSubItem(menuItem.id, sub)
                                 }
                               >
                                 {sub.evidenceStatus === "completed"
                                   ? "Checked"
-                                  : "Mark checked"}
+                                  : reviewLockedByAuthority
+                                    ? "Reopen review to amend"
+                                    : "Mark checked"}
                               </button>
                             </td>
                           </tr>
@@ -960,7 +973,7 @@ export default function HospitalityAllergenDetail({
                       <button
                         type="button"
                         className="button button-purple"
-                        disabled={busy || planStatus !== "planned"}
+                        disabled={busy || effectiveStatus !== "planned"}
                         onClick={() => setSigningRole(role)}
                       >
                         Sign matrix
@@ -1023,7 +1036,7 @@ export default function HospitalityAllergenDetail({
             aria-disabled="true"
             aria-label="Mark as Planned"
           >
-            {planStatus === "planned" ? "Planned automatically" : "Complete every check to plan"}
+            {effectiveStatus === "planned" ? "Planned automatically" : "Complete every check to plan"}
           </button>
         </div>
       </footer>

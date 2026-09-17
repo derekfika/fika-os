@@ -433,7 +433,10 @@ test("allergen checker uses the master-style purple header and four-state cells"
   assert.match(liana, /toDataURL\("image\/png"\)/);
   assert.match(liana, /onPointerDown/);
   assert.match(liana, /Use your finger, stylus or mouse/);
-  assert.match(liana, /planStatus !== "planned"/);
+  assert.match(liana, /reviewLockedByAuthority/);
+  assert.match(liana, /disabled=\{busy \|\| reviewLockedByAuthority \|\| sub\.evidenceStatus === "completed"\}/);
+  assert.doesNotMatch(liana, /if \(planStatus === "planned"\) return/);
+  assert.match(liana, /isCompleteOperationalAllergenMap\(candidate\.allergens\)/);
   assert.match(planCommandSchema, /mayContainNotes/);
   assert.match(planRoute, /allergen-matrix-signed/);
   assert.match(planRoute, /save-matrix/);

@@ -1,5 +1,5 @@
 import type { ProductionPlan } from "../app/lib/production-plan";
-import { currentAllergenReleaseMatchesOrder, matrixSignatureScope, signatureAuthorityForOrder, signatureMatchesScope, type MatrixSignatureScope, type PlannedMenuItem } from "../app/lib/production-plan";
+import { currentAllergenReleaseMatchesOrder, effectiveProductionPlanStatus, matrixSignatureScope, signatureAuthorityForOrder, signatureMatchesScope, type MatrixSignatureScope, type PlannedMenuItem } from "../app/lib/production-plan";
 import { allergenMatrixContentHash } from "./cpu-allergen-release";
 import type { ProductionOrder } from "./production-types";
 import type { ProductionPlanRepository } from "./production-plan-repository";
@@ -60,7 +60,7 @@ export function reviewStatusForPlan(orderId: string, plan: ProductionPlan | unde
   const signatureRoles = [...new Set(validSignatures.map((signature) => signature.role))];
   return {
     orderId,
-    planStatus: plan.status,
+    planStatus: effectiveProductionPlanStatus(plan),
     reviewed: plan.menuItems.length > 0 && plan.menuItems.every((item) => item.sourceLineId && item.subItems.length > 0 && item.subItems.every(subItem => subItem.evidenceStatus === "completed" && isCompleteOperationalAllergenMap(subItem.allergens))),
     completedSourceLineIds,
     signatureRoles,
