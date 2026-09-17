@@ -430,6 +430,14 @@ test("allergen checker uses the master-style purple header and four-state cells"
   assert.match(liana, /Internal FIKA sign-off/);
   assert.match(liana, /sign-matrix/);
   assert.match(liana, /SignatureModal/);
+  assert.match(liana, /sourcePublicationId: order\.sourcePublicationId/);
+  assert.match(liana, /submissionError/);
+  assert.match(liana, /if \(!response\.ok\)[\s\S]*throw new Error/);
+  assert.match(liana, /setSigningError\(\(error as Error\)\.message\)/);
+  const signMatrixBlock = liana.slice(liana.indexOf("const signMatrix"), liana.indexOf("const accept"));
+  const signMatrixCatch = signMatrixBlock.slice(signMatrixBlock.indexOf("} catch"), signMatrixBlock.indexOf("    setBusy(false);"));
+  assert.doesNotMatch(signMatrixCatch, /setSigningRole\(undefined\)/);
+  assert.match(liana, /setSigningRole\(undefined\);[\s\S]*onSaved\(false\)/);
   assert.match(liana, /toDataURL\("image\/png"\)/);
   assert.match(liana, /onPointerDown/);
   assert.match(liana, /Use your finger, stylus or mouse/);

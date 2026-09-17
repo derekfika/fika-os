@@ -373,7 +373,7 @@ export default function CpuProduction() {
         <HospitalityAllergenDetail
           order={selected}
           close={() => selected.origin === "hospitality_booking" ? setShowHospitalityAllergens(false) : setSelected(undefined)}
-          onSaved={async (close = true) => { if (close) { await load(); setSelected(undefined); } }}
+          onSaved={async (close = true) => { await load(); if (close) setSelected(undefined); }}
         />
       )}
     </main>

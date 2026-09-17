@@ -30,7 +30,7 @@ async function sha256Json(value: unknown) {
 async function reviewedLineage(order: ProductionOrder, items: PlannedMenuItem[]): Promise<ReviewedLineage | undefined> {
   const serviceDate = order.serviceDate || order.requiredBy?.slice(0, 10);
   if (!serviceDate || !order.sourceEntityId || !order.sourcePublicationDayId || !order.sourceVersion || !order.sourceContentHash) return undefined;
-  return { productionOrderId: order.canonicalId, serviceDate, sourceDayId: order.sourceEntityId, sourcePublicationDayId: order.sourcePublicationDayId, sourceVersion: order.sourceVersion, sourceContentHash: order.sourceContentHash, matrixContentHash: await sha256Json(canonicalAllergenMatrixForHash(items)) };
+  return { productionOrderId: order.canonicalId, serviceDate, sourceDayId: order.sourceEntityId, ...(order.sourcePublicationId ? { sourcePublicationId: order.sourcePublicationId } : {}), sourcePublicationDayId: order.sourcePublicationDayId, sourceVersion: order.sourceVersion, sourceContentHash: order.sourceContentHash, matrixContentHash: await sha256Json(canonicalAllergenMatrixForHash(items)) };
 }
 
 function menuItemLibraryKey(name: string) {
@@ -113,11 +113,13 @@ export function SignatureModal({
   onCancel,
   onConfirm,
   busy = false,
+  submissionError = "",
 }: {
   role: InternalMatrixSignature["role"];
   onCancel: () => void;
   onConfirm: (printedName: string, signatureDataUrl: string) => void;
   busy?: boolean;
+  submissionError?: string;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const drawing = useRef(false);
@@ -167,6 +169,7 @@ export function SignatureModal({
       );
       return;
     }
+    setError("");
     onConfirm(printedName.trim(), canvasRef.current!.toDataURL("image/png"));
   };
   useEffect(() => {
@@ -250,9 +253,9 @@ export function SignatureModal({
             {busy ? "Saving signature…" : "Save signature"}
           </button>
         </div>
-        {error && (
+        {(submissionError || error) && (
           <p className="signature-error" role="alert">
-            {error}
+            {submissionError || error}
           </p>
         )}
       </section>
@@ -279,6 +282,7 @@ export default function HospitalityAllergenDetail({
   const [signatures, setSignatures] = useState<InternalMatrixSignature[]>([]);
   const [matrixArtifact, setMatrixArtifact] = useState<ProductionPlan["matrixArtifact"]>();
   const [currentAllergenRelease, setCurrentAllergenRelease] = useState<ProductionPlan["currentAllergenRelease"]>();
+  const [signingError, setSigningError] = useState("");
   const [matrixStorageStatus, setMatrixStorageStatus] = useState<"not_configured" | "ready" | "artifact_pending">();
   const [planStatus, setPlanStatus] =
     useState<ProductionPlan["status"]>("draft");
@@ -525,6 +529,7 @@ export default function HospitalityAllergenDetail({
     signatureDataUrl: string,
   ) => {
     setBusy(true);
+    setSigningError("");
     setMessage("");
     try {
       const expectedLineage = await reviewedLineage(order, menuItems);
@@ -549,27 +554,20 @@ export default function HospitalityAllergenDetail({
         throw new Error(
           body.error?.message || "The matrix could not be signed.",
         );
-      const nextSignatures = (body.plan?.signatures || [
-          ...signatures,
-          {
-            role,
-            printedName,
-            signedAt: new Date().toISOString(),
-            actor: "production-chef",
-            attestation: "",
-            signatureDataUrl,
-          },
-        ]) as InternalMatrixSignature[];
+      const persistedSignatures = body.plan?.signatures;
+      if (!Array.isArray(persistedSignatures) || !persistedSignatures.some((signature: InternalMatrixSignature) => signature.role === role)) throw new Error("The server did not confirm that this signature was persisted. Retry from the current review.");
+      const nextSignatures = persistedSignatures as InternalMatrixSignature[];
       setSignatures(nextSignatures);
       setMatrixArtifact(body.matrixArtifact || body.plan?.matrixArtifact || undefined);
       if ("currentAllergenRelease" in (body.plan || {})) setCurrentAllergenRelease(body.plan.currentAllergenRelease);
       setMatrixStorageStatus(body.matrixStatus === "not_configured" ? "not_configured" : body.plan?.matrixArtifact ? "ready" : body.plan?.signatures?.length === 2 ? "artifact_pending" : undefined);
       setMessage(body.matrixStatus === "not_configured" ? "Matrix storage not configured. The signed workflow is complete; Drive persistence can be enabled later." : body.plan?.matrixArtifact ? "Both signatures recorded. The signed matrix is ready to open." : `${role === "production_chef" ? "Production chef" : "Head chef / site manager"} signature recorded.`);
+      setSigningRole(undefined);
+      void onSaved(false).catch(() => undefined);
     } catch (error) {
-      setMessage((error as Error).message);
+      setSigningError((error as Error).message);
     }
     setBusy(false);
-    setSigningRole(undefined);
   };
 
   const accept = async () => {
@@ -974,7 +972,7 @@ export default function HospitalityAllergenDetail({
                         type="button"
                         className="button button-purple"
                         disabled={busy || effectiveStatus !== "planned"}
-                        onClick={() => setSigningRole(role)}
+                        onClick={() => { setSigningError(""); setSigningRole(role); }}
                       >
                         Sign matrix
                       </button>
@@ -996,7 +994,8 @@ export default function HospitalityAllergenDetail({
         <SignatureModal
           role={signingRole}
           busy={busy}
-          onCancel={() => setSigningRole(undefined)}
+          submissionError={signingError}
+          onCancel={() => { setSigningError(""); setSigningRole(undefined); }}
           onConfirm={(printedName, signatureDataUrl) =>
             void signMatrix(signingRole, printedName, signatureDataUrl)
           }
