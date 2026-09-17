@@ -233,12 +233,16 @@ test("signing awaits the serialized matrix save barrier and finalization uses on
   const page = await readFile(new URL("../app/allergens/page.tsx", import.meta.url), "utf8");
   const worker = await readFile(new URL("../lib/cpu-post-commit-worker.ts", import.meta.url), "utf8");
   const materializer = await readFile(new URL("../lib/cpu-release-materialization.ts", import.meta.url), "utf8");
+  const masterReview = await readFile(new URL("../lib/cpu-master-review.ts", import.meta.url), "utf8");
   const outboxWorker = await readFile(new URL("../scripts/cpu-durable-outbox-worker.ts", import.meta.url), "utf8");
   const signBlock = page.slice(page.indexOf("const sign = async"), page.indexOf("const reopenForAmendment"));
   assert.match(signBlock, /await saveReviewRef\.current\?\.\(\)/);
   assert.match(page, /onRegisterSave=\{save => \{ saveReviewRef\.current = save; \}\}/);
   assert.match(worker, /createCpuMasterArtifact/);
   assert.match(worker, /allergen-master-artifact-shared/);
+  assert.match(worker, /saveCpuMasterReview/);
+  assert.match(masterReview, /fikaCpuMasterAllergenReviewsV1/);
+  assert.doesNotMatch(masterReview, /signatureDataUrl/);
   assert.match(materializer, /CPU_RELEASE_RECONCILIATION_DELAY_MS = 60_000/);
   assert.match(materializer, /route: "\/api\/delivered-in\/reconcile"/);
   assert.match(outboxWorker, /recoverCpuPropagation/);

@@ -8,6 +8,7 @@ import { rebuildCpuReviewPackage } from "./cpu-review-package";
 import { createCpuMasterArtifact } from "./cpu-release-materialization";
 import { createProductionPlanRepository } from "./production-plan-repository";
 import type { MatrixArtifact, ProductionPlan, PlannedMenuItem } from "../app/lib/production-plan";
+import { cpuMasterReviewId, saveCpuMasterReview } from "./cpu-master-review";
 
 export type CpuPostCommitJob = { action: "master-sign"; commandId: string; serviceDate: string; orderIds: string[] };
 
@@ -40,6 +41,8 @@ export async function processCpuPostCommitJob(request: NextRequest, job: CpuPost
 
   const plans = await loadPlansForOrders(orders.map(order => order.canonicalId));
   const planByOrderId = new Map(plans.map(plan => [plan.orderId, plan]));
+  const signatureRoles = Object.fromEntries(orders.map(order => [order.canonicalId, [...new Set((planByOrderId.get(order.canonicalId)?.signatures || []).map(signature => signature.role))]]));
+  await saveCpuMasterReview({ id: cpuMasterReviewId(job.commandId), serviceDate: job.serviceDate, commandId: job.commandId, orderIds: orders.map(order => order.canonicalId).sort(), expectedLineages: Object.fromEntries(orders.map(order => [order.canonicalId, (planByOrderId.get(order.canonicalId)?.signatures || []).find(signature => signature.scope)?.scope || null])), signatureRoles, status: orders.length > 0 && orders.every(order => (signatureRoles[order.canonicalId] || []).includes("production_chef") && (signatureRoles[order.canonicalId] || []).includes("head_chef_site_manager")) ? "signed" : "pending", updatedAt: new Date().toISOString(), updatedBy: "cpu-post-commit-worker" });
   const signedPlans = orders.flatMap(order => {
     const plan = planByOrderId.get(order.canonicalId);
     return plan?.currentAllergenRelease && plan.signatures?.some(signature => signature.role === "production_chef") && plan.signatures?.some(signature => signature.role === "head_chef_site_manager") ? [{ order, plan }] : [];

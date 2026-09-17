@@ -20,6 +20,7 @@ import { buildCpuAllergenReleaseEvent, eventTypeForConsumers, notifyCpuConsumerI
 import { deliverCpuPropagation, replayCpuPropagation } from "../../../lib/cpu-durable-outbox";
 import { allergenMatrixContentHash, buildCpuAllergenRelease, revokeCpuAllergenRelease } from "../../../lib/cpu-allergen-release";
 import { releaseMaterializationDelivery, retryCommittedCpuMaterialization } from "../../../lib/cpu-retry-materialization";
+import { cpuMasterReviewId } from "../../../lib/cpu-master-review";
 import { ExpectedLineage, MasterReviewOperation, MasterSignCommand, MenuItem, SubItem } from "../../../lib/production-plan-command-schema";
 
 function menuContentHash(menuItems: PlannedMenuItem[]) {
@@ -216,6 +217,7 @@ async function applyMasterSignatureBatch(request: NextRequest, actor: Awaited<Re
     if (!alreadyApplied && signatures.length > 0 && plan.signedMenuContentHash && plan.signedMenuContentHash !== reviewedMenuContentHash) throw Object.assign(new Error("The allergen matrix changed after the first signature. Re-review the matrix before signing again."), { status: 409, code: "CPU_SIGN_LINEAGE_CONFLICT" });
     const candidate = structuredClone(reviewedPlan);
     candidate.status = "planned";
+    candidate.masterReviewId = cpuMasterReviewId(command.commandId);
     candidate.planningNotes = reviewOperation.planningNotes;
     candidate.audit.push({ action: "plan-marked-planned", at: timestamp, by: auditActor, reason: "The complete reviewed matrix was committed with the master signature." });
     candidate.signatures = signatures;
