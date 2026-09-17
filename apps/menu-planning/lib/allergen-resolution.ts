@@ -12,7 +12,7 @@ export type AllergenResolution = { allergens: CanonicalAllergenMap; mayContainNo
 
 /** Resolves the exact operational allergen snapshot used by readiness, preview, hashing and publication. */
 export function resolveAllergenSnapshot(entry: Pick<RollingEntry, "allergens" | "allergenReviewInvalidated" | "itemId" | "itemLabel">, canonicalDish?: CanonicalDishAllergenSource): AllergenResolution {
-  const explicit = deriveNoKeyAllergens(normaliseOperationalAllergens(entry.allergens || {}));
+  const explicit = normaliseOperationalAllergens(entry.allergens || {});
   if (entry.itemId && (!canonicalDish || canonicalDish.canonicalId !== entry.itemId)) return { allergens: missingMap(), mayContainNotes: undefined, unresolved: ["The referenced canonical dish is not available from the authoritative catalogue."], evidenceStatus: "conflicting", evidenceReason: "authoritative-catalogue-dish-missing", structuralIssue: true };
   const hasExplicitReview = entry.allergenReviewInvalidated === false;
   if (hasExplicitReview) return { allergens: explicit, mayContainNotes: undefined, unresolved: completeMap(explicit) ? [] : ["The menu-entry allergen review is incomplete."], evidenceStatus: completeMap(explicit) ? "confirmed" : "unreviewed", evidenceReason: completeMap(explicit) ? undefined : "menu-entry-review-incomplete" };

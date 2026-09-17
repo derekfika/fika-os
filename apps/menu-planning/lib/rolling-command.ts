@@ -1,5 +1,5 @@
 import type { RollingDay, RollingEntry, RollingWeek } from "./rolling-menu-types";
-import { deriveNoKeyAllergens, normaliseOperationalAllergens } from "./fika-contracts";
+import { normaliseOperationalAllergens } from "./fika-contracts";
 
 export type RollingEntryPatch = Partial<Pick<RollingEntry, "itemId" | "itemLabel" | "portions" | "slot" | "allocations" | "allergens" | "mayContainNotes" | "allergenReviewInvalidated">>;
 export type RollingDayPatch = Partial<Pick<RollingDay, "entryIds" | "oneOffDestinations">>;
@@ -24,7 +24,7 @@ export function applyRollingEntryPatch(entry: RollingEntry, patch: RollingEntryP
   const nextLabel = patch.itemLabel !== undefined ? String(patch.itemLabel).trim().toLocaleLowerCase() : entry.itemLabel.trim().toLocaleLowerCase();
   const dishChanged = nextItemId !== (entry.itemId || "") || nextLabel !== entry.itemLabel.trim().toLocaleLowerCase();
   const restoringReview = patch.allergenReviewInvalidated === false && patch.allergens !== undefined;
-  const normalizedPatch = patch.allergens !== undefined ? { ...patch, allergens: deriveNoKeyAllergens(normaliseOperationalAllergens(patch.allergens)) } : patch;
+  const normalizedPatch = patch.allergens !== undefined ? { ...patch, allergens: normaliseOperationalAllergens(patch.allergens) } : patch;
   Object.assign(entry, { ...normalizedPatch, ...(patch.itemLabel !== undefined ? { itemLabel: String(patch.itemLabel).trim() } : {}), ...(patch.allergens !== undefined && patch.allergenReviewInvalidated === undefined ? { allergenReviewInvalidated: false } : {}), ...(dishChanged && !restoringReview ? { allergens: {}, mayContainNotes: "", allergenReviewInvalidated: true } : {}) });
   return dishChanged;
 }

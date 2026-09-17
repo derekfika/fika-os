@@ -30,6 +30,14 @@ export function deriveNoKeyAllergens(input: CanonicalAllergenMap): CanonicalAlle
   result.no_key_allergens = hasPositiveNamed ? "clear" : namedKeys.every((key) => result[key] === "clear") ? "contains" : "unrecorded";
   return result;
 }
+/** Prefer a persisted explicit no-key decision; only derive it for legacy maps that omit the field. */
+export function resolveNoKeyAllergenState(input: CanonicalAllergenMap | undefined): OperationalAllergenState {
+  const explicit = input?.no_key_allergens;
+  return explicit || deriveNoKeyAllergens(input || {}).no_key_allergens;
+}
+export function isCompleteOperationalAllergenMap(input: Record<string, unknown> | undefined): input is CanonicalAllergenMap {
+  return CANONICAL_ALLERGEN_KEYS.every((key) => input?.[key] === "clear" || input?.[key] === "contains" || input?.[key] === "may_contain");
+}
 export function normaliseOperationalAllergens(input: Record<string, unknown> | undefined): CanonicalAllergenMap {
   const result: CanonicalAllergenMap = {};
   for (const [rawKey, rawValue] of Object.entries(input || {})) {

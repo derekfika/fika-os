@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { CANONICAL_ALLERGEN_COLUMNS, deriveNoKeyAllergens, toggleOperationalAllergen, type CanonicalAllergenKey, type OperationalAllergenState } from "../../../shared/allergen-contract";
+import { CANONICAL_ALLERGEN_COLUMNS, isCompleteOperationalAllergenMap, resolveNoKeyAllergenState, toggleOperationalAllergen, type CanonicalAllergenKey, type OperationalAllergenState } from "../../../shared/allergen-contract";
 import type { ProductionOrder } from "../../lib/production-types";
 import { allergenReviewKey, type AllergenReviewRow } from "../../lib/production-day";
 import { bookingContextEntries } from "./BookingContext";
@@ -21,15 +21,8 @@ type MatrixLineage = {
   matrixContentHash: string;
 };
 
-function stateFor(row: AllergenReviewRow, key: string): OperationalAllergenState | "none" {
-  const state = row.snapshot?.allergens[key];
-  return state === "contains" || state === "may_contain" ? state : row.snapshot ? "unrecorded" : "none";
-}
-
 function displayState(states: Record<string, OperationalAllergenState> | undefined, key: string): OperationalAllergenState | "none" {
-  if (key === "no_key_allergens") {
-    return deriveNoKeyAllergens(states || {}).no_key_allergens;
-  }
+  if (key === "no_key_allergens") return resolveNoKeyAllergenState(states);
   const state = states?.[key];
   if (state) return state;
   return "unrecorded";
@@ -314,6 +307,10 @@ export default function AllergenReviewMatrix({
 
   const markChecked = async (rowKey: string) => {
     if (busy || locked) return;
+    if (!checkedRows.has(rowKey) && !isCompleteOperationalAllergenMap(latestStatesRef.current[rowKey])) {
+      setError("Record every allergen state, including No key allergens, before marking this dish checked.");
+      return;
+    }
     const nextCheckedRows = new Set(checkedRows);
     if (nextCheckedRows.has(rowKey)) nextCheckedRows.delete(rowKey);
     else nextCheckedRows.add(rowKey);
@@ -367,6 +364,7 @@ export default function AllergenReviewMatrix({
       {dirty && <p role="status">Unsaved allergen edits — changes save automatically after a short pause and are sent atomically with the first signature.</p>}
       <div className="cpu-allergen-legend" aria-label="Allergen matrix legend">
         <span><i className="cpu-allergen-state cpu-allergen-state--contains" />Contains</span>
+        <span><i className="cpu-allergen-state cpu-allergen-state--contains cpu-allergen-state--explicit">Yes</i>Explicit no key allergens</span>
         <span><i className="cpu-allergen-state cpu-allergen-state--may_contain" />May contain</span>
         <span><i className="cpu-allergen-state cpu-allergen-state--clear" />No declaration</span>
         <span><i className="cpu-allergen-state cpu-allergen-state--none" />Not recorded</span>
@@ -399,10 +397,11 @@ export default function AllergenReviewMatrix({
                         type="button"
                         disabled={busy || locked || key === "no_key_allergens"}
                         className={`cpu-allergen-state cpu-allergen-state--${state}`}
-                        aria-label={`${titleCaseDish(row.name)}, ${key}: ${state}`}
+                        aria-label={`${titleCaseDish(row.name)}, ${key === "no_key_allergens" ? "No key allergens" : key}: ${key === "no_key_allergens" && state === "contains" ? "explicitly recorded" : state}`}
+                        title={key === "no_key_allergens" && state === "contains" ? "Explicitly recorded: no key allergens" : key === "no_key_allergens" && state === "unrecorded" ? "No key allergen decision is not recorded" : undefined}
                         onClick={() => void toggle(row.key, key)}
                       >
-                        {state === "may_contain" ? "MC" : ""}
+                        {key === "no_key_allergens" ? (state === "contains" ? "Yes" : state === "unrecorded" ? "?" : "") : state === "may_contain" ? "MC" : ""}
                       </button>
                     </td>
                   );

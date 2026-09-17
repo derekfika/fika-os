@@ -5,13 +5,18 @@ import { loadDeliveredInReviewStatuses, MAX_DELIVERED_IN_REVIEW_ORDER_IDS, parse
 import { allergenMatrixContentHash, buildCpuAllergenRelease } from "../lib/cpu-allergen-release";
 import { currentAllergenReleaseMatchesOrder, matrixSignatureScope, type ProductionPlan } from "../app/lib/production-plan";
 import type { ProductionOrder } from "../lib/production-types";
+import { CANONICAL_ALLERGEN_KEYS } from "../../shared/allergen-contract";
 
 function order(canonicalId: string, requiresDelivery = true) {
   return { canonicalId, origin: "menu_planning", requiresDelivery, lines: [{ canonicalId: `${canonicalId}:line:1` }] } as unknown as ProductionOrder;
 }
 
+function linedOrder(canonicalId: string) {
+  return { ...order(canonicalId), serviceDate: "2026-09-03", requiredBy: "2026-09-03T12:00:00Z", sourceEntityId: "menu-day:1", sourcePublicationId: "publication:1", sourcePublicationDayId: "publication-day:1", sourceVersion: 1, sourceContentHash: "a".repeat(64), lines: [{ canonicalId: `${canonicalId}:line:1`, itemName: "Dish", customerQuantity: 1, approvedAllergenSnapshot: { allergens: { no_key_allergens: "contains" } } }] } as unknown as ProductionOrder;
+}
+
 function plan(orderId: string, status: ProductionPlan["status"] = "planning") {
-  return { id: `production-plan:${orderId}`, orderId, status, menuItems: [{ id: `${orderId}:menu`, sourceLineId: `${orderId}:line:1`, name: "Dish", note: "", subItems: [{ id: `${orderId}:sub`, name: "Dish", quantity: 1, allergens: {}, note: "", evidenceStatus: "completed" }] }], updatedAt: "2026-08-29T10:00:00.000Z", updatedBy: "test", audit: [] } as unknown as ProductionPlan;
+  return { id: `production-plan:${orderId}`, orderId, status, menuItems: [{ id: `${orderId}:menu`, sourceLineId: `${orderId}:line:1`, name: "Dish", note: "", subItems: [{ id: `${orderId}:sub`, name: "Dish", quantity: 1, allergens: Object.fromEntries(CANONICAL_ALLERGEN_KEYS.map(key => [key, "clear"])), note: "", evidenceStatus: "completed" }] }], updatedAt: "2026-08-29T10:00:00.000Z", updatedBy: "test", audit: [] } as unknown as ProductionPlan;
 }
 
 const signedOrder = { canonicalId: "signed-order", origin: "menu_planning", destinationOplocId: "oploc:site", serviceDate: "2026-09-03", requiredBy: "2026-09-03T12:00:00Z", sourceEntityId: "menu-day:1", sourcePublicationId: "publication:1", sourcePublicationDayId: "publication-day:1", sourceVersion: 1, sourceContentHash: "a".repeat(64), lines: [{ canonicalId: "line:1" }] } as unknown as ProductionOrder;
@@ -85,6 +90,15 @@ test("matrix hydration uses one bounded request and carries saved cells and sign
   assert.match(matrix, /onSignatureRolesChange/);
   assert.doesNotMatch(matrix, /orders\.map\(async order =>/);
   assert.doesNotMatch(page, /loadSignatures/);
+});
+
+test("missing CPU plan still exposes the exact current Menu lineage from the canonical order", () => {
+  const status = reviewStatusForPlan("known-missing", undefined, linedOrder("known-missing"));
+  assert.equal(status.reviewed, false);
+  assert.equal(status.sourceLineage?.sourcePublicationId, "publication:1");
+  assert.equal(status.sourceLineage?.sourcePublicationDayId, "publication-day:1");
+  assert.equal(status.sourceLineage?.sourceContentHash, "a".repeat(64));
+  assert.equal(status.sourceLineage?.productionOrderId, "known-missing");
 });
 
 test("review status keeps exact-lineage signatures visible while release materializes", () => {

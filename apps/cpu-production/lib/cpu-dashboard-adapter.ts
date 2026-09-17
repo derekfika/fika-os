@@ -37,6 +37,7 @@ export function cpuProjectionToOrders(projection: CpuDayProjection): ProductionO
       ...(row.destinationOplocId ? { destinationOplocId: row.destinationOplocId } : {}),
       ...(row.destinationLabel ? { destinationLabel: row.destinationLabel } : {}),
       ...(row.sourceEntityId ? { sourceEntityId: row.sourceEntityId } : {}),
+      ...(row.sourcePublicationId ? { sourcePublicationId: row.sourcePublicationId } : {}),
       ...(row.sourcePublicationDayId ? { sourcePublicationDayId: row.sourcePublicationDayId } : {}),
       ...(row.sourceVersion !== undefined ? { sourceVersion: row.sourceVersion } : {}),
       ...(row.sourceContentHash ? { sourceContentHash: row.sourceContentHash } : {}),

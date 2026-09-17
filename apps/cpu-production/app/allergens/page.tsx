@@ -7,7 +7,7 @@ import { loadCpuAllergenProjection } from "../lib/cpu-allergen-projection-loader
 import AllergenReviewMatrix from "../ui/AllergenReviewMatrix";
 import { SignatureModal } from "../ui/HospitalityAllergenDetail";
 import { buildAllergenReviewRows, deliveredInMenuOrdersForServiceDate, destination, orderDate } from "../../lib/production-day";
-import { captureSigningLineage } from "./signing-lineage";
+import { captureSigningLineage, signingLineageUnavailableMessage } from "./signing-lineage";
 import "./page.css";
 
 type SignatureRole = "production_chef" | "head_chef_site_manager";
@@ -157,6 +157,7 @@ export default function CpuAllergenReviewPage() {
 
   const refreshReviewStatus = async () => {
     const orderIds = masterOrders.map(order => order.canonicalId);
+    const orderLabels = Object.fromEntries(masterOrders.map(order => [order.canonicalId, destination(order)]));
     const response = await fetch(`/api/production-plan?matrixStatus=1&orderIds=${encodeURIComponent(orderIds.join(","))}`, { cache: "no-store" });
     if (!response.ok) throw new Error("Signature status could not be refreshed. Reload the review before continuing.");
     const body = await response.json() as { matrixStatuses?: MatrixStatus[] };
@@ -164,7 +165,7 @@ export default function CpuAllergenReviewPage() {
     const rolesByOrderId = Object.fromEntries(orderIds.map(orderId => [orderId, statuses.find(status => status.orderId === orderId)?.signatureRoles || []])) as Record<string, SignatureRole[]>;
     const nextMatrixStatusByOrderId = Object.fromEntries(orderIds.map(orderId => [orderId, statuses.find(status => status.orderId === orderId)?.matrixStatus])) as Record<string, string | undefined>;
     const commonRoles = (["production_chef", "head_chef_site_manager"] as SignatureRole[]).filter(role => statuses.length === orderIds.length && statuses.every(status => status.signatureRoles.includes(role)));
-    const freshLineage = captureSigningLineage(orderIds, date, statuses);
+    const freshLineage = captureSigningLineage(orderIds, date, statuses, orderLabels);
     const frozenLineage = signingSnapshotRef.current;
     if (frozenLineage && orderIds.some(orderId => !sameLineage(frozenLineage[orderId], freshLineage[orderId]))) {
       setSignatureMessage("The reviewed Menu publication changed after this review was frozen. Reopen the review and review the current matrix before signing.");
@@ -229,7 +230,7 @@ export default function CpuAllergenReviewPage() {
       const retryResults = await mapWithConcurrency(retryOrders, MAX_PARALLEL_RETRIES, async order => {
         const expectedLineage = refreshed.freshLineage[order.canonicalId];
         if (!expectedLineage) {
-          return { orderId: order.canonicalId, message: `${destination(order)}: The current Menu publication lineage is unavailable. Reload the review.` };
+          return { orderId: order.canonicalId, message: signingLineageUnavailableMessage([order.canonicalId], { [order.canonicalId]: destination(order) }) };
         }
         try {
           const response = await fetch("/api/production-plan", {
@@ -281,7 +282,9 @@ export default function CpuAllergenReviewPage() {
     }
     const signingSnapshot = signingSnapshotRef.current;
     if (!signingSnapshot || masterOrders.some(order => !signingSnapshot[order.canonicalId])) {
-      setSignatureMessage("The current Menu publication lineage is unavailable for one or more OPLOCs. Reload the review before signing.");
+      const missing = masterOrders.filter(order => !signingSnapshot?.[order.canonicalId]).map(order => order.canonicalId);
+      const labels = Object.fromEntries(masterOrders.map(order => [order.canonicalId, destination(order)]));
+      setSignatureMessage(signingLineageUnavailableMessage(masterOrders.map(order => order.canonicalId), labels, missing));
       return;
     }
     if (masterOrders.every(order => (signatureRolesByOrderId[order.canonicalId] || []).includes(role))) {
@@ -407,7 +410,9 @@ export default function CpuAllergenReviewPage() {
       return;
     }
     if (masterOrders.some(order => !lineageByOrderId[order.canonicalId])) {
-      setSignatureMessage("The current Menu publication lineage is unavailable for one or more OPLOCs. Reload the review before signing.");
+      const missing = masterOrders.filter(order => !lineageByOrderId[order.canonicalId]).map(order => order.canonicalId);
+      const labels = Object.fromEntries(masterOrders.map(order => [order.canonicalId, destination(order)]));
+      setSignatureMessage(signingLineageUnavailableMessage(masterOrders.map(order => order.canonicalId), labels, missing));
       return;
     }
     if ((role === "production_chef" && productionSigned) || (role === "head_chef_site_manager" && headChefSigned) || bothSigned || signatureBusy || hydrating) return;

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
-import { CANONICAL_ALLERGEN_KEYS, deriveNoKeyAllergens, type CanonicalAllergenMap } from "../../shared/allergen-contract";
+import { CANONICAL_ALLERGEN_KEYS, deriveNoKeyAllergens, resolveNoKeyAllergenState, type CanonicalAllergenMap } from "../../shared/allergen-contract";
 import { parseExternalProductionMaterialisation } from "@fika/server-shared/external-production";
 import { allergenMatrixContentHash } from "../lib/cpu-allergen-release";
 import { buildCpuPacketItems } from "../lib/cpu-packet-identity";
@@ -70,8 +70,13 @@ test("No Key Allergens survives Menu publication, Hub materialisation, CPU revie
   assert.deepEqual(packetItems.map(item => item.allergens.no_key_allergens), ["contains", "clear", "unrecorded"]);
 });
 
-test("CPU allergen UI uses the shared No Key derivation instead of a second algorithm", async () => {
+test("explicit No Key state survives sparse source and CPU review rendering", async () => {
+  assert.equal(resolveNoKeyAllergenState({ no_key_allergens: "contains" }), "contains");
+  assert.equal(resolveNoKeyAllergenState({ milk: "clear" }), "unrecorded");
+  assert.equal(resolveNoKeyAllergenState(undefined), "unrecorded");
   const source = await readFile(new URL("../app/ui/AllergenReviewMatrix.tsx", import.meta.url), "utf8");
-  assert.match(source, /deriveNoKeyAllergens\(states \|\| \{\}\)\.no_key_allergens/);
+  assert.match(source, /resolveNoKeyAllergenState\(states\)/);
+  assert.match(source, /Explicit no key allergens/);
+  assert.match(source, /Record every allergen state, including No key allergens/);
   assert.doesNotMatch(source, /namedAllergenPresent/);
 });

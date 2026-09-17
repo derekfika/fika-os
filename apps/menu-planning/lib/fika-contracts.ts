@@ -4,7 +4,7 @@ import type { ExternalProductionMaterialisation as SharedExternalProductionMater
 import { canonicalOplocId, GOVERNED_OPLOCS, oplocIdsMatch, resolveGovernedOploc } from "@fika/server-shared/governed-oplocs";
 import type { DurableDomainEvent } from "@fika/server-shared/durable-outbox";
 import { CANONICAL_ALLERGEN_COLUMNS, type CanonicalAllergenKey, type CanonicalAllergenMap, type OperationalAllergenState } from "../../shared/allergen-contract";
-export { CANONICAL_ALLERGEN_COLUMNS, CANONICAL_ALLERGEN_KEYS, deriveNoKeyAllergens, enforceNoKeyExclusivity, normaliseOperationalAllergens, toggleOperationalAllergen, toCanonicalAllergenKey } from "../../shared/allergen-contract";
+export { CANONICAL_ALLERGEN_COLUMNS, CANONICAL_ALLERGEN_KEYS, deriveNoKeyAllergens, enforceNoKeyExclusivity, isCompleteOperationalAllergenMap, normaliseOperationalAllergens, resolveNoKeyAllergenState, toggleOperationalAllergen, toCanonicalAllergenKey } from "../../shared/allergen-contract";
 export type { CanonicalAllergenKey, CanonicalAllergenMap, OperationalAllergenState } from "../../shared/allergen-contract";
 export { claimEvent, eventIsDue, markEventDeadLetter, markEventDelivered, markEventFailed, outboxRecord, resetEventForReplay } from "@fika/server-shared/durable-outbox";
 export type { DurableDomainEvent } from "@fika/server-shared/durable-outbox";

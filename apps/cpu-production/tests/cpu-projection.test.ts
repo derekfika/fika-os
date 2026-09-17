@@ -66,6 +66,7 @@ test("CPU projection preserves allergen review source identity and evidence", ()
   const source = {
     ...order("order:allergen-context"),
     sourceEntityId: "menu-publication:1",
+    sourcePublicationId: "publication:1",
     sourcePublicationDayId: "menu-publication-day:1",
     sourceVersion: 4,
     sourceContentHash: "sha256:menu",
@@ -88,6 +89,7 @@ test("CPU projection preserves allergen review source identity and evidence", ()
   const projected = projection.orders[0];
   const hydrated = cpuProjectionToOrders(projection)[0];
   assert.equal(projected.sourceEntityId, "menu-publication:1");
+  assert.equal(projected.sourcePublicationId, "publication:1");
   assert.equal(projected.sourcePublicationDayId, "menu-publication-day:1");
   assert.equal(projected.sourceVersion, 4);
   assert.equal(projected.quantities[0].sourceLineId, "production-line:1");
@@ -95,6 +97,7 @@ test("CPU projection preserves allergen review source identity and evidence", ()
   assert.equal(projected.quantities[0].allergenEvidenceStatus, "confirmed");
   assert.deepEqual(projected.quantities[0].approvedAllergenSnapshot, source.lines[0].approvedAllergenSnapshot);
   assert.equal(hydrated.sourcePublicationDayId, "menu-publication-day:1");
+  assert.equal(hydrated.sourcePublicationId, "publication:1");
   assert.equal(hydrated.lines[0].canonicalId, "production-line:1");
   assert.equal(hydrated.lines[0].sourceMenuItemId, "menu-item:1");
   assert.deepEqual(hydrated.lines[0].approvedAllergenSnapshot, source.lines[0].approvedAllergenSnapshot);

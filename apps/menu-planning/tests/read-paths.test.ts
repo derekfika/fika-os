@@ -210,7 +210,7 @@ test("manifest and Allergen Checker paths avoid unnecessary full catalogue reads
   assert.match(checker, /useRollingData\(\{ loadCatalogue: false \}\)/);
   assert.match(checker, /entry\.allergens/);
   assert.match(checker, /function displayAllergenState\(/);
-  assert.match(checker, /deriveNoKeyAllergens/);
+  assert.match(checker, /resolveNoKeyAllergenState/);
   assert.match(checker, /disabled=\{saving \|\| key === "no_key_allergens"\}/);
   assert.match(checker, /Record the planned allergen information for CPU Production/);
   assert.match(checker, /CPU performs the final independent safety check/);

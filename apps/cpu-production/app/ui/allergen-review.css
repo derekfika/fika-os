@@ -2,3 +2,4 @@
 .cpu-allergen-matrix-footer{justify-content:center!important;align-items:center!important;flex-direction:column!important;text-align:center}.cpu-allergen-matrix-footer>div{justify-content:center!important}
 .cpu-allergen-state--clear,.cpu-allergen-state--none{background:#fff!important;color:transparent!important}.cpu-allergen-check{min-width:86px;padding:8px 9px;border:0;border-radius:7px;background:#fff0ce;color:#704800;font-size:.68rem;font-weight:900;cursor:pointer}.cpu-allergen-check--done{background:#e2fbf2;color:#11604c}.cpu-allergen-check:disabled{opacity:1;cursor:default}
 .cpu-allergen-state--unrecorded{background:#fff5f7!important;color:#a21d47!important}
+.cpu-allergen-legend .cpu-allergen-state--explicit{width:auto;min-width:28px;padding:0 3px;color:#fff!important}

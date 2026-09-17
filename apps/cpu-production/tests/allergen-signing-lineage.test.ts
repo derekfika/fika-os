@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
-import { captureSigningLineage, type MatrixLineage } from "../app/allergens/signing-lineage";
+import { captureSigningLineage, signingLineageUnavailableMessage, type MatrixLineage } from "../app/allergens/signing-lineage";
 
 const lineage = (orderId: string, matrixContentHash: string): MatrixLineage => ({
   productionOrderId: orderId,
@@ -39,6 +39,17 @@ test("signing snapshot fails closed when a master OPLOC lineage is missing or mo
   assert.throws(
     () => captureSigningLineage(["order:haleon"], "2026-09-14", [{ orderId: "order:haleon", sourceLineage: { ...lineage("order:haleon", "b".repeat(64)), serviceDate: "2026-09-15" } }]),
     /lineage is unavailable/,
+  );
+});
+
+test("lineage failure identifies the affected OPLOC name and stable ID", () => {
+  const message = signingLineageUnavailableMessage(["order:commerzbank", "order:xchange"], { "order:commerzbank": "Commerzbank", "order:xchange": "FIKA Xchange" }, ["order:xchange"]);
+  assert.match(message, /FIKA Xchange \(order:xchange\)/);
+  assert.doesNotMatch(message, /Commerzbank/);
+  assert.match(message, /Reload the review/);
+  assert.throws(
+    () => captureSigningLineage(["order:commerzbank", "order:xchange"], "2026-09-14", [{ orderId: "order:commerzbank", sourceLineage: lineage("order:commerzbank", "b".repeat(64)) }], { "order:commerzbank": "Commerzbank", "order:xchange": "FIKA Xchange" }),
+    /FIKA Xchange \(order:xchange\)/,
   );
 });
 

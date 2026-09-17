@@ -55,3 +55,11 @@ test("saving an allergen patch persists the derived no-key state and explicit re
   applyRollingEntryPatch(entry, { allergens: Object.fromEntries(CANONICAL_ALLERGEN_KEYS.filter(key => key !== "no_key_allergens").map(key => [key, "clear"])) });
   assert.equal(entry.allergens.no_key_allergens, "contains");
 });
+
+test("saving a sparse explicit no-key decision preserves that decision", () => {
+  const entry = { id: "entry:explicit-no-key", dayId: "day:allergens", date: "2026-09-14", slot: "SOUP", itemLabel: "Soup", portions: 1, allocations: [], allergens: {}, audit: [] } as any;
+  applyRollingEntryPatch(entry, { allergens: { no_key_allergens: "contains" } });
+  assert.equal(entry.allergens.no_key_allergens, "contains");
+  assert.equal(entry.allergens.milk, undefined);
+  assert.equal(entry.allergenReviewInvalidated, false);
+});

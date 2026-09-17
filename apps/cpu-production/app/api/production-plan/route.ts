@@ -4,7 +4,7 @@ import { z } from "zod";
 import { existsSync, promises as fs } from "node:fs";
 import { localFixtureOrders, updateLocalFixture } from "../local-fixtures";
 import { allergenAuthorityMatchesOrder, currentAllergenReleaseMatchesOrder, matrixSignatureScope, signatureMatchesScope, signedAllergenCheckpointMatchesOrder, type AllergenCellState, type InternalMatrixSignature, type MatrixArtifact, type PlannedMenuItem, type ProductionPlan } from "../../lib/production-plan";
-import { normaliseOperationalAllergens } from "../../../../shared/allergen-contract";
+import { isCompleteOperationalAllergenMap, normaliseOperationalAllergens } from "../../../../shared/allergen-contract";
 import { canonicalProductionFailureKind, productionOrderDetail, productionQueue, transitionProductionOrder, type CanonicalProductionFailure } from "../../../lib/production-http-client";
 import type { ProductionOrder, ProductionStatus } from "../../../lib/production-types";
 import { rebuildCpuDayProjection, rebuildCpuWeekProjection, weekCommencingFor } from "../../../lib/cpu-projection";
@@ -89,6 +89,10 @@ const planRepository = createProductionPlanRepository();
 const isLocalRuntime = () => (process.env.FIKA_RUNTIME_MODE || "local") === "local";
 function normalisePlanAllergens(plan: ProductionPlan): ProductionPlan {
   return { ...plan, menuItems: plan.menuItems.map(item => ({ ...item, subItems: item.subItems.map(sub => ({ ...sub, allergens: normaliseOperationalAllergens(sub.allergens) })) })) };
+}
+function assertAllergenMatrixComplete(menuItems: PlannedMenuItem[], context: string) {
+  const incomplete = menuItems.find(item => item.subItems.some(subItem => !isCompleteOperationalAllergenMap(subItem.allergens)));
+  if (incomplete) throw Object.assign(new Error(`Record every allergen state, including No key allergens, before ${context}.`), { status: 422, code: "CPU_ALLERGEN_REVIEW_INCOMPLETE" });
 }
 async function persistPlan(plan: ProductionPlan, expectedUpdatedAt?: string) { await planRepository.save(plan, expectedUpdatedAt); }
 function now() { return new Date().toISOString(); }
@@ -212,6 +216,7 @@ async function applyMasterSignatureBatch(request: NextRequest, actor: Awaited<Re
     if (!currentScope || !samePublishedLineage(currentScope, expectedLineage) || (plan.menuItems.length > 0 && currentMenuContentHash !== expectedLineage.matrixContentHash && currentMenuContentHash !== reviewedMenuContentHash)) throw Object.assign(new Error("The reviewed Menu publication or matrix content has changed. Reload and review the current matrix before signing."), { status: 409, code: "CPU_SIGN_LINEAGE_CONFLICT" });
     const subItems = reviewedPlan.menuItems.flatMap(item => item.subItems);
     if (!subItems.length || reviewedPlan.menuItems.some(item => !item.name.trim() || !item.subItems.length) || subItems.some(item => !item.name.trim() || item.evidenceStatus !== "completed")) throw Object.assign(new Error(`Complete every named sub-item and allergen checker before signing ${order.destinationLabel || order.canonicalId}.`), { status: 422 });
+    assertAllergenMatrixComplete(reviewedPlan.menuItems, `signing ${order.destinationLabel || order.canonicalId}`);
     const signatures = (plan.signatures || []).filter(signature => signatureMatchesScope(signature, persistedScope) || signatureMatchesScope(signature, currentScope));
     const alreadyApplied = signatures.some(signature => signature.role === command.role);
     if (!alreadyApplied && signatures.length > 0 && plan.signedMenuContentHash && plan.signedMenuContentHash !== reviewedMenuContentHash) throw Object.assign(new Error("The allergen matrix changed after the first signature. Re-review the matrix before signing again."), { status: 409, code: "CPU_SIGN_LINEAGE_CONFLICT" });
@@ -367,8 +372,9 @@ async function applyMatrixOperation(request: NextRequest, actor: Awaited<ReturnT
     plan.audit.push({ action: "plan-saved", at: now(), by: auditActor });
     updateLocalFixture(operation.orderId, current => ({ ...current, status: "planning", version: current.version + 1 }));
   } else {
-    const subItems = plan.menuItems.flatMap(item => item.subItems);
-    if (!plan.menuItems.length || plan.menuItems.some(item => !item.name.trim() || !item.subItems.length) || subItems.some(item => !item.name.trim() || item.evidenceStatus !== "completed")) throw Object.assign(new Error("Complete every menu item, sub-item name and allergen checker before marking the plan Planned."), { status: 422 });
+     const subItems = plan.menuItems.flatMap(item => item.subItems);
+     if (!plan.menuItems.length || plan.menuItems.some(item => !item.name.trim() || !item.subItems.length) || subItems.some(item => !item.name.trim() || item.evidenceStatus !== "completed")) throw Object.assign(new Error("Complete every menu item, sub-item name and allergen checker before marking the plan Planned."), { status: 422 });
+     assertAllergenMatrixComplete(plan.menuItems, "marking the plan Planned");
     if (matchesSignedCheckpoint) { plan.signatures = plan.signedSignatures; plan.matrixArtifact = plan.signedMatrixArtifact; }
     else if (contentChanged || ((plan.currentAllergenRelease || plan.signatures?.length) && !authorityMatches)) invalidateSignedAllergenAuthorityForNewSourceLineage(plan, auditActor, now(), "The allergen matrix or source lineage changed after signed release.");
     plan.status = "planned";
@@ -561,8 +567,9 @@ async function handlePost(request: NextRequest) {
     }
     if (command.action === "sign-matrix") {
       if (plan.status !== "planned" && plan.status !== "planning") throw Object.assign(new Error("The allergen matrix is not available for signing."), { status: 422 });
-      const subItems = plan.menuItems.flatMap(item => item.subItems);
-      if (!subItems.length || subItems.some(item => !item.name.trim())) throw Object.assign(new Error("Complete every named sub-item before signing the matrix."), { status: 422 });
+       const subItems = plan.menuItems.flatMap(item => item.subItems);
+       if (!subItems.length || subItems.some(item => !item.name.trim())) throw Object.assign(new Error("Complete every named sub-item before signing the matrix."), { status: 422 });
+       assertAllergenMatrixComplete(plan.menuItems, "signing the matrix");
       const candidate = structuredClone(plan);
       candidate.status = "planned";
       const currentMenuContentHash = menuContentHash(plan.menuItems);

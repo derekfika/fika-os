@@ -1,9 +1,10 @@
 import type { ProductionPlan } from "../app/lib/production-plan";
-import { currentAllergenReleaseMatchesOrder, matrixSignatureScope, signatureAuthorityForOrder, signatureMatchesScope, type MatrixSignatureScope } from "../app/lib/production-plan";
+import { currentAllergenReleaseMatchesOrder, matrixSignatureScope, signatureAuthorityForOrder, signatureMatchesScope, type MatrixSignatureScope, type PlannedMenuItem } from "../app/lib/production-plan";
 import { allergenMatrixContentHash } from "./cpu-allergen-release";
 import type { ProductionOrder } from "./production-types";
 import type { ProductionPlanRepository } from "./production-plan-repository";
 import { recordDeliveredInReadBudget } from "./delivered-in-read-budget";
+import { isCompleteOperationalAllergenMap, type CanonicalAllergenMap } from "../../shared/allergen-contract";
 
 export const MAX_DELIVERED_IN_REVIEW_ORDER_IDS = 100;
 
@@ -20,6 +21,24 @@ export type DeliveredInReviewStatus = {
   sourceLineage?: MatrixSignatureScope;
 };
 
+function initialReviewItems(order: ProductionOrder): PlannedMenuItem[] {
+  return order.lines.map((line, index) => ({
+    id: `menu-item:${order.canonicalId}:${index + 1}`,
+    sourceLineId: line.canonicalId,
+    name: line.itemName,
+    note: "",
+    subItems: [{
+      id: `sub-item:${order.canonicalId}:${index + 1}:1`,
+      name: line.itemName,
+      quantity: line.customerQuantity,
+      allergens: (line.approvedAllergenSnapshot?.allergens || {}) as CanonicalAllergenMap,
+      ...(line.approvedAllergenSnapshot?.mayContainNotes ? { mayContainNotes: line.approvedAllergenSnapshot.mayContainNotes } : {}),
+      note: "",
+      evidenceStatus: "completed",
+    }],
+  }));
+}
+
 export function parseDeliveredInReviewOrderIds(value: string | null) {
   if (value === null) throw Object.assign(new Error("Delivered-In review order IDs are required."), { status: 400 });
   const ids = [...new Set(value.split(",").map((id) => id.trim()).filter(Boolean))];
@@ -29,9 +48,12 @@ export function parseDeliveredInReviewOrderIds(value: string | null) {
 }
 
 export function reviewStatusForPlan(orderId: string, plan: ProductionPlan | undefined, order?: ProductionOrder): DeliveredInReviewStatus {
-  if (!plan) return { orderId, planStatus: "draft", reviewed: false, completedSourceLineIds: [], signatureRoles: [], matrixItems: [] };
+  if (!plan) {
+    const sourceLineage = order ? matrixSignatureScope(order, allergenMatrixContentHash(initialReviewItems(order))) : undefined;
+    return { orderId, planStatus: "draft", reviewed: false, completedSourceLineIds: [], signatureRoles: [], matrixItems: [], ...(sourceLineage ? { sourceLineage } : {}) };
+  }
   const completedSourceLineIds = plan.menuItems
-    .filter((item) => item.sourceLineId && item.subItems.length > 0 && item.subItems.every(subItem => subItem.evidenceStatus === "completed"))
+    .filter((item) => item.sourceLineId && item.subItems.length > 0 && item.subItems.every(subItem => subItem.evidenceStatus === "completed" && isCompleteOperationalAllergenMap(subItem.allergens)))
     .map((item) => item.sourceLineId!);
   const scope = order ? matrixSignatureScope(order, allergenMatrixContentHash(plan.menuItems)) : undefined;
   const validSignatures = order ? signatureAuthorityForOrder(plan, order, plan.menuItems) : (plan.signatures || []).filter(signature => Boolean(signature.scope));
@@ -39,7 +61,7 @@ export function reviewStatusForPlan(orderId: string, plan: ProductionPlan | unde
   return {
     orderId,
     planStatus: plan.status,
-    reviewed: plan.menuItems.length > 0 && plan.menuItems.every((item) => item.sourceLineId && item.subItems.length > 0 && item.subItems.every(subItem => subItem.evidenceStatus === "completed")),
+    reviewed: plan.menuItems.length > 0 && plan.menuItems.every((item) => item.sourceLineId && item.subItems.length > 0 && item.subItems.every(subItem => subItem.evidenceStatus === "completed" && isCompleteOperationalAllergenMap(subItem.allergens))),
     completedSourceLineIds,
     signatureRoles,
     updatedAt: plan.updatedAt,
