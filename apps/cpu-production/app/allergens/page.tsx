@@ -22,6 +22,8 @@ type MatrixLineage = {
   matrixContentHash: string;
 };
 type MatrixStatus = { orderId: string; signatureRoles: SignatureRole[]; matrixStatus?: string; sourceLineage?: MatrixLineage };
+const MATERIALIZATION_GRACE_MS = 15_000;
+const MAX_PARALLEL_RETRIES = 4;
 
 function sameLineage(left: MatrixLineage | undefined, right: MatrixLineage | undefined) {
   return Boolean(left && right && left.productionOrderId === right.productionOrderId && left.serviceDate === right.serviceDate && left.sourceDayId === right.sourceDayId && left.sourcePublicationId === right.sourcePublicationId && left.sourcePublicationDayId === right.sourcePublicationDayId && left.sourceVersion === right.sourceVersion && left.sourceContentHash === right.sourceContentHash && left.matrixContentHash === right.matrixContentHash);
@@ -33,6 +35,19 @@ function formatDate(date: string) {
     day: "numeric",
     month: "long",
   });
+}
+
+async function mapWithConcurrency<T, R>(items: T[], limit: number, worker: (item: T) => Promise<R>) {
+  const results = new Array<R>(items.length);
+  let nextIndex = 0;
+  const workerCount = Math.min(Math.max(1, limit), items.length);
+  await Promise.all(Array.from({ length: workerCount }, async () => {
+    while (nextIndex < items.length) {
+      const index = nextIndex++;
+      results[index] = await worker(items[index]);
+    }
+  }));
+  return results;
 }
 
 export default function CpuAllergenReviewPage() {
@@ -53,6 +68,7 @@ export default function CpuAllergenReviewPage() {
   const [signatureBusy, setSignatureBusy] = useState(false);
   const [hydrating, setHydrating] = useState(false);
   const [reviewDirty, setReviewDirty] = useState(false);
+  const [retryEligible, setRetryEligible] = useState(false);
   const signingReviewRef = useRef<(() => unknown[]) | undefined>(undefined);
   const signingSnapshotRef = useRef<Record<string, MatrixLineage> | undefined>(undefined);
   const signingAttemptRef = useRef<{ role: SignatureRole; id: string } | undefined>(undefined);
@@ -77,6 +93,7 @@ export default function CpuAllergenReviewPage() {
     setFinalizationComplete(false);
     setReviewFrozen(false);
     setReviewDirty(false);
+    setRetryEligible(false);
     signingReviewRef.current = undefined;
     signingAttemptRef.current = undefined;
     if (releasePollTimerRef.current) clearTimeout(releasePollTimerRef.current);
@@ -161,15 +178,33 @@ export default function CpuAllergenReviewPage() {
 
   const pollReleaseStatus = async () => {
     const run = ++releasePollRunRef.current;
+    const startedAt = Date.now();
     const refresh = async (): Promise<void> => {
       if (run !== releasePollRunRef.current) return;
       const refreshed = await refreshReviewStatus();
       if (run !== releasePollRunRef.current) return;
+      const currentCount = refreshed.statuses.filter(status => status.matrixStatus === "ready").length;
+      const allReady = refreshed.statuses.length === masterOrders.length && currentCount === masterOrders.length;
+      const hasFailure = refreshed.statuses.some(status => status.matrixStatus === "failed");
+      const hasUnconfigured = refreshed.statuses.some(status => status.matrixStatus === "not_configured");
+      if (allReady) {
+        setRetryEligible(false);
+        setSignatureMessage(`${currentCount} OPLOC release${currentCount === 1 ? "" : "s"} current.`);
+      } else {
+        const eligible = hasFailure || (!hasUnconfigured && Date.now() - startedAt >= MATERIALIZATION_GRACE_MS);
+        setRetryEligible(eligible);
+        if (eligible && hasFailure) setSignatureMessage("One or more OPLOC releases need materialisation retry.");
+      }
       const terminal = refreshed.statuses.length === masterOrders.length && refreshed.statuses.every(status => ["ready", "failed", "not_configured"].includes(status.matrixStatus || ""));
       if (!terminal) releasePollTimerRef.current = setTimeout(() => void refresh().catch(() => undefined), 2500);
     };
     await refresh();
   };
+
+  useEffect(() => {
+    if (!bothSigned || fullySigned || !masterOrders.length) return;
+    void pollReleaseStatus().catch(() => undefined);
+  }, [bothSigned, fullySigned, masterOrders.length]);
 
   const pendingReleaseOrders = useMemo(
     () => masterOrders.filter(order => matrixStatusByOrderId[order.canonicalId] !== "ready"),
@@ -179,6 +214,7 @@ export default function CpuAllergenReviewPage() {
   const retryPendingOplocReleases = async () => {
     if (site || signatureBusy || hydrating || !bothSigned || !masterOrders.length) return;
     setSignatureBusy(true);
+    setRetryEligible(false);
     setSignatureMessage("Refreshing current Menu publication lineage before retrying pending OPLOC releases…");
     const failures: Array<{ orderId: string; message: string }> = [];
     try {
@@ -188,22 +224,27 @@ export default function CpuAllergenReviewPage() {
       }
       const statusByOrderId = new Map(refreshed.statuses.map(status => [status.orderId, status]));
       const retryOrders = masterOrders.filter(order => statusByOrderId.get(order.canonicalId)?.matrixStatus !== "ready");
-      for (const order of retryOrders) {
+      const retryResults = await mapWithConcurrency(retryOrders, MAX_PARALLEL_RETRIES, async order => {
         const expectedLineage = refreshed.freshLineage[order.canonicalId];
         if (!expectedLineage) {
-          failures.push({ orderId: order.canonicalId, message: `${destination(order)}: The current Menu publication lineage is unavailable. Reload the review.` });
-          continue;
+          return { orderId: order.canonicalId, message: `${destination(order)}: The current Menu publication lineage is unavailable. Reload the review.` };
         }
-        const response = await fetch("/api/production-plan", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ action: "retry-materialization", orderId: order.canonicalId, expectedLineage }),
-        });
-        const body = await response.json().catch(() => undefined) as { error?: { code?: string; message?: string }; materializationDelivery?: { status?: string } | null } | undefined;
-        const deliveryStatus = body?.materializationDelivery?.status;
-        if (body?.error?.code === "CPU_RELEASE_ALREADY_CURRENT") continue;
-        if (!response.ok || (deliveryStatus && deliveryStatus !== "delivered")) failures.push({ orderId: order.canonicalId, message: `${destination(order)}: ${body?.error?.message || (deliveryStatus ? `Materialisation delivery ${deliveryStatus}.` : "The OPLOC release retry failed.")}` });
-      }
+        try {
+          const response = await fetch("/api/production-plan", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ action: "retry-materialization", orderId: order.canonicalId, expectedLineage }),
+          });
+          const body = await response.json().catch(() => undefined) as { error?: { code?: string; message?: string }; materializationDelivery?: { status?: string } | null } | undefined;
+          const deliveryStatus = body?.materializationDelivery?.status;
+          if (body?.error?.code === "CPU_RELEASE_ALREADY_CURRENT") return undefined;
+          if (!response.ok || (deliveryStatus && deliveryStatus !== "delivered")) return { orderId: order.canonicalId, message: `${destination(order)}: ${body?.error?.message || (deliveryStatus ? `Materialisation delivery ${deliveryStatus}.` : "The OPLOC release retry failed.")}` };
+          return undefined;
+        } catch (cause) {
+          return { orderId: order.canonicalId, message: `${destination(order)}: ${cause instanceof Error ? cause.message : "The OPLOC release retry failed."}` };
+        }
+      });
+      failures.push(...retryResults.filter((failure): failure is { orderId: string; message: string } => Boolean(failure)));
       const final = await refreshReviewStatus();
       const currentCount = final.statuses.filter(status => status.matrixStatus === "ready").length;
       const stillPending = masterOrders.filter(order => final.statuses.find(status => status.orderId === order.canonicalId)?.matrixStatus !== "ready");
@@ -211,10 +252,13 @@ export default function CpuAllergenReviewPage() {
       const pendingIds = new Set(stillPending.map(order => order.canonicalId));
       const unresolvedFailures = failures.filter(failure => pendingIds.has(failure.orderId)).map(failure => failure.message);
       if (stillPending.length === 0) {
+        setRetryEligible(false);
         setSignatureMessage(currentMessage);
       } else if (unresolvedFailures.length) {
+        setRetryEligible(true);
         setSignatureMessage(`${currentMessage} ${unresolvedFailures.join(" · ")}`);
       } else if (stillPending.length) {
+        setRetryEligible(true);
         setSignatureMessage(`${currentMessage} ${stillPending.map(order => destination(order)).join(", ")} retry still pending.`);
       } else {
         setSignatureMessage(currentMessage);
@@ -304,13 +348,8 @@ export default function CpuAllergenReviewPage() {
         );
       } else {
         setSignatureRoles(current => [...new Set([...current, role])]);
-        setSignatureMessage(
-          role === "production_chef"
-            ? "Production chef signature recorded once across the complete service-date master matrix."
-            : "Head chef / site manager signature recorded once across the complete service-date master matrix. OPLOC-scoped releases are refreshing.",
-        );
+        setSignatureMessage(role === "production_chef" ? "Production chef signature recorded once across the complete service-date master matrix." : "Fully signed · generating OPLOC releases");
         signingAttemptRef.current = undefined;
-        if (refreshed.commonRoles.includes("production_chef") && refreshed.commonRoles.includes("head_chef_site_manager")) void pollReleaseStatus().catch(() => undefined);
       }
     } catch (cause) {
       setSigning(undefined);
@@ -383,7 +422,7 @@ export default function CpuAllergenReviewPage() {
     : fullySigned
       ? "Both signatures recorded and every OPLOC-scoped release is current."
       : bothSigned
-        ? "Both signatures recorded. OPLOC-scoped releases are generating or refreshing."
+        ? "Fully signed · generating OPLOC releases"
         : allChecked
           ? "Every dish is checked. Capture the remaining required master signature."
           : `Check every dish before signing · ${checkedCount} of ${rows.length} checked.`;
@@ -486,7 +525,7 @@ export default function CpuAllergenReviewPage() {
                   <button type="button" disabled={signatureBusy || hydrating || headChefSigned} onClick={() => beginSigning("head_chef_site_manager")}>
                     {headChefSigned ? "Head chef signed" : "Sign as head chef / site manager"}
                   </button>
-                  {bothSigned && pendingReleaseOrders.length > 0 && <button type="button" className="cpu-allergen-retry" disabled={signatureBusy || hydrating} onClick={() => void retryPendingOplocReleases()}>Retry pending OPLOC releases</button>}
+                  {bothSigned && retryEligible && pendingReleaseOrders.length > 0 && <button type="button" className="cpu-allergen-retry" disabled={signatureBusy || hydrating} onClick={() => void retryPendingOplocReleases()}>Retry pending OPLOC releases</button>}
                 </>
               )}
               {reviewFrozen && <button type="button" disabled={signatureBusy || hydrating} onClick={() => void reopenForAmendment()}>Reopen for amendment</button>}

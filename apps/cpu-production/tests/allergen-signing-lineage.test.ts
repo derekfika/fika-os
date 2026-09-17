@@ -194,7 +194,8 @@ test("master page retries only non-ready OPLOC releases with fresh lineage", asy
   assert.match(retryBlock, /expectedLineage/);
   assert.match(retryBlock, /const final = await refreshReviewStatus\(\)/);
   assert.doesNotMatch(retryBlock, /action: "sign-matrix"|action: "reopen-review"|menuItems/);
-  assert.match(page, /bothSigned && pendingReleaseOrders\.length > 0/);
+  assert.match(page, /bothSigned && retryEligible && pendingReleaseOrders\.length > 0/);
+  assert.match(page, /mapWithConcurrency\(retryOrders, MAX_PARALLEL_RETRIES/);
   assert.match(page, /!site/);
 });
 
@@ -213,4 +214,17 @@ test("release polling stops at terminal statuses and cleans up on date changes",
   assert.match(poll, /\["ready", "failed", "not_configured"\]/);
   assert.match(page, /releasePollTimerRef\.current\) clearTimeout/);
   assert.match(page, /releasePollRunRef\.current \+= 1/);
+});
+
+test("master signing distinguishes generating from failed materialization and lets authoritative status win", async () => {
+  const page = await readFile(new URL("../app/allergens/page.tsx", import.meta.url), "utf8");
+  const review = await readFile(new URL("../lib/delivered-in-review.ts", import.meta.url), "utf8");
+  assert.match(page, /MATERIALIZATION_GRACE_MS = 15_000/);
+  assert.match(page, /Fully signed · generating OPLOC releases/);
+  assert.match(page, /setSignatureMessage\(`\$\{currentCount\} OPLOC release/);
+  assert.match(page, /setRetryEligible\(eligible\)/);
+  assert.match(page, /status\.matrixStatus === "failed"/);
+  assert.match(review, /materializationStatus === "failed"/);
+  assert.match(review, /matrixStatus: "failed"/);
+  assert.doesNotMatch(page, /current\. .*Materialisation delivery failed/);
 });

@@ -1,8 +1,9 @@
 import { z } from "zod";
 import type { ExternalProductionMaterialisation } from "@fika/server-shared/external-production";
+import { OPERATIONAL_ALLERGEN_STATES } from "../../shared/allergen-contract";
 
 const allergenSnapshot = z.object({
-  allergens: z.record(z.string(), z.string()),
+  allergens: z.record(z.string(), z.enum(OPERATIONAL_ALLERGEN_STATES)),
   allergenEvidenceStatus: z.enum(["confirmed", "unreviewed", "missing", "conflicting"]).optional(),
   mayContainNotes: z.string().optional(),
   sourcePublicationDayId: z.string().optional(),

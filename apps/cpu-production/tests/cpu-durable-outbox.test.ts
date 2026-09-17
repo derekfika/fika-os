@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildCpuPropagationEvents, deliverCpuPropagation, enqueueCpuDelivery, enqueueCpuPropagation, listCpuOutboxForTests, normaliseCpuBaseUrl, replayCpuPropagation, resetCpuOutboxForTests, recoverCpuPropagation, seedCpuOutboxForTests } from "../lib/cpu-durable-outbox";
+import { buildCpuPropagationEvents, CPU_DELIVERY_TIMEOUT_MS, cpuDeliveryTimeoutMs, deliverCpuPropagation, enqueueCpuDelivery, enqueueCpuPropagation, listCpuOutboxForTests, normaliseCpuBaseUrl, replayCpuPropagation, resetCpuOutboxForTests, recoverCpuPropagation, seedCpuOutboxForTests } from "../lib/cpu-durable-outbox";
 import { cpuReleaseMaterializationEventId } from "../lib/cpu-release-fanout";
 
 const input = {
@@ -13,6 +13,14 @@ const input = {
   order: { origin: "menu_planning", destinationOplocId: "oploc-1" },
   logistics: true,
 };
+
+test("CPU outbox uses a longer bounded timeout only for self materialisation", () => {
+  assert.equal(CPU_DELIVERY_TIMEOUT_MS.materialization, 60_000);
+  assert.equal(cpuDeliveryTimeoutMs("cpu-production", "/api/internal/cpu-release-materialize"), 60_000);
+  assert.equal(cpuDeliveryTimeoutMs("delivered-in", "/api/delivered-in/invalidate"), 8_000);
+  assert.equal(cpuDeliveryTimeoutMs("logistics", "/api/logistics/invalidate"), 8_000);
+  assert.equal(cpuDeliveryTimeoutMs("cpu-production", "/api/internal/cpu-post-commit"), 8_000);
+});
 
 test("CPU self-delivery normalizes configured bases into absolute safe URLs", () => {
   const cases = [

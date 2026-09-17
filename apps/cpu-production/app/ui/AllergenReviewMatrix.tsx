@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { CANONICAL_ALLERGEN_COLUMNS, toggleOperationalAllergen, type CanonicalAllergenKey, type OperationalAllergenState } from "../../../shared/allergen-contract";
+import { CANONICAL_ALLERGEN_COLUMNS, deriveNoKeyAllergens, toggleOperationalAllergen, type CanonicalAllergenKey, type OperationalAllergenState } from "../../../shared/allergen-contract";
 import type { ProductionOrder } from "../../lib/production-types";
 import { allergenReviewKey, type AllergenReviewRow } from "../../lib/production-day";
 import { bookingContextEntries } from "./BookingContext";
@@ -28,9 +28,7 @@ function stateFor(row: AllergenReviewRow, key: string): OperationalAllergenState
 
 function displayState(states: Record<string, OperationalAllergenState> | undefined, key: string): OperationalAllergenState | "none" {
   if (key === "no_key_allergens") {
-    const namedKeys = CANONICAL_ALLERGEN_COLUMNS.map(([candidate]) => candidate).filter(candidate => candidate !== "no_key_allergens");
-    const namedAllergenPresent = namedKeys.some(name => states?.[name] === "contains" || states?.[name] === "may_contain");
-    return namedAllergenPresent ? "clear" : namedKeys.every(name => states?.[name] === "clear") ? "contains" : "unrecorded";
+    return deriveNoKeyAllergens(states || {}).no_key_allergens;
   }
   const state = states?.[key];
   if (state) return state;

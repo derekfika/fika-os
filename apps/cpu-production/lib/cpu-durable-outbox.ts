@@ -47,6 +47,10 @@ export type CpuDurableDeliveryInput = {
 
 export const CPU_PROPAGATION_OUTBOX_COLLECTION = "fikaCpuPropagationOutboxV1";
 export const CPU_PROPAGATION_OUTBOX_PAGE_SIZE = 25;
+export const CPU_DELIVERY_TIMEOUT_MS = {
+  default: 8_000,
+  materialization: 60_000,
+} as const;
 
 const memoryOutbox = new Map<string, CpuOutboxEvent>();
 const memoryEligible = new Map<string, string>();
@@ -224,6 +228,13 @@ function routeBase(consumer: CpuPropagationConsumer) {
   return consumer === "delivered-in" ? "http://localhost:3800" : "http://localhost:3900";
 }
 
+/** Keep ordinary invalidations short while allowing bounded CPU materialisation to finish. */
+export function cpuDeliveryTimeoutMs(consumer: CpuPropagationConsumer, route: string) {
+  return consumer === "cpu-production" && route === "/api/internal/cpu-release-materialize"
+    ? CPU_DELIVERY_TIMEOUT_MS.materialization
+    : CPU_DELIVERY_TIMEOUT_MS.default;
+}
+
 function cpuInternalToken() {
   const token = process.env.FIKA_INTERNAL_API_TOKEN?.trim() || "";
   const runtimeMode = process.env.FIKA_RUNTIME_MODE || "local";
@@ -287,7 +298,7 @@ export async function deliverCpuPropagation(eventId: string, at = new Date()) {
       method: "POST",
       headers: { "content-type": "application/json", accept: "application/json", "x-fika-internal-token": internalToken, "x-fika-delivery-id": payload.deliveryId, "x-fika-source-event-id": payload.sourceEventId },
       body: JSON.stringify(payload.body),
-      signal: AbortSignal.timeout(8_000),
+      signal: AbortSignal.timeout(cpuDeliveryTimeoutMs(payload.consumer, payload.route)),
     });
     if (!response.ok) throw new Error(`${payload.consumer} returned HTTP ${response.status}.`);
     const delivered = markEventDelivered(claimed, new Date().toISOString());

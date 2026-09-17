@@ -95,6 +95,8 @@ test("review status keeps exact-lineage signatures visible while release materia
   assert.deepEqual(both.signatureRoles, ["production_chef", "head_chef_site_manager"]);
   assert.equal(both.matrixStatus, "generating");
   assert.equal(currentAllergenReleaseMatchesOrder(pendingRelease, signedOrder, signedItems as never), false);
+  const failed = reviewStatusForPlan(signedOrder.canonicalId, { ...plan(signedOrder.canonicalId, "planned"), menuItems: signedItems, signatures: [signature("production_chef"), signature("head_chef_site_manager")], currentAllergenRelease: { ...pendingRelease, status: "current", materializationStatus: "failed" } } as unknown as ProductionPlan, signedOrder);
+  assert.equal(failed.matrixStatus, "failed");
   const ready = reviewStatusForPlan(signedOrder.canonicalId, { ...plan(signedOrder.canonicalId, "planned"), menuItems: signedItems, signatures: [signature("production_chef"), signature("head_chef_site_manager")], matrixArtifact: { driveUrl: "https://drive.test/release", localUrl: "/release.pdf" }, currentAllergenRelease: { ...pendingRelease, status: "current", materializationStatus: "ready", packetArtifacts: [pendingRelease.masterArtifact] } } as unknown as ProductionPlan, signedOrder);
   assert.deepEqual(ready.signatureRoles, ["production_chef", "head_chef_site_manager"]);
   assert.equal(ready.matrixStatus, "ready");

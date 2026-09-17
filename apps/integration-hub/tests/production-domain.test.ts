@@ -70,6 +70,48 @@ test("Menu publication materialisation is idempotent and preserves publication l
   }
 });
 
+test("Menu publication materialisation preserves all canonical No Key Allergens states on the CPU order", async () => {
+  const suffix = `${Date.now()}:${process.pid}:no-key`;
+  const input = {
+    sourceDomain: "menu-planning" as const,
+    sourceEntityId: `rolling-week:${suffix}:day:0`,
+    publicationId: `menu-publication:${suffix}`,
+    sourcePublicationDayId: `menu-publication:${suffix}:day:0:v1`,
+    sourceVersion: 1,
+    sourceContentHash: "c".repeat(64),
+    destinationOplocId: "oploc:haleon",
+    destinationLabel: "Haleon",
+    serviceDate: "2026-09-14",
+    status: "published" as const,
+    lines: ["contains", "clear", "unrecorded"].map((noKeyAllergens, index) => ({
+      sourceLineId: `entry:${suffix}:${index + 1}`,
+      canonicalItemId: `dish:no-key:${index + 1}`,
+      itemName: `No Key Dish ${index + 1}`,
+      quantity: 10,
+      unit: "portion",
+      workstream: "delivered_in" as const,
+      approvedAllergenSnapshot: { allergens: { no_key_allergens: noKeyAllergens }, sourcePublicationDayId: `menu-publication:${suffix}:day:0:v1`, sourceVersion: 1, sourceContentHash: "c".repeat(64) },
+    })),
+  };
+  const actor = { uid: "integration-test", name: "Integration Test", role: "integration-admin" as const, synthetic: true as const };
+  try {
+    const result = await materialiseExternalProductionOrder(actor, input);
+    assert.deepEqual(result.order.lines.map(line => line.approvedAllergenSnapshot?.allergens.no_key_allergens), ["contains", "clear", "unrecorded"]);
+  } finally {
+    const orderId = materialisedProductionId(input);
+    const [requirementsSnapshot, receiptsSnapshot] = await Promise.all([
+      db.collection("fikaFulfilmentRequirementsV1").where("sourceEntityId", "==", orderId).get(),
+      db.collection("fikaDomainEventInboxV1").where("sourceAggregateId", "==", orderId).get(),
+    ]);
+    const batch = db.batch();
+    batch.delete(db.collection("fikaProductionOrdersV1").doc(stableDocumentId(orderId)));
+    batch.delete(db.collection("fikaDomainEventsV1").doc(`production.order.created:${orderId}:v1`));
+    for (const doc of requirementsSnapshot.docs) batch.delete(doc.ref);
+    for (const doc of receiptsSnapshot.docs) batch.delete(doc.ref);
+    await batch.commit();
+  }
+});
+
 test("production contracts keep customer and preparation quantities separate", async () => {
   const line: ProductionLine = { canonicalId: "line:1", sourceBookingLineId: "booking:1:line:1", itemName: "Platters", customerQuantity: 4, customerUnit: "platter", productionQuantity: 48, productionUnit: "portion", conversionSnapshot: { quantity: 48, unit: "portion", rule: "Explicit configured production conversion." }, dietaries: {}, status: "ready", sortOrder: 0 };
   assert.equal(line.customerQuantity, 4);

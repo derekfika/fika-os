@@ -10,6 +10,7 @@ import { reviewStatusForPlan } from "./delivered-in-review";
 import { productionQueue } from "./production-http-client";
 import { loadPlansForOrders } from "./cpu-projection-repository";
 import type { NextRequest } from "next/server";
+import { normaliseOperationalAllergens } from "../../shared/allergen-contract";
 
 export type CpuReviewAllergenState = "clear" | "contains" | "may_contain" | "unrecorded";
 export type CpuReviewEntry = {
@@ -63,9 +64,11 @@ const requiredRoles: CpuReviewOrder["requiredSignatureRoles"] = ["production_che
 
 function entryFor(order: ProductionOrder, plan: ProductionPlan | undefined, sourceLineId: string, dishName?: string, allergens: Record<string, string> = {}, evidenceStatus = "not_completed", mayContainNotes?: string, sourceSubItemId?: string): CpuReviewEntry {
   const sourceLine = order.lines.find(line => line.canonicalId === sourceLineId || line.sourceBookingLineId === sourceLineId);
-  const known = Object.values(allergens).filter(value => ["clear", "contains", "may_contain"].includes(value));
-  const allergenState: CpuReviewEntry["allergenState"] = evidenceStatus !== "completed" || !known.length ? "UNRECORDED" : known.some(value => value === "contains") ? "CONTAINS" : known.some(value => value === "may_contain") ? "MAY_CONTAIN" : "CLEAR";
-  return { sourceLineId, ...(sourceSubItemId ? { sourceSubItemId } : {}), ...(sourceLine?.sourceBookingLineId ? { sourceBookingLineId: sourceLine.sourceBookingLineId } : {}), ...(sourceLine?.sourceMenuItemId ? { sourceMenuItemId: sourceLine.sourceMenuItemId } : {}), ...(dishName ? { dishName } : {}), allergens: allergens as Record<string, CpuReviewAllergenState>, allergenState, ...(mayContainNotes ? { mayContainNotes } : {}), evidenceStatus };
+  const canonicalAllergens = normaliseOperationalAllergens(allergens);
+  const values = Object.values(canonicalAllergens);
+  const known = values.filter(value => ["clear", "contains", "may_contain"].includes(value));
+  const allergenState: CpuReviewEntry["allergenState"] = evidenceStatus !== "completed" || !known.length || values.includes("unrecorded") ? "UNRECORDED" : known.some(value => value === "contains") ? "CONTAINS" : known.some(value => value === "may_contain") ? "MAY_CONTAIN" : "CLEAR";
+  return { sourceLineId, ...(sourceSubItemId ? { sourceSubItemId } : {}), ...(sourceLine?.sourceBookingLineId ? { sourceBookingLineId: sourceLine.sourceBookingLineId } : {}), ...(sourceLine?.sourceMenuItemId ? { sourceMenuItemId: sourceLine.sourceMenuItemId } : {}), ...(dishName ? { dishName } : {}), allergens: canonicalAllergens as Record<string, CpuReviewAllergenState>, allergenState, ...(mayContainNotes ? { mayContainNotes } : {}), evidenceStatus };
 }
 
 export function buildCpuReviewProjection(serviceDate: string, oplocId: string, orders: ProductionOrder[], plans: ProductionPlan[], revision = 1, lastChangeSequence = 0, generatedAt = new Date().toISOString()): CpuReviewProjection {
