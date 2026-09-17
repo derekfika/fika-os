@@ -18,6 +18,8 @@ test("client branding remains selector-scoped and dashboard aliases FIKA semanti
   assert.match(dashboardStyles, /data-surface="fika-internal-operational"/);
   assert.match(dashboardStyles, /--fika-action-primary/);
   assert.match(dashboardStyles, /--fika-focus-ring/);
+  assert.match(globals, /--fika-action-secondary:#241176/);
+  assert.match(globals, /--fika-surface-page:#f4f4f2/);
 });
 
 test("touched internal controls keep focus-visible and committed progress safety", () => {

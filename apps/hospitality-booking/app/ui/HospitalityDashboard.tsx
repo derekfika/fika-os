@@ -11,6 +11,7 @@ import { mnkMenuHtml } from "../../lib/mnk-menu-output";
 import type { MenuOutput } from "../../lib/mnk-menu-output";
 import styles from "./HospitalityDashboard.module.css";
 import { portalSite, type PortalSiteKey } from "@/lib/portal-sites";
+import { hospitalityWorkspacePath } from "@/lib/hospitality-workspace";
 
 const statuses = [
   "New",
@@ -804,7 +805,7 @@ export default function HospitalityDashboard({
                 </select>
               </label>
             )}
-            <a className="start-again" href={site.portalPath} target="_blank" rel="noopener noreferrer">View Portal</a>
+            <a className="start-again" href={oplocId ? hospitalityWorkspacePath(oplocId, "booking") : site.portalPath}>View Booking platform</a>
             {site.key === "angel-court" && (
               <>
                 <button type="button" onClick={() => void forceAngelCourtScan()} disabled={scanBusy}>

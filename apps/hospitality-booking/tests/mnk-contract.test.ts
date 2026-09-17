@@ -30,15 +30,15 @@ test("portal validation keeps valid revalidation results and entered values inta
   assert.match(portal, /aria-describedby/);
   assert.match(portal, /role=\"alert\" aria-live=\"polite\"/);
 });
-test("MNK portal has a dedicated route while preserving the legacy root entry point", () => {
+test("MNK portal has a dedicated route while generic Hospitality enters through the workspace", () => {
   const route = fs.readFileSync(new URL("../app/mnk/page.tsx", import.meta.url), "utf8");
   const root = fs.readFileSync(new URL("../app/page.tsx", import.meta.url), "utf8");
   const dashboard = fs.readFileSync(new URL("../app/mnk/dashboard/page.tsx", import.meta.url), "utf8");
   const dashboardCompat = fs.readFileSync(new URL("../app/dashboard/page.tsx", import.meta.url), "utf8");
   assert.match(route, /BookingPortal.*siteKey="mnk"/s);
-  assert.match(root, /redirect\("\/mnk"\)/);
+  assert.match(root, /redirect\("\/workspace"\)/);
   assert.match(dashboard, /redirect\("\/manage\?site=mnk"\)/);
-  assert.match(dashboardCompat, /redirect\("\/manage"\)/);
+  assert.match(dashboardCompat, /redirect\("\/workspace"\)/);
   assert.match(fs.readFileSync(new URL("../app/hospitality/mnk/page.tsx", import.meta.url), "utf8"), /redirect\("\/mnk"\)/);
 });
 
@@ -49,11 +49,11 @@ test("portal actions use the configured public route for each site", () => {
   assert.equal(portalSite("munich-re").portalPath, "/munich-re");
 });
 
-test("workspace uses the internal dashboard and filters OPLOCs through the portal registry", () => {
+test("workspace uses the authorised chooser and filters OPLOCs through the portal registry", () => {
   const workspace = fs.readFileSync(new URL("../app/ui/HospitalityWorkspace.tsx", import.meta.url), "utf8");
   const access = fs.readFileSync(new URL("../app/api/access/route.ts", import.meta.url), "utf8");
   assert.match(workspace, /HospitalityDashboard/);
-  assert.doesNotMatch(workspace, /BookingPortal/);
+  assert.match(workspace, /BookingPortal/);
   assert.match(access, /portalSiteForAuthorisedOploc/);
   assert.equal(portalSiteForOploc({ id: "oploc:funding-circle", label: "Funding Circle" })?.key, "mnk");
   assert.equal(portalSiteForOploc({ id: "oploc:cpu-xchange", label: "CPU Xchange" }), undefined);
@@ -76,10 +76,9 @@ test("MNK manager workspace resolves the canonical OPLOC and rejects Funding Cir
   assert.equal(portalSiteForAuthorisedOploc({ id: "oploc:munich-re", label: "Munich RE" })?.key, "munich-re");
 });
 
-test("dashboard portal action uses the selected configured portal in a new tab", () => {
+test("dashboard portal action returns through the authorised workspace booking surface", () => {
   const dashboard = fs.readFileSync(new URL("../app/ui/HospitalityDashboard.tsx", import.meta.url), "utf8");
-  assert.match(dashboard, /href=\{site\.portalPath\}/);
-  assert.match(dashboard, /target="_blank"/);
+  assert.match(dashboard, /hospitalityWorkspacePath\(oplocId, "booking"\)/);
   assert.match(dashboard, /availableSites/);
 });
 
@@ -200,10 +199,10 @@ test("canonical Hospitality routes use the shared workspace and public portal", 
   const manager = fs.readFileSync(new URL("../app/hospitality/manage/page.tsx", import.meta.url), "utf8");
   const canonicalManager = fs.readFileSync(new URL("../app/manage/page.tsx", import.meta.url), "utf8");
   const workspace = fs.readFileSync(new URL("../app/ui/HospitalityWorkspace.tsx", import.meta.url), "utf8");
-  assert.match(manager, /redirect\("\/manage"\)/);
-  assert.match(canonicalManager, /HospitalityWorkspace/);
+  assert.match(manager, /redirect\(`\/workspace/);
+  assert.match(canonicalManager, /redirect\(`\/workspace/);
   assert.match(workspace, /fetch\("\/api\/access"/);
-  assert.match(workspace, /preferredOplocForPortalSite/);
+  assert.match(workspace, /resolveWorkspaceEntry/);
   assert.match(workspace, /availableSites/);
 });
 

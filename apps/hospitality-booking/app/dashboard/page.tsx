@@ -5,5 +5,5 @@ import { redirect } from "next/navigation";
  * lives under the same site namespace as the booking portal.
  */
 export default function Page() {
-  redirect("/manage");
+  redirect("/workspace");
 }

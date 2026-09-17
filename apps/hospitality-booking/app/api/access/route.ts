@@ -12,6 +12,15 @@ export async function GET(request: NextRequest) {
         return portal ? [{ ...site, portalSiteKey: portal.key }] : [];
       });
     }
+    if (response.ok && Array.isArray(body.sites)) {
+      // Both surfaces are governed by this single AUTHMOD application
+      // assignment. Keep access authority in Hub; this is only a surface
+      // description for the Hospitality chooser.
+      body.surfaces = {
+        bookingPlatform: body.sites.length > 0,
+        operationsDashboard: body.sites.length > 0,
+      };
+    }
     return NextResponse.json(body, { status: response.status });
   } catch (error) { return NextResponse.json({ error: { message: (error as Error).message } }, { status: 503 }); }
 }
