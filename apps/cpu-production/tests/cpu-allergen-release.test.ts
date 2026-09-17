@@ -28,3 +28,24 @@ test("identical menu content cannot restore a release from another publication l
   assert.equal(signedAllergenCheckpointMatchesOrder(plan, order, items), true);
   assert.equal(signedAllergenCheckpointMatchesOrder(plan, { ...order, sourcePublicationDayId: "publication:day:v2" }, items), false);
 });
+
+test("semantic matrix hashing excludes workflow/editor metadata but binds safety evidence", () => {
+  const reviewed = structuredClone(items);
+  const workflowOnly = structuredClone(items);
+  workflowOnly[0].id = "editor-generated-id";
+  workflowOnly[0].note = "changed UI note";
+  workflowOnly[0].subItems[0].id = "new-editor-sub-id";
+  workflowOnly[0].subItems[0].note = "changed workflow note";
+  workflowOnly[0].subItems[0].evidenceStatus = "not_completed";
+  assert.equal(allergenMatrixContentHash(reviewed), allergenMatrixContentHash(workflowOnly));
+
+  const stateChanged = structuredClone(items);
+  stateChanged[0].subItems[0].allergens.milk = "contains";
+  assert.notEqual(allergenMatrixContentHash(reviewed), allergenMatrixContentHash(stateChanged));
+  const evidenceChanged = structuredClone(items);
+  evidenceChanged[0].subItems[0].mayContainNotes = "Shared fryer evidence";
+  assert.notEqual(allergenMatrixContentHash(reviewed), allergenMatrixContentHash(evidenceChanged));
+  const sourceChanged = structuredClone(items);
+  sourceChanged[0].sourceLineId = "source-line:amended";
+  assert.notEqual(allergenMatrixContentHash(reviewed), allergenMatrixContentHash(sourceChanged));
+});

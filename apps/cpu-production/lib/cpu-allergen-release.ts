@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import type { InternalMatrixSignature, MatrixArtifact, PlannedMenuItem } from "../app/lib/production-plan";
+import { canonicalAllergenMatrixForHash } from "../../shared/allergen-matrix-hash";
 
 export type CpuReleaseStatus = "pending" | "current" | "revoked" | "superseded";
 export type CpuReleaseMaterializationStatus = "pending" | "ready" | "failed";
@@ -35,7 +36,12 @@ export type CpuAllergenRelease = {
 const HASH = /^[a-f0-9]{64}$/i;
 const jsonHash = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
 
-export function allergenMatrixContentHash(items: PlannedMenuItem[]) { return jsonHash(items); }
+/**
+ * Hash only signed matrix meaning.  Workflow flags, editor ids and free-form
+ * UI notes are deliberately excluded; source identity, row identity,
+ * canonical states and may-contain evidence remain bound to the signature.
+ */
+export function allergenMatrixContentHash(items: PlannedMenuItem[]) { return jsonHash(canonicalAllergenMatrixForHash(items)); }
 
 export function releaseMatrix(items: PlannedMenuItem[]) {
   return items.flatMap(item => item.subItems.map((sub, index) => ({ menuItemId: `${item.id}:${sub.id || index}`, dishName: sub.name || item.name, allergens: { ...sub.allergens } })));

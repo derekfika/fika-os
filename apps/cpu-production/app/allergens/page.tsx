@@ -70,6 +70,7 @@ export default function CpuAllergenReviewPage() {
   const [reviewDirty, setReviewDirty] = useState(false);
   const [retryEligible, setRetryEligible] = useState(false);
   const signingReviewRef = useRef<(() => unknown[]) | undefined>(undefined);
+  const saveReviewRef = useRef<(() => Promise<void>) | undefined>(undefined);
   const signingSnapshotRef = useRef<Record<string, MatrixLineage> | undefined>(undefined);
   const signingAttemptRef = useRef<{ role: SignatureRole; id: string } | undefined>(undefined);
   const releasePollTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -95,6 +96,7 @@ export default function CpuAllergenReviewPage() {
     setReviewDirty(false);
     setRetryEligible(false);
     signingReviewRef.current = undefined;
+    saveReviewRef.current = undefined;
     signingAttemptRef.current = undefined;
     if (releasePollTimerRef.current) clearTimeout(releasePollTimerRef.current);
     releasePollRunRef.current += 1;
@@ -298,6 +300,10 @@ export default function CpuAllergenReviewPage() {
       return;
     }
     try {
+      // The matrix component serialises autosaves. Await its latest save
+      // before taking the signing snapshot so a slow blur/autosave cannot
+      // arrive after the authoritative signature command.
+      await saveReviewRef.current?.();
       const reviewOperations = signingReviewRef.current?.();
       if (!reviewOperations || reviewOperations.length !== masterOrders.length) {
         throw new Error("The current reviewed matrix is unavailable. Reload the review before signing.");
@@ -502,6 +508,7 @@ export default function CpuAllergenReviewPage() {
           onHydrationChange={setHydrating}
           onDirtyChange={setReviewDirty}
           onRegisterReviewState={get => { signingReviewRef.current = get; }}
+          onRegisterSave={save => { saveReviewRef.current = save; }}
         />
 
         <section className="cpu-allergen-signatures">

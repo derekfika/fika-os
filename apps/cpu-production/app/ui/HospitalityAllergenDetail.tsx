@@ -15,6 +15,7 @@ import { mayContainNotes } from "./allergen-matrix";
 import { CANONICAL_ALLERGEN_COLUMNS, normaliseOperationalAllergens, toggleOperationalAllergen, type CanonicalAllergenKey } from "../../../shared/allergen-contract";
 import { matrixColumns } from "./allergen-matrix";
 import { DELI_STYLE_PARENT_KEY, isDeliStyleParent } from "../../lib/production-item-scope";
+import { canonicalAllergenMatrixForHash } from "../../../shared/allergen-matrix-hash";
 const allergenColumns = matrixColumns;
 const productionPlanEndpoint = "/api/production-plan";
 
@@ -28,7 +29,7 @@ async function sha256Json(value: unknown) {
 async function reviewedLineage(order: ProductionOrder, items: PlannedMenuItem[]): Promise<ReviewedLineage | undefined> {
   const serviceDate = order.serviceDate || order.requiredBy?.slice(0, 10);
   if (!serviceDate || !order.sourceEntityId || !order.sourcePublicationDayId || !order.sourceVersion || !order.sourceContentHash) return undefined;
-  return { productionOrderId: order.canonicalId, serviceDate, sourceDayId: order.sourceEntityId, sourcePublicationDayId: order.sourcePublicationDayId, sourceVersion: order.sourceVersion, sourceContentHash: order.sourceContentHash, matrixContentHash: await sha256Json(items) };
+  return { productionOrderId: order.canonicalId, serviceDate, sourceDayId: order.sourceEntityId, sourcePublicationDayId: order.sourcePublicationDayId, sourceVersion: order.sourceVersion, sourceContentHash: order.sourceContentHash, matrixContentHash: await sha256Json(canonicalAllergenMatrixForHash(items)) };
 }
 
 function menuItemLibraryKey(name: string) {
