@@ -28,6 +28,11 @@ test("date restoration cannot load a different day before URL state settles", ()
   assert.match(planner, /requestedDate && requestedDate !== date[\s\S]*setDate\(requestedDate\)[\s\S]*setWeekCommencing\(mondayOf\(requestedDate\)\)[\s\S]*return;/);
 });
 
+test("the approved create-run workflow has a reachable control", () => {
+  assert.match(planner, /onClick=\{\(\) => props\.setShowRunCreate\(true\)\}>＋ New run/);
+  assert.match(planner, /action: "create-run"/);
+});
+
 test("successful recovery clears stale errors and refreshes the tracked sequence", () => {
   for (const source of [planner, mobile]) {
     assert.match(source, /projectionSequence\.current = projection\.lastChangeSequence/);
