@@ -19,7 +19,7 @@ export function signingLineageUnavailableMessage(orderIds: string[], labels: Rea
     const label = labels[orderId]?.trim();
     return label && label !== orderId ? `${label} (${orderId})` : orderId;
   });
-  return `The current Menu publication lineage is unavailable for ${affected.join(", ") || "one or more OPLOCs"}. Reload the review before signing.`;
+  return `The current source lineage is unavailable for ${affected.join(", ") || "one or more OPLOCs"}. Reload the review before signing.`;
 }
 
 export function captureSigningLineage(

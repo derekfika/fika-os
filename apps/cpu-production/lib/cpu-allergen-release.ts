@@ -10,9 +10,13 @@ export type CpuAllergenRelease = {
   contractVersion: "cpu-production.signed-allergen-release.v1";
   releaseId: string;
   serviceDate: string;
-  sourceDayId: string;
+  sourceOrigin?: "menu_planning" | "hospitality_booking";
+  sourceDayId?: string;
   sourcePublicationId?: string;
-  sourcePublicationDayId: string;
+  sourcePublicationDayId?: string;
+  sourceBookingId?: string;
+  sourceQuoteRevisionId?: string;
+  sourceRevision?: number;
   sourceVersion: number;
   sourceContentHash: string;
   version: number;
@@ -68,13 +72,20 @@ function requireHash(value: string, field: string) { if (!HASH.test(value)) thro
 function requireArtifact(artifact: MatrixArtifact, field: string) { requireHash(artifact.contentHash, `${field}.contentHash`); if (!artifact.driveFileId && !artifact.localUrl) throw new Error(`${field} must have a durable identity.`); }
 
 export function buildCpuAllergenRelease(input: {
-  serviceDate: string; sourceDayId: string; sourcePublicationId?: string; sourcePublicationDayId: string; sourceVersion: number; sourceContentHash: string; version: number; signedAt: string; signatures: InternalMatrixSignature[]; items: PlannedMenuItem[]; masterArtifact: MatrixArtifact; derivedArtifacts: MatrixArtifact[]; packetArtifacts: MatrixArtifact[]; previous?: CpuAllergenRelease; status?: "pending" | "current";
+  serviceDate: string; sourceOrigin?: "menu_planning" | "hospitality_booking"; sourceDayId?: string; sourcePublicationId?: string; sourcePublicationDayId?: string; sourceBookingId?: string; sourceQuoteRevisionId?: string; sourceRevision?: number; sourceVersion: number; sourceContentHash: string; version: number; signedAt: string; signatures: InternalMatrixSignature[]; items: PlannedMenuItem[]; masterArtifact: MatrixArtifact; derivedArtifacts: MatrixArtifact[]; packetArtifacts: MatrixArtifact[]; previous?: CpuAllergenRelease; status?: "pending" | "current";
 }): CpuAllergenRelease {
   if (!Number.isInteger(input.version) || input.version < 1) throw new Error("A release version is required.");
   const roles = new Set(input.signatures.map(signature => signature.role));
   if (!roles.has("production_chef") || !roles.has("head_chef_site_manager")) throw new Error("Both required signatures are required for a release.");
   if ((input.status || "current") === "current") requireArtifact(input.masterArtifact, "masterArtifact");
-  if (!input.sourceDayId || !input.sourcePublicationDayId || !Number.isInteger(input.sourceVersion) || input.sourceVersion < 1) throw new Error("A published Menu Planning source-day identity is required for a release.");
+  const hospitalitySource = input.sourceOrigin === "hospitality_booking";
+  const validRevision = (value: number | undefined): value is number => typeof value === "number" && Number.isInteger(value) && value >= 1;
+  const validHospitalitySource = Boolean(input.sourceBookingId && input.sourceQuoteRevisionId && validRevision(input.sourceRevision));
+  const validMenuSource = Boolean(input.sourceDayId && input.sourcePublicationDayId);
+  if (hospitalitySource
+    ? !validHospitalitySource
+    : !validMenuSource) throw new Error(hospitalitySource ? "A canonical Hospitality Booking and Quote source identity is required for a release." : "A published Menu Planning source-day identity is required for a release.");
+  if (!Number.isInteger(input.sourceVersion) || input.sourceVersion < 1) throw new Error("A source revision is required for a release.");
   requireHash(input.sourceContentHash, "sourceContentHash");
   if ((input.status || "current") === "current") {
     input.derivedArtifacts.forEach((artifact, index) => requireArtifact(artifact, `derivedArtifacts[${index}]`));
@@ -85,7 +96,7 @@ export function buildCpuAllergenRelease(input: {
   const expectedPlanHash = allergenMatrixContentHash(input.items);
   if (input.signatures.some(signature => !signature.scope || signature.scope.matrixContentHash !== expectedPlanHash)) throw new Error("Every release signature must be bound to the exact current publication-day matrix.");
   return {
-    contractVersion: "cpu-production.signed-allergen-release.v1", releaseId: `cpu-allergen-release:${input.serviceDate}:${input.sourcePublicationDayId}:v${input.version}`, serviceDate: input.serviceDate, sourceDayId: input.sourceDayId, ...(input.sourcePublicationId ? { sourcePublicationId: input.sourcePublicationId } : {}), sourcePublicationDayId: input.sourcePublicationDayId, sourceVersion: input.sourceVersion, sourceContentHash: input.sourceContentHash, version: input.version, matrixContentHash, signedAt: input.signedAt,
+    contractVersion: "cpu-production.signed-allergen-release.v1", releaseId: `cpu-allergen-release:${input.serviceDate}:${input.sourcePublicationDayId || `${input.sourceBookingId}:${input.sourceQuoteRevisionId}`}:v${input.version}`, serviceDate: input.serviceDate, ...(input.sourceOrigin ? { sourceOrigin: input.sourceOrigin } : {}), ...(input.sourceDayId ? { sourceDayId: input.sourceDayId } : {}), ...(input.sourcePublicationId ? { sourcePublicationId: input.sourcePublicationId } : {}), ...(input.sourcePublicationDayId ? { sourcePublicationDayId: input.sourcePublicationDayId } : {}), ...(input.sourceBookingId ? { sourceBookingId: input.sourceBookingId } : {}), ...(input.sourceQuoteRevisionId ? { sourceQuoteRevisionId: input.sourceQuoteRevisionId } : {}), ...(input.sourceRevision ? { sourceRevision: input.sourceRevision } : {}), sourceVersion: input.sourceVersion, sourceContentHash: input.sourceContentHash, version: input.version, matrixContentHash, signedAt: input.signedAt,
     signatures: input.signatures.map(signature => ({ ...signature, valid: true })), ...(input.previous ? { previousReleaseId: input.previous.releaseId } : {}), status: input.status || "current", materializationStatus: input.status === "pending" ? "pending" : "ready", masterArtifact: input.masterArtifact, derivedArtifacts: [...input.derivedArtifacts], packetArtifacts: [...input.packetArtifacts], matrix, deltaFromPrevious: allergenReleaseDelta(input.previous, input.items),
   };
 }

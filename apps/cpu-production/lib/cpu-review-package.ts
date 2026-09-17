@@ -25,7 +25,7 @@ export type CpuReviewEntry = {
   mayContainNotes?: string;
   evidenceStatus: string;
 };
-export type CpuReviewSignature = { role: "production_chef" | "head_chef_site_manager"; printedName: string; signedAt: string; actor?: string; attestation?: string; scope?: { productionOrderId: string; serviceDate: string; sourceDayId: string; sourcePublicationId?: string; sourcePublicationDayId: string; sourceVersion: number; sourceContentHash: string; matrixContentHash: string } };
+export type CpuReviewSignature = { role: "production_chef" | "head_chef_site_manager"; printedName: string; signedAt: string; actor?: string; attestation?: string; scope?: { productionOrderId: string; serviceDate: string; sourceOrigin?: "menu_planning" | "hospitality_booking"; sourceDayId?: string; sourcePublicationId?: string; sourcePublicationDayId?: string; sourceBookingId?: string; sourceQuoteRevisionId?: string; sourceRevision?: number; sourceVersion: number; sourceContentHash: string; matrixContentHash: string } };
 export type CpuReviewOrder = {
   productionOrderId: string;
   orderVersion: number;
@@ -38,7 +38,7 @@ export type CpuReviewOrder = {
   signatures: CpuReviewSignature[];
   entries: CpuReviewEntry[];
   matrixArtifact?: { id: string; driveUrl?: string; localUrl?: string; contentHash?: string };
-  sourceIdentity?: { sourceDayId: string; sourcePublicationId?: string; sourcePublicationDayId: string; sourceVersion: number; sourceContentHash: string; matrixContentHash: string };
+  sourceIdentity?: { sourceOrigin?: "menu_planning" | "hospitality_booking"; sourceDayId?: string; sourcePublicationId?: string; sourcePublicationDayId?: string; sourceBookingId?: string; sourceQuoteRevisionId?: string; sourceRevision?: number; sourceVersion: number; sourceContentHash: string; matrixContentHash: string };
 };
 export type CpuReviewProjection = {
   contractVersion: "cpu-production.delivered-in-review.v1";
@@ -83,7 +83,7 @@ export function buildCpuReviewProjection(serviceDate: string, oplocId: string, o
     const signatures = releaseCurrent ? (plan?.signatures || []).filter(signature => signatureMatchesScope(signature, scope)).map(signature => ({ role: signature.role, printedName: signature.printedName, signedAt: signature.signedAt, actor: signature.actor, attestation: signature.attestation, scope: signature.scope })) : [];
     const completedSignatureRoles = [...new Set(signatures.map(signature => signature.role))];
     const reviewStatus: CpuReviewOrder["reviewStatus"] = plan ? completedSignatureRoles.length === requiredRoles.length ? "signed" : "pending" : "missing";
-    const sourceIdentity = scope ? { sourceDayId: scope.sourceDayId, ...(scope.sourcePublicationId ? { sourcePublicationId: scope.sourcePublicationId } : {}), sourcePublicationDayId: scope.sourcePublicationDayId, sourceVersion: scope.sourceVersion, sourceContentHash: scope.sourceContentHash, matrixContentHash: scope.matrixContentHash } : undefined;
+    const sourceIdentity = scope ? { ...(scope.sourceOrigin ? { sourceOrigin: scope.sourceOrigin } : {}), ...(scope.sourceDayId ? { sourceDayId: scope.sourceDayId } : {}), ...(scope.sourcePublicationId ? { sourcePublicationId: scope.sourcePublicationId } : {}), ...(scope.sourcePublicationDayId ? { sourcePublicationDayId: scope.sourcePublicationDayId } : {}), ...(scope.sourceBookingId ? { sourceBookingId: scope.sourceBookingId } : {}), ...(scope.sourceQuoteRevisionId ? { sourceQuoteRevisionId: scope.sourceQuoteRevisionId } : {}), ...(scope.sourceRevision ? { sourceRevision: scope.sourceRevision } : {}), sourceVersion: scope.sourceVersion, sourceContentHash: scope.sourceContentHash, matrixContentHash: scope.matrixContentHash } : undefined;
     return { productionOrderId: order.canonicalId, orderVersion: order.version, orderRevision: order.currentRevision, cpuPlanId: plan?.id || `production-plan:${order.canonicalId}`, ...(plan ? { cpuPlanRevision: plan.audit.length } : {}), reviewStatus, requiredSignatureRoles: requiredRoles, completedSignatureRoles, signatures, entries, ...(sourceIdentity ? { sourceIdentity } : {}), ...(plan?.matrixArtifact && currentAllergenReleaseMatchesOrder(plan.currentAllergenRelease, order, plan.menuItems) ? { matrixArtifact: { id: plan.matrixArtifact.id, driveUrl: plan.matrixArtifact.driveUrl, localUrl: plan.matrixArtifact.localUrl, contentHash: plan.matrixArtifact.contentHash } } : {}) };
   });
   const signatures = [...new Map(sourceOrders.flatMap(order => order.signatures.map(signature => [signature.role, signature]))).values()];

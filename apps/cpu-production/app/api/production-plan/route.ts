@@ -3,7 +3,7 @@ import { errorResponse } from "../../../lib/api";
 import { z } from "zod";
 import { existsSync, promises as fs } from "node:fs";
 import { localFixtureOrders, updateLocalFixture } from "../local-fixtures";
-import { allergenAuthorityMatchesOrder, currentAllergenReleaseMatchesOrder, effectiveProductionPlanStatus, hasAllergenAuthority, isProductionPlanMatrixComplete, matrixSignatureScope, mergeMissingProductionOrderLines, signatureMatchesScope, signedAllergenCheckpointMatchesOrder, type AllergenCellState, type InternalMatrixSignature, type MatrixArtifact, type PlannedMenuItem, type ProductionPlan } from "../../lib/production-plan";
+import { allergenAuthorityMatchesOrder, currentAllergenReleaseMatchesOrder, effectiveProductionPlanStatus, hasAllergenAuthority, isProductionPlanMatrixComplete, matrixSignatureScope, mergeMissingProductionOrderLines, sameMatrixSignatureScope, signatureMatchesScope, signedAllergenCheckpointMatchesOrder, type AllergenCellState, type InternalMatrixSignature, type MatrixArtifact, type PlannedMenuItem, type ProductionPlan } from "../../lib/production-plan";
 import { normaliseOperationalAllergens } from "../../../../shared/allergen-contract";
 import { canonicalProductionFailureKind, productionOrderDetail, productionQueue, transitionProductionOrder, type CanonicalProductionFailure } from "../../../lib/production-http-client";
 import type { ProductionOrder, ProductionStatus } from "../../../lib/production-types";
@@ -96,10 +96,10 @@ function assertAllergenMatrixComplete(menuItems: PlannedMenuItem[], context: str
 async function persistPlan(plan: ProductionPlan, expectedUpdatedAt?: string) { await planRepository.save(plan, expectedUpdatedAt); }
 function now() { return new Date().toISOString(); }
 function sameLineage(left: ReturnType<typeof matrixSignatureScope>, right: ReturnType<typeof matrixSignatureScope>) {
-  return Boolean(left && right && left.productionOrderId === right.productionOrderId && left.serviceDate === right.serviceDate && left.sourceDayId === right.sourceDayId && left.sourcePublicationId === right.sourcePublicationId && left.sourcePublicationDayId === right.sourcePublicationDayId && left.sourceVersion === right.sourceVersion && left.sourceContentHash === right.sourceContentHash && left.matrixContentHash === right.matrixContentHash);
+  return sameMatrixSignatureScope(left, right);
 }
 function samePublishedLineage(left: ReturnType<typeof matrixSignatureScope>, right: ReturnType<typeof matrixSignatureScope>) {
-  return Boolean(left && right && left.productionOrderId === right.productionOrderId && left.serviceDate === right.serviceDate && left.sourceDayId === right.sourceDayId && left.sourcePublicationId === right.sourcePublicationId && left.sourcePublicationDayId === right.sourcePublicationDayId && left.sourceVersion === right.sourceVersion && left.sourceContentHash === right.sourceContentHash);
+  return sameMatrixSignatureScope(left, right, false);
 }
 function hasExactSignature(plan: ProductionPlan, role: InternalMatrixSignature["role"], scope: ReturnType<typeof matrixSignatureScope>) {
   return Boolean(scope && plan.signatures?.some(signature => signature.role === role && signatureMatchesScope(signature, scope)));
@@ -110,9 +110,9 @@ function pendingReleaseArtifact(plan: ProductionPlan, order: ProductionOrder, ti
 }
 function pendingReleaseFor(plan: ProductionPlan, order: ProductionOrder, timestamp: string) {
   const source = matrixSignatureScope(order, menuContentHash(plan.menuItems));
-  if (!source) throw Object.assign(new Error("The current published Menu Planning source identity is unavailable; the matrix cannot be signed."), { status: 503 });
+  if (!source) throw Object.assign(new Error("The current source lineage is unavailable; the matrix cannot be signed."), { status: 503 });
   const previous = [...(plan.allergenReleaseHistory || [])].at(-1);
-  return buildCpuAllergenRelease({ serviceDate: source.serviceDate, sourceDayId: source.sourceDayId, sourcePublicationId: source.sourcePublicationId, sourcePublicationDayId: source.sourcePublicationDayId, sourceVersion: source.sourceVersion, sourceContentHash: source.sourceContentHash, version: Math.max(1, ...((plan.allergenReleaseHistory || []).map(item => item.version + 1))), signedAt: timestamp, signatures: plan.signatures || [], items: plan.menuItems, masterArtifact: pendingReleaseArtifact(plan, order, timestamp), derivedArtifacts: [], packetArtifacts: [], previous, status: "pending" });
+  return buildCpuAllergenRelease({ serviceDate: source.serviceDate, sourceOrigin: source.sourceOrigin, sourceDayId: source.sourceDayId, sourcePublicationId: source.sourcePublicationId, sourcePublicationDayId: source.sourcePublicationDayId, sourceBookingId: source.sourceBookingId, sourceQuoteRevisionId: source.sourceQuoteRevisionId, sourceRevision: source.sourceRevision, sourceVersion: source.sourceVersion, sourceContentHash: source.sourceContentHash, version: Math.max(1, ...((plan.allergenReleaseHistory || []).map(item => item.version + 1))), signedAt: timestamp, signatures: plan.signatures || [], items: plan.menuItems, masterArtifact: pendingReleaseArtifact(plan, order, timestamp), derivedArtifacts: [], packetArtifacts: [], previous, status: "pending" });
 }
 // Artifact creation is intentionally no longer part of the sign command:
 // release materialization runs from the committed outbox obligation after
@@ -213,7 +213,7 @@ async function applyMasterSignatureBatch(request: NextRequest, actor: Awaited<Re
     const reviewedMenuContentHash = menuContentHash(reviewedPlan.menuItems);
     const currentScope = matrixSignatureScope(order, reviewedMenuContentHash);
     const persistedScope = matrixSignatureScope(order, currentMenuContentHash);
-    if (!currentScope || !samePublishedLineage(currentScope, expectedLineage) || (plan.menuItems.length > 0 && currentMenuContentHash !== expectedLineage.matrixContentHash && currentMenuContentHash !== reviewedMenuContentHash)) throw Object.assign(new Error("The reviewed Menu publication or matrix content has changed. Reload and review the current matrix before signing."), { status: 409, code: "CPU_SIGN_LINEAGE_CONFLICT" });
+    if (!currentScope || !samePublishedLineage(currentScope, expectedLineage) || (plan.menuItems.length > 0 && currentMenuContentHash !== expectedLineage.matrixContentHash && currentMenuContentHash !== reviewedMenuContentHash)) throw Object.assign(new Error("The reviewed source lineage or matrix content has changed. Reload and review the current matrix before signing."), { status: 409, code: "CPU_SIGN_LINEAGE_CONFLICT" });
     const subItems = reviewedPlan.menuItems.flatMap(item => item.subItems);
     if (!subItems.length || reviewedPlan.menuItems.some(item => !item.name.trim() || !item.subItems.length) || subItems.some(item => !item.name.trim() || item.evidenceStatus !== "completed")) throw Object.assign(new Error(`Complete every named sub-item and allergen checker before signing ${order.destinationLabel || order.canonicalId}.`), { status: 422 });
     assertAllergenMatrixComplete(reviewedPlan.menuItems, `signing ${order.destinationLabel || order.canonicalId}`);
@@ -438,7 +438,8 @@ async function handleGet(request: NextRequest) {
       const selectedPlan = visible ? await mergeOriginalItems(request, await getPlan(request, orderId), orderId, selectedOrder) : undefined;
       recordDeliveredInReadBudget({ stage: "selected_order_get", canonicalOrderDocs: selectedOrder ? 1 : 0, planDocs: selectedPlan ? 1 : 0, selectedIds: 1 });
       const selectedMatrixStatus = selectedPlan?.matrixArtifact && selectedOrder && currentAllergenReleaseMatchesOrder(selectedPlan.currentAllergenRelease, selectedOrder, selectedPlan.menuItems) ? "ready" : selectedPlan?.signatures?.some(signature => signature.role === "production_chef") && selectedPlan.signatures?.some(signature => signature.role === "head_chef_site_manager") ? selectedOrder && !matrixDriveConfiguration(selectedOrder).enabled ? "not_configured" : "generating" : undefined;
-      return NextResponse.json({ plan: selectedPlan, matrixStatus: selectedMatrixStatus, plans: selectedPlan ? [selectedPlan] : [], notifications: selectedPlan?.status === "planned" ? [{ id: `notification:${selectedPlan.id}`, title: "New production plan ready for menu generation.", orderId: selectedPlan.orderId, plannedItemCount: selectedPlan.menuItems.reduce((sum, item) => sum + item.subItems.length, 0), at: selectedPlan.updatedAt }] : [], menus: [] });
+      const signingLineage = selectedOrder && selectedPlan ? matrixSignatureScope(selectedOrder, menuContentHash(selectedPlan.menuItems)) : undefined;
+      return NextResponse.json({ plan: selectedPlan, signingLineage: signingLineage || null, matrixStatus: selectedMatrixStatus, plans: selectedPlan ? [selectedPlan] : [], notifications: selectedPlan?.status === "planned" ? [{ id: `notification:${selectedPlan.id}`, title: "New production plan ready for menu generation.", orderId: selectedPlan.orderId, plannedItemCount: selectedPlan.menuItems.reduce((sum, item) => sum + item.subItems.length, 0), at: selectedPlan.updatedAt }] : [], menus: [] });
     }
   } catch (error) {
     return errorResponse(error);
@@ -576,11 +577,11 @@ async function handlePost(request: NextRequest) {
       const currentMenuContentHash = menuContentHash(plan.menuItems);
       if (hasAllergenAuthority(plan) && !allergenAuthorityMatchesOrder(plan, currentOrder, plan.menuItems)) throw Object.assign(new Error("Reopen the allergen review before changing a signed matrix."), { status: 409, code: "CPU_REVIEW_REOPEN_REQUIRED" });
       const currentSignatureScope = matrixSignatureScope(currentOrder, currentMenuContentHash);
-      if (!currentSignatureScope) throw Object.assign(new Error("The current published Menu Planning source identity is unavailable; the matrix cannot be signed."), { status: 503 });
-      if (!sameLineage(currentSignatureScope, command.expectedLineage)) throw Object.assign(new Error("The reviewed Menu publication has changed. Reload and review the current matrix before signing."), { status: 409, code: "CPU_SIGN_LINEAGE_CONFLICT" });
+      if (!currentSignatureScope) throw Object.assign(new Error("The current source lineage is unavailable; the matrix cannot be signed."), { status: 503 });
+      if (!sameLineage(currentSignatureScope, command.expectedLineage)) throw Object.assign(new Error("The reviewed source lineage has changed. Reload and review the current matrix before signing."), { status: 409, code: "CPU_SIGN_LINEAGE_CONFLICT" });
       const latestOrderForSign = await loadOrder(request, command.orderId);
       const latestScopeForSign = latestOrderForSign && matrixSignatureScope(latestOrderForSign, currentMenuContentHash);
-      if (!latestScopeForSign || !sameLineage(latestScopeForSign, command.expectedLineage)) throw Object.assign(new Error("The reviewed Menu publication advanced while this signature was being prepared. Reload and review the current matrix before signing."), { status: 409, code: "CPU_SIGN_LINEAGE_CONFLICT" });
+      if (!latestScopeForSign || !sameLineage(latestScopeForSign, command.expectedLineage)) throw Object.assign(new Error("The reviewed source lineage advanced while this signature was being prepared. Reload and review the current matrix before signing."), { status: 409, code: "CPU_SIGN_LINEAGE_CONFLICT" });
       if (candidate.currentAllergenRelease?.status === "pending" && !command.commandId) throw Object.assign(new Error("A signed release is already awaiting materialization. Retry the release instead of signing again."), { status: 409 });
       // Legacy signatures without exact publication/day/content lineage are
       // historical evidence only and must never make the current matrix look
@@ -611,7 +612,7 @@ async function handlePost(request: NextRequest) {
       if (!subItems.length || subItems.some(item => !item.name.trim())) throw Object.assign(new Error("Complete every named sub-item before saving the matrix."), { status: 422 });
       if (hasAllergenAuthority(plan) && !allergenAuthorityMatchesOrder(plan, currentOrder, plan.menuItems)) throw Object.assign(new Error("Reopen the allergen review before changing a signed matrix."), { status: 409, code: "CPU_REVIEW_REOPEN_REQUIRED" });
       const currentSignatureScope = matrixSignatureScope(currentOrder, menuContentHash(plan.menuItems));
-      if (command.expectedLineage && !sameLineage(currentSignatureScope, command.expectedLineage)) throw Object.assign(new Error("The reviewed Menu publication has changed. Reload and review the current matrix before retrying materialization."), { status: 409, code: "CPU_RELEASE_LINEAGE_CONFLICT" });
+      if (command.expectedLineage && !sameLineage(currentSignatureScope, command.expectedLineage)) throw Object.assign(new Error("The reviewed source lineage has changed. Reload and review the current matrix before retrying materialization."), { status: 409, code: "CPU_RELEASE_LINEAGE_CONFLICT" });
       if (!plan.currentAllergenRelease) plan.currentAllergenRelease = pendingReleaseFor(plan, currentOrder, timestamp);
       if (plan.currentAllergenRelease.status === "current" && plan.currentAllergenRelease.materializationStatus === "ready") throw Object.assign(new Error("This CPU allergen release is already current."), { status: 409 });
       plan.signedMenuContentHash = menuContentHash(plan.menuItems);
@@ -621,7 +622,7 @@ async function handlePost(request: NextRequest) {
     plan.updatedAt = timestamp; plan.updatedBy = auditActor;
     const changedOrder = await loadOrder(request, command.orderId);
     const releaseForEvent = plan.currentAllergenRelease?.status === "current" && plan.currentAllergenRelease.materializationStatus === "ready" ? plan.currentAllergenRelease : (command.action === "save-plan" || command.action === "mark-planned" ? plan.allergenReleaseHistory?.at(-1) : undefined);
-    const releaseOplocIds = plan.currentAllergenRelease?.status === "current" && plan.currentAllergenRelease.materializationStatus === "ready" && changedOrder?.destinationOplocId ? [changedOrder.destinationOplocId] : changedOrder?.destinationOplocId ? [changedOrder.destinationOplocId] : [];
+    const releaseOplocIds = changedOrder?.origin === "menu_planning" && changedOrder.destinationOplocId ? [changedOrder.destinationOplocId] : [];
     const releaseEventType = releaseForEvent?.status === "current" ? "published" as const : "revoked" as const;
     const releaseDeliveries = releaseForEvent ? releaseOplocIds.map(oplocId => {
       const releaseEvent = buildCpuAllergenReleaseEvent({ eventType: releaseEventType, release: releaseForEvent, oplocId });
@@ -656,7 +657,8 @@ async function handlePost(request: NextRequest) {
       await notifyCpuConsumerInvalidations({ eventId: `cpu-change:${plan.id}:v${event!.sequence}`, sourceEntityId: plan.id, serviceDate: changedOrder.serviceDate, sourceVersion: event!.sequence, changedAt: timestamp, changeType: eventTypeForConsumers(command.action), order: changedOrder, logistics: false, ...(review ? { reviewManifest: review.manifest } : {}) });
     }
     const matrixStatus = plan.matrixArtifact && changedOrder && currentAllergenReleaseMatchesOrder(plan.currentAllergenRelease, changedOrder, plan.menuItems) ? "ready" : plan.signatures?.some(signature => signature.role === "production_chef") && plan.signatures?.some(signature => signature.role === "head_chef_site_manager") ? changedOrder && !matrixDriveConfiguration(changedOrder).enabled ? "not_configured" : "generating" : undefined;
-    return NextResponse.json({ plan, matrixArtifact: plan.matrixArtifact ?? null, signatures: plan.signatures ?? null, matrixStatus, materializationDelivery: materializationResult || null, notification: notification || (plan.status === "planned" ? { title: "New production plan ready for menu generation.", orderId: plan.orderId } : undefined) });
+    const signingLineage = changedOrder ? matrixSignatureScope(changedOrder, menuContentHash(plan.menuItems)) : undefined;
+    return NextResponse.json({ plan, signingLineage: signingLineage || null, matrixArtifact: plan.matrixArtifact ?? null, signatures: plan.signatures ?? null, matrixStatus, materializationDelivery: materializationResult || null, notification: notification || (plan.status === "planned" ? { title: "New production plan ready for menu generation.", orderId: plan.orderId } : undefined) });
   } catch (error) { return errorResponse(error); }
 }
 

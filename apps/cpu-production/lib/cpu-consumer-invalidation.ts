@@ -23,8 +23,12 @@ export type CpuAllergenReleaseEvent = {
   eventType: "published" | "revoked";
   serviceDate: string;
   oplocId: string;
-  sourceDayId: string;
-  sourcePublicationDayId: string;
+  sourceOrigin?: "menu_planning" | "hospitality_booking";
+  sourceDayId?: string;
+  sourcePublicationDayId?: string;
+  sourceBookingId?: string;
+  sourceQuoteRevisionId?: string;
+  sourceRevision?: number;
   sourceVersion: number;
   sourceContentHash: string;
   releaseId: string;
@@ -48,8 +52,12 @@ export function buildCpuAllergenReleaseEvent(input: {
     eventType: input.eventType,
     serviceDate: input.release.serviceDate,
     oplocId: input.oplocId,
-    sourceDayId: input.release.sourceDayId,
-    sourcePublicationDayId: input.release.sourcePublicationDayId,
+    ...(input.release.sourceOrigin ? { sourceOrigin: input.release.sourceOrigin } : {}),
+    ...(input.release.sourceDayId ? { sourceDayId: input.release.sourceDayId } : {}),
+    ...(input.release.sourcePublicationDayId ? { sourcePublicationDayId: input.release.sourcePublicationDayId } : {}),
+    ...(input.release.sourceBookingId ? { sourceBookingId: input.release.sourceBookingId } : {}),
+    ...(input.release.sourceQuoteRevisionId ? { sourceQuoteRevisionId: input.release.sourceQuoteRevisionId } : {}),
+    ...(input.release.sourceRevision ? { sourceRevision: input.release.sourceRevision } : {}),
     sourceVersion: input.release.sourceVersion,
     sourceContentHash: input.release.sourceContentHash,
     releaseId: input.release.releaseId,

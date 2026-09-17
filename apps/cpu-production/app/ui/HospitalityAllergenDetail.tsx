@@ -9,6 +9,7 @@ import type {
   PlannedMenuItem,
   PlannedSubItem,
   ProductionPlan,
+  MatrixSignatureScope,
 } from "../lib/production-plan";
 import { effectiveProductionPlanStatus, hasAllergenAuthority } from "../lib/production-plan-state";
 import "./hospitality-allergen-detail.css";
@@ -20,14 +21,18 @@ import { canonicalAllergenMatrixForHash } from "../../../shared/allergen-matrix-
 const allergenColumns = matrixColumns;
 const productionPlanEndpoint = "/api/production-plan";
 
-type ReviewedLineage = { productionOrderId: string; serviceDate: string; sourceDayId: string; sourcePublicationId?: string; sourcePublicationDayId: string; sourceVersion: number; sourceContentHash: string; matrixContentHash: string };
+type ReviewedLineage = MatrixSignatureScope;
 
 async function sha256Json(value: unknown) {
   const bytes = await globalThis.crypto.subtle.digest("SHA-256", new TextEncoder().encode(JSON.stringify(value)));
   return [...new Uint8Array(bytes)].map(byte => byte.toString(16).padStart(2, "0")).join("");
 }
 
-async function reviewedLineage(order: ProductionOrder, items: PlannedMenuItem[]): Promise<ReviewedLineage | undefined> {
+async function reviewedLineage(order: ProductionOrder, items: PlannedMenuItem[], authoritative?: ReviewedLineage): Promise<ReviewedLineage | undefined> {
+  if (order.origin === "hospitality_booking") {
+    if (!authoritative || authoritative.sourceOrigin !== "hospitality_booking") return undefined;
+    return { ...authoritative, matrixContentHash: await sha256Json(canonicalAllergenMatrixForHash(items)) };
+  }
   const serviceDate = order.serviceDate || order.requiredBy?.slice(0, 10);
   if (!serviceDate || !order.sourceEntityId || !order.sourcePublicationDayId || !order.sourceVersion || !order.sourceContentHash) return undefined;
   return { productionOrderId: order.canonicalId, serviceDate, sourceDayId: order.sourceEntityId, ...(order.sourcePublicationId ? { sourcePublicationId: order.sourcePublicationId } : {}), sourcePublicationDayId: order.sourcePublicationDayId, sourceVersion: order.sourceVersion, sourceContentHash: order.sourceContentHash, matrixContentHash: await sha256Json(canonicalAllergenMatrixForHash(items)) };
@@ -282,6 +287,7 @@ export default function HospitalityAllergenDetail({
   const [signatures, setSignatures] = useState<InternalMatrixSignature[]>([]);
   const [matrixArtifact, setMatrixArtifact] = useState<ProductionPlan["matrixArtifact"]>();
   const [currentAllergenRelease, setCurrentAllergenRelease] = useState<ProductionPlan["currentAllergenRelease"]>();
+  const [signingLineage, setSigningLineage] = useState<ReviewedLineage>();
   const [signingError, setSigningError] = useState("");
   const [matrixStorageStatus, setMatrixStorageStatus] = useState<"not_configured" | "ready" | "artifact_pending">();
   const [planStatus, setPlanStatus] =
@@ -314,6 +320,7 @@ export default function HospitalityAllergenDetail({
           if ("signatures" in body.plan) setSignatures(body.plan.signatures || []);
           if ("matrixArtifact" in body.plan) setMatrixArtifact(body.plan.matrixArtifact);
           if ("currentAllergenRelease" in body.plan) setCurrentAllergenRelease(body.plan.currentAllergenRelease);
+          setSigningLineage(body.signingLineage || undefined);
           setMatrixStorageStatus(body.matrixStatus === "not_configured" ? "not_configured" : body.plan.matrixArtifact ? "ready" : body.plan.signatures?.length === 2 ? "artifact_pending" : undefined);
           setPlanStatus(effectiveProductionPlanStatus({ ...body.plan, menuItems: hydratedItems }));
         }
@@ -532,8 +539,8 @@ export default function HospitalityAllergenDetail({
     setSigningError("");
     setMessage("");
     try {
-      const expectedLineage = await reviewedLineage(order, menuItems);
-      if (!expectedLineage) throw new Error("The current Menu publication lineage is unavailable. Reload the review before signing.");
+      const expectedLineage = await reviewedLineage(order, menuItems, signingLineage);
+      if (!expectedLineage) throw new Error("The current source lineage is unavailable. Reload the review before signing.");
       const response = await fetch("/api/production-plan", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -602,8 +609,8 @@ export default function HospitalityAllergenDetail({
   const retryFinalArtifact = async () => {
     setBusy(true); setMessage("Retrying final signed matrix artifact…");
     try {
-      const expectedLineage = await reviewedLineage(order, menuItems);
-      if (!expectedLineage) throw new Error("The current Menu publication lineage is unavailable. Reload the review before retrying materialization.");
+      const expectedLineage = await reviewedLineage(order, menuItems, signingLineage);
+      if (!expectedLineage) throw new Error("The current source lineage is unavailable. Reload the review before retrying materialization.");
       const response = await fetch(productionPlanEndpoint, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "save-matrix", orderId: order.canonicalId, expectedLineage }) });
       const body = await response.json();
       if (!response.ok) throw new Error(body.error?.message || "The final signed matrix could not be generated.");
