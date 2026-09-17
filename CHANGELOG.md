@@ -1,5 +1,7 @@
 # Changelog
 
+- **2026-09-17 — CPU Production staging rollout:** submitted exact validated source SHA `1d0a605041d28cb38aaaef2ffc358fd06dd0e5af` to the existing Firebase App Hosting backend `fika-cpu-production-staging` in project `fika-os-dev`. Firebase accepted build `build-2026-09-17-008` and queued rollout UID `882ae468-219d-4027-bb39-09b7203a35e1`; App Hosting compilation/live propagation was not awaited or verified. Deployment status: CPU staging rollout submitted and queued; live verification pending.
+
 - **2026-09-17 — Hospitality staging rollout:** submitted exact validated Hospitality source SHA `113a00ad5099dd116654825d4adc115957fcd2d8` to the existing Firebase App Hosting backend `fika-hospitality-staging` in project `fika-os-dev`. Firebase accepted and started the rollout; no separate rollout/build identifier was returned and App Hosting build/live propagation was not awaited. Deployment status: Hospitality staging rollout submitted; live verification pending.
 
 - **2026-09-17 — Logistics missing-projection recovery staging rollout:** submitted exact validated source SHA `184526c25548c4f1d286097e5a6f24f5b24fb91a` to the existing Firebase App Hosting backend `fika-logistics-staging` in project `fika-os-dev`. Firebase accepted and started the rollout; the CLI returned no separate rollout/build identifier and App Hosting build/live propagation was not awaited. No application data, migrations, secrets or production targets were changed. Deployment status: Logistics staging rollout submitted; live verification pending.
