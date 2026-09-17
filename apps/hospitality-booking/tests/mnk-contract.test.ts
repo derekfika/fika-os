@@ -79,7 +79,8 @@ test("MNK manager workspace resolves the canonical OPLOC and rejects Funding Cir
 test("dashboard portal action returns through the authorised workspace booking surface", () => {
   const dashboard = fs.readFileSync(new URL("../app/ui/HospitalityDashboard.tsx", import.meta.url), "utf8");
   assert.match(dashboard, /hospitalityWorkspacePath\(oplocId, "booking"\)/);
-  assert.match(dashboard, /availableSites/);
+  assert.match(dashboard, /Change workspace/);
+  assert.doesNotMatch(dashboard, /availableSites|onSiteChange|Hospitality site/);
 });
 
 test("MNK portal uses the locally retained official brand asset", () => {
@@ -203,7 +204,7 @@ test("canonical Hospitality routes use the shared workspace and public portal", 
   assert.match(canonicalManager, /redirect\(`\/workspace/);
   assert.match(workspace, /fetch\("\/api\/access"/);
   assert.match(workspace, /resolveWorkspaceEntry/);
-  assert.match(workspace, /availableSites/);
+  assert.match(workspace, /siteLabel=\{active\.label\}/);
 });
 
 test("null, empty and non-numeric prices are not orderable", () => {

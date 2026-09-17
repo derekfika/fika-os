@@ -169,17 +169,6 @@
   :global(.hospitality-dashboard__topbar) {
     justify-content: flex-start !important;
   }
-  :global(.hospitality-dashboard__brand:after) {
-    content: "MNK operational workspace";
-    margin-left: 14px;
-    padding-left: 14px;
-    border-left: 1px solid #ffffff55;
-    color: #fff;
-    font-size: 0.65rem;
-    font-weight: 900;
-    letter-spacing: 0.1em;
-    text-transform: uppercase;
-  }
   :global(.hospitality-dashboard__topbar > div:last-child) {
     display: none !important;
   }
@@ -210,10 +199,42 @@
   :global(.hospitality-dashboard__refresh-trigger:disabled) {
     opacity: 0.55;
   }
-  :global(
-    .hospitality-dashboard.site-angel-court .hospitality-dashboard__brand:after
-  ) {
-    content: "Angel Court operational workspace";
+  :global(.hospitality-dashboard__brand-group) {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    min-width: 0;
+  }
+  :global(.hospitality-dashboard__site-context) {
+    max-width: min(28vw, 320px);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    padding-left: 14px;
+    border-left: 1px solid #ffffff55;
+    color: #fff;
+    font-size: 0.72rem;
+    font-weight: 900;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+  :global(.hospitality-dashboard__workspace-link) {
+    display: inline-flex;
+    min-height: 40px;
+    align-items: center;
+    padding: 0 13px;
+    border: 1px solid #ffffff66;
+    border-radius: 8px;
+    background: #ffffff12;
+    color: #fff;
+    font-size: 0.8rem;
+    font-weight: 900;
+    text-decoration: none;
+    white-space: nowrap;
+  }
+  :global(.hospitality-dashboard__workspace-link:hover) {
+    background: #fff;
+    color: var(--deep);
   }
   :global(.hospitality-dashboard__settings-trigger) {
     top: 17px !important;
@@ -1262,6 +1283,20 @@
     }
   }
   @media (max-width: 620px) {
+    :global(.hospitality-dashboard__brand-group) {
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    :global(.hospitality-dashboard__site-context) {
+      max-width: 42vw;
+      padding-left: 8px;
+      font-size: 0.62rem;
+    }
+    :global(.hospitality-dashboard__workspace-link) {
+      min-height: 36px;
+      padding: 0 9px;
+      font-size: 0.72rem;
+    }
     :global(.hospitality-dashboard__topbar) {
       height: auto;
       min-height: 68px;
@@ -1678,7 +1713,12 @@
   background: var(--fika-action-secondary);
 }
 .scope :global(.hospitality-dashboard[data-surface="fika-internal-operational"] .hospitality-dashboard__hero) {
-  background: linear-gradient(108deg, var(--fika-action-secondary) 0 59%, var(--fika-action-primary) 59%);
+  background: var(--hospitality-site-hero-background);
+}
+.scope :global(.hospitality-dashboard[data-surface="fika-internal-operational"] .hospitality-dashboard__hero:after) {
+  border-left-color: var(--hospitality-site-accent);
+  background: var(--hospitality-site-accent-soft);
+  opacity: 0.18;
 }
 .scope :global(.hospitality-dashboard[data-surface="fika-internal-operational"] .manager-cpu-action),
 .scope :global(.hospitality-dashboard[data-surface="fika-internal-operational"] .hospitality-dashboard__run-sheet-trigger) {

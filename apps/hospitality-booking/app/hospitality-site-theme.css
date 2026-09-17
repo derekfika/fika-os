@@ -1,0 +1,11 @@
+.hospitality-site-themed .mnk-hero,
+.hospitality-site-themed .hospitality-dashboard__hero {
+  background: var(--hospitality-site-hero-background) !important;
+}
+
+.hospitality-site-themed .mnk-hero::after,
+.hospitality-site-themed .hospitality-dashboard__hero::after {
+  border-left-color: var(--hospitality-site-accent) !important;
+  background: var(--hospitality-site-accent-soft) !important;
+  opacity: 0.18;
+}

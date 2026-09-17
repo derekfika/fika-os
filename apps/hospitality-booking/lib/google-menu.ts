@@ -43,7 +43,7 @@ type MenuTemplateConfig = {
   preserveAnchor?: boolean;
 };
 
-function templateConfig(siteKey = "mnk", overrideTemplateId?: string): MenuTemplateConfig {
+function templateConfig(siteKey: string | undefined, overrideTemplateId?: string): MenuTemplateConfig {
   if (siteKey === "angel-court") {
     return {
       templateId: overrideTemplateId || process.env.GOOGLE_MENU_TEMPLATE_ID_ANGEL_COURT,

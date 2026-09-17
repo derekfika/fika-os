@@ -10,7 +10,8 @@ const escapeHtml = (value: unknown) => String(value ?? "")
 export function runSheetTitle(booking: CanonicalBooking) {
   const date = booking.service.eventDate || "undated";
   const client = booking.client.companyName || "client";
-  return `MNK_Run_Sheet_${date}_${client}`.replace(/[^A-Za-z0-9_-]+/g, "_");
+  const site = booking.service.portalSiteLabel?.trim() || "Hospitality";
+  return `${site}_Run_Sheet_${date}_${client}`.replace(/[^A-Za-z0-9_-]+/g, "_");
 }
 
 export function deliveryContext(booking: CanonicalBooking) {
@@ -44,7 +45,9 @@ export function runSheetHtml(booking: CanonicalBooking) {
 
 export function dailyRunSheetTitle(bookings: CanonicalBooking[]) {
   const date = bookings[0]?.service.eventDate || "undated";
-  return `MNK_Daily_Run_Sheet_${date}`;
+  const labels = [...new Set(bookings.map((booking) => booking.service.portalSiteLabel?.trim()).filter(Boolean))];
+  const site = labels.length === 1 ? labels[0] : "Hospitality";
+  return `${site}_Daily_Run_Sheet_${date}`;
 }
 
 export function dailyRunSheetHtml(bookings: CanonicalBooking[]) {

@@ -116,10 +116,10 @@ export default function HospitalityWorkspace() {
   if (unauthorisedOplocId) return <Notice title="Hospitality location not authorised" copy={`Your account is not authorised for ${unauthorisedOplocId}. Choose an authorised Hospitality workspace instead.`} />;
   if (!sites.length) return <Notice title="Hospitality access unavailable" copy="Your account does not currently have access to a Hospitality location." />;
   if (surface === "booking" && active && canBook) {
-    return <BookingPortal siteKey={active.portalSiteKey} oplocId={active.id} siteLabel={active.label} availableSites={sites} onSiteChange={(next) => updateRoute(next, "booking")} />;
+    return <BookingPortal siteKey={active.portalSiteKey} oplocId={active.id} siteLabel={active.label} />;
   }
   if (surface === "operations" && active && canOperate) {
-    return <HospitalityDashboard key={active.id} siteKey={active.portalSiteKey} oplocId={active.id} availableSites={sites} onSiteChange={(next) => updateRoute(next, "operations")} />;
+    return <HospitalityDashboard key={active.id} siteKey={active.portalSiteKey} oplocId={active.id} siteLabel={active.label} />;
   }
 
   const showDestinationChoice = sites.length === 1;

@@ -1,12 +1,12 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import {
   BookingInput,
   type PortalMenuItem,
   portalBookingId,
 } from "@/lib/mnk-contract";
-import { portalSite, type PortalSiteKey } from "@/lib/portal-sites";
+import { hospitalitySiteThemeStyle, portalSite, type PortalSiteConfig, type PortalSiteKey } from "@/lib/portal-sites";
 import { capGallagherMinimum, GALLAGHER_MINIMUM_GUESTS, isGallagherBooking } from "@/lib/gallagher-rules";
 
 type ChoiceValue = string | string[];
@@ -132,21 +132,19 @@ function minimumQuantityFor(item: PortalMenuItem, gallagher = false) {
 }
 
 export default function BookingPortal({
-  siteKey = "mnk",
+  siteKey,
   oplocId,
   siteLabel,
-  availableSites,
-  onSiteChange,
   dashboardMode,
 }: {
-  siteKey?: PortalSiteKey;
+  siteKey: PortalSiteKey;
   oplocId?: string;
   siteLabel?: string;
-  availableSites?: Array<{ id: string; label: string }>;
-  onSiteChange?: (oplocId: string) => void;
   dashboardMode?: boolean;
 }) {
   const site = portalSite(siteKey);
+  const currentSiteLabel = siteLabel?.trim() || site.theme.shortLabel;
+  const themeStyle = hospitalitySiteThemeStyle(site) as CSSProperties;
   const [menu, setMenu] = useState<PortalMenuItem[]>([]);
   const [occasion, setOccasion] = useState("");
   const [step, setStep] = useState(0);
@@ -495,7 +493,7 @@ export default function BookingPortal({
     const payload = {
       bookingId: portalBookingId(site.key),
       submittedAt: new Date().toISOString(),
-      site: site.label,
+      site: currentSiteLabel,
       // portalSiteId is the stable portal key. The Hub, not the browser,
       // resolves the governed canonical OPLOC for the booking.
       siteId: site.key,
@@ -630,8 +628,8 @@ export default function BookingPortal({
   }, [resetOpen]);
   if (confirmation)
     return (
-      <main className={`mnk ${site.cssClass}`} data-surface="client-branded-portal" data-client-brand={site.key}>
-        <Top site={site} siteLabel={siteLabel} availableSites={availableSites} activeOplocId={oplocId} onSiteChange={onSiteChange} dashboardMode={dashboardMode} onStartAgain={() => setResetOpen(true)} />
+        <main className={`mnk ${site.cssClass} hospitality-site-themed`} data-surface="client-branded-portal" data-client-brand={site.key} style={themeStyle}>
+        <Top site={site} siteLabel={currentSiteLabel} dashboardMode={dashboardMode} onStartAgain={() => setResetOpen(true)} />
         <section className="success-screen">
           <p className="eyebrow">Request received</p>
           <h1>We’re on it.</h1>
@@ -644,20 +642,19 @@ export default function BookingPortal({
       </main>
     );
   return (
-    <main className={`mnk ${site.cssClass}`} data-surface="client-branded-portal" data-client-brand={site.key}>
-      <Top site={site} siteLabel={siteLabel} availableSites={availableSites} activeOplocId={oplocId} onSiteChange={onSiteChange} dashboardMode={dashboardMode} onStartAgain={() => setResetOpen(true)} />
+    <main className={`mnk ${site.cssClass} hospitality-site-themed`} data-surface="client-branded-portal" data-client-brand={site.key} style={themeStyle}>
+      <Top site={site} siteLabel={currentSiteLabel} dashboardMode={dashboardMode} onStartAgain={() => setResetOpen(true)} />
       {restoredDraft && <p className="draft-restored" role="status">Your unfinished booking has been restored.</p>}
       {resetOpen && <ResetModal onCancel={() => setResetOpen(false)} onConfirm={resetBooking} />}
       <section className="mnk-hero">
-        <p className="eyebrow">{site.label} hospitality</p>
+        <p className="eyebrow">{currentSiteLabel} · {site.theme.heroEyebrow}</p>
         <h1>
           Hospitality,
           <br />
           elevated.
         </h1>
         <p>
-          Good food, beautifully arranged. Tell us what you need and we’ll take
-          it from there.
+          Good food, beautifully arranged. Tell us what you need and we’ll take it from there.
         </p>
         <div className="journey">
           {steps.slice(0, 3).map((label, index) => (
@@ -766,17 +763,11 @@ export default function BookingPortal({
 function Top({
   site,
   siteLabel,
-  availableSites,
-  activeOplocId,
-  onSiteChange,
   dashboardMode,
   onStartAgain,
 }: {
-  site: ReturnType<typeof portalSite>;
-  siteLabel?: string;
-  availableSites?: Array<{ id: string; label: string }>;
-  activeOplocId?: string;
-  onSiteChange?: (oplocId: string) => void;
+  site: PortalSiteConfig;
+  siteLabel: string;
   dashboardMode?: boolean;
   onStartAgain: () => void;
 }) {
@@ -787,8 +778,9 @@ function Top({
         <span>{dashboardMode ? "Hospitality Dashboard" : "Hospitality"}</span>
       </div>
       <div className="mnk-top-actions">
-        {availableSites && activeOplocId && onSiteChange ? <>{availableSites.length > 1 ? <label>Site: <select aria-label="Hospitality site" value={activeOplocId} onChange={(event) => onSiteChange(event.target.value)}>{availableSites.map(option => <option value={option.id} key={option.id}>{option.label}</option>)}</select></label> : <small>Site: {siteLabel || site.label}</small>}{dashboardMode && <a className="start-again" href={site.portalPath} target="_blank" rel="noopener noreferrer">View Portal</a>}</> : <small>{site.label} booking</small>}
-        {dashboardMode && (!availableSites || !activeOplocId || !onSiteChange) && <a className="start-again" href={site.portalPath} target="_blank" rel="noopener noreferrer">View Portal</a>}
+        <small>Site: {siteLabel}</small>
+        {dashboardMode && <a className="start-again" href={site.portalPath} target="_blank" rel="noopener noreferrer">View Portal</a>}
+        <a className="start-again" href="/workspace">Change workspace</a>
         <button className="start-again" type="button" onClick={onStartAgain}>
           Start again
         </button>

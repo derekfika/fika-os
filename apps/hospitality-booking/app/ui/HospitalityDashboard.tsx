@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import type { FormEvent } from "react";
 import { MailSearch, RefreshCw, Settings } from "lucide-react";
 import type { CanonicalBooking, ProductionOrder, DashboardQuoteSettings } from "@/lib/canonical-types";
@@ -10,7 +10,7 @@ import { amendmentPatchDto } from "../../lib/amendment-dto";
 import { mnkMenuHtml } from "../../lib/mnk-menu-output";
 import type { MenuOutput } from "../../lib/mnk-menu-output";
 import styles from "./HospitalityDashboard.module.css";
-import { portalSite, type PortalSiteKey } from "@/lib/portal-sites";
+import { hospitalitySiteThemeStyle, portalSite, type PortalSiteKey } from "@/lib/portal-sites";
 import { hospitalityWorkspacePath } from "@/lib/hospitality-workspace";
 
 const statuses = [
@@ -79,17 +79,17 @@ async function saveQuoteDocument(payload: { name: string; html: string; canonica
 }
 
 export default function HospitalityDashboard({
-  siteKey = "mnk",
+  siteKey,
   oplocId,
-  availableSites,
-  onSiteChange,
+  siteLabel,
 }: {
-  siteKey?: PortalSiteKey;
-  oplocId?: string;
-  availableSites?: Array<{ id: string; label: string; active: boolean; portalSiteKey: PortalSiteKey }>;
-  onSiteChange?: (oplocId: string) => void;
+  siteKey: PortalSiteKey;
+  oplocId: string;
+  siteLabel: string;
 }) {
   const site = portalSite(siteKey);
+  const currentSiteLabel = siteLabel.trim() || site.theme.shortLabel;
+  const themeStyle = hospitalitySiteThemeStyle(site) as CSSProperties;
   const [bookings, setBookings] = useState<CanonicalBooking[]>([]);
   const [productionOrders, setProductionOrders] = useState<
     Record<string, ProductionOrder | undefined>
@@ -784,27 +784,23 @@ export default function HospitalityDashboard({
 
   return (
     <div className={styles.scope}>
-      <main className={`hospitality-dashboard ${site.cssClass}`} data-surface="fika-internal-operational" data-client-brand={site.key}>
+      <main className={`hospitality-dashboard ${site.cssClass} hospitality-site-themed`} data-surface="fika-internal-operational" data-client-brand={site.key} style={themeStyle}>
         <header className="hospitality-dashboard__topbar">
-          <a
-            className="hospitality-dashboard__brand"
-            href="/"
-            aria-label="FIKA OS Hospitality home"
-          >
-            <strong>FIKA</strong>
-            <span>OS</span>
-            <i>·</i>
-            <b>Hospitality</b>
-          </a>
+          <div className="hospitality-dashboard__brand-group">
+            <a
+              className="hospitality-dashboard__brand"
+              href="/workspace"
+              aria-label="FIKA OS Hospitality workspace"
+            >
+              <strong>FIKA</strong>
+              <span>OS</span>
+              <i>·</i>
+              <b>Hospitality</b>
+            </a>
+            <span className="hospitality-dashboard__site-context">{currentSiteLabel}</span>
+            <a className="hospitality-dashboard__workspace-link" href="/workspace">Change workspace</a>
+          </div>
           <div>
-            <small>{site.label} operational workspace</small>
-            {availableSites && onSiteChange && (
-              <label aria-label="Hospitality site">
-                Site <select value={oplocId || ""} onChange={(event) => onSiteChange(event.target.value)}>
-                  {availableSites.map((available) => <option value={available.id} key={available.id}>{available.label}</option>)}
-                </select>
-              </label>
-            )}
             <a className="start-again" href={oplocId ? hospitalityWorkspacePath(oplocId, "booking") : site.portalPath}>View Booking platform</a>
             {site.key === "angel-court" && (
               <>
@@ -928,9 +924,9 @@ export default function HospitalityDashboard({
         )}
         <section className="hospitality-dashboard__hero">
           <div>
-            <p className="eyebrow">Operational overview</p>
+            <p className="eyebrow">{currentSiteLabel} · {site.theme.heroEyebrow}</p>
             <h1>
-              Hospitality, <em>in hand.</em>
+              {currentSiteLabel}, <em>in hand.</em>
             </h1>
             <p>
               Review every customer request, protect the commercial snapshot and
@@ -1019,7 +1015,7 @@ export default function HospitalityDashboard({
                       <strong>{booking.client.clientCompany || booking.client.companyName}</strong>
                       <small>
                         {booking.client.name} ·{" "}
-                        {booking.service.portalSiteLabel || "MNK"}
+                        {booking.service.portalSiteLabel?.trim() || currentSiteLabel}
                       </small>
                       <span>
                         {booking.service.guestCount} pax · £
@@ -1044,7 +1040,7 @@ export default function HospitalityDashboard({
                 <BookingPane
                   booking={selected}
                   siteKey={site.key}
-                  siteLabel={site.label}
+                  siteLabel={currentSiteLabel}
                   productionOrder={selectedProductionOrder}
                   menuOutput={selectedMenuOutput}
                   menuStale={selectedMenuStale}
@@ -1259,6 +1255,7 @@ export default function HospitalityDashboard({
           <DashboardSettingsModal
             activeTab={settingsTab}
             onTabChange={setSettingsTab}
+            siteLabel={currentSiteLabel}
             settings={quoteSettings}
             onChange={setQuoteSettings}
             onCancel={() => setSettingsOpen(false)}
@@ -1455,7 +1452,7 @@ function BookingDetail({
       <header className="booking-detail__header">
         <div>
           <p className="eyebrow">
-            {booking.service.portalSiteLabel || "MNK"} ·{" "}
+            {booking.service.portalSiteLabel?.trim() || siteLabel} ·{" "}
             {booking.lifecycleStatus}
           </p>
           <h2>{booking.client.clientCompany || booking.client.companyName}</h2>
@@ -2128,7 +2125,7 @@ function QuoteSettingsModal({
         }}
       >
         <p className="eyebrow">Dashboard commercial settings</p>
-        <h2>MNK quote policy</h2>
+        <h2>Hospitality quote policy</h2>
         <p>
           These settings belong to this dashboard only. They are captured in
           each generated quote revision.
@@ -2582,6 +2579,7 @@ function BookingAmendmentPanel({
 function DashboardSettingsModal({
   activeTab,
   onTabChange,
+  siteLabel,
   settings,
   onChange,
   onCancel,
@@ -2589,6 +2587,7 @@ function DashboardSettingsModal({
 }: {
   activeTab: "quotes" | "drive";
   onTabChange: (tab: "quotes" | "drive") => void;
+  siteLabel: string;
   settings: DashboardQuoteSettings;
   onChange: (value: DashboardQuoteSettings) => void;
   onCancel: () => void;
@@ -2604,7 +2603,7 @@ function DashboardSettingsModal({
         }}
       >
         <p className="eyebrow">Dashboard settings</p>
-        <h2>MNK Hospitality</h2>
+        <h2>{siteLabel} Hospitality</h2>
         <nav className="settings-tabs" aria-label="Settings sections">
           <button
             className={activeTab === "quotes" ? "active" : ""}

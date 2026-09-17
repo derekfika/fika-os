@@ -5,9 +5,9 @@ import { localAngelCourtMenuCatalogue } from "@/lib/local-angel-court-menu";
 import { localCfcMenuCatalogue } from "@/lib/local-cfc-menu";
 import { localMunichReMenuCatalogue } from "@/lib/local-munich-re-menu";
 import { filterPricedMenu, isFinitePrice } from "@/lib/reference-data-validation";
-import { portalSite } from "@/lib/portal-sites";
+import { portalSite, type PortalSiteKey } from "@/lib/portal-sites";
 
-function localCompatibilityMenu(siteKey = "mnk") {
+function localCompatibilityMenu(siteKey: PortalSiteKey) {
   const catalogue =
     siteKey === "angel-court"
       ? localAngelCourtMenuCatalogue
@@ -49,7 +49,14 @@ function localCompatibilityMenu(siteKey = "mnk") {
 
 export async function GET(request: Request) {
   const url = new URL(request.url);
-  const siteKey = url.searchParams.get("site") || "mnk";
+  const configuredSite = portalSite(url.searchParams.get("site")?.trim());
+  if (!configuredSite) {
+    return NextResponse.json(
+      { error: { message: "A configured Hospitality site context is required." } },
+      { status: 400 },
+    );
+  }
+  const siteKey = configuredSite.key;
   try {
     if (siteKey === "angel-court" || siteKey === "cfc" || siteKey === "munich-re") {
       return NextResponse.json(localCompatibilityMenu(siteKey), {
@@ -57,8 +64,9 @@ export async function GET(request: Request) {
       });
     }
     const oplocId = url.searchParams.get("oplocId")?.trim()
-      || process.env.FIKA_MNK_OPLOC_ID?.trim()
-      || (siteKey === "mnk" ? portalSite("mnk").canonicalOplocId : undefined);
+      || (siteKey === "mnk"
+        ? process.env.FIKA_MNK_OPLOC_ID?.trim() || configuredSite.canonicalOplocId
+        : undefined);
     if (oplocId) {
       const serviceDate = new Date().toISOString().slice(0, 10);
       const response = await hubFetch(

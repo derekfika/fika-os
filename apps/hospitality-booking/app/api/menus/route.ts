@@ -63,12 +63,14 @@ export async function POST(request: NextRequest) {
     if (!cpuBody.plan) throw Error(cpuBody.error?.message || "The CPU plan could not be loaded.");
     const readiness = planReadiness(cpuBody.plan);
     if (!readiness.available) return NextResponse.json({ error: { message: readiness.reason } }, { status: 409 });
+    const siteKey = booking.service.portalSiteId?.trim();
+    if (!siteKey) return NextResponse.json({ error: { message: "The Booking has no site identity." } }, { status: 409 });
     const generatedAt = new Date().toISOString();
     const bookingContext = menuBookingContext(booking);
     const output: MenuOutput = { id: `menu-output:${body.bookingId}:${generatedAt.replace(/[^0-9]/g, "").slice(0, 14)}`, fileName: menuFileName(bookingContext), bookingId: body.bookingId, planId: cpuBody.plan.id, planUpdatedAt: cpuBody.plan.updatedAt, generatedAt, generatedBy: body.actor || "menu-planning", templateVersion: "mnk-hospitality-menu-v2", booking: bookingContext, items: cpuBody.plan.menuItems.flatMap(menuItem => menuItem.subItems.filter(subItem => subItem.name.trim()).map(subItem => ({ menuItem: menuItem.name, name: subItem.name, allergens: Object.entries(subItem.allergens).filter(([key, state]) => key !== "no_key_allergens" && state === "contains").map(([key]) => key), mayContain: Object.entries(subItem.allergens).filter(([key, state]) => key !== "no_key_allergens" && state === "may_contain").map(([key]) => key) }))) };
     let persisted = output;
     try {
-      const google = await createGoogleMenu(output, { type: "oploc-workspace", oplocId: booking.service.oplocId }, { siteKey: booking.service.portalSiteId || "mnk", folderId: bookingBody.quoteSettings?.googleMenuFolderId, templateId: bookingBody.quoteSettings?.googleMenuTemplateId });
+      const google = await createGoogleMenu(output, { type: "oploc-workspace", oplocId: booking.service.oplocId }, { siteKey, folderId: bookingBody.quoteSettings?.googleMenuFolderId, templateId: bookingBody.quoteSettings?.googleMenuTemplateId });
       if (google) persisted = { ...output, google };
     } catch (error) {
       return NextResponse.json({ error: { message: `Menu was not created in Google Slides: ${(error as Error).message}` } }, { status: 502 });

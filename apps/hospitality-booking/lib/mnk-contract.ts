@@ -76,7 +76,7 @@ export type PortalMenuItem = {
     options: Array<{ id: string; label: string }>;
   }>;
 };
-export function portalBookingId(siteKey = "mnk") {
+export function portalBookingId(siteKey: string) {
   return `${siteKey.toUpperCase().replace(/[^A-Z0-9]+/g, "-")}-${new Date()
     .toISOString()
     .replace(/[-:.TZ]/g, "")
