@@ -87,3 +87,13 @@ test("an upstream invalidation can bootstrap a missing day through the canonical
   assert.match(route, /materialised: true/);
   assert.match(route, /body as LogisticsProjectionInvalidation/);
 });
+
+test("an operator retry explicitly materialises a missing day before retrying the projection read", () => {
+  const planner = readFileSync(new URL("../app/page.tsx", import.meta.url), "utf8");
+  const mobile = readFileSync(new URL("../app/mobile/MobileWorkflow.tsx", import.meta.url), "utf8");
+  assert.match(planner, /LOGISTICS_PROJECTION_NOT_MATERIALIZED/);
+  assert.match(planner, /action: "reconcile-logistics-day"/);
+  assert.match(planner, /projectionNeedsMaterialisation/);
+  assert.match(mobile, /action: "reconcile-logistics-day"/);
+  assert.match(mobile, /Materialise and retry/);
+});

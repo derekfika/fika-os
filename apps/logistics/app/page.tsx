@@ -97,6 +97,7 @@ export default function Planner() {
   const emptyProjection = (serviceDate: string): LogisticsDayProjection => ({ serviceDate, revision: 0, lastChangeSequence: 0, planningQueue: [], deliveryLoads: [], runs: [], exceptions: [], summary: { queuedJobs: 0, loads: 0, assignedJobs: 0, collectedJobs: 0 }, rebuiltAt: new Date().toISOString() });
   const [error, setError] = useState("");
   const [errorReference, setErrorReference] = useState("");
+  const [projectionNeedsMaterialisation, setProjectionNeedsMaterialisation] = useState(false);
   const [authRequired, setAuthRequired] = useState(false);
   const requestsBlocked = useRef(false);
   const [busy, setBusy] = useState(false);
@@ -126,6 +127,7 @@ export default function Planner() {
     const details = clientErrorDetails(cause, fallback);
     if ([401, 403].includes(details.status)) requestsBlocked.current = true;
     if ([401, 403].includes(details.status)) setAuthRequired(true);
+    setProjectionNeedsMaterialisation(details.code === "LOGISTICS_PROJECTION_NOT_MATERIALIZED");
     setError(details.message);
     setErrorReference(details.requestId || "");
   };
@@ -150,7 +152,7 @@ export default function Planner() {
     try { window.localStorage.setItem("fika-logistics-view", JSON.stringify({ date, weekCommencing })); } catch { /* Preferences are an optimisation only. */ }
   }, [date, weekCommencing, viewPreferencesReady]);
 
-  const load = async (silent = false) => {
+  const load = async (silent = false, materialiseMissing = false) => {
     if (requestsBlocked.current) return;
     if (!date) return;
     if (silent) setRefreshing(true);
@@ -170,12 +172,27 @@ export default function Planner() {
       if (cached && Number(head.sequence) === cached.lastChangeSequence && cached.state !== "STALE") {
         setLastUpdated(new Date().toISOString());
         setError("");
+        setProjectionNeedsMaterialisation(false);
         return;
       }
-      const response = await fetchPlannerGet(`/api/logistics?projection=1&serviceDate=${date}`, {
+      let response = await fetchPlannerGet(`/api/logistics?projection=1&serviceDate=${date}`, {
         cache: "no-store",
       });
-      const body = await requireSuccessfulResponse(response, "Logistics could not be loaded.");
+      let body: Record<string, unknown>;
+      try {
+        body = await requireSuccessfulResponse(response, "Logistics could not be loaded.");
+      } catch (cause) {
+        const details = clientErrorDetails(cause, "Logistics could not be loaded.");
+        if (!materialiseMissing || details.code !== "LOGISTICS_PROJECTION_NOT_MATERIALIZED") throw cause;
+        const reconcileResponse = await fetch("/api/logistics", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ action: "reconcile-logistics-day", serviceDate: date }),
+        });
+        await requireSuccessfulResponse(reconcileResponse, "Logistics projection materialisation could not be completed.");
+        response = await fetchPlannerGet(`/api/logistics?projection=1&serviceDate=${date}`, { cache: "no-store" });
+        body = await requireSuccessfulResponse(response, "Logistics could not be loaded after materialisation.");
+      }
       let projection = body.projection as LogisticsDayProjection | undefined;
       if (!projection && body.state === "EMPTY") {
         projection = emptyProjection(date);
@@ -183,11 +200,13 @@ export default function Planner() {
         setProjectionState("VALID_EMPTY");
         setLastUpdated(new Date().toISOString());
         setError("");
+        setProjectionNeedsMaterialisation(false);
         return;
       }
       if (!projection) throw new Error("Logistics projection is unavailable.");
       setData({ ...projectionToDashboardData(projection), projection });
       setProjectionState((body.projectionState || projection.state || "CURRENT") as LogisticsProjectionState);
+      setProjectionNeedsMaterialisation(false);
       if (cacheScope) await writeCachedProjection(cacheScope, projection);
       setLastUpdated(new Date().toISOString());
       setError("");
@@ -239,6 +258,7 @@ export default function Planner() {
     // the background and must not trigger a second full dashboard load.
     setData(undefined);
     setProjectionState("LOADING");
+    setProjectionNeedsMaterialisation(false);
     void load();
     if (!requestsBlocked.current) void ensureVehicleDayRuns(requestedDate || date);
     const liveChannel = typeof BroadcastChannel === "undefined" ? undefined : new BroadcastChannel("fika-logistics-live");
@@ -425,6 +445,7 @@ export default function Planner() {
     data={data}
     error={error}
     errorReference={errorReference}
+    projectionNeedsMaterialisation={projectionNeedsMaterialisation}
     authRequired={authRequired}
     onSignInAgain={() => { window.location.assign(process.env.NEXT_PUBLIC_FIKA_HUB_URL || "/"); }}
     setError={setError}
@@ -625,6 +646,7 @@ type RealPlannerProps = {
   projectionState: LogisticsProjectionState | "LOADING";
   error: string;
   errorReference: string;
+  projectionNeedsMaterialisation: boolean;
   authRequired: boolean;
   onSignInAgain: () => void;
   setError: (value: string) => void;
@@ -655,7 +677,7 @@ type RealPlannerProps = {
   setInspector: (value: RealPlannerProps["inspector"]) => void;
   setAssigning: (value: string | undefined) => void;
   setTargetRun: (value: string) => void;
-  load: (silent?: boolean) => Promise<void>;
+  load: (silent?: boolean, materialiseMissing?: boolean) => Promise<void>;
   act: (payload: object) => Promise<boolean>;
   createRun: () => void;
   createMovement: () => void;
@@ -886,7 +908,7 @@ function RealPlanner(props: RealPlannerProps) {
       <section className="mock-week-nav" aria-label="Operational week navigation"><button aria-label="Previous week" onClick={() => { const next = addOperationalDays(weekCommencing, -7); props.setWeekCommencing(next); props.setDate(next); }}>‹</button><strong>WC {formatWeekRange(weekCommencing)}</strong><button className="mock-this-week" onClick={() => { const next = mondayOf(operationalDate()); props.setWeekCommencing(next); props.setDate(next); }}>This week</button><button aria-label="Next week" onClick={() => { const next = addOperationalDays(weekCommencing, 7); props.setWeekCommencing(next); props.setDate(next); }}>›</button></section>
       <section className="mock-day-cards" aria-label="Operational week">{operationalWeek(weekCommencing).map((day) => { const item = weekData?.days.find((summaryItem) => summaryItem.serviceDate === day); const weekMetricsReady = item?.projectionState === "CURRENT" || item?.projectionState === "VALID_EMPTY"; const weekMetric = (value: number | undefined) => weekMetricsReady && value !== undefined ? value : "—"; return <button key={day} className={day === date ? "selected" : ""} aria-pressed={day === date} onClick={() => props.setDate(day)}><div className="mock-day-title"><strong>{formatOperationalDate(day, { weekday: "short", day: "numeric", month: "short" })}</strong>{day === date && <b>✓</b>}</div><div className="mock-day-metrics"><span><i className="purple-dot" />{weekMetric(item?.loads)} loads</span><span><i className="purple-dot" />{weekMetric(item?.scheduled)} scheduled</span><span><i className="green-dot" />{weekMetric(item?.queue)} in queue</span><span><i className="blue-dot" />{weekMetric(item?.needsTime)} needs time</span><span><i className="red-dot" />{weekMetric(item?.attention)} attention</span></div></button>; })}</section>
       <div className="mock-updated">{props.refreshing ? "Refreshing…" : props.data?.fetchedAt ? `Last updated ${new Date(props.data.fetchedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}` : "Waiting for data"}<Health health={data?.planner.upstreamHealth} /></div>
-      {props.error && <div className="alert" role="alert"><span>{props.error}{props.errorReference && <> <small>Reference: {props.errorReference}</small></>}</span><button className="secondary" onClick={() => void props.load(true)} disabled={props.refreshing}>Try again</button>{props.authRequired && <button className="secondary" onClick={props.onSignInAgain}>Sign in again</button>}</div>}
+      {props.error && <div className="alert" role="alert"><span>{props.error}{props.errorReference && <> <small>Reference: {props.errorReference}</small></>}</span><button className="secondary" onClick={() => void props.load(true, props.projectionNeedsMaterialisation)} disabled={props.refreshing}>{props.projectionNeedsMaterialisation ? "Materialise and retry" : "Try again"}</button>{props.authRequired && <button className="secondary" onClick={props.onSignInAgain}>Sign in again</button>}</div>}
       {props.showMovement && <MovementForm draft={props.draft} setDraft={props.setDraft} oplocs={data?.oplocs || []} onClose={() => props.setShowMovement(false)} onSave={props.createMovement} busy={props.busy} />}
       <section className="mock-selected-day"><div><span>▣</span><strong>{selectedDateLabel}</strong><small>{metric(summary?.loads)} loads · {metricsReady ? runs.length : "—"} vans &nbsp;·&nbsp; {metric(summary?.scheduledStops)} scheduled · {queueCount} in queue · {metric(summary?.needsTime)} needs time · {metric(summary?.attention)} attention</small></div><div className="mock-actions"><button onClick={() => props.setShowMovement(true)} disabled={!data?.planner.upstreamHealth.oplocs.available}>＋ New movement</button><button onClick={() => void props.load(true)} disabled={props.refreshing} aria-busy={props.refreshing}>{props.refreshing ? "Refreshing…" : "↻ Refresh"}</button><a href={runs.length === 1 ? `/mobile?run=${encodeURIComponent(runs[0].runId)}` : "/mobile"}>▦ Driver view</a></div></section>
       {props.showRunCreate && <RunCreatePopover driverId={props.newRunDriverId} setDriverId={props.setNewRunDriverId} driverOptions={props.data?.runs || []} returnToCpuRequired={props.newRunReturnToCpu} setReturnToCpuRequired={props.setNewRunReturnToCpu} onCreate={props.createRun} onClose={() => props.setShowRunCreate(false)} />}
