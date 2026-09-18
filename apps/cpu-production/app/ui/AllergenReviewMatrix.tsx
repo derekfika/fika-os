@@ -45,6 +45,7 @@ export default function AllergenReviewMatrix({
   onLineageChange,
   onHydrationChange,
   onDirtyChange,
+  onPersistenceChange,
 }: {
   rows: AllergenReviewRow[];
   orders: ProductionOrder[];
@@ -62,6 +63,7 @@ export default function AllergenReviewMatrix({
   onLineageChange?: (lineageByOrderId: Record<string, MatrixLineage>) => void;
   onHydrationChange?: (hydrating: boolean) => void;
   onDirtyChange?: (dirty: boolean) => void;
+  onPersistenceChange?: (pending: boolean) => void;
 }) {
   const [states, setStates] = useState<Record<string, Record<string, OperationalAllergenState>>>(
     () => Object.fromEntries(rows.map(row => [row.key, { ...(row.snapshot?.allergens || {}) }])) as Record<string, Record<string, OperationalAllergenState>>,
@@ -71,7 +73,12 @@ export default function AllergenReviewMatrix({
   const [error, setError] = useState("");
   const latestSave = useRef<() => Promise<void>>(() => Promise.resolve());
   const latestStatesRef = useRef(states);
+  const latestCheckedRowsRef = useRef(checkedRows);
   const inFlightSave = useRef<Promise<void> | undefined>(undefined);
+  const pendingSaveCountRef = useRef(0);
+  const hydratedRef = useRef(false);
+  const automaticCompletionInFlightRef = useRef(false);
+  const automaticCompletionAttemptedVersionRef = useRef<number | undefined>(undefined);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const editVersionRef = useRef(0);
   const dirtyRef = useRef(false);
@@ -84,6 +91,9 @@ export default function AllergenReviewMatrix({
     onHydrationChange?.(true);
 
     const hydrate = async () => {
+      hydratedRef.current = false;
+      automaticCompletionInFlightRef.current = false;
+      automaticCompletionAttemptedVersionRef.current = undefined;
       const orderIds = [...new Set(orders.map(order => order.canonicalId))];
       if (!orderIds.length) {
         dirtyRef.current = false;
@@ -95,6 +105,9 @@ export default function AllergenReviewMatrix({
         onMatrixStatusChange?.({});
         onFinalizationChange?.(false);
         onLineageChange?.({});
+        latestCheckedRowsRef.current = new Set();
+        setCheckedRows(new Set());
+        hydratedRef.current = true;
         return;
       }
 
@@ -176,7 +189,13 @@ export default function AllergenReviewMatrix({
       setStates(hydratedStates);
 
       const localChecked = await loadLocalChecked(scopeKey);
-      if (!cancelled) setCheckedRows(new Set(rows.map(row => row.key).filter(key => localChecked.has(key))));
+      if (!cancelled) {
+        const serverChecked = new Set(rows.map(row => row.key).filter(key => saved.get(key)?.completed));
+        const nextCheckedRows = new Set(rows.map(row => row.key).filter(key => localChecked.has(key) || serverChecked.has(key)));
+        latestCheckedRowsRef.current = nextCheckedRows;
+        setCheckedRows(nextCheckedRows);
+        hydratedRef.current = true;
+      }
     };
 
     void hydrate().catch(cause => {
@@ -201,6 +220,7 @@ export default function AllergenReviewMatrix({
   }, [locked]);
 
   useEffect(() => {
+    latestCheckedRowsRef.current = checkedRows;
     onCheckedChange?.(checkedRows.size, rows.length, checkedRows);
   }, [checkedRows, rows.length, onCheckedChange]);
 
@@ -271,9 +291,13 @@ export default function AllergenReviewMatrix({
 
   const startSave = (nextStates: Record<string, Record<string, OperationalAllergenState>>, action: "save-plan" | "mark-planned") => {
     const prior = inFlightSave.current;
+    pendingSaveCountRef.current += 1;
+    if (pendingSaveCountRef.current === 1) onPersistenceChange?.(true);
     const operation = (prior ? prior.catch(() => undefined) : Promise.resolve()).then(() => saveReview(nextStates, action));
     inFlightSave.current = operation;
     void operation.catch(cause => setError(cause instanceof Error ? cause.message : "The allergen edit could not be synchronised.")).finally(() => {
+      pendingSaveCountRef.current = Math.max(0, pendingSaveCountRef.current - 1);
+      if (pendingSaveCountRef.current === 0) onPersistenceChange?.(false);
       if (inFlightSave.current === operation) inFlightSave.current = undefined;
     });
     return operation;
@@ -305,6 +329,25 @@ export default function AllergenReviewMatrix({
     onRegisterReviewState?.(latestReviewState);
   }, [onRegisterReviewState, orders]);
 
+  useEffect(() => {
+    if (!hydratedRef.current || automaticCompletionInFlightRef.current || busy || locked || !rows.length || checkedRows.size !== rows.length || authoritativeReviewedRef.current || automaticCompletionAttemptedVersionRef.current === editVersionRef.current) return;
+    automaticCompletionInFlightRef.current = true;
+    automaticCompletionAttemptedVersionRef.current = editVersionRef.current;
+    dirtyRef.current = true;
+    setDirty(true);
+    onDirtyChange?.(true);
+    const editVersion = editVersionRef.current;
+    void startSave(latestStatesRef.current, "mark-planned").then(() => {
+      if (editVersion !== editVersionRef.current || latestCheckedRowsRef.current.size !== rows.length) return;
+      dirtyRef.current = false;
+      authoritativeReviewedRef.current = true;
+      setDirty(false);
+      onDirtyChange?.(false);
+    }).catch(() => undefined).finally(() => {
+      automaticCompletionInFlightRef.current = false;
+    });
+  }, [busy, checkedRows, locked, onDirtyChange, rows.length]);
+
   const markChecked = async (rowKey: string) => {
     if (busy || locked) return;
     if (!checkedRows.has(rowKey) && !isCompleteOperationalAllergenMap(latestStatesRef.current[rowKey])) {
@@ -314,8 +357,14 @@ export default function AllergenReviewMatrix({
     const nextCheckedRows = new Set(checkedRows);
     if (nextCheckedRows.has(rowKey)) nextCheckedRows.delete(rowKey);
     else nextCheckedRows.add(rowKey);
+    latestCheckedRowsRef.current = nextCheckedRows;
     setCheckedRows(nextCheckedRows);
     void saveLocalChecked(scopeKey, nextCheckedRows);
+    dirtyRef.current = true;
+    authoritativeReviewedRef.current = false;
+    setDirty(true);
+    onDirtyChange?.(true);
+    editVersionRef.current += 1;
   };
 
   const toggle = async (rowKey: string, key: string) => {

@@ -68,6 +68,7 @@ export default function CpuAllergenReviewPage() {
   const [signatureBusy, setSignatureBusy] = useState(false);
   const [hydrating, setHydrating] = useState(false);
   const [reviewDirty, setReviewDirty] = useState(false);
+  const [reviewPersistencePending, setReviewPersistencePending] = useState(false);
   const [retryEligible, setRetryEligible] = useState(false);
   const signingReviewRef = useRef<(() => unknown[]) | undefined>(undefined);
   const saveReviewRef = useRef<(() => Promise<void>) | undefined>(undefined);
@@ -280,13 +281,6 @@ export default function CpuAllergenReviewPage() {
       setSignatureMessage("There is no Delivered-In master matrix to sign for this service date.");
       return;
     }
-    const signingSnapshot = signingSnapshotRef.current;
-    if (!signingSnapshot || masterOrders.some(order => !signingSnapshot[order.canonicalId])) {
-      const missing = masterOrders.filter(order => !signingSnapshot?.[order.canonicalId]).map(order => order.canonicalId);
-      const labels = Object.fromEntries(masterOrders.map(order => [order.canonicalId, destination(order)]));
-      setSignatureMessage(signingLineageUnavailableMessage(masterOrders.map(order => order.canonicalId), labels, missing));
-      return;
-    }
     if (masterOrders.every(order => (signatureRolesByOrderId[order.canonicalId] || []).includes(role))) {
       setSigning(undefined);
       setSignatureMessage("This signature is already recorded across every OPLOC in the service-date master matrix.");
@@ -304,9 +298,19 @@ export default function CpuAllergenReviewPage() {
     }
     try {
       // The matrix component serialises autosaves. Await its latest save
-      // before taking the signing snapshot so a slow blur/autosave cannot
+      // before refreshing the signing snapshot so a slow autosave cannot
       // arrive after the authoritative signature command.
       await saveReviewRef.current?.();
+      const beforeSign = await refreshReviewStatus();
+      if (signingSnapshotRef.current && !beforeSign.lineageMatchesFrozen) {
+        throw new Error("The reviewed Menu publication changed while the signature was being prepared. Reopen the review and review the current matrix before signing.");
+      }
+      const signingSnapshot = beforeSign.freshLineage;
+      const missing = masterOrders.filter(order => !signingSnapshot[order.canonicalId]).map(order => order.canonicalId);
+      if (missing.length) {
+        const labels = Object.fromEntries(masterOrders.map(order => [order.canonicalId, destination(order)]));
+        throw new Error(signingLineageUnavailableMessage(masterOrders.map(order => order.canonicalId), labels, missing));
+      }
       const reviewOperations = signingReviewRef.current?.();
       if (!reviewOperations || reviewOperations.length !== masterOrders.length) {
         throw new Error("The current reviewed matrix is unavailable. Reload the review before signing.");
@@ -396,9 +400,9 @@ export default function CpuAllergenReviewPage() {
     }
   };
 
-  const beginSigning = (role: SignatureRole) => {
-    if (site || hydrating) {
-      setSignatureMessage("Return to All sites to sign the complete Delivered-In service-date master matrix.");
+  const beginSigning = async (role: SignatureRole) => {
+    if (site || hydrating || reviewPersistencePending) {
+      setSignatureMessage(reviewPersistencePending ? "The completed allergen review is still being saved. Signature will be available when that save succeeds." : "Return to All sites to sign the complete Delivered-In service-date master matrix.");
       return;
     }
     if (!masterOrders.length) {
@@ -409,23 +413,40 @@ export default function CpuAllergenReviewPage() {
       setSignatureMessage(`Please mark all ${rows.length} dishes as checked before signing. ${checkedCount} of ${rows.length} are checked.`);
       return;
     }
-    if (masterOrders.some(order => !lineageByOrderId[order.canonicalId])) {
-      const missing = masterOrders.filter(order => !lineageByOrderId[order.canonicalId]).map(order => order.canonicalId);
-      const labels = Object.fromEntries(masterOrders.map(order => [order.canonicalId, destination(order)]));
-      setSignatureMessage(signingLineageUnavailableMessage(masterOrders.map(order => order.canonicalId), labels, missing));
-      return;
-    }
-    if ((role === "production_chef" && productionSigned) || (role === "head_chef_site_manager" && headChefSigned) || bothSigned || signatureBusy || hydrating) return;
+    if ((role === "production_chef" && productionSigned) || (role === "head_chef_site_manager" && headChefSigned) || bothSigned || signatureBusy || hydrating || reviewDirty) return;
 
-    setSignatureMessage("");
     setSignatureBusy(true);
-    signingSnapshotRef.current = lineageByOrderId;
-    setReviewFrozen(true);
-    signingAttemptRef.current = signingAttemptRef.current?.role === role
-      ? signingAttemptRef.current
-      : { role, id: newSigningAttemptId() };
-    setSigning({ role });
-    setSignatureBusy(false);
+    setSignatureMessage("Saving the completed allergen review before opening signature…");
+    try {
+      await saveReviewRef.current?.();
+      const refreshed = await refreshReviewStatus();
+      if (signingSnapshotRef.current && !refreshed.lineageMatchesFrozen) {
+        signingSnapshotRef.current = undefined;
+        signingAttemptRef.current = undefined;
+        setReviewFrozen(false);
+        throw new Error("The reviewed Menu publication changed. Reopen the review and review the current matrix before signing.");
+      }
+      const missing = masterOrders.filter(order => !refreshed.freshLineage[order.canonicalId]).map(order => order.canonicalId);
+      if (missing.length) {
+        const labels = Object.fromEntries(masterOrders.map(order => [order.canonicalId, destination(order)]));
+        throw new Error(signingLineageUnavailableMessage(masterOrders.map(order => order.canonicalId), labels, missing));
+      }
+      if (masterOrders.every(order => (refreshed.rolesByOrderId[order.canonicalId] || []).includes(role))) {
+        setSignatureMessage("This signature is already recorded across every OPLOC in the service-date master matrix.");
+        return;
+      }
+      signingSnapshotRef.current = refreshed.freshLineage;
+      setReviewFrozen(true);
+      signingAttemptRef.current = signingAttemptRef.current?.role === role
+        ? signingAttemptRef.current
+        : { role, id: newSigningAttemptId() };
+      setSignatureMessage("");
+      setSigning({ role });
+    } catch (cause) {
+      setSignatureMessage(cause instanceof Error ? cause.message : "The current allergen review could not be prepared for signing.");
+    } finally {
+      setSignatureBusy(false);
+    }
   };
 
   const signatureSummary = site
@@ -501,7 +522,7 @@ export default function CpuAllergenReviewPage() {
           rows={rows}
           orders={visibleOrders}
           scopeKey={`${date || "unknown"}:${site || "all"}`}
-          busy={signatureBusy || hydrating}
+          busy={signatureBusy || hydrating || reviewPersistencePending}
           locked={hydrating || reviewFrozen || bothSigned || Boolean(signing)}
           onCheckedChange={setCheckedCount}
           onReviewChanged={() => undefined}
@@ -512,6 +533,7 @@ export default function CpuAllergenReviewPage() {
           onLineageChange={setLineageByOrderId}
           onHydrationChange={setHydrating}
           onDirtyChange={setReviewDirty}
+          onPersistenceChange={setReviewPersistencePending}
           onRegisterReviewState={get => { signingReviewRef.current = get; }}
           onRegisterSave={save => { saveReviewRef.current = save; }}
         />
@@ -531,10 +553,10 @@ export default function CpuAllergenReviewPage() {
                 <strong>Fully signed · scoped releases current</strong>
               ) : (
                 <>
-                  <button type="button" disabled={signatureBusy || hydrating || productionSigned} onClick={() => beginSigning("production_chef")}>
+                  <button type="button" disabled={signatureBusy || hydrating || reviewDirty || reviewPersistencePending || productionSigned} onClick={() => void beginSigning("production_chef")}>
                     {productionSigned ? "Production chef signed" : "Sign as production chef"}
                   </button>
-                  <button type="button" disabled={signatureBusy || hydrating || headChefSigned} onClick={() => beginSigning("head_chef_site_manager")}>
+                  <button type="button" disabled={signatureBusy || hydrating || reviewDirty || reviewPersistencePending || headChefSigned} onClick={() => void beginSigning("head_chef_site_manager")}>
                     {headChefSigned ? "Head chef signed" : "Sign as head chef / site manager"}
                   </button>
                   {bothSigned && retryEligible && pendingReleaseOrders.length > 0 && <button type="button" className="cpu-allergen-retry" disabled={signatureBusy || hydrating} onClick={() => void retryPendingOplocReleases()}>Retry pending OPLOC releases</button>}
@@ -551,7 +573,7 @@ export default function CpuAllergenReviewPage() {
       {signing && (
         <SignatureModal
           role={signing.role}
-          busy={signatureBusy}
+          busy={signatureBusy || reviewPersistencePending}
           onCancel={() => { setSigning(undefined); signingSnapshotRef.current = undefined; signingAttemptRef.current = undefined; }}
           onConfirm={(name, dataUrl) => void sign(name, dataUrl)}
         />

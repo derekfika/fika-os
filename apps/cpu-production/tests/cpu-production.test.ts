@@ -27,6 +27,14 @@ const cardCss = readFileSync(
   new URL("../app/ui/production-card-overrides.css", import.meta.url),
   "utf8",
 );
+const calendarCss = readFileSync(
+  new URL("../app/ui/production-calendar.css", import.meta.url),
+  "utf8",
+);
+const stylesCss = readFileSync(
+  new URL("../app/styles.css", import.meta.url),
+  "utf8",
+);
 const scope = readFileSync(
   new URL("../lib/production-scope.ts", import.meta.url),
   "utf8",
@@ -472,6 +480,18 @@ test("CPU dashboard opens with a Monday-to-Friday production heads-up", () => {
   assert.match(cardCss, /white-space:nowrap/);
   assert.doesNotMatch(calendar, /cpuRequiredTime\(order\)/);
   assert.match(calendar, /pieces\/quantities/);
+});
+
+test("weekly production cards use scoped fluid layout and safe truncation", () => {
+  assert.match(stylesCss, /grid-template-columns:minmax\(0,1fr\) clamp\(300px,24vw,397px\)/);
+  assert.match(stylesCss, /@media\(max-width:1120px\)\{\.cpu-dashboard-columns\{grid-template-columns:1fr\}/);
+  assert.match(calendarCss, /\.production-calendar\{container-type:inline-size\}/);
+  assert.match(calendarCss, /\.calendar-day\{container-type:inline-size;min-width:0\}/);
+  assert.match(calendarCss, /\.calendar-day-summary>\*\{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis\}/);
+  assert.match(cardCss, /\.production-card\{container-type:inline-size;min-width:0\}/);
+  assert.match(cardCss, /\.production-card-destination h3\{font-size:clamp\(.78rem,6cqw,1.02rem\)/);
+  assert.match(cardCss, /overflow-wrap:normal;text-overflow:ellipsis;white-space:nowrap;word-break:normal/);
+  assert.match(cardCss, /\.production-card-quantities b\{min-width:0;flex:1 1 auto;overflow:hidden;text-overflow:ellipsis;white-space:nowrap\}/);
 });
 
 test("CPU operational UI inherits the existing Gilroy body token", () => {

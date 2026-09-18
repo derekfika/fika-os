@@ -53,18 +53,23 @@ test("lineage failure identifies the affected OPLOC name and stable ID", () => {
   );
 });
 
-test("opening the signature modal does not wait for review persistence", async () => {
+test("signature modal opens only after review persistence and a fresh lineage refresh", async () => {
   const page = await readFile(new URL("../app/allergens/page.tsx", import.meta.url), "utf8");
-  const begin = page.indexOf("const beginSigning = (");
+  const begin = page.indexOf("const beginSigning = async (");
   const openModal = page.indexOf("setSigning({ role })", begin);
   const batchSign = page.indexOf('action: "sign-master-matrix"');
   const beginBlock = page.slice(begin, openModal);
   assert.ok(begin >= 0 && openModal > begin && batchSign >= 0);
-  assert.doesNotMatch(beginBlock, /await saveReviewRef|batch-plan|matrixStatus=1/);
-  assert.doesNotMatch(beginBlock, /async/);
+  assert.match(beginBlock, /async/);
+  assert.match(beginBlock, /await saveReviewRef\.current\?\.\(\)/);
+  assert.match(beginBlock, /const refreshed = await refreshReviewStatus\(\)/);
+  assert.match(beginBlock, /signingSnapshotRef\.current = refreshed\.freshLineage/);
+  assert.ok(page.indexOf("setSigning({ role })", begin) > page.indexOf("await refreshReviewStatus()", begin));
   assert.match(page, /onRegisterReviewState/);
   assert.match(page, /signingSnapshotRef/);
   assert.match(page, /reviewOperations/);
+  assert.match(page, /reviewDirty \|\| reviewPersistencePending \|\| productionSigned/);
+  assert.match(page, /reviewDirty \|\| reviewPersistencePending \|\| headChefSigned/);
 });
 
 test("the backend still rejects a genuine lineage advance after the client refresh", async () => {
@@ -83,6 +88,9 @@ test("review edits remain local and explicit save is serialized before first sig
   assert.match(matrix, /saveTimer/);
   assert.match(matrix, /setTimeout\(/);
   assert.match(matrix, /if \(inFlightSave\.current\) \{[\s\S]*await inFlightSave\.current/);
+  assert.match(matrix, /onPersistenceChange/);
+  assert.match(matrix, /automaticCompletionInFlightRef/);
+  assert.match(matrix, /startSave\(latestStatesRef\.current, "mark-planned"\)/);
   assert.match(matrix, /if \(!locked\) return/);
   assert.match(matrix, /editVersionRef\.current \+= 1/);
 });
@@ -114,7 +122,7 @@ test("review session saves only once when dirty, never resaves between signature
   assert.match(page, /const refreshReviewStatus = async/);
   assert.match(page, /await refreshReviewStatus\(\)/);
   assert.doesNotMatch(page, /load\(date, \{ resetSession: false \}\)/);
-  assert.match(page, /const signingSnapshot = signingSnapshotRef\.current/);
+  assert.match(page, /const signingSnapshot = beforeSign\.freshLineage/);
   assert.match(page, /const reopenForAmendment = async/);
   assert.match(page, /action: "reopen-review"/);
   assert.match(route, /action: z\.literal\("reopen-review"\)/);
@@ -250,6 +258,8 @@ test("signing awaits the serialized matrix save barrier and finalization uses on
   const outboxWorker = await readFile(new URL("../scripts/cpu-durable-outbox-worker.ts", import.meta.url), "utf8");
   const signBlock = page.slice(page.indexOf("const sign = async"), page.indexOf("const reopenForAmendment"));
   assert.match(signBlock, /await saveReviewRef\.current\?\.\(\)/);
+  assert.match(signBlock, /const beforeSign = await refreshReviewStatus\(\)/);
+  assert.match(signBlock, /const signingSnapshot = beforeSign\.freshLineage/);
   assert.match(page, /onRegisterSave=\{save => \{ saveReviewRef\.current = save; \}\}/);
   assert.match(worker, /createCpuMasterArtifact/);
   assert.match(worker, /allergen-master-artifact-shared/);
