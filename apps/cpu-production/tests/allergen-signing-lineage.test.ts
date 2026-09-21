@@ -125,7 +125,8 @@ test("review session checkpoints only at row boundaries, never resaves between s
   assert.equal((matrix.match(/action: \"batch-plan\"/g) || []).length, 1);
   assert.equal((matrix.match(/await submit\(action\)/g) || []).length, 1);
   assert.match(matrix, /const markChecked = async/);
-  assert.match(matrix, /startSave\(latestStatesRef\.current, nextCheckedRows, action\)/);
+  assert.match(matrix, /startSave\(nextStates, nextCheckedRows, action\)/);
+  assert.match(matrix, /checkpointAllergenReviewRow/);
   assert.match(page, /setReviewFrozen\(true\)/);
   assert.match(page, /const refreshReviewStatus = async/);
   assert.match(page, /await refreshReviewStatus\(\)/);

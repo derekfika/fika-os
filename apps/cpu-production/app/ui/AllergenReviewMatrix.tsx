@@ -1,12 +1,13 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { CANONICAL_ALLERGEN_COLUMNS, isCompleteOperationalAllergenMap, resolveNoKeyAllergenState, toggleOperationalAllergen, type CanonicalAllergenKey, type OperationalAllergenState } from "../../../shared/allergen-contract";
+import { CANONICAL_ALLERGEN_COLUMNS, resolveNoKeyAllergenState, toggleOperationalAllergen, type CanonicalAllergenKey, type OperationalAllergenState } from "../../../shared/allergen-contract";
 import type { ProductionOrder } from "../../lib/production-types";
-import { allergenReviewKey, type AllergenReviewRow } from "../../lib/production-day";
+import type { AllergenReviewRow } from "../../lib/production-day";
 import { bookingContextEntries } from "./BookingContext";
 import { titleCaseDish } from "../../lib/production-presentation";
 import { clearLocalDraft, loadLocalChecked, loadLocalDraft, saveLocalChecked, saveLocalDraft, type AllergenReviewLineage } from "../lib/allergen-review-local";
+import { checkpointAllergenReviewRow, completeAllergenReviewMap, unresolvedNamedAllergenKeys } from "../lib/allergen-review-state";
 import "./allergen-review.css";
 
 type SignatureRole = "production_chef" | "head_chef_site_manager";
@@ -18,7 +19,10 @@ function sameLineage(left: MatrixLineage | undefined, right: MatrixLineage | und
 }
 
 function displayState(states: Record<string, OperationalAllergenState> | undefined, key: string): OperationalAllergenState | "none" {
-  if (key === "no_key_allergens") return resolveNoKeyAllergenState(states);
+  if (key === "no_key_allergens") {
+    const completion = completeAllergenReviewMap(states);
+    return completion.complete ? completion.states.no_key_allergens : resolveNoKeyAllergenState(states);
+  }
   const state = states?.[key];
   if (state) return state;
   return "unrecorded";
@@ -69,6 +73,7 @@ export default function AllergenReviewMatrix({
   const [checkedRows, setCheckedRows] = useState<Set<string>>(() => new Set());
   const [dirty, setDirty] = useState(false);
   const [error, setError] = useState("");
+  const [rowErrors, setRowErrors] = useState<Record<string, string>>({});
   const [reviewSyncStatus, setReviewSyncStatus] = useState<ReviewSyncStatus>("clean");
   const latestSave = useRef<() => Promise<void>>(() => Promise.resolve());
   const latestStatesRef = useRef(states);
@@ -372,13 +377,22 @@ export default function AllergenReviewMatrix({
   const markChecked = async (rowKey: string) => {
     if (busy || locked) return;
     const currentCheckedRows = latestCheckedRowsRef.current;
-    if (!currentCheckedRows.has(rowKey) && !isCompleteOperationalAllergenMap(latestStatesRef.current[rowKey])) {
-      setError("Record every allergen state, including No key allergens, before marking this dish checked.");
+    const checkpoint = checkpointAllergenReviewRow(latestStatesRef.current, currentCheckedRows, rowKey, rows.length);
+    if (checkpoint.blocked) {
+      setRowErrors(current => ({ ...current, [rowKey]: checkpoint.message || "Resolve the remaining allergen states before marking this dish checked." }));
+      setError(checkpoint.message || "Resolve the remaining allergen states before marking this dish checked.");
       return;
     }
-    const nextCheckedRows = new Set(currentCheckedRows);
-    if (nextCheckedRows.has(rowKey)) nextCheckedRows.delete(rowKey);
-    else nextCheckedRows.add(rowKey);
+    const nextStates = checkpoint.states;
+    const nextCheckedRows = checkpoint.checkedRows;
+    latestStatesRef.current = nextStates;
+    setStates(nextStates);
+    setRowErrors(current => {
+      if (!(rowKey in current)) return current;
+      const next = { ...current };
+      delete next[rowKey];
+      return next;
+    });
     latestCheckedRowsRef.current = nextCheckedRows;
     setCheckedRows(nextCheckedRows);
     dirtyRef.current = true;
@@ -388,9 +402,9 @@ export default function AllergenReviewMatrix({
     onDirtyChange?.(true);
     editVersionRef.current += 1;
     const editVersion = editVersionRef.current;
-    const action = nextCheckedRows.size === rows.length ? "mark-planned" as const : "save-plan" as const;
-    persistDraft(latestStatesRef.current, nextCheckedRows);
-    void startSave(latestStatesRef.current, nextCheckedRows, action).then(async () => {
+    const action = checkpoint.action!;
+    persistDraft(nextStates, nextCheckedRows);
+    void startSave(nextStates, nextCheckedRows, action).then(async () => {
       if (editVersion !== editVersionRef.current) return;
       await latestDraftWriteRef.current;
       await clearLocalDraft(scopeKey);
@@ -412,6 +426,12 @@ export default function AllergenReviewMatrix({
     nextCheckedRows.delete(rowKey);
     latestCheckedRowsRef.current = nextCheckedRows;
     setStates(nextStates);
+    setRowErrors(current => {
+      if (!(rowKey in current)) return current;
+      const next = { ...current };
+      delete next[rowKey];
+      return next;
+    });
     dirtyRef.current = true;
     authoritativeReviewedRef.current = false;
     setDirty(true);
@@ -474,7 +494,7 @@ export default function AllergenReviewMatrix({
           </thead>
           <tbody>
             {rows.map(row => (
-              <tr key={row.key}>
+              <tr key={row.key} className={rowErrors[row.key] ? "cpu-allergen-row--error" : undefined}>
                 <th>
                   {titleCaseDish(row.name)}
                   <small>{row.quantity.toLocaleString()} required · {row.destinations.map(item => item.label).join(" · ")}</small>
@@ -483,12 +503,14 @@ export default function AllergenReviewMatrix({
                 </th>
                 {CANONICAL_ALLERGEN_COLUMNS.map(([key]) => {
                   const state = displayState(states[row.key], key);
+                  const unresolved = key !== "no_key_allergens" && unresolvedNamedAllergenKeys(states[row.key]).includes(key);
                   return (
                     <td key={key}>
                       <button
                         type="button"
                         disabled={busy || locked || key === "no_key_allergens"}
-                        className={`cpu-allergen-state cpu-allergen-state--${state}`}
+                        className={`cpu-allergen-state cpu-allergen-state--${state}${unresolved && rowErrors[row.key] ? " cpu-allergen-state--unresolved" : ""}`}
+                        aria-invalid={unresolved && Boolean(rowErrors[row.key]) || undefined}
                         aria-label={`${titleCaseDish(row.name)}, ${key === "no_key_allergens" ? "No key allergens" : key}: ${key === "no_key_allergens" && state === "contains" ? "explicitly recorded" : state}`}
                         title={key === "no_key_allergens" && state === "contains" ? "Explicitly recorded: no key allergens" : key === "no_key_allergens" && state === "unrecorded" ? "No key allergen decision is not recorded" : undefined}
                         onClick={() => void toggle(row.key, key)}
@@ -500,6 +522,7 @@ export default function AllergenReviewMatrix({
                 })}
                 <td><span className={row.snapshot ? "cpu-allergen-approved" : "cpu-allergen-missing"}>{row.snapshot ? "Published" : "Not recorded"}</span></td>
                 <td>
+                  {rowErrors[row.key] && <small className="cpu-allergen-row-error" role="alert">{rowErrors[row.key]}</small>}
                   <button
                     type="button"
                     className={`cpu-allergen-check ${checkedRows.has(row.key) ? "cpu-allergen-check--done" : ""}`}

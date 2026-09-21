@@ -76,7 +76,8 @@ test("explicit No Key state survives sparse source and CPU review rendering", as
   assert.equal(resolveNoKeyAllergenState(undefined), "unrecorded");
   const source = await readFile(new URL("../app/ui/AllergenReviewMatrix.tsx", import.meta.url), "utf8");
   assert.match(source, /resolveNoKeyAllergenState\(states\)/);
+  assert.match(source, /completeAllergenReviewMap\(states\)/);
+  assert.match(source, /allergenReviewCompletionMessage/);
   assert.match(source, /Explicit no key allergens/);
-  assert.match(source, /Record every allergen state, including No key allergens/);
   assert.doesNotMatch(source, /namedAllergenPresent/);
 });
