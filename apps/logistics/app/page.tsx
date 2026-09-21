@@ -46,6 +46,7 @@ type Data = {
   projection?: LogisticsDayProjection;
 };
 type WeekData = { weekCommencing: string; days: PlannerWeekSummary[] };
+type LoadResult = { ok: true; projection: LogisticsDayProjection } | { ok: false };
 
 function clockMinutes(value: string) {
   const [hour, minute] = value.split(":").map(Number);
@@ -125,6 +126,9 @@ export default function Planner() {
   const [queueFilter, setQueueFilter] = useState<"all" | "unassigned" | "needs_time" | "attention">("all");
   const [queueTypeFilter, setQueueTypeFilter] = useState<"all" | "delivery" | "collection" | "transfer">("all");
   const [projectionState, setProjectionState] = useState<LogisticsProjectionState | "LOADING">("LOADING");
+  const loadInFlight = useRef<Promise<LoadResult> | undefined>(undefined);
+  const bootstrapInFlight = useRef<Promise<void> | undefined>(undefined);
+  const weekLoadInFlight = useRef<Promise<void> | undefined>(undefined);
 
   const recordError = (cause: unknown, fallback: string) => {
     const details = clientErrorDetails(cause, fallback);
@@ -155,9 +159,9 @@ export default function Planner() {
     try { window.localStorage.setItem("fika-logistics-view", JSON.stringify({ date, weekCommencing })); } catch { /* Preferences are an optimisation only. */ }
   }, [date, weekCommencing, viewPreferencesReady]);
 
-  const load = async (silent = false, _materialiseMissing = true) => {
-    if (requestsBlocked.current) return;
-    if (!date) return;
+  const loadAuthoritative = async (silent = false, _materialiseMissing = true): Promise<LoadResult> => {
+    if (requestsBlocked.current) return { ok: false };
+    if (!date) return { ok: false };
     if (silent) setRefreshing(true);
     let cached: LogisticsDayProjection | undefined;
     let cacheScope = "";
@@ -177,7 +181,7 @@ export default function Planner() {
         setLastUpdated(new Date().toISOString());
         setError("");
         setProjectionNeedsMaterialisation(false);
-        return;
+        return { ok: true, projection: cached };
       }
       const recovered = await fetchProjectionWithRecovery({ serviceDate: date, fetcher: fetchPlannerGet });
       await requireSuccessfulResponse(recovered.response, "Logistics could not be loaded after automatic materialisation.");
@@ -191,7 +195,7 @@ export default function Planner() {
         setError("");
         setProjectionNeedsMaterialisation(false);
         projectionSequence.current = projection.lastChangeSequence;
-        return;
+        return { ok: true, projection };
       }
       if (!projection) throw new Error("Logistics projection is unavailable.");
       setData({ ...projectionToDashboardData(projection), projection });
@@ -201,17 +205,25 @@ export default function Planner() {
       if (cacheScope) await writeCachedProjection(cacheScope, projection);
       setLastUpdated(new Date().toISOString());
       setError("");
-      const drained = await drainIncrementalPages(cached?.lastChangeSequence ?? projection.lastChangeSequence, async (cursor) => {
-        const changes = await fetchPlannerGet(`/api/logistics?changesSince=${cursor}&serviceDate=${date}`, { cache: "no-store" });
-        const changed = await requireSuccessfulResponse(changes, "Logistics changes could not be loaded.");
-        return { hasMore: Boolean(changed.hasMore), nextCursor: Number(changed.nextCursor ?? cursor), projection: changed.projection as LogisticsDayProjection | undefined };
-      });
-      if (drained.latestProjection && drained.latestProjection.lastChangeSequence >= drained.cursor && drained.latestProjection !== projection) {
-        setData({ ...projectionToDashboardData(drained.latestProjection), projection: drained.latestProjection });
-        setProjectionState(drained.latestProjection.state || "CURRENT");
-        projectionSequence.current = drained.latestProjection.lastChangeSequence;
-        if (cacheScope) await writeCachedProjection(cacheScope, drained.latestProjection);
+      let convergedProjection = projection;
+      const freshHeadResponse = await fetchPlannerGet(`/api/logistics?syncHead=1&serviceDate=${date}`, { cache: "no-store" });
+      const freshHead = await requireSuccessfulResponse(freshHeadResponse, "Logistics sync state could not be checked after projection load.");
+      if (Number(freshHead.sequence) > projection.lastChangeSequence) {
+        const drained = await drainIncrementalPages(projection.lastChangeSequence, async (cursor) => {
+          const changes = await fetchPlannerGet(`/api/logistics?changesSince=${cursor}&serviceDate=${date}`, { cache: "no-store" });
+          const changed = await requireSuccessfulResponse(changes, "Logistics changes could not be loaded.");
+          return { hasMore: Boolean(changed.hasMore), nextCursor: Number(changed.nextCursor ?? cursor), projection: changed.projection as LogisticsDayProjection | undefined };
+        });
+        if (drained.cursor < Number(freshHead.sequence)) throw new Error("Logistics changes did not converge to the current sync head.");
+        if (drained.latestProjection && drained.latestProjection.lastChangeSequence >= drained.cursor && drained.latestProjection !== projection) {
+          convergedProjection = drained.latestProjection;
+          setData({ ...projectionToDashboardData(drained.latestProjection), projection: drained.latestProjection });
+          setProjectionState(drained.latestProjection.state || "CURRENT");
+          projectionSequence.current = drained.latestProjection.lastChangeSequence;
+          if (cacheScope) await writeCachedProjection(cacheScope, drained.latestProjection);
+        }
       }
+      return { ok: true, projection: convergedProjection };
     } catch (cause) {
       if (cached) setProjectionState("STALE");
       else {
@@ -219,11 +231,19 @@ export default function Planner() {
         setProjectionState("UNAVAILABLE");
       }
       recordError(cause, cached ? "Sync failed; showing the last valid Logistics projection." : "Logistics projection could not be loaded.");
+      return { ok: false };
     } finally {
       if (silent) setRefreshing(false);
     }
   };
-  const loadWeek = async (week = weekCommencing) => {
+  const load = (silent = false, materialiseMissing = true): Promise<LoadResult> => {
+    if (loadInFlight.current) return loadInFlight.current;
+    const pending = loadAuthoritative(silent, materialiseMissing);
+    loadInFlight.current = pending;
+    void pending.then(() => { if (loadInFlight.current === pending) loadInFlight.current = undefined; }, () => { if (loadInFlight.current === pending) loadInFlight.current = undefined; });
+    return pending;
+  };
+  const loadWeekAuthoritative = async (week = weekCommencing) => {
     if (requestsBlocked.current) return;
     try {
       const body = await fetchPlannerGet(`/api/logistics?weekSummary=1&weekCommencing=${week}`, { cache: "no-store" }).then((response) => requireSuccessfulResponse(response, "Logistics week summary could not be loaded."));
@@ -233,8 +253,16 @@ export default function Planner() {
       setWeekData(undefined);
     }
   };
+  const loadWeek = (week = weekCommencing): Promise<void> => {
+    if (weekLoadInFlight.current) return weekLoadInFlight.current;
+    const pending = loadWeekAuthoritative(week);
+    weekLoadInFlight.current = pending;
+    void pending.then(() => { if (weekLoadInFlight.current === pending) weekLoadInFlight.current = undefined; }, () => { if (weekLoadInFlight.current === pending) weekLoadInFlight.current = undefined; });
+    return pending;
+  };
   const checkForUpdates = async () => {
     if (requestsBlocked.current || !date || document.visibilityState !== "visible") return;
+    if (bootstrapInFlight.current) return bootstrapInFlight.current;
     if (syncCheckInFlight.current) return syncCheckInFlight.current;
     const pending = (async () => {
       try {
@@ -256,7 +284,10 @@ export default function Planner() {
     try {
       const response = await fetch("/api/logistics", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "ensure-vehicle-day-runs", serviceDate }) });
       const result = await requireSuccessfulResponse(response, "Vehicle-day runs could not be prepared.");
-      if (result.changed) await Promise.all([load(true), loadWeek()]);
+      if (result.changed) {
+        const refreshed = await load(true);
+        if (refreshed.ok) await loadWeek();
+      }
     } catch (cause) { recordError(cause, "Vehicle-day runs could not be prepared."); }
   };
   useEffect(() => {
@@ -270,10 +301,12 @@ export default function Planner() {
     setData(undefined);
     setProjectionState("LOADING");
     setProjectionNeedsMaterialisation(false);
-    void (async () => {
-      await load();
-      if (!requestsBlocked.current) await ensureVehicleDayRuns(date);
+    const bootstrap = (async () => {
+      const result = await load();
+      if (result.ok && !requestsBlocked.current) await ensureVehicleDayRuns(date);
     })();
+    bootstrapInFlight.current = bootstrap;
+    void bootstrap.then(() => { if (bootstrapInFlight.current === bootstrap) bootstrapInFlight.current = undefined; }, () => { if (bootstrapInFlight.current === bootstrap) bootstrapInFlight.current = undefined; });
     const liveChannel = typeof BroadcastChannel === "undefined" ? undefined : new BroadcastChannel("fika-logistics-live");
     const onLiveChange = (event: MessageEvent<{ serviceDate?: string }>) => { if (!event.data?.serviceDate || event.data.serviceDate === date) void checkForUpdates(); };
     liveChannel?.addEventListener("message", onLiveChange);
@@ -288,7 +321,10 @@ export default function Planner() {
   }, [date, viewPreferencesReady]);
   useEffect(() => {
     if (!viewPreferencesReady) return;
-    void loadWeek();
+    void (async () => {
+      if (bootstrapInFlight.current) await bootstrapInFlight.current;
+      await loadWeek();
+    })();
   }, [weekCommencing, viewPreferencesReady]);
   const checkPlanningAttention = async () => {
     if (requestsBlocked.current || document.visibilityState !== "visible") return;
@@ -690,7 +726,7 @@ type RealPlannerProps = {
   setInspector: (value: RealPlannerProps["inspector"]) => void;
   setAssigning: (value: string | undefined) => void;
   setTargetRun: (value: string) => void;
-  load: (silent?: boolean, materialiseMissing?: boolean) => Promise<void>;
+  load: (silent?: boolean, materialiseMissing?: boolean) => Promise<LoadResult>;
   act: (payload: object) => Promise<boolean>;
   createRun: () => void;
   createMovement: () => void;

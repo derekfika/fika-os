@@ -58,7 +58,7 @@ import { restoredStopStatus } from "@/lib/mobile-driver";
 import { recordDataAccess, withDataTrace } from "@fika/server-shared/data-source-meter-server";
 import type { Transaction } from "firebase-admin/firestore";
 import type { PlannerWeekSummary } from "@/lib/planner-read-model";
-import type { DeliveryRun, DeliveryStop, MovementRequest } from "@/lib/types";
+import type { DeliveryRun, DeliveryStop, LogisticsDayProjection, MovementRequest } from "@/lib/types";
 import type { FulfilmentRequirement } from "../../../../shared/fulfilment-requirement";
 import type { ProductionContext } from "@/lib/upstream";
 
@@ -434,10 +434,19 @@ async function getLogistics(request: NextRequest) {
   }
   if (request.nextUrl.searchParams.has("changesSince")) {
     reportLogisticsReadPath("dashboard:warm-incremental-load");
-    const after = Number(request.nextUrl.searchParams.get("changesSince") || 0);
+    const rawCursor = request.nextUrl.searchParams.get("changesSince");
+    const after = Number(rawCursor);
+    if (!rawCursor || !Number.isSafeInteger(after) || after < 0) throw new HttpError(400, "Invalid Logistics change cursor.");
+    if (requestedDate && !validOperationalDate(requestedDate)) throw new HttpError(400, "Invalid Logistics service date.");
     const startedAt = performance.now();
-    const changes = await listLogisticsChanges(Number.isFinite(after) ? after : 0, requestedDate);
-    const projection = requestedDate ? await getLogisticsProjection(requestedDate) : undefined;
+    let changes: Awaited<ReturnType<typeof listLogisticsChanges>>;
+    let projection: LogisticsDayProjection | undefined;
+    try {
+      changes = await listLogisticsChanges(after, requestedDate);
+      projection = requestedDate ? await getLogisticsProjection(requestedDate) : undefined;
+    } catch (cause) {
+      throw Object.assign(new HttpError(503, "Logistics changes could not be loaded."), { code: "LOGISTICS_CHANGE_READ_UNAVAILABLE", cause });
+    }
     return NextResponse.json({ ...changes, projection, metrics: { incrementalUpdateMs: Math.round(performance.now() - startedAt) } });
   }
   if (requestedWeek) {

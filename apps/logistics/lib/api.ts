@@ -21,9 +21,16 @@ function readableErrorMessage(error: unknown) {
   return message && !technical ? message : "We couldn’t complete that request. Please try again, and report it if it keeps happening.";
 }
 
+function safeDiagnostic(error: unknown) {
+  const message = error instanceof Error ? error.message : "";
+  return message
+    .replace(/(authorization|cookie|token|secret|password)\s*[:=]\s*[^\s,;]+/gi, "$1=[redacted]")
+    .slice(0, 500);
+}
+
 export function errorResponse(error: unknown, requestId?: string, context: { operation?: string; serviceDate?: string; projectionSequence?: number; entityId?: string } = {}) {
-  const e = error as { message?: string; status?: number; code?: string };
+  const e = error as { message?: string; status?: number; code?: string; cause?: unknown };
   const safeRequestId = requestId || crypto.randomUUID();
-  console.error("API request failed", { code: e.code || "INVALID_REQUEST", status: e.status || 400, requestId: safeRequestId, ...context });
+  console.error("API request failed", { code: e.code || "INVALID_REQUEST", status: e.status || 400, requestId: safeRequestId, ...(e.cause ? { cause: safeDiagnostic(e.cause) } : {}), ...context });
   return NextResponse.json({ error: { code: e.code || "INVALID_REQUEST", message: readableErrorMessage(error), requestId: safeRequestId } }, { status: e.status || 400, headers: { "x-request-id": safeRequestId } });
 }

@@ -76,3 +76,23 @@ test("a stale projection triggers one explicit reconciliation and returns curren
   assert.equal(result.body?.projectionState, "CURRENT");
   assert.deepEqual(calls.map((call) => call.split(" ")[0]), ["GET", "POST", "GET"]);
 });
+
+test("a transient missing-projection classification failure retries read-only before reconciling", async () => {
+  const calls: string[] = [];
+  const responses = [
+    Response.json({ error: { code: "LOGISTICS_PROJECTION_STATE_UNAVAILABLE" } }, { status: 503 }),
+    Response.json({ projection: projection(9), projectionState: "CURRENT" }),
+  ];
+  const result = await fetchProjectionWithRecovery({
+    serviceDate: "2026-09-17",
+    retryDelays: [0],
+    sleep: async () => undefined,
+    fetcher: async (input, init) => {
+      calls.push(`${init?.method || "GET"} ${String(input)}`);
+      return responses.shift()!;
+    },
+  });
+  assert.equal(result.response.status, 200);
+  assert.equal(result.body?.projection?.lastChangeSequence, 9);
+  assert.deepEqual(calls.map((call) => call.split(" ")[0]), ["GET", "GET"]);
+});

@@ -27,6 +27,18 @@ export async function fetchProjectionWithRecovery(input: {
   const url = `/api/logistics?projection=1&serviceDate=${encodeURIComponent(input.serviceDate)}${vehicleQuery}`;
   let response = await fetcher(url, { cache: "no-store" });
   let body = await readBody(response);
+  const isTransientClassificationFailure = (candidate: ProjectionBody | null, candidateResponse: Response) => !candidateResponse.ok && candidateResponse.status >= 500 && candidate?.error?.code === "LOGISTICS_PROJECTION_STATE_UNAVAILABLE";
+  // Classification of a genuinely missing day depends on cold-startable
+  // upstream reads. Give that read-only classification a short bounded
+  // convergence window before deciding that the day cannot be established.
+  if (isTransientClassificationFailure(body, response)) {
+    for (const delay of input.retryDelays || [0, 150, 400]) {
+      if (delay) await sleep(delay);
+      response = await fetcher(url, { cache: "no-store" });
+      body = await readBody(response);
+      if (!isTransientClassificationFailure(body, response)) break;
+    }
+  }
   const stale = response.ok && (body?.projectionState === "STALE" || body?.projection?.state === "STALE");
   const missing = !response.ok && body?.error?.code === "LOGISTICS_PROJECTION_NOT_MATERIALIZED";
   if (!stale && !missing) return { response, body };

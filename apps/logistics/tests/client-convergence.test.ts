@@ -20,7 +20,7 @@ test("desktop and driver use coalesced visible-tab head checks before full proje
 
 test("successful desktop mutations converge both day and week state", () => {
   assert.match(planner, /await requireSuccessfulResponse\(response, "Action failed\."\)[\s\S]*await Promise\.all\(\[load\(\), loadWeek\(\)\]\)/);
-  assert.match(planner, /if \(result\.changed\) await Promise\.all\(\[load\(true\), loadWeek\(\)\]\)/);
+  assert.match(planner, /if \(result\.changed\) \{[\s\S]*const refreshed = await load\(true\);[\s\S]*if \(refreshed\.ok\) await loadWeek\(\)/);
   assert.match(route, /appendLogisticsChange[\s\S]*rebuildLogisticsProjection/);
 });
 
@@ -40,8 +40,22 @@ test("successful recovery clears stale errors and refreshes the tracked sequence
   }
 });
 
+test("first-load provisioning is gated on successful authoritative convergence", () => {
+  assert.match(planner, /type LoadResult = \{ ok: true/);
+  assert.match(planner, /const result = await load\(\);[\s\S]*if \(result\.ok && !requestsBlocked\.current\) await ensureVehicleDayRuns\(date\)/);
+  assert.match(planner, /if \(result\.changed\) \{[\s\S]*const refreshed = await load\(true\);[\s\S]*if \(refreshed\.ok\) await loadWeek\(\)/);
+  assert.match(planner, /loadInFlight\.current/);
+  assert.match(planner, /bootstrapInFlight\.current/);
+});
+
+test("fresh projection loads use the fresh sequence baseline and re-check the head", () => {
+  assert.match(planner, /freshHeadResponse = await fetchPlannerGet\(`\/api\/logistics\?syncHead=1&serviceDate=\$\{date\}`/);
+  assert.match(planner, /drainIncrementalPages\(projection\.lastChangeSequence/);
+  assert.doesNotMatch(planner, /drainIncrementalPages\(cached\?\.lastChangeSequence/);
+});
+
 test("server diagnostics retain request, operation, date, entity, and revision context", () => {
-  assert.match(api, /requestId: safeRequestId, \.\.\.context/);
+  assert.match(api, /requestId: safeRequestId,[\s\S]*\.\.\.context/);
   assert.match(route, /operation: body\.action/);
   assert.match(route, /serviceDate: body\.serviceDate/);
   assert.match(route, /projectionSequence: body\.expectedRunVersion/);

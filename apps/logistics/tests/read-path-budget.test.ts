@@ -10,6 +10,8 @@ const root = resolve(import.meta.dirname, "..");
 const store = readFileSync(resolve(root, "lib/store.ts"), "utf8");
 const route = readFileSync(resolve(root, "app/api/logistics/route.ts"), "utf8");
 const page = readFileSync(resolve(root, "app/page.tsx"), "utf8");
+const api = readFileSync(resolve(root, "lib/api.ts"), "utf8");
+const indexes = readFileSync(resolve(root, "firestore.indexes.json"), "utf8");
 
 test("incremental changes are ordered, cursor-based, and capped", () => {
   const changes = store.slice(store.indexOf("export async function listLogisticsChanges"));
@@ -27,7 +29,7 @@ test("dashboard polling has separate bounded cadences", () => {
   assert.match(page, /syncHead=1/);
   assert.match(page, /cached && Number\(head\.sequence\) === cached\.lastChangeSequence/);
   assert.match(page, /ensure-vehicle-day-runs/);
-  assert.match(page, /if \(result\.changed\) await Promise\.all\(\[load\(true\), loadWeek\(\)\]\)/);
+  assert.match(page, /if \(result\.changed\) \{[\s\S]*const refreshed = await load\(true\);[\s\S]*if \(refreshed\.ok\) await loadWeek\(\)/);
 });
 
 test("day freshness uses a date-scoped cursor and bounded return-to-planning reads", () => {
@@ -117,4 +119,13 @@ test("IndexedDB cache keys persist across sessions but isolate auth contexts", (
   assert.deepEqual(logisticsCacheKey(franco, "2026-08-31"), logisticsCacheKey(laterSession, "2026-08-31"));
   assert.notDeepEqual(logisticsCacheKey(franco, "2026-08-31"), logisticsCacheKey(otherUser, "2026-08-31"));
   assert.notDeepEqual(logisticsCacheKey(franco, "2026-08-31"), logisticsCacheKey(otherScope, "2026-08-31"));
+});
+
+test("incremental reads validate cursors and classify Firestore failures as infrastructure errors", () => {
+  assert.match(route, /Number\.isSafeInteger\(after\)/);
+  assert.match(route, /after < 0/);
+  assert.match(route, /LOGISTICS_CHANGE_READ_UNAVAILABLE/);
+  assert.match(api, /safeDiagnostic/);
+  assert.match(api, /cause: safeDiagnostic\(e\.cause\)/);
+  assert.match(indexes, /"serviceDate"[\s\S]*"sequence"/);
 });
