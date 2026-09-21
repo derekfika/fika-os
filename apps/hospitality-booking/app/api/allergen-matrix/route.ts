@@ -19,15 +19,19 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: { message: "The fully signed CPU allergen matrix is not available." } }, { status: 404 });
     }
     let notConfigured = false;
+    let generating = false;
+    let failed: string | undefined;
     for (const candidate of candidates) {
       const response = await fetch(`${cpuBase()}/api/production-plan?orderId=${encodeURIComponent(candidate)}`, { cache: "no-store" });
-      const body = await response.json() as { plan?: { matrixArtifact?: Record<string, unknown> }; matrixStatus?: "generating" | "ready" | "not_configured"; signedMatrixAvailable?: boolean; error?: { message?: string } };
+      const body = await response.json() as { plan?: { matrixArtifact?: Record<string, unknown> }; matrixStatus?: "generating" | "ready" | "not_configured" | "failed"; matrixError?: string; signedMatrixAvailable?: boolean; error?: { message?: string } };
       if (response.ok && body.plan?.matrixArtifact) return NextResponse.json({ artifact: { ...body.plan.matrixArtifact, viewUrl: viewUrlFor(candidate) } });
       if (response.ok && body.signedMatrixAvailable) return NextResponse.json({ artifact: { fileName: "signed-allergen-matrix.html", driveStatus: "not_configured", viewUrl: viewUrlFor(candidate) } });
-      if (response.ok && body.matrixStatus === "generating") return NextResponse.json({ artifact: null, status: "generating" });
+      if (response.ok && body.matrixStatus === "generating") generating = true;
+      if (response.ok && body.matrixStatus === "failed") failed ||= body.matrixError || "CPU matrix materialisation failed. Retry materialisation from CPU Production.";
       if (response.ok && body.matrixStatus === "not_configured") notConfigured = true;
     }
-    return NextResponse.json({ artifact: null, ...(notConfigured ? { status: "not_configured" } : {}) });
+    if (failed) return NextResponse.json({ artifact: null, status: "failed", error: failed });
+    return NextResponse.json({ artifact: null, ...(generating ? { status: "generating" } : notConfigured ? { status: "not_configured" } : {}) });
   } catch (error) {
     return NextResponse.json({ error: { message: `CPU Production is unavailable: ${(error as Error).message}` } }, { status: 502 });
   }

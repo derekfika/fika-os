@@ -166,7 +166,8 @@ export default function HospitalityDashboard({
           viewUrl?: string;
           fileName: string;
           driveStatus: string;
-          status?: "generating" | "ready" | "not_configured";
+          status?: "generating" | "ready" | "not_configured" | "failed";
+          error?: string;
         }
       | undefined
     >
@@ -295,6 +296,8 @@ export default function HospitalityDashboard({
           setMatrixArtifacts((current) => ({ ...current, [selected.canonicalId]: { ...(current[selected.canonicalId] || {}), fileName: "", driveStatus: "generating", status: "generating" } }));
         else if (body?.status === "not_configured")
           setMatrixArtifacts((current) => ({ ...current, [selected.canonicalId]: { ...(current[selected.canonicalId] || {}), fileName: "", driveStatus: "not_configured", status: "not_configured" } }));
+        else if (body?.status === "failed")
+          setMatrixArtifacts((current) => ({ ...current, [selected.canonicalId]: { ...(current[selected.canonicalId] || {}), fileName: "", driveStatus: "failed", status: "failed", error: body.error } }));
       })
       .catch(() => undefined);
   }, [selected?.canonicalId, selected?.version, matrixRefreshTick]);
@@ -1605,6 +1608,11 @@ function BookingDetail({
               <button type="button" className="manager-document-action" disabled aria-busy="true">
                 <strong>Generating allergen matrix…</strong>
                 <small>The signed PDF is being prepared</small>
+              </button>
+            ) : matrixArtifact?.status === "failed" ? (
+              <button type="button" className="manager-document-action" disabled>
+                <strong>Allergen matrix needs retry</strong>
+                <small>{matrixArtifact.error || "Retry materialisation from CPU Production."}</small>
               </button>
             ) : (
               <button

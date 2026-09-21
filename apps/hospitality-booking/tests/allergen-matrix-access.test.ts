@@ -12,3 +12,10 @@ test("Hospitality exposes a signed CPU matrix view when Drive materialisation is
   assert.match(dashboard, /matrixArtifact\?\.viewUrl/);
   assert.match(dashboard, /Authoritative signed CPU matrix/);
 });
+
+test("Hospitality does not let an older generating candidate mask the current matrix", () => {
+  assert.match(api, /let generating = false/);
+  assert.match(api, /if \(failed\) return NextResponse\.json/);
+  assert.match(api, /body\.matrixStatus === "generating"\) generating = true/);
+  assert.match(api, /body\.matrixStatus === "failed"/);
+});
