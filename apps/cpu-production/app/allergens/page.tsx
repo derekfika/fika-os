@@ -522,7 +522,7 @@ export default function CpuAllergenReviewPage() {
           rows={rows}
           orders={visibleOrders}
           scopeKey={`${date || "unknown"}:${site || "all"}`}
-          busy={signatureBusy || hydrating || reviewPersistencePending}
+          busy={signatureBusy || hydrating}
           locked={hydrating || reviewFrozen || bothSigned || Boolean(signing)}
           onCheckedChange={setCheckedCount}
           onReviewChanged={() => undefined}

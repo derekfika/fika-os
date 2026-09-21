@@ -6,20 +6,16 @@ import type { ProductionOrder } from "../../lib/production-types";
 import { allergenReviewKey, type AllergenReviewRow } from "../../lib/production-day";
 import { bookingContextEntries } from "./BookingContext";
 import { titleCaseDish } from "../../lib/production-presentation";
-import { loadLocalChecked, saveLocalChecked } from "../lib/allergen-review-local";
+import { clearLocalDraft, loadLocalChecked, loadLocalDraft, saveLocalChecked, saveLocalDraft, type AllergenReviewLineage } from "../lib/allergen-review-local";
 import "./allergen-review.css";
 
 type SignatureRole = "production_chef" | "head_chef_site_manager";
-type MatrixLineage = {
-  productionOrderId: string;
-  serviceDate: string;
-  sourceDayId: string;
-  sourcePublicationId?: string;
-  sourcePublicationDayId: string;
-  sourceVersion: number;
-  sourceContentHash: string;
-  matrixContentHash: string;
-};
+type MatrixLineage = AllergenReviewLineage;
+type ReviewSyncStatus = "clean" | "draft" | "saving" | "saved" | "error";
+
+function sameLineage(left: MatrixLineage | undefined, right: MatrixLineage | undefined) {
+  return Boolean(left && right && left.productionOrderId === right.productionOrderId && left.serviceDate === right.serviceDate && left.sourceDayId === right.sourceDayId && left.sourcePublicationId === right.sourcePublicationId && left.sourcePublicationDayId === right.sourcePublicationDayId && left.sourceVersion === right.sourceVersion && left.sourceContentHash === right.sourceContentHash && left.matrixContentHash === right.matrixContentHash);
+}
 
 function displayState(states: Record<string, OperationalAllergenState> | undefined, key: string): OperationalAllergenState | "none" {
   if (key === "no_key_allergens") return resolveNoKeyAllergenState(states);
@@ -46,6 +42,7 @@ export default function AllergenReviewMatrix({
   onHydrationChange,
   onDirtyChange,
   onPersistenceChange,
+  onReviewSyncChange,
 }: {
   rows: AllergenReviewRow[];
   orders: ProductionOrder[];
@@ -64,6 +61,7 @@ export default function AllergenReviewMatrix({
   onHydrationChange?: (hydrating: boolean) => void;
   onDirtyChange?: (dirty: boolean) => void;
   onPersistenceChange?: (pending: boolean) => void;
+  onReviewSyncChange?: (status: ReviewSyncStatus) => void;
 }) {
   const [states, setStates] = useState<Record<string, Record<string, OperationalAllergenState>>>(
     () => Object.fromEntries(rows.map(row => [row.key, { ...(row.snapshot?.allergens || {}) }])) as Record<string, Record<string, OperationalAllergenState>>,
@@ -71,20 +69,38 @@ export default function AllergenReviewMatrix({
   const [checkedRows, setCheckedRows] = useState<Set<string>>(() => new Set());
   const [dirty, setDirty] = useState(false);
   const [error, setError] = useState("");
+  const [reviewSyncStatus, setReviewSyncStatus] = useState<ReviewSyncStatus>("clean");
   const latestSave = useRef<() => Promise<void>>(() => Promise.resolve());
   const latestStatesRef = useRef(states);
   const latestCheckedRowsRef = useRef(checkedRows);
+  const latestLineageRef = useRef<Record<string, MatrixLineage>>({});
   const inFlightSave = useRef<Promise<void> | undefined>(undefined);
   const pendingSaveCountRef = useRef(0);
   const hydratedRef = useRef(false);
-  const automaticCompletionInFlightRef = useRef(false);
-  const automaticCompletionAttemptedVersionRef = useRef<number | undefined>(undefined);
-  const saveTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const checkpointSequenceRef = useRef(0);
+  const latestDraftWriteRef = useRef<Promise<void> | undefined>(undefined);
   const editVersionRef = useRef(0);
   const dirtyRef = useRef(false);
   const authoritativeReviewedRef = useRef(false);
   const bookingDietaries = [...new Set(orders.flatMap(order => bookingContextEntries(order.bookingDietaries)))];
   const bookingNotes = [...new Set(orders.map(order => order.bookingNotes).filter((note): note is string => Boolean(note?.trim())))];
+
+  const setSyncStatus = (status: ReviewSyncStatus) => {
+    setReviewSyncStatus(status);
+    onReviewSyncChange?.(status);
+  };
+
+  const persistDraft = (nextStates: Record<string, Record<string, OperationalAllergenState>>, nextCheckedRows: Set<string>) => {
+    const draft = {
+      states: nextStates,
+      checkedRows: [...nextCheckedRows],
+      lineageByOrderId: latestLineageRef.current,
+      savedAt: new Date().toISOString(),
+    } satisfies import("../lib/allergen-review-local").AllergenReviewDraft;
+    const write = saveLocalDraft(scopeKey, draft).then(() => saveLocalChecked(scopeKey, nextCheckedRows));
+    latestDraftWriteRef.current = write;
+    void write;
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -92,13 +108,13 @@ export default function AllergenReviewMatrix({
 
     const hydrate = async () => {
       hydratedRef.current = false;
-      automaticCompletionInFlightRef.current = false;
-      automaticCompletionAttemptedVersionRef.current = undefined;
       const orderIds = [...new Set(orders.map(order => order.canonicalId))];
       if (!orderIds.length) {
         dirtyRef.current = false;
         authoritativeReviewedRef.current = false;
+        latestLineageRef.current = {};
         setDirty(false);
+        setSyncStatus("clean");
         onDirtyChange?.(false);
         onSignatureRolesChange?.([]);
         onOrderSignatureRolesChange?.({});
@@ -159,7 +175,9 @@ export default function AllergenReviewMatrix({
       if (cancelled) return;
       dirtyRef.current = false;
       authoritativeReviewedRef.current = authoritativeReviewed;
+      latestLineageRef.current = lineage;
       setDirty(false);
+      setSyncStatus("clean");
       onDirtyChange?.(false);
       onLineageChange?.(lineage);
       onOrderSignatureRolesChange?.(rolesByOrderId);
@@ -185,15 +203,33 @@ export default function AllergenReviewMatrix({
         const hasSavedEvidence = Boolean(savedState && (savedState.completed || Object.keys(savedState.allergens).length > 0));
         return [row.key, hasSavedEvidence ? savedState!.allergens : { ...(row.snapshot?.allergens || {}) }];
       })) as Record<string, Record<string, OperationalAllergenState>>;
-      latestStatesRef.current = hydratedStates;
-      setStates(hydratedStates);
+      const localDraft = await loadLocalDraft(scopeKey);
+      const hasSignedAuthority = statuses.some(status => status.signatureRoles.length > 0 || ["ready", "generating", "failed"].includes(status.matrixStatus || ""));
+      const draftMatchesCurrentLineage = Boolean(localDraft && !hasSignedAuthority && Object.keys(localDraft.lineageByOrderId).length === orderIds.length && orderIds.every(orderId => sameLineage(localDraft.lineageByOrderId[orderId], lineage[orderId])));
+      if (localDraft && !draftMatchesCurrentLineage) void clearLocalDraft(scopeKey);
+      const restoredStates = draftMatchesCurrentLineage
+        ? Object.fromEntries(rows.map(row => [row.key, localDraft!.states[row.key] || hydratedStates[row.key] || {}])) as Record<string, Record<string, OperationalAllergenState>>
+        : hydratedStates;
+      latestStatesRef.current = restoredStates;
+      setStates(restoredStates);
 
-      const localChecked = await loadLocalChecked(scopeKey);
+      // The pre-draft checklist store is still read for backwards-compatible
+      // cleanup, but it cannot override server state without a matching draft
+      // lineage. New persistence always uses the lineage-bound draft above.
+      await loadLocalChecked(scopeKey);
       if (!cancelled) {
         const serverChecked = new Set(rows.map(row => row.key).filter(key => saved.get(key)?.completed));
-        const nextCheckedRows = new Set(rows.map(row => row.key).filter(key => localChecked.has(key) || serverChecked.has(key)));
+        const nextCheckedRows = draftMatchesCurrentLineage
+          ? new Set(localDraft!.checkedRows.filter(key => rows.some(row => row.key === key)))
+          : serverChecked;
         latestCheckedRowsRef.current = nextCheckedRows;
         setCheckedRows(nextCheckedRows);
+        const restoredDraft = draftMatchesCurrentLineage;
+        dirtyRef.current = restoredDraft;
+        authoritativeReviewedRef.current = authoritativeReviewed && !restoredDraft;
+        setDirty(restoredDraft);
+        setSyncStatus(restoredDraft ? "draft" : "clean");
+        onDirtyChange?.(restoredDraft);
         hydratedRef.current = true;
       }
     };
@@ -206,16 +242,8 @@ export default function AllergenReviewMatrix({
     return () => { cancelled = true; };
   }, [rows, orders, scopeKey]);
 
-  useEffect(() => () => {
-    if (saveTimer.current) clearTimeout(saveTimer.current);
-  }, []);
-
   useEffect(() => {
     if (!locked) return;
-    if (saveTimer.current) {
-      clearTimeout(saveTimer.current);
-      saveTimer.current = undefined;
-    }
     editVersionRef.current += 1;
   }, [locked]);
 
@@ -224,7 +252,7 @@ export default function AllergenReviewMatrix({
     onCheckedChange?.(checkedRows.size, rows.length, checkedRows);
   }, [checkedRows, rows.length, onCheckedChange]);
 
-  const saveReview = async (nextStates: Record<string, Record<string, OperationalAllergenState>>, action: "save-plan" | "mark-planned") => {
+  const saveReview = async (nextStates: Record<string, Record<string, OperationalAllergenState>>, nextCheckedRows: Set<string>, action: "save-plan" | "mark-planned") => {
     const makeOperation = (order: ProductionOrder, action: "save-plan" | "mark-planned") => ({
       action,
       orderId: order.canonicalId,
@@ -242,7 +270,7 @@ export default function AllergenReviewMatrix({
             quantity: line.customerQuantity,
             allergens: nextStates[key] || {},
             note: "",
-            evidenceStatus: action === "mark-planned" ? "completed" as const : "not_completed" as const,
+            evidenceStatus: nextCheckedRows.has(`${order.origin}:${line.sourceMenuItemId || line.itemName.trim().toLowerCase()}`) ? "completed" as const : "not_completed" as const,
           }],
         };
       }),
@@ -283,19 +311,29 @@ export default function AllergenReviewMatrix({
           quantity: line.customerQuantity,
           allergens: latestStatesRef.current[key] || {},
           note: "",
-          evidenceStatus: "completed" as const,
+            evidenceStatus: latestCheckedRowsRef.current.has(`${order.origin}:${line.sourceMenuItemId || line.itemName.trim().toLowerCase()}`) ? "completed" as const : "not_completed" as const,
         }],
       };
     }),
   }));
 
-  const startSave = (nextStates: Record<string, Record<string, OperationalAllergenState>>, action: "save-plan" | "mark-planned") => {
+  const startSave = (nextStates: Record<string, Record<string, OperationalAllergenState>>, nextCheckedRows: Set<string>, action: "save-plan" | "mark-planned") => {
     const prior = inFlightSave.current;
+    const checkpointSequence = ++checkpointSequenceRef.current;
     pendingSaveCountRef.current += 1;
     if (pendingSaveCountRef.current === 1) onPersistenceChange?.(true);
-    const operation = (prior ? prior.catch(() => undefined) : Promise.resolve()).then(() => saveReview(nextStates, action));
+    setSyncStatus("saving");
+    const operation = (prior ? prior.catch(() => undefined) : Promise.resolve()).then(() => saveReview(nextStates, nextCheckedRows, action));
     inFlightSave.current = operation;
-    void operation.catch(cause => setError(cause instanceof Error ? cause.message : "The allergen edit could not be synchronised.")).finally(() => {
+    void operation.then(
+      () => { if (checkpointSequence === checkpointSequenceRef.current) setSyncStatus("saved"); },
+      cause => {
+        if (checkpointSequence === checkpointSequenceRef.current) {
+          setSyncStatus("error");
+          setError(cause instanceof Error ? cause.message : "The allergen review could not be synchronised. Use Retry save to try again.");
+        }
+      },
+    ).finally(() => {
       pendingSaveCountRef.current = Math.max(0, pendingSaveCountRef.current - 1);
       if (pendingSaveCountRef.current === 0) onPersistenceChange?.(false);
       if (inFlightSave.current === operation) inFlightSave.current = undefined;
@@ -304,19 +342,21 @@ export default function AllergenReviewMatrix({
   };
 
   latestSave.current = async () => {
-    if (saveTimer.current) {
-      clearTimeout(saveTimer.current);
-      saveTimer.current = undefined;
-    }
     if (inFlightSave.current) {
       await inFlightSave.current;
     }
     // A locally clean matrix still needs one authoritative completion commit
     // when the server has not recorded this review yet.
     if (!dirtyRef.current && authoritativeReviewedRef.current) return;
-    await startSave(latestStatesRef.current, "mark-planned");
+    const nextCheckedRows = new Set(latestCheckedRowsRef.current);
+    const action = nextCheckedRows.size === rows.length ? "mark-planned" as const : "save-plan" as const;
+    const editVersion = editVersionRef.current;
+    await startSave(latestStatesRef.current, nextCheckedRows, action);
+    if (editVersion !== editVersionRef.current) return;
+    await latestDraftWriteRef.current;
+    await clearLocalDraft(scopeKey);
     dirtyRef.current = false;
-    authoritativeReviewedRef.current = true;
+    authoritativeReviewedRef.current = action === "mark-planned";
     setDirty(false);
     onDirtyChange?.(false);
   };
@@ -329,42 +369,36 @@ export default function AllergenReviewMatrix({
     onRegisterReviewState?.(latestReviewState);
   }, [onRegisterReviewState, orders]);
 
-  useEffect(() => {
-    if (!hydratedRef.current || automaticCompletionInFlightRef.current || busy || locked || !rows.length || checkedRows.size !== rows.length || authoritativeReviewedRef.current || automaticCompletionAttemptedVersionRef.current === editVersionRef.current) return;
-    automaticCompletionInFlightRef.current = true;
-    automaticCompletionAttemptedVersionRef.current = editVersionRef.current;
-    dirtyRef.current = true;
-    setDirty(true);
-    onDirtyChange?.(true);
-    const editVersion = editVersionRef.current;
-    void startSave(latestStatesRef.current, "mark-planned").then(() => {
-      if (editVersion !== editVersionRef.current || latestCheckedRowsRef.current.size !== rows.length) return;
-      dirtyRef.current = false;
-      authoritativeReviewedRef.current = true;
-      setDirty(false);
-      onDirtyChange?.(false);
-    }).catch(() => undefined).finally(() => {
-      automaticCompletionInFlightRef.current = false;
-    });
-  }, [busy, checkedRows, locked, onDirtyChange, rows.length]);
-
   const markChecked = async (rowKey: string) => {
     if (busy || locked) return;
-    if (!checkedRows.has(rowKey) && !isCompleteOperationalAllergenMap(latestStatesRef.current[rowKey])) {
+    const currentCheckedRows = latestCheckedRowsRef.current;
+    if (!currentCheckedRows.has(rowKey) && !isCompleteOperationalAllergenMap(latestStatesRef.current[rowKey])) {
       setError("Record every allergen state, including No key allergens, before marking this dish checked.");
       return;
     }
-    const nextCheckedRows = new Set(checkedRows);
+    const nextCheckedRows = new Set(currentCheckedRows);
     if (nextCheckedRows.has(rowKey)) nextCheckedRows.delete(rowKey);
     else nextCheckedRows.add(rowKey);
     latestCheckedRowsRef.current = nextCheckedRows;
     setCheckedRows(nextCheckedRows);
-    void saveLocalChecked(scopeKey, nextCheckedRows);
     dirtyRef.current = true;
     authoritativeReviewedRef.current = false;
     setDirty(true);
+    setSyncStatus("draft");
     onDirtyChange?.(true);
     editVersionRef.current += 1;
+    const editVersion = editVersionRef.current;
+    const action = nextCheckedRows.size === rows.length ? "mark-planned" as const : "save-plan" as const;
+    persistDraft(latestStatesRef.current, nextCheckedRows);
+    void startSave(latestStatesRef.current, nextCheckedRows, action).then(async () => {
+      if (editVersion !== editVersionRef.current) return;
+      await latestDraftWriteRef.current;
+      await clearLocalDraft(scopeKey);
+      dirtyRef.current = false;
+      authoritativeReviewedRef.current = action === "mark-planned";
+      setDirty(false);
+      onDirtyChange?.(false);
+    }).catch(() => undefined);
   };
 
   const toggle = async (rowKey: string, key: string) => {
@@ -374,31 +408,37 @@ export default function AllergenReviewMatrix({
       [rowKey]: toggleOperationalAllergen(latestStatesRef.current[rowKey] || {}, key as CanonicalAllergenKey),
     };
     latestStatesRef.current = nextStates;
-    const nextCheckedRows = new Set(checkedRows);
+    const nextCheckedRows = new Set(latestCheckedRowsRef.current);
     nextCheckedRows.delete(rowKey);
+    latestCheckedRowsRef.current = nextCheckedRows;
     setStates(nextStates);
     dirtyRef.current = true;
     authoritativeReviewedRef.current = false;
     setDirty(true);
+    setSyncStatus("draft");
     onDirtyChange?.(true);
     setCheckedRows(nextCheckedRows);
-    void saveLocalChecked(scopeKey, nextCheckedRows);
+    persistDraft(nextStates, nextCheckedRows);
     onReviewChanged?.();
     setError("");
     editVersionRef.current += 1;
+  };
+
+  const retryCheckpoint = () => {
+    if (busy || locked) return;
+    const nextCheckedRows = new Set(latestCheckedRowsRef.current);
+    const action = nextCheckedRows.size === rows.length ? "mark-planned" as const : "save-plan" as const;
     const editVersion = editVersionRef.current;
-    if (saveTimer.current) clearTimeout(saveTimer.current);
-    saveTimer.current = setTimeout(() => {
-      saveTimer.current = undefined;
-      const operation = startSave(latestStatesRef.current, "save-plan");
-      void operation.then(() => {
-        if (editVersion === editVersionRef.current) {
-          dirtyRef.current = false;
-          setDirty(false);
-          onDirtyChange?.(false);
-        }
-      }).catch(() => undefined);
-    }, 600);
+    persistDraft(latestStatesRef.current, nextCheckedRows);
+    void startSave(latestStatesRef.current, nextCheckedRows, action).then(async () => {
+      if (editVersion !== editVersionRef.current) return;
+      await latestDraftWriteRef.current;
+      await clearLocalDraft(scopeKey);
+      dirtyRef.current = false;
+      authoritativeReviewedRef.current = action === "mark-planned";
+      setDirty(false);
+      onDirtyChange?.(false);
+    }).catch(() => undefined);
   };
 
   return (
@@ -410,7 +450,10 @@ export default function AllergenReviewMatrix({
           {bookingNotes.length > 0 && <p style={{ margin: 0, fontSize: ".78rem" }}><strong>Booking notes:</strong> {bookingNotes.join(" · ")}</p>}
         </section>
       )}
-      {dirty && <p role="status">Unsaved allergen edits — changes save automatically after a short pause and are sent atomically with the first signature.</p>}
+      {reviewSyncStatus === "draft" && <p role="status">Review changes saved on this device. Mark the dish checked to checkpoint them to CPU.</p>}
+      {reviewSyncStatus === "saving" && <p role="status">Saving review…</p>}
+      {reviewSyncStatus === "saved" && !dirty && <p role="status">Review saved.</p>}
+      {reviewSyncStatus === "error" && <p role="alert">Review is saved on this device but not yet synchronised to CPU. <button type="button" onClick={retryCheckpoint} disabled={busy || locked}>Retry save</button></p>}
       <div className="cpu-allergen-legend" aria-label="Allergen matrix legend">
         <span><i className="cpu-allergen-state cpu-allergen-state--contains" />Contains</span>
         <span><i className="cpu-allergen-state cpu-allergen-state--contains cpu-allergen-state--explicit">Yes</i>Explicit no key allergens</span>

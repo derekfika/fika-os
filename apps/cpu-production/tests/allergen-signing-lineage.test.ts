@@ -78,19 +78,25 @@ test("the backend still rejects a genuine lineage advance after the client refre
   assert.match(route, /latestScopeForSign[\s\S]*sameLineage\(latestScopeForSign, command\.expectedLineage\)/);
 });
 
-test("review edits remain local and explicit save is serialized before first signing", async () => {
+test("review edits remain local and row checkpoints are serialized before first signing", async () => {
   const matrix = await readFile(new URL("../app/ui/AllergenReviewMatrix.tsx", import.meta.url), "utf8");
   assert.match(matrix, /dirtyRef/);
   assert.match(matrix, /onDirtyChange/);
   assert.match(matrix, /authoritativeReviewedRef/);
   assert.match(matrix, /if \(!dirtyRef\.current && authoritativeReviewedRef\.current\) return/);
   assert.match(matrix, /startSave/);
-  assert.match(matrix, /saveTimer/);
-  assert.match(matrix, /setTimeout\(/);
+  assert.match(matrix, /loadLocalDraft/);
+  assert.match(matrix, /saveLocalDraft/);
+  assert.match(matrix, /clearLocalDraft/);
+  assert.match(matrix, /sameLineage/);
   assert.match(matrix, /if \(inFlightSave\.current\) \{[\s\S]*await inFlightSave\.current/);
   assert.match(matrix, /onPersistenceChange/);
-  assert.match(matrix, /automaticCompletionInFlightRef/);
-  assert.match(matrix, /startSave\(latestStatesRef\.current, "mark-planned"\)/);
+  assert.match(matrix, /const action = nextCheckedRows\.size === rows\.length ? "mark-planned"/);
+  const toggle = matrix.slice(matrix.indexOf("  const toggle ="), matrix.indexOf("\n\n  const retryCheckpoint", matrix.indexOf("  const toggle =")));
+  assert.doesNotMatch(toggle, /setTimeout|startSave|fetch\(/);
+  const checkpoint = matrix.slice(matrix.indexOf("  const markChecked ="), matrix.indexOf("\n\n  const toggle =", matrix.indexOf("  const markChecked =")));
+  assert.match(checkpoint, /startSave/);
+  assert.match(matrix, /Retry save/);
   assert.match(matrix, /if \(!locked\) return/);
   assert.match(matrix, /editVersionRef\.current \+= 1/);
 });
@@ -107,17 +113,19 @@ test("post-sign hydration keeps the committed role locked and semantic no-op sav
   assert.doesNotMatch(route, /if \(contentChanged \|\| plan\.currentAllergenRelease\) invalidateSignedAllergenAuthority/);
 });
 
-test("review session saves only once when dirty, never resaves between signatures, and supports explicit amendment", async () => {
+test("review session checkpoints only at row boundaries, never resaves between signatures, and supports explicit amendment", async () => {
   const page = await readFile(new URL("../app/allergens/page.tsx", import.meta.url), "utf8");
   const matrix = await readFile(new URL("../app/ui/AllergenReviewMatrix.tsx", import.meta.url), "utf8");
   const route = await readFile(new URL("../app/api/production-plan/route.ts", import.meta.url), "utf8");
-  const toggle = matrix.slice(matrix.indexOf("  const toggle ="), matrix.indexOf("\n\n  return (", matrix.indexOf("  const toggle =")));
+  const toggle = matrix.slice(matrix.indexOf("  const toggle ="), matrix.indexOf("\n\n  const retryCheckpoint", matrix.indexOf("  const toggle =")));
   assert.equal(toggle.includes("fetch("), false);
-  assert.match(toggle, /startSave/);
+  assert.doesNotMatch(toggle, /setTimeout|startSave/);
+  assert.match(toggle, /persistDraft/);
   assert.match(matrix, /dirtyRef\.current = true/);
   assert.equal((matrix.match(/action: \"batch-plan\"/g) || []).length, 1);
   assert.equal((matrix.match(/await submit\(action\)/g) || []).length, 1);
-  assert.match(matrix, /await startSave\(latestStatesRef\.current, \"mark-planned\"\)/);
+  assert.match(matrix, /const markChecked = async/);
+  assert.match(matrix, /startSave\(latestStatesRef\.current, nextCheckedRows, action\)/);
   assert.match(page, /setReviewFrozen\(true\)/);
   assert.match(page, /const refreshReviewStatus = async/);
   assert.match(page, /await refreshReviewStatus\(\)/);
@@ -136,7 +144,7 @@ test("live clean-but-unreviewed state requires one authoritative completion, whi
   assert.match(matrix, /reviewed: boolean/);
   assert.match(matrix, /const authoritativeReviewed = allStatusesPresent && statuses\.every\(status => status\.reviewed\)/);
   assert.match(matrix, /authoritativeReviewedRef\.current = authoritativeReviewed/);
-  assert.match(matrix, /evidenceStatus: action === "mark-planned" \? "completed"/);
+  assert.match(matrix, /evidenceStatus: nextCheckedRows\.has/);
   assert.match(matrix, /body: JSON\.stringify\(\{ action: "batch-plan", operations: orders\.map/);
 });
 
