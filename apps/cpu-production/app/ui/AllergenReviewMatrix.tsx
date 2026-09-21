@@ -470,7 +470,7 @@ export default function AllergenReviewMatrix({
           {bookingNotes.length > 0 && <p style={{ margin: 0, fontSize: ".78rem" }}><strong>Booking notes:</strong> {bookingNotes.join(" · ")}</p>}
         </section>
       )}
-      {reviewSyncStatus === "draft" && <p role="status">Review changes saved on this device. Mark the dish checked to checkpoint them to CPU.</p>}
+      {reviewSyncStatus === "draft" && <p role="status">Review changes saved on this device. Confirm the row to checkpoint them to CPU.</p>}
       {reviewSyncStatus === "saving" && <p role="status">Saving review…</p>}
       {reviewSyncStatus === "saved" && !dirty && <p role="status">Review saved.</p>}
       {reviewSyncStatus === "error" && <p role="alert">Review is saved on this device but not yet synchronised to CPU. <button type="button" onClick={retryCheckpoint} disabled={busy || locked}>Retry save</button></p>}
@@ -523,14 +523,27 @@ export default function AllergenReviewMatrix({
                 <td><span className={row.snapshot ? "cpu-allergen-approved" : "cpu-allergen-missing"}>{row.snapshot ? "Published" : "Not recorded"}</span></td>
                 <td>
                   {rowErrors[row.key] && <small className="cpu-allergen-row-error" role="alert">{rowErrors[row.key]}</small>}
-                  <button
-                    type="button"
-                    className={`cpu-allergen-check ${checkedRows.has(row.key) ? "cpu-allergen-check--done" : ""}`}
-                    onClick={() => void markChecked(row.key)}
-                    disabled={busy || locked}
-                  >
-                    {checkedRows.has(row.key) ? "Checked" : "Mark checked"}
-                  </button>
+                  {(() => {
+                    const unresolvedCount = unresolvedNamedAllergenKeys(states[row.key]).length;
+                    const checked = checkedRows.has(row.key);
+                    const actionLabel = checked
+                      ? "Checked"
+                      : unresolvedCount > 0
+                        ? `Confirm ${unresolvedCount} as clear & mark checked`
+                        : "Mark checked";
+                    return (
+                      <button
+                        type="button"
+                        className={`cpu-allergen-check ${checked ? "cpu-allergen-check--done" : ""}`}
+                        onClick={() => void markChecked(row.key)}
+                        disabled={busy || locked}
+                        aria-label={`${titleCaseDish(row.name)}: ${actionLabel}`}
+                        title={checked || unresolvedCount === 0 ? undefined : `This confirms ${unresolvedCount} not recorded named allergen state${unresolvedCount === 1 ? "" : "s"} as clear.`}
+                      >
+                        {actionLabel}
+                      </button>
+                    );
+                  })()}
                 </td>
               </tr>
             ))}

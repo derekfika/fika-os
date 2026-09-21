@@ -97,6 +97,8 @@ test("review edits remain local and row checkpoints are serialized before first 
   const checkpoint = matrix.slice(matrix.indexOf("  const markChecked ="), matrix.indexOf("\n\n  const toggle =", matrix.indexOf("  const markChecked =")));
   assert.match(checkpoint, /startSave/);
   assert.match(matrix, /Retry save/);
+  assert.match(matrix, /Confirm \$\{unresolvedCount\} as clear & mark checked/);
+  assert.match(matrix, /confirms \$\{unresolvedCount\} not recorded named allergen state/);
   assert.match(matrix, /if \(!locked\) return/);
   assert.match(matrix, /editVersionRef\.current \+= 1/);
 });

@@ -52,6 +52,24 @@ export function completeAllergenReviewMap(
   return { complete: true, states: resolved, unresolvedKeys: [] };
 }
 
+/**
+ * Explicitly confirms the current CPU review. This is intentionally separate
+ * from hydration/display logic: only an authorised row checkpoint may turn
+ * upstream unrecorded or missing named states into reviewed clear states.
+ */
+export function confirmAllergenReviewMap(
+  states: Record<string, OperationalAllergenState> | undefined,
+): AllergenReviewCompletion {
+  const confirmed = { ...(states || {}) };
+  const unresolvedKeys = unresolvedNamedAllergenKeys(confirmed);
+  for (const key of unresolvedKeys) confirmed[key] = "clear";
+  return {
+    complete: true,
+    states: deriveNoKeyAllergens(confirmed),
+    unresolvedKeys,
+  };
+}
+
 export function allergenReviewCompletionMessage(
   unresolvedKeys: CanonicalAllergenKey[],
 ) {
@@ -74,16 +92,7 @@ export function checkpointAllergenReviewRow(
   const isChecked = nextCheckedRows.has(rowKey);
   let nextStates = states;
   if (!isChecked) {
-    const completion = completeAllergenReviewMap(states[rowKey]);
-    if (!completion.complete) {
-      return {
-        blocked: true,
-        states,
-        checkedRows: nextCheckedRows,
-        message: allergenReviewCompletionMessage(completion.unresolvedKeys),
-      };
-    }
-    nextStates = { ...states, [rowKey]: completion.states };
+    nextStates = { ...states, [rowKey]: confirmAllergenReviewMap(states[rowKey]).states };
     nextCheckedRows.add(rowKey);
   } else {
     nextCheckedRows.delete(rowKey);
@@ -91,16 +100,7 @@ export function checkpointAllergenReviewRow(
   if (nextCheckedRows.size === rowCount) {
     const canonicalStates = { ...nextStates };
     for (const checkedRowKey of nextCheckedRows) {
-      const completion = completeAllergenReviewMap(canonicalStates[checkedRowKey]);
-      if (!completion.complete) {
-        return {
-          blocked: true,
-          states,
-          checkedRows: new Set(checkedRows),
-          message: allergenReviewCompletionMessage(completion.unresolvedKeys),
-        };
-      }
-      canonicalStates[checkedRowKey] = completion.states;
+      canonicalStates[checkedRowKey] = confirmAllergenReviewMap(canonicalStates[checkedRowKey]).states;
     }
     nextStates = canonicalStates;
   }

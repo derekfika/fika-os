@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { CANONICAL_ALLERGEN_KEYS, type CanonicalAllergenMap } from "../../shared/allergen-contract";
-import { allergenReviewCompletionMessage, checkpointAllergenReviewRow, completeAllergenReviewMap, unresolvedNamedAllergenKeys } from "../app/lib/allergen-review-state";
+import { allergenReviewCompletionMessage, checkpointAllergenReviewRow, completeAllergenReviewMap, confirmAllergenReviewMap, unresolvedNamedAllergenKeys } from "../app/lib/allergen-review-state";
 
 const allClear = (): CanonicalAllergenMap => Object.fromEntries(CANONICAL_ALLERGEN_KEYS.map(key => [key, "clear" as const]));
 
@@ -15,6 +15,30 @@ test("complete named review derives No-key contains even when its hydrated value
 test("named contains and may-contain states derive No-key clear", () => {
   assert.equal(completeAllergenReviewMap({ ...allClear(), gluten: "contains" }).states.no_key_allergens, "clear");
   assert.equal(completeAllergenReviewMap({ ...allClear(), milk: "may_contain" }).states.no_key_allergens, "clear");
+});
+
+test("one explicit CPU confirmation converts sparse named states to clear without changing positive evidence", () => {
+  const sparse: CanonicalAllergenMap = Object.fromEntries(CANONICAL_ALLERGEN_KEYS.map(key => [key, "unrecorded" as const]));
+  sparse.peanuts = "contains";
+  sparse.fish = "may_contain";
+  sparse.milk = "clear";
+  const confirmed = confirmAllergenReviewMap(sparse);
+  assert.equal(confirmed.complete, true);
+  assert.equal(confirmed.unresolvedKeys.length, 11);
+  assert.equal(confirmed.states.peanuts, "contains");
+  assert.equal(confirmed.states.fish, "may_contain");
+  assert.equal(confirmed.states.milk, "clear");
+  assert.equal(confirmed.states.gluten, "clear");
+  assert.equal(confirmed.states.tree_nuts, "clear");
+  assert.equal(confirmed.states.no_key_allergens, "clear");
+});
+
+test("hydration-safe completion never converts unrecorded values", () => {
+  const sparse = { milk: "unrecorded" as const, no_key_allergens: "unrecorded" as const };
+  const preview = completeAllergenReviewMap(sparse);
+  assert.equal(preview.complete, false);
+  assert.equal(preview.states.milk, "unrecorded");
+  assert.equal(preview.states.no_key_allergens, "unrecorded");
 });
 
 test("any named unrecorded state blocks completion and reports exactly the unresolved columns", () => {
