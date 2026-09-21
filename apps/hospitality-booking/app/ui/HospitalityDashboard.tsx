@@ -1314,7 +1314,8 @@ function BookingPane({
     viewUrl?: string;
     fileName: string;
     driveStatus: string;
-    status?: "generating" | "ready" | "not_configured";
+    status?: "generating" | "ready" | "not_configured" | "failed";
+    error?: string;
   };
   menuBusy: boolean;
   setPending: (status: WorkflowAction) => void;
@@ -1391,7 +1392,8 @@ function BookingDetail({
     viewUrl?: string;
     fileName: string;
     driveStatus: string;
-    status?: "generating" | "ready" | "not_configured";
+    status?: "generating" | "ready" | "not_configured" | "failed";
+    error?: string;
   };
   menuBusy: boolean;
   setPending: (status: WorkflowAction) => void;
