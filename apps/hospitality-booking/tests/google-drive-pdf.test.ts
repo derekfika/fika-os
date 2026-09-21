@@ -60,10 +60,12 @@ test("existing Drive PDF update omits parents while new PDF creation keeps its p
       if (url.includes("/upload/drive/v3/files?") && method === "POST") return new Response(JSON.stringify({ id: "new-file" }), { status: 200 });
       throw new Error(`Unexpected Drive request: ${method} ${url}`);
     };
-    const created = await saveGoogleDrivePdf({ name: "new-matrix.pdf", pdfBase64: "cGRm", owner: { type: "app-workspace", appId: "cpu-production" } });
+    const created = await saveGoogleDrivePdf({ name: "new-matrix.pdf", pdfBase64: "cGRm", owner: { type: "app-workspace", appId: "cpu-production" }, releaseId: "cpu-allergen-release:2026-09-23:booking:mnk:f680ee67ab7f8b935acbba8d193658eb:quote:booking:mnk:f680ee67ab7f8b935acbba8d193658eb:r1:v2" });
     assert.equal(created.reused, false);
     const upload = calls.find(call => call.method === "POST" && call.url.includes("/upload/"))!;
     assert.match(upload.body, /"parents"/);
+    assert.match(upload.body, /"fikaReleaseHash":"[a-f0-9]{64}"/);
+    assert.doesNotMatch(upload.body, /fikaReleaseId/);
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
