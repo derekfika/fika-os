@@ -148,9 +148,10 @@ export default function HospitalityDashboard({
           html?: string;
           localUrl?: string;
           driveUrl?: string;
+          viewUrl?: string;
           fileName: string;
           driveStatus: string;
-          status?: "generating" | "ready";
+          status?: "generating" | "ready" | "not_configured";
         }
       | undefined
     >
@@ -277,6 +278,8 @@ export default function HospitalityDashboard({
           }));
         else if (body?.status === "generating")
           setMatrixArtifacts((current) => ({ ...current, [selected.canonicalId]: { ...(current[selected.canonicalId] || {}), fileName: "", driveStatus: "generating", status: "generating" } }));
+        else if (body?.status === "not_configured")
+          setMatrixArtifacts((current) => ({ ...current, [selected.canonicalId]: { ...(current[selected.canonicalId] || {}), fileName: "", driveStatus: "not_configured", status: "not_configured" } }));
       })
       .catch(() => undefined);
   }, [selected?.canonicalId, selected?.version, matrixRefreshTick]);
@@ -1301,9 +1304,10 @@ function BookingPane({
     html?: string;
     localUrl?: string;
     driveUrl?: string;
+    viewUrl?: string;
     fileName: string;
     driveStatus: string;
-    status?: "generating" | "ready";
+    status?: "generating" | "ready" | "not_configured";
   };
   menuBusy: boolean;
   setPending: (status: WorkflowAction) => void;
@@ -1377,9 +1381,10 @@ function BookingDetail({
     html?: string;
     localUrl?: string;
     driveUrl?: string;
+    viewUrl?: string;
     fileName: string;
     driveStatus: string;
-    status?: "generating" | "ready";
+    status?: "generating" | "ready" | "not_configured";
   };
   menuBusy: boolean;
   setPending: (status: WorkflowAction) => void;
@@ -1576,10 +1581,10 @@ function BookingDetail({
                   : "Quote not generated"}
               </small>
             </button>
-            {matrixArtifact?.driveUrl || matrixArtifact?.localUrl ? (
+            {matrixArtifact?.driveUrl || matrixArtifact?.localUrl || matrixArtifact?.viewUrl ? (
               <a
                 className="manager-document-action"
-                href={matrixArtifact.driveUrl || matrixArtifact.localUrl}
+                href={matrixArtifact.driveUrl || matrixArtifact.localUrl || matrixArtifact.viewUrl}
                 target="_blank"
                 rel="noreferrer"
               >
@@ -1587,7 +1592,9 @@ function BookingDetail({
                 <small>
                   {matrixArtifact.driveUrl
                     ? "Signed PDF in site Drive"
-                    : "Local signed PDF"}
+                    : matrixArtifact.localUrl
+                      ? "Local signed PDF"
+                      : "Authoritative signed CPU matrix"}
                 </small>
               </a>
             ) : matrixArtifact?.status === "generating" ? (
@@ -1602,7 +1609,7 @@ function BookingDetail({
                 disabled
               >
                 <strong>Open allergen matrix</strong>
-                <small>Available after signing</small>
+                <small>{matrixArtifact?.status === "not_configured" ? "Signed matrix storage is not configured" : "Available after signing"}</small>
               </button>
             )}
             {menuOutput ? (
@@ -1682,6 +1689,8 @@ function BookingDetail({
                 Allergen matrix:{" "}
                 {matrixArtifact.driveStatus === "saved"
                   ? "saved to the site Google Drive."
+                  : matrixArtifact.viewUrl
+                    ? "available as the signed CPU view; Drive storage needs attention."
                   : "available locally; Drive needs attention."}
               </p>
               <div className="output-block__links">
@@ -1718,6 +1727,11 @@ function BookingDetail({
                   >
                     Open local matrix
                   </button>
+                )}
+                {!matrixArtifact.driveUrl && !matrixArtifact.localUrl && matrixArtifact.viewUrl && (
+                  <a className="button" href={matrixArtifact.viewUrl} target="_blank" rel="noreferrer">
+                    Open signed matrix
+                  </a>
                 )}
               </div>
             </div>

@@ -3,7 +3,7 @@ import { errorResponse } from "../../../lib/api";
 import { z } from "zod";
 import { existsSync, promises as fs } from "node:fs";
 import { localFixtureOrders, updateLocalFixture } from "../local-fixtures";
-import { allergenAuthorityMatchesOrder, currentAllergenReleaseMatchesOrder, effectiveProductionPlanStatus, hasAllergenAuthority, isProductionPlanMatrixComplete, matrixSignatureScope, mergeMissingProductionOrderLines, sameMatrixSignatureScope, signatureMatchesScope, signedAllergenCheckpointMatchesOrder, type AllergenCellState, type InternalMatrixSignature, type MatrixArtifact, type PlannedMenuItem, type ProductionPlan } from "../../lib/production-plan";
+import { allergenAuthorityMatchesOrder, currentAllergenReleaseMatchesOrder, effectiveProductionPlanStatus, hasAllergenAuthority, isProductionPlanMatrixComplete, matrixSignatureScope, mergeMissingProductionOrderLines, sameMatrixSignatureScope, signatureMatchesScope, signedAllergenCheckpointMatchesOrder, signedAllergenReviewMatchesOrder, type AllergenCellState, type InternalMatrixSignature, type MatrixArtifact, type PlannedMenuItem, type ProductionPlan } from "../../lib/production-plan";
 import { normaliseOperationalAllergens } from "../../../../shared/allergen-contract";
 import { canonicalProductionFailureKind, productionOrderDetail, productionQueue, transitionProductionOrder, type CanonicalProductionFailure } from "../../../lib/production-http-client";
 import type { ProductionOrder, ProductionStatus } from "../../../lib/production-types";
@@ -22,6 +22,7 @@ import { allergenMatrixContentHash, buildCpuAllergenRelease, revokeCpuAllergenRe
 import { releaseMaterializationDelivery, retryCommittedCpuMaterialization } from "../../../lib/cpu-retry-materialization";
 import { cpuMasterReviewId } from "../../../lib/cpu-master-review";
 import { ExpectedLineage, MasterReviewOperation, MasterSignCommand, MenuItem, SubItem } from "../../../lib/production-plan-command-schema";
+import { allergenMatrixHtml } from "../../ui/allergen-matrix";
 
 function menuContentHash(menuItems: PlannedMenuItem[]) {
   return allergenMatrixContentHash(menuItems);
@@ -436,10 +437,18 @@ async function handleGet(request: NextRequest) {
         return new NextResponse(await fs.readFile(artifact.pdfPath), { headers: { "content-type": "application/pdf", "content-disposition": `inline; filename="${artifact.fileName}"` } });
       }
       const selectedPlan = visible ? await mergeOriginalItems(request, await getPlan(request, orderId), orderId, selectedOrder) : undefined;
+      if (request.nextUrl.searchParams.get("download") === "html") {
+        if (!selectedPlan || !selectedOrder || !signedAllergenReviewMatchesOrder(selectedPlan, selectedOrder, selectedPlan.menuItems)) {
+          return NextResponse.json({ error: { message: "The fully signed allergen matrix is not available for this production order." } }, { status: 404 });
+        }
+        const html = allergenMatrixHtml(selectedOrder, selectedPlan.menuItems, selectedPlan.signedSignatures?.length ? selectedPlan.signedSignatures : selectedPlan.signatures || []);
+        return new NextResponse(html, { headers: { "content-type": "text/html; charset=utf-8", "content-disposition": `inline; filename="${orderId.replace(/[^a-zA-Z0-9_-]+/g, "-")}-signed-allergen-matrix.html"` } });
+      }
       recordDeliveredInReadBudget({ stage: "selected_order_get", canonicalOrderDocs: selectedOrder ? 1 : 0, planDocs: selectedPlan ? 1 : 0, selectedIds: 1 });
       const selectedMatrixStatus = selectedPlan?.matrixArtifact && selectedOrder && currentAllergenReleaseMatchesOrder(selectedPlan.currentAllergenRelease, selectedOrder, selectedPlan.menuItems) ? "ready" : selectedPlan?.signatures?.some(signature => signature.role === "production_chef") && selectedPlan.signatures?.some(signature => signature.role === "head_chef_site_manager") ? selectedOrder && !matrixDriveConfiguration(selectedOrder).enabled ? "not_configured" : "generating" : undefined;
       const signingLineage = selectedOrder && selectedPlan ? matrixSignatureScope(selectedOrder, menuContentHash(selectedPlan.menuItems)) : undefined;
-      return NextResponse.json({ plan: selectedPlan, signingLineage: signingLineage || null, matrixStatus: selectedMatrixStatus, plans: selectedPlan ? [selectedPlan] : [], notifications: selectedPlan?.status === "planned" ? [{ id: `notification:${selectedPlan.id}`, title: "New production plan ready for menu generation.", orderId: selectedPlan.orderId, plannedItemCount: selectedPlan.menuItems.reduce((sum, item) => sum + item.subItems.length, 0), at: selectedPlan.updatedAt }] : [], menus: [] });
+      const signedMatrixAvailable = Boolean(selectedPlan && selectedOrder && signedAllergenReviewMatchesOrder(selectedPlan, selectedOrder, selectedPlan.menuItems));
+      return NextResponse.json({ plan: selectedPlan, signingLineage: signingLineage || null, matrixStatus: selectedMatrixStatus, signedMatrixAvailable, plans: selectedPlan ? [selectedPlan] : [], notifications: selectedPlan?.status === "planned" ? [{ id: `notification:${selectedPlan.id}`, title: "New production plan ready for menu generation.", orderId: selectedPlan.orderId, plannedItemCount: selectedPlan.menuItems.reduce((sum, item) => sum + item.subItems.length, 0), at: selectedPlan.updatedAt }] : [], menus: [] });
     }
   } catch (error) {
     return errorResponse(error);
