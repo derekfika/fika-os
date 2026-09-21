@@ -64,12 +64,14 @@ test("signature modal opens only after review persistence and a fresh lineage re
   assert.match(beginBlock, /await saveReviewRef\.current\?\.\(\)/);
   assert.match(beginBlock, /const refreshed = await refreshReviewStatus\(\)/);
   assert.match(beginBlock, /signingSnapshotRef\.current = refreshed\.freshLineage/);
+  assert.doesNotMatch(beginBlock, /reviewDirty|reviewPersistencePending/);
+  assert.match(beginBlock, /Saving the completed allergen review before opening signature/);
   assert.ok(page.indexOf("setSigning({ role })", begin) > page.indexOf("await refreshReviewStatus()", begin));
   assert.match(page, /onRegisterReviewState/);
   assert.match(page, /signingSnapshotRef/);
   assert.match(page, /reviewOperations/);
-  assert.match(page, /reviewDirty \|\| reviewPersistencePending \|\| productionSigned/);
-  assert.match(page, /reviewDirty \|\| reviewPersistencePending \|\| headChefSigned/);
+  const signatureRow = page.slice(page.indexOf('className="cpu-allergen-signature-row"'), page.indexOf("{reviewFrozen", page.indexOf('className="cpu-allergen-signature-row"')));
+  assert.doesNotMatch(signatureRow, /reviewDirty|reviewPersistencePending/);
 });
 
 test("the backend still rejects a genuine lineage advance after the client refresh", async () => {
@@ -91,6 +93,8 @@ test("review edits remain local and row checkpoints are serialized before first 
   assert.match(matrix, /sameLineage/);
   assert.match(matrix, /if \(inFlightSave\.current\) \{[\s\S]*await inFlightSave\.current/);
   assert.match(matrix, /onPersistenceChange/);
+  assert.match(matrix, /checkpointCompletionRef/);
+  assert.match(matrix, /if \(checkpointCompletionRef\.current\) \{[\s\S]*await checkpointCompletionRef\.current/);
   assert.match(matrix, /const action = nextCheckedRows\.size === rows\.length ? "mark-planned"/);
   const toggle = matrix.slice(matrix.indexOf("  const toggle ="), matrix.indexOf("\n\n  const retryCheckpoint", matrix.indexOf("  const toggle =")));
   assert.doesNotMatch(toggle, /setTimeout|startSave|fetch\(/);

@@ -81,6 +81,7 @@ export default function AllergenReviewMatrix({
   const latestLineageRef = useRef<Record<string, MatrixLineage>>({});
   const inFlightSave = useRef<Promise<void> | undefined>(undefined);
   const pendingSaveCountRef = useRef(0);
+  const checkpointCompletionRef = useRef<Promise<void> | undefined>(undefined);
   const hydratedRef = useRef(false);
   const checkpointSequenceRef = useRef(0);
   const latestDraftWriteRef = useRef<Promise<void> | undefined>(undefined);
@@ -346,9 +347,28 @@ export default function AllergenReviewMatrix({
     return operation;
   };
 
+  const queueCheckpointCompletion = (operation: Promise<void>, editVersion: number, action: "save-plan" | "mark-planned") => {
+    const completion = operation.then(async () => {
+      if (editVersion !== editVersionRef.current) return;
+      await latestDraftWriteRef.current;
+      await clearLocalDraft(scopeKey);
+      dirtyRef.current = false;
+      authoritativeReviewedRef.current = action === "mark-planned";
+      setDirty(false);
+      onDirtyChange?.(false);
+    }).catch(() => undefined);
+    checkpointCompletionRef.current = completion;
+    void completion.then(() => {
+      if (checkpointCompletionRef.current === completion) checkpointCompletionRef.current = undefined;
+    });
+  };
+
   latestSave.current = async () => {
     if (inFlightSave.current) {
       await inFlightSave.current;
+    }
+    if (checkpointCompletionRef.current) {
+      await checkpointCompletionRef.current;
     }
     // A locally clean matrix still needs one authoritative completion commit
     // when the server has not recorded this review yet.
@@ -395,6 +415,7 @@ export default function AllergenReviewMatrix({
     });
     latestCheckedRowsRef.current = nextCheckedRows;
     setCheckedRows(nextCheckedRows);
+    onCheckedChange?.(nextCheckedRows.size, rows.length, nextCheckedRows);
     dirtyRef.current = true;
     authoritativeReviewedRef.current = false;
     setDirty(true);
@@ -404,15 +425,7 @@ export default function AllergenReviewMatrix({
     const editVersion = editVersionRef.current;
     const action = checkpoint.action!;
     persistDraft(nextStates, nextCheckedRows);
-    void startSave(nextStates, nextCheckedRows, action).then(async () => {
-      if (editVersion !== editVersionRef.current) return;
-      await latestDraftWriteRef.current;
-      await clearLocalDraft(scopeKey);
-      dirtyRef.current = false;
-      authoritativeReviewedRef.current = action === "mark-planned";
-      setDirty(false);
-      onDirtyChange?.(false);
-    }).catch(() => undefined);
+    queueCheckpointCompletion(startSave(nextStates, nextCheckedRows, action), editVersion, action);
   };
 
   const toggle = async (rowKey: string, key: string) => {
@@ -438,6 +451,7 @@ export default function AllergenReviewMatrix({
     setSyncStatus("draft");
     onDirtyChange?.(true);
     setCheckedRows(nextCheckedRows);
+    onCheckedChange?.(nextCheckedRows.size, rows.length, nextCheckedRows);
     persistDraft(nextStates, nextCheckedRows);
     onReviewChanged?.();
     setError("");
@@ -450,15 +464,7 @@ export default function AllergenReviewMatrix({
     const action = nextCheckedRows.size === rows.length ? "mark-planned" as const : "save-plan" as const;
     const editVersion = editVersionRef.current;
     persistDraft(latestStatesRef.current, nextCheckedRows);
-    void startSave(latestStatesRef.current, nextCheckedRows, action).then(async () => {
-      if (editVersion !== editVersionRef.current) return;
-      await latestDraftWriteRef.current;
-      await clearLocalDraft(scopeKey);
-      dirtyRef.current = false;
-      authoritativeReviewedRef.current = action === "mark-planned";
-      setDirty(false);
-      onDirtyChange?.(false);
-    }).catch(() => undefined);
+    queueCheckpointCompletion(startSave(latestStatesRef.current, nextCheckedRows, action), editVersion, action);
   };
 
   return (

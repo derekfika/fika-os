@@ -69,6 +69,7 @@ export default function CpuAllergenReviewPage() {
   const [hydrating, setHydrating] = useState(false);
   const [reviewDirty, setReviewDirty] = useState(false);
   const [reviewPersistencePending, setReviewPersistencePending] = useState(false);
+  const checkedCountRef = useRef(0);
   const [retryEligible, setRetryEligible] = useState(false);
   const signingReviewRef = useRef<(() => unknown[]) | undefined>(undefined);
   const saveReviewRef = useRef<(() => Promise<void>) | undefined>(undefined);
@@ -87,6 +88,7 @@ export default function CpuAllergenReviewPage() {
     setHydrating(true);
     setOrders([]);
     setCheckedCount(0);
+    checkedCountRef.current = 0;
     setSignatureRoles([]);
     setSignatureRolesByOrderId({});
     setMatrixStatusByOrderId({});
@@ -150,7 +152,7 @@ export default function CpuAllergenReviewPage() {
   const sites = [...new Map(masterOrders.map(order => [order.destinationOplocId || destination(order), destination(order)])).entries()];
   const approved = rows.filter(row => row.snapshot).length;
   const attention = rows.filter(row => row.attention).length;
-  const allChecked = visibleOrders.length > 0 && rows.length > 0 && checkedCount === rows.length;
+  const allChecked = visibleOrders.length > 0 && rows.length > 0 && checkedCountRef.current === rows.length;
   const productionSigned = signatureRoles.includes("production_chef");
   const headChefSigned = signatureRoles.includes("head_chef_site_manager");
   const bothSigned = productionSigned && headChefSigned;
@@ -401,8 +403,12 @@ export default function CpuAllergenReviewPage() {
   };
 
   const beginSigning = async (role: SignatureRole) => {
-    if (site || hydrating || reviewPersistencePending) {
-      setSignatureMessage(reviewPersistencePending ? "The completed allergen review is still being saved. Signature will be available when that save succeeds." : "Return to All sites to sign the complete Delivered-In service-date master matrix.");
+    if (site) {
+      setSignatureMessage("Return to All sites to sign the complete Delivered-In service-date master matrix.");
+      return;
+    }
+    if (hydrating) {
+      setSignatureMessage("The allergen review is still loading. Wait for the current matrix before signing.");
       return;
     }
     if (!masterOrders.length) {
@@ -413,7 +419,22 @@ export default function CpuAllergenReviewPage() {
       setSignatureMessage(`Please mark all ${rows.length} dishes as checked before signing. ${checkedCount} of ${rows.length} are checked.`);
       return;
     }
-    if ((role === "production_chef" && productionSigned) || (role === "head_chef_site_manager" && headChefSigned) || bothSigned || signatureBusy || hydrating || reviewDirty) return;
+    if (role === "production_chef" && productionSigned) {
+      setSignatureMessage("The production chef signature is already recorded.");
+      return;
+    }
+    if (role === "head_chef_site_manager" && headChefSigned) {
+      setSignatureMessage("The head chef / site manager signature is already recorded.");
+      return;
+    }
+    if (bothSigned) {
+      setSignatureMessage("Both required signatures are already recorded.");
+      return;
+    }
+    if (signatureBusy) {
+      setSignatureMessage("Another signing action is already in progress. Wait for it to finish.");
+      return;
+    }
 
     setSignatureBusy(true);
     setSignatureMessage("Saving the completed allergen review before opening signature…");
@@ -524,7 +545,7 @@ export default function CpuAllergenReviewPage() {
           scopeKey={`${date || "unknown"}:${site || "all"}`}
           busy={signatureBusy || hydrating}
           locked={hydrating || reviewFrozen || bothSigned || Boolean(signing)}
-          onCheckedChange={setCheckedCount}
+          onCheckedChange={count => { checkedCountRef.current = count; setCheckedCount(count); }}
           onReviewChanged={() => undefined}
           onSignatureRolesChange={roles => setSignatureRoles(roles)}
           onOrderSignatureRolesChange={setSignatureRolesByOrderId}
@@ -553,10 +574,10 @@ export default function CpuAllergenReviewPage() {
                 <strong>Fully signed · scoped releases current</strong>
               ) : (
                 <>
-                  <button type="button" disabled={signatureBusy || hydrating || reviewDirty || reviewPersistencePending || productionSigned} onClick={() => void beginSigning("production_chef")}>
+                  <button type="button" disabled={signatureBusy || hydrating || productionSigned} onClick={() => void beginSigning("production_chef")}>
                     {productionSigned ? "Production chef signed" : "Sign as production chef"}
                   </button>
-                  <button type="button" disabled={signatureBusy || hydrating || reviewDirty || reviewPersistencePending || headChefSigned} onClick={() => void beginSigning("head_chef_site_manager")}>
+                  <button type="button" disabled={signatureBusy || hydrating || headChefSigned} onClick={() => void beginSigning("head_chef_site_manager")}>
                     {headChefSigned ? "Head chef signed" : "Sign as head chef / site manager"}
                   </button>
                   {bothSigned && retryEligible && pendingReleaseOrders.length > 0 && <button type="button" className="cpu-allergen-retry" disabled={signatureBusy || hydrating} onClick={() => void retryPendingOplocReleases()}>Retry pending OPLOC releases</button>}
@@ -565,7 +586,7 @@ export default function CpuAllergenReviewPage() {
               {reviewFrozen && <button type="button" disabled={signatureBusy || hydrating} onClick={() => void reopenForAmendment()}>Reopen for amendment</button>}
             </div>
           )}
-          {signatureBusy && <p role="status">Syncing allergen edits before signature…</p>}
+          {signatureBusy && <p role="status">{signatureMessage || "Saving review…"}</p>}
           {signatureMessage && !signatureBusy && <p className="cpu-allergen-signature-alert" role="alert">{signatureMessage}</p>}
         </section>
       </section>
