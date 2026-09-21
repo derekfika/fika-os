@@ -153,6 +153,7 @@ export type CanonicalBooking = {
 export type ProductionOrder = {
   canonicalId: string;
   bookingId: string;
+  version?: number;
   state: "Requested" | "Planned" | "Cancelled" | "Uncertain";
   updatedAt?: string;
   createdAt: string;
@@ -852,6 +853,7 @@ export async function bookingWorkspace(siteId?: string, authorisedOplocId?: stri
           {
             canonicalId: modern.canonicalId,
             bookingId: modern.sourceBookingId,
+            version: modern.version,
             state,
             updatedAt: modern.updatedAt,
             createdAt: modern.createdAt,
@@ -1359,6 +1361,7 @@ export async function createProductionOrder(
     productionOrder: {
       canonicalId: order.canonicalId,
       bookingId: order.sourceBookingId,
+      version: order.version,
       state,
       updatedAt: order.updatedAt,
       createdAt: order.createdAt,

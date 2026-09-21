@@ -6,11 +6,11 @@ import type { CanonicalBooking } from "@/lib/canonical-types";
 import type { MenuOutput } from "@/lib/mnk-menu-output";
 import { menuBookingContext, menuFileName } from "@/lib/mnk-menu-output";
 import { createGoogleMenu } from "@/lib/google-menu";
+import { cpuBodyErrorMessage, cpuNotFound, fetchCpuProductionPlan, readCpuJson } from "@/lib/cpu-production";
 
 const storePath = path.join(process.cwd(), "local-data", "hospitality-booking", "menu-outputs.json");
 async function readOutputs(): Promise<MenuOutput[]> { try { return JSON.parse(await fs.readFile(storePath, "utf8")) as MenuOutput[]; } catch { return []; } }
 async function writeOutputs(outputs: MenuOutput[]) { await fs.mkdir(path.dirname(storePath), { recursive: true }); await fs.writeFile(storePath, JSON.stringify(outputs, null, 2), "utf8"); }
-function cpuBase() { return (process.env.CPU_PRODUCTION_BASE_URL || "http://localhost:3400").replace(/\/$/, ""); }
 function productionOrderCandidates(bookingId: string, productionOrderId?: string, sourceBookingId?: string) {
   return [...new Set([productionOrderId, `production-order:v1:${bookingId}`, `production-order:${bookingId}`, bookingId, sourceBookingId].filter(Boolean))] as string[];
 }
@@ -35,10 +35,14 @@ export async function GET(request: NextRequest) {
   const candidates = productionOrderCandidates(booking.canonicalId, request.nextUrl.searchParams.get("productionOrderId") || undefined, booking.source.sourceBookingId);
   let plan: { id: string; status: string; updatedAt: string; menuItems: Array<{ name: string; subItems: Array<{ name: string; allergens: Record<string, string> }> }> } | undefined;
   for (const candidate of candidates) {
-    const response = await fetch(`${cpuBase()}/api/production-plan?orderId=${encodeURIComponent(candidate)}`, { cache: "no-store" });
-    const body = await response.json() as { plan?: typeof plan };
+    const response = await fetchCpuProductionPlan(request, candidate);
+    const body = await readCpuJson(response) as { plan?: typeof plan; error?: { message?: string; code?: string } };
+    if (!response.ok) {
+      if (cpuNotFound(response, body)) continue;
+      return NextResponse.json({ readiness: { available: false, reason: cpuBodyErrorMessage(body, response.status) } }, { status: response.status || 502 });
+    }
     if (body.plan && body.plan.status === "planned") { plan = body.plan; break; }
-    plan ||= body.plan;
+    if (body.plan) { plan = body.plan; break; }
   }
   return NextResponse.json({ readiness: { ...planReadiness(plan), planId: plan?.id, planUpdatedAt: plan?.updatedAt } });
 }
@@ -58,10 +62,14 @@ export async function POST(request: NextRequest) {
     const candidates = productionOrderCandidates(body.bookingId, body.productionOrderId, booking.source.sourceBookingId);
     let cpuBody: { plan?: { id: string; status: string; updatedAt: string; menuItems: Array<{ name: string; subItems: Array<{ name: string; allergens: Record<string, string> }> }> }; error?: { message?: string } } = {};
     for (const cpuOrderId of candidates) {
-      const cpuResponse = await fetch(`${cpuBase()}/api/production-plan?orderId=${encodeURIComponent(cpuOrderId)}`, { cache: "no-store" });
-      const candidate = await cpuResponse.json() as typeof cpuBody;
+      const cpuResponse = await fetchCpuProductionPlan(request, cpuOrderId);
+      const candidate = await readCpuJson(cpuResponse) as typeof cpuBody;
+      if (!cpuResponse.ok) {
+        if (cpuNotFound(cpuResponse, candidate)) continue;
+        return NextResponse.json({ error: { message: cpuBodyErrorMessage(candidate, cpuResponse.status) } }, { status: cpuResponse.status || 502 });
+      }
       if (candidate.plan && candidate.plan.status === "planned") { cpuBody = candidate; break; }
-      if (!cpuBody.plan) cpuBody = candidate;
+      if (candidate.plan) { cpuBody = candidate; break; }
     }
     if (!cpuBody.plan) throw Error(cpuBody.error?.message || "The CPU plan could not be loaded.");
     const readiness = planReadiness(cpuBody.plan);

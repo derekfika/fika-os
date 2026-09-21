@@ -166,7 +166,7 @@ export default function HospitalityDashboard({
           viewUrl?: string;
           fileName: string;
           driveStatus: string;
-          status?: "generating" | "ready" | "not_configured" | "failed";
+          status?: "generating" | "ready" | "not_configured" | "failed" | "error";
           error?: string;
         }
       | undefined
@@ -281,35 +281,54 @@ export default function HospitalityDashboard({
 
   useEffect(() => {
     if (!selected) return;
+    const bookingId = selected.canonicalId;
+    const productionOrder = productionOrders[bookingId];
+    const productionOrderId = productionOrder?.canonicalId;
+    const setMatrixState = (state: { status: "generating" | "ready" | "not_configured" | "failed" | "error"; driveStatus: string; error?: string; artifact?: Record<string, unknown> }) => {
+      setMatrixArtifacts((current) => ({
+        ...current,
+        [bookingId]: {
+          ...(current[bookingId] || {}),
+          ...(state.artifact || {}),
+          fileName: typeof state.artifact?.fileName === "string" ? state.artifact.fileName : current[bookingId]?.fileName || "",
+          driveStatus: state.driveStatus,
+          status: state.status,
+          ...(state.error ? { error: state.error } : { error: undefined }),
+        },
+      }));
+    };
+    setMatrixState({ status: "generating", driveStatus: "generating" });
     void fetch(
-      `/api/allergen-matrix?bookingId=${encodeURIComponent(selected.canonicalId)}${productionOrders[selected.canonicalId]?.canonicalId ? `&productionOrderId=${encodeURIComponent(productionOrders[selected.canonicalId]!.canonicalId)}` : ""}`,
+      `/api/allergen-matrix?bookingId=${encodeURIComponent(bookingId)}${productionOrderId ? `&productionOrderId=${encodeURIComponent(productionOrderId)}` : ""}`,
       { cache: "no-store" },
     )
-      .then((response) => (response.ok ? response.json() : null))
-      .then((body) => {
-        if (body?.artifact)
-          setMatrixArtifacts((current) => ({
-            ...current,
-            [selected.canonicalId]: { ...body.artifact, status: "ready" },
-          }));
-        else if (body?.status === "generating")
-          setMatrixArtifacts((current) => ({ ...current, [selected.canonicalId]: { ...(current[selected.canonicalId] || {}), fileName: "", driveStatus: "generating", status: "generating" } }));
-        else if (body?.status === "not_configured")
-          setMatrixArtifacts((current) => ({ ...current, [selected.canonicalId]: { ...(current[selected.canonicalId] || {}), fileName: "", driveStatus: "not_configured", status: "not_configured" } }));
-        else if (body?.status === "failed")
-          setMatrixArtifacts((current) => ({ ...current, [selected.canonicalId]: { ...(current[selected.canonicalId] || {}), fileName: "", driveStatus: "failed", status: "failed", error: body.error } }));
+      .then(async (response) => {
+        const body = await readDashboardJson(response) as { artifact?: Record<string, unknown>; status?: "generating" | "ready" | "not_configured" | "failed" | "error"; error?: string | { message?: string } };
+        if (!response.ok) throw Error(typeof body.error === "string" ? body.error : body.error?.message || `The allergen matrix could not be loaded (${response.status}).`);
+        return body;
       })
-      .catch(() => undefined);
-  }, [selected?.canonicalId, selected?.version, matrixRefreshTick]);
+      .then((body) => {
+        if (body.artifact) return setMatrixState({ status: "ready", driveStatus: String(body.artifact.driveStatus || "saved"), artifact: body.artifact });
+        if (body.status === "generating") return setMatrixState({ status: "generating", driveStatus: "generating" });
+        if (body.status === "not_configured") return setMatrixState({ status: "not_configured", driveStatus: "not_configured" });
+        if (body.status === "failed") return setMatrixState({ status: "failed", driveStatus: "failed", error: typeof body.error === "string" ? body.error : "CPU matrix materialisation failed. Retry from CPU Production." });
+        setMatrixState({ status: "error", driveStatus: "error", error: "The Hospitality dashboard received no current allergen matrix artifact." });
+      })
+      .catch((cause) => setMatrixState({ status: "error", driveStatus: "error", error: (cause as Error).message }));
+  }, [selected?.canonicalId, selected?.version, productionOrders[selected?.canonicalId || ""]?.canonicalId, productionOrders[selected?.canonicalId || ""]?.version, productionOrders[selected?.canonicalId || ""]?.updatedAt, matrixRefreshTick]);
 
   useEffect(() => {
     if (!selected) return;
     const bookingId = selected.canonicalId;
     const productionOrderId = productionOrders[bookingId]?.canonicalId;
     void fetch(`/api/menus?bookingId=${encodeURIComponent(bookingId)}&readiness=1${productionOrderId ? `&productionOrderId=${encodeURIComponent(productionOrderId)}` : ""}`, { cache: "no-store" })
-      .then((response) => response.json())
+      .then(async (response) => {
+        const body = await readDashboardJson(response) as { readiness?: { available: boolean; reason: string }; error?: { message?: string } };
+        if (!response.ok) throw Error(body.error?.message || body.readiness?.reason || `Menu readiness is unavailable (${response.status}).`);
+        return body;
+      })
       .then((body) => setMenuReadiness((current) => ({ ...current, [bookingId]: body.readiness || { available: false, reason: "Menu readiness is unavailable." } })))
-      .catch(() => setMenuReadiness((current) => ({ ...current, [bookingId]: { available: false, reason: "Menu readiness is unavailable." } })));
+      .catch((cause) => setMenuReadiness((current) => ({ ...current, [bookingId]: { available: false, reason: (cause as Error).message } })));
   }, [selected?.canonicalId, selected?.version, productionOrders[selected?.canonicalId || ""]?.canonicalId, productionOrders[selected?.canonicalId || ""]?.updatedAt]);
 
   // CPU planning is a shared projection, so keep an open manager panel current
@@ -1057,6 +1076,7 @@ export default function HospitalityDashboard({
                   menuReady={Boolean(menuReadiness[selected.canonicalId]?.available)}
                   menuReadyReason={menuReadiness[selected.canonicalId]?.reason || "Waiting for menu items and allergen information."}
                   matrixArtifact={matrixArtifacts[selected.canonicalId]}
+                  onRefreshMatrix={() => setMatrixRefreshTick((current) => current + 1)}
                   menuBusy={menuBusy}
                   setPending={setPending}
                   amendment={amendment}
@@ -1287,6 +1307,7 @@ function BookingPane({
   menuReady,
   menuReadyReason,
   matrixArtifact,
+  onRefreshMatrix,
   menuBusy,
   setPending,
   amendment,
@@ -1314,9 +1335,10 @@ function BookingPane({
     viewUrl?: string;
     fileName: string;
     driveStatus: string;
-    status?: "generating" | "ready" | "not_configured" | "failed";
+    status?: "generating" | "ready" | "not_configured" | "failed" | "error";
     error?: string;
   };
+  onRefreshMatrix: () => void;
   menuBusy: boolean;
   setPending: (status: WorkflowAction) => void;
   amendment: Amendment | null;
@@ -1350,6 +1372,7 @@ function BookingPane({
       menuReady={menuReady}
       menuReadyReason={menuReadyReason}
       matrixArtifact={matrixArtifact}
+      onRefreshMatrix={onRefreshMatrix}
       menuBusy={menuBusy}
       setPending={setPending}
       onAmend={onAmend}
@@ -1370,6 +1393,7 @@ function BookingDetail({
   menuReady,
   menuReadyReason,
   matrixArtifact,
+  onRefreshMatrix,
   menuBusy,
   setPending,
   onAmend,
@@ -1392,9 +1416,10 @@ function BookingDetail({
     viewUrl?: string;
     fileName: string;
     driveStatus: string;
-    status?: "generating" | "ready" | "not_configured" | "failed";
+    status?: "generating" | "ready" | "not_configured" | "failed" | "error";
     error?: string;
   };
+  onRefreshMatrix: () => void;
   menuBusy: boolean;
   setPending: (status: WorkflowAction) => void;
   onAmend: (booking: CanonicalBooking) => void;
@@ -1611,10 +1636,10 @@ function BookingDetail({
                 <strong>Generating allergen matrix…</strong>
                 <small>The signed PDF is being prepared</small>
               </button>
-            ) : matrixArtifact?.status === "failed" ? (
-              <button type="button" className="manager-document-action" disabled>
+            ) : matrixArtifact?.status === "failed" || matrixArtifact?.status === "error" ? (
+              <button type="button" className="manager-document-action" onClick={onRefreshMatrix}>
                 <strong>Allergen matrix needs retry</strong>
-                <small>{matrixArtifact.error || "Retry materialisation from CPU Production."}</small>
+                <small>{matrixArtifact.error || "Reload the current CPU allergen matrix."}</small>
               </button>
             ) : (
               <button

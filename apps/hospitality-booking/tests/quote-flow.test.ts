@@ -17,4 +17,8 @@ test("menu readiness follows the current amended Production Order identity", () 
   assert.match(dashboard, /productionOrderId=\$\{encodeURIComponent\(productionOrderId\)\}/);
   assert.match(menusRoute, /request\.nextUrl\.searchParams\.get\("productionOrderId"\)/);
   assert.match(menusRoute, /productionOrderCandidates\(booking\.canonicalId/);
+  assert.match(menusRoute, /fetchCpuProductionPlan\(request/);
+  assert.match(menusRoute, /cpuNotFound\(response/);
+  assert.match(menusRoute, /cpuBodyErrorMessage\(body, response\.status\)/);
+  assert.match(dashboard, /body\.error\?\.message \|\| body\.readiness\?\.reason/);
 });

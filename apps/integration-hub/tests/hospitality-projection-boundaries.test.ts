@@ -49,6 +49,11 @@ test("Hospitality workspace uses bounded batch production reads instead of an N+
   assert.doesNotMatch(service, /latestProductionOrderForBooking\(booking\.canonicalId\)/);
 });
 
+test("Hospitality production projections retain the current Production Order version", () => {
+  assert.match(service, /version: modern\.version/);
+  assert.match(service, /version: order\.version/);
+});
+
 test("Hospitality handoff, amendment, and cancellation share CPU propagation", () => {
   assert.match(service, /changeType: "created"/);
   assert.match(service, /changeType: "amended"/);
