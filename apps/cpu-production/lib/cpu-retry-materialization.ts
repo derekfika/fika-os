@@ -3,6 +3,7 @@ import { cpuReleaseMaterializationEventId } from "./cpu-release-fanout";
 import { deliverCpuPropagation, replayCpuPropagation } from "./cpu-durable-outbox";
 import { currentAllergenReleaseMatchesOrder, matrixSignatureScope, sameMatrixSignatureScope, signatureAuthorityForOrder, signatureMatchesScope, type MatrixSignatureScope, type ProductionPlan } from "../app/lib/production-plan";
 import { matrixDriveConfiguration } from "../app/lib/matrix-drive-config";
+import { createProductionPlanRepository } from "./production-plan-repository";
 import type { ProductionOrder } from "./production-types";
 
 function sameLineage(left: MatrixSignatureScope | undefined, right: MatrixSignatureScope) {
@@ -25,6 +26,7 @@ export async function retryCommittedCpuMaterialization(input: {
 }, dependencies: {
   replay: typeof replayCpuPropagation;
   deliver: typeof deliverCpuPropagation;
+  loadPlan?: (orderId: string) => Promise<ProductionPlan | undefined>;
 } = { replay: replayCpuPropagation, deliver: deliverCpuPropagation }) {
   const { plan, order, expectedLineage, timestamp } = input;
   if (order.supersededBy) throw Object.assign(new Error("This CPU Production Order has been superseded and cannot receive a materialization retry."), { status: 409, code: "CPU_ORDER_SUPERSEDED" });
@@ -41,6 +43,24 @@ export async function retryCommittedCpuMaterialization(input: {
   const delivery = releaseMaterializationDelivery(plan, release, order, timestamp);
   await dependencies.replay(delivery.eventId);
   const materializationDelivery = await dependencies.deliver(delivery.eventId);
-  const matrixStatus = currentAllergenReleaseMatchesOrder(plan.currentAllergenRelease, order, plan.menuItems) ? "ready" : !matrixDriveConfiguration(order).enabled ? "not_configured" : "generating";
-  return { plan, matrixArtifact: plan.matrixArtifact ?? null, signatures: plan.signatures ?? null, matrixStatus, materializationDelivery };
+  const persistedPlan = await (dependencies.loadPlan || ((orderId: string) => createProductionPlanRepository().get(orderId)))(order.canonicalId);
+  const authoritativePlan = persistedPlan || plan;
+  const persistedRelease = authoritativePlan.currentAllergenRelease;
+  const deliveryFailed = materializationDelivery.status === "failed";
+  const matrixStatus = currentAllergenReleaseMatchesOrder(persistedRelease, order, authoritativePlan.menuItems)
+    ? "ready"
+    : persistedRelease?.materializationStatus === "failed" || deliveryFailed
+      ? "failed"
+      : !matrixDriveConfiguration(order).enabled
+        ? "not_configured"
+        : "generating";
+  return {
+    plan: authoritativePlan,
+    matrixArtifact: authoritativePlan.matrixArtifact ?? null,
+    signatures: authoritativePlan.signatures ?? null,
+    materializationStatus: persistedRelease?.materializationStatus,
+    materializationError: persistedRelease?.materializationError || (deliveryFailed && "error" in materializationDelivery ? materializationDelivery.error : undefined),
+    matrixStatus,
+    materializationDelivery,
+  };
 }

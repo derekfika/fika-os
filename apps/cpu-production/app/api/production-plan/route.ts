@@ -671,10 +671,12 @@ async function handlePost(request: NextRequest) {
     }
     // A duplicate command has already staged its durable work. Replaying the
     // HTTP request must not synchronously repeat delivery or consumer effects.
-    let materializationResult: { eventId: string; status: string } | undefined;
+    let materializationResult: { eventId: string; status: string; error?: string; attempts?: number } | undefined;
     if (materializationDelivery && event) {
       if (command.action === "save-matrix") await replayCpuPropagation(materializationDelivery.eventId);
       materializationResult = await deliverCpuPropagation(materializationDelivery.eventId);
+      const persistedAfterMaterialization = await planRepository.get(plan.orderId);
+      if (persistedAfterMaterialization) Object.assign(plan, normalisePlanAllergens(persistedAfterMaterialization));
     }
     if (releaseForEvent && !event?.duplicate) for (const oplocId of releaseOplocIds) await notifyDeliveredInAllergenRelease({ eventType: releaseEventType, release: releaseForEvent, oplocId });
     recordDeliveredInReadBudget({ stage: "plan_post_mutation", canonicalOrderDocs: changedOrder ? 1 : 0, planDocs: 1, selectedIds: 1 });
@@ -684,9 +686,10 @@ async function handlePost(request: NextRequest) {
       const review = changedOrder.destinationOplocId ? await rebuildCpuReviewPackage(request, changedOrder.serviceDate, changedOrder.destinationOplocId, event!.sequence) : undefined;
       await notifyCpuConsumerInvalidations({ eventId: `cpu-change:${plan.id}:v${event!.sequence}`, sourceEntityId: plan.id, serviceDate: changedOrder.serviceDate, sourceVersion: event!.sequence, changedAt: timestamp, changeType: eventTypeForConsumers(command.action), order: changedOrder, logistics: false, ...(review ? { reviewManifest: review.manifest } : {}) });
     }
-    const matrixStatus = plan.matrixArtifact && changedOrder && currentAllergenReleaseMatchesOrder(plan.currentAllergenRelease, changedOrder, plan.menuItems) ? "ready" : plan.signatures?.some(signature => signature.role === "production_chef") && plan.signatures?.some(signature => signature.role === "head_chef_site_manager") ? changedOrder && !matrixDriveConfiguration(changedOrder).enabled ? "not_configured" : "generating" : undefined;
+    const materializationFailed = materializationResult?.status === "failed";
+    const matrixStatus = plan.matrixArtifact && changedOrder && currentAllergenReleaseMatchesOrder(plan.currentAllergenRelease, changedOrder, plan.menuItems) ? "ready" : plan.currentAllergenRelease?.materializationStatus === "failed" || materializationFailed ? "failed" : plan.signatures?.some(signature => signature.role === "production_chef") && plan.signatures?.some(signature => signature.role === "head_chef_site_manager") ? changedOrder && !matrixDriveConfiguration(changedOrder).enabled ? "not_configured" : "generating" : undefined;
     const signingLineage = changedOrder ? matrixSignatureScope(changedOrder, menuContentHash(plan.menuItems)) : undefined;
-    return NextResponse.json({ plan, signingLineage: signingLineage || null, matrixArtifact: plan.matrixArtifact ?? null, signatures: plan.signatures ?? null, matrixStatus, materializationDelivery: materializationResult || null, notification: notification || (plan.status === "planned" ? { title: "New production plan ready for menu generation.", orderId: plan.orderId } : undefined) });
+    return NextResponse.json({ plan, signingLineage: signingLineage || null, matrixArtifact: plan.matrixArtifact ?? null, signatures: plan.signatures ?? null, matrixStatus, ...(plan.currentAllergenRelease?.materializationError || materializationResult?.error ? { matrixError: plan.currentAllergenRelease?.materializationError || materializationResult?.error } : {}), materializationDelivery: materializationResult || null, notification: notification || (plan.status === "planned" ? { title: "New production plan ready for menu generation.", orderId: plan.orderId } : undefined) });
   } catch (error) { return errorResponse(error); }
 }
 

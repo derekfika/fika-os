@@ -23,6 +23,10 @@ const hospitalityBase = () => (process.env.HOSPITALITY_BOOKING_BASE_URL?.trim() 
 export const CPU_RELEASE_RECONCILIATION_DELAY_MS = 60_000;
 
 const durableArtifact = (artifact: MatrixArtifact | undefined): artifact is MatrixArtifact => Boolean(artifact?.pdfStatus === "generated" && artifact.driveStatus === "saved" && artifact.driveFileId && artifact.contentHash);
+function rendererFailure(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error);
+  return Object.assign(new Error(message || "PDF_RENDERER_ERROR: the hosted PDF renderer failed."), { status: 503, code: "PDF_RENDERER_ERROR" });
+}
 
 /** Render the one service-date master checker. OPLOC materialisation reuses this identity. */
 export async function createCpuMasterArtifact(plan: ProductionPlan, order: ProductionOrder, actor: string, timestamp: string, request: NextRequest, items: PlannedMenuItem[] = plan.menuItems) {
@@ -34,7 +38,7 @@ export async function createCpuMasterArtifact(plan: ProductionPlan, order: Produ
   const withSource = (item: PlannedMenuItem) => ({ ...item, id: `${order.canonicalId}:${item.id}`, name: item.name });
   const html = allergenMatrixHtml({ clientName: "FIKA OS", destinationLabel: "CPU master allergen checker", serviceType: "Delivered-In menu", serviceDate, serviceWindow: order.serviceWindow, requiredBy: order.requiredBy }, items.map(withSource), signatures);
   let pdfBase64: string | undefined;
-  try { pdfBase64 = (await renderPdfToBuffer(html)).toString("base64"); } catch (error) { console.error("FIKA PDF renderer failure", { app: "cpu-production", operation: "allergen-master-pdf-generation", errorName: error instanceof Error ? error.name : "UnknownError", errorMessage: error instanceof Error ? error.message : String(error), serviceDate, requestId: request.headers.get("x-request-id") || undefined, buildSha: process.env.FIKA_BUILD_SHA || undefined }); }
+  try { pdfBase64 = (await renderPdfToBuffer(html)).toString("base64"); } catch (error) { console.error("FIKA PDF renderer failure", { app: "cpu-production", operation: "allergen-master-pdf-generation", errorName: error instanceof Error ? error.name : "UnknownError", errorMessage: error instanceof Error ? error.message : String(error), serviceDate, requestId: request.headers.get("x-request-id") || undefined, buildSha: process.env.FIKA_BUILD_SHA || undefined }); throw rendererFailure(error); }
   if (!pdfBase64) throw Object.assign(new Error("The final allergen checker PDF could not be generated."), { status: 503 });
   const contentHash = dailyBundleSha256(Buffer.from(pdfBase64, "base64"));
   const releaseToken = (plan.currentAllergenRelease?.releaseId || "uncommitted").replace(/[^A-Za-z0-9_-]+/g, "-");
@@ -66,7 +70,7 @@ export async function createCpuReleaseArtifacts(plan: ProductionPlan, order: Pro
     if (durableArtifact(existing)) return { kind, artifact: existing };
     const pdfPath = isHostedPdfRuntime() ? undefined : path.join(os.tmpdir(), `fika-cpu-matrix-${Date.now()}-${Math.random().toString(36).slice(2)}-${fileName}`);
     let pdfBase64: string | undefined;
-    try { const pdf = await renderPdfToBuffer(html); if (pdfPath) await fs.writeFile(pdfPath, pdf); pdfBase64 = pdf.toString("base64"); } catch (error) { console.error("FIKA PDF renderer failure", { app: "cpu-production", operation: "allergen-pdf-generation", errorName: error instanceof Error ? error.name : "UnknownError", errorMessage: error instanceof Error ? error.message : String(error), productionOrderId: order.canonicalId, serviceDate, requestId: request.headers.get("x-request-id") || undefined, buildSha: process.env.FIKA_BUILD_SHA || undefined }); }
+    try { const pdf = await renderPdfToBuffer(html); if (pdfPath) await fs.writeFile(pdfPath, pdf); pdfBase64 = pdf.toString("base64"); } catch (error) { console.error("FIKA PDF renderer failure", { app: "cpu-production", operation: "allergen-pdf-generation", errorName: error instanceof Error ? error.name : "UnknownError", errorMessage: error instanceof Error ? error.message : String(error), productionOrderId: order.canonicalId, serviceDate, requestId: request.headers.get("x-request-id") || undefined, buildSha: process.env.FIKA_BUILD_SHA || undefined }); throw rendererFailure(error); }
     if (!pdfBase64) throw Object.assign(new Error("The final allergen checker PDF could not be generated."), { status: 503 });
     const contentHash = dailyBundleSha256(Buffer.from(pdfBase64, "base64"));
     const response = await fetch(`${hospitalityBase()}/api/allergen-matrix/drive`, { method: "POST", headers: { "content-type": "application/json", ...(request.headers.get("cookie") ? { cookie: request.headers.get("cookie")! } : {}), ...(request.headers.get("x-fika-internal-token") ? { "x-fika-internal-token": request.headers.get("x-fika-internal-token")! } : {}), ...(request.headers.get("x-request-id") ? { "x-request-id": request.headers.get("x-request-id")! } : {}) }, body: JSON.stringify({ name: fileName, html, pdfBase64, productionOrderId: order.canonicalId, releaseId: plan.currentAllergenRelease?.releaseId, weekCommencing: serviceDate }) });
@@ -150,11 +154,18 @@ export async function materializeCommittedCpuRelease(request: NextRequest, order
     console.info("FIKA CPU allergen release materialization", { app: "cpu-production", serviceDate: release.serviceDate, releaseId: release.releaseId, destinationOplocId: order.destinationOplocId, expectedOplocCount: 1, materializedOplocCount: 1, failedOplocCount: 0, pendingOplocCount: 0, packetManifestKey: dailyBundleManifestKey(release.serviceDate, order.destinationOplocId || ""), handoffStatus: deliveries.length ? "staged" : "not_applicable" });
     return { plan: finalPlan, alreadyMaterialized: false, handoffResults };
   } catch (error) {
-    const failed = structuredClone(await repository.get(orderId) || stored);
-    failed.currentAllergenRelease = { ...(failed.currentAllergenRelease || pending), materializationStatus: "failed", materializationError: error instanceof Error ? error.message : String(error) };
-    failed.updatedAt = new Date().toISOString();
-    console.error("FIKA CPU allergen release materialization failed", { app: "cpu-production", serviceDate: order.serviceDate || order.requiredBy.slice(0, 10), releaseId, destinationOplocId: order.destinationOplocId, expectedOplocCount: 1, materializedOplocCount: 0, failedOplocCount: 1, pendingOplocCount: 1, handoffStatus: "retryable", errorName: error instanceof Error ? error.name : "UnknownError", errorMessage: error instanceof Error ? error.message : String(error) });
-    try { await repository.save(failed, (await repository.get(orderId) || stored).updatedAt); } catch { /* the retry re-reads authoritative state */ }
+    const materializationError = error instanceof Error ? error.message : String(error);
+    console.error("FIKA CPU allergen release materialization failed", { app: "cpu-production", serviceDate: order.serviceDate || order.requiredBy.slice(0, 10), releaseId, destinationOplocId: order.destinationOplocId, expectedOplocCount: 1, materializedOplocCount: 0, failedOplocCount: 1, pendingOplocCount: 1, handoffStatus: "retryable", errorName: error instanceof Error ? error.name : "UnknownError", errorMessage: materializationError });
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const current = await repository.get(orderId) || stored;
+      if (current.currentAllergenRelease?.status === "current" && current.currentAllergenRelease.materializationStatus === "ready") break;
+      const failed = structuredClone(current);
+      failed.currentAllergenRelease = { ...(failed.currentAllergenRelease || pending), materializationStatus: "failed", materializationError };
+      failed.updatedAt = new Date().toISOString();
+      try { await repository.save(failed, current.updatedAt); break; } catch (saveError) {
+        if ((saveError as { status?: number }).status !== 409 || attempt === 2) throw saveError;
+      }
+    }
     throw error;
   }
 }

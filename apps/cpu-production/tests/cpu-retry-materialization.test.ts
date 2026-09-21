@@ -4,6 +4,7 @@ import { retryCommittedCpuMaterialization } from "../lib/cpu-retry-materializati
 import { matrixSignatureScope, type ProductionPlan } from "../app/lib/production-plan";
 import { allergenMatrixContentHash, buildCpuAllergenRelease } from "../lib/cpu-allergen-release";
 import { cpuReleaseMaterializationEventId } from "../lib/cpu-release-fanout";
+import type { deliverCpuPropagation } from "../lib/cpu-durable-outbox";
 import type { ProductionOrder } from "../lib/production-types";
 
 const order = {
@@ -95,12 +96,29 @@ test("retry-materialization replays the existing event without mutating the Prod
   const result = await retryCommittedCpuMaterialization({ plan, order, expectedLineage: scope, timestamp: "2026-09-14T08:03:00.000Z" }, {
     replay: async id => { calls.push(`replay:${id}`); return undefined; },
     deliver: async id => { calls.push(`deliver:${id}`); return { eventId: id, status: "delivered" as const, attempts: 1 }; },
+    loadPlan: async () => plan,
   });
   assert.deepEqual(calls, [`replay:${eventId}`, `deliver:${eventId}`]);
   assert.equal(result.materializationDelivery.status, "delivered");
   assert.equal(plan.updatedAt, beforeUpdatedAt);
   assert.deepEqual(plan.audit, beforeAudit);
   assert.equal(plan.updatedBy, "chef");
+});
+
+test("retry-materialization reloads persisted failure state and reports failed delivery", async () => {
+  const plan = planWithRelease();
+  const persisted = structuredClone(plan);
+  persisted.currentAllergenRelease!.materializationStatus = "failed";
+  persisted.currentAllergenRelease!.materializationError = "PDF_RENDERER_ERROR: renderer unavailable";
+  const result = await retryCommittedCpuMaterialization({ plan, order, expectedLineage: scope, timestamp: "2026-09-14T08:03:00.000Z" }, {
+    replay: async () => undefined,
+    deliver: async id => ({ eventId: id, status: "failed" as const, attempts: 1, error: "cpu-production returned HTTP 502: PDF_RENDERER_ERROR: renderer unavailable" } as Awaited<ReturnType<typeof deliverCpuPropagation>>),
+    loadPlan: async () => persisted,
+  });
+  assert.equal(result.matrixStatus, "failed");
+  assert.equal(result.materializationStatus, "failed");
+  assert.equal(result.materializationError, "PDF_RENDERER_ERROR: renderer unavailable");
+  assert.equal(result.plan.currentAllergenRelease?.materializationStatus, "failed");
 });
 
 test("retry-materialization rejects stale lineage before replay", async () => {

@@ -23,6 +23,7 @@ test("second-signature finalisation commits first and materializes through the d
   assert.match(materializer, /const finalResult = await repository\.saveAndAppendCpuChange\(ready, preparedPlan\.updatedAt/);
   assert.match(materializer, /releaseToken/);
   assert.match(materializer, /cpuReleaseMaterializationReceiptId/);
+  assert.match(materializer, /throw rendererFailure\(error\)/);
   assert.doesNotMatch(materializer, /idempotencyKey: `cpu-release-materialize:\$\{releaseId\}:(started|prepared|final)`/);
 });
 

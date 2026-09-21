@@ -146,11 +146,12 @@ test("failed CPU delivery remains observable and bounded recovery retries it", a
   resetCpuOutboxForTests();
   const previousFetch = globalThis.fetch;
   let calls = 0;
-  globalThis.fetch = (async () => { calls += 1; return new Response("unavailable", { status: 503 }); }) as typeof fetch;
+  globalThis.fetch = (async () => { calls += 1; return new Response(JSON.stringify({ error: { message: "PDF_RENDERER_ERROR: renderer unavailable" } }), { status: 503, headers: { "content-type": "application/json" } }); }) as typeof fetch;
   try {
     const [event] = await enqueueCpuPropagation(input);
     const result = await deliverCpuPropagation(event.eventId, new Date("2026-09-15T10:00:00.000Z"));
     assert.equal(result.status, "failed");
+    assert.match(result.error || "", /cpu-production returned HTTP 503: PDF_RENDERER_ERROR: renderer unavailable/);
     assert.equal(calls, 1);
     assert.equal(listCpuOutboxForTests().find(value => value.eventId === event.eventId)?.delivery.status, "failed");
     const recovery = await recoverCpuPropagation(1, new Date("2026-09-15T10:00:31.000Z"));
@@ -158,6 +159,24 @@ test("failed CPU delivery remains observable and bounded recovery retries it", a
     assert.equal(calls, 2);
   } finally {
     globalThis.fetch = previousFetch;
+  }
+});
+
+test("CPU materialization delivery redacts credential-shaped response details", async () => {
+  resetCpuOutboxForTests();
+  const previousFetch = globalThis.fetch;
+  const previousBase = process.env.CPU_PUBLIC_BASE_URL;
+  process.env.CPU_PUBLIC_BASE_URL = "http://cpu.test";
+  globalThis.fetch = (async () => new Response(JSON.stringify({ error: { message: "Google Workspace token=super-secret failed" } }), { status: 502, headers: { "content-type": "application/json" } })) as typeof fetch;
+  try {
+    const event = await enqueueCpuDelivery({ eventId: "cpu-materialize-response-redaction", sourceAggregateId: "release", sourceVersion: 1, occurredAt: "2026-09-14T09:00:00.000Z", consumer: "cpu-production", route: "/api/internal/cpu-release-materialize", body: { orderId: "order:haleon", releaseId: "release" } });
+    const result = await deliverCpuPropagation(event.eventId, new Date("2026-09-14T09:00:00.000Z"));
+    assert.equal(result.status, "failed");
+    assert.match(result.error || "", /Google Workspace token=\[redacted\] failed/);
+    assert.doesNotMatch(result.error || "", /super-secret/);
+  } finally {
+    globalThis.fetch = previousFetch;
+    if (previousBase === undefined) delete process.env.CPU_PUBLIC_BASE_URL; else process.env.CPU_PUBLIC_BASE_URL = previousBase;
   }
 });
 

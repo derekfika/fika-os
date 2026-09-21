@@ -2,6 +2,14 @@ import { NextRequest, NextResponse } from "next/server";
 import { saveGoogleDrivePdf } from "@/lib/google-menu";
 import { hubUserFetch } from "@/lib/hub";
 
+function safeDriveErrorMessage(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error);
+  return message
+    .replace(/Bearer\s+[^\s]+/gi, "Bearer [redacted]")
+    .replace(/(token|secret|password|private[_ -]?key)\s*[:=]\s*[^\s,;}]+/gi, "$1=[redacted]")
+    .slice(0, 1200);
+}
+
 /** Server-side Drive adapter used by CPU Production. Ownership is selected
  * from the canonical Production Order context supplied by the CPU server. */
 export async function POST(request: NextRequest) {
@@ -21,10 +29,9 @@ export async function POST(request: NextRequest) {
       const saved = await saveGoogleDrivePdf({ name: body.name.trim(), pdfBase64: body.pdfBase64, owner, folderId: process.env.GOOGLE_DRIVE_CPU_PRODUCTION_FOLDER_ID, weekCommencing: body.weekCommencing, folderLabel: "CPU production", releaseId: body.releaseId });
       return saved ? NextResponse.json({ saved }) : NextResponse.json({ saved: null, configured: false }, { status: 503 });
     } catch (error) {
-      if (/not configured|folder|OAuth|token/i.test((error as Error).message)) return NextResponse.json({ saved: null, configured: false }, { status: 503 });
-      throw error;
+      return NextResponse.json({ saved: null, configured: false, error: { message: safeDriveErrorMessage(error) } }, { status: 503 });
     }
   } catch (error) {
-    return NextResponse.json({ error: { message: (error as Error).message } }, { status: 502 });
+    return NextResponse.json({ error: { message: safeDriveErrorMessage(error) } }, { status: 502 });
   }
 }

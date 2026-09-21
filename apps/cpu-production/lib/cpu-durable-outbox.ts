@@ -244,6 +244,24 @@ function cpuInternalToken() {
   return token;
 }
 
+function safeInternalResponseMessage(raw: string) {
+  if (!raw.trim()) return undefined;
+  let message: unknown;
+  try {
+    const body = JSON.parse(raw) as { error?: { message?: unknown } | unknown; message?: unknown };
+    message = typeof body.error === "object" && body.error !== null && "message" in body.error
+      ? (body.error as { message?: unknown }).message
+      : body.error || body.message;
+  } catch {
+    message = undefined;
+  }
+  if (typeof message !== "string" || !message.trim()) return undefined;
+  return message
+    .replace(/Bearer\s+[^\s]+/gi, "Bearer [redacted]")
+    .replace(/(token|secret|password|private[_ -]?key)\s*[:=]\s*[^\s,;}]+/gi, "$1=[redacted]")
+    .slice(0, 1200);
+}
+
 async function readOutbox(eventId: string) {
   if (useMemoryOutbox()) return memoryOutbox.get(eventId);
   const snapshot = await db.collection(CPU_PROPAGATION_OUTBOX_COLLECTION).doc(eventId).get();
@@ -302,7 +320,10 @@ export async function deliverCpuPropagation(eventId: string, at = new Date()) {
       body: JSON.stringify(payload.body),
       signal: AbortSignal.timeout(cpuDeliveryTimeoutMs(payload.consumer, payload.route)),
     });
-    if (!response.ok) throw new Error(`${payload.consumer} returned HTTP ${response.status}.`);
+    if (!response.ok) {
+      const detail = safeInternalResponseMessage(await response.text());
+      throw new Error(`${payload.consumer} returned HTTP ${response.status}${detail ? `: ${detail}` : ""}.`);
+    }
     const delivered = markEventDelivered(claimed, new Date().toISOString());
     await writeOutbox(delivered, claimId);
     return { eventId, status: "delivered" as const, attempts: delivered.delivery.attempts + 1 };
