@@ -353,15 +353,28 @@ export default function HospitalityAllergenDetail({
     order.guestCount ||
     order.lines.reduce((sum, line) => sum + (line.customerQuantity || 0), 0);
 
-  const updateMenuItem = (id: string, change: Partial<PlannedMenuItem>) =>
+  const markMatrixEdited = () => {
+    const hadSignedAuthority = signatures.length > 0 || Boolean(matrixArtifact || currentAllergenRelease);
+    if (!hadSignedAuthority) return;
+    setSignatures([]);
+    setMatrixArtifact(undefined);
+    setCurrentAllergenRelease(undefined);
+    setMatrixStorageStatus(undefined);
+    setPlanStatus("planning");
+    setMessage("The matrix changed. Save the amended plan and complete the new evidence before signing again.");
+  };
+  const updateMenuItem = (id: string, change: Partial<PlannedMenuItem>) => {
+    markMatrixEdited();
     setMenuItems((items) =>
       items.map((item) => (item.id === id ? { ...item, ...change } : item)),
     );
+  };
   const updateSubItem = (
     menuId: string,
     subId: string,
     change: Partial<PlannedSubItem>,
-  ) =>
+  ) => {
+    markMatrixEdited();
     setMenuItems((items) =>
       items.map((item) =>
         item.id === menuId
@@ -371,15 +384,19 @@ export default function HospitalityAllergenDetail({
                 sub.id === subId ? { ...sub, ...change } : sub,
               ),
             }
-          : item,
+        : item,
       ),
     );
-  const addMenuItem = () =>
+  };
+  const addMenuItem = () => {
+    markMatrixEdited();
     setMenuItems((items) => [
       ...items,
       { id: `menu-item:${Date.now()}`, name: "", note: "", subItems: [] },
     ]);
-  const addRows = (menuId: string, count: number) =>
+  };
+  const addRows = (menuId: string, count: number) => {
+    markMatrixEdited();
     setMenuItems((items) =>
       items.map((item) =>
         item.id === menuId
@@ -400,10 +417,12 @@ export default function HospitalityAllergenDetail({
                 ),
               ],
             }
-          : item,
+        : item,
       ),
     );
-  const removeSubItem = (menuId: string, subId: string) =>
+  };
+  const removeSubItem = (menuId: string, subId: string) => {
+    markMatrixEdited();
     setMenuItems((items) =>
       items.map((item) =>
         item.id === menuId
@@ -411,12 +430,16 @@ export default function HospitalityAllergenDetail({
               ...item,
               subItems: item.subItems.filter((sub) => sub.id !== subId),
             }
-          : item,
+        : item,
       ),
     );
-  const removeMenuItem = (id: string) =>
+  };
+  const removeMenuItem = (id: string) => {
+    markMatrixEdited();
     setMenuItems((items) => items.filter((item) => item.id !== id));
+  };
   const toggleCell = (menuId: string, sub: PlannedSubItem, key: string) => {
+    markMatrixEdited();
     const allergens = toggleOperationalAllergen(sub.allergens, key as CanonicalAllergenKey);
     updateSubItem(menuId, sub.id, {
       allergens,
@@ -425,6 +448,7 @@ export default function HospitalityAllergenDetail({
   };
   const completeSubItem = (menuId: string, sub: PlannedSubItem) => {
     if (reviewLockedByAuthority || sub.evidenceStatus === "completed") return;
+    markMatrixEdited();
     const nextItems = menuItems.map((item) =>
       item.id === menuId
         ? { ...item, subItems: item.subItems.map((candidate) => candidate.id === sub.id ? { ...candidate, evidenceStatus: "completed" as const } : candidate) }
@@ -437,6 +461,7 @@ export default function HospitalityAllergenDetail({
   const applySandwich = (menuId: string, sub: PlannedSubItem, id: string) => {
     const productionItem = savedProductionItems.find((item) => item.id === id);
     if (!productionItem) return;
+    markMatrixEdited();
     const nextItems = menuItems.map((item) => item.id === menuId ? { ...item, subItems: item.subItems.map((candidate) => candidate.id === sub.id ? {
       ...candidate,
       productionItemId: productionItem.id,

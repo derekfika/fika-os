@@ -62,14 +62,29 @@ function quoteFilename(bookingId: string, companyName: string, extension: "pdf" 
     .replace(/[^A-Za-z0-9._-]+/g, "_");
 }
 
+const QUOTE_REQUEST_TIMEOUT_MS = 60_000;
+
+async function fetchQuoteRequest(input: RequestInfo | URL, init: RequestInit, timeoutMessage: string) {
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), QUOTE_REQUEST_TIMEOUT_MS);
+  try {
+    return await fetch(input, { ...init, signal: controller.signal });
+  } catch (cause) {
+    if (controller.signal.aborted) throw new Error(timeoutMessage);
+    throw cause;
+  } finally {
+    window.clearTimeout(timeout);
+  }
+}
+
 async function saveQuoteDocument(payload: { name: string; html: string; canonicalId: string }) {
   let lastMessage = "The quote PDF could not be saved to Drive.";
   for (let attempt = 0; attempt < 3; attempt += 1) {
-    const response = await fetch("/api/quotes/drive", {
+    const response = await fetchQuoteRequest("/api/quotes/drive", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(payload),
-    });
+    }, "Quote PDF saving timed out. The dashboard remains available; use Retry quote PDF save once the Drive service is responding.");
     const body = await readDashboardJson(response) as { error?: { message?: string }; saved?: { fileId?: string; driveUrl?: string } };
     if (response.ok && body.saved?.fileId) return body.saved;
     lastMessage = body.error?.message || lastMessage;
@@ -336,11 +351,11 @@ export default function HospitalityDashboard({
 
   const persistQuotePdf = async (booking: CanonicalBooking, quote: { id: string; revision: number }) => {
     const saved = await saveQuoteDocument({ name: quoteFilename(booking.canonicalId, booking.client.companyName, "pdf"), html: quoteHtml(booking), canonicalId: booking.canonicalId });
-    const statusResponse = await fetch("/api/dashboard-bookings", {
+    const statusResponse = await fetchQuoteRequest("/api/dashboard-bookings", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ canonicalId: booking.canonicalId, expectedVersion: booking.version, action: "quote-pdf-status", revisionId: quote.id, status: "saved", driveFileId: saved.fileId, driveUrl: saved.driveUrl }),
-    });
+    }, "Quote PDF was saved, but recording its status timed out. Use Retry quote PDF save from the dashboard.");
     const statusBody = await readDashboardJson(statusResponse) as { error?: { message?: string }; booking?: CanonicalBooking };
     if (!statusResponse.ok) throw new Error(statusBody.error?.message || "The quote PDF was saved but could not be recorded against the quote.");
     return statusBody.booking as CanonicalBooking;
@@ -350,31 +365,17 @@ export default function HospitalityDashboard({
     setError("");
     const action = actionOverride || pending;
     if (!selected || !action) return;
-    const quoteWindow = action === "Quoted" ? window.open("", "_blank") : null;
-    if (quoteWindow) {
-      quoteWindow.document.title = "Generating quote PDF…";
-      quoteWindow.document.body.innerHTML = "<main style=\"font-family:Arial,sans-serif;padding:40px;color:#280f8c\"><h1>Generating quote PDF…</h1><p>The quote will open here when it has finished saving.</p></main>";
-    }
-    const showQuoteWindowFailure = (message: string) => {
-      if (!quoteWindow || quoteWindow.closed) return;
-      quoteWindow.document.title = "Quote generation failed";
-      quoteWindow.document.body.innerHTML = "";
-      const main = quoteWindow.document.createElement("main");
-      main.style.cssText = "font-family:Arial,sans-serif;padding:40px;color:#280f8c";
-      const heading = quoteWindow.document.createElement("h1");
-      heading.textContent = "Quote generation failed";
-      const detail = quoteWindow.document.createElement("p");
-      detail.textContent = message;
-      main.append(heading, detail);
-      quoteWindow.document.body.appendChild(main);
-    };
     setActionStage(action === "Quoted" || action === "QuotePdfRetry" ? "Creating quote…" : "Saving changes…");
     if (action === "QuotePdfRetry") {
       const current = selected.quoteState?.revisions.find((revision) => revision.id === selected.quoteState?.currentRevisionId);
-      if (!current) return;
+      if (!current) {
+        setError("The current quote revision could not be found. Reload the booking before retrying.");
+        setPending(null);
+        return;
+      }
       try { setSelected(await persistQuotePdf(selected, current)); setError(""); } catch (cause) { setError((cause as Error).message); }
       setPending(null);
-      await load(false);
+      void load(false);
       return;
     }
     const base = {
@@ -410,16 +411,21 @@ export default function HospitalityDashboard({
       setError("An amendment reason is required.");
       return;
     }
-    const response = await fetch("/api/dashboard-bookings", {
+    const response = await (action === "Quoted"
+      ? fetchQuoteRequest("/api/dashboard-bookings", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(command),
+      }, "Quote creation timed out. No new quote revision was confirmed; check the booking before retrying.")
+      : fetch("/api/dashboard-bookings", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(command),
-    });
+    }));
     const body = await readDashboardJson(response);
     if (!response.ok) {
       const message = body.error?.message || "Could not update this Booking.";
       setError(message);
-      if (action === "Quoted") showQuoteWindowFailure(message);
       return;
     }
     setSelected(body.booking || selected);
@@ -434,31 +440,28 @@ export default function HospitalityDashboard({
         if (quote) {
           const saved = await saveQuoteDocument({ name: quoteFilename(body.booking.canonicalId, body.booking.client.companyName, "pdf"), html: quoteHtml(body.booking), canonicalId: body.booking.canonicalId });
           setActionStage("Recording quote status…");
-          const statusResponse = await fetch("/api/dashboard-bookings", {
+          const statusResponse = await fetchQuoteRequest("/api/dashboard-bookings", {
             method: "POST",
             headers: { "content-type": "application/json" },
             body: JSON.stringify({ canonicalId: body.booking.canonicalId, expectedVersion: body.booking.version, action: "quote-pdf-status", revisionId: quote.id, status: "saved", driveFileId: saved.fileId, driveUrl: saved.driveUrl }),
-          });
+          }, "Quote PDF was saved, but recording its status timed out. Use Retry quote PDF save from the dashboard.");
           const statusBody = await readDashboardJson(statusResponse);
           if (!statusResponse.ok) {
             const message = statusBody.error?.message || "The quote PDF was saved but could not be recorded against the quote.";
             setError(message);
-            showQuoteWindowFailure(message);
           }
           else {
             pdfSaved = true;
             const savedBooking = statusBody.booking || body.booking;
             setSelected(savedBooking);
-            if (quoteWindow && saved.driveUrl) quoteWindow.location.href = saved.driveUrl;
           }
         }
       } catch (cause) {
         const message = `Quote created, but Drive saving failed: ${(cause as Error).message}`;
         setError(message);
-        showQuoteWindowFailure(message);
       }
       if (!pdfSaved && body.booking.quoteState?.currentRevisionId) {
-        await fetch("/api/dashboard-bookings", {
+        void fetchQuoteRequest("/api/dashboard-bookings", {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({
@@ -469,7 +472,7 @@ export default function HospitalityDashboard({
             status: "failed",
             error: "The quote PDF could not be persisted to Drive.",
           }),
-        }).catch(() => undefined);
+        }, "The quote PDF failure status could not be recorded.").catch(() => undefined);
       }
     }
     if (action === "Production") {
@@ -491,7 +494,7 @@ export default function HospitalityDashboard({
     setPending(null);
     setReason("");
     setAmendment(null);
-    await load(action !== "Quoted");
+    void load(action !== "Quoted");
   };
 
   const act = async (actionOverride?: WorkflowAction | null) => {
