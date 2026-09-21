@@ -4,18 +4,13 @@ export type MatrixDriveConfiguration =
   | { enabled: true; ownerKey: string }
   | { enabled: false; reason: "not_configured" };
 
-function ownerKey(order: ProductionOrder) {
-  if (order.origin === "hospitality_booking") {
-    return order.destinationOplocId?.replace(/^oploc:/, "").replace(/[^A-Za-z0-9]+/g, "_").toUpperCase();
-  }
-  return "APP_CPU_PRODUCTION";
-}
+function ownerKey(_order: ProductionOrder) { return "APP_CPU_PRODUCTION"; }
 
 /** Server-only readiness gate. It never exposes configuration to browser code. */
 export function matrixDriveConfiguration(order: ProductionOrder): MatrixDriveConfiguration {
   const key = ownerKey(order);
   if (!key || !process.env.GOOGLE_WORKSPACE_DWD_SERVICE_ACCOUNT_JSON?.trim()) return { enabled: false, reason: "not_configured" };
-  const ownerEmail = process.env[`GOOGLE_DRIVE_OWNER_EMAIL_${order.origin === "hospitality_booking" ? `OPLOC_${key}` : key}`]?.trim();
+  const ownerEmail = process.env[`GOOGLE_DRIVE_OWNER_EMAIL_${key}`]?.trim();
   // The shared Drive adapter resolves the governed default folder hierarchy
   // when no explicit root is supplied. A folder override is optional; this
   // gate only requires the DWD credential and governed owner identity.

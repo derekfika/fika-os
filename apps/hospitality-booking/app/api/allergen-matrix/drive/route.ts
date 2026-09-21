@@ -14,10 +14,11 @@ export async function POST(request: NextRequest) {
       const orderResponse = await hubUserFetch(`/api/production?canonicalId=${encodeURIComponent(body.productionOrderId.trim())}`, request.headers.get("cookie"), { headers: { accept: "application/json", ...(request.headers.get("x-fika-internal-token") ? { "x-fika-internal-token": request.headers.get("x-fika-internal-token")! } : {}), ...(request.headers.get("x-request-id") ? { "x-request-id": request.headers.get("x-request-id")! } : {}) } });
       const orderBody = await orderResponse.json() as { order?: { origin?: string; destinationOplocId?: string } };
       if (!orderResponse.ok || !orderBody.order) return NextResponse.json({ error: { message: "The canonical Production Order could not be loaded for Drive workspace selection." } }, { status: orderResponse.status || 502 });
-      const isHospitality = orderBody.order.origin === "hospitality_booking";
-      if (isHospitality && !orderBody.order.destinationOplocId?.trim()) return NextResponse.json({ error: { message: "The hospitality Production Order has no canonical OPLOC for its Drive workspace." } }, { status: 422 });
-      const owner = isHospitality ? { type: "oploc-workspace" as const, oplocId: orderBody.order.destinationOplocId!.trim() } : { type: "app-workspace" as const, appId: "cpu-production" as const };
-      const saved = await saveGoogleDrivePdf({ name: body.name.trim(), pdfBase64: body.pdfBase64, owner, folderId: isHospitality ? undefined : process.env.GOOGLE_DRIVE_CPU_PRODUCTION_FOLDER_ID, weekCommencing: body.weekCommencing, folderLabel: isHospitality ? "Hospitality allergen matrix" : "CPU production", releaseId: body.releaseId });
+      // CPU owns the matrix artifact regardless of the upstream source. The
+      // destination OPLOC remains part of the Production Order lineage, but
+      // it must not select a different Drive identity or block CPU storage.
+      const owner = { type: "app-workspace" as const, appId: "cpu-production" as const };
+      const saved = await saveGoogleDrivePdf({ name: body.name.trim(), pdfBase64: body.pdfBase64, owner, folderId: process.env.GOOGLE_DRIVE_CPU_PRODUCTION_FOLDER_ID, weekCommencing: body.weekCommencing, folderLabel: "CPU production", releaseId: body.releaseId });
       return saved ? NextResponse.json({ saved }) : NextResponse.json({ saved: null, configured: false }, { status: 503 });
     } catch (error) {
       if (/not configured|folder|OAuth|token/i.test((error as Error).message)) return NextResponse.json({ saved: null, configured: false }, { status: 503 });

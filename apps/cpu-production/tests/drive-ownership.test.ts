@@ -5,7 +5,7 @@ import test from "node:test";
 test("CPU production matrices use governed Drive ownership for each canonical source", async () => {
   const source = await readFile(new URL("../app/api/production-plan/route.ts", import.meta.url), "utf8");
   const materializer = await readFile(new URL("../lib/cpu-release-materialization.ts", import.meta.url), "utf8");
-  assert.equal((materializer.match(/\/api\/allergen-matrix\/drive/g) || []).length, 1);
+  assert.equal((materializer.match(/\/api\/allergen-matrix\/drive/g) || []).length, 2);
   assert.match(materializer, /HOSPITALITY_BOOKING_BASE_URL/);
   assert.match(materializer, /productionOrderId: order\.canonicalId/);
   assert.match(materializer, /matrixDriveConfiguration\(order\)\.enabled/);
