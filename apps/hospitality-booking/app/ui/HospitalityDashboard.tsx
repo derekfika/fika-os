@@ -302,11 +302,12 @@ export default function HospitalityDashboard({
   useEffect(() => {
     if (!selected) return;
     const bookingId = selected.canonicalId;
-    void fetch(`/api/menus?bookingId=${encodeURIComponent(bookingId)}&readiness=1`, { cache: "no-store" })
+    const productionOrderId = productionOrders[bookingId]?.canonicalId;
+    void fetch(`/api/menus?bookingId=${encodeURIComponent(bookingId)}&readiness=1${productionOrderId ? `&productionOrderId=${encodeURIComponent(productionOrderId)}` : ""}`, { cache: "no-store" })
       .then((response) => response.json())
       .then((body) => setMenuReadiness((current) => ({ ...current, [bookingId]: body.readiness || { available: false, reason: "Menu readiness is unavailable." } })))
       .catch(() => setMenuReadiness((current) => ({ ...current, [bookingId]: { available: false, reason: "Menu readiness is unavailable." } })));
-  }, [selected?.canonicalId, selected?.version, productionOrders[selected?.canonicalId || ""]?.updatedAt]);
+  }, [selected?.canonicalId, selected?.version, productionOrders[selected?.canonicalId || ""]?.canonicalId, productionOrders[selected?.canonicalId || ""]?.updatedAt]);
 
   // CPU planning is a shared projection, so keep an open manager panel current
   // while the production team is working without requiring a manual refresh.

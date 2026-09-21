@@ -11,6 +11,9 @@ const storePath = path.join(process.cwd(), "local-data", "hospitality-booking", 
 async function readOutputs(): Promise<MenuOutput[]> { try { return JSON.parse(await fs.readFile(storePath, "utf8")) as MenuOutput[]; } catch { return []; } }
 async function writeOutputs(outputs: MenuOutput[]) { await fs.mkdir(path.dirname(storePath), { recursive: true }); await fs.writeFile(storePath, JSON.stringify(outputs, null, 2), "utf8"); }
 function cpuBase() { return (process.env.CPU_PRODUCTION_BASE_URL || "http://localhost:3400").replace(/\/$/, ""); }
+function productionOrderCandidates(bookingId: string, productionOrderId?: string, sourceBookingId?: string) {
+  return [...new Set([productionOrderId, `production-order:v1:${bookingId}`, `production-order:${bookingId}`, bookingId, sourceBookingId].filter(Boolean))] as string[];
+}
 function planReadiness(plan?: { status: string; menuItems?: Array<{ name?: string; subItems?: Array<{ name?: string; allergens?: Record<string, string> }> }> }) {
   if (!plan) return { available: false, reason: "The CPU plan is not available yet." };
   if (plan.status !== "planned") return { available: false, reason: "The CPU plan must be marked Planned first." };
@@ -29,7 +32,7 @@ export async function GET(request: NextRequest) {
   if (!bookingResponse.ok) return NextResponse.json({ readiness: { available: false, reason: bookingBody.error?.message || "The Booking could not be loaded." } }, { status: bookingResponse.status });
   const booking = bookingBody.bookings?.find((item) => item.canonicalId === bookingId);
   if (!booking) return NextResponse.json({ readiness: { available: false, reason: "The Booking could not be found." } }, { status: 404 });
-  const candidates = [...new Set([`production-order:v1:${booking.canonicalId}`, `production-order:${booking.canonicalId}`, booking.canonicalId, booking.source.sourceBookingId])];
+  const candidates = productionOrderCandidates(booking.canonicalId, request.nextUrl.searchParams.get("productionOrderId") || undefined, booking.source.sourceBookingId);
   let plan: { id: string; status: string; updatedAt: string; menuItems: Array<{ name: string; subItems: Array<{ name: string; allergens: Record<string, string> }> }> } | undefined;
   for (const candidate of candidates) {
     const response = await fetch(`${cpuBase()}/api/production-plan?orderId=${encodeURIComponent(candidate)}`, { cache: "no-store" });
@@ -52,7 +55,7 @@ export async function POST(request: NextRequest) {
     if (!booking.service.oplocId) return NextResponse.json({ error: { message: "The Booking has no canonical OPLOC." } }, { status: 409 });
     // Prefer the shared canonical production-order ID, while retaining the
     // original portal reference as a compatibility fallback for this booking.
-    const candidates = [...new Set([body.productionOrderId, `production-order:v1:${body.bookingId}`, `production-order:${body.bookingId}`, body.bookingId, booking.source.sourceBookingId].filter(Boolean))] as string[];
+    const candidates = productionOrderCandidates(body.bookingId, body.productionOrderId, booking.source.sourceBookingId);
     let cpuBody: { plan?: { id: string; status: string; updatedAt: string; menuItems: Array<{ name: string; subItems: Array<{ name: string; allergens: Record<string, string> }> }> }; error?: { message?: string } } = {};
     for (const cpuOrderId of candidates) {
       const cpuResponse = await fetch(`${cpuBase()}/api/production-plan?orderId=${encodeURIComponent(cpuOrderId)}`, { cache: "no-store" });
