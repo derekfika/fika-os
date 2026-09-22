@@ -2,9 +2,15 @@ import { NextRequest, NextResponse } from "next/server";
 import { hostedRuntime } from "./lib/runtime";
 import { admissionFailure, admissionJson, parseAdmissionBody } from "../../shared/admission";
 import { logAuthDiagnostic, requestIdFor } from "../../shared/auth-diagnostics";
+import { internalTokenAllowed } from "../shared/internal-auth";
 
 export async function middleware(request: NextRequest) {
   if (!hostedRuntime()) return NextResponse.next();
+  // Service-to-service projection invalidations are authenticated by the
+  // internal token at the route boundary. They must not be redirected through
+  // the browser/session admission flow, which has no user cookie and would
+  // incorrectly return 401 before the route can validate the token.
+  if (internalTokenAllowed(request)) return NextResponse.next();
   const requestId = requestIdFor(request);
   logAuthDiagnostic(request, { authStage: "middleware-admission-request", status: 200, code: "AUTH_ADMISSION_REQUESTED", requestId });
   const hub = process.env.FIKA_HUB_BASE_URL?.trim();
