@@ -83,6 +83,7 @@ test("invalidation endpoint and upstream notifier are narrow and internal-only",
   const client = readFileSync(new URL("../../integration-hub/lib/logistics-projection-client.ts", import.meta.url), "utf8");
   assert.match(route, /x-fika-internal-token/);
   assert.match(route, /invalidateLogisticsProjection/);
+  assert.match(route, /LOGISTICS_PROJECTION_CHANGE_TYPES/);
   assert.match(client, /\/api\/logistics\/invalidate/);
   assert.match(client, /sourceVersion/);
 });

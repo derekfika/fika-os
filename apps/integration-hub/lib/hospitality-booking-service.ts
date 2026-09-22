@@ -27,6 +27,7 @@ import {
   type ProductionOrder as ProductionOrderV1,
 } from "./production-domain";
 import { notifyCpuProjection } from "./cpu-projection-client";
+import { deliverLogisticsProjectionForProductionOrder } from "./logistics-projection-outbox";
 import { localBookingFixtures } from "./local-booking-fixtures";
 import { capGallagherMinimum, GALLAGHER_MINIMUM_GUESTS, isGallagherBooking } from "./gallagher-rules";
 import { recordDataAccess } from "@fika/server-shared/data-source-meter-server";
@@ -1342,6 +1343,7 @@ export async function createProductionOrder(
   );
   const order = result.order;
   const projectionPropagation = await propagateProductionChanges([{ order, changeType: "created", idempotencyKey: `cpu-projection:${order.canonicalId}:v${order.version}` }]);
+  const logisticsProjection = await deliverLogisticsProjectionForProductionOrder(order);
   const state: ProductionOrder["state"] =
     order.status === "cancelled"
       ? "Cancelled"
@@ -1358,6 +1360,7 @@ export async function createProductionOrder(
   return {
     created: result.created,
     projectionPropagation,
+    logisticsProjectionPropagation: logisticsProjection?.delivery.status === "delivered" ? { status: "delivered" as const } : { status: "pending" as const },
     productionOrder: {
       canonicalId: order.canonicalId,
       bookingId: order.sourceBookingId,

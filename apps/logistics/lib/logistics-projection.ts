@@ -1,4 +1,6 @@
 import type { DeliveryLoad, DeliveryRun, DeliveryStop, LogisticsAssignment, LogisticsChangeEvent, LogisticsDayProjection, LogisticsJob, LogisticsProjectionJob, LogisticsProjectionLoad, LogisticsSourceLineage, MovementRequest } from "./types";
+import type { LogisticsProjectionInvalidation } from "../../shared/logistics-projection";
+export type { LogisticsProjectionInvalidation } from "../../shared/logistics-projection";
 
 const totalUnits = (job: LogisticsJob) => job.contents.reduce((sum, item) => sum + item.quantity, 0);
 
@@ -40,8 +42,6 @@ export function buildLogisticsDayProjection(input: { serviceDate: string; jobs: 
   const sourceLineage = [...new Map(jobs.filter((job) => job.sourceVersion !== undefined).map((job) => [`${job.sourceType}:${job.sourceId}`, { sourceDomain: job.sourceType, sourceEntityId: job.sourceId, sourceVersion: job.sourceVersion!, ...(job.sourceContentHash ? { sourceContentHash: job.sourceContentHash } : {}), changedAt: job.updatedAt } satisfies LogisticsSourceLineage])).values()].slice(0, 200);
   return { serviceDate: input.serviceDate, revision: input.revision || 1, lastChangeSequence: input.lastChangeSequence || 0, state: validEmpty ? "VALID_EMPTY" as const : "CURRENT" as const, completeness: { fulfilment: "complete" as const, cpu: "not_required" as const, oploc: "complete" as const }, sourceLineage, reconciliation: { status: "current" as const, checkedAt: now }, planningQueue: queue, deliveryLoads: mergedLoads, runs: projectedRuns, stops: projectedStops, movements: projectedMovements, collectionRequiredKeys: input.collectionRequiredKeys || [], exceptions: Array.from(new Set(exceptions)), summary: { queuedJobs: queue.length, loads: mergedLoads.length, assignedJobs: jobs.length - queue.length, collectedJobs: jobs.filter((job) => job.collectionStatus === "collected").length }, rebuiltAt: now };
 }
-
-export type LogisticsProjectionInvalidation = { serviceDate: string; sourceDomain: string; sourceEntityId: string; sourceVersion: number; sourceContentHash?: string; changedAt: string; changeType: "amended" | "cancelled" | "withdrawn" | "superseded" | "status-changed" };
 
 export function applyLogisticsProjectionInvalidation(projection: LogisticsDayProjection, change: LogisticsProjectionInvalidation) {
   if (projection.serviceDate !== change.serviceDate) return { projection, applied: false as const, reason: "unrelated-service-date" as const };

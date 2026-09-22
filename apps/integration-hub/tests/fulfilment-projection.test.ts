@@ -5,6 +5,8 @@ import { fulfilmentFromGrabAndGoOrder, fulfilmentFromProductionOrder, fulfilment
 import { applyFulfilmentEvent, listFulfilmentReceipts, listFulfilmentRequirements, normaliseFulfilmentEvent, shouldApplyFulfilmentVersion } from "../lib/fulfilment-projection";
 import { db } from "../lib/firebase-admin";
 import { stableDocumentId } from "../lib/canonical-editor";
+import { getLogisticsProjectionOutboxEvent } from "../lib/logistics-projection-outbox";
+import { logisticsProjectionEventId } from "../../shared/logistics-projection";
 
 const menuDay = { publicationDayId: "publication:day:v1", sourceDayId: "rolling-week:day:1", version: 2, contentHash: "hash", date: "2026-08-24", status: "published" as const, entries: [{ sourceEntryId: "entry:1", canonicalDishId: "dish:leaf", dishName: "Mixed Leaf", slot: "SALAD", allocations: [{ destinationId: "oploc:haleon", destinationLabel: "Haleon", quantity: 7 }] }] };
 const grabOrder = { orderId: "grab-and-go:oploc:haleon:2026-08-24", oplocId: "oploc:haleon", deliveryDate: "2026-08-24", version: 3, status: "submitted" as const, lines: [{ productId: "grab:pot", productName: "Fruit Pot", quantity: 4, sortOrder: 0 }] };
@@ -38,6 +40,10 @@ test("canonical destination identity prevents display labels from merging requir
   const other = fulfilmentFromGrabAndGoOrder({ ...grabOrder, oplocId: "oploc:other" }, "site");
   assert.notEqual(haleon.canonicalId, other.canonicalId);
   assert.notEqual(haleon.destinationOplocId, other.destinationOplocId);
+  assert.notEqual(
+    logisticsProjectionEventId({ ...haleon, destinationOplocId: haleon.destinationOplocId }),
+    logisticsProjectionEventId({ ...other, destinationOplocId: other.destinationOplocId }),
+  );
 });
 
 test("ProductionOrder lifecycle maps explicitly to Fulfilment lifecycle", () => {
@@ -78,6 +84,9 @@ test("the central store receives all three sources and applies amendments, withd
   const events = requirements.map(requirement => createDomainEvent({ eventType: "fulfilment.requirement.created", sourceAggregateId: requirement.canonicalId, sourceVersion: requirement.sourceVersion, occurredAt: "2026-08-20T10:00:00Z", payload: requirement }));
   try {
     for (const event of events) assert.equal((await applyFulfilmentEvent(event)).applied, true);
+    const staged = await getLogisticsProjectionOutboxEvent(logisticsProjectionEventId({ serviceDate: requirements[2].serviceDate, sourceDomain: requirements[2].sourceDomain, sourceEntityId: requirements[2].sourceEntityId, sourceVersion: requirements[2].sourceVersion, destinationOplocId: requirements[2].destinationOplocId }));
+    assert.equal(staged?.payload.changeType, "created");
+    assert.equal(staged?.delivery.status, "pending");
     assert.equal((await applyFulfilmentEvent(events[0])).duplicate, true);
     const sameVersionConflict = fulfilmentFromGrabAndGoOrder({ ...grab, lines: [{ ...grab.lines[0], quantity: 8 }] }, "site", "2026-08-20T10:01:00Z");
     const conflictResult = await applyFulfilmentEvent(createDomainEvent({ eventType: "fulfilment.requirement.amended", sourceAggregateId: sameVersionConflict.canonicalId, sourceVersion: sameVersionConflict.sourceVersion, occurredAt: "2026-08-20T10:01:00Z", payload: sameVersionConflict }));
@@ -98,9 +107,11 @@ test("the central store receives all three sources and applies amendments, withd
   } finally {
     const requirementsSnapshot = await db.collection("fikaFulfilmentRequirementsV1").get();
     const receiptsSnapshot = await db.collection("fikaDomainEventInboxV1").get();
+    const logisticsOutboxSnapshot = await db.collection("fikaLogisticsProjectionOutboxV1").get();
     const batch = db.batch();
     for (const doc of requirementsSnapshot.docs) if ((doc.data() as { sourceEntityId?: string }).sourceEntityId?.endsWith(suffix)) batch.delete(doc.ref);
     for (const doc of receiptsSnapshot.docs) if (String(doc.data().eventId || "").includes(suffix)) batch.delete(doc.ref);
+    for (const doc of logisticsOutboxSnapshot.docs) if (String(doc.data().payload?.sourceEntityId || "").includes(suffix)) batch.delete(doc.ref);
     await batch.commit();
   }
 });

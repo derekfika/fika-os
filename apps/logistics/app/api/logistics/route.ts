@@ -60,7 +60,6 @@ import type { Transaction } from "firebase-admin/firestore";
 import type { PlannerWeekSummary } from "@/lib/planner-read-model";
 import type { DeliveryRun, DeliveryStop, LogisticsDayProjection, MovementRequest } from "@/lib/types";
 import type { FulfilmentRequirement } from "../../../../shared/fulfilment-requirement";
-import type { ProductionContext } from "@/lib/upstream";
 
 class HttpError extends Error {
   constructor(
@@ -229,16 +228,9 @@ function clearPlannedSchedule(stop: DeliveryStop, now: string, by: string) {
   } as DeliveryStop;
 }
 
-function productionIsCancelled(production: ProductionContext) {
-  return production.status === "cancelled" || production.workflowStatus === "cancelled";
-}
-
 function activeLogisticsRequirements(
   requirements: FulfilmentRequirement[],
-  production: ProductionContext[],
 ) {
-  const activeProduction = production.filter((item) => !productionIsCancelled(item));
-  const currentProductionIds = new Set(production.map((item) => item.canonicalId));
   return requirements.filter((requirement) => {
     if (requirement.status === "withdrawn") return false;
     // FIKA Xchange is the CPU site: its own delivered-in/production demand is
@@ -246,15 +238,9 @@ function activeLogisticsRequirements(
     // Movement Requests are a separate collection and are intentionally not
     // filtered here, so CPU-to-site transfers remain plannable.
     if (requirement.destinationOplocId === CPU_SITE_OPLOC_ID) return false;
-    if (requirement.sourceDomain !== "cpu-production") return true;
-    if (currentProductionIds.has(requirement.sourceEntityId)) {
-      const current = production.find((item) => item.canonicalId === requirement.sourceEntityId);
-      return Boolean(current && !productionIsCancelled(current));
-    }
-    // A requirement with no current CPU order is a stale revision when CPU
-    // still exposes another revision for the same booking. Do not show it as
-    // assignable logistics work.
-    return false;
+    // Fulfilment Requirement is the existence authority. CPU Production is
+    // optional enrichment and must never remove canonical delivery work.
+    return true;
   });
 }
 
@@ -265,13 +251,12 @@ function validOperationalDate(value: string) {
 }
 
 async function classifyMissingProjection(serviceDate: string, cookie?: string) {
-  const [requirements, production, state, loadState] = await Promise.all([
+  const [requirements, state, loadState] = await Promise.all([
     fetchRequirements(serviceDate, cookie),
-    fetchProductionContexts(serviceDate, cookie),
     listState(serviceDate),
     listDeliveryLoadState(serviceDate),
   ]);
-  const activeRequirements = activeLogisticsRequirements(requirements.filter((item) => item.serviceDate === serviceDate), production);
+  const activeRequirements = activeLogisticsRequirements(requirements.filter((item) => item.serviceDate === serviceDate));
   const hasLocalState = state.runs.length > 0 || state.stops.length > 0 || state.movements.length > 0 || loadState.jobs.length > 0 || loadState.loads.length > 0 || loadState.assignments.length > 0;
   return activeRequirements.length || hasLocalState ? "NOT_MATERIALIZED" as const : "EMPTY" as const;
 }
@@ -313,61 +298,6 @@ async function assertProjectionCurrent(serviceDate: string, transaction?: Transa
   if (!projection || projection.state === "STALE" || projection.state === "PARTIAL" || projection.state === "UNAVAILABLE" || projection.lastChangeSequence < headSequence)
     throw new HttpError(409, "Logistics changed upstream. Wait for reconciliation, then refresh before continuing.");
   return projection;
-}
-
-async function reconcileLogisticsDay(serviceDate: string, by: string, actorId = "system:read-reconcile", cookie?: string) {
-  const requirements = await fetchRequirements(serviceDate, cookie);
-  const production = await fetchProductionContexts(serviceDate, cookie);
-  const oplocs = await fetchOplocs(cookie);
-  const existingState = await listDeliveryLoadState(serviceDate);
-  const existing = existingState.jobs;
-  const assignedJobIds = new Set(existingState.assignments.map((assignment) => assignment.jobId));
-  const activeRequirements = activeLogisticsRequirements(requirements.filter((item) => item.serviceDate === serviceDate), production);
-  const hasNativeGrabAndGo = (requirement: FulfilmentRequirement) => activeRequirements.some((item) => item.sourceDomain === "grab-and-go" && item.serviceDate === requirement.serviceDate && item.destinationOplocId === requirement.destinationOplocId);
-  const reconciledRequirements = activeRequirements.filter((requirement) => !(requirement.sourceDomain === "cpu-production" && requirement.sourceEntityId.includes("grab-and-go") && hasNativeGrabAndGo(requirement)));
-  const existingBySource = new Map(existing.map((job) => [`${job.sourceType}:${job.sourceId}`, job]));
-  let created = 0;
-  let updated = 0;
-  let lastChangeSequence = 0;
-  const now = new Date().toISOString();
-  for (const requirement of reconciledRequirements) {
-    const key = `${requirement.sourceDomain}:${requirement.sourceEntityId}`;
-    const prior = existingBySource.get(key);
-    const readiness = requirement.status === "pending" ? "pending" as const : requirement.status === "amended" ? "attention" as const : "ready" as const;
-    const originOplocId = requirement.productionLocationId || CPU_PRODUCTION_LOCATION_ID;
-    const next = {
-      id: prior?.id || `logistics-job:${requirement.canonicalId}`,
-      sourceType: requirement.sourceDomain,
-      sourceId: requirement.sourceEntityId,
-      sourceVersion: requirement.sourceVersion,
-      serviceDate: requirement.serviceDate,
-      ...(originOplocId ? { originOplocId } : {}),
-      destinationOplocId: requirement.destinationOplocId,
-      destinationLabelSnapshot: oplocs.find((oploc) => oploc.id === requirement.destinationOplocId)?.label || requirement.destinationLabelSnapshot,
-      ...(requirement.requiredDeliveryWindow ? { requestedWindow: requirement.requiredDeliveryWindow } : requirement.readyAt ? { requestedWindow: { startTime: requirement.readyAt.slice(11, 16) } } : {}),
-      productionReadiness: readiness,
-      collectionStatus: prior?.collectionStatus || "awaiting" as const,
-      contents: requirement.lines.map((line) => ({ description: line.displayNameSnapshot, quantity: line.quantity, unit: line.unit })),
-      createdAt: prior?.createdAt || now,
-      updatedAt: now,
-      version: (prior?.version || 0) + 1,
-      audit: [...(prior?.audit || []), { action: prior ? "reconciled-job-updated" : "reconciled-job-created", at: now, by, version: (prior?.version || 0) + 1 }],
-    } as import("@/lib/types").LogisticsJob;
-    await saveLogisticsJob(next);
-    const event = await appendLogisticsChange({ serviceDate: next.serviceDate, entityType: "logisticsJob", entityId: next.id, changeType: prior ? "reconciled-job-updated" : "reconciled-job-created", revision: next.version, changedAt: now, actorId });
-    lastChangeSequence = Math.max(lastChangeSequence, event.sequence);
-    if (prior) updated++; else created++;
-  }
-  for (const job of existing) {
-    if (assignedJobIds.has(job.id) || reconciledRequirements.some((requirement) => requirement.sourceDomain === job.sourceType && requirement.sourceEntityId === job.sourceId)) continue;
-    if (job.destinationOplocId === CPU_SITE_OPLOC_ID || job.sourceType === "cpu-production" || (job.sourceType === "grab-and-go" && hasNativeGrabAndGo({ sourceDomain: "grab-and-go", sourceEntityId: job.sourceId, serviceDate: job.serviceDate, destinationOplocId: job.destinationOplocId } as FulfilmentRequirement))) {
-      await logisticsJobs().doc(job.id).delete();
-      const event = await appendLogisticsChange({ serviceDate: job.serviceDate, entityType: "logisticsJob", entityId: job.id, changeType: "stale-upstream-job-removed", revision: job.version + 1, changedAt: now, actorId });
-      lastChangeSequence = Math.max(lastChangeSequence, event.sequence);
-    }
-  }
-  const projection = await rebuildLogisticsProjection(serviceDate, by, lastChangeSequence);
-  return { created, updated, projection, requirements };
 }
 
 async function getLogistics(request: NextRequest) {
@@ -454,13 +384,10 @@ async function getLogistics(request: NextRequest) {
     // One bounded five-day range read keeps the week view from asking Hub for
     // the complete fulfilment projection and avoids a five-request fan-out.
     const requirementsResult = await fetchRequirementsForDateRange(dates[0], addOperationalDays(dates[4], 1), cookie).catch(() => []);
-    const productionByDate = await Promise.all(
-      dates.map((serviceDate) => fetchProductionContexts(serviceDate, cookie).catch(() => [])),
-    );
     const dayStates = await Promise.all(dates.map((serviceDate) => listState(serviceDate)));
     const summaries: PlannerWeekSummary[] = dates.map((serviceDate, index) => {
       const state = dayStates[index];
-      const requirements = activeLogisticsRequirements(requirementsResult.filter((requirement) => requirement.serviceDate === serviceDate), productionByDate[index]);
+      const requirements = activeLogisticsRequirements(requirementsResult.filter((requirement) => requirement.serviceDate === serviceDate));
       const planner = buildPlannerDay({
         serviceDate,
         requirements,
@@ -534,7 +461,7 @@ async function getLogistics(request: NextRequest) {
   const oplocs = oplocsResult.status === "fulfilled" ? oplocsResult.value : [];
   const production =
     productionResult.status === "fulfilled" ? productionResult.value : [];
-  const requirements = activeLogisticsRequirements(upstreamRequirements, production);
+  const requirements = activeLogisticsRequirements(upstreamRequirements);
   const projection = await getLogisticsProjection(date);
   const health = {
     fulfilment:

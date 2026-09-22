@@ -4,6 +4,7 @@ import { requireActor } from "@/lib/auth";
 import { assertPermission } from "@/lib/authmod";
 import { applyFulfilmentEvent, listFulfilmentRequirements, listFulfilmentReceipts } from "@/lib/fulfilment-projection";
 import { internalTokenAllowed } from "../../../../shared/internal-auth";
+import { deliverLogisticsProjectionForRequirement } from "@/lib/logistics-projection-outbox";
 
 function internalAllowed(request: NextRequest) {
   return internalTokenAllowed(request);
@@ -23,7 +24,8 @@ export async function POST(request: NextRequest) {
     if (!internalAllowed(request)) { const actor = await requireActor(request, ["integration-admin", "reviewer"]); assertPermission(actor, "canonical.edit"); }
     const event = await request.json();
     const result = await applyFulfilmentEvent(event);
-    return NextResponse.json(result, { status: result.error ? 422 : result.duplicate ? 200 : 202 });
+    const logisticsHandoff = result.requirement ? await deliverLogisticsProjectionForRequirement(result.requirement) : undefined;
+    return NextResponse.json({ ...result, ...(logisticsHandoff ? { logisticsHandoff: logisticsHandoff.delivery.status } : {}) }, { status: result.error ? 422 : result.duplicate ? 200 : 202 });
   } catch (error) { return errorResponse(error); }
 }
 

@@ -62,9 +62,10 @@ test("Hospitality handoff, amendment, and cancellation share CPU propagation", (
   assert.match(service, /propagateProductionChanges\(\[\{ order, changeType: "created"/);
 });
 
-test("CPU is the single downstream fanout owner for Hub production mutations", () => {
+test("Hub production mutations directly stage and deliver Logistics invalidation", () => {
   assert.match(route, /notifyCpuProjection/);
-  assert.doesNotMatch(route, /notifyLogisticsProjection/);
+  assert.match(route, /deliverLogisticsProjectionForProductionOrder/);
+  assert.match(readFileSync(new URL("../app/api/production/materialise/route.ts", import.meta.url), "utf8"), /deliverLogisticsProjectionForProductionOrder/);
   assert.match(bookingRoute, /createProductionOrder/);
 });
 

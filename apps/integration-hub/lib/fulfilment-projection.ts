@@ -13,6 +13,7 @@ import { db } from "./firebase-admin";
 import { stableDocumentId } from "./canonical-editor";
 import { reconcileFulfilmentRequirements, type ExpectedFulfilmentSource, type FulfilmentReconciliationIssue } from "../../shared/fulfilment-reconciliation";
 import { recordDataAccess } from "@fika/server-shared/data-source-meter-server";
+import { stageLogisticsProjectionEvent } from "./logistics-projection-outbox";
 
 export const FULFILMENT_CONSUMER = "integration-hub.fulfilment-requirements";
 const requirements = () => db.collection("fikaFulfilmentRequirementsV1");
@@ -72,6 +73,7 @@ export async function stageFulfilmentEvent(transaction: Transaction, event: Dura
     return { applied: false, duplicate: false, requirement: current } as const;
   }
   transaction.set(requirementRef, requirement);
+  stageLogisticsProjectionEvent(transaction, requirement, current);
   transaction.create(receiptRef, { consumerName: FULFILMENT_CONSUMER, eventId: event.eventId, sourceAggregateId: event.sourceAggregateId, requirementId: requirement.canonicalId, sourceVersion: event.sourceVersion, processedAt: new Date().toISOString(), outcome: "processed" });
   return { applied: true, duplicate: false, requirement } as const;
 }
@@ -100,6 +102,7 @@ export async function applyFulfilmentEvent(event: DurableDomainEvent): Promise<F
       return { applied: false, duplicate: false, requirement: current };
     }
     transaction.set(ref, requirement);
+    stageLogisticsProjectionEvent(transaction, requirement, current);
     transaction.create(receiptRef, { consumerName: FULFILMENT_CONSUMER, eventId: event.eventId, sourceAggregateId: event.sourceAggregateId, requirementId: requirement.canonicalId, sourceVersion: event.sourceVersion, processedAt: new Date().toISOString(), outcome: "processed" });
     return { applied: true, duplicate: false, requirement };
   });
