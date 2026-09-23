@@ -6,6 +6,8 @@ import { db } from "../lib/firebase-admin";
 import type { ProductionLine } from "../lib/production-domain";
 import { listDomainEvents } from "../lib/domain-event-outbox";
 import { stableDocumentId } from "../lib/canonical-editor";
+import { CPU_SITE_OPLOC_ID } from "../../shared/production-location";
+import { productionOrderRequiresFulfilment } from "../../shared/fulfilment-requirement";
 
 test("production identifiers are stable and distinct by source booking and quote", () => {
   assert.equal(productionOrderV1Id("booking:mnk:one"), "production-order:v1:booking:mnk:one");
@@ -144,6 +146,7 @@ test("explicitly internal CPU production creates no Fulfilment work on create or
     requiredBy: "2026-08-24T09:00:00Z",
     serviceWindow: { startTime: "09:00" },
     requiresDelivery: false,
+    destinationOplocId: CPU_SITE_OPLOC_ID,
     deliveryLocation: "CPU internal",
     serviceType: "Internal production",
     pax: 1,
@@ -156,4 +159,9 @@ test("explicitly internal CPU production creates no Fulfilment work on create or
   assert.equal(next.requiresDelivery, false);
   const receiptsAfter = await db.collection("fikaDomainEventInboxV1").get();
   assert.equal(receiptsAfter.docs.some(doc => doc.data().sourceAggregateId === result.order.canonicalId), false);
+});
+
+test("legacy requiresDelivery false cannot suppress an external Production Order", () => {
+  assert.equal(productionOrderRequiresFulfilment({ requiresDelivery: false, destinationOplocId: "oploc:haleon" }), true);
+  assert.equal(productionOrderRequiresFulfilment({ requiresDelivery: false, destinationOplocId: CPU_SITE_OPLOC_ID }), false);
 });

@@ -41,7 +41,7 @@ import {
   repairLegacyAssignmentServiceDates,
 } from "@/lib/store";
 import { assignJob, assertDispatchable, createLoad, removeAssignment, setJobCollectionStatus } from "@/lib/delivery-loads";
-import { CPU_PRODUCTION_LOCATION_ID } from "../../../../shared/production-location";
+import { CPU_PRODUCTION_LOCATION_ID, CPU_SITE_OPLOC_ID } from "../../../../shared/production-location";
 import { filterLogisticsProjectionForVehicle } from "@/lib/logistics-projection";
 import { rebuildLogisticsProjection as materialiseRebuildLogisticsProjection, reconcileLogisticsDay as materialiseLogisticsDay } from "@/lib/logistics-materialisation";
 import { projectionToDashboardData } from "@/lib/projection-dashboard-adapter";
@@ -233,9 +233,8 @@ function activeLogisticsRequirements(
 ) {
   return requirements.filter((requirement) => {
     if (requirement.status === "withdrawn") return false;
-    // Fulfilment Requirement is the existence authority. CPU Production is
-    // optional enrichment and must never remove canonical work.
-    return true;
+    // FIKA Xchange is local CPU production, not a delivery requirement.
+    return requirement.destinationOplocId !== CPU_SITE_OPLOC_ID;
   });
 }
 

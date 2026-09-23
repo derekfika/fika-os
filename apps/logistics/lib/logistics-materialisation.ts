@@ -1,5 +1,5 @@
 import type { FulfilmentRequirement } from "../../shared/fulfilment-requirement";
-import { CPU_PRODUCTION_LOCATION_ID } from "../../shared/production-location";
+import { CPU_PRODUCTION_LOCATION_ID, CPU_SITE_OPLOC_ID } from "../../shared/production-location";
 import { buildLogisticsDayProjection, type LogisticsProjectionInvalidation } from "./logistics-projection";
 import {
   appendLogisticsChange,
@@ -17,10 +17,9 @@ import type { LogisticsJob } from "./types";
 export function activeLogisticsRequirements(requirements: FulfilmentRequirement[]) {
   return requirements.filter((requirement) => {
     if (requirement.status === "withdrawn") return false;
-    // Fulfilment Requirement is the existence authority. CPU Production is
-    // optional enrichment and must never remove canonical work, including
-    // requirements whose destination is the governed CPU site.
-    return true;
+    // FIKA Xchange is local CPU production. It is not a delivery requirement;
+    // every other active Fulfilment Requirement remains Logistics work.
+    return requirement.destinationOplocId !== CPU_SITE_OPLOC_ID;
   });
 }
 

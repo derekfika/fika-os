@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { CPU_SITE_OPLOC_ID } from "./production-location";
 
 export const FULFILMENT_REQUIREMENT_SCHEMA_VERSION = "0.1.0";
 export type FulfilmentSourceDomain = "cpu-production" | "menu-planning" | "grab-and-go";
@@ -55,11 +56,30 @@ function requireDestination(destinationOplocId: string | undefined, label: strin
 export function productionStatusToFulfilmentStatus(status: string, supersededBy?: string): FulfilmentRequirementStatus {
   if (supersededBy || ["cancelled", "withdrawn", "superseded", "rejected"].includes(status)) return "withdrawn";
   if (["accepted", "planning", "planned", "scheduled", "in_production", "partially_complete", "ready", "complete", "menu_available"].includes(status)) return "ready_for_planning";
-  if (["amended"].includes(status)) return "amended";
+  if (["amended", "blocked", "needs_clarification", "reconciliation_required", "failed"].includes(status)) return "amended";
   return "pending";
 }
 
-export function productionOrderRequiresFulfilment(order: { requiresDelivery?: boolean }) { return order.requiresDelivery !== false; }
+/** Delivery-domain applicability is governed by canonical destination, not a mutable flag. */
+export function productionOrderRequiresFulfilment(order: { destinationOplocId?: string; requiresDelivery?: boolean }) {
+  // A missing destination remains applicable so creation/reconciliation records
+  // an explicit unresolved-destination failure instead of silently dropping it.
+  return order.destinationOplocId !== CPU_SITE_OPLOC_ID;
+}
+
+export function withdrawFulfilmentRequirement(previous: FulfilmentRequirement, by: string, reason: string, at = new Date().toISOString()) {
+  if (previous.status === "withdrawn") return previous;
+  const idempotencyKey = `${previous.idempotencyKey}:withdrawn:v${previous.version + 1}`;
+  return {
+    ...previous,
+    version: previous.version + 1,
+    status: "withdrawn" as const,
+    updatedAt: at,
+    updatedBy: by,
+    idempotencyKey,
+    audit: [...previous.audit, { action: "fulfilment-withdrawn", at, by, sourceVersion: previous.sourceVersion, idempotencyKey, reason }],
+  };
+}
 
 export function materialiseFulfilmentStatus(previous: FulfilmentRequirement | undefined, sourceStatus: FulfilmentRequirementStatus): FulfilmentRequirementStatus {
   if (sourceStatus === "withdrawn") return "withdrawn";

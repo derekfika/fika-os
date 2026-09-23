@@ -38,10 +38,10 @@ test("CPU Fulfilment Requirements remain Logistics work when CPU enrichment is e
   assert.equal(logisticsJobForRequirement(ready, undefined, "test", "2026-09-22T08:01:00.000Z").productionReadiness, "ready");
 });
 
-test("withdrawn requirements are excluded but governed CPU-site fulfilment remains Logistics work", () => {
+test("withdrawn requirements and local FIKA Xchange fulfilment are excluded", () => {
   const withdrawn = requirement("withdrawn");
   const local = requirement("pending", CPU_SITE_OPLOC_ID);
-  assert.deepEqual(activeLogisticsRequirements([withdrawn, local]).map((item) => item.canonicalId), [local.canonicalId]);
+  assert.deepEqual(activeLogisticsRequirements([withdrawn, local]).map((item) => item.canonicalId), []);
 });
 
 test("reconciliation preserves an existing job identity while updating its source version", () => {

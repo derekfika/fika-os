@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createDomainEvent } from "../../shared/domain-events";
-import { fulfilmentFromGrabAndGoOrder, fulfilmentFromProductionOrder, fulfilmentFromPublishedMenuDay, productionStatusToFulfilmentStatus } from "../../shared/fulfilment-requirement";
+import { fulfilmentFromGrabAndGoOrder, fulfilmentFromProductionOrder, fulfilmentFromPublishedMenuDay, productionOrderRequiresFulfilment, productionStatusToFulfilmentStatus } from "../../shared/fulfilment-requirement";
 import { applyFulfilmentEvent, listFulfilmentReceipts, listFulfilmentRequirements, normaliseFulfilmentEvent, shouldApplyFulfilmentVersion } from "../lib/fulfilment-projection";
 import { db } from "../lib/firebase-admin";
 import { stableDocumentId } from "../lib/canonical-editor";
@@ -47,13 +47,18 @@ test("canonical destination identity prevents display labels from merging requir
 });
 
 test("ProductionOrder lifecycle maps explicitly to Fulfilment lifecycle", () => {
-  assert.equal(productionStatusToFulfilmentStatus("received"), "pending");
-  assert.equal(productionStatusToFulfilmentStatus("draft"), "pending");
-  assert.equal(productionStatusToFulfilmentStatus("needs_review"), "pending");
-  assert.equal(productionStatusToFulfilmentStatus("planning"), "ready_for_planning");
-  assert.equal(productionStatusToFulfilmentStatus("ready"), "ready_for_planning");
-  assert.equal(productionStatusToFulfilmentStatus("cancelled"), "withdrawn");
+  for (const status of ["received", "draft", "needs_review"]) assert.equal(productionStatusToFulfilmentStatus(status), "pending");
+  for (const status of ["failed", "blocked", "needs_clarification", "reconciliation_required", "amended"]) assert.equal(productionStatusToFulfilmentStatus(status), "amended");
+  for (const status of ["accepted", "planning", "planned", "menu_available", "scheduled", "in_production", "partially_complete", "ready", "complete"]) assert.equal(productionStatusToFulfilmentStatus(status), "ready_for_planning");
+  for (const status of ["cancelled", "withdrawn", "superseded", "rejected"]) assert.equal(productionStatusToFulfilmentStatus(status), "withdrawn");
   assert.equal(productionStatusToFulfilmentStatus("accepted", "production-order:v2"), "withdrawn");
+});
+
+test("canonical destination, not requiresDelivery, governs Production Order applicability", () => {
+  assert.equal(productionOrderRequiresFulfilment({ destinationOplocId: "oploc:customer" }), true);
+  assert.equal(productionOrderRequiresFulfilment({ destinationOplocId: "oploc:customer", requiresDelivery: false }), true);
+  assert.equal(productionOrderRequiresFulfilment({ destinationOplocId: "oploc:b835d8ee-b187-49d1-9072-7348b04bfd2d", requiresDelivery: true }), false);
+  assert.equal(productionOrderRequiresFulfilment({}), true);
 });
 
 test("Fulfilment materialisation preserves pending and ready lifecycle semantics", () => {
