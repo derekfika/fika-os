@@ -1,5 +1,5 @@
 import type { FulfilmentRequirement } from "../../shared/fulfilment-requirement";
-import { CPU_PRODUCTION_LOCATION_ID, CPU_SITE_OPLOC_ID } from "../../shared/production-location";
+import { CPU_PRODUCTION_LOCATION_ID } from "../../shared/production-location";
 import { buildLogisticsDayProjection, type LogisticsProjectionInvalidation } from "./logistics-projection";
 import {
   appendLogisticsChange,
@@ -17,11 +17,9 @@ import type { LogisticsJob } from "./types";
 export function activeLogisticsRequirements(requirements: FulfilmentRequirement[]) {
   return requirements.filter((requirement) => {
     if (requirement.status === "withdrawn") return false;
-    // The CPU site fulfils its own demand locally. Movement Requests remain a
-    // separate Logistics-owned collection and are not filtered here.
-    if (requirement.destinationOplocId === CPU_SITE_OPLOC_ID) return false;
     // Fulfilment Requirement is the existence authority. CPU Production is
-    // optional enrichment and must never remove canonical delivery work.
+    // optional enrichment and must never remove canonical work, including
+    // requirements whose destination is the governed CPU site.
     return true;
   });
 }
@@ -133,7 +131,7 @@ export async function reconcileLogisticsDay(serviceDate: string, by: string, act
 
   for (const job of existing) {
     if (assignedJobIds.has(job.id) || reconciledRequirements.some((requirement) => requirement.sourceDomain === job.sourceType && requirement.sourceEntityId === job.sourceId)) continue;
-    if (job.destinationOplocId === CPU_SITE_OPLOC_ID || job.sourceType === "cpu-production" || (job.sourceType === "grab-and-go" && hasNativeGrabAndGo({ sourceDomain: "grab-and-go", sourceEntityId: job.sourceId, serviceDate: job.serviceDate, destinationOplocId: job.destinationOplocId } as FulfilmentRequirement))) {
+    if (job.sourceType === "cpu-production" || (job.sourceType === "grab-and-go" && hasNativeGrabAndGo({ sourceDomain: "grab-and-go", sourceEntityId: job.sourceId, serviceDate: job.serviceDate, destinationOplocId: job.destinationOplocId } as FulfilmentRequirement))) {
       await logisticsJobs().doc(job.id).delete();
       const event = await appendLogisticsChange({ serviceDate: job.serviceDate, entityType: "logisticsJob", entityId: job.id, changeType: "stale-upstream-job-removed", revision: job.version + 1, changedAt: now, actorId });
       lastChangeSequence = Math.max(lastChangeSequence, event.sequence);

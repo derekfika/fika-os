@@ -41,7 +41,7 @@ import {
   repairLegacyAssignmentServiceDates,
 } from "@/lib/store";
 import { assignJob, assertDispatchable, createLoad, removeAssignment, setJobCollectionStatus } from "@/lib/delivery-loads";
-import { CPU_PRODUCTION_LOCATION_ID, CPU_SITE_OPLOC_ID } from "../../../../shared/production-location";
+import { CPU_PRODUCTION_LOCATION_ID } from "../../../../shared/production-location";
 import { filterLogisticsProjectionForVehicle } from "@/lib/logistics-projection";
 import { rebuildLogisticsProjection as materialiseRebuildLogisticsProjection, reconcileLogisticsDay as materialiseLogisticsDay } from "@/lib/logistics-materialisation";
 import { projectionToDashboardData } from "@/lib/projection-dashboard-adapter";
@@ -233,13 +233,8 @@ function activeLogisticsRequirements(
 ) {
   return requirements.filter((requirement) => {
     if (requirement.status === "withdrawn") return false;
-    // FIKA Xchange is the CPU site: its own delivered-in/production demand is
-    // fulfilled locally, so it must never appear as a delivery queue item.
-    // Movement Requests are a separate collection and are intentionally not
-    // filtered here, so CPU-to-site transfers remain plannable.
-    if (requirement.destinationOplocId === CPU_SITE_OPLOC_ID) return false;
     // Fulfilment Requirement is the existence authority. CPU Production is
-    // optional enrichment and must never remove canonical delivery work.
+    // optional enrichment and must never remove canonical work.
     return true;
   });
 }
@@ -359,7 +354,7 @@ async function getLogistics(request: NextRequest) {
     reportLogisticsReadPath("planning-attention-check");
     const serviceDates = Array.from({ length: days }, (_, index) => addOperationalDays(fromDate, index));
     const upstream = await fetchRequirementsForDateRange(serviceDates[0], addOperationalDays(serviceDates[days - 1], 1), cookie).catch(() => []);
-    const expectedSourceKeys = new Map(serviceDates.map((serviceDate) => [serviceDate, new Set(upstream.filter((item) => item.serviceDate === serviceDate && item.status !== "withdrawn" && item.destinationOplocId !== CPU_SITE_OPLOC_ID).map((item) => `${item.sourceDomain}:${item.sourceEntityId}`))]));
+    const expectedSourceKeys = new Map(serviceDates.map((serviceDate) => [serviceDate, new Set(upstream.filter((item) => item.serviceDate === serviceDate && item.status !== "withdrawn").map((item) => `${item.sourceDomain}:${item.sourceEntityId}`))]));
     return NextResponse.json({ attention: await listPlanningAttention(serviceDates, expectedSourceKeys), fromDate, days });
   }
   if (request.nextUrl.searchParams.has("changesSince")) {
