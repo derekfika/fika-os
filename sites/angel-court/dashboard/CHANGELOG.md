@@ -12,6 +12,8 @@ The project follows a simple versioning approach:
 
 ### Added
 
+* Expanded the configured Angel Court cancellation policy across the booking confirmation email, cancellation warnings and cancellation emails, including significant reductions, committed third-party costs and the customer contact route.
+* Added structured request/confirmation reminder templates and preserved the strict configured service-time boundary without changing manual charge-decision logic.
 * Added the configured cancellation-policy reminder to booking confirmation emails, including the `Changes & cancellations` section and plain-text fallback.
 
 * Added configuration-backed cancellation policy detection using the booking service date/start time and a strict `< 72 hours` boundary.

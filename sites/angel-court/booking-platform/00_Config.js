@@ -35,7 +35,28 @@ const SITE_CONFIG = Object.freeze({
   copy: {
     vatNote: "Estimated total, subject to final confirmation, VAT, labour and equipment hire where applicable.",
     requestAcknowledgement: "I understand this is a booking request and is subject to confirmation.",
-    cancellationPolicyTemplate: "Cancellations made within {hours} hours may incur up to 100% of the catering cost."
+    cancellationPolicy: {
+      summaryTemplate: "Cancellations made within {hours} hours of the scheduled service time may incur a charge of up to 100% of the catering cost.",
+      paragraphs: [
+        "We understand that plans can change. If you need to cancel or significantly reduce your hospitality booking, please let the FIKA Hospitality team know as soon as possible.",
+        "Cancellations made {hours} hours or more before the scheduled service time will normally not incur a cancellation charge.",
+        "Cancellations made within {hours} hours of the scheduled service time may incur a charge of up to 100% of the catering cost. The amount charged will take into account food or products already ordered or prepared, committed supplier costs and other costs incurred in preparing your booking.",
+        "Significant reductions to guest numbers or quantities within the {hours}-hour period may be treated as a partial cancellation and may also incur a charge.",
+        "Where bespoke products, equipment or other third-party services have been ordered specifically for your booking and cannot be cancelled, those committed costs may still be chargeable.",
+        "To cancel or amend a booking, please contact {contactEmail} quoting your booking reference."
+      ],
+      requestParagraphs: [
+        "If you need to cancel or significantly reduce your booking, please let us know as soon as possible.",
+        "Cancellations made within {hours} hours of the scheduled service time may incur a charge of up to 100% of the catering cost.",
+        "To cancel or amend your request, contact {contactEmail} quoting your booking reference."
+      ],
+      confirmationParagraphs: [
+        "If you need to change, cancel or significantly reduce your booking, please let us know as soon as possible.",
+        "Cancellations made within {hours} hours of the scheduled service time may incur a charge of up to 100% of the catering cost.",
+        "Significant reductions to guest numbers or quantities within that period may also be treated as a partial cancellation.",
+        "To make a change or cancellation, contact {contactEmail} quoting your booking reference."
+      ]
+    }
   },
   branding: {
     eyebrow: "One Angel Court",
@@ -103,13 +124,38 @@ function buildPublicSiteConfig_(settings) {
       paper: settings.COLOUR_PAPER
     }),
     copy: Object.assign({}, SITE_CONFIG.copy, {
-      cancellationPolicy: formatCancellationPolicyCopy_(SITE_CONFIG.rules.cancellationWindowHours)
+      cancellationPolicy: getCancellationPolicy_()
     })
   });
 }
 
 function formatCancellationPolicyCopy_(hours) {
-  return SITE_CONFIG.copy.cancellationPolicyTemplate.replace("{hours}", String(hours));
+  return formatCancellationPolicyText_(SITE_CONFIG.copy.cancellationPolicy.summaryTemplate, hours);
+}
+
+function getCancellationPolicy_() {
+  const policy = SITE_CONFIG.copy.cancellationPolicy;
+  const hours = SITE_CONFIG.rules.cancellationWindowHours;
+  return {
+    windowHours: hours,
+    summary: formatCancellationPolicyCopy_(hours),
+    paragraphs: policy.paragraphs.map(function(paragraph) {
+      return formatCancellationPolicyText_(paragraph, hours);
+    }),
+    requestParagraphs: policy.requestParagraphs.map(function(paragraph) {
+      return formatCancellationPolicyText_(paragraph, hours);
+    }),
+    confirmationParagraphs: policy.confirmationParagraphs.map(function(paragraph) {
+      return formatCancellationPolicyText_(paragraph, hours);
+    }),
+    contactEmail: SITE_CONFIG.siteEmailAddress
+  };
+}
+
+function formatCancellationPolicyText_(template, hours) {
+  return String(template || "")
+    .replace(/\{hours\}/g, String(hours))
+    .replace(/\{contactEmail\}/g, SITE_CONFIG.siteEmailAddress);
 }
 
 function normaliseAngelCourtLogoUrl_(url) {

@@ -44,7 +44,32 @@ const CONFIG = {
 
   CANCELLATION_POLICY: {
     windowHours: 72,
-    copyTemplate: "Cancellations made within {hours} hours may incur up to 100% of the catering cost."
+    contactEmail: "seven@fikacatering.com",
+    summaryTemplate: "Cancellations made within {hours} hours of the scheduled service time may incur a charge of up to 100% of the catering cost.",
+    fullPolicyTemplates: [
+      "We understand that plans can change. If you need to cancel or significantly reduce your hospitality booking, please let the FIKA Hospitality team know as soon as possible.",
+      "Cancellations made {hours} hours or more before the scheduled service time will normally not incur a cancellation charge.",
+      "Cancellations made within {hours} hours of the scheduled service time may incur a charge of up to 100% of the catering cost. The amount charged will take into account food or products already ordered or prepared, committed supplier costs and other costs incurred in preparing your booking.",
+      "Significant reductions to guest numbers or quantities within the {hours}-hour period may be treated as a partial cancellation and may also incur a charge.",
+      "Where bespoke products, equipment or other third-party services have been ordered specifically for your booking and cannot be cancelled, those committed costs may still be chargeable.",
+      "To cancel or amend a booking, please contact {contactEmail} quoting your booking reference."
+    ],
+    requestReminderTemplates: [
+      "If you need to cancel or significantly reduce your booking, please let us know as soon as possible.",
+      "Cancellations made within {hours} hours of the scheduled service time may incur a charge of up to 100% of the catering cost.",
+      "To cancel or amend your request, contact {contactEmail} quoting your booking reference."
+    ],
+    confirmationReminderTemplates: [
+      "If you need to change, cancel or significantly reduce your booking, please let us know as soon as possible.",
+      "Cancellations made within {hours} hours of the scheduled service time may incur a charge of up to 100% of the catering cost.",
+      "Significant reductions to guest numbers or quantities within that period may also be treated as a partial cancellation.",
+      "To make a change or cancellation, contact {contactEmail} quoting your booking reference."
+    ],
+    warningTemplates: [
+      "This cancellation is being made within {hours} hours of the scheduled service time.",
+      "The published policy allows a charge of up to 100% of the catering cost. The appropriate charge should reflect committed or incurred costs and the circumstances of the cancellation."
+    ],
+    cancellationEmailPolicyTemplate: "cancellations within this period may incur a charge of up to 100% of the catering cost."
   },
 
   APP_NAME: "Angel Court Hospitality Dashboard",

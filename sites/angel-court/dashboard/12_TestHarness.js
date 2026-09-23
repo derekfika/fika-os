@@ -230,6 +230,8 @@ function testEmailGeneration_() {
   const confirmationHtml = buildConfirmationEmailHtml_(booking);
   const confirmationText = stripHtml_(confirmationHtml);
   const cancellationHtml = buildCancellationEmailHtml_(booking);
+  const escapedBooking = Object.assign(makeDashboardTestBooking_(), { hostName: "<Host & Co>" });
+  const escapedConfirmationHtml = buildConfirmationEmailHtml_(escapedBooking);
 
   assertDashboardTest_(confirmationSubject.indexOf("Booking Confirmed") !== -1, "Confirmation subject is missing status text.");
   assertDashboardTest_(confirmationHtml.indexOf("Example Client") !== -1, "Confirmation email is missing client company.");
@@ -237,10 +239,13 @@ function testEmailGeneration_() {
   assertDashboardTest_(confirmationHtml.indexOf("GBP") === -1, "Confirmation email should not include prices.");
   assertDashboardTest_(confirmationHtml.indexOf("TEST-BOOKING-001") !== -1, "Confirmation email is missing booking reference.");
   assertDashboardTest_(confirmationHtml.indexOf("Changes &amp; cancellations") !== -1, "Confirmation email is missing changes and cancellations heading.");
-  assertDashboardTest_(confirmationText.indexOf(getCancellationPolicyCopy_()) !== -1, "Confirmation email is missing cancellation policy.");
-  assertDashboardTest_(confirmationText.indexOf("may incur up to 100%") !== -1, "Confirmation email must retain the may-incur policy wording.");
+  assertDashboardTest_(getCancellationPolicy_().confirmationParagraphs.every(function(paragraph) { return confirmationText.indexOf(paragraph) !== -1; }), "Confirmation email is missing configured cancellation policy paragraphs.");
+  assertDashboardTest_(confirmationText.indexOf("may incur a charge of up to 100%") !== -1, "Confirmation email must retain the may-incur policy wording.");
+  assertDashboardTest_(confirmationText.indexOf("significantly reduce") !== -1 && confirmationText.indexOf("partial cancellation") !== -1, "Confirmation email must mention significant reductions.");
+  assertDashboardTest_(confirmationText.indexOf("seven@fikacatering.com") !== -1, "Confirmation email is missing the cancellation contact address.");
   assertDashboardTest_(confirmationText.indexOf("automatically") === -1 && confirmationText.indexOf("will apply") === -1, "Confirmation email must not imply an automatic cancellation charge.");
   assertDashboardTest_(confirmationText.indexOf("booking is confirmed and scheduled") !== -1, "Confirmation email is missing confirmed lifecycle wording.");
+  assertDashboardTest_(escapedConfirmationHtml.indexOf("&lt;Host &amp; Co&gt;") !== -1 && escapedConfirmationHtml.indexOf("<Host & Co>") === -1, "Confirmation email must escape booking information.");
   assertDashboardTest_(cancellationHtml.indexOf("Booking Cancelled") !== -1, "Cancellation email is missing heading.");
   assertDashboardTest_(stripHtml_(confirmationHtml).indexOf("<") === -1, "HTML stripping left tags behind.");
 }
@@ -260,6 +265,9 @@ function testCancellationPolicy_() {
   assertDashboardTest_(at24.insidePolicyWindow, "24 hours should be inside the policy window.");
   assertDashboardTest_(past.insidePolicyWindow && past.hoursUntilService < 0, "Past bookings should be inside the late cancellation state.");
   assertDashboardTest_(!missing.valid, "Missing service time should fail safely.");
+  assertDashboardEqual_(getCancellationPolicy_().windowHours, 72, "Cancellation policy must use the configured 72-hour threshold.");
+  assertDashboardTest_(getCancellationPolicy_().fullPolicy.some(function(paragraph) { return paragraph.indexOf("committed supplier costs") !== -1; }), "Full cancellation policy must explain committed supplier costs.");
+  assertDashboardTest_(getCancellationPolicy_().warningParagraphs[1].indexOf("allows a charge of up to 100%") !== -1 && getCancellationPolicy_().warningParagraphs[1].indexOf("automatically") === -1, "Cancellation warning must retain discretionary maximum-charge wording.");
 
   assertDashboardEqual_(validateCancellationChargeDecision_(false, {}).percent, 0, "Outside-window cancellation should not require a charge decision.");
   assertDashboardEqual_(validateCancellationChargeDecision_(true, { chargeDecision: "NONE" }).percent, 0, "No-charge decision should save 0%.");
@@ -291,6 +299,8 @@ function testCancellationPolicy_() {
     cancellationChargePercent: 100
   });
   assertDashboardTest_(buildCancellationEmailHtml_(noCharge).indexOf("no cancellation charge will be applied") !== -1, "No-charge email wording is missing.");
+  assertDashboardTest_(buildCancellationEmailHtml_(noCharge).indexOf("received within 72 hours of the scheduled service time") !== -1, "Inside-window cancellation timing wording is missing.");
+  assertDashboardTest_(buildCancellationEmailHtml_(noCharge).indexOf("cancellations within this period may incur a charge of up to 100%") !== -1, "Inside-window cancellation policy wording is missing.");
   assertDashboardTest_(buildCancellationEmailHtml_(partial).indexOf("50% of the catering cost") !== -1, "Partial-charge email wording is missing.");
   assertDashboardTest_(buildCancellationEmailHtml_(full).indexOf("100% of the catering cost will apply") !== -1, "Full-charge email wording is missing.");
 }

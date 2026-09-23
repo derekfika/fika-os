@@ -37,6 +37,10 @@ function runBookingPlatformTests() {
   const dashboardBooking = adaptClientBookingForDashboard_(protectedBooking);
   const notificationText = buildBookingNotificationText_(protectedBooking, "Breakfast");
   const notificationHtml = buildBookingNotificationHtml_(protectedBooking, "Breakfast");
+  const publicPolicy = getPublicPlatformConfig().site.copy.cancellationPolicy;
+  const escapedBooking = JSON.parse(JSON.stringify(protectedBooking));
+  escapedBooking.client.name = "<Alex & Co>";
+  const escapedNotificationHtml = buildBookingNotificationHtml_(escapedBooking, "Breakfast");
   const missingReferencePayload = JSON.parse(JSON.stringify(payload));
   missingReferencePayload.client.invoiceReference = "";
   const missingClientNamePayload = JSON.parse(JSON.stringify(payload));
@@ -48,10 +52,12 @@ function runBookingPlatformTests() {
 
   const tests = [
     { name: "valid payload passes", ok: validation.ok },
-    { name: "cancellation policy is configured", ok: SITE_CONFIG.rules.cancellationWindowHours === 72 && formatCancellationPolicyCopy_(72) === "Cancellations made within 72 hours may incur up to 100% of the catering cost." },
+    { name: "cancellation policy is configured", ok: SITE_CONFIG.rules.cancellationWindowHours === 72 && publicPolicy.windowHours === SITE_CONFIG.rules.cancellationWindowHours && publicPolicy.summary === "Cancellations made within 72 hours of the scheduled service time may incur a charge of up to 100% of the catering cost." },
+    { name: "full policy includes reductions and committed costs", ok: publicPolicy.paragraphs.length === 6 && publicPolicy.paragraphs[3].indexOf("partial cancellation") !== -1 && publicPolicy.paragraphs[4].indexOf("committed costs") !== -1 },
     { name: "cancellation acknowledgement is captured", ok: protectedBooking.acknowledgements.noticePolicyAccepted && protectedBooking.acknowledgements.cancellationPolicyAccepted && protectedBooking.acknowledgements.cancellationPolicyHours === 72 },
-    { name: "request email plain text contains cancellation policy", ok: notificationText.indexOf(formatCancellationPolicyCopy_(72)) !== -1 && notificationText.indexOf("This request is subject to confirmation") !== -1 },
-    { name: "request email HTML contains escaped cancellation policy", ok: notificationHtml.indexOf(escapeNotificationHtml_(formatCancellationPolicyCopy_(72))) !== -1 && notificationHtml.indexOf("This request is subject to confirmation") !== -1 },
+    { name: "request email plain text contains cancellation policy", ok: publicPolicy.requestParagraphs.every(function(paragraph) { return notificationText.indexOf(paragraph) !== -1; }) && notificationText.indexOf("This request is subject to confirmation") !== -1 },
+    { name: "request email HTML contains escaped cancellation policy", ok: publicPolicy.requestParagraphs.every(function(paragraph) { return notificationHtml.indexOf(escapeNotificationHtml_(paragraph)) !== -1; }) && notificationHtml.indexOf("This request is subject to confirmation") !== -1 },
+    { name: "request email escapes booking information", ok: escapedNotificationHtml.indexOf("&lt;Alex &amp; Co&gt;") !== -1 && escapedNotificationHtml.indexOf("<Alex & Co>") === -1 },
     { name: "request email retains request status", ok: notificationText.indexOf("booking request has been received") !== -1 && notificationText.indexOf("booking is confirmed") === -1 },
     { name: "server uses schema unit price", ok: protectedBooking.order.items[0].unitPrice === 3.95 },
     { name: "server recalculates total", ok: protectedBooking.order.netTotal === 39.5 },

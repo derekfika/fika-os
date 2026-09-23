@@ -904,7 +904,10 @@ function buildConfirmationEmailHtml_(booking) {
   const paper = getConfiguredValue_("COLOUR_BACKGROUND", CONFIG.COLOUR_BACKGROUND || "#F8F6FF");
   const itemRows = buildConfirmationItemsHtml_(booking.items || []);
   const hostGreeting = booking.hostName ? "Hi " + escapeEmailHtml_(booking.hostName) + "," : "Hi there,";
-  const cancellationPolicy = getCancellationPolicyCopy_();
+  const cancellationPolicy = getCancellationPolicy_();
+  const cancellationParagraphs = cancellationPolicy.confirmationParagraphs.map(function(paragraph) {
+    return '<p style="margin:0 0 8px; font-size:14px;">' + escapeEmailHtml_(paragraph) + '</p>';
+  }).join("");
 
   return `
   <div style="margin:0; padding:0; background:${escapeEmailHtml_(paper)}; font-family: Arial, Helvetica, sans-serif; color:#241F33; line-height:1.5;">
@@ -942,8 +945,7 @@ function buildConfirmationEmailHtml_(booking) {
 
           <div style="margin:24px 0 0; padding:16px; border-left:4px solid ${escapeEmailHtml_(accent)}; background:#FFF8F4; border-radius:12px;">
             <h2 style="margin:0 0 8px; color:${escapeEmailHtml_(primary)}; font-size:20px;">Changes &amp; cancellations</h2>
-            <p style="margin:0 0 8px; font-size:14px;">If anything needs changing before the service date, please let us know as soon as possible and we will do our best to help.</p>
-            <p style="margin:0; font-size:14px;">${escapeEmailHtml_(cancellationPolicy)}</p>
+            ${cancellationParagraphs}
           </div>
           <p style="margin:24px 0 0;">Kind regards,<br><strong style="color:${escapeEmailHtml_(primary)};">FIKA Hospitality</strong></p>
         </div>
@@ -1123,6 +1125,7 @@ function getCancellationPolicyPreview(rowNumber) {
   if (!booking) throw new Error("Could not read booking data.");
 
   const preview = getCancellationWindowForBooking_(booking, new Date());
+  const policy = getCancellationPolicy_();
   return {
     ok: preview.valid,
     bookingId: booking.bookingId,
@@ -1130,7 +1133,8 @@ function getCancellationPolicyPreview(rowNumber) {
     insidePolicyWindow: preview.insidePolicyWindow,
     windowHours: preview.windowHours,
     hoursUntilService: preview.hoursUntilService,
-    policyCopy: getCancellationPolicyCopy_()
+    policyCopy: policy.summary,
+    policyWarningParagraphs: policy.warningParagraphs
   };
 }
 
@@ -1216,8 +1220,27 @@ function getCancellationWindowHours_() {
 }
 
 function getCancellationPolicyCopy_() {
+  return getCancellationPolicy_().summary;
+}
+
+function getCancellationPolicy_() {
   const policy = CONFIG.CANCELLATION_POLICY || {};
-  return String(policy.copyTemplate || "").replace("{hours}", String(getCancellationWindowHours_()));
+  const hours = getCancellationWindowHours_();
+  const format = function(template) {
+    return String(template || "")
+      .replace(/\{hours\}/g, String(hours))
+      .replace(/\{contactEmail\}/g, String(policy.contactEmail || ""));
+  };
+  return {
+    windowHours: hours,
+    summary: format(policy.summaryTemplate),
+    fullPolicy: (policy.fullPolicyTemplates || []).map(format),
+    requestParagraphs: (policy.requestReminderTemplates || []).map(format),
+    confirmationParagraphs: (policy.confirmationReminderTemplates || []).map(format),
+    warningParagraphs: (policy.warningTemplates || []).map(format),
+    cancellationEmailPolicy: format(policy.cancellationEmailPolicyTemplate),
+    contactEmail: String(policy.contactEmail || "")
+  };
 }
 
 function validateCancellationChargeDecision_(insidePolicyWindow, options) {
@@ -1267,15 +1290,15 @@ function buildCancellationEmailHtml_(booking) {
   const insidePolicyWindow = booking.cancellationInsidePolicyWindow === true || booking.cancellationInsidePolicyWindow === "true";
   const chargeDecision = String(booking.cancellationChargeDecision || "").toUpperCase();
   const chargePercent = Number(booking.cancellationChargePercent);
-  const policyCopy = getCancellationPolicyCopy_();
+  const policy = getCancellationPolicy_();
   const chargeNotice = chargeDecision === "FULL"
     ? "A cancellation charge of 100% of the catering cost will apply."
     : chargeDecision === "PARTIAL"
       ? "A cancellation charge of " + escapeEmailHtml_(String(chargePercent)) + "% of the catering cost will apply."
       : "On this occasion, no cancellation charge will be applied.";
   const policyNotice = insidePolicyWindow
-    ? "<p>This cancellation was received within the " + escapeEmailHtml_(String(getCancellationWindowHours_())) + "-hour cancellation window.</p>" +
-      "<p>Our published policy states that " + escapeEmailHtml_(policyCopy.replace(/^Cancellations made /, "cancellations made ")) + "</p>" +
+    ? "<p>This cancellation was received within " + escapeEmailHtml_(String(policy.windowHours)) + " hours of the scheduled service time.</p>" +
+      "<p>Our cancellation policy states that " + escapeEmailHtml_(policy.cancellationEmailPolicy) + "</p>" +
       "<p>" + chargeNotice + "</p>"
     : "";
 

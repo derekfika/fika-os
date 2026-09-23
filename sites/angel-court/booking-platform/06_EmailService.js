@@ -92,7 +92,7 @@ function getBookingNotificationDashboardUrl_(configuredUrl) {
 }
 
 function buildBookingNotificationText_(booking, eventType) {
-  const cancellationPolicy = formatCancellationPolicyCopy_(SITE_CONFIG.rules.cancellationWindowHours);
+  const cancellationPolicy = getCancellationPolicy_();
   return [
     "Hi " + booking.client.name + ",",
     "",
@@ -120,14 +120,14 @@ function buildBookingNotificationText_(booking, eventType) {
     "This request is subject to confirmation. The hospitality team will contact you once it has been reviewed.",
     "",
     "Cancellation policy",
-    cancellationPolicy
+    cancellationPolicy.requestParagraphs.join("\n\n")
   ].filter(function(line, index, values) {
     return line !== "" || values[index - 1] !== "";
   }).join("\n");
 }
 
 function buildBookingNotificationHtml_(booking, eventType) {
-  const cancellationPolicy = formatCancellationPolicyCopy_(SITE_CONFIG.rules.cancellationWindowHours);
+  const cancellationPolicy = getCancellationPolicy_();
   const rows = [
     ["Reference", booking.bookingId],
     ["Client", booking.client.clientName],
@@ -172,7 +172,9 @@ function buildBookingNotificationHtml_(booking, eventType) {
     '<p style="font-size:12px;color:#63666a;margin-bottom:18px">This request is subject to confirmation. The hospitality team will contact you once it has been reviewed.</p>',
     '<div style="padding:14px 16px;border-left:4px solid #63666a;background:#f7f7f5;border-radius:10px">',
     '<strong style="display:block;margin-bottom:4px;color:#323437">Cancellation policy</strong>',
-    '<span style="font-size:13px;color:#63666a">' + escapeNotificationHtml_(cancellationPolicy) + '</span>',
+    cancellationPolicy.requestParagraphs.map(function(paragraph) {
+      return '<p style="font-size:13px;color:#63666a;margin:8px 0 0">' + escapeNotificationHtml_(paragraph) + '</p>';
+    }).join(""),
     '</div>',
     '</div>',
     '</div>'

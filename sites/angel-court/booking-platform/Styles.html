@@ -693,30 +693,50 @@
 
   .policy-disclosure {
     margin: 12px 0 2px;
-    padding: 12px 14px;
     border: 1px solid var(--line);
     border-radius: 12px;
     background: var(--surface);
   }
 
-  .policy-disclosure summary {
-    color: var(--accent);
+  .policy-disclosure-toggle {
+    width: 100%;
+    display: grid;
+    gap: 5px;
+    padding: 14px;
+    border: 0;
+    color: inherit;
+    background: transparent;
+    text-align: left;
     cursor: pointer;
+  }
+
+  .policy-disclosure-toggle:focus-visible {
+    outline: 3px solid var(--accent);
+    outline-offset: 3px;
+  }
+
+  .policy-disclosure-heading {
     font-weight: 800;
   }
 
-  .policy-disclosure p,
-  .policy-summary {
-    margin: 10px 0 0;
+  .policy-disclosure-summary {
+    color: var(--muted);
     line-height: 1.5;
   }
 
-  .policy-summary {
-    display: grid;
-    gap: 4px;
-    padding: 12px 14px;
-    border-left: 3px solid var(--accent);
-    background: var(--surface);
+  .policy-disclosure-action {
+    color: var(--accent);
+    font-weight: 800;
+  }
+
+  .policy-disclosure-full {
+    padding: 0 14px 14px;
+    border-top: 1px solid var(--line);
+  }
+
+  .policy-disclosure-full p {
+    margin: 12px 0 0;
+    line-height: 1.5;
   }
 
   .form-actions {

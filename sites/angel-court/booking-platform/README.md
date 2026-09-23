@@ -13,9 +13,9 @@ Angel Court v1 of the client-facing booking experience. This is a separate Googl
 
 ## Cancellation policy
 
-The Review step shows the configured cancellation policy in an inline disclosure before the mandatory notice-policy acknowledgement. The booking retains the existing `noticePolicyAccepted` field and also stores `cancellationPolicyAccepted`, the configured `cancellationPolicyHours`, and the rendered policy copy inside the existing booking JSON. Booking notice guidance remains separate from cancellation wording.
+The Review step shows one collapsed, keyboard-accessible cancellation-policy disclosure before the mandatory notice-policy acknowledgement. It presents a concise summary first and the configured full policy when expanded. The booking retains the existing `noticePolicyAccepted` field and also stores `cancellationPolicyAccepted`, the configured `cancellationPolicyHours`, and the rendered policy copy inside the existing booking JSON. Booking notice guidance remains separate from cancellation wording.
 
-The booking-request email repeats the same configured policy in both plain text and HTML while continuing to state that the request is subject to confirmation.
+The booking-request email repeats a concise, configured cancellation reminder in both plain text and HTML while continuing to state that the request is subject to confirmation. The policy explains the strict 72-hour threshold, significant reductions, bespoke/third-party committed costs and the contact route. Reductions inside the window are handled manually by the dashboard; the booking platform does not calculate or promise a charge.
 
 To fork for another site, change `SITE_CONFIG`, `MENU_SCHEMA`, branding assets/copy, sheet mapping, notice rules and notification recipients. Core booking and UI logic should not require changes.
 

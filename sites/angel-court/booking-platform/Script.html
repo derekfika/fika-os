@@ -212,6 +212,15 @@
         $("#forget-contact").hidden = !$("#remember-contact").checked;
       });
       $("#forget-contact").addEventListener("click", forgetContactProfile);
+      const policyToggle = $("#cancellation-policy-toggle");
+      if (policyToggle) {
+        policyToggle.addEventListener("click", () => {
+          const expanded = policyToggle.getAttribute("aria-expanded") === "true";
+          policyToggle.setAttribute("aria-expanded", String(!expanded));
+          const fullPolicy = $("#cancellation-policy-full");
+          if (fullPolicy) fullPolicy.hidden = expanded;
+        });
+      }
     }
 
     function render(shouldScroll) {
@@ -566,10 +575,19 @@
         menuRows +
         reviewRow("Estimated total", money.format(total())) +
         '<p class="fine-print" style="color:var(--muted)">' + escapeHtml(config.site.copy.vatNote) + '</p>' +
-        '<div class="policy-summary"><strong>Cancellation policy</strong><span>' + escapeHtml(config.site.copy.cancellationPolicy || "") + '</span></div>' +
         '</div>';
-      const policyCopy = document.getElementById("cancellation-policy-copy");
-      if (policyCopy) policyCopy.textContent = config.site.copy.cancellationPolicy || "";
+      renderCancellationPolicy_();
+    }
+
+    function renderCancellationPolicy_() {
+      const policy = config.site.copy.cancellationPolicy || {};
+      const summary = $("#cancellation-policy-summary");
+      const full = $("#cancellation-policy-full");
+      if (!summary || !full) return;
+      summary.textContent = policy.summary || "";
+      full.innerHTML = (policy.paragraphs || []).map(paragraph =>
+        "<p>" + escapeHtml(paragraph) + "</p>"
+      ).join("");
     }
 
     function submit() {

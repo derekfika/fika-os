@@ -49,7 +49,9 @@ The dashboard automates the workflow from incoming booking request to quote gene
 
 Cancellation detection uses the booking service date and first canonical service time in the dashboard timezone. The boundary is strict: `hours until service < window hours` is inside the window, so exactly 72 hours is outside. Past service starts are inside the late-cancellation state. Historical rows without the new fields remain readable; invalid or missing service timing fails cancellation safely rather than guessing.
 
-Booking confirmation emails include a `Changes & cancellations` section using the same configured policy copy and retain the confirmed/scheduled lifecycle wording.
+Booking confirmation emails include a `Changes & cancellations` section using configured reminder paragraphs covering changes, cancellations, significant reductions and the contact route, while retaining the confirmed/scheduled lifecycle wording. The request and confirmation policy copy is kept alongside the configured `windowHours` threshold in `CONFIG.CANCELLATION_POLICY`.
+
+Inside-window cancellation warnings explain that a charge of up to 100% may be incurred and that the appropriate decision should reflect committed or incurred costs and the circumstances. The dashboard keeps the existing manual `NONE`, `PARTIAL` and `FULL` decision controls; it does not automatically apply the maximum charge. Exactly the configured threshold is outside the window, while any strictly smaller elapsed time is inside.
 
 ## Archiving
 

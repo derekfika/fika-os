@@ -1323,9 +1323,11 @@
 
     if (preview.insidePolicyWindow) {
       status.className = "cancel-policy-status warning";
+      const warningParagraphs = Array.isArray(preview.policyWarningParagraphs)
+        ? preview.policyWarningParagraphs
+        : [preview.policyCopy || ""];
       status.innerHTML = "<strong>Inside " + escapeHtml(String(preview.windowHours)) + "-hour cancellation window</strong>" +
-        "<span>Cancellation charges may apply.</span>" +
-        "<span>Published policy: " + escapeHtml(preview.policyCopy || "") + "</span>";
+        warningParagraphs.map(paragraph => "<span>" + escapeHtml(paragraph) + "</span>").join("");
       chargeFields.hidden = false;
     } else {
       status.className = "cancel-policy-status outside";
