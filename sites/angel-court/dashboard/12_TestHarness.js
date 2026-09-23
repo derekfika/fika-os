@@ -19,6 +19,7 @@ function runDashboardPureTests() {
   record("Status validation", testStatusValidation_);
   record("Settings draft column aliases", testSettingsDraftColumnAliases_);
   record("Locked status validation", testLockedStatusValidation_);
+  record("Cancellation policy workflow", testCancellationPolicy_);
 
   const failures = results.filter(result => !result.ok);
   return {
@@ -227,6 +228,7 @@ function testEmailGeneration_() {
   const booking = makeDashboardTestBooking_();
   const confirmationSubject = buildConfirmationSubject_(booking);
   const confirmationHtml = buildConfirmationEmailHtml_(booking);
+  const confirmationText = stripHtml_(confirmationHtml);
   const cancellationHtml = buildCancellationEmailHtml_(booking);
 
   assertDashboardTest_(confirmationSubject.indexOf("Booking Confirmed") !== -1, "Confirmation subject is missing status text.");
@@ -234,8 +236,63 @@ function testEmailGeneration_() {
   assertDashboardTest_(confirmationHtml.indexOf("Pastries") !== -1, "Confirmation email is missing itemised order lines.");
   assertDashboardTest_(confirmationHtml.indexOf("GBP") === -1, "Confirmation email should not include prices.");
   assertDashboardTest_(confirmationHtml.indexOf("TEST-BOOKING-001") !== -1, "Confirmation email is missing booking reference.");
+  assertDashboardTest_(confirmationHtml.indexOf("Changes &amp; cancellations") !== -1, "Confirmation email is missing changes and cancellations heading.");
+  assertDashboardTest_(confirmationText.indexOf(getCancellationPolicyCopy_()) !== -1, "Confirmation email is missing cancellation policy.");
+  assertDashboardTest_(confirmationText.indexOf("may incur up to 100%") !== -1, "Confirmation email must retain the may-incur policy wording.");
+  assertDashboardTest_(confirmationText.indexOf("automatically") === -1 && confirmationText.indexOf("will apply") === -1, "Confirmation email must not imply an automatic cancellation charge.");
+  assertDashboardTest_(confirmationText.indexOf("booking is confirmed and scheduled") !== -1, "Confirmation email is missing confirmed lifecycle wording.");
   assertDashboardTest_(cancellationHtml.indexOf("Booking Cancelled") !== -1, "Cancellation email is missing heading.");
   assertDashboardTest_(stripHtml_(confirmationHtml).indexOf("<") === -1, "HTML stripping left tags behind.");
+}
+
+function testCancellationPolicy_() {
+  const now = Utilities.parseDate("2026-07-14 08:00", Session.getScriptTimeZone(), "yyyy-MM-dd HH:mm");
+  const at73 = calculateCancellationWindow_("2026-07-17", "09:00", now, 72);
+  const at72 = calculateCancellationWindow_("2026-07-17", "08:00", now, 72);
+  const at7199 = calculateCancellationWindow_("2026-07-17", "07:59", now, 72);
+  const at24 = calculateCancellationWindow_("2026-07-15", "08:00", now, 72);
+  const past = calculateCancellationWindow_("2026-07-14", "07:00", now, 72);
+  const missing = calculateCancellationWindow_("2026-07-14", "", now, 72);
+
+  assertDashboardTest_(!at73.insidePolicyWindow, "73 hours should be outside the policy window.");
+  assertDashboardTest_(!at72.insidePolicyWindow, "Exactly 72 hours should be outside the policy window.");
+  assertDashboardTest_(at7199.insidePolicyWindow, "71 hours 59 minutes should be inside the policy window.");
+  assertDashboardTest_(at24.insidePolicyWindow, "24 hours should be inside the policy window.");
+  assertDashboardTest_(past.insidePolicyWindow && past.hoursUntilService < 0, "Past bookings should be inside the late cancellation state.");
+  assertDashboardTest_(!missing.valid, "Missing service time should fail safely.");
+
+  assertDashboardEqual_(validateCancellationChargeDecision_(false, {}).percent, 0, "Outside-window cancellation should not require a charge decision.");
+  assertDashboardEqual_(validateCancellationChargeDecision_(true, { chargeDecision: "NONE" }).percent, 0, "No-charge decision should save 0%.");
+  assertDashboardEqual_(validateCancellationChargeDecision_(true, { chargeDecision: "PARTIAL", chargePercent: 50 }).percent, 50, "50% partial charge should be valid.");
+  assertDashboardEqual_(validateCancellationChargeDecision_(true, { chargeDecision: "FULL" }).percent, 100, "Full charge should save 100%.");
+  assertDashboardEqual_(getCancellationEmailType_(false, "NONE", true), "STANDARD", "Outside-window email should use the standard template.");
+  assertDashboardEqual_(getCancellationEmailType_(true, "NONE", true), "WITHIN_POLICY_NONE", "Inside-window no-charge email type failed.");
+  assertDashboardEqual_(getCancellationEmailType_(true, "PARTIAL", true), "WITHIN_POLICY_PARTIAL", "Inside-window partial email type failed.");
+  assertDashboardEqual_(getCancellationEmailType_(true, "FULL", true), "WITHIN_POLICY_FULL", "Inside-window full email type failed.");
+  assertDashboardEqual_(getCancellationEmailType_(true, "FULL", false), "NONE", "Email type should be NONE when no email is requested.");
+
+  let blocked = false;
+  try { validateCancellationChargeDecision_(true, { chargeDecision: "PARTIAL", chargePercent: 100 }); } catch (error) { blocked = true; }
+  assertDashboardTest_(blocked, "100% must not be accepted as a partial charge.");
+
+  const noCharge = Object.assign(makeDashboardTestBooking_(), {
+    cancellationInsidePolicyWindow: true,
+    cancellationChargeDecision: "NONE",
+    cancellationChargePercent: 0
+  });
+  const partial = Object.assign(makeDashboardTestBooking_(), {
+    cancellationInsidePolicyWindow: true,
+    cancellationChargeDecision: "PARTIAL",
+    cancellationChargePercent: 50
+  });
+  const full = Object.assign(makeDashboardTestBooking_(), {
+    cancellationInsidePolicyWindow: true,
+    cancellationChargeDecision: "FULL",
+    cancellationChargePercent: 100
+  });
+  assertDashboardTest_(buildCancellationEmailHtml_(noCharge).indexOf("no cancellation charge will be applied") !== -1, "No-charge email wording is missing.");
+  assertDashboardTest_(buildCancellationEmailHtml_(partial).indexOf("50% of the catering cost") !== -1, "Partial-charge email wording is missing.");
+  assertDashboardTest_(buildCancellationEmailHtml_(full).indexOf("100% of the catering cost will apply") !== -1, "Full-charge email wording is missing.");
 }
 
 function testArchiveLogic_() {

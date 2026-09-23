@@ -9,6 +9,8 @@
   let CALENDAR_WEEK_START = getMonday_(new Date());
 
   let CANCEL_BOOKING_ID = null;
+  let CANCEL_PREVIEW = null;
+  let CANCEL_OPTIONS = null;
   let REGENERATE_BOOKING_ID = null;
   let SCAN_STATE = null;
   let TOAST_TIMER = null;
@@ -894,6 +896,8 @@
           </div>
         </div>
 
+        ${renderCancellationAudit_(b)}
+
         <div class="edit-grid">
           ${editField("clientCompany", "Company", b.clientCompany)}
           ${editField("hostName", "Host name", b.hostName)}
@@ -942,6 +946,31 @@
         </div>
       </div>
     `;
+  }
+
+  function renderCancellationAudit_(booking) {
+    if (!booking || booking.status !== "CANCELLED" || !booking.cancelledAt) return "";
+
+    const inside = booking.cancellationInsidePolicyWindow === true || booking.cancellationInsidePolicyWindow === "true";
+    const decision = booking.cancellationChargeDecision || "NONE";
+    const percent = booking.cancellationChargePercent === "" || booking.cancellationChargePercent === undefined
+      ? ""
+      : " (" + escapeHtml(String(booking.cancellationChargePercent)) + "%)";
+    return `
+      <section class="cancellation-audit" aria-label="Cancellation record">
+        <h3>Cancellation record</h3>
+        <p><strong>Cancelled:</strong> ${escapeHtml(formatAuditDate_(booking.cancelledAt))}</p>
+        <p><strong>Cancelled by:</strong> ${escapeHtml(booking.cancelledBy || "Not recorded")}</p>
+        <p><strong>Policy status:</strong> ${inside ? "Inside" : "Outside"} ${escapeHtml(String(booking.cancellationWindowHours || ""))}-hour window</p>
+        <p><strong>Charge decision:</strong> ${escapeHtml(decision)}${percent}</p>
+        <p><strong>Email record:</strong> ${escapeHtml(booking.cancellationEmailType || "NONE")}${booking.cancellationEmailSentAt ? " — sent " + escapeHtml(formatAuditDate_(booking.cancellationEmailSentAt)) : ""}</p>
+      </section>
+    `;
+  }
+
+  function formatAuditDate_(value) {
+    const date = new Date(value);
+    return isNaN(date.getTime()) ? String(value || "") : date.toLocaleString("en-GB");
   }
 
   function getEditRoomValue_(booking) {
@@ -1229,43 +1258,144 @@
 
   function openCancelDialog(bookingId) {
     CANCEL_BOOKING_ID = bookingId;
+    CANCEL_PREVIEW = null;
+    CANCEL_OPTIONS = null;
 
     const modal = document.getElementById("cancelModal");
     if (!modal) return;
 
+    document.getElementById("cancel-options-view").hidden = false;
+    document.getElementById("cancel-confirmation-view").hidden = true;
+    document.getElementById("cancel-policy-loading").hidden = false;
+    document.getElementById("cancel-policy-loading").textContent = "Checking the booking service time...";
+    document.getElementById("cancel-policy-status").hidden = true;
+    document.getElementById("cancel-charge-fields").hidden = true;
+    document.getElementById("cancel-partial-charge-field").hidden = true;
+    document.getElementById("cancel-charge-decision").value = "";
+    document.getElementById("cancel-charge-percent").value = "";
     document.getElementById("cancel-send-email").checked = false;
     document.getElementById("cancel-remove-calendar").checked = true;
+    document.getElementById("cancel-continue-button").disabled = true;
 
     modal.classList.remove("hidden");
+
+    const row = BOOKINGS.find(x => x.BookingID === bookingId);
+    if (!row) return;
+
+    google.script.run
+      .withSuccessHandler(preview => {
+        if (CANCEL_BOOKING_ID !== bookingId) return;
+        CANCEL_PREVIEW = preview || {};
+        renderCancellationPreview_();
+      })
+      .withFailureHandler(err => {
+        if (CANCEL_BOOKING_ID !== bookingId) return;
+        CANCEL_PREVIEW = { ok: false, error: err.message || String(err) };
+        renderCancellationPreview_();
+      })
+      .getCancellationPolicyPreview(row.RowNumber);
   }
 
   function closeCancelDialog() {
     CANCEL_BOOKING_ID = null;
+    CANCEL_PREVIEW = null;
+    CANCEL_OPTIONS = null;
     document.getElementById("cancelModal").classList.add("hidden");
   }
 
+  function renderCancellationPreview_() {
+    const loading = document.getElementById("cancel-policy-loading");
+    const status = document.getElementById("cancel-policy-status");
+    const chargeFields = document.getElementById("cancel-charge-fields");
+    const continueButton = document.getElementById("cancel-continue-button");
+    const preview = CANCEL_PREVIEW || {};
+
+    loading.hidden = true;
+    status.hidden = false;
+    continueButton.disabled = !preview.ok;
+
+    if (!preview.ok) {
+      status.className = "cancel-policy-status error";
+      status.textContent = preview.error || "Cancellation policy could not be calculated.";
+      chargeFields.hidden = true;
+      return;
+    }
+
+    if (preview.insidePolicyWindow) {
+      status.className = "cancel-policy-status warning";
+      status.innerHTML = "<strong>Inside " + escapeHtml(String(preview.windowHours)) + "-hour cancellation window</strong>" +
+        "<span>Cancellation charges may apply.</span>" +
+        "<span>Published policy: " + escapeHtml(preview.policyCopy || "") + "</span>";
+      chargeFields.hidden = false;
+    } else {
+      status.className = "cancel-policy-status outside";
+      status.innerHTML = "<strong>Outside the " + escapeHtml(String(preview.windowHours)) + "-hour cancellation window</strong>" +
+        "<span>No cancellation charge decision is required.</span>";
+      chargeFields.hidden = true;
+    }
+  }
+
+  function togglePartialChargeField() {
+    const decision = document.getElementById("cancel-charge-decision").value;
+    const field = document.getElementById("cancel-partial-charge-field");
+    field.hidden = decision !== "PARTIAL";
+    if (decision !== "PARTIAL") document.getElementById("cancel-charge-percent").value = "";
+  }
+
   function continueCancelDialog() {
+    if (!CANCEL_PREVIEW || !CANCEL_PREVIEW.ok) return;
+
     const sendEmail = document.getElementById("cancel-send-email").checked;
     const removeCalendar = document.getElementById("cancel-remove-calendar").checked;
+    const decision = CANCEL_PREVIEW.insidePolicyWindow
+      ? document.getElementById("cancel-charge-decision").value
+      : "NONE";
+    const rawPercent = document.getElementById("cancel-charge-percent").value;
+    const chargePercent = decision === "FULL"
+      ? 100
+      : decision === "PARTIAL"
+        ? Number(rawPercent)
+        : 0;
 
-    const summary = [
-      "You are about to cancel this booking.",
-      "",
-      `Send cancellation email: ${sendEmail ? "YES" : "NO"}`,
-      `Remove from calendar: ${removeCalendar ? "YES" : "NO"}`,
-      "",
-      "This cannot be undone."
-    ].join("\n");
+    if (CANCEL_PREVIEW.insidePolicyWindow && !["NONE", "PARTIAL", "FULL"].includes(decision)) {
+      showToast("Choose a cancellation charge decision.", "error");
+      return;
+    }
+    if (decision === "PARTIAL" && (!Number.isFinite(chargePercent) || chargePercent <= 0 || chargePercent >= 100)) {
+      showToast("Enter a partial charge from 1% to 99%.", "error");
+      return;
+    }
 
-    const ok = confirm(summary);
-    if (!ok) return;
+    CANCEL_OPTIONS = {
+      sendEmail,
+      removeCalendar,
+      chargeDecision: decision,
+      chargePercent
+    };
 
-    confirmCancelBooking({ sendEmail, removeCalendar });
+    document.getElementById("cancel-confirmation-summary").innerHTML = [
+      "<strong>Booking:</strong> " + escapeHtml(CANCEL_BOOKING_ID || ""),
+      "<strong>Policy status:</strong> " + (CANCEL_PREVIEW.insidePolicyWindow ? "Inside window" : "Outside window"),
+      "<strong>Charge decision:</strong> " + (decision === "PARTIAL" ? escapeHtml(String(chargePercent)) + "% of catering cost" : decision === "FULL" ? "100% of catering cost" : "No charge"),
+      "<strong>Send cancellation email:</strong> " + (sendEmail ? "Yes" : "No"),
+      "<strong>Remove from calendar:</strong> " + (removeCalendar ? "Yes" : "No"),
+      "<span>This cannot be undone.</span>"
+    ].join("<br>");
+    document.getElementById("cancel-options-view").hidden = true;
+    document.getElementById("cancel-confirmation-view").hidden = false;
+  }
+
+  function backToCancelOptions() {
+    document.getElementById("cancel-options-view").hidden = false;
+    document.getElementById("cancel-confirmation-view").hidden = true;
   }
 
   function confirmCancelBooking(options) {
     const row = BOOKINGS.find(x => x.BookingID === CANCEL_BOOKING_ID);
     if (!row) return;
+
+    options = options || CANCEL_OPTIONS;
+    if (!options) return;
 
     const bookingId = row.BookingID;
 

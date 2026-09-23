@@ -904,6 +904,7 @@ function buildConfirmationEmailHtml_(booking) {
   const paper = getConfiguredValue_("COLOUR_BACKGROUND", CONFIG.COLOUR_BACKGROUND || "#F8F6FF");
   const itemRows = buildConfirmationItemsHtml_(booking.items || []);
   const hostGreeting = booking.hostName ? "Hi " + escapeEmailHtml_(booking.hostName) + "," : "Hi there,";
+  const cancellationPolicy = getCancellationPolicyCopy_();
 
   return `
   <div style="margin:0; padding:0; background:${escapeEmailHtml_(paper)}; font-family: Arial, Helvetica, sans-serif; color:#241F33; line-height:1.5;">
@@ -939,7 +940,11 @@ function buildConfirmationEmailHtml_(booking) {
             <p style="margin:0; font-size:14px;">No prices are shown here because this is a booking confirmation, not a quote. Labour, equipment hire, VAT or event-specific requirements may be confirmed separately where needed.</p>
           </div>
 
-          <p style="margin:24px 0 0;">If anything needs changing before the service date, please let us know as soon as possible and we will do our best to help.</p>
+          <div style="margin:24px 0 0; padding:16px; border-left:4px solid ${escapeEmailHtml_(accent)}; background:#FFF8F4; border-radius:12px;">
+            <h2 style="margin:0 0 8px; color:${escapeEmailHtml_(primary)}; font-size:20px;">Changes &amp; cancellations</h2>
+            <p style="margin:0 0 8px; font-size:14px;">If anything needs changing before the service date, please let us know as soon as possible and we will do our best to help.</p>
+            <p style="margin:0; font-size:14px;">${escapeEmailHtml_(cancellationPolicy)}</p>
+          </div>
           <p style="margin:24px 0 0;">Kind regards,<br><strong style="color:${escapeEmailHtml_(primary)};">FIKA Hospitality</strong></p>
         </div>
       </div>
@@ -1042,16 +1047,46 @@ function cancelBookingForRow(rowNumber, options) {
 
   if (!booking) throw new Error("Could not read booking data.");
 
+  const cancelledAt = new Date();
+  const cancellationWindow = getCancellationWindowForBooking_(booking, cancelledAt);
+  if (!cancellationWindow.valid) {
+    throw new Error(cancellationWindow.error);
+  }
+
+  const charge = validateCancellationChargeDecision_(
+    cancellationWindow.insidePolicyWindow,
+    options
+  );
+  const cancellationEmailType = getCancellationEmailType_(
+    cancellationWindow.insidePolicyWindow,
+    charge.decision,
+    Boolean(options.sendEmail)
+  );
+
   const result = {
     ok: true,
     bookingId: booking.bookingId,
     emailSent: false,
-    calendarRemoved: false
+    calendarRemoved: false,
+    cancellationInsidePolicyWindow: cancellationWindow.insidePolicyWindow,
+    cancellationChargeDecision: charge.decision,
+    cancellationChargePercent: charge.percent,
+    cancellationEmailType: cancellationEmailType
   };
+
+  booking.cancelledAt = cancelledAt;
+  booking.cancelledBy = Session.getActiveUser().getEmail();
+  booking.cancellationInsidePolicyWindow = cancellationWindow.insidePolicyWindow;
+  booking.cancellationWindowHours = cancellationWindow.windowHours;
+  booking.cancellationHoursUntilService = cancellationWindow.hoursUntilService;
+  booking.cancellationChargeDecision = charge.decision;
+  booking.cancellationChargePercent = charge.percent;
+  booking.cancellationEmailType = cancellationEmailType;
 
   if (options.sendEmail) {
     sendBookingCancellationEmail_(booking);
     result.emailSent = true;
+    booking.cancellationEmailSentAt = new Date();
   }
 
   if (options.removeCalendar && booking.calendarEventId) {
@@ -1072,14 +1107,140 @@ function cancelBookingForRow(rowNumber, options) {
   }
 
   booking.status = CONFIG.STATUS.CANCELLED || "CANCELLED";
-  booking.cancelledAt = new Date();
-  booking.cancelledBy = Session.getActiveUser().getEmail();
-  booking.cancellationEmailSentAt = result.emailSent ? new Date() : "";
+  booking.cancellationEmailSentAt = result.emailSent ? booking.cancellationEmailSentAt : "";
   booking.updatedAt = new Date();
 
   writeBookingObjectToExistingRow_(rowNumber, booking);
 
   return result;
+}
+
+function getCancellationPolicyPreview(rowNumber) {
+  const sh = getDashboardSheet_();
+  const map = getHeaderMap_();
+  const json = sh.getRange(rowNumber, map.ParsedJSON).getValue();
+  const booking = safeJsonParse_(json, null);
+  if (!booking) throw new Error("Could not read booking data.");
+
+  const preview = getCancellationWindowForBooking_(booking, new Date());
+  return {
+    ok: preview.valid,
+    bookingId: booking.bookingId,
+    error: preview.error || "",
+    insidePolicyWindow: preview.insidePolicyWindow,
+    windowHours: preview.windowHours,
+    hoursUntilService: preview.hoursUntilService,
+    policyCopy: getCancellationPolicyCopy_()
+  };
+}
+
+function getCancellationWindowForBooking_(booking, now) {
+  const windowHours = getCancellationWindowHours_();
+  const serviceTime = getCancellationServiceTime_(booking);
+  const calculation = calculateCancellationWindow_(booking && booking.eventDate, serviceTime, now, windowHours);
+  if (!calculation.valid) return calculation;
+  calculation.windowHours = windowHours;
+  return calculation;
+}
+
+function getCancellationServiceTime_(booking) {
+  if (booking && Array.isArray(booking.serviceTimes) && booking.serviceTimes.length) {
+    return booking.serviceTimes[0];
+  }
+  if (booking && Array.isArray(booking.items)) {
+    const item = booking.items.find(function(candidate) { return candidate && candidate.time; });
+    if (item) return item.time;
+  }
+  return "";
+}
+
+function calculateCancellationWindow_(eventDate, serviceTime, now, windowHours) {
+  const serviceStart = parseCancellationServiceDateTime_(eventDate, serviceTime);
+  if (!serviceStart) {
+    return {
+      valid: false,
+      error: "Cannot determine the booking service start date and time. Check the booking before cancelling.",
+      insidePolicyWindow: false,
+      hoursUntilService: null,
+      windowHours: Number(windowHours)
+    };
+  }
+
+  const reference = now instanceof Date ? now : new Date(now);
+  if (isNaN(reference.getTime())) {
+    return {
+      valid: false,
+      error: "Could not determine the current time for cancellation policy processing.",
+      insidePolicyWindow: false,
+      hoursUntilService: null,
+      windowHours: Number(windowHours)
+    };
+  }
+
+  const hoursUntilService = (serviceStart.getTime() - reference.getTime()) / 3600000;
+  return {
+    valid: true,
+    serviceStart: serviceStart,
+    hoursUntilService: hoursUntilService,
+    insidePolicyWindow: hoursUntilService < Number(windowHours),
+    windowHours: Number(windowHours)
+  };
+}
+
+function parseCancellationServiceDateTime_(eventDate, serviceTime) {
+  if (!eventDate || !serviceTime) return null;
+  const dateText = String(eventDate).trim().match(/^(\d{4}-\d{2}-\d{2})/);
+  const timeText = typeof parseHospitalityTime_ === "function"
+    ? parseHospitalityTime_(serviceTime)
+    : String(serviceTime).trim();
+  if (!dateText || !/^\d{2}:\d{2}$/.test(String(timeText || ""))) return null;
+
+  try {
+    const parsed = Utilities.parseDate(
+      dateText[1] + " " + timeText,
+      Session.getScriptTimeZone(),
+      "yyyy-MM-dd HH:mm"
+    );
+    return parsed && !isNaN(parsed.getTime()) ? parsed : null;
+  } catch (error) {
+    return null;
+  }
+}
+
+function getCancellationWindowHours_() {
+  const configured = Number(CONFIG.CANCELLATION_POLICY && CONFIG.CANCELLATION_POLICY.windowHours);
+  if (!isFinite(configured) || configured <= 0) {
+    throw new Error("Cancellation policy window is not configured.");
+  }
+  return configured;
+}
+
+function getCancellationPolicyCopy_() {
+  const policy = CONFIG.CANCELLATION_POLICY || {};
+  return String(policy.copyTemplate || "").replace("{hours}", String(getCancellationWindowHours_()));
+}
+
+function validateCancellationChargeDecision_(insidePolicyWindow, options) {
+  if (!insidePolicyWindow) return { decision: "NONE", percent: 0 };
+
+  const decision = String(options.chargeDecision || "").trim().toUpperCase();
+  if (["NONE", "PARTIAL", "FULL"].indexOf(decision) === -1) {
+    throw new Error("Choose a cancellation charge decision before confirming.");
+  }
+  if (decision === "NONE") return { decision: decision, percent: 0 };
+  if (decision === "FULL") return { decision: decision, percent: 100 };
+
+  const percent = Number(options.chargePercent);
+  if (!isFinite(percent) || percent <= 0 || percent >= 100) {
+    throw new Error("Partial charge must be a number from 1% to 99%.");
+  }
+  return { decision: decision, percent: percent };
+}
+
+function getCancellationEmailType_(insidePolicyWindow, chargeDecision, sendEmail) {
+  if (!sendEmail) return "NONE";
+  if (!insidePolicyWindow) return "STANDARD";
+  return "WITHIN_POLICY_" + chargeDecision;
 }
 
 function sendBookingCancellationEmail_(booking) {
@@ -1103,6 +1264,21 @@ function sendBookingCancellationEmail_(booking) {
 }
 
 function buildCancellationEmailHtml_(booking) {
+  const insidePolicyWindow = booking.cancellationInsidePolicyWindow === true || booking.cancellationInsidePolicyWindow === "true";
+  const chargeDecision = String(booking.cancellationChargeDecision || "").toUpperCase();
+  const chargePercent = Number(booking.cancellationChargePercent);
+  const policyCopy = getCancellationPolicyCopy_();
+  const chargeNotice = chargeDecision === "FULL"
+    ? "A cancellation charge of 100% of the catering cost will apply."
+    : chargeDecision === "PARTIAL"
+      ? "A cancellation charge of " + escapeEmailHtml_(String(chargePercent)) + "% of the catering cost will apply."
+      : "On this occasion, no cancellation charge will be applied.";
+  const policyNotice = insidePolicyWindow
+    ? "<p>This cancellation was received within the " + escapeEmailHtml_(String(getCancellationWindowHours_())) + "-hour cancellation window.</p>" +
+      "<p>Our published policy states that " + escapeEmailHtml_(policyCopy.replace(/^Cancellations made /, "cancellations made ")) + "</p>" +
+      "<p>" + chargeNotice + "</p>"
+    : "";
+
   return `
   <div style="font-family: Arial, sans-serif; color:#241F33; line-height:1.5; padding:24px;">
     <h2 style="color:#FF5C00; margin-bottom:8px;">Booking Cancelled</h2>
@@ -1112,6 +1288,8 @@ function buildCancellationEmailHtml_(booking) {
     <p>
       This email is to confirm that the following FIKA Hospitality booking has been cancelled.
     </p>
+
+    ${policyNotice}
 
     <div style="margin:22px 0; padding:18px; border:1px solid #DDD8EA; border-radius:14px; background:#FFF7F2;">
       <p><strong>Booking Reference:</strong> ${escapeEmailHtml_(booking.bookingId)}</p>

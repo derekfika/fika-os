@@ -11,6 +11,12 @@ Angel Court v1 of the client-facing booking experience. This is a separate Googl
 - `04_Webapp.js`, `Index.html`, `Styles.html` and `Script.html` provide the client experience.
 - `05_TestHarness.js` contains pure service tests.
 
+## Cancellation policy
+
+The Review step shows the configured cancellation policy in an inline disclosure before the mandatory notice-policy acknowledgement. The booking retains the existing `noticePolicyAccepted` field and also stores `cancellationPolicyAccepted`, the configured `cancellationPolicyHours`, and the rendered policy copy inside the existing booking JSON. Booking notice guidance remains separate from cancellation wording.
+
+The booking-request email repeats the same configured policy in both plain text and HTML while continuing to state that the request is subject to confirmation.
+
 To fork for another site, change `SITE_CONFIG`, `MENU_SCHEMA`, branding assets/copy, sheet mapping, notice rules and notification recipients. Core booking and UI logic should not require changes.
 
 ## Setup

@@ -65,7 +65,13 @@ function createEmptyBooking_() {
     calendarRemovedAt: "",
     cancelledAt: "",
     cancelledBy: "",
-    cancellationEmailSentAt: ""
+    cancellationEmailSentAt: "",
+    cancellationInsidePolicyWindow: "",
+    cancellationWindowHours: "",
+    cancellationHoursUntilService: "",
+    cancellationChargeDecision: "",
+    cancellationChargePercent: "",
+    cancellationEmailType: ""
   };
 }
 

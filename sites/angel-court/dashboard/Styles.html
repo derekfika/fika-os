@@ -1054,6 +1054,67 @@
     box-shadow: var(--shadow-modal);
   }
 
+  .cancel-modal-card {
+    width: min(560px, 100%);
+  }
+
+  .cancel-policy-status,
+  .cancel-confirmation-summary {
+    display: grid;
+    gap: 8px;
+    margin: 0 0 18px;
+    padding: 14px 16px;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    background: var(--bg-card);
+    line-height: 1.4;
+  }
+
+  .cancel-policy-status.warning {
+    border-color: var(--review-border);
+    background: var(--review-bg);
+    color: var(--text);
+  }
+
+  .cancel-policy-status.outside {
+    border-color: var(--confirmed-border);
+    background: var(--confirmed-bg);
+  }
+
+  .cancel-policy-status.error {
+    border-color: var(--error);
+    background: rgba(255, 92, 0, 0.10);
+    color: var(--text);
+  }
+
+  .cancel-confirmation-summary strong {
+    color: var(--text-secondary);
+  }
+
+  .cancellation-audit {
+    margin: 18px 0 22px;
+    padding: 16px;
+    border: 1px solid var(--border);
+    border-left: 4px solid var(--cancelled-border);
+    border-radius: 14px;
+    background: var(--cancelled-bg);
+  }
+
+  .cancellation-audit h3,
+  .cancellation-audit p {
+    margin: 0 0 8px;
+  }
+
+  .cancellation-audit h3 {
+    color: var(--primary-dark);
+  }
+
+  #cancel-partial-charge-field small {
+    display: block;
+    margin-top: 6px;
+    color: var(--text-muted);
+  }
+
   .modal-card h2 {
     margin: 0 0 10px;
     color: var(--primary);

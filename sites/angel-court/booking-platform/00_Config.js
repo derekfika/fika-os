@@ -27,13 +27,15 @@ const SITE_CONFIG = Object.freeze({
   },
   rules: {
     standardNoticeHours: 72,
+    cancellationWindowHours: 72,
     largeEventNoticeWorkingDays: 10,
     dietaryNoticeWorkingDays: 3,
     blockMinimumOrderIssues: true
   },
   copy: {
     vatNote: "Estimated total, subject to final confirmation, VAT, labour and equipment hire where applicable.",
-    requestAcknowledgement: "I understand this is a booking request and is subject to confirmation."
+    requestAcknowledgement: "I understand this is a booking request and is subject to confirmation.",
+    cancellationPolicyTemplate: "Cancellations made within {hours} hours may incur up to 100% of the catering cost."
   },
   branding: {
     eyebrow: "One Angel Court",
@@ -99,8 +101,15 @@ function buildPublicSiteConfig_(settings) {
       accent: settings.COLOUR_ACCENT,
       ink: settings.COLOUR_INK,
       paper: settings.COLOUR_PAPER
+    }),
+    copy: Object.assign({}, SITE_CONFIG.copy, {
+      cancellationPolicy: formatCancellationPolicyCopy_(SITE_CONFIG.rules.cancellationWindowHours)
     })
   });
+}
+
+function formatCancellationPolicyCopy_(hours) {
+  return SITE_CONFIG.copy.cancellationPolicyTemplate.replace("{hours}", String(hours));
 }
 
 function normaliseAngelCourtLogoUrl_(url) {

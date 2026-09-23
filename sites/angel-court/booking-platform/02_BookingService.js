@@ -36,6 +36,8 @@ function buildServerBooking_(payload) {
   const client = payload.client || {};
   const dietaries = payload.dietaries || {};
   const order = payload.order || {};
+  const acknowledgementPayload = payload.acknowledgements || {};
+  const noticePolicyAccepted = Boolean(acknowledgementPayload.noticePolicyAccepted);
 
   const items = recalculateOrderItems_(order.items || [], Number(event.guestCount || 0));
   const eventType = findEventType_(order.eventType);
@@ -90,7 +92,10 @@ function buildServerBooking_(payload) {
     warnings: warnings,
     acknowledgements: {
       quoteSubjectToConfirmation: Boolean((payload.acknowledgements || {}).quoteSubjectToConfirmation),
-      noticePolicyAccepted: Boolean((payload.acknowledgements || {}).noticePolicyAccepted),
+      noticePolicyAccepted: noticePolicyAccepted,
+      cancellationPolicyAccepted: Boolean(acknowledgementPayload.cancellationPolicyAccepted || noticePolicyAccepted),
+      cancellationPolicyHours: Number(SITE_CONFIG.rules.cancellationWindowHours),
+      cancellationPolicyCopy: formatCancellationPolicyCopy_(SITE_CONFIG.rules.cancellationWindowHours),
       dietaryResponsibilityAccepted: Boolean((payload.acknowledgements || {}).dietaryResponsibilityAccepted)
     },
     specialInstructions: clean_(payload.specialInstructions),
@@ -202,7 +207,7 @@ function validateBookingRequest_(booking) {
   });
 
   const a = booking.acknowledgements;
-  if (!a.quoteSubjectToConfirmation || !a.noticePolicyAccepted || !a.dietaryResponsibilityAccepted) {
+  if (!a.quoteSubjectToConfirmation || !a.noticePolicyAccepted || !a.cancellationPolicyAccepted || !a.dietaryResponsibilityAccepted) {
     errors.push("All booking acknowledgements must be accepted.");
   }
   if (booking.dietaries.allergyDetails && !booking.dietaries.severeAllergyAcknowledged) {

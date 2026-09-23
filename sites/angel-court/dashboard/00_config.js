@@ -42,6 +42,11 @@ const CONFIG = {
   CALENDAR_EVENT_COLOR_ID: "9",
   CALENDAR_EVENT_DURATION_MINUTES: 60,
 
+  CANCELLATION_POLICY: {
+    windowHours: 72,
+    copyTemplate: "Cancellations made within {hours} hours may incur up to 100% of the catering cost."
+  },
+
   APP_NAME: "Angel Court Hospitality Dashboard",
   LOCATION_NAME: "Angel Court",
   LOCATION_SHORT_CODE: "OAC",

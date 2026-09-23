@@ -184,26 +184,54 @@
     </div>
 
     <div id="cancelModal" class="modal hidden">
-      <div class="modal-card">
-        <h2>Cancel Booking?</h2>
+      <div class="modal-card cancel-modal-card" role="dialog" aria-modal="true" aria-labelledby="cancel-modal-title">
+        <div id="cancel-options-view">
+          <h2 id="cancel-modal-title">Cancel Booking?</h2>
 
-        <p class="muted">
-          Choose what should happen when this booking is cancelled.
-        </p>
+          <p id="cancel-policy-loading" class="muted">Checking the booking service time...</p>
+          <div id="cancel-policy-status" class="cancel-policy-status" hidden></div>
 
-        <label class="modal-check">
-          <input id="cancel-send-email" type="checkbox">
-          <span>Send cancellation email to client</span>
-        </label>
+          <div id="cancel-charge-fields" hidden>
+            <label class="field">
+              <span>Cancellation charge decision *</span>
+              <select id="cancel-charge-decision" onchange="togglePartialChargeField()">
+                <option value="">Choose an outcome</option>
+                <option value="NONE">No charge</option>
+                <option value="PARTIAL">Partial charge</option>
+                <option value="FULL">Full catering cost</option>
+              </select>
+            </label>
+            <label id="cancel-partial-charge-field" class="field" hidden>
+              <span>Partial charge percentage *</span>
+              <input id="cancel-charge-percent" type="number" min="1" max="99" step="0.01" inputmode="decimal">
+              <small>Enter a percentage from 1% to 99% of the catering cost.</small>
+            </label>
+          </div>
 
-        <label class="modal-check">
-          <input id="cancel-remove-calendar" type="checkbox" checked>
-          <span>Remove from CPU calendar</span>
-        </label>
+          <label class="modal-check">
+            <input id="cancel-send-email" type="checkbox">
+            <span>Send cancellation email to client</span>
+          </label>
 
-        <div class="modal-actions">
-          <button class="button secondary" onclick="closeCancelDialog()">Back</button>
-          <button class="button danger" onclick="continueCancelDialog()">Continue</button>
+          <label class="modal-check">
+            <input id="cancel-remove-calendar" type="checkbox" checked>
+            <span>Remove from CPU calendar</span>
+          </label>
+
+          <div class="modal-actions">
+            <button class="button secondary" onclick="closeCancelDialog()" type="button">Back</button>
+            <button id="cancel-continue-button" class="button danger" onclick="continueCancelDialog()" type="button" disabled>Continue</button>
+          </div>
+        </div>
+
+        <div id="cancel-confirmation-view" hidden>
+          <h2>Confirm cancellation</h2>
+          <p class="muted">Review the cancellation outcome before saving it.</p>
+          <div id="cancel-confirmation-summary" class="cancel-confirmation-summary"></div>
+          <div class="modal-actions">
+            <button class="button secondary" onclick="backToCancelOptions()" type="button">Back</button>
+            <button class="button danger" onclick="confirmCancelBooking()" type="button">Confirm cancellation</button>
+          </div>
         </div>
       </div>
     </div>

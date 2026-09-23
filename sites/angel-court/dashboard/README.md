@@ -42,6 +42,14 @@ The dashboard automates the workflow from incoming booking request to quote gene
 * Sends booking confirmation emails
 * Tracks confirmation status
 * Stores confirmation metadata
+* Detects cancellations inside the configured 72-hour policy window
+* Requires a manager charge decision for inside-window cancellations
+* Sends neutral no-charge, partial-charge or full-charge cancellation wording
+* Stores cancellation timing, actor, charge and email-variant audit facts in `ParsedJSON`
+
+Cancellation detection uses the booking service date and first canonical service time in the dashboard timezone. The boundary is strict: `hours until service < window hours` is inside the window, so exactly 72 hours is outside. Past service starts are inside the late-cancellation state. Historical rows without the new fields remain readable; invalid or missing service timing fails cancellation safely rather than guessing.
+
+Booking confirmation emails include a `Changes & cancellations` section using the same configured policy copy and retain the confirmed/scheduled lifecycle wording.
 
 ## Archiving
 

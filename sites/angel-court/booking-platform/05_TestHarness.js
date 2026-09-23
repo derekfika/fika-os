@@ -35,15 +35,24 @@ function runBookingPlatformTests() {
   tampered.order.items[0].lineTotal = 0.1;
   const protectedBooking = buildServerBooking_(tampered);
   const dashboardBooking = adaptClientBookingForDashboard_(protectedBooking);
+  const notificationText = buildBookingNotificationText_(protectedBooking, "Breakfast");
+  const notificationHtml = buildBookingNotificationHtml_(protectedBooking, "Breakfast");
   const missingReferencePayload = JSON.parse(JSON.stringify(payload));
   missingReferencePayload.client.invoiceReference = "";
   const missingClientNamePayload = JSON.parse(JSON.stringify(payload));
   missingClientNamePayload.client.clientName = "";
   const missingClientCompanyPayload = JSON.parse(JSON.stringify(payload));
   missingClientCompanyPayload.client.clientCompanyName = "";
+  const missingAcknowledgementPayload = JSON.parse(JSON.stringify(payload));
+  missingAcknowledgementPayload.acknowledgements.noticePolicyAccepted = false;
 
   const tests = [
     { name: "valid payload passes", ok: validation.ok },
+    { name: "cancellation policy is configured", ok: SITE_CONFIG.rules.cancellationWindowHours === 72 && formatCancellationPolicyCopy_(72) === "Cancellations made within 72 hours may incur up to 100% of the catering cost." },
+    { name: "cancellation acknowledgement is captured", ok: protectedBooking.acknowledgements.noticePolicyAccepted && protectedBooking.acknowledgements.cancellationPolicyAccepted && protectedBooking.acknowledgements.cancellationPolicyHours === 72 },
+    { name: "request email plain text contains cancellation policy", ok: notificationText.indexOf(formatCancellationPolicyCopy_(72)) !== -1 && notificationText.indexOf("This request is subject to confirmation") !== -1 },
+    { name: "request email HTML contains escaped cancellation policy", ok: notificationHtml.indexOf(escapeNotificationHtml_(formatCancellationPolicyCopy_(72))) !== -1 && notificationHtml.indexOf("This request is subject to confirmation") !== -1 },
+    { name: "request email retains request status", ok: notificationText.indexOf("booking request has been received") !== -1 && notificationText.indexOf("booking is confirmed") === -1 },
     { name: "server uses schema unit price", ok: protectedBooking.order.items[0].unitPrice === 3.95 },
     { name: "server recalculates total", ok: protectedBooking.order.netTotal === 39.5 },
     { name: "site is config driven", ok: protectedBooking.siteId === SITE_CONFIG.siteId },
@@ -58,6 +67,7 @@ function runBookingPlatformTests() {
     { name: "invoice reference is mandatory", ok: !validateBookingRequest_(buildServerBooking_(missingReferencePayload)).ok },
     { name: "client name is mandatory", ok: !validateBookingRequest_(buildServerBooking_(missingClientNamePayload)).ok },
     { name: "client company is mandatory", ok: !validateBookingRequest_(buildServerBooking_(missingClientCompanyPayload)).ok },
+    { name: "missing cancellation acknowledgement is rejected", ok: !validateBookingRequest_(buildServerBooking_(missingAcknowledgementPayload)).ok },
     { name: "serving suggestion schema is public", ok: getPublicPlatformConfig().menu.find(function(item) { return item.id === "mini_pastries"; }).serves === 12 },
     { name: "removed Classic Working Lunch is not public", ok: !getPublicPlatformConfig().menu.some(function(item) { return item.id === "classic_working_lunch"; }) },
     { name: "spreadsheet URL ID extraction", ok: extractSpreadsheetId_("https://docs.google.com/spreadsheets/d/1ExampleSpreadsheetId123456789/edit#gid=0") === "1ExampleSpreadsheetId123456789" },

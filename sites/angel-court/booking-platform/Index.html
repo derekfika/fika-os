@@ -149,7 +149,11 @@
           <label class="field full"><span>Special instructions</span><textarea name="specialInstructions" rows="3" placeholder="Access, setup, presentation or anything else the team should know"></textarea></label>
           <div class="acknowledgements">
             <label class="check-row"><input name="acknowledgements.quoteSubjectToConfirmation" type="checkbox"><span>I understand this is a booking request and is subject to confirmation.</span></label>
-            <label class="check-row"><input name="acknowledgements.noticePolicyAccepted" type="checkbox"><span>I understand the notice and cancellation policies.</span></label>
+            <details class="policy-disclosure">
+              <summary>View cancellation policy</summary>
+              <p id="cancellation-policy-copy"></p>
+            </details>
+            <label class="check-row"><input name="acknowledgements.noticePolicyAccepted" type="checkbox"><span>I have read and understand the notice and cancellation policy.</span></label>
             <label class="check-row"><input name="acknowledgements.dietaryResponsibilityAccepted" type="checkbox"><span>I have provided all known dietary and allergen requirements.</span></label>
           </div>
         </section>

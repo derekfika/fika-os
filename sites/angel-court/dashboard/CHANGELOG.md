@@ -8,6 +8,21 @@ The project follows a simple versioning approach:
 * Bug fixes and stability improvements increment the patch version (e.g. v0.9.1 → v0.9.11)
 
 ---
+## Unreleased
+
+### Added
+
+* Added the configured cancellation-policy reminder to booking confirmation emails, including the `Changes & cancellations` section and plain-text fallback.
+
+* Added configuration-backed cancellation policy detection using the booking service date/start time and a strict `< 72 hours` boundary.
+* Added manager warning and required `NONE`, `PARTIAL` (1–99%) or `FULL` charge decision for inside-window cancellations.
+* Added standard and inside-window cancellation email variants without implying an automatic 100% charge.
+* Added cancellation audit facts to the serialized booking record and a historical cancellation summary in the detail panel.
+
+### Compatibility
+
+* Existing dashboard sheet columns and historical rows remain valid; new audit fields are stored in `ParsedJSON` and missing fields degrade safely.
+
 ## v0.9.12 – Admin Settings & Stability Update
 
 ### Added

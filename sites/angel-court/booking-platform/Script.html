@@ -566,7 +566,10 @@
         menuRows +
         reviewRow("Estimated total", money.format(total())) +
         '<p class="fine-print" style="color:var(--muted)">' + escapeHtml(config.site.copy.vatNote) + '</p>' +
+        '<div class="policy-summary"><strong>Cancellation policy</strong><span>' + escapeHtml(config.site.copy.cancellationPolicy || "") + '</span></div>' +
         '</div>';
+      const policyCopy = document.getElementById("cancellation-policy-copy");
+      if (policyCopy) policyCopy.textContent = config.site.copy.cancellationPolicy || "";
     }
 
     function submit() {
@@ -609,6 +612,8 @@
     }
 
     function buildPayload() {
+      const acknowledgements = objectFromPrefix("acknowledgements.");
+      acknowledgements.cancellationPolicyAccepted = Boolean(acknowledgements.noticePolicyAccepted);
       return {
         client: objectFromPrefix("client."),
         event: objectFromPrefix("event."),
@@ -623,7 +628,7 @@
           }))
         },
         dietaries: objectFromPrefix("dietaries."),
-        acknowledgements: objectFromPrefix("acknowledgements."),
+        acknowledgements,
         specialInstructions: value("specialInstructions")
       };
     }

@@ -92,6 +92,7 @@ function getBookingNotificationDashboardUrl_(configuredUrl) {
 }
 
 function buildBookingNotificationText_(booking, eventType) {
+  const cancellationPolicy = formatCancellationPolicyCopy_(SITE_CONFIG.rules.cancellationWindowHours);
   return [
     "Hi " + booking.client.name + ",",
     "",
@@ -116,13 +117,17 @@ function buildBookingNotificationText_(booking, eventType) {
     ].filter(Boolean).join(" / "),
     "Estimated total: " + formatNotificationMoney_(booking.order.netTotal),
     "",
-    "This request is subject to confirmation. The hospitality team will contact you once it has been reviewed."
+    "This request is subject to confirmation. The hospitality team will contact you once it has been reviewed.",
+    "",
+    "Cancellation policy",
+    cancellationPolicy
   ].filter(function(line, index, values) {
     return line !== "" || values[index - 1] !== "";
   }).join("\n");
 }
 
 function buildBookingNotificationHtml_(booking, eventType) {
+  const cancellationPolicy = formatCancellationPolicyCopy_(SITE_CONFIG.rules.cancellationWindowHours);
   const rows = [
     ["Reference", booking.bookingId],
     ["Client", booking.client.clientName],
@@ -164,7 +169,11 @@ function buildBookingNotificationHtml_(booking, eventType) {
         '</tr>';
     }).join(""),
     '</table>',
-    '<p style="font-size:12px;color:#63666a;margin-bottom:0">This request is subject to confirmation. The hospitality team will contact you once it has been reviewed.</p>',
+    '<p style="font-size:12px;color:#63666a;margin-bottom:18px">This request is subject to confirmation. The hospitality team will contact you once it has been reviewed.</p>',
+    '<div style="padding:14px 16px;border-left:4px solid #63666a;background:#f7f7f5;border-radius:10px">',
+    '<strong style="display:block;margin-bottom:4px;color:#323437">Cancellation policy</strong>',
+    '<span style="font-size:13px;color:#63666a">' + escapeNotificationHtml_(cancellationPolicy) + '</span>',
+    '</div>',
     '</div>',
     '</div>'
   ].join("");
