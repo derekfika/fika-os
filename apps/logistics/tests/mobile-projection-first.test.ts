@@ -88,6 +88,18 @@ test("invalidation endpoint and upstream notifier are narrow and internal-only",
   assert.match(client, /sourceVersion/);
 });
 
+test("batched invalidation reconciles once per affected service date", () => {
+  const route = readFileSync(new URL("../app/api/logistics/invalidate/route.ts", import.meta.url), "utf8");
+  const materialisation = readFileSync(new URL("../lib/logistics-materialisation.ts", import.meta.url), "utf8");
+  assert.match(route, /changes/);
+  assert.match(route, /changes\.length > 25/);
+  assert.match(route, /const dates = \[\.\.\.new Set/);
+  assert.match(route, /reconcileLogisticsDay\(date/);
+  assert.match(route, /system:integration-hub-invalidation/);
+  assert.match(materialisation, /sourceChanges: LogisticsProjectionInvalidation\[\] = \[\]/);
+  assert.match(materialisation, /for \(const change of lineageChanges\)/);
+});
+
 test("server-authoritative vehicle entitlements isolate fixed-van access", async () => {
   const request = (vehicle: string) => ({ cookies: { get: () => undefined }, headers: { get: () => "" }, nextUrl: { searchParams: { get: (key: string) => key === "vehicle" ? vehicle : null } } });
   const admitted = (permittedVehicleIds: string[]) => requireLogisticsAccess(request("van1"), { sessionReader: async () => ({ firebaseUid: "firebase", authmodIdentityId: "driver", displayName: "Driver", permittedVehicleIds } as never), allowLocalFallback: false });

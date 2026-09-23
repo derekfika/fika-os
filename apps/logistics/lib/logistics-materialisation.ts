@@ -99,7 +99,7 @@ export async function rebuildLogisticsProjection(serviceDate: string, _actorId: 
 }
 
 /** Materialise one bounded service day from Hub fulfilment, CPU context and governed OPLOCs. */
-export async function reconcileLogisticsDay(serviceDate: string, by: string, actorId = "system:reconcile", cookie?: string, sourceChange?: LogisticsProjectionInvalidation) {
+export async function reconcileLogisticsDay(serviceDate: string, by: string, actorId = "system:reconcile", cookie?: string, sourceChange?: LogisticsProjectionInvalidation, sourceChanges: LogisticsProjectionInvalidation[] = []) {
   const [requirements, oplocs, existingState] = await Promise.all([
     fetchRequirements(serviceDate, cookie),
     fetchOplocs(cookie),
@@ -140,17 +140,18 @@ export async function reconcileLogisticsDay(serviceDate: string, by: string, act
     }
   }
   let projection = await rebuildLogisticsProjection(serviceDate, by, lastChangeSequence);
-  if (sourceChange) {
-    const prior = projection.sourceLineage?.find((item) => item.sourceDomain === sourceChange.sourceDomain && item.sourceEntityId === sourceChange.sourceEntityId);
-    if (!prior || prior.sourceVersion < sourceChange.sourceVersion) {
-      projection = await saveLogisticsProjection({
-        ...projection,
-        sourceLineage: [
-          ...(projection.sourceLineage || []).filter((item) => !(item.sourceDomain === sourceChange.sourceDomain && item.sourceEntityId === sourceChange.sourceEntityId)),
-          { sourceDomain: sourceChange.sourceDomain, sourceEntityId: sourceChange.sourceEntityId, sourceVersion: sourceChange.sourceVersion, ...(sourceChange.sourceContentHash ? { sourceContentHash: sourceChange.sourceContentHash } : {}), changedAt: sourceChange.changedAt },
-        ].slice(-200),
-      });
+  const lineageChanges = [...sourceChanges, ...(sourceChange ? [sourceChange] : [])];
+  if (lineageChanges.length) {
+    const nextLineage = [...(projection.sourceLineage || [])];
+    for (const change of lineageChanges) {
+      const prior = nextLineage.find((item) => item.sourceDomain === change.sourceDomain && item.sourceEntityId === change.sourceEntityId);
+      if (prior && prior.sourceVersion >= change.sourceVersion) continue;
+      for (let index = nextLineage.length - 1; index >= 0; index--) {
+        if (nextLineage[index].sourceDomain === change.sourceDomain && nextLineage[index].sourceEntityId === change.sourceEntityId) nextLineage.splice(index, 1);
+      }
+      nextLineage.push({ sourceDomain: change.sourceDomain, sourceEntityId: change.sourceEntityId, sourceVersion: change.sourceVersion, ...(change.sourceContentHash ? { sourceContentHash: change.sourceContentHash } : {}), changedAt: change.changedAt });
     }
+    projection = await saveLogisticsProjection({ ...projection, sourceLineage: nextLineage.slice(-200) });
   }
   return { created, updated, projection, requirements };
 }

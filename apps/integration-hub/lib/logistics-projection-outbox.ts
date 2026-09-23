@@ -13,7 +13,7 @@ import {
   type LogisticsProjectionInvalidation,
 } from "../../shared/logistics-projection";
 import { db } from "./firebase-admin";
-import { notifyLogisticsProjection } from "./logistics-projection-client";
+import { notifyLogisticsProjection, notifyLogisticsProjectionBatch } from "./logistics-projection-client";
 
 export type LogisticsProjectionOutboxEvent = DurableDomainEvent<LogisticsProjectionInvalidation>;
 
@@ -114,10 +114,11 @@ export async function repairLogisticsProjectionForServiceDate(serviceDate: strin
     .get();
   const truncated = snapshot.size > boundedLimit;
   const requirements = snapshot.docs.slice(0, boundedLimit).map(document => document.data() as FulfilmentRequirement);
-  const events = await Promise.all(requirements.map(async requirement => {
-    await ensureLogisticsProjectionEvent(requirement);
-    return deliverLogisticsProjectionForRequirement(requirement);
+  const eventIds = await Promise.all(requirements.map(async requirement => {
+    const event = await ensureLogisticsProjectionEvent(requirement);
+    return event.eventId;
   }));
+  const events = await deliverLogisticsProjectionBatch(eventIds);
   return {
     serviceDate,
     inspected: requirements.length,
@@ -134,27 +135,51 @@ export async function getLogisticsProjectionOutboxEvent(eventId: string) {
 }
 
 export async function deliverLogisticsProjection(eventId: string) {
-  const claim = await db.runTransaction(async transaction => {
+  const claim = await claimLogisticsProjection(eventId);
+  if (!claim || !claim.claimed) return claim?.event;
+
+  try {
+    await notifyLogisticsProjection(claim.event.payload);
+    const delivered = markEventDelivered(claim.event, new Date().toISOString());
+    await outbox().doc(eventId).set(outboxRecord(delivered));
+    return delivered;
+  } catch (error) {
+    const failed = markEventFailed(claim.event, error, new Date().toISOString());
+    await outbox().doc(eventId).set(outboxRecord(failed));
+    return failed;
+  }
+}
+
+async function claimLogisticsProjection(eventId: string) {
+  return db.runTransaction(async transaction => {
     const ref = outbox().doc(eventId);
     const snapshot = await transaction.get(ref);
     if (!snapshot.exists) return undefined;
     const current = snapshot.data() as LogisticsProjectionOutboxEvent;
-    if (current.delivery.status === "delivered" || !eventIsDue(current)) return current;
+    if (current.delivery.status === "delivered" || !eventIsDue(current)) return { event: current, claimed: false };
     const claimed = claimEvent(current, `integration-hub-logistics:${Date.now()}`, new Date().toISOString());
     transaction.set(ref, outboxRecord(claimed));
-    return claimed;
+    return { event: claimed, claimed: true };
   });
-  if (!claim || claim.delivery.status === "delivered") return claim;
+}
+
+/** Deliver a bounded batch with one network call so one service-date repair can reconcile once. */
+export async function deliverLogisticsProjectionBatch(eventIds: string[]) {
+  const claims = await Promise.all(eventIds.map(eventId => claimLogisticsProjection(eventId)));
+  const ready = claims.filter((claim): claim is { event: LogisticsProjectionOutboxEvent; claimed: true } => Boolean(claim?.claimed));
+  if (!ready.length) return claims.flatMap(claim => claim?.event ? [claim.event] : []);
 
   try {
-    await notifyLogisticsProjection(claim.payload);
-    const delivered = markEventDelivered(claim, new Date().toISOString());
-    await outbox().doc(eventId).set(outboxRecord(delivered));
-    return delivered;
+    await notifyLogisticsProjectionBatch(ready.map(claim => claim.event.payload));
+    const delivered = ready.map(claim => markEventDelivered(claim.event, new Date().toISOString()));
+    await Promise.all(delivered.map(event => outbox().doc(event.eventId).set(outboxRecord(event))));
+    const deliveredById = new Map(delivered.map(event => [event.eventId, event]));
+    return claims.flatMap(claim => claim?.event ? [deliveredById.get(claim.event.eventId) || claim.event] : []);
   } catch (error) {
-    const failed = markEventFailed(claim, error, new Date().toISOString());
-    await outbox().doc(eventId).set(outboxRecord(failed));
-    return failed;
+    const failed = ready.map(claim => markEventFailed(claim.event, error, new Date().toISOString()));
+    await Promise.all(failed.map(event => outbox().doc(event.eventId).set(outboxRecord(event))));
+    const failedById = new Map(failed.map(event => [event.eventId, event]));
+    return claims.flatMap(claim => claim?.event ? [failedById.get(claim.event.eventId) || claim.event] : []);
   }
 }
 
@@ -163,7 +188,7 @@ export async function replayLogisticsProjectionOutbox(limit = 25) {
     .where("outboxStatus", "in", ["pending", "failed"])
     .limit(Math.min(Math.max(limit, 1), 50))
     .get();
-  const events = await Promise.all(snapshot.docs.map(document => deliverLogisticsProjection(document.id)));
+  const events = await deliverLogisticsProjectionBatch(snapshot.docs.map(document => document.id));
   return {
     attempted: events.length,
     delivered: events.filter(event => event?.delivery.status === "delivered").length,
