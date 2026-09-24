@@ -1,10 +1,8 @@
-import type { FulfilmentWorkstream } from "../../shared/fulfilment-workstream";
-
 export type TimelineEventPresentation = {
   destination: string;
   time: string;
-  workstream: FulfilmentWorkstream | string;
-  quantity?: string;
+  loadCount: number;
+  vehicle?: string;
   lane: "delivery" | "collection";
 };
 
@@ -21,19 +19,22 @@ export function escapeTimelineHtml(value: string) {
 export function timelineEventTooltip(presentation: TimelineEventPresentation) {
   return [
     `Destination: ${presentation.destination}`,
-    `Workstream: ${presentation.workstream}`,
     `Time: ${presentation.time}`,
-    presentation.quantity ? `Quantity: ${presentation.quantity}` : undefined,
+    formatLoadCount(presentation.loadCount),
+    presentation.vehicle ? `Vehicle: ${presentation.vehicle}` : undefined,
     `Operation: ${presentation.lane === "collection" ? "Collection" : "Delivery"}`,
   ].filter(Boolean).join("\n");
 }
 
 export function timelineEventAreaHtml(presentation: TimelineEventPresentation) {
-  const quantity = presentation.quantity ? ` · ${presentation.quantity}` : "";
-  return `<span class="fika-event-label-content"><strong>${escapeTimelineHtml(presentation.destination)}</strong><small>${escapeTimelineHtml(`${presentation.workstream}${quantity}`)}</small></span>`;
+  return `<span class="fika-event-card"><time>${escapeTimelineHtml(presentation.time)}</time><strong>${escapeTimelineHtml(presentation.destination)}</strong><small>${escapeTimelineHtml(formatLoadCount(presentation.loadCount))}</small></span>`;
 }
 
 export function timelineEventInlineHtml(presentation: TimelineEventPresentation) {
-  return `<span class="fika-event-inline-content"><strong>${escapeTimelineHtml(presentation.time)}</strong><small>${escapeTimelineHtml(presentation.workstream)}</small></span>`;
+  return `<span class="fika-event-inline-content"><time>${escapeTimelineHtml(presentation.time)}</time><strong>${escapeTimelineHtml(presentation.destination)}</strong><small>${escapeTimelineHtml(formatLoadCount(presentation.loadCount))}</small></span>`;
 }
 
+export function formatLoadCount(loadCount: number) {
+  const count = Math.max(1, Math.round(loadCount));
+  return `${count} load${count === 1 ? "" : "s"}`;
+}

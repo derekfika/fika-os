@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { fulfilmentWorkstream } from "../../shared/fulfilment-workstream";
-import { timelineEventAreaHtml, timelineEventTooltip } from "../lib/timeline-presentation";
+import { formatLoadCount, timelineEventAreaHtml, timelineEventInlineHtml, timelineEventTooltip } from "../lib/timeline-presentation";
 
 test("explicit production classifications become stable operator workstream labels", () => {
   assert.equal(fulfilmentWorkstream({ sourceDomain: "menu-planning" }), "Delivered-In");
@@ -13,16 +13,23 @@ test("explicit production classifications become stable operator workstream labe
   assert.equal(fulfilmentWorkstream({ sourceDomain: "cpu-production" }), "CPU Production");
 });
 
-test("timeline presentation keeps destination strongest and supplies a complete tooltip", () => {
-  const presentation = { destination: "One Angel Court", time: "07:00", workstream: "Delivered-In" as const, quantity: "24 portions", lane: "delivery" as const };
+test("timeline presentation shows only time, destination and canonical load count", () => {
+  const presentation = { destination: "One Angel Court", time: "07:00", loadCount: 1, vehicle: "Van 2", lane: "delivery" as const };
   const area = timelineEventAreaHtml(presentation);
   assert.match(area, /One Angel Court/);
-  assert.match(area, /Delivered-In · 24 portions/);
-  assert.equal(timelineEventTooltip(presentation), "Destination: One Angel Court\nWorkstream: Delivered-In\nTime: 07:00\nQuantity: 24 portions\nOperation: Delivery");
+  assert.match(area, /1 load/);
+  assert.match(timelineEventInlineHtml(presentation), /07:00/);
+  assert.doesNotMatch(area, /Delivered-In|CPU Production|quantity|portion/);
+  assert.equal(timelineEventTooltip(presentation), "Destination: One Angel Court\nTime: 07:00\n1 load\nVehicle: Van 2\nOperation: Delivery");
   assert.doesNotMatch(area, /cpu-production/);
 });
 
-test("timeline label HTML escapes destination snapshots", () => {
-  assert.match(timelineEventAreaHtml({ destination: "A < B", time: "08:00", workstream: "Events", lane: "delivery" }), /A &lt; B/);
+test("timeline load count pluralises without using displayed quantity", () => {
+  assert.equal(formatLoadCount(1), "1 load");
+  assert.equal(formatLoadCount(2), "2 loads");
+  assert.equal(formatLoadCount(0), "1 load");
 });
 
+test("timeline label HTML escapes destination snapshots", () => {
+  assert.match(timelineEventAreaHtml({ destination: "A < B", time: "08:00", loadCount: 2, lane: "delivery" }), /A &lt; B/);
+});

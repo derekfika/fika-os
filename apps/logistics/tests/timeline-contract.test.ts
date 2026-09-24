@@ -14,14 +14,16 @@ test("DayPilot keeps true short event geometry and supported interaction semanti
   assert.match(page, /snapToGrid=\{true\}/);
   assert.match(page, /onEventMoved=/);
   assert.match(page, /onEventResized=/);
+  assert.match(page, /const loadCount = Math\.max\(1, stop\.requirementCount\)/);
   assert.match(page, /timelineEventAreaHtml/);
   assert.match(page, /timelineEventTooltip/);
+  assert.doesNotMatch(page, /const presentation = \{[^}]*workstream/);
 });
 
 test("desktop layout gives the schedule the wider surface and retains mobile fallback", () => {
   assert.match(styles, /mock-workspace \{ grid-template-columns: minmax\(280px, 28%\) minmax\(0, 72%\)/);
   assert.match(styles, /@media \(max-width: 1050px\) \{\s*\.real-planner \.mock-workspace \{ grid-template-columns: 1fr; \}/);
-  assert.match(styles, /fika-event-label[^}]*width: 118px/);
+  assert.match(styles, /fika-event-label[^}]*width: 124px/);
 });
 
 test("projection dashboard labels are human-facing and do not expose source ids", () => {
@@ -30,3 +32,11 @@ test("projection dashboard labels are human-facing and do not expose source ids"
   assert.match(adapter, /job\.workstream \|\| fulfilmentWorkstream/);
 });
 
+test("weekday selector remains selected-day navigable without changing week controls", () => {
+  assert.match(page, /function WeekStrip/);
+  assert.match(page, /aria-pressed=\{date === selectedDate\}/);
+  assert.match(page, /onSelect=\{setDate\}/);
+  assert.match(page, /function WeekNavigation/);
+  assert.match(page, /aria-label="Previous week"/);
+  assert.match(page, /aria-label="Next week"/);
+});
