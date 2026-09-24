@@ -24,6 +24,17 @@ test("all three source domains normalize into one Logistics-facing contract", ()
   assert.ok(sources.every(source => source.entityType === "Fulfilment Requirement" && source.sourceVersion > 0));
 });
 
+test("Production Order classification crosses the Fulfilment boundary as an operator workstream", () => {
+  assert.equal(fulfilmentFromProductionOrder({ ...productionOrder, origin: "hospitality_booking" }, "cpu").workstream, "Hospitality");
+  assert.equal(fulfilmentFromProductionOrder({ ...productionOrder, productionCategory: "delivered_in" }, "cpu").workstream, "Delivered-In");
+  assert.equal(fulfilmentFromProductionOrder({ ...productionOrder, productionCategory: "fine_dining" }, "cpu").workstream, "Fine Dining");
+  assert.equal(fulfilmentFromProductionOrder({ ...productionOrder, productionCategory: "events" }, "cpu").workstream, "Events");
+  assert.equal(fulfilmentFromProductionOrder({ ...productionOrder, productionCategory: "grab_and_go" }, "cpu").workstream, "Grab & Go");
+  assert.equal(fulfilmentFromProductionOrder(productionOrder, "cpu").workstream, "CPU Production");
+  assert.equal(fulfilmentFromPublishedMenuDay(menuDay, "oploc:haleon").workstream, "Delivered-In");
+  assert.equal(fulfilmentFromGrabAndGoOrder(grabOrder, "site").workstream, "Grab & Go");
+});
+
 test("central projection accepts source snapshots, is idempotent, and rejects stale versions", () => {
   const requirement = fulfilmentFromGrabAndGoOrder(grabOrder, "site");
   const event = createDomainEvent({ eventType: "fulfilment.requirement.created", sourceAggregateId: requirement.canonicalId, sourceVersion: requirement.sourceVersion, occurredAt: "2026-08-20T10:00:00Z", payload: requirement });

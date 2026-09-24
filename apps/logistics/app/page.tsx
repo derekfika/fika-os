@@ -5,6 +5,7 @@ import * as React from "react";
 import type { CSSProperties, ReactNode, DragEvent, MouseEvent, MutableRefObject } from "react";
 import { DayPilotScheduler, DayPilot } from "@daypilot/daypilot-lite-react";
 import type { FulfilmentRequirement } from "../../shared/fulfilment-requirement";
+import { fulfilmentWorkstream } from "../../shared/fulfilment-workstream";
 import type { DeliveryRun, DeliveryStop, MovementRequest } from "../lib/types";
 import {
   workGroupQueueState,
@@ -19,6 +20,7 @@ import type {
 } from "../lib/planner-read-model";
 import type { LogisticsDayProjection, LogisticsProjectionState } from "../lib/types";
 import { projectionToDashboardData } from "../lib/projection-dashboard-adapter";
+import { timelineEventAreaHtml, timelineEventInlineHtml, timelineEventTooltip } from "../lib/timeline-presentation";
 import { operationalDate } from "../lib/date";
 import { clientErrorDetails, requireSuccessfulResponse } from "../lib/client-errors";
 import { drainIncrementalPages } from "../lib/incremental-sync";
@@ -1177,9 +1179,12 @@ function DayPilotTimeline({ runs, serviceDate, onStop, onSchedule, onQueueDrop }
     const optimistic = optimisticSchedules[stop.stopId];
     const start = optimistic?.start || stop.plannedWindow?.startTime || stop.plannedArrivalTime!;
     const end = optimistic?.end || stop.plannedWindow?.endTime || addClockMinutes(start, 15);
-    return { id: stop.stopId, text: `${stop.destination.label} · ${start}`, start: `${serviceDate}T${start}:00`, end: `${serviceDate}T${end}:00`, resource: resourceId(lane, run.runId), cssClass: `fika-event ${stop.attention.length ? "attention" : ""}`, tags: { runId: run.runId, stopId: stop.stopId, lane } } satisfies DayPilot.EventData;
+    const workstream = stop.sourceLabels.join(" · ") || (lane === "collection" ? "CPU Production" : fulfilmentWorkstream({}));
+    const quantity = stop.unitBreakdown.map((item) => `${item.quantity} ${item.unit}`).join(" · ") || undefined;
+    const presentation = { destination: stop.destination.label, time: start, workstream, quantity, lane };
+    return { id: stop.stopId, text: `${stop.destination.label} · ${start}`, start: `${serviceDate}T${start}:00`, end: `${serviceDate}T${end}:00`, resource: resourceId(lane, run.runId), cssClass: `fika-event ${stop.attention.length ? "attention" : ""}`, toolTip: timelineEventTooltip(presentation), tags: { runId: run.runId, stopId: stop.stopId, lane, presentation } } satisfies DayPilot.EventData;
   }));
-  const scheduler = (lane: "delivery" | "collection", start: number, controlRef: React.MutableRefObject<DayPilot.Scheduler | null>) => <DayPilotScheduler controlRef={controlRef} startDate={`${serviceDate}T${String(start).padStart(2, "0")}:00:00`} days={1} scale="CellDuration" cellDuration={15} cellWidth={Math.max(20, Math.round((145 * zoom) / 4))} rowHeaderWidth={108} rowMarginTop={6} rowMarginBottom={6} eventHeight={Math.max(42, Math.round(52 * verticalZoom))} height={Math.max(160, runs.length * Math.round(78 * verticalZoom) + 38)} heightSpec="Auto" timeFormat="Clock24Hours" timeHeaders={[{ groupBy: "Hour", format: "HH:mm" }]} resources={resources(lane)} events={events(lane)} eventMoveHandling="Update" eventResizeHandling="Update" snapToGrid={true} eventTextWrappingEnabled={true} dynamicEventRendering="Disabled" progressiveRowRendering={false} scrollDelayEvents={0} scrollDelayRows={0} onEventClick={(args) => { const tags = args.e.data.tags as { runId: string; stopId: string }; onStop(tags.runId, tags.stopId); }} onEventMoved={(args) => { const tags = args.e.data.tags as { runId: string; stopId: string; lane: "delivery" | "collection" }; const startTime = quarterTime(time(args.newStart)); const endTime = quarterTime(time(args.newEnd)); setOptimisticSchedules((current) => ({ ...current, [tags.stopId]: { start: startTime, end: endTime } })); const target = resourceParts(String(args.newResource)); onSchedule(tags.runId, tags.stopId, target.runId, startTime, endTime, target.lane); }} onEventResized={(args) => { const tags = args.e.data.tags as { runId: string; stopId: string; lane: "delivery" | "collection" }; const startTime = quarterTime(time(args.newStart)); const endTime = quarterTime(time(args.newEnd)); setOptimisticSchedules((current) => ({ ...current, [tags.stopId]: { start: startTime, end: endTime } })); onSchedule(tags.runId, tags.stopId, tags.runId, startTime, endTime, tags.lane); }} onBeforeEventRender={(args) => { const tags = args.data.tags as { runId?: string; stopId?: string; lane?: "delivery" | "collection" } | undefined; const eventLane = tags?.lane || lane; const stopId = tags?.stopId || String(args.data.id); const resource = String(args.data.resource || ""); const runId = tags?.runId || resource.slice(resource.indexOf(":") + 1); args.data.backColor = eventLane === "collection" ? "#f0f8fd" : "#eefaf3"; args.data.borderColor = eventLane === "collection" ? "#218ac3" : "#58bd39"; args.data.fontColor = "#280f8c"; args.data.html = `<strong>${args.data.text}</strong>`; }} />;
+  const scheduler = (lane: "delivery" | "collection", start: number, controlRef: React.MutableRefObject<DayPilot.Scheduler | null>) => <DayPilotScheduler controlRef={controlRef} startDate={`${serviceDate}T${String(start).padStart(2, "0")}:00:00`} days={1} scale="CellDuration" cellDuration={15} cellWidth={Math.max(20, Math.round((145 * zoom) / 4))} rowHeaderWidth={108} rowMarginTop={6} rowMarginBottom={6} eventHeight={Math.max(56, Math.round(60 * verticalZoom))} height={Math.max(160, runs.length * Math.max(76, Math.round(80 * verticalZoom)) + 38)} heightSpec="Auto" timeFormat="Clock24Hours" timeHeaders={[{ groupBy: "Hour", format: "HH:mm" }]} resources={resources(lane)} events={events(lane)} eventMoveHandling="Update" eventResizeHandling="Update" snapToGrid={true} eventTextWrappingEnabled={false} dynamicEventRendering="Disabled" progressiveRowRendering={false} scrollDelayEvents={0} scrollDelayRows={0} onEventClick={(args) => { const tags = args.e.data.tags as { runId: string; stopId: string }; onStop(tags.runId, tags.stopId); }} onEventMoved={(args) => { const tags = args.e.data.tags as { runId: string; stopId: string; lane: "delivery" | "collection" }; const startTime = quarterTime(time(args.newStart)); const endTime = quarterTime(time(args.newEnd)); setOptimisticSchedules((current) => ({ ...current, [tags.stopId]: { start: startTime, end: endTime } })); const target = resourceParts(String(args.newResource)); onSchedule(tags.runId, tags.stopId, target.runId, startTime, endTime, target.lane); }} onEventResized={(args) => { const tags = args.e.data.tags as { runId: string; stopId: string; lane: "delivery" | "collection" }; const startTime = quarterTime(time(args.newStart)); const endTime = quarterTime(time(args.newEnd)); setOptimisticSchedules((current) => ({ ...current, [tags.stopId]: { start: startTime, end: endTime } })); onSchedule(tags.runId, tags.stopId, tags.runId, startTime, endTime, tags.lane); }} onBeforeEventRender={(args) => { const tags = args.data.tags as { runId?: string; stopId?: string; lane?: "delivery" | "collection"; presentation?: Parameters<typeof timelineEventTooltip>[0] } | undefined; const eventLane = tags?.lane || lane; args.data.backColor = eventLane === "collection" ? "#f0f8fd" : "#eefaf3"; args.data.borderColor = eventLane === "collection" ? "#218ac3" : "#58bd39"; args.data.fontColor = "#280f8c"; if (tags?.presentation) { args.data.html = timelineEventInlineHtml(tags.presentation); args.data.toolTip = timelineEventTooltip(tags.presentation); args.data.areas = [{ id: "operator-label", action: "None", left: "100%", top: 0, width: 118, height: "100%", cssClass: "fika-event-label", html: timelineEventAreaHtml(tags.presentation), toolTip: args.data.toolTip }]; } }} />;
   useEffect(() => {
     const root = document.querySelector<HTMLElement>(".daypilot-timeline");
     if (!root) return;
@@ -1222,8 +1227,31 @@ function DayPilotTimeline({ runs, serviceDate, onStop, onSchedule, onQueueDrop }
     return () => { root.removeEventListener("dragover", allowDrop); root.removeEventListener("drop", handleDrop); };
   }, [onQueueDrop]);
   const shift = (lane: "delivery" | "collection", amount: number) => { const setter = lane === "delivery" ? setDeliveryStart : setCollectionStart; setter((value) => Math.max(lane === "collection" ? 12 : 6, Math.min(18, value + amount))); };
+  const fitWork = () => {
+    const scheduled = runs.flatMap((run) => run.stops.filter((stop) => hasUsableSchedule(stop)).map((stop) => {
+      const start = stop.plannedWindow?.startTime || stop.plannedArrivalTime;
+      if (!start) return undefined;
+      const end = stop.plannedWindow?.endTime || addClockMinutes(start, 15) || start;
+      const toMinutes = (value: string) => { const [hour, minute] = value.split(":").map(Number); return hour * 60 + minute; };
+      return { start: toMinutes(start), end: Math.max(toMinutes(start) + 15, toMinutes(end)) };
+    }).filter((value): value is { start: number; end: number } => Boolean(value)));
+    if (!scheduled.length) {
+      setZoom(1);
+      setVerticalZoom(1);
+      setDeliveryStart(6);
+      setCollectionStart(12);
+      return;
+    }
+    const earliest = Math.max(0, Math.min(...scheduled.map((value) => value.start)) - 30);
+    const latest = Math.min(24 * 60, Math.max(...scheduled.map((value) => value.end)) + 30);
+    const span = Math.max(6 * 60, latest - earliest);
+    setZoom(Math.max(0.5, Math.min(2.5, (6 * 60) / span)));
+    setVerticalZoom(1);
+    setDeliveryStart(Math.max(6, Math.min(18, Math.floor(earliest / 60))));
+    setCollectionStart(Math.max(12, Math.min(18, Math.floor(earliest / 60))));
+  };
   if (!runs.length) return <div className="mock-timeline"><Empty title="No vehicles available" body="Vehicles will appear automatically for the selected day." /></div>;
-  return <div className="mock-timeline daypilot-timeline"><div className="timeline-tools" aria-label="Timeline controls"><span className="timeline-tools-title">Timeline</span><span className="timeline-tools-label">Horizontal</span><button aria-label="Zoom timeline out" onClick={() => setZoom((value) => Math.max(0.5, value - 0.25))}>−</button><input aria-label="Timeline horizontal zoom" type="range" min="0.5" max="2.5" step="0.05" value={zoom} onChange={(event) => setZoom(Number(event.target.value))} /><span>{Math.round(zoom * 100)}%</span><button aria-label="Zoom timeline in" onClick={() => setZoom((value) => Math.min(2.5, value + 0.25))}>＋</button><span className="timeline-tools-label">Vertical</span><button aria-label="Zoom rows out" onClick={() => setVerticalZoom((value) => Math.max(0.5, value - 0.25))}>−</button><input aria-label="Zoom rows" type="range" min="0.5" max="2.5" step="0.05" value={verticalZoom} onChange={(event) => setVerticalZoom(Number(event.target.value))} /><span>{Math.round(verticalZoom * 100)}%</span><button aria-label="Zoom rows in" onClick={() => setVerticalZoom((value) => Math.min(2.5, value + 0.25))}>＋</button><button onClick={() => { setZoom(1); setVerticalZoom(1); setDeliveryStart(6); setCollectionStart(12); }}>Fit 6h</button></div><section className="daypilot-group"><header className="stable-section-heading"><strong>DELIVERIES · {String(deliveryStart).padStart(2, "0")}:00</strong><span className="timeline-scroll-controls"><button aria-label="Scroll deliveries earlier" disabled={deliveryStart === 6} onClick={() => shift("delivery", -1)}>←</button><button aria-label="Scroll deliveries later" disabled={deliveryStart === 18} onClick={() => shift("delivery", 1)}>→</button></span></header>{scheduler("delivery", deliveryStart, deliveryControl)}</section><section className="daypilot-group"><header className="stable-section-heading"><strong>COLLECTIONS · {String(collectionStart).padStart(2, "0")}:00</strong><span className="timeline-scroll-controls"><button aria-label="Scroll collections earlier" disabled={collectionStart === 12} onClick={() => shift("collection", -1)}>←</button><button aria-label="Scroll collections later" disabled={collectionStart === 18} onClick={() => shift("collection", 1)}>→</button></span></header>{scheduler("collection", collectionStart, collectionControl)}</section><p className="daypilot-attribution">This scheduler includes DayPilot Lite, licensed under Apache 2.0.</p></div>;
+  return <div className="mock-timeline daypilot-timeline"><div className="timeline-tools" aria-label="Timeline controls"><span className="timeline-tools-title">Timeline</span><span className="timeline-tools-label">Horizontal</span><button aria-label="Zoom timeline out" onClick={() => setZoom((value) => Math.max(0.5, value - 0.25))}>−</button><input aria-label="Timeline horizontal zoom" type="range" min="0.5" max="2.5" step="0.05" value={zoom} onChange={(event) => setZoom(Number(event.target.value))} /><span>{Math.round(zoom * 100)}%</span><button aria-label="Zoom timeline in" onClick={() => setZoom((value) => Math.min(2.5, value + 0.25))}>＋</button><span className="timeline-tools-label">Vertical</span><button aria-label="Zoom rows out" onClick={() => setVerticalZoom((value) => Math.max(0.5, value - 0.25))}>−</button><input aria-label="Zoom rows" type="range" min="0.5" max="2.5" step="0.05" value={verticalZoom} onChange={(event) => setVerticalZoom(Number(event.target.value))} /><span>{Math.round(verticalZoom * 100)}%</span><button aria-label="Zoom rows in" onClick={() => setVerticalZoom((value) => Math.min(2.5, value + 0.25))}>＋</button><button aria-label="Fit scheduled work" onClick={fitWork}>Fit work</button></div><section className="daypilot-group"><header className="stable-section-heading"><strong>DELIVERIES · {String(deliveryStart).padStart(2, "0")}:00</strong><span className="timeline-scroll-controls"><button aria-label="Scroll deliveries earlier" disabled={deliveryStart === 6} onClick={() => shift("delivery", -1)}>←</button><button aria-label="Scroll deliveries later" disabled={deliveryStart === 18} onClick={() => shift("delivery", 1)}>→</button></span></header>{scheduler("delivery", deliveryStart, deliveryControl)}</section><section className="daypilot-group"><header className="stable-section-heading"><strong>COLLECTIONS · {String(collectionStart).padStart(2, "0")}:00</strong><span className="timeline-scroll-controls"><button aria-label="Scroll collections earlier" disabled={collectionStart === 12} onClick={() => shift("collection", -1)}>←</button><button aria-label="Scroll collections later" disabled={collectionStart === 18} onClick={() => shift("collection", 1)}>→</button></span></header>{scheduler("collection", collectionStart, collectionControl)}</section><p className="daypilot-attribution">This scheduler includes DayPilot Lite, licensed under Apache 2.0.</p></div>;
 }
 
 function ScrollableRealTimeline({ runs, onStop, onSchedule, onQueueDrop }: { runs: PlannerDay["runs"]; serviceDate: string; onStop: (runId: string, stopId: string) => void; onRun?: (runId: string) => void; onSchedule: (sourceRunId: string, stopId: string, targetRunId: string, time: string, end?: string, lane?: "delivery" | "collection") => void; onQueueDrop: (kind: "group" | "movement", runId: string, targetRunId: string, time?: string, lane?: "delivery" | "collection", collectionRequired?: boolean) => void; }) {
@@ -2126,11 +2154,7 @@ function WorkGroupCard({
   );
 }
 function sourceLabel(source: string) {
-  return source === "cpu-production"
-    ? "CPU Production"
-    : source === "grab-and-go"
-      ? "Grab & Go"
-      : "Menu Planning";
+  return fulfilmentWorkstream({ sourceDomain: source });
 }
 function formatWindow(window?: { startTime: string; endTime?: string }) {
   return window
@@ -2348,7 +2372,7 @@ function StopPanel({
     const contents = projectionJob?.contents || requirement?.lines.map((line) => ({ description: line.displayNameSnapshot, quantity: line.quantity, unit: line.unit })) || [];
     const total = contents.reduce((sum, item) => sum + item.quantity, 0);
     const unit = contents[0]?.unit || "items";
-    return { ref, source: sourceLabel(projectionJob?.sourceType || requirement?.sourceDomain || "menu-planning"), total, unit, contents, sourceType: projectionJob?.sourceType || requirement?.sourceDomain, sourceId: projectionJob?.sourceId || requirement?.sourceEntityId, notes: projectionJob?.notes };
+    return { ref, source: projectionJob?.workstream || requirement?.workstream || sourceLabel(projectionJob?.sourceType || requirement?.sourceDomain || "menu-planning"), total, unit, contents, sourceType: projectionJob?.sourceType || requirement?.sourceDomain, sourceId: projectionJob?.sourceId || requirement?.sourceEntityId, notes: projectionJob?.notes };
   }) || [];
   return (
     <div className={`stop-panel ${stop.status}`}>
@@ -2401,7 +2425,7 @@ function StopPanel({
           ))}
       {expanded && rawStop && (
         <div className="stop-detail">
-          {selectedJobId && <JobDetailScreen jobId={selectedJobId} sourceType={selectedProjectionJob?.sourceType || selectedRequirement?.sourceDomain} sourceId={selectedProjectionJob?.sourceId || selectedRequirement?.sourceEntityId} contents={selectedProjectionJob?.contents || selectedRequirement?.lines.map((line) => ({ description: line.displayNameSnapshot, quantity: line.quantity, unit: line.unit })) || []} notes={selectedProjectionJob?.notes} onBack={() => setSelectedJobId(undefined)} />}
+          {selectedJobId && <JobDetailScreen jobId={selectedJobId} workstream={selectedProjectionJob?.workstream || selectedRequirement?.workstream || sourceLabel(selectedProjectionJob?.sourceType || selectedRequirement?.sourceDomain || "menu-planning")} contents={selectedProjectionJob?.contents || selectedRequirement?.lines.map((line) => ({ description: line.displayNameSnapshot, quantity: line.quantity, unit: line.unit })) || []} notes={selectedProjectionJob?.notes} onBack={() => setSelectedJobId(undefined)} />}
           {stop.lane === "delivery" && <button className="load-action" onClick={() => onAction({ action: "mark-stop-loaded", loaded: !rawStop.loaded, runId: run.runId, stopId: stop.stopId, expectedRunVersion: run.version, expectedStopVersion: rawStop.version })}>{rawStop.loaded ? "✓ Loaded · remove mark" : "Mark delivery as loaded"}</button>}
           {stop.lane === "collection" && run.status !== "completed" && <PostponeCollectionControl run={run} stop={rawStop} onAction={onAction} />}
           <p>
@@ -2511,12 +2535,12 @@ function StopPanel({
   );
 }
 
-function JobDetailScreen({ sourceType, contents, notes, onBack }: { jobId: string; sourceType?: string; sourceId?: string; contents: Array<{ description: string; quantity: number; unit: string }>; notes?: string; onBack: () => void }) {
+function JobDetailScreen({ workstream, contents, notes, onBack }: { jobId: string; workstream?: string; contents: Array<{ description: string; quantity: number; unit: string }>; notes?: string; onBack: () => void }) {
   return <section className="job-detail-screen" role="dialog" aria-modal="true" aria-label="Subload detail">
     <button type="button" className="job-detail-back" onClick={onBack}>← Back to delivery</button>
     <p className="eyebrow">CPU production job</p>
     <h3>What this job contains</h3>
-    <p className="job-detail-reference">{sourceType ? sourceLabel(sourceType as FulfilmentRequirement["sourceDomain"]) : "Production"}</p>
+    <p className="job-detail-reference">{workstream || "Production"}</p>
     <div className="job-detail-items">{contents.map((item, index) => <div className="job-detail-item" key={`${item.description}-${index}`}><strong>{item.quantity.toLocaleString()}</strong><span>{item.unit}</span><p>{item.description}</p></div>)}</div>
     {notes && <div className="job-detail-notes"><strong>Notes from CPU</strong><p>{notes}</p></div>}
     {!contents.length && <p className="context-line">No item detail was included in the current CPU hand-off.</p>}

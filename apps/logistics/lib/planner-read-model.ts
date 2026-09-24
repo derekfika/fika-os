@@ -6,6 +6,7 @@ import type {
   LogisticsHealth,
 } from "./types";
 import type { MovementType } from "./types";
+import { fulfilmentWorkstream, type FulfilmentWorkstream } from "../../shared/fulfilment-workstream";
 
 export type ProductionContext = {
   canonicalId: string;
@@ -13,6 +14,7 @@ export type ProductionContext = {
   serviceType?: string;
   guestCount?: number;
   origin?: string;
+  productionCategory?: string;
   destinationLabel?: string;
   requiredBy?: string;
   serviceWindow?: { startTime: string; endTime?: string };
@@ -24,6 +26,7 @@ export type PlannerRequirementRef = {
   sourceDomain: FulfilmentRequirement["sourceDomain"];
   sourceEntityId: string;
   status: FulfilmentRequirement["status"];
+  workstream: FulfilmentWorkstream;
   runId?: string;
   stopId?: string;
 };
@@ -215,19 +218,15 @@ export type PlannerWeekSummary = {
   projectionState: "CURRENT" | "STALE" | "PARTIAL" | "UNAVAILABLE" | "MISSING" | "VALID_EMPTY";
 };
 
-const sourceLabels: Record<FulfilmentRequirement["sourceDomain"], string> = {
-  "menu-planning": "Menu Planning",
-  "grab-and-go": "Grab & Go",
-  "cpu-production": "CPU Production",
-};
 function sourceLabel(
   requirement: FulfilmentRequirement,
   production?: ProductionContext,
 ) {
-  return requirement.sourceDomain === "cpu-production" &&
-    production?.origin === "hospitality_booking"
-    ? "Hospitality"
-    : sourceLabels[requirement.sourceDomain];
+  return requirement.workstream || fulfilmentWorkstream({
+    sourceDomain: requirement.sourceDomain,
+    origin: production?.origin,
+    productionCategory: production?.productionCategory,
+  });
 }
 function windowKey(requirement: FulfilmentRequirement) {
   const window = requirement.requiredDeliveryWindow;
@@ -374,6 +373,7 @@ export function buildPlannerDay(input: {
       sourceDomain: requirement.sourceDomain,
       sourceEntityId: requirement.sourceEntityId,
       status: requirement.status,
+      workstream: sourceLabel(requirement, production),
       ...(assignments[0]?.runId
         ? { runId: assignments[0].runId, stopId: assignments[0].stopId }
         : {}),
@@ -583,16 +583,10 @@ export function buildPlannerDay(input: {
                 .filter(Boolean),
             ),
           ) as MovementType[],
-          sourceLabels: Array.from(
-            new Set(
-              refs.map((requirement) =>
-                sourceLabel(
-                  requirement,
-                  productionById.get(requirement.sourceEntityId),
-                ),
-              ),
-            ),
-          ),
+          sourceLabels: Array.from(new Set([
+            ...refs.map((requirement) => sourceLabel(requirement, productionById.get(requirement.sourceEntityId))),
+            ...stop.requirementRefs.map((ref) => ref.workstream).filter(Boolean),
+          ])) as string[],
           combinedLines: Array.from(lines.values()),
           unitBreakdown: unitBreakdown(Array.from(lines.values())),
           attention: Array.from(new Set(attention)),

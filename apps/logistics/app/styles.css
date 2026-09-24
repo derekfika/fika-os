@@ -387,7 +387,7 @@
 .real-planner .stable-drag-preview { display:none !important; }
 .real-planner .stable-timeline > .timeline-tools { position:sticky; left:0; z-index:20; width:100%; box-sizing:border-box; background:#fff; }
 .real-planner .stable-timeline > .timeline-tools > button:last-child { font-size:0; }
-.real-planner .stable-timeline > .timeline-tools > button:last-child::after { content:"Fit 6h"; font-size:10px; }
+.real-planner .stable-timeline > .timeline-tools > button:last-child::after { content:"Fit work"; font-size:10px; }
 .real-planner .stable-lane .stable-drag-preview { display:none !important; }
 
 /* DayPilot Lite owns the timeline geometry. Keep the surrounding FIKA controls and
@@ -1307,6 +1307,24 @@ button:disabled {
   min-height: 28px;
   color: var(--muted);
   font-size: 0.74rem;
+}
+
+/* Desktop planning balance and readable short DayPilot events. The event
+   geometry remains authoritative; the label area is a supported DayPilot
+   presentation layer anchored immediately after the true event box. */
+.real-planner .mock-workspace { grid-template-columns: minmax(280px, 28%) minmax(0, 72%); }
+.real-planner .daypilot-group .scheduler_default_event,
+.real-planner .daypilot-group .scheduler_default_event_inner { overflow: visible !important; }
+.real-planner .daypilot-group .scheduler_default_event_inner { min-height: 56px; box-sizing: border-box; padding: 5px 7px; }
+.real-planner .daypilot-group .fika-event-inline-content,
+.real-planner .daypilot-group .fika-event-label-content { display: flex; flex-direction: column; justify-content: center; min-width: 0; height: 100%; white-space: nowrap; }
+.real-planner .daypilot-group .fika-event-inline-content strong { font-size: 11px; line-height: 1.1; }
+.real-planner .daypilot-group .fika-event-inline-content small { margin-top: 3px; overflow: hidden; text-overflow: ellipsis; font-size: 9px; font-weight: 800; }
+.real-planner .daypilot-group .fika-event-label { z-index: 4; width: 118px !important; min-width: 118px; padding: 4px 7px; border: 1px solid var(--fika-border-default); border-left: 3px solid var(--fika-action-primary); border-radius: var(--radius-sm); background: var(--fika-surface-card); box-shadow: var(--shadow-sm); color: var(--fika-text-primary); pointer-events: none; }
+.real-planner .daypilot-group .fika-event-label-content strong { overflow: hidden; text-overflow: ellipsis; font-size: 11px; line-height: 1.1; }
+.real-planner .daypilot-group .fika-event-label-content small { margin-top: 3px; overflow: hidden; text-overflow: ellipsis; color: var(--fika-text-secondary); font-size: 9px; font-weight: 800; }
+@media (max-width: 1050px) {
+  .real-planner .mock-workspace { grid-template-columns: 1fr; }
 }
 .passive-sync-warning {
   display: inline-flex;

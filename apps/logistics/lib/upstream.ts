@@ -1,7 +1,7 @@
 import type { FulfilmentRequirement } from "../../shared/fulfilment-requirement";
 import { requiredUpstreamUrl } from "./runtime";
 export type GovernedOploc = { id:string; label:string; address?:string };
-export type ProductionContext = { canonicalId:string; sourceBookingId?:string; status?:string; workflowStatus?:string; serviceDate?:string; clientName?:string; serviceType?:string; guestCount?:number; origin?:string; destinationLabel?:string; requiredBy?:string; serviceWindow?:{startTime:string;endTime?:string}; operationalNotes?:string };
+export type ProductionContext = { canonicalId:string; sourceBookingId?:string; status?:string; workflowStatus?:string; serviceDate?:string; clientName?:string; serviceType?:string; guestCount?:number; origin?:string; productionCategory?:string; destinationLabel?:string; requiredBy?:string; serviceWindow?:{startTime:string;endTime?:string}; operationalNotes?:string };
 const hub = requiredUpstreamUrl("FIKA_HUB_BASE_URL");
 const cpu = requiredUpstreamUrl("FIKA_CPU_BASE_URL");
 function requestInit(cookie?:string): RequestInit { const headers: Record<string,string> = {}; if (cookie) headers.cookie = cookie; if (process.env.FIKA_INTERNAL_API_TOKEN) headers["x-fika-internal-token"] = process.env.FIKA_INTERNAL_API_TOKEN; return { cache:"no-store", ...(Object.keys(headers).length ? { headers } : {}) }; }

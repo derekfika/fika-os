@@ -1,4 +1,5 @@
 import type { FulfilmentRequirement } from "../../shared/fulfilment-requirement";
+import { fulfilmentWorkstream } from "../../shared/fulfilment-workstream";
 import type { DeliveryRun, DeliveryStop, LogisticsDayProjection } from "./types";
 import { buildPlannerDay, type PlannerLine, type PlannerWorkGroup } from "./planner-read-model";
 
@@ -48,7 +49,7 @@ export function projectionToDashboardData(projection: LogisticsDayProjection) {
         sequence: (loadStopIdsByRun.get(runId)?.length || 0) + 1,
         locationOplocId: collection ? load.originOplocId : load.destinationOplocId,
         locationLabelSnapshot: collection ? "CPU production" : load.destinationLabelSnapshot || load.destinationOplocId,
-        requirementRefs: load.jobs.map((job) => ({ requirementId: job.id, sourceVersion: 1 })),
+        requirementRefs: load.jobs.map((job) => ({ requirementId: job.id, sourceVersion: 1, sourceDomain: job.sourceType as FulfilmentRequirement["sourceDomain"], ...(job.workstream ? { workstream: job.workstream } : {}) })),
         movementRequestIds: [],
         ...(scheduledTime ? (scheduledEnd ? { plannedWindow: { startTime: scheduledTime, endTime: scheduledEnd } } : { plannedArrivalTime: scheduledTime }) : {}),
         loaded: Boolean(load.loaded),
@@ -96,9 +97,9 @@ export function projectionToDashboardData(projection: LogisticsDayProjection) {
     destinationLabel: job.destinationLabelSnapshot || job.destinationOplocId || "Unknown destination",
     ...(job.requestedWindow ? { deliveryWindow: job.requestedWindow } : {}),
     requiredTimes: job.requestedWindow?.startTime ? [job.requestedWindow.startTime] : [],
-    requirementRefs: [{ requirementId: job.id, sourceVersion: 1, sourceDomain: job.sourceType as FulfilmentRequirement["sourceDomain"], sourceEntityId: job.sourceId, status: "ready_for_planning" }],
+    requirementRefs: [{ requirementId: job.id, sourceVersion: 1, sourceDomain: job.sourceType as FulfilmentRequirement["sourceDomain"], sourceEntityId: job.sourceId, status: "ready_for_planning", workstream: job.workstream || fulfilmentWorkstream({ sourceDomain: job.sourceType }) }],
     requirementCount: 1,
-    sourceLabels: [job.sourceType],
+    sourceLabels: [job.workstream || fulfilmentWorkstream({ sourceDomain: job.sourceType })],
     combinedLines: [line(job)],
     unitBreakdown: [{ unit: "unit", quantity: job.totalUnits }],
     readiness: job.productionReadiness === "attention" ? "ATTENTION" : job.productionReadiness === "pending" ? "PENDING" : "READY",
@@ -115,9 +116,9 @@ export function projectionToDashboardData(projection: LogisticsDayProjection) {
       destinationOplocId: load.originOplocId,
       destinationLabel: "CPU production",
       requiredTimes: [],
-      requirementRefs: load.jobs.map((job) => ({ requirementId: job.id, sourceVersion: 1, sourceDomain: job.sourceType as FulfilmentRequirement["sourceDomain"], sourceEntityId: job.sourceId, status: "ready_for_planning", ...(runId ? { runId, stopId: collectionStopId } : {}) })),
+      requirementRefs: load.jobs.map((job) => ({ requirementId: job.id, sourceVersion: 1, sourceDomain: job.sourceType as FulfilmentRequirement["sourceDomain"], sourceEntityId: job.sourceId, status: "ready_for_planning", workstream: job.workstream || fulfilmentWorkstream({ sourceDomain: job.sourceType }), ...(runId ? { runId, stopId: collectionStopId } : {}) })),
       requirementCount: load.jobCount,
-      sourceLabels: Array.from(new Set(load.jobs.map((job) => job.sourceType))),
+      sourceLabels: Array.from(new Set(load.jobs.map((job) => job.workstream || fulfilmentWorkstream({ sourceDomain: job.sourceType })))),
       combinedLines: load.jobs.map((job) => line(job)),
       unitBreakdown: [{ unit: "unit", quantity: load.totalUnits }],
       readiness: "READY",

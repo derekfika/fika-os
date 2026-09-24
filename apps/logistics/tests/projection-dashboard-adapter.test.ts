@@ -29,3 +29,12 @@ test("a load whose run is absent never leaks onto another canonical run", () => 
   assert.equal(result.runs.find((run) => run.canonicalId === "run:missing")?.vehicleLabel, "van:two");
   assert.equal(result.runs.find((run) => run.canonicalId === "run:other")?.orderedStopIds.length, 0);
 });
+
+test("projection carries explicit workstream into queue and assigned stop labels", () => {
+  const projection = base();
+  projection.planningQueue = [{ id: "job:queue", sourceType: "cpu-production", sourceId: "order:queue", workstream: "Hospitality", serviceDate: projection.serviceDate, destinationOplocId: "oploc:site", destinationLabelSnapshot: "Commerzbank", requestedWindow: { startTime: "07:00" }, productionReadiness: "ready", collectionStatus: "awaiting", contents: [{ description: "Lunch", quantity: 12, unit: "portion" }], totalUnits: 12 }];
+  projection.runs = [{ canonicalId: "run:one", serviceDate: projection.serviceDate, status: "planned", vehicleLabel: "Van 1", orderedStopIds: [], version: 1, createdAt: "now", updatedAt: "now", audit: [] }];
+  const result = projectionToDashboardData(projection);
+  assert.deepEqual(result.planner.workGroups[0].sourceLabels, ["Hospitality"]);
+  assert.equal(result.planner.workGroups[0].requirementRefs[0].workstream, "Hospitality");
+});

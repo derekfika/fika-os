@@ -175,6 +175,8 @@ export function combineStop(
               {
                 requirementId: input.requirement.canonicalId,
                 sourceVersion: input.requirement.sourceVersion,
+                sourceDomain: input.requirement.sourceDomain,
+                ...(input.requirement.workstream ? { workstream: input.requirement.workstream } : {}),
               },
             ]
           : [],
@@ -208,6 +210,8 @@ export function combineStop(
           {
             requirementId: input.requirement.canonicalId,
             sourceVersion: input.requirement.sourceVersion,
+            sourceDomain: input.requirement.sourceDomain,
+            ...(input.requirement.workstream ? { workstream: input.requirement.workstream } : {}),
           },
         ]
       : existing.requirementRefs,
