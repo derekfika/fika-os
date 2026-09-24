@@ -1317,7 +1317,7 @@ button:disabled {
 .real-planner .daypilot-group .scheduler_default_event,
 .real-planner .daypilot-group .scheduler_default_event_inner { overflow: visible !important; }
 .real-planner .daypilot-group .scheduler_default_event_inner { min-height: 56px; box-sizing: border-box; padding: 5px 7px; }
-.real-planner .daypilot-group .fika-event-inline-content { display: flex; flex-direction: column; justify-content: center; min-width: 0; height: 100%; white-space: nowrap; }
+.real-planner .daypilot-group .fika-event-inline-content { display: flex; visibility: hidden; flex-direction: column; justify-content: center; min-width: 0; height: 100%; white-space: nowrap; }
 .real-planner .daypilot-group .fika-event-inline-content time { font-size: 11px; font-weight: 800; line-height: 1.1; }
 .real-planner .daypilot-group .fika-event-inline-content strong { overflow: hidden; text-overflow: ellipsis; font-size: 11px; line-height: 1.1; }
 .real-planner .daypilot-group .fika-event-inline-content small { margin-top: 3px; overflow: hidden; text-overflow: ellipsis; color: var(--fika-text-secondary); font-size: 9px; font-weight: 800; }
