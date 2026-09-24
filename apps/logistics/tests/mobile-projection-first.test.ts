@@ -60,6 +60,14 @@ test("projection freshness is explicit and stale data is surfaced", () => {
   assert.match(route, /state: state === "EMPTY" \? "EMPTY" : "MISSING"/);
 });
 
+test("mobile subloads use the same human workstream labels as desktop", () => {
+  const mobile = readFileSync(new URL("../app/mobile/MobileWorkflow.tsx", import.meta.url), "utf8");
+  assert.match(mobile, /requirement\.workstream \|\| sourceCategory/);
+  assert.match(mobile, /job\.workstream \|\| sourceCategory/);
+  assert.match(mobile, /fulfilmentWorkstream/);
+  assert.doesNotMatch(mobile, /CPU production|Menu planning/);
+});
+
 test("external amendment invalidates only its day and newer source revision wins", () => {
   const current = projection({ sourceLineage: [{ sourceDomain: "cpu-production", sourceEntityId: "order:1", sourceVersion: 4 }] });
   const amended = applyLogisticsProjectionInvalidation(current, { serviceDate: current.serviceDate, sourceDomain: "cpu-production", sourceEntityId: "order:1", sourceVersion: 5, changedAt: "2026-08-31T09:00:00Z", changeType: "amended" });

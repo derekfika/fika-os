@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { FulfilmentRequirement } from "../../../shared/fulfilment-requirement";
+import { fulfilmentWorkstream } from "../../../shared/fulfilment-workstream";
 import type { DeliveryRun, DeliveryStop, MovementRequest } from "../../lib/types";
 import { operationalDate } from "../../lib/date";
 import { movementsForStop, selectMobileRuns } from "../../lib/planning";
@@ -282,15 +283,15 @@ function loadSubloads(stop: DeliveryStop, data: Data, movement?: MovementRequest
     if (requirement) {
       const quantity = requirement.lines.reduce((total, line) => total + (Number(line.quantity) || 0), 0);
       const units = new Set(requirement.lines.map((line) => line.unit).filter(Boolean));
-      return quantity ? [{ id: ref.requirementId, kind: "requirement" as const, category: sourceCategory(requirement.sourceDomain), description: requirement.lines.length === 1 ? requirement.lines[0].displayNameSnapshot : `${requirement.lines.length} items`, quantity, unit: units.size === 1 ? [...units][0] : "pieces" }] : [];
+      return quantity ? [{ id: ref.requirementId, kind: "requirement" as const, category: requirement.workstream || sourceCategory(requirement.sourceDomain), description: requirement.lines.length === 1 ? requirement.lines[0].displayNameSnapshot : `${requirement.lines.length} items`, quantity, unit: units.size === 1 ? [...units][0] : "pieces" }] : [];
     }
     const job = data.projection?.deliveryLoads.flatMap((load) => load.jobs).find((item) => item.id === ref.requirementId);
-    return job?.totalUnits ? [{ id: ref.requirementId, kind: "requirement" as const, category: sourceCategory(job.sourceType), description: job.contents.length === 1 ? job.contents[0].description : `${job.contents.length} items`, quantity: job.totalUnits, unit: "pieces" }] : [];
+    return job?.totalUnits ? [{ id: ref.requirementId, kind: "requirement" as const, category: job.workstream || sourceCategory(job.sourceType), description: job.contents.length === 1 ? job.contents[0].description : `${job.contents.length} items`, quantity: job.totalUnits, unit: "pieces" }] : [];
   });
   if (rows.length) return rows;
   return movement?.items.map((item, index) => ({ id: `${movement.canonicalId}:${index}`, kind: "movement" as const, category: "Movement", description: item.description, quantity: item.quantity, unit: item.unit || "pieces" })) || [];
 }
-function sourceCategory(source: string) { return source === "grab-and-go" ? "Grab & Go" : source === "cpu-production" ? "CPU production" : source === "menu-planning" ? "Menu planning" : "Operational load"; }
+function sourceCategory(source: string) { return fulfilmentWorkstream({ sourceDomain: source }); }
 function itemSummary(stop: DeliveryStop) { return stop.requirementRefs.length ? `${stop.requirementRefs.length} load${stop.requirementRefs.length === 1 ? "" : "s"}` : ""; }
 function stopLabel(stop: DeliveryStop, data: Data) { return data.oplocs.find((item) => item.id === stop.locationOplocId)?.label || (stop.locationLabelSnapshot.startsWith("oploc:") ? "Operational location" : stop.locationLabelSnapshot); }
 function statusLabel(status: DeliveryStop["status"]) { return status === "completed" ? "Complete" : status === "arrived" ? "Current" : status === "issue" ? "Attention" : "Planned"; }
