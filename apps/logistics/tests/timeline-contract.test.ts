@@ -34,11 +34,11 @@ test("projection dashboard labels are human-facing and do not expose source ids"
   assert.match(adapter, /job\.workstream \|\| fulfilmentWorkstream/);
 });
 
-test("weekday selector remains selected-day navigable without changing week controls", () => {
-  assert.match(page, /function WeekStrip/);
-  assert.match(page, /aria-pressed=\{date === selectedDate\}/);
-  assert.match(page, /onSelect=\{setDate\}/);
-  assert.match(page, /function WeekNavigation/);
+test("active weekday selector remains selected-day navigable without changing week controls", () => {
+  assert.match(page, /className="mock-day-cards"/);
+  assert.match(page, /aria-pressed=\{day === date\}/);
+  assert.match(page, /onClick=\{\(\) => props\.setDate\(day\)\}/);
+  assert.match(page, /aria-label="Operational week navigation"/);
   assert.match(page, /aria-label="Previous week"/);
   assert.match(page, /aria-label="Next week"/);
 });
