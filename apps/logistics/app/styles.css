@@ -392,7 +392,8 @@
 
 /* DayPilot Lite owns the timeline geometry. Keep the surrounding FIKA controls and
    event treatment, but let the scheduler synchronise its ruler, grid and scroll area. */
-.real-planner .daypilot-timeline { overflow:visible; }
+.real-planner { overflow-x: hidden; }
+.real-planner .daypilot-timeline { overflow-x: auto; overflow-y: hidden; }
 .real-planner .daypilot-group { margin-top:10px; border:1px solid #ece8f4; border-radius:6px; overflow:hidden; background:#fff; }
 .real-planner .daypilot-group .stable-section-heading { min-height:34px; }
 .real-planner .daypilot-group .stable-section-heading > strong { position:static; display:block; padding-right:0; background:transparent; font-size:9px; }

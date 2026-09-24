@@ -24,6 +24,8 @@ test("desktop layout gives the schedule the wider surface and retains mobile fal
   assert.match(styles, /mock-workspace \{ grid-template-columns: minmax\(280px, 28%\) minmax\(0, 72%\)/);
   assert.match(styles, /@media \(max-width: 1050px\) \{\s*\.real-planner \.mock-workspace \{ grid-template-columns: 1fr; \}/);
   assert.match(styles, /fika-event-label[^}]*width: 124px/);
+  assert.match(styles, /\.real-planner \{ overflow-x: hidden; \}/);
+  assert.match(styles, /\.real-planner \.daypilot-timeline \{ overflow-x: auto; overflow-y: hidden; \}/);
 });
 
 test("projection dashboard labels are human-facing and do not expose source ids", () => {
