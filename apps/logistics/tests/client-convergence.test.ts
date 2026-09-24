@@ -1,21 +1,41 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
+import { mayRequestPassiveRefresh, PASSIVE_REFRESH_INTERVAL_MS } from "../lib/passive-refresh";
 
 const planner = readFileSync(new URL("../app/page.tsx", import.meta.url), "utf8");
 const mobile = readFileSync(new URL("../app/mobile/MobileWorkflow.tsx", import.meta.url), "utf8");
 const route = readFileSync(new URL("../app/api/logistics/route.ts", import.meta.url), "utf8");
 const api = readFileSync(new URL("../lib/api.ts", import.meta.url), "utf8");
 
-test("desktop and driver use coalesced visible-tab head checks before full projection reads", () => {
-  for (const source of [planner, mobile]) {
-    assert.match(source, /syncCheckInFlight\.current/);
-    assert.match(source, /document\.visibilityState/);
-    assert.match(source, /syncHead=1&serviceDate=/);
-    assert.match(source, /30_000/);
-  }
-  assert.match(planner, /Number\(head\.sequence\) !== projectionSequence\.current/);
+test("desktop uses a throttled visible-tab head check before full projection reads", () => {
+  assert.match(planner, /syncCheckInFlight\.current/);
+  assert.match(planner, /document\.visibilityState/);
+  assert.match(planner, /syncHead=1&serviceDate=/);
+  assert.match(planner, /requestPassiveRefresh\("visibility"\)/);
+  assert.match(planner, /requestPassiveRefresh\("broadcast"\)/);
+  assert.match(planner, /PASSIVE_REFRESH_INTERVAL_MS/);
+  assert.doesNotMatch(planner, /30_000/);
+  assert.match(planner, /projectionSequence\.current !== undefined && Number\(head\.sequence\) === projectionSequence\.current[\s\S]*return;/);
   assert.match(mobile, /projectionSequence\.current !== Number\(body\?\.sequence \|\| 0\)/);
+});
+
+test("desktop passive refresh policy blocks chatter inside the 15-minute window", () => {
+  assert.equal(PASSIVE_REFRESH_INTERVAL_MS, 15 * 60_000);
+  const base = { now: 15 * 60_000, visible: true, requestsBlocked: false, inFlight: false };
+  assert.equal(mayRequestPassiveRefresh({ ...base, lastAttemptAt: undefined }), true);
+  assert.equal(mayRequestPassiveRefresh({ ...base, lastAttemptAt: 0 }), true);
+  assert.equal(mayRequestPassiveRefresh({ ...base, lastAttemptAt: 0, now: PASSIVE_REFRESH_INTERVAL_MS - 1 }), false);
+  assert.equal(mayRequestPassiveRefresh({ ...base, lastAttemptAt: 0, now: PASSIVE_REFRESH_INTERVAL_MS }), true);
+  assert.equal(mayRequestPassiveRefresh({ ...base, visible: false }), false);
+  assert.equal(mayRequestPassiveRefresh({ ...base, requestsBlocked: true }), false);
+  assert.equal(mayRequestPassiveRefresh({ ...base, inFlight: true }), false);
+});
+
+test("mobile retains its tighter active-driver convergence cadence", () => {
+  assert.match(mobile, /window\.setInterval[\s\S]*30_000/);
+  assert.match(mobile, /visibilitychange/);
+  assert.match(mobile, /BroadcastChannel\("fika-logistics-live"\)/);
 });
 
 test("successful desktop mutations converge both day and week state", () => {
@@ -38,6 +58,19 @@ test("successful recovery clears stale errors and refreshes the tracked sequence
     assert.match(source, /projectionSequence\.current = projection\.lastChangeSequence/);
     assert.match(source, /setError\(""\)/);
   }
+});
+
+test("passive failures preserve usable data and use compact degraded status", () => {
+  assert.match(planner, /recordPassiveError/);
+  assert.match(planner, /setPassiveSyncError\("Sync unavailable · showing last updated data"\)/);
+  assert.match(planner, /mode === "passive"[\s\S]*recordPassiveError/);
+  assert.match(planner, /passiveSyncError && <div className="passive-sync-warning"/);
+  assert.match(planner, /setProjectionData\(undefined\)/);
+});
+
+test("manual refresh and successful mutations bypass passive throttling", () => {
+  assert.match(planner, /onClick=\{\(\) => void props\.load\(true\)/);
+  assert.match(planner, /await Promise\.all\(\[load\(\), loadWeek\(\)\]\)/);
 });
 
 test("first-load provisioning is gated on successful authoritative convergence", () => {

@@ -85,7 +85,7 @@ test("invalidation endpoint and upstream notifier are narrow and internal-only",
   assert.match(route, /invalidateLogisticsProjection/);
   assert.match(route, /LOGISTICS_PROJECTION_CHANGE_TYPES/);
   assert.match(client, /\/api\/logistics\/invalidate/);
-  assert.match(client, /sourceVersion/);
+  assert.match(client, /LogisticsProjectionInvalidation/);
 });
 
 test("batched invalidation reconciles once per affected service date", () => {

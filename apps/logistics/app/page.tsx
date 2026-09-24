@@ -25,6 +25,7 @@ import { drainIncrementalPages } from "../lib/incremental-sync";
 import { readCachedProjection, writeCachedProjection } from "../lib/logistics-cache";
 import { fetchPlannerGet } from "../lib/planner-fetch";
 import { fetchProjectionWithRecovery } from "../lib/projection-fetch";
+import { mayRequestPassiveRefresh, PASSIVE_REFRESH_INTERVAL_MS } from "../lib/passive-refresh";
 import {
   addOperationalDays,
   formatOperationalDate,
@@ -47,6 +48,7 @@ type Data = {
 };
 type WeekData = { weekCommencing: string; days: PlannerWeekSummary[] };
 type LoadResult = { ok: true; projection: LogisticsDayProjection } | { ok: false };
+type LoadMode = "initial" | "explicit" | "passive";
 
 function clockMinutes(value: string) {
   const [hour, minute] = value.split(":").map(Number);
@@ -99,10 +101,13 @@ export default function Planner() {
   const emptyProjection = (serviceDate: string): LogisticsDayProjection => ({ serviceDate, revision: 0, lastChangeSequence: 0, planningQueue: [], deliveryLoads: [], runs: [], exceptions: [], summary: { queuedJobs: 0, loads: 0, assignedJobs: 0, collectedJobs: 0 }, rebuiltAt: new Date().toISOString() });
   const [error, setError] = useState("");
   const [errorReference, setErrorReference] = useState("");
+  const [passiveSyncError, setPassiveSyncError] = useState("");
   const [projectionNeedsMaterialisation, setProjectionNeedsMaterialisation] = useState(false);
   const [authRequired, setAuthRequired] = useState(false);
   const requestsBlocked = useRef(false);
+  const dataRef = useRef<Data | undefined>(undefined);
   const projectionSequence = useRef<number | undefined>(undefined);
+  const lastPassiveSyncAt = useRef<number | undefined>(undefined);
   const syncCheckInFlight = useRef<Promise<void> | undefined>(undefined);
   const [busy, setBusy] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -130,14 +135,38 @@ export default function Planner() {
   const bootstrapInFlight = useRef<Promise<void> | undefined>(undefined);
   const weekLoadInFlight = useRef<Promise<void> | undefined>(undefined);
 
+  const setProjectionData = (next: Data | undefined) => {
+    dataRef.current = next;
+    setData(next);
+  };
+
   const recordError = (cause: unknown, fallback: string) => {
     const details = clientErrorDetails(cause, fallback);
     if ([401, 403].includes(details.status)) requestsBlocked.current = true;
     if ([401, 403].includes(details.status)) setAuthRequired(true);
     setProjectionNeedsMaterialisation(details.code === "LOGISTICS_PROJECTION_NOT_MATERIALIZED");
+    setPassiveSyncError("");
     setError(details.message);
     setErrorReference(details.requestId || "");
   };
+
+  const recordPassiveError = (cause: unknown, fallback: string) => {
+    const details = clientErrorDetails(cause, fallback);
+    if ([401, 403].includes(details.status)) {
+      recordError(cause, fallback);
+      return;
+    }
+    if (dataRef.current) {
+      setProjectionState("STALE");
+      setError("");
+    }
+    setPassiveSyncError("Sync unavailable · showing last updated data");
+    setErrorReference(details.requestId || "");
+  };
+
+  useEffect(() => {
+    dataRef.current = data;
+  }, [data]);
 
   useEffect(() => {
     const requestedDate = new URLSearchParams(window.location.search).get("serviceDate");
@@ -159,7 +188,7 @@ export default function Planner() {
     try { window.localStorage.setItem("fika-logistics-view", JSON.stringify({ date, weekCommencing })); } catch { /* Preferences are an optimisation only. */ }
   }, [date, weekCommencing, viewPreferencesReady]);
 
-  const loadAuthoritative = async (silent = false, _materialiseMissing = true): Promise<LoadResult> => {
+  const loadAuthoritative = async (silent = false, _materialiseMissing = true, mode: LoadMode = "explicit"): Promise<LoadResult> => {
     if (requestsBlocked.current) return { ok: false };
     if (!date) return { ok: false };
     if (silent) setRefreshing(true);
@@ -172,14 +201,16 @@ export default function Planner() {
       if (cacheScope) {
         cached = await readCachedProjection(cacheScope, date);
         if (cached) {
-          setData({ ...projectionToDashboardData(cached), projection: cached });
+          setProjectionData({ ...projectionToDashboardData(cached), projection: cached });
           setProjectionState(cached.state || "CURRENT");
           projectionSequence.current = cached.lastChangeSequence;
         }
       }
       if (cached && Number(head.sequence) === cached.lastChangeSequence && cached.state !== "STALE") {
+        lastPassiveSyncAt.current = Date.now();
         setLastUpdated(new Date().toISOString());
         setError("");
+        setPassiveSyncError("");
         setProjectionNeedsMaterialisation(false);
         return { ok: true, projection: cached };
       }
@@ -189,22 +220,25 @@ export default function Planner() {
       let projection = body.projection as LogisticsDayProjection | undefined;
       if (!projection && body.state === "EMPTY") {
         projection = { ...emptyProjection(date), state: "VALID_EMPTY", lastChangeSequence: Number(head.sequence || 0) };
-        setData({ ...projectionToDashboardData(projection), projection });
+        setProjectionData({ ...projectionToDashboardData(projection), projection });
         setProjectionState("VALID_EMPTY");
         setLastUpdated(new Date().toISOString());
         setError("");
+        setPassiveSyncError("");
         setProjectionNeedsMaterialisation(false);
         projectionSequence.current = projection.lastChangeSequence;
         return { ok: true, projection };
       }
       if (!projection) throw new Error("Logistics projection is unavailable.");
-      setData({ ...projectionToDashboardData(projection), projection });
+      setProjectionData({ ...projectionToDashboardData(projection), projection });
       setProjectionState((body.projectionState || projection.state || "CURRENT") as LogisticsProjectionState);
       projectionSequence.current = projection.lastChangeSequence;
       setProjectionNeedsMaterialisation(false);
       if (cacheScope) await writeCachedProjection(cacheScope, projection);
       setLastUpdated(new Date().toISOString());
       setError("");
+      setPassiveSyncError("");
+      lastPassiveSyncAt.current = Date.now();
       let convergedProjection = projection;
       const freshHeadResponse = await fetchPlannerGet(`/api/logistics?syncHead=1&serviceDate=${date}`, { cache: "no-store" });
       const freshHead = await requireSuccessfulResponse(freshHeadResponse, "Logistics sync state could not be checked after projection load.");
@@ -217,7 +251,7 @@ export default function Planner() {
         if (drained.cursor < Number(freshHead.sequence)) throw new Error("Logistics changes did not converge to the current sync head.");
         if (drained.latestProjection && drained.latestProjection.lastChangeSequence >= drained.cursor && drained.latestProjection !== projection) {
           convergedProjection = drained.latestProjection;
-          setData({ ...projectionToDashboardData(drained.latestProjection), projection: drained.latestProjection });
+          setProjectionData({ ...projectionToDashboardData(drained.latestProjection), projection: drained.latestProjection });
           setProjectionState(drained.latestProjection.state || "CURRENT");
           projectionSequence.current = drained.latestProjection.lastChangeSequence;
           if (cacheScope) await writeCachedProjection(cacheScope, drained.latestProjection);
@@ -225,37 +259,46 @@ export default function Planner() {
       }
       return { ok: true, projection: convergedProjection };
     } catch (cause) {
-      if (cached) setProjectionState("STALE");
-      else {
-        setData(undefined);
-        setProjectionState("UNAVAILABLE");
+      if (mode === "passive" && (cached || dataRef.current)) {
+        if (cached) setProjectionState("STALE");
+        recordPassiveError(cause, "Sync failed; the last valid Logistics projection remains visible.");
+      } else {
+        if (cached) setProjectionState("STALE");
+        else {
+          setProjectionData(undefined);
+          setProjectionState("UNAVAILABLE");
+        }
+        recordError(cause, cached ? "Sync failed; showing the last valid Logistics projection." : "Logistics projection could not be loaded.");
       }
-      recordError(cause, cached ? "Sync failed; showing the last valid Logistics projection." : "Logistics projection could not be loaded.");
       return { ok: false };
     } finally {
       if (silent) setRefreshing(false);
     }
   };
-  const load = (silent = false, materialiseMissing = true): Promise<LoadResult> => {
+  const load = (silent = false, materialiseMissing = true, mode: LoadMode = "explicit"): Promise<LoadResult> => {
     if (loadInFlight.current) return loadInFlight.current;
-    const pending = loadAuthoritative(silent, materialiseMissing);
+    const pending = loadAuthoritative(silent, materialiseMissing, mode);
     loadInFlight.current = pending;
     void pending.then(() => { if (loadInFlight.current === pending) loadInFlight.current = undefined; }, () => { if (loadInFlight.current === pending) loadInFlight.current = undefined; });
     return pending;
   };
-  const loadWeekAuthoritative = async (week = weekCommencing) => {
+  const loadWeekAuthoritative = async (week = weekCommencing, mode: LoadMode = "explicit") => {
     if (requestsBlocked.current) return;
     try {
       const body = await fetchPlannerGet(`/api/logistics?weekSummary=1&weekCommencing=${week}`, { cache: "no-store" }).then((response) => requireSuccessfulResponse(response, "Logistics week summary could not be loaded."));
       setWeekData({ weekCommencing: body.weekCommencing as string, days: (body.days || []) as PlannerWeekSummary[] });
     } catch (cause) {
-      recordError(cause, "Logistics week data could not be loaded.");
-      setWeekData(undefined);
+      if (mode === "passive" && dataRef.current) {
+        recordPassiveError(cause, "Logistics week summary could not be refreshed.");
+      } else {
+        recordError(cause, "Logistics week data could not be loaded.");
+        setWeekData(undefined);
+      }
     }
   };
-  const loadWeek = (week = weekCommencing): Promise<void> => {
+  const loadWeek = (week = weekCommencing, mode: LoadMode = "explicit"): Promise<void> => {
     if (weekLoadInFlight.current) return weekLoadInFlight.current;
-    const pending = loadWeekAuthoritative(week);
+    const pending = loadWeekAuthoritative(week, mode);
     weekLoadInFlight.current = pending;
     void pending.then(() => { if (weekLoadInFlight.current === pending) weekLoadInFlight.current = undefined; }, () => { if (weekLoadInFlight.current === pending) weekLoadInFlight.current = undefined; });
     return pending;
@@ -268,16 +311,33 @@ export default function Planner() {
       try {
         const response = await fetchPlannerGet(`/api/logistics?syncHead=1&serviceDate=${date}`, { cache: "no-store" });
         const head = await requireSuccessfulResponse(response, "Logistics sync state could not be checked.");
-        if (projectionSequence.current === undefined || Number(head.sequence) !== projectionSequence.current) {
-          await load(true);
-          await loadWeek();
+        if (projectionSequence.current !== undefined && Number(head.sequence) === projectionSequence.current) {
+          setPassiveSyncError("");
+          return;
+        }
+        const refreshed = await load(true, true, "passive");
+        if (refreshed.ok) {
+          await loadWeek(weekCommencing, "passive");
         }
       } catch (cause) {
-        recordError(cause, data ? "Sync failed; the last valid Logistics projection remains visible." : "Logistics sync state could not be checked.");
+        recordPassiveError(cause, "Logistics sync state could not be checked.");
       }
     })().finally(() => { syncCheckInFlight.current = undefined; });
     syncCheckInFlight.current = pending;
     return pending;
+  };
+
+  const requestPassiveRefresh = (reason: string) => {
+    void reason;
+    if (!mayRequestPassiveRefresh({
+      now: Date.now(),
+      lastAttemptAt: lastPassiveSyncAt.current,
+      visible: document.visibilityState === "visible",
+      requestsBlocked: requestsBlocked.current,
+      inFlight: Boolean(syncCheckInFlight.current),
+    })) return;
+    lastPassiveSyncAt.current = Date.now();
+    void checkForUpdates();
   };
   const ensureVehicleDayRuns = async (serviceDate: string) => {
     if (requestsBlocked.current) return;
@@ -299,8 +359,11 @@ export default function Planner() {
       return;
     }
     setData(undefined);
+    dataRef.current = undefined;
     setProjectionState("LOADING");
     setProjectionNeedsMaterialisation(false);
+    setPassiveSyncError("");
+    lastPassiveSyncAt.current = undefined;
     const bootstrap = (async () => {
       const result = await load();
       if (result.ok && !requestsBlocked.current) await ensureVehicleDayRuns(date);
@@ -308,15 +371,15 @@ export default function Planner() {
     bootstrapInFlight.current = bootstrap;
     void bootstrap.then(() => { if (bootstrapInFlight.current === bootstrap) bootstrapInFlight.current = undefined; }, () => { if (bootstrapInFlight.current === bootstrap) bootstrapInFlight.current = undefined; });
     const liveChannel = typeof BroadcastChannel === "undefined" ? undefined : new BroadcastChannel("fika-logistics-live");
-    const onLiveChange = (event: MessageEvent<{ serviceDate?: string }>) => { if (!event.data?.serviceDate || event.data.serviceDate === date) void checkForUpdates(); };
+    const onLiveChange = (event: MessageEvent<{ serviceDate?: string }>) => { if (!event.data?.serviceDate || event.data.serviceDate === date) requestPassiveRefresh("broadcast"); };
     liveChannel?.addEventListener("message", onLiveChange);
     const onVisibilityChange = () => {
-      if (document.visibilityState === "visible" && !requestsBlocked.current) void checkForUpdates();
+      requestPassiveRefresh("visibility");
     };
     document.addEventListener("visibilitychange", onVisibilityChange);
     const timer = window.setInterval(() => {
-      if (document.visibilityState === "visible" && !requestsBlocked.current) void checkForUpdates();
-    }, 30_000);
+      requestPassiveRefresh("interval");
+    }, PASSIVE_REFRESH_INTERVAL_MS);
     return () => { window.clearInterval(timer); document.removeEventListener("visibilitychange", onVisibilityChange); liveChannel?.removeEventListener("message", onLiveChange); liveChannel?.close(); };
   }, [date, viewPreferencesReady]);
   useEffect(() => {
@@ -326,18 +389,18 @@ export default function Planner() {
       await loadWeek();
     })();
   }, [weekCommencing, viewPreferencesReady]);
-  const checkPlanningAttention = async () => {
+  const checkPlanningAttention = async (_passive = false) => {
     if (requestsBlocked.current || document.visibilityState !== "visible") return;
     try {
       const response = await fetchPlannerGet(`/api/logistics?planningAttention=1&serviceDate=${operationalDate()}&days=14`, { cache: "no-store" });
       const body = await requireSuccessfulResponse(response, "Planning attention could not be checked.");
       setPlanningAttention((body.attention || []) as Array<{ serviceDate: string; count: number }>);
-    } catch (cause) { recordError(cause, "Planning attention could not be checked."); }
+    } catch (cause) { recordPassiveError(cause, "Planning attention could not be checked."); }
   };
   useEffect(() => {
     if (!viewPreferencesReady) return;
-    void checkPlanningAttention();
-    const timer = window.setInterval(() => { void checkPlanningAttention(); }, 5 * 60_000);
+    void checkPlanningAttention(true);
+    const timer = window.setInterval(() => { void checkPlanningAttention(true); }, PASSIVE_REFRESH_INTERVAL_MS);
     return () => window.clearInterval(timer);
   }, [viewPreferencesReady]);
 
@@ -494,6 +557,7 @@ export default function Planner() {
     data={data}
     error={error}
     errorReference={errorReference}
+    passiveSyncError={passiveSyncError}
     projectionNeedsMaterialisation={projectionNeedsMaterialisation}
     authRequired={authRequired}
     onSignInAgain={() => { window.location.assign(process.env.NEXT_PUBLIC_FIKA_HUB_URL || "/"); }}
@@ -560,6 +624,7 @@ export default function Planner() {
               ? `Last updated ${new Date(lastUpdated!).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`
               : "Waiting for data"}
         </span>
+        {passiveSyncError && <span className="passive-sync-warning" role="status" aria-live="polite">{passiveSyncError}</span>}
         <Health health={data?.planner.upstreamHealth} />
       </div>
       <WeekStrip
@@ -695,6 +760,7 @@ type RealPlannerProps = {
   projectionState: LogisticsProjectionState | "LOADING";
   error: string;
   errorReference: string;
+  passiveSyncError: string;
   projectionNeedsMaterialisation: boolean;
   authRequired: boolean;
   onSignInAgain: () => void;
@@ -954,6 +1020,7 @@ function RealPlanner(props: RealPlannerProps) {
       <section className="mock-week-nav" aria-label="Operational week navigation"><button aria-label="Previous week" onClick={() => { const next = addOperationalDays(weekCommencing, -7); props.setWeekCommencing(next); props.setDate(next); }}>‹</button><strong>WC {formatWeekRange(weekCommencing)}</strong><button className="mock-this-week" onClick={() => { const next = mondayOf(operationalDate()); props.setWeekCommencing(next); props.setDate(next); }}>This week</button><button aria-label="Next week" onClick={() => { const next = addOperationalDays(weekCommencing, 7); props.setWeekCommencing(next); props.setDate(next); }}>›</button></section>
       <section className="mock-day-cards" aria-label="Operational week">{operationalWeek(weekCommencing).map((day) => { const item = weekData?.days.find((summaryItem) => summaryItem.serviceDate === day); const weekMetricsReady = item?.projectionState === "CURRENT" || item?.projectionState === "VALID_EMPTY"; const weekMetric = (value: number | undefined) => weekMetricsReady && value !== undefined ? value : "—"; return <button key={day} className={day === date ? "selected" : ""} aria-pressed={day === date} onClick={() => props.setDate(day)}><div className="mock-day-title"><strong>{formatOperationalDate(day, { weekday: "short", day: "numeric", month: "short" })}</strong>{day === date && <b>✓</b>}</div><div className="mock-day-metrics"><span><i className="purple-dot" />{weekMetric(item?.loads)} loads</span><span><i className="purple-dot" />{weekMetric(item?.scheduled)} scheduled</span><span><i className="green-dot" />{weekMetric(item?.queue)} in queue</span><span><i className="blue-dot" />{weekMetric(item?.needsTime)} needs time</span><span><i className="red-dot" />{weekMetric(item?.attention)} attention</span></div></button>; })}</section>
       <div className="mock-updated">{props.refreshing ? "Refreshing…" : props.data?.fetchedAt ? `Last updated ${new Date(props.data.fetchedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}` : "Waiting for data"}<Health health={data?.planner.upstreamHealth} /></div>
+      {props.passiveSyncError && <div className="passive-sync-warning" role="status" aria-live="polite">{props.passiveSyncError}</div>}
       {props.error && <div className="alert" role="alert"><span>{props.error}{props.errorReference && <> <small>Reference: {props.errorReference}</small></>}</span><button className="secondary" onClick={() => void props.load(true, props.projectionNeedsMaterialisation)} disabled={props.refreshing}>{props.projectionNeedsMaterialisation ? "Materialise and retry" : "Try again"}</button>{props.authRequired && <button className="secondary" onClick={props.onSignInAgain}>Sign in again</button>}</div>}
       {props.showMovement && <MovementForm draft={props.draft} setDraft={props.setDraft} oplocs={data?.oplocs || []} onClose={() => props.setShowMovement(false)} onSave={props.createMovement} busy={props.busy} />}
       <section className="mock-selected-day"><div><span>▣</span><strong>{selectedDateLabel}</strong><small>{metric(summary?.loads)} loads · {metricsReady ? runs.length : "—"} vans &nbsp;·&nbsp; {metric(summary?.scheduledStops)} scheduled · {queueCount} in queue · {metric(summary?.needsTime)} needs time · {metric(summary?.attention)} attention</small></div><div className="mock-actions"><button onClick={() => props.setShowRunCreate(true)}>＋ New run</button><button onClick={() => props.setShowMovement(true)} disabled={!data?.planner.upstreamHealth.oplocs.available}>＋ New movement</button><button onClick={() => void props.load(true)} disabled={props.refreshing} aria-busy={props.refreshing}>{props.refreshing ? "Refreshing…" : "↻ Refresh"}</button><a href={runs.length === 1 ? `/mobile?run=${encodeURIComponent(runs[0].runId)}` : "/mobile"}>▦ Driver view</a></div></section>

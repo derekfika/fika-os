@@ -10,6 +10,7 @@ const root = resolve(import.meta.dirname, "..");
 const store = readFileSync(resolve(root, "lib/store.ts"), "utf8");
 const route = readFileSync(resolve(root, "app/api/logistics/route.ts"), "utf8");
 const page = readFileSync(resolve(root, "app/page.tsx"), "utf8");
+const passiveRefresh = readFileSync(resolve(root, "lib/passive-refresh.ts"), "utf8");
 const api = readFileSync(resolve(root, "lib/api.ts"), "utf8");
 const indexes = readFileSync(resolve(root, "firestore.indexes.json"), "utf8");
 
@@ -22,8 +23,15 @@ test("incremental changes are ordered, cursor-based, and capped", () => {
 });
 
 test("dashboard polling has separate bounded cadences", () => {
-  assert.match(page, /}, 30_000\)/);
-  assert.match(page, /}, 5 \* 60_000\)/);
+  assert.match(passiveRefresh, /PASSIVE_REFRESH_INTERVAL_MS = 15 \* 60_000/);
+  assert.match(page, /setInterval[\s\S]*PASSIVE_REFRESH_INTERVAL_MS/);
+  assert.doesNotMatch(page, /}, 30_000\)/);
+  assert.doesNotMatch(page, /}, 5 \* 60_000\)/);
+  assert.match(page, /lastPassiveSyncAt\.current/);
+  assert.match(page, /mayRequestPassiveRefresh/);
+  assert.match(page, /requestPassiveRefresh\("interval"\)/);
+  assert.match(page, /requestPassiveRefresh\("visibility"\)/);
+  assert.match(page, /requestPassiveRefresh\("broadcast"\)/);
   assert.match(page, /planningAttention=1/);
   assert.match(page, /visibilitychange/);
   assert.match(page, /syncHead=1/);

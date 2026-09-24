@@ -1308,6 +1308,24 @@ button:disabled {
   color: var(--muted);
   font-size: 0.74rem;
 }
+.passive-sync-warning {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 9px;
+  border: 1px solid var(--fika-status-warning);
+  border-radius: 8px;
+  background: var(--fika-status-warning-surface);
+  color: var(--fika-status-warning);
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+.status-line .passive-sync-warning {
+  margin: 0 8px;
+}
+.mock-updated + .passive-sync-warning {
+  margin: 8px 0 0;
+}
 .health-inline {
   display: flex;
   gap: 12px;
