@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createDomainEvent } from "../../shared/domain-events";
-import { fulfilmentFromGrabAndGoOrder, fulfilmentFromProductionOrder, fulfilmentFromPublishedMenuDay, productionOrderRequiresFulfilment, productionStatusToFulfilmentStatus } from "../../shared/fulfilment-requirement";
+import { fulfilmentFromGrabAndGoOrder, fulfilmentFromProductionOrder, fulfilmentFromPublishedMenuDay, productionOrderRequiresFulfilment, productionStatusToFulfilmentStatus, sourceContentHash } from "../../shared/fulfilment-requirement";
 import { applyFulfilmentEvent, listFulfilmentReceipts, listFulfilmentRequirements, normaliseFulfilmentEvent, shouldApplyFulfilmentVersion } from "../lib/fulfilment-projection";
 import { db } from "../lib/firebase-admin";
 import { stableDocumentId } from "../lib/canonical-editor";
@@ -71,9 +71,42 @@ test("Fulfilment materialisation preserves pending and ready lifecycle semantics
   assert.equal(draft.status, "pending");
   assert.equal(needsReview.status, "pending");
   assert.equal(accepted.status, "ready_for_planning");
-  assert.equal(planning.status, "amended");
+  assert.equal(planning.status, "ready_for_planning");
   assert.equal(amended.status, "amended");
   assert.equal(withdrawn.status, "withdrawn");
+});
+
+test("Production Fulfilment hashing and reconciliation distinguish delivery changes from metadata", () => {
+  const first = fulfilmentFromProductionOrder(productionOrder, "integration-hub", "2026-08-20T10:00:00Z");
+  const replay = fulfilmentFromProductionOrder(productionOrder, "integration-hub-reconciliation", "2026-08-20T10:01:00Z", first);
+  assert.equal(replay, first);
+
+  const metadataRevision = { ...productionOrder, version: 2, bookingNotes: "CPU-local note", operationalNotes: "Review metadata" };
+  const sourceRevisionOnly = fulfilmentFromProductionOrder(metadataRevision, "integration-hub-reconciliation", "2026-08-22T10:00:00Z", first);
+  assert.equal(sourceRevisionOnly.status, "ready_for_planning");
+  assert.equal(sourceRevisionOnly.sourceContentHash, first.sourceContentHash);
+  assert.equal(sourceRevisionOnly.sourceVersion, 2);
+
+  const legacyHash = sourceContentHash({ ...productionOrder, sourceEntityId: productionOrder.canonicalId });
+  const legacyAmendment = {
+    ...first,
+    status: "amended" as const,
+    sourceContentHash: legacyHash,
+    idempotencyKey: `${first.idempotencyKey}:legacy-reconciliation`,
+    audit: [...first.audit, { action: "fulfilment-amended", at: "2026-08-21T10:00:00Z", by: "integration-hub-reconciliation", sourceVersion: first.sourceVersion, idempotencyKey: `${first.idempotencyKey}:legacy-reconciliation` }],
+  };
+  const migrated = fulfilmentFromProductionOrder(productionOrder, "integration-hub-reconciliation", "2026-08-22T10:01:00Z", legacyAmendment);
+  assert.equal(migrated.status, "ready_for_planning");
+  assert.equal(migrated.audit.at(-1)?.action, "fulfilment-reconciled");
+
+  const quantityChange = fulfilmentFromProductionOrder({ ...productionOrder, version: 2, lines: [{ ...productionOrder.lines[0], productionQuantity: 2 }] }, "integration-hub", "2026-08-22T10:02:00Z", first);
+  assert.equal(quantityChange.status, "amended");
+  const destinationChange = fulfilmentFromProductionOrder({ ...productionOrder, version: 2, destinationOplocId: "oploc:new-destination" }, "integration-hub", "2026-08-22T10:03:00Z", first);
+  assert.equal(destinationChange.status, "amended");
+  const windowChange = fulfilmentFromProductionOrder({ ...productionOrder, version: 2, serviceWindow: { startTime: "10:00", endTime: "10:30" } }, "integration-hub", "2026-08-22T10:04:00Z", first);
+  assert.equal(windowChange.status, "amended");
+  const cancellation = fulfilmentFromProductionOrder({ ...productionOrder, version: 2, status: "cancelled" }, "integration-hub", "2026-08-22T10:05:00Z", first);
+  assert.equal(cancellation.status, "withdrawn");
 });
 
 test("the central store receives all three sources and applies amendments, withdrawal and duplicate replay safely", async () => {

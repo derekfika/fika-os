@@ -73,6 +73,11 @@ export async function reconcileProductionFulfilmentForServiceDate(serviceDate: s
   const orders = productionSnapshot.docs.map(document => document.data() as ProductionOrder);
   const actualById = new Map(actual.map(requirement => [requirement.canonicalId, requirement]));
   const activeActual = actual.filter(requirement => (requirement.sourceDomain === "cpu-production" || requirement.sourceDomain === "grab-and-go") && requirement.status !== "withdrawn");
+  const activeBySourceEntity = new Map<string, FulfilmentRequirement>();
+  for (const requirement of activeActual) {
+    const previous = activeBySourceEntity.get(requirement.sourceEntityId);
+    if (!previous || requirement.version > previous.version) activeBySourceEntity.set(requirement.sourceEntityId, requirement);
+  }
   const missingDestinationProductionOrders: string[] = [];
   const terminalProductionOrders: string[] = [];
   const expected = new Map<string, { order: ProductionOrder; source: ProductionOrderFulfilmentSource; requirement: FulfilmentRequirement }>();
@@ -87,7 +92,10 @@ export async function reconcileProductionFulfilmentForServiceDate(serviceDate: s
   for (const order of currentProductionOrders) {
     const source = productionSource(order);
     const identity = fulfilmentFromProductionOrder(source, "integration-hub-reconciliation", now).canonicalId;
-    const previous = actualById.get(identity);
+    // A destination/service-date change changes the requirement identity. Carry
+    // the prior source requirement into the new identity so the replacement is
+    // an explicit amendment, then withdraw the old requirement below.
+    const previous = actualById.get(identity) || activeBySourceEntity.get(source.sourceEntityId || source.canonicalId);
     const requirement = fulfilmentFromProductionOrder(source, "integration-hub-reconciliation", now, previous);
     expected.set(requirement.canonicalId, { order, source, requirement });
   }
@@ -138,6 +146,12 @@ export async function reconcileProductionFulfilmentForServiceDate(serviceDate: s
     const requirementId = source ? fulfilmentFromProductionOrder(source, "integration-hub-reconciliation", now).canonicalId : undefined;
     if (!requirementId) continue;
     const action = await mutate({ requirementId, withdrawalReason: order.destinationOplocId === CPU_SITE_OPLOC_ID ? "Production is fulfilled locally at FIKA Xchange and is not a Logistics delivery." : "The source Production Order is terminal or superseded." });
+    if (action === "withdrawn") withdrawn++;
+    else unchanged++;
+  }
+  const knownCurrentSourceIds = new Set(currentProductionOrders.map(order => order.canonicalId));
+  for (const requirement of activeActual.filter(item => !expectedIds.has(item.canonicalId) && knownCurrentSourceIds.has(item.sourceEntityId))) {
+    const action = await mutate({ requirementId: requirement.canonicalId, withdrawalReason: "The current Production Order fulfilment projection replaced this stale destination or service-date requirement." });
     if (action === "withdrawn") withdrawn++;
     else unchanged++;
   }

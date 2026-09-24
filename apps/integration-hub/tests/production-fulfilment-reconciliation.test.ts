@@ -97,3 +97,33 @@ test("bounded Production Order reconciliation repairs missing/stale work and exc
     await batch.commit();
   }
 });
+
+test("destination changes replace the old requirement and preserve amendment attention", async () => {
+  const destinationDate = "2099-12-30";
+  const source = { ...order({ name: "destination-change", destinationOplocId: "oploc:old-destination", status: "planned" }), serviceDate: destinationDate, requiredBy: `${destinationDate}T09:00:00.000Z` };
+  const moved = { ...source, destinationOplocId: "oploc:new-destination", destinationLabel: "New destination" };
+  const prior = fulfilmentFromProductionOrder(source, "seed");
+  try {
+    await db.collection("fikaProductionOrdersV1").doc(stableDocumentId(moved.canonicalId)).set(moved);
+    await writeRequirement(prior);
+    const result = await reconcileProductionFulfilmentForServiceDate(destinationDate);
+    assert.equal(result.updated, 1);
+    assert.equal(result.withdrawn, 1);
+
+    const requirements = await db.collection("fikaFulfilmentRequirementsV1").where("serviceDate", "==", destinationDate).get();
+    const oldRequirement = requirements.docs.find(document => document.id === stableDocumentId(prior.canonicalId))?.data() as FulfilmentRequirement | undefined;
+    const newId = fulfilmentFromProductionOrder(moved, "test").canonicalId;
+    const newRequirement = requirements.docs.find(document => document.id === stableDocumentId(newId))?.data() as FulfilmentRequirement | undefined;
+    assert.equal(oldRequirement?.status, "withdrawn");
+    assert.equal(newRequirement?.status, "amended");
+    assert.equal(newRequirement?.destinationOplocId, "oploc:new-destination");
+  } finally {
+    const requirementSnapshot = await db.collection("fikaFulfilmentRequirementsV1").where("serviceDate", "==", destinationDate).get();
+    const outboxSnapshot = await db.collection("fikaLogisticsProjectionOutboxV1").where("payload.serviceDate", "==", destinationDate).get();
+    const batch = db.batch();
+    batch.delete(db.collection("fikaProductionOrdersV1").doc(stableDocumentId(moved.canonicalId)));
+    for (const document of requirementSnapshot.docs) if (String(document.data().sourceEntityId || "").includes(suffix)) batch.delete(document.ref);
+    for (const document of outboxSnapshot.docs) if (String(document.data().payload?.sourceEntityId || "").includes(suffix)) batch.delete(document.ref);
+    await batch.commit();
+  }
+});

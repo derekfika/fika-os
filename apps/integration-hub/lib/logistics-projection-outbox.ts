@@ -7,7 +7,7 @@ import {
   outboxRecord,
   type DurableDomainEvent,
 } from "@fika/server-shared/durable-outbox";
-import type { FulfilmentRequirement, ProductionOrderFulfilmentSource } from "../../shared/fulfilment-requirement";
+import { fulfilmentDeliveryContentEqual, type FulfilmentRequirement, type ProductionOrderFulfilmentSource } from "../../shared/fulfilment-requirement";
 import {
   logisticsProjectionEventId,
   type LogisticsProjectionInvalidation,
@@ -47,7 +47,9 @@ export function logisticsProjectionChangeForRequirement(
     changeType: previous
       ? requirement.status === "withdrawn"
         ? "withdrawn"
-        : "amended"
+        : !fulfilmentDeliveryContentEqual(previous, requirement)
+          ? "amended"
+          : "status-changed"
       : "created",
   };
 }
