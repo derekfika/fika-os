@@ -4,6 +4,7 @@ export type TimelineEventPresentation = {
   loadCount: number;
   vehicle?: string;
   lane: "delivery" | "collection";
+  visualWidth?: number;
 };
 
 export function escapeTimelineHtml(value: string) {
@@ -26,12 +27,16 @@ export function timelineEventTooltip(presentation: TimelineEventPresentation) {
   ].filter(Boolean).join("\n");
 }
 
-export function timelineEventAreaHtml(presentation: TimelineEventPresentation) {
-  return `<span class="fika-event-card"><time>${escapeTimelineHtml(presentation.time)}</time><strong>${escapeTimelineHtml(presentation.destination)}</strong><small>${escapeTimelineHtml(formatLoadCount(presentation.loadCount))}</small></span>`;
+export function timelineEventCardWidth(minutesToNextStop: number | undefined, cellWidth: number) {
+  const standardWidth = 124;
+  if (minutesToNextStop === undefined || minutesToNextStop >= 45) return standardWidth;
+  return Math.max(36, Math.min(standardWidth, Math.floor((minutesToNextStop / 15) * cellWidth) - 4));
 }
 
-export function timelineEventInlineHtml(presentation: TimelineEventPresentation) {
-  return `<span class="fika-event-inline-content"><time>${escapeTimelineHtml(presentation.time)}</time><strong>${escapeTimelineHtml(presentation.destination)}</strong><small>${escapeTimelineHtml(formatLoadCount(presentation.loadCount))}</small></span>`;
+export function timelineEventHtml(presentation: TimelineEventPresentation) {
+  const visualWidth = Math.max(36, Math.min(140, Math.round(presentation.visualWidth || 124)));
+  const compactClass = visualWidth < 124 ? " compact" : "";
+  return `<span class="fika-event-card${compactClass}" style="--fika-event-card-width:${visualWidth}px"><time>${escapeTimelineHtml(presentation.time)}</time><strong>${escapeTimelineHtml(presentation.destination)}</strong><small>${escapeTimelineHtml(formatLoadCount(presentation.loadCount))}</small></span>`;
 }
 
 export function formatLoadCount(loadCount: number) {

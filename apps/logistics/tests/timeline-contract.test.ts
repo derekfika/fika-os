@@ -15,15 +15,23 @@ test("DayPilot keeps true short event geometry and supported interaction semanti
   assert.match(page, /onEventMoved=/);
   assert.match(page, /onEventResized=/);
   assert.match(page, /const loadCount = Math\.max\(1, stop\.requirementCount\)/);
-  assert.match(page, /timelineEventAreaHtml/);
+  assert.match(page, /timelineEventHtml/);
   assert.match(page, /timelineEventTooltip/);
+  assert.match(page, /timelineEventCardWidth/);
+  assert.match(page, /args\.data\.backColor = "transparent"/);
+  assert.match(page, /args\.data\.borderColor = "transparent"/);
+  assert.doesNotMatch(page, /left: "100%"/);
+  assert.doesNotMatch(page, /timelineEventAreaHtml|timelineEventInlineHtml|fika-event-label/);
   assert.doesNotMatch(page, /const presentation = \{[^}]*workstream/);
 });
 
 test("desktop layout gives the schedule the wider surface and retains mobile fallback", () => {
   assert.match(styles, /mock-workspace \{ grid-template-columns: minmax\(280px, 28%\) minmax\(0, 72%\)/);
   assert.match(styles, /@media \(max-width: 1050px\) \{\s*\.real-planner \.mock-workspace \{ grid-template-columns: 1fr; \}/);
-  assert.match(styles, /fika-event-label[^}]*width: 124px/);
+  assert.match(styles, /fika-event-card[^}]*--fika-event-card-width/);
+  assert.match(styles, /fika-event\.collection \.fika-event-card[^}]*fika-status-info/);
+  assert.match(styles, /fika-event\.attention \.fika-event-card[^}]*fika-status-danger/);
+  assert.match(styles, /scheduler_default_event_inner \{[^}]*background: transparent/);
   assert.match(styles, /\.real-planner \{ overflow-x: hidden; \}/);
   assert.match(styles, /\.real-planner \.daypilot-timeline \{ overflow-x: auto; overflow-y: hidden; \}/);
 });
