@@ -1316,7 +1316,8 @@ button:disabled {
 .real-planner .mock-workspace { grid-template-columns: minmax(280px, 28%) minmax(0, 72%); }
 .real-planner .daypilot-group .scheduler_default_event,
 .real-planner .daypilot-group .scheduler_default_event_inner { overflow: visible !important; }
-.real-planner .daypilot-group .scheduler_default_event_inner { min-height: 56px; box-sizing: border-box; border-color: transparent !important; background: transparent !important; color: transparent !important; }
+.real-planner .daypilot-group .scheduler_default_event_inner { min-height: 56px; box-sizing: border-box; border: 0 !important; background: transparent !important; color: transparent !important; }
+.real-planner .daypilot-group .fika-event .scheduler_default_event_bar { display: none !important; }
 .real-planner .daypilot-group .fika-event-card { display: grid; box-sizing: border-box; width: var(--fika-event-card-width, 124px); min-width: var(--fika-event-card-width, 124px); height: 100%; min-height: 58px; padding: 6px 8px; gap: 2px; border: 1px solid var(--fika-border-default); border-left: 3px solid var(--fika-status-success); border-radius: var(--radius-sm); background: var(--fika-surface-card); box-shadow: var(--shadow-sm); color: var(--fika-text-primary); line-height: 1.15; overflow: hidden; pointer-events: auto; }
 .real-planner .daypilot-group .fika-event-card.compact { padding-right: 5px; padding-left: 6px; }
 .real-planner .daypilot-group .fika-event-card time { color: var(--fika-text-secondary); font-size: 11px; font-weight: 800; }

@@ -22,6 +22,8 @@ test("DayPilot keeps true short event geometry and supported interaction semanti
   assert.match(page, /args\.data\.borderColor = "transparent"/);
   assert.doesNotMatch(page, /left: "100%"/);
   assert.doesNotMatch(page, /timelineEventAreaHtml|timelineEventInlineHtml|fika-event-label/);
+  assert.match(styles, /fika-event \.scheduler_default_event_bar \{ display: none/);
+  assert.match(styles, /scheduler_default_event_inner \{[^}]*border: 0 !important/);
   assert.doesNotMatch(page, /const presentation = \{[^}]*workstream/);
 });
 
