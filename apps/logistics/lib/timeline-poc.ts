@@ -3,6 +3,9 @@ export const POC_DAY_END = 14 * 60;
 export const POC_SLOT_MINUTES = 15;
 export const POC_SLOT_WIDTH = 38;
 export const POC_CARD_WIDTH = 124;
+export const POC_CARD_HEIGHT = 74;
+export const POC_SUBROW_GAP = 8;
+export const POC_ROW_MIN_HEIGHT = 172;
 
 export type PocLane = "delivery" | "collection";
 export type PocVehicle = "van-1" | "van-2";
@@ -33,6 +36,14 @@ export function clampPocMinute(minute: number, durationMinutes = POC_SLOT_MINUTE
 
 export function pocLeftPx(startMinute: number) {
   return ((startMinute - POC_DAY_START) / POC_SLOT_MINUTES) * POC_SLOT_WIDTH;
+}
+
+export function pocSubrowTop(subrow: number) {
+  return 14 + subrow * (POC_CARD_HEIGHT + POC_SUBROW_GAP);
+}
+
+export function pocLaneHeight(subrowCount: number) {
+  return Math.max(POC_ROW_MIN_HEIGHT, 14 + Math.max(1, subrowCount) * (POC_CARD_HEIGHT + POC_SUBROW_GAP) - POC_SUBROW_GAP + 14);
 }
 
 export function formatPocTime(minute: number) {

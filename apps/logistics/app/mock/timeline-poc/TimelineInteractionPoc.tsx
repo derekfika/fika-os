@@ -6,7 +6,9 @@ import {
   adjustedPocPlacement,
   clampPocMinute,
   formatPocTime,
+  pocLaneHeight,
   pocLeftPx,
+  pocSubrowTop,
   pocVisualSubrows,
   snapPocMinute,
   POC_CARD_WIDTH,
@@ -293,7 +295,9 @@ export default function TimelineInteractionPoc() {
             <div className={styles.rowLabels}>
               {rowsWithPlacements.map((row) => {
                 const activeTarget = target?.vehicle === row.vehicle && target.lane === row.lane;
-                return <div className={`${styles.rowLabel} ${activeTarget ? styles.rowLabelActive : ""}`} key={laneKey(row.vehicle, row.lane)}><strong>{vehicleName(row.vehicle)}</strong><span>{laneName(row.lane)} lane</span></div>;
+                const subrowCount = row.subrows.size ? Math.max(...row.subrows.values()) + 1 : 1;
+                const rowHeight = pocLaneHeight(subrowCount);
+                return <div className={`${styles.rowLabel} ${activeTarget ? styles.rowLabelActive : ""}`} key={laneKey(row.vehicle, row.lane)} style={{ flexBasis: `${rowHeight}px` }}><strong>{vehicleName(row.vehicle)}</strong><span>{laneName(row.lane)} lane</span></div>;
               })}
             </div>
             <div className={styles.axisViewport} ref={viewportRef} data-testid="timeline-viewport" aria-label="Scrollable timeline from 06:00 to 14:00">
@@ -304,15 +308,18 @@ export default function TimelineInteractionPoc() {
                 <div className={styles.gridLines} aria-hidden="true" />
                 {rowsWithPlacements.map((row) => {
                   const rowActive = target?.vehicle === row.vehicle && target.lane === row.lane;
+                  const subrowCount = row.subrows.size ? Math.max(...row.subrows.values()) + 1 : 1;
+                  const rowHeight = pocLaneHeight(subrowCount);
                   return <div
                     key={laneKey(row.vehicle, row.lane)}
                     className={`${styles.laneTrack} ${rowActive ? styles.laneActive : ""}`}
                     ref={(element) => { if (element) rowRefs.current.set(laneKey(row.vehicle, row.lane), element); else rowRefs.current.delete(laneKey(row.vehicle, row.lane)); }}
                     data-lane={laneKey(row.vehicle, row.lane)}
                     aria-label={`${vehicleName(row.vehicle)} ${laneName(row.lane)} lane`}
+                    style={{ height: `${rowHeight}px` }}
                   >
                     {row.items.map((item) => {
-                      const top = 14 + (row.subrows.get(item.id) || 0) * 38;
+                      const top = pocSubrowTop(row.subrows.get(item.id) || 0);
                       const isOrigin = dragPreview?.started && previewSource?.type === "scheduled" && sourceId === item.id;
                       if (isOrigin) return <span key={item.id} aria-hidden="true" className={styles.originMarker} style={{ left: pocLeftPx(item.startMinute), top, width: POC_CARD_WIDTH }} />;
                       return <button key={item.id} type="button" className={`${styles.stopCard} ${item.state === "pending" ? styles.pendingCard : ""} ${item.explicitWindow ? styles.windowCard : ""}`} data-testid={`stop-${item.id}`} style={{ left: pocLeftPx(item.startMinute), top, width: POC_CARD_WIDTH }} disabled={item.state === "pending"} draggable={false} aria-label={`Move ${item.destination}, ${vehicleName(item.vehicle)}, ${laneName(item.lane)}, ${formatPocTime(item.startMinute)}${item.explicitWindow ? ` to ${formatPocTime(item.startMinute + item.durationMinutes)} window end` : ""}, ${item.loadCount} loads`} onPointerDown={(event) => beginDrag(event, { type: "scheduled", item })} onClick={() => setSelectedId(item.id)}>
@@ -333,11 +340,11 @@ export default function TimelineInteractionPoc() {
       <section className={styles.accessPanel} aria-labelledby="keyboard-heading">
         <div className={styles.accessHeading}><div><p className={styles.kicker}>ACCESSIBLE PLACEMENT</p><h2 id="keyboard-heading">Place without dragging</h2></div><p>Keyboard users can select the work item and target, then submit the same fixture command.</p></div>
         <form className={styles.placementForm} onSubmit={submitForm}>
-          <label>Work item<select value={selectedId} onChange={(event) => setSelectedId(event.target.value)} required>{allSources.map((source) => <option key={source.item.id} value={source.item.id}>{source.type === "queue" ? "Queue · " : "Scheduled · "}{source.item.destination}</option>)}</select></label>
-          <label>Vehicle<select value={formVehicle} onChange={(event) => setFormVehicle(event.target.value as PocVehicle)}><option value="van-1">Van 1</option><option value="van-2">Van 2</option></select></label>
-          <label>Lane<select value={formLane} onChange={(event) => setFormLane(event.target.value as PocLane)}><option value="delivery">Delivery</option><option value="collection">Collection</option></select></label>
-          <label>Time<select value={formStart} onChange={(event) => setFormStart(Number(event.target.value))}>{minuteChoices.map((minute) => <option key={minute} value={minute}>{formatPocTime(minute)}</option>)}</select></label>
-          <label>Window end <span className={styles.optional}>(optional)</span><select value={formEnd} onChange={(event) => setFormEnd(event.target.value)}><option value="">Keep item duration</option>{minuteChoices.filter((minute) => minute > formStart).map((minute) => <option key={minute} value={minute}>{formatPocTime(minute)}</option>)}</select></label>
+          <label>Work item<select aria-label="Work item" value={selectedId} onChange={(event) => setSelectedId(event.target.value)} required>{allSources.map((source) => <option key={source.item.id} value={source.item.id}>{source.type === "queue" ? "Queue · " : "Scheduled · "}{source.item.destination}</option>)}</select></label>
+          <label>Vehicle<select aria-label="Vehicle" value={formVehicle} onChange={(event) => setFormVehicle(event.target.value as PocVehicle)}><option value="van-1">Van 1</option><option value="van-2">Van 2</option></select></label>
+          <label>Lane<select aria-label="Lane" value={formLane} onChange={(event) => setFormLane(event.target.value as PocLane)}><option value="delivery">Delivery</option><option value="collection">Collection</option></select></label>
+          <label>Time<select aria-label="Time" value={formStart} onChange={(event) => setFormStart(Number(event.target.value))}>{minuteChoices.map((minute) => <option key={minute} value={minute}>{formatPocTime(minute)}</option>)}</select></label>
+          <label>Window end <span className={styles.optional}>(optional)</span><select aria-label="Window end (optional)" value={formEnd} onChange={(event) => setFormEnd(event.target.value)}><option value="">Keep item duration</option>{minuteChoices.filter((minute) => minute > formStart).map((minute) => <option key={minute} value={minute}>{formatPocTime(minute)}</option>)}</select></label>
           <button className={styles.primaryButton} type="submit" disabled={!allSources.length || Boolean(allSources.find((source) => source.item.id === selectedId && source.type === "scheduled" && source.item.state === "pending"))}>Place fixture item</button>
         </form>
       </section>
