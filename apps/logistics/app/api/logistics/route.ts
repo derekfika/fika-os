@@ -54,6 +54,7 @@ import {
 } from "@/lib/planning";
 import { operationalDate } from "@/lib/date";
 import { addOperationalDays, operationalWeek } from "@/lib/week";
+import { resolveNextAvailableScheduleStart } from "@/lib/scheduling";
 import { restoredStopStatus } from "@/lib/mobile-driver";
 import { recordDataAccess, withDataTrace } from "@fika/server-shared/data-source-meter-server";
 import type { Transaction } from "firebase-admin/firestore";
@@ -143,35 +144,48 @@ function collectionScheduleForDelivery(delivery: DeliveryStop) {
   if (!deliveryStart) return {};
   return { plannedArrivalTime: addMinutesToTime(deliveryStart, 6 * 60) };
 }
-function loadTimesOverlap(start: string, end: string | undefined, otherStart: string, otherEnd: string | undefined) {
-  const toMinutes = (value: string) => Number(value.slice(0, 2)) * 60 + Number(value.slice(3, 5));
-  const aStart = toMinutes(start);
-  const aEnd = toMinutes(end || addMinutesToTime(start, 15));
-  const bStart = toMinutes(otherStart);
-  const bEnd = toMinutes(otherEnd || addMinutesToTime(otherStart, 15));
-  return aStart < bEnd && bStart < aEnd;
-}
 function nextAvailableLoadTime(loads: import("@/lib/types").DeliveryLoad[], input: { loadId?: string; runId?: string; lane: "delivery" | "collection"; destinationOplocId: string; start: string; end?: string }) {
-  let candidate = input.start;
-  let changed = true;
-  while (changed) {
-    changed = false;
-    const conflict = loads.find((load) => {
-    if (load.id === input.loadId || load.status === "cancelled") return false;
-    if (!input.runId) return false;
+  const conflicts = loads.flatMap((load) => {
+    if (load.id === input.loadId || load.status === "cancelled" || !input.runId) return [];
     const sameRun = input.lane === "collection" ? (load.collectionRunId || load.runId) === input.runId : load.runId === input.runId;
-    if (!sameRun || (input.lane === "delivery" ? load.destinationOplocId : load.originOplocId) === input.destinationOplocId) return false;
-    const otherStart = input.lane === "collection" ? load.collectionScheduledTime : load.scheduledTime;
-    const otherEnd = input.lane === "collection" ? load.collectionScheduledEnd : load.scheduledEnd;
-    return Boolean(otherStart && loadTimesOverlap(candidate, input.end, otherStart, otherEnd));
-    });
-    if (!conflict) continue;
-    const conflictStart = input.lane === "collection" ? conflict.collectionScheduledTime! : conflict.scheduledTime;
-    const conflictEnd = input.lane === "collection" ? conflict.collectionScheduledEnd : conflict.scheduledEnd;
-    candidate = addMinutesToTime(conflictEnd || conflictStart, 15 - (conflictEnd ? 0 : 15));
-    changed = true;
+    const destination = input.lane === "collection" ? load.originOplocId : load.destinationOplocId;
+    if (!sameRun || destination === input.destinationOplocId) return [];
+    const start = input.lane === "collection" ? load.collectionScheduledTime : load.scheduledTime;
+    if (!start) return [];
+    return [{ id: load.id, start, end: input.lane === "collection" ? load.collectionScheduledEnd : load.scheduledEnd }];
+  });
+  try {
+    return resolveNextAvailableScheduleStart(input.start, input.end, conflicts);
+  } catch (error) {
+    throw new HttpError(409, error instanceof Error ? error.message : "No available schedule remains within the operational day.");
   }
-  return candidate;
+}
+type PlannedTiming = { plannedArrivalTime?: string; plannedWindow?: { startTime: string; endTime?: string } };
+
+function resolveStopPlannedTiming(stop: DeliveryStop, requested: PlannedTiming, conflicts: DeliveryStop[]): PlannedTiming {
+  const start = requested.plannedWindow?.startTime || requested.plannedArrivalTime;
+  if (!start) return requested;
+  const end = requested.plannedWindow?.endTime;
+  const conflictIntervals = conflicts.flatMap((candidate) => {
+    if (candidate.canonicalId === stop.canonicalId || candidate.status === "completed") return [];
+    const candidateLane = candidate.linkedOperation === "collection" || candidate.movementType === "collection" ? "collection" : "delivery";
+    const stopLane = stop.linkedOperation === "collection" || stop.movementType === "collection" ? "collection" : "delivery";
+    if (candidateLane !== stopLane || candidate.locationOplocId === stop.locationOplocId) return [];
+    const candidateStart = candidate.plannedWindow?.startTime || candidate.plannedArrivalTime;
+    if (!candidateStart) return [];
+    return [{ id: candidate.canonicalId, start: candidateStart, end: candidate.plannedWindow?.endTime }];
+  });
+  let effectiveStart: string;
+  try {
+    effectiveStart = resolveNextAvailableScheduleStart(start, end, conflictIntervals);
+  } catch (error) {
+    throw new HttpError(409, error instanceof Error ? error.message : "No available schedule remains within the operational day.");
+  }
+  if (end) {
+    const requestedDuration = Math.max(15, Number(end.slice(0, 2)) * 60 + Number(end.slice(3, 5)) - (Number(start.slice(0, 2)) * 60 + Number(start.slice(3, 5))));
+    return { plannedWindow: { startTime: effectiveStart, endTime: addMinutesToTime(effectiveStart, requestedDuration) } };
+  }
+  return { plannedArrivalTime: effectiveStart };
 }
 function assertTransition(
   status: DeliveryRun["status"],
@@ -1555,10 +1569,17 @@ async function handlePost(request: NextRequest) {
             422,
             "Move the transfer as a linked job; its pickup and drop-off must stay together.",
           );
+        const sourceStops = sourceStopsSnap.docs
+          .map((doc) => normalizeStop(doc.data()))
+          .filter((item) => item.canonicalId !== stop.canonicalId);
+        const targetStops = targetStopsSnap.docs
+          .map((doc) => normalizeStop(doc.data()))
+          .filter((item) => item.canonicalId !== stop.canonicalId);
+        const resolvedPlanned = planned ? resolveStopPlannedTiming(stop, planned, targetStops) : undefined;
         const moved = {
           ...stop,
           runId: target.canonicalId,
-          ...(planned || {}),
+          ...(resolvedPlanned || {}),
           version: stop.version + 1,
           updatedAt: now,
           audit: [
@@ -1566,12 +1587,6 @@ async function handlePost(request: NextRequest) {
             { action: "stop-moved", at: now, by, version: stop.version + 1 },
           ],
         };
-        const sourceStops = sourceStopsSnap.docs
-          .map((doc) => normalizeStop(doc.data()))
-          .filter((item) => item.canonicalId !== stop.canonicalId);
-        const targetStops = targetStopsSnap.docs
-          .map((doc) => normalizeStop(doc.data()))
-          .filter((item) => item.canonicalId !== stop.canonicalId);
         const orderedSource = orderedTransferStops(sourceStops);
         const orderedTarget = orderedTransferStops([...targetStops, moved]);
         for (const sourceStop of orderedSource)
@@ -1635,17 +1650,20 @@ async function handlePost(request: NextRequest) {
           return { run: nextRun, stop: nextStop };
         }
         const planned = validatePlannedSchedule(body.plannedArrivalTime, body.plannedWindow);
+        const runStopsSnap = await transaction.get(stops().where("runId", "==", run.canonicalId));
+        const currentRunStops = runStopsSnap.docs.map((doc) => normalizeStop(doc.data())).filter((item) => item.canonicalId !== stop.canonicalId);
+        const resolvedPlanned = resolveStopPlannedTiming(stop, planned, currentRunStops);
         if (stop.linkedOperation === "collection" && stop.linkedStopId) {
           const counterpartSnap = await transaction.get(stops().doc(stop.linkedStopId));
           if (counterpartSnap.exists) {
             const counterpart = normalizeStop(counterpartSnap.data()!);
-            const collectionStart = planned.plannedWindow?.startTime || planned.plannedArrivalTime;
+            const collectionStart = resolvedPlanned.plannedWindow?.startTime || resolvedPlanned.plannedArrivalTime;
             const deliveryStart = counterpart.plannedWindow?.startTime || counterpart.plannedArrivalTime;
             if (collectionStart && deliveryStart && collectionStart < deliveryStart)
               throw new HttpError(422, "Collection cannot be scheduled before its delivery.");
           }
         }
-        const nextStop = { ...stop, ...planned, version: stop.version + 1, updatedAt: now, audit: [...stop.audit, { action: "stop-scheduled", at: now, by, version: stop.version + 1 }] };
+        const nextStop = { ...stop, ...resolvedPlanned, version: stop.version + 1, updatedAt: now, audit: [...stop.audit, { action: "stop-scheduled", at: now, by, version: stop.version + 1 }] };
         transaction.set(stopRef, nextStop);
         const nextRun = { ...run, version: run.version + 1, updatedAt: now, audit: [...run.audit, { action: "stop-scheduled", at: now, by, version: run.version + 1 }] };
         transaction.set(runRef, nextRun);
@@ -1794,7 +1812,9 @@ async function handlePost(request: NextRequest) {
         if (planned) {
           for (const id of assignedStopIds) {
             const stop = byId.get(id)!;
-            byId.set(id, { ...stop, ...planned, version: stop.version + 1, updatedAt: now, audit: [...stop.audit, { action: "stop-scheduled", at: now, by, version: stop.version + 1 }] });
+            const conflicts = Array.from(byId.values()).filter((candidate) => candidate.canonicalId !== id);
+            const resolved = resolveStopPlannedTiming(stop, planned, conflicts);
+            byId.set(id, { ...stop, ...resolved, version: stop.version + 1, updatedAt: now, audit: [...stop.audit, { action: "stop-scheduled", at: now, by, version: stop.version + 1 }] });
           }
         }
         const ordered = orderedTransferStops([...byId.values()]);

@@ -7,6 +7,7 @@ import type {
 } from "./types";
 import type { MovementType } from "./types";
 import { fulfilmentWorkstream, type FulfilmentWorkstream } from "../../shared/fulfilment-workstream";
+import { scheduleIntervalsOverlap, scheduleTimeFromMinutes } from "./scheduling";
 
 export type ProductionContext = {
   canonicalId: string;
@@ -606,8 +607,7 @@ export function buildPlannerDay(input: {
         const end = clockMinutes(stop.plannedWindow?.endTime);
         for (const other of stopViews.slice(0, index)) {
           const otherStart = clockMinutes(other.plannedWindow?.startTime || other.plannedArrivalTime);
-          const otherEnd = clockMinutes(other.plannedWindow?.endTime) ?? otherStart;
-          if (start !== undefined && otherStart !== undefined && start <= (otherEnd ?? otherStart) && (end ?? start) >= otherStart) warnings.push(`Overlaps ${other.destination.label}`);
+          if (start !== undefined && otherStart !== undefined && scheduleIntervalsOverlap({ start: scheduleTimeFromMinutes(start), end: end === undefined ? undefined : scheduleTimeFromMinutes(end) }, { start: scheduleTimeFromMinutes(otherStart), end: other.plannedWindow?.endTime })) warnings.push(`Overlaps ${other.destination.label}`);
         }
         return warnings.length ? { ...stop, attention: Array.from(new Set([...stop.attention, ...warnings])) } : stop;
       });
