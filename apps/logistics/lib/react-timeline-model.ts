@@ -1,9 +1,20 @@
 export const TIMELINE_DAY_MINUTES = 24 * 60;
 export const TIMELINE_SLOT_MINUTES = 15;
 
-export function snapTimelineMinute(clientX: number, viewportLeft: number, scrollLeft: number, grabOffset: number, pixelsPerMinute: number): number {
-  const minute = (clientX - viewportLeft + scrollLeft - grabOffset) / pixelsPerMinute;
-  return Math.max(0, Math.min(TIMELINE_DAY_MINUTES - TIMELINE_SLOT_MINUTES, Math.round(minute / TIMELINE_SLOT_MINUTES) * TIMELINE_SLOT_MINUTES));
+export function snapTimelineMinute(clientX: number, trackLeft: number, scrollLeft: number, grabOffset: number, pixelsPerMinute: number, durationMinutes?: number): number {
+  // trackLeft is the measured track rectangle, so its origin already reflects
+  // horizontal scrolling. Keep scrollLeft in the contract for callers whose
+  // coordinate is viewport-relative; the mounted interaction passes the track
+  // content origin and zero here.
+  const minute = (clientX - trackLeft + scrollLeft - grabOffset) / pixelsPerMinute;
+  const requested = Math.round(minute / TIMELINE_SLOT_MINUTES) * TIMELINE_SLOT_MINUTES;
+  const duration = durationMinutes === undefined ? TIMELINE_SLOT_MINUTES : Math.max(TIMELINE_SLOT_MINUTES, durationMinutes);
+  const latestStart = Math.max(0, TIMELINE_DAY_MINUTES - TIMELINE_SLOT_MINUTES - (durationMinutes === undefined ? 0 : duration));
+  return Math.max(0, Math.min(latestStart, requested));
+}
+
+export function schedulableTimelineRuns<T extends { runId: string }>(runs: T[]): T[] {
+  return runs.filter((run) => !run.runId.startsWith("projection-run:") && run.runId.length > 0);
 }
 
 export function formatTimelineMinute(minute: number): string {
@@ -26,6 +37,18 @@ export function timelineVisualSubrows<T extends TimelineInterval>(items: T[]): M
   return result;
 }
 
-export function timelineQueueDuplicatesCanonical(workIds: string[], canonicalIds: Set<string>): boolean {
-  return workIds.some((id) => canonicalIds.has(id));
+export type CanonicalTimelinePlacement = {
+  workIds: Set<string>;
+  runId: string;
+  lane: "delivery" | "collection";
+  start: string;
+};
+
+/** Suppress a queue overlay only when matching canonical work is renderable at that placement. */
+export function timelineQueueDuplicatesCanonical(
+  workIds: string[],
+  canonical: CanonicalTimelinePlacement[],
+  proposed: { runId: string; lane: "delivery" | "collection"; start: string },
+): boolean {
+  return canonical.some((item) => item.runId === proposed.runId && item.lane === proposed.lane && item.start === proposed.start && workIds.some((id) => item.workIds.has(id)));
 }

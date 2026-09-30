@@ -3,29 +3,30 @@ import { expect, test, type Locator, type Page } from "@playwright/test";
 const minuteOf = (value: string) => Number(value.slice(0, 2)) * 60 + Number(value.slice(3, 5));
 
 async function dragTo(page: Page, source: Locator, target: { run: string; lane: "delivery" | "collection"; time: string }, grabOffset = 0) {
-  const initialCard = await source.boundingBox();
+  await source.scrollIntoViewIfNeeded();
   const viewport = page.getByTestId("mounted-timeline-viewport");
   const viewportBox = await viewport.boundingBox();
   const row = page.locator(`[data-lane="${target.run}:${target.lane}"]`);
   const rowBox = await row.boundingBox();
-  if (!initialCard || !viewportBox || !rowBox) throw new Error("Mounted fixture geometry unavailable");
-  await viewport.evaluate((element, targetMinute) => {
-    const scroller = element as HTMLElement;
-    const targetX = 150 + targetMinute * 2;
-    scroller.scrollLeft = Math.max(0, targetX - scroller.clientWidth * 0.55);
-  }, minuteOf(target.time));
   const card = await source.boundingBox();
-  if (!card) throw new Error("Mounted fixture source moved out of the viewport");
-  const scrollLeft = await viewport.evaluate((element) => (element as HTMLElement).scrollLeft);
+  const currentTrack = await row.boundingBox();
+  if (!card || !viewportBox || !rowBox || !currentTrack) throw new Error("Mounted fixture geometry unavailable");
+  const scale = await page.getByTestId("mounted-react-timeline").evaluate((element) => Number.parseFloat(getComputedStyle(element).getPropertyValue("--timeline-quarter-hour")) / 15);
+  const currentScroll = await viewport.evaluate((element) => (element as HTMLElement).scrollLeft);
+  const contentTrackLeft = currentTrack.x + currentScroll;
+  const desiredScroll = Math.max(0, contentTrackLeft - viewportBox.x + minuteOf(target.time) * scale - viewportBox.width * 0.55);
   const startX = card.x + Math.min(grabOffset || 6, card.width - 2);
   const startY = card.y + card.height / 2;
-  const targetX = viewportBox.x + 150 + minuteOf(target.time) * 2 - scrollLeft + grabOffset;
   await page.mouse.move(startX, startY);
   await page.mouse.down();
   await page.mouse.move(startX + 14, startY + 6, { steps: 2 });
+  await viewport.evaluate((element, next) => { (element as HTMLElement).scrollLeft = next; }, desiredScroll);
+  const scrolledTrack = await row.boundingBox();
+  if (!scrolledTrack) throw new Error("Mounted fixture target track geometry unavailable after scroll");
+  const targetX = scrolledTrack.x + minuteOf(target.time) * scale + grabOffset;
   await page.mouse.move(targetX, rowBox.y + rowBox.height / 2, { steps: 10 });
-  await expect(page.getByTestId("mounted-drag-ghost")).toBeVisible();
-  const preview = await page.getByTestId("mounted-drag-ghost").innerText();
+  const ghost = page.getByTestId("mounted-drag-ghost");
+  const preview = await ghost.isVisible() ? await ghost.innerText() : "";
   await page.mouse.up();
   return preview;
 }
@@ -41,6 +42,13 @@ test("safe mounted fixture makes no Logistics API request", async ({ page }) => 
   await page.reload();
   await expect(page.getByTestId("mounted-react-timeline")).toBeVisible();
   expect(requests).toEqual([]);
+});
+
+test("three actual runs render and the synthetic unassigned projection run stays hidden", async ({ page }) => {
+  await expect(page.locator('[data-lane="run-3:delivery"]')).toBeVisible();
+  await expect(page.getByTestId("stop-stop-overlap-6")).toBeVisible();
+  await expect(page.getByTestId("stop-stop-placeholder")).toHaveCount(0);
+  await expect(page.locator('[data-lane^="projection-run:"]')).toHaveCount(0);
 });
 
 test("the full visible card is one real movement hitbox at left, centre and right", async ({ page }) => {
@@ -71,6 +79,27 @@ test("queue placement renders exactly one immediate pending card", async ({ page
   await expect(page.locator('[data-testid="pending-queue-queue-bridge"]')).toHaveCount(1);
 });
 
+test("projection Collection is not suppressed by its unscheduled canonical stop and hands off once", async ({ page }) => {
+  const source = page.locator('[data-timeline-queue-id="projection-collection:load-1"]');
+  const preview = await dragTo(page, source, { run: "run-1", lane: "collection", time: "12:15" });
+  expect(preview).toContain("Projected Collection");
+  const pendingCard = page.getByTestId("pending-queue-projection-collection:load-1");
+  await expect(pendingCard).toBeVisible();
+  await expect(page.getByTestId("stop-projection-stop:collection:load-1")).toHaveCount(0);
+  await expect(pendingCard).toHaveCount(1);
+  await expect(page.getByRole("button", { name: /Move Projected Collection, Van North, Collection, 12:15/ })).toBeVisible({ timeout: 5000 });
+  await expect(pendingCard).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /Move Projected Collection, Van North, Collection, 12:15/ })).toHaveCount(1);
+});
+
+test("partially planned group overlay contains only the eligible work being placed", async ({ page }) => {
+  const source = page.locator('[data-timeline-queue-id="group-partial-delivery"]');
+  const preview = await dragTo(page, source, { run: "run-1", lane: "delivery", time: "08:00" });
+  expect(preview).toContain("Partially planned delivery");
+  await expect(page.getByTestId("pending-queue-group-partial-delivery")).toBeVisible();
+  await expect(page.getByTestId("pending-queue-group-partial-delivery")).toBeDisabled();
+});
+
 test("delayed queue command retains one pending card and hands off to canonical work", async ({ page }) => {
   const source = page.locator('[data-timeline-queue-id="queue-bridge"]');
   await dragTo(page, source, { run: "run-2", lane: "delivery", time: "09:30" });
@@ -81,16 +110,28 @@ test("delayed queue command retains one pending card and hands off to canonical 
   await expect(page.getByRole("button", { name: /Move Bridgepoint Queue, Van South, Delivery, 09:30/ })).toHaveCount(1);
 });
 
-test("existing move is optimistic on the target vehicle and lane", async ({ page }) => {
-  await dragTo(page, page.getByTestId("stop-stop-mnk"), { run: "run-2", lane: "collection", time: "09:15" }, 68);
-  const target = page.locator('[data-lane="run-2:collection"]');
-  await expect(target.getByRole("button", { name: /Move MNK, Van South, Collection, 09:15/ })).toBeDisabled();
+test("existing move is optimistic on the third target vehicle in the same lane", async ({ page }) => {
+  await dragTo(page, page.getByTestId("stop-stop-mnk"), { run: "run-3", lane: "delivery", time: "09:15" }, 68);
+  const target = page.locator('[data-lane="run-3:delivery"]');
+  await expect(target.getByRole("button", { name: /Move MNK, Van East, Delivery, 09:15/ })).toBeDisabled();
   await expect(target).toContainText("MNK");
+});
+
+test("invalid cross-lane drop has no preview target and submits no command", async ({ page }) => {
+  const cases: Array<[Locator, { run: string; lane: "delivery" | "collection"; time: string }]> = [
+    [page.getByTestId("stop-stop-mnk"), { run: "run-1", lane: "collection", time: "09:15" }],
+    [page.getByTestId("stop-stop-riverside"), { run: "run-1", lane: "delivery", time: "09:15" }],
+    [page.locator('[data-timeline-queue-id="queue-bridge"]'), { run: "run-1", lane: "collection", time: "09:15" }],
+    [page.locator('[data-timeline-queue-id="projection-collection:load-1"]'), { run: "run-1", lane: "delivery", time: "09:15" }],
+  ];
+  for (const [source, target] of cases) expect(await dragTo(page, source, target, 8)).toBe("");
+  await expect(page.locator('[data-lane="run-1:collection"].activeTrack, [data-lane="run-1:delivery"].activeTrack')).toHaveCount(0);
+  await expect(page.getByTestId("fixture-message")).toContainText("Commands: 0");
 });
 
 test("rejected placement restores its confirmed position", async ({ page }) => {
   await page.getByLabel("Command mode").selectOption("reject");
-  await dragTo(page, page.getByTestId("stop-stop-haleon"), { run: "run-1", lane: "collection", time: "10:30" }, 68);
+  await dragTo(page, page.getByTestId("stop-stop-haleon"), { run: "run-1", lane: "delivery", time: "10:30" }, 68);
   await expect(page.getByRole("button", { name: /Move Haleon, Van South, Delivery, 08:15/ })).toBeVisible();
   await expect(page.getByTestId("fixture-message")).toContainText("confirmed placement restored");
   await expect(page.locator('[data-lane="run-1:collection"]').getByRole("button", { name: /Move Haleon/ })).toHaveCount(0);
@@ -101,6 +142,64 @@ test("server-adjusted position settles at the returned canonical time", async ({
   await dragTo(page, page.getByTestId("stop-stop-mnk"), { run: "run-1", lane: "delivery", time: "09:15" }, 68);
   await expect(page.getByRole("button", { name: /Move MNK, Van North, Delivery, 09:30/ })).toBeVisible();
   await expect(page.getByTestId("fixture-message")).toContainText("Server adjusted placement to 09:30");
+});
+
+test("a moved card opens Details against its raw source run identity", async ({ page }) => {
+  await page.getByLabel("Command mode").selectOption("success");
+  await dragTo(page, page.getByTestId("stop-stop-mnk"), { run: "run-3", lane: "delivery", time: "09:15" }, 68);
+  await page.getByRole("button", { name: /Move MNK, Van East, Delivery, 09:15/ }).click();
+  await expect(page.getByTestId("fixture-message")).toContainText("Inspector opened for source run run-1");
+});
+
+test("Fit day fits all 24 hours into the space beside the sticky run labels", async ({ page }) => {
+  await page.getByRole("button", { name: "Fit day" }).click();
+  const sizes = await page.getByTestId("mounted-timeline-viewport").evaluate((element) => ({ client: element.clientWidth, scroll: element.scrollWidth }));
+  expect(sizes.scroll).toBeLessThanOrEqual(sizes.client + 1);
+});
+
+test("150 percent zoom keeps grid, pointer preview, submission and horizontal scroll geometry aligned", async ({ page }) => {
+  const zoomIn = page.getByRole("button", { name: "Zoom timeline in" });
+  await zoomIn.click(); await zoomIn.click();
+  await expect(page.getByLabel("Timeline zoom")).toHaveValue("1.5");
+  const spacing = await page.locator('[data-lane="run-2:delivery"]').evaluate((element) => ({
+    quarter: getComputedStyle(element).getPropertyValue("--timeline-quarter-hour").trim(),
+    hour: getComputedStyle(element).getPropertyValue("--timeline-hour").trim(),
+  }));
+  expect(spacing).toEqual({ quarter: "45px", hour: "180px" });
+  const preview = await dragTo(page, page.getByTestId("stop-stop-mnk"), { run: "run-2", lane: "delivery", time: "09:15" }, 68);
+  expect(preview).toContain("09:15");
+  const scroll = await page.getByTestId("mounted-timeline-viewport").evaluate((element) => (element as HTMLElement).scrollLeft);
+  expect(scroll).toBeGreaterThan(0);
+  await expect(page.getByTestId("fixture-message")).toContainText("09:15");
+});
+
+test("explicit windows keep their duration when clamped at the end of day", async ({ page }) => {
+  await page.getByLabel("Command mode").selectOption("success");
+  const arrival = await dragTo(page, page.getByTestId("stop-stop-mnk"), { run: "run-1", lane: "delivery", time: "23:45" }, 4);
+  expect(arrival).toContain("23:45");
+  const thirty = await dragTo(page, page.getByTestId("stop-stop-window-30"), { run: "run-2", lane: "delivery", time: "23:45" }, 4);
+  expect(thirty).toContain("23:15–23:45");
+  const sixty = await dragTo(page, page.getByTestId("stop-stop-riverside"), { run: "run-1", lane: "collection", time: "23:45" }, 4);
+  expect(sixty).toContain("22:45–23:45");
+  await expect(page.getByTestId("fixture-message")).toContainText("22:45–23:45");
+});
+
+test("scheduled card returns to queue through Pointer Events exactly once", async ({ page }) => {
+  const source = page.getByTestId("stop-stop-mnk");
+  const card = await source.boundingBox();
+  const queue = page.locator("[data-logistics-planning-queue]");
+  const queueBox = await queue.boundingBox();
+  if (!card || !queueBox) throw new Error("Queue return target geometry unavailable");
+  await page.mouse.move(card.x + 68, card.y + 24); await page.mouse.down();
+  await page.mouse.move(card.x + 88, card.y + 28, { steps: 2 });
+  await page.mouse.move(queueBox.x + queueBox.width / 2, queueBox.y + queueBox.height / 2, { steps: 10 });
+  await expect(queue).toHaveAttribute("data-return-target", "active");
+  await expect(page.getByTestId("mounted-drag-ghost")).toHaveCount(0);
+  await page.mouse.up();
+  await expect(page.getByTestId("fixture-message")).toContainText("Commands: 1");
+  await expect(page.getByTestId("stop-stop-mnk")).toHaveCount(0);
+  await expect(page.getByTestId("fixture-message")).toContainText("Returned MNK to the Planning queue.", { timeout: 5000 });
+  await expect(page.getByTestId("fixture-message")).toContainText("Commands: 1");
 });
 
 test("Escape cancels without a placement command", async ({ page }) => {
@@ -190,4 +289,16 @@ test("visual subrows preserve canonical 08:00 and 08:15 anchors", async ({ page 
   expect(Math.abs(a.y - b.y)).toBeGreaterThan(0);
   await expect(first).toContainText("08:00");
   await expect(page.getByTestId("stop-stop-haleon")).toContainText("08:15");
+});
+
+test("six dense cards grow their lane instead of overlapping the following lane", async ({ page }) => {
+  const lane = page.locator('[data-lane="run-3:delivery"]');
+  const next = page.locator('[data-lane="run-3:collection"]');
+  const laneBox = await lane.boundingBox();
+  const nextBox = await next.boundingBox();
+  const sixth = await page.getByTestId("stop-stop-overlap-6").boundingBox();
+  if (!laneBox || !nextBox || !sixth) throw new Error("Dense subrow geometry unavailable");
+  expect(laneBox.height).toBeGreaterThanOrEqual(390);
+  expect(sixth.y + sixth.height).toBeLessThanOrEqual(nextBox.y);
+  expect(nextBox.y).toBeGreaterThanOrEqual(laneBox.y + laneBox.height);
 });
