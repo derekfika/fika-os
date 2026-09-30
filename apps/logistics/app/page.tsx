@@ -29,13 +29,19 @@ import { fetchPlannerGet } from "../lib/planner-fetch";
 import { fetchProjectionWithRecovery } from "../lib/projection-fetch";
 import { mayRequestPassiveRefresh, PASSIVE_REFRESH_INTERVAL_MS } from "../lib/passive-refresh";
 import {
-  canStartPendingSchedule,
+  canStartPlacement,
+  confirmedPlacementIsSuperseded,
   createPendingScheduleOperation,
   decodeConfirmedSchedulePosition,
   directResizeEnabled,
-  effectivePendingSchedulePosition,
+  effectivePlacement,
+  markUncertainPlacement,
+  placementRefreshOutcome,
+  reconcileUncertainPlacement,
   resolveNextAvailableScheduleStart,
   settlePendingScheduleOperation,
+  sameSchedulePosition,
+  type ConfirmedPlacement,
   type PendingScheduleOperation,
   type SchedulePosition,
 } from "../lib/scheduling";
@@ -64,8 +70,7 @@ type LoadResult = { ok: true; projection: LogisticsDayProjection } | { ok: false
 type LoadMode = "initial" | "explicit" | "passive";
 type PlacementOutcome =
   | { ok: true; body: Record<string, unknown> }
-  | { ok: false; uncertain: boolean; message: string };
-type ConfirmedSchedule = { position: SchedulePosition; version?: number; operationId: string };
+  | { ok: false; uncertain: boolean; message: string; body?: Record<string, unknown> };
 
 function clockMinutes(value: string) {
   const [hour, minute] = value.split(":").map(Number);
@@ -454,13 +459,13 @@ export default function Planner() {
       // separate, stale-tolerant concern and must not decide settlement.
       try {
         const refreshed = await load();
-        if (!refreshed.ok) return { ok: false, uncertain: true, message: "The schedule command may have been saved; checking the authoritative day before deciding." };
+        if (!refreshed.ok) return placementRefreshOutcome(body, false);
       } catch {
-        return { ok: false, uncertain: true, message: "The schedule command may have been saved; checking the authoritative day before deciding." };
+        return placementRefreshOutcome(body, false);
       }
       void loadWeek();
       setAssigning(undefined);
-      return { ok: true, body };
+      return placementRefreshOutcome(body, true);
     } catch (cause) {
       const details = clientErrorDetails(cause, "Scheduling action could not be confirmed.");
       if ([401, 403].includes(details.status)) recordError(cause, details.message);
@@ -879,8 +884,8 @@ function RealPlanner(props: RealPlannerProps) {
   const { data, weekData, date, weekCommencing, runs, groups, movements } = props;
   const [pendingSchedules, setPendingSchedules] = useState<Record<string, PendingScheduleOperation>>({});
   const pendingSchedulesRef = useRef<Record<string, PendingScheduleOperation>>({});
-  const [confirmedSchedules, setConfirmedSchedules] = useState<Record<string, ConfirmedSchedule>>({});
-  const confirmedSchedulesRef = useRef<Record<string, ConfirmedSchedule>>({});
+  const [confirmedSchedules, setConfirmedSchedules] = useState<Record<string, ConfirmedPlacement>>({});
+  const confirmedSchedulesRef = useRef<Record<string, ConfirmedPlacement>>({});
   const [placementErrors, setPlacementErrors] = useState<Record<string, string>>({});
   useEffect(() => { pendingSchedulesRef.current = pendingSchedules; }, [pendingSchedules]);
   useEffect(() => { confirmedSchedulesRef.current = confirmedSchedules; }, [confirmedSchedules]);
@@ -889,12 +894,18 @@ function RealPlanner(props: RealPlannerProps) {
     let changed = false;
     for (const [identity, confirmed] of Object.entries(next)) {
       const raw = data?.stops.find((item) => item.canonicalId === identity);
-      if (!raw) continue;
+      if (!raw) {
+        const removedFromProjection = confirmed.source === "projection" && data?.projection?.lastChangeSequence !== undefined && confirmed.projectionSequenceAtStart !== undefined && data.projection.lastChangeSequence > confirmed.projectionSequenceAtStart;
+        if (removedFromProjection || (confirmed.source === "stop" && confirmed.kind === "unscheduled")) { delete next[identity]; changed = true; }
+        continue;
+      }
       const lane = raw.linkedOperation === "collection" || raw.movementType === "collection" ? "collection" : "delivery";
       const current: SchedulePosition | undefined = (raw.plannedWindow?.startTime || raw.plannedArrivalTime) ? { runId: raw.runId, lane, start: raw.plannedWindow?.startTime || raw.plannedArrivalTime!, ...(raw.plannedWindow?.endTime ? { end: raw.plannedWindow.endTime } : {}) } : undefined;
-      const same = current && current.runId === confirmed.position.runId && current.lane === confirmed.position.lane && current.start === confirmed.position.start && current.end === confirmed.position.end;
-      const superseded = current && confirmed.version !== undefined && raw.version > confirmed.version;
-      if (same || superseded) { delete next[identity]; changed = true; }
+      const projectionBacked = confirmed.source === "projection";
+      const superseded = confirmedPlacementIsSuperseded(confirmed, projectionBacked
+        ? { source: "projection", projectionSequence: data?.projection?.lastChangeSequence, position: current }
+        : { source: "stop", stopVersion: raw.version, position: current });
+      if (superseded) { delete next[identity]; changed = true; }
     }
     if (changed) { confirmedSchedulesRef.current = next; setConfirmedSchedules(next); }
   }, [data?.stops]);
@@ -903,18 +914,35 @@ function RealPlanner(props: RealPlannerProps) {
     for (const [identity, operation] of Object.entries(pendingSchedulesRef.current)) {
       if (operation.state !== "uncertain") continue;
       const raw = data?.stops.find((item) => item.canonicalId === identity);
-      if (!raw) continue;
+      const projectionBacked = operation.source !== "stop";
+      if (!raw && projectionBacked && data?.projection?.lastChangeSequence !== undefined && operation.projectionSequenceAtStart !== undefined && data.projection.lastChangeSequence > operation.projectionSequenceAtStart) {
+        const nextPending = { ...pendingSchedulesRef.current }; delete nextPending[identity];
+        pendingSchedulesRef.current = nextPending; setPendingSchedules(nextPending);
+        setPlacementErrors((errors) => { const next = { ...errors }; delete next[identity]; return next; });
+        continue;
+      }
+      if (!raw) {
+        if (operation.source !== "stop") continue;
+        const nextPending = { ...pendingSchedulesRef.current }; delete nextPending[identity];
+        pendingSchedulesRef.current = nextPending; setPendingSchedules(nextPending);
+        setPlacementErrors((errors) => { const next = { ...errors }; delete next[identity]; return next; });
+        continue;
+      }
       const lane = raw.linkedOperation === "collection" || raw.movementType === "collection" ? "collection" : "delivery";
       const current: SchedulePosition | undefined = (raw.plannedWindow?.startTime || raw.plannedArrivalTime) ? { runId: raw.runId, lane, start: raw.plannedWindow?.startTime || raw.plannedArrivalTime!, ...(raw.plannedWindow?.endTime ? { end: raw.plannedWindow.endTime } : {}) } : undefined;
-      const same = current && current.runId === operation.proposed.runId && current.lane === operation.proposed.lane && current.start === operation.proposed.start && current.end === operation.proposed.end;
+      const reconciliation = reconcileUncertainPlacement(operation, current, projectionBacked
+        ? { source: "projection", projectionSequence: data?.projection?.lastChangeSequence }
+        : { source: "stop", stopVersion: raw.version });
+      if (reconciliation === "pending") continue;
       const nextPending = { ...pendingSchedulesRef.current }; delete nextPending[identity];
       pendingSchedulesRef.current = nextPending; setPendingSchedules(nextPending);
-      if (same) {
-        const nextConfirmed = { ...confirmedSchedulesRef.current, [identity]: { position: current!, version: raw.version, operationId: operation.operationId } };
+      if (reconciliation === "confirmed" && current) {
+        const reconciled: ConfirmedPlacement = { kind: "scheduled", position: current, operationId: operation.operationId, source: operation.source, ...(operation.source === "stop" ? { stopVersion: raw.version } : { projectionSequenceAtStart: operation.projectionSequenceAtStart }) };
+        const nextConfirmed: Record<string, ConfirmedPlacement> = { ...confirmedSchedulesRef.current, [identity]: reconciled };
         confirmedSchedulesRef.current = nextConfirmed; setConfirmedSchedules(nextConfirmed);
         setPlacementErrors((errors) => { const next = { ...errors }; delete next[identity]; return next; });
       } else {
-        setPlacementErrors((errors) => ({ ...errors, [identity]: "The schedule change could not be confirmed; the authoritative position is unchanged." }));
+        setPlacementErrors((errors) => { const next = { ...errors }; delete next[identity]; return next; });
       }
     }
   }, [data?.stops, props.projectionState]);
@@ -954,6 +982,10 @@ function RealPlanner(props: RealPlannerProps) {
       clearScheduleStop(action.runId, action.stopId);
       return;
     }
+    if (action.action === "return-stop-to-planning" && action.runId && action.stopId) {
+      returnWorkToPlanning(action.runId, action.stopId);
+      return;
+    }
     if (data?.projection && action.action === "unassign-requirement" && action.requirementId) {
       await props.act({ action: "remove-job-from-load", jobId: action.requirementId });
       return;
@@ -965,20 +997,10 @@ function RealPlanner(props: RealPlannerProps) {
         return;
       }
     }
-    if (data?.projection && action.action === "return-stop-to-planning" && action.stopId) {
-      const rawStop = data.stops.find((item) => item.canonicalId === action.stopId);
-      for (const ref of rawStop?.requirementRefs || []) await props.act({ action: "remove-job-from-load", jobId: ref.requirementId });
-      props.setInspector(undefined);
-      return;
-    }
     if (data?.projection && action.action === "defer-stop" && action.stopId) {
       const rawStop = data.stops.find((item) => item.canonicalId === action.stopId);
       for (const ref of rawStop?.requirementRefs || []) await props.act({ action: "remove-job-from-load", jobId: ref.requirementId });
       props.setInspector(undefined);
-      return;
-    }
-    if (action.action === "return-stop-to-planning" && action.runId && action.stopId) {
-      await returnStopToPlanning(action.runId, action.stopId);
       return;
     }
     const succeeded = await props.act(payload);
@@ -1014,14 +1036,20 @@ function RealPlanner(props: RealPlannerProps) {
     const version = typeof value.version === "number" ? value.version : undefined;
     return version;
   };
-  const coordinatePlacement = (identity: string, original: SchedulePosition, proposed: SchedulePosition, execute: () => Promise<PlacementOutcome>, settlePosition: (body: Record<string, unknown>, fallback: SchedulePosition) => SchedulePosition | undefined = decodeConfirmedSchedulePosition) => {
-    const existing = pendingSchedulesRef.current[identity];
+  const responseStopVersion = (result: Record<string, unknown>) => {
+    const value = result.stop && typeof result.stop === "object" ? result.stop as Record<string, unknown> : undefined;
+    return typeof value?.version === "number" ? value.version : undefined;
+  };
+  const coordinatePlacement = (identity: string, original: SchedulePosition | undefined, proposed: SchedulePosition | undefined, execute: () => Promise<PlacementOutcome>, settlePosition: (body: Record<string, unknown>, fallback: SchedulePosition) => SchedulePosition | undefined = decodeConfirmedSchedulePosition) => {
     const priorConfirmed = confirmedSchedulesRef.current[identity];
-    if (!canStartPendingSchedule(existing)) {
+    if (!canStartPlacement(identity, pendingSchedulesRef.current)) {
       setPlacementErrors((current) => ({ ...current, [identity]: "A placement change is already being saved for this work." }));
       return;
     }
-    const operation = createPendingScheduleOperation(identity, original, proposed);
+    const hasNativeStop = Boolean(data?.stops.some((item) => item.canonicalId === identity));
+    const source = identity.startsWith("projection-stop:") ? "projection" : hasNativeStop ? "stop" : "queue";
+    const rawVersion = data?.stops.find((item) => item.canonicalId === identity)?.version;
+    const operation = createPendingScheduleOperation(identity, original, proposed, undefined, { source, projectionSequenceAtStart: data?.projection?.lastChangeSequence, stopVersionAtStart: rawVersion });
     const saving = { ...operation, state: "saving" as const };
     pendingSchedulesRef.current = { ...pendingSchedulesRef.current, [identity]: saving };
     setPendingSchedules(pendingSchedulesRef.current);
@@ -1030,18 +1058,23 @@ function RealPlanner(props: RealPlannerProps) {
       const current = pendingSchedulesRef.current[identity];
       if (!current || current.operationId !== operation.operationId) return;
       if (outcome.ok) {
-        const settledPosition = settlePosition(outcome.body, current.proposed);
-        const confirmed = settlePendingScheduleOperation(current, settledPosition || current.proposed);
+        const settledPosition = current.proposed ? settlePosition(outcome.body, current.proposed) : undefined;
+        const confirmed = settlePendingScheduleOperation(current, settledPosition);
         const nextConfirmed = { ...confirmedSchedulesRef.current };
-        if (settledPosition) nextConfirmed[identity] = { position: confirmed.proposed, version: responseVersion(outcome.body), operationId: operation.operationId };
-        else delete nextConfirmed[identity];
+        const sourceVersion = responseVersion(outcome.body);
+        const returnedStopVersion = responseStopVersion(outcome.body);
+        if (operation.source === "queue") delete nextConfirmed[identity];
+        else nextConfirmed[identity] = settledPosition
+          ? { kind: "scheduled", position: confirmed.proposed!, operationId: operation.operationId, source: operation.source, ...(operation.source === "stop" ? { stopVersion: sourceVersion } : { projectionSequenceAtStart: operation.projectionSequenceAtStart }) }
+          : { kind: "unscheduled", operationId: operation.operationId, source: operation.source, ...(operation.source === "stop" ? { stopVersion: returnedStopVersion } : { projectionSequenceAtStart: operation.projectionSequenceAtStart }) };
         const nextPending = { ...pendingSchedulesRef.current }; delete nextPending[identity];
         pendingSchedulesRef.current = nextPending; setPendingSchedules(nextPending);
         confirmedSchedulesRef.current = nextConfirmed; setConfirmedSchedules(nextConfirmed);
         return;
       }
       if (outcome.uncertain) {
-        const uncertain = { ...current, state: "uncertain" as const, error: "Checking the authoritative schedule before deciding whether this change was saved." };
+        const serverPosition = outcome.body && current.proposed ? settlePosition(outcome.body, current.proposed) : undefined;
+        const uncertain = { ...markUncertainPlacement(current, serverPosition), error: "Checking the authoritative schedule before deciding whether this change was saved." };
         pendingSchedulesRef.current = { ...pendingSchedulesRef.current, [identity]: uncertain };
         setPendingSchedules(pendingSchedulesRef.current);
         setPlacementErrors((errors) => ({ ...errors, [identity]: uncertain.error! }));
@@ -1051,7 +1084,7 @@ function RealPlanner(props: RealPlannerProps) {
       const nextPending = { ...pendingSchedulesRef.current }; delete nextPending[identity];
       pendingSchedulesRef.current = nextPending; setPendingSchedules(nextPending);
       const nextConfirmed = { ...confirmedSchedulesRef.current };
-      if (priorConfirmed) nextConfirmed[identity] = { ...priorConfirmed, position: operation.original };
+      if (priorConfirmed) nextConfirmed[identity] = priorConfirmed;
       else delete nextConfirmed[identity];
       confirmedSchedulesRef.current = nextConfirmed; setConfirmedSchedules(nextConfirmed);
       setPlacementErrors((errors) => ({ ...errors, [identity]: outcome.message }));
@@ -1092,7 +1125,8 @@ function RealPlanner(props: RealPlannerProps) {
       });
       return;
     }
-    const confirmedPosition = confirmedSchedulesRef.current[stopId]?.position;
+    const previousConfirmed = confirmedSchedulesRef.current[stopId];
+    const confirmedPosition = previousConfirmed?.kind === "scheduled" ? previousConfirmed.position : undefined;
     const effectiveSourceRunId = confirmedPosition?.runId || sourceRunId;
     const sourceRun = runs.find((run) => run.runId === effectiveSourceRunId);
     const targetRun = runs.find((run) => run.runId === targetRunId);
@@ -1122,6 +1156,40 @@ function RealPlanner(props: RealPlannerProps) {
     if (!currentStart) return;
     const original: SchedulePosition = { runId, lane, start: currentStart, ...(rawStop.plannedWindow?.endTime ? { end: rawStop.plannedWindow.endTime } : {}) };
     coordinatePlacement(stopId, original, original, () => props.placementCommand({ action: "clear-stop-schedule", runId, stopId, expectedRunVersion: run.version, expectedStopVersion: rawStop.version }), () => undefined);
+  };
+  const returnWorkToPlanning = (runId: string, stopId: string) => {
+    const rawStop = data?.stops.find((item) => item.canonicalId === stopId);
+    const displayed = runs.flatMap((candidate) => candidate.stops.map((stop) => ({ run: candidate, stop }))).find((entry) => entry.stop.stopId === stopId);
+    if (!rawStop || !displayed) return;
+    const start = displayed.stop.plannedWindow?.startTime || displayed.stop.plannedArrivalTime;
+    const original = start ? { runId: displayed.run.runId, lane: displayed.stop.lane, start, ...(displayed.stop.plannedWindow?.endTime ? { end: displayed.stop.plannedWindow.endTime } : {}) } satisfies SchedulePosition : undefined;
+    const projected = Boolean(data?.projection && stopId.startsWith("projection-stop:"));
+    coordinatePlacement(stopId, original, undefined, async () => {
+      if (projected) {
+        const requirementIds = rawStop.requirementRefs.map((ref) => ref.requirementId);
+        if (!requirementIds.length) return { ok: false, uncertain: false, message: "This projected stop has no removable LogisticsJob references." };
+        let lastBody: Record<string, unknown> = {};
+        for (let index = 0; index < requirementIds.length; index += 1) {
+          const outcome = await props.placementCommand({ action: "remove-job-from-load", jobId: requirementIds[index] });
+          if (!outcome.ok) return index ? { ...outcome, uncertain: true, body: lastBody } : outcome;
+          lastBody = outcome.body;
+        }
+        props.setInspector(undefined);
+        return { ok: true, body: lastBody };
+      }
+      try {
+        const response = await fetchPlannerGet(`/api/logistics?serviceDate=${date}`, { cache: "no-store" });
+        const current = await response.json() as Data;
+        const freshRun = current.runs.find((item) => item.canonicalId === runId);
+        const freshStop = current.stops.find((item) => item.canonicalId === stopId);
+        if (!freshRun || !freshStop) return { ok: false, uncertain: false, message: "The stop or run no longer exists." };
+        const outcome = await props.placementCommand({ action: "return-stop-to-planning", runId, stopId, expectedRunVersion: freshRun.version, expectedStopVersion: freshStop.version });
+        if (outcome.ok) props.setInspector(undefined);
+        return outcome;
+      } catch (error) {
+        return { ok: false, uncertain: true, message: error instanceof Error ? error.message : "Could not confirm the stop before returning it to planning." };
+      }
+    }, () => undefined);
   };
   const assignQueueItem = (kind: "group" | "movement", id: string, targetRunId: string, time?: string, lane?: "delivery" | "collection", collectionRequired?: boolean) => {
     if (!time) { props.setError("Set a time before placing this queue item."); return; }
@@ -1168,34 +1236,13 @@ function RealPlanner(props: RealPlannerProps) {
       coordinateQueuePlacement(id, targetRunId, effectiveLane, safeTime, undefined, () => props.placementCommand({ action: "assign", runId: targetRunId, expectedRunVersion: run.version, movementId: id, plannedArrivalTime: safeTime }));
     }
   };
-  const returnStopToPlanning = async (runId: string, stopId: string) => {
-    try {
-      const response = await fetchPlannerGet(`/api/logistics?serviceDate=${date}`, { cache: "no-store" });
-      const current = await response.json() as Data;
-      const run = current.runs.find((item) => item.canonicalId === runId);
-      const stop = current.stops.find((item) => item.canonicalId === stopId);
-      if (!run || !stop) return;
-      const succeeded = await props.act({ action: "return-stop-to-planning", runId, stopId, expectedRunVersion: run.version, expectedStopVersion: stop.version });
-      if (succeeded) props.setInspector(undefined);
-    } catch {
-      // The normal planner refresh/error path remains responsible for surfacing read failures.
-    }
-  };
   const handlePlanningQueueDrop = (event: DragEvent) => {
     event.preventDefault();
     const value = event.dataTransfer.getData("application/x-logistics-stop");
     if (!value) return;
     const [runId, stopId] = value.split("|");
     if (!runId || !stopId) return;
-    if (data?.projection && stopId.startsWith("projection-stop:")) {
-      const rawStop = data.stops.find((item) => item.canonicalId === stopId);
-      if (!rawStop) return;
-      void (async () => {
-        for (const ref of rawStop.requirementRefs) if (!await props.act({ action: "remove-job-from-load", jobId: ref.requirementId })) break;
-      })();
-      return;
-    }
-    void returnStopToPlanning(runId, stopId);
+    returnWorkToPlanning(runId, stopId);
   };
   useEffect(() => {
     const hideNativeDragImage = (event: Event) => {
@@ -1310,7 +1357,7 @@ function LegacyStableTimeline({ runs, serviceDate, onStop, onRun, onSchedule, on
   </div>;
 }
 
-function DayPilotTimeline({ runs, serviceDate, onStop, onSchedule, onQueueDrop, pendingSchedules, confirmedSchedules }: { runs: PlannerDay["runs"]; serviceDate: string; onStop: (runId: string, stopId: string) => void; onSchedule: (sourceRunId: string, stopId: string, targetRunId: string, time: string, end?: string, lane?: "delivery" | "collection") => void; onQueueDrop: (kind: "group" | "movement", id: string, runId: string, time?: string, lane?: "delivery" | "collection", collectionRequired?: boolean) => void; pendingSchedules: Record<string, PendingScheduleOperation>; confirmedSchedules: Record<string, ConfirmedSchedule>; }) {
+function DayPilotTimeline({ runs, serviceDate, onStop, onSchedule, onQueueDrop, pendingSchedules, confirmedSchedules }: { runs: PlannerDay["runs"]; serviceDate: string; onStop: (runId: string, stopId: string) => void; onSchedule: (sourceRunId: string, stopId: string, targetRunId: string, time: string, end?: string, lane?: "delivery" | "collection") => void; onQueueDrop: (kind: "group" | "movement", id: string, runId: string, time?: string, lane?: "delivery" | "collection", collectionRequired?: boolean) => void; pendingSchedules: Record<string, PendingScheduleOperation>; confirmedSchedules: Record<string, ConfirmedPlacement>; }) {
   const [deliveryStart, setDeliveryStart] = useState(6);
   const [collectionStart, setCollectionStart] = useState(12);
   const [zoom, setZoom] = useState(1);
@@ -1365,12 +1412,16 @@ function DayPilotTimeline({ runs, serviceDate, onStop, onSchedule, onQueueDrop, 
     const scheduledStops = runs.flatMap((sourceRun) => sourceRun.stops.map((stop) => ({ sourceRun, stop }))).flatMap(({ sourceRun, stop }) => {
       const pending = pendingSchedules[stop.stopId];
       const confirmed = confirmedSchedules[stop.stopId];
-      const effective = confirmed?.position || (pending ? effectivePendingSchedulePosition(pending) : undefined);
-      const effectiveRunId = effective?.runId || sourceRun.runId;
-      const effectiveLane = effective?.lane || stop.lane;
-      if (effectiveRunId !== run.runId || effectiveLane !== lane || (!effective && !hasUsableSchedule(stop))) return [];
-      const start = effective?.start || stop.plannedWindow?.startTime || stop.plannedArrivalTime!;
-      return [{ stop, sourceRun, start, end: effective?.end || stop.plannedWindow?.endTime || addClockMinutes(start, 15), effectiveRunId, effectiveLane }];
+      const canonicalStart = stop.plannedWindow?.startTime || stop.plannedArrivalTime;
+      const canonical: SchedulePosition | undefined = canonicalStart ? { runId: sourceRun.runId, lane: stop.lane, start: canonicalStart, ...(stop.plannedWindow?.endTime ? { end: stop.plannedWindow.endTime } : {}) } : undefined;
+      const placement = effectivePlacement(pending, confirmed, canonical);
+      if (!placement || placement.kind === "unscheduled") return [];
+      const effective = placement.position;
+      const effectiveRunId = effective.runId;
+      const effectiveLane = effective.lane;
+      if (effectiveRunId !== run.runId || effectiveLane !== lane) return [];
+      const start = effective.start;
+      return [{ stop, sourceRun, start, end: effective.end || addClockMinutes(start, 15), effectiveRunId, effectiveLane }];
     });
     return scheduledStops.map(({ stop, sourceRun, start, end, effectiveRunId, effectiveLane }) => {
     const nextStart = scheduledStops.map((item) => item.start).filter((candidate) => clockMinutes(candidate) > clockMinutes(start)).sort((left, right) => clockMinutes(left) - clockMinutes(right))[0];
