@@ -4,6 +4,8 @@ import {
   adjustedPocPlacement,
   clampPocMinute,
   formatPocTime,
+  pocLaneHeight,
+  pocSubrowTop,
   pocVisualSubrows,
   snapPocMinute,
   type PocPlacement,
@@ -30,6 +32,8 @@ test("visual collisions use extra display subrows while preserving exact operati
   const rows = pocVisualSubrows(items);
   assert.deepEqual(items.map((item) => item.startMinute), [480, 495, 510]);
   assert.deepEqual(items.map((item) => rows.get(item.id)), [0, 1, 2]);
+  assert.ok(pocSubrowTop(1) - pocSubrowTop(0) >= 74);
+  assert.ok(pocLaneHeight(3) >= pocSubrowTop(2) + 74);
 });
 
 test("a non-overlapping readable card can reuse the first visual subrow", () => {
