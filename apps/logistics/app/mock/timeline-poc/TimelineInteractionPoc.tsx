@@ -57,7 +57,7 @@ const FIXTURE_PLACEMENTS: PocPlacement[] = [
   { id: "stop-haleon", destination: "Haleon", vehicle: "van-1", lane: "delivery", startMinute: 8 * 60 + 15, durationMinutes: 15, loadCount: 1, kind: "delivery", state: "confirmed" },
   { id: "stop-riverside", destination: "Riverside", vehicle: "van-1", lane: "collection", startMinute: 10 * 60, durationMinutes: 60, loadCount: 2, kind: "collection", explicitWindow: true, state: "confirmed" },
   { id: "stop-commerce", destination: "Commerzbank", vehicle: "van-2", lane: "delivery", startMinute: 7 * 60, durationMinutes: 15, loadCount: 1, kind: "delivery", state: "confirmed" },
-  { id: "stop-exchange", destination: "FIKA Xchange", vehicle: "van-2", lane: "delivery", startMinute: 9 * 60, durationMinutes: 15, loadCount: 2, kind: "delivery", state: "confirmed" },
+  { id: "stop-exchange", destination: "One Angel Court", vehicle: "van-2", lane: "delivery", startMinute: 9 * 60, durationMinutes: 15, loadCount: 2, kind: "delivery", state: "confirmed" },
   { id: "stop-kitchen", destination: "Kitchen collection", vehicle: "van-2", lane: "collection", startMinute: 10 * 60 + 15, durationMinutes: 15, loadCount: 1, kind: "collection", state: "confirmed" },
 ];
 const minuteChoices = Array.from({ length: (POC_DAY_END - POC_DAY_START) / POC_SLOT_MINUTES + 1 }, (_, index) => POC_DAY_START + index * POC_SLOT_MINUTES);

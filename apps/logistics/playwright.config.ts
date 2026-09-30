@@ -17,6 +17,7 @@ export default defineConfig({
     { name: "golden-week", use: { ...devices["Desktop Chrome"] }, testMatch: /golden-week\.spec\.ts/ },
     { name: "desktop-chromium", use: { ...devices["Desktop Chrome"] }, testMatch: /desktop\.spec\.ts/ },
     { name: "timeline-poc-chromium", use: { ...devices["Desktop Chrome"] }, testMatch: /timeline-poc\.spec\.ts/ },
+    { name: "mounted-timeline-chromium", use: { ...devices["Desktop Chrome"] }, testMatch: /mounted-timeline\.spec\.ts/ },
     { name: "mobile-chromium", use: { ...devices["Pixel 7"] }, testMatch: /mobile\.spec\.ts/ },
   ],
 });

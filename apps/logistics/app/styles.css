@@ -390,30 +390,7 @@
 .real-planner .stable-timeline > .timeline-tools > button:last-child::after { content:"Fit work"; font-size:10px; }
 .real-planner .stable-lane .stable-drag-preview { display:none !important; }
 
-/* DayPilot Lite owns the timeline geometry. Keep the surrounding FIKA controls and
-   event treatment, but let the scheduler synchronise its ruler, grid and scroll area. */
 .real-planner { overflow-x: hidden; }
-.real-planner .daypilot-timeline { overflow-x: auto; overflow-y: hidden; }
-.real-planner .daypilot-group { margin-top:10px; border:1px solid #ece8f4; border-radius:6px; overflow:hidden; background:#fff; }
-.real-planner .daypilot-group .stable-section-heading { min-height:34px; }
-.real-planner .daypilot-group .stable-section-heading > strong { position:static; display:block; padding-right:0; background:transparent; font-size:9px; }
-.real-planner .daypilot-group .timeline-scroll-controls { margin-left:auto; display:flex; gap:5px; }
-.real-planner .daypilot-group .timeline-scroll-controls button { min-width:26px; height:24px; border:1px solid #d8d0ea; border-radius:5px; background:#fff; color:#4f34c7; }
-.real-planner .daypilot-group .scheduler_default_main { border:0; font-family:inherit; color:#280f8c; }
-.real-planner .daypilot-group .scheduler_default_corner,
-.real-planner .daypilot-group .scheduler_default_timeheadergroup,
-.real-planner .daypilot-group .scheduler_default_timeheadercol { border-color:#ece8f4; background:#fcfbff; color:#77718b; font-size:10px; }
-.real-planner .daypilot-group .scheduler_default_rowheader,
-.real-planner .daypilot-group .scheduler_default_rowheader_inner { border-color:#ece8f4; background:#fcfbff; color:#280f8c; }
-.real-planner .daypilot-group .scheduler_default_cell { border-color:#eeeaf5; background:#fff; }
-.real-planner .daypilot-group .scheduler_default_event_inner { border-radius:6px; padding:0; box-shadow:none; font-size:10px; font-weight:800; }
-.real-planner .daypilot-group .fika-event-drag-source { display:block; width:100%; height:100%; cursor:grab; }
-.real-planner .daypilot-group .fika-event-drag-source:active { cursor:grabbing; }
-.real-planner .daypilot-group .scheduler_default_event.fika-event.attention .scheduler_default_event_inner { border-color:transparent !important; background:transparent !important; }
-.real-planner .daypilot-group .daypilot-resource { display:flex; flex-direction:column; gap:3px; }
-.real-planner .daypilot-group .daypilot-resource strong { font-size:11px; }
-.real-planner .daypilot-group .daypilot-resource small { color:#4f34c7; font-size:9px; }
-.real-planner .daypilot-attribution { margin:7px 2px 0; color:#9992aa; font-size:9px; }
 .real-planner .stable-section-heading > strong { position:sticky; left:12px; z-index:12; display:block; padding-right:10px; background:#fcfbff; }
 .real-planner .stable-section-heading > strong { font-size:0; }
 .real-planner .delivery-group .stable-section-heading > strong::before { content:"DELIVERIES"; font-size:9px; }
@@ -1310,21 +1287,8 @@ button:disabled {
   font-size: 0.74rem;
 }
 
-/* Desktop planning balance and readable short DayPilot events. The event
-   geometry remains authoritative; the card is rendered inside the event
-   hitbox so its left edge remains the exact scheduled start. */
+/* Desktop planning balance. */
 .real-planner .mock-workspace { grid-template-columns: minmax(280px, 28%) minmax(0, 72%); }
-.real-planner .daypilot-group .scheduler_default_event,
-.real-planner .daypilot-group .scheduler_default_event_inner { overflow: visible !important; }
-.real-planner .daypilot-group .scheduler_default_event_inner { min-height: 56px; box-sizing: border-box; border: 0 !important; background: transparent !important; color: transparent !important; }
-.real-planner .daypilot-group .fika-event .scheduler_default_event_bar { display: none !important; }
-.real-planner .daypilot-group .fika-event-card { display: grid; box-sizing: border-box; width: var(--fika-event-card-width, 124px); min-width: var(--fika-event-card-width, 124px); height: 100%; min-height: 58px; padding: 6px 8px; gap: 2px; border: 1px solid var(--fika-border-default); border-left: 3px solid var(--fika-status-success); border-radius: var(--radius-sm); background: var(--fika-surface-card); box-shadow: var(--shadow-sm); color: var(--fika-text-primary); line-height: 1.15; overflow: hidden; pointer-events: auto; }
-.real-planner .daypilot-group .fika-event-card.compact { padding-right: 5px; padding-left: 6px; }
-.real-planner .daypilot-group .fika-event-card time { color: var(--fika-text-secondary); font-size: 11px; font-weight: 800; }
-.real-planner .daypilot-group .fika-event-card strong { display: -webkit-box; overflow: hidden; color: var(--fika-text-primary); font-size: 13px; line-height: 1.15; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow-wrap: normal; word-break: normal; }
-.real-planner .daypilot-group .fika-event-card small { color: var(--fika-text-secondary); font-size: 10px; font-weight: 800; }
-.real-planner .daypilot-group .fika-event.collection .fika-event-card { border-left-color: var(--fika-status-info); }
-.real-planner .daypilot-group .fika-event.attention .fika-event-card { border-left-color: var(--fika-status-danger); background: var(--fika-status-danger-surface); }
 @media (max-width: 1050px) {
   .real-planner .mock-workspace { grid-template-columns: 1fr; }
 }

@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import * as React from "react";
 import type { CSSProperties, ReactNode, DragEvent, MouseEvent, MutableRefObject } from "react";
-import { DayPilotScheduler, DayPilot } from "@daypilot/daypilot-lite-react";
+import { deriveTimelineQueueCards, MountedReactTimeline } from "./mounted-react-timeline";
 import type { FulfilmentRequirement } from "../../shared/fulfilment-requirement";
 import { fulfilmentWorkstream } from "../../shared/fulfilment-workstream";
 import type { DeliveryRun, DeliveryStop, MovementRequest } from "../lib/types";
@@ -20,7 +20,6 @@ import type {
 } from "../lib/planner-read-model";
 import type { LogisticsDayProjection, LogisticsProjectionState } from "../lib/types";
 import { projectionToDashboardData } from "../lib/projection-dashboard-adapter";
-import { timelineEventCardWidth, timelineEventHtml, timelineEventTooltip } from "../lib/timeline-presentation";
 import { operationalDate } from "../lib/date";
 import { clientErrorDetails, requireSuccessfulResponse } from "../lib/client-errors";
 import { drainIncrementalPages } from "../lib/incremental-sync";
@@ -34,7 +33,6 @@ import {
   confirmedPlacementIsSuperseded,
   createPendingScheduleOperation,
   decodeConfirmedSchedulePosition,
-  directResizeEnabled,
   effectivePlacement,
   groupAssignmentRoute,
   markUncertainPlacement,
@@ -1448,7 +1446,7 @@ function RealPlanner(props: RealPlannerProps) {
             {filteredMovements.map((movement) => <RealQueueMovement key={movement.movementId} movement={movement} runs={runs} queueState={queueStateForMovement(movement)} assigning={props.assigning === movement.movementId} placementPending={Boolean(pendingSchedules[movement.movementId])} targetRun={props.targetRun} onInspect={() => props.setInspector({ kind: "movement", id: movement.movementId })} onAssign={() => { props.setAssigning(movement.movementId); props.setTargetRun(runs.length === 1 ? runs[0].runId : ""); props.setInspector({ kind: "movement", id: movement.movementId }); }} setTargetRun={props.setTargetRun} onConfirm={(choice) => submitMovementAssignment(movement, choice)} onDragStart={(event) => queueDragStart(event, { kind: "movement", id: movement.movementId, label: movement.to?.label || movement.from?.label || "Movement", type: typeText(movement.type), load: movement.items.map((item) => `${item.quantity} × ${item.description}`).join(" · ") })} />)}
           </div>
         </aside>
-        <section className="mock-schedule" aria-label="Dispatch schedule"><header className="mock-schedule-head"><div><span>PLANNING SURFACE · {selectedDateLabel}</span><h2>Dispatch schedule</h2></div><strong>{metricsReady ? runs.length : "—"} vehicles · {metric(summary?.scheduledStops)} scheduled · {metric(summary?.needsTime)} needs time</strong></header><div className="mock-legend"><span><i className="green-dot" /> Delivery</span><span><i className="blue-dot" /> Collection</span><span><i className="amber-dot" /> Transfer</span><span><i className="red-dot" /> Attention</span></div>{Object.entries(placementErrors).map(([identity, message]) => <div className="degraded-note" role="status" key={identity}>{message}</div>)}{!data && <Empty title={props.projectionState === "LOADING" ? "Loading dispatch schedule" : "Dispatch schedule unavailable"} body={props.projectionState === "LOADING" ? "Waiting for the materialised Logistics projection." : "The authoritative projection could not be loaded."} />}{data && props.projectionState !== "CURRENT" && props.projectionState !== "VALID_EMPTY" && <div className="degraded-note">This materialised view is not current. Refresh before dispatching.</div>}{data && <DayPilotTimeline runs={runs} serviceDate={date} pendingSchedules={pendingSchedules} confirmedSchedules={confirmedSchedules} onStop={(runId, stopId) => props.setInspector({ kind: "stop", id: stopId, runId })} onSchedule={scheduleStop} onQueueDrop={(kind, id, runId, time, lane, collectionRequired) => assignQueueItem(kind, id, runId, time, lane, collectionRequired)} />}<RealScheduleSummary planner={data?.planner} /></section>
+        <section className="mock-schedule" aria-label="Dispatch schedule"><header className="mock-schedule-head"><div><span>PLANNING SURFACE · {selectedDateLabel}</span><h2>Dispatch schedule</h2></div><strong>{metricsReady ? runs.length : "—"} vehicles · {metric(summary?.scheduledStops)} scheduled · {metric(summary?.needsTime)} needs time</strong></header><div className="mock-legend"><span><i className="green-dot" /> Delivery</span><span><i className="blue-dot" /> Collection</span><span><i className="amber-dot" /> Transfer</span><span><i className="red-dot" /> Attention</span></div>{Object.entries(placementErrors).map(([identity, message]) => <div className="degraded-note" role="status" key={identity}>{message}</div>)}{!data && <Empty title={props.projectionState === "LOADING" ? "Loading dispatch schedule" : "Dispatch schedule unavailable"} body={props.projectionState === "LOADING" ? "Waiting for the materialised Logistics projection." : "The authoritative projection could not be loaded."} />}{data && props.projectionState !== "CURRENT" && props.projectionState !== "VALID_EMPTY" && <div className="degraded-note">This materialised view is not current. Refresh before dispatching.</div>}{data && <MountedReactTimeline planner={data.planner} queueItems={deriveTimelineQueueCards(groups, movements, runs, pendingSchedules)} pendingSchedules={pendingSchedules} confirmedSchedules={confirmedSchedules} onStop={(runId, stopId) => props.setInspector({ kind: "stop", id: stopId, runId })} onSchedule={scheduleStop} onQueueDrop={(kind, id, runId, time, lane, collectionRequired) => assignQueueItem(kind, id, runId, time, lane, collectionRequired)} onRun={(runId) => props.setInspector({ kind: "run", id: runId })} />}<RealScheduleSummary planner={data?.planner} /></section>
       </section>
     </div>
     {props.inspector && data && <Inspector selection={props.inspector} planner={data.planner} projection={data.projection} rawRequirements={data.requirements} rawStops={data.stops} onClose={() => props.setInspector(undefined)} onAction={handleInspectorAction} onScheduleStop={scheduleStop} runs={runs} targetRun={props.targetRun} setTargetRun={props.setTargetRun} assigning={props.assigning} setAssigning={props.setAssigning} onAssignGroup={(group, choice) => submitGroupAssignment(group, choice)} onAssignMovement={(movement, choice) => submitMovementAssignment(movement, choice)} placementPending={Boolean(pendingSchedules[inspectorPendingIdentity] || (props.inspector.kind === "group" && confirmedSchedules[inspectorPendingIdentity]))} />}
@@ -1483,14 +1481,13 @@ function RealQueueGroup({ group, runs, queueState, assigning, placementPending =
   const saveCollectionRequired = (value: boolean) => { if (savingCollection) return; const previous = collectionRequired; setCollectionRequired(value); setSavingCollection(true); void onCollectionRequired(value).then((saved) => { if (!saved) setCollectionRequired(previous); }).finally(() => setSavingCollection(false)); };
   const onInspect = (event?: MouseEvent) => { if (!event || event.detail === 2) inspect(); };
   const collectionToggle = <label className="collection-toggle" onPointerDown={(event) => event.stopPropagation()}><input type="checkbox" checked={collectionRequired} disabled={savingCollection} onChange={(event) => { event.stopPropagation(); saveCollectionRequired(event.target.checked); }} /> Collection required</label>;
-  const startDrag = (event: DragEvent) => { onDragStart(event); event.dataTransfer.setData("application/x-logistics-collection-required", String(collectionRequired)); };
-  return <article draggable={(queueState === "unassigned" && eligible.length > 0) || collectionPending} onDragStart={(queueState === "unassigned" && eligible.length > 0) || collectionPending ? startDrag : undefined} className={`mock-queue-item queue-${queueState}`}><button className="mock-queue-main" onClick={onInspect}><span className="mock-item-time">Time set on timeline</span><span className="mock-type delivery"><b>↓</b> Delivery</span><strong>{group.destinationLabel}</strong><small>{group.sourceLabels.join(" · ")}</small><span className="mock-load">{group.unitBreakdown.map((item) => `${item.quantity} ${item.unit}`).join(" · ")}</span>{assignedRun && <span className="queue-assignment">Assigned to {assignedRun.driver || "Unassigned"}</span>}{collectionPending && <span className="queue-assignment">Collection outstanding · place in a collection lane</span>}<span className={`mock-state ${group.attention.length ? "attention" : queueState === "needs_time" ? "needs-time" : "ready"}`}>{group.attention.length ? `⚠ ${group.attention[0]}` : collectionPending ? "⚠ Collection time not confirmed" : queueState === "needs_time" ? "⚠ Time not confirmed" : `● ${group.readiness}`}</span></button>{collectionToggle}<div className="mock-queue-actions"><button onClick={onInspect} disabled={placementPending}>Details</button><button disabled={placementPending || (queueState !== "needs_time" && !eligible.length)} onClick={queueState === "needs_time" ? onInspect : onAssign}>{placementPending ? "Saving…" : queueState === "needs_time" ? "Set time" : group.planningState === "partially_planned" ? "Assign remaining" : "Assign"}</button><b>⁙</b></div>{assigning && queueState !== "needs_time" && !placementPending && <RunChooser runs={runs} targetRun={targetRun} setTargetRun={setTargetRun} onConfirm={onConfirm} label={eligible.length === group.requirementCount ? "Assign all" : "Assign eligible"} />}</article>;
+  return <article data-timeline-queue-id={group.groupKey} draggable={false} className={`mock-queue-item queue-${queueState}`}><button className="mock-queue-main" onClick={onInspect}><span className="mock-item-time">Time set on timeline</span><span className="mock-type delivery"><b>↓</b> Delivery</span><strong>{group.destinationLabel}</strong><small>{group.sourceLabels.join(" · ")}</small><span className="mock-load">{group.unitBreakdown.map((item) => `${item.quantity} ${item.unit}`).join(" · ")}</span>{assignedRun && <span className="queue-assignment">Assigned to {assignedRun.driver || "Unassigned"}</span>}{collectionPending && <span className="queue-assignment">Collection outstanding · place in a collection lane</span>}<span className={`mock-state ${group.attention.length ? "attention" : queueState === "needs_time" ? "needs-time" : "ready"}`}>{group.attention.length ? `⚠ ${group.attention[0]}` : collectionPending ? "⚠ Collection time not confirmed" : queueState === "needs_time" ? "⚠ Time not confirmed" : `● ${group.readiness}`}</span></button>{collectionToggle}<div className="mock-queue-actions"><button onClick={onInspect} disabled={placementPending}>Details</button><button disabled={placementPending || (queueState !== "needs_time" && !eligible.length)} onClick={queueState === "needs_time" ? onInspect : onAssign}>{placementPending ? "Saving…" : queueState === "needs_time" ? "Set time" : group.planningState === "partially_planned" ? "Assign remaining" : "Assign"}</button><b>⁙</b></div>{assigning && queueState !== "needs_time" && !placementPending && <RunChooser runs={runs} targetRun={targetRun} setTargetRun={setTargetRun} onConfirm={onConfirm} label={eligible.length === group.requirementCount ? "Assign all" : "Assign eligible"} />}</article>;
 }
 function RealQueueMovement({ movement, runs, queueState, assigning, placementPending = false, targetRun, onInspect: inspect, onAssign, setTargetRun, onConfirm, onDragStart }: { movement: PlannerMovementView; runs: PlannerDay["runs"]; queueState: ReturnType<typeof movementQueueState>; assigning: boolean; placementPending?: boolean; targetRun: string; onInspect: () => void; onAssign: () => void; setTargetRun: (value: string) => void; onConfirm: (choice?: AssignmentChoice) => void; onDragStart: (event: DragEvent) => void; }) {
   const assigned = movement.assignedStops[0];
   const assignedRun = assigned ? runs.find((run) => run.runId === assigned.runId) : undefined;
   const onInspect = (event?: MouseEvent) => { if (!event || event.detail === 2) inspect(); };
-  return <article draggable={queueState === "unassigned"} onDragStart={queueState === "unassigned" ? onDragStart : undefined} className={`mock-queue-item queue-${queueState}`}><button className="mock-queue-main" onClick={onInspect}><span className="mock-item-time">Time set on timeline</span><span className={`mock-type ${movement.type}`}><b>{typeDirection(movement.type)}</b> {typeText(movement.type)}</span><strong>{movement.to?.label || movement.from?.label || "Unknown governed destination"}</strong><small>{movement.from?.label && movement.to ? `${movement.from.label} → ${movement.to.label}` : "Movement"}</small><span className="mock-load">{movement.items.map((item) => `${item.quantity} × ${item.description}`).join(" · ")}</span>{assignedRun && <span className="queue-assignment">Assigned to {assignedRun.driver || "Unassigned"} · {assignedRun.runId.split(":").at(-1) || "Run"}</span>}<span className={`mock-state ${queueState === "needs_time" ? "needs-time" : movement.notes ? "attention" : "ready"}`}>{queueState === "needs_time" ? "⚠ Time not confirmed" : movement.notes ? "⚠ Notes attached" : "● Ready"}</span></button><div className="mock-queue-actions"><button onClick={onInspect} disabled={placementPending}>Details</button><button disabled={placementPending} onClick={queueState === "needs_time" ? onInspect : onAssign}>{placementPending ? "Saving…" : queueState === "needs_time" ? "Set time" : "Assign"}</button><b>⁙</b></div>{assigning && queueState !== "needs_time" && !placementPending && <RunChooser runs={runs} targetRun={targetRun} setTargetRun={setTargetRun} allowedLanes={movement.type === "collection" ? ["collection"] : ["delivery"]} onConfirm={onConfirm} />}</article>;
+  return <article data-timeline-queue-id={movement.movementId} draggable={false} className={`mock-queue-item queue-${queueState}`}><button className="mock-queue-main" onClick={onInspect}><span className="mock-item-time">Time set on timeline</span><span className={`mock-type ${movement.type}`}><b>{typeDirection(movement.type)}</b> {typeText(movement.type)}</span><strong>{movement.to?.label || movement.from?.label || "Unknown governed destination"}</strong><small>{movement.from?.label && movement.to ? `${movement.from.label} → ${movement.to.label}` : "Movement"}</small><span className="mock-load">{movement.items.map((item) => `${item.quantity} × ${item.description}`).join(" · ")}</span>{assignedRun && <span className="queue-assignment">Assigned to {assignedRun.driver || "Unassigned"} · {assignedRun.runId.split(":").at(-1) || "Run"}</span>}<span className={`mock-state ${queueState === "needs_time" ? "needs-time" : movement.notes ? "attention" : "ready"}`}>{queueState === "needs_time" ? "⚠ Time not confirmed" : movement.notes ? "⚠ Notes attached" : "● Ready"}</span></button><div className="mock-queue-actions"><button onClick={onInspect} disabled={placementPending}>Details</button><button disabled={placementPending} onClick={queueState === "needs_time" ? onInspect : onAssign}>{placementPending ? "Saving…" : queueState === "needs_time" ? "Set time" : "Assign"}</button><b>⁙</b></div>{assigning && queueState !== "needs_time" && !placementPending && <RunChooser runs={runs} targetRun={targetRun} setTargetRun={setTargetRun} allowedLanes={movement.type === "collection" ? ["collection"] : ["delivery"]} onConfirm={onConfirm} />}</article>;
 }
 
 function LegacyStableTimeline({ runs, serviceDate, onStop, onRun, onSchedule, onQueueDrop }: { runs: PlannerDay["runs"]; serviceDate: string; onStop: (runId: string, stopId: string) => void; onRun: (runId: string) => void; onSchedule: (sourceRunId: string, stopId: string, targetRunId: string, time: string, end?: string) => void; onQueueDrop: (kind: "group" | "movement", runId: string, targetRunId: string, time?: string) => void; }) {
@@ -1512,154 +1509,6 @@ function LegacyStableTimeline({ runs, serviceDate, onStop, onRun, onSchedule, on
       </div>
     </div>)}
   </div>;
-}
-
-function DayPilotTimeline({ runs, serviceDate, onStop, onSchedule, onQueueDrop, pendingSchedules, confirmedSchedules }: { runs: PlannerDay["runs"]; serviceDate: string; onStop: (runId: string, stopId: string) => void; onSchedule: (sourceRunId: string, stopId: string, targetRunId: string, time: string, end?: string, lane?: "delivery" | "collection") => void; onQueueDrop: (kind: "group" | "movement", id: string, runId: string, time?: string, lane?: "delivery" | "collection", collectionRequired?: boolean) => void; pendingSchedules: Record<string, PendingScheduleOperation>; confirmedSchedules: Record<string, ConfirmedPlacement>; }) {
-  const [deliveryStart, setDeliveryStart] = useState(6);
-  const [collectionStart, setCollectionStart] = useState(12);
-  const [zoom, setZoom] = useState(1);
-  const [verticalZoom, setVerticalZoom] = useState(1);
-  const [ready, setReady] = useState(false);
-  const deliveryControl = useRef<DayPilot.Scheduler | null>(null);
-  const collectionControl = useRef<DayPilot.Scheduler | null>(null);
-  const lastQueueDrag = useRef<{ lane: "delivery" | "collection"; clientX: number; time: DayPilot.Date; rowId: string } | undefined>(undefined);
-  useEffect(() => {
-    try {
-      const saved = JSON.parse(window.localStorage.getItem("fika-logistics-timeline") || "null") as { deliveryStart?: number; collectionStart?: number; zoom?: number; verticalZoom?: number } | null;
-      if (typeof saved?.zoom === "number") setZoom(Math.max(0.5, Math.min(2.5, saved.zoom)));
-      if (typeof saved?.verticalZoom === "number") setVerticalZoom(Math.max(0.5, Math.min(2.5, saved.verticalZoom)));
-    } catch { /* Preferences are an optimisation only. */ }
-    setReady(true);
-  }, []);
-  useEffect(() => {
-    if (!ready) return;
-    try { window.localStorage.setItem("fika-logistics-timeline", JSON.stringify({ deliveryStart, collectionStart, zoom, verticalZoom })); } catch { /* Preferences are an optimisation only. */ }
-  }, [collectionStart, deliveryStart, ready, verticalZoom, zoom]);
-  const alignTimeline = (control: DayPilot.Scheduler | null, start: number) => {
-    if (!control) return;
-    try {
-      control.scrollTo(`${serviceDate}T${String(start).padStart(2, "0")}:00:00`);
-    } catch {
-      // DayPilot can briefly have no viewport while it is updating. The retry
-      // below is intentionally guarded so a transient update cannot crash the page.
-    }
-  };
-  useEffect(() => {
-    let cancelled = false;
-    let frame = 0;
-    const align = (attempt: number) => {
-      if (cancelled) return;
-      const cellWidth = Math.max(20, Math.round((145 * zoom) / 4));
-      try { deliveryControl.current?.update({ scale: "CellDuration", cellDuration: 15, cellWidth, snapToGrid: true }); } catch { /* wait for DayPilot's viewport */ }
-      try { collectionControl.current?.update({ scale: "CellDuration", cellDuration: 15, cellWidth, snapToGrid: true }); } catch { /* wait for DayPilot's viewport */ }
-      alignTimeline(deliveryControl.current, deliveryStart);
-      alignTimeline(collectionControl.current, collectionStart);
-      if (attempt < 3) frame = window.requestAnimationFrame(() => align(attempt + 1));
-    };
-    frame = window.requestAnimationFrame(() => align(0));
-    return () => { cancelled = true; window.cancelAnimationFrame(frame); };
-  }, [collectionStart, deliveryStart, serviceDate, zoom]);
-  const time = (value: DayPilot.Date) => value.toString("HH:mm");
-  const quarterTime = (value: string) => { const [hour, minute] = value.split(":").map(Number); const total = Math.min(23 * 60 + 45, Math.max(0, Math.round((hour * 60 + minute) / 15) * 15)); return `${String(Math.floor(total / 60)).padStart(2, "0")}:${String(total % 60).padStart(2, "0")}`; };
-  const resourceId = (lane: "delivery" | "collection", runId: string) => `${lane}:${runId}`;
-  const resourceParts = (value: string) => { const separator = value.indexOf(":"); return { lane: value.slice(0, separator) as "delivery" | "collection", runId: value.slice(separator + 1) }; };
-  const resources = (lane: "delivery" | "collection") => runs.map((run, index) => ({ id: resourceId(lane, run.runId), name: run.vehicle || `Van ${index + 1}`, html: `<span class="daypilot-resource"><strong>${run.vehicle || `Van ${index + 1}`}</strong><small>${run.driver || "Select driver"}</small></span>` }));
-  const timelineCellWidth = Math.max(20, Math.round((145 * zoom) / 4));
-  const events = (lane: "delivery" | "collection") => runs.flatMap((run) => {
-    const scheduledStops = runs.flatMap((sourceRun) => sourceRun.stops.map((stop) => ({ sourceRun, stop }))).flatMap(({ sourceRun, stop }) => {
-      const pending = pendingSchedules[stop.stopId];
-      const confirmed = confirmedSchedules[stop.stopId];
-      const canonicalStart = stop.plannedWindow?.startTime || stop.plannedArrivalTime;
-      const canonical: SchedulePosition | undefined = canonicalStart ? { runId: sourceRun.runId, lane: stop.lane, start: canonicalStart, ...(stop.plannedWindow?.endTime ? { end: stop.plannedWindow.endTime } : {}) } : undefined;
-      const placement = effectivePlacement(pending, confirmed, canonical);
-      if (!placement || placement.kind === "unscheduled") return [];
-      const effective = placement.position;
-      const effectiveRunId = effective.runId;
-      const effectiveLane = effective.lane;
-      if (effectiveRunId !== run.runId || effectiveLane !== lane) return [];
-      const start = effective.start;
-      return [{ stop, sourceRun, start, end: effective.end || addClockMinutes(start, 15), effectiveRunId, effectiveLane }];
-    });
-    return scheduledStops.map(({ stop, sourceRun, start, end, effectiveRunId, effectiveLane }) => {
-    const nextStart = scheduledStops.map((item) => item.start).filter((candidate) => clockMinutes(candidate) > clockMinutes(start)).sort((left, right) => clockMinutes(left) - clockMinutes(right))[0];
-    const visualWidth = timelineEventCardWidth(nextStart ? clockMinutes(nextStart) - clockMinutes(start) : undefined, timelineCellWidth);
-    // A projected DeliveryLoad carries its canonical job/requirement references
-    // on the stop. Use that count for the schedule card, never displayed units.
-    // Movement-only stops still represent one operational load.
-    const loadCount = Math.max(1, stop.requirementCount);
-    const pending = pendingSchedules[stop.stopId];
-    const presentation = { destination: stop.destination.label, time: start, loadCount, visualWidth, vehicle: run.vehicle || run.driver || undefined, lane };
-    return { id: stop.stopId, text: `${stop.destination.label} · ${start}`, start: `${serviceDate}T${start}:00`, end: `${serviceDate}T${end}:00`, resource: resourceId(effectiveLane, effectiveRunId), resizeDisabled: !directResizeEnabled(Boolean(stop.plannedWindow?.endTime)), moveDisabled: Boolean(pending), cssClass: `fika-event ${lane} ${stop.attention.length ? "attention" : ""}`, toolTip: timelineEventTooltip(presentation), tags: { runId: effectiveRunId, stopId: stop.stopId, lane: effectiveLane, presentation } } as unknown as DayPilot.EventData;
-    });
-  });
-  const scheduler = (lane: "delivery" | "collection", start: number, controlRef: React.MutableRefObject<DayPilot.Scheduler | null>) => <DayPilotScheduler controlRef={controlRef} startDate={`${serviceDate}T${String(start).padStart(2, "0")}:00:00`} days={1} scale="CellDuration" cellDuration={15} cellWidth={timelineCellWidth} rowHeaderWidth={108} rowMarginTop={6} rowMarginBottom={6} eventHeight={Math.max(56, Math.round(60 * verticalZoom))} height={Math.max(160, runs.length * Math.max(76, Math.round(80 * verticalZoom)) + 38)} heightSpec="Auto" timeFormat="Clock24Hours" timeHeaders={[{ groupBy: "Hour", format: "HH:mm" }]} resources={resources(lane)} events={events(lane)} eventMoveHandling="Update" eventResizeHandling="Update" snapToGrid={true} eventTextWrappingEnabled={false} dynamicEventRendering="Disabled" progressiveRowRendering={false} scrollDelayEvents={0} scrollDelayRows={0} onEventClick={(args) => { const tags = args.e.data.tags as { runId: string; stopId: string }; onStop(tags.runId, tags.stopId); }} onEventMoved={(args) => { const tags = args.e.data.tags as { runId: string; stopId: string; lane: "delivery" | "collection" }; const stop = runs.flatMap((run) => run.stops).find((item) => item.stopId === tags.stopId); if (!stop) return; const startTime = quarterTime(time(args.newStart)); const endTime = quarterTime(time(args.newEnd)); const target = resourceParts(String(args.newResource)); onSchedule(tags.runId, tags.stopId, target.runId, startTime, stop.plannedWindow?.endTime ? endTime : undefined, target.lane); }} onEventResized={(args) => { const tags = args.e.data.tags as { runId: string; stopId: string; lane: "delivery" | "collection" }; const stop = runs.flatMap((run) => run.stops).find((item) => item.stopId === tags.stopId); if (!stop || !directResizeEnabled(Boolean(stop.plannedWindow?.endTime))) return; const startTime = quarterTime(time(args.newStart)); const endTime = quarterTime(time(args.newEnd)); onSchedule(tags.runId, tags.stopId, tags.runId, startTime, endTime, tags.lane); }} onBeforeEventRender={(args) => { const tags = args.data.tags as { runId?: string; stopId?: string; lane?: "delivery" | "collection"; presentation?: Parameters<typeof timelineEventTooltip>[0] } | undefined; args.data.backColor = "transparent"; args.data.borderColor = "transparent"; args.data.fontColor = "transparent"; if (tags?.presentation) { args.data.html = timelineEventHtml(tags.presentation); args.data.toolTip = timelineEventTooltip(tags.presentation); } }} />;
-  useEffect(() => {
-    const root = document.querySelector<HTMLElement>(".daypilot-timeline");
-    if (!root) return;
-    // DayPilot owns movement of timeline events. Nested browser draggable
-    // elements compete with it and cause the event to jump while dragging.
-    root.querySelectorAll<HTMLElement>(".fika-event-drag-source").forEach((element) => element.removeAttribute("draggable"));
-    const allowDrop = (event: Event) => {
-      const drag = event as unknown as globalThis.DragEvent;
-      if (!drag.dataTransfer?.types.includes("application/x-logistics-queue")) return;
-      drag.preventDefault();
-      const group = (drag.target as HTMLElement | null)?.closest(".daypilot-group");
-      const lane = group === root.querySelector(".daypilot-group") ? "delivery" : "collection";
-      const control = lane === "delivery" ? deliveryControl.current : collectionControl.current;
-      const coords = control?.getCoords();
-      if (coords) lastQueueDrag.current = { lane, clientX: drag.clientX, time: coords.time, rowId: String(coords.row.id) };
-    };
-    const handleDrop = (event: Event) => {
-      const drag = event as unknown as globalThis.DragEvent;
-      const value = drag.dataTransfer?.getData("application/x-logistics-queue");
-      if (!value) return;
-      drag.preventDefault();
-      const group = (drag.target as HTMLElement | null)?.closest(".daypilot-group");
-      const lane = group === root.querySelector(".daypilot-group") ? "delivery" : "collection";
-      const control = lane === "delivery" ? deliveryControl.current : collectionControl.current;
-      const coords = control?.getCoords();
-      const remembered = lastQueueDrag.current?.lane === lane ? lastQueueDrag.current : undefined;
-      if (!coords && !remembered) return;
-      const target = resourceParts(remembered?.rowId || String(coords?.row.id));
-      // DayPilot's coordinates are already calculated from the current
-      // pointer position. Applying a second clientX delta shifted drops twice
-      // and was the source of the inaccurate placement.
-      const pointerTime = remembered?.time || coords!.time;
-      const payload = JSON.parse(value) as { kind: "group" | "movement"; id: string };
-      const collectionRequired = drag.dataTransfer?.getData("application/x-logistics-collection-required") === "true";
-      onQueueDrop(payload.kind, payload.id, target.runId, quarterTime(time(pointerTime)), lane, collectionRequired);
-      lastQueueDrag.current = undefined;
-    };
-    root.addEventListener("dragover", allowDrop);
-    root.addEventListener("drop", handleDrop);
-    return () => { root.removeEventListener("dragover", allowDrop); root.removeEventListener("drop", handleDrop); };
-  }, [onQueueDrop]);
-  const shift = (lane: "delivery" | "collection", amount: number) => { const setter = lane === "delivery" ? setDeliveryStart : setCollectionStart; setter((value) => Math.max(lane === "collection" ? 12 : 6, Math.min(18, value + amount))); };
-  const fitWork = () => {
-    const scheduled = runs.flatMap((run) => run.stops.filter((stop) => hasUsableSchedule(stop)).map((stop) => {
-      const start = stop.plannedWindow?.startTime || stop.plannedArrivalTime;
-      if (!start) return undefined;
-      const end = stop.plannedWindow?.endTime || addClockMinutes(start, 15) || start;
-      const toMinutes = (value: string) => { const [hour, minute] = value.split(":").map(Number); return hour * 60 + minute; };
-      return { start: toMinutes(start), end: Math.max(toMinutes(start) + 15, toMinutes(end)) };
-    }).filter((value): value is { start: number; end: number } => Boolean(value)));
-    if (!scheduled.length) {
-      setZoom(1);
-      setVerticalZoom(1);
-      setDeliveryStart(6);
-      setCollectionStart(12);
-      return;
-    }
-    const earliest = Math.max(0, Math.min(...scheduled.map((value) => value.start)) - 30);
-    const latest = Math.min(24 * 60, Math.max(...scheduled.map((value) => value.end)) + 30);
-    const span = Math.max(6 * 60, latest - earliest);
-    setZoom(Math.max(0.5, Math.min(2.5, (6 * 60) / span)));
-    setVerticalZoom(1);
-    setDeliveryStart(Math.max(6, Math.min(18, Math.floor(earliest / 60))));
-    setCollectionStart(Math.max(12, Math.min(18, Math.floor(earliest / 60))));
-  };
-  if (!runs.length) return <div className="mock-timeline"><Empty title="No vehicles available" body="Vehicles will appear automatically for the selected day." /></div>;
-  return <div className="mock-timeline daypilot-timeline"><div className="timeline-tools" aria-label="Timeline controls"><span className="timeline-tools-title">Timeline</span><span className="timeline-tools-label">Horizontal</span><button aria-label="Zoom timeline out" onClick={() => setZoom((value) => Math.max(0.5, value - 0.25))}>−</button><input aria-label="Timeline horizontal zoom" type="range" min="0.5" max="2.5" step="0.05" value={zoom} onChange={(event) => setZoom(Number(event.target.value))} /><span>{Math.round(zoom * 100)}%</span><button aria-label="Zoom timeline in" onClick={() => setZoom((value) => Math.min(2.5, value + 0.25))}>＋</button><span className="timeline-tools-label">Vertical</span><button aria-label="Zoom rows out" onClick={() => setVerticalZoom((value) => Math.max(0.5, value - 0.25))}>−</button><input aria-label="Zoom rows" type="range" min="0.5" max="2.5" step="0.05" value={verticalZoom} onChange={(event) => setVerticalZoom(Number(event.target.value))} /><span>{Math.round(verticalZoom * 100)}%</span><button aria-label="Zoom rows in" onClick={() => setVerticalZoom((value) => Math.min(2.5, value + 0.25))}>＋</button><button aria-label="Fit scheduled work" onClick={fitWork}>Fit work</button></div><section className="daypilot-group"><header className="stable-section-heading"><strong>DELIVERIES · {String(deliveryStart).padStart(2, "0")}:00</strong><span className="timeline-scroll-controls"><button aria-label="Scroll deliveries earlier" disabled={deliveryStart === 6} onClick={() => shift("delivery", -1)}>←</button><button aria-label="Scroll deliveries later" disabled={deliveryStart === 18} onClick={() => shift("delivery", 1)}>→</button></span></header>{scheduler("delivery", deliveryStart, deliveryControl)}</section><section className="daypilot-group"><header className="stable-section-heading"><strong>COLLECTIONS · {String(collectionStart).padStart(2, "0")}:00</strong><span className="timeline-scroll-controls"><button aria-label="Scroll collections earlier" disabled={collectionStart === 12} onClick={() => shift("collection", -1)}>←</button><button aria-label="Scroll collections later" disabled={collectionStart === 18} onClick={() => shift("collection", 1)}>→</button></span></header>{scheduler("collection", collectionStart, collectionControl)}</section><p className="daypilot-attribution">This scheduler includes DayPilot Lite, licensed under Apache 2.0.</p></div>;
 }
 
 function ScrollableRealTimeline({ runs, onStop, onSchedule, onQueueDrop }: { runs: PlannerDay["runs"]; serviceDate: string; onStop: (runId: string, stopId: string) => void; onRun?: (runId: string) => void; onSchedule: (sourceRunId: string, stopId: string, targetRunId: string, time: string, end?: string, lane?: "delivery" | "collection") => void; onQueueDrop: (kind: "group" | "movement", runId: string, targetRunId: string, time?: string, lane?: "delivery" | "collection", collectionRequired?: boolean) => void; }) {
