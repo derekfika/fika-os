@@ -4,16 +4,22 @@ import {
   createPendingScheduleOperation,
   canStartPendingSchedule,
   canStartPlacement,
+  collectionTargetForGroup,
   decodeConfirmedSchedulePosition,
   directResizeEnabled,
   effectivePlacement,
   confirmedPlacementIsSuperseded,
+  groupAssignmentRoute,
   markUncertainPlacement,
   placementRefreshOutcome,
+  projectedCollectionScheduleCommand,
+  queuePlacementConverged,
   reconcileUncertainPlacement,
   resolveNextAvailableScheduleStart,
   settlePendingScheduleOperation,
   scheduleIntervalsOverlap,
+  uncertainPlacementTimeout,
+  uncertainPlacementWindowExpired,
 } from "../lib/scheduling";
 
 test("no-end collision terminates and advances by the default duration", () => {
@@ -99,8 +105,10 @@ test("successful adjusted response remains visible when refresh becomes uncertai
   assert.deepEqual(outcome.body, body);
   const server = decodeConfirmedSchedulePosition(outcome.body, requested);
   const operation = createPendingScheduleOperation("stop-1", requested, requested, "op-1", { source: "stop", stopVersionAtStart: 3 });
-  const uncertain = markUncertainPlacement(operation, server);
+  const uncertain = markUncertainPlacement(operation, server, true, 4);
   assert.equal(uncertain.state, "uncertain");
+  assert.equal(uncertain.responseConfirmed, true);
+  assert.equal(uncertain.serverStopVersion, 4);
   assert.deepEqual(effectivePlacement(uncertain, undefined, requested), { kind: "scheduled", position: server });
   assert.equal(reconcileUncertainPlacement(uncertain, server, { source: "stop", stopVersion: 4 }), "confirmed");
 });
@@ -135,4 +143,60 @@ test("a rejected operation leaves canonical position as the only positional auth
   const rejected = createPendingScheduleOperation("stop-1", canonical, { runId: "van-2", lane: "delivery", start: "10:00" }, "reject-1");
   assert.equal(canStartPendingSchedule(rejected), false);
   assert.deepEqual(effectivePlacement(undefined, undefined, canonical), { kind: "scheduled", position: canonical });
+});
+
+test("Inspector outstanding projected Collection uses collection rescheduling, not delivery assignment", () => {
+  assert.equal(groupAssignmentRoute(true), "collection");
+  assert.equal(groupAssignmentRoute(false), "delivery");
+  const target = collectionTargetForGroup("projection-collection:load-77", [], []);
+  assert.deepEqual(target, { kind: "projection", loadId: "load-77" });
+  if (target?.kind !== "projection") throw new Error("Expected a projected collection target");
+  const command = projectedCollectionScheduleCommand(target.loadId, "run-2", "14:00", "14:30");
+  assert.deepEqual(command, {
+    action: "reschedule-delivery-load",
+    loadId: "load-77",
+    scheduledTime: "14:00",
+    targetRunId: "run-2",
+    lane: "collection",
+    scheduledEnd: "14:30",
+  });
+  assert.notEqual(command.action, "assign-job-to-load");
+});
+
+test("Inspector outstanding native Collection resolves its linked stop for schedule or move", () => {
+  assert.deepEqual(collectionTargetForGroup("group-1", [{ runId: "run-1", stopId: "delivery-1" }], [
+    { stopId: "delivery-1", runId: "run-1", linkedStopId: "collection-1", linkedOperation: "delivery" },
+    { stopId: "collection-1", runId: "run-1", linkedOperation: "collection" },
+  ]), { kind: "native", stopId: "collection-1", runId: "run-1" });
+});
+
+test("successful queue assignment stays locked across a stale or still-actionable read", () => {
+  const operation = { ...createPendingScheduleOperation("projection-job:job-1", { runId: "planning-queue", lane: "delivery", start: "09:00" }, { runId: "run-1", lane: "delivery", start: "09:00" }, "queue-op", { source: "queue", projectionSequenceAtStart: 20 }), state: "confirmed-response" as const };
+  assert.equal(queuePlacementConverged(operation, { projectionBacked: true, projectionSequence: 20, exists: true, actionable: true }), false);
+  assert.equal(queuePlacementConverged(operation, { projectionBacked: true, projectionSequence: 21, exists: true, actionable: true }), false);
+  assert.equal(queuePlacementConverged(operation, { projectionBacked: true, projectionSequence: 21, exists: false, actionable: false }), true);
+  assert.equal(uncertainPlacementTimeout(markUncertainPlacement(operation, operation.proposed, true)).retainLock, true);
+});
+
+test("body-less unchanged authority remains checking until the bounded window expires", () => {
+  const canonical = { runId: "run-1", lane: "delivery" as const, start: "09:00" };
+  const operation = markUncertainPlacement(createPendingScheduleOperation("stop-1", canonical, { runId: "run-2", lane: "delivery", start: "10:00" }, "uncertain-op", { source: "stop", stopVersionAtStart: 5 }));
+  assert.equal(operation.responseConfirmed, false);
+  assert.equal(reconcileUncertainPlacement(operation, canonical, { source: "stop", stopVersion: 5 }), "pending");
+  assert.equal(uncertainPlacementWindowExpired(1), false);
+  assert.equal(uncertainPlacementWindowExpired(2), false);
+  assert.equal(uncertainPlacementWindowExpired(3), true);
+  assert.deepEqual(uncertainPlacementTimeout(operation), {
+    retainLock: false,
+    preserveConfirmedResponse: false,
+    message: "Could not confirm whether this was saved. Refresh and retry.",
+  });
+});
+
+test("a late successful canonical convergence wins before the bounded checking window expires", () => {
+  const requested = { runId: "run-2", lane: "delivery" as const, start: "10:00" };
+  const operation = markUncertainPlacement(createPendingScheduleOperation("stop-1", { runId: "run-1", lane: "delivery", start: "09:00" }, requested, "late-op", { source: "stop", stopVersionAtStart: 5 }));
+  assert.equal(reconcileUncertainPlacement(operation, { runId: "run-1", lane: "delivery", start: "09:00" }, { source: "stop", stopVersion: 5 }), "pending");
+  assert.equal(reconcileUncertainPlacement(operation, requested, { source: "stop", stopVersion: 6 }), "confirmed");
+  assert.equal(uncertainPlacementWindowExpired(2), false);
 });

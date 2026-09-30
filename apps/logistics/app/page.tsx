@@ -30,20 +30,27 @@ import { fetchProjectionWithRecovery } from "../lib/projection-fetch";
 import { mayRequestPassiveRefresh, PASSIVE_REFRESH_INTERVAL_MS } from "../lib/passive-refresh";
 import {
   canStartPlacement,
+  collectionTargetForGroup,
   confirmedPlacementIsSuperseded,
   createPendingScheduleOperation,
   decodeConfirmedSchedulePosition,
   directResizeEnabled,
   effectivePlacement,
+  groupAssignmentRoute,
   markUncertainPlacement,
   placementRefreshOutcome,
+  projectedCollectionScheduleCommand,
+  queuePlacementConverged,
   reconcileUncertainPlacement,
   resolveNextAvailableScheduleStart,
   settlePendingScheduleOperation,
   sameSchedulePosition,
+  uncertainPlacementTimeout,
+  uncertainPlacementWindowExpired,
   type ConfirmedPlacement,
   type PendingScheduleOperation,
   type SchedulePosition,
+  UNCERTAIN_PLACEMENT_MAX_ATTEMPTS,
 } from "../lib/scheduling";
 import {
   addOperationalDays,
@@ -304,6 +311,14 @@ export default function Planner() {
     void pending.then(() => { if (loadInFlight.current === pending) loadInFlight.current = undefined; }, () => { if (loadInFlight.current === pending) loadInFlight.current = undefined; });
     return pending;
   };
+  const loadFresh = async (silent = true): Promise<LoadResult> => {
+    const current = loadInFlight.current;
+    if (current) {
+      await current;
+      if (loadInFlight.current === current) loadInFlight.current = undefined;
+    }
+    return load(silent);
+  };
   const loadWeekAuthoritative = async (week = weekCommencing, mode: LoadMode = "explicit") => {
     if (requestsBlocked.current) return;
     try {
@@ -458,7 +473,7 @@ export default function Planner() {
       // Day convergence is the scheduling dependency. Week summaries are a
       // separate, stale-tolerant concern and must not decide settlement.
       try {
-        const refreshed = await load();
+        const refreshed = await loadFresh();
         if (!refreshed.ok) return placementRefreshOutcome(body, false);
       } catch {
         return placementRefreshOutcome(body, false);
@@ -644,6 +659,7 @@ export default function Planner() {
     setAssigning={setAssigning}
     setTargetRun={setTargetRun}
     load={load}
+    loadFresh={loadFresh}
     act={act}
     placementCommand={placementCommand}
     createRun={createRun}
@@ -856,6 +872,7 @@ type RealPlannerProps = {
   setAssigning: (value: string | undefined) => void;
   setTargetRun: (value: string) => void;
   load: (silent?: boolean, materialiseMissing?: boolean) => Promise<LoadResult>;
+  loadFresh: () => Promise<LoadResult>;
   act: (payload: object) => Promise<boolean | Record<string, unknown>>;
   placementCommand: (payload: object) => Promise<PlacementOutcome>;
   createRun: () => void;
@@ -890,6 +907,24 @@ function RealPlanner(props: RealPlannerProps) {
   useEffect(() => { pendingSchedulesRef.current = pendingSchedules; }, [pendingSchedules]);
   useEffect(() => { confirmedSchedulesRef.current = confirmedSchedules; }, [confirmedSchedules]);
   useEffect(() => {
+    let changed = false;
+    const next = { ...pendingSchedulesRef.current };
+    for (const [identity, operation] of Object.entries(next)) {
+      if (operation.source !== "queue" || operation.state !== "confirmed-response") continue;
+      const group = groups.find((item) => item.groupKey === identity);
+      const movement = movements.find((item) => item.movementId === identity);
+      const exists = Boolean(group || movement);
+      const actionable = group
+        ? groupCollectionPending(group, runs) || group.requirementRefs.some((ref) => !ref.runId && (ref.status === "ready_for_planning" || ref.status === "amended" || (ref.status === "pending" && ref.sourceDomain === "cpu-production")))
+        : Boolean(movement && !movement.assignedStops.length);
+      if (!queuePlacementConverged(operation, { projectionBacked: Boolean(data?.projection), projectionSequence: data?.projection?.lastChangeSequence, exists, actionable })) continue;
+      delete next[identity];
+      setPlacementErrors((errors) => { const updated = { ...errors }; delete updated[identity]; return updated; });
+      changed = true;
+    }
+    if (changed) { pendingSchedulesRef.current = next; setPendingSchedules(next); }
+  }, [data?.projection?.lastChangeSequence, groups, movements, runs]);
+  useEffect(() => {
     const next = { ...confirmedSchedulesRef.current };
     let changed = false;
     for (const [identity, confirmed] of Object.entries(next)) {
@@ -913,6 +948,7 @@ function RealPlanner(props: RealPlannerProps) {
     if (props.projectionState !== "CURRENT" && props.projectionState !== "VALID_EMPTY") return;
     for (const [identity, operation] of Object.entries(pendingSchedulesRef.current)) {
       if (operation.state !== "uncertain") continue;
+      if (operation.source === "queue") continue;
       const raw = data?.stops.find((item) => item.canonicalId === identity);
       const projectionBacked = operation.source !== "stop";
       if (!raw && projectionBacked && data?.projection?.lastChangeSequence !== undefined && operation.projectionSequenceAtStart !== undefined && data.projection.lastChangeSequence > operation.projectionSequenceAtStart) {
@@ -1040,6 +1076,91 @@ function RealPlanner(props: RealPlannerProps) {
     const value = result.stop && typeof result.stop === "object" ? result.stop as Record<string, unknown> : undefined;
     return typeof value?.version === "number" ? value.version : undefined;
   };
+  const freshPlacementRead = async () => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timeout = new Promise<undefined>((resolve) => { timer = setTimeout(() => resolve(undefined), 1500); });
+    const read = props.loadFresh().catch(() => undefined);
+    return Promise.race([read, timeout]).finally(() => { if (timer) clearTimeout(timer); });
+  };
+  const reconcileUncertainWithinWindow = async (identity: string, operationId: string) => {
+    for (let attempt = 1; attempt <= UNCERTAIN_PLACEMENT_MAX_ATTEMPTS; attempt += 1) {
+      if (attempt > 1) await new Promise((resolve) => setTimeout(resolve, 350));
+      const operation = pendingSchedulesRef.current[identity];
+      if (!operation || operation.operationId !== operationId || operation.state !== "uncertain") return;
+      const refreshed = await freshPlacementRead();
+      if (refreshed?.ok && refreshed.projection) {
+        const snapshot = { ...projectionToDashboardData(refreshed.projection), projection: refreshed.projection };
+        let resolution: "confirmed" | "superseded" | "pending" = "pending";
+        let current: SchedulePosition | undefined;
+        const sourceRaw = snapshot.stops.find((item) => item.canonicalId === identity);
+        if (operation.source === "queue") {
+          const group = snapshot.planner.workGroups.find((item) => item.groupKey === identity);
+          const movement = snapshot.planner.movements.find((item) => item.movementId === identity);
+          const exists = Boolean(group || movement);
+          const actionable = group
+            ? groupCollectionPending(group, snapshot.planner.runs) || group.requirementRefs.some((ref) => !ref.runId && (ref.status === "ready_for_planning" || ref.status === "amended" || (ref.status === "pending" && ref.sourceDomain === "cpu-production")))
+            : Boolean(movement && !movement.assignedStops.length);
+          if (queuePlacementConverged({ ...operation, state: "confirmed-response" }, { projectionBacked: true, projectionSequence: refreshed.projection.lastChangeSequence, exists, actionable })) resolution = "confirmed";
+        } else if (!sourceRaw) {
+          if (operation.source === "stop" || (operation.projectionSequenceAtStart !== undefined && refreshed.projection.lastChangeSequence > operation.projectionSequenceAtStart)) resolution = "superseded";
+        } else {
+          const lane = sourceRaw.linkedOperation === "collection" || sourceRaw.movementType === "collection" ? "collection" : "delivery";
+          const start = sourceRaw.plannedWindow?.startTime || sourceRaw.plannedArrivalTime;
+          current = start ? { runId: sourceRaw.runId, lane, start, ...(sourceRaw.plannedWindow?.endTime ? { end: sourceRaw.plannedWindow.endTime } : {}) } : undefined;
+          resolution = reconcileUncertainPlacement(operation, current, operation.source === "projection"
+            ? { source: "projection", projectionSequence: refreshed.projection.lastChangeSequence }
+            : { source: "stop", stopVersion: sourceRaw.version });
+        }
+        if (resolution !== "pending") {
+          const nextPending = { ...pendingSchedulesRef.current };
+          delete nextPending[identity];
+          pendingSchedulesRef.current = nextPending;
+          setPendingSchedules(nextPending);
+          setPlacementErrors((errors) => { const next = { ...errors }; delete next[identity]; return next; });
+          if (resolution === "confirmed") {
+            const confirmed: ConfirmedPlacement | undefined = operation.intent === "unscheduled"
+              ? { kind: "unscheduled", operationId, source: operation.source, ...(operation.source === "stop" ? { stopVersion: sourceRaw?.version } : { projectionSequenceAtStart: operation.projectionSequenceAtStart }) }
+              : current ? { kind: "scheduled", position: current, operationId, source: operation.source, ...(operation.source === "stop" ? { stopVersion: sourceRaw?.version } : { projectionSequenceAtStart: operation.projectionSequenceAtStart }) } : undefined;
+            if (confirmed) {
+              const nextConfirmed = { ...confirmedSchedulesRef.current, [identity]: confirmed };
+              confirmedSchedulesRef.current = nextConfirmed;
+              setConfirmedSchedules(nextConfirmed);
+            }
+          }
+          return;
+        }
+      }
+      if (!uncertainPlacementWindowExpired(attempt)) continue;
+      const latest = pendingSchedulesRef.current[identity];
+      if (!latest || latest.operationId !== operationId || latest.state !== "uncertain") return;
+      const timeout = uncertainPlacementTimeout(latest);
+      if (timeout.retainLock) {
+        const confirmedResponse = { ...latest, state: "confirmed-response" as const, error: timeout.message };
+        pendingSchedulesRef.current = { ...pendingSchedulesRef.current, [identity]: confirmedResponse };
+        setPendingSchedules(pendingSchedulesRef.current);
+        setPlacementErrors((errors) => ({ ...errors, [identity]: timeout.message }));
+        return;
+      }
+      const nextPending = { ...pendingSchedulesRef.current };
+      delete nextPending[identity];
+      pendingSchedulesRef.current = nextPending;
+      setPendingSchedules(nextPending);
+      if (timeout.preserveConfirmedResponse) {
+        const confirmed: ConfirmedPlacement | undefined = latest.intent === "unscheduled"
+          ? { kind: "unscheduled", operationId, source: latest.source, ...(latest.source === "stop" ? { stopVersion: latest.serverStopVersion } : { projectionSequenceAtStart: latest.projectionSequenceAtStart }) }
+          : latest.serverPosition ? { kind: "scheduled", position: latest.serverPosition, operationId, source: latest.source, ...(latest.source === "stop" ? { stopVersion: latest.serverStopVersion } : { projectionSequenceAtStart: latest.projectionSequenceAtStart }) } : undefined;
+        if (confirmed) {
+          const nextConfirmed = { ...confirmedSchedulesRef.current, [identity]: confirmed };
+          confirmedSchedulesRef.current = nextConfirmed;
+          setConfirmedSchedules(nextConfirmed);
+        }
+        setPlacementErrors((errors) => ({ ...errors, [identity]: timeout.message }));
+      } else {
+        setPlacementErrors((errors) => ({ ...errors, [identity]: timeout.message }));
+      }
+      return;
+    }
+  };
   const coordinatePlacement = (identity: string, original: SchedulePosition | undefined, proposed: SchedulePosition | undefined, execute: () => Promise<PlacementOutcome>, settlePosition: (body: Record<string, unknown>, fallback: SchedulePosition) => SchedulePosition | undefined = decodeConfirmedSchedulePosition) => {
     const priorConfirmed = confirmedSchedulesRef.current[identity];
     if (!canStartPlacement(identity, pendingSchedulesRef.current)) {
@@ -1063,22 +1184,24 @@ function RealPlanner(props: RealPlannerProps) {
         const nextConfirmed = { ...confirmedSchedulesRef.current };
         const sourceVersion = responseVersion(outcome.body);
         const returnedStopVersion = responseStopVersion(outcome.body);
-        if (operation.source === "queue") delete nextConfirmed[identity];
-        else nextConfirmed[identity] = settledPosition
+        if (operation.source !== "queue") nextConfirmed[identity] = settledPosition
           ? { kind: "scheduled", position: confirmed.proposed!, operationId: operation.operationId, source: operation.source, ...(operation.source === "stop" ? { stopVersion: sourceVersion } : { projectionSequenceAtStart: operation.projectionSequenceAtStart }) }
           : { kind: "unscheduled", operationId: operation.operationId, source: operation.source, ...(operation.source === "stop" ? { stopVersion: returnedStopVersion } : { projectionSequenceAtStart: operation.projectionSequenceAtStart }) };
-        const nextPending = { ...pendingSchedulesRef.current }; delete nextPending[identity];
+        const nextPending = { ...pendingSchedulesRef.current };
+        if (operation.source === "queue") nextPending[identity] = confirmed;
+        else delete nextPending[identity];
         pendingSchedulesRef.current = nextPending; setPendingSchedules(nextPending);
         confirmedSchedulesRef.current = nextConfirmed; setConfirmedSchedules(nextConfirmed);
+        setPlacementErrors((errors) => { const next = { ...errors }; delete next[identity]; return next; });
         return;
       }
       if (outcome.uncertain) {
         const serverPosition = outcome.body && current.proposed ? settlePosition(outcome.body, current.proposed) : undefined;
-        const uncertain = { ...markUncertainPlacement(current, serverPosition), error: "Checking the authoritative schedule before deciding whether this change was saved." };
+        const uncertain = { ...markUncertainPlacement(current, serverPosition, Boolean(outcome.body), outcome.body ? responseStopVersion(outcome.body) : undefined), error: "Checking save…" };
         pendingSchedulesRef.current = { ...pendingSchedulesRef.current, [identity]: uncertain };
         setPendingSchedules(pendingSchedulesRef.current);
         setPlacementErrors((errors) => ({ ...errors, [identity]: uncertain.error! }));
-        void props.load();
+        void reconcileUncertainWithinWindow(identity, operation.operationId);
         return;
       }
       const nextPending = { ...pendingSchedulesRef.current }; delete nextPending[identity];
@@ -1101,7 +1224,31 @@ function RealPlanner(props: RealPlannerProps) {
       return result && typeof result === "object" && "ok" in result ? result : { ok: false, uncertain: false, message: "Assignment could not be started." };
     });
   };
-  const submitGroupAssignment = (group: PlannerWorkGroup, choice?: AssignmentChoice) => coordinateAssignment(group.groupKey, choice, () => Promise.resolve(props.assignGroup(group, choice)));
+  const submitGroupAssignment = (group: PlannerWorkGroup, choice?: AssignmentChoice) => {
+    if (groupAssignmentRoute(groupCollectionPending(group, runs)) === "collection") {
+      if (!choice?.runId || !choice.start) {
+        props.setError("Choose a vehicle and collection time before scheduling the outstanding collection.");
+        return;
+      }
+      if (choice.lane !== "collection") {
+        props.setError("Outstanding collection work must be scheduled in the collection lane.");
+        return;
+      }
+      const stops = runs.flatMap((run) => run.stops.map((stop) => ({ stopId: stop.stopId, runId: run.runId, linkedStopId: stop.linkedStopId, linkedOperation: stop.linkedOperation })));
+      const target = collectionTargetForGroup(group.groupKey, group.requirementRefs.map((ref) => ({ runId: ref.runId, stopId: ref.stopId })), stops);
+      if (!target) {
+        props.setError("The outstanding collection stop could not be resolved safely.");
+        return;
+      }
+      if (target.kind === "projection") {
+        coordinateQueuePlacement(group.groupKey, choice.runId, "collection", choice.start, choice.end, () => props.placementCommand(projectedCollectionScheduleCommand(target.loadId, choice.runId, choice.start, choice.end)));
+        return;
+      }
+      scheduleStop(target.runId, target.stopId, choice.runId, choice.start, choice.end, "collection");
+      return;
+    }
+    coordinateAssignment(group.groupKey, choice, () => Promise.resolve(props.assignGroup(group, choice)));
+  };
   const submitMovementAssignment = (movement: PlannerMovementView, choice?: AssignmentChoice) => coordinateAssignment(movement.movementId, choice, () => Promise.resolve(props.assignMovement(movement, choice)));
   const coordinateQueuePlacement = (identity: string, targetRunId: string, lane: "delivery" | "collection", start: string, end: string | undefined, execute: () => Promise<PlacementOutcome>) => coordinatePlacement(identity, { runId: "planning-queue", lane, start }, { runId: targetRunId, lane, start, ...(end ? { end } : {}) }, execute);
   const scheduleStop = (sourceRunId: string, stopId: string, targetRunId: string, time: string, end?: string, lane?: "delivery" | "collection") => {
@@ -1197,7 +1344,7 @@ function RealPlanner(props: RealPlannerProps) {
       if (lane === "collection") {
         const loadId = id.startsWith("projection-collection:") ? id.slice("projection-collection:".length) : "";
         if (!loadId) return;
-        coordinateQueuePlacement(id, targetRunId, "collection", time, undefined, () => props.placementCommand({ action: "reschedule-delivery-load", loadId, scheduledTime: time, targetRunId, lane: "collection" }));
+        coordinateQueuePlacement(id, targetRunId, "collection", time, undefined, () => props.placementCommand(projectedCollectionScheduleCommand(loadId, targetRunId, time)));
         return;
       }
       const group = groups.find((item) => item.groupKey === id);
@@ -1236,6 +1383,16 @@ function RealPlanner(props: RealPlannerProps) {
       coordinateQueuePlacement(id, targetRunId, effectiveLane, safeTime, undefined, () => props.placementCommand({ action: "assign", runId: targetRunId, expectedRunVersion: run.version, movementId: id, plannedArrivalTime: safeTime }));
     }
   };
+  const inspectorPendingIdentity = (() => {
+    const selection = props.inspector;
+    if (!selection) return "";
+    if (selection.kind !== "group") return selection.id;
+    const group = groups.find((item) => item.groupKey === selection.id);
+    if (!group || !groupCollectionPending(group, runs)) return group?.groupKey || selection.id;
+    const stops = runs.flatMap((run) => run.stops.map((stop) => ({ stopId: stop.stopId, runId: run.runId, linkedStopId: stop.linkedStopId, linkedOperation: stop.linkedOperation })));
+    const target = collectionTargetForGroup(group.groupKey, group.requirementRefs.map((ref) => ({ runId: ref.runId, stopId: ref.stopId })), stops);
+    return target?.kind === "native" ? target.stopId : group.groupKey;
+  })();
   const handlePlanningQueueDrop = (event: DragEvent) => {
     event.preventDefault();
     const value = event.dataTransfer.getData("application/x-logistics-stop");
@@ -1294,7 +1451,7 @@ function RealPlanner(props: RealPlannerProps) {
         <section className="mock-schedule" aria-label="Dispatch schedule"><header className="mock-schedule-head"><div><span>PLANNING SURFACE · {selectedDateLabel}</span><h2>Dispatch schedule</h2></div><strong>{metricsReady ? runs.length : "—"} vehicles · {metric(summary?.scheduledStops)} scheduled · {metric(summary?.needsTime)} needs time</strong></header><div className="mock-legend"><span><i className="green-dot" /> Delivery</span><span><i className="blue-dot" /> Collection</span><span><i className="amber-dot" /> Transfer</span><span><i className="red-dot" /> Attention</span></div>{Object.entries(placementErrors).map(([identity, message]) => <div className="degraded-note" role="status" key={identity}>{message}</div>)}{!data && <Empty title={props.projectionState === "LOADING" ? "Loading dispatch schedule" : "Dispatch schedule unavailable"} body={props.projectionState === "LOADING" ? "Waiting for the materialised Logistics projection." : "The authoritative projection could not be loaded."} />}{data && props.projectionState !== "CURRENT" && props.projectionState !== "VALID_EMPTY" && <div className="degraded-note">This materialised view is not current. Refresh before dispatching.</div>}{data && <DayPilotTimeline runs={runs} serviceDate={date} pendingSchedules={pendingSchedules} confirmedSchedules={confirmedSchedules} onStop={(runId, stopId) => props.setInspector({ kind: "stop", id: stopId, runId })} onSchedule={scheduleStop} onQueueDrop={(kind, id, runId, time, lane, collectionRequired) => assignQueueItem(kind, id, runId, time, lane, collectionRequired)} />}<RealScheduleSummary planner={data?.planner} /></section>
       </section>
     </div>
-    {props.inspector && data && <Inspector selection={props.inspector} planner={data.planner} projection={data.projection} rawRequirements={data.requirements} rawStops={data.stops} onClose={() => props.setInspector(undefined)} onAction={handleInspectorAction} onScheduleStop={scheduleStop} runs={runs} targetRun={props.targetRun} setTargetRun={props.setTargetRun} assigning={props.assigning} setAssigning={props.setAssigning} onAssignGroup={(group, choice) => submitGroupAssignment(group, choice)} onAssignMovement={(movement, choice) => submitMovementAssignment(movement, choice)} placementPending={props.inspector.kind === "stop" ? Boolean(pendingSchedules[props.inspector.id]) : false} />}
+    {props.inspector && data && <Inspector selection={props.inspector} planner={data.planner} projection={data.projection} rawRequirements={data.requirements} rawStops={data.stops} onClose={() => props.setInspector(undefined)} onAction={handleInspectorAction} onScheduleStop={scheduleStop} runs={runs} targetRun={props.targetRun} setTargetRun={props.setTargetRun} assigning={props.assigning} setAssigning={props.setAssigning} onAssignGroup={(group, choice) => submitGroupAssignment(group, choice)} onAssignMovement={(movement, choice) => submitMovementAssignment(movement, choice)} placementPending={Boolean(pendingSchedules[inspectorPendingIdentity] || (props.inspector.kind === "group" && confirmedSchedules[inspectorPendingIdentity]))} />}
   </main>;
 }
 
@@ -1952,6 +2109,7 @@ function Inspector({
   const stop = selection.kind === "stop" ? planner.runs.flatMap((item) => item.stops).find((item) => item.stopId === selection.id) : undefined;
   const rawStop = stop ? rawStops.find((item) => item.canonicalId === stop.stopId) : undefined;
   const stopTitle = stop ? `${stop.destination.label} · ${stop.plannedWindow?.startTime || stop.plannedArrivalTime || "Time to confirm"}` : undefined;
+  const collectionPending = group ? groupCollectionPending(group, planner.runs) : false;
   return <aside className="mock-inspector" aria-label="Details inspector">
     <header><div><p className="eyebrow">Inspector</p><h2>{group?.destinationLabel || movement?.type || stopTitle || run?.driver || "Details"}</h2></div><button className="close" onClick={onClose} aria-label="Close inspector">×</button></header>
     {group && <>
@@ -1961,16 +2119,16 @@ function Inspector({
       <h3>Load</h3><ul className="inspector-list">{group.combinedLines.map((line) => <li key={line.lineKey}>{line.quantity} {line.unit} · {line.displayName}</li>)}</ul>
       {group.productionContext && <p className="context-line"><strong>{group.productionContext.clientName}</strong>{group.productionContext.guestCount !== undefined && ` · ${group.productionContext.guestCount} guests`}</p>}
       {group.attention.map((item) => <div className="attention-note" key={item}>⚠ {item}</div>)}
-      <div className="inspector-actions"><button onClick={() => { setAssigning(group.groupKey); setTargetRun(runs.length === 1 ? runs[0].runId : ""); }}>Assign to vehicle</button></div>
-      {assigning === group.groupKey && <RunChooser runs={runs} targetRun={targetRun} setTargetRun={setTargetRun} onConfirm={(choice) => onAssignGroup(group, choice)} label="Assign eligible" />}
+      <div className="inspector-actions"><button disabled={placementPending} onClick={() => { setAssigning(group.groupKey); setTargetRun(runs.length === 1 ? runs[0].runId : ""); }}>{placementPending ? "Saving…" : collectionPending ? "Schedule collection" : "Assign to vehicle"}</button></div>
+      {assigning === group.groupKey && <RunChooser key={`${group.groupKey}-${collectionPending ? "collection" : "delivery"}`} runs={runs} targetRun={targetRun} setTargetRun={setTargetRun} allowedLanes={collectionPending ? ["collection"] : ["delivery"]} onConfirm={(choice) => onAssignGroup(group, choice)} label={collectionPending ? "Schedule collection" : "Assign eligible"} pending={placementPending} />}
     </>}
     {movement && <>
       <InspectorMeta label="Direction" value={`${movement.from?.label || "Origin"}${movement.to ? ` → ${movement.to.label}` : ""}`} />
       <InspectorMeta label="Timing" value={formatWindow(movement.window) || movement.requiredTime || "Unscheduled"} />
       <h3>Items</h3><ul className="inspector-list">{movement.items.map((item, index) => <li key={`${item.description}-${index}`}>{item.quantity} × {item.description}</li>)}</ul>
       {movement.notes && <p className="notes-block">Notes: {movement.notes}</p>}
-      <div className="inspector-actions"><button onClick={() => { setAssigning(movement.movementId); setTargetRun(runs.length === 1 ? runs[0].runId : ""); }}>Assign to vehicle</button></div>
-      {assigning === movement.movementId && <RunChooser runs={runs} targetRun={targetRun} setTargetRun={setTargetRun} allowedLanes={movement.type === "collection" ? ["collection"] : ["delivery"]} onConfirm={(choice) => onAssignMovement(movement, choice)} />}
+      <div className="inspector-actions"><button disabled={placementPending} onClick={() => { setAssigning(movement.movementId); setTargetRun(runs.length === 1 ? runs[0].runId : ""); }}>{placementPending ? "Saving…" : "Assign to vehicle"}</button></div>
+      {assigning === movement.movementId && <RunChooser runs={runs} targetRun={targetRun} setTargetRun={setTargetRun} allowedLanes={movement.type === "collection" ? ["collection"] : ["delivery"]} onConfirm={(choice) => onAssignMovement(movement, choice)} pending={placementPending} />}
     </>}
     {run && <>
       <InspectorMeta label="Status" value={liveStatusLabel(run.operationalStatus)} />
@@ -2266,6 +2424,7 @@ function RunChooser({
   onConfirm,
   allowedLanes = ["delivery"],
   label = "Assign to run",
+  pending = false,
 }: {
   runs: PlannerDay["runs"];
   targetRun: string;
@@ -2273,6 +2432,7 @@ function RunChooser({
   onConfirm: (choice?: AssignmentChoice) => void;
   allowedLanes?: AssignmentChoice["lane"][];
   label?: string;
+  pending?: boolean;
 }) {
   const [lane, setLane] = useState<AssignmentChoice["lane"]>(allowedLanes[0]);
   const [start, setStart] = useState("");
@@ -2283,6 +2443,7 @@ function RunChooser({
       <select
         aria-label="Target delivery run"
         value={targetRun}
+        disabled={pending}
         onChange={(event) => setTargetRun(event.target.value)}
       >
         <option value="">Choose a vehicle</option>
@@ -2292,14 +2453,14 @@ function RunChooser({
           </option>
         ))}
       </select>
-      {allowedLanes.length > 1 ? <select aria-label="Schedule lane" value={lane} onChange={(event) => setLane(event.target.value as AssignmentChoice["lane"])} disabled={!targetRun}>
+      {allowedLanes.length > 1 || allowedLanes[0] === "collection" ? <select aria-label="Schedule lane" value={lane} onChange={(event) => setLane(event.target.value as AssignmentChoice["lane"])} disabled={pending || !targetRun}>
         {allowedLanes.map((candidate) => <option key={candidate} value={candidate}>{candidate[0].toUpperCase() + candidate.slice(1)} lane</option>)}
       </select> : <small>{allowedLanes[0][0].toUpperCase() + allowedLanes[0].slice(1)} lane</small>}
-      <label>Time <input aria-label="Schedule time" type="time" step={900} value={start} onChange={(event) => setStart(event.target.value)} /></label>
-      <label>Window end <input aria-label="Schedule window end" type="time" step={900} min={start || undefined} value={end} onChange={(event) => setEnd(event.target.value)} /></label>
+      <label>Time <input aria-label="Schedule time" type="time" step={900} disabled={pending} value={start} onChange={(event) => setStart(event.target.value)} /></label>
+      <label>Window end <input aria-label="Schedule window end" type="time" step={900} disabled={pending} min={start || undefined} value={end} onChange={(event) => setEnd(event.target.value)} /></label>
       {selectedRun && !selectedRun.vehicle && <small>Vehicle label unavailable; using {selectedRun.driver || "the selected run"}.</small>}
-      <button onClick={() => onConfirm({ runId: targetRun, lane, start, ...(end ? { end } : {}) })} disabled={!targetRun || !start}>
-        {label}
+      <button onClick={() => onConfirm({ runId: targetRun, lane, start, ...(end ? { end } : {}) })} disabled={pending || !targetRun || !start}>
+        {pending ? "Saving…" : label}
       </button>
     </div>
   );

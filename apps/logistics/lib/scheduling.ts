@@ -53,6 +53,8 @@ export type PendingScheduleOperation = {
   projectionSequenceAtStart?: number;
   stopVersionAtStart?: number;
   serverPosition?: SchedulePosition;
+  serverStopVersion?: number;
+  responseConfirmed?: boolean;
   error?: string;
 };
 
@@ -64,6 +66,67 @@ export type EffectivePlacement = { kind: "scheduled"; position: SchedulePosition
 export type PlacementRefreshOutcome =
   | { ok: true; body: Record<string, unknown> }
   | { ok: false; uncertain: true; message: string; body: Record<string, unknown> };
+
+export const UNCERTAIN_PLACEMENT_MAX_ATTEMPTS = 3;
+
+export function uncertainPlacementWindowExpired(attempt: number): boolean {
+  return attempt >= UNCERTAIN_PLACEMENT_MAX_ATTEMPTS;
+}
+
+export function uncertainPlacementTimeout(operation: PendingScheduleOperation): { retainLock: boolean; preserveConfirmedResponse: boolean; message: string } {
+  if (operation.responseConfirmed && operation.source === "queue") {
+    return { retainLock: true, preserveConfirmedResponse: true, message: "Saved; waiting for the updated planning queue." };
+  }
+  if (operation.responseConfirmed) {
+    return { retainLock: false, preserveConfirmedResponse: true, message: "Saved; the schedule view is still catching up. Refresh to confirm." };
+  }
+  return { retainLock: false, preserveConfirmedResponse: false, message: "Could not confirm whether this was saved. Refresh and retry." };
+}
+
+export function collectionTargetForGroup(
+  groupKey: string,
+  refs: Array<{ runId?: string; stopId?: string }>,
+  stops: Array<{ stopId: string; runId: string; linkedStopId?: string; linkedOperation?: string }>,
+): { kind: "projection"; loadId: string } | { kind: "native"; stopId: string; runId: string } | undefined {
+  const prefix = "projection-collection:";
+  if (groupKey.startsWith(prefix)) return { kind: "projection", loadId: groupKey.slice(prefix.length) };
+  const deliveryStop = refs
+    .filter((ref): ref is { runId: string; stopId: string } => Boolean(ref.runId && ref.stopId))
+    .map((ref) => stops.find((stop) => stop.runId === ref.runId && stop.stopId === ref.stopId))
+    .find((stop) => stop?.linkedOperation === "delivery" && stop.linkedStopId);
+  const collectionStop = deliveryStop?.linkedStopId
+    ? stops.find((stop) => stop.stopId === deliveryStop.linkedStopId)
+    : undefined;
+  return collectionStop ? { kind: "native", stopId: collectionStop.stopId, runId: collectionStop.runId } : undefined;
+}
+
+export function groupAssignmentRoute(collectionPending: boolean): "collection" | "delivery" {
+  return collectionPending ? "collection" : "delivery";
+}
+
+export function projectedCollectionScheduleCommand(loadId: string, targetRunId: string, scheduledTime: string, scheduledEnd?: string) {
+  return {
+    action: "reschedule-delivery-load" as const,
+    loadId,
+    scheduledTime,
+    targetRunId,
+    lane: "collection" as const,
+    ...(scheduledEnd ? { scheduledEnd } : {}),
+  };
+}
+
+export function queuePlacementConverged(
+  operation: PendingScheduleOperation,
+  snapshot: { projectionBacked: boolean; projectionSequence?: number; exists: boolean; actionable: boolean },
+): boolean {
+  if (operation.source !== "queue" || operation.state !== "confirmed-response") return false;
+  if (!snapshot.exists) return true;
+  if (snapshot.actionable) return false;
+  if (!snapshot.projectionBacked) return true;
+  return operation.projectionSequenceAtStart !== undefined
+    && snapshot.projectionSequence !== undefined
+    && snapshot.projectionSequence > operation.projectionSequenceAtStart;
+}
 
 export function placementRefreshOutcome(body: Record<string, unknown>, dayRefreshSucceeded: boolean): PlacementRefreshOutcome {
   return dayRefreshSucceeded
@@ -113,17 +176,26 @@ export function reconcileUncertainPlacement(
   if (operation.source !== "stop" || snapshot.source !== "stop") return "pending";
   if (operation.intent === "unscheduled") {
     if (!canonical && snapshot.stopVersion !== undefined && snapshot.stopVersion >= (operation.stopVersionAtStart ?? 0)) return "confirmed";
-  } else if (sameSchedulePosition(canonical, operation.serverPosition || operation.proposed)) {
+  } else if (sameSchedulePosition(canonical, operation.serverPosition || operation.proposed)
+    && snapshot.stopVersion !== undefined
+    && snapshot.stopVersion > (operation.stopVersionAtStart ?? 0)) {
     return "confirmed";
   }
   if (snapshot.stopVersion !== undefined && snapshot.stopVersion > (operation.stopVersionAtStart ?? 0)) return "superseded";
   return "pending";
 }
 
-export function markUncertainPlacement(operation: PendingScheduleOperation, bestKnownPosition?: SchedulePosition): PendingScheduleOperation {
+export function markUncertainPlacement(
+  operation: PendingScheduleOperation,
+  bestKnownPosition?: SchedulePosition,
+  responseConfirmed = false,
+  serverStopVersion?: number,
+): PendingScheduleOperation {
   return {
     ...operation,
     ...(operation.intent === "scheduled" && bestKnownPosition ? { proposed: bestKnownPosition, serverPosition: bestKnownPosition } : {}),
+    responseConfirmed,
+    ...(serverStopVersion !== undefined ? { serverStopVersion } : {}),
     state: "uncertain",
     error: "Checking authoritative placement",
   };
