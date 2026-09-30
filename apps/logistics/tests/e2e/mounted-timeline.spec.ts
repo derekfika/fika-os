@@ -35,6 +35,7 @@ async function resizeToEnd(page: Page, stopId: string, end: string, runId = "run
   const viewport = page.getByTestId("mounted-timeline-viewport");
   const track = page.locator(`[data-lane="${runId}:${lane}"]`);
   const handle = page.getByTestId(`resize-${stopId}`);
+  await handle.scrollIntoViewIfNeeded();
   const viewBox = await viewport.boundingBox();
   const trackBox = await track.boundingBox();
   if (!viewBox || !trackBox) throw new Error("Resize viewport geometry unavailable");
@@ -44,7 +45,6 @@ async function resizeToEnd(page: Page, stopId: string, end: string, runId = "run
     maxScroll: (element.querySelector('[data-testid="mounted-timeline-viewport"]') as HTMLElement).scrollWidth - (element.querySelector('[data-testid="mounted-timeline-viewport"]') as HTMLElement).clientWidth,
   }));
   const currentScroll = await viewport.evaluate((element) => (element as HTMLElement).scrollLeft);
-  const trackOrigin = trackBox.x + currentScroll;
   const desiredScroll = Math.max(0, Math.min(geometry.maxScroll, endMinute * geometry.scale - viewBox.width * 0.65));
   await viewport.evaluate((element, next) => { (element as HTMLElement).scrollLeft = next; }, desiredScroll);
   const handleBox = await handle.boundingBox();
@@ -52,7 +52,7 @@ async function resizeToEnd(page: Page, stopId: string, end: string, runId = "run
   if (!handleBox || !scrolledTrack) throw new Error("Resize handle geometry unavailable");
   const startX = handleBox.x + handleBox.width / 2;
   const startY = handleBox.y + handleBox.height / 2;
-  const targetX = trackOrigin - desiredScroll + endMinute * geometry.scale;
+  const targetX = scrolledTrack.x + endMinute * geometry.scale;
   await page.mouse.move(startX, startY);
   await page.mouse.down();
   await page.mouse.move(startX + 9, startY + 2, { steps: 2 });
@@ -169,19 +169,22 @@ test("rejected placement restores its confirmed position", async ({ page }) => {
   await expect(page.locator('[data-lane="run-1:collection"]').getByRole("button", { name: /Move Haleon/ })).toHaveCount(0);
 });
 
-test("server-adjusted position settles at the returned canonical time", async ({ page }) => {
+test("server-adjusted position is shown immediately and stays locked until authority converges", async ({ page }) => {
   await page.getByLabel("Command mode").selectOption("adjust");
+  await page.getByLabel("Refresh mode").selectOption("delayed");
   await dragTo(page, page.getByTestId("stop-stop-mnk"), { run: "run-1", lane: "delivery", time: "09:15" }, 68);
-  await expect(page.getByRole("button", { name: /Move MNK, Van North, Delivery, 09:30/ })).toBeVisible();
+  const adjusted = page.getByRole("button", { name: /Move MNK, Van North, Delivery, 09:30/ });
+  await expect(adjusted).toBeDisabled();
+  await expect(adjusted).toContainText("Saved · syncing…");
   await expect(page.getByTestId("fixture-message")).toContainText("Server adjusted placement to 09:30");
+  await expect(adjusted).toBeEnabled({ timeout: 5000 });
 });
 
 test("a moved card opens Details against its raw source run identity", async ({ page }) => {
   await page.getByLabel("Command mode").selectOption("success");
-  await page.getByLabel("Refresh mode").selectOption("delayed");
   await dragTo(page, page.getByTestId("stop-stop-mnk"), { run: "run-3", lane: "delivery", time: "09:15" }, 68);
   await page.getByRole("button", { name: /Move MNK, Van East, Delivery, 09:15/ }).click();
-  await expect(page.getByTestId("fixture-message")).toContainText("Inspector opened for source run run-1");
+  await expect(page.getByTestId("fixture-message")).toContainText("Inspector opened for source run run-3");
 });
 
 test("Fit day fits all 24 hours into the space beside the sticky run labels", async ({ page }) => {
@@ -362,27 +365,40 @@ test("timeline zoom and horizontal scroll remain usable during a pending save", 
   await expect(page.getByTestId("stop-stop-riverside")).toBeDisabled();
 });
 
-test("successful POST settles before delayed authoritative refresh completes", async ({ page }) => {
+test("successful POST shows Saved syncing, locks only that card, and unlocks after fresh authority", async ({ page }) => {
   await page.getByLabel("Command mode").selectOption("success");
   await page.getByLabel("Refresh mode").selectOption("delayed");
   await dragTo(page, page.getByTestId("stop-stop-mnk"), { run: "run-1", lane: "delivery", time: "09:15" }, 68);
   const settled = page.getByRole("button", { name: /Move MNK, Van North, Delivery, 09:15/ });
-  await expect(settled).toBeEnabled();
-  await expect(settled).not.toContainText("Saving");
+  await expect(settled).toBeDisabled();
+  await expect(settled).toContainText("Saved · syncing…");
   await expect(page.getByTestId("fixture-refresh-status")).toHaveText("Authoritative refresh pending.");
-  await dragTo(page, settled, { run: "run-1", lane: "delivery", time: "09:45" }, 68);
-  await expect(page.getByRole("button", { name: /Move MNK, Van North, Delivery, 09:45/ })).toBeVisible();
+  await expect(page.getByTestId("fixture-versions")).toContainText("Cached stop/run versions 1/1 · saved stop/run versions 2/2");
+  await expect(page.getByTestId("stop-stop-haleon")).toBeEnabled();
+  await dragTo(page, page.getByTestId("stop-stop-haleon"), { run: "run-2", lane: "delivery", time: "08:30" }, 68);
+  await expect(page.getByRole("button", { name: /Move Haleon, Van South, Delivery, 08:30/ })).toBeDisabled();
+  await expect(settled).toBeDisabled();
+  await page.getByLabel("Timeline zoom").fill("1.25");
+  const viewport = page.getByTestId("mounted-timeline-viewport");
+  await viewport.evaluate((element) => { (element as HTMLElement).scrollLeft += 120; });
+  expect(await viewport.evaluate((element) => (element as HTMLElement).scrollLeft)).toBeGreaterThan(0);
+  await expect(settled).toBeEnabled({ timeout: 5000 });
+  await expect(page.getByTestId("fixture-versions")).toContainText("Cached stop/run versions 3/3 · saved stop/run versions 3/3");
 });
 
-test("failed background refresh preserves the successful server placement", async ({ page }) => {
+test("failed refresh preserves saved placement and locks its identity until manual refresh", async ({ page }) => {
   await page.getByLabel("Command mode").selectOption("success");
   await page.getByLabel("Refresh mode").selectOption("failed");
   await dragTo(page, page.getByTestId("stop-stop-mnk"), { run: "run-1", lane: "delivery", time: "09:15" }, 68);
   const settled = page.getByRole("button", { name: /Move MNK, Van North, Delivery, 09:15/ });
-  await expect(settled).toBeVisible();
-  await expect(settled).toBeEnabled();
+  await expect(settled).toBeDisabled();
+  await expect(settled).toContainText("Saved; waiting for refresh");
   await expect(page.getByTestId("fixture-refresh-status")).toHaveText("Authoritative refresh failed; saved placement remains visible.");
   await expect(page.getByTestId("fixture-message")).toContainText("Refresh failed; saved placement retained.");
+  await expect(page.getByTestId("stop-stop-haleon")).toBeEnabled();
+  await page.getByRole("button", { name: "Refresh authority" }).click();
+  await expect(settled).toBeEnabled();
+  await expect(page.getByTestId("fixture-versions")).toContainText("Cached stop/run versions 2/2 · saved stop/run versions 2/2");
 });
 
 test("Collection queue drag uses the Collection lane operation", async ({ page }) => {

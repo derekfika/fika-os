@@ -8,7 +8,7 @@ import styles from "./mounted-react-timeline.module.css";
 
 type Lane = "delivery" | "collection";
 export type QueueCard = { id: string; kind: "group" | "movement"; destination: string; lane: Lane; loadCount: number; workIds: string[]; collectionRequired?: boolean; draggable: boolean };
-type Card = { id: string; destination: string; runId: string; lane: Lane; start: string; end?: string; loadCount: number; duration: number; attention: boolean; pending: boolean; queue: boolean; sourceRunId?: string };
+type Card = { id: string; destination: string; runId: string; lane: Lane; start: string; end?: string; loadCount: number; duration: number; attention: boolean; pending: boolean; pendingLabel?: string; syncing: boolean; queue: boolean; sourceRunId?: string };
 type DragOrigin = { card: Card; queueItem?: QueueCard; element: HTMLElement; pointerId: number; startX: number; startY: number; grabOffset: number; mode: "move" | "resize"; endGrabOffset?: number; started: boolean; x: number; y: number; target?: DragTarget };
 type DragTarget = { kind: "lane"; runId: string; lane: Lane; minute: number; end?: string } | { kind: "resize"; runId: string; lane: Lane; start: string; endMinute: number } | { kind: "queue" };
 
@@ -19,6 +19,9 @@ const hourTicks = Array.from({ length: 25 }, (_, index) => index * 60);
 const MINUTE_PX = 2;
 const CARD_MIN_WIDTH = 136;
 const ROW_BASE_HEIGHT = 78;
+const pendingLabel = (operation: PendingScheduleOperation | undefined) => operation?.state === "confirmed-response"
+  ? operation.error || "Saved · syncing…"
+  : operation?.state === "uncertain" ? "Checking save…" : operation ? "Saving…" : undefined;
 
 function canonicalWorkIds(stop: PlannerDay["runs"][number]["stops"][number]): Set<string> {
   return new Set([
@@ -111,7 +114,8 @@ export function MountedReactTimeline({ planner, queueItems, pendingSchedules, co
       if (!placement || placement.kind === "unscheduled") continue;
       const position = placement.position;
       const loadCount = Math.max(1, stop.requirementCount || stop.movementCount);
-      stops.push({ id: stop.stopId, destination: stop.destination.label, runId: position.runId, lane: stop.lane, start: position.start, ...(position.end ? { end: position.end } : {}), loadCount, duration: position.end ? Math.max(15, minutes(position.end) - minutes(position.start)) : 15, attention: stop.attention.length > 0, pending: Boolean(pendingSchedules[stop.stopId]), queue: false, sourceRunId: sourceRun.runId });
+      const operation = pendingSchedules[stop.stopId];
+      stops.push({ id: stop.stopId, destination: stop.destination.label, runId: position.runId, lane: stop.lane, start: position.start, ...(position.end ? { end: position.end } : {}), loadCount, duration: position.end ? Math.max(15, minutes(position.end) - minutes(position.start)) : 15, attention: stop.attention.length > 0, pending: Boolean(operation), pendingLabel: pendingLabel(operation), syncing: operation?.state === "confirmed-response", queue: false, sourceRunId: sourceRun.runId });
     }
     const canonical = schedulableRuns.flatMap((run) => run.stops.flatMap((stop) => {
       const start = stop.plannedWindow?.startTime || stop.plannedArrivalTime;
@@ -121,7 +125,7 @@ export function MountedReactTimeline({ planner, queueItems, pendingSchedules, co
       const operation = pendingSchedules[item.id];
       if (!operation?.proposed || operation.intent !== "scheduled" || timelineQueueDuplicatesCanonical(item.workIds, canonical, operation.proposed)) return [];
       const position = operation.proposed;
-      return [{ id: `queue:${item.id}`, destination: item.destination, runId: position.runId, lane: position.lane, start: position.start, ...(position.end ? { end: position.end } : {}), loadCount: item.loadCount, duration: position.end ? Math.max(15, minutes(position.end) - minutes(position.start)) : 15, attention: false, pending: true, queue: true }];
+      return [{ id: `queue:${item.id}`, destination: item.destination, runId: position.runId, lane: position.lane, start: position.start, ...(position.end ? { end: position.end } : {}), loadCount: item.loadCount, duration: position.end ? Math.max(15, minutes(position.end) - minutes(position.start)) : 15, attention: false, pending: true, pendingLabel: pendingLabel(operation), syncing: operation.state === "confirmed-response", queue: true }];
     });
     return [...stops, ...queueCards].filter((card) => runById.has(card.runId));
   }, [schedulableRuns, queueItems, pendingSchedules, confirmedSchedules, runById]);
@@ -203,7 +207,7 @@ export function MountedReactTimeline({ planner, queueItems, pendingSchedules, co
       const item = queueItems.find((candidate) => candidate.id === id);
       if (!item?.draggable || pendingSchedules[item.id]) return;
       const rect = target.getBoundingClientRect();
-      const card: Card = { id: item.id, destination: item.destination, runId: "", lane: item.lane, start: "00:00", loadCount: item.loadCount, duration: 15, attention: false, pending: false, queue: true };
+      const card: Card = { id: item.id, destination: item.destination, runId: "", lane: item.lane, start: "00:00", loadCount: item.loadCount, duration: 15, attention: false, pending: false, syncing: false, queue: true };
       const drag: DragOrigin = { card, queueItem: item, element: source, pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, grabOffset: 0, mode: "move", started: false, x: event.clientX, y: event.clientY };
       activeRef.current = drag;
       try { source.setPointerCapture(event.pointerId); } catch { /* window pointer handlers are fallback */ }
@@ -291,8 +295,8 @@ export function MountedReactTimeline({ planner, queueItems, pendingSchedules, co
                   const endMinute = card.end ? minutes(card.end) : undefined;
                   const resizable = Boolean(card.sourceRunId && card.end && endMinute !== undefined && endMinute - startMinute >= 15 && endMinute <= 1425 && startMinute < 1425 && directResizeEnabled(Boolean(card.end)));
                   return <div className={styles.cardSlot} key={card.id} style={{ left, top: `${8 + row * 62}px`, width }}>
-                    <button type="button" className={`${styles.card} ${lane === "collection" ? styles.collection : ""} ${card.attention ? styles.attention : ""} ${card.pending ? styles.pending : ""}`} data-testid={card.queue ? `pending-queue-${card.id.slice("queue:".length)}` : `stop-${card.id}`} aria-label={label} aria-busy={card.pending} disabled={card.pending} onPointerDown={(event) => beginCard(event, card)} onClick={() => card.sourceRunId && onStop(card.sourceRunId, card.id)}>
-                      <time>{card.start}{card.end ? `–${card.end}` : ""}</time><strong>{card.destination}</strong><small>{card.loadCount} {card.loadCount === 1 ? "load" : "loads"}{card.pending ? " · Saving…" : ""}</small>
+                    <button type="button" className={`${styles.card} ${lane === "collection" ? styles.collection : ""} ${card.attention ? styles.attention : ""} ${card.pending ? styles.pending : ""}`} data-testid={card.queue ? `pending-queue-${card.id.slice("queue:".length)}` : `stop-${card.id}`} aria-label={label} aria-busy={card.pending && !card.syncing} disabled={card.pending} onPointerDown={(event) => beginCard(event, card)} onClick={() => card.sourceRunId && onStop(card.sourceRunId, card.id)}>
+                      <time>{card.start}{card.end ? `–${card.end}` : ""}</time><strong>{card.destination}</strong><small>{card.loadCount} {card.loadCount === 1 ? "load" : "loads"}{card.pendingLabel ? ` · ${card.pendingLabel}` : ""}</small>
                     </button>
                     {resizable && endMinute !== undefined && <button type="button" role="slider" className={styles.resizeHandle} data-testid={`resize-${card.id}`} aria-label={`Resize ${card.destination} window end`} aria-valuemin={startMinute + 15} aria-valuemax={1425} aria-valuenow={endMinute} aria-valuetext={`${card.start} start, ${card.end} end, ${endMinute - startMinute} minutes`} disabled={card.pending} style={{ left: `${(endMinute - startMinute) * pxPerMinute}px`, top: "50%" }} onPointerDown={(event) => beginResize(event, card, endMinute)} onKeyDown={(event) => {
                       if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;

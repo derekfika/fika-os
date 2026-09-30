@@ -52,6 +52,7 @@ export type PendingScheduleOperation = {
   source: "stop" | "projection" | "queue";
   projectionSequenceAtStart?: number;
   stopVersionAtStart?: number;
+  runVersionsAtStart?: Record<string, number>;
   serverPosition?: SchedulePosition;
   serverStopVersion?: number;
   responseConfirmed?: boolean;
@@ -126,6 +127,31 @@ export function queuePlacementConverged(
   return operation.projectionSequenceAtStart !== undefined
     && snapshot.projectionSequence !== undefined
     && snapshot.projectionSequence > operation.projectionSequenceAtStart;
+}
+
+export function confirmedResponseConverged(
+  operation: PendingScheduleOperation,
+  snapshot: {
+    projectionSequence?: number;
+    stopVersion?: number;
+    runVersions?: Record<string, number>;
+    exists: boolean;
+  },
+): boolean {
+  if (operation.state !== "confirmed-response") return false;
+  const hasNewProjection = operation.projectionSequenceAtStart !== undefined
+    && snapshot.projectionSequence !== undefined
+    && snapshot.projectionSequence > operation.projectionSequenceAtStart;
+  if (operation.source === "projection") return hasNewProjection;
+  if (!snapshot.exists) return hasNewProjection;
+  if (operation.source !== "stop" || snapshot.stopVersion === undefined) return false;
+  if (operation.stopVersionAtStart === undefined || snapshot.stopVersion <= operation.stopVersionAtStart) return false;
+  if (operation.serverStopVersion !== undefined && snapshot.stopVersion < operation.serverStopVersion) return false;
+  const runVersionsAtStart = Object.entries(operation.runVersionsAtStart || {});
+  return runVersionsAtStart.length > 0 && runVersionsAtStart.every(([runId, startingVersion]) => {
+    const currentVersion = snapshot.runVersions?.[runId];
+    return currentVersion !== undefined && currentVersion > startingVersion;
+  });
 }
 
 export function placementRefreshOutcome(body: Record<string, unknown>, dayRefreshSucceeded: boolean): PlacementRefreshOutcome {
@@ -268,9 +294,9 @@ export function createPendingScheduleOperation(
   original: SchedulePosition | undefined,
   proposed: SchedulePosition | undefined,
   operationId = `schedule:${stopId}:${Date.now()}`,
-  metadata: { source?: "stop" | "projection" | "queue"; projectionSequenceAtStart?: number; stopVersionAtStart?: number } = {},
+  metadata: { source?: "stop" | "projection" | "queue"; projectionSequenceAtStart?: number; stopVersionAtStart?: number; runVersionsAtStart?: Record<string, number> } = {},
 ): PendingScheduleOperation {
-  return { operationId, stopId, original, proposed, intent: proposed ? "scheduled" : "unscheduled", rollback: original, state: "pending", source: metadata.source || "stop", projectionSequenceAtStart: metadata.projectionSequenceAtStart, stopVersionAtStart: metadata.stopVersionAtStart };
+  return { operationId, stopId, original, proposed, intent: proposed ? "scheduled" : "unscheduled", rollback: original, state: "pending", source: metadata.source || "stop", projectionSequenceAtStart: metadata.projectionSequenceAtStart, stopVersionAtStart: metadata.stopVersionAtStart, ...(metadata.runVersionsAtStart ? { runVersionsAtStart: metadata.runVersionsAtStart } : {}) };
 }
 
 export function canStartPendingSchedule(operation: PendingScheduleOperation | undefined): boolean {

@@ -9,6 +9,7 @@ import {
   directResizeEnabled,
   effectivePlacement,
   confirmedPlacementIsSuperseded,
+  confirmedResponseConverged,
   groupAssignmentRoute,
   markUncertainPlacement,
   placementRefreshOutcome,
@@ -67,6 +68,32 @@ test("server-adjusted position replaces the requested optimistic position", () =
   const settled = settlePendingScheduleOperation(operation, { runId: "van-2", lane: "delivery", start: "10:15" });
   assert.deepEqual(settled.proposed, { runId: "van-2", lane: "delivery", start: "10:15" });
   assert.equal(settled.state, "confirmed-response");
+});
+
+test("successful native response remains identity-locked until stop and affected run versions converge", () => {
+  const operation = {
+    ...createPendingScheduleOperation("stop-1", { runId: "run-1", lane: "delivery", start: "09:00" }, { runId: "run-2", lane: "delivery", start: "10:00" }, "op-1", {
+      source: "stop",
+      stopVersionAtStart: 4,
+      runVersionsAtStart: { "run-1": 7, "run-2": 3 },
+    }),
+    state: "confirmed-response" as const,
+    serverStopVersion: 5,
+  };
+  assert.equal(confirmedResponseConverged(operation, { exists: true, stopVersion: 4, runVersions: { "run-1": 7, "run-2": 3 } }), false);
+  assert.equal(confirmedResponseConverged(operation, { exists: true, stopVersion: 5, runVersions: { "run-1": 8, "run-2": 3 } }), false, "both source and target run versions must advance");
+  assert.equal(confirmedResponseConverged(operation, { exists: true, stopVersion: 5, runVersions: { "run-1": 8, "run-2": 4 } }), true);
+  assert.equal(canStartPlacement("stop-1", { "stop-1": operation }), false);
+  assert.equal(canStartPlacement("stop-2", { "stop-1": operation }), true, "unrelated work remains interactive");
+});
+
+test("projected confirmed response unlocks only on a newer projection sequence", () => {
+  const operation = {
+    ...createPendingScheduleOperation("projection-stop:load-1", undefined, { runId: "run-1", lane: "delivery", start: "09:00" }, "op-1", { source: "projection", projectionSequenceAtStart: 12 }),
+    state: "confirmed-response" as const,
+  };
+  assert.equal(confirmedResponseConverged(operation, { exists: true, projectionSequence: 12 }), false);
+  assert.equal(confirmedResponseConverged(operation, { exists: true, projectionSequence: 13 }), true);
 });
 
 test("collection confirmation decodes collection timing and run rather than delivery timing", () => {
