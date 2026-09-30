@@ -37,7 +37,6 @@ import {
   effectivePlacement,
   groupAssignmentRoute,
   markUncertainPlacement,
-  placementRefreshOutcome,
   projectedCollectionScheduleCommand,
   queuePlacementConverged,
   reconcileUncertainPlacement,
@@ -310,13 +309,13 @@ export default function Planner() {
     void pending.then(() => { if (loadInFlight.current === pending) loadInFlight.current = undefined; }, () => { if (loadInFlight.current === pending) loadInFlight.current = undefined; });
     return pending;
   };
-  const loadFresh = async (silent = true): Promise<LoadResult> => {
+  const loadFresh = async (silent = true, mode: LoadMode = "explicit"): Promise<LoadResult> => {
     const current = loadInFlight.current;
     if (current) {
       await current;
       if (loadInFlight.current === current) loadInFlight.current = undefined;
     }
-    return load(silent);
+    return load(silent, true, mode);
   };
   const loadWeekAuthoritative = async (week = weekCommencing, mode: LoadMode = "explicit") => {
     if (requestsBlocked.current) return;
@@ -461,7 +460,6 @@ export default function Planner() {
     }
   }
   async function placementCommand(payload: object): Promise<PlacementOutcome> {
-    setBusy(true);
     try {
       const response = await fetch("/api/logistics", {
         method: "POST",
@@ -469,23 +467,16 @@ export default function Planner() {
         body: JSON.stringify(payload),
       });
       const body = await requireSuccessfulResponse(response, "Scheduling action failed.");
-      // Day convergence is the scheduling dependency. Week summaries are a
-      // separate, stale-tolerant concern and must not decide settlement.
-      try {
-        const refreshed = await loadFresh();
-        if (!refreshed.ok) return placementRefreshOutcome(body, false);
-      } catch {
-        return placementRefreshOutcome(body, false);
-      }
-      void loadWeek();
-      setAssigning(undefined);
-      return placementRefreshOutcome(body, true);
+      // The command response is the best-known truth. Settle the placement
+      // coordinator immediately, then refresh projections without blocking
+      // unrelated timeline interactions.
+      void loadFresh(true, "passive");
+      void loadWeek(weekCommencing, "passive");
+      return { ok: true, body };
     } catch (cause) {
       const details = clientErrorDetails(cause, "Scheduling action could not be confirmed.");
       if ([401, 403].includes(details.status)) recordError(cause, details.message);
       return { ok: false, uncertain: details.status === 0, message: details.message };
-    } finally {
-      setBusy(false);
     }
   }
   const allRuns = data?.planner.runs || [];
@@ -1191,6 +1182,7 @@ function RealPlanner(props: RealPlannerProps) {
         pendingSchedulesRef.current = nextPending; setPendingSchedules(nextPending);
         confirmedSchedulesRef.current = nextConfirmed; setConfirmedSchedules(nextConfirmed);
         setPlacementErrors((errors) => { const next = { ...errors }; delete next[identity]; return next; });
+        if (props.assigning === identity) props.setAssigning(undefined);
         return;
       }
       if (outcome.uncertain) {
@@ -1249,7 +1241,7 @@ function RealPlanner(props: RealPlannerProps) {
   };
   const submitMovementAssignment = (movement: PlannerMovementView, choice?: AssignmentChoice) => coordinateAssignment(movement.movementId, choice, () => Promise.resolve(props.assignMovement(movement, choice)));
   const coordinateQueuePlacement = (identity: string, targetRunId: string, lane: "delivery" | "collection", start: string, end: string | undefined, execute: () => Promise<PlacementOutcome>) => coordinatePlacement(identity, { runId: "planning-queue", lane, start }, { runId: targetRunId, lane, start, ...(end ? { end } : {}) }, execute);
-  const scheduleStop = (sourceRunId: string, stopId: string, targetRunId: string, time: string, end?: string, lane?: "delivery" | "collection") => {
+  const scheduleStop = (sourceRunId: string, stopId: string, targetRunId: string, time: string, end?: string, lane?: "delivery" | "collection", preserveStart = false) => {
     if (data?.projection && stopId.startsWith("projection-stop:")) {
       const loadIds = projectionLoadIdsForStop(stopId);
       if (!loadIds.length || !time) return;
@@ -1257,6 +1249,10 @@ function RealPlanner(props: RealPlannerProps) {
       const rawStop = data.stops.find((item) => item.canonicalId === stopId);
       const safeTime = placementAvailableTime(targetRunId, collection ? "collection" : "delivery", time, rawStop?.locationOplocId || "", stopId, end);
       if (!safeTime) return;
+      if (preserveStart && safeTime !== time) {
+        props.setError("This window end would overlap another stop. Shorten the window to keep its start fixed.");
+        return;
+      }
       const originalStop = runs.flatMap((run) => run.stops.map((item) => ({ run, item }))).find(({ item }) => item.stopId === stopId);
       const original: SchedulePosition = { runId: originalStop?.run.runId || sourceRunId, lane: collection ? "collection" : "delivery", start: originalStop?.item.plannedWindow?.startTime || originalStop?.item.plannedArrivalTime || safeTime, ...(originalStop?.item.plannedWindow?.endTime ? { end: originalStop.item.plannedWindow.endTime } : {}) };
       const proposed: SchedulePosition = { runId: targetRunId, lane: collection ? "collection" : "delivery", start: safeTime, ...(end ? { end: addClockMinutes(safeTime, Math.max(15, clockMinutes(end) - clockMinutes(time))) } : {}) };
@@ -1284,6 +1280,10 @@ function RealPlanner(props: RealPlannerProps) {
     }
     const safeTime = placementAvailableTime(targetRunId, effectiveLane, time, rawStop.locationOplocId, stopId, end);
     if (!safeTime) return;
+    if (preserveStart && safeTime !== time) {
+      props.setError("This window end would overlap another stop. Shorten the window to keep its start fixed.");
+      return;
+    }
     const timing = end ? { plannedWindow: { startTime: safeTime, endTime: addClockMinutes(safeTime, Math.max(15, clockMinutes(end) - clockMinutes(time))) } } : { plannedArrivalTime: safeTime };
     const original: SchedulePosition = confirmedPosition || { runId: effectiveSourceRunId, lane: effectiveLane, start: rawStop.plannedWindow?.startTime || rawStop.plannedArrivalTime || safeTime, ...(rawStop.plannedWindow?.endTime ? { end: rawStop.plannedWindow.endTime } : {}) };
     const proposed: SchedulePosition = { runId: targetRunId, lane: effectiveLane, start: safeTime, ...(end ? { end: addClockMinutes(safeTime, Math.max(15, clockMinutes(end) - clockMinutes(time))) } : {}) };

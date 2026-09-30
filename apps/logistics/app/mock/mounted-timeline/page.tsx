@@ -6,6 +6,7 @@ import type { PlannerDay } from "../../../lib/planner-read-model";
 import { createPendingScheduleOperation, type ConfirmedPlacement, type PendingScheduleOperation, type SchedulePosition } from "../../../lib/scheduling";
 
 type Mode = "success" | "delayed" | "reject" | "adjust";
+type RefreshMode = "immediate" | "delayed" | "failed";
 const date = "2026-09-30";
 const addQuarter = (start: string) => { const total = Number(start.slice(0, 2)) * 60 + Number(start.slice(3, 5)) + 15; return `${String(Math.floor(total / 60)).padStart(2, "0")}:${String(total % 60).padStart(2, "0")}`; };
 const mkStop = (stopId: string, destination: string, runId: string, lane: "delivery" | "collection", start?: string, end?: string, reqId?: string) => ({
@@ -41,6 +42,8 @@ export default function MountedTimelineFixturePage() {
   const [pending, setPending] = useState<Record<string, PendingScheduleOperation>>({});
   const [confirmed, setConfirmed] = useState<Record<string, ConfirmedPlacement>>({});
   const [mode, setMode] = useState<Mode>("delayed");
+  const [refreshMode, setRefreshMode] = useState<RefreshMode>("immediate");
+  const [refreshStatus, setRefreshStatus] = useState("Authoritative refresh idle.");
   const [count, setCount] = useState(0);
   const [message, setMessage] = useState("Safe mounted timeline fixture · no Logistics API requests.");
   const [selected, setSelected] = useState<string>();
@@ -64,8 +67,41 @@ export default function MountedTimelineFixturePage() {
         }) }));
         setQueueItems((current) => current.filter((item) => item.id !== identity));
       }
-    } else setConfirmed((current) => ({ ...current, [identity]: { kind: "scheduled", position: adjusted, operationId: operation.operationId, source: "stop" } }));
-    setMessage(value === "adjust" ? `Server adjusted placement to ${adjusted.start}${adjusted.end ? `–${adjusted.end}` : ""}.` : `Fixture placement saved at ${adjusted.start}${adjusted.end ? `–${adjusted.end}` : ""}.`);
+    } else {
+      setConfirmed((current) => ({ ...current, [identity]: { kind: "scheduled", position: adjusted, operationId: operation.operationId, source: "stop" } }));
+      const applyAuthoritativePosition = () => {
+        setPlanner((current) => {
+          let movedStop: (typeof current.runs)[number]["stops"][number] | undefined;
+          const sourceRunId = current.runs.find((run) => run.stops.some((stop) => stop.stopId === identity))?.runId;
+          const nextRuns = current.runs.map((run) => ({ ...run, stops: run.stops.filter((stop) => {
+            if (stop.stopId !== identity) return true;
+            movedStop = { ...stop, plannedArrivalTime: adjusted.end ? undefined : adjusted.start, plannedWindow: adjusted.end ? { startTime: adjusted.start, endTime: adjusted.end } : undefined };
+            return false;
+          }) }));
+          if (!movedStop) return current;
+          return { ...current, runs: nextRuns.map((run) => {
+            const wasSource = run.runId === sourceRunId;
+            const isTarget = run.runId === adjusted.runId;
+            if (!wasSource && !isTarget) return run;
+            const stops = isTarget ? [...run.stops, movedStop!] : run.stops;
+            const delta = wasSource && isTarget ? 0 : isTarget ? 1 : -1;
+            return { ...run, stops, stopCount: Math.max(0, run.stopCount + delta), scheduledStopCount: Math.max(0, run.scheduledStopCount + delta) };
+          }) };
+        });
+        setConfirmed((current) => { const next = { ...current }; delete next[identity]; return next; });
+      };
+      if (refreshMode === "immediate") {
+        applyAuthoritativePosition();
+        setRefreshStatus("Authoritative refresh complete.");
+      } else if (refreshMode === "delayed") {
+        setRefreshStatus("Authoritative refresh pending.");
+        window.setTimeout(() => { applyAuthoritativePosition(); setRefreshStatus("Authoritative refresh complete."); }, 1800);
+      } else {
+        setRefreshStatus("Authoritative refresh failed; saved placement remains visible.");
+      }
+    }
+    const saveMessage = value === "adjust" ? `Server adjusted placement to ${adjusted.start}${adjusted.end ? `–${adjusted.end}` : ""}.` : `Fixture placement saved at ${adjusted.start}${adjusted.end ? `–${adjusted.end}` : ""}.`;
+    setMessage(`${saveMessage}${operation.source !== "queue" && refreshMode === "delayed" ? " Authoritative refresh pending." : operation.source !== "queue" && refreshMode === "failed" ? " Refresh failed; saved placement retained." : ""}`);
   };
 
   const begin = (identity: string, source: "stop" | "queue", original: SchedulePosition | undefined, proposed: SchedulePosition) => {
@@ -74,7 +110,7 @@ export default function MountedTimelineFixturePage() {
     setCount((value) => value + 1);
     const chosenMode = mode;
     setMessage(`Saving placement · ${proposed.runId} · ${proposed.lane} · ${proposed.start}${proposed.end ? `–${proposed.end}` : ""}.`);
-    if (chosenMode === "delayed") window.setTimeout(() => complete(identity, operation, chosenMode), 1100);
+    if (chosenMode === "delayed") window.setTimeout(() => complete(identity, operation, chosenMode), 2200);
     else if (chosenMode === "reject") window.setTimeout(() => complete(identity, operation, chosenMode), 250);
     else complete(identity, operation, chosenMode);
   };
@@ -104,12 +140,15 @@ export default function MountedTimelineFixturePage() {
     <h1>Mounted React timeline fixture</h1>
     <p>Isolated fixture only. No API or staging writes.</p>
     <label>Command mode <select aria-label="Command mode" value={mode} onChange={(event) => setMode(event.target.value as Mode)}><option value="success">Immediate success</option><option value="delayed">Delayed success</option><option value="reject">Reject</option><option value="adjust">Server adjustment</option></select></label>
+    <label>Refresh mode <select aria-label="Refresh mode" value={refreshMode} onChange={(event) => setRefreshMode(event.target.value as RefreshMode)}><option value="immediate">Immediate refresh</option><option value="delayed">Delayed refresh</option><option value="failed">Failed refresh</option></select></label>
+    <p data-testid="fixture-refresh-status" role="status">{refreshStatus}</p>
     <p role="status" aria-live="polite" data-testid="fixture-message">{message} Commands: {count}</p>
     <div className="fixture-queue" data-logistics-planning-queue><h2>Fixture queue</h2>{queueCards.map((item) => <button key={item.id} className="mock-queue-main" data-timeline-queue-id={item.id} onClick={() => setSelected(item.id)}>{item.destination} · {item.lane}</button>)}</div>
     <MountedReactTimeline planner={planner} queueItems={queueCards} pendingSchedules={pending} confirmedSchedules={confirmed} onStop={(sourceRun, id) => { setSelected(id); setMessage(`Inspector opened for source run ${sourceRun}.`); const stop = planner.runs.flatMap((run) => run.stops).find((item) => item.stopId === id); if (stop?.plannedWindow?.endTime) setWindowEnd(stop.plannedWindow.endTime); }} onReturnToQueue={returnToQueue} onRun={() => setMessage("Run details selected.")} onSchedule={(sourceRunId, stopId, targetRunId, start, end, lane) => {
       const sourceStop = planner.runs.flatMap((run) => run.stops.map((stop) => ({ run, stop }))).find(({ stop }) => stop.stopId === stopId);
       if (!sourceStop) return;
-      const original: SchedulePosition = { runId: sourceRunId, lane: sourceStop.stop.lane, start: sourceStop.stop.plannedWindow?.startTime || sourceStop.stop.plannedArrivalTime || start, ...(sourceStop.stop.plannedWindow?.endTime ? { end: sourceStop.stop.plannedWindow.endTime } : {}) };
+      const existingConfirmed = confirmed[stopId]?.kind === "scheduled" ? confirmed[stopId].position : undefined;
+      const original: SchedulePosition = existingConfirmed || { runId: sourceRunId, lane: sourceStop.stop.lane, start: sourceStop.stop.plannedWindow?.startTime || sourceStop.stop.plannedArrivalTime || start, ...(sourceStop.stop.plannedWindow?.endTime ? { end: sourceStop.stop.plannedWindow.endTime } : {}) };
       begin(stopId, "stop", original, { runId: targetRunId, lane: lane || sourceStop.stop.lane, start, ...(end ? { end } : {}) });
     }} onQueueDrop={(kind, id, runId, start, lane) => {
       const item = queueCards.find((entry) => entry.id === id); if (!item) return;

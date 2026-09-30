@@ -2,15 +2,15 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import type { PlannerDay, PlannerMovementView, PlannerWorkGroup } from "../lib/planner-read-model";
-import { effectivePlacement, type ConfirmedPlacement, type PendingScheduleOperation, type SchedulePosition } from "../lib/scheduling";
-import { formatTimelineMinute, schedulableTimelineRuns, snapTimelineMinute, timelineQueueDuplicatesCanonical, timelineVisualSubrows } from "../lib/react-timeline-model";
+import { directResizeEnabled, effectivePlacement, type ConfirmedPlacement, type PendingScheduleOperation, type SchedulePosition } from "../lib/scheduling";
+import { formatTimelineMinute, schedulableTimelineRuns, snapTimelineEndMinute, snapTimelineMinute, timelineQueueDuplicatesCanonical, timelineVisualSubrows } from "../lib/react-timeline-model";
 import styles from "./mounted-react-timeline.module.css";
 
 type Lane = "delivery" | "collection";
 export type QueueCard = { id: string; kind: "group" | "movement"; destination: string; lane: Lane; loadCount: number; workIds: string[]; collectionRequired?: boolean; draggable: boolean };
 type Card = { id: string; destination: string; runId: string; lane: Lane; start: string; end?: string; loadCount: number; duration: number; attention: boolean; pending: boolean; queue: boolean; sourceRunId?: string };
-type DragOrigin = { card: Card; queueItem?: QueueCard; element: HTMLElement; pointerId: number; startX: number; startY: number; grabOffset: number; started: boolean; x: number; y: number; target?: DragTarget };
-type DragTarget = { kind: "lane"; runId: string; lane: Lane; minute: number; end?: string } | { kind: "queue" };
+type DragOrigin = { card: Card; queueItem?: QueueCard; element: HTMLElement; pointerId: number; startX: number; startY: number; grabOffset: number; mode: "move" | "resize"; endGrabOffset?: number; started: boolean; x: number; y: number; target?: DragTarget };
+type DragTarget = { kind: "lane"; runId: string; lane: Lane; minute: number; end?: string } | { kind: "resize"; runId: string; lane: Lane; start: string; endMinute: number } | { kind: "queue" };
 
 const minutes = (value: string) => { const [hour, minute] = value.split(":").map(Number); return hour * 60 + minute; };
 const laneName = (lane: Lane) => lane === "delivery" ? "Delivery" : "Collection";
@@ -85,7 +85,7 @@ export function MountedReactTimeline({ planner, queueItems, pendingSchedules, co
   pendingSchedules: Record<string, PendingScheduleOperation>;
   confirmedSchedules: Record<string, ConfirmedPlacement>;
   onStop: (runId: string, stopId: string) => void;
-  onSchedule: (sourceRunId: string, stopId: string, targetRunId: string, time: string, end?: string, lane?: Lane) => void;
+  onSchedule: (sourceRunId: string, stopId: string, targetRunId: string, time: string, end?: string, lane?: Lane, preserveStart?: boolean) => void;
   onQueueDrop: (kind: "group" | "movement", id: string, runId: string, time: string, lane: Lane, collectionRequired?: boolean) => void;
   onReturnToQueue: (sourceRunId: string, stopId: string) => void;
   onRun: (runId: string) => void;
@@ -143,6 +143,12 @@ export function MountedReactTimeline({ planner, queueItems, pendingSchedules, co
     const viewport = viewportRef.current;
     if (!viewport) return;
     const bounds = viewport.getBoundingClientRect();
+    if (drag.mode === "resize") {
+      const trackBounds = rowRefs.current.get(`${drag.card.runId}:${drag.card.lane}`)?.getBoundingClientRect();
+      if (!trackBounds || !drag.card.end) return;
+      const endMinute = snapTimelineEndMinute(x, trackBounds.left, pxPerMinute, minutes(drag.card.start), drag.endGrabOffset || 0);
+      return { kind: "resize", runId: drag.card.runId, lane: drag.card.lane, start: drag.card.start, endMinute };
+    }
     const queue = drag.card.sourceRunId ? document.querySelector<HTMLElement>("[data-logistics-planning-queue]") : null;
     const queueBounds = queue?.getBoundingClientRect();
     if (queueBounds && x >= queueBounds.left && x <= queueBounds.right && y >= queueBounds.top && y <= queueBounds.bottom) return { kind: "queue" };
@@ -185,6 +191,7 @@ export function MountedReactTimeline({ planner, queueItems, pendingSchedules, co
       if (target.kind === "queue" && latest.card.sourceRunId) onReturnToQueue(latest.card.sourceRunId, latest.card.id);
       else if (target.kind === "lane" && latest.queueItem) onQueueDrop(latest.queueItem.kind, latest.queueItem.id, target.runId, formatTimelineMinute(target.minute), target.lane, latest.queueItem.collectionRequired);
       else if (target.kind === "lane" && latest.card.sourceRunId) onSchedule(latest.card.sourceRunId, latest.card.id, target.runId, formatTimelineMinute(target.minute), target.end, target.lane);
+      else if (target.kind === "resize" && latest.card.sourceRunId) onSchedule(latest.card.sourceRunId, latest.card.id, target.runId, target.start, formatTimelineMinute(target.endMinute), target.lane, true);
     };
     const onCancel = (event: PointerEvent) => { if (activeRef.current?.pointerId === event.pointerId) { activeRef.current = null; suppressClick.current = false; setPreview(undefined); } };
     const onKey = (event: KeyboardEvent) => { if (event.key === "Escape" && activeRef.current) { event.preventDefault(); activeRef.current = null; suppressClick.current = false; setPreview(undefined); } };
@@ -197,7 +204,7 @@ export function MountedReactTimeline({ planner, queueItems, pendingSchedules, co
       if (!item?.draggable || pendingSchedules[item.id]) return;
       const rect = target.getBoundingClientRect();
       const card: Card = { id: item.id, destination: item.destination, runId: "", lane: item.lane, start: "00:00", loadCount: item.loadCount, duration: 15, attention: false, pending: false, queue: true };
-      const drag: DragOrigin = { card, queueItem: item, element: source, pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, grabOffset: 0, started: false, x: event.clientX, y: event.clientY };
+      const drag: DragOrigin = { card, queueItem: item, element: source, pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, grabOffset: 0, mode: "move", started: false, x: event.clientX, y: event.clientY };
       activeRef.current = drag;
       try { source.setPointerCapture(event.pointerId); } catch { /* window pointer handlers are fallback */ }
       void rect;
@@ -231,14 +238,27 @@ export function MountedReactTimeline({ planner, queueItems, pendingSchedules, co
   const beginCard = (event: ReactPointerEvent<HTMLButtonElement>, card: Card) => {
     if (card.pending || event.button !== 0) return;
     const rect = event.currentTarget.getBoundingClientRect();
-    activeRef.current = { card, element: event.currentTarget, pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, grabOffset: Math.max(0, Math.min(rect.width, event.clientX - rect.left)), started: false, x: event.clientX, y: event.clientY };
+    activeRef.current = { card, element: event.currentTarget, pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, grabOffset: Math.max(0, Math.min(rect.width, event.clientX - rect.left)), mode: "move", started: false, x: event.clientX, y: event.clientY };
+    try { event.currentTarget.setPointerCapture(event.pointerId); } catch { /* window pointer handlers are fallback */ }
+  };
+
+  const beginResize = (event: ReactPointerEvent<HTMLButtonElement>, card: Card, endMinute: number) => {
+    event.preventDefault();
+    event.stopPropagation();
+    if (card.pending || !card.end || event.button !== 0) return;
+    const track = rowRefs.current.get(`${card.runId}:${card.lane}`);
+    const trackBounds = track?.getBoundingClientRect();
+    if (!trackBounds) return;
+    const actualEndX = trackBounds.left + endMinute * pxPerMinute;
+    activeRef.current = { card, element: event.currentTarget, pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, grabOffset: 0, endGrabOffset: event.clientX - actualEndX, mode: "resize", started: false, x: event.clientX, y: event.clientY };
     try { event.currentTarget.setPointerCapture(event.pointerId); } catch { /* window pointer handlers are fallback */ }
   };
 
   const activeOrigin = preview?.origin;
   const laneTarget = preview?.target?.kind === "lane" ? preview.target : undefined;
-  const previewCard: Card | undefined = activeOrigin && laneTarget ? { ...activeOrigin.card, runId: laneTarget.runId, lane: laneTarget.lane, start: formatTimelineMinute(laneTarget.minute), ...(laneTarget.end ? { end: laneTarget.end } : {}) } : undefined;
-  const previewLeft = laneTarget ? laneTarget.minute * pxPerMinute : 0;
+  const resizeTarget = preview?.target?.kind === "resize" ? preview.target : undefined;
+  const previewCard: Card | undefined = activeOrigin && laneTarget ? { ...activeOrigin.card, runId: laneTarget.runId, lane: laneTarget.lane, start: formatTimelineMinute(laneTarget.minute), ...(laneTarget.end ? { end: laneTarget.end } : {}) } : activeOrigin && resizeTarget ? { ...activeOrigin.card, end: formatTimelineMinute(resizeTarget.endMinute), duration: resizeTarget.endMinute - minutes(resizeTarget.start) } : undefined;
+  const previewLeft = laneTarget ? laneTarget.minute * pxPerMinute : resizeTarget ? minutes(resizeTarget.start) * pxPerMinute : 0;
   const fitTimeline = () => {
     const viewport = viewportRef.current;
     const labelWidth = viewport?.querySelector<HTMLElement>(`.${styles.rowLabel}`)?.getBoundingClientRect().width;
@@ -255,7 +275,7 @@ export function MountedReactTimeline({ planner, queueItems, pendingSchedules, co
           <div className={styles.axis} aria-hidden="true">{hourTicks.map((minute) => <span key={minute} style={{ left: `${minute * pxPerMinute}px` }}>{minute === 1440 ? "24:00" : formatTimelineMinute(minute)}</span>)}</div>
           {rows.map(({ run, lane, items, subrows, height }) => {
             const key = `${run.runId}:${lane}`;
-            const highlighted = laneTarget?.runId === run.runId && laneTarget.lane === lane;
+            const highlighted = (laneTarget?.runId === run.runId && laneTarget.lane === lane) || (resizeTarget?.runId === run.runId && resizeTarget.lane === lane);
             const name = run.vehicle || run.driver || "Unassigned vehicle";
             return <div className={styles.row} key={key}>
               <div className={styles.rowLabel}><strong>{name}</strong><span>{run.driver && run.vehicle ? run.driver : `Run ${schedulableRuns.indexOf(run) + 1}`} · {laneName(lane)}</span><button type="button" onClick={() => onRun(run.runId)}>Run details</button></div>
@@ -264,15 +284,27 @@ export function MountedReactTimeline({ planner, queueItems, pendingSchedules, co
                   const row = subrows.get(card.id) || 0;
                   const left = minutes(card.start) * pxPerMinute;
                   const width = Math.max(CARD_MIN_WIDTH, (card.end ? card.duration * pxPerMinute : CARD_MIN_WIDTH));
-                  const isOrigin = activeOrigin?.card.id === card.id && activeOrigin.started;
+                  const isOrigin = activeOrigin?.card.id === card.id && activeOrigin.started && activeOrigin.mode === "move";
                   if (isOrigin) return <span key={card.id} aria-hidden="true" className={styles.origin} style={{ left, top: `${8 + row * 62}px`, width }} />;
                   const label = `Move ${card.destination}, ${name}, ${laneName(lane)}, ${card.start}${card.end ? ` to ${card.end} window end` : ""}, ${card.loadCount} loads`;
-                  return <button type="button" key={card.id} className={`${styles.card} ${lane === "collection" ? styles.collection : ""} ${card.attention ? styles.attention : ""} ${card.pending ? styles.pending : ""}`} data-testid={card.queue ? `pending-queue-${card.id.slice("queue:".length)}` : `stop-${card.id}`} aria-label={label} aria-busy={card.pending} disabled={card.pending} style={{ left, top: `${8 + row * 62}px`, width }} onPointerDown={(event) => beginCard(event, card)} onClick={() => card.sourceRunId && onStop(card.sourceRunId, card.id)}>
-                    <time>{card.start}{card.end ? `–${card.end}` : ""}</time><strong>{card.destination}</strong><small>{card.loadCount} {card.loadCount === 1 ? "load" : "loads"}{card.pending ? " · Saving" : ""}</small>
-                  </button>;
+                  const startMinute = minutes(card.start);
+                  const endMinute = card.end ? minutes(card.end) : undefined;
+                  const resizable = Boolean(card.sourceRunId && card.end && endMinute !== undefined && endMinute - startMinute >= 15 && endMinute <= 1425 && startMinute < 1425 && directResizeEnabled(Boolean(card.end)));
+                  return <div className={styles.cardSlot} key={card.id} style={{ left, top: `${8 + row * 62}px`, width }}>
+                    <button type="button" className={`${styles.card} ${lane === "collection" ? styles.collection : ""} ${card.attention ? styles.attention : ""} ${card.pending ? styles.pending : ""}`} data-testid={card.queue ? `pending-queue-${card.id.slice("queue:".length)}` : `stop-${card.id}`} aria-label={label} aria-busy={card.pending} disabled={card.pending} onPointerDown={(event) => beginCard(event, card)} onClick={() => card.sourceRunId && onStop(card.sourceRunId, card.id)}>
+                      <time>{card.start}{card.end ? `–${card.end}` : ""}</time><strong>{card.destination}</strong><small>{card.loadCount} {card.loadCount === 1 ? "load" : "loads"}{card.pending ? " · Saving…" : ""}</small>
+                    </button>
+                    {resizable && endMinute !== undefined && <button type="button" role="slider" className={styles.resizeHandle} data-testid={`resize-${card.id}`} aria-label={`Resize ${card.destination} window end`} aria-valuemin={startMinute + 15} aria-valuemax={1425} aria-valuenow={endMinute} aria-valuetext={`${card.start} start, ${card.end} end, ${endMinute - startMinute} minutes`} disabled={card.pending} style={{ left: `${(endMinute - startMinute) * pxPerMinute}px`, top: "50%" }} onPointerDown={(event) => beginResize(event, card, endMinute)} onKeyDown={(event) => {
+                      if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+                      event.preventDefault();
+                      const nextEnd = Math.max(startMinute + 15, Math.min(1425, endMinute + (event.key === "ArrowRight" ? 15 : -15)));
+                      if (card.sourceRunId && nextEnd !== endMinute) onSchedule(card.sourceRunId, card.id, card.runId, card.start, formatTimelineMinute(nextEnd), card.lane, true);
+                    }} />}
+                  </div>;
                 })}
                 {previewCard?.runId === run.runId && previewCard.lane === lane && <div className={styles.ghost} data-testid="mounted-drag-ghost" aria-hidden="true" style={{ left: previewLeft, top: 8, width: Math.max(CARD_MIN_WIDTH, previewCard.duration * pxPerMinute) }}><time>{previewCard.start}{previewCard.end ? `–${previewCard.end}` : ""}</time><strong>{previewCard.destination}</strong><small>{previewCard.loadCount} {previewCard.loadCount === 1 ? "load" : "loads"}</small></div>}
                 {highlighted && laneTarget && <><span className={styles.snapLine} style={{ left: previewLeft }} aria-hidden="true" /><span className={styles.timePill} style={{ left: previewLeft }} aria-hidden="true">{formatTimelineMinute(laneTarget.minute)}</span></>}
+                {highlighted && resizeTarget && <><span className={styles.snapLine} data-testid="mounted-resize-marker" style={{ left: resizeTarget.endMinute * pxPerMinute }} aria-hidden="true" /><span className={styles.timePill} data-testid="mounted-resize-time" style={{ left: resizeTarget.endMinute * pxPerMinute }} aria-live="polite">{resizeTarget.start} → {formatTimelineMinute(resizeTarget.endMinute)} · {resizeTarget.endMinute - minutes(resizeTarget.start)} min</span></>}
               </div>
             </div>;
           })}

@@ -13,6 +13,13 @@ export function snapTimelineMinute(clientX: number, trackLeft: number, scrollLef
   return Math.max(0, Math.min(latestStart, requested));
 }
 
+export function snapTimelineEndMinute(clientX: number, trackLeft: number, pixelsPerMinute: number, startMinute: number, grabOffset = 0): number {
+  const latestEnd = Math.floor((TIMELINE_DAY_MINUTES - TIMELINE_SLOT_MINUTES) / TIMELINE_SLOT_MINUTES) * TIMELINE_SLOT_MINUTES;
+  const earliestEnd = startMinute + TIMELINE_SLOT_MINUTES;
+  const requested = Math.round(((clientX - trackLeft - grabOffset) / pixelsPerMinute) / TIMELINE_SLOT_MINUTES) * TIMELINE_SLOT_MINUTES;
+  return Math.max(earliestEnd, Math.min(latestEnd, requested));
+}
+
 export function schedulableTimelineRuns<T extends { runId: string }>(runs: T[]): T[] {
   return runs.filter((run) => !run.runId.startsWith("projection-run:") && run.runId.length > 0);
 }

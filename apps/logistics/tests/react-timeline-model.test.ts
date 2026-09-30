@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { formatTimelineMinute, schedulableTimelineRuns, snapTimelineMinute, timelineQueueDuplicatesCanonical, timelineVisualSubrows } from "../lib/react-timeline-model";
+import { formatTimelineMinute, schedulableTimelineRuns, snapTimelineEndMinute, snapTimelineMinute, timelineQueueDuplicatesCanonical, timelineVisualSubrows } from "../lib/react-timeline-model";
 
 test("pointer coordinate, scroll, grab offset and zoom resolve one exact quarter-hour anchor", () => {
   const minute = snapTimelineMinute(2200, 250, 900, 30, 2);
@@ -14,6 +14,12 @@ test("day horizon clamps to a safe final 15-minute start", () => {
   assert.equal(formatTimelineMinute(snapTimelineMinute(50000, 0, 0, 0, 2, 30)), "23:15");
   assert.equal(formatTimelineMinute(snapTimelineMinute(50000, 0, 0, 0, 2, 60)), "22:45");
   assert.equal(formatTimelineMinute(snapTimelineMinute(50000, 0, 0, 0, 2, 60) + 60), "23:45");
+});
+
+test("explicit-window resize end snaps by 15 minutes, keeps a 15-minute minimum, and clamps at 23:45", () => {
+  assert.equal(formatTimelineMinute(snapTimelineEndMinute(100 + 702 * 2, 100, 2, 600)), "11:45");
+  assert.equal(formatTimelineMinute(snapTimelineEndMinute(100 + 601 * 2, 100, 2, 600)), "10:15");
+  assert.equal(formatTimelineMinute(snapTimelineEndMinute(50000, 100, 2, 600)), "23:45");
 });
 
 test("overlapping readable card rectangles use visual subrows without changing canonical starts", () => {

@@ -17,9 +17,14 @@
 .rowLabel button { padding: 0; border: 0; background: transparent; color: var(--accent); font: inherit; font-size: 10px; font-weight: 700; cursor: pointer; }
 .track { position: relative; min-width: var(--timeline-content-width); background-image: repeating-linear-gradient(90deg, transparent 0, transparent calc(var(--timeline-quarter-hour) - 1px), #f1eef7 calc(var(--timeline-quarter-hour) - 1px), #f1eef7 var(--timeline-quarter-hour)), repeating-linear-gradient(90deg, transparent 0, transparent calc(var(--timeline-hour) - 1px), #e8e3f2 calc(var(--timeline-hour) - 1px), #e8e3f2 var(--timeline-hour)); background-position: 0 0; }
 .activeTrack { background-color: #f8f6ff; }
-.card, .ghost, .origin { position: absolute; box-sizing: border-box; min-height: 56px; height: 56px; padding: 6px 8px; overflow: hidden; border: 1px solid var(--fika-border-default, #bce8d4); border-left: 3px solid var(--fika-status-success, #58a879); border-radius: 7px; background: var(--fika-surface-card, #fff); box-shadow: 0 2px 5px rgb(40 15 140 / 8%); text-align: left; }
-.card { display: flex; flex-direction: column; gap: 2px; color: var(--ink); font: inherit; cursor: grab; touch-action: pan-y; user-select: none; }
+.cardSlot { position: absolute; height: 56px; }
+.card, .ghost, .origin { position: absolute; inset: 0; box-sizing: border-box; min-height: 56px; height: 56px; padding: 6px 8px; overflow: hidden; border: 1px solid var(--fika-border-default, #bce8d4); border-left: 3px solid var(--fika-status-success, #58a879); border-radius: 7px; background: var(--fika-surface-card, #fff); box-shadow: 0 2px 5px rgb(40 15 140 / 8%); text-align: left; }
+.card { display: flex; width: 100%; flex-direction: column; gap: 2px; color: var(--ink); font: inherit; cursor: grab; touch-action: pan-y; user-select: none; }
 .card:active { cursor: grabbing; }
+.resizeHandle { position: absolute; z-index: 2; display: grid; width: 22px; height: 32px; place-items: center; transform: translate(-50%, -50%); padding: 0; border: 1px solid var(--fika-border-default, #ded9ed); border-radius: 5px; background: var(--fika-surface-card, #fff); color: var(--fika-action-primary, #4f34c7); cursor: ew-resize; touch-action: none; }
+.resizeHandle::before { width: 3px; height: 18px; border-right: 1px solid currentColor; border-left: 1px solid currentColor; content: ""; }
+.resizeHandle:focus-visible { outline: 3px solid var(--fika-focus-ring, #7459ea); outline-offset: 2px; }
+.resizeHandle:disabled { cursor: progress; }
 .card time, .ghost time { color: var(--muted); font-size: 11px; font-weight: 800; }
 .card strong, .ghost strong { overflow: hidden; font-size: 12px; line-height: 1.2; text-overflow: ellipsis; white-space: nowrap; }
 .card small, .ghost small { color: var(--muted); font-size: 10px; font-weight: 750; }
