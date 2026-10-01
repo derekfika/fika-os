@@ -95,6 +95,7 @@ export type PlannerStopView = {
 };
 export type LiveRunStatus = "planned" | "dispatched" | "in_progress" | "returning_to_cpu" | "returned" | "complete" | "attention";
 export type PlannerRunView = {
+  vehicleId?: DeliveryRun["vehicleId"];
   runId: string;
   serviceDate: string;
   driverId?: string;
@@ -651,6 +652,7 @@ export function buildPlannerDay(input: {
         runId: run.canonicalId,
         serviceDate: run.serviceDate,
         driverId: run.driverId,
+        vehicleId: run.vehicleId,
         driver: run.driverLabel,
         vehicle: run.vehicleLabel,
         status: run.status,

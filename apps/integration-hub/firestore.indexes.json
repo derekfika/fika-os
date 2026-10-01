@@ -1,5 +1,6 @@
 {
   "indexes": [
+    { "collectionGroup": "authmodAuthorityGrants", "queryScope": "COLLECTION", "fields": [{ "fieldPath": "resource", "order": "ASCENDING" }, { "fieldPath": "status", "order": "ASCENDING" }] },
     { "collectionGroup": "integrationHubCanonical", "queryScope": "COLLECTION", "fields": [{ "fieldPath": "entityType", "order": "ASCENDING" }, { "fieldPath": "lifecycleStatus", "order": "ASCENDING" }] },
     { "collectionGroup": "authmodIdentities", "queryScope": "COLLECTION", "fields": [{ "fieldPath": "externalProvider", "order": "ASCENDING" }, { "fieldPath": "externalUid", "order": "ASCENDING" }] },
     { "collectionGroup": "authmodAuthorityGrants", "queryScope": "COLLECTION", "fields": [{ "fieldPath": "subjectId", "order": "ASCENDING" }, { "fieldPath": "subjectType", "order": "ASCENDING" }] },

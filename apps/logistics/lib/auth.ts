@@ -11,6 +11,7 @@ export type LogisticsPrincipal = {
   representedOplocId?: string;
   primaryCustodianLegendId?: string;
   permittedVehicleIds?: string[];
+  maintenanceAuthorities?: string[];
 };
 export type FikaSessionPrincipal = Omit<LogisticsPrincipal, "type" | "id"> & { firebaseUid: string; authmodIdentityId: string };
 
@@ -20,9 +21,10 @@ export const localLogisticsPrincipal: LogisticsPrincipal = {
   displayName: "Logistics operator (local)",
   email: "logistics@local.fika",
   identityKind: "person",
+  permittedVehicleIds: ["van1", "van2"], // Explicit development-only principal.
 };
-export function logisticsCacheScope(principal: { id: string; identityKind?: string; representedOplocId?: string; primaryCustodianLegendId?: string }) {
-  return `logistics:v1:${principal.id}:${principal.identityKind || "unknown"}:${principal.representedOplocId || "organisation"}:${principal.primaryCustodianLegendId || "none"}`;
+export function logisticsCacheScope(principal: { id: string; identityKind?: string; representedOplocId?: string; primaryCustodianLegendId?: string; permittedVehicleIds?: string[] }) {
+  return `logistics:v2:${principal.id}:${principal.identityKind || "unknown"}:${principal.representedOplocId || "organisation"}:${principal.primaryCustodianLegendId || "none"}:${[...(principal.permittedVehicleIds || [])].sort().join(",")}`;
 }
 
 type LogisticsRequest = { cookies: { get(name: string): { value?: string } | undefined }; headers?: { get(name: string): string | null }; nextUrl?: { searchParams: { get(name: string): string | null } } };
@@ -45,6 +47,7 @@ export async function requireLogisticsAccess(request: LogisticsRequest, dependen
       ...(session.representedOplocId ? { representedOplocId: session.representedOplocId } : {}),
       ...(session.primaryCustodianLegendId ? { primaryCustodianLegendId: session.primaryCustodianLegendId } : {}),
       ...(session.permittedVehicleIds ? { permittedVehicleIds: session.permittedVehicleIds } : {}),
+      ...(session.maintenanceAuthorities ? { maintenanceAuthorities: session.maintenanceAuthorities } : {}),
     };
     await (dependencies.accessChecker || (async () => undefined))(principal);
     const requestedVehicle = request.nextUrl?.searchParams.get("vehicle");

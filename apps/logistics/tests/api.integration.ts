@@ -66,6 +66,8 @@ const run = (id: string, version = 1): DeliveryRun => ({
   canonicalId: id,
   serviceDate,
   status: "draft",
+  vehicleId: "van1",
+  driverId: "identity:integration-franco",
   driverLabel: "Franco",
   orderedStopIds: [],
   version,
@@ -138,6 +140,12 @@ let failFulfilment = false;
 const originalFetch = globalThis.fetch;
 globalThis.fetch = (async (input: RequestInfo | URL) => {
   const url = String(input);
+  if (url.includes("/api/logistics/access")) return Response.json({ principal: { authmodIdentityId: "identity:integration-operator", displayName: "Integration operator", identityKind: "person", permittedVehicleIds: ["van1", "van2"], maintenanceAuthorities: ["logistics.repair", "logistics.reconcile", "logistics.reset"] } });
+  if (url.includes("/api/logistics/drivers")) {
+    const requested = new URL(url).searchParams.get("driverId");
+    const drivers = ["identity:integration-franco", "franco", "dee"].map(driverId => ({ driverId, displayName: driverId === "dee" ? "Dee" : "Franco", permittedDriverVehicleIds: ["van1", "van2"] }));
+    return Response.json({ drivers: requested ? drivers.filter(driver => driver.driverId === requested) : drivers });
+  }
   if (url.includes("/api/fulfilment-requirements"))
     return failFulfilment
       ? new Response(JSON.stringify({ error: "upstream unavailable" }), {

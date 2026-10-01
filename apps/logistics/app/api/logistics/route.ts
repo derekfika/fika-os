@@ -2,7 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { errorResponse } from "@/lib/api";
 import { assertSameOrigin } from "@/lib/csrf";
 import { db } from "@/lib/firebase";
-import { logisticsCacheScope, requireLogisticsAccess } from "@/lib/auth";
+import { logisticsCacheScope, requireLogisticsAccess, type LogisticsPrincipal } from "@/lib/auth";
+import { authorizeCommand, authorizeLoad, authorizeRun, assertMaintenanceAccess, scopeProjection, vehicleScope } from "@/lib/resource-authority";
+import { authorizeTransaction } from "@/lib/authorized-transaction";
+import { isLogisticsVehicleId, logisticsVehicleLabel } from "../../../../shared/logistics-authority";
 import { hostedRuntime } from "@/lib/runtime";
 import {
   fetchOplocs,
@@ -32,6 +35,7 @@ import {
   appendLogisticsChange,
   getLogisticsProjection,
   listLogisticsProjectionSummaries,
+  summarizeLogisticsProjection,
   listPlanningAttention,
   getLogisticsSyncHead,
   logisticsChangeCursor,
@@ -42,7 +46,6 @@ import {
 } from "@/lib/store";
 import { assignJob, assertDispatchable, createLoad, removeAssignment, setJobCollectionStatus } from "@/lib/delivery-loads";
 import { CPU_PRODUCTION_LOCATION_ID, CPU_SITE_OPLOC_ID } from "../../../../shared/production-location";
-import { filterLogisticsProjectionForVehicle } from "@/lib/logistics-projection";
 import { rebuildLogisticsProjection as materialiseRebuildLogisticsProjection, reconcileLogisticsDay as materialiseLogisticsDay } from "@/lib/logistics-materialisation";
 import { projectionToDashboardData } from "@/lib/projection-dashboard-adapter";
 import {
@@ -73,8 +76,11 @@ class HttpError extends Error {
 const messageOf = (error: unknown) =>
   error instanceof Error ? error.message : "Unknown upstream error.";
 
-async function runTracedTransaction<T>(
+async function runAuthorizedTracedTransaction<T>(
   callback: (transaction: Transaction) => Promise<T>,
+  principal: LogisticsPrincipal,
+  cookie?: string,
+  revalidateDrivers = false,
 ): Promise<T> {
   return db.runTransaction(async (transaction) => {
     const originalGet = transaction.get.bind(transaction) as (reference: any) => Promise<any>;
@@ -95,7 +101,7 @@ async function runTracedTransaction<T>(
       });
       return snapshot;
     };
-    return callback(transaction);
+    return authorizeTransaction(transaction, principal, callback, cookie, revalidateDrivers);
   });
 }
 function labelFor(oplocs: Awaited<ReturnType<typeof fetchOplocs>>, id: string) {
@@ -308,11 +314,27 @@ async function assertProjectionCurrent(serviceDate: string, transaction?: Transa
   return projection;
 }
 
-async function getLogistics(request: NextRequest) {
+async function scopeCanonicalProjection(projection: LogisticsDayProjection, principal: LogisticsPrincipal, vehicle?: string | null) {
+  const effective = { ...principal, permittedVehicleIds: vehicleScope(principal, vehicle) };
+  const canonicalRuns = new Map((await Promise.all(projection.runs.map(run => getRun(run.canonicalId)))).filter((run): run is DeliveryRun => Boolean(run)).map(run => [run.canonicalId, run]));
+  const runs = projection.runs.filter(run => canonicalRuns.get(run.canonicalId)?.vehicleId === run.vehicleId);
+  const deliveryLoads = [];
+  for (const load of projection.deliveryLoads) {
+    const canonical = await Promise.all((load.loadIds || [load.id]).map(id => getDeliveryLoad(id)));
+    let visible = canonical.every(item => Boolean(item));
+    for (const item of canonical) if (item) {
+      try { await authorizeLoad(effective, item, async id => canonicalRuns.get(id) || await getRun(id)); }
+      catch (error) { if (![403, 409].includes((error as { status?: number }).status || 0)) throw error; visible = false; }
+    }
+    if (visible) deliveryLoads.push(load);
+  }
+  return scopeProjection({ ...projection, runs, deliveryLoads }, principal, vehicle);
+}
+
+async function getLogistics(request: NextRequest, principal: LogisticsPrincipal) {
   const requestedRunId = request.nextUrl.searchParams.get("runId") || undefined;
   const vehicleContext = request.nextUrl.searchParams.get("vehicle") || undefined;
   if (vehicleContext && vehicleContext !== "van1" && vehicleContext !== "van2") throw new HttpError(400, "Invalid Logistics vehicle context.");
-  const requestedVehicle = vehicleContext === "van1" ? "Van 1" : vehicleContext === "van2" ? "Van 2" : undefined;
   const requestedDate =
     request.nextUrl.searchParams.get("serviceDate") || undefined;
   const requestedWeek =
@@ -336,7 +358,7 @@ async function getLogistics(request: NextRequest) {
     // mobile loads cannot create Firestore writes.
     const syncHead = await getLogisticsSyncHead(serviceDate);
     const projectionState = projection && projection.lastChangeSequence < syncHead.sequence ? "STALE" as const : projection?.state || "CURRENT" as const;
-    if (projection) projection = { ...filterLogisticsProjectionForVehicle(projection, requestedVehicle), state: projectionState };
+    if (projection) projection = { ...await scopeCanonicalProjection(projection, principal, vehicleContext), state: projectionState };
     if (!projection) {
       let state: "EMPTY" | "NOT_MATERIALIZED";
       try {
@@ -453,9 +475,12 @@ async function getLogistics(request: NextRequest) {
     fetchOplocs(cookie).then((value) => ({ status: "fulfilled" as const, value })).catch((reason) => ({ status: "rejected" as const, reason })),
   ]);
   const loadState = await listDeliveryLoadState(date);
-  const scopedState = requestedVehicle ? { ...state, runs: state.runs.filter((run) => run.vehicleLabel === requestedVehicle), stops: state.stops.filter((stop) => state.runs.filter((run) => run.vehicleLabel === requestedVehicle).some((run) => run.canonicalId === stop.runId)) } : state;
+  const permitted = vehicleScope(principal, vehicleContext);
+  const scopedRuns = state.runs.filter(run => isLogisticsVehicleId(run.vehicleId) && permitted.includes(run.vehicleId));
+  const scopedState = { ...state, runs: scopedRuns, stops: state.stops.filter(stop => scopedRuns.some(run => run.canonicalId === stop.runId)) };
   const scopedRunIds = new Set(scopedState.runs.map((run) => run.canonicalId));
-  const scopedLoadState = requestedVehicle ? { ...loadState, loads: loadState.loads.filter((load) => scopedRunIds.has(load.runId || "") || scopedRunIds.has(load.collectionRunId || "")), assignments: loadState.assignments.filter((assignment) => loadState.loads.some((load) => (load.runId === assignment.loadId || load.collectionRunId === assignment.loadId) && scopedRunIds.has(load.runId || load.collectionRunId || ""))) } : loadState;
+  const visibleLoads = loadState.loads.filter(load => (!load.runId || scopedRunIds.has(load.runId)) && (!load.collectionRunId || scopedRunIds.has(load.collectionRunId)) && (load.vehicleId === undefined || isLogisticsVehicleId(load.vehicleId) && permitted.includes(load.vehicleId)) && (!load.vehicleId || !load.runId || scopedRuns.find(run => run.canonicalId === load.runId)?.vehicleId === load.vehicleId));
+  const scopedLoadState = { ...loadState, loads: visibleLoads, assignments: loadState.assignments.filter(assignment => visibleLoads.some(load => load.id === assignment.loadId)) };
   // Keep the upstream reads independently tolerant: one unavailable source
   // should not prevent the local Logistics snapshot from rendering.
   const needsProductionEnrichment =
@@ -470,7 +495,8 @@ async function getLogistics(request: NextRequest) {
   const production =
     productionResult.status === "fulfilled" ? productionResult.value : [];
   const requirements = activeLogisticsRequirements(upstreamRequirements);
-  const projection = await getLogisticsProjection(date);
+  const rawProjection = await getLogisticsProjection(date);
+  const projection = rawProjection ? await scopeCanonicalProjection(rawProjection, principal, vehicleContext) : undefined;
   const health = {
     fulfilment:
       requirementsResult.status === "fulfilled"
@@ -512,6 +538,7 @@ async function handlePost(request: NextRequest) {
   let diagnostic: { operation?: string; serviceDate?: string; projectionSequence?: number; entityId?: string } = {};
   try {
     const principal = await requireLogisticsAccess(request);
+    const runTracedTransaction = <T,>(callback: (transaction: Transaction) => Promise<T>) => runAuthorizedTracedTransaction(callback, principal, request.headers.get("cookie") || undefined, ["set-run-driver", "update-run"].includes(body.action));
     if (hostedRuntime()) assertSameOrigin(request);
     const body = (await request.json()) as {
       action: string;
@@ -528,6 +555,7 @@ async function handlePost(request: NextRequest) {
       stopIds?: string[];
       stopId?: string;
       targetRunId?: string;
+      collectionRunId?: string;
       requirementIds?: string[];
       expectedSourceVersions?: Record<string, number>;
       expectedStopVersion?: number;
@@ -538,6 +566,7 @@ async function handlePost(request: NextRequest) {
       groupKey?: string;
       collectionRequired?: boolean;
       vehicleSlot?: "van-1" | "van-2";
+      vehicleId?: "van1" | "van2";
       driverId?: string;
       driverLabel?: string;
       serviceDate?: string;
@@ -561,9 +590,38 @@ async function handlePost(request: NextRequest) {
       projectionSequence: body.expectedRunVersion ?? body.expectedStopVersion ?? body.expectedSourceVersion,
       entityId: body.runId || body.stopId || body.movementId || body.jobId || body.loadId || body.run?.canonicalId || body.movement?.canonicalId,
     };
+    await authorizeCommand(principal, body, {
+      run: getRun,
+      stop: async id => { const snapshot = await stops().doc(id).get(); return snapshot.exists ? normalizeStop(snapshot.data()!) : undefined; },
+      load: getDeliveryLoad,
+      jobLoads: async id => {
+        const assignments = await logisticsAssignments().where("jobId", "==", id).get();
+        const loads = await Promise.all(assignments.docs.map(doc => getDeliveryLoad(doc.data().loadId)));
+        if (loads.some(load => !load)) throw new HttpError(409, "Canonical load ownership is unavailable.");
+        return loads.filter((load): load is NonNullable<typeof load> => Boolean(load));
+      },
+    });
     const actorId = principal.id;
     const by = principal.displayName;
     const now = new Date().toISOString();
+    if (body.action === "repair-run-vehicle-identity") {
+      if (!body.runId || !isLogisticsVehicleId(body.vehicleId) || body.expectedRunVersion === undefined) throw new HttpError(422, "An explicitly reviewed run ID, stable vehicle ID and current version are required.");
+      // Dedicated organisation repair authority was checked above. No label-to-ID
+      // inference; this reviewed, CAS-protected mapping is never run on page load.
+      const saved = await db.runTransaction(async transaction => {
+        const ref = runs().doc(body.runId!);
+        const snapshot = await transaction.get(ref);
+        if (!snapshot.exists) throw new HttpError(404, "Logistics resource not found.");
+        const current = snapshot.data() as DeliveryRun;
+        if (current.version !== body.expectedRunVersion || current.vehicleId && current.vehicleId !== body.vehicleId) throw new HttpError(409, "Vehicle identity mapping needs review.");
+        if (current.vehicleId === body.vehicleId) return current;
+        const next = { ...current, vehicleId: body.vehicleId, vehicleLabel: logisticsVehicleLabel(body.vehicleId!), version: current.version + 1, updatedAt: now, audit: [...current.audit, { action: "reviewed-vehicle-identity-mapped", at: now, by, version: current.version + 1 }] };
+        transaction.set(ref, next);
+        return next;
+      });
+      await recordCanonicalLogisticsChange({ serviceDate: saved.serviceDate, entityType: "run", entityId: saved.canonicalId, changeType: "reviewed-vehicle-identity-mapped", revision: saved.version, actorId, by, changedAt: now });
+      return NextResponse.json(saved);
+    }
     // The mobile view can receive projection-backed stops from the same
     // logistics timeline as desktop. Resolve those display IDs to their
     // canonical delivery load instead of sending them through the legacy
@@ -779,25 +837,31 @@ async function handlePost(request: NextRequest) {
       const serviceDate = body.serviceDate || operationalDate();
       if (!validOperationalDate(serviceDate)) throw new HttpError(422, "A valid service date is required.");
       const existing = (await listState(serviceDate)).runs;
-      const slots = [{ slot: "van-1" }, { slot: "van-2" }] as const;
+      if (existing.some(run => !isLogisticsVehicleId(run.vehicleId))) throw Object.assign(new HttpError(409, "Existing runs require reviewed vehicle identity mapping."), { code: "LOGISTICS_VEHICLE_IDENTITY_REQUIRED" });
+      const slots = ([{ slot: "van-1", vehicleId: "van1" }, { slot: "van-2", vehicleId: "van2" }] as const).filter(item => vehicleScope(principal).includes(item.vehicleId));
       const result: DeliveryRun[] = [];
-      const missing: Array<{ slot: "van-1" | "van-2"; vehicleLabel: string }> = [];
+      const missing: Array<{ slot: "van-1" | "van-2"; vehicleLabel: string; vehicleId: "van1" | "van2" }> = [];
       for (const item of slots) {
         const vehicleLabel = item.slot === "van-1" ? "Van 1" : "Van 2";
-        const current = existing.find((run) => run.vehicleLabel === vehicleLabel);
+        const current = existing.find((run) => run.vehicleId === item.vehicleId);
         if (current) {
           result.push(current);
           continue;
         }
-        missing.push({ slot: item.slot, vehicleLabel });
+        missing.push({ slot: item.slot, vehicleLabel, vehicleId: item.vehicleId });
       }
       const created = missing.length ? await runTracedTransaction(async (transaction) => {
         const refs = missing.map((item) => runs().doc(`run:${serviceDate}:${item.slot}`));
         const snapshots = await Promise.all(refs.map((ref) => transaction.get(ref)));
         return missing.map((item, index) => {
-          if (snapshots[index].exists) return snapshots[index].data() as DeliveryRun;
+          if (snapshots[index].exists) {
+            const current = snapshots[index].data() as DeliveryRun;
+            authorizeRun(principal, current);
+            if (current.vehicleId !== item.vehicleId) throw new HttpError(409, "Existing run vehicle identity needs review.");
+            return current;
+          }
           const run: DeliveryRun = {
-            canonicalId: refs[index].id, serviceDate, status: "draft", vehicleLabel: item.vehicleLabel,
+            canonicalId: refs[index].id, serviceDate, status: "draft", vehicleLabel: item.vehicleLabel, vehicleId: item.vehicleId,
             returnToCpuRequired: true, orderedStopIds: [], version: 1, createdAt: now, updatedAt: now,
             audit: [{ action: "vehicle-day-run-created", at: now, by, version: 1 }],
           };
@@ -810,7 +874,7 @@ async function handlePost(request: NextRequest) {
       if (changed) await recordCanonicalLogisticsChange({ serviceDate, entityType: "run", entityId: `vehicle-day:${serviceDate}`, changeType: "vehicle-day-runs-ensured", revision: Math.max(...result.map((run) => run.version)), actorId, by, changedAt: now });
       return NextResponse.json({ runs: result, changed });
     }
-    if (body.action === "set-run-driver" && body.runId && body.driverId && body.driverLabel) {
+    if (body.action === "set-run-driver" && body.runId && body.driverId) {
       const current = await getRun(body.runId);
       if (!current) throw new HttpError(404, "Run not found.");
       if (body.expectedRunVersion === undefined) throw new HttpError(422, "A current run version is required.");
@@ -821,8 +885,8 @@ async function handlePost(request: NextRequest) {
         const run = snap.data() as DeliveryRun;
         if (run.version !== body.expectedRunVersion) throw new HttpError(409, "This run changed elsewhere. Refresh before changing its driver.");
         const driverId = body.driverId!.trim();
-        const driverLabel = body.driverLabel!.trim();
-        if (!driverId || !driverLabel || driverId.toLowerCase() === driverLabel.toLowerCase()) throw new HttpError(422, "A governed driver ID and display label are required.");
+        const driverLabel = body.driverLabel?.trim() || ""; // Replaced by Hub authority before commit.
+        if (!driverId) throw new HttpError(422, "A governed driver ID is required.");
         const next = { ...run, driverId, driverLabel, version: run.version + 1, updatedAt: now, audit: [...run.audit, { action: "driver-assigned", at: now, by, version: run.version + 1 }] };
         transaction.set(ref, next);
         return next;
@@ -886,7 +950,8 @@ async function handlePost(request: NextRequest) {
           status: "draft",
           driverId: requested.driverId,
           driverLabel: requested.driverLabel,
-          vehicleLabel: requested.vehicleLabel,
+          vehicleId: requested.vehicleId,
+          vehicleLabel: logisticsVehicleLabel(requested.vehicleId!),
           returnToCpuRequired: requested.returnToCpuRequired !== false,
           orderedStopIds: [],
           version: 1,
@@ -1093,7 +1158,8 @@ async function handlePost(request: NextRequest) {
           ...current,
           driverId: requestedRun.driverId,
           driverLabel: requestedRun.driverLabel,
-          vehicleLabel: requestedRun.vehicleLabel,
+          vehicleId: requestedRun.vehicleId || current.vehicleId,
+          vehicleLabel: logisticsVehicleLabel(requestedRun.vehicleId || current.vehicleId!),
           version: current.version + 1,
           updatedAt: now,
           audit: [
@@ -1967,6 +2033,7 @@ async function handlePost(request: NextRequest) {
             driverId: run.driverId,
             driverLabel: run.driverLabel,
             vehicleLabel: run.vehicleLabel,
+            vehicleId: run.vehicleId,
             orderedStopIds: [],
             version: 1,
             createdAt: now,
@@ -2386,15 +2453,63 @@ async function handlePost(request: NextRequest) {
     }
     throw new HttpError(400, "Unknown Logistics action.");
   } catch (error) {
-    const status = error instanceof HttpError ? error.status : 400;
+    const status = error instanceof HttpError ? error.status : (error as { status?: number }).status || 400;
     return errorResponse(Object.assign(error instanceof Error ? error : new Error(messageOf(error)), { status }), request.headers.get("x-request-id") || undefined, diagnostic);
   }
+}
+
+/** Scoped snapshots replace raw change events: cursors are opaque freshness
+ * tokens, containing no entity IDs. Every returned snapshot is scoped again.
+ */
+async function getScopedLogistics(request: NextRequest, principal: LogisticsPrincipal) {
+  const query = request.nextUrl.searchParams;
+  const vehicle = query.get("vehicle");
+  const date = query.get("serviceDate") || operationalDate();
+  if (!validOperationalDate(date)) throw new HttpError(400, "Invalid Logistics service date.");
+  const read = async (serviceDate: string) => {
+    const [raw, head] = await Promise.all([getLogisticsProjection(serviceDate), getLogisticsSyncHead(serviceDate)]);
+    return raw ? { ...await scopeCanonicalProjection(raw, principal, vehicle), state: raw.lastChangeSequence < head.sequence ? "STALE" as const : raw.state } : undefined;
+  };
+  if (query.get("syncHead") === "1") return NextResponse.json(await getLogisticsSyncHead(date));
+  if (query.has("changesSince")) {
+    const cursor = Number(query.get("changesSince"));
+    if (!query.get("changesSince") || !Number.isSafeInteger(cursor) || cursor < 0) throw new HttpError(400, "Invalid Logistics change cursor.");
+    const head = await getLogisticsSyncHead(query.get("serviceDate") ? date : undefined);
+    return NextResponse.json({ changes: [], hasMore: false, nextCursor: Math.max(cursor, head.sequence), projection: query.get("serviceDate") ? await read(date) : undefined });
+  }
+  if (query.get("weekSummary") === "1" || query.has("weekCommencing")) {
+    const dates = operationalWeek(query.get("weekCommencing") || date);
+    return NextResponse.json({ weekCommencing: dates[0], days: await Promise.all(dates.map(async day => summarizeLogisticsProjection(day, await read(day)))) });
+  }
+  if (query.get("planningAttention") === "1") {
+    const days = Math.min(14, Math.max(1, Number(query.get("days")) || 14));
+    const dates = Array.from({ length: days }, (_, index) => addOperationalDays(date, index));
+    const attention = await Promise.all(dates.map(async day => { const summary = summarizeLogisticsProjection(day, await read(day)); return { serviceDate: day, count: "attention" in summary ? summary.attention || 0 : 0 }; }));
+    return NextResponse.json({ attention: attention.filter(item => item.count > 0), fromDate: date, days });
+  }
+  const projection = await read(date);
+  if (!projection) {
+    const state = await classifyMissingProjection(date, request.headers.get("cookie") || undefined);
+    if (state === "EMPTY") return NextResponse.json({ projection: null, state: "EMPTY", projectionState: "VALID_EMPTY", serviceDate: date });
+    throw Object.assign(new HttpError(503, "Logistics projection has not been materialised."), { code: "LOGISTICS_PROJECTION_NOT_MATERIALIZED" });
+  }
+  return NextResponse.json({ ...projectionToDashboardData(projection), projection, serviceDate: date, state: "READY", projectionState: projection.state || "CURRENT" });
 }
 
 async function handleGet(request: NextRequest) {
   try {
     const principal = await requireLogisticsAccess(request);
-    const response = await getLogistics(request);
+    const permitted = vehicleScope(principal, request.nextUrl.searchParams.get("vehicle"));
+    const requestedRun = request.nextUrl.searchParams.get("runId");
+    if (requestedRun) {
+      const run = await getRun(requestedRun);
+      if (!run) throw new HttpError(404, "Logistics resource not found.");
+      authorizeRun({ ...principal, permittedVehicleIds: permitted }, run);
+      if (!request.nextUrl.searchParams.has("serviceDate")) request.nextUrl.searchParams.set("serviceDate", run.serviceDate);
+    }
+    if (request.nextUrl.searchParams.get("diagnostic") === "1") assertMaintenanceAccess(principal, "logistics.repair");
+    const scopedMode = permitted.length < 2 || request.nextUrl.searchParams.has("vehicle") || request.nextUrl.searchParams.has("changesSince") || request.nextUrl.searchParams.has("weekCommencing") || request.nextUrl.searchParams.get("weekSummary") === "1";
+    const response = await (scopedMode ? getScopedLogistics(request, principal) : getLogistics(request, principal));
     response.headers.set("x-logistics-cache-scope", logisticsCacheScope(principal));
     response.headers.set("Cache-Control", "no-store, max-age=0");
     return response;

@@ -14,6 +14,7 @@ export default defineConfig({
     video: "retain-on-failure",
   },
   projects: [
+    { name: "batch1-authority-chromium", use: { ...devices["Desktop Chrome"] }, testMatch: /authority-drivers\.spec\.ts/ },
     { name: "golden-week", use: { ...devices["Desktop Chrome"] }, testMatch: /golden-week\.spec\.ts/ },
     { name: "desktop-chromium", use: { ...devices["Desktop Chrome"] }, testMatch: /desktop\.spec\.ts/ },
     { name: "timeline-poc-chromium", use: { ...devices["Desktop Chrome"] }, testMatch: /timeline-poc\.spec\.ts/ },

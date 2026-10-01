@@ -7,7 +7,9 @@
     "build": "next build --webpack && node scripts/prepare-standalone-assets.mjs",
     "start": "next start -p 3900",
     "typecheck": "tsc --noEmit",
-    "test": "tsx --test tests/*.test.ts",
+    "test": "tsx --test tests/*.test.ts tests/*.test.cjs",
+    "test:authority": "node --test tests/resource-authority.test.cjs",
+    "test:access-regression": "node --test tests/access-regression.cjs",
     "test:integration": "tsx --test tests/api.integration.ts",
     "test:e2e": "playwright test"
   },

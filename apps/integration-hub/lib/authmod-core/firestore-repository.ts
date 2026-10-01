@@ -45,6 +45,11 @@ async function save<T extends { version: number }>(name: string, id: string, val
   invalidateAuthmodAdmissionCache();
 }
 export class FirestoreAuthModRepository implements AuthModRepository {
+  async listLogisticsDriverGrants() {
+    const snapshot = await firestoreRead("driver-catalogue", collections.grants, () => db.collection(collections.grants).where("resource", "==", "logistics.driver").where("status", "==", "active").limit(201).get());
+    if (snapshot.size > 200) throw new AuthModStoreUnavailable("Driver catalogue exceeds its bounded capacity.", "AUTHMOD_DRIVER_CATALOGUE_LIMIT");
+    return snapshot.docs.map(document => document.data() as AuthorityGrant);
+  }
   constructor(private readonly cacheScope = "unscoped") {}
   async getRuntimeAccessPackage(identityId: string) { return getAuthmodAccessReadPackage(identityId); }
   async getIdentity(id: string) { const snapshot = await firestoreRead("getIdentity", collections.identities, () => db.collection(collections.identities).doc(id).get()); return snapshot.exists ? snapshot.data() as AuthIdentity : undefined; }

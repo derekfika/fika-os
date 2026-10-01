@@ -2,8 +2,9 @@ import type { AuthPrincipal, AuthorityGrant, AuthModAction, DelegationRecord, Ef
 import { assertValidEffectivePeriod, idempotentId, isEffective, now } from "./model";
 import { auditEvent } from "./audit";
 import type { AuthModRepository } from "./repository";
+import { isLogisticsVehicleId } from "../../../shared/logistics-authority";
 
-export const PERSON_REQUIRED_AUTHORITIES = ["authmod", "authmod.admin", "menu.publish"] as const;
+export const PERSON_REQUIRED_AUTHORITIES = ["authmod", "authmod.admin", "menu.publish", "logistics.driver"] as const;
 export function isPersonRequiredAuthority(resource: string) { return (PERSON_REQUIRED_AUTHORITIES as readonly string[]).includes(resource); }
 export const ORGANISATION_AUTHORITIES = ["authmod", "menu.publish"] as const;
 export function isOrganisationAuthority(resource: string) { return (ORGANISATION_AUTHORITIES as readonly string[]).includes(resource); }
@@ -11,6 +12,7 @@ export const OPLOC_SCOPED_AUTHORITIES = ["production.allergen-sign", "production
 export function isOplocScopedAuthority(resource: string) { return (OPLOC_SCOPED_AUTHORITIES as readonly string[]).includes(resource); }
 
 export async function grantAuthority(repository: AuthModRepository, input: { subjectId: string; subjectType: "interactive" | "service"; actor: AuthPrincipal; appId: string; resource: string; action: AuthorityGrant["action"]; scope: AuthorityGrant["scope"]; provenance?: AuthorityGrant["provenance"]; effectivePeriod?: EffectivePeriod; reason: string }) {
+  if (input.resource === "logistics.driver" && (input.appId !== "logistics" || input.action !== "Contribute" || input.scope.kind !== "resource" || !input.scope.ids.length || !input.scope.ids.every(isLogisticsVehicleId))) throw Object.assign(new Error("Driver authority requires explicit governed vehicle IDs and Contribute."), { status: 422 });
   if (!input.reason?.trim() || input.reason.trim().toLowerCase() === "authmod administrator change") throw Object.assign(new Error("A specific reason is required for authority changes."), { status: 422, code: "AUTHMOD_REASON_REQUIRED" });
   const effectivePeriod = input.effectivePeriod?.effectiveTo && !input.effectivePeriod.effectiveFrom ? { ...input.effectivePeriod, effectiveFrom: "1970-01-01T00:00:00.000Z" } : input.effectivePeriod; assertValidEffectivePeriod(effectivePeriod, false);
   if (isPersonRequiredAuthority(input.resource)) {

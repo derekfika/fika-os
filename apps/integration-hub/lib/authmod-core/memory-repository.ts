@@ -1,6 +1,7 @@
 import type { AccessAuditEvent, AppAssignment, ApplicationRegistryEntry, AuditPage, AuthIdentity, AuthorityGrant, CustodianAssignment, DelegationRecord, ImportRecord, ImportRowResolution, LegendReference, ServicePrincipal, SiteAssignment } from "./model";
 import { assertExpectedVersion, type AuthModRepository, type OplocReference } from "./repository";
 export class MemoryAuthModRepository implements AuthModRepository {
+  async listLogisticsDriverGrants() { return [...this.grants.values()].filter(value => value.resource === "logistics.driver" && value.status === "active"); }
   identities = new Map<string, AuthIdentity>(); applications = new Map<string, ApplicationRegistryEntry>(); oplocs = new Map<string, OplocReference>();
   siteAssignments = new Map<string, SiteAssignment>(); appAssignments = new Map<string, AppAssignment>(); grants = new Map<string, AuthorityGrant>(); custodians = new Map<string, CustodianAssignment>();
   principals = new Map<string, ServicePrincipal>(); delegations = new Map<string, DelegationRecord>(); imports = new Map<string, ImportRecord>(); resolutions = new Map<string, ImportRowResolution>(); audits: AccessAuditEvent[] = [];

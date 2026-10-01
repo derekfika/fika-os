@@ -2,6 +2,8 @@ import type { AuthModRepository, OplocReference } from "./repository";
 import { isEffective } from "./model";
 import type { AuthPrincipal, AuthorizationDecision, AuthModAction, Scope } from "./model";
 import { isPersonRequiredAuthority } from "./authority";
+import { LOGISTICS_VEHICLE_IDS, isLogisticsVehicleId } from "../../../shared/logistics-authority";
+export { LOGISTICS_VEHICLE_IDS, type LogisticsVehicleId } from "../../../shared/logistics-authority";
 
 export class AuthModEvaluationContext {
   private runtimePackagePromise?: Promise<Awaited<ReturnType<NonNullable<AuthModRepository["getRuntimeAccessPackage"]>>>>;
@@ -26,8 +28,6 @@ export class AuthModEvaluationContext {
   delegations() { return this.delegationsPromise ||= this.principal.type === "interactive" ? this.repository.listDelegations(this.principal.id) : Promise.resolve([]); }
 }
 
-export const LOGISTICS_VEHICLE_IDS = ["van1", "van2"] as const;
-export type LogisticsVehicleId = (typeof LOGISTICS_VEHICLE_IDS)[number];
 
 export async function resolvePermittedVehicleIds(repository: AuthModRepository, input: { principal: AuthPrincipal; vehicleIds?: readonly string[] }, context = createAuthModEvaluationContext(repository, input.principal)) {
   const vehicleIds = input.vehicleIds || LOGISTICS_VEHICLE_IDS;
@@ -83,6 +83,8 @@ export async function resolveUserAccess(repository: AuthModRepository, input: { 
 }
 export async function evaluateAuthority(repository: AuthModRepository, input: { principal: AuthPrincipal; appId: string; resource: string; action: AuthModAction; scope?: Scope }, context = createAuthModEvaluationContext(repository, input.principal)): Promise<AuthorizationDecision> {
   try {
+    if (input.resource === "logistics.driver" && (input.principal.type !== "interactive" || input.appId !== "logistics" || input.action !== "Contribute" || input.scope?.kind !== "resource" || !input.scope.ids.length || !input.scope.ids.every(isLogisticsVehicleId))) return deny(input.principal, "authority-not-granted");
+    if (input.resource === "logistics.vehicle" && (input.scope?.kind !== "resource" || !input.scope.ids.length || !input.scope.ids.every(isLogisticsVehicleId))) return deny(input.principal, "authority-not-granted");
     const app = await context.application(input.appId);
     if (!app || !app.enabled) return deny(input.principal, "app-disabled", { appId: input.appId, action: input.action });
     const operationalApp = app.scopeModel !== "none";
@@ -98,11 +100,12 @@ export async function evaluateAuthority(repository: AuthModRepository, input: { 
     if (!base.allowed) return { ...base, action: input.action };
     const identity = await context.identity();
     if (!identity || identity.status !== "active") return deny(input.principal, "identity-inactive", { appId: input.appId, action: input.action });
+    if (input.resource === "logistics.driver" && (identity.identityKind !== "person" || !isEffective(identity) || identity.identityLinkStatus !== "matched" || !(await context.appAssignments()).some(item => item.identityId === identity.id && item.appId === "logistics" && isEffective(item)))) return deny(input.principal, "authority-not-granted");
     const grants = await context.grants(); const delegations = await context.delegations(); const delegatedSourceIds = new Set((await Promise.all(delegations.filter(value => isEffective(value)).map(async value => { const grant = await repository.getAuthorityGrant(value.sourceAuthorityGrantId); return grant && grant.id === value.sourceAuthorityGrantId && grant.subjectId === value.delegatorId && grant.subjectType === "interactive" && isEffective(grant) ? value.delegatedAuthorityGrantId : undefined; }))).filter(Boolean));
     if (isPersonRequiredAuthority(input.resource) && identity.identityKind !== "person") return deny(input.principal, "authority-not-granted", { appId: input.appId, action: input.action, scope: input.scope });
     if (identity.identityKind === "person" && identity.fullAccess && app.standardResource === input.resource && app.standardActions.includes(input.action) && await fullAccessScopeAllowed(context, input.scope)) return { ...base, allowed: true, action: input.action, scope: input.scope, matchedGrantIds: [], reasonCode: "allowed" };
     const requestedScope = input.scope;
-    const matched = grants.filter(value => value.appId === input.appId && value.resource === input.resource && value.action === input.action && isEffective(value) && (!value.delegationSourceGrantId || delegatedSourceIds.has(value.id)) && scopeAllows(value.scope, requestedScope));
+    const matched = grants.filter(value => value.appId === input.appId && value.resource === input.resource && value.action === input.action && isEffective(value) && (input.resource !== "logistics.driver" || value.subjectType === "interactive" && value.subjectId === identity.id && value.scope.kind === "resource" && value.scope.ids.length > 0 && value.scope.ids.every(isLogisticsVehicleId)) && (!value.delegationSourceGrantId || delegatedSourceIds.has(value.id)) && scopeAllows(value.scope, requestedScope));
     if (!matched.length) return deny(input.principal, "authority-not-granted", { appId: input.appId, action: input.action, scope: input.scope });
     return { ...base, allowed: true, action: input.action, scope: input.scope, matchedGrantIds: matched.map(value => value.id), reasonCode: "allowed" };
   } catch { return deny(input.principal, "store-unavailable"); }

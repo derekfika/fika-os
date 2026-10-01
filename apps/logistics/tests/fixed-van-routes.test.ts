@@ -19,7 +19,7 @@ test("fixed van routes resolve only Van 1 or Van 2 and reuse the mobile workflow
 
 test("fixed van mobile requests and responses stay vehicle-scoped", () => {
   assert.match(mobile, /vehicle=\$\{encodeURIComponent\(fixedVan\.toLowerCase\(\)\.replace\(" ", ""\)\)\}/);
-  assert.match(api, /filterLogisticsProjectionForVehicle\(projection, requestedVehicle\)/);
+  assert.match(api, /scopeCanonicalProjection\(projection, principal, vehicleContext\)/);
   assert.match(api, /vehicleContext && vehicleContext !== "van1" && vehicleContext !== "van2"/);
 });
 

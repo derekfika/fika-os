@@ -40,6 +40,7 @@ export function seededRun(id: string, driver = "Franco", status: DeliveryRun["st
     canonicalId: E2E_PREFIX + id,
     serviceDate: E2E_DATE,
     status,
+    vehicleId: "van1",
     driverId: driver.toLowerCase(),
     driverLabel: driver,
     orderedStopIds: [],

@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { errorResponse } from "@/lib/api";
 import { FirestoreAuthModRepository } from "@/lib/authmod-core";
-import { createAuthModEvaluationContext, resolvePermittedVehicleIds, resolveUserAccess } from "@/lib/authmod-core/evaluator";
+import { createAuthModEvaluationContext, evaluateAuthority, resolvePermittedVehicleIds, resolveUserAccess } from "@/lib/authmod-core/evaluator";
+import { LOGISTICS_MAINTENANCE_AUTHORITIES } from "../../../../../shared/logistics-authority";
 import { requireFikaSession } from "@/lib/fika-session";
 import { withDataTrace } from "@fika/server-shared/data-source-meter-server";
 import { cachedAuthmodAdmission, withAuthmodRequestContext } from "@/lib/authmod-admission-cache";
@@ -21,11 +22,14 @@ async function handleGet(request: NextRequest) {
       const vehicles = await resolvePermittedVehicleIds(repository, { principal, vehicleIds: requestedVehicle ? [requestedVehicle] : undefined }, context);
       if (vehicles.resolutionFailed) return { ...appAccess, allowed: false, reasonCode: "store-unavailable" as const };
       if (requestedVehicle && !vehicles.permittedVehicleIds.includes(requestedVehicle)) return { ...appAccess, allowed: false, reasonCode: "authority-not-granted" as const };
-      return { ...appAccess, permittedVehicleIds: vehicles.permittedVehicleIds };
+      const maintenance = await Promise.all(LOGISTICS_MAINTENANCE_AUTHORITIES.map(resource => evaluateAuthority(repository, { principal, appId: "logistics", resource, action: "Administer", scope: { kind: "organisation", ids: [] } }, context)));
+      if (maintenance.some(item => item.reasonCode === "store-unavailable")) return { ...appAccess, allowed: false, reasonCode: "store-unavailable" as const };
+      return { ...appAccess, permittedVehicleIds: vehicles.permittedVehicleIds, maintenanceAuthorities: LOGISTICS_MAINTENANCE_AUTHORITIES.filter((_, index) => maintenance[index].allowed) };
     } });
     if (!access.allowed) throw Object.assign(new Error("Your account does not currently have Logistics access."), { status: access.reasonCode === "store-unavailable" ? 503 : 403 });
     logAuthDiagnostic(request, { authStage: "hub-admission-app-access", status: 200, code: "HUB_LOGISTICS_ACCESS_ALLOWED" });
-    return NextResponse.json({ principal: { ...principal, permittedVehicleIds: (access as typeof access & { permittedVehicleIds?: string[] }).permittedVehicleIds || [] }, allowed: true }, { headers: { "Cache-Control": "no-store" } });
+    const resolved = access as typeof access & { permittedVehicleIds?: string[]; maintenanceAuthorities?: string[] };
+    return NextResponse.json({ principal: { ...principal, permittedVehicleIds: resolved.permittedVehicleIds || [], maintenanceAuthorities: resolved.maintenanceAuthorities || [] }, allowed: true }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) { logAuthDiagnostic(request, { authStage: "hub-admission-failure", status: (error as { status?: number }).status || 500, code: (error as { code?: string }).code || "HUB_ADMISSION_FAILURE" }); return errorResponse(error, request.headers.get("x-request-id") || undefined); }
 }
 

@@ -2,6 +2,7 @@ import type { AccessAuditEvent, AppAssignment, ApplicationRegistryEntry, AuditPa
 export type OplocReference = { id: string; label: string; active: boolean };
 export type AuthmodRuntimeAccessPackage = import("../authmod-access-read-package").AuthmodAccessReadPackage;
 export type AuthModRepository = {
+  listLogisticsDriverGrants(): Promise<AuthorityGrant[]>;
   getRuntimeAccessPackage?(identityId: string): Promise<AuthmodRuntimeAccessPackage>;
   getIdentity(id: string): Promise<AuthIdentity | undefined>; listIdentities(): Promise<AuthIdentity[]>;
   listLegendReferences(search?: string, limit?: number): Promise<LegendReference[]>;

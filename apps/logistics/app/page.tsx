@@ -8,6 +8,8 @@ import { schedulableTimelineRuns } from "../lib/react-timeline-model";
 import type { FulfilmentRequirement } from "../../shared/fulfilment-requirement";
 import { fulfilmentWorkstream } from "../../shared/fulfilment-workstream";
 import type { DeliveryRun, DeliveryStop, MovementRequest } from "../lib/types";
+import { DriverAuthorityProvider, DriverSelector, useDriverAuthority } from "./driver-selector";
+import { logisticsVehicleLabel, type LogisticsVehicleId } from "../../shared/logistics-authority";
 import {
   workGroupQueueState,
   movementQueueState,
@@ -132,7 +134,8 @@ const blank: Draft = {
   notes: "",
 };
 
-export default function Planner() {
+export default function Planner() { return <DriverAuthorityProvider><PlannerContents /></DriverAuthorityProvider>; }
+function PlannerContents() {
   // Keep the server render deterministic. The operational date and saved view
   // are browser state and are resolved only after hydration.
   const [date, setDate] = useState("");
@@ -506,7 +509,7 @@ export default function Planner() {
   const movements = data?.planner.movements || [];
   const filteredGroups = queueTypeFilter === "all" || queueTypeFilter === "delivery" ? groups : [];
   const filteredMovements = movements.filter((movement) => queueTypeFilter === "all" || movement.type === queueTypeFilter);
-  const createRun = () => {
+  const createRun = (vehicleId: LogisticsVehicleId) => {
     setShowRunCreate(false);
     void act({
       action: "create-run",
@@ -515,7 +518,7 @@ export default function Planner() {
         serviceDate: date,
         status: "draft",
         driverId: newRunDriverId || undefined,
-        driverLabel: data?.runs.find((item) => item.driverId === newRunDriverId)?.driverLabel,
+        vehicleId,
         returnToCpuRequired: newRunReturnToCpu,
         orderedStopIds: [],
         version: 1,
@@ -885,7 +888,7 @@ type RealPlannerProps = {
   loadFresh: (silent?: boolean, mode?: LoadMode) => Promise<LoadResult>;
   act: (payload: object) => Promise<boolean | Record<string, unknown>>;
   placementCommand: (payload: object) => Promise<PlacementOutcome>;
-  createRun: () => void;
+  createRun: (vehicleId: LogisticsVehicleId) => void;
   createMovement: () => void;
   assignGroup: (group: PlannerWorkGroup, choice?: AssignmentChoice) => void | Promise<PlacementOutcome>;
   assignMovement: (movement: PlannerMovementView, choice?: AssignmentChoice) => void | Promise<PlacementOutcome>;
@@ -2151,6 +2154,7 @@ function Inspector({
     {run && <>
       <InspectorMeta label="Status" value={liveStatusLabel(run.operationalStatus)} />
       <InspectorMeta label="Vehicle" value={run.vehicle || "No vehicle label"} />
+      <DriverSelector vehicleId={run.vehicleId} driverId={run.driverId} historicalLabel={run.driver} disabled={placementPending || run.status === "dispatched" || run.status === "completed"} onChange={driverId => onAction({ action: "set-run-driver", runId: run.runId, driverId, expectedRunVersion: run.version })} />
       <p>{run.completedStops} of {run.stopCount} stops complete · {run.remainingCollections} collection{run.remainingCollections === 1 ? "" : "s"} remaining</p>
       <label className="collection-toggle inspector-collection-toggle"><input type="checkbox" checked={run.returnToCpuRequired} disabled={run.status === "dispatched" || run.status === "completed"} onChange={(event) => onAction({ action: "set-run-return-required", runId: run.runId, returnToCpuRequired: event.target.checked, expectedRunVersion: run.version })} /> Return to CPU required</label>
       {run.returnReady && <p className="context-line">All deliveries and collections complete · ready to return to CPU.</p>}
@@ -2212,7 +2216,6 @@ function ScheduleSummary({ planner }: { planner?: PlannerDay }) {
 function RunCreatePopover({
   driverId,
   setDriverId,
-  driverOptions,
   returnToCpuRequired,
   setReturnToCpuRequired,
   onCreate,
@@ -2220,30 +2223,45 @@ function RunCreatePopover({
 }: {
   driverId: string;
   setDriverId: (value: string) => void;
-  driverOptions: DeliveryRun[];
+  driverOptions?: DeliveryRun[]; // Retained caller compatibility; never a driver authority.
   returnToCpuRequired: boolean;
   setReturnToCpuRequired: (value: boolean) => void;
-  onCreate: () => void;
+  onCreate: (vehicleId: LogisticsVehicleId) => void;
   onClose: () => void;
 }) {
+  const catalogue = useDriverAuthority();
+  const dialog = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const previous = document.activeElement as HTMLElement | null;
+    dialog.current?.focus();
+    return () => previous?.focus();
+  }, []);
+  const [vehicleId, setVehicleId] = useState<LogisticsVehicleId | undefined>(catalogue.vehicles[0]);
+  useEffect(() => { void catalogue.refresh(); }, []);
+  useEffect(() => { if (!vehicleId || !catalogue.vehicles.includes(vehicleId)) setVehicleId(catalogue.vehicles[0]); }, [catalogue.vehicles, vehicleId]);
+  const eligibleSelection = !driverId || catalogue.drivers.some(driver => driver.driverId === driverId && vehicleId && driver.permittedDriverVehicleIds.includes(vehicleId));
   return (
     <div
       className="run-create-popover"
       role="dialog"
       aria-label="Create delivery run"
+      aria-modal="true"
+      ref={dialog}
+      tabIndex={-1}
+      onKeyDown={event => {
+        if (event.key === "Escape") { event.preventDefault(); onClose(); }
+        if (event.key === "Tab") {
+          const controls = Array.from(dialog.current?.querySelectorAll<HTMLElement>("button:not(:disabled), select:not(:disabled), input:not(:disabled)") || []);
+          const first = controls[0], last = controls.at(-1);
+          if (event.shiftKey && (document.activeElement === first || document.activeElement === dialog.current)) { event.preventDefault(); last?.focus(); }
+          else if (!event.shiftKey && (document.activeElement === last || document.activeElement === dialog.current)) { event.preventDefault(); first?.focus(); }
+        }
+      }}
     >
-      <label>
-        Driver
-        <select
-          value={driverId}
-          onChange={(event) => setDriverId(event.target.value)}
-        >
-          <option value="">Unassigned</option>
-          {Array.from(new Map(driverOptions.filter((item) => item.driverId && item.driverLabel && item.driverId.toLowerCase() !== item.driverLabel.toLowerCase()).map((item) => [item.driverId, item.driverLabel])).entries()).map(([id, label]) => <option key={id} value={id}>{label}</option>)}
-        </select>
-      </label>
+      <label>Vehicle <select aria-label="Vehicle" value={vehicleId || ""} disabled={catalogue.loading || Boolean(catalogue.error)} onChange={event => { setVehicleId(event.target.value as LogisticsVehicleId); setDriverId(""); }}>{catalogue.vehicles.map(id => <option key={id} value={id}>{logisticsVehicleLabel(id)}</option>)}</select></label>
+      <DriverSelector vehicleId={vehicleId} driverId={driverId} onChange={setDriverId} />
       <label className="collection-toggle"><input type="checkbox" checked={returnToCpuRequired} onChange={(event) => setReturnToCpuRequired(event.target.checked)} /> Return to CPU required</label>
-      <button onClick={onCreate}>Create run</button>
+      <button disabled={!vehicleId || catalogue.loading || Boolean(catalogue.error) || !eligibleSelection} onClick={() => vehicleId && onCreate(vehicleId)}>Create run</button>
       <button className="popover-close" onClick={onClose}>
         Cancel
       </button>
@@ -2698,7 +2716,7 @@ function RunPanel({
         <div>
           <p className="run-kicker">Run {index + 1}</p>
           <h3>{run.driver || "Unassigned driver"}</h3>
-          <label className="run-driver-control">Driver <select value={run.driverId || ""} aria-label="Driver" onChange={(event) => { const option = (data?.runs || []).find((item) => item.driverId === event.target.value); onAction({ action: "set-run-driver", runId: run.runId, driverId: event.target.value, driverLabel: option?.driverLabel || "", expectedRunVersion: run.version }); }}><option value="">Select driver</option>{Array.from(new Map((data?.runs || []).filter((item) => item.driverId && item.driverLabel && item.driverId.toLowerCase() !== item.driverLabel.toLowerCase()).map((item) => [item.driverId, item.driverLabel])).entries()).map(([id, label]) => <option key={id} value={id}>{label}</option>)}</select></label>
+          <DriverSelector vehicleId={run.vehicleId} driverId={run.driverId} historicalLabel={run.driver} disabled={placementPending} onChange={driverId => onAction({ action: "set-run-driver", runId: run.runId, driverId, expectedRunVersion: run.version })} />
         </div>
         <span className="run-status">{liveStatusLabel(run.operationalStatus)}</span>
       </header>

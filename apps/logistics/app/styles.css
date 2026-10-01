@@ -2726,38 +2726,41 @@ button:disabled {
   z-index: 5;
   top: calc(100% - 2px);
   left: 32px;
-  display: flex;
-  align-items: end;
-  gap: 8px;
-  padding: 10px;
-  border: 1px solid var(--line);
-  border-radius: 9px;
-  background: var(--surface);
-  box-shadow: 0 12px 30px rgba(40, 15, 140, 0.16);
+  display: grid;
+  width: min(560px, calc(100vw - 32px));
+  gap: 16px;
+  padding: 20px;
+  border: 1px solid var(--fika-border-default);
+  border-radius: 16px;
+  background: var(--fika-surface-card);
 }
 .run-create-popover label {
   display: grid;
-  gap: 3px;
-  color: var(--muted);
-  font-size: 0.62rem;
-  font-weight: 800;
-  text-transform: uppercase;
+  gap: 8px;
+  color: var(--fika-text-primary);
+  font-size: 0.875rem;
+  font-weight: 600;
 }
 .run-create-popover select {
-  min-height: 32px;
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  padding: 4px 8px;
+  min-height: 44px;
+  border: 1px solid var(--fika-border-default);
+  border-radius: 8px;
+  padding: 8px 12px;
 }
 .run-create-popover button {
-  min-height: 32px;
-  padding: 6px 10px;
-  border-radius: 6px;
+  min-height: 44px;
+  padding: 8px 16px;
+  border-radius: 8px;
 }
 .run-create-popover .popover-close {
   background: transparent;
-  color: var(--muted);
+  color: var(--fika-text-secondary);
 }
+.run-driver-control { display: grid; gap: 8px; }
+.run-driver-control label { display: grid; gap: 8px; color: var(--fika-text-primary); }
+.run-driver-control select { width: 100%; min-height: 44px; color: var(--fika-text-primary); background: var(--fika-surface-card); border: 1px solid var(--fika-border-default); border-radius: 8px; padding: 8px 12px; }
+.run-driver-control p { margin: 0; color: var(--fika-text-secondary); font-size: 0.875rem; }
+.run-driver-control select:focus-visible, .run-create-popover:focus-visible { outline: 2px solid var(--fika-focus-ring); outline-offset: 2px; }
 .status-line {
   padding: 4px 32px;
   font-size: 0.68rem;
