@@ -5,7 +5,7 @@ import { deriveTimelineQueueCards, MountedReactTimeline, type QueueCard } from "
 import type { PlannerDay } from "../../../lib/planner-read-model";
 import { createPendingScheduleOperation, type ConfirmedPlacement, type PendingScheduleOperation, type SchedulePosition } from "../../../lib/scheduling";
 
-type Mode = "success" | "delayed" | "reject" | "adjust";
+type Mode = "success" | "delayed" | "reject" | "adjust" | "conflict";
 type RefreshMode = "immediate" | "delayed" | "failed";
 const date = "2026-09-30";
 const addQuarter = (start: string) => { const total = Number(start.slice(0, 2)) * 60 + Number(start.slice(3, 5)) + 15; return `${String(Math.floor(total / 60)).padStart(2, "0")}:${String(total % 60).padStart(2, "0")}`; };
@@ -45,18 +45,44 @@ export default function MountedTimelineFixturePage() {
   const [refreshMode, setRefreshMode] = useState<RefreshMode>("immediate");
   const [refreshStatus, setRefreshStatus] = useState("Authoritative refresh idle.");
   const [versions, setVersions] = useState({ cachedStop: 1, serverStop: 1, cachedRun: 1, serverRun: 1 });
+  const [commandDelay, setCommandDelay] = useState(2200);
   const refreshTimers = useRef(new Map<string, number>());
+  const activeRequests = useRef(new Map<string, string>());
+  const queuedIntents = useRef(new Map<string, { proposed: SchedulePosition }>());
+  const countRef = useRef(0);
+  const versionsRef = useRef(versions);
+  const [inFlight, setInFlight] = useState(0);
+  const [commandTokens, setCommandTokens] = useState<string[]>([]);
+  const [globalRefreshing, setGlobalRefreshing] = useState(false);
   const [count, setCount] = useState(0);
   const [message, setMessage] = useState("Safe mounted timeline fixture · no Logistics API requests.");
   const [selected, setSelected] = useState<string>();
   const [windowEnd, setWindowEnd] = useState("11:00");
   const queueCards = useMemo(() => [...queueItems, ...deriveTimelineQueueCards(planner.workGroups, planner.movements, planner.runs, pending)], [queueItems, planner, pending]);
 
-  const complete = (identity: string, operation: PendingScheduleOperation, value: Mode) => {
-    if (value === "reject") { setPending((current) => { const next = { ...current }; delete next[identity]; return next; }); setMessage("Fixture rejected · confirmed placement restored."); return; }
+  function complete(identity: string, operation: PendingScheduleOperation, value: Mode) {
+    if (value === "conflict") {
+      activeRequests.current.delete(identity);
+      queuedIntents.current.delete(identity);
+      setInFlight(activeRequests.current.size);
+      setPending((current) => ({ ...current, [identity]: { ...current[identity], proposed: operation.original, state: "uncertain", error: "Checking save…" } }));
+      setRefreshStatus("409 version conflict · refresh authority before retrying.");
+      setMessage("409 version conflict · confirmed placement retained until authority refresh.");
+      return;
+    }
+    if (value === "reject") {
+      activeRequests.current.delete(identity);
+      queuedIntents.current.delete(identity);
+      setInFlight(activeRequests.current.size);
+      setPending((current) => { const next = { ...current }; delete next[identity]; return next; });
+      setMessage("Fixture rejected · confirmed placement restored.");
+      return;
+    }
     const proposed = operation.proposed!;
     const adjusted: SchedulePosition = value === "adjust" ? { ...proposed, start: addQuarter(proposed.start) } : proposed;
     if (operation.source === "queue") {
+      activeRequests.current.delete(identity);
+      setInFlight(activeRequests.current.size);
       setPending((current) => { const next = { ...current }; delete next[identity]; return next; });
       const queueItem = queueCards.find((item) => item.id === identity);
       if (queueItem) {
@@ -71,8 +97,18 @@ export default function MountedTimelineFixturePage() {
       }
     } else {
       setConfirmed((current) => ({ ...current, [identity]: { kind: "scheduled", position: adjusted, operationId: operation.operationId, source: "stop" } }));
+      versionsRef.current = { ...versionsRef.current, serverStop: versionsRef.current.serverStop + 1, serverRun: versionsRef.current.serverRun + 1 };
+      setVersions(versionsRef.current);
+      activeRequests.current.delete(identity);
+      setInFlight(activeRequests.current.size);
+      const queued = queuedIntents.current.get(identity);
+      if (queued) {
+        queuedIntents.current.delete(identity);
+        startCommand(identity, "stop", adjusted, queued.proposed, mode);
+        setMessage(`Saved first placement; sending latest position ${queued.proposed.start}${queued.proposed.end ? `–${queued.proposed.end}` : ""}.`);
+        return;
+      }
       setPending((current) => ({ ...current, [identity]: { ...operation, proposed: adjusted, serverPosition: adjusted, responseConfirmed: true, state: "confirmed-response" } }));
-      setVersions((current) => ({ ...current, serverStop: current.serverStop + 1, serverRun: current.serverRun + 1 }));
       const applyAuthoritativePosition = () => {
         setPlanner((current) => {
           let movedStop: (typeof current.runs)[number]["stops"][number] | undefined;
@@ -94,7 +130,8 @@ export default function MountedTimelineFixturePage() {
         });
         setConfirmed((current) => { const next = { ...current }; delete next[identity]; return next; });
         setPending((current) => { const next = { ...current }; delete next[identity]; return next; });
-        setVersions((current) => ({ ...current, cachedStop: current.serverStop, cachedRun: current.serverRun }));
+        versionsRef.current = { ...versionsRef.current, cachedStop: versionsRef.current.serverStop, cachedRun: versionsRef.current.serverRun };
+        setVersions(versionsRef.current);
       };
       if (refreshMode === "immediate") {
         applyAuthoritativePosition();
@@ -110,12 +147,34 @@ export default function MountedTimelineFixturePage() {
     }
     const saveMessage = value === "adjust" ? `Server adjusted placement to ${adjusted.start}${adjusted.end ? `–${adjusted.end}` : ""}.` : `Fixture placement saved at ${adjusted.start}${adjusted.end ? `–${adjusted.end}` : ""}.`;
     setMessage(`${saveMessage}${operation.source !== "queue" && refreshMode === "delayed" ? " Authoritative refresh pending." : operation.source !== "queue" && refreshMode === "failed" ? " Refresh failed; saved placement retained." : ""}`);
-  };
+  }
+
+  function startCommand(identity: string, source: "stop" | "queue", original: SchedulePosition | undefined, proposed: SchedulePosition, chosenMode: Mode) {
+    const priorRefresh = refreshTimers.current.get(identity);
+    if (priorRefresh !== undefined) {
+      window.clearTimeout(priorRefresh);
+      refreshTimers.current.delete(identity);
+    }
+    countRef.current += 1;
+    const commandNumber = countRef.current;
+    const versionAtSubmission = versionsRef.current;
+    setCommandTokens((current) => [...current, `stop ${versionAtSubmission.serverStop} · run ${versionAtSubmission.serverRun}`]);
+    const operation = createPendingScheduleOperation(identity, original, proposed, `fixture:${commandNumber}`, { source });
+    activeRequests.current.set(identity, operation.operationId);
+    setInFlight(activeRequests.current.size);
+    setPending((current) => ({ ...current, [identity]: { ...operation, state: "saving" } }));
+    setCount(commandNumber);
+    setMessage(`Saving placement · ${proposed.runId} · ${proposed.lane} · ${proposed.start}${proposed.end ? `–${proposed.end}` : ""}.`);
+    if (chosenMode === "delayed") window.setTimeout(() => complete(identity, operation, chosenMode), commandDelay);
+    else if (chosenMode === "reject") window.setTimeout(() => complete(identity, operation, chosenMode), 250);
+    else complete(identity, operation, chosenMode);
+  }
 
   const refreshAuthority = () => {
+    setGlobalRefreshing(true);
     for (const timer of refreshTimers.current.values()) window.clearTimeout(timer);
     refreshTimers.current.clear();
-    const saved = Object.entries(pending).filter(([, operation]) => operation.state === "confirmed-response" && operation.proposed);
+    const saved = Object.entries(pending).filter(([, operation]) => (operation.state === "confirmed-response" || operation.state === "uncertain") && operation.proposed);
     for (const [identity, operation] of saved) {
       const adjusted = operation.proposed!;
       setPlanner((current) => {
@@ -139,21 +198,25 @@ export default function MountedTimelineFixturePage() {
       setPending((current) => { const next = { ...current }; delete next[identity]; return next; });
       setConfirmed((current) => { const next = { ...current }; delete next[identity]; return next; });
     }
-    setVersions((current) => ({ ...current, cachedStop: current.serverStop, cachedRun: current.serverRun }));
+    versionsRef.current = { ...versionsRef.current, cachedStop: versionsRef.current.serverStop, cachedRun: versionsRef.current.serverRun };
+    setVersions(versionsRef.current);
     setRefreshStatus("Authoritative refresh complete.");
+    setGlobalRefreshing(false);
     setMessage("Manual authoritative refresh completed; saved placement versions are current.");
   };
 
-  const begin = (identity: string, source: "stop" | "queue", original: SchedulePosition | undefined, proposed: SchedulePosition) => {
-    const operation = createPendingScheduleOperation(identity, original, proposed, `fixture:${count + 1}`, { source });
-    setPending((current) => ({ ...current, [identity]: { ...operation, state: "saving" } }));
-    setCount((value) => value + 1);
-    const chosenMode = mode;
-    setMessage(`Saving placement · ${proposed.runId} · ${proposed.lane} · ${proposed.start}${proposed.end ? `–${proposed.end}` : ""}.`);
-    if (chosenMode === "delayed") window.setTimeout(() => complete(identity, operation, chosenMode), 2200);
-    else if (chosenMode === "reject") window.setTimeout(() => complete(identity, operation, chosenMode), 250);
-    else complete(identity, operation, chosenMode);
-  };
+  function begin(identity: string, source: "stop" | "queue", original: SchedulePosition | undefined, proposed: SchedulePosition) {
+    if (activeRequests.current.has(identity)) {
+      queuedIntents.current.set(identity, { proposed });
+      setPending((current) => {
+        const active = current[identity];
+        return active ? { ...current, [identity]: { ...active, proposed, intent: "scheduled", state: "saving", error: undefined } } : current;
+      });
+      setMessage(`Latest placement queued · ${proposed.start}${proposed.end ? `–${proposed.end}` : ""}.`);
+      return;
+    }
+    startCommand(identity, source, original, proposed, mode);
+  }
   const returnToQueue = (sourceRunId: string, stopId: string) => {
     const currentRun = planner.runs.find((run) => run.runId === sourceRunId);
     const stop = currentRun?.stops.find((item) => item.stopId === stopId);
@@ -179,10 +242,14 @@ export default function MountedTimelineFixturePage() {
   return <main style={{ padding: 16, fontFamily: "Arial, sans-serif" }}>
     <h1>Mounted React timeline fixture</h1>
     <p>Isolated fixture only. No API or staging writes.</p>
-    <label>Command mode <select aria-label="Command mode" value={mode} onChange={(event) => setMode(event.target.value as Mode)}><option value="success">Immediate success</option><option value="delayed">Delayed success</option><option value="reject">Reject</option><option value="adjust">Server adjustment</option></select></label>
+    <label>Command mode <select aria-label="Command mode" value={mode} onChange={(event) => setMode(event.target.value as Mode)}><option value="success">Immediate success</option><option value="delayed">Delayed success</option><option value="reject">Reject</option><option value="adjust">Server adjustment</option><option value="conflict">409 version conflict</option></select></label>
+    <label>Command latency ms <input aria-label="Command latency milliseconds" type="number" min="0" max="10000" value={commandDelay} onChange={(event) => setCommandDelay(Number(event.target.value))} /></label>
     <label>Refresh mode <select aria-label="Refresh mode" value={refreshMode} onChange={(event) => setRefreshMode(event.target.value as RefreshMode)}><option value="immediate">Immediate refresh</option><option value="delayed">Delayed refresh</option><option value="failed">Failed refresh</option></select></label>
     <button type="button" onClick={refreshAuthority}>Refresh authority</button>
     <p data-testid="fixture-versions">Cached stop/run versions {versions.cachedStop}/{versions.cachedRun} · saved stop/run versions {versions.serverStop}/{versions.serverRun}</p>
+    <p data-testid="fixture-in-flight">Requests in flight for this stop: {inFlight}</p>
+    <p data-testid="fixture-command-tokens">{commandTokens.join(" → ")}</p>
+    <p data-testid="fixture-global-refresh">{globalRefreshing ? "Refreshing…" : "Idle"}</p>
     <p data-testid="fixture-refresh-status" role="status">{refreshStatus}</p>
     <p role="status" aria-live="polite" data-testid="fixture-message">{message} Commands: {count}</p>
     <div className="fixture-queue" data-logistics-planning-queue><h2>Fixture queue</h2>{queueCards.map((item) => <button key={item.id} className="mock-queue-main" data-timeline-queue-id={item.id} onClick={() => setSelected(item.id)}>{item.destination} · {item.lane}</button>)}</div>

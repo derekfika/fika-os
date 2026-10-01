@@ -34,10 +34,13 @@ import {
   confirmedResponseConverged,
   confirmedPlacementIsSuperseded,
   createPendingScheduleOperation,
+  decodePlacementAuthority,
   decodeConfirmedSchedulePosition,
   effectivePlacement,
   groupAssignmentRoute,
   markUncertainPlacement,
+  mergePlacementAuthority,
+  nativePlacementVersions,
   projectedCollectionScheduleCommand,
   queuePlacementConverged,
   reconcileUncertainPlacement,
@@ -47,6 +50,7 @@ import {
   uncertainPlacementTimeout,
   uncertainPlacementWindowExpired,
   type ConfirmedPlacement,
+  type PlacementAuthority,
   type PendingScheduleOperation,
   type SchedulePosition,
   UNCERTAIN_PLACEMENT_MAX_ATTEMPTS,
@@ -76,7 +80,16 @@ type LoadResult = { ok: true; projection: LogisticsDayProjection } | { ok: false
 type LoadMode = "initial" | "explicit" | "passive";
 type PlacementOutcome =
   | { ok: true; body: Record<string, unknown>; refresh?: Promise<LoadResult> }
-  | { ok: false; uncertain: boolean; message: string; body?: Record<string, unknown> };
+  | { ok: false; uncertain: boolean; message: string; body?: Record<string, unknown>; refresh?: Promise<LoadResult>; conflict?: boolean };
+
+type PlacementIntent = {
+  original?: SchedulePosition;
+  proposed?: SchedulePosition;
+  execute: () => Promise<PlacementOutcome>;
+  settlePosition: (body: Record<string, unknown>, fallback: SchedulePosition) => SchedulePosition | undefined;
+};
+
+type ActivePlacement = { operation: PendingScheduleOperation; intent: PlacementIntent; priorConfirmed?: ConfirmedPlacement };
 
 function clockMinutes(value: string) {
   const [hour, minute] = value.split(":").map(Number);
@@ -219,7 +232,8 @@ export default function Planner() {
   const loadAuthoritative = async (silent = false, _materialiseMissing = true, mode: LoadMode = "explicit"): Promise<LoadResult> => {
     if (requestsBlocked.current) return { ok: false };
     if (!date) return { ok: false };
-    if (silent) setRefreshing(true);
+    const showRefreshing = silent && mode === "explicit";
+    if (showRefreshing) setRefreshing(true);
     let cached: LogisticsDayProjection | undefined;
     let cacheScope = "";
     try {
@@ -300,7 +314,7 @@ export default function Planner() {
       }
       return { ok: false };
     } finally {
-      if (silent) setRefreshing(false);
+      if (showRefreshing) setRefreshing(false);
     }
   };
   const load = (silent = false, materialiseMissing = true, mode: LoadMode = "explicit"): Promise<LoadResult> => {
@@ -477,6 +491,11 @@ export default function Planner() {
     } catch (cause) {
       const details = clientErrorDetails(cause, "Scheduling action could not be confirmed.");
       if ([401, 403].includes(details.status)) recordError(cause, details.message);
+      if (details.status === 409) {
+        const refresh = loadFresh(true, "passive");
+        void loadWeek(weekCommencing, "passive");
+        return { ok: false, uncertain: false, conflict: true, message: details.message, refresh };
+      }
       return { ok: false, uncertain: details.status === 0, message: details.message };
     }
   }
@@ -862,7 +881,7 @@ type RealPlannerProps = {
   setAssigning: (value: string | undefined) => void;
   setTargetRun: (value: string) => void;
   load: (silent?: boolean, materialiseMissing?: boolean) => Promise<LoadResult>;
-  loadFresh: () => Promise<LoadResult>;
+  loadFresh: (silent?: boolean, mode?: LoadMode) => Promise<LoadResult>;
   act: (payload: object) => Promise<boolean | Record<string, unknown>>;
   placementCommand: (payload: object) => Promise<PlacementOutcome>;
   createRun: () => void;
@@ -894,6 +913,10 @@ function RealPlanner(props: RealPlannerProps) {
   const [confirmedSchedules, setConfirmedSchedules] = useState<Record<string, ConfirmedPlacement>>({});
   const confirmedSchedulesRef = useRef<Record<string, ConfirmedPlacement>>({});
   const [placementErrors, setPlacementErrors] = useState<Record<string, string>>({});
+  const activePlacementsRef = useRef<Record<string, ActivePlacement>>({});
+  const queuedPlacementsRef = useRef<Record<string, PlacementIntent>>({});
+  const placementAuthorityRef = useRef<Record<string, PlacementAuthority>>({});
+  const placementOperationSequence = useRef(0);
   useEffect(() => { pendingSchedulesRef.current = pendingSchedules; }, [pendingSchedules]);
   useEffect(() => { confirmedSchedulesRef.current = confirmedSchedules; }, [confirmedSchedules]);
   useEffect(() => {
@@ -1100,6 +1123,20 @@ function RealPlanner(props: RealPlannerProps) {
         let resolution: "confirmed" | "superseded" | "pending" = "pending";
         let current: SchedulePosition | undefined;
         const sourceRaw = snapshot.stops.find((item) => item.canonicalId === identity);
+        const sourceRun = sourceRaw && operation.source === "stop"
+          ? snapshot.planner.runs.find((run) => run.stops.some((stop) => stop.stopId === identity))
+          : undefined;
+        if (sourceRaw && sourceRun && operation.source === "stop") {
+          placementAuthorityRef.current = {
+            ...placementAuthorityRef.current,
+            [identity]: {
+              stopId: identity,
+              stopRunId: sourceRun.runId,
+              stopVersion: sourceRaw.version,
+              runVersions: Object.fromEntries(snapshot.planner.runs.flatMap((run) => [[run.runId, run.version] as const])),
+            },
+          };
+        }
         if (operation.source === "queue") {
           const group = snapshot.planner.workGroups.find((item) => item.groupKey === identity);
           const movement = snapshot.planner.movements.find((item) => item.movementId === identity);
@@ -1168,41 +1205,77 @@ function RealPlanner(props: RealPlannerProps) {
       return;
     }
   };
-  const coordinatePlacement = (identity: string, original: SchedulePosition | undefined, proposed: SchedulePosition | undefined, execute: () => Promise<PlacementOutcome>, settlePosition: (body: Record<string, unknown>, fallback: SchedulePosition) => SchedulePosition | undefined = decodeConfirmedSchedulePosition) => {
-    const priorConfirmed = confirmedSchedulesRef.current[identity];
-    if (!canStartPlacement(identity, pendingSchedulesRef.current)) {
-      setPlacementErrors((current) => ({ ...current, [identity]: "A placement change is already being saved for this work." }));
-      return;
-    }
+  const startPlacement = (identity: string, intent: PlacementIntent, priorConfirmed = confirmedSchedulesRef.current[identity]) => {
     const hasNativeStop = Boolean(data?.stops.some((item) => item.canonicalId === identity));
     const source = identity.startsWith("projection-stop:") ? "projection" : hasNativeStop ? "stop" : "queue";
+    const authority = placementAuthorityRef.current[identity];
     const rawVersion = data?.stops.find((item) => item.canonicalId === identity)?.version;
+    const affectedRunIds = [...new Set([intent.original?.runId, intent.proposed?.runId].filter((runId): runId is string => Boolean(runId)))];
     const runVersionsAtStart = source === "stop"
-      ? Object.fromEntries([...new Set([original?.runId, proposed?.runId].filter((runId): runId is string => Boolean(runId)))].flatMap((runId) => {
-        const run = runs.find((item) => item.runId === runId);
-        return run ? [[runId, run.version] as const] : [];
+      ? Object.fromEntries(affectedRunIds.flatMap((runId) => {
+        const version = authority?.runVersions[runId] ?? runs.find((item) => item.runId === runId)?.version;
+        return version === undefined ? [] : [[runId, version] as const];
       }))
       : undefined;
-    const operation = createPendingScheduleOperation(identity, original, proposed, undefined, { source, projectionSequenceAtStart: data?.projection?.lastChangeSequence, stopVersionAtStart: rawVersion, runVersionsAtStart });
+    placementOperationSequence.current += 1;
+    const operation = createPendingScheduleOperation(
+      identity,
+      intent.original,
+      intent.proposed,
+      `schedule:${identity}:${Date.now()}:${placementOperationSequence.current}`,
+      { source, projectionSequenceAtStart: data?.projection?.lastChangeSequence, stopVersionAtStart: authority?.stopVersion ?? rawVersion, runVersionsAtStart },
+    );
+    const active: ActivePlacement = { operation, intent, priorConfirmed };
+    activePlacementsRef.current = { ...activePlacementsRef.current, [identity]: active };
     const saving = { ...operation, state: "saving" as const };
     pendingSchedulesRef.current = { ...pendingSchedulesRef.current, [identity]: saving };
     setPendingSchedules(pendingSchedulesRef.current);
     setPlacementErrors((current) => { const next = { ...current }; delete next[identity]; return next; });
-    void execute().then((outcome) => {
-      const current = pendingSchedulesRef.current[identity];
-      if (!current || current.operationId !== operation.operationId) return;
+
+    void Promise.resolve().then(intent.execute).then((outcome) => {
+      if (activePlacementsRef.current[identity]?.operation.operationId !== operation.operationId) return;
+      const visible = pendingSchedulesRef.current[identity];
+      if (!visible || visible.operationId !== operation.operationId) return;
       if (outcome.ok) {
-        const settledPosition = current.proposed ? settlePosition(outcome.body, current.proposed) : undefined;
-        const sourceVersion = responseVersion(outcome.body);
-        const returnedStopVersion = responseStopVersion(outcome.body);
-        const confirmed = { ...settlePendingScheduleOperation(current, settledPosition), responseConfirmed: true, serverPosition: settledPosition, serverStopVersion: returnedStopVersion ?? sourceVersion };
-        const nextConfirmed = { ...confirmedSchedulesRef.current };
-        if (operation.source !== "queue") nextConfirmed[identity] = settledPosition
-          ? { kind: "scheduled", position: confirmed.proposed!, operationId: operation.operationId, source: operation.source, ...(operation.source === "stop" ? { stopVersion: sourceVersion } : { projectionSequenceAtStart: operation.projectionSequenceAtStart }) }
-          : { kind: "unscheduled", operationId: operation.operationId, source: operation.source, ...(operation.source === "stop" ? { stopVersion: returnedStopVersion ?? sourceVersion } : { projectionSequenceAtStart: operation.projectionSequenceAtStart }) };
-        const nextPending = { ...pendingSchedulesRef.current, [identity]: confirmed };
-        pendingSchedulesRef.current = nextPending; setPendingSchedules(nextPending);
-        confirmedSchedulesRef.current = nextConfirmed; setConfirmedSchedules(nextConfirmed);
+        const settledPosition = intent.proposed ? intent.settlePosition(outcome.body, intent.proposed) : undefined;
+        const returnedAuthority = decodePlacementAuthority(outcome.body, identity);
+        if (returnedAuthority) {
+          placementAuthorityRef.current = {
+            ...placementAuthorityRef.current,
+            [identity]: mergePlacementAuthority(placementAuthorityRef.current[identity], returnedAuthority),
+          };
+        }
+        const sourceVersion = returnedAuthority?.stopVersion ?? responseVersion(outcome.body);
+        const confirmedOperation = {
+          ...settlePendingScheduleOperation(operation, settledPosition),
+          responseConfirmed: true,
+          serverPosition: settledPosition,
+          serverStopVersion: sourceVersion,
+        };
+        const responsePlacement: ConfirmedPlacement | undefined = operation.source === "queue" ? undefined : settledPosition
+          ? { kind: "scheduled", position: settledPosition, operationId: operation.operationId, source: operation.source, ...(operation.source === "stop" ? { stopVersion: sourceVersion } : { projectionSequenceAtStart: operation.projectionSequenceAtStart }) }
+          : { kind: "unscheduled", operationId: operation.operationId, source: operation.source, ...(operation.source === "stop" ? { stopVersion: sourceVersion } : { projectionSequenceAtStart: operation.projectionSequenceAtStart }) };
+        if (responsePlacement) {
+          const nextConfirmed = { ...confirmedSchedulesRef.current, [identity]: responsePlacement };
+          confirmedSchedulesRef.current = nextConfirmed;
+          setConfirmedSchedules(nextConfirmed);
+        }
+        delete activePlacementsRef.current[identity];
+        const queued = queuedPlacementsRef.current[identity];
+        if (queued) {
+          delete queuedPlacementsRef.current[identity];
+          if (sameSchedulePosition(queued.proposed, settledPosition)) {
+            const nextPending = { ...pendingSchedulesRef.current, [identity]: { ...confirmedOperation, proposed: settledPosition, state: "confirmed-response" as const } };
+            pendingSchedulesRef.current = nextPending;
+            setPendingSchedules(nextPending);
+          } else {
+            startPlacement(identity, { ...queued, original: settledPosition }, responsePlacement || priorConfirmed);
+          }
+        } else {
+          const nextPending = { ...pendingSchedulesRef.current, [identity]: { ...confirmedOperation, state: "confirmed-response" as const } };
+          pendingSchedulesRef.current = nextPending;
+          setPendingSchedules(nextPending);
+        }
         setPlacementErrors((errors) => { const next = { ...errors }; delete next[identity]; return next; });
         if (props.assigning === identity) props.setAssigning(undefined);
         if (outcome.refresh) void outcome.refresh.then((refreshed) => {
@@ -1214,23 +1287,83 @@ function RealPlanner(props: RealPlannerProps) {
         });
         return;
       }
+
+      delete activePlacementsRef.current[identity];
+      if (outcome.conflict) {
+        delete queuedPlacementsRef.current[identity];
+        const checking = { ...markUncertainPlacement(operation, intent.original), proposed: intent.original, intent: intent.original ? "scheduled" as const : "unscheduled" as const, state: "uncertain" as const, error: "Checking save…" };
+        pendingSchedulesRef.current = { ...pendingSchedulesRef.current, [identity]: checking };
+        setPendingSchedules(pendingSchedulesRef.current);
+        setPlacementErrors((errors) => ({ ...errors, [identity]: checking.error! }));
+        const refresh = outcome.refresh || props.loadFresh(true, "passive");
+        void refresh.then((refreshed) => {
+          const latest = pendingSchedulesRef.current[identity];
+          if (!latest || latest.operationId !== operation.operationId || latest.state !== "uncertain") return;
+          if (!refreshed.ok) {
+            const waiting = { ...latest, error: "Refresh before retrying this placement." };
+            pendingSchedulesRef.current = { ...pendingSchedulesRef.current, [identity]: waiting };
+            setPendingSchedules(pendingSchedulesRef.current);
+            setPlacementErrors((errors) => ({ ...errors, [identity]: waiting.error! }));
+            return;
+          }
+          const snapshot = projectionToDashboardData(refreshed.projection);
+          const raw = snapshot.stops.find((item) => item.canonicalId === identity);
+          const containingRun = snapshot.planner.runs.find((run) => run.stops.some((stop) => stop.stopId === identity));
+          if (raw && containingRun) {
+            const runVersions = Object.fromEntries(snapshot.planner.runs.flatMap((run) => [[run.runId, run.version] as const]));
+            placementAuthorityRef.current = {
+              ...placementAuthorityRef.current,
+              [identity]: { stopId: identity, stopRunId: containingRun.runId, stopVersion: raw.version, runVersions },
+            };
+          }
+          const nextPending = { ...pendingSchedulesRef.current };
+          delete nextPending[identity];
+          pendingSchedulesRef.current = nextPending;
+          setPendingSchedules(nextPending);
+          setPlacementErrors((errors) => ({ ...errors, [identity]: "This placement changed elsewhere. The latest version is loaded; retry your move." }));
+        });
+        return;
+      }
       if (outcome.uncertain) {
-        const serverPosition = outcome.body && current.proposed ? settlePosition(outcome.body, current.proposed) : undefined;
-        const uncertain = { ...markUncertainPlacement(current, serverPosition, Boolean(outcome.body), outcome.body ? responseStopVersion(outcome.body) : undefined), error: "Checking save…" };
+        delete queuedPlacementsRef.current[identity];
+        const bestKnown = outcome.body && intent.proposed ? intent.settlePosition(outcome.body, intent.proposed) : intent.original;
+        const uncertain = { ...markUncertainPlacement(operation, bestKnown, Boolean(outcome.body), decodePlacementAuthority(outcome.body || {}, identity)?.stopVersion), error: "Checking save…" };
         pendingSchedulesRef.current = { ...pendingSchedulesRef.current, [identity]: uncertain };
         setPendingSchedules(pendingSchedulesRef.current);
         setPlacementErrors((errors) => ({ ...errors, [identity]: uncertain.error! }));
         void reconcileUncertainWithinWindow(identity, operation.operationId);
         return;
       }
-      const nextPending = { ...pendingSchedulesRef.current }; delete nextPending[identity];
-      pendingSchedulesRef.current = nextPending; setPendingSchedules(nextPending);
+      delete queuedPlacementsRef.current[identity];
+      const nextPending = { ...pendingSchedulesRef.current };
+      delete nextPending[identity];
+      pendingSchedulesRef.current = nextPending;
+      setPendingSchedules(nextPending);
       const nextConfirmed = { ...confirmedSchedulesRef.current };
       if (priorConfirmed) nextConfirmed[identity] = priorConfirmed;
       else delete nextConfirmed[identity];
-      confirmedSchedulesRef.current = nextConfirmed; setConfirmedSchedules(nextConfirmed);
+      confirmedSchedulesRef.current = nextConfirmed;
+      setConfirmedSchedules(nextConfirmed);
       setPlacementErrors((errors) => ({ ...errors, [identity]: outcome.message }));
     });
+  };
+
+  const coordinatePlacement = (identity: string, original: SchedulePosition | undefined, proposed: SchedulePosition | undefined, execute: () => Promise<PlacementOutcome>, settlePosition: (body: Record<string, unknown>, fallback: SchedulePosition) => SchedulePosition | undefined = decodeConfirmedSchedulePosition) => {
+    const intent: PlacementIntent = { original, proposed, execute, settlePosition };
+    const active = activePlacementsRef.current[identity];
+    const pending = pendingSchedulesRef.current[identity];
+    if (active && active.operation.source !== "queue" && active.operation.intent === "scheduled" && proposed) {
+      queuedPlacementsRef.current[identity] = intent;
+      pendingSchedulesRef.current = { ...pendingSchedulesRef.current, [identity]: { ...active.operation, proposed, intent: "scheduled", state: "saving", error: undefined } };
+      setPendingSchedules(pendingSchedulesRef.current);
+      setPlacementErrors((errors) => { const next = { ...errors }; delete next[identity]; return next; });
+      return;
+    }
+    if (pending?.state === "uncertain" || (!canStartPlacement(identity, pendingSchedulesRef.current) && !(pending?.state === "confirmed-response" && pending.source !== "queue"))) {
+      setPlacementErrors((current) => ({ ...current, [identity]: "This placement is being checked. Refresh before trying another change." }));
+      return;
+    }
+    startPlacement(identity, intent);
   };
   const coordinateAssignment = (identity: string, choice: AssignmentChoice | undefined, execute: () => Promise<PlacementOutcome | void>) => {
     if (!choice?.start) {
@@ -1297,7 +1430,8 @@ function RealPlanner(props: RealPlannerProps) {
     }
     const previousConfirmed = confirmedSchedulesRef.current[stopId];
     const confirmedPosition = previousConfirmed?.kind === "scheduled" ? previousConfirmed.position : undefined;
-    const effectiveSourceRunId = confirmedPosition?.runId || sourceRunId;
+    const pendingPosition = pendingSchedulesRef.current[stopId]?.proposed;
+    const effectiveSourceRunId = pendingPosition?.runId || confirmedPosition?.runId || placementAuthorityRef.current[stopId]?.stopRunId || sourceRunId;
     const sourceRun = runs.find((run) => run.runId === effectiveSourceRunId);
     const targetRun = runs.find((run) => run.runId === targetRunId);
     const rawStop = data?.stops.find((item) => item.canonicalId === stopId);
@@ -1314,12 +1448,26 @@ function RealPlanner(props: RealPlannerProps) {
       return;
     }
     const timing = end ? { plannedWindow: { startTime: safeTime, endTime: addClockMinutes(safeTime, Math.max(15, clockMinutes(end) - clockMinutes(time))) } } : { plannedArrivalTime: safeTime };
-    const original: SchedulePosition = confirmedPosition || { runId: effectiveSourceRunId, lane: effectiveLane, start: rawStop.plannedWindow?.startTime || rawStop.plannedArrivalTime || safeTime, ...(rawStop.plannedWindow?.endTime ? { end: rawStop.plannedWindow.endTime } : {}) };
+    const original: SchedulePosition = pendingPosition || confirmedPosition || { runId: effectiveSourceRunId, lane: effectiveLane, start: rawStop.plannedWindow?.startTime || rawStop.plannedArrivalTime || safeTime, ...(rawStop.plannedWindow?.endTime ? { end: rawStop.plannedWindow.endTime } : {}) };
     const proposed: SchedulePosition = { runId: targetRunId, lane: effectiveLane, start: safeTime, ...(end ? { end: addClockMinutes(safeTime, Math.max(15, clockMinutes(end) - clockMinutes(time))) } : {}) };
-    const payload = effectiveSourceRunId === targetRunId
-      ? { action: "schedule-stop", runId: effectiveSourceRunId, stopId, ...timing, expectedRunVersion: sourceRun.version, expectedStopVersion: rawStop.version }
-      : { action: "move-stop", runId: effectiveSourceRunId, targetRunId, stopId, ...timing, expectedRunVersion: sourceRun.version, expectedTargetRunVersion: targetRun.version, expectedStopVersion: rawStop.version };
-    coordinatePlacement(stopId, original, proposed, () => props.placementCommand(payload));
+    const fallbackRunVersions = Object.fromEntries(runs.map((run) => [run.runId, run.version] as const));
+    coordinatePlacement(stopId, original, proposed, () => {
+      const authority = placementAuthorityRef.current[stopId];
+      const versions = nativePlacementVersions(authority, {
+        stopRunId: effectiveSourceRunId,
+        stopVersion: rawStop.version,
+        runVersions: fallbackRunVersions,
+      }, targetRunId);
+      const latestSourceRun = runs.find((run) => run.runId === versions.sourceRunId);
+      const latestTargetRun = runs.find((run) => run.runId === targetRunId);
+      if (!latestSourceRun || !latestTargetRun || versions.expectedRunVersion === undefined || versions.expectedStopVersion === undefined || (versions.sourceRunId !== targetRunId && versions.expectedTargetRunVersion === undefined)) {
+        return Promise.resolve({ ok: false, uncertain: false, message: "Current schedule authority is unavailable. Refresh and retry this placement." });
+      }
+      const payload = versions.sourceRunId === targetRunId
+        ? { action: "schedule-stop", runId: versions.sourceRunId, stopId, ...timing, expectedRunVersion: versions.expectedRunVersion, expectedStopVersion: versions.expectedStopVersion }
+        : { action: "move-stop", runId: versions.sourceRunId, targetRunId, stopId, ...timing, expectedRunVersion: versions.expectedRunVersion, expectedTargetRunVersion: versions.expectedTargetRunVersion, expectedStopVersion: versions.expectedStopVersion };
+      return props.placementCommand(payload);
+    });
   };
   const clearScheduleStop = (runId: string, stopId: string) => {
     const run = runs.find((item) => item.runId === runId);

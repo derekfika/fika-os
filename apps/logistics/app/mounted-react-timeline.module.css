@@ -17,20 +17,23 @@
 .rowLabel button { padding: 0; border: 0; background: transparent; color: var(--accent); font: inherit; font-size: 10px; font-weight: 700; cursor: pointer; }
 .track { position: relative; min-width: var(--timeline-content-width); background-image: repeating-linear-gradient(90deg, transparent 0, transparent calc(var(--timeline-quarter-hour) - 1px), #f1eef7 calc(var(--timeline-quarter-hour) - 1px), #f1eef7 var(--timeline-quarter-hour)), repeating-linear-gradient(90deg, transparent 0, transparent calc(var(--timeline-hour) - 1px), #e8e3f2 calc(var(--timeline-hour) - 1px), #e8e3f2 var(--timeline-hour)); background-position: 0 0; }
 .activeTrack { background-color: #f8f6ff; }
-.cardSlot { position: absolute; height: 56px; }
-.card, .ghost, .origin { position: absolute; inset: 0; box-sizing: border-box; min-height: 56px; height: 56px; padding: 6px 8px; overflow: hidden; border: 1px solid var(--fika-border-default, #bce8d4); border-left: 3px solid var(--fika-status-success, #58a879); border-radius: 7px; background: var(--fika-surface-card, #fff); box-shadow: 0 2px 5px rgb(40 15 140 / 8%); text-align: left; }
-.card { display: flex; width: 100%; flex-direction: column; gap: 2px; color: var(--ink); font: inherit; cursor: grab; touch-action: pan-y; user-select: none; }
+.cardSlot { position: absolute; height: 64px; }
+.card, .ghost, .origin { position: absolute; inset: 0; box-sizing: border-box; min-height: 64px; height: 64px; padding: 6px 8px; overflow: hidden; border: 1px solid var(--fika-border-default, #bce8d4); border-left: 3px solid var(--fika-status-success, #58a879); border-radius: 7px; background: var(--fika-surface-card, #fff); box-shadow: 0 2px 5px rgb(40 15 140 / 8%); text-align: left; }
+.cardSlot.explicitWindow .card { padding-bottom: 15px; }
+.card { display: flex; width: 100%; flex-direction: column; gap: 1px; color: var(--ink); font: inherit; cursor: grab; touch-action: pan-y; user-select: none; }
 .card:active { cursor: grabbing; }
-.resizeHandle { position: absolute; z-index: 2; display: grid; width: 22px; height: 32px; place-items: center; transform: translate(-50%, -50%); padding: 0; border: 1px solid var(--fika-border-default, #ded9ed); border-radius: 5px; background: var(--fika-surface-card, #fff); color: var(--fika-action-primary, #4f34c7); cursor: ew-resize; touch-action: none; }
-.resizeHandle::before { width: 3px; height: 18px; border-right: 1px solid currentColor; border-left: 1px solid currentColor; content: ""; }
+.durationRail { position: absolute; z-index: 2; bottom: 5px; left: 0; height: 2px; border-radius: 2px; background: var(--fika-status-info, #218ac3); pointer-events: none; }
+.resizeHandle { position: absolute; z-index: 3; bottom: 0; width: 10px; height: 14px; transform: translateX(-50%); padding: 0; border: 1px solid var(--fika-surface-card, #fff); border-radius: 2px; background: var(--fika-action-primary, #4f34c7); opacity: .48; cursor: ew-resize; touch-action: none; }
+.cardSlot:hover .resizeHandle, .resizeHandle:hover, .resizeHandle:focus-visible { opacity: 1; }
 .resizeHandle:focus-visible { outline: 3px solid var(--fika-focus-ring, #7459ea); outline-offset: 2px; }
 .resizeHandle:disabled { cursor: progress; }
-.card time, .ghost time { color: var(--muted); font-size: 11px; font-weight: 800; }
-.card strong, .ghost strong { overflow: hidden; font-size: 12px; line-height: 1.2; text-overflow: ellipsis; white-space: nowrap; }
-.card small, .ghost small { color: var(--muted); font-size: 10px; font-weight: 750; }
+.card time, .ghost time { color: var(--muted); font-size: 11px; font-weight: 800; line-height: 13px; }
+.card strong, .ghost strong { overflow: hidden; font-size: 12px; line-height: 14px; text-overflow: ellipsis; white-space: nowrap; }
+.card small, .ghost small { overflow: hidden; color: var(--muted); font-size: 10px; font-weight: 750; line-height: 11px; text-overflow: ellipsis; white-space: nowrap; }
 .collection { border-left-color: var(--fika-status-info, #218ac3); }
 .attention { border-color: var(--fika-status-danger, #ef4353); border-left-color: var(--fika-status-danger, #ef4353); background: var(--fika-status-danger-surface, #fff4f4); }
 .pending { border-style: dashed; background: #f6f3ff; cursor: progress; }
+.locked { border-style: dashed; cursor: progress; }
 .origin { border: 1px dashed var(--accent); background: rgb(79 52 199 / 7%); box-shadow: none; pointer-events: none; }
 .ghost { z-index: 4; border-color: #6d55e8; border-left-color: #4f34c7; background: #f2efff; pointer-events: none; }
 .snapLine { position: absolute; z-index: 5; top: 0; bottom: 0; width: 2px; background: #4f34c7; pointer-events: none; }

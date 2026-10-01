@@ -13,6 +13,50 @@ export type SchedulePosition = {
   end?: string;
 };
 
+export type PlacementAuthority = {
+  stopId: string;
+  stopRunId: string;
+  stopVersion: number;
+  runVersions: Record<string, number>;
+};
+
+export function decodePlacementAuthority(body: Record<string, unknown>, expectedStopId: string): PlacementAuthority | undefined {
+  const value = body.placementAuthority;
+  if (!value || typeof value !== "object") return undefined;
+  const authority = value as Record<string, unknown>;
+  if (authority.stopId !== expectedStopId || typeof authority.stopRunId !== "string" || typeof authority.stopVersion !== "number" || !Number.isFinite(authority.stopVersion) || authority.stopVersion < 0) return undefined;
+  if (!authority.runVersions || typeof authority.runVersions !== "object") return undefined;
+  const runVersions = Object.fromEntries(Object.entries(authority.runVersions as Record<string, unknown>)
+    .filter((entry): entry is [string, number] => typeof entry[1] === "number" && Number.isFinite(entry[1]) && entry[1] >= 0));
+  return Object.keys(runVersions).length
+    ? { stopId: expectedStopId, stopRunId: authority.stopRunId, stopVersion: authority.stopVersion, runVersions }
+    : undefined;
+}
+
+export function mergePlacementAuthority(previous: PlacementAuthority | undefined, update: PlacementAuthority): PlacementAuthority {
+  return {
+    ...previous,
+    ...update,
+    runVersions: { ...previous?.runVersions, ...update.runVersions },
+  };
+}
+
+export function nativePlacementVersions(
+  authority: PlacementAuthority | undefined,
+  fallback: { stopRunId: string; stopVersion: number; runVersions: Record<string, number> },
+  targetRunId: string,
+): { sourceRunId: string; expectedRunVersion?: number; expectedTargetRunVersion?: number; expectedStopVersion: number } {
+  const sourceRunId = authority?.stopRunId || fallback.stopRunId;
+  const sourceVersion = authority?.runVersions[sourceRunId] ?? fallback.runVersions[sourceRunId];
+  const targetVersion = authority?.runVersions[targetRunId] ?? fallback.runVersions[targetRunId];
+  return {
+    sourceRunId,
+    ...(sourceVersion !== undefined ? { expectedRunVersion: sourceVersion } : {}),
+    ...(sourceRunId !== targetRunId && targetVersion !== undefined ? { expectedTargetRunVersion: targetVersion } : {}),
+    expectedStopVersion: authority?.stopVersion ?? fallback.stopVersion,
+  };
+}
+
 export function decodeConfirmedSchedulePosition(
   result: boolean | Record<string, unknown>,
   fallback: SchedulePosition,

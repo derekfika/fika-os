@@ -535,6 +535,12 @@ test("move-stop validates both run versions and keeps source/target sequences co
     expectedStopVersion: 1,
   });
   assert.equal(result.response.status, 200);
+  assert.deepEqual(result.body.placementAuthority, {
+    stopId,
+    stopRunId: targetId,
+    stopVersion: 2,
+    runVersions: { [sourceId]: 2, [targetId]: 2 },
+  });
   assert.equal((await stops().doc(stopId).get()).data()?.runId, targetId);
   assert.deepEqual(
     ((await runs().doc(sourceId).get()).data() as DeliveryRun).orderedStopIds,

@@ -1623,10 +1623,25 @@ async function handlePost(request: NextRequest) {
             },
           ],
         });
-        return { stop: moved, serviceDate: target.serviceDate, revision: Math.max(source.version + 1, target.version + 1) };
+        return {
+          stop: moved,
+          serviceDate: target.serviceDate,
+          revision: Math.max(source.version + 1, target.version + 1),
+          placementAuthority: {
+            stopId: moved.canonicalId,
+            stopRunId: moved.runId,
+            stopVersion: moved.version,
+            runVersions: {
+              [source.canonicalId]: source.version + 1,
+              [target.canonicalId]: target.version + 1,
+            },
+          },
+        };
       });
       await recordCanonicalLogisticsChange({ serviceDate: result.serviceDate, entityType: "stop", entityId: result.stop.canonicalId, changeType: "stop-moved", revision: result.revision, actorId, by, changedAt: now });
-      return NextResponse.json(result.stop);
+      // Keep the historic stop fields at the top level while supplying the
+      // exact optimistic versions needed to safely chain a later placement.
+      return NextResponse.json({ ...result.stop, placementAuthority: result.placementAuthority });
     }
     if ((body.action === "schedule-stop" || body.action === "clear-stop-schedule") && body.runId && body.stopId) {
       if (body.expectedRunVersion === undefined || body.expectedStopVersion === undefined)
@@ -1670,7 +1685,15 @@ async function handlePost(request: NextRequest) {
         return { run: nextRun, stop: nextStop };
       });
       await recordCanonicalLogisticsChange({ serviceDate: result.run.serviceDate, entityType: "stop", entityId: result.stop.canonicalId, changeType: body.action, revision: result.stop.version, actorId, by, changedAt: now });
-      return NextResponse.json(result);
+      return NextResponse.json({
+        ...result,
+        placementAuthority: {
+          stopId: result.stop.canonicalId,
+          stopRunId: result.stop.runId,
+          stopVersion: result.stop.version,
+          runVersions: { [result.run.canonicalId]: result.run.version },
+        },
+      });
     }
     if (body.action === "assign" && body.runId) {
       if (body.requirementId && body.movementId)

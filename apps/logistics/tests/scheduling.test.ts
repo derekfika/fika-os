@@ -2,6 +2,9 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   createPendingScheduleOperation,
+  decodePlacementAuthority,
+  mergePlacementAuthority,
+  nativePlacementVersions,
   canStartPendingSchedule,
   canStartPlacement,
   collectionTargetForGroup,
@@ -22,6 +25,49 @@ import {
   uncertainPlacementTimeout,
   uncertainPlacementWindowExpired,
 } from "../lib/scheduling";
+
+test("native placement authority chains fresh stop and both run versions", () => {
+  const decoded = decodePlacementAuthority({
+    placementAuthority: {
+      stopId: "stop-1",
+      stopRunId: "run-target",
+      stopVersion: 8,
+      runVersions: { "run-source": 5, "run-target": 12 },
+    },
+  }, "stop-1");
+  assert.deepEqual(decoded, {
+    stopId: "stop-1",
+    stopRunId: "run-target",
+    stopVersion: 8,
+    runVersions: { "run-source": 5, "run-target": 12 },
+  });
+  const merged = mergePlacementAuthority(undefined, decoded!);
+  assert.deepEqual(nativePlacementVersions(merged, {
+    stopRunId: "run-source",
+    stopVersion: 3,
+    runVersions: { "run-source": 3, "run-target": 9 },
+  }, "run-target"), {
+    sourceRunId: "run-target",
+    expectedRunVersion: 12,
+    expectedStopVersion: 8,
+  });
+});
+
+test("same-run follow-up prefers response authority over stale planner versions", () => {
+  const authority = decodePlacementAuthority({
+    placementAuthority: {
+      stopId: "stop-1", stopRunId: "run-1", stopVersion: 4,
+      runVersions: { "run-1": 7 },
+    },
+  }, "stop-1");
+  assert.deepEqual(nativePlacementVersions(authority, {
+    stopRunId: "run-1", stopVersion: 2, runVersions: { "run-1": 5 },
+  }, "run-1"), {
+    sourceRunId: "run-1", expectedRunVersion: 7, expectedStopVersion: 4,
+  });
+  assert.equal(decodePlacementAuthority({ placementAuthority: { stopId: "other", stopRunId: "run-1", stopVersion: 4, runVersions: { "run-1": 7 } } }, "stop-1"), undefined);
+  assert.equal(decodePlacementAuthority({ placementAuthority: { stopId: "stop-1", stopRunId: "run-1", stopVersion: Number.NaN, runVersions: { "run-1": 7 } } }, "stop-1"), undefined);
+});
 
 test("no-end collision terminates and advances by the default duration", () => {
   assert.equal(resolveNextAvailableScheduleStart("09:00", undefined, [{ start: "09:00" }]), "09:15");
