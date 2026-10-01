@@ -19,6 +19,7 @@ import {
   projectedCollectionScheduleCommand,
   queuePlacementConverged,
   reconcileUncertainPlacement,
+  retireConvergedPlacementAuthorities,
   resolveNextAvailableScheduleStart,
   settlePendingScheduleOperation,
   scheduleIntervalsOverlap,
@@ -67,6 +68,66 @@ test("same-run follow-up prefers response authority over stale planner versions"
   });
   assert.equal(decodePlacementAuthority({ placementAuthority: { stopId: "other", stopRunId: "run-1", stopVersion: 4, runVersions: { "run-1": 7 } } }, "stop-1"), undefined);
   assert.equal(decodePlacementAuthority({ placementAuthority: { stopId: "stop-1", stopRunId: "run-1", stopVersion: Number.NaN, runVersions: { "run-1": 7 } } }, "stop-1"), undefined);
+});
+
+const responseAuthority = {
+  stopId: "stop-1", stopRunId: "run-target", stopVersion: 8,
+  runVersions: { "run-source": 5, "run-target": 12 },
+};
+const responseStop = { canonicalId: "stop-1", runId: "run-target", version: 8 };
+const responseRuns = [{ runId: "run-source", version: 5 }, { runId: "run-target", version: 12 }];
+const retire = (
+  stop = responseStop,
+  runs = responseRuns,
+  busy: ReadonlySet<string> = new Set<string>(),
+) => retireConvergedPlacementAuthorities({ "stop-1": responseAuthority }, [stop], runs, busy);
+
+test("response authority still overrides a stale canonical refeed for rapid chaining", () => {
+  const remaining = retire({ ...responseStop, version: 7 }, responseRuns);
+  assert.equal(remaining["stop-1"], responseAuthority);
+  assert.deepEqual(nativePlacementVersions(remaining["stop-1"], {
+    stopRunId: "run-source", stopVersion: 7,
+    runVersions: { "run-source": 4, "run-target": 11 },
+  }, "run-source"), {
+    sourceRunId: "run-target", expectedRunVersion: 12,
+    expectedTargetRunVersion: 5, expectedStopVersion: 8,
+  });
+});
+
+test("equal or newer canonical stop and all runs retire response authority", () => {
+  assert.deepEqual(retire(), {});
+  assert.deepEqual(retire({ ...responseStop, version: 9 }, responseRuns.map((run) => ({ ...run, version: run.version + 1 }))), {});
+});
+
+test("canonical stop alone cannot retire authority while an affected run is stale or missing", () => {
+  assert.equal(retire(responseStop, [{ runId: "run-source", version: 4 }, responseRuns[1]])["stop-1"], responseAuthority);
+  assert.equal(retire(responseStop, [responseRuns[1]])["stop-1"], responseAuthority);
+  assert.equal(retire({ ...responseStop, runId: "run-source" })["stop-1"], responseAuthority);
+});
+
+test("cross-run authority waits for both source and target run versions", () => {
+  assert.equal(retire(responseStop, [responseRuns[0], { ...responseRuns[1], version: 11 }])["stop-1"], responseAuthority);
+  assert.equal(retire(responseStop, [{ ...responseRuns[0], version: 4 }, responseRuns[1]])["stop-1"], responseAuthority);
+  assert.deepEqual(retire(), {});
+});
+
+test("after retirement a later independent run increment supplies canonical v3", () => {
+  const remaining = retire();
+  assert.deepEqual(nativePlacementVersions(remaining["stop-1"], {
+    stopRunId: "run-target", stopVersion: 8,
+    runVersions: { "run-source": 5, "run-target": 13 },
+  }, "run-target"), {
+    sourceRunId: "run-target", expectedRunVersion: 13, expectedStopVersion: 8,
+  });
+});
+
+test("active or queued same-stop command keeps response tokens through chained execution", () => {
+  assert.equal(retire(responseStop, responseRuns, new Set(["stop-1"]))["stop-1"], responseAuthority);
+  assert.deepEqual(retire(responseStop, responseRuns, new Set(["stop-2"])), {});
+});
+
+test("retirement requires the canonical stop even when run versions are current", () => {
+  assert.equal(retireConvergedPlacementAuthorities({ "stop-1": responseAuthority }, [], responseRuns, new Set())["stop-1"], responseAuthority);
 });
 
 test("no-end collision terminates and advances by the default duration", () => {

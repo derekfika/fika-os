@@ -44,6 +44,7 @@ import {
   projectedCollectionScheduleCommand,
   queuePlacementConverged,
   reconcileUncertainPlacement,
+  retireConvergedPlacementAuthorities,
   resolveNextAvailableScheduleStart,
   settlePendingScheduleOperation,
   sameSchedulePosition,
@@ -919,6 +920,15 @@ function RealPlanner(props: RealPlannerProps) {
   const placementOperationSequence = useRef(0);
   useEffect(() => { pendingSchedulesRef.current = pendingSchedules; }, [pendingSchedules]);
   useEffect(() => { confirmedSchedulesRef.current = confirmedSchedules; }, [confirmedSchedules]);
+  useEffect(() => {
+    if (props.projectionState !== "CURRENT" && props.projectionState !== "VALID_EMPTY" || !data) return;
+    placementAuthorityRef.current = retireConvergedPlacementAuthorities(
+      placementAuthorityRef.current,
+      data.stops,
+      runs,
+      new Set([...Object.keys(activePlacementsRef.current), ...Object.keys(queuedPlacementsRef.current)]),
+    );
+  }, [data, props.projectionState, runs]);
   useEffect(() => {
     if (props.projectionState !== "CURRENT" && props.projectionState !== "VALID_EMPTY") return;
     let changed = false;

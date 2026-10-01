@@ -41,6 +41,30 @@ export function mergePlacementAuthority(previous: PlacementAuthority | undefined
   };
 }
 
+/** Retire response tokens only after the planner has observed every affected version. */
+export function retireConvergedPlacementAuthorities(
+  authorities: Record<string, PlacementAuthority>,
+  stops: ReadonlyArray<{ canonicalId: string; runId: string; version: number }>,
+  runs: ReadonlyArray<{ runId: string; version: number }>,
+  busyStopIds: ReadonlySet<string>,
+): Record<string, PlacementAuthority> {
+  const stopById = new Map(stops.map((stop) => [stop.canonicalId, stop]));
+  const runById = new Map(runs.map((run) => [run.runId, run]));
+  let remaining = authorities;
+  for (const [stopId, authority] of Object.entries(authorities)) {
+    if (busyStopIds.has(stopId)) continue;
+    const stop = stopById.get(stopId);
+    if (!stop || stop.runId !== authority.stopRunId || stop.version < authority.stopVersion) continue;
+    if (!Object.entries(authority.runVersions).every(([runId, version]) => {
+      const run = runById.get(runId);
+      return run !== undefined && run.version >= version;
+    })) continue;
+    if (remaining === authorities) remaining = { ...authorities };
+    delete remaining[stopId];
+  }
+  return remaining;
+}
+
 export function nativePlacementVersions(
   authority: PlacementAuthority | undefined,
   fallback: { stopRunId: string; stopVersion: number; runVersions: Record<string, number> },
