@@ -173,3 +173,75 @@ test('readyAt earliest arrival uses UK time across BST and GMT', () => {
 test('legacy native ownership cannot be duplicated through the projection job API', async () => {
   const f = setup(); f.requirements.push(requirement(f)); await reconcile(f); f.seed('fikaLogisticsDeliveryStopsV1', 'old', { canonicalId: 'old', runId: 'r2', requirementRefs: [{ requirementId: 'req:a', sourceVersion: 1 }], movementRequestIds: [], status: 'planned', version: 1, audit: [] }); const before = f.writes; const result = await assign(f); assert.equal(result.response.status, 409); assert.equal(f.writes, before); assert.equal(assignments(f).length, 0);
 });
+
+// Sol correction: ambiguous assignment authority and atomic merged placement.
+function duplicate(f, otherLoad = false) {
+  const assignment = assignments(f)[0];
+  if (otherLoad) { const load = loads(f)[0]; f.seed('fikaLogisticsDeliveryLoadsV1', 'duplicate-load', { ...load, id: 'duplicate-load' }); }
+  f.seed('fikaLogisticsAssignmentsV1', 'legacy-duplicate', { ...assignment, ...(otherLoad ? { loadId: 'duplicate-load' } : {}) });
+}
+for (const action of ['mark-delivery-load-loaded', 'dispatch-delivery-load', 'reschedule-delivery-load', 'mark-stop-loaded']) test('duplicate same-load authority rejects ' + action + ' without writes', async () => {
+  const f = await assigned(); duplicate(f); const load = loads(f)[0]; const before = structuredClone([...f.records]); const writes = f.writes;
+  const result = await f.post({ action, loadId: load.id, stopId: action === 'mark-stop-loaded' ? 'projection-stop:delivery:' + load.id : undefined, expectedLoadVersion: load.version, scheduledTime: '10:45' });
+  assert.equal(result.response.status, 409, JSON.stringify(result.body)); assert.equal(f.writes, writes); assert.deepEqual([...f.records], before);
+});
+test('cross-load duplicate ownership rejects mutation of either load', async () => {
+  const f = await assigned(); duplicate(f, true); const before = structuredClone([...f.records]);
+  for (const load of loads(f)) assert.equal((await f.post({ action: 'mark-delivery-load-loaded', loadId: load.id, expectedLoadVersion: load.version })).response.status, 409);
+  assert.deepEqual([...f.records], before);
+});
+test('mismatched activeLoadId rejects an otherwise unique load', async () => {
+  const f = await assigned(); const job = jobs(f)[0]; f.seed('fikaLogisticsJobsV1', job.id, { ...job, activeLoadId: 'other' }); const load = loads(f)[0];
+  assert.equal((await f.post({ action: 'mark-delivery-load-loaded', loadId: load.id, expectedLoadVersion: load.version })).response.status, 409);
+});
+for (const unrelated of [false, true]) test('withdrawal aggregates duplicate removals per load; unrelated=' + unrelated, async () => {
+  const f = await assigned();
+  if (unrelated) { f.requirements.push(requirement(f, 'b')); await reconcile(f); assert.equal((await assign(f, 'logistics-job:req:b')).response.status, 200); }
+  duplicate(f); const original = loads(f)[0]; f.requirements[0] = { ...f.requirements[0], status: 'withdrawn', sourceVersion: 2 }; await reconcile(f);
+  assert.equal(assignments(f).length, unrelated ? 1 : 0); assert.equal(loads(f)[0].status, unrelated ? 'planned' : 'cancelled'); assert.equal(loads(f)[0].version, original.version + 1);
+  const before = structuredClone([...f.records]); await reconcile(f); assert.deepEqual([...f.records], before);
+});
+async function merged() {
+  const f = await assigned(); const first = loads(f)[0]; const job = jobs(f)[0];
+  f.seed('fikaLogisticsDeliveryLoadsV1', 'historical-load:b', { ...first, id: 'historical-load:b' });
+  f.seed('fikaLogisticsJobsV1', 'logistics-job:req:b', { ...job, id: 'logistics-job:req:b', requirementId: 'req:b', sourceId: 'order:b', activeLoadId: 'historical-load:b' });
+  f.seed('fikaLogisticsAssignmentsV1', 'assignment:b', { ...assignments(f)[0], jobId: 'logistics-job:req:b', loadId: 'historical-load:b' });
+  await f.materialisation.rebuildLogisticsProjection(f.date, 'Operator'); return f;
+}
+function bulk(f, extra = {}) { return { action: 'reschedule-delivery-loads', loadIds: loads(f).map(l => l.id), expectedLoadVersions: Object.fromEntries(loads(f).map(l => [l.id, l.version])), scheduledTime: '10:45', scheduledEnd: '12:00', targetRunId: 'r1', lane: 'delivery', ...extra }; }
+for (const lane of ['delivery', 'collection']) test('merged ' + lane + ' placement commits common schedule and versions once', async () => {
+  const f = await merged(); const originals = loads(f); const result = await f.post(bulk(f, lane === 'collection' ? { lane, scheduledTime: '14:00', scheduledEnd: '15:00', targetRunId: 'r2' } : {}));
+  assert.equal(result.response.status, 200, JSON.stringify(result.body)); assert.equal(result.body.loads.length, 2);
+  for (const load of loads(f)) { const old = originals.find(l => l.id === load.id); assert.equal(load.version, old.version + 1); assert.equal(load.runId, 'r1'); assert.equal(load.vehicleId, 'van1'); if (lane === 'collection') { assert.equal(load.collectionRunId, 'r2'); assert.equal(load.collectionScheduledTime, '14:00'); assert.equal(load.scheduledTime, old.scheduledTime); } else assert.equal(load.scheduledTime, '10:45'); }
+  const projection = f.records.get('fikaLogisticsDayProjectionsV1/' + f.date); assert.equal(projection.deliveryLoads.length, 1); assert.equal(projection.deliveryLoads[0].loadIds.length, 2);
+});
+test('second merged member stale CAS rolls back the whole placement', async () => {
+  const f = await merged(); const command = bulk(f); command.expectedLoadVersions[command.loadIds[1]] = 0; const before = structuredClone([...f.records]);
+  assert.equal((await f.post(command)).response.status, 409); assert.deepEqual([...f.records], before);
+});
+test('second merged member source incompatibility commits neither load', async () => {
+  const f = await merged(); const job = jobs(f)[1]; f.seed('fikaLogisticsJobsV1', job.id, { ...job, requestedWindow: { startTime: '10:00', endTime: '10:35' } }); const before = structuredClone([...f.records]);
+  assert.equal((await f.post(bulk(f))).response.status, 409); assert.deepEqual([...f.records], before);
+});
+test('proposed unauthorized collection owner commits neither merged member', async () => {
+  const f = await merged(); f.principal.permittedVehicleIds = ['van1']; const before = structuredClone([...f.records]);
+  assert.equal((await f.post(bulk(f, { lane: 'collection', targetRunId: 'r2', scheduledTime: '14:00' }))).response.status, 403); assert.deepEqual([...f.records], before);
+});
+test('second owner becoming unauthorized inside transaction commits neither member', async () => {
+  const f = await merged(); f.principal.permittedVehicleIds = ['van1']; const command = bulk(f);
+  f.beforeNextTransaction(() => { const second = loads(f)[1]; f.seed('fikaLogisticsDeliveryLoadsV1', second.id, { ...second, collectionRunId: 'r2' }); });
+  const originals = loads(f); const result = await f.post(command); assert.equal(result.response.status, 403);
+  for (const load of loads(f)) { assert.equal(load.scheduledTime, '10:30'); assert.equal(load.version, originals.find(l => l.id === load.id).version); }
+});
+for (const ids of [[], ['x', 'x'], Array.from({ length: 51 }, (_, i) => 'x' + i)]) test('bulk rejects invalid bounded ID set length=' + ids.length, async () => { const f = setup(); assert.equal((await f.post({ action: 'reschedule-delivery-loads', loadIds: ids, scheduledTime: '10:00' })).response.status, 422); });
+test('one explicit divergent operation legitimately splits the projection', async () => {
+  const f = await merged(); const load = loads(f)[0]; const result = await f.post({ action: 'reschedule-delivery-load', loadId: load.id, expectedLoadVersion: load.version, scheduledTime: '10:45' }); assert.equal(result.response.status, 200); assert.equal(f.records.get('fikaLogisticsDayProjectionsV1/' + f.date).deliveryLoads.length, 2);
+});
+test('clean multi-job load passes membership checks and marks loaded once', async () => { const f = await assigned(); f.requirements.push(requirement(f, 'b')); await reconcile(f); assert.equal((await assign(f, 'logistics-job:req:b')).response.status, 200); const load = loads(f)[0]; const result = await f.post({ action: 'mark-delivery-load-loaded', loadId: load.id, expectedLoadVersion: load.version }); assert.equal(result.response.status, 200); assert.equal(loads(f)[0].version, load.version + 1); });
+
+test('merged placement resolves one collision-adjusted arrival for every constituent', async () => {
+  const f = await merged(); const first = loads(f)[0]; f.seed('fikaLogisticsDeliveryLoadsV1', 'collision', { ...first, id: 'collision', destinationOplocId: 'other', scheduledTime: '10:45', scheduledEnd: '11:00' });
+  const selected = loads(f).filter(l => l.id !== 'collision'); const result = await f.post(bulk(f, { loadIds: selected.map(l => l.id), scheduledTime: '10:45', scheduledEnd: undefined }));
+  assert.equal(result.response.status, 200, JSON.stringify(result.body)); assert.equal(result.body.loads[0].scheduledTime, '11:00'); assert.equal(result.body.loads[1].scheduledTime, '11:00');
+});
+test('incompatible grouping semantics cannot be bundled into one placement', async () => { const f = await merged(); const second = loads(f)[1]; f.seed('fikaLogisticsDeliveryLoadsV1', second.id, { ...second, scheduledEnd: '12:00' }); const before = structuredClone([...f.records]); assert.equal((await f.post(bulk(f))).response.status, 409); assert.deepEqual([...f.records], before); });

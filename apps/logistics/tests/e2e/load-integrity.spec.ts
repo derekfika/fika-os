@@ -6,7 +6,7 @@ import { createRequire } from "node:module";
 // This proves mounted client intent parity, not Firestore emulator integration.
 const { fixture } = createRequire(import.meta.url)("../helpers/authority-route-harness.cjs");
 
-async function scenario(page: Page, collection = false) {
+async function scenario(page: Page, collection = false, merged = false) {
   await page.setViewportSize({ width: 1600, height: 1200 });
   const f = fixture(["van1", "van2"], ["logistics.reconcile"], true);
   for (const key of [...f.records.keys()]) if (!key.startsWith("fikaLogisticsDeliveryRunsV1/")) f.records.delete(key);
@@ -18,6 +18,15 @@ async function scenario(page: Page, collection = false) {
   if (collection) {
     const result = await f.post({ action: "assign-job-to-load", jobId: "logistics-job:req:a", targetRunId: "r1", scheduledTime: "10:30", expectedJobVersion: 1, collectionRequired: true });
     expect(result.response.status).toBe(200);
+  }
+  if (merged) {
+    const loadEntry = [...f.records.entries()].find(([key]: [string, any]) => key.startsWith("fikaLogisticsDeliveryLoadsV1/"))!;
+    const job = f.records.get("fikaLogisticsJobsV1/logistics-job:req:a");
+    const assignment = [...f.records.entries()].find(([key]: [string, any]) => key.startsWith("fikaLogisticsAssignmentsV1/"))![1];
+    f.seed("fikaLogisticsDeliveryLoadsV1", "legacy-merged:b", { ...loadEntry[1], id: "legacy-merged:b" });
+    f.seed("fikaLogisticsJobsV1", "logistics-job:req:b", { ...job, id: "logistics-job:req:b", sourceId: "order:b", requirementId: "req:b", activeLoadId: "legacy-merged:b" });
+    f.seed("fikaLogisticsAssignmentsV1", "assignment:b", { ...assignment, jobId: "logistics-job:req:b", loadId: "legacy-merged:b" });
+    await f.materialisation.rebuildLogisticsProjection(f.date, "Operator");
   }
   const commands: Record<string, any>[] = [];
   await page.route("**/api/**", async route => {
@@ -79,8 +88,8 @@ for (const entry of ["queue", "inspector", "timeline"] as const) for (const coll
         await queue.getByRole("button", { name: "Assign all", exact: true }).click();
       }
     }
-    const action = collection ? "reschedule-delivery-load" : "assign-job-to-load";
-    await expect.poll(() => commands.filter(command => command.action === action).length).toBe(1);
+    const action = collection ? "reschedule-delivery-loads" : "assign-job-to-load";
+    await expect.poll(() => commands.filter(command => command.action !== "ensure-vehicle-day-runs").map(command => command.action)).toEqual([action]);
     await expect.poll(() => [...f.records.values()].find((value: any) => value.id?.startsWith("load:v2:"))?.[collection ? "collectionScheduledTime" : "scheduledTime"]).toBe(collection ? "14:00" : "10:30");
     const load: any = [...f.records.values()].find((value: any) => value.id?.startsWith("load:v2:"));
     expect(load).toMatchObject({ runId: "r1", vehicleId: "van1", scheduledTime: "10:30", collectionRequired: true, version: collection ? 2 : 1 });
@@ -90,6 +99,23 @@ for (const entry of ["queue", "inspector", "timeline"] as const) for (const coll
     expect(job.requestedWindow).toEqual({ startTime: "10:00", endTime: "11:00" });
     expect([...f.records.keys()].filter((key: string) => key.startsWith("fikaLogisticsAssignmentsV1/"))).toHaveLength(1);
     const command = commands.find(command => command.action === action)!;
-    if (collection) expect(command.expectedLoadVersion).toBe(1); else expect(command.expectedJobVersion).toBe(1);
+    if (collection) expect(command.expectedLoadVersions[load.id]).toBe(1); else expect(command.expectedJobVersion).toBe(1);
   });
 }
+
+test("one merged collection placement sends one bulk intent and commits both loads", async ({ page }) => {
+  const { f, commands } = await scenario(page, true, true);
+  const queue = page.locator('[data-timeline-queue-id^="projection-collection:"]').first();
+  await queue.getByRole("button", { name: "Details", exact: true }).click();
+  const inspector = page.getByRole("complementary", { name: "Details inspector" });
+  await inspector.getByRole("button", { name: "Schedule collection", exact: true }).click();
+  await inspector.getByLabel("Target delivery run").selectOption("r2");
+  await inspector.getByLabel("Schedule time", { exact: true }).fill("14:00");
+  await inspector.getByRole("button", { name: "Schedule collection", exact: true }).last().click();
+  await expect.poll(() => commands.filter(command => command.action !== "ensure-vehicle-day-runs").map(command => command.action)).toEqual(["reschedule-delivery-loads"]);
+  const command = commands.find(command => command.action === "reschedule-delivery-loads")!;
+  expect(command.loadIds).toHaveLength(2);
+  expect(commands.filter(command => command.action === "reschedule-delivery-load")).toHaveLength(0);
+  await expect.poll(() => [...f.records.entries()].filter(([key]: [string, any]) => key.startsWith("fikaLogisticsDeliveryLoadsV1/")).every(([, load]: [string, any]) => load.collectionScheduledTime === "14:00" && load.version === 2)).toBe(true);
+  expect(f.records.get("fikaLogisticsDayProjectionsV1/" + f.date).deliveryLoads).toHaveLength(1);
+});

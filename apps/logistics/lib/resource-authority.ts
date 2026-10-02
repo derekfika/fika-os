@@ -91,6 +91,7 @@ export async function authorizeCommand(principal: LogisticsPrincipal, body: Reco
   if (body.action === "create-run") authorizeRun(principal, body.run || {});
   if (body.run?.vehicleId) authorizeRun(principal, body.run);
   if (body.loadId) await checkLoad(body.loadId);
+  for (const id of body.loadIds || []) await checkLoad(id);
   for (const id of [...new Set([body.stopId, body.stop?.canonicalId, ...(body.stopIds || [])].filter(Boolean))] as string[]) {
     if (id.startsWith("projection-stop:")) { await checkLoad(id.split(":").slice(2).join(":")); continue; }
     const stop = await reader.stop(id);

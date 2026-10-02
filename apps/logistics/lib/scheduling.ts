@@ -173,10 +173,9 @@ export function groupAssignmentRoute(collectionPending: boolean): "collection" |
   return collectionPending ? "collection" : "delivery";
 }
 
-export function projectedCollectionScheduleCommand(loadId: string, targetRunId: string, scheduledTime: string, scheduledEnd?: string) {
+export function projectedCollectionScheduleCommand(loadId: string | string[], targetRunId: string, scheduledTime: string, scheduledEnd?: string) {
   return {
-    action: "reschedule-delivery-load" as const,
-    loadId,
+    ...(Array.isArray(loadId) ? { action: "reschedule-delivery-loads" as const, loadIds: loadId } : { action: "reschedule-delivery-load" as const, loadId }),
     scheduledTime,
     targetRunId,
     lane: "collection" as const,

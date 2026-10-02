@@ -566,6 +566,7 @@ async function handlePost(request: NextRequest) {
       requirementIds?: string[];
       expectedSourceVersions?: Record<string, number>;
       expectedStopVersion?: number;
+      loadIds?: string[];
       expectedLoadVersion?: number;
       expectedLoadVersions?: Record<string, number>;
       expectedJobVersion?: number;
@@ -601,6 +602,7 @@ async function handlePost(request: NextRequest) {
       projectionSequence: body.expectedRunVersion ?? body.expectedStopVersion ?? body.expectedSourceVersion,
       entityId: body.runId || body.stopId || body.movementId || body.jobId || body.loadId || body.run?.canonicalId || body.movement?.canonicalId,
     };
+    if (body.action === "reschedule-delivery-loads" && (!Array.isArray(body.loadIds) || !body.loadIds.length || body.loadIds.length > 50 || body.loadIds.some(id => typeof id !== "string" || !id) || new Set(body.loadIds).size !== body.loadIds.length)) throw new HttpError(422, "Choose 1–50 unique canonical load IDs.");
     const requirementOwnerStops = new Map<string, Promise<DeliveryStop[]>>();
     await authorizeCommand(principal, body, {
       run: getRun,
@@ -710,51 +712,53 @@ async function handlePost(request: NextRequest) {
       }
       return NextResponse.json(result.load);
     }
-    if (body.action === "reschedule-delivery-load" && body.loadId && body.scheduledTime) {
+    if (["reschedule-delivery-load", "reschedule-delivery-loads"].includes(body.action) && body.scheduledTime) {
+      const loadIds = body.action === "reschedule-delivery-loads" ? body.loadIds! : body.loadId ? [body.loadId] : [];
+      if (!loadIds.length) throw new HttpError(422, "Canonical load IDs are required.");
       validatePlannedSchedule(undefined, { startTime: body.scheduledTime, ...(body.scheduledEnd ? { endTime: body.scheduledEnd } : {}) });
-      const currentLoad = await getDeliveryLoad(body.loadId);
-      if (!currentLoad) throw new HttpError(404, "Delivery load not found.");
-      await assertProjectionCurrent(currentLoad.serviceDate);
       const requestedTime = body.scheduledTime;
-      if (body.targetRunId && body.collectionRunId && body.lane === "collection" && body.targetRunId !== body.collectionRunId) throw new HttpError(422, "Choose one canonical collection run.");
-      const requestedRunId = body.lane === "collection" ? body.collectionRunId || body.targetRunId : body.targetRunId;
-      const result = await runTracedTransaction(async (transaction) => {
-        const loadRef = deliveryLoads().doc(body.loadId!);
-        const loadSnap = await transaction.get(loadRef);
-        if (!loadSnap.exists) throw new HttpError(404, "Delivery load not found.");
-        const load = loadSnap.data() as import("@/lib/types").DeliveryLoad;
-        assertLoadVersion(load, body.expectedLoadVersion ?? body.expectedLoadVersions?.[load.id]);
-        await assertProjectionCurrent(load.serviceDate, transaction);
-        const currentLoads = (await transaction.get(deliveryLoads().where("serviceDate", "==", load.serviceDate))).docs.map(doc => doc.data() as import("@/lib/types").DeliveryLoad);
-        const requestedDuration = body.scheduledEnd ? Math.max(15, Number(body.scheduledEnd.slice(0, 2)) * 60 + Number(body.scheduledEnd.slice(3, 5)) - (Number(requestedTime.slice(0, 2)) * 60 + Number(requestedTime.slice(3, 5)))) : undefined;
-        const effectiveScheduledTime = nextAvailableLoadTime(currentLoads, { loadId: load.id, runId: requestedRunId || (body.lane === "collection" ? load.collectionRunId || load.runId : load.runId), lane: body.lane === "collection" ? "collection" : "delivery", destinationOplocId: body.lane === "collection" ? load.originOplocId : load.destinationOplocId, start: requestedTime, end: body.scheduledEnd });
-        const effectiveScheduledEnd = requestedDuration === undefined ? undefined : addMinutesToTime(effectiveScheduledTime, requestedDuration);
-        const collection = body.lane === "collection";
-        let vehicleId = load.vehicleId;
-        if (requestedRunId) {
-          const target = (await transaction.get(runs().doc(requestedRunId))).data() as DeliveryRun | undefined;
-          if (!target || target.serviceDate !== load.serviceDate || !target.vehicleId) throw new HttpError(409, "Canonical target run is unavailable.");
+      const collection = body.lane === "collection";
+      if (body.lane && !["delivery", "collection"].includes(body.lane)) throw new HttpError(422, "Choose delivery or collection.");
+      if (body.targetRunId && body.collectionRunId && collection && body.targetRunId !== body.collectionRunId) throw new HttpError(422, "Choose one canonical collection run.");
+      const requestedRunId = collection ? body.collectionRunId || body.targetRunId : body.targetRunId;
+      const result = await runTracedTransaction(async transaction => {
+        const snapshots = await Promise.all(loadIds.map(id => transaction.get(deliveryLoads().doc(id))));
+        if (snapshots.some(snapshot => !snapshot.exists)) throw new HttpError(404, "Delivery load not found.");
+        const loads = snapshots.map(snapshot => snapshot.data() as import("@/lib/types").DeliveryLoad);
+        const placementKey = (load: import("@/lib/types").DeliveryLoad) => JSON.stringify([load.serviceDate, load.originOplocId, load.destinationOplocId, load.runId, load.vehicleId, load.scheduledTime, load.scheduledEnd, Boolean(load.collectionRequired), load.collectionRunId, load.collectionScheduledTime, load.collectionScheduledEnd, load.status]);
+        for (const load of loads) {
+          assertLoadVersion(load, body.expectedLoadVersions?.[load.id] ?? (loadIds.length === 1 ? body.expectedLoadVersion : undefined));
+          await assertLoadAssignmentsCurrent(transaction, load);
+          // Current owner checks must also join this transaction before any writes.
+          await authorizeLoad(principal, load, async id => (await transaction.get(runs().doc(id))).data() as DeliveryRun | undefined);
+        }
+        if (loads.some(load => placementKey(load) !== placementKey(loads[0]))) throw new HttpError(409, "Grouped placement changed. Refresh planning.");
+        const first = loads[0];
+        await assertProjectionCurrent(first.serviceDate, transaction);
+        const currentLoads = (await transaction.get(deliveryLoads().where("serviceDate", "==", first.serviceDate))).docs.map(doc => doc.data() as import("@/lib/types").DeliveryLoad).filter(load => !loadIds.includes(load.id));
+        const runId = requestedRunId || (collection ? first.collectionRunId || first.runId : first.runId);
+        let vehicleId = first.vehicleId;
+        if (runId) {
+          const target = (await transaction.get(runs().doc(runId))).data() as DeliveryRun | undefined;
+          if (!target || target.serviceDate !== first.serviceDate || !target.vehicleId) throw new HttpError(409, "Canonical target run is unavailable.");
+          authorizeRun(principal, target);
           if (!collection) vehicleId = target.vehicleId;
         }
-        const nextVersion = load.version + 1;
-        const next = { ...load, ...(collection ? { collectionRequired: true, collectionScheduledTime: effectiveScheduledTime, collectionScheduledEnd: effectiveScheduledEnd, collectionRunId: requestedRunId || load.collectionRunId || load.runId } : { scheduledTime: effectiveScheduledTime, scheduledEnd: effectiveScheduledEnd, runId: requestedRunId || load.runId, vehicleId }), updatedAt: now, version: nextVersion, audit: [...load.audit, { action: collection ? "collection-rescheduled" : "load-rescheduled", at: now, by, version: nextVersion }] };
-        const members = await transaction.get(logisticsAssignments().where("loadId", "==", load.id));
-        const jobs = await Promise.all(members.docs.map(doc => transaction.get(logisticsJobs().doc(doc.data().jobId))));
-        if (!members.size || jobs.some(snapshot => !snapshot.exists || !compatibleLoad(snapshot.data() as import("@/lib/types").LogisticsJob, next))) throw new HttpError(409, "Load schedule conflicts with current source truth. Refresh planning.");
-        transaction.set(loadRef, next);
-        return next;
+        const requestedDuration = body.scheduledEnd ? Math.max(15, Number(body.scheduledEnd.slice(0, 2)) * 60 + Number(body.scheduledEnd.slice(3, 5)) - (Number(requestedTime.slice(0, 2)) * 60 + Number(requestedTime.slice(3, 5)))) : undefined;
+        const effectiveScheduledTime = nextAvailableLoadTime(currentLoads, { runId, lane: collection ? "collection" : "delivery", destinationOplocId: collection ? first.originOplocId : first.destinationOplocId, start: requestedTime, end: body.scheduledEnd });
+        const effectiveScheduledEnd = requestedDuration === undefined ? undefined : addMinutesToTime(effectiveScheduledTime, requestedDuration);
+        const nextLoads = loads.map(load => ({ ...load, ...(collection ? { collectionRequired: true, collectionScheduledTime: effectiveScheduledTime, collectionScheduledEnd: effectiveScheduledEnd, collectionRunId: runId } : { scheduledTime: effectiveScheduledTime, scheduledEnd: effectiveScheduledEnd, runId, vehicleId }), updatedAt: now, version: load.version + 1, audit: [...load.audit, { action: collection ? "collection-rescheduled" : "load-rescheduled", at: now, by, version: load.version + 1 }] }));
+        for (const next of nextLoads) await assertLoadAssignmentsCurrent(transaction, next);
+        for (const next of nextLoads) transaction.set(deliveryLoads().doc(next.id), next);
+        return nextLoads;
       });
-      const event = await appendLogisticsChange({
-        serviceDate: result.serviceDate,
-        entityType: "deliveryLoad",
-        entityId: result.id,
-        changeType: body.lane === "collection" ? "collection-rescheduled" : "load-rescheduled",
-        revision: result.version,
-        changedAt: now,
-        actorId,
-      });
-      await rebuildLogisticsProjection(result.serviceDate, by, event.sequence);
-      return NextResponse.json(result);
+      let sequence = 0;
+      for (const load of result) {
+        const event = await appendLogisticsChange({ serviceDate: load.serviceDate, entityType: "deliveryLoad", entityId: load.id, changeType: collection ? "collection-rescheduled" : "load-rescheduled", revision: load.version, changedAt: now, actorId });
+        sequence = Math.max(sequence, event.sequence);
+      }
+      await rebuildLogisticsProjection(result[0].serviceDate, by, sequence);
+      return NextResponse.json(body.action === "reschedule-delivery-loads" ? { ...result[0], loads: result } : result[0]);
     }
     if (body.action === "mark-delivery-load-loaded" && body.loadId) {
       const result = await runTracedTransaction(async (transaction) => {
@@ -797,6 +801,7 @@ async function handlePost(request: NextRequest) {
         const job = jobSnap.data() as import("@/lib/types").LogisticsJob;
         if (!Number.isInteger(body.expectedJobVersion)) throw new HttpError(422, "The current job version is required to remove its assignment.");
         if (job.version !== body.expectedJobVersion || body.loadId && body.loadId !== assignment.loadId) throw new HttpError(409, "Job assignment changed. Refresh planning before removal.");
+        await assertLoadAssignmentsCurrent(transaction, load);
         transaction.delete(assignmentSnap.docs[0].ref);
         transaction.set(jobRef, { ...job, activeLoadId: undefined, version: job.version + 1, updatedAt: now, audit: [...job.audit, { action: `job-removed:${assignment.loadId}`, at: now, by, version: job.version + 1 }] });
         transaction.set(loadRef, { ...load, ...(loadAssignments.size <= 1 ? { status: "cancelled" } : {}), updatedAt: now, version: load.version + 1, audit: [...load.audit, { action: "job-removed", at: now, by, version: load.version + 1 }] });
@@ -826,10 +831,7 @@ async function handlePost(request: NextRequest) {
         const load = loadSnap.data() as import("@/lib/types").DeliveryLoad;
         assertLoadVersion(load, body.expectedLoadVersion ?? body.expectedLoadVersions?.[load.id]);
         await assertProjectionCurrent(load.serviceDate, transaction);
-        const assignmentsSnap = await transaction.get(logisticsAssignments().where("loadId", "==", load.id));
-        const jobSnapshots = await Promise.all(assignmentsSnap.docs.map(doc => transaction.get(logisticsJobs().doc(doc.data().jobId))));
-        const jobs = jobSnapshots.filter(doc => doc.exists).map(doc => doc.data() as import("@/lib/types").LogisticsJob);
-        const assignments = assignmentsSnap.docs.map((doc) => doc.data() as import("@/lib/types").LogisticsAssignment);
+        const { jobs, assignments } = await assertLoadAssignmentsCurrent(transaction, load);
         if (load.collectionRequired && !load.collectionScheduledTime) throw new HttpError(422, "Collection timing is required before this delivery can be dispatched.");
         try { assertDispatchable(load, jobs, assignments); } catch (error) { throw new HttpError(422, error instanceof Error ? error.message : "Load is not ready to dispatch."); }
         const next = { ...load, status: "dispatched" as const, dispatchedAt: now, updatedAt: now, version: load.version + 1, audit: [...load.audit, { action: "load-dispatched", at: now, by, version: load.version + 1 }] };

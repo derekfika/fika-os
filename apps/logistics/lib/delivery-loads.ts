@@ -68,6 +68,8 @@ export function setJobCollectionStatus(job: LogisticsJob, status: LogisticsJob["
 }
 
 export function assertDispatchable(load: DeliveryLoad, jobs: LogisticsJob[], assignments: LogisticsAssignment[]) {
+  const members = assignments.filter(a => a.loadId === load.id);
+  if (members.some(a => assignments.filter(other => other.jobId === a.jobId).length !== 1 || jobs.some(job => job.id === a.jobId && job.activeLoadId && job.activeLoadId !== load.id))) throw new HttpError(409, "Load assignment integrity requires review.");
   if (assignments.some(a => a.loadId === load.id && !jobs.some(j => j.id === a.jobId && compatibleLoad(j, load)))) throw new Error("Load assignment no longer agrees with current source truth.");
   const summary = loadSummary(load, jobs, assignments);
   if (!summary.jobCount) throw new Error("An empty delivery load cannot be dispatched.");

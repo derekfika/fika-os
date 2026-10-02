@@ -187,7 +187,7 @@ export async function reconcileRequirementJob(id: string, requirement: Fulfilmen
     if (prior && requirement && (prior.sourceVersion || 0) > requirement.sourceVersion) return undefined;
     const next: LogisticsJob = requirement ? logisticsJobForRequirement(requirement, prior, by, now) : { ...prior!, sourceStatus: "withdrawn", updatedAt: now, version: prior!.version + 1, audit: [...prior!.audit, { action: "reconciled-job-withdrawn", at: now, by, version: prior!.version + 1 }] };
     const assignments = await tx.get(logisticsAssignments().where("jobId", "==", id));
-    const invalid = [];
+    const invalid: Array<{ doc: import("firebase-admin/firestore").QueryDocumentSnapshot; load?: DeliveryLoad; members?: import("firebase-admin/firestore").QuerySnapshot }> = [];
     for (const doc of assignments.docs) {
       const loadId = doc.data().loadId;
       const loadSnapshot = await tx.get(deliveryLoads().doc(loadId));
@@ -231,10 +231,14 @@ export async function reconcileRequirementJob(id: string, requirement: Fulfilmen
       if (!changed.length) continue;
       tx.set(doc.ref, { ...run, orderedStopIds: run.orderedStopIds.filter(id => !changed.some(item => item.remove && item.stop.canonicalId === id)), version: run.version + 1, updatedAt: now, audit: [...run.audit, { action: `source-reconciled:${requirementId}`, at: now, by, version: run.version + 1 }] });
     }
-    for (const { doc, load, members } of invalid) {
+    for (const { doc } of invalid) {
       tx.delete(doc.ref);
-      if (load) tx.set(deliveryLoads().doc(load.id), { ...load, ...(members!.size <= 1 ? { status: "cancelled" } : {}), updatedAt: now, version: load.version + 1, audit: [...load.audit, { action: "source-assignment-invalidated", at: now, by, version: load.version + 1 }] });
       next.audit.push({ action: `source-assignment-invalidated:${doc.data().loadId}`, at: now, by, version: next.version });
+    }
+    // Aggregate removals by load: duplicate documents all leave in this commit.
+    for (const { load, members } of new Map(invalid.filter(item => item.load).map(item => [item.load!.id, item])).values()) {
+      const remaining = members!.docs.filter(member => !invalid.some(item => item.doc.ref.path === member.ref.path));
+      tx.set(deliveryLoads().doc(load!.id), { ...load!, ...(!remaining.length ? { status: "cancelled" } : {}), updatedAt: now, version: load!.version + 1, audit: [...load!.audit, { action: "source-assignment-invalidated", at: now, by, version: load!.version + 1 }] });
     }
     if (invalid.length || next.sourceStatus === "withdrawn") delete next.activeLoadId;
     tx.set(ref, next);

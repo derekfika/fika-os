@@ -10,8 +10,16 @@ export type AssignmentBatch = { loads: Map<string, DeliveryLoad>; dayLoads?: Del
 
 export async function assertLoadAssignmentsCurrent(tx: Transaction, load: DeliveryLoad) {
   const assignments = await tx.get(logisticsAssignments().where("loadId", "==", load.id));
-  const jobs = await Promise.all(assignments.docs.map(doc => tx.get(logisticsJobs().doc(doc.data().jobId))));
-  if (!assignments.size || jobs.some(snapshot => !snapshot.exists || !compatibleLoad(snapshot.data() as LogisticsJob, load))) throw new HttpError(409, "Load no longer has active compatible source assignments. Refresh planning.");
+  const ids = assignments.docs.map(doc => doc.data().jobId as string);
+  const conflict = () => new HttpError(409, "Load assignment integrity requires review. Refresh planning.");
+  if (!ids.length || ids.some(id => !id) || new Set(ids).size !== ids.length) throw conflict();
+  const jobs = await Promise.all(ids.map(async id => {
+    const [snapshot, ownership] = await Promise.all([tx.get(logisticsJobs().doc(id)), tx.get(logisticsAssignments().where("jobId", "==", id))]);
+    const job = snapshot.exists ? snapshot.data() as LogisticsJob : undefined;
+    if (!job || !compatibleLoad(job, load) || ownership.size !== 1 || ownership.docs[0].data().loadId !== load.id || job.activeLoadId && job.activeLoadId !== load.id) throw conflict();
+    return job;
+  }));
+  return { jobs, assignments: assignments.docs.map(doc => doc.data() as LogisticsAssignment) };
 }
 
 /** One job document is the serialization point, including legacy pair-ID assignments.
@@ -74,10 +82,12 @@ export async function assignCanonicalJob(tx: Transaction, intent: AssignmentInte
   if ((!intent.sourceJob || existing.length) && !Number.isInteger(intent.expectedJobVersion)) throw new HttpError(422, "The current job version is required.");
   if ((!intent.sourceJob || existing.length) && job.version !== intent.expectedJobVersion) throw new HttpError(409, "Job assignment changed. Refresh Logistics and retry.");
   if (matching.length && !batch?.loads.has(load.id)) assertLoadVersion(load, intent.expectedLoadVersions?.[load.id]);
+  if (matching.length && !batch?.loads.has(load.id)) await assertLoadAssignmentsCurrent(tx, load);
   const oldLoad = existing[0] && existing[0].loadId !== load.id ? (await tx.get(deliveryLoads().doc(existing[0].loadId))).data() as DeliveryLoad | undefined : undefined;
   const oldMembers = oldLoad ? await tx.get(logisticsAssignments().where("loadId", "==", oldLoad.id)) : undefined;
   if (existing.length && !oldLoad && existing[0].loadId !== load.id) throw new HttpError(409, "Prior load authority is unavailable.");
   if (oldLoad) assertLoadVersion(oldLoad, intent.expectedLoadVersions?.[oldLoad.id]);
+  if (oldLoad) await assertLoadAssignmentsCurrent(tx, oldLoad);
   const next = assignJob(job, load, existing, by, now);
   const saved = batch?.loads.has(load.id) ? { ...next.load, version: load.version, audit: [...load.audit, { action: "job-assigned", at: now, by, version: load.version }] } : matching.length ? next.load : { ...next.load, version: 1, audit: [...load.audit, { action: "job-assigned", at: now, by, version: 1 }] };
   for (const doc of assigned.docs) tx.delete(doc.ref);

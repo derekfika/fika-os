@@ -1413,7 +1413,7 @@ function RealPlanner(props: RealPlannerProps) {
         return;
       }
       if (target.kind === "projection") {
-        coordinateQueuePlacement(group.groupKey, choice.runId, "collection", choice.start, choice.end, () => props.placementCommand(projectedCollectionScheduleCommand(target.loadId, choice.runId, choice.start, choice.end)));
+        coordinateQueuePlacement(group.groupKey, choice.runId, "collection", choice.start, choice.end, () => props.placementCommand(projectedCollectionScheduleCommand(projectionLoadIdsForStop(`projection-stop:collection:${target.loadId}`), choice.runId, choice.start, choice.end)));
         return;
       }
       scheduleStop(target.runId, target.stopId, choice.runId, choice.start, choice.end, "collection");
@@ -1439,12 +1439,7 @@ function RealPlanner(props: RealPlannerProps) {
       const original: SchedulePosition = { runId: originalStop?.run.runId || sourceRunId, lane: collection ? "collection" : "delivery", start: originalStop?.item.plannedWindow?.startTime || originalStop?.item.plannedArrivalTime || safeTime, ...(originalStop?.item.plannedWindow?.endTime ? { end: originalStop.item.plannedWindow.endTime } : {}) };
       const proposed: SchedulePosition = { runId: targetRunId, lane: collection ? "collection" : "delivery", start: safeTime, ...(end ? { end: addClockMinutes(safeTime, Math.max(15, clockMinutes(end) - clockMinutes(time))) } : {}) };
       coordinatePlacement(stopId, original, proposed, async () => {
-        let outcome: PlacementOutcome = { ok: true, body: {} };
-        for (const loadId of loadIds) {
-          outcome = await props.placementCommand({ action: "reschedule-delivery-load", loadId, scheduledTime: safeTime, ...(proposed.end ? { scheduledEnd: proposed.end } : {}), targetRunId, ...(collection ? { lane: "collection" } : {}) });
-          if (!outcome.ok) break;
-        }
-        return outcome;
+        return props.placementCommand({ action: "reschedule-delivery-loads", loadIds, scheduledTime: safeTime, ...(proposed.end ? { scheduledEnd: proposed.end } : {}), targetRunId, lane: collection ? "collection" : "delivery" });
       });
       return;
     }
@@ -1539,7 +1534,7 @@ function RealPlanner(props: RealPlannerProps) {
       if (lane === "collection") {
         const loadId = id.startsWith("projection-collection:") ? id.slice("projection-collection:".length) : "";
         if (!loadId) return;
-        coordinateQueuePlacement(id, targetRunId, "collection", time, undefined, () => props.placementCommand(projectedCollectionScheduleCommand(loadId, targetRunId, time)));
+        coordinateQueuePlacement(id, targetRunId, "collection", time, undefined, () => props.placementCommand(projectedCollectionScheduleCommand(projectionLoadIdsForStop(`projection-stop:collection:${loadId}`), targetRunId, time)));
         return;
       }
       const group = groups.find((item) => item.groupKey === id);
