@@ -6,15 +6,15 @@ for (const both of [false, true]) {
     const f = fixture(both ? ['van1', 'van2'] : ['van1']);
     const job = { ...f.records.get('fikaLogisticsJobsV1/jl1'), id: 'shared-job', destinationOplocId: 'shared-site' };
     f.seed('fikaLogisticsJobsV1', job.id, job); await f.rebuild(); const before = f.writes;
-    const result = await f.post({ action: 'assign-job-to-load', jobId: job.id, targetRunId: 'r1', scheduledTime: '10:00' });
+    const result = await f.post({ action: 'assign-job-to-load', jobId: job.id, targetRunId: 'r1', scheduledTime: '10:00', expectedJobVersion: 1, expectedLoadVersions: { l1: 1 } });
     assert.equal(result.response.status, both ? 200 : 403);
     if (!both) assert.equal(f.writes, before);
   });
   for (const action of ['assign-group', 'assign']) test('R1 shared native requirement ' + action + ' ' + (both ? 'allowed' : 'denied'), async () => {
     const f = fixture(both ? ['van1', 'van2'] : ['van1']);
-    f.requirements.push({ canonicalId: 'shared-requirement', sourceDomain: 'cpu-production', sourceVersion: 1, serviceDate: f.date, status: 'ready_for_planning', destinationOplocId: 'shared-site', destinationLabelSnapshot: 'Shared site', lines: [] });
+    f.requirements.push({ canonicalId: 'shared-requirement', sourceDomain: 'cpu-production', sourceEntityId: 'test-order', sourceVersion: 1, serviceDate: f.date, status: 'ready_for_planning', destinationOplocId: 'shared-site', destinationLabelSnapshot: 'Shared site', lines: [] });
     const before = f.writes;
-    const result = await f.post({ action, runId: 'r1', expectedRunVersion: 1, requirementId: action === 'assign' ? 'shared-requirement' : undefined, expectedSourceVersion: 1, requirementIds: action === 'assign-group' ? ['shared-requirement'] : undefined, expectedSourceVersions: { 'shared-requirement': 1 } });
+    const result = await f.post({ action, runId: 'r1', expectedRunVersion: 1, plannedArrivalTime: '10:00', requirementId: action === 'assign' ? 'shared-requirement' : undefined, expectedSourceVersion: 1, requirementIds: action === 'assign-group' ? ['shared-requirement'] : undefined, expectedSourceVersions: { 'shared-requirement': 1 } });
     assert.equal(result.response.status, both ? 200 : 403);
     if (!both) assert.equal(f.writes, before);
   });
@@ -29,17 +29,17 @@ for (const both of [false, true]) {
 }
 test('R1 van1 assigned job remains manageable by van1 operator', async () => {
   const f = fixture(); await f.rebuild();
-  assert.equal((await f.post({ action: 'assign-job-to-load', jobId: 'jl1', targetRunId: 'r1', scheduledTime: '10:00' })).response.status, 200);
+  assert.equal((await f.post({ action: 'assign-job-to-load', jobId: 'jl1', targetRunId: 'r1', scheduledTime: '10:00', expectedJobVersion: 1, expectedLoadVersions: { l1: 1 } })).response.status, 200);
 });
 test('R1 previously assigned native requirement remains manageable on van1', async () => {
-  const f = fixture(); const requirement = { canonicalId: 'owned-requirement', sourceDomain: 'cpu-production', sourceVersion: 1, serviceDate: f.date, status: 'ready_for_planning', destinationOplocId: 'site:s1', destinationLabelSnapshot: 's1', lines: [] };
+  const f = fixture(); const requirement = { canonicalId: 'owned-requirement', sourceDomain: 'cpu-production', sourceEntityId: 'test-order', sourceVersion: 1, serviceDate: f.date, status: 'ready_for_planning', destinationOplocId: 'site:s1', destinationLabelSnapshot: 's1', lines: [] };
   f.requirements.push(requirement); f.records.get('fikaLogisticsDeliveryStopsV1/s1').requirementRefs = [{ requirementId: requirement.canonicalId, sourceVersion: 1 }];
   assert.equal((await f.post({ action: 'schedule-stop', runId: 'r1', stopId: 's1', plannedArrivalTime: '10:00', expectedStopVersion: 1, expectedRunVersion: 1 })).response.status, 200);
 });
 test('R1 ownership removed after preflight cannot be replaced with proposed job assignment', async () => {
   const f = fixture(); await f.rebuild(); const before = f.writes;
   f.beforeNextTransaction(() => f.records.delete('fikaLogisticsAssignmentsV1/jl1:l1'));
-  assert.equal((await f.post({ action: 'assign-job-to-load', jobId: 'jl1', targetRunId: 'r1', scheduledTime: '10:00' })).response.status, 403);
+  assert.equal((await f.post({ action: 'assign-job-to-load', jobId: 'jl1', targetRunId: 'r1', scheduledTime: '10:00', expectedJobVersion: 1, expectedLoadVersions: { l1: 1 } })).response.status, 403);
   assert.equal(f.writes, before);
 });
 async function assignedDriver(f) {
@@ -47,11 +47,11 @@ async function assignedDriver(f) {
 }
 test('R1 native ownership removed after preflight cannot be replaced by a proposed stop', async () => {
   const f = fixture(); f.seed('fikaLogisticsDeliveryRunsV1', 'r3', f.run('r3', 'van1'));
-  const requirement = { canonicalId: 'race-requirement', sourceDomain: 'cpu-production', sourceVersion: 1, serviceDate: f.date, status: 'ready_for_planning', destinationOplocId: 'site:race', destinationLabelSnapshot: 'Race site', lines: [] };
+  const requirement = { canonicalId: 'race-requirement', sourceDomain: 'cpu-production', sourceEntityId: 'test-order', sourceVersion: 1, serviceDate: f.date, status: 'ready_for_planning', destinationOplocId: 'site:race', destinationLabelSnapshot: 'Race site', lines: [] };
   f.requirements.push(requirement); f.records.get('fikaLogisticsDeliveryStopsV1/s1').requirementRefs = [{ requirementId: requirement.canonicalId, sourceVersion: 1 }];
   f.beforeNextTransaction(() => { f.records.get('fikaLogisticsDeliveryStopsV1/s1').requirementRefs = []; });
   const before = f.writes;
-  assert.equal((await f.post({ action: 'assign-group', runId: 'r3', requirementIds: [requirement.canonicalId], expectedSourceVersions: { [requirement.canonicalId]: 1 }, expectedRunVersion: 1 })).response.status, 403);
+  assert.equal((await f.post({ action: 'assign-group', runId: 'r3', requirementIds: [requirement.canonicalId], expectedSourceVersions: { [requirement.canonicalId]: 1 }, expectedRunVersion: 1, plannedArrivalTime: '10:00' })).response.status, 403);
   assert.equal(f.writes, before);
 });
 test('R1 movement ownership removed after preflight cannot be replaced by a proposed stop', async () => {

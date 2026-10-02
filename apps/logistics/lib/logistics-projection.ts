@@ -1,3 +1,4 @@
+import { compatibleLoad } from "./delivery-loads";
 import type { DeliveryLoad, DeliveryRun, DeliveryStop, LogisticsAssignment, LogisticsChangeEvent, LogisticsDayProjection, LogisticsJob, LogisticsProjectionJob, LogisticsProjectionLoad, LogisticsSourceLineage, MovementRequest } from "./types";
 import type { LogisticsProjectionInvalidation } from "../../shared/logistics-projection";
 export type { LogisticsProjectionInvalidation } from "../../shared/logistics-projection";
@@ -5,21 +6,25 @@ export type { LogisticsProjectionInvalidation } from "../../shared/logistics-pro
 const totalUnits = (job: LogisticsJob) => job.contents.reduce((sum, item) => sum + item.quantity, 0);
 
 export function buildLogisticsDayProjection(input: { serviceDate: string; jobs: LogisticsJob[]; loads: DeliveryLoad[]; assignments: LogisticsAssignment[]; runs?: DeliveryRun[]; stops?: DeliveryStop[]; movements?: MovementRequest[]; collectionRequiredKeys?: string[]; lastChangeSequence?: number; revision?: number; now?: string }): LogisticsDayProjection {
-  const jobs = input.jobs.filter((job) => job.serviceDate === input.serviceDate);
+  const jobs = input.jobs.filter((job) => job.serviceDate === input.serviceDate && job.sourceStatus !== "withdrawn");
   const loads = input.loads.filter((load) => load.serviceDate === input.serviceDate && load.status !== "cancelled");
-  const assignments = input.assignments;
+  const counts = new Map<string, number>();
+  for (const assignment of input.assignments) counts.set(assignment.jobId, (counts.get(assignment.jobId) || 0) + 1);
+  const assignments = input.assignments.filter(a => counts.get(a.jobId) === 1 && jobs.some(j => j.id === a.jobId && loads.some(l => l.id === a.loadId && compatibleLoad(j, l))));
   const assigned = new Map(assignments.map((item) => [item.jobId, item.loadId]));
-  const queue: LogisticsProjectionJob[] = jobs.filter((job) => !assigned.has(job.id)).map((job) => ({ id: job.id, sourceType: job.sourceType, sourceId: job.sourceId, serviceDate: job.serviceDate, originOplocId: job.originOplocId, destinationOplocId: job.destinationOplocId, destinationLabelSnapshot: job.destinationLabelSnapshot, requestedWindow: job.requestedWindow, productionReadiness: job.productionReadiness, collectionStatus: job.collectionStatus, contents: job.contents, ...(job.notes ? { notes: job.notes } : {}), ...(job.workstream ? { workstream: job.workstream } : {}), totalUnits: totalUnits(job) }));
+  const nativeIds = new Set((input.stops || []).flatMap(stop => stop.requirementRefs.map(ref => ref.requirementId)));
+  const queue: LogisticsProjectionJob[] = jobs.filter((job) => !assigned.has(job.id) && !nativeIds.has(job.requirementId || "")).map((job) => ({ id: job.id, version: job.version, sourceVersion: job.sourceVersion, requirementId: job.requirementId, sourceType: job.sourceType, sourceId: job.sourceId, serviceDate: job.serviceDate, originOplocId: job.originOplocId, destinationOplocId: job.destinationOplocId, destinationLabelSnapshot: job.destinationLabelSnapshot, requestedWindow: job.requestedWindow, productionReadiness: job.productionReadiness, collectionStatus: job.collectionStatus, contents: job.contents, ...(job.notes ? { notes: job.notes } : {}), ...(job.workstream ? { workstream: job.workstream } : {}), totalUnits: totalUnits(job) }));
   const projectedLoads: LogisticsProjectionLoad[] = loads.map((load) => {
     const childJobs = assignments.filter((item) => item.loadId === load.id).map((item) => jobs.find((job) => job.id === item.jobId)).filter(Boolean) as LogisticsJob[];
     const collectedCount = childJobs.filter((job) => job.collectionStatus === "collected").length;
-    return { id: load.id, loadIds: [load.id], serviceDate: load.serviceDate, originOplocId: load.originOplocId, destinationOplocId: load.destinationOplocId, destinationLabelSnapshot: load.destinationLabelSnapshot, scheduledTime: load.scheduledTime, scheduledEnd: load.scheduledEnd, ...(load.collectionRequired ? { collectionRequired: true } : {}), ...(load.collectionScheduledTime ? { collectionScheduledTime: load.collectionScheduledTime } : {}), ...(load.collectionScheduledEnd ? { collectionScheduledEnd: load.collectionScheduledEnd } : {}), ...(load.collectionRunId ? { collectionRunId: load.collectionRunId } : {}), loaded: load.loaded, status: load.status, driverId: load.driverId, vehicleId: load.vehicleId, runId: load.runId, jobs: childJobs.map((job) => ({ id: job.id, sourceType: job.sourceType, sourceId: job.sourceId, collectionStatus: job.collectionStatus, productionReadiness: job.productionReadiness, contents: job.contents, ...(job.notes ? { notes: job.notes } : {}), ...(job.workstream ? { workstream: job.workstream } : {}), totalUnits: totalUnits(job) })), jobCount: childJobs.length, totalUnits: childJobs.reduce((sum, job) => sum + totalUnits(job), 0), collectedCount, readiness: collectedCount < childJobs.length ? "awaiting_collection" as const : "ready" as const };
+    return { id: load.id, version: load.version, loadVersions: { [load.id]: load.version }, loadIds: [load.id], serviceDate: load.serviceDate, originOplocId: load.originOplocId, destinationOplocId: load.destinationOplocId, destinationLabelSnapshot: load.destinationLabelSnapshot, scheduledTime: load.scheduledTime, scheduledEnd: load.scheduledEnd, ...(load.collectionRequired ? { collectionRequired: true } : {}), ...(load.collectionScheduledTime ? { collectionScheduledTime: load.collectionScheduledTime } : {}), ...(load.collectionScheduledEnd ? { collectionScheduledEnd: load.collectionScheduledEnd } : {}), ...(load.collectionRunId ? { collectionRunId: load.collectionRunId } : {}), loaded: load.loaded, status: load.status, driverId: load.driverId, vehicleId: load.vehicleId, runId: load.runId, jobs: childJobs.map((job) => ({ id: job.id, version: job.version, sourceVersion: job.sourceVersion, requirementId: job.requirementId, sourceType: job.sourceType, sourceId: job.sourceId, collectionStatus: job.collectionStatus, productionReadiness: job.productionReadiness, contents: job.contents, ...(job.notes ? { notes: job.notes } : {}), ...(job.workstream ? { workstream: job.workstream } : {}), totalUnits: totalUnits(job) })), jobCount: childJobs.length, totalUnits: childJobs.reduce((sum, job) => sum + totalUnits(job), 0), collectedCount, readiness: collectedCount < childJobs.length ? "awaiting_collection" as const : "ready" as const };
   }).filter((load) => load.jobCount > 0);
   const mergedLoads = [...projectedLoads.reduce((groups, load) => {
-    const key = `${load.runId || "unassigned"}|${load.destinationOplocId}|${load.scheduledTime || "unscheduled"}`;
+    const key = JSON.stringify([load.serviceDate, load.originOplocId, load.destinationOplocId, load.runId, load.vehicleId, load.scheduledTime, load.scheduledEnd, load.collectionRequired, load.collectionRunId, load.collectionScheduledTime, load.collectionScheduledEnd, load.status]);
     const existing = groups.get(key);
     if (!existing) { groups.set(key, load); return groups; }
     existing.loadIds = [...(existing.loadIds || [existing.id]), ...(load.loadIds || [load.id])];
+    existing.loadVersions = { ...existing.loadVersions, ...load.loadVersions };
     existing.jobs = [...existing.jobs, ...load.jobs];
     existing.jobCount = existing.jobs.length;
     existing.totalUnits += load.totalUnits;
@@ -29,17 +34,18 @@ export function buildLogisticsDayProjection(input: { serviceDate: string; jobs: 
     existing.readiness = existing.collectedCount < existing.jobCount ? "awaiting_collection" : "ready";
     return groups;
   }, new Map<string, LogisticsProjectionLoad>()).values()];
-  const exceptions = jobs.flatMap((job) => [
+  const assignmentExceptions = input.assignments.filter(a => !assignments.includes(a)).map(a => `${a.jobId}: assignment/source integrity conflict requires reconciliation`);
+  const exceptions = [...assignmentExceptions, ...jobs.flatMap((job) => [
     ...(!job.originOplocId || !job.destinationOplocId ? [`${job.id}: missing canonical OPLOC`] : []),
     ...(!job.requestedWindow?.startTime ? [`${job.id}: unresolved timing`] : []),
-  ]);
+  ])];
   const now = input.now || new Date().toISOString();
   const projectedRuns = (input.runs || []).filter((run) => run.serviceDate === input.serviceDate);
   const projectedRunIds = new Set(projectedRuns.map((run) => run.canonicalId));
   const projectedStops = (input.stops || []).filter((stop) => projectedRunIds.has(stop.runId));
   const projectedMovements = (input.movements || []).filter((movement) => movement.serviceDate === input.serviceDate);
   const validEmpty = jobs.length === 0 && mergedLoads.length === 0 && projectedStops.length === 0 && projectedMovements.length === 0;
-  const sourceLineage = [...new Map(jobs.filter((job) => job.sourceVersion !== undefined).map((job) => [`${job.sourceType}:${job.sourceId}`, { sourceDomain: job.sourceType, sourceEntityId: job.sourceId, sourceVersion: job.sourceVersion!, ...(job.sourceContentHash ? { sourceContentHash: job.sourceContentHash } : {}), changedAt: job.updatedAt } satisfies LogisticsSourceLineage])).values()].slice(0, 200);
+  const sourceLineage = [...new Map(input.jobs.filter(job => job.serviceDate === input.serviceDate).filter((job) => job.sourceVersion !== undefined).map((job) => [`${job.sourceType}:${job.sourceId}`, { sourceDomain: job.sourceType, sourceEntityId: job.sourceId, sourceVersion: job.sourceVersion!, ...(job.sourceContentHash ? { sourceContentHash: job.sourceContentHash } : {}), changedAt: job.updatedAt } satisfies LogisticsSourceLineage])).values()].slice(0, 200);
   return { serviceDate: input.serviceDate, revision: input.revision || 1, lastChangeSequence: input.lastChangeSequence || 0, state: validEmpty ? "VALID_EMPTY" as const : "CURRENT" as const, completeness: { fulfilment: "complete" as const, cpu: "not_required" as const, oploc: "complete" as const }, sourceLineage, reconciliation: { status: "current" as const, checkedAt: now }, planningQueue: queue, deliveryLoads: mergedLoads, runs: projectedRuns, stops: projectedStops, movements: projectedMovements, collectionRequiredKeys: input.collectionRequiredKeys || [], exceptions: Array.from(new Set(exceptions)), summary: { queuedJobs: queue.length, loads: mergedLoads.length, assignedJobs: jobs.length - queue.length, collectedJobs: jobs.filter((job) => job.collectionStatus === "collected").length }, rebuiltAt: now };
 }
 

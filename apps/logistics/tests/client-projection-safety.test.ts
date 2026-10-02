@@ -102,10 +102,10 @@ test("Logistics clients do not render a time-dependent date before hydration", (
 
 test("an upstream invalidation can bootstrap a missing day through the canonical materialiser", () => {
   const route = readFileSync(new URL("../app/api/logistics/invalidate/route.ts", import.meta.url), "utf8");
-  assert.match(route, /result\.reason === "missing-projection"/);
+  assert.match(route, /results\[0\]\.reason === "missing-projection"/);
   assert.match(route, /reconcileLogisticsDay\(/);
-  assert.match(route, /materialised: true/);
-  assert.match(route, /body as LogisticsProjectionInvalidation/);
+  assert.match(route, /materialised: results\[0\]\.reason === "missing-projection"/);
+  assert.match(route, /changes as LogisticsProjectionInvalidation\[\]/);
 });
 
 test("desktop and mobile automatically use the bounded missing-projection recovery path", () => {

@@ -167,7 +167,7 @@ export default function MobileWorkflow({ fixedVan }: { fixedVan?: "Van 1" | "Van
     const run = runs.find((item) => item.canonicalId === stop.runId); if (!run) return;
     setPendingAction(action);
     try {
-      const response = await fetch("/api/logistics", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action, runId: run.canonicalId, expectedRunVersion: run.version, stopId: stop.canonicalId, expectedStopVersion: stop.version, ...extra }) });
+      const response = await fetch("/api/logistics", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action, runId: run.canonicalId, expectedRunVersion: run.version, stopId: stop.canonicalId, expectedStopVersion: stop.version, expectedLoadVersions: stop.canonicalLoadVersions, ...extra }) });
       const body = await response.json().catch(() => null); if (!response.ok) { const details = responseErrorDetails(body, response.status, "The operation could not be completed."); setError(`${details.message}${details.requestId ? ` Reference: ${details.requestId}` : ""}`); return; }
       setError(""); setSelectedStop(undefined); setIssueStop(undefined); setIssueText(""); returnFocusToStop(); announceDriverChange(date); await load();
       if (action === "complete-stop" && body?.run && body?.stop) {
@@ -203,7 +203,7 @@ export default function MobileWorkflow({ fixedVan }: { fixedVan?: "Van 1" | "Van
     const current = undoAction;
     setPendingAction("undo-completion");
     try {
-      const response = await fetch("/api/logistics", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "undo-completion", runId: current.run.canonicalId, expectedRunVersion: current.run.version, stopId: current.stop.canonicalId, expectedStopVersion: current.stop.version }) });
+      const response = await fetch("/api/logistics", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "undo-completion", runId: current.run.canonicalId, expectedRunVersion: current.run.version, stopId: current.stop.canonicalId, expectedStopVersion: current.stop.version, expectedLoadVersions: current.stop.canonicalLoadVersions }) });
       const body = await response.json().catch(() => null);
       if (!response.ok) { const details = responseErrorDetails(body, response.status, "The completion could not be undone. Refresh and try again."); setError(`${details.message}${details.requestId ? ` Reference: ${details.requestId}` : ""}`); return; }
       setUndoAction(undefined); setError(""); announceDriverChange(date); await load();

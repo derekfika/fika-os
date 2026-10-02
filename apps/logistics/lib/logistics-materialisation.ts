@@ -8,11 +8,18 @@ import {
   listCollectionPreferenceKeys,
   listState,
   logisticsJobs,
+  deliveryLoads,
+  logisticsAssignments,
+  runs,
+  stops,
+  normalizeStop,
   saveLogisticsJob,
   saveLogisticsProjection,
 } from "./store";
 import { fetchOplocs, fetchRequirements } from "./upstream";
-import type { LogisticsJob } from "./types";
+import { db } from "./firebase";
+import { compatibleLoad } from "./delivery-loads";
+import type { DeliveryLoad, DeliveryRun, DeliveryStop, LogisticsJob } from "./types";
 
 export function activeLogisticsRequirements(requirements: FulfilmentRequirement[]) {
   return requirements.filter((requirement) => {
@@ -33,6 +40,9 @@ export function logisticsJobForRequirement(
   const originOplocId = requirement.productionLocationId || CPU_PRODUCTION_LOCATION_ID;
   return {
     id: prior?.id || `logistics-job:${requirement.canonicalId}`,
+    requirementId: requirement.canonicalId,
+    sourceStatus: requirement.status,
+    ...(prior?.activeLoadId ? { activeLoadId: prior.activeLoadId } : {}),
     sourceType: requirement.sourceDomain,
     sourceId: requirement.sourceEntityId,
     sourceVersion: requirement.sourceVersion,
@@ -42,9 +52,10 @@ export function logisticsJobForRequirement(
     ...(originOplocId ? { originOplocId } : {}),
     destinationOplocId: requirement.destinationOplocId,
     destinationLabelSnapshot: requirement.destinationLabelSnapshot,
-    ...(requirement.requiredDeliveryWindow ? { requestedWindow: requirement.requiredDeliveryWindow } : requirement.readyAt ? { requestedWindow: { startTime: requirement.readyAt.slice(11, 16) } } : {}),
+    ...(requirement.requiredDeliveryWindow ? { requestedWindow: requirement.requiredDeliveryWindow } : requirement.readyAt ? { requestedWindow: { startTime: new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/London", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(new Date(requirement.readyAt)) } } : {}),
     productionReadiness: readiness,
     collectionStatus: prior?.collectionStatus || "awaiting" as const,
+    ...(prior?.notes ? { notes: prior.notes } : {}),
     contents: requirement.lines.map((line) => ({ description: line.displayNameSnapshot, quantity: line.quantity, unit: line.unit })),
     createdAt: prior?.createdAt || now,
     updatedAt: now,
@@ -55,6 +66,8 @@ export function logisticsJobForRequirement(
 
 function jobMaterialisationContent(job: LogisticsJob) {
   return JSON.stringify({
+    requirementId: job.requirementId,
+    sourceStatus: job.sourceStatus,
     sourceType: job.sourceType,
     sourceId: job.sourceId,
     sourceVersion: job.sourceVersion,
@@ -99,10 +112,11 @@ export async function rebuildLogisticsProjection(serviceDate: string, _actorId: 
 
 /** Materialise one bounded service day from Hub fulfilment, CPU context and governed OPLOCs. */
 export async function reconcileLogisticsDay(serviceDate: string, by: string, actorId = "system:reconcile", cookie?: string, sourceChange?: LogisticsProjectionInvalidation, sourceChanges: LogisticsProjectionInvalidation[] = []) {
-  const [requirements, oplocs, existingState] = await Promise.all([
+  const [requirements, oplocs, existingState, nativeState] = await Promise.all([
     fetchRequirements(serviceDate, cookie),
     fetchOplocs(cookie),
     listDeliveryLoadState(serviceDate),
+    listState(serviceDate),
   ]);
   const existing = existingState.jobs;
   const assignedJobIds = new Set(existingState.assignments.map((assignment) => assignment.jobId));
@@ -115,30 +129,36 @@ export async function reconcileLogisticsDay(serviceDate: string, by: string, act
   let lastChangeSequence = 0;
   const now = new Date().toISOString();
 
-  for (const requirement of reconciledRequirements) {
-    const key = `${requirement.sourceDomain}:${requirement.sourceEntityId}`;
-    const prior = existingBySource.get(key);
-    const next = logisticsJobForRequirement({
-      ...requirement,
-      destinationLabelSnapshot: oplocs.find((oploc) => oploc.id === requirement.destinationOplocId)?.label || requirement.destinationLabelSnapshot,
-    }, prior, by, now);
-    if (prior && logisticsJobMaterialisationEqual(prior, next)) continue;
-    await saveLogisticsJob(next);
-    const event = await appendLogisticsChange({ serviceDate: next.serviceDate, entityType: "logisticsJob", entityId: next.id, changeType: prior ? "reconciled-job-updated" : "reconciled-job-created", revision: next.version, changedAt: now, actorId });
+  // Match governed requirement identity first; a legacy source match is accepted
+  // only when unambiguous. Source IDs can legitimately own multiple destinations.
+  const allRequirements = requirements.filter(item => item.serviceDate === serviceDate && item.destinationOplocId !== CPU_SITE_OPLOC_ID);
+  const candidates = [...reconciledRequirements, ...allRequirements.filter(item => item.status === "withdrawn")];
+  const seen = new Set<string>();
+  for (const requirement of candidates) {
+    const sameSource = existing.filter(job => job.sourceType === requirement.sourceDomain && job.sourceId === requirement.sourceEntityId && !job.requirementId);
+    const prior = existing.find(job => job.requirementId === requirement.canonicalId || job.id === `logistics-job:${requirement.canonicalId}`) || (sameSource.length === 1 && candidates.filter(item => item.sourceDomain === requirement.sourceDomain && item.sourceEntityId === requirement.sourceEntityId).length === 1 ? sameSource[0] : undefined);
+    const id = prior?.id || `logistics-job:${requirement.canonicalId}`;
+    seen.add(id);
+    const result = await reconcileRequirementJob(id, { ...requirement, destinationLabelSnapshot: oplocs.find(oploc => oploc.id === requirement.destinationOplocId)?.label || requirement.destinationLabelSnapshot }, by, now, nativeState);
+    if (!result) continue;
+    const event = await appendLogisticsChange({ serviceDate, entityType: "logisticsJob", entityId: result.job.id, changeType: result.job.sourceStatus === "withdrawn" ? "reconciled-job-withdrawn" : result.created ? "reconciled-job-created" : "reconciled-job-updated", revision: result.job.version, changedAt: now, actorId });
     lastChangeSequence = Math.max(lastChangeSequence, event.sequence);
-    if (prior) updated++;
-    else created++;
+    if (result.created) created++; else updated++;
   }
-
+  // Preserve the established CPU/native Grab & Go supersession cleanup, now
+  // including assigned jobs and retaining historical evidence.
   for (const job of existing) {
-    if (assignedJobIds.has(job.id) || reconciledRequirements.some((requirement) => requirement.sourceDomain === job.sourceType && requirement.sourceEntityId === job.sourceId)) continue;
-    if (job.sourceType === "cpu-production" || (job.sourceType === "grab-and-go" && hasNativeGrabAndGo({ sourceDomain: "grab-and-go", sourceEntityId: job.sourceId, serviceDate: job.serviceDate, destinationOplocId: job.destinationOplocId } as FulfilmentRequirement))) {
-      await logisticsJobs().doc(job.id).delete();
-      const event = await appendLogisticsChange({ serviceDate: job.serviceDate, entityType: "logisticsJob", entityId: job.id, changeType: "stale-upstream-job-removed", revision: job.version + 1, changedAt: now, actorId });
+    if (seen.has(job.id) || job.sourceStatus === "withdrawn") continue;
+    if (job.sourceType === "cpu-production" || (job.sourceType === "grab-and-go" && hasNativeGrabAndGo({ serviceDate: job.serviceDate, destinationOplocId: job.destinationOplocId } as FulfilmentRequirement))) {
+      const result = await reconcileRequirementJob(job.id, undefined, by, now, nativeState);
+      if (!result) continue;
+      updated++;
+      const event = await appendLogisticsChange({ serviceDate, entityType: "logisticsJob", entityId: job.id, changeType: "reconciled-job-withdrawn", revision: result.job.version, changedAt: now, actorId });
       lastChangeSequence = Math.max(lastChangeSequence, event.sequence);
     }
   }
-  let projection = await rebuildLogisticsProjection(serviceDate, by, lastChangeSequence);
+  const previous = await getLogisticsProjection(serviceDate);
+  let projection = lastChangeSequence || !previous || previous.state === "STALE" ? await rebuildLogisticsProjection(serviceDate, by, lastChangeSequence) : previous;
   const lineageChanges = [...sourceChanges, ...(sourceChange ? [sourceChange] : [])];
   if (lineageChanges.length) {
     const nextLineage = [...(projection.sourceLineage || [])];
@@ -150,7 +170,74 @@ export async function reconcileLogisticsDay(serviceDate: string, by: string, act
       }
       nextLineage.push({ sourceDomain: change.sourceDomain, sourceEntityId: change.sourceEntityId, sourceVersion: change.sourceVersion, ...(change.sourceContentHash ? { sourceContentHash: change.sourceContentHash } : {}), changedAt: change.changedAt });
     }
-    projection = await saveLogisticsProjection({ ...projection, sourceLineage: nextLineage.slice(-200) });
+    if (JSON.stringify(nextLineage) !== JSON.stringify(projection.sourceLineage || [])) projection = await saveLogisticsProjection({ ...projection, sourceLineage: nextLineage.slice(-200) });
   }
   return { created, updated, projection, requirements };
+}
+
+/** Internal convergence reads the current job and memberships in one transaction.
+ * Operator CAS tokens do not apply here; older source revisions never overwrite newer truth.
+ */
+export async function reconcileRequirementJob(id: string, requirement: FulfilmentRequirement | undefined, by: string, now: string, nativeState?: { stops: DeliveryStop[]; runs: DeliveryRun[] }) {
+  return db.runTransaction(async tx => {
+    const ref = logisticsJobs().doc(id);
+    const snapshot = await tx.get(ref);
+    const prior = snapshot.exists ? snapshot.data() as LogisticsJob : undefined;
+    if (!prior && (!requirement || requirement.status === "withdrawn")) return undefined;
+    if (prior && requirement && (prior.sourceVersion || 0) > requirement.sourceVersion) return undefined;
+    const next: LogisticsJob = requirement ? logisticsJobForRequirement(requirement, prior, by, now) : { ...prior!, sourceStatus: "withdrawn", updatedAt: now, version: prior!.version + 1, audit: [...prior!.audit, { action: "reconciled-job-withdrawn", at: now, by, version: prior!.version + 1 }] };
+    const assignments = await tx.get(logisticsAssignments().where("jobId", "==", id));
+    const invalid = [];
+    for (const doc of assignments.docs) {
+      const loadId = doc.data().loadId;
+      const loadSnapshot = await tx.get(deliveryLoads().doc(loadId));
+      const load = loadSnapshot.exists ? loadSnapshot.data() as DeliveryLoad : undefined;
+      if (!load || !compatibleLoad(next, load)) {
+        const members = load ? await tx.get(logisticsAssignments().where("loadId", "==", load.id)) : undefined;
+        invalid.push({ doc, load, members });
+      }
+    }
+    const requirementId = requirement?.canonicalId || prior?.requirementId;
+    const nativeChanges: Array<{ stop: DeliveryStop; remove: boolean; refs: DeliveryStop["requirementRefs"] }> = [];
+    const knownNative = nativeState?.stops.filter(stop => stop.requirementRefs.some(ref => ref.requirementId === requirementId));
+    const nativeIds = new Set((knownNative || []).flatMap(stop => [stop.canonicalId, ...(stop.linkedStopId ? [stop.linkedStopId] : [])]));
+    const nativeSnapshots = nativeState ? await Promise.all([...nativeIds].map(id => tx.get(stops().doc(id)))) : [];
+    const dayRuns = nativeState ? { docs: await Promise.all([...new Set(nativeSnapshots.filter(doc => doc.exists).map(doc => doc.data()!.runId as string))].map(id => tx.get(runs().doc(id)))) } : requirementId ? await tx.get(runs().where("serviceDate", "==", next.serviceDate)) : undefined;
+    const dayStops = nativeState ? nativeSnapshots.filter(doc => doc.exists).map(doc => normalizeStop(doc.data()!)) : dayRuns ? (await Promise.all(dayRuns.docs.map(doc => tx.get(stops().where("runId", "==", doc.id))))).flatMap(snapshot => snapshot.docs.map(doc => normalizeStop(doc.data()))) : [];
+    for (const stop of dayStops.filter(stop => stop.requirementRefs.some(ref => ref.requirementId === requirementId))) {
+      const arrival = stop.plannedArrivalTime || stop.plannedWindow?.startTime;
+      const compatible = next.sourceStatus !== "withdrawn" && stop.locationOplocId === next.destinationOplocId && (!prior || prior.originOplocId === next.originOplocId && prior.serviceDate === next.serviceDate) && (!arrival || compatibleLoad(next, { serviceDate: next.serviceDate, originOplocId: next.originOplocId!, destinationOplocId: stop.locationOplocId, scheduledTime: arrival, status: "planned" } as DeliveryLoad));
+      const refs = compatible ? stop.requirementRefs.map(ref => ref.requirementId === requirementId ? { ...ref, sourceVersion: next.sourceVersion || ref.sourceVersion } : ref) : stop.requirementRefs.filter(ref => ref.requirementId !== requirementId);
+      if (JSON.stringify(refs) === JSON.stringify(stop.requirementRefs)) continue;
+      nativeChanges.push({ stop, refs, remove: !refs.length && !stop.movementRequestIds.length });
+      if (!refs.length && !stop.movementRequestIds.length && stop.linkedStopId) {
+        const linked = dayStops.find(item => item.canonicalId === stop.linkedStopId);
+        if (linked && !linked.requirementRefs.length && !linked.movementRequestIds.length) nativeChanges.push({ stop: linked, refs: [], remove: true });
+      }
+    }
+    if (prior && logisticsJobMaterialisationEqual(prior, next) && !invalid.length && !nativeChanges.length) return undefined;
+    for (const change of nativeChanges) {
+      const stop = change.stop;
+      if (change.remove) {
+        tx.delete(stops().doc(stop.canonicalId));
+        next.audit.push({ action: `native-assignment-invalidated:${stop.canonicalId}`, at: now, by, version: next.version });
+      }
+      else tx.set(stops().doc(stop.canonicalId), { ...stop, requirementRefs: change.refs, version: stop.version + 1, updatedAt: now, audit: [...stop.audit, { action: "source-reconciled", at: now, by, version: stop.version + 1 }] });
+    }
+    for (const doc of dayRuns?.docs || []) {
+      if (!doc.exists) continue;
+      const run = doc.data() as DeliveryRun;
+      const changed = nativeChanges.filter(item => item.stop.runId === run.canonicalId);
+      if (!changed.length) continue;
+      tx.set(doc.ref, { ...run, orderedStopIds: run.orderedStopIds.filter(id => !changed.some(item => item.remove && item.stop.canonicalId === id)), version: run.version + 1, updatedAt: now, audit: [...run.audit, { action: `source-reconciled:${requirementId}`, at: now, by, version: run.version + 1 }] });
+    }
+    for (const { doc, load, members } of invalid) {
+      tx.delete(doc.ref);
+      if (load) tx.set(deliveryLoads().doc(load.id), { ...load, ...(members!.size <= 1 ? { status: "cancelled" } : {}), updatedAt: now, version: load.version + 1, audit: [...load.audit, { action: "source-assignment-invalidated", at: now, by, version: load.version + 1 }] });
+      next.audit.push({ action: `source-assignment-invalidated:${doc.data().loadId}`, at: now, by, version: next.version });
+    }
+    if (invalid.length || next.sourceStatus === "withdrawn") delete next.activeLoadId;
+    tx.set(ref, next);
+    return { job: next, created: !prior };
+  });
 }

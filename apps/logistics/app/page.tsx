@@ -458,6 +458,13 @@ function PlannerContents() {
     return () => window.clearInterval(timer);
   }, [viewPreferencesReady]);
 
+  function withLoadAuthority(payload: object) {
+    const command = payload as { jobId?: string; loadId?: string; stopId?: string };
+    const projection = dataRef.current?.projection;
+    const versions = Object.assign({}, ...(projection?.deliveryLoads || []).map(load => load.loadVersions || (load.version === undefined ? {} : { [load.id]: load.version })));
+    const job = projection?.planningQueue.find(job => job.id === command.jobId) || projection?.deliveryLoads.flatMap(load => load.jobs).find(job => job.id === command.jobId);
+    return { ...payload, expectedJobVersions: Object.fromEntries([...(projection?.planningQueue || []), ...(projection?.deliveryLoads || []).flatMap(load => load.jobs)].filter(job => job.version !== undefined).map(job => [job.id, job.version])), expectedLoadVersions: versions, ...(command.loadId && versions[command.loadId] !== undefined ? { expectedLoadVersion: versions[command.loadId] } : {}), ...(job?.version !== undefined ? { expectedJobVersion: job.version } : {}) };
+  }
   async function act(payload: object): Promise<boolean | Record<string, unknown>> {
     setBusy(true);
     setError("");
@@ -465,7 +472,7 @@ function PlannerContents() {
       const response = await fetch("/api/logistics", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify(payload),
+        body: JSON.stringify(withLoadAuthority(payload)),
       });
       const result = await requireSuccessfulResponse(response, "Action failed.");
       await Promise.all([load(), loadWeek()]);
@@ -483,7 +490,7 @@ function PlannerContents() {
       const response = await fetch("/api/logistics", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify(payload),
+        body: JSON.stringify(withLoadAuthority(payload)),
       });
       const body = await requireSuccessfulResponse(response, "Scheduling action failed.");
       // The command response is the best-known truth. Settle the placement
@@ -536,7 +543,7 @@ function PlannerContents() {
       const scheduledTime = choice?.start || group.deliveryWindow?.startTime || group.requiredTimes[0];
       if (!scheduledTime) return setError("Set a delivery time before assigning this job.");
       const selectedRun = choice?.runId || targetRun;
-      return placementCommand({ action: "assign-job-to-load", jobId, scheduledTime, ...(choice?.end ? { scheduledEnd: choice.end } : {}), ...(selectedRun ? { targetRunId: selectedRun } : {}) });
+      return placementCommand({ action: "assign-job-to-load", jobId, scheduledTime, ...(group.collectionRequired ? { collectionRequired: true } : {}), ...(choice?.end ? { scheduledEnd: choice.end } : {}), ...(selectedRun ? { targetRunId: selectedRun } : {}) });
     }
     const run =
       runs.find((item) => item.runId === (choice?.runId || targetRun)) ||
@@ -1434,7 +1441,7 @@ function RealPlanner(props: RealPlannerProps) {
       coordinatePlacement(stopId, original, proposed, async () => {
         let outcome: PlacementOutcome = { ok: true, body: {} };
         for (const loadId of loadIds) {
-          outcome = await props.placementCommand({ action: "reschedule-delivery-load", loadId: collection ? projectionLoadIdForStop(stopId) : loadId, scheduledTime: safeTime, ...(proposed.end ? { scheduledEnd: proposed.end } : {}), targetRunId, ...(collection ? { lane: "collection" } : {}) });
+          outcome = await props.placementCommand({ action: "reschedule-delivery-load", loadId, scheduledTime: safeTime, ...(proposed.end ? { scheduledEnd: proposed.end } : {}), targetRunId, ...(collection ? { lane: "collection" } : {}) });
           if (!outcome.ok) break;
         }
         return outcome;
@@ -1651,9 +1658,9 @@ function RealQueueGroup({ group, runs, queueState, assigning, placementPending =
   const [savingCollection, setSavingCollection] = useState(false);
   useEffect(() => setCollectionRequired(Boolean(group.collectionRequired)), [group.collectionRequired]);
   const saveCollectionRequired = (value: boolean) => { if (savingCollection) return; const previous = collectionRequired; setCollectionRequired(value); setSavingCollection(true); void onCollectionRequired(value).then((saved) => { if (!saved) setCollectionRequired(previous); }).finally(() => setSavingCollection(false)); };
-  const onInspect = (event?: MouseEvent) => { if (!event || event.detail === 2) inspect(); };
+  const onInspect = (event?: MouseEvent) => { if (!event || (event.detail === 0 || event.detail === 2)) inspect(); };
   const collectionToggle = <label className="collection-toggle" onPointerDown={(event) => event.stopPropagation()}><input type="checkbox" checked={collectionRequired} disabled={savingCollection} onChange={(event) => { event.stopPropagation(); saveCollectionRequired(event.target.checked); }} /> Collection required</label>;
-  return <article data-timeline-queue-id={group.groupKey} draggable={false} className={`mock-queue-item queue-${queueState}`}><button className="mock-queue-main" onClick={onInspect}><span className="mock-item-time">Time set on timeline</span><span className="mock-type delivery"><b>↓</b> Delivery</span><strong>{group.destinationLabel}</strong><small>{group.sourceLabels.join(" · ")}</small><span className="mock-load">{group.unitBreakdown.map((item) => `${item.quantity} ${item.unit}`).join(" · ")}</span>{assignedRun && <span className="queue-assignment">Assigned to {assignedRun.driver || "Unassigned"}</span>}{collectionPending && <span className="queue-assignment">Collection outstanding · place in a collection lane</span>}<span className={`mock-state ${group.attention.length ? "attention" : queueState === "needs_time" ? "needs-time" : "ready"}`}>{group.attention.length ? `⚠ ${group.attention[0]}` : collectionPending ? "⚠ Collection time not confirmed" : queueState === "needs_time" ? "⚠ Time not confirmed" : `● ${group.readiness}`}</span></button>{collectionToggle}<div className="mock-queue-actions"><button onClick={onInspect} disabled={placementPending}>Details</button><button disabled={placementPending || (queueState !== "needs_time" && !eligible.length)} onClick={queueState === "needs_time" ? onInspect : onAssign}>{placementPending ? "Saving…" : queueState === "needs_time" ? "Set time" : group.planningState === "partially_planned" ? "Assign remaining" : "Assign"}</button><b>⁙</b></div>{assigning && queueState !== "needs_time" && !placementPending && <RunChooser runs={runs} targetRun={targetRun} setTargetRun={setTargetRun} onConfirm={onConfirm} label={eligible.length === group.requirementCount ? "Assign all" : "Assign eligible"} />}</article>;
+  return <article data-timeline-queue-id={group.groupKey} draggable={false} className={`mock-queue-item queue-${queueState}`}><button className="mock-queue-main" onClick={onInspect}><span className="mock-item-time">Time set on timeline</span><span className="mock-type delivery"><b>↓</b> Delivery</span><strong>{group.destinationLabel}</strong><small>{group.sourceLabels.join(" · ")}</small><span className="mock-load">{group.unitBreakdown.map((item) => `${item.quantity} ${item.unit}`).join(" · ")}</span>{assignedRun && <span className="queue-assignment">Assigned to {assignedRun.driver || "Unassigned"}</span>}{collectionPending && <span className="queue-assignment">Collection outstanding · place in a collection lane</span>}<span className={`mock-state ${group.attention.length ? "attention" : queueState === "needs_time" ? "needs-time" : "ready"}`}>{group.attention.length ? `⚠ ${group.attention[0]}` : collectionPending ? "⚠ Collection time not confirmed" : queueState === "needs_time" ? "⚠ Time not confirmed" : `● ${group.readiness}`}</span></button>{collectionToggle}<div className="mock-queue-actions"><button onClick={() => inspect()} disabled={placementPending}>Details</button><button disabled={placementPending || (queueState !== "needs_time" && !eligible.length)} onClick={queueState === "needs_time" ? () => inspect() : onAssign}>{placementPending ? "Saving…" : queueState === "needs_time" ? "Set time" : group.planningState === "partially_planned" ? "Assign remaining" : "Assign"}</button><b>⁙</b></div>{assigning && queueState !== "needs_time" && !placementPending && <RunChooser runs={runs} targetRun={targetRun} setTargetRun={setTargetRun} onConfirm={onConfirm} label={eligible.length === group.requirementCount ? "Assign all" : "Assign eligible"} />}</article>;
 }
 function RealQueueMovement({ movement, runs, queueState, assigning, placementPending = false, targetRun, onInspect: inspect, onAssign, setTargetRun, onConfirm }: { movement: PlannerMovementView; runs: PlannerDay["runs"]; queueState: ReturnType<typeof movementQueueState>; assigning: boolean; placementPending?: boolean; targetRun: string; onInspect: () => void; onAssign: () => void; setTargetRun: (value: string) => void; onConfirm: (choice?: AssignmentChoice) => void; }) {
   const assigned = movement.assignedStops[0];
