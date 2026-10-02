@@ -17,6 +17,11 @@ export function vehicleScope(principal: LogisticsPrincipal, requestedVehicle?: s
 export function assertSharedPlannerAccess(principal: LogisticsPrincipal) {
   if (!LOGISTICS_VEHICLE_IDS.every(id => vehicleScope(principal).includes(id))) throw denied();
 }
+/** Existing canonical owners govern assigned work; an empty owner set is shared work. */
+export async function authorizeOwnedOrSharedWork<T>(principal: LogisticsPrincipal, owners: T[], authorizeOwner: (owner: T) => Promise<unknown>) {
+  if (!owners.length) assertSharedPlannerAccess(principal);
+  for (const owner of owners) await authorizeOwner(owner);
+}
 export function assertMaintenanceAccess(principal: LogisticsPrincipal, authority: LogisticsMaintenanceAuthority) {
   if (!principal.maintenanceAuthorities?.includes(authority)) throw denied();
 }
@@ -72,6 +77,8 @@ export type ResourceReader = {
   stop(id: string): Promise<DeliveryStop | undefined>;
   load(id: string): Promise<DeliveryLoad | undefined>;
   jobLoads(id: string): Promise<DeliveryLoad[]>;
+  requirementRuns(id: string, serviceDate: string): Promise<string[]>;
+  movementRuns(id: string): Promise<string[]>;
 };
 export async function authorizeCommand(principal: LogisticsPrincipal, body: Record<string, any>, reader: ResourceReader) {
   const maintenance: Record<string, LogisticsMaintenanceAuthority> = { "reset-planning-day": "logistics.reset", "repair-logistics-assignment-dates": "logistics.repair", "repair-run-vehicle-identity": "logistics.repair", "rebuild-logistics-projection": "logistics.reconcile", "reconcile-logistics-day": "logistics.reconcile", "save-logistics-job": "logistics.reconcile" };
@@ -93,10 +100,17 @@ export async function authorizeCommand(principal: LogisticsPrincipal, body: Reco
   }
   if (body.jobId || body.job?.id) {
     const loads = await reader.jobLoads(body.jobId || body.job.id);
-    for (const load of loads) await authorizeLoad(principal, load, reader.run);
-    if (!loads.length && !body.targetRunId) assertSharedPlannerAccess(principal);
+    await authorizeOwnedOrSharedWork(principal, loads, load => authorizeLoad(principal, load, reader.run));
     // A supplied job snapshot can affect shared upstream-derived state.
     if (body.job) assertSharedPlannerAccess(principal);
   }
+  if (["assign", "assign-group"].includes(body.action)) {
+    const target = body.runId ? await reader.run(body.runId) : undefined;
+    for (const id of [...new Set([body.requirementId, ...(body.requirementIds || [])].filter(Boolean))] as string[]) {
+      if (!target) throw missing();
+      await authorizeOwnedOrSharedWork(principal, await reader.requirementRuns(id, target.serviceDate), checkRun);
+    }
+  }
+  if (body.movementId) await authorizeOwnedOrSharedWork(principal, await reader.movementRuns(body.movementId), checkRun);
   if (["save-movement", "set-collection-required"].includes(body.action)) assertSharedPlannerAccess(principal);
 }

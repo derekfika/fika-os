@@ -30,6 +30,10 @@ export function DriverAuthorityProvider({ children }: { children: ReactNode }) {
   return <Context.Provider value={{ drivers, vehicles, loading, error, refresh }}>{children}</Context.Provider>;
 }
 export const useDriverAuthority = () => useContext(Context);
+export function useRunDriverEligibility(run?: { vehicleId?: LogisticsVehicleId; driverId?: string }) {
+  const catalogue = useDriverAuthority();
+  return !catalogue.loading && !catalogue.error && Boolean(run?.driverId && run.vehicleId && catalogue.drivers.some(driver => driver.driverId === run.driverId && driver.permittedDriverVehicleIds.includes(run.vehicleId!)));
+}
 export function DriverSelector({ vehicleId, driverId, historicalLabel, disabled, onChange }: { vehicleId?: LogisticsVehicleId; driverId?: string; historicalLabel?: string; disabled?: boolean; onChange: (id: string) => void }) {
   const catalogue = useDriverAuthority();
   const options = catalogue.drivers.filter(driver => vehicleId && driver.permittedDriverVehicleIds.includes(vehicleId));

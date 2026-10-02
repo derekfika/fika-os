@@ -35,12 +35,15 @@ exports.fixture = function (permittedVehicleIds = ['van1'], maintenanceAuthoriti
   const principal = { type: 'interactive', id: 'operator', displayName: 'Operator', identityKind: 'person', permittedVehicleIds, maintenanceAuthorities };
   const driver = { driverId: 'person:driver', displayName: 'Governed Driver', permittedDriverVehicleIds: ['van1'] };
   let driverActive = true;
+  const alternateDriver = { driverId: 'person:replacement', displayName: 'Replacement Driver', permittedDriverVehicleIds: ['van1'] };
+  const requirements = [];
   const localFetch = async input => {
     const url = new URL(String(input));
     if (url.pathname.endsWith('/api/logistics/access')) return Response.json({ principal: { ...principal, authmodIdentityId: principal.id } });
     if (url.pathname.endsWith('/api/logistics/drivers')) {
-      if (url.searchParams.has('driverId') && (!driverActive || url.searchParams.get('driverId') !== driver.driverId || url.searchParams.get('vehicle') !== 'van1')) return Response.json({}, { status: 422 });
-      return Response.json({ drivers: driverActive ? [driver] : [] });
+      const eligible = driverActive ? [driver, alternateDriver] : [alternateDriver];
+      if (url.searchParams.has('driverId') && (!eligible.some(item => item.driverId === url.searchParams.get('driverId')) || url.searchParams.get('vehicle') !== 'van1')) return Response.json({}, { status: 422 });
+      return Response.json({ drivers: eligible });
     }
     throw new Error('Unexpected test network call: ' + url.pathname);
   };
@@ -53,7 +56,7 @@ exports.fixture = function (permittedVehicleIds = ['van1'], maintenanceAuthoriti
     '@/lib/runtime': { hostedRuntime: () => false, requiredUpstreamUrl: () => 'https://hub.test' },
     '@fika/server-shared/data-source-meter-server': { recordDataAccess() {}, withDataTrace: (_, callback) => callback() },
     [path.resolve(appRoot, '../../shared/auth-diagnostics.ts')]: { logAuthDiagnostic() {} },
-    '@/lib/upstream': { fetchRequirements: async () => [], fetchRequirementsForDateRange: async () => [], fetchProductionContexts: async () => [], fetchOplocs: async () => [] },
+    '@/lib/upstream': { fetchRequirements: async () => requirements, fetchRequirementsForDateRange: async () => requirements, fetchProductionContexts: async () => [], fetchOplocs: async () => [] },
   };
   const load = typescriptLoader({ typescript: require('typescript'), appRoot, mocks, fetch: localFetch });
   const store = load(path.join(appRoot, 'lib/store.ts'));
@@ -82,7 +85,7 @@ exports.fixture = function (permittedVehicleIds = ['van1'], maintenanceAuthoriti
   mocks['@/lib/logistics-materialisation'] = { rebuildLogisticsProjection: rebuild, reconcileLogisticsDay: async serviceDate => ({ projection: await rebuild(serviceDate), requirements: [] }) };
   const route = load(path.join(appRoot, 'app/api/logistics/route.ts'));
   const driversRoute = load(path.join(appRoot, 'app/api/logistics/drivers/route.ts'));
-  return { date, records, run, principal, seed, rebuild, get writes() { return writes; }, deactivateDriver() { driverActive = false; },
+  return { date, records, run, principal, seed, rebuild, requirements, get writes() { return writes; }, deactivateDriver() { driverActive = false; },
     beforeNextTransaction(hook) { beforeTransaction = hook; },
     async get(query = '') { const response = await route.GET(new NextRequest('https://logistics.test/api/logistics?serviceDate=' + date + (query ? '&' + query : ''))); return { response, body: await response.json() }; },
     async drivers() { const response = await driversRoute.GET(new NextRequest('https://logistics.test/api/logistics/drivers')); return { response, body: await response.json() }; },

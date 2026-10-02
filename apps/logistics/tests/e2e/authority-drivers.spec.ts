@@ -74,6 +74,21 @@ test.describe("Batch 1 governed driver controls", () => {
     await expect(inspector.getByText(/historical assignment is preserved/)).toBeVisible();
     await expect(inspector.getByRole("option", { name: /Historic Driver.*no longer eligible/ })).toHaveAttribute("disabled", "");
   });
+  test("loaded catalogue revocation disables mounted Mark ready", async ({ page }) => {
+    const options = { restricted: true, revoked: false };
+    const mock = await mockAuthority(page, options);
+    Object.assign(mock.projection.runs[0], { driverId: "person:driver-a", driverLabel: "Driver Alpha", orderedStopIds: ["stop:van1"] });
+    mock.projection.stops = [{ canonicalId: "stop:van1", runId: "run:van1", sequence: 1, locationOplocId: "site:test", locationLabelSnapshot: "Test site", requirementRefs: [], movementRequestIds: [], plannedArrivalTime: "10:00", status: "planned", loaded: true, version: 1, createdAt: "now", updatedAt: "now", audit: [] }];
+    await page.goto("/?serviceDate=" + date);
+    await page.getByRole("button", { name: "Run details" }).first().click();
+    const inspector = page.getByRole("complementary", { name: "Details inspector" });
+    await expect(inspector.getByRole("button", { name: "Mark ready", exact: true })).toBeEnabled();
+    options.revoked = true;
+    await inspector.getByLabel("Driver", { exact: true }).focus();
+    await expect(inspector.getByText(/historical assignment is preserved/)).toBeVisible();
+    await expect(inspector.getByRole("button", { name: "Mark ready", exact: true })).toBeDisabled();
+    expect(mock.commands.filter(command => command.action === "mark-run-ready")).toHaveLength(0);
+  });
   test("fixed-van mobile selection uses only authorized runs", async ({ page }) => {
     const mock = await mockAuthority(page, { restricted: true });
     Object.assign(mock.projection.runs[0], { driverId: "person:driver-a", driverLabel: "Driver Alpha" });

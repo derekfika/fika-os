@@ -590,10 +590,23 @@ async function handlePost(request: NextRequest) {
       projectionSequence: body.expectedRunVersion ?? body.expectedStopVersion ?? body.expectedSourceVersion,
       entityId: body.runId || body.stopId || body.movementId || body.jobId || body.loadId || body.run?.canonicalId || body.movement?.canonicalId,
     };
+    const requirementOwnerStops = new Map<string, Promise<DeliveryStop[]>>();
     await authorizeCommand(principal, body, {
       run: getRun,
       stop: async id => { const snapshot = await stops().doc(id).get(); return snapshot.exists ? normalizeStop(snapshot.data()!) : undefined; },
       load: getDeliveryLoad,
+      requirementRuns: async (id, date) => {
+        if (!requirementOwnerStops.has(date)) requirementOwnerStops.set(date, (async () => {
+          const datedRuns = await runs().where("serviceDate", "==", date).get();
+          const snapshots = await Promise.all(datedRuns.docs.map(doc => stops().where("runId", "==", doc.id).get()));
+          return snapshots.flatMap(snapshot => snapshot.docs.map(doc => normalizeStop(doc.data())));
+        })());
+        return [...new Set((await requirementOwnerStops.get(date)!).filter(stop => stop.requirementRefs.some(ref => ref.requirementId === id)).map(stop => stop.runId))];
+      },
+      movementRuns: async id => {
+        const snapshots = await Promise.all([stops().where("movementRequestIds", "array-contains", id).get(), stops().where("movementRequestId", "==", id).get()]);
+        return [...new Set(snapshots.flatMap(snapshot => snapshot.docs.map(doc => doc.data().runId as string)))];
+      },
       jobLoads: async id => {
         const assignments = await logisticsAssignments().where("jobId", "==", id).get();
         const loads = await Promise.all(assignments.docs.map(doc => getDeliveryLoad(doc.data().loadId)));

@@ -1,5 +1,35 @@
 # Batch 1: vehicle access and governed drivers
 
+## Sol review correction — 2026-10-02
+
+Prior reviewed SHA: `f30aa8c824b7e7c750ffe77cbc1e1dcd8eb1ed86`. Canonical base remains `2db66b3903203b5c65d7fc9b99ac8cdd38914252`. This correction is limited to R1 and R2; no new AUTHMOD authority, merge, deployment or operational migration.
+
+R1: `authorizeOwnedOrSharedWork` now requires both explicit vehicle entitlements when canonical current ownership is empty. Job IDs cannot bypass this by supplying an authorised target run. Native requirement assignment resolves existing stop/run owners, and movement assignment resolves existing movement stop/run owners. The transaction repeats these checks against current persisted assignments/stops, before considering buffered proposed writes. Proposed assignments cannot confer authority over formerly unowned work. Existing current/proposed vehicle checks remain intact, and assigned work remains governed by its existing owners. Native requirement ownership reads use only the target operational date's runs and their stops, coalesced once per date in both preflight and transaction; job/movement ownership uses targeted relationship queries. No periodic reads or listeners were added.
+
+R2: entering Ready or Dispatched freshly validates the canonical driver ID against Hub for the canonical run vehicle inside the transaction guard. Ineligible drivers receive 422 with a reassignment instruction; failed commands leave the run's historical driver ID, label, version and audit unchanged. Eligibility validation does not rewrite historical display names. Completion and execution after dispatch do not gain a new driver-authority gate. Mounted desktop and the retained run panel disable Mark ready when the loaded catalogue does not confirm the assigned driver; catalogue attention explains the preserved historical assignment. Desktop has no Dispatch command in these controls; its server boundary is covered explicitly.
+
+Correction validation:
+
+- Logistics `npm run test:authority`: **52 passed**, including shared jobs/native requirements/open movements for restricted and both-vehicle operators, ownership disappearing after preflight for all three work types, retained scoped management, driver revocation before Ready/Dispatch, eligible replacement, snapshot preservation, forged labels, unchanged post-dispatch completion and the original fresh-day flow.
+- Logistics `npm run test:access-regression`: **81 passed**.
+- `npm run test:e2e -- --project=batch1-authority-chromium --max-failures=1`: **6 passed**, including a loaded valid catalogue changing to revoked and disabling mounted Mark ready.
+- Both Logistics and unchanged Integration Hub: `npm run typecheck`, `tsc --noEmit --incremental false`, production `npm run build`.
+- `git diff --check`: passed. Style Guide compliance: **PASS**; existing semantic controls/status and layout retained.
+- Logistics standard `npm run test` and `npm run test:integration` each attempted once: **ENVIRONMENT-LIMITED**, `uv_os_get_passwd ENOMEM` before execution. No retry or claim of a passing standard/integration suite. Hub authority/regression tests were not rerun because no Hub files changed.
+- User CHANGELOG and MNK menu-data edits remain byte-for-byte unchanged and uncommitted; this correction record replaces a changelog edit under the explicit preservation instruction. No deployment.
+
+Exact correction files:
+
+- apps/logistics/app/api/logistics/route.ts
+- apps/logistics/app/driver-selector.tsx
+- apps/logistics/app/page.tsx
+- apps/logistics/lib/authorized-transaction.ts
+- apps/logistics/lib/resource-authority.ts
+- apps/logistics/tests/helpers/authority-route-harness.cjs
+- apps/logistics/tests/resource-authority.test.cjs
+- apps/logistics/tests/e2e/authority-drivers.spec.ts
+- apps/logistics/docs/batch1-authority-drivers.md
+
 Date: 2026-10-01. Review branch: `review/logistics-a1-a4-authority-drivers`.
 Starting origin/main: `2db66b3903203b5c65d7fc9b99ac8cdd38914252`.
 Scope: audit findings A1 and A4 only. No deployment, real grants, migration or operational data writes performed.

@@ -1,6 +1,97 @@
 const assert = require('node:assert/strict');
 const test = require('node:test');
 const { fixture } = require('./helpers/authority-route-harness.cjs');
+for (const both of [false, true]) {
+  test('R1 shared job assignment ' + (both ? 'allowed for both vehicles' : 'denied for van1 only'), async () => {
+    const f = fixture(both ? ['van1', 'van2'] : ['van1']);
+    const job = { ...f.records.get('fikaLogisticsJobsV1/jl1'), id: 'shared-job', destinationOplocId: 'shared-site' };
+    f.seed('fikaLogisticsJobsV1', job.id, job); await f.rebuild(); const before = f.writes;
+    const result = await f.post({ action: 'assign-job-to-load', jobId: job.id, targetRunId: 'r1', scheduledTime: '10:00' });
+    assert.equal(result.response.status, both ? 200 : 403);
+    if (!both) assert.equal(f.writes, before);
+  });
+  for (const action of ['assign-group', 'assign']) test('R1 shared native requirement ' + action + ' ' + (both ? 'allowed' : 'denied'), async () => {
+    const f = fixture(both ? ['van1', 'van2'] : ['van1']);
+    f.requirements.push({ canonicalId: 'shared-requirement', sourceDomain: 'cpu-production', sourceVersion: 1, serviceDate: f.date, status: 'ready_for_planning', destinationOplocId: 'shared-site', destinationLabelSnapshot: 'Shared site', lines: [] });
+    const before = f.writes;
+    const result = await f.post({ action, runId: 'r1', expectedRunVersion: 1, requirementId: action === 'assign' ? 'shared-requirement' : undefined, expectedSourceVersion: 1, requirementIds: action === 'assign-group' ? ['shared-requirement'] : undefined, expectedSourceVersions: { 'shared-requirement': 1 } });
+    assert.equal(result.response.status, both ? 200 : 403);
+    if (!both) assert.equal(f.writes, before);
+  });
+  test('R1 shared open movement ' + (both ? 'allowed' : 'denied'), async () => {
+    const f = fixture(both ? ['van1', 'van2'] : ['van1']);
+    f.seed('fikaLogisticsMovementRequestsV1', 'shared-movement', { canonicalId: 'shared-movement', serviceDate: f.date, type: 'delivery', toAddress: 'Reviewed one-off address', status: 'open', version: 1, items: [], audit: [] });
+    const before = f.writes;
+    const result = await f.post({ action: 'assign', runId: 'r1', movementId: 'shared-movement', expectedRunVersion: 1 });
+    assert.equal(result.response.status, both ? 200 : 403);
+    if (!both) assert.equal(f.writes, before);
+  });
+}
+test('R1 van1 assigned job remains manageable by van1 operator', async () => {
+  const f = fixture(); await f.rebuild();
+  assert.equal((await f.post({ action: 'assign-job-to-load', jobId: 'jl1', targetRunId: 'r1', scheduledTime: '10:00' })).response.status, 200);
+});
+test('R1 previously assigned native requirement remains manageable on van1', async () => {
+  const f = fixture(); const requirement = { canonicalId: 'owned-requirement', sourceDomain: 'cpu-production', sourceVersion: 1, serviceDate: f.date, status: 'ready_for_planning', destinationOplocId: 'site:s1', destinationLabelSnapshot: 's1', lines: [] };
+  f.requirements.push(requirement); f.records.get('fikaLogisticsDeliveryStopsV1/s1').requirementRefs = [{ requirementId: requirement.canonicalId, sourceVersion: 1 }];
+  assert.equal((await f.post({ action: 'schedule-stop', runId: 'r1', stopId: 's1', plannedArrivalTime: '10:00', expectedStopVersion: 1, expectedRunVersion: 1 })).response.status, 200);
+});
+test('R1 ownership removed after preflight cannot be replaced with proposed job assignment', async () => {
+  const f = fixture(); await f.rebuild(); const before = f.writes;
+  f.beforeNextTransaction(() => f.records.delete('fikaLogisticsAssignmentsV1/jl1:l1'));
+  assert.equal((await f.post({ action: 'assign-job-to-load', jobId: 'jl1', targetRunId: 'r1', scheduledTime: '10:00' })).response.status, 403);
+  assert.equal(f.writes, before);
+});
+async function assignedDriver(f) {
+  assert.equal((await f.post({ action: 'set-run-driver', runId: 'r1', driverId: 'person:driver', expectedRunVersion: 1 })).response.status, 200);
+}
+test('R1 native ownership removed after preflight cannot be replaced by a proposed stop', async () => {
+  const f = fixture(); f.seed('fikaLogisticsDeliveryRunsV1', 'r3', f.run('r3', 'van1'));
+  const requirement = { canonicalId: 'race-requirement', sourceDomain: 'cpu-production', sourceVersion: 1, serviceDate: f.date, status: 'ready_for_planning', destinationOplocId: 'site:race', destinationLabelSnapshot: 'Race site', lines: [] };
+  f.requirements.push(requirement); f.records.get('fikaLogisticsDeliveryStopsV1/s1').requirementRefs = [{ requirementId: requirement.canonicalId, sourceVersion: 1 }];
+  f.beforeNextTransaction(() => { f.records.get('fikaLogisticsDeliveryStopsV1/s1').requirementRefs = []; });
+  const before = f.writes;
+  assert.equal((await f.post({ action: 'assign-group', runId: 'r3', requirementIds: [requirement.canonicalId], expectedSourceVersions: { [requirement.canonicalId]: 1 }, expectedRunVersion: 1 })).response.status, 403);
+  assert.equal(f.writes, before);
+});
+test('R1 movement ownership removed after preflight cannot be replaced by a proposed stop', async () => {
+  const f = fixture(); f.records.get('fikaLogisticsDeliveryStopsV1/s1').movementRequestIds = ['race-movement'];
+  f.seed('fikaLogisticsMovementRequestsV1', 'race-movement', { canonicalId: 'race-movement', serviceDate: f.date, type: 'delivery', toAddress: 'Reviewed one-off address', status: 'open', version: 1, items: [], audit: [] });
+  f.beforeNextTransaction(() => { f.records.get('fikaLogisticsDeliveryStopsV1/s1').movementRequestIds = []; });
+  const before = f.writes;
+  assert.equal((await f.post({ action: 'assign', runId: 'r1', movementId: 'race-movement', expectedRunVersion: 1 })).response.status, 403);
+  assert.equal(f.writes, before);
+});
+test('R2 revoked driver blocks Ready, preserves snapshot and permits eligible replacement', async () => {
+  const f = fixture(); await assignedDriver(f); f.deactivateDriver();
+  const snapshot = structuredClone(f.records.get('fikaLogisticsDeliveryRunsV1/r1')); const before = f.writes;
+  const rejected = await f.post({ action: 'mark-run-ready', runId: 'r1', expectedRunVersion: 2, driverLabel: 'Forged eligible label' });
+  assert.equal(rejected.response.status, 422); assert.match(JSON.stringify(rejected.body), /no longer eligible.*Reassign/);
+  assert.deepEqual(f.records.get('fikaLogisticsDeliveryRunsV1/r1'), snapshot); assert.equal(f.writes, before);
+  assert.equal((await f.post({ action: 'set-run-driver', runId: 'r1', driverId: 'person:replacement', expectedRunVersion: 2 })).response.status, 200);
+  assert.equal((await f.post({ action: 'mark-run-ready', runId: 'r1', expectedRunVersion: 3 })).response.status, 200);
+});
+test('R2 revoked driver blocks Dispatch after valid Ready and preserves history', async () => {
+  const f = fixture(); await assignedDriver(f);
+  assert.equal((await f.post({ action: 'mark-run-ready', runId: 'r1', expectedRunVersion: 2 })).response.status, 200);
+  f.records.get('fikaLogisticsDeliveryStopsV1/s1').loaded = true; f.deactivateDriver();
+  const snapshot = structuredClone(f.records.get('fikaLogisticsDeliveryRunsV1/r1'));
+  assert.equal((await f.post({ action: 'dispatch-run', runId: 'r1', expectedRunVersion: 3 })).response.status, 422);
+  assert.deepEqual(f.records.get('fikaLogisticsDeliveryRunsV1/r1'), snapshot);
+});
+test('R2 driver revoked between preflight and Ready transaction is rejected', async () => {
+  const f = fixture(); await assignedDriver(f); f.beforeNextTransaction(() => f.deactivateDriver());
+  assert.equal((await f.post({ action: 'mark-run-ready', runId: 'r1', expectedRunVersion: 2 })).response.status, 422);
+});
+test('R2 already-dispatched execution remains allowed after driver revocation', async () => {
+  const f = fixture(); await assignedDriver(f);
+  assert.equal((await f.post({ action: 'mark-run-ready', runId: 'r1', expectedRunVersion: 2 })).response.status, 200);
+  f.records.get('fikaLogisticsDeliveryStopsV1/s1').loaded = true;
+  assert.equal((await f.post({ action: 'dispatch-run', runId: 'r1', expectedRunVersion: 3 })).response.status, 200);
+  f.deactivateDriver(); f.records.get('fikaLogisticsDeliveryStopsV1/s1').status = 'completed'; f.records.get('fikaLogisticsDeliveryRunsV1/r1').returnToCpuRequired = false;
+  assert.equal((await f.post({ action: 'complete-run', runId: 'r1', expectedRunVersion: 4 })).response.status, 200);
+  assert.equal(f.records.get('fikaLogisticsDeliveryRunsV1/r1').driverLabel, 'Governed Driver');
+});
 test('ownership changed after preflight is rejected before transactional writes', async () => {
   const f = fixture(); const before = f.writes;
   f.beforeNextTransaction(() => { f.records.get('fikaLogisticsDeliveryRunsV1/r1').vehicleId = 'van2'; });
@@ -79,7 +170,7 @@ test('arbitrary/revoked driver rejected; historical snapshot preserved', async (
   const f = fixture();
   assert.equal((await f.post({ action: 'set-run-driver', runId: 'r1', driverId: 'forged', expectedRunVersion: 1 })).response.status, 422);
   assert.equal((await f.post({ action: 'set-run-driver', runId: 'r1', driverId: 'person:driver', expectedRunVersion: 1 })).response.status, 200);
-  f.deactivateDriver(); assert.equal((await f.drivers()).body.drivers.length, 0);
+  f.deactivateDriver(); assert.ok(!(await f.drivers()).body.drivers.some(driver => driver.driverId === 'person:driver'));
   assert.equal((await f.post({ action: 'set-run-driver', runId: 'r1', driverId: 'person:driver', driverLabel: 'Governed Driver', expectedRunVersion: 2 })).response.status, 422);
   assert.equal((await f.post({ action: 'create-run', run: { ...f.run('revoked-run', 'van1'), driverId: 'person:driver' } })).response.status, 422);
   assert.equal(f.records.get('fikaLogisticsDeliveryRunsV1/r1').driverLabel, 'Governed Driver');

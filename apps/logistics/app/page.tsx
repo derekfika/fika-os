@@ -8,7 +8,7 @@ import { schedulableTimelineRuns } from "../lib/react-timeline-model";
 import type { FulfilmentRequirement } from "../../shared/fulfilment-requirement";
 import { fulfilmentWorkstream } from "../../shared/fulfilment-workstream";
 import type { DeliveryRun, DeliveryStop, MovementRequest } from "../lib/types";
-import { DriverAuthorityProvider, DriverSelector, useDriverAuthority } from "./driver-selector";
+import { DriverAuthorityProvider, DriverSelector, useDriverAuthority, useRunDriverEligibility } from "./driver-selector";
 import { logisticsVehicleLabel, type LogisticsVehicleId } from "../../shared/logistics-authority";
 import {
   workGroupQueueState,
@@ -2127,6 +2127,7 @@ function Inspector({
   const group = selection.kind === "group" ? planner.workGroups.find((item) => item.groupKey === selection.id) : undefined;
   const movement = selection.kind === "movement" ? planner.movements.find((item) => item.movementId === selection.id) : undefined;
   const run = selection.kind === "run" ? planner.runs.find((item) => item.runId === selection.id) : undefined;
+  const driverEligible = useRunDriverEligibility(run);
   const stop = selection.kind === "stop" ? planner.runs.flatMap((item) => item.stops).find((item) => item.stopId === selection.id) : undefined;
   const rawStop = stop ? rawStops.find((item) => item.canonicalId === stop.stopId) : undefined;
   const stopTitle = stop ? `${stop.destination.label} · ${stop.plannedWindow?.startTime || stop.plannedArrivalTime || "Time to confirm"}` : undefined;
@@ -2160,7 +2161,7 @@ function Inspector({
       {run.returnReady && <p className="context-line">All deliveries and collections complete · ready to return to CPU.</p>}
       {run.readiness.blockers.map((item) => <div className="attention-note" key={item}>⚠ {item}</div>)}
       <div className="inspector-actions">
-        {run.status === "planned" && <button disabled={!run.readiness.ready} onClick={() => onAction({ action: "mark-run-ready", runId: run.runId, expectedRunVersion: run.version })}>Mark ready</button>}
+        {run.status === "planned" && <button disabled={!run.readiness.ready || !driverEligible} onClick={() => onAction({ action: "mark-run-ready", runId: run.runId, expectedRunVersion: run.version })}>Mark ready</button>}
         {run.status === "ready" && <button className="secondary" onClick={() => onAction({ action: "return-run-to-planning", runId: run.runId, expectedRunVersion: run.version })}>Return to planning</button>}
       </div>
     </>}
@@ -2710,6 +2711,7 @@ function RunPanel({
   onAction: (payload: object) => void;
   placementPending?: boolean;
 }) {
+  const driverEligible = useRunDriverEligibility(run);
   return (
     <article className="run-panel">
       <header>
@@ -2741,7 +2743,7 @@ function RunPanel({
       <div className="lifecycle-actions">
         {run.status === "planned" && (
           <button
-            disabled={!run.readiness.ready}
+            disabled={!run.readiness.ready || !driverEligible}
             onClick={() =>
               onAction({
                 action: "mark-run-ready",
