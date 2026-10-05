@@ -22,6 +22,8 @@ Ordinary `move-stop` rejects differing source/target service dates inside the tr
 
 `DeliveryLoad` has one `serviceDate` and a `collectionRunId`, but no independently governed collection service date. Projected collection postponement therefore remains rejected as introduced in Batch 3; no multi-day load shape was inferred or added.
 
+The Sol review correction authorizes the server-selected future run by its stable vehicle ID inside the same transaction, before writes. If an existing matching target is outside the operator's scope, deferral returns 403 rather than choosing another run. A movement-backed native collection updates the canonical `MovementRequest` service date, version, timestamp, and audit entry in that transaction. Unexpected movement dates, inconsistent canonical identities, unresolved owners, or another stop sharing the movement on the source/target date fail with 409. The existing separate date events and projection rebuilds then make both date projections coherent. Requirement-only collection stops remain supported.
+
 ## Legacy review and operational implications
 
 No repository fixture contained a real empty-OPLOC Logistics record or a production inventory of previously planner-mutated ready/dispatched loads. The review inspected current persistence types, materialisation/projection paths, transfer assignment/defer logic, and existing historical deferral behavior. The new guards stop future planner mutations after a run leaves planning. Existing ready/dispatched placements are not changed automatically; operations should review any known historical routes whose placement was edited before these guards. Existing transfer records with missing/ambiguous movement or counterpart records now fail closed for affected move, schedule, reorder, and defer commands.
@@ -30,7 +32,7 @@ No migration, index, grant change, projection rebuild, staging/production read, 
 
 ## Validation
 
-- Focused route regressions: `node --test tests/batch4-integrity.test.cjs` — 21 passed.
+- Focused route regressions: `node --test tests/batch4-integrity.test.cjs` — 25 passed after the Sol review correction.
 - Planning helper regressions are included in the Logistics standard test command.
 - Established Batch 1–3 suites, standard tests, API integration, Chromium journeys, typecheck, nonincremental TypeScript, and production build are recorded in the Batch 4 review response.
 

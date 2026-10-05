@@ -2,8 +2,8 @@ const assert = require('node:assert/strict');
 const test = require('node:test');
 const { fixture } = require('./helpers/authority-route-harness.cjs');
 
-function fresh() {
-  const f = fixture(['van1', 'van2'], [], true);
+function fresh(permittedVehicleIds = ['van1', 'van2']) {
+  const f = fixture(permittedVehicleIds, [], true);
   f.requirements.length = 0;
   for (const key of [...f.records.keys()]) if (!key.startsWith('fikaLogisticsDeliveryRunsV1/')) f.records.delete(key);
   for (const run of f.records.values()) run.orderedStopIds = [];
@@ -113,6 +113,88 @@ test('A10 native collection defer publishes both source and target dates and is 
   assert.ok(changeDocs.some(event => event.serviceDate === f.date && event.changeType === 'collection-postponed-out'));
   assert.ok(changeDocs.some(event => event.serviceDate === targetDate && event.changeType === 'collection-postponed-in'));
   const before = f.writes; const replay = await f.post(payload); assert.equal(replay.response.status, 409); assert.equal(f.writes, before);
+});
+
+test('A10 movement-backed collection defer moves canonical movement and both date projections', async () => {
+  const f = fresh(); const targetDate = '2099-01-06'; const id = 'movement:collection-defer';
+  const canonicalMovement = movement(id, 'collection');
+  f.seed('fikaLogisticsMovementRequestsV1', id, canonicalMovement);
+  f.seed('fikaLogisticsDeliveryStopsV1', 'collect', stop('collect', 'r1', 1, { movementType: 'collection', movementRequestId: id }));
+  f.records.get('fikaLogisticsDeliveryRunsV1/r1').orderedStopIds = ['collect'];
+  const payload = { action: 'defer-collection', runId: 'r1', stopId: 'collect', targetServiceDate: targetDate, expectedRunVersion: 1, expectedStopVersion: 1 };
+  const result = await f.post(payload);
+  assert.equal(result.response.status, 200, JSON.stringify(result.body));
+  const saved = f.records.get('fikaLogisticsMovementRequestsV1/' + id);
+  assert.equal(saved.serviceDate, targetDate);
+  assert.equal(saved.canonicalId, id);
+  assert.equal(saved.version, canonicalMovement.version + 1);
+  assert.equal(saved.status, canonicalMovement.status);
+  assert.equal(saved.audit.at(-1).action, 'collection-postponed');
+  assert.equal(saved.audit.at(-1).version, saved.version);
+  const sourceProjection = f.records.get('fikaLogisticsDayProjectionsV1/' + f.date);
+  const targetProjection = f.records.get('fikaLogisticsDayProjectionsV1/' + targetDate);
+  assert.equal(sourceProjection.stops.some(item => item.canonicalId === 'collect'), false);
+  assert.equal(sourceProjection.movements.some(item => item.canonicalId === id), false);
+  assert.ok(targetProjection.stops.some(item => item.canonicalId === 'collect'));
+  assert.ok(targetProjection.movements.some(item => item.canonicalId === id));
+  const targetStop = targetProjection.stops.find(item => item.canonicalId === 'collect');
+  const planning = f.load(require('node:path').resolve(__dirname, '../lib/planning.ts'));
+  assert.deepEqual(planning.movementsForStop(targetStop, targetProjection.movements).map(item => item.canonicalId), [id]);
+  const beforeReplay = f.writes;
+  const replay = await f.post(payload);
+  assert.equal(replay.response.status, 409);
+  assert.equal(f.writes, beforeReplay);
+  assert.equal(values(f, 'fikaLogisticsDeliveryStopsV1').filter(item => item.canonicalId === 'collect').length, 1);
+  assert.equal(values(f, 'fikaLogisticsMovementRequestsV1').filter(item => item.canonicalId === id).length, 1);
+  assert.equal(values(f, 'fikaLogisticsDeliveryRunsV1').filter(item => item.canonicalId === `run:${targetDate}:deferred-collections:r1`).length, 1);
+});
+
+test('A10 movement-backed collection with an unexpected date or canonical identity fails without writes', async () => {
+  const f = fresh(); const id = 'movement:wrong-source-date';
+  f.seed('fikaLogisticsMovementRequestsV1', id, { ...movement(id, 'collection'), serviceDate: '2099-01-04' });
+  f.seed('fikaLogisticsDeliveryStopsV1', 'collect', stop('collect', 'r1', 1, { movementType: 'collection', movementRequestIds: [id] }));
+  const before = f.writes;
+  const result = await f.post({ action: 'defer-collection', runId: 'r1', stopId: 'collect', targetServiceDate: '2099-01-06', expectedRunVersion: 1, expectedStopVersion: 1 });
+  assert.equal(result.response.status, 409); assert.equal(f.writes, before);
+  const g = fresh(); const mismatch = 'movement:canonical-mismatch';
+  g.seed('fikaLogisticsMovementRequestsV1', mismatch, { ...movement(mismatch, 'collection'), canonicalId: 'movement:other' });
+  g.seed('fikaLogisticsDeliveryStopsV1', 'collect', stop('collect', 'r1', 1, { movementType: 'collection', movementRequestIds: [mismatch] }));
+  const beforeMismatch = g.writes;
+  const inconsistent = await g.post({ action: 'defer-collection', runId: 'r1', stopId: 'collect', targetServiceDate: '2099-01-06', expectedRunVersion: 1, expectedStopVersion: 1 });
+  assert.equal(inconsistent.response.status, 409); assert.equal(g.writes, beforeMismatch);
+});
+
+test('A10 movement-backed collection shared by another source-date stop fails without writes', async () => {
+  const f = fresh(); const id = 'movement:shared-source-stop';
+  f.seed('fikaLogisticsMovementRequestsV1', id, movement(id, 'collection'));
+  f.seed('fikaLogisticsDeliveryStopsV1', 'collect', stop('collect', 'r1', 1, { movementType: 'collection', movementRequestIds: [id] }));
+  f.seed('fikaLogisticsDeliveryStopsV1', 'also-collect', stop('also-collect', 'r2', 1, { movementType: 'collection', movementRequestIds: [id] }));
+  const before = f.writes;
+  const result = await f.post({ action: 'defer-collection', runId: 'r1', stopId: 'collect', targetServiceDate: '2099-01-06', expectedRunVersion: 1, expectedStopVersion: 1 });
+  assert.equal(result.response.status, 409); assert.equal(f.writes, before);
+});
+
+test('A10 authorizes selected future owner before writes and accepts permitted vehicle scopes', async () => {
+  async function deferWithScope(scope, targetVehicle) {
+    const f = fresh(scope); const targetDate = '2099-01-06';
+    const source = f.records.get('fikaLogisticsDeliveryRunsV1/r1'); source.driverId = 'person:shared-driver';
+    const target = { ...f.run('target', targetVehicle), serviceDate: targetDate, driverId: 'person:shared-driver' };
+    f.seed('fikaLogisticsDeliveryRunsV1', 'target', target);
+    f.seed('fikaLogisticsDeliveryStopsV1', 'collect', stop('collect', 'r1', 1, { movementType: 'collection' }));
+    source.orderedStopIds = ['collect'];
+    const before = f.writes;
+    const result = await f.post({ action: 'defer-collection', runId: 'r1', stopId: 'collect', targetServiceDate: targetDate, expectedRunVersion: 1, expectedStopVersion: 1 });
+    return { f, before, result };
+  }
+  const denied = await deferWithScope(['van1'], 'van2');
+  assert.equal(denied.result.response.status, 403); assert.equal(denied.f.writes, denied.before);
+  assert.equal(denied.f.records.get('fikaLogisticsDeliveryStopsV1/collect').runId, 'r1');
+  const permitted = await deferWithScope(['van1'], 'van1');
+  assert.equal(permitted.result.response.status, 200, JSON.stringify(permitted.result.body));
+  assert.equal(permitted.f.records.get('fikaLogisticsDeliveryStopsV1/collect').runId, 'target');
+  const planner = await deferWithScope(['van1', 'van2'], 'van2');
+  assert.equal(planner.result.response.status, 200, JSON.stringify(planner.result.body));
+  assert.equal(planner.f.records.get('fikaLogisticsDeliveryStopsV1/collect').runId, 'target');
 });
 
 for (const [label, ids] of [['duplicate', ['s1', 's1']], ['omitted', ['s1']], ['unknown', ['s1', 's2', 'unknown']], ['foreign-run', ['s1', 's2']]]) test(`A11 reorder rejects ${label} IDs without writes`, async () => {

@@ -148,6 +148,7 @@ async function transferContext(transaction: Transaction, stop: DeliveryStop) {
   const movementIds = stop.movementRequestIds || (stop.movementRequestId ? [stop.movementRequestId] : []);
   const movementSnapshots = await Promise.all(movementIds.map(id => transaction.get(movements().doc(id))));
   const linkedMovements = movementSnapshots.filter(snapshot => snapshot.exists).map(snapshot => snapshot.data() as MovementRequest);
+  const inconsistentMovementIds = movementSnapshots.flatMap((snapshot, index) => snapshot.exists && (snapshot.data() as MovementRequest).canonicalId !== movementIds[index] ? [movementIds[index]] : []);
   const missingMovementIds = movementIds.filter((_, index) => !movementSnapshots[index].exists);
   const transferMovements = linkedMovements.filter(movement => movement.type === "transfer");
   const linkedStops = new Map<string, DeliveryStop>([[stop.canonicalId, stop]]);
@@ -158,7 +159,7 @@ async function transferContext(transaction: Transaction, stop: DeliveryStop) {
     ]);
     for (const doc of snapshots.flatMap(snapshot => snapshot.docs)) linkedStops.set(doc.id, normalizeStop(doc.data()));
   }
-  return { movements: linkedMovements, transferMovements, missingMovementIds, stops: [...linkedStops.values()] };
+  return { movements: linkedMovements, transferMovements, inconsistentMovementIds, missingMovementIds, stops: [...linkedStops.values()] };
 }
 function addMinutesToTime(value: string, minutes: number) {
   const [hours, mins] = value.split(":").map(Number);
@@ -1861,6 +1862,7 @@ async function handlePost(request: NextRequest) {
             throw new HttpError(422, "Choose a future collection date.");
           const transfer = await transferContext(transaction, stop);
           if (transfer.missingMovementIds.length) throw new HttpError(409, "Linked movement identity is unavailable; review the collection before postponing it.");
+          if (transfer.inconsistentMovementIds.length) throw new HttpError(409, "Linked movement identity is inconsistent; review the collection before postponing it.");
           const transferLeg = transferLegsForStop(stop, transfer.transferMovements, transfer.stops);
           if (transferLeg.isTransfer) throw new HttpError(422, "Transfer pickup and drop-off must remain linked and cannot be postponed independently.");
           const allRunsSnap = await transaction.get(
@@ -1888,6 +1890,45 @@ async function handlePost(request: NextRequest) {
             updatedAt: now,
             audit: [{ action: "deferred-collection-run-created", at: now, by, version: 1 }],
           };
+          // The future run is selected or constructed server-side, so it was
+          // not covered by authorizeCommand's request-ID preflight. Authorize
+          // its stable vehicle identity before staging any transaction write.
+          authorizeRun(principal, targetRun);
+
+          const movedMovements: MovementRequest[] = [];
+          for (const movement of transfer.movements) {
+            if (movement.type !== "collection" || movement.serviceDate !== run.serviceDate || !Number.isInteger(movement.version) || movement.version < 1 || !Array.isArray(movement.audit))
+              throw new HttpError(409, "Linked collection movement data is invalid or does not match the source service date.");
+            const [canonicalOwners, legacyOwners] = await Promise.all([
+              transaction.get(stops().where("movementRequestIds", "array-contains", movement.canonicalId)),
+              transaction.get(stops().where("movementRequestId", "==", movement.canonicalId)),
+            ]);
+            const owners = new Map<string, DeliveryStop>();
+            for (const doc of [...canonicalOwners.docs, ...legacyOwners.docs]) {
+              const owner = normalizeStop(doc.data());
+              if (owner.movementRequestIds.includes(movement.canonicalId)) {
+                if (doc.id !== owner.canonicalId) throw new HttpError(409, "Linked collection stop identity is inconsistent.");
+                owners.set(doc.id, owner);
+              }
+            }
+            for (const [ownerId, owner] of owners) {
+              if (ownerId === stop.canonicalId) continue;
+              const ownerRunSnap = await transaction.get(runs().doc(owner.runId));
+              if (!ownerRunSnap.exists)
+                throw new HttpError(409, "Linked collection movement has an unresolved stop owner.");
+              const ownerRun = ownerRunSnap.data() as DeliveryRun;
+              if (ownerRun.serviceDate === run.serviceDate || ownerRun.serviceDate === body.targetServiceDate)
+                throw new HttpError(409, "Linked collection movement is shared by another source or target date stop.");
+            }
+            const nextVersion = movement.version + 1;
+            movedMovements.push({
+              ...movement,
+              serviceDate: body.targetServiceDate,
+              version: nextVersion,
+              updatedAt: now,
+              audit: [...movement.audit, { action: "collection-postponed", at: now, by, version: nextVersion }],
+            });
+          }
           const sourceStops = runStopSnap.docs
             .map((doc) => normalizeStop(doc.data()))
             .filter((item) => item.canonicalId !== stop.canonicalId);
@@ -1906,8 +1947,6 @@ async function handlePost(request: NextRequest) {
           const targetStops = (targetStopsSnap?.docs || []).map((doc) => normalizeStop(doc.data()));
           const orderedSource = orderedTransferStops(sourceStops);
           const orderedTarget = orderedTransferStops([...targetStops.filter((item) => item.canonicalId !== stop.canonicalId), moved]);
-          orderedSource.forEach((item) => transaction.set(stops().doc(item.canonicalId), item));
-          orderedTarget.forEach((item) => transaction.set(stops().doc(item.canonicalId), item));
           const sourceWork = await readRunWork(transaction, run);
           sourceWork.native = orderedSource;
           const sourceFinal = finaliseRun({ ...run, orderedStopIds: orderedSource.map(item => item.canonicalId) }, sourceWork, by, now);
@@ -1919,6 +1958,12 @@ async function handlePost(request: NextRequest) {
             updatedAt: now,
             audit: [...targetRun.audit, { action: "collection-postponed-in", at: now, by, version: targetRun.version + 1 }],
           };
+          // Finish every transaction read and derive both run snapshots before
+          // queuing writes; Firestore rejects reads after the first write.
+          for (const movement of movedMovements)
+            transaction.set(movements().doc(movement.canonicalId), movement);
+          orderedSource.forEach((item) => transaction.set(stops().doc(item.canonicalId), item));
+          orderedTarget.forEach((item) => transaction.set(stops().doc(item.canonicalId), item));
           transaction.set(runs().doc(run.canonicalId), sourceNext);
           transaction.set(runs().doc(targetRun.canonicalId), targetNext);
           return { run: sourceNext, targetRun: targetNext, stop: moved };
