@@ -153,11 +153,11 @@ export function portalSiteForAuthorisedOploc(
   site: { id: string; label: string },
   configuredCanonicalOplocIds: Partial<Record<PortalSiteKey, string>> = {},
 ): PortalSiteConfig | undefined {
+  const rcoaOplocId = configuredCanonicalOplocIds.rcoa?.trim();
+  if (rcoaOplocId && site.id === rcoaOplocId) return portalSites.rcoa;
+
   const portal = portalSiteForOploc(site);
-  if (portal?.key === "rcoa") {
-    const canonicalOplocId = configuredCanonicalOplocIds.rcoa?.trim();
-    return canonicalOplocId && site.id === canonicalOplocId ? portal : undefined;
-  }
+  if (portal?.key === "rcoa") return undefined;
   return portal?.canonicalOplocId && portal.canonicalOplocId !== site.id ? undefined : portal;
 }
 

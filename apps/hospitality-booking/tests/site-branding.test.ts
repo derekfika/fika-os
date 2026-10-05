@@ -33,6 +33,40 @@ test("site presentation is shared by Booking and Operations for every configured
   assert.match(dashboard, /hospitalitySiteThemeStyle\(site\)/);
 });
 
+test("RCoA manager identity uses the configured canonical OPLOC ID regardless of label", () => {
+  const configuredId = "oploc:rcoa-confirmed";
+  const configured = { rcoa: configuredId };
+  assert.equal(
+    portalSiteForAuthorisedOploc({ id: configuredId, label: "Jubilee House" }, configured)?.key,
+    "rcoa",
+  );
+  assert.equal(
+    portalSiteForAuthorisedOploc({ id: configuredId, label: "Some future renamed site" }, configured)?.key,
+    "rcoa",
+  );
+  assert.equal(
+    portalSiteForAuthorisedOploc(
+      { id: "oploc:other", label: "Royal College of Anaesthetists" },
+      configured,
+    ),
+    undefined,
+  );
+  assert.equal(
+    portalSiteForAuthorisedOploc({ id: "oploc:other", label: "Royal College of Anaesthetists" }),
+    undefined,
+  );
+});
+
+test("RCoA public page sends only configuration state and keeps the expected OPLOC server-side", () => {
+  assert.match(rcoaPage, /configured=\{Boolean\(process\.env\.FIKA_RCOA_OPLOC_ID\?\.trim\(\)\)\}/);
+  assert.doesNotMatch(rcoaPage, /\boplocId\b/);
+  assert.match(rcoaPortal, /RcoaBookingPortal\(\{ configured \}: \{ configured: boolean \}\)/);
+  assert.match(rcoaPortal, /const rcoaConfigured = configured/);
+  assert.doesNotMatch(rcoaPortal, /\boplocId\b/);
+  assert.match(rcoaBookingRoute, /const expectedOplocId = process\.env\.FIKA_RCOA_OPLOC_ID\?\.trim\(\)/);
+  assert.match(rcoaBookingRoute, /["']x-fika-expected-rcoa-oploc-id["']:\s*expectedOplocId/);
+});
+
 test("RCoA uses shared Hospitality theme/config and requires an exact configured OPLOC for manager access", () => {
   const site = portalSite("rcoa");
   const authorizedSite = { id: "oploc:rcoa-confirmed", label: "Royal College of Anaesthetists" };

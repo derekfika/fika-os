@@ -67,7 +67,7 @@ function safeDraft(value: unknown): RcoaBookingDraft | undefined {
   };
 }
 
-export default function RcoaBookingPortal({ oplocId }: { oplocId?: string }) {
+export default function RcoaBookingPortal({ configured }: { configured: boolean }) {
   const site = portalSite("rcoa");
   const theme = hospitalitySiteThemeStyle(site) as CSSProperties;
   const [draft, setDraft] = useState<RcoaBookingDraft>(createEmptyRcoaDraft);
@@ -201,7 +201,7 @@ export default function RcoaBookingPortal({ oplocId }: { oplocId?: string }) {
   });
   const warnings = rcoaNoticeWarnings(draft, menu);
   const currentEvent = rcoaEventTypes.find((event) => event.id === draft.occasion);
-  const rcoaConfigured = Boolean(oplocId);
+  const rcoaConfigured = configured;
 
   const updateContact = (key: keyof RcoaBookingDraft["contact"], value: string) => setDraft((current) => ({ ...current, contact: { ...current.contact, [key]: value } }));
   const updateEvent = (key: keyof RcoaBookingDraft["event"], value: string | number) => setDraft((current) => ({ ...current, event: { ...current.event, [key]: value } }));
