@@ -46,6 +46,7 @@ import {
   repairLegacyAssignmentServiceDates,
 } from "@/lib/store";
 import { aggregateDelivery, assertLoadVersion, compatibleLoad, assertDispatchable, removeAssignment, setJobCollectionStatus } from "@/lib/delivery-loads";
+import { assignmentIntegrityDiagnostic } from "@/lib/assignment-integrity-diagnostic";
 import { executeProjected, projectedActions } from "@/lib/projected-execution";
 import { readRunWork, assertRunReady, workOutstanding, workIssuesOpen, finaliseRun } from "@/lib/run-execution";
 import { requireGovernedDriver } from "@/lib/driver-authority";
@@ -376,7 +377,15 @@ async function getLogistics(request: NextRequest, principal: LogisticsPrincipal)
   if (request.nextUrl.searchParams.get("diagnostic") === "1") {
     const serviceDate = requestedDate || operationalDate();
     if (!validOperationalDate(serviceDate)) throw new HttpError(400, "Invalid Logistics service date.");
-    const [requirements, integrityState, projection] = await Promise.all([fetchRequirements(serviceDate, cookie), listRunIntegrityDiagnosticState(serviceDate), getLogisticsProjection(serviceDate)]);
+    const [requirements, integrityState, projection, head] = await Promise.all([fetchRequirements(serviceDate, cookie), listRunIntegrityDiagnosticState(serviceDate), getLogisticsProjection(serviceDate), getLogisticsSyncHead(serviceDate)]);
+    const auditJobs = new Map(integrityState.jobs.map(({ id, data }) => [String(data.id || id), data as import("@/lib/types").LogisticsJob]));
+    const auditLoads = new Map(integrityState.loads.map(({ id, data }) => [String(data.id || id), data as import("@/lib/types").DeliveryLoad]));
+    const missingJobIds = diagnosticStringIds(integrityState.assignments.map(({ data }) => data.jobId)).filter(id => !auditJobs.has(id));
+    const missingLoadIds = diagnosticStringIds(integrityState.assignments.map(({ data }) => data.loadId)).filter(id => !auditLoads.has(id));
+    await Promise.all([
+      ...missingJobIds.map(async id => { const job = await getLogisticsJob(id); if (job) auditJobs.set(id, job); }),
+      ...missingLoadIds.map(async id => { const load = await getDeliveryLoad(id); if (load) auditLoads.set(id, load); }),
+    ]);
     const rawRuns = integrityState.runs.map(({ id, data }) => ({ id, raw: data, canonicalId: typeof data.canonicalId === "string" ? data.canonicalId : id }));
     const runIds = new Set(rawRuns.flatMap((run) => [run.id, run.canonicalId]));
     const rawStops = integrityState.stops.map(({ id, data }) => ({ id, raw: data, canonicalId: typeof data.canonicalId === "string" ? data.canonicalId : id }))
@@ -462,11 +471,15 @@ async function getLogistics(request: NextRequest, principal: LogisticsPrincipal)
     const differences = (canonical: Set<string>, projected: Set<string>) => ({ missingFromProjection: [...canonical].filter((id) => !projected.has(id)), projectionOnly: [...projected].filter((id) => !canonical.has(id)) });
     const rawDayCounts = { runs: integrityState.runs.length, stops: integrityState.stops.length, jobs: integrityState.jobs.length, loads: integrityState.loads.length, assignments: integrityState.assignments.length, movements: integrityState.movements.length };
     const assignmentEvidence = rawAssignments.map(({ id, raw }) => ({ id, jobId: raw.jobId ?? null, loadId: raw.loadId ?? null }));
+    const assignmentIntegrity = assignmentIntegrityDiagnostic({ serviceDate,
+      assignments: integrityState.assignments.map(({ id, data }) => ({ id, data: data as import("@/lib/types").LogisticsAssignment })),
+      jobs: auditJobs, loads: auditLoads, nativeRequirementIds: plannedRequirementIds, projection, headSequence: head.sequence });
     return NextResponse.json({
       serviceDate,
-      comparison: { ...comparison, entityDifferences: { jobs: differences(canonicalJobIds, projectionJobIds), loads: differences(canonicalLoadIds, projectionLoadIds) } },
+      comparison: { ...comparison, countBasis: "Legacy requirement/planner counts and grouped projection-card counts are informational; synchronization uses eligible canonical ID coverage.", entityDifferences: { jobs: differences(canonicalJobIds, projectionJobIds), loads: differences(canonicalLoadIds, projectionLoadIds) } },
       runIntegrity: { entityCounts: rawDayCounts, runs: runIntegrityRuns, assignments: assignmentEvidence },
-      status: comparison.jobs === comparison.projection.jobs && comparison.unassignedJobs === comparison.projection.unassignedJobs && comparison.deliveryLoads === comparison.projection.deliveryLoads ? "In sync" : "Projection out of sync",
+      assignmentIntegrity,
+      status: assignmentIntegrity.projectionStatus,
     });
   }
   if (request.nextUrl.searchParams.get("projection") === "1") {

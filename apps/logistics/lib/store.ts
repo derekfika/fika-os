@@ -114,21 +114,20 @@ export async function listRunIntegrityDiagnosticState(serviceDate: string) {
     const data = doc.data();
     return data.serviceDate === undefined ? runIds.includes(data.runId) : data.serviceDate === serviceDate;
   });
-  const runIdSet = new Set(runIds);
-  const relatedLoadDocs = loadSnap.docs.filter((doc) => {
-    const data = doc.data();
-    return runIdSet.has(data.runId) || runIdSet.has(data.collectionRunId);
-  });
-  const relatedLoadIds = Array.from(new Set(relatedLoadDocs.flatMap((doc) => {
+  const relatedLoadIds = Array.from(new Set(loadSnap.docs.flatMap((doc) => {
     const data = doc.data();
     return [doc.id, typeof data.id === "string" ? data.id : undefined].filter((id): id is string => Boolean(id));
   })));
   const assignmentsByLoad = await Promise.all(Array.from({ length: Math.ceil(relatedLoadIds.length / 30) }, (_, index) =>
     logisticsAssignments().where("loadId", "in", relatedLoadIds.slice(index * 30, index * 30 + 30)).get(),
   ));
+  const relatedJobIds = Array.from(new Set(jobSnap.docs.flatMap(doc => [doc.id, doc.data().id]).filter((id): id is string => typeof id === "string")));
+  const assignmentsByJob = await Promise.all(Array.from({ length: Math.ceil(relatedJobIds.length / 30) }, (_, index) =>
+    logisticsAssignments().where("jobId", "in", relatedJobIds.slice(index * 30, index * 30 + 30)).get(),
+  ));
   const assignmentDocsById = new Map<string, (typeof assignmentByDateSnap.docs)[number]>();
   for (const doc of assignmentByDateSnap.docs) assignmentDocsById.set(doc.id, doc);
-  for (const snapshot of assignmentsByLoad) for (const doc of snapshot.docs) {
+  for (const snapshot of [...assignmentsByLoad, ...assignmentsByJob]) for (const doc of snapshot.docs) {
     const serviceDateValue = doc.data().serviceDate;
     if (serviceDateValue === undefined || serviceDateValue === serviceDate) assignmentDocsById.set(doc.id, doc);
   }

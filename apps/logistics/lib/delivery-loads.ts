@@ -19,12 +19,30 @@ export function assertLoadVersion(load: DeliveryLoad, expected?: number) {
   if (load.version !== expected) throw new HttpError(409, "Delivery load changed. Refresh Logistics and retry.");
 }
 
+/** The production predicates also supply read-only administrative explanations. */
+export function explainLoadCompatibility(job: LogisticsJob, load: DeliveryLoad) {
+  const checks = {
+    jobActive: job.sourceStatus !== "withdrawn",
+    loadActive: load.status !== "cancelled",
+    canonicalLocationsPresent: Boolean(job.originOplocId && job.destinationOplocId),
+    serviceDateMatch: job.serviceDate === load.serviceDate,
+    originMatch: job.originOplocId === load.originOplocId,
+    destinationMatch: job.destinationOplocId === load.destinationOplocId,
+    arrivalWithinRequestedWindow: arrivalWithinSource(job.requestedWindow, load.scheduledTime),
+  };
+  const reasons: string[] = [];
+  if (!checks.jobActive) reasons.push("job_withdrawn");
+  if (!checks.loadActive) reasons.push("load_cancelled");
+  if (!checks.canonicalLocationsPresent || !load.originOplocId || !load.destinationOplocId) reasons.push("missing_canonical_origin_or_destination");
+  if (!checks.serviceDateMatch) reasons.push("service_date_mismatch");
+  if (!checks.originMatch) reasons.push("origin_oploc_mismatch");
+  if (!checks.destinationMatch) reasons.push("destination_oploc_mismatch");
+  if (!checks.arrivalWithinRequestedWindow) reasons.push("scheduled_arrival_outside_current_requested_window");
+  return { compatible: Object.values(checks).every(Boolean), checks, reasons };
+}
+
 export function compatibleLoad(job: LogisticsJob, load: DeliveryLoad) {
-  return job.sourceStatus !== "withdrawn" && load.status !== "cancelled" && Boolean(job.originOplocId && job.destinationOplocId) &&
-    job.serviceDate === load.serviceDate &&
-    job.originOplocId === load.originOplocId &&
-    job.destinationOplocId === load.destinationOplocId &&
-    arrivalWithinSource(job.requestedWindow, load.scheduledTime);
+  return explainLoadCompatibility(job, load).compatible;
 }
 
 export function findCompatibleLoad(job: LogisticsJob, loads: DeliveryLoad[]) {
