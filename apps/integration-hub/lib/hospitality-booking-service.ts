@@ -7,6 +7,8 @@ import { stableDocumentId } from "./canonical-editor";
 import { sha256 } from "./profiler";
 import { parseCanonical } from "./schemas";
 import {
+  applyBookingAdditionalCharges,
+  assertBookingExpectedVersion,
   assertWorkflowCommand,
   applyQuotePdfPersistence,
   type DashboardWorkflow,
@@ -18,6 +20,11 @@ import {
   defaultDashboardQuoteSettings,
   type DashboardQuoteSettings,
 } from "./quote-engine";
+import {
+  normalizeBookingAdditionalCharges,
+  validateLabourRates,
+  type BookingAdditionalCharge,
+} from "./hospitality-additional-charges";
 import {
   bookingNotificationRecord,
   type BookingNotificationKind,
@@ -146,6 +153,7 @@ export type CanonicalBooking = {
   }>;
   audit: Array<{ action: string; at: string; by: string; reason: string }>;
   commercialVersion?: number;
+  additionalCharges?: BookingAdditionalCharge[];
   quoteState?: { currentRevisionId?: string; revisions: QuoteRevision[] };
   dashboardWorkflow?: DashboardWorkflow;
   deliveryChargeRequired?: boolean;
@@ -671,9 +679,13 @@ export async function getDashboardQuoteSettings(
     .doc(stableDocumentId(dashboardId))
     .get();
   recordDataAccess({ app: "integration-hub", operation: "hospitality.quote-settings.by-dashboard", source: "FIRESTORE", dataset: "fikaDashboardQuoteSettings", documents: snapshot.exists ? 1 : 0, firestoreReadKind: "document" });
-  return snapshot.exists
+  const settings = snapshot.exists
     ? (snapshot.data() as DashboardQuoteSettings)
     : defaultDashboardQuoteSettings(dashboardId);
+  return {
+    ...settings,
+    labourRates: settings.labourRates ?? defaultDashboardQuoteSettings(dashboardId).labourRates,
+  };
 }
 
 function dashboardIdForSite(siteId?: string) {
@@ -692,9 +704,13 @@ async function getQuoteSettingsInTransaction(
     dashboardQuoteSettings().doc(stableDocumentId(dashboardId)),
   );
   recordDataAccess({ app: "integration-hub", operation: "hospitality.quote-settings.transaction-read", source: "FIRESTORE", dataset: "fikaDashboardQuoteSettings", documents: snapshot.exists ? 1 : 0, firestoreReadKind: "transaction" });
-  return snapshot.exists
+  const settings = snapshot.exists
     ? (snapshot.data() as DashboardQuoteSettings)
     : defaultDashboardQuoteSettings(dashboardId);
+  return {
+    ...settings,
+    labourRates: settings.labourRates ?? defaultDashboardQuoteSettings(dashboardId).labourRates,
+  };
 }
 
 export async function saveDashboardQuoteSettings(
@@ -719,8 +735,12 @@ export async function saveDashboardQuoteSettings(
       throw conflict(
         "Quote settings must contain valid non-negative charges and a VAT rate between 0 and 1.",
       );
+    const labourRates = validateLabourRates(
+      input.labourRates ?? existing.labourRates ?? defaultDashboardQuoteSettings(input.dashboardId).labourRates ?? [],
+    );
     const next: DashboardQuoteSettings = {
       ...input,
+      labourRates,
       version: existing.version + 1,
       updatedAt: new Date().toISOString(),
       updatedBy: actor.uid,
@@ -897,8 +917,7 @@ export async function executeBookingWorkflow(
     const snapshot = await transaction.get(ref);
     if (!snapshot.exists) throw conflict("Booking was not found.");
     const current = snapshot.data() as CanonicalBooking;
-    if (current.version !== expectedVersion)
-      throw conflict("Booking changed elsewhere. Refresh and try again.");
+    assertBookingExpectedVersion(current.version, expectedVersion, command.action);
     assertWorkflowCommand(current, command);
     const now = new Date().toISOString();
     const nextVersion = current.version + 1;
@@ -1037,6 +1056,20 @@ export async function executeBookingWorkflow(
       }
       next.lifecycleStatus = "Reviewed";
     }
+    if (command.action === "set-additional-charges") {
+      const settings = await getQuoteSettingsInTransaction(
+        transaction,
+        dashboardIdForSite(next.service.portalSiteId),
+      );
+      const normalizedCharges = normalizeBookingAdditionalCharges(
+        command.charges,
+        current.additionalCharges || [],
+        settings.labourRates ?? defaultDashboardQuoteSettings(settings.dashboardId).labourRates ?? [],
+        actor.uid,
+        now,
+      );
+      Object.assign(next, applyBookingAdditionalCharges(current, normalizedCharges));
+    }
     if (command.action === "quote") {
       const revisions = next.quoteState!.revisions;
       const revision = revisions.length + 1;
@@ -1054,6 +1087,7 @@ export async function executeBookingWorkflow(
           dietaries: next.dietaries,
           notes: next.notes,
           deliveryChargeRequired: next.deliveryChargeRequired !== false,
+          additionalCharges: next.additionalCharges || [],
         },
         settings,
       );

@@ -5,10 +5,37 @@
  * own settings and a domain supplies a commercial intent; the engine returns an
  * immutable, self-contained commercial snapshot suitable for a quote revision.
  */
+import {
+  DEFAULT_LABOUR_ROLES,
+  roundQuoteMoney,
+  validateStoredAdditionalCharge,
+  type BookingAdditionalCharge,
+  type BookingAdditionalChargeCategory,
+  type LabourRateSetting,
+} from "./hospitality-additional-charges";
+
 export const QUOTE_ENGINE_CONTRACT_VERSION = "fika.quote-engine.v1";
 
 export type Money = { currency: "GBP"; amount: number };
-export type QuoteCharge = { code: "delivery" | "management_fee" | "housekeeping" | "security" | "aircon" | "venue_hire"; label: string; net: Money; vatRate: number };
+export type QuoteChargeLabour = {
+  roleId?: string;
+  roleLabel: string;
+  staffCount: number;
+  hoursPerPerson: number;
+  hourlyRate: number;
+  multiplier: number;
+  rateSource: "configured" | "custom";
+};
+export type QuoteCharge = {
+  code: "delivery" | "management_fee" | "housekeeping" | "security" | "aircon" | "venue_hire" | "booking_additional";
+  label: string;
+  net: Money;
+  vatRate: number;
+  sourceAdditionalChargeId?: string;
+  category?: BookingAdditionalChargeCategory;
+  detail?: string;
+  labour?: QuoteChargeLabour;
+};
 export type QuoteLine = { itemId: string; name: string; description?: string; quantity: number; unitNet: Money; lineNet: Money; servingInfo?: string; choices?: unknown[]; comments?: string };
 export type DashboardQuoteSettings = {
   dashboardId: string;
@@ -16,6 +43,7 @@ export type DashboardQuoteSettings = {
   managementFee: { mode: "fixed" | "percentage"; value: number; label: string };
   deliveryCharge: { enabled: boolean; amount: number; label: string };
   buildingCharges?: { enabled: boolean; housekeeping: { hourly: number; label: string }; security: { hourly: number; minimumHours: number; label: string }; aircon: { hourly: number; afterHour: number; label: string }; venueHire: { enabled: boolean; amount: number; label: string } };
+  labourRates?: LabourRateSetting[];
   vatRate: number;
   updatedAt?: string;
   updatedBy?: string;
@@ -34,6 +62,7 @@ export type QuoteBookingInput = {
   dietaries: Record<string, unknown>;
   notes?: string;
   deliveryChargeRequired?: boolean;
+  additionalCharges?: BookingAdditionalCharge[];
 };
 export type QuoteCommercialSnapshot = {
   contractVersion: typeof QUOTE_ENGINE_CONTRACT_VERSION;
@@ -55,10 +84,11 @@ export const defaultDashboardQuoteSettings = (dashboardId: string): DashboardQuo
   managementFee: dashboardId === "angel-court-hospitality" ? { mode: "percentage", value: 8, label: "Angel Court management fee" } : { mode: "fixed", value: 0, label: "Management fee" },
   deliveryCharge: { enabled: true, amount: 35, label: "CPU delivery charge" },
   buildingCharges: dashboardId === "angel-court-hospitality" ? { enabled: true, housekeeping: { hourly: 23.68, label: "Housekeeping" }, security: { hourly: 29.95, minimumHours: 8, label: "Security" }, aircon: { hourly: 200, afterHour: 19, label: "Aircon after 7pm" }, venueHire: { enabled: false, amount: 1000, label: "Venue hire" } } : undefined,
+  labourRates: structuredClone(DEFAULT_LABOUR_ROLES),
   vatRate: 0.2,
 });
 
-const round = (value: number) => Math.round((value + Number.EPSILON) * 100) / 100;
+const round = roundQuoteMoney;
 const money = (amount: number): Money => ({ currency: "GBP", amount: round(amount) });
 
 export function humaniseQuoteLabel(value: string) {
@@ -120,6 +150,24 @@ export function calculateQuoteSnapshot(input: QuoteBookingInput, settings: Dashb
   const managementBase = itemsNet + charges.reduce((total, charge) => total + charge.net.amount, 0);
   const managementAmount = settings.managementFee.mode === "percentage" ? managementBase * (settings.managementFee.value / 100) : settings.managementFee.value;
   if (managementAmount > 0) charges.push({ code: "management_fee", label: settings.managementFee.label, net: money(managementAmount), vatRate: settings.vatRate });
+  // Booking-owned charges are appended after the existing management-fee
+  // calculation, preserving its historic base and preventing compounding.
+  for (const storedCharge of input.additionalCharges || []) {
+    const additional = validateStoredAdditionalCharge(storedCharge);
+    const detail = additional.kind === "labour"
+      ? `${additional.labour.staffCount} staff × ${additional.labour.hoursPerPerson.toFixed(2)} hrs × £${additional.labour.hourlyRate.toFixed(2)} × ${additional.labour.multiplier}`
+      : undefined;
+    charges.push({
+      code: "booking_additional",
+      sourceAdditionalChargeId: additional.id,
+      category: additional.category,
+      label: additional.label,
+      ...(detail ? { detail } : {}),
+      ...(additional.kind === "labour" ? { labour: structuredClone(additional.labour) } : {}),
+      net: money(additional.netTotal),
+      vatRate: settings.vatRate,
+    });
+  }
   const chargesNet = round(charges.reduce((total, charge) => total + charge.net.amount, 0));
   const net = round(itemsNet + chargesNet); const vat = round(net * settings.vatRate);
   return { contractVersion: QUOTE_ENGINE_CONTRACT_VERSION, bookingId: input.canonicalId, client: structuredClone(input.client), service: structuredClone(input.service), order: { ...(input.order.eventType ? { eventType: input.order.eventType } : {}), lines }, charges, totals: { itemsNet: money(itemsNet), chargesNet: money(chargesNet), net: money(net), vat: money(vat), gross: money(net + vat), vatRate: settings.vatRate }, dietaries: structuredClone(input.dietaries), ...(input.notes ? { notes: input.notes } : {}), pricingPolicy: { dashboardId: settings.dashboardId, version: settings.version, managementFee: structuredClone(settings.managementFee), deliveryCharge: structuredClone(settings.deliveryCharge), vatRate: settings.vatRate } };
@@ -147,7 +195,7 @@ export function brandedQuoteDocumentHtml(snapshot: QuoteCommercialSnapshot, refe
     const choices = Array.isArray(line.choices) && line.choices.length ? `<small>${esc(line.choices.map(choice => typeof choice === "object" && choice ? Object.values(choice as Record<string, unknown>).join(": ") : String(choice)).join(" · "))}</small>` : "";
     return `<tr><td><div class="item-name">${esc(line.name)}</div>${line.description ? `<small>${esc(line.description)}</small>` : ""}${line.servingInfo ? `<small class="muted">${esc(line.servingInfo)}</small>` : ""}${choices}${line.comments ? `<small class="note">${esc(line.comments)}</small>` : ""}</td><td class="qty">${esc(line.quantity)}</td><td class="money">${gbp(line.unitNet.amount)}</td><td class="money strong">${gbp(line.lineNet.amount)}</td></tr>`;
   }).join("");
-  const chargeRows = snapshot.charges.map(charge => `<tr class="charge"><td colspan="3">${esc(charge.label)}</td><td class="money strong">${gbp(charge.net.amount)}</td></tr>`).join("");
+  const chargeRows = snapshot.charges.map(charge => `<tr class="charge"><td colspan="3">${esc(charge.label)}${charge.detail ? `<small>${esc(charge.detail)}</small>` : ""}</td><td class="money strong">${gbp(charge.net.amount)}</td></tr>`).join("");
   const dietaries = Object.entries(snapshot.dietaries).filter(([, value]) => value !== 0 && value !== "" && value !== false).map(([key, value]) => `<span>${esc(key)}: ${esc(value)}</span>`).join("") || `<span class="muted">None recorded</span>`;
   const serviceLabel = humaniseQuoteLabel(snapshot.order.eventType || "Hospitality");
   const serviceDate = formatQuoteDate(snapshot.service.eventDate);

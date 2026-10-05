@@ -1733,3 +1733,264 @@
   outline: 3px solid var(--fika-focus-ring);
   outline-offset: 3px;
 }
+
+.scope :global(.additional-charges-backdrop) {
+  align-items: center;
+  overflow-y: auto;
+  padding: 16px;
+}
+.scope :global(.additional-charges-modal) {
+  display: grid;
+  gap: 16px;
+  width: min(760px, calc(100vw - 32px));
+  max-height: calc(100dvh - 32px);
+  overflow-y: auto;
+  padding: 24px;
+  border: 1px solid var(--fika-border-default);
+  border-radius: 16px !important;
+  background: var(--fika-surface-card);
+  color: var(--fika-text-primary);
+}
+.scope :global(.additional-charges-modal__header),
+.scope :global(.additional-charges-modal__actions),
+.scope :global(.additional-charges-modal__footer),
+.scope :global(.additional-charge-row),
+.scope :global(.additional-charge-row__actions),
+.scope :global(.hospitality-labour-rates__row) {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.scope :global(.additional-charges-modal__header h2) {
+  margin: 2px 0 0;
+  font-size: 1.55rem;
+  letter-spacing: -0.04em;
+}
+.scope :global(.additional-charges-modal__header > button),
+.scope :global(.additional-charges-modal__actions button),
+.scope :global(.additional-charge-row__actions button),
+.scope :global(.additional-charge-editor footer button),
+.scope :global(.additional-charges-modal__footer button),
+.scope :global(.hospitality-labour-rates__row button),
+.scope :global(.hospitality-labour-rates__add) {
+  min-height: 40px;
+  padding: 8px 12px;
+  border: 1px solid var(--fika-border-default);
+  border-radius: 8px;
+  background: var(--fika-surface-card);
+  color: var(--fika-text-primary);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+.scope :global(.additional-charges-modal__header > button) {
+  width: 44px;
+  min-width: 44px;
+  padding: 0;
+  font-size: 1.5rem;
+}
+.scope :global(.additional-charges-modal__actions) {
+  justify-content: flex-start;
+  flex-wrap: wrap;
+}
+.scope :global(.additional-charges-modal__actions button:hover),
+.scope :global(.additional-charge-row__actions button:hover),
+.scope :global(.additional-charge-editor footer button:hover),
+.scope :global(.additional-charges-modal__footer button:hover),
+.scope :global(.hospitality-labour-rates__row button:hover),
+.scope :global(.hospitality-labour-rates__add:hover) {
+  border-color: var(--fika-action-primary);
+}
+.scope :global(.additional-charge-list) {
+  display: grid;
+  gap: 0;
+  max-height: 210px;
+  overflow-y: auto;
+  border-top: 1px solid var(--fika-border-default);
+}
+.scope :global(.additional-charge-row) {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--fika-border-default);
+}
+.scope :global(.additional-charge-row > div:first-child) {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+.scope :global(.additional-charge-row small),
+.scope :global(.additional-charge-list__empty),
+.scope :global(.additional-charges-modal > p),
+.scope :global(.additional-charge-editor__preview span),
+.scope :global(.hospitality-labour-rates p) {
+  color: var(--fika-text-secondary);
+  line-height: 1.4;
+}
+.scope :global(.additional-charge-row__amount) {
+  white-space: nowrap;
+}
+.scope :global(.additional-charge-row__actions) {
+  justify-content: flex-end;
+}
+.scope :global(.additional-charge-list__empty) {
+  margin: 0;
+  padding: 14px 0;
+}
+.scope :global(.additional-charge-editor) {
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+  border: 1px solid var(--fika-border-default);
+  border-radius: 12px;
+  background: var(--fika-surface-subtle);
+}
+.scope :global(.additional-charge-editor h3),
+.scope :global(.hospitality-labour-rates h3) {
+  margin: 0;
+  color: var(--fika-text-primary);
+  font-size: 1.1rem;
+}
+.scope :global(.additional-charge-editor label),
+.scope :global(.hospitality-labour-rates label) {
+  display: grid;
+  gap: 6px;
+  color: var(--fika-text-primary);
+  font-size: 0.88rem;
+  font-weight: 700;
+}
+.scope :global(.additional-charge-editor input),
+.scope :global(.additional-charge-editor select),
+.scope :global(.hospitality-labour-rates input) {
+  width: 100%;
+  min-height: 44px;
+  padding: 9px 11px;
+  border: 1px solid var(--fika-border-default);
+  border-radius: 8px;
+  background: var(--fika-surface-card);
+  color: var(--fika-text-primary);
+  font: inherit;
+}
+.scope :global(.additional-charge-editor input:disabled) {
+  background: var(--fika-surface-subtle);
+  color: var(--fika-text-secondary);
+  opacity: 1;
+}
+.scope :global(.additional-charge-editor__grid) {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.scope :global(.additional-charge-editor__preview) {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 12px;
+  border-radius: 9px;
+  background: var(--fika-surface-card);
+  color: var(--fika-text-primary);
+}
+.scope :global(.additional-charge-editor footer),
+.scope :global(.additional-charges-modal__footer > div) {
+  display: flex;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.scope :global(.additional-charges-modal__footer) {
+  position: sticky;
+  bottom: -24px;
+  z-index: 1;
+  margin: 0 -24px -24px;
+  padding: 14px 24px;
+  border-top: 1px solid var(--fika-border-default);
+  background: var(--fika-surface-card);
+}
+.scope :global(.additional-charges-modal__footer > span) {
+  align-self: center;
+  color: var(--fika-text-secondary);
+}
+.scope :global(.additional-charges-modal__footer > span strong) {
+  color: var(--fika-text-primary);
+}
+.scope :global(.additional-charges-modal .primary) {
+  border-color: var(--fika-action-primary);
+  background: var(--fika-action-primary);
+  color: #fff;
+}
+.scope :global(.additional-charges-modal button:disabled) {
+  cursor: not-allowed;
+  opacity: 0.62;
+}
+.scope :global(.additional-charges-modal__error),
+.scope :global(.additional-charges-summary__stale) {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--fika-status-warning-surface);
+  color: var(--fika-status-warning);
+  font-weight: 700;
+}
+.scope :global(.additional-charges-summary__row) {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.scope :global(.additional-charges-summary__manage) {
+  min-height: 44px;
+  padding: 9px 14px;
+  border: 1px solid var(--fika-action-primary);
+  border-radius: 8px;
+  background: var(--fika-action-primary);
+  color: #fff;
+  font: inherit;
+  font-weight: 700;
+}
+.scope :global(.additional-charges-summary__manage:disabled) {
+  cursor: not-allowed;
+  opacity: 0.62;
+}
+.scope :global(.additional-charges-summary__stale),
+.scope :global(.additional-charges-summary__help) {
+  margin-top: 10px;
+}
+.scope :global(.additional-charges-summary__help) {
+  color: var(--fika-text-secondary);
+  font-size: 0.88rem;
+  line-height: 1.4;
+}
+.scope :global(.hospitality-labour-rates) {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--fika-border-default);
+  border-radius: 10px;
+  background: var(--fika-surface-subtle);
+}
+.scope :global(.hospitality-labour-rates p) {
+  margin: 4px 0 0;
+  font-size: 0.85rem;
+}
+.scope :global(.hospitality-labour-rates__list) {
+  display: grid;
+  gap: 10px;
+}
+.scope :global(.hospitality-labour-rates__row) {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(140px, 0.7fr) auto;
+  gap: 10px;
+}
+
+@media (max-width: 620px) {
+  .scope :global(.additional-charges-backdrop) { align-items: flex-start; padding: 8px; }
+  .scope :global(.additional-charges-modal) { width: calc(100vw - 16px); max-height: calc(100dvh - 16px); padding: 18px; }
+  .scope :global(.additional-charge-row) { grid-template-columns: minmax(0, 1fr) auto; align-items: start; }
+  .scope :global(.additional-charge-row__amount) { grid-column: 2; grid-row: 1; }
+  .scope :global(.additional-charge-row__actions) { grid-column: 1 / -1; justify-content: flex-start; }
+  .scope :global(.additional-charge-editor__grid),
+  .scope :global(.hospitality-labour-rates__row) { grid-template-columns: 1fr; }
+  .scope :global(.additional-charges-modal__footer) { align-items: flex-start; flex-direction: column; bottom: -18px; margin: 0 -18px -18px; padding: 12px 18px; }
+  .scope :global(.additional-charges-modal__footer > div) { width: 100%; }
+}

@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import type { FormEvent } from "react";
 import { MailSearch, RefreshCw, Settings } from "lucide-react";
-import type { CanonicalBooking, ProductionOrder, DashboardQuoteSettings } from "@/lib/canonical-types";
+import type { BookingAdditionalChargeInput, CanonicalBooking, ProductionOrder, DashboardQuoteSettings, LabourRateSetting } from "@/lib/canonical-types";
 import { dailyRunSheetHtml } from "../../lib/run-sheet";
 import { quoteHtml } from "../../lib/quote-document";
 import { amendmentPatchDto } from "../../lib/amendment-dto";
@@ -43,6 +43,11 @@ const inboxScanSteps: Array<{ key: Exclude<InboxScanPhase, "complete" | "error">
   { key: "messages", label: "Read messages newer than the last successful scan" },
   { key: "attachments", label: "Inspect booking attachments and extract source evidence" },
   { key: "staging", label: "Stage new Angel Court booking candidates" },
+];
+const defaultLabourRates: LabourRateSetting[] = [
+  { id: "chef", label: "Chef" },
+  { id: "foh-assistant", label: "FOH Assistant" },
+  { id: "kp", label: "KP" },
 ];
 
 async function readDashboardJson(response: Response) {
@@ -141,6 +146,7 @@ export default function HospitalityDashboard({
   const [quoteSettings, setQuoteSettings] =
     useState<DashboardQuoteSettings | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [additionalChargeBusy, setAdditionalChargeBusy] = useState(false);
   const [settingsTab, setSettingsTab] = useState<"quotes" | "drive">("quotes");
   const [amendment, setAmendment] = useState<Amendment | null>(null);
   const [runSheetOpen, setRunSheetOpen] = useState(false);
@@ -575,6 +581,7 @@ export default function HospitalityDashboard({
   const openQuote = (booking: CanonicalBooking) => {
     try {
       const current = booking.quoteState?.revisions.find((revision) => revision.id === booking.quoteState?.currentRevisionId);
+      if (isBookingQuoteStale(booking)) throw new Error("Quote needs regeneration before it can be opened as current.");
       if (current?.driveUrl && current.pdfStatus === "saved") window.open(current.driveUrl, "_blank", "noopener,noreferrer");
       else openPrintSheet(quoteHtml(booking));
     } catch (cause) {
@@ -782,6 +789,7 @@ export default function HospitalityDashboard({
         managementFee: quoteSettings.managementFee,
         deliveryCharge: quoteSettings.deliveryCharge,
         buildingCharges: quoteSettings.buildingCharges,
+        labourRates: quoteSettings.labourRates ?? defaultLabourRates,
         vatRate: quoteSettings.vatRate,
         googleDriveFolderId: quoteSettings.googleDriveFolderId,
         googleMenuTemplateId: quoteSettings.googleMenuTemplateId,
@@ -797,6 +805,30 @@ export default function HospitalityDashboard({
     }
     setQuoteSettings(body.quoteSettings);
     setSettingsOpen(false);
+  };
+
+  const saveAdditionalCharges = async (charges: BookingAdditionalChargeInput[]) => {
+    if (!selected) throw new Error("Select a Booking before saving charges.");
+    setAdditionalChargeBusy(true);
+    try {
+      const response = await fetch("/api/dashboard-bookings", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          canonicalId: selected.canonicalId,
+          expectedVersion: selected.version,
+          action: "set-additional-charges",
+          charges,
+        }),
+      });
+      const body = await readDashboardJson(response) as { error?: { message?: string }; booking?: CanonicalBooking };
+      if (!response.ok) throw new Error(body.error?.message || "Could not save Booking charges.");
+      if (!body.booking) throw new Error("Charges were saved but the updated Booking was not returned.");
+      setSelected(body.booking);
+      setBookings((current) => current.map((booking) => booking.canonicalId === body.booking?.canonicalId ? body.booking! : booking));
+    } finally {
+      setAdditionalChargeBusy(false);
+    }
   };
 
   const selectedProductionOrder = selected
@@ -1070,6 +1102,7 @@ export default function HospitalityDashboard({
                   booking={selected}
                   siteKey={site.key}
                   siteLabel={currentSiteLabel}
+                  labourRates={quoteSettings?.labourRates ?? defaultLabourRates}
                   productionOrder={selectedProductionOrder}
                   menuOutput={selectedMenuOutput}
                   menuStale={selectedMenuStale}
@@ -1085,6 +1118,8 @@ export default function HospitalityDashboard({
                   onCancelAmendment={() => setAmendment(null)}
                   onSaveAmendment={saveAmendment}
                   onOpenQuote={openQuote}
+                  onSaveAdditionalCharges={saveAdditionalCharges}
+                  additionalChargeBusy={additionalChargeBusy}
                   onAction={(action) => void act(action)}
                   onGenerateMenu={generateMenu}
                   onOpenMenu={openMenu}
@@ -1301,6 +1336,7 @@ function BookingPane({
   booking,
   siteKey,
   siteLabel,
+  labourRates,
   productionOrder,
   menuOutput,
   menuStale,
@@ -1316,6 +1352,8 @@ function BookingPane({
   onCancelAmendment,
   onSaveAmendment,
   onOpenQuote,
+  onSaveAdditionalCharges,
+  additionalChargeBusy,
   onAction,
   onGenerateMenu,
   onOpenMenu,
@@ -1323,6 +1361,7 @@ function BookingPane({
   booking: CanonicalBooking;
   siteKey: PortalSiteKey;
   siteLabel: string;
+  labourRates: LabourRateSetting[];
   productionOrder?: ProductionOrder;
   menuOutput?: MenuOutput;
   menuStale: boolean;
@@ -1347,6 +1386,8 @@ function BookingPane({
   onCancelAmendment: () => void;
   onSaveAmendment: () => Promise<void>;
   onOpenQuote: (booking: CanonicalBooking) => void;
+  onSaveAdditionalCharges: (charges: BookingAdditionalChargeInput[]) => Promise<void>;
+  additionalChargeBusy: boolean;
   onAction: (action: WorkflowAction) => void;
   onGenerateMenu: (booking: CanonicalBooking) => Promise<void>;
   onOpenMenu: (output: MenuOutput) => void;
@@ -1366,6 +1407,7 @@ function BookingPane({
     <BookingDetail
       booking={booking}
       siteLabel={siteLabel}
+      labourRates={labourRates}
       productionOrder={productionOrder}
       menuOutput={menuOutput}
       menuStale={menuStale}
@@ -1377,6 +1419,8 @@ function BookingPane({
       setPending={setPending}
       onAmend={onAmend}
       onOpenQuote={onOpenQuote}
+      onSaveAdditionalCharges={onSaveAdditionalCharges}
+      additionalChargeBusy={additionalChargeBusy}
       onAction={onAction}
       onGenerateMenu={onGenerateMenu}
       onOpenMenu={onOpenMenu}
@@ -1387,6 +1431,7 @@ function BookingPane({
 function BookingDetail({
   booking,
   siteLabel,
+  labourRates,
   productionOrder,
   menuOutput,
   menuStale,
@@ -1398,12 +1443,15 @@ function BookingDetail({
   setPending,
   onAmend,
   onOpenQuote,
+  onSaveAdditionalCharges,
+  additionalChargeBusy,
   onAction,
   onGenerateMenu,
   onOpenMenu,
 }: {
   booking: CanonicalBooking;
   siteLabel: string;
+  labourRates: LabourRateSetting[];
   productionOrder?: ProductionOrder;
   menuOutput?: MenuOutput;
   menuStale: boolean;
@@ -1424,6 +1472,8 @@ function BookingDetail({
   setPending: (status: WorkflowAction) => void;
   onAmend: (booking: CanonicalBooking) => void;
   onOpenQuote: (booking: CanonicalBooking) => void;
+  onSaveAdditionalCharges: (charges: BookingAdditionalChargeInput[]) => Promise<void>;
+  additionalChargeBusy: boolean;
   onAction: (action: WorkflowAction) => void;
   onGenerateMenu: (booking: CanonicalBooking) => Promise<void>;
   onOpenMenu: (output: MenuOutput) => void;
@@ -1436,6 +1486,10 @@ function BookingDetail({
   const dietaryEntries = Object.entries(booking.dietaries).filter(
     ([, value]) => value !== 0 && value !== "" && value !== false,
   );
+  const [additionalChargesOpen, setAdditionalChargesOpen] = useState(false);
+  const additionalCharges = booking.additionalCharges || [];
+  const additionalChargesNet = additionalCharges.reduce((total, charge) => total + charge.netTotal, 0);
+  const quoteNeedsRegeneration = isBookingQuoteStale(booking);
   return (
     <>
       <div className="booking-detail__actions">
@@ -1468,7 +1522,7 @@ function BookingDetail({
               {action === "Reviewed"
                 ? "Review booking"
                 : action === "Quoted"
-                  ? booking.quoteState?.currentRevisionId && booking.quoteState.revisions.some((revision) => revision.id === booking.quoteState?.currentRevisionId && revision.stale)
+                  ? booking.quoteState?.currentRevisionId && isBookingQuoteStale(booking)
                     ? "Regenerate quote"
                     : booking.quoteState?.currentRevisionId ? "Open quote" : "Generate quote"
                   : action === "QuotePdfRetry"
@@ -1550,6 +1604,36 @@ function BookingDetail({
           <b>Total £{booking.order.grossTotal.toFixed(2)}</b>
         </div>
       </section>
+      <section className="booking-detail__section additional-charges-summary">
+        <div className="booking-detail__section-title">
+          <div>
+            <p className="eyebrow">Quote additions</p>
+            <h3>Additional charges</h3>
+          </div>
+          <strong>£{additionalChargesNet.toFixed(2)} net</strong>
+        </div>
+        <div className="additional-charges-summary__row">
+          <span>{additionalCharges.length} {additionalCharges.length === 1 ? "charge" : "charges"}</span>
+          <button
+            type="button"
+            className="additional-charges-summary__manage"
+            disabled={!canManageBookingCharges(booking.lifecycleStatus) || additionalChargeBusy}
+            onClick={() => setAdditionalChargesOpen(true)}
+          >
+            Manage charges
+          </button>
+        </div>
+        {quoteNeedsRegeneration && (
+          <p className="additional-charges-summary__stale" role="status">
+            Quote needs regeneration. The previous revision remains in history.
+          </p>
+        )}
+        {!canManageBookingCharges(booking.lifecycleStatus) && (
+          <p className="additional-charges-summary__help">
+            After CPU hand-off, change commercial intent through the governed Booking amendment workflow.
+          </p>
+        )}
+      </section>
       <div className="booking-detail__split">
         <section>
           <p className="eyebrow">Dietaries</p>
@@ -1603,12 +1687,14 @@ function BookingDetail({
             <button
               type="button"
               className="manager-document-action"
-              disabled={!booking.quoteState?.currentRevisionId}
+              disabled={!booking.quoteState?.currentRevisionId || quoteNeedsRegeneration}
               onClick={() => onOpenQuote(booking)}
             >
-              <strong>Open quote</strong>
+              <strong>{quoteNeedsRegeneration ? "Quote needs regeneration" : "Open quote"}</strong>
               <small>
-                {booking.quoteState?.currentRevisionId
+                {quoteNeedsRegeneration
+                  ? "The previous revision is retained for history"
+                  : booking.quoteState?.currentRevisionId
                   ? booking.quoteState.revisions.find((revision) => revision.id === booking.quoteState?.currentRevisionId)?.pdfStatus === "saved"
                     ? "Current quote PDF in Drive"
                     : "PDF persistence required before CPU hand-off"
@@ -1791,7 +1877,278 @@ function BookingDetail({
           )}
         </pre>
       </details>
+      {additionalChargesOpen && (
+        <AdditionalChargesModal
+          booking={booking}
+          labourRates={labourRates}
+          busy={additionalChargeBusy}
+          onCancel={() => setAdditionalChargesOpen(false)}
+          onSave={async (charges) => {
+            await onSaveAdditionalCharges(charges);
+            setAdditionalChargesOpen(false);
+          }}
+        />
+      )}
     </>
+  );
+}
+
+type ManualChargeEditor = { kind: "manual"; id?: string; category: "equipment" | "service" | "other"; label: string; quantity: string; unitNet: string };
+type LabourChargeEditor = { kind: "labour"; id?: string; label: string; roleId?: string; roleLabel: string; staffCount: string; hoursPerPerson: string; hourlyRate: string; multiplier: string; rateSource: "configured" | "custom" };
+type ChargeEditor = ManualChargeEditor | LabourChargeEditor;
+
+function storedChargeInput(charge: NonNullable<CanonicalBooking["additionalCharges"]>[number]): BookingAdditionalChargeInput {
+  if (charge.kind === "manual") return { id: charge.id, kind: "manual", category: charge.category, label: charge.label, quantity: charge.quantity, unitNet: charge.unitNet };
+  return { id: charge.id, kind: "labour", category: "labour", label: charge.label, labour: structuredClone(charge.labour) };
+}
+
+function previewChargeNet(charge: BookingAdditionalChargeInput) {
+  const amount = charge.kind === "manual"
+    ? charge.quantity * charge.unitNet
+    : charge.labour.staffCount * charge.labour.hoursPerPerson * charge.labour.hourlyRate * charge.labour.multiplier;
+  return Math.round((amount + Number.EPSILON) * 100) / 100;
+}
+
+function chargeCalculationDetail(charge: BookingAdditionalChargeInput) {
+  return charge.kind === "manual"
+    ? `${charge.category[0].toUpperCase()}${charge.category.slice(1)} · ${charge.quantity} × £${charge.unitNet.toFixed(2)} net`
+    : `${charge.labour.roleLabel} · ${charge.labour.staffCount} staff × ${charge.labour.hoursPerPerson.toFixed(2)} hrs × £${charge.labour.hourlyRate.toFixed(2)} × ${charge.labour.multiplier}`;
+}
+
+function newStableId() {
+  return globalThis.crypto?.randomUUID?.() || `charge_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+}
+
+function AdditionalChargesModal({
+  booking,
+  labourRates,
+  busy,
+  onCancel,
+  onSave,
+}: {
+  booking: CanonicalBooking;
+  labourRates: LabourRateSetting[];
+  busy: boolean;
+  onCancel: () => void;
+  onSave: (charges: BookingAdditionalChargeInput[]) => Promise<void>;
+}) {
+  const initialCharges = (booking.additionalCharges || []).map(storedChargeInput);
+  const [charges, setCharges] = useState<BookingAdditionalChargeInput[]>(initialCharges);
+  const original = useRef(JSON.stringify(initialCharges));
+  const [editor, setEditor] = useState<ChargeEditor | null>(null);
+  const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
+  const dialogRef = useRef<HTMLElement | null>(null);
+  const cancelRef = useRef(onCancel);
+  const busyRef = useRef(busy || saving);
+  cancelRef.current = onCancel;
+  busyRef.current = busy || saving;
+  const hasChanges = JSON.stringify(charges) !== original.current;
+  const subtotal = charges.reduce((total, charge) => total + previewChargeNet(charge), 0);
+  const labourRateOptions = editor?.kind === "labour" && editor.roleId && !labourRates.some((rate) => rate.id === editor.roleId)
+    ? [...labourRates, { id: editor.roleId, label: editor.roleLabel, hourlyRate: Number(editor.hourlyRate) }]
+    : labourRates;
+  const storedEditorCharge = editor?.kind === "labour" && editor.id
+    ? booking.additionalCharges?.find((charge) => charge.id === editor.id)
+    : undefined;
+  const keepsStoredConfiguredRate = editor?.kind === "labour" && storedEditorCharge?.kind === "labour" && storedEditorCharge.labour.roleId === editor.roleId && storedEditorCharge.labour.rateSource === "configured" && storedEditorCharge.labour.hourlyRate === Number(editor.hourlyRate);
+
+  useEffect(() => {
+    const returnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const dialog = dialogRef.current;
+    const focusable = () => Array.from(dialog?.querySelectorAll<HTMLElement>("button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [href], [tabindex]:not([tabindex='-1'])") || []);
+    focusable()[0]?.focus();
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && !busyRef.current) {
+        event.preventDefault();
+        cancelRef.current();
+      }
+      if (event.key !== "Tab") return;
+      const items = focusable();
+      if (!items.length) return;
+      const first = items[0];
+      const last = items[items.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("keydown", handleKeyDown);
+      returnFocus?.focus();
+    };
+  }, []);
+
+  const openManualEditor = (charge?: Extract<BookingAdditionalChargeInput, { kind: "manual" }>) => {
+    setError("");
+    setEditor(charge
+      ? { kind: "manual", id: charge.id, category: charge.category, label: charge.label, quantity: String(charge.quantity), unitNet: String(charge.unitNet) }
+      : { kind: "manual", category: "equipment", label: "", quantity: "1", unitNet: "" });
+  };
+  const openLabourEditor = (charge?: Extract<BookingAdditionalChargeInput, { kind: "labour" }>) => {
+    setError("");
+    if (charge) {
+      setEditor({ kind: "labour", id: charge.id, label: charge.label, roleId: charge.labour.roleId, roleLabel: charge.labour.roleLabel, staffCount: String(charge.labour.staffCount), hoursPerPerson: String(charge.labour.hoursPerPerson), hourlyRate: String(charge.labour.hourlyRate), multiplier: String(charge.labour.multiplier), rateSource: charge.labour.rateSource });
+      return;
+    }
+    const firstRate = labourRates.find((rate) => Number(rate.hourlyRate) > 0);
+    setEditor({ kind: "labour", label: "", roleId: firstRate?.id, roleLabel: firstRate?.label || "", staffCount: "1", hoursPerPerson: "1", hourlyRate: firstRate ? String(firstRate.hourlyRate) : "", multiplier: "1", rateSource: firstRate ? "configured" : "custom" });
+  };
+  const changeLabour = (patch: Partial<LabourChargeEditor>) => setEditor((current) => current?.kind === "labour" ? { ...current, ...patch } : current);
+  const saveLine = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!editor) return;
+    setError("");
+    if (editor.kind === "manual") {
+      const quantity = Number(editor.quantity);
+      const unitNet = Number(editor.unitNet);
+      if (!editor.label.trim() || !Number.isFinite(quantity) || quantity <= 0 || !Number.isFinite(unitNet) || unitNet <= 0) {
+        setError("Enter a charge name, positive quantity and positive unit net price.");
+        return;
+      }
+      const line: Extract<BookingAdditionalChargeInput, { kind: "manual" }> = { id: editor.id || newStableId(), kind: "manual", category: editor.category, label: editor.label.trim(), quantity, unitNet };
+      if (previewChargeNet(line) <= 0 || previewChargeNet(line) > 1_000_000) {
+        setError("The calculated line total must be greater than £0 and no more than £1,000,000.");
+        return;
+      }
+      setCharges((current) => editor.id ? current.map((charge) => charge.id === editor.id ? line : charge) : [...current, line]);
+    } else {
+      const selectedRate = editor.roleId ? labourRateOptions.find((rate) => rate.id === editor.roleId) : undefined;
+      const labour = {
+        ...(editor.roleId ? { roleId: editor.roleId } : {}),
+        roleLabel: editor.roleLabel.trim(),
+        staffCount: Number(editor.staffCount),
+        hoursPerPerson: Number(editor.hoursPerPerson),
+        hourlyRate: Number(editor.hourlyRate),
+        multiplier: Number(editor.multiplier),
+        rateSource: editor.rateSource,
+      } as const;
+      const label = editor.label.trim() || `${labour.roleLabel} labour`;
+      const line: Extract<BookingAdditionalChargeInput, { kind: "labour" }> = { id: editor.id || newStableId(), kind: "labour", category: "labour", label, labour };
+      if (!labour.roleLabel || !Number.isInteger(labour.staffCount) || labour.staffCount < 1 || !Number.isFinite(labour.hoursPerPerson) || labour.hoursPerPerson <= 0 || !Number.isFinite(labour.hourlyRate) || labour.hourlyRate <= 0 || !Number.isFinite(labour.multiplier) || labour.multiplier < 0.25 || labour.multiplier > 5) {
+        setError("Enter a role, staff count, hours, positive hourly rate and multiplier between 0.25× and 5×.");
+        return;
+      }
+      const matchesConfiguredRate = Number(selectedRate?.hourlyRate) > 0 && selectedRate?.hourlyRate === labour.hourlyRate;
+      if (editor.rateSource === "configured" && !matchesConfiguredRate && !keepsStoredConfiguredRate) {
+        setError("That configured role rate is unavailable. Choose a configured rate or enter a custom hourly rate.");
+        return;
+      }
+      if (previewChargeNet(line) <= 0 || previewChargeNet(line) > 1_000_000) {
+        setError("The calculated labour total must be greater than £0 and no more than £1,000,000.");
+        return;
+      }
+      setCharges((current) => editor.id ? current.map((charge) => charge.id === editor.id ? line : charge) : [...current, line]);
+    }
+    setEditor(null);
+  };
+  const saveChanges = async () => {
+    setError("");
+    setSaving(true);
+    try {
+      await onSave(charges);
+    } catch (cause) {
+      setError((cause as Error).message || "Could not save Booking charges.");
+    } finally {
+      setSaving(false);
+    }
+  };
+  const labourPreview = editor?.kind === "labour"
+    ? previewChargeNet({ id: editor.id || "charge-preview", kind: "labour", category: "labour", label: editor.label || `${editor.roleLabel} labour`, labour: { ...(editor.roleId ? { roleId: editor.roleId } : {}), roleLabel: editor.roleLabel, staffCount: Number(editor.staffCount), hoursPerPerson: Number(editor.hoursPerPerson), hourlyRate: Number(editor.hourlyRate), multiplier: Number(editor.multiplier), rateSource: editor.rateSource } })
+    : 0;
+
+  return (
+    <div className="modal-backdrop additional-charges-backdrop" role="presentation">
+      <section className="modal hospitality-action-modal additional-charges-modal" role="dialog" aria-modal="true" aria-labelledby="additional-charges-title" ref={dialogRef}>
+        <header className="additional-charges-modal__header">
+          <div>
+            <p className="eyebrow">Booking commercial intent</p>
+            <h2 id="additional-charges-title">Manage additional charges</h2>
+          </div>
+          <button type="button" aria-label="Close additional charges" onClick={onCancel} disabled={busy || saving}>×</button>
+        </header>
+        <p>These net charges are saved to the Booking and included in its next quote revision. VAT is applied by the quote settings.</p>
+        <div className="additional-charges-modal__actions">
+          <button type="button" onClick={() => openManualEditor()}>Add charge</button>
+          <button type="button" onClick={() => openLabourEditor()}>Labour calculator</button>
+        </div>
+        <section className="additional-charge-list" aria-label="Existing additional charges">
+          {charges.length === 0 ? <p className="additional-charge-list__empty">No additional charges have been added.</p> : charges.map((charge) => (
+            <article className="additional-charge-row" key={charge.id}>
+              <div>
+                <strong>{charge.label}</strong>
+                <small>{chargeCalculationDetail(charge)}</small>
+              </div>
+              <strong className="additional-charge-row__amount">£{previewChargeNet(charge).toFixed(2)} net</strong>
+              <div className="additional-charge-row__actions">
+                <button type="button" onClick={() => charge.kind === "manual" ? openManualEditor(charge) : openLabourEditor(charge)}>Edit</button>
+                <button type="button" onClick={() => setCharges((current) => current.filter((currentCharge) => currentCharge.id !== charge.id))}>Remove</button>
+              </div>
+            </article>
+          ))}
+        </section>
+        {editor?.kind === "manual" && (
+          <form className="additional-charge-editor" onSubmit={saveLine}>
+            <h3>{editor.id ? "Edit charge" : "Add charge"}</h3>
+            <label>Category<select value={editor.category} onChange={(event) => setEditor({ ...editor, category: event.target.value as ManualChargeEditor["category"] })}><option value="equipment">Equipment</option><option value="service">Service</option><option value="other">Other</option></select></label>
+            <label>Name / description<input value={editor.label} maxLength={120} onChange={(event) => setEditor({ ...editor, label: event.target.value })} required /></label>
+            <div className="additional-charge-editor__grid">
+              <label>Quantity<input type="number" min="0.01" max="1000" step="0.01" value={editor.quantity} onChange={(event) => setEditor({ ...editor, quantity: event.target.value })} required /></label>
+              <label>Unit price — net (£)<input type="number" min="0.01" max="1000000" step="0.01" value={editor.unitNet} onChange={(event) => setEditor({ ...editor, unitNet: event.target.value })} required /></label>
+            </div>
+            <p className="additional-charge-editor__preview" aria-live="polite">Line total · £{(Math.round((Number(editor.quantity) * Number(editor.unitNet) + Number.EPSILON) * 100) / 100 || 0).toFixed(2)} net</p>
+            <footer><button type="button" onClick={() => setEditor(null)}>Cancel</button><button className="primary">{editor.id ? "Update charge" : "Add charge"}</button></footer>
+          </form>
+        )}
+        {editor?.kind === "labour" && (
+          <form className="additional-charge-editor" onSubmit={saveLine}>
+            <h3>{editor.id ? "Edit labour charge" : "Labour calculator"}</h3>
+            <label>Role<select value={editor.roleId || "custom"} onChange={(event) => {
+              if (event.target.value === "custom") changeLabour({ roleId: undefined, roleLabel: "", hourlyRate: "", rateSource: "custom" });
+              else {
+                const role = labourRates.find((rate) => rate.id === event.target.value);
+                const configured = Number(role?.hourlyRate) > 0;
+                changeLabour({ roleId: role?.id, roleLabel: role?.label || "", hourlyRate: configured ? String(role?.hourlyRate) : "", rateSource: configured ? "configured" : "custom" });
+              }
+            }}><option value="custom">Custom role</option>{labourRateOptions.map((rate) => <option key={rate.id} value={rate.id}>{rate.label}{Number(rate.hourlyRate) > 0 ? ` · £${Number(rate.hourlyRate).toFixed(2)}/hr` : " · rate not configured"}</option>)}</select></label>
+            {!editor.roleId && <label>Role name<input value={editor.roleLabel} maxLength={100} onChange={(event) => changeLabour({ roleLabel: event.target.value })} required /></label>}
+            <label>Charge label<input value={editor.label} placeholder={`${editor.roleLabel || "Labour"} labour`} maxLength={120} onChange={(event) => changeLabour({ label: event.target.value })} /></label>
+            <div className="additional-charge-editor__grid">
+              <label>Staff count<input type="number" min="1" max="100" step="1" value={editor.staffCount} onChange={(event) => changeLabour({ staffCount: event.target.value })} required /></label>
+              <label>Hours per person<input type="number" min="0.25" max="168" step="0.25" value={editor.hoursPerPerson} onChange={(event) => changeLabour({ hoursPerPerson: event.target.value })} required /></label>
+            </div>
+            <label>Hourly rate source<select value={editor.rateSource} onChange={(event) => {
+              const source = event.target.value as LabourChargeEditor["rateSource"];
+              const configuredRate = Number(labourRateOptions.find((rate) => rate.id === editor.roleId)?.hourlyRate);
+              changeLabour({ rateSource: source, hourlyRate: source === "configured" && configuredRate > 0 ? String(configuredRate) : editor.hourlyRate });
+            }}>
+              <option value="custom">Enter a custom net rate</option>
+              {Number(labourRateOptions.find((rate) => rate.id === editor.roleId)?.hourlyRate) > 0 && <option value="configured">{keepsStoredConfiguredRate && Number(labourRateOptions.find((rate) => rate.id === editor.roleId)?.hourlyRate) !== Number(editor.hourlyRate) ? `Keep saved rate (£${Number(editor.hourlyRate).toFixed(2)}; current default £${Number(labourRateOptions.find((rate) => rate.id === editor.roleId)?.hourlyRate).toFixed(2)})` : `Use configured rate (£${Number(labourRateOptions.find((rate) => rate.id === editor.roleId)?.hourlyRate).toFixed(2)})`}</option>}
+            </select></label>
+            <label>Base hourly rate (£ net)<input type="number" min="0.01" max="1000" step="0.01" value={editor.hourlyRate} disabled={editor.rateSource === "configured"} onChange={(event) => changeLabour({ hourlyRate: event.target.value })} required /></label>
+            <div className="additional-charge-editor__grid">
+              <label>Rate multiplier<select value={["1", "1.5", "2"].includes(editor.multiplier) ? editor.multiplier : "custom"} onChange={(event) => changeLabour({ multiplier: event.target.value === "custom" ? "1.25" : event.target.value })}><option value="1">1×</option><option value="1.5">1.5×</option><option value="2">2×</option><option value="custom">Custom</option></select></label>
+              {!["1", "1.5", "2"].includes(editor.multiplier) && <label>Custom multiplier<input type="number" min="0.25" max="5" step="0.05" value={editor.multiplier} onChange={(event) => changeLabour({ multiplier: event.target.value })} required /></label>}
+            </div>
+            <div className="additional-charge-editor__preview" role="status" aria-live="polite">
+              <strong>{editor.label.trim() || `${editor.roleLabel || "Labour"} labour`}</strong>
+              <span>{editor.staffCount || "0"} staff × {Number(editor.hoursPerPerson || 0).toFixed(2)} hrs × £{Number(editor.hourlyRate || 0).toFixed(2)} × {editor.multiplier}</span>
+              <b>£{labourPreview.toFixed(2)} net</b>
+            </div>
+            <footer><button type="button" onClick={() => setEditor(null)}>Cancel</button><button className="primary">{editor.id ? "Update labour charge" : "Add labour charge"}</button></footer>
+          </form>
+        )}
+        {error && <p className="additional-charges-modal__error" role="alert">{error}</p>}
+        <footer className="additional-charges-modal__footer">
+          <span>Additional charges subtotal · <strong>£{subtotal.toFixed(2)} net</strong></span>
+          <div><button type="button" onClick={onCancel} disabled={busy || saving}>Cancel</button><button type="button" className="primary" onClick={() => void saveChanges()} disabled={!hasChanges || busy || saving}>{busy || saving ? "Saving charges…" : "Save changes"}</button></div>
+        </footer>
+      </section>
+    </div>
   );
 }
 
@@ -2318,12 +2675,19 @@ function pretty(value: string) {
     .replace(/([A-Z])/g, " $1")
     .replace(/^./, (character) => character.toUpperCase());
 }
+function canManageBookingCharges(status: Status) {
+  return ["New", "Reviewed", "Quoted"].includes(status);
+}
+function isBookingQuoteStale(booking: CanonicalBooking) {
+  const current = booking.quoteState?.revisions.find((revision) => revision.id === booking.quoteState?.currentRevisionId);
+  return Boolean(current && (current.stale || (current.commercialVersion !== undefined && current.commercialVersion !== (booking.commercialVersion || 1))));
+}
 function availableActions(booking: CanonicalBooking, productionOrder?: ProductionOrder): WorkflowAction[] {
   if (booking.lifecycleStatus === "New") return ["Quoted"];
   if (booking.lifecycleStatus === "Reviewed") return ["Quoted"];
   if (["Quoted", "Approved"].includes(booking.lifecycleStatus)) {
     const current = booking.quoteState?.revisions.find((revision) => revision.id === booking.quoteState?.currentRevisionId);
-    if (current?.stale) return ["Quoted"];
+    if (isBookingQuoteStale(booking)) return ["Quoted"];
     if (current && current.pdfStatus !== "saved") return ["QuotePdfRetry"];
     if (productionOrderMatchesCurrentQuote(booking, productionOrder) || booking.deliveryChargeRequired === false) return ["Completed"];
     return ["Production"];
@@ -2338,7 +2702,7 @@ function productionOrderMatchesCurrentQuote(booking: CanonicalBooking, productio
 
 function quoteReadyForCpu(booking: CanonicalBooking) {
   const current = booking.quoteState?.revisions.find((revision) => revision.id === booking.quoteState?.currentRevisionId);
-  return ["Quoted", "Approved"].includes(booking.lifecycleStatus) && Boolean(current && !current.stale && current.pdfStatus === "saved" && current.driveFileId);
+  return ["Quoted", "Approved"].includes(booking.lifecycleStatus) && Boolean(current && !isBookingQuoteStale(booking) && current.pdfStatus === "saved" && current.driveFileId);
 }
 function commandTitle(action: WorkflowAction) {
   return (
@@ -2646,6 +3010,7 @@ function DashboardSettingsModal({
   onCancel: () => void;
   onSave: () => void;
 }) {
+  const labourRates = settings.labourRates ?? defaultLabourRates;
   return (
     <div className="modal-backdrop" role="presentation">
       <form
@@ -2749,6 +3114,47 @@ function DashboardSettingsModal({
                 }
               />
             </label>
+            <section className="hospitality-labour-rates" aria-labelledby="hospitality-labour-rates-title">
+              <div>
+                <h3 id="hospitality-labour-rates-title">Labour rates</h3>
+                <p>Optional net hourly rates for the labour calculator. Existing Booking charges keep the rate saved on their line.</p>
+              </div>
+              <div className="hospitality-labour-rates__list">
+                {labourRates.map((rate, index) => (
+                  <div className="hospitality-labour-rates__row" key={rate.id}>
+                    <label>
+                      Role
+                      <input
+                        value={rate.label}
+                        maxLength={100}
+                        onChange={(event) => onChange({
+                          ...settings,
+                          labourRates: labourRates.map((current, currentIndex) => currentIndex === index ? { ...current, label: event.target.value } : current),
+                        })}
+                      />
+                    </label>
+                    <label>
+                      Hourly net rate (£)
+                      <input
+                        type="number"
+                        min="0"
+                        max="1000"
+                        step="0.01"
+                        value={rate.hourlyRate ?? ""}
+                        onChange={(event) => onChange({
+                          ...settings,
+                          labourRates: labourRates.map((current, currentIndex) => currentIndex === index
+                            ? { ...current, ...(event.target.value === "" ? { hourlyRate: undefined } : { hourlyRate: Number(event.target.value) }) }
+                            : current),
+                        })}
+                      />
+                    </label>
+                    <button type="button" aria-label={`Remove ${rate.label || "labour role"}`} onClick={() => onChange({ ...settings, labourRates: labourRates.filter((_, currentIndex) => currentIndex !== index) })}>Remove</button>
+                  </div>
+                ))}
+              </div>
+              <button type="button" className="hospitality-labour-rates__add" onClick={() => onChange({ ...settings, labourRates: [...labourRates, { id: `role_${newStableId()}`, label: "New role" }] })}>Add another labour role</button>
+            </section>
             <label>
               VAT rate (%)
               <input

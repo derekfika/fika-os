@@ -13,12 +13,58 @@ export type CanonicalBooking = {
   statusHistory: Array<{ status: CanonicalBooking["lifecycleStatus"]; changedAt: string; changedBy: string; reason: string }>;
   audit: Array<{ action: string; at: string; by: string; reason: string }>;
   commercialVersion?: number;
-  quoteState?: { currentRevisionId?: string; revisions: Array<{ id: string; revision: number; createdAt: string; stale?: boolean; snapshot: Record<string, unknown>; driveUrl?: string; driveFileId?: string; pdfStatus?: string }> };
+  additionalCharges?: BookingAdditionalCharge[];
+  quoteState?: { currentRevisionId?: string; revisions: Array<{ id: string; revision: number; createdAt: string; commercialVersion?: number; stale?: boolean; snapshot: Record<string, unknown>; driveUrl?: string; driveFileId?: string; pdfStatus?: string }> };
   dashboardWorkflow?: Record<string, unknown>;
   deliveryChargeRequired?: boolean;
 };
 
-export type DashboardQuoteSettings = Record<string, any>;
+export type BookingAdditionalChargeCategory = "labour" | "equipment" | "service" | "other";
+export type BookingAdditionalChargeLabour = {
+  roleId?: string;
+  roleLabel: string;
+  staffCount: number;
+  hoursPerPerson: number;
+  hourlyRate: number;
+  multiplier: number;
+  rateSource: "configured" | "custom";
+};
+type BookingAdditionalChargeBase = {
+  id: string;
+  category: BookingAdditionalChargeCategory;
+  label: string;
+  quantity: number;
+  unitNet: number;
+  netTotal: number;
+  createdAt: string;
+  createdBy: string;
+  updatedAt?: string;
+  updatedBy?: string;
+};
+export type BookingAdditionalCharge =
+  | (BookingAdditionalChargeBase & { kind: "manual"; category: Exclude<BookingAdditionalChargeCategory, "labour"> })
+  | (BookingAdditionalChargeBase & { kind: "labour"; category: "labour"; labour: BookingAdditionalChargeLabour });
+export type BookingAdditionalChargeInput =
+  | { id: string; kind: "manual"; category: Exclude<BookingAdditionalChargeCategory, "labour">; label: string; quantity: number; unitNet: number }
+  | { id: string; kind: "labour"; category: "labour"; label: string; labour: BookingAdditionalChargeLabour };
+
+export type LabourRateSetting = { id: string; label: string; hourlyRate?: number };
+export type DashboardQuoteSettings = {
+  dashboardId: string;
+  version: number;
+  managementFee: { mode: "fixed" | "percentage"; value: number; label: string };
+  deliveryCharge: { enabled: boolean; amount: number; label: string };
+  buildingCharges?: { enabled: boolean; housekeeping: { hourly: number; label: string }; security: { hourly: number; minimumHours: number; label: string }; aircon: { hourly: number; afterHour: number; label: string }; venueHire: { enabled: boolean; amount: number; label: string } };
+  labourRates?: LabourRateSetting[];
+  vatRate: number;
+  updatedAt?: string;
+  updatedBy?: string;
+  googleDriveFolderId?: string;
+  googleMenuTemplateId?: string;
+  googleMenuFolderId?: string;
+  googleQuoteFolderId?: string;
+  googleMatrixFolderId?: string;
+};
 
 export type ProductionOrder = {
   canonicalId: string; bookingId: string; version?: number; state: "Requested" | "Planned" | "Cancelled" | "Uncertain"; updatedAt?: string; createdAt: string; createdBy: string;

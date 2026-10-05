@@ -33,3 +33,31 @@ test("quoteHtml renders a self-contained branded immutable quote snapshot", () =
 test("quoteHtml rejects a missing or stale immutable revision", () => {
   assert.throws(() => quoteHtml({ quoteState: { revisions: [], currentRevisionId: "missing" } } as never), /No current quote revision/);
 });
+
+test("labour detail renders from the immutable quote snapshot without exposing its internal ID", () => {
+  const booking = {
+    canonicalId: "booking-1",
+    client: { name: "Alex Client", companyName: "Example Company", email: "alex@example.test" },
+    service: { eventDate: "2026-08-28", startTime: "12:00", portalSiteLabel: "MNK", guestCount: 10 },
+    order: { items: [], netTotal: 0, vatTotal: 0, grossTotal: 0, currency: "GBP" },
+    dietaries: {},
+    additionalCharges: [{ id: "new-booking-charge", kind: "manual", category: "equipment", label: "New equipment", quantity: 1, unitNet: 500, netTotal: 500, createdAt: "2026-08-29T10:00:00Z", createdBy: "manager" }],
+    quoteState: {
+      currentRevisionId: "quote-rev-8",
+      revisions: [{ id: "quote-rev-8", revision: 8, createdAt: "2026-08-28T10:00:00.000Z", snapshot: {
+        bookingId: "booking-1",
+        client: { name: "Alex Client", companyName: "Example Company", email: "alex@example.test" },
+        service: { eventDate: "2026-08-28", startTime: "12:00", portalSiteLabel: "MNK", guestCount: 10 },
+        order: { lines: [] },
+        charges: [{ sourceAdditionalChargeId: "private-charge-id", category: "labour", label: "Chef labour", detail: "2 staff × 5.00 hrs × £22.00 × 1.5", labour: { roleId: "chef", roleLabel: "Chef", staffCount: 2, hoursPerPerson: 5, hourlyRate: 22, multiplier: 1.5, rateSource: "configured" }, net: { currency: "GBP", amount: 330 }, vatRate: 0.2 }],
+        totals: { itemsNet: { amount: 0 }, chargesNet: { amount: 330 }, net: { amount: 330 }, vat: { amount: 66 }, gross: { amount: 396 }, vatRate: 0.2 },
+        dietaries: {},
+      } }],
+    },
+  } as never;
+  const html = quoteHtml(booking);
+  assert.match(html, /Chef labour/);
+  assert.match(html, /2 staff × 5\.00 hrs × £22\.00 × 1\.5/);
+  assert.doesNotMatch(html, /private-charge-id|new-booking-charge|New equipment/);
+  assert.match(html, /£396\.00/);
+});

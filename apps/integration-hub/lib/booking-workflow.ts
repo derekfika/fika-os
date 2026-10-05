@@ -1,3 +1,5 @@
+import type { BookingAdditionalCharge, BookingAdditionalChargeInput } from "./hospitality-additional-charges";
+
 export type BookingStatus = "New" | "Reviewed" | "Quoted" | "Sent to CPU" | "Approved" | "Completed" | "Cancelled";
 export type ReviewChecks = { commercialIntent: boolean; serviceTiming: boolean; deliveryContext: boolean; dietaryRequirements: boolean };
 export type QuotePdfStatus = "pending" | "saved" | "failed";
@@ -7,6 +9,7 @@ export type WorkflowCommand =
   | { action: "review"; checks: Partial<ReviewChecks>; notes?: string }
   | { action: "quote"; regenerate?: boolean }
   | { action: "quote-pdf-status"; revisionId: string; status: QuotePdfStatus; driveFileId?: string; driveUrl?: string; error?: string }
+  | { action: "set-additional-charges"; charges: BookingAdditionalChargeInput[] }
   | { action: "amend"; reason: string; patch: { client: { name: string; email: string; phone?: string; companyName: string; requester?: { name: string; email: string; phone?: string; companyName: string }; clientName?: string; clientCompany?: string; invoiceReference?: string }; service: { eventDate: string; startTime: string; endTime?: string; guestCount: number; floorLevel?: string; roomOrArea?: string; deliveryPoint?: string; onsiteContactName?: string; onsiteContactPhone?: string }; order: { eventType?: string; items: Array<{ itemId: string; itemName?: string; category?: string; description?: string; servingInfo?: string; unitPrice: number; quantity: number; choices?: unknown[]; comments?: string }> }; notes?: string; deliveryChargeRequired?: boolean } }
   | { action: "approve"; quoteRevisionId: string }
   | { action: "complete"; notes?: string }
@@ -15,6 +18,35 @@ export type WorkflowCommand =
 export function isQuoteStale(booking: { commercialVersion?: number; quoteState?: { currentRevisionId?: string; revisions: QuoteRevision[] } }) {
   const current = booking.quoteState?.revisions.find(revision => revision.id === booking.quoteState?.currentRevisionId);
   return !current || current.stale || current.commercialVersion !== (booking.commercialVersion || 1);
+}
+
+export function applyBookingAdditionalCharges(
+  booking: {
+    version: number;
+    commercialVersion?: number;
+    additionalCharges?: BookingAdditionalCharge[];
+    quoteState?: { currentRevisionId?: string; revisions: QuoteRevision[] };
+  },
+  additionalCharges: BookingAdditionalCharge[],
+) {
+  return {
+    version: booking.version + 1,
+    commercialVersion: (booking.commercialVersion || 1) + 1,
+    additionalCharges: structuredClone(additionalCharges),
+    quoteState: {
+      ...(booking.quoteState || { revisions: [] }),
+      revisions: (booking.quoteState?.revisions || []).map((revision) => ({ ...revision, stale: true })),
+    },
+  };
+}
+
+export function assertBookingExpectedVersion(actual: number, expected: number, action?: WorkflowCommand["action"]) {
+  if (actual !== expected) {
+    const status = action === "set-additional-charges" ? 409 : 422;
+    throw Object.assign(new Error(action === "set-additional-charges"
+      ? "Booking changed elsewhere. Refresh before saving additional charges."
+      : "Booking changed elsewhere. Refresh and try again."), { status });
+  }
 }
 
 export function applyQuotePdfPersistence(revisions: QuoteRevision[], currentRevisionId: string | undefined, revisionId: string, status: QuotePdfStatus, driveFileId?: string, driveUrl?: string, error?: string) {
@@ -36,6 +68,8 @@ export function assertWorkflowCommand(booking: { lifecycleStatus: BookingStatus;
     if (booking.lifecycleStatus !== "New") throw workflowError("Only a new Booking can be reviewed.");
   }
   if (command.action === "quote" && !["New", "Reviewed", "Quoted"].includes(booking.lifecycleStatus)) throw workflowError("Generate a quote only for a new or active Booking.");
+  if (command.action === "set-additional-charges" && !["New", "Reviewed", "Quoted"].includes(booking.lifecycleStatus))
+    throw workflowError("Additional charges can be changed directly only before CPU hand-off. Reopen the Booking through its governed amendment workflow to change commercial intent after hand-off.");
   if (command.action === "amend" && !command.reason.trim()) throw workflowError("An amendment reason is required.");
   if (command.action === "approve") throw workflowError("Quote approval has been removed. Send the current quote to CPU instead.");
   if (command.action === "complete") {
