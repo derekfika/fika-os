@@ -31,6 +31,7 @@ import {
   logisticsJobs,
   deliveryLoads,
   logisticsAssignments,
+  listRunIntegrityDiagnosticState,
   saveLogisticsJob,
   appendLogisticsChange,
   getLogisticsProjection,
@@ -280,6 +281,16 @@ function activeLogisticsRequirements(
   });
 }
 
+const legacyVehicleEvidenceFields = ["vehicleSlot", "vehicle", "van", "vehicleName", "vehicleCode", "vehicleNumber", "vehicleLabel"] as const;
+function legacyVehicleEvidence(value: Record<string, unknown>) {
+  return Object.fromEntries(legacyVehicleEvidenceFields
+    .filter((field) => Object.prototype.hasOwnProperty.call(value, field) && (value[field] === null || ["string", "number", "boolean"].includes(typeof value[field])))
+    .map((field) => [field, value[field]]));
+}
+function diagnosticStringIds(values: unknown[]) {
+  return Array.from(new Set(values.filter((value): value is string => typeof value === "string" && value.length > 0)));
+}
+
 function validOperationalDate(value: string) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
   const date = new Date(`${value}T00:00:00Z`);
@@ -364,10 +375,99 @@ async function getLogistics(request: NextRequest, principal: LogisticsPrincipal)
   const cookie = request.headers.get("cookie") || undefined;
   if (request.nextUrl.searchParams.get("diagnostic") === "1") {
     const serviceDate = requestedDate || operationalDate();
-    const [requirements, state, projection] = await Promise.all([fetchRequirements(serviceDate, cookie), listState(serviceDate), getLogisticsProjection(serviceDate)]);
-    const legacy = buildPlannerDay({ serviceDate, requirements, runs: state.runs, stops: state.stops, movements: state.movements, oplocs: [], health: { fulfilment: { available: true }, oplocs: { available: true }, enrichment: { available: true } } });
-    const comparison = { jobs: requirements.length, unassignedJobs: requirements.filter((requirement) => !state.stops.some((stop) => stop.requirementRefs.some((ref) => ref.requirementId === requirement.canonicalId))).length, deliveryLoads: legacy.summary.loads, collectedJobs: 0, projection: { jobs: projection ? projection.summary.queuedJobs + projection.summary.assignedJobs : 0, unassignedJobs: projection?.summary.queuedJobs || 0, deliveryLoads: projection?.summary.loads || 0, collectedJobs: projection?.summary.collectedJobs || 0 } };
-    return NextResponse.json({ serviceDate, comparison, status: comparison.jobs === comparison.projection.jobs && comparison.unassignedJobs === comparison.projection.unassignedJobs && comparison.deliveryLoads === comparison.projection.deliveryLoads ? "In sync" : "Projection out of sync" });
+    if (!validOperationalDate(serviceDate)) throw new HttpError(400, "Invalid Logistics service date.");
+    const [requirements, integrityState, projection] = await Promise.all([fetchRequirements(serviceDate, cookie), listRunIntegrityDiagnosticState(serviceDate), getLogisticsProjection(serviceDate)]);
+    const rawRuns = integrityState.runs.map(({ id, data }) => ({ id, raw: data, canonicalId: typeof data.canonicalId === "string" ? data.canonicalId : id }));
+    const runIds = new Set(rawRuns.flatMap((run) => [run.id, run.canonicalId]));
+    const rawStops = integrityState.stops.map(({ id, data }) => ({ id, raw: data, canonicalId: typeof data.canonicalId === "string" ? data.canonicalId : id }))
+      .filter((stop) => runIds.has(String(stop.raw.runId || "")));
+    const rawLoads = integrityState.loads.map(({ id, data }) => ({ id: typeof data.id === "string" ? data.id : id, raw: data }))
+      .filter((load) => runIds.has(String(load.raw.runId || "")) || runIds.has(String(load.raw.collectionRunId || "")));
+    const linkedLoadIds = new Set(rawLoads.map((load) => load.id));
+    const rawAssignments = integrityState.assignments.map(({ id, data }) => ({ id, raw: data }))
+      .filter((assignment) => linkedLoadIds.has(String(assignment.raw.loadId || "")));
+    const assignmentsByLoad = new Map<string, typeof rawAssignments>();
+    for (const assignment of rawAssignments) {
+      const loadId = String(assignment.raw.loadId || "");
+      assignmentsByLoad.set(loadId, [...(assignmentsByLoad.get(loadId) || []), assignment]);
+    }
+    const rawMovementsById = new Map(integrityState.movements.map(({ id, data }) => [String(data.canonicalId || id), { id: String(data.canonicalId || id), type: data.type ?? null }]));
+    const runIntegrityRuns = rawRuns.map(({ id, raw, canonicalId }) => {
+      const runStops = rawStops.filter((stop) => String(stop.raw.runId || "") === id || String(stop.raw.runId || "") === canonicalId);
+      const linkedLoads = rawLoads.filter((load) => String(load.raw.runId || "") === id || String(load.raw.runId || "") === canonicalId || String(load.raw.collectionRunId || "") === id || String(load.raw.collectionRunId || "") === canonicalId);
+      const runMovementIds = diagnosticStringIds(runStops.flatMap((stop) => [
+        ...(Array.isArray(stop.raw.movementRequestIds) ? stop.raw.movementRequestIds : []),
+        stop.raw.movementRequestId,
+      ]));
+      return {
+        canonicalId,
+        serviceDate: raw.serviceDate ?? null,
+        version: raw.version ?? null,
+        status: raw.status ?? null,
+        vehicleId: raw.vehicleId ?? null,
+        vehicleIdPresent: Object.prototype.hasOwnProperty.call(raw, "vehicleId"),
+        vehicleLabel: raw.vehicleLabel ?? null,
+        driverId: raw.driverId ?? null,
+        driverLabel: raw.driverLabel ?? null,
+        createdAt: raw.createdAt ?? null,
+        updatedAt: raw.updatedAt ?? null,
+        audit: (Array.isArray(raw.audit) ? raw.audit : []).slice(-20).map((entry: Record<string, unknown>) => ({ action: entry.action ?? null, at: entry.at ?? null, version: entry.version ?? null })),
+        orderedStopIds: Array.isArray(raw.orderedStopIds) ? raw.orderedStopIds : [],
+        validVehicleId: isLogisticsVehicleId(raw.vehicleId),
+        legacyVehicleEvidence: legacyVehicleEvidence(raw),
+        stops: runStops.map(({ raw: stop, canonicalId: stopCanonicalId }) => ({
+          canonicalId: stopCanonicalId,
+          runId: stop.runId ?? null,
+          requirementIds: diagnosticStringIds([
+            ...(Array.isArray(stop.requirementRefs) ? stop.requirementRefs.map((ref: Record<string, unknown>) => ref?.requirementId) : []),
+            ...(Array.isArray(stop.requirementIds) ? stop.requirementIds : []),
+          ]),
+          originatingLoadKey: stop.originatingLoadKey ?? null,
+          legacyVehicleEvidence: legacyVehicleEvidence(stop),
+        })),
+        loads: linkedLoads.map(({ id: loadId, raw: load }) => {
+          const assignments = assignmentsByLoad.get(loadId) || [];
+          const referencedJobIds = diagnosticStringIds([
+            ...(Array.isArray(load.jobIds) ? load.jobIds : []),
+            ...assignments.map((assignment) => assignment.raw.jobId),
+          ]);
+          return {
+            id: loadId,
+            serviceDate: load.serviceDate ?? null,
+            runId: load.runId ?? null,
+            collectionRunId: load.collectionRunId ?? null,
+            vehicleId: load.vehicleId ?? null,
+            status: load.status ?? null,
+            jobCount: typeof load.jobCount === "number" ? load.jobCount : referencedJobIds.length,
+            referencedJobIds,
+            legacyVehicleEvidence: legacyVehicleEvidence(load),
+          };
+        }),
+        movements: runMovementIds.map((movementId) => rawMovementsById.get(movementId) || { id: movementId, type: null }),
+      };
+    });
+    const legacy = buildPlannerDay({ serviceDate, requirements, runs: integrityState.runs.map(({ data }) => data as unknown as import("@/lib/types").DeliveryRun), stops: rawStops.map(({ raw }) => normalizeStop(raw) as unknown as import("@/lib/types").DeliveryStop), movements: integrityState.movements.map(({ data }) => data as unknown as import("@/lib/types").MovementRequest), oplocs: [], health: { fulfilment: { available: true }, oplocs: { available: true }, enrichment: { available: true } } });
+    const plannedRequirementIds = new Set(rawStops.flatMap(({ raw }) => [
+      ...(Array.isArray(raw.requirementRefs) ? raw.requirementRefs.map((ref: Record<string, unknown>) => ref?.requirementId) : []),
+      ...(Array.isArray(raw.requirementIds) ? raw.requirementIds : []),
+    ]).filter((id): id is string => typeof id === "string"));
+    const comparison = { jobs: requirements.length, unassignedJobs: requirements.filter((requirement) => !plannedRequirementIds.has(requirement.canonicalId)).length, deliveryLoads: legacy.summary.loads, collectedJobs: 0, projection: { jobs: projection ? projection.summary.queuedJobs + projection.summary.assignedJobs : 0, unassignedJobs: projection?.summary.queuedJobs || 0, deliveryLoads: projection?.summary.loads || 0, collectedJobs: projection?.summary.collectedJobs || 0 } };
+    const canonicalJobIds = new Set(integrityState.jobs.map(({ id, data }) => String(data.id || id)));
+    const projectionJobIds = new Set([
+      ...(projection?.planningQueue || []).map((job) => job.id),
+      ...(projection?.deliveryLoads || []).flatMap((load) => load.jobs.map((job) => job.id)),
+    ]);
+    const canonicalLoadIds = new Set(integrityState.loads.map(({ id, data }) => String(data.id || id)));
+    const projectionLoadIds = new Set((projection?.deliveryLoads || []).flatMap((load) => load.loadIds?.length ? load.loadIds : [load.id]));
+    const differences = (canonical: Set<string>, projected: Set<string>) => ({ missingFromProjection: [...canonical].filter((id) => !projected.has(id)), projectionOnly: [...projected].filter((id) => !canonical.has(id)) });
+    const rawDayCounts = { runs: integrityState.runs.length, stops: integrityState.stops.length, jobs: integrityState.jobs.length, loads: integrityState.loads.length, assignments: integrityState.assignments.length, movements: integrityState.movements.length };
+    const assignmentEvidence = rawAssignments.map(({ id, raw }) => ({ id, jobId: raw.jobId ?? null, loadId: raw.loadId ?? null }));
+    return NextResponse.json({
+      serviceDate,
+      comparison: { ...comparison, entityDifferences: { jobs: differences(canonicalJobIds, projectionJobIds), loads: differences(canonicalLoadIds, projectionLoadIds) } },
+      runIntegrity: { entityCounts: rawDayCounts, runs: runIntegrityRuns, assignments: assignmentEvidence },
+      status: comparison.jobs === comparison.projection.jobs && comparison.unassignedJobs === comparison.projection.unassignedJobs && comparison.deliveryLoads === comparison.projection.deliveryLoads ? "In sync" : "Projection out of sync",
+    });
   }
   if (request.nextUrl.searchParams.get("projection") === "1") {
     reportLogisticsReadPath("dashboard:cold-or-projection-load");
@@ -2438,7 +2538,8 @@ async function getScopedLogistics(request: NextRequest, principal: LogisticsPrin
 async function handleGet(request: NextRequest) {
   try {
     const principal = await requireLogisticsAccess(request);
-    const permitted = vehicleScope(principal, request.nextUrl.searchParams.get("vehicle"));
+    const diagnosticMode = request.nextUrl.searchParams.get("diagnostic") === "1";
+    const permitted = diagnosticMode ? [] : vehicleScope(principal, request.nextUrl.searchParams.get("vehicle"));
     const requestedRun = request.nextUrl.searchParams.get("runId");
     if (requestedRun) {
       const run = await getRun(requestedRun);
@@ -2446,8 +2547,8 @@ async function handleGet(request: NextRequest) {
       authorizeRun({ ...principal, permittedVehicleIds: permitted }, run);
       if (!request.nextUrl.searchParams.has("serviceDate")) request.nextUrl.searchParams.set("serviceDate", run.serviceDate);
     }
-    if (request.nextUrl.searchParams.get("diagnostic") === "1") assertMaintenanceAccess(principal, "logistics.repair");
-    const scopedMode = permitted.length < 2 || request.nextUrl.searchParams.has("vehicle") || request.nextUrl.searchParams.has("changesSince") || request.nextUrl.searchParams.has("weekCommencing") || request.nextUrl.searchParams.get("weekSummary") === "1";
+    if (diagnosticMode) assertMaintenanceAccess(principal, "logistics.repair");
+    const scopedMode = !diagnosticMode && (permitted.length < 2 || request.nextUrl.searchParams.has("vehicle") || request.nextUrl.searchParams.has("changesSince") || request.nextUrl.searchParams.has("weekCommencing") || request.nextUrl.searchParams.get("weekSummary") === "1");
     const response = await (scopedMode ? getScopedLogistics(request, principal) : getLogistics(request, principal));
     response.headers.set("x-logistics-cache-scope", logisticsCacheScope(principal));
     response.headers.set("Cache-Control", "no-store, max-age=0");

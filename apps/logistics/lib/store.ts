@@ -90,6 +90,68 @@ export async function listState(serviceDate?: string) {
   reportRead(`state${serviceDate ? `:${serviceDate}` : ":all"}`, runSnap.size + movementSnap.size + stopDocs.length);
   return serviceDate ? scopeState(state, serviceDate) : state;
 }
+/** Raw, date-bounded canonical rows for the repair-authorized run-integrity diagnostic. */
+export async function listRunIntegrityDiagnosticState(serviceDate: string) {
+  const [runSnap, movementSnap, jobSnap, loadSnap, assignmentByDateSnap, stopByDateSnap] = await Promise.all([
+    runs().where("serviceDate", "==", serviceDate).get(),
+    movements().where("serviceDate", "==", serviceDate).get(),
+    logisticsJobs().where("serviceDate", "==", serviceDate).get(),
+    deliveryLoads().where("serviceDate", "==", serviceDate).get(),
+    logisticsAssignments().where("serviceDate", "==", serviceDate).get(),
+    stops().where("serviceDate", "==", serviceDate).get(),
+  ]);
+  const runIds = Array.from(new Set(runSnap.docs.flatMap((doc) => {
+    const data = doc.data();
+    return [doc.id, typeof data.canonicalId === "string" ? data.canonicalId : undefined].filter((id): id is string => Boolean(id));
+  })));
+  const stopSnapshots = await Promise.all(Array.from({ length: Math.ceil(runIds.length / 30) }, (_, index) =>
+    stops().where("runId", "in", runIds.slice(index * 30, index * 30 + 30)).get(),
+  ));
+  const stopDocsById = new Map<string, (typeof stopByDateSnap.docs)[number]>();
+  for (const doc of stopByDateSnap.docs) stopDocsById.set(doc.id, doc);
+  for (const snapshot of stopSnapshots) for (const doc of snapshot.docs) stopDocsById.set(doc.id, doc);
+  const stopDocs = [...stopDocsById.values()].filter((doc) => {
+    const data = doc.data();
+    return data.serviceDate === undefined ? runIds.includes(data.runId) : data.serviceDate === serviceDate;
+  });
+  const runIdSet = new Set(runIds);
+  const relatedLoadDocs = loadSnap.docs.filter((doc) => {
+    const data = doc.data();
+    return runIdSet.has(data.runId) || runIdSet.has(data.collectionRunId);
+  });
+  const relatedLoadIds = Array.from(new Set(relatedLoadDocs.flatMap((doc) => {
+    const data = doc.data();
+    return [doc.id, typeof data.id === "string" ? data.id : undefined].filter((id): id is string => Boolean(id));
+  })));
+  const assignmentsByLoad = await Promise.all(Array.from({ length: Math.ceil(relatedLoadIds.length / 30) }, (_, index) =>
+    logisticsAssignments().where("loadId", "in", relatedLoadIds.slice(index * 30, index * 30 + 30)).get(),
+  ));
+  const assignmentDocsById = new Map<string, (typeof assignmentByDateSnap.docs)[number]>();
+  for (const doc of assignmentByDateSnap.docs) assignmentDocsById.set(doc.id, doc);
+  for (const snapshot of assignmentsByLoad) for (const doc of snapshot.docs) {
+    const serviceDateValue = doc.data().serviceDate;
+    if (serviceDateValue === undefined || serviceDateValue === serviceDate) assignmentDocsById.set(doc.id, doc);
+  }
+  const assignments = [...assignmentDocsById.values()].map((doc) => ({ id: doc.id, data: doc.data() }));
+  const records = (docs: Array<{ id: string; data: () => DocumentData }>) => docs.map((item) => {
+    return { id: item.id, data: item.data() };
+  });
+  recordDataAccess({ app: "logistics", operation: "run-integrity.runs.service-date", source: "FIRESTORE", documents: runSnap.size, firestoreReadKind: "query" });
+  recordDataAccess({ app: "logistics", operation: "run-integrity.stops.service-date-and-run", source: "FIRESTORE", documents: stopDocs.length, firestoreReadKind: "query" });
+  recordDataAccess({ app: "logistics", operation: "run-integrity.movements.service-date", source: "FIRESTORE", documents: movementSnap.size, firestoreReadKind: "query" });
+  recordDataAccess({ app: "logistics", operation: "run-integrity.jobs.service-date", source: "FIRESTORE", documents: jobSnap.size, firestoreReadKind: "query" });
+  recordDataAccess({ app: "logistics", operation: "run-integrity.loads.service-date", source: "FIRESTORE", documents: loadSnap.size, firestoreReadKind: "query" });
+  recordDataAccess({ app: "logistics", operation: "run-integrity.assignments.service-date-and-load", source: "FIRESTORE", documents: assignments.length, firestoreReadKind: "query" });
+  reportRead(`run-integrity:${serviceDate}`, runSnap.size + stopDocs.length + movementSnap.size + jobSnap.size + loadSnap.size + assignments.length);
+  return {
+    runs: records(runSnap.docs),
+    stops: records(stopDocs),
+    movements: records(movementSnap.docs),
+    jobs: records(jobSnap.docs),
+    loads: records(loadSnap.docs),
+    assignments,
+  };
+}
 export async function getRun(runId: string) {
   const snapshot = await runs().doc(runId).get();
   recordDataAccess({ app: "logistics", operation: "run.by-id", source: "FIRESTORE", documents: snapshot.exists ? 1 : 0, firestoreReadKind: "document" });
