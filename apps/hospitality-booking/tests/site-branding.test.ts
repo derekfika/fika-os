@@ -17,6 +17,7 @@ const rcoaPortal = readFileSync(new URL("../app/ui/RcoaBookingPortal.tsx", impor
 const rcoaPortalStyles = readFileSync(new URL("../app/ui/RcoaBookingPortal.module.css", import.meta.url), "utf8");
 const accessRoute = readFileSync(new URL("../app/api/access/route.ts", import.meta.url), "utf8");
 const hubBridgeBookingRoute = readFileSync(new URL("../../integration-hub/app/api/bookings/mnk/route.ts", import.meta.url), "utf8");
+const stagingConfig = readFileSync(new URL("../apphosting.staging.yaml", import.meta.url), "utf8");
 
 test("site presentation is shared by Booking and Operations for every configured OPLOC", () => {
   for (const siteKey of ["mnk", "angel-court", "cfc", "munich-re"] as const) {
@@ -55,6 +56,16 @@ test("RCoA manager identity uses the configured canonical OPLOC ID regardless of
     portalSiteForAuthorisedOploc({ id: "oploc:other", label: "Royal College of Anaesthetists" }),
     undefined,
   );
+});
+
+test("Hospitality staging configures the approved RCoA OPLOC for server-side use", () => {
+  const variable = stagingConfig.match(
+    /  - variable: FIKA_RCOA_OPLOC_ID\n([\s\S]*?)(?=\n  - variable:|$)/,
+  )?.[0];
+  assert.ok(variable, "FIKA_RCOA_OPLOC_ID must be configured in staging");
+  assert.match(variable, /value:\s*oploc:be0becbe-b6cf-4d7f-9c1e-f36e689feab2/);
+  assert.match(variable, /availability:\s*\[RUNTIME\]/);
+  assert.doesNotMatch(variable, /BUILD/);
 });
 
 test("RCoA public page sends only configuration state and keeps the expected OPLOC server-side", () => {
