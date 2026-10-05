@@ -2,7 +2,7 @@
 .tools { display: flex; align-items: center; justify-content: flex-end; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--soft-line); color: var(--muted); font-size: 12px; }
 .tools > span:first-child { margin-right: auto; font-weight: 750; }
 .tools button { min-height: 32px; min-width: 34px; border: 1px solid var(--line); border-radius: 6px; background: #fff; color: var(--accent); font: inherit; font-weight: 700; cursor: pointer; }
-.tools button:focus-visible, .tools input:focus-visible, .rowLabel button:focus-visible, .card:focus-visible { outline: 3px solid #7459ea; outline-offset: 2px; }
+.tools button:focus-visible, .tools input:focus-visible, .rowLabel button:focus-visible, .card:focus-visible { outline: 3px solid var(--fika-focus-ring, var(--accent)); outline-offset: 2px; }
 .tools input { width: min(180px, 20vw); accent-color: var(--accent); }
 .board { border-top: 1px solid var(--soft-line); }
 .axisViewport { overflow: auto; max-width: 100%; overscroll-behavior-x: contain; scrollbar-gutter: stable; }
@@ -20,9 +20,10 @@
 .cardSlot { position: absolute; height: 64px; }
 .card, .ghost, .origin { position: absolute; inset: 0; box-sizing: border-box; min-height: 64px; height: 64px; padding: 6px 8px; overflow: hidden; border: 1px solid var(--fika-border-default, #bce8d4); border-left: 3px solid var(--fika-status-success, #58a879); border-radius: 7px; background: var(--fika-surface-card, #fff); box-shadow: 0 2px 5px rgb(40 15 140 / 8%); text-align: left; }
 .cardSlot.explicitWindow .card { padding-bottom: 15px; }
+.cardSlot.arrivalOnly .card { padding: 0; border-radius: 50%; background: var(--fika-surface-card, #fff); }
+.ghost.arrivalOnly { padding: 0; border-radius: 50%; }
 .card { display: flex; width: 100%; flex-direction: column; gap: 1px; color: var(--ink); font: inherit; cursor: grab; touch-action: pan-y; user-select: none; }
 .card:active { cursor: grabbing; }
-.durationRail { position: absolute; z-index: 2; bottom: 5px; left: 0; height: 2px; border-radius: 2px; background: var(--fika-status-info, #218ac3); pointer-events: none; }
 .resizeHandle { position: absolute; z-index: 3; bottom: 0; width: 10px; height: 14px; transform: translateX(-50%); padding: 0; border: 1px solid var(--fika-surface-card, #fff); border-radius: 2px; background: var(--fika-action-primary, #4f34c7); opacity: .48; cursor: ew-resize; touch-action: none; }
 .cardSlot:hover .resizeHandle, .resizeHandle:hover, .resizeHandle:focus-visible { opacity: 1; }
 .resizeHandle:focus-visible { outline: 3px solid var(--fika-focus-ring, #7459ea); outline-offset: 2px; }
@@ -36,8 +37,8 @@
 .locked { border-style: dashed; cursor: progress; }
 .origin { border: 1px dashed var(--accent); background: rgb(79 52 199 / 7%); box-shadow: none; pointer-events: none; }
 .ghost { z-index: 4; border-color: #6d55e8; border-left-color: #4f34c7; background: #f2efff; pointer-events: none; }
-.snapLine { position: absolute; z-index: 5; top: 0; bottom: 0; width: 2px; background: #4f34c7; pointer-events: none; }
-.timePill { position: absolute; z-index: 6; top: 2px; transform: translateX(-50%); padding: 3px 6px; border-radius: 4px; background: #4f34c7; color: white; font-size: 10px; font-weight: 800; pointer-events: none; }
+.snapLine { position: absolute; z-index: 5; top: 0; bottom: 0; width: 2px; background: var(--accent); pointer-events: none; }
+.timePill { position: absolute; z-index: 6; top: 2px; transform: translateX(-50%); padding: 3px 6px; border-radius: 4px; background: var(--accent); color: var(--fika-text-on-primary, #fff); font-size: 10px; font-weight: 800; pointer-events: none; }
 .empty { margin: 14px; color: var(--muted); }
 .srOnly { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
 @media (prefers-reduced-motion: reduce) { .timeline *, .timeline *::before, .timeline *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; animation-duration: .01ms !important; } }

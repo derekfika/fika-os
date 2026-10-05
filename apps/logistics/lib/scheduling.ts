@@ -1,4 +1,44 @@
 export const DEFAULT_SCHEDULE_DURATION_MINUTES = 15;
+export const SCHEDULE_SLOT_MINUTES = 15;
+export const LAST_SCHEDULABLE_MINUTE = 23 * 60 + 45;
+export const LAST_INTERVAL_END_MINUTE = 24 * 60;
+
+export type CanonicalStopTiming = {
+  plannedArrivalTime?: string;
+  plannedWindow?: { startTime: string; endTime?: string };
+};
+
+/** Replace both mutually-exclusive native timing fields as one value. */
+export function replaceStopTiming<T extends CanonicalStopTiming>(stop: T, timing: CanonicalStopTiming): Omit<T, keyof CanonicalStopTiming> & CanonicalStopTiming {
+  const { plannedArrivalTime: _arrival, plannedWindow: _window, ...withoutTiming } = stop;
+  return { ...withoutTiming, ...timing } as Omit<T, keyof CanonicalStopTiming> & CanonicalStopTiming;
+}
+
+export type LoadScheduleTiming = { start?: string; end?: string };
+
+/** Remove only the chosen load lane's timing before setting its replacement. */
+export function replaceLoadTiming<T extends object>(
+  load: T,
+  lane: "delivery" | "collection",
+  timing: LoadScheduleTiming,
+): T {
+  const value = load as T & { scheduledTime?: string; scheduledEnd?: string; collectionScheduledTime?: string; collectionScheduledEnd?: string };
+  if (lane === "delivery") {
+    const { scheduledTime: _start, scheduledEnd: _end, ...withoutTiming } = value;
+    return { ...withoutTiming, ...(timing.start ? { scheduledTime: timing.start } : {}), ...(timing.end ? { scheduledEnd: timing.end } : {}) } as T;
+  }
+  const { collectionScheduledTime: _start, collectionScheduledEnd: _end, ...withoutTiming } = value;
+  return { ...withoutTiming, ...(timing.start ? { collectionScheduledTime: timing.start } : {}), ...(timing.end ? { collectionScheduledEnd: timing.end } : {}) } as T;
+}
+
+export function validateOperationalSchedule(start: string, end?: string): string | undefined {
+  const startMinute = scheduleClockMinutes(start);
+  const endMinute = end === undefined ? undefined : scheduleClockMinutes(end);
+  if (startMinute === undefined || startMinute > LAST_SCHEDULABLE_MINUTE) return "Schedule times must be between 00:00 and 23:45.";
+  if (end !== undefined && (endMinute === undefined || endMinute > LAST_SCHEDULABLE_MINUTE)) return "Schedule times must be between 00:00 and 23:45.";
+  if (endMinute !== undefined && endMinute - startMinute < SCHEDULE_SLOT_MINUTES) return "A scheduled window must be at least 15 minutes.";
+  return undefined;
+}
 
 export type ScheduleInterval = {
   id?: string;
@@ -297,12 +337,19 @@ export function markUncertainPlacement(
 export function scheduleClockMinutes(value: string | undefined): number | undefined {
   if (!value || !/^\d{2}:\d{2}$/.test(value)) return undefined;
   const [hours, minutes] = value.split(":").map(Number);
+  if (hours === 24 && minutes === 0) return LAST_INTERVAL_END_MINUTE;
   if (hours > 23 || minutes > 59) return undefined;
   return hours * 60 + minutes;
 }
 
 export function scheduleTimeFromMinutes(value: number): string {
-  const total = Math.max(0, Math.min(23 * 60 + 59, Math.round(value)));
+  const total = Math.max(0, Math.min(LAST_SCHEDULABLE_MINUTE, Math.round(value)));
+  return `${String(Math.floor(total / 60)).padStart(2, "0")}:${String(total % 60).padStart(2, "0")}`;
+}
+
+function intervalEndFromMinutes(value: number): string {
+  if (value >= LAST_INTERVAL_END_MINUTE) return "24:00";
+  const total = Math.max(0, Math.min(LAST_INTERVAL_END_MINUTE, Math.round(value)));
   return `${String(Math.floor(total / 60)).padStart(2, "0")}:${String(total % 60).padStart(2, "0")}`;
 }
 
@@ -310,7 +357,7 @@ export function scheduleEndMinutes(start: string, end?: string): number | undefi
   const startMinutes = scheduleClockMinutes(start);
   if (startMinutes === undefined) return undefined;
   const explicitEnd = scheduleClockMinutes(end);
-  return explicitEnd ?? Math.min(23 * 60 + 59, startMinutes + DEFAULT_SCHEDULE_DURATION_MINUTES);
+  return explicitEnd ?? Math.min(LAST_INTERVAL_END_MINUTE, startMinutes + DEFAULT_SCHEDULE_DURATION_MINUTES);
 }
 
 export function scheduleIntervalsOverlap(left: ScheduleInterval, right: ScheduleInterval): boolean {
@@ -341,15 +388,16 @@ export function resolveNextAvailableScheduleStart(
   let candidate = requestedStartMinutes;
 
   for (let step = 0; step < maxSteps; step += 1) {
-    const candidateInterval = { start: scheduleTimeFromMinutes(candidate), end: scheduleTimeFromMinutes(candidate + duration) };
+    const candidateInterval = { start: scheduleTimeFromMinutes(candidate), end: intervalEndFromMinutes(candidate + duration) };
     const conflict = conflicts.find((item) => scheduleIntervalsOverlap(candidateInterval, item));
     if (!conflict) {
-      if (candidate + duration > 23 * 60 + 59) throw new Error("No available schedule remains within the operational day.");
+      if (candidate > LAST_SCHEDULABLE_MINUTE || candidate + duration > LAST_INTERVAL_END_MINUTE) throw new Error("No available schedule remains within the operational day.");
       return scheduleTimeFromMinutes(candidate);
     }
     const conflictEnd = scheduleEndMinutes(conflict.start, conflict.end);
     const next = Math.max(candidate + DEFAULT_SCHEDULE_DURATION_MINUTES, conflictEnd ?? candidate + DEFAULT_SCHEDULE_DURATION_MINUTES);
     if (next <= candidate) throw new Error("Schedule collision resolution could not advance.");
+    if (next > LAST_SCHEDULABLE_MINUTE) throw new Error("No available schedule remains within the operational day.");
     candidate = next;
   }
 

@@ -64,7 +64,7 @@ import {
 } from "@/lib/planning";
 import { operationalDate } from "@/lib/date";
 import { addOperationalDays, operationalWeek } from "@/lib/week";
-import { resolveNextAvailableScheduleStart } from "@/lib/scheduling";
+import { replaceLoadTiming, replaceStopTiming, resolveNextAvailableScheduleStart, validateOperationalSchedule } from "@/lib/scheduling";
 import { restoredStopStatus } from "@/lib/mobile-driver";
 import { recordDataAccess, withDataTrace } from "@fika/server-shared/data-source-meter-server";
 import type { Transaction } from "firebase-admin/firestore";
@@ -251,15 +251,10 @@ function validatePlannedSchedule(
   if (time && (start || end)) throw new HttpError(422, "Choose a planned arrival time or a planned window, not both.");
   if (!time && !start) throw new HttpError(422, "A planned arrival time or window start is required.");
   if (end && !start) throw new HttpError(422, "A planned window end requires a start time.");
-  if (start && end) {
-    const toMinutes = (value: string) => {
-      const [hour, minute] = value.split(":").map(Number);
-      return hour * 60 + minute;
-    };
-    if (toMinutes(end) - toMinutes(start) < 15)
-      throw new HttpError(422, "Planned window end must be at least 15 minutes after the start time.");
+  if (time || start) {
+    const problem = validateOperationalSchedule(time || start!, time ? undefined : end);
+    if (problem) throw new HttpError(422, problem);
   }
-  if ((time && time > "17:00") || (start && start > "17:00") || (end && end > "17:00")) throw new HttpError(422, "Planned timing must remain within the 06:00–17:00 dispatch view.");
   return {
     ...(time ? { plannedArrivalTime: time } : {}),
     ...(start ? { plannedWindow: { startTime: start, ...(end ? { endTime: end } : {}) } } : {}),
@@ -613,9 +608,11 @@ async function handlePost(request: NextRequest) {
       jobId?: string;
       scheduledTime?: string;
       scheduledEnd?: string;
+      resizeEndOnly?: boolean;
       lane?: "delivery" | "collection";
       collectionStatus?: "awaiting" | "collected";
     };
+    if (body.resizeEndOnly && !["schedule-stop", "reschedule-delivery-load", "reschedule-delivery-loads"].includes(body.action)) throw new HttpError(422, "End-only resize is supported only for an existing scheduled stop or load.");
     diagnostic = {
       operation: body.action,
       serviceDate: body.serviceDate || body.run?.serviceDate || body.movement?.serviceDate || body.job?.serviceDate,
@@ -726,6 +723,34 @@ async function handlePost(request: NextRequest) {
       }
       return NextResponse.json(result.load);
     }
+    if (["clear-delivery-load-schedule", "clear-collection-load-schedule"].includes(body.action)) {
+      if (!body.loadId || body.expectedLoadVersion === undefined) throw new HttpError(422, "A canonical load ID and current load version are required to clear timing.");
+      const lane = body.action === "clear-collection-load-schedule" ? "collection" as const : "delivery" as const;
+      const result = await runTracedTransaction(async transaction => {
+        const ref = deliveryLoads().doc(body.loadId!);
+        const snapshot = await transaction.get(ref);
+        if (!snapshot.exists) throw new HttpError(404, "Delivery load not found.");
+        const load = snapshot.data() as import("@/lib/types").DeliveryLoad;
+        assertLoadVersion(load, body.expectedLoadVersion);
+        await assertLoadAssignmentsCurrent(transaction, load);
+        await authorizeLoad(principal, load, async id => (await transaction.get(runs().doc(id))).data() as DeliveryRun | undefined);
+        const ownerId = lane === "collection" ? load.collectionRunId || (load.collectionRequired ? load.runId : undefined) : load.runId;
+        if (!ownerId) throw new HttpError(409, "The canonical load lane is no longer assigned.");
+        const ownerSnap = await transaction.get(runs().doc(ownerId));
+        if (!ownerSnap.exists) throw new HttpError(409, "Canonical current load owner is unavailable.");
+        assertPlanningOpen(ownerSnap.data() as DeliveryRun);
+        await assertProjectionCurrent(load.serviceDate, transaction);
+        const hasTiming = lane === "collection" ? Boolean(load.collectionScheduledTime || load.collectionScheduledEnd) : Boolean(load.scheduledTime || load.scheduledEnd);
+        if (!hasTiming) throw new HttpError(409, "This canonical load lane no longer has a schedule to clear.");
+        const cleared = replaceLoadTiming(load, lane, {});
+        const next = { ...cleared, updatedAt: now, version: load.version + 1, audit: [...load.audit, { action: body.action, at: now, by, version: load.version + 1 }] };
+        transaction.set(ref, next);
+        return next;
+      });
+      const event = await appendLogisticsChange({ serviceDate: result.serviceDate, entityType: "deliveryLoad", entityId: result.id, changeType: body.action, revision: result.version, changedAt: now, actorId });
+      await rebuildLogisticsProjection(result.serviceDate, by, event.sequence);
+      return NextResponse.json(result);
+    }
     if (["reschedule-delivery-load", "reschedule-delivery-loads"].includes(body.action) && body.scheduledTime) {
       const loadIds = body.action === "reschedule-delivery-loads" ? body.loadIds! : body.loadId ? [body.loadId] : [];
       if (!loadIds.length) throw new HttpError(422, "Canonical load IDs are required.");
@@ -768,10 +793,19 @@ async function handlePost(request: NextRequest) {
           assertPlanningOpen(target);
           if (!collection) vehicleId = target.vehicleId;
         }
+        if (body.resizeEndOnly) {
+          if (!body.scheduledEnd || loadIds.length > 50) throw new HttpError(422, "End-only resize requires an explicit scheduled window.");
+          const canonicalStart = collection ? first.collectionScheduledTime : first.scheduledTime;
+          if (canonicalStart !== requestedTime) throw new HttpError(409, "The window start changed. Refresh before resizing its end.");
+        }
         const requestedDuration = body.scheduledEnd ? Math.max(15, Number(body.scheduledEnd.slice(0, 2)) * 60 + Number(body.scheduledEnd.slice(3, 5)) - (Number(requestedTime.slice(0, 2)) * 60 + Number(requestedTime.slice(3, 5)))) : undefined;
         const effectiveScheduledTime = nextAvailableLoadTime(currentLoads, { runId, lane: collection ? "collection" : "delivery", destinationOplocId: collection ? first.originOplocId : first.destinationOplocId, start: requestedTime, end: body.scheduledEnd });
+        if (body.resizeEndOnly && effectiveScheduledTime !== requestedTime) throw new HttpError(409, "The resized window conflicts with current work; its start must remain fixed.");
         const effectiveScheduledEnd = requestedDuration === undefined ? undefined : addMinutesToTime(effectiveScheduledTime, requestedDuration);
-        const nextLoads = loads.map(load => ({ ...load, ...(collection ? { collectionRequired: true, collectionScheduledTime: effectiveScheduledTime, collectionScheduledEnd: effectiveScheduledEnd, collectionRunId: runId } : { scheduledTime: effectiveScheduledTime, scheduledEnd: effectiveScheduledEnd, runId, vehicleId }), updatedAt: now, version: load.version + 1, audit: [...load.audit, { action: collection ? "collection-rescheduled" : "load-rescheduled", at: now, by, version: load.version + 1 }] }));
+        const nextLoads = loads.map(load => {
+          const timing = replaceLoadTiming(load, collection ? "collection" : "delivery", { start: effectiveScheduledTime, ...(effectiveScheduledEnd ? { end: effectiveScheduledEnd } : {}) });
+          return { ...timing, ...(collection ? { collectionRequired: true, collectionRunId: runId } : { runId, vehicleId }), updatedAt: now, version: load.version + 1, audit: [...load.audit, { action: collection ? "collection-rescheduled" : "load-rescheduled", at: now, by, version: load.version + 1 }] };
+        });
         for (const next of nextLoads) await assertLoadAssignmentsCurrent(transaction, next);
         for (const next of nextLoads) transaction.set(deliveryLoads().doc(next.id), next);
         return nextLoads;
@@ -1467,10 +1501,10 @@ async function handlePost(request: NextRequest) {
           .map((doc) => normalizeStop(doc.data()))
           .filter((item) => item.canonicalId !== stop.canonicalId);
         const resolvedPlanned = planned ? resolveStopPlannedTiming(stop, planned, targetStops) : undefined;
+        const movedTiming = resolvedPlanned ? replaceStopTiming(stop, resolvedPlanned) : stop;
         const moved = {
-          ...stop,
+          ...movedTiming,
           runId: target.canonicalId,
-          ...(resolvedPlanned || {}),
           version: stop.version + 1,
           updatedAt: now,
           audit: [
@@ -1559,6 +1593,12 @@ async function handlePost(request: NextRequest) {
         const runStopsSnap = await transaction.get(stops().where("runId", "==", run.canonicalId));
         const currentRunStops = runStopsSnap.docs.map((doc) => normalizeStop(doc.data())).filter((item) => item.canonicalId !== stop.canonicalId);
         const resolvedPlanned = resolveStopPlannedTiming(stop, planned, currentRunStops);
+        if (body.resizeEndOnly) {
+          const currentStart = stop.plannedWindow?.startTime;
+          if (!planned.plannedWindow?.endTime || !currentStart || planned.plannedWindow.startTime !== currentStart) throw new HttpError(409, "The window start changed. Refresh before resizing its end.");
+          const resolvedStart = resolvedPlanned.plannedWindow?.startTime;
+          if (resolvedStart !== currentStart) throw new HttpError(409, "The resized window conflicts with current work; its start must remain fixed.");
+        }
         if (stop.linkedOperation === "collection" && stop.linkedStopId) {
           const counterpartSnap = await transaction.get(stops().doc(stop.linkedStopId));
           if (counterpartSnap.exists) {
@@ -1583,7 +1623,7 @@ async function handlePost(request: NextRequest) {
               throw new HttpError(422, "Transfer pickup must be scheduled at or before its drop-off.");
           }
         }
-        const nextStop = { ...stop, ...resolvedPlanned, version: stop.version + 1, updatedAt: now, audit: [...stop.audit, { action: "stop-scheduled", at: now, by, version: stop.version + 1 }] };
+        const nextStop = { ...replaceStopTiming(stop, resolvedPlanned), version: stop.version + 1, updatedAt: now, audit: [...stop.audit, { action: "stop-scheduled", at: now, by, version: stop.version + 1 }] };
         transaction.set(stopRef, nextStop);
         const nextRun = { ...run, version: run.version + 1, updatedAt: now, audit: [...run.audit, { action: "stop-scheduled", at: now, by, version: run.version + 1 }] };
         transaction.set(runRef, nextRun);
@@ -1742,7 +1782,7 @@ async function handlePost(request: NextRequest) {
             const stop = byId.get(id)!;
             const conflicts = Array.from(byId.values()).filter((candidate) => candidate.canonicalId !== id);
             const resolved = resolveStopPlannedTiming(stop, planned, conflicts);
-            byId.set(id, { ...stop, ...resolved, version: stop.version + 1, updatedAt: now, audit: [...stop.audit, { action: "stop-scheduled", at: now, by, version: stop.version + 1 }] });
+            byId.set(id, { ...replaceStopTiming(stop, resolved), version: stop.version + 1, updatedAt: now, audit: [...stop.audit, { action: "stop-scheduled", at: now, by, version: stop.version + 1 }] });
           }
         }
         const ordered = orderedTransferStops([...byId.values()]);

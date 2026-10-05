@@ -1,5 +1,7 @@
+import { LAST_SCHEDULABLE_MINUTE, SCHEDULE_SLOT_MINUTES } from "./scheduling";
+
 export const TIMELINE_DAY_MINUTES = 24 * 60;
-export const TIMELINE_SLOT_MINUTES = 15;
+export const TIMELINE_SLOT_MINUTES = SCHEDULE_SLOT_MINUTES;
 
 export function snapTimelineMinute(clientX: number, trackLeft: number, scrollLeft: number, grabOffset: number, pixelsPerMinute: number, durationMinutes?: number): number {
   // trackLeft is the measured track rectangle, so its origin already reflects
@@ -9,12 +11,12 @@ export function snapTimelineMinute(clientX: number, trackLeft: number, scrollLef
   const minute = (clientX - trackLeft + scrollLeft - grabOffset) / pixelsPerMinute;
   const requested = Math.round(minute / TIMELINE_SLOT_MINUTES) * TIMELINE_SLOT_MINUTES;
   const duration = durationMinutes === undefined ? TIMELINE_SLOT_MINUTES : Math.max(TIMELINE_SLOT_MINUTES, durationMinutes);
-  const latestStart = Math.max(0, TIMELINE_DAY_MINUTES - TIMELINE_SLOT_MINUTES - (durationMinutes === undefined ? 0 : duration));
+  const latestStart = Math.max(0, LAST_SCHEDULABLE_MINUTE - (durationMinutes === undefined ? 0 : duration));
   return Math.max(0, Math.min(latestStart, requested));
 }
 
 export function snapTimelineEndMinute(clientX: number, trackLeft: number, pixelsPerMinute: number, startMinute: number, grabOffset = 0): number {
-  const latestEnd = Math.floor((TIMELINE_DAY_MINUTES - TIMELINE_SLOT_MINUTES) / TIMELINE_SLOT_MINUTES) * TIMELINE_SLOT_MINUTES;
+  const latestEnd = LAST_SCHEDULABLE_MINUTE;
   const earliestEnd = startMinute + TIMELINE_SLOT_MINUTES;
   const requested = Math.round(((clientX - trackLeft - grabOffset) / pixelsPerMinute) / TIMELINE_SLOT_MINUTES) * TIMELINE_SLOT_MINUTES;
   return Math.max(earliestEnd, Math.min(latestEnd, requested));
@@ -25,7 +27,7 @@ export function schedulableTimelineRuns<T extends { runId: string }>(runs: T[]):
 }
 
 export function formatTimelineMinute(minute: number): string {
-  const safe = Math.max(0, Math.min(TIMELINE_DAY_MINUTES - TIMELINE_SLOT_MINUTES, minute));
+  const safe = Math.max(0, Math.min(LAST_SCHEDULABLE_MINUTE, minute));
   return `${String(Math.floor(safe / 60)).padStart(2, "0")}:${String(safe % 60).padStart(2, "0")}`;
 }
 

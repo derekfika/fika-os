@@ -12,6 +12,7 @@ import { responseErrorDetails, LogisticsResponseError } from "../../lib/client-e
 import { withDataTrace } from "@fika/server-shared/data-source-meter-client";
 import { readCachedProjection, writeCachedProjection } from "../../lib/logistics-cache";
 import { fetchProjectionWithRecovery } from "../../lib/projection-fetch";
+import { ScopedRequestCoordinator, scopedRequestKey, type ScopedRequestContext } from "../../lib/scoped-request-coordinator";
 
 type Data = { requirements: FulfilmentRequirement[]; runs: DeliveryRun[]; stops: DeliveryStop[]; movements: MovementRequest[]; oplocs: { id: string; label: string; address?: string }[]; serviceDate: string; projection?: Parameters<typeof projectionToDashboardData>[0] };
 type View = "deliveries" | "collections" | "messages" | "more";
@@ -41,91 +42,141 @@ export default function MobileWorkflow({ fixedVan }: { fixedVan?: "Van 1" | "Van
   const [retryDispatchRun, setRetryDispatchRun] = useState<DeliveryRun>();
   const [pendingAction, setPendingAction] = useState<string>();
   const stopTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const requests = useRef(new ScopedRequestCoordinator()).current;
+  const activeContext = useRef<ScopedRequestContext | undefined>(undefined);
   const projectionSequence = useRef<number | undefined>(undefined);
-  const syncCheckInFlight = useRef<Promise<void> | undefined>(undefined);
+  const syncCheckInFlight = useRef(new Map<string, Promise<void>>());
   // Resolve the UK operational date after hydration so SSR and the browser
   // cannot disagree around midnight or on a DST boundary.
   const [selectedDate, setSelectedDate] = useState("");
   const [hydrated, setHydrated] = useState(false);
   const [messages, setMessages] = useState<DriverMessage[]>([]);
   const date = selectedDate;
+  const visibleData = data?.serviceDate === selectedDate ? data : undefined;
   const availableDates = useMemo(() => selectedDate ? dateOptions(selectedDate) : [], [selectedDate]);
 
-  const load = async (materialiseMissing = true) => {
-    if (!date) return;
+  const selectDate = (next: string) => {
+    if (!next || next === selectedDate) return;
+    activeContext.current = requests.activate(next);
+    projectionSequence.current = undefined;
+    setSelectedDate(next);
+    setData(undefined);
+    setSelectedStop(undefined);
+    setIssueStop(undefined);
+    setIssueText("");
+    setIssueType("Cannot access building");
+    setUndoAction(undefined);
+    setRetryDispatchRun(undefined);
+    setPendingAction(undefined);
+    setError("");
+    setSyncUnavailable(false);
+    setProjectionNeedsMaterialisation(false);
+    setDriverId("");
+    stopTriggerRef.current = null;
+  };
+
+  const loadInContext = async (context: ScopedRequestContext, materialiseMissing = true) => {
+    const serviceDate = context.scope;
+    const current = () => requests.isCurrent(context);
+    const commit = (apply: () => void) => requests.commit(context, apply);
+    if (!serviceDate) return;
     return withDataTrace({ app: "logistics", action: fixedVan ? "logistics.mobile.van.load" : "logistics.mobile.day.load", path: typeof window === "undefined" ? "/mobile" : window.location.pathname }, async () => {
       const vehicle = fixedVan || "organisation";
       const vehicleQuery = fixedVan ? `&vehicle=${encodeURIComponent(fixedVan.toLowerCase().replace(" ", ""))}` : "";
       try {
-        const headResponse = await fetch(`/api/logistics?syncHead=1&serviceDate=${date}${vehicleQuery}`, { cache: "no-store" });
+        const headResponse = await fetch(`/api/logistics?syncHead=1&serviceDate=${serviceDate}${vehicleQuery}`, { cache: "no-store" });
         const head = await headResponse.json().catch(() => null);
         const cacheScope = headResponse.headers.get("x-logistics-cache-scope") || "";
-        const cached = cacheScope ? await readCachedProjection(cacheScope, date, vehicle) : undefined;
+        let cached = cacheScope ? await readCachedProjection(cacheScope, serviceDate, vehicle) : undefined;
+        if (cached?.serviceDate !== serviceDate) cached = undefined;
+        if (!current()) return;
         if (!headResponse.ok) {
           if (cached) {
-            projectionSequence.current = cached.lastChangeSequence;
-            setData({ ...projectionToDashboardData(cached), projection: { ...cached, state: "STALE" } });
+            commit(() => {
+              projectionSequence.current = cached.lastChangeSequence;
+              setData({ ...projectionToDashboardData(cached), projection: { ...cached, state: "STALE" } });
+            });
           }
-          setSyncUnavailable(true);
+          commit(() => setSyncUnavailable(true));
           throw new LogisticsResponseError(responseErrorDetails(head, headResponse.status, "Logistics sync state could not be checked."));
         }
         if (cached && cached.lastChangeSequence === Number(head.sequence) && cached.state !== "STALE" && cached.state !== "PARTIAL") {
-          projectionSequence.current = cached.lastChangeSequence;
-          setData({ ...projectionToDashboardData(cached), projection: cached });
-          setError("");
-          setSyncUnavailable(false);
-          setProjectionNeedsMaterialisation(false);
-          return;
-        }
-        const body = await loadMobileProjection(date, vehicleQuery, materialiseMissing);
-        if (!body?.projection) {
-          if (body?.projectionState === "VALID_EMPTY" || body?.state === "EMPTY") {
-            const empty = { serviceDate: date, revision: 0, lastChangeSequence: Number(head.sequence || 0), state: "VALID_EMPTY" as const, planningQueue: [], deliveryLoads: [], runs: [], exceptions: [], summary: { queuedJobs: 0, loads: 0, assignedJobs: 0, collectedJobs: 0 }, rebuiltAt: new Date().toISOString() };
-            projectionSequence.current = empty.lastChangeSequence;
-            setData({ ...projectionToDashboardData(empty), projection: empty });
+          commit(() => {
+            projectionSequence.current = cached.lastChangeSequence;
+            setData({ ...projectionToDashboardData(cached), projection: cached });
             setError("");
             setSyncUnavailable(false);
             setProjectionNeedsMaterialisation(false);
+          });
+          return;
+        }
+        const body = await loadMobileProjection(serviceDate, vehicleQuery, materialiseMissing);
+        if (!current()) return;
+        if (!body?.projection) {
+          if (body?.projectionState === "VALID_EMPTY" || body?.state === "EMPTY") {
+            const empty = { serviceDate, revision: 0, lastChangeSequence: Number(head.sequence || 0), state: "VALID_EMPTY" as const, planningQueue: [], deliveryLoads: [], runs: [], exceptions: [], summary: { queuedJobs: 0, loads: 0, assignedJobs: 0, collectedJobs: 0 }, rebuiltAt: new Date().toISOString() };
+            commit(() => {
+              projectionSequence.current = empty.lastChangeSequence;
+              setData({ ...projectionToDashboardData(empty), projection: empty });
+              setError("");
+              setSyncUnavailable(false);
+              setProjectionNeedsMaterialisation(false);
+            });
             return;
           }
           throw new Error("Logistics projection is unavailable.");
         }
         const projection = body.projection as Parameters<typeof projectionToDashboardData>[0];
-        projectionSequence.current = projection.lastChangeSequence;
+        if (projection.serviceDate !== serviceDate) throw new Error("Logistics returned a projection for a different service date.");
         if (cacheScope) await writeCachedProjection(cacheScope, projection, vehicle);
-        setData({ ...projectionToDashboardData(projection), projection });
-        setError(body.projectionState === "STALE" ? "Showing a stale Logistics projection; reconciliation is required." : "");
-        setSyncUnavailable(body.projectionState === "STALE");
-        setProjectionNeedsMaterialisation(false);
+        commit(() => {
+          projectionSequence.current = projection.lastChangeSequence;
+          setData({ ...projectionToDashboardData(projection), projection });
+          setError(body.projectionState === "STALE" ? "Showing a stale Logistics projection; reconciliation is required." : "");
+          setSyncUnavailable(body.projectionState === "STALE");
+          setProjectionNeedsMaterialisation(false);
+        });
       } catch (cause) {
+        if (!current()) return;
         const details = cause instanceof LogisticsResponseError ? cause.details : undefined;
-        setProjectionNeedsMaterialisation(details?.code === "LOGISTICS_PROJECTION_NOT_MATERIALIZED");
-        setSyncUnavailable(true);
-        setError(cause instanceof LogisticsResponseError ? `${cause.message}${cause.details.requestId ? ` Reference: ${cause.details.requestId}` : ""}` : cause instanceof Error ? cause.message : "Logistics is temporarily unavailable.");
+        commit(() => {
+          setProjectionNeedsMaterialisation(details?.code === "LOGISTICS_PROJECTION_NOT_MATERIALIZED");
+          setSyncUnavailable(true);
+          setError(cause instanceof LogisticsResponseError ? `${cause.message}${cause.details.requestId ? ` Reference: ${cause.details.requestId}` : ""}` : cause instanceof Error ? cause.message : "Logistics is temporarily unavailable.");
+        });
       }
     });
   };
+  const loadForContext = (context: ScopedRequestContext | undefined, materialiseMissing = true) => context ? requests.run(context, () => loadInContext(context, materialiseMissing)) : Promise.resolve();
+  const load = (materialiseMissing = true) => loadForContext(activeContext.current, materialiseMissing);
   const checkForUpdates = async () => {
-    if (!date || document.visibilityState !== "visible") return;
-    if (syncCheckInFlight.current) return syncCheckInFlight.current;
+    const context = activeContext.current;
+    if (!context || document.visibilityState !== "visible") return;
+    const key = scopedRequestKey(context);
+    const existing = syncCheckInFlight.current.get(key);
+    if (existing) return existing;
     const pending = (async () => {
       const vehicleQuery = fixedVan ? `&vehicle=${encodeURIComponent(fixedVan.toLowerCase().replace(" ", ""))}` : "";
       try {
-        const response = await fetch(`/api/logistics?syncHead=1&serviceDate=${date}${vehicleQuery}`, { cache: "no-store" });
+        const response = await fetch(`/api/logistics?syncHead=1&serviceDate=${context.scope}${vehicleQuery}`, { cache: "no-store" });
         const body = await response.json().catch(() => null);
         if (!response.ok) throw new LogisticsResponseError(responseErrorDetails(body, response.status, "Logistics sync state could not be checked."));
-        if (projectionSequence.current === undefined || projectionSequence.current !== Number(body?.sequence || 0)) await load();
-        else setSyncUnavailable(false);
+        if (!requests.isCurrent(context)) return;
+        if (projectionSequence.current === undefined || projectionSequence.current !== Number(body?.sequence || 0)) await loadForContext(context);
+        else requests.commit(context, () => setSyncUnavailable(false));
       } catch (cause) {
+        if (!requests.isCurrent(context)) return;
         const details = cause instanceof LogisticsResponseError ? cause.details : undefined;
-        setSyncUnavailable(true);
-        setError(cause instanceof LogisticsResponseError ? `${cause.message}${details?.requestId ? ` Reference: ${details.requestId}` : ""}` : "Logistics sync state could not be checked.");
+        requests.commit(context, () => {
+          setSyncUnavailable(true);
+          setError(cause instanceof LogisticsResponseError ? `${cause.message}${details?.requestId ? ` Reference: ${details.requestId}` : ""}` : "Logistics sync state could not be checked.");
+        });
       }
-    })().finally(() => { syncCheckInFlight.current = undefined; });
-    syncCheckInFlight.current = pending;
+    })().finally(() => { if (syncCheckInFlight.current.get(key) === pending) syncCheckInFlight.current.delete(key); });
+    syncCheckInFlight.current.set(key, pending);
     return pending;
   };
-  useEffect(() => { const nextDate = operationalDate(); setSelectedDate(nextDate); setHydrated(true); }, []);
+  useEffect(() => { const nextDate = operationalDate(); activeContext.current = requests.activate(nextDate); setSelectedDate(nextDate); setHydrated(true); }, []);
   useEffect(() => { if (selectedDate) void load(); }, [selectedDate]);
   useEffect(() => {
     if (!selectedDate) return;
@@ -137,15 +188,15 @@ export default function MobileWorkflow({ fixedVan }: { fixedVan?: "Van 1" | "Van
     const timer = window.setInterval(() => { if (document.visibilityState === "visible") void checkForUpdates(); }, 30_000);
     return () => { window.clearInterval(timer); document.removeEventListener("visibilitychange", onVisibilityChange); liveChannel?.removeEventListener("message", onLiveChange); liveChannel?.close(); };
   }, [selectedDate, fixedVan]);
-  useEffect(() => { if (!driverId) setDriverId(data?.runs.find((run) => run.driverId)?.driverId || ""); }, [data?.runs, driverId]);
+  useEffect(() => { if (!driverId) setDriverId(visibleData?.runs.find((run) => run.driverId)?.driverId || ""); }, [visibleData?.runs, driverId]);
 
-  const driverOptions = useMemo(() => Array.from(new Map((data?.runs || []).filter((run) => run.driverId && run.driverLabel && run.driverId.toLowerCase() !== run.driverLabel.toLowerCase()).map((run) => [run.driverId, run.driverLabel])).entries()), [data?.runs]);
-  const fixedRuns = useMemo(() => fixedVan ? (data?.runs || []).filter((run) => run.vehicleLabel === fixedVan) : data?.runs || [], [data?.runs, fixedVan]);
+  const driverOptions = useMemo(() => Array.from(new Map((visibleData?.runs || []).filter((run) => run.driverId && run.driverLabel && run.driverId.toLowerCase() !== run.driverLabel.toLowerCase()).map((run) => [run.driverId, run.driverLabel])).entries()), [visibleData?.runs]);
+  const fixedRuns = useMemo(() => fixedVan ? (visibleData?.runs || []).filter((run) => run.vehicleLabel === fixedVan) : visibleData?.runs || [], [visibleData?.runs, fixedVan]);
   const driver = fixedVan || driverOptions.find(([id]) => id === driverId)?.[1] || "Unassigned driver";
   const runs = useMemo(() => fixedVan ? selectMobileRuns(fixedRuns, fixedRuns[0]?.driverId || fixedRuns[0]?.driverLabel || "", date) : selectMobileRuns(fixedRuns, driverId, date), [fixedRuns, fixedVan, driverId, date]);
   const stops = useMemo(() => runs
-    .flatMap((run) => run.orderedStopIds.map((id) => data?.stops.find((stop) => stop.canonicalId === id)).filter(Boolean) as DeliveryStop[])
-    .sort((a, b) => mobileStopMinutes(a) - mobileStopMinutes(b) || a.sequence - b.sequence), [runs, data?.stops]);
+    .flatMap((run) => run.orderedStopIds.map((id) => visibleData?.stops.find((stop) => stop.canonicalId === id)).filter(Boolean) as DeliveryStop[])
+    .sort((a, b) => mobileStopMinutes(a) - mobileStopMinutes(b) || a.sequence - b.sequence), [runs, visibleData?.stops]);
   const deliveries = stops.filter((stop) => !stopIsCollection(stop));
   const collections = stops.filter((stop) => stopIsCollection(stop));
   const deliveryCounts = stopCounts(deliveries);
@@ -156,76 +207,90 @@ export default function MobileWorkflow({ fixedVan }: { fixedVan?: "Van 1" | "Van
   const visibleRemaining = visibleStops.filter((stop) => stop.status !== "completed");
   const visibleCompleted = visibleStops.filter((stop) => stop.status === "completed");
   const nextStop = visibleRemaining[0];
-  const freshness = !data ? "UNAVAILABLE" : syncUnavailable || data.projection?.state === "STALE" || data.projection?.state === "PARTIAL" ? "STALE" : data.projection?.state === "VALID_EMPTY" ? "NO WORK" : "CURRENT";
+  const freshness = !visibleData ? "UNAVAILABLE" : syncUnavailable || visibleData.projection?.state === "STALE" || visibleData.projection?.state === "PARTIAL" ? "STALE" : visibleData.projection?.state === "VALID_EMPTY" ? "NO WORK" : "CURRENT";
 
   const returnFocusToStop = () => window.requestAnimationFrame(() => stopTriggerRef.current?.focus());
   const closeStopSheet = () => { setSelectedStop(undefined); returnFocusToStop(); };
   const closeIssueSheet = () => { setIssueStop(undefined); returnFocusToStop(); };
 
   async function execute(action: string, stop: DeliveryStop, extra: Record<string, unknown> = {}) {
+    const context = activeContext.current;
+    if (!context) return;
     if (pendingAction) return;
-    stop = data?.stops.find(item => item.canonicalId === stop.canonicalId) || stop;
+    const serviceDate = context.scope;
+    stop = visibleData?.stops.find(item => item.canonicalId === stop.canonicalId) || stop;
     const run = runs.find((item) => item.canonicalId === stop.runId); if (!run) return;
-    setPendingAction(action);
+    requests.commit(context, () => setPendingAction(action));
     try {
-      const response = await fetch("/api/logistics", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action, runId: run.canonicalId, expectedRunVersion: run.version, stopId: stop.canonicalId, expectedStopVersion: stop.version, loadIds: stop.canonicalLoadIds, expectedJobVersions: stop.canonicalJobVersions, expectedLoadVersions: { ...Object.assign({}, ...(data?.projection?.deliveryLoads || []).map(load => load.loadVersions || {})), ...stop.canonicalLoadVersions }, ...extra }) });
-      const body = await response.json().catch(() => null); if (!response.ok) { const details = responseErrorDetails(body, response.status, "The operation could not be completed."); setError(`${details.message}${details.requestId ? ` Reference: ${details.requestId}` : ""}`); return; }
-      setError(""); setSelectedStop(undefined); setIssueStop(undefined); setIssueText(""); returnFocusToStop(); announceDriverChange(date); await load();
+      const response = await fetch("/api/logistics", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action, runId: run.canonicalId, expectedRunVersion: run.version, stopId: stop.canonicalId, expectedStopVersion: stop.version, loadIds: stop.canonicalLoadIds, expectedJobVersions: stop.canonicalJobVersions, expectedLoadVersions: { ...Object.assign({}, ...(visibleData?.projection?.deliveryLoads || []).map(load => load.loadVersions || {})), ...stop.canonicalLoadVersions }, ...extra }) });
+      const body = await response.json().catch(() => null); if (!response.ok) { const details = responseErrorDetails(body, response.status, "The operation could not be completed."); requests.commit(context, () => setError(`${details.message}${details.requestId ? ` Reference: ${details.requestId}` : ""}`)); return; }
+      requests.commit(context, () => { setError(""); setSelectedStop(undefined); setIssueStop(undefined); setIssueText(""); returnFocusToStop(); }); announceDriverChange(serviceDate); await loadForContext(context);
       if (action === "complete-stop" && body?.run && body?.stop) {
         const label = stop.movementType === "collection" ? "Collection marked collected" : "Delivery marked delivered";
-        setUndoAction({ run: body.run, stop: body.stop, label });
-        window.setTimeout(() => setUndoAction((current) => current?.stop.canonicalId === body.stop.canonicalId ? undefined : current), 5000);
+        requests.commit(context, () => setUndoAction({ run: body.run, stop: body.stop, label }));
+        window.setTimeout(() => requests.commit(context, () => setUndoAction((current) => current?.stop.canonicalId === body.stop.canonicalId ? undefined : current)), 5000);
       }
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "The operation could not be completed. Check the connection and retry.");
+      requests.commit(context, () => setError(cause instanceof Error ? cause.message : "The operation could not be completed. Check the connection and retry."));
     } finally {
-      setPendingAction(undefined);
+      requests.commit(context, () => setPendingAction(undefined));
     }
   }
   async function dispatchRun(run: DeliveryRun) {
+    const context = activeContext.current;
+    if (!context) return;
+    const serviceDate = context.scope;
     if (pendingAction) return;
-    setPendingAction("dispatch-run");
+    requests.commit(context, () => setPendingAction("dispatch-run"));
     try {
       const response = await fetch("/api/logistics", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "dispatch-run", runId: run.canonicalId, expectedRunVersion: run.version }) });
       const body = await response.json().catch(() => null);
-      if (!response.ok) { setRetryDispatchRun(run); const details = responseErrorDetails(body, response.status, "The vehicle could not be dispatched."); setError(`${details.message}${details.requestId ? ` Reference: ${details.requestId}` : ""}`); return; }
-      setRetryDispatchRun(undefined); setError("");
-      announceDriverChange(date); await load();
+      if (!response.ok) { const details = responseErrorDetails(body, response.status, "The vehicle could not be dispatched."); requests.commit(context, () => { setRetryDispatchRun(run); setError(`${details.message}${details.requestId ? ` Reference: ${details.requestId}` : ""}`); }); return; }
+      requests.commit(context, () => { setRetryDispatchRun(undefined); setError(""); });
+      announceDriverChange(serviceDate); await loadForContext(context);
     } catch (cause) {
-      setRetryDispatchRun(run);
-      setError(cause instanceof Error ? cause.message : "The vehicle could not be dispatched. Check the connection and retry.");
+      requests.commit(context, () => {
+        setRetryDispatchRun(run);
+        setError(cause instanceof Error ? cause.message : "The vehicle could not be dispatched. Check the connection and retry.");
+      });
     } finally {
-      setPendingAction(undefined);
+      requests.commit(context, () => setPendingAction(undefined));
     }
   }
   async function undoCompletion() {
+    const context = activeContext.current;
+    if (!context) return;
+    const serviceDate = context.scope;
     if (!undoAction) return;
     if (pendingAction) return;
     const current = undoAction;
-    setPendingAction("undo-completion");
+    requests.commit(context, () => setPendingAction("undo-completion"));
     try {
       const response = await fetch("/api/logistics", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "undo-completion", runId: current.run.canonicalId, expectedRunVersion: current.run.version, stopId: current.stop.canonicalId, expectedStopVersion: current.stop.version, loadIds: current.stop.canonicalLoadIds, expectedJobVersions: current.stop.canonicalJobVersions, expectedLoadVersions: current.stop.canonicalLoadVersions }) });
       const body = await response.json().catch(() => null);
-      if (!response.ok) { const details = responseErrorDetails(body, response.status, "The completion could not be undone. Refresh and try again."); setError(`${details.message}${details.requestId ? ` Reference: ${details.requestId}` : ""}`); return; }
-      setUndoAction(undefined); setError(""); announceDriverChange(date); await load();
+      if (!response.ok) { const details = responseErrorDetails(body, response.status, "The completion could not be undone. Refresh and try again."); requests.commit(context, () => setError(`${details.message}${details.requestId ? ` Reference: ${details.requestId}` : ""}`)); return; }
+      requests.commit(context, () => { setUndoAction(undefined); setError(""); }); announceDriverChange(serviceDate); await loadForContext(context);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "The completion could not be undone. Check the connection and retry.");
+      requests.commit(context, () => setError(cause instanceof Error ? cause.message : "The completion could not be undone. Check the connection and retry."));
     } finally {
-      setPendingAction(undefined);
+      requests.commit(context, () => setPendingAction(undefined));
     }
   }
   async function confirmReturned(run: DeliveryRun) {
+    const context = activeContext.current;
+    if (!context) return;
+    const serviceDate = context.scope;
     if (pendingAction) return;
-    setPendingAction("confirm-returned-to-cpu");
+    requests.commit(context, () => setPendingAction("confirm-returned-to-cpu"));
     try {
       const response = await fetch("/api/logistics", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "confirm-returned-to-cpu", runId: run.canonicalId, expectedRunVersion: run.version }) });
       const body = await response.json().catch(() => null);
-      if (!response.ok) { const details = responseErrorDetails(body, response.status, "The return could not be confirmed. Refresh and try again."); setError(`${details.message}${details.requestId ? ` Reference: ${details.requestId}` : ""}`); return; }
-      setError(""); announceDriverChange(date); await load();
+      if (!response.ok) { const details = responseErrorDetails(body, response.status, "The return could not be confirmed. Refresh and try again."); requests.commit(context, () => setError(`${details.message}${details.requestId ? ` Reference: ${details.requestId}` : ""}`)); return; }
+      requests.commit(context, () => setError("")); announceDriverChange(serviceDate); await loadForContext(context);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "The return could not be confirmed. Check the connection and retry.");
+      requests.commit(context, () => setError(cause instanceof Error ? cause.message : "The return could not be confirmed. Check the connection and retry."));
     } finally {
-      setPendingAction(undefined);
+      requests.commit(context, () => setPendingAction(undefined));
     }
   }
   const reportIssue = () => { if (issueStop) void execute("report-issue", issueStop, { issueCategory: issueType, issueDescription: issueText.trim() ? `${issueType}: ${issueText.trim()}` : issueType }); };
@@ -233,18 +298,18 @@ export default function MobileWorkflow({ fixedVan }: { fixedVan?: "Van 1" | "Van
   if (!hydrated || !selectedDate) return <main className="driver-app"><section className="driver-empty" aria-busy="true">Loading your day…</section></main>;
 
   return <main className="driver-app">
-    <header className="driver-hero"><div className="driver-topline"><a href="/" aria-label="Back to planner">← Planner</a><span className="driver-bell" aria-label={`${messages.length} notifications`}>♧{messages.length > 0 && <i />}</span></div><p className="driver-eyebrow">FIKA OS · DRIVER</p><div className="driver-title-row"><h1>{view === "collections" ? "Collections" : view === "deliveries" ? "Deliveries" : view === "messages" ? "Messages" : "More"}</h1><span className="driver-live">● {freshness}</span></div><div className="driver-filters"><label><span>▣</span><select aria-label="Service date" value={selectedDate} onChange={(event) => setSelectedDate(event.target.value)}>{availableDates.map((option) => <option key={option} value={option}>{formatDate(option)}</option>)}</select></label>{!fixedVan && <label><span>♙</span><select aria-label="Driver" value={driverId} onChange={(event) => setDriverId(event.target.value)}><option value="">Unassigned driver</option>{driverOptions.map(([id, label]) => <option key={id} value={id}>{label}</option>)}</select></label>}</div></header>
+    <header className="driver-hero"><div className="driver-topline"><a href="/" aria-label="Back to planner">← Planner</a><span className="driver-bell" aria-label={`${messages.length} notifications`}>♧{messages.length > 0 && <i />}</span></div><p className="driver-eyebrow">FIKA OS · DRIVER</p><div className="driver-title-row"><h1>{view === "collections" ? "Collections" : view === "deliveries" ? "Deliveries" : view === "messages" ? "Messages" : "More"}</h1><span className="driver-live">● {freshness}</span></div><div className="driver-filters"><label><span>▣</span><select aria-label="Service date" value={selectedDate} onChange={(event) => selectDate(event.target.value)}>{availableDates.map((option) => <option key={option} value={option}>{formatDate(option)}</option>)}</select></label>{!fixedVan && <label><span>♙</span><select aria-label="Driver" value={driverId} onChange={(event) => setDriverId(event.target.value)}><option value="">Unassigned driver</option>{driverOptions.map(([id, label]) => <option key={id} value={id}>{label}</option>)}</select></label>}</div></header>
     {pendingAction && <div className="driver-operation" role="status" aria-live="polite">{operationLabel(pendingAction)} Keep this page open.</div>}{error && <div className="driver-alert" role="alert">{error}<button disabled={Boolean(pendingAction)} onClick={() => retryDispatchRun ? void dispatchRun(retryDispatchRun) : void load(projectionNeedsMaterialisation)}>{retryDispatchRun ? "Retry dispatch" : projectionNeedsMaterialisation ? "Materialise and retry" : "Retry"}</button></div>}
-    {!data ? <section className="driver-empty">Loading your day…</section> : view === "messages" ? <Messages messages={messages} onDismiss={(id) => setMessages((current) => current.filter((message) => message.id !== id))} onClear={() => setMessages([])} /> : view === "more" ? <More driver={driver} runs={runs} /> : <>
+    {!visibleData ? <section className="driver-empty">Loading your day…</section> : view === "messages" ? <Messages messages={messages} onDismiss={(id) => setMessages((current) => current.filter((message) => message.id !== id))} onClear={() => setMessages([])} /> : view === "more" ? <More driver={driver} runs={runs} /> : <>
       {runs.filter((run) => showDispatchChecklist(run.status)).map((run) => { const runStops = stops.filter((stop) => stop.runId === run.canonicalId && !stopIsCollection(stop)); const loaded = runStops.filter((stop) => stop.loaded).length; return <section className="driver-departure" key={run.canonicalId}><div><p className="driver-section-kicker">LOAD CHECK</p><strong>{run.vehicleLabel || "Your vehicle"} · {loaded} of {runStops.length} deliveries loaded</strong><span>Tap each delivery below to confirm it is on the vehicle before leaving.</span></div><button className="primary-action" disabled={Boolean(pendingAction) || !stops.some(stop => stop.runId === run.canonicalId) || loaded !== runStops.length} onClick={() => void dispatchRun(run)}>{pendingAction === "dispatch-run" ? "Dispatching…" : loaded === runStops.length ? "Dispatch vehicle" : "Load all deliveries"}</button></section>; })}
       {runs.filter((run) => run.returnToCpuPending).map((run) => <section className="driver-departure return-stage" key={`return-${run.canonicalId}`}><div><p className="driver-section-kicker">ALL STOPS COMPLETE</p><strong>Return to CPU</strong><span>All deliveries and collections are complete. Return the vehicle to CPU to finish the run.</span></div><div className="return-actions"><button className="secondary-action" onClick={() => window.open(process.env.NEXT_PUBLIC_FIKA_CPU_URL || "/", "_blank")}>Navigate to CPU</button><button className="primary-action" disabled={Boolean(pendingAction)} onClick={() => void confirmReturned(run)}>{pendingAction === "confirm-returned-to-cpu" ? "Confirming…" : "Confirm returned to CPU"}</button></div></section>)}
       <section className="driver-summary" aria-label="Daily summary"><Metric icon="↘" value={deliveryCounts.total} label="Total deliveries" tone="purple" /><Metric icon="✓" value={completed} label="Completed stops" tone="mint" /><Metric icon="↗" value={collectionCounts.total} label="Total collections" tone="blue" /><Metric icon="!" value={attention} label="Attention" tone="rose" /></section>
       <div className="driver-progress"><span>Today’s progress</span><strong>{completed} of {stops.length} total stops completed</strong><div><i style={{ width: `${stops.length ? (completed / stops.length) * 100 : 0}%` }} /></div></div>
       <nav className="task-switcher" aria-label="Task type"><button className={view === "deliveries" ? "active" : ""} onClick={() => setView("deliveries")}>Deliveries <b>{deliveryCounts.remaining} remaining</b></button><button className={view === "collections" ? "active" : ""} onClick={() => setView("collections")}>Collections <b>{collectionCounts.remaining} remaining</b></button></nav>
-      <section className="driver-list"><div className="list-heading"><div><p className="driver-section-kicker">{view === "collections" ? "RETURN LOAD" : "DELIVERY ROUTE"}</p><h2>{view === "collections" ? "Collection stops" : "Your stops"}</h2></div><span>{visibleStops.length} total · {visibleRemaining.length} remaining · {visibleCompleted.length} completed</span></div>{nextStop && <div className="next-banner"><span>Next up</span><strong>{stopLabel(nextStop, data)}</strong><b>{timeFor(nextStop)}</b></div>}{visibleRemaining.length > 0 && <section className="stop-group" aria-label="Next stops"><p className="driver-section-kicker">NEXT</p>{visibleRemaining.map((stop, index) => <StopRow key={stop.canonicalId} stop={stop} data={data} index={index} onOpen={(trigger) => { stopTriggerRef.current = trigger; setSelectedStop(stop); }} />)}</section>}{visibleCompleted.length > 0 && <section className="stop-group completed-group" aria-label="Completed stops"><p className="driver-section-kicker">COMPLETED</p>{visibleCompleted.map((stop, index) => <StopRow key={stop.canonicalId} stop={stop} data={data} index={index} onOpen={(trigger) => { stopTriggerRef.current = trigger; setSelectedStop(stop); }} />)}</section>}{!visibleStops.length && <div className="driver-empty compact">No {view} assigned for this day.</div>}</section>
+      <section className="driver-list"><div className="list-heading"><div><p className="driver-section-kicker">{view === "collections" ? "RETURN LOAD" : "DELIVERY ROUTE"}</p><h2>{view === "collections" ? "Collection stops" : "Your stops"}</h2></div><span>{visibleStops.length} total · {visibleRemaining.length} remaining · {visibleCompleted.length} completed</span></div>{nextStop && <div className="next-banner"><span>Next up</span><strong>{stopLabel(nextStop, visibleData)}</strong><b>{timeFor(nextStop)}</b></div>}{visibleRemaining.length > 0 && <section className="stop-group" aria-label="Next stops"><p className="driver-section-kicker">NEXT</p>{visibleRemaining.map((stop, index) => <StopRow key={stop.canonicalId} stop={stop} data={visibleData} index={index} onOpen={(trigger) => { stopTriggerRef.current = trigger; setSelectedStop(stop); }} />)}</section>}{visibleCompleted.length > 0 && <section className="stop-group completed-group" aria-label="Completed stops"><p className="driver-section-kicker">COMPLETED</p>{visibleCompleted.map((stop, index) => <StopRow key={stop.canonicalId} stop={stop} data={visibleData} index={index} onOpen={(trigger) => { stopTriggerRef.current = trigger; setSelectedStop(stop); }} />)}</section>}{!visibleStops.length && <div className="driver-empty compact">No {view} assigned for this day.</div>}</section>
     </>}
     <nav className="driver-bottom-nav" aria-label="Primary"><NavItem active={view === "deliveries"} icon="▦" label="Deliveries" onClick={() => setView("deliveries")} /><NavItem active={view === "collections"} icon="⌁" label="Collections" onClick={() => setView("collections")} /><NavItem active={view === "messages"} icon="□" label="Messages" onClick={() => setView("messages")} badge={messages.length ? String(messages.length) : undefined} /><NavItem active={view === "more"} icon="☰" label="More" onClick={() => setView("more")} /></nav>
-    {undoAction && <div className="driver-undo-toast" role="status"><span>{undoAction.label}</span><button disabled={Boolean(pendingAction)} onClick={() => void undoCompletion()}>{pendingAction === "undo-completion" ? "Undoing…" : "Undo"}</button></div>}{selectedStop && data && <StopDetail stop={selectedStop} data={data} busy={Boolean(pendingAction)} onClose={closeStopSheet} onAction={execute} onIssue={() => { if (!pendingAction) { setIssueStop(selectedStop); setSelectedStop(undefined); } }} />}{issueStop && <IssueSheet stop={issueStop} type={issueType} setType={setIssueType} text={issueText} setText={setIssueText} busy={Boolean(pendingAction)} onClose={closeIssueSheet} onSubmit={reportIssue} />}
+    {undoAction && <div className="driver-undo-toast" role="status"><span>{undoAction.label}</span><button disabled={Boolean(pendingAction)} onClick={() => void undoCompletion()}>{pendingAction === "undo-completion" ? "Undoing…" : "Undo"}</button></div>}{selectedStop && visibleData && <StopDetail stop={selectedStop} data={visibleData} busy={Boolean(pendingAction)} onClose={closeStopSheet} onAction={execute} onIssue={() => { if (!pendingAction) { setIssueStop(selectedStop); setSelectedStop(undefined); } }} />}{issueStop && <IssueSheet stop={issueStop} type={issueType} setType={setIssueType} text={issueText} setText={setIssueText} busy={Boolean(pendingAction)} onClose={closeIssueSheet} onSubmit={reportIssue} />}
   </main>;
 }
 

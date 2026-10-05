@@ -30,6 +30,7 @@ import { readCachedProjection, writeCachedProjection } from "../lib/logistics-ca
 import { fetchPlannerGet } from "../lib/planner-fetch";
 import { fetchProjectionWithRecovery } from "../lib/projection-fetch";
 import { mayRequestPassiveRefresh, PASSIVE_REFRESH_INTERVAL_MS } from "../lib/passive-refresh";
+import { ScopedRequestCoordinator, scopedRequestKey, type ScopedRequestContext } from "../lib/scoped-request-coordinator";
 import {
   canStartPlacement,
   collectionTargetForGroup,
@@ -150,10 +151,14 @@ function PlannerContents() {
   const [projectionNeedsMaterialisation, setProjectionNeedsMaterialisation] = useState(false);
   const [authRequired, setAuthRequired] = useState(false);
   const requestsBlocked = useRef(false);
+  const dayRequests = useRef(new ScopedRequestCoordinator()).current;
+  const weekRequests = useRef(new ScopedRequestCoordinator()).current;
+  const activeDayContext = useRef<ScopedRequestContext | undefined>(undefined);
+  const activeWeekContext = useRef<ScopedRequestContext | undefined>(undefined);
   const dataRef = useRef<Data | undefined>(undefined);
   const projectionSequence = useRef<number | undefined>(undefined);
   const lastPassiveSyncAt = useRef<number | undefined>(undefined);
-  const syncCheckInFlight = useRef<Promise<void> | undefined>(undefined);
+  const syncCheckInFlight = useRef(new Map<string, Promise<void>>());
   const [busy, setBusy] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<string>();
@@ -176,9 +181,37 @@ function PlannerContents() {
   const [queueFilter, setQueueFilter] = useState<"all" | "unassigned" | "needs_time" | "attention">("all");
   const [queueTypeFilter, setQueueTypeFilter] = useState<"all" | "delivery" | "collection" | "transfer">("all");
   const [projectionState, setProjectionState] = useState<LogisticsProjectionState | "LOADING">("LOADING");
-  const loadInFlight = useRef<Promise<LoadResult> | undefined>(undefined);
-  const bootstrapInFlight = useRef<Promise<void> | undefined>(undefined);
-  const weekLoadInFlight = useRef<Promise<void> | undefined>(undefined);
+  const bootstrapInFlight = useRef(new Map<string, Promise<void>>());
+
+  const selectDate = (next: string) => {
+    if (!next || next === date) return;
+    activeDayContext.current = dayRequests.activate(next);
+    setDate(next);
+    dataRef.current = undefined;
+    projectionSequence.current = undefined;
+    setData(undefined);
+    setProjectionState("LOADING");
+    setProjectionNeedsMaterialisation(false);
+    setPassiveSyncError("");
+    setError("");
+    setErrorReference("");
+    setLastUpdated(undefined);
+    setRefreshing(false);
+    setInspector(undefined);
+    setExpandedGroup(undefined);
+    setExpandedStop(undefined);
+    setAssigning(undefined);
+    setTargetRun("");
+    setShowRunCreate(false);
+    lastPassiveSyncAt.current = undefined;
+  };
+
+  const selectWeek = (next: string) => {
+    if (!next || next === weekCommencing) return;
+    activeWeekContext.current = weekRequests.activate(`week:${next}`);
+    setWeekCommencing(next);
+    setWeekData(undefined);
+  };
 
   const setProjectionData = (next: Data | undefined) => {
     dataRef.current = next;
@@ -219,11 +252,17 @@ function PlannerContents() {
     try {
       const saved = JSON.parse(window.localStorage.getItem("fika-logistics-view") || "null") as { date?: string; weekCommencing?: string } | null;
       if (!requestedDate && saved?.date) restoredDate = saved.date;
+      activeDayContext.current = dayRequests.activate(restoredDate);
+      const restoredWeek = saved?.weekCommencing || mondayOf(restoredDate);
+      activeWeekContext.current = weekRequests.activate(`week:${restoredWeek}`);
       setDate(restoredDate);
-      setWeekCommencing(saved?.weekCommencing || mondayOf(restoredDate));
+      setWeekCommencing(restoredWeek);
     } catch {
+      activeDayContext.current = dayRequests.activate(restoredDate);
+      const restoredWeek = mondayOf(restoredDate);
+      activeWeekContext.current = weekRequests.activate(`week:${restoredWeek}`);
       setDate(restoredDate);
-      setWeekCommencing(mondayOf(restoredDate));
+      setWeekCommencing(restoredWeek);
     }
     setViewPreferencesReady(true);
   }, []);
@@ -233,151 +272,184 @@ function PlannerContents() {
     try { window.localStorage.setItem("fika-logistics-view", JSON.stringify({ date, weekCommencing })); } catch { /* Preferences are an optimisation only. */ }
   }, [date, weekCommencing, viewPreferencesReady]);
 
-  const loadAuthoritative = async (silent = false, _materialiseMissing = true, mode: LoadMode = "explicit"): Promise<LoadResult> => {
+  const dayContext = activeDayContext.current;
+  const weekContext = activeWeekContext.current;
+  const loadAuthoritative = async (context: ScopedRequestContext, silent = false, _materialiseMissing = true, mode: LoadMode = "explicit"): Promise<LoadResult> => {
+    const serviceDate = context.scope;
+    const current = () => dayRequests.isCurrent(context);
+    const commit = (apply: () => void) => dayRequests.commit(context, apply);
     if (requestsBlocked.current) return { ok: false };
-    if (!date) return { ok: false };
+    if (!serviceDate) return { ok: false };
     const showRefreshing = silent && mode === "explicit";
-    if (showRefreshing) setRefreshing(true);
+    if (showRefreshing) commit(() => setRefreshing(true));
     let cached: LogisticsDayProjection | undefined;
     let cacheScope = "";
     try {
-      const headResponse = await fetchPlannerGet(`/api/logistics?syncHead=1&serviceDate=${date}`, { cache: "no-store" });
+      const headResponse = await fetchPlannerGet(`/api/logistics?syncHead=1&serviceDate=${serviceDate}`, { cache: "no-store" });
       const head = await requireSuccessfulResponse(headResponse, "Logistics sync state could not be checked.");
       cacheScope = headResponse.headers.get("x-logistics-cache-scope") || "";
       if (cacheScope) {
-        cached = await readCachedProjection(cacheScope, date);
+        cached = await readCachedProjection(cacheScope, serviceDate);
+        if (cached?.serviceDate !== serviceDate) cached = undefined;
         if (cached) {
-          setProjectionData({ ...projectionToDashboardData(cached), projection: cached });
-          setProjectionState(cached.state || "CURRENT");
-          projectionSequence.current = cached.lastChangeSequence;
+          commit(() => {
+            setProjectionData({ ...projectionToDashboardData(cached!), projection: cached });
+            setProjectionState(cached!.state || "CURRENT");
+            projectionSequence.current = cached!.lastChangeSequence;
+          });
         }
       }
+      if (!current()) return cached ? { ok: true, projection: cached } : { ok: false };
       if (cached && Number(head.sequence) === cached.lastChangeSequence && cached.state !== "STALE") {
-        lastPassiveSyncAt.current = Date.now();
-        setLastUpdated(new Date().toISOString());
-        setError("");
-        setPassiveSyncError("");
-        setProjectionNeedsMaterialisation(false);
+        commit(() => {
+          lastPassiveSyncAt.current = Date.now();
+          setLastUpdated(new Date().toISOString());
+          setError("");
+          setPassiveSyncError("");
+          setProjectionNeedsMaterialisation(false);
+        });
         return { ok: true, projection: cached };
       }
-      const recovered = await fetchProjectionWithRecovery({ serviceDate: date, fetcher: fetchPlannerGet });
+      const recovered = await fetchProjectionWithRecovery({ serviceDate, fetcher: fetchPlannerGet });
       await requireSuccessfulResponse(recovered.response, "Logistics could not be loaded after automatic materialisation.");
       const body = recovered.body || {};
       let projection = body.projection as LogisticsDayProjection | undefined;
       if (!projection && body.state === "EMPTY") {
-        projection = { ...emptyProjection(date), state: "VALID_EMPTY", lastChangeSequence: Number(head.sequence || 0) };
-        setProjectionData({ ...projectionToDashboardData(projection), projection });
-        setProjectionState("VALID_EMPTY");
-        setLastUpdated(new Date().toISOString());
-        setError("");
-        setPassiveSyncError("");
-        setProjectionNeedsMaterialisation(false);
-        projectionSequence.current = projection.lastChangeSequence;
+        projection = { ...emptyProjection(serviceDate), state: "VALID_EMPTY", lastChangeSequence: Number(head.sequence || 0) };
+        const emptyProjectionValue = projection;
+        commit(() => {
+          setProjectionData({ ...projectionToDashboardData(emptyProjectionValue), projection: emptyProjectionValue });
+          setProjectionState("VALID_EMPTY");
+          setLastUpdated(new Date().toISOString());
+          setError("");
+          setPassiveSyncError("");
+          setProjectionNeedsMaterialisation(false);
+          projectionSequence.current = emptyProjectionValue.lastChangeSequence;
+        });
         return { ok: true, projection };
       }
       if (!projection) throw new Error("Logistics projection is unavailable.");
-      setProjectionData({ ...projectionToDashboardData(projection), projection });
-      setProjectionState((body.projectionState || projection.state || "CURRENT") as LogisticsProjectionState);
-      projectionSequence.current = projection.lastChangeSequence;
-      setProjectionNeedsMaterialisation(false);
-      if (cacheScope) await writeCachedProjection(cacheScope, projection);
-      setLastUpdated(new Date().toISOString());
-      setError("");
-      setPassiveSyncError("");
-      lastPassiveSyncAt.current = Date.now();
+      if (projection.serviceDate !== serviceDate) throw new Error("Logistics returned a projection for a different service date.");
+      const loadedProjection = projection;
+      commit(() => {
+        setProjectionData({ ...projectionToDashboardData(loadedProjection), projection: loadedProjection });
+        setProjectionState((body.projectionState || loadedProjection.state || "CURRENT") as LogisticsProjectionState);
+        projectionSequence.current = loadedProjection.lastChangeSequence;
+        setProjectionNeedsMaterialisation(false);
+        setLastUpdated(new Date().toISOString());
+        setError("");
+        setPassiveSyncError("");
+        lastPassiveSyncAt.current = Date.now();
+      });
+      if (cacheScope) await writeCachedProjection(cacheScope, loadedProjection);
+      if (!current()) return { ok: true, projection: loadedProjection };
       let convergedProjection = projection;
-      const freshHeadResponse = await fetchPlannerGet(`/api/logistics?syncHead=1&serviceDate=${date}`, { cache: "no-store" });
+      const freshHeadResponse = await fetchPlannerGet(`/api/logistics?syncHead=1&serviceDate=${serviceDate}`, { cache: "no-store" });
       const freshHead = await requireSuccessfulResponse(freshHeadResponse, "Logistics sync state could not be checked after projection load.");
+      if (!current()) return { ok: true, projection: loadedProjection };
       if (Number(freshHead.sequence) > projection.lastChangeSequence) {
         const drained = await drainIncrementalPages(projection.lastChangeSequence, async (cursor) => {
-          const changes = await fetchPlannerGet(`/api/logistics?changesSince=${cursor}&serviceDate=${date}`, { cache: "no-store" });
+          const changes = await fetchPlannerGet(`/api/logistics?changesSince=${cursor}&serviceDate=${serviceDate}`, { cache: "no-store" });
           const changed = await requireSuccessfulResponse(changes, "Logistics changes could not be loaded.");
           return { hasMore: Boolean(changed.hasMore), nextCursor: Number(changed.nextCursor ?? cursor), projection: changed.projection as LogisticsDayProjection | undefined };
         });
+        if (!current()) return { ok: true, projection: loadedProjection };
         if (drained.cursor < Number(freshHead.sequence)) throw new Error("Logistics changes did not converge to the current sync head.");
         if (drained.latestProjection && drained.latestProjection.lastChangeSequence >= drained.cursor && drained.latestProjection !== projection) {
           convergedProjection = drained.latestProjection;
-          setProjectionData({ ...projectionToDashboardData(drained.latestProjection), projection: drained.latestProjection });
-          setProjectionState(drained.latestProjection.state || "CURRENT");
-          projectionSequence.current = drained.latestProjection.lastChangeSequence;
+          if (convergedProjection.serviceDate !== serviceDate) throw new Error("Logistics convergence returned a projection for a different service date.");
+          commit(() => {
+            setProjectionData({ ...projectionToDashboardData(drained.latestProjection!), projection: drained.latestProjection });
+            setProjectionState(drained.latestProjection!.state || "CURRENT");
+            projectionSequence.current = drained.latestProjection!.lastChangeSequence;
+          });
           if (cacheScope) await writeCachedProjection(cacheScope, drained.latestProjection);
         }
       }
       return { ok: true, projection: convergedProjection };
     } catch (cause) {
+      if (!current()) return { ok: false };
       if (mode === "passive" && (cached || dataRef.current)) {
-        if (cached) setProjectionState("STALE");
-        recordPassiveError(cause, "Sync failed; the last valid Logistics projection remains visible.");
+        commit(() => {
+          if (cached) setProjectionState("STALE");
+          recordPassiveError(cause, "Sync failed; the last valid Logistics projection remains visible.");
+        });
       } else {
-        if (cached) setProjectionState("STALE");
-        else {
-          setProjectionData(undefined);
-          setProjectionState("UNAVAILABLE");
-        }
-        recordError(cause, cached ? "Sync failed; showing the last valid Logistics projection." : "Logistics projection could not be loaded.");
+        commit(() => {
+          if (cached) setProjectionState("STALE");
+          else {
+            setProjectionData(undefined);
+            setProjectionState("UNAVAILABLE");
+          }
+          recordError(cause, cached ? "Sync failed; showing the last valid Logistics projection." : "Logistics projection could not be loaded.");
+        });
       }
       return { ok: false };
     } finally {
-      if (showRefreshing) setRefreshing(false);
+      if (showRefreshing) commit(() => setRefreshing(false));
     }
   };
-  const load = (silent = false, materialiseMissing = true, mode: LoadMode = "explicit"): Promise<LoadResult> => {
-    if (loadInFlight.current) return loadInFlight.current;
-    const pending = loadAuthoritative(silent, materialiseMissing, mode);
-    loadInFlight.current = pending;
-    void pending.then(() => { if (loadInFlight.current === pending) loadInFlight.current = undefined; }, () => { if (loadInFlight.current === pending) loadInFlight.current = undefined; });
-    return pending;
+  const loadForContext = (context: ScopedRequestContext | undefined, silent = false, materialiseMissing = true, mode: LoadMode = "explicit"): Promise<LoadResult> => {
+    if (!context) return Promise.resolve({ ok: false });
+    return dayRequests.run(context, () => loadAuthoritative(context, silent, materialiseMissing, mode));
   };
-  const loadFresh = async (silent = true, mode: LoadMode = "explicit"): Promise<LoadResult> => {
-    const current = loadInFlight.current;
-    if (current) {
-      await current;
-      if (loadInFlight.current === current) loadInFlight.current = undefined;
-    }
-    return load(silent, true, mode);
+  const load = (silent = false, materialiseMissing = true, mode: LoadMode = "explicit"): Promise<LoadResult> => loadForContext(dayContext || activeDayContext.current, silent, materialiseMissing, mode);
+  const loadFreshFor = async (context: ScopedRequestContext | undefined, silent = true, mode: LoadMode = "explicit"): Promise<LoadResult> => {
+    if (!context) return { ok: false };
+    if (dayRequests.has(context)) await loadForContext(context, silent, true, mode);
+    return loadForContext(context, silent, true, mode);
   };
-  const loadWeekAuthoritative = async (week = weekCommencing, mode: LoadMode = "explicit") => {
+  const loadFresh = (silent = true, mode: LoadMode = "explicit"): Promise<LoadResult> => loadFreshFor(dayContext || activeDayContext.current, silent, mode);
+  const loadWeekAuthoritative = async (context: ScopedRequestContext, mode: LoadMode = "explicit") => {
+    const week = context.scope.slice("week:".length);
+    const current = () => weekRequests.isCurrent(context);
     if (requestsBlocked.current) return;
     try {
       const body = await fetchPlannerGet(`/api/logistics?weekSummary=1&weekCommencing=${week}`, { cache: "no-store" }).then((response) => requireSuccessfulResponse(response, "Logistics week summary could not be loaded."));
-      setWeekData({ weekCommencing: body.weekCommencing as string, days: (body.days || []) as PlannerWeekSummary[] });
+      if (!current() || body.weekCommencing !== week) return;
+      weekRequests.commit(context, () => setWeekData({ weekCommencing: week, days: (body.days || []) as PlannerWeekSummary[] }));
     } catch (cause) {
+      if (!current()) return;
       if (mode === "passive" && dataRef.current) {
-        recordPassiveError(cause, "Logistics week summary could not be refreshed.");
+        weekRequests.commit(context, () => recordPassiveError(cause, "Logistics week summary could not be refreshed."));
       } else {
-        recordError(cause, "Logistics week data could not be loaded.");
-        setWeekData(undefined);
+        weekRequests.commit(context, () => {
+          recordError(cause, "Logistics week data could not be loaded.");
+          setWeekData(undefined);
+        });
       }
     }
   };
+  const loadWeekForContext = (context: ScopedRequestContext | undefined, mode: LoadMode = "explicit"): Promise<void> => context ? weekRequests.run(context, () => loadWeekAuthoritative(context, mode)) : Promise.resolve();
   const loadWeek = (week = weekCommencing, mode: LoadMode = "explicit"): Promise<void> => {
-    if (weekLoadInFlight.current) return weekLoadInFlight.current;
-    const pending = loadWeekAuthoritative(week, mode);
-    weekLoadInFlight.current = pending;
-    void pending.then(() => { if (weekLoadInFlight.current === pending) weekLoadInFlight.current = undefined; }, () => { if (weekLoadInFlight.current === pending) weekLoadInFlight.current = undefined; });
-    return pending;
+    const context = weekContext?.scope === `week:${week}` ? weekContext : activeWeekContext.current?.scope === `week:${week}` ? activeWeekContext.current : undefined;
+    return loadWeekForContext(context, mode);
   };
   const checkForUpdates = async () => {
-    if (requestsBlocked.current || !date || document.visibilityState !== "visible") return;
-    if (bootstrapInFlight.current) return bootstrapInFlight.current;
-    if (syncCheckInFlight.current) return syncCheckInFlight.current;
+    const context = activeDayContext.current;
+    const summaryContext = activeWeekContext.current;
+    if (requestsBlocked.current || !context || document.visibilityState !== "visible") return;
+    const key = scopedRequestKey(context);
+    const inFlight = syncCheckInFlight.current.get(key);
+    if (inFlight) return inFlight;
     const pending = (async () => {
       try {
-        const response = await fetchPlannerGet(`/api/logistics?syncHead=1&serviceDate=${date}`, { cache: "no-store" });
+        const response = await fetchPlannerGet(`/api/logistics?syncHead=1&serviceDate=${context.scope}`, { cache: "no-store" });
         const head = await requireSuccessfulResponse(response, "Logistics sync state could not be checked.");
+        if (!dayRequests.isCurrent(context)) return;
         if (projectionSequence.current !== undefined && Number(head.sequence) === projectionSequence.current) {
-          setPassiveSyncError("");
+          dayRequests.commit(context, () => setPassiveSyncError(""));
           return;
         }
-        const refreshed = await load(true, true, "passive");
+        const refreshed = await loadForContext(context, true, true, "passive");
         if (refreshed.ok) {
-          await loadWeek(weekCommencing, "passive");
+          await loadWeekForContext(summaryContext, "passive");
         }
       } catch (cause) {
-        recordPassiveError(cause, "Logistics sync state could not be checked.");
+        dayRequests.commit(context, () => recordPassiveError(cause, "Logistics sync state could not be checked."));
       }
-    })().finally(() => { syncCheckInFlight.current = undefined; });
-    syncCheckInFlight.current = pending;
+    })().finally(() => { if (syncCheckInFlight.current.get(key) === pending) syncCheckInFlight.current.delete(key); });
+    syncCheckInFlight.current.set(key, pending);
     return pending;
   };
 
@@ -388,42 +460,42 @@ function PlannerContents() {
       lastAttemptAt: lastPassiveSyncAt.current,
       visible: document.visibilityState === "visible",
       requestsBlocked: requestsBlocked.current,
-      inFlight: Boolean(syncCheckInFlight.current),
+      inFlight: Boolean(activeDayContext.current && syncCheckInFlight.current.has(scopedRequestKey(activeDayContext.current))),
     })) return;
     lastPassiveSyncAt.current = Date.now();
     void checkForUpdates();
   };
-  const ensureVehicleDayRuns = async (serviceDate: string) => {
+  const ensureVehicleDayRuns = async (context: ScopedRequestContext, summaryContext: ScopedRequestContext | undefined) => {
+    const serviceDate = context.scope;
     if (requestsBlocked.current) return;
     try {
       const response = await fetch("/api/logistics", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "ensure-vehicle-day-runs", serviceDate }) });
       const result = await requireSuccessfulResponse(response, "Vehicle-day runs could not be prepared.");
       if (result.changed) {
-        const refreshed = await load(true);
-        if (refreshed.ok) await loadWeek();
+        const refreshed = await loadForContext(context, true);
+        if (refreshed.ok) await loadWeekForContext(summaryContext);
       }
-    } catch (cause) { recordError(cause, "Vehicle-day runs could not be prepared."); }
+    } catch (cause) { dayRequests.commit(context, () => recordError(cause, "Vehicle-day runs could not be prepared.")); }
   };
   useEffect(() => {
     if (!viewPreferencesReady) return;
     const requestedDate = new URLSearchParams(window.location.search).get("serviceDate");
     if (requestedDate && requestedDate !== date) {
-      setDate(requestedDate);
-      setWeekCommencing(mondayOf(requestedDate));
+      selectDate(requestedDate);
+      selectWeek(mondayOf(requestedDate));
       return;
     }
-    setData(undefined);
-    dataRef.current = undefined;
-    setProjectionState("LOADING");
-    setProjectionNeedsMaterialisation(false);
-    setPassiveSyncError("");
     lastPassiveSyncAt.current = undefined;
+    const context = activeDayContext.current;
+    const summaryContext = activeWeekContext.current;
+    if (!context || context.scope !== date) return;
+    const key = scopedRequestKey(context);
     const bootstrap = (async () => {
-      const result = await load();
-      if (result.ok && !requestsBlocked.current) await ensureVehicleDayRuns(date);
+      const result = await loadForContext(context);
+      if (result.ok && !requestsBlocked.current && dayRequests.isCurrent(context)) await ensureVehicleDayRuns(context, summaryContext);
     })();
-    bootstrapInFlight.current = bootstrap;
-    void bootstrap.then(() => { if (bootstrapInFlight.current === bootstrap) bootstrapInFlight.current = undefined; }, () => { if (bootstrapInFlight.current === bootstrap) bootstrapInFlight.current = undefined; });
+    bootstrapInFlight.current.set(key, bootstrap);
+    void bootstrap.finally(() => { if (bootstrapInFlight.current.get(key) === bootstrap) bootstrapInFlight.current.delete(key); }).catch(() => undefined);
     const liveChannel = typeof BroadcastChannel === "undefined" ? undefined : new BroadcastChannel("fika-logistics-live");
     const onLiveChange = (event: MessageEvent<{ serviceDate?: string }>) => { if (!event.data?.serviceDate || event.data.serviceDate === date) requestPassiveRefresh("broadcast"); };
     liveChannel?.addEventListener("message", onLiveChange);
@@ -438,18 +510,23 @@ function PlannerContents() {
   }, [date, viewPreferencesReady]);
   useEffect(() => {
     if (!viewPreferencesReady) return;
+    const context = activeWeekContext.current;
+    if (!context || context.scope !== `week:${weekCommencing}`) return;
+    const key = scopedRequestKey(activeDayContext.current || context);
     void (async () => {
-      if (bootstrapInFlight.current) await bootstrapInFlight.current;
-      await loadWeek();
+      const bootstrap = bootstrapInFlight.current.get(key);
+      if (bootstrap) await bootstrap;
+      await loadWeekForContext(context);
     })();
   }, [weekCommencing, viewPreferencesReady]);
   const checkPlanningAttention = async (_passive = false) => {
+    const context = activeDayContext.current;
     if (requestsBlocked.current || document.visibilityState !== "visible") return;
     try {
       const response = await fetchPlannerGet(`/api/logistics?planningAttention=1&serviceDate=${operationalDate()}&days=14`, { cache: "no-store" });
       const body = await requireSuccessfulResponse(response, "Planning attention could not be checked.");
-      setPlanningAttention((body.attention || []) as Array<{ serviceDate: string; count: number }>);
-    } catch (cause) { recordPassiveError(cause, "Planning attention could not be checked."); }
+      if (context) dayRequests.commit(context, () => setPlanningAttention((body.attention || []) as Array<{ serviceDate: string; count: number }>));
+    } catch (cause) { if (context) dayRequests.commit(context, () => recordPassiveError(cause, "Planning attention could not be checked.")); }
   };
   useEffect(() => {
     if (!viewPreferencesReady) return;
@@ -466,6 +543,8 @@ function PlannerContents() {
     return { ...payload, expectedJobVersions: Object.fromEntries([...(projection?.planningQueue || []), ...(projection?.deliveryLoads || []).flatMap(load => load.jobs)].filter(job => job.version !== undefined).map(job => [job.id, job.version])), expectedLoadVersions: versions, ...(command.loadId && versions[command.loadId] !== undefined ? { expectedLoadVersion: versions[command.loadId] } : {}), ...(job?.version !== undefined ? { expectedJobVersion: job.version } : {}) };
   }
   async function act(payload: object): Promise<boolean | Record<string, unknown>> {
+    const context = dayContext;
+    const summaryContext = weekContext;
     setBusy(true);
     setError("");
     try {
@@ -475,17 +554,21 @@ function PlannerContents() {
         body: JSON.stringify(withLoadAuthority(payload)),
       });
       const result = await requireSuccessfulResponse(response, "Action failed.");
-      await Promise.all([load(), loadWeek()]);
-      setAssigning(undefined);
+      if (context && dayRequests.isCurrent(context)) {
+        await Promise.all([loadForContext(context), loadWeekForContext(summaryContext)]);
+        dayRequests.commit(context, () => setAssigning(undefined));
+      }
       return result;
     } catch (cause) {
-      recordError(cause, "Action failed.");
+      if (context) dayRequests.commit(context, () => recordError(cause, "Action failed."));
       return false;
     } finally {
-      setBusy(false);
+      if (context) dayRequests.commit(context, () => setBusy(false));
     }
   }
   async function placementCommand(payload: object): Promise<PlacementOutcome> {
+    const context = dayContext;
+    const summaryContext = weekContext;
     try {
       const response = await fetch("/api/logistics", {
         method: "POST",
@@ -496,15 +579,15 @@ function PlannerContents() {
       // The command response is the best-known truth. Settle the placement
       // coordinator immediately, then refresh projections without blocking
       // unrelated timeline interactions.
-      const refresh = loadFresh(true, "passive");
-      void loadWeek(weekCommencing, "passive");
+      const refresh = loadFreshFor(context, true, "passive");
+      void loadWeekForContext(summaryContext, "passive");
       return { ok: true, body, refresh };
     } catch (cause) {
       const details = clientErrorDetails(cause, "Scheduling action could not be confirmed.");
-      if ([401, 403].includes(details.status)) recordError(cause, details.message);
+      if ([401, 403].includes(details.status) && context) dayRequests.commit(context, () => recordError(cause, details.message));
       if (details.status === 409) {
-        const refresh = loadFresh(true, "passive");
-        void loadWeek(weekCommencing, "passive");
+        const refresh = loadFreshFor(context, true, "passive");
+        void loadWeekForContext(summaryContext, "passive");
         return { ok: false, uncertain: false, conflict: true, message: details.message, refresh };
       }
       return { ok: false, uncertain: details.status === 0, message: details.message };
@@ -639,10 +722,11 @@ function PlannerContents() {
   }
 
   return <RealPlanner
+    key={date}
     date={date}
     weekCommencing={weekCommencing}
-    weekData={weekData}
-    data={data}
+    weekData={weekData?.weekCommencing === weekCommencing ? weekData : undefined}
+    data={data?.serviceDate === date ? data : undefined}
     error={error}
     errorReference={errorReference}
     passiveSyncError={passiveSyncError}
@@ -666,8 +750,8 @@ function PlannerContents() {
     inspector={inspector}
     assigning={assigning}
     targetRun={targetRun}
-    setDate={setDate}
-    setWeekCommencing={setWeekCommencing}
+    setDate={selectDate}
+    setWeekCommencing={selectWeek}
     setShowMovement={setShowMovement}
     setDraft={setDraft}
     setShowRunCreate={setShowRunCreate}
@@ -701,8 +785,8 @@ function PlannerContents() {
         <WeekNavigation
           weekCommencing={weekCommencing}
           onChange={(next) => {
-            setWeekCommencing(next);
-            setDate(next);
+            selectWeek(next);
+            selectDate(next);
           }}
         />
       </nav>
@@ -721,7 +805,7 @@ function PlannerContents() {
         weekCommencing={weekCommencing}
         selectedDate={date}
         summaries={weekData?.days || []}
-        onSelect={setDate}
+          onSelect={selectDate}
       />
       {error && (
         <div className="alert" role="alert">
@@ -1441,7 +1525,7 @@ function RealPlanner(props: RealPlannerProps) {
       const original: SchedulePosition = { runId: originalStop?.run.runId || sourceRunId, lane: collection ? "collection" : "delivery", start: originalStop?.item.plannedWindow?.startTime || originalStop?.item.plannedArrivalTime || safeTime, ...(originalStop?.item.plannedWindow?.endTime ? { end: originalStop.item.plannedWindow.endTime } : {}) };
       const proposed: SchedulePosition = { runId: targetRunId, lane: collection ? "collection" : "delivery", start: safeTime, ...(end ? { end: addClockMinutes(safeTime, Math.max(15, clockMinutes(end) - clockMinutes(time))) } : {}) };
       coordinatePlacement(stopId, original, proposed, async () => {
-        return props.placementCommand({ action: "reschedule-delivery-loads", loadIds, scheduledTime: safeTime, ...(proposed.end ? { scheduledEnd: proposed.end } : {}), targetRunId, lane: collection ? "collection" : "delivery" });
+        return props.placementCommand({ action: "reschedule-delivery-loads", loadIds, scheduledTime: safeTime, ...(proposed.end ? { scheduledEnd: proposed.end } : {}), ...(preserveStart ? { resizeEndOnly: true } : {}), targetRunId, lane: collection ? "collection" : "delivery" });
       });
       return;
     }
@@ -1481,7 +1565,7 @@ function RealPlanner(props: RealPlannerProps) {
         return Promise.resolve({ ok: false, uncertain: false, message: "Current schedule authority is unavailable. Refresh and retry this placement." });
       }
       const payload = versions.sourceRunId === targetRunId
-        ? { action: "schedule-stop", runId: versions.sourceRunId, stopId, ...timing, expectedRunVersion: versions.expectedRunVersion, expectedStopVersion: versions.expectedStopVersion }
+        ? { action: "schedule-stop", runId: versions.sourceRunId, stopId, ...timing, ...(preserveStart ? { resizeEndOnly: true } : {}), expectedRunVersion: versions.expectedRunVersion, expectedStopVersion: versions.expectedStopVersion }
         : { action: "move-stop", runId: versions.sourceRunId, targetRunId, stopId, ...timing, expectedRunVersion: versions.expectedRunVersion, expectedTargetRunVersion: versions.expectedTargetRunVersion, expectedStopVersion: versions.expectedStopVersion };
       return props.placementCommand(payload);
     });
@@ -1494,6 +1578,22 @@ function RealPlanner(props: RealPlannerProps) {
     const currentStart = rawStop.plannedWindow?.startTime || rawStop.plannedArrivalTime;
     if (!currentStart) return;
     const original: SchedulePosition = { runId, lane, start: currentStart, ...(rawStop.plannedWindow?.endTime ? { end: rawStop.plannedWindow.endTime } : {}) };
+    if (data?.projection && stopId.startsWith("projection-stop:")) {
+      const loadId = projectionLoadIdForStop(stopId);
+      const load = data.projection.deliveryLoads.find((item) => item.id === loadId);
+      const expectedLoadVersion = load?.loadVersions?.[loadId] ?? load?.version;
+      if (!load || expectedLoadVersion === undefined) {
+        props.setError("Current canonical load timing authority is unavailable. Refresh and retry.");
+        return;
+      }
+      const collection = stopId.startsWith("projection-stop:collection:");
+      coordinatePlacement(stopId, original, undefined, () => props.placementCommand({
+        action: collection ? "clear-collection-load-schedule" : "clear-delivery-load-schedule",
+        loadId,
+        expectedLoadVersion,
+      }), () => undefined);
+      return;
+    }
     coordinatePlacement(stopId, original, original, () => props.placementCommand({ action: "clear-stop-schedule", runId, stopId, expectedRunVersion: run.version, expectedStopVersion: rawStop.version }), () => undefined);
   };
   const returnWorkToPlanning = (runId: string, stopId: string) => {
@@ -2187,7 +2287,7 @@ function ScheduleEditor({ stop, run, rawStop, runs, onScheduleStop, onAction, pl
     setLane(stop.lane);
   }, [run.runId, stop.lane, stop.plannedArrivalTime, stop.plannedWindow?.endTime, stop.plannedWindow?.startTime]);
   const invalidWindow = end !== "" && (!start || clockMinutes(end) - clockMinutes(start) < 15);
-  return <div className="schedule-editor"><h3>Planned timing</h3><p className="context-line">Logistics timing only; upstream required timing remains unchanged.</p><label>Vehicle <select value={targetRun} disabled={placementPending} onChange={(event) => setTargetRun(event.target.value)}>{runs.map((candidate, index) => <option key={candidate.runId} value={candidate.runId}>{candidate.vehicle || `Run ${index + 1}`} · {candidate.driver || "Driver unassigned"}</option>)}</select></label><label>Lane <select value={lane} disabled aria-label="Confirmed stop lane"><option value={lane}>{lane[0].toUpperCase() + lane.slice(1)} lane</option></select></label><label>Start / arrival <input type="time" step={900} disabled={placementPending} value={start} onChange={(event) => setStart(event.target.value)} /></label><label>Window end <input type="time" step={900} min={start ? addClockMinutes(start, 15) : undefined} disabled={placementPending} value={end} onChange={(event) => setEnd(event.target.value)} /></label><div className="inspector-actions"><button disabled={placementPending || !start || invalidWindow} onClick={() => onScheduleStop(run.runId, stop.stopId, targetRun, start, end || undefined, lane)}>Save time and placement</button>{stop.plannedWindow || stop.plannedArrivalTime ? <button className="secondary" disabled={placementPending} onClick={() => onAction({ action: "clear-stop-schedule", runId: run.runId, stopId: stop.stopId, expectedRunVersion: run.version, expectedStopVersion: rawStop.version })}>Clear time</button> : null}</div></div>;
+  return <div className="schedule-editor"><h3>Planned timing</h3><p className="context-line">Logistics timing only; upstream required timing remains unchanged.</p><label>Vehicle <select value={targetRun} disabled={placementPending} onChange={(event) => setTargetRun(event.target.value)}>{runs.map((candidate, index) => <option key={candidate.runId} value={candidate.runId}>{candidate.vehicle || `Run ${index + 1}`} · {candidate.driver || "Driver unassigned"}</option>)}</select></label><label>Lane <select value={lane} disabled aria-label="Confirmed stop lane"><option value={lane}>{lane[0].toUpperCase() + lane.slice(1)} lane</option></select></label><label>Start / arrival <input type="time" step={900} max="23:45" disabled={placementPending} value={start} onChange={(event) => setStart(event.target.value)} /></label><label>Window end <input type="time" step={900} min={start ? addClockMinutes(start, 15) : undefined} max="23:45" disabled={placementPending} value={end} onChange={(event) => setEnd(event.target.value)} /></label><div className="inspector-actions"><button disabled={placementPending || !start || invalidWindow} onClick={() => onScheduleStop(run.runId, stop.stopId, targetRun, start, end || undefined, lane)}>Save time and placement</button>{stop.plannedWindow || stop.plannedArrivalTime ? <button className="secondary" disabled={placementPending} onClick={() => onAction({ action: "clear-stop-schedule", runId: run.runId, stopId: stop.stopId, expectedRunVersion: run.version, expectedStopVersion: rawStop.version })}>Clear time</button> : null}</div></div>;
 }
 
 function InspectorMeta({ label, value }: { label: string; value: string }) {
@@ -2497,8 +2597,8 @@ function RunChooser({
       {allowedLanes.length > 1 || allowedLanes[0] === "collection" ? <select aria-label="Schedule lane" value={lane} onChange={(event) => setLane(event.target.value as AssignmentChoice["lane"])} disabled={pending || !targetRun}>
         {allowedLanes.map((candidate) => <option key={candidate} value={candidate}>{candidate[0].toUpperCase() + candidate.slice(1)} lane</option>)}
       </select> : <small>{allowedLanes[0][0].toUpperCase() + allowedLanes[0].slice(1)} lane</small>}
-      <label>Time <input aria-label="Schedule time" type="time" step={900} disabled={pending} value={start} onChange={(event) => setStart(event.target.value)} /></label>
-      <label>Window end <input aria-label="Schedule window end" type="time" step={900} disabled={pending} min={start || undefined} value={end} onChange={(event) => setEnd(event.target.value)} /></label>
+      <label>Time <input aria-label="Schedule time" type="time" step={900} max="23:45" disabled={pending} value={start} onChange={(event) => setStart(event.target.value)} /></label>
+      <label>Window end <input aria-label="Schedule window end" type="time" step={900} max="23:45" disabled={pending} min={start || undefined} value={end} onChange={(event) => setEnd(event.target.value)} /></label>
       {selectedRun && !selectedRun.vehicle && <small>Vehicle label unavailable; using {selectedRun.driver || "the selected run"}.</small>}
       <button onClick={() => onConfirm({ runId: targetRun, lane, start, ...(end ? { end } : {}) })} disabled={pending || !targetRun || !start}>
         {pending ? "Saving…" : label}

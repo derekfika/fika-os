@@ -104,6 +104,92 @@ test.describe.serial("Logistics desktop planner", () => {
     ).toBeTruthy();
   });
 
+  test("production planner keeps canonical timing modes and renders true window duration through resize and clear", async ({ page }) => {
+    await page.goto("/?serviceDate=" + E2E_DATE);
+    await expect(page.getByTestId("mounted-react-timeline")).toBeVisible();
+    const api = async () => (await page.request.get("/api/logistics?serviceDate=" + E2E_DATE)).json();
+    let state = await api();
+    const run = state.runs.find((item: { status: string; vehicleId?: string }) => item.status === "planned" && item.vehicleId);
+    expect(run, "E2E service date should have a governed planning run").toBeTruthy();
+    const [from, to] = state.oplocs.slice(0, 2).map((item: { id: string }) => item.id);
+    const movementId = `${E2E_PREFIX}batch5-window`;
+    const created = await page.request.post("/api/logistics", { data: { action: "save-movement", movement: { canonicalId: movementId, entityType: "Movement Request", serviceDate: E2E_DATE, type: "delivery", fromOplocId: from, toOplocId: to, items: [{ description: "Batch 5 true duration", quantity: 1, unit: "load" }], createdBy: "e2e", status: "open", version: 1, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), audit: [] } } });
+    expect(created.ok(), await created.text()).toBeTruthy();
+    const assigned = await page.request.post("/api/logistics", { data: { action: "assign", runId: run.canonicalId, expectedRunVersion: run.version, movementId } });
+    expect(assigned.ok(), await assigned.text()).toBeTruthy();
+    state = await api();
+    let stop = state.stops.find((item: { movementRequestIds?: string[] }) => item.movementRequestIds?.includes(movementId));
+    expect(stop).toBeTruthy();
+
+    const scheduleWindow = async (endTime: string) => {
+      const current = await api();
+      const currentRun = current.runs.find((item: { canonicalId: string }) => item.canonicalId === stop.runId);
+      const currentStop = current.stops.find((item: { canonicalId: string }) => item.canonicalId === stop.canonicalId);
+      const response = await page.request.post("/api/logistics", { data: { action: "schedule-stop", runId: currentRun.canonicalId, stopId: currentStop.canonicalId, plannedWindow: { startTime: "10:00", endTime }, expectedRunVersion: currentRun.version, expectedStopVersion: currentStop.version } });
+      expect(response.ok(), await response.text()).toBeTruthy();
+      await page.reload();
+      const card = page.getByTestId(`stop-${stop.canonicalId}`);
+      await expect(card).toBeVisible();
+      return card;
+    };
+    for (const [endTime, duration, width] of [["10:15", 15, 30], ["10:30", 30, 60], ["11:00", 60, 120]] as const) {
+      const card = await scheduleWindow(endTime);
+      expect(await card.boundingBox()).toMatchObject({ width });
+      expect(await card.getAttribute("aria-label")).toContain(`${duration === 60 ? "10:00 to 11:00" : `10:00 to ${endTime}`} window end`);
+    }
+
+    let card = page.getByTestId(`stop-${stop.canonicalId}`);
+    await card.click();
+    const inspector = page.getByRole("complementary", { name: "Details inspector" });
+    await inspector.getByLabel("Window end").fill("");
+    await inspector.getByRole("button", { name: "Save time and placement" }).click();
+    await expect.poll(async () => {
+      const current = await api();
+      stop = current.stops.find((item: { canonicalId: string }) => item.canonicalId === stop.canonicalId);
+      return stop?.plannedArrivalTime;
+    }).toBe("10:00");
+    expect(Object.hasOwn(stop, "plannedWindow")).toBe(false);
+    await expect.poll(async () => (await page.getByTestId(`stop-${stop.canonicalId}`).boundingBox())?.width).toBe(14);
+
+    await inspector.getByLabel("Window end").fill("10:30");
+    await inspector.getByRole("button", { name: "Save time and placement" }).click();
+    await expect.poll(async () => {
+      const current = await api();
+      stop = current.stops.find((item: { canonicalId: string }) => item.canonicalId === stop.canonicalId);
+      return stop?.plannedWindow?.endTime;
+    }).toBe("10:30");
+    expect(Object.hasOwn(stop, "plannedArrivalTime")).toBe(false);
+    card = page.getByTestId(`stop-${stop.canonicalId}`);
+    await expect.poll(async () => (await card.boundingBox())?.width).toBe(60);
+
+    const viewport = page.getByTestId("mounted-timeline-viewport");
+    const track = page.locator(`[data-lane="${stop.runId}:delivery"]`);
+    const scale = await page.getByTestId("mounted-react-timeline").evaluate((element) => Number.parseFloat(getComputedStyle(element).getPropertyValue("--timeline-quarter-hour")) / 15);
+    await viewport.evaluate((element) => { (element as HTMLElement).scrollLeft = 675 * 2 - (element as HTMLElement).clientWidth * 0.6; });
+    const handle = page.getByTestId(`resize-${stop.canonicalId}`);
+    const handleBox = await handle.boundingBox(); const trackBox = await track.boundingBox();
+    expect(handleBox).toBeTruthy(); expect(trackBox).toBeTruthy();
+    await page.mouse.move(handleBox!.x + handleBox!.width / 2, handleBox!.y + handleBox!.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(trackBox!.x + 10 * 60 + 45 * scale, trackBox!.y + 35, { steps: 10 });
+    await page.mouse.up();
+    await expect.poll(async () => {
+      const current = await api();
+      stop = current.stops.find((item: { canonicalId: string }) => item.canonicalId === stop.canonicalId);
+      return stop?.plannedWindow?.endTime;
+    }).toBe("10:45");
+    expect(stop.plannedWindow.startTime).toBe("10:00");
+
+    card = page.getByTestId(`stop-${stop.canonicalId}`);
+    await card.click();
+    await page.getByRole("complementary", { name: "Details inspector" }).getByRole("button", { name: "Clear time" }).click();
+    await expect.poll(async () => {
+      const current = await api();
+      stop = current.stops.find((item: { canonicalId: string }) => item.canonicalId === stop.canonicalId);
+      return stop?.plannedArrivalTime || stop?.plannedWindow?.startTime;
+    }).toBeUndefined();
+  });
+
   test("assigns a queue load to a run and assigns plus schedules another by drop position", async ({ page }) => {
     const initial = await (await page.request.get("/api/logistics?serviceDate=" + E2E_DATE)).json();
     const [from, to] = initial.oplocs.slice(0, 2).map((item: { id: string }) => item.id);

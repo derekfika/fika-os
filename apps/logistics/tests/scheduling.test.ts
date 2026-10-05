@@ -21,11 +21,45 @@ import {
   reconcileUncertainPlacement,
   retireConvergedPlacementAuthorities,
   resolveNextAvailableScheduleStart,
+  replaceLoadTiming,
+  replaceStopTiming,
+  validateOperationalSchedule,
+  LAST_SCHEDULABLE_MINUTE,
   settlePendingScheduleOperation,
   scheduleIntervalsOverlap,
   uncertainPlacementTimeout,
   uncertainPlacementWindowExpired,
 } from "../lib/scheduling";
+
+test("native timing replacement is mutually exclusive and drops an omitted old window end", () => {
+  const window = { canonicalId: "stop:1", plannedWindow: { startTime: "09:00", endTime: "09:30" }, version: 1 };
+  assert.deepEqual(replaceStopTiming(window, { plannedArrivalTime: "10:00" }), { canonicalId: "stop:1", version: 1, plannedArrivalTime: "10:00" });
+  const arrival = { canonicalId: "stop:1", plannedArrivalTime: "10:00", version: 1 };
+  assert.deepEqual(replaceStopTiming(arrival, { plannedWindow: { startTime: "11:00", endTime: "11:45" } }), { canonicalId: "stop:1", version: 1, plannedWindow: { startTime: "11:00", endTime: "11:45" } });
+  assert.deepEqual(replaceStopTiming(window, { plannedWindow: { startTime: "11:00" } }), { canonicalId: "stop:1", version: 1, plannedWindow: { startTime: "11:00" } });
+});
+
+test("load lane timing replacement removes omitted end without touching the other lane", () => {
+  const load = { id: "load:1", scheduledTime: "10:00", scheduledEnd: "10:45", collectionScheduledTime: "14:00", collectionScheduledEnd: "14:30", collectionRunId: "run:2" };
+  assert.deepEqual(replaceLoadTiming(load, "delivery", { start: "11:00" }), { id: "load:1", collectionScheduledTime: "14:00", collectionScheduledEnd: "14:30", collectionRunId: "run:2", scheduledTime: "11:00" });
+  assert.deepEqual(replaceLoadTiming(load, "collection", {}), { id: "load:1", scheduledTime: "10:00", scheduledEnd: "10:45", collectionRunId: "run:2" });
+});
+
+test("shared schedule bounds cover the full schedulable day with 15-minute windows", () => {
+  assert.equal(LAST_SCHEDULABLE_MINUTE, 23 * 60 + 45);
+  assert.equal(validateOperationalSchedule("00:00"), undefined);
+  assert.equal(validateOperationalSchedule("23:45"), undefined);
+  assert.equal(validateOperationalSchedule("23:46"), "Schedule times must be between 00:00 and 23:45.");
+  assert.equal(validateOperationalSchedule("24:00"), "Schedule times must be between 00:00 and 23:45.");
+  assert.equal(validateOperationalSchedule("10:00", "10:15"), undefined);
+  assert.equal(validateOperationalSchedule("10:00", "10:14"), "A scheduled window must be at least 15 minutes.");
+});
+
+test("touching windows are adjacent; ordinary collision placement keeps first-fit settlement", () => {
+  assert.equal(scheduleIntervalsOverlap({ start: "10:00", end: "10:30" }, { start: "10:30", end: "11:00" }), false);
+  assert.equal(scheduleIntervalsOverlap({ start: "10:00", end: "10:30" }, { start: "10:15", end: "11:00" }), true);
+  assert.equal(resolveNextAvailableScheduleStart("10:00", "10:30", [{ start: "10:00", end: "10:30" }]), "10:30");
+});
 
 test("native placement authority chains fresh stop and both run versions", () => {
   const decoded = decodePlacementAuthority({

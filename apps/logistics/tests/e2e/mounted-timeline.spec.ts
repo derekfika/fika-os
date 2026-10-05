@@ -2,6 +2,14 @@ import { expect, test, type Locator, type Page } from "@playwright/test";
 
 const minuteOf = (value: string) => Number(value.slice(0, 2)) * 60 + Number(value.slice(3, 5));
 
+async function setZoom(page: Page, target: number) {
+  const slider = page.getByLabel("Timeline zoom");
+  await slider.focus();
+  await slider.press("Home");
+  const steps = Math.round((target - 0.05) / 0.05);
+  for (let index = 0; index < steps; index += 1) await page.keyboard.press("ArrowRight");
+}
+
 async function dragTo(page: Page, source: Locator, target: { run: string; lane: "delivery" | "collection"; time: string }, grabOffset = 0) {
   await source.scrollIntoViewIfNeeded();
   const viewport = page.getByTestId("mounted-timeline-viewport");
@@ -62,8 +70,8 @@ async function resizeToEnd(page: Page, stopId: string, end: string, runId = "run
     const start = (await handle.getAttribute("aria-valuetext"))?.match(/^(\d\d:\d\d) start/)?.[1];
     if (!start) throw new Error("Resize start time unavailable");
     await expect(handle).toHaveAttribute("aria-valuenow", String(endMinute));
-    const liveRailWidth = await page.getByTestId(`duration-rail-${stopId}`).evaluate((element) => Number.parseFloat((element as HTMLElement).style.width));
-    expect(liveRailWidth).toBe((endMinute - minuteOf(start)) * geometry.scale);
+    const liveBlockWidth = await page.getByTestId(`stop-${stopId}`).evaluate((element) => element.getBoundingClientRect().width);
+    expect(liveBlockWidth).toBe((endMinute - minuteOf(start)) * geometry.scale);
   }
   await page.mouse.up();
   return feedback;
@@ -89,18 +97,24 @@ test("three actual runs render and the synthetic unassigned projection run stays
   await expect(page.locator('[data-lane^="projection-run:"]')).toHaveCount(0);
 });
 
-test("the full visible card is one real movement hitbox at left, centre and right", async ({ page }) => {
+test("explicit windows keep true duration geometry and arrival-only work stays a marker", async ({ page }) => {
   await page.getByLabel("Command mode").selectOption("success");
-  const card = page.getByTestId("stop-stop-haleon");
-  for (const [offset, time] of [[4, "12:00"], [68, "12:15"], [132, "12:30"]] as const) {
-    await card.scrollIntoViewIfNeeded();
-    const box = await card.boundingBox();
-    expect(box?.width).toBeGreaterThanOrEqual(136);
-    expect(await card.evaluate((element, x) => document.elementFromPoint(element.getBoundingClientRect().left + x, element.getBoundingClientRect().top + 20)?.closest("button") === element, offset)).toBe(true);
-    const preview = await dragTo(page, card, { run: "run-1", lane: "delivery", time }, offset);
-    expect(preview).toContain(time);
+  const card = page.getByTestId("stop-stop-window-30");
+  const arrival = page.getByTestId("stop-stop-haleon");
+  for (const [zoom, expectedWidth] of [[1, 60], [0.5, 30], [1.5, 90]] as const) {
+    await setZoom(page, zoom);
+    await expect.poll(async () => (await card.boundingBox())?.width).toBe(expectedWidth);
+    const cardBox = await card.boundingBox();
+    expect(cardBox).toBeTruthy();
+    expect(await card.evaluate((element) => document.elementFromPoint(element.getBoundingClientRect().right - 1, element.getBoundingClientRect().top + 20)?.closest("button") === element)).toBe(true);
+    expect(await arrival.boundingBox()).toMatchObject({ width: 14 });
   }
-  await expect(page.getByTestId("fixture-message")).toContainText("Commands: 3");
+  await page.getByRole("button", { name: "Fit day" }).click();
+  const fittedWidth = await card.boundingBox();
+  const fittedScale = await page.getByTestId("mounted-react-timeline").evaluate((element) => Number.parseFloat(getComputedStyle(element).getPropertyValue("--timeline-quarter-hour")) / 15);
+  expect(fittedWidth?.width).toBeCloseTo(30 * fittedScale, 1);
+  const preview = await dragTo(page, card, { run: "run-1", lane: "delivery", time: "09:15" }, Math.max(2, (fittedWidth?.width || 2) / 2));
+  expect(preview).toContain("09:15");
 });
 
 test("preview time is the exact 15-minute command target", async ({ page }) => {
@@ -304,19 +318,17 @@ test("explicit window remains editable in Details and exposes a visible end-resi
   await expect(page.getByTestId("fixture-message")).toContainText("10:00–10:45");
 });
 
-test("duration rail and integrated end grip align to the real window end without covering card text", async ({ page }) => {
+test("explicit-window block and integrated end grip align to the canonical end", async ({ page }) => {
   const card = page.getByTestId("stop-stop-riverside");
   const geometry = await page.evaluate(() => {
     const card = document.querySelector('[data-testid="stop-stop-riverside"]')!;
-    const rail = document.querySelector('[data-testid="duration-rail-stop-riverside"]')!;
     const grip = document.querySelector('[data-testid="resize-stop-riverside"]')!;
     const text = card.querySelector("small")!;
     const bounds = (element: Element) => { const rect = element.getBoundingClientRect(); return { left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom, width: rect.width, height: rect.height }; };
-    return { card: bounds(card), rail: bounds(rail), grip: bounds(grip), text: bounds(text), background: getComputedStyle(grip).backgroundColor };
+    return { card: bounds(card), grip: bounds(grip), text: bounds(text), background: getComputedStyle(grip).backgroundColor };
   });
-  expect(Math.abs(geometry.rail.left - geometry.card.left)).toBeLessThan(2);
-  expect(Math.abs(geometry.rail.right - geometry.card.left - 120)).toBeLessThan(2);
-  expect(Math.abs((geometry.grip.left + geometry.grip.width / 2) - geometry.rail.right)).toBeLessThan(2);
+  expect(Math.abs(geometry.card.width - 120)).toBeLessThan(2);
+  expect(Math.abs(geometry.grip.left + geometry.grip.width / 2 - geometry.card.right)).toBeLessThan(2);
   expect(geometry.grip.width).toBeLessThanOrEqual(12);
   expect(geometry.grip.top).toBeGreaterThan(geometry.text.bottom - 2);
   expect(geometry.background).not.toBe("rgb(255, 255, 255)");
@@ -338,7 +350,7 @@ test("resize handle changes only the end and shows snapped live feedback", async
   await expect(page.getByTestId("fixture-message")).toContainText("10:00–11:45");
 });
 
-test("the duration rail and end grip follow the live snapped resize preview", async ({ page }) => {
+test("the explicit-window block and end grip follow the live snapped resize preview", async ({ page }) => {
   const feedback = await resizeToEnd(page, "stop-riverside", "11:30", "run-1", "collection", true);
   expect(feedback).toBe("10:00 → 11:30 · 90 min");
   await expect(page.getByRole("button", { name: /Move Riverside, Van North, Collection, 10:00 to 11:30 window end/ })).toBeVisible();

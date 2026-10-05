@@ -5,6 +5,7 @@ import type { PlannerDay, PlannerMovementView, PlannerWorkGroup } from "../lib/p
 import { directResizeEnabled, effectivePlacement, type ConfirmedPlacement, type PendingScheduleOperation, type SchedulePosition } from "../lib/scheduling";
 import { formatTimelineMinute, schedulableTimelineRuns, snapTimelineEndMinute, snapTimelineMinute, timelineQueueDuplicatesCanonical, timelineVisualSubrows } from "../lib/react-timeline-model";
 import styles from "./mounted-react-timeline.module.css";
+import { ARRIVAL_MARKER_WIDTH_PX, timelineBlockWidth, timelineDurationMinutes } from "../lib/timeline-geometry";
 
 type Lane = "delivery" | "collection";
 export type QueueCard = { id: string; kind: "group" | "movement"; destination: string; lane: Lane; loadCount: number; workIds: string[]; collectionRequired?: boolean; draggable: boolean };
@@ -17,7 +18,6 @@ const laneName = (lane: Lane) => lane === "delivery" ? "Delivery" : "Collection"
 const addMinutes = (start: string, duration: number) => formatTimelineMinute(minutes(start) + duration);
 const hourTicks = Array.from({ length: 25 }, (_, index) => index * 60);
 const MINUTE_PX = 2;
-const CARD_MIN_WIDTH = 136;
 const ROW_BASE_HEIGHT = 78;
 const pendingLabel = (operation: PendingScheduleOperation | undefined) => operation?.state === "confirmed-response"
   ? operation.error || "Saved · syncing…"
@@ -132,7 +132,7 @@ export function MountedReactTimeline({ planner, queueItems, pendingSchedules, co
 
   const rows = useMemo(() => schedulableRuns.flatMap((run) => (["delivery", "collection"] as Lane[]).map((lane) => {
     const items = cards.filter((card) => card.runId === run.runId && card.lane === lane);
-    const subrows = timelineVisualSubrows(items.map((item) => ({ id: item.id, startMinute: minutes(item.start), durationMinutes: Math.max(item.duration, CARD_MIN_WIDTH / pxPerMinute) })));
+    const subrows = timelineVisualSubrows(items.map((item) => ({ id: item.id, startMinute: minutes(item.start), durationMinutes: timelineDurationMinutes(minutes(item.start), item.end ? minutes(item.end) : undefined) })));
     const count = subrows.size ? Math.max(...subrows.values()) + 1 : 1;
     return { run, lane, items, subrows, height: Math.max(ROW_BASE_HEIGHT, 18 + count * 70) };
   })), [schedulableRuns, cards, pxPerMinute]);
@@ -161,7 +161,7 @@ export function MountedReactTimeline({ planner, queueItems, pendingSchedules, co
     if (row.lane !== drag.card.lane) return;
     const trackBounds = rowRefs.current.get(`${row.run.runId}:${row.lane}`)?.getBoundingClientRect();
     if (!trackBounds) return;
-    if (x < Math.max(bounds.left, trackBounds.left) || x > Math.min(trackBounds.right, bounds.right + CARD_MIN_WIDTH)) return;
+    if (x < Math.max(bounds.left, trackBounds.left) || x > Math.min(trackBounds.right, bounds.right + ARRIVAL_MARKER_WIDTH_PX)) return;
     const minute = snapTimelineMinute(x, trackBounds.left, 0, drag.grabOffset, pxPerMinute, drag.card.end ? drag.card.duration : undefined);
     const start = formatTimelineMinute(minute);
     const end = drag.card.end ? addMinutes(start, drag.card.duration) : undefined;
@@ -292,17 +292,16 @@ export function MountedReactTimeline({ planner, queueItems, pendingSchedules, co
                   const isResizing = Boolean(resizeTarget && resizeTarget.stopId === card.id && activeOrigin?.card.id === card.id);
                   const visualEndMinute = isResizing && resizeTarget ? resizeTarget.endMinute : endMinute;
                   const visualDuration = visualEndMinute === undefined ? card.duration : visualEndMinute - startMinute;
-                  const width = Math.max(CARD_MIN_WIDTH, card.end ? visualDuration * pxPerMinute : CARD_MIN_WIDTH);
+                  const width = timelineBlockWidth(startMinute, visualEndMinute, pxPerMinute);
                   const isOrigin = activeOrigin?.card.id === card.id && activeOrigin.started && activeOrigin.mode === "move";
                   if (isOrigin) return <span key={card.id} aria-hidden="true" className={styles.origin} style={{ left, top: `${8 + row * 70}px`, width }} />;
                   const label = `Move ${card.destination}, ${name}, ${laneName(lane)}, ${card.start}${card.end ? ` to ${card.end} window end` : ""}, ${card.loadCount} loads`;
                   const resizable = Boolean(card.sourceRunId && card.end && endMinute !== undefined && endMinute - startMinute >= 15 && endMinute <= 1425 && startMinute < 1425 && directResizeEnabled(Boolean(card.end)));
-                  return <div className={`${styles.cardSlot} ${card.end ? styles.explicitWindow : ""}`} key={card.id} style={{ left, top: `${8 + row * 70}px`, width }}>
-                    <button type="button" className={`${styles.card} ${lane === "collection" ? styles.collection : ""} ${card.attention ? styles.attention : ""} ${card.queue && card.pending ? styles.pending : ""} ${card.locked ? styles.locked : ""}`} data-testid={card.queue ? `pending-queue-${card.id.slice("queue:".length)}` : `stop-${card.id}`} aria-label={label} aria-busy={card.pending && !card.syncing} disabled={card.locked || (card.queue && card.pending)} onPointerDown={(event) => beginCard(event, card)} onClick={() => card.sourceRunId && onStop(card.sourceRunId, card.id)}>
+                  return <div className={`${styles.cardSlot} ${card.end ? styles.explicitWindow : styles.arrivalOnly}`} key={card.id} style={{ left, top: `${8 + row * 70}px`, width }}>
+                    <button type="button" title={label} className={`${styles.card} ${lane === "collection" ? styles.collection : ""} ${card.attention ? styles.attention : ""} ${card.queue && card.pending ? styles.pending : ""} ${card.locked ? styles.locked : ""}`} data-testid={card.queue ? `pending-queue-${card.id.slice("queue:".length)}` : `stop-${card.id}`} aria-label={label} aria-busy={card.pending && !card.syncing} disabled={card.locked || (card.queue && card.pending)} onPointerDown={(event) => beginCard(event, card)} onClick={() => card.sourceRunId && onStop(card.sourceRunId, card.id)}>
                       <time>{card.start}{card.end ? `–${card.end}` : ""}</time><strong>{card.destination}</strong><small>{card.loadCount} {card.loadCount === 1 ? "load" : "loads"}{card.pendingLabel ? ` · ${card.pendingLabel}` : ""}</small>
                     </button>
                     {resizable && visualEndMinute !== undefined && <>
-                      <span className={styles.durationRail} data-testid={`duration-rail-${card.id}`} aria-hidden="true" style={{ width: `${visualDuration * pxPerMinute}px` }} />
                       <button type="button" role="slider" className={styles.resizeHandle} data-testid={`resize-${card.id}`} aria-label={`Resize ${card.destination} window end`} aria-valuemin={startMinute + 15} aria-valuemax={1425} aria-valuenow={visualEndMinute} aria-valuetext={`${card.start} start, ${formatTimelineMinute(visualEndMinute)} end, ${visualEndMinute - startMinute} minutes`} disabled={card.locked || (card.queue && card.pending)} style={{ left: `${visualDuration * pxPerMinute}px` }} onPointerDown={(event) => beginResize(event, { ...card, end: formatTimelineMinute(visualEndMinute), duration: visualDuration }, visualEndMinute)} onKeyDown={(event) => {
                       if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
                       event.preventDefault();
@@ -312,7 +311,7 @@ export function MountedReactTimeline({ planner, queueItems, pendingSchedules, co
                     </>}
                   </div>;
                 })}
-                {previewCard?.runId === run.runId && previewCard.lane === lane && <div className={styles.ghost} data-testid="mounted-drag-ghost" aria-hidden="true" style={{ left: previewLeft, top: 8, width: Math.max(CARD_MIN_WIDTH, previewCard.duration * pxPerMinute) }}><time>{previewCard.start}{previewCard.end ? `–${previewCard.end}` : ""}</time><strong>{previewCard.destination}</strong><small>{previewCard.loadCount} {previewCard.loadCount === 1 ? "load" : "loads"}</small></div>}
+                {previewCard?.runId === run.runId && previewCard.lane === lane && <div className={`${styles.ghost} ${previewCard.end ? styles.explicitWindow : styles.arrivalOnly}`} data-testid="mounted-drag-ghost" aria-hidden="true" style={{ left: previewLeft, top: 8, width: timelineBlockWidth(minutes(previewCard.start), previewCard.end ? minutes(previewCard.end) : undefined, pxPerMinute) }}><time>{previewCard.start}{previewCard.end ? `–${previewCard.end}` : ""}</time><strong>{previewCard.destination}</strong><small>{previewCard.loadCount} {previewCard.loadCount === 1 ? "load" : "loads"}</small></div>}
                 {highlighted && laneTarget && <><span className={styles.snapLine} style={{ left: previewLeft }} aria-hidden="true" /><span className={styles.timePill} style={{ left: previewLeft }} aria-hidden="true">{formatTimelineMinute(laneTarget.minute)}</span></>}
                 {highlighted && resizeTarget && <><span className={styles.snapLine} data-testid="mounted-resize-marker" style={{ left: resizeTarget.endMinute * pxPerMinute }} aria-hidden="true" /><span className={styles.timePill} data-testid="mounted-resize-time" style={{ left: resizeTarget.endMinute * pxPerMinute }} aria-live="polite">{resizeTarget.start} → {formatTimelineMinute(resizeTarget.endMinute)} · {resizeTarget.endMinute - minutes(resizeTarget.start)} min</span></>}
               </div>
