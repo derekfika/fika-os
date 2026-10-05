@@ -88,7 +88,7 @@ test('R2 already-dispatched execution remains allowed after driver revocation', 
   assert.equal((await f.post({ action: 'mark-run-ready', runId: 'r1', expectedRunVersion: 2 })).response.status, 200);
   f.records.get('fikaLogisticsDeliveryStopsV1/s1').loaded = true;
   assert.equal((await f.post({ action: 'dispatch-run', runId: 'r1', expectedRunVersion: 3 })).response.status, 200);
-  f.deactivateDriver(); f.records.get('fikaLogisticsDeliveryStopsV1/s1').status = 'completed'; f.records.get('fikaLogisticsDeliveryRunsV1/r1').returnToCpuRequired = false;
+  f.deactivateDriver(); f.records.get('fikaLogisticsDeliveryStopsV1/s1').status = 'completed'; f.records.get('fikaLogisticsDeliveryRunsV1/r1').returnToCpuRequired = false; f.records.get('fikaLogisticsJobsV1/jl1').deliveryStatus = 'delivered'; f.records.get('fikaLogisticsDeliveryLoadsV1/l1').status = 'delivered';
   assert.equal((await f.post({ action: 'complete-run', runId: 'r1', expectedRunVersion: 4 })).response.status, 200);
   assert.equal(f.records.get('fikaLogisticsDeliveryRunsV1/r1').driverLabel, 'Governed Driver');
 });

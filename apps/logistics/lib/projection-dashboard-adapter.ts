@@ -45,6 +45,7 @@ export function projectionToDashboardData(projection: LogisticsDayProjection) {
       const scheduledEnd = collection ? load.collectionScheduledEnd : load.scheduledEnd;
       loadStops.push({
         canonicalId: stopId,
+        canonicalLoadIds: load.loadIds || [load.id],
         canonicalLoadVersions: load.loadVersions || (load.version === undefined ? {} : { [load.id]: load.version }),
         canonicalJobVersions: Object.fromEntries(load.jobs.filter(job => job.version !== undefined).map(job => [job.id, job.version])),
         runId,
@@ -54,8 +55,13 @@ export function projectionToDashboardData(projection: LogisticsDayProjection) {
         requirementRefs: load.jobs.map((job) => ({ requirementId: job.id, sourceVersion: job.sourceVersion || 1, sourceDomain: job.sourceType as FulfilmentRequirement["sourceDomain"], ...(job.workstream ? { workstream: job.workstream } : {}) })),
         movementRequestIds: [],
         ...(scheduledTime ? (scheduledEnd ? { plannedWindow: { startTime: scheduledTime, endTime: scheduledEnd } } : { plannedArrivalTime: scheduledTime }) : {}),
-        loaded: Boolean(load.loaded),
-        status: load.status === "delivered" ? "completed" : "planned",
+        loaded: !collection && load.jobs.every(job => job.deliveryStatus === "loaded" || job.deliveryStatus === "delivered"),
+        loadedRequirementIds: collection ? [] : load.jobs.filter(job => job.deliveryStatus === "loaded" || job.deliveryStatus === "delivered").map(job => job.id),
+        deliveredRequirementIds: collection ? [] : load.jobs.filter(job => job.deliveryStatus === "delivered").map(job => job.id),
+        collectedRequirementIds: collection ? load.jobs.filter(job => job.collectionStatus === "collected").map(job => job.id) : [],
+        canUndoCompletion: Boolean((collection ? load.collectionExecution : load.deliveryExecution)?.completion),
+        issues: (collection ? load.collectionExecution : load.deliveryExecution)?.issues || [],
+        status: load.jobs.every(job => collection ? job.collectionStatus === "collected" : job.deliveryStatus === "delivered") ? "completed" : (collection ? load.collectionExecution : load.deliveryExecution)?.arrivedAt ? "arrived" : "planned",
         movementType: collection ? "collection" : "delivery",
         linkedStopId: `projection-stop:${collection ? "delivery" : "collection"}:${load.id}`,
         linkedOperation: collection ? "collection" : "delivery",

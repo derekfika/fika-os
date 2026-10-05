@@ -8,7 +8,7 @@ const { fixture } = createRequire(import.meta.url)("../helpers/authority-route-h
 
 async function scenario(page: Page, collection = false, merged = false) {
   await page.setViewportSize({ width: 1600, height: 1200 });
-  const f = fixture(["van1", "van2"], ["logistics.reconcile"], true);
+  const f = fixture(["van1", "van2"], ["logistics.reconcile"], true); f.requirements.length = 0;
   for (const key of [...f.records.keys()]) if (!key.startsWith("fikaLogisticsDeliveryRunsV1/")) f.records.delete(key);
   for (const run of f.records.values()) run.orderedStopIds = [];
   f.requirements.push({ canonicalId: "req:a", sourceDomain: "cpu-production", sourceEntityId: "order:a", sourceVersion: 1, serviceDate: f.date, productionLocationId: "cpu", destinationOplocId: "site", destinationLabelSnapshot: "Batch Two Site", requiredDeliveryWindow: { startTime: "10:00", endTime: "11:00" }, status: "ready_for_planning", lines: [{ displayNameSnapshot: "Lunch", quantity: 10, unit: "portion" }] });

@@ -36,6 +36,10 @@ export type StopIssue = {
 };
 export type RequirementRef = { requirementId: string; sourceVersion: number; sourceDomain?: FulfilmentRequirement["sourceDomain"]; workstream?: FulfilmentWorkstream };
 export type DeliveryStop = {
+  canonicalLoadIds?: string[];
+  canUndoCompletion?: boolean;
+  collectedRequirementIds?: string[];
+  completionSnapshot?: { status: "planned" | "arrived"; loaded?: boolean; loadedRequirementIds?: string[]; deliveredRequirementIds?: string[]; collectedRequirementIds?: string[] };
   canonicalLoadVersions?: Record<string, number>;
   canonicalJobVersions?: Record<string, number>;
   canonicalId: string;
@@ -117,6 +121,8 @@ export type LogisticsJob = {
   destinationLabelSnapshot?: string;
   requestedWindow?: { startTime: string; endTime?: string };
   productionReadiness: "pending" | "ready" | "attention";
+  deliveryStatus?: "pending" | "loaded" | "delivered";
+  deliveredAt?: string;
   collectionStatus: "awaiting" | "collected";
   contents: { description: string; quantity: number; unit: string }[];
   notes?: string;
@@ -125,6 +131,8 @@ export type LogisticsJob = {
   version: number;
   audit: { action: string; at: string; by: string; version: number }[];
 };
+
+export type LoadLegExecution = { arrivedAt?: string; issues?: StopIssue[]; completion?: { id: string; jobs: Record<string, { deliveryStatus: "pending" | "loaded" | "delivered"; collectionStatus: "awaiting" | "collected"; deliveredAt?: string; version: number }> } };
 
 export type DeliveryLoad = {
   id: string;
@@ -143,6 +151,8 @@ export type DeliveryLoad = {
   driverId?: string;
   vehicleId?: string;
   runId?: string;
+  deliveryExecution?: LoadLegExecution;
+  collectionExecution?: LoadLegExecution;
   dispatchedAt?: string;
   deliveredAt?: string;
   createdAt: string;
@@ -172,8 +182,8 @@ export type LogisticsChangeEvent = {
   relatedEntityId?: string;
 };
 
-export type LogisticsProjectionJob = Pick<LogisticsJob, "sourceVersion" | "requirementId" | "id" | "sourceType" | "sourceId" | "serviceDate" | "originOplocId" | "destinationOplocId" | "destinationLabelSnapshot" | "requestedWindow" | "productionReadiness" | "collectionStatus" | "contents" | "notes" | "workstream"> & { version?: number; totalUnits: number; assignedLoadId?: string };
-export type LogisticsProjectionLoad = Pick<DeliveryLoad, "id" | "serviceDate" | "originOplocId" | "destinationOplocId" | "destinationLabelSnapshot" | "scheduledTime" | "scheduledEnd" | "collectionRequired" | "collectionScheduledTime" | "collectionScheduledEnd" | "collectionRunId" | "loaded" | "status" | "driverId" | "vehicleId" | "runId"> & { version?: number; loadVersions?: Record<string, number>; loadIds?: string[]; jobs: Array<Pick<LogisticsJob, "sourceVersion" | "requirementId" | "version" | "id" | "sourceType" | "sourceId" | "collectionStatus" | "productionReadiness" | "contents" | "notes" | "workstream"> & { totalUnits: number }>; jobCount: number; totalUnits: number; collectedCount: number; readiness: "ready" | "attention" | "awaiting_collection" };
+export type LogisticsProjectionJob = Pick<LogisticsJob, "sourceVersion" | "requirementId" | "id" | "sourceType" | "sourceId" | "serviceDate" | "originOplocId" | "destinationOplocId" | "destinationLabelSnapshot" | "requestedWindow" | "productionReadiness" | "deliveryStatus" | "collectionStatus" | "contents" | "notes" | "workstream"> & { version?: number; totalUnits: number; assignedLoadId?: string };
+export type LogisticsProjectionLoad = Pick<DeliveryLoad, "id" | "serviceDate" | "originOplocId" | "destinationOplocId" | "destinationLabelSnapshot" | "scheduledTime" | "scheduledEnd" | "collectionRequired" | "collectionScheduledTime" | "collectionScheduledEnd" | "collectionRunId" | "loaded" | "status" | "driverId" | "vehicleId" | "runId" | "deliveryExecution" | "collectionExecution"> & { version?: number; loadVersions?: Record<string, number>; loadIds?: string[]; jobs: Array<Pick<LogisticsJob, "sourceVersion" | "requirementId" | "version" | "id" | "sourceType" | "sourceId" | "collectionStatus" | "deliveryStatus" | "productionReadiness" | "contents" | "notes" | "workstream"> & { totalUnits: number }>; jobCount: number; totalUnits: number; collectedCount: number; readiness: "ready" | "attention" | "awaiting_collection" };
 export type LogisticsProjectionRun = Pick<DeliveryRun, "canonicalId" | "status" | "driverId" | "driverLabel" | "vehicleLabel" | "vehicleId"> & Partial<Pick<DeliveryRun, "serviceDate" | "returnToCpuRequired" | "returnToCpuPending" | "returnedToCpuAt" | "returnedToCpuBy" | "orderedStopIds" | "version" | "createdAt" | "updatedAt" | "audit">>;
 export type LogisticsProjectionState = "CURRENT" | "STALE" | "PARTIAL" | "UNAVAILABLE" | "MISSING" | "VALID_EMPTY";
 export type LogisticsProjectionCompleteness = { fulfilment: "complete" | "unavailable"; cpu: "complete" | "unavailable" | "not_required"; oploc: "complete" | "unavailable" };

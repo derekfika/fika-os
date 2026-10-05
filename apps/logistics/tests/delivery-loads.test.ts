@@ -19,9 +19,9 @@ test("canonical date/origin/destination/time compatibility prevents incorrect me
 });
 test("split, independent collection and dispatch safety work at job level", () => {
   const jobs = [job("a"), job("b"), job("c")]; const load = createLoad({ serviceDate: jobs[0].serviceDate, originOplocId: "oploc:cpu", destinationOplocId: "oploc:mnk", scheduledTime: "11:30", by: "test" }); const later = createLoad({ serviceDate: jobs[0].serviceDate, originOplocId: "oploc:cpu", destinationOplocId: "oploc:mnk", scheduledTime: "14:00", by: "test" }); let assignments = jobs.map((item) => assignment(item.id, load.id));
-  assert.throws(() => assertDispatchable(load, jobs, assignments), /not been collected/);
+  assert.throws(() => assertDispatchable(load, jobs, assignments), /must be loaded/);
   const collected = setJobCollectionStatus(jobs[0], "collected", "test"); const collectedB = setJobCollectionStatus(jobs[1], "collected", "test"); assert.equal(loadSummary(load, [collected, collectedB, jobs[2]], assignments).collectedCount, 2);
   const split = removeAssignment(assignments, "c", "test"); assignments = [...split.assignments, assignment("c", later.id)]; assert.equal(loadSummary(load, [collected, collectedB, jobs[2]], assignments).jobCount, 2); assert.equal(loadSummary(later, jobs, assignments).jobCount, 1);
-  assert.doesNotThrow(() => assertDispatchable(load, [collected, collectedB], assignments));
+  assert.doesNotThrow(() => assertDispatchable(load, [{ ...collected, deliveryStatus: "loaded" }, { ...collectedB, deliveryStatus: "loaded" }], assignments));
 });
 test("assigning an already assigned job is idempotent", () => { const item = job("a"); const load = createLoad({ serviceDate: item.serviceDate, originOplocId: "oploc:cpu", destinationOplocId: "oploc:mnk", scheduledTime: "11:30", by: "test" }); const existing = [assignment(item.id, load.id)]; assert.equal(assignJob(item, load, existing, "test").assignment, existing[0]); });

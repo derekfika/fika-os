@@ -1079,7 +1079,9 @@ function RealPlanner(props: RealPlannerProps) {
     if (data?.projection && action.action === "mark-stop-loaded" && action.stopId) {
       const loadIds = projectionLoadIdsForStop(action.stopId);
       if (loadIds.length) {
-        for (const loadId of loadIds) await props.act({ action: "mark-delivery-load-loaded", loadId, loaded: action.loaded });
+        const raw = data.stops.find(stop => stop.canonicalId === action.stopId);
+        const run = data.runs.find(run => run.canonicalId === raw?.runId);
+        await props.act({ action: "mark-stop-loaded", stopId: action.stopId, runId: raw?.runId, expectedRunVersion: run?.version, loadIds, loaded: action.loaded });
         return;
       }
     }

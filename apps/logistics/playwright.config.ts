@@ -14,6 +14,7 @@ export default defineConfig({
     video: "retain-on-failure",
   },
   projects: [
+    { name: "batch3-driver-execution-chromium", use: { ...devices["Pixel 7"] }, testMatch: /driver-execution\.spec\.ts/ },
     { name: "batch2-load-integrity-chromium", use: { ...devices["Desktop Chrome"] }, testMatch: /load-integrity\.spec\.ts/ },
     { name: "batch1-authority-chromium", use: { ...devices["Desktop Chrome"] }, testMatch: /authority-drivers\.spec\.ts/ },
     { name: "golden-week", use: { ...devices["Desktop Chrome"] }, testMatch: /golden-week\.spec\.ts/ },

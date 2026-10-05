@@ -44,7 +44,10 @@ import {
   listLogisticsChanges,
   repairLegacyAssignmentServiceDates,
 } from "@/lib/store";
-import { assertLoadVersion, compatibleLoad, assertDispatchable, removeAssignment, setJobCollectionStatus } from "@/lib/delivery-loads";
+import { aggregateDelivery, assertLoadVersion, compatibleLoad, assertDispatchable, removeAssignment, setJobCollectionStatus } from "@/lib/delivery-loads";
+import { executeProjected, projectedActions } from "@/lib/projected-execution";
+import { readRunWork, assertRunReady, workOutstanding, workIssuesOpen, finaliseRun } from "@/lib/run-execution";
+import { requireGovernedDriver } from "@/lib/driver-authority";
 import { assignCanonicalJob, assertLoadAssignmentsCurrent } from "@/lib/load-assignment";
 import { CPU_PRODUCTION_LOCATION_ID, CPU_SITE_OPLOC_ID } from "../../../../shared/production-location";
 import { rebuildLogisticsProjection as materialiseRebuildLogisticsProjection, reconcileLogisticsDay as materialiseLogisticsDay, logisticsJobForRequirement } from "@/lib/logistics-materialisation";
@@ -602,7 +605,7 @@ async function handlePost(request: NextRequest) {
       projectionSequence: body.expectedRunVersion ?? body.expectedStopVersion ?? body.expectedSourceVersion,
       entityId: body.runId || body.stopId || body.movementId || body.jobId || body.loadId || body.run?.canonicalId || body.movement?.canonicalId,
     };
-    if (body.action === "reschedule-delivery-loads" && (!Array.isArray(body.loadIds) || !body.loadIds.length || body.loadIds.length > 50 || body.loadIds.some(id => typeof id !== "string" || !id) || new Set(body.loadIds).size !== body.loadIds.length)) throw new HttpError(422, "Choose 1–50 unique canonical load IDs.");
+    if ((body.action === "reschedule-delivery-loads" || body.loadIds !== undefined) && (!Array.isArray(body.loadIds) || !body.loadIds.length || body.loadIds.length > 50 || body.loadIds.some(id => typeof id !== "string" || !id) || new Set(body.loadIds).size !== body.loadIds.length)) throw new HttpError(422, "Choose 1–50 unique canonical load IDs.");
     const requirementOwnerStops = new Map<string, Promise<DeliveryStop[]>>();
     await authorizeCommand(principal, body, {
       run: getRun,
@@ -652,27 +655,20 @@ async function handlePost(request: NextRequest) {
     // logistics timeline as desktop. Resolve those display IDs to their
     // canonical delivery load instead of sending them through the legacy
     // run/stop execution branch.
-    if (body.stopId?.startsWith("projection-stop:") && ["mark-stop-loaded", "mark-subload-loaded", "mark-subload-delivered", "complete-stop", "undo-completion"].includes(body.action)) {
-      const projectionStopParts = body.stopId.split(":");
-      const loadId = projectionStopParts.length >= 3 ? projectionStopParts.slice(2).join(":") : body.stopId.slice("projection-stop:".length);
-      const result = await runTracedTransaction(async (transaction) => {
-        const loadRef = deliveryLoads().doc(loadId);
-        const loadSnap = await transaction.get(loadRef);
-        if (!loadSnap.exists) throw new HttpError(404, "Delivery load not found.");
-        const load = loadSnap.data() as import("@/lib/types").DeliveryLoad;
-        assertLoadVersion(load, body.expectedLoadVersion ?? body.expectedLoadVersions?.[load.id]);
-        await assertProjectionCurrent(load.serviceDate, transaction);
-        const loaded = body.action === "mark-stop-loaded" || body.action === "mark-subload-loaded" ? body.loaded !== false : load.loaded;
-        const status = body.action === "complete-stop" || body.action === "mark-subload-delivered" ? "delivered" as const : body.action === "undo-completion" ? "planned" as const : load.status;
-        await assertLoadAssignmentsCurrent(transaction, load);
-        const nextVersion = load.version + 1;
-        const next = { ...load, loaded, status, ...(status === "delivered" ? { deliveredAt: now } : { deliveredAt: undefined }), updatedAt: now, version: nextVersion, audit: [...load.audit, { action: body.action, at: now, by, version: nextVersion }] };
-        transaction.set(loadRef, next);
-        return next;
-      });
-      const event = await appendLogisticsChange({ serviceDate: result.serviceDate, entityType: "deliveryLoad", entityId: result.id, changeType: body.action, revision: result.version, changedAt: now, actorId });
-      await rebuildLogisticsProjection(result.serviceDate, by, event.sequence);
-      return NextResponse.json({ load: result });
+    if (body.stopId?.startsWith("projection-stop:") && projectedActions.includes(body.action)) {
+      if (body.action === "defer-collection") throw new HttpError(422, "Projected collection postponement is unavailable until A10 provides the governed cross-date workflow.");
+      const owner = body.runId ? await getRun(body.runId) : undefined;
+      if (!owner) throw new HttpError(422, "Canonical execution run is required.");
+      const requirements = await fetchRequirements(owner.serviceDate, request.headers.get("cookie") || undefined);
+      const result = await runTracedTransaction(tx => executeProjected(tx, principal, body, requirements, by, now));
+      let sequence = 0;
+      for (const job of result.changedJobs) { const event = await appendLogisticsChange({ serviceDate: job.serviceDate, entityType: "logisticsJob", entityId: job.id, changeType: body.action, revision: job.version, changedAt: now, actorId }); sequence = Math.max(sequence, event.sequence); }
+      for (const load of result.changedLoads) { const event = await appendLogisticsChange({ serviceDate: load.serviceDate, entityType: "deliveryLoad", entityId: load.id, changeType: body.action, revision: load.version, changedAt: now, actorId }); sequence = Math.max(sequence, event.sequence); }
+      for (const other of result.additionalRuns) { const event = await appendLogisticsChange({ serviceDate: other.serviceDate, entityType: "run", entityId: other.canonicalId, changeType: "issue-finalised", revision: other.version, changedAt: now, actorId }); sequence = Math.max(sequence, event.sequence); }
+      if (result.run.version !== owner.version) { const event = await appendLogisticsChange({ serviceDate: owner.serviceDate, entityType: "run", entityId: result.run.canonicalId, changeType: "execution-finalised", revision: result.run.version, changedAt: now, actorId }); sequence = Math.max(sequence, event.sequence); }
+      const projection = await materialiseRebuildLogisticsProjection(owner.serviceDate, by, sequence);
+      const stop = projectionToDashboardData(projection).stops.find(stop => stop.canonicalId === body.stopId);
+      return NextResponse.json({ run: result.run, stop, loads: result.loads, jobs: result.jobs, canonicalLoadVersions: Object.fromEntries(result.loads.map(load => [load.id, load.version])), canonicalJobVersions: Object.fromEntries(result.jobs.map(job => [job.id, job.version])) });
     }
     if (body.action === "repair-logistics-assignment-dates") {
       return NextResponse.json({ migration: await repairLegacyAssignmentServiceDates() });
@@ -708,7 +704,8 @@ async function handlePost(request: NextRequest) {
       });
       if (result.changed) {
         const event = await appendLogisticsChange({ serviceDate: job.serviceDate, entityType: "assignment", entityId: job.id, relatedEntityId: result.load.id, changeType: "job-assigned", revision: result.load.version, changedAt: now, actorId });
-        await rebuildLogisticsProjection(job.serviceDate, by, event.sequence);
+        const plannedEvent = result.plannedRun ? await appendLogisticsChange({ serviceDate: job.serviceDate, entityType: "run", entityId: result.plannedRun.canonicalId, changeType: "canonical-work-planned", revision: result.plannedRun.version, changedAt: now, actorId }) : undefined;
+        await rebuildLogisticsProjection(job.serviceDate, by, plannedEvent?.sequence || event.sequence);
       }
       return NextResponse.json(result.load);
     }
@@ -761,27 +758,14 @@ async function handlePost(request: NextRequest) {
       return NextResponse.json(body.action === "reschedule-delivery-loads" ? { ...result[0], loads: result } : result[0]);
     }
     if (body.action === "mark-delivery-load-loaded" && body.loadId) {
-      const result = await runTracedTransaction(async (transaction) => {
-        const loadRef = deliveryLoads().doc(body.loadId!);
-        const loadSnap = await transaction.get(loadRef);
-        if (!loadSnap.exists) throw new HttpError(404, "Delivery load not found.");
-        const load = loadSnap.data() as import("@/lib/types").DeliveryLoad;
-        assertLoadVersion(load, body.expectedLoadVersion ?? body.expectedLoadVersions?.[load.id]);
-        await assertProjectionCurrent(load.serviceDate, transaction);
-        await assertLoadAssignmentsCurrent(transaction, load);
-        const nextVersion = load.version + 1;
-        const loaded = body.loaded !== false;
-        transaction.update(loadRef, {
-          loaded,
-          updatedAt: now,
-          version: nextVersion,
-          audit: [...load.audit, { action: loaded ? "load-marked-loaded" : "load-marked-unloaded", at: now, by, version: nextVersion }],
-        });
-        return { ...load, loaded, updatedAt: now, version: nextVersion };
-      });
-      const event = await appendLogisticsChange({ serviceDate: result.serviceDate, entityType: "deliveryLoad", entityId: result.id, changeType: result.loaded ? "load-marked-loaded" : "load-marked-unloaded", revision: result.version, changedAt: now, actorId });
-      await rebuildLogisticsProjection(result.serviceDate, by, event.sequence);
-      return NextResponse.json(result);
+      const current = await getDeliveryLoad(body.loadId);
+      if (!current?.runId) throw new HttpError(409, "Canonical load/run authority is unavailable.");
+      const source = await fetchRequirements(current.serviceDate, request.headers.get("cookie") || undefined);
+      const result = await runTracedTransaction(tx => executeProjected(tx, principal, { ...body, action: "mark-stop-loaded", runId: current.runId, stopId: `projection-stop:delivery:${current.id}`, loadIds: body.loadIds || [current.id] }, source, by, now));
+      for (const job of result.changedJobs) await appendLogisticsChange({ serviceDate: job.serviceDate, entityType: "logisticsJob", entityId: job.id, changeType: "delivery-loaded", revision: job.version, changedAt: now, actorId });
+      const event = await appendLogisticsChange({ serviceDate: current.serviceDate, entityType: "deliveryLoad", entityId: current.id, changeType: "load-loaded", revision: result.loads[0].version, changedAt: now, actorId });
+      await rebuildLogisticsProjection(current.serviceDate, by, event.sequence);
+      return NextResponse.json(result.loads[0]);
     }
     if (body.action === "remove-job-from-load" && body.jobId) {
       const result = await runTracedTransaction(async (transaction) => {
@@ -801,10 +785,10 @@ async function handlePost(request: NextRequest) {
         const job = jobSnap.data() as import("@/lib/types").LogisticsJob;
         if (!Number.isInteger(body.expectedJobVersion)) throw new HttpError(422, "The current job version is required to remove its assignment.");
         if (job.version !== body.expectedJobVersion || body.loadId && body.loadId !== assignment.loadId) throw new HttpError(409, "Job assignment changed. Refresh planning before removal.");
-        await assertLoadAssignmentsCurrent(transaction, load);
+        const remainingJobs = (await assertLoadAssignmentsCurrent(transaction, load)).jobs.filter(job => job.id !== assignment.jobId);
         transaction.delete(assignmentSnap.docs[0].ref);
         transaction.set(jobRef, { ...job, activeLoadId: undefined, version: job.version + 1, updatedAt: now, audit: [...job.audit, { action: `job-removed:${assignment.loadId}`, at: now, by, version: job.version + 1 }] });
-        transaction.set(loadRef, { ...load, ...(loadAssignments.size <= 1 ? { status: "cancelled" } : {}), updatedAt: now, version: load.version + 1, audit: [...load.audit, { action: "job-removed", at: now, by, version: load.version + 1 }] });
+        transaction.set(loadRef, aggregateDelivery({ ...load, ...(loadAssignments.size <= 1 ? { status: "cancelled" } : {}), updatedAt: now, version: load.version + 1, audit: [...load.audit, { action: "job-removed", at: now, by, version: load.version + 1 }] }, remainingJobs));
         return removeAssignment([assignment], body.jobId!, by, now).removed;
       });
       if (result) {
@@ -814,32 +798,17 @@ async function handlePost(request: NextRequest) {
       }
       return NextResponse.json(result);
     }
-    if (body.action === "set-job-collection" && (body.job || body.jobId) && body.collectionStatus) {
-      const job = body.job || (body.jobId ? await getLogisticsJob(body.jobId) : undefined);
-      if (!job) throw new HttpError(404, "Logistics job not found.");
-      await assertProjectionCurrent(job.serviceDate);
-      const nextJob = await saveLogisticsJob(setJobCollectionStatus(job, body.collectionStatus, by, now));
-      const event = await appendLogisticsChange({ serviceDate: nextJob.serviceDate, entityType: "logisticsJob", entityId: nextJob.id, changeType: "collection-status-changed", revision: nextJob.version, changedAt: now, actorId });
-      await rebuildLogisticsProjection(nextJob.serviceDate, by, event.sequence);
-      return NextResponse.json(nextJob);
-    }
+    if (body.action === "set-job-collection") throw new HttpError(422, "Use the governed collection execution command with current stop, job and load authority.");
     if (body.action === "dispatch-delivery-load" && body.loadId) {
-      const result = await runTracedTransaction(async (transaction) => {
-        const loadRef = deliveryLoads().doc(body.loadId!);
-        const loadSnap = await transaction.get(loadRef);
-        if (!loadSnap.exists) throw new HttpError(404, "Delivery load not found.");
-        const load = loadSnap.data() as import("@/lib/types").DeliveryLoad;
+      const result = await runTracedTransaction(async tx => {
+        const load = (await tx.get(deliveryLoads().doc(body.loadId!))).data() as import("@/lib/types").DeliveryLoad | undefined;
+        if (!load) throw new HttpError(404, "Load not found.");
         assertLoadVersion(load, body.expectedLoadVersion ?? body.expectedLoadVersions?.[load.id]);
-        await assertProjectionCurrent(load.serviceDate, transaction);
-        const { jobs, assignments } = await assertLoadAssignmentsCurrent(transaction, load);
-        if (load.collectionRequired && !load.collectionScheduledTime) throw new HttpError(422, "Collection timing is required before this delivery can be dispatched.");
-        try { assertDispatchable(load, jobs, assignments); } catch (error) { throw new HttpError(422, error instanceof Error ? error.message : "Load is not ready to dispatch."); }
-        const next = { ...load, status: "dispatched" as const, dispatchedAt: now, updatedAt: now, version: load.version + 1, audit: [...load.audit, { action: "load-dispatched", at: now, by, version: load.version + 1 }] };
-        transaction.set(loadRef, next);
-        return next;
+        await assertLoadAssignmentsCurrent(tx, load);
+        const owner = load.runId ? (await tx.get(runs().doc(load.runId))).data() as DeliveryRun | undefined : undefined;
+        if (owner?.status !== "dispatched" || load.status !== "dispatched") throw new HttpError(422, "Dispatch the owning run so all departure safeguards and delivery loads change together.");
+        return load;
       });
-      const event = await appendLogisticsChange({ serviceDate: result.serviceDate, entityType: "deliveryLoad", entityId: result.id, changeType: "load-dispatched", revision: result.version, changedAt: now, actorId });
-      await rebuildLogisticsProjection(result.serviceDate, by, event.sequence);
       return NextResponse.json(result);
     }
     if (body.action === "set-collection-required" && body.groupKey && typeof body.collectionRequired === "boolean") {
@@ -997,131 +966,40 @@ async function handlePost(request: NextRequest) {
           422,
           "A current run version is required for lifecycle changes.",
         );
-      if (body.action === "confirm-returned-to-cpu") {
-        if (current.status !== "dispatched" || current.returnToCpuRequired === false || !current.returnToCpuPending)
-          throw new HttpError(422, "This run is not ready to confirm as returned to CPU.");
-        const state = await listState(current.serviceDate);
-        if (state.stops.filter((stop) => stop.runId === current.canonicalId).some((stop) => stop.status !== "completed" || (stop.issues || []).some((issue) => issue.status === "open")))
-          throw new HttpError(422, "All deliveries and required collections must be complete first.");
-      } else if (body.action === "mark-run-ready" || (body.action === "dispatch-run" && current.status === "planned")) {
-        let requirements: FulfilmentRequirement[];
-        try {
-          requirements = await fetchRequirements(
-            current.serviceDate,
-            request.headers.get("cookie") || undefined,
-          );
-        } catch (error) {
-          throw new HttpError(
-            503,
-            `Fulfilment work could not be verified: ${messageOf(error)}`,
-          );
-        }
-        const state = await listState(current.serviceDate);
-        const blockers: string[] = [];
-        if (!current.driverLabel) blockers.push("No driver assigned");
-        if (!current.orderedStopIds.length) blockers.push("No stops");
-        for (const stop of state.stops.filter(
-          (item) => item.runId === current.canonicalId,
-        )) {
-          if ((stop.issues || []).some((issue) => issue.status === "open"))
-            blockers.push(`Open issue at ${stop.locationLabelSnapshot}`);
-          for (const ref of stop.requirementRefs) {
-            const requirement = requirements.find(
-              (item) => item.canonicalId === ref.requirementId,
-            );
-            if (!requirement)
-              blockers.push(`Missing requirement ${ref.requirementId}`);
-            else if (requirement.status === "withdrawn")
-              blockers.push(`Withdrawn work at ${stop.locationLabelSnapshot}`);
-            else if (requirement.sourceVersion !== ref.sourceVersion)
-              blockers.push(
-                `Newer source version at ${stop.locationLabelSnapshot}`,
-              );
-          }
-        }
-        if (blockers.length)
-          return NextResponse.json(
-            { error: "Run is not ready", blockers },
-            { status: 422 },
-          );
-        if (body.action === "mark-run-ready") assertTransition(current.status, "ready");
-      } else if (body.action === "return-run-to-planning")
-        assertTransition(current.status, "planned");
-      else if (body.action === "dispatch-run") {
-        const state = await listState(current.serviceDate);
-        const deliveryStops = state.stops.filter(
-          (stop) => stop.runId === current.canonicalId && stop.linkedOperation !== "collection" && stop.movementType !== "collection",
-        );
-        if (deliveryStops.some((stop) => !stop.loaded))
-          throw new HttpError(422, "Every delivery must be marked loaded before dispatch.");
-        const outstandingCollection = deliveryStops.find((delivery) => {
-          if (!delivery.collectionRequired || !delivery.linkedStopId) return false;
-          const collection = state.stops.find((stop) => stop.canonicalId === delivery.linkedStopId);
-          return !collection || !collection.plannedArrivalTime && !collection.plannedWindow?.startTime;
-        });
-        if (outstandingCollection)
-          throw new HttpError(422, `Collection timing is required for ${outstandingCollection.locationLabelSnapshot} before dispatch.`);
-        assertTransition(current.status, "dispatched");
-      }
-      else {
-        const state = await listState(current.serviceDate);
-        if (
-          body.action === "complete-run" &&
-          current.returnToCpuRequired !== false &&
-          !current.returnedToCpuAt
-        )
-          throw new HttpError(422, "Confirm the return to CPU before completing this run.");
-        if (
-          state.stops
-            .filter((stop) => stop.runId === current.canonicalId)
-            .some((stop) => stop.status !== "completed")
-        )
-          throw new HttpError(
-            422,
-            "Run cannot complete while stops remain outstanding.",
-          );
-        assertTransition(current.status, "completed");
-      }
-      const nextStatus =
-        body.action === "mark-run-ready"
-          ? "ready"
-          : body.action === "return-run-to-planning"
-            ? "planned"
-          : body.action === "dispatch-run"
-              ? "dispatched"
-              : "completed";
-      const result = await runTracedTransaction(async (transaction) => {
+      const requirements = ["mark-run-ready", "dispatch-run"].includes(body.action) ? await fetchRequirements(current.serviceDate, request.headers.get("cookie") || undefined) : [];
+      const result = await runTracedTransaction(async transaction => {
         const ref = runs().doc(current.canonicalId);
         const snapshot = await transaction.get(ref);
         if (!snapshot.exists) throw new HttpError(404, "Run not found.");
         const run = snapshot.data() as DeliveryRun;
-        if (run.version !== body.expectedRunVersion)
-          throw new HttpError(
-            409,
-            "This run changed elsewhere. Refresh before changing its lifecycle.",
-          );
-        assertTransition(run.status, nextStatus);
-        const next = {
-          ...run,
-          status: nextStatus as DeliveryRun["status"],
-          ...(body.action === "confirm-returned-to-cpu" ? { returnToCpuPending: false, returnedToCpuAt: now, returnedToCpuBy: by } : {}),
-          version: run.version + 1,
-          updatedAt: now,
-          audit: [
-            ...run.audit,
-            {
-              action: `run-${body.action}`,
-              at: now,
-              by,
-              version: run.version + 1,
-            },
-          ],
-        };
+        if (run.version !== body.expectedRunVersion) throw new HttpError(409, "Run changed. Refresh lifecycle authority.");
+        const work = await readRunWork(transaction, run);
+        for (const leg of work.legs) await authorizeLoad(principal, leg.load, async id => (await transaction.get(runs().doc(id))).data() as DeliveryRun | undefined);
+        let status: DeliveryRun["status"];
+        if (["mark-run-ready", "dispatch-run"].includes(body.action)) {
+          if (!["planned", "ready"].includes(run.status)) throw new HttpError(422, "Run must be planned or ready for departure.");
+          if (!run.driverId) throw new HttpError(422, "Assign an eligible governed driver before Ready or Dispatch.");
+          try { await requireGovernedDriver(run.driverId, authorizeRun(principal, run), request.headers.get("cookie") || undefined); } catch (error) { if ((error as { status?: number }).status === 422) throw new HttpError(422, "The assigned driver is no longer eligible. Reassign an eligible driver before Ready or Dispatch."); throw error; }
+          await assertRunReady(transaction, run, work, requirements, body.action === "dispatch-run");
+          status = body.action === "dispatch-run" ? "dispatched" : "ready";
+        } else if (body.action === "return-run-to-planning") {
+          assertTransition(run.status, "planned"); status = "planned";
+        } else {
+          if (workOutstanding(work) || workIssuesOpen(work)) throw new HttpError(422, "All owned native/projected work and issues must be complete first.");
+          if (body.action === "confirm-returned-to-cpu") {
+            if (run.status !== "dispatched" || run.returnToCpuRequired === false || !run.returnToCpuPending) throw new HttpError(422, "This run is not ready to confirm returned to CPU.");
+          } else if (run.returnToCpuRequired !== false && !run.returnedToCpuAt) throw new HttpError(422, "Confirm the return to CPU first.");
+          assertTransition(run.status, "completed"); status = "completed";
+        }
+        const next = { ...run, status, ...(body.action === "confirm-returned-to-cpu" ? { returnToCpuPending: false, returnedToCpuAt: now, returnedToCpuBy: by } : {}), version: run.version + 1, updatedAt: now, audit: [...run.audit, { action: body.action, at: now, by, version: run.version + 1 }] };
+        const changedLoads: import("@/lib/types").DeliveryLoad[] = [];
+        if (body.action === "dispatch-run") for (const { load, lane } of work.legs) if (lane === "delivery") { const dispatched = { ...load, status: "dispatched" as const, dispatchedAt: now, version: load.version + 1, updatedAt: now, audit: [...load.audit, { action: "run-dispatched", at: now, by, version: load.version + 1 }] }; transaction.set(deliveryLoads().doc(load.id), dispatched); changedLoads.push(dispatched); }
         transaction.set(ref, next);
-        return next;
+        return { run: next, changedLoads };
       });
-      await recordCanonicalLogisticsChange({ serviceDate: result.serviceDate, entityType: "run", entityId: result.canonicalId, changeType: body.action, revision: result.version, actorId, by, changedAt: now });
-      return NextResponse.json(result);
+      for (const load of result.changedLoads) await appendLogisticsChange({ serviceDate: load.serviceDate, entityType: "deliveryLoad", entityId: load.id, changeType: "run-dispatched", revision: load.version, changedAt: now, actorId });
+      await recordCanonicalLogisticsChange({ serviceDate: result.run.serviceDate, entityType: "run", entityId: result.run.canonicalId, changeType: body.action, revision: result.run.version, actorId, by, changedAt: now });
+      return NextResponse.json(result.run);
     }
     if (body.action === "save-movement" && body.movement) {
       const requested = body.movement;
@@ -1231,6 +1109,7 @@ async function handlePost(request: NextRequest) {
         return loads;
       });
       for (const item of result.filter(item => item.changed)) await appendLogisticsChange({ serviceDate: target.serviceDate, entityType: "assignment", entityId: item.jobId, relatedEntityId: item.load.id, changeType: "job-assigned", revision: item.load.version, changedAt: now, actorId });
+      for (const item of result) if (item.plannedRun) await appendLogisticsChange({ serviceDate: target.serviceDate, entityType: "run", entityId: item.plannedRun.canonicalId, changeType: "canonical-work-planned", revision: item.plannedRun.version, changedAt: now, actorId });
       if (result.some(item => item.changed)) await rebuildLogisticsProjection(target.serviceDate, by);
       return NextResponse.json({ loads: result.map(item => item.load), assigned: ids.length });
     }
@@ -1847,6 +1726,7 @@ async function handlePost(request: NextRequest) {
         "mark-stop-loaded",
         "mark-subload-loaded",
         "mark-subload-delivered",
+        "mark-subload-collected",
         "defer-collection",
         "report-issue",
         "defer-stop",
@@ -1866,6 +1746,7 @@ async function handlePost(request: NextRequest) {
         body.action !== "defer-stop" &&
         body.action !== "mark-stop-loaded" &&
         body.action !== "mark-subload-loaded" &&
+        body.action !== "mark-subload-collected" &&
         body.action !== "mark-subload-delivered" &&
         body.action !== "undo-completion" &&
         body.action !== "defer-collection" &&
@@ -1900,7 +1781,6 @@ async function handlePost(request: NextRequest) {
           body.action !== "resolve-issue" &&
           body.action !== "mark-stop-loaded" &&
           body.action !== "mark-subload-loaded" &&
-          body.action !== "mark-subload-delivered" &&
           body.action !== "undo-completion" &&
           body.action !== "defer-collection" &&
           run.status !== "dispatched"
@@ -1913,6 +1793,11 @@ async function handlePost(request: NextRequest) {
           throw new HttpError(422, "Completed runs are read-only.");
         if (body.action === "defer-collection" && run.status === "completed")
           throw new HttpError(422, "Completed runs are read-only.");
+        const collectionLane = stop.linkedOperation === "collection" || stop.movementType === "collection";
+        if (["mark-stop-loaded", "mark-subload-loaded"].includes(body.action) && (collectionLane || !["planned", "ready"].includes(run.status) || stop.status === "completed")) throw new HttpError(422, "Delivery loading is allowed only before dispatch.");
+        if (body.action === "mark-subload-delivered" && (collectionLane || !stop.loaded && !stop.loadedRequirementIds?.includes(body.requirementId!))) throw new HttpError(422, "Load this delivery subload before completing it.");
+        if (body.action === "complete-stop" && !collectionLane && !stop.loaded) throw new HttpError(422, "Load the delivery before whole completion.");
+        if (body.action === "undo-completion" && !["dispatched", "completed"].includes(run.status)) throw new HttpError(422, "Undo requires a dispatched or completed run.");
         const runStopSnap = await transaction.get(
           stops().where("runId", "==", run.canonicalId),
         );
@@ -1968,16 +1853,10 @@ async function handlePost(request: NextRequest) {
           const orderedTarget = orderedTransferStops([...targetStops.filter((item) => item.canonicalId !== stop.canonicalId), moved]);
           orderedSource.forEach((item) => transaction.set(stops().doc(item.canonicalId), item));
           orderedTarget.forEach((item) => transaction.set(stops().doc(item.canonicalId), item));
-          const sourceRemaining = orderedSource.filter((item) => item.status !== "completed");
-          const sourceNext = {
-            ...run,
-            orderedStopIds: orderedSource.map((item) => item.canonicalId),
-            ...(sourceRemaining.length === 0 && run.returnToCpuRequired !== false ? { returnToCpuPending: true } : {}),
-            ...(sourceRemaining.length === 0 && run.returnToCpuRequired === false ? { status: "completed" as const } : {}),
-            version: run.version + 1,
-            updatedAt: now,
-            audit: [...run.audit, { action: "collection-postponed", at: now, by, version: run.version + 1 }],
-          };
+          const sourceWork = await readRunWork(transaction, run);
+          sourceWork.native = orderedSource;
+          const sourceFinal = finaliseRun({ ...run, orderedStopIds: orderedSource.map(item => item.canonicalId) }, sourceWork, by, now);
+          const sourceNext = { ...sourceFinal, version: run.version + 1, updatedAt: now, audit: [...run.audit, { action: "collection-postponed", at: now, by, version: run.version + 1 }] };
           const targetNext = {
             ...targetRun,
             orderedStopIds: orderedTarget.map((item) => item.canonicalId),
@@ -2000,6 +1879,7 @@ async function handlePost(request: NextRequest) {
           nextStop = {
             ...stop,
             loaded: body.loaded !== false,
+            loadedRequirementIds: body.loaded === false ? [] : stop.requirementRefs.map(ref => ref.requirementId),
             version: stop.version + 1,
             updatedAt: now,
             audit: [
@@ -2043,6 +1923,15 @@ async function handlePost(request: NextRequest) {
           };
           if (nextStop.status === "completed") nextRun = { ...run, version: run.version + 1, updatedAt: now, audit: [...run.audit, { action: "stop-completed", at: now, by, version: run.version + 1 }] };
         }
+        if (body.action === "mark-subload-collected") {
+          if (stop.linkedOperation !== "collection" && stop.movementType !== "collection") throw new HttpError(422, "Only collection subloads can be collected.");
+          if (!body.requirementId || !stop.requirementRefs.some(ref => ref.requirementId === body.requirementId)) throw new HttpError(422, "Subload is not attached to this collection.");
+          const ids = [...new Set([...(stop.collectedRequirementIds || []), body.requirementId])];
+          nextStop = { ...stop, collectedRequirementIds: ids, status: ids.length === stop.requirementRefs.length ? "completed" : stop.status, version: stop.version + 1, updatedAt: now, audit: [...stop.audit, { action: "subload-collected", at: now, by, version: stop.version + 1 }] };
+        }
+        if (["mark-subload-delivered", "mark-subload-collected"].includes(body.action) && nextStop.status === "completed" && stop.status !== "completed") {
+          nextStop.completionSnapshot = { status: stop.status === "arrived" ? "arrived" : "planned", loaded: stop.loaded === true, loadedRequirementIds: stop.loadedRequirementIds || [], deliveredRequirementIds: stop.deliveredRequirementIds || [], collectedRequirementIds: stop.collectedRequirementIds || [] };
+        }
         if (body.action === "arrive-stop") {
           if (stop.status !== "planned")
             throw new HttpError(
@@ -2076,7 +1965,9 @@ async function handlePost(request: NextRequest) {
           nextStop = {
             ...stop,
             status: "completed",
+            ...(collectionLane ? { collectedRequirementIds: stop.requirementRefs.map(ref => ref.requirementId) } : { deliveredRequirementIds: stop.requirementRefs.map(ref => ref.requirementId) }),
             completedFromStatus: stop.status === "arrived" ? "arrived" : "planned",
+            completionSnapshot: { status: stop.status === "arrived" ? "arrived" : "planned", loaded: stop.loaded === true, loadedRequirementIds: stop.loadedRequirementIds || [], deliveredRequirementIds: stop.deliveredRequirementIds || [], collectedRequirementIds: stop.collectedRequirementIds || [] },
             version: stop.version + 1,
             updatedAt: now,
             audit: [
@@ -2089,32 +1980,6 @@ async function handlePost(request: NextRequest) {
               },
             ],
           };
-          const remaining = allStops.filter(
-            (item) =>
-              item.canonicalId !== stop.canonicalId &&
-              item.status !== "completed",
-          );
-          if (!remaining.length) {
-            const hasOpenIssues = allStops.some((item) => (item.issues || []).some((issue) => issue.status === "open"));
-            if (run.returnToCpuRequired !== false && !hasOpenIssues) {
-              nextRun = {
-                ...run,
-                returnToCpuPending: true,
-                version: run.version + 1,
-                updatedAt: now,
-                audit: [...run.audit, { action: "run-ready-to-return-to-cpu", at: now, by, version: run.version + 1 }],
-              };
-            } else {
-              assertTransition(run.status, "completed");
-              nextRun = {
-                ...run,
-                status: "completed",
-                version: run.version + 1,
-                updatedAt: now,
-                audit: [...run.audit, { action: "run-completed", at: now, by, version: run.version + 1 }],
-              };
-            }
-          }
         }
         if (body.action === "undo-completion") {
           if (stop.status !== "completed")
@@ -2122,7 +1987,9 @@ async function handlePost(request: NextRequest) {
           const { completedFromStatus, ...rest } = stop;
           nextStop = {
             ...rest,
-            status: restoredStopStatus({ completedFromStatus }),
+            ...stop.completionSnapshot,
+            completionSnapshot: undefined,
+            status: stop.completionSnapshot?.status || restoredStopStatus({ completedFromStatus }),
             version: stop.version + 1,
             updatedAt: now,
             audit: [
@@ -2261,6 +2128,12 @@ async function handlePost(request: NextRequest) {
               },
             ],
           };
+        }
+        if (["complete-stop", "mark-subload-delivered", "mark-subload-collected", "undo-completion", "resolve-issue", "report-issue"].includes(body.action)) {
+          const work = await readRunWork(transaction, run);
+          work.native = work.native.map(item => item.canonicalId === stop.canonicalId ? nextStop : item);
+          // Recompute from the original run to avoid double version increments.
+          nextRun = finaliseRun(run, work, by, now, body.action === "undo-completion");
         }
         transaction.set(stopRef, nextStop);
         if (nextRun.version === run.version)

@@ -59,7 +59,7 @@ export function loadSummary(load: DeliveryLoad, jobs: LogisticsJob[], assignment
   const collected = childJobs.filter((job) => job.collectionStatus === "collected").length;
   const portions = childJobs.reduce((sum, job) => sum + job.contents.reduce((total, item) => total + item.quantity, 0), 0);
   const warnings = childJobs.filter((job) => job.productionReadiness !== "ready").length;
-  return { jobCount: childJobs.length, totalUnits: portions, collectedCount: collected, collectionTotal: childJobs.length, productionWarnings: warnings, readyToDispatch: childJobs.length > 0 && collected === childJobs.length && warnings === 0 };
+  return { jobCount: childJobs.length, totalUnits: portions, collectedCount: collected, collectionTotal: childJobs.length, productionWarnings: warnings, readyToDispatch: childJobs.length > 0 && childJobs.every(job => job.deliveryStatus === "loaded" || job.deliveryStatus === "delivered") && warnings === 0 };
 }
 
 export function setJobCollectionStatus(job: LogisticsJob, status: LogisticsJob["collectionStatus"], by: string, now = new Date().toISOString()): LogisticsJob {
@@ -73,6 +73,11 @@ export function assertDispatchable(load: DeliveryLoad, jobs: LogisticsJob[], ass
   if (assignments.some(a => a.loadId === load.id && !jobs.some(j => j.id === a.jobId && compatibleLoad(j, load)))) throw new Error("Load assignment no longer agrees with current source truth.");
   const summary = loadSummary(load, jobs, assignments);
   if (!summary.jobCount) throw new Error("An empty delivery load cannot be dispatched.");
-  if (summary.collectedCount !== summary.collectionTotal) throw new Error(`${summary.collectionTotal - summary.collectedCount} job(s) in this load have not been collected.`);
+  if (members.some(member => !jobs.some(job => job.id === member.jobId && (job.deliveryStatus === "loaded" || job.deliveryStatus === "delivered")))) throw new Error("Every delivery job must be loaded before dispatch.");
   if (summary.productionWarnings) throw new Error(`${summary.productionWarnings} job(s) are not production-ready.`);
+}
+
+export function aggregateDelivery(load: DeliveryLoad, jobs: LogisticsJob[]): DeliveryLoad {
+  if (load.status === "cancelled") return { ...load, loaded: false };
+  return { ...load, loaded: jobs.length > 0 && jobs.every(job => job.deliveryStatus === "loaded" || job.deliveryStatus === "delivered"), status: (jobs.length > 0 && jobs.every(job => job.deliveryStatus === "delivered")) ? "delivered" : load.status === "delivered" ? load.dispatchedAt ? "dispatched" : "planned" : load.status, deliveredAt: (jobs.length > 0 && jobs.every(job => job.deliveryStatus === "delivered")) ? load.deliveredAt || jobs.map(job => job.deliveredAt || "").sort().at(-1) : undefined };
 }

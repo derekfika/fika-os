@@ -18,7 +18,7 @@ import {
 } from "./store";
 import { fetchOplocs, fetchRequirements } from "./upstream";
 import { db } from "./firebase";
-import { compatibleLoad } from "./delivery-loads";
+import { aggregateDelivery, compatibleLoad } from "./delivery-loads";
 import type { DeliveryLoad, DeliveryRun, DeliveryStop, LogisticsJob } from "./types";
 
 export function activeLogisticsRequirements(requirements: FulfilmentRequirement[]) {
@@ -54,6 +54,8 @@ export function logisticsJobForRequirement(
     destinationLabelSnapshot: requirement.destinationLabelSnapshot,
     ...(requirement.requiredDeliveryWindow ? { requestedWindow: requirement.requiredDeliveryWindow } : requirement.readyAt ? { requestedWindow: { startTime: new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/London", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(new Date(requirement.readyAt)) } } : {}),
     productionReadiness: readiness,
+    deliveryStatus: prior?.deliveryStatus || "pending",
+    ...(prior?.deliveredAt ? { deliveredAt: prior.deliveredAt } : {}),
     collectionStatus: prior?.collectionStatus || "awaiting" as const,
     ...(prior?.notes ? { notes: prior.notes } : {}),
     contents: requirement.lines.map((line) => ({ description: line.displayNameSnapshot, quantity: line.quantity, unit: line.unit })),
@@ -187,14 +189,15 @@ export async function reconcileRequirementJob(id: string, requirement: Fulfilmen
     if (prior && requirement && (prior.sourceVersion || 0) > requirement.sourceVersion) return undefined;
     const next: LogisticsJob = requirement ? logisticsJobForRequirement(requirement, prior, by, now) : { ...prior!, sourceStatus: "withdrawn", updatedAt: now, version: prior!.version + 1, audit: [...prior!.audit, { action: "reconciled-job-withdrawn", at: now, by, version: prior!.version + 1 }] };
     const assignments = await tx.get(logisticsAssignments().where("jobId", "==", id));
-    const invalid: Array<{ doc: import("firebase-admin/firestore").QueryDocumentSnapshot; load?: DeliveryLoad; members?: import("firebase-admin/firestore").QuerySnapshot }> = [];
+    const invalid: Array<{ doc: import("firebase-admin/firestore").QueryDocumentSnapshot; load?: DeliveryLoad; members?: import("firebase-admin/firestore").QuerySnapshot; remainingJobs?: LogisticsJob[] }> = [];
     for (const doc of assignments.docs) {
       const loadId = doc.data().loadId;
       const loadSnapshot = await tx.get(deliveryLoads().doc(loadId));
       const load = loadSnapshot.exists ? loadSnapshot.data() as DeliveryLoad : undefined;
       if (!load || !compatibleLoad(next, load)) {
         const members = load ? await tx.get(logisticsAssignments().where("loadId", "==", load.id)) : undefined;
-        invalid.push({ doc, load, members });
+        const remainingJobs = members ? (await Promise.all(members.docs.filter(member => member.data().jobId !== id).map(member => tx.get(logisticsJobs().doc(member.data().jobId))))).filter(snapshot => snapshot.exists).map(snapshot => snapshot.data() as LogisticsJob) : [];
+        invalid.push({ doc, load, members, remainingJobs });
       }
     }
     const requirementId = requirement?.canonicalId || prior?.requirementId;
@@ -236,9 +239,9 @@ export async function reconcileRequirementJob(id: string, requirement: Fulfilmen
       next.audit.push({ action: `source-assignment-invalidated:${doc.data().loadId}`, at: now, by, version: next.version });
     }
     // Aggregate removals by load: duplicate documents all leave in this commit.
-    for (const { load, members } of new Map(invalid.filter(item => item.load).map(item => [item.load!.id, item])).values()) {
+    for (const { load, members, remainingJobs } of new Map(invalid.filter(item => item.load).map(item => [item.load!.id, item])).values()) {
       const remaining = members!.docs.filter(member => !invalid.some(item => item.doc.ref.path === member.ref.path));
-      tx.set(deliveryLoads().doc(load!.id), { ...load!, ...(!remaining.length ? { status: "cancelled" } : {}), updatedAt: now, version: load!.version + 1, audit: [...load!.audit, { action: "source-assignment-invalidated", at: now, by, version: load!.version + 1 }] });
+      tx.set(deliveryLoads().doc(load!.id), aggregateDelivery({ ...load!, ...(!remaining.length ? { status: "cancelled" } : {}), updatedAt: now, version: load!.version + 1, audit: [...load!.audit, { action: "source-assignment-invalidated", at: now, by, version: load!.version + 1 }] }, remainingJobs || []));
     }
     if (invalid.length || next.sourceStatus === "withdrawn") delete next.activeLoadId;
     tx.set(ref, next);

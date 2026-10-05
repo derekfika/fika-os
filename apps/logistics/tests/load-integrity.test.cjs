@@ -3,11 +3,12 @@ const test = require('node:test');
 const path = require('node:path');
 const { fixture } = require('./helpers/authority-route-harness.cjs');
 function setup() {
-  const f = fixture(['van1', 'van2'], ['logistics.reconcile'], true);
+  const f = fixture(['van1', 'van2'], ['logistics.reconcile'], true); f.requirements.length = 0;
   for (const key of [...f.records.keys()]) if (!key.startsWith('fikaLogisticsDeliveryRunsV1/')) f.records.delete(key);
   for (const run of f.records.values()) run.orderedStopIds = [];
   return f;
 }
+function executionAuthority(f) { return { runId: 'r1', expectedRunVersion: f.records.get('fikaLogisticsDeliveryRunsV1/r1').version, expectedJobVersions: Object.fromEntries(jobs(f).map(job => [job.id, job.version])) }; }
 function requirement(f, id = 'a', overrides = {}) {
   return { canonicalId: 'req:' + id, sourceDomain: 'cpu-production', sourceEntityId: 'order:' + id, sourceVersion: 1, sourceContentHash: 'hash:' + id, serviceDate: f.date, productionLocationId: 'cpu', destinationOplocId: 'site', destinationLabelSnapshot: 'Site', requiredDeliveryWindow: { startTime: '10:00', endTime: '11:00' }, lines: [{ displayNameSnapshot: 'Lunch', quantity: 10, unit: 'portion' }], status: 'ready_for_planning', ...overrides };
 }
@@ -17,7 +18,7 @@ const loads = f => values(f, 'fikaLogisticsDeliveryLoadsV1');
 const assignments = f => values(f, 'fikaLogisticsAssignmentsV1');
 async function reconcile(f) { return f.materialisation.reconcileLogisticsDay(f.date, 'Operator'); }
 async function assign(f, id = 'logistics-job:req:a', extra = {}) {
-  return f.post({ action: 'assign-job-to-load', jobId: id, targetRunId: 'r1', scheduledTime: '10:30', scheduledEnd: '11:30', expectedJobVersion: jobs(f).find(j => j.id === id)?.version, expectedLoadVersions: Object.fromEntries(loads(f).map(l => [l.id, l.version])), ...extra });
+  return f.post({ ...executionAuthority(f), action: 'assign-job-to-load', jobId: id, targetRunId: 'r1', scheduledTime: '10:30', scheduledEnd: '11:30', expectedJobVersion: jobs(f).find(j => j.id === id)?.version, expectedLoadVersions: Object.fromEntries(loads(f).map(l => [l.id, l.version])), ...extra });
 }
 async function assigned(overrides = {}) {
   const f = setup(); f.requirements.push(requirement(f, 'a', overrides)); await reconcile(f);
@@ -40,7 +41,7 @@ for (const [window, arrival, expected] of [
 test('assignment and rescheduling keep source window separate from operator duration', async () => {
   const f = await assigned(); const window = structuredClone(jobs(f)[0].requestedWindow); const load = loads(f)[0];
   assert.equal(load.scheduledEnd, '11:30');
-  const result = await f.post({ action: 'reschedule-delivery-load', loadId: load.id, expectedLoadVersion: load.version, scheduledTime: '10:45', scheduledEnd: '12:00', targetRunId: 'r1' });
+  const result = await f.post({ ...executionAuthority(f), action: 'reschedule-delivery-load', loadId: load.id, expectedLoadVersion: load.version, scheduledTime: '10:45', scheduledEnd: '12:00', targetRunId: 'r1' });
   assert.equal(result.response.status, 200, JSON.stringify(result.body)); assert.deepEqual(jobs(f)[0].requestedWindow, window); assert.equal(loads(f)[0].scheduledEnd, '12:00');
 });
 for (const window of [{ startTime: '09:00', endTime: '12:00' }, { startTime: '10:15', endTime: '10:45' }]) test('compatible broadened/narrowed amendment preserves load schedule ' + JSON.stringify(window), async () => {
@@ -96,27 +97,27 @@ test('concurrent same-job assignment to two runs commits one active assignment',
 });
 for (const action of ['mark-delivery-load-loaded', 'dispatch-delivery-load', 'reschedule-delivery-load', 'remove-job-from-load', 'mark-stop-loaded']) test('operator stale version fails closed: ' + action, async () => {
   const f = await assigned(); const load = loads(f)[0]; const before = structuredClone([...f.records]);
-  const result = await f.post({ action, loadId: load.id, jobId: jobs(f)[0].id, stopId: action === 'mark-stop-loaded' ? 'projection-stop:delivery:' + load.id : undefined, expectedLoadVersion: 0, scheduledTime: '10:45' }); assert.equal(result.response.status, 409, JSON.stringify(result.body)); assert.deepEqual([...f.records], before);
+  const result = await f.post({ ...executionAuthority(f), action, loadId: load.id, jobId: jobs(f)[0].id, stopId: action === 'mark-stop-loaded' ? 'projection-stop:delivery:' + load.id : undefined, expectedLoadVersion: 0, scheduledTime: '10:45' }); assert.equal(result.response.status, 409, JSON.stringify(result.body)); assert.deepEqual([...f.records], before);
 });
 test('current load version succeeds once; missing token fails', async () => {
-  const f = await assigned(); const load = loads(f)[0]; assert.equal((await f.post({ action: 'mark-delivery-load-loaded', loadId: load.id })).response.status, 422); const result = await f.post({ action: 'mark-delivery-load-loaded', loadId: load.id, expectedLoadVersion: load.version }); assert.equal(result.response.status, 200); assert.equal(loads(f)[0].version, load.version + 1);
+  const f = await assigned(); const load = loads(f)[0]; assert.equal((await f.post({ ...executionAuthority(f), action: 'mark-delivery-load-loaded', loadId: load.id })).response.status, 422); const result = await f.post({ ...executionAuthority(f), action: 'mark-delivery-load-loaded', loadId: load.id, expectedLoadVersion: load.version }); assert.equal(result.response.status, 200); assert.equal(loads(f)[0].version, load.version + 1);
 });
 test('stale removal cannot remove a newer assignment', async () => {
-  const f = await assigned(); const old = loads(f)[0]; await assign(f, undefined, { targetRunId: 'r2' }); const before = structuredClone(assignments(f)); const result = await f.post({ action: 'remove-job-from-load', jobId: jobs(f)[0].id, expectedJobVersion: 2, expectedLoadVersion: 1 }); assert.equal(result.response.status, 409); assert.deepEqual(assignments(f), before);
+  const f = await assigned(); const old = loads(f)[0]; await assign(f, undefined, { targetRunId: 'r2' }); const before = structuredClone(assignments(f)); const result = await f.post({ ...executionAuthority(f), action: 'remove-job-from-load', jobId: jobs(f)[0].id, expectedJobVersion: 2, expectedLoadVersion: 1 }); assert.equal(result.response.status, 409); assert.deepEqual(assignments(f), before);
 });
 test('inconsistent vehicle ownership and unauthorized collection owner are rejected', async () => {
-  const f = await assigned(); const load = loads(f)[0]; f.records.get('fikaLogisticsDeliveryLoadsV1/' + load.id).vehicleId = 'van2'; assert.equal((await f.post({ action: 'mark-delivery-load-loaded', loadId: load.id, expectedLoadVersion: load.version })).response.status, 409);
-  f.records.get('fikaLogisticsDeliveryLoadsV1/' + load.id).vehicleId = 'van1'; f.principal.permittedVehicleIds = ['van1']; const before = f.writes; assert.equal((await f.post({ action: 'reschedule-delivery-load', loadId: load.id, lane: 'collection', targetRunId: 'r2', scheduledTime: '14:00', expectedLoadVersion: load.version })).response.status, 403); assert.equal(f.writes, before);
+  const f = await assigned(); const load = loads(f)[0]; f.records.get('fikaLogisticsDeliveryLoadsV1/' + load.id).vehicleId = 'van2'; assert.equal((await f.post({ ...executionAuthority(f), action: 'mark-delivery-load-loaded', loadId: load.id, expectedLoadVersion: load.version })).response.status, 409);
+  f.records.get('fikaLogisticsDeliveryLoadsV1/' + load.id).vehicleId = 'van1'; f.principal.permittedVehicleIds = ['van1']; const before = f.writes; assert.equal((await f.post({ ...executionAuthority(f), action: 'reschedule-delivery-load', loadId: load.id, lane: 'collection', targetRunId: 'r2', scheduledTime: '14:00', expectedLoadVersion: load.version })).response.status, 403); assert.equal(f.writes, before);
 });
 test('collection schedule owns its run and duration independently; delivery ownership and source remain intact', async () => {
   const f = await assigned(); const load = loads(f)[0]; const source = jobs(f)[0].requestedWindow;
-  const result = await f.post({ action: 'reschedule-delivery-load', loadId: load.id, lane: 'collection', targetRunId: 'r2', scheduledTime: '14:00', scheduledEnd: '14:45', expectedLoadVersion: load.version }); assert.equal(result.response.status, 200, JSON.stringify(result.body)); const next = loads(f)[0]; assert.equal(result.body.runId, 'r1'); assert.equal(next.collectionRunId, 'r2'); assert.equal(next.vehicleId, 'van1'); assert.equal(next.collectionRequired, true); assert.equal(next.collectionScheduledEnd, '14:45'); assert.deepEqual(jobs(f)[0].requestedWindow, source);
+  const result = await f.post({ ...executionAuthority(f), action: 'reschedule-delivery-load', loadId: load.id, lane: 'collection', targetRunId: 'r2', scheduledTime: '14:00', scheduledEnd: '14:45', expectedLoadVersion: load.version }); assert.equal(result.response.status, 200, JSON.stringify(result.body)); const next = loads(f)[0]; assert.equal(result.body.runId, 'r1'); assert.equal(next.collectionRunId, 'r2'); assert.equal(next.vehicleId, 'van1'); assert.equal(next.collectionRequired, true); assert.equal(next.collectionScheduledEnd, '14:45'); assert.deepEqual(jobs(f)[0].requestedWindow, source);
 });
 test('native assign and assign-group create the same canonical load and assignment as projection delivery', async () => {
   const states = [];
   for (const action of ['assign-job-to-load', 'assign', 'assign-group']) {
     const f = setup(); f.requirements.push(requirement(f)); await reconcile(f);
-    const result = action === 'assign-job-to-load' ? await assign(f, undefined, { collectionRequired: true }) : await f.post({ action, runId: 'r1', requirementId: action === 'assign' ? 'req:a' : undefined, requirementIds: action === 'assign-group' ? ['req:a'] : undefined, expectedSourceVersion: 1, expectedSourceVersions: { 'req:a': 1 }, expectedRunVersion: 1, plannedWindow: { startTime: '10:30', endTime: '11:30' }, collectionRequired: true });
+    const result = action === 'assign-job-to-load' ? await assign(f, undefined, { collectionRequired: true }) : await f.post({ ...executionAuthority(f), action, runId: 'r1', requirementId: action === 'assign' ? 'req:a' : undefined, requirementIds: action === 'assign-group' ? ['req:a'] : undefined, expectedSourceVersion: 1, expectedSourceVersions: { 'req:a': 1 }, expectedRunVersion: 1, plannedWindow: { startTime: '10:30', endTime: '11:30' }, collectionRequired: true });
     assert.equal(result.response.status, 200, JSON.stringify(result.body)); const load = loads(f)[0]; const projection = (await f.rebuild()).deliveryLoads[0];
     states.push({ id: load.id, runId: load.runId, vehicleId: load.vehicleId, collectionRunId: load.collectionRunId, collectionRequired: load.collectionRequired, time: load.scheduledTime, end: load.scheduledEnd, version: load.version, assignments: assignments(f).map(a => [a.jobId, a.loadId]), projection: [projection.runId, projection.jobCount, projection.scheduledTime, projection.scheduledEnd] });
   }
@@ -124,21 +125,21 @@ test('native assign and assign-group create the same canonical load and assignme
 });
 test('native group combines two compatible jobs once without duplicate assignments', async () => {
   const f = setup(); f.requirements.push(requirement(f), requirement(f, 'b')); await reconcile(f);
-  const result = await f.post({ action: 'assign-group', runId: 'r1', requirementIds: ['req:a', 'req:b'], expectedSourceVersions: { 'req:a': 1, 'req:b': 1 }, expectedRunVersion: 1, plannedArrivalTime: '10:30' }); assert.equal(result.response.status, 200, JSON.stringify(result.body)); assert.equal(loads(f).length, 1); assert.equal(assignments(f).length, 2); assert.equal((await f.rebuild()).deliveryLoads[0].jobCount, 2);
+  const result = await f.post({ ...executionAuthority(f), action: 'assign-group', runId: 'r1', requirementIds: ['req:a', 'req:b'], expectedSourceVersions: { 'req:a': 1, 'req:b': 1 }, expectedRunVersion: 1, plannedArrivalTime: '10:30' }); assert.equal(result.response.status, 200, JSON.stringify(result.body)); assert.equal(loads(f).length, 1); assert.equal(assignments(f).length, 2); assert.equal((await f.rebuild()).deliveryLoads[0].jobCount, 2);
 });
 test('withdrawal also removes retained native delivery and linked collection projection stops', async () => {
   const f = await assigned(); f.seed('fikaLogisticsDeliveryStopsV1', 'legacy', { canonicalId: 'legacy', runId: 'r1', sequence: 1, locationOplocId: 'site', requirementRefs: [{ requirementId: 'req:a', sourceVersion: 1 }], movementRequestIds: [], linkedStopId: 'legacy-collection', status: 'planned', plannedArrivalTime: '10:30', version: 1, audit: [] }); f.seed('fikaLogisticsDeliveryStopsV1', 'legacy-collection', { canonicalId: 'legacy-collection', runId: 'r2', sequence: 1, requirementRefs: [], movementRequestIds: [], status: 'planned', version: 1, audit: [] });
   Object.assign(f.requirements[0], { status: 'withdrawn', sourceVersion: 2 }); const result = await reconcile(f); assert.equal(result.projection.stops.length, 0); assert.equal(values(f, 'fikaLogisticsDeliveryRunsV1').find(r => r.canonicalId === 'r1').version, 2);
 });
 test('old cancelled source assignments cannot execute even with a fresh load version', async () => {
-  const f = await assigned(); Object.assign(f.requirements[0], { status: 'withdrawn', sourceVersion: 2 }); await reconcile(f); const load = loads(f)[0]; assert.equal((await f.post({ action: 'mark-stop-loaded', stopId: 'projection-stop:delivery:' + load.id, expectedLoadVersion: load.version })).response.status, 409);
+  const f = await assigned(); Object.assign(f.requirements[0], { status: 'withdrawn', sourceVersion: 2 }); await reconcile(f); const load = loads(f)[0]; assert.equal((await f.post({ ...executionAuthority(f), action: 'mark-stop-loaded', stopId: 'projection-stop:delivery:' + load.id, expectedLoadVersion: load.version })).response.status, 409);
 });
 test('republishing after withdrawal creates a new load incarnation and preserves cancelled history', async () => {
   const f = await assigned(); const old = loads(f)[0]; Object.assign(f.requirements[0], { status: 'withdrawn', sourceVersion: 2 }); await reconcile(f);
   Object.assign(f.requirements[0], { status: 'ready_for_planning', sourceVersion: 3 }); await reconcile(f); const result = await assign(f); assert.equal(result.response.status, 200, JSON.stringify(result.body)); assert.equal(loads(f).length, 2); assert.equal(loads(f).find(l => l.id === old.id).status, 'cancelled'); assert.notEqual(assignments(f)[0].loadId, old.id);
 });
 test('a rescheduled load keeps its ID; adding at its old time never overwrites it', async () => {
-  const f = await assigned(); const old = loads(f)[0]; await f.post({ action: 'reschedule-delivery-load', loadId: old.id, scheduledTime: '10:45', scheduledEnd: '11:45', expectedLoadVersion: old.version });
+  const f = await assigned(); const old = loads(f)[0]; await f.post({ ...executionAuthority(f), action: 'reschedule-delivery-load', loadId: old.id, scheduledTime: '10:45', scheduledEnd: '11:45', expectedLoadVersion: old.version });
   f.requirements.push(requirement(f, 'b')); await reconcile(f); const result = await assign(f, 'logistics-job:req:b'); assert.equal(result.response.status, 200, JSON.stringify(result.body)); assert.equal(loads(f).find(l => l.id === old.id).scheduledTime, '10:45'); assert.equal(loads(f).length, 2);
 });
 test('reusing a load needs its current observed version and increments it once', async () => {
@@ -151,7 +152,7 @@ test('source date incompatibility invalidates assignment without rewriting sourc
   await f.materialisation.reconcileRequirementJob(jobs(f)[0].id, req, 'Operator', '2099-01-05T12:00:00Z'); assert.equal(assignments(f).length, 0); assert.equal(loads(f)[0].status, 'cancelled'); assert.deepEqual(jobs(f)[0].requestedWindow, req.requiredDeliveryWindow);
 });
 test('ordinary planning and reconciliation queries stay constrained by date or known relationships', async () => {
-  const f = await assigned(); const load = loads(f)[0]; await f.post({ action: 'reschedule-delivery-load', loadId: load.id, lane: 'collection', targetRunId: 'r2', scheduledTime: '14:00', expectedLoadVersion: load.version });
+  const f = await assigned(); const load = loads(f)[0]; await f.post({ ...executionAuthority(f), action: 'reschedule-delivery-load', loadId: load.id, lane: 'collection', targetRunId: 'r2', scheduledTime: '14:00', expectedLoadVersion: load.version });
   Object.assign(f.requirements[0], { sourceVersion: 2, status: 'withdrawn' }); await reconcile(f); assert(f.queries.length > 0); assert(f.queries.every(query => query.filters.length > 0), JSON.stringify(f.queries));
 });
 test('projection retains independent origin, duration and collection ownership with per-load versions', () => {
@@ -161,10 +162,10 @@ test('projection retains independent origin, duration and collection ownership w
   const jobRecords = loadRecords.map(l => ({ ...l, id: 'j:' + l.id, sourceType: 'cpu-production', sourceId: l.id, contents: [], audit: [] })); const projection = buildLogisticsDayProjection({ serviceDate: f.date, loads: loadRecords, jobs: jobRecords, assignments: loadRecords.map(l => ({ loadId: l.id, jobId: 'j:' + l.id })) }); assert.equal(projection.deliveryLoads.length, 4); assert.deepEqual(projection.deliveryLoads[0].loadVersions, { one: 4 });
 });
 test('current removal requires job and load versions and preserves cancelled history', async () => {
-  const f = await assigned(); const load = loads(f)[0]; const job = jobs(f)[0]; const result = await f.post({ action: 'remove-job-from-load', jobId: job.id, loadId: load.id, expectedJobVersion: job.version, expectedLoadVersion: load.version }); assert.equal(result.response.status, 200, JSON.stringify(result.body)); assert.equal(assignments(f).length, 0); assert.equal(loads(f)[0].status, 'cancelled'); assert.equal(loads(f)[0].version, load.version + 1);
+  const f = await assigned(); const load = loads(f)[0]; const job = jobs(f)[0]; const result = await f.post({ ...executionAuthority(f), action: 'remove-job-from-load', jobId: job.id, loadId: load.id, expectedJobVersion: job.version, expectedLoadVersion: load.version }); assert.equal(result.response.status, 200, JSON.stringify(result.body)); assert.equal(assignments(f).length, 0); assert.equal(loads(f)[0].status, 'cancelled'); assert.equal(loads(f)[0].version, load.version + 1);
 });
 test('source-incompatible operator rescheduling fails without modifying job or load', async () => {
-  const f = await assigned(); const before = structuredClone([...f.records]); const load = loads(f)[0]; assert.equal((await f.post({ action: 'reschedule-delivery-load', loadId: load.id, expectedLoadVersion: load.version, scheduledTime: '11:15' })).response.status, 409); assert.deepEqual([...f.records], before);
+  const f = await assigned(); const before = structuredClone([...f.records]); const load = loads(f)[0]; assert.equal((await f.post({ ...executionAuthority(f), action: 'reschedule-delivery-load', loadId: load.id, expectedLoadVersion: load.version, scheduledTime: '11:15' })).response.status, 409); assert.deepEqual([...f.records], before);
 });
 test('readyAt earliest arrival uses UK time across BST and GMT', () => {
   const f = setup(); const make = readyAt => f.materialisation.logisticsJobForRequirement(requirement(f, 'a', { requiredDeliveryWindow: undefined, readyAt }), undefined, 'Operator', 'now').requestedWindow;
@@ -182,17 +183,17 @@ function duplicate(f, otherLoad = false) {
 }
 for (const action of ['mark-delivery-load-loaded', 'dispatch-delivery-load', 'reschedule-delivery-load', 'mark-stop-loaded']) test('duplicate same-load authority rejects ' + action + ' without writes', async () => {
   const f = await assigned(); duplicate(f); const load = loads(f)[0]; const before = structuredClone([...f.records]); const writes = f.writes;
-  const result = await f.post({ action, loadId: load.id, stopId: action === 'mark-stop-loaded' ? 'projection-stop:delivery:' + load.id : undefined, expectedLoadVersion: load.version, scheduledTime: '10:45' });
+  const result = await f.post({ ...executionAuthority(f), action, loadId: load.id, stopId: action === 'mark-stop-loaded' ? 'projection-stop:delivery:' + load.id : undefined, expectedLoadVersion: load.version, scheduledTime: '10:45' });
   assert.equal(result.response.status, 409, JSON.stringify(result.body)); assert.equal(f.writes, writes); assert.deepEqual([...f.records], before);
 });
 test('cross-load duplicate ownership rejects mutation of either load', async () => {
   const f = await assigned(); duplicate(f, true); const before = structuredClone([...f.records]);
-  for (const load of loads(f)) assert.equal((await f.post({ action: 'mark-delivery-load-loaded', loadId: load.id, expectedLoadVersion: load.version })).response.status, 409);
+  for (const load of loads(f)) assert.equal((await f.post({ ...executionAuthority(f), action: 'mark-delivery-load-loaded', loadId: load.id, expectedLoadVersion: load.version })).response.status, 409);
   assert.deepEqual([...f.records], before);
 });
 test('mismatched activeLoadId rejects an otherwise unique load', async () => {
   const f = await assigned(); const job = jobs(f)[0]; f.seed('fikaLogisticsJobsV1', job.id, { ...job, activeLoadId: 'other' }); const load = loads(f)[0];
-  assert.equal((await f.post({ action: 'mark-delivery-load-loaded', loadId: load.id, expectedLoadVersion: load.version })).response.status, 409);
+  assert.equal((await f.post({ ...executionAuthority(f), action: 'mark-delivery-load-loaded', loadId: load.id, expectedLoadVersion: load.version })).response.status, 409);
 });
 for (const unrelated of [false, true]) test('withdrawal aggregates duplicate removals per load; unrelated=' + unrelated, async () => {
   const f = await assigned();
@@ -233,11 +234,11 @@ test('second owner becoming unauthorized inside transaction commits neither memb
   const originals = loads(f); const result = await f.post(command); assert.equal(result.response.status, 403);
   for (const load of loads(f)) { assert.equal(load.scheduledTime, '10:30'); assert.equal(load.version, originals.find(l => l.id === load.id).version); }
 });
-for (const ids of [[], ['x', 'x'], Array.from({ length: 51 }, (_, i) => 'x' + i)]) test('bulk rejects invalid bounded ID set length=' + ids.length, async () => { const f = setup(); assert.equal((await f.post({ action: 'reschedule-delivery-loads', loadIds: ids, scheduledTime: '10:00' })).response.status, 422); });
+for (const ids of [[], ['x', 'x'], Array.from({ length: 51 }, (_, i) => 'x' + i)]) test('bulk rejects invalid bounded ID set length=' + ids.length, async () => { const f = setup(); assert.equal((await f.post({ ...executionAuthority(f), action: 'reschedule-delivery-loads', loadIds: ids, scheduledTime: '10:00' })).response.status, 422); });
 test('one explicit divergent operation legitimately splits the projection', async () => {
-  const f = await merged(); const load = loads(f)[0]; const result = await f.post({ action: 'reschedule-delivery-load', loadId: load.id, expectedLoadVersion: load.version, scheduledTime: '10:45' }); assert.equal(result.response.status, 200); assert.equal(f.records.get('fikaLogisticsDayProjectionsV1/' + f.date).deliveryLoads.length, 2);
+  const f = await merged(); const load = loads(f)[0]; const result = await f.post({ ...executionAuthority(f), action: 'reschedule-delivery-load', loadId: load.id, expectedLoadVersion: load.version, scheduledTime: '10:45' }); assert.equal(result.response.status, 200); assert.equal(f.records.get('fikaLogisticsDayProjectionsV1/' + f.date).deliveryLoads.length, 2);
 });
-test('clean multi-job load passes membership checks and marks loaded once', async () => { const f = await assigned(); f.requirements.push(requirement(f, 'b')); await reconcile(f); assert.equal((await assign(f, 'logistics-job:req:b')).response.status, 200); const load = loads(f)[0]; const result = await f.post({ action: 'mark-delivery-load-loaded', loadId: load.id, expectedLoadVersion: load.version }); assert.equal(result.response.status, 200); assert.equal(loads(f)[0].version, load.version + 1); });
+test('clean multi-job load passes membership checks and marks loaded once', async () => { const f = await assigned(); f.requirements.push(requirement(f, 'b')); await reconcile(f); assert.equal((await assign(f, 'logistics-job:req:b')).response.status, 200); const load = loads(f)[0]; const result = await f.post({ ...executionAuthority(f), action: 'mark-delivery-load-loaded', loadId: load.id, expectedLoadVersion: load.version }); assert.equal(result.response.status, 200); assert.equal(loads(f)[0].version, load.version + 1); });
 
 test('merged placement resolves one collision-adjusted arrival for every constituent', async () => {
   const f = await merged(); const first = loads(f)[0]; f.seed('fikaLogisticsDeliveryLoadsV1', 'collision', { ...first, id: 'collision', destinationOplocId: 'other', scheduledTime: '10:45', scheduledEnd: '11:00' });

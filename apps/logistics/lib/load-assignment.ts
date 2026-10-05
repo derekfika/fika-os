@@ -1,12 +1,12 @@
 import type { Transaction } from "firebase-admin/firestore";
 import { collectionPreferences, deliveryLoads, logisticsAssignments, logisticsJobs, runs, stops } from "./store";
-import { assignJob, assertLoadVersion, compatibleLoad, createLoad } from "./delivery-loads";
+import { assignJob, aggregateDelivery, assertLoadVersion, compatibleLoad, createLoad } from "./delivery-loads";
 import { HttpError } from "./http-error";
 import type { DeliveryLoad, DeliveryRun, LogisticsAssignment, LogisticsJob } from "./types";
 
 export const assignmentId = (jobId: string) => `assignment:${encodeURIComponent(jobId)}`;
 export type AssignmentIntent = { resolveSchedule?: (loads: DeliveryLoad[], job: LogisticsJob) => { scheduledTime: string; scheduledEnd?: string }; jobId: string; targetRunId?: string; scheduledTime: string; scheduledEnd?: string; collectionRequired?: boolean; expectedJobVersion?: number; expectedLoadVersions?: Record<string, number>; sourceJob?: LogisticsJob };
-export type AssignmentBatch = { loads: Map<string, DeliveryLoad>; dayLoads?: DeliveryLoad[]; nativeRequirements?: Set<string> };
+export type AssignmentBatch = { loads: Map<string, DeliveryLoad>; plannedRuns?: Set<string>; members?: Map<string, LogisticsJob[]>; dayLoads?: DeliveryLoad[]; nativeRequirements?: Set<string> };
 
 export async function assertLoadAssignmentsCurrent(tx: Transaction, load: DeliveryLoad) {
   const assignments = await tx.get(logisticsAssignments().where("loadId", "==", load.id));
@@ -31,7 +31,7 @@ export async function assignCanonicalJob(tx: Transaction, intent: AssignmentInte
   if (!jobSnap.exists && !intent.sourceJob) throw new HttpError(404, "Logistics job not found.");
   const current = jobSnap.exists ? jobSnap.data() as LogisticsJob : undefined;
   if (intent.sourceJob && current && (current.sourceVersion || 0) > (intent.sourceJob.sourceVersion || 0)) throw new HttpError(409, "Source changed. Refresh planning.");
-  const job = intent.sourceJob ? { ...intent.sourceJob, id: intent.jobId, collectionStatus: current?.collectionStatus || intent.sourceJob.collectionStatus, activeLoadId: current?.activeLoadId, version: current?.version || 0, audit: current?.audit || [] } : current!;
+  const job = intent.sourceJob ? { ...intent.sourceJob, id: intent.jobId, deliveryStatus: current?.deliveryStatus || "pending", ...(current?.deliveredAt ? { deliveredAt: current.deliveredAt } : {}), collectionStatus: current?.collectionStatus || intent.sourceJob.collectionStatus, activeLoadId: current?.activeLoadId, version: current?.version || 0, audit: current?.audit || [] } : current!;
   if (!job.originOplocId || !job.destinationOplocId || job.sourceStatus === "withdrawn") throw new HttpError(422, "Job has no active canonical delivery authority.");
   if (job.requirementId) {
     let nativeIds = batch?.nativeRequirements;
@@ -49,11 +49,13 @@ export async function assignCanonicalJob(tx: Transaction, intent: AssignmentInte
     intent = { ...intent, collectionRequired: preferences.some(snapshot => snapshot.exists && snapshot.data()?.collectionRequired === true) };
   }
   let vehicleId: string | undefined;
+  let deliveryRun: DeliveryRun | undefined;
   if (intent.targetRunId) {
     const runSnap = await tx.get(runs().doc(intent.targetRunId));
     const run = runSnap.data() as DeliveryRun | undefined;
     if (!run || run.serviceDate !== job.serviceDate || !run.vehicleId) throw new HttpError(409, "Canonical delivery run is unavailable.");
     vehicleId = run.vehicleId;
+    deliveryRun = run;
   }
   const [datedLoads, assigned] = await Promise.all([
     batch?.dayLoads ? Promise.resolve(batch.dayLoads) : tx.get(deliveryLoads().where("serviceDate", "==", job.serviceDate)).then(snapshot => snapshot.docs.map(doc => doc.data() as DeliveryLoad)),
@@ -82,19 +84,29 @@ export async function assignCanonicalJob(tx: Transaction, intent: AssignmentInte
   if ((!intent.sourceJob || existing.length) && !Number.isInteger(intent.expectedJobVersion)) throw new HttpError(422, "The current job version is required.");
   if ((!intent.sourceJob || existing.length) && job.version !== intent.expectedJobVersion) throw new HttpError(409, "Job assignment changed. Refresh Logistics and retry.");
   if (matching.length && !batch?.loads.has(load.id)) assertLoadVersion(load, intent.expectedLoadVersions?.[load.id]);
-  if (matching.length && !batch?.loads.has(load.id)) await assertLoadAssignmentsCurrent(tx, load);
+  const targetJobs = matching.length && !batch?.loads.has(load.id) ? (await assertLoadAssignmentsCurrent(tx, load)).jobs : batch?.members?.get(load.id) || [];
   const oldLoad = existing[0] && existing[0].loadId !== load.id ? (await tx.get(deliveryLoads().doc(existing[0].loadId))).data() as DeliveryLoad | undefined : undefined;
   const oldMembers = oldLoad ? await tx.get(logisticsAssignments().where("loadId", "==", oldLoad.id)) : undefined;
   if (existing.length && !oldLoad && existing[0].loadId !== load.id) throw new HttpError(409, "Prior load authority is unavailable.");
   if (oldLoad) assertLoadVersion(oldLoad, intent.expectedLoadVersions?.[oldLoad.id]);
-  if (oldLoad) await assertLoadAssignmentsCurrent(tx, oldLoad);
+  const oldJobs = oldLoad ? (await assertLoadAssignmentsCurrent(tx, oldLoad)).jobs.filter(member => member.id !== job.id) : [];
   const next = assignJob(job, load, existing, by, now);
-  const saved = batch?.loads.has(load.id) ? { ...next.load, version: load.version, audit: [...load.audit, { action: "job-assigned", at: now, by, version: load.version }] } : matching.length ? next.load : { ...next.load, version: 1, audit: [...load.audit, { action: "job-assigned", at: now, by, version: 1 }] };
+  const savedBase = batch?.loads.has(load.id) ? { ...next.load, version: load.version, audit: [...load.audit, { action: "job-assigned", at: now, by, version: load.version }] } : matching.length ? next.load : { ...next.load, version: 1, audit: [...load.audit, { action: "job-assigned", at: now, by, version: 1 }] };
+  const nextMembers = [...targetJobs.filter(member => member.id !== job.id), job];
+  const saved = aggregateDelivery(savedBase, nextMembers);
+  // First canonical work plans a fresh draft run, as native assignment does.
+  // Further assignments and replays do not churn its lifecycle/version.
+  const plannedRun = deliveryRun?.status === "draft" && !batch?.plannedRuns?.has(deliveryRun.canonicalId) ? { ...deliveryRun, status: "planned" as const, version: deliveryRun.version + 1, updatedAt: now, audit: [...deliveryRun.audit, { action: "canonical-work-planned", at: now, by, version: deliveryRun.version + 1 }] } : undefined;
+  if (plannedRun) {
+    tx.set(runs().doc(plannedRun.canonicalId), plannedRun);
+    if (batch) { batch.plannedRuns ||= new Set(); batch.plannedRuns.add(plannedRun.canonicalId); }
+  }
+  if (batch) { batch.members ||= new Map(); batch.members.set(saved.id, nextMembers); }
   for (const doc of assigned.docs) tx.delete(doc.ref);
   tx.set(logisticsAssignments().doc(assignmentId(job.id)), next.assignment);
   tx.set(jobRef, { ...job, activeLoadId: load.id, version: job.version + 1, updatedAt: now, audit: [...job.audit, { action: `job-assigned:${load.id}`, at: now, by, version: job.version + 1 }] });
   tx.set(deliveryLoads().doc(load.id), saved);
-  if (oldLoad) tx.set(deliveryLoads().doc(oldLoad.id), { ...oldLoad, ...(oldMembers!.size <= 1 ? { status: "cancelled" } : {}), version: oldLoad.version + 1, updatedAt: now, audit: [...oldLoad.audit, { action: `job-moved-out:${job.id}`, at: now, by, version: oldLoad.version + 1 }] });
+  if (oldLoad) tx.set(deliveryLoads().doc(oldLoad.id), aggregateDelivery({ ...oldLoad, ...(oldMembers!.size <= 1 ? { status: "cancelled" } : {}), version: oldLoad.version + 1, updatedAt: now, audit: [...oldLoad.audit, { action: `job-moved-out:${job.id}`, at: now, by, version: oldLoad.version + 1 }] }, oldJobs));
   batch?.loads.set(saved.id, saved);
-  return { jobId: job.id, load: saved, changed: true };
+  return { jobId: job.id, load: saved, plannedRun, changed: true };
 }

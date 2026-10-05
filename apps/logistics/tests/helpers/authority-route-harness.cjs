@@ -88,6 +88,12 @@ exports.fixture = function (permittedVehicleIds = ['van1'], maintenanceAuthoriti
     seed('fikaLogisticsJobsV1', 'j' + id, { id: 'j' + id, serviceDate: date, sourceType: 'cpu-production', sourceId: 'order:' + id, originOplocId: 'cpu', destinationOplocId: 'site:' + id, productionReadiness: 'ready', collectionStatus: 'collected', contents: [], version: 1, audit: [], createdAt: 'now', updatedAt: 'now' });
     seed('fikaLogisticsAssignmentsV1', 'j' + id + ':' + id, { jobId: 'j' + id, loadId: id, serviceDate: date, assignedAt: 'now', assignedBy: 'operator', audit: [] });
   }
+  // Seeded authority fixtures represent valid current, loaded projected work.
+  for (const id of ['l1', 'l2']) {
+    const job = records.get('fikaLogisticsJobsV1/j' + id); job.requirementId = 'req:' + id; job.sourceVersion = 1; job.deliveryStatus = 'loaded';
+    records.get('fikaLogisticsDeliveryLoadsV1/' + id).loaded = true;
+    requirements.push({ canonicalId: job.requirementId, sourceDomain: job.sourceType, sourceEntityId: job.sourceId, sourceVersion: 1, serviceDate: date, productionLocationId: job.originOplocId, destinationOplocId: job.destinationOplocId, destinationLabelSnapshot: job.destinationOplocId, status: 'ready_for_planning', lines: [], requiredDeliveryWindow: { startTime: '09:00' } });
+  }
   async function rebuild(serviceDate = date) {
     const state = await store.listState(serviceDate);
     const loads = await store.listDeliveryLoadState(serviceDate);

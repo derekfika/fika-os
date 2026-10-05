@@ -8,6 +8,7 @@
     "start": "next start -p 3900",
     "typecheck": "tsc --noEmit",
     "test": "tsx --test tests/*.test.ts tests/*.test.cjs",
+    "test:driver-execution": "node --test tests/driver-execution.test.cjs tests/driver-regression.cjs",
     "test:load-integrity": "node --test tests/load-integrity.test.cjs tests/load-regression.cjs",
     "test:authority": "node --test tests/resource-authority.test.cjs",
     "test:access-regression": "node --test tests/access-regression.cjs",
