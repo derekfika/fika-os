@@ -4,28 +4,33 @@ import { localMnkMenuCatalogue } from "@/lib/local-mnk-menu";
 import { localAngelCourtMenuCatalogue } from "@/lib/local-angel-court-menu";
 import { localCfcMenuCatalogue } from "@/lib/local-cfc-menu";
 import { localMunichReMenuCatalogue } from "@/lib/local-munich-re-menu";
+import { localRcoaMenuCatalogue } from "@/lib/local-rcoa-menu";
 import { filterPricedMenu, isFinitePrice } from "@/lib/reference-data-validation";
 import { portalSite, type PortalSiteKey } from "@/lib/portal-sites";
 
 function localCompatibilityMenu(siteKey: PortalSiteKey) {
   const catalogue =
-    siteKey === "angel-court"
-      ? localAngelCourtMenuCatalogue
-      : siteKey === "cfc"
-        ? localCfcMenuCatalogue
-        : siteKey === "munich-re"
-          ? localMunichReMenuCatalogue
-        : localMnkMenuCatalogue;
+    siteKey === "rcoa"
+      ? localRcoaMenuCatalogue
+      : siteKey === "angel-court"
+        ? localAngelCourtMenuCatalogue
+        : siteKey === "cfc"
+          ? localCfcMenuCatalogue
+          : siteKey === "munich-re"
+            ? localMunichReMenuCatalogue
+            : localMnkMenuCatalogue;
   return {
     contractVersion: catalogue.schemaVersion,
     source:
       siteKey === "angel-court"
         ? "local-angel-court-brochure-fixture"
-        : siteKey === "cfc"
-          ? "local-cfc-brochure-fixture"
-          : siteKey === "munich-re"
-            ? "local-munich-re-generic-brochure-fixture"
-          : "local-generated-mnk-fixture",
+        : siteKey === "rcoa"
+          ? "local-rcoa-legacy-menu-snapshot-v1"
+          : siteKey === "cfc"
+            ? "local-cfc-brochure-fixture"
+            : siteKey === "munich-re"
+              ? "local-munich-re-generic-brochure-fixture"
+              : "local-generated-mnk-fixture",
     menu: catalogue.items
       .filter((item) => item.lifecycleState === "active")
       .map((item) => ({
@@ -35,12 +40,17 @@ function localCompatibilityMenu(siteKey: PortalSiteKey) {
         description: item.description,
         category: item.category,
         unitPrice: item.pricing.unitPrice,
+        priceType: item.pricing.basis,
         vatRate: item.pricing.vatRate,
         dietaryInformation: item.dietaryInformation,
         allergenInformation: item.allergenInformation,
         minimumQuantity: item.orderingConstraints.minimumQuantity,
         minimumGuests: item.orderingConstraints.minimumGuests || undefined,
         noticeRequiredDays: item.orderingConstraints.noticeRequiredDays,
+        serves: item.orderingConstraints.serves,
+        suggestionType: item.orderingConstraints.suggestionType,
+        suggestionLabel: item.orderingConstraints.suggestionLabel,
+        suggestionUnit: item.orderingConstraints.suggestionUnit,
         optionGroups: item.optionGroups,
         servingInfo: item.pricing.servingInfo,
       })),
@@ -58,7 +68,7 @@ export async function GET(request: Request) {
   }
   const siteKey = configuredSite.key;
   try {
-    if (siteKey === "angel-court" || siteKey === "cfc" || siteKey === "munich-re") {
+    if (siteKey === "angel-court" || siteKey === "cfc" || siteKey === "munich-re" || siteKey === "rcoa") {
       return NextResponse.json(localCompatibilityMenu(siteKey), {
         headers: { "Cache-Control": "no-store, max-age=0" },
       });

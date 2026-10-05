@@ -1,0 +1,1744 @@
+{
+  "schemaVersion": "fika.hospitality-menu-catalogue.v1",
+  "generatedAt": "2026-10-05T00:00:00.000Z",
+  "source": {
+    "path": "sites/rcoa/booking-platform/01_MenuData.js",
+    "itemCount": 43
+  },
+  "categories": [
+    {
+      "canonicalId": "hospitality-menu-category:rcoa:drinks",
+      "name": "Drinks"
+    },
+    {
+      "canonicalId": "hospitality-menu-category:rcoa:sweet-treats",
+      "name": "Sweet treats"
+    },
+    {
+      "canonicalId": "hospitality-menu-category:rcoa:breakfast",
+      "name": "Breakfast"
+    },
+    {
+      "canonicalId": "hospitality-menu-category:rcoa:lunch",
+      "name": "Lunch"
+    },
+    {
+      "canonicalId": "hospitality-menu-category:rcoa:lunch-boxes",
+      "name": "Lunch Boxes"
+    },
+    {
+      "canonicalId": "hospitality-menu-category:rcoa:grazing-boxes",
+      "name": "Grazing Boxes"
+    },
+    {
+      "canonicalId": "hospitality-menu-category:rcoa:salads-sushi",
+      "name": "Salads & Sushi"
+    },
+    {
+      "canonicalId": "hospitality-menu-category:rcoa:grazing-events",
+      "name": "Grazing Events"
+    },
+    {
+      "canonicalId": "hospitality-menu-category:rcoa:afternoon",
+      "name": "Afternoon"
+    },
+    {
+      "canonicalId": "hospitality-menu-category:rcoa:finger-food",
+      "name": "Finger Food"
+    },
+    {
+      "canonicalId": "hospitality-menu-category:rcoa:fork-buffet-bowl-food",
+      "name": "Fork Buffet & Bowl Food"
+    },
+    {
+      "canonicalId": "hospitality-menu-category:rcoa:canapes",
+      "name": "Canapes"
+    },
+    {
+      "canonicalId": "hospitality-menu-category:rcoa:dining",
+      "name": "Dining"
+    },
+    {
+      "canonicalId": "hospitality-menu-category:rcoa:bespoke-events",
+      "name": "Bespoke Events"
+    }
+  ],
+  "items": [
+    {
+      "canonicalId": "hospitality-menu-item:rcoa:house_filter_coffee",
+      "source": {
+        "provider": "rcoa-hospitality-brochure",
+        "sourcePath": "sites/rcoa/booking-platform/01_MenuData.js",
+        "sourceItemId": "house_filter_coffee"
+      },
+      "name": "House Filter Coffee",
+      "description": "Filter coffee, served per person.",
+      "category": "Drinks",
+      "pricing": {
+        "unitPrice": 3,
+        "currency": "GBP",
+        "basis": "per_item",
+        "servingInfo": "Per person",
+        "vatRate": 0.2
+      },
+      "orderingConstraints": {
+        "minimumQuantity": 1,
+        "minimumGuests": null,
+        "noticeRequiredDays": 3,
+        "serves": null,
+        "suggestionType": null,
+        "suggestionLabel": "",
+        "suggestionUnit": "units"
+      },
+      "optionGroups": [],
+      "dietaryInformation": [],
+      "allergenInformation": [],
+      "lifecycleState": "active",
+      "sortOrder": 10
+    },
+    {
+      "canonicalId": "hospitality-menu-item:rcoa:specialty_tea_coffee",
+      "source": {
+        "provider": "rcoa-hospitality-brochure",
+        "sourcePath": "sites/rcoa/booking-platform/01_MenuData.js",
+        "sourceItemId": "specialty_tea_coffee"
+      },
+      "name": "Specialty Tea & Coffee",
+      "description": "Specialty teas and coffee, served per person.",
+      "category": "Drinks",
+      "pricing": {
+        "unitPrice": 3.5,
+        "currency": "GBP",
+        "basis": "per_item",
+        "servingInfo": "Per person",
+        "vatRate": 0.2
+      },
+      "orderingConstraints": {
+        "minimumQuantity": 1,
+        "minimumGuests": null,
+        "noticeRequiredDays": 3,
+        "serves": null,
+        "suggestionType": null,
+        "suggestionLabel": "",
+        "suggestionUnit": "units"
+      },
+      "optionGroups": [],
+      "dietaryInformation": [],
+      "allergenInformation": [],
+      "lifecycleState": "active",
+      "sortOrder": 20
+    },
+    {
+      "canonicalId": "hospitality-menu-item:rcoa:belu_water",
+      "source": {
+        "provider": "rcoa-hospitality-brochure",
+        "sourcePath": "sites/rcoa/booking-platform/01_MenuData.js",
+        "sourceItemId": "belu_water"
+      },
+      "name": "Belu Water Bottle",
+      "description": "750ml still or sparkling mineral water. All profits go to WaterAid.",
+      "category": "Drinks",
+      "pricing": {
+        "unitPrice": 3.95,
+        "currency": "GBP",
+        "basis": "per_item",
+        "servingInfo": "Per bottle",
+        "vatRate": 0.2
+      },
+      "orderingConstraints": {
+        "minimumQuantity": 1,
+        "minimumGuests": null,
+        "noticeRequiredDays": 3,
+        "serves": null,
+        "suggestionType": null,
+        "suggestionLabel": "",
+        "suggestionUnit": "units"
+      },
+      "optionGroups": [
+        {
+          "id": "water",
+          "label": "Choose water",
+          "selectionType": "select",
+          "required": true,
+          "options": [
+            {
+              "id": "still",
+              "label": "Still"
+            },
+            {
+              "id": "sparkling",
+              "label": "Sparkling"
+            },
+            {
+              "id": "mixed",
+              "label": "Mixed"
+            }
+          ]
+        }
+      ],
+      "dietaryInformation": [],
+      "allergenInformation": [],
+      "lifecycleState": "active",
+      "sortOrder": 30
+    },
+    {
+      "canonicalId": "hospitality-menu-item:rcoa:canned_drinks",
+      "source": {
+        "provider": "rcoa-hospitality-brochure",
+        "sourcePath": "sites/rcoa/booking-platform/01_MenuData.js",
+        "sourceItemId": "canned_drinks"
+      },
+      "name": "A Selection of Canned Drinks",
+      "description": "Coke, Diet Coke, Coke Zero, Sprite and Fanta Orange.",
+      "category": "Drinks",
+      "pricing": {
+        "unitPrice": 1.75,
+        "currency": "GBP",
+        "basis": "per_item",
+        "servingInfo": "Per can",
+        "vatRate": 0.2
+      },
+      "orderingConstraints": {
+        "minimumQuantity": 1,
+        "minimumGuests": null,
+        "noticeRequiredDays": 3,
+        "serves": null,
+        "suggestionType": null,
+        "suggestionLabel": "",
+        "suggestionUnit": "units"
+      },
+      "optionGroups": [],
+      "dietaryInformation": [],
+      "allergenInformation": [],
+      "lifecycleState": "active",
+      "sortOrder": 40
+    },
+    {
+      "canonicalId": "hospitality-menu-item:rcoa:fresh_juice_250",
+      "source": {
+        "provider": "rcoa-hospitality-brochure",
+        "sourcePath": "sites/rcoa/booking-platform/01_MenuData.js",
+        "sourceItemId": "fresh_juice_250"
+      },
+      "name": "Fresh Squeezed & Pressed Juice",
+      "description": "250ml bottle. Orange, seasonal apple, carrot pear & ginger, or seasonal blood orange.",
+      "category": "Drinks",
+      "pricing": {
+        "unitPrice": 3,
+        "currency": "GBP",
+        "basis": "per_item",
+        "servingInfo": "Per bottle",
+        "vatRate": 0.2
+      },
+      "orderingConstraints": {
+        "minimumQuantity": 1,
+        "minimumGuests": null,
+        "noticeRequiredDays": 3,
+        "serves": null,
+        "suggestionType": null,
+        "suggestionLabel": "",
+        "suggestionUnit": "units"
+      },
+      "optionGroups": [
+        {
+          "id": "flavour",
+          "label": "Choose flavour",
+          "selectionType": "select",
+          "required": true,
+          "options": [
+            {
+              "id": "orange",
+              "label": "Orange"
+            },
+            {
+              "id": "seasonal-apple",
+              "label": "Seasonal apple"
+            },
+            {
+              "id": "carrot-pear-ginger",
+              "label": "Carrot, pear & ginger"
+            },
+            {
+              "id": "blood-orange-seasonal",
+              "label": "Blood orange (seasonal)"
+            },
+            {
+              "id": "mixed",
+              "label": "Mixed"
+            }
+          ]
+        }
+      ],
+      "dietaryInformation": [],
+      "allergenInformation": [],
+      "lifecycleState": "active",
+      "sortOrder": 50
+    },
+    {
+      "canonicalId": "hospitality-menu-item:rcoa:fresh_juice_1l",
+      "source": {
+        "provider": "rcoa-hospitality-brochure",
+        "sourcePath": "sites/rcoa/booking-platform/01_MenuData.js",
+        "sourceItemId": "fresh_juice_1l"
+      },
+      "name": "Fresh Squeezed & Pressed Juice",
+      "description": "1L bottle. Orange, seasonal apple, carrot pear & ginger, or seasonal blood orange.",
+      "category": "Drinks",
+      "pricing": {
+        "unitPrice": 9,
+        "currency": "GBP",
+        "basis": "per_item",
+        "servingInfo": "Per bottle",
+        "vatRate": 0.2
+      },
+      "orderingConstraints": {
+        "minimumQuantity": 1,
+        "minimumGuests": null,
+        "noticeRequiredDays": 3,
+        "serves": null,
+        "suggestionType": null,
+        "suggestionLabel": "",
+        "suggestionUnit": "units"
+      },
+      "optionGroups": [
+        {
+          "id": "flavour",
+          "label": "Choose flavour",
+          "selectionType": "select",
+          "required": true,
+          "options": [
+            {
+              "id": "orange",
+              "label": "Orange"
+            },
+            {
+              "id": "seasonal-apple",
+              "label": "Seasonal apple"
+            },
+            {
+              "id": "carrot-pear-ginger",
+              "label": "Carrot, pear & ginger"
+            },
+            {
+              "id": "blood-orange-seasonal",
+              "label": "Blood orange (seasonal)"
+            },
+            {
+              "id": "mixed",
+              "label": "Mixed"
+            }
+          ]
+        }
+      ],
+      "dietaryInformation": [],
+      "allergenInformation": [],
+      "lifecycleState": "active",
+      "sortOrder": 60
+    },
+    {
+      "canonicalId": "hospitality-menu-item:rcoa:ginger_shot",
+      "source": {
+        "provider": "rcoa-hospitality-brochure",
+        "sourcePath": "sites/rcoa/booking-platform/01_MenuData.js",
+        "sourceItemId": "ginger_shot"
+      },
+      "name": "Fresh Pressed Ginger, Turmeric & Lemon Shot",
+      "description": "",
+      "category": "Drinks",
+      "pricing": {
+        "unitPrice": 3,
+        "currency": "GBP",
+        "basis": "per_item",
+        "servingInfo": "80ml shot",
+        "vatRate": 0.2
+      },
+      "orderingConstraints": {
+        "minimumQuantity": 1,
+        "minimumGuests": null,
+        "noticeRequiredDays": 3,
+        "serves": null,
+        "suggestionType": null,
+        "suggestionLabel": "",
+        "suggestionUnit": "units"
+      },
+      "optionGroups": [],
+      "dietaryInformation": [],
+      "allergenInformation": [],
+      "lifecycleState": "active",
+      "sortOrder": 70
+    },
+    {
+      "canonicalId": "hospitality-menu-item:rcoa:smoothie_1l",
+      "source": {
+        "provider": "rcoa-hospitality-brochure",
+        "sourcePath": "sites/rcoa/booking-platform/01_MenuData.js",
+        "sourceItemId": "smoothie_1l"
+      },
+      "name": "Freshly Made Smoothie",
+      "description": "1L bottle. Green Glow, Berry Boost or Island Breeze.",
+      "category": "Drinks",
+      "pricing": {
+        "unitPrice": 12,
+        "currency": "GBP",
+        "basis": "per_item",
+        "servingInfo": "Per bottle",
+        "vatRate": 0.2
+      },
+      "orderingConstraints": {
+        "minimumQuantity": 1,
+        "minimumGuests": null,
+        "noticeRequiredDays": 3,
+        "serves": null,
+        "suggestionType": null,
+        "suggestionLabel": "",
+        "suggestionUnit": "units"
+      },
+      "optionGroups": [
+        {
+          "id": "flavour",
+          "label": "Choose flavour",
+          "selectionType": "select",
+          "required": true,
+          "options": [
+            {
+              "id": "green-glow",
+              "label": "Green Glow"
+            },
+            {
+              "id": "berry-boost",
+              "label": "Berry Boost"
+            },
+            {
+              "id": "island-breeze",
+              "label": "Island Breeze"
+            },
+            {
+              "id": "mixed",
+              "label": "Mixed"
+            }
+          ]
+        }
+      ],
+      "dietaryInformation": [],
+      "allergenInformation": [],
+      "lifecycleState": "active",
+      "sortOrder": 80
+    },
+    {
+      "canonicalId": "hospitality-menu-item:rcoa:cookie_box",
+      "source": {
+        "provider": "rcoa-hospitality-brochure",
+        "sourcePath": "sites/rcoa/booking-platform/01_MenuData.js",
+        "sourceItemId": "cookie_box"
+      },
+      "name": "Freshly Baked Cookie Box",
+      "description": "24 freshly baked mixed cookies including milk chocolate, double chocolate, white chocolate, chocolate chip and Carnivals Smarties cookies.",
+      "category": "Sweet treats",
+      "pricing": {
+        "unitPrice": 40,
+        "currency": "GBP",
+        "basis": "per_item",
+        "servingInfo": "Box of 24",
+        "vatRate": 0.2
+      },
+      "orderingConstraints": {
+        "minimumQuantity": 1,
+        "minimumGuests": null,
+        "noticeRequiredDays": 3,
+        "serves": null,
+        "suggestionType": null,
+        "suggestionLabel": "",
+        "suggestionUnit": "units"
+      },
+      "optionGroups": [],
+      "dietaryInformation": [],
+      "allergenInformation": [],
+      "lifecycleState": "active",
+      "sortOrder": 100
+    },
+    {
+      "canonicalId": "hospitality-menu-item:rcoa:tray_bake_box",
+      "source": {
+        "provider": "rcoa-hospitality-brochure",
+        "sourcePath": "sites/rcoa/booking-platform/01_MenuData.js",
+        "sourceItemId": "tray_bake_box"
+      },
+      "name": "Tray Bake Box",
+      "description": "Medium box contains 24 pieces and can be cut into 48 smaller bites. Example flavours include caramel Rolo brownie, caramelised biscuit brownie, raspberry & white chocolate blondies, and lemon & white chocolate blondies.",
+      "category": "Sweet treats",
+      "pricing": {
+        "unitPrice": 75,
+        "currency": "GBP",
+        "basis": "per_item",
+        "servingInfo": "Box of 24 pieces",
+        "vatRate": 0.2
+      },
+      "orderingConstraints": {
+        "minimumQuantity": 1,
+        "minimumGuests": null,
+        "noticeRequiredDays": 3,
+        "serves": null,
+        "suggestionType": null,
+        "suggestionLabel": "",
+        "suggestionUnit": "units"
+      },
+      "optionGroups": [],
+      "dietaryInformation": [],
+      "allergenInformation": [],
+      "lifecycleState": "active",
+      "sortOrder": 110
+    },
+    {
+      "canonicalId": "hospitality-menu-item:rcoa:exotic_fruit_box",
+      "source": {
+        "provider": "rcoa-hospitality-brochure",
+        "sourcePath": "sites/rcoa/booking-platform/01_MenuData.js",
+        "sourceItemId": "exotic_fruit_box"
+      },
+      "name": "Exotic Fruit Box",
+      "description": "Watermelon, cantaloupe melon, honey dew melon, pineapple, kiwi, passion fruit and strawberries.",
+      "category": "Breakfast",
+      "pricing": {
+        "unitPrice": 52.5,
+        "currency": "GBP",
+        "basis": "per_item",
+        "servingInfo": "Serves 20 people",
+        "vatRate": 0.2
+      },
+      "orderingConstraints": {
+        "minimumQuantity": 1,
+        "minimumGuests": null,
+        "noticeRequiredDays": 3,
+        "serves": 20,
+        "suggestionType": "ceil_by_guests",
+        "suggestionLabel": "Suggested for your guest count",
+        "suggestionUnit": "boxes"
+      },
+      "optionGroups": [],
+      "dietaryInformation": [],
+      "allergenInformation": [],
+      "lifecycleState": "active",
+      "sortOrder": 120
+    },
+    {
+      "canonicalId": "hospitality-menu-item:rcoa:mini_pastries",
+      "source": {
+        "provider": "rcoa-hospitality-brochure",
+        "sourcePath": "sites/rcoa/booking-platform/01_MenuData.js",
+        "sourceItemId": "mini_pastries"
+      },
+      "name": "Mini Pastries",
+      "description": "A selection of two mini Danish and bite-size chocolate muffins per person, garnished with strawberries and icing sugar.",
+      "category": "Breakfast",
+      "pricing": {
+        "unitPrice": 36,
+        "currency": "GBP",
+        "basis": "per_item",
+        "servingInfo": "Box feeds 12 people",
+        "vatRate": 0.2
+      },
+      "orderingConstraints": {
+        "minimumQuantity": 1,
+        "minimumGuests": null,
+        "noticeRequiredDays": 3,
+        "serves": 12,
+        "suggestionType": "ceil_by_guests",
+        "suggestionLabel": "Suggested for your guest count",
+        "suggestionUnit": "boxes"
+      },
+      "optionGroups": [],
+      "dietaryInformation": [],
+      "allergenInformation": [],
+      "lifecycleState": "active",
+      "sortOrder": 130
+    },
+    {
+      "canonicalId": "hospitality-menu-item:rcoa:large_pastries",
+      "source": {
+        "provider": "rcoa-hospitality-brochure",
+        "sourcePath": "sites/rcoa/booking-platform/01_MenuData.js",
+        "sourceItemId": "large_pastries"
+      },
+      "name": "Freshly Baked Large Pastries",
+      "description": "Four plain croissants, four raspberry croissants and four almond croissants.",
+      "category": "Breakfast",
+      "pricing": {
+        "unitPrice": 42,
+        "currency": "GBP",
+        "basis": "per_item",
+        "servingInfo": "Box of 12 pastries",
+        "vatRate": 0.2
+      },
+      "orderingConstraints": {
+        "minimumQuantity": 1,
+        "minimumGuests": null,
+        "noticeRequiredDays": 3,
+        "serves": 12,
+        "suggestionType": "ceil_by_guests",
+        "suggestionLabel": "Suggested for your guest count",
+        "suggestionUnit": "boxes"
+      },
+      "optionGroups": [],
+      "dietaryInformation": [],
+      "allergenInformation": [],
+      "lifecycleState": "active",
+      "sortOrder": 140
+    },
+    {
+      "canonicalId": "hospitality-menu-item:rcoa:filled_savoury_croissant",
+      "source": {
+        "provider": "rcoa-hospitality-brochure",
+        "sourcePath": "sites/rcoa/booking-platform/01_MenuData.js",
+        "sourceItemId": "filled_savoury_croissant"
+      },
+      "name": "Filled Savoury Croissant",
+      "description": "Four Swiss cheese, Wiltshire ham & vine tomato; four free-range egg mayonnaise, sun blush tomato & roquette; four smoked Chalk Stream trout, cream cheese & dill.",
+      "category": "Breakfast",
+      "pricing": {
+        "unitPrice": 60,
+        "currency": "GBP",
+        "basis": "per_item",
+        "servingInfo": "Box of 12 pastries",
+        "vatRate": 0.2
+      },
+      "orderingConstraints": {
+        "minimumQuantity": 1,
+        "minimumGuests": null,
+        "noticeRequiredDays": 3,
+        "serves": 12,
+        "suggestionType": "ceil_by_guests",
+        "suggestionLabel": "Suggested for your guest count",
+        "suggestionUnit": "boxes"
+      },
+      "optionGroups": [],
+      "dietaryInformation": [],
+      "allergenInformation": [],
+      "lifecycleState": "active",
+      "sortOrder": 150
+    },
+    {
+      "canonicalId": "hospitality-menu-item:rcoa:vegan_savoury_croissant",
+      "source": {
+        "provider": "rcoa-hospitality-brochure",
+        "sourcePath": "sites/rcoa/booking-platform/01_MenuData.js",
+        "sourceItemId": "vegan_savoury_croissant"
+      },
+      "name": "Vegan Savoury Croissant",
+      "description": "Four smashed avocado & sun blushed tomatoes; four smoked Applewood cheese, green tomato chutney & roquette; four roast portobello mushroom, baby spinach & vegan feta.",
+      "category": "Breakfast",
+      "pricing": {
+        "unitPrice": 65,
+        "currency": "GBP",
+        "basis": "per_item",
+        "servingInfo": "Box of 12 pastries",
+        "vatRate": 0.2
+      },
+      "orderingConstraints": {
+        "minimumQuantity": 1,
+        "minimumGuests": null,
+        "noticeRequiredDays": 3,
+        "serves": 12,
+        "suggestionType": "ceil_by_guests",
+        "suggestionLabel": "Suggested for your guest count",
+        "suggestionUnit": "boxes"
+      },
+      "optionGroups": [],
+      "dietaryInformation": [],
+      "allergenInformation": [],
+      "lifecycleState": "active",
+      "sortOrder": 160
+    },
+    {
+      "canonicalId": "hospitality-menu-item:rcoa:bagel_box",
+      "source": {
+        "provider": "rcoa-hospitality-brochure",
+        "sourcePath": "sites/rcoa/booking-platform/01_MenuData.js",
+        "sourceItemId": "bagel_box"
+      },
+      "name": "Bagel Box",
+      "description": "12 bagels cut in half. Choose smoked trout, crispy bacon & egg mayonnaise, roasted red pepper with smashed avocado, or mixed.",
+      "category": "Breakfast",
+      "pricing": {
+        "unitPrice": 72,
+        "currency": "GBP",
+        "basis": "per_item",
+        "servingInfo": "12 bagels cut in half",
+        "vatRate": 0.2
+      },
+      "orderingConstraints": {
+        "minimumQuantity": 1,
+        "minimumGuests": null,
+        "noticeRequiredDays": 3,
+        "serves": 12,
+        "suggestionType": "ceil_by_guests",
+        "suggestionLabel": "Suggested for your guest count",
+        "suggestionUnit": "boxes"
+      },
+      "optionGroups": [
+        {
+          "id": "selection",
+          "label": "Choose bagel selection",
+          "selectionType": "select",
+          "required": true,
+          "options": [
+            {
+              "id": "chapel-swan-smoked-trout-soft-cream-cheese-dill",
+              "label": "Chapel Swan smoked trout, soft cream cheese & dill"
+            },
+            {
+              "id": "crispy-bacon-free-range-egg-mayonnaise",
+              "label": "Crispy bacon & free range egg mayonnaise"
+            },
+            {
+              "id": "roasted-red-pepper-smashed-avocado-baby-spinach",
+              "label": "Roasted red pepper, smashed avocado & baby spinach"
+            },
+            {
+              "id": "mixed",
+              "label": "Mixed"
+            }
+          ]
+        }
+      ],
+      "dietaryInformation": [],
+      "allergenInformation": [],
+      "lifecycleState": "active",
+      "sortOrder": 170
+    },
+    {
+      "canonicalId": "hospitality-menu-item:rcoa:breakfast_pots",
+      "source": {
+        "provider": "rcoa-hospitality-brochure",
+        "sourcePath": "sites/rcoa/booking-platform/01_MenuData.js",
+        "sourceItemId": "breakfast_pots"
+      },
+      "name": "Breakfast Pots",
+      "description": "Weekly changing menu. Options include fruit salad, Greek yoghurt, vegan yoghurt, free range boiled egg & baby spinach, smashed avocado with smoked salmon and egg, or overnight oats.",
+      "category": "Breakfast",
+      "pricing": {
+        "unitPrice": 3.95,
+        "currency": "GBP",
+        "basis": "per_item",
+        "servingInfo": "Per pot - minimum 12 per item",
+        "vatRate": 0.2
+      },
+      "orderingConstraints": {
+        "minimumQuantity": 12,
+        "minimumGuests": null,
+        "noticeRequiredDays": 3,
+        "serves": null,
+        "suggestionType": null,
+        "suggestionLabel": "",
+        "suggestionUnit": "units"
+      },
+      "optionGroups": [
+        {
+          "id": "pot",
+          "label": "Choose pot",
+          "selectionType": "select",
+          "required": true,
+          "options": [
+            {
+              "id": "fruit-salad",
+              "label": "Fruit salad"
+            },
+            {
+              "id": "house-made-greek-yoghurt",
+              "label": "House made Greek yoghurt"
+            },
+            {
+              "id": "vegan-yoghurt",
+              "label": "Vegan yoghurt"
+            },
+            {
+              "id": "free-range-boiled-egg-baby-spinach",
+              "label": "Free range boiled egg & baby spinach"
+            },
+            {
+              "id": "smashed-avocado-smoked-salmon-free-range-boiled-egg",
+              "label": "Smashed avocado, smoked salmon & free range boiled egg"
+            },
+            {
+              "id": "overnight-oats",
+              "label": "Overnight oats"
+            },
+            {
+              "id": "mixed",
+              "label": "Mixed"
+            }
+          ]
+        }
+      ],
+      "dietaryInformation": [],
+      "allergenInformation": [],
+      "lifecycleState": "active",
+      "sortOrder": 180
+    },
+    {
+      "canonicalId": "hospitality-menu-item:rcoa:healthy_plant_power_breakfast",
+      "source": {
+        "provider": "rcoa-hospitality-brochure",
+        "sourcePath": "sites/rcoa/booking-platform/01_MenuData.js",
+        "sourceItemId": "healthy_plant_power_breakfast"
+      },
+      "name": "Healthy Plant Power Breakfast",
+      "description": "Example menu includes seasonal poached fruit with coconut chia, vegan banana bread, sourdough crostini with smashed avocado, flapjack and fresh ginger shot.",
+      "category": "Breakfast",
+      "pricing": {
+        "unitPrice": 22,
+        "currency": "GBP",
+        "basis": "per_item",
+        "servingInfo": "Per person",
+        "vatRate": 0.2
+      },
+      "orderingConstraints": {
+        "minimumQuantity": 1,
+        "minimumGuests": null,
+        "noticeRequiredDays": 3,
+        "serves": null,
+        "suggestionType": null,
+        "suggestionLabel": "",
+        "suggestionUnit": "units"
+      },
+      "optionGroups": [],
+      "dietaryInformation": [],
+      "allergenInformation": [],
+      "lifecycleState": "active",
+      "sortOrder": 190
+    },
+    {
+      "canonicalId": "hospitality-menu-item:rcoa:deli_sandwich_lunch",
+      "source": {
+        "provider": "rcoa-hospitality-brochure",
+        "sourcePath": "sites/rcoa/booking-platform/01_MenuData.js",
+        "sourceItemId": "deli_sandwich_lunch"
+      },
+      "name": "Deli Style Sandwich Lunch",
+      "description": "Three pieces per person. Meat, fish and vegetarian fillings on artisan breads such as ciabatta, focaccia, baguettes and wraps, served with hand cooked vegetable crisps.",
+      "category": "Lunch",
+      "pricing": {
+        "unitPrice": 9,
+        "currency": "GBP",
+        "basis": "per_item",
+        "servingInfo": "Per person",
+        "vatRate": 0.2
+      },
+      "orderingConstraints": {
+        "minimumQuantity": 8,
+        "minimumGuests": 8,
+        "noticeRequiredDays": 3,
+        "serves": null,
+        "suggestionType": null,
+        "suggestionLabel": "",
+        "suggestionUnit": "units"
+      },
+      "optionGroups": [],
+      "dietaryInformation": [],
+      "allergenInformation": [],
+      "lifecycleState": "active",
+      "sortOrder": 200
+    },
+    {
+      "canonicalId": "hospitality-menu-item:rcoa:individual_boxed_lunch",
+      "source": {
+        "provider": "rcoa-hospitality-brochure",
+        "sourcePath": "sites/rcoa/booking-platform/01_MenuData.js",
+        "sourceItemId": "individual_boxed_lunch"
+      },
+      "name": "Individual Boxed Lunch",
+      "description": "Deli style sandwich, pasta salad, vegetable crisps, sausage roll and mini traybake. Vegan and gluten-free available on request.",
+      "category": "Lunch Boxes",
+      "pricing": {
+        "unitPrice": 14.95,
+        "currency": "GBP",
+        "basis": "per_item",
+        "servingInfo": "Per person",
+        "vatRate": 0.2
+      },
+      "orderingConstraints": {
+        "minimumQuantity": 8,
+        "minimumGuests": 8,
+        "noticeRequiredDays": 3,
+        "serves": null,
+        "suggestionType": null,
+        "suggestionLabel": "",
+        "suggestionUnit": "units"
+      },
+      "optionGroups": [],
+      "dietaryInformation": [],
+      "allergenInformation": [],
+      "lifecycleState": "active",
+      "sortOrder": 210
+    },
+    {
+      "canonicalId": "hospitality-menu-item:rcoa:salad_protein_lunch_platter",
+      "source": {
+        "provider": "rcoa-hospitality-brochure",
+        "sourcePath": "sites/rcoa/booking-platform/01_MenuData.js",
+        "sourceItemId": "salad_protein_lunch_platter"
+      },
+      "name": "Salad & Protein Lunch Platter",
+      "description": "Three composite salads plus one meat protein, one fish protein and one veggie or vegan protein.",
+      "category": "Lunch",
+      "pricing": {
+        "unitPrice": 14,
+        "currency": "GBP",
+        "basis": "per_item",
+        "servingInfo": "Per person",
+        "vatRate": 0.2
+      },
+      "orderingConstraints": {
+        "minimumQuantity": 8,
+        "minimumGuests": 8,
+        "noticeRequiredDays": 3,
+        "serves": null,
+        "suggestionType": null,
+        "suggestionLabel": "",
+        "suggestionUnit": "units"
+      },
+      "optionGroups": [],
+      "dietaryInformation": [],
+      "allergenInformation": [],
+      "lifecycleState": "active",
+      "sortOrder": 220
+    },
+    {
+      "canonicalId": "hospitality-menu-item:rcoa:rice_paper_rolls",
+      "source": {
+        "provider": "rcoa-hospitality-brochure",
+        "sourcePath": "sites/rcoa/booking-platform/01_MenuData.js",
+        "sourceItemId": "rice_paper_rolls"
+      },
+      "name": "Freshly Wrapped Rice Paper Rolls",
+      "description": "12 wraps per platter, each platter contains one flavour with dipping sauce.",
+      "category": "Lunch",
+      "pricing": {
+        "unitPrice": 45,
+        "currency": "GBP",
+        "basis": "per_item",
+        "servingInfo": "Feeds 3",
+        "vatRate": 0.2
+      },
+      "orderingConstraints": {
+        "minimumQuantity": 3,
+        "minimumGuests": null,
+        "noticeRequiredDays": 3,
+        "serves": 3,
+        "suggestionType": "ceil_by_guests",
+        "suggestionLabel": "Suggested for your guest count",
+        "suggestionUnit": "platters"
+      },
+      "optionGroups": [
+        {
+          "id": "flavour",
+          "label": "Choose flavour",
+          "selectionType": "multi",
+          "required": true,
+          "options": [
+            {
+              "id": "crayfish-and-avocado",
+              "label": "Crayfish and avocado"
+            },
+            {
+              "id": "hot-smoked-trout",
+              "label": "Hot smoked trout"
+            },
+            {
+              "id": "char-siu-pulled-chicken",
+              "label": "Char-siu pulled chicken"
+            },
+            {
+              "id": "lemongrass-ginger-chilli-chicken",
+              "label": "Lemongrass, ginger & chilli chicken"
+            },
+            {
+              "id": "rainbow-vegetable-roll-vegan",
+              "label": "Rainbow vegetable roll (vegan)"
+            },
+            {
+              "id": "hoisin-tofu-and-rainbow-veg-vegan",
+              "label": "Hoisin tofu and rainbow veg (vegan)"
+            }
+          ]
+        }
+      ],
+      "dietaryInformation": [],
+      "allergenInformation": [],
+      "lifecycleState": "active",
+      "sortOrder": 230
+    },
+    {
+      "canonicalId": "hospitality-menu-item:rcoa:grazing_charcuterie_box",
+      "source": {
+        "provider": "rcoa-hospitality-brochure",
+        "sourcePath": "sites/rcoa/booking-platform/01_MenuData.js",
+        "sourceItemId": "grazing_charcuterie_box"
+      },
+      "name": "Grazing Box - Charcuterie",
+      "description": "Cobble Lane cured British charcuterie, Gordal olives, sun blush tomatoes, baby gherkins, stuffed cherrybell peppers, artisan breads, olive oil and balsamic.",
+      "category": "Grazing Boxes",
+      "pricing": {
+        "unitPrice": 75,
+        "currency": "GBP",
+        "basis": "per_item",
+        "servingInfo": "Feeds 10",
+        "vatRate": 0.2
+      },
+      "orderingConstraints": {
+        "minimumQuantity": 1,
+        "minimumGuests": null,
+        "noticeRequiredDays": 3,
+        "serves": 10,
+        "suggestionType": "ceil_by_guests",
+        "suggestionLabel": "Suggested for your guest count",
+        "suggestionUnit": "boxes"
+      },
+      "optionGroups": [],
+      "dietaryInformation": [],
+      "allergenInformation": [],
+      "lifecycleState": "active",
+      "sortOrder": 240
+    },
+    {
+      "canonicalId": "hospitality-menu-item:rcoa:cheese_box",
+      "source": {
+        "provider": "rcoa-hospitality-brochure",
+        "sourcePath": "sites/rcoa/booking-platform/01_MenuData.js",
+        "sourceItemId": "cheese_box"
+      },
+      "name": "Cheese Box",
+      "description": "British county cheeses including Wookey Hole Cheddar, Colston Bassett Stilton, Hampshire Tunworth and Cornish Yarg in nettles with Stokes beer chutney and artisan biscuits.",
+      "category": "Grazing Boxes",
+      "pricing": {
+        "unitPrice": 75,
+        "currency": "GBP",
+        "basis": "per_item",
+        "servingInfo": "Feeds 10",
+        "vatRate": 0.2
+      },
+      "orderingConstraints": {
+        "minimumQuantity": 1,
+        "minimumGuests": null,
+        "noticeRequiredDays": 3,
+        "serves": 10,
+        "suggestionType": "ceil_by_guests",
+        "suggestionLabel": "Suggested for your guest count",
+        "suggestionUnit": "boxes"
+      },
+      "optionGroups": [],
+      "dietaryInformation": [],
+      "allergenInformation": [],
+      "lifecycleState": "active",
+      "sortOrder": 250
+    },
+    {
+      "canonicalId": "hospitality-menu-item:rcoa:picnic_box",
+      "source": {
+        "provider": "rcoa-hospitality-brochure",
+        "sourcePath": "sites/rcoa/booking-platform/01_MenuData.js",
+        "sourceItemId": "picnic_box"
+      },
+      "name": "Picnic Box",
+      "description": "Freshly baked sausage rolls, Scotch eggs, pork pies, chicken skewers and tomato quiche with Stokes beer chutney and red onion marmalade.",
+      "category": "Grazing Boxes",
+      "pricing": {
+        "unitPrice": 75,
+        "currency": "GBP",
+        "basis": "per_item",
+        "servingInfo": "Feeds 10",
+        "vatRate": 0.2
+      },
+      "orderingConstraints": {
+        "minimumQuantity": 1,
+        "minimumGuests": null,
+        "noticeRequiredDays": 3,
+        "serves": 10,
+        "suggestionType": "ceil_by_guests",
+        "suggestionLabel": "Suggested for your guest count",
+        "suggestionUnit": "boxes"
+      },
+      "optionGroups": [],
+      "dietaryInformation": [],
+      "allergenInformation": [],
+      "lifecycleState": "active",
+      "sortOrder": 260
+    },
+    {
+      "canonicalId": "hospitality-menu-item:rcoa:vegan_box",
+      "source": {
+        "provider": "rcoa-hospitality-brochure",
+        "sourcePath": "sites/rcoa/booking-platform/01_MenuData.js",
+        "sourceItemId": "vegan_box"
+      },
+      "name": "Vegan Box",
+      "description": "Vegan mezze with rainbow radish, cucumber and carrot shards, edamame beans, sweet potato falafel, olives, little gem spears, cherry tomatoes, pickles, toasted pita and three hummus flavours.",
+      "category": "Grazing Boxes",
+      "pricing": {
+        "unitPrice": 60,
+        "currency": "GBP",
+        "basis": "per_item",
+        "servingInfo": "Feeds 10",
+        "vatRate": 0.2
+      },
+      "orderingConstraints": {
+        "minimumQuantity": 1,
+        "minimumGuests": null,
+        "noticeRequiredDays": 3,
+        "serves": 10,
+        "suggestionType": "ceil_by_guests",
+        "suggestionLabel": "Suggested for your guest count",
+        "suggestionUnit": "boxes"
+      },
+      "optionGroups": [],
+      "dietaryInformation": [],
+      "allergenInformation": [],
+      "lifecycleState": "active",
+      "sortOrder": 270
+    },
+    {
+      "canonicalId": "hospitality-menu-item:rcoa:salad_boxes",
+      "source": {
+        "provider": "rcoa-hospitality-brochure",
+        "sourcePath": "sites/rcoa/booking-platform/01_MenuData.js",
+        "sourceItemId": "salad_boxes"
+      },
+      "name": "Salad Boxes",
+      "description": "Mediterranean, grilled chicken Caesar, hot smoked salmon Nicoise, or weekly salad box on request.",
+      "category": "Salads & Sushi",
+      "pricing": {
+        "unitPrice": 25,
+        "currency": "GBP",
+        "basis": "per_item",
+        "servingInfo": "Feeds 8 as a side",
+        "vatRate": 0.2
+      },
+      "orderingConstraints": {
+        "minimumQuantity": 1,
+        "minimumGuests": null,
+        "noticeRequiredDays": 3,
+        "serves": 8,
+        "suggestionType": "ceil_by_guests",
+        "suggestionLabel": "Suggested for your guest count",
+        "suggestionUnit": "boxes"
+      },
+      "optionGroups": [
+        {
+          "id": "salad",
+          "label": "Choose salads",
+          "selectionType": "multi",
+          "required": true,
+          "options": [
+            {
+              "id": "mediterranean",
+              "label": "Mediterranean"
+            },
+            {
+              "id": "grilled-chicken-caesar",
+              "label": "Grilled chicken Caesar"
+            },
+            {
+              "id": "hot-smoked-salmon-nicoise",
+              "label": "Hot smoked salmon Nicoise"
+            },
+            {
+              "id": "weekly-salad-box",
+              "label": "Weekly salad box"
+            }
+          ]
+        }
+      ],
+      "dietaryInformation": [],
+      "allergenInformation": [],
+      "lifecycleState": "active",
+      "sortOrder": 280
+    },
+    {
+      "canonicalId": "hospitality-menu-item:rcoa:weekly_salad_box",
+      "source": {
+        "provider": "rcoa-hospitality-brochure",
+        "sourcePath": "sites/rcoa/booking-platform/01_MenuData.js",
+        "sourceItemId": "weekly_salad_box"
+      },
+      "name": "Weekly Salad Box",
+      "description": "Weekly salad boxes available. Menu on request.",
+      "category": "Salads & Sushi",
+      "pricing": {
+        "unitPrice": 20,
+        "currency": "GBP",
+        "basis": "per_item",
+        "servingInfo": "Per box",
+        "vatRate": 0.2
+      },
+      "orderingConstraints": {
+        "minimumQuantity": 1,
+        "minimumGuests": null,
+        "noticeRequiredDays": 3,
+        "serves": null,
+        "suggestionType": null,
+        "suggestionLabel": "",
+        "suggestionUnit": "units"
+      },
+      "optionGroups": [],
+      "dietaryInformation": [],
+      "allergenInformation": [],
+      "lifecycleState": "active",
+      "sortOrder": 290
+    },
+    {
+      "canonicalId": "hospitality-menu-item:rcoa:deluxe_sushi_box",
+      "source": {
+        "provider": "rcoa-hospitality-brochure",
+        "sourcePath": "sites/rcoa/booking-platform/01_MenuData.js",
+        "sourceItemId": "deluxe_sushi_box"
+      },
+      "name": "Deluxe Sushi Box",
+      "description": "84 pieces. Mixed selection of nigiri, maki and uramaki served with pickled ginger, wasabi and soy.",
+      "category": "Salads & Sushi",
+      "pricing": {
+        "unitPrice": 160,
+        "currency": "GBP",
+        "basis": "per_item",
+        "servingInfo": "Feeds 8 to 12 people",
+        "vatRate": 0.2
+      },
+      "orderingConstraints": {
+        "minimumQuantity": 1,
+        "minimumGuests": null,
+        "noticeRequiredDays": 3,
+        "serves": 10,
+        "suggestionType": "ceil_by_guests",
+        "suggestionLabel": "Suggested for your guest count",
+        "suggestionUnit": "boxes"
+      },
+      "optionGroups": [],
+      "dietaryInformation": [],
+      "allergenInformation": [],
+      "lifecycleState": "active",
+      "sortOrder": 300
+    },
+    {
+      "canonicalId": "hospitality-menu-item:rcoa:vegan_sushi_box",
+      "source": {
+        "provider": "rcoa-hospitality-brochure",
+        "sourcePath": "sites/rcoa/booking-platform/01_MenuData.js",
+        "sourceItemId": "vegan_sushi_box"
+      },
+      "name": "Vegan Sushi Box",
+      "description": "72 pieces. Mixed plant based selection of nigiri, maki and uramaki served with pickled ginger, wasabi and soy.",
+      "category": "Salads & Sushi",
+      "pricing": {
+        "unitPrice": 120,
+        "currency": "GBP",
+        "basis": "per_item",
+        "servingInfo": "Feeds 8 to 12 people",
+        "vatRate": 0.2
+      },
+      "orderingConstraints": {
+        "minimumQuantity": 1,
+        "minimumGuests": null,
+        "noticeRequiredDays": 3,
+        "serves": 10,
+        "suggestionType": "ceil_by_guests",
+        "suggestionLabel": "Suggested for your guest count",
+        "suggestionUnit": "boxes"
+      },
+      "optionGroups": [],
+      "dietaryInformation": [],
+      "allergenInformation": [],
+      "lifecycleState": "active",
+      "sortOrder": 310
+    },
+    {
+      "canonicalId": "hospitality-menu-item:rcoa:glow_bowl",
+      "source": {
+        "provider": "rcoa-hospitality-brochure",
+        "sourcePath": "sites/rcoa/booking-platform/01_MenuData.js",
+        "sourceItemId": "glow_bowl"
+      },
+      "name": "FIKA Glow Bowl",
+      "description": "Individual salad bowl. Choose avocado Mex, sweet potato & quinoa, Mediterranean veg, or Asian prawn & edamame.",
+      "category": "Salads & Sushi",
+      "pricing": {
+        "unitPrice": 12.95,
+        "currency": "GBP",
+        "basis": "per_item",
+        "servingInfo": "Per person",
+        "vatRate": 0.2
+      },
+      "orderingConstraints": {
+        "minimumQuantity": 8,
+        "minimumGuests": 8,
+        "noticeRequiredDays": 3,
+        "serves": null,
+        "suggestionType": null,
+        "suggestionLabel": "",
+        "suggestionUnit": "units"
+      },
+      "optionGroups": [
+        {
+          "id": "bowl",
+          "label": "Choose bowl",
+          "selectionType": "select",
+          "required": true,
+          "options": [
+            {
+              "id": "avocado-mex-bowl",
+              "label": "Avocado Mex Bowl"
+            },
+            {
+              "id": "sweet-potato-quinoa-bowl",
+              "label": "Sweet Potato & Quinoa Bowl"
+            },
+            {
+              "id": "mediterranean-veg-bowl",
+              "label": "Mediterranean Veg Bowl"
+            },
+            {
+              "id": "asian-prawn-edamame-bowl",
+              "label": "Asian Prawn & Edamame Bowl"
+            },
+            {
+              "id": "mixed",
+              "label": "Mixed"
+            }
+          ]
+        }
+      ],
+      "dietaryInformation": [],
+      "allergenInformation": [],
+      "lifecycleState": "active",
+      "sortOrder": 320
+    },
+    {
+      "canonicalId": "hospitality-menu-item:rcoa:picnic_grazing_table",
+      "source": {
+        "provider": "rcoa-hospitality-brochure",
+        "sourcePath": "sites/rcoa/booking-platform/01_MenuData.js",
+        "sourceItemId": "picnic_grazing_table"
+      },
+      "name": "Picnic Grazing Table",
+      "description": "British charcuterie, sausage rolls, olives, breads, crudites, falafel, hummus, British county cheese board, artisan biscuits and fresh cut fruit.",
+      "category": "Grazing Events",
+      "pricing": {
+        "unitPrice": 24.95,
+        "currency": "GBP",
+        "basis": "per_item",
+        "servingInfo": "Per person - minimum 20",
+        "vatRate": 0.2
+      },
+      "orderingConstraints": {
+        "minimumQuantity": 20,
+        "minimumGuests": 20,
+        "noticeRequiredDays": 7,
+        "serves": null,
+        "suggestionType": null,
+        "suggestionLabel": "",
+        "suggestionUnit": "units"
+      },
+      "optionGroups": [],
+      "dietaryInformation": [],
+      "allergenInformation": [],
+      "lifecycleState": "active",
+      "sortOrder": 400
+    },
+    {
+      "canonicalId": "hospitality-menu-item:rcoa:grazing_sweet_table",
+      "source": {
+        "provider": "rcoa-hospitality-brochure",
+        "sourcePath": "sites/rcoa/booking-platform/01_MenuData.js",
+        "sourceItemId": "grazing_sweet_table"
+      },
+      "name": "Grazing Sweet Table",
+      "description": "Lemon mousse, tiramisu coffee shots, mini pavlova, salted caramel canelles, mini passion fruit meringue pies and macaroon tower.",
+      "category": "Grazing Events",
+      "pricing": {
+        "unitPrice": 18.95,
+        "currency": "GBP",
+        "basis": "per_item",
+        "servingInfo": "Per person - minimum 20",
+        "vatRate": 0.2
+      },
+      "orderingConstraints": {
+        "minimumQuantity": 20,
+        "minimumGuests": 20,
+        "noticeRequiredDays": 7,
+        "serves": null,
+        "suggestionType": null,
+        "suggestionLabel": "",
+        "suggestionUnit": "units"
+      },
+      "optionGroups": [],
+      "dietaryInformation": [],
+      "allergenInformation": [],
+      "lifecycleState": "active",
+      "sortOrder": 410
+    },
+    {
+      "canonicalId": "hospitality-menu-item:rcoa:grazing_cups",
+      "source": {
+        "provider": "rcoa-hospitality-brochure",
+        "sourcePath": "sites/rcoa/booking-platform/01_MenuData.js",
+        "sourceItemId": "grazing_cups"
+      },
+      "name": "Grazing Cups",
+      "description": "Individual cups with charcuterie, cheese with olives and crisp breads, falafel and dried fruit, and pretzels.",
+      "category": "Grazing Events",
+      "pricing": {
+        "unitPrice": 12.95,
+        "currency": "GBP",
+        "basis": "per_item",
+        "servingInfo": "Per person - minimum 30 cups",
+        "vatRate": 0.2
+      },
+      "orderingConstraints": {
+        "minimumQuantity": 30,
+        "minimumGuests": 30,
+        "noticeRequiredDays": 7,
+        "serves": null,
+        "suggestionType": null,
+        "suggestionLabel": "",
+        "suggestionUnit": "units"
+      },
+      "optionGroups": [],
+      "dietaryInformation": [],
+      "allergenInformation": [],
+      "lifecycleState": "active",
+      "sortOrder": 420
+    },
+    {
+      "canonicalId": "hospitality-menu-item:rcoa:afternoon_tea",
+      "source": {
+        "provider": "rcoa-hospitality-brochure",
+        "sourcePath": "sites/rcoa/booking-platform/01_MenuData.js",
+        "sourceItemId": "afternoon_tea"
+      },
+      "name": "Afternoon Tea",
+      "description": "Three bridge rolls from six fillings, colourful macaroon, salted caramel canelles, lemon mousse, Black Forest gateau, passion fruit meringue, and teas with milk and cream.",
+      "category": "Afternoon",
+      "pricing": {
+        "unitPrice": 21.95,
+        "currency": "GBP",
+        "basis": "per_item",
+        "servingInfo": "Per person",
+        "vatRate": 0.2
+      },
+      "orderingConstraints": {
+        "minimumQuantity": 8,
+        "minimumGuests": 8,
+        "noticeRequiredDays": 3,
+        "serves": null,
+        "suggestionType": null,
+        "suggestionLabel": "",
+        "suggestionUnit": "units"
+      },
+      "optionGroups": [],
+      "dietaryInformation": [],
+      "allergenInformation": [],
+      "lifecycleState": "active",
+      "sortOrder": 430
+    },
+    {
+      "canonicalId": "hospitality-menu-item:rcoa:finger_food",
+      "source": {
+        "provider": "rcoa-hospitality-brochure",
+        "sourcePath": "sites/rcoa/booking-platform/01_MenuData.js",
+        "sourceItemId": "finger_food"
+      },
+      "name": "Finger Food",
+      "description": "Minimum recommended four pieces per person. Choose meat, fish, vegetarian, vegan and dessert options from the brochure selection.",
+      "category": "Finger Food",
+      "pricing": {
+        "unitPrice": 3.95,
+        "currency": "GBP",
+        "basis": "per_item",
+        "servingInfo": "Per piece",
+        "vatRate": 0.2
+      },
+      "orderingConstraints": {
+        "minimumQuantity": 4,
+        "minimumGuests": null,
+        "noticeRequiredDays": 3,
+        "serves": null,
+        "suggestionType": null,
+        "suggestionLabel": "",
+        "suggestionUnit": "units"
+      },
+      "optionGroups": [
+        {
+          "id": "selection",
+          "label": "Selection style",
+          "selectionType": "select",
+          "required": true,
+          "options": [
+            {
+              "id": "mixed-brochure-selection",
+              "label": "Mixed brochure selection"
+            },
+            {
+              "id": "meat-focused",
+              "label": "Meat focused"
+            },
+            {
+              "id": "fish-focused",
+              "label": "Fish focused"
+            },
+            {
+              "id": "vegetarian-focused",
+              "label": "Vegetarian focused"
+            },
+            {
+              "id": "vegan-focused",
+              "label": "Vegan focused"
+            },
+            {
+              "id": "dessert-focused",
+              "label": "Dessert focused"
+            }
+          ]
+        }
+      ],
+      "dietaryInformation": [],
+      "allergenInformation": [],
+      "lifecycleState": "active",
+      "sortOrder": 440
+    },
+    {
+      "canonicalId": "hospitality-menu-item:rcoa:hot_fork_buffet_gold",
+      "source": {
+        "provider": "rcoa-hospitality-brochure",
+        "sourcePath": "sites/rcoa/booking-platform/01_MenuData.js",
+        "sourceItemId": "hot_fork_buffet_gold"
+      },
+      "name": "Hot Fork Buffet - Gold Package",
+      "description": "Meat, fish, vegan, two sides, four salads and one dessert. Menu on request.",
+      "category": "Fork Buffet & Bowl Food",
+      "pricing": {
+        "unitPrice": 28,
+        "currency": "GBP",
+        "basis": "per_item",
+        "servingInfo": "Per person",
+        "vatRate": 0.2
+      },
+      "orderingConstraints": {
+        "minimumQuantity": 12,
+        "minimumGuests": 12,
+        "noticeRequiredDays": 7,
+        "serves": null,
+        "suggestionType": null,
+        "suggestionLabel": "",
+        "suggestionUnit": "units"
+      },
+      "optionGroups": [],
+      "dietaryInformation": [],
+      "allergenInformation": [],
+      "lifecycleState": "active",
+      "sortOrder": 450
+    },
+    {
+      "canonicalId": "hospitality-menu-item:rcoa:hot_fork_buffet_silver",
+      "source": {
+        "provider": "rcoa-hospitality-brochure",
+        "sourcePath": "sites/rcoa/booking-platform/01_MenuData.js",
+        "sourceItemId": "hot_fork_buffet_silver"
+      },
+      "name": "Hot Fork Buffet - Silver Package",
+      "description": "Meat, vegan, two sides and four salads. Menu on request.",
+      "category": "Fork Buffet & Bowl Food",
+      "pricing": {
+        "unitPrice": 20,
+        "currency": "GBP",
+        "basis": "per_item",
+        "servingInfo": "Per person",
+        "vatRate": 0.2
+      },
+      "orderingConstraints": {
+        "minimumQuantity": 12,
+        "minimumGuests": 12,
+        "noticeRequiredDays": 7,
+        "serves": null,
+        "suggestionType": null,
+        "suggestionLabel": "",
+        "suggestionUnit": "units"
+      },
+      "optionGroups": [],
+      "dietaryInformation": [],
+      "allergenInformation": [],
+      "lifecycleState": "active",
+      "sortOrder": 460
+    },
+    {
+      "canonicalId": "hospitality-menu-item:rcoa:bowl_food",
+      "source": {
+        "provider": "rcoa-hospitality-brochure",
+        "sourcePath": "sites/rcoa/booking-platform/01_MenuData.js",
+        "sourceItemId": "bowl_food"
+      },
+      "name": "Bowl Food",
+      "description": "Three bowls per person. Example menu includes chorizo jambalaya, plant based cumin lamb meatball tagine and hot smoked salmon Caesar salad.",
+      "category": "Fork Buffet & Bowl Food",
+      "pricing": {
+        "unitPrice": 30,
+        "currency": "GBP",
+        "basis": "per_item",
+        "servingInfo": "Per person",
+        "vatRate": 0.2
+      },
+      "orderingConstraints": {
+        "minimumQuantity": 20,
+        "minimumGuests": 20,
+        "noticeRequiredDays": 7,
+        "serves": null,
+        "suggestionType": null,
+        "suggestionLabel": "",
+        "suggestionUnit": "units"
+      },
+      "optionGroups": [],
+      "dietaryInformation": [],
+      "allergenInformation": [],
+      "lifecycleState": "active",
+      "sortOrder": 470
+    },
+    {
+      "canonicalId": "hospitality-menu-item:rcoa:canapes",
+      "source": {
+        "provider": "rcoa-hospitality-brochure",
+        "sourcePath": "sites/rcoa/booking-platform/01_MenuData.js",
+        "sourceItemId": "canapes"
+      },
+      "name": "FIKA Canapes",
+      "description": "Six items per person. Hot canapes can only be offered on sites with an oven or a hire charge.",
+      "category": "Canapes",
+      "pricing": {
+        "unitPrice": 30,
+        "currency": "GBP",
+        "basis": "per_item",
+        "servingInfo": "Per person - minimum 20",
+        "vatRate": 0.2
+      },
+      "orderingConstraints": {
+        "minimumQuantity": 20,
+        "minimumGuests": 20,
+        "noticeRequiredDays": 7,
+        "serves": null,
+        "suggestionType": null,
+        "suggestionLabel": "",
+        "suggestionUnit": "units"
+      },
+      "optionGroups": [],
+      "dietaryInformation": [],
+      "allergenInformation": [],
+      "lifecycleState": "active",
+      "sortOrder": 480
+    },
+    {
+      "canonicalId": "hospitality-menu-item:rcoa:corporate_dining",
+      "source": {
+        "provider": "rcoa-hospitality-brochure",
+        "sourcePath": "sites/rcoa/booking-platform/01_MenuData.js",
+        "sourceItemId": "corporate_dining"
+      },
+      "name": "FIKA Corporate Dining",
+      "description": "Bespoke seated dining menus served with homemade focaccia and flavoured butters. One menu per booking.",
+      "category": "Dining",
+      "pricing": {
+        "unitPrice": 45,
+        "currency": "GBP",
+        "basis": "per_item",
+        "servingInfo": "Per person - minimum 12",
+        "vatRate": 0.2
+      },
+      "orderingConstraints": {
+        "minimumQuantity": 12,
+        "minimumGuests": 12,
+        "noticeRequiredDays": 7,
+        "serves": null,
+        "suggestionType": null,
+        "suggestionLabel": "",
+        "suggestionUnit": "units"
+      },
+      "optionGroups": [],
+      "dietaryInformation": [],
+      "allergenInformation": [],
+      "lifecycleState": "active",
+      "sortOrder": 490
+    },
+    {
+      "canonicalId": "hospitality-menu-item:rcoa:christmas_themed_menu",
+      "source": {
+        "provider": "rcoa-hospitality-brochure",
+        "sourcePath": "sites/rcoa/booking-platform/01_MenuData.js",
+        "sourceItemId": "christmas_themed_menu"
+      },
+      "name": "Example Christmas Themed Menu",
+      "description": "Roast turkey with trimmings, butternut squash wellington, roast potatoes, honey glazed roots, Brussels sprouts, chocolate orange cheesecake, mince pies and brandy cream.",
+      "category": "Bespoke Events",
+      "pricing": {
+        "unitPrice": 25,
+        "currency": "GBP",
+        "basis": "per_item",
+        "servingInfo": "Per person - minimum 50 - from price",
+        "vatRate": 0.2
+      },
+      "orderingConstraints": {
+        "minimumQuantity": 50,
+        "minimumGuests": 50,
+        "noticeRequiredDays": 10,
+        "serves": null,
+        "suggestionType": null,
+        "suggestionLabel": "",
+        "suggestionUnit": "units"
+      },
+      "optionGroups": [],
+      "dietaryInformation": [],
+      "allergenInformation": [],
+      "lifecycleState": "active",
+      "sortOrder": 500
+    },
+    {
+      "canonicalId": "hospitality-menu-item:rcoa:bespoke_event",
+      "source": {
+        "provider": "rcoa-hospitality-brochure",
+        "sourcePath": "sites/rcoa/booking-platform/01_MenuData.js",
+        "sourceItemId": "bespoke_event"
+      },
+      "name": "Bespoke Event Menu",
+      "description": "For Thanksgiving, Christmas, Valentine's Day or other themed events. The team will create a tailored proposal.",
+      "category": "Bespoke Events",
+      "pricing": {
+        "unitPrice": 0,
+        "currency": "GBP",
+        "basis": "per_item",
+        "servingInfo": "Price on request",
+        "vatRate": 0.2
+      },
+      "orderingConstraints": {
+        "minimumQuantity": 1,
+        "minimumGuests": null,
+        "noticeRequiredDays": 7,
+        "serves": null,
+        "suggestionType": null,
+        "suggestionLabel": "",
+        "suggestionUnit": "units"
+      },
+      "optionGroups": [],
+      "dietaryInformation": [],
+      "allergenInformation": [],
+      "lifecycleState": "active",
+      "sortOrder": 510
+    }
+  ],
+  "validationReport": {
+    "sourceItemCount": 43,
+    "generatedItemCount": 43,
+    "missingCanonicalFields": [
+      {
+        "field": "dietaryInformation",
+        "reason": "The legacy RCoA catalogue contains no structured dietary data."
+      },
+      {
+        "field": "allergenInformation",
+        "reason": "The legacy RCoA catalogue contains no structured allergen data; an empty list is not a clear declaration."
+      }
+    ]
+  }
+}

@@ -1,4 +1,4 @@
-export type PortalSiteKey = "mnk" | "angel-court" | "cfc" | "munich-re";
+export type PortalSiteKey = "mnk" | "angel-court" | "cfc" | "munich-re" | "rcoa";
 
 export type PortalSiteConfig = {
   key: PortalSiteKey;
@@ -99,6 +99,23 @@ export const portalSites: Record<PortalSiteKey, PortalSiteConfig> = {
       heroEyebrow: "Hospitality workspace",
     },
   },
+  rcoa: {
+    key: "rcoa",
+    label: "RCoA",
+    displayName: "Royal College of Anaesthetists",
+    logoPath: "https://www.rcoa.ac.uk/themes/custom/rcoa_base/images/rcoa-logo-white.svg",
+    cssClass: "site-rcoa",
+    bookingEndpoint: "/api/bookings/rcoa",
+    portalPath: "/rcoa",
+    oplocAliases: ["rcoa", "royal college of anaesthetists"],
+    theme: {
+      shortLabel: "RCoA",
+      heroBackground: "linear-gradient(114deg, #2C1951 0 58%, #4F34C7 58%)",
+      accent: "#2C1951",
+      accentSoft: "#E9E3EF",
+      heroEyebrow: "Royal College of Anaesthetists",
+    },
+  },
 };
 
 export function portalSite(key: PortalSiteKey): PortalSiteConfig;
@@ -132,8 +149,15 @@ export function portalSiteForOploc(site: { id: string; label: string }): PortalS
  * Resolve an OPLOC for the manager access list without treating a distinct
  * governed OPLOC as an alias for a portal with a configured canonical OPLOC.
  */
-export function portalSiteForAuthorisedOploc(site: { id: string; label: string }): PortalSiteConfig | undefined {
+export function portalSiteForAuthorisedOploc(
+  site: { id: string; label: string },
+  configuredCanonicalOplocIds: Partial<Record<PortalSiteKey, string>> = {},
+): PortalSiteConfig | undefined {
   const portal = portalSiteForOploc(site);
+  if (portal?.key === "rcoa") {
+    const canonicalOplocId = configuredCanonicalOplocIds.rcoa?.trim();
+    return canonicalOplocId && site.id === canonicalOplocId ? portal : undefined;
+  }
   return portal?.canonicalOplocId && portal.canonicalOplocId !== site.id ? undefined : portal;
 }
 

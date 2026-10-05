@@ -61,6 +61,7 @@ export type PortalMenuItem = {
   description?: string;
   category: string;
   unitPrice: number;
+  priceType?: string;
   vatRate: number | null;
   dietaryInformation: string[];
   allergenInformation: string[];
@@ -68,6 +69,10 @@ export type PortalMenuItem = {
   minimumGuests?: number;
   noticeRequiredDays?: number;
   servingInfo?: string;
+  serves?: number | null;
+  suggestionType?: string | null;
+  suggestionLabel?: string;
+  suggestionUnit?: string;
   optionGroups?: Array<{
     id: string;
     label: string;

@@ -394,10 +394,17 @@ export function resolveHospitalityDestinationOploc(
   return target?.canonicalId;
 }
 export function resolveHospitalityDestinationId(payload: Pick<MnkBookingPayload, "siteId" | "site">, mappings: Array<Record<string, unknown>>) {
-  const portalSiteId = portalSiteKeyForPayload(payload);
-  const sourceIdentifiers = [portalSiteId, payload.site].map(value => String(value || "").trim().toLowerCase()).filter(Boolean);
+  const sourceIdentifiers = portalSourceIdentifiers(payload);
   const mapping = mappings.find(candidate => sourceIdentifiers.includes(String(candidate.sourceIdentifier || "").trim().toLowerCase()) && String(candidate.mappingStatus || "") === "confirmed" && Boolean(String(candidate.sourceEntityType || "")));
   return String(mapping?.oplocId || mapping?.targetCanonicalId || "").trim() || undefined;
+}
+
+function portalSourceIdentifiers(payload: Pick<MnkBookingPayload, "siteId" | "site">) {
+  const portalSiteId = portalSiteKeyForPayload(payload);
+  // RCoA dashboard access and booking handoff must be joined by its stable
+  // portal key; a display label is never a governed site identity.
+  if (portalSiteId === "rcoa") return [portalSiteId];
+  return [...new Set([portalSiteId, payload.site].map(value => String(value || "").trim().toLowerCase()).filter(Boolean))];
 }
 export function productionOrderId(bookingId: string) {
   return `production-order:${bookingId}`;
@@ -577,8 +584,8 @@ export async function ingestMnkBooking(
       return ingestMnkBookingFromExisting(existingSnapshot.data() as CanonicalBooking, payload, []);
     }
     const portalSiteId = portalSiteKeyForPayload(payload);
-    const portalSourceIdentifiers = [...new Set([portalSiteId, payload.site].map(value => String(value || "").trim().toLowerCase()).filter(Boolean))];
-    const mappingIdentifiers = portalSourceIdentifiers.length ? portalSourceIdentifiers : ["__missing__"];
+    const mappingIdentifiers = portalSourceIdentifiers(payload);
+    if (!mappingIdentifiers.length) mappingIdentifiers.push("__missing__");
     const [menusSnapshot, mappingsSnapshot] = await Promise.all([
       transaction.get(canonical().where("entityType", "==", "Hospitality Menu Item").where("lifecycleStatus", "in", ["draft", "published"])),
       transaction.get(sourceMappings().where("sourceIdentifier", "in", mappingIdentifiers)),
@@ -589,7 +596,9 @@ export async function ingestMnkBooking(
     const destinationSnapshot = destinationId ? await transaction.get(canonical().doc(stableDocumentId(destinationId))) : undefined;
     const destinationOplocId = destinationSnapshot?.exists ? resolveHospitalityDestinationOploc(payload, mappings, [...canonicalRecords, destinationSnapshot.data() as CanonicalRecord]) : undefined;
     recordDataAccess({ app: "integration-hub", operation: "hospitality.ingest.transaction-reads", source: "FIRESTORE", dataset: "hospitality-ingest", documents: menusSnapshot.size + mappingsSnapshot.size + (destinationSnapshot?.exists ? 1 : 0), estimatedBillableReads: menusSnapshot.size + mappingsSnapshot.size + (destinationSnapshot?.exists ? 1 : 0), firestoreReadKind: "transaction" });
-    if (!destinationOplocId) throw conflict("This delivery-requiring Hospitality Booking has no confirmed canonical destination OPLOC; resolve the governed site mapping before submission.");
+    if (!destinationOplocId) throw conflict(portalSiteId === "rcoa"
+      ? "RCoA has no confirmed canonical destination OPLOC. Configure the governed source mapping for rcoa before submission."
+      : "This delivery-requiring Hospitality Booking has no confirmed canonical destination OPLOC; resolve the governed site mapping before submission.");
     const result = ingestMnkBookingFromExisting(
       existingSnapshot.exists
         ? (existingSnapshot.data() as CanonicalBooking)
@@ -1526,6 +1535,8 @@ function validatePayload(payload: MnkBookingPayload) {
 }
 function providerForSite(siteId?: string) {
   switch (siteId) {
+    case "rcoa":
+      return "rcoa-hospitality-brochure";
     case "angel-court":
       return "angel-court-hospitality-brochure";
     case "cfc":
@@ -1538,12 +1549,13 @@ function providerForSite(siteId?: string) {
 }
 function portalSiteKeyForPayload(payload: Pick<MnkBookingPayload, "siteId" | "site">) {
   const value = String(payload.siteId || "").trim().toLowerCase();
-  if (["mnk", "angel-court", "cfc", "munich-re"].includes(value)) return value;
+  if (["mnk", "angel-court", "cfc", "munich-re", "rcoa"].includes(value)) return value;
   const label = String(payload.site || "").trim().toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
   if (label === "mnk" || label === "mnk international") return "mnk";
   if (label === "angel court" || label === "one angel court") return "angel-court";
   if (label === "cfc" || label === "cfc underwriting") return "cfc";
   if (label === "munich re") return "munich-re";
+  if (label === "rcoa") return "rcoa";
   return undefined;
 }
 function londonBusinessDate(date = new Date()) {

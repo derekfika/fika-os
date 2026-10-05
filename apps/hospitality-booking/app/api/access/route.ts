@@ -8,7 +8,9 @@ export async function GET(request: NextRequest) {
     const body = await response.json();
     if (response.ok && Array.isArray(body.sites)) {
       body.sites = body.sites.flatMap((site: { id: string; label: string }) => {
-        const portal = portalSiteForAuthorisedOploc(site);
+        const portal = portalSiteForAuthorisedOploc(site, {
+          rcoa: process.env.FIKA_RCOA_OPLOC_ID?.trim(),
+        });
         return portal ? [{ ...site, portalSiteKey: portal.key }] : [];
       });
     }

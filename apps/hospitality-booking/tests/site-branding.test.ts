@@ -11,6 +11,9 @@ const booking = readFileSync(new URL("../app/ui/BookingPortal.tsx", import.meta.
 const dashboard = readFileSync(new URL("../app/ui/HospitalityDashboard.tsx", import.meta.url), "utf8");
 const referenceDataRoute = readFileSync(new URL("../app/api/reference-data/route.ts", import.meta.url), "utf8");
 const menusRoute = readFileSync(new URL("../app/api/menus/route.ts", import.meta.url), "utf8");
+const rcoaBookingRoute = readFileSync(new URL("../app/api/bookings/rcoa/route.ts", import.meta.url), "utf8");
+const rcoaPage = readFileSync(new URL("../app/rcoa/page.tsx", import.meta.url), "utf8");
+const accessRoute = readFileSync(new URL("../app/api/access/route.ts", import.meta.url), "utf8");
 
 test("site presentation is shared by Booking and Operations for every configured OPLOC", () => {
   for (const siteKey of ["mnk", "angel-court", "cfc", "munich-re"] as const) {
@@ -25,6 +28,27 @@ test("site presentation is shared by Booking and Operations for every configured
   }
   assert.match(booking, /hospitalitySiteThemeStyle\(site\)/);
   assert.match(dashboard, /hospitalitySiteThemeStyle\(site\)/);
+});
+
+test("RCoA uses shared Hospitality theme/config and requires an exact configured OPLOC for manager access", () => {
+  const site = portalSite("rcoa");
+  const authorizedSite = { id: "oploc:rcoa-confirmed", label: "Royal College of Anaesthetists" };
+  assert.equal(site.portalPath, "/rcoa");
+  assert.equal(site.canonicalOplocId, undefined);
+  assert.equal(portalSiteForAuthorisedOploc(authorizedSite), undefined);
+  assert.equal(portalSiteForAuthorisedOploc(authorizedSite, { rcoa: "oploc:other" }), undefined);
+  assert.equal(portalSiteForAuthorisedOploc(authorizedSite, { rcoa: "oploc:rcoa-confirmed" })?.key, "rcoa");
+  assert.deepEqual(hospitalitySiteThemeStyle(site), {
+    "--hospitality-site-hero-background": site.theme.heroBackground,
+    "--hospitality-site-accent": site.theme.accent,
+    "--hospitality-site-accent-soft": site.theme.accentSoft,
+  });
+  assert.match(dashboard, /site\.key/);
+  assert.doesNotMatch(dashboard, /site\.key\s*===\s*["']rcoa["']/);
+  assert.match(rcoaPage, /RcoaBookingPortal/);
+  assert.match(accessRoute, /FIKA_RCOA_OPLOC_ID/);
+  assert.match(rcoaBookingRoute, /buildTrustedRcoaHubPayload/);
+  assert.match(rcoaBookingRoute, /hubFetch\("\/api\/bookings\/mnk"/);
 });
 
 test("Booking and Operations expose the canonical current site identity", () => {

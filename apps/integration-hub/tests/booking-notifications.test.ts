@@ -34,3 +34,21 @@ test("notification identity is deterministic per booking event version", () => {
   assert.equal(bookingNotificationId(booking, "confirmed", 2), bookingNotificationId(booking, "confirmed", 2));
   assert.notEqual(bookingNotificationId(booking, "confirmed", 2), bookingNotificationId(booking, "confirmed", 3));
 });
+
+test("RCoA booking notifications use the client brand without changing the shared lifecycle", () => {
+  const rcoa = {
+    ...booking,
+    source: { ...booking.source, sourceBookingId: "RCOA-20261005103000-AB12" },
+    service: { ...booking.service, portalSiteId: "rcoa", portalSiteLabel: "RCoA Hospitality" },
+  } as CanonicalBooking;
+  const submitted = buildBookingSubmittedEmail(rcoa);
+  const confirmed = buildBookingConfirmedEmail(rcoa);
+  const cancelled = buildBookingCancelledEmail({ ...rcoa, lifecycleStatus: "Cancelled" });
+
+  assert.match(submitted.subject, /New RCoA Hospitality booking request/);
+  assert.match(submitted.html, /Royal College of Anaesthetists|RCoA Hospitality/);
+  assert.match(confirmed.subject, /RCoA Hospitality.*Booking Confirmed/);
+  assert.match(confirmed.html, /Royal College of Anaesthetists/);
+  assert.match(cancelled.subject, /RCoA Hospitality.*Booking Cancelled/);
+  assert.match(cancelled.html, /RCoA Hospitality/);
+});

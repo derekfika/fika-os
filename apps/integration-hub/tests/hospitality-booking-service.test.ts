@@ -32,6 +32,7 @@ test("all portal payloads preserve portal identity separately from governed OPLO
     "angel-court": "angel-court-hospitality-brochure",
     cfc: "cfc-hospitality-brochure",
     "munich-re": "munich-re-generic-brochure",
+    rcoa: "rcoa-hospitality-brochure",
   } as const;
   for (const [siteId, provider] of Object.entries(providers)) {
     const record = menu();
@@ -46,6 +47,32 @@ test("all portal payloads preserve portal identity separately from governed OPLO
     assert.equal(result.booking.service.portalSiteId, siteId);
     assert.equal(result.booking.service.oplocId, undefined);
   }
+});
+test("RCoA requests retain their portal reference and site identity in the canonical Booking", () => {
+  const rcoaMenu = menu();
+  rcoaMenu.record.providerMappings = [{ provider: "rcoa-hospitality-brochure", sourceItemId: "house_filter_coffee" }];
+  const rcoaPayload = {
+    ...payload,
+    bookingId: "RCOA-20261005103000-AB12",
+    site: "RCoA Hospitality",
+    siteId: "rcoa",
+    order: { ...payload.order, eventType: "breakfast", items: [{ itemId: "house_filter_coffee", itemName: "House Filter Coffee", category: "Drinks", unitPrice: 3, quantity: 2, lineTotal: 6 }] },
+  };
+  const result = buildMnkCanonicalBooking(rcoaPayload, [rcoaMenu], "2026-10-05T10:31:00.000Z");
+  assert.equal(result.booking.source.sourceBookingId, rcoaPayload.bookingId);
+  assert.equal(result.booking.source.originalPayload.siteId, "rcoa");
+  assert.equal(result.booking.service.portalSiteId, "rcoa");
+  assert.equal(result.booking.service.portalSiteLabel, "RCoA Hospitality");
+  assert.equal(result.booking.order.items[0].menuItemId, rcoaMenu.canonicalId);
+  assert.equal(result.booking.canonicalId, canonicalBookingId(rcoaPayload.bookingId));
+});
+test("RCoA destination authority resolves only from the stable rcoa source key", () => {
+  const records: CanonicalRecord[] = [{ canonicalId: "oploc:rcoa-confirmed", entityType: "OPLOC", lifecycleStatus: "published", publicationStatus: "published", dataHash: "x", record: { lifecycleState: "active" } }];
+  const labelMapping = [{ sourceIdentifier: "Royal College of Anaesthetists", sourceEntityType: "provider-location", mappingStatus: "confirmed", oplocId: "oploc:rcoa-confirmed" }];
+  const keyMapping = [{ sourceIdentifier: "rcoa", sourceEntityType: "provider-location", mappingStatus: "confirmed", oplocId: "oploc:rcoa-confirmed" }];
+  const rcoaContext = { siteId: "rcoa", site: "Royal College of Anaesthetists" };
+  assert.equal(resolveHospitalityDestinationOploc(rcoaContext, labelMapping, records), undefined);
+  assert.equal(resolveHospitalityDestinationOploc(rcoaContext, keyMapping, records), "oploc:rcoa-confirmed");
 });
 test("a legacy canonical OPLOC payload cannot switch MNK out of strict provider mode", () => {
   const legacyPayload = { ...payload, siteId: "oploc:66e621fa-6e6f-4f46-9aed-462313abbe8f", order: { ...payload.order, items: [{ ...payload.order.items[0], itemId: "unmapped-item" }] } };
