@@ -147,6 +147,7 @@ test("each branded portal exposes its own browser title", () => {
     ["angel-court", "Angel Court Hospitality"],
     ["cfc", "CFC Hospitality"],
     ["munich-re", "Munich Re Hospitality"],
+    ["rcoa", "RCoA Hospitality"],
   ];
   for (const [site, title] of expected) {
     const source = fs.readFileSync(new URL(`../app/${site}/layout.tsx`, import.meta.url), "utf8");

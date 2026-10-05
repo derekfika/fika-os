@@ -326,11 +326,13 @@ export default function RcoaBookingPortal({ oplocId }: { oplocId?: string }) {
         <a className={styles.brand} href="/rcoa" aria-label="RCoA Hospitality home">
           <img src={site.logoPath} alt={site.displayName} onError={(event) => { event.currentTarget.hidden = true; const fallback = event.currentTarget.nextElementSibling as HTMLElement | null; if (fallback) fallback.style.display = "inline"; }} />
           <span className={styles.logoFallback} aria-hidden="true">RCoA</span>
-          <span className={styles.brandLabel}>Hospitality</span>
         </a>
-        <p className={styles.categoryNav}>Plan a booking with RCoA Hospitality</p>
+        <nav className={styles.categoryNav} aria-label="Booking categories">
+          <span>Booking</span><span>Breakfast</span><span>Lunch</span><span>Afternoon</span>
+          <span>Finger food</span><span>Bowl food &amp; canapes</span><span>Events</span>
+        </nav>
         <button ref={resetTriggerRef} className={styles.resetButton} type="button" aria-label="Start again" onClick={() => setResetOpen(true)}>
-          <span aria-hidden="true">↻</span><span className={styles.resetLabel}>Start again</span>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.64-6.36" /><path d="M21 3v6h-6" /></svg>
         </button>
       </header>
 

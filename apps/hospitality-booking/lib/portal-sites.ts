@@ -110,9 +110,9 @@ export const portalSites: Record<PortalSiteKey, PortalSiteConfig> = {
     oplocAliases: ["rcoa", "royal college of anaesthetists"],
     theme: {
       shortLabel: "RCoA",
-      heroBackground: "linear-gradient(114deg, #2C1951 0 58%, #4F34C7 58%)",
+      heroBackground: "linear-gradient(105deg, #20113d, #2c1951)",
       accent: "#2C1951",
-      accentSoft: "#E9E3EF",
+      accentSoft: "#8E73B8",
       heroEyebrow: "Royal College of Anaesthetists",
     },
   },

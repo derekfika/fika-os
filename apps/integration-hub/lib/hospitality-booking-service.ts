@@ -41,6 +41,8 @@ import { recordDataAccess } from "@fika/server-shared/data-source-meter-server";
 
 export const MNK_BOOKING_INGESTION_CONTRACT_VERSION =
   "fika.booking-ingestion.mnk.v1";
+export const RCOA_BOOKING_INGESTION_CONTRACT_VERSION =
+  "fika.booking-ingestion.rcoa.v1";
 export const HOSPITALITY_MENU_READ_CONTRACT_VERSION =
   "fika.hospitality-menu-read.v1";
 
@@ -116,7 +118,7 @@ export type CanonicalBooking = {
   updatedAt: string;
   updatedBy: string;
   source: {
-    provider: "mnk-booking-platform";
+    provider: "mnk-booking-platform" | "rcoa-booking-platform";
     sourceBookingId: string;
     submissionTimestamp: string;
     contractVersion: string;
@@ -374,13 +376,15 @@ export async function saveHospitalityMenuItem(
   });
 }
 
-export function canonicalBookingId(sourceBookingId: string) {
+export function canonicalBookingId(sourceBookingId: string, portalSiteId?: string) {
+  const isRcoa = portalSiteId === "rcoa";
+  const provider = isRcoa ? "rcoa-booking-platform" : "mnk-booking-platform";
   const digest = crypto
     .createHash("sha256")
-    .update(`mnk-booking-platform:${sourceBookingId.trim()}`)
+    .update(`${provider}:${sourceBookingId.trim()}`)
     .digest("hex")
     .slice(0, 32);
-  return `booking:mnk:${digest}`;
+  return `booking:${isRcoa ? "rcoa" : "mnk"}:${digest}`;
 }
 
 /** Resolve a portal site through governed source mapping; labels are not identity. */
@@ -395,15 +399,37 @@ export function resolveHospitalityDestinationOploc(
 }
 export function resolveHospitalityDestinationId(payload: Pick<MnkBookingPayload, "siteId" | "site">, mappings: Array<Record<string, unknown>>) {
   const sourceIdentifiers = portalSourceIdentifiers(payload);
-  const mapping = mappings.find(candidate => sourceIdentifiers.includes(String(candidate.sourceIdentifier || "").trim().toLowerCase()) && String(candidate.mappingStatus || "") === "confirmed" && Boolean(String(candidate.sourceEntityType || "")));
+  const portalSiteId = portalSiteKeyForPayload(payload);
+  const candidates = mappings.filter(candidate => sourceIdentifiers.includes(String(candidate.sourceIdentifier || "").trim().toLowerCase()) && String(candidate.mappingStatus || "") === "confirmed" && (portalSiteId === "rcoa" ? String(candidate.sourceEntityType || "") === "provider-location" : Boolean(String(candidate.sourceEntityType || ""))));
+  const mapping = portalSiteId === "rcoa" ? (candidates.length === 1 ? candidates[0] : undefined) : candidates[0];
   return String(mapping?.oplocId || mapping?.targetCanonicalId || "").trim() || undefined;
+}
+
+export function assertExpectedRcoaOploc(
+  expectedOplocId: string | undefined,
+  mappedOplocId: string | undefined,
+  activeOplocId?: string,
+) {
+  const expected = String(expectedOplocId || "").trim();
+  if (!expected)
+    throw Object.assign(new Error("RCoA booking is unavailable because FIKA_RCOA_OPLOC_ID is not configured."), { status: 503 });
+  if (!mappedOplocId)
+    throw conflict("RCoA requires one confirmed Hub provider-location mapping for sourceIdentifier 'rcoa'.");
+  if (mappedOplocId !== expected)
+    throw conflict(`RCoA configuration mismatch: FIKA_RCOA_OPLOC_ID is '${expected}', but the confirmed Hub destination for sourceIdentifier 'rcoa' is '${mappedOplocId}'.`);
+  if (activeOplocId !== expected)
+    throw conflict(`RCoA configured OPLOC '${expected}' is not an active canonical destination.`);
+  return expected;
 }
 
 function portalSourceIdentifiers(payload: Pick<MnkBookingPayload, "siteId" | "site">) {
   const portalSiteId = portalSiteKeyForPayload(payload);
   // RCoA dashboard access and booking handoff must be joined by its stable
   // portal key; a display label is never a governed site identity.
-  if (portalSiteId === "rcoa") return [portalSiteId];
+  if (portalSiteId === "rcoa")
+    return String(payload.siteId || "").trim().toLowerCase() === "rcoa"
+      ? [portalSiteId]
+      : [];
   return [...new Set([portalSiteId, payload.site].map(value => String(value || "").trim().toLowerCase()).filter(Boolean))];
 }
 export function productionOrderId(bookingId: string) {
@@ -490,25 +516,27 @@ export function buildMnkCanonicalBooking(
       ...(menuItem ? { menuItemId: menuItem.canonicalId } : {}),
     };
   });
-  const id = canonicalBookingId(payload.bookingId);
+  const isRcoa = portalSiteId === "rcoa";
+  const sourceProvider = isRcoa ? "rcoa-booking-platform" : "mnk-booking-platform";
+  const bridgeActor = `bridge:${sourceProvider}`;
   const status: CanonicalBooking["lifecycleStatus"] = "New";
   const vatTotal = 0; // The portal's current snapshot is net-only; do not manufacture VAT line detail.
   return {
     booking: {
-      canonicalId: id,
+      canonicalId: canonicalBookingId(payload.bookingId, portalSiteId),
       entityType: "Booking",
       schemaVersion: "0.1.0",
       version: 1,
       lifecycleStatus: status,
       createdAt: now,
-      createdBy: "bridge:mnk-booking-platform",
+      createdBy: bridgeActor,
       updatedAt: now,
-      updatedBy: "bridge:mnk-booking-platform",
+      updatedBy: bridgeActor,
       source: {
-        provider: "mnk-booking-platform",
+        provider: sourceProvider,
         sourceBookingId: payload.bookingId.trim(),
         submissionTimestamp: payload.submittedAt,
-        contractVersion: MNK_BOOKING_INGESTION_CONTRACT_VERSION,
+        contractVersion: isRcoa ? RCOA_BOOKING_INGESTION_CONTRACT_VERSION : MNK_BOOKING_INGESTION_CONTRACT_VERSION,
         originalPayload: structuredClone(payload),
       },
       client: structuredClone(payload.client),
@@ -540,17 +568,18 @@ export function buildMnkCanonicalBooking(
         {
           status,
           changedAt: now,
-          changedBy: "bridge:mnk-booking-platform",
-          reason: "Submitted through MNK Hospitality Booking Portal.",
+          changedBy: bridgeActor,
+          reason: isRcoa ? "Submitted through RCoA Hospitality Booking Portal." : "Submitted through MNK Hospitality Booking Portal.",
         },
       ],
       audit: [
         {
           action: "booking-ingested",
           at: now,
-          by: "bridge:mnk-booking-platform",
-          reason:
-            "Canonical bridge accepted the structured MNK portal booking.",
+          by: bridgeActor,
+          reason: isRcoa
+            ? "Canonical bridge accepted the structured RCoA portal booking."
+            : "Canonical bridge accepted the structured MNK portal booking.",
         },
       ],
     },
@@ -576,14 +605,19 @@ export function ingestMnkBookingFromExisting(
 
 export async function ingestMnkBooking(
   payload: MnkBookingPayload,
+  expectedRcoaOplocId?: string,
 ): Promise<IngestionResult> {
+  const portalSiteId = portalSiteKeyForPayload(payload);
+  const isRcoa = portalSiteId === "rcoa";
+  if (isRcoa && !String(expectedRcoaOplocId || "").trim())
+    assertExpectedRcoaOploc(undefined, undefined);
+  const bookingId = canonicalBookingId(payload.bookingId, portalSiteId);
   const result = await db.runTransaction(async (transaction) => {
-    const existingSnapshot = await transaction.get(bookings().doc(canonicalBookingId(payload.bookingId)));
+    const existingSnapshot = await transaction.get(bookings().doc(bookingId));
     if (existingSnapshot.exists) {
       recordDataAccess({ app: "integration-hub", operation: "hospitality.ingest.transaction-reads", source: "FIRESTORE", dataset: "hospitality-ingest", documents: 1, estimatedBillableReads: 1, firestoreReadKind: "transaction" });
       return ingestMnkBookingFromExisting(existingSnapshot.data() as CanonicalBooking, payload, []);
     }
-    const portalSiteId = portalSiteKeyForPayload(payload);
     const mappingIdentifiers = portalSourceIdentifiers(payload);
     if (!mappingIdentifiers.length) mappingIdentifiers.push("__missing__");
     const [menusSnapshot, mappingsSnapshot] = await Promise.all([
@@ -593,9 +627,12 @@ export async function ingestMnkBooking(
     const canonicalRecords = menusSnapshot.docs.map((document) => document.data() as CanonicalRecord);
     const mappings = mappingsSnapshot.docs.map(document => document.data() as Record<string, unknown>);
     const destinationId = resolveHospitalityDestinationId(payload, mappings);
+    if (isRcoa && destinationId !== expectedRcoaOplocId)
+      assertExpectedRcoaOploc(expectedRcoaOplocId, destinationId);
     const destinationSnapshot = destinationId ? await transaction.get(canonical().doc(stableDocumentId(destinationId))) : undefined;
     const destinationOplocId = destinationSnapshot?.exists ? resolveHospitalityDestinationOploc(payload, mappings, [...canonicalRecords, destinationSnapshot.data() as CanonicalRecord]) : undefined;
     recordDataAccess({ app: "integration-hub", operation: "hospitality.ingest.transaction-reads", source: "FIRESTORE", dataset: "hospitality-ingest", documents: menusSnapshot.size + mappingsSnapshot.size + (destinationSnapshot?.exists ? 1 : 0), estimatedBillableReads: menusSnapshot.size + mappingsSnapshot.size + (destinationSnapshot?.exists ? 1 : 0), firestoreReadKind: "transaction" });
+    if (isRcoa) assertExpectedRcoaOploc(expectedRcoaOplocId, destinationId, destinationOplocId);
     if (!destinationOplocId) throw conflict(portalSiteId === "rcoa"
       ? "RCoA has no confirmed canonical destination OPLOC. Configure the governed source mapping for rcoa before submission."
       : "This delivery-requiring Hospitality Booking has no confirmed canonical destination OPLOC; resolve the governed site mapping before submission.");

@@ -5,7 +5,8 @@ import { buildTrustedRcoaHubPayload } from "@/lib/rcoa-booking-request";
 
 export async function POST(request: NextRequest) {
   return withDataTrace({ app: "hospitality-booking", action: "booking.create.rcoa", path: "/api/bookings/rcoa", outcome: "SUCCESS" }, async () => {
-    if (!process.env.FIKA_RCOA_OPLOC_ID?.trim()) {
+    const expectedOplocId = process.env.FIKA_RCOA_OPLOC_ID?.trim();
+    if (!expectedOplocId) {
       return NextResponse.json({ error: { message: "RCoA booking is unavailable until its governed OPLOC mapping is configured." } }, { status: 503 });
     }
     let payload: ReturnType<typeof buildTrustedRcoaHubPayload>;
@@ -18,7 +19,10 @@ export async function POST(request: NextRequest) {
     try {
       const response = await hubFetch("/api/bookings/mnk", {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers: {
+          "content-type": "application/json",
+          "x-fika-expected-rcoa-oploc-id": expectedOplocId,
+        },
         body: JSON.stringify(payload),
       });
       recordDataAccess({ operation: "booking.create.rcoa", source: "NETWORK_UPSTREAM", documents: 0, dataset: "hospitality/bookings" });
