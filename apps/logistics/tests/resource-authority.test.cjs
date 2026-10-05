@@ -125,7 +125,7 @@ for (const body of [
   { action: 'reorder', runId: 'r1', stopIds: ['s2'], expectedRunVersion: 1 },
 ]) test('actual POST rejects forged resource: ' + JSON.stringify(body), async () => {
   const f = fixture(); await f.rebuild(); const before = f.writes; const result = await f.post(body);
-  assert.equal(result.response.status, 403); assert.equal(f.writes, before);
+  assert.equal(result.response.status, body.action === 'reorder' ? 422 : 403); assert.equal(f.writes, before);
 });
 test('unauthorized collection run withheld and mutations rejected', async () => {
   const f = fixture(); Object.assign(f.records.get('fikaLogisticsDeliveryLoadsV1/l1'), { collectionRunId: 'r2', collectionRequired: true }); await f.rebuild();

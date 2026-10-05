@@ -2,6 +2,7 @@ import type { Transaction } from "firebase-admin/firestore";
 import { collectionPreferences, deliveryLoads, logisticsAssignments, logisticsJobs, runs, stops } from "./store";
 import { assignJob, aggregateDelivery, assertLoadVersion, compatibleLoad, createLoad } from "./delivery-loads";
 import { HttpError } from "./http-error";
+import { assertRunPlanningOpen } from "./planning";
 import type { DeliveryLoad, DeliveryRun, LogisticsAssignment, LogisticsJob } from "./types";
 
 export const assignmentId = (jobId: string) => `assignment:${encodeURIComponent(jobId)}`;
@@ -20,6 +21,16 @@ export async function assertLoadAssignmentsCurrent(tx: Transaction, load: Delive
     return job;
   }));
   return { jobs, assignments: assignments.docs.map(doc => doc.data() as LogisticsAssignment) };
+}
+
+async function assertLoadPlacementPlanningOpen(tx: Transaction, load: DeliveryLoad) {
+  const ownerIds = [...new Set([load.runId, load.collectionRunId || (load.collectionRequired ? load.runId : undefined)].filter((id): id is string => Boolean(id)))];
+  for (const id of ownerIds) {
+    const snapshot = await tx.get(runs().doc(id));
+    const owner = snapshot.exists ? snapshot.data() as DeliveryRun : undefined;
+    if (!owner) throw new HttpError(409, "Canonical load owner is unavailable.");
+    try { assertRunPlanningOpen(owner); } catch (error) { throw new HttpError(422, error instanceof Error ? error.message : "Return the run to planning before changing assignments."); }
+  }
 }
 
 /** One job document is the serialization point, including legacy pair-ID assignments.
@@ -54,6 +65,7 @@ export async function assignCanonicalJob(tx: Transaction, intent: AssignmentInte
     const runSnap = await tx.get(runs().doc(intent.targetRunId));
     const run = runSnap.data() as DeliveryRun | undefined;
     if (!run || run.serviceDate !== job.serviceDate || !run.vehicleId) throw new HttpError(409, "Canonical delivery run is unavailable.");
+    try { assertRunPlanningOpen(run); } catch (error) { throw new HttpError(422, error instanceof Error ? error.message : "Run is not open for planning."); }
     vehicleId = run.vehicleId;
     deliveryRun = run;
   }
@@ -88,7 +100,11 @@ export async function assignCanonicalJob(tx: Transaction, intent: AssignmentInte
   const oldLoad = existing[0] && existing[0].loadId !== load.id ? (await tx.get(deliveryLoads().doc(existing[0].loadId))).data() as DeliveryLoad | undefined : undefined;
   const oldMembers = oldLoad ? await tx.get(logisticsAssignments().where("loadId", "==", oldLoad.id)) : undefined;
   if (existing.length && !oldLoad && existing[0].loadId !== load.id) throw new HttpError(409, "Prior load authority is unavailable.");
-  if (oldLoad) assertLoadVersion(oldLoad, intent.expectedLoadVersions?.[oldLoad.id]);
+  if (oldLoad) {
+    assertLoadVersion(oldLoad, intent.expectedLoadVersions?.[oldLoad.id]);
+    await assertLoadPlacementPlanningOpen(tx, oldLoad);
+  }
+  if (matching.length && !batch?.loads.has(load.id)) await assertLoadPlacementPlanningOpen(tx, load);
   const oldJobs = oldLoad ? (await assertLoadAssignmentsCurrent(tx, oldLoad)).jobs.filter(member => member.id !== job.id) : [];
   const next = assignJob(job, load, existing, by, now);
   const savedBase = batch?.loads.has(load.id) ? { ...next.load, version: load.version, audit: [...load.audit, { action: "job-assigned", at: now, by, version: load.version }] } : matching.length ? next.load : { ...next.load, version: 1, audit: [...load.audit, { action: "job-assigned", at: now, by, version: 1 }] };

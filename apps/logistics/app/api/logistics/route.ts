@@ -56,6 +56,9 @@ import {
   assignMovementStops,
   combineStop,
   orderedTransferStops,
+  transferLegsForStop,
+  transferOrderProblem,
+  assertRunPlanningOpen,
   validateRequirementForPlanning,
   linkedCollectionForDelivery,
 } from "@/lib/planning";
@@ -138,11 +141,24 @@ function runPayload(
   };
 }
 function assertPlanningOpen(run: DeliveryRun) {
-  if (run.status !== "draft" && run.status !== "planned")
-    throw new HttpError(
-      422,
-      `Run is ${run.status}; return it to planning before changing its structure.`,
-    );
+  try { assertRunPlanningOpen(run); }
+  catch (error) { throw new HttpError(422, error instanceof Error ? error.message : "Return the run to planning before changing its structure."); }
+}
+async function transferContext(transaction: Transaction, stop: DeliveryStop) {
+  const movementIds = stop.movementRequestIds || (stop.movementRequestId ? [stop.movementRequestId] : []);
+  const movementSnapshots = await Promise.all(movementIds.map(id => transaction.get(movements().doc(id))));
+  const linkedMovements = movementSnapshots.filter(snapshot => snapshot.exists).map(snapshot => snapshot.data() as MovementRequest);
+  const missingMovementIds = movementIds.filter((_, index) => !movementSnapshots[index].exists);
+  const transferMovements = linkedMovements.filter(movement => movement.type === "transfer");
+  const linkedStops = new Map<string, DeliveryStop>([[stop.canonicalId, stop]]);
+  for (const movement of transferMovements) {
+    const snapshots = await Promise.all([
+      transaction.get(stops().where("movementRequestIds", "array-contains", movement.canonicalId)),
+      transaction.get(stops().where("movementRequestId", "==", movement.canonicalId)),
+    ]);
+    for (const doc of snapshots.flatMap(snapshot => snapshot.docs)) linkedStops.set(doc.id, normalizeStop(doc.data()));
+  }
+  return { movements: linkedMovements, transferMovements, missingMovementIds, stops: [...linkedStops.values()] };
 }
 function addMinutesToTime(value: string, minutes: number) {
   const [hours, mins] = value.split(":").map(Number);
@@ -728,6 +744,15 @@ async function handlePost(request: NextRequest) {
           await assertLoadAssignmentsCurrent(transaction, load);
           // Current owner checks must also join this transaction before any writes.
           await authorizeLoad(principal, load, async id => (await transaction.get(runs().doc(id))).data() as DeliveryRun | undefined);
+          const currentOwners = [...new Set((collection
+            ? [load.collectionRunId || (load.collectionRequired ? load.runId : undefined)]
+            : [load.runId]
+          ).filter((id): id is string => Boolean(id)))];
+          for (const ownerId of currentOwners) {
+            const ownerSnap = await transaction.get(runs().doc(ownerId));
+            if (!ownerSnap.exists) throw new HttpError(409, "Canonical current load owner is unavailable.");
+            assertPlanningOpen(ownerSnap.data() as DeliveryRun);
+          }
         }
         if (loads.some(load => placementKey(load) !== placementKey(loads[0]))) throw new HttpError(409, "Grouped placement changed. Refresh planning.");
         const first = loads[0];
@@ -739,6 +764,7 @@ async function handlePost(request: NextRequest) {
           const target = (await transaction.get(runs().doc(runId))).data() as DeliveryRun | undefined;
           if (!target || target.serviceDate !== first.serviceDate || !target.vehicleId) throw new HttpError(409, "Canonical target run is unavailable.");
           authorizeRun(principal, target);
+          assertPlanningOpen(target);
           if (!collection) vehicleId = target.vehicleId;
         }
         const requestedDuration = body.scheduledEnd ? Math.max(15, Number(body.scheduledEnd.slice(0, 2)) * 60 + Number(body.scheduledEnd.slice(3, 5)) - (Number(requestedTime.slice(0, 2)) * 60 + Number(requestedTime.slice(3, 5)))) : undefined;
@@ -779,6 +805,13 @@ async function handlePost(request: NextRequest) {
         if (assignmentSnap.size !== 1 || !loadSnap.exists) throw new HttpError(409, "Canonical assignment integrity requires review.");
         const load = loadSnap.data() as import("@/lib/types").DeliveryLoad;
         assertLoadVersion(load, body.expectedLoadVersion ?? body.expectedLoadVersions?.[load.id]);
+        if (!load.runId) throw new HttpError(409, "Canonical delivery owner is unavailable.");
+        const ownerIds = [...new Set([load.runId, load.collectionRequired && load.collectionScheduledTime ? load.collectionRunId || load.runId : undefined].filter((id): id is string => Boolean(id)))];
+        for (const ownerId of ownerIds) {
+          const ownerSnap = await transaction.get(runs().doc(ownerId));
+          if (!ownerSnap.exists) throw new HttpError(409, "Canonical load owner is unavailable.");
+          assertPlanningOpen(ownerSnap.data() as DeliveryRun);
+        }
         const jobRef = logisticsJobs().doc(assignment.jobId);
         const jobSnap = await transaction.get(jobRef);
         if (!jobSnap.exists) throw new HttpError(409, "Canonical job is unavailable.");
@@ -1399,6 +1432,8 @@ async function handlePost(request: NextRequest) {
           throw new HttpError(404, "Run or stop not found.");
         const source = sourceSnap.data() as DeliveryRun;
         const target = targetSnap.data() as DeliveryRun;
+        if (source.serviceDate !== target.serviceDate)
+          throw new HttpError(422, "Ordinary stop moves must stay within the same service date. Use the explicit collection deferral workflow for cross-date work.");
         assertPlanningOpen(source);
         assertPlanningOpen(target);
         const stop = normalizeStop(stopSnap.data()!);
@@ -1417,11 +1452,13 @@ async function handlePost(request: NextRequest) {
             422,
             "Stop does not belong to the selected source run.",
           );
-        if (stop.movementType === "transfer")
-          throw new HttpError(
-            422,
-            "Move the transfer as a linked job; its pickup and drop-off must stay together.",
-          );
+        const transfer = await transferContext(transaction, stop);
+        if (transfer.missingMovementIds.length) throw new HttpError(409, "Linked movement identity is unavailable; review the stop before moving it.");
+        const transferLeg = transferLegsForStop(stop, transfer.transferMovements, transfer.stops);
+        if (transferLeg.isTransfer) {
+          if (transferLeg.integrityProblem) throw new HttpError(409, "Transfer leg mapping is incomplete or ambiguous; review the linked movement before moving it.");
+          throw new HttpError(422, "Transfer pickup and drop-off are linked and cannot be moved independently.");
+        }
         const sourceStops = sourceStopsSnap.docs
           .map((doc) => normalizeStop(doc.data()))
           .filter((item) => item.canonicalId !== stop.canonicalId);
@@ -1529,6 +1566,20 @@ async function handlePost(request: NextRequest) {
             const deliveryStart = counterpart.plannedWindow?.startTime || counterpart.plannedArrivalTime;
             if (collectionStart && deliveryStart && collectionStart < deliveryStart)
               throw new HttpError(422, "Collection cannot be scheduled before its delivery.");
+          }
+        }
+        const transfer = await transferContext(transaction, stop);
+        if (transfer.missingMovementIds.length) throw new HttpError(409, "Linked movement identity is unavailable; review the stop before scheduling it.");
+        const transferLeg = transferLegsForStop(stop, transfer.transferMovements, transfer.stops);
+        if (transferLeg.isTransfer) {
+          if (transferLeg.integrityProblem) throw new HttpError(409, "Transfer pickup/drop-off mapping is incomplete or ambiguous; review the linked movement before scheduling.");
+          const proposedStart = resolvedPlanned.plannedWindow?.startTime || resolvedPlanned.plannedArrivalTime;
+          for (const leg of transferLeg.legs) {
+            const counterpart = leg.counterpart!;
+            if (counterpart.runId !== run.canonicalId) throw new HttpError(409, "Transfer pickup and drop-off must remain on the same run.");
+            const counterpartStart = counterpart.plannedWindow?.startTime || counterpart.plannedArrivalTime;
+            if (proposedStart && counterpartStart && (leg.role === "pickup" ? proposedStart > counterpartStart : proposedStart < counterpartStart))
+              throw new HttpError(422, "Transfer pickup must be scheduled at or before its drop-off.");
           }
         }
         const nextStop = { ...stop, ...resolvedPlanned, version: stop.version + 1, updatedAt: now, audit: [...stop.audit, { action: "stop-scheduled", at: now, by, version: stop.version + 1 }] };
@@ -1806,8 +1857,12 @@ async function handlePost(request: NextRequest) {
             throw new HttpError(422, "Only collection stops can be postponed.");
           if (stop.status === "completed")
             throw new HttpError(422, "Completed collections cannot be postponed.");
-          if (!body.targetServiceDate || body.targetServiceDate <= run.serviceDate)
+          if (!body.targetServiceDate || !validOperationalDate(body.targetServiceDate) || body.targetServiceDate <= run.serviceDate)
             throw new HttpError(422, "Choose a future collection date.");
+          const transfer = await transferContext(transaction, stop);
+          if (transfer.missingMovementIds.length) throw new HttpError(409, "Linked movement identity is unavailable; review the collection before postponing it.");
+          const transferLeg = transferLegsForStop(stop, transfer.transferMovements, transfer.stops);
+          if (transferLeg.isTransfer) throw new HttpError(422, "Transfer pickup and drop-off must remain linked and cannot be postponed independently.");
           const allRunsSnap = await transaction.get(
             runs().where("serviceDate", "==", body.targetServiceDate),
           );
@@ -2088,20 +2143,13 @@ async function handlePost(request: NextRequest) {
         if (body.action === "defer-stop") {
           if (stop.status === "completed")
             throw new HttpError(422, "Completed stops cannot be deferred.");
-          const movementIds = stop.movementRequestIds || [];
-          const linked = await Promise.all(
-            movementIds.map((id) => transaction.get(movements().doc(id))),
-          );
-          if (
-            linked.some(
-              (snapshot) =>
-                snapshot.exists &&
-                (snapshot.data() as MovementRequest).type === "transfer",
-            )
-          )
+          const transfer = await transferContext(transaction, stop);
+          if (transfer.missingMovementIds.length) throw new HttpError(409, "Linked movement identity is unavailable; review the stop before deferring it.");
+          const transferLeg = transferLegsForStop(stop, transfer.transferMovements, transfer.stops);
+          if (transferLeg.isTransfer)
             throw new HttpError(
               422,
-              "Transfer pickup and drop-off must remain linked; defer the transfer as a pair.",
+              "Transfer pickup and drop-off must remain linked and cannot be deferred independently.",
             );
           const reordered = [
             ...allStops.filter((item) => item.canonicalId !== stop.canonicalId),
@@ -2154,6 +2202,14 @@ async function handlePost(request: NextRequest) {
         transaction.set(runRef, nextRun);
         return { run: nextRun, stop: nextStop };
       });
+      const deferredTargetRun = (result as { targetRun?: DeliveryRun }).targetRun;
+      if (body.action === "defer-collection" && deferredTargetRun) {
+        const sourceEvent = await appendLogisticsChange({ serviceDate: result.run.serviceDate, entityType: "run", entityId: result.run.canonicalId, changeType: "collection-postponed-out", revision: result.run.version, changedAt: now, actorId });
+        const targetEvent = await appendLogisticsChange({ serviceDate: deferredTargetRun.serviceDate, entityType: "run", entityId: deferredTargetRun.canonicalId, changeType: "collection-postponed-in", revision: deferredTargetRun.version, changedAt: now, actorId });
+        await rebuildLogisticsProjection(result.run.serviceDate, by, sourceEvent.sequence);
+        await rebuildLogisticsProjection(deferredTargetRun.serviceDate, by, targetEvent.sequence);
+        return NextResponse.json({ ...result, affectedServiceDates: [result.run.serviceDate, deferredTargetRun.serviceDate], changeCursors: { [result.run.serviceDate]: sourceEvent.sequence, [deferredTargetRun.serviceDate]: targetEvent.sequence } });
+      }
       await recordCanonicalLogisticsChange({ serviceDate: result.run.serviceDate, entityType: "stop", entityId: result.stop.canonicalId, changeType: body.action, revision: result.stop.version, actorId, by, changedAt: now });
       return NextResponse.json(result);
     }
@@ -2163,11 +2219,8 @@ async function handlePost(request: NextRequest) {
         "Use an execution command to change stop status.",
       );
     }
-    if (
-      body.action === "reorder" &&
-      body.runId &&
-      Array.isArray(body.stopIds)
-    ) {
+    if (body.action === "reorder" && body.runId) {
+      if (!Array.isArray(body.stopIds)) throw new HttpError(422, "Reorder requires an exact array of canonical stop IDs.");
       if (body.expectedRunVersion === undefined)
         throw new HttpError(
           422,
@@ -2183,32 +2236,25 @@ async function handlePost(request: NextRequest) {
             409,
             "This run changed elsewhere. Refresh before reordering stops.",
           );
+        assertPlanningOpen(run);
         const stopSnap = await transaction.get(
           stops().where("runId", "==", body.runId),
         );
         const byId = new Map(
           stopSnap.docs.map((doc) => [doc.id, normalizeStop(doc.data())]),
         );
-        const selected = body
-          .stopIds!.map((id) => byId.get(id))
-          .filter(Boolean) as DeliveryStop[];
-        if (selected.length !== body.stopIds!.length)
-          throw new HttpError(422, "The stop list contains an unknown stop.");
-        if (selected.length !== byId.size)
-          throw new HttpError(
-            422,
-            "Reorder must include every stop in the run.",
-          );
-        const ordered = orderedTransferStops(selected);
-        if (
-          ordered.some(
-            (stop, index) => stop.canonicalId !== body.stopIds![index],
-          )
-        )
-          throw new HttpError(
-            422,
-            "Transfer pickup must remain before drop-off.",
-          );
+        const submitted = body.stopIds!;
+        const submittedSet = new Set(submitted);
+        if (submitted.some(id => typeof id !== "string") || submittedSet.size !== submitted.length || submitted.length !== byId.size || [...byId.keys()].some(id => !submittedSet.has(id)))
+          throw new HttpError(422, "Reorder must be an exact permutation of every current stop ID in this run.");
+        const selected = submitted.map((id, index) => ({ ...byId.get(id)!, sequence: index + 1 }));
+        const movementIds = [...new Set(selected.flatMap(stop => stop.movementRequestIds || (stop.movementRequestId ? [stop.movementRequestId] : [])))];
+        const movementSnapshots = await Promise.all(movementIds.map(id => transaction.get(movements().doc(id))));
+        if (movementSnapshots.some(snapshot => !snapshot.exists)) throw new HttpError(409, "A linked movement identity is unavailable; review run integrity before reordering.");
+        const linkedMovements = movementSnapshots.filter(snapshot => snapshot.exists).map(snapshot => snapshot.data() as MovementRequest);
+        const orderProblem = transferOrderProblem(selected, linkedMovements);
+        if (orderProblem) throw new HttpError(orderProblem.includes("incomplete or ambiguous") ? 409 : 422, orderProblem);
+        const ordered = selected;
         for (const stop of ordered)
           transaction.set(stops().doc(stop.canonicalId), stop);
         const next = {

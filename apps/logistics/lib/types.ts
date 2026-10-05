@@ -36,6 +36,8 @@ export type StopIssue = {
 };
 export type RequirementRef = { requirementId: string; sourceVersion: number; sourceDomain?: FulfilmentRequirement["sourceDomain"]; workstream?: FulfilmentWorkstream };
 export type DeliveryStop = {
+  /** Stable identity for a one-off movement endpoint; never derived from address text. */
+  oneOffEndpointId?: string;
   canonicalLoadIds?: string[];
   canUndoCompletion?: boolean;
   collectedRequirementIds?: string[];

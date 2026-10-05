@@ -66,6 +66,10 @@ export function chooseTargetRun(runs: DeliveryRun[], selectedRunId?: string) {
     return selectedRunId;
   return runs.length === 1 ? runs[0].canonicalId : undefined;
 }
+export function assertRunPlanningOpen(run: DeliveryRun) {
+  if (run.status !== "draft" && run.status !== "planned")
+    throw new Error(`Run is ${run.status}; return it to planning before changing its structure.`);
+}
 export function selectMobileRuns(
   runs: DeliveryRun[],
   driverId: string,
@@ -137,6 +141,9 @@ export function combineStop(
     locationLabel: string;
     requirement?: FulfilmentRequirement;
     movement?: MovementRequest;
+    oneOffEndpointId?: string;
+    transferMovementId?: string;
+    transferEndpointRole?: "pickup" | "dropoff";
     runId: string;
     by: string;
     now?: string;
@@ -147,7 +154,10 @@ export function combineStop(
   const existing = stops.find(
     (stop) =>
       stop.runId === input.runId &&
-      stop.locationOplocId === input.locationOplocId &&
+      (input.locationOplocId
+        ? stop.locationOplocId === input.locationOplocId && !stop.oneOffEndpointId
+        : Boolean(input.oneOffEndpointId) && stop.oneOffEndpointId === input.oneOffEndpointId) &&
+      !(input.transferMovementId && (stop.movementRequestIds || []).includes(input.transferMovementId) && stop.movementType === (input.transferEndpointRole === "pickup" ? "delivery" : "collection")) &&
       stop.status !== "completed",
   );
   if (input.requirement && !isNewlyPlannable(input.requirement, stops))
@@ -165,10 +175,11 @@ export function combineStop(
   if (!existing)
     return {
       ...({
-        canonicalId: `stop:${input.runId}:${input.locationOplocId}:${Date.now()}`,
+        canonicalId: `stop:${input.runId}:${input.oneOffEndpointId ? encodeURIComponent(input.oneOffEndpointId) : input.locationOplocId}:${Date.now()}`,
         runId: input.runId,
         sequence: stops.length + 1,
         locationOplocId: input.locationOplocId,
+        ...(input.oneOffEndpointId ? { oneOffEndpointId: input.oneOffEndpointId } : {}),
         locationLabelSnapshot: input.locationLabel,
         requirementRefs: input.requirement
           ? [
@@ -230,13 +241,35 @@ export function combineStop(
     ],
   };
 }
+export type TransferStopLeg = { movementId: string; role: "pickup" | "dropoff"; counterpart?: DeliveryStop };
+export function transferLegsForStop(stop: DeliveryStop, movements: MovementRequest[], runStops: DeliveryStop[]) {
+  const movementIds = stop.movementRequestIds || (stop.movementRequestId ? [stop.movementRequestId] : []);
+  const transfers = movements.filter((movement) => movementIds.includes(movement.canonicalId) && movement.type === "transfer");
+  const legs: TransferStopLeg[] = [];
+  let integrityProblem = false;
+  for (const movement of transfers) {
+    const role = stop.movementType === "collection" ? "pickup" : stop.movementType === "delivery" ? "dropoff" : undefined;
+    if (!role) { integrityProblem = true; continue; }
+    const counterparts = runStops.filter((candidate) => candidate.canonicalId !== stop.canonicalId && candidate.runId === stop.runId && (candidate.movementRequestIds || (candidate.movementRequestId ? [candidate.movementRequestId] : [])).includes(movement.canonicalId) && (role === "pickup" ? candidate.movementType === "delivery" : candidate.movementType === "collection"));
+    legs.push({ movementId: movement.canonicalId, role, ...(counterparts.length === 1 ? { counterpart: counterparts[0] } : {}) });
+    if (counterparts.length !== 1) integrityProblem = true;
+  }
+  return { isTransfer: transfers.length > 0, legs, integrityProblem };
+}
+export function transferOrderProblem(stops: DeliveryStop[], movements: MovementRequest[]) {
+  const ids = new Set(movements.filter((movement) => movement.type === "transfer").map((movement) => movement.canonicalId));
+  for (const movementId of ids) {
+    const legs = stops.filter((stop) => (stop.movementRequestIds || (stop.movementRequestId ? [stop.movementRequestId] : [])).includes(movementId));
+    const pickups = legs.filter((stop) => stop.movementType === "collection");
+    const dropoffs = legs.filter((stop) => stop.movementType === "delivery");
+    if (legs.length !== 2 || pickups.length !== 1 || dropoffs.length !== 1 || pickups[0].runId !== dropoffs[0].runId) return `Transfer ${movementId} has an incomplete or ambiguous pickup/drop-off mapping.`;
+    if (stops.indexOf(pickups[0]) >= stops.indexOf(dropoffs[0])) return `Transfer ${movementId} pickup must remain before its drop-off.`;
+  }
+  return undefined;
+}
 export function orderedTransferStops(stops: DeliveryStop[]) {
   return [...stops]
-    .sort(
-      (a, b) =>
-        (a.movementType === "collection" ? -1 : 0) -
-          (b.movementType === "collection" ? -1 : 0) || a.sequence - b.sequence,
-    )
+    .sort((a, b) => a.sequence - b.sequence)
     .map((stop, index) => ({ ...stop, sequence: index + 1 }));
 }
 export function linkedCollectionForDelivery(delivery: DeliveryStop, runId: string, by: string, now = new Date().toISOString()) {
@@ -273,6 +306,9 @@ export function assignMovementStops(
   if (movement.type === "transfer") {
     const pickup = combineStop(working, {
       locationOplocId: movement.fromOplocId || "",
+      oneOffEndpointId: movement.fromOplocId ? undefined : `movement:${encodeURIComponent(movement.canonicalId)}:pickup`,
+      transferMovementId: movement.canonicalId,
+      transferEndpointRole: "pickup",
       locationLabel: labels.from || "",
       movement: { ...movement, type: "collection" },
       runId,
@@ -284,6 +320,9 @@ export function assignMovementStops(
     ];
     const dropoff = combineStop(working, {
       locationOplocId: movement.toOplocId || "",
+      oneOffEndpointId: movement.toOplocId ? undefined : `movement:${encodeURIComponent(movement.canonicalId)}:dropoff`,
+      transferMovementId: movement.canonicalId,
+      transferEndpointRole: "dropoff",
       locationLabel: labels.to || "",
       movement: { ...movement, type: "delivery" },
       runId,
@@ -297,6 +336,7 @@ export function assignMovementStops(
   } else {
     const next = combineStop(working, {
       locationOplocId: movement.toOplocId || movement.fromOplocId || "",
+      oneOffEndpointId: movement.toOplocId || movement.fromOplocId ? undefined : `movement:${encodeURIComponent(movement.canonicalId)}:endpoint`,
       locationLabel: labels.to || labels.from || "",
       movement,
       runId,

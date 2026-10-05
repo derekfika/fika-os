@@ -15,6 +15,8 @@ import {
   selectMobileRun,
   selectMobileRuns,
   scopeState,
+  transferLegsForStop,
+  transferOrderProblem,
   validateRequirementForPlanning,
 } from "../lib/planning";
 import { operationalDate } from "../lib/date";
@@ -266,25 +268,40 @@ test("actual transfer assignment path orders pickup before drop-off and snapshot
     [1, 2],
   );
 });
-test("transfer ordering remains enforced when stops already exist", () => {
+test("operator stop ordering preserves unrelated collection and delivery order", () => {
   const ordered = orderedTransferStops([
-    stop({
-      canonicalId: "drop",
-      sequence: 1,
-      movementType: "delivery",
-      movementRequestIds: ["transfer:1"],
-    }),
-    stop({
-      canonicalId: "pickup",
-      sequence: 2,
-      movementType: "collection",
-      movementRequestIds: ["transfer:1"],
-    }),
+    stop({ canonicalId: "delivery-first", sequence: 1, movementType: "delivery" }),
+    stop({ canonicalId: "collection-second", sequence: 2, movementType: "collection" }),
   ]);
-  assert.deepEqual(
-    ordered.map((item) => item.canonicalId),
-    ["pickup", "drop"],
-  );
+  assert.deepEqual(ordered.map((item) => item.canonicalId), ["delivery-first", "collection-second"]);
+});
+test("transfer legs resolve from canonical movement identity and validate pair order", () => {
+  const transfer = movement("transfer:1", "transfer");
+  const pickup = stop({ canonicalId: "pickup", sequence: 1, movementType: "collection", movementRequestIds: [transfer.canonicalId] });
+  const dropoff = stop({ canonicalId: "dropoff", sequence: 2, movementType: "delivery", movementRequestIds: [transfer.canonicalId] });
+  assert.equal(transferLegsForStop(pickup, [transfer], [pickup, dropoff]).isTransfer, true);
+  assert.equal(transferLegsForStop(dropoff, [transfer], [pickup, dropoff]).legs[0].role, "dropoff");
+  assert.equal(transferOrderProblem([pickup, dropoff], [transfer]), undefined);
+  assert.match(transferOrderProblem([dropoff, pickup], [transfer]) || "", /pickup must remain before/);
+  const unrelated = movement("movement:ordinary", "delivery");
+  assert.equal(transferLegsForStop(stop({ movementType: "delivery", movementRequestIds: [unrelated.canonicalId] }), [unrelated], []).isTransfer, false);
+});
+test("one-off movement endpoints use stable request-scoped identities", () => {
+  const oneOff = { ...movement("movement:one-off"), fromOplocId: undefined, toOplocId: undefined, toAddress: "Same address text" };
+  const first = assignMovementStops([], "run:1", oneOff, { to: "Same address text" }, "Operator");
+  const differentAddress = assignMovementStops(first, "run:1", { ...oneOff, canonicalId: "movement:other", toAddress: "Another address" }, { to: "Another address" }, "Operator");
+  assert.equal(differentAddress.length, 2);
+  const sameAddressDifferentRequest = assignMovementStops(differentAddress, "run:1", { ...oneOff, canonicalId: "movement:same-address" }, { to: "Same address text" }, "Operator");
+  assert.equal(sameAddressDifferentRequest.length, 3);
+  const replay = combineStop(first, { locationOplocId: "", oneOffEndpointId: "movement:movement%3Aone-off:endpoint", locationLabel: "Same address text", movement: oneOff, runId: "run:1", by: "Operator", allowExistingMovement: true });
+  assert.equal(replay.canonicalId, first[0].canonicalId);
+  const governed = combineStop([], { locationOplocId: "oploc:one", locationLabel: "One Angel Court", movement: movement("movement:governed"), runId: "run:1", by: "Operator" });
+  const oneOffBesideGoverned = combineStop([governed], { locationOplocId: "", oneOffEndpointId: "movement:one-off:endpoint", locationLabel: "One Angel Court", movement: oneOff, runId: "run:1", by: "Operator" });
+  assert.notEqual(governed.canonicalId, oneOffBesideGoverned.canonicalId);
+  const transfer = { ...movement("movement:transfer-one-off", "transfer"), fromOplocId: undefined, toOplocId: undefined, fromAddress: "A", toAddress: "B" };
+  const transferStops = assignMovementStops([], "run:1", transfer, { from: "A", to: "B" }, "Operator");
+  assert.equal(transferStops.length, 2);
+  assert.notEqual(transferStops[0].oneOffEndpointId, transferStops[1].oneOffEndpointId);
 });
 test("mobile run selection honours requested run ownership and current-date fallback", () => {
   const currentFranco = run("franco-current", "2026-08-20", "Franco");

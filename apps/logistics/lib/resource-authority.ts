@@ -92,11 +92,20 @@ export async function authorizeCommand(principal: LogisticsPrincipal, body: Reco
   if (body.run?.vehicleId) authorizeRun(principal, body.run);
   if (body.loadId) await checkLoad(body.loadId);
   for (const id of body.loadIds || []) await checkLoad(id);
-  for (const id of [...new Set([body.stopId, body.stop?.canonicalId, ...(body.stopIds || [])].filter(Boolean))] as string[]) {
+  const submittedStopIds = Array.isArray(body.stopIds) ? body.stopIds : [];
+  const commandStopIds = body.action === "reorder" ? submittedStopIds.filter((id: unknown): id is string => typeof id === "string") : submittedStopIds;
+  for (const id of [...new Set([body.stopId, body.stop?.canonicalId, ...commandStopIds].filter(Boolean))] as string[]) {
     if (id.startsWith("projection-stop:")) { await checkLoad(id.split(":").slice(2).join(":")); continue; }
     const stop = await reader.stop(id);
-    if (!stop) throw missing();
-    await checkRun(stop.runId);
+    if (!stop) {
+      if (body.action === "reorder") continue;
+      throw missing();
+    }
+    try { await checkRun(stop.runId); }
+    catch (error) {
+      if (body.action === "reorder") throw new LogisticsAuthorityError(422, "INVALID_REQUEST", "Reorder must be an exact permutation of the authorized run stops.");
+      throw error;
+    }
     if (stop.linkedStopId) { const linked = await reader.stop(stop.linkedStopId); if (!linked) throw missing(); await checkRun(linked.runId); }
   }
   if (body.jobId || body.job?.id) {

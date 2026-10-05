@@ -566,6 +566,7 @@ test("reorder persists order and rejects a transfer order that breaks pickup-bef
   const runId = `${id}:run`;
   const pickup = `${id}:pickup`;
   const drop = `${id}:drop`;
+  await seed(movements(), movement(`${id}:transfer`, "transfer"));
   await seed(runs(), { ...run(runId), orderedStopIds: [pickup, drop] });
   const base = {
     runId,
