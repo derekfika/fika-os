@@ -246,3 +246,105 @@ test('merged placement resolves one collision-adjusted arrival for every constit
   assert.equal(result.response.status, 200, JSON.stringify(result.body)); assert.equal(result.body.loads[0].scheduledTime, '11:00'); assert.equal(result.body.loads[1].scheduledTime, '11:00');
 });
 test('incompatible grouping semantics cannot be bundled into one placement', async () => { const f = await merged(); const second = loads(f)[1]; f.seed('fikaLogisticsDeliveryLoadsV1', second.id, { ...second, scheduledEnd: '12:00' }); const before = structuredClone([...f.records]); assert.equal((await f.post(bulk(f))).response.status, 409); assert.deepEqual([...f.records], before); });
+
+test('merged projected delivery clear unschedules every canonical load and rebuilds without stale timing', async () => {
+  const f = await merged();
+  const projection = f.records.get('fikaLogisticsDayProjectionsV1/' + f.date);
+  assert.equal(projection.deliveryLoads.length, 1);
+  const group = projection.deliveryLoads[0];
+  assert.equal(group.loadIds.length, 2);
+  const beforeLoads = loads(f);
+  const beforeAssignments = assignments(f);
+  const beforeJobs = jobs(f);
+  const beforeEvents = values(f, 'fikaLogisticsChangesV1').length;
+  const result = await f.post({ action: 'clear-delivery-load-schedule', loadIds: group.loadIds, expectedLoadVersions: group.loadVersions });
+  assert.equal(result.response.status, 200, JSON.stringify(result.body));
+  assert.equal(result.body.loads.length, 2);
+  for (const load of loads(f)) {
+    const old = beforeLoads.find(item => item.id === load.id);
+    assert.equal(Object.hasOwn(load, 'scheduledTime'), false);
+    assert.equal(Object.hasOwn(load, 'scheduledEnd'), false);
+    assert.equal(load.version, old.version + 1);
+    assert.equal(load.runId, old.runId);
+    assert.equal(load.vehicleId, old.vehicleId);
+    assert.equal(load.collectionScheduledTime, old.collectionScheduledTime);
+    assert.equal(load.collectionScheduledEnd, old.collectionScheduledEnd);
+    assert.equal(load.collectionRunId, old.collectionRunId);
+  }
+  assert.deepEqual(assignments(f), beforeAssignments);
+  assert.deepEqual(jobs(f), beforeJobs);
+  const rebuilt = f.records.get('fikaLogisticsDayProjectionsV1/' + f.date);
+  assert.equal(rebuilt.deliveryLoads.length, 1);
+  assert.deepEqual(new Set(rebuilt.deliveryLoads[0].loadIds), new Set(group.loadIds));
+  assert.equal(rebuilt.deliveryLoads[0].scheduledTime, undefined);
+  assert.equal(rebuilt.deliveryLoads[0].scheduledEnd, undefined);
+  assert.equal(values(f, 'fikaLogisticsChangesV1').length, beforeEvents + 2);
+});
+
+test('merged projected collection clear preserves delivery, collection owner and assignments for every load', async () => {
+  const f = await merged();
+  let projection = f.records.get('fikaLogisticsDayProjectionsV1/' + f.date);
+  const group = projection.deliveryLoads[0];
+  const scheduled = await f.post(bulk(f, { lane: 'collection', targetRunId: 'r2', scheduledTime: '14:00', scheduledEnd: '15:00' }));
+  assert.equal(scheduled.response.status, 200, JSON.stringify(scheduled.body));
+  projection = f.records.get('fikaLogisticsDayProjectionsV1/' + f.date);
+  assert.equal(projection.deliveryLoads.length, 1);
+  assert.deepEqual(new Set(projection.deliveryLoads[0].loadIds), new Set(group.loadIds));
+  const currentGroup = projection.deliveryLoads[0];
+  const beforeLoads = loads(f);
+  const beforeAssignments = assignments(f);
+  const result = await f.post({ action: 'clear-collection-load-schedule', loadIds: currentGroup.loadIds, expectedLoadVersions: currentGroup.loadVersions });
+  assert.equal(result.response.status, 200, JSON.stringify(result.body));
+  assert.equal(result.body.loads.length, 2);
+  for (const load of loads(f)) {
+    const old = beforeLoads.find(item => item.id === load.id);
+    assert.equal(Object.hasOwn(load, 'collectionScheduledTime'), false);
+    assert.equal(Object.hasOwn(load, 'collectionScheduledEnd'), false);
+    assert.equal(load.collectionRequired, true);
+    assert.equal(load.collectionRunId, 'r2');
+    assert.equal(load.scheduledTime, old.scheduledTime);
+    assert.equal(load.scheduledEnd, old.scheduledEnd);
+    assert.equal(load.runId, old.runId);
+    assert.equal(load.version, old.version + 1);
+  }
+  assert.deepEqual(assignments(f), beforeAssignments);
+  const rebuilt = f.records.get('fikaLogisticsDayProjectionsV1/' + f.date);
+  assert.equal(rebuilt.deliveryLoads.length, 1);
+  assert.deepEqual(new Set(rebuilt.deliveryLoads[0].loadIds), new Set(currentGroup.loadIds));
+  assert.equal(rebuilt.deliveryLoads[0].collectionScheduledTime, undefined);
+  assert.equal(rebuilt.deliveryLoads[0].collectionScheduledEnd, undefined);
+  assert.equal(rebuilt.deliveryLoads[0].collectionRunId, 'r2');
+});
+
+test('merged projected clear with stale constituent B version is all-or-zero', async () => {
+  const f = await merged();
+  const group = f.records.get('fikaLogisticsDayProjectionsV1/' + f.date).deliveryLoads[0];
+  const before = structuredClone([...f.records]);
+  const writes = f.writes;
+  const expectedLoadVersions = { ...group.loadVersions, [group.loadIds[1]]: group.loadVersions[group.loadIds[1]] - 1 };
+  const result = await f.post({ action: 'clear-delivery-load-schedule', loadIds: group.loadIds, expectedLoadVersions });
+  assert.equal(result.response.status, 409, JSON.stringify(result.body));
+  assert.equal(f.writes, writes);
+  assert.deepEqual([...f.records], before);
+});
+
+test('merged projected clear rejects an incomplete canonical constituent set', async () => {
+  const f = await merged();
+  const group = f.records.get('fikaLogisticsDayProjectionsV1/' + f.date).deliveryLoads[0];
+  const loadId = group.loadIds[0];
+  const before = structuredClone([...f.records]);
+  const writes = f.writes;
+  const result = await f.post({ action: 'clear-delivery-load-schedule', loadIds: [loadId], expectedLoadVersions: { [loadId]: group.loadVersions[loadId] } });
+  assert.equal(result.response.status, 409, JSON.stringify(result.body));
+  assert.equal(f.writes, writes);
+  assert.deepEqual([...f.records], before);
+});
+
+test('single projected clear accepts plural canonical identity and per-load CAS', async () => {
+  const f = await assigned();
+  const load = loads(f)[0];
+  const result = await f.post({ action: 'clear-delivery-load-schedule', loadIds: [load.id], expectedLoadVersions: { [load.id]: load.version } });
+  assert.equal(result.response.status, 200, JSON.stringify(result.body));
+  assert.equal(Object.hasOwn(result.body, 'scheduledTime'), false);
+  assert.equal(loads(f)[0].version, load.version + 1);
+});

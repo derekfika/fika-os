@@ -347,6 +347,15 @@ export function scheduleTimeFromMinutes(value: number): string {
   return `${String(Math.floor(total / 60)).padStart(2, "0")}:${String(total % 60).padStart(2, "0")}`;
 }
 
+/** Add a duration only when the resulting persisted schedule time stays in-day. */
+export function addSchedulableMinutes(value: string, duration: number): string | undefined {
+  const start = scheduleClockMinutes(value);
+  if (start === undefined || start > LAST_SCHEDULABLE_MINUTE || !Number.isInteger(duration) || duration < 0) return undefined;
+  const end = start + duration;
+  if (end > LAST_SCHEDULABLE_MINUTE) return undefined;
+  return scheduleTimeFromMinutes(end);
+}
+
 function intervalEndFromMinutes(value: number): string {
   if (value >= LAST_INTERVAL_END_MINUTE) return "24:00";
   const total = Math.max(0, Math.min(LAST_INTERVAL_END_MINUTE, Math.round(value)));
@@ -391,7 +400,8 @@ export function resolveNextAvailableScheduleStart(
     const candidateInterval = { start: scheduleTimeFromMinutes(candidate), end: intervalEndFromMinutes(candidate + duration) };
     const conflict = conflicts.find((item) => scheduleIntervalsOverlap(candidateInterval, item));
     if (!conflict) {
-      if (candidate > LAST_SCHEDULABLE_MINUTE || candidate + duration > LAST_INTERVAL_END_MINUTE) throw new Error("No available schedule remains within the operational day.");
+      const latestEnd = requestedEnd === undefined ? LAST_INTERVAL_END_MINUTE : LAST_SCHEDULABLE_MINUTE;
+      if (candidate > LAST_SCHEDULABLE_MINUTE || candidate + duration > latestEnd) throw new Error("No available schedule remains within the operational day.");
       return scheduleTimeFromMinutes(candidate);
     }
     const conflictEnd = scheduleEndMinutes(conflict.start, conflict.end);

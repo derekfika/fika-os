@@ -44,8 +44,9 @@ test("successful desktop mutations converge both day and week state", () => {
   assert.match(route, /appendLogisticsChange[\s\S]*rebuildLogisticsProjection/);
 });
 
-test("date restoration cannot load a different day before URL state settles", () => {
-  assert.match(planner, /requestedDate && requestedDate !== date[\s\S]*selectDate\(requestedDate\)[\s\S]*selectWeek\(mondayOf\(requestedDate\)\)[\s\S]*return;/);
+test("service-date deep links establish initial state without overriding later navigation", () => {
+  assert.match(planner, /const requestedDate = new URLSearchParams\(window\.location\.search\)\.get\("serviceDate"\);[\s\S]*let restoredDate = requestedDate \|\| operationalDate\(\);[\s\S]*if \(!requestedDate && saved\?\.date\)/);
+  assert.doesNotMatch(planner, /requestedDate && requestedDate !== date/);
   assert.match(planner, /key=\{date\}[\s\S]*data=\{data\?\.serviceDate === date \? data : undefined\}/);
 });
 

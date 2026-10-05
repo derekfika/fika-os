@@ -24,7 +24,10 @@ import {
   replaceLoadTiming,
   replaceStopTiming,
   validateOperationalSchedule,
+  addSchedulableMinutes,
+  scheduleEndMinutes,
   LAST_SCHEDULABLE_MINUTE,
+  LAST_INTERVAL_END_MINUTE,
   settlePendingScheduleOperation,
   scheduleIntervalsOverlap,
   uncertainPlacementTimeout,
@@ -53,6 +56,18 @@ test("shared schedule bounds cover the full schedulable day with 15-minute windo
   assert.equal(validateOperationalSchedule("24:00"), "Schedule times must be between 00:00 and 23:45.");
   assert.equal(validateOperationalSchedule("10:00", "10:15"), undefined);
   assert.equal(validateOperationalSchedule("10:00", "10:14"), "A scheduled window must be at least 15 minutes.");
+});
+
+test("explicit end-of-day windows stop at 23:45 while arrival occupancy can end at midnight", () => {
+  const conflict = [{ start: "23:30", end: "23:45" }];
+  assert.equal(addSchedulableMinutes("23:30", 15), "23:45");
+  assert.equal(addSchedulableMinutes("23:45", 15), undefined);
+  assert.equal(scheduleEndMinutes("23:45"), LAST_INTERVAL_END_MINUTE);
+  assert.equal(LAST_INTERVAL_END_MINUTE, 24 * 60);
+  assert.equal(scheduleIntervalsOverlap({ start: "23:45" }, { start: "23:59" }), true);
+  assert.equal(scheduleIntervalsOverlap({ start: "23:45" }, { start: "24:00" }), false);
+  assert.equal(resolveNextAvailableScheduleStart("23:30", undefined, conflict), "23:45");
+  assert.throws(() => resolveNextAvailableScheduleStart("23:30", "23:45", conflict), /operational day/i);
 });
 
 test("touching windows are adjacent; ordinary collision placement keeps first-fit settlement", () => {

@@ -28,6 +28,20 @@ async function assigned(f = setup()) {
 function stop(id, timing = {}) {
   return { canonicalId: id, runId: 'r1', sequence: 1, locationOplocId: `site:${id}`, locationLabelSnapshot: id, requirementRefs: [], movementRequestIds: [], status: 'planned', version: 1, audit: [], createdAt: 'now', updatedAt: 'now', ...timing };
 }
+function assertPersistedWindowsValid(f) {
+  for (const load of loads(f)) if (load.scheduledEnd || load.collectionScheduledEnd) {
+    for (const [start, end] of [[load.scheduledTime, load.scheduledEnd], [load.collectionScheduledTime, load.collectionScheduledEnd]]) if (end) {
+      assert.notEqual(end, '24:00'); assert.notEqual(end, '23:59');
+      assert.ok(end <= '23:45');
+      assert.ok(Number(end.slice(0, 2)) * 60 + Number(end.slice(3, 5)) - (Number(start.slice(0, 2)) * 60 + Number(start.slice(3, 5))) >= 15);
+    }
+  }
+  for (const item of records(f, 'fikaLogisticsDeliveryStopsV1')) if (item.plannedWindow?.endTime) {
+    const start = item.plannedWindow.startTime; const end = item.plannedWindow.endTime;
+    assert.notEqual(end, '24:00'); assert.notEqual(end, '23:59'); assert.ok(end <= '23:45');
+    assert.ok(Number(end.slice(0, 2)) * 60 + Number(end.slice(3, 5)) - (Number(start.slice(0, 2)) * 60 + Number(start.slice(3, 5))) >= 15);
+  }
+}
 
 test('native schedule switching replaces the entire mutually-exclusive timing value', async () => {
   const f = setup();
@@ -61,6 +75,47 @@ test('full operational-day native timing accepts the latest supported arrival an
   assert.deepEqual([...f.records], before);
 });
 
+test('native explicit 23:30–23:45 window persists exactly; arrival at 23:45 remains valid', async () => {
+  const f = setup();
+  f.seed('fikaLogisticsDeliveryStopsV1', 'edge-window', stop('edge-window'));
+  let run = f.records.get('fikaLogisticsDeliveryRunsV1/r1');
+  const window = await f.post({ action: 'schedule-stop', runId: 'r1', stopId: 'edge-window', plannedWindow: { startTime: '23:30', endTime: '23:45' }, expectedRunVersion: run.version, expectedStopVersion: 1 });
+  assert.equal(window.response.status, 200, JSON.stringify(window.body));
+  assert.deepEqual(window.body.stop.plannedWindow, { startTime: '23:30', endTime: '23:45' });
+  f.seed('fikaLogisticsDeliveryStopsV1', 'edge-arrival', stop('edge-arrival', { sequence: 2, locationOplocId: 'different-site' }));
+  run = f.records.get('fikaLogisticsDeliveryRunsV1/r1');
+  const arrival = await f.post({ action: 'schedule-stop', runId: 'r1', stopId: 'edge-arrival', plannedArrivalTime: '23:45', expectedRunVersion: run.version, expectedStopVersion: 1 });
+  assert.equal(arrival.response.status, 200, JSON.stringify(arrival.body));
+  assert.equal(arrival.body.stop.plannedArrivalTime, '23:45');
+  assertPersistedWindowsValid(f);
+});
+
+test('native explicit collision at 23:30 rejects instead of storing 23:45–23:59', async () => {
+  const f = setup();
+  f.seed('fikaLogisticsDeliveryStopsV1', 'edge-target', stop('edge-target'));
+  f.seed('fikaLogisticsDeliveryStopsV1', 'edge-conflict', stop('edge-conflict', { sequence: 2, locationOplocId: 'other-site', plannedWindow: { startTime: '23:30', endTime: '23:45' } }));
+  const run = f.records.get('fikaLogisticsDeliveryRunsV1/r1');
+  const before = structuredClone([...f.records]); const writes = f.writes;
+  const result = await f.post({ action: 'schedule-stop', runId: 'r1', stopId: 'edge-target', plannedWindow: { startTime: '23:30', endTime: '23:45' }, expectedRunVersion: run.version, expectedStopVersion: 1 });
+  assert.equal(result.response.status, 409, JSON.stringify(result.body));
+  assert.equal(f.writes, writes); assert.deepEqual([...f.records], before);
+  assertPersistedWindowsValid(f);
+});
+
+test('native fixed-start resize may end at 23:45 but cannot exceed the persisted bound', async () => {
+  const f = setup();
+  f.seed('fikaLogisticsDeliveryStopsV1', 'edge-resize', stop('edge-resize', { plannedWindow: { startTime: '23:30', endTime: '23:45' } }));
+  const run = f.records.get('fikaLogisticsDeliveryRunsV1/r1');
+  const valid = await f.post({ action: 'schedule-stop', runId: 'r1', stopId: 'edge-resize', plannedWindow: { startTime: '23:30', endTime: '23:45' }, resizeEndOnly: true, expectedRunVersion: run.version, expectedStopVersion: 1 });
+  assert.equal(valid.response.status, 200, JSON.stringify(valid.body));
+  assert.deepEqual(valid.body.stop.plannedWindow, { startTime: '23:30', endTime: '23:45' });
+  const nextRun = f.records.get('fikaLogisticsDeliveryRunsV1/r1');
+  const before = structuredClone([...f.records]); const writes = f.writes;
+  const beyond = await f.post({ action: 'schedule-stop', runId: 'r1', stopId: 'edge-resize', plannedWindow: { startTime: '23:30', endTime: '23:46' }, resizeEndOnly: true, expectedRunVersion: nextRun.version, expectedStopVersion: 2 });
+  assert.equal(beyond.response.status, 422); assert.equal(f.writes, writes); assert.deepEqual([...f.records], before);
+  assertPersistedWindowsValid(f);
+});
+
 test('native end-only resize rejects a current collision without writes and retains its canonical start', async () => {
   const f = setup();
   f.seed('fikaLogisticsDeliveryStopsV1', 'window', stop('window', { plannedWindow: { startTime: '10:00', endTime: '10:30' } }));
@@ -88,7 +143,6 @@ test('projected timing replacement removes an omitted delivery end and source ti
 test('projected delivery clear uses canonical load CAS, removes only delivery timing, and preserves collection authority', async () => {
   const f = await assigned(); const original = loads(f)[0];
   const setCollection = await f.post({ action: 'reschedule-delivery-load', loadId: original.id, expectedLoadVersion: original.version, lane: 'collection', targetRunId: 'r2', scheduledTime: '14:00', scheduledEnd: '14:30' });
-  assert.equal(setCollection.response.status, 200, JSON.stringify(setCollection.body));
   assert.equal(setCollection.response.status, 200, JSON.stringify(setCollection.body));
   const scheduled = loads(f)[0];
   const clear = await f.post({ action: 'clear-delivery-load-schedule', loadId: scheduled.id, expectedLoadVersion: scheduled.version });
@@ -125,4 +179,25 @@ test('projected end-only resize rejects a conflict and stale start without write
   assert.equal(conflict.response.status, 409, JSON.stringify(conflict.body)); assert.equal(f.writes, writes); assert.deepEqual([...f.records], before);
   const changedStart = await f.post({ action: 'reschedule-delivery-load', loadId: load.id, expectedLoadVersion: load.version, scheduledTime: '10:45', scheduledEnd: '11:00', targetRunId: 'r1', resizeEndOnly: true });
   assert.equal(changedStart.response.status, 409); assert.equal(f.writes, writes);
+});
+
+test('projected delivery explicit collision at 23:30 rejects without invalid settlement', async () => {
+  const f = await assigned(); const load = loads(f)[0];
+  f.seed('fikaLogisticsDeliveryLoadsV1', 'edge-conflict', { ...load, id: 'edge-conflict', destinationOplocId: 'other-site', scheduledTime: '23:30', scheduledEnd: '23:45', version: 1 });
+  const before = structuredClone([...f.records]); const writes = f.writes;
+  const result = await f.post({ action: 'reschedule-delivery-load', loadId: load.id, expectedLoadVersion: load.version, scheduledTime: '23:30', scheduledEnd: '23:45', targetRunId: 'r1' });
+  assert.equal(result.response.status, 409, JSON.stringify(result.body));
+  assert.equal(f.writes, writes); assert.deepEqual([...f.records], before);
+  assertPersistedWindowsValid(f);
+});
+
+test('projected fixed-start resize allows 23:45 and rejects any later explicit end', async () => {
+  const f = await assigned(); const load = loads(f)[0];
+  const valid = await f.post({ action: 'reschedule-delivery-load', loadId: load.id, expectedLoadVersion: load.version, scheduledTime: load.scheduledTime, scheduledEnd: '23:45', targetRunId: 'r1', resizeEndOnly: true });
+  assert.equal(valid.response.status, 200, JSON.stringify(valid.body));
+  assert.equal(valid.body.scheduledTime, load.scheduledTime); assert.equal(valid.body.scheduledEnd, '23:45');
+  const updated = loads(f)[0]; const before = structuredClone([...f.records]); const writes = f.writes;
+  const beyond = await f.post({ action: 'reschedule-delivery-load', loadId: updated.id, expectedLoadVersion: updated.version, scheduledTime: updated.scheduledTime, scheduledEnd: '23:46', targetRunId: 'r1', resizeEndOnly: true });
+  assert.equal(beyond.response.status, 422); assert.equal(f.writes, writes); assert.deepEqual([...f.records], before);
+  assertPersistedWindowsValid(f);
 });

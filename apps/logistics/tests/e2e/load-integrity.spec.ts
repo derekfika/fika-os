@@ -119,3 +119,92 @@ test("one merged collection placement sends one bulk intent and commits both loa
   await expect.poll(() => [...f.records.entries()].filter(([key]: [string, any]) => key.startsWith("fikaLogisticsDeliveryLoadsV1/")).every(([, load]: [string, any]) => load.collectionScheduledTime === "14:00" && load.version === 2)).toBe(true);
   expect(f.records.get("fikaLogisticsDayProjectionsV1/" + f.date).deliveryLoads).toHaveLength(1);
 });
+
+test("projected merged delivery Clear sends every canonical load and preserves assignment and collection state", async ({ page }) => {
+  const { f, commands } = await scenario(page, true, true);
+  const projection = f.records.get("fikaLogisticsDayProjectionsV1/" + f.date);
+  const group = projection.deliveryLoads[0];
+  expect(group.loadIds).toHaveLength(2);
+  const beforeLoads = [...f.records.entries()].filter(([key]: [string, any]) => key.startsWith("fikaLogisticsDeliveryLoadsV1/")).map(([, load]: [string, any]) => structuredClone(load));
+  const beforeAssignments = [...f.records.entries()].filter(([key]: [string, any]) => key.startsWith("fikaLogisticsAssignmentsV1/")).map(([, assignment]: [string, any]) => structuredClone(assignment));
+
+  const card = page.locator(`[data-stop-id="projection-stop:delivery:${group.id}"]`);
+  await expect(card).toBeVisible();
+  await card.click();
+  const inspector = page.getByRole("complementary", { name: "Details inspector" });
+  await inspector.getByRole("button", { name: "Clear time", exact: true }).click();
+
+  await expect.poll(() => commands.filter(command => command.action.startsWith("clear-")).map(command => command.action)).toEqual(["clear-delivery-load-schedule"]);
+  const command = commands.find(command => command.action === "clear-delivery-load-schedule")!;
+  expect(new Set(command.loadIds)).toEqual(new Set(group.loadIds));
+  expect(command.expectedLoadVersions).toEqual(group.loadVersions);
+  await expect.poll(() => [...f.records.entries()].filter(([key]: [string, any]) => key.startsWith("fikaLogisticsDeliveryLoadsV1/")).every(([, load]: [string, any]) => !load.scheduledTime && !load.scheduledEnd)).toBe(true);
+
+  const afterLoads = [...f.records.entries()].filter(([key]: [string, any]) => key.startsWith("fikaLogisticsDeliveryLoadsV1/")).map(([, load]: [string, any]) => load);
+  for (const load of afterLoads) {
+    const before = beforeLoads.find((item: any) => item.id === load.id);
+    expect(load.version).toBe(before.version + 1);
+    expect(load.runId).toBe(before.runId);
+    expect(load.collectionRequired).toBe(before.collectionRequired);
+    expect(load.collectionRunId).toBe(before.collectionRunId);
+    expect(load.collectionScheduledTime).toBe(before.collectionScheduledTime);
+    expect(load.collectionScheduledEnd).toBe(before.collectionScheduledEnd);
+  }
+  expect([...f.records.entries()].filter(([key]: [string, any]) => key.startsWith("fikaLogisticsAssignmentsV1/")).map(([, assignment]: [string, any]) => assignment)).toEqual(beforeAssignments);
+  const rebuilt = f.records.get("fikaLogisticsDayProjectionsV1/" + f.date);
+  expect(rebuilt.deliveryLoads).toHaveLength(1);
+  expect(new Set(rebuilt.deliveryLoads[0].loadIds)).toEqual(new Set(group.loadIds));
+  expect(rebuilt.deliveryLoads[0].scheduledTime).toBeUndefined();
+});
+
+test("projected merged collection Clear sends every canonical load and preserves delivery state", async ({ page }) => {
+  const { f, commands } = await scenario(page, true, true);
+  let projection = f.records.get("fikaLogisticsDayProjectionsV1/" + f.date);
+  const initialGroup = projection.deliveryLoads[0];
+  const scheduled = await f.post({
+    action: "reschedule-delivery-loads",
+    loadIds: initialGroup.loadIds,
+    expectedLoadVersions: initialGroup.loadVersions,
+    lane: "collection",
+    targetRunId: "r2",
+    scheduledTime: "14:00",
+    scheduledEnd: "15:00",
+  });
+  expect(scheduled.response.status).toBe(200);
+  await page.reload();
+
+  projection = f.records.get("fikaLogisticsDayProjectionsV1/" + f.date);
+  const group = projection.deliveryLoads[0];
+  expect(group.loadIds).toHaveLength(2);
+  const beforeLoads = [...f.records.entries()].filter(([key]: [string, any]) => key.startsWith("fikaLogisticsDeliveryLoadsV1/")).map(([, load]: [string, any]) => structuredClone(load));
+  const beforeAssignments = [...f.records.entries()].filter(([key]: [string, any]) => key.startsWith("fikaLogisticsAssignmentsV1/")).map(([, assignment]: [string, any]) => structuredClone(assignment));
+
+  const card = page.locator(`[data-stop-id="projection-stop:collection:${group.id}"]`);
+  await expect(card).toBeVisible();
+  await card.click();
+  const inspector = page.getByRole("complementary", { name: "Details inspector" });
+  await inspector.getByRole("button", { name: "Clear time", exact: true }).click();
+
+  await expect.poll(() => commands.filter(command => command.action.startsWith("clear-")).map(command => command.action)).toEqual(["clear-collection-load-schedule"]);
+  const command = commands.find(command => command.action === "clear-collection-load-schedule")!;
+  expect(new Set(command.loadIds)).toEqual(new Set(group.loadIds));
+  expect(command.expectedLoadVersions).toEqual(group.loadVersions);
+  await expect.poll(() => [...f.records.entries()].filter(([key]: [string, any]) => key.startsWith("fikaLogisticsDeliveryLoadsV1/")).every(([, load]: [string, any]) => !load.collectionScheduledTime && !load.collectionScheduledEnd)).toBe(true);
+
+  const afterLoads = [...f.records.entries()].filter(([key]: [string, any]) => key.startsWith("fikaLogisticsDeliveryLoadsV1/")).map(([, load]: [string, any]) => load);
+  for (const load of afterLoads) {
+    const before = beforeLoads.find((item: any) => item.id === load.id);
+    expect(load.version).toBe(before.version + 1);
+    expect(load.collectionRequired).toBe(true);
+    expect(load.collectionRunId).toBe("r2");
+    expect(load.scheduledTime).toBe(before.scheduledTime);
+    expect(load.scheduledEnd).toBe(before.scheduledEnd);
+    expect(load.runId).toBe(before.runId);
+  }
+  expect([...f.records.entries()].filter(([key]: [string, any]) => key.startsWith("fikaLogisticsAssignmentsV1/")).map(([, assignment]: [string, any]) => assignment)).toEqual(beforeAssignments);
+  const rebuilt = f.records.get("fikaLogisticsDayProjectionsV1/" + f.date);
+  expect(rebuilt.deliveryLoads).toHaveLength(1);
+  expect(new Set(rebuilt.deliveryLoads[0].loadIds)).toEqual(new Set(group.loadIds));
+  expect(rebuilt.deliveryLoads[0].collectionScheduledTime).toBeUndefined();
+  expect(rebuilt.deliveryLoads[0].collectionRunId).toBe("r2");
+});

@@ -111,12 +111,24 @@ test.describe("Batch 5 production date isolation", () => {
     await mondayStarted.promise;
 
     const week = page.getByRole("region", { name: "Operational week" });
+    await expect(week.getByRole("button").nth(0)).toHaveAttribute("aria-pressed", "true");
     await week.getByRole("button").nth(1).click();
     const tuesdayCard = page.getByTestId(`stop-stop:${TUESDAY}`);
     await expect(tuesdayCard).toBeVisible();
+    await expect(week.getByRole("button").nth(1)).toHaveAttribute("aria-pressed", "true");
     mondayGate.resolve();
     await expect(tuesdayCard).toBeVisible();
+    await expect(week.getByRole("button").nth(1)).toHaveAttribute("aria-pressed", "true");
     await expect(page.getByTestId(`stop-stop:${MONDAY}`)).toHaveCount(0);
+
+    await week.getByRole("button").nth(0).click();
+    const mondayCard = page.getByTestId(`stop-stop:${MONDAY}`);
+    await expect(mondayCard).toBeVisible();
+    await week.getByRole("button").nth(1).click();
+    await week.getByRole("button").nth(0).click();
+    await expect(mondayCard).toBeVisible();
+    await expect(week.getByRole("button").nth(0)).toHaveAttribute("aria-pressed", "true");
+    await expect(page.getByTestId(`stop-stop:${TUESDAY}`)).toHaveCount(0);
   });
 
   test("late Monday week summary cannot replace the newly selected week", async ({ page }) => {

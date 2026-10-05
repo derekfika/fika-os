@@ -479,12 +479,6 @@ function PlannerContents() {
   };
   useEffect(() => {
     if (!viewPreferencesReady) return;
-    const requestedDate = new URLSearchParams(window.location.search).get("serviceDate");
-    if (requestedDate && requestedDate !== date) {
-      selectDate(requestedDate);
-      selectWeek(mondayOf(requestedDate));
-      return;
-    }
     lastPassiveSyncAt.current = undefined;
     const context = activeDayContext.current;
     const summaryContext = activeWeekContext.current;
@@ -1134,6 +1128,20 @@ function RealPlanner(props: RealPlannerProps) {
     return load?.loadIds?.length ? load.loadIds : stopId.startsWith("projection-stop:") ? [stopId.slice("projection-stop:".length)] : [];
   };
   const projectionLoadIdForStop = (stopId: string) => stopId.split(":").slice(2).join(":") || stopId.slice("projection-stop:".length);
+  const projectionLoadAuthorityForStop = (stopId: string) => {
+    const aggregateId = projectionLoadIdForStop(stopId);
+    const load = data?.projection?.deliveryLoads.find((item) => item.id === aggregateId);
+    const stop = data?.stops.find((item) => item.canonicalId === stopId);
+    const loadIds = stop?.canonicalLoadIds?.length ? stop.canonicalLoadIds : load?.loadIds?.length ? load.loadIds : load ? [load.id] : [];
+    if (!load || !loadIds.length) return undefined;
+    const versions: Record<string, number> = {};
+    for (const id of loadIds) {
+      const version = stop?.canonicalLoadVersions?.[id] ?? load.loadVersions?.[id] ?? (loadIds.length === 1 ? load.version : undefined);
+      if (typeof version !== "number" || !Number.isFinite(version) || version < 0) return undefined;
+      versions[id] = version;
+    }
+    return { loadIds, expectedLoadVersions: versions };
+  };
   const handleInspectorAction = async (payload: object) => {
     const action = payload as { action?: string; runId?: string; targetRunId?: string; stopId?: string; requirementId?: string; plannedArrivalTime?: string; plannedWindow?: { startTime: string; endTime?: string }; loaded?: boolean };
     if (action.action === "schedule-stop" && action.runId && action.stopId) {
@@ -1579,18 +1587,16 @@ function RealPlanner(props: RealPlannerProps) {
     if (!currentStart) return;
     const original: SchedulePosition = { runId, lane, start: currentStart, ...(rawStop.plannedWindow?.endTime ? { end: rawStop.plannedWindow.endTime } : {}) };
     if (data?.projection && stopId.startsWith("projection-stop:")) {
-      const loadId = projectionLoadIdForStop(stopId);
-      const load = data.projection.deliveryLoads.find((item) => item.id === loadId);
-      const expectedLoadVersion = load?.loadVersions?.[loadId] ?? load?.version;
-      if (!load || expectedLoadVersion === undefined) {
-        props.setError("Current canonical load timing authority is unavailable. Refresh and retry.");
+      const authority = projectionLoadAuthorityForStop(stopId);
+      if (!authority) {
+        props.setError("Current canonical load timing authority is incomplete. Refresh and retry.");
         return;
       }
       const collection = stopId.startsWith("projection-stop:collection:");
       coordinatePlacement(stopId, original, undefined, () => props.placementCommand({
         action: collection ? "clear-collection-load-schedule" : "clear-delivery-load-schedule",
-        loadId,
-        expectedLoadVersion,
+        loadIds: authority.loadIds,
+        expectedLoadVersions: authority.expectedLoadVersions,
       }), () => undefined);
       return;
     }

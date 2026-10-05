@@ -64,7 +64,7 @@ import {
 } from "@/lib/planning";
 import { operationalDate } from "@/lib/date";
 import { addOperationalDays, operationalWeek } from "@/lib/week";
-import { replaceLoadTiming, replaceStopTiming, resolveNextAvailableScheduleStart, validateOperationalSchedule } from "@/lib/scheduling";
+import { addSchedulableMinutes, replaceLoadTiming, replaceStopTiming, resolveNextAvailableScheduleStart, validateOperationalSchedule } from "@/lib/scheduling";
 import { restoredStopStatus } from "@/lib/mobile-driver";
 import { recordDataAccess, withDataTrace } from "@fika/server-shared/data-source-meter-server";
 import type { Transaction } from "firebase-admin/firestore";
@@ -161,15 +161,11 @@ async function transferContext(transaction: Transaction, stop: DeliveryStop) {
   }
   return { movements: linkedMovements, transferMovements, inconsistentMovementIds, missingMovementIds, stops: [...linkedStops.values()] };
 }
-function addMinutesToTime(value: string, minutes: number) {
-  const [hours, mins] = value.split(":").map(Number);
-  const total = Math.min(23 * 60 + 59, hours * 60 + mins + minutes);
-  return `${String(Math.floor(total / 60)).padStart(2, "0")}:${String(total % 60).padStart(2, "0")}`;
-}
 function collectionScheduleForDelivery(delivery: DeliveryStop) {
   const deliveryStart = delivery.plannedWindow?.startTime || delivery.plannedArrivalTime;
   if (!deliveryStart) return {};
-  return { plannedArrivalTime: addMinutesToTime(deliveryStart, 6 * 60) };
+  const plannedArrivalTime = addSchedulableMinutes(deliveryStart, 6 * 60);
+  return plannedArrivalTime ? { plannedArrivalTime } : {};
 }
 function nextAvailableLoadTime(loads: import("@/lib/types").DeliveryLoad[], input: { loadId?: string; runId?: string; lane: "delivery" | "collection"; destinationOplocId: string; start: string; end?: string }) {
   const conflicts = loads.flatMap((load) => {
@@ -190,7 +186,9 @@ function nextAvailableLoadTime(loads: import("@/lib/types").DeliveryLoad[], inpu
 function resolveCanonicalLoadSchedule(loads: import("@/lib/types").DeliveryLoad[], job: import("@/lib/types").LogisticsJob, runId: string | undefined, start: string, end?: string) {
   const scheduledTime = nextAvailableLoadTime(loads, { runId, lane: "delivery", destinationOplocId: job.destinationOplocId!, start, end });
   const minutes = (time: string) => Number(time.slice(0, 2)) * 60 + Number(time.slice(3, 5));
-  return { scheduledTime, ...(end ? { scheduledEnd: addMinutesToTime(scheduledTime, minutes(end) - minutes(start)) } : {}) };
+  const scheduledEnd = end ? addSchedulableMinutes(scheduledTime, minutes(end) - minutes(start)) : undefined;
+  if (end && !scheduledEnd) throw new HttpError(409, "The requested window does not fit within the operational day.");
+  return { scheduledTime, ...(scheduledEnd ? { scheduledEnd } : {}) };
 }
 
 type PlannedTiming = { plannedArrivalTime?: string; plannedWindow?: { startTime: string; endTime?: string } };
@@ -216,7 +214,9 @@ function resolveStopPlannedTiming(stop: DeliveryStop, requested: PlannedTiming, 
   }
   if (end) {
     const requestedDuration = Math.max(15, Number(end.slice(0, 2)) * 60 + Number(end.slice(3, 5)) - (Number(start.slice(0, 2)) * 60 + Number(start.slice(3, 5))));
-    return { plannedWindow: { startTime: effectiveStart, endTime: addMinutesToTime(effectiveStart, requestedDuration) } };
+    const effectiveEnd = addSchedulableMinutes(effectiveStart, requestedDuration);
+    if (!effectiveEnd) throw new HttpError(409, "The requested window does not fit within the operational day.");
+    return { plannedWindow: { startTime: effectiveStart, endTime: effectiveEnd } };
   }
   return { plannedArrivalTime: effectiveStart };
 }
@@ -724,32 +724,58 @@ async function handlePost(request: NextRequest) {
       return NextResponse.json(result.load);
     }
     if (["clear-delivery-load-schedule", "clear-collection-load-schedule"].includes(body.action)) {
-      if (!body.loadId || body.expectedLoadVersion === undefined) throw new HttpError(422, "A canonical load ID and current load version are required to clear timing.");
+      const loadIds = body.loadIds || (body.loadId ? [body.loadId] : []);
+      if (!loadIds.length || loadIds.length > 50 || loadIds.some(id => typeof id !== "string" || !id) || new Set(loadIds).size !== loadIds.length)
+        throw new HttpError(422, "Choose 1–50 unique canonical load IDs to clear timing.");
+      const expectedVersions = Object.fromEntries(loadIds.map(id => [id, body.expectedLoadVersions?.[id] ?? (loadIds.length === 1 ? body.expectedLoadVersion : undefined)]));
+      if (loadIds.some(id => typeof expectedVersions[id] !== "number" || !Number.isFinite(expectedVersions[id]) || expectedVersions[id] < 0))
+        throw new HttpError(422, "A current expected version is required for every canonical load.");
       const lane = body.action === "clear-collection-load-schedule" ? "collection" as const : "delivery" as const;
       const result = await runTracedTransaction(async transaction => {
-        const ref = deliveryLoads().doc(body.loadId!);
-        const snapshot = await transaction.get(ref);
-        if (!snapshot.exists) throw new HttpError(404, "Delivery load not found.");
-        const load = snapshot.data() as import("@/lib/types").DeliveryLoad;
-        assertLoadVersion(load, body.expectedLoadVersion);
-        await assertLoadAssignmentsCurrent(transaction, load);
-        await authorizeLoad(principal, load, async id => (await transaction.get(runs().doc(id))).data() as DeliveryRun | undefined);
-        const ownerId = lane === "collection" ? load.collectionRunId || (load.collectionRequired ? load.runId : undefined) : load.runId;
-        if (!ownerId) throw new HttpError(409, "The canonical load lane is no longer assigned.");
-        const ownerSnap = await transaction.get(runs().doc(ownerId));
-        if (!ownerSnap.exists) throw new HttpError(409, "Canonical current load owner is unavailable.");
-        assertPlanningOpen(ownerSnap.data() as DeliveryRun);
-        await assertProjectionCurrent(load.serviceDate, transaction);
-        const hasTiming = lane === "collection" ? Boolean(load.collectionScheduledTime || load.collectionScheduledEnd) : Boolean(load.scheduledTime || load.scheduledEnd);
-        if (!hasTiming) throw new HttpError(409, "This canonical load lane no longer has a schedule to clear.");
-        const cleared = replaceLoadTiming(load, lane, {});
-        const next = { ...cleared, updatedAt: now, version: load.version + 1, audit: [...load.audit, { action: body.action, at: now, by, version: load.version + 1 }] };
-        transaction.set(ref, next);
-        return next;
+        const refs = loadIds.map(id => deliveryLoads().doc(id));
+        const snapshots = await Promise.all(refs.map(ref => transaction.get(ref)));
+        if (snapshots.some(snapshot => !snapshot.exists)) throw new HttpError(404, "Delivery load not found.");
+        const loads = snapshots.map(snapshot => snapshot.data() as import("@/lib/types").DeliveryLoad);
+        const first = loads[0];
+        if (loads.some(load => load.serviceDate !== first.serviceDate)) throw new HttpError(409, "All projected loads must belong to the same service date.");
+        const placementKey = (load: import("@/lib/types").DeliveryLoad) => JSON.stringify([load.serviceDate, load.originOplocId, load.destinationOplocId, load.runId, load.vehicleId, load.scheduledTime, load.scheduledEnd, Boolean(load.collectionRequired), load.collectionRunId, load.collectionScheduledTime, load.collectionScheduledEnd, load.status]);
+        if (loads.some(load => placementKey(load) !== placementKey(first))) throw new HttpError(409, "Projected loads no longer form one compatible placement. Refresh planning.");
+        const projection = await assertProjectionCurrent(first.serviceDate, transaction);
+        const projectedGroup = projection.deliveryLoads.find(load => (load.loadIds || [load.id]).some(id => loadIds.includes(id)));
+        const projectedIds = projectedGroup?.loadIds || (projectedGroup ? [projectedGroup.id] : []);
+        if (!projectedGroup || projectedIds.length !== loadIds.length || projectedIds.some(id => !loadIds.includes(id)))
+          throw new HttpError(409, "The requested loads no longer match the complete projected placement. Refresh planning.");
+        const owners = new Set<string>();
+        for (const load of loads) {
+          assertLoadVersion(load, expectedVersions[load.id]);
+          await assertLoadAssignmentsCurrent(transaction, load);
+          await authorizeLoad(principal, load, async id => (await transaction.get(runs().doc(id))).data() as DeliveryRun | undefined);
+          const ownerId = lane === "collection" ? load.collectionRunId || (load.collectionRequired ? load.runId : undefined) : load.runId;
+          if (!ownerId) throw new HttpError(409, "The canonical load lane is no longer assigned.");
+          owners.add(ownerId);
+          const ownerSnap = await transaction.get(runs().doc(ownerId));
+          if (!ownerSnap.exists) throw new HttpError(409, "Canonical current load owner is unavailable.");
+          const owner = ownerSnap.data() as DeliveryRun;
+          if (owner.serviceDate !== load.serviceDate) throw new HttpError(409, "Canonical load owner belongs to a different service date.");
+          assertPlanningOpen(owner);
+          const hasTiming = lane === "collection" ? Boolean(load.collectionScheduledTime || load.collectionScheduledEnd) : Boolean(load.scheduledTime || load.scheduledEnd);
+          if (!hasTiming) throw new HttpError(409, "A canonical load lane no longer has a schedule to clear.");
+        }
+        if (owners.size !== 1) throw new HttpError(409, "Projected loads no longer share one lane owner. Refresh planning.");
+        const clearedLoads = loads.map(load => {
+          const cleared = replaceLoadTiming(load, lane, {});
+          return { ...cleared, updatedAt: now, version: load.version + 1, audit: [...load.audit, { action: body.action, at: now, by, version: load.version + 1 }] };
+        });
+        for (const load of clearedLoads) transaction.set(deliveryLoads().doc(load.id), load);
+        return clearedLoads;
       });
-      const event = await appendLogisticsChange({ serviceDate: result.serviceDate, entityType: "deliveryLoad", entityId: result.id, changeType: body.action, revision: result.version, changedAt: now, actorId });
-      await rebuildLogisticsProjection(result.serviceDate, by, event.sequence);
-      return NextResponse.json(result);
+      let sequence = 0;
+      for (const load of result) {
+        const event = await appendLogisticsChange({ serviceDate: load.serviceDate, entityType: "deliveryLoad", entityId: load.id, changeType: body.action, revision: load.version, changedAt: now, actorId });
+        sequence = Math.max(sequence, event.sequence);
+      }
+      await rebuildLogisticsProjection(result[0].serviceDate, by, sequence);
+      return NextResponse.json(result.length === 1 ? result[0] : { ...result[0], loads: result });
     }
     if (["reschedule-delivery-load", "reschedule-delivery-loads"].includes(body.action) && body.scheduledTime) {
       const loadIds = body.action === "reschedule-delivery-loads" ? body.loadIds! : body.loadId ? [body.loadId] : [];
@@ -801,7 +827,8 @@ async function handlePost(request: NextRequest) {
         const requestedDuration = body.scheduledEnd ? Math.max(15, Number(body.scheduledEnd.slice(0, 2)) * 60 + Number(body.scheduledEnd.slice(3, 5)) - (Number(requestedTime.slice(0, 2)) * 60 + Number(requestedTime.slice(3, 5)))) : undefined;
         const effectiveScheduledTime = nextAvailableLoadTime(currentLoads, { runId, lane: collection ? "collection" : "delivery", destinationOplocId: collection ? first.originOplocId : first.destinationOplocId, start: requestedTime, end: body.scheduledEnd });
         if (body.resizeEndOnly && effectiveScheduledTime !== requestedTime) throw new HttpError(409, "The resized window conflicts with current work; its start must remain fixed.");
-        const effectiveScheduledEnd = requestedDuration === undefined ? undefined : addMinutesToTime(effectiveScheduledTime, requestedDuration);
+        const effectiveScheduledEnd = requestedDuration === undefined ? undefined : addSchedulableMinutes(effectiveScheduledTime, requestedDuration);
+        if (requestedDuration !== undefined && !effectiveScheduledEnd) throw new HttpError(409, "The requested window does not fit within the operational day.");
         const nextLoads = loads.map(load => {
           const timing = replaceLoadTiming(load, collection ? "collection" : "delivery", { start: effectiveScheduledTime, ...(effectiveScheduledEnd ? { end: effectiveScheduledEnd } : {}) });
           return { ...timing, ...(collection ? { collectionRequired: true, collectionRunId: runId } : { runId, vehicleId }), updatedAt: now, version: load.version + 1, audit: [...load.audit, { action: collection ? "collection-rescheduled" : "load-rescheduled", at: now, by, version: load.version + 1 }] };
