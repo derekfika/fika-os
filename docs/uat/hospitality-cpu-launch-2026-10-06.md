@@ -62,8 +62,10 @@ without manual reload. Immutable history and supersession were retained.
 - The RCoA configuration regression test accepts Windows line endings.
 
 Style Guide compliance: PASS. Existing UI tokens/components are retained. The
-self-contained PDF retains its established styling; the white site-logo backing
-is limited to approved brand artwork so its existing colours remain legible.
+self-contained PDF retains its established styling. Dark-lettered artwork has
+a white backing; MNK's reversed white artwork stays transparent on the existing
+purple masthead. Actual PDF inspection caught and corrected the initial white
+backing on MNK before declaring UAT complete.
 
 No authoritative shared contract or persistence schema changed. No new recurring
 reads/writes, listeners or polling were added. Cold/warm CPU read shapes retain
@@ -95,5 +97,49 @@ guards and handoff audit/outbox mechanisms remain authoritative.
   exposed an unchanged delivery-hash expectation failure. Staging UI UAT is
   required to verify the actual Hospitality handoff.
 
-Deployment/UAT: pending at the source commit; final evidence will be appended
-after exact-SHA rollouts and browser verification.
+## First exact-SHA rollout and UAT
+
+Both changed apps served 100% traffic from
+`184b29f57fb2df5d643ee22a8faab1a8051d724a`, READY, rollout/build
+`build-2026-10-06-001`. Hub and all other apps were not deployed.
+
+Fresh source request: `MNK-20261006122750-BFD2`.
+Booking: `booking:mnk:2fdaea9b9ddbddf136163f3a5a11cd76`.
+12 guests, 13 October 2026, 12:00, MNK · Launch UAT.
+
+- First quote generated without reload: revision 1, £143 net, £28.60 VAT,
+  £171.60 gross, Drive saved. Loading settled and console had no errors.
+- Saved a manual equipment charge at £10, then edited and explicitly saved it
+  as 2 × £12.50 = £25 net. Old quote became stale and CPU handoff was disabled.
+- Regeneration without reload created exactly revision 2: £168 net, £33.60 VAT,
+  £201.60 gross. Revision 1 retained its original snapshot and stale flag.
+- CPU handoff through the UI completed and retained the current saved quote.
+  Booking reached Completed through the existing completion workflow.
+- Production Order:
+  `production-order:v1:booking:mnk:2fdaea9b9ddbddf136163f3a5a11cd76`,
+  version 1, draft, current quote revision 2, one Sandwich Lunch line,
+  12 people → 36 pieces, `sandwiches` workstream.
+- Production Requirement, durable `production.order.created` event and
+  fulfilment requirement all exist; fulfilment receipt is `processed` and its
+  pending requirement carries 36 pieces. The correlation ID points back to the
+  Hospitality handoff. Targeted week projection contains the same current order.
+- CPU UI displays the UAT order in 12–16 October. Detail visibly displays
+  36 pieces to produce and 12 people ordered. Sandwiches scope includes it.
+- Public initial CPU HTML contains `Loading date` and `Loading production
+  calendar`, with no stale build-date text. Authenticated hard refresh, empty
+  current week, populated next week and normal scope navigation produced no new
+  React hydration errors.
+- Bounded Cloud Run request logs for actual UAT quote, PDF-save, charge-save,
+  handoff and production-sync POSTs all returned HTTP 200. Quote commands were
+  about 0.5 seconds; PDF/Drive stages about 7.5–8 seconds.
+- The connected Drive account cannot fetch the fresh UAT-owned PDF (404).
+  Original-booking PDF is accessible: its governed amendment regenerated the
+  current quote after deployment and preserved £268.15 commercial values.
+  Download/render of that actual PDF exposed reversed MNK artwork on a white
+  backing. The focused correction retains a transparent backing for MNK only;
+  other site assets and branding identity stay unchanged.
+- Final logo-correction Hospitality tests: 97/97; build/typecheck passed.
+  A Hospitality-only exact-SHA rollout and final PDF readback follow.
+
+Final staging verification and protection hashes will be appended after the
+logo contrast correction rollout. Production remains untouched.

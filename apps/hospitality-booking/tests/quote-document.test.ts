@@ -13,9 +13,11 @@ test("quote branding uses immutable portal identity and self-contained existing 
     } }] },
   } as never);
   const mnk = render("mnk", "MNK");
-  assert.ok(mnk.includes(`class="site-logo" src="${SITE_LOGO_DATA_URIS.mnk}" alt="MNK"`));
+  assert.ok(mnk.includes(`class="site-logo site-logo--reversed" src="${SITE_LOGO_DATA_URIS.mnk}" alt="MNK"`));
+  assert.match(mnk, /\.site-logo--reversed\{background:transparent;padding:0\}/);
   const cfc = render("cfc", "CFC");
   assert.ok(cfc.includes(SITE_LOGO_DATA_URIS.cfc));
+  assert.ok(cfc.includes(`class="site-logo" src="${SITE_LOGO_DATA_URIS.cfc}"`));
   assert.ok(!cfc.includes(SITE_LOGO_DATA_URIS.mnk));
   const unknown = render("unknown", "MNK");
   assert.ok(unknown.includes(FIKA_LOGO_DATA_URI));
