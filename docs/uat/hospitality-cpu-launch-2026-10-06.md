@@ -141,5 +141,44 @@ Booking: `booking:mnk:2fdaea9b9ddbddf136163f3a5a11cd76`.
 - Final logo-correction Hospitality tests: 97/97; build/typecheck passed.
   A Hospitality-only exact-SHA rollout and final PDF readback follow.
 
-Final staging verification and protection hashes will be appended after the
-logo contrast correction rollout. Production remains untouched.
+## Final quote inspection and discovered daily-package defect
+
+Hospitality's final logo correction serves 100% traffic from
+`03a8249d3639f38c3c87eac3ea24f7b1e14a77f8`, READY, build/rollout
+`build-2026-10-06-002`. Original-booking final governed amendment completed;
+its actual Drive PDF modified at 12:47:16 UTC was downloaded and rendered.
+The one-page quote visibly contains the full MNK International logo, with no
+clipping or missing lettering, and retains its £268.15 total.
+
+RCoA and MNK remain available in the governed workspace selector. RCoA selection
+opens its own canonical OPLOC and site branding. Reloading MNK retained the UAT
+booking's edited charge and saved current quote. CPU retained the UAT order in
+Sandwiches scope after reload. No new hydration errors were captured.
+
+A later Day-view load/refresh exposed an additional confirmed defect:
+`sync-production-event` and related mutation commands used a route-local daily
+rebuild that wrote the projection directly but did not publish the daily read
+package. Weekly publication used the canonical materialiser and succeeded, so
+the week view worked while the daily package remained unavailable.
+
+Correction: all handoff/mutation daily rebuilds delegate to the existing
+monotonic daily materialiser, including package publication. Missing historical
+daily packages now recover through a coalesced, single-date canonical rebuild.
+Valid empty days publish zero orders; no fake work is created. The integrity
+failure branch returns before either day or week recovery and stays fail-closed.
+
+Affected CPU regression set after this correction: 90/90 passed. This includes
+historical missing-day recovery, preserved 12-person/36-piece quantities, empty
+day, concurrent rebuild coalescing, failed-recovery retry, bounded date scope,
+and integrity-failure separation. CPU build and typecheck passed.
+
+Read/write shape: package HIT and warm client manifest validation retain their
+existing bounded paths. Only a MISSING daily package triggers the date-scoped
+canonical query, direct reads for affected plans, monotonic derived projection
+write and package/head publication. Concurrent requests for that date coalesce;
+no polling, broad listeners or business audit writes are added for recovery.
+Shared DTOs, GCS gzip storage adapter and compressed-byte integrity contracts
+are unchanged. Actual CPU Day and empty-day UAT follow the CPU-only rollout.
+
+Production remains untouched. Final rollout/UAT and protection hashes will be
+appended after daily-package correction verification.

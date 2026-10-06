@@ -7,11 +7,59 @@ import { decodeReadPackage, encodeReadPackage } from "@fika/server-shared/read-p
 import { cpuProjectionPackageIsCurrent, publishCpuProjectionPackage, getCpuProjectionPackage, publishMonotonicCpuPackage } from "../lib/cpu-read-package";
 import { downloadCpuPackageBytes } from "../lib/cpu-package-store";
 import { cpuProjectionCacheEntryMatches } from "../app/lib/cpu-indexeddb";
-import { initialiseEmptyCpuWeekProjection, type CpuDayProjection, type CpuWeekProjection, type EmptyWeekInitialisationDependencies } from "../lib/cpu-projection";
+import { buildCpuDayProjection, recoverMissingCpuDayProjection, initialiseEmptyCpuWeekProjection, type CpuDayProjection, type CpuWeekProjection, type EmptyWeekInitialisationDependencies } from "../lib/cpu-projection";
 import { europeLondonDate } from "../lib/operational-date";
 
 const day = (date: string): CpuDayProjection => ({ serviceDate: date, revision: 4, lastChangeSequence: 12, orders: [], summary: { orders: 0, ready: 0, attention: 0, planned: 0, totalUnits: 0 }, rebuiltAt: "2026-08-31T10:00:00.000Z" });
 const week = (): CpuWeekProjection => ({ ...day("all"), serviceDate: "2026-08-31", weekCommencing: "2026-08-31" });
+
+test("a historical missing daily package recovers canonical quantities without inventing work", async () => {
+  const serviceDate = "2026-08-24";
+  const order = { canonicalId: "historic:hospitality:1", serviceDate, requiredBy: `${serviceDate}T12:00`, serviceWindow: { startTime: "12:00" }, sourceBookingId: "historic:booking:1", status: "draft", priority: "normal", origin: "hospitality_booking", version: 1, exceptions: [], lines: [{ canonicalId: "historic:line:1", sourceBookingLineId: "historic:booking:1:line:1", itemName: "Sandwich Lunch", customerQuantity: 12, customerUnit: "person", productionQuantity: 36, productionUnit: "piece", workstream: "sandwiches", dietaries: {} }] } as never;
+  const recovered = await recoverMissingCpuDayProjection(undefined as never, serviceDate, async (_, requestedDate) => {
+    assert.equal(requestedDate, serviceDate);
+    const projection = buildCpuDayProjection(requestedDate, [order], [], 7);
+    const encoded = encodeReadPackage("snapshots/cpu-production/projection-day", 1, { projection }, projection.orders.length);
+    return { projection: decodeReadPackage<{ projection: CpuDayProjection }>(encoded.manifest, encoded.bytes).projection, manifest: encoded.manifest };
+  });
+  assert.equal(recovered.projection.orders.length, 1);
+  assert.equal(recovered.projection.orders[0].quantities[0].productionQuantity, 36);
+  assert.equal(recovered.projection.orders[0].quantities[0].quantity, 12);
+  const blank = await recoverMissingCpuDayProjection(undefined as never, "2026-08-25", async (_, date) => {
+    const projection = buildCpuDayProjection(date, [order]);
+    return { projection, manifest: encodeReadPackage("snapshots/cpu-production/projection-day", 1, { projection }, 0).manifest };
+  });
+  assert.deepEqual(blank.projection.orders, []);
+});
+
+test("missing day recovery coalesces concurrent rebuilds and clears failures for a safe retry", async () => {
+  let calls = 0;
+  let release!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  const materialise = async (_: unknown, date: string) => {
+    calls += 1;
+    await gate;
+    const projection = day(date);
+    return { projection, manifest: encodeReadPackage("snapshots/cpu-production/projection-day", 1, { projection }, 0).manifest };
+  };
+  const first = recoverMissingCpuDayProjection(undefined as never, "2026-08-26", materialise);
+  const second = recoverMissingCpuDayProjection(undefined as never, "2026-08-26", materialise);
+  release();
+  assert.deepEqual(await first, await second);
+  assert.equal(calls, 1);
+  await assert.rejects(recoverMissingCpuDayProjection(undefined as never, "2026-08-27", async () => { throw new Error("Authority unavailable"); }), /Authority unavailable/);
+  await recoverMissingCpuDayProjection(undefined as never, "2026-08-27", materialise);
+  assert.equal(calls, 2);
+  await assert.rejects(recoverMissingCpuDayProjection(undefined as never, "all", materialise), /bounded service date/);
+  assert.equal(calls, 2);
+});
+
+test("all mutation and handoff day rebuilds use the monotonic package publisher", async () => {
+  const route = await readFile(new URL("../app/api/production/route.ts", import.meta.url), "utf8");
+  const helper = route.slice(route.indexOf("async function rebuildCpuProjection"), route.indexOf("async function recordCpuChange"));
+  assert.match(helper, /return rebuildCpuDayProjection\(request, serviceDate, lastChangeSequence\)/);
+  assert.doesNotMatch(helper, /\.set\(|\bbuildCpuDayProjection\(/);
+});
 
 test("CPU operational today uses the Europe/London business date at the UTC boundary", () => {
   assert.equal(europeLondonDate(new Date("2026-08-31T23:30:00.000Z")), "2026-09-01");
@@ -178,13 +226,15 @@ test("CPU dashboard stores package metadata and package delivery precedes source
   assert.equal(cpuProjectionCacheEntryMatches(entry, entry.cacheScope, { schemaVersion: 1, packageVersion: 2, contentHash: "wrong", sourceVersion: "cpu-change-12" }), false);
 });
 
-test("normal CPU projection GET returns before canonical reads, rebuilds, or writes on package failure", async () => {
+test("normal CPU projection GET recovers missing day/week data but fails closed on integrity errors", async () => {
   const route = await readFile(new URL("../app/api/production/route.ts", import.meta.url), "utf8");
   const branch = route.slice(route.indexOf('if (request.nextUrl.searchParams.get("projection") === "1")'));
   const normalBranch = branch.slice(0, branch.indexOf('} else recordCpuPackageFallback("explicit-reconciliation")'));
   assert.match(normalBranch, /recoverMissingCpuWeekProjection/);
-  assert.match(normalBranch, /CPU_PROJECTION_PACKAGE_UNAVAILABLE/);
+  assert.match(normalBranch, /recoverMissingCpuDayProjection/);
   assert.match(normalBranch, /CPU_PROJECTION_PACKAGE_INTEGRITY_FAILURE/);
+  const integrityBranch = normalBranch.slice(normalBranch.indexOf("} catch {"), normalBranch.indexOf('recordCpuPackageFallback("missing")'));
+  assert.doesNotMatch(integrityBranch, /recoverMissingCpu/);
   const initializer = await readFile(new URL("../lib/cpu-projection.ts", import.meta.url), "utf8");
   assert.match(initializer, /sourceOrders\.length > 0\) return undefined/);
   assert.match(initializer, /dependencies\.publishPackage\(week\)/);

@@ -9,7 +9,7 @@ import { filterCpuProjectionForScope } from "../../../lib/cpu-dashboard-adapter"
 // Scope filtering remains backed by the existing hospitalityMenuProductionRouting adapter.
 import { localFixtureOrders, updateLocalFixture } from "../local-fixtures";
 import { normaliseProductionScope } from "../../../lib/production-scope";
-import { appendCpuChange, buildCpuDayProjection, cpuProjections, recoverMissingCpuWeekProjection, listCpuChanges, listCpuWeekChanges, rebuildCpuDayProjection, rebuildCpuWeekProjection, weekCommencingFor } from "../../../lib/cpu-projection";
+import { appendCpuChange, buildCpuDayProjection, cpuProjections, recoverMissingCpuDayProjection, recoverMissingCpuWeekProjection, listCpuChanges, listCpuWeekChanges, rebuildCpuDayProjection, rebuildCpuWeekProjection, weekCommencingFor } from "../../../lib/cpu-projection";
 import { europeLondonDate } from "../../../lib/operational-date";
 import { loadPlansForOrders } from "../../../lib/cpu-projection-repository";
 import { recordDeliveredInReadBudget } from "../../../lib/delivered-in-read-budget";
@@ -35,12 +35,8 @@ function withServerTiming(response: NextResponse, timings: Record<string, number
   return response;
 }
 async function rebuildCpuProjection(request: NextRequest, serviceDate: string, lastChangeSequence?: number) {
-  const [rawOrders, previous] = await Promise.all([productionQueue(request, serviceDate === "all" ? undefined : serviceDate), cpuProjections().doc(serviceDate).get()]);
-  const orders = await withReadableDestinations(request, rawOrders);
-  const plans = await loadPlansForOrders(orders.map(order => order.canonicalId));
-  const projection = buildCpuDayProjection(serviceDate, orders, plans, lastChangeSequence ?? Number(previous.data()?.lastChangeSequence || 0), Number(previous.data()?.revision || 0) + 1);
-  await cpuProjections().doc(serviceDate).set(projection);
-  return projection;
+  // All handoffs/mutations must publish the same monotonic day package as reads.
+  return rebuildCpuDayProjection(request, serviceDate, lastChangeSequence);
 }
 
 async function recordCpuChange(request: NextRequest, canonicalId: string, actorId: string, changeType: string, order?: ProductionOrder, idempotencyKey?: string) {
@@ -202,7 +198,9 @@ async function handleGet(request: NextRequest) {
           const filtered = filterCpuProjectionForScope(recoveredWeek.projection, normaliseProductionScope(request.nextUrl.searchParams.get("scope")));
           return withServerTiming(NextResponse.json({ projection: filtered, package: recoveredWeek.manifest }), { package: performance.now() - startedAt, total: performance.now() - startedAt });
         }
-        return withServerTiming(NextResponse.json({ error: { code: "CPU_PROJECTION_PACKAGE_UNAVAILABLE", message: "The CPU projection package is currently unavailable." }, freshness: "unavailable" }, { status: 503 }), { package: performance.now() - startedAt, total: performance.now() - startedAt });
+        const recoveredDay = await recoverMissingCpuDayProjection(request, projectionDate);
+        const filtered = filterCpuProjectionForScope(recoveredDay.projection, normaliseProductionScope(request.nextUrl.searchParams.get("scope")));
+        return withServerTiming(NextResponse.json({ projection: filtered, package: recoveredDay.manifest }), { package: performance.now() - startedAt, total: performance.now() - startedAt });
       } else recordCpuPackageFallback("explicit-reconciliation");
       const storedStartedAt = performance.now();
       const stored = await cpuProjections().doc(week ? `week:${week}` : projectionDate).get();

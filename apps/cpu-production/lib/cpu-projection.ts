@@ -36,17 +36,33 @@ export function buildCpuDayProjection(serviceDate: string, orders: ProductionOrd
   return { serviceDate, revision, lastChangeSequence, orders: projectedWithPublicationIdentity, summary: { orders: projectedWithPublicationIdentity.length, ready: projectedWithPublicationIdentity.filter((order) => order.planningReadiness === "ready").length, attention: projectedWithPublicationIdentity.filter((order) => order.attention.length > 0).length, planned: projectedWithPublicationIdentity.filter((order) => order.workflowStatus === "planned").length, totalUnits: projectedWithPublicationIdentity.reduce((sum, order) => sum + order.quantities.reduce((total, item) => total + item.quantity, 0), 0) }, rebuiltAt: now };
 }
 
-export async function rebuildCpuDayProjection(request: NextRequest, serviceDate: string, lastChangeSequence?: number) {
+export async function materialiseCpuDayProjection(request: NextRequest, serviceDate: string, lastChangeSequence?: number) {
   const [rawOrders, previous] = await Promise.all([productionQueue(request, serviceDate), cpuProjections().doc(serviceDate).get()]);
   recordDataAccess({ app: "cpu-production", operation: "projection.by-service-date", source: "FIRESTORE", documents: previous.exists ? 1 : 0, firestoreReadKind: "document" });
   const orders = await withReadableDestinations(request, rawOrders);
   const plans = await loadPlansForOrders(orders.map(order => order.canonicalId));
   const projection = buildCpuDayProjection(serviceDate, orders, plans, lastChangeSequence ?? Number(previous.data()?.lastChangeSequence || 0), Number(previous.data()?.revision || 0) + 1);
   const written = await writeCpuProjectionMonotonically(cpuProjections().doc(serviceDate), projection);
-  if (written.status === "superseded") return written.projection as CpuDayProjection;
-  await publishCpuProjectionPackage(written.projection as CpuDayProjection);
+  const current = written.projection as CpuDayProjection;
+  const manifest = await publishCpuProjectionPackage(current);
   recordDeliveredInReadBudget({ stage: "day_projection_rebuild", projectionDocs: 1, selectedIds: orders.length, rebuildScopes: 1 });
-  return written.projection as CpuDayProjection;
+  return { projection: current, manifest };
+}
+
+export async function rebuildCpuDayProjection(request: NextRequest, serviceDate: string, lastChangeSequence?: number) {
+  return (await materialiseCpuDayProjection(request, serviceDate, lastChangeSequence)).projection;
+}
+
+const missingDayRecoveryInFlight = new Map<string, Promise<{ projection: CpuDayProjection; manifest: ReadPackageManifest }>>();
+
+/** Missing derived data is rebuildable; callers must exclude integrity failures first. */
+export async function recoverMissingCpuDayProjection(request: NextRequest, serviceDate: string, materialise = materialiseCpuDayProjection) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(serviceDate)) throw Object.assign(new Error("A bounded service date is required."), { status: 400 });
+  const existing = missingDayRecoveryInFlight.get(serviceDate);
+  if (existing) return existing;
+  const recovery = materialise(request, serviceDate).finally(() => missingDayRecoveryInFlight.delete(serviceDate));
+  missingDayRecoveryInFlight.set(serviceDate, recovery);
+  return recovery;
 }
 
 export async function rebuildCpuWeekProjection(request: NextRequest, weekCommencing: string, lastChangeSequence?: number) {
