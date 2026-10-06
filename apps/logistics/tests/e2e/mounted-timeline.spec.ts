@@ -97,6 +97,63 @@ test("three actual runs render and the synthetic unassigned projection run stays
   await expect(page.locator('[data-lane^="projection-run:"]')).toHaveCount(0);
 });
 
+test("timeline cards adapt destination, load count and time to their width", async ({ page }) => {
+  const narrow = page.getByTestId("stop-stop-window-30");
+  const medium = page.getByTestId("stop-stop-riverside");
+  const twoLoads = page.getByTestId("stop-stop-two-load-window");
+
+  await setZoom(page, 1);
+  await expect(medium.getByTestId("timeline-card-heading").locator("strong")).toHaveText("Riverside");
+  expect(await medium.evaluate((element) => element.firstElementChild?.getAttribute("data-testid"))).toBe("timeline-card-heading");
+  await expect(medium.getByTestId("timeline-card-full-time")).toBeHidden();
+  await expect(medium.getByTestId("timeline-card-compact-details")).toBeVisible();
+  await expect(medium.getByTestId("timeline-card-compact-details").locator("time")).toHaveText("10:00");
+  await expect(medium.getByTestId("timeline-card-compact-load")).toHaveText(" · 1 load");
+  await expect(medium).toHaveAttribute("aria-label", "Move Riverside, Van North, Collection, 10:00 to 11:00 window end, 1 load");
+  await expect(medium).toHaveAttribute("title", await medium.getAttribute("aria-label") || "");
+  await expect(twoLoads.getByTestId("timeline-card-compact-load")).toHaveText(" · 2 loads");
+
+  await expect(narrow.getByTestId("timeline-card-full-time")).toBeHidden();
+  await expect(narrow.getByTestId("timeline-card-load-badge")).toBeHidden();
+  await expect(narrow.getByTestId("timeline-card-compact-details").locator("time")).toHaveText("09:00");
+  await expect(narrow.getByTestId("timeline-card-compact-load")).toBeHidden();
+  await expect(narrow).toHaveAttribute("aria-label", "Move Thirty minute window, Van South, Delivery, 09:00 to 09:30 window end, 1 load");
+  const narrowVisibleText = await narrow.evaluate((element) => (element as HTMLElement).innerText);
+  expect(narrowVisibleText).toBe("Thirty minute window\n09:00");
+  expect(narrowVisibleText).not.toContain("09:30");
+  expect(narrowVisibleText).not.toContain("READY");
+
+  await setZoom(page, 1.5);
+  await expect(medium.getByTestId("timeline-card-load-badge")).toBeVisible();
+  await expect(medium.getByTestId("timeline-card-load-badge")).toHaveText("1 load");
+  await expect(medium.getByTestId("timeline-card-full-time")).toBeVisible();
+  await expect(medium.getByTestId("timeline-card-full-time")).toHaveText("10:00–11:00");
+  await expect(medium.getByTestId("timeline-card-compact-details")).toBeHidden();
+});
+
+test("move and resize cursors stay clear without shifting the timeline card", async ({ page }) => {
+  const card = page.getByTestId("stop-stop-riverside");
+  const handle = page.getByTestId("resize-stop-riverside");
+  await expect(card).toHaveCSS("cursor", "move");
+  await expect(handle).toBeVisible();
+  await expect(handle).toHaveCSS("cursor", "ew-resize");
+  await expect(handle).toHaveCSS("opacity", "0");
+
+  const before = await card.boundingBox();
+  await card.hover();
+  const after = await card.boundingBox();
+  expect(after).toEqual(before);
+  await handle.hover();
+  await expect(handle).toHaveCSS("opacity", "1");
+  await expect(handle).toHaveCSS("cursor", "ew-resize");
+
+  await card.focus();
+  await page.keyboard.press("Tab");
+  await expect(handle).toBeFocused();
+  await expect(handle).toHaveCSS("outline-style", "solid");
+  await expect(handle).toHaveAttribute("role", "slider");
+});
+
 test("explicit windows keep true duration geometry and arrival-only work stays a marker", async ({ page }) => {
   await page.getByLabel("Command mode").selectOption("success");
   const card = page.getByTestId("stop-stop-window-30");
@@ -129,6 +186,8 @@ test("queue placement renders exactly one immediate pending card", async ({ page
   expect(preview).toContain("Bridgepoint Queue");
   await expect(page.getByTestId("pending-queue-queue-bridge")).toBeVisible();
   await expect(page.getByTestId("pending-queue-queue-bridge")).toBeDisabled();
+  await expect(page.getByTestId("pending-queue-queue-bridge")).toHaveCSS("border-top-style", "dashed");
+  await expect(page.getByTestId("pending-queue-queue-bridge")).toHaveCSS("cursor", "progress");
   await expect(page.locator('[data-testid="pending-queue-queue-bridge"]')).toHaveCount(1);
 });
 
