@@ -48,8 +48,8 @@ export default function HospitalityProductionDetail({
         <div className="hospitality-production-detail__lines">
           {order.lines.map((line) => (
             <div key={line.canonicalId}>
-              <strong>{line.customerQuantity.toLocaleString()}</strong>
-              <span>{line.itemName}<small>{line.customerQuantity} {line.customerUnit} ordered</small></span>
+              <strong>{(line.productionQuantity ?? line.customerQuantity).toLocaleString()}</strong>
+              <span>{line.itemName}<small>{line.productionQuantity !== undefined ? `${line.productionUnit || line.customerUnit} to produce · ` : ""}{line.customerQuantity} {line.customerUnit} ordered</small></span>
             </div>
           ))}
         </div>

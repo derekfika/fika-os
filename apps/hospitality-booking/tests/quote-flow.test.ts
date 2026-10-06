@@ -8,7 +8,7 @@ const menusRoute = readFileSync(new URL("../app/api/menus/route.ts", import.meta
 test("quote generation stays on the dashboard and bounds remote persistence waits", () => {
   assert.doesNotMatch(dashboard, /window\.open\("", "_blank"\)/);
   assert.match(dashboard, /fetchQuoteRequest/);
-  assert.match(dashboard, /QUOTE_REQUEST_TIMEOUT_MS/);
+  assert.match(dashboard, /import \{ fetchQuoteRequest \} from/);
   assert.match(dashboard, /void load\(action !== "Quoted"\)/);
   assert.match(dashboard, /Retry quote PDF save/);
 });

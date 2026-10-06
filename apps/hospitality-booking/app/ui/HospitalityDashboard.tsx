@@ -6,6 +6,7 @@ import { MailSearch, RefreshCw, Settings } from "lucide-react";
 import type { BookingAdditionalChargeInput, CanonicalBooking, ProductionOrder, DashboardQuoteSettings, LabourRateSetting } from "@/lib/canonical-types";
 import { dailyRunSheetHtml } from "../../lib/run-sheet";
 import { quoteHtml } from "../../lib/quote-document";
+import { fetchQuoteRequest } from "../../lib/quote-request";
 import { amendmentPatchDto } from "../../lib/amendment-dto";
 import { mnkMenuHtml } from "../../lib/mnk-menu-output";
 import type { MenuOutput } from "../../lib/mnk-menu-output";
@@ -65,21 +66,6 @@ function quoteFilename(bookingId: string, companyName: string, extension: "pdf" 
   // creating confusing revision copies.
   return `Quote_${companyName}_${bookingId}.${extension}`
     .replace(/[^A-Za-z0-9._-]+/g, "_");
-}
-
-const QUOTE_REQUEST_TIMEOUT_MS = 60_000;
-
-async function fetchQuoteRequest(input: RequestInfo | URL, init: RequestInit, timeoutMessage: string) {
-  const controller = new AbortController();
-  const timeout = window.setTimeout(() => controller.abort(), QUOTE_REQUEST_TIMEOUT_MS);
-  try {
-    return await fetch(input, { ...init, signal: controller.signal });
-  } catch (cause) {
-    if (controller.signal.aborted) throw new Error(timeoutMessage);
-    throw cause;
-  } finally {
-    window.clearTimeout(timeout);
-  }
 }
 
 async function saveQuoteDocument(payload: { name: string; html: string; canonicalId: string }) {
@@ -490,18 +476,24 @@ export default function HospitalityDashboard({
         setError(message);
       }
       if (!pdfSaved && body.booking.quoteState?.currentRevisionId) {
-        void fetchQuoteRequest("/api/dashboard-bookings", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({
-            canonicalId: body.booking.canonicalId,
-            expectedVersion: body.booking.version,
-            action: "quote-pdf-status",
-            revisionId: body.booking.quoteState.currentRevisionId,
-            status: "failed",
-            error: "The quote PDF could not be persisted to Drive.",
-          }),
-        }, "The quote PDF failure status could not be recorded.").catch(() => undefined);
+        try {
+          const failureResponse = await fetchQuoteRequest("/api/dashboard-bookings", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              canonicalId: body.booking.canonicalId,
+              expectedVersion: body.booking.version,
+              action: "quote-pdf-status",
+              revisionId: body.booking.quoteState.currentRevisionId,
+              status: "failed",
+              error: "The quote PDF could not be persisted to Drive.",
+            }),
+          }, "The quote PDF failure status could not be recorded.");
+          const failureBody = await readDashboardJson(failureResponse);
+          if (failureResponse.ok && failureBody.booking) setSelected(failureBody.booking);
+        } catch {
+          // The refresh below reconciles a write whose response could not be confirmed.
+        }
       }
     }
     if (action === "Production") {
@@ -527,12 +519,18 @@ export default function HospitalityDashboard({
   };
 
   const act = async (actionOverride?: WorkflowAction | null) => {
+    if (actionBusy) return;
     setActionStage("Working…");
     setActionBusy(true);
     try {
       await performAction(actionOverride);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "The booking action failed. Please try again.");
+      setPending(null);
+      void load(false);
     } finally {
       setActionBusy(false);
+      setActionStage("");
     }
   };
 
@@ -705,11 +703,11 @@ export default function HospitalityDashboard({
       } : current);
     };
     const post = async (body: Record<string, unknown>) => {
-      const response = await fetch("/api/dashboard-bookings", {
+      const response = await fetchQuoteRequest("/api/dashboard-bookings", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify(body),
-      });
+      }, "The booking workflow timed out. Check its saved state before retrying.");
       const parsed = await readDashboardJson(response) as { error?: { message?: string }; booking?: CanonicalBooking; productionOrder?: ProductionOrder };
       if (!response.ok) throw new Error(parsed.error?.message || "The booking workflow could not be completed.");
       return parsed;
@@ -811,7 +809,7 @@ export default function HospitalityDashboard({
     if (!selected) throw new Error("Select a Booking before saving charges.");
     setAdditionalChargeBusy(true);
     try {
-      const response = await fetch("/api/dashboard-bookings", {
+      const response = await fetchQuoteRequest("/api/dashboard-bookings", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
@@ -820,7 +818,7 @@ export default function HospitalityDashboard({
           action: "set-additional-charges",
           charges,
         }),
-      });
+      }, "Saving charges timed out. Check the booking before retrying.");
       const body = await readDashboardJson(response) as { error?: { message?: string }; booking?: CanonicalBooking };
       if (!response.ok) throw new Error(body.error?.message || "Could not save Booking charges.");
       if (!body.booking) throw new Error("Charges were saved but the updated Booking was not returned.");

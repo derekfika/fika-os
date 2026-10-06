@@ -60,7 +60,7 @@ test("RCoA manager identity uses the configured canonical OPLOC ID regardless of
 
 test("Hospitality staging configures the approved RCoA OPLOC for server-side use", () => {
   const variable = stagingConfig.match(
-    /  - variable: FIKA_RCOA_OPLOC_ID\n([\s\S]*?)(?=\n  - variable:|$)/,
+    /  - variable: FIKA_RCOA_OPLOC_ID\r?\n([\s\S]*?)(?=\r?\n  - variable:|$)/,
   )?.[0];
   assert.ok(variable, "FIKA_RCOA_OPLOC_ID must be configured in staging");
   assert.match(variable, /value:\s*oploc:be0becbe-b6cf-4d7f-9c1e-f36e689feab2/);

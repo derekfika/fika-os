@@ -1,6 +1,28 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { quoteHtml } from "../lib/quote-document";
+import { FIKA_LOGO_DATA_URI, SITE_LOGO_DATA_URIS } from "../lib/quote-brand-assets.generated";
+
+test("quote branding uses immutable portal identity and self-contained existing assets", () => {
+  const render = (portalSiteId: string, portalSiteLabel: string) => quoteHtml({
+    quoteState: { currentRevisionId: "quote-1", revisions: [{ id: "quote-1", revision: 1, createdAt: "2026-10-06T12:00:00Z", snapshot: {
+      client: { companyName: "UAT", name: "Operator", email: "uat@example.test" },
+      service: { portalSiteId, portalSiteLabel, eventDate: "2026-10-13", startTime: "12:00", guestCount: 12 },
+      order: { lines: [] }, charges: [], dietaries: {},
+      totals: { itemsNet: { amount: 0 }, chargesNet: { amount: 0 }, net: { amount: 0 }, vat: { amount: 0 }, gross: { amount: 0 }, vatRate: 0.2 },
+    } }] },
+  } as never);
+  const mnk = render("mnk", "MNK");
+  assert.ok(mnk.includes(`class="site-logo" src="${SITE_LOGO_DATA_URIS.mnk}" alt="MNK"`));
+  const cfc = render("cfc", "CFC");
+  assert.ok(cfc.includes(SITE_LOGO_DATA_URIS.cfc));
+  assert.ok(!cfc.includes(SITE_LOGO_DATA_URIS.mnk));
+  const unknown = render("unknown", "MNK");
+  assert.ok(unknown.includes(FIKA_LOGO_DATA_URI));
+  assert.ok(!unknown.includes(SITE_LOGO_DATA_URIS.mnk));
+  assert.match(unknown, /masthead-label">MNK/);
+  assert.ok(!render("rcoa", "RCoA").includes(SITE_LOGO_DATA_URIS.mnk));
+});
 
 test("quoteHtml renders a self-contained branded immutable quote snapshot", () => {
   const booking = {

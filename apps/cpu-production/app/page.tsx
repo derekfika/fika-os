@@ -26,6 +26,7 @@ import { orderDate } from "../lib/production-day";
 import { cpuProjectionToOrders, dashboardOperationalDate, filterCpuProjectionForScope, weekCommencingFor } from "../lib/cpu-dashboard-adapter";
 import { readApiResponse } from "./lib/api-response";
 import { readCpuProjection, writeCpuProjection } from "./lib/cpu-indexeddb";
+import { europeLondonDate } from "../lib/operational-date";
 
 const statuses: CpuLifecycle[] = ["received", "accepted", "planning", "planned", "ready", "in_production", "complete"];
 const terminalStatuses = new Set<ProductionStatus>([
@@ -59,8 +60,17 @@ export default function CpuProduction() {
   const [origin, setOrigin] = useState("");
   const [site, setSite] = useState("");
   const [date, setDate] = useState("");
-  const [dayDate, setDayDate] = useState(dashboardOperationalDate());
-  const [weekCommencing, setWeekCommencing] = useState(weekCommencingFor(dashboardOperationalDate()));
+  // Static App Hosting HTML and the first client render must share a clock-free state.
+  const [todayKey, setTodayKey] = useState("");
+  const [dayDate, setDayDate] = useState("");
+  const [weekCommencing, setWeekCommencing] = useState("");
+  useEffect(() => {
+    const now = new Date();
+    setTodayKey(europeLondonDate(now));
+    const operationalDate = dashboardOperationalDate(now);
+    setDayDate(operationalDate);
+    setWeekCommencing(weekCommencingFor(operationalDate));
+  }, []);
   const [productionScope, setProductionScope] = useState<ProductionScope>("all");
   const [view, setView] = useState<View>("calendar");
   const [selected, setSelected] = useState<ProductionOrder>();
@@ -72,6 +82,7 @@ export default function CpuProduction() {
   const [error, setError] = useState("");
   const [refreshing, setRefreshing] = useState(false);
   const load = async (showFeedback = false): Promise<ProductionOrder[]> => {
+    if (!dayDate || !weekCommencing) return [];
     if (showFeedback) setRefreshing(true);
     try {
       const isDayProjection = view === "day" || view === "totals";
@@ -134,7 +145,6 @@ export default function CpuProduction() {
     (order) => !date || order.requiredBy.startsWith(date),
   );
   const totalsVisible = baseVisible.filter((order) => orderDate(order) === (date || dayDate));
-  const todayKey = new Date().toLocaleDateString("en-CA");
   const openOrder = async (order: Pick<ProductionOrder, "canonicalId">, preserveOpen = false) => {
     if (!preserveOpen) setShowHospitalityAllergens(false);
     const requestId = ++detailRequest.current;
@@ -194,7 +204,7 @@ export default function CpuProduction() {
             <h1>Production, <em>in hand.</em></h1>
             <p>See what needs preparing, when it is required and where intervention is needed.</p>
           </div>
-          <div className="cpu-header-tools"><button type="button" onClick={() => { window.location.href = "http://localhost:4000"; }}>＋ Ad-hoc production</button><button type="button">▣ &nbsp; {new Date().toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })} &nbsp;⌄</button></div>
+          <div className="cpu-header-tools"><button type="button" onClick={() => { window.location.href = "http://localhost:4000"; }}>＋ Ad-hoc production</button><button type="button">▣ &nbsp; {todayKey ? new Date(`${todayKey}T12:00:00Z`).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" }) : "Loading date…"} &nbsp;⌄</button></div>
           <small>Operational application&nbsp; · &nbsp;governed Production domain</small>
         </header>
         <div className="cpu-main">
@@ -332,7 +342,7 @@ export default function CpuProduction() {
           />
         )}
         {view === "calendar" && (
-          <ProductionCalendar orders={baseVisible} open={openOrder} onCancelBooking={acknowledgeCancelledBooking} weekCommencing={weekCommencing} onWeekChange={(nextWeek) => setWeekCommencing(nextWeek)} onDayOpen={(selectedDate) => { setDayDate(selectedDate); setWeekCommencing(weekCommencingFor(selectedDate)); setView("day"); }} reviewAllergens={(selectedDate) => { window.location.href = `/allergens?date=${encodeURIComponent(selectedDate)}`; }} />
+          weekCommencing ? <ProductionCalendar orders={baseVisible} open={openOrder} onCancelBooking={acknowledgeCancelledBooking} weekCommencing={weekCommencing} onWeekChange={(nextWeek) => setWeekCommencing(nextWeek)} onDayOpen={(selectedDate) => { setDayDate(selectedDate); setWeekCommencing(weekCommencingFor(selectedDate)); setView("day"); }} reviewAllergens={(selectedDate) => { window.location.href = `/allergens?date=${encodeURIComponent(selectedDate)}`; }} /> : <p role="status">Loading production calendar…</p>
         )}
         {view === "day" && <ProductionDayView orders={baseVisible} date={dayDate} open={openOrder} onChangeDate={(nextDate) => { setDayDate(nextDate); setWeekCommencing(weekCommencingFor(nextDate)); }} reviewAllergens={(selectedDate) => { window.location.href = `/allergens?date=${encodeURIComponent(selectedDate)}`; }} />}
         {view === "queue" && <Queue orders={visible} open={openOrder} />}
