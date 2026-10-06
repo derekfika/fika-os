@@ -180,5 +180,145 @@ no polling, broad listeners or business audit writes are added for recovery.
 Shared DTOs, GCS gzip storage adapter and compressed-byte integrity contracts
 are unchanged. Actual CPU Day and empty-day UAT follow the CPU-only rollout.
 
-Production remains untouched. Final rollout/UAT and protection hashes will be
-appended after daily-package correction verification.
+## Interim report at the user's request to finish (superseded by closure below)
+
+End-to-end result: **INCOMPLETE / FAIL for final release verification**.
+The quote/charges/branding/governed handoff/week-view checks passed. The final
+daily-package fix is validated and pushed, but its staging build was still
+BUILDING when the user requested immediate completion because usage was low.
+Its post-deployment populated-day, empty-day, refresh and reload UAT remains.
+No final journey PASS is claimed.
+
+| Reported issue | Root cause / finding | Fix and verification |
+| --- | --- | --- |
+| 1. Initial quote errors | Exact historical transient not reproduced; confirmed unhandled client errors and incomplete timeout coverage | Visible recoverable errors and full-body timeouts; fresh first quote succeeded, actual quote/PDF POSTs HTTP 200 |
+| 2. Frozen quote spinner | Timeout covered headers only; body could stall indefinitely | Complete response deadline and loading cleanup; stalled-body/network regression tests passed, live quote actions settled |
+| 3. Reload needed | Failed PDF status advanced the booking version while retry state retained the old version | Retain returned booking after failed status; first generation and regeneration succeeded without reload |
+| 4. Manage charges | Governed editable manual/labour fields already existed; post-handoff fields intentionally require amendment | Existing explicit save preserved and bounded; added £10 then edited to 2 × £12.50 and saved |
+| 5. Regenerated quote values | Existing immutable snapshot/stale logic works when latest persisted booking state is used | Revision 2 used £25 net addition and £201.60 gross; revision 1 retained as stale history |
+| 6. MNK logo | Renderer never selected the site asset; reversed MNK artwork also needs transparent backing | Immutable portal identity selects embedded local asset; final actual one-page PDF visibly shows full MNK International logo |
+| 7. Missing Sandwich Lunch | Canonical order/routing already existed; reported booking is in next week. Additional Day-path package defect confirmed during later UAT | Correct week displays the booking; daily sync/publication fix pushed and final rollout pending |
+| 8. React #418 | Static HTML froze the date at build time (5 Oct), browser rendered 6 Oct | Clock-free first render, UK dates after hydration; authenticated reload/navigation had no new hydration errors |
+| 9. Relationship of errors | Hydration mismatch is independent of canonical handoff and routing | Original order and projection existed despite hydration error; verified separately |
+| 10. Full journey | UI quote → charge edit → saved revised quote → governed handoff → order/fulfilment → CPU week/detail verified | PASS for those stages; final daily-package rollout and UAT remain incomplete |
+
+## Staging deployment status at the interim stopping point
+
+| App | Exact source SHA | Build / rollout | Final observed status |
+| --- | --- | --- | --- |
+| Hospitality | 03a8249d3639f38c3c87eac3ea24f7b1e14a77f8 | build-2026-10-06-002 | READY, current, 100%; authenticated UI and actual PDF verified |
+| CPU final correction | c35d6a9b8b0a86c2aa27297559081ba919543b97 | build-2026-10-06-002 | Submitted, BUILDING; post-deployment UAT outstanding |
+| CPU currently serving | 184b29f57fb2df5d643ee22a8faab1a8051d724a | build-2026-10-06-001 | READY, current, 100%; hydration and weekly handoff verified |
+
+Hub, Logistics, other apps and production were not deployed.
+
+## Files changed
+
+Hospitality: `app/ui/HospitalityDashboard.tsx`, `lib/quote-request.ts`,
+`lib/quote-document.ts`, `lib/quote-brand-assets.generated.ts`,
+`scripts/generate-quote-brand-assets.mjs`, `tests/quote-request.test.ts`,
+`tests/quote-document.test.ts`, `tests/quote-flow.test.ts`,
+`tests/site-branding.test.ts`.
+
+CPU: `app/page.tsx`, `app/ui/HospitalityProductionDetail.tsx`,
+`app/api/production/route.ts`, `lib/cpu-dashboard-adapter.ts`,
+`lib/cpu-projection.ts`, `tests/dashboard-date.test.ts`,
+`tests/cpu-read-package.test.ts`.
+
+Documentation: `docs/uat/hospitality-cpu-launch-2026-10-06.md`.
+Generated Next.js declarations were restored and not committed.
+
+## Final validation and deferred work
+
+- Hospitality: 97/97 tests; production build and typecheck passed.
+- CPU affected regression set: 90/90; production build and typecheck passed.
+- CPU full suite: 276/285, same nine failures as the pre-package-fix run.
+  The full suite is not green. Details and environmental limitations above.
+- Hub isolated contracts: 27/27. PDF renderer service: 2/2.
+- `git diff --check` and staged diff checks passed.
+- MNK/RCoA selector and canonical OPLOC scope checks passed.
+- Remaining launch verification: final CPU rollout readiness, then daily missing
+  package recovery, empty-day, refresh and reload browser UAT.
+- Deferred: unchanged full-suite allergen/Drive/outbox failures and the existing
+  signed-matrix storage configuration limitation, outside this quote journey.
+- A bounded historical-log read hit Cloud Logging HTTP 429; no historical
+  transient-quote root cause is fabricated from missing logs.
+
+## Integrity and source control
+
+Source commits pushed to `main`:
+`184b29f57fb2df5d643ee22a8faab1a8051d724a`,
+`03a8249d3639f38c3c87eac3ea24f7b1e14a77f8`,
+`c35d6a9b8b0a86c2aa27297559081ba919543b97`.
+The interim report append was saved locally; its commit/push was blocked by the
+usage-limit approval-review failure. Final closure below supersedes that status.
+
+Production untouched. No unauthorized destructive staging mutation. Test work
+used normal governed booking, charge, amendment and handoff workflows; no manual
+Production Orders, permission broadening, migrations or secret changes.
+
+Both protected files remain unchanged and uncommitted, verified before and after:
+
+- CHANGELOG.md: `4691AC53FF895F84701B476129018065ED8F4F1D766DC458E706BD455201E81D`.
+- sites/mnk/booking-platform/01_MenuData.js:
+  `7A5C0D3664799ED88D7BF1473683F2A6EFCC6FBA9232B3B32C1E139C364D1636`.
+
+CHANGELOG updated: no — explicitly protected; this report is the task record.
+Style Guide compliance: PASS.
+
+## Final live closure — 6 October 2026
+
+Closure resumed from `origin/main` and HEAD
+`c35d6a9b8b0a86c2aa27297559081ba919543b97`; fetch and fast-forward pull confirmed
+already up to date. Existing source work was not repeated or changed.
+
+Firebase App Hosting, project `fika-os-dev`, location `europe-west4`:
+
+| Backend | Exact source SHA | Build / rollout | Verified live state |
+| --- | --- | --- | --- |
+| fika-cpu-production-staging | c35d6a9b8b0a86c2aa27297559081ba919543b97 | build-2026-10-06-002 | READY; rollout SUCCEEDED at 12:56:22 UTC; current traffic 100% |
+| fika-hospitality-staging | 03a8249d3639f38c3c87eac3ea24f7b1e14a77f8 | build-2026-10-06-002 | READY; rollout SUCCEEDED; current traffic 100% |
+
+Final authenticated browser UAT on `https://cpu-staging.fikacatering.com/`:
+
+- Normal reload succeeded, then week 12–16 October → Tuesday 13 October opened
+  the populated daily package with both current MNK jobs.
+- UAT booking `MNK-20261006122750-BFD2` was present. Detail showed
+  **36 Deli Style Sandwich Lunch pieces to produce**, with 12 per-person ordered.
+- Refresh production completed on the populated day and preserved the job/quantity.
+- Wednesday 14 October loaded as **0 production jobs**, with the explicit
+  "No production jobs required today" state. Empty-day refresh completed.
+- The user performed the hard reload and confirmed DONE. The browser returned
+  to the current week; navigation back to Tuesday loaded the UAT day and the
+  same 36-piece detail. A subsequent refresh completed successfully.
+- No React hydration #418 and no package-unavailable UI error occurred during
+  final closure. One transient `TypeError: Failed to fetch` console entry was
+  observed during post-reload navigation; the subsequent refresh and detail
+  requests settled successfully without an unavailable state. This is recorded
+  rather than claiming a completely error-free console.
+- Screenshot: `C:\Users\derek\.codex\visualizations\2026\10\06\01a11123-2509-7b13-9d69-e8590d891594\cpu-closure-pass.png`.
+
+Hospitality was checked read-only without repeating quote generation, charge
+editing, PDF inspection or handoff mutations. The existing UAT booking remains
+Completed, £25.00 net additional charges, quote net £168.00 / VAT £33.60 /
+**£201.60 gross**, and "Production hand-off recorded". Existing successful
+first-attempt quote, settled modal, 2 × £12.50 charge edit, regeneration and
+rendered MNK-logo evidence above remain applicable: Hospitality still serves
+the same verified commit. CPU day/detail persistence confirms the governed
+handoff remains operationally durable.
+
+No production action, rollout, data mutation, configuration, permission, secret
+or migration was performed in this task. Closure used only staging metadata,
+staging browser reads/refreshes and this documentation update. No new source fix
+or deployment was required. Previously reported unrelated test failures remain
+deferred; no test suite was rerun for this documentation-only closure.
+
+Both protected files retain the exact SHA256 values recorded above and remain
+unstaged/uncommitted user changes. CHANGELOG updated: no, explicitly protected.
+Style Guide compliance: PASS (no new UI change in closure).
+
+Final release result: the Hospitality → CPU launch journey passed the requested
+live closure checks. Earlier BUILDING / outstanding-day-UAT statements describe
+the interim stopping point and are superseded by this section.
+
+FIKA OS HOSPITALITY → CPU LAUNCH JOURNEY PASS
