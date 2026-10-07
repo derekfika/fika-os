@@ -24,7 +24,11 @@ export async function POST(request: NextRequest) {
   try {
     const result = await replayMenuPublicationOutbox(forwardProductionMaterialisationEvent, new Date(), { maxEvents: limit });
     return NextResponse.json(result, { headers: { "cache-control": "no-store" } });
-  } catch {
+  } catch (error) {
+    console.error("Menu publication recovery failed", {
+      code: error && typeof error === "object" && "code" in error ? error.code : "OUTBOX_RECOVERY_UNAVAILABLE",
+      message: error instanceof Error ? error.message : "Recovery failed",
+    });
     return NextResponse.json({ code: "OUTBOX_RECOVERY_UNAVAILABLE" }, { status: 503 });
   }
 }

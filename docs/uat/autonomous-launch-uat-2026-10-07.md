@@ -252,6 +252,36 @@ This dated UAT entry records the task. Production untouched. Implementation SHA,
 push, staging rollout, Scheduler and exact owned-week live evidence pending the
 deployment phase below.
 
+### Hosted recovery defect discovered and corrected
+
+Implementation `bca19c4b4e48b90dcc24a2a6ed06094aebba2687` was pushed and deployed
+to Menu staging, rollout `uat-1007180636-bca19c4`, verified READY/SUCCEEDED/current
+100% at 17:10:32Z. The staging-only recovery job was created ENABLED with existing
+token version 3 and limit 25. Its initial worker smoke returned 503; no live
+publication mutation was begun while recovery was unavailable.
+
+Both existing modern and compatibility Menu outbox indexes were READY. Reproducing
+the actual adapter on the isolated emulator confirmed an existing cursor bug:
+empty/last-page global claims wrote `legacy`/`modern` with JavaScript undefined,
+which strict Firestore rejects. Mock queue tests had accepted these invalid values.
+The minimal correction omits absent cursor properties while retaining the same
+eligibility queries, pagination, leases and delivery logic. Strict cursor contract
+coverage failed before the fix; actual Firestore empty-queue recovery passes after
+it. Worker infrastructure failures now emit structured server diagnostics.
+
+Also executed an additional isolated provider test: source v1 → amendment v2 →
+amendment v3, followed by concurrent v2/v2/v3/v1 replays. All return duplicate and
+the single canonical order remains at source v3, quantity 3 and three audit entries.
+No production or staging business data used for this test. Final validation and
+replacement Menu-only rollout are recorded below.
+
+Final correction validation: focused publication/API/Firestore/clean-dirty tests
+**99/99 PASS**, full Menu suite **220/220 PASS** (zero skips), typecheck PASS,
+webpack build PASS, actual strict Firestore cursor probe PASS, diff check PASS.
+One intermediate full run completed all test assertions but its temporary-directory
+cleanup encountered Windows EPERM; bounded cleanup retries were added and the full
+run then completed green. No operational storage/query refactor or index change.
+
 ## Resume evidence — owned Hospitality gate, 7 October
 
 Existing authenticated session and normal product commands only. Owned booking

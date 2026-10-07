@@ -13,7 +13,7 @@ writeFileSync(join(directory, "local-data/menu-planning/canonical-menu-items.jso
 process.env.MENU_PLANNING_TEST_MODE = "1";
 process.env.MENU_PLANNING_DB_PATH = join(directory, "operational.sqlite");
 process.env.FIKA_RUNTIME_MODE = "local";
-process.on("exit", () => { process.chdir(originalDirectory); rmSync(directory, { recursive: true, force: true }); });
+process.on("exit", () => { process.chdir(originalDirectory); rmSync(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }); });
 const { POST: publish } = await import("../app/api/rolling-menu/route");
 const { GET: status, POST: publicationCommand } = await import("../app/api/rolling-menu/publications/route");
 const { POST: worker } = await import("../app/api/internal/menu-publication-outbox/route");

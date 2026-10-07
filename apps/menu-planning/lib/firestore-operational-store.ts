@@ -18,6 +18,10 @@ const MENU_PLANNING_OUTBOX_COMPATIBILITY_PAGES = 4;
 const MENU_PLANNING_OUTBOX_CURSOR = "menu-planning";
 type QueueCursor = { nextEligibleAt?: string; occurredAt?: string; eventId?: string };
 type QueueCursorState = { modern?: QueueCursor; legacy?: QueueCursor };
+const queueCursorDocument = (state: QueueCursorState) => ({
+  ...(state.modern ? { modern: state.modern } : {}),
+  ...(state.legacy ? { legacy: state.legacy } : {}),
+});
 export type EventReplayState = "claimed" | "blocked" | "dead-lettered" | "missing";
 export type HostedTransactionState = { rolling: { version?: number; weeks: RollingWeek[]; days: RollingDay[]; entries: RollingEntry[] }; publications: { version: number; publications: MenuPublication[]; events: DurableDomainEvent[] } };
 export type MenuPlanningTransactionScope = { weekId?: string; sourceWeekId?: string; includeEvents?: boolean };
@@ -310,10 +314,10 @@ export class MenuPlanningFirestoreRepository {
       if (claimed) {
         transaction.set(this.db.collection(MENU_PLANNING_COLLECTIONS.events).doc(claimed.eventId), claimed);
         transaction.set(this.db.collection(MENU_PLANNING_COLLECTIONS.outbox).doc(claimed.eventId), outboxRecord(claimed));
-        if (nextModernCursor || cursorState.modern || compatibilityScanned) transaction.set(cursorRef, { ...cursorState, modern: nextModernCursor });
+        if (nextModernCursor || cursorState.modern || compatibilityScanned) transaction.set(cursorRef, queueCursorDocument({ ...cursorState, modern: nextModernCursor }));
         return claimed;
       }
-      if (nextModernCursor || cursorState.modern || compatibilityScanned) transaction.set(cursorRef, { ...cursorState, modern: nextModernCursor });
+      if (nextModernCursor || cursorState.modern || compatibilityScanned) transaction.set(cursorRef, queueCursorDocument({ ...cursorState, modern: nextModernCursor }));
       return undefined;
     });
   }

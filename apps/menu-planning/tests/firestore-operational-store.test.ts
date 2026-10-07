@@ -127,7 +127,12 @@ function boundedQueueHarness(events: DurableDomainEvent[]) {
           budget.queryReturned(values.length);
           return { size: values.length, docs: values.map(value => ({ id: (value as any).eventId, exists: true, data: () => structuredClone(value) })) };
         },
-        set: (target: any, value: unknown) => pending.push({ target, value }),
+        set: (target: any, value: unknown) => {
+          if (target.id === "menu-planning") {
+            assert.ok(Object.values(value as Record<string, unknown>).every(field => field !== undefined), "queue cursor must satisfy strict Firestore document serialization");
+          }
+          pending.push({ target, value });
+        },
       };
       const result = await callback(transaction);
       for (const write of pending) {
@@ -144,6 +149,13 @@ const queued = (id: string, status: "pending" | "delivered" | "failed", sourceVe
   const value = event(id, status, sourceVersion, dueAt);
   return { ...value, sourceAggregateId, ...(predecessorEventId ? { predecessorEventId } : {}), delivery: { ...value.delivery, nextAttemptAt: dueAt, nextEligibleAt: dueAt } };
 };
+
+test("empty hosted recovery persists a cleared cursor without undefined Firestore fields", async () => {
+  const h = boundedQueueHarness([]);
+  assert.equal(await h.repository.claimNextEvent("empty-worker"), undefined);
+  assert.deepEqual(h.outboxDocs.get("menu-planning"), {});
+  assert.equal(await h.repository.claimNextEvent("repeated-empty-worker"), undefined);
+});
 
 test("indexed outbox claims are bounded, non-starving, and independent of delivered history", async () => {
   const at = new Date("2026-08-24T10:00:00.000Z");
