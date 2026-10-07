@@ -3,7 +3,9 @@
 Task: FIKA OS — Autonomous Launch UAT + Remediation War Room.
 Branch: `main`. Starting fetched `origin/main`: `4948ed5730a2a090801407b86392f61a34cac595`.
 Environment: staging only, Firebase project `fika-os-dev`.
-RC achieved: **NO — CHECKPOINT SAVED; STOPPED AT USER REQUEST**. No RC SHA frozen.
+RC achieved: **NO — HUB REPLAY GUARDS PASS; WITHDRAWAL CONSUMER GATE FAIL**. No RC SHA frozen.
+Latest authoritative result is the Hub rapid-amend/withdraw section below; earlier
+stop/resume instructions and next-gate statements are historical checkpoints.
 The resume instruction supersedes the earlier closure-only scope. Continue the ordered UAT/remediation loop; automatically checkpoint if ordinary usage remaining falls below 10%.
 Resume fetched `origin/main` and local HEAD: `d1c9e5d7cbb540def2b4882d69635315e60ea398` (report-only prior checkpoint). Protected hashes and all six staging provenance rows were reverified before continuing. The latest implementation commit and final HEAD/origin SHA are recorded below or returned in the chat following commit/push.
 
@@ -91,6 +93,100 @@ Automatic review rejected the premature commit/push; corrected documented test
 store selection passed before retrying. Hub typecheck/webpack build/diff check PASS.
 Final rollout and automatic recovery evidence follows; do not call this interim gate
 PASS while CPU remains stale.
+
+### Final live evidence and disposition — full gate FAIL
+
+Final implementation/pushed main SHA: **`c0a41ae3fe60393d20fc810fa6f0c1dacbe48b0f`**.
+Final Hub-only rollout **`uat-1007193534-c0a41ae`**, verified READY/SUCCEEDED,
+not reconciling/current/100% at **18:39:59Z**. Build operation
+`operation-1791398134589-65d446176a8b8-ab868593-a5f96e22`; rollout operation
+`operation-1791398135169-65d44617f8283-b5f33b42-ba0b8841`.
+Final provenance reconfirmed: Menu `06181e4`, CPU `9aa2cba`, Delivered-In `71b2860`,
+Logistics `ec1b110` unchanged, all READY/current/100%. Production untouched.
+Final report-only commit follows this implementation and is identified in the
+closing return; it changes neither code nor deployment source.
+
+Exact owned production events used (publication `menu-publication:rolling-week:2026-10-12`):
+
+| Purpose | Exact immutable event ID |
+| --- | --- |
+| Older replay (quantity13) | `production.materialise:menu-publication:rolling-week:2026-10-12:menu-publication:rolling-week:2026-10-12:v2:day:0:amended:oploc:bb4c7eea-87f5-4e79-8ed6-b973b24ded7b:v2` |
+| First amendment (quantity14) | `production.materialise:menu-publication:rolling-week:2026-10-12:menu-publication:rolling-week:2026-10-12:v3:day:0:amended:oploc:bb4c7eea-87f5-4e79-8ed6-b973b24ded7b:v3` |
+| Newest amendment / same-version replay (quantity15) | `production.materialise:menu-publication:rolling-week:2026-10-12:menu-publication:rolling-week:2026-10-12:v4:day:0:amended:oploc:bb4c7eea-87f5-4e79-8ed6-b973b24ded7b:v4` |
+| Withdrawal | `production.materialise:menu-publication:rolling-week:2026-10-12:menu-publication:rolling-week:2026-10-12:v4:day:0:withdrawn:oploc:bb4c7eea-87f5-4e79-8ed6-b973b24ded7b:v4` |
+
+The other five withdrawal event IDs are
+`menu.day.withdrawn:menu-publication:rolling-week:2026-10-12:menu-publication:rolling-week:2026-10-12:v4:day:0:withdrawn:v4`,
+`menu.day.withdrawn:menu-publication:rolling-week:2026-10-12:menu-publication:rolling-week:2026-10-12:v4:day:1:withdrawn:v1`,
+`menu.day.withdrawn:menu-publication:rolling-week:2026-10-12:menu-publication:rolling-week:2026-10-12:v4:day:2:withdrawn:v1`,
+`menu.day.withdrawn:menu-publication:rolling-week:2026-10-12:menu-publication:rolling-week:2026-10-12:v4:day:3:withdrawn:v1`,
+`menu.day.withdrawn:menu-publication:rolling-week:2026-10-12:menu-publication:rolling-week:2026-10-12:v4:day:4:withdrawn:v1`.
+They settled at 18:31:17.345 / 19.023 / 19.117 / 19.231 / 19.316Z respectively.
+Production withdrawal settled **automatically at 18:40:06.276Z**, after nine real
+retry failures while the CPU notification fix was built/deployed. No manual reset,
+artificial failure, event rewrite or direct operational Firestore mutation.
+All **30 owned events delivered**, zero pending/failed/dead-letter at final read.
+Menu reload retains **Withdrawn · downstream handoff delivered**. Root authoritative
+publication remains withdrawn, all five current days withdrawn, no compiled/current
+packet pointers. Immutable snapshots v1-v4 still exist with identical SHA256 values
+before/after final replays (`hub-guard-history-integrity.json`). Audit has exactly
+one initial publication, three amendments and one week withdrawal.
+
+Canonical stable identities are exactly those in the Menu latency acceptance above:
+Production `production-order:v1:menu-planning:rolling-week:2026-10-12:day:1:oploc:bb4c7eea-87f5-4e79-8ed6-b973b24ded7b`;
+Fulfilment `fulfilment-requirement:cpu-production:production-order:v1:menu-planning:rolling-week:2026-10-12:day:1:oploc:bb4c7eea-87f5-4e79-8ed6-b973b24ded7b:oploc:bb4c7eea-87f5-4e79-8ed6-b973b24ded7b`;
+Logistics `logistics-job:fulfilment-requirement:cpu-production:production-order:v1:menu-planning:rolling-week:2026-10-12:day:1:oploc:bb4c7eea-87f5-4e79-8ed6-b973b24ded7b:oploc:bb4c7eea-87f5-4e79-8ed6-b973b24ded7b`.
+
+| State / boundary | Canonical revision | Source version | Quantity retained | State | Audit count | Count |
+| --- | --- | --- | --- | --- | --- | --- |
+| Before amendment | 2 | 2 | 13 | menu_available | 2 | 1 |
+| Newest amendment and after v2 replay | 4 | 4 | 15 | menu_available | 4 | 1 |
+| Withdrawn Production, before/after v2 and v4 replays | 5 | 4 | 15 (history; inactive) | cancelled | 5 | 1 |
+| Withdrawn Fulfilment, before/after both replays | 5 | 5 | 15 (history; inactive) | withdrawn | 5 | 1 |
+| Withdrawn Logistics, before/after both replays | 5 | 5 | 15 (history; inactive) | sourceStatus withdrawn | 5 | 1 |
+
+Post-withdrawal exact v2 and original v4 amendment replay: HTTP200, duplicate=true,
+created=false, current cancelled order revision5/sourceVersion4 returned. Production,
+Fulfilment and Logistics snapshots byte-for-byte unchanged; no duplicate or resurrection.
+Bounded direct projections after both replays: CPU owned orders0, Logistics owned
+planning queue0/load0/movement0. Hard-refreshed CPU owned week shows no bookings;
+Logistics Monday queue0, separate pre-existing three native loads retained and untouched.
+This is an owned-scope assertion, not a claim of empty global operational data.
+Replay responses report Logistics delivered but **CPU pending**. CPU request logs
+show four HTTP409 responses at 18:40:56–18:41:00. Current CPU cancellation and all
+owned Menu event delivery remain intact; repeated CPU notification/rebuild idempotency
+is **not** declared PASS and requires bounded diagnosis. Error log query contained
+no structured error detail; exact post-fix 409 cause remains unconfirmed.
+
+**New confirmed P1 / full withdrawal gate FAIL:** Delivered-In hard reload of the
+owned Monday removes Monday and redirects to Tuesday13; Tuesday–Friday remain
+navigable and observed Tuesday is Published blank, despite all five authoritative current days being
+withdrawn. Observed Tuesday shows Published Menu v1 / Published — No service rather
+than withdrawn. No owned dish/production work resurrected, but operational freshness
+and withdrawal semantics are wrong. Inspected deployed source matches main for this
+path: `apps/delivered-in/lib/menu-planning-week-packet.ts` reads publication packets,
+then falls back to historical snapshots when packets are absent, without excluding
+an authoritatively withdrawn publication. Withdrawal intentionally clears current
+packets, so historical blank snapshots can appear current. This must be corrected
+without deleting historical evidence or treating integrity corruption as rebuildable.
+Delivered-In was inspected read-only, not edited or deployed in this task.
+
+**Exact next gate:** remediate and validate Delivered-In authoritative withdrawn-week
+tombstone/fallback and withdrawn-day navigation/cache behavior; diagnose repeat CPU
+notification HTTP409; deploy only the affected validated staging app(s), then rerun
+the existing owned withdrawn-week consumer and exact stale replay checks. Do not
+republish the owned week merely to hide the failure. After these new withdrawal
+gates pass, resume the existing Grab & Go durable handoff deployment/live chain.
+Existing Hub/Delivered baseline failures and other RC gates remain separate and open.
+No whole-suite-green, six-app RC, signed allergen acceptance or launch PASS asserted.
+
+Validation totals: Hub affected provider/Fulfilment/auth/adapter/concurrent replay
+33/33 PASS; CPU projection/durable consumer23/23 PASS; Menu adapter/recovery5/5 PASS;
+Hub typecheck and webpack build PASS after each code fix; diff check PASS. No full
+Hub suite rerun. Protected files unchanged and excluded from every commit. Style
+Guide compliance PASS for inspected existing UI; no UI implementation edited.
+Final screenshots and exact safe JSON/logs retained under `artifacts/uat/hub-guard-*`.
+Final source-control/protected integrity checks and report-only push follow.
 
 ## Baseline evidence
 
