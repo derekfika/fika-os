@@ -14,6 +14,43 @@ uncommitted user changes. Neither may be altered. Initial SHA256 verification:
 - CHANGELOG: `4691AC53FF895F84701B476129018065ED8F4F1D766DC458E706BD455201E81D`.
 - MenuData: `7A5C0D3664799ED88D7BF1473683F2A6EFCC6FBA9232B3B32C1E139C364D1636`.
 
+## Hub stale-source guard and owned rapid-amend/withdraw gate — 7 October 2026
+
+Starting fetched HEAD/origin/main: `e2adb67b75a98667cddab74edeefba8d0a2c84d5`.
+Both protected hashes match the task instructions; CHANGELOG remains untouched
+under explicit protection. This dated entry records the task instead.
+Hub prior staging: `3446d5d9b58a5bd363e5655ec74a460bc3ce565d`,
+`uat-1007132239-3446d5d`, verified READY/current/100%.
+Pre-deploy diff contains only the three-line lower-sourceVersion guard and its
+28-line regression in Hub; shared/runtime/dependency source has no additional diff.
+Initial provider/consumer/auth/replay tests 28/28 PASS; Menu adapter/claim/withdrawal
+tests 5/5 PASS; Hub typecheck and webpack build PASS; diff check PASS.
+Full Hub baseline suite not rerun or claimed green; existing RC failures remain.
+Exact validated `e2adb67` Hub-only rollout submitted: `uat-1007191808-e2adb67`;
+build operation `operation-1791397086853-65d4423037ab9-e2f85af1-61027ca2`,
+rollout operation `operation-1791397087112-65d4423076d3f-59695739-8d53c9bb`.
+
+**New directly relevant P1 reproduced before live withdrawal:** Menu withdrawal
+retains the published day content version. The lower-version guard alone lets an
+earlier publication with the same version overwrite cancellation. Isolated real
+Firestore regression FAIL before fix (`hub-guard-same-version-before.log`). No live
+resurrection or direct Firestore write performed. Minimal Hub fix makes cancellation
+terminal for the same Menu content version while permitting newer republish;
+contracts/identity/history/auth and other source-domain behavior are unchanged.
+Final focused provider/Fulfilment/auth/concurrent replay suite 30/30 PASS, including
+same-version published/amended/withdrawn replay and valid newer republish. Expected
+read/write shape unchanged: one known canonical document in the existing transaction;
+rejected replay returns existing state without new domain/audit/requirement writes.
+No new scheduler, polling or broad reads. Final build/deployment/live evidence follows.
+
+Owned baseline: `rolling-week:2026-10-12`, Monday Haleon quantity 13, publication v2.
+Exactly one canonical Production, one Fulfilment and one Logistics record, each
+sourceVersion/version 2 and audit count 2. Existing immutable v2 event will be
+replayed verbatim through authenticated `/api/production/materialise`: Menu's
+governed retry skips delivered events, so its no-op cannot prove the Hub guard.
+No delivery history reset, artificial dead letter or publication payload rewrite.
+Evidence is ignored under `artifacts/uat/hub-guard-*`. Production untouched.
+
 ## Baseline evidence
 
 Fetch and `git pull --ff-only origin main` completed; main already up to date.

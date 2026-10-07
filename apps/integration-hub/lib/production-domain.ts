@@ -283,6 +283,9 @@ export async function materialiseExternalProductionOrder(actor: Actor, input: Ex
     // A delayed delivery of an older immutable source event cannot resurrect
     // superseded work or overwrite a later amendment/cancellation.
     if (previous && (previous.sourceVersion || 0) > input.sourceVersion) return { created: false, duplicate: true, order: previous };
+    // Menu withdrawal retains the published content version. Cancellation is
+    // terminal for that version; only a newer publication may restore work.
+    if (previous && input.sourceDomain === "menu-planning" && previous.sourceVersion === input.sourceVersion && previous.status === "cancelled" && status !== "cancelled") return { created: false, duplicate: true, order: previous };
     if (previous && previous.sourceVersion === input.sourceVersion && previous.sourceContentHash === input.sourceContentHash && previous.status === status) return { created: false, duplicate: true, order: previous };
     const now = new Date().toISOString();
     const order: ProductionOrder = {

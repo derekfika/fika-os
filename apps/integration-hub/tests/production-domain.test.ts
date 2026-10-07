@@ -57,6 +57,21 @@ test("late Grab & Go and Menu source deliveries cannot overwrite a newer cancell
   }
 });
 
+test("Menu withdrawal dominates replay of the same content version and permits a newer republish", async () => {
+  const actor = { uid: "integration-test", name: "Integration Test", role: "integration-admin" as const, synthetic: true as const };
+  const input = { sourceDomain: "menu-planning" as const, sourceEntityId: `same-content-withdrawal:${Date.now()}:${process.pid}`, destinationOplocId: "oploc:haleon", serviceDate: "2026-10-12", sourceVersion: 4, sourceContentHash: "a".repeat(64), status: "amended" as const, lines: [{ sourceLineId: "owned-line", itemName: "Owned item", quantity: 15, unit: "portion" }] };
+  await materialiseExternalProductionOrder(actor, input);
+  const withdrawn = await materialiseExternalProductionOrder(actor, { ...input, status: "withdrawn" });
+  const replays = await Promise.all([input, { ...input, status: "published" as const }, { ...input, status: "withdrawn" as const }].map(value => materialiseExternalProductionOrder(actor, value)));
+  assert.ok(replays.every(result => result.duplicate));
+  for (const replay of replays) assert.deepEqual(replay.order, withdrawn.order);
+  const republished = await materialiseExternalProductionOrder(actor, { ...input, sourceVersion: 5, status: "published" });
+  assert.equal(republished.duplicate, false);
+  assert.equal(republished.order.status, "menu_available");
+  assert.equal(republished.order.sourceVersion, 5);
+  assert.equal(republished.order.audit.length, 3);
+});
+
 test("Menu publication materialisation is idempotent and preserves publication lineage", async () => {
   const suffix = `${Date.now()}:${process.pid}`;
   const input = {
