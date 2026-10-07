@@ -22,7 +22,9 @@ test("production actions are lifecycle constrained and typed", () => {
 test("hospitality hand-off writes the governed production collection consumed by the queue", () => {
   const service = readFileSync(new URL("../lib/hospitality-booking-service.ts", import.meta.url), "utf8");
   assert.match(service, /createProductionFromApprovedBooking/);
-  assert.match(service, /productionOrderV1Id/);
+  const provider = readFileSync(new URL("../lib/production-domain.ts", import.meta.url), "utf8");
+  assert.match(provider, /productionOrderV1Id/);
+  assert.match(provider, /fikaProductionOrdersV1/);
 });
 
 test("production reads preserve source Booking client and destination context for older hand-offs", () => {

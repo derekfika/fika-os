@@ -46,15 +46,18 @@ export type ProductionFulfilmentReconciliationResult = {
   withdrawnRequirements: number;
 };
 
-function productionSource(order: ProductionOrder): ProductionOrderFulfilmentSource {
+function productionSource(order: ProductionOrderFulfilmentSource): ProductionOrderFulfilmentSource {
   return {
     ...order,
+    // Hospitality amendments retire the frozen handoff while a replacement is quoted.
+    // Generic CPU amendments remain active work; only this upstream snapshot is withdrawn.
+    status: order.origin === "hospitality_booking" && order.status === "amended" ? "withdrawn" : order.status,
     sourceEntityId: order.origin === "grab_and_go" ? order.sourceEntityId || order.canonicalId : order.canonicalId,
   };
 }
 
 function terminalProductionOrder(order: ProductionOrder) {
-  return Boolean(order.supersededBy) || ["cancelled", "withdrawn", "superseded", "rejected"].includes(order.status);
+  return Boolean(order.supersededBy) || order.origin === "hospitality_booking" && order.status === "amended" || ["cancelled", "withdrawn", "superseded", "rejected"].includes(order.status);
 }
 
 /**
@@ -80,7 +83,7 @@ export async function reconcileProductionFulfilmentForServiceDate(serviceDate: s
   }
   const missingDestinationProductionOrders: string[] = [];
   const terminalProductionOrders: string[] = [];
-  const expected = new Map<string, { order: ProductionOrder; source: ProductionOrderFulfilmentSource; requirement: FulfilmentRequirement }>();
+  const expected = new Map<string, { order: ProductionOrder; source: ProductionOrderFulfilmentSource; requirement: FulfilmentRequirement; previousRequirementId?: string }>();
   const localProductionOrders = new Set<string>();
   const currentProductionOrders = orders.filter(order => {
     if (order.destinationOplocId === CPU_SITE_OPLOC_ID) { localProductionOrders.add(order.canonicalId); return false; }
@@ -97,7 +100,7 @@ export async function reconcileProductionFulfilmentForServiceDate(serviceDate: s
     // an explicit amendment, then withdraw the old requirement below.
     const previous = actualById.get(identity) || activeBySourceEntity.get(source.sourceEntityId || source.canonicalId);
     const requirement = fulfilmentFromProductionOrder(source, "integration-hub-reconciliation", now, previous);
-    expected.set(requirement.canonicalId, { order, source, requirement });
+    expected.set(requirement.canonicalId, { order, source, requirement, previousRequirementId: previous?.canonicalId });
   }
 
   const expectedIds = new Set(expected.keys());
@@ -115,10 +118,12 @@ export async function reconcileProductionFulfilmentForServiceDate(serviceDate: s
   let withdrawn = 0;
   let unchanged = 0;
 
-  const mutate = async (input: { order?: ProductionOrder; source?: ProductionOrderFulfilmentSource; requirementId: string; withdrawalReason?: string }) => db.runTransaction(async transaction => {
+  const mutate = async (input: { order?: ProductionOrder; source?: ProductionOrderFulfilmentSource; requirementId: string; previousRequirementId?: string; withdrawalReason?: string }) => db.runTransaction(async transaction => {
     const ref = requirements().doc(stableDocumentId(input.requirementId));
     const snapshot = await transaction.get(ref);
-    const previous = snapshot.exists ? snapshot.data() as FulfilmentRequirement : undefined;
+    const priorSnapshot = !snapshot.exists && input.previousRequirementId && input.previousRequirementId !== input.requirementId
+      ? await transaction.get(requirements().doc(stableDocumentId(input.previousRequirementId))) : undefined;
+    const previous = snapshot.exists ? snapshot.data() as FulfilmentRequirement : priorSnapshot?.exists ? priorSnapshot.data() as FulfilmentRequirement : undefined;
     const changedAt = new Date().toISOString();
     if (input.withdrawalReason) {
       if (!previous || previous.status === "withdrawn") return "unchanged" as const;
@@ -136,7 +141,7 @@ export async function reconcileProductionFulfilmentForServiceDate(serviceDate: s
   });
 
   for (const item of expected.values()) {
-    const action = await mutate({ order: item.order, source: item.source, requirementId: item.requirement.canonicalId });
+    const action = await mutate({ order: item.order, source: item.source, requirementId: item.requirement.canonicalId, previousRequirementId: item.previousRequirementId });
     if (action === "created") created++;
     else if (action === "updated") updated++;
     else unchanged++;
@@ -181,11 +186,11 @@ function asRequirement(value: unknown): FulfilmentRequirement | undefined {
   return candidate.entityType === "Fulfilment Requirement" && typeof candidate.canonicalId === "string" ? value as FulfilmentRequirement : undefined;
 }
 
-function requirementFromEvent(event: DurableDomainEvent): FulfilmentRequirement {
+function requirementFromEvent(event: DurableDomainEvent, previous?: FulfilmentRequirement): FulfilmentRequirement {
   const direct = asRequirement(event.payload);
   if (direct) return direct;
-  const payload = event.payload as { productionOrder?: ProductionOrderFulfilmentSource };
-  if (payload?.productionOrder) return fulfilmentFromProductionOrder(payload.productionOrder, "integration-hub", event.occurredAt);
+  const payload = event.payload as { productionOrder?: ProductionOrderFulfilmentSource; actorId?: string };
+  if (payload?.productionOrder) return fulfilmentFromProductionOrder(productionSource(payload.productionOrder), payload.actorId || "integration-hub", event.occurredAt, previous);
   throw Object.assign(new Error(`Event ${event.eventId} does not contain a Fulfilment Requirement or Production Order snapshot.`), { status: 422 });
 }
 
@@ -202,19 +207,24 @@ function isNonDeliveryProductionEvent(event: DurableDomainEvent) {
   return Boolean(productionOrder && !productionOrderRequiresFulfilment(productionOrder));
 }
 
-export async function stageFulfilmentEvent(transaction: Transaction, event: DurableDomainEvent) {
-  if (isNonDeliveryProductionEvent(event)) return { applied: false, duplicate: false, skipped: true } as const;
+/** Read first, then return a write-only staging function so callers can atomically stage several orders. */
+export async function prepareFulfilmentEvent(transaction: Transaction, event: DurableDomainEvent) {
+  if (isNonDeliveryProductionEvent(event)) return () => ({ applied: false, duplicate: false, skipped: true } as const);
   const receiptRef = inbox().doc(`${FULFILMENT_CONSUMER}:${stableDocumentId(event.eventId)}`);
   const receipt = await transaction.get(receiptRef);
-  if (receipt.exists) return { applied: false, duplicate: true } as const;
+  if (receipt.exists) return () => ({ applied: false, duplicate: true } as const);
   let requirement: FulfilmentRequirement;
   try { requirement = requirementFromEvent(event); } catch (error) {
+    return () => {
     transaction.create(receiptRef, { consumerName: FULFILMENT_CONSUMER, eventId: event.eventId, sourceAggregateId: event.sourceAggregateId, sourceVersion: event.sourceVersion, processedAt: new Date().toISOString(), outcome: "failed", error: error instanceof Error ? error.message : String(error) });
     return { applied: false, duplicate: false, error: error instanceof Error ? error.message : String(error) } as const;
+    };
   }
   const requirementRef = requirements().doc(stableDocumentId(requirement.canonicalId));
   const currentSnapshot = await transaction.get(requirementRef);
   const current = currentSnapshot.exists ? currentSnapshot.data() as FulfilmentRequirement : undefined;
+  requirement = requirementFromEvent(event, current);
+  return () => {
   if (current && current.sourceVersion === requirement.sourceVersion) {
     const outcome = fulfilmentRequirementContentEqual(current, requirement) ? "noop" : "conflict";
     transaction.create(receiptRef, { consumerName: FULFILMENT_CONSUMER, eventId: event.eventId, sourceAggregateId: event.sourceAggregateId, requirementId: requirement.canonicalId, sourceVersion: event.sourceVersion, processedAt: new Date().toISOString(), outcome, ...(outcome === "conflict" ? { error: "Same source version contained different Fulfilment content; reconciliation is required." } : {}) });
@@ -228,6 +238,11 @@ export async function stageFulfilmentEvent(transaction: Transaction, event: Dura
   stageLogisticsProjectionEvent(transaction, requirement, current);
   transaction.create(receiptRef, { consumerName: FULFILMENT_CONSUMER, eventId: event.eventId, sourceAggregateId: event.sourceAggregateId, requirementId: requirement.canonicalId, sourceVersion: event.sourceVersion, processedAt: new Date().toISOString(), outcome: "processed" });
   return { applied: true, duplicate: false, requirement } as const;
+  };
+}
+
+export async function stageFulfilmentEvent(transaction: Transaction, event: DurableDomainEvent) {
+  return (await prepareFulfilmentEvent(transaction, event))();
 }
 
 export async function applyFulfilmentEvent(event: DurableDomainEvent): Promise<FulfilmentProjectionResult> {
@@ -244,6 +259,7 @@ export async function applyFulfilmentEvent(event: DurableDomainEvent): Promise<F
     const ref = requirements().doc(stableDocumentId(requirement.canonicalId));
     const currentSnapshot = await transaction.get(ref);
     const current = currentSnapshot.exists ? currentSnapshot.data() as FulfilmentRequirement : undefined;
+    requirement = requirementFromEvent(event, current);
     if (current && current.sourceVersion === requirement.sourceVersion) {
       const outcome = fulfilmentRequirementContentEqual(current, requirement) ? "noop" : "conflict";
       transaction.create(receiptRef, { consumerName: FULFILMENT_CONSUMER, eventId: event.eventId, sourceAggregateId: event.sourceAggregateId, requirementId: requirement.canonicalId, sourceVersion: event.sourceVersion, processedAt: new Date().toISOString(), outcome, ...(outcome === "conflict" ? { error: "Same source version contained different Fulfilment content; reconciliation is required." } : {}) });

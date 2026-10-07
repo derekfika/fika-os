@@ -54,7 +54,7 @@ Pending rows are explicitly unexecuted and do not claim PASS.
 | 8 Amendment | Not executed | Unverified | None in this run yet | Owned UAT record |
 | 9 Cancellation / withdrawal | Not executed | Unverified | None in this run yet | Owned UAT record |
 | 10 Date / cache / retry | Not executed | Unverified | None in this run yet | Smoke gates |
-| Driver execution | BLOCKED — DEREK DECISION REQUIRED | Logistics baseline | Mobile only Unassigned driver; bounded logistics.driver grant query returned zero | Decide launch scope or provide an existing governed driver authority; no grant created |
+| Driver execution | FAIL — AUTOFIXING | Logistics baseline | No person-bound logistics.driver grants; Ready/Dispatch and mobile selection currently depend on them | Latest business requirement: shared authorised Logistics session, vehicle/run selection and execution. Driver execution remains an RC gate; no individual accounts or new driver grants. |
 
 ## Validation
 
@@ -67,7 +67,7 @@ Pending rows are explicitly unexecuted and do not claim PASS.
 
 Menu remediation commit pushed: `0fd871416ecb548202f6be3c20a75f7d5867253b`.
 App Hosting staging build/rollout `uat-1007075039-0fd8714` submitted for Menu only;
-current/live verification pending. Firebase CLI's separate login remains expired;
+current/live verification completed: READY/current 100%, exact `0fd871416ecb548202f6be3c20a75f7d5867253b`. Dish Library and picker recovered. Firebase CLI's separate login remains expired;
 submission used the same official API payloads with the refreshed existing GCP account.
 
 ## Remediation in progress
@@ -76,10 +76,12 @@ submission used the same official API payloads with the refreshed existing GCP a
 - P1 Logistics: clearing delivery timing retained durable assignments but projection filtering discarded them; routine reconciliation could then erase membership. Existing unscheduled membership now survives projection/reconciliation and can be rescheduled with CAS; new assignment and dispatch retain strict arrival constraints. Source identity/location/date changes and withdrawals still invalidate membership.
 - P0 Hospitality: bounded 13 October state shows superseded/amended orders retaining pending fulfilment and Logistics work. Tracing the workflow confirmed missing durable fulfilment event staging on amendment/cancellation. Fix in progress; no direct operational repair performed.
 - Invalid Menu week-query input ignored its explicit fallback date; fixed while validating date navigation, retaining Europe/London business-date semantics.
+- Driver business requirement confirmed by Derek: authentication belongs to the shared authorised Logistics operator; operational driver/run/vehicle identity is separate. Earlier out-of-scope decision is superseded. Remove the person-login dependency from execution while retaining canonical vehicle ownership, scoped server authorization, CAS and audit actor evidence.
 
 ## UAT records and live observations
 
 Normal UI created blank planning week `rolling-week:2026-10-12`; not published yet.
+The owned `FIKA-AUTOUAT-20261007-ALPHA Salad` was added through the normal catalogue/planner UI; Monday has 12 portions for canonical Haleon `oploc:bb4c7eea-87f5-4e79-8ed6-b973b24ded7b`. Whole-week publication shows Published v1. Other weekdays remain intentionally blank; downstream checks pending.
 No customer/internal notification sent. Existing yesterday UAT Hospitality record
 `booking:mnk:2fdaea9b9ddbddf136163f3a5a11cd76`, portal `MNK-20261006122750-BFD2`, retains £25 net additional charge, current £201.60 gross quote and CPU handoff. CPU 13 October shows **36 pieces / 12 people**. No browser hydration #418 observed. Current week explicitly empty; next week contains two Hospitality jobs.
 Original booking `booking:mnk:86ee28f023384fde1245816b9b595244` has order revisions base/r9/r13/r17; old work is excluded in CPU but remains downstream. Existing records were inspected without edits.
@@ -90,3 +92,11 @@ Production untouched. No reset, direct staging deletion, identity repair,
 permission broadening, secret change, or Golden Week cloud mutation performed.
 Style Guide compliance: PASS for inspected launcher; no UI edit yet.
 CHANGELOG updated: no — task-specific protection; this report is the task record.
+
+## Hospitality durable downstream remediation validation
+
+Amendment/cancellation now prepare all known-ID Fulfilment reads before staging any transaction writes, then atomically stage the requirement, receipt, Logistics outbox and domain event with the authoritative Hospitality order update. Retired Hospitality handoffs map to withdrawn fulfilment while their frozen production snapshots remain amended history. Ordinary CPU amendments retain their existing semantics. Replay preserves prior audit evidence. Destination reconciliation now retains the prior requirement audit when creating its superseding destination requirement.
+
+Focused provider/workflow regressions: **49/49 PASS**, including four isolated cancellation/amendment/retry tests. Hub typecheck and production build PASS. Full Hub baseline executed **480 tests, 464 pass, 16 fail**; three relevant failures were subsequently fixed and included in the focused 49-test pass. Remaining failures are documented baseline assertions/fixtures outside this remediation; full suite is not claimed green. A final full-suite attempt failed before execution with `uv_os_get_passwd ENOMEM` in tsx (zero tests); no repeated environmental retry. Staging deployment and affected full live journey remain pending.
+
+Logistics commit `5e5cd36c7f22c806617f3d0f7697d46ecfbb3ee2` pushed; staging build/rollout `uat-1007075545-5e5cd36` submitted. Live verification pending.

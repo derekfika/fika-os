@@ -38,6 +38,10 @@ import { deliverLogisticsProjectionForProductionOrder } from "./logistics-projec
 import { localBookingFixtures } from "./local-booking-fixtures";
 import { capGallagherMinimum, GALLAGHER_MINIMUM_GUESTS, isGallagherBooking } from "./gallagher-rules";
 import { recordDataAccess } from "@fika/server-shared/data-source-meter-server";
+import type { Transaction } from "firebase-admin/firestore";
+import { createDomainEvent } from "../../shared/domain-events";
+import { stageDomainEvent } from "./domain-event-outbox";
+import { prepareFulfilmentEvent } from "./fulfilment-projection";
 
 export const MNK_BOOKING_INGESTION_CONTRACT_VERSION =
   "fika.booking-ingestion.mnk.v1";
@@ -802,6 +806,18 @@ const WORKSPACE_ARCHIVE_LOOKBACK_DAYS = 365;
 const FIRESTORE_IN_LIMIT = 30;
 type ProductionProjectionChange = { order: ProductionOrderV1; changeType: "created" | "amended" | "withdrawn"; idempotencyKey: string };
 
+export async function prepareHospitalityProductionChanges(transaction: Transaction, changes: ProductionProjectionChange[], actorId: string, bookingId: string, occurredAt: string, reason: string) {
+  const events = changes.map(change => createDomainEvent({ eventType: change.changeType === "withdrawn" ? "production.order.cancelled" : "production.order.amended", sourceAggregateId: change.order.canonicalId, sourceVersion: change.order.version, occurredAt, correlationId: bookingId, causationId: change.idempotencyKey, payload: { productionOrder: change.order, actorId, reason } }));
+  const prepared = await Promise.all(events.map(event => prepareFulfilmentEvent(transaction, event)));
+  return () => {
+    for (let index = 0; index < events.length; index += 1) {
+      const result = prepared[index]();
+      if ("error" in result && result.error) throw new Error(result.error);
+      stageDomainEvent(transaction, events[index]);
+    }
+  };
+}
+
 function addCalendarDays(date: string, days: number) {
   const value = new Date(`${date}T00:00:00Z`);
   value.setUTCDate(value.getUTCDate() + days);
@@ -812,7 +828,8 @@ async function propagateProductionChanges(changes: ProductionProjectionChange[])
   const results = [];
   for (const change of changes) {
     try {
-      results.push({ canonicalId: change.order.canonicalId, ...(await notifyCpuProjection(change.order, change.changeType, change.idempotencyKey)), status: "delivered" as const });
+      const [cpuProjection, logisticsProjection] = await Promise.all([notifyCpuProjection(change.order, change.changeType, change.idempotencyKey), change.changeType === "created" ? Promise.resolve(undefined) : deliverLogisticsProjectionForProductionOrder(change.order)]);
+      results.push({ canonicalId: change.order.canonicalId, ...cpuProjection, ...(logisticsProjection ? { logisticsProjection } : {}), status: logisticsProjection && logisticsProjection.outboxStatus !== "delivered" ? "pending" as const : "delivered" as const });
     } catch (error) {
       results.push({ canonicalId: change.order.canonicalId, status: "pending" as const, reason: error instanceof Error ? error.message : "CPU projection handoff failed." });
     }
@@ -1049,15 +1066,21 @@ export async function executeBookingWorkflow(
       const priorRequirements = await transaction.get(
         db.collection("fikaProductionRequirements").where("sourceBookingId", "==", canonicalId),
       );
-      for (const prior of priorOrders.docs) {
+      const retiringOrders = priorOrders.docs.filter(prior => !["cancelled", "amended"].includes((prior.data() as ProductionOrderV1).status));
+      for (const prior of retiringOrders) {
         const order = prior.data() as ProductionOrderV1;
-        if (order.status === "cancelled" || order.status === "amended") continue;
-        projectionChanges.push({ order: { ...order, status: "amended", workflowStatus: "amended", version: Number(order.version || 1) + 1 }, changeType: "amended", idempotencyKey: `hospitality-projection:${canonicalId}:amended:v${next.version}` });
+        projectionChanges.push({ order: { ...order, status: "amended", workflowStatus: "amended", version: Number(order.version || 1) + 1, updatedAt: now }, changeType: "amended", idempotencyKey: `hospitality-projection:${canonicalId}:amended:v${next.version}` });
+      }
+      const stageChanges = await prepareHospitalityProductionChanges(transaction, projectionChanges, actor.uid, canonicalId, now, command.reason);
+      stageChanges();
+      for (const prior of retiringOrders) {
+        const order = prior.data() as ProductionOrderV1;
         transaction.set(
           prior.ref,
           {
             status: "amended",
             workflowStatus: "amended",
+            updatedAt: now,
             version: Number(order.version || 1) + 1,
             amendedAt: now,
             amendedBy: actor.uid,
@@ -1211,12 +1234,18 @@ export async function executeBookingWorkflow(
       });
       for (const prior of activeOrders) {
         const order = prior.data() as ProductionOrderV1;
-        projectionChanges.push({ order: { ...order, status: "cancelled", workflowStatus: "cancelled", version: Number(order.version || 1) + 1 }, changeType: "withdrawn", idempotencyKey: `hospitality-projection:${canonicalId}:cancelled:v${next.version}` });
+        projectionChanges.push({ order: { ...order, status: "cancelled", workflowStatus: "cancelled", version: Number(order.version || 1) + 1, updatedAt: now }, changeType: "withdrawn", idempotencyKey: `hospitality-projection:${canonicalId}:cancelled:v${next.version}` });
+      }
+      const stageChanges = await prepareHospitalityProductionChanges(transaction, projectionChanges, actor.uid, canonicalId, now, command.reason);
+      stageChanges();
+      for (const prior of activeOrders) {
+        const order = prior.data() as ProductionOrderV1;
         transaction.set(
           prior.ref,
           {
             status: "cancelled",
             workflowStatus: "cancelled",
+            updatedAt: now,
             cancellationNotice: `Booking cancelled: ${command.reason}`,
             version: Number(order.version || 1) + 1,
             cancelledAt: now,

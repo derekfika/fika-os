@@ -98,7 +98,7 @@ test("Production Fulfilment hashing and reconciliation distinguish delivery chan
   assert.equal(sourceRevisionOnly.sourceContentHash, first.sourceContentHash);
   assert.equal(sourceRevisionOnly.sourceVersion, 2);
 
-  const legacyHash = sourceContentHash({ ...productionOrder, sourceEntityId: productionOrder.canonicalId });
+  const legacyHash = sourceContentHash(productionOrder);
   const legacyAmendment = {
     ...first,
     status: "amended" as const,
