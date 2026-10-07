@@ -30,6 +30,41 @@ function scheduledWork(mock: Awaited<ReturnType<typeof mockAuthority>>) {
   mock.projection.stops = [{ canonicalId: "stop:van1", runId: "run:van1", sequence: 1, locationOplocId: "site:test", locationLabelSnapshot: "Test site", requirementRefs: [], movementRequestIds: [], plannedArrivalTime: "10:00", status: "planned", loaded: true, version: 1, createdAt: "now", updatedAt: "now", audit: [] }];
 }
 test.describe("Shared Logistics session and vehicle execution", () => {
+  test("movement Details, keyboard card and Set time open the inspector with canonical display metadata", async ({ page }) => {
+    const mock = await mockAuthority(page);
+    mock.projection.movements = [{ canonicalId: "movement:inspect", entityType: "Movement Request", type: "delivery", serviceDate: date, toOplocId: "oploc:governed-uat", toLabelSnapshot: "Governed UAT site", items: [{ description: "Owned movement", quantity: 1 }], createdBy: "operator", status: "open", version: 1, createdAt: "now", updatedAt: "now", audit: [] }];
+    await page.goto("/?serviceDate=" + date);
+    const card = page.locator('article[data-timeline-queue-id="movement:inspect"]');
+    const inspector = page.getByRole("complementary", { name: "Details inspector" });
+    await expect(card).toContainText("Governed UAT site");
+    await card.getByRole("button", { name: "Details", exact: true }).click();
+    await expect(inspector).toBeVisible();
+    await inspector.getByRole("button", { name: /Close/ }).click();
+    await card.getByRole("button", { name: /Time set on timeline/ }).press("Enter");
+    await expect(inspector).toBeVisible();
+    await inspector.getByRole("button", { name: /Close/ }).click();
+    // A placed movement without timing must remain actionable through Set time.
+    mock.projection.stops = [{ canonicalId: "stop:inspect", runId: "run:van2", sequence: 1, locationOplocId: "oploc:governed-uat", locationLabelSnapshot: "Governed UAT site", movementRequestIds: ["movement:inspect"], requirementRefs: [], status: "planned", version: 1, createdAt: "now", updatedAt: "now", audit: [] }];
+    mock.projection.runs[1].orderedStopIds = ["stop:inspect"];
+    mock.projection.revision++; mock.projection.lastChangeSequence++;
+    await page.reload();
+    await card.getByRole("button", { name: "Set time", exact: true }).click();
+    await expect(inspector).toBeVisible();
+    expect(mock.commands.filter(command => command.action !== "ensure-vehicle-day-runs")).toHaveLength(0);
+    expect(mock.reads.some(url => url.pathname === "/api/logistics/locations")).toBe(false);
+  });
+  test("legacy unassigned movement resolves labels through one lazy admitted reference read", async ({ page }) => {
+    const mock = await mockAuthority(page);
+    mock.projection.movements = [{ canonicalId: "movement:legacy-display", entityType: "Movement Request", type: "delivery", serviceDate: date, toOplocId: "oploc:governed-uat", items: [{ description: "Legacy owned movement", quantity: 1 }], createdBy: "operator", status: "open", version: 7, createdAt: "before", updatedAt: "before", audit: [] }];
+    await page.goto("/?serviceDate=" + date);
+    const card = page.locator('article[data-timeline-queue-id="movement:legacy-display"]');
+    await expect(card).toContainText("Governed UAT site");
+    await page.getByRole("button", { name: /Refresh/ }).click();
+    await expect(card).toContainText("Governed UAT site");
+    expect(mock.reads.filter(url => url.pathname === "/api/logistics/locations")).toHaveLength(1);
+    expect(mock.projection.movements[0].toLabelSnapshot).toBeUndefined();
+    expect(mock.commands.filter(command => command.action !== "ensure-vehicle-day-runs")).toHaveLength(0);
+  });
   test("New Run uses vehicle authority without driver accounts", async ({ page }) => {
     const mock = await mockAuthority(page);
     await page.goto("/?serviceDate=" + date);

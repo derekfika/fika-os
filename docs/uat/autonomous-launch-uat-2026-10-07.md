@@ -444,3 +444,45 @@ Style Guide compliance PASS: existing light planner rendering retained.
 **CODE FIXED / LOCAL VALIDATION PASS / LIVE RETEST PENDING.** Deploy Logistics
 only at the resulting exact validated commit, refresh/reconcile owned
 `movement:1791375509831`, then verify Haleon label and persistence before Van 2 UAT.
+
+## Movement inspection and ordinary legacy display follow-up
+
+Pushed `d107e6066918aa1e16d0930f9bc03af23863459f`; Logistics build
+`uat-1007133321-d107e60` verified READY/current/100%. Narrow live retest showed
+ordinary Refresh is a projection reread, not maintenance reconciliation. Therefore
+the old unassigned owned movement still lacked display snapshots until a real
+canonical reconciliation; this is not called live PASS.
+
+Follow-up source adds one lazy, admitted `/api/logistics/locations` package read
+only when a legacy projection lacks movement endpoint labels. Display joins use
+canonical IDs and do not rewrite authoritative history or projection state.
+Resolved labels remain in mounted view across normal refreshes; no catalogue
+polling or extra reads for current snapshotted movements. Failure is explicit
+with a governed retry button. Endpoint admission remains both-vehicle authority;
+no security scope is expanded. Server-derived snapshots continue to serve new work.
+
+New live P1 also confirmed: normal mouse click on movement Details did nothing.
+The control incorrectly reused a double-click-only card handler. Details and Set
+time now invoke inspection directly; keyboard activation of the movement card is
+supported while its pointer drag/double-click behaviour remains intact.
+
+Validation: final isolated rendered Chromium authority suite **12/12 PASS**, zero
+skips, including single-click Details, keyboard card, Set time, lazy historical
+label recovery with one read across refresh, no history mutation, and zero label
+reads for snapshotted movements. Initial new test incorrectly counted the normal
+idempotent ensure-vehicle-day-runs command as an inspection mutation; assertion
+corrected to exclude that existing bootstrap. Final typecheck/build PASS. The
+prior 441 domain/authority regressions passed for d107; no business mutation or
+server authority code changes in this UI follow-up. Style Guide compliance PASS.
+**CODE FIXED / LOCAL VALIDATION PASS / LIVE RETEST PENDING.** Deploy this resulting
+exact Logistics commit and retest the same owned record, then execute Van 2.
+
+Recovery infrastructure reconnaissance found Cloud Scheduler API disabled in
+`fika-os-dev` and zero jobs. Under the authorised staging-only configuration scope,
+API enabled successfully (operation
+`operations/acf.p2-594727519934-b3530bd3-279b-4e50-b8a3-55bf933cbfa3`). Both deployed
+worker apps bind existing `FIKA_INTERNAL_API_TOKEN@3`; no secret version, login
+account or IAM grant created/changed. Documented 25-event/minute recovery jobs are
+being configured using that existing token. Job creation, enabled/authenticated
+invocation and controlled retryable-obligation recovery must each be verified;
+API enablement alone is not a recovery PASS.
