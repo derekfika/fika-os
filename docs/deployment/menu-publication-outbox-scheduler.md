@@ -31,6 +31,9 @@ unchanged. Current status is read on Portion Planner load/week-version change
 and manual refresh: one deterministic publication read, existing publication-
 scoped event-ID lookup, then direct event reads. Status is deliberately separate
 from the week-version cache because worker delivery does not alter the menu week.
+The existing claim primitive also persists its bounded pagination checkpoint;
+an idle recovery pass normally writes one cursor document per minute. That existing
+behaviour is retained for the separately scoped post-launch cost optimisation.
 
 The publication detail API exposes `pending`, `delivered` or
 `intervention-required` based on durable state. Missing historical obligations

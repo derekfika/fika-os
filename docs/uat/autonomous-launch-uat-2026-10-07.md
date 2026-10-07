@@ -282,6 +282,123 @@ One intermediate full run completed all test assertions but its temporary-direct
 cleanup encountered Windows EPERM; bounded cleanup retries were added and the full
 run then completed green. No operational storage/query refactor or index change.
 
+### Final deployment and live acceptance — Menu latency P1 PASS
+
+Final deployed implementation SHA: **`06181e4b50262fb505396fbc5080ad9907b6bcce`**.
+Both implementation commits (`bca19c4`, `06181e4`) were pushed to canonical `main`.
+Final Menu-only build/rollout: **`uat-1007182022-06181e4`**, build operation
+`operation-1791393621324-65d435473b3e5-b0ab1132-59a5b576`, rollout operation
+`operation-1791393621614-65d4354781e42-5e55afda-c717c5e9`. App Hosting API verified
+READY / SUCCEEDED / not reconciling / current 100% at **17:23:48Z (18:23 UK)**.
+Evidence: `artifacts/uat/menu-async-final-rollout-progress.json`.
+
+Scheduler `projects/fika-os-dev/locations/europe-west4/jobs/fika-menu-publication-outbox-recovery`
+is ENABLED, every minute, Europe/London, POST to the friendly Menu staging URL,
+body `{"limit":25}`, deadline 300 seconds, three transport retries, 30–300-second
+backoff. Uses existing `FIKA_INTERNAL_API_TOKEN@3`; no new secret/IAM/account or
+production configuration. Corrected authenticated smoke: HTTP 200; unauthenticated
+smoke: HTTP 401. Automatic attempts at 17:25/26/27/28 returned HTTP 200. Worker
+consumer failures remain in durable event state, never falsely marked delivered.
+The initial smoke's per-event failure belonged to an older unrelated obligation.
+Bounded read found historical August/September failures with Delivered-In
+invalidation HTTP 500, including legacy attempt counts above ten; this is a
+separate governed historical-recovery gate, not a reset/cleanup performed here.
+No artificial failure was introduced to produce a dead letter.
+
+Normal authorized UI amended the checkpoint-owned week **`rolling-week:2026-10-12`**:
+`FIKA-AUTOUAT-20261007-ALPHA Salad`, Monday Haleon allocation **12 → 13 portions**.
+Save made v1 dirty; **one** Publish week amendment produced clean v2. Publication
+ID: **`menu-publication:rolling-week:2026-10-12`**; Monday publication day:
+**`menu-publication:rolling-week:2026-10-12:v2:day:0`**.
+
+Before: supplied live evidence ~48 seconds, ~47.7 seconds server-side with 22
+downstream events. After: Cloud Run POST `/api/rolling-menu` **HTTP 200,
+2.117935 seconds**, revision `fika-menu-planning-staging-uat-1007182022-06181e4`,
+request timestamp 17:27:19.213647Z. This owned amendment queued six events; the
+before/after journeys have different fan-out sizes. Source and API tests prove
+normal response completion performs no downstream calls, rather than claiming a
+controlled 22-event benchmark. Launch target <3 seconds: **PASS**.
+
+UI persistently displayed **Published · downstream handoff pending** and
+**Published v2 ✓**. Immediately refreshed the browser; at 17:28:01.377Z the
+publication had six old delivered events plus **six new pending events**, no
+failed/dead-letter events. This proves the browser refresh did not remove the
+committed downstream obligation. Scheduler recovery subsequently delivered all
+six new events without a manual owned-event replay. New event IDs and settlements:
+
+| Exact event ID | Delivered UTC |
+| --- | --- |
+| `menu.day.amended:menu-publication:rolling-week:2026-10-12:menu-publication:rolling-week:2026-10-12:v2:day:0:amended:v2` | 17:28:03.326Z |
+| `production.materialise:menu-publication:rolling-week:2026-10-12:menu-publication:rolling-week:2026-10-12:v2:day:0:amended:oploc:bb4c7eea-87f5-4e79-8ed6-b973b24ded7b:v2` | 17:28:06.013Z |
+| `menu.day.amended:menu-publication:rolling-week:2026-10-12:menu-publication:rolling-week:2026-10-12:v2:day:1:amended:v1` | 17:28:06.184Z |
+| `menu.day.amended:menu-publication:rolling-week:2026-10-12:menu-publication:rolling-week:2026-10-12:v2:day:2:amended:v1` | 17:28:06.339Z |
+| `menu.day.amended:menu-publication:rolling-week:2026-10-12:menu-publication:rolling-week:2026-10-12:v2:day:3:amended:v1` | 17:28:06.504Z |
+| `menu.day.amended:menu-publication:rolling-week:2026-10-12:menu-publication:rolling-week:2026-10-12:v2:day:4:amended:v1` | 17:28:06.656Z |
+
+All occurred at **17:27:21.059Z**. Production delivery settled after ~45 seconds;
+the final new event after ~45.6 seconds. At 17:38:38.995Z all twelve historical+
+new events remained delivered, zero pending/failed/dead letter. Manual Refresh
+handoff status showed delivered; a further hard refresh retained v2, clean state,
+13 portions and delivered status. No new aggressive polling was introduced.
+
+Downstream evidence, bounded by known source/requirement IDs:
+
+- One canonical Production Order:
+  `production-order:v1:menu-planning:rolling-week:2026-10-12:day:1:oploc:bb4c7eea-87f5-4e79-8ed6-b973b24ded7b`;
+  document `d97f18434e5bd5b165df40d48fdde04e98c047866f003b9cfdb5133ef97ee25b`,
+  version/sourceVersion 2, quantity 13, exactly two audit entries (create/amend).
+  Repeated automatic recovery left the same version, quantity and audit count.
+- CPU day projection `2026-10-12` revision 3, change sequence 631. Normal CPU UI
+  showed exactly one Haleon job, the owned dish x13; Tuesday–Friday had no bookings.
+- Delivered-In normal UI at governed Haleon
+  `oploc:bb4c7eea-87f5-4e79-8ed6-b973b24ded7b`, week/day 2026-10-12, showed Menu v2,
+  one dish and 13 portions. Its separate CPU checker remains awaiting sign-off;
+  this is not claimed as signed allergen release acceptance. No signature mutation.
+- One Fulfilment Requirement, v2/sourceVersion 2, quantity 13:
+  `fulfilment-requirement:cpu-production:production-order:v1:menu-planning:rolling-week:2026-10-12:day:1:oploc:bb4c7eea-87f5-4e79-8ed6-b973b24ded7b:oploc:bb4c7eea-87f5-4e79-8ed6-b973b24ded7b`.
+- One Logistics job for that exact `requirementId`, v2/sourceVersion 2, quantity 13:
+  `logistics-job:fulfilment-requirement:cpu-production:production-order:v1:menu-planning:rolling-week:2026-10-12:day:1:oploc:bb4c7eea-87f5-4e79-8ed6-b973b24ded7b:oploc:bb4c7eea-87f5-4e79-8ed6-b973b24ded7b`;
+  source status amended, production readiness attention, delivery pending.
+  No dispatch or movement mutation. Initial query used absent `sourceEntityId`;
+  corrected to the domain's actual stable requirement ID before counting jobs.
+
+Safe evidence retained under ignored `artifacts/uat/menu-async-*`: rollout/API
+metadata, scheduler configuration/invocations, HTTP timing, exact event snapshots,
+canonical/Fulfilment/Logistics records and pending/delivered/CPU/Delivered-In PNGs.
+Browser direct API navigation was blocked, so consumer verification used normal
+authorized UI plus targeted read-only cloud evidence. No browser security barrier
+was bypassed. Style Guide compliance **PASS**.
+
+Acceptance A–F: local API/adapter/claim tests plus live pending → refresh → automatic
+delivery and stable canonical state PASS. G/H: isolated retry/backoff/ten-attempt
+dead-letter tests PASS; no destructive live failure manufactured. I: exact rapid
+two-amendment/delayed-older concurrent provider test PASS **locally only**. J:
+durable withdrawal and downstream cancellation tests PASS locally; this live task
+performed one amendment, not a new withdrawal journey. K: governed targeted retry
+and repeated delivered retry tests PASS. L: clean/dirty/amendment/hard-refresh
+regressions PASS locally and on the owned live journey.
+
+**Exact next gate:** deploy the already validated Hub stale-source guard to staging
+under a separately authorized Hub rollout, prove READY/current/100%, then run the
+rapid-amendment/stale-replay and withdrawal convergence gate. Hub currently serves
+`3446d5d9b58a5bd363e5655ec74a460bc3ce565d`, whose source lacks the guard added by
+`ceaff01a5f3f3b78a9ef5b0db070fc3f03430afe`. Current CPU is `9aa2cba`, Delivered-In
+`71b2860`, Logistics `ec1b110` (all READY/current/100%). No other app was deployed
+in this Menu-only task. Do not equate local guard tests with proof on that older
+Hub rollout. Existing historical handoff failures and the other launch gates above
+remain open; no six-app aligned RC, P0/P1-zero or whole-launch PASS is asserted.
+
+**Result: Menu synchronous-publication latency P1 PASS; whole-launch gate remains
+open.** Protected files remain unchanged and excluded from commits. CHANGELOG
+updated: no, explicit protection; this dated report is the task record. Production
+untouched. Final report-only commit follows this validated implementation and is
+identified in the closing response; it does not change the deployed source SHA.
+
+Final read-only verification at 17:54:39Z: Menu remains READY/current/100% at exact
+`06181e4b50262fb505396fbc5080ad9907b6bcce`; Scheduler remains ENABLED with limit 25
+and internal header configured. Isolated emulator on port 8096 stopped after
+validation. Protected SHA256 values still exactly match the authoritative prompt.
+
 ## Resume evidence — owned Hospitality gate, 7 October
 
 Existing authenticated session and normal product commands only. Owned booking
