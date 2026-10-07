@@ -629,7 +629,6 @@ export function buildPlannerDay(input: {
         operationalStatus: liveStopStatus(stop, run.status),
       }));
       const blockers: string[] = [];
-      if (!run.driverLabel) blockers.push("No driver assigned");
       if (!stopViews.length) blockers.push("No stops");
       runStops.forEach((stop) => {
         if ((stop.issues || []).some((issue) => issue.status === "open"))

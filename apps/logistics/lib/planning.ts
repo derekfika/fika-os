@@ -70,6 +70,14 @@ export function assertRunPlanningOpen(run: DeliveryRun) {
   if (run.status !== "draft" && run.status !== "planned")
     throw new Error(`Run is ${run.status}; return it to planning before changing its structure.`);
 }
+/** Operational selection only. Server responses and commands enforce vehicle authority. */
+export function selectMobileVehicleRuns(runs: DeliveryRun[], vehicleId: string, serviceDate: string) {
+  if (vehicleId !== "van1" && vehicleId !== "van2") return [];
+  const priority: Record<DeliveryRun["status"], number> = { dispatched: 0, ready: 1, planned: 2, draft: 3, completed: 4 };
+  return runs.filter(run => run.vehicleId === vehicleId && run.serviceDate === serviceDate)
+    .sort((a, b) => priority[a.status] - priority[b.status] || a.canonicalId.localeCompare(b.canonicalId));
+}
+
 export function selectMobileRuns(
   runs: DeliveryRun[],
   driverId: string,

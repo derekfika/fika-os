@@ -45,7 +45,7 @@ async function installRoutes(page: Page, options: {
   await page.route("**/api/**", async (route) => {
     const request = route.request();
     const url = new URL(request.url());
-    if (url.pathname === "/api/logistics/drivers") return route.fulfill({ json: { permittedVehicleIds: ["van1"], drivers: [] } });
+    if (url.pathname === "/api/logistics/vehicles") return route.fulfill({ json: { permittedVehicleIds: ["van1"] } });
     if (url.pathname !== "/api/logistics") return route.continue();
     if (request.method() === "POST") {
       const command = request.postDataJSON();

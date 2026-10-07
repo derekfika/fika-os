@@ -48,8 +48,10 @@ exports.fixture = function (permittedVehicleIds = ['van1'], maintenanceAuthoriti
   let driverActive = true;
   const alternateDriver = { driverId: 'person:replacement', displayName: 'Replacement Driver', permittedDriverVehicleIds: ['van1'] };
   const requirements = [];
+  const authorityRequests = [];
   const localFetch = async input => {
     const url = new URL(String(input));
+    authorityRequests.push(url.pathname);
     if (url.pathname.endsWith('/api/logistics/access')) return Response.json({ principal: { ...principal, authmodIdentityId: principal.id } });
     if (url.pathname.endsWith('/api/logistics/drivers')) {
       const eligible = driverActive ? [driver, alternateDriver] : [alternateDriver];
@@ -106,10 +108,12 @@ exports.fixture = function (permittedVehicleIds = ['van1'], maintenanceAuthoriti
   if (realReconciliation) mocks['@/lib/logistics-materialisation'] = materialisation;
   const route = load(path.join(appRoot, 'app/api/logistics/route.ts'));
   const driversRoute = load(path.join(appRoot, 'app/api/logistics/drivers/route.ts'));
-  return { date, queries, materialisation, load, records, run, principal, seed, rebuild, requirements, get writes() { return writes; }, deactivateDriver() { driverActive = false; },
+  const vehiclesRoute = load(path.join(appRoot, 'app/api/logistics/vehicles/route.ts'));
+  return { date, queries, authorityRequests, materialisation, load, records, run, principal, seed, rebuild, requirements, get writes() { return writes; }, deactivateDriver() { driverActive = false; },
     beforeNextTransaction(hook) { beforeTransaction = hook; },
     async get(query = '') { const response = await route.GET(new NextRequest('https://logistics.test/api/logistics?serviceDate=' + date + (query ? '&' + query : ''))); return { response, body: await response.json() }; },
     async drivers() { const response = await driversRoute.GET(new NextRequest('https://logistics.test/api/logistics/drivers')); return { response, body: await response.json() }; },
+    async vehicles(query = '') { const response = await vehiclesRoute.GET(new NextRequest('https://logistics.test/api/logistics/vehicles' + query)); return { response, body: await response.json() }; },
     async post(body, query = '') { const response = await route.POST(new NextRequest('https://logistics.test/api/logistics' + query, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })); return { response, body: await response.json() }; },
   };
 };

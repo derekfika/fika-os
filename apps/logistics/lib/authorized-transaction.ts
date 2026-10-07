@@ -105,13 +105,8 @@ export async function authorizeTransaction<T>(transaction: Transaction, principa
     const next = await proposed(ref);
     await check(ref.path, current, false);
     await check(ref.path, next, true);
-    if (ref.parent.id === "fikaLogisticsDeliveryRunsV1" && current && next && current.status !== next.status && ["ready", "dispatched"].includes(next.status)) {
-      const message = "The assigned driver is no longer eligible for this vehicle. Reassign an eligible driver before Ready or Dispatch.";
-      if (!next.driverId) throw Object.assign(new Error(message), { status: 422 });
-      try { await requireGovernedDriver(next.driverId, next.vehicleId, cookie); }
-      catch (error) { if ((error as { status?: number }).status === 422) throw Object.assign(new Error(message), { status: 422 }); throw error; }
-      // Validate without rewriting the historical driver/name snapshot.
-    }
+    // Current AND proposed canonical vehicle ownership above governs execution.
+    // Optional historical driver metadata never grants or blocks execution.
     if (ref.parent.id === "fikaLogisticsDeliveryRunsV1" && next && (revalidateDrivers || !current || current.driverId !== next.driverId || current.driverLabel !== next.driverLabel || current.vehicleId !== next.vehicleId)) {
       if (next.driverLabel && !next.driverId) throw Object.assign(new Error("A governed driver identity is required."), { status: 422 });
       if (next.driverId) {

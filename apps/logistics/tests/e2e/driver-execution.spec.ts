@@ -4,11 +4,12 @@ import { projectionToDashboardData } from "../../lib/projection-dashboard-adapte
 const { setup, jobs, loads, run } = createRequire(import.meta.url)("../helpers/execution-fixture.cjs");
 
 async function mobile(page: Page, merged = false) {
-  const f = await setup({ collection: true, merged, draft: true });
+  const f = await setup({ collection: true, merged, draft: true, sharedSession: true });
   const commands: Record<string, any>[] = [];
   await page.clock.install({ time: new Date(f.date + "T12:00:00Z") });
   await page.route("**/api/**", async route => {
     const url = new URL(route.request().url());
+    if (url.pathname === "/api/logistics/vehicles") return route.fulfill({ json: { permittedVehicleIds: ["van1", "van2"] } });
     if (route.request().method() === "POST") {
       const body = route.request().postDataJSON(); commands.push(body);
       if (body.stopId?.startsWith("projection-stop:")) {

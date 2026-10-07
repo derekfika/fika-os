@@ -62,26 +62,27 @@ test('R1 movement ownership removed after preflight cannot be replaced by a prop
   assert.equal((await f.post({ action: 'assign', runId: 'r1', movementId: 'race-movement', expectedRunVersion: 1 })).response.status, 403);
   assert.equal(f.writes, before);
 });
-test('R2 revoked driver blocks Ready, preserves snapshot and permits eligible replacement', async () => {
+test('shared-session Ready preserves optional historical driver snapshot after revocation', async () => {
   const f = fixture(); await assignedDriver(f); f.deactivateDriver();
-  const snapshot = structuredClone(f.records.get('fikaLogisticsDeliveryRunsV1/r1')); const before = f.writes;
-  const rejected = await f.post({ action: 'mark-run-ready', runId: 'r1', expectedRunVersion: 2, driverLabel: 'Forged eligible label' });
-  assert.equal(rejected.response.status, 422); assert.match(JSON.stringify(rejected.body), /no longer eligible.*Reassign/);
-  assert.deepEqual(f.records.get('fikaLogisticsDeliveryRunsV1/r1'), snapshot); assert.equal(f.writes, before);
-  assert.equal((await f.post({ action: 'set-run-driver', runId: 'r1', driverId: 'person:replacement', expectedRunVersion: 2 })).response.status, 200);
-  assert.equal((await f.post({ action: 'mark-run-ready', runId: 'r1', expectedRunVersion: 3 })).response.status, 200);
+  const snapshot = structuredClone(f.records.get('fikaLogisticsDeliveryRunsV1/r1'));
+  const result = await f.post({ action: 'mark-run-ready', runId: 'r1', expectedRunVersion: 2, driverLabel: 'Forged eligible label' });
+  assert.equal(result.response.status, 200);
+  assert.equal(result.body.driverId, snapshot.driverId); assert.equal(result.body.driverLabel, snapshot.driverLabel);
+  assert.equal(result.body.status, 'ready');
 });
-test('R2 revoked driver blocks Dispatch after valid Ready and preserves history', async () => {
+test('shared-session Dispatch uses vehicle authority after historical driver revocation', async () => {
   const f = fixture(); await assignedDriver(f);
   assert.equal((await f.post({ action: 'mark-run-ready', runId: 'r1', expectedRunVersion: 2 })).response.status, 200);
   f.records.get('fikaLogisticsDeliveryStopsV1/s1').loaded = true; f.deactivateDriver();
   const snapshot = structuredClone(f.records.get('fikaLogisticsDeliveryRunsV1/r1'));
-  assert.equal((await f.post({ action: 'dispatch-run', runId: 'r1', expectedRunVersion: 3 })).response.status, 422);
-  assert.deepEqual(f.records.get('fikaLogisticsDeliveryRunsV1/r1'), snapshot);
+  const result = await f.post({ action: 'dispatch-run', runId: 'r1', expectedRunVersion: 3 });
+  assert.equal(result.response.status, 200);
+  assert.equal(result.body.driverId, snapshot.driverId); assert.equal(result.body.driverLabel, snapshot.driverLabel);
+  assert.deepEqual(result.body.audit.slice(0, snapshot.audit.length), snapshot.audit);
 });
-test('R2 driver revoked between preflight and Ready transaction is rejected', async () => {
+test('historical driver revocation during Ready does not change session vehicle authority', async () => {
   const f = fixture(); await assignedDriver(f); f.beforeNextTransaction(() => f.deactivateDriver());
-  assert.equal((await f.post({ action: 'mark-run-ready', runId: 'r1', expectedRunVersion: 2 })).response.status, 422);
+  assert.equal((await f.post({ action: 'mark-run-ready', runId: 'r1', expectedRunVersion: 2 })).response.status, 200);
 });
 test('R2 already-dispatched execution remains allowed after driver revocation', async () => {
   const f = fixture(); await assignedDriver(f);

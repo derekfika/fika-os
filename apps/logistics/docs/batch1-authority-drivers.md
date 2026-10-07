@@ -1,5 +1,13 @@
 # Batch 1: vehicle access and governed drivers
 
+## Current policy correction — 2026-10-07
+
+Derek confirmed that driver phones authenticate with one shared authorised Logistics account. Physical drivers do not require individual FIKA OS accounts or `logistics.driver` person grants. Authentication/session authority and operational vehicle/run identity are separate. The person-driver policy documented below is historical and superseded for execution.
+
+Ready/Dispatch and mobile execution use the authenticated operator's existing vehicle entitlements, current canonical ownership and operational readiness/CAS checks. Fixed `/mobile/van1` and `/mobile/van2` views select their vehicle; selection never grants authority. Optional historical driver ID/name snapshots remain audit metadata and are not an execution gate. The legacy explicit driver-assignment API retains its existing validation for compatibility; routine desktop/mobile workflows do not require or query that catalogue.
+
+No identities or grants were created/broadened. Final shared-account configuration is launch preparation; staging UAT is authorised to use the currently authorised existing session. See `docs/uat/autonomous-launch-uat-2026-10-07.md` for validation and deployment evidence.
+
 ## Sol review correction — 2026-10-02
 
 Prior reviewed SHA: `f30aa8c824b7e7c750ffe77cbc1e1dcd8eb1ed86`. Canonical base remains `2db66b3903203b5c65d7fc9b99ac8cdd38914252`. This correction is limited to R1 and R2; no new AUTHMOD authority, merge, deployment or operational migration.

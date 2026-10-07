@@ -4,8 +4,9 @@ const rows = (f, name) => [...f.records].filter(([key]) => key.startsWith(name +
 const jobs = f => rows(f, 'fikaLogisticsJobsV1');
 const loads = f => rows(f, 'fikaLogisticsDeliveryLoadsV1');
 const run = (f, id = 'r1') => structuredClone(f.records.get('fikaLogisticsDeliveryRunsV1/' + id));
-async function setup({ count = 2, collection = false, merged = false, native = false, draft = false } = {}) {
+async function setup({ count = 2, collection = false, merged = false, native = false, draft = false, sharedSession = false } = {}) {
   const f = fixture(['van1', 'van2'], ['logistics.reconcile'], true); f.requirements.length = 0;
+  if (sharedSession) { f.principal.identityKind = 'operational'; f.principal.id = 'operational:logistics'; f.principal.displayName = 'Shared Logistics'; f.deactivateDriver(); }
   for (const key of [...f.records.keys()]) if (!key.startsWith('fikaLogisticsDeliveryRunsV1/')) f.records.delete(key);
   for (const value of f.records.values()) value.orderedStopIds = [];
   if (draft) f.records.get("fikaLogisticsDeliveryRunsV1/r1").status = "draft";
@@ -25,7 +26,7 @@ async function setup({ count = 2, collection = false, merged = false, native = f
     for (const [key, value] of f.records) if (key.startsWith('fikaLogisticsAssignmentsV1/') && value.jobId === job.id) value.loadId = second.id;
   }
   if (collection) for (const load of loads(f)) f.records.get('fikaLogisticsDeliveryLoadsV1/' + load.id).collectionScheduledTime = '14:00';
-  const driver = await f.post({ action: 'set-run-driver', runId: 'r1', expectedRunVersion: run(f).version, driverId: 'person:driver' }); assert.equal(driver.response.status, 200);
+  if (!sharedSession) { const driver = await f.post({ action: 'set-run-driver', runId: 'r1', expectedRunVersion: run(f).version, driverId: 'person:driver' }); assert.equal(driver.response.status, 200); }
   await f.materialisation.rebuildLogisticsProjection(f.date, 'Operator'); return f;
 }
 async function lifecycle(f, action, id = 'r1', extra = {}) { return f.post({ action, runId: id, expectedRunVersion: run(f, id).version, ...extra }); }

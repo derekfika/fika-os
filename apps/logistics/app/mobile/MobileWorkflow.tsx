@@ -5,7 +5,9 @@ import type { FulfilmentRequirement } from "../../../shared/fulfilment-requireme
 import { fulfilmentWorkstream } from "../../../shared/fulfilment-workstream";
 import type { DeliveryRun, DeliveryStop, MovementRequest } from "../../lib/types";
 import { operationalDate } from "../../lib/date";
-import { movementsForStop, selectMobileRuns } from "../../lib/planning";
+import { movementsForStop, selectMobileVehicleRuns } from "../../lib/planning";
+import { VehicleAuthorityProvider, useVehicleAuthority } from "../vehicle-authority";
+import { logisticsVehicleLabel, type LogisticsVehicleId } from "../../../shared/logistics-authority";
 import { projectionToDashboardData } from "../../lib/projection-dashboard-adapter";
 import { announceDriverChange, driverIssueTypes, showDispatchChecklist, stopCounts, stopIsCollection } from "../../lib/mobile-driver";
 import { responseErrorDetails, LogisticsResponseError } from "../../lib/client-errors";
@@ -28,7 +30,12 @@ async function loadMobileProjection(date: string, vehicleQuery: string, _materia
 }
 
 export default function MobileWorkflow({ fixedVan }: { fixedVan?: "Van 1" | "Van 2" } = {}) {
-  const [driverId, setDriverId] = useState("");
+  return <VehicleAuthorityProvider><MobileWorkflowContents fixedVan={fixedVan} /></VehicleAuthorityProvider>;
+}
+function MobileWorkflowContents({ fixedVan }: { fixedVan?: "Van 1" | "Van 2" }) {
+  const authority = useVehicleAuthority();
+  const [selectedVehicle, setSelectedVehicle] = useState<LogisticsVehicleId | "">(fixedVan === "Van 1" ? "van1" : fixedVan === "Van 2" ? "van2" : "");
+  const [selectedRunId, setSelectedRunId] = useState("");
   const [data, setData] = useState<Data>();
   const [view, setView] = useState<View>("deliveries");
   const [selectedStop, setSelectedStop] = useState<DeliveryStop>();
@@ -71,7 +78,7 @@ export default function MobileWorkflow({ fixedVan }: { fixedVan?: "Van 1" | "Van
     setError("");
     setSyncUnavailable(false);
     setProjectionNeedsMaterialisation(false);
-    setDriverId("");
+    setSelectedRunId("");
     stopTriggerRef.current = null;
   };
 
@@ -188,12 +195,27 @@ export default function MobileWorkflow({ fixedVan }: { fixedVan?: "Van 1" | "Van
     const timer = window.setInterval(() => { if (document.visibilityState === "visible") void checkForUpdates(); }, 30_000);
     return () => { window.clearInterval(timer); document.removeEventListener("visibilitychange", onVisibilityChange); liveChannel?.removeEventListener("message", onLiveChange); liveChannel?.close(); };
   }, [selectedDate, fixedVan]);
-  useEffect(() => { if (!driverId) setDriverId(visibleData?.runs.find((run) => run.driverId)?.driverId || ""); }, [visibleData?.runs, driverId]);
-
-  const driverOptions = useMemo(() => Array.from(new Map((visibleData?.runs || []).filter((run) => run.driverId && run.driverLabel && run.driverId.toLowerCase() !== run.driverLabel.toLowerCase()).map((run) => [run.driverId, run.driverLabel])).entries()), [visibleData?.runs]);
-  const fixedRuns = useMemo(() => fixedVan ? (visibleData?.runs || []).filter((run) => run.vehicleLabel === fixedVan) : visibleData?.runs || [], [visibleData?.runs, fixedVan]);
-  const driver = fixedVan || driverOptions.find(([id]) => id === driverId)?.[1] || "Unassigned driver";
-  const runs = useMemo(() => fixedVan ? selectMobileRuns(fixedRuns, fixedRuns[0]?.driverId || fixedRuns[0]?.driverLabel || "", date) : selectMobileRuns(fixedRuns, driverId, date), [fixedRuns, fixedVan, driverId, date]);
+  useEffect(() => {
+    if (fixedVan || authority.loading || !authority.vehicles.length) return;
+    if (!selectedVehicle || !authority.vehicles.includes(selectedVehicle)) {
+      const requested = new URLSearchParams(window.location.search).get("vehicle");
+      setSelectedVehicle(authority.vehicles.find(id => id === requested) || authority.vehicles[0]);
+    }
+  }, [fixedVan, authority.loading, authority.vehicles, selectedVehicle]);
+  const vehicleRuns = useMemo(() => authority.vehicles.includes(selectedVehicle as LogisticsVehicleId) ? selectMobileVehicleRuns(visibleData?.runs || [], selectedVehicle, date) : [], [visibleData?.runs, selectedVehicle, date, authority.vehicles]);
+  useEffect(() => {
+    if (vehicleRuns.some(run => run.canonicalId === selectedRunId)) return;
+    const requested = new URLSearchParams(window.location.search).get("run");
+    setSelectedRunId(vehicleRuns.find(run => run.canonicalId === requested)?.canonicalId || vehicleRuns[0]?.canonicalId || "");
+  }, [vehicleRuns, selectedRunId]);
+  useEffect(() => {
+    if (!selectedVehicle || !selectedRunId) return;
+    const url = new URL(window.location.href);
+    url.searchParams.set("vehicle", selectedVehicle); url.searchParams.set("run", selectedRunId);
+    window.history.replaceState(null, "", url);
+  }, [selectedVehicle, selectedRunId]);
+  const driver = selectedVehicle ? logisticsVehicleLabel(selectedVehicle) : "Select vehicle";
+  const runs = useMemo(() => vehicleRuns.filter(run => run.canonicalId === selectedRunId), [vehicleRuns, selectedRunId]);
   const stops = useMemo(() => runs
     .flatMap((run) => run.orderedStopIds.map((id) => visibleData?.stops.find((stop) => stop.canonicalId === id)).filter(Boolean) as DeliveryStop[])
     .sort((a, b) => mobileStopMinutes(a) - mobileStopMinutes(b) || a.sequence - b.sequence), [runs, visibleData?.stops]);
@@ -298,8 +320,8 @@ export default function MobileWorkflow({ fixedVan }: { fixedVan?: "Van 1" | "Van
   if (!hydrated || !selectedDate) return <main className="driver-app"><section className="driver-empty" aria-busy="true">Loading your day…</section></main>;
 
   return <main className="driver-app">
-    <header className="driver-hero"><div className="driver-topline"><a href="/" aria-label="Back to planner">← Planner</a><span className="driver-bell" aria-label={`${messages.length} notifications`}>♧{messages.length > 0 && <i />}</span></div><p className="driver-eyebrow">FIKA OS · DRIVER</p><div className="driver-title-row"><h1>{view === "collections" ? "Collections" : view === "deliveries" ? "Deliveries" : view === "messages" ? "Messages" : "More"}</h1><span className="driver-live">● {freshness}</span></div><div className="driver-filters"><label><span>▣</span><select aria-label="Service date" value={selectedDate} onChange={(event) => selectDate(event.target.value)}>{availableDates.map((option) => <option key={option} value={option}>{formatDate(option)}</option>)}</select></label>{!fixedVan && <label><span>♙</span><select aria-label="Driver" value={driverId} onChange={(event) => setDriverId(event.target.value)}><option value="">Unassigned driver</option>{driverOptions.map(([id, label]) => <option key={id} value={id}>{label}</option>)}</select></label>}</div></header>
-    {pendingAction && <div className="driver-operation" role="status" aria-live="polite">{operationLabel(pendingAction)} Keep this page open.</div>}{error && <div className="driver-alert" role="alert">{error}<button disabled={Boolean(pendingAction)} onClick={() => retryDispatchRun ? void dispatchRun(retryDispatchRun) : void load(projectionNeedsMaterialisation)}>{retryDispatchRun ? "Retry dispatch" : projectionNeedsMaterialisation ? "Materialise and retry" : "Retry"}</button></div>}
+    <header className="driver-hero"><div className="driver-topline"><a href="/" aria-label="Back to planner">← Planner</a><span className="driver-bell" aria-label={`${messages.length} notifications`}>♧{messages.length > 0 && <i />}</span></div><p className="driver-eyebrow">FIKA OS · DRIVER</p><div className="driver-title-row"><h1>{view === "collections" ? "Collections" : view === "deliveries" ? "Deliveries" : view === "messages" ? "Messages" : "More"}</h1><span className="driver-live">● {freshness}</span></div><div className="driver-filters"><label><span>▣</span><select aria-label="Service date" disabled={Boolean(pendingAction)} value={selectedDate} onChange={(event) => selectDate(event.target.value)}>{availableDates.map((option) => <option key={option} value={option}>{formatDate(option)}</option>)}</select></label>{!fixedVan && <label><span>Vehicle</span><select aria-label="Vehicle" value={selectedVehicle} disabled={Boolean(pendingAction) || authority.loading || Boolean(authority.error)} onChange={(event) => { setSelectedVehicle(event.target.value as LogisticsVehicleId); setSelectedRunId(""); setSelectedStop(undefined); setIssueStop(undefined); setUndoAction(undefined); setRetryDispatchRun(undefined); }}><option value="">Select vehicle</option>{authority.vehicles.map(id => <option key={id} value={id}>{logisticsVehicleLabel(id)}</option>)}</select></label>}<label><span>Run</span><select aria-label="Run" value={selectedRunId} disabled={Boolean(pendingAction) || !vehicleRuns.length} onChange={event => { setSelectedRunId(event.target.value); setSelectedStop(undefined); setIssueStop(undefined); setUndoAction(undefined); setRetryDispatchRun(undefined); }}><option value="">No run assigned</option>{vehicleRuns.map((run, index) => <option key={run.canonicalId} value={run.canonicalId}>{logisticsVehicleLabel(run.vehicleId!)} · Run {index + 1} · {run.status}</option>)}</select></label></div></header>
+    {authority.error && <div className="driver-alert" role="alert">{authority.error}<button onClick={() => void authority.refresh()}>Retry vehicles</button></div>}{pendingAction && <div className="driver-operation" role="status" aria-live="polite">{operationLabel(pendingAction)} Keep this page open.</div>}{error && <div className="driver-alert" role="alert">{error}<button disabled={Boolean(pendingAction)} onClick={() => retryDispatchRun ? void dispatchRun(retryDispatchRun) : void load(projectionNeedsMaterialisation)}>{retryDispatchRun ? "Retry dispatch" : projectionNeedsMaterialisation ? "Materialise and retry" : "Retry"}</button></div>}
     {!visibleData ? <section className="driver-empty">Loading your day…</section> : view === "messages" ? <Messages messages={messages} onDismiss={(id) => setMessages((current) => current.filter((message) => message.id !== id))} onClear={() => setMessages([])} /> : view === "more" ? <More driver={driver} runs={runs} /> : <>
       {runs.filter((run) => showDispatchChecklist(run.status)).map((run) => { const runStops = stops.filter((stop) => stop.runId === run.canonicalId && !stopIsCollection(stop)); const loaded = runStops.filter((stop) => stop.loaded).length; return <section className="driver-departure" key={run.canonicalId}><div><p className="driver-section-kicker">LOAD CHECK</p><strong>{run.vehicleLabel || "Your vehicle"} · {loaded} of {runStops.length} deliveries loaded</strong><span>Tap each delivery below to confirm it is on the vehicle before leaving.</span></div><button className="primary-action" disabled={Boolean(pendingAction) || !stops.some(stop => stop.runId === run.canonicalId) || loaded !== runStops.length} onClick={() => void dispatchRun(run)}>{pendingAction === "dispatch-run" ? "Dispatching…" : loaded === runStops.length ? "Dispatch vehicle" : "Load all deliveries"}</button></section>; })}
       {runs.filter((run) => run.returnToCpuPending).map((run) => <section className="driver-departure return-stage" key={`return-${run.canonicalId}`}><div><p className="driver-section-kicker">ALL STOPS COMPLETE</p><strong>Return to CPU</strong><span>All deliveries and collections are complete. Return the vehicle to CPU to finish the run.</span></div><div className="return-actions"><button className="secondary-action" onClick={() => window.open(process.env.NEXT_PUBLIC_FIKA_CPU_URL || "/", "_blank")}>Navigate to CPU</button><button className="primary-action" disabled={Boolean(pendingAction)} onClick={() => void confirmReturned(run)}>{pendingAction === "confirm-returned-to-cpu" ? "Confirming…" : "Confirm returned to CPU"}</button></div></section>)}
@@ -338,7 +360,7 @@ function StopDetail({ stop, data, busy, onClose, onAction, onIssue }: { stop: De
 function PostponeCollectionControl({ disabled, onPostpone }: { disabled: boolean; onPostpone: (targetServiceDate: string) => void }) { const [targetDate, setTargetDate] = useState(addDays(operationalDate(), 1)); return <div className="postpone-collection"><label>Postpone collection<select disabled={disabled} value={targetDate} onChange={(event) => setTargetDate(event.target.value)}>{Array.from({ length: 14 }, (_, index) => addDays(operationalDate(), index + 1)).map((date) => <option key={date} value={date}>{formatDate(date)}</option>)}</select></label><button className="secondary-action" disabled={disabled} onClick={() => onPostpone(targetDate)}>Postpone collection</button></div>; }
 function IssueSheet({ stop, type, setType, text, setText, busy, onClose, onSubmit }: { stop: DeliveryStop; type: string; setType: (value: string) => void; text: string; setText: (value: string) => void; busy: boolean; onClose: () => void; onSubmit: () => void }) { const closeRef = useRef<HTMLButtonElement>(null); useEffect(() => { closeRef.current?.focus(); }, []); return <div className="sheet-backdrop" role="presentation" onMouseDown={(event) => { if (!busy && event.target === event.currentTarget) onClose(); }}><section className="stop-detail-sheet issue-sheet" role="dialog" aria-modal="true" aria-labelledby="issue-sheet-title" onKeyDown={(event) => { if (event.key === "Escape" && !busy) { event.preventDefault(); onClose(); } }}><button ref={closeRef} className="sheet-close" aria-label="Close report issue" onClick={onClose}>×</button><p className="driver-section-kicker">REPORT EXCEPTION</p><h2 id="issue-sheet-title">What needs attention?</h2><p className="issue-stop-name">{stop.locationLabelSnapshot}</p><label>Issue type<select disabled={busy} value={type} onChange={(event) => setType(event.target.value)}>{driverIssueTypes.map((item) => <option key={item}>{item}</option>)}</select></label><label>Notes <span className="optional-label">(optional)</span><textarea disabled={busy} value={text} onChange={(event) => setText(event.target.value)} placeholder="Add a short note for the planner…" rows={4} /></label><button className="danger-action submit-issue" disabled={busy} onClick={onSubmit}>{busy ? "Submitting…" : "Submit issue"}</button></section></div>; }
 function Messages({ messages, onDismiss, onClear }: { messages: DriverMessage[]; onDismiss: (id: string) => void; onClear: () => void }) { return <section className="secondary-screen"><div className="messages-heading"><div><p className="driver-section-kicker">INBOX</p><h2>Messages</h2></div>{messages.length > 0 && <button className="clear-messages" onClick={onClear}>Clear all</button>}</div>{messages.length ? messages.map((message) => <article className="message-card" key={message.id}><span>●</span><div><strong>{message.title}</strong><p>{message.body}</p><small>{message.meta}</small></div><button className="dismiss-message" aria-label={`Dismiss ${message.title}`} onClick={() => onDismiss(message.id)}>×</button></article>) : <div className="driver-empty compact">You’re all caught up. No new messages.</div>}</section>; }
-function More({ driver, runs }: { driver: string; runs: DeliveryRun[] }) { return <section className="secondary-screen"><p className="driver-section-kicker">ACCOUNT</p><h2>More</h2><div className="more-card"><span>♙</span><div><small>Signed in as</small><strong>{driver}</strong></div></div><div className="more-card"><span>▣</span><div><small>Assigned vehicles</small><strong>{runs.map((run) => run.vehicleLabel || "Van").join(" · ") || "No vehicle assigned"}</strong></div></div><a className="planner-return" href="/">Open planner workspace →</a></section>; }
+function More({ driver, runs }: { driver: string; runs: DeliveryRun[] }) { return <section className="secondary-screen"><p className="driver-section-kicker">ACCOUNT</p><h2>More</h2><div className="more-card"><span>♙</span><div><small>Selected vehicle</small><strong>{driver}</strong></div></div><div className="more-card"><span>▣</span><div><small>Assigned vehicles</small><strong>{runs.map((run) => run.vehicleLabel || "Van").join(" · ") || "No vehicle assigned"}</strong></div></div><a className="planner-return" href="/">Open planner workspace →</a></section>; }
 function formatDate(date: string) { return new Intl.DateTimeFormat("en-GB", { weekday: "short", day: "numeric", month: "short" }).format(new Date(`${date}T12:00:00`)); }
 function addDays(date: string, days: number) { const value = new Date(`${date}T12:00:00`); value.setDate(value.getDate() + days); return value.toISOString().slice(0, 10); }
 function dateOptions(startDate = operationalDate()) { const start = new Date(`${startDate}T12:00:00`); return Array.from({ length: 8 }, (_, index) => { const date = new Date(start); date.setDate(start.getDate() + index); return date.toISOString().slice(0, 10); }); }

@@ -23,6 +23,10 @@ exports.typescriptLoader = function ({ typescript, appRoot, mocks = {}, fetch: t
           return nativeRequire(candidate);
         }
       }
+      // Local workspace packages export TS sources; resolve those through the
+      // same loader so extensionless relative imports stay diskless as well.
+      const resolved = nativeRequire.resolve(name);
+      if (/\.tsx?$/.test(resolved)) return load(resolved);
       return nativeRequire(name);
     };
     const compiled = vm.runInThisContext('(function(exports,require,module,__filename,__dirname,fetch){' + js + '\n})', { filename });

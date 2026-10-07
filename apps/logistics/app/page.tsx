@@ -8,7 +8,7 @@ import { schedulableTimelineRuns } from "../lib/react-timeline-model";
 import type { FulfilmentRequirement } from "../../shared/fulfilment-requirement";
 import { fulfilmentWorkstream } from "../../shared/fulfilment-workstream";
 import type { DeliveryRun, DeliveryStop, MovementRequest } from "../lib/types";
-import { DriverAuthorityProvider, DriverSelector, useDriverAuthority, useRunDriverEligibility } from "./driver-selector";
+import { VehicleAuthorityProvider, useVehicleAuthority } from "./vehicle-authority";
 import { logisticsVehicleLabel, type LogisticsVehicleId } from "../../shared/logistics-authority";
 import {
   workGroupQueueState,
@@ -135,7 +135,7 @@ const blank: Draft = {
   notes: "",
 };
 
-export default function Planner() { return <DriverAuthorityProvider><PlannerContents /></DriverAuthorityProvider>; }
+export default function Planner() { return <VehicleAuthorityProvider><PlannerContents /></VehicleAuthorityProvider>; }
 function PlannerContents() {
   // Keep the server render deterministic. The operational date and saved view
   // are browser state and are resolved only after hydration.
@@ -2237,13 +2237,12 @@ function Inspector({
   const group = selection.kind === "group" ? planner.workGroups.find((item) => item.groupKey === selection.id) : undefined;
   const movement = selection.kind === "movement" ? planner.movements.find((item) => item.movementId === selection.id) : undefined;
   const run = selection.kind === "run" ? planner.runs.find((item) => item.runId === selection.id) : undefined;
-  const driverEligible = useRunDriverEligibility(run);
   const stop = selection.kind === "stop" ? planner.runs.flatMap((item) => item.stops).find((item) => item.stopId === selection.id) : undefined;
   const rawStop = stop ? rawStops.find((item) => item.canonicalId === stop.stopId) : undefined;
   const stopTitle = stop ? `${stop.destination.label} · ${stop.plannedWindow?.startTime || stop.plannedArrivalTime || "Time to confirm"}` : undefined;
   const collectionPending = group ? groupCollectionPending(group, planner.runs) : false;
   return <aside className="mock-inspector" aria-label="Details inspector">
-    <header><div><p className="eyebrow">Inspector</p><h2>{group?.destinationLabel || movement?.type || stopTitle || run?.driver || "Details"}</h2></div><button className="close" onClick={onClose} aria-label="Close inspector">×</button></header>
+    <header><div><p className="eyebrow">Inspector</p><h2>{group?.destinationLabel || movement?.type || stopTitle || run?.vehicle || "Details"}</h2></div><button className="close" onClick={onClose} aria-label="Close inspector">×</button></header>
     {group && <>
       <InspectorMeta label="Timing" value={formatWindow(group.deliveryWindow) || group.requiredTimes[0] || "Unscheduled"} />
       <label className="collection-toggle inspector-collection-toggle"><input type="checkbox" checked={Boolean(group.collectionRequired)} onChange={(event) => onAction({ action: "set-collection-required", groupKey: group.groupKey, serviceDate: group.serviceDate, collectionRequired: event.target.checked })} /> Collection required</label>
@@ -2265,13 +2264,13 @@ function Inspector({
     {run && <>
       <InspectorMeta label="Status" value={liveStatusLabel(run.operationalStatus)} />
       <InspectorMeta label="Vehicle" value={run.vehicle || "No vehicle label"} />
-      <DriverSelector vehicleId={run.vehicleId} driverId={run.driverId} historicalLabel={run.driver} disabled={placementPending || run.status === "dispatched" || run.status === "completed"} onChange={driverId => onAction({ action: "set-run-driver", runId: run.runId, driverId, expectedRunVersion: run.version })} />
+      {run.driver && <InspectorMeta label="Historical driver assignment" value={run.driver} />}
       <p>{run.completedStops} of {run.stopCount} stops complete · {run.remainingCollections} collection{run.remainingCollections === 1 ? "" : "s"} remaining</p>
       <label className="collection-toggle inspector-collection-toggle"><input type="checkbox" checked={run.returnToCpuRequired} disabled={run.status === "dispatched" || run.status === "completed"} onChange={(event) => onAction({ action: "set-run-return-required", runId: run.runId, returnToCpuRequired: event.target.checked, expectedRunVersion: run.version })} /> Return to CPU required</label>
       {run.returnReady && <p className="context-line">All deliveries and collections complete · ready to return to CPU.</p>}
       {run.readiness.blockers.map((item) => <div className="attention-note" key={item}>⚠ {item}</div>)}
       <div className="inspector-actions">
-        {run.status === "planned" && <button disabled={!run.readiness.ready || !driverEligible} onClick={() => onAction({ action: "mark-run-ready", runId: run.runId, expectedRunVersion: run.version })}>Mark ready</button>}
+        {run.status === "planned" && <button disabled={!run.readiness.ready || placementPending} onClick={() => onAction({ action: "mark-run-ready", runId: run.runId, expectedRunVersion: run.version })}>Mark ready</button>}
         {run.status === "ready" && <button className="secondary" onClick={() => onAction({ action: "return-run-to-planning", runId: run.runId, expectedRunVersion: run.version })}>Return to planning</button>}
       </div>
     </>}
@@ -2340,7 +2339,7 @@ function RunCreatePopover({
   onCreate: (vehicleId: LogisticsVehicleId) => void;
   onClose: () => void;
 }) {
-  const catalogue = useDriverAuthority();
+  const catalogue = useVehicleAuthority();
   const dialog = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const previous = document.activeElement as HTMLElement | null;
@@ -2350,7 +2349,6 @@ function RunCreatePopover({
   const [vehicleId, setVehicleId] = useState<LogisticsVehicleId | undefined>(catalogue.vehicles[0]);
   useEffect(() => { void catalogue.refresh(); }, []);
   useEffect(() => { if (!vehicleId || !catalogue.vehicles.includes(vehicleId)) setVehicleId(catalogue.vehicles[0]); }, [catalogue.vehicles, vehicleId]);
-  const eligibleSelection = !driverId || catalogue.drivers.some(driver => driver.driverId === driverId && vehicleId && driver.permittedDriverVehicleIds.includes(vehicleId));
   return (
     <div
       className="run-create-popover"
@@ -2370,9 +2368,9 @@ function RunCreatePopover({
       }}
     >
       <label>Vehicle <select aria-label="Vehicle" value={vehicleId || ""} disabled={catalogue.loading || Boolean(catalogue.error)} onChange={event => { setVehicleId(event.target.value as LogisticsVehicleId); setDriverId(""); }}>{catalogue.vehicles.map(id => <option key={id} value={id}>{logisticsVehicleLabel(id)}</option>)}</select></label>
-      <DriverSelector vehicleId={vehicleId} driverId={driverId} onChange={setDriverId} />
+      {catalogue.error && <p role="alert">{catalogue.error} <button type="button" className="secondary" onClick={() => void catalogue.refresh()}>Retry vehicles</button></p>}
       <label className="collection-toggle"><input type="checkbox" checked={returnToCpuRequired} onChange={(event) => setReturnToCpuRequired(event.target.checked)} /> Return to CPU required</label>
-      <button disabled={!vehicleId || catalogue.loading || Boolean(catalogue.error) || !eligibleSelection} onClick={() => vehicleId && onCreate(vehicleId)}>Create run</button>
+      <button disabled={!vehicleId || catalogue.loading || Boolean(catalogue.error)} onClick={() => vehicleId && onCreate(vehicleId)}>Create run</button>
       <button className="popover-close" onClick={onClose}>
         Cancel
       </button>
@@ -2821,14 +2819,13 @@ function RunPanel({
   onAction: (payload: object) => void;
   placementPending?: boolean;
 }) {
-  const driverEligible = useRunDriverEligibility(run);
   return (
     <article className="run-panel">
       <header>
         <div>
           <p className="run-kicker">Run {index + 1}</p>
-          <h3>{run.driver || "Unassigned driver"}</h3>
-          <DriverSelector vehicleId={run.vehicleId} driverId={run.driverId} historicalLabel={run.driver} disabled={placementPending} onChange={driverId => onAction({ action: "set-run-driver", runId: run.runId, driverId, expectedRunVersion: run.version })} />
+          <h3>{run.vehicle || "Vehicle needs review"}</h3>
+          {run.driver && <p>Historical driver assignment: {run.driver}</p>}
         </div>
         <span className="run-status">{liveStatusLabel(run.operationalStatus)}</span>
       </header>
@@ -2853,7 +2850,7 @@ function RunPanel({
       <div className="lifecycle-actions">
         {run.status === "planned" && (
           <button
-            disabled={!run.readiness.ready || !driverEligible}
+            disabled={!run.readiness.ready || placementPending}
             onClick={() =>
               onAction({
                 action: "mark-run-ready",

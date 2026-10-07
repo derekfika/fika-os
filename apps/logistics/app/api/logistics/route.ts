@@ -49,7 +49,6 @@ import { aggregateDelivery, assertLoadVersion, compatibleLoad, assertDispatchabl
 import { assignmentIntegrityDiagnostic } from "@/lib/assignment-integrity-diagnostic";
 import { executeProjected, projectedActions } from "@/lib/projected-execution";
 import { readRunWork, assertRunReady, workOutstanding, workIssuesOpen, finaliseRun } from "@/lib/run-execution";
-import { requireGovernedDriver } from "@/lib/driver-authority";
 import { assignCanonicalJob, assertLoadAssignmentsCurrent } from "@/lib/load-assignment";
 import { CPU_PRODUCTION_LOCATION_ID, CPU_SITE_OPLOC_ID } from "../../../../shared/production-location";
 import { rebuildLogisticsProjection as materialiseRebuildLogisticsProjection, reconcileLogisticsDay as materialiseLogisticsDay, logisticsJobForRequirement } from "@/lib/logistics-materialisation";
@@ -1186,8 +1185,9 @@ async function handlePost(request: NextRequest) {
         let status: DeliveryRun["status"];
         if (["mark-run-ready", "dispatch-run"].includes(body.action)) {
           if (!["planned", "ready"].includes(run.status)) throw new HttpError(422, "Run must be planned or ready for departure.");
-          if (!run.driverId) throw new HttpError(422, "Assign an eligible governed driver before Ready or Dispatch.");
-          try { await requireGovernedDriver(run.driverId, authorizeRun(principal, run), request.headers.get("cookie") || undefined); } catch (error) { if ((error as { status?: number }).status === 422) throw new HttpError(422, "The assigned driver is no longer eligible. Reassign an eligible driver before Ready or Dispatch."); throw error; }
+          // The authenticated operator executes the canonical vehicle/run.
+          // A historical driver assignment is not a login or execution grant.
+          authorizeRun(principal, run);
           await assertRunReady(transaction, run, work, requirements, body.action === "dispatch-run");
           status = body.action === "dispatch-run" ? "dispatched" : "ready";
         } else if (body.action === "return-run-to-planning") {

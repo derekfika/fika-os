@@ -12,9 +12,12 @@ test("fixed van routes resolve only Van 1 or Van 2 and reuse the mobile workflow
   assert.match(route, /van === "van1" \? "Van 1" : "Van 2"/);
   assert.match(route, /<MobileWorkflow fixedVan=/);
   assert.match(route, /notFound\(\)/);
-  assert.match(mobile, /fixedVan \? selectMobileRuns\(fixedRuns/);
+  assert.match(mobile, /selectMobileVehicleRuns\(visibleData\?\.runs/);
+  assert.match(mobile, /authority\.vehicles\.includes\(selectedVehicle/);
   assert.match(mobile, /\{!fixedVan && <label>/);
-  assert.match(mobile, /aria-label="Driver"/);
+  assert.match(mobile, /aria-label="Vehicle"/);
+  assert.match(mobile, /aria-label="Run"/);
+  assert.doesNotMatch(mobile, /aria-label="Driver"/);
 });
 
 test("fixed van mobile requests and responses stay vehicle-scoped", () => {
