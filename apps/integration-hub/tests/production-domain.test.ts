@@ -29,6 +29,34 @@ test("Grab & Go external production is immediately plannable without CPU accepta
   assert.equal(externalProductionStatus({ sourceDomain: "menu-planning", status: "published" }), "menu_available");
 });
 
+test("late Grab & Go and Menu source deliveries cannot overwrite a newer cancellation or its history", async () => {
+  const actor = { uid: "integration-test", name: "Integration Test", role: "integration-admin" as const, synthetic: true as const };
+  for (const sourceDomain of ["grab-and-go", "menu-planning"] as const) {
+    const input = { sourceDomain, sourceEntityId: `late-source:${sourceDomain}:${Date.now()}:${process.pid}`, destinationOplocId: "oploc:haleon", serviceDate: "2026-10-12", sourceVersion: 1, status: sourceDomain === "grab-and-go" ? "submitted" as const : "published" as const, lines: [{ sourceLineId: "line:owned", itemName: "Owned item", quantity: 1, unit: "item" }] };
+    const orderId = materialisedProductionId(input);
+    try {
+      await materialiseExternalProductionOrder(actor, input);
+      await materialiseExternalProductionOrder(actor, { ...input, sourceVersion: 2, lines: [{ ...input.lines[0], quantity: 2 }] });
+      const cancelled = await materialiseExternalProductionOrder(actor, { ...input, sourceVersion: 3, status: sourceDomain === "grab-and-go" ? "cancelled" : "withdrawn" });
+      for (const sourceVersion of [1, 2]) {
+        const replay = await materialiseExternalProductionOrder(actor, { ...input, sourceVersion });
+        assert.equal(replay.duplicate, true); assert.deepEqual(replay.order, cancelled.order);
+      }
+      const persisted = (await db.collection("fikaProductionOrdersV1").doc(stableDocumentId(orderId)).get()).data();
+      assert.equal(persisted?.status, "cancelled"); assert.equal(persisted?.sourceVersion, 3); assert.equal(persisted?.version, 3); assert.equal(persisted?.audit.length, 3);
+    } finally {
+      const [requirements, receipts] = await Promise.all([
+        db.collection("fikaFulfilmentRequirementsV1").where("sourceEntityId", "==", orderId).get(),
+        db.collection("fikaDomainEventInboxV1").where("sourceAggregateId", "==", orderId).get(),
+      ]);
+      const batch = db.batch(); batch.delete(db.collection("fikaProductionOrdersV1").doc(stableDocumentId(orderId)));
+      for (const [index, action] of ["created", "amended", "withdrawn"].entries()) batch.delete(db.collection("fikaDomainEventsV1").doc(`production.order.${action}:${orderId}:v${index + 1}`));
+      for (const document of [...requirements.docs, ...receipts.docs]) batch.delete(document.ref);
+      await batch.commit();
+    }
+  }
+});
+
 test("Menu publication materialisation is idempotent and preserves publication lineage", async () => {
   const suffix = `${Date.now()}:${process.pid}`;
   const input = {

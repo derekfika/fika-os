@@ -280,6 +280,9 @@ export async function materialiseExternalProductionOrder(actor: Actor, input: Ex
     // as the site submits the quantities. Menu publications retain their
     // separate publication state and hospitality work follows the usual flow.
     const status = externalProductionStatus(input);
+    // A delayed delivery of an older immutable source event cannot resurrect
+    // superseded work or overwrite a later amendment/cancellation.
+    if (previous && (previous.sourceVersion || 0) > input.sourceVersion) return { created: false, duplicate: true, order: previous };
     if (previous && previous.sourceVersion === input.sourceVersion && previous.sourceContentHash === input.sourceContentHash && previous.status === status) return { created: false, duplicate: true, order: previous };
     const now = new Date().toISOString();
     const order: ProductionOrder = {

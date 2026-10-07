@@ -5,6 +5,7 @@ import { getGrabAndGoCataloguePackage } from "@/lib/grab-and-go-catalogue-client
 import { assertAuthorisedOploc } from "@/lib/projection";
 import { deliveredInErrorBody, resolveAccess } from "@/lib/server";
 import { forwardProductionMaterialisation } from "../../../../lib/production-client";
+import { deliverGrabHandoff, ensureGrabHandoff, grabHandoffEvent, grabHandoffId } from "../../../../lib/grab-and-go-handoff";
 import { withDataTrace } from "@fika/server-shared/data-source-meter-server";
 
 export const dynamic = "force-dynamic";
@@ -40,9 +41,17 @@ async function handleGet(request: NextRequest) {
 
 async function handlePost(request: NextRequest) {
   try {
-    const body = await request.json() as { oplocId?: string; deliveryDate?: string; action?: "submit" | "amend" | "cancel"; expectedVersion?: number; lines?: Array<{ productId: string; quantity: number }> };
-    if (!body.deliveryDate || !body.action || !["submit", "amend", "cancel"].includes(body.action)) return NextResponse.json({ error: { message: "A delivery date and valid order action are required." } }, { status: 422 });
-    const { selected, access } = await authorisedSite(request, body.oplocId); const catalogue = (await getGrabAndGoCataloguePackage()).catalogue.products; const existing = await getGrabAndGoOrderHosted(selected, body.deliveryDate); const order = applyOrderAction(existing, { action: body.action, oplocId: selected, deliveryDate: body.deliveryDate, rotationWeek: rotationWeekForDate(body.deliveryDate), lines: body.lines, expectedVersion: body.expectedVersion, actor: access.email }, catalogue); await saveGrabAndGoOrderHosted(order, body.action === "submit" ? undefined : body.expectedVersion); const handoff = await forwardProductionMaterialisation({ sourceDomain: "grab-and-go", sourceEntityId: order.orderId, sourceVersion: order.version, destinationOplocId: order.oplocId, destinationLabel: order.oplocId, serviceDate: order.deliveryDate, requiredBy: `${order.deliveryDate}T08:00`, status: order.status, lines: order.lines.map(line => ({ sourceLineId: `${order.orderId}:line:${line.productId}`, canonicalItemId: line.productId, itemName: line.productName, quantity: line.quantity, unit: "item", workstream: "grab_and_go", })) }, { allowPending: true });
+    const body = await request.json() as { oplocId?: string; deliveryDate?: string; action?: "submit" | "amend" | "cancel" | "retry-handoff"; expectedVersion?: number; lines?: Array<{ productId: string; quantity: number }> };
+    if (!body.deliveryDate || !body.action || !["submit", "amend", "cancel", "retry-handoff"].includes(body.action)) return NextResponse.json({ error: { message: "A delivery date and valid order action are required." } }, { status: 422 });
+    if (body.action === "retry-handoff") {
+      const { selected } = await authorisedSite(request, body.oplocId);
+      if (!Number.isInteger(body.expectedVersion)) return NextResponse.json({ error: { message: "Current source version required." } }, { status: 422 });
+      const hosted = ["staging", "production"].includes(process.env.FIKA_RUNTIME_MODE || "");
+      const order = hosted ? await ensureGrabHandoff(selected, body.deliveryDate, body.expectedVersion!) : await getGrabAndGoOrderHosted(selected, body.deliveryDate);
+      if (!order || order.version !== body.expectedVersion) return NextResponse.json({ error: { message: "Current order version required." } }, { status: 409 });
+      return NextResponse.json({ order, handoff: hosted ? await deliverGrabHandoff(grabHandoffId(order)) : await forwardProductionMaterialisation(grabHandoffEvent(order).payload, { allowPending: true }) });
+    }
+    const { selected, access } = await authorisedSite(request, body.oplocId); const catalogue = (await getGrabAndGoCataloguePackage()).catalogue.products; const existing = await getGrabAndGoOrderHosted(selected, body.deliveryDate); const order = applyOrderAction(existing, { action: body.action, oplocId: selected, deliveryDate: body.deliveryDate, rotationWeek: rotationWeekForDate(body.deliveryDate), lines: body.lines, expectedVersion: body.expectedVersion, actor: access.email }, catalogue); await saveGrabAndGoOrderHosted(order, body.action === "submit" ? undefined : body.expectedVersion); let handoff: "delivered" | "pending" | "intervention-required" = "pending"; try { handoff = ["staging", "production"].includes(process.env.FIKA_RUNTIME_MODE || "") ? await deliverGrabHandoff(grabHandoffId(order)) : await forwardProductionMaterialisation(grabHandoffEvent(order).payload, { allowPending: true }); } catch { console.warn("Grab & Go source saved; production handoff remains pending", { orderId: order.orderId, sourceVersion: order.version }); }
     return NextResponse.json({ order, handoff }, { status: existing ? 200 : 201 });
   } catch (error) { return NextResponse.json(deliveredInErrorBody(error, "The Grab & Go order could not be saved."), { status: Number((error as { status?: number }).status) || 502 }); }
 }

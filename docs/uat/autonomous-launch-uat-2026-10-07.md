@@ -3,7 +3,7 @@
 Task: FIKA OS — Autonomous Launch UAT + Remediation War Room.
 Branch: `main`. Starting fetched `origin/main`: `4948ed5730a2a090801407b86392f61a34cac595`.
 Environment: staging only, Firebase project `fika-os-dev`.
-RC achieved: **NO — AUTONOMOUS UAT RESUMED**. No RC SHA frozen.
+RC achieved: **NO — CHECKPOINT PREPARATION**. No RC SHA frozen.
 The resume instruction supersedes the earlier closure-only scope. Continue the ordered UAT/remediation loop; automatically checkpoint if ordinary usage remaining falls below 10%.
 Resume fetched `origin/main` and local HEAD: `d1c9e5d7cbb540def2b4882d69635315e60ea398` (report-only prior checkpoint). Protected hashes and all six staging provenance rows were reverified before continuing. The latest implementation commit and final HEAD/origin SHA are recorded below or returned in the chat following commit/push.
 
@@ -51,12 +51,12 @@ This matrix supersedes the earlier baseline matrix. Partial live successes do no
 | 3 Hospitality → quote → CPU | OWNED LIVE AMENDMENT / CANCELLATION PASS | Hospitality `03a8249`, Hub `1dd58ce`, CPU `d916c8d` | Normal amendment 12→13 pax, £25 net addition retained, quote r3 £212.40; original 12/36 frozen history, replacement 13/39; normal cancellation and downstream withdrawal persist after reload | Exact-event live replay and separate historical retired-work recovery pending |
 | 4 CPU / allergen safety | PARTIAL LIVE PASS / GATE PENDING | CPU initially `c35d6a9`, now `d916c8d` | Explicit synthetic unknown→contains/may_contain/clear review; checked checkpoint, both internal synthetic test-role signatures; normal retry yields current OPLOC release | Reopen/amendment revocation, signature/packet invalidation, immutable history and downstream withdrawal still pending; full current CPU suite 289/289 PASS |
 | 5 Fulfilment → Logistics | PARTIAL LIVE PASS / GATE PENDING | Hub `1dd58ce`, Logistics `0fe3ec6` | Owned Monday Menu order appears as one Haleon/12-unit planning item | Assignment lineage, retry exactly-once and downstream amendment/cancellation live gates pending |
-| 6 Logistics desktop | PARTIAL LIVE PASS / GATE PENDING | `0fe3ec6` | Normal owned delivery+collection creation, authorised Van 1 assignment, exact native timing edit, Ready without driver principal | Drag/move/cross-vehicle/resize/23:45/merged-clear-refresh/invalid-window live gates pending. Cleared-membership fix: CODE FIXED / LOCAL VALIDATION PASS / LIVE RETEST PENDING. Governed location picker defect open |
-| 7 Grab & Go / Xchange | UNEXECUTED | Delivered `71b2860` | No new governed order chain exercised | Full required policy/order/downstream journey pending |
+| 6 Logistics desktop | PARTIAL LIVE PASS / GATE PENDING | `ec1b110` | Governed picker, server labels, ordinary historical labels and single-click/keyboard Details PASS; Van 2 native movement clear, two-tab stale edit denial, reload and reschedule PASS | Merged canonical-load clear/reconciliation, drag/move/resize/23:45/invalid-window and separate-context concurrency remain pending |
+| 7 Grab & Go / Xchange | CODE FIXED / LOCAL VALIDATION PASS / LIVE RETEST PENDING | Resulting exact handoff SHA recorded in latest checkpoint | Atomic hosted source + immutable delivery obligation; historical recovery, scoped retry, lease/backoff and monotonic Hub replay regressions PASS | Non-Xchange submit/amend/cancel/full downstream live chain and new Delivered recovery Scheduler pending; intentional Xchange exclusion retained |
 | 8 Owned amendment | HOSPITALITY LIVE PASS / EXACT REPLAY PENDING | Hub `1dd58ce` READY/current 100% | Old order amended v2; old requirement/job withdrawn v2; one replacement r12/39-piece queue item; all known outbox events delivered; reload retained state | Exact-event live replay pending; separate historical booking remains untouched |
 | 9 Owned cancellation / withdrawal | HOSPITALITY LIVE PASS / MENU GATE PENDING | Hub `1dd58ce` READY/current 100% | Cancelled booking v14 and replacement order v2; replacement requirement/job withdrawn v2; projection revision 205/sequence 203 has zero owned queue/load items; reload does not resurrect work | Menu withdrawal/republish and exact-event live replay pending |
 | 10 Date / cache / retry | NARROW DATE LOCAL/LIVE PASS / FULL GATE PENDING | CPU/Logistics `9aa2cba` | Both fixed van non-today service-date reloads retain permitted run; opposite-vehicle request revalidated; CPU Today/allergen default correct; BST/GMT/DST local boundary tests PASS | Broader cache/retry/concurrency live gates unexecuted |
-| Driver execution | VAN 1 LIVE LIFECYCLE / RELOAD PASS; FULL GATE PENDING | Logistics execution `0fe3ec6`, reload `9aa2cba` READY/current 100% | Existing authorised session → fixed `/mobile/van1` → assigned stops → loading → dispatch → delivery → collection → return → completed v10; 12 October and completed stops survive reload | Real shared identity preparation, Van 2 execution and two-context concurrency remain; no individual accounts/grants created |
+| Driver execution | VAN 1 AND VAN 2 LIVE LIFECYCLE / RELOAD PASS; FULL GATE PENDING | Van 1 `0fe3ec6`/`9aa2cba`; Van 2 `ec1b110` | Shared authorised session, fixed phone views, scoped stops, loading/dispatch/completion/return/reload PASS; Van 1 v10 and Van 2 v9 complete | Final shared AUTHMOD identity preparation, merged-load gates and separate-context concurrency remain; no individual accounts/grants created |
 | CPU quantity correction | PASS — CODE / LOCAL / LIVE | CPU `d916c8d` READY/current 100% | Week card Production: 36 piece + 12 pax; detail 36 pieces to produce / 12 Per person ordered; Menu remains 12 portion | No remaining quantity defect observed in this narrow regression |
 
 ## Validation
@@ -77,7 +77,7 @@ submission used the same official API payloads with the refreshed existing GCP a
 
 - P0 catalogue: the source hash depended on Firestore map key ordering. Staging source revision 5, 398 dishes; stored hash `f636d8ec42a4e30d31d95253daf5db812416744ba0b5552fe7ff47b5b781e338` versus freshly read `2baa9d7cbaffd788a99799239aed00b640e0981b183b0ef4934e55de53c8fb2c`. Canonical recursive key ordering now certifies identical records deterministically. Existing legacy manifests receive a transactionally certified metadata-only revision; authoritative dishes and immutable packages remain unchanged. Corrupt packages are rejected before any recovery/migration. Cold legacy recovery reads one manifest and at most 1,500 dish records; warm current reads retain the existing package/manifest path with no catalogue scan. Migration is coalesced per process and idempotent across instances.
 - P1 Logistics: clearing delivery timing retained durable assignments but projection filtering discarded them; routine reconciliation could then erase membership. Existing unscheduled membership now survives projection/reconciliation and can be rescheduled with CAS; new assignment and dispatch retain strict arrival constraints. Source identity/location/date changes and withdrawals still invalidate membership.
-- P0 Hospitality: bounded 13 October state shows superseded/amended orders retaining pending fulfilment and Logistics work. Missing durable event staging was fixed, validated and deployed at `1dd58ce`; CODE FIXED / LOCAL VALIDATION PASS / LIVE RETEST PENDING. No direct operational repair performed; pre-existing retired records have not been repaired.
+- P0 Hospitality: bounded 13 October state shows superseded/amended orders retaining pending fulfilment and Logistics work. Missing durable event staging was fixed, validated and deployed at `1dd58ce`; owned live amendment/cancellation PASS; historical recovery and exact-event replay remain pending. No direct operational repair performed; pre-existing retired records have not been repaired.
 - Invalid Menu week-query input ignored its explicit fallback date; fixed while validating date navigation, retaining Europe/London business-date semantics.
 - Driver business requirement confirmed by Derek: authentication belongs to the shared authorised Logistics operator; operational driver/run/vehicle identity is separate. Earlier out-of-scope decision is superseded. Remove the person-login dependency from execution while retaining canonical vehicle ownership, scoped server authorization, CAS and audit actor evidence.
 
@@ -156,7 +156,7 @@ The report-only commit is titled **Save autonomous launch UAT closure checkpoint
 
 Actual staging flow, at verified `0fe3ec6`: existing authorised account → `/mobile/van1` → select 12 October and Van 1 run → inspect owned assigned stops → confirm delivery loaded → Dispatch vehicle → Mark delivered → Collection complete → Confirm returned to CPU. No driver identity selected or driver grant/account created. Before loading, delivery completion was disabled. After completion the UI shows **completed**, **2/2 total stops completed**, zero remaining deliveries/collections and zero attention. Normal reload plus reselecting 12 October shows the same completed state. Direct known-ID staging read confirms run version **10**, status **completed**, vehicle **van1**, updated `2026-10-07T07:52:43.054Z`; both owned stop records are completed.
 
-Important limit: reload resets the service date to today (7 October) while the URL retains the 12 October run ID. It then shows NO WORK until 12 October is reselected. Durable execution state persists, but selected-date persistence fails. This is a confirmed **P1**, so the full driver launch gate remains open. No new remediation begun in closure mode.
+Historical finding at `0fe3ec6` (FIXED / LOCAL AND LIVE PASS at `9aa2cba`): reload reset the service date to today (7 October) while the URL retains the 12 October run ID. It then shows NO WORK until 12 October is reselected. Durable execution state persists, but selected-date persistence fails. This is a confirmed **P1**, so the full driver launch gate remains open. No new remediation begun in closure mode.
 
 Exact owned records for safe continuation:
 
@@ -164,7 +164,7 @@ Exact owned records for safe continuation:
 - Menu canonical CPU order: `production-order:v1:menu-planning:rolling-week:2026-10-12:day:1:oploc:bb4c7eea-87f5-4e79-8ed6-b973b24ded7b`; Firestore document hash `d97f18434e5bd5b165df40d48fdde04e98c047866f003b9cfdb5133ef97ee25b`.
 - Allergen release: `cpu-allergen-release:2026-10-12:menu-publication:rolling-week:2026-10-12:v1:day:0:v1`; the corresponding materialisation delivery ID is `cpu-allergen-materialize:cpu-allergen-release:2026-10-12:menu-publication:rolling-week:2026-10-12:v1:day:0:v1:oploc:oploc:bb4c7eea-87f5-4e79-8ed6-b973b24ded7b:order:production-order:v1:menu-planning:rolling-week:2026-10-12:day:1:oploc:bb4c7eea-87f5-4e79-8ed6-b973b24ded7b`.
 - Hospitality owned booking: `booking:mnk:2fdaea9b9ddbddf136163f3a5a11cd76`; portal `MNK-20261006122750-BFD2`, Completed, 13 October 12:00. Use this clearly marked UAT record for the governed reopen/amend/cancel workflow. Do not silently edit the separate original booking `booking:mnk:86ee28f023384fde1245816b9b595244`.
-- Logistics owned run: `run:2026-10-12:van-1` (completed v10). Van 2 run `run:2026-10-12:van-2` was not executed.
+- Logistics owned run: `run:2026-10-12:van-1` (completed v10). Van 2 run `run:2026-10-12:van-2` is now completed v9; see latest live checkpoint.
 - Owned delivery movement: `movement:1791359068176` — FIKA-AUTOUAT-20261007 Driver delivery.
 - Owned collection movement: `movement:1791359274129` — FIKA-AUTOUAT-20261007 Driver collection.
 - Delivery stop: `stop:run:2026-10-12:van-1:movement%3Amovement%253A1791359068176%3Aendpoint:1791359236769` (completed v5).
@@ -176,7 +176,7 @@ Evidence screenshots (ignored local artifacts, not repository source): `artifact
 
 - **P0 historical downstream retirement unresolved:** owned Hospitality live amendment/cancellation now PASS at Hub `1dd58ce`; pre-existing retired requirements/jobs for the separate historical booking remain unmodified. They require a separately justified governed recovery path; do not erase evidence or directly repair operational state.
 - **P1 mobile service-date reload:** FIXED / LOCAL AND NARROW LIVE PASS at `9aa2cba`; both fixed van routes retain 12 October and their own run after reload.
-- **P1 confirmed UI omission:** New movement shows “Integration Hub locations are unavailable” and an empty governed-site selector while the day health indicates OPLOC availability. Source inspection shows `projectionToDashboardData` deliberately returns `oplocs: []`, so the form lacks a reference catalogue. One-off request-scoped destinations were used for the owned execution UAT. No fake permanent OPLOC created. No fix begun; trace/restore the governed reference read with admission checks, explicit failure/retry and bounded/cache-aware behaviour.
+- **P1 confirmed UI omission:** New movement shows “Integration Hub locations are unavailable” and an empty governed-site selector while the day health indicates OPLOC availability. Source inspection shows `projectionToDashboardData` deliberately returns `oplocs: []`, so the form lacks a reference catalogue. One-off request-scoped destinations were used for the owned execution UAT. No fake permanent OPLOC created. FIXED / LOCAL AND LIVE PASS at `898b0c9`; final labels and Details live PASS at `ec1b110`.
 - **P1 cleared-membership remediation:** CODE FIXED / LOCAL VALIDATION PASS / LIVE RETEST PENDING for real merged clear/refresh/reassign.
 - **Safety gate still pending:** allergen signed-release amendment/revocation and downstream packet withdrawal; passing dual-sign/materialisation does not prove revocation safety.
 - **Unexecuted full gates:** Grab & Go/Xchange; Delivered populated/blank/withdraw/republish/historical recovery/integrity/client-cache scenarios; auth denial/redirect; comprehensive timeline interaction/rejection/end23:45; BST/date/retry/concurrency live coverage; final same-SHA six-app RC regression. Root Golden Week tests passed locally, but no full Golden Week cloud fixture was run or permitted.
@@ -486,3 +486,156 @@ account or IAM grant created/changed. Documented 25-event/minute recovery jobs a
 being configured using that existing token. Job creation, enabled/authenticated
 invocation and controlled retryable-obligation recovery must each be verified;
 API enablement alone is not a recovery PASS.
+
+## Resume checkpoint — 7 October, superseding prior pending rows
+
+This section supersedes historical status statements above. No RC is frozen; no
+production configuration/deployment occurred. Current fetched `origin/main` before
+the hosted handoff commit: `ec1b11029beb5c03e7e68cb54c1ca55cc6fbac85`.
+Resume started at `d1c9e5d7cbb540def2b4882d69635315e60ea398`.
+
+Additional pushed commits today, after the original five listed above:
+
+- `d1c9e5d7cbb540def2b4882d69635315e60ea398` — prior report checkpoint.
+- `9aa2cba7d901fd1a69f97d465852758a560abd49` — fixed mobile reload and CPU London dates.
+- `898b0c9da2e2233bfea185f2858e35f78879c2ee` — governed movement location picker.
+- `3446d5d9b58a5bd363e5655ec74a460bc3ce565d` — exact Hub dead-letter recovery.
+- `d107e6066918aa1e16d0930f9bc03af23863459f` — server movement labels and legacy reconciliation.
+- `ec1b11029beb5c03e7e68cb54c1ca55cc6fbac85` — Details/keyboard interaction and ordinary legacy labels.
+
+### Completed Logistics live gates
+
+At `ec1b110`, build `uat-1007134501-ec1b110`, READY/current/100%, the existing
+authorised session executed Van 2 on 12 October through the normal fixed mobile
+view. Owned movement `movement:1791375509831`, title
+`FIKA-AUTOUAT-20261007-VAN2 governed delivery`, is one unit for Haleon
+`oploc:bb4c7eea-87f5-4e79-8ed6-b973b24ded7b`, 14:00–14:30.
+Normal return-to-planning removed its stop. A second tab's stale timing edit was
+rejected with “We could not find that Logistics record. Refresh and try again.”
+(404; not misreported as 409). Both tabs reloaded with no resurrected Van 2 stop.
+The same movement was rescheduled once normally; no replacement movement created.
+This is a native movement smoke, not the still-pending merged canonical-load gate.
+
+Shared mobile session → correct Van 2 run → one assigned stop → loaded → Dispatch
+vehicle → arrived → completed delivery → confirmed returned to CPU → reload PASS.
+Run `run:2026-10-12:van-2` is completed v9, returned
+`2026-10-07T12:56:12.979Z`. Stop
+`stop:run:2026-10-12:van-2:oploc:bb4c7eea-87f5-4e79-8ed6-b973b24ded7b:1791377457074`
+is completed v5; loaded v3, arrived v4, completed v5. Reload retains 12 October,
+Van 2 and 1/1 completed with zero attention. Van 1 fixed view has no owned Van 2
+movement, and Van 2 showed no Van 1 stops. Source movement remains planned v4;
+execution authority is the completed stop/run, and these distinct states are not
+misreported. Current account is UAT authority, not a confirmed permanent shared identity.
+
+Historical movement labels and normal Details click now live PASS. Evidence:
+`movement-label-details-live-ec1b110.png`, `van2-stale-edit-rejected-ec1b110.png`,
+`van2-completed-reloaded-ec1b110.png`, and known-ID JSON under `artifacts/uat/resume-van2-*`.
+Same-session two-tab stale edit smoke PASS; separate browser/device contexts pending.
+Earlier “Van 2 not executed”, picker open and Details/label pending statuses are superseded.
+
+### Recovery infrastructure configuration and limits
+
+Both existing-token, staging-only jobs now exist and are ENABLED in europe-west4:
+
+- `fika-logistics-projection-outbox-recovery`: POST
+  `https://staging-os.fikacatering.com/api/internal/logistics-outbox`.
+- `fika-cpu-durable-outbox-recovery`: POST
+  `https://cpu-staging.fikacatering.com/api/internal/durable-outbox`.
+
+Each runs every minute, Europe/London, with `{"limit":25}`, 180-second deadline,
+three retries and 30–300 second retry backoff. Uses existing token version 3, no
+new secret, IAM, account or grant. Manual runs returned HTTP 200 at 12:45:44Z Hub
+and 12:45:53Z CPU; automatic invocations also returned HTTP 200 at 12:53/54/55Z.
+Evidence `artifacts/uat/resume-scheduler-success.json` retains safe job names,
+timestamps and statuses only. Enabled/authenticated/bounded invocation PASS.
+Controlled retryable-obligation recovery remains LIVE RETEST PENDING: scoped
+owned CPU obligations were already delivered; bounded Hub dead-letter query found
+zero. No green event reset or artificial failure introduced to manufacture PASS.
+Hub exact-event review of the owned cancellation displays Delivered/no reset:
+review PASS, actual dead-letter reset/delivery still pending.
+
+### Hosted Grab & Go durability remediation
+
+Delivered-In owns the source, history and handoff obligation. Hub owns canonical
+Production; the existing external materialisation DTO and downstream ownership
+remain unchanged. A hosted source mutation now atomically commits its source and
+one immutable event per source version, including actor and payload. Failure after
+commit returns saved/pending and keeps a leased, backoff-controlled retry obligation.
+Normal site-authorised retry is exact current source-version CAS; it may lazily
+materialise a missing historical obligation without changing source/history.
+Worker admission is server-side service authentication, limit 1–25, one bounded
+indexed eligibility query. Delivered/dead-letter rows have no top-level eligibility
+field, so terminal history cannot starve due work. Ten failed attempts require
+administrator intervention, not a silent reset. No timer-only/browser retry reliance.
+Cold source save reads two deterministic documents and atomically writes source+
+event; delivery uses direct claim/settle reads; warm delivered replay does not forward.
+No full source scan, new polling or duplicate audit store.
+
+Hub rejects older source versions transactionally by returning the current order.
+A delayed submission/amendment cannot overwrite later withdrawal. Existing source
+and destination IDs remain stable; Xchange local-fulfilment exclusion unchanged.
+UI provides Retry production update and persistent saved/pending or review feedback
+after data reload, with accessible semantic warning status and existing light controls.
+Style Guide compliance PASS; no native dialogs or authority broadening.
+
+Validation: 7/7 focused source/route regressions PASS (atomic rollback, failed network
+recovery, immutable payload, concurrent claim, historical cancellation CAS, internal
+admission/query bounds, cross-site denial, expired lease and late-ack protection).
+Hub provider/consumer regressions 27/27 PASS against isolated emulator, including
+both Grab & Go and Menu late-version-after-cancellation tests. Both app typechecks
+and production webpack builds PASS. Isolated rendered Chromium saved/pending/retry/
+intervention feedback PASS; `artifacts/uat/grab-handoff-ui.png`. Local mocked APIs
+only; this is not staging end-to-end evidence.
+
+Delivered-In full suite: **128 tests, 123 PASS, 5 FAIL, zero skips**. The same five
+fail with the exact pre-fix store source loaded without modifying the checkout.
+Logs: `resume-grab-full-tests-final.log`, `resume-grab-baseline-tests.log`.
+The first baseline harness parsed generic TypeScript as TSX; corrected parser mode
+then executed the real tests. Initial UI harness assumed a spinbutton; corrected
+to the actual Increase stepper. Neither failed harness is called green.
+
+| Existing failing Delivered-In test | Exact error |
+| --- | --- |
+| corrupt Grab & Go SQLite recovers from the preserved JSON source without returning an empty list | Grab & Go operational persistence is unavailable; cause `file is not a database`, `ERR_SQLITE_ERROR`, errcode 26 |
+| Delivered-In consumes one gzip/base64 week packet and retains allocation portions | `TypeError: Cannot read properties of undefined (reading 'days')` |
+| Delivered-In filters by stable OPLOC ID and never by destination label | same TypeError |
+| Delivered-In consumes the shared Menu Planning packet envelope | same TypeError |
+| a newer withdrawn day in the weekly packet hides older published bytes | same TypeError |
+
+The four packet tests use September dates outside the current October operational
+horizon; the SQLite recovery fixture has no preserved JSON seed. These are baseline
+test/fixture findings, not waived RC gates. The earlier full Hub 488/476/12 exact
+name/error register remains authoritative; the full Hub suite has not been rerun
+after this source-version guard. Focused provider/consumer validation is green.
+
+**CODE FIXED / LOCAL VALIDATION PASS / LIVE RETEST PENDING.** Resulting exact
+commit and rollout status will be recorded after push. New worker endpoint:
+`/api/internal/grab-and-go-outbox`. Its staging Scheduler is not configured yet.
+No owned live G&G submit/amend/cancel was started during this remediation.
+
+### Remaining launch gates and execution order
+
+No P0/P1-zero assertion: historical retired Hospitality downstream recovery remains
+unresolved; merged Logistics membership and live exact dead-letter recovery remain
+pending. Menu truthful handoff feedback/retry and CPU visible-screen durable-head
+freshness fallback remain unremediated confirmed P1 work. Shared production AUTHMOD
+identity must be formally configured by its owner; no physical-driver account/grant
+is required or authorised. No permanent identity was inferred from current UAT access.
+
+Next: verify exact Hub + Delivered-In handoff rollouts, configure/verify the bounded
+Delivered recovery job using existing token version 3, then execute one owned
+non-Xchange G&G submit → canonical Production → CPU → Fulfilment → Logistics →
+amend exactly once → cancel/withdraw → reload/replay without duplicate/resurrection.
+Record exact source/event/order/requirement/job IDs. Do not start it below 10% usage.
+Then complete merged Logistics clear/refresh/reconcile/reschedule and separate-context
+concurrency; Menu owned week lifecycle/blank/cache/PDF/history/missing/corrupt;
+owned allergen revoke/dual re-sign/downstream invalidation; controlled Scheduler
+recovery; Auth/OPLOC/date/cache/retry and all baseline test failures. Only then
+evaluate RC and align six apps at one validated literal SHA. Audit/readiness scan
+remain unexecuted until RC genuinely passes.
+
+Limits: mixed staging SHAs, current UAT session instead of final shared identity,
+synthetic internal allergen signatures, email webhook unavailable (queue only), no
+controlled dead letter available, and isolated Windows runner restrictions. Existing
+ignored evidence is local and must be preserved for a fresh session. Never edit the
+protected CHANGELOG/MenuData or clean historical cloud data to improve the matrix.

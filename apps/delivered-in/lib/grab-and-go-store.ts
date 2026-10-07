@@ -10,6 +10,7 @@ import { db } from "./firebase-admin";
 import { stableDocumentId } from "@fika/server-shared/stable-document-id";
 import { recordDeliveredInAppReadBudget } from "./delivered-in-read-budget";
 import { recordDataAccess } from "@fika/server-shared/data-source-meter-server";
+import { stageGrabHandoff } from "./grab-and-go-handoff";
 
 type Stored = { version: 1; orders: GrabAndGoOrder[]; events: DurableDomainEvent[]; /** Legacy migration field; central Integration Hub is authoritative. */ fulfilmentRequirements?: FulfilmentRequirement[] };
 const file = appDataPath("delivered-in", "delivered-in", "grab-and-go-orders.json");
@@ -87,6 +88,8 @@ export async function saveGrabAndGoOrderHosted(order: GrabAndGoOrder, expectedVe
     if (previous && expectedVersion !== previous.version) throw Object.assign(new Error(`This Grab & Go order changed elsewhere (expected version ${previous.version}). Refresh and try again.`), { status: 409 });
     if (!previous && expectedVersion !== undefined) throw Object.assign(new Error("This Grab & Go order no longer exists. Refresh and try again."), { status: 409 });
     if (previous && order.version !== previous.version + 1) throw Object.assign(new Error("The submitted Grab & Go order version is stale. Refresh and try again."), { status: 409 });
+    if (!previous && order.version !== 1) throw Object.assign(new Error("Submit must create the first order version."), { status: 409 });
+    await stageGrabHandoff(transaction, order);
     transaction.set(ref, order);
   });
   recordDeliveredInAppReadBudget({ stage: "grab_and_go_order_mutation", recordsInspected: 1, oplocId: order.oplocId, knownId: true });
