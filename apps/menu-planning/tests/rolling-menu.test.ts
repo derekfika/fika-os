@@ -554,6 +554,52 @@ test("publication state and the publish gate share normalized day-hash compariso
   assert.equal(comparison.dayHasUnpublishedChanges[snapshot.days[0].id], false);
 });
 
+test("Portion Planner publication stays clean after reload, turns dirty on allocation edit, and clears after amendment", async () => {
+  const rollingFile = join(process.cwd(), "local-data", "menu-planning", "rolling-menu-weeks.json");
+  const publicationFile = join(process.cwd(), "local-data", "menu-planning", "menu-publications.json");
+  const rollingBefore = existsSync(rollingFile) ? await readFile(rollingFile) : undefined;
+  const publicationBefore = existsSync(publicationFile) ? await readFile(publicationFile) : undefined;
+  const canonicalFile = join(process.cwd(), "local-data", "menu-planning", "canonical-menu-items.json");
+  const canonicalBefore = existsSync(canonicalFile) ? await readFile(canonicalFile) : undefined;
+  const week = emptyWeek("2034-01-02", "portion-planner-regression");
+  const oplocs = [{ canonicalId: "oploc:portion-regression", label: "Portion regression site" }];
+  try {
+    await saveSnapshot(week);
+    const canonicalDish = await createCanonicalMenuItem({ displayName: `Published quantity regression ${Date.now()}`, category: "Salad", allergenEvidence: [{ allergen: "sesame", value: "contains", source: "test", reviewedBy: "test", reviewedAt: new Date().toISOString() }] }, "test");
+    const created = await createEntry(week.week.id, week.days[0].id, "SALAD 1", canonicalDish.displayName, "test", canonicalDish.canonicalId);
+    const entryId = created.entries.find(entry => entry.dayId === week.days[0].id)!.id;
+    const populated = await updateEntry(week.week.id, entryId, { portions: 12, allocations: [{ destinationId: oplocs[0].canonicalId, destinationLabel: oplocs[0].label, quantity: 12 }] }, "test", oplocs, created.week.version, week.days[0].id);
+
+    const firstPublication = await createPublishedMenuWeek(week.week.id, {}, "test", new Set([oplocs[0].canonicalId]), oplocs);
+    const publishedDays = firstPublication.days.filter(day => day.status === "published");
+    assert.equal(publishedDays.length, 5);
+    let state = await publicationState(await getWeek(week.week.id), oplocs);
+    for (const published of publishedDays) assert.equal(state[published.sourceDayId].hasUnpublishedChanges, false, `day ${published.sourceDayId} is clean after publish`);
+    assert.equal(state[week.days[0].id].currentVersion, 1);
+    assert.equal(state[week.days[0].id].hasUnpublishedChanges, false);
+
+    const edited = await batchUpdateEntries(week.week.id, (await getWeek(week.week.id)).week.version, [{ entryId, dayId: week.days[0].id, allocations: [{ destinationId: oplocs[0].canonicalId, destinationLabel: oplocs[0].label, quantity: 13 }] }], "test", oplocs);
+    state = await publicationState(await getWeek(week.week.id), oplocs);
+    assert.equal(state[week.days[0].id].hasUnpublishedChanges, true, "a saved real quantity edit is dirty");
+
+    const amendment = await createPublishedMenuWeek(week.week.id, {}, "test", new Set([oplocs[0].canonicalId]), oplocs);
+    assert.equal(amendment.publicationVersion, 2);
+    state = await publicationState(await getWeek(week.week.id), oplocs);
+    assert.equal(state[week.days[0].id].currentVersion, 2);
+    assert.equal(state[week.days[0].id].hasUnpublishedChanges, false, "amendment clears the changed hash");
+
+    const reloaded = await getWeek(week.week.id);
+    state = await publicationState(reloaded, oplocs);
+    assert.equal(reloaded.week.version, edited.week.version + 1);
+    assert.equal(state[week.days[0].id].hasUnpublishedChanges, false, "a fresh persisted read remains clean");
+    assert.equal(state[week.days[0].id].currentContentHash, amendment.days.find(day => day.sourceDayId === week.days[0].id && day.status === "published")?.contentHash);
+  } finally {
+    if (rollingBefore) await writeFile(rollingFile, rollingBefore); else await rm(rollingFile, { force: true });
+    if (publicationBefore) await writeFile(publicationFile, publicationBefore); else await rm(publicationFile, { force: true });
+    if (canonicalBefore) await writeFile(canonicalFile, canonicalBefore); else await rm(canonicalFile, { force: true });
+  }
+});
+
 test("published day matrix keeps all canonical allergen columns", async () => {
   const rollingFile = join(process.cwd(), "local-data", "menu-planning", "rolling-menu-weeks.json");
   const publicationFile = join(process.cwd(), "local-data", "menu-planning", "menu-publications.json");

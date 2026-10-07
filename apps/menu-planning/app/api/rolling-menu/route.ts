@@ -375,7 +375,26 @@ async function handlePost(request: NextRequest) {
         actor.uid,
         liveOplocs,
       );
-      return NextResponse.json({ mutation });
+      const saved = scopedSnapshot(
+        normaliseRollingSnapshotDestinations(
+          await getWeek(String(body.weekId)),
+          liveOplocs,
+        ),
+        actor,
+      );
+      const catalogue = await listCatalogueEntriesForIds(
+        saved.entries.map((entry) => entry.itemId || ""),
+      );
+      return NextResponse.json({
+        mutation,
+        publicationState: await publicationState(
+          saved,
+          liveOplocs,
+          catalogue
+            .map((entry) => entry.item)
+            .filter((item): item is NonNullable<typeof item> => Boolean(item)),
+        ),
+      });
     }
     if (action === "create-entry") {
       const snapshot = await createEntry(
