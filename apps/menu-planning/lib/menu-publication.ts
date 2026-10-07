@@ -7,6 +7,7 @@ import type {
   RollingEntry,
   RollingSnapshot,
 } from "./rolling-menu-types";
+import { ROLLING_SLOTS } from "./rolling-menu-types";
 import {
   getWeek,
   listWeeks,
@@ -274,20 +275,52 @@ const publishedEntry = (
     ...(mayContainNotes !== undefined ? { mayContainNotes } : {}),
   });
 };
-export function buildPublishedDay(snapshot: RollingSnapshot, day: RollingDay, canonicalDishes: readonly MenuItem[] = [], options: PublicationBuildOptions = {}) {
-  const entries = snapshot.entries
-    .filter(
-      (entry) =>
-        entry.dayId === day.id &&
-        entry.itemLabel.trim() &&
-        entry.allocations.some(
-          (allocation) =>
-            Number.isFinite(allocation.quantity) && allocation.quantity > 0,
-        ),
-    )
-    .map((entry) => {
-      return publishedEntry(entry, canonicalDishFor(canonicalDishes, entry.itemId), options, day);
+const compareStableText = (left: string, right: string) => left < right ? -1 : left > right ? 1 : 0;
+const allocationIdentity = (allocation: RollingEntry["allocations"][number]) =>
+  allocation.destinationId?.trim() ||
+  `unresolved:${allocation.destinationLabel.trim().toLowerCase()}|${(allocation.destinationAddress || "").trim().toLowerCase()}`;
+function orderedEntriesForDay(snapshot: RollingSnapshot, day: RollingDay) {
+  const position = new Map((day.entryIds || []).map((id, index) => [id, index]));
+  const slotPosition = new Map(
+    [...ROLLING_SLOTS, ...(snapshot.week.customSlots || [])].map((slot, index) => [slot, index]),
+  );
+  return snapshot.entries
+    .filter((entry) => entry.dayId === day.id && entry.itemLabel.trim() && entry.allocations.some((allocation) => Number.isFinite(allocation.quantity) && allocation.quantity > 0))
+    .slice()
+    .sort((left, right) => {
+      const leftPosition = position.get(left.id);
+      const rightPosition = position.get(right.id);
+      if (leftPosition !== undefined || rightPosition !== undefined)
+        return (leftPosition ?? Number.MAX_SAFE_INTEGER) - (rightPosition ?? Number.MAX_SAFE_INTEGER) || compareStableText(left.id, right.id);
+      const slotDifference = (slotPosition.get(left.slot) ?? Number.MAX_SAFE_INTEGER) - (slotPosition.get(right.slot) ?? Number.MAX_SAFE_INTEGER);
+      return slotDifference || compareStableText(left.slot, right.slot) || compareStableText(left.id, right.id);
     });
+}
+function historicalDayMatchesWorkingOrder(current: PublishedMenuDay, day: RollingDay, snapshot: RollingSnapshot, workingHash: string) {
+  const originalContent = normalizePublicationValue({ sourceDayId: current.sourceDayId, date: current.date, dayName: current.dayName, entries: current.entries });
+  if (contentHash(originalContent) !== current.contentHash) return false;
+  const entryPosition = new Map((day.entryIds || []).map((id, index) => [id, index]));
+  const slotPosition = new Map([...ROLLING_SLOTS, ...(snapshot.week.customSlots || [])].map((slot, index) => [slot, index]));
+  const entries = current.entries.map(entry => ({ ...entry, allocations: entry.allocations.slice().sort((left, right) => compareStableText(allocationIdentity(left), allocationIdentity(right)) || compareStableText(left.destinationLabel, right.destinationLabel) || compareStableText(left.destinationAddress || "", right.destinationAddress || "") || left.quantity - right.quantity) })).sort((left, right) => {
+    const leftPosition = entryPosition.get(left.sourceEntryId);
+    const rightPosition = entryPosition.get(right.sourceEntryId);
+    if (leftPosition !== undefined || rightPosition !== undefined)
+      return (leftPosition ?? Number.MAX_SAFE_INTEGER) - (rightPosition ?? Number.MAX_SAFE_INTEGER) || compareStableText(left.sourceEntryId, right.sourceEntryId);
+    const slotDifference = (slotPosition.get(left.slot) ?? Number.MAX_SAFE_INTEGER) - (slotPosition.get(right.slot) ?? Number.MAX_SAFE_INTEGER);
+    return slotDifference || compareStableText(left.slot, right.slot) || compareStableText(left.sourceEntryId, right.sourceEntryId);
+  });
+  return contentHash(normalizePublicationValue({ sourceDayId: current.sourceDayId, date: current.date, dayName: current.dayName, entries })) === workingHash;
+}
+export function buildPublishedDay(snapshot: RollingSnapshot, day: RollingDay, canonicalDishes: readonly MenuItem[] = [], options: PublicationBuildOptions = {}) {
+  const entries = orderedEntriesForDay(snapshot, day).map((entry) => {
+    const allocations = entry.allocations.slice().sort((left, right) =>
+      compareStableText(allocationIdentity(left), allocationIdentity(right)) ||
+      compareStableText(left.destinationLabel, right.destinationLabel) ||
+      compareStableText(left.destinationAddress || "", right.destinationAddress || "") ||
+      left.quantity - right.quantity,
+    );
+    return publishedEntry({ ...entry, allocations }, canonicalDishFor(canonicalDishes, entry.itemId), options, day);
+  });
   const stableDay = normalizePublicationValue({
     sourceDayId: day.id,
     date: day.date,
@@ -676,7 +709,7 @@ export function compareWorkingWeekToPublication(
       // populated working day, or a published day with a different hash, is
       // a persisted amendment.
       const changed = current
-        ? current.contentHash !== working.contentHash
+        ? current.contentHash !== working.contentHash && !historicalDayMatchesWorkingOrder(current, day, normalized, working.contentHash)
         : working.entries.length > 0;
       return [day.id, changed];
     }),

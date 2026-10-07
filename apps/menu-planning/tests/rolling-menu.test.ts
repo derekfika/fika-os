@@ -12,7 +12,7 @@ import * as XLSX from "xlsx";
 import { addMenuSlot, applyEntryPatch, assertWeekDateAvailable, attachCanonicalDishIds, batchUpdateEntries, copyWeekIntoWeek, createEntry, defaultWeekForDate, duplicateWeek, emptyWeek, getWeek, importWorkbook, isProtectedExistingPlanningWeek, normaliseRollingSnapshotDestinations, operationalDateLondon, planningWeekCommencing, planningWeekFromQuery, planningWeekImportConflictReason, planningWeekReplacementDetails, publishWeek, removeMenuSlot, replaceSnapshotsExplicit, saveSnapshot, saveSnapshotsCreateOnly, updateEntry, validateWeek, ROLLING_SLOTS } from "../lib/rolling-menu";
 import { hasPlannedDishes } from "../lib/rolling-menu-types";
 import { createCanonicalMenuItem, createCanonicalMenuItems, listCanonicalMenuItems } from "../lib/canonical-menu-repository";
-import { buildCompiledPublicationSnapshot, buildPublishedDay, compareWorkingWeekToPublication, createPublishedMenuDay, createPublishedMenuWeek, currentPublishedDays, getCompiledPublicationSnapshot, getMenuPublication, listMenuPublicationEvents, listMenuPublications, publicationPreview, publicationState, publishedDayMatrixHtml, replayMenuPublicationOutbox, withdrawPublishedMenuDay, withdrawPublishedMenuWeek, type MenuPublicationSignoff } from "../lib/menu-publication";
+import { buildCompiledPublicationSnapshot, buildPublishedDay, compareWorkingWeekToPublication, contentHash, createPublishedMenuDay, createPublishedMenuWeek, currentPublishedDays, getCompiledPublicationSnapshot, getMenuPublication, listMenuPublicationEvents, listMenuPublications, publicationPreview, publicationState, publishedDayMatrixHtml, replayMenuPublicationOutbox, withdrawPublishedMenuDay, withdrawPublishedMenuWeek, type MenuPublicationSignoff } from "../lib/menu-publication";
 import { resolveAllergenSnapshot } from "../lib/allergen-resolution";
 import type { RollingEntry } from "../lib/rolling-menu-types";
 import { decodeWeeklyPublicationPacket } from "@fika/server-shared/weekly-publication-packet";
@@ -552,6 +552,31 @@ test("publication state and the publish gate share normalized day-hash compariso
   const comparison = compareWorkingWeekToPublication(snapshot, publication, liveOplocs);
   assert.equal(comparison.hasUnpublishedChanges, false);
   assert.equal(comparison.dayHasUnpublishedChanges[snapshot.days[0].id], false);
+});
+
+test("publication content hash ignores Firestore entry and allocation read order while preserving menu order", () => {
+  const snapshot = emptyWeek("2031-01-13");
+  const day = snapshot.days[0];
+  const first: RollingEntry = { id: "entry:first", dayId: day.id, date: day.date, slot: "SALAD 1", itemLabel: "First dish", itemId: "dish:first", portions: 5, allocations: [{ destinationId: "site:b", destinationLabel: "Site B", quantity: 3 }, { destinationId: "site:a", destinationLabel: "Site A", quantity: 2 }], allergens: { sesame: "contains" }, audit: [] };
+  const second: RollingEntry = { id: "entry:second", dayId: day.id, date: day.date, slot: "SOUP", itemLabel: "Second dish", itemId: "dish:second", portions: 1, allocations: [{ destinationId: "site:a", destinationLabel: "Site A", quantity: 1 }], allergens: { milk: "clear" }, audit: [] };
+  day.entryIds = [first.id, second.id];
+  snapshot.week.entryIds = [first.id, second.id];
+  snapshot.entries = [first, second];
+
+  const published = buildPublishedDay(snapshot, day);
+  const shuffled = { ...snapshot, entries: [second, { ...first, allocations: first.allocations.slice().reverse() }] };
+  const shuffledHash = buildPublishedDay(shuffled, day);
+  assert.equal(shuffledHash.contentHash, published.contentHash, "document and allocation return order does not change semantic content hash");
+  assert.deepEqual(published.entries.map(entry => entry.sourceEntryId), day.entryIds, "stored day entryIds preserve intentional menu order");
+  assert.deepEqual(published.entries[0].allocations.map(allocation => allocation.destinationId), ["site:a", "site:b"], "allocations use stable destination identity order");
+
+  const publication = { sourceWeekId: snapshot.week.id, days: [{ sourceDayId: day.id, status: "published" as const, contentHash: published.contentHash }] } as any;
+  assert.equal(compareWorkingWeekToPublication(shuffled, publication).dayHasUnpublishedChanges[day.id], false, "equivalent Firestore ordering is not an amendment");
+  const historicalEntries = published.entries.slice().reverse().map(entry => ({ ...entry, allocations: entry.allocations.slice().reverse() }));
+  const historicalPublication = { sourceWeekId: snapshot.week.id, days: [{ sourceDayId: day.id, date: day.date, dayName: day.dayName, status: "published" as const, contentHash: contentHash({ sourceDayId: day.id, date: day.date, dayName: day.dayName, entries: historicalEntries }), entries: historicalEntries }] } as any;
+  assert.equal(compareWorkingWeekToPublication(shuffled, historicalPublication).dayHasUnpublishedChanges[day.id], false, "verified immutable pre-fix hashes remain equivalent without rewriting history");
+  const changed = { ...snapshot, entries: snapshot.entries.map(entry => entry.id === first.id ? { ...entry, allocations: entry.allocations.map(allocation => allocation.destinationId === "site:a" ? { ...allocation, quantity: 4 } : allocation) } : entry) };
+  assert.equal(compareWorkingWeekToPublication(changed, publication).dayHasUnpublishedChanges[day.id], true, "a genuine portion change remains dirty");
 });
 
 test("Portion Planner publication stays clean after reload, turns dirty on allocation edit, and clears after amendment", async () => {
