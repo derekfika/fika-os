@@ -1,0 +1,11 @@
+{
+  "local-test-legacy-plan": {
+    "menuItems": [
+      {
+        "subItems": [
+          { "allergens": { "noKeyAllergens": "clear", "otherNuts": "may_contain", "milk": "unrecorded" } }
+        ]
+      }
+    ]
+  }
+}

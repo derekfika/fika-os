@@ -95,7 +95,7 @@ test("review edits remain local and row checkpoints are serialized before first 
   assert.match(matrix, /onPersistenceChange/);
   assert.match(matrix, /checkpointCompletionRef/);
   assert.match(matrix, /if \(checkpointCompletionRef\.current\) \{[\s\S]*await checkpointCompletionRef\.current/);
-  assert.match(matrix, /const action = nextCheckedRows\.size === rows\.length ? "mark-planned"/);
+  assert.match(matrix, /const action = nextCheckedRows\.size === rows\.length \? "mark-planned" as const/);
   const toggle = matrix.slice(matrix.indexOf("  const toggle ="), matrix.indexOf("\n\n  const retryCheckpoint", matrix.indexOf("  const toggle =")));
   assert.doesNotMatch(toggle, /setTimeout|startSave|fetch\(/);
   const checkpoint = matrix.slice(matrix.indexOf("  const markChecked ="), matrix.indexOf("\n\n  const toggle =", matrix.indexOf("  const markChecked =")));

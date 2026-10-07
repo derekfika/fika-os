@@ -479,7 +479,8 @@ test("CPU dashboard opens with a Monday-to-Friday production heads-up", () => {
   assert.match(cardCss, /font-family:inherit/);
   assert.match(cardCss, /white-space:nowrap/);
   assert.doesNotMatch(calendar, /cpuRequiredTime\(order\)/);
-  assert.match(calendar, /pieces\/quantities/);
+  assert.match(calendar, /productionQuantitySummary\(order\)/);
+  assert.match(calendar, /Production:/);
 });
 
 test("weekly production cards use scoped fluid layout and safe truncation", () => {

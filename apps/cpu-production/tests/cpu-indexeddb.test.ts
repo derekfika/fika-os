@@ -87,7 +87,7 @@ test("CPU allergen review keeps authoritative review and mutation paths separate
   const matrix = await readFile(new URL("../app/ui/AllergenReviewMatrix.tsx", import.meta.url), "utf8");
   const loader = await readFile(new URL("../app/lib/cpu-allergen-projection-loader.ts", import.meta.url), "utf8");
   assert.match(matrix, /matrixStatus=1&orderIds=/);
-  assert.match(page, /action: "sign-matrix"/);
+  assert.match(page, /action: "sign-master-matrix"/);
   assert.match(page, /captureSigningLineage/);
   assert.match(matrix, /action: "batch-plan"/);
   assert.doesNotMatch(loader, /production-plan/);
@@ -170,7 +170,7 @@ test("failed projection head fails closed and never uses stale allergen cache", 
 test("allergen freshness hardening preserves the dual-sign and invalidation workflow", async () => {
   const page = await readFile(new URL("../app/allergens/page.tsx", import.meta.url), "utf8");
   const planRoute = await readFile(new URL("../app/api/production-plan/route.ts", import.meta.url), "utf8");
-  assert.match(page, /action: "sign-matrix"/);
+  assert.match(page, /action: "sign-master-matrix"/);
   assert.doesNotMatch(page, /if \(fullySigned\) void fetch[\s\S]*save-matrix/);
   assert.match(page, /production_chef/);
   assert.match(page, /head_chef_site_manager/);
@@ -184,9 +184,12 @@ test("allergen signing freezes once, preserves the first signature, and locks ed
   const page = await readFile(new URL("../app/allergens/page.tsx", import.meta.url), "utf8");
   const matrix = await readFile(new URL("../app/ui/AllergenReviewMatrix.tsx", import.meta.url), "utf8");
   const planRoute = await readFile(new URL("../app/api/production-plan/route.ts", import.meta.url), "utf8");
-  assert.match(page, /if \(!reviewFrozen\) \{[\s\S]*await saveReviewRef\.current\(\);[\s\S]*setReviewFrozen\(true\);[\s\S]*\}/);
-  assert.doesNotMatch(page, /beginSigning[\s\S]*await saveReviewRef\.current\(\);[\s\S]*await saveReviewRef\.current\(\);/);
-  assert.match(page, /busy=\{signatureBusy\}/);
+  const beginSigning = page.slice(page.indexOf("  const beginSigning ="), page.indexOf("  const signatureSummary ="));
+  assert.match(beginSigning, /await saveReviewRef\.current\?\.\(\);[\s\S]*await refreshReviewStatus\(\)/);
+  assert.equal((beginSigning.match(/await saveReviewRef\.current/g) || []).length, 1);
+  assert.match(beginSigning, /signingSnapshotRef\.current && !refreshed\.lineageMatchesFrozen[\s\S]*setReviewFrozen\(false\)/);
+  assert.match(beginSigning, /signingSnapshotRef\.current = refreshed\.freshLineage;[\s\S]*setReviewFrozen\(true\)/);
+  assert.match(page, /busy=\{signatureBusy \|\| hydrating\}/);
   assert.match(page, /locked=\{hydrating \|\| reviewFrozen \|\| bothSigned \|\| Boolean\(signing\)\}/);
   assert.match(matrix, /locked = false/);
   assert.match(matrix, /disabled=\{busy \|\| locked \|\| key === "no_key_allergens"\}/);
@@ -194,5 +197,7 @@ test("allergen signing freezes once, preserves the first signature, and locks ed
   assert.match(matrix, /saveLocalChecked/);
   assert.doesNotMatch(matrix, /confirm-review/);
   assert.doesNotMatch(matrix, /completedKeys/);
-  assert.match(planRoute, /signatures\.length > 0 && plan\.signedMenuContentHash && plan\.signedMenuContentHash !== currentMenuContentHash/);
+  assert.match(planRoute, /hasAllergenAuthority\(plan\) && !allergenAuthorityMatchesOrder\(plan, order, reviewedPlan\.menuItems\)/);
+  assert.match(planRoute, /invalidateSignedAllergenAuthorityForNewSourceLineage/);
+  assert.match(planRoute, /revokeCpuAllergenRelease/);
 });

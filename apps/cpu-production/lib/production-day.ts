@@ -10,6 +10,19 @@ export function allergenReviewKey(order: ProductionOrder, line: ProductionLine) 
 
 export function orderDate(order: ProductionOrder) { return order.serviceDate || order.requiredBy.slice(0, 10); }
 export function orderQuantity(order: ProductionOrder) { return order.lines.reduce((sum, line) => sum + line.customerQuantity, 0); }
+/** Production quantities keep their units and never fall back to commercial portions. */
+export function productionQuantitySummary(order: Pick<ProductionOrder, "lines">) {
+  const quantities = new Map<string, number>();
+  let unconfigured = 0;
+  for (const line of order.lines) {
+    const unit = line.productionUnit?.trim();
+    if (line.productionQuantity === undefined || !Number.isFinite(line.productionQuantity) || line.productionQuantity < 0 || !unit) { unconfigured++; continue; }
+    quantities.set(unit, (quantities.get(unit) || 0) + line.productionQuantity);
+  }
+  const labels = [...quantities].map(([unit, quantity]) => `${quantity.toLocaleString("en-GB")} ${unit}`);
+  if (unconfigured) labels.push(`${unconfigured} line${unconfigured === 1 ? "" : "s"} not configured`);
+  return labels.join(" · ") || "No production quantities";
+}
 export function orderLineCount(order: ProductionOrder) { return order.lines.length; }
 export function orderSummary(order: ProductionOrder) { const ordered = orderQuantity(order); const unit = order.origin === "menu_planning" ? "portions" : "items"; return `${ordered.toLocaleString()} ${unit} ordered · ${orderLineCount(order)} line${orderLineCount(order) === 1 ? "" : "s"}`; }
 export function sourceHeading(order: ProductionOrder) { if (order.productionCategory === "fine_dining") return "Fine Dining · Delivered-In"; if (order.productionCategory === "delivered_in") return "Delivered-In"; if (order.productionCategory === "events") return "Events & Corporate"; if (order.productionCategory === "hospitality") return "Hospitality"; if (order.productionCategory === "grab_and_go") return "Grab & Go"; return order.origin === "menu_planning" ? "Delivered-In lunch" : cpuSourceLabel(order).replace(/ order$/, ""); }

@@ -35,13 +35,13 @@ test("CPU allergen review is a full-screen editable master-sign workflow", () =>
   assert.match(reviewMatrix, /action: "save-plan"/);
   assert.match(reviewMatrix, /Mark checked/);
   assert.doesNotMatch(reviewMatrix, /Acknowledge approved data|Save CPU review|Mark ready for signature/);
-  assert.match(reviewPage, /action: "sign-matrix"/);
+  assert.match(reviewPage, /action: "sign-master-matrix"/);
   assert.match(reviewMatrix, /row\.snapshot/);
   assert.match(reviewPage, /order\.origin === "menu_planning"/);
   assert.doesNotMatch(reviewPage, /Production source/);
   assert.doesNotMatch(reviewMatrix, />Source<|>Published menu</);
   assert.match(reviewMatrix, /function displayState\(/);
-  assert.match(reviewMatrix, /namedKeys\.every/);
+  assert.match(reviewMatrix, /resolveNoKeyAllergenState/);
   assert.match(reviewMatrix, /disabled=\{busy \|\| locked \|\| key === "no_key_allergens"\}/);
   assert.doesNotMatch(reviewMatrix, /states\[row\.key\]\?\.\[key\] \|\| "clear"/);
   assert.match(reviewPage, /deliveredInMenuOrdersForServiceDate/);

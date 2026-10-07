@@ -28,8 +28,8 @@ test("CPU Drive configuration does not require an explicit folder override", () 
   assert.equal(matrixDriveConfiguration(order("menu_planning")).enabled, true);
 });
 
-test("Hospitality CPU matrices use the shared CPU Production Drive owner", () => {
+test("Hospitality matrix configuration retains its governed OPLOC owner diagnostic", () => {
   process.env.GOOGLE_WORKSPACE_DWD_SERVICE_ACCOUNT_JSON = "configured-later";
   process.env.GOOGLE_DRIVE_OWNER_EMAIL_APP_CPU_PRODUCTION = "derek@fikacatering.com";
-  assert.deepEqual(matrixDriveConfiguration(order("hospitality_booking", "oploc:angel")), { enabled: true, ownerKey: "APP_CPU_PRODUCTION" });
+  assert.deepEqual(matrixDriveConfiguration(order("hospitality_booking", "oploc:angel")), { enabled: true, ownerKey: "OPLOC_APP_CPU_PRODUCTION" });
 });

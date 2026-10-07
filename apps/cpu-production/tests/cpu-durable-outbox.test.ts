@@ -142,20 +142,26 @@ test("CPU creates one durable obligation per independent consumer and stable sco
   assert.equal(listCpuOutboxForTests()[0].payload.sourceEventId, input.eventId);
 });
 
-test("failed CPU delivery remains observable and bounded recovery retries it", async () => {
+test("failed CPU delivery remains observable and bounded recovery retries it", async (context) => {
+  context.mock.timers.enable({ apis: ["Date"], now: new Date("2026-09-15T10:00:00.000Z") });
   resetCpuOutboxForTests();
   const previousFetch = globalThis.fetch;
   let calls = 0;
   globalThis.fetch = (async () => { calls += 1; return new Response(JSON.stringify({ error: { message: "PDF_RENDERER_ERROR: renderer unavailable" } }), { status: 503, headers: { "content-type": "application/json" } }); }) as typeof fetch;
   try {
-    const [event] = await enqueueCpuPropagation(input);
+    const event = await enqueueCpuDelivery({ eventId: "cpu-test-materialization-failure", sourceAggregateId: input.sourceEntityId, sourceVersion: input.sourceVersion, occurredAt: input.changedAt, consumer: "cpu-production", route: "/api/internal/cpu-release-materialize", body: { orderId: "order:test", releaseId: "release:test" } });
     const result = await deliverCpuPropagation(event.eventId, new Date("2026-09-15T10:00:00.000Z"));
     assert.equal(result.status, "failed");
     assert.match(result.error || "", /cpu-production returned HTTP 503: PDF_RENDERER_ERROR: renderer unavailable/);
     assert.equal(calls, 1);
     assert.equal(listCpuOutboxForTests().find(value => value.eventId === event.eventId)?.delivery.status, "failed");
-    const recovery = await recoverCpuPropagation(1, new Date("2026-09-15T10:00:31.000Z"));
+    const failedEvent = listCpuOutboxForTests().find(value => value.eventId === event.eventId)!;
+    const recoveryAt = new Date(new Date(failedEvent.delivery.nextEligibleAt!).getTime() + 1);
+    assert.equal((await recoverCpuPropagation(1, new Date(recoveryAt.getTime() - 2))).length, 0, "failed delivery must respect backoff");
+    context.mock.timers.setTime(recoveryAt.getTime());
+    const recovery = await recoverCpuPropagation(1, recoveryAt);
     assert.equal(recovery.length, 1);
+    assert.equal(recovery[0].eventId, event.eventId, "bounded recovery retries the failed materialization obligation");
     assert.equal(calls, 2);
   } finally {
     globalThis.fetch = previousFetch;

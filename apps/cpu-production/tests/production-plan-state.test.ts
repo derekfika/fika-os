@@ -72,6 +72,7 @@ test("Hospitality detail enables completion only for an unlocked row and auto-pl
 test("signed matrix amendments retain the explicit reopen requirement", async () => {
   const route = await readFile(new URL("../app/api/production-plan/route.ts", import.meta.url), "utf8");
   assert.match(route, /hasAllergenAuthority\(plan\) && !allergenAuthorityMatchesOrder\(plan, order, reviewedPlan\.menuItems\)/);
-  assert.match(route, /planHasAllergenAuthority && !authorityMatches/);
+  assert.match(route, /\(plan\.currentAllergenRelease \|\| plan\.signatures\?\.length\) && !authorityMatches/);
+  assert.match(route, /invalidateSignedAllergenAuthorityForNewSourceLineage/);
   assert.match(route, /CPU_REVIEW_REOPEN_REQUIRED/);
 });

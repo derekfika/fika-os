@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import type { ProductionOrder } from "../../lib/production-types";
 import { cpuAttentionLabel, cpuDestinationLabel, cpuLifecycle, cpuLifecycleLabels, cpuSourceLabel } from "../../lib/production-presentation";
-import { orderDate, orderSummary, productionJobCount, sourceHeading } from "../../lib/production-day";
+import { orderDate, orderSummary, productionJobCount, productionQuantitySummary, sourceHeading } from "../../lib/production-day";
 import "./production-calendar.css";
 import "./production-card-overrides.css";
 
@@ -24,7 +24,6 @@ function shortDate(date: Date) { return date.toLocaleDateString("en-GB", { day: 
 function longDate(date: Date) { return date.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "short" }); }
 function guestCount(order: ProductionOrder) { return order.guestCount || order.lines.reduce((sum, line) => sum + (line.customerQuantity || 0), 0); }
 function cardOploc(order: ProductionOrder) { return cpuDestinationLabel(order).replace(/\s·\s\d+$/, ""); }
-function cardQuantityTotal(order: ProductionOrder) { return order.lines.reduce((sum, line) => sum + (line.customerQuantity || 0), 0); }
 function dietarySummary(order: ProductionOrder) {
   const values = new Map<string, number>();
   for (const line of order.lines) for (const [key, value] of Object.entries(line.dietaries || {})) {
@@ -78,7 +77,7 @@ export default function ProductionCalendar({ orders, open, onCancelBooking, week
                   <div className="production-card-quantities" aria-label="Order dishes and quantities">{order.lines.map((line) => <span key={line.canonicalId}><b>{line.itemName}</b><em>x{line.customerQuantity.toLocaleString()}</em></span>)}</div>
                   <p className="production-card-client"><b>{cpuSourceLabel(order)}:</b> {orderSummary(order)}</p>
                   {dietaries && <p className="production-card-dietaries"><b>Dietary:</b> {dietaries}</p>}
-                  <div className="production-card-meta"><span>{customerPax} pax</span><span>{cardQuantityTotal(order).toLocaleString()} pieces/quantities</span></div>
+                  <div className="production-card-meta"><span>{customerPax} pax</span><span>Production: {productionQuantitySummary(order)}</span></div>
                   {order.exceptions.length > 0 && <div className="calendar-exceptions"><small className="calendar-exception">{order.exceptions.length} exception{order.exceptions.length === 1 ? "" : "s"} needs attention</small><small className="calendar-exception-detail">{order.exceptions[0].description}</small></div>}
                   {order.cancellationNotice && <span className="production-card-cancel-overlay" aria-hidden="true"><span>×</span></span>}
                 </button>
