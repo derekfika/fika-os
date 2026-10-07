@@ -39,8 +39,7 @@ import {
   type MenuActor,
 } from "@/lib/auth";
 import { readDeliveredInOplocs } from "@/lib/oploc-authority";
-import { forwardProductionMaterialisationEvent } from "@/lib/production-client";
-import { replayMenuPublicationOutbox } from "@/lib/menu-publication";
+import { queuedPublicationHandoff } from "@/lib/publication-handoff";
 import {
   listCatalogueEntriesForIds,
 } from "@/lib/catalogue";
@@ -492,11 +491,7 @@ async function handlePost(request: NextRequest) {
         new Set(oplocs.map((oploc) => oploc.canonicalId)),
         oplocs,
       );
-      const handoff = await replayMenuPublicationOutbox(
-        forwardProductionMaterialisationEvent,
-        new Date(),
-        { eventIds: publication.handoffEventIds, resetDeadLetter: true },
-      );
+      const handoff = queuedPublicationHandoff(publication);
       const saved = await getWeek(requestedWeekId);
       const published = await getMenuPublication(publication.publicationId);
       return NextResponse.json({
@@ -504,11 +499,7 @@ async function handlePost(request: NextRequest) {
         publication: published
           ? scopeMenuPublication(published, actor)
           : undefined,
-        handoff: {
-          status: handoff.failed ? "pending" : "delivered",
-          delivered: handoff.delivered,
-          failed: handoff.failed,
-        },
+        handoff,
         weeks: await listWeeks(),
         blockers: await validateWeekAuthoritative(scopedSnapshot(saved, actor)),
         publicationState: await publicationState(saved, liveOplocs),

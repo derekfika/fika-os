@@ -5,6 +5,7 @@ import { forwardProductionMaterialisationEvent } from "@/lib/production-client";
 import { replayMenuPublicationOutbox } from "@/lib/menu-publication";
 import { listMenuPlanningEventIdsForPublication } from "@/lib/operational-store";
 import { withDataTrace } from "@fika/server-shared/data-source-meter-server";
+import { getPublicationHandoff, queuedPublicationHandoff } from "@/lib/publication-handoff";
 
 async function handleGet(request: NextRequest) {
   const actor = await resolveMenuActor(request);
@@ -12,7 +13,7 @@ async function handleGet(request: NextRequest) {
   if (publicationId) {
     const publication = await getMenuPublication(publicationId);
     if (!publication) return NextResponse.json({ error: { message: "Menu publication was not found." } }, { status: 404 });
-    return NextResponse.json({ publication: scopeMenuPublication(publication, actor) });
+    return NextResponse.json({ publication: scopeMenuPublication(publication, actor), handoff: await getPublicationHandoff(publicationId) });
   }
   const fromWeek = request.nextUrl.searchParams.get("fromWeek");
   const toWeek = request.nextUrl.searchParams.get("toWeek");
@@ -31,7 +32,7 @@ async function handlePost(request: NextRequest) {
       if (!body.publicationId) return NextResponse.json({ error: { message: "Publication is required for a targeted handoff retry." } }, { status: 422 });
       const eventIds = await listMenuPlanningEventIdsForPublication(body.publicationId);
       const handoff = await replayMenuPublicationOutbox(forwardProductionMaterialisationEvent, new Date(), { eventIds, resetDeadLetter: true });
-      return NextResponse.json({ handoff: { status: handoff.deadLettered ? "intervention-required" : handoff.pending || handoff.failed ? "pending" : "delivered", delivered: handoff.delivered, failed: handoff.failed, pending: handoff.pending, deadLettered: handoff.deadLettered } });
+      return NextResponse.json({ handoff: await getPublicationHandoff(body.publicationId) });
     }
     if (!body.publicationId) return NextResponse.json({ error: { message: "Publication is required." } }, { status: 422 });
     if (body.action === "repair-handoff") {
@@ -41,11 +42,10 @@ async function handlePost(request: NextRequest) {
     }
     if (body.action === "withdraw-week") {
       const publication = await withdrawPublishedMenuWeek(body.publicationId, body.reason || "", actor.uid);
-      const handoff = await replayMenuPublicationOutbox(forwardProductionMaterialisationEvent, new Date(), { eventIds: publication.handoffEventIds });
-      return NextResponse.json({ publication: scopeMenuPublication(publication, actor), handoff: { status: handoff.deadLettered ? "intervention-required" : handoff.pending || handoff.failed ? "pending" : "delivered", delivered: handoff.delivered, failed: handoff.failed, pending: handoff.pending, deadLettered: handoff.deadLettered } });
+      return NextResponse.json({ publication: scopeMenuPublication(publication, actor), handoff: queuedPublicationHandoff(publication) });
     }
     if (!body.publicationDayId) return NextResponse.json({ error: { message: "Publication day is required." } }, { status: 422 });
-    if (body.action === "withdraw") { const publication = await withdrawPublishedMenuDay(body.publicationId, body.publicationDayId, body.reason || "", actor.uid); const handoff = await replayMenuPublicationOutbox(forwardProductionMaterialisationEvent, new Date(), { eventIds: publication.handoffEventIds }); return NextResponse.json({ publication: scopeMenuPublication(publication, actor), handoff: { status: handoff.deadLettered ? "intervention-required" : handoff.pending || handoff.failed ? "pending" : "delivered", delivered: handoff.delivered, failed: handoff.failed, pending: handoff.pending, deadLettered: handoff.deadLettered } }); }
+    if (body.action === "withdraw") { const publication = await withdrawPublishedMenuDay(body.publicationId, body.publicationDayId, body.reason || "", actor.uid); return NextResponse.json({ publication: scopeMenuPublication(publication, actor), handoff: queuedPublicationHandoff(publication) }); }
     if (body.action === "retry-archive") {
       const archive = await archivePublishedDayMatrix(body.publicationId, body.publicationDayId);
       const publication = await getMenuPublication(body.publicationId);

@@ -199,6 +199,59 @@ Protected hashes must remain the initial values above. Final check/push/fetch/HE
 
 **CHECKPOINT SAVED — SAFE TO RESUME AUTONOMOUS UAT**
 
+## 2026-10-07 — Remove synchronous Menu publication handoff P1
+
+Authoritative task baseline: `ca5b1039676844d07ff239ef3c30a688ad1f22ea`.
+Fetched origin and fast-forwarded `main` (already current). Before diagnosis,
+Menu staging build `build-2026-10-07-001` was verified READY, current/100%, with
+that exact source SHA. This task supersedes the older checkpoint's next-task
+sequence only for the publication-latency remediation requested by Derek.
+
+Publish/amend and day/week withdrawal now return after authoritative publication
+and durable outbox commit, reporting success with handoff pending. No normal
+mutation invokes downstream replay. The unchanged event IDs, atomic history,
+leases, predecessors, retries/backoff and ten-attempt dead-letter boundary remain
+in force. Targeted Integration Administrator retry remains available; its response
+now reads actual durable state, including repeated already-delivered retries.
+
+There was no hosted Menu recovery endpoint or Menu Scheduler. Added
+`POST /api/internal/menu-publication-outbox`, with exact middleware service-route
+exemption, timing-safe existing internal-token check and integer limit 1–25.
+It wraps the existing global bounded claim/replay primitive; it never resets dead
+letters. The staging config already references `FIKA_INTERNAL_API_TOKEN@3`.
+Provisioning and live results will be appended after validated deployment.
+
+Portion Planner persistently shows pending/delivered/intervention-required and
+offers Refresh handoff status. Status revalidates independently of the menu-week
+cache on load/version change and explicit refresh. No new timer/polling, no
+Firestore read-amplification refactor, no shared contract/provider changes.
+Existing light surfaces, semantic text, shared button/focus styling and accessible
+status announcement are reused. Style Guide compliance: PASS.
+
+Local validation: focused publication/API/outbox suite **110/110 PASS**; full Menu
+Planning suite **219/219 PASS**, zero skips; typecheck PASS; webpack build PASS;
+shared durable-outbox tests **2/2 PASS**; Hub production/provider tests **14/14
+PASS** on an isolated loopback Firestore emulator. Provider coverage includes
+stable materialisation identity, duplicate delivery, publication lineage and late
+Menu replay after newer withdrawal. New isolated API regressions prove no inline
+consumer, durable pending response, reopen/recovery after response, concurrent
+claims, bounded authenticated worker calling the real adapter, repeated delivery,
+backoff, dead-letter, deliberate reset and durable week withdrawal. Existing
+clean/dirty/amendment/order-determinism regressions remain green.
+
+Runner corrections: restricted Windows `tsx` initially failed before tests with
+`uv_os_get_passwd ENOMEM`; executed successfully with authorized escalation.
+Initial new fixture was blank/incomplete and was corrected to a fully isolated
+populated reference fixture. First provider run used an unapproved demo project
+name and was rejected fail-closed; rerun used allowed `demo-fika-os` at isolated
+port 8096 and passed. These failed attempts are not called green.
+
+Protected CHANGELOG/MenuData hashes verified unchanged before edits and validation;
+neither staged nor modified. CHANGELOG updated: **no — explicit task protection**.
+This dated UAT entry records the task. Production untouched. Implementation SHA,
+push, staging rollout, Scheduler and exact owned-week live evidence pending the
+deployment phase below.
+
 ## Resume evidence — owned Hospitality gate, 7 October
 
 Existing authenticated session and normal product commands only. Owned booking
