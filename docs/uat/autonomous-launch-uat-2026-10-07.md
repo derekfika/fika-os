@@ -3,8 +3,8 @@
 Task: FIKA OS — Autonomous Launch UAT + Remediation War Room.
 Branch: `main`. Starting fetched `origin/main`: `4948ed5730a2a090801407b86392f61a34cac595`.
 Environment: staging only, Firebase project `fika-os-dev`.
-RC achieved: **NO — HUB REPLAY GUARDS PASS; WITHDRAWAL CONSUMER GATE FAIL**. No RC SHA frozen.
-Latest authoritative result is the Hub rapid-amend/withdraw section below; earlier
+RC achieved: **NO — MENU WITHDRAWAL CONSUMER GATE PASS; OTHER RC GATES OPEN**. No RC SHA frozen.
+Latest authoritative result is the withdrawal consumer remediation section below; earlier
 stop/resume instructions and next-gate statements are historical checkpoints.
 The resume instruction supersedes the earlier closure-only scope. Continue the ordered UAT/remediation loop; automatically checkpoint if ordinary usage remaining falls below 10%.
 Resume fetched `origin/main` and local HEAD: `d1c9e5d7cbb540def2b4882d69635315e60ea398` (report-only prior checkpoint). Protected hashes and all six staging provenance rows were reverified before continuing. The latest implementation commit and final HEAD/origin SHA are recorded below or returned in the chat following commit/push.
@@ -243,6 +243,74 @@ Style Guide compliance PASS: existing light semantic text, distinct withdrawn la
 no new visual primitives or polling. Logs under `artifacts/uat/consumer-p1-*`.
 Both P1 fixes locally validated before the12% threshold. Exact commit/deployment/live
 retest evidence follows. Production untouched; CHANGELOG remains explicitly protected.
+
+### Consumer P1 staging/live acceptance and usage checkpoint — PASS
+
+Implementation pushed/deployed **`e4dddbe0164ce295a447eea7803ebea278e6e8ca`**.
+Only Delivered-In and CPU were deployed; Hub stays `c0a41ae`, Menu stays `06181e4`,
+Logistics stays `ec1b110`. Production untouched.
+
+| Staging backend | Build/rollout | Exact SHA | Verified |
+| --- | --- | --- | --- |
+| `fika-delivered-in-staging` | `uat-1007200422-e4dddbe` | `e4dddbe0164ce295a447eea7803ebea278e6e8ca` | READY/SUCCEEDED/current100%, not reconciling,19:08:21Z |
+| `fika-cpu-production-staging` | `uat-1007200425-e4dddbe` | `e4dddbe0164ce295a447eea7803ebea278e6e8ca` | READY/SUCCEEDED/current100%, not reconciling,19:08:22Z |
+
+Delivered build/rollout operations:
+`operation-1791399863021-65d44c87c6f12-8abbef0a-ebe9dc70`,
+`operation-1791399863269-65d44c8803a5e-d02d485e-8697d2f5`.
+CPU build/rollout operations:
+`operation-1791399865399-65d44c8a0b91d-fbca9ca0-5773a156`,
+`operation-1791399865539-65d44c8a2dc81-9edd1607-715e020e`.
+
+Owned week **`rolling-week:2026-10-12` was not republished**. Normal Delivered-In
+hard reload at Haleon now retains the exact Monday12 URL, shows **Menu withdrawn
+for the selected operational week**, exposes no published service-day navigation,
+and no longer falls through to historical Tuesday blank bytes. Second hard reload
+preserves the withdrawn state and Monday URL. Historical v1-v4 snapshot SHA256 values
+are identical before/after this retest. All five authoritative current days remain
+withdrawn; root current packet/snapshot pointers remain absent.
+
+Replayed the exact older immutable v2 event through governed authenticated Hub
+`/api/production/materialise` (same exact event ID listed in previous gate).
+HTTP200, duplicate=true, created=false, **CPU handoff delivered**, Logistics delivered.
+Current order returned cancelled, canonical revision5/sourceVersion4, retained history
+quantity15, audit5. One Production, one withdrawn Fulfilment and one withdrawn Logistics
+record preserve the same stable IDs. Fulfilment/Logistics version/sourceVersion5/audit5.
+No duplicate/resurrection. CPU owned orders0; Logistics owned queue/load/movement0.
+All30 owned Menu events remain delivered, zero pending/failed/dead-letter.
+
+Before/after direct reads of the accepted CPU cancellation receipt and day/week/review
+package heads prove **all six normalized documents identical**. Receipt sequence664,
+CPU day revision6, CPU week revision17, day/week/review packageVersion1 all unchanged;
+same immutable object names, hashes and promotion timestamps. An initial raw JSON
+comparison was false solely because Firestore returned field keys in different order;
+canonical sorted-key comparison proves unchanged content. No source/audit/receipt/head
+sequence increase, no manual outbox reset, cloud repair or historical mutation.
+The initial direct diagnostic probe omitted changedAt in its stored request because
+the canonical order has createdAt but no updatedAt; it reused the existing accepted
+receipt. Final proof is the real Hub adapter using its existing createdAt fallback,
+not a fabricated successful CPU request or a generic conversion of409 into200.
+
+**Menu withdrawal consumer P1 A and P1 B: PASS locally and on staging.** Full launch
+remains open: Delivered SQLite baseline129/130 is explicitly unresolved; other previous
+RC gates, signed allergen acceptance, historical recovery and aligned six-app regression
+remain open. No full Delivered green or P0/P1-zero assertion.
+
+Usage reached **11% five-hour remaining** after both P1s had been fixed and locally
+validated at17%. Completed the current staging/live atomic verification and saved a
+clean checkpoint. No new architectural remediation or Grab & Go live mutation begun
+below12%. No background local test process remains; staging jobs retain existing scope.
+**Exact next gate:** Grab & Go durable handoff scheduler configuration/accepted bounded
+invocation, then one owned non-Xchange submit→Production→CPU→Fulfilment→Logistics→amend→
+cancel→reload/exact replay. Delivered-In already serves the durable G&G implementation
+within `e4dddbe`; do not redeploy an old SHA or repeat passed Menu/Hub work. Verify usage
+and current exact source before starting that next journey. Preserve Xchange exclusion
+and the withdrawn Menu week; no new accounts/grants or production changes.
+
+CHANGELOG unchanged by explicit protection; dated report is task evidence. Both protected
+hashes still match. Report-only final commit follows the implementation and is returned
+in the closing message. Evidence: `artifacts/uat/consumer-p1-*`, plus the final bounded
+owned snapshot under `hub-guard-consumer-final-*`. Style Guide compliance PASS.
 
 ## Baseline evidence
 
