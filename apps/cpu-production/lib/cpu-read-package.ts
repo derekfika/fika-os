@@ -43,7 +43,7 @@ async function publishHostedCpuPackage(store: ReadPackageStore, key: string, enc
       throw Object.assign(new Error("CPU package materialisation is superseded and has no current package."), { code: "CPU_PACKAGE_SUPERSEDED", status: 409 });
     }
     if (head?.state === "current" && incomingSequence === head.sourceSequence) {
-      if (head.sourceHash !== sourceHash || head.manifest?.contentHash !== encoded.manifest.contentHash) throw packageConflict(incomingSequence);
+      if (head.sourceHash !== sourceHash) throw packageConflict(incomingSequence);
       return { action: "idempotent" as const, manifest: head.manifest };
     }
     if (head?.pending && incomingSequence === head.pending.sourceSequence && (head.pending.sourceHash !== sourceHash || head.pending.manifest.contentHash !== encoded.manifest.contentHash)) throw packageConflict(incomingSequence);
@@ -54,7 +54,14 @@ async function publishHostedCpuPackage(store: ReadPackageStore, key: string, enc
     if (!prepared.manifest) throw Object.assign(new Error("CPU package materialisation was superseded before a current package existed."), { code: "CPU_PACKAGE_SUPERSEDED", status: 409 });
     return prepared.manifest;
   }
-  if (prepared.action === "idempotent") return prepared.manifest!;
+  if (prepared.action === "idempotent") {
+    const manifest = prepared.manifest!;
+    const bytes = await store.get(manifest.objectName);
+    if (!bytes) throw new Error(`Read package ${manifest.objectName} was not persisted.`);
+    const saved = decodeReadPackage<{ projection: CpuProjectionPackage }>(manifest, bytes);
+    if (cpuProjectionContentHash(saved.projection) !== sourceHash) throw packageConflict(sequenceOf(manifest));
+    return manifest;
+  }
   try {
     await store.putImmutable(encoded.manifest.objectName, encoded.bytes, encoded.manifest.contentHash);
     const persisted = await store.get(encoded.manifest.objectName);
@@ -94,6 +101,13 @@ export async function publishMonotonicCpuPackage(store: ReadPackageStore, key: s
   const incomingSequence = sequenceOf(encoded.manifest);
   if (previous && incomingSequence < sequenceOf(previous)) return previous;
   if (previous && incomingSequence === sequenceOf(previous) && previous.sourceHash && previous.sourceHash !== sourceHash) throw packageConflict(incomingSequence);
+  if (previous && incomingSequence === sequenceOf(previous) && previous.sourceHash === sourceHash) {
+    const bytes = await store.get(previous.objectName);
+    if (!bytes) throw new Error(`Read package ${previous.objectName} was not persisted.`);
+    const saved = decodeReadPackage<{ projection: CpuProjectionPackage }>(previous, bytes);
+    if (cpuProjectionContentHash(saved.projection) !== sourceHash) throw packageConflict(incomingSequence);
+    return previous;
+  }
   return publishReadPackage(store, key, encoded);
 }
 

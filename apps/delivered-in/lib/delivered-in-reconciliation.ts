@@ -23,6 +23,7 @@ export type DeliveredInSystemReconciliationContext = Extract<DeliveredInReconcil
 
 function menuResultForPublications(publications: SourcePublication[], oplocId: string, serviceDate: string) {
   for (const publication of publications) {
+    if (publication.publicationStatus === "withdrawn") return { withdrawn: true as const, sourceVersion: `${publication.publicationId}:withdrawn:v${publication.publicationVersion || 0}`, sourceSequence: publication.publicationVersion || 0, sourceLineageKey: `${publication.publicationId}|withdrawn|${publication.publicationVersion || 0}` };
     const sourceDay = publication.days.filter(candidate => candidate.date === serviceDate).sort((a, b) => b.version - a.version)[0];
     if (!sourceDay) continue;
     if (sourceDay.status === "withdrawn" || sourceDay.status === "superseded") return { withdrawn: true as const, sourceVersion: `${sourceDay.publicationDayId}:v${sourceDay.version}:${sourceDay.contentHash}`, sourceSequence: sourceDay.version, sourceLineageKey: [publication.publicationId, sourceDay.publicationDayId, sourceDay.version, sourceDay.contentHash, "none"].join("|") };

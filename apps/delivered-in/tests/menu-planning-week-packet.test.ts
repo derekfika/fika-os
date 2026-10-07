@@ -2,7 +2,8 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { gzipSync } from "node:zlib";
 import test from "node:test";
-import { decodeMenuPlanningWeekPacket, isMenuPlanningWeekPacketIntegrityError, packetPublicationsForRange } from "../lib/menu-planning-week-packet";
+import { decodeMenuPlanningWeekPacket, isMenuPlanningWeekPacketIntegrityError, packetPublicationsForRange, readMenuPlanningWeekPackets } from "../lib/menu-planning-week-packet";
+import { db } from "../lib/firebase-admin";
 import { encodeWeeklyPublicationPacket } from "@fika/server-shared/weekly-publication-packet";
 import { projectPublishedWeeks } from "../lib/projection";
 
@@ -44,7 +45,7 @@ function encoded(value = snapshot) {
 test("Delivered-In consumes one gzip/base64 week packet and retains allocation portions", () => {
   const packet = decodeMenuPlanningWeekPacket({ packet: encoded() });
   const [publication] = packetPublicationsForRange([packet], "2026-09-01", "2026-10-01");
-  const [week] = projectPublishedWeeks([publication], "oploc:haleon", new Set(["oploc:haleon"]));
+  const [week] = projectPublishedWeeks([publication], "oploc:haleon", new Set(["oploc:haleon"]), "2026-09-08");
   assert.equal(week.days[0].entries.length, 1);
   assert.equal(week.days[0].entries[0].quantity, 10);
   assert.equal(packet.days[0].entries[0].portions, 25);
@@ -54,7 +55,7 @@ test("Delivered-In consumes one gzip/base64 week packet and retains allocation p
 test("Delivered-In filters by stable OPLOC ID and never by destination label", () => {
   const packet = decodeMenuPlanningWeekPacket(snapshot);
   const [publication] = packetPublicationsForRange([packet], "2026-09-01", "2026-10-01");
-  const [week] = projectPublishedWeeks([publication], "oploc:missing", new Set(["oploc:missing"]));
+  const [week] = projectPublishedWeeks([publication], "oploc:missing", new Set(["oploc:missing"]), "2026-09-08");
   assert.equal(week.days[0].entries.length, 0);
 });
 
@@ -67,7 +68,7 @@ test("Delivered-In rejects a weekly packet whose compressed bytes were changed",
 test("Delivered-In consumes the shared Menu Planning packet envelope", () => {
   const packet = decodeMenuPlanningWeekPacket(encodeWeeklyPublicationPacket(snapshot));
   const [publication] = packetPublicationsForRange([packet], "2026-09-01", "2026-10-01");
-  const [week] = projectPublishedWeeks([publication], "oploc:haleon", new Set(["oploc:haleon"]));
+  const [week] = projectPublishedWeeks([publication], "oploc:haleon", new Set(["oploc:haleon"]), "2026-09-08");
   assert.equal(week.days[0].entries[0].quantity, 10);
 });
 
@@ -75,6 +76,6 @@ test("a newer withdrawn day in the weekly packet hides older published bytes", (
   const withdrawn = { ...snapshot, days: [...snapshot.days, { ...snapshot.days[0], publicationDayId: "publication-day:mon:v4-withdrawn", version: 4, status: "withdrawn" as const, entries: [] }] };
   const packet = decodeMenuPlanningWeekPacket(encodeWeeklyPublicationPacket(withdrawn));
   const [publication] = packetPublicationsForRange([packet], "2026-09-01", "2026-10-01");
-  const [week] = projectPublishedWeeks([publication], "oploc:haleon", new Set(["oploc:haleon"]));
+  const [week] = projectPublishedWeeks([publication], "oploc:haleon", new Set(["oploc:haleon"]), "2026-09-08");
   assert.equal(week.days.length, 0);
 });

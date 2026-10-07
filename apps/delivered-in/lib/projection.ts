@@ -3,7 +3,7 @@ export type Site = { oplocId: string; label: string };
 export type SourceAllocation = { destinationId?: string; destinationLabel: string; quantity: number };
 export type SourceEntry = { sourceEntryId: string; slot: string; canonicalDishId?: string; dishName: string; portions: number; allocations: SourceAllocation[]; allergens: Record<string, "clear" | "contains" | "may_contain" | "unrecorded">; allergenEvidenceStatus?: "confirmed" | "unreviewed" | "missing" | "conflicting"; mayContainNotes?: string };
 export type SourceDay = { publicationDayId: string; sourceDayId: string; date: string; dayName: string; version: number; status: "published" | "superseded" | "withdrawn"; contentHash: string; entries: SourceEntry[]; allergenSignoff: { productionChef?: { printedName: string; signedAt: string }; headChefSiteManager?: { printedName: string; signedAt: string }; printedName?: string; signedAt?: string }; driveArchive?: { pdfDriveUrl?: string; pdfStatus?: string; pdfFileName?: string } };
-export type SourcePublication = { publicationId: string; sourceWeekId: string; weekCommencing: string; weekEnding: string; days: SourceDay[] };
+export type SourcePublication = { publicationId: string; sourceWeekId: string; weekCommencing: string; weekEnding: string; publicationStatus?: "withdrawn"; publicationVersion?: number; days: SourceDay[] };
 export type ProjectedEntry = { sourceEntryId: string; slot: string; canonicalDishId?: string; dishName: string; quantity: number; allergens: Record<string, "clear" | "contains" | "may_contain" | "unrecorded">; allergenEvidenceStatus?: "confirmed" | "unreviewed" | "missing" | "conflicting"; mayContainNotes?: string; allergensVisible?: boolean };
 export type ProjectedDestination = { oplocId: string; label: string; portions: number };
 export type AllergenReleaseDelta = { dishName: string; allergen: string; previous: "clear" | "contains" | "may_contain" | "unrecorded"; current: "clear" | "contains" | "may_contain" | "unrecorded" };
@@ -66,7 +66,7 @@ export function projectPublishedWeeks(publications: SourcePublication[], selecte
   const selectedCanonicalOplocId = canonicalOplocId(selectedOplocId);
   return publications.filter(publication => isRelevantPublishedWeek(publication, asOf)).map(publication => {
     const latestByDate = new Map<string, SourceDay>();
-    for (const day of publication.days) {
+    for (const day of publication.publicationStatus === "withdrawn" ? [] : publication.days) {
       const existing = latestByDate.get(day.date);
       if (!existing || day.version > existing.version) latestByDate.set(day.date, day);
     }

@@ -102,7 +102,7 @@ test("normal CPU package miss and corruption do not write or reconstruct", async
   assert.equal(writes, 0);
 });
 
-test("CPU package publication advances the manifest without changing projection contents", async () => {
+test("CPU package publication reuses the manifest when projection contents and sequence are unchanged", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "fika-cpu-package-"));
   const previous = process.env.FIKA_SNAPSHOT_DIR;
   process.env.FIKA_SNAPSHOT_DIR = root;
@@ -110,10 +110,10 @@ test("CPU package publication advances the manifest without changing projection 
     const first = await publishCpuProjectionPackage(day("2026-08-31"));
     const second = await publishCpuProjectionPackage(day("2026-08-31"));
     assert.equal(first.packageVersion, 1);
-    assert.equal(second.packageVersion, 2);
+    assert.equal(second.packageVersion, 1);
     const retrieved = await getCpuProjectionPackage("2026-08-31");
     assert.deepEqual(retrieved?.value.projection, day("2026-08-31"));
-    assert.equal(retrieved?.manifest.packageVersion, 2);
+    assert.equal(retrieved?.manifest.packageVersion, 1);
     const manifest = JSON.parse(await readFile(path.join(root, "manifests", "cpu-production_projection_day_2026-08-31.json"), "utf8"));
     assert.equal(manifest.contentHash, second.contentHash);
   } finally {

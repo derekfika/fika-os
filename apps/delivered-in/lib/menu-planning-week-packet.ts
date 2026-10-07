@@ -17,7 +17,7 @@ export const MENU_PLANNING_SNAPSHOTS_COLLECTION = "fikaMenuPlanningPublishedSnap
 
 export type MenuPlanningWeekPacketEntry = { sourceEntryId: string; slot: string; canonicalDishId?: string; dishName: string; portions: number; allocations: Array<{ destinationId?: string; destinationLabel: string; quantity: number }>; allergens?: Record<string, string>; allergenEvidenceStatus?: "confirmed" | "unreviewed" | "missing" | "conflicting"; mayContainNotes?: string };
 export type MenuPlanningWeekPacketDay = { publicationDayId: string; sourceDayId: string; date: string; dayName: string; version: number; status?: "published" | "superseded" | "withdrawn"; contentHash?: string; entries: MenuPlanningWeekPacketEntry[]; allergenSignoff?: Record<string, unknown> };
-export type MenuPlanningWeekPacket = { schemaVersion: number; publicationId: string; sourceWeekId: string; publicationVersion?: number; contentHash?: string; week: { weekCommencing: string; weekEnding: string }; days: MenuPlanningWeekPacketDay[] };
+export type MenuPlanningWeekPacket = { schemaVersion: number; publicationId: string; sourceWeekId: string; publicationStatus?: "withdrawn"; publicationVersion?: number; contentHash?: string; week: { weekCommencing: string; weekEnding: string }; days: MenuPlanningWeekPacketDay[] };
 type PacketDocument = { packet?: unknown; payload?: unknown; payloadBase64?: unknown; encoding?: unknown; contentHash?: unknown; compressedSize?: unknown; uncompressedSize?: unknown; [key: string]: unknown };
 
 const isRecord = (value: unknown): value is Record<string, unknown> => Boolean(value && typeof value === "object" && !Array.isArray(value));
@@ -95,16 +95,26 @@ export function decodeMenuPlanningWeekPacket(value: unknown, expectedPublication
 }
 
 function toSourcePublication(packet: MenuPlanningWeekPacket): SourcePublication {
-  return { publicationId: packet.publicationId, sourceWeekId: packet.sourceWeekId, weekCommencing: packet.week.weekCommencing, weekEnding: packet.week.weekEnding, days: packet.days.map(day => ({ publicationDayId: day.publicationDayId, sourceDayId: day.sourceDayId, date: day.date, dayName: day.dayName, version: day.version, status: day.status || "published", contentHash: day.contentHash!, entries: day.entries.map(entry => ({ ...entry, allergens: safeAllergens(entry.allergens) })), allergenSignoff: {} })) };
+  return { publicationId: packet.publicationId, sourceWeekId: packet.sourceWeekId, weekCommencing: packet.week.weekCommencing, weekEnding: packet.week.weekEnding, ...(packet.publicationStatus ? { publicationStatus: packet.publicationStatus, publicationVersion: packet.publicationVersion } : {}), days: packet.days.map(day => ({ publicationDayId: day.publicationDayId, sourceDayId: day.sourceDayId, date: day.date, dayName: day.dayName, version: day.version, status: day.status || "published", contentHash: day.contentHash!, entries: day.entries.map(entry => ({ ...entry, allergens: safeAllergens(entry.allergens) })), allergenSignoff: {} })) };
 }
 export type MenuPlanningPacketPublication = ReturnType<typeof toSourcePublication>;
 export const packetPublication = toSourcePublication;
+
+export function withdrawnPublicationPacket(value: Record<string, unknown>, publicationId: string): MenuPlanningWeekPacket | undefined {
+  if (value.publicationStatus !== "withdrawn") return undefined;
+  const end = new Date(`${value.weekCommencing}T12:00:00Z`);
+  end.setUTCDate(end.getUTCDate() + 6);
+  const packet = validate({ ...value, publicationId, week: { weekCommencing: value.weekCommencing, weekEnding: end.toISOString().slice(0, 10) }, days: [] }, publicationId);
+  return { ...packet, publicationStatus: "withdrawn" };
+}
 
 async function readDirect(documentId: string) {
   const publication = await db.collection(MENU_PLANNING_PUBLICATIONS_COLLECTION).doc(documentId).get();
   recordDataAccess({ app: "delivered-in", operation: "menu-planning.publication-head.by-id", source: "FIRESTORE", dataset: MENU_PLANNING_PUBLICATIONS_COLLECTION, documents: 1, firestoreReadKind: "document" });
   if (!publication.exists) return undefined;
   const publicationData = publication.data() || {};
+  const withdrawn = withdrawnPublicationPacket(publicationData, documentId);
+  if (withdrawn) return withdrawn;
   if (publicationData.weekPacket) return decodeMenuPlanningWeekPacket(publicationData.weekPacket, documentId);
   const snapshotId = publication.data()?.compiledSnapshotId;
   if (typeof snapshotId !== "string") return undefined;
@@ -117,13 +127,26 @@ export async function readMenuPlanningWeekPackets(fromWeek: string, toWeek: stri
   let publications: FirebaseFirestore.QuerySnapshot;
   try {
     publications = await db.collection(MENU_PLANNING_PUBLICATIONS_COLLECTION).where("weekCommencing", ">=", fromWeek).where("weekCommencing", "<", toWeek).limit(16).get();
-  } catch { /* Absent packet collection/index retains legacy compatibility. */ }
+  } catch (cause) { throw Object.assign(new Error("Menu Planning publication authority is unavailable."), { code: "MENU_SOURCE_UNAVAILABLE", status: 503, cause }); }
   if (publications!) {
     recordDataAccess({ app: "delivered-in", operation: "menu-planning.week-packets.by-window", source: "FIRESTORE", dataset: MENU_PLANNING_PUBLICATIONS_COLLECTION, documents: publications.size, firestoreReadKind: "query" });
-    const packets = publications.docs.map(document => document.data()?.weekPacket).filter(Boolean);
+    const packets: MenuPlanningWeekPacket[] = [];
     // Decode outside the query compatibility catch: an existing packet that
     // fails integrity/schema/identity validation must fail closed.
-    if (packets.length) return packets.map(packet => decodeMenuPlanningWeekPacket(packet));
+    for (const document of publications.docs) {
+      const head = document.data();
+      const withdrawn = withdrawnPublicationPacket(head, document.id);
+      if (withdrawn) packets.push(withdrawn);
+      else if (head.weekPacket) packets.push(decodeMenuPlanningWeekPacket(head.weekPacket, document.id));
+      else if (typeof head.compiledSnapshotId === "string") {
+        const snapshot = await db.collection(MENU_PLANNING_SNAPSHOTS_COLLECTION).doc(head.compiledSnapshotId).get();
+        recordDataAccess({ app: "delivered-in", operation: "menu-planning.current-snapshot.by-id", source: "FIRESTORE", documents: 1, firestoreReadKind: "document" });
+        if (snapshot.exists) packets.push(decodeMenuPlanningWeekPacket(snapshot.data(), document.id));
+      }
+    }
+    // Existing heads own freshness, including absence and withdrawal. Only
+    // publications predating heads may use the historical compatibility scan.
+    if (publications.size) return packets;
   }
   let snapshots: FirebaseFirestore.QuerySnapshot | undefined;
   try {

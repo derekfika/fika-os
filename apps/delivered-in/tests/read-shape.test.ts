@@ -67,7 +67,8 @@ test("Menu Planning packet integrity errors are not folded into legacy fallback"
   const packet = await readFile(new URL("../lib/menu-planning-week-packet.ts", import.meta.url), "utf8");
   assert.match(packet, /Decode outside the query compatibility catch/);
   assert.match(packet, /MENU_PLANNING_WEEK_PACKET_INVALID/);
-  assert.match(packet, /if \(packets\.length\) return packets\.map\(packet => decodeMenuPlanningWeekPacket\(packet\)\)/);
+  assert.match(packet, /decodeMenuPlanningWeekPacket\(head\.weekPacket, document\.id\)/);
+  assert.match(packet, /if \(publications\.size\) return packets/);
   assert.match(packet, /Decode outside the query compatibility catch for the same fail-closed/);
 });
 

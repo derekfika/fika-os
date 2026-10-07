@@ -188,6 +188,62 @@ Guide compliance PASS for inspected existing UI; no UI implementation edited.
 Final screenshots and exact safe JSON/logs retained under `artifacts/uat/hub-guard-*`.
 Final source-control/protected integrity checks and report-only push follow.
 
+## Withdrawal consumer P1 remediation — 7 October 2026
+
+Starting fetched HEAD/origin/main **`e54fd92a55268e5a6b8844844f741e499dd15310`**.
+Protected SHA256 values verified unchanged; no clones/worktrees/subagents.
+User usage guard: no new architectural remediation below 12%; checkpoint current
+atomic work if threshold is reached before both fixes are locally validated.
+Initial five-hour remaining26%, weekly58%; latest local validation remaining17%.
+
+Delivered-In owns its operational projection and navigation. Withdrawn Menu
+publication heads now return an explicit tombstone before any historical fallback;
+known active heads use their packet/current snapshot pointer, not a scan of history.
+Only pre-head records use bounded legacy compatibility. Authority query failure
+returns unavailable, never historical published bytes. Corrupt active/current or
+explicit historical packets retain integrity errors. Immutable v1-v4 snapshots are
+not deleted or rewritten. Requested-week head/recovery checks the bounded Menu
+authority even when a cached derived week exists; withdrawal reconciles only the
+five scoped weekdays missing a withdrawn index marker. Repeated withdrawn loads
+do not rewrite already withdrawn markers. Cache hydration carries withdrawn dates,
+evicts withdrawn packages and displays a distinct withdrawn-week message. No polling.
+Cold/warm: one bounded publication-head query (limit16), active missing packet uses
+one known current snapshot read; withdrawn state reads no historical snapshots.
+First legacy stale-index recovery marks at most five existing scoped projections;
+steady state reads the index and writes none. AUTHMOD/OPLOC scope remains enforced.
+
+Exact CPU diagnosis from accepted owned cancellation revision5: live HTTP409 body
+**`CPU_PACKAGE_SEQUENCE_CONFLICT` / CPU package sequence664 has conflicting content**.
+Receipt/projection cancellation remains valid; package publisher incorrectly compares
+new compressed bytes containing regenerated timestamp/revision metadata with existing
+immutable bytes for the same semantic source. Hosted regression reproduces different
+encoded hashes for identical operational source. Fix compares the existing semantic
+sourceHash and sequence, verifies the saved compressed bytes and their decoded semantic
+hash, then reuses the existing manifest. Different semantic content at same sequence
+still409; corrupt/missing stored bytes fail closed, no blind success conversion.
+No receipt/audit/sequence/head/object increment on exact package replay; newer source
+and older-source supersession retain the existing governed path. No Hub/contract edit.
+
+Local validation: Delivered-In focused withdrawal/packet/index21/21 PASS. CPU full
+suite **291/291 PASS**, zero skips. Delivered-In full suite **130 tests,129 PASS,1 FAIL**,
+zero skips: existing `corrupt Grab & Go SQLite recovers from the preserved JSON source
+without returning an empty list` raises `Grab & Go operational persistence is unavailable`,
+cause `file is not a database` / `ERR_SQLITE_ERROR`26. This exact unchanged test/store
+failure was independently recorded before this task; it has no preserved JSON fixture.
+Classification: existing local SQLite recovery fixture/coverage gate, not a regression
+from these hosted withdrawal changes, not waived or counted green. Four known packet
+fixture failures now pin asOf to their September operational date; an obsolete read-shape
+assertion was updated to the new authority barrier, behavior covered by the reader test.
+Both app typechecks and webpack production builds PASS; diff check PASS.
+Initial focused CPU run found the old test expecting packageVersion increment on repeat;
+updated it to require unchanged packageVersion. Initial Delivered build caught test fixture
+and Dashboard types; corrected and rerun successfully. Generated CPU root-params import
+was removed from task diff; no runtime dependency change.
+Style Guide compliance PASS: existing light semantic text, distinct withdrawn label,
+no new visual primitives or polling. Logs under `artifacts/uat/consumer-p1-*`.
+Both P1 fixes locally validated before the12% threshold. Exact commit/deployment/live
+retest evidence follows. Production untouched; CHANGELOG remains explicitly protected.
+
 ## Baseline evidence
 
 Fetch and `git pull --ff-only origin main` completed; main already up to date.

@@ -132,6 +132,12 @@ export async function recoverRequestedWeek(request: NextRequest, oplocId: string
     const { reconcileDeliveredInDay } = await import("./delivered-in-reconciliation");
     const publishedDays = publications.flatMap(publication => projectPublishedWeeks([publication], oplocId, new Set([oplocId])).flatMap(week => week.days));
     const indexWindow = await readProjectionIndexWindow(oplocId, operationalDateLondon(), weekCommencing);
+    if (publications.some(publication => publication.publicationStatus === "withdrawn")) {
+      const indexed = new Map(indexWindow.entries.map(entry => [entry.serviceDate, entry]));
+      const dates = Array.from({ length: 5 }, (_, index) => addDays(weekCommencing, index));
+      await Promise.all(dates.filter(date => !indexWindow.withdrawnServiceDates.includes(date) || indexed.has(date)).map(date => reconcileDeliveredInDay(request, oplocId, date, { authoritativePublications: publications })));
+      return;
+    }
     const unavailableInWeek = [...new Set(knownUnavailableDates)].filter(date => date >= weekCommencing && date < toWeek);
     const packetDates = new Set(publishedDays.map(day => day.date));
     const omittedUnavailableDates = unavailableInWeek.filter(date => !packetDates.has(date));
@@ -236,7 +242,7 @@ export async function projectionHead(request: NextRequest, requestedOplocId?: st
   if (!selectedOplocId) return { access, sites, selectedOplocId: undefined, projectionState: "unavailable" as const, entries: [], withdrawnServiceDates: [], unavailableServiceDates: [] };
   assertAuthorisedOploc(access, selectedOplocId);
   let window = await readProjectionIndexWindow(selectedOplocId, operationalDateLondon(), requestedWeek);
-  if (requestedWeek && (!window.weeks.some(week => week.weekCommencing === requestedWeek) || window.unavailableServiceDates.some(date => date >= requestedWeek && date < addDays(requestedWeek, 7)))) {
+  if (requestedWeek) {
     await recoverRequestedWeek(request, selectedOplocId, requestedWeek, window.unavailableServiceDates);
     window = await readProjectionIndexWindow(selectedOplocId, operationalDateLondon(), requestedWeek);
   }

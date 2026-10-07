@@ -24,6 +24,7 @@ type ProjectionHeadEntry = {
   completeness: "complete" | "partial" | "missing" | "unavailable";
 };
 type Dashboard = {
+  withdrawnServiceDates?: string[];
   access: { email: string; oplocIds: string[]; permissions: string[] };
   sites: Array<
     Site & { services?: { deliveredIn: boolean; grabAndGo: boolean } }
@@ -565,6 +566,7 @@ export default function Page() {
           weeks: weeksFromHeadAndCachedDays(head.weeks, visibleCachedDays),
           projectionState: matches ? "current" : "stale",
           unavailableServiceDates: head.unavailableServiceDates,
+          withdrawnServiceDates: head.withdrawnServiceDates,
         });
       if (!matches) {
         const responseParams = new URLSearchParams({ oplocId: oplocId || nextSite });
@@ -814,7 +816,7 @@ export default function Page() {
               </div>
             ) : (
               <span className="ops-muted">
-                No published menu for the selected operational week.
+                {dashboard?.withdrawnServiceDates?.some(date => date >= selectedWeekCommencing && date < addDays(selectedWeekCommencing, 7)) ? "Menu withdrawn for the selected operational week." : "No published menu for the selected operational week."}
               </span>
             )}
             {selectedSite?.services?.grabAndGo && (
