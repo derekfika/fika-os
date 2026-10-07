@@ -18,6 +18,8 @@ import {
 } from "./store";
 import { fetchOplocs, fetchRequirements } from "./upstream";
 import { db } from "./firebase";
+import { movementDisplaySnapshots } from "./movement-labels";
+import type { GovernedOploc } from "./upstream";
 import { aggregateDelivery, compatibleAssignedLoad, compatibleLoad } from "./delivery-loads";
 import type { DeliveryLoad, DeliveryRun, DeliveryStop, LogisticsJob } from "./types";
 
@@ -91,7 +93,7 @@ export function logisticsJobMaterialisationEqual(left: LogisticsJob, right: Logi
 }
 
 /** Rebuild from Logistics-owned records without reading upstream systems. */
-export async function rebuildLogisticsProjection(serviceDate: string, _actorId: string, lastChangeSequence?: number) {
+export async function rebuildLogisticsProjection(serviceDate: string, _actorId: string, lastChangeSequence?: number, oplocs?: GovernedOploc[]) {
   const [state, legacyState, previous, collectionRequiredKeys] = await Promise.all([
     listDeliveryLoadState(serviceDate),
     listState(serviceDate),
@@ -104,7 +106,7 @@ export async function rebuildLogisticsProjection(serviceDate: string, _actorId: 
     ...state,
     runs: legacyState.runs,
     stops: legacyState.stops,
-    movements: legacyState.movements,
+    movements: movementDisplaySnapshots(legacyState.movements, previous?.movements, oplocs),
     collectionRequiredKeys,
     lastChangeSequence: effectiveSequence,
     now: new Date().toISOString(),
@@ -160,7 +162,10 @@ export async function reconcileLogisticsDay(serviceDate: string, by: string, act
     }
   }
   const previous = await getLogisticsProjection(serviceDate);
-  let projection = lastChangeSequence || !previous || previous.state === "STALE" ? await rebuildLogisticsProjection(serviceDate, by, lastChangeSequence) : previous;
+  // Reuse this reconciliation's existing bounded reference read to recover old
+  // projection labels. Authoritative movement versions/audits remain unchanged.
+  const labelsChanged = previous && JSON.stringify(movementDisplaySnapshots(previous.movements || [], [], oplocs)) !== JSON.stringify(previous.movements || []);
+  let projection = lastChangeSequence || !previous || previous.state === "STALE" || labelsChanged ? await rebuildLogisticsProjection(serviceDate, by, lastChangeSequence, oplocs) : previous;
   const lineageChanges = [...sourceChanges, ...(sourceChange ? [sourceChange] : [])];
   if (lineageChanges.length) {
     const nextLineage = [...(projection.sourceLineage || [])];

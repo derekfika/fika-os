@@ -483,7 +483,7 @@ export function buildPlannerDay(input: {
           ? {
               from: {
                 id: movement.fromOplocId,
-                label: oplocLabel(movement.fromOplocId),
+                label: oplocLabel(movement.fromOplocId, movement.fromLabelSnapshot),
               },
             }
           : movement.fromAddress
@@ -498,7 +498,7 @@ export function buildPlannerDay(input: {
           ? {
               to: {
                 id: movement.toOplocId,
-                label: oplocLabel(movement.toOplocId),
+                label: oplocLabel(movement.toOplocId, movement.toLabelSnapshot),
               },
             }
           : movement.toAddress

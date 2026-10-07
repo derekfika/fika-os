@@ -409,3 +409,38 @@ after the completed baseline comparison, deploy Hub staging at the exact validat
 then review a known event under the existing authorised session. Do not reset a
 delivered event or invent a dead letter to manufacture a live PASS. If no owned
 reviewable dead letter exists, keep actual reset/delivery live retest pending.
+
+## Governed movement labels and Hub recovery live review
+
+Baseline origin/main: `3446d5d9b58a5bd363e5655ec74a460bc3ce565d`.
+Hub build `uat-1007132239-3446d5d` is verified READY/current/100% at that exact SHA.
+Existing authorised administrator reviewed the owned cancellation event
+`logistics-projection:2026-10-13:cpu-production:production-order:v1:booking:mnk:2fdaea9b9ddbddf136163f3a5a11cd76:r12:oploc:66e621fa-6e6f-4f46-9aed-462313abbe8f:v2`
+on `/logistics-recovery`. PASS: exact lookup displays Delivered, source version 2,
+13 October, attempts 0, and no reset control. Read-only bounded query of at most
+10 existing dead letters returned zero. Actual dead-letter reset/delivery remains
+LIVE RETEST PENDING; no delivered event was reset or failure manufactured.
+Evidence: `artifacts/uat/recovery-owned-delivered-3446d5d.png` and
+`artifacts/uat/resume-dead-letter-review.json`.
+
+The confirmed movement queue label defect is fixed in source. Logistics owns the
+optional endpoint display snapshots; Hub's provider contract is unchanged. Normal
+movement creation derives labels server-side from canonical IDs and ignores client
+labels. Planner rendering consumes snapshots only as display fallback. Existing
+movements recover labels in their derived day projection using reconciliation's
+already-required bounded Hub reference read, without rewriting authoritative
+movement versions or audit history. Ordinary mutation rebuilds retain labels only
+when movement and endpoint IDs match, with no extra upstream read. No full reference
+catalogue is stored in a day projection; normal vehicle scope filters the movement
+and its labels together. New and old records remain compatible.
+
+Validation: Logistics **441/441 PASS** (203 isolated TypeScript + 238 CJS), zero
+skips; typecheck and production webpack build PASS. New real-route/materialisation
+regressions cover forged client labels, historical recovery without authoritative
+rewrite, same-name distinct IDs, no unrelated reference leakage, retained labels
+without upstream reread, unchanged reconciliation without a projection rewrite,
+endpoint replacement, and vehicle-only denial of unassigned movement metadata.
+Style Guide compliance PASS: existing light planner rendering retained.
+**CODE FIXED / LOCAL VALIDATION PASS / LIVE RETEST PENDING.** Deploy Logistics
+only at the resulting exact validated commit, refresh/reconcile owned
+`movement:1791375509831`, then verify Haleon label and persistence before Van 2 UAT.

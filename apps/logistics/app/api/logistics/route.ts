@@ -1229,9 +1229,9 @@ async function handlePost(request: NextRequest) {
         if (snapshot.exists) throw new HttpError(409, "This movement already exists. Refresh before creating another movement.");
         const movement: MovementRequest = {
           canonicalId: requested.canonicalId, entityType: "Movement Request", type: requested.type, serviceDate: requested.serviceDate,
-          ...(requested.fromOplocId ? { fromOplocId: requested.fromOplocId } : {}),
+          ...(requested.fromOplocId ? { fromOplocId: requested.fromOplocId, fromLabelSnapshot: labelFor(oplocs, requested.fromOplocId) } : {}),
           ...(requested.fromAddress?.trim() ? { fromAddress: requested.fromAddress.trim() } : {}),
-          ...(requested.toOplocId ? { toOplocId: requested.toOplocId } : {}),
+          ...(requested.toOplocId ? { toOplocId: requested.toOplocId, toLabelSnapshot: labelFor(oplocs, requested.toOplocId) } : {}),
           ...(requested.toAddress?.trim() ? { toAddress: requested.toAddress.trim() } : {}),
           ...(requested.requiredTime ? { requiredTime: requested.requiredTime } : {}),
           ...(requested.window ? { window: requested.window } : {}),

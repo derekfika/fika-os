@@ -8,8 +8,11 @@ export type MovementRequest = {
   type: MovementType;
   serviceDate: string;
   fromOplocId?: string;
+  /** Server-derived display metadata; canonical endpoint IDs remain authority. */
+  fromLabelSnapshot?: string;
   fromAddress?: string;
   toOplocId?: string;
+  toLabelSnapshot?: string;
   toAddress?: string;
   requiredTime?: string;
   window?: { startTime: string; endTime?: string };
