@@ -1,8 +1,27 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { notifyCpuProjection } from "../lib/cpu-projection-client";
+import { notifyCpuProjection, notifyMaterialisedCpuProjection } from "../lib/cpu-projection-client";
 
 const order = { canonicalId: "production-order:v1:booking:test", version: 3, serviceDate: "2026-09-01", updatedAt: "2026-09-01T10:00:00.000Z", createdAt: "2026-09-01T09:00:00.000Z" };
+
+test("materialised CPU notifications distinguish withdrawal revisions and replay the accepted current cancellation", async () => {
+  const previousFetch = globalThis.fetch;
+  const previousUrl = process.env.CPU_PRODUCTION_BASE_URL;
+  process.env.CPU_PRODUCTION_BASE_URL = "https://cpu.example.test";
+  const payloads: Record<string, unknown>[] = [];
+  globalThis.fetch = (async (_input, init) => { payloads.push(JSON.parse(String(init?.body))); return Response.json({ applied: true }); }) as typeof fetch;
+  try {
+    await notifyMaterialisedCpuProjection({ ...order, version: 4, status: "menu_available" });
+    const cancelled = { ...order, version: 5, status: "cancelled" as const };
+    await notifyMaterialisedCpuProjection(cancelled);
+    await notifyMaterialisedCpuProjection(cancelled);
+    assert.notEqual(payloads[0].idempotencyKey, payloads[1].idempotencyKey);
+    assert.equal(payloads[0].changeType, "amended");
+    assert.equal(payloads[1].changeType, "withdrawn");
+    assert.equal(payloads[1].revision, 5);
+    assert.deepEqual(payloads[2], payloads[1]);
+  } finally { globalThis.fetch = previousFetch; if (previousUrl === undefined) delete process.env.CPU_PRODUCTION_BASE_URL; else process.env.CPU_PRODUCTION_BASE_URL = previousUrl; }
+});
 
 test("hosted CPU projection propagation fails closed when CPU URL is absent", async () => {
   const previousMode = process.env.FIKA_RUNTIME_MODE;

@@ -2,6 +2,11 @@ import type { ProductionOrder } from "./production-domain";
 
 type CpuProjectionOrder = Pick<ProductionOrder, "canonicalId" | "version" | "serviceDate" | "updatedAt" | "createdAt">;
 
+export function notifyMaterialisedCpuProjection(order: CpuProjectionOrder & Pick<ProductionOrder, "status">) {
+  const changeType = order.status === "cancelled" ? "withdrawn" : order.version > 1 ? "amended" : "created";
+  return notifyCpuProjection(order, changeType, `cpu-projection:${order.canonicalId}:v${order.version}`);
+}
+
 function cpuBase() {
   const configured = process.env.CPU_PRODUCTION_BASE_URL?.trim();
   const hosted = ["staging", "production"].includes(process.env.FIKA_RUNTIME_MODE || "");

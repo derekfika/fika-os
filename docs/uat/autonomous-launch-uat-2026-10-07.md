@@ -51,6 +51,47 @@ governed retry skips delivered events, so its no-op cannot prove the Hub guard.
 No delivery history reset, artificial dead letter or publication payload rewrite.
 Evidence is ignored under `artifacts/uat/hub-guard-*`. Production untouched.
 
+### Live progress and second directly relevant Hub defect
+
+Initial `e2adb67` rollout READY/current/100% at 18:24:34Z. Same-version cancellation
+fix pushed as `e6826baaeeb4b71e678cfad756f50b73a88fe89e`, deployed Hub only,
+`uat-1007192502-e6826ba`, READY/SUCCEEDED/current/100% at 18:30:04Z.
+Build operation `operation-1791397502777-65d443bcdf92b-c37736ad-368dcb31`;
+rollout operation `operation-1791397503031-65d443bd1d7fc-900fb17f-77f80b49`.
+Normal UI amendment 13→14 produced v3 at 18:25:42.324Z; second 14→15 produced v4
+at 18:26:50.944Z. Publish HTTP 200 latencies 2.177217s and 2.381263s. Production
+events delivered automatically at 18:26:09.070Z and 18:27:05.970Z respectively.
+Exactly one Production/Fulfilment/Logistics record at v4/quantity15/audit count4.
+Exact v2 replay returned duplicate=true, created=false, current sourceVersion4,
+canonical version4, quantity15, audit4, CPU/Logistics handoff delivered.
+All three bounded canonical/downstream JSON snapshots were byte-for-byte unchanged.
+Menu reload retained clean published v4/delivered; CPU showed one Haleon dish x15;
+Delivered-In showed Menu v4/15 portions, awaiting separate CPU allergen sign-off.
+
+Normal whole-week withdrawal on `e6826ba` returned HTTP200 in **2.361519s**, request
+18:30:32.124200Z; all six durable events occurred 18:30:34.421Z. UI showed
+Withdrawn/pending; browser reload did not remove the obligation. Production became
+cancelled canonical version5/sourceVersion4, audit5; Fulfilment/Logistics became
+withdrawn version/sourceVersion5, audit5. Logistics owned queue/load/movement counts0.
+
+**Second proven directly relevant P1:** Hub's CPU notification key used Menu content
+version, which is unchanged on withdrawal. CPU reuses the earlier amendment receipt
+and fails its monotonic same-sequence/different-content projection check. The owned
+withdrawal materialisation event persisted failed/retryable with CPU handoff pending;
+CPU projection still v4/menu_available. No failure manufactured or terminal reset.
+Minimal Hub route fix derives notification identity from accepted canonical order ID
+and revision, and changeType from the accepted order state, so stale replay forwards
+current cancellation rather than the obsolete input action. DTO/auth unchanged;
+no CPU/Menu source edit or deployment. Provider/consumer/adapter tests **33/33 PASS**.
+CPU projection/durable consumer tests **23/23 PASS** with explicit
+`FIKA_CPU_PLAN_STORE=memory`, `NODE_ENV=test`. Initial additional run selected
+Firestore while six fixtures asserted the memory-only test store (17 pass/6 fail);
+this harness configuration failure is retained in evidence, not reported green.
+Automatic review rejected the premature commit/push; corrected documented test
+store selection passed before retrying. Hub typecheck/webpack build/diff check PASS.
+Final rollout and automatic recovery evidence follows; do not call this interim gate
+PASS while CPU remains stale.
+
 ## Baseline evidence
 
 Fetch and `git pull --ff-only origin main` completed; main already up to date.
