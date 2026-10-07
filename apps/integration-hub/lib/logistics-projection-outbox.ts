@@ -5,6 +5,7 @@ import {
   markEventDelivered,
   markEventFailed,
   outboxRecord,
+  resetEventForReplay,
   type DurableDomainEvent,
 } from "@fika/server-shared/durable-outbox";
 import { fulfilmentDeliveryContentEqual, type FulfilmentRequirement, type ProductionOrderFulfilmentSource } from "../../shared/fulfilment-requirement";
@@ -13,6 +14,7 @@ import {
   type LogisticsProjectionInvalidation,
 } from "../../shared/logistics-projection";
 import { db } from "./firebase-admin";
+import { stableDocumentId } from "./canonical-editor";
 import { notifyLogisticsProjection, notifyLogisticsProjectionBatch } from "./logistics-projection-client";
 
 export type LogisticsProjectionOutboxEvent = DurableDomainEvent<LogisticsProjectionInvalidation>;
@@ -135,6 +137,40 @@ export async function repairLogisticsProjectionForServiceDate(serviceDate: strin
 export async function getLogisticsProjectionOutboxEvent(eventId: string) {
   const snapshot = await outbox().doc(eventId).get();
   return snapshot.exists ? snapshot.data() as LogisticsProjectionOutboxEvent : undefined;
+}
+
+/** Reviewed recovery of one exact dead letter, with immutable atomic evidence. */
+export async function resetLogisticsProjectionDeadLetter(input: {
+  eventId: string; commandId: string; expectedAttempts: number; expectedDeadLetteredAt: string;
+  reason: string; actorId: string;
+}) {
+  const auditId = stableDocumentId(`${input.eventId}:${input.commandId}`);
+  return db.runTransaction(async transaction => {
+    const ref = outbox().doc(input.eventId);
+    const auditRef = db.collection("fikaLogisticsProjectionReplayAuditV1").doc(auditId);
+    const [snapshot, auditSnapshot] = await Promise.all([transaction.get(ref), transaction.get(auditRef)]);
+    if (!snapshot.exists) throw Object.assign(new Error("Logistics update not found."), { status: 404 });
+    const current = snapshot.data() as LogisticsProjectionOutboxEvent;
+    if (auditSnapshot.exists) {
+      const prior = auditSnapshot.data() as { actorId: string; eventId: string; reason: string; expectedAttempts: number; expectedDeadLetteredAt: string };
+      if (prior.actorId !== input.actorId || prior.eventId !== input.eventId || prior.reason !== input.reason || prior.expectedAttempts !== input.expectedAttempts || prior.expectedDeadLetteredAt !== input.expectedDeadLetteredAt)
+        throw Object.assign(new Error("This recovery reference was already used for a different command."), { status: 409 });
+      return { event: current, auditId, changed: false };
+    }
+    if (current.delivery.status !== "dead-letter" || current.delivery.attempts !== input.expectedAttempts || current.delivery.deadLetteredAt !== input.expectedDeadLetteredAt)
+      throw Object.assign(new Error("This Logistics update changed. Review its current failure before retrying."), { status: 409 });
+    const at = new Date().toISOString();
+    const next = resetEventForReplay(current, at, input.reason);
+    transaction.create(auditRef, {
+      id: auditId, action: "logistics-projection-dead-letter-replayed", at, actorId: input.actorId,
+      reason: input.reason, commandId: input.commandId, eventId: current.eventId,
+      expectedAttempts: input.expectedAttempts, expectedDeadLetteredAt: input.expectedDeadLetteredAt,
+      sourceAggregateId: current.sourceAggregateId, sourceVersion: current.sourceVersion,
+      beforeDelivery: current.delivery, afterDelivery: next.delivery,
+    });
+    transaction.set(ref, outboxRecord(next));
+    return { event: next, auditId, changed: true };
+  });
 }
 
 export async function deliverLogisticsProjection(eventId: string) {

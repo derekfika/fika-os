@@ -15,8 +15,8 @@ test("Logistics outbox replay batches due events through one projection notifica
 });
 
 test("bounded Logistics outbox recovery has an explicit scheduler pattern", () => {
-  const scheduler = readFileSync(new URL("../../docs/deployment/integration-hub-logistics-outbox-scheduler.md", import.meta.url), "utf8");
+  const scheduler = readFileSync(new URL("../../../docs/deployment/integration-hub-logistics-outbox-scheduler.md", import.meta.url), "utf8");
   assert.match(scheduler, /gcloud scheduler jobs create http/);
   assert.match(scheduler, /--message-body='\{"limit":25\}'/);
-  assert.match(scheduler, /bounded batch/);
+  assert.match(scheduler, /bounded\s+batch/);
 });

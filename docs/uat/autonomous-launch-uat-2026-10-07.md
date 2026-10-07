@@ -326,3 +326,86 @@ form/styles and semantic buttons/status/alert retained.
 **CODE FIXED / LOCAL VALIDATION PASS / LIVE RETEST PENDING.** Commit/push, deploy
 Logistics only at the exact validated SHA, then narrow real governed picker/save
 regression using owned UAT work. CPU remains current at `9aa2cba`.
+
+## Full Hub suite — exact remaining baseline failures
+
+Trusted `NODE_ENV=test npm test` against isolated local demo-fika-os Firestore
+executed **480 tests: 467 PASS, 13 FAIL**, zero skips. This supersedes the earlier
+ENOMEM/zero-test limitation; full Hub is not green. Initial resume attempt was
+stopped because the required local emulator was absent (one Firestore test waited
+279 seconds); that environment run is not the authoritative result. Emulator was
+then started without any cloud import/export and the complete suite executed.
+Raw local evidence: `artifacts/uat/resume-hub-full-emulator.log`. Exact failure names
+and diagnostic errors below retain the assertions without reproducing enormous
+source-code strings printed as their Input/actual values.
+
+| Exact failed test | Exact error / assertion | Location / disposition |
+| --- | --- | --- |
+| ADDR-001 is Accepted and LOC-003 remains authoritative and unchanged | `Error: ENOENT: no such file or directory, open 'C:\Fika\fika-os\fika-platform-specs\docs\business-decisions\addr-001-canonical-address.md'` | address-workflow.test.ts:80; missing external specification dependency |
+| canonical boundary exposes published OPLOCs only with type filters and deterministic pagination | `AssertionError [ERR_ASSERTION]: Expected values to be strictly deep-equal:` actual `[]`, expected `['oploc:a']` | canonical-boundary.test.ts:11; pending investigation |
+| completeness register covers restricted and unknown BrightHR fields | `AssertionError [ERR_ASSERTION]: The expression evaluated to a falsy value:` `assert.ok(BrightHrCompleteness.some(field => field.fieldId === "brighthr:start-date" && field.classification === "unknown-investigation"))` | canonical-governance.test.ts:26; pending investigation |
+| tests\connections-home.test.ts | `TypeError [ERR_UNKNOWN_FILE_EXTENSION]: Unknown file extension ".css" for C:\Fika\fika-os\apps\integration-hub\app\ui\MenuRoutingPanel.css`; runner `'test failed'` | Node CSS import unsupported; legitimate test adapter still needed |
+| service and allocation actions require explicit confirmation and support restoration | `AssertionError [ERR_ASSERTION]: The input did not match the regular expression /window\.confirm/. Input:` | connections-lifecycle-actions.test.ts:25; stale native-dialog assertion conflicts with Style Guide |
+| Delivered-In synthetic access is explicit and OPLOC-ID based | `AssertionError [ERR_ASSERTION]: Expected values to be strictly deep-equal:` actual `[]`, expected `['oploc:46701265-15af-48f4-a230-1d27ca21bc59']` | delivered-in-access.test.ts:13; pending fixture/contract investigation |
+| decommissioned OPLOCs never enter Delivered-In access | `AssertionError [ERR_ASSERTION]: Expected values to be strictly deep-equal:` actual `[]`, expected `['Haleon', 'FIKA Xchange']` | delivered-in-access.test.ts:24; pending investigation |
+| integration admins receive all active canonical OPLOCs | `AssertionError [ERR_ASSERTION]: Expected values to be strictly deep-equal:` actual `[]`, expected `['oploc:46701265-15af-48f4-a230-1d27ca21bc59']` | delivered-in-access.test.ts:32; pending investigation |
+| Logistics admission route has one stable server trace boundary | `AssertionError [ERR_ASSERTION]: The input did not match the regular expression /resolveUserAccess\(new FirestoreAuthModRepository\(\), \{ principal, appId: "logistics" \}\)/. Input:` | logistics-admission-trace.test.ts; current shared evaluation context differs; pending assertion review |
+| bounded Logistics outbox recovery has an explicit scheduler pattern | `Error: ENOENT: no such file or directory, open 'C:\Fika\fika-os\apps\docs\deployment\integration-hub-logistics-outbox-scheduler.md'` | logistics-replay-boundaries.test.ts:18; relative path corrected as part of recovery validation; retest pending |
+| Service Definition steady-state GET reads the package; canonical reads remain rebuild-only | `AssertionError [ERR_ASSERTION]: The input was expected to not match the regular expression /rebuildServiceDefinitionsReadPackage/. Input:` | service-definitions-read-package.test.ts:28; provider missing-package semantics require investigation |
+| package misses require explicit authenticated rebuild instead of synchronous GET reconstruction | `AssertionError [ERR_ASSERTION]: The input did not match the regular expression /z\.enum\(\["oplocs", "service-arrangements", "service-definitions", "authmod-references"\]\)/. Input:` | service-definitions-read-package.test.ts:57; current dataset list differs; pending review |
+| cancel creates no mutation and saves refresh both views | `AssertionError [ERR_ASSERTION]: The input did not match the regular expression /type="button" onClick=\{close\}>Cancel/. Input:` | site-staffing.test.ts:277; pending current modal/refresh assertion review |
+
+Do not mark any unresolved assertion PASS merely because it looks stale. Verify
+the current contract and replace stale coverage with meaningful invariants where
+appropriate; do not reinstate prohibited native dialogs or broaden access.
+
+## Location picker — narrow live evidence and new label defect
+
+Logistics commit `898b0c9da2e2233bfea185f2858e35f78879c2ee` pushed and build
+`uat-1007130519-898b0c9` verified READY/current 100% exact SHA. Real staging form
+loaded 19 governed locations. Normal save selected canonical Haleon
+`oploc:bb4c7eea-87f5-4e79-8ed6-b973b24ded7b`, 1 item named
+`FIKA-AUTOUAT-20261007-VAN2 governed delivery`, 12 October 14:00–14:30, uniquely
+marked staging-only notes. Exact new record `movement:1791375509831` is open v1,
+created/updated at 2026-10-07T12:18:29Z. No real delivery or notification occurred.
+
+**PASS:** governed picker load and canonical normal save. **New confirmed P1:**
+the planning queue labels this saved canonical movement “Unknown governed destination”.
+Trace its projection/label path; preserve the stable OPLOC and movement IDs, use
+governed display metadata, and do not join or authorise by label. This movement is
+owned Van 2 UAT preparation; it has not been assigned/executed yet.
+
+## Exact Hub Logistics dead-letter recovery remediation
+
+The normal worker intentionally excludes dead letters. A new administrator-only
+exact-event lookup/replay endpoint and `/logistics-recovery` review surface support
+one reviewed recovery, with no bulk reset. Existing Integration Administrator and
+canonical.edit admission precede any event read. POST requires one event ID, UUID
+command reference, reason, expected attempts and exact reviewed dead-letter timestamp.
+The transaction reads only event+command audit IDs, checks stale review/state and
+atomically resets the existing event with an immutable before/after delivery audit.
+Payload, ID, source version, correlation and source history remain unchanged.
+Normal leasing/bounded worker delivery resumes outside that atomic reset; a process
+or network failure therefore leaves a durable retry obligation. Same command retry
+is idempotent; a different command/actor/reason/state conflicts. Original failure
+evidence remains in `fikaLogisticsProjectionReplayAuditV1`.
+
+Validation: focused real-route/service 8/8 PASS; directly affected Hospitality/
+Fulfilment/reconciliation/outbox provider regressions 27/27 PASS, including those
+eight. Typecheck and production webpack build PASS. Isolated rendered Chromium
+checks PASS for denied admission, reviewed one-event scope, required reason, uncertain
+response retry retaining the same UUID/body, delivered feedback and 44px purple/
+white semantic controls. New local review page uses shared FIKA tokens; Style Guide
+compliance PASS. The old scheduler-document regression had a wrong relative path
+and an assertion that rejected Markdown line wrapping; both corrected and PASS.
+Final full Hub suite: **488 tests, 476 PASS, 12 FAIL, zero skips**. The eight new
+recovery tests pass and the scheduler-document test now passes; the other 12 exact
+baseline names/errors above persist with no new failures. Evidence:
+`artifacts/uat/resume-hub-recovery-full-final.log`. Unresolved baseline failures
+remain RC gates; full Hub is not claimed green.
+
+**CODE FIXED / LOCAL VALIDATION PASS / LIVE RETEST PENDING.** Commit/push only
+after the completed baseline comparison, deploy Hub staging at the exact validated SHA,
+then review a known event under the existing authorised session. Do not reset a
+delivered event or invent a dead letter to manufacture a live PASS. If no owned
+reviewable dead letter exists, keep actual reset/delivery live retest pending.
