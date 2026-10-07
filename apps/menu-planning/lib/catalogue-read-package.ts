@@ -3,7 +3,7 @@ import { recordDataAccess } from "@fika/server-shared/data-source-meter-server";
 import { catalogueEntriesForItems, type CatalogueEntry } from "./catalogue";
 import { cataloguePackageStore, dataset, manifestKey, recordSnapshotAccess } from "./catalogue-package-store";
 import type { ReadPackageStore } from "@fika/server-shared/read-package";
-import { ensureCatalogueSourceIdentity, getCatalogueManifest, markCataloguePackageCurrent, markCataloguePackageFailed, type CatalogueManifest } from "./catalogue-manifest";
+import { ensureCatalogueSourceIdentity, getCatalogueManifest, getMaterialisableCatalogueManifest, markCataloguePackageCurrent, markCataloguePackageFailed, type CatalogueManifest } from "./catalogue-manifest";
 import { catalogueSourceHash, catalogueSourceVersion } from "./catalogue-source";
 import { listCanonicalMenuItems } from "./canonical-menu-repository";
 
@@ -21,7 +21,7 @@ const packageStoreId = (store: ReadPackageStore) => {
 };
 
 async function rebuildCataloguePackage(store: ReadPackageStore) {
-  const source = await getCatalogueManifest();
+  const source = await getMaterialisableCatalogueManifest();
   const result = await materialiseCataloguePackage(undefined, source, store);
   if (result.status !== "current" || !result.manifest) throw result.error || Object.assign(new Error("The Menu Planning catalogue package could not be rebuilt for the authoritative source."), { status: 503, code: "CATALOGUE_PACKAGE_STALE" });
   return result.manifest;

@@ -19,7 +19,12 @@ const write = async (value: Stored) => { await updateRollingState<Stored>(curren
 const dateFromName = (name: string) => { const m = name.match(/(\d{2})[._-](\d{2})[._-](\d{2,4})/); if (!m) return undefined; const y = m[3].length === 2 ? `20${m[3]}` : m[3]; return `${y}-${m[2]}-${m[1]}`; };
 const addDays = (iso: string, days: number) => { const d = new Date(`${iso}T00:00:00Z`); d.setUTCDate(d.getUTCDate() + days); return d.toISOString().slice(0, 10); };
 export function planningWeekCommencing(date: string) { const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date); if (!match) return planningWeekCommencing(operationalDate()); const value = new Date(`${date}T00:00:00Z`); if (Number.isNaN(value.getTime()) || value.toISOString().slice(0, 10) !== date) return planningWeekCommencing(operationalDate()); const day = value.getUTCDay(); value.setUTCDate(value.getUTCDate() - (day === 0 ? 6 : day - 1)); return value.toISOString().slice(0, 10); }
-export function planningWeekFromQuery(value: string | undefined, fallback = operationalDate()) { return planningWeekCommencing(value?.replace(/^rolling-week:/, "") || fallback); }
+export function planningWeekFromQuery(value: string | undefined, fallback = operationalDate()) {
+  const candidate = value?.replace(/^rolling-week:/, "");
+  const parsed = candidate && /^\d{4}-\d{2}-\d{2}$/.test(candidate) ? new Date(`${candidate}T00:00:00Z`) : undefined;
+  const valid = parsed && !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === candidate;
+  return planningWeekCommencing(valid ? candidate! : fallback);
+}
 const dayName = (date: string) => new Date(`${date}T00:00:00Z`).toLocaleDateString("en-GB", { weekday: "long", timeZone: "UTC" });
 const slotOf = (value: unknown): RollingSlot | undefined => { const text = String(value ?? "").trim().toUpperCase(); if (ROLLING_SLOTS.includes(text as RollingSlot)) return text as RollingSlot; if (/^EXTRAS/.test(text)) return "EXTRAS 1"; return undefined; };
 export type LiveGovernedOploc = { canonicalId: string; label: string; legacyIds?: string[] };

@@ -4,7 +4,7 @@ import { appDataPath } from "./fika-contracts";
 import { assertOperationalStoreAvailable } from "./hosted-runtime";
 import { recordDataAccess } from "@fika/server-shared/data-source-meter-server";
 import { cataloguePackageStore, manifestKey } from "./catalogue-package-store";
-import { catalogueSourceHash } from "./catalogue-source";
+import { catalogueSourceHash, CATALOGUE_SOURCE_HASH_VERSION } from "./catalogue-source";
 
 export type CataloguePackageState = {
   status: "pending" | "current" | "failed";
@@ -23,6 +23,7 @@ export type CatalogueManifest = {
   catalogueVersion: number;
   sourceRevision?: number;
   sourceHash?: string;
+  sourceHashVersion?: number;
   updatedAt?: string;
   dishCount?: number;
   packageState?: CataloguePackageState;
@@ -47,6 +48,7 @@ export async function getCatalogueManifest(): Promise<CatalogueManifest> {
     return {
       schemaVersion: Number(value.schemaVersion || 1), catalogueVersion: sourceRevision, sourceRevision,
       sourceHash: typeof value.sourceHash === "string" ? value.sourceHash : undefined,
+      sourceHashVersion: Number(value.sourceHashVersion || 1),
       updatedAt: typeof value.updatedAt === "string" ? value.updatedAt : undefined,
       dishCount: typeof value.dishCount === "number" ? value.dishCount : undefined,
       packageState: value.packageState as CataloguePackageState | undefined,
@@ -60,7 +62,7 @@ export async function getCatalogueManifest(): Promise<CatalogueManifest> {
     const sourceRevision = Number(value.sourceRevision ?? value.version ?? 0);
     return {
       schemaVersion: 1, catalogueVersion: sourceRevision, sourceRevision,
-      sourceHash: catalogueSourceHash(items), updatedAt: value.updatedAt, dishCount: items.length,
+      sourceHash: catalogueSourceHash(items), sourceHashVersion: CATALOGUE_SOURCE_HASH_VERSION, updatedAt: value.updatedAt, dishCount: items.length,
       packageState: value.packageState as CataloguePackageState | undefined,
       lastMutationBy: typeof value.lastMutationBy === "string" ? value.lastMutationBy : undefined,
     };
@@ -74,6 +76,34 @@ export async function getPublishedCatalogueManifest(): Promise<CatalogueManifest
   const manifest = await cataloguePackageStore().getManifest(manifestKey);
   if (!manifest) return getCatalogueManifest();
   return { schemaVersion: manifest.schemaVersion, catalogueVersion: manifest.packageVersion, sourceRevision: manifest.packageVersion, sourceHash: manifest.sourceHash, updatedAt: manifest.generatedAt, dishCount: manifest.recordCount, package: manifest };
+}
+
+/** Metadata-only compatibility migration. The transaction certifies the complete current catalogue,
+ * advances the cache revision once, and leaves authoritative dish records and old packages intact. */
+export async function migrateLegacyCatalogueSourceIdentity(db = firestore()): Promise<void> {
+  const ref = db.collection(collectionName).doc("catalogue");
+  await db.runTransaction(async transaction => {
+    const snapshot = await transaction.get(ref);
+    const value = snapshot.exists ? snapshot.data() || {} : {};
+    if (Number(value.sourceHashVersion || 1) >= CATALOGUE_SOURCE_HASH_VERSION && value.sourceHash) return;
+    const records = await transaction.get(db.collection("fikaMenuPlanningCatalogue").where("kind", "==", "dish").limit(1501));
+    if (records.size > 1500) throw Object.assign(new Error("Catalogue compatibility migration exceeds its read bound."), { status: 503, code: "CATALOGUE_MIGRATION_READ_LIMIT" });
+    recordDataAccess({ app: "menu-planning", operation: "catalogue.source-identity-migration", source: "FIRESTORE", documents: records.size, firestoreReadKind: "transaction" });
+    const items = records.docs.map(document => (document.data().record || document.data()) as import("./domain").MenuItem);
+    const sourceRevision = Number(value.sourceRevision ?? value.catalogueVersion ?? 0) + 1;
+    const sourceHash = catalogueSourceHash(items);
+    const now = new Date().toISOString();
+    transaction.set(ref, { schemaVersion: 1, sourceHashVersion: CATALOGUE_SOURCE_HASH_VERSION, catalogueVersion: sourceRevision, sourceRevision, sourceHash, dishCount: items.length, updatedAt: now, packageState: { status: "pending", sourceRevision, sourceHash, requestedAt: now, updatedAt: now, attempts: 0 } }, { merge: true });
+  });
+}
+
+let sourceMigrationInFlight: Promise<void> | undefined;
+export async function getMaterialisableCatalogueManifest(): Promise<CatalogueManifest> {
+  const current = await getCatalogueManifest();
+  if (!hosted() || current.sourceHashVersion === CATALOGUE_SOURCE_HASH_VERSION && current.sourceHash) return current;
+  if (!sourceMigrationInFlight) sourceMigrationInFlight = migrateLegacyCatalogueSourceIdentity().finally(() => { sourceMigrationInFlight = undefined; });
+  await sourceMigrationInFlight;
+  return getCatalogueManifest();
 }
 
 function stateError(error: unknown) {

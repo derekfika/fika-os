@@ -11,7 +11,7 @@ import { Firestore } from "@google-cloud/firestore";
 import { recordMenuPlanningReadBudget } from "./read-budget";
 import { getCatalogueManifest } from "./catalogue-manifest";
 import { recordDataAccess } from "@fika/server-shared/data-source-meter-server";
-import { catalogueSourceHash } from "./catalogue-source";
+import { catalogueSourceHash, CATALOGUE_SOURCE_HASH_VERSION } from "./catalogue-source";
 import { markCataloguePackageFailed, type CataloguePackageState } from "./catalogue-manifest";
 
 const filePath = appDataPath("menu-planning", "menu-planning", "canonical-menu-items.json");
@@ -114,7 +114,7 @@ async function writeItems(items: MenuItem[], options: { currentItems?: MenuItem[
         transaction.set(ref, sanitiseFirestoreValue({ ...(existing ? { id: item.canonicalId, kind: "dish", record: existing } : hostedDocument(item)), id: item.canonicalId, kind: "dish", record: item }), { merge: true });
       }
       const at = new Date().toISOString();
-      transaction.set(manifestRef, sanitiseFirestoreValue({ schemaVersion: 1, catalogueVersion: sourceRevision, sourceRevision, sourceHash, updatedAt: at, dishCount: authoritativeItems.length, packageState: { status: "pending", sourceRevision, sourceHash, requestedAt: at, updatedAt: at, attempts: 0 } satisfies CataloguePackageState, ...(options.actor ? { lastMutationBy: options.actor } : {}) }), { merge: true });
+      transaction.set(manifestRef, sanitiseFirestoreValue({ schemaVersion: 1, sourceHashVersion: CATALOGUE_SOURCE_HASH_VERSION, catalogueVersion: sourceRevision, sourceRevision, sourceHash, updatedAt: at, dishCount: authoritativeItems.length, packageState: { status: "pending", sourceRevision, sourceHash, requestedAt: at, updatedAt: at, attempts: 0 } satisfies CataloguePackageState, ...(options.actor ? { lastMutationBy: options.actor } : {}) }), { merge: true });
     });
     recordDataAccess({ app: "menu-planning", operation: "catalogue.mutation-write", source: "FIRESTORE", documents: requested.length, estimatedFirestoreWrites: requested.length });
     invalidateHostedCatalogueCache();
