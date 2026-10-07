@@ -9,6 +9,7 @@ import type { FulfilmentRequirement } from "../../shared/fulfilment-requirement"
 import { fulfilmentWorkstream } from "../../shared/fulfilment-workstream";
 import type { DeliveryRun, DeliveryStop, MovementRequest } from "../lib/types";
 import { VehicleAuthorityProvider, useVehicleAuthority } from "./vehicle-authority";
+import { useMovementLocations } from "./use-movement-locations";
 import { logisticsVehicleLabel, type LogisticsVehicleId } from "../../shared/logistics-authority";
 import {
   workGroupQueueState,
@@ -815,7 +816,6 @@ function PlannerContents() {
         <MovementForm
           draft={draft}
           setDraft={setDraft}
-          oplocs={data?.oplocs || []}
           onClose={() => setShowMovement(false)}
           onSave={createMovement}
           busy={busy}
@@ -1716,7 +1716,7 @@ function RealPlanner(props: RealPlannerProps) {
       <div className="mock-updated">{props.refreshing ? "Refreshing…" : props.data?.fetchedAt ? `Last updated ${new Date(props.data.fetchedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}` : "Waiting for data"}<Health health={data?.planner.upstreamHealth} /></div>
       {props.passiveSyncError && <div className="passive-sync-warning" role="status" aria-live="polite">{props.passiveSyncError}</div>}
       {props.error && <div className="alert" role="alert"><span>{props.error}{props.errorReference && <> <small>Reference: {props.errorReference}</small></>}</span><button className="secondary" onClick={() => void props.load(true, props.projectionNeedsMaterialisation)} disabled={props.refreshing}>{props.projectionNeedsMaterialisation ? "Materialise and retry" : "Try again"}</button>{props.authRequired && <button className="secondary" onClick={props.onSignInAgain}>Sign in again</button>}</div>}
-      {props.showMovement && <MovementForm draft={props.draft} setDraft={props.setDraft} oplocs={data?.oplocs || []} onClose={() => props.setShowMovement(false)} onSave={props.createMovement} busy={props.busy} />}
+      {props.showMovement && <MovementForm draft={props.draft} setDraft={props.setDraft} onClose={() => props.setShowMovement(false)} onSave={props.createMovement} busy={props.busy} />}
       <section className="mock-selected-day"><div><span>▣</span><strong>{selectedDateLabel}</strong><small>{metric(summary?.loads)} loads · {metricsReady ? runs.length : "—"} vans &nbsp;·&nbsp; {metric(summary?.scheduledStops)} scheduled · {queueCount} in queue · {metric(summary?.needsTime)} needs time · {metric(summary?.attention)} attention</small></div><div className="mock-actions"><button onClick={() => props.setShowRunCreate(true)}>＋ New run</button><button onClick={() => props.setShowMovement(true)} disabled={!data?.planner.upstreamHealth.oplocs.available}>＋ New movement</button><button onClick={() => void props.load(true)} disabled={props.refreshing} aria-busy={props.refreshing}>{props.refreshing ? "Refreshing…" : "↻ Refresh"}</button><a href={runs.length === 1 ? `/mobile?run=${encodeURIComponent(runs[0].runId)}` : "/mobile"}>▦ Driver view</a></div></section>
       {props.showRunCreate && <RunCreatePopover driverId={props.newRunDriverId} setDriverId={props.setNewRunDriverId} driverOptions={props.data?.runs || []} returnToCpuRequired={props.newRunReturnToCpu} setReturnToCpuRequired={props.setNewRunReturnToCpu} onCreate={props.createRun} onClose={() => props.setShowRunCreate(false)} />}
       <section className="mock-workspace">
@@ -3133,18 +3133,17 @@ function JobDetailScreen({ workstream, contents, notes, onBack }: { jobId: strin
 function MovementForm({
   draft,
   setDraft,
-  oplocs,
   onClose,
   onSave,
   busy,
 }: {
   draft: Draft;
   setDraft: (draft: Draft) => void;
-  oplocs: Oploc[];
   onClose: () => void;
   onSave: () => void;
   busy: boolean;
 }) {
+  const { oplocs, loading: locationsLoading, error: locationsError, retry: retryLocations } = useMovementLocations();
   const field = (key: keyof Draft, value: string) =>
     setDraft({ ...draft, [key]: value });
   return (
@@ -3161,11 +3160,8 @@ function MovementForm({
           ×
         </button>
       </header>
-      {!oplocs.length && (
-        <div className="movement-form-notice">
-          Integration Hub locations are unavailable. You can still enter a one-off address.
-        </div>
-      )}
+      {locationsLoading && <div className="movement-form-notice" role="status">Loading governed locations…</div>}
+      {locationsError && <div className="movement-form-notice" role="alert">{locationsError} <button type="button" className="secondary-action" onClick={() => void retryLocations()} disabled={locationsLoading}>Retry locations</button></div>}
       <>
           <div className="form-grid">
             <label>

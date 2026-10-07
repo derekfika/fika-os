@@ -3,15 +3,17 @@ import { projectionToDashboardData } from "../../lib/projection-dashboard-adapte
 import type { LogisticsDayProjection } from "../../lib/types";
 
 const date = "2099-01-05";
-async function mockAuthority(page: Page, options: { unavailable?: boolean; restricted?: boolean } = {}) {
+async function mockAuthority(page: Page, options: { unavailable?: boolean; restricted?: boolean; locationFailures?: number } = {}) {
   const ids = options.restricted ? ["van1" as const] : ["van1" as const, "van2" as const];
   const projection: LogisticsDayProjection = { serviceDate: date, revision: 1, lastChangeSequence: 1, state: "CURRENT", planningQueue: [], deliveryLoads: [], runs: ids.map(id => ({ canonicalId: "run:" + id, vehicleId: id, vehicleLabel: id === "van1" ? "Van 1" : "Van 2", status: "planned", serviceDate: date, orderedStopIds: [], version: 1 })), stops: [], movements: [], exceptions: [], summary: { queuedJobs: 0, loads: 0, assignedJobs: 0, collectedJobs: 0 }, rebuiltAt: new Date().toISOString() };
   const commands: Record<string, any>[] = [];
   const reads: URL[] = [];
+  let locationAttempts = 0;
   await page.route("**/api/**", async route => {
     const url = new URL(route.request().url());
     if (route.request().method() === "GET") reads.push(url);
     if (url.pathname === "/api/logistics/vehicles") return route.fulfill(options.unavailable ? { status: 503, json: { error: { message: "Unavailable" } } } : { json: { permittedVehicleIds: ids } });
+    if (url.pathname === "/api/logistics/locations") return route.fulfill(++locationAttempts <= (options.locationFailures || 0) ? { status: 503, json: { error: { message: "Governed locations are temporarily unavailable." } } } : { json: { oplocs: [{ id: "oploc:governed-uat", label: "Governed UAT site" }] } });
     if (url.pathname === "/api/logistics/drivers") return route.fulfill({ status: 503, json: { error: { message: "No driver login catalogue" } } });
     if (route.request().method() === "POST") { commands.push(route.request().postDataJSON()); return route.fulfill({ json: { runs: projection.runs, changed: false } }); }
     if (url.searchParams.get("syncHead")) return route.fulfill({ headers: { "x-logistics-cache-scope": "shared-session:" + ids.join(",") }, json: { sequence: projection.lastChangeSequence } });
@@ -39,6 +41,30 @@ test.describe("Shared Logistics session and vehicle execution", () => {
     await expect.poll(() => mock.commands.find(command => command.action === "create-run")?.run.vehicleId).toBe("van2");
     expect(mock.commands.find(command => command.action === "create-run")?.run.driverId).toBeUndefined();
     expect(mock.reads.some(url => url.pathname.endsWith("/drivers"))).toBe(false);
+  });
+  test("movement form loads governed reference lazily and submits canonical identity", async ({ page }) => {
+    const mock = await mockAuthority(page); await page.goto("/?serviceDate=" + date);
+    await expect(page.getByRole("button", { name: /New movement/ })).toBeEnabled();
+    expect(mock.reads.some(url => url.pathname === "/api/logistics/locations")).toBe(false);
+    await page.getByRole("button", { name: /New movement/ }).click();
+    await expect(page.getByRole("combobox", { name: "To OPLOC", exact: true }).locator("option")).toHaveCount(2);
+    await page.getByRole("combobox", { name: "To OPLOC", exact: true }).selectOption("oploc:governed-uat");
+    await page.getByLabel("Item description", { exact: true }).fill("UAT governed movement");
+    await page.getByLabel("Quantity", { exact: true }).fill("2");
+    await page.getByRole("button", { name: "Create movement", exact: true }).click();
+    await expect.poll(() => mock.commands.find(command => command.action === "save-movement")?.movement.toOplocId).toBe("oploc:governed-uat");
+    expect(mock.reads.filter(url => url.pathname === "/api/logistics/locations")).toHaveLength(1);
+  });
+  test("movement reference outage is explicit and retry restores the picker", async ({ page }) => {
+    const mock = await mockAuthority(page, { locationFailures: 1 }); await page.goto("/?serviceDate=" + date);
+    await page.getByRole("button", { name: /New movement/ }).click();
+    await expect(page.locator(".movement-form").getByRole("alert")).toContainText("Governed locations are temporarily unavailable.");
+    await expect(page.getByRole("combobox", { name: "To OPLOC", exact: true }).locator("option")).toHaveCount(1);
+    await expect(page.getByLabel("Use one-off address", { exact: true })).toBeEnabled();
+    await page.getByRole("button", { name: "Retry locations", exact: true }).click();
+    await expect(page.getByRole("combobox", { name: "To OPLOC", exact: true }).locator("option")).toHaveCount(2);
+    await expect(page.locator(".movement-form").getByRole("alert")).toHaveCount(0);
+    expect(mock.reads.filter(url => url.pathname === "/api/logistics/locations")).toHaveLength(2);
   });
   test("vehicle authority unavailable blocks creation and preserves keyboard focus", async ({ page }) => {
     await mockAuthority(page, { unavailable: true }); await page.goto("/?serviceDate=" + date);

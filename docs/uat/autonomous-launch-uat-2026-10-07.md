@@ -55,8 +55,8 @@ This matrix supersedes the earlier baseline matrix. Partial live successes do no
 | 7 Grab & Go / Xchange | UNEXECUTED | Delivered `71b2860` | No new governed order chain exercised | Full required policy/order/downstream journey pending |
 | 8 Owned amendment | HOSPITALITY LIVE PASS / EXACT REPLAY PENDING | Hub `1dd58ce` READY/current 100% | Old order amended v2; old requirement/job withdrawn v2; one replacement r12/39-piece queue item; all known outbox events delivered; reload retained state | Exact-event live replay pending; separate historical booking remains untouched |
 | 9 Owned cancellation / withdrawal | HOSPITALITY LIVE PASS / MENU GATE PENDING | Hub `1dd58ce` READY/current 100% | Cancelled booking v14 and replacement order v2; replacement requirement/job withdrawn v2; projection revision 205/sequence 203 has zero owned queue/load items; reload does not resurrect work | Menu withdrawal/republish and exact-event live replay pending |
-| 10 Date / cache / retry | PARTIAL LOCAL/LIVE EVIDENCE / GATE PENDING | Mixed staging SHAs | Date fallback regression and scoped cache/authority/CAS tests pass; current release retry succeeds; completed driver state survives storage/reload | Mobile selected service date resets on reload (confirmed P1); broader BST/date/cache/retry live gates unexecuted |
-| Driver execution | LIVE LIFECYCLE PASS / FULL GATE PENDING | Logistics `0fe3ec6` READY/current 100% | Existing authorised session → fixed `/mobile/van1` → selected owned run → assigned stops → loading → dispatch → delivery → collection → return → completed v10; durable completion verified | Reload loses non-today service-date selection; selecting 12 October restores persisted completed run. Real shared identity preparation and Van 2 live coverage remain; no individual accounts/grants created |
+| 10 Date / cache / retry | NARROW DATE LOCAL/LIVE PASS / FULL GATE PENDING | CPU/Logistics `9aa2cba` | Both fixed van non-today service-date reloads retain permitted run; opposite-vehicle request revalidated; CPU Today/allergen default correct; BST/GMT/DST local boundary tests PASS | Broader cache/retry/concurrency live gates unexecuted |
+| Driver execution | VAN 1 LIVE LIFECYCLE / RELOAD PASS; FULL GATE PENDING | Logistics execution `0fe3ec6`, reload `9aa2cba` READY/current 100% | Existing authorised session → fixed `/mobile/van1` → assigned stops → loading → dispatch → delivery → collection → return → completed v10; 12 October and completed stops survive reload | Real shared identity preparation, Van 2 execution and two-context concurrency remain; no individual accounts/grants created |
 | CPU quantity correction | PASS — CODE / LOCAL / LIVE | CPU `d916c8d` READY/current 100% | Week card Production: 36 piece + 12 pax; detail 36 pieces to produce / 12 Per person ordered; Menu remains 12 portion | No remaining quantity defect observed in this narrow regression |
 
 ## Validation
@@ -175,7 +175,7 @@ Evidence screenshots (ignored local artifacts, not repository source): `artifact
 ### Remaining P0 / P1 and unexecuted work
 
 - **P0 historical downstream retirement unresolved:** owned Hospitality live amendment/cancellation now PASS at Hub `1dd58ce`; pre-existing retired requirements/jobs for the separate historical booking remain unmodified. They require a separately justified governed recovery path; do not erase evidence or directly repair operational state.
-- **P1 confirmed:** mobile non-today selected service date does not persist on reload (above).
+- **P1 mobile service-date reload:** FIXED / LOCAL AND NARROW LIVE PASS at `9aa2cba`; both fixed van routes retain 12 October and their own run after reload.
 - **P1 confirmed UI omission:** New movement shows “Integration Hub locations are unavailable” and an empty governed-site selector while the day health indicates OPLOC availability. Source inspection shows `projectionToDashboardData` deliberately returns `oplocs: []`, so the form lacks a reference catalogue. One-off request-scoped destinations were used for the owned execution UAT. No fake permanent OPLOC created. No fix begun; trace/restore the governed reference read with admission checks, explicit failure/retry and bounded/cache-aware behaviour.
 - **P1 cleared-membership remediation:** CODE FIXED / LOCAL VALIDATION PASS / LIVE RETEST PENDING for real merged clear/refresh/reassign.
 - **Safety gate still pending:** allergen signed-release amendment/revocation and downstream packet withdrawal; passing dual-sign/materialisation does not prove revocation safety.
@@ -274,3 +274,55 @@ Style Guide compliance: PASS, existing UI semantics/styles retained.
 **CODE FIXED / LOCAL VALIDATION PASS / LIVE RETEST PENDING.** Deploy only the exact
 validated pushed SHA to CPU and Logistics; verify READY/current 100%, then retest
 non-today fixed van reload and CPU Today/allergen defaults. No RC is frozen.
+
+### Date fixes — deployment and live evidence superseding pending status
+
+Commit pushed: `9aa2cba7d901fd1a69f97d465852758a560abd49`.
+CPU `uat-1007125522-9aa2cba` and Logistics `uat-1007125529-9aa2cba` verified
+READY/current 100%, source exactly this SHA. Other staging apps retain the mixed
+SHAs in the prior provenance table; no six-app RC exists.
+
+Live existing-session Van 1 selects 12 October, completed run v10, and reloads
+with serviceDate=2026-10-12 plus the same canonical run and two completed stops.
+Fixed Van 2 given Van 1 vehicle/run query values revalidates to its own
+`run:2026-10-12:van-2`, retains 12 October after reload and displays zero assigned
+stops. This is scope/date evidence, not a Van 2 execution PASS. CPU Day Previous
+then Today returns to Wednesday 7 October; default /allergens uses 2026-10-07.
+Actual staging clock used; synthetic midnight/DST coverage is local only.
+**PASS:** narrow date regression. Evidence: `mobile-van1-date-reloaded-9aa2cba.png`,
+`mobile-van2-date-reloaded-9aa2cba.png`, `cpu-today-9aa2cba.png`,
+`cpu-allergen-date-9aa2cba.png` in ignored artifacts/uat.
+
+## Resume remediation — governed movement location selector
+
+Root cause: compiled day projection intentionally carries no OPLOC catalogue, yet
+the movement form consumed its empty oplocs array. The form now lazily requests a
+dedicated server endpoint when opened. Admission uses the same both-vehicle shared
+planner authority required to create unassigned movements, before any reference read.
+The endpoint reuses Hub's existing integrity-checked canonical OPLOC read package,
+accepts at most 1,500 valid reference rows and fails explicitly for empty/invalid/
+unavailable data. Labels remain display only. Existing save-movement independently
+revalidates canonical IDs against governed Hub references; one-off addresses retain
+request-scoped identity. No access or grants changed.
+
+Read shape: no catalogue call during ordinary dashboard load; one coalesced call
+per opened form, plus explicit retry. Hub's existing compiled-package/manifest path
+serves current references; no new Firestore collection scan, listener or periodic
+catalogue polling introduced. Missing/stale derived-package recovery remains the
+existing Hub provider behaviour; integrity failure remains fail-closed. Close/reopen
+revalidates references instead of retaining a cross-session client catalogue.
+
+Validation: focused real-route 4/4 PASS (missing/single-vehicle denial before upstream,
+one canonical read/zero operational queries or writes, invalid/bounded/outage/retry,
+label-as-ID rejection and canonical save). Full Logistics 439/439 PASS (203 TS +236
+CJS), typecheck and production webpack build PASS. Eight existing browser authority/
+date tests PASS; two new rendered movement tests PASS after correcting ambiguous
+test locators (select label includes option text; Next.js owns a second alert).
+New browser tests prove lazy one-call reference load, stable-ID submission and
+outage→explicit retry→populated picker. No product test skipped. Task local server
+stopped and generated files restored. Style Guide compliance: PASS; existing light
+form/styles and semantic buttons/status/alert retained.
+
+**CODE FIXED / LOCAL VALIDATION PASS / LIVE RETEST PENDING.** Commit/push, deploy
+Logistics only at the exact validated SHA, then narrow real governed picker/save
+regression using owned UAT work. CPU remains current at `9aa2cba`.
