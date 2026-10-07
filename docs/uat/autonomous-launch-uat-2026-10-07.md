@@ -3,7 +3,7 @@
 Task: FIKA OS — Autonomous Launch UAT + Remediation War Room.
 Branch: `main`. Starting fetched `origin/main`: `4948ed5730a2a090801407b86392f61a34cac595`.
 Environment: staging only, Firebase project `fika-os-dev`.
-RC achieved: **NO — CHECKPOINT PREPARATION**. No RC SHA frozen.
+RC achieved: **NO — CHECKPOINT SAVED; STOPPED AT USER REQUEST**. No RC SHA frozen.
 The resume instruction supersedes the earlier closure-only scope. Continue the ordered UAT/remediation loop; automatically checkpoint if ordinary usage remaining falls below 10%.
 Resume fetched `origin/main` and local HEAD: `d1c9e5d7cbb540def2b4882d69635315e60ea398` (report-only prior checkpoint). Protected hashes and all six staging provenance rows were reverified before continuing. The latest implementation commit and final HEAD/origin SHA are recorded below or returned in the chat following commit/push.
 
@@ -52,7 +52,7 @@ This matrix supersedes the earlier baseline matrix. Partial live successes do no
 | 4 CPU / allergen safety | PARTIAL LIVE PASS / GATE PENDING | CPU initially `c35d6a9`, now `d916c8d` | Explicit synthetic unknown→contains/may_contain/clear review; checked checkpoint, both internal synthetic test-role signatures; normal retry yields current OPLOC release | Reopen/amendment revocation, signature/packet invalidation, immutable history and downstream withdrawal still pending; full current CPU suite 289/289 PASS |
 | 5 Fulfilment → Logistics | PARTIAL LIVE PASS / GATE PENDING | Hub `1dd58ce`, Logistics `0fe3ec6` | Owned Monday Menu order appears as one Haleon/12-unit planning item | Assignment lineage, retry exactly-once and downstream amendment/cancellation live gates pending |
 | 6 Logistics desktop | PARTIAL LIVE PASS / GATE PENDING | `ec1b110` | Governed picker, server labels, ordinary historical labels and single-click/keyboard Details PASS; Van 2 native movement clear, two-tab stale edit denial, reload and reschedule PASS | Merged canonical-load clear/reconciliation, drag/move/resize/23:45/invalid-window and separate-context concurrency remain pending |
-| 7 Grab & Go / Xchange | CODE FIXED / LOCAL VALIDATION PASS / LIVE RETEST PENDING | Resulting exact handoff SHA recorded in latest checkpoint | Atomic hosted source + immutable delivery obligation; historical recovery, scoped retry, lease/backoff and monotonic Hub replay regressions PASS | Non-Xchange submit/amend/cancel/full downstream live chain and new Delivered recovery Scheduler pending; intentional Xchange exclusion retained |
+| 7 Grab & Go / Xchange | CODE FIXED / LOCAL VALIDATION PASS / LIVE RETEST PENDING | `ceaff01` committed/pushed; not deployed | Atomic hosted source + immutable delivery obligation; historical recovery, scoped retry, lease/backoff and monotonic Hub replay regressions PASS | Non-Xchange submit/amend/cancel/full downstream live chain and new Delivered recovery Scheduler pending; intentional Xchange exclusion retained |
 | 8 Owned amendment | HOSPITALITY LIVE PASS / EXACT REPLAY PENDING | Hub `1dd58ce` READY/current 100% | Old order amended v2; old requirement/job withdrawn v2; one replacement r12/39-piece queue item; all known outbox events delivered; reload retained state | Exact-event live replay pending; separate historical booking remains untouched |
 | 9 Owned cancellation / withdrawal | HOSPITALITY LIVE PASS / MENU GATE PENDING | Hub `1dd58ce` READY/current 100% | Cancelled booking v14 and replacement order v2; replacement requirement/job withdrawn v2; projection revision 205/sequence 203 has zero owned queue/load items; reload does not resurrect work | Menu withdrawal/republish and exact-event live replay pending |
 | 10 Date / cache / retry | NARROW DATE LOCAL/LIVE PASS / FULL GATE PENDING | CPU/Logistics `9aa2cba` | Both fixed van non-today service-date reloads retain permitted run; opposite-vehicle request revalidated; CPU Today/allergen default correct; BST/GMT/DST local boundary tests PASS | Broader cache/retry/concurrency live gates unexecuted |
@@ -622,7 +622,7 @@ freshness fallback remain unremediated confirmed P1 work. Shared production AUTH
 identity must be formally configured by its owner; no physical-driver account/grant
 is required or authorised. No permanent identity was inferred from current UAT access.
 
-Next: verify exact Hub + Delivered-In handoff rollouts, configure/verify the bounded
+Next: deploy exact `ceaff01a5f3f3b78a9ef5b0db070fc3f03430afe` to Hub and Delivered-In staging only, verify both READY/current/100%, then configure/verify the bounded
 Delivered recovery job using existing token version 3, then execute one owned
 non-Xchange G&G submit → canonical Production → CPU → Fulfilment → Logistics →
 amend exactly once → cancel/withdraw → reload/replay without duplicate/resurrection.
@@ -639,3 +639,83 @@ synthetic internal allergen signatures, email webhook unavailable (queue only), 
 controlled dead letter available, and isolated Windows runner restrictions. Existing
 ignored evidence is local and must be preserved for a fresh session. Never edit the
 protected CHANGELOG/MenuData or clean historical cloud data to improve the matrix.
+
+## Final stop checkpoint — authoritative handoff
+
+Derek requested: “Finish what you are doing and create a checkpoint. Fully update
+the autonomous launch UAT MD file and stop.” The active handoff fix is completed,
+validated and pushed; no new live journey or remediation is started. **Stopped.**
+
+Latest implementation and fetched `origin/main`/local HEAD before this report-only
+checkpoint: **`ceaff01a5f3f3b78a9ef5b0db070fc3f03430afe`** — Persist hosted Grab and
+Go production handoffs and reject stale source replay. This is the additional
+implementation commit pushed today; together with both commit lists above, every
+today's implementation/report push is preserved. The final report-only checkpoint
+commit is titled **Save complete autonomous launch UAT resume checkpoint**; it
+does not change implementation or deployed source. Its exact final HEAD/origin SHA
+is returned in the closing chat after push, avoiding a self-referential commit hash
+inside its own content.
+
+**Deployment status of `ceaff01`: NOT SUBMITTED.** User stop supersedes the earlier
+plan to deploy/retest next. Therefore Hub and Delivered-In currently serve their
+previous validated sources below. No rollout identifier is invented. Grab & Go
+remains **CODE FIXED / LOCAL VALIDATION PASS / LIVE RETEST PENDING**. Its recovery
+Scheduler has not been created. Do not treat queued/source tests as live proof.
+
+Final read-only current traffic/build API verification, all READY/current/100%:
+
+| App / staging backend | Exact current served SHA | Current build |
+| --- | --- | --- |
+| Hub / `fika-os-staging` | `3446d5d9b58a5bd363e5655ec74a460bc3ce565d` | `uat-1007132239-3446d5d` |
+| Menu / `fika-menu-planning-staging` | `0fd871416ecb548202f6be3c20a75f7d5867253b` | `uat-1007075039-0fd8714` |
+| Hospitality / `fika-hospitality-staging` | `03a8249d3639f38c3c87eac3ea24f7b1e14a77f8` | `build-2026-10-06-002` |
+| CPU / `fika-cpu-production-staging` | `9aa2cba7d901fd1a69f97d465852758a560abd49` | `uat-1007125522-9aa2cba` |
+| Delivered-In / `fika-delivered-in-staging` | `71b2860ac572894d7df6979430ea326edfba0ce1` | `build-2026-10-05-002` |
+| Logistics / `fika-logistics-staging` | `ec1b11029beb5c03e7e68cb54c1ca55cc6fbac85` | `uat-1007134501-ec1b110` |
+
+Evidence `artifacts/uat/checkpoint-final-provenance.json`. Mixed commits are
+intentional current checkpoint state; no aligned six-app RC exists.
+
+### Exact next task for a fresh session
+
+Fetch origin; read this full report; verify protected hashes and current traffic.
+Then deploy **only Hub and Delivered-In staging** at literal
+**`ceaff01a5f3f3b78a9ef5b0db070fc3f03430afe`**, using the existing exact-SHA helper:
+
+```powershell
+./artifacts/uat/submit-staging-rollout.ps1 -Backend fika-os-staging -Sha ceaff01a5f3f3b78a9ef5b0db070fc3f03430afe
+./artifacts/uat/submit-staging-rollout.ps1 -Backend fika-delivered-in-staging -Sha ceaff01a5f3f3b78a9ef5b0db070fc3f03430afe
+```
+
+Capture both build/rollout operations, verify actual READY/current/100% before
+diagnosis. Configure staging-only bounded Delivered recovery Scheduler POST
+`https://delivered-in-staging.fikacatering.com/api/internal/grab-and-go-outbox`
+with existing `FIKA_INTERNAL_API_TOKEN@3`, every minute, `{"limit":25}`, preserving
+existing authority; verify its actual accepted invocation. Confirm the friendly
+Delivered-In URL from the launcher/backend before configuring the target; the
+URL above is the existing documented staging route, not a new environment.
+Then start one clearly owned non-Xchange G&G submit/amend/cancel journey through
+normal authorised UI, and trace exact source/event/Production/Fulfilment/Logistics
+IDs with reload/replay checks. Preserve Xchange exclusion. No new driver grants,
+shared account guessing, direct cloud repair or production action.
+
+After that, follow the remaining ordered launch gates above. Do not repeat passed
+Van 1/Van 2 execution unless later source changes affect it. Human preparation
+still needed: formally identify/configure the final shared Logistics AUTHMOD
+account, and approve a governed recovery plan for the separate historical retired
+Hospitality work. Neither permits arbitrary new UAT authority or history deletion.
+
+Final integrity before report-only commit: `git diff --check` PASS, `git fetch
+origin` completed, local HEAD = origin/main = `ceaff01a5f3f3b78a9ef5b0db070fc3f03430afe`.
+Only `CHANGELOG.md` and `sites/mnk/booking-platform/01_MenuData.js` remain dirty;
+unchanged SHA256 values are exactly the initial protected hashes above. They were
+never staged, reset or committed. CHANGELOG updated: **no — explicit protection**;
+this report records the task. Final fetch/status/hash verification is repeated
+after pushing this report-only checkpoint. Local UI server and isolated Firestore
+emulator were stopped; no UAT worker/test remains running locally. Existing
+authorised staging recovery jobs remain enabled as intended.
+
+No RC freeze, formal forensic audit, final six-app RC regression or Go-Live
+Readiness Scan occurred. Production remains untouched.
+
+**CHECKPOINT SAVED — SAFE TO RESUME AUTONOMOUS UAT**
