@@ -5,37 +5,29 @@ import test from "node:test";
 const page = readFileSync(new URL("../app/page.tsx", import.meta.url), "utf8");
 const styles = readFileSync(new URL("../app/styles.css", import.meta.url), "utf8");
 const adapter = readFileSync(new URL("../lib/projection-dashboard-adapter.ts", import.meta.url), "utf8");
+const timeline = readFileSync(new URL("../app/mounted-react-timeline.tsx", import.meta.url), "utf8");
+const timelineStyles = readFileSync(new URL("../app/mounted-react-timeline.module.css", import.meta.url), "utf8");
 
-test("DayPilot keeps true short event geometry and supported interaction semantics", () => {
-  assert.match(page, /cellDuration=\{15\}/);
-  assert.match(page, /addClockMinutes\(start, 15\)/);
-  assert.match(page, /eventHeight=\{Math\.max\(56/);
-  assert.match(page, /eventTextWrappingEnabled=\{false\}/);
-  assert.match(page, /snapToGrid=\{true\}/);
-  assert.match(page, /onEventMoved=/);
-  assert.match(page, /onEventResized=/);
-  assert.match(page, /const loadCount = Math\.max\(1, stop\.requirementCount\)/);
-  assert.match(page, /timelineEventHtml/);
-  assert.match(page, /timelineEventTooltip/);
-  assert.match(page, /timelineEventCardWidth/);
-  assert.match(page, /args\.data\.backColor = "transparent"/);
-  assert.match(page, /args\.data\.borderColor = "transparent"/);
-  assert.doesNotMatch(page, /left: "100%"/);
-  assert.doesNotMatch(page, /timelineEventAreaHtml|timelineEventInlineHtml|fika-event-label/);
-  assert.match(styles, /fika-event \.scheduler_default_event_bar \{ display: none/);
-  assert.match(styles, /scheduler_default_event_inner \{[^}]*border: 0 !important/);
-  assert.doesNotMatch(page, /const presentation = \{[^}]*workstream/);
+test("mounted timeline retains source-aware move and explicit-window resize semantics", () => {
+  assert.match(page, /<MountedReactTimeline/);
+  assert.match(page, /onSchedule=\{scheduleStop\}/);
+  assert.match(timeline, /snapTimelineMinute/);
+  assert.match(timeline, /snapTimelineEndMinute/);
+  assert.match(timeline, /directResizeEnabled\(Boolean\(card\.end\)\)/);
+  assert.match(timeline, /role="slider"/);
+  assert.match(timeline, /aria-valuemax=\{1425\}/);
+  assert.match(timeline, /onSchedule\(latest\.card\.sourceRunId/);
+  assert.match(timelineStyles, /cursor: move/);
+  assert.match(timelineStyles, /resizeHandle/);
 });
 
 test("desktop layout gives the schedule the wider surface and retains mobile fallback", () => {
   assert.match(styles, /mock-workspace \{ grid-template-columns: minmax\(280px, 28%\) minmax\(0, 72%\)/);
   assert.match(styles, /@media \(max-width: 1050px\) \{\s*\.real-planner \.mock-workspace \{ grid-template-columns: 1fr; \}/);
-  assert.match(styles, /fika-event-card[^}]*--fika-event-card-width/);
-  assert.match(styles, /fika-event\.collection \.fika-event-card[^}]*fika-status-info/);
-  assert.match(styles, /fika-event\.attention \.fika-event-card[^}]*fika-status-danger/);
-  assert.match(styles, /scheduler_default_event_inner \{[^}]*background: transparent/);
+  assert.match(timelineStyles, /\.collection[^}]*fika-status-info/);
+  assert.match(timelineStyles, /\.attention[^}]*fika-status-danger/);
+  assert.match(timelineStyles, /\.axisViewport \{ overflow: auto/);
   assert.match(styles, /\.real-planner \{ overflow-x: hidden; \}/);
-  assert.match(styles, /\.real-planner \.daypilot-timeline \{ overflow-x: auto; overflow-y: hidden; \}/);
 });
 
 test("projection dashboard labels are human-facing and do not expose source ids", () => {

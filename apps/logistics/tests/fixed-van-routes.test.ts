@@ -12,7 +12,7 @@ test("fixed van routes resolve only Van 1 or Van 2 and reuse the mobile workflow
   assert.match(route, /van === "van1" \? "Van 1" : "Van 2"/);
   assert.match(route, /<MobileWorkflow fixedVan=/);
   assert.match(route, /notFound\(\)/);
-  assert.match(mobile, /fixedVan \? \(data\?\.runs \|\| \[\]\)\.filter\(\(run\) => run\.vehicleLabel === fixedVan\)/);
+  assert.match(mobile, /fixedVan \? selectMobileRuns\(fixedRuns/);
   assert.match(mobile, /\{!fixedVan && <label>/);
   assert.match(mobile, /aria-label="Driver"/);
 });

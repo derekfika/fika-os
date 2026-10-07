@@ -63,7 +63,12 @@ Pending rows are explicitly unexecuted and do not claim PASS.
   executed; three live build SHAs captured, Hub explicitly unavailable.
 - Baseline CPU suite: 276/285 pass, 9 failures. Logistics: 419/427 pass, 8 failures. Menu: 207/208 pass, 1 invalid-date fallback failure. No failed test silently skipped.
 - Menu after fix: `NODE_ENV=test npm test` **211/211 PASS**, `npm run typecheck` PASS, `npm run build` PASS.
-- Logistics cleared-load route regressions: **100/100 PASS**; delivery-load unit regressions **5/5 PASS**. Full suite/typecheck/build and deployed UI retest pending.
+- Logistics cleared-load route regressions: **100/100 PASS**; delivery-load unit regressions **5/5 PASS**; complete suite **429/429 PASS**, no skips. `npm run typecheck` and `npm run build` PASS. Seven baseline stale assertions were updated to the already-present mounted timeline, scoped request/cache coordinator and arrival-only normalization. No source change was made to satisfy retired UI assertions. Deployed UI retest pending.
+
+Menu remediation commit pushed: `0fd871416ecb548202f6be3c20a75f7d5867253b`.
+App Hosting staging build/rollout `uat-1007075039-0fd8714` submitted for Menu only;
+current/live verification pending. Firebase CLI's separate login remains expired;
+submission used the same official API payloads with the refreshed existing GCP account.
 
 ## Remediation in progress
 

@@ -1,4 +1,4 @@
-import { explainLoadCompatibility } from "./delivery-loads";
+import { explainAssignedLoadCompatibility } from "./delivery-loads";
 import type { DeliveryLoad, LogisticsAssignment, LogisticsDayProjection, LogisticsJob } from "./types";
 
 type AssignmentRow = { id: string; data: LogisticsAssignment };
@@ -32,7 +32,7 @@ export function assignmentIntegrityDiagnostic(input: {
   }
   const assignments = input.assignments.map(({ id, data }) => {
     const job = input.jobs.get(data.jobId), load = input.loads.get(data.loadId);
-    const evaluation = job && load ? explainLoadCompatibility(job, load) : undefined;
+    const evaluation = job && load ? explainAssignedLoadCompatibility(job, load) : undefined;
     const multiplicity = counts.get(data.jobId) || 0;
     const projectionMultiplicity = projectionCounts.get(data.jobId) || 0;
     const reasons: string[] = [];
@@ -52,7 +52,7 @@ export function assignmentIntegrityDiagnostic(input: {
       assignmentMultiplicity: multiplicity, projectionAssignmentMultiplicity: projectionMultiplicity,
       duplicate: multiplicity > 1, jobExists: Boolean(job), loadExists: Boolean(load),
       job: job ? jobEvidence(job) : null, load: load ? loadEvidence(load) : null,
-      // compatible is exactly compatibleLoad(job, load); acceptance also accounts for input and duplicates.
+      // Existing unscheduled membership remains valid; acceptance also accounts for input and duplicates.
       compatible: evaluation?.compatible ?? false, acceptedByProjection,
       checks: evaluation?.checks ?? null, failureReasons: Array.from(new Set(reasons)),
       warnings: multiplicity > projectionMultiplicity && multiplicity > 1 ? ["additional_assignment_outside_projection_input"] : [] };

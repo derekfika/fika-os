@@ -59,7 +59,8 @@ test('native schedule switching replaces the entire mutually-exclusive timing va
   run = f.records.get('fikaLogisticsDeliveryRunsV1/r1');
   saved = await f.post({ action: 'schedule-stop', runId: 'r1', stopId: 'native', plannedWindow: { startTime: '12:00' }, expectedRunVersion: run.version, expectedStopVersion: 3 });
   assert.equal(saved.response.status, 200, JSON.stringify(saved.body));
-  assert.deepEqual(saved.body.stop.plannedWindow, { startTime: '12:00' });
+  assert.equal(saved.body.stop.plannedArrivalTime, '12:00');
+  assert.equal(Object.hasOwn(saved.body.stop, 'plannedWindow'), false);
 });
 
 test('full operational-day native timing accepts the latest supported arrival and rejects beyond it', async () => {

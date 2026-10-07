@@ -36,7 +36,7 @@ test("mobile uses the authenticated head/projection path and vehicle-scoped cach
   assert.match(mobile, /syncHead=1&serviceDate=/);
   assert.match(mobile, /fetchProjectionWithRecovery/);
   assert.match(recovery, /projection=1&serviceDate=/);
-  assert.match(mobile, /readCachedProjection\(cacheScope, date, vehicle\)/);
+  assert.match(mobile, /readCachedProjection\(cacheScope, serviceDate, vehicle\)/);
   assert.match(mobile, /writeCachedProjection\(cacheScope, projection, vehicle\)/);
   assert.doesNotMatch(mobile, /fetch\(`\/api\/logistics\?serviceDate=/);
 });
@@ -46,7 +46,7 @@ test("driver freshness converges without fabricated live state or messages", () 
   assert.match(mobile, /window\.setInterval[\s\S]*30_000/);
   assert.match(mobile, /visibilitychange/);
   assert.match(mobile, /BroadcastChannel\("fika-logistics-live"\)/);
-  assert.match(mobile, /syncUnavailable \|\| data\.projection\?\.state === "STALE"[\s\S]*\? "STALE"[\s\S]*: "CURRENT"/);
+  assert.match(mobile, /syncUnavailable \|\| visibleData\.projection\?\.state === "STALE"[\s\S]*\? "STALE"[\s\S]*: "CURRENT"/);
   assert.match(mobile, /useState<DriverMessage\[]>\(\[\]\)/);
   assert.doesNotMatch(mobile, /New stop assigned|Roadworks reported/);
 });

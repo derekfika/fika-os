@@ -1,4 +1,4 @@
-import { compatibleLoad } from "./delivery-loads";
+import { compatibleAssignedLoad } from "./delivery-loads";
 import type { DeliveryLoad, DeliveryRun, DeliveryStop, LogisticsAssignment, LogisticsChangeEvent, LogisticsDayProjection, LogisticsJob, LogisticsProjectionJob, LogisticsProjectionLoad, LogisticsSourceLineage, MovementRequest } from "./types";
 import type { LogisticsProjectionInvalidation } from "../../shared/logistics-projection";
 export type { LogisticsProjectionInvalidation } from "../../shared/logistics-projection";
@@ -10,7 +10,7 @@ export function buildLogisticsDayProjection(input: { serviceDate: string; jobs: 
   const loads = input.loads.filter((load) => load.serviceDate === input.serviceDate && load.status !== "cancelled");
   const counts = new Map<string, number>();
   for (const assignment of input.assignments) counts.set(assignment.jobId, (counts.get(assignment.jobId) || 0) + 1);
-  const assignments = input.assignments.filter(a => counts.get(a.jobId) === 1 && jobs.some(j => j.id === a.jobId && loads.some(l => l.id === a.loadId && compatibleLoad(j, l))));
+  const assignments = input.assignments.filter(a => counts.get(a.jobId) === 1 && jobs.some(j => j.id === a.jobId && loads.some(l => l.id === a.loadId && compatibleAssignedLoad(j, l))));
   const assigned = new Map(assignments.map((item) => [item.jobId, item.loadId]));
   const nativeIds = new Set((input.stops || []).flatMap(stop => stop.requirementRefs.map(ref => ref.requirementId)));
   const queue: LogisticsProjectionJob[] = jobs.filter((job) => !assigned.has(job.id) && !nativeIds.has(job.requirementId || "")).map((job) => ({ id: job.id, version: job.version, sourceVersion: job.sourceVersion, requirementId: job.requirementId, sourceType: job.sourceType, sourceId: job.sourceId, serviceDate: job.serviceDate, originOplocId: job.originOplocId, destinationOplocId: job.destinationOplocId, destinationLabelSnapshot: job.destinationLabelSnapshot, requestedWindow: job.requestedWindow, productionReadiness: job.productionReadiness, deliveryStatus: job.deliveryStatus || "pending", collectionStatus: job.collectionStatus, contents: job.contents, ...(job.notes ? { notes: job.notes } : {}), ...(job.workstream ? { workstream: job.workstream } : {}), totalUnits: totalUnits(job) }));

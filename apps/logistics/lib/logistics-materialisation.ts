@@ -18,7 +18,7 @@ import {
 } from "./store";
 import { fetchOplocs, fetchRequirements } from "./upstream";
 import { db } from "./firebase";
-import { aggregateDelivery, compatibleLoad } from "./delivery-loads";
+import { aggregateDelivery, compatibleAssignedLoad, compatibleLoad } from "./delivery-loads";
 import type { DeliveryLoad, DeliveryRun, DeliveryStop, LogisticsJob } from "./types";
 
 export function activeLogisticsRequirements(requirements: FulfilmentRequirement[]) {
@@ -194,7 +194,7 @@ export async function reconcileRequirementJob(id: string, requirement: Fulfilmen
       const loadId = doc.data().loadId;
       const loadSnapshot = await tx.get(deliveryLoads().doc(loadId));
       const load = loadSnapshot.exists ? loadSnapshot.data() as DeliveryLoad : undefined;
-      if (!load || !compatibleLoad(next, load)) {
+      if (!load || !compatibleAssignedLoad(next, load)) {
         const members = load ? await tx.get(logisticsAssignments().where("loadId", "==", load.id)) : undefined;
         const remainingJobs = members ? (await Promise.all(members.docs.filter(member => member.data().jobId !== id).map(member => tx.get(logisticsJobs().doc(member.data().jobId))))).filter(snapshot => snapshot.exists).map(snapshot => snapshot.data() as LogisticsJob) : [];
         invalid.push({ doc, load, members, remainingJobs });

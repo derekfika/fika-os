@@ -20,7 +20,7 @@ export function assertLoadVersion(load: DeliveryLoad, expected?: number) {
 }
 
 /** The production predicates also supply read-only administrative explanations. */
-export function explainLoadCompatibility(job: LogisticsJob, load: DeliveryLoad) {
+function loadCompatibility(job: LogisticsJob, load: DeliveryLoad, retainUnscheduled: boolean) {
   const checks = {
     jobActive: job.sourceStatus !== "withdrawn",
     loadActive: load.status !== "cancelled",
@@ -28,7 +28,7 @@ export function explainLoadCompatibility(job: LogisticsJob, load: DeliveryLoad) 
     serviceDateMatch: job.serviceDate === load.serviceDate,
     originMatch: job.originOplocId === load.originOplocId,
     destinationMatch: job.destinationOplocId === load.destinationOplocId,
-    arrivalWithinRequestedWindow: arrivalWithinSource(job.requestedWindow, load.scheduledTime),
+    arrivalWithinRequestedWindow: retainUnscheduled && load.scheduledTime === undefined || arrivalWithinSource(job.requestedWindow, load.scheduledTime),
   };
   const reasons: string[] = [];
   if (!checks.jobActive) reasons.push("job_withdrawn");
@@ -39,6 +39,19 @@ export function explainLoadCompatibility(job: LogisticsJob, load: DeliveryLoad) 
   if (!checks.destinationMatch) reasons.push("destination_oploc_mismatch");
   if (!checks.arrivalWithinRequestedWindow) reasons.push("scheduled_arrival_outside_current_requested_window");
   return { compatible: Object.values(checks).every(Boolean), checks, reasons };
+}
+
+export function explainLoadCompatibility(job: LogisticsJob, load: DeliveryLoad) {
+  return loadCompatibility(job, load, false);
+}
+
+/** Clearing a placement retains existing membership; assigning or dispatching still requires a valid arrival. */
+export function explainAssignedLoadCompatibility(job: LogisticsJob, load: DeliveryLoad) {
+  return loadCompatibility(job, load, true);
+}
+
+export function compatibleAssignedLoad(job: LogisticsJob, load: DeliveryLoad) {
+  return explainAssignedLoadCompatibility(job, load).compatible;
 }
 
 export function compatibleLoad(job: LogisticsJob, load: DeliveryLoad) {

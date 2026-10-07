@@ -316,6 +316,30 @@ test('merged projected collection clear preserves delivery, collection owner and
   assert.equal(rebuilt.deliveryLoads[0].collectionRunId, 'r2');
 });
 
+test('cleared merged delivery survives reconciliation and rejects early placement before valid rescheduling', async () => {
+  const f = await merged();
+  f.requirements.push(requirement(f, 'b'));
+  const group = f.records.get('fikaLogisticsDayProjectionsV1/' + f.date).deliveryLoads[0];
+  const beforeAssignments = assignments(f);
+  assert.equal((await f.post({ action: 'clear-delivery-load-schedule', loadIds: group.loadIds, expectedLoadVersions: group.loadVersions })).response.status, 200);
+  const cleared = loads(f);
+  await reconcile(f);
+  await f.rebuild();
+  assert.deepEqual(assignments(f), beforeAssignments);
+  assert.deepEqual(loads(f), cleared);
+  const unscheduled = f.records.get('fikaLogisticsDayProjectionsV1/' + f.date).deliveryLoads[0];
+  assert.equal(unscheduled.jobCount, 2);
+  assert.equal(f.records.get('fikaLogisticsDayProjectionsV1/' + f.date).planningQueue.length, 0);
+  const before = structuredClone([...f.records]);
+  const rejected = await f.post(bulk(f, { scheduledTime: '09:45', scheduledEnd: '10:15' }));
+  assert.equal(rejected.response.status, 409, JSON.stringify(rejected.body));
+  assert.deepEqual([...f.records], before);
+  const accepted = await f.post(bulk(f, { scheduledTime: '10:00', scheduledEnd: '11:00' }));
+  assert.equal(accepted.response.status, 200, JSON.stringify(accepted.body));
+  assert.deepEqual(assignments(f), beforeAssignments);
+  for (const load of loads(f)) assert.equal(load.scheduledTime, '10:00');
+});
+
 test('merged projected clear with stale constituent B version is all-or-zero', async () => {
   const f = await merged();
   const group = f.records.get('fikaLogisticsDayProjectionsV1/' + f.date).deliveryLoads[0];

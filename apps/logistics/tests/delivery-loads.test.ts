@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { assignJob, assertDispatchable, compatibleLoad, createLoad, findCompatibleLoad, loadSummary, removeAssignment, setJobCollectionStatus } from "../lib/delivery-loads";
+import { assignJob, assertDispatchable, compatibleAssignedLoad, compatibleLoad, createLoad, findCompatibleLoad, loadSummary, removeAssignment, setJobCollectionStatus } from "../lib/delivery-loads";
 import type { LogisticsAssignment, LogisticsJob } from "../lib/types";
 
 const job = (id: string, destination = "oploc:mnk", time = "11:30", origin = "oploc:cpu"): LogisticsJob => ({ id, sourceType: "cpu-production", sourceId: `order:${id}`, serviceDate: "2026-08-24", originOplocId: origin, destinationOplocId: destination, requestedWindow: { startTime: time }, productionReadiness: "ready", collectionStatus: "awaiting", contents: [{ description: "Sandwich lunch", quantity: 30, unit: "portion" }], createdAt: "now", updatedAt: "now", version: 1, audit: [] });
@@ -25,3 +25,15 @@ test("split, independent collection and dispatch safety work at job level", () =
   assert.doesNotThrow(() => assertDispatchable(load, [{ ...collected, deliveryStatus: "loaded" }, { ...collectedB, deliveryStatus: "loaded" }], assignments));
 });
 test("assigning an already assigned job is idempotent", () => { const item = job("a"); const load = createLoad({ serviceDate: item.serviceDate, originOplocId: "oploc:cpu", destinationOplocId: "oploc:mnk", scheduledTime: "11:30", by: "test" }); const existing = [assignment(item.id, load.id)]; assert.equal(assignJob(item, load, existing, "test").assignment, existing[0]); });
+
+test("cleared timing retains membership without authorising a new assignment or dispatch", () => {
+  const item = { ...job("a"), deliveryStatus: "loaded" as const };
+  const load = createLoad({ serviceDate: item.serviceDate, originOplocId: item.originOplocId!, destinationOplocId: item.destinationOplocId!, scheduledTime: "11:30", by: "test" });
+  const cleared = { ...load, scheduledTime: undefined! };
+  assert(compatibleAssignedLoad(item, cleared));
+  assert(!compatibleLoad(item, cleared));
+  assert.throws(() => assignJob(item, cleared, [], "test"), /not compatible/);
+  assert.throws(() => assertDispatchable(cleared, [item], [assignment(item.id, load.id)]), /current source truth/);
+  for (const invalid of [{ ...cleared, destinationOplocId: "other" }, { ...cleared, serviceDate: "2026-08-25" }, { ...cleared, status: "cancelled" as const }, { ...cleared, scheduledTime: "" }, { ...cleared, scheduledTime: "10:00" }]) assert(!compatibleAssignedLoad(item, invalid));
+  assert(!compatibleAssignedLoad({ ...item, sourceStatus: "withdrawn" }, cleared));
+});

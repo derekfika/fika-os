@@ -37,7 +37,7 @@ test("dashboard polling has separate bounded cadences", () => {
   assert.match(page, /syncHead=1/);
   assert.match(page, /cached && Number\(head\.sequence\) === cached\.lastChangeSequence/);
   assert.match(page, /ensure-vehicle-day-runs/);
-  assert.match(page, /if \(result\.changed\) \{[\s\S]*const refreshed = await load\(true\);[\s\S]*if \(refreshed\.ok\) await loadWeek\(\)/);
+  assert.match(page, /if \(result\.changed\) \{[\s\S]*const refreshed = await loadForContext\(context, true\);[\s\S]*if \(refreshed\.ok\) await loadWeekForContext\(summaryContext\)/);
 });
 
 test("day freshness uses a date-scoped cursor and bounded return-to-planning reads", () => {

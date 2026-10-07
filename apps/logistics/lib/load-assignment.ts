@@ -1,6 +1,6 @@
 import type { Transaction } from "firebase-admin/firestore";
 import { collectionPreferences, deliveryLoads, logisticsAssignments, logisticsJobs, runs, stops } from "./store";
-import { assignJob, aggregateDelivery, assertLoadVersion, compatibleLoad, createLoad } from "./delivery-loads";
+import { assignJob, aggregateDelivery, assertLoadVersion, compatibleAssignedLoad, compatibleLoad, createLoad } from "./delivery-loads";
 import { HttpError } from "./http-error";
 import { assertRunPlanningOpen } from "./planning";
 import type { DeliveryLoad, DeliveryRun, LogisticsAssignment, LogisticsJob } from "./types";
@@ -17,7 +17,7 @@ export async function assertLoadAssignmentsCurrent(tx: Transaction, load: Delive
   const jobs = await Promise.all(ids.map(async id => {
     const [snapshot, ownership] = await Promise.all([tx.get(logisticsJobs().doc(id)), tx.get(logisticsAssignments().where("jobId", "==", id))]);
     const job = snapshot.exists ? snapshot.data() as LogisticsJob : undefined;
-    if (!job || !compatibleLoad(job, load) || ownership.size !== 1 || ownership.docs[0].data().loadId !== load.id || job.activeLoadId && job.activeLoadId !== load.id) throw conflict();
+    if (!job || !compatibleAssignedLoad(job, load) || ownership.size !== 1 || ownership.docs[0].data().loadId !== load.id || job.activeLoadId && job.activeLoadId !== load.id) throw conflict();
     return job;
   }));
   return { jobs, assignments: assignments.docs.map(doc => doc.data() as LogisticsAssignment) };
