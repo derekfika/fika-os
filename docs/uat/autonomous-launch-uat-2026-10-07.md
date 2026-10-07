@@ -3,9 +3,9 @@
 Task: FIKA OS — Autonomous Launch UAT + Remediation War Room.
 Branch: `main`. Starting fetched `origin/main`: `4948ed5730a2a090801407b86392f61a34cac595`.
 Environment: staging only, Firebase project `fika-os-dev`.
-RC achieved: **NO — CHECKPOINT / CLOSURE MODE**. No RC SHA frozen.
-User requested closure below 10% usage. No further broad journey or new non-critical remediation is authorised during this checkpoint.
-Latest fetched source `origin/main` at checkpoint construction: `d916c8d5e976da882553b25c7499762b316c4a51` (local HEAD identical before this report-only commit). The subsequent report-only checkpoint commit is identifiable in `git log`; its final HEAD/origin SHA is returned in the chat. No source change follows the validated CPU commit.
+RC achieved: **NO — AUTONOMOUS UAT RESUMED**. No RC SHA frozen.
+The resume instruction supersedes the earlier closure-only scope. Continue the ordered UAT/remediation loop; automatically checkpoint if ordinary usage remaining falls below 10%.
+Resume fetched `origin/main` and local HEAD: `d1c9e5d7cbb540def2b4882d69635315e60ea398` (report-only prior checkpoint). Protected hashes and all six staging provenance rows were reverified before continuing. The latest implementation commit and final HEAD/origin SHA are recorded below or returned in the chat following commit/push.
 
 The task-specific protected-file instruction overrides the normal CHANGELOG rule.
 `CHANGELOG.md` and `sites/mnk/booking-platform/01_MenuData.js` remain unstaged and
@@ -48,13 +48,13 @@ This matrix supersedes the earlier baseline matrix. Partial live successes do no
 | --- | --- | --- | --- | --- |
 | 1 Auth / launcher / OPLOC | PARTIAL LIVE PASS / GATE PENDING | Hub `1dd58ce` | Existing authenticated launcher, six app links, session reload and governed workspace entry load | Live invalid/missing scope, redirect and denial checks pending |
 | 2 Menu → CPU → Delivered-In | PARTIAL LIVE PASS / GATE PENDING | Menu `0fd8714`, CPU `d916c8d`, Delivered `71b2860` | Catalogue/picker recovered; owned whole-week v1 published; Monday 12 portions materialised once into canonical CPU and visible Logistics queue | Delivered consumption, intentionally blank downstream days, withdrawal/republish, historical missing/corrupt package and stale-cache live checks pending; local recovery/integrity tests pass |
-| 3 Hospitality → quote → CPU | NARROW LIVE REGRESSION PASS / AFFECTED FULL RETEST PENDING | Hospitality `03a8249`, Hub `1dd58ce`, CPU `d916c8d` | Owned prior booking retains £25 net addition, £201.60 gross quote, CPU handoff, 36 production pieces for 12 ordered portions | Hub change requires full owned amendment/cancellation downstream retest |
+| 3 Hospitality → quote → CPU | OWNED LIVE AMENDMENT / CANCELLATION PASS | Hospitality `03a8249`, Hub `1dd58ce`, CPU `d916c8d` | Normal amendment 12→13 pax, £25 net addition retained, quote r3 £212.40; original 12/36 frozen history, replacement 13/39; normal cancellation and downstream withdrawal persist after reload | Exact-event live replay and separate historical retired-work recovery pending |
 | 4 CPU / allergen safety | PARTIAL LIVE PASS / GATE PENDING | CPU initially `c35d6a9`, now `d916c8d` | Explicit synthetic unknown→contains/may_contain/clear review; checked checkpoint, both internal synthetic test-role signatures; normal retry yields current OPLOC release | Reopen/amendment revocation, signature/packet invalidation, immutable history and downstream withdrawal still pending; full current CPU suite 289/289 PASS |
 | 5 Fulfilment → Logistics | PARTIAL LIVE PASS / GATE PENDING | Hub `1dd58ce`, Logistics `0fe3ec6` | Owned Monday Menu order appears as one Haleon/12-unit planning item | Assignment lineage, retry exactly-once and downstream amendment/cancellation live gates pending |
 | 6 Logistics desktop | PARTIAL LIVE PASS / GATE PENDING | `0fe3ec6` | Normal owned delivery+collection creation, authorised Van 1 assignment, exact native timing edit, Ready without driver principal | Drag/move/cross-vehicle/resize/23:45/merged-clear-refresh/invalid-window live gates pending. Cleared-membership fix: CODE FIXED / LOCAL VALIDATION PASS / LIVE RETEST PENDING. Governed location picker defect open |
 | 7 Grab & Go / Xchange | UNEXECUTED | Delivered `71b2860` | No new governed order chain exercised | Full required policy/order/downstream journey pending |
-| 8 Owned amendment | CODE FIXED / LOCAL VALIDATION PASS / LIVE RETEST PENDING | Hub `1dd58ce` READY/current 100% | Atomic source/order/Fulfilment/outbox/audit regression coverage passes | Owned Hospitality amendment and retired downstream work verification next; no direct repair performed |
-| 9 Owned cancellation / withdrawal | CODE FIXED / LOCAL VALIDATION PASS / LIVE RETEST PENDING | Hub `1dd58ce` READY/current 100% | Atomic cancellation and retry regression coverage passes | Owned Hospitality cancellation and Menu withdrawal/republish live checks pending |
+| 8 Owned amendment | HOSPITALITY LIVE PASS / EXACT REPLAY PENDING | Hub `1dd58ce` READY/current 100% | Old order amended v2; old requirement/job withdrawn v2; one replacement r12/39-piece queue item; all known outbox events delivered; reload retained state | Exact-event live replay pending; separate historical booking remains untouched |
+| 9 Owned cancellation / withdrawal | HOSPITALITY LIVE PASS / MENU GATE PENDING | Hub `1dd58ce` READY/current 100% | Cancelled booking v14 and replacement order v2; replacement requirement/job withdrawn v2; projection revision 205/sequence 203 has zero owned queue/load items; reload does not resurrect work | Menu withdrawal/republish and exact-event live replay pending |
 | 10 Date / cache / retry | PARTIAL LOCAL/LIVE EVIDENCE / GATE PENDING | Mixed staging SHAs | Date fallback regression and scoped cache/authority/CAS tests pass; current release retry succeeds; completed driver state survives storage/reload | Mobile selected service date resets on reload (confirmed P1); broader BST/date/cache/retry live gates unexecuted |
 | Driver execution | LIVE LIFECYCLE PASS / FULL GATE PENDING | Logistics `0fe3ec6` READY/current 100% | Existing authorised session → fixed `/mobile/van1` → selected owned run → assigned stops → loading → dispatch → delivery → collection → return → completed v10; durable completion verified | Reload loses non-today service-date selection; selecting 12 October restores persisted completed run. Real shared identity preparation and Van 2 live coverage remain; no individual accounts/grants created |
 | CPU quantity correction | PASS — CODE / LOCAL / LIVE | CPU `d916c8d` READY/current 100% | Week card Production: 36 piece + 12 pax; detail 36 pieces to produce / 12 Per person ordered; Menu remains 12 portion | No remaining quantity defect observed in this narrow regression |
@@ -174,7 +174,7 @@ Evidence screenshots (ignored local artifacts, not repository source): `artifact
 
 ### Remaining P0 / P1 and unexecuted work
 
-- **P0 source fixed, live unresolved:** Hospitality downstream retirement. CODE FIXED / LOCAL VALIDATION PASS / LIVE RETEST PENDING. Owned full amendment/cancellation live path was not begun in closure mode; pre-existing retired requirements/jobs remain unmodified and need a separately justified governed recovery path if still stale after the fixed workflow is proved.
+- **P0 historical downstream retirement unresolved:** owned Hospitality live amendment/cancellation now PASS at Hub `1dd58ce`; pre-existing retired requirements/jobs for the separate historical booking remain unmodified. They require a separately justified governed recovery path; do not erase evidence or directly repair operational state.
 - **P1 confirmed:** mobile non-today selected service date does not persist on reload (above).
 - **P1 confirmed UI omission:** New movement shows “Integration Hub locations are unavailable” and an empty governed-site selector while the day health indicates OPLOC availability. Source inspection shows `projectionToDashboardData` deliberately returns `oplocs: []`, so the form lacks a reference catalogue. One-off request-scoped destinations were used for the owned execution UAT. No fake permanent OPLOC created. No fix begun; trace/restore the governed reference read with admission checks, explicit failure/retry and bounded/cache-aware behaviour.
 - **P1 cleared-membership remediation:** CODE FIXED / LOCAL VALIDATION PASS / LIVE RETEST PENDING for real merged clear/refresh/reassign.
@@ -198,3 +198,79 @@ Next: remediate mobile service-date reload persistence with scoped vehicle/run r
 Protected hashes must remain the initial values above. Final check/push/fetch/HEAD verification is required before returning. CHANGELOG updated: **no**, explicit task protection; this report is the durable task record.
 
 **CHECKPOINT SAVED — SAFE TO RESUME AUTONOMOUS UAT**
+
+## Resume evidence — owned Hospitality gate, 7 October
+
+Existing authenticated session and normal product commands only. Owned booking
+`booking:mnk:2fdaea9b9ddbddf136163f3a5a11cd76` was amended from 12 to 13 guests/portions
+with a uniquely marked reason. The five-stage UI regenerated quote/PDF, handed off
+the replacement to CPU and reconciled Logistics. Quote r3 is £177 net, £35.40 VAT,
+£212.40 gross, including the unchanged £25 net addition. Booking v13 was Sent to CPU.
+
+Original Production ID `production-order:v1:booking:mnk:2fdaea9b9ddbddf136163f3a5a11cd76`
+became amended v2 and retained its frozen 12-customer/36-production snapshot.
+Replacement ID `production-order:v1:booking:mnk:2fdaea9b9ddbddf136163f3a5a11cd76:r12`
+was needs_review v1 with quote r3, 13 customer portions and 39 production pieces.
+The original Fulfilment and Logistics records became withdrawn v2; their original
+audit evidence was retained. Projection revision 201/sequence 200 contained exactly
+one owned current queue item (replacement r12), with no owned loads. Known old v1/v2
+and replacement v1 Logistics outbox events were delivered.
+
+Normal Cancel booking used an explicit UAT reason and **Request production cancellation**.
+No Calendar removal was requested. Staging has no FIKA_EMAIL_WEBHOOK_URL: the existing
+notification command records a queued obligation and sends no email. No secret or
+notification configuration was changed. Cancellation at 11:42:10Z yielded booking
+Cancelled v14 and replacement Production cancelled v2. Original amended history
+was unchanged. Replacement Fulfilment and Logistics became withdrawn v2 and its
+v1/v2 outbox events were delivered. Known audit document
+`booking_mnk_2fdaea9b9ddbddf136163f3a5a11cd76:14` records workflow-cancel.
+
+Exact Fulfilment IDs are `fulfilment-requirement:cpu-production:<Production ID>:oploc:66e621fa-6e6f-4f46-9aed-462313abbe8f`
+for the two literal Production IDs above. Corresponding Logistics IDs are
+`logistics-job:<Fulfilment ID>`. Source withdrawals, rather than historical deliveryStatus,
+determine current work. Reloaded Hospitality retains Cancelled/13 pax/£212.40;
+refreshed and reloaded Logistics has four unrelated historical items and no owned
+39-piece item. Direct known-day projection revision 205/sequence 203 confirms
+ownedQueue=0 and ownedLoads=0. No duplicate replacement was observed.
+
+**PASS:** owned amendment, immutable prior snapshot, current replacement lineage,
+durable downstream invalidations, cancellation and reload persistence.
+**Pending:** live exact-event replay; local idempotency/replay tests already pass.
+No delivered event was reset merely to manufacture replay evidence. The separate
+older booking `booking:mnk:86ee28f023384fde1245816b9b595244` remains untouched.
+Evidence: ignored `artifacts/uat/resume-amendment-*.json`, `resume-cancellation-*.json`,
+`resume-hospitality-amended.png`, `resume-hospitality-cancelled.png`,
+`resume-logistics-cancelled-reloaded.png`. All reads used known IDs or bounded queries.
+
+Next active task: validate, commit and deploy the confirmed Logistics mobile service-date
+reload and CPU Today/allergen London-date fixes, then narrow live retest both fixed
+van routes. The earlier first-fresh-session Hospitality instruction above is superseded.
+
+## Resume remediation — mobile date / CPU UK date
+
+Mobile hydration now restores a strictly validated YYYY-MM-DD serviceDate query;
+malformed/impossible calendar dates fall back to the actual London date. Selecting
+a new day clears prior run selection and date-scoped transient state. Restoration
+waits for current projection/vehicle admission and only selects a run belonging to
+the permitted fixed vehicle and requested day. The URL persists valid date even
+on an empty day; no driver account or grant was added. Existing server access/CAS
+and scoped projection/cache coordinator remain unchanged.
+
+CPU Production Day Today and default Allergen Review date now use the existing
+europeLondonDate helper. They retain actual weekends rather than using the dashboard's
+next-working-day convention. Explicit supplied allergen dates remain unchanged.
+
+Validation: mobile calendar/BST/GMT/DST focused 2/2 PASS; CPU boundary/wiring 3/3
+PASS. Full Logistics 435/435 PASS (203 isolated TS + 232 CJS), full CPU 290/290
+PASS. Both typechecks and webpack production builds PASS. Chromium browser suite
+10/10 PASS including shared-session execution, both fixed van non-today reloads,
+opposite-vehicle requested-run rejection and empty-date reload without stale run.
+Initial local Turbopack could not resolve existing cross-root modules; trusted
+webpack dev runner executed the browser tests successfully with demo-fika-os and
+emulator configuration. All API data was intercepted by isolated browser fixtures.
+Generated declarations/test-run metadata were restored; local task server stopped.
+Style Guide compliance: PASS, existing UI semantics/styles retained.
+
+**CODE FIXED / LOCAL VALIDATION PASS / LIVE RETEST PENDING.** Deploy only the exact
+validated pushed SHA to CPU and Logistics; verify READY/current 100%, then retest
+non-today fixed van reload and CPU Today/allergen defaults. No RC is frozen.

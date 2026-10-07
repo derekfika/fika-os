@@ -17,7 +17,9 @@ async function mockAuthority(page: Page, options: { unavailable?: boolean; restr
     if (url.searchParams.get("syncHead")) return route.fulfill({ headers: { "x-logistics-cache-scope": "shared-session:" + ids.join(",") }, json: { sequence: projection.lastChangeSequence } });
     if (url.searchParams.get("weekSummary")) return route.fulfill({ json: { weekCommencing: date, days: [] } });
     if (url.searchParams.get("planningAttention")) return route.fulfill({ json: { attention: [] } });
-    return route.fulfill({ headers: { "x-logistics-cache-scope": "shared-session:" + ids.join(",") }, json: { ...projectionToDashboardData(projection), projection } });
+    const requestedDate = url.searchParams.get("serviceDate");
+    const scopedProjection = requestedDate && requestedDate !== date ? { ...projection, serviceDate: requestedDate, runs: [], stops: [] } : projection;
+    return route.fulfill({ headers: { "x-logistics-cache-scope": "shared-session:" + ids.join(",") }, json: { ...projectionToDashboardData(scopedProjection), projection: scopedProjection } });
   });
   return { projection, commands, reads };
 }
@@ -82,5 +84,24 @@ test.describe("Shared Logistics session and vehicle execution", () => {
     await page.getByRole("button", { name: "More", exact: true }).click();
     await expect(page.getByText("Selected vehicle", { exact: true })).toBeVisible();
     await expect(page.getByText("Signed in as", { exact: true })).toHaveCount(0);
+  });
+  for (const vehicle of ["van1", "van2"]) test(`fixed ${vehicle} restores a non-today date and rejects the other vehicle's requested run`, async ({ page }) => {
+    const mock = await mockAuthority(page);
+    await page.clock.install({ time: new Date("2099-01-03T12:00:00Z") });
+    const other = vehicle === "van1" ? "van2" : "van1";
+    await page.goto(`/mobile/${vehicle}?serviceDate=${date}&vehicle=${other}&run=run:${other}`);
+    await expect(page.getByLabel("Run", { exact: true })).toHaveValue("run:" + vehicle);
+    await expect(page.getByLabel("Service date", { exact: true })).toHaveValue(date);
+    await page.reload();
+    await expect(page.getByLabel("Service date", { exact: true })).toHaveValue(date);
+    await expect(page.getByLabel("Run", { exact: true })).toHaveValue("run:" + vehicle);
+    expect(mock.reads.filter(url => url.pathname === "/api/logistics").every(url => url.searchParams.get("vehicle") === vehicle && url.searchParams.get("serviceDate") === date)).toBe(true);
+    await page.getByLabel("Service date", { exact: true }).selectOption("2099-01-06");
+    await expect(page.getByLabel("Run", { exact: true })).toHaveValue("");
+    await expect(page).toHaveURL(/serviceDate=2099-01-06/);
+    await page.reload();
+    await expect(page.getByLabel("Service date", { exact: true })).toHaveValue("2099-01-06");
+    await expect(page.getByLabel("Run", { exact: true })).toHaveValue("");
+    await expect(page).not.toHaveURL(/run=/);
   });
 });

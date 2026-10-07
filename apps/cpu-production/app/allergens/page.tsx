@@ -8,6 +8,7 @@ import AllergenReviewMatrix from "../ui/AllergenReviewMatrix";
 import { SignatureModal } from "../ui/HospitalityAllergenDetail";
 import { buildAllergenReviewRows, deliveredInMenuOrdersForServiceDate, destination, orderDate } from "../../lib/production-day";
 import { captureSigningLineage, signingLineageUnavailableMessage } from "./signing-lineage";
+import { europeLondonDate } from "../../lib/operational-date";
 import "./page.css";
 
 type SignatureRole = "production_chef" | "head_chef_site_manager";
@@ -114,7 +115,7 @@ export default function CpuAllergenReviewPage() {
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    setDate(params.get("date") || new Date().toISOString().slice(0, 10));
+    setDate(params.get("date") || europeLondonDate());
   }, []);
 
   useEffect(() => {

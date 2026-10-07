@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { FulfilmentRequirement } from "../../../shared/fulfilment-requirement";
 import { fulfilmentWorkstream } from "../../../shared/fulfilment-workstream";
 import type { DeliveryRun, DeliveryStop, MovementRequest } from "../../lib/types";
-import { operationalDate } from "../../lib/date";
+import { isOperationalDate, mobileServiceDate, operationalDate } from "../../lib/date";
 import { movementsForStop, selectMobileVehicleRuns } from "../../lib/planning";
 import { VehicleAuthorityProvider, useVehicleAuthority } from "../vehicle-authority";
 import { logisticsVehicleLabel, type LogisticsVehicleId } from "../../../shared/logistics-authority";
@@ -63,7 +63,11 @@ function MobileWorkflowContents({ fixedVan }: { fixedVan?: "Van 1" | "Van 2" }) 
   const availableDates = useMemo(() => selectedDate ? dateOptions(selectedDate) : [], [selectedDate]);
 
   const selectDate = (next: string) => {
-    if (!next || next === selectedDate) return;
+    if (!isOperationalDate(next) || next === selectedDate) return;
+    const url = new URL(window.location.href);
+    url.searchParams.set("serviceDate", next);
+    url.searchParams.delete("run");
+    window.history.replaceState(null, "", url);
     activeContext.current = requests.activate(next);
     projectionSequence.current = undefined;
     setSelectedDate(next);
@@ -183,7 +187,7 @@ function MobileWorkflowContents({ fixedVan }: { fixedVan?: "Van 1" | "Van 2" }) 
     syncCheckInFlight.current.set(key, pending);
     return pending;
   };
-  useEffect(() => { const nextDate = operationalDate(); activeContext.current = requests.activate(nextDate); setSelectedDate(nextDate); setHydrated(true); }, []);
+  useEffect(() => { const nextDate = mobileServiceDate(new URLSearchParams(window.location.search).get("serviceDate")); activeContext.current = requests.activate(nextDate); setSelectedDate(nextDate); setHydrated(true); }, []);
   useEffect(() => { if (selectedDate) void load(); }, [selectedDate]);
   useEffect(() => {
     if (!selectedDate) return;
@@ -204,16 +208,20 @@ function MobileWorkflowContents({ fixedVan }: { fixedVan?: "Van 1" | "Van 2" }) 
   }, [fixedVan, authority.loading, authority.vehicles, selectedVehicle]);
   const vehicleRuns = useMemo(() => authority.vehicles.includes(selectedVehicle as LogisticsVehicleId) ? selectMobileVehicleRuns(visibleData?.runs || [], selectedVehicle, date) : [], [visibleData?.runs, selectedVehicle, date, authority.vehicles]);
   useEffect(() => {
+    if (authority.loading || !visibleData) return;
     if (vehicleRuns.some(run => run.canonicalId === selectedRunId)) return;
     const requested = new URLSearchParams(window.location.search).get("run");
     setSelectedRunId(vehicleRuns.find(run => run.canonicalId === requested)?.canonicalId || vehicleRuns[0]?.canonicalId || "");
-  }, [vehicleRuns, selectedRunId]);
+  }, [vehicleRuns, selectedRunId, authority.loading, visibleData]);
   useEffect(() => {
-    if (!selectedVehicle || !selectedRunId) return;
+    if (!selectedDate) return;
     const url = new URL(window.location.href);
-    url.searchParams.set("vehicle", selectedVehicle); url.searchParams.set("run", selectedRunId);
+    url.searchParams.set("serviceDate", selectedDate);
+    if (selectedVehicle && authority.vehicles.includes(selectedVehicle)) url.searchParams.set("vehicle", selectedVehicle);
+    if (selectedRunId && vehicleRuns.some(run => run.canonicalId === selectedRunId)) url.searchParams.set("run", selectedRunId);
+    else if (visibleData && !authority.loading) url.searchParams.delete("run");
     window.history.replaceState(null, "", url);
-  }, [selectedVehicle, selectedRunId]);
+  }, [selectedDate, selectedVehicle, selectedRunId, vehicleRuns, visibleData, authority.loading, authority.vehicles]);
   const driver = selectedVehicle ? logisticsVehicleLabel(selectedVehicle) : "Select vehicle";
   const runs = useMemo(() => vehicleRuns.filter(run => run.canonicalId === selectedRunId), [vehicleRuns, selectedRunId]);
   const stops = useMemo(() => runs
