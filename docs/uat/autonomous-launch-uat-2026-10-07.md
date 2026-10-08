@@ -1037,6 +1037,119 @@ remaining Hub/workspace evidence. No new P0; no RC freeze. Evidence:
 `oct08-gate4-site-build.log` under artifacts/uat. Deployment SHA/result recorded
 after validated commit/push. Production and protected hashes unchanged.
 
+Implementation pushed: **`a866b4910e5318a744bdaad6d71bfe80bc648995`**, HEAD=origin/main.
+Final Delivered full135/135, rendered5/5, typecheck/build PASS. Navigation's old
+source regex initially expected `siteId`; updated for `nextSiteId` after the URL
+fix, then full suite passed. Local test server stopped; no local worker remains.
+Only Delivered staging submitted: build/rollout `uat-1008161054-a866b49`, build
+operation `operation-1791472272666-65d55a46ff123-ef18e68a-52314e23`, rollout operation
+`operation-1791472272845-65d55a472ab07-8d7bdbe8-933ac791`. At15:12:37Z BUILDING/QUEUED,
+previous be86844 still current100%; not yet accepted live. An incorrectly transcribed
+SHA was rejected by the helper's ancestor check before any cloud submission;
+correct literal verified SHA used for the actual rollout. No production action.
+Hub recovery normal Review of preserved owned13 October cancellation v2 displays
+Delivered/version2/attempts0 and no retry/reset action, agreeing with immutable event
+and canonical withdrawal. No event reset performed.
+
+### Gate4 staging/live acceptance — PASS
+
+At15:14:45.885Z Delivered build `uat-1008161054-a866b49` READY, rolloutSUCCEEDED,
+current100%, not reconciling; exactSHA `a866b4910e5318a744bdaad6d71bfe80bc648995`.
+Live existing admin entry: One Angel Court→MNK shows only Loading dashboard during
+transition (no old menu/selector/privileged content), then MNK with preserved5 October
+week. Next week→Back while request pending restores5 October; later response does
+not overwrite it; Forward retainsMNK/12 October. G&G MNK→One Angel Court immediately
+removes old basket and heading while loading, writes Angel's exactOPLOC intoURL,
+then correctly shows its preserved cancelled12 October source. No submit/amend/cancel.
+Refresh retains valid site context. Deterministic late-head/body reordering is proved
+by the five isolated real-page regressions; no network delay injected into staging.
+
+Authenticated launcher and Hub entry resolve existing session; no privileged Hub
+data while resolving. Hospitality `/manage` redirects `/workspace`, rememberedMNK
+is preselected only from authorised5-site list. Normal Operations destination,
+refresh and Back from invalid deep link preserve valid scope. InvalidOPLOC direct
+link renders Location not authorised and Return to FIKA OS only, no record/form.
+Missing/invalid session401 checks and memory AUTHMOD admission/redirect tests are
+the denial authority proof; rendered zero-access/invalid-remembered tests are isolated.
+No actual zero-access identity/grant created or repurposed; this is an explicit live
+coverage limit, not a claim of a second identity's staging sign-in.
+
+Hub recovery terminal display agrees with current source version. Exact duplicates/
+stale replay remain proven by preserved Gate1/3 immutable-event comparisons and
+unchanged Hub guard source; not repeated wholesale. Natural CPU failures truthfully
+record retries/errors/dead-letter status, not successful deliveries. No unresolved
+P0/P1 found in Gate4 after the deployed site-isolation fix. Historical retirement
+remains Gate5's separate unresolved scope; Gates1–3 stay closed. Shared production
+AUTHMOD identity remains owner launch preparation, not newly inferred code defect.
+
+Bounded Logistics UX acceptance at34aaf9f: read-only existing13 October MNK Inspector
+shows sourceHospitality, destinationMNK, vehicleVan1/planned, lifecyclePlanned,
+scheduled07:00–07:30, preferred source12:00 explicitlyAdvisory. Persisted schedule
+outside source time demonstrates current operational/advisory distinction. No
+unowned work rescheduled and no withdrawn fixture revived. 30-minute default and
+command acceptance retain external16/16 rendered regression proof, rather than a
+claim that this session created the existing live schedule. Inspector top quantity
+is unavailable despite four36-piece subloads, and nested timing says Time to confirm
+despite07:00 schedule: P2 presentation observations. No full Gate3 reopened.
+Evidence `oct08-logistics-advisory-inspector.png`, rolloutJSON and browser state
+captured through managed IAB. Style Guide compliance PASS for touched Delivered UI.
+
+Next: Gate5 bounded reads of original `booking:mnk:86ee28f023384fde1245816b9b595244`
+and preserved owned booking2fdaea..., determine historical retired/current lineage
+and existing source-authoritative reconciliation route before any governed recovery.
+No direct history repair/deletion, no arbitrary replay payloads. RC not frozen.
+
+### Gate5 historical retirement — governed recovery completed; remaining acceptance checkpoint
+
+Below usage threshold, finish current safe atomic recovery only; no new remediation
+or RC freeze. Historical booking `booking:mnk:86ee28f023384fde1245816b9b595244`
+is present in authoritative `fikaBookings`,v18; owned booking2fdaea... remainsv14
+cancelled. Initial helper used the unrelated Integration Hub catalogue collection;
+zero results were diagnostic lookup errors, not absent bookings. Corrected to
+known-ID fikaBookings reads before recovery.
+
+Confirmed existing historical downstream defect: base/r9/r13 Production areamendedv2
+(base supersededByr17); all three still hadpending requirementv1 andpending assigned
+Logisticsjobv2. Currentr17 needs_reviewv1 is genuinely current and must remain active.
+Six literal Production records belong to the two preserved bookings on13 October;
+no new fixture. Frozen source events and exact old Logistics invalidation payloads
+exist and are captured. Current read-only Logistics Inspector showed four scheduled
+36-piece Hospitality subloads, including the three stale retired revisions.
+
+Used existing staging Hub `POST /api/internal/production-fulfilment-reconcile`
+withserviceDate2026-10-13/limit10, existinginternaltoken3, no direct Firestore writes.
+This source matches deployedHubc0a41ae; earlier emulator regression
+“bounded Production Order reconciliation repairs missing/stale work and excludes
+local CPU production” passed (`resume-hub-full-emulator.log`). No new implementation
+required. HTTP200:6Production,1expected requirement,3withdrawn,3unchanged,
+0created/updated. Requirement audit records existing reconciliation actor/reason;
+normal durable Logistics invalidation staged by the canonical command.
+
+After convergence, three retired requirementswithdrawnv2, Logisticsjobswithdrawnv3
+withactiveLoadId removed; currentr17 stayspending/assigned, owned cancelled booking
+stayswithdrawn. Exact deep equality before/after PASS for both entire authoritative
+booking records (including quote/audit/history), all6 Production orders and their
+immutable domain events. Existing Logistics event payloads unchanged. No history
+deletion/rewriting or cancellation of the genuine currentr17. This closes the stale
+retirement state through governed recovery, **not full Gate5 acceptance yet**.
+
+Evidence underartifacts/uat: `oct08-historical-hospitality.cjs`, snapshots
+`oct08-historical-hospitality-before.json`, `-recovery-immediate.json`, `-settled.json`,
+`oct08-hospitality-recover.cjs`, `oct08-hospitality-recovery-result.json`.
+No automatic claim of Gate5PASS/P0-P1-zero/RC. Exact stale invalidation replay,
+repeat-recovery idempotency, durable new outbox identity proof, full load/assignment
+retirement comparison, browser reload and representative historical CPU/PDF evidence
+remain the next bounded acceptance unit. Do not rerun recovery blindly or reset
+delivered events: read settled snapshot first; use preserved unchangedv1 payloads
+through existing authenticated Logistics `/api/logistics/invalidate`, then compare
+source/requirements/jobs/history and active load/assignment counts. Keepcurrentr17.
+
+Checkpoint: Gate1PASS/Gate2PASS/Gate3PASS/**Gate4PASS**, outbox starvationP1CLOSED,
+Gate5OPEN (governed retirement convergence accepted, replay/history UI still pending).
+Delivered staging exactimplementationa866b49; other app SHAs table above unchanged;
+report-only commits require no rollout. Production untouched/protected hashes match.
+No local server/worker remains. Final report-only SHA supplied after push.
+
 ## Hub stale-source guard and owned rapid-amend/withdraw gate — 7 October 2026
 
 Starting fetched HEAD/origin/main: `e2adb67b75a98667cddab74edeefba8d0a2c84d5`.
