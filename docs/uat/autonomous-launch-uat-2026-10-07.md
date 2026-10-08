@@ -1176,7 +1176,7 @@ Delivered staging exactimplementationa866b49; other app SHAs table above unchang
 report-only commits require no rollout. Production untouched/protected hashes match.
 No local server/worker remains. Final report-only SHA supplied after push.
 
-### Gate5 historical Hospitality — event-identity P1 remediated; stale replay PASS; UI verification pending
+### Gate5 historical Hospitality — event-identity P1 remediated; stale replay PASS; UI/history PASS; **Gate5 PASS**
 
 **Remediation (CLOSED).** Root cause: `withdrawFulfilmentRequirement` advances the
 requirement `version` (v1→v2) but not `sourceVersion`; `logisticsProjectionEventId`
@@ -1228,12 +1228,45 @@ retired Logistics jobs (base, `:r9`, `:r13`, plus preserved cancelled booking
 `cancelled`. Current `:r17` requirement `pending` v1, job `pending` with `activeLoadId`
 and its load `planned` (Van 1); the single assignment is intact. Nothing resurrected.
 
-**Gate5 remains OPEN for one item only:** historical/replay UI verification. The
-built-in browser pane has no staging session and Google sign-in requires credentials,
-which the agent must not enter; a signed-in browser is required. All other Gate5 checks
-(identity P1, idempotent recovery, exact stale replay, canonical history stability)
-PASS. Production untouched; protected CHANGELOG/MenuData hashes unchanged; no CPU
-dead-letter replay, no terminal `nextEligibleAt` change, no retry-query change.
+**UI / history verification (PASS).** Staging UI, signed-in Integration
+Administrator session in the managed browser (no credentials entered by the agent).
+Logistics `https://logistics-staging.fikacatering.com`, WC 12-16 Oct, Tue 13 Oct:
+tile and day header `1 loads · 2 vans · 1 scheduled · 0 in queue · 0 needs time · 0
+attention`; planning queue empty; one MNK stop 07:00 on Van 1. Inspector: destination
+MNK, source Hospitality, scheduled 07:00-07:30, preferred source 12:00 labelled
+advisory, Van 1 planned, status Scheduled, load lifecycle Planned, **SUBLOADS 1**
+(Hospitality 36 piece) -- the three retired subloads that previously sat beside it
+are gone; page text contains no withdrawn/cancelled/retired work. Full page reload
+and week back/forward navigation re-read the same figures (last updated 16:21);
+nothing stale resurfaced. CPU `https://cpu-staging.fikacatering.com`, week 12-16 Oct,
+Tue 13 Oct: exactly two jobs -- current MNK Hospitality booking (12 pax, Production 36
+piece, status Planning) and the owned UAT booking clearly labelled `Cancelled` /
+`Cancelled booking` with its cancellation reason; the three superseded `r9`/`r13`/base
+revisions are not listed as jobs. 36 piece in CPU agrees with the single Logistics
+subload. No signed-allergen release, revoked state or historical PDF appears on these
+Hospitality jobs, so none is presented as current authority. Hub `/production`
+defaults to today's window and labels cancelled orders `Cancelled`. Audit/history is
+unchanged (requirement audit 2 entries each; Logistics outbox/changes unchanged; zero writes during
+replay). Not exercised: browser back/forward across the auth redirect (SPA navigation
+used instead).
+
+**P2/P3 observations (non-blocking, pre-existing).** Logistics Inspector shows `Load
+quantity: Quantity unavailable` and nested `Time to confirm` despite a 07:00
+schedule (already recorded above as P2 presentation items). Setting the CPU date
+input programmatically did not update the app state (test-harness artefact; the
+app's own week navigation works).
+
+**Gate5 disposition: PASS.** Identity P1 closed (`63512b7`, deployed Hub staging),
+idempotent recovery zero writes, exact stale replay no-op across 12 collections,
+current `r17` untouched, retired work stays withdrawn/non-current, history stable, UI
+verified. No unresolved Gate5 P0/P1. Supersedes the earlier `Gate5OPEN` checkpoint
+lines above. Limitation retained: pre-fix live immutability cannot be shown (originals
+were overwritten before the fix; preserved as evidence) and the new `:r2` identity was
+proven by emulator regression rather than a natural live record. RC not frozen;
+Gates 1-5 PASS; outstanding for final RC review: six-app same-SHA regression, Gate
+4/5 follow-ups already listed, and the separate open P2s (CPU post-commit sequence
+conflict, terminal `nextEligibleAt` packaging). Production untouched; protected
+`CHANGELOG.md`/`01_MenuData.js` hashes unchanged.
 
 ## Hub stale-source guard and owned rapid-amend/withdraw gate — 7 October 2026
 
