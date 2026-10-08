@@ -3,10 +3,12 @@
 Task: FIKA OS — Autonomous Launch UAT + Remediation War Room.
 Branch: `main`. Starting fetched `origin/main`: `4948ed5730a2a090801407b86392f61a34cac595`.
 Environment: staging only, Firebase project `fika-os-dev`.
-RC achieved: **NO — G&G AND FULL ALLERGEN LIFECYCLE PASS; GATES3–5/OTHER RC GATES OPEN**. No RC SHA frozen.
+RC achieved: **NO — G&G AND FULL ALLERGEN LIFECYCLE PASS; NEW LOGISTICS CLEAR-TIME P1; GATES3–5/OTHER RC GATES OPEN**. No RC SHA frozen.
 Latest continuation is the 8 October resume section below. The withdrawal consumer
 acceptance remains PASS; older stop/resume instructions are historical checkpoints.
-The resume instruction supersedes the earlier closure-only scope. Continue the ordered UAT/remediation loop; automatically checkpoint if ordinary usage remaining falls below 10%.
+The latest resume instruction supersedes older scopes/thresholds: continue the ordered
+UAT/remediation loop, checkpoint at approximately15% remaining, and start no new major
+gate/remediation below that threshold.
 Resume fetched `origin/main` and local HEAD: `d1c9e5d7cbb540def2b4882d69635315e60ea398` (report-only prior checkpoint). Protected hashes and all six staging provenance rows were reverified before continuing. The latest implementation commit and final HEAD/origin SHA are recorded below or returned in the chat following commit/push.
 
 The task-specific protected-file instruction overrides the normal CHANGELOG rule.
@@ -433,8 +435,15 @@ when draft receives work. Stale merged placement commits neither loads nor promo
 Focused load integrity/regression **105/105 PASS**; full Logistics **446/446 PASS**,
 zero skips, `NODE_ENV=test npm test` outside the restricted runner; typecheck and
 webpack build/standalone-assets PASS; diffcheck and focused source review PASS.
-Commit/push, Logistics-only staging deployment and original owned live retest
-are pending at this intermediate record. Logs `oct08-draft-target-before.log`,
+Implementation committed/pushed as `19884563ecc689182677d2240c72dedefbac781f`;
+HEAD=origin/main after fetch. Logistics-only rollout `uat-1008103245-1988456` at
+09:36:08Z: buildREADY/rolloutSUCCEEDED/current100%, not reconciling, exact source1988456.
+Original live scenario retested by normal native move on the existing draft Van2:
+10:30–11:15/loadv5 and target plannedv2 commit together. Second move10:45–11:30/loadv6
+leaves target plannedv2 with exactly one canonical-work-planned audit event. Stable
+load/job/assignment IDs; exactly1 load,1 job,1 assignment,0 stops/movements. No direct
+repair or forced runtime record. Confirmed browser settles after Saving. **This P1 PASS
+locally and live; Gate3 overall remains IN PROGRESS.** Logs `oct08-draft-target-before.log`,
 `after.log`, `full.log`, `typecheck.log`, `build.log` under `artifacts/uat` with the
 `oct08-draft-target-` prefix. Canonical read-only date-scoped snapshots:
 `oct08-timeline-before-planning.json`, `assigned-van1.json`, `moved-van1.json`,
@@ -446,6 +455,85 @@ failures above remain open investigations; comprehensive Gate3 is not yet PASS.
 Retain the current19 October fixture for remaining interaction/concurrency checks,
 then retire through normal Menu withdrawal.12 October withdrawn history is untouched.
 No direct Firestore writes, production actions, permission changes or other app rollout.
+
+### Latest Gate3 checkpoint — clear-time queue P1 confirmed, no fix started
+
+After both bounded P1s above passed staging acceptance at source1988456, normal
+Inspector **Clear time** on the same owned load succeeds. Read-only snapshot at
+09:39:41Z proves loadv7 retains its ID, Van2 ownership, planned status and assignment,
+with scheduledTime/scheduledEnd absent. Job remainsv2, both runs plannedv2, exactly
+1 job/load/assignment and0 native stops/movements. This is expected clear-command
+authority behavior, not lost data or a cancellation.
+
+**New P1 launch blocker:** settled UI and ordinary reload show1 needs-time item,
+0 scheduled, Planning queue(0)/Needs time0, empty timeline, no Haleon card. The
+cleared delivery work is no longer reachable through the normal queue/timeline.
+Evidence `artifacts/uat/oct08-timeline-cleared-time-live.json` and screenshot
+`artifacts/uat/oct08-logistics-clear-time-p1.jpg`. This reproduces on the exact
+READY/current100% deployed1988456 source. Gate3 remains FAIL/IN PROGRESS; no RC/GO.
+
+Root cause traced: `lib/projection-dashboard-adapter.ts` creates workGroups from
+unassigned planningQueue and outstanding collections only; assigned delivery loads
+with no scheduledTime have no delivery workGroup. The unscheduled canonical stop
+is correctly counted as needs-time but intentionally excluded from timeline cards.
+`deriveTimelineQueueCards` additionally admits unassigned refs/outstanding collection
+only. A delivery projection group alone is insufficient: queue visibility/placement
+eligibility and normal Inspector/drag command routing must recognize the existing
+load rather than create another assignment. Fix not implemented or deployed.
+
+**Exact next atomic gate:** expose assigned untimed delivery work from current durable
+projection using its canonical load/group IDs, job refs and expected versions; preserve
+workstream/context. Route Set time and queue placement to existing canonical load
+reschedule commands with the complete constituent load ID/version set, preserving
+merged placement and ownership. Do not convert assigned refs to fake unassigned
+refs, reassign by display names, or create replacement loads merely to restore timing.
+Verify provider projection adapter + directly affected queue/consumer paths, clear →
+reload → reachable needs-time → schedule same load, merged clear, stale/partial clear
+rollback, concurrency, collection isolation, no duplicates. Run affected/full Logistics
+tests, typecheck/build/diff review, commit/push exact main SHA, deploy Logistics only,
+verify READY/current100% provenance and rerun this original loadv7. No human product
+decision required: the existing needs-time/canonical command semantics establish intent.
+
+Keep the owned `rolling-week:2026-10-19` source current, corrected ready allergen
+releasev2 and the **untimed loadv7 on Van2** intact for this retest. Do not delete,
+directly repair Firestore, withdraw early, or restart passed G&G/allergen journeys.
+After remaining Gate3 checks finish, retire through normal Menu withdrawal.12 October
+remains withdrawn; historical Hospitality recovery and other documented P0/P1s remain
+separate. Then Gate4 Auth/Hub → Gate5 historical Hospitality → outstanding RC gates.
+
+### Browser investigation / checkpoint validation
+
+Untouched mounted fixture first repeated its3 initial failures. Exploratory test-helper
+corrections identified viewport-scroll coordinate noise, grab offset68 on a14px arrival
+marker, and innerText empty because arrival ghost labels intentionally have display:none.
+Two focused checks passed after geometry/preview-model corrections; pending queue check
+then exposed cursor `not-allowed` instead of expected `progress` (P2 feedback inconsistency,
+not a blocked save). Exploratory full result37 PASS/6 FAIL of43, including helper effects;
+**not** accepted as a green or authoritative unchanged suite. All exploratory test edits
+were restored; no mounted production source or test assertion was committed. Evidence
+retained under `oct08-timeline-three-*` and `oct08-timeline-mounted-current.log`.
+Untouched full mounted baseline rerun **43 executed /24 PASS /19 FAIL**, zero not-run,
+3.0min, no browser-spawn infrastructure failure. Log
+`artifacts/uat/oct08-timeline-mounted-baseline-final.log`; all failing screenshots,
+videos/traces retained under `timeline-mounted-baseline-final-results`. Failures cover
+cursor/geometry, previews/queue placement, optimistic/adjusted movement and Details,
+zoom/clamping, return-to-queue, arrival-only movement, integrated grip geometry,
+concurrent card edits and save/refresh/coalescing state. Exact test names and assertions
+are in the retained log; remaining failures require individual fixture/product triage.
+Do not label all19 product regressions or all19 stale fixtures without proving each.
+Logistics command/domain full suite remains446/446 PASS; date-isolation Chromium6/6
+PASS. **The full mounted browser suite is not green.** Production timeline source was
+unchanged by these investigations. Local fixture server stopped after the completed run.
+
+Five-hour usage at final checkpoint15% remaining / weekly27%. Per approximate15%
+guard, finish current verification/report unit only; no new queue architecture/remediation
+started. Current implementation/main SHA `19884563ecc689182677d2240c72dedefbac781f`;
+latest Logistics staging same SHA/build `uat-1008103245-1988456`. Final report commit
+SHA will differ from served implementation SHA solely by checkpoint documentation.
+Both protected hashes remain the documented values and both files remain unstaged.
+CHANGELOG intentionally not updated under explicit protected-file instruction.
+Production untouched. Temporary desktop1440x900 viewport reset; owned staging tabs
+retained for continuation. No detached local worker should remain at final checkpoint.
 
 ## Hub stale-source guard and owned rapid-amend/withdraw gate — 7 October 2026
 
