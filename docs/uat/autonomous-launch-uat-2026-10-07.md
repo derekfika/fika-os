@@ -3,7 +3,7 @@
 Task: FIKA OS — Autonomous Launch UAT + Remediation War Room.
 Branch: `main`. Starting fetched `origin/main`: `4948ed5730a2a090801407b86392f61a34cac595`.
 Environment: staging only, Firebase project `fika-os-dev`.
-RC achieved: **NO — MENU WITHDRAWAL CONSUMER GATE PASS; OTHER RC GATES OPEN**. No RC SHA frozen.
+RC achieved: **NO — G&G LIVE CHAIN PASS; ALLERGEN REVOCATION P0 FIX PASS; FULL GATE2/OTHER RC GATES OPEN**. No RC SHA frozen.
 Latest continuation is the 8 October resume section below. The withdrawal consumer
 acceptance remains PASS; older stop/resume instructions are historical checkpoints.
 The resume instruction supersedes the earlier closure-only scope. Continue the ordered UAT/remediation loop; automatically checkpoint if ordinary usage remaining falls below 10%.
@@ -161,7 +161,7 @@ cancel200/4.360015s, cancelled-source retry200/0.480389s (`oct08-grab-http.json`
 The former12 October signed fixture is authoritatively withdrawn and was preserved.
 Known-ID read proved `rolling-week:2026-10-19` absent. Normal Menu UI **Start blank week**
 created that separate owned week; selected existing `Fika-Autouat-20261007-Alpha Salad`
-for Monday, saved2 Haleon portions, published whoIe weekv1; four other weekdays remain
+for Monday, saved2 Haleon portions, published whole weekv1; four other weekdays remain
 published blank. No catalogue/recipe mutation or change to the withdrawn12 October week.
 Owned canonical Production:
 `production-order:v1:menu-planning:rolling-week:2026-10-19:day:1:oploc:bb4c7eea-87f5-4e79-8ed6-b973b24ded7b`.
@@ -218,12 +218,69 @@ Evidence: `oct08-allergen-checkpoint.json`, `first-signature.json`, `both-signed
 CUA live snapshots/screenshots in this session. UI/source styling unchanged.
 
 **Current gate status: P0 FIXED/LOCAL VALIDATION PASS/STAGING LIVE RETEST PENDING.**
-Commit/push the atomic four-file source/test fix plus this report; deploy only Delivered
-staging at that exact validated SHA, verify READY/SUCCEEDED/current100%/not reconciling
+Implementation committed/pushed as **`99c1ce04943c7704b9cd850159e08f103d915dd3`**,
+HEAD=origin/main verified. Only Delivered staging rollout submitted:
+`uat-1008043726-99c1ce0`; build operation
+`operation-1791430646149-65d4bf34db01d-9b96152d-50ba093f`, rollout operation
+`operation-1791430646374-65d4bf3512000-5ccef336-f163896a`.
+No queued rollout is claimed current before live verification.
+Verify READY/SUCCEEDED/current100%/not reconciling
 and runtime SHA, then reload the still-revoked owned19 October condition **before**
 new signatures. Confirm no old signed PDF or clearance. Then finish corrected dual
 re-sign/new-release propagation/history and stale replay, with final clean owned withdrawal
 if safe. No Gate3 or RC started. Protected files remain excluded.
+
+### P0 staging acceptance and 15% usage checkpoint — 8 October 2026
+
+At **03:41:30.852Z**, Delivered-only build `uat-1008043726-99c1ce0` is **READY**,
+rollout **SUCCEEDED**, current traffic **100%**, **not reconciling**, source exactly
+**`99c1ce04943c7704b9cd850159e08f103d915dd3`**. Public `/api/build-info` returns
+the same literal SHA. CPU/Hub/Menu/Hospitality/Logistics were not redeployed.
+Evidence `oct08-revocation-rollout-status.json`, `oct08-revocation-served-sha.json`.
+
+**Original safety failure retest PASS before any replacement signatures:** normal
+Delivered-In reload at Haleon/week19/day19 now retains Published Menuv1,1 dish/2 portions,
+but shows **Awaiting CPU sign-off**, with **zero old signed checker PDF links** and no
+old signed allergen clearance. Second reload retains that state. No republish/re-sign,
+outbox reset or direct data repair was used to hide the defect. Existing bounded recovery
+rejects the revoked cached projection and constructs a safe Menu-only view. Current
+CPU plan remains unsigned; Delivered head remains revoked; corrected GLUTEN CONTAINS,
+MILK CONTAINS/TREE_NUTS MAY_CONTAIN are saved. Signedv1 matrix/signature evidence and
+master/packet hashes match the earlier current release; only revoked authority metadata
+changes. Evidence `oct08-allergen-corrected-unsigned.json`, `post-deploy-revoked.json`,
+`history-integrity.json` (prefix `oct08-allergen-` under `artifacts/uat`). CUA snapshots
+and screenshots retain the browser evidence in this session.
+
+**New P0 revoked-read defect: FIXED / LOCAL AND ORIGINAL STAGING RETEST PASS.**
+**Gate2 overall: PARTIAL; corrected dual re-sign, independently materialized replacement,
+downstream replacement/current-pointer coherence and exact older CPU-release replay
+still pending.** Do not claim full Gate2/launch/RC acceptance from this narrower P0 pass.
+
+Usage at03:40 checkpoint read was **14% five-hour remaining / 42% weekly remaining**.
+Per the user's15% threshold, finished only the already-started atomic P0 fix/build/rollout
+and original live retest. No replacement signatures, new architectural remediation,
+Gate3 timeline, Gate4 AUTHMOD/Hub or Gate5 historical regression started below threshold.
+Final report-only commit follows; it does not change implementation or served source.
+
+**Exact next action for a fresh session:** fetch/verify HEAD=origin/main and protected
+hashes; verify Delivered still serves99c1ce0. Continue owned19 October CPU matrix at
+`/allergens?date=2026-10-19`: allsites,1 owned dish/1 OPLOC, corrected row checkpointed,
+no signatures/current release, v1 revoked in history. Finish two clearly marked UAT
+signatures through the existing normal pads, materialize a **new** release identity/version,
+verify current replacement in CPU/Delivered-In, preservev1 history and exercise exact
+older published/revoked event replay without resurrecting old clearance. Do not sign as
+real staff, add authority, change recipe/catalogue or mutate the preserved withdrawn
+12 October Menu week. The19 October source is intentionally still published as an
+owned in-progress fixture with its canonical CPU/Fulfilment/Logistics lineage; do not
+mistake that expected active test work for an orphan or delete it. Retire it by normal
+owned withdrawal only after the remaining gate is proved and evidence retained.
+
+Then proceed Gate3→Gate4→Gate5 in the new prompt order; earlier remaining RC/P1/history
+gates remain open. G&G gate and SQLite baseline are green and should not be repeated
+without affected-source evidence. No RC frozen; production untouched. Protected-file
+SHA256 checks match both documented hashes. Only the two protected edits remain dirty
+after report commit; no tests/workers or rollout left running locally. CHANGELOG not
+updated under explicit protection; this dated report records the work. UI unchanged.
 
 ## Hub stale-source guard and owned rapid-amend/withdraw gate — 7 October 2026
 
