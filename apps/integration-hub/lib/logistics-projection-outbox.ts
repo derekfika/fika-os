@@ -21,10 +21,33 @@ export type LogisticsProjectionOutboxEvent = DurableDomainEvent<LogisticsProject
 
 const outbox = () => db.collection("fikaLogisticsProjectionOutboxV1");
 
-function eventForRequirement(requirement: FulfilmentRequirement, previous?: FulfilmentRequirement): LogisticsProjectionOutboxEvent {
+/**
+ * Requirement revision that distinguishes a later transition at an unchanged
+ * sourceVersion (withdrawal, status change, same-version amendment). Undefined
+ * for the first revision of a source version, which keeps the original
+ * sourceVersion-only identity. Derived from the requirement's own audit
+ * history, so it needs no previous state and is stable across retries.
+ */
+export function logisticsProjectionRequirementRevision(requirement: FulfilmentRequirement) {
+  const revisionsAtSourceVersion = requirement.audit.filter(entry => entry.sourceVersion === requirement.sourceVersion).length;
+  return revisionsAtSourceVersion > 1 ? requirement.version : undefined;
+}
+
+function eventIdForRequirement(requirement: FulfilmentRequirement) {
+  return logisticsProjectionEventId({
+    serviceDate: requirement.serviceDate,
+    sourceDomain: requirement.sourceDomain,
+    sourceEntityId: requirement.sourceEntityId,
+    sourceVersion: requirement.sourceVersion,
+    destinationOplocId: requirement.destinationOplocId,
+    requirementRevision: logisticsProjectionRequirementRevision(requirement),
+  });
+}
+
+function eventForRequirement(requirement: FulfilmentRequirement, previous?: FulfilmentRequirement, identity: "transition" | "source-version" = "transition"): LogisticsProjectionOutboxEvent {
   const change = logisticsProjectionChangeForRequirement(requirement, previous);
   return {
-    eventId: logisticsProjectionEventId({ ...change, destinationOplocId: requirement.destinationOplocId }),
+    eventId: identity === "transition" ? eventIdForRequirement(requirement) : logisticsProjectionEventId({ ...change, destinationOplocId: requirement.destinationOplocId }),
     eventType: "fulfilment.requirement.logistics-invalidation",
     sourceAggregateId: requirement.canonicalId,
     sourceVersion: requirement.sourceVersion,
@@ -62,7 +85,11 @@ export function stageLogisticsProjectionEvent(
   previous?: FulfilmentRequirement,
 ) {
   const event = eventForRequirement(requirement, previous);
-  transaction.set(outbox().doc(event.eventId), outboxRecord(event));
+  const ref = outbox().doc(event.eventId);
+  // A later transition at an unchanged sourceVersion owns a distinct identity
+  // and must never replace an existing durable record: create fails closed.
+  if (logisticsProjectionRequirementRevision(requirement) !== undefined) transaction.create(ref, outboxRecord(event));
+  else transaction.set(ref, outboxRecord(event));
   return event.eventId;
 }
 
@@ -72,7 +99,9 @@ export function stageLogisticsProjectionEvent(
  * bounded and idempotent; normal mutations use stageLogisticsProjectionEvent.
  */
 export async function ensureLogisticsProjectionEvent(requirement: FulfilmentRequirement) {
-  const event = eventForRequirement(requirement);
+  // Legacy repair only fills a missing sourceVersion-level event; it never
+  // fabricates a transition identity for already-revised requirements.
+  const event = eventForRequirement(requirement, undefined, "source-version");
   return db.runTransaction(async transaction => {
     const ref = outbox().doc(event.eventId);
     const snapshot = await transaction.get(ref);
@@ -101,13 +130,11 @@ export async function deliverLogisticsProjectionForProductionOrder(order: Produc
 }
 
 export async function deliverLogisticsProjectionForRequirement(requirement: FulfilmentRequirement) {
-  return deliverLogisticsProjection(logisticsProjectionEventId({
-    serviceDate: requirement.serviceDate,
-    sourceDomain: requirement.sourceDomain,
-    sourceEntityId: requirement.sourceEntityId,
-    sourceVersion: requirement.sourceVersion,
-    destinationOplocId: requirement.destinationOplocId,
-  }));
+  const delivered = await deliverLogisticsProjection(eventIdForRequirement(requirement));
+  if (delivered || logisticsProjectionRequirementRevision(requirement) === undefined) return delivered;
+  // Requirements revised before transition identities existed only have the
+  // sourceVersion-level event; keep that handoff reachable.
+  return deliverLogisticsProjection(eventForRequirement(requirement, undefined, "source-version").eventId);
 }
 
 export async function repairLogisticsProjectionForServiceDate(serviceDate: string, limit = 50) {
