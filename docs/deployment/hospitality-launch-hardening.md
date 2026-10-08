@@ -216,3 +216,92 @@ relied on a sibling node_modules directory locally. Both scripts now import the
 shared catalogue directly. No maintenance script was executed against staging.
 Hub typecheck, production build and the 10 behavioural hardening tests were rerun.
 Hospitality's initial rollout succeeded; Hub's failed build never replaced traffic.
+
+## Changed files (implementation and build correction)
+
+- `apps/hospitality-booking/docs/rcoa-hospitality-mapping.md`
+- `apps/hospitality-booking/lib/hospitality-menu-catalogue.ts`
+- `apps/hospitality-booking/lib/local-angel-court-menu.ts`
+- `apps/hospitality-booking/lib/local-cfc-menu.ts`
+- `apps/hospitality-booking/lib/local-mnk-menu.ts`
+- `apps/hospitality-booking/lib/local-munich-re-menu.ts`
+- `apps/hospitality-booking/lib/local-rcoa-menu.ts`
+- `apps/hospitality-booking/scripts/convert-mnk-menu.mjs`
+- `apps/hospitality-booking/scripts/convert-rcoa-menu.mjs`
+- `apps/hospitality-booking/scripts/google-menu-auth.mjs`
+- `apps/integration-hub/app/api/internal/booking-email-outbox/route.ts`
+- `apps/integration-hub/app/api/internal/booking-email-replay/route.ts`
+- `apps/integration-hub/apphosting.staging.yaml`
+- `apps/integration-hub/firestore.indexes.json`
+- `apps/integration-hub/lib/booking-email-delivery.ts`
+- `apps/integration-hub/lib/booking-email-firestore.ts`
+- `apps/integration-hub/lib/booking-email-outbox.ts`
+- `apps/integration-hub/lib/booking-notifications.ts`
+- `apps/integration-hub/lib/hospitality-booking-service.ts`
+- `apps/integration-hub/lib/hospitality-price-trust.ts`
+- `apps/integration-hub/lib/production-domain.ts`
+- `apps/integration-hub/scripts/create-site-menu-offerings.ts`
+- `apps/integration-hub/scripts/promote-local-portal-menu-items.ts`
+- `apps/integration-hub/tests/booking-email-firestore.test.ts`
+- `apps/integration-hub/tests/hospitality-booking-service.test.ts`
+- `apps/integration-hub/tests/hospitality-launch-hardening.test.ts`
+- `apps/integration-hub/tests/hospitality-projection-boundaries.test.ts`
+- `docs/deployment/hospitality-launch-hardening.md`
+- `docs/uat/autonomous-launch-uat-2026-10-07.md`
+- `packages/server-shared/package.json`
+- `packages/server-shared/src/hospitality-catalogue/hospitality-menu-catalogue.ts`
+- `packages/server-shared/src/hospitality-catalogue/index.ts`
+- `packages/server-shared/src/hospitality-catalogue/local-angel-court-menu.ts`
+- `packages/server-shared/src/hospitality-catalogue/local-cfc-menu.ts`
+- `packages/server-shared/src/hospitality-catalogue/local-mnk-menu.ts`
+- `packages/server-shared/src/hospitality-catalogue/local-munich-re-menu.ts`
+- `packages/server-shared/src/hospitality-catalogue/local-rcoa-menu.ts`
+- `packages/server-shared/src/hospitality-catalogue/mnk-hospitality-menu.v1.json`
+- `packages/server-shared/src/hospitality-catalogue/rcoa-hospitality-menu.v1.json`
+
+## Final post-RC staging acceptance — 8 October 2026
+
+Implementation committed/pushed as `0143f74e4f13354d157e29cfddc6b4504b899928`.
+Hub clean-install build correction committed/pushed as
+`9b747cc10d22c34c132b9cd0b25601fef27c06e0`: two existing maintenance scripts now
+import shared catalogue directly rather than the Hospitality wrapper. The initial
+Hub build failed before traffic changed. Corrected local typecheck/build and 10/10
+hardening tests PASS; corrected cloud compilation/typechecking/build also PASS.
+No maintenance/migration script ran against staging.
+
+Verified live provenance through App Hosting build source, rollout and traffic:
+
+| Staging backend | Exact source SHA | Build / rollout ID | Acceptance |
+| --- | --- | --- | --- |
+| Integration Hub (`fika-os-staging`) | `9b747cc10d22c34c132b9cd0b25601fef27c06e0` | `uat-1008214827-9b747cc` | READY / SUCCEEDED / current 100% / not reconciling |
+| Hospitality (`fika-hospitality-staging`) | `0143f74e4f13354d157e29cfddc6b4504b899928` | `uat-1008214306-0143f74` | READY / SUCCEEDED / current 100% / not reconciling |
+
+Email candidate index `fikaBookingNotifications/CICAgNi4-ZIK` is READY in staging.
+Safe live acceptance on the verified source:
+
+- Both internal worker/replay POST routes without service token return HTTP 403.
+- Authorized worker POST returns HTTP 200, `enabled:false`, `attempted:0`.
+  This proves the deployment kill switch; it does not claim live Gmail delivery.
+- Public bridge submission with an intentionally unknown item and tampered prices
+  returns HTTP 422, unknown/retired catalogue item. Pricing validation occurs before
+  transaction writes, so this rejection created no booking/email obligation.
+- Hospitality CFC reference-data read returns HTTP 200 with 37 catalogue items.
+
+No real customer email, Gmail send, OAuth consent/replacement, alias change,
+Scheduler activation, dead-letter manufacture or cloud booking mutation occurred.
+Actual Gmail construction/receipt/retry/uncertainty and lifecycle transitions were
+proven with mocks and isolated local Firestore tests. Terminal selection, exact
+retry, immutable earlier messages, revision guards and sender routing passed those
+behavioural tests. Delivery activation remains deliberately pending Derek's manual
+Workspace/mailbox/send-as/send-only grant and approved safe-recipient setup.
+
+Local evidence: `artifacts/uat/post-rc-final-provenance.json`,
+`post-rc-live-acceptance.json`, `post-rc-hospitality-live-read.json`,
+`post-rc-email-index-ready.json`, and validation logs described above. Evidence stays
+local; runtime data/secrets are not committed. Final report commits are documentation
+only and do not alter either deployed application SHA.
+
+Protected SHA256 values reverified unchanged. HEAD equals origin/main after final
+report push/fetch. Unrelated existing protected-file edits and untracked audit/artifact
+files remain preserved; they are not part of this task's commits. Production untouched.
+Gates 1–5 and the previously frozen RC remain authoritative and were not rerun/refrozen.

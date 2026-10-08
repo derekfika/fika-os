@@ -2666,3 +2666,50 @@ CHANGELOG `4691AC53FF895F84701B476129018065ED8F4F1D766DC458E706BD455201E81D`;
 MNK MenuData `7A5C0D3664799ED88D7BF1473683F2A6EFCC6FBA9232B3B32C1E139C364D1636`.
 Neither file was modified/staged/restored/committed. Unrelated local audit/artifact
 files are preserved. CHANGELOG updated: no — explicit user protection.
+
+## Final post-RC staging acceptance — 8 October 2026
+
+Implementation committed/pushed as `0143f74e4f13354d157e29cfddc6b4504b899928`.
+Hub clean-install build correction committed/pushed as
+`9b747cc10d22c34c132b9cd0b25601fef27c06e0`: two existing maintenance scripts now
+import shared catalogue directly rather than the Hospitality wrapper. The initial
+Hub build failed before traffic changed. Corrected local typecheck/build and 10/10
+hardening tests PASS; corrected cloud compilation/typechecking/build also PASS.
+No maintenance/migration script ran against staging.
+
+Verified live provenance through App Hosting build source, rollout and traffic:
+
+| Staging backend | Exact source SHA | Build / rollout ID | Acceptance |
+| --- | --- | --- | --- |
+| Integration Hub (`fika-os-staging`) | `9b747cc10d22c34c132b9cd0b25601fef27c06e0` | `uat-1008214827-9b747cc` | READY / SUCCEEDED / current 100% / not reconciling |
+| Hospitality (`fika-hospitality-staging`) | `0143f74e4f13354d157e29cfddc6b4504b899928` | `uat-1008214306-0143f74` | READY / SUCCEEDED / current 100% / not reconciling |
+
+Email candidate index `fikaBookingNotifications/CICAgNi4-ZIK` is READY in staging.
+Safe live acceptance on the verified source:
+
+- Both internal worker/replay POST routes without service token return HTTP 403.
+- Authorized worker POST returns HTTP 200, `enabled:false`, `attempted:0`.
+  This proves the deployment kill switch; it does not claim live Gmail delivery.
+- Public bridge submission with an intentionally unknown item and tampered prices
+  returns HTTP 422, unknown/retired catalogue item. Pricing validation occurs before
+  transaction writes, so this rejection created no booking/email obligation.
+- Hospitality CFC reference-data read returns HTTP 200 with 37 catalogue items.
+
+No real customer email, Gmail send, OAuth consent/replacement, alias change,
+Scheduler activation, dead-letter manufacture or cloud booking mutation occurred.
+Actual Gmail construction/receipt/retry/uncertainty and lifecycle transitions were
+proven with mocks and isolated local Firestore tests. Terminal selection, exact
+retry, immutable earlier messages, revision guards and sender routing passed those
+behavioural tests. Delivery activation remains deliberately pending Derek's manual
+Workspace/mailbox/send-as/send-only grant and approved safe-recipient setup.
+
+Local evidence: `artifacts/uat/post-rc-final-provenance.json`,
+`post-rc-live-acceptance.json`, `post-rc-hospitality-live-read.json`,
+`post-rc-email-index-ready.json`, and validation logs described above. Evidence stays
+local; runtime data/secrets are not committed. Final report commits are documentation
+only and do not alter either deployed application SHA.
+
+Protected SHA256 values reverified unchanged. HEAD equals origin/main after final
+report push/fetch. Unrelated existing protected-file edits and untracked audit/artifact
+files remain preserved; they are not part of this task's commits. Production untouched.
+Gates 1–5 and the previously frozen RC remain authoritative and were not rerun/refrozen.
