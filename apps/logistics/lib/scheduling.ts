@@ -223,6 +223,11 @@ export function projectedCollectionScheduleCommand(loadId: string | string[], ta
   };
 }
 
+export function projectedDeliveryScheduleCommand(authority: { loadIds: string[]; expectedLoadVersions: Record<string, number> }, targetRunId: string, scheduledTime: string, scheduledEnd?: string) {
+  if (!authority.loadIds.length || new Set(authority.loadIds).size !== authority.loadIds.length || authority.loadIds.some(id => !Number.isInteger(authority.expectedLoadVersions[id]) || authority.expectedLoadVersions[id] < 0)) return undefined;
+  return { action: "reschedule-delivery-loads" as const, loadIds: [...authority.loadIds], expectedLoadVersions: Object.fromEntries(authority.loadIds.map(id => [id, authority.expectedLoadVersions[id]])), targetRunId, lane: "delivery" as const, scheduledTime, ...(scheduledEnd ? { scheduledEnd } : {}) };
+}
+
 export function queuePlacementConverged(
   operation: PendingScheduleOperation,
   snapshot: { projectionBacked: boolean; projectionSequence?: number; exists: boolean; actionable: boolean },

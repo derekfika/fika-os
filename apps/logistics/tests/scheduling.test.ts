@@ -17,6 +17,7 @@ import {
   markUncertainPlacement,
   placementRefreshOutcome,
   projectedCollectionScheduleCommand,
+  projectedDeliveryScheduleCommand,
   queuePlacementConverged,
   reconcileUncertainPlacement,
   retireConvergedPlacementAuthorities,
@@ -33,6 +34,18 @@ import {
   uncertainPlacementTimeout,
   uncertainPlacementWindowExpired,
 } from "../lib/scheduling";
+
+test("assigned untimed delivery commands retain every canonical load and captured version", () => {
+  const authority = { loadIds: ["load:a", "load:b"], expectedLoadVersions: { "load:a": 7, "load:b": 4 } };
+  const before = structuredClone(authority);
+  assert.deepEqual(projectedDeliveryScheduleCommand(authority, "run:two", "10:45", "11:15"), {
+    action: "reschedule-delivery-loads", loadIds: ["load:a", "load:b"], expectedLoadVersions: { "load:a": 7, "load:b": 4 }, targetRunId: "run:two", lane: "delivery", scheduledTime: "10:45", scheduledEnd: "11:15",
+  });
+  assert.deepEqual(authority, before);
+  assert.equal(projectedDeliveryScheduleCommand({ ...authority, expectedLoadVersions: { "load:a": 7 } }, "run:two", "10:45"), undefined);
+  assert.equal(projectedDeliveryScheduleCommand({ ...authority, loadIds: ["load:a", "load:a"] }, "run:two", "10:45"), undefined);
+  assert.equal(projectedDeliveryScheduleCommand({ ...authority, loadIds: [] }, "run:two", "10:45"), undefined);
+});
 
 test("native timing replacement is mutually exclusive and drops an omitted old window end", () => {
   const window = { canonicalId: "stop:1", plannedWindow: { startTime: "09:00", endTime: "09:30" }, version: 1 };

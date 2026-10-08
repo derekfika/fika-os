@@ -535,6 +535,75 @@ CHANGELOG intentionally not updated under explicit protected-file instruction.
 Production untouched. Temporary desktop1440x900 viewport reset; owned staging tabs
 retained for continuation. No detached local worker should remain at final checkpoint.
 
+## Autonomous resume — 8 October 2026: assigned untimed Logistics delivery P1
+
+Starting fetched origin/main=HEAD **`38b548123da895e7be104bd8e573721c21efa880`**,
+branchmain; only protected CHANGELOG/MenuData user edits dirty, both SHA256 values
+match. Difference from served implementation1988456 is solely this UAT report;
+no missing Logistics source or initial redeployment. At09:55:21Z Logistics staging
+`19884563ecc689182677d2240c72dedefbac781f`, rollout`uat-1008103245-1988456`,
+READY/SUCCEEDED/current100%, not reconciling. Read-only owned19 October snapshot
+at09:55:23Z retains loadv7, Van2 plannedv2, jobv2,1 load/job/assignment, no timing,
+0 native stops/movements. Evidence `oct08-clear-time-start-provenance.json` and
+`oct08-timeline-clear-time-start.json` under `artifacts/uat`.
+
+Usage at entry100% five-hour/weekly remaining; latest request retains the approximate
+15% checkpoint guard. Gate1/Gate2 and deep-link/draft-run P1s remain accepted; no
+wholesale repeat. Production strictly out of scope and untouched.
+
+### Clear-time P1 regression and bounded correction — local PASS, staging pending
+
+Before implementation, the provider regression fails: assigned untimed merged
+delivery has no operator needs-time work group. Corrected adapter now derives
+`projection-delivery:<existing group ID>` only for assigned untimed nonempty delivery
+loads. It keeps assigned run/stop/job refs, complete constituent load IDs/versions
+on the existing canonical stop, workstreams and contents/units from the projection.
+No fake unassigned refs or new persistence domain. Assigned delivery and outstanding
+collection groups remain separate; unassigned groups retain existing behavior.
+
+Queue-card derivation and pending/convergence checks recognize this assigned delivery.
+Set time opens the existing Inspector with its assigned vehicle selected. Set time
+and pointer queue placement submit canonical bulk reschedule with all constituent
+IDs and their captured expected versions; no replacement load or assignment command.
+Explicit expected versions are preserved instead of silently replaced by a later
+read snapshot. Missing/incomplete/duplicate authority fails closed. Collection
+preferences are not edited through the derived assigned-delivery group; its checkbox
+displays current state disabled. Vehicle ownership is displayed as the vehicle, with
+driver fallback only if the vehicle label is absent. Existing styles/tokens reused;
+Style Guide compliance PASS.
+
+Provider/scheduling focused41/41 PASS; full Logistics448/448 PASS, zero skips;
+typecheck PASS. Rendered initial14/14 PASS includes single/merged Clear time → reload
+→ Needs time → Set time and drag → same scheduled IDs, captured versions, same jobs
+and assignments, collection/unassigned isolation and stale queue rejection against
+a newer canonical command. Existing merged stale/partial clear rollback cases also
+pass in the full command suite. Initial rendered fixture had an incorrect landmark,
+obsolete data-stop-id selector and incorrect Window end accessible name; corrected
+to actual complementary queue, current mounted data-testid and Schedule window end.
+These locator failures are not claimed product regressions or passes.
+
+Additional before-deploy collision regression caught a new-path implementation edge:
+when the client shifts10:45–11:15 to11:00 past a10:45–11:00 obstacle, it must move the
+end to11:30 rather than shrink the window to15min. Duration is now preserved as on
+existing timeline moves; adjacent half-open placement passes through the actual
+canonical route. Focused rendered collision before FAIL/after PASS; no faulty version
+was deployed. Final rendered suite **15/15 PASS**, full final Logistics **448/448 PASS**,
+typecheck and webpack production build/standalone-assets PASS; diffcheck/focused source
+review PASS. Generated Next dev route import returned to the unchanged production
+form through the build. Local server stopped. Commit/push/Logistics-only deployment
+and original live loadv7 retest follow. This P1 remains open until staging acceptance.
+
+No new Firestore reads/writes from the adapter or queue rendering. Cold/warm read
+shape remains the bounded current day projection and existing head/cache flow;
+mutation uses existing canonical reschedule transaction/events/rebuild. No extra
+polling/listeners or upstream scans. Tests intercept all APIs into isolated actual
+handler fixtures, not staging Firestore. PowerShell process launch briefly returned
+Access denied; trusted Node/cmd validation ran, then normal PowerShell recovered.
+Actual test bodies ran. Evidence prefix`oct08-clear-time-` under`artifacts/uat`:
+provider-before/after, focused, full, typecheck, consumer-final, collision-before/after
+logs and scoped consumer/collision browser traces/screenshots. Local fixture server
+will be stopped before production build.
+
 ## Hub stale-source guard and owned rapid-amend/withdraw gate — 7 October 2026
 
 Starting fetched HEAD/origin/main: `e2adb67b75a98667cddab74edeefba8d0a2c84d5`.

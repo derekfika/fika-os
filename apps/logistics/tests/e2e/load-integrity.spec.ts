@@ -47,8 +47,8 @@ async function scenario(page: Page, collection = false, merged = false) {
   return { f, commands };
 }
 
-async function dropQueue(page: Page, lane: "delivery" | "collection", time: string, run = "r1") {
-  const source = page.locator(`[data-timeline-queue-id^="projection-${lane === "delivery" ? "job" : "collection"}:"]`).first();
+async function dropQueue(page: Page, lane: "delivery" | "collection", time: string, run = "r1", groupPrefix = lane === "delivery" ? "job" : "collection") {
+  const source = page.locator(`[data-timeline-queue-id^="projection-${groupPrefix}:"]`).first();
   await source.scrollIntoViewIfNeeded();
   const card = await source.locator(".mock-queue-main").boundingBox();
   const viewport = page.getByTestId("mounted-timeline-viewport");
@@ -66,6 +66,96 @@ async function dropQueue(page: Page, lane: "delivery" | "collection", time: stri
   await expect(page.getByTestId("mounted-drag-ghost")).toContainText(time);
   await page.mouse.up();
 }
+
+for (const merged of [false, true]) for (const entry of ["set-time", "drag"] as const) test(`${merged ? "merged" : "single"} cleared assigned delivery reloads into Needs time and ${entry} schedules the same canonical loads`, async ({ page }) => {
+  const { f, commands } = await scenario(page, true, merged);
+  const initial = f.records.get("fikaLogisticsDayProjectionsV1/" + f.date).deliveryLoads[0];
+  const originalAssignments = [...f.records.entries()].filter(([key]: [string, any]) => key.startsWith("fikaLogisticsAssignmentsV1/"));
+  const originalJobs = [...f.records.entries()].filter(([key]: [string, any]) => key.startsWith("fikaLogisticsJobsV1/"));
+  await page.getByTestId(`stop-projection-stop:delivery:${initial.id}`).click();
+  await page.getByRole("complementary", { name: "Details inspector" }).getByRole("button", { name: "Clear time", exact: true }).click();
+  await expect.poll(() => f.records.get("fikaLogisticsDayProjectionsV1/" + f.date).deliveryLoads[0].scheduledTime).toBeUndefined();
+  await page.reload();
+  const cleared = structuredClone(f.records.get("fikaLogisticsDayProjectionsV1/" + f.date).deliveryLoads[0]);
+  const queue = page.locator(`[data-timeline-queue-id="projection-delivery:${cleared.id}"]`);
+  await expect(queue).toBeVisible();
+  await expect(queue).toContainText("Time not confirmed");
+  await expect(page.locator(`[data-timeline-queue-id="projection-collection:${cleared.id}"]`)).toBeVisible();
+  await expect(page.getByRole("complementary", { name: "Planning queue", exact: true }).getByRole("button", { name: /^Needs time/ })).toHaveText("Needs time 2");
+  if (entry === "drag") await dropQueue(page, "delivery", "10:45", "r1", "delivery");
+  else {
+    await queue.getByRole("button", { name: "Set time", exact: true }).click();
+    const inspector = page.getByRole("complementary", { name: "Details inspector" });
+    await inspector.getByRole("button", { name: "Set delivery time", exact: true }).click();
+    await expect(inspector.getByLabel("Target delivery run", { exact: true })).toHaveValue("r1");
+    await inspector.getByLabel("Schedule time", { exact: true }).fill("10:45");
+    await inspector.getByLabel("Schedule window end", { exact: true }).fill("11:15");
+    await inspector.getByRole("button", { name: "Set time", exact: true }).click();
+  }
+  await expect.poll(() => commands.filter(command => command.action === "reschedule-delivery-loads").length).toBe(1);
+  const command = commands.find(command => command.action === "reschedule-delivery-loads")!;
+  expect(command.loadIds).toEqual(cleared.loadIds);
+  expect(command.expectedLoadVersions).toEqual(cleared.loadVersions);
+  expect(command.lane).toBe("delivery"); expect(command.targetRunId).toBe("r1");
+  await expect.poll(() => f.records.get("fikaLogisticsDayProjectionsV1/" + f.date).deliveryLoads[0].scheduledTime).toBe("10:45");
+  const after = f.records.get("fikaLogisticsDayProjectionsV1/" + f.date).deliveryLoads[0];
+  expect(after.id).toBe(initial.id); expect(after.loadIds).toEqual(initial.loadIds);
+  for (const id of initial.loadIds) {
+    const load = f.records.get("fikaLogisticsDeliveryLoadsV1/" + id);
+    expect(load.version).toBe(cleared.loadVersions[id] + 1); expect(load.runId).toBe("r1");
+    expect(load.collectionRequired).toBe(true); expect(load.collectionScheduledTime).toBeUndefined();
+  }
+  expect([...f.records.entries()].filter(([key]: [string, any]) => key.startsWith("fikaLogisticsAssignmentsV1/"))).toEqual(originalAssignments);
+  expect([...f.records.entries()].filter(([key]: [string, any]) => key.startsWith("fikaLogisticsJobsV1/"))).toEqual(originalJobs);
+  expect([...f.records.keys()].filter((key: string) => key.startsWith("fikaLogisticsDeliveryLoadsV1/"))).toHaveLength(initial.loadIds.length);
+  await page.reload();
+  await expect(page.getByTestId(`stop-projection-stop:delivery:${after.id}`)).toBeVisible();
+  await expect(page.locator(`[data-timeline-queue-id="projection-delivery:${after.id}"]`)).toHaveCount(0);
+  await expect(page.locator(`[data-timeline-queue-id="projection-collection:${after.id}"]`)).toBeVisible();
+});
+
+test("stale assigned untimed delivery queue cannot overwrite a newer canonical placement", async ({ page }) => {
+  const { f, commands } = await scenario(page, true, true);
+  let group = f.records.get("fikaLogisticsDayProjectionsV1/" + f.date).deliveryLoads[0];
+  await f.post({ action: "clear-delivery-load-schedule", loadIds: group.loadIds, expectedLoadVersions: group.loadVersions });
+  await page.reload();
+  group = structuredClone(f.records.get("fikaLogisticsDayProjectionsV1/" + f.date).deliveryLoads[0]);
+  await page.locator(`[data-timeline-queue-id="projection-delivery:${group.id}"]`).getByRole("button", { name: "Set time", exact: true }).click();
+  const inspector = page.getByRole("complementary", { name: "Details inspector" });
+  await inspector.getByRole("button", { name: "Set delivery time", exact: true }).click();
+  await inspector.getByLabel("Schedule time", { exact: true }).fill("11:00");
+  const newer = await f.post({ action: "reschedule-delivery-loads", loadIds: group.loadIds, expectedLoadVersions: group.loadVersions, targetRunId: "r1", lane: "delivery", scheduledTime: "10:45" });
+  expect(newer.response.status).toBe(200);
+  const confirmed = structuredClone([...f.records.entries()].filter(([key]: [string, any]) => /fikaLogistics(DeliveryLoads|Jobs|Assignments)V1\//.test(key)));
+  await inspector.getByRole("button", { name: "Set time", exact: true }).click();
+  await expect.poll(() => commands.filter(command => command.action === "reschedule-delivery-loads").length).toBe(1);
+  expect(commands.find(command => command.action === "reschedule-delivery-loads")!.expectedLoadVersions).toEqual(group.loadVersions);
+  await expect(page.getByTestId(`stop-projection-stop:delivery:${group.id}`)).toBeVisible();
+  await expect(page.getByRole("button", { name: /Move .*10:45/ })).toBeVisible();
+  expect([...f.records.entries()].filter(([key]: [string, any]) => /fikaLogistics(DeliveryLoads|Jobs|Assignments)V1\//.test(key))).toEqual(confirmed);
+});
+
+test("collision-adjusted cleared delivery placement preserves the chosen window duration", async ({ page }) => {
+  const { f, commands } = await scenario(page, true);
+  const original = f.records.get("fikaLogisticsDayProjectionsV1/" + f.date).deliveryLoads[0];
+  await f.post({ action: "clear-delivery-load-schedule", loadIds: original.loadIds, expectedLoadVersions: original.loadVersions });
+  f.requirements.push({ ...f.requirements[0], canonicalId: "req:obstacle", sourceEntityId: "order:obstacle", destinationOplocId: "site:other", destinationLabelSnapshot: "Other destination" });
+  await f.materialisation.reconcileLogisticsDay(f.date, "Operator");
+  const assigned = await f.post({ action: "assign-job-to-load", jobId: "logistics-job:req:obstacle", expectedJobVersion: 1, targetRunId: "r1", scheduledTime: "10:45", scheduledEnd: "11:00" });
+  expect(assigned.response.status).toBe(200);
+  await page.reload();
+  await page.locator(`[data-timeline-queue-id="projection-delivery:${original.id}"]`).getByRole("button", { name: "Set time", exact: true }).click();
+  const inspector = page.getByRole("complementary", { name: "Details inspector" });
+  await inspector.getByRole("button", { name: "Set delivery time", exact: true }).click();
+  await inspector.getByLabel("Schedule time", { exact: true }).fill("10:45");
+  await inspector.getByLabel("Schedule window end", { exact: true }).fill("11:15");
+  await inspector.getByRole("button", { name: "Set time", exact: true }).click();
+  await expect.poll(() => commands.filter(command => command.action === "reschedule-delivery-loads").length).toBe(1);
+  const command = commands.find(command => command.action === "reschedule-delivery-loads")!;
+  expect(command.scheduledTime).toBe("11:00"); expect(command.scheduledEnd).toBe("11:30");
+  await expect.poll(() => f.records.get("fikaLogisticsDeliveryLoadsV1/" + original.id).scheduledEnd).toBe("11:30");
+  expect(f.records.get("fikaLogisticsDeliveryLoadsV1/" + original.id).runId).toBe("r1");
+});
 
 for (const entry of ["queue", "inspector", "timeline"] as const) for (const collection of [false, true]) {
   test(`${entry} ${collection ? "collection" : "delivery"} produces canonical ownership, timing and versions`, async ({ page }) => {
@@ -128,7 +218,7 @@ test("projected merged delivery Clear sends every canonical load and preserves a
   const beforeLoads = [...f.records.entries()].filter(([key]: [string, any]) => key.startsWith("fikaLogisticsDeliveryLoadsV1/")).map(([, load]: [string, any]) => structuredClone(load));
   const beforeAssignments = [...f.records.entries()].filter(([key]: [string, any]) => key.startsWith("fikaLogisticsAssignmentsV1/")).map(([, assignment]: [string, any]) => structuredClone(assignment));
 
-  const card = page.locator(`[data-stop-id="projection-stop:delivery:${group.id}"]`);
+  const card = page.getByTestId(`stop-projection-stop:delivery:${group.id}`);
   await expect(card).toBeVisible();
   await card.click();
   const inspector = page.getByRole("complementary", { name: "Details inspector" });
@@ -179,7 +269,7 @@ test("projected merged collection Clear sends every canonical load and preserves
   const beforeLoads = [...f.records.entries()].filter(([key]: [string, any]) => key.startsWith("fikaLogisticsDeliveryLoadsV1/")).map(([, load]: [string, any]) => structuredClone(load));
   const beforeAssignments = [...f.records.entries()].filter(([key]: [string, any]) => key.startsWith("fikaLogisticsAssignmentsV1/")).map(([, assignment]: [string, any]) => structuredClone(assignment));
 
-  const card = page.locator(`[data-stop-id="projection-stop:collection:${group.id}"]`);
+  const card = page.getByTestId(`stop-projection-stop:collection:${group.id}`);
   await expect(card).toBeVisible();
   await card.click();
   const inspector = page.getByRole("complementary", { name: "Details inspector" });

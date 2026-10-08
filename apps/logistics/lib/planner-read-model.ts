@@ -179,6 +179,15 @@ function stopForRequirement(group: PlannerWorkGroup, ref: PlannerRequirementRef,
   return runs.find((run) => run.runId === ref.runId)?.stops.find((stop) => stop.stopId === ref.stopId);
 }
 
+/** A cleared delivery remains assigned; its queue action schedules the same load. */
+export function untimedAssignedDeliveryStop(group: PlannerWorkGroup, runs: PlannerRunView[]) {
+  if (!group.groupKey.startsWith("projection-delivery:")) return undefined;
+  const stopId = `projection-stop:delivery:${group.groupKey.slice("projection-delivery:".length)}`;
+  const ref = group.requirementRefs.find(item => item.runId && item.stopId === stopId);
+  const stop = ref && stopForRequirement(group, ref, runs);
+  return stop?.lane === "delivery" && !hasUsableSchedule(stop) ? stop : undefined;
+}
+
 function clockMinutes(value?: string) {
   if (!value) return undefined;
   const [hour, minute] = value.split(":").map(Number);

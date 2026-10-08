@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import type { PlannerDay, PlannerMovementView, PlannerWorkGroup } from "../lib/planner-read-model";
+import { untimedAssignedDeliveryStop } from "../lib/planner-read-model";
 import { directResizeEnabled, effectivePlacement, type ConfirmedPlacement, type PendingScheduleOperation, type SchedulePosition } from "../lib/scheduling";
 import { formatTimelineMinute, schedulableTimelineRuns, snapTimelineEndMinute, snapTimelineMinute, timelineQueueDuplicatesCanonical, timelineVisualSubrows } from "../lib/react-timeline-model";
 import styles from "./mounted-react-timeline.module.css";
@@ -33,13 +34,14 @@ function canonicalWorkIds(stop: PlannerDay["runs"][number]["stops"][number]): Se
 export function deriveTimelineQueueCards(groups: PlannerWorkGroup[], movements: PlannerMovementView[], runs: PlannerDay["runs"], pendingSchedules: Record<string, PendingScheduleOperation> = {}): QueueCard[] {
   const result: QueueCard[] = [];
   for (const group of groups) {
+    const untimedDelivery = untimedAssignedDeliveryStop(group, runs);
     const eligibleRefs = group.requirementRefs.filter((ref) => !ref.runId && (ref.status === "ready_for_planning" || ref.status === "amended" || (ref.status === "pending" && ref.sourceDomain === "cpu-production")));
     let collectionPending = false;
-    if (group.collectionRequired && group.groupKey.startsWith("projection-collection:")) {
+    if (!group.groupKey.startsWith("projection-delivery:") && group.collectionRequired && group.groupKey.startsWith("projection-collection:")) {
       const id = group.requirementRefs.find((ref) => ref.stopId)?.stopId;
       const linked = id ? runs.flatMap((run) => run.stops).find((item) => item.stopId === id) : undefined;
       collectionPending = Boolean(linked && !linked.plannedArrivalTime && !linked.plannedWindow?.startTime);
-    } else if (group.collectionRequired) {
+    } else if (!group.groupKey.startsWith("projection-delivery:") && group.collectionRequired) {
       collectionPending = group.requirementRefs.some((ref) => {
         const delivery = ref.runId && ref.stopId ? runs.find((run) => run.runId === ref.runId)?.stops.find((stop) => stop.stopId === ref.stopId) : undefined;
         const linked = delivery?.linkedStopId ? runs.flatMap((run) => run.stops).find((stop) => stop.stopId === delivery.linkedStopId) : undefined;
@@ -47,11 +49,11 @@ export function deriveTimelineQueueCards(groups: PlannerWorkGroup[], movements: 
       });
     }
     const placementPending = pendingSchedules[group.groupKey]?.intent === "scheduled" && Boolean(pendingSchedules[group.groupKey]?.proposed);
-    if (!eligibleRefs.length && !collectionPending && !placementPending) continue;
-    const workIds = collectionPending
+    if (!eligibleRefs.length && !untimedDelivery && !collectionPending && !placementPending) continue;
+    const workIds = untimedDelivery ? [untimedDelivery.stopId, ...group.requirementRefs.map(ref => ref.requirementId)] : collectionPending
       ? groupCollectionWorkIds(group, runs)
       : eligibleRefs.flatMap((ref) => [ref.requirementId, ...(ref.stopId ? [ref.stopId] : [])]);
-    result.push({ id: group.groupKey, kind: "group", destination: group.destinationLabel, lane: collectionPending ? "collection" : "delivery", loadCount: Math.max(1, collectionPending ? group.requirementCount : eligibleRefs.length), workIds, collectionRequired: group.collectionRequired, draggable: !placementPending });
+    result.push({ id: group.groupKey, kind: "group", destination: group.destinationLabel, lane: !untimedDelivery && collectionPending ? "collection" : "delivery", loadCount: Math.max(1, untimedDelivery || collectionPending ? group.requirementCount : eligibleRefs.length), workIds, collectionRequired: group.collectionRequired, draggable: !placementPending });
   }
   for (const movement of movements) {
     const placementPending = pendingSchedules[movement.movementId]?.intent === "scheduled" && Boolean(pendingSchedules[movement.movementId]?.proposed);

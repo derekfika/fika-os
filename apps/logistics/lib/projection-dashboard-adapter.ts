@@ -115,6 +115,27 @@ export function projectionToDashboardData(projection: LogisticsDayProjection) {
     planningState: job.productionReadiness === "attention" ? "attention" : "unplanned",
     collectionRequired: Boolean(projection.collectionRequiredKeys?.includes(`projection-job:${job.id}`)),
   }));
+  for (const load of projection.deliveryLoads.filter(item => item.runId && !item.scheduledTime && item.jobCount > 0)) {
+    const combinedLines = load.jobs.flatMap(job => job.contents?.length ? job.contents.map((content, index) => ({ ...line(job), lineKey: `projection:${job.id}:${index}`, displayName: content.description, quantity: content.quantity, unit: content.unit })) : [line(job)]);
+    const units = new Map<string, number>();
+    for (const item of combinedLines) units.set(item.unit, (units.get(item.unit) || 0) + item.quantity);
+    workGroups.push({
+      groupKey: `projection-delivery:${load.id}`,
+      serviceDate: projection.serviceDate,
+      destinationOplocId: load.destinationOplocId,
+      destinationLabel: load.destinationLabelSnapshot || load.destinationOplocId,
+      requiredTimes: [],
+      requirementRefs: load.jobs.map(job => ({ requirementId: job.id, sourceVersion: job.sourceVersion || 1, sourceDomain: job.sourceType as FulfilmentRequirement["sourceDomain"], sourceEntityId: job.sourceId, status: "ready_for_planning", workstream: job.workstream || fulfilmentWorkstream({ sourceDomain: job.sourceType }), runId: load.runId, stopId: `projection-stop:delivery:${load.id}` })),
+      requirementCount: load.jobCount,
+      sourceLabels: Array.from(new Set(load.jobs.map(job => job.workstream || fulfilmentWorkstream({ sourceDomain: job.sourceType })))),
+      combinedLines,
+      unitBreakdown: Array.from(units, ([unit, quantity]) => ({ unit, quantity })),
+      readiness: load.readiness === "attention" ? "ATTENTION" : "READY",
+      attention: load.readiness === "attention" ? ["Upstream amendment requires review"] : [],
+      planningState: "planned",
+      collectionRequired: Boolean(load.collectionRequired),
+    });
+  }
   for (const load of projection.deliveryLoads.filter((item) => item.collectionRequired && !item.collectionScheduledTime)) {
     const runId = load.collectionRunId || load.runId || unassignedRunId;
     const collectionStopId = `projection-stop:collection:${load.id}`;
