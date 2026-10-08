@@ -3,7 +3,7 @@
 Task: FIKA OS — Autonomous Launch UAT + Remediation War Room.
 Branch: `main`. Starting fetched `origin/main`: `4948ed5730a2a090801407b86392f61a34cac595`.
 Environment: staging only, Firebase project `fika-os-dev`.
-RC achieved: **NO — G&G, FULL ALLERGEN LIFECYCLE AND LOGISTICS CLEAR-TIME P1 PASS; GATES3–5/OTHER RC GATES OPEN**. No RC SHA frozen.
+RC achieved: **NO — GATES1–3 PASS; GATES4–5/OTHER RC GATES OPEN**. No RC SHA frozen.
 Latest continuation is the 8 October resume section below. The withdrawal consumer
 acceptance remains PASS; older stop/resume instructions are historical checkpoints.
 The latest resume instruction supersedes older scopes/thresholds: continue the ordered
@@ -787,6 +787,119 @@ so do not falsely report a15% usage stop. No active rollout or local fixture ser
 Both protected hashes match their documented values and remain unstaged user edits;
 CHANGELOG intentionally untouched. Production never deployed/mutated. Final report-only
 commit differs from served a2462fd solely in this UAT record; no app redeploy needed.
+
+## Latest autonomous resume — 8 October 2026: Gate3 retirement and exact replay PASS
+
+Starting fetched origin/main=HEAD **`4a1c8b5277cf98c8f98e583b69956b1a98d753f3`**,
+branchmain. Only the two protected user files dirty; both documented SHA256 values
+match. Difference from served Logistics implementationa2462fd is solely the report.
+At12:02:03Z Logistics `a2462fd589f0f105da972bac0c3cfcfe51f77c66`, rollout
+`uat-1008123333-a2462fd`: READY/SUCCEEDED/current100%, not reconciling. No deployment
+needed or performed this retirement task. Production untouched; no direct Firestore
+writes, projection clears, resets, grants, unrelated fixture changes or fabricated events.
+Accepted448/448 Logistics tests,64/64 affected rendered tests and prior typecheck/build
+acceptance remain applicable; they were not rerun wholesale during this normal flow.
+
+### Normal owned Menu withdrawal / durable convergence
+
+Only `rolling-week:2026-10-19`, publication `menu-publication:rolling-week:2026-10-19`,
+was withdrawn via Portion Planner → Withdraw week → required reason → Withdraw publication.
+Reason: “FIKA owned launch UAT 19 October fixture retirement after Logistics interaction
+and concurrency acceptance. Preserve publication and signed history.” No republish.
+Staging request log12:04:35.086441Z, service`fika-menu-planning-staging`, HTTP200,
+**1.630612s** latency; trace`a33c3169ad8974b3ed65a29f547dea1e`. Browser resource-timing
+API is unavailable in the automation bridge; no fabricated browser HTTP timing used.
+Menu initially shows **Withdrawn · downstream handoff pending**, then normal Refresh
+handoff status shows **delivered**, retained after CtrlShiftR input/browser reload.
+
+All5 published days nowwithdrawn while publication/day version1 historical identity
+is retained. Current compiledSnapshotId/weekPacket pointers cleared. The immutable
+snapshot `menu-publication:rolling-week:2026-10-19:snapshot:v1` stays present and has
+identical canonical hash before/after/replay:
+`859279ac029d96968c76e631e77799bfa7dcc55f2b844724d7b1702f029404d2`.
+Current rolling authoring state may be draft/ready-to-publish by existing withdrawal
+semantics; publication authority is withdrawn, not silently republished. Authored2
+portions remain editable historical intent, not active work.
+
+Six exact immutable withdrawal events each exist once, with one delivered outbox row:
+five `menu.day.withdrawn:menu-publication:rolling-week:2026-10-19:menu-publication:rolling-week:2026-10-19:v1:day:{0,1,2,3,4}:withdrawn:v1`
+and `production.materialise:menu-publication:rolling-week:2026-10-19:menu-publication:rolling-week:2026-10-19:v1:day:0:withdrawn:oploc:bb4c7eea-87f5-4e79-8ed6-b973b24ded7b:v1`.
+Source command committed at12:04:36.646Z; day0 delivered12:05:03.216Z, Production
+withdrawal12:05:09.897Z, other days12:05:10.068–10.434Z. Existing durable recovery
+delivered them automatically, no manual outbox/receipt reset or extra Scheduler change.
+
+| Owned record | Before | After normal withdrawal and exact replay |
+| --- | --- | --- |
+| Production `production-order:v1:menu-planning:rolling-week:2026-10-19:day:1:oploc:bb4c7eea-87f5-4e79-8ed6-b973b24ded7b` | v1/sourceVersion1/menu_available,2 units,audit1 | same ID,v2/sourceVersion1/cancelled,2 historical units,audit2 |
+| Fulfilment `fulfilment-requirement:cpu-production:` + exact Production ID + `:oploc:bb4c7eea-87f5-4e79-8ed6-b973b24ded7b` | v1/sourceVersion1/ready_for_planning | same ID,v2/sourceVersion2/withdrawn |
+| Logistics `logistics-job:` + exact Fulfilment ID | v2/ready_for_planning/activeLoadId retained | same ID,v3/withdrawn,activeLoadId removed |
+| Load — exact long stable ID recorded above | v11/planned/Van2,12:00–12:30 | same ID,v12/cancelled, timing retained as history; operational projection excludes it |
+| Assignments |1 |0 through canonical cancellation |
+
+Exactly1 Production/requirement/job/cancelled historical load; **0 active owned
+jobs/loads/assignments**,0 native stops/movements. Both empty vehicle-day runs retain
+plannedv2 as ordinary fleet/day records; they contain no owned work and were not deleted.
+Reloaded Logistics:0 loads/scheduled/queue/needs-time/attention, no Haleon card.
+
+CPU date19 review has **0 dishes/0 published/0 checked**; Delivered-In explicitly says
+**Menu withdrawn for the selected operational week**,0 portions/dishes, no signed PDF
+or old clear declaration. Corrected releasev2 remains stored ready with the plan-local
+`current` flag and Delivered release headpublished retained; withdrawal does not rewrite
+that signed evidence. It is **operationally non-current because its canonical source
+order/publication is inactive and the current date/menu selection excludes it**.
+Do not describe those persisted flags as revoked or cleared: both complete corrected
+v2 release evidence and prior revokedv1 history/signatures remain unchanged. This follows
+the existing authority boundary; no reinterpretation or direct repair was used.
+
+### Exact older immutable publication replay / non-resurrection
+
+After full convergence, read the exact stored event (one record) and replay its unchanged
+payload through the existing governed authenticated staging Hub `/api/production/materialise`:
+`production.materialise:menu-publication:rolling-week:2026-10-19:menu-publication:rolling-week:2026-10-19:v1:day:0:published:oploc:bb4c7eea-87f5-4e79-8ed6-b973b24ded7b:v1`.
+SourceVersion1/statuspublished, same originalHaleon destination/2-unit payload. Existing
+staging internal token3 remained in memory; no credential logged, fabricated payload,
+new event ID, delivered receipt reset or manufactured dead letter.
+
+Response **HTTP200 /duplicate=true /created=false**, ordercancelled/v2/sourceVersion1,
+CPU/Logistics handoffsdelivered. Complete canonical before/after equality assertion
+PASS for publications/days/events/orders/requirements, runs/jobs/loads/assignments/
+stops/movements, CPU plan/release/master review and Delivered release head, including
+audit/history arrays. Frozen corrected/revoked allergen evidence and immutable snapshot
+hash equal original pre-withdrawal evidence. No version/audit/quantity regression or
+duplicate/resurrection. CtrlShiftR/browser reloads confirm Menuwithdrawn/delivered,
+CPU0 operational dishes, Deliveredwithdrawn/noPDF, Logistics0 active work.
+
+**Gate3 PASS**, including previously accepted interaction/browser/concurrency work and
+now retired fixture/non-resurrection. Gates1/2 remain PASS; Gates4/5 are next and have
+not been completed. No new P0/P1 found in retirement. Remaining documented launch
+blockers outside Gate3 remain open; RC **NO-GO/not frozen**.
+P2 observation: Delivered-In's explicit withdrawn notice is correct, but its empty
+summary still uses generic Pending/Pending CPU handoff labels. No signed/clear/PDF
+exposure or active work; record separately from launch-blocking defects.
+
+Evidence under`artifacts/uat`: `oct08-retirement-start-provenance.json`,
+`oct08-retirement-request-logs.json`, `oct08-retirement-outbox-proof.json`,
+`oct08-owned-menu-retirement-before.json`, `retirement-immediate.json`,
+`retirement-settled.json`, `retirement-after-replay.json` (all`oct08-owned-menu-` prefix),
+`oct08-owned-menu-replay-result.json`, matching date-scoped `oct08-timeline-retirement-*`
+and`oct08-allergen-retirement-*` JSON, `oct08-retirement-immutable-before/after/after-replay.json`,
+comparison helper`oct08-retirement-compare.cjs`, Menu/Delivered/Logistics screenshots
+`oct08-retirement-menu-live.jpg`, `delivered-live.jpg`, `replay-delivered-live.jpg`,
+`replay-logistics-live.jpg` (each`oct08-retirement-` prefix).
+
+### Next checkpoint
+
+Ordinary usage at acceptance preparation18% remaining, approaching the established15%
+guard; finish this atomic record/source/hash verification rather than begin a major
+Auth remediation. **Next Gate4 Auth/Hub**: authenticated entry/session, authorised and
+remembered OPLOC selectors/redirects, zero-access, launcher/workspace navigation,
+current-state/retry/error display and no stale current data. Do not broaden permissions
+or redo passed G&G/allergen/Logistics work. Then Gate5 historical Hospitality and all
+remaining RC gates. Owned19 and12 October weeks are now both withdrawn; never resurrect
+them as fresh fixtures without an explicit new mission. No active rollout/local server.
+Final report commit differs from served Logisticsa2462fd solely by this record; no
+application deployment is implied by the final SHA. Protected files/hashes unchanged;
+CHANGELOG untouched under explicit protection. Production untouched.
 
 ## Hub stale-source guard and owned rapid-amend/withdraw gate — 7 October 2026
 
