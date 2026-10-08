@@ -11,10 +11,7 @@ import { stableDocumentId } from "../lib/canonical-editor";
 import { parseCanonical } from "../lib/schemas";
 import { sha256 } from "../lib/profiler";
 import type { CanonicalRecord } from "../lib/types";
-import { localMnkMenuCatalogue } from "../../hospitality-booking/lib/local-mnk-menu";
-import { localAngelCourtMenuCatalogue } from "../../hospitality-booking/lib/local-angel-court-menu";
-import { localCfcMenuCatalogue } from "../../hospitality-booking/lib/local-cfc-menu";
-import { localMunichReMenuCatalogue } from "../../hospitality-booking/lib/local-munich-re-menu";
+import { localMnkMenuCatalogue, localAngelCourtMenuCatalogue, localCfcMenuCatalogue, localMunichReMenuCatalogue } from "@fika/server-shared/hospitality-catalogue";
 
 const catalogues = [localMnkMenuCatalogue, localAngelCourtMenuCatalogue, localCfcMenuCatalogue, localMunichReMenuCatalogue];
 const actorId = "migration:portal-menu-catalogues";

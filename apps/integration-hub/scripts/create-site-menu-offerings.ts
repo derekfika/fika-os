@@ -3,9 +3,7 @@ import { db } from "../lib/firebase-admin";
 import { stableDocumentId } from "../lib/canonical-editor";
 import { parseCanonical } from "../lib/schemas";
 import { sha256 } from "../lib/profiler";
-import { localAngelCourtMenuCatalogue } from "../../hospitality-booking/lib/local-angel-court-menu";
-import { localCfcMenuCatalogue } from "../../hospitality-booking/lib/local-cfc-menu";
-import { localMunichReMenuCatalogue } from "../../hospitality-booking/lib/local-munich-re-menu";
+import { localAngelCourtMenuCatalogue, localCfcMenuCatalogue, localMunichReMenuCatalogue } from "@fika/server-shared/hospitality-catalogue";
 
 const effectiveFrom = "2026-01-01";
 const actorId = "migration:site-menu-offerings";

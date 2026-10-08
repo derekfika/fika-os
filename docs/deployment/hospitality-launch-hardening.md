@@ -209,3 +209,10 @@ No blocker requires a new business-model choice. Sender mailbox/alias authority 
 activation require Derek's Workspace setup. Production is untouched. CHANGELOG and
 MNK MenuData were never edited/staged/restored/committed; explicit protection overrides
 the normal changelog rule. This document records the task instead.
+
+Initial cloud deployment exposed a clean-install import issue: Hub maintenance
+scripts imported the Hospitality app's wrapper files, whose dependency resolution
+relied on a sibling node_modules directory locally. Both scripts now import the
+shared catalogue directly. No maintenance script was executed against staging.
+Hub typecheck, production build and the 10 behavioural hardening tests were rerun.
+Hospitality's initial rollout succeeded; Hub's failed build never replaced traffic.
