@@ -1,6 +1,10 @@
 # Firebase App Hosting staging configuration for the Integration Hub.
 # Configure the backend root directory as apps/integration-hub.
 env:
+  - variable: FIKA_HOSPITALITY_EMAIL_DELIVERY_ENABLED
+    value: "false"
+    availability:
+      - RUNTIME
   - variable: FIKA_DATA_SOURCE_TRACE
     value: "1"
     availability:

@@ -13,11 +13,13 @@ test("active canonical menu mappings are exposed to the MNK portal", () => { con
 test("an MNK payload keeps its existing canonical ID and provider provenance", () => { const result = buildMnkCanonicalBooking(payload, [menu()], "2026-07-30T10:01:00.000Z"); assert.equal(result.booking.canonicalId, "booking:mnk:a60b2ecb2b226c4d56b61460830a38a6"); assert.equal(result.booking.canonicalId, canonicalBookingId("MNK-ONE")); assert.equal(result.booking.source.provider, "mnk-booking-platform"); assert.equal(result.booking.order.items[0].menuItemId, "hospitality-menu-item:abc12345"); assert.equal(result.booking.lifecycleStatus, "New"); assert.equal(result.booking.source.originalPayload.bookingId, "MNK-ONE"); });
 test("inactive or unmapped menu items cannot enter a new canonical Booking", () => { assert.throws(() => buildMnkCanonicalBooking(payload, [menu("archived")])); });
 test("site-scoped compatibility menus retain a booking snapshot while canonical mappings are being promoted", () => {
-  const angelPayload = { ...payload, bookingId: "ANGEL-ONE", site: "Angel Court", siteId: "angel-court", order: { ...payload.order, items: [{ ...payload.order.items[0], itemId: "deli-style-sandwich", unitPrice: 10.95, lineTotal: 10.95 }] } };
+  const angelPayload = { ...payload, bookingId: "ANGEL-ONE", site: "Angel Court", siteId: "angel-court", order: { ...payload.order, items: [{ ...payload.order.items[0], itemId: "deli-style-sandwich", quantity: 10, unitPrice: 10.95, lineTotal: 10.95 }] } };
   const result = buildMnkCanonicalBooking(angelPayload, [menu()], "2026-07-30T10:01:00.000Z");
   assert.equal(result.booking.order.items[0].itemId, "deli-style-sandwich");
   assert.equal(result.booking.order.items[0].menuItemId, undefined);
-  assert.match(result.validationWarnings[0], /site-scoped compatibility evidence/);
+  assert.ok(result.validationWarnings.some(warning => /site-scoped compatibility evidence/.test(warning)));
+  assert.equal(result.booking.order.items[0].lineTotal, 109.5);
+  assert.equal(result.booking.order.netTotal, 109.5);
 });
 
 test("site-scoped canonical mappings are used once a portal catalogue is promoted", () => {
@@ -129,6 +131,7 @@ test("a retry returns the existing canonical Booking rather than creating a dupl
 test("canonical booking ingestion enforces a three-box minimum for governed summer rolls", () => {
   const minimumMenu = menu();
   minimumMenu.record.minimumQuantity = 3;
+  minimumMenu.record.name = "Freshly Wrapped Rice Paper Rolls";
   const summerRollPayload = {
     ...payload,
     bookingId: "MNK-SUMMER-ROLLS",

@@ -87,6 +87,6 @@ const catalogue = {
   },
 };
 
-const outputPath = path.join(appDirectory, "generated/rcoa-hospitality-menu.v1.json");
+const outputPath = path.join(repositoryDirectory, "packages/server-shared/src/hospitality-catalogue/rcoa-hospitality-menu.v1.json");
 await writeFile(outputPath, `${JSON.stringify(catalogue, null, 2)}\n`, "utf8");
 process.stdout.write(`Generated ${catalogue.items.length} RCoA menu items at ${outputPath}\n`);

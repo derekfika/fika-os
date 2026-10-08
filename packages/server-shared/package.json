@@ -25,5 +25,6 @@
     ,"./build-identity-resolver": "./src/build-identity-resolver.ts"
     ,"./durable-outbox": "./src/durable-outbox.ts"
     ,"./menu-artifact": "./src/menu-artifact.ts"
+    ,"./hospitality-catalogue": "./src/hospitality-catalogue/index.ts"
   }
 }

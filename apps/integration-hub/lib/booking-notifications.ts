@@ -1,6 +1,6 @@
 import type { CanonicalBooking } from "./hospitality-booking-service";
 
-export type BookingNotificationKind = "submitted" | "confirmed" | "cancelled";
+export type BookingNotificationKind = "submitted" | "confirmed" | "amended" | "cancelled";
 export type BookingEmail = {
   kind: BookingNotificationKind;
   siteId?: string;
@@ -12,7 +12,7 @@ export type BookingEmail = {
   text: string;
   html: string;
 };
-export type BookingNotificationRecord = BookingEmail & { notificationId: string; bookingId: string; status: "queued" | "sent" | "failed"; createdAt: string; attempts: number; sentAt?: string; failedAt?: string; failureReason?: string };
+export type BookingNotificationRecord = BookingEmail & { notificationId: string; bookingId: string; status: "queued" | "sent" | "failed"; createdAt: string; attempts: number; sentAt?: string; failedAt?: string; failureReason?: string; bookingVersion?: number; commercialVersion?: number; oplocId?: string; delivery?: import("@fika/server-shared/durable-outbox").DurableEventDelivery; outboxStatus?: string; nextEligibleAt?: string; gmailMessageId?: string; sendingStartedAt?: string };
 
 export function bookingNotificationId(booking: CanonicalBooking, kind: BookingNotificationKind, version: number) {
   return `booking:${booking.canonicalId}:${kind}:${version}`.replace(/[^A-Za-z0-9:_-]/g, "_");
@@ -21,7 +21,7 @@ export function bookingNotificationId(booking: CanonicalBooking, kind: BookingNo
 export function bookingNotificationRecord(booking: CanonicalBooking, kind: BookingNotificationKind, version: number, createdAt: string): BookingNotificationRecord {
   const siteId = booking.service.portalSiteId || "mnk";
   const siteLabel = booking.service.portalSiteLabel || siteId;
-  return { ...buildBookingEmail(kind, booking), siteId, siteLabel, templateKey: `${siteId}.${kind}.v1`, notificationId: bookingNotificationId(booking, kind, version), bookingId: booking.canonicalId, status: "queued", createdAt, attempts: 0 };
+  return { ...buildBookingEmail(kind, booking), siteId, siteLabel, templateKey: `${siteId}.${kind}.v2`, notificationId: bookingNotificationId(booking, kind, version), bookingId: booking.canonicalId, bookingVersion: version, commercialVersion: booking.commercialVersion || 1, ...(booking.service.oplocId ? { oplocId: booking.service.oplocId } : {}), status: "queued", createdAt, attempts: 0, delivery: { status: "pending", attempts: 0 }, outboxStatus: "pending", nextEligibleAt: createdAt };
 }
 
 function esc(value: unknown) {
@@ -68,7 +68,7 @@ function plainFromHtml(html: string) {
 function configuredRecipients(siteId?: string) {
   const value = siteId === "rcoa"
     ? process.env.FIKA_RCOA_NOTIFICATION_RECIPIENTS || process.env.FIKA_BOOKING_NOTIFICATION_RECIPIENTS || ""
-    : process.env.FIKA_MNK_NOTIFICATION_RECIPIENTS || process.env.FIKA_BOOKING_NOTIFICATION_RECIPIENTS || "mnk@fikacatering.com";
+    : siteId && siteId !== "mnk" ? process.env[`FIKA_${siteId.replace(/-/g, "_").toUpperCase()}_NOTIFICATION_RECIPIENTS`] || "" : process.env.FIKA_MNK_NOTIFICATION_RECIPIENTS || process.env.FIKA_BOOKING_NOTIFICATION_RECIPIENTS || "mnk@fikacatering.com";
   return [...new Set(value.split(/[\s,;]+/).map(item => item.trim().toLowerCase()).filter(item => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(item)))];
 }
 
@@ -99,7 +99,7 @@ export function buildBookingConfirmedEmail(booking: CanonicalBooking): BookingEm
   const heading = rcoa ? "Your booking is confirmed" : "Booking confirmed";
   const subtitle = rcoa
     ? `Royal College of Anaesthetists · ${esc(date(booking.service.eventDate))}`
-    : `Fika at MNK Hospitality - ${esc(date(booking.service.eventDate))}`;
+    : `${esc(siteLabel(booking))} Hospitality - ${esc(date(booking.service.eventDate))}`;
   const intro = rcoa
     ? "Thank you for choosing RCoA Hospitality. Your booking is confirmed with our team. Here is a summary of what we have booked in for you."
     : "Your hospitality booking is confirmed and scheduled with our team. Here is a summary of what we have booked in for you.";
@@ -114,5 +114,25 @@ export function buildBookingCancelledEmail(booking: CanonicalBooking): BookingEm
 }
 
 export function buildBookingEmail(kind: BookingNotificationKind, booking: CanonicalBooking) {
-  return kind === "submitted" ? buildBookingSubmittedEmail(booking) : kind === "confirmed" ? buildBookingConfirmedEmail(booking) : buildBookingCancelledEmail(booking);
+  const base = kind === "submitted" ? buildBookingSubmittedEmail(booking) : kind === "confirmed" || kind === "amended" ? buildBookingConfirmedEmail(booking) : buildBookingCancelledEmail(booking);
+  if (kind === "submitted") {
+    base.to = booking.client.email ? [booking.client.email] : [];
+    base.cc = configuredRecipients(booking.service.portalSiteId);
+    base.subject = `${siteLabel(booking)} booking request received | ${booking.source.sourceBookingId}`;
+    base.text = `Hi ${booking.client.name},\n\nThank you. Your booking request has been received. This request is subject to confirmation.\n\n${base.text.replace(/A new booking request has been added[^\n]+\n/, "").replace("Dashboard status: New", "").replace("Please review the request and prepare the quote.", "The hospitality team will contact you once it has been reviewed.")}`;
+    base.html = `<p>Hi ${esc(booking.client.name)}, thank you. Your booking request has been received. This request is subject to confirmation.</p>${base.html.replace(/New (?:Fika at MNK|RCoA) Hospitality booking/g, "Booking request received").replace("A new client booking request is ready for review.", "Your hospitality request is ready for our team to review.").replace("Please review the request and prepare the quote.", "The hospitality team will contact you once it has been reviewed.")}`;
+  }
+  if (kind === "confirmed" || kind === "amended") {
+    const summary = `Current booking revision ${booking.version}: Net GBP ${booking.order.netTotal.toFixed(2)} · VAT GBP ${booking.order.vatTotal.toFixed(2)} · Total GBP ${booking.order.grossTotal.toFixed(2)}`;
+    // Replace the legacy price-free confirmation disclaimer with current canonical totals.
+    base.html = base.html.replace(/No prices are shown here[^<]+/, esc(summary));
+    base.text = plainFromHtml(base.html);
+    if (kind === "amended") {
+      base.subject = `${siteLabel(booking)} | Booking Amended | ${booking.source.sourceBookingId}`;
+      base.html = base.html.replace(/Booking confirmed|Your booking is confirmed/gi, "Booking updated").replace(/Your hospitality booking is confirmed and scheduled with our team\./, "Your hospitality booking has been updated. This amendment is subject to renewed confirmation.").replace(/Your booking is confirmed with our team\./, "Your booking has been updated. This amendment is subject to renewed confirmation.");
+      base.html = `<p>Your booking has been updated. These are the latest details; this amendment is subject to renewed confirmation.</p>${base.html}`;
+      base.text = plainFromHtml(base.html);
+    }
+  }
+  return { ...base, kind };
 }

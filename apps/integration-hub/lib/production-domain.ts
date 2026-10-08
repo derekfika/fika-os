@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { bookingNotificationRecord } from "./booking-notifications";
 import { db } from "./firebase-admin";
 import type { Actor } from "./auth";
 import type { CanonicalBooking } from "./hospitality-booking-service";
@@ -83,6 +84,8 @@ export async function createProductionFromApprovedBooking(actor: Actor, bookingI
         ],
       };
       transaction.set(bookingSnapshot.ref, nextBooking);
+      const notification = bookingNotificationRecord(nextBooking, "confirmed", nextBooking.version, now);
+      transaction.create(db.collection("fikaBookingNotifications").doc(notification.notificationId), notification);
     };
     const orderId = existingBase?.status === "amended"
       ? productionOrderV1Id(bookingId, booking.version)

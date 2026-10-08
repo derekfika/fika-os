@@ -30,7 +30,10 @@ const server = createServer(async (request, response) => {
 const port = await new Promise((resolve, reject) => server.listen(0, "127.0.0.1", () => resolve(server.address().port)).once("error", reject));
 redirectUri = `http://localhost:${port}/oauth2callback`;
 const authUrl = new URL(client.auth_uri || "https://accounts.google.com/o/oauth2/v2/auth");
-authUrl.search = new URLSearchParams({ client_id: client.client_id, redirect_uri: redirectUri, response_type: "code", access_type: "offline", prompt: "consent", scope: "https://www.googleapis.com/auth/drive https://www.googleapis.com/auth/presentations" }).toString();
+// Explicit opt-in only; do not run consent or replace a token merely by deploying email code.
+const scopes = ["https://www.googleapis.com/auth/drive", "https://www.googleapis.com/auth/presentations"];
+if (process.argv.includes("--gmail-send")) scopes.push("https://www.googleapis.com/auth/gmail.send");
+authUrl.search = new URLSearchParams({ client_id: client.client_id, redirect_uri: redirectUri, response_type: "code", access_type: "offline", prompt: "consent", scope: scopes.join(" ") }).toString();
 console.log("Opening Google consent in your browser…"); console.log(`If it does not open, visit:\n${authUrl}\n`);
 // Do not use `cmd /c start` here: ampersands in the query string are parsed as
 // shell separators and Google then receives a truncated URL (often missing

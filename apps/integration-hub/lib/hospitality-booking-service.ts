@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { trustedPublicOrder } from "./hospitality-price-trust";
 import { db } from "./firebase-admin";
 import type { Actor } from "./auth";
 import type { CanonicalRecord } from "./types";
@@ -446,6 +447,7 @@ export function buildMnkCanonicalBooking(
   now = new Date().toISOString(),
 ): IngestionResult {
   validatePayload(payload);
+  const originalPayload = structuredClone(payload);
   const activeMenuItems = menuRecords.filter(
     (record) =>
       record.entityType === "Hospitality Menu Item" &&
@@ -453,6 +455,7 @@ export function buildMnkCanonicalBooking(
       record.record.lifecycleState === "active",
   );
   const portalSiteId = portalSiteKeyForPayload(payload);
+  payload = { ...payload, order: trustedPublicOrder(payload, menuRecords, portalSiteId || "mnk") };
   const expectedProvider = providerForSite(portalSiteId);
   const menuByItemId = new Map(
     activeMenuItems.flatMap((record) => [
@@ -471,9 +474,10 @@ export function buildMnkCanonicalBooking(
     ]),
   );
   const warnings: string[] = [];
+  if (originalPayload.order.netTotal !== payload.order.netTotal || originalPayload.order.items.some((item, index) => item.unitPrice !== payload.order.items[index].unitPrice || item.lineTotal !== payload.order.items[index].lineTotal)) warnings.push("Client price values differed from the server catalogue; server prices and recalculated totals were used.");
   // Angel Court and the other new portals currently retain their brochure
   // catalogue locally while those records are being promoted into the Hub.
-  // Keep those submitted commercial snapshots intact during that transition;
+  // Use those server-owned brochure catalogues during that transition;
   // MNK remains strict because its canonical catalogue is already governed.
   const siteCompatibilityMode = Boolean(
     portalSiteId !== "mnk",
@@ -486,7 +490,7 @@ export function buildMnkCanonicalBooking(
       )
     )
       warnings.push(
-        "Hospitality Menu Catalogue has no MNK mappings yet; portal price snapshot retained as compatibility evidence.",
+        "Hospitality Menu Catalogue has no MNK mappings yet; server brochure price used as compatibility evidence.",
       );
     else if (!menuItem && siteCompatibilityMode)
       warnings.push(
@@ -541,7 +545,7 @@ export function buildMnkCanonicalBooking(
         sourceBookingId: payload.bookingId.trim(),
         submissionTimestamp: payload.submittedAt,
         contractVersion: isRcoa ? RCOA_BOOKING_INGESTION_CONTRACT_VERSION : MNK_BOOKING_INGESTION_CONTRACT_VERSION,
-        originalPayload: structuredClone(payload),
+        originalPayload,
       },
       client: structuredClone(payload.client),
       service: {
@@ -625,9 +629,10 @@ export async function ingestMnkBooking(
     const mappingIdentifiers = portalSourceIdentifiers(payload);
     if (!mappingIdentifiers.length) mappingIdentifiers.push("__missing__");
     const [menusSnapshot, mappingsSnapshot] = await Promise.all([
-      transaction.get(canonical().where("entityType", "==", "Hospitality Menu Item").where("lifecycleStatus", "in", ["draft", "published"])),
+      transaction.get(canonical().where("entityType", "==", "Hospitality Menu Item").where("lifecycleStatus", "in", ["draft", "published", "archived"]).limit(501)),
       transaction.get(sourceMappings().where("sourceIdentifier", "in", mappingIdentifiers)),
     ]);
+    if (menusSnapshot.size > 500) throw conflict("Hospitality catalogue exceeds the bounded ingestion limit.");
     const canonicalRecords = menusSnapshot.docs.map((document) => document.data() as CanonicalRecord);
     const mappings = mappingsSnapshot.docs.map(document => document.data() as Record<string, unknown>);
     const destinationId = resolveHospitalityDestinationId(payload, mappings);
@@ -686,12 +691,6 @@ export async function ingestMnkBooking(
     );
     return result;
   });
-  if (result.created)
-    await dispatchBookingNotification(
-      result.booking,
-      "submitted",
-      result.booking.version,
-    );
   return result;
 }
 
@@ -1195,6 +1194,7 @@ export async function executeBookingWorkflow(
       };
     }
     let notificationKind: BookingNotificationKind | undefined;
+    if (command.action === "amend") notificationKind = "amended";
     if (command.action === "approve") {
       next.lifecycleStatus = "Approved";
       notificationKind = "confirmed";
@@ -1292,7 +1292,7 @@ export async function executeBookingWorkflow(
           { merge: true },
         );
       }
-      notificationKind = "cancelled";
+      notificationKind = command.notify === false ? undefined : "cancelled";
       next.dashboardWorkflow = {
         ...next.dashboardWorkflow,
         cancellation: {
@@ -1357,13 +1357,7 @@ export async function executeBookingWorkflow(
     }
     return { booking: next, notificationKind, projectionChanges };
   });
-  const notification = result.notificationKind
-    ? await dispatchBookingNotification(
-        result.booking,
-        result.notificationKind,
-        result.booking.version,
-      )
-    : undefined;
+  const notification = result.notificationKind ? { status: "queued" as const } : undefined;
   const projectionPropagation = await propagateProductionChanges(result.projectionChanges);
   return { booking: result.booking, ...(notification ? { notification } : {}), projectionPropagation };
 }
@@ -1373,73 +1367,21 @@ export async function dispatchBookingNotification(
   kind: BookingNotificationKind,
   version: number,
 ) {
-  const notification = bookingNotificationRecord(
-    booking,
-    kind,
-    version,
-    booking.updatedAt,
-  );
-  const existing = await db
-    .collection("fikaBookingNotifications")
-    .doc(notification.notificationId)
-    .get();
-  const existingStatus = existing.exists
-    ? String(existing.data()?.status || "")
-    : "";
-  if (existingStatus === "sent")
-    return {
-      status: "sent" as const,
-      reason: "Already delivered for this Booking revision.",
-    };
-  const endpoint = String(process.env.FIKA_EMAIL_WEBHOOK_URL || "").trim();
-  if (!endpoint)
-    return {
-      status: "queued" as const,
-      reason: "FIKA_EMAIL_WEBHOOK_URL is not configured.",
-    };
-  try {
-    const response = await fetch(endpoint, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        contractVersion: "fika.booking-email.v1",
-        from: process.env.FIKA_EMAIL_FROM || "FIKA Hospitality",
-        siteId: notification.siteId,
-        siteLabel: notification.siteLabel,
-        templateKey: notification.templateKey,
-        to: notification.to,
-        cc: notification.cc,
-        subject: notification.subject,
-        text: notification.text,
-        html: notification.html,
-      }),
-    });
-    if (!response.ok)
-      throw new Error(`Email provider returned HTTP ${response.status}.`);
-    await db
-      .collection("fikaBookingNotifications")
-      .doc(notification.notificationId)
-      .set(
-        { status: "sent", sentAt: new Date().toISOString() },
-        { merge: true },
-      );
-    return { status: "sent" as const };
-  } catch (error) {
-    await db
-      .collection("fikaBookingNotifications")
-      .doc(notification.notificationId)
-      .set(
-        {
-          status: "failed",
-          failureReason: (error as Error).message,
-          failedAt: new Date().toISOString(),
-        },
-        { merge: true },
-      );
-    return { status: "failed" as const, reason: (error as Error).message };
-  }
+  return db.runTransaction(async transaction => {
+    const source = await transaction.get(bookings().doc(booking.canonicalId));
+    if (!source.exists) return { status: "skipped" as const, reason: "Booking missing." };
+    const current = source.data() as CanonicalBooking;
+    if (current.version !== version || (kind === "confirmed" && !["Sent to CPU", "Approved"].includes(current.lifecycleStatus)))
+      return { status: "skipped" as const, reason: "Booking transition is no longer current." };
+    const notification = bookingNotificationRecord(current, kind, version, current.updatedAt);
+    const ref = db.collection("fikaBookingNotifications").doc(notification.notificationId);
+    const existing = await transaction.get(ref);
+    if (existing.exists) return { status: String(existing.data()?.status || "queued") as "queued" | "sent" | "failed" };
+    if (kind === "confirmed") return { status: "skipped" as const, reason: "No confirmation obligation was recorded by this canonical transition." };
+    transaction.create(ref, notification);
+    return { status: "queued" as const };
+  });
 }
-
 export async function createProductionOrder(
   actor: Actor,
   canonicalId: string,

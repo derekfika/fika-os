@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const sourcePath = path.resolve(here, "../../../sites/mnk/booking-platform/01_MenuData.js");
-const outputPath = path.resolve(here, "../generated/mnk-hospitality-menu.v1.json");
+const outputPath = path.resolve(here, "../../../packages/server-shared/src/hospitality-catalogue/mnk-hospitality-menu.v1.json");
 const source = await readFile(sourcePath, "utf8");
 const context = vm.createContext({ Object });
 vm.runInContext(`${source}\nglobalThis.__MENU_SCHEMA__ = MENU_SCHEMA;`, context, { filename: sourcePath });

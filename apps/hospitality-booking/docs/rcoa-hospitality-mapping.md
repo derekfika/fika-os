@@ -15,7 +15,7 @@ The public booking entry is `/rcoa`. It uses RCoA branding through the shared Ho
 | VAT and confirmation wording | Source VAT rate `0.20`; quote remains indicative and the Hospitality team confirms VAT/labour/equipment as applicable |
 | Standard, large-event, dietary, item notice periods | Public request guidance in Europe/London time; the shared booking lifecycle remains authoritative |
 
-`generated/rcoa-hospitality-menu.v1.json` is a deterministic conversion of the 43 legacy menu records. The source provides no structured dietary or allergen declaration; the generated validation report records this gap, and empty arrays must not be treated as `CLEAR`. RCoA feedback remains disabled. Legacy Sheets, Gmail, Drive, and Apps Script calendar persistence are not the source of current operational truth.
+`packages/server-shared/src/hospitality-catalogue/rcoa-hospitality-menu.v1.json` is a deterministic conversion of the 43 legacy menu records, shared by the portal read API and Hub pricing authority. The source provides no structured dietary or allergen declaration; the generated validation report records this gap, and empty arrays must not be treated as `CLEAR`. RCoA feedback remains disabled. Legacy Sheets, Gmail, Drive, and Apps Script calendar persistence are not the source of current operational truth.
 
 The Integration Hub continues to own canonical booking persistence and downstream Production handoff. RCoA items retain source ID/provider evidence and remain site-scoped compatibility snapshots until explicitly promoted into the shared canonical Hospitality catalogue.
 

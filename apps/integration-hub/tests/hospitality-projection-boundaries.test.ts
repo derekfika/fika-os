@@ -33,7 +33,8 @@ test("Hospitality booking ingest does not enumerate canonical or source-mapping 
   assert.doesNotMatch(ingest, /transaction\.get\(canonical\(\)\)/);
   assert.doesNotMatch(ingest, /transaction\.get\(sourceMappings\(\)\)/);
   assert.match(ingest, /where\("entityType", "==", "Hospitality Menu Item"\)/);
-  assert.match(ingest, /where\("lifecycleStatus", "in", \["draft", "published"\]\)/);
+  assert.match(ingest, /where\("lifecycleStatus", "in", \["draft", "published", "archived"\]\)/);
+  assert.match(ingest, /limit\(501\)/);
   assert.doesNotMatch(ingest, /where\("record\.lifecycleState"/);
   assert.match(ingest, /where\("sourceIdentifier", "in", mappingIdentifiers\)/);
   assert.match(ingest, /canonical\(\)\.doc\(stableDocumentId\(destinationId\)\)/);

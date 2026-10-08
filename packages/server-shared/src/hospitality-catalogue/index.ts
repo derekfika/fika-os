@@ -1,0 +1,12 @@
+export * from "./hospitality-menu-catalogue";
+export { localMnkMenuCatalogue } from "./local-mnk-menu";
+export { localRcoaMenuCatalogue } from "./local-rcoa-menu";
+export { localAngelCourtMenuCatalogue } from "./local-angel-court-menu";
+export { localCfcMenuCatalogue } from "./local-cfc-menu";
+export { localMunichReMenuCatalogue } from "./local-munich-re-menu";
+import { localMnkMenuCatalogue } from "./local-mnk-menu";
+import { localRcoaMenuCatalogue } from "./local-rcoa-menu";
+import { localAngelCourtMenuCatalogue } from "./local-angel-court-menu";
+import { localCfcMenuCatalogue } from "./local-cfc-menu";
+import { localMunichReMenuCatalogue } from "./local-munich-re-menu";
+export const hospitalityCatalogues = { mnk: localMnkMenuCatalogue, rcoa: localRcoaMenuCatalogue, "angel-court": localAngelCourtMenuCatalogue, cfc: localCfcMenuCatalogue, "munich-re": localMunichReMenuCatalogue };

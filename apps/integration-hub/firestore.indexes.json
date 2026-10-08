@@ -1,5 +1,6 @@
 {
   "indexes": [
+    { "collectionGroup": "fikaBookingNotifications", "queryScope": "COLLECTION", "fields": [{ "fieldPath": "outboxStatus", "order": "ASCENDING" }, { "fieldPath": "nextEligibleAt", "order": "ASCENDING" }, { "fieldPath": "__name__", "order": "ASCENDING" }] },
     { "collectionGroup": "authmodAuthorityGrants", "queryScope": "COLLECTION", "fields": [{ "fieldPath": "resource", "order": "ASCENDING" }, { "fieldPath": "status", "order": "ASCENDING" }] },
     { "collectionGroup": "integrationHubCanonical", "queryScope": "COLLECTION", "fields": [{ "fieldPath": "entityType", "order": "ASCENDING" }, { "fieldPath": "lifecycleStatus", "order": "ASCENDING" }] },
     { "collectionGroup": "authmodIdentities", "queryScope": "COLLECTION", "fields": [{ "fieldPath": "externalProvider", "order": "ASCENDING" }, { "fieldPath": "externalUid", "order": "ASCENDING" }] },

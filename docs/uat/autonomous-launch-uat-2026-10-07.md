@@ -2608,3 +2608,61 @@ No RC freeze, formal forensic audit, final six-app RC regression or Go-Live
 Readiness Scan occurred. Production remains untouched.
 
 **CHECKPOINT SAVED — SAFE TO RESUME AUTONOMOUS UAT**
+
+## Post-RC Hospitality launch hardening — 8 October 2026 (latest task)
+
+Reconciled `main`/`origin/main` at `e0df8ecf2a054cc6cc96424f87492cf9c71ff962`.
+The final RC handoff remains authoritative: Gates 1–5 PASS; frozen application RC
+`63512b705c5c3c9cbd6c0b31e0deffe3f6f4d6c3`; GO WITH RECORDED P2/P3. This bounded
+post-RC task does not redefine that freeze or repeat historical acceptance. The
+later menu-generation implementation is preserved; no menu layout/template work.
+
+Implemented customer request-received, exact-revision confirmation, amendment and
+cancellation obligations in existing `fikaBookingNotifications`. Canonical writes
+and obligations commit together. Removed synchronous webhook sending. Added bounded
+Gmail worker, OPLOC-based sender configuration, send-only OAuth/DWD architecture,
+shared retry/lease/dead-letter conventions, terminal eligibility protection and
+manual evidence-based recovery. Actual sender/account/MIME hash and Gmail receipts
+are captured as delivery evidence. Missing sender/auth cannot undo a booking.
+Unknown Gmail acceptance is held, never automatically resent; no false exactly-once
+Gmail claim. Historical v1 messages are not migrated or bulk-reissued. Existing
+explicit cancellation notify choice is respected. Delivery remains disabled in
+staging; no real customer email, alias/settings change or OAuth token replacement.
+
+Public booking prices now come from matching server catalogue authority; client
+unit/line/overall totals cannot override them. Unknown/retired/withdrawn items fail
+closed. Existing net-only ingestion and later quote VAT/charges remain unchanged.
+Original submitted evidence is retained. Newer portal catalogue data was extracted
+into the shared package and remains identical to the existing server catalogue;
+this is pricing ownership work, not menu artifact/layout development.
+
+Validation: final focused Hub 44/44 PASS (including real emulator transition/CAS/
+recovery); shared outbox 3/3 PASS; Hospitality full 100/100 PASS. Full Hub 509 tests:
+497 PASS / 12 FAIL; exact starting-commit baseline loaded in memory: 497 tests,
+485 PASS / the same 12 FAIL. Names and assertion failures were compared after
+correcting baseline harness path/inventory errors. No whole-suite green claim.
+Both affected typechecks and production builds PASS, with final Hub build checked
+before commit. Initial restricted SWC build failures were Windows filesystem access;
+rerun with authorized local build access. Stale generated Hospitality dev route cache
+was preserved outside build includes. Auth/catalogue scripts syntax-checked only.
+Style Guide compliance PASS; no app screen redesign.
+
+Starting live provenance independently verified: Hub READY/current/100% at
+`63512b705c5c3c9cbd6c0b31e0deffe3f6f4d6c3`; Hospitality READY/current/100% at
+`e0df8ecf2a054cc6cc96424f87492cf9c71ff962`; neither reconciling. Derek renewed his
+expired Cloud login himself; no credentials were created/replaced by this task.
+Staging-only email index provisioned: `fikaBookingNotifications/CICAgNi4-ZIK`;
+last checked CREATING. Exact implementation SHA, final index/rollout states and
+bounded no-email live acceptance are recorded below after push/deployment.
+
+Full design, changed-file scope, Google references, read budget and tomorrow's
+Workspace/mailbox/send-as/DWD/safe-recipient/Scheduler activation steps are in
+`docs/deployment/hospitality-launch-hardening.md`. Existing DWD secret existence
+was checked by name only; Gmail delegated scopes and aliases were not inspected or
+changed. No Scheduler activates email sending in this task.
+
+Production untouched. Protected file SHA256 values remain:
+CHANGELOG `4691AC53FF895F84701B476129018065ED8F4F1D766DC458E706BD455201E81D`;
+MNK MenuData `7A5C0D3664799ED88D7BF1473683F2A6EFCC6FBA9232B3B32C1E139C364D1636`.
+Neither file was modified/staged/restored/committed. Unrelated local audit/artifact
+files are preserved. CHANGELOG updated: no — explicit user protection.
