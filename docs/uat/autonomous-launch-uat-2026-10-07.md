@@ -1129,9 +1129,33 @@ After convergence, three retired requirementswithdrawnv2, Logisticsjobswithdrawn
 withactiveLoadId removed; currentr17 stayspending/assigned, owned cancelled booking
 stayswithdrawn. Exact deep equality before/after PASS for both entire authoritative
 booking records (including quote/audit/history), all6 Production orders and their
-immutable domain events. Existing Logistics event payloads unchanged. No history
-deletion/rewriting or cancellation of the genuine currentr17. This closes the stale
+immutable domain events. The genuine currentr17 was not cancelled. This closes the stale
 retirement state through governed recovery, **not full Gate5 acceptance yet**.
+
+**Final comparison correction — new confirmed P1, Gate5 remains OPEN:** full
+before/settled Logistics outbox deep equality FAILS. For each retired requirement,
+recovery retained sourceVersion1 while requirement advancedv1→v2. Existing
+`stageLogisticsProjectionEvent` keys by sourceVersion, then transaction.set replaces
+the delivered originalv1 creation event withv1 withdrawal payload/changedAt and
+new delivery timestamps. No new distinct withdrawal event identity was produced.
+This supersedes any earlier unchanged-outbox assertion. Booking/Production/domain
+event equality passed; **Logistics outbox history did not**. Preserved localbefore
+snapshot retains exact original payloads; never overwrite/restore cloud history by
+hand. Runtime retirement converged safely, but audit identity is defective.
+
+Exact next remediation: inspect Hub `lib/logistics-projection-outbox.ts` event
+identity/staging and shared `logisticsProjectionEventId`; retain upstream source
+version metadata while giving distinct requirement transitions immutable event
+identities (requirement revision or canonical transition identity), preserve old
+live-event compatibility. Trace Hub producer/Logistics consumer and all helper
+callers before editing. Behavioral regression: same upstreamsourceVersion1,
+requirementv1pending→v2withdrawn must retain original creation bytes and stage a
+distinct withdrawal; exact duplicate replay no newevent; withdrawal/current state
+never resurrected. Provider+consumer focused/full/typecheck/build, commit/push,
+affected staging only, exact provenance and original live acceptance. Do not alter
+upstream versions or weaken CAS to hide the identity collision. Already overwritten
+legacy outbox evidence requires an explicitly governed provenance recovery design;
+the untouched original local snapshot is evidence, not authority to patch cloud.
 
 Evidence underartifacts/uat: `oct08-historical-hospitality.cjs`, snapshots
 `oct08-historical-hospitality-before.json`, `-recovery-immediate.json`, `-settled.json`,
@@ -1143,6 +1167,8 @@ remain the next bounded acceptance unit. Do not rerun recovery blindly or reset
 delivered events: read settled snapshot first; use preserved unchangedv1 payloads
 through existing authenticated Logistics `/api/logistics/invalidate`, then compare
 source/requirements/jobs/history and active load/assignment counts. Keepcurrentr17.
+Do not start those replay checks until the newly discovered event-identityP1 is
+addressed; no exact stale replay was executed in this recovery unit.
 
 Checkpoint: Gate1PASS/Gate2PASS/Gate3PASS/**Gate4PASS**, outbox starvationP1CLOSED,
 Gate5OPEN (governed retirement convergence accepted, replay/history UI still pending).
