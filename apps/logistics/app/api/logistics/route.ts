@@ -924,11 +924,13 @@ async function handlePost(request: NextRequest) {
         const currentLoads = (await transaction.get(deliveryLoads().where("serviceDate", "==", first.serviceDate))).docs.map(doc => doc.data() as import("@/lib/types").DeliveryLoad).filter(load => !loadIds.includes(load.id));
         const runId = requestedRunId || (collection ? first.collectionRunId || first.runId : first.runId);
         let vehicleId = first.vehicleId;
+        let targetRun: DeliveryRun | undefined;
         if (runId) {
           const target = (await transaction.get(runs().doc(runId))).data() as DeliveryRun | undefined;
           if (!target || target.serviceDate !== first.serviceDate || !target.vehicleId) throw new HttpError(409, "Canonical target run is unavailable.");
           authorizeRun(principal, target);
           assertPlanningOpen(target);
+          targetRun = target;
           if (!collection) vehicleId = target.vehicleId;
         }
         if (body.resizeEndOnly) {
@@ -946,6 +948,10 @@ async function handlePost(request: NextRequest) {
           return { ...timing, ...(collection ? { collectionRequired: true, collectionRunId: runId } : { runId, vehicleId }), updatedAt: now, version: load.version + 1, audit: [...load.audit, { action: collection ? "collection-rescheduled" : "load-rescheduled", at: now, by, version: load.version + 1 }] };
         });
         for (const next of nextLoads) await assertLoadAssignmentsCurrent(transaction, next);
+        if (targetRun?.status === "draft") {
+          const version = targetRun.version + 1;
+          transaction.set(runs().doc(targetRun.canonicalId), { ...targetRun, status: "planned", version, updatedAt: now, audit: [...targetRun.audit, { action: "canonical-work-planned", at: now, by, version }] });
+        }
         for (const next of nextLoads) transaction.set(deliveryLoads().doc(next.id), next);
         return nextLoads;
       });

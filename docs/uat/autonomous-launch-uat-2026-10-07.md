@@ -396,11 +396,56 @@ log under `artifacts/uat`. Before/after/browser traces/screenshots retained in s
 artifact directories. Own generated test-results were archived under `timeline-initial-run`;
 tracked generated last-run metadata restored, no user evidence deleted.
 
-**Gate3 overall IN PROGRESS. P1 local validation PASS; commit/push/Logistics-only staging
-rollout and original saved-week deep-link live retest follow.** No timeline assignments,
-drag/resize or movement creation performed live yet. Current19 October fixture remains
-tracked and current;12 October completed runs/history preserved. Production untouched.
+**Deep-link P1 PASS locally and live.** Implementation pushed as
+`7e72c5aa8c6bc3f4efffec3bf44451d183c700b4`; Logistics-only staging rollout
+`uat-1008095703-7e72c5a` verified at09:01:33Z buildREADY/rolloutSUCCEEDED/current100%,
+not reconciling, exact source7e72c5a. Reloading the original browser with its remembered
+12 October state intact now shows19–23 October, Monday19 selected and correct owned
+queue. No storage clear was used. Gate3 overall remains IN PROGRESS.
 Style Guide compliance PASS for this minimal navigation change.
+
+### Gate3 canonical move — confirmed draft target lifecycle P1, bounded fix
+
+Owned19 October normal desktop planning at1440x900 uses the existing Haleon2-unit
+job. Initial state: one ready_for_planning jobv1, zero loads/assignments/stops/movements,
+Van1/Van2 draftv1. Normal queue Assign to Van1 09:00–09:30 produces one loadv1,
+one assignment/jobv2, and Van1 plannedv2. Saving ghost is disabled while pending;
+confirmed UI settles to the canonical position. DOM geometry at100% zoom verifies
+30px per15min, exact start anchor and60px30-minute card width.
+
+Native same-lane drag yields09:15–09:45/loadv2; end-slider resize preserves09:15
+and extends to10:00/loadv3. Native cross-vehicle drag yields Van2 10:15–11:00/loadv4.
+All preserve the same load ID, jobv2, one assignment; no native stops/movements created.
+Stable load ID (including its original identity components, not rewritten on moves):
+`load:v2:%5B%222026-10-19%22%2C%22oploc%3Acpu%22%2C%22oploc%3Abb4c7eea-87f5-4e79-8ed6-b973b24ded7b%22%2C%22run%3A2026-10-19%3Avan-1%22%2C%22van1%22%2C%2209%3A00%22%2C%2209%3A30%22%2Cfalse%5D`.
+
+**P1 confirmed:** successful cross-run placement leaves target Van2 draftv1 despite
+its canonical assigned work. Existing first-assignment policy promotes draft to
+planned atomically; reschedule path omitted that transition. No new authority rule.
+Four before-fix regressions reproduce draft!=planned for single/merged delivery and
+collection moves. Minimal route fix retains the already transaction-read/authorized
+target and promotes draft once after all load/version/membership/collision validation,
+in the same transaction as placement. Canonical-work-planned audit matches existing
+assignment semantics; already-planned runs do not churn. Existing target read provides
+transaction conflict protection; no additional reads or polling, only one run write
+when draft receives work. Stale merged placement commits neither loads nor promotion.
+
+Focused load integrity/regression **105/105 PASS**; full Logistics **446/446 PASS**,
+zero skips, `NODE_ENV=test npm test` outside the restricted runner; typecheck and
+webpack build/standalone-assets PASS; diffcheck and focused source review PASS.
+Commit/push, Logistics-only staging deployment and original owned live retest
+are pending at this intermediate record. Logs `oct08-draft-target-before.log`,
+`after.log`, `full.log`, `typecheck.log`, `build.log` under `artifacts/uat` with the
+`oct08-draft-target-` prefix. Canonical read-only date-scoped snapshots:
+`oct08-timeline-before-planning.json`, `assigned-van1.json`, `moved-van1.json`,
+`resized-van1.json`, `moved-van2.json` (each with `oct08-timeline-` prefix).
+
+P2 recorded: RunChooser exceeds the queue column and requires horizontal scrolling
+to expose Assign all even at desktop width. No redesign performed. Mounted browser
+failures above remain open investigations; comprehensive Gate3 is not yet PASS.
+Retain the current19 October fixture for remaining interaction/concurrency checks,
+then retire through normal Menu withdrawal.12 October withdrawn history is untouched.
+No direct Firestore writes, production actions, permission changes or other app rollout.
 
 ## Hub stale-source guard and owned rapid-amend/withdraw gate — 7 October 2026
 

@@ -210,6 +210,31 @@ async function merged() {
   await f.materialisation.rebuildLogisticsProjection(f.date, 'Operator'); return f;
 }
 function bulk(f, extra = {}) { return { action: 'reschedule-delivery-loads', loadIds: loads(f).map(l => l.id), expectedLoadVersions: Object.fromEntries(loads(f).map(l => [l.id, l.version])), scheduledTime: '10:45', scheduledEnd: '12:00', targetRunId: 'r1', lane: 'delivery', ...extra }; }
+for (const mergedScope of [false, true]) for (const lane of ['delivery', 'collection']) test('moving ' + (mergedScope ? 'merged' : 'single') + ' ' + lane + ' work plans a draft target once', async () => {
+  const f = mergedScope ? await merged() : await assigned();
+  const target = f.records.get('fikaLogisticsDeliveryRunsV1/r2');
+  f.seed('fikaLogisticsDeliveryRunsV1', 'r2', { ...target, status: 'draft' });
+  const beforeVersion = target.version, originalIds = loads(f).map(load => load.id);
+  const command = bulk(f, { lane, targetRunId: 'r2' });
+  if (!mergedScope) { command.action = 'reschedule-delivery-load'; command.loadId = command.loadIds[0]; command.expectedLoadVersion = command.expectedLoadVersions[command.loadId]; delete command.loadIds; delete command.expectedLoadVersions; }
+  const result = await f.post(command);
+  assert.equal(result.response.status, 200, JSON.stringify(result.body));
+  const planned = f.records.get('fikaLogisticsDeliveryRunsV1/r2');
+  assert.equal(planned.status, 'planned'); assert.equal(planned.version, beforeVersion + 1);
+  assert.equal(planned.audit.filter(entry => entry.action === 'canonical-work-planned').length, 1);
+  assert.deepEqual(loads(f).map(load => load.id), originalIds);
+  const next = bulk(f, { lane, targetRunId: 'r2', scheduledTime: '10:30', scheduledEnd: '11:30' });
+  assert.equal((await f.post(next)).response.status, 200);
+  assert.deepEqual(f.records.get('fikaLogisticsDeliveryRunsV1/r2'), planned);
+});
+
+test('stale merged placement cannot plan a draft target or commit a subset', async () => {
+  const f = await merged(), target = f.records.get('fikaLogisticsDeliveryRunsV1/r2');
+  f.seed('fikaLogisticsDeliveryRunsV1', 'r2', { ...target, status: 'draft' });
+  const command = bulk(f, { targetRunId: 'r2' }); command.expectedLoadVersions[command.loadIds[1]] = 0;
+  const before = structuredClone([...f.records]); assert.equal((await f.post(command)).response.status, 409); assert.deepEqual([...f.records], before);
+});
+
 for (const lane of ['delivery', 'collection']) test('merged ' + lane + ' placement commits common schedule and versions once', async () => {
   const f = await merged(); const originals = loads(f); const result = await f.post(bulk(f, lane === 'collection' ? { lane, scheduledTime: '14:00', scheduledEnd: '15:00', targetRunId: 'r2' } : {}));
   assert.equal(result.response.status, 200, JSON.stringify(result.body)); assert.equal(result.body.loads.length, 2);
