@@ -110,6 +110,8 @@ for (const merged of [false, true]) for (const entry of ["set-time", "drag"] as 
   expect([...f.records.keys()].filter((key: string) => key.startsWith("fikaLogisticsDeliveryLoadsV1/"))).toHaveLength(initial.loadIds.length);
   await page.reload();
   await expect(page.getByTestId(`stop-projection-stop:delivery:${after.id}`)).toBeVisible();
+  await expect(page.getByTestId(`stop-projection-stop:delivery:${after.id}`)).toHaveCSS("cursor", "move");
+  if (entry === "set-time") await expect(page.getByTestId(`resize-projection-stop:delivery:${after.id}`)).toHaveCSS("cursor", "ew-resize");
   await expect(page.locator(`[data-timeline-queue-id="projection-delivery:${after.id}"]`)).toHaveCount(0);
   await expect(page.locator(`[data-timeline-queue-id="projection-collection:${after.id}"]`)).toBeVisible();
 });

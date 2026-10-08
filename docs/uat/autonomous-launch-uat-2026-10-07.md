@@ -696,6 +696,32 @@ those, remaining owned concurrency acceptance and fixture retirement.
 Evidence`oct08-timeline-triage-first.log`/`after.log`, scoped first/after failure traces,
 `oct08-timeline-final-regression.log` and`oct08-timeline-triage-full.log` under artifacts/uat.
 
+### Gate3 real-planner style acceptance — additional parent cursor override
+
+Timeline correction pushed as`e6a7f56d1762286255f90ac96b79dc2b0e61bdee`;
+Logistics-only rollout`uat-1008121247-e6a7f56` at11:15:44Z READY/SUCCEEDED/current100%,
+not reconciling, exact sourcee6a7f56. Live owned loadv10 remains11:15–11:45 on Van2.
+Before/after real card hover geometry identical: x745.546875/y613/60×64px, transformnone.
+Keyboard grip center805.546875 equals canonical card end805.546875, delta0; focus
+solid using actual semantic focus tokenrgb(255,92,0); card transform remainsnone.
+Screenshot `oct08-timeline-hover-focus-live.jpg`. No canonical mutation from these checks.
+
+**Additional P2 confirmed by live context:** `.mock-tower button` gives the actual
+planner grip/card cursorpointer despite the component's ew-resize/move declarations;
+the standalone mounted fixture lacks that parent class. Added card/grip cursor assertions
+to the real rendered single/merged clear→Set time/drag cases. Before fails against the
+validated production build. Scope active/disabled cursor rules beneath the timeline
+container, preserving existing move/ew-resize/progress intent. No behavioral or data
+change; focus/hover anchor correction retained. Final affected **64/64 PASS** including
+the real-planner cursor assertions. Full Logistics **448/448 PASS**, zero skips,
+typecheck and webpack build/standalone-assets PASS; diffcheck/focused CSS/test review
+PASS. Local server stopped, generated next-env production import unchanged.
+Commit/push and next Logistics-only rollout follow; final cursor correction is not
+claimed live before exact source/traffic and original surface verification.
+Evidence `oct08-timeline-real-cursor-before.log`/`after.log` and scoped browser traces.
+P1 clear-time remains PASS; Gate3 overall IN PROGRESS until final style acceptance,
+owned concurrency check and normal19 October fixture retirement. Production untouched.
+
 ## Hub stale-source guard and owned rapid-amend/withdraw gate — 7 October 2026
 
 Starting fetched HEAD/origin/main: `e2adb67b75a98667cddab74edeefba8d0a2c84d5`.
