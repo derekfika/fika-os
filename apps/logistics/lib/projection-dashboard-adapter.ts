@@ -97,7 +97,9 @@ export function projectionToDashboardData(projection: LogisticsDayProjection) {
     },
   });
 
-  const line = (job: { id: string; sourceId: string; totalUnits: number }): PlannerLine => ({ lineKey: `projection:${job.id}`, displayName: job.sourceId, unit: "unit", quantity: job.totalUnits, requirementRefs: [job.id], sourceLineRefs: [] });
+  const lines = (job: { id: string; sourceId: string; totalUnits: number; contents?: Array<{ description: string; quantity: number; unit: string }> }): PlannerLine[] => job.contents?.length
+    ? job.contents.map((content, index) => ({ lineKey: `projection:${job.id}:${index}`, displayName: content.description, unit: content.unit, quantity: content.quantity, requirementRefs: [job.id], sourceLineRefs: [] }))
+    : [{ lineKey: `projection:${job.id}`, displayName: "Delivery items", unit: "unit", quantity: job.totalUnits, requirementRefs: [job.id], sourceLineRefs: [] }];
   const workGroups: PlannerWorkGroup[] = projection.planningQueue.map((job) => ({
     groupKey: `projection-job:${job.id}`,
     serviceDate: projection.serviceDate,
@@ -108,15 +110,18 @@ export function projectionToDashboardData(projection: LogisticsDayProjection) {
     requirementRefs: [{ requirementId: job.id, sourceVersion: job.sourceVersion || 1, sourceDomain: job.sourceType as FulfilmentRequirement["sourceDomain"], sourceEntityId: job.sourceId, status: "ready_for_planning", workstream: job.workstream || fulfilmentWorkstream({ sourceDomain: job.sourceType }) }],
     requirementCount: 1,
     sourceLabels: [job.workstream || fulfilmentWorkstream({ sourceDomain: job.sourceType })],
-    combinedLines: [line(job)],
+    combinedLines: lines(job),
     unitBreakdown: [{ unit: "unit", quantity: job.totalUnits }],
     readiness: job.productionReadiness === "attention" ? "ATTENTION" : job.productionReadiness === "pending" ? "PENDING" : "READY",
     attention: job.productionReadiness === "attention" ? ["Upstream amendment requires review"] : [],
     planningState: job.productionReadiness === "attention" ? "attention" : "unplanned",
     collectionRequired: Boolean(projection.collectionRequiredKeys?.includes(`projection-job:${job.id}`)),
+    deliveryStatus: job.deliveryStatus,
+    collectionStatus: job.collectionStatus,
+    ...(job.notes ? { notes: job.notes } : {}),
   }));
   for (const load of projection.deliveryLoads.filter(item => item.runId && !item.scheduledTime && item.jobCount > 0)) {
-    const combinedLines = load.jobs.flatMap(job => job.contents?.length ? job.contents.map((content, index) => ({ ...line(job), lineKey: `projection:${job.id}:${index}`, displayName: content.description, quantity: content.quantity, unit: content.unit })) : [line(job)]);
+    const combinedLines = load.jobs.flatMap(lines);
     const units = new Map<string, number>();
     for (const item of combinedLines) units.set(item.unit, (units.get(item.unit) || 0) + item.quantity);
     workGroups.push({
@@ -148,7 +153,7 @@ export function projectionToDashboardData(projection: LogisticsDayProjection) {
       requirementRefs: load.jobs.map((job) => ({ requirementId: job.id, sourceVersion: job.sourceVersion || 1, sourceDomain: job.sourceType as FulfilmentRequirement["sourceDomain"], sourceEntityId: job.sourceId, status: "ready_for_planning", workstream: job.workstream || fulfilmentWorkstream({ sourceDomain: job.sourceType }), ...(runId ? { runId, stopId: collectionStopId } : {}) })),
       requirementCount: load.jobCount,
       sourceLabels: Array.from(new Set(load.jobs.map((job) => job.workstream || fulfilmentWorkstream({ sourceDomain: job.sourceType })))),
-      combinedLines: load.jobs.map((job) => line(job)),
+      combinedLines: load.jobs.flatMap(lines),
       unitBreakdown: [{ unit: "unit", quantity: load.totalUnits }],
       readiness: "READY",
       attention: ["Collection timing required"],

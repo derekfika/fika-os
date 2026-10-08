@@ -65,7 +65,7 @@ import {
 } from "@/lib/planning";
 import { operationalDate } from "@/lib/date";
 import { addOperationalDays, operationalWeek } from "@/lib/week";
-import { addSchedulableMinutes, replaceLoadTiming, replaceStopTiming, resolveNextAvailableScheduleStart, validateOperationalSchedule } from "@/lib/scheduling";
+import { addSchedulableMinutes, DEFAULT_DELIVERY_LOAD_DURATION_MINUTES, replaceLoadTiming, replaceStopTiming, resolveNextAvailableScheduleStart, validateOperationalSchedule } from "@/lib/scheduling";
 import { restoredStopStatus } from "@/lib/mobile-driver";
 import { recordDataAccess, withDataTrace } from "@fika/server-shared/data-source-meter-server";
 import type { Transaction } from "firebase-admin/firestore";
@@ -185,11 +185,14 @@ function nextAvailableLoadTime(loads: import("@/lib/types").DeliveryLoad[], inpu
   }
 }
 function resolveCanonicalLoadSchedule(loads: import("@/lib/types").DeliveryLoad[], job: import("@/lib/types").LogisticsJob, runId: string | undefined, start: string, end?: string) {
-  const scheduledTime = nextAvailableLoadTime(loads, { runId, lane: "delivery", destinationOplocId: job.destinationOplocId!, start, end });
   const minutes = (time: string) => Number(time.slice(0, 2)) * 60 + Number(time.slice(3, 5));
-  const scheduledEnd = end ? addSchedulableMinutes(scheduledTime, minutes(end) - minutes(start)) : undefined;
-  if (end && !scheduledEnd) throw new HttpError(409, "The requested window does not fit within the operational day.");
-  return { scheduledTime, ...(scheduledEnd ? { scheduledEnd } : {}) };
+  const duration = end ? minutes(end) - minutes(start) : DEFAULT_DELIVERY_LOAD_DURATION_MINUTES;
+  const requestedEnd = end || addSchedulableMinutes(start, duration);
+  if (!requestedEnd) throw new HttpError(409, "The requested window does not fit within the operational day.");
+  const scheduledTime = nextAvailableLoadTime(loads, { runId, lane: "delivery", destinationOplocId: job.destinationOplocId!, start, end: requestedEnd });
+  const scheduledEnd = addSchedulableMinutes(scheduledTime, duration);
+  if (!scheduledEnd) throw new HttpError(409, "The requested window does not fit within the operational day.");
+  return { scheduledTime, scheduledEnd };
 }
 
 type PlannedTiming = { plannedArrivalTime?: string; plannedWindow?: { startTime: string; endTime?: string } };
@@ -938,8 +941,16 @@ async function handlePost(request: NextRequest) {
           const canonicalStart = collection ? first.collectionScheduledTime : first.scheduledTime;
           if (canonicalStart !== requestedTime) throw new HttpError(409, "The window start changed. Refresh before resizing its end.");
         }
-        const requestedDuration = body.scheduledEnd ? Math.max(15, Number(body.scheduledEnd.slice(0, 2)) * 60 + Number(body.scheduledEnd.slice(3, 5)) - (Number(requestedTime.slice(0, 2)) * 60 + Number(requestedTime.slice(3, 5)))) : undefined;
-        const effectiveScheduledTime = nextAvailableLoadTime(currentLoads, { runId, lane: collection ? "collection" : "delivery", destinationOplocId: collection ? first.originOplocId : first.destinationOplocId, start: requestedTime, end: body.scheduledEnd });
+        const currentStart = collection ? first.collectionScheduledTime : first.scheduledTime;
+        const currentEnd = collection ? first.collectionScheduledEnd : first.scheduledEnd;
+        const currentDuration = currentStart && currentEnd ? Number(currentEnd.slice(0, 2)) * 60 + Number(currentEnd.slice(3, 5)) - (Number(currentStart.slice(0, 2)) * 60 + Number(currentStart.slice(3, 5))) : undefined;
+        const usableCurrentDuration = currentDuration !== undefined && Number.isInteger(currentDuration) && currentDuration >= 15 ? currentDuration : undefined;
+        const requestedDuration = body.scheduledEnd
+          ? Math.max(15, Number(body.scheduledEnd.slice(0, 2)) * 60 + Number(body.scheduledEnd.slice(3, 5)) - (Number(requestedTime.slice(0, 2)) * 60 + Number(requestedTime.slice(3, 5))))
+          : usableCurrentDuration ?? (collection ? undefined : DEFAULT_DELIVERY_LOAD_DURATION_MINUTES);
+        const requestedEnd = requestedDuration === undefined ? undefined : addSchedulableMinutes(requestedTime, requestedDuration);
+        if (requestedDuration !== undefined && !requestedEnd) throw new HttpError(409, "The requested window does not fit within the operational day.");
+        const effectiveScheduledTime = nextAvailableLoadTime(currentLoads, { runId, lane: collection ? "collection" : "delivery", destinationOplocId: collection ? first.originOplocId : first.destinationOplocId, start: requestedTime, end: body.scheduledEnd || requestedEnd });
         if (body.resizeEndOnly && effectiveScheduledTime !== requestedTime) throw new HttpError(409, "The resized window conflicts with current work; its start must remain fixed.");
         const effectiveScheduledEnd = requestedDuration === undefined ? undefined : addSchedulableMinutes(effectiveScheduledTime, requestedDuration);
         if (requestedDuration !== undefined && !effectiveScheduledEnd) throw new HttpError(409, "The requested window does not fit within the operational day.");

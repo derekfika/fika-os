@@ -4,7 +4,7 @@ const path = require('node:path');
 const { fixture } = require('./helpers/authority-route-harness.cjs');
 const modulePath = name => path.resolve(__dirname, '../lib/' + name + '.ts');
 
-test('shared compatibility explanations preserve production arrival and location predicates', () => {
+test('shared compatibility explanations keep upstream timing advisory and enforce location predicates', () => {
   const f = fixture();
   const { compatibleLoad, explainLoadCompatibility } = f.load(modulePath('delivery-loads'));
   const baseJob = { serviceDate: f.date, originOplocId: 'cpu', destinationOplocId: 'site', requestedWindow: { startTime: '10:00', endTime: '11:00' } };
@@ -17,8 +17,8 @@ test('shared compatibility explanations preserve production arrival and location
     [{}, { serviceDate: '2099-01-06' }, false, ['service_date_mismatch']],
     [{}, { originOplocId: 'other' }, false, ['origin_oploc_mismatch']],
     [{}, { destinationOplocId: 'other' }, false, ['destination_oploc_mismatch']],
-    [{}, { scheduledTime: '09:45' }, false, ['scheduled_arrival_outside_current_requested_window']],
-    [{}, { scheduledTime: '11:15' }, false, ['scheduled_arrival_outside_current_requested_window']],
+    [{}, { scheduledTime: '09:45' }, true, []],
+    [{}, { scheduledTime: '11:15' }, true, []],
     [{ requestedWindow: { startTime: '10:00' } }, {}, true, []],
     [{ requestedWindow: undefined }, { scheduledTime: '09:45' }, true, []],
   ];
@@ -28,6 +28,7 @@ test('shared compatibility explanations preserve production arrival and location
     assert.equal(result.compatible, expected);
     assert.equal(compatibleLoad(job, load), expected);
     assert.deepEqual(result.reasons, reasons);
+    if (job.requestedWindow && !result.checks.arrivalWithinRequestedWindow) assert.deepEqual(result.warnings, ['scheduled_arrival_outside_advisory_requested_window']);
   }
 });
 
@@ -48,7 +49,7 @@ test('merged cards retain canonical coverage and do not trigger a count-only syn
   assert.equal(f.writes, before);
 });
 
-test('diagnostic separates canonical incompatibility, undated input exclusions and genuinely unassigned jobs', async () => {
+test('diagnostic reports advisory timing separately from canonical incompatibility and undated input exclusions', async () => {
   const f = fixture(['van1', 'van2'], ['logistics.repair']);
   f.records.get('fikaLogisticsJobsV1/jl1').requestedWindow = { startTime: '10:00', endTime: '11:00' };
   delete f.records.get('fikaLogisticsAssignmentsV1/jl2:l2').serviceDate;
@@ -58,13 +59,14 @@ test('diagnostic separates canonical incompatibility, undated input exclusions a
   const before = f.writes;
   const { body } = await f.get('diagnostic=1');
   const rows = body.assignmentIntegrity.assignments;
-  assert.equal(rows.find(r => r.jobId === 'jl1').compatible, false);
-  assert.deepEqual(rows.find(r => r.jobId === 'jl1').failureReasons, ['scheduled_arrival_outside_current_requested_window']);
+  assert.equal(rows.find(r => r.jobId === 'jl1').compatible, true);
+  assert.deepEqual(rows.find(r => r.jobId === 'jl1').failureReasons, []);
+  assert.deepEqual(rows.find(r => r.jobId === 'jl1').warnings, ['scheduled_arrival_outside_advisory_requested_window']);
   const undated = rows.find(r => r.jobId === 'jl2');
   assert.equal(undated.compatible, true);
   assert.equal(undated.acceptedByProjection, false);
   assert.deepEqual(undated.failureReasons, ['missing_assignment_service_date']);
-  assert.equal(body.assignmentIntegrity.summary.rejectedAssignments, 2);
+  assert.equal(body.assignmentIntegrity.summary.rejectedAssignments, 1);
   assert.equal(body.assignmentIntegrity.summary.trulyUnassignedJobs, 1);
   assert.deepEqual(body.assignmentIntegrity.trulyUnassignedJobs.map(j => j.id), ['unassigned']);
   assert.equal(body.status, 'In sync', 'faithfully rejecting invalid assignments is distinct from stale materialisation');

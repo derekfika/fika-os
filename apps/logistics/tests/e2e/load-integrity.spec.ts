@@ -11,7 +11,7 @@ async function scenario(page: Page, collection = false, merged = false) {
   const f = fixture(["van1", "van2"], ["logistics.reconcile"], true); f.requirements.length = 0;
   for (const key of [...f.records.keys()]) if (!key.startsWith("fikaLogisticsDeliveryRunsV1/")) f.records.delete(key);
   for (const run of f.records.values()) run.orderedStopIds = [];
-  f.requirements.push({ canonicalId: "req:a", sourceDomain: "cpu-production", sourceEntityId: "order:a", sourceVersion: 1, serviceDate: f.date, productionLocationId: "cpu", destinationOplocId: "site", destinationLabelSnapshot: "Batch Two Site", requiredDeliveryWindow: { startTime: "10:00", endTime: "11:00" }, status: "ready_for_planning", lines: [{ displayNameSnapshot: "Lunch", quantity: 10, unit: "portion" }] });
+  f.requirements.push({ canonicalId: "req:a", sourceDomain: "cpu-production", sourceEntityId: "order:a", sourceVersion: 1, workstream: "Hospitality", serviceDate: f.date, productionLocationId: "cpu", destinationOplocId: "site", destinationLabelSnapshot: "Batch Two Site", requiredDeliveryWindow: { startTime: "10:00", endTime: "11:00" }, status: "ready_for_planning", lines: [{ displayNameSnapshot: "Lunch", quantity: 10, unit: "portion" }] });
   await f.materialisation.reconcileLogisticsDay(f.date, "Operator");
   f.seed("fikaLogisticsCollectionPreferencesV1", encodeURIComponent("projection-job:logistics-job:req:a"), { groupKey: "projection-job:logistics-job:req:a", serviceDate: f.date, collectionRequired: true });
   await f.materialisation.rebuildLogisticsProjection(f.date, "Operator");
@@ -67,6 +67,51 @@ async function dropQueue(page: Page, lane: "delivery" | "collection", time: stri
   await page.mouse.up();
 }
 
+test("advisory source timing permits placement and an untimed delivery gets an editable 30-minute window", async ({ page }) => {
+  const { f } = await scenario(page);
+  const queue = page.locator('[data-timeline-queue-id^="projection-job:"]').first();
+  await queue.getByRole("button", { name: "Details", exact: true }).click();
+  const inspector = page.getByRole("complementary", { name: "Details inspector" });
+  await expect(inspector).toContainText("Hospitality");
+  await expect(inspector).toContainText("Preferred source timing");
+  await expect(inspector).toContainText("10:00–11:00");
+  await expect(inspector).toContainText("Advisory timing");
+  await expect(inspector).toContainText("10 portion · Lunch");
+  await inspector.getByRole("button", { name: "Close inspector" }).click();
+
+  await dropQueue(page, "delivery", "12:00");
+  await expect.poll(() => f.records.get("fikaLogisticsDayProjectionsV1/" + f.date).deliveryLoads[0]?.scheduledTime).toBe("12:00");
+  const projectionLoad = f.records.get("fikaLogisticsDayProjectionsV1/" + f.date).deliveryLoads[0];
+  expect(projectionLoad.scheduledEnd).toBe("12:30");
+  expect(projectionLoad.loadIds).toHaveLength(1);
+  const canonicalJob = f.records.get("fikaLogisticsJobsV1/logistics-job:req:a");
+  expect(canonicalJob.requestedWindow).toEqual({ startTime: "10:00", endTime: "11:00" });
+
+  const card = page.getByTestId(`stop-projection-stop:delivery:${projectionLoad.id}`);
+  await expect(card).toBeVisible();
+  await expect(card.getByTestId("timeline-card-full-time")).toHaveText("12:00–12:30");
+  await card.click();
+  const assignedInspector = page.getByRole("complementary", { name: "Details inspector" });
+  await expect(assignedInspector).toContainText("Scheduled timing");
+  await expect(assignedInspector).toContainText("Preferred source timing");
+  await expect(assignedInspector).toContainText("10:00–11:00");
+  await expect(assignedInspector).toContainText("Vehicle / run");
+  await expect(assignedInspector).toContainText("Collection");
+  const resize = page.getByTestId(`resize-projection-stop:delivery:${projectionLoad.id}`);
+  await expect(resize).toBeVisible();
+  await assignedInspector.getByRole("button", { name: "Close inspector" }).click();
+  await page.reload();
+  const reloaded = f.records.get("fikaLogisticsDayProjectionsV1/" + f.date).deliveryLoads[0];
+  expect(reloaded.id).toBe(projectionLoad.id);
+  expect(reloaded.scheduledTime).toBe("12:00");
+  expect(reloaded.scheduledEnd).toBe("12:30");
+  await page.getByTestId(`resize-projection-stop:delivery:${reloaded.id}`).focus();
+  await page.keyboard.press("ArrowRight");
+  await expect.poll(() => f.records.get("fikaLogisticsDayProjectionsV1/" + f.date).deliveryLoads[0]?.scheduledEnd).toBe("12:45");
+  expect(f.records.get("fikaLogisticsDeliveryLoadsV1/" + projectionLoad.id).scheduledTime).toBe("12:00");
+  expect(f.records.get("fikaLogisticsJobsV1/logistics-job:req:a").requestedWindow).toEqual({ startTime: "10:00", endTime: "11:00" });
+});
+
 for (const merged of [false, true]) for (const entry of ["set-time", "drag"] as const) test(`${merged ? "merged" : "single"} cleared assigned delivery reloads into Needs time and ${entry} schedules the same canonical loads`, async ({ page }) => {
   const { f, commands } = await scenario(page, true, merged);
   const initial = f.records.get("fikaLogisticsDayProjectionsV1/" + f.date).deliveryLoads[0];
@@ -100,6 +145,8 @@ for (const merged of [false, true]) for (const entry of ["set-time", "drag"] as 
   await expect.poll(() => f.records.get("fikaLogisticsDayProjectionsV1/" + f.date).deliveryLoads[0].scheduledTime).toBe("10:45");
   const after = f.records.get("fikaLogisticsDayProjectionsV1/" + f.date).deliveryLoads[0];
   expect(after.id).toBe(initial.id); expect(after.loadIds).toEqual(initial.loadIds);
+  expect(after.scheduledEnd).toBe("11:15");
+  expect(new Set(Object.keys(after.loadVersions))).toEqual(new Set(initial.loadIds));
   for (const id of initial.loadIds) {
     const load = f.records.get("fikaLogisticsDeliveryLoadsV1/" + id);
     expect(load.version).toBe(cleared.loadVersions[id] + 1); expect(load.runId).toBe("r1");
@@ -111,7 +158,7 @@ for (const merged of [false, true]) for (const entry of ["set-time", "drag"] as 
   await page.reload();
   await expect(page.getByTestId(`stop-projection-stop:delivery:${after.id}`)).toBeVisible();
   await expect(page.getByTestId(`stop-projection-stop:delivery:${after.id}`)).toHaveCSS("cursor", "move");
-  if (entry === "set-time") await expect(page.getByTestId(`resize-projection-stop:delivery:${after.id}`)).toHaveCSS("cursor", "ew-resize");
+  await expect(page.getByTestId(`resize-projection-stop:delivery:${after.id}`)).toHaveCSS("cursor", "ew-resize");
   await expect(page.locator(`[data-timeline-queue-id="projection-delivery:${after.id}"]`)).toHaveCount(0);
   await expect(page.locator(`[data-timeline-queue-id="projection-collection:${after.id}"]`)).toBeVisible();
 });
@@ -185,7 +232,7 @@ for (const entry of ["queue", "inspector", "timeline"] as const) for (const coll
     await expect.poll(() => [...f.records.values()].find((value: any) => value.id?.startsWith("load:v2:"))?.[collection ? "collectionScheduledTime" : "scheduledTime"]).toBe(collection ? "14:00" : "10:30");
     const load: any = [...f.records.values()].find((value: any) => value.id?.startsWith("load:v2:"));
     expect(load).toMatchObject({ runId: "r1", vehicleId: "van1", scheduledTime: "10:30", collectionRequired: true, version: collection ? 2 : 1 });
-    expect(load.scheduledEnd).toBeUndefined();
+    expect(load.scheduledEnd).toBe("11:00");
     if (collection) expect(load.collectionRunId).toBe("r2");
     const job = f.records.get("fikaLogisticsJobsV1/logistics-job:req:a");
     expect(job.requestedWindow).toEqual({ startTime: "10:00", endTime: "11:00" });

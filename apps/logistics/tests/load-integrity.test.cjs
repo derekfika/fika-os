@@ -26,14 +26,14 @@ async function assigned(overrides = {}) {
 }
 for (const [window, arrival, expected] of [
   [{ startTime: '10:00', endTime: '11:00' }, '10:30', true],
-  [{ startTime: '10:00', endTime: '11:00' }, '09:45', false],
-  [{ startTime: '10:00', endTime: '11:00' }, '11:15', false],
+  [{ startTime: '10:00', endTime: '11:00' }, '09:45', true],
+  [{ startTime: '10:00', endTime: '11:00' }, '11:15', true],
   [{ startTime: '10:00' }, '10:30', true],
-  [{ startTime: '10:00' }, '09:45', false],
+  [{ startTime: '10:00' }, '09:45', true],
   [{ startTime: '10:00', endTime: '11:00' }, '10:00', true],
   [{ startTime: '10:00', endTime: '11:00' }, '11:00', true],
   [undefined, '09:45', true],
-]) test('source arrival constraint ' + JSON.stringify(window) + ' / ' + arrival, () => {
+]) test('source arrival timing stays advisory ' + JSON.stringify(window) + ' / ' + arrival, () => {
   const f = setup(); const { compatibleLoad } = f.load(path.resolve(__dirname, '../lib/delivery-loads.ts'));
   const job = { serviceDate: f.date, originOplocId: 'cpu', destinationOplocId: 'site', requestedWindow: window };
   assert.equal(compatibleLoad(job, { ...job, scheduledTime: arrival, scheduledEnd: '12:00', status: 'planned' }), expected);
@@ -44,14 +44,12 @@ test('assignment and rescheduling keep source window separate from operator dura
   const result = await f.post({ ...executionAuthority(f), action: 'reschedule-delivery-load', loadId: load.id, expectedLoadVersion: load.version, scheduledTime: '10:45', scheduledEnd: '12:00', targetRunId: 'r1' });
   assert.equal(result.response.status, 200, JSON.stringify(result.body)); assert.deepEqual(jobs(f)[0].requestedWindow, window); assert.equal(loads(f)[0].scheduledEnd, '12:00');
 });
-for (const window of [{ startTime: '09:00', endTime: '12:00' }, { startTime: '10:15', endTime: '10:45' }]) test('compatible broadened/narrowed amendment preserves load schedule ' + JSON.stringify(window), async () => {
+for (const window of [{ startTime: '09:00', endTime: '12:00' }, { startTime: '10:15', endTime: '10:45' }, { startTime: '12:00', endTime: '13:00' }]) test('source timing amendment preserves the operational load schedule ' + JSON.stringify(window), async () => {
   const f = await assigned(); const load = loads(f)[0]; const assignment = assignments(f)[0];
   Object.assign(f.requirements[0], { sourceVersion: 2, sourceContentHash: 'amended', status: 'amended', requiredDeliveryWindow: window });
   await reconcile(f); assert.deepEqual(loads(f)[0], load); assert.deepEqual(assignments(f)[0], assignment); assert.deepEqual(jobs(f)[0].requestedWindow, window);
 });
 for (const change of [
-  { requiredDeliveryWindow: { startTime: '10:45', endTime: '11:00' } },
-  { requiredDeliveryWindow: { startTime: '09:00', endTime: '10:15' } },
   { destinationOplocId: 'other-site' }, { productionLocationId: 'other-cpu' },
 ]) test('incompatible source amendment returns work to planning ' + JSON.stringify(change), async () => {
   const f = await assigned(); Object.assign(f.requirements[0], change, { sourceVersion: 2, status: 'amended' });
@@ -164,8 +162,41 @@ test('projection retains independent origin, duration and collection ownership w
 test('current removal requires job and load versions and preserves cancelled history', async () => {
   const f = await assigned(); const load = loads(f)[0]; const job = jobs(f)[0]; const result = await f.post({ ...executionAuthority(f), action: 'remove-job-from-load', jobId: job.id, loadId: load.id, expectedJobVersion: job.version, expectedLoadVersion: load.version }); assert.equal(result.response.status, 200, JSON.stringify(result.body)); assert.equal(assignments(f).length, 0); assert.equal(loads(f)[0].status, 'cancelled'); assert.equal(loads(f)[0].version, load.version + 1);
 });
-test('source-incompatible operator rescheduling fails without modifying job or load', async () => {
-  const f = await assigned(); const before = structuredClone([...f.records]); const load = loads(f)[0]; assert.equal((await f.post({ ...executionAuthority(f), action: 'reschedule-delivery-load', loadId: load.id, expectedLoadVersion: load.version, scheduledTime: '11:15' })).response.status, 409); assert.deepEqual([...f.records], before);
+test('operator rescheduling outside advisory source timing succeeds and retains source metadata', async () => {
+  const f = await assigned(); const window = structuredClone(jobs(f)[0].requestedWindow); const load = loads(f)[0];
+  const result = await f.post({ ...executionAuthority(f), action: 'reschedule-delivery-load', loadId: load.id, expectedLoadVersion: load.version, scheduledTime: '11:15', scheduledEnd: '11:45' });
+  assert.equal(result.response.status, 200, JSON.stringify(result.body));
+  assert.equal(loads(f)[0].scheduledTime, '11:15'); assert.equal(loads(f)[0].scheduledEnd, '11:45');
+  assert.deepEqual(jobs(f)[0].requestedWindow, window);
+  await reconcile(f); assert.equal(loads(f)[0].scheduledTime, '11:15'); assert.deepEqual(jobs(f)[0].requestedWindow, window);
+});
+test('untimed job placement persists a 30-minute window and collision adjustment keeps its duration', async () => {
+  const f = setup(); f.requirements.push(requirement(f)); await reconcile(f);
+  const template = { serviceDate: f.date, originOplocId: 'cpu', destinationOplocId: 'other-site', scheduledTime: '10:00', scheduledEnd: '10:30', runId: 'r1', vehicleId: 'van1', status: 'planned', version: 1, audit: [] };
+  f.seed('fikaLogisticsDeliveryLoadsV1', 'collision', { ...template, id: 'collision' });
+  const job = jobs(f)[0]; const window = structuredClone(job.requestedWindow);
+  const result = await f.post({ action: 'assign-job-to-load', jobId: job.id, targetRunId: 'r1', scheduledTime: '10:00', expectedJobVersion: job.version });
+  assert.equal(result.response.status, 200, JSON.stringify(result.body));
+  assert.equal(result.body.scheduledTime, '10:30'); assert.equal(result.body.scheduledEnd, '11:00');
+  const load = loads(f).find(item => item.id === result.body.id);
+  assert.equal(load.scheduledTime, '10:30'); assert.equal(load.scheduledEnd, '11:00');
+  assert.equal(assignments(f)[0].loadId, load.id); assert.deepEqual(jobs(f)[0].requestedWindow, window);
+  await reconcile(f); assert.equal(loads(f).find(item => item.id === load.id).scheduledEnd, '11:00');
+});
+test('placing a cleared canonical delivery load defaults to 30 minutes after collision and keeps merged authority', async () => {
+  const f = await merged(); const projection = f.records.get('fikaLogisticsDayProjectionsV1/' + f.date);
+  const prior = projection.deliveryLoads[0];
+  assert.equal((await f.post({ action: 'clear-delivery-load-schedule', loadIds: prior.loadIds, expectedLoadVersions: prior.loadVersions })).response.status, 200);
+  const cleared = loads(f); const template = cleared[0];
+  f.seed('fikaLogisticsDeliveryLoadsV1', 'duration-collision', { ...template, id: 'duration-collision', destinationOplocId: 'other-site', scheduledTime: '12:00', scheduledEnd: '12:30' });
+  const window = structuredClone(jobs(f)[0].requestedWindow);
+  const result = await f.post({ action: 'reschedule-delivery-loads', loadIds: prior.loadIds, expectedLoadVersions: Object.fromEntries(cleared.map(load => [load.id, load.version])), targetRunId: 'r1', lane: 'delivery', scheduledTime: '12:00' });
+  assert.equal(result.response.status, 200, JSON.stringify(result.body));
+  assert.deepEqual(new Set(result.body.loads.map(load => load.id)), new Set(prior.loadIds));
+  for (const load of result.body.loads) { assert.equal(load.scheduledTime, '12:30'); assert.equal(load.scheduledEnd, '13:00'); }
+  const after = f.records.get('fikaLogisticsDayProjectionsV1/' + f.date).deliveryLoads[0];
+  assert.deepEqual(new Set(after.loadIds), new Set(prior.loadIds)); assert.deepEqual(new Set(Object.keys(after.loadVersions)), new Set(prior.loadIds));
+  assert.deepEqual(jobs(f).map(job => job.requestedWindow), [window, window]);
 });
 test('readyAt earliest arrival uses UK time across BST and GMT', () => {
   const f = setup(); const make = readyAt => f.materialisation.logisticsJobForRequirement(requirement(f, 'a', { requiredDeliveryWindow: undefined, readyAt }), undefined, 'Operator', 'now').requestedWindow;
@@ -245,8 +276,8 @@ test('second merged member stale CAS rolls back the whole placement', async () =
   const f = await merged(); const command = bulk(f); command.expectedLoadVersions[command.loadIds[1]] = 0; const before = structuredClone([...f.records]);
   assert.equal((await f.post(command)).response.status, 409); assert.deepEqual([...f.records], before);
 });
-test('second merged member source incompatibility commits neither load', async () => {
-  const f = await merged(); const job = jobs(f)[1]; f.seed('fikaLogisticsJobsV1', job.id, { ...job, requestedWindow: { startTime: '10:00', endTime: '10:35' } }); const before = structuredClone([...f.records]);
+test('second merged member canonical destination incompatibility commits neither load', async () => {
+  const f = await merged(); const job = jobs(f)[1]; f.seed('fikaLogisticsJobsV1', job.id, { ...job, destinationOplocId: 'other-site' }); const before = structuredClone([...f.records]);
   assert.equal((await f.post(bulk(f))).response.status, 409); assert.deepEqual([...f.records], before);
 });
 test('proposed unauthorized collection owner commits neither merged member', async () => {
@@ -341,7 +372,7 @@ test('merged projected collection clear preserves delivery, collection owner and
   assert.equal(rebuilt.deliveryLoads[0].collectionRunId, 'r2');
 });
 
-test('cleared merged delivery survives reconciliation and rejects early placement before valid rescheduling', async () => {
+test('cleared merged delivery survives reconciliation and accepts a schedule outside advisory source timing', async () => {
   const f = await merged();
   f.requirements.push(requirement(f, 'b'));
   const group = f.records.get('fikaLogisticsDayProjectionsV1/' + f.date).deliveryLoads[0];
@@ -355,14 +386,11 @@ test('cleared merged delivery survives reconciliation and rejects early placemen
   const unscheduled = f.records.get('fikaLogisticsDayProjectionsV1/' + f.date).deliveryLoads[0];
   assert.equal(unscheduled.jobCount, 2);
   assert.equal(f.records.get('fikaLogisticsDayProjectionsV1/' + f.date).planningQueue.length, 0);
-  const before = structuredClone([...f.records]);
-  const rejected = await f.post(bulk(f, { scheduledTime: '09:45', scheduledEnd: '10:15' }));
-  assert.equal(rejected.response.status, 409, JSON.stringify(rejected.body));
-  assert.deepEqual([...f.records], before);
-  const accepted = await f.post(bulk(f, { scheduledTime: '10:00', scheduledEnd: '11:00' }));
+  const accepted = await f.post(bulk(f, { scheduledTime: '09:45', scheduledEnd: '10:15' }));
   assert.equal(accepted.response.status, 200, JSON.stringify(accepted.body));
   assert.deepEqual(assignments(f), beforeAssignments);
-  for (const load of loads(f)) assert.equal(load.scheduledTime, '10:00');
+  for (const load of loads(f)) { assert.equal(load.scheduledTime, '09:45'); assert.equal(load.scheduledEnd, '10:15'); }
+  for (const job of jobs(f)) assert.deepEqual(job.requestedWindow, { startTime: '10:00', endTime: '11:00' });
 });
 
 test('merged projected clear with stale constituent B version is all-or-zero', async () => {

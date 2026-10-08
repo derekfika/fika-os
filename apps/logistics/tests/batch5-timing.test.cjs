@@ -132,12 +132,12 @@ test('native end-only resize rejects a current collision without writes and reta
   assert.deepEqual(accepted.body.stop.plannedWindow, { startTime: '10:00', endTime: '11:00' });
 });
 
-test('projected timing replacement removes an omitted delivery end and source timing remains unchanged', async () => {
+test('projected timing replacement preserves an existing delivery duration when the end is omitted', async () => {
   const f = await assigned(); const load = loads(f)[0]; const requestedWindow = jobs(f)[0].requestedWindow;
   const result = await f.post({ action: 'reschedule-delivery-load', loadId: load.id, expectedLoadVersion: load.version, scheduledTime: '10:45', targetRunId: 'r1' });
   assert.equal(result.response.status, 200, JSON.stringify(result.body));
   assert.equal(result.body.scheduledTime, '10:45');
-  assert.equal(Object.hasOwn(result.body, 'scheduledEnd'), false);
+  assert.equal(result.body.scheduledEnd, '11:45');
   assert.deepEqual(jobs(f)[0].requestedWindow, requestedWindow);
 });
 

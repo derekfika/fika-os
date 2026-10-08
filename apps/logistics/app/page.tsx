@@ -2273,17 +2273,34 @@ function Inspector({
   const run = selection.kind === "run" ? planner.runs.find((item) => item.runId === selection.id) : undefined;
   const stop = selection.kind === "stop" ? planner.runs.flatMap((item) => item.stops).find((item) => item.stopId === selection.id) : undefined;
   const rawStop = stop ? rawStops.find((item) => item.canonicalId === stop.stopId) : undefined;
+  const stopRun = stop ? planner.runs.find((item) => item.runId === rawStop?.runId) : undefined;
+  const projectedLoad = stop && rawStop?.canonicalLoadIds?.length
+    ? projection?.deliveryLoads.find((load) => (load.loadIds || [load.id]).some((id) => rawStop.canonicalLoadIds!.includes(id)))
+    : undefined;
+  const advisorySourceTiming = projectedLoad
+    ? Array.from(new Set(projectedLoad.jobs.map((job) => formatWindow(job.requestedWindow)).filter(Boolean))).join(" · ")
+    : undefined;
   const stopTitle = stop ? `${stop.destination.label} · ${stop.plannedWindow?.startTime || stop.plannedArrivalTime || "Time to confirm"}` : undefined;
   const collectionPending = group ? groupCollectionPending(group, planner.runs) : false;
   const assignedDelivery = group && untimedAssignedDeliveryStop(group, planner.runs);
+  const assignedRun = assignedDelivery && group
+    ? runs.find((item) => item.runId === group.requirementRefs.find((ref) => ref.stopId === assignedDelivery.stopId)?.runId)
+    : undefined;
   return <aside className="mock-inspector" aria-label="Details inspector">
     <header><div><p className="eyebrow">Inspector</p><h2>{group?.destinationLabel || movement?.type || stopTitle || run?.vehicle || "Details"}</h2></div><button className="close" onClick={onClose} aria-label="Close inspector">×</button></header>
     {group && <>
-      <InspectorMeta label="Timing" value={formatWindow(group.deliveryWindow) || group.requiredTimes[0] || "Unscheduled"} />
+      {group.deliveryWindow && <><InspectorMeta label="Preferred source timing" value={formatWindow(group.deliveryWindow)!} /><p className="context-line">Advisory timing · Logistics sets the operational schedule.</p></>}
+      {!group.deliveryWindow && group.requiredTimes[0] && <><InspectorMeta label="Preferred source timing" value={formatAdvisoryTime(group.requiredTimes[0])} /><p className="context-line">Advisory timing · Logistics sets the operational schedule.</p></>}
       <label className="collection-toggle inspector-collection-toggle"><input type="checkbox" checked={Boolean(group.collectionRequired)} disabled={Boolean(assignedDelivery)} onChange={(event) => onAction({ action: "set-collection-required", groupKey: group.groupKey, serviceDate: group.serviceDate, collectionRequired: event.target.checked })} /> Collection required</label>
-      <InspectorMeta label="Source" value={group.sourceLabels.join(" · ")} />
+      <InspectorMeta label="Source / workstream" value={group.sourceLabels.join(" · ")} />
+      <InspectorMeta label="Production readiness" value={group.readiness === "READY" ? "Ready" : group.readiness === "PENDING" ? "Pending" : "Attention"} />
+      {group.deliveryStatus && <InspectorMeta label="Delivery status" value={group.deliveryStatus === "pending" ? "Pending" : group.deliveryStatus === "loaded" ? "Loaded" : "Delivered"} />}
+      <InspectorMeta label="Jobs / quantity" value={`${group.requirementCount} ${group.requirementCount === 1 ? "job" : "jobs"} · ${group.unitBreakdown.map((item) => `${item.quantity} ${item.unit}`).join(" · ") || "Quantity unavailable"}`} />
+      {assignedDelivery && <InspectorMeta label="Assignment" value={`${assignedRun?.vehicle || "Vehicle not labelled"} · ${assignedRun?.status || "Run status unavailable"}`} />}
       <h3>Load</h3><ul className="inspector-list">{group.combinedLines.map((line) => <li key={line.lineKey}>{line.quantity} {line.unit} · {line.displayName}</li>)}</ul>
-      {group.productionContext && <p className="context-line"><strong>{group.productionContext.clientName}</strong>{group.productionContext.guestCount !== undefined && ` · ${group.productionContext.guestCount} guests`}</p>}
+      {group.productionContext && <p className="context-line">{[group.productionContext.clientName, group.productionContext.serviceType, group.productionContext.guestCount !== undefined ? `${group.productionContext.guestCount} guests` : undefined].filter(Boolean).join(" · ")}</p>}
+      {group.productionContext?.operationalNotes && <p className="notes-block">Notes: {group.productionContext.operationalNotes}</p>}
+      {group.notes && <p className="notes-block">Notes: {group.notes}</p>}
       {group.attention.map((item) => <div className="attention-note" key={item}>⚠ {item}</div>)}
       <div className="inspector-actions"><button disabled={placementPending} onClick={() => { setAssigning(group.groupKey); setTargetRun(assignedDelivery ? group.requirementRefs.find(ref => ref.runId)?.runId || "" : runs.length === 1 ? runs[0].runId : ""); }}>{placementPending ? "Saving…" : assignedDelivery ? "Set delivery time" : collectionPending ? "Schedule collection" : "Assign to vehicle"}</button></div>
       {assigning === group.groupKey && <RunChooser key={`${group.groupKey}-${collectionPending ? "collection" : "delivery"}`} runs={runs} targetRun={targetRun} setTargetRun={setTargetRun} allowedLanes={collectionPending ? ["collection"] : ["delivery"]} onConfirm={(choice) => onAssignGroup(group, choice)} label={assignedDelivery ? "Set time" : collectionPending ? "Schedule collection" : "Assign eligible"} pending={placementPending} />}
@@ -2309,7 +2326,19 @@ function Inspector({
         {run.status === "ready" && <button className="secondary" onClick={() => onAction({ action: "return-run-to-planning", runId: run.runId, expectedRunVersion: run.version })}>Return to planning</button>}
       </div>
     </>}
-    {stop && rawStop && <><div className="inspector-actions"><button className="secondary" disabled={placementPending} onClick={() => onAction({ action: "return-stop-to-planning", runId: rawStop.runId, stopId: stop.stopId, expectedRunVersion: planner.runs.find((item) => item.runId === rawStop.runId)!.version, expectedStopVersion: rawStop.version })}>Return to planning queue</button></div><ScheduleEditor stop={stop} run={planner.runs.find((item) => item.runId === rawStop.runId)!} rawStop={rawStop} runs={runs} onScheduleStop={onScheduleStop} onAction={onAction} placementPending={placementPending} /><StopPanel stop={stop} index={Math.max(0, stop.sequence - 1)} run={planner.runs.find((item) => item.runId === rawStop.runId)!} runs={runs} rawStop={rawStop} rawRequirements={rawRequirements} projection={projection} expanded onToggle={() => undefined} onAction={onAction} placementPending={placementPending} /></>}
+    {stop && rawStop && <>
+      <InspectorMeta label="Destination" value={stop.destination.label} />
+      <InspectorMeta label="Source / workstream" value={stop.sourceLabels.join(" · ") || "Source not supplied"} />
+      <InspectorMeta label="Load quantity" value={stop.unitBreakdown.map((item) => `${item.quantity} ${item.unit}`).join(" · ") || "Quantity unavailable"} />
+      <InspectorMeta label="Scheduled timing" value={formatWindow(stop.plannedWindow) || stop.plannedArrivalTime || "Unscheduled"} />
+      {advisorySourceTiming && <><InspectorMeta label="Preferred source timing" value={advisorySourceTiming} /><p className="context-line">Advisory timing · Logistics sets the operational schedule.</p></>}
+      <InspectorMeta label="Vehicle / run" value={`${stopRun?.vehicle || "Vehicle not labelled"} · ${stopRun?.status || "Run status unavailable"}`} />
+      <InspectorMeta label="Status" value={stopOperationalStatusLabel(stop.operationalStatus)} />
+      {projectedLoad?.collectionRequired && <InspectorMeta label="Collection" value={projectedLoad.jobs.every((job) => job.collectionStatus === "collected") ? "Collected" : "Required · outstanding"} />}
+      {projectedLoad && <InspectorMeta label="Load lifecycle" value={projectedLoad.status[0].toUpperCase() + projectedLoad.status.slice(1)} />}
+      {stop.attention.map((item) => <div className="attention-note" key={item}>⚠ {item}</div>)}
+      <div className="inspector-actions"><button className="secondary" disabled={placementPending} onClick={() => onAction({ action: "return-stop-to-planning", runId: rawStop.runId, stopId: stop.stopId, expectedRunVersion: stopRun!.version, expectedStopVersion: rawStop.version })}>Return to planning queue</button></div><ScheduleEditor stop={stop} run={stopRun!} rawStop={rawStop} runs={runs} onScheduleStop={onScheduleStop} onAction={onAction} placementPending={placementPending} /><StopPanel stop={stop} index={Math.max(0, stop.sequence - 1)} run={stopRun!} runs={runs} rawStop={rawStop} rawRequirements={rawRequirements} projection={projection} expanded onToggle={() => undefined} onAction={onAction} placementPending={placementPending} />
+    </>}
   </aside>;
 }
 
@@ -2773,6 +2802,12 @@ function formatWindow(window?: { startTime: string; endTime?: string }) {
   return window
     ? `${window.startTime}${window.endTime ? `–${window.endTime}` : ""}`
     : undefined;
+}
+function formatAdvisoryTime(value: string) {
+  if (!/^\d{4}-\d{2}-\d{2}T/.test(value)) return value;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/London", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(date);
 }
 
 function MovementCard({

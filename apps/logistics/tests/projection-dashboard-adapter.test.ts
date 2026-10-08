@@ -38,6 +38,8 @@ test("projection carries explicit workstream into queue and assigned stop labels
   const result = projectionToDashboardData(projection);
   assert.deepEqual(result.planner.workGroups[0].sourceLabels, ["Hospitality"]);
   assert.equal(result.planner.workGroups[0].requirementRefs[0].workstream, "Hospitality");
+  assert.deepEqual(result.planner.workGroups[0].combinedLines.map(line => [line.displayName, line.quantity, line.unit]), [["Lunch", 12, "portion"]]);
+  assert.deepEqual(result.planner.workGroups[0].deliveryWindow, { startTime: "07:00" });
 });
 
 test("assigned untimed delivery stays reachable with merged canonical authority after projection reload", () => {

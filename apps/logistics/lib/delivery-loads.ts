@@ -28,7 +28,8 @@ function loadCompatibility(job: LogisticsJob, load: DeliveryLoad, retainUnschedu
     serviceDateMatch: job.serviceDate === load.serviceDate,
     originMatch: job.originOplocId === load.originOplocId,
     destinationMatch: job.destinationOplocId === load.destinationOplocId,
-    arrivalWithinRequestedWindow: retainUnscheduled && load.scheduledTime === undefined || arrivalWithinSource(job.requestedWindow, load.scheduledTime),
+    scheduledArrivalPresent: retainUnscheduled && load.scheduledTime === undefined || Boolean(load.scheduledTime && arrivalWithinSource(undefined, load.scheduledTime)),
+    arrivalWithinRequestedWindow: arrivalWithinSource(job.requestedWindow, load.scheduledTime),
   };
   const reasons: string[] = [];
   if (!checks.jobActive) reasons.push("job_withdrawn");
@@ -37,8 +38,13 @@ function loadCompatibility(job: LogisticsJob, load: DeliveryLoad, retainUnschedu
   if (!checks.serviceDateMatch) reasons.push("service_date_mismatch");
   if (!checks.originMatch) reasons.push("origin_oploc_mismatch");
   if (!checks.destinationMatch) reasons.push("destination_oploc_mismatch");
-  if (!checks.arrivalWithinRequestedWindow) reasons.push("scheduled_arrival_outside_current_requested_window");
-  return { compatible: Object.values(checks).every(Boolean), checks, reasons };
+  // Upstream timing is retained as source context, but Fulfilment Requirement
+  // has no hard-constraint contract. Logistics owns the operational arrival.
+  const warnings = load.scheduledTime && job.requestedWindow && !checks.arrivalWithinRequestedWindow
+    ? ["scheduled_arrival_outside_advisory_requested_window"]
+    : [];
+  const compatible = Object.entries(checks).every(([key, value]) => key === "arrivalWithinRequestedWindow" || value);
+  return { compatible, checks, reasons, warnings };
 }
 
 export function explainLoadCompatibility(job: LogisticsJob, load: DeliveryLoad) {

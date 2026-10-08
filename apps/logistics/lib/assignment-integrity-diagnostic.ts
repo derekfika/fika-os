@@ -55,7 +55,7 @@ export function assignmentIntegrityDiagnostic(input: {
       // Existing unscheduled membership remains valid; acceptance also accounts for input and duplicates.
       compatible: evaluation?.compatible ?? false, acceptedByProjection,
       checks: evaluation?.checks ?? null, failureReasons: Array.from(new Set(reasons)),
-      warnings: multiplicity > projectionMultiplicity && multiplicity > 1 ? ["additional_assignment_outside_projection_input"] : [] };
+      warnings: [...(evaluation?.warnings || []), ...(multiplicity > projectionMultiplicity && multiplicity > 1 ? ["additional_assignment_outside_projection_input"] : [])] };
   });
   const dayJobs = [...input.jobs.values()].filter(job => job.serviceDate === input.serviceDate && job.sourceStatus !== "withdrawn");
   const assignedIds = new Set(assignments.filter(row => row.acceptedByProjection).map(row => row.jobId));

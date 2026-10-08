@@ -78,7 +78,7 @@ export async function assignCanonicalJob(tx: Transaction, intent: AssignmentInte
   for (const [id, load] of batch?.loads || []) available.set(id, load);
   if (intent.resolveSchedule) intent = { ...intent, ...intent.resolveSchedule([...available.values()], job) };
   const proposed = createLoad({ serviceDate: job.serviceDate, originOplocId: job.originOplocId, destinationOplocId: job.destinationOplocId, scheduledTime: intent.scheduledTime, scheduledEnd: intent.scheduledEnd, collectionRequired: intent.collectionRequired, runId: intent.targetRunId, vehicleId, destinationLabelSnapshot: job.destinationLabelSnapshot, by, now });
-  if (!compatibleLoad(job, proposed)) throw new HttpError(422, "Scheduled arrival falls outside the source delivery constraint.");
+  if (!compatibleLoad(job, proposed)) throw new HttpError(422, "The job and delivery load no longer match the current operational details.");
   const matching = [...available.values()].filter(l => l.status !== "cancelled" && l.originOplocId === proposed.originOplocId && l.destinationOplocId === proposed.destinationOplocId && l.runId === proposed.runId && l.vehicleId === proposed.vehicleId && l.scheduledTime === proposed.scheduledTime && l.scheduledEnd === proposed.scheduledEnd && Boolean(l.collectionRequired) === Boolean(intent.collectionRequired));
   if (matching.length > 1 || assigned.size > 1) throw new HttpError(409, "Duplicate canonical load or assignment requires review.");
   const baseId = proposed.id;

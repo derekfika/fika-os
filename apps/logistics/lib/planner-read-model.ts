@@ -56,6 +56,9 @@ export type PlannerWorkGroup = {
   planningState: "unplanned" | "partially_planned" | "planned" | "attention";
   productionContext?: ProductionContext;
   collectionRequired?: boolean;
+  deliveryStatus?: "pending" | "loaded" | "delivered";
+  collectionStatus?: "awaiting" | "collected";
+  notes?: string;
 };
 export type PlannerMovementView = {
   movementId: string;
