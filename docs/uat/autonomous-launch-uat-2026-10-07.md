@@ -722,6 +722,72 @@ Evidence `oct08-timeline-real-cursor-before.log`/`after.log` and scoped browser 
 P1 clear-time remains PASS; Gate3 overall IN PROGRESS until final style acceptance,
 owned concurrency check and normal19 October fixture retirement. Production untouched.
 
+### Latest resumable checkpoint — final Logistics style/concurrency acceptance PASS
+
+Final cursor implementation committed/pushed as **`a2462fd589f0f105da972bac0c3cfcfe51f77c66`**.
+Logistics-only staging rollout **`uat-1008123333-a2462fd`** verified at11:41:13Z:
+READY/SUCCEEDED/current100%, not reconciling, exact sourcea2462fd. Main included all
+validated earlier fixes; protected files excluded. Live normal planner now reports
+card cursor **move**, grip cursor **ew-resize**, card transformnone, grip center still
+anchored with translateX(-50%). Clear-time P1 and scoped style P2s PASS locally/live.
+Final validation:64/64 affected browser cases,448/448 Logistics domain/unit, zero skips,
+typecheck, webpack build/standalone-assets, diffcheck/source review PASS.
+
+Owned real two-tab concurrency acceptance: both views loaded the same loadv10 at
+11:15–11:45. Second view prepared12:15–12:45 without submission. First normal Inspector
+save created **v11,12:00–12:30** at11:44:58Z. The older view still showed11:15–11:45
+and its proposed12:15–12:45 before submission; after Save it displayed the normal
+conflict message **“This placement changed elsewhere. The latest version is loaded;
+retry your move.”** and reconciled card/form to12:00–12:30. No dev console response
+status was exposed; record the observed conflict path, not an invented network capture.
+Read-only canonical snapshot11:46:23Z retains **v11,12:00–12:30**, unchanged ownership,
+jobv2/sourceVersion1, both runsv2, exactly1 load/job/assignment and0 native stops/movements.
+No older intent overwrote the newer placement; no audit/version or duplicate churn.
+Evidence `oct08-timeline-concurrency-newer-live.json`,
+`oct08-timeline-concurrency-stale-after-live.json`, `oct08-timeline-concurrency-live.jpg`.
+
+**Gate3 operational interaction/style/concurrency checks PASS; Gate3 overall remains
+IN PROGRESS because owned fixture retirement/non-resurrection is not yet executed.**
+Gate1/Gate2 and prior P1 acceptances remain PASS. Gates4/5 not started. RC remains
+NO-GO/not frozen while remaining launch gates and documented P0/P1s are open.
+
+**Exact next atomic action:** retire only `rolling-week:2026-10-19` through normal
+Menu Portion Planner → Withdraw week with an explicit UAT cleanup reason. Owned
+publication remains **`menu-publication:rolling-week:2026-10-19`**, publication/day
+version1, all5 days published; Monday Haleon2 portions, other4 days blank. Current
+owned load **v11 on Van2,12:00–12:30**, same long load ID recorded in this report;
+one active job/assignment. Corrected CPU releasev2 remains current/ready until normal
+withdrawal. Do not delete/directly repair records or touch the withdrawn12 October week.
+
+Record source HTTP latency/handoff pending→delivered; allow durable recovery to settle;
+verify Menu withdrawal, Production cancelled, Fulfilment withdrawn, Logistics no active
+owned jobs/loads/assignments, CPU/Delivered current menu/PDF pointers non-current with
+immutable histories preserved. Reload all affected surfaces. Then replay the exact
+older owned source event through existing governed Hub `/api/production/materialise`:
+`production.materialise:menu-publication:rolling-week:2026-10-19:menu-publication:rolling-week:2026-10-19:v1:day:0:published:oploc:bb4c7eea-87f5-4e79-8ed6-b973b24ded7b:v1`.
+Original payload exists exactly once, sourceVersion1/statuspublished/destinationHaleon.
+No event/receipt reset or invented event ID. Confirm duplicate/stale result cannot
+resurrect canonical/Fulfilment/Logistics work; compare IDs/versions/audit and active counts.
+
+Ignored helper `artifacts/uat/oct08-owned-menu-retirement.cjs before|after|replay`
+reads only bounded owned publication/day/event/order/requirement records. Replay is
+guarded to require actual publicationwithdrawn and ordercancelled before its governed
+POST; existing staging internal token3 stays in memory and is never printed.
+Before evidence `oct08-owned-menu-before.json`:1 orderv1/sourceVersion1/menu_available,
+2 units,1 requirementv1/ready_for_planning, all5 publication daysv1/published.
+Publication days are stored in the actual `days` subcollection, not inline; first
+diagnostic shape assumption corrected before using its evidence. No withdrawal or
+replay performed yet. Use existing date-snapshot/allergen helpers for downstream proof.
+
+After retirement/non-resurrection genuinely passes, mark Gate3 PASS and continue
+Gate4 Auth/Hub → Gate5 historical Hospitality → remaining RC alignment/regression/
+audit/readiness/preflight gates. Do not restart passed journeys. Context checkpoint
+after completed safe atomic work; ordinary usage still available (last read48% remaining),
+so do not falsely report a15% usage stop. No active rollout or local fixture server.
+Both protected hashes match their documented values and remain unstaged user edits;
+CHANGELOG intentionally untouched. Production never deployed/mutated. Final report-only
+commit differs from served a2462fd solely in this UAT record; no app redeploy needed.
+
 ## Hub stale-source guard and owned rapid-amend/withdraw gate — 7 October 2026
 
 Starting fetched HEAD/origin/main: `e2adb67b75a98667cddab74edeefba8d0a2c84d5`.
