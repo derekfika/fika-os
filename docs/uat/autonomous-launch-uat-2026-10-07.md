@@ -1176,6 +1176,65 @@ Delivered staging exactimplementationa866b49; other app SHAs table above unchang
 report-only commits require no rollout. Production untouched/protected hashes match.
 No local server/worker remains. Final report-only SHA supplied after push.
 
+### Gate5 historical Hospitality — event-identity P1 remediated; stale replay PASS; UI verification pending
+
+**Remediation (CLOSED).** Root cause: `withdrawFulfilmentRequirement` advances the
+requirement `version` (v1→v2) but not `sourceVersion`; `logisticsProjectionEventId`
+keyed on `sourceVersion` only and `stageLogisticsProjectionEvent` used a blind `set`,
+so the governed withdrawal overwrote the delivered original v1 outbox record. Fix at
+**`63512b705c5c3c9cbd6c0b31e0deffe3f6f4d6c3`** (pushed; checkpoint `e735074` preserved
+the earlier report): the first revision of a sourceVersion keeps `...:v{sourceVersion}`;
+a later requirement revision at the same sourceVersion stages the distinct deterministic
+`...:v{sourceVersion}:r{requirement.version}` with `create`, so existing durable history
+can never be replaced. Payload, retry-query semantics, CAS and the Logistics consumer
+unchanged; legacy repair keeps the sourceVersion-level identity. Files:
+`apps/shared/logistics-projection.ts`, `apps/integration-hub/lib/logistics-projection-outbox.ts`,
+new `apps/integration-hub/tests/logistics-event-identity.test.ts` (6/6 on an isolated
+loopback `demo-fika-os` emulator; the three behavioural tests fail on pre-fix code with
+1 outbox event where 2 are expected). Full Hub suite 497 tests / 485 pass / 12 fail --
+identical 12 failures on baseline HEAD (CRLF source-regex, missing data file, unseeded
+OPLOC fixtures), none related. Logistics 449/449; Hub and Logistics typecheck, Hub
+production build and `git diff --check` PASS. Hub staging rollout `fika-os-staging`
+`build-2026-10-08-001` SUCCEEDED, build READY at `63512b7`, traffic 100%, not
+reconciling. (Hub exposes no runtime build-info route; provenance is the recorded
+build commit.)
+
+**Idempotent governed recovery rerun.** `POST /api/internal/production-fulfilment-reconcile`
+(`serviceDate 2026-10-13`, `limit 10`) through the fixed Hub: HTTP 200,
+created 0 / updated 0 / withdrawn 0 / unchanged 6. Requirements and Logistics outbox
+before/after identical including every `updateTime` (zero writes). Limitation: the
+three original v1 events were overwritten before the fix and still carry the
+withdrawal payload (preserved as defect evidence); the new `:r2` identity was proven
+by emulator regression, not live, because no natural stale record remains.
+
+**Exact stale replay (PASS).** The three exact original v1 `created` payloads for
+retired `...86ee28...` base, `:r9`, `:r13` (from `oct08-historical-hospitality-before.json`;
+event IDs `logistics-projection:2026-10-13:cpu-production:<entity>:oploc:66e621fa-6e6f-4f46-9aed-462313abbe8f:v1`,
+changedAt `2026-10-06T11:58:09.590Z`, `12:20:55.550Z`, `12:38:38.269Z`) were replayed twice
+(6 calls) via the existing governed authenticated path
+`POST https://logistics-staging.fikacatering.com/api/logistics/invalidate`
+(internal token, no direct writes). Every response: HTTP 200, `applied:false`,
+`reason:"older-or-duplicate"`, created 0, updated 0, `projection.state` CURRENT. This is
+the canonical stale-event result (Logistics source lineage already holds sourceVersion>=1).
+Sorted before/after snapshots of 12 collections for 2026-10-13 are byte-identical
+including `updateTime`: Fulfilment Requirements (6), Production Orders (6), Logistics
+projection outbox (8), Logistics jobs (6), delivery loads (3), assignments (1), runs (2),
+stops (0), movement requests (0), Logistics changes (30), day projection, change cursor
+(735). No new or overwritten event, no audit/history change, no identity change.
+
+**Resulting canonical state.** Retired requirements `withdrawn` v2 (audit 2 each);
+retired Logistics jobs (base, `:r9`, `:r13`, plus preserved cancelled booking
+`2fdaea` base/`:r12`) `sourceStatus withdrawn`, no `activeLoadId`; their loads
+`cancelled`. Current `:r17` requirement `pending` v1, job `pending` with `activeLoadId`
+and its load `planned` (Van 1); the single assignment is intact. Nothing resurrected.
+
+**Gate5 remains OPEN for one item only:** historical/replay UI verification. The
+built-in browser pane has no staging session and Google sign-in requires credentials,
+which the agent must not enter; a signed-in browser is required. All other Gate5 checks
+(identity P1, idempotent recovery, exact stale replay, canonical history stability)
+PASS. Production untouched; protected CHANGELOG/MenuData hashes unchanged; no CPU
+dead-letter replay, no terminal `nextEligibleAt` change, no retry-query change.
+
 ## Hub stale-source guard and owned rapid-amend/withdraw gate — 7 October 2026
 
 Starting fetched HEAD/origin/main: `e2adb67b75a98667cddab74edeefba8d0a2c84d5`.
