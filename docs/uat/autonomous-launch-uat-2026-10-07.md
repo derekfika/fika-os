@@ -3,7 +3,7 @@
 Task: FIKA OS — Autonomous Launch UAT + Remediation War Room.
 Branch: `main`. Starting fetched `origin/main`: `4948ed5730a2a090801407b86392f61a34cac595`.
 Environment: staging only, Firebase project `fika-os-dev`.
-RC achieved: **NO — G&G AND FULL ALLERGEN LIFECYCLE PASS; NEW LOGISTICS CLEAR-TIME P1; GATES3–5/OTHER RC GATES OPEN**. No RC SHA frozen.
+RC achieved: **NO — G&G, FULL ALLERGEN LIFECYCLE AND LOGISTICS CLEAR-TIME P1 PASS; GATES3–5/OTHER RC GATES OPEN**. No RC SHA frozen.
 Latest continuation is the 8 October resume section below. The withdrawal consumer
 acceptance remains PASS; older stop/resume instructions are historical checkpoints.
 The latest resume instruction supersedes older scopes/thresholds: continue the ordered
@@ -551,7 +551,7 @@ Usage at entry100% five-hour/weekly remaining; latest request retains the approx
 15% checkpoint guard. Gate1/Gate2 and deep-link/draft-run P1s remain accepted; no
 wholesale repeat. Production strictly out of scope and untouched.
 
-### Clear-time P1 regression and bounded correction — local PASS, staging pending
+### Clear-time P1 regression and bounded correction — local and staging/live PASS
 
 Before implementation, the provider regression fails: assigned untimed merged
 delivery has no operator needs-time work group. Corrected adapter now derives
@@ -590,8 +590,41 @@ canonical route. Focused rendered collision before FAIL/after PASS; no faulty ve
 was deployed. Final rendered suite **15/15 PASS**, full final Logistics **448/448 PASS**,
 typecheck and webpack production build/standalone-assets PASS; diffcheck/focused source
 review PASS. Generated Next dev route import returned to the unchanged production
-form through the build. Local server stopped. Commit/push/Logistics-only deployment
-and original live loadv7 retest follow. This P1 remains open until staging acceptance.
+form through the build. Local server stopped. Implementation committed/pushed as
+**`9ff7a3ecd4b950c3e56d577cebb71e0d5068a40d`**, HEAD=origin/main after fetch;
+only protected user files remain dirty. Logistics-only rollout **`uat-1008113006-9ff7a3e`**
+verified at10:35:13Z buildREADY/rolloutSUCCEEDED/current100%, not reconciling,
+exact source9ff7a3e. No other app or production rollout.
+
+Original owned loadv7 reloads into Needs time1, Haleon/Delivered-In/2 portion,
+Assigned to Van2. DOM queue key `projection-delivery:` plus the exact existing load
+ID recorded above; same underlying run/stop/job authority. Normal Set time Inspector
+preselects Van2;11:00–11:30 submission has one disabled Saving ghost then confirms.
+Read-only canonical snapshot10:37:32Z: same loadv8, same jobv2, same assignment,
+both runs plannedv2;0 native stops/movements. CtrlShiftR input plus explicit browser
+reload preserves the correct11:00–11:30 card. No storage clear or Firestore repair.
+
+Fresh full cycle on deployed9ff7a3e also PASS: Inspector Clear time → loadv9 untimed
+at10:39:57Z → reload → visible Needs time/Assigned Van2 → Set time11:15–11:45 →
+same loadv10 at10:40:51Z → CtrlShiftR/browser reload → correct Van2 card, no stale
+queue item. Exactly **1 load /1 job /1 assignment**, unchanged IDs/ownership,
+jobv2/sourceVersion1/2 units, both runsv2; no duplicate or native movement.
+Durable day projection direct read: **CURRENT**, revision671/lastChangeSequence670,
+planningQueue0,1 delivery load, complete loadVersions map={existing ID:10}, Van2,
+11:15–11:45. Clear preserves assignment; Set time never sends assign-job-to-load.
+Immutable canonical history/audit remains append-only; no reset/delete used.
+
+**Clear-time P1 PASS. Gate3 overall remains IN PROGRESS** pending responsible mounted
+browser triage and remaining interaction/concurrency acceptance. Do not withdraw
+the19 October source yet. Resume with scheduled owned loadv10 on Van2,11:15–11:45;
+G&G/allergen and both prior Logistics P1s remain accepted.
+
+Live evidence under`artifacts/uat`: `oct08-timeline-clear-time-rescheduled-live.json`,
+`oct08-timeline-clear-time-fresh-cleared-live.json`,
+`oct08-timeline-clear-time-fresh-rescheduled-live.json`,
+`oct08-clear-time-live-projection.json`, `oct08-clear-time-rollout-status.json`,
+`oct08-clear-time-queue-live.jpg`, `oct08-clear-time-rescheduled-live.jpg`,
+`oct08-clear-time-fresh-rescheduled-live.jpg`. Protected hashes reverified unchanged.
 
 No new Firestore reads/writes from the adapter or queue rendering. Cold/warm read
 shape remains the bounded current day projection and existing head/cache flow;
