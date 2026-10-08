@@ -255,7 +255,8 @@ function PlannerContents() {
       const saved = JSON.parse(window.localStorage.getItem("fika-logistics-view") || "null") as { date?: string; weekCommencing?: string } | null;
       if (!requestedDate && saved?.date) restoredDate = saved.date;
       activeDayContext.current = dayRequests.activate(restoredDate);
-      const restoredWeek = saved?.weekCommencing || mondayOf(restoredDate);
+      // An explicit service-date link owns both the day and its visible week.
+      const restoredWeek = requestedDate ? mondayOf(restoredDate) : saved?.weekCommencing || mondayOf(restoredDate);
       activeWeekContext.current = weekRequests.activate(`week:${restoredWeek}`);
       setDate(restoredDate);
       setWeekCommencing(restoredWeek);

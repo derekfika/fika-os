@@ -345,6 +345,63 @@ Next **Gate3 Logistics desktop timeline**. Retain this current owned19 October s
 queue/assignment testing, then retire it by normal withdrawal once those checks finish;
 its expected canonical/Fulfilment/Logistics work is tracked UAT data, not an orphan.
 
+### Gate3 desktop entry — confirmed deep-link week P1, local fix validated
+
+Gate2 acceptance/report-only alignment pushed as `3047d851caabcd0f2c84e0c834ed732b8d092368`.
+Logistics at08:25:19Z serves `ec1b11029beb5c03e7e68cb54c1ca55cc6fbac85`, buildREADY,
+current100%, not reconciling. Diff from that deployed SHA to main is empty for Logistics,
+apps/shared and packages/server-shared; the diagnosed path is actual deployed source.
+
+Before any scheduling mutation, normal staging deep link `/?serviceDate=2026-10-19`
+loads the owned19 October queue (Haleon/Delivered-In/2 units),2 empty vehicle lanes,
+and Monday19 selected-day heading, but the settled week strip remains12–16 October.
+It is not transient loading: the cached remembered week overrides the link's week.
+**P1 wrong operational navigation**; explicit day and visible week disagree.
+
+Cause: Planner hydration prefers `saved.weekCommencing` even when requestedDate is
+explicit. Minimal one-line decision now chooses `mondayOf(requestedDate)` for linked
+entry and retains remembered-week behavior without a link. Day/week request generations
+activate matching scopes; no backend/contract/timezone/authority/CAS change, no new
+polling or extra read/write path. All UI styles/components/tokens retained.
+
+Rendered isolated Chromium regression seeded a remembered5 January week and linked
+12 January: before fix the correct12 January stop rendered while first day was5 January,
+unselected. After fix query day/week, weekday selection,2-load week summary and reload
+all agree. Added that case and corrected exact region/mobile-details selectors in the
+existing date suite (week-nav prefix and duplicate visible stop text are not identity).
+Final date-isolation Chromium **6/6 PASS**, including delayed old day/week responses,
+Inspector clearing, late placement response and mobile date switch. Actual test bodies
+ran. Dev Turbopack cannot resolve existing monorepo imports; used webpack local server,
+explicit local Firebase/emulator settings and intercepted isolated API fixtures. No live
+cloud writes by automated tests. The local dev server is stopped.
+
+Full Logistics **441/441 PASS**, zero skips, with `NODE_ENV=test`; initial restricted
+tsx loader denied opening authority test file EPERM before its bodies (389/390).
+Standalone authority **52/52 PASS** and unrestricted full rerun441/441 establish the
+environment limitation. Typecheck PASS; webpack build/standalone-assets PASS; diffcheck
+PASS. Initial fixture selected week-nav arrow instead of day strip; corrected exact
+selector before meaningful before/after regression. No fixture failure claimed product PASS.
+
+Broader combined browser run remains **NOT GREEN**: final exploratory run10 passed,
+3 failed,36 not run. Mounted fixture failures: cursor/hit geometry during automatic
+viewport scrolling, empty exact-time drag preview, empty queue-placement preview.
+These are separate Gate3 investigations, not established regressions from the one-line
+hydration fix; no mounted production source changed. Exploratory mounted-test edits
+were discarded; failure evidence/logs retained. No wholesale timeline redesign.
+
+Logs `oct08-timeline-deeplink-before.log`, `deeplink-after.log`, `date-after.log`,
+`browser-regression.log` (prefix `oct08-timeline-`), `oct08-logistics-hydration-full.log`,
+`typecheck.log`, `build.log` (prefix `oct08-logistics-hydration-`), and authority-isolated
+log under `artifacts/uat`. Before/after/browser traces/screenshots retained in scoped
+artifact directories. Own generated test-results were archived under `timeline-initial-run`;
+tracked generated last-run metadata restored, no user evidence deleted.
+
+**Gate3 overall IN PROGRESS. P1 local validation PASS; commit/push/Logistics-only staging
+rollout and original saved-week deep-link live retest follow.** No timeline assignments,
+drag/resize or movement creation performed live yet. Current19 October fixture remains
+tracked and current;12 October completed runs/history preserved. Production untouched.
+Style Guide compliance PASS for this minimal navigation change.
+
 ## Hub stale-source guard and owned rapid-amend/withdraw gate — 7 October 2026
 
 Starting fetched HEAD/origin/main: `e2adb67b75a98667cddab74edeefba8d0a2c84d5`.

@@ -103,6 +103,23 @@ async function installRoutes(page: Page, options: {
 }
 
 test.describe("Batch 5 production date isolation", () => {
+  test("explicit service-date deep link overrides a remembered week for day and week hydration", async ({ page }) => {
+    await page.addInitScript(({ date, weekCommencing }) => {
+      window.localStorage.setItem("fika-logistics-view", JSON.stringify({ date, weekCommencing }));
+    }, { date: MONDAY, weekCommencing: MONDAY });
+    await installRoutes(page);
+    await page.goto(`/?serviceDate=${NEXT_MONDAY}`);
+    await expect(page.getByTestId(`stop-stop:${NEXT_MONDAY}`)).toBeVisible();
+    const week = page.getByRole("region", { name: "Operational week", exact: true });
+    await expect(week.getByRole("button").first()).toContainText("Mon 12 Jan");
+    await expect(week.getByRole("button").first()).toHaveAttribute("aria-pressed", "true");
+    await expect(page.getByRole("region", { name: "Operational week navigation", exact: true })).toContainText("12 Jan");
+    await expect(week.getByRole("button").first()).toContainText("2 loads");
+    await page.reload();
+    await expect(week.getByRole("button").first()).toHaveAttribute("aria-pressed", "true");
+    await expect(page.getByTestId(`stop-stop:${MONDAY}`)).toHaveCount(0);
+  });
+
   test("late Monday projection cannot replace Tuesday after the selected day changes", async ({ page }) => {
     const mondayGate = deferred();
     const mondayStarted = deferred();
@@ -110,7 +127,7 @@ test.describe("Batch 5 production date isolation", () => {
     await page.goto(`/?serviceDate=${MONDAY}`);
     await mondayStarted.promise;
 
-    const week = page.getByRole("region", { name: "Operational week" });
+    const week = page.getByRole("region", { name: "Operational week", exact: true });
     await expect(week.getByRole("button").nth(0)).toHaveAttribute("aria-pressed", "true");
     await week.getByRole("button").nth(1).click();
     const tuesdayCard = page.getByTestId(`stop-stop:${TUESDAY}`);
@@ -144,7 +161,7 @@ test.describe("Batch 5 production date isolation", () => {
     await mondayStarted.promise;
 
     await page.getByRole("button", { name: "Next week" }).click();
-    const firstDay = page.getByRole("region", { name: "Operational week" }).getByRole("button").first();
+    const firstDay = page.getByRole("region", { name: "Operational week", exact: true }).getByRole("button").first();
     await expect(firstDay).toContainText("2 loads");
     mondayGate.resolve();
     await mondayReturned.promise;
@@ -160,7 +177,7 @@ test.describe("Batch 5 production date isolation", () => {
     const inspector = page.getByRole("complementary", { name: "Details inspector" });
     await expect(inspector).toBeVisible();
 
-    await page.getByRole("region", { name: "Operational week" }).getByRole("button").nth(1).click();
+    await page.getByRole("region", { name: "Operational week", exact: true }).getByRole("button").nth(1).click();
     await expect(page.getByTestId(`stop-stop:${TUESDAY}`)).toBeVisible();
     await expect(inspector).toHaveCount(0);
   });
@@ -183,7 +200,7 @@ test.describe("Batch 5 production date isolation", () => {
     await inspector.getByRole("button", { name: "Save time and placement" }).click();
     await mutationStarted.promise;
 
-    await page.getByRole("region", { name: "Operational week" }).getByRole("button").nth(1).click();
+    await page.getByRole("region", { name: "Operational week", exact: true }).getByRole("button").nth(1).click();
     const tuesdayCard = page.getByTestId(`stop-stop:${TUESDAY}`);
     await expect(tuesdayCard).toBeVisible();
     mutationGate.resolve();
@@ -201,9 +218,9 @@ test.describe("Batch 5 production date isolation", () => {
     await mondayStarted.promise;
 
     await page.getByLabel("Service date").selectOption(TUESDAY);
-    await expect(page.getByText(`Stop ${TUESDAY}`, { exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: `Open details for Stop ${TUESDAY}`, exact: true })).toBeVisible();
     mondayGate.resolve();
-    await expect(page.getByText(`Stop ${TUESDAY}`, { exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: `Open details for Stop ${TUESDAY}`, exact: true })).toBeVisible();
     await expect(page.getByText(`Stop ${MONDAY}`, { exact: true })).toHaveCount(0);
   });
 });
