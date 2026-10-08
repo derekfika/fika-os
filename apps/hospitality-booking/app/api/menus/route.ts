@@ -4,8 +4,9 @@ import path from "node:path";
 import { hubUserFetch } from "@/lib/hub";
 import type { CanonicalBooking } from "@/lib/canonical-types";
 import type { MenuOutput } from "@/lib/mnk-menu-output";
-import { menuBookingContext, menuFileName } from "@/lib/mnk-menu-output";
 import { createGoogleMenu } from "@/lib/google-menu";
+import { hospitalityMenuFromBooking } from "@/lib/menu-adapter";
+import { MenuArtifactError, menuArtifactFileName } from "@fika/server-shared/menu-artifact";
 import { cpuBodyErrorMessage, cpuNotFound, fetchCpuProductionPlan, readCpuJson } from "@/lib/cpu-production";
 
 const storePath = path.join(process.cwd(), "local-data", "hospitality-booking", "menu-outputs.json");
@@ -74,16 +75,24 @@ export async function POST(request: NextRequest) {
     if (!cpuBody.plan) throw Error(cpuBody.error?.message || "The CPU plan could not be loaded.");
     const readiness = planReadiness(cpuBody.plan);
     if (!readiness.available) return NextResponse.json({ error: { message: readiness.reason } }, { status: 409 });
-    const siteKey = booking.service.portalSiteId?.trim();
-    if (!siteKey) return NextResponse.json({ error: { message: "The Booking has no site identity." } }, { status: 409 });
+    // Normalize first: this is where cancelled/superseded/unplanned bookings and
+    // unrecorded allergens are refused, before any Google call is made.
+    let menu;
+    try { menu = hospitalityMenuFromBooking(booking, cpuBody.plan); }
+    catch (error) { if (error instanceof MenuArtifactError) return NextResponse.json({ error: { message: error.message, code: error.code } }, { status: error.status }); throw error; }
     const generatedAt = new Date().toISOString();
-    const bookingContext = menuBookingContext(booking);
-    const output: MenuOutput = { id: `menu-output:${body.bookingId}:${generatedAt.replace(/[^0-9]/g, "").slice(0, 14)}`, fileName: menuFileName(bookingContext), bookingId: body.bookingId, planId: cpuBody.plan.id, planUpdatedAt: cpuBody.plan.updatedAt, generatedAt, generatedBy: body.actor || "menu-planning", templateVersion: "mnk-hospitality-menu-v2", booking: bookingContext, items: cpuBody.plan.menuItems.flatMap(menuItem => menuItem.subItems.filter(subItem => subItem.name.trim()).map(subItem => ({ menuItem: menuItem.name, name: subItem.name, allergens: Object.entries(subItem.allergens).filter(([key, state]) => key !== "no_key_allergens" && state === "contains").map(([key]) => key), mayContain: Object.entries(subItem.allergens).filter(([key, state]) => key !== "no_key_allergens" && state === "may_contain").map(([key]) => key) }))) };
+    const output: MenuOutput = {
+      id: `menu-output:${body.bookingId}:${generatedAt.replace(/[^0-9]/g, "").slice(0, 14)}`, fileName: menuArtifactFileName(menu), bookingId: body.bookingId,
+      planId: cpuBody.plan.id, planUpdatedAt: cpuBody.plan.updatedAt, generatedAt, generatedBy: body.actor || "menu-planning", templateVersion: "mnk-hospitality-menu-v2",
+      booking: { companyName: menu.source.clientName || "", destination: menu.siteLabel, date: menu.serviceDate, time: menu.serviceTime || "", guestCount: booking.service.guestCount },
+      items: menu.sections.flatMap(section => section.items).map(item => ({ menuItem: item.id.split(":")[0], name: item.name, allergens: item.contains, mayContain: item.mayContain })),
+    };
     let persisted = output;
     try {
-      const google = await createGoogleMenu(output, { type: "oploc-workspace", oplocId: booking.service.oplocId }, { siteKey, folderId: bookingBody.quoteSettings?.googleMenuFolderId, templateId: bookingBody.quoteSettings?.googleMenuTemplateId });
-      if (google) persisted = { ...output, google };
+      const published = await createGoogleMenu(menu, { type: "oploc-workspace", oplocId: booking.service.oplocId }, { folderId: bookingBody.quoteSettings?.googleMenuFolderId, templateId: bookingBody.quoteSettings?.googleMenuTemplateId });
+      persisted = { ...output, fileName: published.fileName, google: { fileId: published.fileId, presentationUrl: published.presentationUrl, driveUrl: published.driveUrl }, artifactKey: published.artifactKey, ...(published.retiredFileIds.length ? { retiredFileIds: published.retiredFileIds } : {}) };
     } catch (error) {
+      if (error instanceof MenuArtifactError) return NextResponse.json({ error: { message: error.message, code: error.code } }, { status: error.status });
       return NextResponse.json({ error: { message: `Menu was not created in Google Slides: ${(error as Error).message}` } }, { status: 502 });
     }
     const outputs = await readOutputs();

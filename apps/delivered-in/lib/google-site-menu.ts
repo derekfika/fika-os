@@ -4,6 +4,8 @@ import { groupSiteMenuEntries, siteMenuFileName, type SiteMenuArtifact } from ".
 import { CANONICAL_ALLERGEN_COLUMNS } from "./allergen-columns";
 import { driveAccessToken, resolveDriveOwner } from "@fika/server-shared/drive-owner";
 import { stableDocumentId } from "@fika/server-shared/stable-document-id";
+import { MenuArtifactError, publishMenuArtifact, resolveMenuTemplate } from "@fika/server-shared/menu-artifact";
+import { deliveredInMenuFromDay, deliveredInMenuSiteKey } from "./menu-adapter";
 
 type OAuthClient = { installed?: { client_id: string; client_secret: string; token_uri?: string } };
 type OAuthToken = { access_token?: string; refresh_token?: string; expiry_date?: number; token_type?: string };
@@ -58,7 +60,25 @@ export function buildDeliveredInMenuRequests(day: ProjectedDay, site: Site, pres
   return requests;
 }
 
+/**
+ * Sites with a shared site template (for example MNK) are rendered by the shared
+ * menu renderer from the normalized menu. The Delivered-In generic template
+ * path below is kept unchanged for sites that have no site template.
+ */
+async function createSharedSiteMenu(day: ProjectedDay, site: Site, generatedBy: string, deliveryId?: string): Promise<SiteMenuArtifact> {
+  const menu = deliveredInMenuFromDay(day, site);
+  const template = resolveMenuTemplate({ siteKey: menu.siteKey, oplocId: site.oplocId });
+  const folderId = resourceId(process.env.GOOGLE_DELIVERED_IN_OUTPUT_FOLDER_ID || process.env.GOOGLE_DRIVE_ROOT_FOLDER_ID_APP_DELIVERED_IN);
+  if (!folderId) throw new MenuArtifactError("MENU_OUTPUT_FOLDER_NOT_CONFIGURED", "The Delivered-In menu output folder is not configured (GOOGLE_DELIVERED_IN_OUTPUT_FOLDER_ID).", 409);
+  const token = await accessToken(); const headers = { Authorization: `Bearer ${token}` };
+  const outputFolderId = await weekFolderId(folderId, day.weekCommencing || "", { ...headers, "content-type": "application/json" });
+  const published = await publishMenuArtifact({ menu, template, folderId: outputFolderId, headers });
+  const release = (day as ProjectedDay & { sourceLineage?: { cpu?: { releaseId?: string; releaseVersion?: string; contentHash?: string } } }).sourceLineage?.cpu;
+  return { artifactId: published.artifactId, oplocId: site.oplocId, sourceDayId: day.sourceDayId, sourcePublicationDayId: day.publicationDayId, sourceVersion: day.version, sourceContentHash: day.contentHash, generatedAt: new Date().toISOString(), generatedBy, driveFileId: published.fileId, driveUrl: published.driveUrl, fileName: published.fileName, ...(deliveryId ? { deliveryId } : {}), ...(release?.releaseId ? { sourceReleaseId: release.releaseId } : {}), ...(release?.releaseVersion ? { sourceReleaseVersion: release.releaseVersion } : {}), ...(release?.contentHash ? { sourcePacketHash: release.contentHash } : {}) };
+}
+
 export async function createGoogleSiteMenu(day: ProjectedDay, site: Site, generatedBy: string, existingFileId?: string, deliveryId?: string): Promise<SiteMenuArtifact> {
+  if (deliveredInMenuSiteKey(site)) return createSharedSiteMenu(day, site, generatedBy, deliveryId);
   const templateId = resourceId(process.env.GOOGLE_DELIVERED_IN_TEMPLATE_ID); const folderId = resourceId(process.env.GOOGLE_DELIVERED_IN_OUTPUT_FOLDER_ID || process.env.GOOGLE_DRIVE_ROOT_FOLDER_ID_APP_DELIVERED_IN);
   if (!templateId || !folderId) throw new Error("Delivered-In Google Slides template and output folder are not configured.");
   const token = await accessToken(); const headers = { Authorization: `Bearer ${token}`, "content-type": "application/json" }; const outputFolderId = await weekFolderId(folderId, day.weekCommencing || "", headers);

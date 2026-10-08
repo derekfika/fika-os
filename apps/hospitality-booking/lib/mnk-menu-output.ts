@@ -10,6 +10,10 @@ export type MenuOutput = {
   generatedBy: string;
   templateVersion: "mnk-hospitality-menu-v1" | "mnk-hospitality-menu-v2";
   google?: { fileId: string; presentationUrl: string; driveUrl: string };
+  /** Deterministic artifact identity for this exact booking/plan revision (retries reuse it). */
+  artifactKey?: string;
+  /** Earlier revisions of this menu that were retired when this one was generated. */
+  retiredFileIds?: string[];
   booking: { companyName: string; destination: string; date: string; time: string; guestCount: number };
   items: Array<{ menuItem: string; name: string; allergens: string[]; mayContain: string[] }>;
 };
