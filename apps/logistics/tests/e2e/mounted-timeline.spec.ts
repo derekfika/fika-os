@@ -23,18 +23,27 @@ async function dragTo(page: Page, source: Locator, target: { run: string; lane: 
   const currentScroll = await viewport.evaluate((element) => (element as HTMLElement).scrollLeft);
   const contentTrackLeft = currentTrack.x + currentScroll;
   const desiredScroll = Math.max(0, contentTrackLeft - viewportBox.x + minuteOf(target.time) * scale - viewportBox.width * 0.55);
-  const startX = card.x + Math.min(grabOffset || 6, card.width - 2);
+  const actualGrabOffset = Math.min(grabOffset || 6, card.width - 2);
+  const targetGrabOffset = await source.getAttribute("data-timeline-queue-id") ? 0 : actualGrabOffset;
+  const startX = card.x + actualGrabOffset;
   const startY = card.y + card.height / 2;
   await page.mouse.move(startX, startY);
   await page.mouse.down();
   await page.mouse.move(startX + 14, startY + 6, { steps: 2 });
+  await row.scrollIntoViewIfNeeded();
   await viewport.evaluate((element, next) => { (element as HTMLElement).scrollLeft = next; }, desiredScroll);
   const scrolledTrack = await row.boundingBox();
   if (!scrolledTrack) throw new Error("Mounted fixture target track geometry unavailable after scroll");
-  const targetX = scrolledTrack.x + minuteOf(target.time) * scale + grabOffset;
-  await page.mouse.move(targetX, rowBox.y + rowBox.height / 2, { steps: 10 });
+  const targetX = scrolledTrack.x + minuteOf(target.time) * scale + targetGrabOffset;
+  await page.mouse.move(targetX, scrolledTrack.y + scrolledTrack.height / 2, { steps: 10 });
+  await viewport.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => resolve())));
+  const settledTrack = await row.boundingBox();
+  if (!settledTrack) throw new Error("Mounted fixture target track disappeared");
+  await page.mouse.move(settledTrack.x + minuteOf(target.time) * scale + targetGrabOffset, settledTrack.y + settledTrack.height / 2);
+  await viewport.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => resolve())));
   const ghost = page.getByTestId("mounted-drag-ghost");
-  const preview = await ghost.isVisible() ? await ghost.innerText() : "";
+  const preview = await ghost.isVisible() ? await ghost.textContent() || "" : "";
+  if (preview) await expect(ghost.locator("..").locator(":scope > span").filter({ hasText: /^\d\d:\d\d$/ })).toBeVisible();
   await page.mouse.up();
   return preview;
 }
@@ -139,13 +148,20 @@ test("move and resize cursors stay clear without shifting the timeline card", as
   await expect(handle).toHaveCSS("cursor", "ew-resize");
   await expect(handle).toHaveCSS("opacity", "0");
 
-  const before = await card.boundingBox();
+  const geometry = () => card.evaluate(element => {
+    const card = element as HTMLElement, slot = card.parentElement!;
+    return { left: slot.offsetLeft, top: slot.offsetTop, width: slot.offsetWidth, height: slot.offsetHeight, cardLeft: card.offsetLeft, cardTop: card.offsetTop, transform: getComputedStyle(card).transform, slotTransform: getComputedStyle(slot).transform };
+  });
+  const before = await geometry();
   await card.hover();
-  const after = await card.boundingBox();
+  const after = await geometry();
   expect(after).toEqual(before);
   await handle.hover();
   await expect(handle).toHaveCSS("opacity", "1");
   await expect(handle).toHaveCSS("cursor", "ew-resize");
+  const hoveredCard = await card.boundingBox(), hoveredHandle = await handle.boundingBox();
+  expect(hoveredCard).toBeTruthy(); expect(hoveredHandle).toBeTruthy();
+  expect(Math.abs(hoveredHandle!.x + hoveredHandle!.width / 2 - (hoveredCard!.x + hoveredCard!.width))).toBeLessThan(1);
 
   await card.focus();
   await page.keyboard.press("Tab");
@@ -161,6 +177,7 @@ test("explicit windows keep true duration geometry and arrival-only work stays a
   for (const [zoom, expectedWidth] of [[1, 60], [0.5, 30], [1.5, 90]] as const) {
     await setZoom(page, zoom);
     await expect.poll(async () => (await card.boundingBox())?.width).toBe(expectedWidth);
+    await card.scrollIntoViewIfNeeded();
     const cardBox = await card.boundingBox();
     expect(cardBox).toBeTruthy();
     expect(await card.evaluate((element) => document.elementFromPoint(element.getBoundingClientRect().right - 1, element.getBoundingClientRect().top + 20)?.closest("button") === element)).toBe(true);
@@ -307,8 +324,9 @@ test("scheduled card returns to queue through Pointer Events exactly once", asyn
   const queue = page.locator("[data-logistics-planning-queue]");
   const queueBox = await queue.boundingBox();
   if (!card || !queueBox) throw new Error("Queue return target geometry unavailable");
-  await page.mouse.move(card.x + 68, card.y + 24); await page.mouse.down();
-  await page.mouse.move(card.x + 88, card.y + 28, { steps: 2 });
+  const grab = Math.min(6, card.width - 2);
+  await page.mouse.move(card.x + grab, card.y + 24); await page.mouse.down();
+  await page.mouse.move(card.x + grab + 14, card.y + 28, { steps: 2 });
   await page.mouse.move(queueBox.x + queueBox.width / 2, queueBox.y + queueBox.height / 2, { steps: 10 });
   await expect(queue).toHaveAttribute("data-return-target", "active");
   await expect(page.getByTestId("mounted-drag-ghost")).toHaveCount(0);
@@ -340,19 +358,22 @@ test("pointercancel cancels without a placement command", async ({ page }) => {
 
 test("horizontal edge autoscroll keeps the preview on a quarter-hour", async ({ page }) => {
   const viewport = page.getByTestId("mounted-timeline-viewport");
+  await page.getByTestId("stop-stop-mnk").scrollIntoViewIfNeeded();
   await viewport.evaluate((element) => { (element as HTMLElement).scrollLeft = 200; });
   const before = await viewport.evaluate((element) => (element as HTMLElement).scrollLeft);
   const box = await page.getByTestId("stop-stop-mnk").boundingBox();
   const row = await page.locator('[data-lane="run-1:delivery"]').boundingBox();
   const view = await viewport.boundingBox();
   if (!box || !row || !view) throw new Error("Autoscroll geometry unavailable");
-  await page.mouse.move(box.x + 70, box.y + 20); await page.mouse.down(); await page.mouse.move(box.x + 90, box.y + 24);
+  const grab = Math.min(6, box.width - 2);
+  await page.mouse.move(box.x + grab, box.y + 20); await page.mouse.down(); await page.mouse.move(box.x + grab + 14, box.y + 24);
   await page.mouse.move(view.x + view.width - 4, row.y + 35, { steps: 8 });
   await page.waitForTimeout(300);
   const after = await viewport.evaluate((element) => (element as HTMLElement).scrollLeft);
   expect(after).toBeGreaterThan(before);
-  const ghostTime = await page.getByTestId("mounted-drag-ghost").locator("time").innerText();
+  const ghostTime = await page.getByTestId("mounted-drag-ghost").locator("..").locator(":scope > span").filter({ hasText: /^\d\d:\d\d$/ }).innerText();
   expect(ghostTime).toMatch(/^\d\d:\d\d$/);
+  expect(Number(ghostTime.slice(3)) % 15).toBe(0);
   await page.keyboard.press("Escape"); await page.mouse.up();
   await expect(page.getByTestId("fixture-message")).toContainText("Commands: 0");
 });
@@ -382,7 +403,7 @@ test("explicit-window block and integrated end grip align to the canonical end",
   const geometry = await page.evaluate(() => {
     const card = document.querySelector('[data-testid="stop-stop-riverside"]')!;
     const grip = document.querySelector('[data-testid="resize-stop-riverside"]')!;
-    const text = card.querySelector("small")!;
+    const text = card.querySelector('[data-testid="timeline-card-compact-details"]')!;
     const bounds = (element: Element) => { const rect = element.getBoundingClientRect(); return { left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom, width: rect.width, height: rect.height }; };
     return { card: bounds(card), grip: bounds(grip), text: bounds(text), background: getComputedStyle(grip).backgroundColor };
   });

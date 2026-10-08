@@ -24,9 +24,11 @@
 .cardSlot.arrivalOnly .card, .ghost.arrivalOnly { padding: 0; border-radius: 50%; background: var(--fika-surface-card, #fff); }
 .cardSlot.arrivalOnly .cardHeading, .cardSlot.arrivalOnly .fullTime, .cardSlot.arrivalOnly .compactLine, .cardSlot.arrivalOnly .exception, .ghost.arrivalOnly .cardHeading, .ghost.arrivalOnly .fullTime, .ghost.arrivalOnly .compactLine, .ghost.arrivalOnly .exception { display: none; }
 .card { display: flex; width: 100%; flex-direction: column; align-items: stretch; gap: 1px; color: var(--ink); font: inherit; cursor: move; touch-action: pan-y; user-select: none; }
-.card:hover:not(:disabled) { border-color: var(--fika-action-primary); box-shadow: var(--shadow-sm); }
+.card:hover:not(:disabled) { border-color: var(--fika-action-primary); box-shadow: var(--shadow-sm); transform: none; }
+.card:disabled { cursor: progress; }
+.card:focus-visible { outline: 3px solid var(--fika-focus-ring, var(--fika-action-primary)); outline-offset: 2px; }
 .resizeHandle { position: absolute; z-index: 3; bottom: 0; width: 10px; height: 14px; transform: translateX(-50%); padding: 0; border: 1px solid transparent; border-radius: 2px; background: transparent; opacity: 0; cursor: ew-resize; touch-action: none; }
-.resizeHandle:hover, .resizeHandle:focus-visible { border-color: var(--fika-surface-card, #fff); background: var(--fika-action-primary, #4f34c7); opacity: 1; }
+.resizeHandle:hover:not(:disabled), .resizeHandle:focus-visible { border-color: var(--fika-surface-card, #fff); background: var(--fika-action-primary, #4f34c7); opacity: 1; transform: translateX(-50%); }
 .resizeHandle:focus-visible { outline: 3px solid var(--fika-focus-ring, #7459ea); outline-offset: 2px; }
 .resizeHandle:disabled { cursor: progress; }
 .cardHeading { display: flex; width: 100%; min-width: 0; align-items: center; gap: 6px; }

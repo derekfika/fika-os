@@ -637,6 +637,65 @@ provider-before/after, focused, full, typecheck, consumer-final, collision-befor
 logs and scoped consumer/collision browser traces/screenshots. Local fixture server
 will be stopped before production build.
 
+### Gate3 mounted browser triage — all19 baseline failures investigated
+
+Clear-time acceptance report pushed as`648acf78e0cb3a21985bbc92e02bdfd107c9e446`;
+Logistics staging remains exact implementation9ff7a3e. Mounted fixture corrections
+were tested first against that unchanged production build: **41/43 PASS /2 FAIL**.
+No timeline business behavior was changed to resolve the17 fixture/helper failures.
+The remaining2 expose bounded **P2 shared-style interference**, not canonical mutation
+or concurrency failures: global button hover translates cards/grips, and global
+disabled-button cursor overrides the timeline's declared progress cursor.
+
+| Original failed test | Evidence-based classification / correction |
+| --- | --- |
+| Move/resize cursors without card shift | Viewport y changes during automatic scroll made old comparison invalid; grid-local layout and transforms now checked. That exposes a genuine P2 inherited hover transform; scoped CSS removes card lift and preserves grip centering. |
+| Explicit duration and arrival-marker geometry | Browser hit test queried an offscreen point; scroll into view before unchanged width/edge-hit assertions. |
+| Exact15-minute preview target | Start grab is clamped to14px marker but target incorrectly adds68px; use the same actual grab offset at both ends and settled track geometry. |
+| One immediate pending queue card | Arrival ghost deliberately hides text; verify visible ghost/snap-time indicator plus its model contents. Exactly-one/disabled/dashed assertions retained. Remaining progress-cursor failure is genuine P2 CSS specificity. |
+| Outstanding projected Collection handoff | Same arrival-ghost read/helper defect; existing Collection identity/one-command assertions unchanged. |
+| Partially planned eligible overlay | Same ghost/helper defect; eligible-only quantity/identity assertions retained. |
+| Optimistic move to third vehicle | Target row coordinates stale after page scrolling and inconsistent grab offset; refresh measured track/row. Existing optimistic/confirmation assertions retained. |
+| Server-adjusted editable position | Wrong helper target time; original adjusted-position and editability assertions now pass. |
+| Moved Details raw source identity | Wrong helper placement prevented matching the expected moved card; unchanged raw-source Details assertions pass after correct gesture. |
+|150% zoom/grid/pointer/scroll | Actual marker grab remains14px at zoom; consistent offset and current track measurement, unchanged scale/command checks. |
+| End-of-day duration clamp | Ghost responsive visible text omits end; visible snap indicator plus full ghost model and final canonical window validate unchanged duration/clamp assertions. |
+| Pointer return to queue once |68px grab on14px MNK marker actually targets neighboring Bridgepoint; bounded in-marker grab, same return/one-command/removal assertions. |
+| Edge autoscroll quarter-hour | Duplicate full/compact time nodes make locator ambiguous; read the single visible snap-time pill and strengthen quarter-hour modulo assertion. |
+| Arrival-only move without end | Correct bounded grab/target geometry; unchanged no-resize/no-end assertions. |
+| Integrated end grip geometry | Old `small` text element no longer exists; select actual responsive compact-details element, retain canonical-end/clear-text/hit assertions. |
+| Different card during saving resize | Wrong marker/target helper; same independent-card/version/command behavior assertions pass. |
+| Saved syncing/per-stop editability | Wrong helper placement prevented expected role match; unchanged syncing and editability assertions pass. |
+| Failed refresh/per-stop recovery | Same helper issue; unchanged retained-save/manual-authority-refresh assertions pass. |
+| Same-stop coalescing/returned versions | Same helper issue; original in-flight/coalescing/returned-version command counts and values pass. |
+
+Fixture helper now captures queue-vs-stop and actual in-bounds grab before dragging,
+keeps target row visible, remeasures after scrolling/render frame, and checks the visible
+time pill instead of treating intentionally hidden arrival labels as missing preview.
+Invalid cross-lane/Escape/pointercancel checks remain; no always-visible-preview shortcut.
+Cursor geometry checks grid-local offsets and transforms, not viewport scroll position.
+No assertions about command identities/versions/durations/duplicates were weakened.
+
+Small scoped CSS correction follows the module's existing anchored geometry/progress
+intent: card hover has no translation; disabled timeline card uses progress; resize
+hover retains translateX(-50%) so its center stays at the canonical end. Card keyboard
+focus uses semantic FIKA focus/action tokens. Hover-grip center assertion added.
+No raw color added, layout redesign, contract/auth/persistence/polling change or other
+app source touched. Style Guide compliance PASS. P2s are recorded separately from
+the already-fixed P1s; no new P0/P1 discovered by this triage.
+
+Full mounted rerun with corrected fixture and scoped CSS: **43/43 PASS**, actual
+bodies executed, including pending/confirmed/uncertain, stale refresh, adjustment,
+coalescing, arrival-only, resize limits, keyboard, zoom, dense subrows and cancellation.
+Final affected **64/64 mounted/date/load rendered PASS**, full Logistics **448/448
+PASS**, zero skips; typecheck and webpack build/standalone-assets PASS; diffcheck and
+focused CSS/test diff review PASS. Local server stopped; generated dev next-env import
+returned to its unchanged production form. Commit/push/Logistics-only deployment and
+real surface hover/focus acceptance follow. Gate3 overall remains IN PROGRESS until
+those, remaining owned concurrency acceptance and fixture retirement.
+Evidence`oct08-timeline-triage-first.log`/`after.log`, scoped first/after failure traces,
+`oct08-timeline-final-regression.log` and`oct08-timeline-triage-full.log` under artifacts/uat.
+
 ## Hub stale-source guard and owned rapid-amend/withdraw gate — 7 October 2026
 
 Starting fetched HEAD/origin/main: `e2adb67b75a98667cddab74edeefba8d0a2c84d5`.
