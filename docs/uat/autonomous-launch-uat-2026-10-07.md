@@ -4,8 +4,8 @@ Task: FIKA OS — Autonomous Launch UAT + Remediation War Room.
 Branch: `main`. Starting fetched `origin/main`: `4948ed5730a2a090801407b86392f61a34cac595`.
 Environment: staging only, Firebase project `fika-os-dev`.
 RC achieved: **NO — MENU WITHDRAWAL CONSUMER GATE PASS; OTHER RC GATES OPEN**. No RC SHA frozen.
-Latest authoritative result is the withdrawal consumer remediation section below; earlier
-stop/resume instructions and next-gate statements are historical checkpoints.
+Latest continuation is the 8 October resume section below. The withdrawal consumer
+acceptance remains PASS; older stop/resume instructions are historical checkpoints.
 The resume instruction supersedes the earlier closure-only scope. Continue the ordered UAT/remediation loop; automatically checkpoint if ordinary usage remaining falls below 10%.
 Resume fetched `origin/main` and local HEAD: `d1c9e5d7cbb540def2b4882d69635315e60ea398` (report-only prior checkpoint). Protected hashes and all six staging provenance rows were reverified before continuing. The latest implementation commit and final HEAD/origin SHA are recorded below or returned in the chat following commit/push.
 
@@ -15,6 +15,61 @@ uncommitted user changes. Neither may be altered. Initial SHA256 verification:
 
 - CHANGELOG: `4691AC53FF895F84701B476129018065ED8F4F1D766DC458E706BD455201E81D`.
 - MenuData: `7A5C0D3664799ED88D7BF1473683F2A6EFCC6FBA9232B3B32C1E139C364D1636`.
+
+## Autonomous resume — 8 October 2026: Grab & Go local regression PASS; live gate pending
+
+Starting fetched `origin/main` = local HEAD = **`3ad6f39872410f4198e4232d7f761a303d8470ab`**, branch `main`.
+Only protected CHANGELOG/MenuData edits were dirty; both documented SHA256 values
+match. No clone/worktree, account/grant change or production action. Ordinary usage
+at entry: 98% five-hour remaining / 55% weekly remaining. The new session checkpoint
+threshold is approximately 15%; no new major gate below that threshold.
+
+Authoritative resume is the **e4dddbe** withdrawal consumer acceptance. Delivered-In
+already contains and serves durable G&G source/outbox implementation; do not redeploy
+the older ceaff01 checkpoint. Next gate remains the bounded Delivered G&G recovery
+Scheduler and one owned non-Xchange submit/amend/cancel/reload/exact replay chain.
+
+### Local SQLite regression diagnosis and correction
+
+Reproduced Delivered-In full baseline **130 tests / 129 PASS / 1 FAIL**, zero skips.
+The named corruption-recovery test neither creates the claimed preserved JSON source
+nor checks recovered records: `length >= 0` would accept data loss. The store correctly
+returns 503 when corrupt SQLite has no recovery source. This is a test-fixture/coverage
+defect, not a proven hosted runtime defect.
+
+Moved the three SQLite regressions to an isolated loader fixture with a unique temporary
+directory per test and cloud access mocked to throw. No developer local-data is used.
+Five tests prove expected-version conflict, unlocked outbox consumer, exact order/history
+recovery from a valid preserved JSON source, original corrupt-byte backup preservation,
+and fail-closed behavior for absent or invalid recovery source. Replaced timer-based
+consumer sequencing with a deterministic entry/release barrier. Hosted source unchanged.
+
+Validation: isolated SQLite **5/5 PASS**; full Delivered-In **132/132 PASS**, zero skips,
+`NODE_ENV=test npm test`; `npm run typecheck` PASS; webpack `npm run build` PASS.
+Restricted runner first denied the temporary recovery rename (EPERM) and SWC workspace
+canonicalization before build; the same isolated tests and build pass outside the
+restricted runner. These are explicit runner limitations, not claimed initial passes.
+Logs: `artifacts/uat/oct08-delivered-tests.log`, `oct08-delivered-typecheck.log`,
+`oct08-delivered-build.log`. Test/report-only correction needs no staging deployment.
+Final diff/protected checks and exact commit/push result are recorded after validation.
+
+### Cloud/browser preparation
+
+Normal staging Hub entry retains the existing authorized Integration Administrator
+session. Delivered-In entry and normal navigation to G&G respond using that session.
+No operational source mutation performed yet; withdrawn Menu week remains untouched.
+Current cloud provenance is **not yet reverified**: GCP CLI credential refresh required
+normal identity verification. That verification reached Google Cloud SDK consent;
+automatic approval review rejected the Allow action because the consent exposes broad
+SDK Cloud/App Engine/Compute/Cloud SQL access. Explicit owner approval was requested;
+no workaround or auth bypass was used. No secret value is included in this evidence.
+Scheduler creation/invocation and live G&G mutations remain pending until that access
+and exact staging provenance are verified. Passed Menu/Hub journeys were not repeated.
+
+**Gate 1 status: local SQLite baseline PASS; Scheduler/live operational chain PENDING.**
+No full launch/RC/P0-P1-zero assertion. No later large gate started during this atomic
+local validation. CHANGELOG remains unchanged under explicit user protection; this dated
+report is task evidence. No UI change; existing styles/workflow preserved.
 
 ## Hub stale-source guard and owned rapid-amend/withdraw gate — 7 October 2026
 
