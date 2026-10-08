@@ -901,6 +901,142 @@ Final report commit differs from served Logisticsa2462fd solely by this record; 
 application deployment is implied by the final SHA. Protected files/hashes unchanged;
 CHANGELOG untouched under explicit protection. Production untouched.
 
+## Latest autonomous resume — 8 October 2026: external remediation reconciliation and outbox acceptance
+
+This section supersedes the older Gate3 next-checkpoint instruction. Gates1–3
+remain PASS and were not repeated. Gates4–5 remain open; RC not frozen. Starting
+fetched origin/main = HEAD `be868442888d790b42aeff5b25b73b817dcc69bc`, branch main.
+Protected SHA256 values match the report header. Additional pre-existing local
+edits are the CPU descending change-feed index in Hub's index file and untracked
+`docs/audits/2026-10-08-claude-second-opinion-handoff.md`; preserved/excluded from
+this task. CHANGELOG remains untouched under explicit user protection.
+
+Inspected both implementation diffs since report checkpoint `df054ca`:
+`34aaf9f4b5f279c8151715c870d534af09042644` changes Logistics advisory source timing,
+30-minute delivery placement and Inspector context; bounded live acceptance remains
+pending. `be86844` changes shared terminal eligibility serialization, CPU/Delivered
+retryable candidate queries and their composite indexes. No new implementation
+change was needed for starvation acceptance. Previous Chrome URL confidence stop
+was an automation limitation, not product/UAT failure.
+
+### Staging provenance reverified at 15:00 UTC
+
+All six builds READY/current100%, not reconciling; no rollout submitted here.
+Logistics source uses `source.codebase.hash`, rather than `commit`; both resolve
+the same immutable repository identity. Rollout-list matching did not identify
+rows (numeric versus named project resource paths); current traffic plus exact
+READY build is the direct serving evidence, not an invented rollout status.
+
+| App | Served SHA | Build |
+| --- | --- | --- |
+| Hub | `c0a41ae3fe60393d20fc810fa6f0c1dacbe48b0f` | `uat-1007193534-c0a41ae` |
+| Menu | `06181e4b50262fb505396fbc5080ad9907b6bcce` | `uat-1007182022-06181e4` |
+| Hospitality | `03a8249d3639f38c3c87eac3ea24f7b1e14a77f8` | `build-2026-10-06-002` |
+| CPU | `be868442888d790b42aeff5b25b73b817dcc69bc` | `build-2026-10-08-001` |
+| Delivered-In | `be868442888d790b42aeff5b25b73b817dcc69bc` | `build-2026-10-08-001` |
+| Logistics | `34aaf9f4b5f279c8151715c870d534af09042644` | `build-2026-10-08-000` |
+
+### Durable outbox starvation P1 — CLOSED, bounded live acceptance
+
+Both exact `(outboxStatus,nextEligibleAt,__name__)` indexes READY:
+CPU `CICAgNiroIEK`; Delivered G&G `CICAgNjaxJEK`. Both recovery jobs ENABLED,
+every minute; actual scheduled AttemptFinished logs at15:00:09.341Z CPU and
+15:00:05.103Z Delivered report HTTP200 (also prior successful minutes).
+
+Executed the exact bounded deployed candidate query: status IN pending/failed,
+eligibility <= now, ordered eligibility, LIMIT25. CPU returned25 natural retryable
+rows, excluding all30 sampled legacy delivered rows even though those retain old
+top-level eligibility. Delivered has3 delivered source events,0 retryable/eligible.
+Thus terminal history cannot consume the bounded candidate page. No failure/event
+or dead letter manufactured, no history reset/backfill/direct Firestore write.
+
+Normal worker POST limit25 returned HTTP200 for both. CPU attempted natural
+historical obligations and updated attempts/status; this proves they are reachable
+after starvation removal, **not successful delivery of every historical obligation**.
+Several September release materializations correctly reject missing release or
+changed canonical lineage with409; one post-commit obligation returns502. Normal
+retry policy can terminalise an existing obligation at attempt10. These are real
+pre-existing failures exposed by repaired recovery, not forced test dead letters.
+Separate historical obligation disposition requires inspection; do not relax
+allergen lineage or reset terminal events to manufacture green. Delivered idle
+response attempted0/delivered0/pending0/interventionRequired0, truthful bounded
+acceptance rather than live failure-recovery proof.
+
+Known-ID before/after comparison of owned12 October G&G source, all3 source events,
+Production/Fulfilment/Logistics records, audit/history arrays, counts and CPU day
+revision/sequence is exactly equal. One record per downstream identity, sourcev3
+cancelled, Productionv3 cancelled, downstreamv3 withdrawn, no active CPU orders,
+revision9/sequence667. No duplicate or resurrection found in this representative
+live check; no platform-wide no-duplicate claim.
+
+Re-executed focused CPU/shared17/17 and hosted G&G8/8 regression tests, zero skips,
+covering terminal exclusion beyond30 historical rows, retry timing, claims and
+idempotency. Full suites/typechecks/builds from the external remediation are still
+to be reconciled; focused passes and READY hosted builds do not imply full-suite
+passes. Invalid index inventory API path initially returned400; corrected before
+acceptance, no operational change. Evidence under `artifacts/uat`:
+`oct08-outbox-live-acceptance.json`, `oct08-outbox-acceptance.cjs`,
+`oct08-outbox-acceptance-focused-cpu.log`, `oct08-outbox-acceptance-focused-grab.log`,
+`oct08-grab-outbox-before.json`, `oct08-grab-outbox-after.json`.
+
+Next atomic work: Gate4 Auth/Hub denial/site-selection/navigation/current-state
+acceptance, bounded Logistics UX acceptance, then Gate5 historical Hospitality.
+Keep historical retry failures separate from the closed starvation defect pending
+evidence/severity assessment. Production untouched; no new fixture/grant/secret.
+
+### Gate4 site isolation — reproduced P1, remediation validated locally
+
+Isolated rendered real Delivered-In page (all APIs mocked) delayed siteB head,
+navigated via popstate to siteC, then completedB. Before fix selector/URL reverted
+toB: expectedC/actualB assertion failure. Dashboard also retained prior-site content
+during scope resolution. G&G's unkeyed child similarly retained prior basket state,
+and its selector wrote the old closure's site into URL. No staging data mutation
+was needed to reproduce these defects.
+
+Bounded fix: generation-guard async head/cache/body/error/redirect completions,
+invalidate on unmount, clear displayed dashboard during resolution/denial, use
+authoritative resolved site, preserve selected week during refresh/site change.
+G&G child keyed by account+site and URL updated with selected event value. No
+authority grants or server contract change. Existing light semantic UI reused;
+Style Guide compliance PASS. Regression runner
+`node apps/delivered-in/tests/browser/site-scope.cjs` against local port3800 mocks
+all operational APIs: late head, late body, denial, zero-access and G&G basket/URL
+isolation,5/5 PASS. This is rendered isolated proof, not staging fault injection.
+
+CPU full292/292 PASS. Delivered full135/135 PASS on elevated Windows runner;
+restricted full run131PASS/1failed file because tsx loader Windows path was
+unresolvable; isolated elevated projection4/4 and full elevated135/135 then PASS.
+Delivered typecheck and webpack production build PASS. Focused Hub auth/scope
+60/63PASS: three old synthetic Delivered access fixtures omit service definition/
+arrangement records required by current service filtering. No authority weakening
+or fake service grants used to make those fixtures pass; coverage debt remains.
+Hospitality workspace routing7/7 PASS including invalid remembered site/explicit
+denial/zero access. Live missing/invalid session read requests for Hub session,
+launcher, Delivered head, Hospitality access and CPU plan all return401 (10/10);
+CPU uses generic UPSTREAM_UNAVAILABLE code despite correct denial, P2 diagnostics.
+Authenticated invalid Delivered OPLOC direct URL renders only unavailable notice,
+no site selector/navigation/menu/PDF, no redirect loop. Normal launcher and
+Delivered site switch use existing admin session and authorised site list.
+
+Concurrent external config commit `dc7f4eaef249fcd98d745f2bd1393adf388f8dd2`
+landed during this unit; inspected diff: only Hub index declaration, no app source.
+Declares existing READY `fikaCpuProductionChangesV1 serviceDate ASC,sequence DESC,
+__name__ DESC` index `CICAgLiIkYMK`; no app rollout required. Earlier pre-existing
+index edit is now committed by its owner; audit handoff remains unrelated/untracked.
+External remediation evidence reconciled from actual commands/results:
+shared11/11,CPU292/292,Delivered135/135,affected typechecks/builds PASS;
+Logistics449/449,affected rendered16/16,typecheck/build PASS. These are external
+validation results, distinct from tests rerun in this task. Actual hosted serving
+provenance supersedes the earlier remediation chat's expired-CLI deployment block.
+
+Gate4 remains OPEN until exact remediation staging deployment/live acceptance and
+remaining Hub/workspace evidence. No new P0; no RC freeze. Evidence:
+`oct08-site-race.cjs` (baseline failure then corrected PASS),
+`oct08-gate4-auth-http.json`, `oct08-gate4-auth-focused.log`,
+`oct08-gate4-cpu-full.log`, `oct08-gate4-delivered-full-elevated.log`,
+`oct08-gate4-site-build.log` under artifacts/uat. Deployment SHA/result recorded
+after validated commit/push. Production and protected hashes unchanged.
+
 ## Hub stale-source guard and owned rapid-amend/withdraw gate — 7 October 2026
 
 Starting fetched HEAD/origin/main: `e2adb67b75a98667cddab74edeefba8d0a2c84d5`.

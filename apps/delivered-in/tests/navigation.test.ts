@@ -23,6 +23,6 @@ test("Delivered-In UI exposes navigation, browser history and conditional Grab &
   assert.doesNotMatch(page, /AllergenView|Allergens<|view === "allergens"/);
   assert.match(page, /View signed CPU checker PDF/);
   assert.match(grab, /requested\.oplocId/);
-  assert.match(grab, /oplocId: siteId/);
+  assert.match(grab, /oplocId: nextSiteId/);
   assert.doesNotMatch(grab, /view=allergens|Allergens/);
 });

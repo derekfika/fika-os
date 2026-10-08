@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   operationalDateLondon,
   type ProjectedDay,
@@ -76,10 +76,11 @@ const operationalWeek = () => ({
   weekEnding: addDays(weekFor(todayKey()), 6),
   days: [] as ProjectedDay[],
 });
-async function redirectForSessionFailure(response: Response) {
+async function redirectForSessionFailure(response: Response, current: () => boolean) {
   if (response.status !== 401) return false;
   const body = (await response.clone().json().catch(() => undefined)) as { error?: { code?: string } } | undefined;
   const code = body?.error?.code;
+  if (!current()) return true;
   if (code !== "FIKA_SESSION_MISSING" && code !== "FIKA_SESSION_INVALID") return false;
   const hub = (process.env.NEXT_PUBLIC_INTEGRATION_HUB_BASE_URL || "http://localhost:3200").replace(/\/$/, "");
   const returnTo = typeof window === "undefined" ? "/" : window.location.href;
@@ -520,7 +521,14 @@ export default function Page() {
   const [selectedDayDate, setSelectedDayDate] = useState("");
   const [view, setView] = useState<View>("today");
   const [error, setError] = useState("");
+  const loadGeneration = useRef(0);
   const load = async (oplocId?: string, requestedWeek?: string) => {
+    const generation = ++loadGeneration.current;
+    const current = () => generation === loadGeneration.current;
+    // Authority and content belong to the response's site. Hide the previous
+    // dashboard until this navigation has resolved, including denial paths.
+    setDashboard(undefined);
+    setError("");
     try {
       const headParams = new URLSearchParams("head=1");
       if (oplocId) headParams.set("oplocId", oplocId);
@@ -529,18 +537,21 @@ export default function Page() {
         cache: "no-store",
       });
       const head = (await headResponse.json()) as ProjectionHead;
+      if (!current()) return;
       if (!headResponse.ok) {
-        if (await redirectForSessionFailure(headResponse)) return;
+        if (await redirectForSessionFailure(headResponse, current)) return;
         throw new Error("Unavailable");
       }
-      const nextSite =
-        head.selectedOplocId || oplocId || head.sites[0]?.oplocId || "";
+      const nextSite = head.access.oplocIds.length
+        ? head.selectedOplocId || head.sites[0]?.oplocId || ""
+        : "";
       setSelectedSiteId(nextSite);
       const accountScope = head.access.email.toLowerCase();
       const cachedDays = await readCachedDeliveredInDays(
         accountScope,
         nextSite,
       );
+      if (!current()) return;
       const activeEntries = head.entries.filter(
         (entry) => entry.state !== "withdrawn",
       );
@@ -569,15 +580,17 @@ export default function Page() {
           withdrawnServiceDates: head.withdrawnServiceDates,
         });
       if (!matches) {
-        const responseParams = new URLSearchParams({ oplocId: oplocId || nextSite });
+        const responseParams = new URLSearchParams({ oplocId: nextSite });
         if (requestedWeek) responseParams.set("week", requestedWeek);
         const response = await fetch(
           `/api/delivered-in?${responseParams}`,
           { cache: "no-store" },
         );
         const body = (await response.json()) as Dashboard;
+        if (!current()) return;
         if (!response.ok) {
-          if (await redirectForSessionFailure(response)) return;
+          setDashboard(undefined);
+          if (await redirectForSessionFailure(response, current)) return;
           throw new Error("Unavailable");
         }
         setDashboard(body);
@@ -594,6 +607,8 @@ export default function Page() {
       );
       setError("");
     } catch {
+      if (!current()) return;
+      setDashboard(undefined);
       setError(
         "This dashboard is temporarily unavailable. Please check back shortly.",
       );
@@ -613,7 +628,10 @@ export default function Page() {
     };
     applyLocation();
     window.addEventListener("popstate", applyLocation);
-    return () => window.removeEventListener("popstate", applyLocation);
+    return () => {
+      ++loadGeneration.current;
+      window.removeEventListener("popstate", applyLocation);
+    };
   }, []);
   useEffect(() => {
     if (!dashboard) return;
@@ -698,7 +716,7 @@ export default function Page() {
     );
   };
   const refresh = () => {
-    if (selectedSiteId) void load(selectedSiteId);
+    if (selectedSiteId) void load(selectedSiteId, selectedWeekCommencing);
   };
   return (
     <main className="app-shell">
@@ -716,7 +734,7 @@ export default function Page() {
                 value={selectedSiteId}
                 onChange={(event) => {
                   setSelectedSiteId(event.target.value);
-                  void load(event.target.value);
+                  void load(event.target.value, selectedWeekCommencing);
                 }}
               >
                 {dashboard.sites.map((site) => (
