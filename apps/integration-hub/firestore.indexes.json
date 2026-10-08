@@ -13,7 +13,9 @@
     { "collectionGroup": "fikaFulfilmentRequirementsV1", "queryScope": "COLLECTION", "fields": [{ "fieldPath": "serviceDate", "order": "ASCENDING" }, { "fieldPath": "status", "order": "ASCENDING" }] },
     { "collectionGroup": "fikaFulfilmentRequirementsV1", "queryScope": "COLLECTION", "fields": [{ "fieldPath": "serviceDate", "order": "ASCENDING" }, { "fieldPath": "destinationOplocId", "order": "ASCENDING" }] },
     { "collectionGroup": "fikaFulfilmentRequirementsV1", "queryScope": "COLLECTION", "fields": [{ "fieldPath": "serviceDate", "order": "ASCENDING" }, { "fieldPath": "productionLocationId", "order": "ASCENDING" }] },
-    { "collectionGroup": "fikaFulfilmentRequirementsV1", "queryScope": "COLLECTION", "fields": [{ "fieldPath": "serviceDate", "order": "ASCENDING" }, { "fieldPath": "status", "order": "ASCENDING" }, { "fieldPath": "destinationOplocId", "order": "ASCENDING" }, { "fieldPath": "productionLocationId", "order": "ASCENDING" }] }
+    { "collectionGroup": "fikaFulfilmentRequirementsV1", "queryScope": "COLLECTION", "fields": [{ "fieldPath": "serviceDate", "order": "ASCENDING" }, { "fieldPath": "status", "order": "ASCENDING" }, { "fieldPath": "destinationOplocId", "order": "ASCENDING" }, { "fieldPath": "productionLocationId", "order": "ASCENDING" }] },
+    { "collectionGroup": "fikaCpuPropagationOutboxV1", "queryScope": "COLLECTION", "fields": [{ "fieldPath": "outboxStatus", "order": "ASCENDING" }, { "fieldPath": "nextEligibleAt", "order": "ASCENDING" }, { "fieldPath": "__name__", "order": "ASCENDING" }] },
+    { "collectionGroup": "fikaDeliveredInGrabAndGoHandoffV1", "queryScope": "COLLECTION", "fields": [{ "fieldPath": "outboxStatus", "order": "ASCENDING" }, { "fieldPath": "nextEligibleAt", "order": "ASCENDING" }, { "fieldPath": "__name__", "order": "ASCENDING" }] }
   ],
   "fieldOverrides": []
 }

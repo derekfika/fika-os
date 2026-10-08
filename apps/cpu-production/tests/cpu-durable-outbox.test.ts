@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 import { buildCpuPropagationEvents, CPU_DELIVERY_TIMEOUT_MS, cpuDeliveryTimeoutMs, deliverCpuPropagation, enqueueCpuDelivery, enqueueCpuPropagation, listCpuOutboxForTests, normaliseCpuBaseUrl, replayCpuPropagation, resetCpuOutboxForTests, recoverCpuPropagation, seedCpuOutboxForTests } from "../lib/cpu-durable-outbox";
 import { cpuReleaseMaterializationEventId } from "../lib/cpu-release-fanout";
@@ -40,6 +41,39 @@ test("durable recovery processes a T+60 reconciliation without browser involveme
   } finally {
     globalThis.fetch = previousFetch;
     if (previousDelivered === undefined) delete process.env.FIKA_APP_DELIVERED_IN_URL; else process.env.FIKA_APP_DELIVERED_IN_URL = previousDelivered;
+    resetCpuOutboxForTests();
+  }
+});
+
+test("bounded recovery excludes terminal history before its 25-row page and keeps retry timing", async () => {
+  const now = new Date("2026-09-16T10:00:00.000Z");
+  const base = await enqueueCpuDelivery({ eventId: "cpu-starvation-template", sourceAggregateId: "aggregate", sourceVersion: 1, occurredAt: "2026-09-01T10:00:00.000Z", consumer: "delivered-in", route: "/api/delivered-in/invalidate", body: {} });
+  const terminal = Array.from({ length: 30 }, (_, index) => ({
+    ...base,
+    eventId: `terminal-delivered-${String(index).padStart(2, "0")}`,
+    occurredAt: `2026-09-01T09:${String(index).padStart(2, "0")}:00.000Z`,
+    delivery: { ...base.delivery, status: "delivered" as const, deliveredAt: "2026-09-01T09:00:00.000Z", nextEligibleAt: "2026-09-01T09:00:00.000Z" },
+  }));
+  const earlierFailed = { ...base, eventId: "retry-failed-earlier", delivery: { ...base.delivery, status: "failed" as const, attempts: 2, nextEligibleAt: "2026-09-16T09:59:59.000Z", nextAttemptAt: "2026-09-16T09:59:59.000Z" } };
+  const failed = { ...base, eventId: "retry-failed-after-terminal-history", delivery: { ...base.delivery, status: "failed" as const, attempts: 1, nextEligibleAt: now.toISOString(), nextAttemptAt: now.toISOString() } };
+  const pending = { ...base, eventId: "retry-pending", delivery: { ...base.delivery, nextEligibleAt: now.toISOString(), nextAttemptAt: now.toISOString() } };
+  const deadLetter = { ...base, eventId: "terminal-dead-letter", delivery: { ...base.delivery, status: "dead-letter" as const, attempts: 10, nextEligibleAt: "2026-09-01T09:00:00.000Z" } };
+  const future = { ...base, eventId: "retry-future", delivery: { ...base.delivery, status: "failed" as const, nextEligibleAt: "2026-09-16T10:00:01.000Z", nextAttemptAt: "2026-09-16T10:00:01.000Z" } };
+  seedCpuOutboxForTests([...terminal, failed, pending, deadLetter, future, earlierFailed]);
+  const previousFetch = globalThis.fetch;
+  const calls: string[] = [];
+  globalThis.fetch = (async (_input, init) => { calls.push(new Headers(init?.headers).get("x-fika-delivery-id") || ""); return new Response("{}", { status: 200 }); }) as typeof fetch;
+  try {
+    const recovered = await recoverCpuPropagation(25, now);
+    assert.deepEqual(recovered.map(result => result.eventId), [earlierFailed.eventId, failed.eventId, pending.eventId]);
+    assert.equal(calls.length, 3);
+    const source = readFileSync(new URL("../lib/cpu-durable-outbox.ts", import.meta.url), "utf8");
+    assert.match(source, /\.where\("outboxStatus", "in", \["pending", "failed"\]\)\s*\.where\("nextEligibleAt", "<=", at\.toISOString\(\)\)/);
+    assert.doesNotMatch(source, /snapshot\.docs\.map\(document => document\.data\(\) as CpuOutboxEvent\)\.filter\(event => event\.delivery\.status/);
+    const indexes = JSON.parse(readFileSync(new URL("../../integration-hub/firestore.indexes.json", import.meta.url), "utf8"));
+    assert.ok(indexes.indexes.some((index: any) => index.collectionGroup === "fikaCpuPropagationOutboxV1" && index.fields.map((field: any) => field.fieldPath).join(",") === "outboxStatus,nextEligibleAt,__name__"));
+  } finally {
+    globalThis.fetch = previousFetch;
     resetCpuOutboxForTests();
   }
 });

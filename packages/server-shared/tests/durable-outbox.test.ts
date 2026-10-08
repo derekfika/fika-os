@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { DURABLE_OUTBOX_MAX_ATTEMPTS, markEventFailed, resetEventForReplay, type DurableDomainEvent } from "../src/durable-outbox";
+import { DURABLE_OUTBOX_MAX_ATTEMPTS, markEventDeadLetter, markEventDelivered, markEventFailed, outboxRecord, resetEventForReplay, type DurableDomainEvent } from "../src/durable-outbox";
 
 const event = (): DurableDomainEvent => ({
   eventId: "production.materialise:week:day:v1",
@@ -35,4 +35,16 @@ test("shared durable outbox dead-letters on the tenth failure and replay preserv
   assert.equal(replayed.sourceAggregateId, current.sourceAggregateId);
   assert.equal(replayed.delivery.status, "pending");
   assert.equal(replayed.delivery.nextEligibleAt, "2026-08-24T11:00:00.000Z");
+});
+
+test("outbox serialization keeps eligibility only on retryable records", () => {
+  const pending = outboxRecord(event());
+  assert.equal(pending.nextEligibleAt, event().occurredAt);
+  const delivered = outboxRecord(markEventDelivered(event(), "2026-08-24T10:01:00.000Z"));
+  const deadLetter = outboxRecord(markEventDeadLetter(event(), "terminal", "2026-08-24T10:01:00.000Z"));
+  assert.equal(delivered.outboxStatus, "delivered");
+  assert.equal("nextEligibleAt" in delivered, false);
+  assert.equal(deadLetter.outboxStatus, "dead-letter");
+  assert.equal("nextEligibleAt" in deadLetter, false);
+  assert.equal(delivered.occurredAt, event().occurredAt, "immutable occurrence history is preserved");
 });

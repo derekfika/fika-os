@@ -352,11 +352,12 @@ export async function recoverCpuPropagation(limit = CPU_PROPAGATION_OUTBOX_PAGE_
     return deliverCpuPropagations(due);
   }
   const snapshot = await db.collection(CPU_PROPAGATION_OUTBOX_COLLECTION)
+    .where("outboxStatus", "in", ["pending", "failed"])
     .where("nextEligibleAt", "<=", at.toISOString())
     .orderBy("nextEligibleAt")
     .limit(boundedLimit)
     .get();
-  return deliverCpuPropagations(snapshot.docs.map(document => document.data() as CpuOutboxEvent).filter(event => event.delivery.status === "pending" || event.delivery.status === "failed"));
+  return deliverCpuPropagations(snapshot.docs.map(document => document.data() as CpuOutboxEvent));
 }
 
 export async function replayCpuPropagation(eventId: string, at = new Date()) {

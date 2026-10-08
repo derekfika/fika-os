@@ -70,5 +70,12 @@ export function resetEventForReplay<T>(event: DurableDomainEvent<T>, at: string,
 }
 
 export function outboxRecord<T>(event: DurableDomainEvent<T>) {
-  return { ...event, outboxStatus: event.delivery.status, nextEligibleAt: event.delivery.nextEligibleAt || event.delivery.nextAttemptAt || event.occurredAt, aggregateSequence: event.sourceVersion, ...(event.predecessorEventId ? { predecessorEventId: event.predecessorEventId } : {}) };
+  const retryable = event.delivery.status === "pending" || event.delivery.status === "failed";
+  return {
+    ...event,
+    outboxStatus: event.delivery.status,
+    ...(retryable ? { nextEligibleAt: event.delivery.nextEligibleAt || event.delivery.nextAttemptAt || event.occurredAt } : {}),
+    aggregateSequence: event.sourceVersion,
+    ...(event.predecessorEventId ? { predecessorEventId: event.predecessorEventId } : {}),
+  };
 }

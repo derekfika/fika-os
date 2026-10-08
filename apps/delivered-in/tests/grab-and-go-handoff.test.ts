@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 import { createRequire } from "node:module";
 import { dirname, resolve } from "node:path";
@@ -16,11 +17,25 @@ function fixture() {
   const snapshot = (ref: any) => ({ exists: records.has(ref.path), data: () => structuredClone(records.get(ref.path)) });
   const collection = (name: string) => ({
     doc: (id: string) => ({ path: `${name}/${id}`, get: async function () { return snapshot(this); } }),
-    where: (field: string, operator: string, value: string) => ({ orderBy: (sort: string) => ({ limit: (limit: number) => ({ get: async () => {
-      queries.push({ name, field, operator, sort, limit });
-      const rows = [...records.entries()].filter(([key, row]) => key.startsWith(`${name}/`) && row[field] !== undefined && row[field] <= value).map(([, row]) => row).sort((a, b) => a[sort].localeCompare(b[sort])).slice(0, limit);
-      return { docs: rows.map(row => ({ data: () => structuredClone(row) })) };
-    } }) }) }),
+    where: (field: string, operator: string, value: unknown) => {
+      const filters: Array<{ field: string; operator: string; value: unknown }> = [{ field, operator, value }];
+      let sort = "", limit = 0;
+      const query: any = {
+        where(nextField: string, nextOperator: string, nextValue: unknown) { filters.push({ field: nextField, operator: nextOperator, value: nextValue }); return query; },
+        orderBy(nextSort: string) { sort = nextSort; return query; },
+        limit(nextLimit: number) { limit = nextLimit; return query; },
+        async get() {
+          queries.push({ name, filters: structuredClone(filters), sort, limit });
+          const rows = [...records.entries()].filter(([key]) => key.startsWith(`${name}/`)).map(([, row]) => row).filter(row => filters.every(filter => {
+            if (filter.operator === "in") return (filter.value as unknown[]).includes(row[filter.field]);
+            if (filter.operator === "<=") return row[filter.field] !== undefined && row[filter.field] <= (filter.value as string);
+            return false;
+          })).sort((a, b) => a[sort].localeCompare(b[sort])).slice(0, limit);
+          return { docs: rows.map(row => ({ data: () => structuredClone(row) })) };
+        },
+      };
+      return query;
+    },
   });
   const db = { collection, runTransaction: (callback: any) => {
     const operation = queue.then(async () => {
@@ -70,11 +85,37 @@ test("network failure keeps the committed source and recovers the identical payl
   const failed = [...f.records.values()].find(row => row.eventId); assert.equal(failed.delivery.status, "failed");
   assert.equal((await f.store.getGrabAndGoOrderHosted(source.oplocId, source.deliveryDate)).version, 1);
   f.forward(async () => "delivered");
-  assert.deepEqual(await f.handoff.recoverGrabHandoffs(25, new Date(Date.now() + 31_000)), { attempted: 1, delivered: 1, pending: 0, interventionRequired: 0 });
+  const recoveryAt = new Date(Date.now() + 31_000);
+  assert.deepEqual(await f.handoff.recoverGrabHandoffs(25, recoveryAt), { attempted: 1, delivered: 1, pending: 0, interventionRequired: 0 });
   assert.deepEqual(f.calls[1], f.calls[0]);
-  assert.deepEqual(f.queries[0], { name: f.handoff.GRAB_HANDOFF_COLLECTION, field: "nextEligibleAt", operator: "<=", sort: "nextEligibleAt", limit: 25 });
+  assert.deepEqual(f.queries[0], { name: f.handoff.GRAB_HANDOFF_COLLECTION, filters: [{ field: "outboxStatus", operator: "in", value: ["pending", "failed"] }, { field: "nextEligibleAt", operator: "<=", value: recoveryAt.toISOString() }], sort: "nextEligibleAt", limit: 25 });
   assert.equal([...f.records.values()].find(row => row.eventId).nextEligibleAt, undefined);
   assert.equal((await f.handoff.recoverGrabHandoffs()).attempted, 0);
+}));
+
+test("bounded Grab & Go recovery selects failed work beyond 30 historical terminal rows", () => withHosted(async () => {
+  const f = fixture(), source = order(); await f.store.saveGrabAndGoOrderHosted(source);
+  const eventKey = [...f.records.keys()].find(key => key.startsWith(`${f.handoff.GRAB_HANDOFF_COLLECTION}/`))!;
+  const retry = f.records.get(eventKey);
+  retry.delivery = { ...retry.delivery, status: "failed", attempts: 1, nextAttemptAt: "2026-10-07T10:00:30.000Z", nextEligibleAt: "2026-10-07T10:00:30.000Z" };
+  retry.outboxStatus = "failed";
+  f.records.set(eventKey, retry);
+  for (let index = 0; index < 30; index += 1) {
+    const timestamp = `2026-10-01T09:${String(index).padStart(2, "0")}:00.000Z`;
+    f.records.set(`${f.handoff.GRAB_HANDOFF_COLLECTION}/legacy-terminal-${index}`, { ...retry, eventId: `legacy-terminal-${index}`, outboxStatus: "delivered", delivery: { ...retry.delivery, status: "delivered", deliveredAt: timestamp }, nextEligibleAt: timestamp });
+  }
+  f.forward(async () => "delivered");
+  const result = await f.handoff.recoverGrabHandoffs(25, new Date("2026-10-07T10:01:00.000Z"));
+  assert.deepEqual(result, { attempted: 1, delivered: 1, pending: 0, interventionRequired: 0 });
+  assert.equal(f.calls.length, 1);
+  assert.equal(f.calls[0].sourceVersion, source.version, "retry preserves the stable source version");
+  assert.equal(f.records.get(eventKey).delivery.status, "delivered");
+  assert.equal(f.queries[0].filters[0].field, "outboxStatus");
+  assert.deepEqual(f.queries[0].filters[0].value, ["pending", "failed"]);
+  assert.equal(f.queries[0].limit, 25);
+  assert.equal(f.records.has(eventKey), true, "the durable source event remains present after the retry");
+  const indexes = JSON.parse(readFileSync(new URL("../../integration-hub/firestore.indexes.json", import.meta.url), "utf8"));
+  assert.ok(indexes.indexes.some((index: any) => index.collectionGroup === "fikaDeliveredInGrabAndGoHandoffV1" && index.fields.map((field: any) => field.fieldPath).join(",") === "outboxStatus,nextEligibleAt,__name__"));
 }));
 
 test("concurrent delivery claims forward once and delivered replay does not forward again", () => withHosted(async () => {

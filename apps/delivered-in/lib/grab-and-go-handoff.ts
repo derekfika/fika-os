@@ -81,7 +81,12 @@ export async function deliverGrabHandoff(eventId: string, at = new Date()) {
 
 export async function recoverGrabHandoffs(limit = 25, at = new Date()) {
   if (!Number.isInteger(limit) || limit < 1 || limit > 25) throw Object.assign(new Error("Recovery limit must be 1–25."), { status: 422 });
-  const snapshot = await events().where("nextEligibleAt", "<=", at.toISOString()).orderBy("nextEligibleAt").limit(limit).get();
+  const snapshot = await events()
+    .where("outboxStatus", "in", ["pending", "failed"])
+    .where("nextEligibleAt", "<=", at.toISOString())
+    .orderBy("nextEligibleAt")
+    .limit(limit)
+    .get();
   const due = snapshot.docs.map(doc => doc.data() as HandoffEvent).filter(event => eventIsDue(event, at));
   const results = await Promise.all(due.map(event => deliverGrabHandoff(event.eventId, at)));
   return { attempted: due.length, delivered: results.filter(result => result === "delivered").length, pending: results.filter(result => result === "pending").length, interventionRequired: results.filter(result => result === "intervention-required").length };
