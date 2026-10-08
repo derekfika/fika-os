@@ -1268,6 +1268,145 @@ Gates 1-5 PASS; outstanding for final RC review: six-app same-SHA regression, Ga
 conflict, terminal `nextEligibleAt` packaging). Production untouched; protected
 `CHANGELOG.md`/`01_MenuData.js` hashes unchanged.
 
+## FINAL RELEASE CANDIDATE REVIEW - 8 October 2026 (authoritative; supersedes all earlier RC/NO-GO text)
+
+**Recommendation: GO WITH RECORDED P2/P3** for the staging-validated release candidate,
+subject to Derek's explicit sign-off of the accepted-risk and pre-production items below.
+Staging only; production untouched; no deployment was made in this review.
+
+**Frozen RC source SHA: `63512b705c5c3c9cbd6c0b31e0deffe3f6f4d6c3`.** It contains
+**application code** (last code commit: Hub Logistics event-identity fix) plus all earlier
+docs. Every later commit is **report-only** (`621ab15`, `cebf4f7`, and the commit that
+adds this section; `git diff 63512b7..cebf4f7` changes only this UAT report). The RC is
+NOT redefined as the later report-only HEAD; the final report commit SHA is recorded
+separately in the return. Release policy: repository docs (`AGENTS.md` 10.2,
+`docs/ai/GO-LIVE-READINESS-SCAN.md`) require exact validated SHAs and one frozen RC SHA,
+not literal SHA equality across apps; the earlier "align six apps at one literal SHA" line
+is a UAT plan note, not binding policy. No alignment rollout was made. Optional later
+alignment is a Derek decision and is not recommended.
+
+**Gates:** 1 Grab & Go PASS; 2 Allergen lifecycle PASS; 3 Logistics PASS; 4 Auth/Hub PASS;
+5 Historical Hospitality PASS. No regression found in the final smoke pass. No unresolved P0/P1.
+
+**Per-app staging provenance (all READY, rollout SUCCEEDED, current traffic 100%, not reconciling):**
+
+| App / backend | Served source SHA | Build | Contains all app-relevant changes? |
+| --- | --- | --- | --- |
+| Integration Hub / `fika-os-staging` | `63512b7` | `build-2026-10-08-001` | Yes - equals RC; no diff to HEAD |
+| Menu Planning / `fika-menu-planning-staging` | `06181e4` | `uat-1007182022-06181e4` | Yes. App code unchanged since; only shared `outboxRecord` terminal serialisation differs (Menu recovery already filters by status; legacy path by `delivery.status`) - not required |
+| Hospitality / `fika-hospitality-staging` | `03a8249` | `build-2026-10-06-002` | Yes. No app diff; shared diffs are unused by Hospitality (`outboxRecord` / `logisticsProjectionEventId` not called) |
+| CPU / `fika-cpu-production-staging` | `be86844` | `build-2026-10-08-001` | Yes. Only diff is the optional `requirementRevision` parameter in `logistics-projection.ts`, unused by CPU |
+| Delivered-In / `fika-delivered-in-staging` | `a866b49` | `uat-1008161054-a866b49` | Yes. Same optional-parameter diff only, unused |
+| Logistics / `fika-logistics-staging` | `34aaf9f` | `build-2026-10-08-000` (rollout `rollout-2026-10-08-000`) | Yes. App code unchanged; shared diffs unused by Logistics |
+
+Runtime SHA evidence: CPU and Delivered-In `/api/build-info` (custom domains) return `be86844`
+and `a866b49`. Hub, Menu and Hospitality expose no public runtime SHA and Logistics build-info
+requires a session; for those, provenance is the App Hosting build's recorded commit.
+Indexes READY: `(outboxStatus, nextEligibleAt)` for the CPU outbox and G&G handoff, and
+`(serviceDate asc, sequence desc)` for `fikaCpuProductionChangesV1` (gcloud-created, declared in repo).
+
+**Final six-app smoke/regression (signed-in staging UI plus read-only data reads):**
+- Hub: launcher authenticated, all five apps Available, role shown; `/hub` workspace loads
+  (893 canonical records, STAGING banner); production queue labels cancelled work `Cancelled`.
+- Menu Planning: week planner loads (WC 5 Oct Published); History shows WC 12 Oct and WC 19 Oct
+  UAT weeks only Withdrawn/Superseded with preserved reasons; nothing republished.
+- Hospitality: workspace and MNK operations dashboard load; 13 Oct current booking (12 pax,
+  GBP 268.15) `Sent to CPU`; owned UAT booking `Cancelled`; commercial snapshot and audit panel
+  coherent; the signed-matrix link honestly says storage is not configured.
+- CPU: Tue 13 Oct shows exactly the current MNK job and the labelled Cancelled booking; no
+  superseded revision, revoked state or historical PDF presented as current. Allergen release
+  states: 15 `current` + 5 `pending`, **0 revoked/superseded/withdrawn held as current**; the two
+  October `current` releases sit on *cancelled* orders (12/19 Oct) as retained signed history and
+  are not served (Delivered-In shows Not published).
+- Delivered-In: 5 sequential site switches each showed only the chosen site (loading, then its own
+  data; the previous site was never displayed across 45 samples); WC 12/19/26 Oct show Not
+  published; Grab & Go page healthy with CPU-owned catalogue and an empty basket.
+- Logistics: Tue 13 Oct = 1 load, 1 scheduled MNK 07:00 Van 1, queue 0, attention 0; Inspector
+  1 subload; retired work absent; stable across full reload.
+
+**Cross-app invariants (current reads):** all four durable outboxes have 0 pending and 0 failed
+(CPU 797 delivered / 58 dead-letter; G&G 3 / 0; Hub-Logistics 171 / 0; Menu 277 / 19 historical
+dead-letters from 6 and 16 Sep, dead-lettered 7 Oct); all four recovery Schedulers ENABLED with
+80/80 recent attempts HTTP 200; idle Firestore reads ~0 after the starvation fix; the 12-collection
+13 Oct snapshot was byte-identical across the exact stale replay; active Fulfilment Requirements
+contain no UAT-marked record and exactly one future-dated record (the intentional current `r17`);
+no duplicate current Production/Fulfilment/Logistics record found for 13 Oct. The remaining 53
+active requirements are past-dated September records (data hygiene, P3).
+
+**P2 A - CPU post-commit sequence conflict: RETAIN as P2.** The 14 dead-lettered `cpu-master-sign`
+post-commit events cover only four service dates: 16 Sep and 22 Sep (past) and 12 Oct and 19 Oct
+(the withdrawn UAT weeks, cancelled orders). Function: after dual signature the job builds/shares the
+master allergen artifact and release, then rebuilds derived day/week/review projections and sends
+downstream invalidations. Critical release work runs before the projection housekeeping that hits
+the same-sequence/different-content guard; failure skips only the housekeeping and the follow-up
+invalidation. The immutable guard fails closed (it does not overwrite), so no incorrect
+allergen/production authority is produced and no current operational date is affected; a normal
+later CPU change for a date advances the sequence and heals its projection. Risk to watch: the same
+conflict can recur on a current date if upstream data changes without a CPU sequence bump.
+Post-launch remediation: make projection rebuild resolve same-sequence drift (revision/content-hash
+aware) instead of throwing, alert on `cpu-post-commit` dead letters, and document a governed replay
+once fixed. Not replayed in this review.
+
+**P2 B - terminal `nextEligibleAt` / shared-package packaging: RETAIN as P2.** All 101 CPU terminal
+documents written after the rollout still carry a top-level `nextEligibleAt` equal to the previous
+retry time (old `outboxRecord` behaviour), so the deployed CPU bundle's `@fika/server-shared` copy
+does not contain the 9-line `outboxRecord` change although the build commit is correct. Lead (not
+yet proven): the lockfiles of Hub, Menu, CPU and Delivered-In hold `@fika/server-shared` as a bare
+`file:` entry with no `link`, whereas Logistics and Hospitality use `link: true`; local
+`node_modules` copies of three of those apps are stale against source. Impact is bounded:
+selection/recovery correctness is protected by app-local code that deploys correctly (CPU and G&G
+recovery queries filter `outboxStatus` before LIMIT; the Hub identity fix lives in app code and
+relative `apps/shared` imports), the only evidenced shared-package divergence between the previous
+CPU deploy and `be86844` is that one function, and starvation remains closed (idle reads ~0).
+Post-launch remediation: regenerate the four lockfiles with link entries (or add a deploy-time
+shared-package content check) and confirm in a built bundle before the next shared-package fix is
+relied upon.
+
+**Other current P2/P3 (separated):**
+- *Product P2:* G&G delivery-time presentation/policy clarity needs an owner decision; Logistics
+  Inspector shows `Quantity unavailable` / `Time to confirm` despite a 07:00 schedule; Delivered-In
+  withdrawn/blank days show generic Pending / Pending-CPU-handoff labels; CPU 401 uses the generic
+  `UPSTREAM_UNAVAILABLE` code (diagnostics).
+- *Product P3:* Hospitality shows `CPU plan: Uncertain` beside `Sent to CPU`; Logistics RunChooser
+  horizontal scroll and hover/cursor style interference were recorded earlier (not re-verified here);
+  the allergen release record keeps status `current` on cancelled plans (retained history; consumers
+  gate on order/publication state).
+- *Operational preparation:* no production environment exists (all `apphosting*.yaml` target
+  `fika-os-dev`/staging; production must set `FIKA_RUNTIME_MODE=production`); final production AUTHMOD
+  identities including the shared Logistics driver account; Hospitality signed-matrix storage is not
+  configured in staging; Hospitality Drive/domain-wide-delegation ownership review.
+- *Security hardening (from the 8 Oct second-opinion file
+  `docs/audits/2026-10-08-claude-second-opinion-handoff.md`, untracked; the price-control claim was
+  re-verified by code read):* public `/api/bookings` forwards the raw payload unauthenticated and
+  ingest validates only that `unitPrice` is finite, so customer-supplied prices feed quote lines; no
+  rate limiting; CSRF/origin checks on mutating routes; `xlsx@0.18.5`; Menu middleware fails open when
+  runtime mode is unset; Logistics POST schema validation.
+- *Test debt:* the Hub baseline has 12 failures proven identical on pre-change HEAD (CRLF source-text
+  regex tests, a missing data file, unseeded OPLOC fixtures); source-regex tests remain maintenance debt.
+- *Environment limitations:* Windows sandbox; the isolated emulator used `demo-fika-os` on port 8187
+  (the Firebase CLI refreshed its emulator jar); Hub has no runtime-SHA endpoint; the browser pane's
+  default width is narrow; programmatic date entry did not drive React state (harness only).
+
+**Tests/builds reviewed (not rerun where source is unchanged):** shared 11/11, CPU 292/292, focused CPU
+outbox 14/14 and G&G 8/8 at `be86844`; fresh at HEAD: Hub 497 tests / 485 pass / 12 baseline-identical
+failures (new identity suite 6/6), Logistics 449/449, Menu Planning 220/220 (isolated emulator),
+Delivered-In 135/135 plus typecheck; Hub and Logistics typecheck and the Hub production build PASS.
+Hospitality suite not rerun (no app or used-shared change since its deploy).
+
+**Accepted risks requiring Derek's sign-off (owner: Derek Buckley):**
+
+| Risk | Mitigation | Follow-up trigger |
+| --- | --- | --- |
+| P2 A CPU post-commit conflict | immutable guard fails closed; affected dates past/withdrawn; dead-letter count visible | before the first live sign-off week; remediate post-launch |
+| P2 B shared-package packaging | app-local fixes deploy correctly; selection protected | before any further shared-package change is relied upon |
+| Public intake price control + no rate limit | staff Reviewed/Quoted step precedes CPU hand-off | **before public exposure of the booking portal** |
+| No production env / production identities / signed-matrix storage | staging-only RC; no production change made | before production cutover |
+
+**Final integrity:** HEAD at freeze `cebf4f7a16dee6d5996450c1bfbfadfb2040cf5e` = origin/main; protected
+`CHANGELOG.md` (`4691ac53...e81d`) and `01_MenuData.js` (`7a5c0d36...1636`) unchanged and never staged;
+production untouched; no deployment, replay, dead-letter manufacture, fixture resurrection or Firestore
+repair in this review.
+
 ## Hub stale-source guard and owned rapid-amend/withdraw gate — 7 October 2026
 
 Starting fetched HEAD/origin/main: `e2adb67b75a98667cddab74edeefba8d0a2c84d5`.
