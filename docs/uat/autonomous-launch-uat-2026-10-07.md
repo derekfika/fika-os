@@ -3,7 +3,7 @@
 Task: FIKA OS — Autonomous Launch UAT + Remediation War Room.
 Branch: `main`. Starting fetched `origin/main`: `4948ed5730a2a090801407b86392f61a34cac595`.
 Environment: staging only, Firebase project `fika-os-dev`.
-RC achieved: **NO — G&G LIVE CHAIN PASS; ALLERGEN REVOCATION P0 FIX PASS; FULL GATE2/OTHER RC GATES OPEN**. No RC SHA frozen.
+RC achieved: **NO — G&G AND FULL ALLERGEN LIFECYCLE PASS; GATES3–5/OTHER RC GATES OPEN**. No RC SHA frozen.
 Latest continuation is the 8 October resume section below. The withdrawal consumer
 acceptance remains PASS; older stop/resume instructions are historical checkpoints.
 The resume instruction supersedes the earlier closure-only scope. Continue the ordered UAT/remediation loop; automatically checkpoint if ordinary usage remaining falls below 10%.
@@ -281,6 +281,69 @@ without affected-source evidence. No RC frozen; production untouched. Protected-
 SHA256 checks match both documented hashes. Only the two protected edits remain dirty
 after report commit; no tests/workers or rollout left running locally. CHANGELOG not
 updated under explicit protection; this dated report records the work. UI unchanged.
+
+### Continued 8 October — repository/deployment alignment verified; Gate2 resumed
+
+Starting fetched `origin/main` = local HEAD = **`dbd9f49184a93d18347fd42b4fb16d0f24b25131`**,
+branch `main`. Both protected hashes match; only those two user edits are dirty.
+`git diff --name-status 99c1ce0..dbd9f49` lists only this UAT report. **The repository/
+Delivered staging SHA difference is solely report/checkpoint changes; staging is missing
+no application code.** No redeployment required for this difference.
+At08:11:31Z Delivered build `uat-1008043726-99c1ce0` remains READY, rollout SUCCEEDED,
+current100%, not reconciling; public build-info confirms99c1ce0. CPU fixture read confirms
+the owned19 October correction remains planned/unsigned, historicalv1 revoked and
+Delivered head revoked. Usage entry99% five-hour /40% weekly remaining. Production is
+outside all commands/scopes; no production operation/configuration change performed.
+Resume corrected dual signatures, replacement release and exact older event replay;
+do not repeat G&G or the already-passed revoked-PDF fix gate wholesale.
+
+### Gate2 corrected replacement release and stale replay — PASS
+
+Normal owned19 October UI reload confirms1/1 checked, GLUTEN/MILK CONTAINS and TREE_NUTS
+MAY_CONTAIN. Recorded the two replacement signatures through normal pads with clearly
+marked staging names `FIKA UAT PRODUCTION CHEF V2`/`FIKA UAT HEAD CHEF V2`. Existing
+governed pending-OPLOC retry materializes **releasev2**, while source Menu publication
+and canonical Production remainv1. The only current CPU release is:
+`cpu-allergen-release:2026-10-19:menu-publication:rolling-week:2026-10-19:v1:day:0:v2`,
+current/ready. Exactly2 distinct role signatures,1 revoked historicalv1, no duplicate
+current release/signature. Delivered head is publishedv2.
+
+Read the current GCS daily-bundle manifest/object through raw compressed-byte transport;
+the canonical decoder verifies its compressed SHA256 and envelope. PackageVersion2 is
+bound to that exact release and unchanged current Menu source hash; packet contains
+GLUTEN/MILK and MAY_CONTAIN TREE_NUTS, with2 signatures. New signed PDF identity differs
+fromv1. Original matrix/signature evidence is unchanged in revokedv1 history; its
+immutable packet object remains readable. No history/blob rewrite or deletion.
+
+Read exact original published/revokedv1 payloads from the existing CPU durable outbox,
+then replayed unchanged bodies through authenticated staging `/api/internal/cpu-release-event`.
+Used the documented direct callback's default source eventId identity, rather than resetting
+the original delivered outbox receipt; this exercises older-release ordering. Both HTTP200
+**superseded**. Original event IDs:
+`cpu-allergen-release:cpu-allergen-release:2026-10-19:menu-publication:rolling-week:2026-10-19:v1:day:0:v1:published`
+and the same prefix ending`:revoked`. No event fabrication, dead letter or auth bypass.
+Current CPU plan and Delivered release head canonical-sorted snapshots are identical
+before/after replay. GLUTEN remains CONTAINS; old clear/PDF cannot become current.
+
+Normal reload of CPU and Delivered retains correct currentv2 authority. CPU matrix is
+locked with corrected values and both scoped signatures; Delivered retains Published
+Menuv1/1dish/2portions and exactly1 signed-PDF link to the new Drive identity. Its old
+PDF is not exposed. Source canonical identity and immutable publication unchanged.
+Focused CPU signing/source-lineage/schema checks **28/28 PASS**, zero skips, explicit
+memory test store; prior Delivered134/134, CPU affected19/19, typecheck/build remain
+applicable (no application source change in this continuation). Existing expected-lineage
+checks and receipt monotonicity retained; no weakened concurrency protection.
+
+**Gate2 PASS** for owned check→dual-sign→materialize→reopen/revoke→correct/re-check→
+dual re-sign→new release→consumer→older published/revoked replay→reload chain.
+Evidence `oct08-allergen-replacement-first-signature.json`, `replacement-both-signed.json`,
+`replacement-current.json`, `after-old-release-replay.json`, `events-read.json`,
+`events-replay.json`, `packet-proof.json`, `replay-stability.json` (all under `artifacts/uat`,
+prefix `oct08-allergen-`); `oct08-resume-signing-lineage.log`; CUA UI snapshots/screenshots.
+No redeployment required; Delivered99c1ce0/CPUe4dddbe verified, production untouched.
+Next **Gate3 Logistics desktop timeline**. Retain this current owned19 October source for
+queue/assignment testing, then retire it by normal withdrawal once those checks finish;
+its expected canonical/Fulfilment/Logistics work is tracked UAT data, not an orphan.
 
 ## Hub stale-source guard and owned rapid-amend/withdraw gate — 7 October 2026
 
