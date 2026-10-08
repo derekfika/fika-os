@@ -107,4 +107,29 @@ export async function failCpuReleaseReceipt(event: CpuReleaseEventIdentity, erro
   recordDataAccess({ app: "delivered-in", operation: "cpu-release-receipt.fail", source: "FIRESTORE", documents: 1, estimatedFirestoreWrites: 1, firestoreReadKind: "transaction" });
 }
 
+/** A durable revocation receipt is a permanent veto for that exact signed release,
+ * including while reconciliation is processing or a newer release is current. */
+export async function cpuSignedBundleIsRevoked(oplocId: string, serviceDate: string, bundleId?: string) {
+  if (!bundleId) return false;
+  const prefix = `cpu-allergen:${serviceDate}:${oplocId}:`;
+  const releaseId = bundleId.startsWith(prefix) ? bundleId.slice(prefix.length) : bundleId;
+  // Historical packages without a CPU release identity retain their existing contract.
+  if (!releaseId.startsWith("cpu-allergen-release:")) return false;
+  const eventId = `cpu-allergen-release:${releaseId}:revoked`;
+  const keys = [eventId, `${eventId}:delivered-in:${oplocId}`].map(deliveryId => stableDocumentId(`${deliveryId}:${oplocId}:${releaseId}`));
+  let values: Array<CpuReleaseReceipt | undefined>;
+  if (inMemory()) values = keys.map(key => memoryReceipts.get(key));
+  else {
+    const snapshots = await db.getAll(...keys.map(key => receipts().doc(key)));
+    recordDataAccess({ app: "delivered-in", operation: "cpu-release-revocation.by-release", source: "FIRESTORE", documents: snapshots.filter(snapshot => snapshot.exists).length, estimatedBillableReads: keys.length, firestoreReadKind: "document" });
+    values = snapshots.map(snapshot => snapshot.exists ? snapshot.data() as CpuReleaseReceipt : undefined);
+  }
+  for (const value of values) {
+    if (value && (value.eventType !== "revoked" || value.releaseId !== releaseId || value.oplocId !== oplocId || value.serviceDate !== serviceDate)) {
+      throw Object.assign(new Error("CPU release revocation receipt has invalid scope."), { code: "CPU_RELEASE_REVOCATION_INVALID", status: 503 });
+    }
+  }
+  return values.some(Boolean);
+}
+
 export function resetCpuReleaseReceiptsForTests() { memoryReceipts.clear(); memoryHeads.clear(); }

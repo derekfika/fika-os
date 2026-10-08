@@ -13,6 +13,7 @@ import {
 import { retrieveReadPackage, type ReadPackageManifest, type ReadPackageStore } from "@fika/server-shared/read-package";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { cpuSignedBundleIsRevoked } from "./cpu-release-receipts";
 
 /** Consumer-side view of the one shared CPU daily bundle package. */
 export const CPU_DAILY_PACKET_DATASET = DAILY_SIGNED_OPLOC_BUNDLE_DATASET;
@@ -82,6 +83,7 @@ export async function readCpuDailySignedPacket(serviceDate: string, oplocId: str
   if (packet.source.contentHash !== expectedSourceBundleHash || bundle.source.contentHash !== expectedSourceBundleHash) throw lineageMismatch("The signed CPU allergen package source hash does not match the current published Menu Planning day.");
   if (bundle.status !== "published" || packet.bundleId !== bundle.bundleId || packet.serviceDate !== serviceDate || packet.oploc.id !== oplocId || packet.source.revision !== bundle.source.revision || packet.contentHash !== bundle.packet.contentHash) throw invalid("CPU daily packet scope or bundle binding is invalid.");
   if (bundle.pdf.contentHash.length !== 64 || !bundle.pdf.fileId || !bundle.pdf.url) throw invalid("CPU daily packet has no durable signed PDF identity and URL.");
+  if (await cpuSignedBundleIsRevoked(oplocId, serviceDate, bundle.bundleId)) return undefined;
   return { bundle, packet, manifest: retrieved.manifest, sourceBundleHash: bundle.source.contentHash, signedPdfUrl: bundle.pdf.url, signedPdfContentHash: bundle.pdf.contentHash };
 }
 

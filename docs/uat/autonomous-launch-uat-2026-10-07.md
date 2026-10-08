@@ -152,6 +152,79 @@ converges with stable IDs/history and no resurrection. Test/report correction pu
 No full launch/RC/P0-P1-zero assertion. CHANGELOG remains unchanged under explicit user
 protection; this dated report is task evidence. No UI change; existing styles preserved.
 
+### Gate 2 — owned allergen revocation: confirmed P0, local fix validated; staging retest pending
+
+Gate1 acceptance report pushed as `8f8450620420968fa4b85a535021b69850d75efb`.
+Normal G&G HTTP evidence: submit201/7.268315s, amend200/4.057012s,
+cancel200/4.360015s, cancelled-source retry200/0.480389s (`oct08-grab-http.json`).
+
+The former12 October signed fixture is authoritatively withdrawn and was preserved.
+Known-ID read proved `rolling-week:2026-10-19` absent. Normal Menu UI **Start blank week**
+created that separate owned week; selected existing `Fika-Autouat-20261007-Alpha Salad`
+for Monday, saved2 Haleon portions, published whoIe weekv1; four other weekdays remain
+published blank. No catalogue/recipe mutation or change to the withdrawn12 October week.
+Owned canonical Production:
+`production-order:v1:menu-planning:rolling-week:2026-10-19:day:1:oploc:bb4c7eea-87f5-4e79-8ed6-b973b24ded7b`.
+
+CPU normal UI reviewed milk CONTAINS/tree_nuts MAY_CONTAIN, explicitly confirmed the
+remaining12 unknown named states as CLEAR and checkpointed the row. Two **staging-test**
+signatures used names `FIKA UAT PRODUCTION CHEF`/`FIKA UAT HEAD CHEF` via ordinary drawn
+signature pads and existing authorized session. No real staff signature/real service
+impersonated, no new role/grant/account. Existing normal OPLOC release retry completed
+materialization; release **`cpu-allergen-release:2026-10-19:menu-publication:rolling-week:2026-10-19:v1:day:0:v1`**
+became current/ready; Delivered release head published.
+
+Normal **Reopen for amendment** removed CPU current signatures/release and preservedv1
+as revoked history with both signatures valid=false. Delivered receipt/head eventType
+revoked/resultapplied. Milk CONTAINS and nuts MAY_CONTAIN retained. Gluten correction
+to CONTAINS cleared checked state until explicit re-check; correction saved, no new
+signatures. Horizontal table scrolling was required to bring the gluten cell into view;
+earlier offscreen locator clicks caused no source mutation.
+
+**Confirmed P0:** normal Delivered-In19 October navigation and hard reload still show
+Signed by CPU and the old signed PDF link after accepted revocation. Consumers verify
+immutable gzip/source bytes but never consult revoked release authority; revocation
+reconciliation can therefore enrich/recompile from the same old signed package, and
+current cached projections also retain the obsolete signed status. This is not a
+source-history rewrite or integrity corruption. Do not re-sign merely to hide it.
+
+Bounded Delivered-In fix checks deterministic receipts for the exact release bound to
+the bundle, covering both direct and durable delivery IDs. A processing/failed/applied
+revocation receipt remains a permanent veto even after a newer head is published.
+Both daily packet and cached projection ordinary read paths reject that revoked signed
+authority, letting existing bounded Menu-only recovery retain the operational menu
+without old signed PDF/allergen clearance. Integrity is verified before the veto;
+corruption remains fail-closed, immutable bytes/receipts unchanged, and legacy bundles
+without CPU release IDs retain their compatibility path. No source/shared contract,
+CPU producer, permission, scheduler or recurring polling change.
+
+Read shape: at most **two known revocation receipt document reads** for a release-bearing
+signed packet/projection, no collection query; absent release identity addszero reads.
+No read failure is swallowed; malformed scope fails503. No write added to successful reads.
+
+Regression reproduces old signed packet authority before fix; initial fixture omission
+of publishedAt was corrected before the meaningful failure. Final tests cover pending
+revocation-before-reconciliation, immutable packet/projection preservation, independently
+signedv2 acceptance, oldv1 blocking after a later published head, integrity failure,
+two-ID hosted read budget and read/scope fail-closed behavior. Focused consumer8/8 PASS
+before the additional hosted test; final full Delivered **134/134 PASS**, zero skips;
+CPU affected release/durable-provider/integrity **19/19 PASS** with memory store;
+Delivered typecheck/build PASS; final diff review/check and protected hashes PASS.
+Logs `oct08-revocation-before.log`, `focused.log`, `full.log`, `provider.log`,
+`typecheck.log`, `build.log` (all under `artifacts/uat`, prefix `oct08-revocation-`).
+
+Evidence: `oct08-allergen-checkpoint.json`, `first-signature.json`, `both-signed.json`,
+`materialized.json`, `revoked.json` under `artifacts/uat` with prefix `oct08-allergen-`;
+CUA live snapshots/screenshots in this session. UI/source styling unchanged.
+
+**Current gate status: P0 FIXED/LOCAL VALIDATION PASS/STAGING LIVE RETEST PENDING.**
+Commit/push the atomic four-file source/test fix plus this report; deploy only Delivered
+staging at that exact validated SHA, verify READY/SUCCEEDED/current100%/not reconciling
+and runtime SHA, then reload the still-revoked owned19 October condition **before**
+new signatures. Confirm no old signed PDF or clearance. Then finish corrected dual
+re-sign/new-release propagation/history and stale replay, with final clean owned withdrawal
+if safe. No Gate3 or RC started. Protected files remain excluded.
+
 ## Hub stale-source guard and owned rapid-amend/withdraw gate — 7 October 2026
 
 Starting fetched HEAD/origin/main: `e2adb67b75a98667cddab74edeefba8d0a2c84d5`.

@@ -7,6 +7,7 @@ import { recordDataAccess } from "@fika/server-shared/data-source-meter-server";
 import type { DeliveredInDayProjection } from "./delivered-in-day-projection";
 import { db } from "./firebase-admin";
 import { stableDocumentId } from "@fika/server-shared/stable-document-id";
+import { cpuSignedBundleIsRevoked } from "./cpu-release-receipts";
 
 export const DELIVERED_IN_DATASET = "delivered-in/day";
 export const DELIVERED_IN_INDEX_DATASET = "delivered-in/projection-index";
@@ -133,6 +134,7 @@ export function deliveredInProjectionStore() { return hosted() ? cloudStore() : 
 export async function readDeliveredInProjection(oplocId: string, serviceDate: string) {
   const store = deliveredInProjectionStore();
   const result = hosted() ? await readHostedProjection(store, oplocId, serviceDate) : await retrieveReadPackage<DeliveredInDayProjection>(store, projectionManifestKey(oplocId, serviceDate));
+  if (result && await cpuSignedBundleIsRevoked(oplocId, serviceDate, result.value.sourceLineage.cpu.releaseId)) return undefined;
   if (result) recordDataAccess({ app: "delivered-in", operation: "day-projection.read", source: "SNAPSHOT", documents: 1, cacheHit: false });
   return result;
 }
