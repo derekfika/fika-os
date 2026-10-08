@@ -16,7 +16,7 @@ uncommitted user changes. Neither may be altered. Initial SHA256 verification:
 - CHANGELOG: `4691AC53FF895F84701B476129018065ED8F4F1D766DC458E706BD455201E81D`.
 - MenuData: `7A5C0D3664799ED88D7BF1473683F2A6EFCC6FBA9232B3B32C1E139C364D1636`.
 
-## Autonomous resume — 8 October 2026: Grab & Go local regression PASS; live gate pending
+## Autonomous resume — 8 October 2026: Grab & Go Scheduler / owned live chain PASS
 
 Starting fetched `origin/main` = local HEAD = **`3ad6f39872410f4198e4232d7f761a303d8470ab`**, branch `main`.
 Only protected CHANGELOG/MenuData edits were dirty; both documented SHA256 values
@@ -58,18 +58,99 @@ Final diff/protected checks and exact commit/push result are recorded after vali
 Normal staging Hub entry retains the existing authorized Integration Administrator
 session. Delivered-In entry and normal navigation to G&G respond using that session.
 No operational source mutation performed yet; withdrawn Menu week remains untouched.
-Current cloud provenance is **not yet reverified**: GCP CLI credential refresh required
+GCP CLI credential refresh initially required
 normal identity verification. That verification reached Google Cloud SDK consent;
 automatic approval review rejected the Allow action because the consent exposes broad
 SDK Cloud/App Engine/Compute/Cloud SQL access. Explicit owner approval was requested;
-no workaround or auth bypass was used. No secret value is included in this evidence.
-Scheduler creation/invocation and live G&G mutations remain pending until that access
-and exact staging provenance are verified. Passed Menu/Hub journeys were not repeated.
+no workaround or auth bypass was used. Owner explicitly approved SDK consent and normal
+sign-in completed. No credential values are included in this evidence.
+Passed Menu/Hub journeys were not repeated.
 
-**Gate 1 status: local SQLite baseline PASS; Scheduler/live operational chain PENDING.**
-No full launch/RC/P0-P1-zero assertion. No later large gate started during this atomic
-local validation. CHANGELOG remains unchanged under explicit user protection; this dated
-report is task evidence. No UI change; existing styles/workflow preserved.
+### Verified staging provenance and bounded recovery worker
+
+At **2026-10-08T03:03:12–14Z**, all six backend builds READY, matching rollouts
+SUCCEEDED, current traffic100%, not reconciling. Source SHA/build:
+
+| App | SHA | Build |
+| --- | --- | --- |
+| Hub | `c0a41ae3fe60393d20fc810fa6f0c1dacbe48b0f` | `uat-1007193534-c0a41ae` |
+| Menu | `06181e4b50262fb505396fbc5080ad9907b6bcce` | `uat-1007182022-06181e4` |
+| Hospitality | `03a8249d3639f38c3c87eac3ea24f7b1e14a77f8` | `build-2026-10-06-002` |
+| CPU | `e4dddbe0164ce295a447eea7803ebea278e6e8ca` | `uat-1007200425-e4dddbe` |
+| Delivered-In | `e4dddbe0164ce295a447eea7803ebea278e6e8ca` | `uat-1007200422-e4dddbe` |
+| Logistics | `ec1b11029beb5c03e7e68cb54c1ca55cc6fbac85` | `uat-1007134501-ec1b110` |
+
+Public Menu/CPU/Delivered build-info responses corroborate those SHAs. The initial
+provenance reader incorrectly treated traffic splits as rollout references; the actual
+field is build. That diagnostic was corrected before accepting any provenance result.
+Evidence `oct08-start-provenance.json`, `oct08-runtime-build-info.json`.
+
+Created staging-only `projects/fika-os-dev/locations/europe-west4/jobs/fika-delivered-in-grab-and-go-outbox-recovery`;
+ENABLED, every minute, Europe/London, POST friendly staging `/api/internal/grab-and-go-outbox`,
+limit25, existing `FIKA_INTERNAL_API_TOKEN@3`,180s deadline/3 retries/30–300s backoff.
+No IAM/secret/app-config change. Manual initial invocation HTTP200 at03:03:54.773Z;
+subsequent scheduled invocations HTTP200. Existing Hub/CPU/Menu workers remain enabled.
+No failed event was manufactured: owned commands delivered normally, so live evidence
+is accepted Scheduler invocation plus source/downstream convergence; failure/lease/backoff
+recovery is covered by the isolated hosted regression, not claimed live fault injection.
+Evidence `oct08-grab-scheduler-created.json`, `oct08-grab-scheduler-invocations.json`.
+
+### Owned non-Xchange live journey
+
+Normal authorized G&G UI selected **One Angel Court**, canonical
+`oploc:24a93500-d75d-4fe0-8beb-672d36f9da10`, Monday **2026-10-12**, rotation4.
+Known-ID reads proved no source/event/canonical/downstream record before creation.
+The new source `grab-and-go:oploc:24a93500-d75d-4fe0-8beb-672d36f9da10:2026-10-12`
+is owned by this UAT. Product `grab-250ml-greek-yoghurt-raspberry-goji-coconut-chia`.
+No FIKA Xchange mutation and no republish of the withdrawn Menu week.
+
+| Normal UI stage | Source version/status/quantity | Canonical Production | Fulfilment / Logistics | Source event delivery |
+| --- | --- | --- | --- | --- |
+| Submit | v1/submitted/2 | v1/sourceVersion1/planned/2/audit1 | v1/sourceVersion1/ready_for_planning/2/audit1 | delivered03:05:56.194Z |
+| Amend | v2/submitted/3 | v2/sourceVersion2/planned/3/audit2 | v2/sourceVersion2/amended/3/audit2 | delivered03:08:21.962Z |
+| Cancel | v3/cancelled/3 retained history | v3/sourceVersion3/cancelled/audit3 | v3/sourceVersion3/withdrawn/audit3 | delivered03:09:34.190Z |
+
+Production stable ID is `production-order:v1:grab-and-go:<sourceId>:<oplocId>`;
+Fulfilment `fulfilment-requirement:grab-and-go:<sourceId>:<oplocId>`;
+Logistics `logistics-job:<fulfilmentId>`. Exact expanded IDs/payloads retained in snapshots.
+Events exactly `production.materialise:<sourceId>:v1`, `:v2`, `:v3`, all delivered.
+Source history preserves all3 transitions and quantity snapshots2/3/3. Bounded source-ID
+queries prove exactly **one Production, one Fulfilment, one Logistics job** after each
+accepted version; stable line/product identities preserved.
+
+CPU visible Monday card showed One Angel Court/G&G/2 then3; canonical day projections
+rev7/seq665 then rev8/seq666 matched. Logistics planning queue showed One Angel Court
+G&G2 READY, then3 with upstream-amendment attention. Normal refresh/reload retains
+the source amendment. Cancellation produces CPU day rev9/seq667 with owned orders0,
+Logistics withdrawn job, no owned assignment/load work. Normal cancelled-source retry
+is delivered and does not rewrite source or downstream history.
+
+Exact immutable older **v1** payload replayed through existing authenticated staging
+Hub `/api/production/materialise`, no event/history reset. HTTP200 in1419ms,
+duplicate=true/created=false, returned current cancelled Productionv3/sourceVersion3/audit3,
+CPU and Logistics handoff delivered. Canonical sorted comparisons of source, Production,
+Fulfilment, Logistics, CPU owned day projection and all3 outbox events are identical
+before/after replay+UI retry; CPU revision/sequence remains9/667. No duplicate/resurrection.
+Relevant apps reloaded after cancellation/replay. No direct Firestore mutation/repair.
+Evidence `oct08-grab-before.json`, `submitted-confirmed.json`, `amended.json`, `cancelled.json`,
+`stale-replay.json`, `final.json`, `no-resurrection.json` (all under `artifacts/uat`).
+
+### Non-blocking observation and next gate
+
+G&G UI displays07:00–10:30 delivery information; existing external Production fallback
+uses serviceWindow00:00/requiredBy08:00, while the G&G Fulfilment adapter intentionally
+omits readyAt/requiredDeliveryWindow. This is **P2 operational presentation/policy clarity**:
+planning currently sets delivery time explicitly; no source-date or canonical chain failure
+was found. Do not reinterpret the UI text as a new enforced scheduling policy or amend
+shared fulfilment constraints without owner clarification. No runtime change made for it.
+
+**Gate 1 PASS:** Delivered SQLite full regression green; bounded staging recovery job
+accepted; owned source→Production→CPU→Fulfilment→Logistics submit/amend/cancel/retry/replay
+converges with stable IDs/history and no resurrection. Test/report correction pushed as
+`c8f919589713204960ac2978ed2137abb4852cf2`; no application rollout needed or submitted.
+**Next required gate: allergen signed-release correction/revocation and downstream withdrawal.**
+No full launch/RC/P0-P1-zero assertion. CHANGELOG remains unchanged under explicit user
+protection; this dated report is task evidence. No UI change; existing styles preserved.
 
 ## Hub stale-source guard and owned rapid-amend/withdraw gate — 7 October 2026
 
