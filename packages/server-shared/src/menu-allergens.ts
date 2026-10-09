@@ -6,7 +6,7 @@ import { MenuArtifactError, type NormalizedMenuItem } from "./menu-types";
  *   contains      -> "(Gluten, Milk)"            allergens in brackets, no prefix
  *   mayContain    -> not displayed on any menu   (kept in the data; never shown as "clear")
  *   unrecorded    -> the dish is refused         (never rendered as clear)
- *   noKeyAllergens-> "No key allergens"          (only when positively established)
+ *   noKeyAllergens-> nothing printed             (still required: a dish with no allergens must be positively established)
  *   none of those -> the dish is refused         (unknown is not clear)
  */
 
@@ -19,7 +19,7 @@ export function menuAllergenLabel(key: string) {
   return key.replace(/[_-]+/g, " ").trim().replace(/[A-Za-zÀ-ÿ]+/g, word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase());
 }
 
-export type MenuAllergenLineKind = "contains" | "clear";
+export type MenuAllergenLineKind = "contains";
 export type MenuAllergenLine = { kind: MenuAllergenLineKind; label: string; text: string };
 
 const declared = (keys: string[]) => [...new Set(keys)].filter(key => key !== "no_key_allergens");
@@ -27,15 +27,15 @@ const declared = (keys: string[]) => [...new Set(keys)].filter(key => key !== "n
 /**
  * The allergen line for one dish: `(Gluten, Milk)` for what it contains. "May
  * contain" is deliberately not displayed. A dish that only may-contain something
- * shows no line (it is never labelled "No key allergens"). Throws for any dish
- * whose allergen state is not safe to print.
+ * shows no line, and a dish with no allergens shows no line either. Throws for
+ * any dish whose allergen state is not safe to print (unrecorded, or empty
+ * without positive "no key allergens" evidence).
  */
 export function menuAllergenLines(item: NormalizedMenuItem): MenuAllergenLine[] {
   assertAllergensPrintable(item);
   const contains = declared(item.contains);
   const lines: MenuAllergenLine[] = [];
   if (contains.length) lines.push({ kind: "contains", label: "Contains", text: `(${contains.map(menuAllergenLabel).join(", ")})` });
-  else if (!declared(item.mayContain).length) lines.push({ kind: "clear", label: "No key allergens", text: "No key allergens" });
   return lines;
 }
 

@@ -36,7 +36,7 @@ test("Hospitality MNK booking normalizes to current items, selects the MNK templ
   assert.equal(template.siteKey, "mnk"); assert.equal(template.templateId, "tpl-mnk");
   const requests = buildMenuSlidesRequests(menu, template, page) as Array<Record<string, any>>;
   const text: string = requests.find(request => request.insertText)!.insertText.text;
-  assert.match(text, /^BBQ Chicken Mayo, Gherkins, Tomatoes, Leaves\n\(Gluten, Eggs, Mustard, Sulphites\)\nVegan Feta, Pesto, Vegan Mayo, Salad\n\(Tree Nuts, Gluten, Soya\)\nFruit Pot\nNo key allergens$/);
+  assert.match(text, /^BBQ Chicken Mayo, Gherkins, Tomatoes, Leaves\n\(Gluten, Eggs, Mustard, Sulphites\)\nVegan Feta, Pesto, Vegan Mayo, Salad\n\(Tree Nuts, Gluten, Soya\)\nFruit Pot$/);
   assert.equal(text.includes("(No"), false, "no_key_allergens is a positive statement, never listed as an allergen");
 });
 

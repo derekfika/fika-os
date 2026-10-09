@@ -66,8 +66,8 @@ test("allergens: bracketed contains only, may-contain is not displayed, labels a
   assert.equal(menuAllergenLabel("tree_nuts"), "Tree Nuts");
   assert.deepEqual(menuAllergenLines(item("a", "Granola", ["gluten", "milk"], ["tree_nuts"])).map(line => line.text), ["(Gluten, Milk)"], "may-contain is not shown");
   assert.deepEqual(menuAllergenLines(item("b", "Granola", ["tree_nuts"])).map(line => line.text), ["(Tree Nuts)"], "machine keys are humanised");
-  assert.deepEqual(menuAllergenLines(item("c", "Fruit", [], ["tree_nuts"])), [], "a may-contain-only dish shows nothing - and is never labelled 'No key allergens'");
-  assert.deepEqual(menuAllergenLines(item("d", "Fruit Pot")).map(line => `${line.kind}:${line.text}`), ["clear:No key allergens"]);
+  assert.deepEqual(menuAllergenLines(item("c", "Fruit", [], ["tree_nuts"])), [], "a may-contain-only dish shows nothing");
+  assert.deepEqual(menuAllergenLines(item("d", "Fruit Pot")), [], "a dish with no key allergens shows nothing - no text, no red");
   const states = allergensFromStates({ gluten: "contains", milk: "may_contain", fish: "unrecorded", eggs: "clear", no_key_allergens: "contains" });
   assert.deepEqual(states, { contains: ["gluten"], mayContain: ["milk"], unrecorded: ["fish"], noKeyAllergens: false });
 });
@@ -145,7 +145,7 @@ test("tablet: a realistic MNK menu keeps the template structure and reproduces t
     "BBQ Chicken Mayo, Gherkins, Tomatoes, Leaves", "(Gluten, Eggs, Mustard, Sulphites)",
     "Vegan Feta, Pesto, Vegan Mayo, Salad", "(Tree Nuts, Gluten, Soya)",
     "Caesar Salad", "(Gluten, Fish, Eggs, Milk, Mustard)",
-    "Test Salad 1", "No key allergens",
+    "Test Salad 1",
     "Test Salad 2", "(Peanuts, Gluten, Soya)",
   ]);
   assert.deepEqual(content.rect, { x: 35.4, y: 155.9, w: 425.2, h: 568.3 });
@@ -166,10 +166,10 @@ test("tablet slides requests: one text box in the content region, typography per
   assert.ok(Math.abs(transform.translateX - (35.4 + 14 - 7.2) * EMU) <= 1); // content + padding, less Slides' own 7.2pt inset
   assert.ok(Math.abs(shapes[0].createShape.elementProperties.size.width.magnitude / EMU - (425.2 - 2 * (14 - 7.2))) < 0.01);
   const text: string = requests.find(request => request.insertText)!.insertText.text;
-  assert.match(text, /Caesar Salad\n\(Gluten, Fish, Eggs, Milk, Mustard\)\nTest Salad 1\nNo key allergens\nTest Salad 2\n\(Peanuts, Gluten, Soya\)$/);
+  assert.match(text, /Caesar Salad\n\(Gluten, Fish, Eggs, Milk, Mustard\)\nTest Salad 1\nTest Salad 2\n\(Peanuts, Gluten, Soya\)$/);
   const styles = requests.filter(request => request.updateTextStyle?.textRange.type === "FIXED_RANGE").map(request => request.updateTextStyle);
   const red = styles.filter(entry => entry.style.foregroundColor.opaqueColor.rgbColor.red === 1);
-  assert.equal(red.length, 4, "the four dishes that contain allergens are red; 'No key allergens' is not an allergen warning");
+  assert.equal(red.length, 4, "only the four dishes that contain allergens have red text");
   for (const entry of red) assert.match(text.slice(entry.textRange.startIndex, entry.textRange.endIndex), /^\(.*\)$/, "each red range is exactly one bracketed allergen line");
   assert.ok(requests.some(request => request.replaceAllText?.containsText.text === "{{MENU_TITLE}}" && request.replaceAllText.replaceText === "MENU"));
   assert.deepEqual(requests.find(request => request.updateShapeProperties)!.updateShapeProperties.shapeProperties.autofit, { autofitType: "NONE" });
@@ -220,11 +220,11 @@ test("flat labels: one dish per label at the extracted card origins, dish name d
   const [bbq, , , clear, both] = labels;
   assert.deepEqual(bbq.paragraphs.map(paragraph => paragraph.text), ["BBQ Chicken Mayo, Gherkins, Tomatoes, Leaves", "(Gluten, Eggs, Mustard, Sulphites)"]);
   assert.deepEqual(both.paragraphs.map(paragraph => paragraph.text), ["Test Salad 2", "(Peanuts, Gluten, Soya)"]);
-  assert.deepEqual(clear.paragraphs.map(paragraph => paragraph.text), ["Test Salad 1", "No key allergens"]);
+  assert.deepEqual(clear.paragraphs.map(paragraph => paragraph.text), ["Test Salad 1"]);
   for (const label of labels) {
     const [name, ...allergens] = label.paragraphs;
     assert.ok(name.fontPt >= 9 && name.fontPt <= 11 && name.bold, `${name.text} ${name.fontPt}`);
-    assert.ok(allergens.length >= 1, "every label shows an allergen line");
+    assert.equal(allergens.length, label.itemId === "4" ? 0 : 1, "dishes with allergens show one bracketed line; clear dishes show none");
     assert.ok(allergens.every(paragraph => paragraph.fontPt >= 7 && paragraph.fontPt <= name.fontPt), "allergen text keeps its 7pt safety floor");
   }
   // Short names stay at the maximum; only long names shrink.

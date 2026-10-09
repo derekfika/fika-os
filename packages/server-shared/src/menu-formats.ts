@@ -257,8 +257,8 @@ export function paragraphHeight(paragraph: PlanParagraph, widthPt: number, lineH
   return estimateLines(paragraph.text, paragraph.fontPt, widthPt, paragraph.bold) * paragraph.fontPt * lineHeight + paragraph.spaceBeforePt;
 }
 
-const allergenStyle = (kind: MenuAllergenLineKind, color: string, mutedColor: string) => ({
-  bold: false, color: kind === "clear" ? mutedColor : color,
+const allergenStyle = (color: string) => ({
+  bold: false, color,
 });
 
 const flattenItems = (menu: NormalizedMenu) => menu.sections.flatMap(section => section.items);
@@ -301,7 +301,7 @@ function planTablet(menu: NormalizedMenu, branding: SiteBranding, master: Tablet
       if (labelled) paragraphs.push({ text: section.label!.toLocaleUpperCase("en-GB"), role: "section", fontPt: sectionPt, bold: true, color: colors.text, spaceBeforePt: sectionIndex ? itemPt * 1.4 : 0 });
       section.items.forEach((item, index) => {
         paragraphs.push({ text: item.name.trim(), role: "item", fontPt: itemPt, bold: true, color: colors.text, spaceBeforePt: !paragraphs.length ? 0 : labelled && index === 0 ? itemPt * 0.5 : itemPt });
-        for (const line of menuAllergenLines(item)) paragraphs.push({ text: line.text, role: "allergen", allergenKind: line.kind, fontPt: allergenPt, ...allergenStyle(line.kind, colors.allergen, colors.text), spaceBeforePt: 0 });
+        for (const line of menuAllergenLines(item)) paragraphs.push({ text: line.text, role: "allergen", allergenKind: line.kind, fontPt: allergenPt, ...allergenStyle(colors.allergen), spaceBeforePt: 0 });
       });
     });
     const total = paragraphs.reduce((sum, paragraph) => sum + paragraphHeight(paragraph, widthPt, type.lineHeight), 0);
@@ -327,7 +327,7 @@ export function fitLabelFace(item: NormalizedMenuItem, branding: SiteBranding, m
   const name = item.name.trim();
   const build = (namePt: number, allergenPt: number) => {
     const paragraphs: PlanParagraph[] = [{ text: name, role: "name", fontPt: namePt, bold: true, color: branding.colors.panel, spaceBeforePt: 0 }];
-    for (const line of lines) paragraphs.push({ text: line.text, role: "allergen", allergenKind: line.kind, fontPt: allergenPt, ...allergenStyle(line.kind, branding.colors.allergen, branding.colors.panel), spaceBeforePt: paragraphs.length === 1 ? 2 : 0 });
+    for (const line of lines) paragraphs.push({ text: line.text, role: "allergen", allergenKind: line.kind, fontPt: allergenPt, ...allergenStyle(branding.colors.allergen), spaceBeforePt: paragraphs.length === 1 ? 2 : 0 });
     return paragraphs;
   };
   const height = (paragraphs: PlanParagraph[]) => paragraphs.reduce((sum, paragraph) => sum + paragraphHeight(paragraph, widthPt, type.lineHeight), 0);

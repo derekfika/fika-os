@@ -42,7 +42,7 @@ test("the MNK template is selected by site and the rendered menu carries names a
   assert.equal(template.siteKey, "mnk"); assert.equal(template.templateId, "tpl-mnk");
   const requests = buildMenuSlidesRequests(menu, template, page) as Array<Record<string, any>>;
   const text: string = requests.find(request => request.insertText)!.insertText.text;
-  assert.match(text, /^SALADS\nMixed Fika Leaf Salad\n\(Mustard\)\nHOT MAINS\nRoast Chicken Breast\n\(Gluten\)\nSIDES & EXTRAS\nRoasted Potatoes\nNo key allergens$/);
+  assert.match(text, /^SALADS\nMixed Fika Leaf Salad\n\(Mustard\)\nHOT MAINS\nRoast Chicken Breast\n\(Gluten\)\nSIDES & EXTRAS\nRoasted Potatoes$/);
   assert.equal(requests.filter(request => request.createShape).length, 1);
 });
 
@@ -101,7 +101,7 @@ test("the same current-day Delivered-In menu renders as flat labels with one dis
   assert.deepEqual(labels.map(label => label.type === "text" ? label.paragraphs.map(paragraph => paragraph.text) : []), [
     ["Mixed Fika Leaf Salad", "(Mustard)"],
     ["Roast Chicken Breast", "(Gluten)"],
-    ["Roasted Potatoes", "No key allergens"],
+    ["Roasted Potatoes"],
   ]);
   assert.notEqual(menuArtifactKey(menu, "mnk-tablet-v1", "tablet"), menuArtifactKey(menu, "mnk-flat-label-v1", "flat-label"));
 });
