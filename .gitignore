@@ -151,6 +151,7 @@ apps/menu-planning/fixtures/*-import-report.json
 # ----------------------------------------------------------
 artifacts/uat/
 artifacts/menu-previews/
+artifacts/live-check/
 tmp-menu-deck/
 FIKA-RESTORED-DATA.json
 repo-files.txt
