@@ -41,7 +41,7 @@ All numbers are in `LAYOUT_MASTERS` with the extraction notes at the top of `men
 * **MNK Tablet Template** (Google Slides): page 6 300 200 x 10 076 675 EMU. Header art 0,0 496.9x139.9, accent rule y=139.9 h=3.8
   `#49A5B5`, footer bar y=748 h=45.7 `#0F4C6A`, MNK mark 32.8,63.4 88.8x29.3, "MENU" 34pt Montserrat white at 272.6,42.3
   188.9x71.4, footer Fika mark 22.7,762.4 and tagline 343.3,763.8. The template has no content box; the content region
-  (35.4,155.9 425.2x568.3, Montserrat 15pt bold `#0F4D6B` dishes, 10pt red allergens) is the proven 2026-08-25 deck.
+  (35.4,155.9 425.2x568.3, the 2026-08-25 deck used Montserrat 15pt bold `#0F4D6B` dishes and 10pt red allergens; dishes are now 13pt with section titles at about 1.5x the dish size) is the proven region.
 * **MNK Label Template.pptx**: page 9 720 250 x 6 858 000 EMU. Group transforms (scale 0.625) were composed to absolute origins; the
   source rows are not on a perfectly regular pitch, so origins are stored as extracted. Face: white, 0.72pt `#45C1B6` outline;
   bar: bottom 18.5pt `#134D6B` with the MNK mark bottom-left and the white Fika mark bottom-right; rear face (tent): `#134D6B` with the MNK mark rotated 180 degrees.
@@ -85,7 +85,7 @@ Upgrade note: keys and source keys now include the format, so each existing tabl
 * Machine keys are humanised (`tree_nuts` -> `Tree Nuts`).
 * A dish with unrecorded allergens is refused (`MENU_ALLERGENS_UNRECORDED`); a dish with no allergens **and no positive "clear" evidence** is refused
   (`MENU_ALLERGENS_NOT_ESTABLISHED`). `noKeyAllergens` (derived from explicit clear/none states or the workflow's `no_key_allergens` marker) is still required for a dish with no allergens, but it prints nothing. Nothing is inferred.
-* Minimum sizes: tablet 10pt dishes / 8pt allergens; labels 9pt dish names / 7pt allergens. Label dish names start at 11pt and shrink (to 9pt) only when a long name needs it. A menu or label that cannot fit fails with
+* Minimum sizes: tablet 10pt dishes / 8pt allergens; labels 8pt dish names / 7pt allergens. Label dish names start at 10pt and shrink (to 8pt) only when a long name needs it. A menu or label that cannot fit fails with
   `MENU_OVERFLOW` / `MENU_LABEL_OVERFLOW`; allergens are never truncated, dropped or shrunk past the floor.
 
 ## Offline previews

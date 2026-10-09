@@ -149,7 +149,7 @@ test("tablet: a realistic MNK menu keeps the template structure and reproduces t
     "Test Salad 2", "(Peanuts, Gluten, Soya)",
   ]);
   assert.deepEqual(content.rect, { x: 35.4, y: 155.9, w: 425.2, h: 568.3 });
-  assert.ok(content.paragraphs.filter(paragraph => paragraph.role === "item").every(paragraph => paragraph.fontPt === 15 && paragraph.bold && paragraph.color === "#0F4D6B"));
+  assert.ok(content.paragraphs.filter(paragraph => paragraph.role === "item").every(paragraph => paragraph.fontPt === 13 && paragraph.bold && paragraph.color === "#0F4D6B"));
   assert.ok(content.paragraphs.filter(paragraph => paragraph.role === "allergen").every(paragraph => paragraph.fontPt >= 8));
   assert.equal(plan.fontScaled, false);
   const chrome = plan.pages[0].elements.filter(element => element.layer === "master");
@@ -223,14 +223,14 @@ test("flat labels: one dish per label at the extracted card origins, dish name d
   assert.deepEqual(clear.paragraphs.map(paragraph => paragraph.text), ["Test Salad 1"]);
   for (const label of labels) {
     const [name, ...allergens] = label.paragraphs;
-    assert.ok(name.fontPt >= 9 && name.fontPt <= 11 && name.bold, `${name.text} ${name.fontPt}`);
+    assert.ok(name.fontPt >= 8 && name.fontPt <= 10 && name.bold, `${name.text} ${name.fontPt}`);
     assert.equal(allergens.length, label.itemId === "4" ? 0 : 1, "dishes with allergens show one bracketed line; clear dishes show none");
     assert.ok(allergens.every(paragraph => paragraph.fontPt >= 7 && paragraph.fontPt <= name.fontPt), "allergen text keeps its 7pt safety floor");
   }
   // Short names stay at the maximum; only long names shrink.
-  assert.equal(clear.paragraphs[0].fontPt, 11); assert.equal(both.paragraphs[0].fontPt, 11);
+  assert.equal(clear.paragraphs[0].fontPt, 10); assert.equal(both.paragraphs[0].fontPt, 10);
   const long = textElements(planMenuLayout(deckMenu({ sections: [{ key: "menu", items: [item("l", "Slow Roasted Sweet Potato, Charred Corn, Roasted Pepper, Baby Spinach & Toasted Seeds", ["milk"])] }] }), "flat-label"))[0];
-  assert.ok(long.paragraphs[0].fontPt < 11 && long.paragraphs[0].fontPt >= 9, "a long name shrinks only as far as needed");
+  assert.ok(long.paragraphs[0].fontPt < 10 && long.paragraphs[0].fontPt >= 8, "a long name shrinks only as far as needed");
   // The label's chrome (card panel, bar, marks) travels with each label; flat labels have no rear face.
   const chrome = plan.pages[0].elements.filter(element => element.layer === "master");
   assert.equal(chrome.length, 5 * flat.chrome.length);

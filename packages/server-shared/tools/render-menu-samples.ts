@@ -40,11 +40,22 @@ const hotLunch = [
 ];
 
 const samples: Array<{ file: string; title: string; format: MenuOutputFormat; menu: NormalizedMenu }> = [
-  { file: "mnk-tablet", title: "MNK tablet menu (5 dishes)", format: "tablet", menu: menu(hotLunch.slice(4)) },
-  { file: "mnk-tablet-sectioned", title: "MNK tablet menu (sectioned, 8 dishes)", format: "tablet", menu: menu([], [
-    { key: "salads", label: "Salads", items: [hotLunch[2], hotLunch[3], hotLunch[6]] },
-    { key: "hot", label: "Hot mains", items: [hotLunch[0], hotLunch[1]] },
-    { key: "sides", label: "Sides & extras", items: [hotLunch[7], hotLunch[5]] },
+  { file: "mnk-tablet", title: "MNK tablet menu (5 salads, 2 mains, 2 sides)", format: "tablet", menu: menu([], [
+    { key: "salads", label: "Salads", items: [
+      item("s1", "Mixed Leaves, Tomato, Cucumber & Pink Pickled Onions", ["sulphites"]),
+      item("s2", "Fika Slaw with Pineapple & Jalapeño Dressing", ["sulphites", "eggs"]),
+      item("s3", "Caesar Salad", ["gluten", "fish", "eggs", "milk", "mustard"]),
+      item("s4", "Roasted Beetroot, Goat's Cheese, Walnuts & Rocket", ["milk", "tree_nuts", "sulphites"]),
+      item("s5", "Quinoa, Charred Broccoli, Edamame & Lemon Tahini", ["sesame", "soya"]),
+    ] },
+    { key: "hot", label: "Hot mains", items: [
+      item("m1", "Roasted Sweet Potato, Charred Corn, Roasted Pepper & Baby Spinach", ["milk"]),
+      item("m2", "BBQ Chicken Mayo, Gherkins, Tomatoes, Leaves", ["gluten", "eggs", "mustard", "sulphites"]),
+    ] },
+    { key: "sides", label: "Sides & extras", items: [
+      item("e1", "Roasted Potatoes with Rosemary", ["sulphites"]),
+      item("e2", "Vegan Feta, Pesto, Vegan Mayo, Salad", ["tree_nuts", "gluten", "soya"]),
+    ] },
   ]) },
   { file: "mnk-flat-labels", title: "MNK flat labels (8 dishes, one page)", format: "flat-label", menu: menu(hotLunch) },
   { file: "mnk-tent-labels", title: "MNK tent labels (8 dishes, one page)", format: "tent-label", menu: menu(hotLunch) },

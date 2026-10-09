@@ -25,7 +25,7 @@ import { MenuArtifactError, type MenuOutputFormat, type NormalizedMenu, type Nor
  *   "MENU" 34pt Montserrat white in 272.6,42.3 188.9x71.4;
  *   footer Fika wordmark 22.7,762.4 42.9x18.3, tagline 343.3,763.8 136.8x14.0.
  *   The template has no content box; the generated deck's text box 35.4,155.9
- *   425.2x568.3 (Montserrat 15pt bold #0F4D6B items, 10pt red allergens) is the
+ *   425.2x568.3 (the deck used Montserrat 15pt bold #0F4D6B items, 10pt red allergens; dishes are now 13pt with larger section titles) is the
  *   proven content region and is kept.
  *
  * "MNK Label Template.pptx" (page 9 720 250 x 6 858 000 EMU = 765.37 x 540pt, landscape):
@@ -113,7 +113,7 @@ const MNK_TABLET_V1: TabletMaster = {
     { kind: "image", role: "tagline", rect: { x: 343.3, y: 763.8, w: 136.8, h: 14 } },
   ],
   content: { x: 35.4, y: 155.9, w: 425.2, h: 568.3 }, padding: 14,
-  type: { itemMax: 15, itemMin: 10, allergenMax: 10, allergenMin: 8, lineHeight: NATURAL_LINE_HEIGHT },
+  type: { itemMax: 13, itemMin: 10, allergenMax: 10, allergenMin: 8, lineHeight: NATURAL_LINE_HEIGHT },
   pagination: "single",
 };
 
@@ -127,7 +127,7 @@ const ANGEL_COURT_TABLET_V1: TabletMaster = {
 const flatCells = grid(Array.from({ length: 6 }, () => [26.5, 205.8, 385.1, 567.9]), [7.9, 97.0, 186.0, 275.1, 364.2, 453.2]);
 const tentCells = grid([[27.2, 206.4, 385.7, 568.6], [28.7, 208.0, 387.3, 570.1], [29.0, 208.3, 387.6, 570.4]], [21.4, 189.8, 361.4]);
 /** Labels run tighter than Slides' natural single spacing (90%) so a long dish name and both allergen lines fit the 58pt face. */
-const LABEL_TYPE: LabelType = { nameMax: 11, nameMin: 9, allergenMax: 8, allergenMin: 7, lineHeight: 1.1 };
+const LABEL_TYPE: LabelType = { nameMax: 10, nameMin: 8, allergenMax: 8, allergenMin: 7, lineHeight: 1.1 };
 
 const MNK_FLAT_LABEL_V1: LabelMaster = {
   kind: "flat-label", key: "mnk-flat-label", version: 1, page: LABEL_PAGE, masterSlideIndex: 1,
@@ -295,10 +295,11 @@ function planTablet(menu: NormalizedMenu, branding: SiteBranding, master: Tablet
   const colors = branding.colors;
   const build = (itemPt: number) => {
     const allergenPt = Math.max(type.allergenMin, Math.round(itemPt * (type.allergenMax / type.itemMax) * 2) / 2);
-    const sectionPt = Math.max(allergenPt + 1, itemPt - 3);
+    // Section headings read as titles: clearly larger than the dishes beneath them.
+    const sectionPt = Math.max(allergenPt + 1, Math.round(itemPt * 1.55 * 2) / 2);
     const paragraphs: PlanParagraph[] = [];
     sections.forEach((section, sectionIndex) => {
-      if (labelled) paragraphs.push({ text: section.label!.toLocaleUpperCase("en-GB"), role: "section", fontPt: sectionPt, bold: true, color: colors.text, spaceBeforePt: sectionIndex ? itemPt * 1.4 : 0 });
+      if (labelled) paragraphs.push({ text: section.label!.toLocaleUpperCase("en-GB"), role: "section", fontPt: sectionPt, bold: true, color: colors.text, spaceBeforePt: sectionIndex ? itemPt * 1.6 : 0 });
       section.items.forEach((item, index) => {
         paragraphs.push({ text: item.name.trim(), role: "item", fontPt: itemPt, bold: true, color: colors.text, spaceBeforePt: !paragraphs.length ? 0 : labelled && index === 0 ? itemPt * 0.5 : itemPt });
         for (const line of menuAllergenLines(item)) paragraphs.push({ text: line.text, role: "allergen", allergenKind: line.kind, fontPt: allergenPt, ...allergenStyle(colors.allergen), spaceBeforePt: 0 });
