@@ -5,6 +5,7 @@ import { notificationIsCurrent } from "./booking-email-delivery";
 import { claimBookingEmail, notificationEvent, notificationWithEvent, type EmailOutboxStore } from "./booking-email-outbox";
 import type { BookingNotificationRecord } from "./booking-notifications";
 import type { CanonicalBooking } from "./hospitality-booking-service";
+import { assertStagingEmailCandidate } from "./booking-email-uat-safety";
 const notifications = () => db.collection("fikaBookingNotifications");
 const clean = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 
@@ -29,6 +30,8 @@ export async function replayBookingEmail(id: string, reason: string, providerEvi
 export const bookingEmailStore: EmailOutboxStore = {
   async candidates(limit, at) {
     const rows = await notifications().where("outboxStatus", "in", ["pending", "failed"]).where("nextEligibleAt", "<=", at).orderBy("nextEligibleAt").limit(limit).get();
+    // Inspect the complete bounded batch before any claim or business mutation.
+    for (const row of rows.docs) assertStagingEmailCandidate(row.data() as BookingNotificationRecord);
     return rows.docs.map(row => row.id);
   },
   async claim(id, claimId, at) {
@@ -37,6 +40,7 @@ export const bookingEmailStore: EmailOutboxStore = {
       const row = await transaction.get(ref);
       if (!row.exists) return undefined;
       const message = row.data() as BookingNotificationRecord;
+      assertStagingEmailCandidate(message);
       if (!message.delivery || !eventIsDue(notificationEvent(message), new Date(at))) return undefined;
       const source = await transaction.get(db.collection("fikaBookings").doc(message.bookingId));
       const next = source.exists ? claimBookingEmail(message, source.data() as CanonicalBooking, claimId, at) : notificationWithEvent(message, markEventDeadLetter(notificationEvent(message), "Booking source missing; no email sent.", at));
@@ -53,6 +57,7 @@ export const bookingEmailStore: EmailOutboxStore = {
       const row = await transaction.get(ref);
       if (!row.exists) return false;
       const message = row.data() as BookingNotificationRecord;
+      assertStagingEmailCandidate(message);
       if (message.delivery?.claimId !== claimId || message.sendingStartedAt || !message.delivery.leaseExpiresAt || message.delivery.leaseExpiresAt <= at) return false;
       const source = await transaction.get(db.collection("fikaBookings").doc(message.bookingId));
       if (!source.exists || !notificationIsCurrent(message, source.data() as CanonicalBooking)) {

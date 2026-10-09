@@ -1,6 +1,24 @@
 # Firebase App Hosting staging configuration for the Integration Hub.
 # Configure the backend root directory as apps/integration-hub.
 env:
+  # Manual lifecycle UAT only. Runtime Booking IDs must be explicitly selected
+  # before enabling delivery; an empty selection fails closed for all candidates.
+  - variable: FIKA_HOSPITALITY_EMAIL_UAT_BOOKING_IDS
+    value: ""
+    availability:
+      - RUNTIME
+  - variable: FIKA_HOSPITALITY_EMAIL_UAT_RECIPIENT
+    value: derek@fikacatering.com
+    availability:
+      - RUNTIME
+  - variable: FIKA_MNK_NOTIFICATION_RECIPIENTS
+    value: derek@fikacatering.com
+    availability:
+      - RUNTIME
+  - variable: FIKA_HOSPITALITY_EMAIL_SENDERS_JSON
+    value: '{"oploc:66e621fa-6e6f-4f46-9aed-462313abbe8f":{"from":"mnk@fikacatering.com","replyTo":"mnk@fikacatering.com","authenticatedAccount":"mnk@fikacatering.com","displayName":"FIKA Hospitality at MNK","verifiedSendAs":true,"enabled":["submitted","confirmed","amended","cancelled"]}}'
+    availability:
+      - RUNTIME
   - variable: FIKA_HOSPITALITY_EMAIL_DELIVERY_ENABLED
     value: "false"
     availability:
