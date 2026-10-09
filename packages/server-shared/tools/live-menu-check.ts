@@ -9,7 +9,7 @@
  *   hosted: GOOGLE_WORKSPACE_DWD_SERVICE_ACCOUNT_JSON (NODE_ENV=production)
  * Required: GOOGLE_MENU_TEMPLATE_ID_MNK, GOOGLE_MENU_LABEL_TEMPLATE_ID_MNK and the MNK OPLOC destination
  * (GOOGLE_DRIVE_OWNER_EMAIL_OPLOC_<KEY> + GOOGLE_MENU_PARENT_FOLDER_ID_OPLOC_<KEY>).
- * Writes `LIVECHECK_*` files under <parent>/Generated Menus/WC_2026-10-05; superseded files go to the Drive trash; nothing is
+ * Writes `LIVECHECK_*` files under <parent>/WC_2026-10-05 (the `cleanup` group trashes them again); superseded files go to the Drive trash; nothing is
  * permanently deleted. Results: artifacts/live-check/result.json (git-ignored).
  */
 import { mkdirSync, writeFileSync } from "node:fs";

@@ -10,13 +10,13 @@ import { MenuArtifactError } from "./menu-types";
  * explicit configuration keyed by the canonical OPLOC id:
  *
  *   GOOGLE_DRIVE_OWNER_EMAIL_OPLOC_<KEY>         the Workspace user DWD impersonates when publishing (hosted)
- *   GOOGLE_MENU_PARENT_FOLDER_ID_OPLOC_<KEY>     the folder that holds <parent>/Generated Menus/WC_<Monday>/...
+ *   GOOGLE_MENU_PARENT_FOLDER_ID_OPLOC_<KEY>     the final menu parent: files go in <parent>/WC_<Monday>/...
  *   (GOOGLE_DRIVE_ROOT_FOLDER_ID_OPLOC_<KEY>     the OPLOC's existing Drive root, accepted when no menu parent is set)
  *
  * `<KEY>` is the OPLOC id without the `oploc:` prefix, upper-cased with non-alphanumerics as `_`
  * (see `menuParentEnvKey`). Nothing is guessed: there is no app-wide owner or folder fallback, no
  * My Drive root fallback and no auto-created parent path. A missing or malformed value is an
- * actionable error naming the exact key. Only the `Generated Menus/WC_...` structure beneath an
+ * actionable error naming the exact key. Only the `WC_YYYY-MM-DD` week folder beneath an
  * explicit, verified parent is created.
  */
 

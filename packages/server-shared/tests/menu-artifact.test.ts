@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   LAYOUT_MASTERS, MenuArtifactError, SITE_BRANDING, menuFormatsForSite, siteBrandingFor, allergensFromStates, buildMenuSlidesRequests, flattenSlideElements, menuAllergenLabel, menuAllergenLines, menuArtifactFileName,
-  ensureGeneratedMenusFolder, menuOwnerEnvKey, menuParentEnvKey, resolveMenuDestination, menuWeekCommencing, menuWeekFolderName, menuArtifactId, menuArtifactKey, menuArtifactSourceKey, planMenuLayout, publishMenuArtifact, resolveMenuTemplate,
+  ensureMenuWeekFolder, menuOwnerEnvKey, menuParentEnvKey, resolveMenuDestination, menuWeekCommencing, menuWeekFolderName, menuArtifactId, menuArtifactKey, menuArtifactSourceKey, planMenuLayout, publishMenuArtifact, resolveMenuTemplate,
   type LabelMaster, type MenuOutputFormat, type NormalizedMenu, type NormalizedMenuItem, type PlanElement, type SiteBranding, type SlidesPresentation,
 } from "../src/menu-artifact";
 import { renderMenuPlanHtml } from "../src/menu-preview";
@@ -450,7 +450,7 @@ test("publishing reports the page count so callers know how many label sheets we
   assert.equal((await publishWith(google, deckMenu(), "tablet")).pageCount, 1);
 });
 
-// ------------------------------------------------------------------ Drive filing: Generated Menus / WC_<Monday>
+// ------------------------------------------------------------------ Drive filing: <parent> / WC_<Monday>
 
 function fakeFolders() {
   const folders: Array<{ id: string; name: string; parent: string }> = []; const created: string[] = [];
@@ -477,21 +477,22 @@ test("week commencing is the Monday of the service week", () => {
   assert.throws(() => menuWeekCommencing("25/08/2026"), (error: unknown) => error instanceof MenuArtifactError && error.code === "MENU_DATE_INVALID");
 });
 
-test("generated menus are filed in 'Generated Menus' / 'WC_<Monday>' and folders are never duplicated", async () => {
+test("generated menus are filed directly in <configured parent>/WC_<Monday>: no extra level, no duplicate folders", async () => {
   const drive = fakeFolders();
-  const filing = (serviceDate: string, parentId = "root") => ensureGeneratedMenusFolder({ parentId, serviceDate, headers: { Authorization: "Bearer t" }, fetch: drive.fetchImpl });
+  const filing = (serviceDate: string, parentId = "configured-parent") => ensureMenuWeekFolder({ parentId, serviceDate, headers: { Authorization: "Bearer t" }, fetch: drive.fetchImpl });
   const first = await filing("2026-08-26");
   assert.equal(first.weekFolderName, "WC_2026-08-24");
-  assert.deepEqual(drive.created, ["Generated Menus", "WC_2026-08-24"]);
-  assert.deepEqual(drive.folders.map(folder => `${folder.parent}>${folder.name}`), ["root>Generated Menus", "folder-1>WC_2026-08-24"]);
+  assert.deepEqual(drive.created, ["WC_2026-08-24"], "only the week folder is created - never a 'Generated Menus' level");
+  assert.deepEqual(drive.folders.map(folder => `${folder.parent}>${folder.name}`), ["configured-parent>WC_2026-08-24"]);
   assert.equal((await filing("2026-08-28")).folderId, first.folderId, "same week -> same folder");
-  assert.equal(drive.created.length, 2, "nothing is re-created");
+  assert.equal(drive.created.length, 1, "nothing is re-created");
   const nextWeek = await filing("2026-08-31");
   assert.notEqual(nextWeek.folderId, first.folderId);
-  assert.equal(nextWeek.generatedMenusFolderId, first.generatedMenusFolderId, "weeks share one Generated Menus folder");
-  assert.deepEqual(drive.created, ["Generated Menus", "WC_2026-08-24", "WC_2026-08-31"]);
-  const elsewhere = await filing("2026-08-26", "configured-folder");
-  assert.equal(drive.folders.find(folder => folder.id === elsewhere.generatedMenusFolderId)!.parent, "configured-folder", "a configured parent gets its own Generated Menus folder");
+  assert.deepEqual(drive.created, ["WC_2026-08-24", "WC_2026-08-31"]);
+  const other = await filing("2026-08-26", "another-site-parent");
+  assert.notEqual(other.folderId, first.folderId, "each site's parent holds its own week folders");
+  assert.equal(drive.folders.find(folder => folder.id === other.folderId)!.parent, "another-site-parent");
+  assert.ok(!drive.folders.some(folder => folder.name === "Generated Menus"));
 });
 
 // ------------------------------------------------------------------ OPLOC-scoped Drive destination
@@ -545,6 +546,6 @@ test("drive destination: nothing is guessed - no app-wide owner/folder, no My Dr
 
 test("filing verifies the explicit parent folder before creating anything beneath it", async () => {
   const reply = (body: unknown) => async () => new Response(JSON.stringify(body), { status: 200, headers: { "content-type": "application/json" } });
-  await assert.rejects(ensureGeneratedMenusFolder({ parentId: "not-a-folder", serviceDate: "2026-08-26", headers: {}, fetch: reply({ mimeType: "application/vnd.google-apps.document" }) }), (error: unknown) => error instanceof MenuArtifactError && error.code === "MENU_PARENT_FOLDER_INACCESSIBLE");
-  await assert.rejects(ensureGeneratedMenusFolder({ parentId: "gone", serviceDate: "2026-08-26", headers: {}, fetch: reply({ mimeType: "application/vnd.google-apps.folder", trashed: true }) }), (error: unknown) => error instanceof MenuArtifactError && error.code === "MENU_PARENT_FOLDER_INACCESSIBLE");
+  await assert.rejects(ensureMenuWeekFolder({ parentId: "not-a-folder", serviceDate: "2026-08-26", headers: {}, fetch: reply({ mimeType: "application/vnd.google-apps.document" }) }), (error: unknown) => error instanceof MenuArtifactError && error.code === "MENU_PARENT_FOLDER_INACCESSIBLE");
+  await assert.rejects(ensureMenuWeekFolder({ parentId: "gone", serviceDate: "2026-08-26", headers: {}, fetch: reply({ mimeType: "application/vnd.google-apps.folder", trashed: true }) }), (error: unknown) => error instanceof MenuArtifactError && error.code === "MENU_PARENT_FOLDER_INACCESSIBLE");
 });

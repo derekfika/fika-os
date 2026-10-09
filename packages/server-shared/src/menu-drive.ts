@@ -3,12 +3,12 @@ import { MenuArtifactError } from "./menu-types";
 /**
  * Where generated menus are filed in Drive:
  *
- *   <parent>/Generated Menus/WC_<Monday of the service week>/<file>
+ *   <configured per-OPLOC menu parent>/WC_<Monday of the service week>/<file>
  *
- * `WC_YYYY-MM-DD` is the week-commencing convention already used for quotes and
- * allergen matrices. Folders are found-or-created, so repeated generation never
- * makes duplicates; if two requests race and both create one, the oldest wins
- * on every later lookup.
+ * The configured parent IS the final menu parent: no extra folder is created beneath it. (The MNK parents are
+ * already `Generated Menus/Hospitality` and `Generated Menus/Delivered In`.) `WC_YYYY-MM-DD` is the week-commencing
+ * convention already used for quotes and allergen matrices. The week folder is found-or-created, so repeated
+ * generation never makes duplicates; if two requests race and both create one, the oldest wins on every later lookup.
  */
 
 export function menuDriveResourceId(value?: string) {
@@ -17,8 +17,6 @@ export function menuDriveResourceId(value?: string) {
   const match = raw.match(/\/folders\/([A-Za-z0-9_-]+)/) || raw.match(/\/d\/([A-Za-z0-9_-]+)/);
   return (match?.[1] || raw).replace(/[),.;]+$/, "");
 }
-
-export const GENERATED_MENUS_FOLDER = "Generated Menus";
 
 type FetchLike = (input: string, init?: RequestInit) => Promise<Response>;
 
@@ -58,16 +56,16 @@ async function findOrCreateFolder(fetchImpl: FetchLike, headers: Record<string, 
 }
 
 /**
- * Resolves (creating as needed) `<parent>/Generated Menus/WC_<week commencing>` for a
- * service date and returns the week folder's id. `parentId` is a Drive folder id or `root`.
+ * Resolves (creating as needed) `<parent>/WC_<week commencing>` for a service date and returns the week folder's id.
+ * `parentId` is the explicit, configured menu parent (a Drive folder id, or `root`) and is verified first.
  */
-export async function ensureGeneratedMenusFolder(input: { parentId: string; serviceDate: string; headers: Record<string, string>; fetch?: FetchLike }) {
+export async function ensureMenuWeekFolder(input: { parentId: string; serviceDate: string; headers: Record<string, string>; fetch?: FetchLike }) {
   const fetchImpl: FetchLike = input.fetch || ((url, init) => fetch(url, init));
   // The parent is explicit configuration: verify it is a live folder this identity can see before creating anything beneath it.
   if (input.parentId !== "root") {
     const parent = await drive<{ mimeType?: string; trashed?: boolean }>(fetchImpl, `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(input.parentId)}?supportsAllDrives=true&fields=mimeType,trashed`, { headers: input.headers }, "Google Drive menu parent folder check");
     if (parent.mimeType !== "application/vnd.google-apps.folder" || parent.trashed) throw new MenuArtifactError("MENU_PARENT_FOLDER_INACCESSIBLE", `The configured menu parent folder ${input.parentId} is not an accessible Google Drive folder.`, 409);
   }
-  const generated = await findOrCreateFolder(fetchImpl, input.headers, input.parentId, GENERATED_MENUS_FOLDER);
-  return { folderId: await findOrCreateFolder(fetchImpl, input.headers, generated, menuWeekFolderName(input.serviceDate)), generatedMenusFolderId: generated, weekFolderName: menuWeekFolderName(input.serviceDate) };
+  const weekFolderName = menuWeekFolderName(input.serviceDate);
+  return { folderId: await findOrCreateFolder(fetchImpl, input.headers, input.parentId, weekFolderName), weekFolderName };
 }

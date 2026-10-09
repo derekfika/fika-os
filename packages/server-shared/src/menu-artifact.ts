@@ -23,7 +23,7 @@ import { DEFAULT_MENU_OUTPUT_FORMAT, MENU_OUTPUT_FORMATS, MenuArtifactError, typ
 
 export * from "./menu-types";
 export { assertNormalizedMenu } from "./menu-validation";
-export { GENERATED_MENUS_FOLDER, ensureGeneratedMenusFolder, menuDriveResourceId, menuWeekCommencing, menuWeekFolderName } from "./menu-drive";
+export { ensureMenuWeekFolder, menuDriveResourceId, menuWeekCommencing, menuWeekFolderName } from "./menu-drive";
 export { menuDestinationToken, menuOwnerEnvKey, menuParentEnvKey, resolveMenuDestination, type MenuDestination } from "./menu-destination";
 export { allergensFromStates, assertAllergensPrintable, menuAllergenLabel, menuAllergenLine, menuAllergenLines, type MenuAllergenLine } from "./menu-allergens";
 export { LAYOUT_MASTERS, SITE_BRANDING, fitLabelFace, menuFormatsForSite, layoutTemplateKey, planMenuLayout, resolveLayoutMaster, siteBrandingFor, type MenuLayoutPlan, type MenuLayoutPage, type PlanElement, type PlanParagraph, type SiteBranding } from "./menu-formats";

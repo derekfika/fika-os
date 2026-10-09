@@ -4,7 +4,7 @@ import { groupSiteMenuEntries, siteMenuFileName, type SiteMenuArtifact } from ".
 import { CANONICAL_ALLERGEN_COLUMNS } from "./allergen-columns";
 import { driveOwnerEnvKey } from "@fika/server-shared/drive-owner";
 import { stableDocumentId } from "@fika/server-shared/stable-document-id";
-import { MenuArtifactError, ensureGeneratedMenusFolder, menuDestinationToken, publishMenuArtifact, resolveMenuDestination, resolveMenuTemplate, type MenuOutputFormat } from "@fika/server-shared/menu-artifact";
+import { MenuArtifactError, ensureMenuWeekFolder, menuDestinationToken, publishMenuArtifact, resolveMenuDestination, resolveMenuTemplate, type MenuOutputFormat } from "@fika/server-shared/menu-artifact";
 import { deliveredInMenuFromDay, deliveredInMenuSiteKey } from "./menu-adapter";
 
 type OAuthClient = { installed?: { client_id: string; client_secret: string; token_uri?: string } };
@@ -68,8 +68,8 @@ async function createSharedSiteMenu(day: ProjectedDay, site: Site, generatedBy: 
   const menu = deliveredInMenuFromDay(day, site);
   const template = resolveMenuTemplate({ siteKey: menu.siteKey, oplocId: site.oplocId, format });
   const { destination, token } = await siteDestination(site.oplocId); const headers = { Authorization: `Bearer ${token}` };
-  // <this site's menu parent>/Generated Menus/WC_<week commencing>
-  const { folderId: outputFolderId } = await ensureGeneratedMenusFolder({ parentId: destination.parentFolderId, serviceDate: day.weekCommencing || day.date, headers });
+  // <this site's menu parent>/WC_<week commencing>
+  const { folderId: outputFolderId } = await ensureMenuWeekFolder({ parentId: destination.parentFolderId, serviceDate: day.weekCommencing || day.date, headers });
   const published = await publishMenuArtifact({ menu, template, folderId: outputFolderId, headers });
   const release = (day as ProjectedDay & { sourceLineage?: { cpu?: { releaseId?: string; releaseVersion?: string; contentHash?: string } } }).sourceLineage?.cpu;
   return { artifactId: published.artifactId, oplocId: site.oplocId, sourceDayId: day.sourceDayId, sourcePublicationDayId: day.publicationDayId, sourceVersion: day.version, sourceContentHash: day.contentHash, generatedAt: new Date().toISOString(), generatedBy, driveFileId: published.fileId, driveUrl: published.driveUrl, fileName: published.fileName, ...(format !== "tablet" ? { format } : {}), ...(deliveryId ? { deliveryId } : {}), ...(release?.releaseId ? { sourceReleaseId: release.releaseId } : {}), ...(release?.releaseVersion ? { sourceReleaseVersion: release.releaseVersion } : {}), ...(release?.contentHash ? { sourcePacketHash: release.contentHash } : {}) };
@@ -83,7 +83,7 @@ export async function createGoogleSiteMenu(day: ProjectedDay, site: Site, genera
   const templateId = resourceId(process.env[`GOOGLE_DELIVERED_IN_TEMPLATE_ID_${driveOwnerEnvKey({ type: "oploc-workspace", oplocId: site.oplocId })}`] || process.env.GOOGLE_DELIVERED_IN_TEMPLATE_ID);
   if (!templateId) throw new Error("Delivered-In generic Google Slides template is not configured (GOOGLE_DELIVERED_IN_TEMPLATE_ID or the OPLOC-specific key).");
   const { destination, token } = await siteDestination(site.oplocId); const headers = { Authorization: `Bearer ${token}`, "content-type": "application/json" };
-  const { folderId: outputFolderId } = await ensureGeneratedMenusFolder({ parentId: destination.parentFolderId, serviceDate: day.weekCommencing || day.date, headers }); // <site menu parent>/Generated Menus/WC_<week commencing>
+  const { folderId: outputFolderId } = await ensureMenuWeekFolder({ parentId: destination.parentFolderId, serviceDate: day.weekCommencing || day.date, headers }); // <site menu parent>/WC_<week commencing>
   const fileName = siteMenuFileName(site.label, day); const stableDeliveryId = deliveryId ? stableDocumentId(`${site.oplocId}:${deliveryId}`) : undefined;
   let copy: { id: string; webViewLink?: string; appProperties?: Record<string, string> } | undefined;
   if (stableDeliveryId) {

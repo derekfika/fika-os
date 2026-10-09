@@ -19,7 +19,7 @@ export async function POST(request: NextRequest) {
     if (body.access.email.trim().toLowerCase() !== allowed) return NextResponse.json({ error: { message: "Not permitted." } }, { status: 403 });
     const group = request.nextUrl.searchParams.get("group") as LiveCheckGroup;
     const runId = request.nextUrl.searchParams.get("runId") || "";
-    if (!["core", "amend", "paging"].includes(group) || !/^[a-z0-9]{6,20}$/.test(runId)) return NextResponse.json({ error: { message: "group (core|amend|paging) and runId ([a-z0-9]{6,20}) are required." } }, { status: 422 });
+    if (!["core", "amend", "paging", "cleanup"].includes(group) || !/^[a-z0-9]{6,20}$/.test(runId)) return NextResponse.json({ error: { message: "group (core|amend|paging|cleanup) and runId ([a-z0-9]{6,20}) are required." } }, { status: 422 });
     const destination = resolveMenuDestination({ oplocId: MNK });
     const report = await runMenuLiveCheck({ destination, token: await menuDestinationToken(destination), group, runId });
     return NextResponse.json({ app: "hospitality", owner: destination.owner.workspaceEmail, authMode: destination.owner.authMode, parentFolderId: destination.parentFolderId, parentSource: destination.parentSource, report });

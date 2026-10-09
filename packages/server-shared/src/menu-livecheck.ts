@@ -1,4 +1,4 @@
-import { ensureGeneratedMenusFolder, publishMenuArtifact, resolveMenuTemplate, menuArtifactKey, menuArtifactSourceKey, type MenuOutputFormat, type NormalizedMenu, type NormalizedMenuItem } from "./menu-artifact";
+import { ensureMenuWeekFolder, publishMenuArtifact, resolveMenuTemplate, menuArtifactKey, menuArtifactSourceKey, type MenuOutputFormat, type NormalizedMenu, type NormalizedMenuItem } from "./menu-artifact";
 import type { MenuDestination } from "./menu-destination";
 
 /**
@@ -7,13 +7,14 @@ import type { MenuDestination } from "./menu-destination";
  * from Drive/Slides metadata (not from the publisher's own return values) and reports explicit pass/fail checks.
  *
  * Stateless per call so it fits a request timeout: pass the same `runId` to each group.
+ *   cleanup trashes this tool's own `LIVECHECK_*` files (and the then-empty week folders it created); never touches other files, never deletes permanently
  *   core    folders (created once, reused), tablet + flat v1, retry idempotency, format independence, deck inspection
  *   amend   tablet + flat v2: per-format supersession (the other format is never retired), content reflects the amendment
  *   paging  30 dishes -> 2 label pages, no orphaned cards
  */
 
-export type LiveCheckGroup = "core" | "amend" | "paging";
-export type LiveCheckReport = { group: LiveCheckGroup; runId: string; passed: boolean; checks: Array<{ check: string; ok: boolean; detail?: unknown }>; artifacts: Array<{ label: string; url: string; fileId: string; path?: string }>; folderPath?: string };
+export type LiveCheckGroup = "core" | "amend" | "paging" | "cleanup";
+export type LiveCheckReport = { group: LiveCheckGroup; runId: string; passed: boolean; checks: Array<{ check: string; ok: boolean; detail?: unknown }>; artifacts: Array<{ label: string; url: string; fileId: string; path?: string }>; folderPath?: string; removed?: Array<{ kind: "file" | "folder"; name: string; id: string }>; alreadyInTrash?: Array<{ name: string; id: string }> };
 
 const MNK_OPLOC = "oploc:66e621fa-6e6f-4f46-9aed-462313abbe8f";
 const SERVICE_DATE = "2026-10-07"; // a Wednesday: week commencing Monday 2026-10-05
@@ -59,16 +60,42 @@ export async function runMenuLiveCheck(input: { destination: MenuDestination; to
   const keyOf = (menu: NormalizedMenu, format: MenuOutputFormat) => menuArtifactKey(menu, resolveMenuTemplate({ siteKey: "mnk", format }).key, format);
   const sourceKeyOf = (menu: NormalizedMenu, format: MenuOutputFormat) => menuArtifactSourceKey(menu, format);
 
-  const filing = await ensureGeneratedMenusFolder({ parentId: destination.parentFolderId, serviceDate: SERVICE_DATE, headers, fetch: fetchImpl });
+  async function cleanup(): Promise<LiveCheckReport> {
+    const PREFIX = "LIVECHECK_";
+    const inTree = async (file: Meta) => { let current: Meta | undefined = file; for (let depth = 0; depth < 8 && current?.parents?.[0]; depth += 1) { if (current.parents[0] === destination.parentFolderId) return true; current = await meta(current.parents[0]).catch(() => undefined); } return false; };
+    const listByName = async (trashed: boolean) => (await get<{ files?: Meta[] }>(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(`name contains '${PREFIX}' and trashed = ${trashed}`)}&spaces=drive&supportsAllDrives=true&includeItemsFromAllDrives=true&fields=files(id,name,parents,trashed)&pageSize=200`)).files || [];
+    const children = async (id: string) => (await get<{ files?: Meta[] }>(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(`'${id}' in parents and trashed = false`)}&spaces=drive&supportsAllDrives=true&includeItemsFromAllDrives=true&fields=files(id,name,mimeType)&pageSize=200`)).files || [];
+    const trash = async (id: string) => { const response = await fetchImpl(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(id)}?supportsAllDrives=true`, { method: "PATCH", headers: { ...headers, "content-type": "application/json" }, body: JSON.stringify({ trashed: true }) }); if (!response.ok) throw new Error(`trash ${id}: ${response.status}`); };
+    const removed: NonNullable<LiveCheckReport["removed"]> = [];
+    // 1. Only this tool's own LIVECHECK_ files beneath the configured parent are trashed (reversible; nothing is deleted permanently).
+    for (const file of await listByName(false)) if (file.name.startsWith(PREFIX) && await inTree(file)) { await trash(file.id); removed.push({ kind: "file", name: file.name, id: file.id }); }
+    // 2. Folders this tool created, only when they are now empty: <parent>/WC_2026-10-05, and the former extra <parent>/Generated Menus level.
+    const folderNamed = async (parentId: string, name: string) => (await get<{ files?: Meta[] }>(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(`'${parentId}' in parents and name = '${name}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false`)}&spaces=drive&supportsAllDrives=true&includeItemsFromAllDrives=true&fields=files(id,name)&pageSize=10`)).files || [];
+    const trashIfEmpty = async (folder: Meta) => { if ((await children(folder.id)).length === 0) { await trash(folder.id); removed.push({ kind: "folder", name: folder.name, id: folder.id }); return true; } return false; };
+    for (const extra of await folderNamed(destination.parentFolderId, "Generated Menus")) {
+      for (const week of (await children(extra.id)).filter(entry => /^WC_\d{4}-\d{2}-\d{2}$/.test(entry.name))) await trashIfEmpty({ id: week.id, name: week.name });
+      await trashIfEmpty({ id: extra.id, name: extra.name });
+    }
+    for (const week of await folderNamed(destination.parentFolderId, "WC_2026-10-05")) await trashIfEmpty(week);
+    const alreadyInTrash = (await listByName(true)).filter(file => file.name.startsWith(PREFIX)).map(file => ({ file, tree: inTree(file) }));
+    const trashed: Array<{ name: string; id: string }> = [];
+    for (const entry of alreadyInTrash) if (await entry.tree) trashed.push({ name: entry.file.name, id: entry.file.id });
+    const remaining = (await listByName(false)).filter(file => file.name.startsWith(PREFIX));
+    const leftInTree: string[] = []; for (const file of remaining) if (await inTree(file)) leftInTree.push(file.name);
+    check("no live LIVECHECK_ file remains beneath the configured parent", leftInTree.length === 0, leftInTree);
+    return { group, runId, passed: checks.every(entry => entry.ok), checks, artifacts: [], removed, alreadyInTrash: trashed };
+  }
+  if (group === "cleanup") return cleanup();
+  const filing = await ensureMenuWeekFolder({ parentId: destination.parentFolderId, serviceDate: SERVICE_DATE, headers, fetch: fetchImpl });
   const folderPath = await pathOf(filing.folderId);
 
   if (group === "core") {
-    const again = await ensureGeneratedMenusFolder({ parentId: destination.parentFolderId, serviceDate: "2026-10-08", headers, fetch: fetchImpl });
-    check("filed under <parent>/Generated Menus/WC_2026-10-05", /Generated Menus \/ WC_2026-10-05$/.test(folderPath), folderPath);
-    check("the parent folder is the configured one", (await meta((await meta(filing.generatedMenusFolderId)).parents?.[0] || "")).id === destination.parentFolderId);
-    check("folders are reused, never duplicated (same week -> same folder)", again.folderId === filing.folderId && again.generatedMenusFolderId === filing.generatedMenusFolderId);
-    const siblings = await get<{ files?: Meta[] }>(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(`'${destination.parentFolderId}' in parents and name = 'Generated Menus' and trashed = false`)}&supportsAllDrives=true&includeItemsFromAllDrives=true&fields=files(id)&pageSize=10`);
-    check("exactly one 'Generated Menus' folder under the parent", (siblings.files || []).length === 1, (siblings.files || []).length);
+    const again = await ensureMenuWeekFolder({ parentId: destination.parentFolderId, serviceDate: "2026-10-08", headers, fetch: fetchImpl });
+    check("filed at <configured parent>/WC_2026-10-05", /WC_2026-10-05$/.test(folderPath), folderPath);
+    check("the week folder sits DIRECTLY in the configured parent (no extra level)", (await meta(filing.folderId)).parents?.[0] === destination.parentFolderId, { parent: destination.parentFolderId });
+    check("folders are reused, never duplicated (same week -> same folder)", again.folderId === filing.folderId);
+    const siblings = await get<{ files?: Meta[] }>(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(`'${destination.parentFolderId}' in parents and name = 'WC_2026-10-05' and mimeType = 'application/vnd.google-apps.folder' and trashed = false`)}&supportsAllDrives=true&includeItemsFromAllDrives=true&fields=files(id)&pageSize=10`);
+    check("exactly one WC_2026-10-05 folder under the parent", (siblings.files || []).length === 1, (siblings.files || []).length);
     const v1 = menuFor(runId, 1, "");
     const t1 = await publish(v1, "tablet", filing.folderId); const t1b = await publish(v1, "tablet", filing.folderId);
     const f1 = await publish(v1, "flat-label", filing.folderId); const f1b = await publish(v1, "flat-label", filing.folderId);
