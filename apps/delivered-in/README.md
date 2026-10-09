@@ -14,7 +14,7 @@ The assignments are isolated in `apps/integration-hub/lib/delivered-in-access.ts
 
 ## Phase 2 site menus
 
-Set `GOOGLE_DELIVERED_IN_TEMPLATE_ID` to the generic FIKA Slides template and `GOOGLE_DELIVERED_IN_OUTPUT_FOLDER_ID` to the shared Delivered-In Drive folder. The template can use `{{SITE_NAME}}`, `{{SERVICE_DATE}}`, `{{WEEK_COMMENCING}}`, `{{SALADS}}`, `{{HOT_MAINS}}` and `{{SIDES_EXTRAS}}` tokens. Slides containing an empty section token are omitted from the generated deck.
+Set `GOOGLE_DELIVERED_IN_TEMPLATE_ID` to the generic FIKA Slides template (an OPLOC-specific `GOOGLE_DELIVERED_IN_TEMPLATE_ID_OPLOC_<KEY>` overrides it per site). Each site files its menus under its own Workspace owner and menu parent folder: set `GOOGLE_DRIVE_OWNER_EMAIL_OPLOC_<KEY>` and `GOOGLE_MENU_PARENT_FOLDER_ID_OPLOC_<KEY>` per OPLOC (see `docs/deployment/menu-templates.md`); there is no app-wide owner or output folder. The template can use `{{SITE_NAME}}`, `{{SERVICE_DATE}}`, `{{WEEK_COMMENCING}}`, `{{SALADS}}`, `{{HOT_MAINS}}` and `{{SIDES_EXTRAS}}` tokens. Slides containing an empty section token are omitted from the generated deck.
 
 Google OAuth uses the existing `GOOGLE_OAUTH_CLIENT_FILE` and `GOOGLE_OAUTH_TOKEN_FILE` refresh-token flow. Generated decks are derived from the current immutable site projection and recorded locally in `local-data/delivered-in/site-menus.json`; publication records are never changed. A later publication amendment automatically marks the prior generated deck as stale until regenerated.
 

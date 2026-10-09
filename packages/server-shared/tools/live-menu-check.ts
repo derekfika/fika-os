@@ -3,19 +3,18 @@
  *
  *   npx tsx packages/server-shared/tools/live-menu-check.ts
  *
- * Writes clearly named `LIVECHECK_*` files under <LIVE_CHECK_PARENT_FOLDER_ID>/Generated Menus/WC_2026-10-05 and verifies, from Drive/Slides
+ * Writes clearly named `LIVECHECK_*` files under <the MNK OPLOC menu parent>/Generated Menus/WC_2026-10-05 and verifies, from Drive/Slides
  * metadata: the folder path, tablet + flat-label generation, retry idempotency, amendment supersession scoped per format, label paging and
  * the absence of leftover template elements. Results go to artifacts/live-check/result.json (git-ignored). Test files are left in place for
  * visual review; superseded ones are in the Drive trash. Nothing is permanently deleted.
  */
 import { mkdirSync, writeFileSync } from "node:fs";
-import { driveAccessToken, resolveDriveOwner } from "../src/drive-owner";
-import { ensureGeneratedMenusFolder, publishMenuArtifact, resolveMenuTemplate, type MenuOutputFormat, type NormalizedMenu, type NormalizedMenuItem } from "../src/menu-artifact";
+import { ensureGeneratedMenusFolder, menuDestinationToken, publishMenuArtifact, resolveMenuDestination, resolveMenuTemplate, type MenuOutputFormat, type NormalizedMenu, type NormalizedMenuItem } from "../src/menu-artifact";
 
 // Credentials come from the environment, exactly as the apps resolve them:
 //   local:  FIKA_RUNTIME_MODE=local + GOOGLE_OAUTH_CLIENT_FILE / GOOGLE_OAUTH_TOKEN_FILE
 //   hosted: GOOGLE_WORKSPACE_DWD_SERVICE_ACCOUNT_JSON + GOOGLE_DRIVE_OWNER_EMAIL_OPLOC_66E621FA_6E6F_4F46_9AED_462313ABBE8F (NODE_ENV=production)
-// Required: LIVE_CHECK_PARENT_FOLDER_ID (the menu parent folder to test under), GOOGLE_MENU_TEMPLATE_ID_MNK, GOOGLE_MENU_LABEL_TEMPLATE_ID_MNK.
+// Required: GOOGLE_MENU_TEMPLATE_ID_MNK, GOOGLE_MENU_LABEL_TEMPLATE_ID_MNK, and the MNK OPLOC destination (GOOGLE_DRIVE_OWNER_EMAIL_OPLOC_<KEY> + GOOGLE_MENU_PARENT_FOLDER_ID_OPLOC_<KEY>).
 const need = (name: string) => { const value = process.env[name]?.trim(); if (!value) throw new Error(`${name} is required.`); return value; };
 const env = { GOOGLE_MENU_TEMPLATE_ID_MNK: need("GOOGLE_MENU_TEMPLATE_ID_MNK"), GOOGLE_MENU_LABEL_TEMPLATE_ID_MNK: need("GOOGLE_MENU_LABEL_TEMPLATE_ID_MNK") };
 const MNK_OPLOC = "oploc:66e621fa-6e6f-4f46-9aed-462313abbe8f";
@@ -35,12 +34,13 @@ const menu = (sourceId: string, version: number, extra: Partial<NormalizedMenu> 
 
 type Meta = { id: string; name: string; parents?: string[]; trashed?: boolean; appProperties?: Record<string, string>; webViewLink?: string; mimeType?: string };
 async function main() {
-  const token = await driveAccessToken(resolveDriveOwner({ type: "oploc-workspace", oplocId: MNK_OPLOC }));
+  const destination = resolveMenuDestination({ oplocId: MNK_OPLOC });
+  const token = await menuDestinationToken(destination);
   const headers = { Authorization: `Bearer ${token}` };
   const get = async <T>(url: string) => { const response = await fetch(url, { headers }); if (!response.ok) throw new Error(`${response.status} ${url.split("?")[0]} ${(await response.text()).slice(0, 200)}`); return await response.json() as T; };
   const meta = (id: string) => get<Meta>(`https://www.googleapis.com/drive/v3/files/${id}?supportsAllDrives=true&fields=id,name,parents,trashed,appProperties,webViewLink,mimeType`);
   const pathOf = async (id: string): Promise<string> => { const names: string[] = []; let current: Meta | undefined = await meta(id); while (current) { names.unshift(current.name); current = current.parents?.[0] ? await meta(current.parents[0]).catch(() => undefined) : undefined; } return names.join(" / "); };
-  const parent = need("LIVE_CHECK_PARENT_FOLDER_ID");
+  const parent = destination.parentFolderId;
   const log: Array<Record<string, unknown>> = [];
   const note = (step: string, data: Record<string, unknown>) => { log.push({ step, ...data }); console.log(step, JSON.stringify(data)); };
 

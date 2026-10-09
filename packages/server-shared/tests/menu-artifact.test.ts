@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   LAYOUT_MASTERS, MenuArtifactError, SITE_BRANDING, menuFormatsForSite, siteBrandingFor, allergensFromStates, buildMenuSlidesRequests, flattenSlideElements, menuAllergenLabel, menuAllergenLines, menuArtifactFileName,
-  ensureGeneratedMenusFolder, menuWeekCommencing, menuWeekFolderName, menuArtifactId, menuArtifactKey, menuArtifactSourceKey, planMenuLayout, publishMenuArtifact, resolveMenuTemplate,
+  ensureGeneratedMenusFolder, menuOwnerEnvKey, menuParentEnvKey, resolveMenuDestination, menuWeekCommencing, menuWeekFolderName, menuArtifactId, menuArtifactKey, menuArtifactSourceKey, planMenuLayout, publishMenuArtifact, resolveMenuTemplate,
   type LabelMaster, type MenuOutputFormat, type NormalizedMenu, type NormalizedMenuItem, type PlanElement, type SiteBranding, type SlidesPresentation,
 } from "../src/menu-artifact";
 import { renderMenuPlanHtml } from "../src/menu-preview";
@@ -457,6 +457,7 @@ function fakeFolders() {
   const fetchImpl = async (url: string, init?: RequestInit) => {
     const reply = (body: unknown) => new Response(JSON.stringify(body), { status: 200, headers: { "content-type": "application/json" } });
     if (!init?.method) {
+      if (!new URL(url).searchParams.get("q")) return reply({ mimeType: "application/vnd.google-apps.folder" }); // parent folder check
       const q = new URL(url).searchParams.get("q")!; const parent = q.match(/'([^']+)' in parents/)![1]; const name = q.match(/name = '([^']+)'/)![1];
       return reply({ files: folders.filter(folder => folder.parent === parent && folder.name === name).map(folder => ({ id: folder.id })) });
     }
@@ -491,4 +492,59 @@ test("generated menus are filed in 'Generated Menus' / 'WC_<Monday>' and folders
   assert.deepEqual(drive.created, ["Generated Menus", "WC_2026-08-24", "WC_2026-08-31"]);
   const elsewhere = await filing("2026-08-26", "configured-folder");
   assert.equal(drive.folders.find(folder => folder.id === elsewhere.generatedMenusFolderId)!.parent, "configured-folder", "a configured parent gets its own Generated Menus folder");
+});
+
+// ------------------------------------------------------------------ OPLOC-scoped Drive destination
+
+const MNK = "oploc:66e621fa-6e6f-4f46-9aed-462313abbe8f";
+const ANGEL = "oploc:24a93500-d75d-4fe0-8beb-672d36f9da10";
+const MNK_ROOT_KEY = "GOOGLE_DRIVE_ROOT_FOLDER_ID_OPLOC_66E621FA_6E6F_4F46_9AED_462313ABBE8F";
+function withEnv<T>(values: Record<string, string | undefined>, run: () => T): T {
+  const saved: Record<string, string | undefined> = {};
+  for (const key of Object.keys(values)) { saved[key] = process.env[key]; if (values[key] === undefined) delete process.env[key]; else process.env[key] = values[key]; }
+  try { return run(); } finally { for (const key of Object.keys(saved)) { if (saved[key] === undefined) delete process.env[key]; else process.env[key] = saved[key]; } }
+}
+const hostedEnv = { NODE_ENV: "production", FIKA_RUNTIME_MODE: "staging", GOOGLE_WORKSPACE_DWD_SERVICE_ACCOUNT_JSON: "{}" };
+const failure = (code: string, pattern: RegExp) => (error: unknown) => error instanceof MenuArtifactError && error.code === code && error.status === 409 && pattern.test(error.message);
+
+test("drive destination: each OPLOC resolves its own explicit owner and menu parent (DWD impersonates that owner)", () => {
+  assert.equal(menuOwnerEnvKey(MNK), "GOOGLE_DRIVE_OWNER_EMAIL_OPLOC_66E621FA_6E6F_4F46_9AED_462313ABBE8F");
+  assert.equal(menuParentEnvKey(MNK), "GOOGLE_MENU_PARENT_FOLDER_ID_OPLOC_66E621FA_6E6F_4F46_9AED_462313ABBE8F");
+  const config = { ...hostedEnv, [menuOwnerEnvKey(MNK)]: "mnk@fikacatering.com", [menuParentEnvKey(MNK)]: "https://drive.google.com/drive/folders/mnk-parent-1", [menuOwnerEnvKey(ANGEL)]: "angel@fikacatering.com", [menuParentEnvKey(ANGEL)]: "angel-parent-9" };
+  withEnv(config, () => {
+    const mnk = resolveMenuDestination({ oplocId: MNK }); const angel = resolveMenuDestination({ oplocId: ANGEL });
+    assert.deepEqual([mnk.owner.workspaceEmail, mnk.parentFolderId, mnk.owner.authMode, mnk.parentSource], ["mnk@fikacatering.com", "mnk-parent-1", "dwd", "oploc-menu-parent"], "a pasted folder URL is reduced to its id");
+    assert.deepEqual([angel.owner.workspaceEmail, angel.parentFolderId], ["angel@fikacatering.com", "angel-parent-9"]);
+    assert.notEqual(mnk.owner.workspaceEmail, angel.owner.workspaceEmail, "owners are per site");
+    assert.equal(resolveMenuDestination({ oplocId: MNK, parentFolderIdOverride: "site-setting-folder" }).parentFolderId, "site-setting-folder", "a site-scoped dashboard setting wins for that site only");
+    assert.equal(resolveMenuDestination({ oplocId: ANGEL }).parentFolderId, "angel-parent-9");
+  });
+});
+
+test("drive destination: nothing is guessed - no app-wide owner/folder, no My Drive root, no auto-created parent path", () => {
+  const globals = { GOOGLE_DELIVERED_IN_OUTPUT_FOLDER_ID: "global-output", GOOGLE_MENU_OUTPUT_FOLDER_ID: "global-menu", GOOGLE_DRIVE_ROOT_FOLDER_ID_APP_DELIVERED_IN: "global-root", GOOGLE_DRIVE_OWNER_EMAIL_APP_DELIVERED_IN: "delivered-in@fikacatering.com" };
+  // Owner missing in hosted mode -> names the exact key.
+  withEnv({ ...hostedEnv, ...globals, [menuOwnerEnvKey(MNK)]: undefined, [menuParentEnvKey(MNK)]: "p" }, () => assert.throws(() => resolveMenuDestination({ oplocId: MNK }), failure("MENU_DRIVE_OWNER_NOT_CONFIGURED", /GOOGLE_DRIVE_OWNER_EMAIL_OPLOC_66E621FA/)));
+  // Owner must be an email.
+  withEnv({ ...hostedEnv, [menuOwnerEnvKey(MNK)]: "not-an-email", [menuParentEnvKey(MNK)]: "p" }, () => assert.throws(() => resolveMenuDestination({ oplocId: MNK }), failure("MENU_DRIVE_OWNER_INVALID", /email/)));
+  // Parent missing: the app-wide values above never stand in for it, hosted or local.
+  for (const mode of [hostedEnv, { NODE_ENV: "development", FIKA_RUNTIME_MODE: "local" }]) {
+    withEnv({ ...mode, ...globals, [menuOwnerEnvKey(MNK)]: "mnk@fikacatering.com", [menuParentEnvKey(MNK)]: undefined, [MNK_ROOT_KEY]: undefined }, () =>
+      assert.throws(() => resolveMenuDestination({ oplocId: MNK }), failure("MENU_PARENT_FOLDER_NOT_CONFIGURED", /GOOGLE_MENU_PARENT_FOLDER_ID_OPLOC_66E621FA/)));
+  }
+  // One site's configuration never serves another.
+  withEnv({ ...hostedEnv, [menuOwnerEnvKey(MNK)]: "mnk@fikacatering.com", [menuParentEnvKey(MNK)]: "mnk-parent", [menuOwnerEnvKey(ANGEL)]: "angel@fikacatering.com", [menuParentEnvKey(ANGEL)]: undefined }, () =>
+    assert.throws(() => resolveMenuDestination({ oplocId: ANGEL }), failure("MENU_PARENT_FOLDER_NOT_CONFIGURED", /OPLOC_24A93500/)));
+  // The OPLOC's own Drive root is an accepted explicit parent when no menu parent is set.
+  withEnv({ ...hostedEnv, [menuOwnerEnvKey(MNK)]: "mnk@fikacatering.com", [menuParentEnvKey(MNK)]: undefined, [MNK_ROOT_KEY]: "mnk-root" }, () => {
+    const destination = resolveMenuDestination({ oplocId: MNK }); assert.deepEqual([destination.parentFolderId, destination.parentSource], ["mnk-root", "oploc-drive-root"]);
+  });
+  // A destination needs a canonical OPLOC.
+  for (const oplocId of [undefined, "", "mnk", "oploc:not-a-uuid"]) assert.throws(() => resolveMenuDestination({ oplocId }), failure("MENU_DESTINATION_OPLOC_REQUIRED", /OPLOC/));
+});
+
+test("filing verifies the explicit parent folder before creating anything beneath it", async () => {
+  const reply = (body: unknown) => async () => new Response(JSON.stringify(body), { status: 200, headers: { "content-type": "application/json" } });
+  await assert.rejects(ensureGeneratedMenusFolder({ parentId: "not-a-folder", serviceDate: "2026-08-26", headers: {}, fetch: reply({ mimeType: "application/vnd.google-apps.document" }) }), (error: unknown) => error instanceof MenuArtifactError && error.code === "MENU_PARENT_FOLDER_INACCESSIBLE");
+  await assert.rejects(ensureGeneratedMenusFolder({ parentId: "gone", serviceDate: "2026-08-26", headers: {}, fetch: reply({ mimeType: "application/vnd.google-apps.folder", trashed: true }) }), (error: unknown) => error instanceof MenuArtifactError && error.code === "MENU_PARENT_FOLDER_INACCESSIBLE");
 });

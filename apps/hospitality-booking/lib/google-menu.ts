@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { ensureGeneratedMenusFolder, menuDriveResourceId, publishMenuArtifact, resolveMenuTemplate, type MenuOutputFormat, type NormalizedMenu, type PublishedMenuArtifact } from "@fika/server-shared/menu-artifact";
+import { MenuArtifactError, ensureGeneratedMenusFolder, menuDestinationToken, menuDriveResourceId, publishMenuArtifact, resolveMenuDestination, resolveMenuTemplate, type MenuOutputFormat, type NormalizedMenu, type PublishedMenuArtifact } from "@fika/server-shared/menu-artifact";
 import { driveAccessToken, driveFolderPath, resolveDriveOwner, type DriveOwner, type ResolvedDriveOwner } from "./drive-owner";
 
 const json = async <T>(response: Response): Promise<T> => {
@@ -73,7 +73,7 @@ async function resolveArtifactFolder(owner: ResolvedDriveOwner, configuredFolder
 
 /**
  * Generates the site menu from a normalized menu using the shared renderer and files it under
- * `Generated Menus/WC_<week commencing>` beneath the menu parent folder it already used.
+ * `Generated Menus/WC_<week commencing>` beneath the site's explicit menu parent folder, using the site's own Drive owner.
  * The site template is resolved by destination (never by workflow) and an
  * unconfigured or unknown site is an error, not a silently unbranded file.
  * Idempotent per exact revision and format: a retry reuses the existing Slides file.
@@ -81,12 +81,14 @@ async function resolveArtifactFolder(owner: ResolvedDriveOwner, configuredFolder
  */
 export async function createGoogleMenu(menu: NormalizedMenu, owner: DriveOwner, settings?: { folderId?: string; templateId?: string }, format: MenuOutputFormat = "tablet"): Promise<PublishedMenuArtifact> {
   const template = resolveMenuTemplate({ siteKey: menu.siteKey, oplocId: menu.oplocId, templateIdOverride: settings?.templateId, format });
-  const { owner: resolved, headers: authHeaders } = await driveHeaders(owner);
+  // OPLOC-scoped destination: this site's configured Workspace owner (DWD impersonates exactly that user) and its
+  // explicit menu parent. Nothing is guessed or auto-created above the parent; see menu-destination.ts.
+  if (owner.type !== "oploc-workspace" || owner.oplocId !== menu.oplocId) throw new MenuArtifactError("MENU_DESTINATION_OPLOC_MISMATCH", "The menu's OPLOC does not match the Drive owner it was routed to.", 409);
+  const destination = resolveMenuDestination({ oplocId: menu.oplocId, parentFolderIdOverride: settings?.folderId });
+  const authHeaders = { Authorization: `Bearer ${await menuDestinationToken(destination)}` };
   const headers = { ...authHeaders, "content-type": "application/json" };
-  // <the existing menu parent>/Generated Menus/WC_<Monday of the service week>. The parent is exactly where menus
-  // already went: the site's configured menu folder or the owner's configured root, else the FIKA OS menu folder path.
-  const parentFolderId = await resolveArtifactFolder(resolved, settings?.folderId, "menu", headers, "Hospitality menu");
-  const { folderId } = await ensureGeneratedMenusFolder({ parentId: parentFolderId, serviceDate: menu.serviceDate, headers });
+  // <site menu parent>/Generated Menus/WC_<Monday of the service week>
+  const { folderId } = await ensureGeneratedMenusFolder({ parentId: destination.parentFolderId, serviceDate: menu.serviceDate, headers });
   return publishMenuArtifact({ menu, template, folderId, headers: authHeaders });
 }
 

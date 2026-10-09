@@ -70,14 +70,29 @@ Labels are **never auto-regenerated**. Delivered-In records each label format se
 **OUTDATED** when the day's content hash changes, a new CPU allergen release is published, or a release is revoked (revocation marks every format). Generating
 labels never replaces or retires the tablet menu; a newer label revision retires only earlier files of the same source and format.
 
-## Where generated menus are filed
+## Where generated menus are filed (OPLOC-scoped)
 
-    <existing menu parent>/Generated Menus/WC_<Monday of the service week>/<Slides file>
+    <site menu parent>/Generated Menus/WC_<Monday of the service week>/<Slides file>
 
-The parent is where menus already went: Hospitality - the site's configured menu folder, else the owner's configured root, else the `FIKA OS/Hospitality/Menus`
-path; Delivered-In - the output folder (`GOOGLE_DELIVERED_IN_OUTPUT_FOLDER_ID` / app Drive root). This applies to the shared-template path and to the
-generic Delivered-In template path. Folders are found-or-created (`ensureGeneratedMenusFolder`), so there are no duplicates. `WC_YYYY-MM-DD` is the existing
-week-commencing convention.
+Each site (OPLOC) has its own Drive owner and menu parent folder, resolved by `resolveMenuDestination` (`menu-destination.ts`) from explicit configuration keyed by the
+canonical OPLOC id. `<KEY>` is the id without `oploc:`, upper-cased, non-alphanumerics as `_` (MNK: `66E621FA_6E6F_4F46_9AED_462313ABBE8F`):
+
+| Setting | Meaning |
+| --- | --- |
+| `GOOGLE_DRIVE_OWNER_EMAIL_OPLOC_<KEY>` | The Workspace user that DWD impersonates when publishing for that site (must be an email; required when hosted) |
+| `GOOGLE_MENU_PARENT_FOLDER_ID_OPLOC_<KEY>` | The folder that holds that site's `Generated Menus` folder (a pasted folder URL is accepted) |
+| `GOOGLE_DRIVE_ROOT_FOLDER_ID_OPLOC_<KEY>` | The site's existing Drive root, accepted as the parent only when no menu parent is set |
+| Hospitality per-site `googleMenuFolderId` | Site-scoped dashboard setting; wins for that site only |
+
+Nothing is guessed: there is **no app-wide owner or folder** (the old `GOOGLE_DELIVERED_IN_OUTPUT_FOLDER_ID`, `GOOGLE_DRIVE_*_APP_DELIVERED_IN` and local-only
+`GOOGLE_MENU_OUTPUT_FOLDER_ID` no longer stand in), no My Drive-root fallback and no auto-created `FIKA OS/...` path. A missing owner, a non-email owner, a missing parent or a
+non-OPLOC id fails with an actionable error naming the exact key (`MENU_DRIVE_OWNER_NOT_CONFIGURED` / `_INVALID`, `MENU_PARENT_FOLDER_NOT_CONFIGURED`,
+`MENU_DESTINATION_OPLOC_REQUIRED`), and the parent is verified to be a live folder before anything is created (`MENU_PARENT_FOLDER_INACCESSIBLE`). Only `Generated Menus` and
+`WC_YYYY-MM-DD` beneath that verified parent are created (found-or-created, no duplicates). `WC_YYYY-MM-DD` is the existing week-commencing convention.
+Applies to Hospitality, Delivered-In shared-template menus and the generic Delivered-In template path (generic template: optional `GOOGLE_DELIVERED_IN_TEMPLATE_ID_OPLOC_<KEY>`
+override, else `GOOGLE_DELIVERED_IN_TEMPLATE_ID`). Superseded-file retirement uses the same OPLOC owner. Templates and supported formats stay site-scoped (`SITE_BRANDING.formats`).
+
+Migration: set the two per-OPLOC keys for every site that generates menus before deploying; until then generation fails closed with the messages above.
 
 ## Adding a site
 

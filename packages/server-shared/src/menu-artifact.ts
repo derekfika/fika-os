@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { canonicalOplocId } from "./governed-oplocs";
 import { SITE_BRANDING, layoutTemplateKey, menuFormatsForSite, planMenuLayout, resolveLayoutMaster, siteBrandingFor, type SiteBranding } from "./menu-formats";
 import { buildMenuSlidesRequests, type SlidesPresentation } from "./menu-slides";
+import { menuDriveResourceId } from "./menu-drive";
 import { assertNormalizedMenu } from "./menu-validation";
 import { DEFAULT_MENU_OUTPUT_FORMAT, MENU_OUTPUT_FORMATS, MenuArtifactError, type MenuOutputFormat, type NormalizedMenu } from "./menu-types";
 
@@ -22,7 +23,8 @@ import { DEFAULT_MENU_OUTPUT_FORMAT, MENU_OUTPUT_FORMATS, MenuArtifactError, typ
 
 export * from "./menu-types";
 export { assertNormalizedMenu } from "./menu-validation";
-export { GENERATED_MENUS_FOLDER, ensureGeneratedMenusFolder, menuWeekCommencing, menuWeekFolderName } from "./menu-drive";
+export { GENERATED_MENUS_FOLDER, ensureGeneratedMenusFolder, menuDriveResourceId, menuWeekCommencing, menuWeekFolderName } from "./menu-drive";
+export { menuDestinationToken, menuOwnerEnvKey, menuParentEnvKey, resolveMenuDestination, type MenuDestination } from "./menu-destination";
 export { allergensFromStates, assertAllergensPrintable, menuAllergenLabel, menuAllergenLine, menuAllergenLines, type MenuAllergenLine } from "./menu-allergens";
 export { LAYOUT_MASTERS, SITE_BRANDING, fitLabelFace, menuFormatsForSite, layoutTemplateKey, planMenuLayout, resolveLayoutMaster, siteBrandingFor, type MenuLayoutPlan, type MenuLayoutPage, type PlanElement, type PlanParagraph, type SiteBranding } from "./menu-formats";
 export { MENU_CONTENT_OBJECT_ID, buildMenuSlidesRequests, flattenSlideElements, type SlidesPresentation } from "./menu-slides";
@@ -86,13 +88,6 @@ export function menuSiteKeyForOploc(oplocId?: string) {
 }
 
 export function menuTemplateSiteKeys() { return SITE_BRANDING.map(site => site.siteKey); }
-
-export function menuDriveResourceId(value?: string) {
-  const raw = value?.trim().replace(/[),.;]+$/, "");
-  if (!raw) return undefined;
-  const match = raw.match(/\/folders\/([A-Za-z0-9_-]+)/) || raw.match(/\/d\/([A-Za-z0-9_-]+)/);
-  return (match?.[1] || raw).replace(/[),.;]+$/, "");
-}
 
 /**
  * Resolves the site branding, layout master and Drive master deck for a format.

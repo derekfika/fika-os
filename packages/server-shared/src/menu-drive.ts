@@ -11,6 +11,13 @@ import { MenuArtifactError } from "./menu-types";
  * on every later lookup.
  */
 
+export function menuDriveResourceId(value?: string) {
+  const raw = value?.trim().replace(/[),.;]+$/, "");
+  if (!raw) return undefined;
+  const match = raw.match(/\/folders\/([A-Za-z0-9_-]+)/) || raw.match(/\/d\/([A-Za-z0-9_-]+)/);
+  return (match?.[1] || raw).replace(/[),.;]+$/, "");
+}
+
 export const GENERATED_MENUS_FOLDER = "Generated Menus";
 
 type FetchLike = (input: string, init?: RequestInit) => Promise<Response>;
@@ -56,6 +63,11 @@ async function findOrCreateFolder(fetchImpl: FetchLike, headers: Record<string, 
  */
 export async function ensureGeneratedMenusFolder(input: { parentId: string; serviceDate: string; headers: Record<string, string>; fetch?: FetchLike }) {
   const fetchImpl: FetchLike = input.fetch || ((url, init) => fetch(url, init));
+  // The parent is explicit configuration: verify it is a live folder this identity can see before creating anything beneath it.
+  if (input.parentId !== "root") {
+    const parent = await drive<{ mimeType?: string; trashed?: boolean }>(fetchImpl, `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(input.parentId)}?supportsAllDrives=true&fields=mimeType,trashed`, { headers: input.headers }, "Google Drive menu parent folder check");
+    if (parent.mimeType !== "application/vnd.google-apps.folder" || parent.trashed) throw new MenuArtifactError("MENU_PARENT_FOLDER_INACCESSIBLE", `The configured menu parent folder ${input.parentId} is not an accessible Google Drive folder.`, 409);
+  }
   const generated = await findOrCreateFolder(fetchImpl, input.headers, input.parentId, GENERATED_MENUS_FOLDER);
   return { folderId: await findOrCreateFolder(fetchImpl, input.headers, generated, menuWeekFolderName(input.serviceDate)), generatedMenusFolderId: generated, weekFolderName: menuWeekFolderName(input.serviceDate) };
 }
