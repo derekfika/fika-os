@@ -2,11 +2,7 @@
 # Configure the backend root directory as apps/integration-hub.
 env:
   # Manual lifecycle UAT only. Runtime Booking IDs must be explicitly selected
-  # before enabling delivery; an empty selection fails closed for all candidates.
-  - variable: FIKA_HOSPITALITY_EMAIL_UAT_BOOKING_IDS
-    value: ""
-    availability:
-      - RUNTIME
+  # before enabling delivery; a missing selection fails closed for all candidates.
   - variable: FIKA_HOSPITALITY_EMAIL_UAT_RECIPIENT
     value: derek@fikacatering.com
     availability:
