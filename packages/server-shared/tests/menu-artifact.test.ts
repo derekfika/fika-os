@@ -192,7 +192,15 @@ test("tablet: sections render as labelled groups; long menus shrink within reada
     { key: "hot_mains", label: "Hot mains", items: [item("b", "Roast Chicken", ["gluten"], ["milk"])] },
   ] });
   const paragraphs = textElements(planMenuLayout(sectioned, "tablet"))[0].paragraphs.map(paragraph => `${paragraph.role}:${paragraph.text}`);
-  assert.deepEqual(paragraphs, ["section:SALADS", "item:Mixed Leaf Salad", "allergen:(Mustard)", "section:HOT MAINS", "item:Roast Chicken", "allergen:(Gluten)"]);
+  // Input order is salads then mains; the tablet reads mains, sides, then salads.
+  assert.deepEqual(paragraphs, ["section:HOT MAINS", "item:Roast Chicken", "allergen:(Gluten)", "section:SALADS", "item:Mixed Leaf Salad", "allergen:(Mustard)"]);
+  const three = deckMenu({ sections: [
+    { key: "salads", label: "Salads", items: [item("a", "Mixed Leaf Salad", ["mustard"])] },
+    { key: "sides_extras", label: "Sides & extras", items: [item("c", "Roasted Potatoes", ["sulphites"])] },
+    { key: "hot_mains", label: "Hot mains", items: [item("b", "Roast Chicken", ["gluten"])] },
+  ] });
+  assert.deepEqual(textElements(planMenuLayout(three, "tablet"))[0].paragraphs.filter(paragraph => paragraph.role === "section").map(paragraph => paragraph.text), ["HOT MAINS", "SIDES & EXTRAS", "SALADS"]);
+  assert.deepEqual(textElements(planMenuLayout(three, "flat-label")).map(label => label.paragraphs[0].text), ["Mixed Leaf Salad", "Roasted Potatoes", "Roast Chicken"], "labels keep the source order");
 
   const longNames = deckMenu({ sections: [{ key: "menu", items: Array.from({ length: 14 }, (_, index) => item(String(index), `Long dish name number ${index + 1} with sauce`, ["gluten", "milk"])) }] });
   const shrunk = planMenuLayout(longNames, "tablet");

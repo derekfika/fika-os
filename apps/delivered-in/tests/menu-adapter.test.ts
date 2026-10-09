@@ -42,7 +42,7 @@ test("the MNK template is selected by site and the rendered menu carries names a
   assert.equal(template.siteKey, "mnk"); assert.equal(template.templateId, "tpl-mnk");
   const requests = buildMenuSlidesRequests(menu, template, page) as Array<Record<string, any>>;
   const text: string = requests.find(request => request.insertText)!.insertText.text;
-  assert.match(text, /^SALADS\nMixed Fika Leaf Salad\n\(Mustard\)\nHOT MAINS\nRoast Chicken Breast\n\(Gluten\)\nSIDES & EXTRAS\nRoasted Potatoes$/);
+  assert.match(text, /^HOT MAINS\nRoast Chicken Breast\n\(Gluten\)\nSIDES & EXTRAS\nRoasted Potatoes\nSALADS\nMixed Fika Leaf Salad\n\(Mustard\)$/);
   assert.equal(requests.filter(request => request.createShape).length, 1);
 });
 

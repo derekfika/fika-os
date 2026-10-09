@@ -286,11 +286,17 @@ function chromeElements(chrome: ChromeShape[], origin: { x: number; y: number },
   });
 }
 
+const TABLET_SECTION_ORDER: Record<string, number> = { hot_mains: 0, sides_extras: 1, salads: 2 };
+
 function planTablet(menu: NormalizedMenu, branding: SiteBranding, master: TabletMaster): MenuLayoutPlan {
   const { type, content, padding } = master;
   const widthPt = content.w - padding * 2;
   const heightPt = content.h - padding * 2;
-  const sections = menu.sections.filter(section => section.items.length);
+  // Tablet reading order: mains, sides, then salads. Other section keys keep their order after these (stable sort).
+  const sections = menu.sections.filter(section => section.items.length)
+    .map((section, index) => ({ section, index }))
+    .sort((a, b) => (TABLET_SECTION_ORDER[a.section.key] ?? 99) - (TABLET_SECTION_ORDER[b.section.key] ?? 99) || a.index - b.index)
+    .map(entry => entry.section);
   const labelled = sections.length > 1 && sections.every(section => section.label);
   const colors = branding.colors;
   const build = (itemPt: number) => {

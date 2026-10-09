@@ -26,7 +26,7 @@ The renderer never branches on workflow. The **caller picks the format**; the **
 
 | Format | Master deck | Output | Pagination |
 | --- | --- | --- | --- |
-| `tablet` | MNK Tablet Template (portrait 496.08 x 793.44pt) | one menu page | none; overflow fails with `MENU_OVERFLOW` |
+| `tablet` | MNK Tablet Template (portrait 496.08 x 793.44pt) | one menu page; sections read Hot mains, Sides & extras, then Salads | none; overflow fails with `MENU_OVERFLOW` |
 | `flat-label` | MNK Label Template **slide 2** (landscape 765.37 x 540pt) | one dish per 168.1 x 76.5pt label, 4 x 6 = 24 per page | automatic; pages are duplicated as needed |
 | `tent-label` | MNK Label Template **slide 1** | one dish per fold-over card (168.1 x 153pt: rotated rear face + front face), 4 x 3 = 12 per page | automatic |
 
