@@ -22,6 +22,7 @@ import { DEFAULT_MENU_OUTPUT_FORMAT, MENU_OUTPUT_FORMATS, MenuArtifactError, typ
 
 export * from "./menu-types";
 export { assertNormalizedMenu } from "./menu-validation";
+export { GENERATED_MENUS_FOLDER, ensureGeneratedMenusFolder, menuWeekCommencing, menuWeekFolderName } from "./menu-drive";
 export { allergensFromStates, assertAllergensPrintable, menuAllergenLabel, menuAllergenLine, menuAllergenLines, type MenuAllergenLine } from "./menu-allergens";
 export { LAYOUT_MASTERS, SITE_BRANDING, fitLabelFace, layoutTemplateKey, planMenuLayout, resolveLayoutMaster, siteBrandingFor, type MenuLayoutPlan, type MenuLayoutPage, type PlanElement, type PlanParagraph, type SiteBranding } from "./menu-formats";
 export { MENU_CONTENT_OBJECT_ID, buildMenuSlidesRequests, flattenSlideElements, type SlidesPresentation } from "./menu-slides";

@@ -61,8 +61,18 @@ Hospitality's per-site override (`googleMenuTemplateId`) applies to `tablet` onl
 A site/format with no layout or an unconfigured deck fails with `MENU_FORMAT_UNSUPPORTED` / `MENU_TEMPLATE_NOT_CONFIGURED`; a master deck whose page
 size or card grid does not match the layout master fails with `MENU_TEMPLATE_MISMATCH` instead of producing a misaligned sheet.
 
-Hospitality: `POST /api/menus` accepts an optional `format` (default `tablet`). Delivered-In: `createGoogleSiteMenu(..., format)`
-(not yet exposed in its release flow, which tracks one artifact per day).
+Hospitality dashboard: the booking panel has a **Menu format** picker (Tablet menu / Flat labels / Tent labels) next to Generate/Regenerate; `POST /api/menus`
+takes `format` (default `tablet`) and the dashboard keeps one current output per booking per format. Delivered-In: the site-menu controls have the same
+picker. Tablet keeps the existing current-site-menu record and retirement; labels are extra print artifacts that never replace or retire the day's tablet
+menu (labels generated for an earlier revision are retired only when labels are regenerated for a newer one). Labels need a site with a shared template (MNK).
+
+## Where generated menus are filed
+
+    <parent>/Generated Menus/WC_<Monday of the service week>/<Slides file>
+
+`<parent>` is the configured menu folder (Hospitality: the site's `googleMenuFolderId` or the owner's configured root; Delivered-In: the output folder) or, with
+nothing configured, the owner's My Drive. Folders are found-or-created (`ensureGeneratedMenusFolder`), so there are no duplicates. `WC_YYYY-MM-DD` is the
+existing week-commencing convention. Delivered-In sites without a shared template still use the generic template path and its existing `WC_` folder.
 
 ## Adding a site
 

@@ -8,8 +8,8 @@ import { dailyRunSheetHtml } from "../../lib/run-sheet";
 import { quoteHtml } from "../../lib/quote-document";
 import { fetchQuoteRequest } from "../../lib/quote-request";
 import { amendmentPatchDto } from "../../lib/amendment-dto";
-import { mnkMenuHtml } from "../../lib/mnk-menu-output";
-import type { MenuOutput } from "../../lib/mnk-menu-output";
+import { MENU_FORMAT_OPTIONS, menuOutputKey, mnkMenuHtml } from "../../lib/mnk-menu-output";
+import type { MenuFormat, MenuOutput } from "../../lib/mnk-menu-output";
 import styles from "./HospitalityDashboard.module.css";
 import { hospitalitySiteThemeStyle, portalSite, type PortalSiteKey } from "@/lib/portal-sites";
 import { hospitalityWorkspacePath } from "@/lib/hospitality-workspace";
@@ -147,6 +147,7 @@ export default function HospitalityDashboard({
     {},
   );
   const [menuBusy, setMenuBusy] = useState(false);
+  const [menuFormat, setMenuFormat] = useState<MenuFormat>("tablet");
   const [menuReadiness, setMenuReadiness] = useState<Record<string, { available: boolean; reason: string }>>({});
   const [matrixArtifacts, setMatrixArtifacts] = useState<
     Record<
@@ -192,7 +193,7 @@ export default function HospitalityDashboard({
           setMenuOutputs(
             Object.fromEntries(
               (menuBody.outputs || []).filter((output) => output.templateVersion === "mnk-hospitality-menu-v2").map((output) => [
-                output.bookingId,
+                menuOutputKey(output.bookingId, output.format),
                 output,
               ]),
             ),
@@ -600,6 +601,7 @@ export default function HospitalityDashboard({
             quoteSettings?.googleMenuFolderId ||
             quoteSettings?.googleDriveFolderId,
           menuTemplateId: quoteSettings?.googleMenuTemplateId,
+          format: menuFormat,
           actor: "menu-planning",
         }),
       });
@@ -614,7 +616,7 @@ export default function HospitalityDashboard({
         );
       setMenuOutputs((current) => ({
         ...current,
-        [booking.canonicalId]: body.output!,
+        [menuOutputKey(booking.canonicalId, body.output!.format)]: body.output!,
       }));
       if (body.output.google?.presentationUrl)
         window.open(
@@ -833,7 +835,7 @@ export default function HospitalityDashboard({
     ? productionOrders[selected.canonicalId]
     : undefined;
   const selectedMenuOutput = selected
-    ? menuOutputs[selected.canonicalId]
+    ? menuOutputs[menuOutputKey(selected.canonicalId, menuFormat)]
     : undefined;
   const selectedMenuStale = Boolean(
     selectedMenuOutput?.planUpdatedAt &&
@@ -1109,6 +1111,8 @@ export default function HospitalityDashboard({
                   matrixArtifact={matrixArtifacts[selected.canonicalId]}
                   onRefreshMatrix={() => setMatrixRefreshTick((current) => current + 1)}
                   menuBusy={menuBusy}
+                  menuFormat={menuFormat}
+                  onMenuFormatChange={setMenuFormat}
                   setPending={setPending}
                   amendment={amendment}
                   onAmend={openAmendment}
@@ -1343,6 +1347,8 @@ function BookingPane({
   matrixArtifact,
   onRefreshMatrix,
   menuBusy,
+  menuFormat,
+  onMenuFormatChange,
   setPending,
   amendment,
   onAmend,
@@ -1377,6 +1383,8 @@ function BookingPane({
   };
   onRefreshMatrix: () => void;
   menuBusy: boolean;
+  menuFormat: MenuFormat;
+  onMenuFormatChange: (format: MenuFormat) => void;
   setPending: (status: WorkflowAction) => void;
   amendment: Amendment | null;
   onAmend: (booking: CanonicalBooking) => void;
@@ -1414,6 +1422,8 @@ function BookingPane({
       matrixArtifact={matrixArtifact}
       onRefreshMatrix={onRefreshMatrix}
       menuBusy={menuBusy}
+      menuFormat={menuFormat}
+      onMenuFormatChange={onMenuFormatChange}
       setPending={setPending}
       onAmend={onAmend}
       onOpenQuote={onOpenQuote}
@@ -1438,6 +1448,8 @@ function BookingDetail({
   matrixArtifact,
   onRefreshMatrix,
   menuBusy,
+  menuFormat,
+  onMenuFormatChange,
   setPending,
   onAmend,
   onOpenQuote,
@@ -1467,6 +1479,8 @@ function BookingDetail({
   };
   onRefreshMatrix: () => void;
   menuBusy: boolean;
+  menuFormat: MenuFormat;
+  onMenuFormatChange: (format: MenuFormat) => void;
   setPending: (status: WorkflowAction) => void;
   onAmend: (booking: CanonicalBooking) => void;
   onOpenQuote: (booking: CanonicalBooking) => void;
@@ -1735,6 +1749,19 @@ function BookingDetail({
                 <small>{matrixArtifact?.status === "not_configured" ? "Signed matrix storage is not configured" : "Available after signing"}</small>
               </button>
             )}
+            <label className="manager-document-action">
+              <strong>Menu format</strong>
+              <select
+                value={menuFormat}
+                onChange={(event) => onMenuFormatChange(event.target.value as MenuFormat)}
+                disabled={menuBusy}
+              >
+                {MENU_FORMAT_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>{option.label}</option>
+                ))}
+              </select>
+              <small>{MENU_FORMAT_OPTIONS.find((option) => option.value === menuFormat)?.hint}</small>
+            </label>
             {menuOutput ? (
               <>
                 <button

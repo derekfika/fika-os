@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { menuDriveResourceId, publishMenuArtifact, resolveMenuTemplate, type MenuOutputFormat, type NormalizedMenu, type PublishedMenuArtifact } from "@fika/server-shared/menu-artifact";
+import { ensureGeneratedMenusFolder, menuDriveResourceId, publishMenuArtifact, resolveMenuTemplate, type MenuOutputFormat, type NormalizedMenu, type PublishedMenuArtifact } from "@fika/server-shared/menu-artifact";
 import { driveAccessToken, driveFolderPath, resolveDriveOwner, type DriveOwner, type ResolvedDriveOwner } from "./drive-owner";
 
 const json = async <T>(response: Response): Promise<T> => {
@@ -72,7 +72,8 @@ async function resolveArtifactFolder(owner: ResolvedDriveOwner, configuredFolder
 }
 
 /**
- * Generates the site menu from a normalized menu using the shared renderer.
+ * Generates the site menu from a normalized menu using the shared renderer and files it under
+ * `Generated Menus/WC_<week commencing>` in the owner's Drive.
  * The site template is resolved by destination (never by workflow) and an
  * unconfigured or unknown site is an error, not a silently unbranded file.
  * Idempotent per exact revision and format: a retry reuses the existing Slides file.
@@ -82,7 +83,10 @@ export async function createGoogleMenu(menu: NormalizedMenu, owner: DriveOwner, 
   const template = resolveMenuTemplate({ siteKey: menu.siteKey, oplocId: menu.oplocId, templateIdOverride: settings?.templateId, format });
   const { owner: resolved, headers: authHeaders } = await driveHeaders(owner);
   const headers = { ...authHeaders, "content-type": "application/json" };
-  const folderId = await resolveArtifactFolder(resolved, settings?.folderId, "menu", headers, "Hospitality menu");
+  // <configured folder, or the owner's My Drive>/Generated Menus/WC_<Monday of the service week>
+  const configured = driveResourceId(settings?.folderId || resolved.configuredRootFolderId);
+  if (configured) await assertDriveFolder(configured, headers, "Hospitality menu");
+  const { folderId } = await ensureGeneratedMenusFolder({ parentId: configured || "root", serviceDate: menu.serviceDate, headers });
   return publishMenuArtifact({ menu, template, folderId, headers: authHeaders });
 }
 

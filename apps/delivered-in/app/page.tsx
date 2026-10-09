@@ -150,6 +150,8 @@ function SiteMenuControls({
 }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [format, setFormat] = useState<"tablet" | "flat-label" | "tent-label">("tablet");
+  const [labels, setLabels] = useState<{ format: string; driveUrl: string; fileName: string } | null>(null);
   const state = day.siteMenu || { status: "none" as const };
   const artifact = state.artifact;
   const signed = day.cpuReview?.status === "signed";
@@ -157,6 +159,7 @@ function SiteMenuControls({
     if (!signed) return;
     setBusy(true);
     setError("");
+    setLabels(null);
     try {
       const response = await fetch("/api/delivered-in/site-menu", {
         method: "POST",
@@ -165,12 +168,16 @@ function SiteMenuControls({
           oplocId: site.oplocId,
           publicationDayId: day.publicationDayId,
           action: state.status === "none" ? "generate" : "regenerate",
+          format,
         }),
       });
-      if (!response.ok) throw new Error();
-      onGenerated();
-    } catch {
-      setError("Site menu could not be generated.");
+      const body = (await response.json().catch(() => ({}))) as { artifact?: { driveUrl: string; fileName: string }; error?: { message?: string } };
+      if (!response.ok) throw new Error(body.error?.message);
+      // Labels are extra print files: the day's tablet site-menu state is unchanged, so only show their link.
+      if (format !== "tablet" && body.artifact) setLabels({ format, driveUrl: body.artifact.driveUrl, fileName: body.artifact.fileName });
+      else onGenerated();
+    } catch (cause) {
+      setError((cause as Error).message || "Site menu could not be generated.");
     } finally {
       setBusy(false);
     }
@@ -197,6 +204,21 @@ function SiteMenuControls({
         </a>
       )}
       {signed && (
+        <label className="ops-field-inline">
+          <span className="sr-only">Menu format</span>
+          <select
+            aria-label="Menu format"
+            value={format}
+            onChange={(event) => setFormat(event.target.value as typeof format)}
+            disabled={busy}
+          >
+            <option value="tablet">Tablet menu</option>
+            <option value="flat-label">Flat labels</option>
+            <option value="tent-label">Tent labels</option>
+          </select>
+        </label>
+      )}
+      {signed && (
         <button
           className="ops-button ops-button-secondary"
           onClick={() => void generate()}
@@ -204,10 +226,19 @@ function SiteMenuControls({
         >
           {busy
             ? "Working…"
-            : state.status === "none"
-              ? "Generate site menu"
-              : "Regenerate site menu"}
+            : format !== "tablet"
+              ? format === "flat-label"
+                ? "Generate flat labels"
+                : "Generate tent labels"
+              : state.status === "none"
+                ? "Generate site menu"
+                : "Regenerate site menu"}
         </button>
+      )}
+      {labels && (
+        <a className="ops-link" href={labels.driveUrl} target="_blank" rel="noopener noreferrer">
+          View {labels.format === "flat-label" ? "flat" : "tent"} labels ↗
+        </a>
       )}
       {error && (
         <span className="ops-error" role="alert">

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { MenuArtifactError, buildMenuSlidesRequests, menuArtifactFileName, menuArtifactKey, planMenuLayout, resolveMenuTemplate, type SlidesPresentation } from "@fika/server-shared/menu-artifact";
+import { MENU_FORMAT_OPTIONS, menuOutputKey } from "../lib/mnk-menu-output";
 import { hospitalityMenuFromBooking, type CpuPlanForMenu } from "../lib/menu-adapter";
 import type { CanonicalBooking } from "../lib/canonical-types";
 
@@ -86,4 +87,10 @@ test("the same current booking menu renders as tablet and flat labels; a cancell
   assert.equal(menuArtifactFileName(menu, "flat-label"), "2026-08-25-12-00-FIKA-MNK-flat-labels");
   assert.notEqual(menuArtifactKey(menu, "mnk-tablet-v1", "tablet"), menuArtifactKey(menu, "mnk-flat-label-v1", "flat-label"));
   assert.throws(() => hospitalityMenuFromBooking(booking({ lifecycleStatus: "Cancelled" }), plan()), (error: unknown) => error instanceof MenuArtifactError && error.code === "MENU_BOOKING_CANCELLED");
+});
+
+test("each booking keeps one current output per format, and every format is offered to the manager", () => {
+  assert.deepEqual(MENU_FORMAT_OPTIONS.map(option => option.value), ["tablet", "flat-label", "tent-label"]);
+  assert.equal(menuOutputKey("booking:1", undefined), menuOutputKey("booking:1", "tablet"), "outputs generated before formats existed are tablet menus");
+  assert.notEqual(menuOutputKey("booking:1", "flat-label"), menuOutputKey("booking:1", "tablet"));
 });

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   LAYOUT_MASTERS, MenuArtifactError, SITE_BRANDING, allergensFromStates, buildMenuSlidesRequests, flattenSlideElements, menuAllergenLabel, menuAllergenLines, menuArtifactFileName,
-  menuArtifactId, menuArtifactKey, menuArtifactSourceKey, planMenuLayout, publishMenuArtifact, resolveMenuTemplate,
+  ensureGeneratedMenusFolder, menuWeekCommencing, menuWeekFolderName, menuArtifactId, menuArtifactKey, menuArtifactSourceKey, planMenuLayout, publishMenuArtifact, resolveMenuTemplate,
   type LabelMaster, type MenuOutputFormat, type NormalizedMenu, type NormalizedMenuItem, type PlanElement, type SiteBranding, type SlidesPresentation,
 } from "../src/menu-artifact";
 import { renderMenuPlanHtml } from "../src/menu-preview";
@@ -436,4 +436,47 @@ test("publishing reports the page count so callers know how many label sheets we
   const google = fakeGoogle();
   assert.equal((await publishWith(google, manyDishes(30), "flat-label")).pageCount, 2);
   assert.equal((await publishWith(google, deckMenu(), "tablet")).pageCount, 1);
+});
+
+// ------------------------------------------------------------------ Drive filing: Generated Menus / WC_<Monday>
+
+function fakeFolders() {
+  const folders: Array<{ id: string; name: string; parent: string }> = []; const created: string[] = [];
+  const fetchImpl = async (url: string, init?: RequestInit) => {
+    const reply = (body: unknown) => new Response(JSON.stringify(body), { status: 200, headers: { "content-type": "application/json" } });
+    if (!init?.method) {
+      const q = new URL(url).searchParams.get("q")!; const parent = q.match(/'([^']+)' in parents/)![1]; const name = q.match(/name = '([^']+)'/)![1];
+      return reply({ files: folders.filter(folder => folder.parent === parent && folder.name === name).map(folder => ({ id: folder.id })) });
+    }
+    const body = JSON.parse(String(init.body)); const id = `folder-${folders.length + 1}`;
+    folders.push({ id, name: body.name, parent: body.parents[0] }); created.push(body.name); return reply({ id });
+  };
+  return { folders, created, fetchImpl };
+}
+
+test("week commencing is the Monday of the service week", () => {
+  assert.equal(menuWeekCommencing("2026-08-24"), "2026-08-24", "a Monday is its own week commencing");
+  assert.equal(menuWeekCommencing("2026-08-25"), "2026-08-24");
+  assert.equal(menuWeekCommencing("2026-08-30"), "2026-08-24", "Sunday belongs to the week that began the previous Monday");
+  assert.equal(menuWeekCommencing("2026-09-01"), "2026-08-31", "crosses a month boundary");
+  assert.equal(menuWeekCommencing("2026-01-01"), "2025-12-29", "crosses a year boundary");
+  assert.equal(menuWeekFolderName("2026-08-26"), "WC_2026-08-24");
+  assert.throws(() => menuWeekCommencing("25/08/2026"), (error: unknown) => error instanceof MenuArtifactError && error.code === "MENU_DATE_INVALID");
+});
+
+test("generated menus are filed in 'Generated Menus' / 'WC_<Monday>' and folders are never duplicated", async () => {
+  const drive = fakeFolders();
+  const filing = (serviceDate: string, parentId = "root") => ensureGeneratedMenusFolder({ parentId, serviceDate, headers: { Authorization: "Bearer t" }, fetch: drive.fetchImpl });
+  const first = await filing("2026-08-26");
+  assert.equal(first.weekFolderName, "WC_2026-08-24");
+  assert.deepEqual(drive.created, ["Generated Menus", "WC_2026-08-24"]);
+  assert.deepEqual(drive.folders.map(folder => `${folder.parent}>${folder.name}`), ["root>Generated Menus", "folder-1>WC_2026-08-24"]);
+  assert.equal((await filing("2026-08-28")).folderId, first.folderId, "same week -> same folder");
+  assert.equal(drive.created.length, 2, "nothing is re-created");
+  const nextWeek = await filing("2026-08-31");
+  assert.notEqual(nextWeek.folderId, first.folderId);
+  assert.equal(nextWeek.generatedMenusFolderId, first.generatedMenusFolderId, "weeks share one Generated Menus folder");
+  assert.deepEqual(drive.created, ["Generated Menus", "WC_2026-08-24", "WC_2026-08-31"]);
+  const elsewhere = await filing("2026-08-26", "configured-folder");
+  assert.equal(drive.folders.find(folder => folder.id === elsewhere.generatedMenusFolderId)!.parent, "configured-folder", "a configured parent gets its own Generated Menus folder");
 });
