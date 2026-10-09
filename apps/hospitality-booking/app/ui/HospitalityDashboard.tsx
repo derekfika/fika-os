@@ -8,7 +8,7 @@ import { dailyRunSheetHtml } from "../../lib/run-sheet";
 import { quoteHtml } from "../../lib/quote-document";
 import { fetchQuoteRequest } from "../../lib/quote-request";
 import { amendmentPatchDto } from "../../lib/amendment-dto";
-import { MENU_FORMAT_OPTIONS, menuOutputKey, mnkMenuHtml } from "../../lib/mnk-menu-output";
+import { MENU_FORMAT_OPTIONS, menuFormatsForSiteKey, menuOutputKey, mnkMenuHtml } from "../../lib/mnk-menu-output";
 import type { MenuFormat, MenuOutput } from "../../lib/mnk-menu-output";
 import styles from "./HospitalityDashboard.module.css";
 import { hospitalitySiteThemeStyle, portalSite, type PortalSiteKey } from "@/lib/portal-sites";
@@ -148,6 +148,8 @@ export default function HospitalityDashboard({
   );
   const [menuBusy, setMenuBusy] = useState(false);
   const [menuFormat, setMenuFormat] = useState<MenuFormat>("tablet");
+  const supportedMenuFormats = menuFormatsForSiteKey(site.key);
+  const activeMenuFormat: MenuFormat = supportedMenuFormats.includes(menuFormat) ? menuFormat : "tablet";
   const [menuReadiness, setMenuReadiness] = useState<Record<string, { available: boolean; reason: string }>>({});
   const [matrixArtifacts, setMatrixArtifacts] = useState<
     Record<
@@ -601,7 +603,7 @@ export default function HospitalityDashboard({
             quoteSettings?.googleMenuFolderId ||
             quoteSettings?.googleDriveFolderId,
           menuTemplateId: quoteSettings?.googleMenuTemplateId,
-          format: menuFormat,
+          format: activeMenuFormat,
           actor: "menu-planning",
         }),
       });
@@ -835,7 +837,7 @@ export default function HospitalityDashboard({
     ? productionOrders[selected.canonicalId]
     : undefined;
   const selectedMenuOutput = selected
-    ? menuOutputs[menuOutputKey(selected.canonicalId, menuFormat)]
+    ? menuOutputs[menuOutputKey(selected.canonicalId, activeMenuFormat)]
     : undefined;
   const selectedMenuStale = Boolean(
     selectedMenuOutput?.planUpdatedAt &&
@@ -1111,7 +1113,8 @@ export default function HospitalityDashboard({
                   matrixArtifact={matrixArtifacts[selected.canonicalId]}
                   onRefreshMatrix={() => setMatrixRefreshTick((current) => current + 1)}
                   menuBusy={menuBusy}
-                  menuFormat={menuFormat}
+                  menuFormat={activeMenuFormat}
+                  menuFormats={supportedMenuFormats}
                   onMenuFormatChange={setMenuFormat}
                   setPending={setPending}
                   amendment={amendment}
@@ -1348,6 +1351,7 @@ function BookingPane({
   onRefreshMatrix,
   menuBusy,
   menuFormat,
+  menuFormats,
   onMenuFormatChange,
   setPending,
   amendment,
@@ -1384,6 +1388,7 @@ function BookingPane({
   onRefreshMatrix: () => void;
   menuBusy: boolean;
   menuFormat: MenuFormat;
+  menuFormats: MenuFormat[];
   onMenuFormatChange: (format: MenuFormat) => void;
   setPending: (status: WorkflowAction) => void;
   amendment: Amendment | null;
@@ -1423,6 +1428,7 @@ function BookingPane({
       onRefreshMatrix={onRefreshMatrix}
       menuBusy={menuBusy}
       menuFormat={menuFormat}
+      menuFormats={menuFormats}
       onMenuFormatChange={onMenuFormatChange}
       setPending={setPending}
       onAmend={onAmend}
@@ -1449,6 +1455,7 @@ function BookingDetail({
   onRefreshMatrix,
   menuBusy,
   menuFormat,
+  menuFormats,
   onMenuFormatChange,
   setPending,
   onAmend,
@@ -1480,6 +1487,7 @@ function BookingDetail({
   onRefreshMatrix: () => void;
   menuBusy: boolean;
   menuFormat: MenuFormat;
+  menuFormats: MenuFormat[];
   onMenuFormatChange: (format: MenuFormat) => void;
   setPending: (status: WorkflowAction) => void;
   onAmend: (booking: CanonicalBooking) => void;
@@ -1749,6 +1757,7 @@ function BookingDetail({
                 <small>{matrixArtifact?.status === "not_configured" ? "Signed matrix storage is not configured" : "Available after signing"}</small>
               </button>
             )}
+            {menuFormats.length > 1 && (
             <label className="manager-document-action">
               <strong>Menu format</strong>
               <select
@@ -1756,12 +1765,13 @@ function BookingDetail({
                 onChange={(event) => onMenuFormatChange(event.target.value as MenuFormat)}
                 disabled={menuBusy}
               >
-                {MENU_FORMAT_OPTIONS.map((option) => (
+                {MENU_FORMAT_OPTIONS.filter((option) => menuFormats.includes(option.value)).map((option) => (
                   <option key={option.value} value={option.value}>{option.label}</option>
                 ))}
               </select>
               <small>{MENU_FORMAT_OPTIONS.find((option) => option.value === menuFormat)?.hint}</small>
             </label>
+            )}
             {menuOutput ? (
               <>
                 <button

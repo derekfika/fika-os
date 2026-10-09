@@ -171,7 +171,9 @@ test("hosted Delivered-In persistence uses bounded Firestore keys and range quer
   assert.match(orders, /\.where\("oplocId", "==", oplocId\)/);
   assert.match(orders, /\.where\("deliveryDate", ">=", startDate\)/);
   assert.match(orders, /\.limit\(100\)/);
-  assert.match(siteMenus, /stableDocumentId\(`\$\{oplocId\}:\$\{sourceDayId\}`\)/);
+  // One bounded document per site/day (tablet keeps the original key); each label format has its own suffixed key.
+  assert.match(siteMenus, /stableDocumentId\(documentKey\(oplocId, sourceDayId, format\)\)/);
+  assert.match(siteMenus, /format === "tablet" \? `\$\{oplocId\}:\$\{sourceDayId\}` : `\$\{oplocId\}:\$\{sourceDayId\}:\$\{format\}`/);
   assert.match(siteMenus, /collection\("revisions"\)/);
   assert.doesNotMatch(orders, /if \(!hosted\(\)\)[\s\S]*hostedOrders\(\)\.get/);
 });

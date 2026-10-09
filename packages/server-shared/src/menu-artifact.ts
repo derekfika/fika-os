@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { canonicalOplocId } from "./governed-oplocs";
-import { SITE_BRANDING, layoutTemplateKey, planMenuLayout, resolveLayoutMaster, siteBrandingFor, type SiteBranding } from "./menu-formats";
+import { SITE_BRANDING, layoutTemplateKey, menuFormatsForSite, planMenuLayout, resolveLayoutMaster, siteBrandingFor, type SiteBranding } from "./menu-formats";
 import { buildMenuSlidesRequests, type SlidesPresentation } from "./menu-slides";
 import { assertNormalizedMenu } from "./menu-validation";
 import { DEFAULT_MENU_OUTPUT_FORMAT, MENU_OUTPUT_FORMATS, MenuArtifactError, type MenuOutputFormat, type NormalizedMenu } from "./menu-types";
@@ -24,7 +24,7 @@ export * from "./menu-types";
 export { assertNormalizedMenu } from "./menu-validation";
 export { GENERATED_MENUS_FOLDER, ensureGeneratedMenusFolder, menuWeekCommencing, menuWeekFolderName } from "./menu-drive";
 export { allergensFromStates, assertAllergensPrintable, menuAllergenLabel, menuAllergenLine, menuAllergenLines, type MenuAllergenLine } from "./menu-allergens";
-export { LAYOUT_MASTERS, SITE_BRANDING, fitLabelFace, layoutTemplateKey, planMenuLayout, resolveLayoutMaster, siteBrandingFor, type MenuLayoutPlan, type MenuLayoutPage, type PlanElement, type PlanParagraph, type SiteBranding } from "./menu-formats";
+export { LAYOUT_MASTERS, SITE_BRANDING, fitLabelFace, menuFormatsForSite, layoutTemplateKey, planMenuLayout, resolveLayoutMaster, siteBrandingFor, type MenuLayoutPlan, type MenuLayoutPage, type PlanElement, type PlanParagraph, type SiteBranding } from "./menu-formats";
 export { MENU_CONTENT_OBJECT_ID, buildMenuSlidesRequests, flattenSlideElements, type SlidesPresentation } from "./menu-slides";
 
 export function assertMenuOutputFormat(format: unknown): MenuOutputFormat {
@@ -108,6 +108,7 @@ export function resolveMenuTemplate(input: { siteKey?: string; oplocId?: string;
   if (!branding) throw new MenuArtifactError("MENU_TEMPLATE_SITE_UNSUPPORTED", `No menu template is defined for site "${input.siteKey || input.oplocId || "unknown"}". Supported sites: ${menuTemplateSiteKeys().join(", ")}.`, 422);
   resolveLayoutMaster(branding, format); // MENU_FORMAT_UNSUPPORTED when the site has no layout for it
   const entry = branding.formats[format]!;
+  if (entry.available === false) throw new MenuArtifactError("MENU_FORMAT_UNSUPPORTED", `${branding.siteLabel} does not offer the "${format}" menu format yet. Available: ${menuFormatsForSite(branding.siteKey).join(", ")}.`, 422);
   const override = format === "tablet" ? menuDriveResourceId(input.templateIdOverride) : undefined;
   const templateId = override || entry.envKeys.map(key => menuDriveResourceId(env[key])).find(Boolean);
   if (!templateId) throw new MenuArtifactError("MENU_TEMPLATE_NOT_CONFIGURED", `The ${branding.siteLabel} ${format} menu template is not configured. Set ${entry.envKeys[0]}${format === "tablet" ? " (or the Google menu template in Hospitality settings)" : ""} to the approved Google Slides ${format === "tablet" ? "template" : "MNK Label Template deck"}.`, 409);

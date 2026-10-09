@@ -7,6 +7,8 @@ export const MENU_FORMAT_OPTIONS: Array<{ value: MenuFormat; label: string; hint
   { value: "flat-label", label: "Flat labels", hint: "One dish per label, 24 per sheet" },
   { value: "tent-label", label: "Tent labels", hint: "Fold-over self-standing cards, 12 per sheet" },
 ];
+/** Formats a site's renderer actually supports (client-safe mirror of `menuFormatsForSite`, parity-tested). Tent labels stay hidden until a real tent layout is approved. */
+export function menuFormatsForSiteKey(siteKey: string | undefined): MenuFormat[] { return siteKey === "mnk" ? ["tablet", "flat-label"] : siteKey === "angel-court" ? ["tablet"] : []; }
 /** A booking has one current output per format. */
 export const menuOutputKey = (bookingId: string, format: MenuFormat | undefined) => `${bookingId}|${format || "tablet"}`;
 

@@ -150,8 +150,28 @@ function SiteMenuControls({
 }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const [format, setFormat] = useState<"tablet" | "flat-label" | "tent-label">("tablet");
-  const [labels, setLabels] = useState<{ format: string; driveUrl: string; fileName: string } | null>(null);
+  type LabelFormat = "flat-label" | "tent-label";
+  type LabelState = { status: "none" | "current" | "outdated"; reason?: string; artifact?: { driveUrl: string; fileName: string } };
+  const FORMAT_LABELS: Record<string, string> = { tablet: "Tablet menu", "flat-label": "Flat labels", "tent-label": "Tent labels" };
+  const [format, setFormat] = useState<"tablet" | LabelFormat>("tablet");
+  // Only the formats this site's renderer supports are offered; label currentness is tracked per format.
+  const [formats, setFormats] = useState<string[]>(["tablet"]);
+  const [labelStates, setLabelStates] = useState<Record<string, LabelState>>({});
+  useEffect(() => {
+    let cancelled = false;
+    void fetch(`/api/delivered-in/site-menu?oplocId=${encodeURIComponent(site.oplocId)}&publicationDayId=${encodeURIComponent(day.publicationDayId)}`, { cache: "no-store" })
+      .then((response) => (response.ok ? response.json() : undefined))
+      .then((body: { formats?: string[]; labels?: Record<string, LabelState> } | undefined) => {
+        if (cancelled || !body) return;
+        setFormats(body.formats?.length ? body.formats : ["tablet"]);
+        setLabelStates(body.labels || {});
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [site.oplocId, day.publicationDayId, day.contentHash]);
+  const labelState: LabelState | undefined = format === "tablet" ? undefined : labelStates[format];
   const state = day.siteMenu || { status: "none" as const };
   const artifact = state.artifact;
   const signed = day.cpuReview?.status === "signed";
@@ -159,7 +179,6 @@ function SiteMenuControls({
     if (!signed) return;
     setBusy(true);
     setError("");
-    setLabels(null);
     try {
       const response = await fetch("/api/delivered-in/site-menu", {
         method: "POST",
@@ -171,10 +190,10 @@ function SiteMenuControls({
           format,
         }),
       });
-      const body = (await response.json().catch(() => ({}))) as { artifact?: { driveUrl: string; fileName: string }; error?: { message?: string } };
+      const body = (await response.json().catch(() => ({}))) as { artifact?: { driveUrl: string; fileName: string }; state?: LabelState; error?: { message?: string } };
       if (!response.ok) throw new Error(body.error?.message);
       // Labels are extra print files: the day's tablet site-menu state is unchanged, so only show their link.
-      if (format !== "tablet" && body.artifact) setLabels({ format, driveUrl: body.artifact.driveUrl, fileName: body.artifact.fileName });
+      if (format !== "tablet" && body.artifact) setLabelStates((current) => ({ ...current, [format]: body.state || { status: "current", artifact: body.artifact } }));
       else onGenerated();
     } catch (cause) {
       setError((cause as Error).message || "Site menu could not be generated.");
@@ -203,7 +222,7 @@ function SiteMenuControls({
           View menu ↗
         </a>
       )}
-      {signed && (
+      {signed && formats.length > 1 && (
         <label className="ops-field-inline">
           <span className="sr-only">Menu format</span>
           <select
@@ -212,9 +231,9 @@ function SiteMenuControls({
             onChange={(event) => setFormat(event.target.value as typeof format)}
             disabled={busy}
           >
-            <option value="tablet">Tablet menu</option>
-            <option value="flat-label">Flat labels</option>
-            <option value="tent-label">Tent labels</option>
+            {formats.map((value) => (
+              <option key={value} value={value}>{FORMAT_LABELS[value] || value}</option>
+            ))}
           </select>
         </label>
       )}
@@ -227,17 +246,24 @@ function SiteMenuControls({
           {busy
             ? "Working…"
             : format !== "tablet"
-              ? format === "flat-label"
-                ? "Generate flat labels"
-                : "Generate tent labels"
+              ? `${labelState?.status === "none" || !labelState ? "Generate" : "Regenerate"} ${FORMAT_LABELS[format].toLowerCase()}`
               : state.status === "none"
                 ? "Generate site menu"
                 : "Regenerate site menu"}
         </button>
       )}
-      {labels && (
-        <a className="ops-link" href={labels.driveUrl} target="_blank" rel="noopener noreferrer">
-          View {labels.format === "flat-label" ? "flat" : "tent"} labels ↗
+      {signed && labelState && (
+        <span className={`menu-state menu-state-${labelState.status === "outdated" ? "stale" : labelState.status === "current" ? "current" : "none"}`}>
+          {labelState.status === "current"
+            ? `${FORMAT_LABELS[format]} current`
+            : labelState.status === "outdated"
+              ? `${FORMAT_LABELS[format]} OUTDATED — menu or allergens changed; regenerate to reprint`
+              : `${FORMAT_LABELS[format]} not generated`}
+        </span>
+      )}
+      {signed && labelState?.artifact && (
+        <a className="ops-link" href={labelState.artifact.driveUrl} target="_blank" rel="noopener noreferrer">
+          View {FORMAT_LABELS[format].toLowerCase()}{labelState.status === "outdated" ? " (outdated)" : ""} ↗
         </a>
       )}
       {error && (

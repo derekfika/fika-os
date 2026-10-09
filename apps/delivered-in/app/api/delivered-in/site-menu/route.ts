@@ -2,8 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { projectedAllergenDay, resolveAccess } from "@/lib/server";
 import { createGoogleSiteMenu, retireGoogleSiteMenu } from "@/lib/google-site-menu";
 import { latestSiteMenuArtifactHosted, saveSiteMenuArtifactHosted } from "@/lib/site-menu-store";
-import { siteMenuState } from "@/lib/site-menu";
-import { MenuArtifactError, assertMenuOutputFormat } from "@fika/server-shared/menu-artifact";
+import { siteLabelState, siteMenuState } from "@/lib/site-menu";
+import { MenuArtifactError, assertMenuOutputFormat, menuFormatsForSite, menuSiteKeyForOploc } from "@fika/server-shared/menu-artifact";
 import { withDataTrace } from "@fika/server-shared/data-source-meter-server";
 import { requireDeliveredInMaintenance } from "@/lib/maintenance-auth";
 
@@ -15,7 +15,11 @@ async function handleGet(request: NextRequest) {
     const publicationDayId = request.nextUrl.searchParams.get("publicationDayId");
     if (!oplocId || !publicationDayId) return NextResponse.json({ error: { message: "A site and published day are required." } }, { status: 422 });
     const day = await projectedAllergenDay(request, oplocId, publicationDayId);
-    return NextResponse.json({ siteMenu: day.siteMenu || { status: "none" } }, { headers: { "Cache-Control": "no-store, max-age=0" } });
+    // Formats this site's renderer supports, and the currentness of each label format (never auto-regenerated).
+    const formats = menuFormatsForSite(menuSiteKeyForOploc(oplocId));
+    const labels: Record<string, ReturnType<typeof siteLabelState>> = {};
+    for (const format of formats.filter(value => value !== "tablet")) labels[format] = siteLabelState(day, await latestSiteMenuArtifactHosted(oplocId, day.sourceDayId, format));
+    return NextResponse.json({ siteMenu: day.siteMenu || { status: "none" }, formats: formats.length ? formats : ["tablet"], labels }, { headers: { "Cache-Control": "no-store, max-age=0" } });
   } catch (error) {
     return NextResponse.json({ error: { message: error instanceof Error ? error.message : "The site menu could not be loaded." } }, { status: Number((error as { status?: number }).status) || 502 });
   }
@@ -32,10 +36,11 @@ async function handlePost(request: NextRequest) {
     const format = assertMenuOutputFormat(body.format ?? "tablet");
     const access = await resolveAccess(request);
     if (format !== "tablet") {
-      // Labels are extra print artifacts: they never replace the day's current site-menu record or retire the tablet menu.
-      // Each is idempotent per exact revision and format, and a newer revision retires only the earlier labels of that format.
+      // Labels are extra print artifacts: they never replace the day's tablet record or retire the tablet menu. Each is idempotent per
+      // exact revision and format, a newer revision retires only the earlier files of that format, and each format has its own record.
       const labels = await createGoogleSiteMenu(day, day.site, access.access.email, undefined, undefined, format);
-      return NextResponse.json({ format, artifact: labels }, { status: 201 });
+      await saveSiteMenuArtifactHosted(labels);
+      return NextResponse.json({ format, artifact: labels, state: siteLabelState(day, labels) }, { status: 201 });
     }
     const previous = await latestSiteMenuArtifactHosted(body.oplocId, day.sourceDayId);
     const artifact = await createGoogleSiteMenu(day, day.site, access.access.email, previous?.driveFileId);

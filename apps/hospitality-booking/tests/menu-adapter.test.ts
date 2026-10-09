@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { MenuArtifactError, buildMenuSlidesRequests, menuArtifactFileName, menuArtifactKey, planMenuLayout, resolveMenuTemplate, type SlidesPresentation } from "@fika/server-shared/menu-artifact";
-import { MENU_FORMAT_OPTIONS, menuOutputKey } from "../lib/mnk-menu-output";
+import { MenuArtifactError, buildMenuSlidesRequests, menuFormatsForSite, menuArtifactFileName, menuArtifactKey, planMenuLayout, resolveMenuTemplate, type SlidesPresentation } from "@fika/server-shared/menu-artifact";
+import { MENU_FORMAT_OPTIONS, menuFormatsForSiteKey, menuOutputKey } from "../lib/mnk-menu-output";
 import { hospitalityMenuFromBooking, type CpuPlanForMenu } from "../lib/menu-adapter";
 import type { CanonicalBooking } from "../lib/canonical-types";
 
@@ -93,4 +93,10 @@ test("each booking keeps one current output per format, and every format is offe
   assert.deepEqual(MENU_FORMAT_OPTIONS.map(option => option.value), ["tablet", "flat-label", "tent-label"]);
   assert.equal(menuOutputKey("booking:1", undefined), menuOutputKey("booking:1", "tablet"), "outputs generated before formats existed are tablet menus");
   assert.notEqual(menuOutputKey("booking:1", "flat-label"), menuOutputKey("booking:1", "tablet"));
+});
+
+test("the dashboard offers only the formats each site's renderer supports (tent labels stay hidden)", () => {
+  for (const siteKey of ["mnk", "angel-court", "unknown"]) assert.deepEqual(menuFormatsForSiteKey(siteKey), menuFormatsForSite(siteKey), `client list matches the renderer for ${siteKey}`);
+  assert.deepEqual(menuFormatsForSiteKey("mnk"), ["tablet", "flat-label"]);
+  assert.equal(menuFormatsForSiteKey("angel-court").length, 1, "one format -> no picker is shown");
 });

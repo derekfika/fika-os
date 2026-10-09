@@ -3,7 +3,7 @@ import { test } from "node:test";
 import { MenuArtifactError, buildMenuSlidesRequests, menuArtifactKey, planMenuLayout, resolveMenuTemplate, type SlidesPresentation } from "@fika/server-shared/menu-artifact";
 import { deliveredInMenuFromDay, deliveredInMenuSiteKey } from "../lib/menu-adapter";
 import { projectPublishedWeeks, type ProjectedDay, type SourceDay, type SourcePublication } from "../lib/projection";
-import { siteMenuState, type SiteMenuArtifact } from "../lib/site-menu";
+import { siteLabelState, siteMenuState, type SiteMenuArtifact } from "../lib/site-menu";
 
 const MNK = "oploc:66e621fa-6e6f-4f46-9aed-462313abbe8f";
 const site = { oplocId: MNK, label: "MNK" };
@@ -104,4 +104,16 @@ test("the same current-day Delivered-In menu renders as flat labels with one dis
     ["Roasted Potatoes"],
   ]);
   assert.notEqual(menuArtifactKey(menu, "mnk-tablet-v1", "tablet"), menuArtifactKey(menu, "mnk-flat-label-v1", "flat-label"));
+});
+
+const labelArtifact = (over: Partial<SiteMenuArtifact> = {}): SiteMenuArtifact => ({ artifactId: "a1", oplocId: "oploc:x", sourceDayId: "day-1", sourcePublicationDayId: "pub-1", sourceVersion: 1, sourceContentHash: "hash-1", generatedAt: "2026-08-25T09:00:00.000Z", generatedBy: "t", driveFileId: "f1", driveUrl: "https://drive/f1", fileName: "labels", format: "flat-label", sourceReleaseId: "release-1", ...over });
+
+test("label artifacts are tracked per format and flagged outdated - never auto-regenerated - when source, release or safety state moves", () => {
+  const day = { sourceDayId: "day-1", contentHash: "hash-1", sourceLineage: { cpu: { releaseId: "release-1" } } };
+  assert.deepEqual(siteLabelState(day, undefined), { status: "none" });
+  assert.equal(siteLabelState(day, labelArtifact()).status, "current");
+  assert.deepEqual([siteLabelState({ ...day, contentHash: "hash-2" }, labelArtifact()).status, siteLabelState({ ...day, contentHash: "hash-2" }, labelArtifact()).reason], ["outdated", "source-changed"]);
+  assert.equal(siteLabelState({ ...day, sourceLineage: { cpu: { releaseId: "release-2" } } }, labelArtifact()).reason, "release-changed", "a new allergen release outdates labels even if the menu text is unchanged");
+  assert.equal(siteLabelState(day, labelArtifact({ revokedAt: "2026-08-25T10:00:00.000Z", reprintRequired: true })).reason, "revoked");
+  assert.equal(siteLabelState({ sourceDayId: "day-1", contentHash: "hash-1" }, labelArtifact({ sourceReleaseId: undefined })).status, "current", "legacy artifacts without release provenance compare on content");
 });

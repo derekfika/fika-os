@@ -73,7 +73,7 @@ async function resolveArtifactFolder(owner: ResolvedDriveOwner, configuredFolder
 
 /**
  * Generates the site menu from a normalized menu using the shared renderer and files it under
- * `Generated Menus/WC_<week commencing>` in the owner's Drive.
+ * `Generated Menus/WC_<week commencing>` beneath the menu parent folder it already used.
  * The site template is resolved by destination (never by workflow) and an
  * unconfigured or unknown site is an error, not a silently unbranded file.
  * Idempotent per exact revision and format: a retry reuses the existing Slides file.
@@ -83,10 +83,10 @@ export async function createGoogleMenu(menu: NormalizedMenu, owner: DriveOwner, 
   const template = resolveMenuTemplate({ siteKey: menu.siteKey, oplocId: menu.oplocId, templateIdOverride: settings?.templateId, format });
   const { owner: resolved, headers: authHeaders } = await driveHeaders(owner);
   const headers = { ...authHeaders, "content-type": "application/json" };
-  // <configured folder, or the owner's My Drive>/Generated Menus/WC_<Monday of the service week>
-  const configured = driveResourceId(settings?.folderId || resolved.configuredRootFolderId);
-  if (configured) await assertDriveFolder(configured, headers, "Hospitality menu");
-  const { folderId } = await ensureGeneratedMenusFolder({ parentId: configured || "root", serviceDate: menu.serviceDate, headers });
+  // <the existing menu parent>/Generated Menus/WC_<Monday of the service week>. The parent is exactly where menus
+  // already went: the site's configured menu folder or the owner's configured root, else the FIKA OS menu folder path.
+  const parentFolderId = await resolveArtifactFolder(resolved, settings?.folderId, "menu", headers, "Hospitality menu");
+  const { folderId } = await ensureGeneratedMenusFolder({ parentId: parentFolderId, serviceDate: menu.serviceDate, headers });
   return publishMenuArtifact({ menu, template, folderId, headers: authHeaders });
 }
 

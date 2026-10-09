@@ -15,18 +15,23 @@ const hosted = () => ["staging", "production"].includes(process.env.FIKA_RUNTIME
 const siteMenus = () => db.collection("fikaDeliveredInSiteMenusV1");
 
 export function listSiteMenuArtifacts() { return read().artifacts; }
-export function latestSiteMenuArtifact(oplocId: string, sourceDayId: string) { return read().artifacts.filter(value => value.oplocId === oplocId && value.sourceDayId === sourceDayId).sort((a, b) => b.generatedAt.localeCompare(a.generatedAt))[0]; }
+export type SiteMenuFormat = NonNullable<SiteMenuArtifact["format"]>;
+/** Formats that carry their own current artifact per day. Tablet keeps the original record key. */
+export const SITE_MENU_FORMATS: SiteMenuFormat[] = ["tablet", "flat-label", "tent-label"];
+const formatOf = (artifact: Pick<SiteMenuArtifact, "format">): SiteMenuFormat => artifact.format || "tablet";
+const documentKey = (oplocId: string, sourceDayId: string, format: SiteMenuFormat) => format === "tablet" ? `${oplocId}:${sourceDayId}` : `${oplocId}:${sourceDayId}:${format}`;
+export function latestSiteMenuArtifact(oplocId: string, sourceDayId: string, format: SiteMenuFormat = "tablet") { return read().artifacts.filter(value => value.oplocId === oplocId && value.sourceDayId === sourceDayId && formatOf(value) === format).sort((a, b) => b.generatedAt.localeCompare(a.generatedAt))[0]; }
 export function saveSiteMenuArtifact(artifact: SiteMenuArtifact) { const stored = read(); stored.artifacts.push(artifact); write(stored); return artifact; }
-export async function latestSiteMenuArtifactHosted(oplocId: string, sourceDayId: string) {
-  if (!hosted()) return latestSiteMenuArtifact(oplocId, sourceDayId);
-  const snapshot = await siteMenus().doc(stableDocumentId(`${oplocId}:${sourceDayId}`)).get();
+export async function latestSiteMenuArtifactHosted(oplocId: string, sourceDayId: string, format: SiteMenuFormat = "tablet") {
+  if (!hosted()) return latestSiteMenuArtifact(oplocId, sourceDayId, format);
+  const snapshot = await siteMenus().doc(stableDocumentId(documentKey(oplocId, sourceDayId, format))).get();
   recordDataAccess({ app: "delivered-in", operation: "site-menu.by-oploc-day", source: "FIRESTORE", documents: snapshot.exists ? 1 : 0, firestoreReadKind: "document" });
   recordDeliveredInAppReadBudget({ stage: "current_site_menu_lookup", recordsInspected: snapshot.exists ? 1 : 0, oplocId });
   return snapshot.exists ? snapshot.data()?.artifact as SiteMenuArtifact : undefined;
 }
 export async function saveSiteMenuArtifactHosted(artifact: SiteMenuArtifact) {
   if (!hosted()) return saveSiteMenuArtifact(artifact);
-  const current = siteMenus().doc(stableDocumentId(`${artifact.oplocId}:${artifact.sourceDayId}`));
+  const current = siteMenus().doc(stableDocumentId(documentKey(artifact.oplocId, artifact.sourceDayId, formatOf(artifact))));
   await db.runTransaction(async transaction => {
     transaction.set(current, { artifact, updatedAt: artifact.generatedAt });
     transaction.set(current.collection("revisions").doc(stableDocumentId(artifact.artifactId)), { artifact, recordedAt: artifact.generatedAt });
@@ -35,26 +40,33 @@ export async function saveSiteMenuArtifactHosted(artifact: SiteMenuArtifact) {
   return artifact;
 }
 
-/** Mark one known site/date artifact non-current while retaining its audit revision. */
+/** Mark every known artifact for a site/date (tablet and any label formats) non-current while retaining the audit revisions. */
 export async function revokeSiteMenuArtifactHosted(oplocId: string, sourceDayId: string, releaseId: string, revokedAt = new Date().toISOString()) {
   if (!hosted()) {
     const stored = read();
-    const index = stored.artifacts.findIndex(value => value.oplocId === oplocId && value.sourceDayId === sourceDayId);
-    if (index < 0) return false;
-    stored.artifacts[index] = { ...stored.artifacts[index], revokedAt, reprintRequired: true, sourceReleaseId: releaseId };
-    write(stored);
-    return true;
+    let revoked = false;
+    for (const format of SITE_MENU_FORMATS) {
+      const index = stored.artifacts.findIndex(value => value.oplocId === oplocId && value.sourceDayId === sourceDayId && formatOf(value) === format);
+      if (index < 0) continue;
+      stored.artifacts[index] = { ...stored.artifacts[index], revokedAt, reprintRequired: true, sourceReleaseId: releaseId };
+      revoked = true;
+    }
+    if (revoked) write(stored);
+    return revoked;
   }
-  const current = siteMenus().doc(stableDocumentId(`${oplocId}:${sourceDayId}`));
-  const snapshot = await current.get();
-  recordDataAccess({ app: "delivered-in", operation: "site-menu.revoke.by-oploc-day", source: "FIRESTORE", documents: snapshot.exists ? 1 : 0, firestoreReadKind: "document" });
-  if (!snapshot.exists) return false;
-  const artifact = snapshot.data()?.artifact as SiteMenuArtifact | undefined;
-  if (!artifact) return false;
-  const revoked = { ...artifact, revokedAt, reprintRequired: true, sourceReleaseId: releaseId };
-  await db.runTransaction(async transaction => {
-    transaction.set(current, { artifact: revoked, updatedAt: revokedAt });
-    transaction.set(current.collection("revisions").doc(stableDocumentId(`${artifact.artifactId}:revoked:${releaseId}`)), { artifact: revoked, recordedAt: revokedAt });
-  });
-  return true;
+  let revoked = false;
+  for (const format of SITE_MENU_FORMATS) {
+    const current = siteMenus().doc(stableDocumentId(documentKey(oplocId, sourceDayId, format)));
+    const snapshot = await current.get();
+    recordDataAccess({ app: "delivered-in", operation: "site-menu.revoke.by-oploc-day", source: "FIRESTORE", documents: snapshot.exists ? 1 : 0, firestoreReadKind: "document" });
+    const artifact = snapshot.exists ? snapshot.data()?.artifact as SiteMenuArtifact | undefined : undefined;
+    if (!artifact) continue;
+    const next = { ...artifact, revokedAt, reprintRequired: true, sourceReleaseId: releaseId };
+    await db.runTransaction(async transaction => {
+      transaction.set(current, { artifact: next, updatedAt: revokedAt });
+      transaction.set(current.collection("revisions").doc(stableDocumentId(`${artifact.artifactId}:revoked:${releaseId}`)), { artifact: next, recordedAt: revokedAt });
+    });
+    revoked = true;
+  }
+  return revoked;
 }

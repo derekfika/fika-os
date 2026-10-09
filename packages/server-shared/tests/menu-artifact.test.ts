@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
-  LAYOUT_MASTERS, MenuArtifactError, SITE_BRANDING, allergensFromStates, buildMenuSlidesRequests, flattenSlideElements, menuAllergenLabel, menuAllergenLines, menuArtifactFileName,
+  LAYOUT_MASTERS, MenuArtifactError, SITE_BRANDING, menuFormatsForSite, siteBrandingFor, allergensFromStates, buildMenuSlidesRequests, flattenSlideElements, menuAllergenLabel, menuAllergenLines, menuArtifactFileName,
   ensureGeneratedMenusFolder, menuWeekCommencing, menuWeekFolderName, menuArtifactId, menuArtifactKey, menuArtifactSourceKey, planMenuLayout, publishMenuArtifact, resolveMenuTemplate,
   type LabelMaster, type MenuOutputFormat, type NormalizedMenu, type NormalizedMenuItem, type PlanElement, type SiteBranding, type SlidesPresentation,
 } from "../src/menu-artifact";
@@ -57,7 +57,7 @@ function labelDeck(): SlidesPresentation {
   return { pageSize: { width: { magnitude: landscape.width }, height: { magnitude: landscape.height } }, slides: [slideFor(LAYOUT_MASTERS["mnk-tent-label-v1"] as LabelMaster, "tent-slide"), slideFor(LAYOUT_MASTERS["mnk-flat-label-v1"] as LabelMaster, "flat-slide")] };
 }
 const tabletDeck: SlidesPresentation = { pageSize: { width: { magnitude: portrait.width }, height: { magnitude: portrait.height } }, slides: [{ objectId: "slide-1", pageElements: [] }] };
-const requestsOf = (menu: NormalizedMenu, format: MenuOutputFormat, deck = format === "tablet" ? tabletDeck : labelDeck()) => buildMenuSlidesRequests(menu, template(format), deck) as Array<Record<string, any>>;
+const requestsOf = (menu: NormalizedMenu, format: MenuOutputFormat, deck = format === "tablet" ? tabletDeck : labelDeck()) => buildMenuSlidesRequests(menu, { format, branding: siteBrandingFor("mnk")! }, deck) as Array<Record<string, any>>;
 const lastIndexOf = (requests: Array<Record<string, any>>, key: string) => requests.map(request => Boolean(request[key])).lastIndexOf(true);
 
 // ------------------------------------------------------------------ allergens
@@ -103,7 +103,7 @@ test("identity: existing file name convention, deterministic keys, format- and r
 
 test("identity: a tablet artifact and a flat/tent label artifact for the same menu never collide", () => {
   const menu = deckMenu();
-  const formats: MenuOutputFormat[] = ["tablet", "flat-label", "tent-label"];
+  const formats: MenuOutputFormat[] = ["tablet", "flat-label"];
   const unique = (values: string[]) => assert.equal(new Set(values).size, values.length, values.join(" | "));
   unique(formats.map(format => menuArtifactKey(menu, template(format).key, format)));
   unique(formats.map(format => menuArtifactSourceKey(menu, format)));
@@ -123,8 +123,10 @@ test("template resolution is site and format based and fails safely", () => {
   assert.equal(resolveMenuTemplate({ siteKey: "mnk" }, { GOOGLE_MENU_TEMPLATE_ID: "legacy-tpl" }).templateId, "legacy-tpl", "legacy MNK env name still works");
   assert.equal(resolveMenuTemplate({ siteKey: "mnk", templateIdOverride: "https://docs.google.com/presentation/d/override-tpl/edit" }, mnkEnv).templateId, "override-tpl");
   assert.equal(resolveMenuTemplate({ siteKey: "mnk", format: "flat-label", templateIdOverride: "override-tpl" }, mnkEnv).templateId, "tpl-mnk-labels", "a tablet override is never used as a label master");
-  assert.equal(template("tent-label").templateId, "tpl-mnk-labels");
-  assert.equal(template("tent-label").key, "mnk-tent-label-v1");
+  assert.deepEqual(menuFormatsForSite("mnk"), ["tablet", "flat-label"], "tent labels are not offered until a real tent layout is approved");
+  assert.deepEqual(menuFormatsForSite("angel-court"), ["tablet"]);
+  assert.deepEqual(menuFormatsForSite("unknown"), []);
+  assert.throws(() => template("tent-label"), (error: unknown) => error instanceof MenuArtifactError && error.code === "MENU_FORMAT_UNSUPPORTED" && /does not offer/.test(error.message));
   assert.equal(LAYOUT_MASTERS[resolveMenuTemplate({ siteKey: "angel-court" }, { GOOGLE_MENU_TEMPLATE_ID_ANGEL_COURT: "tpl-ac" }).key].kind, "tablet");
   assert.throws(() => resolveMenuTemplate({ siteKey: "mnk" }, {}), (error: unknown) => error instanceof MenuArtifactError && error.code === "MENU_TEMPLATE_NOT_CONFIGURED" && error.status === 409 && /GOOGLE_MENU_TEMPLATE_ID_MNK/.test(error.message));
   assert.throws(() => resolveMenuTemplate({ siteKey: "mnk", format: "flat-label" }, { GOOGLE_MENU_TEMPLATE_ID_MNK: "tpl-mnk" }), (error: unknown) => error instanceof MenuArtifactError && error.code === "MENU_TEMPLATE_NOT_CONFIGURED" && /GOOGLE_MENU_LABEL_TEMPLATE_ID_MNK/.test(error.message));
@@ -386,7 +388,7 @@ const publishWith = (google: ReturnType<typeof fakeGoogle>, menu: NormalizedMenu
 
 test("publication is idempotent per revision and format: retries reuse the artifact and never duplicate files", async () => {
   const google = fakeGoogle();
-  for (const format of ["tablet", "flat-label", "tent-label"] as const) {
+  for (const format of ["tablet", "flat-label"] as const) {
     const before = google.copies;
     const first = await publishWith(google, deckMenu(), format);
     assert.equal(first.reused, false); assert.equal(google.copies, before + 1); assert.equal(first.format, format);
@@ -395,10 +397,10 @@ test("publication is idempotent per revision and format: retries reuse the artif
     assert.equal(retry.reused, true); assert.equal(retry.fileId, first.fileId); assert.equal(retry.artifactKey, first.artifactKey);
     assert.equal(google.copies, before + 1, `${format}: no second copy`);
   }
-  assert.equal(google.batches.length, 3, "one Slides write per format, none on retry");
-  assert.equal(google.files.filter(file => !file.trashed).length, 3, "tablet, flat and tent files coexist");
-  assert.deepEqual(google.copiedFrom, ["tpl-mnk", "tpl-mnk-labels", "tpl-mnk-labels"]);
-  assert.deepEqual(google.files.map(file => file.appProperties.fikaMenuFormat), ["tablet", "flat-label", "tent-label"]);
+  assert.equal(google.batches.length, 2, "one Slides write per format, none on retry");
+  assert.equal(google.files.filter(file => !file.trashed).length, 2, "tablet and flat files coexist");
+  assert.deepEqual(google.copiedFrom, ["tpl-mnk", "tpl-mnk-labels"]);
+  assert.deepEqual(google.files.map(file => file.appProperties.fikaMenuFormat), ["tablet", "flat-label"]);
 });
 
 test("an amendment creates a newer artifact and retires only the earlier revision of the same format", async () => {

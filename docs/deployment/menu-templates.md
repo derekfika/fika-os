@@ -61,18 +61,23 @@ Hospitality's per-site override (`googleMenuTemplateId`) applies to `tablet` onl
 A site/format with no layout or an unconfigured deck fails with `MENU_FORMAT_UNSUPPORTED` / `MENU_TEMPLATE_NOT_CONFIGURED`; a master deck whose page
 size or card grid does not match the layout master fails with `MENU_TEMPLATE_MISMATCH` instead of producing a misaligned sheet.
 
-Hospitality dashboard: the booking panel has a **Menu format** picker (Tablet menu / Flat labels / Tent labels) next to Generate/Regenerate; `POST /api/menus`
-takes `format` (default `tablet`) and the dashboard keeps one current output per booking per format. Delivered-In: the site-menu controls have the same
-picker. Tablet keeps the existing current-site-menu record and retirement; labels are extra print artifacts that never replace or retire the day's tablet
-menu (labels generated for an earlier revision are retired only when labels are regenerated for a newer one). Labels need a site with a shared template (MNK).
+Hospitality dashboard: the booking panel shows a **Menu format** picker only when the site supports more than one format (`menuFormatsForSite`: MNK =
+Tablet menu + Flat labels; Angel Court = tablet only, so no picker). **Tent labels are defined (`available: false`) but hidden and refused until a real tent
+layout is approved.** `POST /api/menus` takes `format` (default `tablet`); the dashboard keeps one current output per booking per format and flags it
+outdated when the CPU plan changes. Delivered-In: the same picker, fed by `GET /api/delivered-in/site-menu` (`formats`, `labels`).
+
+Labels are **never auto-regenerated**. Delivered-In records each label format separately (own current record, `format` on the artifact) and `siteLabelState` flags it
+**OUTDATED** when the day's content hash changes, a new CPU allergen release is published, or a release is revoked (revocation marks every format). Generating
+labels never replaces or retires the tablet menu; a newer label revision retires only earlier files of the same source and format.
 
 ## Where generated menus are filed
 
-    <parent>/Generated Menus/WC_<Monday of the service week>/<Slides file>
+    <existing menu parent>/Generated Menus/WC_<Monday of the service week>/<Slides file>
 
-`<parent>` is the configured menu folder (Hospitality: the site's `googleMenuFolderId` or the owner's configured root; Delivered-In: the output folder) or, with
-nothing configured, the owner's My Drive. Folders are found-or-created (`ensureGeneratedMenusFolder`), so there are no duplicates. `WC_YYYY-MM-DD` is the
-existing week-commencing convention. Delivered-In sites without a shared template still use the generic template path and its existing `WC_` folder.
+The parent is where menus already went: Hospitality - the site's configured menu folder, else the owner's configured root, else the `FIKA OS/Hospitality/Menus`
+path; Delivered-In - the output folder (`GOOGLE_DELIVERED_IN_OUTPUT_FOLDER_ID` / app Drive root). This applies to the shared-template path and to the
+generic Delivered-In template path. Folders are found-or-created (`ensureGeneratedMenusFolder`), so there are no duplicates. `WC_YYYY-MM-DD` is the existing
+week-commencing convention.
 
 ## Adding a site
 

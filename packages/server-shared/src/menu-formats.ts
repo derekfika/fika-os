@@ -164,7 +164,7 @@ export type SiteBranding = {
   assets: Partial<Record<AssetRole, string>>;
   tagline?: string;
   /** Per format: which layout master the site uses and which env keys name its Drive master deck. */
-  formats: Partial<Record<MenuOutputFormat, { master: string; envKeys: string[] }>>;
+  formats: Partial<Record<MenuOutputFormat, { master: string; envKeys: string[]; /** `false` keeps a layout defined (previews, tests) but not offered or generated until a real layout is approved. */ available?: boolean }>>;
 };
 
 const MNK_LABEL_ENV = ["GOOGLE_MENU_LABEL_TEMPLATE_ID_MNK"];
@@ -180,7 +180,8 @@ export const SITE_BRANDING: SiteBranding[] = [
     formats: {
       tablet: { master: "mnk-tablet-v1", envKeys: ["GOOGLE_MENU_TEMPLATE_ID_MNK", "GOOGLE_MENU_TEMPLATE_ID"] },
       "flat-label": { master: "mnk-flat-label-v1", envKeys: MNK_LABEL_ENV },
-      "tent-label": { master: "mnk-tent-label-v1", envKeys: MNK_LABEL_ENV },
+      // Defined from the label deck's fold-over page but deliberately not offered until a real tent layout is approved.
+      "tent-label": { master: "mnk-tent-label-v1", envKeys: MNK_LABEL_ENV, available: false },
     },
   },
   {
@@ -193,6 +194,12 @@ export const SITE_BRANDING: SiteBranding[] = [
 ];
 
 export function siteBrandingFor(siteKey: string) { return SITE_BRANDING.find(site => site.siteKey === siteKey); }
+
+/** Formats a site can actually generate and be offered to a manager (excludes layouts that are defined but not yet available). */
+export function menuFormatsForSite(siteKey: string | undefined): MenuOutputFormat[] {
+  const branding = siteKey ? siteBrandingFor(siteKey) : undefined;
+  return branding ? (Object.keys(branding.formats) as MenuOutputFormat[]).filter(format => branding.formats[format]?.available !== false) : [];
+}
 
 // ---------------------------------------------------------------- plan model
 
