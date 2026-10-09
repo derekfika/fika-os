@@ -42,7 +42,7 @@ test("the MNK template is selected by site and the rendered menu carries names a
   assert.equal(template.siteKey, "mnk"); assert.equal(template.templateId, "tpl-mnk");
   const requests = buildMenuSlidesRequests(menu, template, page) as Array<Record<string, any>>;
   const text: string = requests.find(request => request.insertText)!.insertText.text;
-  assert.match(text, /^SALADS\nMixed Fika Leaf Salad\nContains: Mustard\nHOT MAINS\nRoast Chicken Breast\nContains: Gluten\nMay contain: Milk\nSIDES & EXTRAS\nRoasted Potatoes\nNo key allergens$/);
+  assert.match(text, /^SALADS\nMixed Fika Leaf Salad\n\(Mustard\)\nHOT MAINS\nRoast Chicken Breast\n\(Gluten\)\nSIDES & EXTRAS\nRoasted Potatoes\nNo key allergens$/);
   assert.equal(requests.filter(request => request.createShape).length, 1);
 });
 
@@ -99,8 +99,8 @@ test("the same current-day Delivered-In menu renders as flat labels with one dis
   const labels = plan.pages.flatMap(layoutPage => layoutPage.elements).filter(element => element.type === "text");
   assert.equal(labels.length, 3, "one label per dish across the sections");
   assert.deepEqual(labels.map(label => label.type === "text" ? label.paragraphs.map(paragraph => paragraph.text) : []), [
-    ["Mixed Fika Leaf Salad", "Contains: Mustard"],
-    ["Roast Chicken Breast", "Contains: Gluten", "May contain: Milk"],
+    ["Mixed Fika Leaf Salad", "(Mustard)"],
+    ["Roast Chicken Breast", "(Gluten)"],
     ["Roasted Potatoes", "No key allergens"],
   ]);
   assert.notEqual(menuArtifactKey(menu, "mnk-tablet-v1", "tablet"), menuArtifactKey(menu, "mnk-flat-label-v1", "flat-label"));

@@ -48,7 +48,7 @@ const samples: Array<{ file: string; title: string; format: MenuOutputFormat; me
   ]) },
   { file: "mnk-flat-labels", title: "MNK flat labels (8 dishes, one page)", format: "flat-label", menu: menu(hotLunch) },
   { file: "mnk-tent-labels", title: "MNK tent labels (8 dishes, one page)", format: "tent-label", menu: menu(hotLunch) },
-  { file: "mnk-flat-labels-paged", title: "MNK flat labels (30 dishes, two pages)", format: "flat-label", menu: menu(Array.from({ length: 30 }, (_, index) => hotLunch[index % hotLunch.length]).map((dish, index) => ({ ...dish, id: `${dish.id}-${index}`, name: `${dish.name}${index >= 8 ? ` (${index + 1})` : ""}` }))) },
+  { file: "mnk-flat-labels-paged", title: "MNK flat labels (30 dishes, two pages)", format: "flat-label", menu: menu(Array.from({ length: 30 }, (_, index) => hotLunch[index % hotLunch.length]).map((dish, index) => ({ ...dish, id: `${dish.id}-${index}`, name: dish.name }))) },
 ];
 
 const outDir = path.resolve(process.argv[2] || "artifacts/menu-previews");

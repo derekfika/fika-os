@@ -3,8 +3,8 @@ import { MenuArtifactError, type NormalizedMenuItem } from "./menu-types";
 /**
  * Allergen semantics for every menu output.
  *
- *   contains      -> "Contains: ..."
- *   mayContain    -> "May contain: ..."          (never merged into `contains`)
+ *   contains      -> "(Gluten, Milk)"            allergens in brackets, no prefix
+ *   mayContain    -> not displayed on any menu   (kept in the data; never shown as "clear")
  *   unrecorded    -> the dish is refused         (never rendered as clear)
  *   noKeyAllergens-> "No key allergens"          (only when positively established)
  *   none of those -> the dish is refused         (unknown is not clear)
@@ -19,24 +19,23 @@ export function menuAllergenLabel(key: string) {
   return key.replace(/[_-]+/g, " ").trim().replace(/[A-Za-zÀ-ÿ]+/g, word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase());
 }
 
-export type MenuAllergenLineKind = "contains" | "may-contain" | "clear";
+export type MenuAllergenLineKind = "contains" | "clear";
 export type MenuAllergenLine = { kind: MenuAllergenLineKind; label: string; text: string };
 
 const declared = (keys: string[]) => [...new Set(keys)].filter(key => key !== "no_key_allergens");
 
 /**
- * The declared allergen lines for one dish, in display order. A key that is
- * contained is not repeated under "May contain". Throws for any dish whose
- * allergen state is not safe to print.
+ * The allergen line for one dish: `(Gluten, Milk)` for what it contains. "May
+ * contain" is deliberately not displayed. A dish that only may-contain something
+ * shows no line (it is never labelled "No key allergens"). Throws for any dish
+ * whose allergen state is not safe to print.
  */
 export function menuAllergenLines(item: NormalizedMenuItem): MenuAllergenLine[] {
   assertAllergensPrintable(item);
   const contains = declared(item.contains);
-  const may = declared(item.mayContain).filter(key => !contains.includes(key));
   const lines: MenuAllergenLine[] = [];
-  if (contains.length) lines.push({ kind: "contains", label: "Contains:", text: `Contains: ${contains.map(menuAllergenLabel).join(", ")}` });
-  if (may.length) lines.push({ kind: "may-contain", label: "May contain:", text: `May contain: ${may.map(menuAllergenLabel).join(", ")}` });
-  if (!lines.length) lines.push({ kind: "clear", label: "No key allergens", text: "No key allergens" });
+  if (contains.length) lines.push({ kind: "contains", label: "Contains", text: `(${contains.map(menuAllergenLabel).join(", ")})` });
+  else if (!declared(item.mayContain).length) lines.push({ kind: "clear", label: "No key allergens", text: "No key allergens" });
   return lines;
 }
 
@@ -48,10 +47,9 @@ export function assertAllergensPrintable(item: NormalizedMenuItem) {
   }
 }
 
-/** Single-line form kept for callers that need one string: `(Gluten, Milk)`; may-contain is labelled, never merged. */
+/** Single-line form for callers that need one string: `(Gluten, Milk)`, or empty. */
 export function menuAllergenLine(item: NormalizedMenuItem) {
-  const lines = menuAllergenLines(item).filter(line => line.kind !== "clear");
-  return lines.length ? `(${lines.map(line => line.text).join("; ")})` : "";
+  return menuAllergenLines(item).filter(line => line.kind === "contains").map(line => line.text).join("");
 }
 
 const KNOWN_NEGATIVE_STATES = new Set(["clear", "none", "absent", "does_not_contain"]);

@@ -127,7 +127,7 @@ const ANGEL_COURT_TABLET_V1: TabletMaster = {
 const flatCells = grid(Array.from({ length: 6 }, () => [26.5, 205.8, 385.1, 567.9]), [7.9, 97.0, 186.0, 275.1, 364.2, 453.2]);
 const tentCells = grid([[27.2, 206.4, 385.7, 568.6], [28.7, 208.0, 387.3, 570.1], [29.0, 208.3, 387.6, 570.4]], [21.4, 189.8, 361.4]);
 /** Labels run tighter than Slides' natural single spacing (90%) so a long dish name and both allergen lines fit the 58pt face. */
-const LABEL_TYPE: LabelType = { nameMax: 14, nameMin: 9, allergenMax: 8, allergenMin: 7, lineHeight: 1.1 };
+const LABEL_TYPE: LabelType = { nameMax: 11, nameMin: 9, allergenMax: 8, allergenMin: 7, lineHeight: 1.1 };
 
 const MNK_FLAT_LABEL_V1: LabelMaster = {
   kind: "flat-label", key: "mnk-flat-label", version: 1, page: LABEL_PAGE, masterSlideIndex: 1,
@@ -258,7 +258,7 @@ export function paragraphHeight(paragraph: PlanParagraph, widthPt: number, lineH
 }
 
 const allergenStyle = (kind: MenuAllergenLineKind, color: string, mutedColor: string) => ({
-  bold: kind === "contains", italic: kind === "may-contain", color: kind === "clear" ? mutedColor : color,
+  bold: false, color: kind === "clear" ? mutedColor : color,
 });
 
 const flattenItems = (menu: NormalizedMenu) => menu.sections.flatMap(section => section.items);

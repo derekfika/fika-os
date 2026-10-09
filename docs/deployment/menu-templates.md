@@ -81,12 +81,12 @@ Upgrade note: keys and source keys now include the format, so each existing tabl
 
 ## Allergen rules
 
-* `Contains: ...` and `May contain: ...` are separate lines (contains bold, may-contain italic); a contained allergen is not repeated under may-contain.
+* Allergens a dish contains print in brackets with no prefix, e.g. `(Gluten, Milk)`. "May contain" is **not displayed on any menu** (it stays in the data). A dish that only may-contain something prints no allergen line and is never labelled "No key allergens".
 * Machine keys are humanised (`tree_nuts` -> `Tree Nuts`).
 * A dish with unrecorded allergens is refused (`MENU_ALLERGENS_UNRECORDED`); a dish with no allergens **and no positive "clear" evidence** is refused
   (`MENU_ALLERGENS_NOT_ESTABLISHED`). `No key allergens` prints only when the adapter established it (`noKeyAllergens`, derived from explicit
   clear/none states or the workflow's `no_key_allergens` marker). Nothing is inferred.
-* Minimum sizes: tablet 10pt dishes / 8pt allergens; labels 9pt dish names / 7pt allergens. A menu or label that cannot fit fails with
+* Minimum sizes: tablet 10pt dishes / 8pt allergens; labels 9pt dish names / 7pt allergens. Label dish names start at 11pt and shrink (to 9pt) only when a long name needs it. A menu or label that cannot fit fails with
   `MENU_OVERFLOW` / `MENU_LABEL_OVERFLOW`; allergens are never truncated, dropped or shrunk past the floor.
 
 ## Offline previews

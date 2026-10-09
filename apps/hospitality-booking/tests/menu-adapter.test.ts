@@ -36,15 +36,15 @@ test("Hospitality MNK booking normalizes to current items, selects the MNK templ
   assert.equal(template.siteKey, "mnk"); assert.equal(template.templateId, "tpl-mnk");
   const requests = buildMenuSlidesRequests(menu, template, page) as Array<Record<string, any>>;
   const text: string = requests.find(request => request.insertText)!.insertText.text;
-  assert.match(text, /^BBQ Chicken Mayo, Gherkins, Tomatoes, Leaves\nContains: Gluten, Eggs, Mustard, Sulphites\nVegan Feta, Pesto, Vegan Mayo, Salad\nContains: Tree Nuts, Gluten, Soya\nFruit Pot\nNo key allergens$/);
-  assert.equal(text.includes("Contains: No"), false, "no_key_allergens is a positive statement, never listed as an allergen");
+  assert.match(text, /^BBQ Chicken Mayo, Gherkins, Tomatoes, Leaves\n\(Gluten, Eggs, Mustard, Sulphites\)\nVegan Feta, Pesto, Vegan Mayo, Salad\n\(Tree Nuts, Gluten, Soya\)\nFruit Pot\nNo key allergens$/);
+  assert.equal(text.includes("(No"), false, "no_key_allergens is a positive statement, never listed as an allergen");
 });
 
 test("a dish that may contain an allergen shows it; it is never silently dropped", () => {
   const menu = hospitalityMenuFromBooking(booking(), plan({ menuItems: [{ name: "Lunch", subItems: [{ name: "Granola Pot", allergens: { gluten: "contains", milk: "may_contain" } }] }] }));
   assert.deepEqual(menu.sections[0].items[0].mayContain, ["milk"]);
   const requests = buildMenuSlidesRequests(menu, resolveMenuTemplate({ siteKey: "mnk" }, mnkEnv), page) as Array<Record<string, any>>;
-  assert.match(requests.find(request => request.insertText)!.insertText.text, /Granola Pot\nContains: Gluten\nMay contain: Milk/);
+  assert.match(requests.find(request => request.insertText)!.insertText.text, /Granola Pot\n\(Gluten\)$/);
 });
 
 test("an amended booking menu is built from the latest revision and is a distinct artifact", () => {

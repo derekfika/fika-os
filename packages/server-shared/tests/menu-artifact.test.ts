@@ -62,11 +62,11 @@ const lastIndexOf = (requests: Array<Record<string, any>>, key: string) => reque
 
 // ------------------------------------------------------------------ allergens
 
-test("allergens: contains and may-contain stay distinct, labels are human readable, unrecorded is never clear", () => {
+test("allergens: bracketed contains only, may-contain is not displayed, labels are human readable, unrecorded is never clear", () => {
   assert.equal(menuAllergenLabel("tree_nuts"), "Tree Nuts");
-  assert.deepEqual(menuAllergenLines(item("a", "Granola", ["gluten", "milk"], ["tree_nuts"])).map(line => line.text), ["Contains: Gluten, Milk", "May contain: Tree Nuts"]);
-  assert.deepEqual(menuAllergenLines(item("b", "Granola", ["gluten"], ["milk", "gluten"])).map(line => line.text), ["Contains: Gluten", "May contain: Milk"], "a contained allergen is not repeated as may-contain");
-  assert.deepEqual(menuAllergenLines(item("c", "Fruit", [], ["tree_nuts"])).map(line => line.text), ["May contain: Tree Nuts"]);
+  assert.deepEqual(menuAllergenLines(item("a", "Granola", ["gluten", "milk"], ["tree_nuts"])).map(line => line.text), ["(Gluten, Milk)"], "may-contain is not shown");
+  assert.deepEqual(menuAllergenLines(item("b", "Granola", ["tree_nuts"])).map(line => line.text), ["(Tree Nuts)"], "machine keys are humanised");
+  assert.deepEqual(menuAllergenLines(item("c", "Fruit", [], ["tree_nuts"])), [], "a may-contain-only dish shows nothing - and is never labelled 'No key allergens'");
   assert.deepEqual(menuAllergenLines(item("d", "Fruit Pot")).map(line => `${line.kind}:${line.text}`), ["clear:No key allergens"]);
   const states = allergensFromStates({ gluten: "contains", milk: "may_contain", fish: "unrecorded", eggs: "clear", no_key_allergens: "contains" });
   assert.deepEqual(states, { contains: ["gluten"], mayContain: ["milk"], unrecorded: ["fish"], noKeyAllergens: false });
@@ -142,11 +142,11 @@ test("tablet: a realistic MNK menu keeps the template structure and reproduces t
   assert.deepEqual(plan.page, { w: 496.08, h: 793.44 });
   const [content] = textElements(plan);
   assert.deepEqual(content.paragraphs.map(paragraph => paragraph.text), [
-    "BBQ Chicken Mayo, Gherkins, Tomatoes, Leaves", "Contains: Gluten, Eggs, Mustard, Sulphites",
-    "Vegan Feta, Pesto, Vegan Mayo, Salad", "Contains: Tree Nuts, Gluten, Soya",
-    "Caesar Salad", "Contains: Gluten, Fish, Eggs, Milk, Mustard",
+    "BBQ Chicken Mayo, Gherkins, Tomatoes, Leaves", "(Gluten, Eggs, Mustard, Sulphites)",
+    "Vegan Feta, Pesto, Vegan Mayo, Salad", "(Tree Nuts, Gluten, Soya)",
+    "Caesar Salad", "(Gluten, Fish, Eggs, Milk, Mustard)",
     "Test Salad 1", "No key allergens",
-    "Test Salad 2", "Contains: Peanuts, Gluten, Soya", "May contain: Milk",
+    "Test Salad 2", "(Peanuts, Gluten, Soya)",
   ]);
   assert.deepEqual(content.rect, { x: 35.4, y: 155.9, w: 425.2, h: 568.3 });
   assert.ok(content.paragraphs.filter(paragraph => paragraph.role === "item").every(paragraph => paragraph.fontPt === 15 && paragraph.bold && paragraph.color === "#0F4D6B"));
@@ -166,11 +166,11 @@ test("tablet slides requests: one text box in the content region, typography per
   assert.ok(Math.abs(transform.translateX - (35.4 + 14 - 7.2) * EMU) <= 1); // content + padding, less Slides' own 7.2pt inset
   assert.ok(Math.abs(shapes[0].createShape.elementProperties.size.width.magnitude / EMU - (425.2 - 2 * (14 - 7.2))) < 0.01);
   const text: string = requests.find(request => request.insertText)!.insertText.text;
-  assert.match(text, /Caesar Salad\nContains: Gluten, Fish, Eggs, Milk, Mustard\nTest Salad 1\nNo key allergens\nTest Salad 2\nContains: Peanuts, Gluten, Soya\nMay contain: Milk$/);
+  assert.match(text, /Caesar Salad\n\(Gluten, Fish, Eggs, Milk, Mustard\)\nTest Salad 1\nNo key allergens\nTest Salad 2\n\(Peanuts, Gluten, Soya\)$/);
   const styles = requests.filter(request => request.updateTextStyle?.textRange.type === "FIXED_RANGE").map(request => request.updateTextStyle);
   const red = styles.filter(entry => entry.style.foregroundColor.opaqueColor.rgbColor.red === 1);
-  assert.equal(red.length, 5, "four contains lines and one may-contain line are red; 'No key allergens' is not an allergen warning");
-  for (const entry of red) assert.match(text.slice(entry.textRange.startIndex, entry.textRange.endIndex), /^(Contains|May contain): /, "each red range is exactly one allergen line");
+  assert.equal(red.length, 4, "the four dishes that contain allergens are red; 'No key allergens' is not an allergen warning");
+  for (const entry of red) assert.match(text.slice(entry.textRange.startIndex, entry.textRange.endIndex), /^\(.*\)$/, "each red range is exactly one bracketed allergen line");
   assert.ok(requests.some(request => request.replaceAllText?.containsText.text === "{{MENU_TITLE}}" && request.replaceAllText.replaceText === "MENU"));
   assert.deepEqual(requests.find(request => request.updateShapeProperties)!.updateShapeProperties.shapeProperties.autofit, { autofitType: "NONE" });
 });
@@ -189,10 +189,10 @@ test("rendering does not depend on the source workflow", () => {
 test("tablet: sections render as labelled groups; long menus shrink within readable minimums; impossible menus fail instead of clipping", () => {
   const sectioned = deckMenu({ sections: [
     { key: "salads", label: "Salads", items: [item("a", "Mixed Leaf Salad", ["mustard"])] },
-    { key: "hot_mains", label: "Hot mains", items: [item("b", "Roast Chicken", [], ["milk"])] },
+    { key: "hot_mains", label: "Hot mains", items: [item("b", "Roast Chicken", ["gluten"], ["milk"])] },
   ] });
   const paragraphs = textElements(planMenuLayout(sectioned, "tablet"))[0].paragraphs.map(paragraph => `${paragraph.role}:${paragraph.text}`);
-  assert.deepEqual(paragraphs, ["section:SALADS", "item:Mixed Leaf Salad", "allergen:Contains: Mustard", "section:HOT MAINS", "item:Roast Chicken", "allergen:May contain: Milk"]);
+  assert.deepEqual(paragraphs, ["section:SALADS", "item:Mixed Leaf Salad", "allergen:(Mustard)", "section:HOT MAINS", "item:Roast Chicken", "allergen:(Gluten)"]);
 
   const longNames = deckMenu({ sections: [{ key: "menu", items: Array.from({ length: 14 }, (_, index) => item(String(index), `Long dish name number ${index + 1} with sauce`, ["gluten", "milk"])) }] });
   const shrunk = planMenuLayout(longNames, "tablet");
@@ -218,18 +218,19 @@ test("flat labels: one dish per label at the extracted card origins, dish name d
   const flat = LAYOUT_MASTERS["mnk-flat-label-v1"] as LabelMaster;
   labels.forEach((label, index) => { assert.equal(label.rect.x, flat.cells[index].x); assert.equal(label.rect.y, flat.cells[index].y); assert.equal(label.rect.w, 168.1); });
   const [bbq, , , clear, both] = labels;
-  assert.deepEqual(bbq.paragraphs.map(paragraph => paragraph.text), ["BBQ Chicken Mayo, Gherkins, Tomatoes, Leaves", "Contains: Gluten, Eggs, Mustard, Sulphites"]);
-  assert.deepEqual(both.paragraphs.map(paragraph => paragraph.text), ["Test Salad 2", "Contains: Peanuts, Gluten, Soya", "May contain: Milk"]);
+  assert.deepEqual(bbq.paragraphs.map(paragraph => paragraph.text), ["BBQ Chicken Mayo, Gherkins, Tomatoes, Leaves", "(Gluten, Eggs, Mustard, Sulphites)"]);
+  assert.deepEqual(both.paragraphs.map(paragraph => paragraph.text), ["Test Salad 2", "(Peanuts, Gluten, Soya)"]);
   assert.deepEqual(clear.paragraphs.map(paragraph => paragraph.text), ["Test Salad 1", "No key allergens"]);
   for (const label of labels) {
     const [name, ...allergens] = label.paragraphs;
-    assert.ok(name.fontPt >= 9 && name.fontPt <= 14 && name.bold, `${name.text} ${name.fontPt}`);
+    assert.ok(name.fontPt >= 9 && name.fontPt <= 11 && name.bold, `${name.text} ${name.fontPt}`);
     assert.ok(allergens.length >= 1, "every label shows an allergen line");
     assert.ok(allergens.every(paragraph => paragraph.fontPt >= 7 && paragraph.fontPt <= name.fontPt), "allergen text keeps its 7pt safety floor");
   }
-  // Contains and may-contain are visually distinct, not just worded differently.
-  const [, contains, may] = both.paragraphs;
-  assert.ok(contains.bold && !may.bold && may.italic);
+  // Short names stay at the maximum; only long names shrink.
+  assert.equal(clear.paragraphs[0].fontPt, 11); assert.equal(both.paragraphs[0].fontPt, 11);
+  const long = textElements(planMenuLayout(deckMenu({ sections: [{ key: "menu", items: [item("l", "Slow Roasted Sweet Potato, Charred Corn, Roasted Pepper, Baby Spinach & Toasted Seeds", ["milk"])] }] }), "flat-label"))[0];
+  assert.ok(long.paragraphs[0].fontPt < 11 && long.paragraphs[0].fontPt >= 9, "a long name shrinks only as far as needed");
   // The label's chrome (card panel, bar, marks) travels with each label; flat labels have no rear face.
   const chrome = plan.pages[0].elements.filter(element => element.layer === "master");
   assert.equal(chrome.length, 5 * flat.chrome.length);
@@ -264,7 +265,7 @@ test("label overflow fails safely: allergens are never truncated or dropped", ()
   for (const format of ["flat-label", "tent-label"] as const) assert.throws(() => planMenuLayout(long, format), (error: unknown) => error instanceof MenuArtifactError && error.code === "MENU_LABEL_OVERFLOW" && /never truncated/.test(error.message));
   const heavy = deckMenu({ sections: [{ key: "menu", items: [item("h", "Roasted Sweet Potato, Charred Corn, Roasted Pepper & Baby Spinach", ["gluten", "milk", "eggs", "soya"], ["tree_nuts", "peanuts"])] }] });
   const [label] = textElements(planMenuLayout(heavy, "flat-label"));
-  assert.match(label.paragraphs.map(paragraph => paragraph.text).join("\n"), /Contains: Gluten, Milk, Eggs, Soya\nMay contain: Tree Nuts, Peanuts/, "every declared allergen appears in full");
+  assert.match(label.paragraphs.map(paragraph => paragraph.text).join("\n"), /\(Gluten, Milk, Eggs, Soya\)$/, "every contained allergen appears in full");
 });
 
 test("flat-label slides requests: slides are pruned, nested groups flattened, pages duplicated and unused cards removed", () => {
@@ -337,7 +338,7 @@ test("site branding is data, separate from layout geometry", () => {
   const label = textElements(planMenuLayout(deckMenu(), "flat-label", rebranded))[0].paragraphs;
   assert.equal(label[0].color, "#222222"); assert.equal(label[1].color, "#AA0000");
   const html = renderMenuPlanHtml(planMenuLayout(deckMenu(), "flat-label"), { title: "t", assets: { "fika-logo-white": "x.png" } });
-  assert.match(html, /Contains: Gluten/); assert.match(html, /missing asset mnk-group-logo-white/);
+  assert.match(html, /\(Gluten/); assert.match(html, /missing asset mnk-group-logo-white/);
 });
 
 // ----------------------------------------------------------------- stateful fake Drive/Slides
