@@ -48,11 +48,11 @@ const samples: Array<{ file: string; title: string; format: MenuOutputFormat; me
       item("s4", "Roasted Beetroot, Goat's Cheese, Walnuts & Rocket", ["milk", "tree_nuts", "sulphites"]),
       item("s5", "Quinoa, Charred Broccoli, Edamame & Lemon Tahini", ["sesame", "soya"]),
     ] },
-    { key: "hot", label: "Hot mains", items: [
+    { key: "hot_mains", label: "Hot mains", items: [
       item("m1", "Roasted Sweet Potato, Charred Corn, Roasted Pepper & Baby Spinach", ["milk"]),
       item("m2", "BBQ Chicken Mayo, Gherkins, Tomatoes, Leaves", ["gluten", "eggs", "mustard", "sulphites"]),
     ] },
-    { key: "sides", label: "Sides & extras", items: [
+    { key: "sides_extras", label: "Sides & extras", items: [
       item("e1", "Roasted Potatoes with Rosemary", ["sulphites"]),
       item("e2", "Vegan Feta, Pesto, Vegan Mayo, Salad", ["tree_nuts", "gluten", "soya"]),
     ] },
