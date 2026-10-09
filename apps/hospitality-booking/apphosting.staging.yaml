@@ -31,6 +31,17 @@ env:
   - variable: GOOGLE_DRIVE_OWNER_EMAIL_OPLOC_66E621FA_6E6F_4F46_9AED_462313ABBE8F
     value: mnk@fikacatering.com
     availability: [RUNTIME]
+  # MNK menu destination (OPLOC-scoped): this site's own Drive owner (above) and its own menu parent folder. Hospitality only; Delivered-In has a separate parent.
+  - variable: GOOGLE_MENU_PARENT_FOLDER_ID_OPLOC_66E621FA_6E6F_4F46_9AED_462313ABBE8F
+    value: 1RAj7EFDJIcwvMn8fJaw1eDVI5xec0ENC
+    availability: [RUNTIME]
+  # Approved MNK Google Slides decks (site-scoped): tablet menu and flat/tent label master.
+  - variable: GOOGLE_MENU_TEMPLATE_ID_MNK
+    value: 1A3xn63KiCrxrnro3SWJO9FdNf2Y_QIrA8rc7V3K8ToE
+    availability: [RUNTIME]
+  - variable: GOOGLE_MENU_LABEL_TEMPLATE_ID_MNK
+    value: 1st025DPvfJ_I6rj8Ad_BguLbpo00GT4bGS0uwCvQfIc
+    availability: [RUNTIME]
   - variable: MNK_CANON_BRIDGE_TOKEN
     secret: MNK_CANON_BRIDGE_TOKEN
     availability: [RUNTIME]

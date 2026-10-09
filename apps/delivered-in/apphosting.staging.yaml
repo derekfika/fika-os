@@ -35,16 +35,22 @@ env:
   - variable: FIKA_SNAPSHOT_BUCKET
     value: fika-os-dev-staging-read-packages-europe-west4
     availability: [RUNTIME]
-  # Provision these before enabling generated site menus. The current
-  # file-based OAuth implementation is local-only; hosted generation requires
-  # the established Workspace DWD integration used by the other apps.
+  # Drive DWD credential (the existing Drive one - not the Gmail mailer credential) and the MNK OPLOC-scoped menu destination.
   - variable: GOOGLE_WORKSPACE_DWD_SERVICE_ACCOUNT_JSON
     secret: GOOGLE_WORKSPACE_DWD_SERVICE_ACCOUNT_JSON
     availability: [RUNTIME]
-  # Add these non-secret values after manual provisioning. Drive destinations are OPLOC-scoped (no app-wide owner/folder);
-  # <KEY> is the OPLOC id without "oploc:", upper-cased, non-alphanumerics as "_" (e.g. 66E621FA_6E6F_4F46_9AED_462313ABBE8F for MNK):
-  # GOOGLE_DRIVE_OWNER_EMAIL_OPLOC_<KEY>        explicit Workspace owner DWD impersonates for that site
-  # GOOGLE_MENU_PARENT_FOLDER_ID_OPLOC_<KEY>    explicit menu parent folder for that site
-  # GOOGLE_MENU_TEMPLATE_ID_MNK                 MNK tablet deck (site-scoped)
-  # GOOGLE_MENU_LABEL_TEMPLATE_ID_MNK           MNK label deck (site-scoped)
-  # GOOGLE_DELIVERED_IN_TEMPLATE_ID             generic template for sites without a shared layout (optional per-OPLOC override: GOOGLE_DELIVERED_IN_TEMPLATE_ID_OPLOC_<KEY>)
+  - variable: GOOGLE_DRIVE_OWNER_EMAIL_OPLOC_66E621FA_6E6F_4F46_9AED_462313ABBE8F
+    value: mnk@fikacatering.com
+    availability: [RUNTIME]
+  # Delivered-In's own MNK menu parent folder (separate from Hospitality's).
+  - variable: GOOGLE_MENU_PARENT_FOLDER_ID_OPLOC_66E621FA_6E6F_4F46_9AED_462313ABBE8F
+    value: 1OC2LSGyabZx7gLcN88V7y6ly1lK4SiC_
+    availability: [RUNTIME]
+  # Approved MNK Google Slides decks (site-scoped).
+  - variable: GOOGLE_MENU_TEMPLATE_ID_MNK
+    value: 1A3xn63KiCrxrnro3SWJO9FdNf2Y_QIrA8rc7V3K8ToE
+    availability: [RUNTIME]
+  - variable: GOOGLE_MENU_LABEL_TEMPLATE_ID_MNK
+    value: 1st025DPvfJ_I6rj8Ad_BguLbpo00GT4bGS0uwCvQfIc
+    availability: [RUNTIME]
+  # Optional: GOOGLE_DELIVERED_IN_TEMPLATE_ID (generic template for sites without a shared layout; per-OPLOC override GOOGLE_DELIVERED_IN_TEMPLATE_ID_OPLOC_<KEY>).
