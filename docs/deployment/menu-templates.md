@@ -123,3 +123,14 @@ Upgrade note: keys and source keys now include the format, so each existing tabl
 `npx tsx packages/server-shared/tools/render-menu-samples.ts` writes HTML samples to `artifacts/menu-previews/` (git-ignored). Place the four brand PNGs
 (`mnk-tablet-header`, `mnk-group-logo-white`, `fika-logo-white`, `fika-tagline-white`) in its `assets/` folder to see logos. Open the pages in a browser: each
 reports whether every text box fits with the real Montserrat font.
+
+## Production prerequisites (before launch)
+
+* **Enable the Google Slides API (`slides.googleapis.com`) in the production Google Cloud project.** Menu generation copies a template deck with the Drive API and then
+  rewrites it with the Slides API; with Slides disabled every generation fails at "Google Slides template read" (403 `SERVICE_DISABLED`). It was found missing in the staging
+  project `fika-os-dev` (only Drive was enabled) and enabled there manually. Production is untouched by this change and must have it enabled by its owner.
+* Per site that generates menus: the OPLOC-scoped owner and menu parent keys (see above), the approved tablet deck and, for label sites, the label deck - each **shared
+  with that site's Drive owner** (a deck the owner cannot see fails with `File not found` on copy, as the MNK Label Template did until it was shared with `mnk@fikacatering.com`).
+* Hosted Delivered-In generation needs the existing Drive DWD secret (`GOOGLE_WORKSPACE_DWD_SERVICE_ACCOUNT_JSON`), not the Gmail mailer credential.
+* Delivered-In manager generation needs the Hub deployed with the `delivered_in.site_menu.generate` permission issuance (editors only).
+
