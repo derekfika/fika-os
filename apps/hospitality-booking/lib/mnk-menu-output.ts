@@ -9,6 +9,10 @@ export type MenuOutput = {
   generatedAt: string;
   generatedBy: string;
   templateVersion: "mnk-hospitality-menu-v1" | "mnk-hospitality-menu-v2";
+  /** Physical output format; absent on outputs generated before formats existed (tablet). */
+  format?: "tablet" | "flat-label" | "tent-label";
+  /** Pages generated in the Slides file (labels page automatically). */
+  pageCount?: number;
   google?: { fileId: string; presentationUrl: string; driveUrl: string };
   /** Deterministic artifact identity for this exact booking/plan revision (retries reuse it). */
   artifactKey?: string;

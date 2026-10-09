@@ -1,14 +1,19 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
-  MenuArtifactError, allergensFromStates, buildMenuSlidesRequests, layoutMenu, menuAllergenLabel, menuAllergenLine, menuArtifactFileName,
-  menuArtifactKey, menuArtifactSourceKey, publishMenuArtifact, resolveMenuTemplate, type NormalizedMenu, type SlidesPresentation,
+  LAYOUT_MASTERS, MenuArtifactError, SITE_BRANDING, allergensFromStates, buildMenuSlidesRequests, flattenSlideElements, menuAllergenLabel, menuAllergenLines, menuArtifactFileName,
+  menuArtifactId, menuArtifactKey, menuArtifactSourceKey, planMenuLayout, publishMenuArtifact, resolveMenuTemplate,
+  type LabelMaster, type MenuOutputFormat, type NormalizedMenu, type NormalizedMenuItem, type PlanElement, type SiteBranding, type SlidesPresentation,
 } from "../src/menu-artifact";
+import { renderMenuPlanHtml } from "../src/menu-preview";
 
 const MNK_OPLOC = "oploc:66e621fa-6e6f-4f46-9aed-462313abbe8f";
-const portrait = { width: 6_300_200, height: 10_076_675 }; // the proven MNK deck page
-const mnkEnv = { GOOGLE_MENU_TEMPLATE_ID_MNK: "tpl-mnk" };
-const item = (id: string, name: string, contains: string[] = [], mayContain: string[] = []) => ({ id, name, contains, mayContain });
+const EMU = 12_700;
+const portrait = { width: 6_300_200, height: 10_076_675 }; // the proven MNK tablet deck page
+const landscape = { width: 9_720_250, height: 6_858_000 }; // the MNK Label Template page
+const mnkEnv = { GOOGLE_MENU_TEMPLATE_ID_MNK: "tpl-mnk", GOOGLE_MENU_LABEL_TEMPLATE_ID_MNK: "tpl-mnk-labels" };
+/** Dishes with an empty allergen list in these fixtures are positively clear (`noKeyAllergens`). Raw objects are used where "unknown" matters. */
+const item = (id: string, name: string, contains: string[] = [], mayContain: string[] = []): NormalizedMenuItem => ({ id, name, contains, mayContain, ...(contains.length || mayContain.length ? {} : { noKeyAllergens: true }) });
 
 // The reference deck 2026-08-25-12-00-FIKA-MNK.pptx, as normalized input.
 function deckMenu(over: Partial<NormalizedMenu> = {}, workflow: "hospitality" | "delivered-in" = "hospitality"): NormalizedMenu {
@@ -19,134 +24,342 @@ function deckMenu(over: Partial<NormalizedMenu> = {}, workflow: "hospitality" | 
       item("2", "Vegan Feta, Pesto, Vegan Mayo, Salad", ["tree_nuts", "gluten", "soya"]),
       item("3", "Caesar Salad", ["gluten", "fish", "eggs", "milk", "mustard"]),
       item("4", "Test Salad 1"),
-      item("5", "Test Salad 2", ["peanuts", "gluten", "soya"]),
+      item("5", "Test Salad 2", ["peanuts", "gluten", "soya"], ["milk"]),
     ] }],
     source: { workflow, id: "booking:mnk:deck", version: 3, clientName: "FIKA" },
     ...over,
   };
 }
-const presentation: SlidesPresentation = { pageSize: { width: { magnitude: portrait.width }, height: { magnitude: portrait.height } }, slides: [{ objectId: "slide-1", pageElements: [] }] };
-const template = () => resolveMenuTemplate({ siteKey: "mnk" }, mnkEnv);
+const manyDishes = (count: number, over: Partial<NormalizedMenu> = {}) => deckMenu({ sections: [{ key: "menu", items: Array.from({ length: count }, (_, index) => item(`d${index}`, `Dish ${index + 1}`, index % 2 ? ["gluten"] : [], index % 3 === 0 ? ["milk"] : [])) }], ...over });
+const template = (format: MenuOutputFormat = "tablet") => resolveMenuTemplate({ siteKey: "mnk", format }, mnkEnv);
+const textElements = (plan: ReturnType<typeof planMenuLayout>) => plan.pages.flatMap(page => page.elements).filter((element): element is Extract<PlanElement, { type: "text" }> => element.type === "text");
 
-test("allergens: labels are display text, may-contain is never dropped, unrecorded is never clear", () => {
+// -------- a Slides-API shaped MNK Label Template deck, built from the extracted geometry (cards inside row groups) --------
+type El = Record<string, any>;
+function labelDeck(): SlidesPresentation {
+  const dim = (pt: number) => ({ magnitude: Math.round(pt * EMU), unit: "EMU" });
+  const leaf = (id: string, rect: { x: number; y: number; w: number; h: number }, rotation = 0, extra: El = {}): El => ({
+    objectId: id, size: { width: dim(rect.w), height: dim(rect.h) },
+    transform: rotation ? { scaleX: -1, scaleY: -1, translateX: Math.round((rect.x + rect.w) * EMU), translateY: Math.round((rect.y + rect.h) * EMU), unit: "EMU" } : { scaleX: 1, scaleY: 1, translateX: Math.round(rect.x * EMU), translateY: Math.round(rect.y * EMU), unit: "EMU" },
+    ...extra,
+  });
+  const slideFor = (master: LabelMaster, slideId: string): El => {
+    const cards = master.cells.map((cell, index) => ({ // a card is a group at its origin; row groups wrap the cards of one row (nested)
+      cell, group: { objectId: `${slideId}-card${index}`, size: { width: dim(master.card.w), height: dim(master.card.h) }, transform: { scaleX: 1, scaleY: 1, translateX: 0, translateY: 0, unit: "EMU" },
+        elementGroup: { children: master.chrome.map((shape, shapeIndex) => leaf(`${slideId}-c${index}-${shapeIndex}`, { x: cell.x + shape.rect.x, y: cell.y + shape.rect.y, w: shape.rect.w, h: shape.rect.h }, shape.kind === "image" ? shape.rotation || 0 : 0)) } },
+    }));
+    const rows: El[] = [];
+    for (let start = 0; start < cards.length; start += 4) rows.push({ objectId: `${slideId}-row${start / 4}`, size: { width: dim(700), height: dim(80) }, transform: { scaleX: 1, scaleY: 1, translateX: 0, translateY: 0, unit: "EMU" }, elementGroup: { children: cards.slice(start, start + 4).map(card => card.group) } });
+    const lastCell = master.cells[master.cells.length - 1];
+    const stray = leaf(`${slideId}-blank`, { x: lastCell.x, y: lastCell.y + master.face.y, w: 160, h: 50 }, 0, { shape: { shapeType: "TEXT_BOX", text: { textElements: [{ textRun: { content: "\n" } }] } } });
+    return { objectId: slideId, pageElements: [...rows, stray] };
+  };
+  return { pageSize: { width: { magnitude: landscape.width }, height: { magnitude: landscape.height } }, slides: [slideFor(LAYOUT_MASTERS["mnk-tent-label-v1"] as LabelMaster, "tent-slide"), slideFor(LAYOUT_MASTERS["mnk-flat-label-v1"] as LabelMaster, "flat-slide")] };
+}
+const tabletDeck: SlidesPresentation = { pageSize: { width: { magnitude: portrait.width }, height: { magnitude: portrait.height } }, slides: [{ objectId: "slide-1", pageElements: [] }] };
+const requestsOf = (menu: NormalizedMenu, format: MenuOutputFormat, deck = format === "tablet" ? tabletDeck : labelDeck()) => buildMenuSlidesRequests(menu, template(format), deck) as Array<Record<string, any>>;
+const lastIndexOf = (requests: Array<Record<string, any>>, key: string) => requests.map(request => Boolean(request[key])).lastIndexOf(true);
+
+// ------------------------------------------------------------------ allergens
+
+test("allergens: contains and may-contain stay distinct, labels are human readable, unrecorded is never clear", () => {
   assert.equal(menuAllergenLabel("tree_nuts"), "Tree Nuts");
-  assert.equal(menuAllergenLine({ contains: ["gluten"], mayContain: ["milk", "gluten"] }), "(Gluten, Milk)");
-  assert.equal(menuAllergenLine({ contains: ["no_key_allergens"], mayContain: [] }), "");
+  assert.deepEqual(menuAllergenLines(item("a", "Granola", ["gluten", "milk"], ["tree_nuts"])).map(line => line.text), ["Contains: Gluten, Milk", "May contain: Tree Nuts"]);
+  assert.deepEqual(menuAllergenLines(item("b", "Granola", ["gluten"], ["milk", "gluten"])).map(line => line.text), ["Contains: Gluten", "May contain: Milk"], "a contained allergen is not repeated as may-contain");
+  assert.deepEqual(menuAllergenLines(item("c", "Fruit", [], ["tree_nuts"])).map(line => line.text), ["May contain: Tree Nuts"]);
+  assert.deepEqual(menuAllergenLines(item("d", "Fruit Pot")).map(line => `${line.kind}:${line.text}`), ["clear:No key allergens"]);
   const states = allergensFromStates({ gluten: "contains", milk: "may_contain", fish: "unrecorded", eggs: "clear", no_key_allergens: "contains" });
-  assert.deepEqual(states, { contains: ["gluten"], mayContain: ["milk"], unrecorded: ["fish"] });
+  assert.deepEqual(states, { contains: ["gluten"], mayContain: ["milk"], unrecorded: ["fish"], noKeyAllergens: false });
 });
 
-test("identity: existing file name convention, deterministic keys, revision-sensitive artifact key", () => {
+test("allergen safety: unrecorded or unestablished allergens are refused in every format, and 'no key allergens' needs positive evidence", () => {
+  assert.equal(allergensFromStates({ gluten: "clear", milk: "clear" }).noKeyAllergens, true);
+  assert.equal(allergensFromStates({ no_key_allergens: "contains" }).noKeyAllergens, true, "the workflows' explicit marker");
+  assert.equal(allergensFromStates({ gluten: "clear", milk: "unrecorded" }).noKeyAllergens, false);
+  assert.equal(allergensFromStates({ gluten: "clear", milk: "mystery" }).noKeyAllergens, false, "unknown states are not clear");
+  assert.equal(allergensFromStates({ gluten: "contains" }).noKeyAllergens, false);
+  assert.equal(allergensFromStates({}).noKeyAllergens, false);
+  const unrecorded = deckMenu({ sections: [{ key: "menu", items: [{ id: "x", name: "Mystery Wrap", contains: [], mayContain: [], unrecorded: ["gluten"] }] }] });
+  const unknown = deckMenu({ sections: [{ key: "menu", items: [{ id: "y", name: "Blank Wrap", contains: [], mayContain: [] }] }] });
+  for (const format of ["tablet", "flat-label", "tent-label"] as const) {
+    assert.throws(() => planMenuLayout(unrecorded, format), (error: unknown) => error instanceof MenuArtifactError && error.code === "MENU_ALLERGENS_UNRECORDED" && error.status === 409);
+    assert.throws(() => planMenuLayout(unknown, format), (error: unknown) => error instanceof MenuArtifactError && error.code === "MENU_ALLERGENS_NOT_ESTABLISHED", `${format}: empty is unknown, not clear`);
+  }
+  // Even a dish that also declares an allergen is refused if part of its state is unrecorded.
+  assert.throws(() => menuAllergenLines({ id: "z", name: "Z", contains: ["milk"], mayContain: [], unrecorded: ["eggs"] }), /unrecorded/);
+});
+
+// ------------------------------------------------------------------ identity
+
+test("identity: existing file name convention, deterministic keys, format- and revision-sensitive artifact key", () => {
   const menu = deckMenu();
-  assert.equal(menuArtifactFileName(menu), "2026-08-25-12-00-FIKA-MNK");
-  const key = menuArtifactKey(menu, "mnk-portrait-v1");
-  assert.equal(key, menuArtifactKey(deckMenu(), "mnk-portrait-v1"), "a retry has the same key");
-  const amended = deckMenu({ source: { ...menu.source, version: 4 } });
-  assert.notEqual(menuArtifactKey(amended, "mnk-portrait-v1"), key, "an amendment is a distinct artifact");
-  assert.equal(menuArtifactSourceKey(amended), menuArtifactSourceKey(menu), "but it belongs to the same source");
+  assert.equal(menuArtifactFileName(menu), "2026-08-25-12-00-FIKA-MNK", "the tablet file name is unchanged");
+  const key = (value: NormalizedMenu, format: MenuOutputFormat) => menuArtifactKey(value, template(format).key, format);
+  assert.equal(key(menu, "tablet"), key(deckMenu(), "tablet"), "a retry has the same key");
+  assert.notEqual(key(deckMenu({ source: { ...menu.source, version: 4 } }), "tablet"), key(menu, "tablet"), "an amendment is a distinct artifact");
+  assert.equal(menuArtifactSourceKey(deckMenu({ source: { ...menu.source, version: 4 } })), menuArtifactSourceKey(menu), "but it belongs to the same source");
   assert.notEqual(menuArtifactSourceKey(deckMenu({ serviceTime: "13:00" })), menuArtifactSourceKey(menu));
 });
 
-test("template resolution is site based and fails safely", () => {
+test("identity: a tablet artifact and a flat/tent label artifact for the same menu never collide", () => {
+  const menu = deckMenu();
+  const formats: MenuOutputFormat[] = ["tablet", "flat-label", "tent-label"];
+  const unique = (values: string[]) => assert.equal(new Set(values).size, values.length, values.join(" | "));
+  unique(formats.map(format => menuArtifactKey(menu, template(format).key, format)));
+  unique(formats.map(format => menuArtifactSourceKey(menu, format)));
+  unique(formats.map(format => menuArtifactId(menu, template(format).key, format)));
+  unique(formats.map(format => menuArtifactFileName(menu, format)));
+  assert.equal(menuArtifactFileName(menu, "flat-label"), "2026-08-25-12-00-FIKA-MNK-flat-labels");
+  assert.equal(menuArtifactFileName(deckMenu({ fileName: "Governed Name" }), "tent-label"), "Governed Name-tent-labels");
+  assert.match(menuArtifactId(menu, template("flat-label").key, "flat-label"), /:flat-label:v3:/);
+  // The layout template version is part of identity too.
+  assert.notEqual(menuArtifactKey(menu, "mnk-flat-label-v1", "flat-label"), menuArtifactKey(menu, "mnk-flat-label-v2", "flat-label"));
+});
+
+test("template resolution is site and format based and fails safely", () => {
   assert.equal(resolveMenuTemplate({ siteKey: "mnk" }, mnkEnv).templateId, "tpl-mnk");
+  assert.equal(resolveMenuTemplate({ siteKey: "mnk" }, mnkEnv).key, "mnk-tablet-v1");
   assert.equal(resolveMenuTemplate({ oplocId: MNK_OPLOC }, mnkEnv).siteKey, "mnk");
   assert.equal(resolveMenuTemplate({ siteKey: "mnk" }, { GOOGLE_MENU_TEMPLATE_ID: "legacy-tpl" }).templateId, "legacy-tpl", "legacy MNK env name still works");
   assert.equal(resolveMenuTemplate({ siteKey: "mnk", templateIdOverride: "https://docs.google.com/presentation/d/override-tpl/edit" }, mnkEnv).templateId, "override-tpl");
-  assert.equal(resolveMenuTemplate({ siteKey: "angel-court" }, { GOOGLE_MENU_TEMPLATE_ID_ANGEL_COURT: "tpl-ac" }).layout.contentLeft, 1_750_000);
+  assert.equal(resolveMenuTemplate({ siteKey: "mnk", format: "flat-label", templateIdOverride: "override-tpl" }, mnkEnv).templateId, "tpl-mnk-labels", "a tablet override is never used as a label master");
+  assert.equal(template("tent-label").templateId, "tpl-mnk-labels");
+  assert.equal(template("tent-label").key, "mnk-tent-label-v1");
+  assert.equal(LAYOUT_MASTERS[resolveMenuTemplate({ siteKey: "angel-court" }, { GOOGLE_MENU_TEMPLATE_ID_ANGEL_COURT: "tpl-ac" }).key].kind, "tablet");
   assert.throws(() => resolveMenuTemplate({ siteKey: "mnk" }, {}), (error: unknown) => error instanceof MenuArtifactError && error.code === "MENU_TEMPLATE_NOT_CONFIGURED" && error.status === 409 && /GOOGLE_MENU_TEMPLATE_ID_MNK/.test(error.message));
+  assert.throws(() => resolveMenuTemplate({ siteKey: "mnk", format: "flat-label" }, { GOOGLE_MENU_TEMPLATE_ID_MNK: "tpl-mnk" }), (error: unknown) => error instanceof MenuArtifactError && error.code === "MENU_TEMPLATE_NOT_CONFIGURED" && /GOOGLE_MENU_LABEL_TEMPLATE_ID_MNK/.test(error.message));
+  assert.throws(() => resolveMenuTemplate({ siteKey: "angel-court", format: "flat-label" }, { GOOGLE_MENU_TEMPLATE_ID_ANGEL_COURT: "tpl-ac" }), (error: unknown) => error instanceof MenuArtifactError && error.code === "MENU_FORMAT_UNSUPPORTED");
+  assert.throws(() => resolveMenuTemplate({ siteKey: "mnk", format: "poster" as MenuOutputFormat }, mnkEnv), (error: unknown) => error instanceof MenuArtifactError && error.code === "MENU_FORMAT_INVALID");
   assert.throws(() => resolveMenuTemplate({ siteKey: "haleon" }, mnkEnv), (error: unknown) => error instanceof MenuArtifactError && error.code === "MENU_TEMPLATE_SITE_UNSUPPORTED");
   assert.throws(() => resolveMenuTemplate({ oplocId: "oploc:unknown" }, mnkEnv), /No menu template is defined/);
 });
 
-test("layout reproduces the reference deck: text, order and allergens directly under each item", () => {
-  const layout = layoutMenu(deckMenu(), template(), portrait);
-  assert.deepEqual(layout.runs.map(run => run.text), [
-    "BBQ Chicken Mayo, Gherkins, Tomatoes, Leaves", "(Gluten, Eggs, Mustard, Sulphites)", "",
-    "Vegan Feta, Pesto, Vegan Mayo, Salad", "(Tree Nuts, Gluten, Soya)", "",
-    "Caesar Salad", "(Gluten, Fish, Eggs, Milk, Mustard)", "",
-    "Test Salad 1", "",
-    "Test Salad 2", "(Peanuts, Gluten, Soya)",
+// ------------------------------------------------------------------ tablet
+
+test("tablet: a realistic MNK menu keeps the template structure and reproduces the reference text with separate allergen lines", () => {
+  const plan = planMenuLayout(deckMenu(), "tablet");
+  assert.equal(plan.pages.length, 1);
+  assert.deepEqual(plan.page, { w: 496.08, h: 793.44 });
+  const [content] = textElements(plan);
+  assert.deepEqual(content.paragraphs.map(paragraph => paragraph.text), [
+    "BBQ Chicken Mayo, Gherkins, Tomatoes, Leaves", "Contains: Gluten, Eggs, Mustard, Sulphites",
+    "Vegan Feta, Pesto, Vegan Mayo, Salad", "Contains: Tree Nuts, Gluten, Soya",
+    "Caesar Salad", "Contains: Gluten, Fish, Eggs, Milk, Mustard",
+    "Test Salad 1", "No key allergens",
+    "Test Salad 2", "Contains: Peanuts, Gluten, Soya", "May contain: Milk",
   ]);
-  assert.equal(layout.itemFontSize, 15);
-  assert.equal(layout.allergenFontSize, 10);
-  assert.equal(layout.fontScaled, false);
+  assert.deepEqual(content.rect, { x: 35.4, y: 155.9, w: 425.2, h: 568.3 });
+  assert.ok(content.paragraphs.filter(paragraph => paragraph.role === "item").every(paragraph => paragraph.fontPt === 15 && paragraph.bold && paragraph.color === "#0F4D6B"));
+  assert.ok(content.paragraphs.filter(paragraph => paragraph.role === "allergen").every(paragraph => paragraph.fontPt >= 8));
+  assert.equal(plan.fontScaled, false);
+  const chrome = plan.pages[0].elements.filter(element => element.layer === "master");
+  assert.ok(chrome.some(element => element.type === "rect" && element.rect.y === 748 && element.fill === "#0F4C6A"), "footer bar");
+  assert.ok(chrome.some(element => element.type === "image" && element.role === "header-bg" && element.rect.h === 139.9), "header");
+  assert.ok(chrome.some(element => element.type === "static-text" && element.text === "MENU" && element.fontPt === 34));
 });
 
-test("slides requests match the baseline geometry and typography (navy bold items, red 10pt allergens)", () => {
-  const requests = buildMenuSlidesRequests(deckMenu(), template(), presentation) as Array<Record<string, any>>;
-  const shape = requests.filter(request => request.createShape);
-  assert.equal(shape.length, 1);
-  assert.deepEqual(shape[0].createShape.elementProperties.transform, { scaleX: 1, scaleY: 1, translateX: 450_000, translateY: 1_800_000 + 180_000, unit: "EMU" });
-  assert.equal(shape[0].createShape.elementProperties.size.width.magnitude, portrait.width - 900_000);
+test("tablet slides requests: one text box in the content region, typography per paragraph, nothing hard-coded to object ids", () => {
+  const requests = requestsOf(deckMenu(), "tablet");
+  const shapes = requests.filter(request => request.createShape);
+  assert.equal(shapes.length, 1);
+  const transform = shapes[0].createShape.elementProperties.transform;
+  assert.ok(Math.abs(transform.translateX - (35.4 + 14 - 7.2) * EMU) <= 1); // content + padding, less Slides' own 7.2pt inset
+  assert.ok(Math.abs(shapes[0].createShape.elementProperties.size.width.magnitude / EMU - (425.2 - 2 * (14 - 7.2))) < 0.01);
   const text: string = requests.find(request => request.insertText)!.insertText.text;
-  const base = requests.find(request => request.updateTextStyle?.textRange.type === "ALL")!.updateTextStyle.style;
-  assert.equal(base.fontFamily, "Montserrat"); assert.equal(base.fontSize.magnitude, 15); assert.equal(base.bold, true);
-  assert.deepEqual(base.foregroundColor.opaqueColor.rgbColor, { red: 0.06, green: 0.3, blue: 0.42 });
-  const allergenStyles = requests.filter(request => request.updateTextStyle?.textRange.type === "FIXED_RANGE").map(request => request.updateTextStyle);
-  assert.equal(allergenStyles.length, 4);
-  for (const entry of allergenStyles) {
-    assert.equal(entry.style.fontSize.magnitude, 10); assert.equal(entry.style.bold, false);
-    assert.deepEqual(entry.style.foregroundColor.opaqueColor.rgbColor, { red: 1, green: 0, blue: 0 });
-    const covered = text.slice(entry.textRange.startIndex, entry.textRange.endIndex);
-    assert.match(covered, /^\(.*\)$/, "each styled range is exactly one allergen line");
-  }
-  // The allergen line immediately follows its own item.
-  assert.match(text, /Caesar Salad\n\(Gluten, Fish, Eggs, Milk, Mustard\)\n\nTest Salad 1\n\nTest Salad 2\n\(Peanuts, Gluten, Soya\)$/);
+  assert.match(text, /Caesar Salad\nContains: Gluten, Fish, Eggs, Milk, Mustard\nTest Salad 1\nNo key allergens\nTest Salad 2\nContains: Peanuts, Gluten, Soya\nMay contain: Milk$/);
+  const styles = requests.filter(request => request.updateTextStyle?.textRange.type === "FIXED_RANGE").map(request => request.updateTextStyle);
+  const red = styles.filter(entry => entry.style.foregroundColor.opaqueColor.rgbColor.red === 1);
+  assert.equal(red.length, 5, "four contains lines and one may-contain line are red; 'No key allergens' is not an allergen warning");
+  for (const entry of red) assert.match(text.slice(entry.textRange.startIndex, entry.textRange.endIndex), /^(Contains|May contain): /, "each red range is exactly one allergen line");
   assert.ok(requests.some(request => request.replaceAllText?.containsText.text === "{{MENU_TITLE}}" && request.replaceAllText.replaceText === "MENU"));
+  assert.deepEqual(requests.find(request => request.updateShapeProperties)!.updateShapeProperties.shapeProperties.autofit, { autofitType: "NONE" });
 });
 
 test("a visible {{MENU_ITEMS}} token is replaced instead of left on the slide", () => {
-  const withToken: SlidesPresentation = { ...presentation, slides: [{ objectId: "s", pageElements: [{ objectId: "tok", shape: { text: { textElements: [{ textRun: { content: "{{MENU_ITEMS}}" } }] } } }] }] };
-  const requests = buildMenuSlidesRequests(deckMenu(), template(), withToken) as Array<Record<string, any>>;
-  assert.deepEqual(requests[0], { deleteObject: { objectId: "tok" } });
+  const withToken: SlidesPresentation = { ...tabletDeck, slides: [{ objectId: "s", pageElements: [{ objectId: "tok", shape: { text: { textElements: [{ textRun: { content: "{{MENU_ITEMS}}" } }] } } }] }] };
+  assert.deepEqual(requestsOf(deckMenu(), "tablet", withToken)[0], { deleteObject: { objectId: "tok" } });
 });
 
 test("rendering does not depend on the source workflow", () => {
   const strip = (requests: Array<Record<string, any>>) => requests.filter(request => !request.replaceAllText);
-  const hospitality = buildMenuSlidesRequests(deckMenu({}, "hospitality"), template(), presentation) as Array<Record<string, any>>;
-  const deliveredIn = buildMenuSlidesRequests(deckMenu({ source: { workflow: "delivered-in", id: "publication-day:mnk:2026-08-25", version: 9 } }, "delivered-in"), template(), presentation) as Array<Record<string, any>>;
-  assert.deepEqual(strip(hospitality), strip(deliveredIn));
+  const deliveredIn = deckMenu({ source: { workflow: "delivered-in", id: "publication-day:mnk:2026-08-25", version: 9 } }, "delivered-in");
+  for (const format of ["tablet", "flat-label", "tent-label"] as const) assert.deepEqual(strip(requestsOf(deckMenu({}, "hospitality"), format)), strip(requestsOf(deliveredIn, format)));
 });
 
-test("sections render as labelled groups; long menus shrink; impossible menus fail instead of clipping", () => {
+test("tablet: sections render as labelled groups; long menus shrink within readable minimums; impossible menus fail instead of clipping", () => {
   const sectioned = deckMenu({ sections: [
     { key: "salads", label: "Salads", items: [item("a", "Mixed Leaf Salad", ["mustard"])] },
     { key: "hot_mains", label: "Hot mains", items: [item("b", "Roast Chicken", [], ["milk"])] },
   ] });
-  const runs = layoutMenu(sectioned, template(), portrait).runs.map(run => `${run.kind}:${run.text}`);
-  assert.deepEqual(runs, ["section:SALADS", "gap:", "item:Mixed Leaf Salad", "allergen:(Mustard)", "gap:", "section:HOT MAINS", "gap:", "item:Roast Chicken", "allergen:(Milk)"]);
+  const paragraphs = textElements(planMenuLayout(sectioned, "tablet"))[0].paragraphs.map(paragraph => `${paragraph.role}:${paragraph.text}`);
+  assert.deepEqual(paragraphs, ["section:SALADS", "item:Mixed Leaf Salad", "allergen:Contains: Mustard", "section:HOT MAINS", "item:Roast Chicken", "allergen:May contain: Milk"]);
 
-  const many = deckMenu({ sections: [{ key: "menu", items: Array.from({ length: 14 }, (_, index) => item(String(index), `Long dish name number ${index + 1} with sauce`, ["gluten", "milk"])) }] });
-  const shrunk = layoutMenu(many, template(), portrait);
-  assert.ok(shrunk.fontScaled && shrunk.itemFontSize < 15 && shrunk.itemFontSize >= 10 && shrunk.allergenFontSize >= 8, `shrunk to ${shrunk.itemFontSize}`);
-  const insane = deckMenu({ sections: [{ key: "menu", items: Array.from({ length: 120 }, (_, index) => item(String(index), `Very long dish name ${index} with a lot of extra description words to wrap`, ["gluten", "milk", "eggs"])) }] });
-  assert.throws(() => layoutMenu(insane, template(), portrait), (error: unknown) => error instanceof MenuArtifactError && error.code === "MENU_OVERFLOW");
+  const longNames = deckMenu({ sections: [{ key: "menu", items: Array.from({ length: 14 }, (_, index) => item(String(index), `Long dish name number ${index + 1} with sauce`, ["gluten", "milk"])) }] });
+  const shrunk = planMenuLayout(longNames, "tablet");
+  const sizes = textElements(shrunk)[0].paragraphs;
+  assert.ok(shrunk.fontScaled, "14 long dishes need the text to shrink");
+  assert.ok(sizes.every(paragraph => paragraph.fontPt >= (paragraph.role === "allergen" ? 8 : 10)), "never below 10pt dishes / 8pt allergens");
+  assert.throws(() => planMenuLayout(manyDishes(120), "tablet"), (error: unknown) => error instanceof MenuArtifactError && error.code === "MENU_OVERFLOW" && /flat labels/.test(error.message));
 });
 
 test("an empty or unnamed menu is rejected rather than generating a blank artifact", () => {
-  assert.throws(() => layoutMenu(deckMenu({ sections: [{ key: "menu", items: [] }] }), template(), portrait), (error: unknown) => error instanceof MenuArtifactError && error.code === "MENU_EMPTY");
-  assert.throws(() => layoutMenu(deckMenu({ sections: [{ key: "menu", items: [item("x", "  ")] }] }), template(), portrait), (error: unknown) => error instanceof MenuArtifactError && error.code === "MENU_ITEM_NAME_REQUIRED");
+  assert.throws(() => planMenuLayout(deckMenu({ sections: [{ key: "menu", items: [] }] }), "tablet"), (error: unknown) => error instanceof MenuArtifactError && error.code === "MENU_EMPTY");
+  assert.throws(() => planMenuLayout(deckMenu({ sections: [{ key: "menu", items: [item("x", "  ")] }] }), "flat-label"), (error: unknown) => error instanceof MenuArtifactError && error.code === "MENU_ITEM_NAME_REQUIRED");
+});
+
+// ------------------------------------------------------------------ labels
+
+test("flat labels: one dish per label at the extracted card origins, dish name dominant, allergens visible", () => {
+  const plan = planMenuLayout(deckMenu(), "flat-label");
+  assert.equal(plan.pages.length, 1); assert.equal(plan.capacityPerPage, 24);
+  assert.deepEqual(plan.page, { w: 765.37, h: 540 });
+  const labels = textElements(plan);
+  assert.equal(labels.length, 5, "one label per dish");
+  const flat = LAYOUT_MASTERS["mnk-flat-label-v1"] as LabelMaster;
+  labels.forEach((label, index) => { assert.equal(label.rect.x, flat.cells[index].x); assert.equal(label.rect.y, flat.cells[index].y); assert.equal(label.rect.w, 168.1); });
+  const [bbq, , , clear, both] = labels;
+  assert.deepEqual(bbq.paragraphs.map(paragraph => paragraph.text), ["BBQ Chicken Mayo, Gherkins, Tomatoes, Leaves", "Contains: Gluten, Eggs, Mustard, Sulphites"]);
+  assert.deepEqual(both.paragraphs.map(paragraph => paragraph.text), ["Test Salad 2", "Contains: Peanuts, Gluten, Soya", "May contain: Milk"]);
+  assert.deepEqual(clear.paragraphs.map(paragraph => paragraph.text), ["Test Salad 1", "No key allergens"]);
+  for (const label of labels) {
+    const [name, ...allergens] = label.paragraphs;
+    assert.ok(name.fontPt >= 9 && name.fontPt <= 14 && name.bold, `${name.text} ${name.fontPt}`);
+    assert.ok(allergens.length >= 1, "every label shows an allergen line");
+    assert.ok(allergens.every(paragraph => paragraph.fontPt >= 7 && paragraph.fontPt <= name.fontPt), "allergen text keeps its 7pt safety floor");
+  }
+  // Contains and may-contain are visually distinct, not just worded differently.
+  const [, contains, may] = both.paragraphs;
+  assert.ok(contains.bold && !may.bold && may.italic);
+  // The label's chrome (card panel, bar, marks) travels with each label; flat labels have no rear face.
+  const chrome = plan.pages[0].elements.filter(element => element.layer === "master");
+  assert.equal(chrome.length, 5 * flat.chrome.length);
+  assert.ok(!chrome.some(element => element.type === "image" && element.rotation === 180));
+});
+
+test("tent labels: the front face carries the dish, the rear face carries the rotated brand mark", () => {
+  const plan = planMenuLayout(deckMenu(), "tent-label");
+  assert.equal(plan.capacityPerPage, 12);
+  const tent = LAYOUT_MASTERS["mnk-tent-label-v1"] as LabelMaster;
+  assert.deepEqual(tent.card, { w: 168.1, h: 153 });
+  const first = textElements(plan)[0];
+  assert.equal(first.rect.y, tent.cells[0].y + 76.5, "dish text sits on the lower (front) face");
+  const rotated = plan.pages[0].elements.filter(element => element.type === "image" && element.rotation === 180);
+  assert.equal(rotated.length, 5, "one upside-down mark per card");
+});
+
+test("labels page automatically: more dishes than a sheet holds create additional pages", () => {
+  assert.equal(planMenuLayout(manyDishes(24), "flat-label").pages.length, 1);
+  const flat = planMenuLayout(manyDishes(25), "flat-label");
+  assert.equal(flat.pages.length, 2);
+  assert.deepEqual(flat.pages.map(page => page.elements.filter(element => element.type === "text").length), [24, 1]);
+  assert.equal(planMenuLayout(manyDishes(13), "tent-label").pages.length, 2);
+  const big = planMenuLayout(manyDishes(100), "flat-label");
+  assert.equal(big.pages.length, 5); assert.equal(textElements(big).length, 100);
+  assert.equal(new Set(textElements(big).map(element => element.id)).size, 100, "label ids are unique across pages");
+  assert.equal(textElements(big)[24].rect.x, (LAYOUT_MASTERS["mnk-flat-label-v1"] as LabelMaster).cells[0].x, "page two restarts at the first cell");
+});
+
+test("label overflow fails safely: allergens are never truncated or dropped", () => {
+  const long = deckMenu({ sections: [{ key: "menu", items: [item("l", "An extraordinarily long dish name ".repeat(8), ["gluten", "milk", "eggs", "tree_nuts", "peanuts"], ["fish", "soya", "mustard"])] }] });
+  for (const format of ["flat-label", "tent-label"] as const) assert.throws(() => planMenuLayout(long, format), (error: unknown) => error instanceof MenuArtifactError && error.code === "MENU_LABEL_OVERFLOW" && /never truncated/.test(error.message));
+  const heavy = deckMenu({ sections: [{ key: "menu", items: [item("h", "Roasted Sweet Potato, Charred Corn, Roasted Pepper & Baby Spinach", ["gluten", "milk", "eggs", "soya"], ["tree_nuts", "peanuts"])] }] });
+  const [label] = textElements(planMenuLayout(heavy, "flat-label"));
+  assert.match(label.paragraphs.map(paragraph => paragraph.text).join("\n"), /Contains: Gluten, Milk, Eggs, Soya\nMay contain: Tree Nuts, Peanuts/, "every declared allergen appears in full");
+});
+
+test("flat-label slides requests: slides are pruned, nested groups flattened, pages duplicated and unused cards removed", () => {
+  const requests = requestsOf(manyDishes(30), "flat-label");
+  assert.deepEqual(requests[0], { deleteObject: { objectId: "tent-slide" } }, "the tent slide is not part of a flat-label deck");
+  const ungroups = requests.filter(request => request.ungroupObjects).map(request => request.ungroupObjects.objectIds as string[]);
+  assert.equal(ungroups.length, 2, "two nesting levels");
+  assert.ok(ungroups[0].every(id => id.includes("-row")) && ungroups[1].every(id => id.includes("-card")), "rows first, then cards");
+  assert.ok(lastIndexOf(requests, "ungroupObjects") < requests.findIndex(request => request.duplicateObject), "ungroup before duplicate so every element has a stable id on every page");
+  assert.equal(requests.filter(request => request.duplicateObject).length, 1, "30 dishes need two pages");
+  const duplicate = requests.find(request => request.duplicateObject)!.duplicateObject;
+  assert.equal(duplicate.objectIds["flat-slide"], "fika-menu-slide-1");
+  assert.equal(Object.keys(duplicate.objectIds).length, 1 + 24 * 4 + 1, "slide + every card element + the blank placeholder");
+  // Page two keeps 6 cards: 18 unused cards x 4 elements are removed there, plus the blank placeholder on both pages.
+  const deletes = requests.filter(request => request.deleteObject).map(request => request.deleteObject.objectId as string);
+  assert.equal(deletes.filter(id => id.startsWith("fika-menu-p1-")).length, 18 * 4 + 1);
+  assert.equal(deletes.filter(id => id.startsWith("flat-slide-")).length, 1, "page one uses every card; only the blank placeholder goes");
+  assert.equal(requests.filter(request => request.createShape).length, 30);
+  assert.equal(requests.filter(request => request.createShape?.elementProperties.pageObjectId === "fika-menu-slide-1").length, 6);
+  assert.equal(new Set(requests.filter(request => request.createShape).map(request => request.createShape.objectId)).size, 30);
+  const first = requests.find(request => request.createShape)!.createShape;
+  const flat = LAYOUT_MASTERS["mnk-flat-label-v1"] as LabelMaster;
+  assert.equal(first.elementProperties.transform.translateX, Math.round((flat.cells[0].x + 7.65 - 7.2) * EMU));
+  assert.equal(first.elementProperties.transform.translateY, Math.round((flat.cells[0].y + 3.8 - 3.6) * EMU));
+});
+
+test("tent-label slides requests use the tent slide and its rotated cards", () => {
+  const requests = requestsOf(manyDishes(5), "tent-label");
+  assert.deepEqual(requests[0], { deleteObject: { objectId: "flat-slide" } });
+  assert.equal(requests.filter(request => request.duplicateObject).length, 0);
+  const deletes = requests.filter(request => request.deleteObject).map(request => request.deleteObject.objectId as string);
+  assert.equal(deletes.filter(id => id.startsWith("tent-slide-c")).length, 7 * 6, "the 7 unused cards lose all six elements");
+  const first = requests.find(request => request.createShape)!.createShape;
+  assert.equal(first.elementProperties.transform.translateY, Math.round(((LAYOUT_MASTERS["mnk-tent-label-v1"] as LabelMaster).cells[0].y + 76.5 + 3.8 - 3.6) * EMU), "text is placed on the front face");
+});
+
+test("group transforms are composed (including 180 degree rotation) to find cards on the master", () => {
+  const deck = labelDeck();
+  const tentBoxes = flattenSlideElements(deck.slides![0].pageElements);
+  const rotated = tentBoxes.find(box => box.objectId === "tent-slide-c0-1")!;
+  assert.deepEqual([rotated.box.x, rotated.box.y, rotated.box.w, rotated.box.h].map(value => Math.round(value * 10) / 10), [27.2 + 48.9, 21.4 + 25.9, 70.3, 23.3]);
+  assert.equal(flattenSlideElements(deck.slides![1].pageElements).filter(box => !box.group).length, 24 * 4 + 1);
+  // A shifted group (translate) moves its children.
+  const moved = flattenSlideElements([{ objectId: "g", size: { width: { magnitude: 100 * EMU }, height: { magnitude: 50 * EMU } }, transform: { translateX: 10 * EMU, translateY: 20 * EMU, unit: "EMU" }, elementGroup: { children: [{ objectId: "k", size: { width: { magnitude: 40 * EMU }, height: { magnitude: 10 * EMU } }, transform: { translateX: 5 * EMU, translateY: 5 * EMU, unit: "EMU" } }] } }]);
+  assert.deepEqual(moved.find(box => box.objectId === "k")!.box, { x: 15, y: 25, w: 40, h: 10 });
+});
+
+test("a label request against the wrong master deck fails safely instead of producing a misaligned sheet", () => {
+  assert.throws(() => requestsOf(deckMenu(), "flat-label", tabletDeck), (error: unknown) => error instanceof MenuArtifactError && error.code === "MENU_TEMPLATE_MISMATCH", "tablet deck page size");
+  const damaged = labelDeck(); damaged.slides![1].pageElements = damaged.slides![1].pageElements!.slice(1);
+  assert.throws(() => requestsOf(deckMenu(), "flat-label", damaged), (error: unknown) => error instanceof MenuArtifactError && error.code === "MENU_TEMPLATE_MISMATCH" && /card 1/.test(error.message));
+  const oneSlide = labelDeck(); oneSlide.slides = oneSlide.slides!.slice(0, 1);
+  assert.throws(() => requestsOf(deckMenu(), "flat-label", oneSlide), (error: unknown) => error instanceof MenuArtifactError && error.code === "MENU_TEMPLATE_MISMATCH");
+});
+
+// ------------------------------------------------------------------ branding vs geometry
+
+test("site branding is data, separate from layout geometry", () => {
+  assert.ok(!/#[0-9a-f]{6}/i.test(JSON.stringify(LAYOUT_MASTERS)), "layout masters contain no colours");
+  assert.ok(!/"(x|y|w|h)"/.test(JSON.stringify(SITE_BRANDING)), "branding contains no geometry");
+  const mnk = SITE_BRANDING.find(site => site.siteKey === "mnk")!;
+  const rebranded: SiteBranding = { ...mnk, siteKey: "other", colors: { ...mnk.colors, panel: "#222222", text: "#333333", allergen: "#AA0000" }, fontFamily: "Lato" };
+  for (const format of ["tablet", "flat-label", "tent-label"] as const) {
+    const base = planMenuLayout(deckMenu(), format, mnk); const other = planMenuLayout(deckMenu(), format, rebranded);
+    const rects = (plan: typeof base) => plan.pages.flatMap(page => page.elements.map(element => ("rect" in element ? element.rect : undefined)));
+    assert.deepEqual(rects(other), rects(base), `${format}: identical geometry`);
+    assert.notEqual(JSON.stringify(other), JSON.stringify(base), `${format}: different branding`);
+    assert.equal(other.fontFamily, "Lato");
+  }
+  const label = textElements(planMenuLayout(deckMenu(), "flat-label", rebranded))[0].paragraphs;
+  assert.equal(label[0].color, "#222222"); assert.equal(label[1].color, "#AA0000");
+  const html = renderMenuPlanHtml(planMenuLayout(deckMenu(), "flat-label"), { title: "t", assets: { "fika-logo-white": "x.png" } });
+  assert.match(html, /Contains: Gluten/); assert.match(html, /missing asset mnk-group-logo-white/);
 });
 
 // ----------------------------------------------------------------- stateful fake Drive/Slides
 
 type FakeFile = { id: string; name: string; parents: string[]; appProperties: Record<string, string>; trashed: boolean };
 function fakeGoogle() {
-  const files: FakeFile[] = []; const batches: Array<{ id: string; requests: unknown[] }> = []; let copies = 0;
+  const files: FakeFile[] = []; const batches: Array<{ id: string; requests: Array<Record<string, any>> }> = []; let copies = 0; const copiedFrom: string[] = [];
   const reply = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
   const fetchImpl = async (url: string, init?: RequestInit) => {
     const method = init?.method || "GET"; const parsed = new URL(url);
     if (parsed.hostname === "slides.googleapis.com") {
       const id = decodeURIComponent(parsed.pathname.split("/")[3].replace(":batchUpdate", ""));
       if (parsed.pathname.endsWith(":batchUpdate")) { batches.push({ id, requests: JSON.parse(String(init!.body)).requests }); return reply({}); }
-      return reply(presentation);
+      const file = files.find(candidate => candidate.id === id)!;
+      return reply(file.appProperties.fikaMenuFormat === "tablet" || !file.appProperties.fikaMenuFormat ? tabletDeck : labelDeck());
     }
     if (method === "GET") {
       const q = parsed.searchParams.get("q") || ""; const match = q.match(/key='(\w+)' and value='(\w+)'/)!;
       return reply({ files: files.filter(file => !file.trashed && file.appProperties[match[1]] === match[2]).map(file => ({ id: file.id, appProperties: file.appProperties, webViewLink: `https://drive/${file.id}` })) });
     }
     if (method === "POST" && parsed.pathname.endsWith("/copy")) {
-      copies += 1; const body = JSON.parse(String(init!.body));
+      copies += 1; const body = JSON.parse(String(init!.body)); copiedFrom.push(decodeURIComponent(parsed.pathname.split("/")[4]));
       const file = { id: `file-${copies}`, name: body.name, parents: body.parents, appProperties: body.appProperties || {}, trashed: false };
       files.push(file); return reply({ id: file.id, webViewLink: `https://drive/${file.id}` });
     }
@@ -157,47 +370,69 @@ function fakeGoogle() {
     }
     return reply({ error: "unexpected" }, 500);
   };
-  return { files, batches, fetchImpl, get copies() { return copies; } };
+  return { files, batches, copiedFrom, fetchImpl, get copies() { return copies; } };
 }
+const publishWith = (google: ReturnType<typeof fakeGoogle>, menu: NormalizedMenu, format: MenuOutputFormat = "tablet", folderId = "folder-1") =>
+  publishMenuArtifact({ menu, template: template(format), folderId, headers: { Authorization: "Bearer t" }, fetch: google.fetchImpl });
 
-test("publication is idempotent per revision: retries reuse the artifact and never duplicate files", async () => {
-  const google = fakeGoogle(); const menu = deckMenu();
-  const publish = (value: NormalizedMenu) => publishMenuArtifact({ menu: value, template: template(), folderId: "folder-1", headers: { Authorization: "Bearer t" }, fetch: google.fetchImpl });
-  const first = await publish(menu);
-  assert.equal(first.reused, false); assert.equal(google.copies, 1); assert.equal(first.fileName, "2026-08-25-12-00-FIKA-MNK");
-  assert.equal(google.batches.length, 1);
-  const retry = await publish(deckMenu());
-  assert.equal(retry.reused, true); assert.equal(retry.fileId, first.fileId);
-  assert.equal(google.copies, 1, "no second copy"); assert.equal(google.batches.length, 1, "no second Slides write");
-  assert.equal(google.files.filter(file => !file.trashed).length, 1);
+test("publication is idempotent per revision and format: retries reuse the artifact and never duplicate files", async () => {
+  const google = fakeGoogle();
+  for (const format of ["tablet", "flat-label", "tent-label"] as const) {
+    const before = google.copies;
+    const first = await publishWith(google, deckMenu(), format);
+    assert.equal(first.reused, false); assert.equal(google.copies, before + 1); assert.equal(first.format, format);
+    assert.equal(first.fileName, menuArtifactFileName(deckMenu(), format));
+    const retry = await publishWith(google, deckMenu(), format);
+    assert.equal(retry.reused, true); assert.equal(retry.fileId, first.fileId); assert.equal(retry.artifactKey, first.artifactKey);
+    assert.equal(google.copies, before + 1, `${format}: no second copy`);
+  }
+  assert.equal(google.batches.length, 3, "one Slides write per format, none on retry");
+  assert.equal(google.files.filter(file => !file.trashed).length, 3, "tablet, flat and tent files coexist");
+  assert.deepEqual(google.copiedFrom, ["tpl-mnk", "tpl-mnk-labels", "tpl-mnk-labels"]);
+  assert.deepEqual(google.files.map(file => file.appProperties.fikaMenuFormat), ["tablet", "flat-label", "tent-label"]);
 });
 
-test("an amendment creates a newer artifact and retires the earlier revision so it cannot look current", async () => {
+test("an amendment creates a newer artifact and retires only the earlier revision of the same format", async () => {
   const google = fakeGoogle();
-  const publish = (version: number) => publishMenuArtifact({ menu: deckMenu({ source: { workflow: "hospitality", id: "booking:mnk:deck", version, clientName: "FIKA" } }), template: template(), folderId: "folder-1", headers: {}, fetch: google.fetchImpl });
-  const v3 = await publish(3);
-  const v4 = await publish(4);
-  assert.notEqual(v4.fileId, v3.fileId);
-  assert.deepEqual(v4.retiredFileIds, [v3.fileId]);
-  assert.deepEqual(google.files.filter(file => !file.trashed).map(file => file.id), [v4.fileId]);
-  const retryOfV4 = await publish(4);
-  assert.equal(retryOfV4.reused, true); assert.deepEqual(retryOfV4.retiredFileIds, []);
-  assert.equal(google.copies, 2);
+  const at = (version: number) => deckMenu({ source: { workflow: "hospitality", id: "booking:mnk:deck", version, clientName: "FIKA" } });
+  const tablet = await publishWith(google, at(3), "tablet");
+  const labels3 = await publishWith(google, at(3), "flat-label");
+  const labels4 = await publishWith(google, at(4), "flat-label");
+  assert.notEqual(labels4.fileId, labels3.fileId);
+  assert.deepEqual(labels4.retiredFileIds, [labels3.fileId]);
+  assert.deepEqual(google.files.filter(file => !file.trashed).map(file => file.id).sort(), [tablet.fileId, labels4.fileId].sort(), "the tablet menu is not retired by a label amendment");
+  const tablet4 = await publishWith(google, at(4), "tablet");
+  assert.deepEqual(tablet4.retiredFileIds, [tablet.fileId]);
+  const retry = await publishWith(google, at(4), "flat-label");
+  assert.equal(retry.reused, true); assert.deepEqual(retry.retiredFileIds, []);
+  assert.equal(google.copies, 4);
 });
 
 test("a different site or date is never retired by another menu's amendment", async () => {
   const google = fakeGoogle();
-  const publish = (menu: NormalizedMenu) => publishMenuArtifact({ menu, template: template(), folderId: "f", headers: {}, fetch: google.fetchImpl });
-  await publish(deckMenu());
-  await publish(deckMenu({ serviceDate: "2026-08-26" }));
+  await publishWith(google, deckMenu(), "flat-label", "f");
+  await publishWith(google, deckMenu({ serviceDate: "2026-08-26" }), "flat-label", "f");
   assert.equal(google.files.filter(file => !file.trashed).length, 2);
+});
+
+test("a menu that cannot be laid out fails before any Drive file is created", async () => {
+  const google = fakeGoogle();
+  await assert.rejects(publishWith(google, manyDishes(120), "tablet"), (error: unknown) => error instanceof MenuArtifactError && error.code === "MENU_OVERFLOW");
+  await assert.rejects(publishWith(google, deckMenu({ sections: [{ key: "m", items: [{ id: "u", name: "Mystery", contains: [], mayContain: [], unrecorded: ["milk"] }] }] }), "flat-label"), (error: unknown) => error instanceof MenuArtifactError && error.code === "MENU_ALLERGENS_UNRECORDED");
+  assert.equal(google.copies, 0); assert.equal(google.files.length, 0);
 });
 
 test("a half-finished artifact (copied but not materialised) is completed, not duplicated", async () => {
   const google = fakeGoogle(); const menu = deckMenu();
-  const key = menuArtifactKey(menu, "mnk-portrait-v1");
-  google.files.push({ id: "file-pre", name: "x", parents: ["folder-1"], appProperties: { fikaMenuArtifactKey: key, fikaMenuSourceKey: menuArtifactSourceKey(menu) }, trashed: false });
-  const result = await publishMenuArtifact({ menu, template: template(), folderId: "folder-1", headers: {}, fetch: google.fetchImpl });
+  const key = menuArtifactKey(menu, template().key, "tablet");
+  google.files.push({ id: "file-pre", name: "x", parents: ["folder-1"], appProperties: { fikaMenuArtifactKey: key, fikaMenuSourceKey: menuArtifactSourceKey(menu, "tablet") }, trashed: false });
+  const result = await publishWith(google, menu);
   assert.equal(result.fileId, "file-pre"); assert.equal(result.reused, false); assert.equal(google.copies, 0); assert.equal(google.batches.length, 1);
   assert.equal(google.files[0].appProperties.fikaMenuMaterialised, "ready");
+});
+
+test("publishing reports the page count so callers know how many label sheets were generated", async () => {
+  const google = fakeGoogle();
+  assert.equal((await publishWith(google, manyDishes(30), "flat-label")).pageCount, 2);
+  assert.equal((await publishWith(google, deckMenu(), "tablet")).pageCount, 1);
 });

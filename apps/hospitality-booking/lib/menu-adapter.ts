@@ -31,9 +31,9 @@ export function hospitalityMenuFromBooking(booking: CanonicalBooking, plan: CpuP
       const name = subItem.name?.trim();
       if (!name) continue;
       if (!subItem.allergens || !Object.keys(subItem.allergens).length) throw new MenuArtifactError("MENU_ALLERGENS_INCOMPLETE", `Allergen information is not complete for "${name}".`, 409);
-      const { contains, mayContain, unrecorded } = allergensFromStates(subItem.allergens);
+      const { contains, mayContain, unrecorded, noKeyAllergens } = allergensFromStates(subItem.allergens);
       if (unrecorded.length) throw new MenuArtifactError("MENU_ALLERGENS_UNRECORDED", `"${name}" has unrecorded allergens (${unrecorded.join(", ")}); a menu cannot be printed until they are recorded.`, 409);
-      items.push({ id: `${menuItem.name}:${index}:${name}`, name, contains, mayContain });
+      items.push({ id: `${menuItem.name}:${index}:${name}`, name, contains, mayContain, ...(noKeyAllergens ? { noKeyAllergens: true } : {}) });
     }
   }
   const destination = booking.service.portalSiteLabel || booking.service.roomOrArea || booking.service.deliveryPoint || "Destination not assigned";

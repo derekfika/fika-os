@@ -28,9 +28,9 @@ export function deliveredInMenuFromDay(day: ProjectedDay, site: Site): Normalize
     label: section.title,
     items: section.entries.map(entry => {
       if (entry.allergenEvidenceStatus && entry.allergenEvidenceStatus !== "confirmed") throw new MenuArtifactError("MENU_ALLERGENS_UNCONFIRMED", `Allergen evidence for "${entry.dishName}" is ${entry.allergenEvidenceStatus}; the menu cannot be printed.`, 409);
-      const { contains, mayContain, unrecorded } = allergensFromStates(entry.allergens);
+      const { contains, mayContain, unrecorded, noKeyAllergens } = allergensFromStates(entry.allergens);
       if (unrecorded.length) throw new MenuArtifactError("MENU_ALLERGENS_UNRECORDED", `"${entry.dishName}" has unrecorded allergens (${unrecorded.join(", ")}); a menu cannot be printed until they are recorded.`, 409);
-      return { id: entry.sourceEntryId, name: entry.dishName, contains, mayContain };
+      return { id: entry.sourceEntryId, name: entry.dishName, contains, mayContain, ...(noKeyAllergens ? { noKeyAllergens: true } : {}) };
     }),
   }));
   const release = (day as ProjectedDay & { sourceLineage?: { cpu?: CpuLineage } }).sourceLineage?.cpu;
