@@ -11,7 +11,7 @@ import { buildCpuDayProjection, recoverMissingCpuDayProjection, initialiseEmptyC
 import { europeLondonDate } from "../lib/operational-date";
 
 const day = (date: string): CpuDayProjection => ({ serviceDate: date, revision: 4, lastChangeSequence: 12, orders: [], summary: { orders: 0, ready: 0, attention: 0, planned: 0, totalUnits: 0 }, rebuiltAt: "2026-08-31T10:00:00.000Z" });
-const week = (): CpuWeekProjection => ({ ...day("all"), serviceDate: "2026-08-31", weekCommencing: "2026-08-31" });
+const week = (): CpuWeekProjection => ({ ...day("all"), serviceDate: "2026-08-31", weekCommencing: "2026-08-31" } as CpuWeekProjection);
 
 test("a historical missing daily package recovers canonical quantities without inventing work", async () => {
   const serviceDate = "2026-08-24";

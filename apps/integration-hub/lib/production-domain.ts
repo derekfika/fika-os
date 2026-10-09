@@ -8,6 +8,7 @@ import { CPU_PRODUCTION_LOCATION_ID } from "../../shared/production-location";
 import { createDomainEvent } from "../../shared/domain-events";
 import { stageDomainEvent } from "./domain-event-outbox";
 import { stageFulfilmentEvent } from "./fulfilment-projection";
+import { stageCpuProjectionEvent } from "./cpu-projection-outbox";
 import { productionOrderRequiresFulfilment } from "../../shared/fulfilment-requirement";
 import { hospitalityMenuProductionRouting } from "./connections-service";
 import { adaptCpuProductionWorkstreams } from "../../shared/production-workstreams";
@@ -304,6 +305,8 @@ export async function materialiseExternalProductionOrder(actor: Actor, input: Ex
     };
     const event = createDomainEvent({ eventType: status === "cancelled" ? "production.order.withdrawn" : previous ? "production.order.amended" : "production.order.created", sourceAggregateId: canonicalId, sourceVersion: order.version, occurredAt: now, correlationId: order.idempotencyKey, payload: { canonicalId, version: order.version, status, productionOrder: order } });
     await stageFulfilmentEvent(transaction, event);
+    // Durable Hub -> CPU obligation for exactly this canonical order version, committed atomically with the order.
+    stageCpuProjectionEvent(transaction, order);
     transaction.set(ref, order);
     stageDomainEvent(transaction, event);
     return { created: !previous, duplicate: false, order };
@@ -328,6 +331,7 @@ export async function transitionProductionOrder(actor: Actor, canonicalId: strin
     const next = { ...current, version: current.version + 1, status, updatedAt: now, ...(status === "accepted" ? { acceptedAt: now } : {}), ...(status === "in_production" ? { startedAt: now } : {}), ...(status === "complete" ? { completedAt: now } : {}), audit: [...current.audit, { action: "production-status-changed", at: now, by: actor.uid, previousState: current.status, newState: status, reason }] };
     const event = createDomainEvent({ eventType: status === "cancelled" ? "production.order.withdrawn" : "production.order.amended", sourceAggregateId: next.canonicalId, sourceVersion: next.version, occurredAt: now, payload: { canonicalId: next.canonicalId, version: next.version, status: next.status, reason, sourceBookingId: next.sourceBookingId, serviceDate: next.serviceDate, productionLocationId: next.productionLocationId, destinationOplocId: next.destinationOplocId, destinationLabel: next.destinationLabel, lineIds: next.lines.map(line => line.canonicalId), productionOrder: next } });
     if (productionOrderRequiresFulfilment(current)) await stageFulfilmentEvent(transaction, event);
+    stageCpuProjectionEvent(transaction, next);
     transaction.set(ref, next);
     stageDomainEvent(transaction, event);
     return next;

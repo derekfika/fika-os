@@ -36,7 +36,7 @@ import {
   createProductionFromApprovedBooking,
   type ProductionOrder as ProductionOrderV1,
 } from "./production-domain";
-import { notifyCpuProjection } from "./cpu-projection-client";
+import { deliverCpuProjectionForOrder } from "./cpu-projection-outbox";
 import { deliverLogisticsProjectionForProductionOrder } from "./logistics-projection-outbox";
 import { localBookingFixtures } from "./local-booking-fixtures";
 import { capGallagherMinimum, GALLAGHER_MINIMUM_GUESTS, isGallagherBooking } from "./gallagher-rules";
@@ -840,8 +840,8 @@ async function propagateProductionChanges(changes: ProductionProjectionChange[])
   const results = [];
   for (const change of changes) {
     try {
-      const [cpuProjection, logisticsProjection] = await Promise.all([notifyCpuProjection(change.order, change.changeType, change.idempotencyKey), change.changeType === "created" ? Promise.resolve(undefined) : deliverLogisticsProjectionForProductionOrder(change.order)]);
-      results.push({ canonicalId: change.order.canonicalId, ...cpuProjection, ...(logisticsProjection ? { logisticsProjection } : {}), status: logisticsProjection && logisticsProjection.outboxStatus !== "delivered" ? "pending" as const : "delivered" as const });
+      const [cpuProjection, logisticsProjection] = await Promise.all([deliverCpuProjectionForOrder(change.order, change.changeType), change.changeType === "created" ? Promise.resolve(undefined) : deliverLogisticsProjectionForProductionOrder(change.order)]);
+      results.push({ canonicalId: change.order.canonicalId, cpuProjection, ...(logisticsProjection ? { logisticsProjection } : {}), status: cpuProjection.state === "pending" || (logisticsProjection && logisticsProjection.outboxStatus !== "delivered") ? "pending" as const : "delivered" as const });
     } catch (error) {
       results.push({ canonicalId: change.order.canonicalId, status: "pending" as const, reason: error instanceof Error ? error.message : "CPU projection handoff failed." });
     }

@@ -24,6 +24,7 @@
     ,"./build-identity": "./src/build-identity.ts"
     ,"./build-identity-resolver": "./src/build-identity-resolver.ts"
     ,"./durable-outbox": "./src/durable-outbox.ts"
+    ,"./canonical-production-digest": "./src/canonical-production-digest.ts"
     ,"./menu-artifact": "./src/menu-artifact.ts"
     ,"./menu-livecheck": "./src/menu-livecheck.ts"
     ,"./hospitality-catalogue": "./src/hospitality-catalogue/index.ts"
