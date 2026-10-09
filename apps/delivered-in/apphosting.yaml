@@ -51,3 +51,7 @@ env:
   - variable: GOOGLE_MENU_LABEL_TEMPLATE_ID_MNK
     value: 1st025DPvfJ_I6rj8Ad_BguLbpo00GT4bGS0uwCvQfIc
     availability: [RUNTIME]
+  # TEMPORARY (remove before merge): enables the staging-only real-Google live check for exactly one signed-in operator.
+  - variable: FIKA_MENU_LIVECHECK_ALLOWED_EMAIL
+    value: derek@fikacatering.com
+    availability: [RUNTIME]

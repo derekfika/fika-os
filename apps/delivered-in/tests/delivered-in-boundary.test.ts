@@ -14,7 +14,9 @@ test("manager allergen route is a fail-closed tombstone and permission is retire
 
 test("maintenance and reconciliation routes require explicit service authentication", () => {
   assert.match(text("../app/api/delivered-in/reconcile/route.ts"), /requireDeliveredInMaintenance\(request\)/);
-  assert.match(text("../app/api/delivered-in/site-menu/route.ts"), /requireDeliveredInMaintenance\(request\)/);
+  // Site-menu generation accepts the internal service token OR an authenticated manager session with the generate permission (see site-menu-authorization.test.ts).
+  assert.match(text("../app/api/delivered-in/site-menu/route.ts"), /authorizeSiteMenuGeneration\(request, body\.oplocId, resolveAccess\)/);
+  assert.match(text("../lib/site-menu-authorization.ts"), /deliveredInMaintenanceAllowed\(request\)/);
 });
 
 test("ordinary CPU reads use the daily signed packet adapter and do not call review reconstruction", () => {

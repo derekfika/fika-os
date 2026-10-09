@@ -63,3 +63,7 @@ env:
   - variable: NEXT_PUBLIC_FIKA_HUB_URL
     value: https://staging-os.fikacatering.com
     availability: [BUILD, RUNTIME]
+  # TEMPORARY (remove before merge): enables the staging-only real-Google live check for exactly one signed-in operator.
+  - variable: FIKA_MENU_LIVECHECK_ALLOWED_EMAIL
+    value: derek@fikacatering.com
+    availability: [RUNTIME]

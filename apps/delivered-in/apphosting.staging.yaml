@@ -54,3 +54,7 @@ env:
     value: 1st025DPvfJ_I6rj8Ad_BguLbpo00GT4bGS0uwCvQfIc
     availability: [RUNTIME]
   # Optional: GOOGLE_DELIVERED_IN_TEMPLATE_ID (generic template for sites without a shared layout; per-OPLOC override GOOGLE_DELIVERED_IN_TEMPLATE_ID_OPLOC_<KEY>).
+  # TEMPORARY (remove before merge): enables the staging-only real-Google live check for exactly one signed-in operator.
+  - variable: FIKA_MENU_LIVECHECK_ALLOWED_EMAIL
+    value: derek@fikacatering.com
+    availability: [RUNTIME]

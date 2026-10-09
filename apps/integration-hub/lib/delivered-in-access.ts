@@ -1,6 +1,7 @@
 export {
   resolveDeliveredInAccess,
   DELIVERED_IN_PERMISSIONS,
+  deliveredInPermissionsFor,
   type DeliveredInAccess,
   type DeliveredInPermission,
   type DeliveredInSite,

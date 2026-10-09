@@ -157,12 +157,15 @@ function SiteMenuControls({
   // Only the formats this site's renderer supports are offered; label currentness is tracked per format.
   const [formats, setFormats] = useState<string[]>(["tablet"]);
   const [labelStates, setLabelStates] = useState<Record<string, LabelState>>({});
+  // Authoritative permission comes from the server (the API enforces it independently).
+  const [canGenerate, setCanGenerate] = useState(false);
   useEffect(() => {
     let cancelled = false;
     void fetch(`/api/delivered-in/site-menu?oplocId=${encodeURIComponent(site.oplocId)}&publicationDayId=${encodeURIComponent(day.publicationDayId)}`, { cache: "no-store" })
       .then((response) => (response.ok ? response.json() : undefined))
-      .then((body: { formats?: string[]; labels?: Record<string, LabelState> } | undefined) => {
+      .then((body: { formats?: string[]; labels?: Record<string, LabelState>; canGenerate?: boolean } | undefined) => {
         if (cancelled || !body) return;
+        setCanGenerate(Boolean(body.canGenerate));
         setFormats(body.formats?.length ? body.formats : ["tablet"]);
         setLabelStates(body.labels || {});
       })
@@ -176,7 +179,7 @@ function SiteMenuControls({
   const artifact = state.artifact;
   const signed = day.cpuReview?.status === "signed";
   const generate = async () => {
-    if (!signed) return;
+    if (!signed || !canGenerate) return;
     setBusy(true);
     setError("");
     try {
@@ -222,7 +225,7 @@ function SiteMenuControls({
           View menu ↗
         </a>
       )}
-      {signed && formats.length > 1 && (
+      {signed && canGenerate && formats.length > 1 && (
         <label className="ops-field-inline">
           <span className="sr-only">Menu format</span>
           <select
@@ -237,7 +240,7 @@ function SiteMenuControls({
           </select>
         </label>
       )}
-      {signed && (
+      {signed && canGenerate && (
         <button
           className="ops-button ops-button-secondary"
           onClick={() => void generate()}
@@ -251,6 +254,9 @@ function SiteMenuControls({
                 ? "Generate site menu"
                 : "Regenerate site menu"}
         </button>
+      )}
+      {signed && !canGenerate && (
+        <span className="menu-state menu-state-none">Menu generation needs the Delivered-In generate permission</span>
       )}
       {signed && labelState && (
         <span className={`menu-state menu-state-${labelState.status === "outdated" ? "stale" : labelState.status === "current" ? "current" : "none"}`}>
