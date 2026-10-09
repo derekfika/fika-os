@@ -1,5 +1,5 @@
 import crypto from "node:crypto";
-import { JWT } from "google-auth-library";
+import { workspaceGmailToken } from "./workspace-gmail-dwd";
 import { readGmailOAuthFiles, refreshGmailAccessToken } from "./gmail-client";
 import type { BookingNotificationKind, BookingNotificationRecord } from "./booking-notifications";
 import type { CanonicalBooking } from "./hospitality-booking-service";
@@ -52,14 +52,7 @@ export async function bookingGmailToken(sender: BookingSender) {
     if (process.env.FIKA_GMAIL_AUTH_ACCOUNT !== sender.authenticatedAccount) throw new Error("Gmail authenticated account does not match site configuration.");
     return refreshGmailAccessToken(client, token);
   }
-  // Existing Drive DWD credentials, independently scoped to send-only and an explicit site sender account.
-  let credentials: { client_email?: string; private_key?: string };
-  try { credentials = JSON.parse(process.env.GOOGLE_WORKSPACE_DWD_SERVICE_ACCOUNT_JSON || ""); } catch { throw new Error("Workspace Gmail delegation is not configured."); }
-  if (!credentials.client_email || !credentials.private_key) throw new Error("Workspace Gmail delegation is incomplete.");
-  const auth = new JWT({ email: credentials.client_email, key: credentials.private_key, subject: sender.authenticatedAccount, scopes: [GMAIL_SEND_SCOPE] });
-  const token = await auth.getAccessToken();
-  if (!token.token) throw new Error("Workspace Gmail authentication failed.");
-  return token.token;
+  return workspaceGmailToken(sender.authenticatedAccount);
 }
 
 export class GmailSendFailure extends Error {
