@@ -151,7 +151,9 @@ test("tablet: a realistic MNK menu keeps the template structure and reproduces t
     "Test Salad 2", "(Peanuts, Gluten, Soya)",
   ]);
   assert.deepEqual(content.rect, { x: 35.4, y: 155.9, w: 425.2, h: 568.3 });
-  assert.ok(content.paragraphs.filter(paragraph => paragraph.role === "item").every(paragraph => paragraph.fontPt === 13 && paragraph.bold && paragraph.color === "#0F4D6B"));
+  assert.ok(content.paragraphs.filter(paragraph => paragraph.role === "item").every(paragraph => paragraph.fontPt === 13 && !paragraph.bold && paragraph.color === "#0F4D6B"), "tablet dish titles are regular weight");
+  const sectioned = textElements(planMenuLayout(deckMenu({ sections: [{ key: "salads", label: "Salads", items: [item("a", "Mixed Leaf Salad", ["mustard"])] }, { key: "hot_mains", label: "Hot mains", items: [item("b", "Roast Chicken", ["gluten"])] }] }), "tablet"))[0].paragraphs;
+  assert.ok(sectioned.filter(paragraph => paragraph.role === "section").every(paragraph => paragraph.bold), "section titles stay bold");
   assert.ok(content.paragraphs.filter(paragraph => paragraph.role === "allergen").every(paragraph => paragraph.fontPt >= 8));
   assert.equal(plan.fontScaled, false);
   const chrome = plan.pages[0].elements.filter(element => element.layer === "master");

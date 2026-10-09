@@ -314,7 +314,7 @@ function planTablet(menu: NormalizedMenu, branding: SiteBranding, master: Tablet
     sections.forEach((section, sectionIndex) => {
       if (labelled) paragraphs.push({ text: section.label!.toLocaleUpperCase("en-GB"), role: "section", fontPt: sectionPt, bold: true, color: colors.text, spaceBeforePt: sectionIndex ? itemPt * 1.6 : 0 });
       section.items.forEach((item, index) => {
-        paragraphs.push({ text: item.name.trim(), role: "item", fontPt: itemPt, bold: true, color: colors.text, spaceBeforePt: !paragraphs.length ? 0 : labelled && index === 0 ? itemPt * 0.5 : itemPt });
+        paragraphs.push({ text: item.name.trim(), role: "item", fontPt: itemPt, bold: false, color: colors.text, spaceBeforePt: !paragraphs.length ? 0 : labelled && index === 0 ? itemPt * 0.5 : itemPt });
         for (const line of menuAllergenLines(item)) paragraphs.push({ text: line.text, role: "allergen", allergenKind: line.kind, fontPt: allergenPt, ...allergenStyle(colors.allergen), spaceBeforePt: 0 });
       });
     });
