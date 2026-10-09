@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { hospitalityMenuDate } from "../../../../shared/hospitality-menu-date";
 import { hubFetch, isLocalBridgeEnvironment } from "@/lib/hub";
 import { localMnkMenuCatalogue } from "@/lib/local-mnk-menu";
 import { localAngelCourtMenuCatalogue } from "@/lib/local-angel-court-menu";
@@ -78,7 +79,7 @@ export async function GET(request: Request) {
         ? process.env.FIKA_MNK_OPLOC_ID?.trim() || configuredSite.canonicalOplocId
         : undefined);
     if (oplocId) {
-      const serviceDate = new Date().toISOString().slice(0, 10);
+      const serviceDate = hospitalityMenuDate();
       const response = await hubFetch(
         `/api/hospitality-menu/portal?oplocId=${encodeURIComponent(oplocId)}&serviceDate=${serviceDate}`,
       );

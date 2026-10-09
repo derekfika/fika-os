@@ -1,5 +1,7 @@
 import crypto from "node:crypto";
 import { trustedPublicOrder } from "./hospitality-price-trust";
+import { loadMnkBookingCatalogue, mnkBookingPricingRecords } from "./mnk-booking-catalogue";
+import { hospitalityMenuDate } from "../../shared/hospitality-menu-date";
 import { db } from "./firebase-admin";
 import type { Actor } from "./auth";
 import type { CanonicalRecord } from "./types";
@@ -620,6 +622,7 @@ export async function ingestMnkBooking(
   if (isRcoa && !String(expectedRcoaOplocId || "").trim())
     assertExpectedRcoaOploc(undefined, undefined);
   const bookingId = canonicalBookingId(payload.bookingId, portalSiteId);
+  const now = new Date().toISOString();
   const result = await db.runTransaction(async (transaction) => {
     const existingSnapshot = await transaction.get(bookings().doc(bookingId));
     if (existingSnapshot.exists) {
@@ -645,13 +648,23 @@ export async function ingestMnkBooking(
     if (!destinationOplocId) throw conflict(portalSiteId === "rcoa"
       ? "RCoA has no confirmed canonical destination OPLOC. Configure the governed source mapping for rcoa before submission."
       : "This delivery-requiring Hospitality Booking has no confirmed canonical destination OPLOC; resolve the governed site mapping before submission.");
+    let pricingRecords = canonicalRecords;
+    if (portalSiteId === "mnk") {
+      const catalogue = await loadMnkBookingCatalogue(canonicalRecords, payload, destinationOplocId, async (field, ids) => {
+        const snapshot = await transaction.get(canonical().where(field, "in", ids).limit(501));
+        if (snapshot.size > 500) throw conflict("MNK catalogue relations exceed the bounded ingestion limit.");
+        recordDataAccess({ app: "integration-hub", operation: "hospitality.ingest.catalogue-relations", source: "FIRESTORE", dataset: "hospitality-ingest", documents: snapshot.size, estimatedBillableReads: snapshot.size, firestoreReadKind: "transaction" });
+        return snapshot.docs.map(document => document.data() as CanonicalRecord);
+      });
+      pricingRecords = mnkBookingPricingRecords(catalogue, { oplocId: destinationOplocId, serviceDate: hospitalityMenuDate(new Date(now)) });
+    }
     const result = ingestMnkBookingFromExisting(
       existingSnapshot.exists
         ? (existingSnapshot.data() as CanonicalBooking)
         : undefined,
       payload,
-      canonicalRecords,
-      undefined,
+      pricingRecords,
+      now,
       destinationOplocId,
     );
     if (!result.created) return result;
