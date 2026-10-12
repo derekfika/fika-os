@@ -536,7 +536,7 @@ export default function RcoaBookingPortal({ configured }: { configured: boolean 
               <button type="button" className={styles.secondaryButton} disabled={step === 0 || sending} onClick={() => goToStep(step - 1)}>Back</button>
               {step < stepLabels.length - 1
                 ? <button type="button" className={styles.primaryButton} onClick={() => goToStep(step + 1)}>Continue</button>
-                : <button type="submit" className={styles.primaryButton} disabled={sending || !bookingId || !rcoaConfigured}>{sending ? "Sending request…" : "Send booking request"}</button>}
+                : <button type="submit" className={styles.primaryButton} disabled={sending || !bookingId || !rcoaConfigured} aria-busy={sending ? true : undefined}>{sending ? <><span className="fika-spinner" aria-hidden="true" />Sending request…</> : "Send booking request"}</button>}
             </footer>
           </form>
 

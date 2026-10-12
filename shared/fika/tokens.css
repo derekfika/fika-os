@@ -66,3 +66,8 @@
   --fika-font-body: var(--font-body);
   --fika-control-height: var(--control-height);
 }
+/* Indeterminate-action feedback (shared). The spinner is hidden under reduced motion; the adjacent status text always remains. */
+.fika-spinner{display:inline-block;flex:none;width:1em;height:1em;margin-right:8px;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;animation:fika-spinner-rotate .7s linear infinite;vertical-align:-.12em}
+@keyframes fika-spinner-rotate{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion:reduce){.fika-spinner{display:none!important;animation:none!important}}
+.fika-action-status{display:flex;align-items:center;width:fit-content;max-width:100%;margin:0;padding:8px 12px;border:1px solid var(--fika-border-default,#d8d3ed);border-radius:8px;background:var(--fika-surface-card,#fff);color:var(--fika-text-primary,#221874);font-size:.875rem;line-height:1.4}

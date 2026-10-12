@@ -250,9 +250,10 @@ function SiteMenuControls({
           className="ops-button ops-button-secondary"
           onClick={() => void generate()}
           disabled={busy}
+          aria-busy={busy ? true : undefined}
         >
           {busy
-            ? "Working…"
+            ? <><span className="fika-spinner" aria-hidden="true" />{format !== "tablet" ? `Generating ${FORMAT_LABELS[format].toLowerCase()}…` : "Generating site menu…"}</>
             : format !== "tablet"
               ? `${labelState?.status === "none" || !labelState ? "Generate" : "Regenerate"} ${FORMAT_LABELS[format].toLowerCase()}`
               : state.status === "none"

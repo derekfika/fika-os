@@ -6,3 +6,6 @@
 .cpu-allergen-row--error th,.cpu-allergen-row--error td{background:#fffafc}
 .cpu-allergen-row-error{display:block;max-width:190px;margin-bottom:7px;color:var(--fika-status-danger);font-size:.68rem;line-height:1.25;font-weight:800;white-space:normal}
 .cpu-allergen-state--unresolved{outline:3px solid var(--fika-status-danger);outline-offset:-3px}
+/* Save status stays in view next to the rows being checked, not at the top of a long matrix. */
+.cpu-allergen-sync{position:sticky;top:8px;z-index:6}
+.cpu-allergen-sync--error{border-color:currentColor;font-weight:600}

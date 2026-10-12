@@ -751,7 +751,7 @@ export default function BookingPortal({
                 Continue
               </button>
             ) : (
-              <button type="button" className="primary" onClick={() => { explicitSendRef.current = true; void submit(); }} disabled={sending || !Object.values(acks).every(Boolean)}>{sending ? "Sending…" : Object.values(acks).every(Boolean) ? "Send request" : "Complete acknowledgements"}</button>
+              <button type="button" className="primary" onClick={() => { explicitSendRef.current = true; void submit(); }} disabled={sending || !Object.values(acks).every(Boolean)} aria-busy={sending ? true : undefined}>{sending ? <><span className="fika-spinner" aria-hidden="true" />Sending…</> : Object.values(acks).every(Boolean) ? "Send request" : "Complete acknowledgements"}</button>
             )}
           </footer>
         </form>

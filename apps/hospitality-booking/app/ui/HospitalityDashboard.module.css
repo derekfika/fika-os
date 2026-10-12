@@ -2049,3 +2049,6 @@
   .scope :global(.additional-charges-modal__footer) { align-items: flex-start; flex-direction: column; bottom: -18px; margin: 0 -18px -18px; padding: 12px 18px; }
   .scope :global(.additional-charges-modal__footer > div) { width: 100%; }
 }
+@media (prefers-reduced-motion: reduce) {
+  .spinner { display: none !important; animation: none !important; }
+}

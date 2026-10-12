@@ -1772,7 +1772,10 @@ function BookingDetail({
               </a>
             ) : matrixArtifact?.status === "generating" ? (
               <button type="button" className="manager-document-action" disabled aria-busy="true">
-                <strong>Generating allergen matrix…</strong>
+                <strong>
+                  <span className={styles.spinner} aria-hidden="true" />
+                  Generating allergen matrix…
+                </strong>
                 <small>The signed PDF is being prepared</small>
               </button>
             ) : matrixArtifact?.status === "failed" || matrixArtifact?.status === "error" ? (
@@ -1821,10 +1824,20 @@ function BookingDetail({
                   className="manager-document-action"
                   onClick={() => void onGenerateMenu(booking)}
                   disabled={menuBusy || !menuReady}
+                  aria-busy={menuBusy ? true : undefined}
                 >
-                  <strong>Regenerate menu</strong>
+                  <strong>
+                    {menuBusy ? (
+                      <>
+                        <span className={styles.spinner} aria-hidden="true" />
+                        Generating menu…
+                      </>
+                    ) : "Regenerate menu"}
+                  </strong>
                   <small>
-                    {menuStale
+                    {menuBusy
+                      ? "This can take a few seconds. Please keep this page open."
+                      : menuStale
                       ? "Allergen or production details have changed"
                     : menuReadyReason}
                   </small>
@@ -1836,9 +1849,17 @@ function BookingDetail({
                 className="manager-document-action"
                 onClick={() => void onGenerateMenu(booking)}
                 disabled={menuBusy || !menuReady}
+                aria-busy={menuBusy ? true : undefined}
               >
-                <strong>Generate menu</strong>
-                <small>{menuReady ? "Generate from the Planned CPU revision" : menuReadyReason}</small>
+                <strong>
+                  {menuBusy ? (
+                    <>
+                      <span className={styles.spinner} aria-hidden="true" />
+                      Generating menu…
+                    </>
+                  ) : "Generate menu"}
+                </strong>
+                <small>{menuBusy ? "This can take a few seconds. Please keep this page open." : menuReady ? "Generate from the Planned CPU revision" : menuReadyReason}</small>
               </button>
             )}
           </div>

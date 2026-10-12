@@ -23,3 +23,8 @@
 .final-review__notice--attention{border-left-color:#d48a00;background:#fff4d6}
 .inline-validation-error{margin:-10px 0 0;color:#ae2645;font-size:.82rem;font-weight:900}.fields input[aria-invalid="true"],.submit textarea[aria-invalid="true"],.stepper input[aria-invalid="true"]{border-color:#ae2645}
 :root{--fika-surface-page:#f4f4f2;--fika-surface-card:#fff;--fika-surface-subtle:#f7f6fb;--fika-text-primary:#221874;--fika-text-secondary:#5f5a82;--fika-text-muted:#7d7898;--fika-border-default:#d9d7e3;--fika-action-primary:#4f35cf;--fika-action-primary-hover:#4329b2;--fika-action-secondary:#241176;--fika-focus-ring:#34e6e1;--fika-status-success:#227a54;--fika-status-success-surface:#75efb8;--fika-status-warning:#8a5a00;--fika-status-warning-surface:#fff4d6;--fika-status-danger:#ae2645;--fika-status-danger-surface:#ffe7e7;--fika-status-info:#176f8e;--fika-status-info-surface:#e5fbf8}
+/* Indeterminate-action feedback (shared). The spinner is hidden under reduced motion; the adjacent status text always remains. */
+.fika-spinner{display:inline-block;flex:none;width:1em;height:1em;margin-right:8px;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;animation:fika-spinner-rotate .7s linear infinite;vertical-align:-.12em}
+@keyframes fika-spinner-rotate{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion:reduce){.fika-spinner{display:none!important;animation:none!important}}
+.fika-action-status{display:flex;align-items:center;width:fit-content;max-width:100%;margin:0;padding:8px 12px;border:1px solid var(--fika-border-default,#d8d3ed);border-radius:8px;background:var(--fika-surface-card,#fff);color:var(--fika-text-primary,#221874);font-size:.875rem;line-height:1.4}
