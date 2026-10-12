@@ -157,17 +157,22 @@ function SiteMenuControls({
   // Only the formats this site's renderer supports are offered; label currentness is tracked per format.
   const [formats, setFormats] = useState<string[]>(["tablet"]);
   const [labelStates, setLabelStates] = useState<Record<string, LabelState>>({});
+  // Live tablet-menu state from the same authoritative lookup as the labels. The stored day projection (`day.siteMenu`) predates a manual generation.
+  type TabletState = { status: "none" | "current" | "stale" | "unavailable"; artifact?: { driveUrl: string; fileName: string } };
+  const [tabletState, setTabletState] = useState<TabletState | undefined>(undefined);
   // Authoritative permission comes from the server (the API enforces it independently).
   const [canGenerate, setCanGenerate] = useState(false);
   useEffect(() => {
     let cancelled = false;
+    setTabletState(undefined); // never show another day's live state while this day's lookup is in flight
     void fetch(`/api/delivered-in/site-menu?oplocId=${encodeURIComponent(site.oplocId)}&publicationDayId=${encodeURIComponent(day.publicationDayId)}`, { cache: "no-store" })
       .then((response) => (response.ok ? response.json() : undefined))
-      .then((body: { formats?: string[]; labels?: Record<string, LabelState>; canGenerate?: boolean } | undefined) => {
+      .then((body: { siteMenu?: TabletState; formats?: string[]; labels?: Record<string, LabelState>; canGenerate?: boolean } | undefined) => {
         if (cancelled || !body) return;
         setCanGenerate(Boolean(body.canGenerate));
         setFormats(body.formats?.length ? body.formats : ["tablet"]);
         setLabelStates(body.labels || {});
+        setTabletState(body.siteMenu);
       })
       .catch(() => undefined);
     return () => {
@@ -175,7 +180,7 @@ function SiteMenuControls({
     };
   }, [site.oplocId, day.publicationDayId, day.contentHash]);
   const labelState: LabelState | undefined = format === "tablet" ? undefined : labelStates[format];
-  const state = day.siteMenu || { status: "none" as const };
+  const state: TabletState = tabletState || day.siteMenu || { status: "none" as const };
   const artifact = state.artifact;
   const signed = day.cpuReview?.status === "signed";
   const generate = async () => {
@@ -193,11 +198,11 @@ function SiteMenuControls({
           format,
         }),
       });
-      const body = (await response.json().catch(() => ({}))) as { artifact?: { driveUrl: string; fileName: string }; state?: LabelState; error?: { message?: string } };
+      const body = (await response.json().catch(() => ({}))) as { artifact?: { driveUrl: string; fileName: string }; state?: LabelState; siteMenu?: TabletState; error?: { message?: string } };
       if (!response.ok) throw new Error(body.error?.message);
       // Labels are extra print files: the day's tablet site-menu state is unchanged, so only show their link.
       if (format !== "tablet" && body.artifact) setLabelStates((current) => ({ ...current, [format]: body.state || { status: "current", artifact: body.artifact } }));
-      else onGenerated();
+      else { if (body.siteMenu) setTabletState(body.siteMenu); onGenerated(); }
     } catch (cause) {
       setError((cause as Error).message || "Site menu could not be generated.");
     } finally {
