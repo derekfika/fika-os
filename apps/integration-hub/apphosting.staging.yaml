@@ -16,7 +16,7 @@ env:
     availability:
       - RUNTIME
   - variable: FIKA_HOSPITALITY_EMAIL_DELIVERY_ENABLED
-    value: "false"
+    value: "true"
     availability:
       - RUNTIME
   - variable: FIKA_DATA_SOURCE_TRACE
