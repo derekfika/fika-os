@@ -130,7 +130,9 @@ export type AllergenCompositionAuthority = {
   /** Append-only registry of orders that adopted this authority; used to reopen them if the authority is later revoked. */
   reusedBy: Array<{ orderId: string; at: string; by: string }>;
   createdAt: string;
-  history: Array<{ action: "approved" | "re-approved" | "revoked" | "reused"; at: string; by: string; reason?: string; releaseId?: string }>;
+  /** Durable, observable progress of the adopter cascade that follows each revocation, keyed by the revoked origin release ID. */
+  cascades?: Record<string, { startedAt: string; completedAt?: string; adopters: Record<string, { sequence?: number; done?: boolean; doneAt?: string }> }>;
+  history: Array<{ action: "approved" | "re-approved" | "revoked" | "reused" | "cascade-completed"; at: string; by: string; reason?: string; releaseId?: string }>;
 };
 
 type SignedPlanView = Pick<ProductionPlan, "menuItems" | "signedSignatures" | "currentAllergenRelease" | "signedMenuContentHash" | "id" | "orderId">;

@@ -6,8 +6,8 @@ import test from "node:test";
 process.env.FIKA_CPU_PLAN_STORE = "memory";
 const { createProductionPlanRepository } = await import("../lib/production-plan-repository");
 const { memoryAllergenAuthorityStore } = await import("../lib/allergen-authority-store");
-const { applyReuseCommand, cascadeAuthorityRevocation, approvedMatrixChanged } = await import("../lib/allergen-reuse-orchestrator");
-const { recordSignedAuthority, reuseViewFor, reuseCandidateFor } = await import("../lib/allergen-reuse-service");
+const { applyReuseCommand, cascadeAuthorityRevocation, approvedMatrixChanged, processAuthorityRevocation, AUTHORITY_REVOKED_ROUTE, authorityRevocationEventId } = await import("../lib/allergen-reuse-orchestrator");
+const { recordSignedAuthority, reuseViewFor, reuseCandidateFor, failClosedStaleReuse } = await import("../lib/allergen-reuse-service");
 const { resetCpuOutboxForTests, listCpuOutboxForTests } = await import("../lib/cpu-durable-outbox");
 const { materializeCpuAllergenRelease } = await import("../lib/cpu-allergen-release");
 const { currentAllergenReleaseMatchesOrder, reusedAuthorityReleaseMatchesOrder, hasAllergenAuthority } = await import("../app/lib/production-plan");
@@ -147,6 +147,87 @@ test("the route wires reuse through the canonical change path, not a bare plan w
   const route = await readFile(new URL("../app/api/production-plan/route.ts", import.meta.url), "utf8");
   assert.match(route, /applyReuseCommand\(reuseDeps\(request\)/);
   assert.match(route, /cascadeAuthorityRevocation\(reuseDeps\(request\)/);
-  assert.match(route, /emitPlanChange\(request, input\)/);
+  assert.match(route, /emitCpuPlanChange\(request, input\)/);
+  assert.match(await readFile(new URL("../app/api/internal/cpu-allergen-authority-revoked/route.ts", import.meta.url), "utf8"), /processAuthorityRevocation/);
   assert.doesNotMatch(route, /reopenAdoptingPlan/);
+});
+
+test("durable cascade: a failure part-way through the adopters is retried from the outbox; every adopter ends non-authoritative exactly once", async () => {
+  const h = await harness();
+  const ids = ["o-a", "o-b", "o-c"];
+  for (const id of ids) {
+    const o = order(id, ITEMS); h.orders.set(id, o);
+    const p = planFor(o, {}, { status: "planning" });
+    for (const item of p.menuItems) for (const sub of item.subItems) { sub.allergens = {} as never; sub.evidenceStatus = "not_completed"; }
+    await h.plans.save(p);
+    const r = await applyReuseCommand(h.deps as never, { plan: structuredClone(p), storedPlan: p, order: o as never, actor: "cpu", actorId: "u", at: "2026-10-12T11:00:00.000Z", commandId: `reuse-${id}-command` });
+    assert.equal(r.changed, true);
+  }
+  const commits = new Map<string, number>();
+  const emitSuccess = new Map<string, number>();
+  const failures = { emitB: 1, commitC: 1 };
+  const plans = {
+    ...h.plans,
+    get: (id: string) => h.plans.get(id),
+    getByOrderIds: (x: string[]) => h.plans.getByOrderIds(x),
+    save: (p: ProductionPlan, e?: string) => h.plans.save(p, e),
+    saveAndAppendCpuChange: async (p: ProductionPlan, e: string | undefined, change: never) => {
+      if (p.orderId === "o-c" && failures.commitC-- > 0) throw new Error("injected commit failure for o-c");
+      const result = await h.plans.saveAndAppendCpuChange(p, e, change);
+      if (!result.duplicate) commits.set(p.orderId, (commits.get(p.orderId) || 0) + 1);
+      return result;
+    },
+  };
+  const deps = {
+    plans, store: memoryAllergenAuthorityStore, loadOrder: async (id: string) => h.orders.get(id),
+    emit: async (input: { order: { canonicalId: string } }) => {
+      if (input.order.canonicalId === "o-b" && failures.emitB-- > 0) throw new Error("injected invalidation failure for o-b");
+      emitSuccess.set(input.order.canonicalId, (emitSuccess.get(input.order.canonicalId) || 0) + 1);
+    },
+  };
+
+  // Origin approval corrected: revocation is immediate, adopter work is partly done, and the rest is durable.
+  const reopened = await cascadeAuthorityRevocation(deps as never, { order: h.originOrder as never, releaseId: "rel-origin-1", actor: "head", actorId: "u2", at: "2026-10-12T13:00:00.000Z", reason: "corrected" });
+  assert.equal(reopened.length, 3);
+  const authority = [...memoryAllergenAuthorityStore.records.values()][0];
+  assert.equal(authority.status, "revoked", "origin revocation is immediate");
+  const compositionId = authority.compositionId;
+  const queued = listCpuOutboxForTests().find(event => event.eventId === authorityRevocationEventId(compositionId, "rel-origin-1"));
+  assert.ok(queued && queued.payload.route === AUTHORITY_REVOKED_ROUTE, "adopter cascade is durable outbox work");
+  const progress = authority.cascades?.["rel-origin-1"];
+  assert.equal(progress?.completedAt, undefined, "completion is observable and not yet reached");
+  assert.equal(progress?.adopters["o-a"]?.done, true);
+  assert.notEqual(progress?.adopters["o-b"]?.done, true);
+  assert.notEqual(progress?.adopters["o-c"]?.done, true);
+
+  // Reads fail closed immediately, including for the adopter whose plan has not been rewritten yet (o-c).
+  for (const id of ids) {
+    const stored = (await h.plans.get(id))!;
+    const view = await failClosedStaleReuse(memoryAllergenAuthorityStore, stored, h.orders.get(id) as never);
+    assert.equal(view.currentAllergenRelease, undefined, `${id} read exposes no authoritative release`);
+    assert.notEqual(view.status, "planned");
+  }
+  assert.equal((await h.plans.get("o-c"))!.reusedAllergenAuthority !== undefined, true, "o-c is still durably pending");
+
+  // The outbox redelivers the same work item until it succeeds (the failure injections are spent).
+  const body = queued!.payload.body as never as Parameters<typeof processAuthorityRevocation>[1];
+  const retry = await processAuthorityRevocation(deps as never, body);
+  assert.equal(retry.status, "complete");
+  assert.equal((await processAuthorityRevocation(deps as never, body)).status, "complete"); // redelivery after success is a no-op
+
+  for (const id of ids) {
+    const after = (await h.plans.get(id))!;
+    assert.equal(after.currentAllergenRelease, undefined);
+    assert.equal(after.reusedAllergenAuthority, undefined);
+    assert.notEqual(after.status, "planned");
+    assert.equal(after.allergenReleaseHistory?.filter(release => release.status === "revoked").length, 1, `${id} release revoked exactly once`);
+    assert.equal(commits.get(id), 1, `${id} CPU revocation change committed exactly once`);
+    assert.ok((emitSuccess.get(id) || 0) >= 1, `${id} downstream invalidation delivered`);
+  }
+  assert.equal(emitSuccess.get("o-a"), 1);
+  assert.equal(emitSuccess.get("o-c"), 1);
+  const done = [...memoryAllergenAuthorityStore.records.values()][0];
+  assert.ok(done.cascades?.["rel-origin-1"]?.completedAt, "completion is recorded");
+  assert.equal(done.history.filter(entry => entry.action === "cascade-completed").length, 1);
+  assert.equal(JSON.stringify((await h.plans.get("o-origin"))!.currentAllergenRelease?.releaseId), '"rel-origin-1"', "the signed origin record is untouched");
 });

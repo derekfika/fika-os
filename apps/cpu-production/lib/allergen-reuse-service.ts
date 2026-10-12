@@ -77,3 +77,17 @@ export async function reuseViewFor(store: AllergenAuthorityStore, plan: Producti
   const candidate = await reuseCandidateFor(store, plan, order);
   return candidate.available ? { candidate } : undefined;
 }
+
+/**
+ * Fail closed on any read: a plan whose reused authority is revoked, missing or no longer describes it is returned as unreviewed
+ * with no release or artifacts, immediately, regardless of whether the durable cascade has finished. Response-only.
+ */
+export async function failClosedStaleReuse<T extends ProductionPlan>(store: AllergenAuthorityStore, plan: T, order?: Order, cache = new Map<string, AllergenCompositionAuthority | undefined>()): Promise<T> {
+  const reuse = plan.reusedAllergenAuthority;
+  if (!reuse) return plan;
+  if (!cache.has(reuse.compositionId)) cache.set(reuse.compositionId, await store.get(reuse.compositionId));
+  const authority = cache.get(reuse.compositionId);
+  const valid = authority?.status === "active" && (!order || reuseStillValid(plan, order));
+  if (valid) return plan;
+  return { ...plan, status: plan.status === "planned" ? "planning" : plan.status, currentAllergenRelease: undefined, matrixArtifact: undefined, signedMatrixArtifact: undefined, masterMatrixArtifact: undefined, siteMatrixArtifacts: undefined };
+}

@@ -10,7 +10,8 @@ import type { ProductionOrder, ProductionStatus } from "../../../lib/production-
 import { rebuildCpuDayProjection, rebuildCpuWeekProjection, weekCommencingFor } from "../../../lib/cpu-projection";
 import { createProductionPlanRepository } from "../../../lib/production-plan-repository";
 import { createAllergenAuthorityStore } from "../../../lib/allergen-authority-store";
-import { reconcileReuse, recordSignedAuthority, reuseViewFor } from "../../../lib/allergen-reuse-service";
+import { emitCpuPlanChange } from "../../../lib/cpu-plan-change-effects";
+import { failClosedStaleReuse, reconcileReuse, recordSignedAuthority, reuseViewFor } from "../../../lib/allergen-reuse-service";
 import { applyReuseCommand, approvedMatrixChanged, cascadeAuthorityRevocation, revokeReusedRelease, type ReuseOrchestrationDeps } from "../../../lib/allergen-reuse-orchestrator";
 import { clearReuse } from "../../../lib/allergen-composition";
 import { requireCpuActor } from "../../../lib/cpu-access-client";
@@ -152,15 +153,7 @@ const allergenAuthorityStore = createAllergenAuthorityStore();
 async function reconcileAllergenReuse(plan: ProductionPlan, order: ProductionOrder | undefined, actor: string, at: string) {
   if (plan.reusedAllergenAuthority && await reconcileReuse(allergenAuthorityStore, plan, order, { by: actor, at })) revokeReusedRelease(plan, { by: actor, at, reason: "The reused allergen approval no longer applies to this booking." });
 }
-/** Canonical post-commit effects for one durably committed plan change: projections, review package and consumer invalidation. */
-async function emitPlanChange(request: NextRequest, input: { order: ProductionOrder; plan: ProductionPlan; sequence: number; changeType: string; at: string }) {
-  const serviceDate = input.order.serviceDate || input.order.requiredBy.slice(0, 10);
-  await rebuildCpuDayProjection(request, serviceDate, input.sequence);
-  await rebuildCpuWeekProjection(request, weekCommencingFor(serviceDate), input.sequence);
-  const review = input.order.destinationOplocId ? await rebuildCpuReviewPackage(request, serviceDate, input.order.destinationOplocId, input.sequence) : undefined;
-  await notifyCpuConsumerInvalidations({ eventId: `cpu-change:${input.plan.id}:v${input.sequence}`, sourceEntityId: input.plan.id, serviceDate, sourceVersion: input.sequence, changedAt: input.at, changeType: eventTypeForConsumers(input.changeType), order: input.order, logistics: false, ...(review ? { reviewManifest: review.manifest } : {}) });
-}
-const reuseDeps = (request: NextRequest): ReuseOrchestrationDeps => ({ plans: planRepository, store: allergenAuthorityStore, loadOrder: orderId => loadOrder(request, orderId), emit: input => emitPlanChange(request, input) });
+const reuseDeps = (request: NextRequest): ReuseOrchestrationDeps => ({ plans: planRepository, store: allergenAuthorityStore, loadOrder: orderId => loadOrder(request, orderId), emit: input => emitCpuPlanChange(request, input) });
 /**
  * After a plan mutation is durably saved: if the approval behind a shared composition authority was explicitly reopened or its
  * approved matrix changed, revoke the authority and cascade through every booking that reused it via the normal CPU change path;
@@ -475,9 +468,10 @@ async function handleGet(request: NextRequest) {
       const sourceOrders = await productionQueue(request, serviceDate);
       const selectedPlans = await planRepository.getByOrderIds(sourceOrders.map(order => order.canonicalId));
       const planByOrderId = new Map(selectedPlans.map(plan => [plan.orderId, normalisePlanAllergens(plan)]));
+      const reuseCache = new Map<string, Awaited<ReturnType<typeof allergenAuthorityStore.get>>>();
       const visiblePlans = await Promise.all(sourceOrders
         .filter(order => !(order.origin === "hospitality_booking" && order.requiresDelivery === false))
-        .map(async order => mergeOriginalItems(request, planByOrderId.get(order.canonicalId) || await getPlan(request, order.canonicalId), order.canonicalId, order)));
+        .map(async order => failClosedStaleReuse(allergenAuthorityStore, await mergeOriginalItems(request, planByOrderId.get(order.canonicalId) || await getPlan(request, order.canonicalId), order.canonicalId, order), order as never, reuseCache)));
       const entries = visiblePlans.filter(plan => plan.status === "planned");
       return NextResponse.json({ plans: visiblePlans, notifications: entries.map(plan => ({ id: `notification:${plan.id}`, title: "New production plan ready for menu generation.", orderId: plan.orderId, plannedItemCount: plan.menuItems.reduce((sum, item) => sum + item.subItems.length, 0), at: plan.updatedAt })), menus: entries.map(plan => ({ planId: plan.id, orderId: plan.orderId, clientSite: sourceOrders.find(order => order.canonicalId === plan.orderId)?.destinationLabel || "Site not assigned", items: plan.menuItems.flatMap(item => item.subItems.map(subItem => ({ menuItem: item.name, name: subItem.name, quantity: subItem.quantity, allergens: Object.entries(subItem.allergens).filter(([, state]) => state === "contains").map(([key]) => key), mayContain: Object.entries(subItem.allergens).filter(([, state]) => state === "may_contain").map(([key]) => key) }))) })) });
     }

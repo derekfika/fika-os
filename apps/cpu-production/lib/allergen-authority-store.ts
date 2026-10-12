@@ -34,6 +34,29 @@ export function applyOriginRevocation(existing: AllergenCompositionAuthority | u
   return { authority: next, changed: true };
 }
 
+/** Pure: records one adopter's cascade progress. Idempotent; returns the same object when nothing changes. */
+export function applyCascadeStep(existing: AllergenCompositionAuthority, releaseId: string, orderId: string, patch: { sequence?: number; done?: boolean }, at: string): AllergenCompositionAuthority {
+  const cascade = existing.cascades?.[releaseId];
+  const step = cascade?.adopters[orderId];
+  if (step && (patch.sequence === undefined || step.sequence === patch.sequence) && (!patch.done || step.done)) return existing;
+  const next = structuredClone(existing);
+  next.cascades = next.cascades || {};
+  const target = (next.cascades[releaseId] = next.cascades[releaseId] || { startedAt: at, adopters: {} });
+  target.adopters[orderId] = { ...target.adopters[orderId], ...(patch.sequence !== undefined ? { sequence: patch.sequence } : {}), ...(patch.done ? { done: true, doneAt: at } : {}) };
+  return next;
+}
+/** Pure: marks the cascade complete once. */
+export function applyCascadeComplete(existing: AllergenCompositionAuthority, releaseId: string, at: string, by: string): AllergenCompositionAuthority {
+  const cascade = existing.cascades?.[releaseId];
+  if (cascade?.completedAt) return existing;
+  const next = structuredClone(existing);
+  next.cascades = next.cascades || {};
+  const target = (next.cascades[releaseId] = next.cascades[releaseId] || { startedAt: at, adopters: {} });
+  target.completedAt = at;
+  next.history.push({ action: "cascade-completed", at, by, releaseId, reason: "Every adopting booking was made non-authoritative." });
+  return next;
+}
+
 /** Pure: records that an order adopted the authority (idempotent per order). Returns the same object when nothing changes. */
 export function applyReuseRegistration(existing: AllergenCompositionAuthority, orderId: string, at: string, by: string): AllergenCompositionAuthority {
   if ((existing.reusedBy || []).some(item => item.orderId === orderId)) return existing;
@@ -48,6 +71,8 @@ export type AllergenAuthorityStore = {
   recordApproval(candidate: AllergenCompositionAuthority, at: string, by: string): Promise<ApprovalOutcome>;
   revokeForOrigin(compositionId: string, releaseId: string, at: string, by: string, reason: string): Promise<AllergenCompositionAuthority | undefined>;
   registerReuse(compositionId: string, orderId: string, at: string, by: string): Promise<void>;
+  /** Atomic read-modify-write of the stored authority; the mutator must be pure and idempotent. */
+  mutate(compositionId: string, mutator: (current: AllergenCompositionAuthority) => AllergenCompositionAuthority): Promise<AllergenCompositionAuthority | undefined>;
 };
 
 class MemoryAllergenAuthorityStore implements AllergenAuthorityStore {
@@ -62,6 +87,13 @@ class MemoryAllergenAuthorityStore implements AllergenAuthorityStore {
     const result = applyOriginRevocation(this.records.get(id), releaseId, at, by, reason);
     if (result.changed && result.authority) this.records.set(id, structuredClone(result.authority));
     return result.changed ? result.authority : undefined;
+  }
+  async mutate(id: string, mutator: (current: AllergenCompositionAuthority) => AllergenCompositionAuthority) {
+    const current = this.records.get(id);
+    if (!current) return undefined;
+    const next = mutator(structuredClone(current));
+    this.records.set(id, structuredClone(next));
+    return structuredClone(next);
   }
   async registerReuse(id: string, orderId: string, at: string, by: string) {
     const current = this.records.get(id);
@@ -88,6 +120,17 @@ class FirestoreAllergenAuthorityStore implements AllergenAuthorityStore {
       const result = applyOriginRevocation(snapshot.exists ? snapshot.data() as AllergenCompositionAuthority : undefined, releaseId, at, by, reason);
       if (result.changed && result.authority) transaction.set(doc, result.authority);
       return result.changed ? result.authority : undefined;
+    });
+  }
+  async mutate(id: string, mutator: (current: AllergenCompositionAuthority) => AllergenCompositionAuthority) {
+    const { db, doc } = await this.ref(id);
+    return db.runTransaction(async transaction => {
+      const snapshot = await transaction.get(doc);
+      if (!snapshot.exists) return undefined;
+      const current = snapshot.data() as AllergenCompositionAuthority;
+      const next = mutator(structuredClone(current));
+      if (JSON.stringify(next) !== JSON.stringify(current)) transaction.set(doc, next);
+      return next;
     });
   }
   async registerReuse(id: string, orderId: string, at: string, by: string) {
