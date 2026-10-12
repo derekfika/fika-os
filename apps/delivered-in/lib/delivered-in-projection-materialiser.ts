@@ -41,6 +41,9 @@ export async function buildDeliveredInDayProjection(input: { request: NextReques
     const allergensVisible = review?.cpuReview.status === "signed" && !cpuFailure && packetReviewed?.allergenState !== "unrecorded" && Object.values(allergens).every(state => state !== "unrecorded");
     return {
       ...entry,
+      // CPU is the allergen authority: a dish whose allergens come from the verified, signed CPU packet is confirmed by that
+      // review, whatever the earlier Menu Planning snapshot said. Without a valid signed packet the source status is kept.
+      ...(allergensVisible ? { allergenEvidenceStatus: "confirmed" as const } : {}),
       allergensVisible,
       allergens,
       ...(packetReviewed?.mayContainNotes ? { mayContainNotes: packetReviewed.mayContainNotes } : {}),

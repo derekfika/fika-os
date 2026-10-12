@@ -76,3 +76,25 @@ test("a CPU lineage failure does not expose its signed PDF reference", async () 
   assert.equal(projection.drivePdfUrl, undefined);
   assert.equal(projection.state.exceptions[0].code, "CPU_REVIEW_LINEAGE_MISMATCH");
 });
+
+// CPU is the allergen authority: Menu Planning's pre-sign evidence flag must not outlive a valid signed CPU review.
+const stale = { ...day, entries: [{ ...day.entries[0], allergenEvidenceStatus: "unreviewed" as const }] };
+const signedReview = (state: "contains" | "unrecorded") => ({ entries: new Map([["dish:1", { allergens: (state === "contains" ? { milk: "contains" } : {}) as Record<string, "contains">, allergenState: state }]]), cpuReview: { status: "signed" as const, signatures: [{ role: "production_chef", printedName: "Chef", signedAt: "2026-09-14T08:00:00Z" }, { role: "head_chef_site_manager", printedName: "Manager", signedAt: "2026-09-14T08:01:00Z" }], drivePdfUrl: "https://example.test/signed.pdf" }, orderIds: ["order:1"], package: { sourceBundleHash: "menu-day-hash", sourceStatus: "current" as const, sourceCompleteness: "complete" as const } });
+
+test("a dish confirmed by the signed CPU packet is confirmed even if the Menu Planning snapshot was unreviewed", async () => {
+  const projection = await buildDeliveredInDayProjection({ request, site, day: stale, governed: true, loadReview: async () => signedReview("contains") });
+  assert.equal(projection.entries[0].allergenEvidenceStatus, "confirmed");
+  assert.equal(projection.entries[0].allergensVisible, true);
+});
+
+test("without a signed CPU review the Menu Planning evidence status is kept (still unreviewed)", async () => {
+  const projection = await buildDeliveredInDayProjection({ request, site, day: stale, governed: true, loadReview: async () => ({ entries: new Map(), cpuReview: { status: "pending" as const, signatures: [] }, orderIds: [] }) });
+  assert.equal(projection.entries[0].allergenEvidenceStatus, "unreviewed");
+  assert.equal(projection.entries[0].allergensVisible, false);
+});
+
+test("a dish unrecorded in the signed CPU packet is not promoted to confirmed", async () => {
+  const projection = await buildDeliveredInDayProjection({ request, site, day: stale, governed: true, loadReview: async () => signedReview("unrecorded") });
+  assert.equal(projection.entries[0].allergenEvidenceStatus, "unreviewed");
+  assert.equal(projection.entries[0].allergensVisible, false);
+});
