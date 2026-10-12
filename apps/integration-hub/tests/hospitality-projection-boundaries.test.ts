@@ -64,7 +64,8 @@ test("Hospitality handoff, amendment, and cancellation share CPU propagation", (
 });
 
 test("Hub production mutations directly stage and deliver Logistics invalidation", () => {
-  assert.match(route, /notifyCpuProjection/);
+  // The CPU projection handoff is a durable per-canonical-version outbox obligation (staged with the order write), not a best-effort notify.
+  assert.match(route, /deliverCpuProjectionForOrder/);
   assert.match(route, /deliverLogisticsProjectionForProductionOrder/);
   assert.match(readFileSync(new URL("../app/api/production/materialise/route.ts", import.meta.url), "utf8"), /deliverLogisticsProjectionForProductionOrder/);
   assert.match(bookingRoute, /createProductionOrder/);
