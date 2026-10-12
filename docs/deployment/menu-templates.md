@@ -72,7 +72,11 @@ labels never replaces or retires the tablet menu; a newer label revision retires
 
 ## Where generated menus are filed (OPLOC-scoped)
 
-    <site menu parent>/Generated Menus/WC_<Monday of the service week>/<Slides file>
+    <configured per-OPLOC menu parent>/WC_<Monday of the service week>/<Slides file>
+
+The configured menu parent IS the final parent: **no extra folder is created beneath it**. For MNK the two parents are already
+`Generated Menus/Hospitality` and `Generated Menus/Delivered In`, so files land in `Generated Menus/Hospitality/WC_YYYY-MM-DD/` and
+`Generated Menus/Delivered In/WC_YYYY-MM-DD/` (Hospitality and Delivered-In use separate parents).
 
 Each site (OPLOC) has its own Drive owner and menu parent folder, resolved by `resolveMenuDestination` (`menu-destination.ts`) from explicit configuration keyed by the
 canonical OPLOC id. `<KEY>` is the id without `oploc:`, upper-cased, non-alphanumerics as `_` (MNK: `66E621FA_6E6F_4F46_9AED_462313ABBE8F`):
@@ -80,15 +84,15 @@ canonical OPLOC id. `<KEY>` is the id without `oploc:`, upper-cased, non-alphanu
 | Setting | Meaning |
 | --- | --- |
 | `GOOGLE_DRIVE_OWNER_EMAIL_OPLOC_<KEY>` | The Workspace user that DWD impersonates when publishing for that site (must be an email; required when hosted) |
-| `GOOGLE_MENU_PARENT_FOLDER_ID_OPLOC_<KEY>` | The folder that holds that site's `Generated Menus` folder (a pasted folder URL is accepted) |
+| `GOOGLE_MENU_PARENT_FOLDER_ID_OPLOC_<KEY>` | The site's final menu parent folder; `WC_` folders are created directly inside (a pasted folder URL is accepted) |
 | `GOOGLE_DRIVE_ROOT_FOLDER_ID_OPLOC_<KEY>` | The site's existing Drive root, accepted as the parent only when no menu parent is set |
 | Hospitality per-site `googleMenuFolderId` | Site-scoped dashboard setting; wins for that site only |
 
 Nothing is guessed: there is **no app-wide owner or folder** (the old `GOOGLE_DELIVERED_IN_OUTPUT_FOLDER_ID`, `GOOGLE_DRIVE_*_APP_DELIVERED_IN` and local-only
 `GOOGLE_MENU_OUTPUT_FOLDER_ID` no longer stand in), no My Drive-root fallback and no auto-created `FIKA OS/...` path. A missing owner, a non-email owner, a missing parent or a
 non-OPLOC id fails with an actionable error naming the exact key (`MENU_DRIVE_OWNER_NOT_CONFIGURED` / `_INVALID`, `MENU_PARENT_FOLDER_NOT_CONFIGURED`,
-`MENU_DESTINATION_OPLOC_REQUIRED`), and the parent is verified to be a live folder before anything is created (`MENU_PARENT_FOLDER_INACCESSIBLE`). Only `Generated Menus` and
-`WC_YYYY-MM-DD` beneath that verified parent are created (found-or-created, no duplicates). `WC_YYYY-MM-DD` is the existing week-commencing convention.
+`MENU_DESTINATION_OPLOC_REQUIRED`), and the parent is verified to be a live folder before anything is created (`MENU_PARENT_FOLDER_INACCESSIBLE`). Only the `WC_YYYY-MM-DD` week
+folder beneath that verified parent is created (found-or-created, no duplicates). `WC_YYYY-MM-DD` is the existing week-commencing convention.
 Applies to Hospitality, Delivered-In shared-template menus and the generic Delivered-In template path (generic template: optional `GOOGLE_DELIVERED_IN_TEMPLATE_ID_OPLOC_<KEY>`
 override, else `GOOGLE_DELIVERED_IN_TEMPLATE_ID`). Superseded-file retirement uses the same OPLOC owner. Templates and supported formats stay site-scoped (`SITE_BRANDING.formats`).
 
@@ -126,11 +130,23 @@ reports whether every text box fits with the real Montserrat font.
 
 ## Production prerequisites (before launch)
 
-* **Enable the Google Slides API (`slides.googleapis.com`) in the production Google Cloud project.** Menu generation copies a template deck with the Drive API and then
-  rewrites it with the Slides API; with Slides disabled every generation fails at "Google Slides template read" (403 `SERVICE_DISABLED`). It was found missing in the staging
-  project `fika-os-dev` (only Drive was enabled) and enabled there manually. Production is untouched by this change and must have it enabled by its owner.
-* Per site that generates menus: the OPLOC-scoped owner and menu parent keys (see above), the approved tablet deck and, for label sites, the label deck - each **shared
-  with that site's Drive owner** (a deck the owner cannot see fails with `File not found` on copy, as the MNK Label Template did until it was shared with `mnk@fikacatering.com`).
-* Hosted Delivered-In generation needs the existing Drive DWD secret (`GOOGLE_WORKSPACE_DWD_SERVICE_ACCOUNT_JSON`), not the Gmail mailer credential.
-* Delivered-In manager generation needs the Hub deployed with the `delivered_in.site_menu.generate` permission issuance (editors only).
+All of these must be true in the production project/environment; none is enabled or configured by this change.
+
+1. **Google Slides API (`slides.googleapis.com`) enabled in the production Google Cloud project.** Menu generation copies a template deck with the Drive API and then rewrites it
+   with the Slides API; with Slides disabled every generation fails at "Google Slides template read" (403 `SERVICE_DISABLED`). It was missing in the staging project
+   `fika-os-dev` (only Drive was enabled) and enabled there manually.
+2. **Google Drive API (`drive.googleapis.com`) enabled** in the same project.
+3. **The existing Drive DWD credential provisioned** (`GOOGLE_WORKSPACE_DWD_SERVICE_ACCOUNT_JSON`) for each backend that publishes menus - not the Gmail mailer credential.
+4. **A per-OPLOC Drive owner configured** (`GOOGLE_DRIVE_OWNER_EMAIL_OPLOC_<KEY>`) for every site that generates menus.
+5. **A per-OPLOC menu parent configured** (`GOOGLE_MENU_PARENT_FOLDER_ID_OPLOC_<KEY>`), separately for Hospitality and Delivered-In where they should not share a folder.
+6. **Template decks shared with / readable by the site's Drive owner.** A deck the owner cannot see fails with `File not found` on copy (the MNK Label Template did until it was shared
+   with `mnk@fikacatering.com`).
+7. **Approved template IDs present**: `GOOGLE_MENU_TEMPLATE_ID_MNK` (tablet) and, for label sites, `GOOGLE_MENU_LABEL_TEMPLATE_ID_MNK`; Angel Court: `GOOGLE_MENU_TEMPLATE_ID_ANGEL_COURT`.
+8. **Hub deployed with `delivered_in.site_menu.generate` issuance** (editors only) before Delivered-In manager generation is used; Delivered-In and Hospitality redeployed after the Hub.
+
+## Live verification tool
+
+`packages/server-shared/tools/live-menu-check.ts` runs the real-Google check (`core` / `amend` / `paging`, then `cleanup`) from a shell that has the credentials above. It writes clearly named
+`LIVECHECK_*` files and `cleanup` trashes only those (and the empty week folders it made); it never deletes permanently. There is no staging route for it: the temporary
+in-app routes used for the 2026-10-09 staging validation were removed before merge.
 
