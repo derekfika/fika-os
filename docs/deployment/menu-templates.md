@@ -149,4 +149,3 @@ All of these must be true in the production project/environment; none is enabled
 `packages/server-shared/tools/live-menu-check.ts` runs the real-Google check (`core` / `amend` / `paging`, then `cleanup`) from a shell that has the credentials above. It writes clearly named
 `LIVECHECK_*` files and `cleanup` trashes only those (and the empty week folders it made); it never deletes permanently. There is no staging route for it: the temporary
 in-app routes used for the 2026-10-09 staging validation were removed before merge.
-
