@@ -8,6 +8,7 @@ import { bookingContextEntries } from "./BookingContext";
 import { titleCaseDish } from "../../lib/production-presentation";
 import { clearLocalDraft, loadLocalChecked, loadLocalDraft, saveLocalChecked, saveLocalDraft, type AllergenReviewLineage } from "../lib/allergen-review-local";
 import { checkpointAllergenReviewRow, completeAllergenReviewMap, unresolvedNamedAllergenKeys } from "../lib/allergen-review-state";
+import { createSaveCoalescer } from "./allergen-save-coalescer";
 import "./allergen-review.css";
 
 type SignatureRole = "production_chef" | "head_chef_site_manager";
@@ -80,6 +81,10 @@ export default function AllergenReviewMatrix({
   const latestCheckedRowsRef = useRef(checkedRows);
   const latestLineageRef = useRef<Record<string, MatrixLineage>>({});
   const inFlightSave = useRef<Promise<void> | undefined>(undefined);
+  type SavePayload = { states: Record<string, Record<string, OperationalAllergenState>>; checkedRows: Set<string>; action: "save-plan" | "mark-planned" };
+  const saveReviewFnRef = useRef<(states: SavePayload["states"], checkedRows: Set<string>, action: SavePayload["action"]) => Promise<void>>(async () => undefined);
+  // Saves carry the whole matrix, so rapid edits coalesce into one in-flight save plus at most one trailing save (latest state wins).
+  const saverRef = useRef(createSaveCoalescer<SavePayload>(payload => saveReviewFnRef.current(payload.states, payload.checkedRows, payload.action)));
   const pendingSaveCountRef = useRef(0);
   const checkpointCompletionRef = useRef<Promise<void> | undefined>(undefined);
   const hydratedRef = useRef(false);
@@ -324,12 +329,12 @@ export default function AllergenReviewMatrix({
   }));
 
   const startSave = (nextStates: Record<string, Record<string, OperationalAllergenState>>, nextCheckedRows: Set<string>, action: "save-plan" | "mark-planned") => {
-    const prior = inFlightSave.current;
     const checkpointSequence = ++checkpointSequenceRef.current;
     pendingSaveCountRef.current += 1;
     if (pendingSaveCountRef.current === 1) onPersistenceChange?.(true);
     setSyncStatus("saving");
-    const operation = (prior ? prior.catch(() => undefined) : Promise.resolve()).then(() => saveReview(nextStates, nextCheckedRows, action));
+    saveReviewFnRef.current = saveReview;
+    const operation = saverRef.current.submit({ states: nextStates, checkedRows: nextCheckedRows, action });
     inFlightSave.current = operation;
     void operation.then(
       () => { if (checkpointSequence === checkpointSequenceRef.current) setSyncStatus("saved"); },
