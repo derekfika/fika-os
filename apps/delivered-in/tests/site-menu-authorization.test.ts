@@ -79,3 +79,10 @@ test("authorisation precedes any data or Drive access, and the internal token ne
   assert.doesNotMatch(page, /x-fika-internal-token|INTERNAL_API_TOKEN/, "no service credential in client code");
   assert.doesNotMatch(route, /NextResponse\.json\([^)]*(token|INTERNAL)/i, "the token is never echoed");
 });
+
+test("the site-menu GET reads the tablet artifact live, so a menu generated after the day projection was built is shown", async () => {
+  const route = await readFile(new URL("../app/api/delivered-in/site-menu/route.ts", import.meta.url), "utf8");
+  const get = route.slice(route.indexOf("async function handleGet"), route.indexOf("async function handlePost"));
+  assert.match(get, /siteMenuState\(day, await latestSiteMenuArtifactHosted\(oplocId, day\.sourceDayId\)\)/);
+  assert.doesNotMatch(get, /siteMenu: day\.siteMenu/);
+});

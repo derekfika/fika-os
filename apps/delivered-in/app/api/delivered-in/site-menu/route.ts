@@ -20,7 +20,9 @@ async function handleGet(request: NextRequest) {
     const labels: Record<string, ReturnType<typeof siteLabelState>> = {};
     for (const format of formats.filter(value => value !== "tablet")) labels[format] = siteLabelState(day, await latestSiteMenuArtifactHosted(oplocId, day.sourceDayId, format));
     const { access } = await resolveAccess(request);
-    return NextResponse.json({ siteMenu: day.siteMenu || { status: "none" }, formats: formats.length ? formats : ["tablet"], labels, canGenerate: canGenerateSiteMenu(access, oplocId) }, { headers: { "Cache-Control": "no-store, max-age=0" } });
+    // The tablet menu state is read live (one document), like the label states: the stored day projection predates a manual generation.
+    const tabletMenu = siteMenuState(day, await latestSiteMenuArtifactHosted(oplocId, day.sourceDayId));
+    return NextResponse.json({ siteMenu: tabletMenu, formats: formats.length ? formats : ["tablet"], labels, canGenerate: canGenerateSiteMenu(access, oplocId) }, { headers: { "Cache-Control": "no-store, max-age=0" } });
   } catch (error) {
     return NextResponse.json({ error: { message: error instanceof Error ? error.message : "The site menu could not be loaded." } }, { status: Number((error as { status?: number }).status) || 502 });
   }
