@@ -9,6 +9,9 @@ import { canonicalProductionFailureKind, productionOrderDetail, productionQueue,
 import type { ProductionOrder, ProductionStatus } from "../../../lib/production-types";
 import { rebuildCpuDayProjection, rebuildCpuWeekProjection, weekCommencingFor } from "../../../lib/cpu-projection";
 import { createProductionPlanRepository } from "../../../lib/production-plan-repository";
+import { createAllergenAuthorityStore } from "../../../lib/allergen-authority-store";
+import { adoptReusableAuthority, reconcileReuse, recordSignedAuthority, reopenAdoptingPlan, reuseViewFor, revokeAuthorityForRelease } from "../../../lib/allergen-reuse-service";
+import { clearReuse } from "../../../lib/allergen-composition";
 import { requireCpuActor } from "../../../lib/cpu-access-client";
 import { hubJson } from "../../../lib/production-http-client";
 import { matrixDriveConfiguration } from "../../lib/matrix-drive-config";
@@ -77,6 +80,7 @@ const Command = z.discriminatedUnion("action", [
   z.object({ action: z.literal("sign-matrix"), orderId: z.string(), role: z.enum(["production_chef", "head_chef_site_manager"]), printedName: z.string().trim().min(2).max(120), attestation: z.string().trim().min(10).max(500), signatureDataUrl: z.string().regex(/^data:image\/png;base64,/).max(500000), expectedLineage: ExpectedLineage, commandId: z.string().trim().min(8).optional() }),
   z.object({ action: z.literal("save-matrix"), orderId: z.string(), expectedLineage: ExpectedLineage.optional(), commandId: z.string().trim().min(8).optional() }),
   z.object({ action: z.literal("retry-materialization"), orderId: z.string(), expectedLineage: ExpectedLineage }),
+  z.object({ action: z.literal("apply-reused-authority"), orderId: z.string(), commandId: z.string().trim().min(8).optional() }),
 ]);
 const MatrixOperation = z.discriminatedUnion("action", [
   z.object({ action: z.literal("save-plan"), orderId: z.string(), menuItems: z.array(MenuItem).min(1), planningNotes: z.string().default(""), commandId: z.string().trim().min(8).optional() }),
@@ -134,12 +138,38 @@ function invalidateSignedAllergenAuthorityForNewSourceLineage(plan: ProductionPl
   plan.masterMatrixArtifact = undefined;
   plan.siteMatrixArtifacts = undefined;
   if (hasAuthority) plan.audit.push({ action: "allergen-release-revoked", at, by: actor, reason });
+  if (plan.reusedAllergenAuthority) { clearReuse(plan, { by: actor, at, reason }); return true; }
   return hasAuthority;
 }
 function revokedReleaseDeliveries(release: ProductionPlan["currentAllergenRelease"], order: ProductionOrder | undefined): CpuDurableDeliveryInput[] {
   if (!release?.packetArtifacts?.[0]?.contentHash || !order?.destinationOplocId) return [];
   const releaseEvent = buildCpuAllergenReleaseEvent({ eventType: "revoked", release, oplocId: order.destinationOplocId });
   return [{ eventId: `${releaseEvent.eventId}:delivered-in:${order.destinationOplocId}`, sourceAggregateId: releaseEvent.releaseId, sourceVersion: releaseEvent.sourceVersion, occurredAt: release.signedAt, consumer: "delivered-in", route: "/api/internal/cpu-release-event", body: releaseEvent as unknown as Record<string, unknown> }];
+}
+const allergenAuthorityStore = createAllergenAuthorityStore();
+/** Reuse provenance must describe the plan it sits on; drop it before persisting if the composition, states or signing changed. */
+async function reconcileAllergenReuse(plan: ProductionPlan, order: ProductionOrder | undefined, actor: string, at: string) {
+  if (plan.reusedAllergenAuthority) await reconcileReuse(allergenAuthorityStore, plan, order, { by: actor, at });
+}
+/**
+ * After a plan mutation is durably saved: revoke the shared authority if the release that established it was revoked (reopening
+ * every booking that adopted it), and record a newly signed release as the authority for its composition. The signed release
+ * itself is already committed, so a failure here is logged and retried by the next sign or revoke rather than failing the command.
+ */
+async function settleAllergenAuthority(request: NextRequest, input: { order: ProductionOrder | undefined; before?: ProductionPlan["currentAllergenRelease"]; plan: ProductionPlan; actor: string; at: string }) {
+  try {
+    const { order, before, plan, actor, at } = input;
+    if (before && plan.currentAllergenRelease?.releaseId !== before.releaseId) {
+      const reopen = await revokeAuthorityForRelease(allergenAuthorityStore, order, before.releaseId, { by: actor, at, reason: "The signed release that established this approved composition was revoked." });
+      for (const orderId of reopen) {
+        const adopting = await planRepository.get(orderId);
+        if (adopting && reopenAdoptingPlan(adopting, { by: actor, at })) { adopting.updatedAt = at; adopting.updatedBy = actor; await planRepository.save(adopting, undefined); }
+      }
+    }
+    if (plan.currentAllergenRelease && !plan.reusedAllergenAuthority) await recordSignedAuthority(allergenAuthorityStore, plan, order, at, actor);
+  } catch (error) {
+    console.error("[cpu-allergen-reuse] authority settlement failed", { orderId: input.plan.orderId, error: error instanceof Error ? error.message : String(error) });
+  }
 }
 async function loadOrder(request: NextRequest, orderId: string) {
   try {
@@ -182,6 +212,7 @@ async function getPlan(request: NextRequest, orderId: string, knownPlan?: Produc
       });
       const carried: ProductionPlan = { ...prior, id: `production-plan:${orderId}`, orderId, status: "draft", menuItems, updatedAt: now(), updatedBy: "system", audit: [...prior.audit] };
       invalidateSignedAllergenAuthorityForNewSourceLineage(carried, "system", now(), "The Booking was amended; prior signed allergen authority cannot transfer to the replacement source lineage.");
+      if (prior.currentAllergenRelease) await settleAllergenAuthority(request, { order: priorPlans[0].order, before: prior.currentAllergenRelease, plan: carried, actor: "system", at: now() });
       carried.audit.push({ action: "plan-carried-to-amended-order", at: now(), by: "system", reason: "The Booking was amended; prior allergen work was retained as a draft for the replacement CPU order." });
       plans.set(orderId, carried);
     } else {
@@ -359,6 +390,7 @@ async function applyMatrixOperation(request: NextRequest, actor: Awaited<ReturnT
       deliveries: releaseDeliveries,
     });
     if (event.duplicate && event.plan) Object.assign(plan, event.plan);
+    if (!event.duplicate) await settleAllergenAuthority(request, { order, before: releaseBeforeReopen, plan, actor: auditActor, at: timestamp });
     if (!event.duplicate && releaseDeliveries[0]) await deliverCpuPropagation(releaseDeliveries[0].eventId);
     return { orderId: operation.orderId, plan, serviceDate: changedOrder.serviceDate, sequence: event.sequence, changed: true };
   }
@@ -398,6 +430,7 @@ async function applyMatrixOperation(request: NextRequest, actor: Awaited<ReturnT
     await syncCanonicalLifecycle(request, operation.orderId, "planned", "Production plan marked Planned by the production chef.");
   }
   const timestamp = now();
+  await reconcileAllergenReuse(plan, order, auditActor, timestamp);
   plan.updatedAt = timestamp; plan.updatedBy = auditActor;
   const changedOrder = await loadOrder(request, operation.orderId);
   if (!changedOrder?.serviceDate) {
@@ -406,6 +439,7 @@ async function applyMatrixOperation(request: NextRequest, actor: Awaited<ReturnT
   }
   const event = await planRepository.saveAndAppendCpuChange(plan, storedPlan?.updatedAt, { serviceDate: changedOrder.serviceDate, entityType: "productionPlan", entityId: plan.id, revision: plan.audit.length, changeType: operation.action, actorId: actor.uid, changedAt: timestamp, ...(operation.commandId ? { idempotencyKey: operation.commandId } : {}), propagation: { sourceEntityId: plan.id, serviceDate: changedOrder.serviceDate, sourceVersion: plan.audit.length, changedAt: timestamp, changeType: eventTypeForConsumers(operation.action), order: changedOrder, logistics: false }, deliveries: releaseDeliveries });
   if (event.duplicate && event.plan) Object.assign(plan, event.plan);
+  if (!event.duplicate) await settleAllergenAuthority(request, { order, before: storedPlan?.currentAllergenRelease, plan, actor: auditActor, at: timestamp });
   if (!event.duplicate) for (const delivery of releaseDeliveries) await deliverCpuPropagation(delivery.eventId);
   return { orderId: operation.orderId, plan, serviceDate: changedOrder.serviceDate, sequence: event.sequence };
 }
@@ -461,7 +495,10 @@ async function handleGet(request: NextRequest) {
       const selectedMatrixStatus = selectedPlan?.matrixArtifact && selectedOrder && currentAllergenReleaseMatchesOrder(selectedPlan.currentAllergenRelease, selectedOrder, selectedPlan.menuItems) ? "ready" : selectedPlan?.currentAllergenRelease?.materializationStatus === "failed" ? "failed" : selectedPlan?.signatures?.some(signature => signature.role === "production_chef") && selectedPlan.signatures?.some(signature => signature.role === "head_chef_site_manager") ? selectedOrder && !matrixDriveConfiguration(selectedOrder).enabled ? "not_configured" : "generating" : undefined;
       const signingLineage = selectedOrder && selectedPlan ? matrixSignatureScope(selectedOrder, menuContentHash(selectedPlan.menuItems)) : undefined;
       const signedMatrixAvailable = Boolean(selectedPlan && selectedOrder && signedAllergenReviewMatchesOrder(selectedPlan, selectedOrder, selectedPlan.menuItems));
-      return NextResponse.json({ plan: selectedPlan, signingLineage: signingLineage || null, matrixStatus: selectedMatrixStatus, ...(selectedPlan?.currentAllergenRelease?.materializationError ? { matrixError: selectedPlan.currentAllergenRelease.materializationError } : {}), signedMatrixAvailable, plans: selectedPlan ? [selectedPlan] : [], notifications: selectedPlan?.status === "planned" ? [{ id: `notification:${selectedPlan.id}`, title: "New production plan ready for menu generation.", orderId: selectedPlan.orderId, plannedItemCount: selectedPlan.menuItems.reduce((sum, item) => sum + item.subItems.length, 0), at: selectedPlan.updatedAt }] : [], menus: [] });
+      const reuse = selectedPlan && selectedOrder ? await reuseViewFor(allergenAuthorityStore, selectedPlan, selectedOrder).catch(() => undefined) : undefined;
+      // A stale reuse is shown as unreviewed rather than Planned; persistence is corrected by the next CPU mutation.
+      const responsePlan = selectedPlan && reuse?.applied && !reuse.applied.valid && selectedPlan.status === "planned" ? { ...selectedPlan, status: "planning" as const } : selectedPlan;
+      return NextResponse.json({ plan: responsePlan, ...(reuse ? { reuse } : {}), signingLineage: signingLineage || null, matrixStatus: selectedMatrixStatus, ...(selectedPlan?.currentAllergenRelease?.materializationError ? { matrixError: selectedPlan.currentAllergenRelease.materializationError } : {}), signedMatrixAvailable, plans: selectedPlan ? [selectedPlan] : [], notifications: selectedPlan?.status === "planned" ? [{ id: `notification:${selectedPlan.id}`, title: "New production plan ready for menu generation.", orderId: selectedPlan.orderId, plannedItemCount: selectedPlan.menuItems.reduce((sum, item) => sum + item.subItems.length, 0), at: selectedPlan.updatedAt }] : [], menus: [] });
     }
   } catch (error) {
     return errorResponse(error);
@@ -526,6 +563,13 @@ async function handlePost(request: NextRequest) {
     const plan = await getPlan(request, command.orderId, storedPlan);
     const expectedUpdatedAt = storedPlan?.updatedAt;
     const timestamp = now();
+    if (command.action === "apply-reused-authority") {
+      const adoption = await adoptReusableAuthority(allergenAuthorityStore, plan, currentOrder, { by: auditActor, at: timestamp });
+      if (!adoption.changed) return NextResponse.json({ plan, reuse: { applied: true, unchanged: true } });
+      Object.assign(plan, adoption.plan);
+      await syncCanonicalLifecycle(request, command.orderId, "planned", "Allergen matrix planned from a previously approved identical sandwich composition.");
+    }
+    const releaseBeforeCommand = storedPlan?.currentAllergenRelease;
     let notification: { status: string; reason?: string } | undefined;
     let revokedReleaseForEvent: ProductionPlan["currentAllergenRelease"];
     if (command.action === "accept") {
@@ -646,6 +690,7 @@ async function handlePost(request: NextRequest) {
       plan.signedSignatures = plan.signatures;
       plan.audit.push({ action: "allergen-matrix-materialization-requested", at: timestamp, by: auditActor, reason: "Release materialization requested after authoritative signature state." });
     }
+    if (command.action !== "apply-reused-authority") await reconcileAllergenReuse(plan, currentOrder, auditActor, timestamp);
     plan.updatedAt = timestamp; plan.updatedBy = auditActor;
     const changedOrder = await loadOrder(request, command.orderId);
     const candidateReleaseForEvent = plan.currentAllergenRelease?.status === "current" && plan.currentAllergenRelease.materializationStatus === "ready" ? plan.currentAllergenRelease : revokedReleaseForEvent;
@@ -669,6 +714,7 @@ async function handlePost(request: NextRequest) {
         }
       }
     }
+    if (!event?.duplicate) await settleAllergenAuthority(request, { order: changedOrder || currentOrder, before: releaseBeforeCommand, plan, actor: auditActor, at: timestamp });
     // A duplicate command has already staged its durable work. Replaying the
     // HTTP request must not synchronously repeat delivery or consumer effects.
     let materializationResult: { eventId: string; status: string; error?: string; attempts?: number } | undefined;

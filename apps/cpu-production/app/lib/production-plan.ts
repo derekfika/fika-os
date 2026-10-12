@@ -1,3 +1,4 @@
+import type { ReusedAllergenAuthority } from "../../lib/allergen-composition";
 import type { OperationalAllergenState } from "../../../shared/allergen-contract";
 import { allergenMatrixContentHash } from "../../lib/cpu-allergen-release";
 import { isProductionPlanMatrixComplete } from "./production-plan-state";
@@ -33,7 +34,7 @@ export type InternalMatrixSignature = { role: "production_chef" | "head_chef_sit
 export type MatrixArtifact = { id: string; bookingId: string; fileName: string; createdAt: string; createdBy: string; contentHash: string; html?: string; pdfPath?: string; localUrl?: string; pdfStatus: "generated" | "unavailable"; driveFileId?: string; driveUrl?: string; driveStatus: "saved" | "not_configured" | "failed"; bundleId?: string; packetContentHash?: string; packetObjectName?: string; sourceRevision?: number; sourceContentHash?: string };
 export type CpuAllergenRelease = import("../../lib/cpu-allergen-release").CpuAllergenRelease;
 /** A production menu item may contain several separately checked sub-items. */
-export type ProductionPlan = { id: string; orderId: string; status: PlanStatus; acceptedBy?: string; acceptedAt?: string; rejectionReason?: string; clarificationNote?: string; menuItems: PlannedMenuItem[]; planningNotes: string; masterReviewId?: string; signatures?: InternalMatrixSignature[]; matrixArtifact?: MatrixArtifact; masterMatrixArtifact?: MatrixArtifact; siteMatrixArtifacts?: Record<string, MatrixArtifact>; signedMenuContentHash?: string; signedSignatures?: InternalMatrixSignature[]; signedMatrixArtifact?: MatrixArtifact; currentAllergenRelease?: CpuAllergenRelease; allergenReleaseHistory?: CpuAllergenRelease[]; updatedAt: string; updatedBy: string; audit: Array<{ action: string; at: string; by: string; reason?: string }> };
+export type ProductionPlan = { id: string; orderId: string; status: PlanStatus; acceptedBy?: string; acceptedAt?: string; rejectionReason?: string; clarificationNote?: string; menuItems: PlannedMenuItem[]; planningNotes: string; masterReviewId?: string; signatures?: InternalMatrixSignature[]; matrixArtifact?: MatrixArtifact; masterMatrixArtifact?: MatrixArtifact; siteMatrixArtifacts?: Record<string, MatrixArtifact>; signedMenuContentHash?: string; signedSignatures?: InternalMatrixSignature[]; signedMatrixArtifact?: MatrixArtifact; currentAllergenRelease?: CpuAllergenRelease; allergenReleaseHistory?: CpuAllergenRelease[]; reusedAllergenAuthority?: ReusedAllergenAuthority; updatedAt: string; updatedBy: string; audit: Array<{ action: string; at: string; by: string; reason?: string }> };
 
 export { effectiveProductionPlanStatus, hasAllergenAuthority, isProductionPlanMatrixComplete, mergeMissingProductionOrderLines } from "./production-plan-state";
 

@@ -1,0 +1,11 @@
+.fika-reuse-notice{display:grid;gap:8px;margin:0 0 16px;padding:14px 16px;border:1px solid var(--fika-status-info,#2f5d9e);border-radius:8px;background:var(--fika-status-info-surface,#eef4fc);color:var(--fika-text-primary,#221874)}
+.fika-reuse-notice p{margin:0;color:var(--fika-text-secondary,#4a4470);line-height:1.45}
+.fika-reuse-notice details{font-size:.875rem}
+.fika-reuse-notice summary{cursor:pointer;font-weight:600}
+.fika-reuse-notice summary:focus-visible,.fika-reuse-apply:focus-visible{outline:3px solid var(--fika-focus-ring,#5135c9);outline-offset:2px}
+.fika-reuse-notice dl{display:grid;grid-template-columns:max-content 1fr;gap:4px 12px;margin:8px 0 0}
+.fika-reuse-notice dt{font-weight:600}
+.fika-reuse-notice dd{margin:0}
+.fika-reuse-apply{display:inline-flex;align-items:center;justify-self:start;padding:10px 14px;border:0;border-radius:8px;background:var(--fika-action-primary,#5135c9);color:#fff;font-weight:700;cursor:pointer}
+.fika-reuse-apply:hover:not(:disabled){background:var(--fika-action-primary-hover,#3f29a3)}
+.fika-reuse-apply:disabled{opacity:.6;cursor:not-allowed}
