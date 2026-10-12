@@ -2,9 +2,9 @@ import { promises as fs } from "node:fs";
 import type { ProjectedDay, Site } from "./projection";
 import { groupSiteMenuEntries, siteMenuFileName, type SiteMenuArtifact } from "./site-menu";
 import { CANONICAL_ALLERGEN_COLUMNS } from "./allergen-columns";
-import { driveAccessToken, resolveDriveOwner } from "@fika/server-shared/drive-owner";
+import { driveOwnerEnvKey } from "@fika/server-shared/drive-owner";
 import { stableDocumentId } from "@fika/server-shared/stable-document-id";
-import { MenuArtifactError, publishMenuArtifact, resolveMenuTemplate } from "@fika/server-shared/menu-artifact";
+import { MenuArtifactError, ensureMenuWeekFolder, menuDestinationToken, publishMenuArtifact, resolveMenuDestination, resolveMenuTemplate, type MenuOutputFormat } from "@fika/server-shared/menu-artifact";
 import { deliveredInMenuFromDay, deliveredInMenuSiteKey } from "./menu-adapter";
 
 type OAuthClient = { installed?: { client_id: string; client_secret: string; token_uri?: string } };
@@ -14,15 +14,14 @@ type Presentation = { pageSize?: { width?: { magnitude?: number }; height?: { ma
 const json = async <T>(response: Response): Promise<T> => { const text = await response.text(); let body: unknown; try { body = JSON.parse(text); } catch { throw new Error(`Google API returned ${response.status} without JSON.`); } if (!response.ok) throw new Error(`Google API ${response.status}: ${JSON.stringify(body)}`); return body as T; };
 async function googleFetch(input: string, init: RequestInit, label: string) { const controller = new AbortController(); const timer = setTimeout(() => controller.abort(), 30000); try { return await fetch(input, { ...init, signal: controller.signal }); } catch (error) { if ((error as { name?: string }).name === "AbortError") throw new Error(`${label} timed out after 30 seconds.`); throw new Error(`${label} failed: ${(error as Error).message}`); } finally { clearTimeout(timer); } }
 function resourceId(value?: string) { const raw = value?.trim().replace(/[),.;]+$/, ""); if (!raw) return undefined; return (raw.match(/\/folders\/([A-Za-z0-9_-]+)/)?.[1] || raw.match(/\/d\/([A-Za-z0-9_-]+)/)?.[1] || raw).replace(/[),.;]+$/, ""); }
-async function accessToken() {
-  const owner = resolveDriveOwner({ type: "app-workspace", appId: "delivered-in" });
-  return driveAccessToken(owner);
+/** The OPLOC's own Drive owner (DWD impersonates exactly that user) and explicit menu parent folder; never an app-wide owner or folder. */
+async function siteDestination(oplocId: string) {
+  const destination = resolveMenuDestination({ oplocId });
+  return { destination, token: await menuDestinationToken(destination) };
 }
-async function assertFolder(folderId: string, headers: Record<string, string>) { const metadata = await json<{ mimeType?: string; trashed?: boolean }>(await googleFetch(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(folderId)}?supportsAllDrives=true&fields=mimeType,trashed`, { headers }, "Delivered-In output folder validation")); if (metadata.mimeType !== "application/vnd.google-apps.folder" || metadata.trashed) throw new Error("The configured Delivered-In output folder is not accessible."); }
 export function weekFolderName(weekCommencing?: string) { return weekCommencing ? `WC_${weekCommencing}` : undefined; }
-async function weekFolderId(rootFolderId: string, weekCommencing: string, headers: Record<string, string>) { const name = weekFolderName(weekCommencing); if (!name) return rootFolderId; await assertFolder(rootFolderId, headers); const query = `'${rootFolderId}' in parents and name = '${name}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false`; const existing = await json<{ files?: Array<{ id: string }> }>(await googleFetch(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(query)}&spaces=drive&fields=files(id)&pageSize=1`, { headers }, "Delivered-In week folder lookup")); if (existing.files?.[0]?.id) return existing.files[0].id; const created = await json<{ id: string }>(await googleFetch("https://www.googleapis.com/drive/v3/files?supportsAllDrives=true&fields=id", { method: "POST", headers, body: JSON.stringify({ name, parents: [rootFolderId], mimeType: "application/vnd.google-apps.folder" }) }, "Delivered-In week folder creation")); return created.id; }
 async function trashDriveFile(fileId: string, headers: Record<string, string>) { await googleFetch(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}?supportsAllDrives=true`, { method: "PATCH", headers, body: JSON.stringify({ trashed: true }) }, "Delivered-In previous menu replacement"); }
-export async function retireGoogleSiteMenu(fileId?: string) { if (!fileId) return; const token = await accessToken(); await trashDriveFile(fileId, { Authorization: `Bearer ${token}`, "content-type": "application/json" }); }
+export async function retireGoogleSiteMenu(oplocId: string, fileId?: string) { if (!fileId) return; const { token } = await siteDestination(oplocId); await trashDriveFile(fileId, { Authorization: `Bearer ${token}`, "content-type": "application/json" }); }
 function slideText(slide: NonNullable<Presentation["slides"]>[number]) { return (slide.pageElements || []).flatMap(element => element.shape?.text?.textElements || []).map(element => element.textRun?.content || "").join(""); }
 function titleCase(value: string) { return value.trim().toLocaleLowerCase("en-GB").replace(/(^|[^A-Za-zÀ-ÿ])([a-zà-ÿ])/g, (_, prefix: string, letter: string) => `${prefix}${letter.toLocaleUpperCase("en-GB")}`); }
 function declaredAllergens(dayEntry: ProjectedDay["entries"][number]) { return CANONICAL_ALLERGEN_COLUMNS.filter(([key]) => key !== "no_key_allergens" && (dayEntry.allergens[key] === "contains" || dayEntry.allergens[key] === "may_contain")).map(([, label]) => label); }
@@ -65,23 +64,26 @@ export function buildDeliveredInMenuRequests(day: ProjectedDay, site: Site, pres
  * menu renderer from the normalized menu. The Delivered-In generic template
  * path below is kept unchanged for sites that have no site template.
  */
-async function createSharedSiteMenu(day: ProjectedDay, site: Site, generatedBy: string, deliveryId?: string): Promise<SiteMenuArtifact> {
+async function createSharedSiteMenu(day: ProjectedDay, site: Site, generatedBy: string, deliveryId?: string, format: MenuOutputFormat = "tablet"): Promise<SiteMenuArtifact> {
   const menu = deliveredInMenuFromDay(day, site);
-  const template = resolveMenuTemplate({ siteKey: menu.siteKey, oplocId: site.oplocId });
-  const folderId = resourceId(process.env.GOOGLE_DELIVERED_IN_OUTPUT_FOLDER_ID || process.env.GOOGLE_DRIVE_ROOT_FOLDER_ID_APP_DELIVERED_IN);
-  if (!folderId) throw new MenuArtifactError("MENU_OUTPUT_FOLDER_NOT_CONFIGURED", "The Delivered-In menu output folder is not configured (GOOGLE_DELIVERED_IN_OUTPUT_FOLDER_ID).", 409);
-  const token = await accessToken(); const headers = { Authorization: `Bearer ${token}` };
-  const outputFolderId = await weekFolderId(folderId, day.weekCommencing || "", { ...headers, "content-type": "application/json" });
+  const template = resolveMenuTemplate({ siteKey: menu.siteKey, oplocId: site.oplocId, format });
+  const { destination, token } = await siteDestination(site.oplocId); const headers = { Authorization: `Bearer ${token}` };
+  // <this site's menu parent>/WC_<week commencing>
+  const { folderId: outputFolderId } = await ensureMenuWeekFolder({ parentId: destination.parentFolderId, serviceDate: day.weekCommencing || day.date, headers });
   const published = await publishMenuArtifact({ menu, template, folderId: outputFolderId, headers });
   const release = (day as ProjectedDay & { sourceLineage?: { cpu?: { releaseId?: string; releaseVersion?: string; contentHash?: string } } }).sourceLineage?.cpu;
-  return { artifactId: published.artifactId, oplocId: site.oplocId, sourceDayId: day.sourceDayId, sourcePublicationDayId: day.publicationDayId, sourceVersion: day.version, sourceContentHash: day.contentHash, generatedAt: new Date().toISOString(), generatedBy, driveFileId: published.fileId, driveUrl: published.driveUrl, fileName: published.fileName, ...(deliveryId ? { deliveryId } : {}), ...(release?.releaseId ? { sourceReleaseId: release.releaseId } : {}), ...(release?.releaseVersion ? { sourceReleaseVersion: release.releaseVersion } : {}), ...(release?.contentHash ? { sourcePacketHash: release.contentHash } : {}) };
+  return { artifactId: published.artifactId, oplocId: site.oplocId, sourceDayId: day.sourceDayId, sourcePublicationDayId: day.publicationDayId, sourceVersion: day.version, sourceContentHash: day.contentHash, generatedAt: new Date().toISOString(), generatedBy, driveFileId: published.fileId, driveUrl: published.driveUrl, fileName: published.fileName, ...(format !== "tablet" ? { format } : {}), ...(deliveryId ? { deliveryId } : {}), ...(release?.releaseId ? { sourceReleaseId: release.releaseId } : {}), ...(release?.releaseVersion ? { sourceReleaseVersion: release.releaseVersion } : {}), ...(release?.contentHash ? { sourcePacketHash: release.contentHash } : {}) };
 }
 
-export async function createGoogleSiteMenu(day: ProjectedDay, site: Site, generatedBy: string, existingFileId?: string, deliveryId?: string): Promise<SiteMenuArtifact> {
-  if (deliveredInMenuSiteKey(site)) return createSharedSiteMenu(day, site, generatedBy, deliveryId);
-  const templateId = resourceId(process.env.GOOGLE_DELIVERED_IN_TEMPLATE_ID); const folderId = resourceId(process.env.GOOGLE_DELIVERED_IN_OUTPUT_FOLDER_ID || process.env.GOOGLE_DRIVE_ROOT_FOLDER_ID_APP_DELIVERED_IN);
-  if (!templateId || !folderId) throw new Error("Delivered-In Google Slides template and output folder are not configured.");
-  const token = await accessToken(); const headers = { Authorization: `Bearer ${token}`, "content-type": "application/json" }; const outputFolderId = await weekFolderId(folderId, day.weekCommencing || "", headers);
+/** `format` is chosen by the caller. The CPU release flow only ever regenerates the tablet menu; label artifacts are tracked per format and flagged outdated, never auto-regenerated. */
+export async function createGoogleSiteMenu(day: ProjectedDay, site: Site, generatedBy: string, existingFileId?: string, deliveryId?: string, format: MenuOutputFormat = "tablet"): Promise<SiteMenuArtifact> {
+  if (deliveredInMenuSiteKey(site)) return createSharedSiteMenu(day, site, generatedBy, deliveryId, format);
+  if (format !== "tablet") throw new MenuArtifactError("MENU_FORMAT_UNSUPPORTED", `${site.label} has no ${format} layout; labels are available for sites with a shared menu template (MNK).`, 422);
+  // Generic template: an OPLOC-specific deck wins; the shared generic deck is the fallback. Owner and parent folder are always this site's own.
+  const templateId = resourceId(process.env[`GOOGLE_DELIVERED_IN_TEMPLATE_ID_${driveOwnerEnvKey({ type: "oploc-workspace", oplocId: site.oplocId })}`] || process.env.GOOGLE_DELIVERED_IN_TEMPLATE_ID);
+  if (!templateId) throw new Error("Delivered-In generic Google Slides template is not configured (GOOGLE_DELIVERED_IN_TEMPLATE_ID or the OPLOC-specific key).");
+  const { destination, token } = await siteDestination(site.oplocId); const headers = { Authorization: `Bearer ${token}`, "content-type": "application/json" };
+  const { folderId: outputFolderId } = await ensureMenuWeekFolder({ parentId: destination.parentFolderId, serviceDate: day.weekCommencing || day.date, headers }); // <site menu parent>/WC_<week commencing>
   const fileName = siteMenuFileName(site.label, day); const stableDeliveryId = deliveryId ? stableDocumentId(`${site.oplocId}:${deliveryId}`) : undefined;
   let copy: { id: string; webViewLink?: string; appProperties?: Record<string, string> } | undefined;
   if (stableDeliveryId) {

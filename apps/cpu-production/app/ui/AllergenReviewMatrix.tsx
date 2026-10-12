@@ -8,6 +8,7 @@ import { bookingContextEntries } from "./BookingContext";
 import { titleCaseDish } from "../../lib/production-presentation";
 import { clearLocalDraft, loadLocalChecked, loadLocalDraft, saveLocalChecked, saveLocalDraft, type AllergenReviewLineage } from "../lib/allergen-review-local";
 import { checkpointAllergenReviewRow, completeAllergenReviewMap, unresolvedNamedAllergenKeys } from "../lib/allergen-review-state";
+import { createSaveCoalescer } from "./allergen-save-coalescer";
 import "./allergen-review.css";
 
 type SignatureRole = "production_chef" | "head_chef_site_manager";
@@ -80,6 +81,10 @@ export default function AllergenReviewMatrix({
   const latestCheckedRowsRef = useRef(checkedRows);
   const latestLineageRef = useRef<Record<string, MatrixLineage>>({});
   const inFlightSave = useRef<Promise<void> | undefined>(undefined);
+  type SavePayload = { states: Record<string, Record<string, OperationalAllergenState>>; checkedRows: Set<string>; action: "save-plan" | "mark-planned" };
+  const saveReviewFnRef = useRef<(states: SavePayload["states"], checkedRows: Set<string>, action: SavePayload["action"]) => Promise<void>>(async () => undefined);
+  // Saves carry the whole matrix, so rapid edits coalesce into one in-flight save plus at most one trailing save (latest state wins).
+  const saverRef = useRef(createSaveCoalescer<SavePayload>(payload => saveReviewFnRef.current(payload.states, payload.checkedRows, payload.action)));
   const pendingSaveCountRef = useRef(0);
   const checkpointCompletionRef = useRef<Promise<void> | undefined>(undefined);
   const hydratedRef = useRef(false);
@@ -324,12 +329,12 @@ export default function AllergenReviewMatrix({
   }));
 
   const startSave = (nextStates: Record<string, Record<string, OperationalAllergenState>>, nextCheckedRows: Set<string>, action: "save-plan" | "mark-planned") => {
-    const prior = inFlightSave.current;
     const checkpointSequence = ++checkpointSequenceRef.current;
     pendingSaveCountRef.current += 1;
     if (pendingSaveCountRef.current === 1) onPersistenceChange?.(true);
     setSyncStatus("saving");
-    const operation = (prior ? prior.catch(() => undefined) : Promise.resolve()).then(() => saveReview(nextStates, nextCheckedRows, action));
+    saveReviewFnRef.current = saveReview;
+    const operation = saverRef.current.submit({ states: nextStates, checkedRows: nextCheckedRows, action });
     inFlightSave.current = operation;
     void operation.then(
       () => { if (checkpointSequence === checkpointSequenceRef.current) setSyncStatus("saved"); },
@@ -468,7 +473,7 @@ export default function AllergenReviewMatrix({
   };
 
   return (
-    <section className="cpu-allergen-matrix-panel" aria-label="CPU allergen matrix">
+    <section className="cpu-allergen-matrix-panel" aria-label="CPU allergen matrix" aria-busy={reviewSyncStatus === "saving" ? true : undefined}>
       {(bookingDietaries.length > 0 || bookingNotes.length > 0) && (
         <section style={{ display: "grid", gap: 5, padding: "13px 15px", border: "1px solid #d8d0f2", borderRadius: 10, background: "#fbfaff", color: "#51486a" }}>
           <h3 style={{ margin: 0, color: "#24115c", fontSize: ".9rem" }}>Booking dietary & notes</h3>
@@ -477,9 +482,9 @@ export default function AllergenReviewMatrix({
         </section>
       )}
       {reviewSyncStatus === "draft" && <p role="status">Review changes saved on this device. Confirm the row to checkpoint them to CPU.</p>}
-      {reviewSyncStatus === "saving" && <p role="status">Saving review…</p>}
-      {reviewSyncStatus === "saved" && !dirty && <p role="status">Review saved.</p>}
-      {reviewSyncStatus === "error" && <p role="alert">Review is saved on this device but not yet synchronised to CPU. <button type="button" onClick={retryCheckpoint} disabled={busy || locked}>Retry save</button></p>}
+      {reviewSyncStatus === "saving" && <p className="fika-action-status cpu-allergen-sync" role="status" aria-live="polite"><span className="fika-spinner" aria-hidden="true" />Saving your review to CPU…</p>}
+      {reviewSyncStatus === "saved" && !dirty && <p className="fika-action-status cpu-allergen-sync" role="status" aria-live="polite">Review saved to CPU.</p>}
+      {reviewSyncStatus === "error" && <p className="fika-action-status cpu-allergen-sync cpu-allergen-sync--error" role="alert">Review is saved on this device but not yet synchronised to CPU. <button type="button" onClick={retryCheckpoint} disabled={busy || locked}>Retry save</button></p>}
       <div className="cpu-allergen-legend" aria-label="Allergen matrix legend">
         <span><i className="cpu-allergen-state cpu-allergen-state--contains" />Contains</span>
         <span><i className="cpu-allergen-state cpu-allergen-state--contains cpu-allergen-state--explicit">Yes</i>Explicit no key allergens</span>

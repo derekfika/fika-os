@@ -1,5 +1,17 @@
 import type { CanonicalBooking } from "@/lib/canonical-types";
 
+/** Output formats a manager can choose (mirrors `MenuOutputFormat` in server-shared; kept client-safe). */
+export type MenuFormat = "tablet" | "flat-label" | "tent-label";
+export const MENU_FORMAT_OPTIONS: Array<{ value: MenuFormat; label: string; hint: string }> = [
+  { value: "tablet", label: "Tablet menu", hint: "One page for a digital display" },
+  { value: "flat-label", label: "Flat labels", hint: "One dish per label, 24 per sheet" },
+  { value: "tent-label", label: "Tent labels", hint: "Fold-over self-standing cards, 12 per sheet" },
+];
+/** Formats a site's renderer actually supports (client-safe mirror of `menuFormatsForSite`, parity-tested). Tent labels stay hidden until a real tent layout is approved. */
+export function menuFormatsForSiteKey(siteKey: string | undefined): MenuFormat[] { return siteKey === "mnk" ? ["tablet", "flat-label"] : siteKey === "angel-court" ? ["tablet"] : []; }
+/** A booking has one current output per format. */
+export const menuOutputKey = (bookingId: string, format: MenuFormat | undefined) => `${bookingId}|${format || "tablet"}`;
+
 export type MenuOutput = {
   id: string;
   fileName: string;
@@ -9,6 +21,10 @@ export type MenuOutput = {
   generatedAt: string;
   generatedBy: string;
   templateVersion: "mnk-hospitality-menu-v1" | "mnk-hospitality-menu-v2";
+  /** Physical output format; absent on outputs generated before formats existed (tablet). */
+  format?: MenuFormat;
+  /** Pages generated in the Slides file (labels page automatically). */
+  pageCount?: number;
   google?: { fileId: string; presentationUrl: string; driveUrl: string };
   /** Deterministic artifact identity for this exact booking/plan revision (retries reuse it). */
   artifactKey?: string;

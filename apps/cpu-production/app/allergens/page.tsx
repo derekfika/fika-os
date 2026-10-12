@@ -222,7 +222,7 @@ export default function CpuAllergenReviewPage() {
     if (site || signatureBusy || hydrating || !bothSigned || !masterOrders.length) return;
     setSignatureBusy(true);
     setRetryEligible(false);
-    setSignatureMessage("Refreshing current Menu publication lineage before retrying pending OPLOC releases…");
+    setSignatureMessage("Checking the latest published menu before retrying the pending site releases…");
     const failures: Array<{ orderId: string; message: string }> = [];
     try {
       const refreshed = await refreshReviewStatus();
@@ -380,7 +380,7 @@ export default function CpuAllergenReviewPage() {
   const reopenForAmendment = async () => {
     if (!reviewFrozen || signatureBusy || hydrating || !masterOrders.length) return;
     setSignatureBusy(true);
-    setSignatureMessage("Revoking prior signature authority and reopening the review…");
+    setSignatureMessage("Reopening the review. Earlier signatures are being cleared…");
     try {
       const response = await fetch("/api/production-plan", {
         method: "POST",
@@ -587,7 +587,7 @@ export default function CpuAllergenReviewPage() {
               {reviewFrozen && <button type="button" disabled={signatureBusy || hydrating} onClick={() => void reopenForAmendment()}>Reopen for amendment</button>}
             </div>
           )}
-          {signatureBusy && <p role="status">{signatureMessage || "Saving review…"}</p>}
+          {signatureBusy && <p className="fika-action-status" role="status" aria-live="polite"><span className="fika-spinner" aria-hidden="true" />{signatureMessage || "Saving review…"}</p>}
           {signatureMessage && !signatureBusy && <p className="cpu-allergen-signature-alert" role="alert">{signatureMessage}</p>}
         </section>
       </section>

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { MenuArtifactError, buildMenuSlidesRequests, menuArtifactFileName, menuArtifactKey, resolveMenuTemplate, type SlidesPresentation } from "@fika/server-shared/menu-artifact";
+import { MenuArtifactError, buildMenuSlidesRequests, menuFormatsForSite, menuArtifactFileName, menuArtifactKey, planMenuLayout, resolveMenuTemplate, type SlidesPresentation } from "@fika/server-shared/menu-artifact";
+import { MENU_FORMAT_OPTIONS, menuFormatsForSiteKey, menuOutputKey } from "../lib/mnk-menu-output";
 import { hospitalityMenuFromBooking, type CpuPlanForMenu } from "../lib/menu-adapter";
 import type { CanonicalBooking } from "../lib/canonical-types";
 
@@ -36,15 +37,15 @@ test("Hospitality MNK booking normalizes to current items, selects the MNK templ
   assert.equal(template.siteKey, "mnk"); assert.equal(template.templateId, "tpl-mnk");
   const requests = buildMenuSlidesRequests(menu, template, page) as Array<Record<string, any>>;
   const text: string = requests.find(request => request.insertText)!.insertText.text;
-  assert.match(text, /^BBQ Chicken Mayo, Gherkins, Tomatoes, Leaves\n\(Gluten, Eggs, Mustard, Sulphites\)\n\nVegan Feta, Pesto, Vegan Mayo, Salad\n\(Tree Nuts, Gluten, Soya\)\n\nFruit Pot$/);
-  assert.equal(text.includes("No Key Allergens"), false, "no_key_allergens is not printed as an allergen");
+  assert.match(text, /^BBQ Chicken Mayo, Gherkins, Tomatoes, Leaves\n\(Gluten, Eggs, Mustard, Sulphites\)\nVegan Feta, Pesto, Vegan Mayo, Salad\n\(Tree Nuts, Gluten, Soya\)\nFruit Pot$/);
+  assert.equal(text.includes("(No"), false, "no_key_allergens is a positive statement, never listed as an allergen");
 });
 
 test("a dish that may contain an allergen shows it; it is never silently dropped", () => {
   const menu = hospitalityMenuFromBooking(booking(), plan({ menuItems: [{ name: "Lunch", subItems: [{ name: "Granola Pot", allergens: { gluten: "contains", milk: "may_contain" } }] }] }));
   assert.deepEqual(menu.sections[0].items[0].mayContain, ["milk"]);
   const requests = buildMenuSlidesRequests(menu, resolveMenuTemplate({ siteKey: "mnk" }, mnkEnv), page) as Array<Record<string, any>>;
-  assert.match(requests.find(request => request.insertText)!.insertText.text, /Granola Pot\n\(Gluten, Milk\)/);
+  assert.match(requests.find(request => request.insertText)!.insertText.text, /Granola Pot\n\(Gluten\)$/);
 });
 
 test("an amended booking menu is built from the latest revision and is a distinct artifact", () => {
@@ -76,4 +77,26 @@ test("a site without a template fails safely and tells the operator what to conf
   assert.equal(menu.siteKey, "cfc");
   assert.throws(() => resolveMenuTemplate({ siteKey: menu.siteKey, oplocId: menu.oplocId }, mnkEnv), (error: unknown) => error instanceof MenuArtifactError && error.code === "MENU_TEMPLATE_SITE_UNSUPPORTED");
   assert.throws(() => resolveMenuTemplate({ siteKey: "mnk" }, {}), (error: unknown) => error instanceof MenuArtifactError && error.code === "MENU_TEMPLATE_NOT_CONFIGURED" && /GOOGLE_MENU_TEMPLATE_ID_MNK/.test(error.message));
+});
+
+test("the same current booking menu renders as tablet and flat labels; a cancelled booking produces neither", () => {
+  const menu = hospitalityMenuFromBooking(booking(), plan());
+  assert.equal(planMenuLayout(menu, "tablet").pages.length, 1);
+  const labels = planMenuLayout(menu, "flat-label").pages.flatMap(layoutPage => layoutPage.elements).filter(element => element.type === "text");
+  assert.equal(labels.length, 3, "one label per dish");
+  assert.equal(menuArtifactFileName(menu, "flat-label"), "2026-08-25-12-00-FIKA-MNK-flat-labels");
+  assert.notEqual(menuArtifactKey(menu, "mnk-tablet-v1", "tablet"), menuArtifactKey(menu, "mnk-flat-label-v1", "flat-label"));
+  assert.throws(() => hospitalityMenuFromBooking(booking({ lifecycleStatus: "Cancelled" }), plan()), (error: unknown) => error instanceof MenuArtifactError && error.code === "MENU_BOOKING_CANCELLED");
+});
+
+test("each booking keeps one current output per format, and every format is offered to the manager", () => {
+  assert.deepEqual(MENU_FORMAT_OPTIONS.map(option => option.value), ["tablet", "flat-label", "tent-label"]);
+  assert.equal(menuOutputKey("booking:1", undefined), menuOutputKey("booking:1", "tablet"), "outputs generated before formats existed are tablet menus");
+  assert.notEqual(menuOutputKey("booking:1", "flat-label"), menuOutputKey("booking:1", "tablet"));
+});
+
+test("the dashboard offers only the formats each site's renderer supports (tent labels stay hidden)", () => {
+  for (const siteKey of ["mnk", "angel-court", "unknown"]) assert.deepEqual(menuFormatsForSiteKey(siteKey), menuFormatsForSite(siteKey), `client list matches the renderer for ${siteKey}`);
+  assert.deepEqual(menuFormatsForSiteKey("mnk"), ["tablet", "flat-label"]);
+  assert.equal(menuFormatsForSiteKey("angel-court").length, 1, "one format -> no picker is shown");
 });

@@ -171,7 +171,9 @@ test("hosted Delivered-In persistence uses bounded Firestore keys and range quer
   assert.match(orders, /\.where\("oplocId", "==", oplocId\)/);
   assert.match(orders, /\.where\("deliveryDate", ">=", startDate\)/);
   assert.match(orders, /\.limit\(100\)/);
-  assert.match(siteMenus, /stableDocumentId\(`\$\{oplocId\}:\$\{sourceDayId\}`\)/);
+  // One bounded document per site/day (tablet keeps the original key); each label format has its own suffixed key.
+  assert.match(siteMenus, /stableDocumentId\(documentKey\(oplocId, sourceDayId, format\)\)/);
+  assert.match(siteMenus, /format === "tablet" \? `\$\{oplocId\}:\$\{sourceDayId\}` : `\$\{oplocId\}:\$\{sourceDayId\}:\$\{format\}`/);
   assert.match(siteMenus, /collection\("revisions"\)/);
   assert.doesNotMatch(orders, /if \(!hosted\(\)\)[\s\S]*hostedOrders\(\)\.get/);
 });
@@ -195,8 +197,10 @@ test("hosted migration is dry-run by default and chunks writes", async () => {
 test("Delivered-In Google generation reuses DWD in hosted mode and local OAuth only locally", async () => {
   const google = await readFile(new URL("../lib/google-site-menu.ts", import.meta.url), "utf8");
   const owner = await readFile(new URL("../../../packages/server-shared/src/drive-owner.ts", import.meta.url), "utf8");
-  assert.match(google, /resolveDriveOwner\(\{ type: "app-workspace", appId: "delivered-in" \}\)/);
-  assert.match(google, /driveAccessToken\(owner\)/);
+  // Menu publishing is OPLOC-scoped: each site's own Workspace owner (DWD impersonation) and explicit menu parent folder.
+  assert.match(google, /resolveMenuDestination\(\{ oplocId \}\)/);
+  assert.match(google, /menuDestinationToken\(destination\)/);
+  assert.doesNotMatch(google, /app-workspace|GOOGLE_DELIVERED_IN_OUTPUT_FOLDER_ID|GOOGLE_DRIVE_ROOT_FOLDER_ID_APP_DELIVERED_IN/, "no app-wide owner or folder");
   assert.match(owner, /appId: "cpu-production" \| "delivered-in"/);
   assert.doesNotMatch(google, /process\.env\.GOOGLE_OAUTH_CLIENT_FILE/);
   assert.match(google, /fikaDeliveryId/);

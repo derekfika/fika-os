@@ -21,6 +21,8 @@ export type SiteMenuArtifact = {
   deliveryId?: string;
   revokedAt?: string;
   reprintRequired?: boolean;
+  /** Output format; absent on artifacts generated before formats existed (tablet). */
+  format?: "tablet" | "flat-label" | "tent-label";
 };
 export type SiteMenuState = { status: "none" | "current" | "stale" | "unavailable"; artifact?: SiteMenuArtifact };
 
@@ -50,6 +52,20 @@ export function siteMenuState(day: Pick<ProjectedDay, "sourceDayId" | "contentHa
   if (!artifact) return { status: "none" };
   if (artifact.revokedAt) return { status: "stale", artifact };
   return { status: artifact.sourceDayId === day.sourceDayId && artifact.sourceContentHash === day.contentHash ? "current" : "stale", artifact };
+}
+
+/**
+ * Currentness of a label artifact. Labels are never auto-regenerated: when the day's content, its
+ * allergen release or a revocation moves on, the labels are flagged outdated so they are reprinted deliberately.
+ */
+export type SiteLabelState = { status: "none" | "current" | "outdated"; reason?: "revoked" | "source-changed" | "release-changed"; artifact?: SiteMenuArtifact };
+export function siteLabelState(day: Pick<ProjectedDay, "sourceDayId" | "contentHash"> & { sourceLineage?: { cpu?: { releaseId?: string } } }, artifact?: SiteMenuArtifact): SiteLabelState {
+  if (!artifact) return { status: "none" };
+  if (artifact.revokedAt) return { status: "outdated", reason: "revoked", artifact };
+  if (artifact.sourceDayId !== day.sourceDayId || artifact.sourceContentHash !== day.contentHash) return { status: "outdated", reason: "source-changed", artifact };
+  const release = day.sourceLineage?.cpu?.releaseId;
+  if (release && artifact.sourceReleaseId && release !== artifact.sourceReleaseId) return { status: "outdated", reason: "release-changed", artifact };
+  return { status: "current", artifact };
 }
 
 export function siteMenuFileName(siteName: string, day: Pick<ProjectedDay, "date" | "version">) {

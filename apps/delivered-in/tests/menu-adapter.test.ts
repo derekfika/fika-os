@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { MenuArtifactError, buildMenuSlidesRequests, menuArtifactKey, resolveMenuTemplate, type SlidesPresentation } from "@fika/server-shared/menu-artifact";
+import { MenuArtifactError, buildMenuSlidesRequests, menuArtifactKey, planMenuLayout, resolveMenuTemplate, type SlidesPresentation } from "@fika/server-shared/menu-artifact";
 import { deliveredInMenuFromDay, deliveredInMenuSiteKey } from "../lib/menu-adapter";
 import { projectPublishedWeeks, type ProjectedDay, type SourceDay, type SourcePublication } from "../lib/projection";
-import { siteMenuState, type SiteMenuArtifact } from "../lib/site-menu";
+import { siteLabelState, siteMenuState, type SiteMenuArtifact } from "../lib/site-menu";
 
 const MNK = "oploc:66e621fa-6e6f-4f46-9aed-462313abbe8f";
 const site = { oplocId: MNK, label: "MNK" };
@@ -42,7 +42,7 @@ test("the MNK template is selected by site and the rendered menu carries names a
   assert.equal(template.siteKey, "mnk"); assert.equal(template.templateId, "tpl-mnk");
   const requests = buildMenuSlidesRequests(menu, template, page) as Array<Record<string, any>>;
   const text: string = requests.find(request => request.insertText)!.insertText.text;
-  assert.match(text, /^SALADS\n\nMixed Fika Leaf Salad\n\(Mustard\)\n\nHOT MAINS\n\nRoast Chicken Breast\n\(Gluten, Milk\)\n\nSIDES & EXTRAS\n\nRoasted Potatoes$/);
+  assert.match(text, /^HOT MAINS\nRoast Chicken Breast\n\(Gluten\)\nSIDES & EXTRAS\nRoasted Potatoes\nSALADS\nMixed Fika Leaf Salad\n\(Mustard\)$/);
   assert.equal(requests.filter(request => request.createShape).length, 1);
 });
 
@@ -91,4 +91,29 @@ test("sites without a shared template are outside the shared path and fail safel
   const [projected] = project([sourceDay()]);
   assert.throws(() => deliveredInMenuFromDay(projected, haleon), (error: unknown) => error instanceof MenuArtifactError && error.code === "MENU_TEMPLATE_SITE_UNSUPPORTED");
   assert.throws(() => resolveMenuTemplate({ siteKey: "mnk" }, {}), (error: unknown) => error instanceof MenuArtifactError && error.code === "MENU_TEMPLATE_NOT_CONFIGURED");
+});
+
+test("the same current-day Delivered-In menu renders as flat labels with one dish per label and distinct artifact identity", () => {
+  const menu = deliveredInMenuFromDay(project([sourceDay()])[0], site);
+  const plan = planMenuLayout(menu, "flat-label");
+  const labels = plan.pages.flatMap(layoutPage => layoutPage.elements).filter(element => element.type === "text");
+  assert.equal(labels.length, 3, "one label per dish across the sections");
+  assert.deepEqual(labels.map(label => label.type === "text" ? label.paragraphs.map(paragraph => paragraph.text) : []), [
+    ["Mixed Fika Leaf Salad", "(Mustard)"],
+    ["Roast Chicken Breast", "(Gluten)"],
+    ["Roasted Potatoes"],
+  ]);
+  assert.notEqual(menuArtifactKey(menu, "mnk-tablet-v1", "tablet"), menuArtifactKey(menu, "mnk-flat-label-v1", "flat-label"));
+});
+
+const labelArtifact = (over: Partial<SiteMenuArtifact> = {}): SiteMenuArtifact => ({ artifactId: "a1", oplocId: "oploc:x", sourceDayId: "day-1", sourcePublicationDayId: "pub-1", sourceVersion: 1, sourceContentHash: "hash-1", generatedAt: "2026-08-25T09:00:00.000Z", generatedBy: "t", driveFileId: "f1", driveUrl: "https://drive/f1", fileName: "labels", format: "flat-label", sourceReleaseId: "release-1", ...over });
+
+test("label artifacts are tracked per format and flagged outdated - never auto-regenerated - when source, release or safety state moves", () => {
+  const day = { sourceDayId: "day-1", contentHash: "hash-1", sourceLineage: { cpu: { releaseId: "release-1" } } };
+  assert.deepEqual(siteLabelState(day, undefined), { status: "none" });
+  assert.equal(siteLabelState(day, labelArtifact()).status, "current");
+  assert.deepEqual([siteLabelState({ ...day, contentHash: "hash-2" }, labelArtifact()).status, siteLabelState({ ...day, contentHash: "hash-2" }, labelArtifact()).reason], ["outdated", "source-changed"]);
+  assert.equal(siteLabelState({ ...day, sourceLineage: { cpu: { releaseId: "release-2" } } }, labelArtifact()).reason, "release-changed", "a new allergen release outdates labels even if the menu text is unchanged");
+  assert.equal(siteLabelState(day, labelArtifact({ revokedAt: "2026-08-25T10:00:00.000Z", reprintRequired: true })).reason, "revoked");
+  assert.equal(siteLabelState({ sourceDayId: "day-1", contentHash: "hash-1" }, labelArtifact({ sourceReleaseId: undefined })).status, "current", "legacy artifacts without release provenance compare on content");
 });

@@ -875,3 +875,6 @@ button:disabled {
 .allergen-legend-item--clear b,
 .allergen-legend-item--unrecorded b { background: var(--fika-surface-card); color: transparent; }
 .allergen-legend-item--may-contain b { color: var(--fika-action-secondary); }
+@media (prefers-reduced-motion: reduce) {
+  .action-spinner { display: none !important; animation: none !important; }
+}

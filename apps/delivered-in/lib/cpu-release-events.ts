@@ -93,7 +93,7 @@ export async function applyCpuReleaseEvent(request: NextRequest, event: CpuRelea
     throw Object.assign(new Error("Delivered-In CPU release did not converge on the saved site-menu artifact."), { code: "DELIVERED_IN_RELEASE_NOT_COHERENT", status: 409 });
   }
   await saveAllergenSafetyState(publishSafetyState({ siteId: event.oplocId, serviceDate: event.serviceDate, releaseId: event.releaseId, releaseVersion: event.releaseVersion, releaseHash: event.packetContentHash, previousReleaseId: existing.sourceReleaseId, previousReleaseVersion: existing.sourceReleaseVersion, delta: event.delta, regenerated: true, updatedAt: new Date().toISOString() }));
-  if (existing.driveFileId && existing.driveFileId !== artifact.driveFileId) await retireGoogleSiteMenu(existing.driveFileId);
+  if (existing.driveFileId && existing.driveFileId !== artifact.driveFileId) await retireGoogleSiteMenu(event.oplocId, existing.driveFileId);
   const receipt = await completeCpuReleaseReceipt(identity, { result: "applied", projectionId: finalProjection.projectionId, projectionContentHash: finalProjection.sourceLineage.menu.contentHash, artifactId: artifact.artifactId, driveFileId: artifact.driveFileId });
   logCpuRelease(event, "receipt-completed", { result: receipt.result, artifactId: artifact.artifactId, driveFileId: artifact.driveFileId });
   return { status: "reconciled" as const, regenerated: true, artifactId: artifact.artifactId, receipt };

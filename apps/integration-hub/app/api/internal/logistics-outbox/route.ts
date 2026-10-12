@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { internalTokenAllowed } from "../../../../../shared/internal-auth";
+import { replayCpuProjectionOutbox } from "@/lib/cpu-projection-outbox";
 import { deliverLogisticsProjection, repairLogisticsProjectionForServiceDate, replayLogisticsProjectionOutbox } from "@/lib/logistics-projection-outbox";
 
 export async function POST(request: NextRequest) {
@@ -13,5 +14,8 @@ export async function POST(request: NextRequest) {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(body.serviceDate)) return NextResponse.json({ error: { message: "A valid serviceDate is required." } }, { status: 422 });
     return NextResponse.json(await repairLogisticsProjectionForServiceDate(body.serviceDate, body.limit));
   }
-  return NextResponse.json(await replayLogisticsProjectionOutbox(body.limit));
+  const logistics = await replayLogisticsProjectionOutbox(body.limit);
+  // The existing every-minute tick also drains durable Hub -> CPU projection handoffs, so none can stay undelivered for lack of a retry.
+  const cpuProjection = await replayCpuProjectionOutbox(body.limit).catch(error => ({ error: error instanceof Error ? error.message : "CPU projection outbox replay failed." }));
+  return NextResponse.json({ ...logistics, cpuProjection });
 }

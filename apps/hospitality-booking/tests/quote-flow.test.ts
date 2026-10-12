@@ -10,7 +10,8 @@ test("quote generation stays on the dashboard and bounds remote persistence wait
   assert.match(dashboard, /fetchQuoteRequest/);
   assert.match(dashboard, /import \{ fetchQuoteRequest \} from/);
   assert.match(dashboard, /void load\(action !== "Quoted"\)/);
-  assert.match(dashboard, /Retry quote PDF save/);
+  assert.match(dashboard, /Retry quote generation/);
+  assert.doesNotMatch(dashboard, /Retry quote PDF save/);
 });
 
 test("menu readiness follows the current amended Production Order identity", () => {
@@ -48,4 +49,23 @@ test("additional-charge manager preserves unsaved edits and provides accessible 
   assert.match(dashboard, /2×/);
   assert.match(dashboard, /event\.target\.value === "custom" \? "1\.25"/);
   assert.match(dashboard, /Custom multiplier<input type="number" min="0\.25" max="5" step="0\.05"/);
+});
+
+test("manager document actions: quote PDF only, loading state, plain-language allergen copy, labelled format control", () => {
+  // The HTML intermediate is never opened by the operator: Open quote needs the saved PDF.
+  const openQuote = dashboard.slice(dashboard.indexOf("const openQuote ="), dashboard.indexOf("const generateMenu"));
+  assert.doesNotMatch(openQuote, /openPrintSheet/);
+  assert.match(openQuote, /current\.pdfStatus === "saved"/);
+  // Inline loading state that blocks repeat activation of quote generation.
+  assert.match(dashboard, /Generating quote…/);
+  assert.match(dashboard, /disabled=\{quoteBusy && \(action === "Quoted" \|\| action === "QuotePdfRetry"\)\}/);
+  assert.match(dashboard, /if \(quoteBusy\) return;/);
+  // Allergen failure copy is operator-facing; the technical detail goes to diagnostics only.
+  assert.match(dashboard, /Allergen matrix unavailable/);
+  assert.match(dashboard, /couldn&apos;t load the latest CPU allergen data\. Try again\./);
+  assert.doesNotMatch(dashboard, /<small>\{matrixArtifact\.error/);
+  assert.match(dashboard, /console\.warn\("FIKA allergen matrix unavailable"/);
+  // Menu format is a labelled native select in its own form-control wrapper, not a pseudo-card.
+  assert.match(dashboard, /<label className="manager-menu-format">/);
+  assert.match(dashboard, /<select\s+value=\{menuFormat\}/);
 });

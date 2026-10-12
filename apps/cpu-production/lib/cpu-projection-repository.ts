@@ -58,7 +58,7 @@ type ProjectionRecord = {
 };
 
 export type MonotonicProjectionWrite<T extends ProjectionRecord> = {
-  status: "created" | "advanced" | "idempotent" | "superseded";
+  status: "created" | "advanced" | "idempotent" | "superseded" | "recovered";
   projection: T;
 };
 
@@ -94,12 +94,27 @@ export function compareMonotonicProjectionWrite(current: ProjectionRecord | unde
  * sequence.  The transaction is the ordering authority; process-local
  * rebuild coalescing is only an optimisation and is not part of correctness.
  */
-export async function writeCpuProjectionMonotonically<T extends ProjectionRecord>(ref: DocumentReference, incoming: T): Promise<MonotonicProjectionWrite<T>> {
+export type MonotonicProjectionWriteOptions = {
+  /**
+   * The incoming projection was just derived from the authoritative Hub canonical state. If it carries the SAME change
+   * sequence as the stored one but different content, the stored copy has silently diverged from canonical state (for
+   * example a canonical order changed without a CPU change event), so the canonical rebuild replaces it instead of
+   * failing with CPU_PROJECTION_SEQUENCE_CONFLICT. Lower sequences are still superseded and never overwrite.
+   */
+  authoritativeRebuild?: boolean;
+};
+
+export async function writeCpuProjectionMonotonically<T extends ProjectionRecord>(ref: DocumentReference, incoming: T, options: MonotonicProjectionWriteOptions = {}): Promise<MonotonicProjectionWrite<T>> {
   return db.runTransaction(async transaction => {
     const snapshot = await transaction.get(ref);
     recordDataAccess({ app: "cpu-production", operation: "projection.monotonic-head-read", source: "FIRESTORE", documents: snapshot.exists ? 1 : 0, firestoreReadKind: "transaction" });
     const current = snapshot.exists ? snapshot.data() as ProjectionRecord : undefined;
-    const decision = compareMonotonicProjectionWrite(current, incoming);
+    let decision: { status: MonotonicProjectionWrite<T>["status"] };
+    try { decision = compareMonotonicProjectionWrite(current, incoming); }
+    catch (error) {
+      if (!options.authoritativeRebuild || (error as { code?: string }).code !== "CPU_PROJECTION_SEQUENCE_CONFLICT") throw error;
+      decision = { status: "recovered" };
+    }
     if (decision.status === "superseded" || decision.status === "idempotent") return { status: decision.status, projection: current as T };
     const projection = {
       ...incoming,

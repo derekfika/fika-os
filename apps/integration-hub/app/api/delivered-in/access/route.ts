@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { actorFromSession } from "@/lib/auth";
-import { assertPermission } from "@/lib/authmod";
+import { assertPermission, hasPermission } from "@/lib/authmod";
 import { FirestoreAuthModRepository } from "@/lib/authmod-core";
 import { requireFikaSession } from "@/lib/fika-session";
 import { resolvePermittedOplocIds } from "@/lib/oploc-authorization";
 import { getOplocReadPackage, validateOplocReadPackage } from "@/lib/oploc-read-package";
 import { getServiceArrangementsReadPackage, validateServiceArrangementsReadPackage } from "@/lib/service-arrangements-read-package";
-import { DELIVERED_IN_PERMISSIONS } from "@fika/server-shared/delivered-in-access";
+import { deliveredInPermissionsFor } from "@fika/server-shared/delivered-in-access";
 import { admissionFailure, admissionJson } from "../../../../../../shared/admission";
 
 export const dynamic = "force-dynamic";
@@ -39,7 +39,7 @@ export async function GET(request: NextRequest) {
     const deliveredIn = enabledFor("delivered-in");
     const grabAndGo = enabledFor("grab-and-go");
     const authorized = packageValue.oplocs.filter(oploc => (scope.all || scope.ids.has(oploc.canonicalId)) && enabled.has(oploc.canonicalId));
-    return NextResponse.json({ access: { email: session.email || "", oplocIds: authorized.map(oploc => oploc.canonicalId), permissions: [...DELIVERED_IN_PERMISSIONS] }, sites: authorized.map(oploc => ({ oplocId: oploc.canonicalId, label: oploc.label, services: { deliveredIn: deliveredIn.has(oploc.canonicalId), grabAndGo: grabAndGo.has(oploc.canonicalId) } })) }, { headers: { "Cache-Control": "no-store, max-age=0" } });
+    return NextResponse.json({ access: { email: session.email || "", oplocIds: authorized.map(oploc => oploc.canonicalId), permissions: deliveredInPermissionsFor(hasPermission(actor, "canonical.edit")) }, sites: authorized.map(oploc => ({ oplocId: oploc.canonicalId, label: oploc.label, services: { deliveredIn: deliveredIn.has(oploc.canonicalId), grabAndGo: grabAndGo.has(oploc.canonicalId) } })) }, { headers: { "Cache-Control": "no-store, max-age=0" } });
   } catch (error) {
     const requestId = request.headers.get("x-request-id") || undefined;
     const status = Number((error as { status?: number }).status) || 403;

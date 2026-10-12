@@ -8,8 +8,8 @@ import { dailyRunSheetHtml } from "../../lib/run-sheet";
 import { quoteHtml } from "../../lib/quote-document";
 import { fetchQuoteRequest } from "../../lib/quote-request";
 import { amendmentPatchDto } from "../../lib/amendment-dto";
-import { mnkMenuHtml } from "../../lib/mnk-menu-output";
-import type { MenuOutput } from "../../lib/mnk-menu-output";
+import { MENU_FORMAT_OPTIONS, menuFormatsForSiteKey, menuOutputKey, mnkMenuHtml } from "../../lib/mnk-menu-output";
+import type { MenuFormat, MenuOutput } from "../../lib/mnk-menu-output";
 import styles from "./HospitalityDashboard.module.css";
 import { hospitalitySiteThemeStyle, portalSite, type PortalSiteKey } from "@/lib/portal-sites";
 import { hospitalityWorkspacePath } from "@/lib/hospitality-workspace";
@@ -75,7 +75,7 @@ async function saveQuoteDocument(payload: { name: string; html: string; canonica
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(payload),
-    }, "Quote PDF saving timed out. The dashboard remains available; use Retry quote PDF save once the Drive service is responding.");
+    }, "Quote PDF saving timed out. The dashboard remains available; use Retry quote generation once the Drive service is responding.");
     const body = await readDashboardJson(response) as { error?: { message?: string }; saved?: { fileId?: string; driveUrl?: string } };
     if (response.ok && body.saved?.fileId) return body.saved;
     lastMessage = body.error?.message || lastMessage;
@@ -148,6 +148,9 @@ export default function HospitalityDashboard({
     {},
   );
   const [menuBusy, setMenuBusy] = useState(false);
+  const [menuFormat, setMenuFormat] = useState<MenuFormat>("tablet");
+  const supportedMenuFormats = menuFormatsForSiteKey(site.key);
+  const activeMenuFormat: MenuFormat = supportedMenuFormats.includes(menuFormat) ? menuFormat : "tablet";
   const [menuReadiness, setMenuReadiness] = useState<Record<string, { available: boolean; reason: string }>>({});
   const [matrixArtifacts, setMatrixArtifacts] = useState<
     Record<
@@ -193,7 +196,7 @@ export default function HospitalityDashboard({
           setMenuOutputs(
             Object.fromEntries(
               (menuBody.outputs || []).filter((output) => output.templateVersion === "mnk-hospitality-menu-v2").map((output) => [
-                output.bookingId,
+                menuOutputKey(output.bookingId, output.format),
                 output,
               ]),
             ),
@@ -371,7 +374,7 @@ export default function HospitalityDashboard({
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ canonicalId: booking.canonicalId, expectedVersion: booking.version, action: "quote-pdf-status", revisionId: quote.id, status: "saved", driveFileId: saved.fileId, driveUrl: saved.driveUrl }),
-    }, "Quote PDF was saved, but recording its status timed out. Use Retry quote PDF save from the dashboard.");
+    }, "Quote PDF was saved, but recording its status timed out. Use Retry quote generation from the dashboard.");
     const statusBody = await readDashboardJson(statusResponse) as { error?: { message?: string }; booking?: CanonicalBooking };
     if (!statusResponse.ok) throw new Error(statusBody.error?.message || "The quote PDF was saved but could not be recorded against the quote.");
     return statusBody.booking as CanonicalBooking;
@@ -460,7 +463,7 @@ export default function HospitalityDashboard({
             method: "POST",
             headers: { "content-type": "application/json" },
             body: JSON.stringify({ canonicalId: body.booking.canonicalId, expectedVersion: body.booking.version, action: "quote-pdf-status", revisionId: quote.id, status: "saved", driveFileId: saved.fileId, driveUrl: saved.driveUrl }),
-          }, "Quote PDF was saved, but recording its status timed out. Use Retry quote PDF save from the dashboard.");
+          }, "Quote PDF was saved, but recording its status timed out. Use Retry quote generation from the dashboard.");
           const statusBody = await readDashboardJson(statusResponse);
           if (!statusResponse.ok) {
             const message = statusBody.error?.message || "The quote PDF was saved but could not be recorded against the quote.";
@@ -584,7 +587,7 @@ export default function HospitalityDashboard({
       const current = booking.quoteState?.revisions.find((revision) => revision.id === booking.quoteState?.currentRevisionId);
       if (isBookingQuoteStale(booking)) throw new Error("Quote needs regeneration before it can be opened as current.");
       if (current?.driveUrl && current.pdfStatus === "saved") window.open(current.driveUrl, "_blank", "noopener,noreferrer");
-      else openPrintSheet(quoteHtml(booking));
+      else throw new Error("The quote PDF isn't ready yet. Use Retry quote generation.");
     } catch (cause) {
       setError((cause as Error).message);
     }
@@ -603,6 +606,7 @@ export default function HospitalityDashboard({
             quoteSettings?.googleMenuFolderId ||
             quoteSettings?.googleDriveFolderId,
           menuTemplateId: quoteSettings?.googleMenuTemplateId,
+          format: activeMenuFormat,
           actor: "menu-planning",
         }),
       });
@@ -617,7 +621,7 @@ export default function HospitalityDashboard({
         );
       setMenuOutputs((current) => ({
         ...current,
-        [booking.canonicalId]: body.output!,
+        [menuOutputKey(booking.canonicalId, body.output!.format)]: body.output!,
       }));
       if (body.output.google?.presentationUrl)
         window.open(
@@ -836,7 +840,7 @@ export default function HospitalityDashboard({
     ? productionOrders[selected.canonicalId]
     : undefined;
   const selectedMenuOutput = selected
-    ? menuOutputs[selected.canonicalId]
+    ? menuOutputs[menuOutputKey(selected.canonicalId, activeMenuFormat)]
     : undefined;
   const selectedMenuStale = Boolean(
     selectedMenuOutput?.planUpdatedAt &&
@@ -1122,6 +1126,10 @@ export default function HospitalityDashboard({
                   matrixArtifact={matrixArtifacts[selected.canonicalId]}
                   onRefreshMatrix={() => setMatrixRefreshTick((current) => current + 1)}
                   menuBusy={menuBusy}
+                  quoteBusy={actionBusy}
+                  menuFormat={activeMenuFormat}
+                  menuFormats={supportedMenuFormats}
+                  onMenuFormatChange={setMenuFormat}
                   setPending={setPending}
                   amendment={amendment}
                   onAmend={openAmendment}
@@ -1357,6 +1365,10 @@ function BookingPane({
   matrixArtifact,
   onRefreshMatrix,
   menuBusy,
+  quoteBusy,
+  menuFormat,
+  menuFormats,
+  onMenuFormatChange,
   setPending,
   amendment,
   onAmend,
@@ -1391,6 +1403,10 @@ function BookingPane({
   };
   onRefreshMatrix: () => void;
   menuBusy: boolean;
+  quoteBusy: boolean;
+  menuFormat: MenuFormat;
+  menuFormats: MenuFormat[];
+  onMenuFormatChange: (format: MenuFormat) => void;
   setPending: (status: WorkflowAction) => void;
   amendment: Amendment | null;
   onAmend: (booking: CanonicalBooking) => void;
@@ -1428,6 +1444,10 @@ function BookingPane({
       matrixArtifact={matrixArtifact}
       onRefreshMatrix={onRefreshMatrix}
       menuBusy={menuBusy}
+      quoteBusy={quoteBusy}
+      menuFormat={menuFormat}
+      menuFormats={menuFormats}
+      onMenuFormatChange={onMenuFormatChange}
       setPending={setPending}
       onAmend={onAmend}
       onOpenQuote={onOpenQuote}
@@ -1438,6 +1458,14 @@ function BookingPane({
       onOpenMenu={onOpenMenu}
     />
   );
+}
+
+/** Keeps the technical allergen-matrix failure in diagnostics while the operator sees plain-language copy. */
+function MatrixDiagnostics({ bookingId, detail }: { bookingId: string; detail?: string }) {
+  useEffect(() => {
+    if (detail) console.warn("FIKA allergen matrix unavailable", { bookingId, detail });
+  }, [bookingId, detail]);
+  return null;
 }
 
 function BookingDetail({
@@ -1452,6 +1480,10 @@ function BookingDetail({
   matrixArtifact,
   onRefreshMatrix,
   menuBusy,
+  quoteBusy,
+  menuFormat,
+  menuFormats,
+  onMenuFormatChange,
   setPending,
   onAmend,
   onOpenQuote,
@@ -1481,6 +1513,10 @@ function BookingDetail({
   };
   onRefreshMatrix: () => void;
   menuBusy: boolean;
+  quoteBusy: boolean;
+  menuFormat: MenuFormat;
+  menuFormats: MenuFormat[];
+  onMenuFormatChange: (format: MenuFormat) => void;
   setPending: (status: WorkflowAction) => void;
   onAmend: (booking: CanonicalBooking) => void;
   onOpenQuote: (booking: CanonicalBooking) => void;
@@ -1526,19 +1562,27 @@ function BookingDetail({
               key={action}
               type="button"
               className="primary"
+              disabled={quoteBusy && (action === "Quoted" || action === "QuotePdfRetry")}
+              aria-busy={quoteBusy && (action === "Quoted" || action === "QuotePdfRetry") ? true : undefined}
               onClick={() => {
+                if (quoteBusy) return;
                 if (action === "Quoted") onAction(action);
                 else setPending(action);
               }}
             >
-              {action === "Reviewed"
+              {quoteBusy && (action === "Quoted" || action === "QuotePdfRetry") ? (
+                <>
+                  <span className={styles.spinner} aria-hidden="true" />
+                  Generating quote…
+                </>
+              ) : action === "Reviewed"
                 ? "Review booking"
                 : action === "Quoted"
                   ? booking.quoteState?.currentRevisionId && isBookingQuoteStale(booking)
                     ? "Regenerate quote"
                     : booking.quoteState?.currentRevisionId ? "Open quote" : "Generate quote"
                   : action === "QuotePdfRetry"
-                    ? "Retry quote PDF save"
+                    ? "Retry quote generation"
                     : action === "Completed"
                       ? "Mark complete"
                       : "Send to CPU"}
@@ -1695,21 +1739,32 @@ function BookingDetail({
                     : "Available after the quote PDF is saved to Drive"}
             </small>
           </button>
-          <div className="manager-document-actions">
+          <div className="manager-document-actions" role="group" aria-label="Quote, allergen matrix and menu">
+            <p className="manager-document-actions__title">Quote, allergens and menu</p>
             <button
               type="button"
               className="manager-document-action"
-              disabled={!booking.quoteState?.currentRevisionId || quoteNeedsRegeneration}
+              disabled={quoteBusy || !booking.quoteState?.currentRevisionId || quoteNeedsRegeneration || booking.quoteState.revisions.find((revision) => revision.id === booking.quoteState?.currentRevisionId)?.pdfStatus !== "saved"}
+              aria-busy={quoteBusy ? true : undefined}
               onClick={() => onOpenQuote(booking)}
             >
-              <strong>{quoteNeedsRegeneration ? "Quote needs regeneration" : "Open quote"}</strong>
+              <strong>
+                {quoteBusy ? (
+                  <>
+                    <span className={styles.spinner} aria-hidden="true" />
+                    Generating quote…
+                  </>
+                ) : quoteNeedsRegeneration ? "Quote needs regeneration" : "Open quote"}
+              </strong>
               <small>
-                {quoteNeedsRegeneration
+                {quoteBusy
+                  ? "Preparing the quote PDF"
+                  : quoteNeedsRegeneration
                   ? "The previous revision is retained for history"
                   : booking.quoteState?.currentRevisionId
                   ? booking.quoteState.revisions.find((revision) => revision.id === booking.quoteState?.currentRevisionId)?.pdfStatus === "saved"
                     ? "Current quote PDF in Drive"
-                    : "PDF persistence required before CPU hand-off"
+                    : "Quote PDF not saved yet. Use Retry quote generation."
                   : "Quote not generated"}
               </small>
             </button>
@@ -1731,13 +1786,17 @@ function BookingDetail({
               </a>
             ) : matrixArtifact?.status === "generating" ? (
               <button type="button" className="manager-document-action" disabled aria-busy="true">
-                <strong>Generating allergen matrix…</strong>
+                <strong>
+                  <span className={styles.spinner} aria-hidden="true" />
+                  Generating allergen matrix…
+                </strong>
                 <small>The signed PDF is being prepared</small>
               </button>
             ) : matrixArtifact?.status === "failed" || matrixArtifact?.status === "error" ? (
               <button type="button" className="manager-document-action" onClick={onRefreshMatrix}>
-                <strong>Allergen matrix needs retry</strong>
-                <small>{matrixArtifact.error || "Reload the current CPU allergen matrix."}</small>
+                <MatrixDiagnostics bookingId={booking.canonicalId} detail={matrixArtifact.error} />
+                <strong>Allergen matrix unavailable</strong>
+                <small>We couldn&apos;t load the latest CPU allergen data. Try again.</small>
               </button>
             ) : (
               <button
@@ -1748,6 +1807,21 @@ function BookingDetail({
                 <strong>Open allergen matrix</strong>
                 <small>{matrixArtifact?.status === "not_configured" ? "Signed matrix storage is not configured" : "Available after signing"}</small>
               </button>
+            )}
+            {menuFormats.length > 1 && (
+            <label className="manager-menu-format">
+              <span className="manager-menu-format__label">Menu format</span>
+              <select
+                value={menuFormat}
+                onChange={(event) => onMenuFormatChange(event.target.value as MenuFormat)}
+                disabled={menuBusy}
+              >
+                {MENU_FORMAT_OPTIONS.filter((option) => menuFormats.includes(option.value)).map((option) => (
+                  <option key={option.value} value={option.value}>{option.label}</option>
+                ))}
+              </select>
+              <small>{MENU_FORMAT_OPTIONS.find((option) => option.value === menuFormat)?.hint}</small>
+            </label>
             )}
             {menuOutput ? (
               <>
@@ -1764,10 +1838,20 @@ function BookingDetail({
                   className="manager-document-action"
                   onClick={() => void onGenerateMenu(booking)}
                   disabled={menuBusy || !menuReady}
+                  aria-busy={menuBusy ? true : undefined}
                 >
-                  <strong>Regenerate menu</strong>
+                  <strong>
+                    {menuBusy ? (
+                      <>
+                        <span className={styles.spinner} aria-hidden="true" />
+                        Generating menu…
+                      </>
+                    ) : "Regenerate menu"}
+                  </strong>
                   <small>
-                    {menuStale
+                    {menuBusy
+                      ? "This can take a few seconds. Please keep this page open."
+                      : menuStale
                       ? "Allergen or production details have changed"
                     : menuReadyReason}
                   </small>
@@ -1779,9 +1863,17 @@ function BookingDetail({
                 className="manager-document-action"
                 onClick={() => void onGenerateMenu(booking)}
                 disabled={menuBusy || !menuReady}
+                aria-busy={menuBusy ? true : undefined}
               >
-                <strong>Generate menu</strong>
-                <small>{menuReady ? "Generate from the Planned CPU revision" : menuReadyReason}</small>
+                <strong>
+                  {menuBusy ? (
+                    <>
+                      <span className={styles.spinner} aria-hidden="true" />
+                      Generating menu…
+                    </>
+                  ) : "Generate menu"}
+                </strong>
+                <small>{menuBusy ? "This can take a few seconds. Please keep this page open." : menuReady ? "Generate from the Planned CPU revision" : menuReadyReason}</small>
               </button>
             )}
           </div>
